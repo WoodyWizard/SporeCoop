@@ -36,7 +36,7 @@ looked up). Not a desync a player can use (nothing to eat or pick up was seen in
 
 ## Fix
 The bones: worldobj.cpp kind `interactive_ornament` (see BUG-0459). Plants and rocks: no kind yet
-(docs/known-issues.md#issue-world-objects-left).
+(docs/archive/known-issues-2026.md#issue-world-objects-left).
 Plants and rocks: no worldobj kind; the detector leaves `rock` and `game_plant` out (worlddiff.IGNORE, with the
 evidence) (fix/w40-cell-evo).
 

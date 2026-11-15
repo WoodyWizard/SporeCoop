@@ -13,7 +13,7 @@ branch: fix/w49-spacegfx
 commits: 7e17a5fb
 tests: campaign_space
 signature:
-docs: docs/known-issues.md#issue-gpu-overcommit-garbage, docs/06-testing.md#testing-gpu-overcommit
+docs: docs/archive/known-issues-2026.md#issue-gpu-overcommit-garbage, docs/06-testing.md#testing-gpu-overcommit
 related: BUG-1096
 ---
 
@@ -55,7 +55,7 @@ Inferred: the driver's eviction under VRAM + RAM pressure left some of Bob's and
 amdgpu error in the kernel log at 01:18 (only the usual "VM memory stats ... non-zero when fini" at game ends).
 
 ## Fix
-None in the mod. docs/known-issues.md#issue-gpu-overcommit-garbage (how to tell it on a key frame) and
+None in the mod. docs/archive/known-issues-2026.md#issue-gpu-overcommit-garbage (how to tell it on a key frame) and
 docs/06-testing.md#testing-gpu-overcommit (the numbers, the game count to keep the VRAM under the card).
 
 ## Verification

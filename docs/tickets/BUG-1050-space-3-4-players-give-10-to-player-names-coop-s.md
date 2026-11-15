@@ -13,7 +13,7 @@ branch: fix/w49-space
 commits: f95e96fe
 tests: space_give_pick
 signature:
-docs: docs/re/space.md#space-war-npc-hits, docs/known-issues.md#issue-space-give-recipient
+docs: docs/re/space.md#space-war-npc-hits, docs/archive/known-issues-2026.md#issue-space-give-recipient
 related: BUG-0075, BUG-0234
 ---
 

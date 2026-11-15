@@ -13,7 +13,7 @@ branch: fix/w9-tribe, fix/w13-tribe-civ
 commits: 22cbf89 d1cdf2e eb1bebf 4c6c6e1
 tests: tribe_leave_walk (coop_tribe_leave_walk.py)
 signature: 0xC0000005 at 0x00C0DB23 SporeCoop::CreatureHearsTarget+0x463 data 0x3C (handled, first chance)
-docs: docs/re/tribe.md#tribe-leave-walk-fault, docs/known-issues.md#issue-tribe-leave-hears-fault
+docs: docs/re/tribe.md#tribe-leave-walk-fault, docs/archive/known-issues-2026.md#issue-tribe-leave-hears-fault
 related: BUG-0284, BUG-0310
 ---
 

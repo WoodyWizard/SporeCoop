@@ -13,7 +13,7 @@ branch: fix/w49-puppet
 commits: 215adcfb, 7c5c6f20, 59a155c8
 tests: puppet_air, net_tests test_interp
 signature:
-docs: docs/re/creature.md#creature-puppet-agl-lerp, docs/06-testing.md#testing-puppet-look, docs/known-issues.md#issue-puppet-jumps
+docs: docs/re/creature.md#creature-puppet-agl-lerp, docs/06-testing.md#testing-puppet-look, docs/archive/known-issues-2026.md#issue-puppet-jumps
 related: BUG-0376, BUG-0425, BUG-0532, BUG-1093
 ---
 

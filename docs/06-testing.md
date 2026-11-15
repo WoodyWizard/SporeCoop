@@ -7801,7 +7801,7 @@ editor's own pause and input lock and the trace lines are the same in both runs;
 * Twin: `SPORE_WARM_KEEP_FAULTS=1 tools/lab.py run kit_cmd_fault,same_view --lane 6 --retry 0 --no-build
   --in-order` FAILS (20261114-025716), without it PASSES (20261114-025857, 20261114-030034).
 * Another warm-only failure of that check is not this one: npc_ai_lookup's "0 reuses" (BUG-1099,
-  [known issue](known-issues.md#issue-npc-ai-lookup-reuse)) is the guest's heap, the faults are on the host.
+  [known issue](archive/known-issues-2026.md#issue-npc-ai-lookup-reuse)) is the guest's heap, the faults are on the host.
 
 ## GPU memory of the lab: garbage on key frames above the card's VRAM (2026-11-14, fix/w49-spacegfx)
 <a id="testing-gpu-overcommit"></a>
@@ -7812,7 +7812,7 @@ during two campaign_space runs on lane 4 with other agents' lanes running): 5.2 
 DXVK) over a base of ~3.9 GB (desktop, other programs). The card has 16.0 GB (16368 MB): about 18 games fit.
 * The rel/0.7.14 final check 20261114-005006 ran 22 games at 01:18 (five 4-player tests and play_space on six lanes;
   the "6 lanes" rule of 6.19 counted 2-player lanes): ~18.4 GB wanted, MemAvailable down to 4.9 GB. Two guests of
-  campaign_space drew garbage (docs/known-issues.md#issue-gpu-overcommit-garbage); the same test alone on lane 4 was
+  campaign_space drew garbage (docs/archive/known-issues-2026.md#issue-gpu-overcommit-garbage); the same test alone on lane 4 was
   clean twice (20261114-025653, 20261114-031143).
 * Key frame review: garbage in the scene, the textures and the HUD at once on one game of a loaded run is this; repeat
   the test alone before opening a mod bug. A quick look at the count: `pgrep -x SporeApp.exe | wc -l`.

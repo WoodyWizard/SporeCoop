@@ -13,7 +13,7 @@ branch: fix/w48-space
 commits: 8f0afe6e
 tests: effects_party_space
 signature:
-docs: docs/re/space.md#space-s1-0713, docs/known-issues.md#issue-effects-civ-space
+docs: docs/re/space.md#space-s1-0713, docs/archive/known-issues-2026.md#issue-effects-civ-space
 related: BUG-0451, BUG-0471, BUG-0527
 ---
 

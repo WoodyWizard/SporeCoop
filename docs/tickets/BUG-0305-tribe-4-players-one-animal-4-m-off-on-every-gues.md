@@ -13,7 +13,7 @@ branch: fix/w12-tribe-npc
 commits: 8623721, 07c3c07
 tests: tribe_npc_dash (coop_tribe_npc_dash.py), coop_sync_multi --fixture tribe, campaign
 signature:
-docs: docs/re/tribe.md#tribe-animal-proxy-trail, docs/known-issues.md#issue-tribe-npc-4m
+docs: docs/re/tribe.md#tribe-animal-proxy-trail, docs/archive/known-issues-2026.md#issue-tribe-npc-4m
 related: BUG-0281, BUG-0275, BUG-0280, BUG-0291
 ---
 

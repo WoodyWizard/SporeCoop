@@ -13,7 +13,7 @@ branch: fix/w9-tests
 commits: 2db65c9
 tests: select
 signature:
-docs: docs/known-issues.md#issue-select-partner-off-screen
+docs: docs/archive/known-issues-2026.md#issue-select-partner-off-screen
 related:
 ---
 

@@ -13,7 +13,7 @@ branch: fix/w49-small
 commits: f4aca716
 tests: npc_snap
 signature:
-docs: docs/known-issues.md#issue-npc-snap-dead, docs/06-testing.md#testing-t1-small
+docs: docs/archive/known-issues-2026.md#issue-npc-snap-dead, docs/06-testing.md#testing-t1-small
 related: BUG-0757, BUG-0361
 ---
 

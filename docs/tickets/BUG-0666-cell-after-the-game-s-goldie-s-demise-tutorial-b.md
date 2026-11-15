@@ -13,7 +13,7 @@ branch: fix/w46-k8-open
 commits:
 tests: cell_goldie, cell_part_token
 signature:
-docs: docs/re/cell.md#cell-goldie-button, docs/known-issues.md#issue-cell-goldie-locks
+docs: docs/re/cell.md#cell-goldie-button, docs/archive/known-issues-2026.md#issue-cell-goldie-locks
 related: BUG-0316, BUG-0633
 ---
 

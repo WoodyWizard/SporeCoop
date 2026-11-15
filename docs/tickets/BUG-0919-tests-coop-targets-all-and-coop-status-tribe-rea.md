@@ -13,7 +13,7 @@ branch: fix/w48-rest
 commits: 339c3dc4
 tests: status_stale_chief, sync_tribe, play_tribe
 signature:
-docs: docs/known-issues.md#issue-test-commands-stale-tables
+docs: docs/archive/known-issues-2026.md#issue-test-commands-stale-tables
 related: BUG-0917
 ---
 

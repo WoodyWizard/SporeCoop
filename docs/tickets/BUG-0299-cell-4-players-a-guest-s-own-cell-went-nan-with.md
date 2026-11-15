@@ -13,7 +13,7 @@ branch: fix/w10-cell-4p
 commits: a964c90
 tests: cell_nan
 signature: dc04aee5:Simulator::Cell::PopulateTile+0x8A
-docs: docs/re/cell.md#cell-broadphase-cap, docs/known-issues.md#issue-cell-own-nan
+docs: docs/re/cell.md#cell-broadphase-cap, docs/archive/known-issues-2026.md#issue-cell-own-nan
 related: BUG-0292
 ---
 

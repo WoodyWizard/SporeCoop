@@ -40,7 +40,7 @@ anything new, write it down in the same change.**
     how to reproduce it, fix it only when it is part of their task, and list the new tickets in
     their report.
   * `docs/known-issues.md`: bugs found and not fixed yet (with how to reproduce them), each with its
-    ticket id.
+    ticket id; an entry whose tickets are all closed moves to `docs/archive/known-issues-2026.md`.
   * `docs/06-testing.md`: test tools, fixtures, how long things take, test pitfalls.
 * Code never uses a raw game address: ask SporeKit by name (`H->sym("…")`) and add the name to the
   `.sym` file.

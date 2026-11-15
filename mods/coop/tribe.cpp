@@ -220,7 +220,7 @@ static bool kept_alive(void* o, uint32_t serial, uint32_t noun)
 static bool g_member_body_fix = true;
 COOP_FIX("tribe.member_body", "BUG-0620", g_member_body_fix,
          "tribe: the body of a member that died lies in every player's game as long as in the host's");
-// BUG-0665 (docs/known-issues.md#issue-tribe-join-body): a guest made no mirror for a body entry, so a guest that joined
+// BUG-0665 (docs/archive/known-issues-2026.md#issue-tribe-join-body): a guest made no mirror for a body entry, so a guest that joined
 // or loaded the world while a dead member's body lay on the host had none (its own loaded member of it, alive in the
 // shared save, was removed at the end of the cycle as unknown). With tribe.join_body a body entry without a mirror binds
 // or spawns one as a live entry does; guest_tick then plays its death (tribe.ko) and takes it out of its tribe

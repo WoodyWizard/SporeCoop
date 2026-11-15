@@ -13,7 +13,7 @@ branch: fix/w46-k7-findings
 commits: 4ec6ff91, fe3800b6, a1d1cc7a
 tests: campaign_tribe (seed 953406079), campaign_tribe slow, multi4_creature_slow, keepalive_stall
 signature: host log ends with "world: no saved box and no file written 10013 ms after the save for player 1: saving again (try 2/3)"; FROZE (no frame for 10 s)
-docs: docs/known-issues.md#issue-creature-rejoin-share-freeze, docs/06-testing.md#testing-k7-findings
+docs: docs/archive/known-issues-2026.md#issue-creature-rejoin-share-freeze, docs/06-testing.md#testing-k7-findings
 related: BUG-0686
 ---
 

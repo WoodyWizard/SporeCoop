@@ -33,7 +33,7 @@ Found by the lab (no player report). Target: 0.7.4.
 ## Fix
 `civ.mirror_remove`: the guest removes such a vehicle with the game's own removal `SporeCoop::Vehicle_Remove`
 0xCAA7B0 (Die, the behavior manager, the civilization's removal that destroys it). Roads not fixed, moved to BUG-0494
-(docs/known-issues.md#issue-civ-roads-not-mirrored): the road creation of the host is not traced.
+(docs/archive/known-issues-2026.md#issue-civ-roads-not-mirrored): the road creation of the host is not traced.
 
 ## Verification
 * FAIL (`SPORE_FIX_OFF=civ.mirror_remove`): `out/lab/20261103-131214`: the guest keeps the two dead vehicles the host's

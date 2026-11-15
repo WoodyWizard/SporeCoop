@@ -13,7 +13,7 @@ branch: fix/w49-life
 commits: f2f013ec, a49f379c, ade567a3, a7f75467, 398a5ab1
 tests: tribe_host_reload_reset
 signature:
-docs: docs/known-issues.md#issue-tribe-stale-host-reload, docs/01-architecture.md#arch-lifecycle-registry, docs/06-testing.md#testing-lifecycle-reset
+docs: docs/archive/known-issues-2026.md#issue-tribe-stale-host-reload, docs/01-architecture.md#arch-lifecycle-registry, docs/06-testing.md#testing-lifecycle-reset
 related: BUG-0332
 ---
 

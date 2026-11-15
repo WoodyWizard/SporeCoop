@@ -13,7 +13,7 @@ branch: fix/w12-cell-fault, fix/w45-cell-nan
 commits: 251c7cc2, e5adadb5, 4075f89e
 tests: cell_contact_nan, cell_levelups, cell_nan_all, cell_churn, campaign, cell_4p, cell_nan_drain, cell_jumps, cell_view_nan
 signature:
-docs: docs/re/cell.md#cell-contact-nan, docs/known-issues.md#issue-cell-own-nan
+docs: docs/re/cell.md#cell-contact-nan, docs/archive/known-issues-2026.md#issue-cell-own-nan
 related: BUG-0621, BUG-0299, BUG-0292, BUG-0306, BUG-0314, BUG-0604
 ---
 
@@ -60,7 +60,7 @@ neither the churn nor the NaN state itself drains it; what does is not known (ca
 checked: model / resource loads for the new cells around a jumping centre, something that grows
 with the frame time at fps 1-3). The
 host's fault loop BUG-0306 ran in the same minutes (from 11:47:35) and froze part of the host's
-pool, which may have worsened the coverage. Source of the NaN: docs/known-issues.md#issue-cell-own-nan.
+pool, which may have worsened the coverage. Source of the NaN: docs/archive/known-issues-2026.md#issue-cell-own-nan.
 
 ## Fix
 Partial (the repetition, not the source): `coop.fix cell.nan_heal_all` (cellsync.cpp heal_own): any

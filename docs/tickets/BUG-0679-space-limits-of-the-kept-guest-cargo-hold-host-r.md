@@ -13,7 +13,7 @@ branch: fix/w46-k56-space
 commits: ad4dfd39
 tests: space_items_limits, space_items_rejoin
 signature:
-docs: docs/re/space.md#space-kept-hold-limits, docs/06-testing.md#testing-space-kept-hold-limits, docs/known-issues.md#issue-space-kept-hold-limits
+docs: docs/re/space.md#space-kept-hold-limits, docs/06-testing.md#testing-space-kept-hold-limits, docs/archive/known-issues-2026.md#issue-space-kept-hold-limits
 related: BUG-0678, BUG-0195
 ---
 

@@ -39,7 +39,7 @@ Found by the lab (no player report). Target: 0.7.4.
 `tribe.guest_tribes` (tribe.cpp): a hook on SporeCoop::NpcTribeController_FormTribe (its only function, vtable slot
 0x24): on a guest in a session in Tribe its game does not form NPC tribes (the host's come through tribe.npc_tribes);
 and a local NPC tribe no host tribe maps to for 5 s of complete cycles loses its members (RemoveMember with destroy).
-Its hut, tools and food mat stay (no game function to remove a whole tribe is known: docs/known-issues.md#issue-tribe-tools).
+Its hut, tools and food mat stay (no game function to remove a whole tribe is known: docs/archive/known-issues-2026.md#issue-tribe-tools).
 
 ## Verification
 * FAIL (`SPORE_FIX_OFF=tribe.guest_tribes`): out/lab/20261103-234937: the guest's game formed 3 tribes of its own,

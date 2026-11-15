@@ -13,7 +13,7 @@ branch: integrate/pr5-pr6
 commits: a387323
 tests: leave_cleanup, cell_coop
 signature:
-docs: docs/known-issues.md#issue-session-cleanup-paths
+docs: docs/archive/known-issues-2026.md#issue-session-cleanup-paths
 related: #11
 switch: session.end
 ---
@@ -106,7 +106,7 @@ The test must fail on main and with `coop.fix session_end off`, and pass with th
 ### Related
 - PR WoodyWizard/SporeCoop#5 (BUG-0028, Cell part)
 - BUG-0006 (a stale cell pool at session end)
-- [Session cleanup known issue](../known-issues.md#issue-session-cleanup-paths)
+- [Session cleanup known issue](../archive/known-issues-2026.md#issue-session-cleanup-paths)
 - The issues on the stale vote, `shared` resources and reused player ids are the same pattern.
 
 ## History

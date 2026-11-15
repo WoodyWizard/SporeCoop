@@ -13,7 +13,7 @@ branch: fix/w46-space-items
 commits: 767118a2, 13dccfa9, 08ff13df
 tests: space_items_rejoin
 signature:
-docs: docs/re/space.md#space-kept-hold, docs/06-testing.md#testing-space-kept-hold, docs/known-issues.md#issue-space-kept-hold-limits
+docs: docs/re/space.md#space-kept-hold, docs/06-testing.md#testing-space-kept-hold, docs/archive/known-issues-2026.md#issue-space-kept-hold-limits
 related: BUG-0195, BUG-0058, BUG-0679
 ---
 

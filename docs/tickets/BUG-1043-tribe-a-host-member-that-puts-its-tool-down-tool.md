@@ -13,7 +13,7 @@ branch: fix/w49-small
 commits: f4aca716
 tests: tribe_zero_fields
 signature:
-docs: docs/known-issues.md#issue-tribe-tool-zero, docs/06-testing.md#testing-t1-small
+docs: docs/archive/known-issues-2026.md#issue-tribe-tool-zero, docs/06-testing.md#testing-t1-small
 related: BUG-0514, BUG-0935, BUG-0987
 ---
 

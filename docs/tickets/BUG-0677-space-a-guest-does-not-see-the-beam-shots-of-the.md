@@ -13,7 +13,7 @@ branch: fix/w46-k56-space
 commits: 5eace570, d14618ed
 tests: space_shots
 signature:
-docs: docs/re/space.md#space-ship-shots, docs/06-testing.md#testing-space-ship-shots, docs/known-issues.md#issue-space-beams
+docs: docs/re/space.md#space-ship-shots, docs/06-testing.md#testing-space-ship-shots, docs/archive/known-issues-2026.md#issue-space-beams
 related: BUG-0477, BUG-0657
 ---
 

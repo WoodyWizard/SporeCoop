@@ -13,7 +13,7 @@ branch: fix/w49-net
 commits: 226988e3
 tests: unit (make test: net_tests test_join_seen); lab join_late_names (coop_join_late_names.py); regression settings_creature
 signature:
-docs: docs/known-issues.md#issue-late-join-seen-name, docs/04-netcode.md#netcode-n2-join-input, docs/06-testing.md#testing-n2-net
+docs: docs/archive/known-issues-2026.md#issue-late-join-seen-name, docs/04-netcode.md#netcode-n2-join-input, docs/06-testing.md#testing-n2-net
 related:
 switch: net.join_seen
 ---

@@ -2866,7 +2866,7 @@ Runtime (2026-11-12, fix/w48-reports, lane 4/5, GOG 2024):
   works: the rejoined guest's earned badges and counters are its own again (space.keep_badges); the host's copy is
   untouched.
 * ✔ A host that earned a badge and loads its own save again: no fault. A guest that earned one and loads the host's
-  world from the same game at a rejoin: a fault in 9 of 10 runs (BUG-0956, docs/known-issues.md#issue-space-badge-rejoin-fault).
+  world from the same game at a rejoin: a fault in 9 of 10 runs (BUG-0956, docs/archive/known-issues-2026.md#issue-space-badge-rejoin-fault).
 
 ## The modal window list and the badge rejoin crash (2026-11-12, fix/w48-new)
 <a id="space-modal-list-crash"></a>
@@ -3052,7 +3052,7 @@ reporter's minidump.
   0x107367D, no other fault in the session. ? Why the reporter's badge path did not stop at 0xF179E0 / 0xFE7140 first
   (they fault for captain 0 in the lab) is not known; the Space update's opener reaches the portrait without them.
 * ? Why the reporter's captain was 0: inferred, "Name Your Captain" could not copy the world's species (the host's
-  creation) on the guest's PC; the log has no line on it (docs/known-issues.md#issue-captain-uncopyable-species).
+  creation) on the guest's PC; the log has no line on it (docs/archive/known-issues-2026.md#issue-captain-uncopyable-species).
 * Fix `game.captain_portrait` (gamefixes.cpp): a portrait whose creature cannot load (no key and no name, or a key no
   database has) gets the world's species when this game has it, else is skipped (0xAE7D90 checks the slot).
   `coop.captain [open | species <hex> | species restore]` prints the captain and the species; tests open the screen as

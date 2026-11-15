@@ -13,7 +13,7 @@ branch: fix/w46-k8-open
 commits: 4278b714
 tests: tribe_join_body, tribe_dead_rejoin, tribe_dead_player, tribe_body_teardown, tribe_dead_member
 signature:
-docs: docs/known-issues.md#issue-tribe-join-body, docs/06-testing.md#testing-tribe-join-body
+docs: docs/archive/known-issues-2026.md#issue-tribe-join-body, docs/06-testing.md#testing-tribe-join-body
 related: BUG-0620, BUG-0664, BUG-0667
 ---
 
@@ -23,7 +23,7 @@ BUG-0620), so a guest that joins or reloads the world while a dead member's body
 60 s) has no copy of it. Reproduce: tribe_dead_rejoin (coop_tribe_dead_member.py --rejoin): the host sends the body
 (bodies_sent grows) for 24 s after the join, the guest's `coop.sync` never lists its key (lab 20261107-014244).
 Not checked: whether the guest's loaded world holds a body of its own there (the shared save). See
-docs/known-issues.md#issue-tribe-join-body.
+docs/archive/known-issues-2026.md#issue-tribe-join-body.
 
 ## Root cause
 Observed (code + lab 20261108-003733): the guest's snapshot apply (tribe.cpp, guest chunk loop) skipped every entry

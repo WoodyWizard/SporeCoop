@@ -13,7 +13,7 @@ branch: fix/w49-space
 commits: f95e96fe
 tests: space_shot_count
 signature:
-docs: docs/re/space.md#space-war-npc-hits, docs/known-issues.md#issue-space-shot-burst
+docs: docs/re/space.md#space-war-npc-hits, docs/archive/known-issues-2026.md#issue-space-shot-burst
 related: BUG-0677
 ---
 

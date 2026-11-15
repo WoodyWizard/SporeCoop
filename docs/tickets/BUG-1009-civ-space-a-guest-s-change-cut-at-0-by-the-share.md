@@ -13,7 +13,7 @@ branch: fix/w49-money
 commits: d500f3b0
 tests: res_cause_floor
 signature:
-docs: docs/known-issues.md#issue-shared-cause-floor
+docs: docs/archive/known-issues-2026.md#issue-shared-cause-floor
 related:
 ---
 

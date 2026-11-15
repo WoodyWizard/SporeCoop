@@ -13,7 +13,7 @@ branch: fix/w46-b1-space
 commits: 7e49ddba
 tests: space_fast_sync_guest
 signature: sync-check: MISMATCH with player N ... (Space 40AE3044, 2 checks 3 s apart, 5 objects compared): p: 1 apart (pN 30-80 m), N = that guest's own id
-docs: docs/re/space.md#space-guest-ship-path, docs/known-issues.md#issue-space-guest-ship-path
+docs: docs/re/space.md#space-guest-ship-path, docs/archive/known-issues-2026.md#issue-space-guest-ship-path
 related: BUG-0547, BUG-0378
 ---
 
