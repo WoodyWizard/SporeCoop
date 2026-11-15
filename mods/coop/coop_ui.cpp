@@ -1991,7 +1991,10 @@ COOP_FIX("ui.settings_tabs", "BUG-9120", g_settings_tabs_fix,
 // Interface Size slider (a native WinSlider, lying on its side), the Frame Rate field moves into the Screen Size box
 // and a Borderless Mode check box sits under Full Screen Mode (the two exclusive). The left panel keeps only the tabs.
 // Old (`coop.fix ui.settings_layout off`, before the dialog first opens): the controls in the left panel.
-static bool g_settings_layout = true;
+// 54 (2026-11-15, BUG-9211): off by default: after Accept the new page drew Spore's Options menu over the Settings
+// (its buttons as pills, the quality table's buttons and Defaults hidden); the original controls stay well. On again
+// once that is understood.
+static bool g_settings_layout = false;
 COOP_FIX("ui.settings_layout", "BUG-9191", g_settings_layout,
          "ui: Interface Size slider, Frame Rate and Borderless Mode on Spore's Graphic Settings page (the dialog grows)");
 static bool g_settings_visible;
@@ -2049,9 +2052,12 @@ static int ui_percent(Win w)
     return atoi(c.c_str() + std::min<size_t>(10, c.size()));
 }
 
+// the Borderless control: the new layout's check box (a small toggle), else the old layout's wide button with a caption
+// ("Borderless: On"); told by the width, not by the caption (BUG-9211: a button with no caption yet stayed blank)
+static bool borderless_box(Win w) { return w && sui::area(w).w() < 60; }
 static bool borderless_on(Win w)
 {
-    return sui::caption(w).empty() ? sui::button_selected(w) : sui::caption(w) == "Borderless: On";
+    return borderless_box(w) ? sui::button_selected(w) : sui::caption(w) == "Borderless: On";
 }
 
 // the owner's Graphic page; false when a native window it builds on is missing (nothing changed then)
@@ -2069,6 +2075,18 @@ static bool build_graphic_page(Win settings, Win panel, const uint32_t* ids, Win
     if (!row_label || !screen_box || !full_box || !full_check || !full_label || !combo || !music) {
         H->log(M, SK_WARN, "ui: Graphic page layout: a native window is missing, the old controls instead");
         return false;
+    }
+    // BUG-9211: the dialog grows through its root (a small window holding Accept, Cancel, the frame and the backgrounds,
+    // docs/re/graphics.md#graphics-native-scale). Any other parent (a dialog made again after Accept) would move what
+    // else it holds (the Options menu showed over Settings): the old controls instead.
+    if (g_settings_once) {
+        Win root = sui::parent(settings);
+        const sui::Rect ra = root ? sui::area(root) : sui::Rect{};
+        if (!root || !sui::find(root, 0x043B7A18) || ra.w() > 200 || ra.h() > 200 || sui::children(root).size() > 12) {
+            H->log(M, SK_WARN, "ui: Graphic page layout: the dialog's root is not the one we know (%.0f x %.0f, %zu windows): "
+                   "the old controls instead (BUG-9211)", ra.w(), ra.h(), root ? sui::children(root).size() : 0);
+            return false;
+        }
     }
     // even spacing (the owner 2026-11-13: "a little inconsistent with spacing"): 8 px between the boxes, rows 8 px
     // under a box's title band (30 px) and 10 px above its bottom; the two check boxes centred in theirs
@@ -2291,14 +2309,29 @@ static void refresh_graphics_options()
     constexpr uint32_t kControls[] = {0xC00F0110, 0xC00F0111, 0xC00F0112, 0xC00F0113, 0xC00F0114,
                                       kIfaceBox, kIfaceTitle, kIfaceLabel, kIfaceValue, 0xC00F0119, 0xC00F011A};
     static Win last_open = nullptr;
-    Win settings = sui::find(sui::main_window(), kSettings);
-    Win panel = settings ? sui::find(settings, kGraphicPanel) : nullptr;
     auto visible = [](Win w) {
         if (!w) return false;
         for (; w; w = sui::parent(w))
             if (!sui::visible(w)) return false;
         return true;
     };
+    // BUG-9211: after Accept the game makes a new Settings dialog and keeps the old one hidden (two windows with this
+    // id; seen 2026-11-15): the first found was the old one, so the new one's page was laid out over the old one's
+    // state. The visible one is the one shown (else the first, as before).
+    Win settings = sui::find(sui::main_window(), kSettings);
+    if (g_settings_once && settings && !visible(settings)) { // (a walk of the UI tree: no pointer kept between calls)
+        std::vector<Win> stack{sui::main_window()};
+        for (int n = 0; !stack.empty() && n < 30000; n++) {
+            Win w = stack.back();
+            stack.pop_back();
+            if (sui::control_id(w) == kSettings && visible(w)) {
+                settings = w;
+                break;
+            }
+            for (Win c : sui::children(w)) stack.push_back(c);
+        }
+    }
+    Win panel = settings ? sui::find(settings, kGraphicPanel) : nullptr;
     g_settings_visible = visible(settings);
     if (!visible(settings)) {
         last_open = nullptr;
@@ -2399,7 +2432,7 @@ static void refresh_graphics_options()
         const auto saved = lineages_graphics::read(file);
         sui::set_edit_text(fps, saved.fps ? std::to_string(saved.fps) : "");
         const int percent = lineages_graphics::read_ui_scale(file);
-        if (sui::caption(borderless).empty()) // the check box: off while Full Screen Mode is on (the two exclusive)
+        if (borderless_box(borderless)) // the check box: off while Full Screen Mode is on (the two exclusive)
             sui::set_button_selected(borderless,
                                      saved.borderless && !sui::button_selected(sui::find(settings, kFullScreenCheck)));
         else
@@ -2427,7 +2460,7 @@ static void refresh_graphics_options()
         Win value = sui::find(settings, kIfaceValue);
         if (value && sui::caption(value) != shown) sui::set_caption(value, shown);
     }
-    if (sui::caption(borderless).empty()) { // Borderless Mode and Full Screen Mode exclude each other (the owner)
+    if (borderless_box(borderless)) { // Borderless Mode and Full Screen Mode exclude each other (the owner)
         static bool was_border;
         Win full = sui::find(settings, kFullScreenCheck);
         if (sui::button_selected(borderless) && full && sui::button_selected(full)) {
