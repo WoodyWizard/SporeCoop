@@ -54,6 +54,8 @@ cp "$ROOT/build/SporeCoopSetup.exe" "$STAGE/SporeCoopSetup.exe"
 python3 "$ROOT/tools/pe_version.py" --expect "$VER" "$STAGE/SporeCoopSetup.exe" "$STAGE/SporeCoop/steam_api.sporekit.dll" \
     "$STAGE/SporeCoop/sporekit.dll" "$STAGE/SporeCoop/mods/coop.dll" >&2
 cp "$STAGE/SporeCoop-$VER.pack" "$STAGE/SporeCoopSetup.exe" "$ROOT/out/dist/"
+# B5 (BUG-1123): the unstripped DLLs as the release's debug-symbols asset (for tools/crash_triage.py)
+"$ROOT/tools/symbols_pack.sh" "$ROOT/build" "$VER" "$ROOT/out/dist" "$STAGE" >&2
 sed -i 's/\r*$/\r/' "$STAGE"/*.bat "$STAGE"/*.txt "$STAGE/SporeCoop/ini.exclude"  # Windows line endings for cmd.exe and Notepad
 (cd "$STAGE" && rm -f "../SporeCoop-$VER.zip" && zip -qr "../SporeCoop-$VER.zip" .)
 echo "$ROOT/out/dist/SporeCoop-$VER.zip"

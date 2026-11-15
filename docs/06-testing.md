@@ -7912,3 +7912,35 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   game (0x5971D4 or 0xC02A14, handled) and stops before the portrait: the badge alone does not reproduce BUG-1111 in
   the lab (docs/re/space.md#space-captain-portrait-null). The test allows only these two faults.
 * Twin: `SPORE_LAB_FIXOFF="space_captain_none=game.captain_portrait"`.
+
+## Crash triage with the debug symbols of the report's version (2026-11-15, feat/w51-build)
+<a id="testing-crash-symbols"></a>
+
+* From 0.7.15 the release job publishes `SporeCoop-<ver>-debug-symbols.tar.xz` (B5, BUG-1123): the
+  unstripped coop.dll, sporekit.dll and steam_api.sporekit.dll (DWARF, ~14 MB as xz; the zip, the pack
+  and the setup keep their stripped DLLs) and `SYMBOLS.txt` (commit, sha256 of each file and of the
+  shipped stripped copy with its `pe_version.py --repro-sha256`). `tools/symbols_pack.sh` writes it
+  (called by `tools/package.sh`); the asset is also in SHA256SUMS.txt and attested.
+* `tools/crash_triage.py <report>` prints, after the signature lines, `symbols    coop <ver>: <source>`
+  and one `symbol     coop.dll+0x...  function+0xN  file:line` per own frame (the fault first, then the
+  chain; chain frames are return addresses, symbolised at -1; an inlined frame shows the inlined
+  function, its line and `(inlined into <outer>+0xN)`). Where the symbols come from, in order:
+  `--symbols <dir|tar.xz>` (its coop.dll must be the report's version: VERSIONINFO, or the
+  `SporeCoop <ver>` string in builds before 0.7.12; another version is refused, since the offsets
+  would name wrong code), the cache (`$SPORECOOP_SYMBOLS_CACHE`, default `~/.cache/sporecoop/symbols/<ver>`),
+  then `gh release download v<ver>` checked against the release's SHA256SUMS.txt (a mismatch is refused
+  and not cached). `--no-symbols` skips it. Versions before 0.7.15 have no asset: build the tag
+  (`d=$(mktemp -d) && git archive v<ver> | tar -x -C $d && make -C $d -j8 coop sporekit loader`,
+  ~30 s) and pass `--symbols $d/build`.
+* llvm-symbolizer comes from the pinned llvm-mingw (`make toolchain-path`; `LLVM_SYMBOLIZER` or
+  `LLVM_MINGW` override). CORRECTION (2026-11-15, feat/w51-build): the note in the frozen-game section
+  above that llvm-symbolizer "is not installed on the lab machine" is outdated: it ships in llvm-mingw.
+* Proof: BUG-0688's frame `coop.dll+0x4158E` of 0.7.9, with a build of tag v0.7.9 from `git archive`,
+  is `civ::weapon_of(void*)  mods/coop/civ.cpp  (inlined into civ::tick(double)+0x5DE)`, the root cause
+  in the ticket.
+* Test `tools/tests/triage_symbols_check.py` (make test part `unit-symbols`, ~13 s, needs the build):
+  packs the local build with symbols_pack.sh, symbolises a made-up report through `--symbols` (tarball
+  and build folder), refuses another version, and runs the download path with a fake `gh` on PATH (no
+  network): fetch + sha256 + cache, cache reuse with gh failing, a wrong sha256, gh failing without a
+  cache, a pre-0.7.15 report that never calls gh. Against the old tool (`SELFTEST_TRIAGE=<copy>`) 12
+  checks FAIL.

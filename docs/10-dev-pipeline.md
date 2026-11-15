@@ -266,3 +266,13 @@ without out/tickets), and v0.7.14 was moved after its failure. `make release-dry
    --jq '.[0].databaseId') --exit-status`.
 4. Only on a green main: push the tag `vX.Y.Z` on exactly that commit.
 5. A published tag is never moved or re-pushed: a broken release gets the next version (X.Y.Z.1).
+
+## Debug symbols per release (2026-11-15, feat/w51-build)
+<a id="pipeline-release-symbols"></a>
+
+Owner decision 6 (0.7.15 plan): the debug symbols are a public release asset. `tools/package.sh` calls
+`tools/symbols_pack.sh`, which writes `out/dist/SporeCoop-<ver>-debug-symbols.tar.xz` (the unstripped
+DLLs of the build, `SYMBOLS.txt`); the build job uploads it with the other files, the release job
+fails when it is missing, lists it in SHA256SUMS.txt, publishes and attests it (BUG-1123). The player
+files stay stripped. `make release-dry` checks that the asset exists. How triage uses it:
+docs/06-testing.md#testing-crash-symbols.

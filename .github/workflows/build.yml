@@ -48,6 +48,7 @@ jobs:
             out/dist/SporeCoop-*.zip
             out/dist/SporeCoop-*.pack
             out/dist/SporeCoopSetup.exe
+            out/dist/SporeCoop-*-debug-symbols.tar.xz
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -71,8 +72,12 @@ jobs:
           ver="${GITHUB_REF_NAME#v}"
           # the tag must be COOP_VERSION; the notes: exactly this version's section of CHANGELOG.md
           tools/release_check.sh "$GITHUB_REF_NAME" notes.md
-          (cd dist && sha256sum SporeCoop-*.zip SporeCoop-*.pack SporeCoopSetup.exe > SHA256SUMS.txt)
-          gh release create "$GITHUB_REF_NAME" dist/SporeCoop-*.zip dist/SporeCoop-*.pack dist/SporeCoopSetup.exe dist/SHA256SUMS.txt \
+          # B5 (BUG-1123): the debug symbols (the unstripped DLLs) go up with the release, for
+          # tools/crash_triage.py; the zip, the pack and the setup keep their stripped DLLs
+          sym="dist/SporeCoop-$ver-debug-symbols.tar.xz"
+          test -s "$sym" || { echo "release: $sym is missing (tools/package.sh writes it)" >&2; exit 1; }
+          (cd dist && sha256sum SporeCoop-*.zip SporeCoop-*.pack SporeCoopSetup.exe "SporeCoop-$ver-debug-symbols.tar.xz" > SHA256SUMS.txt)
+          gh release create "$GITHUB_REF_NAME" dist/SporeCoop-*.zip dist/SporeCoop-*.pack dist/SporeCoopSetup.exe "$sym" dist/SHA256SUMS.txt \
             --title "SporeCoop $ver" --notes-file notes.md
       # BUG-0784: a signed build provenance for every release file and for each binary inside the zip,
       # so anyone can check that a file was built by this workflow from the tag:
@@ -89,6 +94,7 @@ jobs:
             dist/SporeCoop-*.zip
             dist/SporeCoop-*.pack
             dist/SporeCoopSetup.exe
+            dist/SporeCoop-*-debug-symbols.tar.xz
             inzip/SporeCoop/steam_api.sporekit.dll
             inzip/SporeCoop/sporekit.dll
             inzip/SporeCoop/mods/coop.dll

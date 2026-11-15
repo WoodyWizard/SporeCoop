@@ -19,8 +19,10 @@ description: Turn a SporeCoop crash report (crash-*.txt, sporekit.log, a player'
    Report (what the player did, in our words), the signature and the chain. Then fix-player-report.
 4. **GOG 2016** (`922af7c7`): not supported since 0.7.8 (CLAUDE.md); a crash only there gets a
    ticket and `wontfix` unless it is also on GOG 2024.
-5. A `coop.dll+0x...` place: the `coop.dll` line gives the llvm-symbolizer call; it is right only for
-   a build of the report's coop version (`git checkout v<version>`, `make`).
+5. A `coop.dll+0x...` / `sporekit.dll+0x...` place: the `symbol` lines name function+offset and source
+   line from the debug symbols of the report's coop version (the release asset from 0.7.15 on, fetched
+   with `gh` and cached; older versions: `--symbols <a build of tag v<version>>`, the `symbols` line says
+   how). Never symbolise with a build of another version (docs/06-testing.md#testing-crash-symbols).
 6. Report: build, signature, ticket (seen / new), action, what is not known yet.
 
 Details: docs/06-testing.md (crash reports, stack of a frozen game), docs/tickets/README.md.

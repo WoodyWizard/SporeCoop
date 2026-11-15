@@ -114,7 +114,7 @@ endif
 # docs/06-testing.md#testing-lab-speed). `make test TEST_JOBS=1` runs them one after the other.
 TEST_JOBS ?= 8
 NET_SHARDS ?= 8
-UNIT_PARTS := unit-net unit-lab unit-cpp unit-lint unit-tools
+UNIT_PARTS := unit-net unit-lab unit-cpp unit-lint unit-tools unit-symbols
 ifneq ($(SKIP_SANITIZERS),1)
 UNIT_PARTS += test-asan test-tsan unit-fuzz
 endif
@@ -179,6 +179,11 @@ unit-tools:
 	python3 tools/tests/visual_selftest.py
 	python3 tools/tests/state_fields_check.py
 	python3 tools/tests/test_lint.py
+
+# B5 (BUG-1123): crash_triage.py symbolises coop.dll / sporekit.dll frames with the debug symbols of the
+# report's version (symbols_pack.sh of the local build, a fake gh for the download; no network)
+unit-symbols: $(B)/coop.dll $(B)/sporekit.dll $(B)/steam_api.dll
+	python3 tools/tests/triage_symbols_check.py $(B) $(LLVM_MINGW)
 
 # the same unit tests under AddressSanitizer: a freed object used later fails here (BUG-0029)
 test-asan: sanitizer-probe
