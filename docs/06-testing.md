@@ -8012,3 +8012,37 @@ branches and the integration runs between merges only: **the final check and the
   file (debug.cpp) is found only by its stage; tests outside `full` (nightly-only, players, extended, campaign, multi)
   are selected only when their own script or entry changed; a new stage module must be added to STAGE_FILES, else it
   counts as core (safe, not narrow).
+
+## Campaign reporting and segment reruns (2026-11-15, feat/w51-labverdict)
+<a id="testing-campaign-segments"></a>
+
+0.7.15 A6 (BUG-1115, audit TST-1, owner decision 10). Code: tools/tests/coop_campaign.py, campaign_lib.py (pure
+helpers, unit tests in labverdict_selftest.py `campaign`), suite entry `campaign_segment`, `lab.py run --segment`.
+
+* **FAIL lines.** Every finding that fails the run (any kind but `info`) prints `FAIL <kind> <stage/phase>: <text>`
+  next to its `FINDING [kind]` line, at the moment it is found (so a campaign the lab kills at its timeout still has
+  its reasons). Recorded runs without the line get their reason from the findings anyway (the lab, see
+  #testing-lab-verdicts).
+* **The jump is on by default** (it already was: `--no-jump` turns it off; `--jump` is accepted for clarity; no suite
+  entry passes `--no-jump`). CORRECTION (2026-11-15, feat/w51-labverdict): the audit (TST-1) read the `campaign` entry
+  as stopping at a stall without `--jump`; coop_campaign.py's `--jump` has defaulted to on since the jump was added. A
+  stall therefore ends a run only when the jump itself fails (`stuck jump:<stage>`) or when the guests do not follow.
+* **Segment saves.** At the start of every played stage the host saves (`coop.save`, up to 6 tries 5 s apart while an
+  editor or the last save's box is up; then until the slot's files rest, up to 90 s) and the run keeps that slot as
+  `<run>/segments/<stage>.tgz` (the fixture layout Games/Game0) and its planet in `segments.json`. Measured: Cell
+  start 4 s. A save that is not made (Space on a planet) leaves the stage without one: its rerun starts from the
+  stage's fixture (said in the timeline). After a jump the stage's segment is the jumped fixture. CAMPAIGN_SEGMENTS=0:
+  no saves (the old behaviour).
+* **The failed segment.** At the end a failed run prints `CAMPAIGN-SEGMENT {json}` (and writes `<run>/segment.json`):
+  the stage of its first failing finding (its `stage/phase`), the next stage (or the end), that stage's save, the
+  seed, the minutes. The lab keeps it in the result (`segment`) and prints `rerun only the failed segment ...:
+  lab.py run campaign_segment --segment <lab run>`.
+* **The rerun.** `lab.py run campaign_segment --segment <lab run id | run dir | segment.json> --lane N` sets
+  CAMPAIGN_SEGMENT for the `campaign_segment` entry (`coop_campaign.py --segment "$CAMPAIGN_SEGMENT"`; empty: FAIL with
+  the usage). The campaign starts from the stage's fixture (cold, four players), the host loads the segment's save
+  into slot 30 in game (`coop.load Game30 <planet>`) and the guests follow by the world share, as after a jump; then
+  the segment's phases run as usual (play, advance, the next stage's play). By hand: `coop_campaign.py --from <stage>
+  --to <next> --save <run>/segments/<stage>.tgz`. Owner decision 10: a final-check rerun may run only this segment;
+  the full campaign still runs once in the final check.
+* **Twin of the reporting:** `CAMPAIGN_PLANT_STUCK=<stage>[,<stage>]`: that stage change is not tried and counts as
+  stuck (the lab records the knob as a twin, the ledger leaves the run out).
