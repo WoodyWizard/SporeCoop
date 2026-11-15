@@ -7,7 +7,7 @@ leave and game over) dealt all members anew in turns, so members a player was gi
 keeps a claim per member (its owner's stable key, by position) in the per-player store next to its save and gives them
 back after the load; while the owner is not there yet the host holds them for it.
 
-1. Two games on the tribe fixture. The host gives two of its own members to the guest (`coop.give` with two of them
+1. Two games on the tribe fixture. The host gives all but one of its own members to the guest (`coop.give` with them
    selected): the guest owns more than its share of the turn split. The owners are noted.
 2. A new evening (twoinst.session_restart): the host saves, both quit, both start again, the host loads its save, the
    guest joins.
@@ -49,14 +49,14 @@ def main():
     hm = members(host)
     mine = [i for i, v in hm.items() if v[0] == 0 and v[3] == 'player']
     print(f'  host members: {owners(host)} (host-owned ids {mine})', flush=True)
-    if not ck(len(mine) >= 3, f'the host owns members to give ({len(mine)})'):
+    if not ck(len(mine) >= 2, f'the host owns members to give ({len(mine)})'):
         return ck.result()
     for i in hm:
         host.call(f'coop.tribe select {i} 0')
-    for i in mine[:2]:
+    for i in mine[:len(mine) - 1]:  # all but one: the guest owns more than its share of the turns
         host.call(f'coop.tribe select {i} 1')
     print('  host:', host.call('coop.give')['out'].strip()[:160], flush=True)
-    before = wait(lambda: (o := owners(host)) and o.get(1, 0) >= 2 + 1 and o, 10)
+    wait(lambda: owners(host).get(0, 0) == 1, 10)
     before = owners(host)
     print(f'  after the gift: host {before}, guest {owners(guest)}', flush=True)
     ck(wait(lambda: owners(guest) == before, 10), f'the guest sees the same owners ({owners(guest)})')

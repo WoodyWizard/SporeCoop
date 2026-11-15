@@ -586,7 +586,12 @@ static void test_settings()
     CHECK(parse_value(kCreatureMode, "on", v) && v == 1 && !parse_value(kCreatureMode, "hosts", v));
     CHECK(value_name(kCellRegen, 0).empty() && value_text(kCellRegen, 0) == "off");
     for (int i = kNameTags; i < kCount; i++) // every row of step 3 but friendly fire and the creature mode is on by default
-        CHECK(kDefs[i].def == (i == kFriendlyFire || i == kCreatureMode ? 0 : i == kPlayerLimit ? 4 : 1));
+        CHECK(kDefs[i].def == (i == kFriendlyFire || i == kCreatureMode ? 0 : i == kPlayerLimit ? 4 : i == kAutosave ? 2 : 1));
+    // E2 (BUG-0864): the host's autosave: a choice of minutes, 10 by default, Live
+    CHECK(kDefs[kAutosave].scope == Scope::Live && value_text(kAutosave, 2) == "10 min" && value_text(kAutosave, 0) == "off");
+    CHECK(autosave_minutes(0) == 0 && autosave_minutes(2) == 10 && autosave_minutes(5) == 60 && autosave_minutes(9) == 10);
+    CHECK(parse_value(kAutosave, "off", v) && v == 0 && parse_value(kAutosave, "30 min", v) && v == 4 &&
+          !parse_value(kAutosave, "6", v));
     CHECK(kCount < 255); // MSG_SETTINGS: u8 n
     // the wire: the whole table round trips; a key this build does not know is skipped; a cut message applies nothing
     Values a;
@@ -1112,8 +1117,9 @@ static void test_manifest()
             printf("  type %d: class %d, 0.7.14 %d\n", t, (int)host_world::msg_class(u), (int)golden0714::msg_class(u));
             bad++;
         }
-        // kinds added after 0.7.14 (unknown there: a 0.7.14 peer passes them on and ignores them): K_ECO 90 (BUG-1148)
-        bool added = t == 90 && golden0714::space_dir(u) == SpaceDir::Unknown;
+        // kinds added after 0.7.14 (unknown there: a 0.7.14 peer passes them on and ignores them): K_ECO 90 (BUG-1148),
+        // K_COLONY 14 / K_KEPT_COLONY 15 (BUG-1151)
+        bool added = (t == 90 || t == 14 || t == 15) && golden0714::space_dir(u) == SpaceDir::Unknown;
         if (space_dir(u) != golden0714::space_dir(u) && !added) {
             printf("  space kind %d: direction %d, 0.7.14 %d\n", t, (int)space_dir(u), (int)golden0714::space_dir(u));
             bad++;
