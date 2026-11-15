@@ -8887,3 +8887,16 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   game (0x5971D4 or 0xC02A14, handled) and stops before the portrait: the badge alone does not reproduce BUG-1111 in
   the lab (docs/re/space.md#space-captain-portrait-null). The test allows only these two faults.
 * Twin: `SPORE_LAB_FIXOFF="space_captain_none=game.captain_portrait"`.
+
+## TITAN's QA copy stops starting after a Steam client update (2026-11-15, feat/lineages-merge-0.7.14)
+<a id="testing-steam-update-qa-start"></a>
+
+* TITAN's Steam client updated itself at 11:51 (client 1794424036 -> 1794536281, `Steam\logs\connection_log.txt`).
+  From then on every start of the QA copy (out/release36/native) ended at once: sporekit logs
+  "App::cSporeApp::Init returned 0" about 0.5 s after the `Global\SporeEdi` mutex, with the 56-dev build, with the
+  55-dev / 54-dev files restored, with any profile and instance, and with no mods at all (steam_api_orig.dll as
+  steam_api.dll: exit code 0 within seconds). Not the free disk space modulo 4 GB (a pad file changing it did not help).
+  The MSI (Steam client 1792618285, not updated) started the same 56-dev files fine.
+* Still open: whether the owner's own Steam Spore starts after the update (not tried: the owner's install is theirs).
+  Until it is understood, cross-PC tests use the MSI's two games (`msi.ps1 start -Instance 2`, qa target msi2).
+

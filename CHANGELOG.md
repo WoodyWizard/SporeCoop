@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages56-dev] - 2026-11-15
+
+- Built on upstream SporeCoop 0.7.14.1 (was 0.7.8): its crash guards and network
+  fixes, player colours (the square button next to your name), a session
+  settings page, a "report a problem" round, Evolve Now and stability fixes.
+  Lineages keeps its own one-page Co-op window, Party, per-player villages and
+  cities, the guest pack and the first creature (decisions 4E, 4F).
+- Creature: leaving the Creature stage is the host's vote and takes the whole
+  party to Tribe; every other Creature editor stays personal (decision 4F A).
+- Space: sharing a Space world no longer fails with "Unexpected resource in
+  saved Civilization designs" (found in the merge's stage tour).
+- Civilization: shared money notices ("Host earned 40 money (shared)") are
+  summed into one line every 10 seconds instead of one per city payout
+  (BUG-9217).
+- Co-op window: your colour button no longer covers the first letter of your
+  name (BUG-9218).
+- Every player in a session needs this build: the network messages changed.
+
 ## [0.7.8-lineages55-dev] - 2026-11-15
 
 - Creature: the first creature's editor no longer opens under the galaxy menu's

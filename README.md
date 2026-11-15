@@ -67,6 +67,7 @@ Done in 51-dev: the connected player's own pack (Summon Flock, recruiting), mete
 Done in 52-dev: a connected player with their own custom creature gets their own village and chief again (Tribe, Civilization).
 Done in 53-dev: bones the other player digs up disappear on your screen too.
 Done in 54-dev: befriending works for connected players again, a partner's respawn no longer darkens your screen, Ctrl+Scroll FoV widens the view, partner villages use the partner's own creature, smoother sending on slow connections.
+Done in 56-dev: built on upstream SporeCoop 0.7.14.1 (its crash and network fixes, player colours, session settings, problem reports), Creature stage end by the host's vote for the whole party, tidier shared-money notices.
 Done in 55-dev: every partner gets a Party card in their stage's style, Interface Size scales Spore's whole UI, joining shows a loading screen, a new player makes their first creature with the host's start parts before the world loads, shared Adventure and Space enemies, and fixes from the 2026-11-15 play test (naming, nests, Settings, cells shared as creatures).
 
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
