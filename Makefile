@@ -8,7 +8,10 @@ HOSTCXX ?= clang++
 
 B := build
 comma := ,
-COMMON  := -O2 -g -Wall -Werror=misleading-indentation -Wno-unused-function -Wno-missing-braces -D_WIN32_WINNT=0x0601 -DUNICODE -D_UNICODE
+# A4 (BUG-1122): the code reads and writes game objects through casts at fixed offsets and SporeKit lets code go on
+# after a repaired fault: no type-based aliasing assumptions, no null checks dropped after a dereference. Warnings
+# are errors (the toolchain is pinned, tools/toolchain.env); printf-style functions carry format attributes (SK_PRINTF).
+COMMON  := -O2 -g -fno-strict-aliasing -fno-delete-null-pointer-checks -Wall -Wimplicit-fallthrough -Werror -Wno-unused-function -Wno-missing-braces -D_WIN32_WINNT=0x0601 -DUNICODE -D_UNICODE
 CFLAGS  := $(COMMON)
 CXXFLAGS:= $(COMMON) -std=c++20
 LDDLL   := -shared -static -Wl,--kill-at -Wl,--enable-stdcall-fixup
@@ -62,6 +65,10 @@ $(B)/obj/%_rc.o: %.rc installer/version.rc $(B)/version.h
 $(B)/obj/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -I$(MINHOOK)/include -c $< -o $@
+
+# coop.cpp's own warnings are fixed in the commit "A4: coop.cpp warnings" (kept apart for the coop.cpp split): until
+# then they stay warnings there. That commit removes this line.
+$(B)/obj/mods/coop/coop.o: CXXFLAGS += -Wno-error
 
 $(B)/obj/%.o: %.cpp
 	@mkdir -p $(dir $@)

@@ -1807,16 +1807,19 @@ void destroy_deferred_tick()
             it = g_destroy_later.erase(it);
         } else
             ++it;
-    if (g_defer_identity_fix) // BUG-0825: freed meanwhile, or another creature at its address: not ours any more
-        for (auto it = g_destroy_later.begin(); it != g_destroy_later.end();)
+    if (g_defer_identity_fix) { // BUG-0825: freed meanwhile, or another creature at its address: not ours any more
+        for (auto it = g_destroy_later.begin(); it != g_destroy_later.end();) {
             if (!alive(LiveRef{it->first, it->serial, 0x18EB45Eu})) {
                 H->log(M, SK_INFO, "deferred destroy of %p dropped: not the creature queued any more (npc.defer_identity)",
                        it->first);
                 puppet_unregister(it->first);
                 g_destroys_not_same++;
                 it = g_destroy_later.erase(it);
-            } else
+            } else {
                 ++it;
+            }
+        }
+    }
     if (g_destroy_later.empty() || cinematic_running())
         return;
     auto later = std::move(g_destroy_later);

@@ -430,7 +430,8 @@ std::string exceptions_edge_test()
         AddVectoredExceptionHandler(0, edge_handler);
         installed = true;
     }
-    g_edge_faults = g_edge_nested = 0;
+    g_edge_faults = 0;
+    g_edge_nested = 0;
     DWORD tid = 0;
     HANDLE t = CreateThread(nullptr, 0, edge_thread, nullptr, 0, &tid);
     if (!t)

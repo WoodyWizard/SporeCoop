@@ -806,7 +806,7 @@ LIFECYCLE_STATE("tribe.ring", lifecycle::kSession | lifecycle::kWorld, nullptr, 
     g_ring.target = nullptr;
     g_ring.ids.clear();
 }, []() -> size_t { return g_ring.target ? 1 : 0; });
-static uintptr_t a_RingDraw, a_TribeUI;
+static uintptr_t a_RingDraw;
 using RingsUpdate_t = void(SK_THISCALL*)(void*);
 static RingsUpdate_t o_RingsUpdate;
 
@@ -1252,7 +1252,6 @@ static void* hand_item_model(void* c)
     void* m = rec && skg::readable(rec + 0x8C, 4) ? *(void**)(rec + 0x8C) : nullptr;
     return m && skg::readable(m, 4) && skg::readable(*(void**)m, 0x48) ? m : nullptr;
 }
-static uint32_t g_item_scale_sets;
 static float read_item_scale(void* c)
 {
     void* m = hand_item_model(c);
@@ -1272,7 +1271,6 @@ static void apply_item_scale(void* c, float v)
     t.scale = v;
     t.count++; // (as 0xC25556: the transform's change count)
     vcall<void>(m, 0x18 / 4, &t);
-    g_item_scale_sets++;
 }
 static const fields::Field kItemScale{fields::F_ITEM_SCALE, "item_scale", read_item_scale, apply_item_scale, 0.02f};
 static const fields::Field kItemScaleFields[] = {kItemScale};
@@ -1666,7 +1664,6 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     H->hook_create(M, (void*)a_DoActionForObjects, (void*)h_DoActionForObjects, (void**)&o_DoActionForObjects);
     H->hook_create(M, (void*)a_WalkSelected, (void*)h_WalkSelected, (void**)&o_WalkSelected);
     a_RingDraw = H->sym("SporeCoop::TribeTargetRing_Draw"); // BUG-0570 (optional)
-    a_TribeUI = H->sym("SporeCoop::TribeUI_ptr");
     if (uintptr_t a = H->sym("SporeCoop::TribeTargetRings_Update"))
         H->hook_create(M, (void*)a, (void*)h_RingsUpdate, (void**)&o_RingsUpdate);
     a_BTTerminate = H->sym("SporeCoop::Citizen_BTTerminate"); // BUG-0667 (optional)
@@ -5902,7 +5899,6 @@ static std::string tribe_hunt_status()
 static bool g_village_stamp_fix = true;
 COOP_FIX("tribe.village_load_stamp", "BUG-0947", g_village_stamp_fix,
          "tribe: a village made during play gets the ground stamp a load of the world gives it (a rejoining guest's ground round it was 5-8 m off)");
-static uint32_t g_village_stamps;
 constexpr uintptr_t kTribeStampOff = 0x19D4, kTribeStampPropOff = 0x2D4;
 static void village_stamps_tick(double now)
 {
@@ -5926,7 +5922,6 @@ static void village_stamps_tick(double now)
             continue;
         }
         thiscall<void>(a_TribeGroundStamp, t);
-        g_village_stamps++;
         net::Vec3 p = tribe_pos(t);
         H->log(M, SK_INFO, "tribe: the village at (%.0f %.0f %.0f) made during play gets the ground stamp a load gives it: id %u (BUG-0947)",
                p.x, p.y, p.z, F<uint32_t>(t, kTribeStampOff));
