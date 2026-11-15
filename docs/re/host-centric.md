@@ -317,3 +317,19 @@ window ("Resume Game").
   (BUG-0313) and the mod's own wait on a guest (BUG-0960).
 * ? The flags +0x48: bit 0 the time stands; the pause menu and My Collections 3, P 7, the Sporepedia 1. The meaning of
   bits 1 and 2 is not known; the flags of an editor coming were not read.
+
+## How a Cell guest waits for the host's pause (2026-11-15, feat/w51-core2)
+<a id="host-centric-cell-hold"></a>
+
+C3 (BUG-1142), the open question of docs/01-architecture.md#arch-busy-model ("how a Cell guest's simulation is stood").
+* ✔ The Cell stage has no game-time pause (#host-centric-pause-reasons: its pause menu sets no cGameTimeManager reason);
+  its pause is the cell step `Simulator::Cell::SimUpdate` 0xE7F3A0 not running. The mod already hooks SimUpdate
+  (modes.cpp h_SimUpdate, the puppets' poses): while a guest waits for the host's pause menu the hook returns without
+  calling the game's step (`modes::set_cell_hold`). Seen on lane 9 (lab 20261115-161010 host_pause_cell): the guest's own
+  cell, sent to swim 40 m on (`coop.pool goto`, the move target a click sets), moved 0.0 m in 3 s while held, 4.3 m
+  before and 7.2 m after the host's Resume Game; the guest's game draws on (the frame, the UI, the toast), its cells
+  stand. The rest of CellFrame (MovePlayerToMousePosition, RebuildLevel, graphics, UI) still runs, as it does not under
+  the game's own pause menu (? which of them that menu skips is not known; nothing faulted).
+* ~ The broadphase's pending list (docs/re/cell.md#cell-sap-pending, BUG-0348) grows while SimUpdate does not run and the guest makes mirrors;
+  the host's cells stand while the host is paused, so few are made; `cell.sap_pending`'s hold applies as under a pause
+  menu.
