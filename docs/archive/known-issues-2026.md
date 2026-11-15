@@ -8,7 +8,7 @@ entries are appended at the end.
 ## Session: cleanup differs between leave, disconnection and unload (2026-10-27, code review)
 <a id="issue-session-cleanup-paths"></a>
 
-* [BUG-0033](tickets/BUG-0033-leaving-re-hosting-and-hot-reload-each-clean-up.md): fixed
+* [BUG-0033](../tickets/BUG-0033-leaving-re-hosting-and-hot-reload-each-clean-up.md): fixed
   (unreleased) for the stage modules: every way a session ends now runs the same cleanup. Still
   open: `g_host_away` is not reset on any path. The vote (BUG-0043)
   and the world share queue (BUG-0140) are reset by the same cleanup since fix/w1-core; the
@@ -750,7 +750,7 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
   `SPORE_FIX_OFF=world.share_settle_reset`; not reproduced so far (the save must land in the first
   frames of the solar system).
 * Known: the save was posted 9 ms after the host reached the system
-  ([space.md](re/space.md#space-share-save-at-context-change)); the share save now waits 2 s after
+  ([space.md](../re/space.md#space-share-save-at-context-change)); the share save now waits 2 s after
   every place change (`world.share_settle_reset`). Inferred, not proven, that this was the cause.
 * Next steps: if it is seen again with the fix in, the "saving for the share" line of the host's log
   says how long the host had been in the system.
@@ -1768,7 +1768,7 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
 ## Content one game lacks: what the lookalike parts do not cover yet (2026-11-04, fix/w43-content)
 <a id="issue-content-lookalike-gaps"></a>
 
-* [BUG-0424](tickets/BUG-0424-class-content-parts-paints-designs-the-other-gam.md) (open, class): since BUG-0559 a
+* [BUG-0424](../tickets/BUG-0424-class-content-parts-paints-designs-the-other-gam.md) (open, class): since BUG-0559 a
   part a guest's game lacks in a player's creature, cell or UFO, or in a species of the host's world, is shown as
   the most similar part that game has (the sender's description of the part, docs/re/creations.md#creations-lookalike).
   Not covered: civ mirror vehicles, buildings and host ships in Space (`ensure_model` builds them from a key, no
@@ -3283,9 +3283,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Not checked: a heap census of the guest in the failing run.
 * Next steps: `warm=False` for npc_ai_lookup and proxy_identity(_tribe), or a hunt that tries harder.
 * Fixed (2026-11-14, fix/w49-reuse): the hunt waits for the free and the free check sees a merged chunk; see
-  [06-testing](06-testing.md#testing-w49-reuse). CORRECTION (2026-11-14, fix/w49-reuse): "seldom hands the freed block to
+  [06-testing](../06-testing.md#testing-w49-reuse). CORRECTION (2026-11-14, fix/w49-reuse): "seldom hands the freed block to
   the next creature" was the hunt: the block was freed and merged, the old check read a stale header
-  ([re](re/creature.md#creature-reuse-merged)).
+  ([re](../re/creature.md#creature-reuse-merged)).
 * Ticket: BUG-1099
 ## Lab: broken textures, a white wedge, garbage geometry and a smeared HUD on key frames when the GPU memory is overcommitted (2026-11-14, fix/w49-spacegfx)
 <a id="issue-gpu-overcommit-garbage"></a>
@@ -3305,7 +3305,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Not checked: the driver level (no amdgpu error in the kernel log); whether fewer games at once removes it for good.
 * Next steps: keep the final check's games at once under ~18 (VRAM under the card), or repeat a test whose key frames
   show this alone on a quiet lane before judging it.
-* Ticket: [BUG-1098](tickets/BUG-1098-space-guests-screens-show-broken-textures-a-whit.md)
+* Ticket: [BUG-1098](../tickets/BUG-1098-space-guests-screens-show-broken-textures-a-whit.md)
 ## Tribe: a guest's game time stays paused after a village caption it clicks as it closes itself (2026-11-14, final check 0.7.14)
 <a id="issue-guest-caption-click-pause"></a>
 
@@ -3329,7 +3329,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   (docs/re/tribe.md#tribe-caption-pause-leak); one way the game leaves such a pause is known (the cinematic's pause
   slot cleared without a Resume by the next start). Next hit: the net's log line names the reason; with
   `coop.pauses trace` on the guest also its caller.
-* Ticket: [BUG-1101](tickets/BUG-1101-tribe-a-guest-s-game-time-stays-paused-for-the-r.md)
+* Ticket: [BUG-1101](../tickets/BUG-1101-tribe-a-guest-s-game-time-stays-paused-for-the-r.md)
 
 ## Tribe: a partner's member 1.0-1.5 m under the host's ground for 10-20 s (2026-11-14, final check 0.7.14)
 <a id="issue-tribe-member-under-host"></a>
@@ -3345,7 +3345,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   either) explains 10-20 s there: inferred the game's own crowd/collider state, on the host's screen only.
   The fixture's raids and epic fights do not show it (labs 20261114-034621 .. -042624, `tribe_under_probe`);
   docs/re/tribe.md#tribe-member-under.
-* Ticket: [BUG-1104](tickets/BUG-1104-tests-the-monitor-s-ground-rule-names-no-tribe-m.md)
+* Ticket: [BUG-1104](../tickets/BUG-1104-tests-the-monitor-s-ground-rule-names-no-tribe-m.md)
 
 ## Tribe: a standing herd's animals stay 6-9 m off on one guest at one spot of the campaign planet (2026-11-14, rel/0.7.14 final check)
 <a id="issue-tribe-proxy-spot-cadian"></a>
