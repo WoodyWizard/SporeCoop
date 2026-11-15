@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Development
+- Release path: `make release-dry` builds and checks a release the way GitHub does before every tag, and a tag is
+  pushed only on a green main; CI actions and the compiler download are pinned by hash; every release gets a
+  debug-symbols download so crash reports name the function that crashed; the DLLs build with stricter compiler
+  settings and warnings as errors.
+
 ## [0.7.14.1] - 2026-11-14
 
 A crash fix on top of 0.7.14. Only the player who opens the captain screen needs it, but both players should update

@@ -218,8 +218,9 @@ also check README (Compatibility, footnotes) and INSTALL, which name no patch ve
 
 * `tools/toolchain.env` is the one place for the build environment: the llvm-mingw version and the
   SHA-256 of its tarball, the CI runner's Python (`CI_PYTHON`) and Pillow. The Makefile includes it
-  (`make toolchain-path` prints the folder it uses), `tools/package.sh` and `tools/release_dry.sh`
-  ask the Makefile, and the workflow copies its `KEY=value` lines into `$GITHUB_ENV`.
+  (`make toolchain-path` prints the folder it uses), `tools/package.sh` asks the Makefile,
+  `tools/release_dry.sh` reads the file of the commit it checks, and the workflow copies its
+  `KEY=value` lines into `$GITHUB_ENV`.
 * The workflow checks the tarball with `sha256sum -c` before unpacking it (a changed or replaced
   asset fails the job), installs `pillow==$PILLOW_VERSION`, and fails when the runner's `python3`
   is not `CI_PYTHON` (then `make release-dry` would test another Python than CI runs).
@@ -276,3 +277,19 @@ DLLs of the build, `SYMBOLS.txt`); the build job uploads it with the other files
 fails when it is missing, lists it in SHA256SUMS.txt, publishes and attests it (BUG-1123). The player
 files stay stripped. `make release-dry` checks that the asset exists. How triage uses it:
 docs/06-testing.md#testing-crash-symbols.
+
+## Compiler flags of the DLLs: no aliasing assumptions, warnings are errors (2026-11-15, feat/w51-build)
+<a id="pipeline-compiler-flags"></a>
+
+* `COMMON` in the Makefile: `-fno-strict-aliasing -fno-delete-null-pointer-checks` (game memory is read and
+  written through casts at fixed offsets, `field<T>` / `F<T>`, and SporeKit lets code go on after a repaired
+  fault: the compiler may not reorder such accesses by type or drop a null check after a dereference),
+  `-Wimplicit-fallthrough` and `-Werror` (BUG-1122). The cost: .text +1.35 % (coop.dll), +2.4 % (sporekit.dll).
+* Printf-style functions carry `SK_PRINTF(format arg, first vararg)` (sdk/include/sporekit.h; 0 for a
+  `va_list`): `H->log`, `H->logv`, `H->out_printf`, `sk::logf` / `logv` / `out_vappend` and the wrappers; a new
+  one gets it too. A `%s` with an int or `%d` with a 64-bit value is then a build error, not a 32-bit vararg
+  crash at runtime.
+* A new warning fails the build: fix it (a counter nobody reads goes, an offset kept as knowledge gets
+  `[[maybe_unused]]`). The host test builds (`make test`, HOSTCXX) keep `-Wall` without `-Werror`: CI's host
+  clang 14 and the local clang differ.
+* `-Wformat=2` is not on: its 15 `-Wformat-nonliteral` hits are the translated format strings of the UI.
