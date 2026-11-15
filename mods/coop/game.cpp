@@ -583,6 +583,7 @@ void hit_push(void* c, float dmg, int type, void* attacker, const net::Vec3& p)
 static uintptr_t a_PlayAnim, a_PlayAnimTo;
 static AnimListener g_anim_listener;
 static bool g_in_puppet_anim;
+CALL_GUARD("game.puppet_anim", g_in_puppet_anim); // BUG-1134: a partner's animation played by us: not relayed back
 
 typedef int(SK_THISCALL* PlayAnim_t)(void*, uint32_t, int, int);
 typedef int(SK_THISCALL* PlayAnimTo_t)(void*, uint32_t, void*, int, int);
@@ -619,9 +620,8 @@ void set_anim_listener(AnimListener fn) { g_anim_listener = fn; }
 
 void play_animation(void* c, uint32_t anim_id, int block, bool disable_blend)
 {
-    g_in_puppet_anim = true;
+    callguard::Hold puppet(g_in_puppet_anim);
     o_PlayAnim(c, anim_id, block, disable_blend ? 1 : 0);
-    g_in_puppet_anim = false;
 }
 
 // ---- behaviour animations (BUG-0464) ----
@@ -686,12 +686,13 @@ bool play_behaviour_anim(void* c, uint32_t anim_id, int how, int a, int b)
     if (!c)
         return false;
     int r = 0;
-    g_in_puppet_anim = true;
-    if (how == 0 && o_CreaturePlayAnim)
-        r = o_CreaturePlayAnim(c, anim_id, a, b);
-    else if (how != 0 && o_PlayAnim) // (PlayAnimationTo's target is the host's object: played without one)
-        r = o_PlayAnim(c, anim_id, b, a);
-    g_in_puppet_anim = false;
+    {
+        callguard::Hold puppet(g_in_puppet_anim);
+        if (how == 0 && o_CreaturePlayAnim)
+            r = o_CreaturePlayAnim(c, anim_id, a, b);
+        else if (how != 0 && o_PlayAnim) // (PlayAnimationTo's target is the host's object: played without one)
+            r = o_PlayAnim(c, anim_id, b, a);
+    }
     return r != 0;
 }
 
@@ -855,6 +856,7 @@ uint32_t last_effect_id(bool main_world_only) { return main_world_only ? g_fx_la
 uint32_t last_foreign_effect_id() { return g_fx_last_foreign_id; }
 uint32_t foreign_effects() { return g_fx_foreign; }
 static bool g_in_relay;        // a relayed effect played by us: never put it in the table again
+CALL_GUARD("game.fx_relay", g_in_relay); // BUG-1134
 static thread_local bool t_in_anim_fx; // inside the animation system's effect wrapper (main thread)
 static WorldEffectListener g_world_listener;
 static uintptr_t a_EffectsGet;
@@ -1133,8 +1135,7 @@ static void* create_effect_at(uint32_t id, const void* xform, bool relayed)
     if (!mgr)
         return nullptr;
     void* fx = nullptr;
-    bool was = g_in_relay;
-    g_in_relay = relayed; // a relayed effect: the hooks must not send it back
+    callguard::Hold relay(g_in_relay, relayed); // a relayed effect: the hooks must not send it back
     int ok = f_MgrCreate(mgr, id, 0, &fx);
     if ((ok & 0xFF) && fx) {
         vcall<void>(fx, 0x18 / 4, xform); // SetTransform
@@ -1142,7 +1143,6 @@ static void* create_effect_at(uint32_t id, const void* xform, bool relayed)
     } else {
         fx = nullptr;
     }
-    g_in_relay = was;
     return fx;
 }
 
@@ -1157,23 +1157,17 @@ void* create_creature_effect(void* c, int bone, uint32_t effect_id)
 {
     if (!c || !o_CreateCreatureFx)
         return nullptr;
-    bool was = g_in_relay;
-    g_in_relay = true; // relayed: the hooks must not send it back
-    void* fx = o_CreateCreatureFx(c, bone, effect_id, 0);
-    g_in_relay = was;
-    return fx;
+    callguard::Hold relay(g_in_relay); // relayed: the hooks must not send it back
+    return o_CreateCreatureFx(c, bone, effect_id, 0);
 }
 
 void* start_effect(void* c, const EffectEvent& ev)
 {
     if (!c)
         return nullptr;
-    bool was = g_in_relay;
-    g_in_relay = true; // relayed: the hooks must not send it back
-    void* fx = ev.pool == 2 && o_StartStopFx2 ? o_StartStopFx2(c, 1, ev.id, ev.key)
-                                                : o_StartStopFx1 ? o_StartStopFx1(c, 1, ev.id, ev.key) : nullptr;
-    g_in_relay = was;
-    return fx;
+    callguard::Hold relay(g_in_relay); // relayed: the hooks must not send it back
+    return ev.pool == 2 && o_StartStopFx2 ? o_StartStopFx2(c, 1, ev.id, ev.key)
+                                          : o_StartStopFx1 ? o_StartStopFx1(c, 1, ev.id, ev.key) : nullptr;
 }
 
 bool stop_effect(void* c, uint32_t key) { return c && o_StopFx && o_StopFx(c, key, 0) != 0; }
@@ -1294,9 +1288,10 @@ static void SK_THISCALL h_NPCTickAI(void* self, float dt)
 // frame, outside every NPC tick: a swap still open here is such a leftover and is undone.
 static void swap_ledger_tick();
 // BUG-0882: a detour that lends game state around a call puts its undo into the swap ledger (views' relevance pass, the
-// own creature's scale call); the mod's own call guards (inside a puppet's animation, an effect wrapper, an event,
-// a relayed effect) are false outside every game call, so the frame's tick clears one a caught fault left set (a
-// stuck guard switched its relay off for good). Off (`coop.fix game.lend_ledger off`): no entries, no reset.
+// own creature's scale call); the mod's own thread_local call guards (inside an effect wrapper, an event) are false
+// outside every game call, so the frame's tick clears one a caught fault left set (a stuck guard switched its relay
+// off for good; the puppet animation and relayed effect guards are registered in call_guard.h since BUG-1134). Off
+// (`coop.fix game.lend_ledger off`): no entries, no reset.
 static bool g_lend_ledger_fix = true;
 COOP_FIX("game.lend_ledger", "BUG-0882", g_lend_ledger_fix, "creature: a fault inside the game's relevance pass or the own creature's scale call cannot leave the game's sphere list on the mod's buffer, the player species changed or a relay of the mod switched off");
 bool lend_ledger_on() { return g_lend_ledger_fix; }
@@ -1311,9 +1306,11 @@ static void reset_call_guards()
     callguard::reset(g_call_guard_fix);
     if (!g_lend_ledger_fix)
         return;
-    if (g_in_puppet_anim || g_in_relay || t_in_anim_fx || t_in_evt)
+    // BUG-1134: g_in_puppet_anim and g_in_relay are registered call guards now (callguard::reset above clears them,
+    // core.call_guard_reset); the two thread_local ones cannot be registered (call_guard.h) and stay here
+    if (t_in_anim_fx || t_in_evt)
         g_guards_reset++;
-    g_in_puppet_anim = g_in_relay = t_in_anim_fx = t_in_evt = false;
+    t_in_anim_fx = t_in_evt = false;
 }
 uint32_t call_guards_reset() { return g_guards_reset; }
 void swap_guard_tick()

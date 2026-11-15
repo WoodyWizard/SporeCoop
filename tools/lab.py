@@ -55,6 +55,7 @@ sys.path.insert(0, os.path.join(ROOT, 'tools', 'tests'))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 import suite  # noqa: E402
 import loggates  # noqa: E402
+import labbudget  # noqa: E402
 import labverdict  # noqa: E402 (verdicts, reasons, the flaky ledger, the repeat rule)
 
 TIMEOUT = 1800
@@ -314,19 +315,11 @@ XW_LOAD = 0.9
 XW_STEP = 10.0
 
 
-def headless_xwayland():
-    """pid of the Xwayland that serves the headless shell (its auth file is under sporecoop-headless), or None"""
-    try:
-        out = subprocess.run(['pgrep', '-x', 'Xwayland'], capture_output=True, text=True).stdout.split()
-    except OSError:
-        return None
-    for pid in out:
-        try:
-            if b'sporecoop-headless' in open(f'/proc/{pid}/cmdline', 'rb').read():
-                return int(pid)
-        except OSError:
-            pass
-    return None
+def headless_xwayland(lane=None):
+    """pid of the Xwayland that serves the headless shell lane `lane` draws on (A16, BUG-1113: one of
+    SPORE_HEADLESS_DISPLAYS shells, labbudget.display_name; without a lane the first shell), or None"""
+    got = labbudget.xwaylands().get(labbudget.display_name(lane or 1))
+    return got[0] if got else None
 
 
 def proc_ticks(pid):
@@ -339,9 +332,10 @@ def proc_ticks(pid):
 
 class XwSampler(threading.Thread):
     """the headless Xwayland's share of one core: the whole test and its busiest XW_STEP window"""
-    def __init__(self):
+    def __init__(self, lane=None):
         super().__init__(daemon=True)
-        self.pid = headless_xwayland() if os.environ.get('SPORE_LAB_XWAYLAND', '1') != '0' else None
+        self.display = labbudget.display_name(lane or 1)
+        self.pid = headless_xwayland(lane) if os.environ.get('SPORE_LAB_XWAYLAND', '1') != '0' else None
         self.hz = os.sysconf('SC_CLK_TCK')
         self.stop_ev = threading.Event()
         self.first = self.last = None
@@ -366,7 +360,7 @@ class XwSampler(threading.Thread):
         if not self.first or not self.last or self.first[1] is None:
             return None
         avg = (self.last[1] - self.first[1]) / self.hz / max(self.last[0] - self.first[0], 1e-3)
-        return {'avg': round(avg, 2), 'peak': round(self.peak, 2)}
+        return {'avg': round(avg, 2), 'peak': round(self.peak, 2), 'display': self.display}
 
 
 # BUG-0916 (docs/06-testing.md#testing-lab-memory): a test script (the python3 that drives the games) needs 25-150 MB.
@@ -557,7 +551,7 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
     t0 = time.time()
     reports0 = report_files(lane)
     marks0 = {who: loggates.log_marks(p) for who, p in game_logs(lane).items()}  # where the test's lines begin
-    xw = XwSampler()
+    xw = XwSampler(lane)
     xw.start()
     with open(log, 'w') as f:
         f.write(f'# {t["cmd"]}  (lane {lane}, {"warm" if warm else "cold"})\n')
@@ -904,16 +898,26 @@ def cmd_run(a):
 
     free_lock = threading.Lock()  # BUG-0468: two tests on the one free lane at once broke both
     gate = MemGate(lambda x: print(x, flush=True))  # BUG-0916
+    budget = labbudget.Gate(lambda x: print(x, flush=True))  # D1 (BUG-1114): games, VRAM, displays of the machine
 
     def gated(t, lane, warm_ok):
-        """attempt() behind the memory gate: (result, warm_ok), or None after an interrupt"""
+        """attempt() behind the memory gate and the machine budget: (result, warm_ok), or None after an interrupt"""
         tok = gate.admit(t, stopping)
         if tok is None:
             return None
         if isinstance(tok, str):
             return dict(name=t['name'], lane=lane, ok=False, rc=-1, seconds=0, start='', faults=[], fails=[tok]), warm_ok
         try:
-            return attempt(t, lane, warm_ok)
+            btok = budget.admit(t, lane, stopping)
+            if btok is None:
+                return None
+            if isinstance(btok, str):
+                return dict(name=t['name'], lane=lane, ok=False, rc=-1, seconds=0, start='', faults=[],
+                            fails=[btok]), warm_ok
+            try:
+                return attempt(t, lane, warm_ok)
+            finally:
+                budget.release(btok)
         finally:
             gate.release(tok)
 
@@ -958,6 +962,10 @@ def cmd_run(a):
         while True:
             t = take(last if warm_ok else None)
             if t is None:
+                # D1 (BUG-1114): a lane with nothing left ends its warm games now, not at the end of the run: they
+                # count against the machine's game budget of the lanes still running
+                if not stopping.is_set() and labbudget.enabled():
+                    spore(tree, lane, 'kill')
                 return
             got = gated(t, lane, warm_ok)
             if got is None:
@@ -1009,9 +1017,11 @@ def cmd_run(a):
     threads = [threading.Thread(target=worker, args=(lane,)) for lane in a.lane_ids]
     interrupted = False
     try:
-        for th in threads:
+        for th, lane in zip(threads, a.lane_ids):
             th.start()
-            time.sleep(5)  # Bottles sandboxes starting at the same moment can race
+            # Bottles sandboxes starting at the same moment can race: the next lane starts once this lane's first game
+            # process runs (A9, BUG-1112), at most the old fixed 5 s (a test without a game: the 5 s)
+            labbudget.until(lambda: lane_games_rss(lane)[0] > 0, 5.0, stopping)
         for th in threads:
             th.join()
         if alone:  # the machine alone: no game of another lane may be visible (LAN discovery)

@@ -61,6 +61,7 @@ LANE = 10
 FAILS = []
 # the fake tests of this file start whatever the machine's free memory is (the gate has its own cases, mem_gate)
 os.environ['SPORE_LAB_MEM_FLOOR_GB'] = '0'
+os.environ['SPORE_LAB_BUDGET'] = '0'  # nor wait for the machine's game budget (labstart_selftest.py has its cases)
 
 
 def check(cond, what):
@@ -290,8 +291,8 @@ def worktree_case(tree, tmp):
     """lab.worktree() of a branch whose name is a prefix of another checked-out branch; the tree's
     lab.py runs from a copy inside a scratch repository (it never sees the real one)"""
     repo = os.path.join(tmp, 'wt', 'SporeCoop')
-    for f in ('tools/lab.py', 'tools/loggates.py', 'tools/labverdict.py', 'tools/tests/suite.py'):
-        if not os.path.exists(os.path.join(tree, f)):  # (labverdict.py: not in a tree before A15 of 0.7.15)
+    for f in ('tools/lab.py', 'tools/loggates.py', 'tools/labverdict.py', 'tools/tests/suite.py', 'tools/labbudget.py'):
+        if not os.path.exists(os.path.join(tree, f)):  # (labverdict.py: not before A15 of 0.7.15, labbudget.py: BUG-1114)
             continue
         os.makedirs(os.path.dirname(os.path.join(repo, f)), exist_ok=True)
         shutil.copy(os.path.join(tree, f), os.path.join(repo, f))
@@ -315,8 +316,8 @@ def game_log_case(tree, tmp):
     base = os.path.join(tmp, 'gl')
     repo = os.path.join(base, 'SPORE', 'SporeCoop')
     for f in ('tools/sporectl.py', 'tools/tests/lane.py', 'tools/tests/twoinst.py', 'tools/tests/fixtures.py',
-              'tools/tests/memprobe.py'):
-        if not os.path.exists(os.path.join(tree, f)):  # (memprobe.py: not in a tree before BUG-0916)
+              'tools/tests/memprobe.py', 'tools/tests/startwait.py'):
+        if not os.path.exists(os.path.join(tree, f)):  # (memprobe.py: not before BUG-0916, startwait.py: BUG-1112)
             continue
         os.makedirs(os.path.dirname(os.path.join(repo, f)), exist_ok=True)
         shutil.copy(os.path.join(tree, f), os.path.join(repo, f))

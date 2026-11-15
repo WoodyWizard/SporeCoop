@@ -24,6 +24,7 @@ import sys
 import time
 
 import lane
+import startwait
 import twoinst
 from coop_chaos import Bot
 from coop_sync import LIMITS, pct
@@ -86,15 +87,24 @@ def start_extra(n):
         appdata = lane.APPDATA.replace(f'/{lane.BOTTLE}/', f'/SporeLab{b}/' if b > 1 else '/Games/')
         subprocess.run(['rm', '-rf', f'{appdata}/SporeKit-{prof}/Spore/Games'])
         sh('run', '-i', str(inst), '-p', prof)
-        time.sleep(2)
-    for i, inst in enumerate(insts):
+        # A9 (BUG-1112): the next launch once this game's process runs (its sandbox is up), at most the old 2 s
+        startwait.until(lambda: sh('pids', str(inst)).stdout.strip(), 2)
+    menu = startwait.MenuFrames()
+    cons = {}
+    for inst in insts:
         assert wait_up(inst, 120), f'extra guest instance {inst} did not start'
-        c = Console(inst)
-        for _ in range(120):
-            if 'GalaxyGameEntry' in c.call('game.mode')['out']:
+        cons[inst] = Console(inst)
+    for i, inst in enumerate(insts):
+        c = cons[inst]
+        t0 = time.time()
+        while time.time() - t0 < 120:
+            for j in insts:  # A9: every extra guest's menu frames count from the first poll that saw its menu
+                if j not in menu.at and 'GalaxyGameEntry' in cons[j].call('game.mode')['out']:
+                    menu.note(j, cons[j])
+            if inst in menu.at:
                 break
-            time.sleep(1)
-        c.call('wait.frames 200 60000')
+            time.sleep(1 if startwait.fixed() else startwait.STEP)
+        menu.wait_menu(inst, c, 200)  # was `wait.frames 200` from here
         out[NAMES[i]] = (c, inst)
         twoinst.monitor_add(f'extra{i + 1}', inst)  # the invariant monitor follows them too (monitor.py)
         twoinst.apply_fps(c, f'extra{i + 1}')  # SPORE_FPS

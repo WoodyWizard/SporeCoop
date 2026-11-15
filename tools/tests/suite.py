@@ -93,6 +93,21 @@ def games(t):
     return 4 if 'coop_campaign.py' in cmd or '_4p' in cmd else 2
 
 
+# D1 (BUG-1114, docs/06-testing.md#testing-lab-budget): the motion tests whose measures follow the observer's fps (the
+# top of the mixed-result list of docs/audit-0.7.15/tests.md TST-3: tribe_walk_mobile, puppet_walk, npc_walk,
+# tribe_npc_dash, puppet_stops, body_trail_tribe_player; npc_walk_tribe failed the 0.7.14 final check at 22 fps): while
+# one runs the lab keeps the machine at most labbudget.LS_GAMES games
+LOAD_SENSITIVE = ('npc_walk', 'puppet_walk', 'puppet_stops', 'tribe_walk', 'tribe_npc_dash', 'creature_npc_dash',
+                  'body_trail')
+
+
+def load_sensitive(t):
+    """does the test measure motion against the observer's frame rate (the lab's budget keeps the machine calmer)"""
+    if t.get('load_sensitive') is not None:
+        return bool(t['load_sensitive'])
+    return t.get('name', '').split('#')[0].startswith(LOAD_SENSITIVE)
+
+
 P = 'python3 tools/tests/'
 add('unit', 'make test', ('smoke',), minutes=1, gates=NO_GAME)
 add('unit_parallel', P + 'unit_parallel.py', minutes=2, gates=NO_GAME)  # BUG-0969: 3 copies of the native net tests at once, 2 rounds: all ALL OK (a fixed localhost port collided; old code: 1 of 2 copies failed)
@@ -794,6 +809,7 @@ add('space_give_pick', P + 'coop_space_give_pick.py', ('multi', 'extended'), min
 add('space_finale_death', P + 'coop_space_finale_death.py', minutes=4, fixture='space_free')  # tests (BUG-0991): the finale bot confirms the death caption of a destroyed ship and zooms out (OLD_FINALE_DEATH=1 fails)
 add('space_diplomacy', P + 'coop_space_diplomacy.py', minutes=5)  # shared relations with NPC empires
 add('call_guard', P + 'coop_call_guard.py', minutes=4)  # BUG-1047: a module's call guard left set by a caught fault (space_diplomacy's replay cut short) does not switch its relay off: the guest's first contact reaches the host (SPORE_FIX_OFF=core.call_guard_reset fails)
+add('call_guard_game', P + 'coop_call_guard_game.py', warm=True, minutes=4, fixture='creature', monitor={'proxy_n': 1000})  # BUG-1134: game.cpp's puppet animation and effect relay guards left set by a caught fault (the host's plays of the guest's animation / effect cut short): the host's own animation reaches the guest's puppet, its world effect the guest's game (SPORE_FIX_OFF=core.call_guard_reset fails)
 add('space_npc_model', P + 'coop_space_npc_model.py --solo', minutes=4)  # BUG-0546: one game with a Sporepedia cache without a complete UFO (lane 5's of 2026-11-04) flies to an NPC empire's star: no fault at 0xE98DD0 (game.ufo_model off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-130233:space_npc_model))
 add('space_npc_model_coop', P + 'coop_space_npc_model.py', ('extended',), minutes=5)  # BUG-0546: the same host in a co-op session with a guest
 add('space_diplo_mirror', P + 'coop_space_diplo_mirror.py', warm=True, minutes=3, fixture='space')  # the allies mirror's record is never shared by pol (BUG-0071)

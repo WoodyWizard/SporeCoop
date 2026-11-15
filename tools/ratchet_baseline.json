@@ -30,10 +30,7 @@
    "mods/coop/wsync.cpp": 4
   }
  },
- "call_guard": {
-  "game::g_in_puppet_anim": 2,
-  "game::g_in_relay": 2
- },
+ "call_guard": {},
  "lifecycle": {
   "cellsync::on_player_leave": 1,
   "cellsync::on_session_end": 1,
