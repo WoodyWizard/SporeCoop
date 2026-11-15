@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+- The old GOG 2016 build of Spore is no longer supported at all: on it the game now starts without co-op and shows
+  "this game version (GOG 2016) is not supported, please update to the current GOG or Steam version"; the setup says
+  the same and does not install. Update the game through GOG Galaxy, or play on Steam (BUG-1125).
+
+### Fixed
+- Logs and problem reports: a Windows user name with letters outside English (Cyrillic, accented, Greek) is now hidden
+  in the paths of the log and of report archives, like any other user name (BUG-1124).
+
 ## [0.7.14.1] - 2026-11-14
 
 A crash fix on top of 0.7.14. Only the player who opens the captain screen needs it, but both players should update

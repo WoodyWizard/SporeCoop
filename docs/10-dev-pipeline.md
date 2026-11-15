@@ -37,9 +37,8 @@ A lane is an independent copy of the whole setup, so several test pairs run at t
 * `SPORE_LANE=N` selects a lane for `tools/spore.sh`, every test and helper (`tools/tests/lane.py`).
 * Lanes 1..10 (ports, `tools/tests/lane.py`); at most 6 at once on this machine (`lab.py` caps it:
   a GPU reset under more load, docs/06-testing.md 6.19). Since 2026-10-24 every lane is a copy of
-  the GOG 2024 install (`dc04aee5`, the only build supported from 0.8 on). The GOG 2016 exe is
-  kept in `~/Games/Modding/_ref/gog2016/SporeApp.exe` (a 2016 lane: copy it into a lane's
-  `SporebinEP1`).
+  the GOG 2024 install (`dc04aee5`, the only supported build). GOG 2016 is not supported and has no
+  symbol files since 0.7.15 (BUG-1125): a 2016 exe in a lane gets the "not supported" message, no co-op.
 
 ## 10.3 The lab (`tools/lab.py`)
 

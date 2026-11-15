@@ -16,10 +16,10 @@ it deadlocks under Wine.
 
 ## Spore ModAPI
 
-The function names and addresses in `data/symbols/gog2016_922af7c7.sym` were ported to the GOG
-2016 build of the game from the March 2017 address tables of
-[Spore ModAPI](https://github.com/Spore-Community/Spore-ModAPI) (Spore Community) by
-`tools/addrport/port_modapi.py`. ModAPI's code itself is not included. Thanks to its authors for
+The function names and addresses in `data/symbols/march2017_dc04aee5.sym` come from the March 2017
+address tables of [Spore ModAPI](https://github.com/Spore-Community/Spore-ModAPI) (Spore Community),
+used as they are for the GOG 2024 build (earlier releases also carried a port of them to the GOG 2016
+build). ModAPI's code itself is not included. Thanks to its authors for
 years of reverse-engineering work on Spore.
 
 ## Fonts and images
