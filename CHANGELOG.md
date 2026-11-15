@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Development
+- Lab: a test whose scenario did not happen is INCONCLUSIVE (never a pass, three in a row fail), every failure has a
+  reason, one flake history over all worktrees (`lab.py flaky`), `--repeat` stops once the answer is clear, test
+  selection by the change (`lab.py run impact`), and a failed campaign segment can be played again from its own save
+  (BUG-1115, BUG-1116, BUG-1117, BUG-1118, BUG-1119).
+
 ## [0.7.14.1] - 2026-11-14
 
 A crash fix on top of 0.7.14. Only the player who opens the captain screen needs it, but both players should update

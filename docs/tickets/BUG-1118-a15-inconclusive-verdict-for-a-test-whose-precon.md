@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/w51-labverdict
-commits: 0481ee6e, c22c393a
+commits: 0481ee6e, c22c393a, 5a48f2dd, 91e5668c
 tests: content_civ, tools/tests/labverdict_selftest.py (make test)
 signature:
 docs: docs/06-testing.md#testing-lab-verdicts
