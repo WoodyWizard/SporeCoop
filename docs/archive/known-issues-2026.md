@@ -3391,3 +3391,14 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   commits.
 * Reproduce: `python3 tools/tickets.py check` on a 0.7.15 branch other than the one that fixed the private tickets.
 * Ticket: BUG-1129
+
+## Two re-entrancy flags in game.cpp are no call guards (2026-11-15, feat/w51-guards)
+<a id="issue-game-unregistered-guards"></a>
+
+* What happens (inferred from the code, not seen yet): a fault the game catches inside the puppet / behaviour
+  animation call or inside a relayed effect's creation leaves `g_in_puppet_anim` or the effect relay's `g_in_relay`
+  set; the behaviour animations or the effects then stop reaching the partner for the rest of the session.
+* Reproduce: not reproduced; `tools/ratchet_lint.py` lists both in its `guard` baseline.
+* Ticket: BUG-1134 (fixed, unreleased, fix/w51-guards2): both are registered call guards (`game.puppet_anim`,
+  `game.fx_relay`), test `call_guard_game`. CORRECTION (2026-11-15, fix/w51-guards2): they were never left set for
+  the session: BUG-0882 (0.7.13) already cleared both once a frame under `game.lend_ledger`.

@@ -7243,6 +7243,16 @@ The live pointer package (BUG-1053, BUG-0994, BUG-0995) of 0.7.14; method of doc
   met (a jump to its home star); the host's game must have met it too (its relation flags). Twin:
   `SPORE_FIX_OFF=core.call_guard_reset` (the guard stays set, the contact is never sent).
 * Unit test: `test_call_guard` in tests/npc_tests.cpp (holds, unwind, reset, the switch off).
+* `coop_call_guard_game.py` (suite `call_guard_game`, creature fixture, warm, ~1.5 min; BUG-1134): game.cpp's own
+  guards `game.puppet_anim` (a partner's animation played on its puppet, play_animation / play_behaviour_anim) and
+  `game.fx_relay` (a partner's effect played here, create_world_effect / create_creature_effect / start_effect) are
+  registered too. The host arms both (`unwind ... 10` / `5`: a guest's mating call makes about 5 animation plays and
+  1 effect play on the host), the guest's mating call cuts them short; then the host's own mating call must play on
+  the guest's puppet of the host (`coop.npc cur`, `cur p<id>`) and the host's part found (a world effect, pool 5)
+  must be active in the guest's game (`coop.effects`). Twin: `SPORE_FIX_OFF=core.call_guard_reset` (both guards stay
+  set; the creature pool effects are still sent, their hooks never read `g_in_relay`, only the world effect hooks
+  and the animation event effect do). The two thread_local guards of game.cpp (`t_in_anim_fx`, `t_in_evt`) cannot be
+  registered and are still cleared by `reset_call_guards` under `game.lend_ledger`.
 
 ## Console commands and mod unload (2026-11-13, fix/w49-kit2)
 <a id="testing-kit-cmd-unload"></a>
