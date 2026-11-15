@@ -143,6 +143,10 @@ static void unload_from(SkMod* m)
 
 bool mod_load(const std::string& name, std::string& err)
 {
+    if (*unsupported_build_text()) { // BUG-1125: a game build that is not supported (GOG 2016) runs no mod
+        err = unsupported_build_text();
+        return false;
+    }
     if (find_mod(name) && find_mod(name)->module) {
         err = "already loaded";
         return false;

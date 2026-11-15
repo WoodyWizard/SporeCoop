@@ -71,7 +71,9 @@ bool is_loader(const std::wstring& dll); // SporeCoop's steam_api.dll, not the g
 bool inspect_loader(const std::wstring& dll, bool& loader);
 
 // BUG-0851: the symbol files a release installs (data/symbols/*.sym; tools/tests/tools_selftest.py
-// `symlist` keeps the list complete): the uninstall deletes these and no other *.sym
+// `symlist` keeps the list complete): the uninstall deletes these and no other *.sym. The two GOG 2016 files
+// (gog2016_922af7c7.sym, overrides_922af7c7.sym) are no longer shipped since 0.7.15 (BUG-1125) and stay listed:
+// an install made by an older release still has them
 constexpr const char* kSymbolFiles[] = {"gog2016_922af7c7.sym", "march2017_dc04aee5.sym", "overrides_922af7c7.sym",
                                         "overrides_dc04aee5.sym"};
 

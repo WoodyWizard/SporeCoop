@@ -3,7 +3,7 @@ id: BUG-1111
 title: Space: the captain screen crashes the game at 0xA055B5 when the player's empire has no captain (captain key 0): the portrait's animated creature is null
 status: fixed
 kind: crash
-stage: space
+stage: Space
 reported: 2026-11-14
 source: GitHub issue #202
 role: guest
@@ -13,7 +13,7 @@ branch: fix/w50-captain
 commits: 6a0cfbf0 3aaba7d3 4efe5f69 6dfc9c94
 tests: space_captain_none
 signature: 3010a413:SporeApp.exe SporeCoop::AnimatedCreature_SetEpicFlag+0x9B5 (0xC0000005 at 0xA055B5, write of 0x54; now SporeCoop::AnimWorld_vt40+0x15), calls 00AE8D88 <- 01072C75 (SpaceGameUI_ShowCaptainScreen) <- 0107367D (rank badge handler)
-docs: docs/re/space.md#space-captain-portrait-null, docs/known-issues.md#issue-captain-uncopyable-species, docs/06-testing.md#testing-captain-none
+docs: docs/re/space.md#space-captain-portrait-null, docs/archive/known-issues-2026.md#issue-captain-uncopyable-species, docs/06-testing.md#testing-captain-none
 related: BUG-0304, BUG-0303
 ---
 

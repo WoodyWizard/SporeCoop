@@ -3,7 +3,7 @@ id: BUG-0372
 title: Tools: crash_triage.py reads the coop version from the crash file's summary of an earlier run
 status: fixed
 kind: tooling
-stage: -
+stage: Tools
 reported: 2026-11-01
 source: player reports 2026-11-01 (host GOG 2024 + Steam guest, 0.7.3.3)
 role: 

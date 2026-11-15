@@ -13,7 +13,7 @@ branch: fix/w10-cell-4p
 commits: 08428c0, f34dad4, 3a3292b, 1ebfd3e, e1962bd, 878a768, 6a731e6, bea15ec
 tests: cell_4p, campaign_short
 signature: dc04aee5:Simulator::cStarRecord::GetPlanetRecord+0x4AB (0x00BBB07B, really SweepPrune::MergeAxis+0x16B)
-docs: docs/re/cell.md#cell-broadphase-cap, docs/known-issues.md#issue-cell-4p-budget, docs/06-testing.md#testing-cell-4p
+docs: docs/re/cell.md#cell-broadphase-cap, docs/archive/known-issues-2026.md#issue-cell-4p-budget, docs/06-testing.md#testing-cell-4p
 related: BUG-0174, BUG-0296, BUG-0297, BUG-0298, BUG-0299
 ---
 

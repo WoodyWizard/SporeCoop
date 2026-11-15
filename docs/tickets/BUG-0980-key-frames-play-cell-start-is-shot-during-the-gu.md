@@ -3,7 +3,7 @@ id: BUG-0980
 title: key frames: play_cell start is shot during the guest's Cell intro (input lock): the meteor rock and the letterbox
 status: fixed
 kind: test
-stage: cell
+stage: Cell
 reported: 2026-11-12
 source: lab-final-0.7.13
 role: guest

@@ -583,7 +583,6 @@ int c_bodyrec(void*, int argc, const char* const* argv, SkOut* out)
 // once that the partner is not responding and when it plays again. Off: 0.7.3.6.
 static bool g_partner_silent_fix = true;
 COOP_FIX("core.partner_silent", "BUG-0513", g_partner_silent_fix, "core: a partner whose game stopped answering (minimized, frozen) is announced, and when it is back");
-uint32_t g_silent_notices = 0; // tests
 // BUG-0923: a partner's creation record arrives 0.3-0.4 s after its first puppet (at a join) or later (a new body):
 // the puppet is rebuilt with that look, and each making told "<name> appeared in the world" (twice at every join on
 // the host). Off: every puppet made is told (0.7.11)
@@ -598,7 +597,6 @@ static void silent_tick(Remote& r, double now)
     double age = r.buf.age(now);
     if (!r.silent_said && age > 5.0 && g_sess.connected()) {
         r.silent_said = true;
-        g_silent_notices++;
         feed(r.name + " is not responding (game minimized or frozen?)");
     } else if (r.silent_said && age < 1.0) {
         r.silent_said = false;

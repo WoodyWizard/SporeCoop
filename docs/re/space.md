@@ -2866,7 +2866,7 @@ Runtime (2026-11-12, fix/w48-reports, lane 4/5, GOG 2024):
   works: the rejoined guest's earned badges and counters are its own again (space.keep_badges); the host's copy is
   untouched.
 * ✔ A host that earned a badge and loads its own save again: no fault. A guest that earned one and loads the host's
-  world from the same game at a rejoin: a fault in 9 of 10 runs (BUG-0956, docs/known-issues.md#issue-space-badge-rejoin-fault).
+  world from the same game at a rejoin: a fault in 9 of 10 runs (BUG-0956, docs/archive/known-issues-2026.md#issue-space-badge-rejoin-fault).
 
 ## The modal window list and the badge rejoin crash (2026-11-12, fix/w48-new)
 <a id="space-modal-list-crash"></a>
@@ -3052,8 +3052,32 @@ reporter's minidump.
   0x107367D, no other fault in the session. ? Why the reporter's badge path did not stop at 0xF179E0 / 0xFE7140 first
   (they fault for captain 0 in the lab) is not known; the Space update's opener reaches the portrait without them.
 * ? Why the reporter's captain was 0: inferred, "Name Your Captain" could not copy the world's species (the host's
-  creation) on the guest's PC; the log has no line on it (docs/known-issues.md#issue-captain-uncopyable-species).
+  creation) on the guest's PC; the log has no line on it (docs/archive/known-issues-2026.md#issue-captain-uncopyable-species).
 * Fix `game.captain_portrait` (gamefixes.cpp): a portrait whose creature cannot load (no key and no name, or a key no
   database has) gets the world's species when this game has it, else is skipped (0xAE7D90 checks the slot).
   `coop.captain [open | species <hex> | species restore]` prints the captain and the species; tests open the screen as
   the Space update does and emulate an uncopyable species. Test `space_captain_none`.
+
+## Whose kept state: the rejoin token, not the session name (2026-11-15, fix/w51-net)
+<a id="space-kept-key"></a>
+
+BUG-1107 (plan 0.7.15 A10, audit NET-2). The host keeps four kinds of a guest's own Space state across its rejoin:
+its colonies ([space-kept-colonies](#space-kept-colonies), space_map.cpp `g_kept`), its cargo hold
+([space-kept-hold](#space-kept-hold), space_trade.cpp `g_kept_inv`), its badges (space_badges.cpp `g_kept`) and its
+Rivals budget (space_rivalry.cpp `g_budget_name`, K_ASK / K_SET). Up to 0.7.14 all four were keyed by the session
+name. That name is the HELLO name made unique in join order ("Player", "Player 2", BUG-0141), so two players of the
+same name who left and came back in the other order got each other's state.
+
+* Now every store is keyed by `spaceext::kept_key(id)` = `net::Session::player_key(id)`: `t:` + a 64-bit mix of the
+  player's HELLO rejoin token (rejoin.h, BUG-0235 / BUG-1001) when it had one, else `n:` + the session name (an
+  older SporeCoop without a token). The key is never printed or sent; status lines show the name kept beside it
+  (`kept '<name>'`, as before). `coop.space keptkey` lists how each player is keyed (token / name).
+* Who gets the state back: the same game after a crash (the token file) or after a leave or a lost connection (the
+  token kept in memory for the same host address and name, BUG-1001). Not: another game under the same name, the same
+  game under another name, and a game that was closed and started again (a new token): for the kept state these
+  are new players, the same rule as the join rule of BUG-1001 while late join is off.
+* Not changed: the allies mirror (space_allies.cpp `g_m`) is still by name; it is each machine's picture of the other
+  players' empires, rebuilt from their rosters, not state handed back to a player.
+* Switch `space.kept_token` (space_ext.cpp): off = the name, the 0.7.14 behaviour. Test seam `coop.space keptkey other
+  on|off` (rejoin::test_other): the next joins of this game send a fresh token that is neither written to the slot nor
+  kept, as a second game of the same name would. Test `space_kept_key` (Rivals budget), unit `test_player_key`.

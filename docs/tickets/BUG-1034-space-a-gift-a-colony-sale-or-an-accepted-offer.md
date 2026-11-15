@@ -13,7 +13,7 @@ branch: fix/w49-space2
 commits: daac928c, 8d73e8a9
 tests: space_trade_restore
 signature:
-docs: docs/re/space.md#space-restore-window, docs/known-issues.md#issue-trade-before-restore
+docs: docs/re/space.md#space-restore-window, docs/archive/known-issues-2026.md#issue-trade-before-restore
 related: BUG-0678, BUG-0832, BUG-0196
 ---
 

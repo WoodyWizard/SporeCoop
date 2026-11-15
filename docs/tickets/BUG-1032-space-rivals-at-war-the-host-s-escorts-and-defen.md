@@ -13,7 +13,7 @@ branch: fix/w49-space
 commits: f95e96fe
 tests: space_war_escort
 signature:
-docs: docs/re/space.md#space-war-npc-hits, docs/known-issues.md#issue-war-escort-hits
+docs: docs/re/space.md#space-war-npc-hits, docs/archive/known-issues-2026.md#issue-war-escort-hits
 related: BUG-0192, BUG-0420, BUG-0705
 ---
 

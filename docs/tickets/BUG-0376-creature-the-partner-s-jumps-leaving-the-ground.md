@@ -13,7 +13,7 @@ branch: fix/w41-puppet-look
 commits: af6fe121, see the branch log
 tests: puppet_air
 signature:
-docs: docs/re/creature.md#creature-puppet-look, docs/re/creature.md#creature-puppet-ground, docs/known-issues.md#issue-puppet-jumps
+docs: docs/re/creature.md#creature-puppet-look, docs/re/creature.md#creature-puppet-ground, docs/archive/known-issues-2026.md#issue-puppet-jumps
 related: BUG-0366, BUG-0360
 ---
 

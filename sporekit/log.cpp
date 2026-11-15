@@ -1,4 +1,7 @@
 #include "core.h"
+#include "path_mask.h"
+
+#include <shlobj.h>
 
 #include <algorithm>
 #include <atomic>
@@ -38,17 +41,34 @@ bool log_session_time(double& t)
 }
 
 // Paths of the player's computer never go into the log or a report in full (players attach them to
-// public issues): the game folder becomes <game>, the Windows user folder %USERPROFILE%, Wine's home
-// folder of the Linux user <home>. Longest first; compared without case. Set once at log_init.
-static std::vector<std::pair<std::string, std::string>> g_masks;
+// public issues): the game folder becomes <game>, the Windows user folder %USERPROFILE%, a Documents
+// folder outside it <Documents>, Wine's home folder of the Linux user <home>. Longest first; compared
+// without case (sporekit/path_mask.h). Set once at log_init.
+// BUG-1124: the folders are read through the wide API and kept as UTF-8, the text of the log: the ANSI
+// GetEnvironmentVariableA gave a Cyrillic user name in the code page (cp1251), which never matched the
+// UTF-8 log lines, so C:\Users\<name> stayed in full. The ANSI and short (8.3) forms are masked too, for
+// text some code wrote through an A function.
+static sk::pathmask::Masks g_masks;
 
-static void add_mask(std::string path, const char* token)
+static std::string env_w(const wchar_t* name)
 {
-    while (!path.empty() && (path.back() == '\\' || path.back() == '/'))
-        path.pop_back();
-    if (path.size() < 4) // "C:" or "Z:\" alone is no private path
-        return;
-    g_masks.push_back({path, token});
+    wchar_t b[MAX_PATH * 2];
+    DWORD n = GetEnvironmentVariableW(name, b, MAX_PATH * 2);
+    return n && n < MAX_PATH * 2 ? narrow(std::wstring(b, n)) : std::string();
+}
+
+static std::string env_a(const char* name)
+{
+    char b[MAX_PATH * 2];
+    DWORD n = GetEnvironmentVariableA(name, b, sizeof b);
+    return n && n < sizeof b ? std::string(b, n) : std::string();
+}
+
+static std::string short_path(const std::wstring& p)
+{
+    wchar_t b[MAX_PATH * 2];
+    DWORD n = p.empty() ? 0 : GetShortPathNameW(p.c_str(), b, MAX_PATH * 2);
+    return n && n < MAX_PATH * 2 ? narrow(std::wstring(b, n)) : std::string();
 }
 
 static void init_masks()
@@ -57,58 +77,27 @@ static void init_masks()
     std::wstring g = game_dir(); // ...\SporebinEP1: its parent is the game folder
     size_t k = g.find_last_of(L"\\/");
     if (k != std::wstring::npos)
-        add_mask(narrow(g.substr(0, k)), "<game>");
-    char b[MAX_PATH * 2];
-    if (GetEnvironmentVariableA("USERPROFILE", b, sizeof b) && b[0])
-        add_mask(b, "%USERPROFILE%");
-    // Wine: \??\Z:\home\<user>
-    if (GetEnvironmentVariableA("WINEHOMEDIR", b, sizeof b) && b[0])
-        add_mask(strncmp(b, "\\??\\", 4) == 0 ? b + 4 : b, "<home>");
-    std::sort(g_masks.begin(), g_masks.end(),
-              [](const auto& a, const auto& c) { return a.first.size() > c.first.size(); });
-}
-
-static bool same_path_char(char a, char c)
-{
-    if (a == '/')
-        a = '\\';
-    if (c == '/')
-        c = '\\';
-    return tolower((unsigned char)a) == tolower((unsigned char)c);
-}
-
-std::string mask_paths(const std::string& s)
-{
-    if (g_masks.empty() || s.size() < 4)
-        return s;
-    std::string out;
-    size_t i = 0;
-    bool changed = false;
-    while (i < s.size()) {
-        bool hit = false;
-        for (auto& [path, token] : g_masks) {
-            if (path.size() > s.size() - i || !same_path_char(s[i], path[0]))
-                continue;
-            size_t j = 1;
-            while (j < path.size() && same_path_char(s[i + j], path[j]))
-                j++;
-            if (j == path.size()) {
-                if (!changed)
-                    out.assign(s, 0, i);
-                out += token;
-                i += j;
-                hit = changed = true;
-                break;
-            }
-        }
-        if (!hit) {
-            if (changed)
-                out += s[i];
-            i++;
-        }
+        g_masks.add(narrow(g.substr(0, k)), "<game>");
+    std::string prof = env_w(L"USERPROFILE");
+    if (!prof.empty()) {
+        g_masks.add(prof, "%USERPROFILE%");
+        g_masks.add(env_a("USERPROFILE"), "%USERPROFILE%"); // the ANSI code page form (the same when ASCII)
+        g_masks.add(short_path(widen(prof)), "%USERPROFILE%");
     }
-    return changed ? out : s;
+    // Documents moved to another drive or OneDrive: not inside the profile
+    wchar_t docs[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_PERSONAL, nullptr, 0, docs)) && docs[0]) {
+        std::string d = narrow(docs);
+        if (!g_masks.covered(d))
+            g_masks.add(d, "<Documents>");
+    }
+    // Wine: \??\Z:\home\<user>
+    std::string home = env_w(L"WINEHOMEDIR");
+    if (!home.empty())
+        g_masks.add(home.rfind("\\??\\", 0) == 0 ? home.substr(4) : home, "<home>");
 }
+
+std::string mask_paths(const std::string& s) { return g_masks.apply(s); }
 
 // The log of the previous run is kept: a player who restarts the game after a crash still has
 // the log of the crash. logs\previous\<name>-<time of its last line>.log, the newest kKeep of

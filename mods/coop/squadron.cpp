@@ -36,7 +36,8 @@ static bool g_ok;
 static uintptr_t a_GetAllUFOs, a_TakeDamage, a_FireTool, a_SpawnUFO, a_PlayerUFOGet, a_PlayerEmpireID;
 
 // ---- cGameDataUFO (docs/re/space.md) ----
-constexpr uintptr_t kLoco = 0x34, kPos = 0x38, kRot = 0x44, kCombat = 0x508, kMaxHp = 0x534, kState = 0x53C,
+// kNextPos / kDest are not read yet: kept as the known layout (A4: [[maybe_unused]])
+[[maybe_unused]] constexpr uintptr_t kLoco = 0x34, kPos = 0x38, kRot = 0x44, kCombat = 0x508, kMaxHp = 0x534, kState = 0x53C,
                     kHp = 0x540, kInvincible = 0x588, kType = 0x714, kNextPos = 0x718, kNextVel = 0x724,
                     kNextRot = 0x730, kAtDest = 0x74C, kDest = 0x750, kModel = 0x780, kPol = 0x30;
 

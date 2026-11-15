@@ -37,9 +37,8 @@ A lane is an independent copy of the whole setup, so several test pairs run at t
 * `SPORE_LANE=N` selects a lane for `tools/spore.sh`, every test and helper (`tools/tests/lane.py`).
 * Lanes 1..10 (ports, `tools/tests/lane.py`); at most 6 at once on this machine (`lab.py` caps it:
   a GPU reset under more load, docs/06-testing.md 6.19). Since 2026-10-24 every lane is a copy of
-  the GOG 2024 install (`dc04aee5`, the only build supported from 0.8 on). The GOG 2016 exe is
-  kept in `~/Games/Modding/_ref/gog2016/SporeApp.exe` (a 2016 lane: copy it into a lane's
-  `SporebinEP1`).
+  the GOG 2024 install (`dc04aee5`, the only supported build). GOG 2016 is not supported and has no
+  symbol files since 0.7.15 (BUG-1125): a 2016 exe in a lane gets the "not supported" message, no co-op.
 
 ## 10.3 The lab (`tools/lab.py`)
 
@@ -212,6 +211,106 @@ that never applies) or when CHANGELOG.md has no `## [X.Y.Z]` section, and writes
 section as the release notes (not the X.Y.Z.N sections after it) (BUG-0097). Before a release
 also check README (Compatibility, footnotes) and INSTALL, which name no patch versions any more
 (BUG-0165).
+
+## Worktrees and branches that are done: wt_gc.py (2026-11-15, feat/w51-hygiene)
+<a id="pipeline-wt-gc"></a>
+
+Every agent and `lab.py run --branch` makes a worktree in `../SporeCoop-wt/`; nothing removed them (KIT-9 of
+docs/audit-0.7.15/kit_build.md: 400 trees, about 100 GB in their build/ and out/). `tools/wt_gc.py` (BUG-1127)
+prints what can go and how many bytes of build/ and out/ that frees; only `--apply` deletes (`git worktree remove`
+without `--force`, `git branch -d`, `git worktree prune`). A tree goes when its branch is merged into main (not main,
+not `rel/*`, not a `--keep` glob, no detached HEAD), `git status` is empty and no merge / rebase / bisect is in
+progress, nothing uses it (a process's cwd, PWD, open file or command-line path in it; a held lab lane lock
+`.lab-run-laneN.lock` or a game console port 47800+ of a process started from it) and nothing in it changed for
+`--min-age` hours (48: its git HEAD / index, top folder, out/, out/lab/*, build/). Merged branches without a tree go
+with `git branch -d`; unmerged ones are listed for a person. Run the dry run first and read its "kept" lines; during a
+release batch keep its trees: `tools/wt_gc.py --keep '*/w51-*'`. Self-test: `tools_selftest.py wtgc` (a temporary
+repository with a busy tree, a held lane lock, uncommitted work, an unmerged branch).
+
+Dry run on 2026-11-15 (main 74611a57, `--keep '*/w51-*'`, nothing deleted): 307 worktrees to remove with 77.5 GB of
+build/ and out/, 342 merged branches; kept 108 trees (68 changed in the last 48 h, 16 `rel/*`, 8 unmerged, 6
+detached, 6 `*/w51-*`, 3 in use by a process, 1 with uncommitted work); 16 unmerged branches left for a person.
+
+## CI supply chain: pinned actions and toolchain (2026-11-15, feat/w51-build)
+<a id="pipeline-ci-pins"></a>
+
+* `tools/toolchain.env` is the one place for the build environment: the llvm-mingw version and the
+  SHA-256 of its tarball, the CI runner's Python (`CI_PYTHON`) and Pillow. The Makefile includes it
+  (`make toolchain-path` prints the folder it uses), `tools/package.sh` asks the Makefile,
+  `tools/release_dry.sh` reads the file of the commit it checks, and the workflow copies its
+  `KEY=value` lines into `$GITHUB_ENV`.
+* The workflow checks the tarball with `sha256sum -c` before unpacking it (a changed or replaced
+  asset fails the job), installs `pillow==$PILLOW_VERSION`, and fails when the runner's `python3`
+  is not `CI_PYTHON` (then `make release-dry` would test another Python than CI runs).
+* Every action is pinned by its commit SHA, the tag it was resolved from in a comment
+  (`actions/checkout@<sha> # v4.4.0`). New version: `gh api repos/<owner>/<action>/commits/<tag>
+  --jq .sha`. The pinned tags are the latest of the majors that ran green (v4 / v2); GitHub runs
+  their Node 20 code on Node 24 with a warning. A major bump is its own change with a CI run.
+* New toolchain: download the tarball, `sha256sum` it, compare with the asset's `digest` in
+  `gh api repos/mstorsjo/llvm-mingw/releases/tags/<version>`, update both lines.
+* `tools/ci_lint.py` (in `make test`) fails on an action without a SHA or tag comment, a workflow
+  that does not check the tarball or pins a toolchain version of its own, unpinned Pillow, or a
+  malformed `toolchain.env` (BUG-1121).
+
+## Release dry run, and tag only on a green main (2026-11-15, feat/w51-build)
+<a id="pipeline-release-dry"></a>
+
+3 of 9 tags before 0.7.15 failed only in CI (v0.7.3.4: libstdc++ 12 headers; v0.7.11: Python 3.12
+f-strings that the runner's 3.10 cannot parse; v0.7.14: a private ticket id in the notes, invisible
+without out/tickets), and v0.7.14 was moved after its failure. `make release-dry`
+(`tools/release_dry.sh [--rev <commit>] [--keep]`, about 95 s) runs the tag workflow locally (BUG-1120):
+
+* a `git archive` copy of the commit (HEAD by default; uncommitted changes are not in it) in an empty
+  folder, made a depth-1 shallow repository of the same commit, as CI's checkout: no history, no
+  out/ (no private tickets, lab results or old dist), no untracked files;
+* CI's Python (`CI_PYTHON` of tools/toolchain.env, through `uv run --no-project --python 3.10`) as
+  `python3`, Pillow `PILLOW_VERSION`, the pinned llvm-mingw, `env -i` with `CI=true` and `LANG=C.UTF-8`;
+* the workflow's steps in order: the Python check, `release_check.sh v<COOP_VERSION>` (version, notes,
+  notes-check), `make`, `make test`, `package.sh`, then the release job's checks (every asset the
+  publish step names, SHA256SUMS.txt, the zip holds the attested binaries).
+* Not covered: CI's host compiler for `make test` (ubuntu-22.04's clang 14 with libstdc++ 12, here
+  Fedora's clang++: the v0.7.3.4 class of missing includes still shows only in CI), the upload and the
+  attestation.
+* Proof (2026-11-15): HEAD PASS; a commit with a 3.12 f-string in a game test (3.14 parses it) FAIL in
+  `make test` (test_lint: does not parse); a commit naming a private ticket under Fixed FAIL in
+  release_check (no ticket docs/tickets/BUG-1003-*.md).
+* The copy is removed after a PASS and kept with `release-dry.log` after a FAIL; uv's relocatable
+  Python gets `PYTHONHOME` there (a test starts it under a fake argv[0]).
+
+**The release order** (replaces "push main and the tag together"):
+
+1. On main: CHANGELOG section, `COOP_VERSION`, `tools/tickets.py release X.Y.Z`, commit.
+2. `make release-dry` on that commit: PASS.
+3. Push main only, then wait for its CI run: `gh run watch $(gh run list -b main -L 1 --json databaseId
+   --jq '.[0].databaseId') --exit-status`.
+4. Only on a green main: push the tag `vX.Y.Z` on exactly that commit.
+5. A published tag is never moved or re-pushed: a broken release gets the next version (X.Y.Z.1).
+
+## Debug symbols per release (2026-11-15, feat/w51-build)
+<a id="pipeline-release-symbols"></a>
+
+Owner decision 6 (0.7.15 plan): the debug symbols are a public release asset. `tools/package.sh` calls
+`tools/symbols_pack.sh`, which writes `out/dist/SporeCoop-<ver>-debug-symbols.tar.xz` (the unstripped
+DLLs of the build, `SYMBOLS.txt`); the build job uploads it with the other files, the release job
+fails when it is missing, lists it in SHA256SUMS.txt, publishes and attests it (BUG-1123). The player
+files stay stripped. `make release-dry` checks that the asset exists. How triage uses it:
+docs/06-testing.md#testing-crash-symbols.
+
+## Compiler flags of the DLLs: no aliasing assumptions, warnings are errors (2026-11-15, feat/w51-build)
+<a id="pipeline-compiler-flags"></a>
+
+* `COMMON` in the Makefile: `-fno-strict-aliasing -fno-delete-null-pointer-checks` (game memory is read and
+  written through casts at fixed offsets, `field<T>` / `F<T>`, and SporeKit lets code go on after a repaired
+  fault: the compiler may not reorder such accesses by type or drop a null check after a dereference),
+  `-Wimplicit-fallthrough` and `-Werror` (BUG-1122). The cost: .text +1.35 % (coop.dll), +2.4 % (sporekit.dll).
+* Printf-style functions carry `SK_PRINTF(format arg, first vararg)` (sdk/include/sporekit.h; 0 for a
+  `va_list`): `H->log`, `H->logv`, `H->out_printf`, `sk::logf` / `logv` / `out_vappend` and the wrappers; a new
+  one gets it too. A `%s` with an int or `%d` with a 64-bit value is then a build error, not a 32-bit vararg
+  crash at runtime.
+* A new warning fails the build: fix it (a counter nobody reads goes, an offset kept as knowledge gets
+  `[[maybe_unused]]`). The host test builds (`make test`, HOSTCXX) keep `-Wall` without `-Werror`: CI's host
+  clang 14 and the local clang differ.
+* `-Wformat=2` is not on: its 15 `-Wformat-nonliteral` hits are the translated format strings of the UI.
 
 ## Proving a refactoring: pure moves and identical dumps (2026-11-15, feat/w51-split)
 <a id="pipeline-refactor-proof"></a>

@@ -3,7 +3,7 @@ id: BUG-0804
 title: The mod's click on the game saved box keeps the virtual cursor on the OK button for 5 s: the player loses the mouse after every save
 status: fixed
 kind: bug
-stage: all
+stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 BUG-9101 (commit 39cdca69, lineages41-dev)
 role: host guest

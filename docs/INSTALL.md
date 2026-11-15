@@ -23,8 +23,9 @@ others; your saves and creations are not touched.
 | Players | 2–4, every player with the **same SporeCoop version** (the network protocol is checked on join). |
 | Network | The same local network, a virtual LAN (Tailscale, ZeroTier, Radmin VPN), or UDP port 47810 forwarded to the host. |
 
-Supported: the current GOG build (the 2024 update) and Steam, on Windows and Linux; the GOG 2016
-build is no longer supported since 0.7.8, the EA app and disc versions are not supported. Details:
+Supported: the current GOG build (the 2024 update) and Steam, on Windows and Linux; the old GOG 2016
+build is not supported (since 0.7.8; from 0.7.15 the mod does not start on it and says so), the EA app
+and disc versions are not supported. Details:
 [compatibility details](#compatibility-details), every test: [section 2](#where-sporecoop-has-been-tested).
 If you try another build, an [issue](https://github.com/WoodyWizard/SporeCoop/issues) with the
 result and `mods\logs\sporekit.log` helps.
@@ -35,7 +36,6 @@ SporeCoop has the game addresses for these builds of `SPORE\SporebinEP1\SporeApp
 
 | Build | Size | SHA-256 |
 |---|---|---|
-| GOG 2016 (the build SporeCoop was developed on) | 24 888 320 bytes | `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e` |
 | GOG 2024 update (the current GOG download) | 24 895 536 bytes | `dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37` |
 | Steam (since its October 2024 update; Spore + Galactic Adventures) | 25 066 744 bytes | `3010a413f9a4a05ee9c4de24756c1c94c7fb218f70cad29bcf5bc0b4abfa2466` |
 
@@ -49,9 +49,12 @@ Adventures (app 24720) in **`steamapps\common\Spore 24720`** (Steam may write it
 has `SporebinEP1`. SporeCoop goes into `Spore 24720`: choose that folder in the setup (setups newer
 than 0.7.3.3 find it by themselves, also when you choose `Spore` or its `SporeBin`).
 
-**0.7.x is the last version for the GOG 2016 build.** From 0.8 SporeCoop supports only the current
-GOG build (the 2024 update; GOG Galaxy and the GOG installers give you that one): with the 2016
-build co-op stays off. Update the game, or stay on SporeCoop 0.7.
+**The old GOG 2016 build** (24 888 320 bytes, SHA-256 `922af7c7908af2614b9caca2ffb1ec2353442022fd124866105724acaa24c26e`)
+**is not supported**: please update the game to the current GOG version (GOG Galaxy and the GOG
+installers give you the 2024 update) or use Steam. Since 0.7.15 SporeCoop recognises the 2016 exe and
+does not start co-op on it: the game shows "this game version (GOG 2016) is not supported" in its
+top left corner, `mods\logs\sporekit.log` says the same, and the setup names the build and does not
+install.
 
 Players of one game must have the same build: the host turns away a guest with another
 `SporeApp.exe`. With any other build the game starts normally but without co-op
@@ -70,22 +73,17 @@ SporeCoop runs the Galactic Adventures game, `SporebinEP1\SporeApp.exe`. Where i
 |---|---|---|---|
 | **GOG**, the current download (2024 update) | 24 895 536 bytes, `dc04aee5…` | ✅ 0.6.1: every stage as host + guest; 0.7.1, 0.7.2: with a Steam player | ✅ 0.7.0: the full automated suite (every stage, every Space feature) |
 | **Steam**, Spore + Galactic Adventures (October 2024 update) | 25 066 744 bytes, `3010a413…` | ✅ 0.7.1, 0.7.2: Steam guest + GOG host (Creature), Steam offline ¹ | ✅ 0.7.1: Steam + Proton, offline |
-| **GOG 2016**, the older GOG download | 24 888 320 bytes, `922af7c7…` | ❌ no longer supported since 0.7.8 ² | ❌ no longer supported since 0.7.8 ² |
+| **GOG 2016**, the older GOG download | 24 888 320 bytes, `922af7c7…` | ❌ not supported ² | ❌ not supported ² |
 | EA app / Origin, disc | other files | ❌ not supported yet | ❌ not supported yet |
 
 ¹ With Steam **online** its overlay can keep the game's frames from the mod (no *Co-op* item,
 [issue #4](https://github.com/WoodyWizard/SporeCoop/issues/4)). Since 0.7.2 the mod then takes its
 frames from the game loop; tested by simulating that case, not yet with the real overlay.
-² **GOG 2016 is no longer supported since 0.7.8** (2026-11-05): update the game through GOG (the current
-download is the 2024 build; Steam is the same game). The mod still starts on GOG 2016, but it is not
-tested there any more and its bugs are not fixed. Since 0.7.2.2 new fixes get game addresses for
-the current build only: on GOG 2016 they switch themselves off (Alt+Shift+Enter, the hatchling growing
-up after a death, the pack, Cell bites, meat and spin, NPC nations' vehicles on a guest's game, our
-creatures kept out of saves); the other fixes work there too. The full list, checked by the build:
-[data/symbols/frozen_off_922af7c7.txt](../data/symbols/frozen_off_922af7c7.txt).
+² **GOG 2016 is not supported** (since 0.7.8, 2026-11-05): update the game through GOG (the current
+download is the 2024 build; Steam is the same game). Since 0.7.15 SporeCoop has no game addresses for
+it any more: on GOG 2016 the game starts without co-op and shows why.
 
-**Playing together:** GOG 2024 and Steam players can play together (the same game code). A GOG
-2016 player cannot join a GOG 2024 or Steam host (the host turns away another build). Every player
+**Playing together:** GOG 2024 and Steam players can play together (the same game code). Every player
 needs the same SporeCoop protocol: every 0.7 version plays with every other, 0.6.x cannot join 0.7.
 With an older 0.7 version (0.7.2.x, 0.7.3.0) on one side, chat lines above about 1160 bytes arrive
 cut and the Creature species table of a planet with 42 or more species does not reach that player;
@@ -99,10 +97,9 @@ tell us in an [issue](https://github.com/WoodyWizard/SporeCoop/issues) with `mod
 
 | Game build | System | Tested |
 |---|---|---|
-| GOG 2016 (`922af7c7…`) | Linux, Wine / Bottles | Yes: SporeCoop was developed on it; every stage, 2-4 players, the stability runs of 0.6.0 |
+| GOG 2016 (`922af7c7…`) | Linux, Wine / Bottles | Up to 0.7.7 (SporeCoop was developed on it); not supported since 0.7.8, no co-op since 0.7.15 |
 | GOG 2024 (`dc04aee5…`) | Windows 11 | Yes (0.6.1): every stage (cell, creature, tribe, civilization, space) as host + guest, two game instances on one PC |
 | GOG 2024 with a changed header (same `code_sha256`) | Windows 11 | Only with a modified copy of the GOG 2024 exe (0.6.2): it loads the GOG 2024 addresses and joins a GOG 2024 host |
-| GOG 2016 | Windows | Not tested. Before 0.6.1 every address was wrong on Windows (it moves the exe in memory), so 0.6.0 and older could not work there |
 | GOG 2024 (`dc04aee5…`) | Linux, Wine / Bottles | Yes (0.7.0): the full automated suite (every stage, every Space feature, host + guest, real clicks) on copies of the current GOG install; before that a smoke test of the 0.6.2 release zip |
 | Steam (`3010a413…`) | Linux, Steam + Proton (offline mode) | Yes (0.7.1): the mod recognises the unpacked code, every feature is on, a Steam guest joined a GOG 2024 host in the Creature stage (world transfer, avatar, the host's NPCs), no faults |
 | Steam | Windows 11, Steam offline | Yes (0.7.1, 0.7.2): every feature on; a Steam guest played with a GOG 2024 host in the Creature stage (world transfer, puppets, NPC damage, shared DNA), also with the frames from the game loop (`frames=loop`) as with the Steam overlay online; not tested with Steam online |

@@ -13,7 +13,7 @@ branch: fix/w49-space
 commits: f95e96fe
 tests: space_terra_far
 signature: 0xC0000005 at 0x00BBABE2 Simulator::cStarRecord::GetPlanetRecord+0x12 data=0 (from cStarManager::GetPlanetRecord 0x00BA6F4B)
-docs: docs/re/space.md#space-war-npc-hits, docs/known-issues.md#issue-terra-rec-unchecked
+docs: docs/re/space.md#space-war-npc-hits, docs/archive/known-issues-2026.md#issue-terra-rec-unchecked
 related: BUG-0883, BUG-0284
 ---
 

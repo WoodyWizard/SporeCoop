@@ -3,7 +3,7 @@ id: BUG-1049
 title: Creature/Tribe: the host's mirror_fx key table (256) is never cleared and drops a live key's stop when full: a looped effect can stay on a guest's mirror
 status: fixed
 kind: desync
-stage: Creature,Tribe
+stage: Creature, Tribe
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) SPC-20
 role: 
@@ -13,7 +13,7 @@ branch: fix/w49-life
 commits: f2f013ec, a49f379c, ade567a3, a7f75467, 398a5ab1
 tests: mirror_fx_keys, lifecycle_reset
 signature:
-docs: docs/known-issues.md#issue-mirror-fx-keys, docs/01-architecture.md#arch-lifecycle-registry, docs/06-testing.md#testing-lifecycle-reset
+docs: docs/archive/known-issues-2026.md#issue-mirror-fx-keys, docs/01-architecture.md#arch-lifecycle-registry, docs/06-testing.md#testing-lifecycle-reset
 related: BUG-0600, BUG-0955
 ---
 

@@ -13,7 +13,7 @@ branch: fix/w49-money
 commits: d500f3b0
 tests: space_spice_rivals
 signature:
-docs: docs/re/space.md#space-rival-merge-known, docs/known-issues.md#issue-colony-spice-old-world
+docs: docs/re/space.md#space-rival-merge-known, docs/archive/known-issues-2026.md#issue-colony-spice-old-world
 related: BUG-0822, BUG-0840
 ---
 

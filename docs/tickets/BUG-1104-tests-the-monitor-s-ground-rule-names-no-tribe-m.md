@@ -13,7 +13,7 @@ branch: fix/w49-under
 commits: 0a79fb2e 4c61f2a6
 tests: campaign (the monitor gate), gates_selftest, tribe_under_probe
 signature: MONITOR-VIOLATION ground host: the tribe members of partner N 1.26 m under the ground (Tribe) on 2 lines
-docs: docs/06-testing.md#testing-fcgates-0714, docs/re/tribe.md#tribe-member-under, docs/06-testing.md#testing-tribe-under, docs/known-issues.md#issue-tribe-member-under-host
+docs: docs/06-testing.md#testing-fcgates-0714, docs/re/tribe.md#tribe-member-under, docs/06-testing.md#testing-tribe-under, docs/archive/known-issues-2026.md#issue-tribe-member-under-host
 related: BUG-0945, BUG-1088, BUG-0444, BUG-1082, BUG-0505
 ---
 

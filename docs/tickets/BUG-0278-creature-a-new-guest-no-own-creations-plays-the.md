@@ -3,7 +3,7 @@ id: BUG-0278
 title: Creature: a new guest (no own creations) plays the legless creature from the start of the stage and cannot change it
 status: fixed
 kind: bug
-stage: creature
+stage: Creature
 reported: 2026-10-29
 source: Discord report 2026-10-29
 role: guest

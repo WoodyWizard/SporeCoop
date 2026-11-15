@@ -10,7 +10,7 @@
 
 namespace game {
 
-// cCreatureAnimal layout (GOG 2016 build, matches ModAPI March2017 headers)
+// cCreatureAnimal layout (ModAPI March2017 headers; the same in the GOG 2024 build)
 constexpr uintptr_t kSpatialOff = 0xC0;     // cLocomotiveObject/cSpatialObject subobject
 constexpr uintptr_t kPosOff = 0xC0 + 0x04;  // cSpatialObject::mPosition
 constexpr uintptr_t kRotOff = 0xC0 + 0x10;  // cSpatialObject::mOrientation

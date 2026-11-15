@@ -13,7 +13,7 @@ branch: fix/w22-cell
 commits: 21b178c, 90f091b, 27245c9
 tests: cell_pause
 signature: dc04aee5:GeneralAllocator_FreeInternal+0x13D / +0x64 from cObjectPool::_dtor in the Cell teardown 0xE7F9B0 (returns 0xE7FAF0 / 0xE7FA8D, named SimUpdate+0x750 / +0x6ED), then 0x00DDA358 (data 0x18)
-docs: docs/re/cell.md#cell-sap-pending, docs/06-testing.md#testing-cell-4p, docs/known-issues.md#issue-cell-sap-broken-order
+docs: docs/re/cell.md#cell-sap-pending, docs/06-testing.md#testing-cell-4p, docs/archive/known-issues-2026.md#issue-cell-sap-broken-order
 related: BUG-0337, BUG-0308, BUG-0289, BUG-0295
 ---
 

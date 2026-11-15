@@ -3,7 +3,7 @@ id: BUG-1009
 title: Civ/Space: a guest's change cut at 0 by the shared money floor is still counted in full, the next host total names a wrong cause (host earned / spent)
 status: fixed
 kind: bug
-stage: Civ,Space
+stage: Civ, Space
 reported: 2026-11-13
 source: audit 2026-11-12 (0.7.14) NET-5
 role: host
@@ -13,7 +13,7 @@ branch: fix/w49-money
 commits: d500f3b0
 tests: res_cause_floor
 signature:
-docs: docs/known-issues.md#issue-shared-cause-floor
+docs: docs/archive/known-issues-2026.md#issue-shared-cause-floor
 related:
 ---
 

@@ -54,7 +54,7 @@ the regression test tribe_mirror_jump (no twin).
 
 ## Verification
 no-fail-run: not reproduced with a targeted 2-player recipe in 7 runs (above); the regression test tribe_mirror_jump
-passes (20261108-150538 #1, #2, 20261108-150728). The campaign case stays in docs/known-issues.md#issue-tribe-chief-jump
+passes (20261108-150538 #1, #2, 20261108-150728). The campaign case stays in docs/archive/known-issues-2026.md#issue-tribe-chief-jump
 with the recipe tried.
 
 ## History

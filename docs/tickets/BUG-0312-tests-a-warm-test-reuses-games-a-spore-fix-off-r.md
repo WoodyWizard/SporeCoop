@@ -3,7 +3,7 @@ id: BUG-0312
 title: tests: a warm test reuses games a SPORE_FIX_OFF run left with the fix switched off
 status: fixed
 kind: test
-stage: all
+stage: All
 reported: 2026-10-30
 source: fix/w13-creature BUG-0281 runs, lane 5
 role: 

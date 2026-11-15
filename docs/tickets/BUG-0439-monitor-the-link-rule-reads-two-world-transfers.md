@@ -3,7 +3,7 @@ id: BUG-0439
 title: monitor: the link rule reads two world transfers 18 s apart as an unhealthy link on a clean network
 status: fixed
 kind: test
-stage: all
+stage: All
 reported: 2026-11-01
 source: lab 20261101-173721 busy_gate#3 (fix/w34-vote-cinematic)
 role: host

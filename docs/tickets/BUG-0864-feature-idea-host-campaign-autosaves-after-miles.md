@@ -3,7 +3,7 @@ id: BUG-0864
 title: Feature idea: host campaign autosaves after milestones and every ten minutes
 status: open
 kind: feature
-stage: all
+stage: All
 reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages36-dev (autosave.h, world.cpp)
 role: 

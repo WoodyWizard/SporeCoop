@@ -13,7 +13,7 @@ branch: fix/w49-space
 commits: f95e96fe
 tests: space_finale_fly
 signature:
-docs: docs/re/space.md#space-war-npc-hits, docs/known-issues.md#issue-finale-fly-energy
+docs: docs/re/space.md#space-war-npc-hits, docs/archive/known-issues-2026.md#issue-finale-fly-energy
 related: BUG-0063, BUG-0820
 ---
 

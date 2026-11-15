@@ -3,7 +3,7 @@ id: BUG-0275
 title: the extra guests (3rd and 4th player) stay over the sync limits after BUG-0269 (cell c 2.0, creature n 5.8)
 status: fixed
 kind: tooling
-stage: cell
+stage: Cell
 reported: 2026-10-29
 source: lab 20261029-122937 campaign
 role: 

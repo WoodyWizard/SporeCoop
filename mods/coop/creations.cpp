@@ -2737,7 +2737,6 @@ bool avatar_swap_settling(double now)
 // of its health over the swap (full stays full, half stays half). Off: the old number stays.
 static bool g_swap_health_fix = true;
 COOP_FIX("creations.swap_health", "BUG-0928", g_swap_health_fix, "creations: the avatar keeps its share of health when its creature is swapped");
-static unsigned g_swap_health_set;
 static void swap_health(void* av, float hp0, float max0)
 {
     float max1 = game::max_health(av);
@@ -2746,7 +2745,6 @@ static void swap_health(void* av, float hp0, float max0)
     float share = hp0 / max0 > 1.f ? 1.f : hp0 / max0;
     float hp1 = share * max1 < 1.f ? 1.f : share * max1;
     game::set_health(av, hp1);
-    g_swap_health_set++;
     H->log(M, SK_INFO, "creations: own avatar's health %.1f/%.1f -> %.1f/%.1f over the swap (BUG-0928)", hp0, max0, hp1, max1);
 }
 

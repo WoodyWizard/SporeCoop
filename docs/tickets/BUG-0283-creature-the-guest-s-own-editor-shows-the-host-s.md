@@ -3,7 +3,7 @@ id: BUG-0283
 title: Creature: the guest's own editor shows the host's new parts while it is open (DNA drops, cancel asks to confirm)
 status: not-reproduced
 kind: bug
-stage: creature
+stage: Creature
 reported: 2026-10-29
 source: fix/w7-legless test run 20261029-143204
 role: guest

@@ -18,7 +18,7 @@ related: BUG-0240, BUG-0078, BUG-0714, BUG-0428
 ---
 
 ## Report
-No player symptom today, but the regression test of BUG-0078 and BUG-0240 no longer proves anything: `SPORE_FIX_OFF=pool.guestbite_type` (named in the test's docstring as the run that must FAIL at step 6) and `SPORE_CELL_FIX=0` (`coop.pool fix guestbite 0`) both switch a code path the default build never reaches, so a regression in the fallback gate would pass the lab unseen. docs/known-issues.md#issue-cell-guest-bite-lock (the hurt-lock part left open by BUG-0240) is probably out of date too: BUG-0714 now runs the game's own Bite / DamageCell, which sets the hurt marks.
+No player symptom today, but the regression test of BUG-0078 and BUG-0240 no longer proves anything: `SPORE_FIX_OFF=pool.guestbite_type` (named in the test's docstring as the run that must FAIL at step 6) and `SPORE_CELL_FIX=0` (`coop.pool fix guestbite 0`) both switch a code path the default build never reaches, so a regression in the fallback gate would pass the lab unseen. docs/archive/known-issues-2026.md#issue-cell-guest-bite-lock (the hurt-lock part left open by BUG-0240) is probably out of date too: BUG-0714 now runs the game's own Bite / DamageCell, which sets the hurt marks.
 
 Severity: medium. Confidence: high.
 
@@ -35,7 +35,7 @@ Make the test's FAIL twin `SPORE_FIX_OFF=cell.guest_hit_game,pool.guestbite_type
 Run cell_guest_bite three ways: (1) `SPORE_FIX_OFF=pool.guestbite_type` alone: expected PASS today (the twin is dead); (2) `SPORE_FIX_OFF=cell.guest_hit_game,pool.guestbite_type`: must FAIL (rock / meat hp 60 -> 54 in the host's game after the guest's bite); (3) all on: PASS. Every check reads the victim's hp in the host's game.
 
 ## Fix
-No mod change (a test fix). Confirmed: `SPORE_FIX_OFF=pool.guestbite_type` alone passes (the gate is read on the hand-made path only, cell.guest_hit_game replays a guest's bite through the game's Bite / DamageCell whose IsDamageable spares rocks and meat by itself). The test's twins now name the live path: `SPORE_FIX_OFF=cell.guest_hit_game,pool.guestbite_type` (BUG-0240's rock / meat) and SPORE_CELL_FIX=0, which now also switches cell.guest_hit_game off on the host (BUG-0078's spare / invulnerable steps; restored at the end so a warm lane does not keep it). Docstring and suite comment say so. The default path (the game's own DamageCell) is what the all-on run checks. Not done: the hurt-lock bytes of a host bite against a replayed guest bite (docs/known-issues.md#issue-cell-guest-bite-lock stays as it is).
+No mod change (a test fix). Confirmed: `SPORE_FIX_OFF=pool.guestbite_type` alone passes (the gate is read on the hand-made path only, cell.guest_hit_game replays a guest's bite through the game's Bite / DamageCell whose IsDamageable spares rocks and meat by itself). The test's twins now name the live path: `SPORE_FIX_OFF=cell.guest_hit_game,pool.guestbite_type` (BUG-0240's rock / meat) and SPORE_CELL_FIX=0, which now also switches cell.guest_hit_game off on the host (BUG-0078's spare / invulnerable steps; restored at the end so a warm lane does not keep it). Docstring and suite comment say so. The default path (the game's own DamageCell) is what the all-on run checks. Not done: the hurt-lock bytes of a host bite against a replayed guest bite (docs/archive/known-issues-2026.md#issue-cell-guest-bite-lock stays as it is).
 
 ## Verification
 cell_guest_bite (every check reads the victim's hp in the host's game):

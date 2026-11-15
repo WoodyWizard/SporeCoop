@@ -13,7 +13,7 @@ branch: fix/w20-cell
 commits: a649261, ad2d187, 0181edb, 46b2667
 tests: cell_sap
 signature: dc04aee5: faults at small addresses (0x196, 0x4D6, 0x144, ...) with esp=0012D394 edi=01639470 on the main thread, really the ret of SweepPrune::UpdatePairs (0xBBB450) to an overwritten return address; stale frames named UIMissionCardPanel_HandleMessage+0x775 < App::cCellModeStrategy::OnExit+0xC4C
-docs: docs/re/cell.md#cell-sap-active-list, docs/known-issues.md#issue-cell-sap-broken-order, docs/06-testing.md#testing-cell-4p
+docs: docs/re/cell.md#cell-sap-active-list, docs/archive/known-issues-2026.md#issue-cell-sap-broken-order, docs/06-testing.md#testing-cell-4p
 related: BUG-0295, BUG-0338
 ---
 
@@ -43,7 +43,7 @@ than its live objects, so its endpoint arrays held entries left behind or out of
 replays of the campaign's Cell stage (seed 755764009, lanes 5 / 6, `coop.pool sap` every 10 s on
 all games) showed 13-43 open at most, none left at the end, no duplicate or lone entries. The same
 frame (EDX 0x614 / 0x7F0) is in lab 20261030-035318 right after BUG-0295's MergeAxis overrun.
-Open follow-up: docs/known-issues.md#issue-cell-sap-broken-order.
+Open follow-up: docs/archive/known-issues-2026.md#issue-cell-sap-broken-order.
 
 ## Fix
 `coop.fix cell.sap_sweep` (cellsync.cpp `h_UpdatePairs`, a hook on 0xBBB450, GOG 2024 only): the

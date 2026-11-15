@@ -3,7 +3,7 @@ id: BUG-0294
 title: frames_loop: the guest's NPC hit sometimes does not arrive (test picks an NPC the guest has no proxy for)
 status: fixed
 kind: test
-stage: creature
+stage: Creature
 reported: 2026-10-30
 source: lab 20261030-033555
 role: test

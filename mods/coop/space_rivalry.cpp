@@ -37,6 +37,7 @@
 #include "fixes.h"
 #include "game.h"
 #include "modes.h"
+#include "net/validate.h"
 #include "space_ext.h"
 #include "sporekit_game.hpp"
 
@@ -101,6 +102,15 @@ static bool g_merge_known_fix = true;
 COOP_FIX("space.merge_known_budget", "BUG-1029", g_merge_known_fix,
          "space rivals: the switch to allies merges each guest's known budget (a rejoiner's kept one, 0 for a newcomer)");
 static uint32_t g_newcomers, g_merge_fix_skipped;
+// BUG-1110: a reported budget (K_MONEY, K_SET) outside the game's money range 0..99 999 999 is no budget (counted and
+// ignored), and the Allies merge adds the budgets in 64 bits, clamped once (an int sum overflowed). Robustness only: the
+// game itself never has such money. `coop.fix space.money_range off`: any value taken, an int sum (0.7.14)
+static bool g_money_range_fix = true;
+COOP_FIX("space.money_range", "BUG-1110", g_money_range_fix,
+         "space rivals: budgets outside the game's money range are ignored, the allies merge sum stays in range");
+static uint32_t g_money_refused;
+static int g_fake_money;            // tests: the budget this guest reports instead of its money ...
+static double g_fake_money_until;   // ... until then
 static double g_hold_set_until; // tests: the host does not answer K_ASK until then (the window before K_SET)
 static int g_last_hit_type, g_last_hit_att;
 
@@ -114,7 +124,7 @@ static std::vector<NameProp> g_props_names;
 static uint16_t g_split_seq, g_merge_seq;
 static int g_split_total, g_split_share;
 static std::map<uint8_t, int> g_merge_credit_of; // the budgets the last merge counted
-static std::map<std::string, int> g_budget_name;  // player name -> its last reported budget (rejoins)
+static std::map<std::string, int> g_budget_name;  // player key (spaceext::kept_key, BUG-1107) -> its last reported budget (rejoins)
 // BUG-0422: a merge credited the departed player's last budget to a newcomer under its id (the name-keyed
 // g_budget_name keeps a rejoiner's own)
 PLAYER_STATE("space_rivalry", [](uint8_t id) { g_budget.erase(id); g_merge_credit_of.erase(id); },
@@ -315,6 +325,7 @@ static std::string host_apply(uint8_t action, uint8_t origin, uint8_t target)
             // the merge: everybody's last reported budget is added to the host's money; each player
             // corrects the difference to its money at the switch (K_MERGE_FIX)
             int sum = 0;
+            std::vector<int> credits;
             g_merge_credit_of.clear();
             for (auto& [id, nm] : roster()) {
                 if (id == 0)
@@ -322,12 +333,16 @@ static std::string host_apply(uint8_t action, uint8_t origin, uint8_t target)
                 if (g_budget.count(id))
                     g_merge_credit_of[id] = g_budget[id];
                 else if (g_merge_known_fix) { // BUG-1029: no report yet: the kept budget, or 0 for a newcomer
-                    auto it = g_budget_name.find(nm);
+                    auto it = g_budget_name.find(spaceext::kept_key(id));
                     g_merge_credit_of[id] = it != g_budget_name.end() ? it->second : 0;
                 } else
                     continue;
-                sum += g_merge_credit_of[id];
+                credits.push_back(g_merge_credit_of[id]);
+                if (!g_money_range_fix)
+                    sum = (int)((unsigned)sum + (unsigned)g_merge_credit_of[id]); // 0.7.14: an int sum (wraps)
             }
+            if (g_money_range_fix)
+                sum = net::money_sum(credits.begin(), credits.end());
             add_money(sum);
             g_merge_seq++;
             g_merges++;
@@ -597,16 +612,21 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         break;
     case K_MONEY: {
         int v = (int)r.u32();
+        if (r.ok() && g_money_range_fix && !net::money_in_range(v)) {
+            if (g_money_refused++ < 5)
+                H->log(M, SK_WARN, "rivalry: a budget of player %u outside the game's range ignored (%d)", origin, v);
+            break;
+        }
         if (r.ok() && spaceext::rivals()) {
             g_budget[origin] = v;
             if (spaceext::is_host())
-                g_budget_name[spaceext::name_of(origin)] = v;
+                g_budget_name[spaceext::kept_key(origin)] = v;
         }
         break;
     }
     case K_ASK: // a guest (re)joined or loaded the world: its budget, if the host knows it
         if (spaceext::is_host() && spaceext::rivals() && H->time_seconds() >= g_hold_set_until) {
-            std::string nm = spaceext::name_of(origin);
+            std::string nm = spaceext::kept_key(origin);
             auto it = g_budget_name.find(nm);
             uint8_t have = it != g_budget_name.end();
             int v = have ? it->second : 0;
@@ -629,6 +649,10 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
     case K_SET: {
         uint8_t to = r.u8(), have = r.u8();
         int v = (int)r.u32();
+        if (g_money_range_fix && r.ok() && !net::money_in_range(v)) { // BUG-1110
+            g_money_refused++;
+            v = net::money_clamp(v);
+        }
         int* m = money_ptr();
         if (!r.ok() || to != me() || origin != 0 || !spaceext::rivals() || !m || g_budget_known)
             break;
@@ -747,11 +771,12 @@ static void tick(double now)
     if (spaceext::rivals() && g_budget_known) {
         if (int* m = money_ptr()) {
             g_budget[me()] = *m;
-            if (!spaceext::is_host() && ((*m != g_last_reported && now - g_last_report > 0.5) || now - g_last_report > 3.0)) {
+            int report = now < g_fake_money_until ? g_fake_money : *m; // tests: a crafted budget (BUG-1110)
+            if (!spaceext::is_host() && ((report != g_last_reported && now - g_last_report > 0.5) || now - g_last_report > 3.0)) {
                 net::Writer w;
-                w.u32((uint32_t)*m);
+                w.u32((uint32_t)report);
                 spaceext::send(K_MONEY, w);
-                g_last_reported = *m;
+                g_last_reported = report;
                 g_last_report = now;
             } else if (spaceext::is_host() && now - g_last_report > 1.0) {
                 net::Writer w;
@@ -887,10 +912,10 @@ static std::string status()
     char b[400];
     snprintf(b, sizeof b,
              " hits_sent=%u hits_got=%u dmg_got=%.1f pvp_deaths=%u enemy_puppets=%u splits=%u merges=%u puppet_hits=%u"
-             " (last type %d by %s) restored=%u budget_kept=%u newcomers=%u merge_fix_skipped=%u\n",
+             " (last type %d by %s) restored=%u budget_kept=%u newcomers=%u merge_fix_skipped=%u money_refused=%u\n",
              g_hits_sent, g_hits_got, g_dmg_got, g_pvp_deaths, g_enemy_puppets, g_splits, g_merges, g_puppet_hits,
              g_last_hit_type, g_last_hit_att == 1 ? "me" : g_last_hit_att == 2 ? "other" : "none", g_restored, g_budget_kept,
-             g_newcomers, g_merge_fix_skipped);
+             g_newcomers, g_merge_fix_skipped, g_money_refused);
     return s + b;
 }
 
@@ -926,6 +951,11 @@ static std::string debug(const std::vector<std::string>& a)
         skg::thiscall<int>(a_TakeDamage, (uint8_t*)pup + kCombat, (float)atof(a[2].c_str()), pol, 0, (const float*)dir,
                            (uint8_t*)u + kCombat);
         return "shot (hits_sent=" + std::to_string(g_hits_sent) + ")";
+    } else if (a[0] == "fakemoney" && a.size() > 1) { // tests (BUG-1110): this guest reports <v> as its budget for <s> s
+        g_fake_money = (int)strtoll(a[1].c_str(), nullptr, 0);
+        g_fake_money_until = H->time_seconds() + (a.size() > 2 ? atof(a[2].c_str()) : 10.0);
+        g_last_reported = -1;
+        return "reporting a budget of " + std::to_string(g_fake_money) + " for " + (a.size() > 2 ? a[2] : "10") + " s";
     } else if (a[0] == "holdset" && a.size() > 1) { // tests (BUG-1029): the host answers no K_ASK for <s> seconds
         g_hold_set_until = H->time_seconds() + atof(a[1].c_str());
         return "K_SET held for " + a[1] + " s";

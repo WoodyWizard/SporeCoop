@@ -61,20 +61,22 @@ in console commands, which SporeKit runs on the main thread).
 
 ## 1.5 Symbol database
 
-File `mods/sporekit/symbols/<first 8 hex chars of the exe SHA-256>.sym`:
+Files `mods/sporekit/symbols/<name>_<first 8 hex chars of the exe SHA-256>.sym` (in git: `data/symbols/`;
+the supported build is GOG 2024, `march2017_dc04aee5.sym` and `overrides_dc04aee5.sym`):
 
 ```
-# exe_sha256=922af7c7...
-Simulator::cGameNounManager::Get=0x00B3D3D0 ; high m17=0x00B3D400
+# exe_sha256=dc04aee5...
 App::cCheatManager::AddCheat=0x0067FC10 ; high m17=0x0067FC10
 ```
 
 * On startup SporeKit computes the exe's SHA-256 and picks the file; if there is no file,
   mods that require symbols are disabled (instead of crashing the game).
 * Addresses are given for base `0x400000`; under ASLR they are rebased (the exe has `DYNAMIC_BASE` set).
-* The `conf` field (high/medium/low/verified) is the confidence level. Functions the mod actually
-  calls are checked manually with REA and marked `verified` in
-  `data/symbols/overrides_<hash>.sym` (overrides the automatically ported ones).
+* The confidence: `high` / `medium` / `low` in the generated file; every function the mod calls has
+  an entry in `data/symbols/overrides_dc04aee5.sym` (it wins over the generated one) with
+  `verified` / `likely` / `unknown` and its signature (CLAUDE.md 1, `tools/re_lint.py`).
+* A known build that is not supported (GOG 2016, `922af7c7`) loads no symbols and no mod; the log and
+  the overlay say "this game version (GOG 2016) is not supported" (BUG-1125).
 * A mod declares the symbols it needs as a list; if any required one is missing, the mod reports
   it to the log and console and doesn't enable the corresponding functionality.
 

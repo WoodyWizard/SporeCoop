@@ -3,7 +3,7 @@ id: BUG-0273
 title: vote: the I'm ready clicks of all three guests were not counted, the Creature -> Tribe vote ended by its timer
 status: fixed
 kind: bug
-stage: creature
+stage: Creature
 reported: 2026-10-29
 source: lab 20261029-122937 campaign
 role: 

@@ -3,7 +3,7 @@ id: BUG-0578
 title: Crash at Graphics::cModelWorld::FinishBackgroundLoad+0x2735 on 0.7.3.6 (3010a413, mode none)
 status: not-reproduced
 kind: crash
-stage: none
+stage: All
 reported: 2026-11-04
 source: player report 2026-11-04 (Discord bug-reports, 0.7.5, Steam build)
 role: guest

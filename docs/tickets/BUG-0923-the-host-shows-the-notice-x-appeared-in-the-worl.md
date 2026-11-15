@@ -3,7 +3,7 @@ id: BUG-0923
 title: The host shows the notice 'X appeared in the world' twice within 0.4 s when a guest joins
 status: fixed
 kind: bug
-stage: Core
+stage: All
 reported: 2026-11-11
 source: key-frame review of the 0.7.12 final check 20261111-044257
 role: host

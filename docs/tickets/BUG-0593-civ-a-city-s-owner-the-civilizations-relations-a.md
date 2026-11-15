@@ -3,7 +3,7 @@ id: BUG-0593
 title: Civ: a city's owner, the civilizations' relations and money differ between the games (detector planet_owner / state:relation rows)
 status: fixed
 kind: desync
-stage: Civilization
+stage: Civ
 reported: 2026-11-05
 source: detector, rel/0.7.7 final check out/lab/20261105-015320 and 015350
 role: guest

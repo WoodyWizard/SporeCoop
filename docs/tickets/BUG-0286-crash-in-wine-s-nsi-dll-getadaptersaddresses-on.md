@@ -3,7 +3,7 @@ id: BUG-0286
 title: Crash in Wine's nsi.dll (GetAdaptersAddresses) on the main thread after a guest leaves in Space
 status: fixed
 kind: crash
-stage: Space/Any
+stage: All
 reported: 2026-10-29
 source: lab
 role: guest
@@ -13,7 +13,7 @@ branch: fix/w8-adapters
 commits: 042a194 6a6bb7d 499c8d2 (tests 56f498a 3b53d69, docs 0d70eaf 4736828)
 tests: tools/tests/coop_adapters.py (suite adapters)
 signature: 0xC0000005 ucrtbase.dll+0x14A9C (memcpy) < nsi.dll+0x191B < nsi.dll+0x150A < iphlpapi.dll < coop.dll local_addresses (GetAdaptersAddresses), main thread, from the co-op window refresh (sk::h_WndProc / run_outside_frame)
-docs: docs/04-netcode.md#netcode-wine-nsi, docs/06-testing.md#testing-adapters, docs/known-issues.md#issue-wine-nsi-other-callers
+docs: docs/04-netcode.md#netcode-wine-nsi, docs/06-testing.md#testing-adapters, docs/archive/known-issues-2026.md#issue-wine-nsi-other-callers
 related:
 ---
 

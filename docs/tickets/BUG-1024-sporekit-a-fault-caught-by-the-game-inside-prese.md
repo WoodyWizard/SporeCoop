@@ -13,7 +13,7 @@ branch: fix/w49-kit
 commits: 438e1cdb
 tests: kit_present_fault, kit_overlay_fault
 signature:
-docs: docs/02-modkit.md#modkit-present-unwind, docs/known-issues.md#issue-present-depth-stuck
+docs: docs/02-modkit.md#modkit-present-unwind, docs/archive/known-issues-2026.md#issue-present-depth-stuck
 related:
 ---
 

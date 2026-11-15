@@ -1,7 +1,7 @@
 #!/bin/bash
 # Batch queries against the private Ghidra project of one game build (docs/05-re-notes.md 5.2).
 #
-#   tools/ghidra/q.sh [--build 2016|2024] <queries-file|-> <output-file>
+#   tools/ghidra/q.sh [--build 2024] <queries-file|-> <output-file>
 #
 # Query syntax: see the header of tools/ghidra/Q.java (dec, asm, fasm, info, xref, callers,
 # callees, calls, scan, bytes, str, dd, sym). Several q.sh runs may go at the same time: each one
@@ -10,7 +10,7 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
-BUILD=2016
+BUILD=2024
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --build) BUILD="$2"; shift 2 ;;

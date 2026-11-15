@@ -132,8 +132,8 @@ Shared contracts between the features:
   `starRecord+0x70`, PlanetID = `record+0x184`, docs/re/space.md 7.3). Political ids of NPC
   empires and of the player's empire are the same too (docs/re/space.md 12.3); their names and
   species are not (each copy picks its own at the first contact).
-* Every feature works on both supported builds (symbols in `overrides_922af7c7.sym` and
-  `overrides_dc04aee5.sym`; `tools/re_lint.py` fails otherwise) and has a two-game test
+* Every feature works on the supported build (symbols in `overrides_dc04aee5.sym`; `tools/re_lint.py`
+  fails otherwise; the GOG 2016 file went in 0.7.15) and has a two-game test
   `tools/tests/coop_space_<feature>.py`.
 
 ### Adventures

@@ -13,7 +13,7 @@ branch: fix/w49-campgate
 commits: da38ba0c
 tests: campaign (the full one, lane 2), tribe_proxy_held (the audit line's new fields)
 signature: guest trace `proxy_stuck=6` on 7 lines in a row; audit line `proxy N: walk err 5.7-9.8 m, held 0, place lost 0, teleports 11..301 (about 5 a second), walked 0, nearest proxy M at 0.0-1.7 m ... game speed 72-124 m/s ... nest herd 1, host's speed 0.0`; the proxy back at the same two points after every teleport
-docs: docs/known-issues.md#issue-tribe-proxy-spot-cadian
+docs: docs/archive/known-issues-2026.md#issue-tribe-proxy-spot-cadian
 related: BUG-0169, BUG-0440, BUG-0503, BUG-0332
 ---
 

@@ -13,7 +13,7 @@ branch: fix/w49-small
 commits: f4aca716
 tests: tribe_chief_rescue
 signature:
-docs: docs/known-issues.md#issue-tribe-chief-rescue-hp, docs/06-testing.md#testing-t1-small
+docs: docs/archive/known-issues-2026.md#issue-tribe-chief-rescue-hp, docs/06-testing.md#testing-t1-small
 related: BUG-0745
 ---
 

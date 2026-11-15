@@ -13,7 +13,7 @@ branch: fix/w49-mirror
 commits:
 tests:
 signature:
-docs: docs/re/tribe.md#tribe-bubble-icons, docs/known-issues.md#issue-tribe-bubble-icons
+docs: docs/re/tribe.md#tribe-bubble-icons, docs/archive/known-issues-2026.md#issue-tribe-bubble-icons
 related: BUG-1043
 ---
 

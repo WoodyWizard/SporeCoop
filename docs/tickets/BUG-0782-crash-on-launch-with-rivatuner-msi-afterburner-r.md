@@ -3,7 +3,7 @@ id: BUG-0782
 title: Crash on launch with RivaTuner / MSI Afterburner (RTSSHooks) running: a notice, the advice in crash reports and INSTALL
 status: fixed
 kind: crash
-stage: boot
+stage: Boot
 reported: 2026-11-10
 source: Discord 2026-11-09 help Crashing on launch
 role: 

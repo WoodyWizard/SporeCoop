@@ -13,7 +13,7 @@ branch: fix/w49-mirror
 commits:
 tests: campaign_short (key frame play-creature)
 signature:
-docs: docs/known-issues.md#issue-camera-in-ground
+docs: docs/archive/known-issues-2026.md#issue-camera-in-ground
 related:
 ---
 

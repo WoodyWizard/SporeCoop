@@ -152,7 +152,7 @@ For bug reports of players, who send a file, not a debugger session:
   `mods\logs\previous\<name>-<time of its last line>.log` (the newest 10 of each name).
 * **The environment is in the log.** At boot: Windows (or `Wine x on Linux`, with the emulated
   Windows version), RAM, the game's 32-bit address space in use and the exe's large-address flag
-  (a 4GB patch), `game build: GOG 2024 / Steam (the GOG 2024 code) / GOG 2016 / unknown`; after 30
+  (a 4GB patch), `game build: GOG 2024 / Steam (the GOG 2024 code) / GOG 2016 (not supported: co-op off) / unknown`; after 30
   frames the GPU (adapter, driver, resolution) and other DLLs that hook the game (Steam, Discord,
   NVIDIA, EA overlays, RivaTuner, ReShade, dgVoodoo, OBS, Spore ModAPI, a d3d9/dxgi/dinput8 from the
   game folder). Console: `env`.

@@ -3,7 +3,7 @@ id: BUG-0684
 title: Civ: 132 caught faults on a guest at 0xC23469 (gather node, null bundle in 0xC23460) next to an old tribe village, wobj carried bundles
 status: fixed
 kind: crash
-stage: Civilization
+stage: Civ
 reported: 2026-11-07
 source: lab 20261107-141346 play_civ (rel/0.7.10 e7d1734c, lane 3)
 role: guest

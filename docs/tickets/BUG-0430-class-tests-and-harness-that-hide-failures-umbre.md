@@ -3,7 +3,7 @@ id: BUG-0430
 title: class: tests and harness that hide failures (umbrella)
 status: fixed
 kind: bug
-stage: Tests
+stage: Tools
 reported: 2026-11-01
 source: generalisation audits 2026-11-01 (docs/generalisation-plan.md)
 role: 

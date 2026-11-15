@@ -13,7 +13,7 @@ branch: fix/w23-cell
 commits: f251d22, d7d6769, e8cbe1a, 835a085, d40438c
 tests: cell_particles, cell_sap
 signature: dc04aee5:0x00E4E384 (FUN_00e4e320+0x64, symbolised j_mem_free+0x724) under Simulator::Cell::SimUpdate+0xCA; dc04aee5:0x00E4DBD9 (Simulator::Cell::ParticleAlloc+0x39, symbolised GetGlobalsData+0xDB9)
-docs: docs/re/cell.md#cell-particle-pool, docs/06-testing.md#testing-cell-4p, docs/known-issues.md#issue-cell-advect-fault
+docs: docs/re/cell.md#cell-particle-pool, docs/06-testing.md#testing-cell-4p, docs/archive/known-issues-2026.md#issue-cell-advect-fault
 related: BUG-0337
 ---
 

@@ -3,7 +3,7 @@ id: BUG-0680
 title: Creature: the partner's puppet still slides over 0.3 m past where the partner stopped at about 1 stop in 12 (rest of BUG-0408; puppet_stops flaky)
 status: fixed
 kind: desync
-stage: creature
+stage: Creature
 reported: 2026-11-07
 source: lab 20261107-132459 (A/B: rel/0.7.9 1/4 PASS, rel/0.7.10 3/4 PASS) and 20261107-124806
 role: 
