@@ -2658,7 +2658,7 @@ session clock `[s T]`) and evaluates:
 
 | invariant | violation (each needs its state on several lines in a row) |
 |---|---|
-| together | two machines' own trace lines say the same stage and world (both playing: avatar, no vote, in world) for 20 s, but one's partner line says `same_place=0` |
+| together | two machines' own trace lines say the same stage and world (both playing: avatar, no vote, in world) for 20 s, but one's partner line says `same_place=0`; `world=-` (world 0, the Space galaxy view) is no place ([testing-monitor-nowhere](#testing-monitor-nowhere)) |
 | puppet | a partner line with `same_place=1`, alive and in a world, `puppet=hidden: not spawned (yet)` or `state older than 5 s` on 2 lines |
 | link | clean network only (no SPORE_NET): resends / sent between two lines over 0.5 (at least 50 sent), `pending` over 400 or a state 5 s old in the same place, 3 lines in a row |
 | totals | the shared totals of the own lines (dna in Creature, the stage's `food=` / `money=` ...; `(unsynced)` values left out) of a guest outside every value the host had within 6 s, beyond 1 point or 2 %, on 3 comparisons spanning 20 s |
@@ -8235,6 +8235,20 @@ helpers, unit tests in labverdict_selftest.py `campaign`), suite entry `campaign
   cache, a pre-0.7.15 report that never calls gh. Against the old tool (`SELFTEST_TRIAGE=<copy>`) 12
   checks FAIL.
 
+## Wire golden bytes, kept-store unit tests and the libFuzzer run (2026-11-15, feat/w51-space)
+<a id="testing-wire-golden"></a>
+
+* `tests/wire_tests.cpp` (`make test`, unit-cpp, ASan, under a second): the golden bytes of every Space and shared-pool
+  payload (docs/04-netcode.md#netcode-wire-structs). A failing line names the kind and prints the bytes the struct
+  wrote, the pinned hex and, where present, the old writer's bytes: a difference is a wire change (0.7.14 and 0.7.15
+  must still play together), not a test to update.
+* `tests/space_tests.cpp` `test_kept_store`, `test_kept_map`, `test_kept_rivals`, `test_restore_window`: the kept-state
+  machine of docs/01-architecture.md#arch-space-kept-store (join, rejoin, crash rejoin with the same id and the code
+  before BUG-0810, same-name players BUG-1107, another world, session end mid-restore, the 10 s resend, a restore's
+  failed list, Rivals budgets, the BUG-1034 queue and its 64 cap).
+* `fuzz_decoders` grew by the wire structs (`game module payloads, mods/coop/wire`, about 1 s of its run).
+* `make fuzz [FUZZ_SECONDS=60]`: the libFuzzer build (clang, ASan + UBSan), outside `make test`; CI runs it on every
+  push (2 min) and weekly (20 min, `.github/workflows/fuzz.yml`).
 ## Ratchet lints: object_alive, call guards, lifecycle functions (2026-11-15, feat/w51-guards)
 <a id="testing-ratchet-lints"></a>
 
@@ -8266,3 +8280,143 @@ helpers, unit tests in labverdict_selftest.py `campaign`), suite entry `campaign
   comments), and each planted violation fails: a second `object_alive(` call, a bare `g_applying = true; o_Apply();`,
   a `++g_hook_depth` around `o_Ev`, an unregistered `on_player_leave`; `--lower` refuses each and lowers a count that
   went down.
+
+## The message manifest and version compatibility tests (2026-11-15, feat/w51-manifest)
+<a id="testing-manifest-compat"></a>
+
+B3 / B6 of 0.7.15 (BUG-1136, BUG-1137; docs/04-netcode.md#netcode-manifest, #netcode-compat).
+
+* Unit (`make test`): `validate_tests` `test_manifest` (every type and Space kind once; the generated class, Space
+  direction and dispatch tables equal 0.7.14's verbatim copies in `tests/manifest_golden.h` for 0..255 and both roles;
+  the direction gate drops exactly the 31 host-only types; the space kinds against each feature's `enum Kind` and its
+  registered range) and `test_compat` (conflicts by stage, older peers, the texts); `net_tests` `test_dir_gate`
+  (FAILS with `--off dir_gate`), `test_families_wire` (0.7.14's `Hello::read`, verbatim, reads a 0.7.15 HELLO; cut and
+  overlong family lists), `test_family_check` (FAILS with `--off family_check`); `fuzz_decoders` (HELLO / WELCOME with
+  families); `tools/msg_manifest.py check` and `--self-test` (the docs tables and the family locks: a changed row or
+  wire file without a bump fails).
+* Lab `compat` (`coop_compat.py`, warm Creature, about 1 min): a guest's crafted host-only MSG_DNA through
+  `coop.manifest send 23 <hex>` is dropped and counted by the host; a planted Creature revision on the Creature host
+  (`coop.manifest plant creature 2`) refuses the rejoining guest with a text naming both versions (guest's co-op feed,
+  host's "was not let in"); a planted Space revision does not. `SPORE_FIX_OFF=net.dir_gate` and
+  `SPORE_FIX_OFF=net.family_check` fail. The test resets the revisions at its end (`coop.manifest reset`), also on a
+  failure, so a warm lane's next test has the build's own.
+* Lab `mixed` suite (`coop_mixed_version.py`, lane B = SPORE_LANE_B): the default old release is now the previous tag
+  (v0.7.14; `--old-tag` / MIXED_OLD_TAG another). New checks: the warning on both sides (this build's co-op feed "<old
+  player> plays SporeCoop ...: some things may not match", the old release's log "versions differ"). `--plant FAMILY`
+  (tests `mixed_plant_guest`, `mixed_plant_host`): this build plants revision 2 of a family the stage uses before Carol
+  joins; the join is refused and the refused game's log names both versions (an old guest shows this build's REJECT
+  text; this build's guest refuses an old host by the host's first state). `--plant space --expect-join`
+  (`mixed_plant_unused`): an unused family does not stop the join, and every check of the normal run follows.
+* Pitfall: COOP_VERSION is bumped only at the release, so a branch of 0.7.15 still says `coop 0.7.14.1` and v0.7.14
+  says `coop 0.7.14`: the texts name 0.7.14.1 and 0.7.14 (the coop parts differ, so the warning fires).
+* Results (2026-11-15, feat/w51-manifest, lanes 10 + 9): `compat` PASS 20261115-031537 / -032912 / -034921,
+  SPORE_FIX_OFF=net.dir_gate FAIL 20261115-031637, net.family_check FAIL 20261115-031742. Against v0.7.14:
+  `mixed_version_guest`, `mixed_version_host`, `mixed_plant_guest`, `mixed_plant_host` PASS 20261115-032035 and
+  -034921, `mixed_plant_unused` PASS -034921 and -040030; SPORE_FIX_OFF=net.family_check `mixed_plant_guest` FAIL
+  20261115-035619 (the v0.7.14 guest got in). A v0.7.14 guest shows this build's refusal text as is ("rejected: ...").
+## The warm reset closes the co-op window on its lobby page (2026-11-15, fix/w51-space2)
+<a id="testing-warm-ui-page"></a>
+
+BUG-1139: a closed co-op window keeps its page (Space, settings) for the next F9, so `coop.uistate 0` in the warm
+reset (BUG-0898) left the Space page of `space_rivalry` behind and `space_trade` (warm after it) waited for the
+lobby's "Space >" button that the Space page hides. `warm_reset` now sends `coop.uistate reset` (closed and on the
+lobby page, as at a cold start; an older DLL reads it as `0`). Proof: `lab.py run space_rivalry,space_trade --in-order`
+warm on one lane.
+
+Also on this branch: `space_allies_near` (BUG-1144, `coop.space allies near` prints the game's list of owned stars
+nearby, docs/re/space.md#space-near-stars) and `space_badges_rejoin` switches the twin's fixes off in the restarted
+guest too (BUG-1135, `net.rejoin_disk`).
+
+## The monitor reads world=- lines; warm tests read counters as deltas (2026-11-15, fix/w51-tests)
+<a id="testing-monitor-nowhere"></a>
+
+* The trace lines say `world=-` where the mod's world is 0: no planet or star system, in Space the galaxy view
+  (`to_galaxy` of space_allies). The monitor's patterns took only hex worlds, so those own and partner lines were
+  dropped, and `Together` paired the galaxy view's partner lines (`same_place=0`, right: the mod's `same_place()` is
+  never 1 in world 0) with the own line from just before or after the zoom (up to 6 s off, still the system's world):
+  "guest sees host elsewhere for 10 s" while every check passed (BUG-1145, 3 of 13 space_allies runs). Now the lines
+  are read and world `-` is no place for `together`; a real separation (both own lines in the system, `same_place=0`)
+  still fails (gates_selftest `together_space_apart`). `monitor.py report` over every recorded passed result: only
+  one earlier `together` of campaign_space went away, no new violation.
+* The same for a NaN position as Windows prints it (`pos=(-nan(ind) ...)`, a guest's ship right after a jump) and a
+  state age of `-0.0`: 87 own and 4374 partner lines of 3000 recorded logs were dropped; now every own / partner
+  line parses (BUG-1147, gates_selftest "parses ... line"). New trace fields: keep the number format of printf (the
+  monitor's token `N`) or extend `N`, never a pattern that silently drops a line.
+* Counters of the mod that are diagnostics only (no player sees them, e.g. `coop.space rivalry` hits_got / dmg_got /
+  pvp_deaths) count since the game started: a warm game keeps the previous test's. A test reads them as deltas from
+  its own start, as coop_space_rival_away does with `restored` (BUG-1146, space_rivalry warm after space_rivalry).
+  State a player sees belongs in the lifecycle registry instead (docs/01-architecture.md#arch-lifecycle-registry).
+
+## Tests across sessions: session_restart() (2026-11-15, feat/w51-store)
+<a id="testing-session-restart"></a>
+
+Nothing tested across sessions before 0.7.15 E1: every test started from its fixture and the host's game never ran
+twice on the same save. `twoinst.session_restart(host, guest, save=True, ...)` plays "a new evening" in the middle of
+a test and returns `(host, guest, info)` with the new consoles:
+
+1. `save=True` (default): the host saves its game (`coop.save`: the game's own save into its own slot, as the pause
+   menu's Save) and waits for the per-player store's write (`coop.store`: `writes=` grows; the save box is confirmed
+   meanwhile). `info['saved']` says whether the game took the save;
+2. the guest leaves (`coop.leave`: a clean leave keeps its rejoin token on its disk, BUG-1135), then the host;
+3. `spore.sh kill`: both games end, nothing else of the lane is touched: the host's profile keeps its save slot and
+   `Games-sporecoop-store`, the guest's profile its kept token file. With `save=False` this is a crash of the host
+   after whatever it saved itself (the E2 autosave test);
+4. both start cold, SPORE_FIX_OFF and SPORE_FPS are set again in both (`apply_fix_off`), the host loads the slot it
+   played (`played_slot()`: the fixture's planet of a cold start or the slot of the last warm reset) and hosts, the
+   guest joins (`before_join(guest)` right before) and loads the host's world. ~45 s on a quiet lane.
+
+The restarted games are no warm games for the next test (the lane state gets a knob `(session_restart)`). Every
+other test starts without a store: `forget_store()` (cold start and warm reset) removes
+`<profile>/Spore/Games-sporecoop-store` of both profiles, as `forget_settings()` does for the session settings.
+Tests on it: `space_session` (a guest's colony, badges, Rivals budget and war), `autosave_milestone` /
+`autosave_timer` (the host's game killed after its autosave), `civ_owners_session`, `tribe_owners_session`.
+A twin run sets the fix switch off in the restarted games too, so a switch that acts when the world opens (the
+store's reading) is off when it matters. The store's own status: `coop.store` (world, players, records, writes);
+`coop.store save` writes it now (as after a save of the game), `coop.store reload` reads the file again.
+## The Tribe outfit and the Civ designs: tribe_outfit, civ_designs (2026-11-15, fix/w51-editors)
+<a id="testing-stage-designs"></a>
+
+E4 (BUG-1156..1158, docs/re/creations.md#creations-stage-designs).
+* `coop_tribe_outfit.py` (suite `tribe_outfit`, `tribe` fixture, ~1.5 min warm / 2 min cold) drives the Tribal
+  Outfitter by real input: the hut (`coop.targets objs` row `hut0p`, clicked 30 px above; the first click after a
+  while may only take the focus, the test clicks again until `coop.status` shows the planner's `busy: input_lock`),
+  the planner's second tab (204, 40), the card's edit badge (44, 630), the guest's real "I'm ready", the outfitter's
+  third tab (260, 40), a slow drag (84, 216) -> (975, 440), Done (1416, 1060); the planner's own check (1416, 1060)
+  closes it again. It reads `coop.designs members` (the tribe profile's keys and generation, each member's), the bem
+  hash of the profile's creation (`coop.creations modelhash <inst> 2B978C46 40626200`), and the guest's newest save
+  for our key.
+* `coop_civ_designs.py` (suite `civ_designs`, `civ_npc`, ~1 min after the cold start) gives both profiles another
+  creation under the test's ids (as civ_host_building) and sets the host's designs with the game's own setter:
+  `coop.designs set <hex id> <hex inst> [<type> <group>]` (0xBF4C50 on this game's player civilization, what a planner
+  pick calls; the test helpers `coop.civ bdesign` / `setdesign` only write the entry and re-model nothing).
+  `coop.designs culture` prints the culture set without generating entries; `coop.designs editor <hex id>` submits an
+  editor request of this game through the Submit hook (the refusal of BUG-1158; with `editors.guest_designs` off the
+  editor opens and the test leaves it with the red X at (1380, 1062)).
+* Twins: SPORE_FIX_OFF=tribe.outfit_sync / civ.design_sync / editors.guest_designs.
+## Space ecosystems and late terraforming records (2026-11-15, fix/w51-eco)
+<a id="testing-space-ecosystem"></a>
+
+* `space_eco` (BUG-1148, `space_free`, ~4 min cold): the guest lands on 02460035 (T1, 2 plants, stabilized level 0)
+  and places the missing plant size class, two herbivores and a carnivore of its home planet's species through the
+  game's own placement function with the player flag (`coop.space eco place <plant|animal> <i> <source PlanetID>`);
+  the host's record by PlanetID (`coop.space eco <PlanetID>`: T score, `eco=` the game's PlanetRecord_EcoLevel, the
+  species with their size class `/<class>` or diet `/h` `/c`, on the active planet `#n` the live creatures of each
+  animal species) must have the guest's lists and level 1 while away and after landing, and creatures of each animal
+  species after landing. SPORE_FIX_OFF=space.eco_sync fails (2 plants, level 0 on the host).
+* The cargo drop itself is not driven: 02460035 starts its story scene (a crashed spacecraft, "use the Scan Tool")
+  when a ship lands, which hides the tool palette; `coop.space trade cargo <type> <inst>:<type>:<group>` puts a plant
+  (type 0) or animal (type 1) cargo of a full species key into the hold for a manual try.
+* `space_terra_late` (BUG-1155, `space_free`, ~5 min): K_TERRA_REC (`coop.space terrarec`) to a guest in the
+  `coop.space away 1` state, then back; for a star the host never generated (`coop.space nogen` on the host), then
+  the host jumps there (`coop.space jumpto 0x<star> force`); then the guest jumps there and gets the host's kept
+  record. SPORE_FIX_OFF=space.terra_rec_late fails all three. Status lines: `terra_pending= terra_pended=
+  terra_pend_applied= terra_kept= terra_resent=` in `coop.space`.
+* Do not run `make` while a lane's games of this tree run: once the games of lane 6 stopped answering (no log line
+  after it) when the tree was rebuilt under them (2026-11-15; the cause was not looked into).
+* Seams of these tests: `coop.space allies colonycities <PlanetID>` (my civilization's cities in a planet record:
+  spice, size, turrets, buildings and their class ids, names), `coop.space allies citytest <PlanetID>` (a colony's
+  cities as a player's after a while: two cities, spice, turrets, three real building entries of the home planet),
+  `coop.space allies npcstar [<StarID>] [force]` (an NPC empire's star near the guest, or of an empire it met, becomes
+  its own through the game's TransferStarOwnership; `force` also takes a home star or an empire's last star: the
+  space_empire fixture's two met empires have one star each, their home). Durations on a quiet lane: space_session
+  ~2.5 min, space_session_npc ~2 min, civ_owners_session ~3 min, tribe_owners_session ~2-5 min, autosave_* ~2 min.

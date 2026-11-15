@@ -1836,3 +1836,33 @@ BUG-1100. GOG 2024, lab lane 7, civ_npc. Follows #civ-wild-parked.
   fixture's start the game rebuilt 14 tracked objects of species 06689607 as 065276AC / 066742CD within 2 s, several
   at unplaced points with z = 0 ((0 524.8 0), (-368.7 -347.0 0)), the rest at their new herds: the reuse in a stand is
   common, and the guest's #129 at (-387.0 -327.7 0.0) of the final check was such an unplaced object.
+
+## City and vehicle owners across sessions: claims by position (2026-11-15, feat/w51-store)
+<a id="civ-owner-claims"></a>
+
+BUG-1153 (E1 of 0.7.15), lab lanes 9 / 10 (coop_civ_owners_session.py).
+* The mod's owner tables (g_city_owner, the vehicle table g_hv) are rebuilt by every world change and every session:
+  the save holds no owner. civ.owners_kept (BUG-0950) kept them only in memory, by the owner's name.
+* ✔ Now each player city and vehicle has a claim (civ.cpp g_city_claim / g_veh_claim: its owner's stable key, the host
+  "host", the shared capital "shared"), written with every save of the game into the host's per-player store
+  (docs/01-architecture.md#arch-player-store, world record `civ.owners` v1: city spots then vehicle spots, each
+  {x, y, z, key, flags 1 gifted / 2 captured}; owner_claims.h). After the load the first host tick with cities pairs
+  them with the spots (one to one, nearest first, 5 m; vehicles 6 m): the saved positions come back exactly (lab: 3 of
+  3 cities, 2 of 2 vehicles, from_disk=3/2).
+* A claimed city (not the capital) is dealt to its player when it is here; while it is away the host holds it (never
+  another guest); its join gives it back (the deal on a changed roster). A claimed vehicle the same, on every change
+  of the roster. The claims follow the owners every 2 s for players that are here (a gift, a capture, a deal), and at
+  once for a gift (CMD_GIVE) and a capture (h_Capture). A world with claims from the disk skips BUG-0950's name-keyed
+  restore.
+* ? A vehicle that drove more than 6 m between the save and the load is not found (the save keeps its position, so
+  only a load of an older save). A city that changed hands in the host's game while its claimed player was away (an
+  NPC capture) keeps its claim only while it is a player city.
+## New designs between the games: the culture set (2026-11-15, fix/w51-editors)
+<a id="civ-culture-sync"></a>
+
+E4, BUG-1157, BUG-1158: cCivilization +0x6C is an EASTL map design id -> key, set by `Civ_SetDesign` 0xBF4C50 (the
+planner's pick, the editors' return), which re-models the civilization's buildings and vehicles of that design.
+Before 0.7.15 the host's new designs never reached a guest kept in place (BUG-0508) and a guest's own pick or editor
+changed only its own game. Now the wsync row `civ_design` carries the host's entries (the guest calls the same setter),
+a guest's own design editor is refused and its own pick goes back. Details and lab runs:
+docs/re/creations.md#creations-stage-designs.

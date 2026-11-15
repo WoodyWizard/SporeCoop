@@ -39,6 +39,9 @@ struct Fixes {
     // 0.7.15 (A11)
     bool queue_cap = true;    // BUG-1108: host: a guest with far more queued reliable data than normal play is dropped
     bool relay_budget = true; // BUG-1108: host: a guest whose messages make the host queue far more than normal play is dropped
+    // 0.7.15 (B3, B6)
+    bool dir_gate = true;     // BUG-1136: host: a message of a type only the host sends (net/messages.def) from a guest is dropped
+    bool family_check = true; // BUG-1137: a peer whose message family revision differs in a family the stage uses is refused
 };
 inline Fixes g_fix;
 

@@ -18,7 +18,11 @@
 //   60..69  space_allies   partner colonies as an allied empire
 //   70..79  space_trade    tool gifts and trade between players
 //   80..84  space_planets  a shared colony's stored spice (BUG-0537)
-//   85..99  free
+//   85..89  space_badges   badges kept across a rejoin
+//   90..94  space_eco      a planet's ecosystem (plant and animal species, BUG-1148)
+//   95..    free
+// The table of every kind (owner feature, who may send it) is net/space_kinds.def (B3 of 0.7.15): a new kind is a row
+// there, with its direction; tests/validate_tests.cpp checks the rows against each feature's enum Kind and kind range.
 #pragma once
 
 #include <cstdint>
@@ -72,6 +76,7 @@ std::string name_of(uint8_t id);
 // net::Session::player_key (its rejoin token, else its name). "" = no such player. `coop.fix space.kept_token off`:
 // the session name (0.7.14: two players of the same name who rejoin in the other order swap their kept state)
 std::string kept_key(uint8_t id);
+// (map, trade, badges and rivalry keep a rejoiner's state through space_kept.h under this key: C5, BUG-1132)
 bool in_space();          // the Space stage is running (false while the `away` test hook is on)
 // tests (BUG-0226, BUG-0228, BUG-0229): `coop.space away 1|0` makes the Space modules act as
 // outside Space while the Space world stays (as an editor or an adventure entered from Space does):
@@ -123,6 +128,11 @@ bool allies_own_mirror(uint32_t planet);
 // BUG-0195: make `planet` a colony of my own empire at record level (a guest's colony the host kept for
 // it). "" = done (or mine already), "wait" = not now (the ship is at that planet), else why it can not be mine.
 std::string colonize_own(uint32_t planet);
+// BUG-1151 (space_allies.cpp): my colony's cities as the planet record keeps them (wire/space_map.h put_cities; empty:
+// none), and writing them back into a restored colony ("" done, "wait": the planet is loaded, else why not)
+std::vector<uint8_t> colony_cities(uint32_t planet);
+std::string colony_cities_apply(uint32_t planet, const std::vector<uint8_t>& blob);
+bool colony_cities_on(); // space.colony_cities
 // the game's missions (cMission*, every state; space_allies.cpp reads the noun list)
 std::vector<void*> game_missions();
 

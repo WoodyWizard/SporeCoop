@@ -55,6 +55,7 @@ enum Id : int {
     kSpaceAllies,    // Space: the partners' colonies as an allied empire (space_allies.cpp)
     kSpaceFinale,    // Space: the galaxy's core together (space_finale.cpp)
     kSpaceRivals,    // Space: the host may switch to the rivals mode (space_rivalry.cpp)
+    kAutosave,       // all stages: the host's game saves itself every N minutes and after milestones (E2, autosave.h)
     kCount
 };
 
@@ -165,7 +166,17 @@ inline const Def kDefs[kCount] = {
     {"space.rivals", "Space", "Rivals mode allowed",
      "on: the host can switch Space to the rivals mode (own empires, budgets, fights); off: the players stay allies",
      1, 0, 1, Scope::Session, nullptr, false},
+    {"all.autosave", "All stages", "Host autosave",
+     "every N minutes and after a milestone (a new stage, a colony founded, a city captured, an epic killed) the host's game saves itself into its own save, as the pause menu's Save; off: only the players' own saves",
+     2, 0, 5, Scope::Live, "autosave", false, "off|5 min|10 min|15 min|30 min|60 min"},
 };
+
+// all.autosave (E2): the minutes of a choice (0 = off)
+inline int autosave_minutes(int choice)
+{
+    static const int m[] = {0, 5, 10, 15, 30, 60};
+    return choice >= 0 && choice < 6 ? m[choice] : 10;
+}
 
 inline const Def& def(int id) { return kDefs[id]; }
 

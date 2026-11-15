@@ -3076,8 +3076,168 @@ same name who left and came back in the other order got each other's state.
   token kept in memory for the same host address and name, BUG-1001). Not: another game under the same name, the same
   game under another name, and a game that was closed and started again (a new token): for the kept state these
   are new players, the same rule as the join rule of BUG-1001 while late join is off.
+  CORRECTION (2026-11-15, fix/w51-space2): a game that was closed and started again gets its state back since
+  BUG-1135: the token of its clean leave is kept on disk for that host address and name
+  ([netcode-rejoin-restart](../04-netcode.md#netcode-rejoin-restart)); another game under the same name still does not.
 * Not changed: the allies mirror (space_allies.cpp `g_m`) is still by name; it is each machine's picture of the other
   players' empires, rebuilt from their rosters, not state handed back to a player.
 * Switch `space.kept_token` (space_ext.cpp): off = the name, the 0.7.14 behaviour. Test seam `coop.space keptkey other
   on|off` (rejoin::test_other): the next joins of this game send a fresh token that is neither written to the slot nor
   kept, as a second game of the same name would. Test `space_kept_key` (Rivals budget), unit `test_player_key`.
+
+## The game's list of owned stars nearby and the allies mirror (2026-11-15, fix/w51-space2)
+<a id="space-near-stars"></a>
+
+BUG-1144 (space_allies, lab 20261115-030136 of feat/w51-space: a caught fault at 0x00C32817, reported as
+"cEmpire_MakeContact+0x3C7"; the real function is 0xC32810, MakeContact ends at 0xC32745).
+
+* ✔ `[cSimulatorSpaceGame+0x30]` points at an object embedded at sim+0xF8 (vtable 0x1494398, ctor 0xFE6730). Its
+  +0x68 vector holds the stars in range of the active star and **+0x7C the ones with star flag 0x10 or 0x20** (owned
+  by an empire; AddRef'd star records). Both are rebuilt only by **0xFE6A50** (`SpaceNearStars_Rebuild`), which its
+  message handler 0xFE6E40 calls (with 0xFE6CD0) on messages 0x43F2583 and 0x55BD8F7 (seen after a jump into a system).
+  Runtime (lane 6): at home only the home star; after a visit to the mirror's star system and back, both.
+* ✔ **The NPC visitor spawn 0x1009070** (thiscall(sim, float dt) ret 4, from the system update 0x1009C90): when no NPC
+  UFO is in state 6, with a chance of 1 - 2^(-0.0869 dt) per call (about 6 % a second), picks a random star of +0x7C
+  (needs 2 or more), skips the player's own (+0x54 == GetPlayerEmpireID), then calls 0xC32810 on
+  `cStarManager::GetEmpire(star +0x54)` **without a null check**: the game never lists a star nobody owns.
+* ✔ Cause: `space_allies.cpp unapply()` (before every save for 3 s, `allies remove`, the session's end) gives the
+  mirror's star back to nobody (+0x54 = -1, flags without 0x10 / 0x20) while the list still holds it: GetEmpire(-1)
+  is null and 0xC32810 faults at its first instruction (`cmp [edi+0xB8],0`, data 0xB8). Reproduced on purpose: visit
+  the mirror's star, go home, `coop.space allies remove`: a fault after 10 s (the stack holds the star record).
+* Fix (`allies.near_rebuild`): after unapply() restored stars, call 0xFE6A50 on the near object (vtable checked) the
+  way the game's handler does; the list then holds no star of nobody. `coop.space allies near` prints the list
+  (owner, flags, `NO EMPIRE` for a stale entry, `stale=<n>`). Test `space_allies_near`.
+
+## A guest colony's cities and an NPC's star at the colony's restore (2026-11-15, feat/w51-store)
+<a id="space-colony-cities"></a>
+
+BUG-1151 (E1 of 0.7.15). GOG 2024, objdump of SporeApp.exe and lab lanes 9 / 10.
+
+* ✔ The cCityData field table (0xC4 bytes, no vtable; the save's serializer: field table built by 0x1397890 into
+  0x15B5510, Read 0xFF0380, Write 0xFF0300): +0x00 position (vec3), +0x0C orientation (quat), +0x1C mSpiceProduction
+  (the stored spice), +0x20 mMaxSize, +0x24 mSize, +0x28 mTurretLocations (a byte of bits), +0x2C mFinalIncome,
+  +0x30 mHappiness, +0x34 mVehicleSpecialty, +0x38 mCaptureID, +0x3C mCapturePercent, +0x40 mName / +0x50
+  mDescription (string16), +0x60..+0x7A 14 u16 (meaning not traced), +0x7C mBuilding (vector of 0x38-byte plain
+  entries), +0x90 mOrnament, +0xA4 mWall, +0xB8 mWallStyle, +0xBC / +0xC0 handles.
+  CORRECTION (2026-11-15, feat/w51-store): docs/re/space.md#space-city-data says "turrets from +0x90": the serializer
+  names +0x90 mOrnament; the turrets are the bits of +0x28. Section 15.2's "cCityData of type 0xFD701F6F" is the
+  mWallStyle value (+0xB8, written by 0xFF0230) FillPlanet gives a city of another empire (0x280852F1: the player's).
+* ✔ cCivData (0x50): +0x14 pol, +0x18 colour, +0x1C wealth, +0x20 turrets, +0x24 buildings, +0x3C the cities.
+  `AddCityData` 0xFF2B20 adds popcount(city +0x28) to +0x20 and (city +0x24 minus that) to +0x24, then the push_back.
+* ✔ FillPlanetDataForTechLevel level 5 (0xB96E90) = GameAlloc(0x50, ...) + cCivData ctor 0xFF32F0 + pol, the species,
+  then per city GameAlloc(0xC4, 0x1465A70, 0, 0, 0, 0) + cCityData ctor 0xFF1B60 (reserves 10 building entries),
+  size 2 or 4 (+ income 150), the wall style, AddCityData; then cPlanetRecord_AddCivData.
+* ✔ 0xFF1500 (the building vector's insert, thiscall(vector, pos, const entry*) ret 8) is an insert before a position:
+  with pos == end it copies downwards from end - 0x38 and runs past the vector's start (lab crash 20261115-132419 at
+  0xFF1550 on an empty list). An append is the game's reserve 0xFF13E0 (thiscall(vector, n) ret 4) and a copy of the
+  plain entry at the end.
+* ✔ The mod writes a guest's own colony cities back into a restored record (space_allies.cpp cities_apply): into the
+  civilization FillPlanet made, a missing city made as FillPlanet makes one; not into the active planet's record (its
+  live cCity objects point at the cCityData, +0x2F0). A planet of the system the ship is in has a cPlanet in the star
+  manager's list (+0x50) but no cities: its record is written.
+* ✔ `TransferStarOwnership` 0xC353A0 (cdecl(star, newPol), plain ret) is the game's change of a star's owner: the old
+  empire's RemoveStarOwnership 0xC35040, the new one's AddStarOwnership 0xC34300 (every tech-5 planet of the star
+  converted, ConvertPlanetOwner 0xC73940), then per planet record 0xCE6AD0 / 0xAEAAC0 / 0xAEA6A0 (not traced). Its
+  callers: 0xAEA092 (a comm event), 0xC8D1E3, 0x1059D2D. The old owner must be an empire (a star of nobody: `this`
+  null). Lab (space_empire fixture, lane 9): the guest's game took an NPC's only star (its home star): the empire was
+  gone from that game (GetEmpire of its pol null), no fault, the planet's 10 cities became the guest's empire's.
+* Restore rule (space.npc_star_colonies): a guest's own colony whose star belongs to an NPC empire in the host's world
+  (bought or conquered in the guest's game) gets the star taken in the guest's copy with TransferStarOwnership; never
+  on the host, never a partner's mirror empire. The host's world keeps the NPC's star: the allies mirror does not show
+  that colony (BUG-0197) and the NPC's AI goes on there in the host's game.
+* ✔ FillPlanetDataForTechLevel's number of cities for a record-level colony is not fixed: 2 in the space fixture's
+  home system before the merge of E3 (BUG-1148, the ecosystem sync), 0 after it (lab 20261115-140828: the colony a
+  civilization of the guest without a city); 0xBBE5E0, the colony city count of a planet, reads the ecosystem level
+  (docs/re/space.md#space-ecosystem, PlanetRecord_EcoLevel). The restore makes every city the guest had, any count.
+* ? Not done: the ornaments (+0x90), walls (+0xA4), the 14 u16 and the two handles are not carried (the city maker
+  makes walls and ornaments of its own); a generated city beyond the guest's count stays; a guest colony made from
+  a planet only partly the guest's (some cities captured, the star still the NPC's) is taken whole.
+## A planet's ecosystem: placed plants and animals, the food web, the stabilized level (2026-11-15, fix/w51-eco)
+<a id="space-ecosystem"></a>
+
+BUG-1148 (a guest's populated, stabilized T1 planet was empty and not stabilized on the host). Ghidra GOG 2024
+(`tools/ghidra/q.sh`) and runtime lane 6 (`space_free`). ✔ = runtime or decompile checked, ~ = inferred.
+
+**Where the game keeps it.**
+* ✔ `cPlanetRecord` **+0xBC** plant species, **+0xD0** animal species: eastl `vector<ResourceKey>` (begin, end,
+  capacity; 12-byte keys: plants `{inst, 0x438F6347 flr, 0x40666200}`, animals `{inst, 0x2B978C46 crt, 0x40626200}`).
+  Runtime `space_free`: the home planet 00460035 (type 5, b0 = b4 = 0.5, T score 3) holds 9 plants and 9 animals;
+  02460035 (type 3, b0 0.63, b4 0.27, T score 1) 2 plants, 0 animals; 01460035 (type 2, T score 0) none. The planet
+  generation 0xBAD5D0 (from 0xBADEA0 <- GeneratePlanetsForStar) fills both lists with `cStarManager::PickPlantSpecies`
+  0xBAC9C0 / `PickAnimalSpecies` 0xBACE60 from the terrain's default flora 0xBAD210.
+* ✔ The record's **type +0x28** (PlanetType: 2 T0 .. 5 T3) follows the T score, not the ecosystem: the terrain tick
+  0xC83280 calls 0xC716F0 (`record +0x28 = 2 + CalculateTScore(+0xB0, +0xB4)`) when the score changes.
+* ✔ The **food web** is read from the lists' order (0xBBC9E0 / 0xBBCAC0 / 0xBBCBA0): row n (T level n) = the n-th
+  plant of each of the three size classes (`SporeCoop::PlantCargo_SizeClass` 0xB8F9B0 on the plant's cargo template:
+  0x6D60A1CC, 0x029C388A, 0x3A8BE428; the home planet has 3 of each), the (2n-1)-th and 2n-th herbivore and the n-th
+  carnivore (species profile +0x608 != 0; the home planet: 6 herbivores, 3 carnivores). A sanctuary (record +0x2C &
+  0x800) counts its plants instead.
+* ✔ **The stabilized level** is `SporeCoop::PlanetRecord_EcoLevel` 0xBBCFB0 (record, ret 4): the highest n up to the T
+  score with at least 3n animal species; it decides the planet's colony city count (0xBBE5E0, the colony tool's
+  Update 0x1058B30) and the tooltips. Runtime: 02460035 is 0 with its 2 plants; after one plant of the missing class,
+  two herbivores and a carnivore it is 1 (both games, lab lane 6).
+* ✔ The game removes species by its rules (0xBBF420, 0xBBCD00 -> 0xBBC6B0 / 0xBBCC80 -> 0xC74770
+  `PlanetRecord_RemoveSpecies` erases from the list): every row above the T score dies out, and a row with fewer than 3
+  plants loses its animals. So a T0 planet holds no species, and a T1 planet's animals need their plant row.
+* ✔ A per-planet entry of a map in the noun manager's window object (+0x11C0, 0xBA4FB0(&PlanetID)) keeps +0xA0 the
+  highest T score reached (the "planets terraformed" badge, AddToBadgeProgress 3 in 0xC83280) and +0xA1 the food webs
+  completed (animals / 3; the "food webs" badge 10 in the landing 0x1032BD0). Local progress, not synced.
+
+**How a placement adds a species.**
+* ✔ `cDropCargoToolStrategy::WhileFiring` 0x105AA10: cargo type 1 (animal) makes the creature at the beam point
+  (0xAD0450: `CreateHerd` 0xB23920 + `cCreatureAnimal::Create`), type 0 (plant) a plant through `cGamePlantManager`
+  (0xB2B570), type 6 an animal of the abduct kind, 4/5 artifacts (planet objects through 0xC73340). No T-score check
+  (Update 0x1056B80 / WhileAiming 0x1054030 only test the tool and the selected item).
+* ✔ The drop's landing (the cDropToGroundLocomotion handler 0x1032BD0) calls **`SporeCoop::PlanetEco_AddAnimal`
+  0xC82590** (at 0x1033300) / **`SporeCoop::PlanetEco_AddPlant` 0xC81C50** (0x1032FE7, 0x103349D): thiscall on the
+  planet's terrain data (planet +0x154; data +0x4C is the planet), `(const ResourceKey* species, const Vector3* pos,
+  bool player)`, ret 0xC. They put the species into the terrain's grid cell of `pos` (6 faces x 4 x 4 cells of 0x54 at
+  data +0x50; a position of 0,0,0 divides by zero there) and append it to the record list when it is new and the list
+  holds fewer than 9 (0xC82340 -> 0xC73460 push_back, 0xC81A30 -> 0xC80B70); the plant one also regrows that size
+  class (0xB2BD20 / 0xB2A890). With `player` set: the third, sixth, ninth new animal shows the food web event
+  0x739DC1E3, a plant row sets data +0x2031 and shows 0x398341C. The planet fill 0xFF73E0 calls them with player 0.
+  This is the hook point: both are hooked by space_eco.cpp (the player flag = the own placement).
+* ✔ `SporeCoop::KeyVector_InsertValue` 0x4E3E80 is eastl DoInsertValue: with room it copies end[-1] up first, so it
+  is only for a full vector (the game's push_back 0xC73460 writes in place while there is room). Called with
+  position == end on an empty vector with room it read before the buffer and faulted at 0x4E3F4D (lane 6, the first
+  version of the sync).
+
+**How the planet's creatures come back when a player arrives.**
+* ✔ The planet entry 0xFF96B0 (from 0xFDF9E0 <- `cAppModeSpace_LandOnActivePlanet` 0xFE0E00) walks the record's
+  planet objects +0x134 (`cPlanetObjectData`, 0x2C bytes: +0x28 flags): flag 4 with a key that is in +0xD0 gets a
+  herd through `SporeCoop::PlanetEco_SpawnHerd` 0xACF320 (thiscall on `PlanetEco_HerdSpawner()` = [0x167EB3C],
+  `(const ResourceKey*, const Vector3*)`, ret 8: CreateHerd, enabled, the members put on the ground by 0xACEB10);
+  then, with 2 % chance, one herd of a random species of +0xD0. Flag 0x40 objects go to the sanctuary 0x1043FE0.
+* ✔ Runtime: 02460035 has no planet objects; after the host's record got the guest's 3 animal species while away, the
+  host landed and saw no creature of them in 15 s (`coop.space eco`, `#0`). A dropped animal is no planet object
+  (only the sanctuary path 0x1043FE0 writes flag-0x40 ones); ~ where the game keeps a player's dropped herds between
+  visits was not found (not in the record; ~ the profile's planet cache `Planets.package`, local to each game).
+* Plants: ~ the plant manager grows the planet's flora from +0xBC when the planet loads (the regrow calls above); not
+  checked on the screen.
+
+**What the sync does** (space_eco.cpp, `space.eco_sync`): after the own placement (the two hooks, player flag) the
+lists of that planet go to everyone while they change (K_ECO 90, with each species' drop position, at most once a
+second, 30 s after the last placement). A game on that planet adds the missing species through the same two
+functions (player 0) and a herd of each new animal species (PlanetEco_SpawnHerd at the sender's position); a game
+elsewhere writes its record's lists (push_back as the game does, the grow through KeyVector_InsertValue) and owes a
+herd of each new animal species for its next landing there (3 s after it); a planet not generated here (or outside
+Space) waits until it is. The host keeps the latest lists per planet and sends a star system's to a partner entering
+it, all of them to one who joins. Test `space_eco` (`coop.space eco place`, the game's own function with the player
+flag; the real cargo drop is not driven: 02460035 runs its story scene "a crashed spacecraft" on landing, which
+hides the palette).
+
+## Terraforming records for a game outside Space or without that star, and for later players (2026-11-15, fix/w51-eco)
+<a id="space-terraform-late"></a>
+
+BUG-1155 (audit of 0.7.15 wave E, Space item 4), after [the far records](#space-terraform-flag) of BUG-0883 / BUG-1042.
+* ✔ (code) K_TERRA_REC was applied only when the receiver was in Space and its game had generated that star's planets
+  (`planet_record_checked`: star +0xAC count, BUG-1042); otherwise it was dropped, and the sender sends only while the
+  record changes (30 s after the last change). So an editor visit, an adventure, or a star the receiver never came
+  near lost the terraforming for good; when the host was that receiver, it never reached the host's record nor its
+  save. A player who joined later got only what the host's share save held.
+* Now (`space.terra_rec_late`, spacecoop.cpp): a skipped record waits per PlanetID (at most 128) and is applied in the
+  first Space second its planet exists here (a jump into the system generates it: RequirePlanetsForStar); the host keeps
+  the latest values of every planet it sent or received (at most 64) and sends a star system's to a partner whose
+  place enters that star, all of them to a partner it sees for the first time (a join). Both reset with the Space world
+  (world epoch) and the session. The same holds for the ecosystem lists ([space-ecosystem](#space-ecosystem)). Test
+  `space_terra_late` (`coop.space away`, `coop.space nogen`, `coop.space terrarec`, `coop.space jumpto`).

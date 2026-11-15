@@ -1407,3 +1407,91 @@ BUG-0996. GOG 2024 (dc04aee5), from the decompiler (tools/ghidra/q.sh --build 20
   write of the same name fail (`_2.package` ... `_49`, then "cannot write the package").
 - The GOG 2016 addresses in the section above (Close 0x8D9CC0, SetLocation 0x8D9CD0) are 0x10 lower than GOG 2024's
   (the march2017 port names Close=0x8D9CD0, SetLocation=0x8D9CE0 for dc04aee5): not a contradiction, two builds.
+
+## The Tribe outfit and the Civ designs between the games (2026-11-15, fix/w51-editors)
+<a id="creations-stage-designs"></a>
+
+E4 of docs/plan-0.7.15.md, BUG-1156, BUG-1157, BUG-1158. GOG 2024, Ghidra (out/ghidra-2024) and lab lane 4 (`tribe` and
+`civ_npc` fixtures). The cases first observed with the 0.7.15 code before the fix (the base build of rel/0.7.15 at
+c90f2ed9, by hand), then as the FAIL halves of the twins (the fix switched off).
+
+**Tribe: the Tribal Outfitter.**
+* ✔ (runtime) The players' route: a click on the own hut opens the tribe planner (the first click after a while may
+  only take the focus: a second one opens it; the planner sets the input lock and the pause), its second tab (204, 40
+  of 1440x1080) shows the tribe's creature card, the card's blue edit badge (44, 630) asks for editor **0x156276D1**
+  (the outfitter: EditorRequest::Submit 0x5A947C gives it editor kind 7). On the host this is an editor request of the
+  stage: the vote of BUG-0151 ("Alice wants to evolve (Tribe)" before the fix). In the outfitter the third tab
+  (260, 40) holds body pieces; a drag of the second (84, 216) onto the chest (975, 440) costs 5 of the 100 budget;
+  Done (1416, 1060).
+* ✔ (runtime) Done saves the outfitted creature as a **new creation in the player's My Creations** (EditorSaves:
+  bem, metadata naming the tribe's species as its parent, creaturedata; e.g. 2923BFD6 with parent 067B3E4A) and the
+  tribe's members wear it at once. Nothing else changes: the members' own species key (+0xB28) stays the old species
+  (067B3E4A), the tribe's card shows the outfit; the outfit of an earlier visit is there again in the next one.
+* ✔ (Ghidra) The return: cTribeUI 0xCDCC90 (else branch, the result at +0x2F8, its new key at +0x18) calls
+  `cSpeciesManager 0x4DFBC0(mgr, tribe +0x18CC profile, &key)`: the tribe's species profile **reloaded in place**
+  (`SpeciesProfile_Load` 0x4D4F70: LoadCreatureData, +0x504 and +0x510 = the key, the profile built from the data,
+  generation +0x53C); 0x4DFBC0 also maps the old and the new key to the profile and deletes another profile object of
+  the new key. Then `cTribe_SpeciesSize` 0xC996E0(tribe, |place|), cPlayer map[0x55D6335] = result +0x34, and for
+  every member of the tribe (vt 0x90): +0xB24 = profile +0x53C, SetScale(vt 0x80(1)), `Creature_RebuildModel`
+  0xC21D50(1, 1), `Creature_AfterModel` 0xC0BD40, `TribeToolUI_AttachTool` 0xCCAA00(*(cTribeUI +0x240), member, tool
+  +0x102C), `cModifiers_Find` / `CreatureModifiers_Remove` (+0xB48, kind 5), `Creature_RestartAnimSlot`
+  0xC141D0(`Creature_FindAnimSlot`(+0xFC4)).
+* ✔ (runtime, before the fix) Host's outfit: host profile +0x504 = 2923BFD6, the guest's 067B3E4A for good (the guest
+  stayed in place, "evolved in place: Bob keeps its world", and the notice said "Alice evolved the species: everybody
+  gets the new body"). Guest's own outfitter: its request opened its own editor at once ("Bob evolves its own
+  creature"), after Done the guest's profile was its new creation 2923BFD1 and the host's stayed 2923BFD6: the guest's
+  outfit was its own game's only, and the next world from the host replaces it.
+* ✔ (runtime) A save names the tribe's species by the profile's +0x504 **in the save's main stream** (record
+  0x01897C18, after `011989B7 2905CC1D`, big-endian {group, type, instance}), which is written before the save hook of
+  savestrip fires: a key of ours at +0x504 reached the guest's save there. +0x510 (the model key, group 0x41626200) is
+  not in the save.
+* Fix (`tribe.outfit_sync`, BUG-1156, designs.cpp): wsync row `tribe_outfit` (id 16): the host's player tribe profile
+  +0x504 and +0x510; the host also sends the creation itself (creations::host_species_out, the BUG-0200 own-species
+  bundle: the guest registers it under 0x7D...... and aliases the host's key to it). A guest whose tribe profile is
+  not built from it loads it outside the frame (`SpeciesProfile_Load` with our key, not 0x4DFBC0: no map change, no
+  profile deleted), writes the host's species key back into +0x504 (the save's key) and keeps our key in +0x510 (the
+  model the members are built from), then rebuilds the members as 0xCDCC90 does. +0x510 holds the host's model key
+  while a save is written and from the session end on. A key of the host's that is no creation of its own (a premade,
+  a download) is used as it is after 10 s (want_species when unknown).
+* Lab: `tribe_outfit` PASS (the guest's profile key = the host's, its model key ours with the host's bem hash 1092B5E8,
+  every member at the new generation, the guest's save without our key); FAIL with SPORE_FIX_OFF=tribe.outfit_sync,
+  editors.guest_designs: out/lab/20261115-131200 (the guest's tribe stayed 067B3E4A; the guest's own outfitter opened).
+
+**Civilization: the culture set.**
+* ✔ (Ghidra, runtime) cCivilization +0x6C cCultureSet is an EASTL map<int design id, ResourceKey>: anchor at +0x70,
+  root at +0x78, node +0 right, +4 left, +0x10 the id, +0x14 the key (lookup 0xBF3DF0; PickCreation 0xBF9840 generates
+  a missing entry, so the mod walks the tree itself: `coop.designs culture`). The civ_npc player civilization has 18
+  entries: City Hall 99E92F05, house 4E3F7777, factory 47C10953, entertainment 72C49181, BDD15F3D and 13 vehicle ids
+  (7D433FAD military land = VehicleDesignId(0, 0), ...); most hold key 0 (no design yet).
+* ✔ (Ghidra) `Civ_SetDesign` 0xBF4C50 (thiscall(civ, id, const ResourceKey*) ret 8) is the one setter: the planner's
+  Sporepedia pick (message 0x5132389 in 0xD130D0: each picked cEditorResource's +0x18 design id), the editors' return
+  (0xD095A0; City Hall also into cPlayer +0x1150), the Civ start's first vehicle (0xBF5100 from cPlayer +0x115C) and
+  0xBD5FF0, 0xCACE00. For a building id it re-models every city building of that design (0xBE3870); for a vehicle id
+  it calls SetModelKey (vt 0x94 of +0x34) on every vehicle of the civilization (+0xB0) of that locomotion and purpose.
+* ✔ (runtime) The setter on the host re-models at once: `coop.designs set 99E92F05 067CEDE1` turned the host's City
+  Hall model 07EDB5B0 into 067CEDE1, `set 7D433FAD FFE48DC4` its military land vehicle (and its hit points 362 -> 314,
+  from the design). Before the fix the guest's culture set, City Hall and mirror kept the old design (the FAIL half).
+* Fix (`civ.design_sync`, BUG-1157): wsync row `civ_design` (id 17): the host's entries with a key; a guest whose entry
+  differs calls the same setter on its player civilization (its buildings and the mirrors of the civilization's
+  vehicles re-modelled by the game), then the host's own My Creations come by the BUG-0647 / BUG-0670 paths
+  (civ.host_buildings re-keys the buildings within a second, civ::redesign_vehicles the vehicles). The culture set
+  holds the host's keys, as after a world load. Not covered: an entry the host has none of yet (key 0) is not sent, so
+  a guest's own pick for such a design stays its own until the host makes one.
+* Lab: `civ_designs` PASS (with the guest's own other creations under the same ids: its City Hall and its mirror of
+  the host's vehicle have the host's bem hashes 0B25F69B / DD673F46); FAIL with SPORE_FIX_OFF=civ.design_sync,
+  editors.guest_designs: out/lab/20261115-131006.
+
+**A guest's own design (BUG-1158).** One tribe and one civilization are shared: the game has one species profile per
+tribe and one culture set per civilization, so there is no outfit or design of one player only. The host's world is
+the truth; a guest's own outfitter (Tribe, 0x156276D1) or design editor (Civ, any editor but the spaceship editor
+0x96B24187 of the stage's end) in the host's world is refused in the Submit hook with the line "the tribe's outfit is
+shared: only <host> changes it" / "the civilization's designs are shared: only <host> makes new ones"; the planner
+stays open, no input lock is left. A guest's own Sporepedia pick in its planner goes back to the host's design within
+a second with "the civilization's designs are shared: yours went back to <host>'s". `editors.guest_designs` off: the
+editor opens (0.7.14). Lab: the refusals in tribe_outfit / civ_designs; FAIL runs above.
+* Notices: the host's outfitter vote reads "<host> wants to change the tribe's outfit", its return "<host> made a new
+  outfit for the tribe: everybody's tribe wears it" (with `tribe.outfit_sync`; off: the old evolution texts). The
+  Civ return's "changed a design: everybody gets the new designs" is true with `civ.design_sync`.
+* ? Not checked: a Civ outfitter (AccessoryEditorActivate 0x4D2B5FD in the Civ input actions, planner kind 4); the
+  host's real Civ editor route (vote, building editor, save) end to end (the tests set the design with the game's
+  setter); the anthem.

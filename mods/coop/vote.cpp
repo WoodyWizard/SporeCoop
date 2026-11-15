@@ -5,6 +5,7 @@
 // busy for a share (game_busy, save_blocker) and the editor-pending flag (BUG-0920). The MSG_VOTE handler is in the
 // session callbacks.
 #include "coop_state.h"
+#include "designs.h"
 
 namespace coop_core {
 
@@ -726,7 +727,9 @@ bool SK_CDECL h_Submit(void* req)
                     g_stage_end_votes++;
                     LOG("evolution: the end of the Creature stage waits for the vote (BUG-1085)");
                     start_vote(req, g_name + " wants to move on to the Tribe stage");
-                } else
+                } else if (designs::outfit_texts(mode, editor)) // BUG-1156: the outfitter is no evolution
+                    start_vote(req, g_name + " wants to change the tribe's outfit");
+                else
                     start_vote(req, g_name + (design_stage(mode) ? " wants to edit a design (" : " wants to evolve (") +
                                         modes::mode_name(mode) + ")");
             }
@@ -742,6 +745,14 @@ bool SK_CDECL h_Submit(void* req)
                 LOG("evolution: this guest's stage-end request is not taken: the host moves everybody on (BUG-1085)");
                 feed("the host moves everybody on to the Tribe stage (after a vote)");
             }
+            return false;
+        } else if (std::string why = designs::refuse_own_editor(mode, editor, host_world_now() != host_world::HostWorld::Same,
+                                                                 g_sess.name_of(0));
+                   !why.empty()) {
+            // BUG-1158: a guest's own outfitter / design editor in the host's world changed only its own game (the
+            // shared tribe's outfit and civilization's designs are the host's, designs.h): refused, told why
+            LOG("evolution: this guest's own editor %08X is refused: %s (BUG-1158)", editor, why.c_str());
+            feed(why);
             return false;
         } else {
             offer_end("the own evolution"); // BUG-0516: this guest evolves on its own now

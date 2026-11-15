@@ -507,7 +507,6 @@ void* puppet_now(const Remote& r);
 extern bool g_evo_key_done;
 extern bool g_evo_save_test_off;
 extern bool g_id_reuse_fix;
-extern bool g_session_end_fix;
 extern bool g_settings_in;
 extern bool g_share_cine_fix;
 extern double g_evo_key_until;

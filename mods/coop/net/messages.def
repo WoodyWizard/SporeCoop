@@ -1,0 +1,126 @@
+// The message manifest (B3 of 0.7.15, BUG-1136; docs/04-netcode.md#netcode-manifest): every top-level message type
+// of the protocol, listed exactly once, and the message families with their wire revisions (B6, BUG-1137). An
+// X-macro file: the includer defines MSG and / or FAMILY, this file #undefs them at the end.
+//
+// Generated from it (never kept by hand):
+//   * `enum net::MsgType` (net/protocol.h): a duplicate name does not compile, a duplicate id fails the switches below
+//   * the direction of each type and the host's direction gate (net/manifest.h msg_dir, dir_gate_drops)
+//   * the world-state class (host_world.h msg_class, BUG-0420) and the dispatch route of the session's custom-message
+//     callback (net/manifest.h dispatch_route, session_glue.cpp)
+//   * the message table of docs/04-netcode.md (tools/msg_manifest.py docs; `make test` checks it)
+//   * the family revisions a HELLO / WELCOME carries (CAP_FAMILIES) and the hash lock of each family's wire
+//     (net/messages.lock, tools/msg_manifest.py check in `make test`)
+//
+// MSG(id, NAME, chan, dir, cls, route, recv, family, "what")
+//   chan    R reliable, U unreliable, RU both (docs only)
+//   dir     who sends it on the wire: Host (host -> guests), Guest (guest -> host; the host may relay it), Any
+//   cls     host_world::MsgClass: Session (wherever the guest plays), HostWorld (a guest elsewhere drops it at
+//           dispatch), Module (the module gates it per place)
+//   recv    which game's session_glue dispatch takes it: Both, Host, Client (the other role ignores it there)
+//   route   the handler of session_glue.cpp's dispatch (net::Route); None: net::Session handles it or nobody does
+//   family  the message family (FAMILY below) whose revision covers its wire format
+//
+// FAMILY(name, id, rev, minor, stages, "title", "wire files")
+//   rev     bumped when older versions can NOT read the family's messages any more (a changed field, a removed type):
+//           a peer with another rev of a family the current stage uses is refused (net/compat.h)
+//   minor   bumped for a change older versions still read (a new trailing field, a new type they ignore): a warning only
+//   stages  where the family is used: STAGE_ALWAYS, or STAGE_CELL | STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV | STAGE_SPACE
+//           (an adventure counts as Creature)
+//   wire files: sources (under mods/coop/) whose code, without comments, is part of the family's lock hash
+// Every 0.7.x before 0.7.15 sends no revisions: it counts as rev 1 minor 0 of every family listed here (compat.h).
+// A changed row or wire file without a bumped rev / minor fails `make test` (tools/msg_manifest.py check); then bump
+// and run `tools/msg_manifest.py lock`.
+
+#ifndef MSG
+#define MSG(id, name, chan, dir, cls, route, recv, family, what)
+#endif
+#ifndef FAMILY
+#define FAMILY(name, id, rev, minor, stages, title, files)
+#endif
+
+FAMILY(session,   1, 1, 0, STAGE_ALWAYS, "session", "net/protocol.h")
+FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
+FAMILY(creature,  3, 1, 0, STAGE_CREATURE, "Creature", "")
+FAMILY(npc,       4, 1, 0, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
+FAMILY(cell,      5, 1, 0, STAGE_CELL, "Cell", "")
+FAMILY(tribe,     6, 1, 0, STAGE_TRIBE, "Tribe", "")
+FAMILY(civ,       7, 1, 0, STAGE_CIV | STAGE_SPACE, "Civilization", "")
+FAMILY(space,     8, 1, 2, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h")
+FAMILY(shared,    9, 1, 0, STAGE_TRIBE | STAGE_CIV | STAGE_SPACE, "shared resources", "wire/common.h wire/shared_res.h")
+FAMILY(creations, 10, 1, 0, STAGE_ALWAYS, "creations", "")
+
+// Class notes (from the 0.7.14 switch of host_world.h): ANIM, DAMAGE are Session: a partner's own creature (its
+// puppet); SETTINGS, COLORS, REPORT, HOST_WORLD: the session's, wherever the guest plays (HOST_WORLD is what
+// "elsewhere" is measured against); VOTE: session-wide, the editor start it brings is gated in its handler
+// (core.vote_world); RES: held inside shared.cpp (res.elsewhere), not at dispatch.
+// Ids 55 and 58 are free (never used; a new type takes the next free id after the last row).
+MSG(1,  HELLO,       R,  Guest, Session,   None,        Both,   session,   "u16 protocol, u32 exe build id, str8 name; then u32 caps and their payloads (#netcode-hello-caps)")
+MSG(2,  WELCOME,      R,  Host,  Session,   None,        Both,   session,   "u8 your id, u32 world id, u8 n, n x {u8 id, str8 name}; then u32 caps and their payloads")
+MSG(3,  REJECT,       R,  Host,  Session,   None,        Both,   session,   "u8 reason (1 version, 2 full, 3 another exe build, 4 started, 5 kicked), str8 text")
+MSG(4,  PLAYER_JOIN,  R,  Host,  Session,   None,        Both,   session,   "u8 id, str8 name, str8 version")
+MSG(5,  PLAYER_LEAVE, R,  Host,  Session,   None,        Both,   session,   "u8 id, u8 reason")
+MSG(6,  PLAYER_STATE, U,  Any,   Session,   None,        Both,   session,   "a player's own creature: pose, flags, health, species, mode, world, scale, agl, body (the host relays it)")
+MSG(7,  CHAT,         R,  Any,   Session,   None,        Both,   session,   "u8 id, str16 text (the host relays it)")
+MSG(8,  PING,         U,  Guest, Session,   None,        Both,   session,   "unused: nothing sends it, the host answers one with a PONG")
+MSG(9,  PONG,         U,  Host,  Session,   None,        Both,   session,   "unused: the answer to PING")
+MSG(10, BYE,          U,  Any,   Session,   None,        Both,   session,   "leaving (three packets)")
+MSG(11, ABILITY,      R,  Any,   Session,   None,        Both,   session,   "reserved, never sent or handled")
+MSG(12, DAMAGE,       R,  Any,   Session,   Npc,         Both,   npc,       "host -> guest: an NPC hit you; guest -> host: friendly fire on a player (F3)")
+MSG(13, NPC_STATE,    U,  Host,  Module,    Npc,         Both,   npc,       "u32 time, u8 n, n x NpcState (+ agl trailer)")
+MSG(14, WORLD_OFFER,  R,  Host,  Session,   World,       Client, world,     "the host's save follows: u32 world, u32 size, u16 files, str8 planet")
+MSG(15, WORLD_FILE,   R,  Host,  Session,   World,       Client, world,     "a file header: u16 index, u32 size, str8 path")
+MSG(16, WORLD_CHUNK,  R,  Host,  Session,   World,       Client, world,     "file data: u16 index, u32 offset, u16 n, bytes")
+MSG(17, WORLD_DONE,   R,  Host,  Session,   World,       Client, world,     "end of the transfer")
+MSG(18, ANIM,         R,  Any,   Session,   Anim,        Both,   creature,  "an animation of a player's own creature (the host relays it)")
+MSG(19, NPC_SPAWN,    R,  Host,  Module,    Npc,         Both,   npc,       "start mirroring an NPC (NpcSpawn)")
+MSG(20, NPC_DESPAWN,  R,  Host,  Module,    Npc,         Both,   npc,       "stop mirroring an NPC: u16 id")
+MSG(21, DAMAGE_REQ,   R,  Guest, Module,    Npc,         Both,   npc,       "my hit on an NPC: u16 id, f32 damage, i32 type")
+MSG(22, WORLD_TIME,   U,  Host,  HostWorld, WorldTime,   Client, creature,  "the time of day: the sky's quaternion")
+MSG(23, DNA,          R,  Host,  HostWorld, Dna,         Client, creature,  "the shared DNA total (f32), u8 n x {cause, player, f32} (dna_ledger.h), u8 pace")
+MSG(24, DNA_ADD,      R,  Guest, Session,   DnaAdd,      Host,   creature,  "DNA a guest earned or spent (f32 delta)")
+MSG(25, RES,          R,  Host,  Session,   Shared,      Both,   shared,    "a shared resource total (u8 id, f64)")
+MSG(26, RES_ADD,      R,  Guest, Session,   Shared,      Both,   shared,    "a guest's change of a shared resource (u8 id, f64 delta)")
+MSG(27, PING_MARK,    R,  Any,   Session,   PingMark,    Both,   session,   "a look-here marker: u8 origin, vec3, u32 mode (the host relays it)")
+MSG(28, READY,        R,  Guest, Session,   Ready,       Host,   session,   "u8 ready")
+MSG(29, LOBBY,        R,  Host,  Session,   Lobby,       Client, session,   "u8 n, {u8 id, u8 ready, u16 rtt}, roles (lobby.h)")
+MSG(30, NOTICE,       R,  Any,   Session,   Notice,      Both,   session,   "str8 text everybody sees (the host relays it)")
+MSG(31, TRIBE_STATE,  U,  Host,  HostWorld, Tribe,       Both,   tribe,     "tribes and citizens snapshot (chunked)")
+MSG(32, TRIBE_CMD,    R,  Guest, HostWorld, Tribe,       Both,   tribe,     "an order for the guest's own tribe members")
+MSG(33, CELL_STATE,   U,  Host,  HostWorld, Cell,        Both,   cell,      "NPC cells and food snapshot (chunked)")
+MSG(34, CELL_HIT,     R,  Any,   HostWorld, Cell,        Both,   cell,      "guest -> host: u32 host cell index, u8 damage, u8 type (host -> guest only from the test command coop.pool hurt)")
+MSG(35, CELL_EAT,     R,  Guest, HostWorld, Cell,        Both,   cell,      "u32 host cell index the guest ate or destroyed")
+MSG(36, CELL_FOOD,    R,  Any,   HostWorld, Cell,        Both,   cell,      "host: i32 food, i32 plant; guest: i32 delta, u8 plant")
+MSG(37, CIV_STATE,    U,  Host,  HostWorld, Civ,         Both,   civ,       "cities and vehicles snapshot (chunked)")
+MSG(38, CIV_CMD,      R,  Any,   Module,    Civ,         Both,   civ,       "guest -> host: a vehicle order, move, purchase or building; host -> guest: a specialty ask, a Space planner building")
+MSG(39, CIV_BUILD,    R,  Host,  HostWorld, Civ,         Both,   civ,       "a building appeared in a city, a city founded, the trade routes")
+MSG(40, UFO_STATE,    U,  Host,  Module,    Squadron,    Both,   space,     "NPC ships near the guest (chunked)")
+MSG(41, UFO_HIT,      R,  Guest, Module,    Squadron,    Both,   space,     "u16 ship id, f32 damage, i32 type, vec3 dir")
+MSG(42, UFO_DAMAGE,   R,  Host,  Module,    Squadron,    Both,   space,     "f32 damage, i32 type, vec3 dir, u16 attacker ship id")
+MSG(43, VOTE,         R,  Host,  Session,   Vote,        Client, creature,  "the evolution vote: u8 active, u8 seconds, str8 text, u32 editor, u8 flags")
+MSG(44, CELL_KO,      R,  Any,   HostWorld, Cell,        Both,   cell,      "u8 player, u8 state, u8 tenths left, u8 revive progress (the host relays it)")
+MSG(45, CREATION,     R,  Any,   Session,   Creation,    Both,   creations, "reliable chunks of a player's creation")
+MSG(46, ROLE,         R,  Guest, Session,   Role,        Host,   civ,       "u8 role (Civilization: none, military, economic, religious)")
+MSG(47, CIV_ALARM,    R,  Host,  HostWorld, Civ,         Both,   civ,       "u8 city index, u8 kind, u8 owner")
+MSG(48, SPACE,        R,  Any,   Module,    Space,       Both,   space,     "u8 kind (space_kinds.def), u8 origin, payload (the host relays it)")
+MSG(49, CELL_BITTEN,  R,  Guest, HostWorld, Cell,        Both,   cell,      "u32 host cell index of the NPC whose mirror bit the guest")
+MSG(50, SPECIES,      R,  Host,  HostWorld, Social,      Both,   creature,  "the Creature stage's species relationship table")
+MSG(51, SOCIAL,       R,  Any,   HostWorld, Social,      Both,   creature,  "u8 kind: a social act, its progress, its result, a goal reward")
+MSG(52, NEST,         RU, Any,   HostWorld, Nest,        Both,   creature,  "u8 kind: the eggs at the host's nests, an egg a guest ate")
+MSG(53, PARTS,        R,  Any,   HostWorld, Parts,       Both,   creature,  "the party's collected creature parts")
+MSG(54, WOBJ,         RU, Any,   Module,    Wobj,        Both,   npc,       "u8 kind: host-owned world objects (snapshot), a guest's request")
+MSG(56, FIELDS,       U,  Host,  HostWorld, Fields,      Both,   npc,       "replicated state fields of mirrored objects (fields.h)")
+MSG(57, NPC_RESYNC,   R,  Guest, Module,    Npc,         Both,   npc,       "u8 n, n x u16 NPC ids the guest has states and no spawn of")
+MSG(59, NPC_ANIM,     RU, Host,  Module,    Npc,         Both,   npc,       "animations the host's NPCs and tribe members started or play now")
+MSG(60, DIAG,         RU, Any,   Session,   Diag,        Both,   session,   "support diagnostics (net/diagmsg.h): u8 kind, payload")
+MSG(61, EFFECT,       R,  Any,   Module,    Effect,      Both,   creature,  "a player's creature started or stopped an effect (the host relays it)")
+MSG(62, WSTATE,       U,  Host,  HostWorld, Wsync,       Both,   npc,       "host-owned world state rows (wsync.h)")
+MSG(63, PLAYER_RULE,  RU, Any,   HostWorld, PlayerRule,  Both,   npc,       "u8 kind: the game's rules one game decides on the other's creature (a stun)")
+MSG(64, MIRROR_FX,    RU, Host,  HostWorld, MirrorFx,    Both,   npc,       "what the host's game did to a mirrored creature (effect, voice, sprint)")
+MSG(65, NPC_MEAT,     RU, Any,   Module,    Npc,         Both,   npc,       "u8 kind: the meat left on killed NPCs, what a guest ate of it")
+MSG(66, SETTINGS,     R,  Host,  Session,   Settings,    Both,   session,   "the session settings (settings_core.h)")
+MSG(67, COLORS,       R,  Any,   Session,   Colors,      Both,   session,   "u8 kind: the player colour table, a guest's choice")
+MSG(68, REPORT,       R,  Any,   Session,   Report,      Both,   session,   "the session report (net/sreport.h)")
+MSG(69, HOST_WORLD,   R,  Host,  Session,   HostWorld,   Both,   session,   "u32 world: the host's save changed (BUG-0933)")
+
+#undef MSG
+#undef FAMILY

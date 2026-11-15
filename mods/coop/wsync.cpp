@@ -12,6 +12,7 @@
 
 #include "cellsync.h"
 #include "civ.h"
+#include "designs.h"
 #include "fixes.h"
 #include "own_world.h"
 #include "game.h"
@@ -1398,6 +1399,61 @@ static std::string f_marker(const Entry& e)
     return g_fmt;
 }
 
+// ---- E4 (designs.cpp): the player tribe's outfit (BUG-1156) and the player civilization's designs (BUG-1157)
+static Table to_table(const std::vector<designs::Val>& v)
+{
+    Table t;
+    for (auto& x : v) {
+        Entry e;
+        e.key = x.key;
+        memcpy(e.v, x.v, sizeof e.v);
+        t.push_back(e);
+    }
+    return t;
+}
+static std::vector<designs::Val> to_vals(const Table& t)
+{
+    std::vector<designs::Val> v;
+    for (auto& e : t) {
+        designs::Val x;
+        x.key = e.key;
+        memcpy(x.v, e.v, sizeof x.v);
+        v.push_back(x);
+    }
+    return v;
+}
+static bool r_outfit(Table& out)
+{
+    std::vector<designs::Val> v;
+    if (!designs::outfit_read(v))
+        return false;
+    out = to_table(v);
+    return true;
+}
+static int s_outfit(const Table& want, bool apply) { return designs::outfit_sync(to_vals(want), apply); }
+static std::string f_outfit(const Entry& e)
+{
+    designs::Val x;
+    memcpy(x.v, e.v, sizeof x.v);
+    return designs::outfit_fmt(x);
+}
+static bool r_design(Table& out)
+{
+    std::vector<designs::Val> v;
+    if (!designs::civ_read(v))
+        return false;
+    out = to_table(v);
+    return true;
+}
+static int s_design(const Table& want, bool apply) { return designs::civ_sync(to_vals(want), apply); }
+static std::string f_design(const Entry& e)
+{
+    designs::Val x;
+    x.key = e.key;
+    memcpy(x.v, e.v, sizeof x.v);
+    return designs::civ_fmt(x);
+}
+
 static const Row kRows[] = {
     {1, "tod", 4, &kRowOn, sky, r_tod, s_tod, true, f_tod},
     {2, "day", 1, &kRowOn, sky_day, r_day, s_day, false, f_day},
@@ -1414,6 +1470,8 @@ static const Row kRows[] = {
     {13, "tribe_color", 4, &g_tribe_color_fix, tribe_mode, r_tcolor, s_tcolor, false, f_tcolor},
     {14, "herd_evo", 6, &g_herd_evo_fix, creature_mode, r_herd_evo, s_herd_evo, false, f_herd_evo},
     {15, "tribe_marker", 6, &g_marker_fix, tribe_mode, r_marker, s_marker, false, f_marker},
+    {16, "tribe_outfit", 6, &designs::g_outfit_fix, tribe_mode, r_outfit, s_outfit, false, f_outfit}, // BUG-1156
+    {17, "civ_design", 3, &designs::g_civ_fix, civ_mode, r_design, s_design, false, f_design},       // BUG-1157
 };
 constexpr int kNRows = sizeof kRows / sizeof kRows[0];
 
@@ -1439,6 +1497,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
 
 void on_session_end()
 {
+    designs::on_session_end(); // E4: no key of ours left in the guest's tribe profile
     for (auto& g : g_guest)
         g = GuestRow{};
     for (auto& h : g_host)
@@ -1781,6 +1840,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     H = host;
     M = mod;
     C = ctx;
+    designs::init(host, mod, ctx.sess); // E4: the tribe outfit and civilization design rows
     H->command_add(mod, "coop.wsync",
                    "coop.wsync [dump [row]|want <row>|rel <pol> <delta>|goal <pol>|goal dirty [pol]] - host-owned world state (time of day, "
                    "stages done, village relations, the Tribe goal): rows, this game's values",

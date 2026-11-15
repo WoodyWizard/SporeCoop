@@ -3402,3 +3402,51 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Ticket: BUG-1134 (fixed, unreleased, fix/w51-guards2): both are registered call guards (`game.puppet_anim`,
   `game.fx_relay`), test `call_guard_game`. CORRECTION (2026-11-15, fix/w51-guards2): they were never left set for
   the session: BUG-0882 (0.7.13) already cleared both once a frame under `game.lend_ledger`.
+
+## A restarted guest gets none of its kept Space state back (2026-11-15, feat/w51-space)
+<a id="issue-space-kept-restart"></a>
+
+* What happens: a guest that leaves, closes and starts its game again and joins again gets the host's badges and rank,
+  no kept colonies and no Rivals budget back: the host keeps them by the rejoin token (BUG-1107), and a restart after a
+  clean leave sends a new token. A crash rejoin or a rejoin without a restart works.
+* Reproduce: `space_badges_rejoin` (it restarts the guest) fails on rel/0.7.15; with `coop.fix space.kept_token off`
+  it passes (the 0.7.14 name key).
+* Ticket: BUG-1135 (fixed, unreleased, fix/w51-space2): the token of a clean leave is kept on disk for that host
+  and name (`net.rejoin_disk`, docs/04-netcode.md#netcode-rejoin-restart).
+
+## space_trade fails warm after space_rivalry (2026-11-15, feat/w51-space)
+<a id="issue-space-trade-warm-page"></a>
+
+* What happens (test only): the co-op window stays on the Space page from space_rivalry over the warm reset, the lobby's
+  "Space >" button is hidden and space_trade's first step times out; cold it passes.
+* Reproduce: `lab.py run space_rivalry,space_trade --lane N` (warm, in that order).
+* Ticket: BUG-1139 (fixed, unreleased, fix/w51-space2): the warm reset sends `coop.uistate reset`.
+
+## A caught game fault in cEmpire_MakeContact while a guest loads its own save (2026-11-15, feat/w51-space)
+<a id="issue-space-makecontact-fault"></a>
+
+* What happens: once in four space_allies runs the guest's game faulted (caught) in the planet populate of its own
+  save after a co-op session, at cEmpire_MakeContact+0x3C7.
+* Reproduce: not reproduced (space_allies passed on the same build and on rel/0.7.15 right after).
+* Ticket: BUG-1144 (fixed, unreleased, fix/w51-space2). CORRECTION (2026-11-15, fix/w51-space2): not in the load of
+  its own save and not MakeContact: the fault came in the guest's home system 2.7 s after a save during the session
+  (the allies mirror out for the save), in 0xC32810 called by the NPC visitor spawn with a null empire; reproduced on
+  purpose and fixed (`allies.near_rebuild`, docs/re/space.md#space-near-stars).
+
+## The lab's together monitor fails space_allies after the galaxy view (2026-11-15, fix/w51-space2)
+<a id="issue-monitor-together-galaxy"></a>
+
+* What happens (lab only): space_allies passes every check, but the gate monitor reports "guest sees host elsewhere
+  (same_place=0) for 10 s" over the stretch the test spends in the galaxy view (12 s that run).
+* Reproduce: `lab.py run space_allies --repeat 12 --lane N` (1 of 4 runs in out/lab/20261115-042849 of fix/w51-space2).
+* Ticket: BUG-1145 (fixed, unreleased, fix/w51-tests): the monitor reads the galaxy view's `world=-` lines and
+  counts world `-` as no place (docs/06-testing.md#testing-monitor-nowhere).
+
+## space_rivalry fails warm after space_rivalry (2026-11-15, fix/w51-space2)
+<a id="issue-rivalry-warm-counters"></a>
+
+* What happens (test only): the second space_rivalry on warm games sees the first one's hit counters (hits_got 43)
+  and fails its neutral and lethal-hit checks; cold it passes.
+* Reproduce: `lab.py run space_rivalry --repeat 2 --lane N` (warm, the second run), out/lab/20261115-042847.
+* Ticket: BUG-1146 (fixed, unreleased, fix/w51-tests): the counters are diagnostics no player sees; the test reads
+  them as deltas from its start (docs/06-testing.md#testing-monitor-nowhere).

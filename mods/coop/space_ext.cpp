@@ -1,4 +1,5 @@
 #include "space_ext.h"
+#include "store.h"
 #include <algorithm>
 #include <cstdlib>
 #include <map>
@@ -49,7 +50,10 @@ std::string kept_key(uint8_t id)
         std::string n = C->sess->name_of(id);
         return n == "?" ? "" : n;
     }
-    return C->sess->player_key(id);
+    // E1 (BUG-1149): the stable key of the per-player store on the host's disk (a salted digest of the player key), so
+    // that what the kept stores read from that store at world load is found under the same key
+    std::string k = store::key_of(id);
+    return k.empty() ? C->sess->player_key(id) : k;
 }
 static bool g_away;
 bool away() { return g_away; }

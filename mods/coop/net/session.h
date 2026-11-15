@@ -19,6 +19,8 @@ enum class Role { None, Host, Client };
 using SpawnFn = bool (*)(void (*fn)(void*), void* arg);
 extern SpawnFn g_spawn_thread;
 
+std::vector<FamilyRev> compat_families(); // net::compat::my_families() (session.cpp: compat.h stays out of this header)
+
 struct Peer {
     uint8_t id = 0xFF; // player id (host side: guest id; client side: 0 = host)
     std::string name;
@@ -26,6 +28,8 @@ struct Peer {
     bool bye = false; // said goodbye: dropped in update()
     uint32_t caps = 0;      // its HELLO / WELCOME caps (BUG-0219); 0 = an older SporeCoop
     std::string version;    // CAP_VERSION text ("" = unknown: an older SporeCoop)
+    bool has_families = false;       // B6: its HELLO / WELCOME carried CAP_FAMILIES (false: before 0.7.15)
+    std::vector<FamilyRev> families; // ... and these are its revisions
     bool has_token = false; // host: its HELLO carried a rejoin token (BUG-0235)
     uint64_t token = 0;
     std::string hello_name; // host: the name of its HELLO, cleaned, before " 2" / "guest<id>" (BUG-1001)
@@ -55,9 +59,18 @@ public:
         // a player (host: a guest; guest: the host, id 0) runs an older SporeCoop without the HELLO
         // extension: long chat lines reach them cut, messages above one packet not at all (BUG-0219)
         std::function<void(uint8_t id, const std::string& name)> old_peer;
+        // B6 (BUG-1137): a line for the player about another version's message families: `refused` (host: a guest not
+        // let in, id 0xFF) or a warning (a stage change into a family that differs: host: that guest's id, guest: 0)
+        std::function<void(uint8_t id, const std::string& text, bool refused)> compat;
     } cb;
 
     uint32_t build = 0;      // exe build id; mismatch = reject
+    // B6 (BUG-1137): this game's message family revisions (net/messages.def), sent in HELLO / WELCOME (CAP_FAMILIES); a
+    // peer with another rev of a family the stage uses is refused (net/compat.h). Tests change it (coop.compat plant)
+    std::vector<FamilyRev> families = compat_families();
+    // host: its game mode (coop.cpp sets it every frame): the stage whose families a joining guest must match
+    uint32_t mode = 0;
+    uint32_t compat_refused() const { return compat_refused_; } // joins refused for a family conflict (either role)
     std::string version;     // ours for HELLO / WELCOME (CAP_VERSION): "coop X, SporeKit Y, <game build> <exe hash>"
     // BUG-0141: names are unique in a session (the host appends " 2", " 3" to a taken name; the
     // guest takes its name from the roster). Space tables keyed by name mixed up two players with
@@ -71,6 +84,7 @@ public:
     // silent entry only on an equal token (net::g_fix.rejoin_token), never by the name alone
     uint64_t rejoin_token = 0;
     bool send_caps = true; // not a lab switch: test seam, false = HELLO / WELCOME without the extension (0.7.2 shape)
+    bool send_families = true; // not a lab switch: test seam, false = HELLO / WELCOME without CAP_FAMILIES (0.7.14 shape)
     // host: its world id (save CRC in Cell / Creature / Tribe / Civ, else 0), sent in WELCOME; coop.cpp
     // sets it every frame (host_world.h). Guest: welcome_world() is what the host sent (0 = unknown
     // or an older host), until leave(). The field stays where it is in Welcome (BUG-0231)
@@ -113,6 +127,8 @@ public:
         uint32_t queue_drops = 0, relay_drops = 0, kicks = 0;
     };
     const LimitStats& limit_stats() const { return lim_; }
+    // host (BUG-1136, net.dir_gate): messages of a type only the host sends that came from a guest, dropped
+    uint32_t dir_drops() const { return dir_drops_; }
 
     bool host(uint16_t port, const std::string& name, std::string& err);
     bool join(const std::string& addr, const std::string& name, std::string& err);
@@ -214,6 +230,14 @@ private:
     uint32_t gen_ = 0;
     std::vector<std::unique_ptr<Peer>> zombies_;
     uint32_t disc_window_ms_ = 0, disc_in_window_ = 0, disc_answered_ = 0, disc_refused_ = 0; // BUG-0776
+    uint32_t dir_drops_ = 0; // BUG-1136
+    // B6 (BUG-1137): host: the stage last checked; guest: the host's stage of its last state and whether one came
+    uint32_t host_mode_seen_ = 0;
+    bool host_state_seen_ = false;
+    std::vector<uint32_t> compat_warned_; // host: (id << 8 | family) warned about; guest: families
+    uint32_t compat_refused_ = 0;
+    bool host_compat(Peer& p, uint32_t host_mode);
+    void stage_compat();
     uint32_t halfopen_refused_ = 0, halfopen_evicted_ = 0;                                      // BUG-0778
     uint32_t replace_refused_ = 0;                                                              // BUG-1003
     uint32_t recv_skipped_ = 0;                                                                 // BUG-1007

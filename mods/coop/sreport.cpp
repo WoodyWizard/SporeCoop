@@ -138,6 +138,7 @@ static int g_write_delay_ms; // tests (coop.sreport writedelay <ms>): a slow dis
 struct WriteJob {
     std::unique_ptr<Round> r;
     std::string host_zip, host_name, dir;
+    std::string versions; // B6 (BUG-1137): the versions and message families of every player, taken on the main thread
     int delay_ms = 0;
     // results (read on the main thread)
     std::string line, ui_line, path, log, err;
@@ -168,6 +169,8 @@ static void do_write(WriteJob& j)
                                : "The host's \"Report a problem\": the host's report and every guest's it asked for.\n";
     text += "Each report is stored here exactly as it was received (never unpacked). Paths and the Windows user name\n"
             "are masked in every report; no player's network address is written into this file.\n\n";
+    if (!j.versions.empty()) // B6: both versions (and the message families) of every player
+        text += "Versions (the host's game; wire = message family revisions, net/messages.def):\n" + j.versions + "\n";
     if (!j.host_zip.empty()) {
         if (read_file(j.host_zip, host_data, 64u << 20)) {
             std::string n = entry_name("Host-", j.host_name, 0, taken);
@@ -286,6 +289,17 @@ static void start_write()
     j->host_zip = g_host_zip;
     j->host_name = g_host_name;
     j->dir = logs_dir();
+    {
+        std::string st = C.sess->status(), line; // its "versions:" lines (net::Session::status)
+        for (size_t a = 0, b; a < st.size(); a = b + 1) {
+            b = st.find('\n', a);
+            if (b == std::string::npos)
+                b = st.size();
+            line = st.substr(a, b - a);
+            if (line.rfind("versions: ", 0) == 0)
+                j->versions += "  " + line.substr(10) + "\n";
+        }
+    }
     j->delay_ms = g_write_delay_ms;
     g_writing = true;
     if (g_write_worker_fix && net::g_spawn_thread && net::g_spawn_thread(write_worker, j)) {

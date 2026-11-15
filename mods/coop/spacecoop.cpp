@@ -18,6 +18,7 @@
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "settings.h"
+#include "wire/space_core.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -253,8 +254,7 @@ float filter_own_damage(void* ufo, float dmg, int type)
     g_repair_t = 0; // invincible from the next frame on (down_tick): this hit still shows
     g_down_fresh = g_repair_fix;
     net::Writer w;
-    w.u8(1);
-    w.u8((uint8_t)kDownTime);
+    wire::space_core::Down{1, (uint8_t)kDownTime}.write(w);
     send(K_DOWN, w);
     if (C.notice)
         C.notice("your ship is disabled: a partner can repair it by flying close (20 s)");
@@ -266,8 +266,7 @@ static void end_down(bool rescued)
     void* u = my_ufo();
     g_down = false;
     net::Writer w;
-    w.u8(rescued ? 2 : 3);
-    w.u8(0);
+    wire::space_core::Down{(uint8_t)(rescued ? 2 : 3), 0}.write(w);
     send(K_DOWN, w);
     g_invincible_owed = false;
     g_down_ship = {};
@@ -1015,8 +1014,7 @@ static void SK_THISCALL h_SetState(void* m, int s)
             g_raids_seen++;
             g_raid_since[m] = H->time_seconds();
             net::Writer w;
-            w.u32(place);
-            w.u8(3);
+            wire::space_core::Raid{place, 3}.write(w);
             send(K_RAID, w);
         } else if (s == 7) {
             g_raid_since.erase(m); // aborted (BUG-0227: the armada contract ends a raid that brought no ships)
@@ -1032,8 +1030,7 @@ static void SK_THISCALL h_SetState(void* m, int s)
                     C.notice("colony defended together: +2000");
             }
             net::Writer w;
-            w.u32(place);
-            w.u8((uint8_t)s);
+            wire::space_core::Raid{place, (uint8_t)s}.write(w);
             send(K_RAID, w);
         }
         return;
@@ -1052,11 +1049,14 @@ static void SK_THISCALL h_SetState(void* m, int s)
             if (k.v[0])
                 keys.push_back(k);
         }
-        w.f32(F<float>(m, 0xA0));
-        w.u8((uint8_t)keys.size());
-        for (auto& kk : keys)
-            for (uint32_t v : kk.v)
-                w.u32(v);
+        wire::space_core::Mission msg;
+        msg.reward = F<float>(m, 0xA0);
+        for (auto& kk : keys) {
+            wire::Key3 k3;
+            memcpy(k3.v, kk.v, sizeof k3.v);
+            msg.tools.push_back(k3);
+        }
+        msg.write(w);
         send(K_MISSION, w);
         g_missions_sent++;
         if (!partners_here().empty()) {
@@ -1114,6 +1114,32 @@ static void* active_planet_record()
     void* rec = p && !IsBadReadPtr(p, 0x140) ? F<void*>(p, 0x13C) : nullptr;
     return rec && !IsBadReadPtr(rec, 0xBC) ? rec : nullptr;
 }
+// BUG-1155: a K_TERRA_REC was skipped by a player whose game had not generated that star's planets or was not in Space
+// (BUG-1042's checks), and it is sent only while the planet changes (30 s): a player who was in an editor, far away
+// or not yet in the session never got the terraforming, and a guest's terraforming never reached the host's record
+// (so not its save) when the host had not generated that star. Now a skipped record waits and is applied once the
+// planet exists here in Space; the host keeps the latest values of each planet (its own and its guests') and sends
+// the ones of a star system to a partner who enters it, all of them to a partner who joins.
+// `coop.fix space.terra_rec_late off`: skipped, sent only while it changes (0.7.14).
+static bool g_terra_late_fix = true;
+COOP_FIX("space.terra_rec_late", "BUG-1155", g_terra_late_fix,
+         "space: a partner's terraforming reaches a game that generates that planet later or was outside Space, and a player who arrives later");
+struct TerraVals {
+    float v[3];
+};
+static std::unordered_map<uint32_t, TerraVals> g_terra_kept, g_terra_pending; // PlanetID -> record values
+static std::unordered_map<uint8_t, uint32_t> g_terra_partner_star;           // host: partner -> its star (0 galaxy)
+static uint32_t g_terra_epoch, g_terra_pended, g_terra_pend_applied, g_terra_resent;
+static double g_terra_late_last;
+constexpr size_t kTerraKeptMax = 64, kTerraPendingMax = 128;
+static void terra_keep(uint32_t planet, const float v[3])
+{
+    if (!g_terra_late_fix || !spaceext::is_host() || !(planet & 0xFFFFFFu))
+        return;
+    if (g_terra_kept.size() >= kTerraKeptMax && !g_terra_kept.count(planet))
+        g_terra_kept.erase(g_terra_kept.begin());
+    g_terra_kept[planet] = {{v[0], v[1], v[2]}};
+}
 static void terra_rec_tick(double now)
 {
     if (!g_terra_elsewhere_fix || !g_terra_rec_place || now > g_terra_rec_until || now - g_terra_rec_last_send < 1.0)
@@ -1129,10 +1155,9 @@ static void terra_rec_tick(double now)
     if (!changed)
         return;
     net::Writer w;
-    w.u32(g_terra_rec_place);
-    for (float f : v)
-        w.f32(f);
+    wire::space_core::TerraRec{g_terra_rec_place, {v[0], v[1], v[2]}}.write(w);
     send(K_TERRA_REC, w);
+    terra_keep(g_terra_rec_place & 0x3FFFFFFFu, v); // BUG-1155
     memcpy(g_terra_rec_last, v, sizeof v);
     g_terra_rec_last_send = now;
     g_terra_rec_until = now + 30;
@@ -1152,9 +1177,7 @@ static void terra_tick(double now)
         (void)p, here = true;
     if (here) {
         net::Writer w;
-        w.u32(g_terra_planet);
-        for (float v : g_terra_acc)
-            w.f32(v);
+        wire::space_core::Terra{g_terra_planet, {g_terra_acc[0], g_terra_acc[1], g_terra_acc[2]}}.write(w);
         send(K_TERRA, w);
         g_terra_sent++;
     }
@@ -1225,27 +1248,89 @@ static void* planet_record_checked(uint32_t planet)
     }
     return thiscall<void*>(get_rec, sm, planet & 0x3FFFFFFFu);
 }
-static void apply_terra_rec(uint32_t planet_place, const float v[3])
+static bool apply_terra_rec(uint32_t planet_place, const float v[3])
 {
-    g_terra_rec_got++;
     if (!g_terra_elsewhere_fix || !(planet_place & 0x40000000u) || !a_StarMgr)
-        return;
+        return true;
     uint32_t mine = C.my_place ? C.my_place() : 0;
     void* rec = nullptr;
     if (mine == planet_place) {
         void* p = a_ActivePlanet ? cdecl_call<void*>(a_ActivePlanet) : nullptr;
         void* data = p && !IsBadReadPtr(p, 0x158) ? F<void*>(p, 0x154) : nullptr;
         if (data && !IsBadReadPtr(data, 0x2034) && F<uint8_t>(data, 0x2030))
-            return; // terraforming runs here: the live deltas (K_TERRA) move this record
+            return true; // terraforming runs here: the live deltas (K_TERRA) move this record
         rec = active_planet_record();
     } else
         rec = planet_record_checked(planet_place & 0x3FFFFFFFu);
     if (!rec || IsBadWritePtr(rec, 0xBC))
-        return;
+        return false; // not generated here / outside Space (BUG-1155: waits)
     for (int i = 0; i < 3; i++)
         if (std::isfinite(v[i]))
             F<float>(rec, 0xB0 + 4 * i) = i < 2 ? std::min(1.f, std::max(0.f, v[i])) : v[i];
     g_terra_rec_set++;
+    return true;
+}
+static void on_terra_rec(uint32_t planet_place, const float v[3])
+{
+    g_terra_rec_got++;
+    uint32_t id = planet_place & 0x3FFFFFFFu;
+    terra_keep(id, v); // BUG-1155
+    if (apply_terra_rec(planet_place, v)) {
+        g_terra_pending.erase(id);
+        return;
+    }
+    if (g_terra_late_fix && g_terra_rec_checked_fix && (g_terra_pending.count(id) || g_terra_pending.size() < kTerraPendingMax)) {
+        g_terra_pending[id] = {{v[0], v[1], v[2]}};
+        g_terra_pended++;
+    }
+}
+static void send_terra_rec(uint32_t planet, const TerraVals& t)
+{
+    net::Writer w;
+    wire::space_core::TerraRec{planet | 0x40000000u, {t.v[0], t.v[1], t.v[2]}}.write(w);
+    send(K_TERRA_REC, w);
+    g_terra_resent++;
+}
+// BUG-1155: pending records once the planet exists here; the host's kept records for a partner that joins (all) or
+// enters a star system (that star's)
+static void terra_late_tick(double now)
+{
+    if (now - g_terra_late_last < 1.0)
+        return;
+    g_terra_late_last = now;
+    uint32_t ep = spaceext::world_epoch();
+    if (ep != g_terra_epoch) { // another Space world: other planets
+        g_terra_kept.clear();
+        g_terra_pending.clear();
+        g_terra_partner_star.clear();
+        g_terra_epoch = ep;
+    }
+    if (!g_terra_late_fix || !connected())
+        return;
+    if (in_space()) {
+        for (auto it = g_terra_pending.begin(); it != g_terra_pending.end();) {
+            if (apply_terra_rec(it->first | 0x40000000u, it->second.v)) {
+                g_terra_pend_applied++;
+                it = g_terra_pending.erase(it);
+            } else
+                ++it;
+        }
+    }
+    if (!spaceext::is_host() || !C.partners)
+        return;
+    std::unordered_map<uint8_t, uint32_t> seen;
+    for (auto& p : C.partners()) {
+        uint32_t s = (p.place & 0xC0000000u) ? (p.place & 0xFFFFFFu) : 0;
+        seen[p.id] = s;
+        auto it = g_terra_partner_star.find(p.id);
+        bool joined = it == g_terra_partner_star.end();
+        if (!joined && it->second == s)
+            continue;
+        for (auto& [id, t] : g_terra_kept)
+            if (joined || (s && (id & 0xFFFFFFu) == s))
+                send_terra_rec(id, t);
+    }
+    g_terra_partner_star.swap(seen);
 }
 
 // ---------------- terrain sculpting and planet colouring (BUG-0763) ----------------
@@ -1297,9 +1382,11 @@ static bool SK_THISCALL h_ToolMsg(void* self, uint32_t msg, uint32_t* m)
             bool own = g_tool_hit_depth > 0 || H->time_seconds() - g_own_hit_at < kSculptAfterHit;
             if (place && own && g_terra_sculpt_fix) {
                 net::Writer w;
-                w.u32(place);
-                w.u32(m[0]);
-                w.raw(xf, 0x38);
+                wire::space_core::Sculpt msg;
+                msg.place = place;
+                msg.effect = m[0];
+                memcpy(msg.xf, xf, sizeof msg.xf);
+                msg.write(w);
                 send(K_SCULPT, w);
                 g_sculpt_sent++;
             }
@@ -1330,10 +1417,7 @@ static void SK_THISCALL h_SetColors(void* terrain, int ramp, uint32_t a, uint32_
         uint32_t place = sculpt_place();
         if (place && g_terra_sculpt_fix) {
             net::Writer w;
-            w.u32(place);
-            w.u32((uint32_t)ramp);
-            w.u32(a);
-            w.u32(b);
+            wire::space_core::Colour{place, (uint32_t)ramp, a, b}.write(w);
             send(K_COLOUR, w);
             g_colour_sent++;
         }
@@ -1601,10 +1685,9 @@ int give_spice(int n, uint8_t to)
     if (out)
         vcall<void>(out, 0x08 / 4);
     net::Writer w;
-    w.u8(to);
-    for (uint32_t v : k.v)
-        w.u32(v);
-    w.u32((uint32_t)n);
+    wire::space_core::Gift gm{to, {}, n};
+    memcpy(gm.key.v, k.v, sizeof gm.key.v);
+    gm.write(w);
     send(K_GIFT, w);
     g_gifts_sent++;
     if (g_gift_refund_fix) {
@@ -1651,9 +1734,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     double now = H->time_seconds();
     switch (kind) {
     case K_DOWN: {
-        uint8_t st = r.u8(), secs = r.u8();
-        if (!r.ok())
+        wire::space_core::Down msg;
+        if (!msg.read(r))
             break;
+        uint8_t st = msg.state, secs = msg.secs;
         if (st == 1) {
             g_partner_down[origin] = now + secs;
             if (C.notice)
@@ -1666,10 +1750,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         break;
     }
     case K_RAID: {
-        uint32_t place = r.u32();
-        uint8_t st = r.u8();
-        if (!r.ok())
+        wire::space_core::Raid msg;
+        if (!msg.read(r))
             break;
+        uint32_t place = msg.place;
+        uint8_t st = msg.state;
         if (st == 3) {
             g_raids_told++;
             if (star_of(place))
@@ -1682,20 +1767,16 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         break;
     }
     case K_MISSION: {
-        r.f32();
-        uint8_t n = r.u8();
-        if (!r.ok() || r.left() < (size_t)n * 12)
+        wire::space_core::Mission msg;
+        if (!msg.read(r))
             break; // cut: no notice, no tools
         if (spaceext::relation(C.sess->my_id(), origin) != spaceext::Relation::Ally)
             break; // rivals mode: mission rewards are shared between allies only
         void* inv = inventory();
         int got = 0, owed = 0;
-        for (int i = 0; i < n && r.ok(); i++) {
+        for (auto& k3 : msg.tools) {
             Key k;
-            for (auto& v : k.v)
-                v = r.u32();
-            if (!r.ok())
-                continue;
+            memcpy(k.v, k3.v, sizeof k.v);
             if ((!inv || !in_space()) && spaceext::owe_tool_key(k.v, name(origin) + "'s mission")) { // BUG-0694
                 owed++;
                 continue;
@@ -1715,44 +1796,37 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         break;
     }
     case K_TERRA: {
-        uint32_t place = r.u32();
-        float d[3] = {r.f32(), r.f32(), r.f32()};
-        if (r.ok())
-            apply_terra(place, d);
+        wire::space_core::Terra msg;
+        if (msg.read(r))
+            apply_terra(msg.place, msg.v);
         break;
     }
     case K_TERRA_REC: { // BUG-0883
-        uint32_t place = r.u32();
-        float v[3] = {r.f32(), r.f32(), r.f32()};
-        if (r.ok())
-            apply_terra_rec(place, v);
+        wire::space_core::TerraRec msg;
+        if (msg.read(r))
+            on_terra_rec(msg.place, msg.v);
         break;
     }
     case K_SCULPT: { // BUG-0763
-        uint32_t place = r.u32(), effect = r.u32();
-        uint8_t xf[0x38];
-        for (auto& c : xf)
-            c = r.u8();
-        if (r.ok())
-            apply_sculpt(place, effect, xf);
+        wire::space_core::Sculpt msg;
+        if (msg.read(r))
+            apply_sculpt(msg.place, msg.effect, msg.xf);
         break;
     }
     case K_COLOUR: { // BUG-0763
-        uint32_t place = r.u32(), ramp = r.u32(), ca = r.u32(), cb = r.u32();
-        if (r.ok())
-            apply_colour(place, (int)ramp, ca, cb);
+        wire::space_core::Colour msg;
+        if (msg.read(r))
+            apply_colour(msg.place, (int)msg.ramp, msg.a, msg.b);
         break;
     }
     case K_GIFT:
     case K_GIFT_BACK: {
-        uint8_t to = r.u8();
-        Key k;
-        for (auto& v : k.v)
-            v = r.u32();
-        int n = (int)r.u32();
-        if (!r.ok() || to != C.sess->my_id())
+        wire::space_core::Gift msg;
+        if (!msg.read(r) || msg.to != C.sess->my_id())
             break;
-        on_gift(kind, origin, k, n);
+        Key k;
+        memcpy(k.v, msg.key.v, sizeof k.v);
+        on_gift(kind, origin, k, msg.n);
         break;
     }
     default:
@@ -1807,10 +1881,9 @@ static void on_gift(uint8_t kind, uint8_t origin, const Key& k, int n)
                                         : name(origin) + " had no room: " + std::to_string(n) + " spice came back");
         } else if (kind == K_GIFT) { // no free cargo slot: send it back
             net::Writer w;
-            w.u8(origin);
-            for (uint32_t v : k.v)
-                w.u32(v);
-            w.u32((uint32_t)n);
+            wire::space_core::Gift gm{origin, {}, n};
+            memcpy(gm.key.v, k.v, sizeof gm.key.v);
+            gm.write(w);
             send(K_GIFT_BACK, w);
             if (C.notice)
                 C.notice("no free cargo slot for " + name(origin) + "'s spice");
@@ -1866,6 +1939,7 @@ void tick(double now)
     down_world_tick(now);    // BUG-0229: first end or pause the disabled state,
     down_owed_tick();        // BUG-0228: then an owed clear of its invincibility
     gift_owed_tick();        // BUG-0226
+    terra_late_tick(now);    // BUG-1155
     if (!in_space() || !connected())
         return;
     if (C.partners)
@@ -1920,6 +1994,9 @@ void on_session_end()
     g_raid_since.clear();
     g_terra_planet = 0;
     g_terra_rec_place = 0; // BUG-0883
+    g_terra_kept.clear();  // BUG-1155
+    g_terra_pending.clear();
+    g_terra_partner_star.clear();
     g_gifts_out.clear(); // unanswered gifts most likely arrived (only a failure is answered); g_gifts_owed stays
     g_gifts_held.clear();
     g_gift_hold = g_gift_noroom = false;
@@ -2087,13 +2164,13 @@ std::vector<syncdbg::Entry> nav_entries()
 
 std::string status()
 {
-    char b[640];
+    char b[800];
     snprintf(b, sizeof b,
              "space co-op: down=%d rescues=%u lost=%u raids=%u raids_told=%u raid_bonus=%u missions_sent=%u "
-             "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u terra_rec_sent=%u terra_rec_got=%u terra_rec_set=%u terra_rec_skipped=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
+             "tools_got=%u terra_sent=%u terra_got=%u terra_enabled=%u terra_rec_sent=%u terra_rec_got=%u terra_rec_set=%u terra_rec_skipped=%u terra_pending=%u terra_pended=%u terra_pend_applied=%u terra_kept=%u terra_resent=%u gifts_sent=%u gifts_got=%u jumps=%u planets_seeded=%u stores_seeded=%u galaxy_msgs_skipped=%u respawns_forced=%u "
              "partners_here=%u partners_down=%u bad_origin=%u disable_off=%u\n",
              (int)g_down, g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
-             g_terra_sent, g_terra_got, g_terra_enabled, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set, g_terra_rec_skipped, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
+             g_terra_sent, g_terra_got, g_terra_enabled, g_terra_rec_sent, g_terra_rec_got, g_terra_rec_set, g_terra_rec_skipped, (unsigned)g_terra_pending.size(), g_terra_pended, g_terra_pend_applied, (unsigned)g_terra_kept.size(), g_terra_resent, g_gifts_sent, g_gifts_got, g_jumps, g_planets_seeded, g_stores_seeded, g_galaxy_msgs_skipped, g_respawns_forced,
              (unsigned)partners_here().size(), (unsigned)g_partner_down.size(), g_bad_origin, g_disable_off);
     return b + spaceext::status_all();
 }
@@ -2711,9 +2788,9 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a[0] == "terrarec" && a.size() > 4) { // tests (BUG-1042): send a K_TERRA_REC for <place hex> as if we terraformed it
         net::Writer w;
-        w.u32((uint32_t)strtoul(a[1].c_str(), nullptr, 16));
-        for (int i = 2; i < 5; i++)
-            w.f32((float)atof(a[i].c_str()));
+        wire::space_core::TerraRec{(uint32_t)strtoul(a[1].c_str(), nullptr, 16),
+                                   {(float)atof(a[2].c_str()), (float)atof(a[3].c_str()), (float)atof(a[4].c_str())}}
+            .write(w);
         send(K_TERRA_REC, w);
         return "sent";
     }

@@ -85,6 +85,8 @@
 #include "dna_ledger.h"
 #include "dna_pace.h"
 #include "settings.h"
+#include "store.h"
+#include "autosave_glue.h"
 #include "sreport.h"
 #include "space_ext.h"
 #include "host_world.h"
@@ -926,6 +928,7 @@ static void frame_receive(double now)
     // guests never read it
     if (g_sess.role() == net::Role::Host)
         g_sess.world = host_world::welcome_world(g_mode, g_world, g_mode == modes::kSpace ? modes::current_world() : 0);
+    g_sess.mode = g_mode; // B6 (BUG-1137): the stage whose message families a joining guest must match
     host_save_tick(); // BUG-0933: the host says its save again when it changed; a guest follows it
     g_sess.update();
     partner_pass_tick(); // BUG-0913: what the collision and hover hooks may skip this frame
@@ -1038,6 +1041,8 @@ static void frame_local_update(double now)
     g_world = modes::current_place(g_adapter);
     g_local = g_adapter ? g_adapter->local() : nullptr;
     settings::tick(); // F3: the host's world opened or closed (its stored settings)
+    store::tick();    // E1 (BUG-1149): the host's world opened: its per-player store
+    autosave::tick(); // E2 (BUG-0864): the host's autosave (the save itself outside the frame)
     g_sess.max_players = settings::get(settings::kPlayerLimit); // F3 (BUG-0768): the host's join rules
     pfind::tick(H->time_seconds()); // F2: the partners on the minimap (outside the frame)
     portrait::tick(H->time_seconds()); // BUG-0937: the HUD portrait follows the avatar's species (outside the frame)
@@ -1733,8 +1738,8 @@ std::string ui_session_line()
 {
     char b[256];
     if (g_sess.role() == net::Role::Host)
-        snprintf(b, sizeof b, "Hosting on UDP port %u  -  %d/%d players", g_sess.port(), (int)g_sess.players().size(),
-                 g_sess.max_players);
+        snprintf(b, sizeof b, "Hosting on UDP port %u  -  %d/%d players  -  %s", g_sess.port(), (int)g_sess.players().size(),
+                 g_sess.max_players, autosave::saved_line().c_str()); // E2: when the host's game last saved
     else if (g_sess.connected())
         snprintf(b, sizeof b, "Connected to %s (%s)", g_sess.name_of(0).c_str(), g_sess.host_address().c_str());
     else
@@ -2120,7 +2125,7 @@ void on_unload()
     coop_ui::shutdown();
     lan_scan(false);
     g_sess.leave("mod unload");
-    rejoin::shutdown();
+    rejoin::shutdown(net::g_fix.join_seen); // a game closed in a session keeps its token for that host (BUG-1135)
     end_session(EndPath::Unload, true);
 }
 
@@ -2528,6 +2533,12 @@ static void init_player_modules()
         sc.rivals = [] { return spaceext::rivals() || pfind::g_test_rivals; }; // (tests: coop.find rivals 1)
         sc.feed = feed;
         settings::init(H, M, sc);
+        store::Ctx stc; // E1 (BUG-1149): the per-player store on the host's disk
+        stc.sess = &g_sess;
+        stc.feed = feed;
+        stc.notice = feed; // the host only (the hint names a console command of the host)
+        store::init(H, M, stc);
+        autosave::init(H, M, &g_sess, feed); // E2 (BUG-0864)
         g_sess.join_closed = [] { return !settings::on(settings::kLateJoin) && settings::started(); };
     }
     { // F2 of 0.7.12: player colours, arrows to partners, partners on the minimap

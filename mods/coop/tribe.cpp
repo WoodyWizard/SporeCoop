@@ -23,6 +23,9 @@
 #include "space_ext.h"
 #include "stage_epoch.h"
 #include "world.h"
+#include "owner_claims.h"
+#include "autosave_glue.h"
+#include "store.h"
 #include "wsync.h"
 #include "net/held_cmds.h"
 #include "net/ids.h"
@@ -3057,6 +3060,168 @@ static void test_vel_tick(double now)
 // BUG-0841 (evidence): members the host's game moved from one tribe to another (none seen: the game adds only new
 // citizens to a tribe, docs/re/tribe.md#tribe-member-moves); unowned: into the player tribe with owner 0xFE
 static uint32_t g_member_moves, g_member_moves_unowned;
+
+// E1 (BUG-1154): the owners of the player tribe's members across joins, leaves, a game over and sessions. The owner
+// table (g_hm) lived only in the host's memory, and every change of the players (a join, a leave, a new session) and
+// every world change (a game over, a load) dealt every member anew in turns: a child a guest bought, members it was
+// given and its chief went to other players. Now each member has a claim: its owner's stable key (store.h key_of; the
+// host is "host"). A claimed member is its player's whenever that player is here; while it is away the host holds it
+// (never another guest). A player who joins with no member gets an even share from the player with the most (members
+// the game made for a player, babies and gifts, move last). The claims go into the per-player store on the host's disk
+// with every save (owner_claims.h: by position, world record tribe.owners) and come back to the same members after a
+// load (the game over's reload too). `coop.fix store.tribe_owners off`: dealt in turns as before (0.7.14).
+static bool g_owners_fix = true;
+COOP_FIX("store.tribe_owners", "BUG-1154", g_owners_fix,
+         "tribe: tribe members keep their owners across joins, leaves, a game over and sessions (kept on the host's disk)");
+static std::unordered_map<void*, std::string> g_member_claim; // host: player tribe member -> its owner's stable key
+static std::unordered_map<void*, uint8_t> g_member_flags;      // host: 1 born for its player, 2 a gift
+static std::vector<claims::Spot> g_member_spots;              // host: read from the store, not matched yet
+static uint32_t g_mclaims_serial, g_mclaims_read, g_mclaims_moved, g_mclaims_held;
+static bool g_members_matched;
+static std::map<std::string, uint8_t> g_tpresent;
+static double g_mclaims_at;
+static int tpresent(const std::string& k)
+{
+    auto it = g_tpresent.find(k);
+    return it == g_tpresent.end() ? -1 : it->second;
+}
+// a claimed member's holder (its player, or the host for an absent one), -1: no claim
+static int claim_holder(void* c)
+{
+    if (!g_owners_fix)
+        return -1;
+    auto it = g_member_claim.find(c);
+    return it == g_member_claim.end() ? -1 : claims::holder(it->second, tpresent, C.sess->my_id());
+}
+static void member_claim(void* c, uint8_t owner, uint8_t flag)
+{
+    std::string k = store::key_of(owner);
+    if (!g_owners_fix || k.empty())
+        return;
+    g_member_claim[c] = k;
+    if (flag)
+        g_member_flags[c] |= flag;
+}
+static void member_claims_tick(void* pt, double now)
+{
+    g_tpresent.clear();
+    for (auto& p : C.sess->players()) {
+        std::string k = store::key_of(p.id);
+        if (!k.empty())
+            g_tpresent[k] = p.id;
+    }
+    if (!g_owners_fix || !pt)
+        return;
+    pstore::Store* w = store::world();
+    if (w && store::serial() != g_mclaims_serial) { // the world's store opened (or the world changed): its claims
+        g_mclaims_serial = store::serial();
+        g_member_spots.clear();
+        g_member_claim.clear();
+        g_member_flags.clear();
+        g_members_matched = false;
+        if (const pstore::Record* r = w->get_world("tribe.owners"); r && r->ver == 1) {
+            pstore::In in(r->data);
+            if (!claims::get_spots(in, g_member_spots))
+                g_member_spots.clear();
+        }
+    }
+    auto ms = members(pt);
+    if (!g_members_matched && !ms.empty()) {
+        std::vector<std::array<float, 3>> pos;
+        for (void* c : ms) {
+            net::Vec3 q = game::position(c);
+            pos.push_back({q.x, q.y, q.z});
+        }
+        auto m = claims::match(pos, g_member_spots, 2.5f);
+        for (size_t i = 0; i < ms.size(); i++)
+            if (m[i] >= 0) {
+                g_member_claim[ms[i]] = g_member_spots[m[i]].key;
+                if (g_member_spots[m[i]].flags)
+                    g_member_flags[ms[i]] = g_member_spots[m[i]].flags;
+                g_mclaims_read++;
+            }
+        g_members_matched = true;
+        g_member_spots.clear();
+    }
+    if (!g_members_matched || now - g_mclaims_at < 2.0)
+        return;
+    g_mclaims_at = now; // every 2 s: the claims follow the owners of members whose claimed player is here
+    std::unordered_map<void*, std::string> mc;
+    for (void* c : ms) {
+        auto old = g_member_claim.find(c);
+        auto hm = g_hm.find(c);
+        if (old != g_member_claim.end() && tpresent(old->second) < 0)
+            mc[c] = old->second;
+        else if (hm != g_hm.end() && hm->second.owner < 0xFE && !store::key_of(hm->second.owner).empty())
+            mc[c] = store::key_of(hm->second.owner);
+    }
+    g_member_claim = std::move(mc);
+    for (auto it = g_member_flags.begin(); it != g_member_flags.end();)
+        it = g_member_claim.count(it->first) ? std::next(it) : g_member_flags.erase(it);
+}
+// a player here without a member gets an even share: from the player with the most, its plain members first
+static void member_balance(void* pt, const std::vector<uint8_t>& players)
+{
+    if (!g_owners_fix || players.empty())
+        return;
+    auto ms = members(pt);
+    std::map<uint8_t, std::vector<void*>> by;
+    for (void* c : ms)
+        if (auto hm = g_hm.find(c); hm != g_hm.end())
+            by[hm->second.owner].push_back(c);
+    size_t share = ms.size() / players.size();
+    for (uint8_t p : players) {
+        bool newcomer = by[p].empty();
+        while (newcomer && by[p].size() < share) {
+            // the richest player gives one (a plain member first); never below the share
+            uint8_t rich = p;
+            for (uint8_t q : players)
+                if (by[q].size() > by[rich].size())
+                    rich = q;
+            if (rich == p || by[rich].size() <= share)
+                break;
+            auto& v = by[rich];
+            auto pick = std::find_if(v.begin(), v.end(), [](void* c) { return !g_member_flags.count(c); });
+            if (pick == v.end())
+                pick = v.begin();
+            void* c = *pick;
+            v.erase(pick);
+            g_hm[c].owner = p;
+            member_claim(c, p, 0);
+            by[p].push_back(c);
+            g_mclaims_moved++;
+        }
+    }
+}
+// the game saves: the claims by position (world record tribe.owners v1)
+static void member_claims_save(pstore::Store& s, int64_t)
+{
+    if (!g_owners_fix || !g_mclaims_serial || g_mclaims_serial != store::serial() || &s != store::world() ||
+        game::mode_id() != modes::kTribe)
+        return;
+    std::vector<claims::Spot> v = g_member_spots; // (not matched yet: as read)
+    if (void* pt = player_tribe())
+        for (void* c : members(pt))
+            if (auto it = g_member_claim.find(c); it != g_member_claim.end()) {
+                net::Vec3 q = game::position(c);
+                auto f = g_member_flags.find(c);
+                v.push_back({q.x, q.y, q.z, it->second, f == g_member_flags.end() ? (uint8_t)0 : f->second});
+            }
+    if (v.empty() && !s.get_world("tribe.owners"))
+        return;
+    pstore::Out o;
+    claims::put_spots(o, v);
+    s.put_world("tribe.owners", 1, o.d);
+}
+static bool g_mclaims_reg = store::add({"tribe.owners", member_claims_save, [](const std::string& from, const std::string& to) {
+                                            for (auto& [c, k] : g_member_claim)
+                                                if (k == from)
+                                                    k = to;
+                                            for (auto& sp : g_member_spots)
+                                                if (sp.key == from)
+                                                    sp.key = to;
+                                        }});
+
 static void host_tick(double now)
 {
     test_vel_tick(now);
@@ -3071,16 +3236,24 @@ static void host_tick(double now)
     for (auto& p : C.sess->players())
         players.push_back(p.id);
     std::sort(players.begin(), players.end());
+    member_claims_tick(pt, now); // E1 (BUG-1154)
     if (players != g_split_for && pt) {
         arrival_place_due(now); // BUG-0340: a player arrived or rejoined
-        // the players changed: split the player tribe again, in member order
+        // the players changed: split the player tribe again, in member order (E1: a claimed member to its player)
         g_split_for = players;
         g_player_members_seen = 0;
         for (void* c : members(pt)) {
             auto it = g_hm.find(c);
-            if (it != g_hm.end())
+            if (it == g_hm.end())
+                continue;
+            int cl = claim_holder(c);
+            if (cl >= 0) {
+                g_mclaims_held += cl == C.sess->my_id() && g_member_claim[c] != "host";
+                it->second.owner = (uint8_t)cl;
+            } else
                 it->second.owner = players[g_player_members_seen++ % players.size()];
         }
+        member_balance(pt, players);
     }
     std::unordered_set<void*> alive;
     struct Entry {
@@ -3104,7 +3277,9 @@ static void host_tick(double now)
             }
             if (it == g_hm.end()) {
                 // the player tribe is split between the players in turns; others belong to nobody
-                uint8_t owner = player && !players.empty() ? players[g_player_members_seen++ % players.size()] : 0xFE;
+                int cl = player ? claim_holder(c) : -1; // E1 (BUG-1154): its claimed player's
+                uint8_t owner = cl >= 0 ? (uint8_t)cl
+                                : player && !players.empty() ? players[g_player_members_seen++ % players.size()] : 0xFE;
                 auto bf = g_born_for.find(c); // BUG-0671: a member a guest bought is that guest's
                 if (bf != g_born_for.end()) {
                     if (player && net::is_player(*C.sess, bf->second))
@@ -3279,6 +3454,7 @@ static void give_on_host(uint8_t from, uint8_t to, const std::vector<uint16_t>& 
             F<void*>(hm->first, kOwnerTribeOff) != pt)
             continue;
         hm->second.owner = to;
+        member_claim(hm->first, to, 2); // E1 (BUG-1154): the receiver's from now on
         n++;
     }
     g_gifts += n;
@@ -3324,6 +3500,7 @@ static bool baby_near(const net::Vec3& a, const net::Vec3& b)
     float dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
     return dx * dx + dy * dy + dz * dz < kBabyNear * kBabyNear;
 }
+static void member_claim(void* c, uint8_t owner, uint8_t flag);
 static void baby_give(void* c, uint8_t from)
 {
     auto it = g_hm.find(c);
@@ -3331,6 +3508,7 @@ static void baby_give(void* c, uint8_t from)
         it->second.owner = from;
     else
         g_born_for[c] = from;
+    member_claim(c, from, 1); // E1 (BUG-1154): the buyer's
 }
 // host: the new members of the player tribe that one call of the game's function made
 static std::vector<void*> baby_call(void* stage, const net::Vec3& p)
@@ -5324,6 +5502,7 @@ static void epic_tick(double now)
         int food = g_epic_hitters.size() >= 2 ? 80 : 30;
         bonus_food(food);
         g_epic_kills++;
+        autosave::milestone("an epic killed"); // E2 (BUG-0864)
         if (C.notice)
             C.notice(std::string("epic creature down: +") + std::to_string(food) + " food");
         g_epic = nullptr;
@@ -6023,6 +6202,10 @@ void on_world_change()
     party_forget(); // BUG-0646
     baby_forget(); // BUG-0671
     g_resets++;
+    g_mclaims_serial = 0; // E1 (BUG-1154): the claims of the world loaded now come from the store again
+    g_member_claim.clear();
+    g_member_flags.clear();
+    g_members_matched = false;
     forget_world_tables(); // every citizen of the old world is freed: nothing to restore
     g_detached.clear(); // (BUG-0667: freed with the world)
     g_left_tribe.clear();
@@ -6148,7 +6331,13 @@ std::string status()
         snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u member_moves=%u/%u cmd_gone=%u guest_missions=%u\n",
                  (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent, g_village_captions_closed,
                  g_member_moves, g_member_moves_unowned, g_cmd_gone, g_guest_missions);
-    else
+    if (C.sess && C.sess->role() == net::Role::Host) { // E1 (BUG-1154)
+        char c[200];
+        snprintf(c, sizeof c, "claims: fix=%d serial=%u members=%u matched=%d from_disk=%u held=%u moved=%u\n", (int)g_owners_fix,
+                 g_mclaims_serial, (unsigned)g_member_claim.size(), (int)g_members_matched, g_mclaims_read, g_mclaims_held,
+                 g_mclaims_moved);
+        strncat(b, c, sizeof b - strlen(b) - 1);
+    } else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
                  "local_tribes=%u player_tribe=%p unselected=%u incomplete=%u older_chunks=%u ai_skipped=%u/%u away_orders=%u local=%d mirror_walks=%u timed=%u "

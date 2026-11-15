@@ -484,6 +484,14 @@ def forget_holds():
         subprocess.run(['rm', '-rf', d + '/SporeCoop/holds', d + '/SporeCoop/badges'])  # (badges: BUG-0786)
 
 
+def forget_store():
+    """E1 (BUG-1149): every test starts without the per-player store an earlier test left on the host's disk
+    (<profile>/Spore/Games-sporecoop-store: one file per save slot and planet, and the profile's salt); a test across
+    sessions keeps it through session_restart(), which does not call this"""
+    for d in (lane.HOST_DIR, lane.GUEST_DIR):
+        subprocess.run(['rm', '-rf', d + '/Games-sporecoop-store'])
+
+
 def forget_settings():
     """BUG-0762: every test starts with the default session settings: no world keeps the values an earlier test
     stored (<profile>/Spore/SporeCoop/settings, one file per world; a warm reset loads the same planet name)"""
@@ -507,6 +515,7 @@ KNOBS = re.compile(r'\s*(?:'
                    r'|coop\.settings\s+(?:set|force)\s+\S+\s+\S+|coop\.dna\s+pace\s+\S+'  # BUG-0762: session settings
                    r'|coop\.puppet\s+hold\s+\S+|coop\.track\s+(?:novel|lift)\s+\S+|coop\.npctrack\s+novel\s+\S+'
                    r'|coop\.space\s+repairdist\s+\S+'  # w49-warm: a warm successor would inherit these three
+                   r'|coop\.autosave\s+interval\s+\S+'  # E2: the autosave's test interval
                    r'|coop\.uistate\s+(?:lang|color|nudge|hide)\s+\S+|coop\.lanfake\b'
                    r'|coop\.view\s+set\b'  # a fixed camera (coop_same_view.py): off at the test's end, a crash leaves it
                    r'|coop\.diag\s+(?:sync\s+(?!now\b)\S+|detail\s+\S+|reserve\s+\S+)|coop\.log\s+detail\s+\S+'
@@ -588,12 +597,16 @@ def warm_reset(host, guest, fixture, planet):
     clear_faults(host=host, guest=guest)
     for c in (guest, host):
         c.call('coop.leave')
-        c.call('coop.uistate 0')  # BUG-0898: as a cold start, the co-op window closed (a question of the last test opened it)
+        # BUG-0898: as a cold start, the co-op window closed (a question of the last test opened it); BUG-1139: and on
+        # the lobby page (a closed window keeps its Space / settings page for the next F9: space_trade after
+        # space_rivalry waited for the lobby's Space button). An older DLL reads `reset` as 0: closed only
+        c.call('coop.uistate reset')
     if not KEEP_HOLDS[0]:  # BUG-0679: no hold record of an earlier test (its file and its memory)
         for c in (guest, host):
             c.call('coop.space trade forget')
         forget_holds()
     forget_settings()
+    forget_store()
     sh('fixture', 'slot', fixture, lane.HOST_PROFILE, str(slot))
     host.call(f'coop.load Game{slot} {planet.split("/")[1]}')
     phases = []
@@ -632,6 +645,130 @@ def warm_reset(host, guest, fixture, planet):
           + f'; warm run {st.get("warm_runs", 0) + 1} of these games; settle '
           + (f'{settled:.1f} s' if settled is not None else 'at the 3 s bound') + ')', flush=True)
     return True
+
+
+def played_slot():
+    """('GameN', 'Planet') the host plays now: the cold start's fixture planet, or the slot of the last warm reset"""
+    st = lane_state()
+    planet = st.get('planet') or ''
+    if '/' not in planet:
+        return None, None
+    slot, name = planet.split('/', 1)
+    if st.get('slot', 9) != 9:
+        slot = f'Game{st["slot"]}'
+    return slot, name
+
+
+def fix_off_names():
+    return [n for n in (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',')) if n]
+
+
+def apply_fix_off(con, who):
+    """SPORE_FIX_OFF in a game started again by the test (start() did it for the first games)"""
+    for name in fix_off_names():
+        cmd = f'kit.fix {name[4:]} 0' if name.startswith('kit.') else f'coop.fix {name} off'
+        print(f'  SPORE_FIX_OFF ({who}, restarted): ' + (con.call(cmd).get('out') or '').strip(), flush=True)
+
+
+def session_restart(host, guest, save=True, store_wait=20.0, slot=None, planet=None, before_join=None,
+                    host_kill=False):
+    """A new evening (E1 of 0.7.15, BUG-1149; docs/06-testing.md#testing-session-restart): both players quit, the
+    host's game starts again and loads its own save of the world, the guest's game starts again and joins.
+    Nothing of the lane is restored or forgotten in between: the host's profile keeps its save slot and its per-player
+    store (Games-sporecoop-store), the guest's profile its kept rejoin token (its clean leave, BUG-1135).
+
+    1. save (default): the host saves its game (`coop.save`, the game's own save into its own slot, like the pause
+       menu's Save) and waits for the per-player store's write (`coop.store`: writes > before, at most store_wait s);
+    2. the guest leaves (`coop.leave`: a clean leave), then the host;
+    3. both games end (`spore.sh kill`: no other process of the lane runs on; host_kill only says in the log that the
+       host's end was a crash, the end is the same);
+    4. both start cold; SPORE_FIX_OFF is set in both again; the host loads `slot`/`planet` (default: played_slot())
+       and hosts; the guest joins (before_join(guest) right before) and loads the host's world.
+    Returns (host, guest, info): the new consoles and {'saved': bool, 'store_writes': n, 'seconds': t}. The games are
+    no warm games for the next test (lane state knobs: a session restart)."""
+    t0 = time.time()
+    info = {'saved': False, 'store_writes': None}
+    if slot is None or planet is None:
+        s, p = played_slot()
+        slot, planet = slot or s, planet or p
+    assert slot and planet, 'session_restart: which save the host plays is not known (lane state)'
+
+    def writes(con):
+        m = re.search(r'writes=(\d+)', con.call('coop.store').get('out') or '')
+        return int(m.group(1)) if m else -1
+    if save:
+        w0 = writes(host)
+        out = (host.call('coop.save').get('out') or '').strip()
+        print(f'  session_restart: host save: {out[:120]}', flush=True)
+        info['saved'] = out.startswith('saved')
+        t1 = time.time()
+        while time.time() - t1 < store_wait:
+            f1 = host_frame(host)
+            time.sleep(0.5)
+            if host_frame(host) == f1:
+                host.call('key enter')  # the game's "game saved" box holds the frames
+            if writes(host) > w0:
+                break
+        info['store_writes'] = writes(host)
+        print(f'  session_restart: store writes {w0} -> {info["store_writes"]} '
+              f'({(host.call("coop.store").get("out") or "").splitlines()[0][:200]})', flush=True)
+        time.sleep(1)
+    for m in _monitors:
+        m.stop = True
+    try:
+        guest.call('coop.leave')
+        time.sleep(2)
+        host.call('coop.leave')
+        time.sleep(1)
+    except OSError:
+        pass
+    print('  session_restart: both games end' + (' (the host as a crash)' if host_kill else ''), flush=True)
+    sh('kill')
+    lane_down(10)
+    lane_state(**{**lane_state(), 'knobs': lane_state().get('knobs', []) + ['(session_restart)']})
+    menu = startwait.MenuFrames()
+    lane.run_guest()
+    game_process_up(lane.GUEST)
+    lane.run_host()
+    for inst in (lane.GUEST, lane.HOST):
+        assert wait_up(inst, 120), f'session_restart: instance {inst} did not start'
+    host, guest = Console(lane.HOST), Console(lane.GUEST)
+    t1 = time.time()
+    while time.time() - t1 < 180:
+        if 'GalaxyGameEntry' in guest.call('game.mode')['out']:
+            menu.note('guest', guest)
+        if 'GalaxyGameEntry' in host.call('game.mode')['out']:
+            break
+        time.sleep(startwait.STEP)
+    host.call('wait.frames 240 90000')
+    apply_fix_off(host, 'host')
+    apply_fix_off(guest, 'guest')
+    apply_fps(host, 'host')
+    apply_fps(guest, 'guest')
+    host.call(f'coop.load {slot} {planet}')
+    t1 = time.time()
+    while time.time() - t1 < 240 and not host.call('coop.avatar')['ok']:
+        time.sleep(startwait.STEP)
+    startwait.settle([host], 4)
+    host_up(host)
+    for _ in range(240):
+        if 'GalaxyGameEntry' in guest.call('game.mode')['out']:
+            menu.note('guest', guest)
+            break
+        time.sleep(0.5)
+    menu.wait_menu('guest', guest, 200)
+    if before_join is not None:
+        before_join(guest)
+    guest.call(lane.JOIN)
+    if not wait_guest_in(host, guest):
+        print('  (session_restart: the guest is not in the host\'s world after 240 s)', flush=True)
+    startwait.settle([host, guest], 4)
+    watch(lane.HOST, lane.GUEST)
+    PLAYERS.clear()
+    PLAYERS.update(host=host, guest=guest)
+    info['seconds'] = time.time() - t0
+    print(f'  session_restart: a new session in {info["seconds"]:.0f} s ({slot}/{planet})', flush=True)
+    return host, guest, info
 
 
 def start(*a, **kw):
@@ -772,6 +909,7 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
     if not KEEP_HOLDS[0]:
         forget_holds()
     forget_settings()
+    forget_store()
     for d in (lane.HOST_DIR, lane.GUEST_DIR):  # own-creation choices: back to the defaults
         subprocess.run(['rm', '-f', d + '/SporeCoop/choices.ini'])
     for who, lines in PRESET_CHOICES.items():  # a test's choices from an earlier session (BUG-0342/0344)

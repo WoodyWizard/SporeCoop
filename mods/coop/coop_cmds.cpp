@@ -3,7 +3,9 @@
 // places the registrations had (the same order: SporeKit keeps the commands by name, the module inits between them stay
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
 #include "coop_state.h"
+#include "net/compat.h"
 #include "net/kick.h"
+#include "net/manifest.h"
 
 namespace coop_core {
 
@@ -1026,6 +1028,11 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
         SAY("ui lang %s (the texts set from now on)", coop_ui::russian() ? "ru" : "en");
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "reset")) { // tests (BUG-1139): closed, on the lobby page, as at a cold start
+        coop_ui::test_reset();
+        SAY("%s", coop_ui::debug_state().c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "first")) { // tests: the window as at the first start (the name step)
         coop_ui::first_start();
         SAY("ui: back to the first start (the name step)");
@@ -1278,6 +1285,63 @@ void register_commands_core()
                    },
                    nullptr, MT);
     H->command_add(M, "coop.status", "session, players and puppets", c_status, nullptr, MT);
+    // B3 / B6 (BUG-1136, BUG-1137): the message manifest, the family revisions; tests plant a revision and send a crafted
+    // message through the session (the direction gate's lab test)
+    H->command_add(M, "coop.manifest",
+                   "coop.manifest [plant <family> <rev> [minor] | reset | send <type> [hex bytes] | types] - the message "
+                   "families of this game and the players (net/messages.def), the host's direction gate; tests: plant a "
+                   "family revision, send a crafted message to the host (a guest) or to every guest",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "types")) {
+                           for (int t = 0; t < 256; t++) {
+                               net::MsgInfo m = net::msg_info((uint8_t)t);
+                               if (m.known)
+                                   SAY("%3d %-13s dir=%d cls=%d route=%d recv=%d family=%d\n", t, m.name, (int)m.dir,
+                                       (int)m.cls, (int)m.route, (int)m.recv, (int)m.family);
+                           }
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "reset")) {
+                           g_sess.families = net::compat::my_families();
+                           SAY("families reset: %s\n", net::compat::families_text(g_sess.families).c_str());
+                           return 0;
+                       }
+                       if (argc > 3 && !strcmp(argv[1], "plant")) { // tests: this game's revision of one family
+                           bool hit = false;
+                           for (auto& f : g_sess.families)
+                               if (!strcmp(argv[2], net::family_info(f.family) ? net::family_info(f.family)->name : "")) {
+                                   f.rev = (uint16_t)atoi(argv[3]);
+                                   f.minor = argc > 4 ? (uint16_t)atoi(argv[4]) : f.minor;
+                                   hit = true;
+                               }
+                           SAY("%s: %s\n", hit ? "planted" : "no such family", net::compat::families_text(g_sess.families).c_str());
+                           return hit ? 0 : 1;
+                       }
+                       if (argc > 2 && !strcmp(argv[1], "send")) { // tests: a crafted message of any type
+                           net::Writer w;
+                           for (const char* h = argc > 3 ? argv[3] : ""; h[0] && h[1]; h += 2) {
+                               char b[3] = {h[0], h[1], 0};
+                               w.u8((uint8_t)strtoul(b, nullptr, 16));
+                           }
+                           uint8_t type = (uint8_t)strtoul(argv[2], nullptr, 0);
+                           if (g_sess.role() == net::Role::None) {
+                               SAY("not in a session\n");
+                               return 1;
+                           }
+                           g_sess.broadcast_reliable(type, w);
+                           SAY("sent %s (%u), %zu bytes\n", net::msg_name(type), type, w.size());
+                           return 0;
+                       }
+                       SAY("this game: %s\n", net::compat::families_text(g_sess.families).c_str());
+                       for (auto& p : g_sess.players())
+                           if (p.id != g_sess.my_id())
+                               SAY("player %u '%s': %s\n", p.id, p.name.c_str(),
+                                   p.version.empty() ? "version unknown" : p.version.c_str());
+                       SAY("dir_drops=%u compat_refused=%u dir_gate=%s family_check=%s\n", g_sess.dir_drops(),
+                           g_sess.compat_refused(), net::g_fix.dir_gate ? "on" : "off", net::g_fix.family_check ? "on" : "off");
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.effects",
                    "coop.effects [probe <hex key> | map | log on|off | load <n> [period_ms] [hex id]] - creature effects "
                    "relayed to the partners' puppets (BUG-0451); probe: the game's own effect pool of a key on the avatar "
@@ -1895,7 +1959,7 @@ void register_commands_ui()
     H->command_add(M, "coop.adapters", "coop.adapters [stress N|fault] - local address lookup (BUG-0286)",
                    [](void*, int argc, const char* const* argv, SkOut* out) { return adapters::command(argc, argv, out); },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.uistate", "coop.uistate [0|1|log|lang en|ru|first|color <argb>|nudge <control> <dx> <dy>|hide <control>|nudge off|demo <addr> <port> <shown port>|demo off|widgets] - co-op window state (open/close it; the rest: tests, README pictures)", c_uistate, nullptr,
+    H->command_add(M, "coop.uistate", "coop.uistate [0|1|reset|log|lang en|ru|first|color <argb>|nudge <control> <dx> <dy>|hide <control>|nudge off|demo <addr> <port> <shown port>|demo off|widgets] - co-op window state (open/close it; the rest: tests, README pictures)", c_uistate, nullptr,
                    SK_CMD_OUTSIDE_FRAME);
 }
 

@@ -6,21 +6,69 @@
 - The old GOG 2016 build of Spore is no longer supported at all: on it the game now starts without co-op and shows
   "this game version (GOG 2016) is not supported, please update to the current GOG or Steam version"; the setup says
   the same and does not install. Update the game through GOG Galaxy, or play on Steam (BUG-1125).
+- Players with different SporeCoop versions (0.7.x) can play together, each game shows "<player> plays SporeCoop
+  0.7.13; you have SporeCoop 0.7.15: some things may not match". Only when the two versions really send a part of the
+  game differently (from 0.7.15 on each part has its own revision) is the join refused, with a message naming both
+  versions; update both games to the same version then (BUG-1137).
 
 ### Added
+- Play over several evenings: the host's game now remembers what belongs to each player of its world, in a file next
+  to its save, and gives it back the next time you play together: a guest's Space colonies (with their cities,
+  buildings and spice, also colonies on stars it took from an alien empire), its badges and captain rank, the Rivals
+  mode with every player's own budget and their alliances and wars, whose cities and vehicles are whose in
+  Civilization, and whose tribe members are whose in Tribe. The guest gets them as long as it plays from the same game
+  (its game remembers for 30 days that it was you). A guest who comes back from another PC or a new install starts
+  fresh; the host is told and can hand that player its things with `coop.store adopt <name>` (BUG-1149, BUG-1151,
+  BUG-1152, BUG-1153, BUG-1154).
+- The host's game saves itself while it hosts: every 10 minutes (Settings, "Host autosave": off, 5, 10, 15, 30 or 60
+  minutes) and a few seconds after a new stage, a colony founded, a city captured or an epic killed. A crash or a
+  lost connection no longer takes the whole evening; the co-op window shows "saved N min ago" (BUG-0864).
 - `coop.kick <id | name>` in the console: the host removes a player from the session; that player's co-op window says
   why. It may join again.
 
 ### Fixed
+- Tribe: tribe members no longer change hands every time a player joins or leaves, or after a game over: a child you
+  bought or members you were given stay yours; a new player gets a fair share (BUG-1154).
+- Civilization: a city or vehicle of a player who left is kept for that player (the host looks after it) instead of
+  going to another player for good (BUG-1153).
 - Logs and problem reports: a Windows user name with letters outside English (Cyrillic, accented, Greek) is now hidden
   in the paths of the log and of report archives, like any other user name (BUG-1124).
 - Space: two players with the same name no longer swap their kept colonies, cargo hold, badges or Rivals budget when
   they leave and come back in the other order; the host gives them back to the same game (after a crash or a leave),
-  not to whoever joins under that name (BUG-1107).
+  not to whoever joins under that name (BUG-1107). After a restart of the game you get your things back from the
+  same host too: your game remembers for 30 days that it was you, for that host and your name only (BUG-1135,
+  BUG-1150).
+- Space: a rare crash when an NPC ship would visit your star system right after you saved, or after the host left,
+  while a partner's colony was shown as an allied empire nearby (BUG-1144).
+- Space: plants and animals a player places on a planet are now on that planet in every player's game, and the
+  planet counts as stabilized there too (more colony cities); a player who flies there later finds the animals. Before,
+  a planet a guest terraformed and populated was empty and not stabilized for the host (BUG-1148).
+- Space: terraforming done by a partner is no longer lost for a player who was in an editor or an adventure at the
+  time, or whose game had never been near that star; the host also hands it to a player who arrives in that star
+  system later, so it reaches the host's save as well (BUG-1155).
 - Network: more robustness checks on the data between the players' games: the host's game stays stable when another
   game sends far more than normal play.
+- Tribe: when the host dresses the tribe in the Tribal Outfitter, every player's tribe now wears the new outfit at
+  once (before, the other players kept the old look until the next world from the host) (BUG-1156).
+- Civilization: the host's new building and vehicle designs (a pick in the city planner or a new design from the
+  editor) now reach every player at once: their cities and the host's vehicles look the same on every game (before,
+  the others kept the old designs until the next world from the host) (BUG-1157).
+- Tribe and Civilization: the tribe's outfit and the civilization's designs belong to the whole shared tribe or
+  civilization, so only the host changes them. A guest's own outfitter or design editor no longer opens just to have
+  its work lost; the guest sees "only <host> changes it" instead, and a guest's own design pick goes back to the
+  host's with a message (BUG-1158).
 
 ### Development
+- Tests across sessions: `twoinst.session_restart()` plays "a new evening" in a test (save, both quit, the host loads
+  its save, the guest joins again); tests space_session, space_session_npc, civ_owners_session, tribe_owners_session,
+  autosave_milestone, autosave_timer (docs/06-testing.md#testing-session-restart).
+- Network: one message manifest (`net/messages.def`, `net/space_kinds.def`) generates the message ids, classes,
+  directions, the dispatch and the docs tables; the host drops a host-only message a guest sends; every message
+  family has a wire revision with a lock in `make test` (`tools/msg_manifest.py`) (BUG-1136, BUG-1137).
+- Lab: the warm reset puts the co-op window back on the lobby page (`coop.uistate reset`), as at a cold start
+  (BUG-1139).
+- Lab: the invariant monitor reads every trace line (the Space galaxy view's, a NaN position: no false "not together"
+  in space_allies), and space_rivalry passes warm after itself (BUG-1145, BUG-1146, BUG-1147).
 - Threads: one main-thread check for every module and `coop.threads`, which counts game calls made off the game's
   main thread (none in the smoke tests); `make test` has ratchet lints for `object_alive` calls, call guards around
   the game's original functions and lifecycle registration (BUG-1130, BUG-1131).
@@ -45,6 +93,9 @@
 - Shared building blocks for the stages, unit-tested before any stage uses them: one table of the mirrored objects,
   one receiver of the host's snapshots, one world identity with ordered session / world observers, and one model of
   the host's busy state (away, editor, pause) with the pause reasons of every stage measured (BUG-1140..1143).
+- Space: the kept state of a rejoining guest (colonies, cargo hold, badges, Rivals budget) goes through one shared store
+  instead of four hand-built copies, and every Space and shared-money message is decoded by a portable struct with
+  golden-byte tests and fuzzing; the libFuzzer run is in CI (BUG-1132, BUG-1133). No change on the wire.
 
 ## [0.7.14.1] - 2026-11-14
 

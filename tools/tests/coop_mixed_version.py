@@ -21,9 +21,18 @@ Checked on the players' games:
             Carol stands at a nest; in Tribe the chunks carry the host's time trailer: the old game
             keeps playing, draws the others right, has no caught fault
   health    no caught fault on any game (exc), no crash / hang report of any of the three, all answer
+  warning   (B6, BUG-1137) another version is let in with a warning on both sides: this build's game shows "<player>
+            plays SporeCoop <v>; you have SporeCoop <v>: some things may not match" (its feed, in its log), the old game logs
+            "versions differ" (0.7.4 and later)
 FAIL demo: --old-tag v0.7.2.4 or MIXED_OLD_TAG=v0.7.2.4 (no version lines before 0.7.3.x: "version unknown").
 
-  SPORE_LANE=9 SPORE_LANE_B=10 python3 tools/tests/coop_mixed_version.py --old guest|host [--fixture creature|tribe]
+--plant FAMILY  (B6) this build plants revision 2 of that message family (`coop.manifest plant`) before Carol joins:
+            the join is refused (this build hosting: the host refuses the old guest, which shows the text; the old
+            release hosting: this build's guest refuses the host by its first state), the refused game's log names
+            both versions; nobody faulted. Use a family the fixture's stage uses (creature, npc, session); a family
+            it does not use (space in Creature) must join: --plant space --expect-join.
+
+  SPORE_LANE=9 SPORE_LANE_B=10 python3 tools/tests/coop_mixed_version.py --old guest|host [--fixture creature|tribe] [--plant FAMILY [--expect-join]]
 """
 import argparse
 import glob
@@ -196,7 +205,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--old', choices=('guest', 'host'), required=True)
     ap.add_argument('--fixture', default='creature', choices=('creature', 'tribe'))
-    ap.add_argument('--old-tag', default=os.environ.get('MIXED_OLD_TAG', 'v0.7.3.3'))
+    ap.add_argument('--old-tag', default=os.environ.get('MIXED_OLD_TAG', 'v0.7.14'))  # B6: the previous release
+    ap.add_argument('--plant', default='', help='B6: plant revision 2 of this family on this build first')
+    ap.add_argument('--expect-join', action='store_true', help='--plant: the planted family is unused here, Carol joins')
     a = ap.parse_args()
     lane_a = lane.LANE
     # the other version's lane: SPORE_LANE_B, else the neighbour (the suite marks these tests exclusive)
@@ -232,7 +243,12 @@ def main():
     ps.append(carol)
     ck = Checks()
     host = ps[0]
+    if a.plant:
+        mine = carol if old_side else host
+        print(f'  {mine.name} (this build): ' + mine.call(f'coop.manifest plant {a.plant} 2').strip(), flush=True)
     carol.call(f'cheat coop join 127.0.0.1:{lane.PORT} Carol')
+    if a.plant and not a.expect_join:
+        return refused_check(a, ps, carol, ck, t_start, lane_a, lane_b, old_side)
     t0 = time.time()
     inside = False
     while time.time() - t0 < 240 and not inside:
@@ -260,6 +276,17 @@ def main():
             known = [l for l in lines if 'version unknown' not in l]
             ck(known, f'[version] {p.name}\'s game logs {q.name}\'s version: '
                + (known[-1].split('net: ')[-1].strip()[:160] if known else (lines[-1].strip()[-120:] if lines else 'no line')))
+    # B6: the warning on both sides (this build: the owner's text in its co-op feed; the old release: its log)
+    for p in ps:
+        if p.old:
+            text = log_since(p.inst, 0)
+            ck('versions differ' in text, f'[warning] {p.name} (old) logs that the versions differ')
+        else:  # the feed line (a toast and the co-op feed) is logged as "coop: <text>"
+            others = [q.name for q in ps if q.old]
+            w = [ln.strip() for ln in log_since(p.inst, 0).splitlines() if 'some things may not match' in ln]
+            ck(all(any(o + ' plays SporeCoop' in ln for ln in w) for o in others),
+               f'[warning] {p.name} (this build) shows "<old player> plays SporeCoop ...: some things may not match": '
+               f'{w[-1][:160] if w else "no line"}')
     near = NEAR.get(a.fixture, 6.0)
     views(ps, ck, 'join', near)
     # walks
@@ -300,6 +327,10 @@ def main():
     except OSError as e:
         print(f'  (Carol\'s log not kept: {e})', flush=True)
     print(f'  ({time.time() - t_start:.0f} s)', flush=True)
+    return finish(ck, lane_a, lane_b)
+
+
+def finish(ck, lane_a, lane_b):
     r = ck.result()
     # the lanes go back to this build's files (the next test of lane B must not start the old release)
     for n in (lane_a, lane_b):
@@ -308,6 +339,36 @@ def main():
     for n in (lane_a, lane_b):
         sh_lane(n, 'deploy')
     return r
+
+
+def refused_check(a, ps, carol, ck, t_start, lane_a, lane_b, old_side):
+    """B6: a planted revision of a family the stage uses: Carol does not get in, the refused game says why"""
+    host = ps[0]
+    refused_game = carol  # this build hosting: the old Carol is refused; the old release hosting: this build's Carol leaves
+    t0 = time.time()
+    text = ''
+    while time.time() - t0 < 90:
+        text = log_since(refused_game.inst, 0)
+        if 'do not fit together' in text:
+            break
+        time.sleep(2)
+    time.sleep(5)
+    st = host.call('coop.status')
+    line = next((ln for ln in reversed(text.splitlines()) if 'do not fit together' in ln), '')
+    print(f'  {refused_game.name}: {line.strip()[-260:]}', flush=True)
+    print(f'  host: {st.splitlines()[0] if st else "no answer"}', flush=True)
+    ck(bool(line), f'[refused] {refused_game.name}\'s game says why it cannot join ("... do not fit together")')
+    ck(f'the {a.plant}' in line.lower() or a.plant in line.lower(), f'[refused] the text names the family ({a.plant})')
+    ck(line.count('SporeCoop') >= 2 or ('SporeCoop' in line and 'older' in line),
+       f'[refused] the text names both versions: {line.strip()[-200:]!r}')
+    ck('players=2/' in st, f'[refused] the host has only its own two players ({st.splitlines()[0] if st else "?"})')
+    for p in ps:
+        out = p.call('exc').splitlines()
+        ck(out and 'total faults: 0' in out[0], f'[health] {p.name}: no caught fault ({out[0] if out else "no answer"})')
+    dirs = {os.path.dirname(lane.game_log(p.inst)) for p in ps}
+    rep = reports(dirs, t_start)
+    ck(not rep, f'[health] no crash / hang report: {rep}')
+    return finish(ck, lane_a, lane_b)
 
 
 if __name__ == '__main__':

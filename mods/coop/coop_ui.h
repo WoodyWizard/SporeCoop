@@ -105,6 +105,9 @@ struct Api {
 void init(const SkHost* host, SkMod* mod, Api api);
 void tick();     // every frame (inside Present): only schedules UI work outside the frame
 void open(bool on);
+// tests (BUG-1139, the warm reset): the window closed and back on the lobby page, as at a cold start (a closed
+// window keeps its page for the next F9)
+void test_reset();
 void open_lobby(); // open on the lobby page (not the settings / space page): a guest asked for its report
 bool is_open();
 // BUG-0599: the window covers (x, y) (screen pixels of the game window): hide it for `secs` so that a click of the
