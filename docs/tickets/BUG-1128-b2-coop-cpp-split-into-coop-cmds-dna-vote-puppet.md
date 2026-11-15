@@ -1,16 +1,16 @@
 ---
 id: BUG-1128
 title: B2: coop.cpp split into coop_cmds, dna, vote, puppets, session_glue by pure moves; sporekit_mod_main and the frame in named phases
-status: open
+status: fixed
 kind: tooling
 stage: All
 reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/w51-split
-commits:
+commits: f37ab85f, f0031517, 728dc06c, 8397caab, 1f4594c4, b97ce418, 07a2ed60, 3fa72b95, a3b1d81c, 9681105a, d03e7301, 12bc9b41, b7eb4260
 tests: refactor_dump (tools/refactor_dump.py, suite refactor), smoke on lane 10
 signature:
 docs: docs/01-architecture.md#arch-start-and-frame, docs/10-dev-pipeline.md#pipeline-refactor-proof
@@ -45,6 +45,8 @@ the declarations the move needs; `tools/refactor_dump.py moves <c>~1 <c>` lists 
 - 3fa72b95 coop_state.h: declarations grouped by their file (header only).
 - a3b1d81c sporekit_mod_main: eight init phases, called in the same order.
 - 9681105a on_frame: nine frame phases, called in the same order (CORE-8).
+- d03e7301 docs (01-architecture, 10-dev-pipeline, CHANGELOG); 12bc9b41 merge of rel/0.7.15 with A4 / A11 replayed;
+  b7eb4260 B5's triage_symbols_check accepts the phase inlined at sporekit_mod_main+0x40.
 Non-move lines over the series: `static` dropped on 78 definitions now shared (and on 3 forward declarations), the
 default arguments of host_elsewhere, parts_census, notice and chat_log kept only on their prototypes, the no-op
 `(void)av;` at the end of its phase. state_fields_check.py names session_glue.cpp for PlayerState.species.
@@ -57,7 +59,13 @@ lifecycle, players, guards, hooks, commands of host and guest; message table and
 base rel/0.7.15 out/lab/20261115-011231; namespace 20261115-011340; coop_cmds 20261115-012416; dna
 20261115-012622; vote 20261115-013051; puppets 20261115-013542; session_glue 20261115-014151; mod_main phases
 20261115-014623; frame phases 20261115-014811. `make test` passed after every move commit.
+Smoke on lane 10 of the split tip 9681105a (all of smoke but `unit`, run as make test, and `ui`, exclusive: it needs the
+machine alone): 12/12 ok, out/lab/20261115-014927.
+Merge of rel/0.7.15 (12bc9b41, 0c0f8c93: A11's coop.kick and A4's counter deletions replayed in the split files):
+refactor_dump of the rel/0.7.15 tip dfdfb3d0 (out/lab/20261115-021145) and of the merged branch
+(out/lab/20261115-021242) identical in every section (785 fixes, 184 commands with coop.kick); `make test` all parts
+passed; lab `kick` ok (out/lab/20261115-021813).
 
 ## History
 - 2026-11-15: opened.
-- 2026-11-15: split and phases done on feat/w51-split (B2).
+- 2026-11-15: split and phases done on feat/w51-split (B2); rel/0.7.15 merged in, A4 / A11 replayed; fixed.
