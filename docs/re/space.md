@@ -3145,6 +3145,10 @@ BUG-1151 (E1 of 0.7.15). GOG 2024, objdump of SporeApp.exe and lab lanes 9 / 10.
   (bought or conquered in the guest's game) gets the star taken in the guest's copy with TransferStarOwnership; never
   on the host, never a partner's mirror empire. The host's world keeps the NPC's star: the allies mirror does not show
   that colony (BUG-0197) and the NPC's AI goes on there in the host's game.
+* ✔ FillPlanetDataForTechLevel's number of cities for a record-level colony is not fixed: 2 in the space fixture's
+  home system before the merge of E3 (BUG-1148, the ecosystem sync), 0 after it (lab 20261115-140828: the colony a
+  civilization of the guest without a city); 0xBBE5E0, the colony city count of a planet, reads the ecosystem level
+  (docs/re/space.md#space-ecosystem, PlanetRecord_EcoLevel). The restore makes every city the guest had, any count.
 * ? Not done: the ornaments (+0x90), walls (+0xA4), the 14 u16 and the two handles are not carried (the city maker
   makes walls and ornaments of its own); a generated city beyond the guest's count stays; a guest colony made from
   a planet only partly the guest's (some cities captured, the star still the NPC's) is taken whole.

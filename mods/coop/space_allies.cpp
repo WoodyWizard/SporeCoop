@@ -1810,8 +1810,16 @@ static std::string debug(const std::vector<std::string>& a)
     if (a[0] == "citytest" && a.size() > 1) { // tests (BUG-1151): my colony's cities as a player's would be after a while
         uint32_t id = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
         std::vector<wire::space_map::City> v;
-        if (!wire::space_map::get_cities(cities_read(id), v) || v.empty())
-            return "no cities of mine there\n";
+        if (!my_civ(planet_record(id)))
+            return "no civilization of mine there\n";
+        wire::space_map::get_cities(cities_read(id), v);
+        if (v.empty()) { // FillPlanet made none (the planet's city count follows its ecosystem level): a plain one
+            wire::space_map::City c;
+            c.size = 4;
+            c.income = 150;
+            c.wall = 0x280852F1;
+            v.push_back(c);
+        }
         // buildings: the home planet's first city's real entries (their class ids), 3 of them
         std::vector<std::vector<uint8_t>> real;
         void* hr = planet_record((uint32_t)strtoul(a.size() > 2 ? a[2].c_str() : "00460035", nullptr, 16));
