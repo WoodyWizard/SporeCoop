@@ -277,6 +277,17 @@ static void hello_welcome_ext()
     Writer wm;
     mine.write(wm);
     CHECK(wm.data.size() >= 5 && memcmp(wm.data.data() + 1, wb.data.data() + 1, 4) == 0, "Welcome::world offset");
+    // B6 (BUG-1137): CAP_FAMILIES after CAP_VERSION's payload; a cut list or a bad version payload: no families
+    Writer f = base;
+    f.u32(CAP_VERSION | CAP_FAMILIES); f.str8("coop 0.7.15"); f.u8(2); f.u8(1); f.u16(1); f.u16(0); f.u8(8); f.u16(2); f.u16(1);
+    CHECK(rd(f.data, h) && h.has_families && h.families.size() == 2 && h.families[1].family == 8 && h.families[1].rev == 2 &&
+              h.version == "coop 0.7.15", "Hello families");
+    Writer fc = f;
+    fc.data.pop_back();
+    CHECK(rd(fc.data, h) && !h.has_families && h.version == "coop 0.7.15", "Hello families cut");
+    Writer fb = base;
+    fb.u32(CAP_VERSION | CAP_FAMILIES); fb.u8(200); fb.u8(1); // a version longer than the message
+    CHECK(rd(fb.data, h) && !h.has_families && h.version.empty() && h.name == "Bob", "Hello families after a bad version");
 }
 
 static void fuzz_protocol(uint64_t seed, int iters)
@@ -295,6 +306,8 @@ static void fuzz_protocol(uint64_t seed, int iters)
         h.ext = R.below(4) != 0; // without: a 0.7.2 HELLO
         h.caps = R.below(2) ? kMyCaps : R.u32();
         h.has_token = R.below(2); h.token = ((uint64_t)R.u32() << 32) | R.u32();
+        if (R.below(2)) h.version = R.str(60);
+        for (int n = (int)R.below(12), i = 0; i < n; i++) h.families.push_back({R.u8(), R.u16(), R.u16()}); // B6
         return h;
     }, [](const Hello& h) { return (size_t)(2 + 4 + 1 + std::min<size_t>(h.name.size(), 255)); });
     fuzz_struct<Welcome>("Welcome", R, iters, [](Rng& R) {
@@ -302,6 +315,7 @@ static void fuzz_protocol(uint64_t seed, int iters)
         for (int n = (int)R.below(R.below(8) ? 5 : 256), i = 0; i < n; i++) w.players.push_back({R.u8(), R.str(40)});
         w.ext = R.below(4) != 0;
         w.caps = R.below(2) ? kMyCaps : R.u32();
+        for (int n = (int)R.below(12), i = 0; i < n; i++) w.families.push_back({R.u8(), R.u16(), R.u16()}); // B6
         return w;
     }, [](const Welcome& w) {
         size_t n = 1 + 4 + 1;

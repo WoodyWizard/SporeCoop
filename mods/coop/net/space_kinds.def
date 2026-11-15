@@ -1,0 +1,86 @@
+// The MSG_SPACE sub-kinds (B3 of 0.7.15, BUG-1136; docs/04-netcode.md#netcode-manifest): every kind once, with the
+// feature that owns it and who may send it. An X-macro file: the includer defines KIND and / or FEATURE, this file
+// #undefs them at the end. MSG_SPACE is u8 kind, u8 origin, payload (spacecoop.cpp relays it on the host).
+//
+// Generated from it: net/validate.h space_dir (BUG-1041: the direction gate of every kind, space.dir_table), the
+// kind table of docs/04-netcode.md, and the space family's lock hash (net/messages.lock). The kinds themselves stay
+// in each feature's `enum Kind` (spacecoop.cpp, space_<feature>.cpp): tests/validate_tests.cpp checks that every
+// enum value is a row here with the same name and feature, every row is in its feature's enum, and the ranges of
+// FEATURE are disjoint and equal to what each feature registers (spaceext::add kind_lo / kind_hi).
+//
+// FEATURE(name, lo, hi)          the kinds a feature owns (inclusive); its source is spacecoop.cpp or space_<name>.cpp
+// KIND(id, feature, NAME, dir)   dir: Host (only the host sends it: its tables, its decisions, what it kept for a
+//                                rejoiner), Guest (only a guest: its own state, an ask, a done), Any (every player:
+//                                its own events; gifts and trades addressed to a player)
+
+#ifndef FEATURE
+#define FEATURE(name, lo, hi)
+#endif
+#ifndef KIND
+#define KIND(id, feature, name, dir)
+#endif
+
+FEATURE(spacecoop, 1, 9)    // rescue, raids, missions, terraforming, spice gifts
+FEATURE(map, 10, 19)        // partner on the galaxy map, colonies roster
+FEATURE(contracts, 20, 29)  // co-op contracts
+FEATURE(diplomacy, 30, 39)  // shared relations with NPC empires
+FEATURE(finale, 40, 49)     // the galaxy core together
+FEATURE(rivalry, 50, 59)    // rivals mode (own budgets, PvP)
+FEATURE(allies, 60, 69)     // partner colonies as an allied empire
+FEATURE(trade, 70, 79)      // tool gifts and trade between players
+FEATURE(planets, 80, 84)    // a shared colony's stored spice (BUG-0537)
+FEATURE(badges, 85, 89)     // badges kept across a rejoin
+// 90..255 free
+
+KIND(1,  spacecoop, DOWN,          Any)
+KIND(2,  spacecoop, RAID,          Any)
+KIND(3,  spacecoop, MISSION,       Any)
+KIND(4,  spacecoop, TERRA,         Any)
+KIND(5,  spacecoop, GIFT,          Any)
+KIND(6,  spacecoop, GIFT_BACK,     Any)
+KIND(7,  spacecoop, SCULPT,        Any)
+KIND(8,  spacecoop, COLOUR,        Any)
+KIND(9,  spacecoop, TERRA_REC,     Any)
+KIND(10, map,       ROSTER,        Any)
+KIND(11, map,       ROSTER_REQ,    Any)
+KIND(12, map,       KEPT,          Host)
+KIND(13, map,       KEPT_DONE,     Guest)
+KIND(20, contracts, STATE,         Host)
+KIND(21, contracts, ACCEPT,        Guest)
+KIND(22, contracts, RESULT,        Host)
+KIND(30, diplomacy, EVENT,         Any)
+KIND(31, diplomacy, STATE,         Any)
+KIND(32, diplomacy, SNAP,          Host)
+KIND(33, diplomacy, ASK,           Guest)
+KIND(34, diplomacy, CONTACT,       Any)
+KIND(40, finale,    STATE,         Any)
+KIND(41, finale,    WAIT,          Any)
+KIND(42, finale,    REACHED,       Any)
+KIND(50, rivalry,   STATE,         Host)
+KIND(51, rivalry,   REQ,           Guest)
+KIND(52, rivalry,   EVENT,         Host)
+KIND(53, rivalry,   HIT,           Any)
+KIND(54, rivalry,   MONEY,         Any)
+KIND(55, rivalry,   MERGE_FIX,     Guest)
+KIND(56, rivalry,   ASK,           Guest)
+KIND(57, rivalry,   SET,           Host)
+KIND(60, allies,    RAIDS,         Any)
+KIND(61, allies,    DEFENDED,      Any)
+KIND(70, trade,     TOOL,          Any)
+KIND(71, trade,     TOOL_ACK,      Any)
+KIND(72, trade,     SELL,          Any)
+KIND(73, trade,     SELL_ACK,      Any)
+KIND(74, trade,     OFFER,         Any)
+KIND(75, trade,     OFFER_ACK,     Any)
+KIND(76, trade,     OFFER_CANCEL,  Any)
+KIND(77, trade,     INV,           Guest)
+KIND(78, trade,     INV_KEPT,      Host)
+KIND(79, trade,     INV_DONE,      Guest)
+KIND(80, planets,   SPICE,         Host)
+KIND(81, planets,   SPICE_TAKEN,   Guest)
+KIND(85, badges,    BADGES,        Guest)
+KIND(86, badges,    BADGES_KEPT,   Host)
+KIND(87, badges,    BADGES_DONE,   Guest)
+
+#undef FEATURE
+#undef KIND
