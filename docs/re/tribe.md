@@ -4112,3 +4112,11 @@ BUG-1154 (E1 of 0.7.15), lab lanes 9 / 10 (coop_tribe_owners_session.py).
   (members / players) from the player with the most, members without a flag first.
 * ? The guest's own chief is "the lowest id adult member of the owner" (tribe.cpp): it follows the claims, not a
   claim of its own.
+## The Tribal Outfitter between the games (2026-11-15, fix/w51-editors)
+<a id="tribe-outfitter"></a>
+
+E4, BUG-1156, BUG-1158: the outfitter (the hut planner's second tab, editor 0x156276D1) saves a new creation in the
+player's My Creations and reloads the tribe's species profile with it in place. Before 0.7.15 the host's outfit never
+reached a guest kept in place (BUG-0508) and a guest's own outfit stayed in its own game. Now the wsync row
+`tribe_outfit` carries it, and a guest's own outfitter is refused. The route, the game's calls and the lab runs:
+docs/re/creations.md#creations-stage-designs.

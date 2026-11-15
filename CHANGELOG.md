@@ -48,6 +48,15 @@
   system later, so it reaches the host's save as well (BUG-1155).
 - Network: more robustness checks on the data between the players' games: the host's game stays stable when another
   game sends far more than normal play.
+- Tribe: when the host dresses the tribe in the Tribal Outfitter, every player's tribe now wears the new outfit at
+  once (before, the other players kept the old look until the next world from the host) (BUG-1156).
+- Civilization: the host's new building and vehicle designs (a pick in the city planner or a new design from the
+  editor) now reach every player at once: their cities and the host's vehicles look the same on every game (before,
+  the others kept the old designs until the next world from the host) (BUG-1157).
+- Tribe and Civilization: the tribe's outfit and the civilization's designs belong to the whole shared tribe or
+  civilization, so only the host changes them. A guest's own outfitter or design editor no longer opens just to have
+  its work lost; the guest sees "only <host> changes it" instead, and a guest's own design pick goes back to the
+  host's with a message (BUG-1158).
 
 ### Development
 - Tests across sessions: `twoinst.session_restart()` plays "a new evening" in a test (save, both quit, the host loads

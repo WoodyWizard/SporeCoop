@@ -1857,3 +1857,12 @@ BUG-1153 (E1 of 0.7.15), lab lanes 9 / 10 (coop_civ_owners_session.py).
 * ? A vehicle that drove more than 6 m between the save and the load is not found (the save keeps its position, so
   only a load of an older save). A city that changed hands in the host's game while its claimed player was away (an
   NPC capture) keeps its claim only while it is a player city.
+## New designs between the games: the culture set (2026-11-15, fix/w51-editors)
+<a id="civ-culture-sync"></a>
+
+E4, BUG-1157, BUG-1158: cCivilization +0x6C is an EASTL map design id -> key, set by `Civ_SetDesign` 0xBF4C50 (the
+planner's pick, the editors' return), which re-models the civilization's buildings and vehicles of that design.
+Before 0.7.15 the host's new designs never reached a guest kept in place (BUG-0508) and a guest's own pick or editor
+changed only its own game. Now the wsync row `civ_design` carries the host's entries (the guest calls the same setter),
+a guest's own design editor is refused and its own pick goes back. Details and lab runs:
+docs/re/creations.md#creations-stage-designs.
