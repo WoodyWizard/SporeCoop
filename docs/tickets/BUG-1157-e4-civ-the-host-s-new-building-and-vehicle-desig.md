@@ -40,7 +40,7 @@ buildings). Switch: `coop.fix civ.design_sync off`.
 civ_designs (both profiles with other creations under the test ids; the host's City Hall and vehicle designs set with
 the game's setter; checks the guest's culture set and the bem hashes of its City Hall and of its mirror = the host's):
 FAIL with SPORE_FIX_OFF=civ.design_sync,editors.guest_designs: out/lab/20261115-131006;
-PASS: out/lab/20261115-131752 (two runs each; civ_host_building, civ_host_design, tribe_editor_world 2x PASS in the same run). Earlier PASS runs: out/lab/20261115-130639 (tribe_outfit), out/lab/20261115-130858 (civ_designs).
+PASS (after the merge of rel/0.7.15 5901c362): out/lab/20261115-133408 (two runs each, play_tribe and play_civ --quick 2x PASS in the same run); before it: out/lab/20261115-131752 (two runs each; civ_host_building, civ_host_design, tribe_editor_world 2x PASS in the same run). Earlier PASS runs: out/lab/20261115-130639 (tribe_outfit), out/lab/20261115-130858 (civ_designs).
 Not verified: the host's real editor route end to end (vote, building editor, save); a design id the host has none of
 yet is not sent (a guest's own pick there stays its own until the host makes one).
 

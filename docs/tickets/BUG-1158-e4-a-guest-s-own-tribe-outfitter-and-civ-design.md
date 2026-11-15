@@ -41,7 +41,7 @@ tribe_outfit (the guest's own outfitter by real input: stays in Tribe, refused, 
 guest's own pick goes back, its editor request is refused):
 FAIL with SPORE_FIX_OFF=tribe.outfit_sync,editors.guest_designs: out/lab/20261115-131200; with
 SPORE_FIX_OFF=civ.design_sync,editors.guest_designs: out/lab/20261115-131006 (the editors opened);
-PASS: out/lab/20261115-131752 (two runs each; civ_host_building, civ_host_design, tribe_editor_world 2x PASS in the same run). Earlier PASS runs: out/lab/20261115-130639 (tribe_outfit), out/lab/20261115-130858 (civ_designs).
+PASS (after the merge of rel/0.7.15 5901c362): out/lab/20261115-133408 (two runs each, play_tribe and play_civ --quick 2x PASS in the same run); before it: out/lab/20261115-131752 (two runs each; civ_host_building, civ_host_design, tribe_editor_world 2x PASS in the same run). Earlier PASS runs: out/lab/20261115-130639 (tribe_outfit), out/lab/20261115-130858 (civ_designs).
 
 ## History
 - 2026-11-15: opened.

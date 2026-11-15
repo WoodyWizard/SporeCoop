@@ -42,7 +42,7 @@ tribe's outfit. Switch: `coop.fix tribe.outfit_sync off`.
 tribe_outfit (real input: the host's outfitter, the guest's I'm ready; checks the guest's tribe profile key, the bem
 hash of its model = the host's, every member's generation, no key of ours in the guest's save):
 FAIL with SPORE_FIX_OFF=tribe.outfit_sync,editors.guest_designs: out/lab/20261115-131200;
-PASS: out/lab/20261115-131752 (two runs each; civ_host_building, civ_host_design, tribe_editor_world 2x PASS in the same run). Earlier PASS runs: out/lab/20261115-130639 (tribe_outfit), out/lab/20261115-130858 (civ_designs).
+PASS (after the merge of rel/0.7.15 5901c362): out/lab/20261115-133408 (two runs each, play_tribe and play_civ --quick 2x PASS in the same run); before it: out/lab/20261115-131752 (two runs each; civ_host_building, civ_host_design, tribe_editor_world 2x PASS in the same run). Earlier PASS runs: out/lab/20261115-130639 (tribe_outfit), out/lab/20261115-130858 (civ_designs).
 Not verified: a host's outfit made while no guest was in the session (the row covers it after the load, not run).
 
 ## History
