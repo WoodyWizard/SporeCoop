@@ -30,6 +30,7 @@
 #include "modes.h"
 #include "space_ext.h"
 #include "sporekit_game.hpp"
+#include "wire/space_planets.h"
 
 using skg::cdecl_call;
 
@@ -51,6 +52,7 @@ template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 
 constexpr size_t kMaxColonies = 48, kMaxCities = 16;
+static_assert(kMaxColonies == wire::space_planets::kMaxColonies && kMaxCities == wire::space_planets::kMaxCities);
 // BUG-0834: kMaxColonies was a cap: the 49th and later colonies (and every colony above 256 in the list) were never
 // sent, so each game kept its own spice there again (the BUG-0537 double collection). Now every colony of the list
 // (up to kListMax) is synced, K_SPICE goes in parts of kMaxColonies. `coop.fix space.colony_spice_all off`: the cap
@@ -162,15 +164,12 @@ static void host_tick(double now)
     auto it = now_v.begin();
     do {
         net::Writer w;
-        w.u32(pol);
+        wire::space_planets::Spice msg;
+        msg.pol = pol;
         size_t n = std::min<size_t>(kMaxColonies, (size_t)std::distance(it, now_v.end()));
-        w.u8((uint8_t)n);
-        for (size_t k = 0; k < n; k++, ++it) {
-            w.u32(it->first);
-            w.u8((uint8_t)it->second.size());
-            for (float x : it->second)
-                w.f32(x);
-        }
+        for (size_t k = 0; k < n; k++, ++it)
+            msg.colonies.push_back({it->first, it->second});
+        msg.write(w);
         spaceext::send(K_SPICE, w);
         g_tx++;
     } while (it != now_v.end());
@@ -218,14 +217,15 @@ static void apply_taken(const Taken& t)
 
 static bool read_taken(uint8_t origin, net::Reader& r, Taken& t)
 {
+    wire::space_planets::SpiceTaken msg;
+    if (!msg.read(r))
+        return false;
     t.origin = origin;
-    t.pol = r.u32();
-    t.id = r.u32();
-    uint8_t n = r.u8();
-    for (int i = 0; i < n && i < (int)kMaxCities; i++)
-        t.left.push_back(r.f32());
+    t.pol = msg.pol;
+    t.id = msg.id;
+    t.left = std::move(msg.left);
     t.epoch = spaceext::world_epoch();
-    return r.ok();
+    return true;
 }
 
 // the host back in Space: the collections that came while it was away, in the same Space world
@@ -296,11 +296,7 @@ static void guest_check(double now, bool force = false)
         }
         if (took) {
             net::Writer w;
-            w.u32(pol);
-            w.u32(c.id);
-            w.u8((uint8_t)v.size());
-            for (float x : v)
-                w.f32(x);
+            wire::space_planets::SpiceTaken{pol, c.id, v}.write(w);
             spaceext::send(K_SPICE_TAKEN, w);
             g_taken_tx++;
             g.pending_until = now + kPendingHold;
@@ -312,18 +308,15 @@ static void guest_check(double now, bool force = false)
 
 static void guest_state(net::Reader& r, double now)
 {
-    uint32_t pol = r.u32();
-    uint8_t n = r.u8();
-    std::map<uint32_t, std::vector<float>> host;
-    for (int k = 0; k < n && k < (int)kMaxColonies; k++) {
-        uint32_t id = r.u32();
-        uint8_t m = r.u8();
-        auto& v = host[id];
-        for (int i = 0; i < m && i < (int)kMaxCities; i++)
-            v.push_back(r.f32());
-    }
-    if (!r.ok() || pol != player_pol()) // another galaxy (the player's empire is not the host's)
+    wire::space_planets::Spice msg;
+    if (!msg.read(r) || msg.pol != player_pol()) // another galaxy (the player's empire is not the host's)
         return;
+    uint32_t pol = msg.pol;
+    std::map<uint32_t, std::vector<float>> host;
+    for (auto& [id, vals] : msg.colonies) {
+        auto& v = host[id]; // a planet listed twice: its values one after the other, as before
+        v.insert(v.end(), vals.begin(), vals.end());
+    }
     g_rx++;
     guest_check(now, true); // a collection of this game before the host's values are written
     for (auto& c : colonies(pol)) {

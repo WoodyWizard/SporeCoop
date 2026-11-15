@@ -35,9 +35,17 @@
 #include "net/sreport.h"
 #include "net/utf8.h"
 #include "net/validate.h"
+#include "fields_wire.h"
 #include "wire/common.h"
+#include "wire/shared_res.h"
+#include "wire/space_allies.h"
 #include "wire/space_badges.h"
+#include "wire/space_contracts.h"
+#include "wire/space_core.h"
+#include "wire/space_diplomacy.h"
+#include "wire/space_finale.h"
 #include "wire/space_map.h"
+#include "wire/space_planets.h"
 #include "wire/space_rivalry.h"
 #include "wire/space_trade.h"
 
@@ -1018,6 +1026,25 @@ static void fuzz_session(uint64_t seed, int iters)
 // picks the struct).
 template <class T> static bool wire_dec(Reader& r) { T x; return x.read(r); }
 using WireDec = bool (*)(Reader&);
+// MSG_FIELDS (fields_wire.h) as one packet: encode()'s bytes for a batch that fits one, decode() reads them
+struct FieldsPacket {
+    fields_wire::Batch b;
+    void write(Writer& w) const
+    {
+        w.u8(b.kind);
+        w.u8((uint8_t)b.fids.size());
+        for (uint8_t f : b.fids)
+            w.u8(f);
+        w.u16((uint16_t)b.ids.size());
+        for (size_t j = 0; j < b.ids.size(); j++) {
+            w.u16(b.ids[j]);
+            for (size_t k = 0; k < b.fids.size(); k++)
+                w.f32(b.vals[j * b.fids.size() + k]);
+        }
+    }
+    bool read(Reader& r) { return fields_wire::decode(r, b); }
+};
+
 static const WireDec kWireDecoders[] = {
     // wire/space_map.h
     wire_dec<wire::space_map::Roster>, wire_dec<wire::space_map::RosterReq>, wire_dec<wire::space_map::Kept>,
@@ -1033,13 +1060,190 @@ static const WireDec kWireDecoders[] = {
     wire_dec<wire::space_rivalry::State>, wire_dec<wire::space_rivalry::Req>, wire_dec<wire::space_rivalry::Event>,
     wire_dec<wire::space_rivalry::Hit>, wire_dec<wire::space_rivalry::Money>, wire_dec<wire::space_rivalry::MergeFix>,
     wire_dec<wire::space_rivalry::Ask>, wire_dec<wire::space_rivalry::Set>,
+    // wire/space_core.h
+    wire_dec<wire::space_core::Down>, wire_dec<wire::space_core::Raid>, wire_dec<wire::space_core::Mission>,
+    wire_dec<wire::space_core::Terra>, wire_dec<wire::space_core::Gift>, wire_dec<wire::space_core::Sculpt>,
+    wire_dec<wire::space_core::Colour>,
+    // wire/space_contracts.h
+    wire_dec<wire::space_contracts::State>, wire_dec<wire::space_contracts::Accept>, wire_dec<wire::space_contracts::Result>,
+    // wire/space_diplomacy.h
+    wire_dec<wire::space_diplomacy::Event>, wire_dec<wire::space_diplomacy::State>, wire_dec<wire::space_diplomacy::Snap>,
+    wire_dec<wire::space_diplomacy::Contact>,
+    // wire/space_finale.h
+    wire_dec<wire::space_finale::State>,
+    // wire/space_allies.h
+    wire_dec<wire::space_allies::Raids>, wire_dec<wire::space_allies::Defended>,
+    // wire/space_planets.h
+    wire_dec<wire::space_planets::Spice>, wire_dec<wire::space_planets::SpiceTaken>,
+    // wire/shared_res.h, fields_wire.h
+    wire_dec<wire::shared_res::Res>, wire_dec<wire::shared_res::ResAdd>, wire_dec<FieldsPacket>,
 };
+
+// fuzz_struct with a rule per prefix length instead of one base length (MSG_RES: the head alone is an older host's
+// message, a cut ack list is refused, a cut cause list is read)
+template <class T>
+static void fuzz_struct_px(const char* name, Rng& R, int iters, const std::function<T(Rng&)>& gen,
+                           const std::function<bool(const T&, size_t)>& prefix_ok)
+{
+    CodecStats st;
+    std::vector<std::vector<uint8_t>> corpus;
+    for (int i = 0; i < 64; i++) {
+        T x = gen(R);
+        auto b = enc(x);
+        Exact e(b);
+        Reader r(e.data(), e.n);
+        T y;
+        CHECK(y.read(r), "%s: a valid encoding (%zu bytes) is rejected", name, b.size());
+        CHECK(r.left() == 0, "%s: %zu bytes left after reading", name, r.left());
+        CHECK(enc(y) == b, "%s: re-encoding differs", name);
+        st.roundtrips++;
+        for (size_t k = 0; k < b.size(); k++) {
+            std::vector<uint8_t> pre(b.begin(), b.begin() + (long)k);
+            Exact ep(pre);
+            Reader rp(ep.data(), ep.n);
+            T z;
+            bool ok = z.read(rp);
+            CHECK(ok == prefix_ok(x, k), "%s: prefix %zu/%zu %s", name, k, b.size(), ok ? "accepted" : "rejected");
+            st.prefixes++;
+        }
+        corpus.push_back(b);
+    }
+    for (int i = 0; i < iters; i++) {
+        auto m = mutate(R, corpus[R.below((uint32_t)corpus.size())]);
+        Exact e(m);
+        Reader r(e.data(), e.n);
+        T y;
+        st.mutations++;
+        if (!y.read(r))
+            continue;
+        st.accepted++;
+        auto b = enc(y);
+        Exact e2(b);
+        Reader r2(e2.data(), e2.n);
+        T z;
+        CHECK(z.read(r2) && enc(z) == b, "%s: accepted mutation does not round trip", name);
+    }
+    printf("  %-14s %3d round trips, %5d prefixes, %6d mutations (%d accepted)\n", name, st.roundtrips, st.prefixes,
+           st.mutations, st.accepted);
+}
 
 static wire::Key3 key3(Rng& R)
 {
     wire::Key3 k;
-    for (auto& x : k.v) x = R.u32();
+    for (auto& x : k.v)
+        x = R.below(4) ? R.u32() : 0;
     return k;
+}
+static double f64(Rng& R) { return (double)((int)R.below(2000001) - 1000000) / 8.0; }
+
+// the structs of wire/space_core.h, space_contracts.h, space_diplomacy.h, space_finale.h, space_allies.h,
+// space_planets.h, shared_res.h and MSG_FIELDS
+static void fuzz_wire_modules(Rng& R, int iters)
+{
+    namespace c = wire::space_core;
+    fuzz_struct<c::Down>("core Down", R, iters, [](Rng& R) { return c::Down{R.u8(), R.u8()}; });
+    fuzz_struct<c::Raid>("core Raid", R, iters, [](Rng& R) { return c::Raid{R.u32(), R.u8()}; });
+    fuzz_struct<c::Mission>("core Mission", R, iters, [](Rng& R) {
+        c::Mission m; m.reward = R.f32();
+        for (int n = (int)R.below(R.below(8) ? 9 : 40), i = 0; i < n; i++) m.tools.push_back(key3(R));
+        return m;
+    });
+    fuzz_struct<c::Terra>("core Terra", R, iters, [](Rng& R) { return c::Terra{R.u32(), {R.f32(), R.f32(), R.f32()}}; });
+    fuzz_struct<c::Gift>("core Gift", R, iters, [](Rng& R) { return c::Gift{R.u8(), key3(R), (int32_t)R.below(1200) - 100}; });
+    fuzz_struct<c::Sculpt>("core Sculpt", R, iters, [](Rng& R) {
+        c::Sculpt s; s.place = R.u32(); s.effect = R.u32();
+        for (auto& b : s.xf) b = R.u8();
+        return s;
+    });
+    fuzz_struct<c::Colour>("core Colour", R, iters, [](Rng& R) { return c::Colour{R.u32(), R.u32(), R.u32(), R.u32()}; });
+
+    namespace k = wire::space_contracts;
+    fuzz_struct<k::State>("contracts State", R, iters, [](Rng& R) {
+        k::State s; s.id = R.u32(); s.type = (uint8_t)R.below(3); s.state = R.u8(); s.reason = R.u8(); s.needed = R.u8();
+        s.money = R.u32(); s.tool = R.u32(); s.secs = R.u32();
+        for (int n = (int)R.below(5), i = 0; i < n; i++) s.crew.push_back(R.u8());
+        for (int n = (int)R.below(17) + (s.type == k::kTypeArmada), i = 0; i < n && i < 16; i++)
+            s.targets.push_back({R.u32(), R.u8(), R.u32()});
+        s.wave = R.u8(); s.waves = R.u8(); s.left = R.u8(); s.up = R.u8();
+        return s;
+    });
+    fuzz_struct<k::Accept>("contracts Accept", R, iters, [](Rng& R) { return k::Accept{R.u32()}; });
+    fuzz_struct<k::Result>("contracts Result", R, iters, [](Rng& R) {
+        k::Result x{R.u32(), R.u8(), R.u8(), R.u32(), R.u32(), R.u8(), {}};
+        for (int n = (int)R.below(5), i = 0; i < n; i++) x.crew.push_back(R.u8());
+        return x;
+    });
+
+    namespace d = wire::space_diplomacy;
+    fuzz_struct<d::Event>("diplo Event", R, iters, [](Rng& R) { return d::Event{R.u32(), R.u8(), R.u32(), R.f32(), R.str(60)}; });
+    fuzz_struct<d::State>("diplo State", R, iters, [](Rng& R) { return d::State{R.u32(), R.u8(), R.u8(), R.str(60)}; });
+    fuzz_struct<d::Snap>("diplo Snap", R, iters, [](Rng& R) {
+        d::Snap s; s.last = R.u8(); s.reply_to = R.u8();
+        for (int n = (int)R.below(6), i = 0; i < n; i++) {
+            d::SnapRec h; h.npc = R.u32(); h.flags = R.u32();
+            for (int m = (int)R.below(R.below(8) ? 6 : 101), j = 0; j < m; j++) h.ev.push_back({R.u32(), R.f32()});
+            s.recs.push_back(std::move(h));
+        }
+        return s;
+    });
+    fuzz_struct<d::Contact>("diplo Contact", R, iters, [](Rng& R) { return d::Contact{R.u32(), R.u8(), R.str(60)}; });
+
+    namespace f = wire::space_finale;
+    fuzz_struct<f::State>("finale State", R, iters, [](Rng& R) { return f::State{R.u8(), R.u8(), R.u32(), R.u32(), R.f32()}; });
+
+    namespace a = wire::space_allies;
+    fuzz_struct<a::Raids>("allies Raids", R, iters, [](Rng& R) {
+        a::Raids x;
+        for (int n = (int)R.below(R.below(8) ? 6 : 51), i = 0; i < n; i++) x.raids.push_back({R.u32(), R.u8()});
+        return x;
+    });
+    fuzz_struct<a::Defended>("allies Defended", R, iters, [](Rng& R) { return a::Defended{R.u8(), R.u32()}; });
+
+    namespace p = wire::space_planets;
+    fuzz_struct<p::Spice>("planets Spice", R, iters, [](Rng& R) {
+        p::Spice s; s.pol = R.u32();
+        for (int n = (int)R.below(R.below(8) ? 6 : 49), i = 0; i < n; i++) {
+            std::vector<float> v;
+            for (int m = (int)R.below(17), j = 0; j < m; j++) v.push_back(R.f32());
+            s.colonies.push_back({R.u32(), std::move(v)});
+        }
+        return s;
+    });
+    fuzz_struct<p::SpiceTaken>("planets Taken", R, iters, [](Rng& R) {
+        p::SpiceTaken t{R.u32(), R.u32(), {}};
+        for (int m = (int)R.below(17), j = 0; j < m; j++) t.left.push_back(R.f32());
+        return t;
+    });
+
+    namespace s = wire::shared_res;
+    fuzz_struct_px<s::Res>("shared Res", R, iters, [](Rng& R) {
+        s::Res x; x.id = R.u8(); x.v = f64(R);
+        x.has_acks = R.below(4) != 0;
+        if (x.has_acks)
+            for (int n = (int)R.below(5), i = 0; i < n; i++) x.acks.push_back({R.u8(), R.u32()});
+        x.has_causes = x.has_acks && R.below(3) != 0;
+        if (x.has_causes)
+            for (int n = (int)R.below(17), i = 0; i < n; i++) x.causes.push_back({R.u8(), f64(R)});
+        return x;
+    }, [](const s::Res& x, size_t k) {
+        size_t acks_end = 9 + 1 + 5 * x.acks.size();
+        return k == 9 || (x.has_acks && k >= acks_end); // the head alone; the acks and any part of the causes
+    });
+    fuzz_struct<s::ResAdd>("shared ResAdd", R, iters, [](Rng& R) {
+        s::ResAdd x{R.u8(), f64(R), R.below(4) != 0, 0};
+        x.seq = x.has_seq ? R.u32() : 0;
+        return x;
+    }, [](const s::ResAdd&) { return (size_t)9; });
+
+    fuzz_struct<FieldsPacket>("MSG_FIELDS", R, iters, [](Rng& R) {
+        FieldsPacket p; p.b.kind = R.u8();
+        for (int n = 1 + (int)R.below(fields_wire::kMaxFields), i = 0; i < n; i++) p.b.fids.push_back(R.u8());
+        for (int n = (int)R.below(20), i = 0; i < n; i++) {
+            p.b.ids.push_back(R.u16());
+            for (size_t j = 0; j < p.b.fids.size(); j++) p.b.vals.push_back(R.f32());
+        }
+        return p;
+    });
 }
 
 // wire/space_map.h
@@ -1169,6 +1373,7 @@ static void fuzz_wire(uint64_t seed, int iters)
     fuzz_wire_space_trade(R, iters);
     fuzz_wire_space_badges(R, iters);
     fuzz_wire_space_rivalry(R, iters);
+    fuzz_wire_modules(R, iters);
 }
 
 #ifdef FUZZ_LIBFUZZER

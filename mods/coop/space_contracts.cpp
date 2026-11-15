@@ -31,6 +31,7 @@
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "world.h"
+#include "wire/space_contracts.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -482,61 +483,48 @@ uint32_t place_of_player(uint8_t id)
 // ---- state messages ----
 void write_state(net::Writer& w, const Contract& c, double t)
 {
-    w.u32(c.id);
-    w.u8(c.type);
-    w.u8(c.state);
-    w.u8(c.reason);
-    w.u8(c.needed);
-    w.u32(c.money);
-    w.u32(c.tool);
-    w.u32((uint32_t)std::max(0, (int)std::ceil(c.deadline - t)));
-    w.u8((uint8_t)c.crew.size());
-    for (uint8_t id : c.crew)
-        w.u8(id);
-    w.u8((uint8_t)c.targets.size());
-    for (auto& tg : c.targets) {
-        w.u32(tg.star);
-        w.u8(tg.done);
-        w.u32(tg.planet);
-    }
-    w.u8(c.wave);
-    w.u8(c.waves);
-    w.u8(c.left);
-    w.u8(c.up);
+    wire::space_contracts::State m;
+    m.id = c.id;
+    m.type = c.type;
+    m.state = c.state;
+    m.reason = c.reason;
+    m.needed = c.needed;
+    m.money = c.money;
+    m.tool = c.tool;
+    m.secs = (uint32_t)std::max(0, (int)std::ceil(c.deadline - t));
+    m.crew = c.crew;
+    for (auto& tg : c.targets)
+        m.targets.push_back({tg.star, tg.done, tg.planet});
+    m.wave = c.wave;
+    m.waves = c.waves;
+    m.left = c.left;
+    m.up = c.up;
+    m.write(w);
 }
 
 bool read_state(net::Reader& r, Contract& c, double t)
 {
+    static_assert(T_ARMADA == wire::space_contracts::kTypeArmada && T_SURVEY == wire::space_contracts::kTypeSurvey);
+    wire::space_contracts::State m;
     c = Contract{};
-    c.id = r.u32();
-    c.type = r.u8();
-    c.state = r.u8();
-    c.reason = r.u8();
-    c.needed = r.u8();
-    c.money = r.u32();
-    c.tool = r.u32();
-    c.deadline = t + r.u32();
-    uint8_t n = r.u8();
-    for (int i = 0; i < n && r.ok(); i++)
-        c.crew.push_back(r.u8());
-    n = r.u8();
-    if (n > 16)
+    if (!m.read(r))
         return false;
-    for (int i = 0; i < n && r.ok(); i++) {
-        Target tg;
-        tg.star = r.u32();
-        tg.done = r.u8();
-        tg.planet = r.u32();
-        c.targets.push_back(tg);
-    }
-    c.wave = r.u8();
-    c.waves = r.u8();
-    c.left = r.u8();
-    c.up = r.u8();
-    // an armada needs its target planet (title, rows, the raid all read targets[0])
-    if (c.type > T_SURVEY || (c.type == T_ARMADA && c.targets.empty()))
-        return false;
-    return r.ok();
+    c.id = m.id;
+    c.type = m.type;
+    c.state = m.state;
+    c.reason = m.reason;
+    c.needed = m.needed;
+    c.money = m.money;
+    c.tool = m.tool;
+    c.deadline = t + m.secs;
+    c.crew = std::move(m.crew);
+    for (auto& tg : m.targets)
+        c.targets.push_back({tg.star, tg.done, tg.planet});
+    c.wave = m.wave;
+    c.waves = m.waves;
+    c.left = m.left;
+    c.up = m.up;
+    return true;
 }
 
 // the notices of a change (every machine words its own, from the old and the new state)
@@ -655,15 +643,7 @@ void finish(bool ok, uint8_t reason)
     g_next_offer = now() + g_period;
     publish();
     net::Writer w;
-    w.u32(g.id);
-    w.u8(ok);
-    w.u8(reason);
-    w.u32(g.money);
-    w.u32(g.tool);
-    w.u8(g.type);
-    w.u8((uint8_t)g.crew.size());
-    for (uint8_t id : g.crew)
-        w.u8(id);
+    wire::space_contracts::Result{g.id, (uint8_t)ok, reason, g.money, g.tool, g.type, g.crew}.write(w);
     spaceext::send(K_RESULT, w);
     on_result(g.id, ok, reason, g.money, g.tool, g.crew, g.type);
 }
@@ -836,7 +816,7 @@ std::string accept_mine()
         return "accepted";
     }
     net::Writer w;
-    w.u32(g.id);
+    wire::space_contracts::Accept{g.id}.write(w);
     spaceext::send(K_ACCEPT, w);
     return "accept sent";
 }
@@ -1244,19 +1224,13 @@ void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
         announce(g, c);
         g = c;
     } else if (kind == K_ACCEPT && host()) {
-        uint32_t id = r.u32();
-        if (r.ok() && id == g.id)
+        wire::space_contracts::Accept m;
+        if (m.read(r) && m.id == g.id)
             accept(origin);
     } else if (kind == K_RESULT && !host()) {
-        uint32_t id = r.u32();
-        uint8_t ok = r.u8(), reason = r.u8();
-        uint32_t mo = r.u32(), tool = r.u32();
-        uint8_t type = r.u8(), n = r.u8();
-        std::vector<uint8_t> crew;
-        for (int i = 0; i < n && r.ok(); i++)
-            crew.push_back(r.u8());
-        if (r.ok())
-            on_result(id, ok, reason, mo, tool, crew, type);
+        wire::space_contracts::Result m;
+        if (m.read(r))
+            on_result(m.id, m.ok, m.reason, m.money, m.tool, m.crew, m.type);
     }
 }
 
