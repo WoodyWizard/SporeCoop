@@ -282,3 +282,38 @@ Users, each with its own switch: cellsync (cell.solo_elsewhere BUG-0797, cell.se
 * ✔ Measured (lab 20261112-025009): the host sent a guest in its Cell world 238 KB/s; with the guest in a Cell world
   of its own and cell.send_here on, 2.6 KB/s (states, pings, the 2 s food total). With the switch off the host sends
   the full live Cell state to a guest that drops it at dispatch.
+
+## The player's own pauses per stage: what the host can read (2026-11-15, feat/w51-ccore)
+<a id="host-centric-pause-reasons"></a>
+
+C3 of docs/plan-0.7.15.md (owner decision 1: the host's explicit pause makes the guests wait; BUG-1142). GOG 2024,
+lane 4, one game per stage fixture without a session, `tools/tests/coop_pause_reasons.py` (run by hand: `SPORE_LANE=4
+python3 tools/tests/coop_pause_reasons.py [stage ...]`). After each key or click: `coop.pauses` (cGameTimeManager
++0x48 flags and the reasons counted, docs/re/tribe.md#tribe-game-time-pauses), `coop.status` busy, the pause menu's
+window ("Resume Game").
+
+| Stage | Esc (pause menu) | P | F1 / F2 | Sporepedia button | My Collections button |
+|---|---|---|---|---|---|
+| Cell | window shown; **no reason, flags 0, busy -** | nothing (no reason, no window) | nothing | - | - |
+| Creature | 0x4BF38A4, flags 3, window shown | 0x4BF38A8, flags 7 | nothing | **0x4BF38A6**, flags 1 | 0x4BF38A4, flags 3 |
+| Tribe | 0x4BF38A4, flags 3 | 0x4BF38A8, flags 7 | nothing | (not clicked) | (not clicked) |
+| Civ | 0x4BF38A4, flags 3 | 0x4BF38A8, flags 7 | nothing | (not clicked) | (not clicked) |
+| Space | 0x4BF38A4, flags 3 | 0x4BF38A8, flags 7 | nothing | (not clicked) | (not clicked) |
+
+* ✔ The pause menu and P use the same two reasons in Creature, Tribe, Civ and Space (the Tribe row of
+  docs/re/tribe.md#tribe-caption-pause-leak holds in every Simulator stage). Idle games count no reason.
+* ✔ The Creature HUD's Sporepedia button (84 1054 in the 1440x1080 window) pauses with **0x4BF38A6**, the reason
+  docs/re/tribe.md and docs/re/civ.md#civ-launch-pause name "an editor is coming" (City Hall, the Civ launch); flags 1.
+  So 0x4BF38A6 alone does not say "the Sporepedia": the host tells them apart by its own editor-pending state
+  (busy_model.h `Reading::editor_coming`). My Collections (114 1054) uses the pause menu's 0x4BF38A4, flags 3.
+* ✔ **Cell: the pause menu sets no cGameTimeManager reason** (flags 0, `busy: -` while "Resume Game" is shown): the
+  Cell stage is no Simulator stage; its pause is SimUpdate not running (docs/re/cell.md, the broadphase section). The
+  host's only reading there is the pause menu's window. P in Cell: no reason, no window (? whether it pauses at all).
+* ~ F1 / F2 set nothing in any stage here (one game, no session). docs/re/tribe.md#tribe-caption-pause-leak saw
+  0x4BF38A4 for F1, F2 and Tab on a Tribe guest in a session (lane 7): not reproduced on lane 4; ? which window they
+  open there.
+* ? A tutorial / hint box: the UI-modal 0x4BF38A7 with a modal window (docs/re/tribe.md#tribe-game-time-pauses: 90
+  call sites); not measured with a real tutorial box. The same reason without a window is the Tribe stage's entry
+  (BUG-0313) and the mod's own wait on a guest (BUG-0960).
+* ? The flags +0x48: bit 0 the time stands; the pause menu and My Collections 3, P 7, the Sporepedia 1. The meaning of
+  bits 1 and 2 is not known; the flags of an editor coming were not read.

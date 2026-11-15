@@ -75,6 +75,11 @@ tools/lab.py reload --lane 2                     # dev loop: build + hot reload 
 * Self-test of the lab: `tools/tests/lab_selftest.py` (in `make test`), fake tests through
   `lab.cmd_run` with the lanes stubbed; `--tree <checkout>` runs it against another checkout's lab.
 * Results: `out/lab/<run>/summary.md`, `results.json`, the test logs and both games' own logs.
+* The machine budget (0.7.15, BUG-1114, docs/06-testing.md#testing-lab-budget): after the memory gate a test waits
+  until the whole machine has room for the games it adds (at most 18 games, the card's VRAM, at most 10 games and
+  under 80 % Xwayland on its display, 12 games while a motion test runs); lane N draws on headless shell
+  (N - 1) % 2 (docs/06-testing.md#testing-two-displays); the start-up steps wait on signals, not fixed sleeps
+  (docs/06-testing.md#testing-start-waits).
 
 ## 10.4 Invariants (checked in every test)
 

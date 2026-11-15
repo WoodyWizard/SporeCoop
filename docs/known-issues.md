@@ -262,12 +262,3 @@ anchor so other docs can link to it:
   stage only; in Cell, Tribe and Civilization players still cannot hurt each other (Space has its rivals mode).
 * Reproduce: `coop.settings force all.friendly_fire on` on the host in Cell: a bite on the partner's cell does nothing.
 * Ticket: BUG-0899.
-
-## Two re-entrancy flags in game.cpp are no call guards (2026-11-15, feat/w51-guards)
-<a id="issue-game-unregistered-guards"></a>
-
-* What happens (inferred from the code, not seen yet): a fault the game catches inside the puppet / behaviour
-  animation call or inside a relayed effect's creation leaves `g_in_puppet_anim` or the effect relay's `g_in_relay`
-  set; the behaviour animations or the effects then stop reaching the partner for the rest of the session.
-* Reproduce: not reproduced; `tools/ratchet_lint.py` lists both in its `guard` baseline.
-* Ticket: BUG-1134.

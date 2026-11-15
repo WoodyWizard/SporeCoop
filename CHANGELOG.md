@@ -36,9 +36,6 @@
 - Tickets: the `stage` field is one of a fixed list (`tools/tickets.py stages`); known-issues.md lists only what is
   open, closed entries are in docs/archive/known-issues-2026.md (BUG-1126). `tools/wt_gc.py` lists merged worktrees
   and branches that can go (BUG-1127).
-- Tickets: the `stage` field is one of a fixed list (`tools/tickets.py stages`); known-issues.md lists only what is
-  open, closed entries are in docs/archive/known-issues-2026.md (BUG-1126). `tools/wt_gc.py` lists merged worktrees
-  and branches that can go (BUG-1127).
 - Lab: a test whose scenario did not happen is INCONCLUSIVE (never a pass, three in a row fail), every failure has a
   reason, one flake history over all worktrees (`lab.py flaky`), `--repeat` stops once the answer is clear, test
   selection by the change (`lab.py run impact`), and a failed campaign segment can be played again from its own save
@@ -49,6 +46,11 @@
   settings and warnings as errors.
 - The core of the mod (coop.cpp) is split into smaller files by pure moves, its start and its frame into named
   phases; `tools/refactor_dump.py` proves such a change left every registry as it was (BUG-1128).
+- Test lab: the games start without fixed pauses (each step waits for the game to be ready), the lab draws on two
+  hidden test displays and starts a test only when the machine has room for its games (BUG-1112, BUG-1113, BUG-1114).
+- Shared building blocks for the stages, unit-tested before any stage uses them: one table of the mirrored objects,
+  one receiver of the host's snapshots, one world identity with ordered session / world observers, and one model of
+  the host's busy state (away, editor, pause) with the pause reasons of every stage measured (BUG-1140..1143).
 
 ## [0.7.14.1] - 2026-11-14
 
