@@ -2,6 +2,7 @@
 #include "call_guard.h"
 #include "squadron.h"
 #include "lifecycle.h"
+#include "mirror_registry.h"
 #include "player_life.h"
 #include "census.h"
 
@@ -24,6 +25,7 @@
 #include "net/ids.h"
 #include "net/interp.h"
 #include "net/validate.h"
+#include "net/snapshot_rx.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "settings.h"
@@ -479,22 +481,270 @@ static std::unordered_map<void*, uint16_t> g_gv_of;
 static bool g_veh_lifetime_fix = true;
 COOP_FIX("civ.mirror_lifetime", "BUG-0951", g_veh_lifetime_fix, "civ: a guest never drives or removes a vehicle of its own game that the game built where a removed copy of a host's vehicle was");
 static uint32_t g_veh_stale;
-static bool gv_ok(const GV& g)
+// the guest's liveness rule of a mirror's vehicle: its memory says it is not destroyed and (civ.mirror_lifetime) it is
+// the object bound (its serial). The serial in the vehicle's own memory, not the object list: a vehicle the mod just
+// made may join the list later, and prune_gone (the game's vehicle list, every Civ frame) drops one the game removed
+// before it is freed; what is left is another vehicle at the address, which has another serial. The one object_alive
+// the registry keeps (docs/01-architecture.md#arch-mirror-registry). Off (civ.mirror_lifetime): object_alive alone.
+static bool gv_alive(const mirror::Ref& r)
 {
-    if (!g.v)
+    if (!r.p || !game::object_alive(r.p))
         return false;
-    if (!g_veh_lifetime_fix)
-        return game::object_alive(g.v);
-    // the serial in the vehicle's own memory, not the object list: a vehicle the mod just made may join the list later,
-    // and prune_gone (the game's vehicle list, every Civ frame) drops one the game removed before it is freed; what is
-    // left is another vehicle at the address, which has another serial
-    return game::object_alive(g.v) && game::object_serial(g.v) == g.serial;
+    return !g_veh_lifetime_fix || game::object_serial(r.p) == r.serial;
 }
+static bool gv_ok(const GV& g) { return gv_alive(mirror::Ref{g.v, g.serial, 0}); }
 static bool g_veh_hold; // tests (BUG-0951): the guest ignores the host's vehicle states (as during the host's editor)
+
+// ---------------- the vehicle tables (C1 of 0.7.15, BUG-1140) ----------------
+// The host's table (net id <-> vehicle of the game's list), the guest's mirrors (host id <-> the local vehicle that
+// copies it) and the guest's removals waiting for the planner or a cinematic (BUG-0493) are mirror::Registry objects
+// (mirror_registry.h, docs/01-architecture.md#arch-mirror-registry): the reverse index is the registry's, so the two
+// directions cannot drift (BUG-0951's `g_gv_of[v] == id` checks). What stays here is Civ's own: the political id check
+// (BUG-0059) and the serial check (BUG-0951) of the host's table pass, the owners (BUG-0031) and E1's claims
+// (owner_claims.h), the bind candidate (same nation / purpose / locomotion within 25 m) and the guest's liveness rule
+// (gv_alive: the serial in the vehicle's own memory, because a vehicle the mod just made joins the game's list later;
+// prune_gone drops one the game took out of its list before it is freed). `coop.fix civ.registry off`: the hand-made
+// maps of 0.7.14 (removed once the lab passed with the registry).
+static bool g_reg_fix = true;
+COOP_FIX("civ.registry", "BUG-1140", g_reg_fix,
+         "civ: the host's vehicle table, the guest's mirrors and their waiting removals are one mirror registry (C1)");
+static bool hv_alive(const mirror::Ref& r) { return game::alive(game::LiveRef{r.p, r.serial, r.noun}); }
+static mirror::Registry<uint16_t, HV> g_hvr("civ.hv", hv_alive);
+static mirror::Registry<uint16_t, GV> g_gvr("civ.gv", gv_alive);
+// BUG-0493: vehicles of this game the mod removes once the city planner no longer moves them (civ.registry off)
+static std::unordered_set<void*> g_kill_later;
+
+// host: an entry of the table (v: its vehicle, h: its data)
+struct HvRef {
+    uint16_t id = 0;
+    void* v = nullptr;
+    HV* h = nullptr;
+    explicit operator bool() const { return h != nullptr; }
+};
+static HvRef hv_find(void* v)
+{
+    if (!v)
+        return {};
+    if (g_reg_fix) {
+        uint16_t id;
+        if (!g_hvr.id_of(v, id))
+            return {};
+        auto* e = g_hvr.find(id);
+        return e ? HvRef{id, e->ref.p, &e->data} : HvRef{};
+    }
+    auto it = g_hv.find(v);
+    return it == g_hv.end() ? HvRef{} : HvRef{it->second.id, v, &it->second};
+}
+static HvRef hv_by_id(uint16_t id)
+{
+    if (g_reg_fix) {
+        auto* e = g_hvr.find(id);
+        return e && e->ref.p ? HvRef{id, e->ref.p, &e->data} : HvRef{};
+    }
+    auto it = g_hv_by_id.find(id);
+    if (it == g_hv_by_id.end())
+        return {};
+    auto hv = g_hv.find(it->second);
+    return hv == g_hv.end() ? HvRef{} : HvRef{id, it->second, &hv->second};
+}
+template <class Fn>
+static void hv_each(Fn&& fn)
+{
+    if (g_reg_fix) {
+        g_hvr.for_each([&](auto& e) {
+            if (e.ref.p)
+                fn(HvRef{e.id, e.ref.p, &e.data});
+        });
+        return;
+    }
+    for (auto& [v, h] : g_hv)
+        fn(HvRef{h.id, v, &h});
+}
+static size_t hv_count() { return g_reg_fix ? g_hvr.size() : g_hv.size(); }
+struct HvIds { // net::alloc_id's "in use" for the registry
+    const mirror::Registry<uint16_t, HV>& r;
+    size_t count(uint16_t id) const { return r.has(id) ? 1 : 0; }
+};
+// host: a vehicle of the game's list gets a net id (BUG-0154: never a live id, never 0); 0 when none is free
+static uint16_t hv_add(void* v, uint8_t owner)
+{
+    if (g_reg_fix) {
+        uint16_t id = 0;
+        uint32_t serial = game::object_serial(v);
+        g_hvr.adopt(mirror::Ref{v, g_veh_lifetime_fix ? serial : 0u, kVehicleNoun},
+                    [] { return net::alloc_id(g_next_id, HvIds{g_hvr}); }, [](uint16_t) {}, id);
+        if (auto* e = id ? g_hvr.find(id) : nullptr)
+            e->data = {id, owner, pol_of(v), serial};
+        return id;
+    }
+    uint16_t id = net::alloc_id(g_next_id, g_hv_by_id);
+    g_hv[v] = {id, owner, pol_of(v), game::object_serial(v)};
+    g_hv_by_id[id] = v;
+    return id;
+}
+static void hv_drop(uint16_t id)
+{
+    if (g_reg_fix) {
+        g_hvr.erase(id);
+        return;
+    }
+    auto it = g_hv_by_id.find(id);
+    if (it == g_hv_by_id.end())
+        return;
+    g_hv.erase(it->second);
+    g_hv_by_id.erase(it);
+}
+static void hv_clear()
+{
+    g_hvr.clear();
+    g_hv.clear();
+    g_hv_by_id.clear();
+}
+
+// guest: a mirror (v: its local vehicle or null, serial: v's cGameData::mID when it was bound)
+struct GvRef {
+    uint16_t id = 0;
+    GV* g = nullptr;
+    void* v = nullptr;
+    uint32_t serial = 0;
+    explicit operator bool() const { return g != nullptr; }
+};
+static GvRef gv_find(uint16_t id)
+{
+    if (g_reg_fix) {
+        auto* e = g_gvr.find(id);
+        return e ? GvRef{id, &e->data, e->ref.p, e->ref.serial} : GvRef{};
+    }
+    auto it = g_gv.find(id);
+    return it == g_gv.end() ? GvRef{} : GvRef{id, &it->second, it->second.v, it->second.serial};
+}
+static GvRef gv_at(uint16_t id)
+{
+    if (g_reg_fix) {
+        auto& e = g_gvr.at(id);
+        return {id, &e.data, e.ref.p, e.ref.serial};
+    }
+    auto& g = g_gv[id];
+    return {id, &g, g.v, g.serial};
+}
+// the mirror whose vehicle is v (a pointer compare: safe on a freed one; no liveness check)
+static GvRef gv_of(void* v)
+{
+    if (!v)
+        return {};
+    if (g_reg_fix) {
+        uint16_t id;
+        return g_gvr.id_of(v, id) ? gv_find(id) : GvRef{};
+    }
+    auto it = g_gv_of.find(v);
+    return it == g_gv_of.end() ? GvRef{} : gv_find(it->second);
+}
+// the id of the mirror whose vehicle is v (raw: no liveness check)
+static bool gv_id_of(void* v, uint16_t& id)
+{
+    if (!v)
+        return false;
+    if (g_reg_fix)
+        return g_gvr.id_of(v, id);
+    auto it = g_gv_of.find(v);
+    if (it == g_gv_of.end())
+        return false;
+    id = it->second;
+    return true;
+}
+static bool gv_bound(void* v) { return v && (g_reg_fix ? g_gvr.bound(v) : g_gv_of.count(v) != 0); }
+static bool gv_ok(const GvRef& x) // (BUG-0951)
+{
+    if (!g_reg_fix)
+        return x.g && gv_ok(*x.g);
+    return x.v && gv_alive(mirror::Ref{x.v, x.serial, kVehicleNoun});
+}
+// the mirror's vehicle while it is the object bound (gv_ok), else null
+static void* gv_live(uint16_t id)
+{
+    GvRef x = gv_find(id);
+    return gv_ok(x) ? x.v : nullptr;
+}
+template <class Fn>
+static void gv_each(Fn&& fn)
+{
+    if (g_reg_fix) {
+        g_gvr.for_each([&](auto& e) { fn(GvRef{e.id, &e.data, e.ref.p, e.ref.serial}); });
+        return;
+    }
+    for (auto& [id, g] : g_gv)
+        fn(GvRef{id, &g, g.v, g.serial});
+}
+static size_t gv_count() { return g_reg_fix ? g_gvr.size() : g_gv.size(); }
+// mirror id's vehicle is v from now on (made: CreateVehicle, not a local vehicle bound). An address still bound to
+// another mirror holds a new vehicle now (CreateVehicle gave the block of a freed one): that mirror loses it.
+static void gv_bind(uint16_t id, void* v, bool made)
+{
+    uint32_t serial = game::object_serial(v);
+    if (g_reg_fix) {
+        uint16_t other;
+        if (g_gvr.id_of(v, other) && other != id)
+            g_gvr.detach(other);
+        g_gvr.bind(id, mirror::Ref{v, serial, kVehicleNoun}, made);
+        g_gvr.at(id).data.listed = false;
+        return;
+    }
+    GV& g = g_gv[id];
+    g.v = v;
+    g.serial = serial;
+    g.listed = false;
+    g_gv_of[v] = id;
+}
+// mirror id has no vehicle (forgotten, no game call); the reverse index of its old vehicle only when it named this
+// mirror (BUG-0951: not another mirror's)
+static void gv_unbind(uint16_t id)
+{
+    if (g_reg_fix) {
+        g_gvr.detach(id);
+        if (auto* e = g_gvr.find(id))
+            e->data.listed = false;
+        return;
+    }
+    auto it = g_gv.find(id);
+    if (it == g_gv.end())
+        return;
+    GV& g = it->second;
+    if (g.v && g_gv_of.count(g.v) && g_gv_of[g.v] == id)
+        g_gv_of.erase(g.v);
+    g.v = nullptr;
+    g.listed = false;
+}
+static void gv_clear()
+{
+    g_gvr.clear(); // (also its waiting removals)
+    g_gv.clear();
+    g_gv_of.clear();
+    g_kill_later.clear();
+}
+// BUG-0493: the removals waiting (the planner moves the vehicle, a cinematic plays)
+static bool kill_waiting(void* v) { return v && (g_reg_fix ? g_gvr.deferred(v) : g_kill_later.count(v) != 0); }
+static void kill_wait(void* v, uint32_t serial)
+{
+    if (g_reg_fix)
+        g_gvr.defer(mirror::Ref{v, serial, kVehicleNoun}, false);
+    else
+        g_kill_later.insert(v);
+}
+static size_t kill_waiting_count() { return g_reg_fix ? g_gvr.deferred_count() : g_kill_later.size(); }
 
 static std::unordered_set<uint16_t> g_cycle_ids;
 static net::CycleTracker g_cyc;                    // the cycle being received and its chunks (BUG-0612)
 static uint32_t g_incomplete;                      // cycles whose cleanup was skipped (a chunk missing)
+// C4 of 0.7.15 (BUG-1143): the chunked receive of the host's snapshot is net::SnapshotReceiver (net/snapshot_rx.h,
+// docs/01-architecture.md#arch-snapshot-rx) with Tribe's policy: at most 255 chunks, a late chunk of an older cycle
+// (within half the u16 range) dropped while net.cycle_order is on (BUG-0612), only the last chunk completes a cycle and
+// only once (a duplicate of it does not sweep again), the sweep hands the cycle's ids to the mirror registry.
+// `coop.fix civ.snapshot_rx off`: the copied CycleTracker code of 0.7.14 (removed once the lab passed).
+static bool g_rx_fix = true;
+COOP_FIX("civ.snapshot_rx", "BUG-1143", g_rx_fix, "civ: a guest receives the host's chunked Civ snapshots with the shared snapshot receiver (C4)");
+static net::SnapshotReceiver<uint16_t> g_rx(net::SnapshotPolicy{255, true, 0x8000, true, true});
+// the cycle being received named mirror id
+static bool cycle_saw(uint16_t id) { return g_rx_fix ? g_rx.seen(id) : g_cycle_ids.count(id) != 0; }
 // BUG-1051 (the Civ part): civ::on_world_change resets the tracker, the session end did not: a guest that joined
 // another (or a restarted) host without a world change in between dropped its Civ snapshots as older. Off: 0.7.13.
 static bool g_cycle_reset_fix = true;
@@ -504,7 +754,8 @@ SESSION_STATE("civ.cycle", &g_cycle_reset_fix, [] {
     g_cyc.reset();
     g_cyc.older = older;
     g_cycle_ids.clear();
-}, []() -> size_t { return (g_cyc.have ? 1 : 0) + g_cycle_ids.size(); });
+    g_rx.reset(); // (its counters stay)
+}, []() -> size_t { return g_rx_fix ? g_rx.held() : (g_cyc.have ? 1 : 0) + g_cycle_ids.size(); });
 static uint32_t g_last_chunks, g_max_chunk;        // host: chunks per cycle, largest chunk (bytes)
 static size_t g_chunk_budget = net::kMaxPacket - 48; // host: bytes per chunk (coop.civ chunk <bytes>, tests)
 static bool& g_cycle_order_fix = tribe::g_cycle_order_fix; // tribe.cpp (net.cycle_order, BUG-0612)
@@ -529,12 +780,12 @@ COOP_FIX("civ.away_ground", "BUG-1056", g_away_ground_fix,
          "civ: while the host is away the guest's game keeps its mirror vehicles on valid ground (its own ground check)");
 static void SK_THISCALL h_KeepGround(void* v)
 {
-    if (g_away_ground_fix && local_play() && g_gv_of.count(v)) {
+    if (g_away_ground_fix && local_play() && gv_bound(v)) {
         g_away_ground_checks++;
         o_KeepGround(v);
         return;
     }
-    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv && g_gv_of.count(v)) {
+    if (!g_applying && is_guest() && game::mode_id() == modes::kCiv && gv_bound(v)) {
         g_mirror_place_skipped++;
         return;
     }
@@ -725,10 +976,9 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target, bool
         note_tool(tool);
     void* o = (uint8_t*)owner - kVSpatial;
     Shot s;
-    auto it = g_hv.find(o);
-    if (it != g_hv.end()) {
+    if (HvRef it = hv_find(o)) {
         s.kind = 1;
-        s.id = it->second.id;
+        s.id = it.id;
     } else if (!IsBadReadPtr(o, 0x40) && vtable_in_game(o) && game::noun_id(o) == kTurretNoun && game::object_position(o, s.at)) {
         s.kind = 3;
         g_turret_shots_seen++;
@@ -739,10 +989,9 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target, bool
         return;
     if (target && target != owner && !IsBadReadPtr((uint8_t*)target - kVSpatial, 0x40)) {
         void* t = (uint8_t*)target - kVSpatial;
-        auto tv = g_hv.find(t);
-        if (tv != g_hv.end()) {
+        if (HvRef tv = hv_find(t)) {
             s.tkind = 1;
-            s.tid = tv->second.id;
+            s.tid = tv.id;
         } else if (vtable_in_game(t) && game::object_alive(t) && game::object_position(t, s.tpos)) {
             s.tkind = 3;
             s.tnoun = game::noun_id(t);
@@ -993,11 +1242,11 @@ static int SK_THISCALL h_ToolMouseUp(void* mgr, void* tool)
     if (g_fix_shot_fired && tool && is_host() && active() && !IsBadReadPtr(tool, 0x118)) {
         void* owner = *(void**)((uint8_t*)tool + 0x114);
         void* o = owner ? (uint8_t*)owner - kVSpatial : nullptr;
-        auto it = o ? g_hv.find(o) : g_hv.end();
+        HvRef it = hv_find(o);
         std::pair<uint16_t, uint32_t> key{0, 0};
         bool known = false;
-        if (it != g_hv.end()) {
-            key = {it->second.id, 0u};
+        if (it) {
+            key = {it.id, 0u};
             known = true;
         } else if (o && !IsBadReadPtr(o, 0x40) && vtable_in_game(o) && game::noun_id(o) == kTurretNoun) {
             net::Vec3 at;
@@ -1076,8 +1325,7 @@ static void release_copy(Shot& s)
     s.released = true;
     if (!a_ToolMouseUp || s.kind != 1)
         return;
-    auto g = g_gv.find(s.id);
-    void* o = g == g_gv.end() || !gv_ok(g->second) ? nullptr : g->second.v; // (BUG-0951)
+    void* o = gv_live(s.id); // (BUG-0951)
     if (!o || !exists(o) || F<uint8_t>(o, kVDead))
         return;
     void* tool = weapon_of((uint8_t*)o + kVCombatant);
@@ -1133,8 +1381,7 @@ static void guest_fire(double now)
         void* o = nullptr;
         void* comb = nullptr;
         if (s.kind == 1) {
-            auto g = g_gv.find(s.id);
-            o = g == g_gv.end() || !gv_ok(g->second) ? nullptr : g->second.v; // (BUG-0951)
+            o = gv_live(s.id); // (BUG-0951)
             if (o && (!exists(o) || F<uint8_t>(o, kVDead)))
                 o = nullptr;
             comb = o ? (uint8_t*)o + kVCombatant : nullptr;
@@ -1157,8 +1404,7 @@ static void guest_fire(double now)
         // the target in this game (the projectile homes on it as the host's does); its place is the aim
         void* t = nullptr;
         if (s.tkind == 1) {
-            auto g = g_gv.find(s.tid);
-            t = g == g_gv.end() || !gv_ok(g->second) ? nullptr : g->second.v; // (BUG-0951)
+            t = gv_live(s.tid); // (BUG-0951)
             if (t && (!exists(t) || F<uint8_t>(t, kVDead)))
                 t = nullptr;
         } else if (s.tkind == 3)
@@ -1215,7 +1461,7 @@ static bool cosmetic_hit(void* att)
         IsBadReadPtr(*(void**)att, 0x60))
         return false;
     void* v = vcall<void*>(att, 0x5C / 4, 0x137E8E0u); // the vehicle behind a combatant
-    bool ours = (v && g_gv_of.count(v)) || g_turret_shooters.count((uint8_t*)att - shooter_comb_off(3));
+    bool ours = gv_bound(v) || g_turret_shooters.count((uint8_t*)att - shooter_comb_off(3));
     if (ours)
         g_hits_dropped++;
     return ours;
@@ -1237,11 +1483,11 @@ static uint32_t g_created, g_removed, g_cmds_sent, g_builds_in, g_captures_in, g
 static uint8_t owner_of_vehicle(void* v)
 {
     if (C.sess && C.sess->role() == net::Role::Host) {
-        auto it = g_hv.find(v);
-        return it == g_hv.end() ? 0xFF : it->second.owner;
+        HvRef it = hv_find(v);
+        return it ? it.h->owner : 0xFF;
     }
-    auto it = g_gv_of.find(v);
-    return it == g_gv_of.end() ? 0xFF : g_gv[it->second].owner;
+    GvRef it = gv_of(v);
+    return it ? it.g->owner : 0xFF;
 }
 
 static uint8_t owner_of_city(void* c)
@@ -1311,10 +1557,9 @@ static Target encode_target(void* t)
     Target r;
     if (!t)
         return r;
-    auto it = g_gv_of.find(t);
-    if (it != g_gv_of.end()) {
+    if (GvRef it = gv_of(t)) {
         r.kind = 1;
-        r.id = it->second;
+        r.id = it.id;
         return r;
     }
     int ci = host_index_of_city(t);
@@ -1371,17 +1616,16 @@ static int SK_THISCALL h_SetOrder(void* v, void* target, int type, int flag)
     if (local_play() && !g_applying)
         g_away_orders++;
     else if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
-        auto it = g_gv_of.find(v);
-        if (it != g_gv_of.end()) {
+        if (GvRef it = gv_of(v)) {
             // a mirror of another player's or nation's vehicle: the guest's own civ AI orders the
             // other nations' vehicles every few frames (hundreds of rejected commands a minute)
-            if (g_gv[it->second].owner != C.sess->my_id()) {
+            if (it.g->owner != C.sess->my_id()) {
                 g_orders_dropped++;
                 return 0;
             }
             net::Writer w;
             w.u8(CMD_ORDER);
-            w.u16(it->second);
+            w.u16(it.id);
             w.u32((uint32_t)type);
             w.u32((uint32_t)flag);
             Target et = encode_target(target);
@@ -1401,15 +1645,14 @@ static int SK_THISCALL h_SetMoveOrder(void* v, float x, float y, float z, int fl
     if (local_play() && !g_applying)
         g_away_orders++;
     else if (!g_applying && is_guest() && game::mode_id() == modes::kCiv) {
-        auto it = g_gv_of.find(v);
-        if (it != g_gv_of.end()) {
-            if (g_gv[it->second].owner != C.sess->my_id()) {
+        if (GvRef it = gv_of(v)) {
+            if (it.g->owner != C.sess->my_id()) {
                 g_orders_dropped++;
                 return 0;
             }
             net::Writer w;
             w.u8(CMD_MOVE);
-            w.u16(it->second);
+            w.u16(it.id);
             w.f32(x); w.f32(y); w.f32(z);
             w.u32((uint32_t)flag);
             send_cmd(w);
@@ -1919,17 +2162,18 @@ static int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int
             uint8_t owner = 0;
             float bd = 1e18f;
             game::LiveScope live; // BUG-1053: one walk of the object list (no game code runs in the loop)
-            for (auto& [v, hv] : g_hv) {
+            hv_each([&](const HvRef& x) {
+                const HV& hv = *x.h;
                 if (hv.owner == 0xFE || !net::is_player(*C.sess, hv.owner))
-                    continue; // BUG-0031: never a player who is not here
-                if (g_cmd_listed_fix && !hv_live(v, hv))
-                    continue; // BUG-1053: removed by the game since the last cycle
-                float d = net::dist(veh_pos(v), city_pos(city));
+                    return; // BUG-0031: never a player who is not here
+                if (g_cmd_listed_fix && !hv_live(x.v, hv))
+                    return; // BUG-1053: removed by the game since the last cycle
+                float d = net::dist(veh_pos(x.v), city_pos(city));
                 if (d < bd) {
                     bd = d;
                     owner = hv.owner;
                 }
-            }
+            });
             uint8_t credit = capture_credit(city);
             if (credit != 0xFF)
                 owner = credit;
@@ -2195,8 +2439,8 @@ static uint8_t player_of_combatant(void* att)
     void* v = vcall<void*>(att, 0x5C / 4, 0x137E8E0u); // the vehicle behind a combatant
     if (!v)
         return 0xFF;
-    auto it = g_hv.find(v);
-    return it == g_hv.end() ? 0xFF : it->second.owner;
+    HvRef it = hv_find(v);
+    return it ? it.h->owner : 0xFF;
 }
 
 // F3 (BUG-0768): civ.roles off: nobody has a role, no role bonus
@@ -2272,12 +2516,11 @@ static void SK_THISCALL h_Convert(void* city, uint32_t pol, int count)
         net::Vec3 cp = city_pos(city);
         uint8_t preacher = 0xFF;
         game::LiveScope live; // BUG-1053: one walk of the object list (no game code runs in the loop)
-        for (auto& [v, h] : g_hv)
-            if (role(h.owner) == 3 && (!g_cmd_listed_fix || hv_live(v, h)) && F<int>(v, kVPurpose) == 2 &&
-                net::dist(veh_pos(v), cp) < 200.f) {
-                preacher = h.owner;
-                break;
-            }
+        hv_each([&](const HvRef& x) {
+            if (preacher == 0xFF && role(x.h->owner) == 3 && (!g_cmd_listed_fix || hv_live(x.v, *x.h)) &&
+                F<int>(x.v, kVPurpose) == 2 && net::dist(veh_pos(x.v), cp) < 200.f)
+                preacher = x.h->owner; // (the first one)
+        });
         if (preacher != 0xFF) {
             float k = 1.5f;
             double now = H->time_seconds();
@@ -2362,13 +2605,14 @@ static void SK_THISCALL h_OnAttacked(void* city, int kind, uint32_t att)
                  (kind ? " is being converted: help!" : " is under attack: help!"));
     // the defenders: vehicles of the other players within reach go 50% faster for 20 s
     net::Vec3 cp = city_pos(city);
-    for (auto& [v, h] : g_hv) {
-        if (!exists(v)) // g_hv is rebuilt every 0.1 s: a vehicle freed meanwhile
-            continue;
-        if (h.owner == owner || net::dist(veh_pos(v), cp) > 600.f)
-            continue;
-        if (g_fix_boost_players && h.owner >= 0xFE) // BUG-0876: an NPC nation's vehicle (the attackers)
-            continue;
+    hv_each([&](const HvRef& x) {
+        void* v = x.v;
+        if (!exists(v)) // the table is rebuilt every 0.1 s: a vehicle freed meanwhile
+            return;
+        if (x.h->owner == owner || net::dist(veh_pos(v), cp) > 600.f)
+            return;
+        if (g_fix_boost_players && x.h->owner >= 0xFE) // BUG-0876: an NPC nation's vehicle (the attackers)
+            return;
         auto [bi, fresh] = g_boost.try_emplace(v);
         Boost& b = bi->second;
         if (g_fix_boost_base ? fresh : b.until < now) { // BUG-0771: the own speed once per entry
@@ -2376,7 +2620,7 @@ static void SK_THISCALL h_OnAttacked(void* city, int kind, uint32_t att)
             b.pol = pol_of(v);
         }
         b.until = now + 20.0;
-    }
+    });
 }
 
 static void boost_tick(double now)
@@ -2385,7 +2629,7 @@ static void boost_tick(double now)
         void* v = it->first;
         // BUG-0040: object_alive reads the vehicle's own memory and cannot tell a freed one: only a
         // vehicle in the game's own list is written to
-        bool alive = g_hv.count(v) && exists(v);
+        bool alive = hv_find(v) && exists(v);
         if (!alive) {
             if (g_fix_boost_restore && boost_ours(v, it->second)) { // BUG-0773: it lives, out of the table only
                 F<float>(v, 0x218) = it->second.orig;
@@ -2608,17 +2852,17 @@ static void veh_each(void (*cb)(uint16_t, void*, void*), void* u)
 {
     auto alive = all_vehicles();
     for (void* v : alive) {
-        auto it = g_hv.find(v);
-        if (it != g_hv.end() && it->second.id)
-            cb(it->second.id, v, u);
+        HvRef it = hv_find(v);
+        if (it && it.id)
+            cb(it.id, v, u);
     }
 }
 static uint64_t g_veh_live_frame = ~0ull;
 static std::unordered_set<void*> g_veh_live;
 static void* veh_mirror(uint16_t id)
 {
-    auto it = g_gv.find(id);
-    if (it == g_gv.end() || !it->second.v || (g_veh_lifetime_fix && !gv_ok(it->second))) // (BUG-0951)
+    GvRef it = gv_find(id);
+    if (!it || !it.v || (g_veh_lifetime_fix && !gv_ok(it))) // (BUG-0951)
         return nullptr;
     if (H->frame_index() != g_veh_live_frame) {
         g_veh_live_frame = H->frame_index();
@@ -2626,7 +2870,7 @@ static void* veh_mirror(uint16_t id)
         for (void* v : all_vehicles())
             g_veh_live.insert(v);
     }
-    return g_veh_live.count(it->second.v) ? it->second.v : nullptr;
+    return g_veh_live.count(it.v) ? it.v : nullptr;
 }
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
@@ -2828,23 +3072,25 @@ static void claims_tick()
         g_cities_matched = true;
         g_city_spots.clear();
     }
-    if (!g_vehs_matched && !g_hv.empty()) {
+    if (!g_vehs_matched && hv_count()) {
         uint32_t ppol = pol_of(pc);
         std::vector<void*> vs;
         std::vector<std::array<float, 3>> pos;
-        for (auto& [v, hv] : g_hv)
-            if (hv.pol == ppol) {
-                vs.push_back(v);
-                net::Vec3 q = veh_pos(v);
+        hv_each([&](const HvRef& x) {
+            if (x.h->pol == ppol) {
+                vs.push_back(x.v);
+                net::Vec3 q = veh_pos(x.v);
                 pos.push_back({q.x, q.y, q.z});
             }
+        });
         auto m = claims::match(pos, g_veh_spots, 6.0f);
         for (size_t i = 0; i < vs.size(); i++)
             if (m[i] >= 0) {
                 const auto& sp = g_veh_spots[m[i]];
                 g_veh_claim[vs[i]] = sp.key;
                 int id = present_id(sp.key);
-                g_hv[vs[i]].owner = id >= 0 ? (uint8_t)id : C.sess->my_id();
+                if (HvRef x = hv_find(vs[i]))
+                    x.h->owner = id >= 0 ? (uint8_t)id : C.sess->my_id();
                 g_claim_vehs++;
             }
         g_vehs_matched = true;
@@ -2876,15 +3122,15 @@ static void claims_refresh()
     g_city_claim = std::move(cc);
     uint32_t ppol = pol_of(pc);
     std::unordered_map<void*, std::string> vc;
-    for (auto& [v, hv] : g_hv) {
-        if (hv.pol != ppol)
-            continue;
-        auto old = g_veh_claim.find(v);
+    hv_each([&](const HvRef& x) {
+        if (x.h->pol != ppol)
+            return;
+        auto old = g_veh_claim.find(x.v);
         if (old != g_veh_claim.end() && present_id(old->second) < 0)
-            vc[v] = old->second;
-        else if (hv.owner < 0xFE && !store::key_of(hv.owner).empty())
-            vc[v] = store::key_of(hv.owner);
-    }
+            vc[x.v] = old->second;
+        else if (x.h->owner < 0xFE && !store::key_of(x.h->owner).empty())
+            vc[x.v] = store::key_of(x.h->owner);
+    });
     if (g_vehs_matched)
         g_veh_claim = std::move(vc);
 }
@@ -2906,7 +3152,7 @@ static void claims_save(pstore::Store& s, int64_t)
                           (uint8_t)((g_city_gifted.count(c) ? 1 : 0) | (g_city_captured.count(c) ? 2 : 0))});
         }
     for (auto& [v, k] : g_veh_claim)
-        if (g_hv.count(v)) {
+        if (hv_find(v)) {
             net::Vec3 q = veh_pos(v);
             vs.push_back({q.x, q.y, q.z, k, 0});
         }
@@ -3122,15 +3368,15 @@ static void probe_note(void* sp, const float* p, const char* what, void* ret)
     if (g_applying || !p || g_probe_hits >= 40)
         return;
     void* v = (uint8_t*)sp - kVSpatial;
-    auto it = g_gv_of.find(v);
-    if (it == g_gv_of.end())
+    GvRef it = gv_of(v);
+    if (!it)
         return;
     net::Vec3 cur = veh_pos(v), to{p[0], p[1], p[2]};
     if (net::dist(cur, to) < 2.f)
         return;
     g_probe_hits++;
     H->log(M, SK_WARN, "civ: probe: %s of mirror #%u by %p: (%.1f %.1f %.1f) -> (%.1f %.1f %.1f)", what,
-           (unsigned)it->second, ret, cur.x, cur.y, cur.z, to.x, to.y, to.z);
+           (unsigned)it.id, ret, cur.x, cur.y, cur.z, to.x, to.y, to.z);
 }
 static void __fastcall probe_setpos(void* sp, void*, const float* p)
 {
@@ -3147,11 +3393,10 @@ static std::string push_probe()
     if (g_probe_vt)
         return "probe on";
     void* v = nullptr;
-    for (auto& [id, g] : g_gv)
-        if (gv_ok(g)) {
-            v = g.v;
-            break;
-        }
+    gv_each([&](const GvRef& x) {
+        if (!v && gv_ok(x))
+            v = x.v;
+    });
     if (!v)
         return "no mirror";
     uintptr_t* vt = *(uintptr_t**)((uint8_t*)v + kVSpatial);
@@ -3471,6 +3716,26 @@ static void host_tick(double now)
     g_host_cities = all_cities();
     auto vehicles = all_vehicles();
     std::unordered_set<void*> alive(vehicles.begin(), vehicles.end());
+    if (g_reg_fix) {
+        // C1 (BUG-1140): the table pass is the registry's sweep: an entry whose vehicle left the game's list, or whose
+        // address holds a vehicle of another world or nation (BUG-0059) or another vehicle of the same nation
+        // (BUG-0951: another serial), is not seen and goes (no game call: the host's game owns its vehicles)
+        g_hvr.sweep(
+            [&](uint16_t id) {
+                auto* e = g_hvr.find(id);
+                void* v = e ? e->ref.p : nullptr;
+                if (!v || !alive.count(v))
+                    return false;
+                if (pol_of(v) != e->data.pol)
+                    return false;
+                if (g_veh_lifetime_fix && e->data.serial && game::object_serial(v) != e->data.serial) {
+                    g_veh_stale++; // BUG-0951: another vehicle of the same nation at the address: a new id and owner
+                    return false;
+                }
+                return true;
+            },
+            [](auto&, bool) { return mirror::Unseen::Remove; }, [](auto&, bool) {});
+    } else
     for (auto it = g_hv.begin(); it != g_hv.end();) {
         // a vehicle of another world (or another nation) at an address we knew: assigned anew
         bool gone = !alive.count(it->first);
@@ -3486,22 +3751,24 @@ static void host_tick(double now)
             ++it;
     }
     if (roster_changed && g_store_fix) // E1 (BUG-1153): a claimed vehicle goes to its player, or the host holds it
-        for (auto& [v, hv] : g_hv)
-            if (auto it = g_veh_claim.find(v); it != g_veh_claim.end())
-                hv.owner = claims::holder(it->second, present_id, C.sess->my_id());
+        hv_each([&](const HvRef& x) {
+            if (auto it = g_veh_claim.find(x.v); it != g_veh_claim.end())
+                x.h->owner = claims::holder(it->second, present_id, C.sess->my_id());
+        });
     if (roster_changed)
-        for (auto& [v, hv] : g_hv) {
+        hv_each([&](const HvRef& x) {
+            HV& hv = *x.h;
             if (hv.owner >= 0xFE || std::binary_search(players.begin(), players.end(), hv.owner))
-                continue;
+                return;
             uint8_t owner = 0;
-            nearest_player_city(veh_pos(v), &owner);
+            nearest_player_city(veh_pos(x.v), &owner);
             if (owner == 0xFF || owner == kShared || !std::binary_search(players.begin(), players.end(), owner))
                 owner = 0;
             hv.owner = owner;
             g_orphans_given++;
-        }
+        });
     for (void* v : vehicles) {
-        if (g_hv.count(v))
+        if (hv_find(v))
             continue;
         uint8_t owner = 0xFE;
         if (pol_of(v) == ppol) {
@@ -3512,9 +3779,7 @@ static void host_tick(double now)
             if (owner == 0xFF || owner == kShared)
                 owner = 0;
         }
-        uint16_t id = net::alloc_id(g_next_id, g_hv_by_id); // BUG-0154: never a live id, never 0
-        g_hv[v] = {id, owner, pol_of(v), game::object_serial(v)};
-        g_hv_by_id[id] = v;
+        hv_add(v, owner); // BUG-0154: never a live id, never 0
     }
     g_cycle++;
     host_send_roads(now); // BUG-0494
@@ -3621,7 +3886,8 @@ static void host_tick(double now)
         w.u8((uint8_t)(c.v1 - c.v0));
         for (size_t i = c.v0; i < c.v1; i++) {
             void* v = vehicles[i];
-            const HV& hv = g_hv[v];
+            HvRef x = hv_find(v); // (every vehicle of the list is in the table after the pass above)
+            const HV hv = x ? *x.h : HV{};
             net::Vec3 p = veh_pos(v);
             net::Quat q = veh_rot(v);
             w.u16(hv.id); w.u8(hv.owner); w.u32(pol_of(v));
@@ -3730,11 +3996,8 @@ static void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool
 static void* resolve_target(const Target& t)
 {
     if (t.kind == 1) {
-        auto it = g_hv_by_id.find(t.id);
-        if (it == g_hv_by_id.end())
-            return nullptr;
-        auto hv = g_hv.find(it->second);
-        return hv != g_hv.end() && hv_live(hv->first, hv->second) ? it->second : nullptr; // (BUG-1053)
+        HvRef x = hv_by_id(t.id);
+        return x && hv_live(x.v, *x.h) ? x.v : nullptr; // (BUG-1053)
     }
     if (t.kind == 2)
         return host_city(t.id); // (BUG-1053)
@@ -3751,21 +4014,21 @@ static void host_command(uint8_t from, net::Reader& r)
     // or another owner: a gift or a capture in between), logged with the rejection
     char why[160] = "";
     auto own_vehicle = [&](uint16_t id) -> void* {
-        auto it = g_hv_by_id.find(id);
-        if (it == g_hv_by_id.end()) {
+        HvRef x = hv_by_id(id);
+        if (!x) {
             snprintf(why, sizeof why, " (vehicle %u: not in the host's game)", (unsigned)id);
             return nullptr;
         }
-        if (!hv_live(it->second, g_hv[it->second])) { // BUG-1053: removed by the host's game since the last cycle
+        if (!hv_live(x.v, *x.h)) { // BUG-1053: removed by the host's game since the last cycle
             snprintf(why, sizeof why, " (vehicle %u: gone from the host's game since the last cycle)", (unsigned)id);
             return nullptr;
         }
-        if (g_hv[it->second].owner != from) {
-            snprintf(why, sizeof why, " (vehicle %u: owner %u%s)", (unsigned)id, (unsigned)g_hv[it->second].owner,
-                     F<uint8_t>(it->second, kVDead) ? ", dead" : "");
+        if (x.h->owner != from) {
+            snprintf(why, sizeof why, " (vehicle %u: owner %u%s)", (unsigned)id, (unsigned)x.h->owner,
+                     F<uint8_t>(x.v, kVDead) ? ", dead" : "");
             return nullptr;
         }
-        return it->second;
+        return x.v;
     };
     auto reject = [&] {
         if (from != C.sess->my_id()) {
@@ -3787,7 +4050,7 @@ static void host_command(uint8_t from, net::Reader& r)
             uint16_t id = r.u16();
             if (what == 0) {
                 if (void* v = own_vehicle(id)) {
-                    g_hv[v].owner = to;
+                    hv_find(v).h->owner = to; // (own_vehicle found its entry)
                     if (g_store_fix && !store::key_of(to).empty())
                         g_veh_claim[v] = store::key_of(to); // E1: the receiver's from now on
                     given++;
@@ -3864,11 +4127,8 @@ static void host_command(uint8_t from, net::Reader& r)
             return reject();
         g_pending_owner = from;
         void* v = host_buy(city, loco);
-        if (v && !g_hv.count(v)) {
-            uint16_t id = net::alloc_id(g_next_id, g_hv_by_id); // BUG-0154 (this one could hand out 0)
-            g_hv[v] = {id, from, pol_of(v), game::object_serial(v)};
-            g_hv_by_id[id] = v;
-        }
+        if (v && !hv_find(v))
+            hv_add(v, from); // BUG-0154 (this one could hand out 0)
         g_pending_owner = -1;
         if (!v) {
             // the guest's button was enabled (its own count of vehicles may differ for a moment):
@@ -4128,9 +4388,7 @@ static void guest_building_hp(net::Reader& r)
     }
 }
 
-// BUG-0493: vehicles of this game the mod removes once the city planner no longer moves them
-static std::unordered_set<void*> g_kill_later;
-// a removal waits while the planner moves the vehicle, and (BUG-0478: the removal frees it now, Die
+// BUG-0493: vehicles of this game the mod removes once the city planner no longer moves them (kill_wait): a removal waits while the planner moves the vehicle, and (BUG-0478: the removal frees it now, Die
 // alone did not) while a cinematic plays (its actors are the game's raw pointers, CLAUDE.md 2)
 static bool hold_removal(void* v) { return planner_moves(v) || movie_playing(); }
 
@@ -4147,7 +4405,7 @@ struct Took {
     void* p;
 };
 static std::vector<Took> g_took;
-static bool is_mirror(void* v) { return v && (g_gv_of.count(v) || g_kill_later.count(v)); }
+static bool is_mirror(void* v) { return gv_bound(v) || kill_waiting(v); }
 static void host_buildings_keys(bool own);
 static void save_start()
 {
@@ -4185,7 +4443,9 @@ static void save_end()
 }
 static bool save_filter(void* o, uint32_t noun)
 {
-    if (noun != 0x18C6DE8 || !(g_gv_of.count(o) || g_kill_later.count(o)))
+    if (noun != kVehicleNoun)
+        return false;
+    if (g_reg_fix ? !g_gvr.ours(o, noun, true) : !(g_gv_of.count(o) || g_kill_later.count(o))) // C1: any bound one, Civ's rule
         return false;
     g_save_stripped++;
     return true;
@@ -4613,13 +4873,21 @@ static void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
     uint8_t chunk = r.u8(), chunks = r.u8();
-    if (!r.ok() || !net::cycle_chunk_ok(chunk, chunks))
+    if (!r.ok())
+        return;
+    if (g_rx_fix) {
+        g_rx.policy.keep_order = g_cycle_order_fix; // (the switch is read every chunk, as before)
+        if (!g_rx.begin(cycle, chunk, chunks))
+            return; // a bad header, or a late chunk of an older cycle
+    } else {
+    if (!net::cycle_chunk_ok(chunk, chunks))
         return;
     bool started = false;
     if (!g_cyc.begin(cycle, g_cycle_order_fix, &started))
         return; // a late chunk of an older cycle
     if (started)
         g_cycle_ids.clear();
+    }
     if (!guest_cities(r))
         return;
     guest_nodes_and_buildings(r);
@@ -4643,13 +4911,17 @@ static void guest_state(net::Reader& r)
         m.hp = r.f32();
         if (!r.ok())
             return;
-        g_cycle_ids.insert(id);
-        auto& g = g_gv[id];
-        void* v = g.v;
+        if (g_rx_fix)
+            g_rx.saw(id);
+        else
+            g_cycle_ids.insert(id);
+        GvRef x = gv_at(id);
+        GV& g = *x.g;
+        void* v = x.v;
         g.owner = m.owner; g.pol = m.pol; g.purpose = m.purpose; g.loco = m.loco;
         g.pos = m.pos; g.rot = m.rot; g.hp = m.hp; g.seen = now;
         // BUG-0186: a step faster than twice the vehicle's own top speed is a jump of the host's game
-        bool alive_v = v && gv_ok(g) && !F<uint8_t>(v, kVDead); // (BUG-0951)
+        bool alive_v = v && gv_ok(x) && !F<uint8_t>(v, kVDead); // (BUG-0951)
         float top = alive_v ? F<float>(v, 0x218) : 0.f;
         g.host_top = -1.f;
         if (tops) {
@@ -4670,13 +4942,12 @@ static void guest_state(net::Reader& r)
         if (g_extrap_fix && net::g_lead_fix)
             g.est.max_ahead = kVehLead;
         g.est.update(m.pos, now, sent);
-        if (v && (!gv_ok(g) || F<uint8_t>(v, kVDead))) { // (BUG-0951: also another vehicle at its address)
-            if (g_veh_lifetime_fix && game::object_alive(v) && g_gv_of.count(v) && g_gv_of[v] == id)
-                g_veh_stale++;
-            if (g_gv_of.count(v) && g_gv_of[v] == id)
-                g_gv_of.erase(v);
-            g.v = v = nullptr;
-            g.listed = false;
+        if (v && (!gv_ok(x) || F<uint8_t>(v, kVDead))) { // (BUG-0951: also another vehicle at its address)
+            uint16_t bid;
+            if (g_veh_lifetime_fix && gv_id_of(v, bid) && bid == id && game::object_alive(v))
+                g_veh_stale++; // its memory says alive: another vehicle at the address (another serial)
+            gv_unbind(id);
+            v = nullptr;
         }
         if (v)
             continue;
@@ -4684,7 +4955,7 @@ static void guest_state(net::Reader& r)
         // design key the tests force (BUG-0469): always create, so the creation path is reached)
         float best = 25.f;
         for (void* lv : all_vehicles()) {
-            if (g_veh_force || g_gv_of.count(lv) || pol_of(lv) != m.pol || F<int>(lv, kVPurpose) != m.purpose ||
+            if (g_veh_force || gv_bound(lv) || pol_of(lv) != m.pol || F<int>(lv, kVPurpose) != m.purpose ||
                 F<int>(lv, kVLoco) != m.loco)
                 continue;
             float d = net::dist(veh_pos(lv), m.pos);
@@ -4695,6 +4966,7 @@ static void guest_state(net::Reader& r)
         }
         if (v && !bound_design(v))
             continue; // BUG-0647: the host's answer for its model first (bound on a later cycle)
+        bool made = !v;
         if (!v) {
             void* civ = thiscall<void*>(a_CivByPol, nm(), m.pol);
             uint32_t key[3] = {0, 0, 0};
@@ -4708,24 +4980,44 @@ static void guest_state(net::Reader& r)
         }
         if (!v)
             continue;
-        g.v = v;
-        g.serial = game::object_serial(v);
-        g.listed = false;
-        g_gv_of[v] = id;
+        gv_bind(id, v, made);
     }
+    // only a complete cycle tells which vehicles are gone: with a chunk lost (or late) every
+    // vehicle of it was killed and made again on the next cycle
+    if (g_rx_fix) {
+        if (!g_rx.end(r.ok())) // a cut chunk does not count: the cycle stays incomplete, nothing is removed
+            return;
+    } else {
     if (!r.ok()) // a cut chunk does not count: the cycle stays incomplete, nothing is removed
         return;
     g_cyc.add(chunk);
     if (chunk + 1 < chunks)
         return;
-    // only a complete cycle tells which vehicles are gone: with a chunk lost (or late) every
-    // vehicle of it was killed and made again on the next cycle
     if (!g_cyc.complete(chunks)) {
         g_incomplete++;
         return;
     }
+    }
+    if (g_reg_fix) {
+        // C1 (BUG-1140): every mirror the cycle did not name goes; its vehicle is removed now, or (BUG-0493) waits in the
+        // registry's deferred list while the planner moves it or a cinematic plays (guest_tick's pump)
+        g_gvr.sweep([](uint16_t id) { return cycle_saw(id); },
+                    [](auto& e, bool alive) {
+                        if (alive && !F<uint8_t>(e.ref.p, kVDead) && hold_removal(e.ref.p)) {
+                            g_planner_kills_held++;
+                            return mirror::Unseen::Defer;
+                        }
+                        return mirror::Unseen::Remove;
+                    },
+                    [](auto& e, bool alive) {
+                        if (alive && !F<uint8_t>(e.ref.p, kVDead)) { // (BUG-0951: the object bound, not one at its address)
+                            kill_local(e.ref.p);
+                            g_removed++;
+                        }
+                    });
+    } else
     for (auto it = g_gv.begin(); it != g_gv.end();) {
-        if (!g_cycle_ids.count(it->first)) {
+        if (!cycle_saw(it->first)) {
             if (gv_ok(it->second) && !F<uint8_t>(it->second.v, kVDead)) { // (BUG-0951)
                 if (hold_removal(it->second.v)) { // BUG-0493: removed when the planner (or a cinematic) lets it go
                     g_kill_later.insert(it->second.v);
@@ -4743,11 +5035,11 @@ static void guest_state(net::Reader& r)
     }
     // the guest's own vehicles that the host does not have (its local civ AI, the start vehicle)
     for (void* lv : all_vehicles())
-        if (!g_gv_of.count(lv)) {
-            if (g_kill_later.count(lv))
+        if (!gv_bound(lv)) {
+            if (kill_waiting(lv))
                 continue;
             if (hold_removal(lv)) {
-                g_kill_later.insert(lv);
+                kill_wait(lv, game::object_serial(lv));
                 g_planner_kills_held++;
                 continue;
             }
@@ -4761,6 +5053,15 @@ static void guest_tick(double now)
 {
     guest_fire(now); // BUG-0477
     host_buildings_tick(now); // BUG-0670
+    if (g_reg_fix) // C1 (BUG-1140): the registry's deferred list (it drops a vehicle that is gone or a mirror again)
+        g_gvr.pump([](const mirror::Ref& r) { return exists(r.p) && !F<uint8_t>(r.p, kVDead) && hold_removal(r.p); },
+                   [](const mirror::Ref& r) {
+                       if (!exists(r.p) || F<uint8_t>(r.p, kVDead))
+                           return; // the game removed it first
+                       kill_local(r.p);
+                       g_removed++;
+                   });
+    else
     for (auto it = g_kill_later.begin(); it != g_kill_later.end();) {
         void* v = *it;
         if (!exists(v) || F<uint8_t>(v, kVDead) || g_gv_of.count(v)) { // gone, or a mirror again
@@ -4778,19 +5079,19 @@ static void guest_tick(double now)
         drop_foreign_selection();
     }
     if (local_play()) {
-        for (auto& [id, g] : g_gv)
-            g.has_put = false;
+        gv_each([](const GvRef& x) { x.g->has_put = false; });
         return; // the last states would stop every order for 3 s (StopMovement below)
     }
     static double last_tick = 0; // BUG-0438: the last frame's time (the placing shows up a frame later)
     const double fdt = std::min(std::max(now - last_tick, 0.0), 0.1);
     last_tick = now;
-    for (auto& [id, g] : g_gv) {
-        if (!gv_ok(g) || now - g.seen > 3.0) { // (BUG-0951)
+    gv_each([&](const GvRef& x) {
+        GV& g = *x.g;
+        if (!gv_ok(x) || now - g.seen > 3.0) { // (BUG-0951)
             g.has_put = false;
-            continue;
+            return;
         }
-        const net::Vec3 at = veh_pos(g.v);
+        const net::Vec3 at = veh_pos(x.v);
         net::Vec3 cur = at;
         // moved on with the estimated velocity (no lag behind the host); BUG-0425 (drive.lead): by the one-way latency
         // the session measures (half the round trip), not a fixed 0.03 s
@@ -4811,14 +5112,14 @@ static void guest_tick(double now)
             float k = 0.5f;
             p = {cur.x + (want.x - cur.x) * k, cur.y + (want.y - cur.y) * k, cur.z + (want.z - cur.z) * k};
         }
-        void* sp = (uint8_t*)g.v + kVSpatial;
+        void* sp = (uint8_t*)x.v + kVSpatial;
         float pp[3] = {p.x, p.y, p.z}, q[4] = {g.rot.x, g.rot.y, g.rot.z, g.rot.w};
         vcall<void>(sp, 0xEC / 4); // StopMovement: the locomotion does not pull it back
         vcall<void>(sp, 0x44 / 4, (const float*)pp, (const float*)q); // Teleport
-        F<float>(g.v, kVHp) = g.hp;
+        F<float>(x.v, kVHp) = g.hp;
         g.put = p;
         g.has_put = true;
-    }
+    });
 }
 
 static void guest_build(net::Reader& r)
@@ -4863,6 +5164,20 @@ static void prune_gone()
 {
     // guests only: the host's map is rebuilt from the vehicle list in host_tick, and a vehicle it has
     // just bought for a guest is not in the list yet (dropping it lost the guest's ownership)
+    if (g_reg_fix) {
+        std::vector<uint16_t> gone;
+        gv_each([&](const GvRef& x) {
+            if (!x.v)
+                return;
+            if (exists(x.v))
+                x.g->listed = true;
+            else if (x.g->listed)
+                gone.push_back(x.id);
+        });
+        for (uint16_t id : gone)
+            gv_unbind(id);
+        return;
+    }
     for (auto& [id, g] : g_gv) {
         if (!g.v)
             continue;
@@ -4921,14 +5236,14 @@ static std::string veh_hunt_status()
     char b[400];
     bool l = g_vh.hit && game::listed(g_vh.hit, 0x18C6DE8u) && game::object_serial(g_vh.hit) == g_vh.hit_serial;
     net::Vec3 q = l ? veh_pos(g_vh.hit) : net::Vec3{};
-    auto it = g_gv.find(g_vh.id);
-    net::Vec3 want = it != g_gv.end() ? it->second.pos : net::Vec3{};
-    auto gi = l ? g_gv_of.find(g_vh.hit) : g_gv_of.end();
+    GvRef it = gv_find(g_vh.id);
+    net::Vec3 want = it ? it.g->pos : net::Vec3{};
+    GvRef gi = l ? gv_of(g_vh.hit) : GvRef{};
     snprintf(b, sizeof b, "civ reuse target=%p mirror=%u left=%d tries=%d hit=%p alive=%d dead=%d own_civ=%d pos=(%.2f %.2f %.2f) "
              "host_vehicle=(%.2f %.2f %.2f) bound_as=%d stale=%u\n", (void*)g_vh.target, g_vh.id, g_vh.left, g_vh.tries,
              g_vh.hit, (int)l, l ? (int)F<uint8_t>(g_vh.hit, kVDead) : -1,
              (int)(l && player_civ() && pol_of(g_vh.hit) == pol_of(player_civ())), q.x, q.y, q.z, want.x, want.y, want.z,
-             gi != g_gv_of.end() ? (int)gi->second : -1, g_veh_stale);
+             gi ? (int)gi.id : -1, g_veh_stale);
     return b;
 }
 
@@ -5306,10 +5621,8 @@ void on_session_end()
     g_turret_sent.clear();
     g_turret_seen.clear();
     g_tribe_extra_seen.clear();
-    g_hv.clear();
-    g_hv_by_id.clear();
-    g_gv.clear();
-    g_gv_of.clear();
+    hv_clear();
+    gv_clear();
     g_city_owner.clear();
     g_host_cities.clear();
     g_split_for.clear();
@@ -5334,10 +5647,8 @@ void on_world_change()
     clear_coop_tables(g_fix_boost_restore);
     // BUG-0223: the tables are forgotten here, not through on_session_end (its restoring clear
     // would write +0x218 into the old world's vehicles if the order ever changed)
-    g_hv.clear();
-    g_hv_by_id.clear();
-    g_gv.clear();
-    g_gv_of.clear();
+    hv_clear();
+    gv_clear();
     g_city_owner.clear();
     g_host_cities.clear();
     g_split_for.clear();
@@ -5352,6 +5663,7 @@ void on_world_change()
     g_cities_waiting_told = 0;
     g_cyc.reset();
     g_cycle_ids.clear();
+    g_rx.reset();
     g_exist_frame = ~0ull;
 }
 
@@ -5408,13 +5720,15 @@ void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, b
                 if (c && o != kShared && game::listed(c))
                     es.push_back({c, city_pos(c), o, true});
             if (is_host()) {
-                for (auto& [v, hv] : g_hv)
-                    if (hv.owner != 0xFE && hv_live(v, hv))
-                        es.push_back({v, veh_pos(v), hv.owner, false});
+                hv_each([&](const HvRef& x) {
+                    if (x.h->owner != 0xFE && hv_live(x.v, *x.h))
+                        es.push_back({x.v, veh_pos(x.v), x.h->owner, false});
+                });
             } else
-                for (auto& [id, g] : g_gv)
-                    if (g.v && g.owner != 0xFE && gv_ok(g))
-                        es.push_back({g.v, veh_pos(g.v), g.owner, false});
+                gv_each([&](const GvRef& x) {
+                    if (x.v && x.g->owner != 0xFE && gv_ok(x))
+                        es.push_back({x.v, veh_pos(x.v), x.g->owner, false});
+                });
         }
         for (auto& e : es)
             fn(e.o, e.p, e.owner, e.city, user);
@@ -5424,13 +5738,15 @@ void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, b
         if (c && game::object_alive(c) && o != kShared)
             fn(c, city_pos(c), o, true, user);
     if (is_host()) {
-        for (auto& [v, hv] : g_hv)
-            if (hv.owner != 0xFE)
-                fn(v, veh_pos(v), hv.owner, false, user);
+        hv_each([&](const HvRef& x) {
+            if (x.h->owner != 0xFE)
+                fn(x.v, veh_pos(x.v), x.h->owner, false, user);
+        });
     } else {
-        for (auto& [id, g] : g_gv)
-            if (g.v && g.owner != 0xFE)
-                fn(g.v, veh_pos(g.v), g.owner, false, user);
+        gv_each([&](const GvRef& x) {
+            if (x.v && x.g->owner != 0xFE)
+                fn(x.v, veh_pos(x.v), x.g->owner, false, user);
+        });
     }
 }
 
@@ -5442,7 +5758,7 @@ std::string status()
                  "civ(host): vehicles=%u cities=%u owned_cities=%u cmds_done=%u rejected=%u builds_sent=%u gifts=%u "
                  "trade_pairs=%d trade_total=%d joint_hits=%u military_hits=%u religious=%u alarms=%u votes=%u sw_unvoted=%u boosts=%u "
                  "cities_founded=%u unselected=%u movie=%d buys_refused=%u chunks=%u max_chunk=%u siege_npc=%u creature_orders=%u/%u cmd_gone=%u\n",
-                 (unsigned)g_hv.size(), (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), g_cmds_done,
+                 (unsigned)hv_count(), (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), g_cmds_done,
                  g_cmds_rejected, g_builds_sent, g_gifts, g_trade_pairs, g_trade_total, g_joint_hits, g_military_hits,
                  g_religious_boosts, g_alarms, g_votes, g_sw_unvoted, (unsigned)g_boost.size(), g_cities_founded, g_unselected, (int)movie_playing(), g_buys_refused, g_last_chunks,
                  g_max_chunk, g_siege_npc, g_creature_near, g_creature_moves, g_cmd_gone);
@@ -5451,12 +5767,12 @@ std::string status()
                  "civ(guest): mirrors=%u created=%u removed=%u cities=%u cmds_sent=%u builds_in=%u captures_in=%u "
                  "orders_dropped=%u growth_blocked=%u nodes_in=%u cities_in=%u cities_blocked=%u unselected=%u movie=%d "
                  "buildings_fixed=+%u/-%u off_slot=%u moved=%u ruins_in=%u ruins_differ=%u incomplete=%u older_chunks=%u income_blocked=%u cities_caught_up=%u ai_spawns_blocked=%u away_orders=%u local=%d founds_outside=%u mirror_place_skipped=%u away_ground=%u removed_local=%u\n",
-                 (unsigned)g_gv.size(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
+                 (unsigned)gv_count(), g_created, g_removed, (unsigned)g_host_cities.size(), g_cmds_sent, g_builds_in,
                  g_captures_in, g_orders_dropped, g_growth_blocked, g_nodes_in, g_cities_in, g_cities_blocked, g_unselected, (int)movie_playing(), g_bfix_added,
-                 g_bfix_removed, g_bfix_off_slot, g_bfix_moved, g_ruins_in, g_ruins_differ, g_incomplete, g_cyc.older, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped, g_away_ground_checks, g_removed_local);
+                 g_bfix_removed, g_bfix_off_slot, g_bfix_moved, g_ruins_in, g_ruins_differ, g_rx_fix ? g_rx.incomplete : g_incomplete, g_rx_fix ? g_rx.older : g_cyc.older, g_income_blocked, g_cities_caught_up, g_ai_spawns_blocked, g_away_orders, (int)local_play(), g_founds_outside, g_mirror_place_skipped, g_away_ground_checks, g_removed_local);
     char pl[260];
     snprintf(pl, sizeof pl, "planner: open=%d held=%u kills_held=%u kills_waiting=%u picks_refused=%u builds_held=%u build_orphans=%u save_stripped=%u cards_skipped=%u owner_unknown=%u met=%d build_refunds=%u/%.0f\n",
-             planner_city() ? 1 : 0, g_planner_held, g_planner_kills_held, (unsigned)g_kill_later.size(),
+             planner_city() ? 1 : 0, g_planner_held, g_planner_kills_held, (unsigned)kill_waiting_count(),
              g_planner_picks_refused, (unsigned)g_held_builds.size(), g_build_orphans, g_save_stripped, g_cards_skipped, g_owner_unknown, g_met,
              g_build_refunds, g_build_refunded);
     char sh[320];
@@ -5515,13 +5831,15 @@ void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::
                     es.push_back({"city", (int)i, o == 0xFF ? -1 : (int)o, city_pos(c)});
                 }
             if (is_host()) {
-                for (auto& [v, hv] : g_hv)
-                    if (hv.owner != 0xFE && hv_live(v, hv))
-                        es.push_back({"vehicle", hv.id, hv.owner, veh_pos(v)});
+                hv_each([&](const HvRef& x) {
+                    if (x.h->owner != 0xFE && hv_live(x.v, *x.h))
+                        es.push_back({"vehicle", x.id, x.h->owner, veh_pos(x.v)});
+                });
             } else
-                for (auto& [id, g] : g_gv)
-                    if (g.owner != 0xFE && gv_ok(g)) // (BUG-0951)
-                        es.push_back({"vehicle", id, g.owner, veh_pos(g.v)});
+                gv_each([&](const GvRef& x) {
+                    if (x.g->owner != 0xFE && gv_ok(x)) // (BUG-0951)
+                        es.push_back({"vehicle", x.id, x.g->owner, veh_pos(x.v)});
+                });
         }
         for (auto& e : es)
             fn(e.kind, e.id, e.owner, e.p, user);
@@ -5533,13 +5851,15 @@ void for_each_target(void (*fn)(const char* kind, int id, int owner, const net::
             fn("city", (int)i, o == 0xFF ? -1 : (int)o, city_pos(c), user);
         }
     if (is_host()) {
-        for (auto& [v, hv] : g_hv)
-            if (hv.owner != 0xFE && game::object_alive(v))
-                fn("vehicle", hv.id, hv.owner, veh_pos(v), user);
+        hv_each([&](const HvRef& x) {
+            if (x.h->owner != 0xFE && game::object_alive(x.v))
+                fn("vehicle", x.id, x.h->owner, veh_pos(x.v), user);
+        });
     } else {
-        for (auto& [id, g] : g_gv)
-            if (g.owner != 0xFE && gv_ok(g)) // (BUG-0951)
-                fn("vehicle", id, g.owner, veh_pos(g.v), user);
+        gv_each([&](const GvRef& x) {
+            if (x.g->owner != 0xFE && gv_ok(x)) // (BUG-0951)
+                fn("vehicle", x.id, x.g->owner, veh_pos(x.v), user);
+        });
     }
 }
 
@@ -5574,11 +5894,11 @@ std::string list()
         net::Vec3 p = veh_pos(v);
         uint16_t id = 0;
         if (C.sess && C.sess->role() == net::Role::Host) {
-            auto it = g_hv.find(v);
-            id = it == g_hv.end() ? 0 : it->second.id;
+            HvRef it = hv_find(v);
+            id = it ? it.id : 0;
         } else {
-            auto it = g_gv_of.find(v);
-            id = it == g_gv_of.end() ? 0 : it->second;
+            GvRef it = gv_of(v);
+            id = it ? it.id : 0;
         }
         uint8_t o = owner_of_vehicle(v);
         // the current order (mOrders +0xB68, element {target, pos, type, issuer}): type, -1 none
@@ -5595,14 +5915,15 @@ std::string list()
                  F<uint8_t>(v, kVSelected), F<float>(v, kVHp), p.x, p.y, p.z, otype, ox, oy, oz, game::object_scale(v),
                  F<uint32_t>(v, kVModelKey));
         out += b;
-        auto gi = id && !(C.sess && C.sess->role() == net::Role::Host) ? g_gv.find(id) : g_gv.end();
-        if (gi != g_gv.end()) { // BUG-0186: the guest's view of the mirror (on the same line)
+        GvRef gx = id && !(C.sess && C.sess->role() == net::Role::Host) ? gv_find(id) : GvRef{};
+        if (gx) { // BUG-0186: the guest's view of the mirror (on the same line)
             out.pop_back();
-            const net::Vec3& ev = gi->second.est.vel;
+            const GV& gi = *gx.g;
+            const net::Vec3& ev = gi.est.vel;
             snprintf(b, sizeof b, " age=%.1f err=%.1f pushed=%.1f pushed5s=%.1f vel=%.1f top=%.1f jumps=%u htop=%.1f\n",
-                     H->time_seconds() - gi->second.seen, gi->second.err, gi->second.pushed, gi->second.pushed_max,
-                     std::sqrt(ev.x * ev.x + ev.y * ev.y + ev.z * ev.z), F<float>(v, 0x218), gi->second.est.capped,
-                     gi->second.host_top);
+                     H->time_seconds() - gi.seen, gi.err, gi.pushed, gi.pushed_max,
+                     std::sqrt(ev.x * ev.x + ev.y * ev.y + ev.z * ev.z), F<float>(v, 0x218), gi.est.capped,
+                     gi.host_top);
             out += b;
         }
     }
@@ -5620,11 +5941,11 @@ void census_rows(std::vector<census::Row>& out)
         census::Row r;
         r.kind = 'v';
         if (host) {
-            auto it = g_hv.find(v);
-            r.id = it == g_hv.end() ? -1 : it->second.id;
+            HvRef it = hv_find(v);
+            r.id = it ? it.id : -1;
         } else {
-            auto it = g_gv_of.find(v);
-            r.id = it == g_gv_of.end() ? -1 : it->second;
+            GvRef it = gv_of(v);
+            r.id = it ? it.id : -1;
         }
         r.own = r.id < 0 ? "local" : host ? "host" : "mirror";
         uint8_t o = owner_of_vehicle(v);
@@ -5640,12 +5961,9 @@ void census_rows(std::vector<census::Row>& out)
 // ---- debug (tests): the same hooked paths the UI uses ----
 static void* local_vehicle(uint16_t id)
 {
-    if (C.sess && C.sess->role() == net::Role::Host) {
-        auto it = g_hv_by_id.find(id);
-        return it == g_hv_by_id.end() ? nullptr : it->second;
-    }
-    auto it = g_gv.find(id);
-    return it == g_gv.end() || !gv_ok(it->second) ? nullptr : it->second.v; // (BUG-0951)
+    if (C.sess && C.sess->role() == net::Role::Host)
+        return hv_by_id(id).v;
+    return gv_live(id); // (BUG-0951)
 }
 
 bool near_vehicle(const net::Vec3& p, float radius)
@@ -5692,25 +6010,26 @@ std::string debug(const std::vector<std::string>& a)
             return veh_hunt_status();
         // npc: the first live mirror of another civilization than this guest's (the new vehicle is made for the guest's
         // own civilization: it is never bound to that host vehicle by its kind)
-        auto it = g_gv.find((uint16_t)atoi(a[1].c_str()));
+        GvRef it = a[1] == "npc" || a[1] == "any" ? GvRef{} : gv_find((uint16_t)atoi(a[1].c_str()));
         void* pc = player_civ();
         // (the new vehicle is made 40 m away: farther than the 25 m a mirror binds a local vehicle of its kind by)
         if (a[1] == "npc" || a[1] == "any")
-            for (int pass = a[1] == "npc" ? 0 : 1; pass < 2 && it == g_gv.end(); pass++)
-                for (it = g_gv.begin(); it != g_gv.end(); ++it)
-                    if (gv_ok(it->second) && !F<uint8_t>(it->second.v, kVDead) && H->time_seconds() - it->second.seen < 1.0 &&
-                        (pass || !pc || pol_of(it->second.v) != pol_of(pc)) && !g_kill_later.count(it->second.v))
-                        break;
-        if (it == g_gv.end() || !gv_ok(it->second)) {
+            for (int pass = a[1] == "npc" ? 0 : 1; pass < 2 && !it; pass++)
+                gv_each([&](const GvRef& x) {
+                    if (!it && gv_ok(x) && !F<uint8_t>(x.v, kVDead) && H->time_seconds() - x.g->seen < 1.0 &&
+                        (pass || !pc || pol_of(x.v) != pol_of(pc)) && !kill_waiting(x.v))
+                        it = x;
+                });
+        if (!it || !gv_ok(it)) {
             char b[120];
-            snprintf(b, sizeof b, "no live mirror (%u mirrors, %u vehicles in the game)\n", (unsigned)g_gv.size(),
+            snprintf(b, sizeof b, "no live mirror (%u mirrors, %u vehicles in the game)\n", (unsigned)gv_count(),
                      (unsigned)all_vehicles().size());
             return b;
         }
-        void* v = it->second.v;
+        void* v = it.v;
         g_vh = VehHunt{};
         g_vh.target = (uint8_t*)v;
-        g_vh.id = it->first;
+        g_vh.id = it.id;
         g_vh.purpose = F<int>(v, kVPurpose);
         g_vh.loco = F<int>(v, kVLoco);
         g_vh.at = veh_pos(v);
@@ -5749,9 +6068,9 @@ std::string debug(const std::vector<std::string>& a)
                  "tables: hv=%u boost=%u alarm_at=%u siege=%u joint=%u gifted=%u bfix=%u host_cities=%u city_owner=%u "
                  "gv=%u world_resets=%u next_id=%u world_changes=%u "
                  "mirror_designs=%u veh_fallback=%u build_skipped=%u bound_redesigned=%u last_order=%d/%u/%u/%08X\n",
-                 (unsigned)g_hv.size(), (unsigned)g_boost.size(), (unsigned)g_alarm_at.size(), (unsigned)g_siege.size(),
+                 (unsigned)hv_count(), (unsigned)g_boost.size(), (unsigned)g_alarm_at.size(), (unsigned)g_siege.size(),
                  (unsigned)g_joint_told.size(), (unsigned)g_city_gifted.size(), (unsigned)g_bfix_seen.size(),
-                 (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), (unsigned)g_gv.size(), g_world_resets,
+                 (unsigned)g_host_cities.size(), (unsigned)g_city_owner.size(), (unsigned)gv_count(), g_world_resets,
                  (unsigned)g_next_id, g_world_checks_fired, g_veh_design_checked,
                  g_veh_design_fallback, g_build_skipped, g_bound_redesigned, g_last_order.type, g_last_order.kind,
                  g_last_order.id, g_last_order.noun);
@@ -5775,7 +6094,9 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(cl, sizeof cl, "claims: fix=%d serial=%u cities=%u vehicles=%u matched=%d/%d from_disk=%u/%u held=%u back=%u\n",
                  (int)g_store_fix, g_claims_serial, (unsigned)g_city_claim.size(), (unsigned)g_veh_claim.size(),
                  (int)g_cities_matched, (int)g_vehs_matched, g_claim_cities, g_claim_vehs, g_claims_held, g_claims_back);
-        return std::string(b) + k + sp + cl + c;
+        std::string reg = "registry: fix=" + std::to_string((int)g_reg_fix) + " " + g_hvr.status() + " | " + g_gvr.status() +
+                          "\n"; // C1 (BUG-1140)
+        return std::string(b) + k + sp + cl + c + reg;
     }
     if (!a.empty() && a[0] == "fakeveh") { // tests (BUG-0469): fakeveh <hex design instance|off> [<hex type> <hex group>]
         // every mirror vehicle is built with that design key (the guest's own civ design otherwise)
@@ -5949,11 +6270,10 @@ std::string debug(const std::vector<std::string>& a)
         return "alarm raised";
     }
     if (a.size() >= 2 && a[0] == "hvdrop" && is_host()) { // hvdrop <net id>: out of the host's table, it lives (BUG-0773)
-        auto it = g_hv_by_id.find((uint16_t)atoi(a[1].c_str()));
-        if (it == g_hv_by_id.end())
+        uint16_t id = (uint16_t)atoi(a[1].c_str());
+        if (!hv_by_id(id))
             return "no such vehicle";
-        g_hv.erase(it->second);
-        g_hv_by_id.erase(it);
+        hv_drop(id);
         return "dropped from the table";
     }
     if (a.size() >= 4 && a[0] == "guestcmd" && is_host()) { // guestcmd <from> <vehicle id> v<vehicle id>|<city> [type]:
@@ -5965,8 +6285,7 @@ std::string debug(const std::vector<std::string>& a)
         if (a[3][0] == 'v') {
             t.kind = 1;
             t.id = (uint16_t)atoi(a[3].c_str() + 1);
-            auto it = g_hv_by_id.find(t.id);
-            tp = it == g_hv_by_id.end() ? nullptr : it->second;
+            tp = hv_by_id(t.id).v;
         } else {
             t.kind = 2;
             t.id = (uint16_t)atoi(a[3].c_str());
@@ -5981,8 +6300,7 @@ std::string debug(const std::vector<std::string>& a)
         uint32_t d0 = g_cmds_done, r0 = g_cmds_rejected, g0 = g_cmd_gone;
         net::Reader r(w.data.data(), w.data.size());
         host_command((uint8_t)atoi(a[1].c_str()), r);
-        auto vi = g_hv_by_id.find(vid);
-        void* v = vi == g_hv_by_id.end() ? nullptr : vi->second;
+        void* v = hv_by_id(vid).v;
         void* ot = nullptr;
         int otype = -1;
         if (v && game::listed(v, kVehicleNoun)) {
@@ -6041,7 +6359,7 @@ std::string debug(const std::vector<std::string>& a)
         double now = H->time_seconds();
         for (auto& [v, bo] : g_boost) {
             snprintf(b, sizeof b, "boost %p orig=%.3f left=%.1f owner=%d\n", v, bo.orig, bo.until - now,
-                     g_hv.count(v) ? (int)g_hv[v].owner : -1);
+                     hv_find(v) ? (int)hv_find(v).h->owner : -1);
             out += b;
         }
         snprintf(b, sizeof b, "boosts=%zu restored=%u\n", g_boost.size(), g_boost_restored);
@@ -6050,10 +6368,10 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 3 && a[0] == "stale_hv" && is_host() && game::mode_id() == modes::kCiv) {
         // stale_hv <vehicle id> <owner> (tests, BUG-0222 / BUG-0059): the table entry of that vehicle as if
         // its address had held a player's vehicle of the old world: a player owner and another nation's pol
-        auto it = g_hv_by_id.find((uint16_t)atoi(a[1].c_str()));
-        if (it == g_hv_by_id.end() || !g_hv.count(it->second))
+        HvRef x = hv_by_id((uint16_t)atoi(a[1].c_str()));
+        if (!x)
             return "no such vehicle";
-        HV& h = g_hv[it->second];
+        HV& h = *x.h;
         h.owner = (uint8_t)atoi(a[2].c_str());
         h.pol ^= 0x5A5A5A5Au;
         return "stale entry: owner=" + std::to_string(h.owner);
@@ -6467,7 +6785,7 @@ std::string debug(const std::vector<std::string>& a)
             void* v = sp ? (uint8_t*)sp - kVSpatial : nullptr;
             bool veh = v && exists(v);
             snprintf(line, sizeof line, "moved %p %s%s\n", sp, veh ? "vehicle" : "object",
-                     veh && g_gv_of.count(v) ? " (mirror)" : "");
+                     veh && gv_bound(v) ? " (mirror)" : "");
             out += line;
         }
         if (pc)
@@ -6583,10 +6901,9 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 3 && a[0] == "vscale") { // vscale <net id> <scale> (tests, BUG-0549): this game's vehicle of that id
         uint16_t id = (uint16_t)atoi(a[1].c_str());
         void* v = nullptr;
-        if (is_host()) {
-            auto it = g_hv_by_id.find(id);
-            v = it == g_hv_by_id.end() ? nullptr : it->second;
-        } else
+        if (is_host())
+            v = hv_by_id(id).v;
+        else
             v = veh_mirror(id);
         if (!v)
             return "no such vehicle";
@@ -6667,14 +6984,15 @@ void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), 
         return;
     double now = H->time_seconds();
     char k[8];
-    for (auto& [id, g] : g_gv) {
-        if (!gv_ok(g) || now - g.seen > 3.0) // (BUG-0951)
-            continue;
-        snprintf(k, sizeof k, "w%u", (unsigned)id);
+    gv_each([&](const GvRef& x) {
+        const GV& g = *x.g;
+        if (!gv_ok(x) || now - g.seen > 3.0) // (BUG-0951)
+            return;
+        snprintf(k, sizeof k, "w%u", (unsigned)x.id);
         fn(k, g.est.at(now, net::g_lead_fix ? net::g_one_way : 0.03), user);
-        snprintf(k, sizeof k, "e%u", (unsigned)id);
+        snprintf(k, sizeof k, "e%u", (unsigned)x.id);
         fn(k, net::Vec3{(float)(now - g.est.t), net::dist(net::Vec3{}, g.est.vel), g.err}, user);
-    }
+    });
 }
 
 std::vector<syncdbg::Entry> sync_entries()
@@ -6683,13 +7001,15 @@ std::vector<syncdbg::Entry> sync_entries()
     auto alive = all_vehicles();
     auto live = [&](void* x) { return std::find(alive.begin(), alive.end(), x) != alive.end(); };
     if (C.sess && C.sess->role() == net::Role::Host) {
-        for (auto& [x, h] : g_hv)
-            if (live(x))
-                v.push_back({"v" + std::to_string(h.id), veh_pos(x), veh_rot(x)});
+        hv_each([&](const HvRef& x) {
+            if (live(x.v))
+                v.push_back({"v" + std::to_string(x.id), veh_pos(x.v), veh_rot(x.v)});
+        });
     } else {
-        for (auto& [id, g] : g_gv)
-            if (g.v && live(g.v))
-                v.push_back({"v" + std::to_string(id), veh_pos(g.v), veh_rot(g.v)});
+        gv_each([&](const GvRef& x) {
+            if (x.v && live(x.v))
+                v.push_back({"v" + std::to_string(x.id), veh_pos(x.v), veh_rot(x.v)});
+        });
     }
     return v;
 }
@@ -6701,13 +7021,15 @@ static void own_selection(std::vector<uint16_t>& vehicles, int& city)
     city = -1;
     game::LiveScope live; // (BUG-1053: one walk)
     if (C.sess->role() == net::Role::Host) {
-        for (auto& [v, h] : g_hv)
-            if (h.owner == me && (!g_cmd_listed_fix || hv_live(v, h)) && F<uint8_t>(v, kVSelected))
-                vehicles.push_back(h.id);
+        hv_each([&](const HvRef& x) {
+            if (x.h->owner == me && (!g_cmd_listed_fix || hv_live(x.v, *x.h)) && F<uint8_t>(x.v, kVSelected))
+                vehicles.push_back(x.id);
+        });
     } else
-        for (auto& [id, g] : g_gv)
-            if (g.v && g.owner == me && (g_cmd_listed_fix ? gv_ok(g) : true) && F<uint8_t>(g.v, kVSelected)) // (BUG-1053)
-                vehicles.push_back(id);
+        gv_each([&](const GvRef& x) {
+            if (x.v && x.g->owner == me && (g_cmd_listed_fix ? gv_ok(x) : true) && F<uint8_t>(x.v, kVSelected)) // (BUG-1053)
+                vehicles.push_back(x.id);
+        });
     if (vehicles.empty() && g_ui_city && owner_of_city(g_ui_city) == me)
         city = host_index_of_city(g_ui_city);
 }

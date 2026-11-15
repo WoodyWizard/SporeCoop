@@ -17,6 +17,7 @@
 #include "net/ids.h"
 #include "net/interp.h"
 #include "net/validate.h"
+#include "net/snapshot_rx.h"
 #include "space_rivalry.h"
 #include "spacecoop.h"
 #include "sporekit_game.hpp"
@@ -112,6 +113,16 @@ COOP_FIX("fleet.mirror_pin", "BUG-0190", g_mirror_pin_fix,
          "space: a host ship's mirror stays where the mod puts it (its controller update skipped, pinned minus its offset)");
 static bool g_chunk_fix = true;
 COOP_FIX("fleet.chunk", "BUG-0037", g_chunk_fix, "space: the mirror removal pass runs only on a complete cycle of ship chunks");
+// C4 of 0.7.15 (BUG-1143): with fleet.chunk on, the chunked receive is net::SnapshotReceiver (net/snapshot_rx.h,
+// docs/01-architecture.md#arch-snapshot-rx) with the squadron's policy: at most 31 chunks (the old mask), a chunk up to
+// 99 cycles behind is a late one of an older cycle (farther back: a restarted host's counter, a new cycle), any chunk
+// that fills the set completes the cycle (a late chunk 0 after the last one), once. `coop.fix fleet.snapshot_rx off`:
+// the hand-made mask of 0.7.14 (removed once the lab passed). fleet.chunk off (`coop.fleet chunkfix 0`, BUG-0037's
+// test twin) keeps its own path: the removal on the last chunk without the completeness check.
+static bool g_rx_fix = true;
+COOP_FIX("fleet.snapshot_rx", "BUG-1143", g_rx_fix, "space: a guest receives the host's chunked ship snapshots with the shared snapshot receiver (C4)");
+static net::SnapshotReceiver<uint16_t> g_rx(net::SnapshotPolicy{31, true, 99, true, false});
+static bool use_rx() { return g_chunk_fix && g_rx_fix; }
 // BUG-0084: the guest's own escort (posse, type 3 ships) is not the host's to simulate.
 // `coop.fleet keepposse 0` restores the old loop that destroyed it (tests).
 static bool g_keep_posse = true;
@@ -907,7 +918,10 @@ static void guest_state(net::Reader& r)
         guest_shots(r, n);
         return;
     }
-    if (g_chunk_fix) {
+    if (use_rx()) {
+        if (!g_rx.begin(cycle, chunk, chunks))
+            return; // a bad header, or a late chunk of an older cycle
+    } else if (g_chunk_fix) {
         if (!chunks || chunks > 31 || chunk >= chunks)
             return;
         int16_t age = (int16_t)(uint16_t)(cycle - g_rx_cycle);
@@ -943,7 +957,10 @@ static void guest_state(net::Reader& r)
         (void)mx;
         if (!r.ok())
             return;
-        g_cycle_ids.insert(id);
+        if (use_rx())
+            g_rx.saw(id);
+        else
+            g_cycle_ids.insert(id);
         auto& m = g_mirrors[id];
         m.pos = p; m.rot = q; m.hp = hp; m.seen = now; m.pol = pol;
         m.est.update(p, now, sent);
@@ -1018,7 +1035,11 @@ static void guest_state(net::Reader& r)
             g_created++;
         }
     }
-    if (g_chunk_fix) { // the removal pass needs every chunk of the cycle, in any order, once
+    bool rx = use_rx();
+    if (rx) { // the removal pass needs every chunk of the cycle, in any order, once
+        if (!g_rx.end(r.ok()))
+            return;
+    } else if (g_chunk_fix) { // the removal pass needs every chunk of the cycle, in any order, once
         g_rx_mask |= 1u << chunk;
         if (g_rx_done || g_rx_mask != (chunks >= 32 ? 0xFFFFFFFFu : (1u << chunks) - 1))
             return;
@@ -1026,7 +1047,7 @@ static void guest_state(net::Reader& r)
     } else if (chunk + 1 < chunks)
         return;
     for (auto it = g_mirrors.begin(); it != g_mirrors.end();) {
-        if (!g_cycle_ids.count(it->first)) {
+        if (rx ? !g_rx.seen(it->first) : !g_cycle_ids.count(it->first)) {
             if (it->second.u) {
                 g_mirror_of.erase(it->second.u);
                 destroy_mirror(it->second.u, true);
@@ -1204,6 +1225,7 @@ void on_session_end()
     g_rx_any = false;
     g_rx_mask = 0;
     g_rx_done = false;
+    g_rx.reset(); // (its counters stay)
     g_drop_left = 0;
 }
 
@@ -1240,8 +1262,8 @@ static std::string status_ships()
                  "freed_by_game=%u puppet_shots_blocked=%u mirror_hits=%u att_dropped=%u att_freed=%u stale_chunks=%u "
                  "partial_cycles=%u posse_kept=%u unknown_models=%u content_checked=%u controller_skips=%u save_stripped=%u/%u\n",
                  (unsigned)g_mirrors.size(), g_created, g_removed, g_local_removed, g_hits_sent, g_damage_in,
-                 game::g_ufos_freed, g_puppet_shots, g_mirror_hits, g_att_dropped, g_att_freed, g_stale_chunks,
-                 g_partial_cycles, g_posse_kept, g_unknown_models, g_content_checked, g_ctl_skipped, g_ufo_stripped,
+                 game::g_ufos_freed, g_puppet_shots, g_mirror_hits, g_att_dropped, g_att_freed, g_stale_chunks + g_rx.older,
+                 g_partial_cycles + g_rx.abandoned, g_posse_kept, g_unknown_models, g_content_checked, g_ctl_skipped, g_ufo_stripped,
                  g_ufo_strip_saves);
     if (!(C.sess && C.sess->role() == net::Role::Host)) { // BUG-0723 / BUG-0724
         size_t n = strlen(b);
