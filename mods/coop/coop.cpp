@@ -92,18 +92,16 @@
 #include "diag_coop.h"
 #include "trace.h"
 #include "view_centres.h"
+#include "coop_state.h"
 
-static const SkHost* H;
-static SkMod* M;
+const SkHost* H;
+SkMod* M;
 extern const SkHost* g_host_for_modes; // modes.cpp
 extern SkMod* g_mod_for_modes;
 
 void coop_register_debug_commands(const SkHost* host, SkMod* self); // debug.cpp
 
-#define LOG(...) H->log(M, SK_INFO, __VA_ARGS__)
-#define SAY(...) H->out_printf(out, __VA_ARGS__)
-
-namespace {
+namespace coop_core {
 
 struct Remote {
     uint8_t id = 0;
@@ -1407,7 +1405,7 @@ bool host_absent_for(Absent who)
 
 // O1 of 0.7.13 (own_world.h): the one answer to "is this guest in the host's world right now?" for the modules
 static double g_host_left_since = -1;
-} // namespace (the anonymous one: own_world is called from the other modules)
+} // namespace coop_core (own_world is called from the other modules)
 namespace own_world {
 bool elsewhere() { return guest_elsewhere(); }
 bool space_other()
@@ -1449,7 +1447,7 @@ bool peer_elsewhere(uint8_t id)
     return host_world::peer_elsewhere(s != nullptr, s ? s->mode : 0, s ? s->world : 0, g_mode, g_world);
 }
 } // namespace own_world
-namespace {
+namespace coop_core {
 
 // a message of the host's world state a guest elsewhere must not apply (MSG_RES is held inside
 // shared.cpp instead: res.elsewhere). BUG-0420: one class per message type (host_world.h msg_class, a
@@ -7398,7 +7396,7 @@ int c_sessionfix(void*, int argc, const char* const* argv, SkOut* out)
 
 SkModInfo g_info = {SK_ABI_VERSION, "coop", COOP_VERSION, on_unload};
 
-} // namespace
+} // namespace coop_core
 
 extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMod* self)
 {
