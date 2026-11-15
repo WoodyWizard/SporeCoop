@@ -166,6 +166,36 @@ struct Stray {
     double since;
 };
 static constexpr double kSoloAwait = 5.0;
+constexpr double kOfferSeconds = 90.0;
+constexpr uint8_t kVoteOffer = 1; // MSG_VOTE flags: an evolve offer, not a vote (sent with active = 0: older guests ignore it)
+using BlockingErrors_t = uint32_t*(SK_THISCALL*)(void*, uint32_t*, void*, void*, int);
+// BUG-0315: the Cell stage's switch to Creature (0xE62440: ends the cinematics, CreatureStart_FromCell, the mode
+// switch to 0x1654C01, the fade effect), reached from cCellModeStrategy::HandleMessage 0x47C1D19 (History's check)
+// and the cell event 0x1F (0xE7E130). cdecl void(void), globals only: safe to run later from outside the frame.
+typedef void(SK_CDECL* CellToCreature_t)();
+// Selecting a creature in the creature stage: CreatureSelectionUI reads (+0xE84)->+0x32C only for
+// an adult with +0xB58 mask 0x1 set and mask 0x2 clear (GOG 2024 0xB6C9C3..0xB6CA11: `test al,2`
+// skips the read, `test al,1` gates it; then vt 0xD0 / 0xD4 false). Our puppets and proxies have no
+// +0xE84 object (the game crashed there), so mask 0x1 is hidden for the call. Mask 0x1 is not the
+// pack (that is 0x100); docs/re/creature.md#creature-selection-gate (BUG-0118).
+typedef void(SK_CDECL* SelectUI_t)(void*, void*, void*, uint32_t, float);
+// The quit message 0x4715068 (save and leave the stage for the galaxy menu; coop.load and received
+// worlds use it, docs/re/space.md 8.2) saves the game itself. Handled while our save for a world
+// share was still queued or being written (a guest joined as the host left), the two saves broke
+// the host's slot: its next load faulted at 0xBA7F87 (data 0x1188, from 0xB27DA6) and stayed in
+// LoadGame. Like the game does while a mode switch is pending, the message is posted again until
+// our save is written.
+using SimMsg_t = int(SK_THISCALL*)(void*, uint32_t, void*);
+// The creature stage's avatar-event handler (a vtable method, 0xD47FC0) reads (+0xE84)->+0x32C of
+// the creature an event is about (msg+4: the attacked creature of 0xD335362C, the impressed one of
+// 0x60B4123) when it is an adult of another species, without a null check (0xD48634). Our puppets
+// and NPC proxies have no +0xE84 object: the guest faulted there while it fought proxies
+// (play_creature.py, 2026-10-23). The host of a player's report faulted there 3 times on a
+// creature that was none of ours (a puppet brought back by a save, npc.cpp remove_saved_strays), so the
+// creature of the message itself is checked too, whatever it is. During the handler these get a
+// blank object whose +0x32C is -1 ("none"); a creature with tuning is never touched.
+typedef bool(SK_THISCALL* StageMsg_t)(void*, uint32_t, void*);
+using Submit_t = bool(SK_CDECL*)(void*);
 // ---- evolution vote: the host's editor request (next stage or evolution inside a stage) waits
 // until every player is ready (or 60 s / "Start now"), then the game goes on ----
 struct Vote {
@@ -386,6 +416,11 @@ void* puppet_now(const Remote& r);
 bool same_place(const net::PlayerState& s);
 extern uint32_t g_stage_world;
 bool host_here();
+extern bool g_lobby_dirty;
+extern std::map<uint8_t, bool> g_ready;
+host_world::HostWorld host_world_now();
+void notice(const std::string& text, int from = -1);
+bool stage_mode(uint32_t m);
 
 // ---- defined in dna.cpp ----
 void dna_host_gain(const dna_ledger::Part& p, float before);
@@ -408,6 +443,48 @@ extern bool g_solo_await_fix;
 extern double g_solo_await_until;
 bool on_dna(float& delta);
 void dna_spend_note(float d);
+
+// ---- defined in vote.cpp ----
+bool design_stage(uint32_t m);
+void drop_vote(const char* why);
+void evo_flag_tick(double now);
+alignas(16) extern uint8_t g_blank_e84[0x1000];
+extern double g_editor_left_at;
+extern uint32_t g_last_editor_req;
+extern uint32_t g_last_stage;
+extern bool g_offer_opened_ui;
+extern double g_offer_until;
+extern bool g_own_editor_charge_due;
+extern double g_own_editor_due_at;
+extern double g_own_editor_due_first;
+extern bool g_own_editor_end_fix;
+extern bool g_own_editor_flags_fix;
+extern bool g_vote_drop_editor_fix;
+extern bool g_vote_opened_ui;
+extern bool g_was_in_editor;
+uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void* model, int flag);
+void SK_CDECL h_CellToCreature();
+bool SK_THISCALL h_CreatureGameMsg(void* self, uint32_t id, void* data);
+bool host_creature_mode();
+void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5);
+int SK_THISCALL h_SimMsg(void* self, uint32_t id, void* data);
+bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg);
+bool SK_CDECL h_Submit(void* req);
+extern BlockingErrors_t o_BlockingErrors;
+extern CellToCreature_t o_CellToCreature;
+void offer_take();
+void offer_tick(double now);
+extern SelectUI_t o_SelectUI;
+extern SimMsg_t o_SimMsg;
+extern StageMsg_t o_StageMsg;
+extern Submit_t o_Submit;
+void own_editor_tick(double now);
+const char* save_blocker();
+void submit_tick(double now);
+bool tribe_graduating();
+void vote_action_tick(double now);
+void vote_tick(double now);
+bool tribe_civ_editor(uint32_t id);
 
 // ---- defined in coop_cmds.cpp ----
 void register_commands_cell();
