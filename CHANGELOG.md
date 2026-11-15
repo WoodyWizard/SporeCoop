@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- Space: two players with the same name no longer swap their kept colonies, cargo hold, badges or Rivals budget when
+  they leave and come back in the other order; the host gives them back to the same game (after a crash or a leave),
+  not to whoever joins under that name (BUG-1107).
+- Network: more robustness checks on the data between the players' games: the host's game stays stable when another
+  game sends far more than normal play.
+
+### Added
+- `coop.kick <id | name>` in the console: the host removes a player from the session; that player's co-op window says
+  why. It may join again.
+
 ## [0.7.14.1] - 2026-11-14
 
 A crash fix on top of 0.7.14. Only the player who opens the captain screen needs it, but both players should update
