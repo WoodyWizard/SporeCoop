@@ -1002,6 +1002,10 @@ add('campaign_ct', P + 'coop_campaign.py --from cell --to tribe --minutes 2 --no
     minutes=45, timeout=3600)
 # BUG-0359 (N2 of 0.7.11): the reported path forced: the host's world share posted again every ~1.5 s through the
 # Creature -> Tribe change (CAMPAIGN_SHARE_SPAM=1), so a share save is being written while the game enters Tribe
+# A6 (BUG-1115, docs/06-testing.md#testing-campaign-segments): the failed segment of a campaign run played again from
+# the save it started from (owner decision 10: a final-check rerun may run only that segment; the full campaign still
+# runs once in the final check): `lab.py run campaign_segment --segment <lab run of the failed campaign>`
+add('campaign_segment', P + 'coop_campaign.py --segment "$CAMPAIGN_SEGMENT"', (), minutes=45, timeout=3600)
 add('campaign_tribe_share', 'CAMPAIGN_SHARE_SPAM=1 ' + P + 'coop_campaign.py --from creature --to tribe --minutes 2 --no-finale', (),
     minutes=30, timeout=3600)
 

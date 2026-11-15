@@ -121,7 +121,7 @@ endif
 # docs/06-testing.md#testing-lab-speed). `make test TEST_JOBS=1` runs them one after the other.
 TEST_JOBS ?= 8
 NET_SHARDS ?= 8
-UNIT_PARTS := unit-net unit-lab unit-cpp unit-lint unit-tools unit-symbols
+UNIT_PARTS := unit-net unit-lab unit-cpp unit-lint unit-tools unit-symbols unit-verdict
 ifneq ($(SKIP_SANITIZERS),1)
 UNIT_PARTS += test-asan test-tsan unit-fuzz
 endif
@@ -150,6 +150,11 @@ unit-lab:
 	python3 tools/tests/gates_selftest.py
 	python3 tools/tests/walk_selftest.py
 	python3 tools/tests/dash_selftest.py
+
+# the lab's verdicts, reasons, flaky ledger, repeat rule and impact selection (0.7.15 A6-A8, A15, D5): its own part (its
+# fake lab runs wait ~40 s, beside unit-lab's)
+unit-verdict:
+	python3 tools/tests/labverdict_selftest.py
 
 unit-fuzz: sanitizer-probe
 	@mkdir -p $(B)/host
