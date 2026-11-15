@@ -176,6 +176,12 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
         SAY("ground %.2f\n", game::ground_radius(p));
         return 0;
     }
+    if (argc > 4 && !strcmp(argv[1], "walk")) { // tests (BUG-9212): walk there as a click on the ground does
+        net::Vec3 p{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        game::move_to(av, p, 0.3f);
+        SAY("walking to (%.2f %.2f %.2f)\n", p.x, p.y, p.z);
+        return 0;
+    }
     if (argc > 4 && !strcmp(argv[1], "goto")) { // onto the ground in the direction of x y z
         net::Vec3 p{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
         float r = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z), g = game::ground_radius(p);
