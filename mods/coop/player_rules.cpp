@@ -863,7 +863,7 @@ static std::string carry_dump()
 }
 
 // ---------------------------------------------------------------- BUG-0558, the host's UFO on the guest
-// The drama UFO is an event of the host's world (a guest's own game starts none: creature.guest_events, BUG-0486), so the
+// The drama UFO is an event of the host's world (a guest's own game starts none: BUG-0486), so the
 // guest never saw the ship that came over the players (the report: the host saw the ship and its beam, the guest's game
 // at the same second nothing). Now the host sends its ships' poses 10 times a second while it has any, and the guest's
 // game shows a ship of its own at each: a type 7 ship made the way the event makes it (UFOAbductionEvent_SpawnUFO), not

@@ -8,7 +8,7 @@
 // within the kind's tolerance, the player's own village only with the host's player village), then
 // * an object of its own without a host partner on `kExtraLooks` complete lists in a row is extra: it
 //   goes through the game's own removal (the village with its hut, tools, food mat and map mark);
-// * a host object without a partner is missing (counted; the stage's own path makes it: tribe.npc_tribes);
+// * a host object without a partner is missing (counted; the stage's own path makes it: BUG-0381);
 // * a bound pair whose state differs (a hut's health) gets the host's state.
 #pragma once
 

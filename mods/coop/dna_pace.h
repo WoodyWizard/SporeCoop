@@ -7,7 +7,7 @@
 // (the host for its own game, a guest for its own forwarded gain or meal, with the divisor the host
 // announced), so nothing is scaled twice. Rewards the party gets once (a species goal card) are not
 // scaled: they do not come N times faster. The host's session setting all.dna_pace (coop.ini [coop]
-// dna_pace=1 its default; 0: the full sum, as before 0.7.4) decides for the party; `coop.fix core.dna_pace off` is the test switch.
+// dna_pace=1 its default; 0: the full sum, as before 0.7.4) decides for the party (BUG-0510).
 // Portable (no game calls): tests/validate_tests.cpp.
 #pragma once
 

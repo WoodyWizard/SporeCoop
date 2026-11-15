@@ -80,7 +80,7 @@ static bool rts_stage() { return game::mode_id() == 0x1654C02 || civ_stage(); }
 // BUG-0291: in the Tribe stage the host sent a guest only the animals within kRtsRelevance of the
 // player tribe; a guest looking farther away saw none there (its own are removed by the update
 // filter). Now also those within kRelevance of the guest's view centre (its pointer,
-// view_centres.h); the game keeps them alive there (npc.view_centres_tribe).
+// view_centres.h); the game keeps them alive there (BUG-0280).
 
 // ------------------------------------------------------------------ host side
 struct HostNpc {
@@ -118,11 +118,11 @@ COOP_FIX("npc.stall", "BUG-0169", g_stall_fix, "creature: a proxy 2.5 m off for 
 // locomotion (5-10 % kept): running NPCs were 3-6 m off on a 15 fps guest. While the host's NPC moves
 // its proxy is now placed on the interpolated host path every frame with the host's velocity (the
 // game animates from it); standing, the driving (walk, nudge, stuck/stall/trail) works as before.
-// BUG-0361: npc.kinematic (BUG-0281) teleported a moving NPC's proxy onto the host's path every frame.
+// BUG-0361: BUG-0281's placement teleported a moving NPC's proxy onto the host's path every frame.
 // A teleport (vt 0x44) sets the teleport mark +0xB5D, which restarts the animation's walk gait: the
 // proxies of walking and running NPCs slid over the ground in the idle pose (walk gait on in 4 % of
 // their moving frames on the guest's screen, coop_npc_walk.py). Now, as for the partner's puppet
-// (BUG-0360, creature.puppet_walk), the game walks the proxy (the host NPC's speed, a MoveTo 12 m
+// (BUG-0360), the game walks the proxy (the host NPC's speed, a MoveTo 12 m
 // ahead on its path given again only when the direction turns, at most every 0.3 s, at least every
 // 1.5 s) and game::place (teleport, then +0xB5D = 0) puts it on the interpolated path every frame;
 // an error left from standing is closed at kWalkCatchUp faster than the NPC. The end of a walk is
@@ -1243,7 +1243,7 @@ std::string debug_dash(uint16_t id, float len, float speed, float secs, float wi
 struct NpcTrackRow {
     float t;
     uint16_t id;
-    uint8_t how;   // 0 driven (drive::step), 1 placed (npc.kinematic), 2 killed, 3 walked (npc.walk)
+    uint8_t how;   // 0 driven (drive::step), 1 placed (BUG-0281), 2 killed, 3 walked (BUG-0361)
     uint8_t flags; // the host state's NF_*
     uint16_t tp;   // the driver's teleports so far
     net::Vec3 d, p, tgt;
@@ -1378,7 +1378,7 @@ static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
             g_npc_novel = atoi(argv[2]) != 0;
         H->out_printf(out, "npc novel %d\n", (int)g_npc_novel);
         return 0;
-    } else if (!strcmp(a, "variant") && argc > 2) { // tests (BUG-0361): how npc.walk moves a proxy
+    } else if (!strcmp(a, "variant") && argc > 2) { // tests (BUG-0361): how a walked proxy moves
         g_walk_variant = atoi(argv[2]);
         H->out_printf(out, "npc.walk variant %d (0 walk goal + place, 1 place only, 2 walk goal + teleport, 3 no teleport when the place was lost)\n", g_walk_variant);
         return 0;
@@ -2333,7 +2333,7 @@ static void guest_tick(double now)
         }
         if (!placed && px.kinematic) { // it stands again: the driving takes over from here
             px.kinematic = false;
-            if (px.drv.kinematic) // walked (npc.walk): a MoveTo to where it stops, as the partner's puppet
+            if (px.drv.kinematic) // walked (BUG-0361): a MoveTo to where it stops, as the partner's puppet
                 drive::walk_end(px.c, s.pos, px.drv, now);
             else
                 *(net::Vec3*)((uint8_t*)px.c + game::kVelOff) = {0, 0, 0};
@@ -2653,7 +2653,7 @@ void set_kill_clear(bool on) { g_kill_clear = on; }
 
 // BUG-0722 (class BUG-0431): game code reads a creature's archetype tuning (+0xE84) without a null check (the getter
 // 0xC0C300 from 0xBA43E0, ApplyEvent 0xBA4A00, CreatureSocialSuccess 0xD9BBD0, Create 0xC09B40, the direct read
-// 0xC115E0; docs/re/creature.md#creature-puppet-tuning). Proxies get the host's (npc.tuning); a partner's puppet got
+// 0xC115E0; docs/re/creature.md#creature-puppet-tuning). Proxies get the host's (BUG-0462); a partner's puppet got
 // one only from its herd: the puppet of a guest playing its own species (a herd without an archetype) had none on
 // every other game (lab 20261108-040137: 1 of 24-25 of ours on three games, for minutes). Guards covered three
 // readers only (SelectUI, the stage event handler, the AI tick, which lends the avatar's for its tick). Now every

@@ -215,7 +215,7 @@ inline float fall_rate(double dt, double knee, double tau = kFallTau, bool on = 
 // max_extrap 0.25 s, and a partner that stopped in a spike was shown walking on: the target stepped back 0.72 m at the
 // stop's news and the puppet stood 0.33-0.86 m past where the partner stopped (puppet_stops, lab 20261107-132459 #1,
 // 1 stop in 10-14). With the fix it is moved on at the full speed for kPuppetFallMargin s only, then falling with
-// kPuppetFallTau, its velocity too (creature.puppet_stop then holds it where the target slows down). Off: 0.7.10.
+// kPuppetFallTau, its velocity too (BUG-0408 then holds it where the target slows down). Off: 0.7.10.
 inline bool g_puppet_fall_fix = true;
 // BUG-1095 (`coop.fix drive.air_keep`): not for a state in the air (PF_JUMPING). A partner in the air at 9-10 m/s whose
 // states came 0.2-0.3 s late was slowed to 0.1-1.8 m/s past each newest state: its puppet (placed on the target in the

@@ -18,7 +18,7 @@ namespace dna_route {
 // rows 1-5: a guest's own gain (on_dna, d > 0)
 enum class Gain {
     Local,   // 1: not a connected guest: the game applies it
-    Own,     // 2: the guest plays another world (core.world_dna): applied here, nothing sent; the
+    Own,     // 2: the guest plays another world (BUG-0231): applied here, nothing sent; the
              //    host's total replaces it once the guest plays the host's world (row 6)
     Solo,    // 3: the host is away (core.away_dna): applied here, kept as solo DNA (row 9)
     Forward, // 4-5: a goal card's reward (K_GOAL) or MSG_DNA_ADD, not applied here

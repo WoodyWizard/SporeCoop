@@ -6,7 +6,7 @@
 // its own (its stage epoch: a load, the game over's reload of the last save) or of a guest's (it is in our
 // place again: a join, a rejoin, an editor return). A guest compares the list with its own game's objects
 // (realign_rule.h): an object of its own the host has not goes through the game's own removal, a state that
-// differs gets the host's; what it lacks is counted (the stage's own path makes it: tribe.npc_tribes).
+// differs gets the host's; what it lacks is counted (the stage's own path makes it: BUG-0381).
 // The guest re-aligns in place: a load of the host's world would cost the guest a loading screen at every
 // host game over and its game's own changes since, and would not cover a rejoin or an editor return.
 #pragma once

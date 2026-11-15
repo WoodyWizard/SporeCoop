@@ -125,7 +125,7 @@ inline net::Vec3 out_of_ground(const net::Vec3& pos, bool fix = g_out_of_ground_
     float k = (g - kSink) / r;
     return {pos.x * k, pos.y * k, pos.z * k};
 }
-// BUG-0444 (tribe.mirror_ground): onto this game's ground from up to kOutMax under or over it, for a creature the
+// BUG-0444: onto this game's ground from up to kOutMax under or over it, for a creature the
 // game does not ground itself (its game time paused: no locomotion runs). Higher up it is left where it is.
 inline net::Vec3 onto_ground(const net::Vec3& pos)
 {
@@ -195,7 +195,7 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
     if (ground) {
         // BUG-0399: never a target under this game's ground; a creature found under it (made there, or
         // kept there by own_height) is put onto it at once (walked or pulled it would stay under).
-        // `ground` is the caller's switch (npc.proxy_ground, tribe.mirror_ground)
+        // `ground` is the caller's switch (npc.proxy_ground, BUG-0444)
         pos = out_of_ground(pos, true);
         if (net::dist(out_of_ground(cur, true), cur) > 0.01f) {
             ds.grounded_from = over_ground(cur);

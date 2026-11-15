@@ -331,7 +331,7 @@ bool host_elsewhere(bool unknown)
 // BUG-0789: an adventure (kScenario) lights its planet itself: the time-of-day object's orientation is computed from
 // the clock AND the captain's position (fork RE, docs/re/adventure.md#adventure-ga-fork), so the host's is wrong for
 // another captain. The host sends no MSG_WORLD_TIME from an adventure and a guest in one applies none (the wsync sky
-// row is not in play in kScenario either). `coop.fix wsync.adventure_sky off` (with wsync.tod off): the legacy
+// row is not in play in kScenario either). `coop.fix wsync.adventure_sky off`: the legacy
 // packet in an adventure as before.
 static bool g_adventure_sky_fix = true;
 COOP_FIX("wsync.adventure_sky", "BUG-0789", g_adventure_sky_fix, "wsync: in an adventure each game keeps its own sky (no host time of day sent or applied)");
@@ -599,7 +599,7 @@ void host_away_tick(double now)
         g_host_away_count++;
         auto hi = g_remotes.find(0);
         if (hi != g_remotes.end() && !hi->second.buf.empty() && (hi->second.buf.latest().flags & net::PF_RESYNC)) {
-            // BUG-0332: the host's one reload of the new Tribe world (tribe.host_reload)
+            // BUG-0332: the host's one reload of the new Tribe world
             feed(host + " (host) is loading the new world once, so that everybody has the same ground (about 10 s)");
             return;
         }
@@ -861,7 +861,7 @@ void avatar_change_check()
     g_last_avatar = local;
 }
 
-// Tests: fix switches that act while the game starts (before a console can switch them, e.g. game.save_areas,
+// Tests: fix switches that act while the game starts (before a console can switch them, e.g. BUG-0506,
 // BUG-0506) are switched off by a file <AppData>\Spore\SporeCoop\fixes_off.txt of the profile, one name per
 // line, read once when the mod loads. The file is the test's (coop_save_areas.py writes and removes it).
 static void apply_startup_off()

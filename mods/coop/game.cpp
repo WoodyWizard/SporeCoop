@@ -158,7 +158,7 @@ std::string herd_nulls_status()
 
 static std::vector<void*> g_puppets;
 
-// BUG-0532: a partner's puppet in the air (creature.puppet_air) was drawn on its terrain for 1-3 frames when the
+// BUG-0532: a partner's puppet in the air (BUG-0376) was drawn on its terrain for 1-3 frames when the
 // game started another animation on it (fall -> idle, the walk start): something in that update grounds it. The
 // puppets held in the air (air_hold, set by modes.cpp each frame) are put back where the partner is and marked not
 // grounded right after the game's animation starts and its update when the game grounded them.

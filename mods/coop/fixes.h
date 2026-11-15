@@ -51,8 +51,8 @@ const Info* find(const std::string& name);
 bool set(const std::string& name, bool on); // false: unknown name
 // every switch; returns how many changed. Off skips the unsafe ones unless `unsafe` (*skipped: how many)
 size_t set_all(bool on, bool unsafe = false, size_t* skipped = nullptr);
-// registered names that end with `tail` after a '.' or equal its last part ("session_end" ->
-// "session.end" through the '_' / '.' fold): the hint for an unknown name
+// registered names that end with `tail` after a '.' or equal its last part ("id_reuse" ->
+// "core.id_reuse" through the '_' / '.' fold): the hint for an unknown name
 std::vector<std::string> suggest(const std::string& tail);
 int duplicates();
 std::string list(); // "N fixes (M off)" then one line per fix: name on|off ticket what

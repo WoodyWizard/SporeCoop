@@ -129,12 +129,12 @@ struct Remote {
     bool joined_phase = false; // host: the guest played the host's mode after the last world send
     bool needs_world = false;  // host: joined while the host was not playing; send the world later
     double cine_wait_since = 0; // host: since when this guest's share waits for a cinematic (BUG-0232)
-    // host, BUG-0508 (world.evolve_in_place): after the host's editor this guest was in the same world and
+    // host, BUG-0508: after the host's editor this guest was in the same world and
     // stage, so it may take the new body without the whole world; evo_check_until: until then its avatar
     // must have left the host's pre-editor species (Creature), or it gets the world after all
     bool evo_inplace = false;
     double evo_check_until = 0;
-    // host, BUG-0231 (core.share_retry): a failed share is retried; dropped with the entry at the
+    // host, BUG-0231: a failed share is retried; dropped with the entry at the
     // session end (g_remotes.clear())
     uint32_t join_serial = 0; // this guest's join (the share's tag: an id reused by a newcomer is not it)
     bool share_at_join = false; // the last share was the join's (a retry waits for needs_world)

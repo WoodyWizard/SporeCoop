@@ -173,7 +173,7 @@ void on_mode_change(uint32_t from, uint32_t to)
         }
     g_share_due_at = H->time_seconds() + (evolved ? 3.0 : 0.0); // BUG-0019: its cinematic starts first
     if (new_stage && last == modes::kCreature && to == modes::kTribe)
-        world::host_reload_after_share(); // BUG-0332: one ground for everybody (world.cpp tribe.host_reload)
+        world::host_reload_after_share(); // BUG-0332: one ground for everybody (world.cpp)
     notice(new_stage            ? g_name + " entered the " + modes::mode_name(to) + " stage: everybody follows"
            : other_save         ? g_name + " loaded another game: everybody follows"
            : design_stage(to) ? g_name + " changed a design: everybody gets the new designs"

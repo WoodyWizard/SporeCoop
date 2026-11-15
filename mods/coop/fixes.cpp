@@ -83,7 +83,7 @@ std::vector<std::string> suggest(const std::string& tail)
         return out;
     for (const Info& f : table()) {
         std::string n = fold(f.name);
-        // the whole name or its end after a separator: "session_end" and "end" find "session.end"
+        // the whole name or its end after a separator: "id_reuse" and "reuse" find "core.id_reuse"
         bool ends = n.size() >= t.size() && n.compare(n.size() - t.size(), t.size(), t) == 0 &&
                     (n.size() == t.size() || n[n.size() - t.size() - 1] == '_');
         if (ends)

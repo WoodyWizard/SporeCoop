@@ -5,7 +5,7 @@
 // Finding (docs/re/tribe.md#tribe-terrain-stamps): the heights a game renders for stamps it applies live (the ~56 of
 // the Tribe start) differ from the ones any load of the same stamp list gives; a rebuild started by the mod
 // (`coop.terrain rebuild`, or the planet editor's reload sequence) gives a third result (lab 20261106-043944,
-// 20261106-045023), so the fix (tribe.host_reload, world.cpp) is the game's load itself.
+// 20261106-045023), so the fix (BUG-0332, world.cpp) is the game's load itself.
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>

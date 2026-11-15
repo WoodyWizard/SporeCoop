@@ -156,12 +156,12 @@ static void* creature_spawn(const net::PlayerState& s, void* av)
 //   animation run as on the partner's screen;
 // * game::place puts it on the interpolated path every frame with the partner's facing: a teleport
 //   (the locomotion keeps its own position, SetPosition alone is undone) without the teleport mark
-//   +0xB5D, which restarts the animation's gait (teleported every frame with it, as npc.kinematic
+//   +0xB5D, which restarts the animation's gait (teleported every frame with it, as BUG-0281
 //   does, the creature slides without a walk gait). An error left from standing is closed at
 //   kCatchUp faster than the partner, not in one frame.
 // Standing, the driving (drive::step) works as before.
 // BUG-0366 / BUG-0367: the puppet was placed at the partner's own position, taken from the partner's
-// game, every frame (0.7.3.3, creature.puppet_walk). Walking downhill a creature placed exactly on the
+// game, every frame (0.7.3.3, BUG-0360). Walking downhill a creature placed exactly on the
 // ground is a few cm over it after the game's next step (its walk goes along, not down): the game
 // takes it as falling (+0x137 = 0) and plays the fall animation 0x0692E6A9 for 1-5 frames, again and
 // again ("constantly jumping"; 4-7 times in 40 s on a slope, the partner's own creature never). A
@@ -236,7 +236,7 @@ constexpr float kStopSpeed = 4.f;  // m/s: the hold's own approach
 // nest; while the brain upgrade caption plays (busy=cinematic,input_lock) the game separates the creatures stacked there
 // sideways and pressed a standing puppet 0.55-0.74 m under its terrain (the monitor's ground rule in campaign_tribe,
 // rel/0.7.5 and rel/0.7.10). The partner stands, so the drive placed nothing and the puppet stayed in the ground until
-// the caption ended. creature.own_ground covers the own creature only. With creature.puppet_unground a puppet whose
+// the caption ended. BUG-0592 covers the own creature only. With creature.puppet_unground a puppet whose
 // partner stands (under 0.3 m/s, on its ground), that has been more than kPupUnder under this game's terrain
 // (GetHeightAt) for kPupUnderFor s, is put onto it where it stands (or at its target's height on a mound next to it).
 // `coop.fix creature.puppet_unground off`: 0.7.10.
@@ -1340,7 +1340,7 @@ static void cell_drive(void* cp, const net::PlayerState& s_in, drive::State&, do
     uint8_t* c = (uint8_t*)cp;
     // BUG-0519: the partner's pose is in its own world scale; a level change rescales each world over
     // ~3.5 s at its own moment (docs/re/cell.md#cell-world-scale): draw it in ours (as the mirrors,
-    // cell.world_scale)
+    // BUG-0511)
     float k = 1.f;
     if (net::SnapshotBuffer::scale_lerp && s_in.scale > 0)
         if (uint8_t* g0 = cell_game()) {

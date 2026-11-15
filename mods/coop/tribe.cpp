@@ -1729,7 +1729,7 @@ static TribeInfo tribe_info(void* t)
 // The behaviour tree of a guest's mirror does not run (h_BTTick: the host's member decides), and the animations of
 // the members' actions are started by those trees (SporeCoop::CreaturePlayAnim: fights, gathering, the grab, the
 // social dances; game.cpp's behaviour animation listener). The mirrors played only what their locomotion picks
-// (idle, walk). As for the animals (npc.anims, BUG-0464): the host reports every behaviour animation of a member
+// (idle, walk). As for the animals (BUG-0464): the host reports every behaviour animation of a member
 // it tracks and sends them once a cycle to the guests (MSG_NPC_ANIM kind 2: u8 n, n x {u16 member id, u32 anim, u8 how,
 // u8 a, u32 b}); once a second the animation each member plays now when its tree started it (kind 3: u8 n, n x
 // {u16 id, u32 anim}) for a mirror made later or a lost message. A guest plays the same call on the mirror.
@@ -1759,7 +1759,7 @@ void on_behaviour_anim(void* c, uint32_t anim, int how, int a, int b)
 // BUG-0946 (docs/re/tribe.md#tribe-member-toss): a blow of 60 hp and more throws a member up (about 5 m, over 3 m for
 // 1.3-1.5 s, on the host's game, the fight node's reaction); a guest's mirror keeps its own height (the two games'
 // grounds differ: drive.own_height BUG-0329, the mirrors' ground BUG-0444) and stayed on its ground. As the animal
-// proxies (npc.air, BUG-0550): once a cycle the host sends every member it runs that is off its ground for a reason
+// proxies (BUG-0550): once a cycle the host sends every member it runs that is off its ground for a reason
 // its game knows (drive::body_airborne: not grounded and more than 0.15 m off GetHeightAt; not dead) with its height
 // over the host's ground (MSG_NPC_ANIM kind 9: u8 n, n x {u16 member id, f32 agl}); a guest places that mirror at that
 // height over its own ground (drive::air_place: not walked, not grounded, held through animation starts) while the
@@ -4624,7 +4624,7 @@ static void mirror_drive(GMember& g, double now)
 // BUG-1084 (docs/re/tribe.md#tribe-away-tree-end): while the host is away the guest's game runs its mirrors' trees
 // (tribe.away); when the host is back they are skipped again (h_BTTick), frozen in whatever node they were, and the
 // world-object sync then changes what the mirror holds (a carried bundle the host's game has not is removed,
-// wobj.bundle_carried). At the host's next away the frozen node went on with its bundle gone: the food delivery node
+// BUG-0617). At the host's next away the frozen node went on with its bundle gone: the food delivery node
 // 0x04623E0C (state 3, 0xC25BB0) found the member's container empty and called Citizen_HoldBundle 0xC23460 with null
 // (caught faults at 0xC23469, campaign_tribe_end). tribe.away_tree_end: in the frame the host is back every mirror's
 // running tree is ended (Citizen_BTTerminate: the nodes' exits run while what they hold is still there, its tribe

@@ -62,7 +62,7 @@ enum KindId : uint8_t {
     K_TRIBE_MEMBER = 2, // tribe members of every tribe (tribe.cpp)
     K_UFO = 3,          // NPC ships of the host's place (spacecoop.cpp)
     K_CIV_CITIZEN = 4,  // Civ city citizens bound by the world-object kind `citizen` (worldobj.cpp, BUG-0475 / BUG-0476)
-    K_TRIBE_TOOL = 5,   // tribe members' held tools (tribe.cpp, BUG-0514: its own switch tribe.tool_hold)
+    K_TRIBE_TOOL = 5,   // tribe members' held tools (tribe.cpp, BUG-0514)
     K_SPACE_CITIZEN = 6, // Space: colony citizens bound by the world-object kind `space_citizen` (worldobj.cpp, BUG-0490)
     K_SPACE_VEHICLE = 7, // Space: colony vehicles bound by the world-object kind `space_vehicle` (worldobj.cpp, BUG-0490)
     K_CIV_VEHICLE = 8,   // Civ vehicles: the host's by net id, a guest's mirrors (civ.cpp, BUG-0549)

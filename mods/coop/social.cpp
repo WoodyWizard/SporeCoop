@@ -44,7 +44,7 @@ enum Kind : uint8_t { K_ACT = 0, K_PROGRESS = 1, K_RESULT = 2, K_GOAL = 3, K_ENG
 // of the prompts' points, a prompt waits 10 s (0x1582F20) after the NPC's performance, at the end of the list an
 // unfilled meter is a failure (animation 0x53685D8F). A guest's game with a mirror had no session anywhere: the
 // host counted any social ability as a round. Now the host runs that list for the guest's game: it picks the
-// prompts when the guest engages its NPC (K_ENGAGE), plays each prompt on its NPC (relayed by npc.anims) and sends
+// prompts when the guest engages its NPC (K_ENGAGE), plays each prompt on its NPC (relayed by BUG-0464) and sends
 // it (K_PROMPT: the guest plays it on its mirror), and counts only an answer to an open prompt, by its points.
 static constexpr double kPromptGreet = 2.0;   // s from the engagement to the first prompt (the NPC's greeting)
 static constexpr double kPromptWait = 13.0;   // s a prompt stays open: its performance (~3 s) + 10 s (0x1582F20)
@@ -970,7 +970,7 @@ static void host_prompt_tick(double now)
             g.answered = false;
             g.prompt_at = now;
             const Prompt& p = g.prompts[g.idx];
-            if (a_PlayReaction) // the NPC performs it (npc.anims shows it on the guest's mirror)
+            if (a_PlayReaction) // the NPC performs it (BUG-0464 shows it on the guest's mirror)
                 thiscall<int>(a_PlayReaction, c, p.anim, 1, -1);
             send_prompt(from, id, g.idx, (int)g.prompts.size(), p);
         }

@@ -144,12 +144,12 @@ static void world_record_set(int k, uint32_t world, uint32_t inst)
     g_world_records++;
     H->log(M, SK_INFO, "creations: own %s %08X recorded for world %08X (BUG-0345)", kInfo[k].name, inst, world);
 }
-// BUG-0508 (world.evolve_in_place): a guest that plays the host world's species (no creation of its
+// BUG-0508: a guest that plays the host world's species (no creation of its
 // own, no choice) takes the host's new creature in place after the host's editor, as the reloaded
 // world gave it before: `g_follow` is the host's new creation, valid in the stage world it came in
 // (a load gives the avatar the world's species again). g_seen_own: the own key last seen in a stage
 // (in the vote's editor the avatar is not there when the host's bundle comes).
-// The host's side (no world after the editor) is world.evolve_in_place (coop.cpp). Off: the guest's
+// The host's side (no world after the editor) is BUG-0508 (coop.cpp). Off: the guest's
 // avatar keeps the species it had until a world load (0.7.3.6).
 static bool g_follow_fix = true;
 COOP_FIX("creations.follow_evolution", "BUG-0508", g_follow_fix,

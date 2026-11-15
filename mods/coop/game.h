@@ -47,7 +47,7 @@ void set_world_epoch_fix(bool on);
 // a received world, another stage raise it; an editor visit keeps it). stage_epoch_tick() once per
 // frame at the very top of on_frame, before any message or module tick; stage_epoch(kTribe) etc.
 // read it. stage_epoch(kCreature) counts the same mode routes as world_epoch() without its avatar
-// rule. No fix switch: callers gate their own use (tribe.editor_world, civ.world_epoch).
+// rule. No fix switch: callers gate their own use (BUG-0217, BUG-0223).
 void stage_epoch_tick();
 uint32_t stage_epoch(uint32_t stage_mode);
 void* avatar();
