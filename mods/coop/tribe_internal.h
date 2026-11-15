@@ -53,6 +53,7 @@ namespace tribe {
 extern const SkHost* H;
 extern SkMod* M;
 extern Ctx C;
+extern bool g_ok;
 
 // ---- layout (docs/re/tribe.md) ----
 constexpr uint32_t kTribeNoun = 0x18C6D19;
@@ -75,6 +76,7 @@ bool is_host();
 bool is_guest();
 extern bool g_fix_away;
 bool local_play();
+void anim_send(uint8_t to, const net::Writer& w, bool reliable);
 void* player_tribe();
 bool is_citizen(void* c);
 std::vector<void*> members(void* t);
@@ -292,12 +294,17 @@ constexpr uintptr_t kHeldItemOff = 0xFFC; // cCreatureCitizen: mCurrentHandheldI
 constexpr uintptr_t kHandOff = 0xFC4;     // ... the hand (an attachment slot) the item goes to
 
 extern uintptr_t a_SetHandheldItem;
+extern uintptr_t a_ClearPending;
 extern uint32_t g_item_sets;
 bool has_body(void* c);
 extern uint32_t g_item_holds_ended;
 uint32_t hold_modifier(void* c, bool end);
 void set_hand(void* c, int item);
 extern bool g_mirror_hold_fix;
+extern bool g_hold_item_fix;
+extern bool g_hold_anim_fix;
+extern bool g_hold_queued_fix;
+void hold_try(GEntry& e, double now);
 
 // tests (BUG-0968 / BUG-0970): the last hold events of the guest's mirrors (`coop.tribe holdtrace [id]`)
 struct HoldEv {
@@ -314,7 +321,9 @@ extern uint16_t g_hand_probe_id;
 extern uint32_t g_hand_probe_handle;
 extern double g_hand_probe_until;
 int hand_model(void* c);
+extern bool g_item_scale_fix;
 float read_item_scale(void* c);
+void apply_item_scale(void* c, float v);
 extern bool g_hunger_fix;
 extern uintptr_t a_SetHunger;
 extern uint32_t g_hunger_sets;
@@ -340,6 +349,10 @@ void* SK_THISCALL h_Form(void* self, int arg);
 using Form_t = void*(SK_THISCALL*)(void*, int);
 extern Form_t o_Form;
 extern uintptr_t a_NpcCtrl;
+void theme_hooks_install();
+void party_hooks_install();
+void party_forget();
+void on_idle_anim(void* c, uint32_t anim);
 
 struct TribeInfo {
     game::Key key{};
@@ -348,14 +361,52 @@ struct TribeInfo {
 
 TribeInfo tribe_info(void* t);
 extern bool g_mirror_air_fix;
+
+constexpr double kMirrorAirFresh = 0.35;
+
+extern bool g_mirror_hang_fix;
+
+constexpr double kMirrorHangHold = 1.0;
+constexpr float kMirrorHangMax = 2000.f;
+
+void send_member_air();
 extern bool g_mirror_idle_fix;
+extern bool g_stale_anim_fix;
+extern bool g_phase_any_fix;
+extern bool g_hold_restart_fix;
 extern bool g_mirror_phase_fix;
 extern bool g_phase_tracks_fix;
 extern double g_phase_last_off;
 uint8_t* main_track(void* c);
 bool track_loops(uint8_t* tr);
+
+// BUG-1072: every playing track of a creature (the playing list +0xF0C, 16 indices; the main one is +0xF0C[+0xFA4]):
+// fn(track, is_main); a track's first dword is 0 when it holds no animation
+template <typename Fn>
+static void playing_tracks(void* c, Fn fn)
+{
+    uint8_t* ac = has_body(c) ? F<uint8_t*>(c, 0xB54) : nullptr;
+    uint8_t* st = ac && skg::readable(ac + 0x184, 4) ? *(uint8_t**)(ac + 0x184) : nullptr;
+    if (!st || !skg::readable(st, 0xFAC))
+        return;
+    uint32_t mi = *(uint32_t*)(st + 0xFA4);
+    for (uint32_t i = 0; i < 16; i++) {
+        uint32_t k = *(uint32_t*)(st + 0xF0C + i * 4);
+        if (k > 0xF)
+            continue;
+        uint8_t* tr = st + 8 + k * 0xF0;
+        if (*(uint32_t*)tr && *(uint32_t*)(tr + 0xD8))
+            fn(tr, i == mi);
+    }
+}
+
+void send_member_anims(double now);
+void theme_forget();
+void on_theme(uint8_t kind, net::Reader& r);
 extern bool g_party_fix;
+extern bool g_party_stop_fix;
 extern uint32_t g_party_stops_outside;
+void on_party(uint8_t kind, net::Reader& r);
 
 // tests (BUG-0759): `coop.tribe setvel <id> <vx> <vy> <vz> <s>` holds a host member's velocity field (cLocomotiveObject
 // mVelocity) at that value for s seconds, as the game left the chief's in campaign_tc2 (119.7 m/s while it slept)
