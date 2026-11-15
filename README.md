@@ -1,51 +1,29 @@
-# SporeCoop Lineages
+# SporeCoop: Lineages
 
-Each player evolves their own species through a shared Spore campaign. Founders keep their creations, lead separate villages and nations, and eventually fly their own ships for one empire. The host reserves seats when starting a campaign, so difficulty can account for the whole party even when someone plays alone.
+**Separated Lives - Partied - Difficulty Scaling - Custom Cells**
 
-Lineages builds on WoodyWizard's multiplayer mod. [Original SporeCoop project](https://github.com/WoodyWizard/SporeCoop)
+Lineages is a fork of [WoodyWizard's SporeCoop](https://github.com/WoodyWizard/SporeCoop) for a co-op campaign where every player evolves their own species in one shared Spore world, from the tide pool to the galaxy. It is built on upstream SporeCoop 0.7.14.1 and keeps its crash guards, network code and tools.
 
-## Playable today
+**Current build:** `0.7.14.1-lineages56-dev` ([Releases](https://github.com/PandizeLive/SporeCoop-Lineages/releases)). Everyone in a session needs the same build. A running game offers new builds itself (Co-op window, Check for Updates).
 
-**Development build** `0.7.8-lineages47-dev`. Both players need the same build. The results below come from targeted scenarios using two Windows game instances on one PC, not one uninterrupted campaign.
+## What Lineages adds
 
-| Stage | What players have done together |
+| | |
 | --- | --- |
-| Cell and Creature | Evolved distinct species, kept their own edits through landfall, revived a partner and recovered shared DNA after restarting. |
-| Tribe | Controlled separate villages, rebuilt a defeated partner's village and earned shared victories through raids and alliances. Both species reached Civilization. |
-| Civilization | Governed separate nations and pooled city captures toward launch. Five cities per founder met the ten-city Space requirement. |
-| Space | Designed different ships, named captains of their own species and shared an empire treasury. One founder flew into orbit while the other took flight training. Rejoining preserved both ships. |
-| Galactic Adventures | Either captain could reach the town gate in Adventure Town and advance both players to the next act. |
+| **Separated Lives** | Each player keeps their own species through the stages: their own cell and creature, their own nest, village and chief, their own nation and cities, their own ship and captain. Creations are shared between players' Sporepedias through the Lineages Cache. |
+| **Partied** | Players progress together: one world, and the stage ends for the whole party by the host's vote (other editors stay personal). Every partner has a Party card in the style of the stage they play. A downed player has 30 seconds for a partner to revive them (hold G to give up); if nobody comes, the party owes 10% of the progress bar instead of losing DNA or food. |
+| **Difficulty Scaling** | The host reserves one to four seats; one Difficulty Scaling slider (up to 400%) sets progress, enemy health and damage, hunger, city takeover and Space raids. Joining an open seat keeps the stage's difficulty steady, and the host can start alone. |
+| **Custom Cells** | Cells the players made swim in the Cell stage as native species (about 1 in 6 spawns) and follow their mouth's diet (Player Cells in the lobby). With Foreign Creations on, creations your partners received from others come too. |
 
-## Defeat and recovery
+Also: a one-page Co-op window, Interface Size for Spore's whole UI, a loading screen while joining, a guest's first creature made with the host's start parts, shared Cell and Creature parts, shared Adventure and Space enemies, and a Creature editor depth cube.
 
-| Stage | What happens in co-op |
-| --- | --- |
-| Cell | A partner has 10 seconds to revive a downed cell. On timeout, it respawns at half normal size beside the nearest partner, if available. |
-| Creature | A partner has 10 seconds to revive the player at 40% health and preserve the pack's DNA. On timeout, the player respawns at the nest and the pack loses 10% of its shared spendable DNA, rounded up and capped at its available whole DNA. |
-| Tribe | A partner villager has 10 seconds to rescue the last villager. If an enemy captures the village, the surviving founder can help rebuild the defeated species elsewhere. If capture does not occur, the villager returns at 40% health and that village loses 10% of its food, rounded up and capped at its balance. |
-| Civilization | Destroyed vehicles and captured cities are losses to their nation. The fork adds no shared currency charge for losing a unit. |
-| Space | A partner has 20 seconds to repair an eligible disabled ship. If the timer expires, the ship is destroyed and the player respawns at the nearest owned colony. |
-| Galactic Adventures | Each player's adventure handles captain defeat locally. The fork adds no shared death penalty. |
+## Status
 
-## Current work
+- Two players: all five stages (Cell, Creature, Tribe, Civilization, Space) were played together on two PCs with the 56-dev merge, with no crashes. Galactic Adventures: combat adventures are shared; dialogue, multi-goal acts and captain XP still run separately.
+- Three and four players: the difficulty scales for them, but full campaigns are not tested yet. More than four players is planned.
+- Known issues, each with how to reproduce it: [docs/known-issues.md](docs/known-issues.md). Changes per build: [CHANGELOG.md](CHANGELOG.md). Decisions and plan: [docs/ROADMAP.md](docs/ROADMAP.md). How the upstream 0.7.14.1 merge was done: [docs/merge-0.7.14.md](docs/merge-0.7.14.md).
 
-Difficulty scales with the seats reserved for the stage. The host can reserve one to four and start solo. Joining an open seat keeps that stage's difficulty steady. **Two founding species are qualified; three- and four-species campaign bindings remain unfinished.** Reserving four seats enables the corresponding difficulty, not a completed four-species campaign.
-
-Lineages 25 includes verified guest economic purchases, religious conversion state, and preaching at cities the host has not viewed. Civilization vehicles, turrets and buildings have targeted combat-scaling coverage. The packaged build also passed a Tribal combat synchronization check. A returning Tribal founder can recover the saved Civilization victory, create its own ship and captain while the host remains in Space, and reconnect with the tutorial intact.
-
-A first-use Civilization tutorial also reached two native species capitals through normal camera and vehicle-selection input. Both clients retained the graduation designs, and the guest could buy and command its own vehicle afterward.
-
-## Known limits
-
-- Tribal movement can jump on the guest's screen when the host changes position unexpectedly.
-- Returning-founder catch-up is verified for specific transitions, including Tribe to Space. Arbitrary Cell-to-Space catch-up and first-ever mid-stage joins are not qualified.
-- Adventure dialogue, combat, multi-goal acts, final results and captain XP still run separately for each player.
-
-## Roadmap
-
-1. **Finish the two-founder campaign.** Resolve remaining reproducible blockers with targeted checkpoint tests, including disconnects, save reloads and returning founders.
-2. **Test three founders, then four.** Verify that every player keeps their species and settlements, and that larger rival counts remain playable from founding through victory.
-3. **Complete shared Adventures and cross-PC testing.** Synchronize the remaining objectives and rewards, verify the return to the campaign, and run the supported setup on separate PCs.
+<details><summary>Build history (41-dev to 56-dev)</summary>
 
 Done in 41-dev: 60% progress per extra seat, and one Difficulty Scaling slider (up to 400%) for progress, enemy health and damage, hunger, city takeover and Space raids.
 
@@ -69,6 +47,8 @@ Done in 53-dev: bones the other player digs up disappear on your screen too.
 Done in 54-dev: befriending works for connected players again, a partner's respawn no longer darkens your screen, Ctrl+Scroll FoV widens the view, partner villages use the partner's own creature, smoother sending on slow connections.
 Done in 56-dev: built on upstream SporeCoop 0.7.14.1 (its crash and network fixes, player colours, session settings, problem reports), Creature stage end by the host's vote for the whole party, tidier shared-money notices.
 Done in 55-dev: every partner gets a Party card in their stage's style, Interface Size scales Spore's whole UI, joining shows a loading screen, a new player makes their first creature with the host's start parts before the world loads, shared Adventure and Space enemies, and fixes from the 2026-11-15 play test (naming, nests, Settings, cells shared as creatures).
+
+</details>
 
 See [campaign development notes](docs/DUO.md) for setup and recorded test details.
 
