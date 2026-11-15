@@ -68,9 +68,7 @@ COOP_FIX("savestrip.pending", "BUG-0256", g_pending_fix, "saves: creatures waiti
 // BUG-0255: a herd made for a puppet stayed in the world empty after its partner left (herds are
 // reused per species and never destroyed) and went into every save: the owner rule only stripped
 // herds that still held a creature of ours. Now an own-kind herd with no members is stripped too,
-// when it is surely empty (savestrip_rule.h). `coop.fix savestrip.empty_herds off`: kept (0.7.3.0).
-static bool g_empty_fix = true;
-COOP_FIX("savestrip.empty_herds", "BUG-0255", g_empty_fix, "saves: empty herds made for partners' puppets are kept out of saves too");
+// when it is surely empty (savestrip_rule.h).
 // BUG-1067: the empty-herd rule asks whether the herd is one the mod made (game::our_herd), not only whether it
 // looks like one: in Civ the game's own herds have no archetype and no nest either, and every empty one of them was
 // left out of every Civ save (77 in a guest's save, the host's too). `coop.fix savestrip.our_herds off`: by the
@@ -103,7 +101,7 @@ static bool creature_filter(void* o, uint32_t noun)
             return true;
         if (g_strip_herds.count(o) && !g_keep_herds.count(o))
             return true;
-        if (!g_empty_fix || g_strip_herds.count(o) || g_keep_herds.count(o))
+        if (g_strip_herds.count(o) || g_keep_herds.count(o))
             return false;
         bool empty = false, readable = herd_members(o, empty);
         if (!strip_empty_herd(readable, empty, g_herd_seen.count(o) != 0, g_unreadable))

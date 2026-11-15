@@ -244,13 +244,9 @@ struct GuestCheck {
 // seconds two checks 3 s apart each caught the guest one meal behind ("cell food: host 252, guest
 // 240", the guest at 252 0.15 s later), a MISMATCH without a desync. A guest value the host had
 // within kTotalLag s before it asked is no difference.
-static bool g_fix_total_lag = true;
-COOP_FIX("diag.total_lag", "BUG-0379", g_fix_total_lag, "sync-check: a guest's total the host had within 3 s before asking is no difference (food sent late)");
 // BUG-0588: after the City Hall editor of the end of Tribe the host's game has every animal at (0 0 0) (it takes the
 // Tribe world down for Civ) while the guests' proxies stay: "n: 46 apart" MISMATCH (lab 20261104-224338). The check
-// does not compare while the host's stage ends. Off: compared (0.7.7).
-static bool g_stage_end_fix = true;
-COOP_FIX("diag.stage_end", "BUG-0588", g_stage_end_fix, "sync-check: nothing is compared while the host's game ends its stage (Tribe -> Civ editors)");
+// does not compare while the host's stage ends.
 // BUG-0754: a guest the host shares its world with is not compared for kShareQuiet s after the share was asked for: the
 // host saves (a 0.8 s hitch), the transfer runs and the guest loads the received world. In campaign_ct (lab
 // 20261108-085348-2 #2 of fix/w46-k4-ground) a check of that moment took the host's family members (moved with the
@@ -259,7 +255,7 @@ COOP_FIX("diag.stage_end", "BUG-0588", g_stage_end_fix, "sync-check: nothing is 
 static bool g_share_quiet_fix = true;
 COOP_FIX("diag.share_quiet", "BUG-0754", g_share_quiet_fix, "sync-check: a guest is not compared while the host shares its world with it (the save, the transfer, its load)");
 constexpr double kShareQuiet = 20.0;
-// BUG-0430: the windows above (diag.total_lag, diag.cell_margin) take a guest a moment late for no difference, so one
+// BUG-0430: the windows above (BUG-0379: totals, cells) take a guest a moment late for no difference, so one
 // late for good passed every check. Three checks in a row that needed a window (a total only the host's recent value
 // matched while the host had left it over 1 s before asking, or over 5 % of the guest's sent band of cells missing that
 // were in the band at the check before too: lab 20261108-080337 showed that a rising total or a changing set alone
@@ -472,9 +468,8 @@ static void guest_path_check(uint8_t guest, const dg::Digest& hd, const dg::Dige
 }
 
 // BUG-0379: in a crowded pool the host's choice of a guest's 900 nearest cells (around its view
-// centre, a state late) and the compare's (around the guest's own position) differ near rank 900
-static bool g_fix_cell_margin = true;
-COOP_FIX("diag.cell_margin", "BUG-0379", g_fix_cell_margin, "sync-check: a guest must have only the nearest 80% of the 900 cells it is sent (the host picks them around a late position)");
+// centre, a state late) and the compare's (around the guest's own position) differ near rank 900: a guest must have
+// only the nearest 80% of them (dg::Limits::cell_sure)
 
 // BUG-0606: a Cell level change multiplies every position by old / new world scale about the origin, on each
 // game at its own moment, and the end of Cell shrinks the scale for ~40 s (a cell 74 m from the origin went to
@@ -482,12 +477,10 @@ COOP_FIX("diag.cell_margin", "BUG-0379", g_fix_cell_margin, "sync-check: a guest
 // own scale at the moment it was built, the host's in its own at another: the host's own cell came out 359-740
 // "apart" on every guest (campaign_ct, lab 20261105-233139) with nothing to see. The host compares the guest's
 // Cell positions converted into its own scale (times guest scale / host scale; pos x scale stays the same for a
-// cell at rest through a change). Off: raw positions (0.7.8).
-static bool g_fix_cell_scale = true;
-COOP_FIX("diag.cell_scale", "BUG-0606", g_fix_cell_scale, "sync-check: in Cell a guest's positions are compared in the host's world scale (level changes, the end of Cell)");
+// cell at rest through a change).
 static void to_host_scale(const dg::Digest& hd, dg::Digest& gd)
 {
-    if (!g_fix_cell_scale || hd.mode != modes::kCell || gd.mode != modes::kCell || !(hd.scale > 0) || !(gd.scale > 0) ||
+    if (hd.mode != modes::kCell || gd.mode != modes::kCell || !(hd.scale > 0) || !(gd.scale > 0) ||
         hd.scale == gd.scale)
         return;
     float k = gd.scale / hd.scale;
@@ -502,8 +495,6 @@ static dg::Limits limits_for(uint32_t mode, uint32_t world)
 {
     dg::Limits l;
     l.no_place = g_no_place_fix && world == 0;
-    if (!g_fix_cell_margin)
-        l.cell_sure = 1.f;
     if (mode == modes::kTribe || mode == modes::kCiv)
         l.npc_missing = false; // RTS stages: NPCs are sent around the tribe / cities
     return l;
@@ -606,13 +597,12 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
     dg::Limits lim = limits_for(hd.mode, hd.world);
     add_speed_slack(lim, hd.mode, from);
     std::vector<std::pair<uint8_t, float>> recent, fresh;
-    if (g_fix_total_lag)
-        for (auto& r : g_host_totals)
-            if (r.t >= g.asked - kTotalLag) {
-                recent.push_back({r.id, r.v});
-                if (r.t >= g.asked - kLateAge)
-                    fresh.push_back({r.id, r.v});
-            }
+    for (auto& r : g_host_totals)
+        if (r.t >= g.asked - kTotalLag) {
+            recent.push_back({r.id, r.v});
+            if (r.t >= g.asked - kLateAge)
+                fresh.push_back({r.id, r.v});
+        }
     std::set<uint32_t> steady = std::move(g.band);
     dg::Late late;
     if (g_fix_late_streak) {
@@ -621,7 +611,7 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
     }
     dg::Digest gconv = gd;
     to_host_scale(hd, gconv); // BUG-0606
-    dg::Compared c = dg::compare(hd, gconv, lim, g_fix_total_lag ? &recent : nullptr, late);
+    dg::Compared c = dg::compare(hd, gconv, lim, &recent, late);
     g.band = c.band;
     {
         net::Session::Link lk; // BUG-0547: the guest's round trip widens the window
@@ -629,7 +619,7 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
         own_path_check(hd, gconv, lim, c, now, rtt);
         guest_path_check(from, hd, gconv, lim, c, now, rtt); // BUG-0758
     }
-    if (g_stage_end_fix && g_P.stage_end && g_P.stage_end())
+    if (g_P.stage_end && g_P.stage_end())
         c.other_place = true; // BUG-0588
     if (g_share_quiet_fix && g_P.since_share && g_P.since_share(from) < kShareQuiet)
         c.other_place = true; // BUG-0754

@@ -69,9 +69,6 @@ COOP_FIX("nest.hatch_now", "BUG-0896", g_hatch_now_fix, "creature: an NPC egg th
 
 // BUG-0474: the animal nests of the Tribe stage are the same cHerd / cEgg objects, and the guest's game removes its
 // own animals there too (tribe proxies): the host's eggs were missing on every guest. The mirrors run in Tribe too.
-// `coop.fix nest.eggs_tribe off`: Creature only (0.7.3.6).
-static bool g_tribe_fix = true;
-COOP_FIX("nest.eggs_tribe", "BUG-0474", g_tribe_fix, "tribe: the host's eggs at the animal nests are shown and eaten on the guests");
 
 // BUG-0660 (docs/re/creature.md#creature-family-eggs): the players' own nest is the avatar family's herd (+0x84 set),
 // left out of nest.eggs: its members are NPCs too (the guest's are the host's, mirrored, with no AI), so only the host's
@@ -86,7 +83,7 @@ constexpr uint8_t kFamilyBit = 0x80;
 constexpr float kOwnBind = 4.f, kOwnDrift = 0.5f;
 static uint32_t g_family_tx, g_own_bound, g_family_made, g_own_placed;
 
-static bool egg_stage() { return game::in_creature_stage() || (g_tribe_fix && game::mode_id() == modes::kTribe); }
+static bool egg_stage() { return game::in_creature_stage() || game::mode_id() == modes::kTribe; }
 
 constexpr uint8_t kKindSnap = 0, kKindEat = 1;
 constexpr int kMaxSnap = 20;           // eggs per snapshot (49 bytes each, one packet)
@@ -376,7 +373,7 @@ static void host_tick(double now)
             continue;
         if (!C.player_pos || !C.player_pos(p.id, gp) || (gp.x == 0 && gp.y == 0 && gp.z == 0)) {
             // Tribe (BUG-0474): a player is a pointer, often (0 0 0) in a background game: the tribe's place
-            if (!(g_tribe_fix && game::mode_id() == modes::kTribe && C.stage_center && C.stage_center(gp)))
+            if (!(game::mode_id() == modes::kTribe && C.stage_center && C.stage_center(gp)))
                 continue;
         }
         std::vector<const HostEgg*> close;
@@ -603,9 +600,7 @@ static void on_eat(uint8_t from, net::Reader& r)
 // cEgg_SnapToGround finds it) and has not moved for a second onto that surface with cEgg_SnapToGround, what
 // the game does to the avatar's eggs when they are laid and to every egg when it hatches. Only near the
 // host's avatar (kGroundNear): farther away the nest's collision is not loaded and the surface would be the
-// bare terrain under the mound. `coop.fix nest.egg_ground off`: they stay in the air (0.7.3.3).
-static bool g_ground_fix = true;
-COOP_FIX("nest.egg_ground", "BUG-0443", g_ground_fix, "creature: an NPC egg left hanging in the air on the host is put onto the ground");
+// bare terrain under the mound.
 
 constexpr float kHang = 0.3f;        // m over the surface (settled eggs: 0.00-0.1, measured)
 constexpr float kGroundNear = 60.f;  // m from the host's avatar
@@ -660,7 +655,7 @@ void tick(double now)
     if (is_host()) {
         if (g_eggs_fix && egg_stage())
             host_tick(now);
-        if (g_ground_fix && a_Surface && a_PlanetGet && game::in_creature_stage())
+        if (a_Surface && a_PlanetGet && game::in_creature_stage())
             ground_tick(now);
     } else if (is_guest())
         guest_tick(now);
@@ -954,8 +949,8 @@ std::string status()
     int live = 0;
     for (auto& [id, m] : g_mirrors)
         live += mirror_ok(m);
-    snprintf(b, sizeof b, "nest eggs fix=%d ground_fix=%d grounded=%u grounded_max=%.2f role=%s mirrors=%u live=%d made=%u removed=%u snaps_tx=%u early=%u snaps_rx=%u eats_sent=%u eats_applied=%u family_fix=%d family_tx=%u family_made=%u own_bound=%u/%u own_placed=%u epoch_removed=%u epoch_released=%u\n",
-             (int)g_eggs_fix, (int)g_ground_fix, g_grounded, g_grounded_max, is_host() ? "host" : is_guest() ? "guest" : "none", (unsigned)g_mirrors.size(), live, g_made, g_removed,
+    snprintf(b, sizeof b, "nest eggs fix=%d grounded=%u grounded_max=%.2f role=%s mirrors=%u live=%d made=%u removed=%u snaps_tx=%u early=%u snaps_rx=%u eats_sent=%u eats_applied=%u family_fix=%d family_tx=%u family_made=%u own_bound=%u/%u own_placed=%u epoch_removed=%u epoch_released=%u\n",
+             (int)g_eggs_fix, g_grounded, g_grounded_max, is_host() ? "host" : is_guest() ? "guest" : "none", (unsigned)g_mirrors.size(), live, g_made, g_removed,
              g_snaps_tx, g_early_snaps, g_snaps_rx, g_eats_sent, g_eats_applied, (int)g_family_fix, g_family_tx, g_family_made, (unsigned)g_own.size(), g_own_bound, g_own_placed, g_epoch_removed, g_epoch_released);
     return b;
 }
