@@ -40,7 +40,7 @@ rel/0.7.15 checkout beside the new code, lanes 4/5, then swapped; team,select,fr
 39.5 -> 25.5 s (n 28 each; the three fixed steps 12 -> 4 s), warm reset 20 -> 17 s (n 14 each), the four runs 2831 ->
 2488 s; results 41 OK + 1 FAIL on each side (frames_loop's frame count at load 34-40, old and new alike). Twin
 SPORE_START_FIXED=1: lab 20261115-022027 (team x3 cold: 29-32 s, every settle at its bound). Stage tests on the new
-code: labs 20261115-022047 (lane 5) and 20261115-022517 (lane 4). Unit: tools/tests/labstart_selftest.py.
+code: labs 20261115-022047 (lane 5) and 20261115-022517 (lane 4). Unit: tools/tests/labstart_selftest.py. After merging rel/0.7.15 (lab verdicts, the coop.cpp split): lab 20261115-024425 (team, select, frames_loop, npc_walk_tribe x2 on lanes 4/5): 7 of 8 OK, npc_walk_tribe#2 failed "no jump of a moving proxy" (3 jumps at 36 fps, 37-51 s into the walk, not at the start; the ledger: a known flake, 31 of 81 since Nov 1); rerun 20261115-024912 3 of 3 OK, and with SPORE_START_FIXED=1 20261115-024927 3 of 3 OK.
 
 ## History
 - 2026-11-15: opened.
