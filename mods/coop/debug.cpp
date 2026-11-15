@@ -787,12 +787,11 @@ int c_cam(void*, int argc, const char* const* argv, SkOut* out)
 // 0x400000 addresses: "self" is where the thread was, "stack" counts each address once per sample
 // (an inclusive profile of the callers). Runs on the console thread; the game goes on running.
 namespace {
-std::atomic<DWORD> g_main_tid{0};
 int c_sample(void*, int argc, const char* const* argv, SkOut* out)
 {
     int ms = argc > 1 ? atoi(argv[1]) : 2000, top = argc > 2 ? atoi(argv[2]) : 25;
     ms = std::clamp(ms, 100, 30000);
-    DWORD tid = g_main_tid.load();
+    DWORD tid = game::main_thread(); // A14: the one main-thread id
     if (tid == GetCurrentThreadId()) {
         SAY("not on the main thread");
         return 1;
@@ -888,7 +887,6 @@ void init(const SkHost*, SkMod*); // test_view.cpp: coop.view
 void coop_register_debug_commands(const SkHost* host, SkMod* self)
 {
     H = host;
-    host->subscribe(self, SK_EV_FRAME, [](void*, int, void*) { g_main_tid.store(GetCurrentThreadId()); }, nullptr);
     host->command_add(self, "coop.sample", "coop.sample [ms] [top] - sample the main thread's EIP and stack (RE, BUG-0355)", c_sample,
                       nullptr, SK_CMD_ANY_THREAD | SK_CMD_NOT_ON_MAIN);
     void coop_register_debug_commands2(const SkHost*, SkMod*);

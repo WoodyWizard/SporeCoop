@@ -73,6 +73,10 @@ $(B)/obj/%.o: %.cpp
 $(B)/sporekit.dll: $(KIT_OBJ) $(MH_OBJ) $(B)/obj/sporekit/sporekit_rc.o
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -lshell32 -ld3d9 -Wl,--out-implib,$(B)/libsporekit.a
 
+# session_glue.cpp takes COOP_VERSION from build/version.h (it is defined in coop.cpp, where the tools read it)
+$(B)/obj/mods/coop/session_glue.o: $(B)/version.h
+$(B)/obj/mods/coop/session_glue.o: CXXFLAGS += -I$(B)
+
 $(B)/coop.dll: $(COOP_OBJ) $(B)/obj/mods/coop/coop_rc.o
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -liphlpapi -lwinhttp -lshell32
 
@@ -117,7 +121,7 @@ endif
 # docs/06-testing.md#testing-lab-speed). `make test TEST_JOBS=1` runs them one after the other.
 TEST_JOBS ?= 8
 NET_SHARDS ?= 8
-UNIT_PARTS := unit-net unit-lab unit-cpp unit-lint unit-tools unit-symbols
+UNIT_PARTS := unit-net unit-lab unit-cpp unit-lint unit-tools unit-symbols unit-verdict
 ifneq ($(SKIP_SANITIZERS),1)
 UNIT_PARTS += test-asan test-tsan unit-fuzz
 endif
@@ -146,6 +150,11 @@ unit-lab:
 	python3 tools/tests/gates_selftest.py
 	python3 tools/tests/walk_selftest.py
 	python3 tools/tests/dash_selftest.py
+
+# the lab's verdicts, reasons, flaky ledger, repeat rule and impact selection (0.7.15 A6-A8, A15, D5): its own part (its
+# fake lab runs wait ~40 s, beside unit-lab's)
+unit-verdict:
+	python3 tools/tests/labverdict_selftest.py
 
 unit-fuzz: sanitizer-probe
 	@mkdir -p $(B)/host
@@ -181,6 +190,8 @@ unit-lint:
 	python3 tools/glyph_lint.py
 	python3 tools/tickets.py check
 	python3 tools/ci_lint.py
+	python3 tools/ratchet_lint.py
+	python3 tools/ratchet_lint.py --self-test
 
 unit-tools:
 	python3 tools/tests/tools_selftest.py

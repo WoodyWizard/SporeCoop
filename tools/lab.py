@@ -13,6 +13,10 @@
   lab.py coverage --commit <rev> --require smoke,full,multi   the release rule (docs/06-testing.md#testing-release-rule)
   lab.py fixcheck                      "SPORE_FIX_OFF=x fails" claims of suite.py against recorded FAIL runs
   lab.py gates [out/lab dirs]          the log gates over recorded results, report only (tools/loggates.py)
+  lab.py flaky [--branch 'rel/*']      the flake ledger over every worktree's results (twins left out; tools/labverdict.py)
+  lab.py impact --why [--base rev]     the tests a change can break (tools/labimpact.py); `run impact` runs them
+  lab.py run X --repeat 20 [--until clear|fail|all]   stops once the verdict is clear, prints the rate
+  lab.py run campaign_segment --segment <run>         a failed campaign's segment again, from its save
   lab.py kill [--lane N ... | --upto N | --lanes 2,3] [--include-lane-1]
                                        stop the games of lanes 2..10, of lane N, of lanes 2..N or of a list
                                        (lane 1: only with --include-lane-1, its test games only)
@@ -26,8 +30,9 @@ seconds after it, a game died right after it, or its log shows a non-zero fault 
 (BUG-0036, BUG-0042; suite.py reports=True for tests that make them on purpose), or when the games'
 own logs written during it break a log gate (tools/loggates.py: sync-check MISMATCH, a hitch over
 2 s in play, address space running low or lost by the minute; suite.py gates= / allow=;
-SPORE_GATES=report: report only, off: none). RESULT: SKIP is
-a skip, not a pass (BUG-0100). A timeout kills the test's whole process group (BUG-0052).
+SPORE_GATES=report: report only, off: none). RESULT: INCONCLUSIVE
+(or RESULT: SKIP) is INCONCLUSIVE, never a pass (BUG-0100); three in a row fail (A15,
+docs/06-testing.md#testing-lab-verdicts). A timeout kills the test's whole process group (BUG-0052).
 Exclusive tests run at the end, alone. Results: out/lab/<run>/ (one log per test, results.json,
 summary.md).
 """
@@ -49,6 +54,7 @@ sys.path.insert(0, os.path.join(ROOT, 'tools', 'tests'))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 import suite  # noqa: E402
 import loggates  # noqa: E402
+import labverdict  # noqa: E402 (verdicts, reasons, the flaky ledger, the repeat rule)
 
 TIMEOUT = 1800
 AFTER = 5.0  # seconds after a test in which a game of its lane may still crash or die (BUG-0036)
@@ -545,6 +551,7 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
             env['SPORE_FIX_OFF'] = sw.strip()
     if t.get('monitor') is not None:  # the invariant monitor's settings (tools/tests/monitor.py)
         env['SPORE_MONITOR'] = t['monitor'] if isinstance(t['monitor'], str) else json.dumps(t['monitor'])
+    run_env = env
     log = os.path.join(logdir, t['name'] + suffix + '.log')
     t0 = time.time()
     reports0 = report_files(lane)
@@ -591,7 +598,10 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
         except OSError:
             pass
     has_result = 'RESULT:' in text or t['cmd'].startswith('make')
-    skipped = 'RESULT: SKIP' in text and 'RESULT: FAIL' not in text
+    # A15 (docs/06-testing.md#testing-lab-verdicts): RESULT: INCONCLUSIVE (or the older RESULT: SKIP) is INCONCLUSIVE,
+    # never a pass; `skipped` stays in results.json for the tools that read it
+    inc, inc_why = labverdict.output_verdict(text)
+    skipped = inc == labverdict.INCONCLUSIVE
     faults = [l.strip() for l in text.splitlines() if ' faults: ' in l and 'total faults: 0' not in l]
     lab_fails, lab_notes = [], []
     if not t.get('reports'):
@@ -640,11 +650,16 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
         lab_fails.append(f'LOAD lab: the headless Xwayland used {xwl["peak"]:.0%} of a core in the busiest {XW_STEP:.0f} s '
                          f'({xwl["avg"]:.0%} on average): saturated, the fps of this run are the machine\'s (BUG-0663)')
     return dict(name=t['name'], lane=lane, watched=watched, ok=ok, rc=rc, env=env, skipped=skipped and ok, xwayland=xwl, load=load,
+                verdict=labverdict.FAIL if not ok else labverdict.INCONCLUSIVE if skipped else labverdict.PASS,
+                inconclusive=skipped and ok, why=inc_why if skipped and ok else '',
+                # A7: a twin run (a fix switched off, an old behaviour planted) is left out of the flaky ledger
+                fix_off=run_env.get('SPORE_FIX_OFF', '').strip(), twin=labverdict.twin_env(run_env),
+                segment=labverdict.segment_of(text),  # A6: a failed campaign's segment and its save
                 quick=bool(t.get('quick_run')),
                 mem={k: v for k, v in mem.items() if k != 'over'},
                 harness=(not has_result or 'Traceback' in text) and not lab_fails,
                 seconds=round(time.time() - t0), start=f'{m.group(1)} {m.group(2)} s' if m else '',
-                fails=(lab_fails + [l.strip() for l in text.splitlines() if l.strip().startswith('FAIL')])[:8],
+                fails=(lab_fails + labverdict.reasons(text, failed=not ok and not lab_fails))[:8],
                 faults=faults, reports=[os.path.basename(p) for p in new_reports], died=died, log=log,
                 gates=gate_fails + gate_notes, log_marks={w: m for w, m in marks0.items() if m})
 
@@ -698,15 +713,102 @@ def new_run_dir(branch=None, now=None):
     raise RuntimeError(f'lab: no free run directory for {stamp}{tail}')
 
 
+def ledger_rows(dirs=None):
+    """A7: the recorded results of the main checkout and every worktree as labverdict rows ([] when unreadable)"""
+    try:
+        if dirs is None:
+            dirs = loggates.lab_dirs(os.path.dirname(git('rev-parse', '--path-format=absolute', '--git-common-dir')))
+        return labverdict.rows_of(loggates.recorded(dirs),
+                                  lambda rd, r: labverdict.fix_off_in_log(loggates.result_logs(rd, r)[1]))
+    except Exception as e:  # noqa: BLE001 (the history is a note; without it the run still reports)
+        print(f'  (flaky ledger: not read: {e!r})', flush=True)
+        return []
+
+
+def find_segment(spec, dirs=None):
+    """A6: the segment.json of a failed campaign: spec is that file, a lab run directory, or a run id (looked up in
+    every worktree's out/lab); the first result of the run that printed CAMPAIGN-SEGMENT"""
+    if os.path.isfile(spec):
+        return os.path.abspath(spec)
+    runs = [spec] if os.path.isdir(spec) else []
+    if not runs:
+        if dirs is None:
+            dirs = loggates.lab_dirs(os.path.dirname(git('rev-parse', '--path-format=absolute', '--git-common-dir')))
+        runs = [os.path.join(d, spec) for d in dirs if os.path.isdir(os.path.join(d, spec))]
+    for rd in runs:
+        try:
+            res = json.load(open(os.path.join(rd, 'results.json'))).get('results', [])
+        except (OSError, ValueError):
+            res = []
+        for r in res:
+            seg = r.get('segment') or (labverdict.segment_of(open(r['log'], errors='replace').read())
+                                       if r.get('log') and os.path.exists(r['log']) else None)
+            if seg and seg.get('file') and os.path.exists(seg['file']):
+                return seg['file']
+    return None
+
+
+def streak_fails(results, rows, k=None):
+    """A15 (owner decision 11): a test INCONCLUSIVE in this run and in the runs before it, k in a row in all (the
+    ledger: every worktree, twins and quick runs left out), fails: its precondition never happens (a test or bot
+    problem, or the mod prevents it); the failure line names it a ticket candidate"""
+    k = k or labverdict.INCONCLUSIVE_STREAK
+    run_seen = {}
+    for r in results:
+        if not r.get('inconclusive') or r.get('fix_off') or r.get('twin') or r.get('quick'):
+            continue
+        base = r['name'].split('#')[0]
+        run_seen[base] = run_seen.get(base, 0) + 1
+        n = labverdict.inconclusive_streak(rows, base) + run_seen[base]
+        if n >= k:
+            r.update(ok=False, skipped=False, verdict=labverdict.FAIL)
+            r['fails'] = [f'FAIL lab: INCONCLUSIVE {n} runs in a row ({r.get("why") or "no reason"}): the precondition '
+                          f'never happens; ticket candidate (A15, docs/06-testing.md#testing-lab-verdicts)'] + r['fails']
+
+
+def summary_history(results, rows, repeats):
+    """the summary's lines from the ledger: each failed or INCONCLUSIVE test's history, the ticket candidates"""
+    out = []
+    if repeats:
+        out += ['', '## Repeats (--repeat, --until)', ''] + [f'- {x}' for x in repeats]
+    if not rows:
+        return out
+    stats = labverdict.ledger(rows)
+    bad = sorted({r['name'].split('#')[0] for r in results if not r['ok'] or r.get('skipped') or r.get('flaky')})
+    if bad:
+        out += ['', '## History of the failed and INCONCLUSIVE tests (all worktrees, before this run; `lab.py flaky`)', '']
+        out += [f'- {n}: {labverdict.known_line(stats.get(n))}' for n in bad]
+    cand = [s for s in labverdict.ticket_candidates(stats) if s.test in {r['name'].split('#')[0] for r in results}]
+    if cand:
+        out += ['', '## Ticket candidates (INCONCLUSIVE in a row)', ''] + [
+            f'- {s.test}: INCONCLUSIVE in its last {s.streak} runs' for s in cand]
+    return out
+
+
 def cmd_run(a):
     tree = worktree(a.branch) if a.branch else ROOT
-    tests = suite.select(a.tests)
+    if a.tests == 'impact':  # D5: the tests the tree's change can break (tools/labimpact.py); never for the final check
+        import labimpact
+        base, sel = labimpact.impact(getattr(a, 'base', None), tree)
+        print(f'lab: impact against {base}: {len(sel)} tests (`lab.py impact --why` lists the reasons)')
+        tests = [t for t, _ in sel]
+    else:
+        tests = suite.select(a.tests)
+    if getattr(a, 'segment', None):  # A6: campaign_segment plays this failed campaign segment again from its save
+        seg = find_segment(a.segment)
+        if not seg:
+            sys.exit(f'lab: no failed campaign segment in {a.segment} (a lab run id or dir with a CAMPAIGN-SEGMENT '
+                     'result, or a segment.json)')
+        os.environ['CAMPAIGN_SEGMENT'] = seg
+        print(f'lab: CAMPAIGN_SEGMENT={seg}')
     quick = getattr(a, 'quick', False) or os.environ.get('SPORE_LAB_QUICK') == '1'
     if quick:  # docs/06-testing.md#testing-lab-speed: shorter play scenarios, marked in the results (labcov skips them)
         tests = [dict(t, cmd=suite.quick_cmd(t), quick_run=True, minutes=max(2, t['minutes'] // 2)) if t.get('quick') else t
                  for t in tests]
     if a.repeat > 1:  # hunting a flaky bug: the same tests many times
         tests = [dict(t, name=f'{t["name"]}#{k + 1}') for k in range(a.repeat) for t in tests]
+    until = getattr(a, 'until', None) or 'clear'  # A8: when a --repeat stops (labverdict.repeat_stop)
+    repeat_stopped = {}  # test -> why its copies still waiting were dropped
     run_id, logdir = new_run_dir(a.branch)
     head = git('log', '-1', '--format=%h %s', cwd=tree)
     tree_branch = git('branch', '--show-current', cwd=tree) or '(detached)'
@@ -777,10 +879,25 @@ def cmd_run(a):
     def report(r):
         with lock:
             results.append(r)
-            flag = 'SKIP' if r.get('skipped') else 'OK  ' if r['ok'] else 'FAIL'
+            flag = 'INC ' if r.get('skipped') else 'OK  ' if r['ok'] else 'FAIL'
             extra = ' (flaky)' if r.get('flaky') else ''
             shown = r['fails'] + [x for x in r['faults'] if not any(x in y for y in r['fails'])] + \
                 [x for x in r.get('gates', []) if not x.startswith('FAIL')]
+            if r.get('segment') and not r['ok']:  # A6, owner decision 10
+                shown.append(f'rerun only the failed segment ({r["segment"].get("stage")} -> {r["segment"].get("to")}, '
+                             f'from its save): lab.py run campaign_segment --segment {run_id}')
+            if r.get('skipped'):
+                shown = [f'INCONCLUSIVE: {r.get("why") or "the precondition did not happen"} (not a pass)'] + shown
+            if a.repeat > 1:  # A8: the copies of a test whose verdict is clear are not started
+                base = r['name'].split('#')[0]
+                got = [labverdict.verdict_of(x) for x in results if x['name'].split('#')[0] == base]
+                stop, why = labverdict.repeat_stop(got, a.repeat, until)
+                if stop and base not in repeat_stopped:
+                    left = [t for t in pending if t['name'].split('#')[0] == base]
+                    repeat_stopped[base] = why
+                    for t in left:
+                        pending.remove(t)
+                    shown.append(f'{labverdict.repeat_line(base, got, a.repeat, why)}: {len(left)} copies not started')
             print(f'  {flag} {r["name"]:<15} lane {r["lane"]}{r.get("watched", "")}  {r["seconds"]:>4} s  {r["start"]}{extra}'
                   + ''.join(f'\n         {x}' for x in shown), flush=True)
 
@@ -927,11 +1044,14 @@ def cmd_run(a):
             for lane in a.lane_ids:
                 spore(tree, lane, 'kill')
     total = time.time() - t0
+    rows = ledger_rows()  # A7: the flake history of every worktree (before this run)
+    streak_fails(results, rows)  # A15: INCONCLUSIVE several runs in a row is a failure
     ok = all(r['ok'] for r in results)
     passed = sum(r['ok'] and not r.get('skipped') for r in results)
     skipped = sum(bool(r.get('skipped')) for r in results)
     flaky = sum(bool(r.get('flaky')) for r in results)
-    notes = ''.join([f', {skipped} skipped' if skipped else '', f', {flaky} flaky (harness)' if flaky else ''])
+    notes = ''.join([f', {skipped} INCONCLUSIVE (not passed)' if skipped else '',
+                     f', {flaky} flaky (harness)' if flaky else ''])
     # flaky history across runs: which tests fail now and then (fix the test or the bug behind it)
     hist_path = os.path.join(ROOT, 'out', 'lab', 'flaky.json')
     import fcntl
@@ -954,8 +1074,11 @@ def cmd_run(a):
     os.replace(tmp_hist, hist_path)
     fcntl.flock(hist_lock, fcntl.LOCK_UN)
     hist_lock.close()
+    repeats = [labverdict.repeat_line(b, [labverdict.verdict_of(r) for r in results if r['name'].split('#')[0] == b],
+                                      a.repeat, repeat_stopped.get(b, ''))
+               for b in sorted({r['name'].split('#')[0] for r in results})] if a.repeat > 1 else []
     json.dump(dict(run=run_id, tree=tree, branch=tree_branch, head=head, skipped=skipped, lanes=a.lanes, seconds=round(total), ok=ok,
-                   quick=quick, results=results),
+                   quick=quick, repeat=dict(n=a.repeat, until=until, lines=repeats) if repeats else None, results=results),
               open(os.path.join(logdir, 'results.json'), 'w'), indent=1)
     lines = [f'# lab run {run_id}', '', f'{tree_branch} {head} - {len(results)} tests, {a.lanes} lanes, '
              f'{total / 60:.1f} min, ' + (f'**all passed**{notes}' if ok else f'**FAILED**{notes}'), '']
@@ -964,7 +1087,7 @@ def cmd_run(a):
                   '(docs/06-testing.md#testing-lab-speed).', '']
     lines += ['| test | result | lane | s | start |', '|---|---|---|---|---|']
     for r in sorted(results, key=lambda r: (r['ok'], r['name'])):
-        res = 'skip' if r.get('skipped') else 'ok' if r['ok'] else 'FAIL'
+        res = 'INCONCLUSIVE' if r.get('skipped') else 'ok' if r['ok'] else 'FAIL'
         lines.append(f'| {r["name"]} | {res}{" (flaky)" if r.get("flaky") else ""}{" (load)" if r.get("load") else ""}'
                      f'{" (quick)" if r.get("quick") else ""} | {r["lane"]} '
                      f'| {r["seconds"]} | {r["start"]} |')
@@ -980,15 +1103,46 @@ def cmd_run(a):
     if gated:  # docs/06-testing.md#testing-log-gates: what the games' logs said, failed or allowed
         lines += ['', '## Log gates', ''] + [f'- {r["name"]}: {g}' for r in sorted(gated, key=lambda r: r['name'])
                                               for g in r['gates']]
-    shaky = sorted(((h['flaky'] + h['failed']) / h['runs'], n) for n, h in hist.items() if h['flaky'] + h['failed'])
-    if shaky:
-        lines += ['', '## Unstable tests (all runs)', ''] + [
-            f'- {n}: {hist[n]["flaky"]} flaky, {hist[n]["failed"]} failed in {hist[n]["runs"]} runs; last: '
-            f'{hist[n]["last"][-1] if hist[n]["last"] else ""}' for _, n in reversed(shaky)]
+    hist_lines = summary_history(results, rows, repeats)
+    lines += hist_lines
     open(os.path.join(logdir, 'summary.md'), 'w').write('\n'.join(lines) + '\n')
+    for x in hist_lines:  # the repeat rates, each failed test's history (A7), the ticket candidates (A15)
+        if x.startswith('- ') or x.startswith('## '):
+            print(x[2:] if x.startswith('- ') else x[3:])
     print(f'{"PASSED" if ok else "FAILED"}: {passed}/{len(results)}{notes} in {total / 60:.1f} min '
           f'-> out/lab/{run_id}/summary.md')
     return 0 if ok else 1
+
+
+def cmd_flaky(a, rows=None, out=print):
+    """A7 (docs/06-testing.md#testing-lab-verdicts): the flake ledger of every recorded result (main + worktrees):
+    per test fails / runs, on rel/main, commits with both PASS and FAIL, INCONCLUSIVE and its streak, the twins left
+    out; the ticket candidates (INCONCLUSIVE in a row)"""
+    rows = ledger_rows() if rows is None else rows
+    since = datetime.datetime.now() - datetime.timedelta(days=a.days) if getattr(a, 'days', None) else None
+    stats = labverdict.ledger(rows, since=since, branch=getattr(a, 'branch', None))
+    if getattr(a, 'test', None):
+        s = stats.get(a.test)
+        out(f'# {a.test}: {labverdict.known_line(s)}')
+        if s:
+            out(f'twin runs left out: {s.twins}, quick runs left out: {s.quick}')
+            for x in s.reasons:
+                out(f'- {x}')
+        return 0
+    n = sum(s.runs for s in stats.values())
+    tw = sum(s.twins for s in stats.values())
+    out(f'# Flaky ledger: {len(rows)} results, {n} counted ({tw} twin runs and {sum(s.quick for s in stats.values())} '
+        f'quick runs left out), {len(stats)} tests' + (f', since {since:%Y-%m-%d}' if since else '')
+        + (f', branches {a.branch}' if getattr(a, 'branch', None) else ''))
+    out('')
+    for ln in labverdict.table(stats, top=getattr(a, 'top', 40), only_failing=not getattr(a, 'all', False)):
+        out(ln)
+    cand = labverdict.ticket_candidates(stats)
+    out('')
+    out(f'## Ticket candidates: INCONCLUSIVE in the last {labverdict.INCONCLUSIVE_STREAK}+ runs in a row ({len(cand)})')
+    for s in cand:
+        out(f'- {s.test}: {s.streak} in a row, {s.inconclusive} of {s.runs} runs')
+    return 0
 
 
 def cmd_reload(a):
@@ -1026,7 +1180,16 @@ def main():
     r.add_argument('--retry', type=int, default=1)
     r.add_argument('--in-order', action='store_true', help='run the named tests in the given order (not longest '
                    'first): a passing warm test before a twin check (SPORE_LAB_FIXOFF="<test>=<switch>")')
-    r.add_argument('--repeat', type=int, default=1, help='run every test N times (flaky bug hunt)')
+    r.add_argument('--repeat', type=int, default=1, help='run every test N times (flaky bug hunt); stops early per '
+                   '--until')
+    r.add_argument('--until', choices=labverdict.UNTIL, default='clear',
+                   help='with --repeat: clear (default: stop once PASS and FAIL were both seen, or 3 FAILs / 3 '
+                   'INCONCLUSIVE and nothing else), fail (fail fast: stop at the first FAIL), all (every copy, to '
+                   'measure a rate); docs/06-testing.md#testing-lab-verdicts')
+    r.add_argument('--segment', help='A6: campaign_segment plays the failed segment of this campaign run again from '
+                   'its save (a lab run id or dir, or a segment.json); sets CAMPAIGN_SEGMENT')
+    r.add_argument('--base', help='run impact: the change is against the merge base with this rev (default: the '
+                   'nearest of main and rel/*)')
     r.add_argument('--quick', action='store_true', help='the long play scenarios shortened (suite.py quick=; also '
                    'SPORE_LAB_QUICK=1): intermediate runs only, the release rule does not count them')
     ln = sub.add_parser('lanes')
@@ -1044,6 +1207,15 @@ def main():
     cv.add_argument('--commit')
     cv.add_argument('--require', default='smoke,full')
     sub.add_parser('fixcheck')
+    fk = sub.add_parser('flaky', help='the flake ledger over every results.json of the main checkout and all worktrees')
+    fk.add_argument('--days', type=float, help='only results of the last N days')
+    fk.add_argument('--branch', help="only these branches (a glob: 'rel/*', main)")
+    fk.add_argument('--test', help='one test: its history')
+    fk.add_argument('--all', action='store_true', help='also tests that never failed')
+    fk.add_argument('--top', type=int, default=40)
+    im = sub.add_parser('impact', help='the tests the tree\'s change can break (D5, tools/labimpact.py)')
+    im.add_argument('--base')
+    im.add_argument('--why', action='store_true', help='why each test is selected')
     gt = sub.add_parser('gates')
     gt.add_argument('dirs', nargs='*')
     a = ap.parse_args()
@@ -1052,6 +1224,11 @@ def main():
         return labcov.cmd_coverage(a) if a.cmd == 'coverage' else labcov.cmd_fixcheck(a)
     if a.cmd == 'gates':
         return loggates.main(['report', *a.dirs])
+    if a.cmd == 'flaky':
+        return cmd_flaky(a)
+    if a.cmd == 'impact':
+        import labimpact
+        return labimpact.cmd_impact(a)
     if a.cmd == 'run':
         return cmd_run(a)
     if a.cmd == 'lanes':

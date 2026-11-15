@@ -22,6 +22,12 @@
 
 namespace skg {
 
+// A14 (CORE-6): a mod may install a probe that sees every game call made through the helpers below with the game
+// function's address (coop's game.cpp counts the calls made off the game's main thread, mods/coop/off_main.h). One
+// copy per module (an inline variable of this header); null, the default, costs a load and a branch per call.
+using CallProbe = void (*)(uintptr_t fn);
+inline CallProbe call_probe = nullptr;
+
 template <typename T>
 inline T& field(void* obj, uintptr_t off)
 {
@@ -38,6 +44,8 @@ template <typename R, typename... A>
 inline R thiscall(uintptr_t addr, void* self, A... a)
 {
     using F = R(SK_THISCALL*)(void*, A...);
+    if (call_probe)
+        call_probe(addr);
     return reinterpret_cast<F>(addr)(self, a...);
 }
 
@@ -45,6 +53,8 @@ template <typename R, typename... A>
 inline R cdecl_call(uintptr_t addr, A... a)
 {
     using F = R(SK_CDECL*)(A...);
+    if (call_probe)
+        call_probe(addr);
     return reinterpret_cast<F>(addr)(a...);
 }
 
@@ -52,6 +62,8 @@ template <typename R, typename... A>
 inline R stdcall_call(uintptr_t addr, A... a)
 {
     using F = R(SK_STDCALL*)(A...);
+    if (call_probe)
+        call_probe(addr);
     return reinterpret_cast<F>(addr)(a...);
 }
 
@@ -61,6 +73,8 @@ template <typename R, typename... A>
 inline R vcall(void* self, int index, A... a)
 {
     using F = R(SK_THISCALL*)(void*, A...);
+    if (call_probe)
+        call_probe(reinterpret_cast<uintptr_t>(vtable(self)[index]));
     return reinterpret_cast<F>(vtable(self)[index])(self, a...);
 }
 

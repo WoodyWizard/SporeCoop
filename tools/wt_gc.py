@@ -247,7 +247,7 @@ def plan(repo, into='main', keep=(), min_age_h=48.0, now=None, sizes=True):
                     why = 'a game started from it runs: ' + ', '.join(port)
                 elif users:
                     why = f'in use by process(es) {", ".join(map(str, users[:5]))}'
-                elif age_h < min_age_h:
+                elif min_age_h > 0 and age_h < min_age_h:  # --min-age 0: no age rule (a fresh mtime may lie a tick ahead)
                     why = f'changed {age_h:.1f} h ago (< {min_age_h:g} h)'
         if why:
             kept.append((f'{p} [{b or "detached"}]', why))

@@ -27,7 +27,7 @@ FIELDS = {
         'anim': (N, 'always 0: the animations of a player go by MSG_ANIM (coop.cpp), one message per animation start'),
         'health': (A, 'creature_hp.cpp', r'drive_puppet'),  # Creature; Space: modes.cpp space_puppet_health (BUG-0697)
         'max_health': (A, 'modes.cpp', r'space_puppet_health\(mh, s\.health, s\.max_health'),
-        'species': (A, 'coop.cpp', r'\.species'),
+        'species': (A, 'session_glue.cpp', r'\.species'),  # the host's evolution in place reads the guest's species
         'mode': (A, 'coop.cpp', r'\.mode\b'),
         'world': (A, 'coop.cpp', r'\.world\b'),
         'scale': (A, 'modes.cpp', r's_in\.scale / own'),  # Cell: the sender's world scale (BUG-0519)

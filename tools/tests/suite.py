@@ -8,6 +8,7 @@
             campaign (a whole game of four bot players, coop_campaign.py: in no other suite, run it alone)
             mixed (the previous release and this build in one session, coop_mixed_version.py: in no other suite;
             it uses the neighbour lane too, run it alone: `lab.py run mixed --lane 9` with lane 10 idle)
+            refactor (the dumps that prove a refactoring changed no registry, tools/refactor_dump.py: only by name)
             players (generated variants of chosen tests under the conditions of real players: the guest
             at 15 fps, a mobile / bursty network, both, four players; docs/06-testing.md#testing-degraded)
   warm      may reuse running games of the lane (twoinst.start with SPORE_WARM=1: the fixture is
@@ -55,7 +56,7 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
     """reports=True: the test makes crash / hang reports or faults on purpose and checks them itself;
     for every other test the lab fails it on a new crash-*/report-* file of its lane, a game that
     dies right after it, or a non-zero fault count in its log (tools/lab.py run_one, BUG-0036/0042)"""
-    if {'campaign', 'mixed', 'detector'} & set(suites):  # hours on one lane / a second lane / the detector: only when asked for
+    if {'campaign', 'mixed', 'detector', 'refactor'} & set(suites):  # hours on one lane / a second lane / the detector / a refactoring's proof: only when asked for
         suites = set(suites)
     else:
         suites = set(suites) | ({'nightly'} if {'nightly', 'extended'} & set(suites) else {'full', 'nightly'})
@@ -313,6 +314,7 @@ for fx in ('creature', 'tribe', 'civ_npc'):  # BUG-0791: readable() calls a fram
     add('perf_readable' + ('' if fx == 'creature' else '_' + fx), P + f'perf_readable.py --fixture {fx}', ('extended',), minutes=4, fixture=fx)
 add('kit_initfail', P + 'kit_initfail.py', minutes=3, reports=True)  # the game's own start fails (cSporeApp::Init 0): a report, a mark, the log says what to check, the next start names it and SK_EV_POST_INIT is not fired (BUG-0521; SPORE_FIX_OFF=initfail fails; BUG-1021: SPORE_FIX_OFF=kit.postinit fails)
 add('kit_cmd_unload', P + 'kit_cmd_unload.py', minutes=3)  # mod.unload / mod.reload coop while its coop.sample runs on the console thread: the unload waits, the game lives on (BUG-1018; SPORE_FIX_OFF=kit.cmdkeep fails)
+add('threads', P + 'coop_threads.py', minutes=2)  # A14: the off-main game call counter: 0 to the galaxy menu, a call from the console thread counted once, its log line (BUG-1130; --old: probe off, fails)
 add('kit_watchdog', P + 'kit_watchdog.py', minutes=4, reports=True)  # a minimized / hidden game (no frames, the loop runs) is no hang: an INFO line, no WATCHDOG dump; a blocked main thread still writes the dump and the hang report (BUG-0347; SPORE_FIX_OFF=hangloop fails)
 add('kit_present_hitch', P + 'kit_present_hitch.py', warm=True, minutes=2, fixture='creature', gates={'off': ('hitch',)})  # one 2.6 s frame (kit.test.hang, as the game saved box hitch) is not taken for Present lost: no WARN, frames stay on Present (BUG-0653; SPORE_FIX_OFF=kit.presentlost fails)
 add('kit_overlay_reset', P + 'kit_overlay_reset.py', minutes=4, fixture='creature')  # BUG-1026: a failed CreateStateBlock turns the overlay shapes off only until the next device Reset (Alt+Enter twice): the test triangle is on the screen again (SPORE_FIX_OFF=kit.trireset fails)
@@ -1001,6 +1003,10 @@ add('campaign_ct', P + 'coop_campaign.py --from cell --to tribe --minutes 2 --no
     minutes=45, timeout=3600)
 # BUG-0359 (N2 of 0.7.11): the reported path forced: the host's world share posted again every ~1.5 s through the
 # Creature -> Tribe change (CAMPAIGN_SHARE_SPAM=1), so a share save is being written while the game enters Tribe
+# A6 (BUG-1115, docs/06-testing.md#testing-campaign-segments): the failed segment of a campaign run played again from
+# the save it started from (owner decision 10: a final-check rerun may run only that segment; the full campaign still
+# runs once in the final check): `lab.py run campaign_segment --segment <lab run of the failed campaign>`
+add('campaign_segment', P + 'coop_campaign.py --segment "$CAMPAIGN_SEGMENT"', (), minutes=45, timeout=3600)
 add('campaign_tribe_share', 'CAMPAIGN_SHARE_SPAM=1 ' + P + 'coop_campaign.py --from creature --to tribe --minutes 2 --no-finale', (),
     minutes=30, timeout=3600)
 
@@ -1034,7 +1040,7 @@ add('mem_census_tribe_solo', P + 'coop_mem_census.py --fixture tribe --idle --so
 add('mem_reserve', P + 'coop_mem_reserve.py', minutes=8, fixture='creature', allow=[allow('mem-low', 'BUG-0631', 'the test fills the host\'s address space to 260 MB free on purpose (coop.diag fill)', who='host')])  # BUG-0631: the host's address space filled with 16 MB blocks to 260 MB free: within 2.5 min a free block of 100+ MB is back and the screen says to save and restart; 3 min of play on (SPORE_FIX_OFF=core.mem_reserve fails)
 add('mem_census_short', P + 'coop_mem_census.py --minutes 4 --sample 2', ('extended',), minutes=10, fixture='creature')
 
-SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed', 'detector')
+SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed', 'detector', 'refactor')
 
 
 def select(spec):
@@ -1154,3 +1160,4 @@ add('tribe_mirror_phase', P + 'coop_tribe_mirror_phase.py', warm=True, minutes=5
 add('creature_join_apart', P + 'coop_creature_join_apart.py', warm=True, minutes=3, fixture='creature')  # BUG-0989: a guest that joins on the host's creature's spot is put beside it: 15-20 s after the join the two creatures stand >= 3 m apart on both games (SPORE_FIX_OFF=core.join_apart: one spot)
 add('tribe_chief_still', P + 'coop_tribe_chief_still.py', warm=True, minutes=4, fixture='tribe')  # BUG-1069: the host's chief sampled on both games from the guest's start for 90 s: no stretch over 1 s with its item in the hand on one game only, the hand item the same within 3 s
 add('tribe_chief_tracks', P + 'coop_tribe_chief_tracks.py', warm=True, minutes=4, fixture='tribe')  # BUG-1072: the host's chief's other playing animation tracks (its ~2 s posture loop 0x05EF4EE1, 0x0354559B) and its idle read on both games with mem.read for 90 s: their times within 0.3 s in 85 % of the samples (SPORE_FIX_OFF=tribe.mirror_phase_tracks: seconds apart)
+add('refactor_dump', 'python3 tools/refactor_dump.py capture', ('refactor',), minutes=3, fixture='creature')  # B2 of 0.7.15: the registries of both games (coop.fix list, coop.lifecycle, coop.guard, hooks, help) and the source's message table, compared before / after a refactoring with `tools/refactor_dump.py compare` (docs/10-dev-pipeline.md#pipeline-refactor-proof)

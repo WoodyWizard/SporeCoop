@@ -613,6 +613,11 @@ def run_checks(tickets, ctx):
         for rule, fn in CHECKS:
             for msg in fn(t, ctx):
                 # a private ticket's text never goes into public output beyond its id
+                if t['_private'] and rule in ('commits', 'tests'):
+                    # BUG-1129: out/tickets/ is shared by every worktree, so a private ticket names commits and
+                    # tests of a branch the others do not have yet; there it is a note, not a problem
+                    ctx.notes.append(f'{tid}: {rule}: {msg} (private ticket, shared by all worktrees)')
+                    continue
                 problems.append(f'{tid if t["_private"] else name}: {rule}: {msg}')
     return problems, seen
 

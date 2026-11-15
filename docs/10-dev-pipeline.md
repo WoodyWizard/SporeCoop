@@ -64,7 +64,8 @@ tools/lab.py reload --lane 2                     # dev loop: build + hot reload 
   `out/lab/flaky.json` keeps the history; the summary lists the unstable tests - each one is a
   bug in the test or in the mod and gets fixed, not ignored.
 * `RESULT: SKIP` is shown as `SKIP` / `skip` and counted apart ("PASSED: 14/15, 1 skipped"), never
-  as a pass (BUG-0100).
+  as a pass (BUG-0100). Since 0.7.15 (A15) it is the verdict INCONCLUSIVE, and INCONCLUSIVE three
+  runs in a row is a failure: [Lab verdicts](#pipeline-lab-verdicts).
 * A timeout (30 min) kills the test's whole process group: tests run in their own session
   (BUG-0052: the shell died, the Python test went on driving the lane). Ctrl+C on the lab kills
   the running tests too.
@@ -311,3 +312,62 @@ docs/06-testing.md#testing-crash-symbols.
   `[[maybe_unused]]`). The host test builds (`make test`, HOSTCXX) keep `-Wall` without `-Werror`: CI's host
   clang 14 and the local clang differ.
 * `-Wformat=2` is not on: its 15 `-Wformat-nonliteral` hits are the translated format strings of the UI.
+
+## Lab verdicts, the flaky ledger, repeats and impact runs (2026-11-15, feat/w51-labverdict)
+<a id="pipeline-lab-verdicts"></a>
+
+0.7.15 A6, A7, A8, A15, D5 (BUG-1115..1119); the details and the rules are in
+docs/06-testing.md#testing-lab-verdicts, #testing-campaign-segments and #testing-impact.
+
+```
+tools/lab.py flaky [--branch 'rel/*'] [--days 14] [--test X]   # one flake history over every worktree
+tools/lab.py run X --repeat 20 [--until clear|fail|all]        # stops once the answer is clear, prints the rate
+tools/lab.py impact --why [--base rel/0.7.15]                  # which tests a change can break, and why
+tools/lab.py run impact --lane 2 --lane 3 --retry 0 --no-build # run them (in-between runs only)
+tools/lab.py run campaign_segment --segment <lab run>          # a failed campaign's segment again, from its save
+```
+
+* Verdicts: PASS, FAIL, INCONCLUSIVE. A test whose precondition did not happen prints `RESULT: INCONCLUSIVE <why>`
+  (`RESULT: SKIP <why>` means the same). It is never a pass: shown `INC` / `INCONCLUSIVE`, counted apart ("PASSED:
+  14/15, 1 INCONCLUSIVE (not passed)"); one does not fail the run; the third in a row (the ledger, every worktree,
+  twins and quick runs left out) fails the test with `FAIL lab: INCONCLUSIVE 3 runs in a row ...: ticket candidate`.
+  INCONCLUSIVE is neither half of a FAIL/PASS twin (`lab.py fixcheck`).
+* Every failure has a reason in results.json / summary.md: the FAIL lines, else a campaign's findings, a traceback's
+  exception, the timeout, "no RESULT line".
+* results.json records per result `verdict`, `fix_off` (SPORE_FIX_OFF / SPORE_LAB_FIXOFF), `twin` (planted old
+  behaviour in the lab's environment), `segment` (a failed campaign); summary.md lists each failed or INCONCLUSIVE
+  test's history ("known flake: 5 of 11 failed on rel/main ...") and the ticket candidates. `out/lab/flaky.json` is
+  still written (per checkout) but no longer read by the summary.
+* The final check and the release rule stay full (`run impact` is for fix branches and the integration runs between
+  merges); the full campaign runs once in the final check, a rerun may run only its failed segment (owner decision 10).
+
+## Proving a refactoring: pure moves and identical dumps (2026-11-15, feat/w51-split)
+<a id="pipeline-refactor-proof"></a>
+
+The 0.7.15 rule for refactoring (docs/plan-0.7.15.md "Rules for this release"): a pure move (a file split, a
+function moved) carries no edits in its commit, and it is proved by the build, `make test` and identical dumps of
+the registries before and after. `tools/refactor_dump.py` makes and compares them (B2, BUG-1128; B1 and C8 reuse it).
+
+1. Build the base (`make -j8`) and take its dumps on your lane:
+   `SPORE_DETECTOR=20 python3 tools/lab.py run refactor_dump --lane N --retry 0 --no-build`
+   (suite `refactor`, only by name; about 1 min: a cold start of two games in a Creature session). The log
+   `out/lab/<run>/refactor_dump.log` holds `=== <section>` blocks of both games: `coop.fix list` (count line, then
+   the switches sorted: their registration order is the link order, which a new file changes), `coop.lifecycle`
+   (in table order, the reset order; held counts dropped), `coop.players`, `coop.guard` (names sorted), SporeKit's
+   `hooks` (in the order they were made) and `help` (every command with its help text), and two tables from the
+   source: the message dispatch of `g_sess.cb.custom` (every `MSG_` test and `on_message` call in order, and the
+   count of each `net::MSG_` name over mods/coop) and the session callbacks with a hash of each lambda's body.
+2. Make the move, build, run `make test`, take the dumps again.
+3. `python3 tools/refactor_dump.py compare out/lab/<base run> out/lab/<new run>`: every section must say identical
+   (exit 1 otherwise, with a diff).
+4. `python3 tools/refactor_dump.py moves <base rev> <new rev>` (`.` = the working tree) lists every line of
+   mods/coop/*.cpp|h whose count changed, i.e. what the commit did besides moving lines. For a pure move it shows
+   only includes, declarations, `static` dropped where a name became shared, a default argument kept only on the
+   prototype, wrapper heads and braces. Name these in the commit message.
+5. Behaviour-level check once at the end of a series: the smoke tests on the lane.
+
+Helpers for a split: a definition another file uses loses `static` and gets a declaration in the shared header (for
+the coop core: mods/coop/coop_state.h, docs/01-architecture.md#arch-start-and-frame); a type moves into the header
+with its comment; a `static` forward declaration of a moved function loses `static` too (clang: "static declaration
+follows non-static declaration", or the warning "has internal linkage but is not defined", which becomes a link
+error). B2's commits are the worked example (git log --grep BUG-1128).

@@ -22,6 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(HERE, 'tests')]
 import loggates  # noqa: E402
+import labverdict  # noqa: E402
 
 RUN_ID = re.compile(r'^(\d{8})-(\d{6})')
 
@@ -49,8 +50,10 @@ def runs_by_test(dirs):
 
 
 def verdict(r):
-    if r.get('skipped'):
-        return 'skip'
+    """A15: INCONCLUSIVE (RESULT: INCONCLUSIVE / SKIP) is never a pass; the release rule lists it apart (one is not a
+    failure of the rule, INCONCLUSIVE several runs in a row is a FAIL already: lab.py streak_fails)"""
+    if labverdict.verdict_of(r) == labverdict.INCONCLUSIVE:
+        return 'INCONCLUSIVE'
     if r.get('ok'):
         return 'ok (flaky)' if r.get('flaky') else 'ok'
     return 'FAIL'
@@ -107,10 +110,13 @@ def claims(suite_path):
 
 
 def fix_off_runs(dirs, switch):
-    """[(rundir, test, ok)] of recorded results whose test output switched `switch` off"""
+    """[(rundir, test, ok)] of recorded results whose test output switched `switch` off. A15: an INCONCLUSIVE result
+    (the precondition did not happen; also one the streak rule made a FAIL) is neither half of a twin"""
     needle = f'SPORE_FIX_OFF: {switch} off'
     out = []
     for rundir, data, r in loggates.recorded(dirs):
+        if labverdict.was_inconclusive(r):
+            continue
         _, tlog = loggates.result_logs(rundir, r)
         try:
             text = open(tlog, errors='replace').read()
@@ -151,12 +157,13 @@ def cmd_coverage(a):
     if a.commit:
         req = [s for s in a.require.split(',') if s]
         rows = commit_rule(suite.T, runs, a.commit, req)
-        bad = [(n, v) for n, v in rows if not v.startswith('ok') and v != 'skip']
+        bad = [(n, v) for n, v in rows if not v.startswith('ok') and v != 'INCONCLUSIVE']
         print(f'# release rule: suites {", ".join(req)} on {a.commit}\n\n{len(rows)} tests, '
               f'{len(rows) - len(bad)} passed on this commit\n')
         for n, v in rows:
             if v != 'ok':
-                print(f'- {n}: {v}')
+                print(f'- {n}: {v}' + (' (not a pass; a failure of the rule only in a row: docs/06-testing.md'
+                                       '#testing-lab-verdicts)' if v == 'INCONCLUSIVE' else ''))
         return 1 if bad else 0
     rows = coverage(suite.T, runs, days=a.days)
     never = [r for r in rows if r[6] == 'NEVER RUN']
