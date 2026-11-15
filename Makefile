@@ -73,6 +73,10 @@ $(B)/obj/%.o: %.cpp
 $(B)/sporekit.dll: $(KIT_OBJ) $(MH_OBJ) $(B)/obj/sporekit/sporekit_rc.o
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -lshell32 -ld3d9 -Wl,--out-implib,$(B)/libsporekit.a
 
+# session_glue.cpp takes COOP_VERSION from build/version.h (it is defined in coop.cpp, where the tools read it)
+$(B)/obj/mods/coop/session_glue.o: $(B)/version.h
+$(B)/obj/mods/coop/session_glue.o: CXXFLAGS += -I$(B)
+
 $(B)/coop.dll: $(COOP_OBJ) $(B)/obj/mods/coop/coop_rc.o
 	$(CXX) $(LDDLL) -o $@ $^ -lws2_32 -luser32 -liphlpapi -lwinhttp -lshell32
 

@@ -32,6 +32,8 @@
   pushed only on a green main; CI actions and the compiler download are pinned by hash; every release gets a
   debug-symbols download so crash reports name the function that crashed; the DLLs build with stricter compiler
   settings and warnings as errors.
+- The core of the mod (coop.cpp) is split into smaller files by pure moves, its start and its frame into named
+  phases; `tools/refactor_dump.py` proves such a change left every registry as it was (BUG-1128).
 
 ## [0.7.14.1] - 2026-11-14
 

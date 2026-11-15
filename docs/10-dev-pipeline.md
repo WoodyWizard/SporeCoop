@@ -341,3 +341,33 @@ tools/lab.py run campaign_segment --segment <lab run>          # a failed campai
 * The final check and the release rule stay full (`run impact` is for fix branches and the integration runs between
   merges); the full campaign runs once in the final check, a rerun may run only its failed segment (owner decision 10).
 
+## Proving a refactoring: pure moves and identical dumps (2026-11-15, feat/w51-split)
+<a id="pipeline-refactor-proof"></a>
+
+The 0.7.15 rule for refactoring (docs/plan-0.7.15.md "Rules for this release"): a pure move (a file split, a
+function moved) carries no edits in its commit, and it is proved by the build, `make test` and identical dumps of
+the registries before and after. `tools/refactor_dump.py` makes and compares them (B2, BUG-1128; B1 and C8 reuse it).
+
+1. Build the base (`make -j8`) and take its dumps on your lane:
+   `SPORE_DETECTOR=20 python3 tools/lab.py run refactor_dump --lane N --retry 0 --no-build`
+   (suite `refactor`, only by name; about 1 min: a cold start of two games in a Creature session). The log
+   `out/lab/<run>/refactor_dump.log` holds `=== <section>` blocks of both games: `coop.fix list` (count line, then
+   the switches sorted: their registration order is the link order, which a new file changes), `coop.lifecycle`
+   (in table order, the reset order; held counts dropped), `coop.players`, `coop.guard` (names sorted), SporeKit's
+   `hooks` (in the order they were made) and `help` (every command with its help text), and two tables from the
+   source: the message dispatch of `g_sess.cb.custom` (every `MSG_` test and `on_message` call in order, and the
+   count of each `net::MSG_` name over mods/coop) and the session callbacks with a hash of each lambda's body.
+2. Make the move, build, run `make test`, take the dumps again.
+3. `python3 tools/refactor_dump.py compare out/lab/<base run> out/lab/<new run>`: every section must say identical
+   (exit 1 otherwise, with a diff).
+4. `python3 tools/refactor_dump.py moves <base rev> <new rev>` (`.` = the working tree) lists every line of
+   mods/coop/*.cpp|h whose count changed, i.e. what the commit did besides moving lines. For a pure move it shows
+   only includes, declarations, `static` dropped where a name became shared, a default argument kept only on the
+   prototype, wrapper heads and braces. Name these in the commit message.
+5. Behaviour-level check once at the end of a series: the smoke tests on the lane.
+
+Helpers for a split: a definition another file uses loses `static` and gets a declaration in the shared header (for
+the coop core: mods/coop/coop_state.h, docs/01-architecture.md#arch-start-and-frame); a type moves into the header
+with its comment; a `static` forward declaration of a moved function loses `static` too (clang: "static declaration
+follows non-static declaration", or the warning "has internal linkage but is not defined", which becomes a link
+error). B2's commits are the worked example (git log --grep BUG-1128).

@@ -8,6 +8,7 @@
             campaign (a whole game of four bot players, coop_campaign.py: in no other suite, run it alone)
             mixed (the previous release and this build in one session, coop_mixed_version.py: in no other suite;
             it uses the neighbour lane too, run it alone: `lab.py run mixed --lane 9` with lane 10 idle)
+            refactor (the dumps that prove a refactoring changed no registry, tools/refactor_dump.py: only by name)
             players (generated variants of chosen tests under the conditions of real players: the guest
             at 15 fps, a mobile / bursty network, both, four players; docs/06-testing.md#testing-degraded)
   warm      may reuse running games of the lane (twoinst.start with SPORE_WARM=1: the fixture is
@@ -55,7 +56,7 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
     """reports=True: the test makes crash / hang reports or faults on purpose and checks them itself;
     for every other test the lab fails it on a new crash-*/report-* file of its lane, a game that
     dies right after it, or a non-zero fault count in its log (tools/lab.py run_one, BUG-0036/0042)"""
-    if {'campaign', 'mixed', 'detector'} & set(suites):  # hours on one lane / a second lane / the detector: only when asked for
+    if {'campaign', 'mixed', 'detector', 'refactor'} & set(suites):  # hours on one lane / a second lane / the detector / a refactoring's proof: only when asked for
         suites = set(suites)
     else:
         suites = set(suites) | ({'nightly'} if {'nightly', 'extended'} & set(suites) else {'full', 'nightly'})
@@ -1038,7 +1039,7 @@ add('mem_census_tribe_solo', P + 'coop_mem_census.py --fixture tribe --idle --so
 add('mem_reserve', P + 'coop_mem_reserve.py', minutes=8, fixture='creature', allow=[allow('mem-low', 'BUG-0631', 'the test fills the host\'s address space to 260 MB free on purpose (coop.diag fill)', who='host')])  # BUG-0631: the host's address space filled with 16 MB blocks to 260 MB free: within 2.5 min a free block of 100+ MB is back and the screen says to save and restart; 3 min of play on (SPORE_FIX_OFF=core.mem_reserve fails)
 add('mem_census_short', P + 'coop_mem_census.py --minutes 4 --sample 2', ('extended',), minutes=10, fixture='creature')
 
-SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed', 'detector')
+SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed', 'detector', 'refactor')
 
 
 def select(spec):
@@ -1158,3 +1159,4 @@ add('tribe_mirror_phase', P + 'coop_tribe_mirror_phase.py', warm=True, minutes=5
 add('creature_join_apart', P + 'coop_creature_join_apart.py', warm=True, minutes=3, fixture='creature')  # BUG-0989: a guest that joins on the host's creature's spot is put beside it: 15-20 s after the join the two creatures stand >= 3 m apart on both games (SPORE_FIX_OFF=core.join_apart: one spot)
 add('tribe_chief_still', P + 'coop_tribe_chief_still.py', warm=True, minutes=4, fixture='tribe')  # BUG-1069: the host's chief sampled on both games from the guest's start for 90 s: no stretch over 1 s with its item in the hand on one game only, the hand item the same within 3 s
 add('tribe_chief_tracks', P + 'coop_tribe_chief_tracks.py', warm=True, minutes=4, fixture='tribe')  # BUG-1072: the host's chief's other playing animation tracks (its ~2 s posture loop 0x05EF4EE1, 0x0354559B) and its idle read on both games with mem.read for 90 s: their times within 0.3 s in 85 % of the samples (SPORE_FIX_OFF=tribe.mirror_phase_tracks: seconds apart)
+add('refactor_dump', 'python3 tools/refactor_dump.py capture', ('refactor',), minutes=3, fixture='creature')  # B2 of 0.7.15: the registries of both games (coop.fix list, coop.lifecycle, coop.guard, hooks, help) and the source's message table, compared before / after a refactoring with `tools/refactor_dump.py compare` (docs/10-dev-pipeline.md#pipeline-refactor-proof)
