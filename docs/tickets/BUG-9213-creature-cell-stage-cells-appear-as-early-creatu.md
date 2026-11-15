@@ -33,3 +33,4 @@ Not analysed yet; no screenshot. No creation of the cell type (0x40616000) was r
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (night): opened from the owner's play test (build 87d69a05 on both PCs).
+- 2026-11-15: owner: "It was Wilson as a Cell. Even the discovery image on the top right of the screen showed the cell stage 2D / Top Down image." A cell creation is used as a creature species of the new world.

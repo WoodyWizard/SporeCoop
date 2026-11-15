@@ -33,3 +33,4 @@ Observed (the MSI log): the pre-game start editor opened at 02:09:31 with the ho
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (night): opened from the owner's play test (build 87d69a05 on both PCs).
+- 2026-11-15: owner: "The box said 'Name Your Creature' and when I clicked it, it raised the name menu (showing description and tags) however it still said 'Name Your Creature' at the top. Upon clicking that, it closed that name menu. It was like I was unable to even access the naming field." (the MSI, 1280 x 960). The click on the panel's name field toggled the panel instead of focusing the field: to reproduce on the MSI.
