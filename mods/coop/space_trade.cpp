@@ -2027,9 +2027,10 @@ static std::string debug(const std::vector<std::string>& a)
                  (unsigned)g_inv_missed.size(), g_inv_missed_epoch, g_inv_missed_kept); // BUG-0826
         return inv_status() + b;
     }
-    if (a[0] == "cargo" && a.size() >= 3) { // tests (BUG-0679): cargo <type 0|1|5|6> <hex instance> [n]: the game's factory
+    if (a[0] == "cargo" && a.size() >= 3) { // tests (BUG-0679): cargo <type 0|1|5|6> <hex instance>[:type:group] [n]: the game's factory
         Key k;
         k.v[0] = (uint32_t)strtoul(a[2].c_str(), nullptr, 16);
+        sscanf(a[2].c_str(), "%x:%x:%x", &k.v[0], &k.v[1], &k.v[2]); // BUG-1148: a species key as a planet record holds it
         int n = a.size() > 3 ? atoi(a[3].c_str()) : 1;
         bool ok = add_cargo((uint8_t)atoi(a[1].c_str()), k, n);
         snprintf(b, sizeof b, "cargo %s %08X x%d: %s\n", a[1].c_str(), k.v[0], n, ok ? "added" : "not made");
