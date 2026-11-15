@@ -117,14 +117,12 @@ static void SK_CDECL h_AddEvo(float delta)
 // has none, so moving the others down changes no count).
 typedef void(SK_THISCALL* HerdUpdate_t)(void*, int);
 static HerdUpdate_t o_HerdUpdate;
-static bool g_herd_nulls_fix = true;
-COOP_FIX("npc.herd_nulls", "BUG-0256", g_herd_nulls_fix, "creature: a herd loaded with a null member does not fault every frame");
 static uint32_t g_herd_nulls_removed, g_herd_nulls_herds;
 static void* g_herd_nulls_last;
 
 static void SK_THISCALL h_HerdUpdate(void* herd, int dt)
 {
-    if (g_herd_nulls_fix && herd && !IsBadReadPtr((uint8_t*)herd + 0x40, 8)) {
+    if (herd && !IsBadReadPtr((uint8_t*)herd + 0x40, 8)) {
         void**& b = *(void***)((uint8_t*)herd + 0x40);
         void**& e = *(void***)((uint8_t*)herd + 0x44);
         if (b && e > b && !IsBadReadPtr(b, (size_t)((uint8_t*)e - (uint8_t*)b))) {
@@ -153,8 +151,8 @@ static void SK_THISCALL h_HerdUpdate(void* herd, int dt)
 std::string herd_nulls_status()
 {
     char b[120];
-    snprintf(b, sizeof b, "herd nulls: fix=%d hooked=%d removed=%u herds=%u", (int)g_herd_nulls_fix,
-             (int)(o_HerdUpdate != nullptr), g_herd_nulls_removed, g_herd_nulls_herds);
+    snprintf(b, sizeof b, "herd nulls: hooked=%d removed=%u herds=%u", (int)(o_HerdUpdate != nullptr),
+             g_herd_nulls_removed, g_herd_nulls_herds);
     return b;
 }
 
@@ -1214,11 +1212,8 @@ bool stop_world_effect(void* effect)
 // food mat at +0x260 and calls [+0x260]+0x34 vt+0x2C (its position) without a null check. After the City Hall editor
 // at the end of Tribe the player tribe has no food mat any more (+0x260 = 0) while the stage still runs for the
 // vehicle editor's vote and captions; a guest's food change relayed then (shared.cpp) faulted the host's game at
-// UpdateFoodVisuals+0x28 (data 0x34) inside the message pump and froze it. On: no visual without the food mat (the
-// food itself is changed). `coop.fix tribe.food_fx_mat off`: called anyway (0.7.6).
-static bool g_food_fx_fix = true;
-COOP_FIX("tribe.food_fx_mat", "BUG-0585", g_food_fx_fix,
-         "tribe: no +N/-N food visual on a tribe without its food mat (the end of Tribe: the City Hall stands)");
+// UpdateFoodVisuals+0x28 (data 0x34) inside the message pump and froze it. No visual without the food mat (the
+// food itself is changed).
 unsigned g_food_fx_skipped; // tests
 bool tribe_food_visuals(void* tribe, float change)
 {
@@ -1226,7 +1221,7 @@ bool tribe_food_visuals(void* tribe, float change)
     if (!f || !tribe || !skg::readable((uint8_t*)tribe + 0x260, 4))
         return false;
     uint8_t* mat = *(uint8_t**)((uint8_t*)tribe + 0x260);
-    if (g_food_fx_fix && (!mat || !skg::readable(mat + 0x34, 4) || !skg::readable(*(void**)(mat + 0x34), 0x30))) {
+    if (!mat || !skg::readable(mat + 0x34, 4) || !skg::readable(*(void**)(mat + 0x34), 0x30)) {
         if (g_food_fx_skipped++ < 3)
             H->log(M, SK_INFO, "tribe: no food visual: the tribe has no food mat (the City Hall stands, BUG-0585)");
         return false;
@@ -1524,10 +1519,7 @@ bool in_creature_stage() { return mode_id() == 0x1654C01; }
 // noun manager's avatar field kept the freed avatar for about a second and every guest of a
 // 4-player campaign faulted in max_health (its vtable read 0x01) from creature_fill. From the moment
 // the quit is posted or handled until the mode changes (30 s at most) there is no avatar, and an
-// avatar whose vtables are no longer the game's is never handed out. `coop.fix world.leave_avatar
-// off`: the avatar field as it is (tests).
-static bool g_leave_fix = true;
-COOP_FIX("world.leave_avatar", "BUG-0264", g_leave_fix, "creature: no avatar while the game leaves the stage for the galaxy menu (it is freed before the mode changes)");
+// avatar whose vtables are no longer the game's is never handed out.
 constexpr double kLeaveMax = 30.0;
 static uint32_t g_leave_mode = 0; // the stage being left, 0 = none
 static double g_leave_at = 0;
@@ -1588,7 +1580,7 @@ void* avatar()
     uint32_t m = mode_id();
     if (m != 0x1654C01 && m != 0x1654C10) // creature stage, adventures (the captain)
         return nullptr;
-    if (g_leave_fix && leaving_stage()) {
+    if (leaving_stage()) {
         g_leave.refused++;
         return nullptr;
     }
@@ -1598,7 +1590,7 @@ void* avatar()
     if (!nm)
         return nullptr;
     void* av = field<void*>(nm, kNounAvatarOff);
-    if (g_leave_fix && av && !creature_vtables_ok(av)) {
+    if (av && !creature_vtables_ok(av)) {
         g_leave.bad_vtable++;
         return nullptr;
     }
@@ -1812,9 +1804,6 @@ COOP_FIX("npc.defer_identity", "BUG-0825", g_defer_identity_fix, "creature: a cr
 static bool g_destroy_defer = true; // tests: off = at once, as before (coop.npc cinedefer off)
 COOP_FIX("npc.cinedefer", "BUG-0018", g_destroy_defer, "creature: creatures removed during a cinematic go when it is over");
 void set_destroy_defer(bool on) { g_destroy_defer = on; }
-static bool g_defer_keeps_puppet = true; // tests: off = unregistered at once (coop.npc deferpuppet off, BUG-0066)
-COOP_FIX("npc.deferpuppet", "BUG-0066", g_defer_keeps_puppet, "creature: a deferred puppet or proxy keeps its puppet state");
-void set_defer_keeps_puppet(bool on) { g_defer_keeps_puppet = on; }
 
 bool destroy_pending(void* c)
 {
@@ -1839,7 +1828,7 @@ void destroy_creature(void* c)
     bool defer = g_destroy_defer && noun_id(c) == 0x18EB45Eu && cinematic_running();
     // a puppet or proxy that waits stays one (BUG-0066): no AI of its own (h_NPCTickAI), not an
     // NPC for host_tick to send to the guests. It leaves the puppet list when it is destroyed.
-    if (!defer || !g_defer_keeps_puppet)
+    if (!defer)
         puppet_unregister(c); // also used for UFOs and other cGameData puppets
     if (defer) {
         if (destroy_pending(c))
@@ -1945,9 +1934,7 @@ static bool pose_refused(const net::Vec3* p, const net::Quat* q)
 // drawing still grounded it; writes at the mod's frame were undone by it). Not the physics' simple path
 // (+0xF90 = 1, LOD +0xEAC = 2 in every such frame, out/lab/20261106-042950). After the physics manager's update
 // (SporeCoop::PhysicsManager_Update, hooked by gamefixes.cpp for BUG-0449) a puppet whose target stands > 0.3 m over GetHeightAt and that was put within
-// 0.1 m of it is lifted back to its target's height over the ground. Off: 0.7.8.
-static bool g_culled_ground_fix = true;
-COOP_FIX("creature.culled_ground", "BUG-0434", g_culled_ground_fix, "creature: the partner's creature on a nest mound stays on it while off the screen (no low frame when it comes into view)");
+// 0.1 m of it is lifted back to its target's height over the ground.
 struct MoundHold {
     void* c;
     net::Vec3 tgt;
@@ -2058,7 +2045,7 @@ void after_physics() // gamefixes.cpp's hook of the physics update (BUG-0449), a
             if (creature_listed(cs[i]))
                 place_reassert(cs[i]);
     }
-    if (!g_culled_ground_fix || g_mound.empty())
+    if (g_mound.empty())
         return;
     double now = H->time_seconds();
     for (size_t i = 0; i < g_mound.size();) {
@@ -2477,14 +2464,11 @@ float dna()
 // the own editor's price) through AddEvolutionPoints: each editor spend lowered the other player's bar by the amount
 // (players: "the evolution bar reset to almost 0", "halved"). With the fix a negative change (a spend, anyone's)
 // writes the DNA only, never below 0; a gain still goes through AddEvolutionPoints and raises the bar as the game's
-// rewards do. Off (`coop.fix creature.bar_spend off`): 0.7.8, every change through AddEvolutionPoints.
-static bool g_bar_spend_fix = true;
-COOP_FIX("creature.bar_spend", "BUG-0630", g_bar_spend_fix,
-         "creature: a DNA spend shared between players (an editor's price) moves the DNA only, not the evolution bar");
+// rewards do.
 
 void dna_add_raw(float delta)
 {
-    if (g_bar_spend_fix && delta < 0) {
+    if (delta < 0) {
         if (uintptr_t set = H->sym("Simulator::cCreatureGameData::SetEvolutionPoints")) {
             cdecl_call<void>(set, std::max(0.f, dna() + delta));
             return;
@@ -2511,19 +2495,14 @@ void set_dna_listener(DnaListener fn) { g_dna_listener = fn; }
 
 // BUG-0433: TimeOfDay_Unavailable (= Simulator::GetCurrentContext, [[SpacePlayerData]+0x10]) reads the
 // game's SpacePlayerData, which does not exist before the game reaches its main menu: a session hosted then
-// (game mode 0) crashed in the host's once-a-second time-of-day send (on_frame -> time_of_day). Off: the
-// read as before (the test coop_tod_early.py crashes the host).
-static bool g_tod_guard_fix = true;
-COOP_FIX("core.tod_guard", "BUG-0433", g_tod_guard_fix,
-         "core: no time-of-day read or write while the game has no SpacePlayerData yet (before the main menu)");
+// (game mode 0) crashed in the host's once-a-second time-of-day send (on_frame -> time_of_day). No read or
+// write without SpacePlayerData.
 
 static void* tod_object()
 {
-    if (g_tod_guard_fix) {
-        uintptr_t spd = H->sym("Simulator::SpacePlayerData::ptr");
-        if (!mode_id() || !spd || !*(void**)spd)
-            return nullptr;
-    }
+    uintptr_t spd = H->sym("Simulator::SpacePlayerData::ptr");
+    if (!mode_id() || !spd || !*(void**)spd)
+        return nullptr;
     uintptr_t un = H->sym("SporeCoop::TimeOfDay_Unavailable"), get = H->sym("SporeCoop::TimeOfDay_GetObject");
     if (!un || !get || cdecl_call<int>(un) != 0)
         return nullptr;

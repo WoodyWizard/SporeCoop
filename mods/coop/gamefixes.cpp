@@ -175,9 +175,6 @@ static void __fastcall next_adapter_guard(void* app, void*)
 using HoverFn = void*(__thiscall*)(void*, void*, int);
 static HoverFn g_hover_orig;
 static std::atomic<unsigned> g_dead_modal{0};
-static bool g_dead_modal_fix = true;
-COOP_FIX("game.dead_modal", "BUG-0270", g_dead_modal_fix,
-         "gamefixes: a destroyed modal window left in the window manager is dropped before a mouse message uses it");
 static uintptr_t g_code_lo, g_code_hi; // the game's image (no VirtualQuery for its addresses)
 static uintptr_t g_test_vt[0x100 / 4]; // tests: a vtable as the destroyed object's (slots past the code)
 static uintptr_t g_test_obj[4];
@@ -254,7 +251,7 @@ static void* __fastcall hover_guard(void* wm, void*, void* out, int flag)
     drop_dead_listed((uint8_t*)wm, "UpdateHover");
     uint8_t* m = (uint8_t*)wm;
     void* modal = m ? *(void**)(m + 0x82C) : nullptr;
-    if (g_dead_modal_fix && modal && !modal_alive(modal)) {
+    if (modal && !modal_alive(modal)) {
         uintptr_t* list = (uintptr_t*)(m + 0x81C);
         bool more = *list != (uintptr_t)list; // other modal windows under it (left in the list)
         *(void**)(m + 0x82C) = nullptr;
@@ -336,9 +333,6 @@ using OffStageFn = void(__thiscall*)(void*, void*);
 using IdleWalkFn = void(__cdecl*)(void*);
 static OffStageFn g_offstage_orig;
 static IdleWalkFn g_idle_walk; // 0xD57680, what the check calls for a citizen with nowhere to go
-static bool g_leave_walk_fix = true;
-COOP_FIX("tribe.leave_walk", "BUG-0285 BUG-0310", g_leave_walk_fix,
-         "gamefixes: a citizen already cleaned up while the Tribe stage is left is not sent on a new walk (fault in SetMoveScale)");
 constexpr uint32_t kCitizenNoun = 0x18EB4B7;
 constexpr uint32_t kTribeMode = 0x1654C02;
 static std::atomic<unsigned> g_offstage_calls{0}, g_offstage_citizens{0}, g_leave_walk_skipped{0};
@@ -373,15 +367,10 @@ static void __fastcall offstage_guard(void* mgr, void*, void* obj)
         g_offstage_orig(mgr, obj);
         return;
     }
-    if (g_leave_walk_fix) { // (in the Tribe mode the check does nothing for a citizen: skipping it is the same)
-        if (++g_leave_walk_skipped <= 8)
-            H->log(M, SK_WARN, "game fixes: citizen %p was cleaned up (+0xB54 0) but is checked for a new walk: skipped (mode %08X)",
-                   c, mode);
-    } else if (test && g_idle_walk) {
-        g_idle_walk(c); // the old code's path for this citizen (the check's own end: no place in range)
-    } else {
-        g_offstage_orig(mgr, obj);
-    }
+    // (in the Tribe mode the check does nothing for a citizen: skipping it is the same)
+    if (++g_leave_walk_skipped <= 8)
+        H->log(M, SK_WARN, "game fixes: citizen %p was cleaned up (+0xB54 0) but is checked for a new walk: skipped (mode %08X)",
+               c, mode);
     if (test)
         *(void**)(c + 0xB54) = saved;
 }
@@ -389,9 +378,8 @@ static void __fastcall offstage_guard(void* mgr, void*, void* obj)
 // tests: the game's own path to the fault is a citizen in a certain action as the mode changes (a
 // long session); none came in the lab's leaves (docs/re/tribe.md#tribe-offstage-action). So in the
 // first frame the Tribe stage is being left (quit posted) the armed stand-in puts one player member
-// through the guard as the game would have: +0xB54 cleared, then the guard (fix on: skipped) or the
-// old code's walk (fix off: WalkTo faults in SetMoveScale, caught by the game's handler as in the
-// campaign). Returns whether it fired.
+// through the guard as the game would have: +0xB54 cleared, then the guard skips it (BUG-0285).
+// Returns whether it fired.
 bool leave_walk_armed() { return g_leave_walk_test; }
 
 bool leave_walk_tick(void* citizen)
@@ -424,9 +412,6 @@ std::string arm_leave_walk()
 using PhysUpdateFn = void(__thiscall*)(void*, uint32_t);
 static PhysUpdateFn g_phys_orig;
 static uintptr_t g_phys_world; // address of the physics world pointer
-static bool g_phys_owner_fix = true;
-COOP_FIX("game.physics_owner", "BUG-0449", g_phys_owner_fix,
-         "gamefixes: a physics body without an owner is left out of the physics update (the game faulted on it in every frame)");
 constexpr uint32_t kBodySize = 0x138, kBodyKindOff = 0x4, kBodyOwnerOff = 0x40, kBodyKindSkip = 3;
 static std::atomic<unsigned> g_phys_orphans{0}, g_phys_scans{0};
 static std::atomic<bool> g_phys_test{false}; // tests: the next update first gets a body without an owner
@@ -473,27 +458,25 @@ static void make_orphan(BodyPool& p)
 static void __fastcall phys_update_guard(void* mgr, void*, uint32_t dt)
 {
     BodyPool p;
-    if ((g_phys_owner_fix || g_phys_test) && body_pool(p)) {
+    if (body_pool(p)) {
         if (g_phys_test.exchange(false))
             make_orphan(p);
-        if (g_phys_owner_fix) {
-            g_phys_scans++;
-            for (uint32_t i = 0; i < p.high; i++) {
-                uint8_t* e = p.base + (size_t)i * p.size;
-                int kind = at<int>(e, kBodyKindOff);
-                if ((kind != 0 && kind != 1) || at<void*>(e, kBodyOwnerOff) || !body_live(p, i))
-                    continue;
-                unsigned n = ++g_phys_orphans;
-                if (n <= 8) // (head == the slot: freed twice, the pool's free list points at itself)
-                    H->log(M, SK_WARN, "game fixes: physics body %u (word %08X, kind %d) has no owner: left out of the physics "
-                           "update (pool head %u count %u high %u%s)", i, at<uint32_t>(e, 0), kind, p.head, p.count, p.high,
-                           p.head == i ? ", the free list's head: freed twice?" : "");
-                *(int*)(e + kBodyKindOff) = kBodyKindSkip;
-            }
+        g_phys_scans++;
+        for (uint32_t i = 0; i < p.high; i++) {
+            uint8_t* e = p.base + (size_t)i * p.size;
+            int kind = at<int>(e, kBodyKindOff);
+            if ((kind != 0 && kind != 1) || at<void*>(e, kBodyOwnerOff) || !body_live(p, i))
+                continue;
+            unsigned n = ++g_phys_orphans;
+            if (n <= 8) // (head == the slot: freed twice, the pool's free list points at itself)
+                H->log(M, SK_WARN, "game fixes: physics body %u (word %08X, kind %d) has no owner: left out of the physics "
+                       "update (pool head %u count %u high %u%s)", i, at<uint32_t>(e, 0), kind, p.head, p.count, p.high,
+                       p.head == i ? ", the free list's head: freed twice?" : "");
+            *(int*)(e + kBodyKindOff) = kBodyKindSkip;
         }
     }
     g_phys_orig(mgr, dt);
-    game::after_physics(); // BUG-0434 (creature.culled_ground)
+    game::after_physics(); // BUG-0434
 }
 
 // BUG-0719 (class BUG-0432, tests): the fill of the game's fixed object pools every stage uses (the physics
@@ -548,9 +531,6 @@ std::string arm_physics_orphan()
 // check does (return 0), animation or not.
 using AttackTickFn = int(__cdecl*)(void*, void*, void*, void*, void*, void*, void*, void*, void*, void*);
 static AttackTickFn g_attack_orig;
-static bool g_attack_target_fix = true;
-COOP_FIX("npc.attack_lost_target", "BUG-0453", g_attack_target_fix,
-         "creature: an NPC whose target is removed during its attack animation ends the attack (the game read the missing target)");
 static std::atomic<unsigned> g_attack_ended{0};
 static std::atomic<int> g_attack_cut_test{0}; // tests: armed by coop.attackcut
 static unsigned g_attack_cuts = 0;
@@ -576,7 +556,7 @@ static int __cdecl attack_tick_guard(void* c, void* a2, void* a3, void* a4, void
 {
     if (g_attack_cut_test && c && readable(c, 0xE80) && at<void*>(c, 0xE7C))
         attack_cut(c, (const uint8_t*)a6);
-    if (g_attack_target_fix && c && readable(c, 0xE80) && !at<void*>(c, 0xE7C)) {
+    if (c && readable(c, 0xE80) && !at<void*>(c, 0xE7C)) {
         unsigned n = ++g_attack_ended;
         if (n <= 8 || n % 100 == 0)
             H->log(M, SK_INFO, "game fixes: NPC %p is in its attack with no target (removed): the attack ends (BUG-0453, %u)",
@@ -599,9 +579,6 @@ static int __cdecl attack_tick_guard(void* c, void* a2, void* a3, void* a4, void
 // cleared as 0xBC9A60 clears one (masks, value, the sender released), the others stay.
 using DestroyFn = void(__thiscall*)(void*, void*);
 static DestroyFn g_destroy_orig;
-static bool g_stale_sender_fix = true;
-COOP_FIX("npc.stale_sender", "BUG-0456", g_stale_sender_fix,
-         "creature: a destroyed creature is taken out of every NPC's stimuli (the AI read it after it was gone)");
 static std::atomic<unsigned> g_senders_cleared{0}, g_destroys_scanned{0};
 constexpr uint32_t kAnimalNoun = 0x018EB45Eu; // (kCitizenNoun 0x18EB4B7: above)
 constexpr size_t kAiOff = 0xB4C, kStimOff = 8, kStimSlot = 0x38, kStimSender = 0x2C, kStimUnion = 0x1C0;
@@ -931,7 +908,7 @@ static void __fastcall destroy_guard(void* nm, void*, void* obj)
     game::note_destroyed(obj); // (BUG-0426: the object list of this frame, game::listed)
     if (g_destroy_listener && obj)
         g_destroy_listener(obj, (uintptr_t)__builtin_return_address(0));
-    if (g_stale_sender_fix && obj && readable(obj, 0x30)) {
+    if (obj && readable(obj, 0x30)) {
         uint32_t noun = game::noun_id(obj);
         if (noun == kAnimalNoun || noun == kCitizenNoun)
             forget_sender(obj);
@@ -989,9 +966,6 @@ using UfoSetModelFn = void(__thiscall*)(void*, const uint32_t*, uint32_t);
 using UfoSetVisibleFn = void(__thiscall*)(void*, uint32_t);
 static UfoSetModelFn g_ufo_model_orig;
 static UfoSetVisibleFn g_ufo_visible_orig;
-static bool g_ufo_model_fix = true;
-COOP_FIX("game.ufo_model", "BUG-0546", g_ufo_model_fix,
-         "gamefixes: a ship whose model this game lacks (an incomplete Sporepedia cache) gets the default UFO model instead of a crash at 0xE98DD0");
 static std::atomic<unsigned> g_ufo_defaulted{0}, g_ufo_invisible_skipped{0};
 static const uint32_t kUfoModelType = 0x476A98C7, kDefaultUfo[3] = {0x9D5DB21A, kUfoModelType, 0x40656200};
 
@@ -1009,7 +983,7 @@ static bool ufo_key_known(const uint32_t* key)
 
 static void __fastcall ufo_set_model_guard(void* gfx, void*, const uint32_t* key, uint32_t bake)
 {
-    if (g_ufo_model_fix && key && readable(key, 12) && (key[0] || key[2])) {
+    if (key && readable(key, 12) && (key[0] || key[2])) {
         if (ufo_key_known(key)) {
             memcpy(g_ufo_good, key, sizeof g_ufo_good);
         } else {
@@ -1035,7 +1009,7 @@ static void __fastcall ufo_set_model_guard(void* gfx, void*, const uint32_t* key
 
 static void __fastcall ufo_set_visible_guard(void* gfx, void*, uint32_t visible)
 {
-    if (g_ufo_model_fix && gfx && readable(gfx, 4)) {
+    if (gfx && readable(gfx, 4)) {
         void** vt = *(void***)gfx;
         using GetModelFn = void*(__thiscall*)(void*);
         if (vt && readable(vt + 0x2C / 4, 4) && !((GetModelFn)vt[0x2C / 4])(gfx)) {
@@ -1150,7 +1124,7 @@ static int c_captain(void*, int argc, const char* const* argv, SkOut* out)
 // the gfx vtable 0x1486F6C, thiscall(any, cUFO*) ret 4) news a cUFOGfx (0xD8 bytes, ctor 0xE993A0), runs its
 // InitFromUfo (vt 0x24), then, outside game mode 0x1654C10, writes GetModel() (vt 0x2C) +4 |= 0x20 without a null
 // check: a read of 0x4 at 0xE99524 when the model world made no model for the ship's key (SetModel keeps none; the
-// game.ufo_model substitute needs a known ship model, which a Creature game has not). Seen on the host when the
+// BUG-0546 substitute needs a known ship model, which a Creature game has not). Seen on the host when the
 // Creature Drama Manager's UFO visit started while the evolution vote held the editor request (lab lanes 2 and 3,
 // whose Sporepedia caches hold UFO summaries only). The gfx's message listener (this = gfx + 0x3C,
 // SporeCoop::UfoGfx_HandleMessage 0xE9A7A0, thiscall(listener, id, data) ret 8) writes GetModel()+0x18 on message
@@ -1240,12 +1214,8 @@ std::string arm_attack_cut()
 // (rec+0x40 / +0x44 the spots, 0x1C bytes each). Its sibling 0xD72690 (giving a spot back) checks the null. A host
 // faulted there every frame after its own creature attack (lab, tribe_bounce_world). With no record the guard
 // answers "no free spot" (out = -1, false), the game's own branch that ends the attacker's behaviour.
-// `coop.fix tribe.attack_spot off`: the game's read as before.
 using TakeSpotFn = uint32_t(__cdecl*)(const float*, const float*, void*, uint32_t*);
 static TakeSpotFn g_spot_orig;
-static bool g_attack_spot_fix = true;
-COOP_FIX("tribe.attack_spot", "BUG-0582", g_attack_spot_fix,
-         "tribe: an animal of a creature attack whose village spot is gone ends its attack (the game read the missing spot)");
 static std::atomic<unsigned> g_spots_missing{0};
 static std::atomic<int> g_spot_cut_test{0}; // tests: coop.spotcut (the next lookup finds no record)
 static unsigned g_spot_cuts = 0;
@@ -1258,7 +1228,7 @@ static uint32_t __cdecl take_spot_guard(const float* a, const float* b, void* re
         H->log(M, SK_WARN, "game fixes: tests: an attacker's spot record %p is left out (BUG-0582)", rec);
         rec = nullptr;
     }
-    if (!rec && g_attack_spot_fix) {
+    if (!rec) {
         unsigned n = ++g_spots_missing;
         if (n <= 8 || n % 100 == 0)
             H->log(M, SK_INFO, "game fixes: a creature attack's attacker has no spot record: its attack ends (BUG-0582, %u)", n);
@@ -1290,14 +1260,10 @@ std::string arm_spot_cut()
 // vtable in the game, slots 2 / 3 in its code). A broken one leaves the list without a call (no Release on freed
 // memory: the reference is lost, not dropped twice); the game makes the effect again when it wants it.
 // Not verified against the players' crash: who freed the component is not known (docs/re/tribe.md#tribe-model-fx-guard).
-// `coop.fix game.model_fx off`: the loops run on whatever is listed (0.7.7).
 using OwnerFn = void(__thiscall*)(void*);
 using OwnerXfFn = void(__thiscall*)(void*, void*);
 static OwnerFn g_fx_dist_orig;
 static OwnerXfFn g_fx_xf_orig;
-static bool g_model_fx_fix = true;
-COOP_FIX("game.model_fx", "BUG-0575", g_model_fx_fix,
-         "gamefixes: a model's attached effect whose parts were freed leaves the model's list before the camera starts it (the guest crashed at 0xA826F3)");
 static std::atomic<unsigned> g_model_fx_dropped{0};
 static uintptr_t g_text_lo, g_text_hi, g_fx_vt, g_fx_start;
 static uint8_t* g_fxcut_owner; // tests (coop.fxcut): the planted effect's list owner, entry index, effect
@@ -1343,7 +1309,7 @@ static bool model_fx_ok(uintptr_t fx)
 
 static void model_fx_scrub(void* owner, const char* where)
 {
-    if (!g_model_fx_fix || !owner || !g_text_hi)
+    if (!owner || !g_text_hi)
         return;
     uintptr_t b = at<uintptr_t>(owner, 0xC0), e = at<uintptr_t>(owner, 0xC4);
     if (b == e || !heap_ptr(b) || e < b || (e - b) % 0x3C || (e - b) / 0x3C > 256)
@@ -1530,12 +1496,8 @@ static int c_fxlist(void*, int argc, const char* const* argv, SkOut* out)
 // the freed memory (a host at 0xB097C2, lab 20261105-100942). Before the take the guard takes such free fruit, and any
 // entry of the two vectors that is not a cFruit (its vtable), out of its vector without a Release (kept alive: a few
 // hundred bytes lost); a null take is the game's own "no fruit" (nothing falls this time).
-// `coop.fix game.fruit_pool off`: the take reads whatever is listed (0.7.7).
 using TakeFruitFn = void*(__thiscall*)(void*);
 static TakeFruitFn g_take_fruit_orig;
-static bool g_fruit_pool_fix = true;
-COOP_FIX("game.fruit_pool", "BUG-0584", g_fruit_pool_fix,
-         "gamefixes: a freed fruit, or a free one the take would free, leaves the plants' fruit pool before a fruit falls (a host faulted at 0xB097C2)");
 static std::atomic<unsigned> g_fruit_dropped{0};
 static uintptr_t g_fruit_vt;
 constexpr size_t kFreeFruit = 0x1B8F44, kLooseFruit = 0x1B905C;
@@ -1564,7 +1526,7 @@ static unsigned fruit_vec_scrub(uint8_t* flora, size_t off)
 
 static void* __fastcall take_fruit_guard(void* flora, void*)
 {
-    if (g_fruit_pool_fix && flora && g_fruit_vt) {
+    if (flora && g_fruit_vt) {
         unsigned f = fruit_vec_scrub((uint8_t*)flora, kFreeFruit), l = fruit_vec_scrub((uint8_t*)flora, kLooseFruit);
         if (f + l) {
             unsigned n = g_fruit_dropped += f + l;
@@ -1635,9 +1597,6 @@ static CreateSaveAreaFn g_create_area;
 static RegisterSaveAreaFn g_register_area;
 static GetDatabaseFn g_get_db;
 static std::atomic<unsigned> g_areas_made{0}, g_areas_failed{0};
-static bool g_save_areas_fix = true;
-COOP_FIX("game.save_areas", "BUG-0506", g_save_areas_fix,
-         "gamefixes: missing Pictures / Movies / Animations save areas get a fallback folder right after the game's startup (settings, editors, screenshots)");
 
 static void ensure_save_areas()
 {
@@ -1671,8 +1630,8 @@ static void log_areas(const char* when)
 {
     if (!g_get_db)
         return;
-    H->log(M, SK_INFO, "game fixes: save areas %s: Pictures=%p Movies=%p Animations=%p (fix %s)", when, g_get_db(0x011AC196),
-           g_get_db(0x011AC197), g_get_db(0x011AC198), g_save_areas_fix ? "on" : "off");
+    H->log(M, SK_INFO, "game fixes: save areas %s: Pictures=%p Movies=%p Animations=%p", when, g_get_db(0x011AC196),
+           g_get_db(0x011AC197), g_get_db(0x011AC198));
 }
 
 static void __cdecl areas_init_guard()
@@ -1680,8 +1639,7 @@ static void __cdecl areas_init_guard()
     g_areas_init_orig();
     g_areas_checked = true;
     log_areas("after the game's startup");
-    if (g_save_areas_fix)
-        ensure_save_areas();
+    ensure_save_areas();
 }
 
 // BUG-0676: the galaxy menu (GalaxyGameEntry, global [0x16A1344]) keeps the planet under the mouse at +0xF8 (the
@@ -1883,15 +1841,13 @@ void frame()
     g_areas_checked = true; // the init ran before our hook (hot reload, a late load): check once now
     H->run_outside_frame([](void*) {
         log_areas("at the first frame");
-        if (g_save_areas_fix)
-            ensure_save_areas();
+        ensure_save_areas();
     }, nullptr);
 }
 
 static void __fastcall settings_build_guard(void* self, void*, void* a, void* b, void* c)
 {
-    if (g_save_areas_fix)
-        ensure_save_areas();
+    ensure_save_areas();
     g_settings_orig(self, a, b, c);
 }
 

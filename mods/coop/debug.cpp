@@ -280,7 +280,7 @@ int c_spotcut(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
-// tests (BUG-0686): game.ufo_model forgets the last known ship model
+// tests (BUG-0686): the ship model guard (BUG-0546) forgets the last known ship model
 int c_ufoforget(void*, int, const char* const*, SkOut* out)
 {
     SAY("%s", gamefixes::ufo_forget().c_str());

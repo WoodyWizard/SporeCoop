@@ -52,7 +52,7 @@ void stage_epoch_tick();
 uint32_t stage_epoch(uint32_t stage_mode);
 void* avatar();
 // BUG-0264: the stage is being left for the galaxy menu (the quit message 0x4715068 posted or
-// handled): avatar() returns null until the mode changes (30 s at most). world.leave_avatar.
+// handled): avatar() returns null until the mode changes (30 s at most).
 struct LeaveStats {
     unsigned windows = 0;    // stages left
     unsigned frames = 0;     // frames seen while leaving
@@ -90,12 +90,11 @@ void destroy_untracked(void* c); // tests (BUG-0507): the game's destroy without
 void destroy_instance(void* obj); // cGameNounManager::DestroyInstance of a game object that is no creature (a fruit, BUG-0584)
 void destroy_deferred_tick(); // once per frame
 void set_destroy_defer(bool on); // tests (off: at once)
-void set_defer_keeps_puppet(bool on); // tests (off: a deferred puppet leaves the puppet list at once, BUG-0066)
 bool cinematic_playing(); // cCinematicManager +0x2C != 0 (W2: no destroy of a village meanwhile)
 bool destroy_pending(void* c);     // queued by destroy_creature, still there
 std::string destroy_deferred_status();
 // BUG-0614 (game.finite_pose): a received pose with NaN / Inf; counted, false with the switch off
-// BUG-0434 (creature.culled_ground): this frame's target of a puppet, lifted to after the physics update when the game grounds it
+// BUG-0434: this frame's target of a puppet, lifted to after the physics update when the game grounds it
 void mound_hold(void* c, const net::Vec3& tgt);
 void after_physics();
 uint32_t air_culled_lifts(); // BUG-1082: held creatures put back up after the physics update

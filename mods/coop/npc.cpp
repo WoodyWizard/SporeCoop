@@ -3459,7 +3459,7 @@ bool debug_hit(uint16_t id, float damage)
     auto it = g_proxies.find(id);
     if (it == g_proxies.end() || !it->second.c || !game::avatar())
         return false;
-    g_test_hit = true; // (social.no_bite lets a test's hit pass in the social stance)
+    g_test_hit = true; // (BUG-0021: a test's hit passes in the social stance)
     game::hit(it->second.c, damage, 0, game::avatar());
     g_test_hit = false;
     return true;
