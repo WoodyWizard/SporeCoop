@@ -65,6 +65,8 @@ void on_session_end();
 bool load_queued();
 // guest (BUG-9208): hold a received world while the first-creature editor is requested or open
 void hold_for_editor(bool on);
+// host (BUG-9210): a player's share waits while this says its own nest is about to be made (2 min at most)
+void set_share_hold(std::function<bool(uint8_t, uint64_t)> hold); // (player, ms since the share was asked for)
 // guest: it plays its own planet-side Space intro (the personal launch, BUG-9071): the host's world waits for its
 // launch, so a queued load is not coming now (BUG-9202: the loading screen stayed over the playable Civ stage)
 bool local_intro_running();

@@ -28,6 +28,14 @@ static bool g_fix = true;
 COOP_FIX("creature.own_nests", "BUG-9135", g_fix,
          "creature: every player with their own species has their own nest next to the host's (hatch, respawn, migration)");
 
+// BUG-9210 (owner 2026-11-15: "'Bringing Your Nest' only happened after the player spawned into the world"): the host's
+// new-world intro (a cinematic, the game paused) held every seat's nest for its whole length (4 min in the test) while
+// the guests already played at the host's nest. Nests are made during it too, and a guest's first world waits for its
+// nest (world::set_share_hold). Off: the nests after the intro, the world at once.
+static bool g_nest_first = true;
+COOP_FIX("creature.nest_before_world", "BUG-9210", g_nest_first,
+         "creature: a guest's own nest is made during the host's intro and its world waits for it (no reload after spawning)");
+
 constexpr uint32_t kNestNoun = 0x52AA6122; // cNest
 constexpr uint32_t kCrtType = 0x2B978C46, kCrtGroup = 0x40626200;
 constexpr float kNear = 160.f;             // a seat's nest belongs to the host's current home within this
@@ -75,11 +83,32 @@ COOP_FIX("creature.nest_follows_evolution", "BUG-9151", g_follow,
          "creature: a partner who evolves keeps their nest; its herd and family take the new species (no second nest, no world resend)");
 static std::string g_last;
 
+static bool is_host();
+static bool host_home(net::Vec3& out);
+static void* nest_herd_near(void* profile, const net::Vec3& home, float r, net::Vec3* at);
+// BUG-9210: `player`'s own nest is about to be made (or waits for its first member): its world waits
+static bool nest_due(uint8_t player, uint64_t waited_ms)
+{
+    if (!g_fix || !g_nest_first || !is_host() || !game::in_creature_stage()) return false;
+    const int seat = party::seat_of_player(player);
+    const auto& roster = party::roster();
+    // a player who just joined: its creature (and so its seat's species) comes a few seconds after (15 s at most)
+    if (seat <= 0 || seat >= (int)roster.seats.size()) return waited_ms < 15000;
+    const uint32_t species = roster.seats[seat].species;
+    if (!species) return waited_ms < 15000;
+    if (species == roster.seats[0].species) return false; // the host's species: the host's nest
+    if (seat < (int)g_share_due.size() && g_share_due[seat].since >= 0) return true; // made, waits for a member
+    net::Vec3 home;
+    if (!host_home(home)) return false;
+    void* profile = game::species_by_key({species, kCrtType, kCrtGroup});
+    return !profile || !nest_herd_near(profile, home, kNear, nullptr);
+}
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 {
     H = host;
     M = mod;
     C = ctx;
+    world::set_share_hold(nest_due);
 }
 
 bool enabled() { return g_fix; }
@@ -246,7 +275,8 @@ static void make_nest(void* ctx)
 {
     const int seat = (int)(intptr_t)ctx;
     g_queued = false;
-    if (!g_fix || !is_host() || !game::in_creature_stage() || game::cinematic_playing() || world::load_queued())
+    if (!g_fix || !is_host() || !game::in_creature_stage() || (!g_nest_first && game::cinematic_playing()) ||
+        world::load_queued())
         return;
     const auto& roster = party::roster();
     if (seat <= 0 || seat >= (int)roster.seats.size())
@@ -615,7 +645,8 @@ void host_tick(double now)
     if (!g_fix || !is_host() || now < g_next || g_queued)
         return;
     g_next = now + 2;
-    if (!game::in_creature_stage() || game::cinematic_playing() || world::time_paused() || world::load_queued())
+    if (!game::in_creature_stage() || world::load_queued() ||
+        (!g_nest_first && (game::cinematic_playing() || world::time_paused())))
         return;
     share_due_tick(now);
     net::Vec3 home;

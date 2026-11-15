@@ -572,7 +572,9 @@ struct PendingShare {
     uint64_t asked = 0;     // BUG-9166: when the share was asked for (a save posted before it lacks what changed since)
     uint64_t posted = 0;    // when its save was posted
     bool waited = false;    // BUG-9166: logged once
+    bool held = false;      // BUG-9210: logged once
 };
+static std::function<bool(uint8_t, uint64_t)> g_share_hold; // BUG-9210: home_nests: this player's own nest comes first
 // BUG-0231: the final failure of a queued share ("cannot share the world"), for the caller's retry
 static void (*g_share_failed)(uint8_t peer, uint32_t tag, bool planet_missing);
 void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing)) { g_share_failed = f; }
@@ -1902,6 +1904,17 @@ void tick(net::Session& s)
     for (size_t i = 0; i < g_pending.size();) {
         auto& p = g_pending[i];
         uint64_t now = GetTickCount64();
+        // BUG-9210: a guest whose own nest is about to be made gets the world with it (the nest's share joins this one,
+        // share_with), not before: it spawned at the host's nest and reloaded minutes later ("Bringing your nest").
+        // 2 minutes at most.
+        if (p.need_save && g_share_hold && p.asked && now < p.asked + 120000 && g_share_hold(p.peer, now - p.asked)) {
+            if (!p.held) {
+                p.held = true;
+                H->log(M, SK_INFO, "world: the share for player %u waits for its own nest (BUG-9210)", p.peer);
+            }
+            ++i;
+            continue;
+        }
         if (p.need_save && g_one_save_fix) {
             // BUG-0112: a save for another share is posted already and not written yet (2+ guests
             // waiting at a stage change, or a guest that joins during another one's save): this
@@ -2593,5 +2606,8 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "%s %d\n", x.name, *x.on ? 1 : 0);
     return 0;
 }
+
+// BUG-9210
+void set_share_hold(std::function<bool(uint8_t, uint64_t)> hold) { g_share_hold = std::move(hold); }
 
 } // namespace world
