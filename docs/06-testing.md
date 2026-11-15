@@ -8898,6 +8898,13 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   steam_api.dll: exit code 0 within seconds). Not the free disk space modulo 4 GB (a pad file changing it did not help).
   The MSI (Steam client 1792618285, not updated) started the same 56-dev files fine.
 * The owner's own Steam Spore starts after the update (the owner, 2026-11-15): the failure is the QA copy's (a copy
-  outside Steam's library), not Spore's. Still open: why.
+  outside Steam's library), not Spore's. 
+* CAUSE (2026-11-15, found): after the self-update Steam's registry `HKCU\Software\Valve\Steam\ActiveProcess\pid`
+  still named the update's bootstrapper (2936, gone); the running steam.exe was 50284. Spore's 2008 steam_api
+  (steam_api_orig.dll) checks that process, finds no Steam, and SteamAPI_Init returns 0 (a probe that loads
+  steam_api_orig.dll and calls SteamAPI_Init: 0 before, non-zero after); cSporeApp::Init then fails. A game Steam
+  launches is not affected. Setting the pid to the running steam.exe fixed it at once (the 57-dev QA game reached the
+  galaxy menu). tools/qa_win/launch.ps1 now does this itself when the pid names no running process. The MSI's start
+  has no such check yet (its Steam had not updated).
   Until it is understood, cross-PC tests use the MSI's two games (`msi.ps1 start -Instance 2`, qa target msi2).
 
