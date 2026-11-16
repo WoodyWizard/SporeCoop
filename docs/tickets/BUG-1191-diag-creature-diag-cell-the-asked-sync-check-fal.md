@@ -28,9 +28,10 @@ Observed: coop_diag.py asks one check (`coop.diag sync now`) and waits 25 s for 
 compare a guest within 20 s after it asked for a world share with it (BUG-0754 `diag.share_quiet`, kShareQuiet); such a
 check counts (`checks 2`) but is "plays elsewhere, not compared" (logged only at log_detail 2), and the next one comes
 `g_sync_interval` = 30 s later. The guest's game log of diag_creature: the share's load at s 9.4, the guest's OK at s
-41.7, about 30 s after the asked check: past the test's 25 s. Inferred: with A9's faster warm reset (BUG-1112, settle
-waits instead of fixed sleeps) the test reaches its `sync now` sooner after the reset's share, inside the quiet window;
-before, the fixed sleeps put it after the window more often.
+41.7, about 30 s after the asked check: past the test's 25 s. Lab 20261116-085443 (with the fix) on lane 9: diag_cell's
+OK came after 19 s and 4 asks, diag_creature's after 6 s and 2. Not a 0.7.15 change: v0.7.14.1 (a detached worktree of
+the tag, built, lane 9) fails both the same way, lab 20261116-090440 ("FAIL the host logs a sync-check OK in Cell" /
+"... in Creature"); the ledger's earlier passes were starts that reached the ask after the quiet window.
 
 ## Fix
 coop_diag.py asks the check again every 5 s until the host's OK of this stage is logged, at most 45 s (the 20 s quiet
