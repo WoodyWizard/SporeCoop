@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Creature: the host can add creatures to its pack again after a guest used
+  Summon Flock (the guest's flock kept the host's pack "full") (BUG-9233), and a
+  guest's flock follows the guest (BUG-9229).
+
 ## [0.7.14.1-lineages59-dev] - 2026-11-15
 
 Fixes from the owner's play test of 2026-11-15.

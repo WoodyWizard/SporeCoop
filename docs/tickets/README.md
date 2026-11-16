@@ -1336,13 +1336,14 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9220](BUG-9220-co-op-window-grey-and-blue-buttons-navigation-bl.md) | fixed | feature | menu | 2026-11-15 | 0.7.14.1-lineages57-dev | Co-op window: grey and blue buttons (navigation blue, helpers grey, the color button grey); 'color' wording |
 | [BUG-9221](BUG-9221-co-op-lobby-even-spacing-stop-hosting-leave-bott.md) | fixed | feature | menu | 2026-11-15 | 0.7.14.1-lineages57-dev | Co-op lobby: even spacing, Stop Hosting / Leave bottom right, Copy Server IP |
 | [BUG-9222](BUG-9222-lineages-cache-a-player-name-with-noshare-never.md) | fixed | feature | all | 2026-11-15 | 0.7.14.1-lineages57-dev | Lineages Cache: a player name with -NoShare- never shares or stores its creations (QA players) |
-| [BUG-9223](BUG-9223-creature-a-guest-s-own-editor-spend-is-given-bac.md) | open | bug | creature | 2026-11-15 |  | Creature: a guest's own editor spend is given back (DNA put back after the mating editor and cocoon) |
-| [BUG-9224](BUG-9224-cell-the-knocked-out-ring-timer-does-not-go-down.md) | open | bug | cell | 2026-11-15 |  | Cell: the knocked-out ring timer does not go down |
-| [BUG-9225](BUG-9225-cell-the-spectator-camera-is-slow-to-reach-the-p.md) | open | bug | cell | 2026-11-15 |  | Cell: the spectator camera is slow to reach the partner |
-| [BUG-9226](BUG-9226-cell-creature-when-the-whole-party-is-down-nobod.md) | open | bug | creature | 2026-11-15 |  | Cell / Creature: when the whole party is down nobody is forced to respawn (they wait for a revive nobody can give) |
-| [BUG-9227](BUG-9227-guests-see-a-paused-by-host-cover-while-the-host.md) | open | feature | all | 2026-11-15 |  | Guests see a 'Paused by host' cover while the host's game is paused |
-| [BUG-9228](BUG-9228-editor-the-party-cards-cover-the-paint-page-s-ne.md) | open | bug | creature | 2026-11-15 |  | Editor: the Party cards cover the paint page's next-page button |
+| [BUG-9223](BUG-9223-creature-a-guest-s-own-editor-spend-is-given-bac.md) | fixed | bug | creature | 2026-11-15 | 0.7.14.1-lineages59-dev | Creature: a guest's own editor spend is given back (DNA put back after the mating editor and cocoon) |
+| [BUG-9224](BUG-9224-cell-the-knocked-out-ring-timer-does-not-go-down.md) | fixed | bug | cell | 2026-11-15 | 0.7.14.1-lineages59-dev | Cell: the knocked-out ring timer does not go down |
+| [BUG-9225](BUG-9225-cell-the-spectator-camera-is-slow-to-reach-the-p.md) | fixed | bug | cell | 2026-11-15 | 0.7.14.1-lineages59-dev | Cell: the spectator camera is slow to reach the partner |
+| [BUG-9226](BUG-9226-cell-creature-when-the-whole-party-is-down-nobod.md) | fixed | bug | creature | 2026-11-15 | 0.7.14.1-lineages59-dev | Cell / Creature: when the whole party is down nobody is forced to respawn (they wait for a revive nobody can give) |
+| [BUG-9227](BUG-9227-guests-see-a-paused-by-host-cover-while-the-host.md) | fixed | feature | all | 2026-11-15 | 0.7.14.1-lineages59-dev | Guests see a 'Paused by host' cover while the host's game is paused |
+| [BUG-9228](BUG-9228-editor-the-party-cards-cover-the-paint-page-s-ne.md) | fixed | bug | creature | 2026-11-15 | 0.7.14.1-lineages59-dev | Editor: the Party cards cover the paint page's next-page button |
 | [BUG-9229](BUG-9229-creature-a-guest-s-summon-flock-does-not-follow.md) | open | bug | creature | 2026-11-15 |  | Creature: a guest's Summon Flock does not follow the guest |
 | [BUG-9230](BUG-9230-creature-the-impress-progress-bar-does-not-move.md) | open | bug | creature | 2026-11-15 |  | Creature: the impress progress bar does not move on the guest's screen |
 | [BUG-9231](BUG-9231-creature-some-enemies-are-invisible-on-the-guest.md) | open | bug | creature | 2026-11-15 |  | Creature: some enemies are invisible on the guest |
 | [BUG-9232](BUG-9232-creature-cells-appear-in-the-creature-stage.md) | open | bug | creature | 2026-11-15 |  | Creature: cells appear in the Creature stage |
+| [BUG-9233](BUG-9233-creature-the-host-cannot-add-creatures-to-its-pa.md) | open | bug | creature | 2026-11-15 |  | Creature: the host cannot add creatures to its pack while a guest's flock is out |
