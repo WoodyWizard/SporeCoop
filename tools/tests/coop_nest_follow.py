@@ -17,6 +17,7 @@ respawn place and the home of its family), and that nest heals it (BUG-0496, the
   coop_nest_follow.py [--own]  (SPORE_FIX_OFF=wsync.creature_nest: the guest's game never claims: FAILS)
   --own (BUG-0642): the guest plays its own creature (chosen in the co-op window), another species than the world's:
         the nest rules (claim, home, heal) are the player species' and hold for it too."""
+import os
 import re
 import sys
 import time
@@ -29,6 +30,8 @@ from coop_migration import (CINE_CLAIM, CINE_MIGRATE, DONE, avatar_herd, cinemat
 from coop_nest_heal import heal
 from coop_ui import Ui
 from twoinst import Checks, start
+
+GUEST_PLAY_S = 8  # BUG-1178: s the guest's game plays before the DNA (the old start: about 6 s more than A9's)
 
 
 def herd_nest_pos(con):
@@ -104,6 +107,12 @@ def run(host, guest, ck):
     home0 = herd_nest_pos(host), herd_nest_pos(guest)
     print(f'  home nests before: host {home0[0]}, guest {home0[1]}', flush=True)
 
+    # BUG-1178: the guest's game plays its world for a while before the brain upgrade's DNA: given 6 s after it entered
+    # (the lab's condition start-up waits of A9, BUG-1112, ended the old fixed 4 s / 3 s sleeps) its game planned no
+    # migration (its next nest stayed its home nest: the guest never followed); the old start gave it 12 s.
+    # NEST_FOLLOW_NO_PLAY=1: no wait (the twin of this test fix)
+    if os.environ.get('NEST_FOLLOW_NO_PLAY') != '1':
+        time.sleep(GUEST_PLAY_S)
     # 1. DNA, brain upgrade, editors
     d0 = total_dna(guest)
     host.call('coop.dna add 250')
