@@ -69,18 +69,27 @@ def case_citizens(host, guest, ck):
         _, g = objs(guest, CITIZEN, c, 400)
         h = [x for x in h if math.dist(x['pos'], c) < 400]
         g = [x for x in g if math.dist(x['pos'], c) < 400]
-        far, size, used = 0, 0, set()
-        for x in h:
-            best = min(((math.dist(x['pos'], y['pos']), i) for i, y in enumerate(g) if i not in used), default=(1e9, -1))
-            if best[0] > 3.0:
+        # BUG-1210: the pairs nearest first over all of them (each citizen in one pair); in host order a host citizen
+        # took the nearest guest one even when that was its neighbour's partner (citizens stand in groups), and the
+        # neighbour then counted as elsewhere (or got a guest citizen of another size)
+        far, size, used, pair, miss = 0, 0, set(), {}, []
+        for d, a, b in sorted((math.dist(x['pos'], y['pos']), a, b) for a, x in enumerate(h) for b, y in enumerate(g)):
+            if d > 3.0:
+                break
+            if a not in pair and b not in used:
+                pair[a] = b
+                used.add(b)
+        for a, x in enumerate(h):
+            if a not in pair:
                 far += 1
+                miss.append(round(min((math.dist(x['pos'], y['pos']) for y in g), default=1e9), 1))
                 continue
-            used.add(best[1])
-            y = g[best[1]]
+            y = g[pair[a]]
             if abs(x['scale'] - y['scale']) > 0.12 * max(x['scale'], 0.01):
                 size += 1
+                miss.append(f"size {x['scale']:.2f}/{y['scale']:.2f}")
         print(f'  round {rnd}: host {len(h)} citizens near the guest, guest {len(g)}; {far} without a guest citizen within 3 m, '
-              f'{size} of another size', flush=True)
+              f'{size} of another size' + (f' (elsewhere: nearest guest citizen in m; size: host/guest: {miss})' if miss else ''), flush=True)
         rounds.append((len(h), far, size))
         time.sleep(5)
     n = sum(r[0] for r in rounds)
