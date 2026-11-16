@@ -42,6 +42,9 @@ Structure (one hub file).
   20261115-164829), after the first split 92ac086f out/lab/20261115-164829, after the second f8be9a3d
   out/lab/20261115-174353: `tools/refactor_dump.py compare` identical in every section (fix, lifecycle, players,
   guards, hooks, commands of both games; msgtable, manifest, callbacks).
+- After the merge of rel/0.7.15 (5c3df1be): refactor_dump of the merged branch against rel/0.7.15 96e0fd4c itself
+  (out/lab/20261115-200041-rel96e0, copied from its worktree run, vs out/lab/20261115-200041): identical in every section,
+  so the whole branch (C1, C4, D3, C8) leaves every switch, lifecycle entry, guard, hook, command and message as it was.
 - make -j8, make test (all parts passed); the Civ lab tests on the split build: see BUG-1140.
 - no-fail-run: pure moves (no behaviour to fail); the proof is the identical dumps above.
 
