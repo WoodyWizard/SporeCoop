@@ -836,12 +836,21 @@ static int c_nest(void*, int argc, const char* const* argv, SkOut* out)
                 int gen = field<int>(o, 0xF0), nk = kb && ke >= kb ? (int)((uint8_t*)ke - (uint8_t*)kb) / 12 : -1;
                 uint32_t skey = sp && !IsBadReadPtr(sp, 0x510) ? field<uint32_t>(sp, 0x504) : 0;
                 uint32_t next = gen >= 0 && gen + 1 < nk && !IsBadReadPtr(kb, (gen + 2) * 12) ? *(uint32_t*)((uint8_t*)kb + (gen + 1) * 12) : 0;
+                // BUG-1181: what the game shows of this herd: its nest +0x160 (null: a herd of ours, a puppet's or a
+                // proxy's), its archetype +0x88, and the species key of its live members (the creatures a player sees;
+                // 0: none, FFFFFFFF: members of more than one species)
+                uint32_t mkey = 0;
+                for (void** m = b; b && e >= b && m < e && m < b + 64; m++)
+                    if (*m && game::listed(*m) && !IsBadReadPtr(*m, game::kSpeciesKeyOff + 4)) {
+                        uint32_t k = game::species_instance(*m);
+                        mkey = !mkey || mkey == k ? k : 0xFFFFFFFFu;
+                    }
                 H->out_printf(u->out,
                               "herd %p should_evolve=%d gen=%d evolved_keys=%d threshold=%.0f extinct=%d members=%d species=%p "
-                              "skey=%08X next=%08X home=(%.0f %.0f %.0f) dist=%.0f\n",
+                              "skey=%08X next=%08X home=(%.0f %.0f %.0f) dist=%.0f nest=%p arch=%08X mkey=%08X\n",
                               o, (int)field<uint8_t>(o, 0x85), gen, nk, field<float>(o, 0x94),
                               (int)field<uint8_t>(o, 0x190), b && e >= b ? (int)(e - b) : -1, sp, skey, next, h.x, h.y, h.z,
-                              net::dist(h, u->c));
+                              net::dist(h, u->c), game::herd_nest(o), field<uint32_t>(o, 0x88), mkey);
                 return true;
             },
             &u);
