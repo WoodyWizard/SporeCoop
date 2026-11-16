@@ -4,9 +4,12 @@
 // a join or a phase change (on_mode_change, follow_phase, share_failed and its retries, the waits for a cinematic), the
 // evolution in place (BUG-0508) and the lobby table.
 // COOP_VERSION is defined in coop.cpp (tools/package.sh, release_check.sh and the Makefile read it there); this file
-// takes the same text from build/version.h, which the Makefile makes from it.
+// takes the same text from build/version.h, which the Makefile makes from it. A -DCOOP_VERSION on the command line wins
+// here as in coop.cpp (tools/tests/update_check.py builds the next version so, BUG-1189).
 #include "version.h"
+#ifndef COOP_VERSION
 #define COOP_VERSION SC_VER_STR
+#endif
 #include "lifecycle.h"
 #include "coop_state.h"
 #include "store.h"
