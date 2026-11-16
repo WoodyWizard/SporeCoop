@@ -320,3 +320,10 @@ BUG-0948. GOG 2024, lane 4, Creature (the guest's follow camera turned by SporeK
   the player's, so a click aimed by screen_rect missed (the game saved box, BUG-9238).
 * ? Not looked at yet: the bars over Tribe members, Civ units and vehicles, Cell's health ring (cCellUI rollovers):
   find their layer with `coop.ui at <x> <y>` on the bar, then `coop.ui path <id>`.
+* ✔ (2026-11-16) Cell and Civ have the same two world layers (0xCBDF6E1D hints, 0xE9F70DF9 bars) at the whole
+  screen; the Civ city rollover (owner, population, spice) is placed correctly at 125 %.
+* ✔ (2026-11-16, BUG-9241) Spore's tooltip is one window, 0x03754E6C (StdDrawable, kept hidden between uses with its
+  last text), a child of the HUD layer 0x05B598F6 (the cheat console 0x014A4606 is there too). The game puts it at the
+  pointer's REAL screen place (centred, about 20 px under it), not the remapped mouse place, so in a scaled layer it
+  showed at f x the pointer. Fixed in its own transform (ui.tooltip_place); the layer itself stays scaled.
+* ~ (2026-11-16) A `move` posted by qa.py over a Creature ability button showed no tooltip (Civ's city buttons did).
