@@ -49,7 +49,7 @@ def main():
         time.sleep(1)
     time.sleep(3)
     key, r = None, ''
-    for _ in range(10):
+    for _ in range(20):  # (BUG-1207: a warm start had none near the camera within 10 s)
         r = guest.call('coop.pool nanmirror')['out'].strip()
         m = re.match(r'nanmirror (c\d+):', r)
         if m:
@@ -71,10 +71,16 @@ def main():
             continue
         nf, pm = num(g, 'nf'), pair(g, 'pmean')
         nf = int(re.search(r'nf=0x([0-9A-Fa-f]+)', g).group(1), 16) if 'nf=0x' in g else nf
+        what = 'its particles'
+        if num(g, 'parts') == 0:
+            # BUG-1207: no soft body now (the game's LOD frees it outside the active box around the camera,
+            # docs/re/cell.md: the particles of a NaN body are gone with it); pmean is then (0 0): the centre
+            # the game draws (+0x4C, in nf too) is what is compared
+            pm, what = pair(g, 'pos'), 'its centre (no soft body now)'
         if nf:
             bad.append(f'non-finite fields 0x{nf:X}')
         elif finite(hp) and finite(pm) and math.dist(pm, hp) > 2.0:
-            bad.append(f'its particles {math.dist(pm, hp):.1f} m from the host\'s pose')
+            bad.append(f'{what} {math.dist(pm, hp):.1f} m from the host\'s pose')
     bad = [b for b in bad if b]
     ck(not bad, f'the guest\'s game shows the NaN mirror {key} finite and in the host\'s place within 1 s and 3 s'
                 + (f' ({"; ".join(bad)})' if bad else ''))
