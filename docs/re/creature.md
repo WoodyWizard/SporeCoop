@@ -5221,3 +5221,15 @@ Guest on the creature fixture, `coop.npc reusehunt p<id> ...` with `coop.npc chu
   than about 8 m, the others went out to 25-28 m; the host the same (nearest 14.6 m). It is the host's NPC AI (the
   guest's proxies only follow), so it is not a proxy or puppet fault (BUG-9212, "they move away at the same speed").
 * ✔ Being downed and revived (creature_rescue, six times by herd 291E6C6A) does not change that herd's relation.
+
+## The social meter's bars and what is drawn (2026-11-16, feat/lineages-47)
+<a id="creature-meter-bars"></a>
+
+BUG-9230. Steam = GOG 2024 code, but SporeKit maps the .sym addresses: `sym SporeCoop::SocialMeter_SetBar` answers 0x00D21990 on Steam (the file's 0x00E31990 minus 0x110000); raw reads of the Steam exe must use the resolved address (the exe is encrypted on disk: read the code from a running game, `mem.read`). Read at runtime (TITAN, a native meter while the owner impressed, and the code around Steam 0xD21990-0xD237F0):
+
+* ✔ Two bars grow towards each other from the arc's ends: meter +0x3C (bar 0's start, 0.626) and +0x40 (bar 1's start, 2.516); each bar's full length is half the gap (0.945); full when pos0 + pos1 reaches +0x40 - +0x3C (Steam 0xD23705). After round 1 of 3 both bars stood at 0.315, full at 0.945.
+* ✔ Bar i (i = 0, 1, stride 0xA4): lo / pos / hi at +0x134 / +0x138 / +0x13C; SetBar(i, f) is pos = lo + (hi - lo) * f and sets +0x24 ("redraw", Steam 0xD21990). Its list of finished steps: vector begin / end / capacity at +0xA4 / +0xA8 / +0xAC, own storage for 6 entries at +0xBC; an entry is 0x14 bytes {the step's end on the arc (bar 0: +0x3C + length so far; bar 1: +0x40 - it; the last pi / 2), 1.0, -FLT_MAX, 0.0, 0.01}. One entry per finished round (the native meter: 1 entry after round 1, 2 when full of 2).
+* ✔ What is drawn is that list (the draw at Steam 0xD232FF walks it); a pos without entries draws nothing. The guest's meter had lo = hi = 0 and empty lists: the BUG-9230 empty arc.
+* ✔ The meter tick (Steam ~0xD237CB): when +0x24 is set it takes the bars' window 0x562BD40 from the meter's layout (meter +0xC, UTFWin::UILayout::FindWindowByID(id, 1)) and calls its vt 0x90 (the redraw). A guest has no session to run it; social.meter_fill does that call.
+* ~ Steam 0xD224B0(i) ends a step (hi = pos, trims the list with 0xD22120(i)) and 0xD22EC0 is the win (both bars to the end, +0x26 full); not called by the mod.
+* CORRECTION (2026-11-16, feat/lineages-47): the .sym note on SocialMeter_SetBar ("the session tick 0xD9B9C0 sets it", BUG-0179) is right about SetBar, but SetBar is not what draws the fill; see above.

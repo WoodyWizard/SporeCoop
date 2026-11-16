@@ -1343,7 +1343,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9227](BUG-9227-guests-see-a-paused-by-host-cover-while-the-host.md) | fixed | feature | all | 2026-11-15 | 0.7.14.1-lineages59-dev | Guests see a 'Paused by host' cover while the host's game is paused |
 | [BUG-9228](BUG-9228-editor-the-party-cards-cover-the-paint-page-s-ne.md) | fixed | bug | creature | 2026-11-15 | 0.7.14.1-lineages59-dev | Editor: the Party cards cover the paint page's next-page button |
 | [BUG-9229](BUG-9229-creature-a-guest-s-summon-flock-does-not-follow.md) | fixed | bug | creature | 2026-11-15 | 0.7.14.1-lineages60-dev | Creature: a guest's Summon Flock does not follow the guest |
-| [BUG-9230](BUG-9230-creature-the-impress-progress-bar-does-not-move.md) | open | bug | creature | 2026-11-15 |  | Creature: the impress progress bar does not move on the guest's screen |
+| [BUG-9230](BUG-9230-creature-the-impress-progress-bar-does-not-move.md) | fixed | bug | creature | 2026-11-15 | unreleased | Creature: the impress progress bar does not move on the guest's screen |
 | [BUG-9231](BUG-9231-creature-some-enemies-are-invisible-on-the-guest.md) | fixed | bug | creature | 2026-11-15 | 0.7.14.1-lineages62-dev | Creature: some enemies are invisible on the guest |
 | [BUG-9232](BUG-9232-creature-cells-appear-in-the-creature-stage.md) | open | bug | creature | 2026-11-15 |  | Creature: cells appear in the Creature stage |
 | [BUG-9233](BUG-9233-creature-the-host-cannot-add-creatures-to-its-pa.md) | fixed | bug | creature | 2026-11-15 | 0.7.14.1-lineages60-dev | Creature: the host cannot add creatures to its pack while a guest's flock is out |
@@ -1357,3 +1357,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9241](BUG-9241-interface-size-spore-s-tooltips-drawn-about-1-25.md) | fixed | bug | civ | 2026-11-16 | 0.7.14.1-lineages62-dev | Interface Size: Spore's tooltips drawn about 1.25 x the pointer's place at 125 % |
 | [BUG-9242](BUG-9242-notice-spore-runs-at-n-fps-without-its-frame-cap.md) | open | bug | all | 2026-11-16 |  | Notice: 'Spore runs at N fps without its frame cap' shows for a frame cap the player set (7 ms, about 143 FPS) |
 | [BUG-9243](BUG-9243-co-op-window-searching-your-network-starts-left.md) | open | bug | all | 2026-11-16 |  | Co-op window: 'Searching your network...' starts left of its box and the update line wraps and sits on the host box |
+| [BUG-9244](BUG-9244-creature-a-species-goal-card-says-it-is-extinct.md) | open | bug | creature | 2026-11-16 |  | Creature: a species' goal card says it is extinct while its creatures still live (the line shown twice) |

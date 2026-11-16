@@ -8892,6 +8892,11 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("the next %s meter tasks find no meter window\n", argv[2]);
         return 0;
     }
+    if (argc > 3 && !strcmp(argv[1], "meterfill")) { // tests (BUG-9230): meterfill <done> <rounds> [close]
+        social::debug_meter_fill(atoi(argv[2]), atoi(argv[3]), argc > 4 && !strcmp(argv[4], "close"));
+        SAY("meter fill queued");
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "meter")) { // tests (BUG-0179): the game's social meter on this screen
         SAY("%s", social::meter_dump().c_str());
         return 0;

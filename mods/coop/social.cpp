@@ -571,6 +571,60 @@ COOP_FIX("social.meter_retry", "BUG-1058", g_meter_retry_fix, "creature: a guest
 constexpr double kMeterRetry = 0.25;
 static double g_meter_missed_at;
 static unsigned g_meter_missed, g_meter_test_null; // (tests: meter tasks that find no meter window)
+// BUG-9230 (owner 2026-11-16 on MSI: "the on screen UI didn't fill up with the pink bar"): the meter has two bars that grow
+// towards each other from the arc's ends (+0x3C and +0x40, Steam/GOG 2024 0.626 and 2.516: each bar's full length is half
+// the gap, 0.945); the meter is full when they meet. SocialMeter_SetBar(i, f) only puts bar i between the ends of its
+// current step (pos = lo + (hi - lo) * f, lo / pos / hi at +0x134 / +0x138 / +0x13C + i * 0xA4); the native session sets
+// those ends for every round (TITAN 2026-11-16, a native meter: after round 1 of 3 both bars lo 0, hi 0.315). The guest's
+// meter never got them (lo = hi = 0: every SetBar drew nothing, the progress only in the feed lines). Now both bars get
+// their step's ends (lo = where it stands, hi = progress x the bar's length) and SetBar moves them there.
+// Off (`coop.fix social.meter_fill off`): bar 0 only, without ends (62-dev).
+static bool g_meter_fill_fix = true;
+COOP_FIX("social.meter_fill", "BUG-9230", g_meter_fill_fix, "creature: a guest's social meter fills its bars as the impressing goes on (both bars, the native look)");
+static uint32_t g_meter_fills = 0;
+static void meter_fill(void* m, float frac)
+{
+    uint8_t* u = (uint8_t*)m;
+    if (IsBadWritePtr(u + 0x134, 0xB0)) return;
+    const float a = *(float*)(u + 0x3C), b = *(float*)(u + 0x40);
+    if (!(b > a) || !std::isfinite(a) || !std::isfinite(b)) return;
+    const float len = (b - a) / 2, to = std::max(0.f, std::min(1.f, frac)) * len;
+    // what is drawn: each bar's list of finished steps (vector begin / end / capacity at +0xA4 / +0xA8 / +0xAC + i * 0xA4,
+    // its own storage for 6 at +0xBC + i * 0xA4; entries of 0x14 bytes {the step's end on the arc, 1.0, -FLT_MAX, 0, 0.01},
+    // read from a native meter: bar 0 ends at +0x3C + its length so far, bar 1 at +0x40 - it, the last at pi / 2 where they
+    // meet). The guest's list was empty: nothing drawn. Rebuilt for the rounds done (rounds at +0x44).
+    const int rounds = *(int*)(u + 0x44);
+    const int done = rounds > 0 ? std::min(rounds, (int)std::lround(std::max(0.f, std::min(1.f, frac)) * rounds)) : 0;
+    for (int i = 0; i < 2; i++) {
+        uint8_t* v = u + 0xA4 + i * 0xA4;
+        uint8_t* own = u + 0xBC + i * 0xA4;
+        if (*(uint8_t**)v != own || done > 6) continue; // (not its own storage: left alone)
+        for (int k = 0; k < done; k++) {
+            float* e = (float*)(own + k * 0x14);
+            const float at = len * (k + 1) / rounds;
+            e[0] = i == 0 ? a + at : b - at;
+            e[1] = 1.0f;
+            e[2] = -3.40282347e38f; // -FLT_MAX
+            e[3] = 0.0f;
+            e[4] = 0.01f;
+        }
+        *(uint8_t**)(v + 4) = own + done * 0x14;
+    }
+    for (int i = 0; i < 2; i++) {
+        float* lo = (float*)(u + 0x134 + i * 0xA4);
+        lo[0] = lo[1]; // the step starts where the bar stands
+        lo[2] = to;
+        thiscall<void>(a_MeterBar, m, i, 1.0f); // pos = hi (+0x24 set: "redraw")
+    }
+    // the redraw: the native meter tick (Steam 0xD237CB) does this when +0x24 is set; a guest has no session to tick it.
+    // FindWindowByID(meter's layout +0xC, the bars' window 0x562BD40, recursive) and that window's vt 0x90
+    static uintptr_t a_find = H->sym("UTFWin::UILayout::FindWindowByID");
+    if (a_find)
+        if (void* w = thiscall<void*>(a_find, u + 0xC, 0x562BD40u, 1))
+            skg::vcall<void>(w, 0x90 / 4);
+    g_meter_fills++;
+}
+
 static void meter_run(void*) // outside the frame: the meter is UI
 {
     auto v = std::move(g_meter_tasks);
@@ -599,12 +653,14 @@ static void meter_run(void*) // outside the frame: the meter is UI
             g_meter_frac = 0;
             g_meter_opened++;
         } else if (t.op == 1 && t.npc == g_meter_npc && a_MeterBar) {
-            thiscall<void>(a_MeterBar, m, 0, t.frac);
+            if (g_meter_fill_fix) meter_fill(m, t.frac); // BUG-9230
+            else thiscall<void>(a_MeterBar, m, 0, t.frac);
             g_meter_frac = t.frac;
             g_meter_bars++;
         } else if (t.op == 2 && t.npc == g_meter_npc) {
             g_meter_vis_at_win = meter_visible(m);
-            if (a_MeterBar)
+            if (a_MeterBar && g_meter_fill_fix) meter_fill(m, 1.0f); // BUG-9230: both bars meet
+            else if (a_MeterBar)
                 thiscall<void>(a_MeterBar, m, 0, 1.0f);
             g_meter_frac = 1;
             if (a_MeterFinish)
@@ -666,10 +722,33 @@ static void meter_tick()
 
 void debug_meter_null(unsigned n) { g_meter_test_null = n; } // tests (BUG-1058)
 
+// tests (BUG-9230): `coop.social meterfill <done> <rounds> [close]`: the meter opened (as op 0 does) and filled to done / rounds
+static int g_test_done, g_test_rounds, g_test_close;
+static void meter_test_run(void*)
+{
+    void* m = meter_ui();
+    if (!m || !a_MeterVisible) return;
+    if (g_test_close) { thiscall<void>(a_MeterVisible, m, 0); return; }
+    if (a_MeterReset && a_MeterRounds) {
+        thiscall<void>(a_MeterReset, m);
+        thiscall<void>(a_MeterRounds, m, g_test_rounds);
+        thiscall<void>(a_MeterVisible, m, 1);
+    }
+    if (a_MeterBar && g_test_done > 0) { // as op 1 does (the switch off: 62-dev's one SetBar)
+        if (g_meter_fill_fix) meter_fill(m, (float)g_test_done / g_test_rounds);
+        else thiscall<void>(a_MeterBar, m, 0, (float)g_test_done / g_test_rounds);
+    }
+}
+void debug_meter_fill(int done, int rounds, bool close)
+{
+    g_test_done = done; g_test_rounds = std::max(1, rounds); g_test_close = close;
+    H->run_outside_frame(meter_test_run, nullptr);
+}
+
 std::string meter_dump() // tests: the game's meter object as the guest's screen has it
 {
     void* m = meter_ui();
-    char b[400];
+    char b[560];
     if (!m)
         return "meter: none\n";
     uint8_t* u = (uint8_t*)m;
@@ -677,9 +756,10 @@ std::string meter_dump() // tests: the game's meter object as the guest's screen
     float lo = *(float*)(u + 0x134), pos = *(float*)(u + 0x138), hi = *(float*)(u + 0x13C);
     float frac = hi != lo ? (pos - lo) / (hi - lo) : 0;
     snprintf(b, sizeof b,
-             "meter: ui=%p visible=%d visible_at_win=%d raw=%.3f/%.3f/%.3f full=%d rounds=%d bar0=%.2f open_for=%d opened=%u bars=%u closed=%u win_msgs=%u stage_win_msgs=%u "
+             "meter: ui=%p visible=%d visible_at_win=%d raw=%.3f/%.3f/%.3f bar1=%.3f/%.3f/%.3f fills=%u full=%d rounds=%d bar0=%.2f open_for=%d opened=%u bars=%u closed=%u win_msgs=%u stage_win_msgs=%u "
              "frac_set=%.2f missed=%u\n",
-             m, meter_visible(m), g_meter_vis_at_win, lo, pos, hi, (int)u[0x26], *(int*)(u + 0x44), frac, g_meter_npc, g_meter_opened, g_meter_bars, g_meter_closed, g_win_msgs,
+             m, meter_visible(m), g_meter_vis_at_win, lo, pos, hi, *(float*)(u + 0x1D8), *(float*)(u + 0x1DC), *(float*)(u + 0x1E0),
+             g_meter_fills, (int)u[0x26], *(int*)(u + 0x44), frac, g_meter_npc, g_meter_opened, g_meter_bars, g_meter_closed, g_win_msgs,
              g_stage_msg_win, g_meter_frac, g_meter_missed);
     return b;
 }
