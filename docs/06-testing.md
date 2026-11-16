@@ -8728,3 +8728,21 @@ v0.7.14.1 (a detached worktree of the tag, `make`) beside rel/0.7.15 on lanes 6 
 * A test that makes an NPC tribe in Tribe and needs its members calm for a minute should hold kind 7 the same way.
 * Under SPORE_START_FIXED=1 on rel/0.7.15 the test stops earlier (4 of 4, lab 20261116-023030): the guest's first
   member is its chief (#1, holding item 11), which never takes the instrument. Only that twin start shows it.
+
+## Space tests and the host's autosave; the sculpting spot (2026-11-16, fix/w51-t3)
+<a id="testing-space-autosave"></a>
+
+From the 0.7.15 final check triage of the Space group (BUG-1203, BUG-1210, BUG-1211):
+* The host's autosave (E2) saves a few seconds after a milestone, and in Space only off a planet: a colony founded
+  while the host stands on a planet is saved the moment the host leaves it (zooms out to the galaxy, jumps). A test
+  that sends real input right then (an Esc, a galaxy click) can land in the save (a 0.7-0.8 s hitch, the "game saved"
+  box the mod confirms about 2 s after the write). `harness.autosave_settled(host)` waits until no milestone waits and
+  every posted save is written, then 3 s; coop_space_map.py calls it before its pause-menu step. It checks nothing.
+* `coop.space map status` ends with `planet_gaps=N`: reads of the own colonies that kept a star's colonies over its
+  empty planet list right after a save ([space-save-planet-gap](re/space.md#space-save-planet-gap)).
+* coop_space_sculpt_tool.py puts both ships over the planet point (-5, -176, 557) (`coop.space over`) before the hits:
+  where a landing puts a ship depends on when it lands, and since the faster start (A9) the first hit fell on a plateau
+  already at the height the first sculpting tool raises the ground to, so the hits changed it by 0.0-0.5 m.
+* space_planet_citizens: one host citizen near the guest with no guest citizen within the bind radius (30 m) stayed
+  unbound in every run since 0.7.6 (`coop.wobj`: binds=18 own=1 of 19), 1 of 19 elsewhere per round, 3+ of 57 over the
+  three rounds against the 5 % limit (2.85). `space.citizen_relocate` binds it to the guest's nearest free citizen.

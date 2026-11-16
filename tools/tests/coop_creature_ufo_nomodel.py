@@ -27,7 +27,7 @@ import lane
 from coop_space_npc_model import bad_cache
 from twoinst import Checks, alive, shot, start
 
-TRIES = 5
+TRIES = 8  # BUG-1213: 5 visits brought none in 2 runs of 0.7.15 (lab 20261116-025154, -082811); 0.7.14.1 needed 4 (-085912)
 HOLD = 40.0
 
 

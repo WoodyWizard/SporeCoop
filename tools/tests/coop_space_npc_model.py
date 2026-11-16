@@ -30,6 +30,7 @@ from twoinst import Checks, alive, shot, start, wait_up
 
 FIXTURE = 'space_empire'
 STAR = 0x004A0014  # home star of the NPC empire 8000216E in the fixture
+VISITS = 4
 
 
 def faults(con):
@@ -107,24 +108,45 @@ def run():
         host, guest = start(FIXTURE)
     time.sleep(3)
     f0, _ = faults(host)
-    for _ in range(5):  # a badge or caption cinematic blocks the jump: confirm it
-        r = sp(host, 'jumpto', STAR)
-        print(f'  host flies to star {STAR:08X}: {r}', flush=True)
-        if 'cinematic' not in r:
-            break
-        host.call('key enter')
-        time.sleep(2)
-    t0 = time.time()
-    arrived = False
-    while time.time() - t0 < 60:
-        st = host.call('coop.status')['out']
-        if re.search(r'world=804A0014|Space 804A0014', st) or '804A0014' in sp(host, 'hp'):
-            arrived = True
-        hp = sp(host, 'hp')
-        if 'cine=1' in hp or 'movie=1' in hp:
+    home = re.search(r'star (\d+)', sp(host, 'star'))
+    home = int(home.group(1)) if home else 0
+
+    def defaulted():
+        m = re.search(r'ship models defaulted (\d+)', host.call('coop.status')['out'])
+        return int(m.group(1)) if m else 0
+
+    def fly(star, world):
+        for _ in range(5):  # a badge or caption cinematic blocks the jump: confirm it
+            r = sp(host, 'jumpto', star)
+            print(f'  host flies to star {star:08X}: {r}', flush=True)
+            if 'cinematic' not in r:
+                break
             host.call('key enter')
-        time.sleep(2)
-        if arrived and time.time() - t0 > 25:
+            time.sleep(2)
+        t0 = time.time()
+        arrived = False
+        while time.time() - t0 < 60:
+            st = host.call('coop.status')['out']
+            if re.search(rf'world={world}|Space {world}', st) or world in sp(host, 'hp'):
+                arrived = True
+            hp = sp(host, 'hp')
+            if 'cine=1' in hp or 'movie=1' in hp:
+                host.call('key enter')
+            time.sleep(2)
+            if arrived and time.time() - t0 > 25:
+                break
+        return arrived
+
+    # the NPC empire's ships at its star take their models from the cache's UFO list, one picked per ship: the case
+    # (a ship without its model) comes with some of them only. Up to VISITS arrivals there (out to the home star and
+    # back in between) until one ship needed the guard (BUG-1213: one visit was not enough on lanes 2-4, 6, 7)
+    for visit in range(VISITS):
+        if visit and home:
+            fly(home, f'80{home:06X}')
+        fly(STAR, '804A0014')
+        n = defaulted()
+        print(f'  visit {visit + 1}: ship models defaulted {n}', flush=True)
+        if n or not alive(lane.HOST):
             break
     fleet = host.call('coop.fleet list')['out']
     print('  fleet:', ' | '.join(fleet.splitlines()[:3])[:300], flush=True)
