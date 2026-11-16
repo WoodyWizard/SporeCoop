@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: owner play test 2026-11-15 (59-dev)
 role: guest
 versions: 0.7.14.1-lineages59-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages60-dev
 branch: feat/lineages-47
 commits: 6dc24d1b
 tests: none yet (a real migration is needed)

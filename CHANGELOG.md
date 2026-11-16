@@ -2,9 +2,15 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages60-dev] - 2026-11-15
+
 - Creature: the host can add creatures to its pack again after a guest used
   Summon Flock (the guest's flock kept the host's pack "full") (BUG-9233), and a
   guest's flock follows the guest (BUG-9229).
+- Creature: during a nest migration a partner's own nest is made at the new
+  nest right away, so the partner loads the world once instead of twice
+  (BUG-9234; not tested in a real migration yet, `coop.fix
+  creature.nest_at_migration_target off` turns it off).
 
 ## [0.7.14.1-lineages59-dev] - 2026-11-15
 

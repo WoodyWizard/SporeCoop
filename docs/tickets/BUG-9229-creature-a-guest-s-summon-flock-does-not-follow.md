@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: owner play test 2026-11-15
 role: guest
 versions: 0.7.14.1-lineages58-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages60-dev
 branch: feat/lineages-47
 commits: e1ce9e69
 tests: manual Windows QA: the MSI, two games, coop.gpack summon 1
