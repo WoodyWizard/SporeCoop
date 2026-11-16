@@ -55,6 +55,83 @@ constexpr uintptr_t kTarget = 0x08, kFlags = 0x48, kCounter = 0x4A, kPos = 0x4C,
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 
+// the diagnostic counters (coop.pool and the Cell status lines print them, the tests read them; never reset by a
+// session or world change, as before C8 of 0.7.15)
+struct Counters {
+    uint32_t own_bites = 0, own_hits = 0; // DamageCell by our avatar / that took hp
+    uint32_t own_chunks = 0; // chunks our avatar bit off the host's cells (EatChunk)
+    uint32_t hits_in = 0, eats_in = 0, hits_aggro = 0, bitten_in = 0, puppet_hits_dropped = 0, kills_in = 0, eats_late = 0;
+    uint32_t kills_sent = 0, death_replays = 0, loot_skipped = 0;
+    uint32_t hurt_local = 0, hurt_fwd = 0, soft_moves = 0, bites_taken = 0, damage_taken = 0;
+    uint32_t scale_conv = 0; // samples converted (host and guest scale differed)
+    uint32_t ko_bites_blocked = 0, ko_hits_refused = 0;
+    uint32_t ko_eats_blocked = 0; // BUG-0364: meals and chunk bites of our knocked-out cell left out
+    uint32_t ko_swallows_blocked = 0;
+    uint32_t statehold_dropped = 0;
+    uint32_t hits_spared = 0;
+    uint32_t solo_times = 0, solo_released = 0, solo_spawns = 0, solo_sent = 0, solo_dropped = 0;
+    uint32_t send_held = 0; // host: sends held back for a guest not in the host's Cell world (tests)
+    uint32_t kills_resent = 0; // tests: a guest's kill sent again after the host left the creature alive
+    uint32_t kills_dup_sent = 0, kills_dup_refused = 0;
+    uint32_t eaten_skipped = 0, gone_again = 0;
+    uint32_t late_chunks = 0, rounds_partial = 0; // guest: state chunks of an older round, rounds with a lost chunk
+    uint32_t created = 0, destroyed = 0, hits_sent = 0, eats_sent = 0, purged = 0, bitten_sent = 0, soft_turns = 0, chunks_sent = 0, chunks_taken = 0, breaks_sent = 0;
+    uint32_t revives = 0, respawns = 0;
+    uint32_t camera_snaps = 0;
+    uint32_t camera_heals = 0;
+    uint32_t puppet_cell_refused = 0, puppet_cell_own = 0;
+    uint32_t ko_deaths = 0; // timed-out knock-outs that ended in the game's own death (cell.respawn_small off; coop.cell status: ko_deaths)
+    uint32_t chunk_kills = 0;
+    uint32_t product_hits = 0, foreign_mirror = 0, foreign_puppet = 0, foreign_other = 0, product_pairs = 0, products_live = 0; // tests
+    uint32_t puppet_poison_steps = 0;
+    uint32_t ko_clouds_blocked = 0; // tests: clouds a knocked-out cell did not make (own avatar's and partners' steps)
+    uint32_t partner_poison_refused = 0, partner_poison_taken = 0; // tests: refused / taken (switch off, ff, Rivals)
+    uint32_t clouds_made = 0, cloud_last = 0xFFFFFFFF, puppet_clouds = 0;
+    uint32_t own_clouds_held = 0;
+    uint32_t zaps = 0, zap_hits = 0; // tests
+    uint32_t bite_rings = 0; // tests
+    uint32_t mirror_kills = 0, npc_deaths = 0; // npc_deaths: NPCs of this pool killed / broken by the game
+    uint32_t wipe_kept = 0, wipe_destroyed = 0, wipe_near_lost = 0, wipe_calls = 0; // host: per session (tests)
+    uint32_t dbg_destroys = 0, dbg_expect = 0, dbg_freed = 0, dbg_nogfx = 0, dbg_alive = 0; // RE (BUG-0355)
+    uint32_t swallows_marked = 0;
+    uint32_t kept = 0, puppet_saves = 0, puppet_new = 0, own_eats = 0, own_food = 0;
+    uint32_t quick_destroys = 0;
+    uint32_t products_kept = 0;
+    uint32_t own_nf_events = 0;   // finite -> not finite transitions seen
+    uint32_t stack_logs = 0, stack_pairs = 0; // tests: `coop.pool stack`
+    uint32_t stack2_pairs = 0;
+    uint32_t pairs_skipped = 0;
+    uint32_t creature_pairs = 0, bite_events = 0;
+    uint32_t own_pairs = 0; // tests (BUG-0342): collision pairs of our own cell with any cell
+    uint32_t guest_attacks = 0, guest_attacks_spared = 0, guest_attack_kills = 0; // tests
+    uint32_t contacts_bad = 0, contacts_bad_own = 0, contact_logs = 0, contact_solves = 0, contacts_unit = 0;
+    uint32_t wipes = 0;
+    uint32_t nonfinite_sent_skipped = 0, nonfinite_dropped = 0;
+    uint32_t nan_pop_skips = 0, nan_heals = 0;
+    uint32_t tilecap_skips = 0;
+    uint32_t tiles_core = 0, tiles_starved = 0, tiles_fed = 0, send_capped = 0, mirror_capped = 0, cells_peak = 0;
+    uint32_t tiles_unshared = 0, tiles_flush = 0, tiles_full = 0, tiles_partner = 0, tiles_shared = 0, tiles_bg = 0, tile_passes = 0, tiles_kept = 0, tile_resets = 0, tiles_drained = 0;
+    uint32_t views_empty_skips = 0;
+    uint32_t handed_flushed = 0;                         // hand-overs into a list flushed in the same pass
+    uint32_t tile_check_warns_between = 0;               // "the frame between" warnings
+    uint32_t tiles_handed = 0;
+    uint32_t tiles_scale_flush = 0;
+    uint32_t tile_checks_bad = 0;
+    uint32_t stale_targets = 0;
+    uint32_t loot_calls = 0, loot_cells = 0;
+    uint32_t part_bad_frees = 0, particles_peak = 0;
+    uint32_t soft_refused = 0, soft_made = 0, gfx_peak = 0, soft_count0 = 0;
+    uint32_t part_room_runs = 0, part_stripped = 0, part_spare_freed = 0, bare_moves = 0;
+    uint32_t mirror_nan_heals = 0, mirror_nan_turns = 0;
+    uint32_t sap_over = 0, sap_peak = 0, sap_sweeps = 0, sap_left = 0;
+    uint32_t sap_pairs = 0, sap_pair_cap = 0, sap_pairs_full = 0; // tests (BUG-0342): pairs of the last sweep, the pair list size, sweeps that filled it
+    uint32_t merge_ours = 0, merge_peak = 0, merge_clipped = 0; // tests: merges of ours, the largest array merged, entries cut at the array's size
+    uint32_t joins_load = 0;     // tests: guest moved next to the host after a new avatar
+    uint32_t bg_culled = 0;
+    uint32_t leave_writes = 0, leave_dropped = 0; // BUG-0308: our pool work while the stage was left (off) / skipped (on)
+};
+static Counters g_n;
+
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 static bool in_cell() { return g_ok && game::mode_id() == modes::kCell && modes::cell_game(); }
@@ -124,9 +201,6 @@ static void set_pos(uint8_t* c, const net::Vec3& p)
 // ---------------- host ----------------
 static double g_last_send, g_last_food;
 static uint16_t g_cycle;
-static uint32_t g_own_bites, g_own_hits; // DamageCell by our avatar / that took hp
-static uint32_t g_own_chunks; // chunks our avatar bit off the host's cells (EatChunk)
-static uint32_t g_hits_in, g_eats_in, g_hits_aggro, g_bitten_in, g_puppet_hits_dropped, g_kills_in, g_eats_late;
 static int32_t g_food_sent = -1, g_plant_sent = -1;
 
 // ---------------- guest ----------------
@@ -151,8 +225,6 @@ CALL_GUARD("cellsync.replay", g_replay);
 // host adds it only if the cell was still there (eaten once), else on its own at the end of the frame
 static int g_pend_food;
 static bool g_pend_plant;
-static uint32_t g_kills_sent, g_death_replays, g_loot_skipped;
-static uint32_t g_hurt_local, g_hurt_fwd, g_soft_moves, g_bites_taken, g_damage_taken;
 // coop.pool mirrorfix 0|1 (tests): 0 = the guest of 0.7.2 (mirrors not turned, chunk and lethal bites not
 // sent to the host), to show what the fixes change in the same session
 static bool g_mirror_fixes = true;
@@ -191,7 +263,6 @@ COOP_FIX("pool.ko_grace", "BUG-0238", g_fix_ko_grace, "cell: a late knockout ref
 // follows the host's shared food total). The host's cell poses were applied in the guest's scale: up to
 // 10 m off and gliding fast for seconds after every level-up. The host sends its scale at the end of each
 // state chunk (older guests ignore it); the guest converts the pose by host scale / own scale.
-static uint32_t g_scale_conv; // samples converted (host and guest scale differed)
 static float world_scale()
 {
     uint8_t* g = G();
@@ -202,20 +273,15 @@ static float world_scale()
 // attack code ran for the avatar (Bite 0xE7B0A0, DamageCell with the avatar as attacker, BreakOrSwallow on a lethal
 // bite), a guest's bites went to the host as MSG_CELL_HIT and killed. Now a downed avatar's attacks do nothing on its
 // own game, and the host refuses MSG_CELL_HIT from a guest it knows to be knocked out (KO_OUT).
-static uint32_t g_ko_bites_blocked = 0, g_ko_hits_refused = 0;
-static uint32_t g_ko_eats_blocked; // BUG-0364: meals and chunk bites of our knocked-out cell left out
 // BUG-0746: the swallow of interaction kinds 9 / 10 (meat or a plant swallowed whole, StartEatSwallow 0xE7E020 ->
 // event type 1 -> SwallowWhole 0xE7D880 -> FinishEatEvent 0xE7D800 -> OnEat -> AvatarEat) is not EatFood: a
 // knocked-out carnivore still swallowed meat that touched its mouth. With the fix the executor 0xE7E7F0 runs such a
 // pair of our knocked-out avatar as a plain contact (kind 1, the push the game uses when the swallow refuses).
 static bool g_fix_ko_no_swallow = true;
 COOP_FIX("cell.ko_no_swallow", "BUG-0746", g_fix_ko_no_swallow, "cell: a knocked-out cell does not swallow meat or a plant whole (interaction kinds 9 / 10), so it does not eat while it is down");
-static uint32_t g_ko_swallows_blocked;
 static double g_kodrop_until; // tests (`coop.pool kodrop <s>`): MSG_CELL_KO ignored until then
 static double g_statehold_until; // tests (`coop.pool statehold <s>`): MSG_CELL_STATE dropped until then (a dead link, BUG-0480)
-static uint32_t g_statehold_dropped;
 static bool g_test_away; // tests (`coop.pool away 1|0`, host): the Cell messages are handled as in an editor
-static uint32_t g_hits_spared;
 // BUG-0205 / BUG-0151 (GitHub #130): while the host is away (main menu, an editor or a load, the
 // state coop.cpp calls "host away") its pool is not simulated and no state comes. The guest was told
 // "you play on alone", but its mirrors stood AI-locked, it spawned nothing (h_Populate) and the food
@@ -227,7 +293,6 @@ static uint32_t g_hits_spared;
 static bool g_solo;        // guest: playing its own pool now (the host away)
 static int g_solo_food[2]; // guest: meat / plant points eaten meanwhile (the guest's game has them)
 static bool g_solo_owed;   // the host is back: g_solo_food goes out before its first state or total is applied
-static uint32_t g_solo_times, g_solo_released, g_solo_spawns, g_solo_sent, g_solo_dropped;
 // BUG-0797: the guest plays its own pool also while it plays another Cell world than the host's (joined from its own
 // game, loaded a save of its own: own_world::elsewhere) or while the host already plays another stage and this guest
 // is still in Cell (own_world::host_left, BUG-0638's path): the host's pool never comes there, and the guarded hooks
@@ -242,7 +307,6 @@ COOP_FIX("cell.solo_elsewhere", "BUG-0797", g_fix_solo_elsewhere,
 // reliable chunks. Off: every guest every cycle (0.7.12).
 static bool g_fix_send_here = true;
 COOP_FIX("cell.send_here", "BUG-0809", g_fix_send_here, "cell: the host sends live Cell state only to guests in its Cell world");
-static uint32_t g_send_held; // host: sends held back for a guest not in the host's Cell world (tests)
 bool totals_resend_enabled() { return g_fix_resend; }
 static cell_logic::Rounds g_rounds;
 // Class BUG-0420: a world event on one cell acted on once (cell_logic::Once, docs/re/cell.md#cell-once).
@@ -265,7 +329,6 @@ COOP_FIX("cell.kill_refused", "BUG-0821", g_fix_kill_refused, "cell: a guest's k
 // log read as if the creature had been killed). Now it says "refused (knocked out)". Diagnostics only. Off: 0.7.12.
 static bool g_fix_ko_trace = true;
 COOP_FIX("cell.ko_trace", "BUG-0959", g_fix_ko_trace, "cell: the host's trace names a knocked-out guest's refused kill as refused, not applied");
-static uint32_t g_kills_resent; // tests: a guest's kill sent again after the host left the creature alive
 // guest: whether a lethal bite of mirror `hidx` goes out (false: sent already, the host's answer is on its way)
 static bool kill_send_first(uint32_t hidx, double now)
 {
@@ -273,14 +336,13 @@ static bool kill_send_first(uint32_t hidx, double now)
         auto it = g_kill_sent.at.find(hidx);
         if (it != g_kill_sent.at.end() && now - it->second >= 2.0) {
             g_kill_sent.drop(hidx); // the host left it alive: its refusal (or its spare) is over
-            g_kills_resent++;
+            g_n.kills_resent++;
         }
     }
     return g_kill_sent.first(hidx, now, g_fix_kill_once);
 }
 static bool g_in_guest_attack; // BUG-0714: a guest's attack replayed through the game (KillCell inside it counts as the player's kill)
 CALL_GUARD("cellsync.guest_attack", g_in_guest_attack); // BUG-1047
-static uint32_t g_kills_dup_sent, g_kills_dup_refused;
 // BUG-0636: the guest's mirror of a cell it ate (ACT_GONE) was made again from the next state chunk
 // before the host's state dropped it (one round trip) and the guest's game ate it again (its food
 // twice). The guest keeps a tombstone of the host indices it ate and mirrors them no more (5 s).
@@ -288,10 +350,8 @@ static uint32_t g_kills_dup_sent, g_kills_dup_refused;
 static bool g_fix_eat_once = true;
 COOP_FIX("cell.eat_once", "BUG-0636", g_fix_eat_once, "cell: a cell the guest ate is not mirrored again from a state sent before the host removed it (it was eaten twice)");
 static cell_logic::Once g_eaten(5.0);
-static uint32_t g_eaten_skipped, g_gone_again;
 static std::unordered_map<uint32_t, uint32_t> g_gone_sends; // tests: ACT_GONE sends per host index (last 512)
 static cell_logic::Meals g_meals;              // guest: meals sent, not yet in a host total
-static uint32_t g_late_chunks, g_rounds_partial; // guest: state chunks of an older round, rounds with a lost chunk
 static std::unordered_map<int, uint32_t> g_food_ack; // host: the last meal number of each guest it applied
 struct FoodTx {
     int32_t food = -1, plant = -1;
@@ -299,7 +359,6 @@ struct FoodTx {
     double at = 0;
 };
 static std::unordered_map<int, FoodTx> g_food_tx; // host: what each guest got last
-static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged, g_bitten_sent, g_soft_turns, g_chunks_sent, g_chunks_taken, g_breaks_sent;
 
 // ---------------- both: symbiosis ----------------
 // A lethal hit does not kill a player who has a partner in the pool: the cell is knocked out for
@@ -310,7 +369,6 @@ static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged, g_bi
 constexpr double kDownTime = 10.0, kReviveHold = 1.5;
 constexpr float kSmall = 0.5f;
 static double g_last_regen, g_invuln_until, g_last_tick;
-static uint32_t g_revives, g_respawns;
 static bool g_downed;
 static double g_down_since, g_hold;
 static net::Vec3 g_down_pos;
@@ -362,7 +420,6 @@ static float revive_dist(uint8_t* a)
 // partner, a guest put next to the host after a load or an editor) the view stayed off centre until
 // the player swam a while. The game's own jumps (0xE611B0, 0xE794F0) set +0x48, +0x54 and +0x60 to
 // the new place; we do the same for every jump of our own cell.
-static uint32_t g_camera_snaps;
 static void camera_snap(const net::Vec3& p)
 {
     uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
@@ -372,7 +429,7 @@ static void camera_snap(const net::Vec3& p)
         auto* q = (float*)(ui + off);
         q[0] = p.x; q[1] = p.y; q[2] = p.z;
     }
-    g_camera_snaps++;
+    g_n.camera_snaps++;
 }
 
 // BUG-0604: the camera update (0xE600A0) eases the drawn point +0x48 with factors computed from the
@@ -381,7 +438,6 @@ static void camera_snap(const net::Vec3& p)
 // clamp around the avatar compares a NaN distance and never runs. The view boxes are built around +0x48,
 // so the screen showed only the water for the rest of the session, while the cell kept swimming. Any
 // non-finite camera point goes back onto our own cell as the game's own jumps set them.
-static uint32_t g_camera_heals;
 static bool camera_finite()
 {
     uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
@@ -400,7 +456,7 @@ static void camera_heal(uint8_t* av)
     if (!views::finite_pos(p))
         return; // the own cell's heal puts it back first; the camera follows next frame
     camera_snap(p);
-    if (++g_camera_heals <= 10)
+    if (++g_n.camera_heals <= 10)
         H->log(M, SK_WARN, "coop: cell: the camera was not finite, put back on our own cell (%.1f %.1f) (BUG-0604)", p.x, p.y);
 }
 
@@ -562,7 +618,6 @@ static void send_ko(uint8_t state, float left, float hold)
 // (modes::cell_is_puppet) is returned. Old (`coop.fix cell.puppet_cell_index off`): the table's pointer.
 static bool g_puppet_cell_fix = true;
 COOP_FIX("cell.puppet_cell_index", "BUG-0823", g_puppet_cell_fix, "cell: the host's own cell is never taken for a partner's cell in the frame of a level rebuild (it got the knockout look or bit for the partner)");
-static uint32_t g_puppet_cell_refused, g_puppet_cell_own;
 static uint8_t* avatar();
 static uint8_t* puppet_cell(int id)
 {
@@ -571,11 +626,11 @@ static uint8_t* puppet_cell(int id)
     for (auto& p : C.puppets())
         if (p.id == id) {
             if (g_puppet_cell_fix && p.cell && !modes::cell_is_puppet(p.cell)) {
-                g_puppet_cell_refused++;
+                g_n.puppet_cell_refused++;
                 return nullptr;
             }
             if (p.cell && (uint8_t*)p.cell == avatar()) // (tests: the own cell handed out as the partner's)
-                g_puppet_cell_own++;
+                g_n.puppet_cell_own++;
             return (uint8_t*)p.cell;
         }
     return nullptr;
@@ -631,7 +686,6 @@ static void ko_expire(double now)
 static bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_player, int type, float dt);
 static bool g_ko_dying = false; // cell.respawn_small off: the timed-out knock-out ends in the game's own death
 CALL_GUARD("cellsync.ko_dying", g_ko_dying); // BUG-1047
-static uint32_t g_ko_deaths = 0; // ... how often (coop.cell status: ko_deaths)
 
 static bool go_down(uint8_t* c)
 {
@@ -682,7 +736,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
         F<int>(a, kHp) = 3;
         F<float>(a, kOpacity) = 1.f;
         g_invuln_until = now + 2.0;
-        g_revives++;
+        g_n.revives++;
         effect(a, "cell_hatch_ice");
         send_ko(KO_REVIVED, 0, 1);
         if (C.notice)
@@ -698,7 +752,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
         F<int>(a, kHp) = 0;
         g_invuln_until = 0;
         send_ko(KO_UP, 0, 0);
-        g_ko_deaths++;
+        g_n.ko_deaths++;
         if (C.notice)
             C.notice(C.my_name() + " was not revived in time");
         {
@@ -718,7 +772,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
     g_invuln_until = now + 3.0;
     set_body(a, kSmall);
     F<float>(a, kOpacity) = 1.f;
-    g_respawns++;
+    g_n.respawns++;
     effect(a, "cell_egg_L0_autohatch");
     send_ko(KO_RESPAWNED, 0, 0);
     if (C.notice)
@@ -814,7 +868,6 @@ static void hurt_avatar(int dmg, int type);
 // on the host's cell), and a hit on a dead cell is refused (a second KillCell). Off: the host's avatar is the killer.
 static bool g_fix_chunk_killer = true;
 COOP_FIX("cell.chunk_killer", "BUG-1008", g_fix_chunk_killer, "cell: a guest's lethal hit (a mouth chunk) on a host NPC kills it in the name of the guest's puppet, and a dead cell refuses the hit");
-static uint32_t g_chunk_kills;
 
 // guest: our cell bit the host's cell <hidx> (its mirror here): the host applies it (MSG_CELL_HIT)
 static void send_hit(uint32_t hidx, int dmg, int type)
@@ -824,7 +877,7 @@ static void send_hit(uint32_t hidx, int dmg, int type)
     w.u8((uint8_t)std::max(0, std::min(dmg, 255)));
     w.u8((uint8_t)type);
     C.sess->send_reliable_to(0, net::MSG_CELL_HIT, w);
-    g_hits_sent++;
+    g_n.hits_sent++;
     trace::ev("bite", "sent", "sent c%u dmg=%d type=%d", hidx, dmg, type);
 }
 
@@ -841,9 +894,7 @@ static void send_hit(uint32_t hidx, int dmg, int type)
 // counts them (`foreign_hits=<mirror>/<puppet>/<other>`). Old (`coop.fix cell.puppet_poison off`): no poison step.
 static bool g_fix_puppet_poison = true;
 COOP_FIX("cell.puppet_poison", "BUG-0716", g_fix_puppet_poison, "cell: a guest's poison part makes its clouds in the host's game, where they hurt the host's creatures (its own game destroyed them at once)");
-static uint32_t g_product_hits, g_foreign_mirror, g_foreign_puppet, g_foreign_other, g_product_pairs, g_products_live; // tests
 static uintptr_t a_PoisonStep;
-static uint32_t g_puppet_poison_steps;
 static void poison_step(uint8_t* cell, float dt) // custom convention: ESI = cell, stack float dt, caller pops
 {
     uint32_t bits;
@@ -867,7 +918,6 @@ static void poison_step(uint8_t* cell, float dt) // custom convention: ESI = cel
 // Off: 0.7.12 (clouds while knocked out).
 static bool g_fix_ko_no_poison = true;
 COOP_FIX("cell.ko_no_poison", "BUG-0799", g_fix_ko_no_poison, "cell: a knocked-out cell makes no poison clouds (they hurt and killed creatures for its owner while it was down)");
-static uint32_t g_ko_clouds_blocked; // tests: clouds a knocked-out cell did not make (own avatar's and partners' steps)
 static bool guest_knocked_out(uint32_t from);
 static void puppet_poison(float dt)
 {
@@ -879,7 +929,7 @@ static void puppet_poison(float dt)
         if (!pc || F<uint8_t>(pc, kDead) || F<uint8_t>(pc, kDying) || !F<uint32_t>(pc, kModelKey))
             continue;
         if (g_fix_ko_no_poison && guest_knocked_out((uint32_t)id)) {
-            g_ko_clouds_blocked++; // BUG-0799: a knocked-out partner's cell makes no clouds
+            g_n.ko_clouds_blocked++; // BUG-0799: a knocked-out partner's cell makes no clouds
             continue;
         }
         uint32_t& av = F<uint32_t>(g, 0x411C);
@@ -889,7 +939,7 @@ static void puppet_poison(float dt)
         poison_step(pc, dt);
         av = keep;
         game::swap_close(mark);
-        g_puppet_poison_steps++;
+        g_n.puppet_poison_steps++;
     }
 }
 // BUG-0958: a partner's poison clouds hurt and knocked out another player's cell while friendly fire was off (lab
@@ -902,7 +952,6 @@ static void puppet_poison(float dt)
 // before. Friendly fire on or Rivals: as 0.7.12. `coop.fix cell.partner_poison off`: as 0.7.12.
 static bool g_fix_partner_poison = true;
 COOP_FIX("cell.partner_poison", "BUG-0958", g_fix_partner_poison, "cell: with friendly fire off a partner's poison clouds do not hurt a player's cell");
-static uint32_t g_partner_poison_refused, g_partner_poison_taken; // tests: refused / taken (switch off, ff, Rivals)
 static std::unordered_set<uint32_t> g_partner_clouds; // host: cells its game made as clouds of a partner's puppet
 static char g_own_hit_last[160] = "-";                // tests: the last hit our cell took (attacker kind, origin, type)
 static bool players_hurt_each_other()
@@ -916,17 +965,16 @@ static void note_foreign_hit(uint8_t* att)
     if (!att || att == avatar())
         return;
     if (g_host_of.count(F<uint32_t>(att, 0)))
-        g_foreign_mirror++;
+        g_n.foreign_mirror++;
     else if (modes::cell_is_puppet(att))
-        g_foreign_puppet++;
+        g_n.foreign_puppet++;
     else
-        g_foreign_other++;
+        g_n.foreign_other++;
 }
 
 // tests (BUG-0716): the poison clouds our avatar's poison part makes (0xE76660, cdecl void(cell* maker, int size, ...))
 using Cloud_t = void(SK_CDECL*)(uint8_t*, int, void*);
 static Cloud_t o_Cloud;
-static uint32_t g_clouds_made, g_cloud_last = 0xFFFFFFFF, g_puppet_clouds;
 // host (BUG-0799): a partner's puppet whose player is knocked out
 static bool ko_puppet(uint8_t* c)
 {
@@ -938,18 +986,17 @@ static bool ko_puppet(uint8_t* c)
     return false;
 }
 static bool g_test_no_own_cloud = false; // tests (BUG-0892): our own avatar makes no cloud (a partner's puppet does)
-static uint32_t g_own_clouds_held;
 static void SK_CDECL h_Cloud(uint8_t* maker, int size, void* at)
 {
     if (g_test_no_own_cloud && in_cell() && maker && maker == avatar() && !modes::cell_is_puppet(maker)) {
         // (puppet_poison lends a partner's puppet the avatar index for its step: that cloud is the partner's)
-        g_own_clouds_held++;
+        g_n.own_clouds_held++;
         return;
     }
     if (g_fix_ko_no_poison && in_cell() && maker && ((g_downed && maker == avatar()) || ko_puppet(maker))) {
         // BUG-0799: a knocked-out cell makes no cloud: our own, and a knocked-out partner's puppet (puppet_poison, and
         // the game's own poison step, which also runs for a puppet drawn here with a poison part: lab 20261112-063438)
-        g_ko_clouds_blocked++;
+        g_n.ko_clouds_blocked++;
         return;
     }
     uint32_t live0 = G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0;
@@ -971,11 +1018,11 @@ static void SK_CDECL h_Cloud(uint8_t* maker, int size, void* at)
         });
     }
     if (in_cell() && maker && modes::cell_is_puppet(maker)) {
-        g_puppet_clouds++; // host (BUG-0716): a partner's cloud (puppet_poison, or the game's own poison step)
+        g_n.puppet_clouds++; // host (BUG-0716): a partner's cloud (puppet_poison, or the game's own poison step)
     }
     if (in_cell() && maker && maker == avatar()) {
-        g_clouds_made++;
-        g_cloud_last = (G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0) - live0; // cells added by it
+        g_n.clouds_made++;
+        g_n.cloud_last = (G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0) - live0; // cells added by it
     }
 }
 
@@ -992,14 +1039,13 @@ COOP_FIX("cell.electric", "BUG-0715", g_fix_electric, "cell: a guest's electric 
 using Zap_t = void(SK_CDECL*)(uint8_t*, uint32_t, uint32_t*);
 static Zap_t o_Zap;
 static uintptr_t a_Zap;
-static uint32_t g_zaps, g_zap_hits; // tests
 static void SK_CDECL h_Zap(uint8_t* att, uint32_t a2, uint32_t* first)
 {
     if (in_cell() && att && att == avatar())
-        g_zaps++; // our avatar's electric attacks, with the fix or without
+        g_n.zaps++; // our avatar's electric attacks, with the fix or without
     if (!g_fix_electric || !in_cell() || !is_guest() || !att || att != avatar() || g_downed) {
         if (in_cell() && g_downed && att && att == avatar()) {
-            g_ko_bites_blocked++; // BUG-0509: a knocked-out cell zaps nobody
+            g_n.ko_bites_blocked++; // BUG-0509: a knocked-out cell zaps nobody
             return;
         }
         o_Zap(att, a2, first);
@@ -1022,7 +1068,7 @@ static void SK_CDECL h_Zap(uint8_t* att, uint32_t a2, uint32_t* first)
         auto it = g_host_of.find(F<uint32_t>(c, 0));
         if (it != g_host_of.end()) {
             send_hit(it->second, lost, 1);
-            g_zap_hits++;
+            g_n.zap_hits++;
         }
     }
 }
@@ -1032,7 +1078,6 @@ static void SK_CDECL h_Zap(uint8_t* att, uint32_t a2, uint32_t* first)
 // hp change, docs/re/cell.md#cell-guest-bite-ring): the guest never saw the hp of what it bit. The
 // ring is shown here under DamageCell's own conditions (damage > 0, the victim damageable and not
 // spared); the hp change and the hurt reaction stay the host's (they come with the state).
-static uint32_t g_bite_rings; // tests
 // tests: whether a cell is inside the window (world_to_screen)
 static int on_screen_dbg(uint8_t* c)
 {
@@ -1074,7 +1119,7 @@ static void bite_ring(uint8_t* victim, uint8_t* attacker, int dmg)
     if (why)
         return;
     skg::cdecl_call<void>(a_Rollover, victim, F<int>(victim, kHp));
-    g_bite_rings++;
+    g_n.bite_rings++;
 }
 
 static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir, int type, int x, float dt)
@@ -1082,7 +1127,7 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
     if (!in_cell())
         return o_DamageCell(victim, attacker, dir, type, x, dt);
     if (g_downed && attacker && attacker == avatar() && victim != attacker) {
-        g_ko_bites_blocked++; // BUG-0509: a knocked-out cell's spike, poison or bite hurts nobody
+        g_n.ko_bites_blocked++; // BUG-0509: a knocked-out cell's spike, poison or bite hurts nobody
         return false;
     }
     // Damage to a player's cell is decided on that player's machine: there the host's NPC is a
@@ -1092,7 +1137,7 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
     // (docs/re/cell.md 9). The guest tells the host which NPC bit it (MSG_CELL_BITTEN) for the
     // NPC's own after-bite behaviour.
     if (is_host() && victim && C.puppet_owner && C.puppet_owner(victim) > 0) {
-        g_puppet_hits_dropped++;
+        g_n.puppet_hits_dropped++;
         return false;
     }
     if (victim && victim == avatar() && attacker && attacker != victim) {
@@ -1109,10 +1154,10 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
                  F<int>(victim, kHp));
         if ((mirror_product || partner_cloud) && !strcmp(k, "poison")) {
             if (g_fix_partner_poison && !players_hurt_each_other()) {
-                g_partner_poison_refused++;
+                g_n.partner_poison_refused++;
                 return false;
             }
-            g_partner_poison_taken++;
+            g_n.partner_poison_taken++;
         }
     }
     if (is_guest() && victim) {
@@ -1127,15 +1172,15 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
             return false;
         }
         if (victim == avatar() && attacker && g_host_of.count(F<uint32_t>(attacker, 0)))
-            g_hurt_local++; // a mirror bit us here: the only way a host NPC hurts us (see above)
+            g_n.hurt_local++; // a mirror bit us here: the only way a host NPC hurts us (see above)
     }
     if (victim && victim == avatar()) { // damage our own cell takes (diagnostics: is the guest as exposed?)
         int before = F<int>(victim, kHp);
         bool r = o_DamageCell(victim, attacker, dir, type, x, dt);
         int lost = before - F<int>(victim, kHp);
         if (lost > 0 && !g_downed) {
-            g_bites_taken++;
-            g_damage_taken += lost;
+            g_n.bites_taken++;
+            g_n.damage_taken += lost;
         }
         if (lost > 0 && is_guest() && attacker) {
             // a mirror bit us: on the host that NPC only touched our puppet (no bite there), so it
@@ -1145,7 +1190,7 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
                 net::Writer w;
                 w.u32(it->second);
                 C.sess->send_reliable_to(0, net::MSG_CELL_BITTEN, w);
-                g_bitten_sent++;
+                g_n.bitten_sent++;
             }
         }
         return r;
@@ -1153,9 +1198,9 @@ static bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const floa
     if (victim && attacker && attacker == avatar()) { // our own bites on the host's cells (diagnostics)
         int before = F<int>(victim, kHp);
         bool r = o_DamageCell(victim, attacker, dir, type, x, dt);
-        g_own_bites++;
+        g_n.own_bites++;
         if (F<int>(victim, kHp) < before || F<uint8_t>(victim, kDying))
-            g_own_hits++;
+            g_n.own_hits++;
         return r;
     }
     return o_DamageCell(victim, attacker, dir, type, x, dt);
@@ -1181,16 +1226,16 @@ static void chunk(Chunk_t orig, uint32_t eater, uint32_t victim, uint32_t a, uin
         return;
     }
     if (g_downed && e == avatar()) { // BUG-0364: a knocked-out mouth does not bite
-        g_ko_eats_blocked++;
+        g_n.ko_eats_blocked++;
         return;
     }
     if (e == avatar() && !is_guest())
-        g_own_chunks++;
+        g_n.own_chunks++;
     auto it = is_guest() ? g_host_of.find(victim) : g_host_of.end();
     if (g_mirror_fixes && it != g_host_of.end() && e == avatar()) {
         int dmg = a_GetDamage ? skg::cdecl_call<int>(a_GetDamage, e, v) : 1;
         send_hit(it->second, dmg, 6);
-        g_chunks_sent++;
+        g_n.chunks_sent++;
         // the bite shows here (food, health ring, push), but the mirror does not die here
         int hp = F<int>(v, kHp);
         if (hp - dmg < 1)
@@ -1202,16 +1247,16 @@ static void chunk(Chunk_t orig, uint32_t eater, uint32_t victim, uint32_t a, uin
     int before = victim == avatar_idx() ? F<int>(v, kHp) : 0;
     orig(eater, victim, a, b, dt);
     if (victim == avatar_idx() && F<int>(v, kHp) < before && !g_downed) {
-        g_bites_taken++;
-        g_damage_taken += before - F<int>(v, kHp);
+        g_n.bites_taken++;
+        g_n.damage_taken += before - F<int>(v, kHp);
         if (is_guest()) { // a mirror bit a chunk off us: the host's NPC rests after it (as for a bite)
             auto at = g_host_of.find(eater);
             if (at != g_host_of.end()) {
-                g_chunks_taken++;
+                g_n.chunks_taken++;
                 net::Writer w;
                 w.u32(at->second);
                 C.sess->send_reliable_to(0, net::MSG_CELL_BITTEN, w);
-                g_bitten_sent++;
+                g_n.bitten_sent++;
             }
         }
     }
@@ -1222,7 +1267,6 @@ static void SK_CDECL h_ChunkB(uint32_t e, uint32_t v, uint32_t a, uint32_t b, fl
 using KillCell_t = bool(SK_CDECL*)(uint8_t*, uint32_t, void*, bool, int, float);
 static KillCell_t o_KillCell;
 static std::unordered_map<uintptr_t, uint32_t> g_destroy_callers; // diagnostics: who destroyed a mirror
-static uint32_t g_mirror_kills, g_npc_deaths; // npc_deaths: NPCs of this pool killed / broken by the game
 static bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_player, int type, float dt)
 {
     if (uint32_t hidx = !g_replay && g_mirror_fixes && in_cell() ? mirror_key(c) : 0) {
@@ -1230,14 +1274,14 @@ static bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_
         // 0xE7DD90 / 0xE7DBD0 -> KillIfDead, ...). Killed here, its death and its meat (KillCell's loot)
         // stayed on this machine: the loot was purged as cells the host does not have, the host's
         // creature lived on. The host kills it; its death and loot come back with the state.
-        g_mirror_kills++;
+        g_n.mirror_kills++;
         g_destroy_callers[((uintptr_t)__builtin_return_address(0) - H->rebase(0)) | 0x20000000u]++;
         if (!F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead)) {
             if (kill_send_first(hidx, H->time_seconds())) {
                 send_act(hidx, ACT_KILL, (uint8_t)type, 0, false);
-                g_kills_sent++;
+                g_n.kills_sent++;
             } else
-                g_kills_dup_sent++; // BUG-0632: killed already, the host decides
+                g_n.kills_dup_sent++; // BUG-0632: killed already, the host decides
         }
         return false;
     }
@@ -1248,7 +1292,7 @@ static bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_
     bool npc = in_cell() && c && c != avatar() && !modes::cell_is_puppet(c) && !F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead);
     bool r = o_KillCell(c, killer, res, by_player, type, dt);
     if (npc && F<uint8_t>(c, kDying))
-        g_npc_deaths++;
+        g_n.npc_deaths++;
     return r;
 }
 
@@ -1257,7 +1301,7 @@ static Break_t o_Break;
 static void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
 {
     if (g_downed && in_cell() && attacker && attacker == avatar() && victim != attacker) {
-        g_ko_bites_blocked++; // BUG-0509: nor kills
+        g_n.ko_bites_blocked++; // BUG-0509: nor kills
         return;
     }
     if (uint32_t hidx = g_mirror_fixes && in_cell() ? mirror_key(victim) : 0) {
@@ -1265,24 +1309,24 @@ static void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
         // (event 5 0xE7ADD0) its loot and DestroyCell(idx, 1). On a mirror all of it happened here only
         // (the meat stayed on the guest and was purged as stray, the host never saw the kill): the
         // host breaks its own cell (ACT_BREAK), with the same death and loot, mirrored back.
-        g_mirror_kills++;
+        g_n.mirror_kills++;
         g_destroy_callers[((uintptr_t)__builtin_return_address(0) - H->rebase(0)) | 0x10000000u]++;
         int st = F<int>(victim, 0x18C);
         bool lethal = attacker && attacker == avatar() && st != 7 && st != 8 && st != 9 && !F<uint8_t>(victim, kDead);
         if (lethal && !kill_send_first(hidx, H->time_seconds())) {
-            g_kills_dup_sent++; // BUG-0632: we broke it already, the host's death comes with its state
+            g_n.kills_dup_sent++; // BUG-0632: we broke it already, the host's death comes with its state
         } else if (lethal) {
             effect(victim, "cell_death_break");
             send_act(hidx, ACT_BREAK, 0, 0, false);
-            g_kills_sent++;
-            g_breaks_sent++;
+            g_n.kills_sent++;
+            g_n.breaks_sent++;
         }
         return;
     }
     if (in_cell() && go_down(victim))
         return;
     if (in_cell() && victim && victim != avatar() && !modes::cell_is_puppet(victim))
-        g_npc_deaths++;
+        g_n.npc_deaths++;
     o_Break(victim, attacker, f);
 }
 
@@ -1296,7 +1340,6 @@ static void SK_CDECL h_Break(uint8_t* victim, uint8_t* attacker, float f)
 static bool g_fix_levelup_keep = true;
 COOP_FIX("cell.levelup_keep", "BUG-0635", g_fix_levelup_keep, "cell: a level change on the host keeps the cells on a partner's screen, as a single player keeps the cells in its view (they vanished on the guest and new ones came)");
 static bool g_in_wipe; // host: inside RemoveCellsOfOldScale
-static uint32_t g_wipe_kept, g_wipe_destroyed, g_wipe_near_lost, g_wipe_calls; // host: per session (tests)
 // tests (BUG-1064): `coop.pool areas mark` marks the cells in the host's visible box and in the same box round each
 // partner's cell (area 0: the host, k: partner k); `coop.pool areas` tells per area how many are gone and which
 // DestroyCell caller removed them (h_Destroy, by return address)
@@ -1337,7 +1380,6 @@ static bool in_partner_view(uint8_t* c)
 }
 using Destroy_t = void(SK_CDECL*)(uint32_t, bool, float, int);
 static Destroy_t o_Destroy;
-static uint32_t g_dbg_destroys, g_dbg_expect, g_dbg_freed, g_dbg_nogfx, g_dbg_alive; // RE (BUG-0355)
 static std::map<uintptr_t, uint32_t> g_dbg_destroy_by; // RE (BUG-0355): DestroyCell calls by return address
 // Guest: the cells our avatar touched lately (HandleCollisionPair with the avatar), local index -> time.
 // Only these can have been eaten or swallowed by us.
@@ -1350,9 +1392,7 @@ static std::unordered_map<uint32_t, double> g_touched;
 static bool g_fix_swallow_gone = true;
 COOP_FIX("cell.swallow_gone", "BUG-0827", g_fix_swallow_gone, "cell: a host cell a guest swallows whole is gone in the host's game too (it lived on and could be eaten again)");
 static std::unordered_map<uint32_t, double> g_swallowed;
-static uint32_t g_swallows_marked;
 static const char* kind_of(uint8_t* c);
-static uint32_t g_kept, g_puppet_saves, g_puppet_new, g_own_eats, g_own_food;
 static std::unordered_map<int, void*> g_puppet_seen;
 // tests (BUG-0480): when each host index was last sent, and where it was then (`coop.pool cell <key>` on the
 // host names it for a cell it does not have now); pruned after 20 s
@@ -1366,11 +1406,9 @@ static std::unordered_map<uint32_t, SentCell> g_sent_at;
 static double g_sent_pruned;
 // BUG-0480: host cells destroyed less than 2 s after their first send, by the caller of DestroyCell
 static std::map<uintptr_t, uint32_t> g_quick_destroy;
-static uint32_t g_quick_destroys;
 
 static std::map<uintptr_t, uint32_t> g_product_destroys; // tests (BUG-0716): who destroys our poison clouds, by return address
 static uintptr_t a_PoisonCullRet; // the visibility step's DestroyCell of a poison cell outside the active area (0xE78C37)
-static uint32_t g_products_kept;
 static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
 {
     if (in_cell() && is_guest()) {
@@ -1381,7 +1419,7 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
             // destroys every poison cloud of its avatar in the frame it is made ("outside the active area",
             // lab 20261108-042625: 101 of 101 at 0xE78C37); kept, they still met no mirror (lab 20261108-043126).
             // The host makes the guest's clouds instead (puppet_poison)
-            g_products_kept += a_PoisonCullRet && ra == a_PoisonCullRet;
+            g_n.products_kept += a_PoisonCullRet && ra == a_PoisonCullRet;
             if (g_product_destroys.size() < 32)
                 g_product_destroys[ra - H->rebase(0)]++;
         }
@@ -1389,7 +1427,7 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
     if (is_host() && in_cell()) {
         auto st = g_sent_at.find(idx);
         if (st != g_sent_at.end() && H->time_seconds() - st->second.first < 2.0) {
-            g_quick_destroys++;
+            g_n.quick_destroys++;
             g_quick_destroy[(uintptr_t)__builtin_return_address(0) - H->rebase(0)]++;
         }
     }
@@ -1402,7 +1440,7 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
         if (c && modes::cell_is_puppet(c)) {
             uintptr_t ra = (uintptr_t)__builtin_return_address(0) - H->rebase(0);
             g_destroy_callers[ra | 0x80000000u]++;
-            g_puppet_saves++;
+            g_n.puppet_saves++;
             F<uint8_t>(c, kDead) = 0;
             F<uint8_t>(c, kDying) = 0;
             return;
@@ -1413,11 +1451,11 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
         if (c && c != avatar() && !modes::cell_is_puppet(c)) {
             bool in_view = in_partner_view(c);
             if (in_view && g_fix_levelup_keep) {
-                g_wipe_kept++;
+                g_n.wipe_kept++;
                 return;
             }
-            g_wipe_destroyed++;
-            g_wipe_near_lost += in_view;
+            g_n.wipe_destroyed++;
+            g_n.wipe_near_lost += in_view;
         }
     }
     if (is_guest() && !g_our_destroy && in_cell()) {
@@ -1439,19 +1477,19 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
                 // cleared around a hatching cell 0xE78B20, size 0). It is the host's cell: the host
                 // decides, the mirror stays until the host's state drops it. Reported, these made
                 // the host destroy cells nobody had eaten (docs/stability/cell.md).
-                g_kept++;
+                g_n.kept++;
                 return;
             }
             // we ate it (or swallowed it): the host removes it the same way (with its loot, if the
             // game asked for loot) and adds what we got for it, once (not if someone ate it first)
             send_act(it->second, ACT_GONE, loot ? 1 : 0, g_pend_food, g_pend_plant);
             if (++g_gone_sends[it->second] > 1)
-                g_gone_again++; // BUG-0636: the same host cell eaten again (a mirror made again)
+                g_n.gone_again++; // BUG-0636: the same host cell eaten again (a mirror made again)
             if (g_gone_sends.size() > 512)
                 g_gone_sends.clear();
             g_eaten.first(it->second, H->time_seconds(), g_fix_eat_once);
             g_pend_food = 0;
-            g_eats_sent++;
+            g_n.eats_sent++;
             g_mirrors.erase(it->second);
             g_host_of.erase(it);
             if (t != g_touched.end())
@@ -1476,11 +1514,11 @@ static void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
     }
     o_Destroy(idx, loot, f, x);
     if (dc && dparts && dn > 1) {
-        g_dbg_destroys++;
-        g_dbg_expect += (uint32_t)dn;
-        g_dbg_freed += (uint32_t)std::max(0, before - F<int>(dparts, 0x1BD54));
-        g_dbg_nogfx += !dgfx;
-        g_dbg_alive += modes::cell_at(idx) != nullptr;
+        g_n.dbg_destroys++;
+        g_n.dbg_expect += (uint32_t)dn;
+        g_n.dbg_freed += (uint32_t)std::max(0, before - F<int>(dparts, 0x1BD54));
+        g_n.dbg_nogfx += !dgfx;
+        g_n.dbg_alive += modes::cell_at(idx) != nullptr;
     }
 }
 
@@ -1493,7 +1531,7 @@ static EatFood_t o_EatFood;
 static void SK_CDECL h_EatFood(uint32_t eater, uint32_t food, void* ref, float dt)
 {
     if (g_downed && in_cell() && eater == avatar_idx() && avatar()) {
-        g_ko_eats_blocked++;
+        g_n.ko_eats_blocked++;
         return;
     }
     o_EatFood(eater, food, ref, dt);
@@ -1508,7 +1546,7 @@ static void SK_CDECL h_ExecInter(uint32_t* in, float dt)
 {
     if (g_fix_ko_no_swallow && g_downed && in && (in[2] == 9 || in[2] == 10) && in_cell() && avatar() &&
         in[0] == avatar_idx()) {
-        g_ko_swallows_blocked++;
+        g_n.ko_swallows_blocked++;
         uint32_t k = in[2];
         in[2] = 1;
         o_ExecInter(in, dt);
@@ -1525,7 +1563,7 @@ static void SK_CDECL h_Swallow(uint8_t* eater, uint8_t* food, int type)
 {
     if (food && eater && in_cell() && is_guest() && eater == avatar() && g_host_of.count(F<uint32_t>(food, 0))) {
         g_swallowed[F<uint32_t>(food, 0)] = H->time_seconds();
-        g_swallows_marked++;
+        g_n.swallows_marked++;
         if (g_swallowed.size() > 256)
             g_swallowed.clear();
     }
@@ -1584,8 +1622,8 @@ static void SK_CDECL h_AddFood(int amount, bool plant)
     float before = a0 ? F<float>(a0, kTargetSize) : 0.f;
     o_AddFood(amount, plant);
     if (!g_food_guard && amount > 0 && in_cell()) { // our own avatar ate (AvatarEat 0xE7D070), not the network
-        g_own_eats++;
-        g_own_food += amount;
+        g_n.own_eats++;
+        g_n.own_food += amount;
         uint8_t* s0 = S();
         trace::ev("eat", "own", "own cell ate +%d %s (total %d)", amount, plant ? "plant" : "meat",
                   s0 ? F<int32_t>(s0, 0x1C) : -1);
@@ -1666,7 +1704,6 @@ static unsigned cell_nonfinite(uint8_t* c)
 }
 static const char* g_own_ok_at = "-";
 static unsigned g_own_nf;          // the mask at the last probe
-static uint32_t g_own_nf_events;   // finite -> not finite transitions seen
 static uint32_t g_shared_parts;    // own particle indices also held by another cell (last scan)
 static double g_shared_scan_at;
 static float g_last_dt;
@@ -1686,7 +1723,7 @@ static void own_probe(const char* where, uint8_t* other = nullptr)
         return;
     }
     g_own_nf = m;
-    if (++g_own_nf_events > 20)
+    if (++g_n.own_nf_events > 20)
         return;
     // what was near: cells within 3 sizes, non-finite cells there, own particles shared with others
     auto* p = (float*)(av + 0x84); // the previous position (the current one may be NaN)
@@ -1753,8 +1790,8 @@ static void shared_parts_scan(double now)
     g_shared_parts = shared;
 }
 
-static uint32_t g_stack_idx, g_stack_logs, g_stack_pairs; // tests: `coop.pool stack`
-static uint32_t g_stack2_a, g_stack2_nf, g_stack2_pairs;
+static uint32_t g_stack_idx; // tests: `coop.pool stack`
+static uint32_t g_stack2_a, g_stack2_nf;
 static std::vector<uint32_t> g_stack2; // the cells (the first is g_stack2_a)
 static float g_stack2_vmax;
 static int g_stack2_frames;
@@ -1763,22 +1800,19 @@ static void stack_pair(uint8_t* av, uint8_t* other);
 static net::Vec3 first_sphere(uint8_t* c);
 using Pair_t = void(SK_CDECL*)(uint8_t*, uint8_t*, float);
 static Pair_t o_Pair;
-static uint32_t g_pairs_skipped;
 static const char* kind_of(uint8_t* c);
 // what our cell does to creatures (tests: how often a player gets to bite): collision pairs of our
 // cell with a creature, interaction events of kind 10 our cell started (Bite 0xE7B0A0)
-static uint32_t g_creature_pairs, g_bite_events;
-static uint32_t g_own_pairs; // tests (BUG-0342): collision pairs of our own cell with any cell
 using Bite_t = bool(SK_CDECL*)(uint32_t, uint32_t, void*, void*, int, float);
 static Bite_t o_Bite;
 static bool SK_CDECL h_Bite(uint32_t att, uint32_t vic, void* p, void* d, int x, float dt)
 {
     if (in_cell() && att == avatar_idx()) {
         if (g_downed) { // BUG-0509: a knocked-out mouth does not bite
-            g_ko_bites_blocked++;
+            g_n.ko_bites_blocked++;
             return false;
         }
-        g_bite_events++;
+        g_n.bite_events++;
     }
     return o_Bite(att, vic, p, d, x, dt);
 }
@@ -1803,7 +1837,7 @@ static struct {
     uint8_t* vic = nullptr;
     int dmg = 0;
 } g_forced;                         // the damage GetDamageAmount answers for the guest's attack being replayed
-static uint32_t g_guest_attacks, g_guest_attacks_spared, g_guest_attack_kills, g_guest_attack_types[8]; // tests
+static uint32_t g_guest_attack_types[8]; // tests
 using GetDamage_t = int(SK_CDECL*)(uint8_t*, uint8_t*);
 static GetDamage_t o_GetDamage;
 static int SK_CDECL h_GetDamage(uint8_t* att, uint8_t* vic)
@@ -1838,12 +1872,12 @@ static bool guest_attack(uint32_t from, uint8_t* c, uint8_t* pc, int dmg, int t,
         }
     }
     g_forced.att = g_forced.vic = nullptr;
-    g_guest_attacks++;
+    g_n.guest_attacks++;
     g_guest_attack_types[(lethal ? 4 : t) & 7]++;
     bool died = F<uint8_t>(c, kDying) || F<uint8_t>(c, kDead) || F<int>(c, kHp) <= 0;
     bool hurt = died || F<int>(c, kHp) < hp0;
-    g_guest_attacks_spared += !hurt;
-    g_guest_attack_kills += died;
+    g_n.guest_attacks_spared += !hurt;
+    g_n.guest_attack_kills += died;
     trace::ev("bite", hurt ? "applied" : "spared", "from %u c%u (%s) dmg=%d type=%d%s through the game: hp %d -> %d%s anim=%X", from,
               F<uint32_t>(c, 0), kind_of(c), dmg, t, lethal ? " lethal" : "", hp0, F<int>(c, kHp), died ? " killed" : "",
               F<uint32_t>(c, 0x1B0));
@@ -1858,17 +1892,17 @@ static bool guest_knocked_out(uint32_t from)
 static void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
 {
     if (in_cell() && a && b && (a == avatar() || b == avatar()) && !strcmp(kind_of(a == avatar() ? b : a), "creature"))
-        g_creature_pairs++;
+        g_n.creature_pairs++;
     if (in_cell() && (modes::cell_is_puppet(a) || modes::cell_is_puppet(b))) {
         // a partner's cell is a picture of a cell simulated on its owner's machine: here nothing eats
         // it, swallows it or is eaten by it (the owner's own game does that, with our cells mirrored)
-        g_pairs_skipped++;
+        g_n.pairs_skipped++;
         return;
     }
     if (is_guest() && in_cell() && !g_solo) { // BUG-0205: our own pool while the host is away: every pair
         uint8_t* av = avatar();
         if (a != av && b != av) {
-            g_pairs_skipped++;
+            g_n.pairs_skipped++;
             return;
         }
         uint8_t* other = a == av ? b : a;
@@ -1883,9 +1917,9 @@ static void SK_CDECL h_Pair(uint8_t* a, uint8_t* b, float dt)
     uint8_t* av = avatar();
     bool mine = av && (a == av || b == av);
     if (mine)
-        g_own_pairs++;
+        g_n.own_pairs++;
     if (g_stack2_frames > 0 && (F<uint32_t>(a, 0) == g_stack2_a || F<uint32_t>(b, 0) == g_stack2_a))
-        g_stack2_pairs++;
+        g_n.stack2_pairs++;
     if (mine)
         stack_pair(av, a == av ? b : a);
     if (mine)
@@ -1921,14 +1955,13 @@ static uintptr_t a_ContactPass, a_ContactSolve;
 // inf / NaN (runtime: 2 cells on one centre 884 m/s, 4 cells inf, lab 20261106-111709). The fix: a contact's
 // normal is made a unit vector before it is solved (the unset one keeps its direction, a zero or non-finite
 // one becomes +x), and a contact whose impulse is still not finite is not applied.
-static uint32_t g_contacts_bad, g_contacts_bad_own, g_contact_logs, g_contact_solves, g_contacts_unit;
 static void contact_unit(Contact* k)
 {
     float* n = k->normal;
     float n2 = n[0] * n[0] + n[1] * n[1] + n[2] * n[2];
     if (std::isfinite(n2) && std::fabs(n2 - 1.f) < 0.02f)
         return;
-    g_contacts_unit++;
+    g_n.contacts_unit++;
     if (std::isfinite(n2) && n2 > 1e-12f) {
         float r = 1.f / std::sqrt(n2);
         n[0] *= r, n[1] *= r, n[2] *= r;
@@ -1961,7 +1994,7 @@ static bool contact_finite(const Contact* k, uint8_t* ra, uint8_t* rb, float* ou
 }
 static void contact_log(const char* what, const Contact* k, uint8_t* a, uint8_t* b, uint8_t* ra, uint8_t* rb, float imp)
 {
-    if (++g_contact_logs > 30)
+    if (++g_n.contact_logs > 30)
         return;
     auto one = [](uint8_t* c, char* o, size_t n) {
         snprintf(o, n, "c%u %s size=%.3f mass=%g inv=%g vel=(%g %g) pos=(%.2f %.2f) parts=%d gfx=%d chain=%u nf=0x%X%s%s",
@@ -1988,23 +2021,23 @@ static int SK_CDECL h_ContactSolve(Contact* k)
     uint8_t* b = a ? modes::cell_at(k->b) : nullptr;
     if (!a || !b)
         return o_ContactSolve(k);
-    g_contact_solves++;
+    g_n.contact_solves++;
     uint8_t *ra = contact_root(a), *rb = contact_root(b), *av = avatar();
     float imp = 0;
     contact_unit(k);
     bool st2 = g_stack2_frames > 0 && (F<uint32_t>(a, 0) == g_stack2_a || F<uint32_t>(b, 0) == g_stack2_a);
-    if ((st2 || (g_stack_frames > 0 && (F<uint32_t>(a, 0) == g_stack_idx || F<uint32_t>(b, 0) == g_stack_idx))) && g_stack_logs++ < 12) {
+    if ((st2 || (g_stack_frames > 0 && (F<uint32_t>(a, 0) == g_stack_idx || F<uint32_t>(b, 0) == g_stack_idx))) && g_n.stack_logs++ < 12) {
         contact_finite(k, ra, rb, &imp);
         net::Vec3 fa = first_sphere(a), fb = first_sphere(b);
         char w[96];
-        snprintf(w, sizeof w, "stacked (RE, first spheres %.5f apart, pairs %u)", std::hypot(fa.x - fb.x, fa.y - fb.y, fa.z - fb.z), g_stack_pairs);
+        snprintf(w, sizeof w, "stacked (RE, first spheres %.5f apart, pairs %u)", std::hypot(fa.x - fb.x, fa.y - fb.y, fa.z - fb.z), g_n.stack_pairs);
         contact_log(w, k, a, b, ra, rb, imp);
     }
     if (contact_finite(k, ra, rb, &imp))
         return o_ContactSolve(k);
     bool own = av && (ra == av || rb == av);
-    g_contacts_bad++;
-    g_contacts_bad_own += own;
+    g_n.contacts_bad++;
+    g_n.contacts_bad_own += own;
     contact_log("not applied", k, a, b, ra, rb, imp);
     if (!std::isfinite(k->accum))
         k->accum = 0.f; // the game's clamp keeps a contact's accumulated impulse; a NaN one stays out of the next round
@@ -2022,13 +2055,12 @@ static void SK_CDECL h_ContactPass()
 // guest send ~600 "eaten" reports per level change before h_Destroy kept untouched mirrors).
 using Wipe_t = void(SK_CDECL*)();
 static Wipe_t o_Wipe;
-static uint32_t g_wipes;
 static void SK_CDECL h_Wipe()
 {
     if (is_guest() && in_cell())
-        g_wipes++; // h_Destroy keeps the mirrors (not touched by us): the host's state replaces them
+        g_n.wipes++; // h_Destroy keeps the mirrors (not touched by us): the host's state replaces them
     g_in_wipe = is_host() && in_cell();
-    g_wipe_calls++;
+    g_n.wipe_calls++;
     o_Wipe();
     g_in_wipe = false;
 }
@@ -2041,7 +2073,7 @@ static int SK_CDECL h_Populate(float prob, int layer, int level, void* query, vo
     if (is_guest() && in_cell() && query == fg_query()) {
         if (!g_solo)
             return 0;
-        g_solo_spawns++; // BUG-0205: the host is away, our game fills its own pool
+        g_n.solo_spawns++; // BUG-0205: the host is away, our game fills its own pool
     }
     return o_Populate(prob, layer, level, query, bbox, marker, x);
 }
@@ -2061,13 +2093,11 @@ static int SK_CDECL h_Populate(float prob, int layer, int level, void* query, vo
 // Old (`coop.fix pool.finite_state off`): sent and mirrored as they come.
 static bool g_fix_finite = true;
 COOP_FIX("pool.finite_state", "BUG-0292", g_fix_finite, "cell: a cell with a NaN / infinite pose is neither sent by the host nor mirrored by a guest");
-static uint32_t g_nonfinite_sent_skipped, g_nonfinite_dropped;
 // BUG-0299: a guest's own cell still went NaN with no NaN mirror (4 players, lab 20261030-053709): its
 // view boxes followed, PopulateTiles filled the tile pool with garbage (a fault) and the next level-up
 // crashed in PopulateTile+0x8A. Now no PopulateTiles / PopulateTile runs while the own view boxes are
 // not finite, and the own cell is put back at its last finite position (soft-body particles around
 // it, at rest).
-static uint32_t g_nan_pop_skips, g_nan_heals;
 // BUG-0975: a fall of several levels at once (a guest at food 327 that joins a host at food 0, the host's
 // total taken in one AddFoodPoints) leaves the world scale G+0x514C at the old level's for ~3 s while
 // PopulateTiles builds the new level's active set from it: the lowest levels' tiles are tiny and the
@@ -2076,7 +2106,6 @@ static uint32_t g_nan_pop_skips, g_nan_heals;
 // target (or the set would not fit): ~2 s after a fall of three levels; a fall of one level is untouched. Old (`coop.fix cell.tile_cap off`): as before.
 static bool g_fix_tile_cap = true;
 COOP_FIX("cell.tile_cap", "BUG-0975", g_fix_tile_cap, "cell: no tile pass while the world scale is more than one level above its target after a fall, or while the active set would overflow the game's 511-tile buffer");
-static uint32_t g_tilecap_skips;
 static double g_tilecap_max;
 static uintptr_t a_TileSizes;
 static bool pose_finite(const net::Vec3& p, float vx, float vy, float size)
@@ -2098,7 +2127,6 @@ static bool pose_finite(const net::Vec3& p, float vx, float vy, float size)
 static uint32_t kPopCap = 1100, kPopCapScreen = 1300;
 constexpr uint32_t kSendCap = 900, kMirrorCap = 1500;
 static int g_tile_level = -1; // the level base of the last PopulateTiles call (tests)
-static uint32_t g_tiles_core, g_tiles_starved, g_tiles_fed, g_send_capped, g_mirror_capped, g_cells_peak;
 static std::unordered_map<uint32_t, uint8_t> g_starved; // tile objects of ours not populated for the budget -> the partner (0xFF: unknown)
 static uint32_t cells_live() { return G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0; }
 static bool over_budget() { return cells_live() >= kPopCap; }
@@ -2124,13 +2152,11 @@ static TileList* g_pass_list;   // the list of the pass PopulateTiles is running
 static int g_pass = -1;         // -1 none, 0 the host's pass, k > 0 the pass of centre k
 static bool g_union;            // h_TileActive: also true inside another centre's box
 static std::unordered_set<uint32_t> g_shadow_tiles; // tile objects not populated (another list has the tile)
-static uint32_t g_tiles_unshared, g_tiles_flush, g_tiles_full, g_tiles_partner, g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained;
 // BUG-0999: a host view box whose centre is not a usable position (not finite, or at the 1e7 edge that view_bad lets
 // through and views::finite_pos refuses) leaves the view set empty: the partner pass skips then (np = size() - 1
 // wrapped to SIZE_MAX and read past both lists). Off: the old unchecked pass (a fault on the host).
 static bool g_fix_views_empty = true;
 COOP_FIX_UNSAFE("cell.views_empty", "BUG-0999", g_fix_views_empty, "cell: the host's partner tile pass is skipped when its view set is empty (its own view centre not usable)");
-static uint32_t g_views_empty_skips;
 static int g_test_view_edge; // tests (BUG-0999): the host's view box at the 1e7 edge for this many tile passes
 // BUG-1000: the tile bookkeeping of a flush. The between-frames check runs after the cleanup of lists a rebuild
 // freed (it logged a false "dead entries" warning after every rebuild and used up the 20 warnings), and a flush of
@@ -2140,8 +2166,6 @@ static bool g_fix_flush_handover = true;
 COOP_FIX("cell.flush_handover", "BUG-1000", g_fix_flush_handover, "cell: a flush of the partner tile lists hands deleted tiles only to the host's list, and the between-frames tile check runs after the rebuild cleanup");
 static bool g_flushing;                                   // tiles_delete runs inside the flush of every partner list
 static std::unordered_set<TileList*> g_flush_lists;       // the partner lists that flush (this pass)
-static uint32_t g_handed_flushed;                         // hand-overs into a list flushed in the same pass
-static uint32_t g_tile_check_warns_between;               // "the frame between" warnings
 
 using PopTiles_t = void(SK_CDECL*)(int, TileList*, int);
 static PopTiles_t o_PopTiles;
@@ -2233,7 +2257,7 @@ static bool starve_tile(const uint32_t* t)
     if (live < kPopCap)
         return false;
     if (live < kPopCapScreen && partner_core(t)) {
-        g_tiles_core++;
+        g_n.tiles_core++;
         return false;
     }
     return true;
@@ -2242,17 +2266,17 @@ static bool starve_tile(const uint32_t* t)
 static void SK_CDECL h_PopTile(uint32_t* t, int all)
 {
     if (view_bad()) {
-        g_nan_pop_skips++;
+        g_n.nan_pop_skips++;
         return;
     }
     if (t && g_pass >= 0) {
         if (g_pass > 0 && t[1] != 0) { // the host does not need a partner's background
-            g_tiles_bg++;
+            g_n.tiles_bg++;
             g_shadow_tiles.insert(t[0]);
             return;
         }
         if (tile_elsewhere(cell_logic::tile_key((int32_t)t[1], (int32_t)t[2], (int32_t)t[3], (int32_t)t[4]), g_pass_list)) {
-            g_tiles_shared++; // its cells are there already: populating it again doubled the food
+            g_n.tiles_shared++; // its cells are there already: populating it again doubled the food
             g_shadow_tiles.insert(t[0]);
             return;
         }
@@ -2262,13 +2286,13 @@ static void SK_CDECL h_PopTile(uint32_t* t, int all)
         // (cell_4p, lab 20261030-064009)
         bool budgeted = g_pass > 0 || (g_pass == 0 && t[1] == 0 && g_views.size() > 1);
         if (budgeted && (size_t)g_pass < g_views.size() && starve_tile(t)) {
-            g_tiles_starved++;
+            g_n.tiles_starved++;
             g_shadow_tiles.insert(t[0]);
             g_starved[t[0]] = (uint8_t)g_views.list()[(size_t)g_pass].player;
             return;
         }
         if (g_pass > 0) {
-            g_tiles_partner++;
+            g_n.tiles_partner++;
             g_frame_tiles++;
         }
     } else if (t && !g_shadow_tiles.empty() && g_shadow_tiles.count(t[0]))
@@ -2300,7 +2324,7 @@ static bool SK_CDECL h_TileActive(const int32_t* t)
     }
     memcpy(vb, save, sizeof save);
     if (r)
-        g_tiles_kept++;
+        g_n.tiles_kept++;
     return r;
 }
 
@@ -2370,7 +2394,6 @@ static std::vector<uint32_t> g_freed_dbg;
 // tiles went back to the pool and the host's shadowed tiles around its own cell stayed empty
 // (RemoveCellsOfOldScale skips shadows; cell_new_game: the host found no meat on its screen, lab
 // 20261030-022912).
-static uint32_t g_tiles_handed;
 static void hand_over(int32_t key, TileList* from)
 {
     uint8_t* g = G();
@@ -2386,7 +2409,7 @@ static void hand_over(int32_t key, TileList* from)
                 uint32_t* t = (uint32_t*)(data + (size_t)((uint32_t)e[1] & 0xFFFF) * size);
                 if (l != host_tiles() && over_budget()) { // BUG-0295: a partner's area waits for room
                     if (g_flushing && g_flush_lists.count(l))
-                        g_handed_flushed++; // BUG-1000: waits in a list this pass deletes
+                        g_n.handed_flushed++; // BUG-1000: waits in a list this pass deletes
                     g_starved.emplace((uint32_t)e[1], (uint8_t)0xFF);
                     return true;
                 }
@@ -2397,7 +2420,7 @@ static void hand_over(int32_t key, TileList* from)
                     g_pass = -1;
                     o_PopTile(t, 0);
                     g_pass = pass;
-                    g_tiles_handed++;
+                    g_n.tiles_handed++;
                 }
                 return true;
             }
@@ -2410,7 +2433,7 @@ static void hand_over(int32_t key, TileList* from)
     for (auto& [id, pt] : g_ptiles)
         if (try_list(pt.list)) {
             if (g_flushing && g_flush_lists.count(pt.list))
-                g_handed_flushed++;
+                g_n.handed_flushed++;
             return;
         }
 }
@@ -2450,7 +2473,7 @@ static void tiles_delete(TileList* l, Keep keep)
             F<uint32_t>(pool, 4) = idx & 0xFFFF;
             g_shadow_tiles.erase(idx);
             g_starved.erase(idx);
-            g_tiles_drained++;
+            g_n.tiles_drained++;
             if (g_freed_dbg.size() < 6)
                 g_freed_dbg.push_back(idx);
             if (!was_shadow)
@@ -2499,7 +2522,6 @@ static void tiles_drain(int, PartnerTiles& pt)
 // Old (`coop.fix cell.scale_food_flush off`): before it.
 static bool g_fix_scale_food_flush = true;
 COOP_FIX("cell.scale_food_flush", "BUG-1066", g_fix_scale_food_flush, "cell: the host gives its partner tiles back before the world rescale that a partner's food starts (its own tiles were left in no list)");
-static uint32_t g_tiles_scale_flush;
 using WorldScale_t = void(SK_CDECL*)(float);
 static WorldScale_t o_WorldScale;
 static uintptr_t a_WorldScale;
@@ -2543,7 +2565,7 @@ static void stack_pair(uint8_t* av, uint8_t* other)
         return;
     net::Vec3 w = first_sphere(av), o = first_sphere(other), p = pos_of(other);
     modes::cell_move(other, {p.x + w.x - o.x, p.y + w.y - o.y, p.z + w.z - o.z}, true);
-    g_stack_pairs++;
+    g_n.stack_pairs++;
 }
 // tests (BUG-0307): `coop.pool stack2 <frames>`: two cells without a soft body (outside the active area)
 // on one centre at the start of <frames> cell steps: the game's sphere-sphere collision 0xE73BB0 then
@@ -2592,8 +2614,8 @@ static void SK_CDECL h_WorldScale(float dt)
         if (!g_ptiles.empty() && in_cell() && scale_moving())
             for (auto& [id, pt] : g_ptiles)
                 if (pt.list && pt.list->begin != pt.list->end) {
-                    g_tiles_flush++;
-                    g_tiles_scale_flush++;
+                    g_n.tiles_flush++;
+                    g_n.tiles_scale_flush++;
                     tiles_delete(pt.list, [](const int32_t*) { return false; });
                 }
     };
@@ -2623,12 +2645,11 @@ static void partner_tiles_reset(bool drain)
 
 // debug: every tile object is in exactly one list (the host's or one of ours); log the first step
 // where the pool's live count and the lists disagree
-static uint32_t g_tile_checks_bad;
 static void tiles_check(const char* step, int level)
 {
     uint8_t* g = G();
     TileList* h = host_tiles();
-    if (!g || !h || g_tile_checks_bad > 20)
+    if (!g || !h || g_n.tile_checks_bad > 20)
         return;
     size_t n = (size_t)((h->end - h->begin) / 2), dead = 0;
     uint32_t first_dead = 0, first_key = 0;
@@ -2645,9 +2666,9 @@ static void tiles_check(const char* step, int level)
         }
     uint32_t live = F<uint32_t>(g, 0x38 + 0xC);
     if (n != live || dead) {
-        g_tile_checks_bad++;
+        g_n.tile_checks_bad++;
         if (!strncmp(step, "the frame between", 17) && dead) // dead entries: a list that points at freed tiles
-            g_tile_check_warns_between++;
+            g_n.tile_check_warns_between++;
         std::string fr;
         for (uint32_t i : g_freed_dbg)
             fr += " " + std::to_string(i & 0xFFFF) + "/" + std::to_string(i >> 16);
@@ -2696,7 +2717,7 @@ static void feed_starved()
                 ++it;
                 continue;
             }
-            g_tiles_core++;
+            g_n.tiles_core++;
         }
         // another list populated the same tile meanwhile: ours stays a plain shadow
         bool other = tile_elsewhere(cell_logic::tile_key((int32_t)t[1], (int32_t)t[2], (int32_t)t[3], (int32_t)t[4]), nullptr);
@@ -2706,7 +2727,7 @@ static void feed_starved()
         g_shadow_tiles.erase(idx);
         if (t[1] == 0) {
             o_PopTile(t, 0);
-            g_tiles_fed++;
+            g_n.tiles_fed++;
             g_frame_tiles++;
             n++;
         }
@@ -2729,10 +2750,10 @@ static bool tiles_overflow(int level)
     bool falling = F<float>(g, 0x514C) > F<float>(g, 0x5150) * 3.5f;
     if (n <= cell_logic::kActiveTileCap && !falling)
         return false;
-    if (g_tilecap_skips++ % 30 == 0)
+    if (g_n.tilecap_skips++ % 30 == 0)
         trace::line("tiles", "pass skipped: its active set would be %.0f tiles (the game's buffer holds 511; held until the scale settles), level %d, food %d, "
                              "world scale %.3f -> %.3f (BUG-0975, %u skipped)",
-                    n, level, F<int32_t>(s, 0x1C), F<float>(g, 0x514C), F<float>(g, 0x5150), g_tilecap_skips);
+                    n, level, F<int32_t>(s, 0x1C), F<float>(g, 0x514C), F<float>(g, 0x5150), g_n.tilecap_skips);
     g_tilecap_max = std::max(g_tilecap_max, n);
     return true;
 }
@@ -2799,7 +2820,7 @@ static void SK_CDECL h_PopTiles(int level, TileList* list, int all)
 static void pop_tiles(int level, TileList* list, int all)
 {
     if (view_bad()) { // BUG-0299: the active set from NaN boxes is garbage
-        g_nan_pop_skips++;
+        g_n.nan_pop_skips++;
         return;
     }
     if (tiles_overflow(level))
@@ -2842,7 +2863,7 @@ static void pop_tiles(int level, TileList* list, int all)
         int32_t* out = list->begin;
         for (int32_t* e = list->begin; e < list->end; e += 2) {
             if (mine.count((uint32_t)e[1])) {
-                g_tiles_unshared++;
+                g_n.tiles_unshared++;
                 continue;
             }
             out[0] = e[0];
@@ -2857,7 +2878,7 @@ static void pop_tiles(int level, TileList* list, int all)
     for (auto& [id, pt] : g_ptiles)
         if (pt.list && pt.list->begin != pt.list->end && !tile_alive((uint32_t)pt.list->begin[1])) {
             tiles_forget(pt);
-            g_tile_resets++;
+            g_n.tile_resets++;
         }
     if (g_fix_flush_handover) // BUG-1000: after the lists a rebuild freed are forgotten
         tiles_check("the frame between", level);
@@ -2886,7 +2907,7 @@ static void pop_tiles(int level, TileList* list, int all)
     g_flushing = all_go;
     for (auto& [id, pt] : g_ptiles) {
         if (all_go && pt.list && pt.list->begin != pt.list->end) {
-            g_tiles_flush++;
+            g_n.tiles_flush++;
             tiles_delete(pt.list, [](const int32_t*) { return false; });
         } else
             tiles_delete(pt.list, [](const int32_t* t) { return h_TileActive(t); });
@@ -2901,7 +2922,7 @@ static void pop_tiles(int level, TileList* list, int all)
     o_PopTiles(level, list, all);
     tiles_check("the host's pass", level);
     if (g_views.size() == 0 && g_fix_views_empty) // BUG-0999: the host's own centre was not usable this pass
-        g_views_empty_skips++;
+        g_n.views_empty_skips++;
     else if (!all && !scale_moving()) { // a rebuild (all) populates the host's view in one go, a moving
                                         // world scale refills the host's list from every tile: the partners follow
         // BUG-0295: the partners take turns being first, so the one that comes first does not take
@@ -2924,14 +2945,14 @@ static void pop_tiles(int level, TileList* list, int all)
             // list broken: 4060 faults at CreateObject+0x37, lab 20261030-002902). One call creates
             // at most 0x33 tiles: a partner pass runs only with room for that and the host's next.
             if (F<uint32_t>(tp, 0x18) < F<uint32_t>(tp, 0xC) + 4 * 0x40) {
-                g_tiles_full++;
+                g_n.tiles_full++;
                 continue;
             }
             memcpy(vb, g_view_boxes[k].data(), sizeof(float) * 12);
             g_pass = (int)k;
             g_pass_list = pt.list;
             o_PopTiles(level, pt.list, 0);
-            g_tile_passes++;
+            g_n.tile_passes++;
             tiles_check("a partner's pass", level);
         }
         memcpy(vb, host_box.data(), sizeof(float) * 12);
@@ -2939,7 +2960,7 @@ static void pop_tiles(int level, TileList* list, int all)
     }
     g_pass = -1;
     g_pass_list = nullptr;
-    g_cells_peak = std::max(g_cells_peak, cells_live());
+    g_n.cells_peak = std::max(g_n.cells_peak, cells_live());
     static double last_log;
     if (now - last_log > 10.0) { // the support log: how full the tile pool is with the partners' areas
         last_log = now;
@@ -2949,7 +2970,7 @@ static void pop_tiles(int level, TileList* list, int all)
                 ours += (size_t)((pt.list->end - pt.list->begin) / 2);
         trace::line("tiles", "pool %u/%u, host list %d, partner lists %u (%u tiles), level %d, flushes %u, full %u; cell pool %u/%u",
                     F<uint32_t>(tp, 0xC), F<uint32_t>(tp, 0x18), (int)((list->end - list->begin) / 2),
-                    (unsigned)g_ptiles.size(), (unsigned)ours, level, g_tiles_flush, g_tiles_full,
+                    (unsigned)g_ptiles.size(), (unsigned)ours, level, g_n.tiles_flush, g_n.tiles_full,
                     F<uint32_t>(G(), 0x1C + 0xC), F<uint32_t>(G(), 0x1C + 0x18));
     }
     // a partner that left (or has no cell here any more): the game deletes its tiles
@@ -2998,7 +3019,6 @@ static bool SK_CDECL h_NoAttack(uint8_t* a, uint8_t* b)
 using PickTargets_t = bool(SK_CDECL*)(uint8_t*, void*);
 static PickTargets_t o_PickTargets;
 static uintptr_t a_PickTargets;
-static uint32_t g_stale_targets;
 static bool SK_CDECL h_PickTargets(uint8_t* c, void* res)
 {
     bool r = o_PickTargets(c, res);
@@ -3008,13 +3028,13 @@ static bool SK_CDECL h_PickTargets(uint8_t* c, void* res)
     if (chase && !modes::cell_at(chase)) {
         chase = 0;
         F<float>(c, 0x230) = 0.f; // chase timer
-        g_stale_targets++;
+        g_n.stale_targets++;
     }
     uint32_t& flee = F<uint32_t>(c, kFlee);
     if (flee && !modes::cell_at(flee)) {
         flee = 0;
         F<float>(c, 0x21C) = 0.f; // flee timer
-        g_stale_targets++;
+        g_n.stale_targets++;
     }
     return r;
 }
@@ -3023,7 +3043,6 @@ static bool SK_CDECL h_PickTargets(uint8_t* c, void* res)
 // (KillCell, a break 0xE7ADD0, DestroyCell(idx, 1)). Counted per machine: loot_calls / loot_cells.
 using SpawnLoot_t = void(SK_CDECL*)(void*, void*, void*, void*, float, int, void*, float, uint32_t*, int*);
 static SpawnLoot_t o_SpawnLoot;
-static uint32_t g_loot_calls, g_loot_cells;
 // BUG-1004: SpawnLoot appends every cell it makes to the list it is given, recursion included, with no bound. The
 // list is a static one of 4096 entries (the cell pool holds 4096 cells: the game can never write more). Off: the
 // old 256-entry stack array (a loot drop of more than 256 cells writes past it on the stack).
@@ -3047,7 +3066,7 @@ static void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, f
         // The gameplay cells of the pool are the host's (no PopulateMarker here either): loot the guest's
         // game drops (a mirror broken or killed by the game here, DestroyCell(idx, 1)) would exist only on
         // this machine and be purged as stray at the next state. The host drops its own, mirrored here.
-        g_loot_skipped++;
+        g_n.loot_skipped++;
         return;
     }
     uint32_t before = fg ? pool_live() : 0;
@@ -3109,10 +3128,10 @@ static void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, f
     if (mine && !saved.empty())
         g_loot_listed_big = n;
     if (fg) {
-        g_loot_calls++;
+        g_n.loot_calls++;
         uint32_t after = pool_live();
         if (after > before)
-            g_loot_cells += after - before;
+            g_n.loot_cells += after - before;
         double now = H->time_seconds();
         for (int i = 0; i < n && i < cap; i++)
             g_loot_recent.push_back({buf[i], now});
@@ -3144,7 +3163,7 @@ constexpr int kParticles = 1500, kSpare = kParticles - 1;
 static uintptr_t a_PartAlloc, a_PartFree;
 static int(SK_CDECL* o_PartAlloc)(uint8_t*, const float*, const float*, float, int);
 static void(SK_CDECL* o_PartFree)(uint8_t*, int);
-static uint32_t g_part_spare, g_part_bad_frees, g_particles_peak;
+static uint32_t g_part_spare;
 static uintptr_t g_part_site[1500]; // RE (BUG-0355): the return address of each slot's last allocation
 static int particles_used()
 {
@@ -3191,7 +3210,6 @@ static void particle_state(int* minus1_cells, int* head_bad)
 // again next frame and gets one when there is room.
 static uintptr_t a_CreateSoft, a_GfxPtr;
 static void(SK_CDECL* o_CreateSoft)(uint32_t, int);
-static uint32_t g_soft_refused, g_soft_made, g_gfx_peak, g_soft_count0;
 static uint32_t* gfx_pool() // cObjectPool_ fields as uint32: [3] live, [6] capacity
 {
     uint8_t* gfx = a_GfxPtr ? *(uint8_t**)a_GfxPtr : nullptr;
@@ -3200,10 +3218,10 @@ static uint32_t* gfx_pool() // cObjectPool_ fields as uint32: [3] live, [6] capa
 static void SK_CDECL h_CreateSoft(uint32_t idx, int arg)
 {
     uint32_t* gp = gfx_pool();
-    if (gp && gp[3] > g_gfx_peak)
-        g_gfx_peak = gp[3];
+    if (gp && gp[3] > g_n.gfx_peak)
+        g_n.gfx_peak = gp[3];
     if (gp && gp[6] && gp[3] >= gp[6]) {
-        if (!g_soft_refused++)
+        if (!g_n.soft_refused++)
             H->log(M, SK_WARN, "cell: the cell graphics pool is full (%u of %u): no soft body for new cells on screen until there is room (BUG-0355)",
                    gp[3], gp[6]);
         // a new cell has count 0 (the pool's memset) until its first CreateSoftBody: give it the
@@ -3212,11 +3230,11 @@ static void SK_CDECL h_CreateSoft(uint32_t idx, int arg)
             if (F<int>(c, 0x250) < 1) {
                 F<int>(c, 0x250) = 1;
                 F<int>(c, 0x254) = -1;
-                g_soft_count0++;
+                g_n.soft_count0++;
             }
         return;
     }
-    g_soft_made++;
+    g_n.soft_made++;
     o_CreateSoft(idx, arg);
 }
 
@@ -3233,7 +3251,6 @@ static void SK_CDECL h_CreateSoft(uint32_t idx, int arg)
 // soft body. A cell left holding the spare (no cell to take from) is freed the same way once a
 // frame, and the spare is put back to a finite place.
 constexpr int kRoomTo = 1300; // used particles after a full pool made room (our cell at tier 3 takes 64)
-static uint32_t g_part_room_runs, g_part_stripped, g_part_spare_freed, g_bare_moves;
 // A mirror whose soft body the full pool freed was moved like a mirror without one (tier 0): steered by
 // its velocity towards the host's pose (set_pos only when over 3 m off). A mirror made from a full
 // pool lands on top of its neighbours and the cells around ours; steered, they shoved our own cell
@@ -3255,7 +3272,7 @@ static int strip_soft_body(uint8_t* parts, uint8_t* c)
         F<int>(c, 0x254 + 4 * i) = -1;
     }
     F<int>(c, 0x250) = 1;
-    g_part_stripped++;
+    g_n.part_stripped++;
     return freed;
 }
 // a full pool: free the soft bodies of the farthest cells (not ours, no puppet, not `asking`)
@@ -3274,7 +3291,7 @@ static void make_particle_room(uint8_t* parts, int asking)
         takers.push_back({std::isfinite(d) ? d : 1e30f, c}); // a NaN cell first
     });
     std::sort(takers.begin(), takers.end(), [](auto& x, auto& y) { return x.first > y.first; });
-    g_part_room_runs++;
+    g_n.part_room_runs++;
     for (auto& [d, c] : takers) {
         if (F<int>(parts, 0x1BD54) <= kRoomTo)
             break;
@@ -3295,7 +3312,7 @@ static void spare_tick()
         for (int i = 0; i < n; i++)
             if (F<int>(c, 0x254 + 4 * i) == kSpare) {
                 strip_soft_body(parts, c);
-                g_part_spare_freed++;
+                g_n.part_spare_freed++;
                 return;
             }
     });
@@ -3310,8 +3327,8 @@ static void spare_tick()
 static int SK_CDECL h_PartAlloc(uint8_t* parts, const float* pos, const float* vel, float w, int cell)
 {
     int used = parts ? F<int>(parts, 0x1BD54) : 0;
-    if (used > (int)g_particles_peak)
-        g_particles_peak = (uint32_t)used;
+    if (used > (int)g_n.particles_peak)
+        g_n.particles_peak = (uint32_t)used;
     // The game's own last slot is 1499 too: with no free slot below the high water it hands out
     // index = the new count (slots 1..1499; 1499 at 1498 used), so BUG-0338's spare could be a
     // real cell's particle (and its free was dropped: one slot lost). The pool counts as full at
@@ -3338,7 +3355,7 @@ static int SK_CDECL h_PartAlloc(uint8_t* parts, const float* pos, const float* v
 static void SK_CDECL h_PartFree(uint8_t* parts, int i)
 {
     if (i < 0 || i >= kSpare) {
-        g_part_bad_frees++;
+        g_n.part_bad_frees++;
         return;
     }
     o_PartFree(parts, i);
@@ -3365,7 +3382,6 @@ static void nan_velocity(uint8_t* c)
 // BUG-1006 (heal_mirror below): a guest's mirror whose soft body went NaN
 static bool g_fix_mirror_nan_heal = true;
 COOP_FIX("cell.mirror_nan_heal", "BUG-1006", g_fix_mirror_nan_heal, "cell: a guest's mirror whose soft body went NaN is rebuilt at the host's pose, and the mirror turn skips a NaN angle");
-static uint32_t g_mirror_nan_heals, g_mirror_nan_turns;
 using Soft_t = void(SK_CDECL*)(uint8_t*, void*, float);
 static Soft_t o_Soft;
 static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
@@ -3397,7 +3413,7 @@ static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
     float d = std::atan2(want[1], want[0]) - std::atan2(m[1], m[0]);
     float cs = std::cos(d), sn = std::sin(d);
     if (g_fix_mirror_nan_heal && !(std::isfinite(cs) && std::isfinite(sn))) { // BUG-1006: a NaN matrix (guest_tick rebuilds it)
-        g_mirror_nan_turns++;
+        g_n.mirror_nan_turns++;
         return;
     }
     float cx = 0, cy = 0;
@@ -3431,7 +3447,7 @@ static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
     memcpy(m, want, sizeof want);
     memcpy(c + 0x24, want, sizeof want); // the shape matrix the fit wrote with it (blend 0: the same)
     F<uint16_t>(c, kFlags) |= 2;
-    g_soft_turns++;
+    g_n.soft_turns++;
 }
 
 // ---- the cell broadphase's sweep (BUG-0337, docs/re/cell.md#cell-sap-active-list) ----
@@ -3442,8 +3458,6 @@ static void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
 // game's MergeAxis), the same pair test (the game's), the same pairs in the same order.
 static uintptr_t a_UpdatePairs, a_MergeAxis, a_Overlap;
 static void(__cdecl* o_UpdatePairs)(uint8_t*);
-static uint32_t g_sap_over, g_sap_peak, g_sap_sweeps, g_sap_left;
-static uint32_t g_sap_pairs, g_sap_pair_cap, g_sap_pairs_full; // tests (BUG-0342): pairs of the last sweep, the pair list size, sweeps that filled it
 static std::string sap_report(); // sweeps with over 1024 open objects, the most open at once, sweeps of ours
 
 // BUG-0718 (class BUG-0432): SweepPrune::MergeAxis 0xBBAF10 merges the pending endpoints into the sorted
@@ -3460,7 +3474,6 @@ static std::string sap_report(); // sweeps with over 1024 open objects, the most
 // MergeAxis at every size.
 static bool g_fix_sap_merge = true;
 COOP_FIX_UNSAFE("cell.sap_merge", "BUG-0718", g_fix_sap_merge, "cell: a broadphase axis with over 4096 endpoints (over ~2048 live cells) is merged with its queue on the heap, not in the game's 4096-entry stack buffer (it overran and faulted at 0xBBB07B)");
-static uint32_t g_merge_ours, g_merge_peak, g_merge_clipped; // tests: merges of ours, the largest array merged, entries cut at the array's size
 struct SapEp {
     int16_t type, obj;
     float v;
@@ -3488,9 +3501,9 @@ static int merge_axis(uint8_t* s, SapEp* sorted, int count, SapEp* added, int na
             F<int16_t>(objs + 16 * (size_t)e.obj, (e.type == 0 ? 8 : 0xC) + 2 * axis) = (int16_t)k;
         k++;
     }
-    g_merge_clipped += (uint32_t)(old.size() - i + add.size() - j);
-    g_merge_ours++;
-    g_merge_peak = std::max(g_merge_peak, (uint32_t)count);
+    g_n.merge_clipped += (uint32_t)(old.size() - i + add.size() - j);
+    g_n.merge_ours++;
+    g_n.merge_peak = std::max(g_n.merge_peak, (uint32_t)count);
     return k;
 }
 constexpr int kMergeQueue = 4096; // the game's stack queue: 0x8000 bytes of 8-byte endpoints
@@ -3510,7 +3523,7 @@ static void __cdecl h_UpdatePairs(uint8_t* s)
     F<int>(s, 0x20) = n;
     F<int>(s, 0x2C) = 0;
     F<int>(s, 8) = 0;
-    g_sap_sweeps++;
+    g_n.sap_sweeps++;
     static std::vector<int> open; // reused: no allocation per frame
     open.clear();
     uint32_t peak = 0;
@@ -3540,12 +3553,12 @@ static void __cdecl h_UpdatePairs(uint8_t* s)
             }
         }
     }
-    g_sap_pairs = (uint32_t)F<int>(s, 8);
-    g_sap_pair_cap = (uint32_t)F<int>(s, 0);
-    g_sap_pairs_full += g_sap_pairs >= g_sap_pair_cap;
-    g_sap_peak = std::max(g_sap_peak, peak);
-    g_sap_left = std::max(g_sap_left, (uint32_t)open.size());
-    if (peak > 1024 && !g_sap_over++) // the first one per session (the count is in `coop.pool sap`)
+    g_n.sap_pairs = (uint32_t)F<int>(s, 8);
+    g_n.sap_pair_cap = (uint32_t)F<int>(s, 0);
+    g_n.sap_pairs_full += g_n.sap_pairs >= g_n.sap_pair_cap;
+    g_n.sap_peak = std::max(g_n.sap_peak, peak);
+    g_n.sap_left = std::max(g_n.sap_left, (uint32_t)open.size());
+    if (peak > 1024 && !g_n.sap_over++) // the first one per session (the count is in `coop.pool sap`)
         H->log(M, SK_WARN, "cell: the broadphase sweep held %u open objects (the game's list holds 1024, BUG-0337)", peak);
     // objects still open after the sweep have their max endpoint before their min: a broken order
     static double s_told;
@@ -3766,7 +3779,7 @@ static void host_tick(double now)
             return;
         net::Vec3 p = pos_of(c);
         if (g_fix_finite && !pose_finite(p, F<float>(c, kVel), F<float>(c, kVel + 4), F<float>(c, kSize))) {
-            if (!g_nonfinite_sent_skipped++)
+            if (!g_n.nonfinite_sent_skipped++)
                 H->log(M, SK_WARN, "coop: cell: host cell %08X has a pose that is not finite: not sent (BUG-0292)", idx);
             return;
         }
@@ -3779,7 +3792,7 @@ static void host_tick(double now)
         if (pl.id == 0)
             continue;
         if (g_fix_send_here && !own_world::peer_here((uint8_t)pl.id)) {
-            g_send_held++; // BUG-0809
+            g_n.send_held++; // BUG-0809
             continue;
         }
         const views::Centre* vc = per_guest ? vs.find((uint8_t)pl.id) : nullptr;
@@ -3808,7 +3821,7 @@ static void host_tick(double now)
             closest.reserve(kSendCap);
             for (size_t i = 0; i < kSendCap; i++)
                 closest.push_back((*list)[d[i].second]);
-            g_send_capped++;
+            g_n.send_capped++;
             send_state(pl.id, closest);
             continue;
         }
@@ -3896,7 +3909,7 @@ static void guest_state(net::Reader& r)
         return;
     switch (g_rounds.on_chunk(cycle, chunk, g_fix_purge)) {
     case cell_logic::Rounds::OLD_CHUNK: // overtaken by a newer round: it would start that one again
-        g_late_chunks++;
+        g_n.late_chunks++;
         return;
     case cell_logic::Rounds::NEW_ROUND:
         g_cycle_seen.clear();
@@ -3915,7 +3928,7 @@ static void guest_state(net::Reader& r)
     }
     float k = host_scale > 0 && own_scale > 0 ? host_scale / own_scale : 1.f;
     if (k != 1.f)
-        g_scale_conv++;
+        g_n.scale_conv++;
     for (int i = 0; i < n && r.ok(); i++) {
         uint32_t hidx = r.u32(), inst = r.u32(), key[3];
         key[0] = r.u32(); key[1] = r.u32(); key[2] = r.u32();
@@ -3932,12 +3945,12 @@ static void guest_state(net::Reader& r)
             return;
         if (g_fix_finite && (!pose_finite(p, v.x, v.y, size) || !std::isfinite(q.x) || !std::isfinite(q.y) ||
                              !std::isfinite(q.z) || !std::isfinite(q.w))) {
-            if (!g_nonfinite_dropped++)
+            if (!g_n.nonfinite_dropped++)
                 H->log(M, SK_WARN, "coop: cell: host cell %08X arrived with a pose that is not finite: not mirrored (BUG-0292)", hidx);
             continue; // not in this round: its mirror goes with the round's purge
         }
         if (g_fix_eat_once && g_eaten.has(hidx, now)) {
-            g_eaten_skipped++; // BUG-0636: we ate it, the host's state has not dropped it yet
+            g_n.eaten_skipped++; // BUG-0636: we ate it, the host's state has not dropped it yet
             continue;
         }
         g_cycle_seen.insert(hidx);
@@ -3948,7 +3961,7 @@ static void guest_state(net::Reader& r)
         size *= k;
         uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
         if (!c && cells_live() >= kMirrorCap) {
-            g_mirror_capped++; // BUG-0295: the pool is full enough (an older host sends more)
+            g_n.mirror_capped++; // BUG-0295: the pool is full enough (an older host sends more)
             continue;
         }
         if (!c) { // dead ones too: the host shows a creature it killed until it is gone
@@ -3959,7 +3972,7 @@ static void guest_state(net::Reader& r)
                     g_host_of.erase(m.local);
                 m.local = idx;
                 g_host_of[idx] = hidx;
-                g_created++;
+                g_n.created++;
             }
         }
         if (c) {
@@ -3975,11 +3988,11 @@ static void guest_state(net::Reader& r)
                     callguard::Hold replay(g_replay);
                     o_KillCell(c, 0, nullptr, false, 6, 0.f);
                 }
-                g_death_replays++;
+                g_n.death_replays++;
             }
         }
     }
-    g_cells_peak = std::max(g_cells_peak, cells_live());
+    g_n.cells_peak = std::max(g_n.cells_peak, cells_live());
     if (chunk + 1 < chunks)
         return;
     // The host no longer has these: remove the mirrors. Only after a round of which every chunk
@@ -3987,13 +4000,13 @@ static void guest_state(net::Reader& r)
     // came back 0.1 s later as new cells (BUG-0032). Mirrors not listed for a second go anyway.
     bool complete = g_rounds.complete(chunks, g_fix_purge);
     if (!complete)
-        g_rounds_partial++;
+        g_n.rounds_partial++;
     for (auto it = g_mirrors.begin(); it != g_mirrors.end();) {
         if (complete ? !g_cycle_seen.count(it->first) : now - it->second.seen > 1.0) {
             if (it->second.local) {
                 g_host_of.erase(it->second.local);
                 destroy_local(it->second.local);
-                g_destroyed++;
+                g_n.destroyed++;
             }
             it = g_mirrors.erase(it);
         } else
@@ -4004,16 +4017,16 @@ static void guest_state(net::Reader& r)
     // within a second, so a guest could never reach it and open its own editor.
     std::vector<uint32_t> stray;
     uint32_t mate = mate_idx();
-    g_products_live = 0;
+    g_n.products_live = 0;
     for_each_cell([&](uint8_t* c, uint32_t idx) {
         if (!g_host_of.count(idx) && !modes::cell_is_puppet(c) && F<uint8_t>(c, 0x110))
-            g_products_live++; // tests (BUG-0716): our poison clouds and the like
+            g_n.products_live++; // tests (BUG-0716): our poison clouds and the like
         if (!g_host_of.count(idx) && !modes::cell_is_puppet(c) && idx != mate)
             stray.push_back(idx);
     });
     for (uint32_t idx : stray) {
         destroy_local(idx);
-        g_purged++;
+        g_n.purged++;
     }
 }
 
@@ -4093,7 +4106,7 @@ static bool heal_mirror(uint8_t* c, const net::Vec3& want, float size)
     }
     soft_ring(c, want);
     stop_at(c, want);
-    if (g_mirror_nan_heals++ < 20)
+    if (g_n.mirror_nan_heals++ < 20)
         H->log(M, SK_WARN, "coop: cell: mirror c%u had non-finite fields 0x%X: rebuilt at the host's pose (%.1f %.1f) (BUG-1006)",
                F<uint32_t>(c, 0), mask, want.x, want.y);
     return true;
@@ -4133,7 +4146,7 @@ static void heal_own(uint8_t* a, const net::Vec3& me, bool bad)
     }
     soft_ring(a, p);
     stop_at(a, p);
-    if (!g_nan_heals++ || (mask && g_nan_heals <= 20))
+    if (!g_n.nan_heals++ || (mask && g_n.nan_heals <= 20))
         H->log(M, SK_WARN, "coop: cell: our own cell went back to its last finite position (%.1f %.1f), non-finite fields 0x%X (BUG-0299, BUG-0307)",
                p.x, p.y, mask);
 }
@@ -4154,7 +4167,6 @@ LIFECYCLE_STATE("cell.join", lifecycle::kSession | lifecycle::kWorld, &g_fix_ses
     g_join_since = g_join_check = -1;
     g_join_tries = 0;
 }, []() -> size_t { return g_join_avatar || g_join_since >= 0 || g_join_check >= 0 ? 1 : 0; });
-static uint32_t g_joins_load;     // tests: guest moved next to the host after a new avatar
 static void join_after_load(double now)
 {
     uint32_t idx = avatar_idx();
@@ -4193,7 +4205,7 @@ static void join_after_load(double now)
     stop_at(a, g_join_to);
     g_join_tries++;
     g_join_check = now + 3.0;
-    g_joins_load++;
+    g_n.joins_load++;
     H->log(M, SK_INFO, "cell: our new cell joined the host (%.0f m away after the load, try %d)", d, g_join_tries);
 }
 
@@ -4213,7 +4225,7 @@ static void guest_tick(double now)
             for (auto& [hidx, m] : g_mirrors)
                 odd += !pose_finite(m.pos, m.vel.x, m.vel.y, m.size);
             H->log(M, SK_WARN, "coop: cell: our own cell's position is not finite (BUG-0292): %u mirrors, %u of them with a pose that is not finite, %u dropped so far",
-                   (unsigned)g_mirrors.size(), (unsigned)odd, g_nonfinite_dropped);
+                   (unsigned)g_mirrors.size(), (unsigned)odd, g_n.nonfinite_dropped);
         }
         own_bad = bad;
         heal_own(a, me, bad);
@@ -4241,14 +4253,14 @@ static void guest_tick(double now)
             modes::cell_move(c, want, true);
             auto* acc = (float*)(c + 0x1C4);
             acc[0] = acc[1] = acc[2] = 0;
-            g_soft_moves++;
+            g_n.soft_moves++;
         } else if (F<uint32_t>(c, 0x248) && n == 1 && F<int>(c, 0x24C) >= 1) {
             // a mirror whose soft body we freed (BUG-0355): placed as a soft one is (the
             // host's pose, at rest), not steered by velocity into the cells around it
             set_pos(c, want);
             auto* v = (float*)(c + kVel);
             v[0] = v[1] = 0.f;
-            g_bare_moves++;
+            g_n.bare_moves++;
         } else {
             if (net::dist(cur, want) > 3.f)
                 set_pos(c, want);
@@ -4281,7 +4293,7 @@ static void symbiosis_tick(double now)
         for (auto& p : C.puppets()) {
             void*& last = g_puppet_seen[p.id];
             if (last && last != p.cell)
-                g_puppet_new++;
+                g_n.puppet_new++;
             last = p.cell;
         }
     ko_expire(now);
@@ -4321,8 +4333,8 @@ static void hurt_avatar(int dmg, int type)
     if (!a || dmg <= 0 || F<uint8_t>(a, kInvuln) || F<uint8_t>(a, kDying))
         return;
     int old = F<int>(a, kHp), hp = old - dmg;
-    g_bites_taken++;
-    g_damage_taken += std::min(old, dmg);
+    g_n.bites_taken++;
+    g_n.damage_taken += std::min(old, dmg);
     if (hp > 0) {
         F<int>(a, kHp) = hp;
         if (a_Rollover && F<uint32_t>(a, 0x248))
@@ -4397,7 +4409,7 @@ void on_player_leave(int id)
 static void solo_reset()
 {
     if (g_solo_food[0] || g_solo_food[1]) {
-        g_solo_dropped++;
+        g_n.solo_dropped++;
         trace::ev("eat", "solo dropped", "food kept while the host was away dropped (meat %d plant %d): the stage or "
                   "the session ended first", g_solo_food[0], g_solo_food[1]);
     }
@@ -4417,7 +4429,7 @@ static void solo_start()
             continue;
         F<uint8_t>(c, kAiLock) = 0;
         F<uint8_t>(c, kKeepAlive) = 0; // the tile streaming owns them again
-        g_solo_released++;
+        g_n.solo_released++;
     }
     g_mirrors.clear();
     g_host_of.clear();
@@ -4431,8 +4443,8 @@ static void solo_start()
     }
     g_solo = true;
     g_solo_owed = false;
-    g_solo_times++;
-    trace::line("cell", "host away: the guest plays its own pool (%u cells released)", g_solo_released);
+    g_n.solo_times++;
+    trace::line("cell", "host away: the guest plays its own pool (%u cells released)", g_n.solo_released);
 }
 
 // the host is back and its pool runs again (its first state or total arrived): what we ate meanwhile
@@ -4449,7 +4461,7 @@ static void solo_send()
             w.u8((uint8_t)k);
             w.u32(g_meals.sent(n));
             C.sess->send_reliable_to(0, net::MSG_CELL_FOOD, w);
-            g_solo_sent += n;
+            g_n.solo_sent += n;
             trace::ev("eat", "solo sent", "host back: food +%d %s eaten while it was away sent", n, k ? "plant" : "meat");
         }
     g_solo_food[0] = g_solo_food[1] = 0;
@@ -4481,8 +4493,6 @@ static void solo_tick()
 // cells farther than kBgFar from our own cell are destroyed (the game's own DestroyCell, as
 // RemoveCellsOfOldScale does for cells outside the view), every 2 s, at most 300 a pass.
 constexpr float kBgFar = 150.f;
-static uint32_t g_bg_culled;
-static uint32_t g_leave_writes, g_leave_dropped; // BUG-0308: our pool work while the stage was left (off) / skipped (on)
 static double g_bg_cull_at;
 static void bg_cull(double now)
 {
@@ -4513,10 +4523,10 @@ static void bg_cull(double now)
     }
     for (uint32_t idx : gone)
         destroy_local(idx);
-    if (!gone.empty() && (g_bg_culled == 0 || (g_bg_culled + gone.size()) / 1000 != g_bg_culled / 1000))
+    if (!gone.empty() && (g_n.bg_culled == 0 || (g_n.bg_culled + gone.size()) / 1000 != g_n.bg_culled / 1000))
         trace::ev("cell", "bg cull", "%u background cells over %.0f m from our cell removed (%u in all, BUG-0314)",
-                  (unsigned)gone.size(), kBgFar, g_bg_culled + (unsigned)gone.size());
-    g_bg_culled += (uint32_t)gone.size();
+                  (unsigned)gone.size(), kBgFar, g_n.bg_culled + (unsigned)gone.size());
+    g_n.bg_culled += (uint32_t)gone.size();
 }
 
 static bool g_dna_note_due;
@@ -4575,7 +4585,7 @@ void tick(double now)
     if (cell && avatar() && game::leaving_stage()) { // BUG-0308: no pool writes while the stage is torn down
         if (modes::cell_leaving())
             return;
-        g_leave_writes++;
+        g_n.leave_writes++;
     }
     solo_tick();
     if (cell)
@@ -4638,10 +4648,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     bool cell = in_cell() && avatar() && !g_test_away;
     if (cell && game::leaving_stage()) { // BUG-0308: the stage is being torn down
         if (modes::cell_leaving()) {
-            g_leave_dropped++;
+            g_n.leave_dropped++;
             cell = false;
         } else if (type == net::MSG_CELL_STATE)
-            g_leave_writes++;
+            g_n.leave_writes++;
     }
     // BUG-0239: a guest's meal that reaches us in an editor (or without an avatar, around a rebuild)
     // is acknowledged without its points, as a meal eaten first: the guest takes it back at our next
@@ -4662,7 +4672,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         uint32_t idx = r.u32();
         int dmg = r.u8(), t = r.u8();
         if (r.ok() && idx == 0xFFFFFFFFu) {
-            g_hurt_fwd++;
+            g_n.hurt_fwd++;
             hurt_avatar(dmg, t);
         }
         return;
@@ -4690,7 +4700,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         solo_send(); // before the host's first total is applied: it then counts them as on the way (no dip)
     if (type == net::MSG_CELL_STATE && is_guest()) {
         if (g_statehold_until > 0 && H->time_seconds() < g_statehold_until) {
-            g_statehold_dropped++;
+            g_n.statehold_dropped++;
             return; // tests: the host's state lost on the way (coop.pool statehold)
         }
         guest_state(r);
@@ -4706,11 +4716,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             return;
         }
         if (guest_knocked_out(from)) { // BUG-0509: a knocked-out guest bites nothing (an old guest, or one in flight)
-            g_ko_hits_refused++;
+            g_n.ko_hits_refused++;
             trace::ev("bite", "refused ko", "from %u c%u refused: that player is knocked out", from, idx);
             return;
         }
-        g_hits_in++;
+        g_n.hits_in++;
         uint8_t* pc = puppet_cell(from);
         if (t != 6 && guest_attack(from, c, pc, dmg, t, false)) // BUG-0714: the game's Bite / DamageCell
             return;
@@ -4727,7 +4737,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (g_fix_guestbite && t != 6 &&
             (F<uint8_t>(c, kDead) == 1 || F<int>(c, kHp) == 0 || F<uint8_t>(c, 0x17C) || F<uint8_t>(c, kInvuln) ||
              not_damageable || (pc && o_NoAttack && h_NoAttack(c, pc)))) {
-            g_hits_spared++;
+            g_n.hits_spared++;
             trace::ev("bite", "spared", "from %u c%u (%s) dmg=%d spared by the game's rules (dead/hp0/invulnerable/"
                       "not damageable/no-attack)", from, idx, kind_of(c), dmg);
             return;
@@ -4740,7 +4750,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             skg::cdecl_call<void>(a_Alert, c, pidx);
             if (a_React && ai_type(c) == 0x1006)
                 skg::cdecl_call<void>(a_React, c, pidx);
-            g_hits_aggro++;
+            g_n.hits_aggro++;
         }
         int hp = F<int>(c, kHp) - dmg;
         trace::ev("bite", "applied", "from %u c%u (%s) dmg=%d hp %d -> %d%s", from, idx, kind_of(c), dmg, F<int>(c, kHp),
@@ -4752,7 +4762,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (g_fix_chunk_killer) { // BUG-1008: the guest's puppet killed it (as MSG_CELL_EAT's kill does)
                 uint8_t* av = avatar();
                 h_KillCell(c, pc ? F<uint32_t>(pc, 0) : avatar_idx(), pc ? F<void*>(pc, kRes) : av ? F<void*>(av, kRes) : nullptr, true, t, 0.f);
-                g_chunk_kills++;
+                g_n.chunk_kills++;
             } else
                 h_KillCell(c, avatar_idx(), F<void*>(avatar(), kRes), true, t, 0.f); // counts as a player kill
         }
@@ -4763,7 +4773,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         uint8_t* c = modes::cell_at(r.u32());
         if (!r.ok() || !c || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying))
             return;
-        g_bitten_in++;
+        g_n.bitten_in++;
         if (a_Rest && ai_type(c) == 0x1006) {
             void* holder = nullptr;
             uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, F<void*>(c, kRes), &holder);
@@ -4796,7 +4806,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                      (g_fix_kill_refused ? g_fix_kill_once && g_kill_applied.has(idx, H->time_seconds())
                                          : !g_kill_applied.first(idx, H->time_seconds(), g_fix_kill_once));
         if (again)
-            g_kills_dup_refused++;
+            g_n.kills_dup_refused++;
         // BUG-0714 / BUG-0509: a kill of a knocked-out guest is refused below
         bool ko = kind != ACT_GONE && alive && !again && g_fix_guest_hit_game && guest_knocked_out(from);
         if (kind == ACT_GONE)
@@ -4808,26 +4818,26 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                       cell_logic::kill_word(again, alive, ko && g_fix_ko_trace));
         if (kind == ACT_GONE) {
             if (c) {
-                g_eats_in++;
+                g_n.eats_in++;
                 o_Destroy(idx, arg & 1, 0.f, 0); // with the loot the game asked for on the guest
                 if (food)
                     food_in_step([food, plant] { o_AddFood(food, plant); });
             } else if (food) {
                 // somebody ate it first: no points for it. The guest already counted them: our total
                 // goes out again and takes them back (MSG_CELL_FOOD -> its AddFoodPoints(diff))
-                g_eats_late++;
+                g_n.eats_late++;
                 g_food_sent = -1;
             }
         } else if (ko) {
-            g_ko_hits_refused++; // BUG-0714: a lethal bite or kill of a knocked-out guest, as MSG_CELL_HIT (BUG-0509)
+            g_n.ko_hits_refused++; // BUG-0714: a lethal bite or kill of a knocked-out guest, as MSG_CELL_HIT (BUG-0509)
             trace::ev("bite", "refused ko", "from %u kill c%u refused: that player is knocked out", from, idx);
         } else if (alive && !again) {
             // the guest's bite killed it: the kill happens here, with the death and the loot
-            g_kills_in++;
+            g_n.kills_in++;
             if (kind == ACT_BREAK && guest_attack(from, c, pc, F<int>(c, kHp), 4, true)) {
-                g_hits_in++; // BUG-0714: the game's Bite decides with the host's hp (BreakOrSwallow, or its gates)
+                g_n.hits_in++; // BUG-0714: the game's Bite decides with the host's hp (BreakOrSwallow, or its gates)
             } else if (kind == ACT_BREAK) { // the lethal bite: also a hit that arrived (hits_in)
-                g_hits_in++;
+                g_n.hits_in++;
                 F<int>(c, kHp) = 0;
                 h_Break(c, pc ? pc : avatar(), 1.f / 30.f);
             } else {
@@ -4922,7 +4932,7 @@ static std::string away_status()
 {
     if (C.sess && C.sess->role() == net::Role::Host) {
         char h[80];
-        snprintf(h, sizeof h, "cell_send: held_not_here=%u\n", g_send_held); // BUG-0809
+        snprintf(h, sizeof h, "cell_send: held_not_here=%u\n", g_n.send_held); // BUG-0809
         return h;
     }
     if (!C.sess || C.sess->role() != net::Role::Client)
@@ -4930,8 +4940,8 @@ static std::string away_status()
     char e[200];
     snprintf(e, sizeof e, "cell_away: solo=%d send_due=%d solo_times=%u released=%u solo_spawns=%u kept_meat=%d kept_plant=%d "
              "kept_sent=%u kept_lost=%u\n",
-             (int)g_solo, (int)g_solo_owed, g_solo_times, g_solo_released, g_solo_spawns, g_solo_food[0], g_solo_food[1],
-             g_solo_sent, g_solo_dropped);
+             (int)g_solo, (int)g_solo_owed, g_n.solo_times, g_n.solo_released, g_n.solo_spawns, g_solo_food[0], g_solo_food[1],
+             g_n.solo_sent, g_n.solo_dropped);
     return e;
 }
 
@@ -5277,8 +5287,8 @@ static std::string sap_report()
     snprintf(b, sizeof b,
              "sap: merges_ours=%u merge_peak=%u merge_clipped=%u merge_fix=%d particles=%d peak=%u spare=%u bad_frees=%u minus1_cells=%d free_head_bad=%d endpoints=%d objects_cap=%d pending=%d held=%u removed=%d nan=%d unsorted=%d peak_open=%d open_at_end=%d "
              "max_first=%d live_objects=%d dup_min=%d lone_min=%d lone_max=%d sweeps=%u over_1024=%u sweep_peak=%u sweep_left=%u pairs=%u/%u pairs_full=%u fix=%d | open: mirror=%d other=%d bg=%d puppet=%d avatar=%d no_cell=%d inverted=%d size=%.3f..%.3f%s",
-             g_merge_ours, g_merge_peak, g_merge_clipped, (int)g_fix_sap_merge, particles_used(), g_particles_peak, g_part_spare, g_part_bad_frees, m1, hb, n, cap, pend, modes::cell_sap_held(), removed, nan_v, unsorted, peak, (int)active.size(), max_first, live_objs, dup_min, lone_min, lone_max, g_sap_sweeps, g_sap_over, g_sap_peak, g_sap_left,
-             g_sap_pairs, g_sap_pair_cap, g_sap_pairs_full, 1, k_mirror, k_other, k_bg, k_puppet,
+             g_n.merge_ours, g_n.merge_peak, g_n.merge_clipped, (int)g_fix_sap_merge, particles_used(), g_n.particles_peak, g_part_spare, g_n.part_bad_frees, m1, hb, n, cap, pend, modes::cell_sap_held(), removed, nan_v, unsorted, peak, (int)active.size(), max_first, live_objs, dup_min, lone_min, lone_max, g_n.sap_sweeps, g_n.sap_over, g_n.sap_peak, g_n.sap_left,
+             g_n.sap_pairs, g_n.sap_pair_cap, g_n.sap_pairs_full, 1, k_mirror, k_other, k_bg, k_puppet,
              k_avatar, k_none, inverted, rmin, rmax, sample);
     return b;
 }
@@ -5475,7 +5485,7 @@ std::string debug(const std::vector<std::string>& a)
         for (auto& [lv, k] : stray_levels)
             n += snprintf(b + n, sizeof b - std::min<size_t>(n, sizeof b), "%d:%u ", lv, k);
         n += snprintf(b + n, sizeof b - std::min<size_t>(n, sizeof b), " background=%u (over 150 m %u, keepalive %u, mirrors %u) bg_culled=%u leave_writes=%u leave_dropped=%u bg_levels=",
-                      bg, bg_far, bg_keep, bg_host, g_bg_culled, g_leave_writes, g_leave_dropped);
+                      bg, bg_far, bg_keep, bg_host, g_n.bg_culled, g_n.leave_writes, g_n.leave_dropped);
         for (auto& [lv, k] : bg_levels)
             n += snprintf(b + n, sizeof b - std::min<size_t>(n, sizeof b), "%d:%u ", lv, k);
         n = std::min<int>(n, (int)sizeof b - 1);
@@ -5527,7 +5537,7 @@ std::string debug(const std::vector<std::string>& a)
                          H->time_seconds() - st->second.first, st->second.sends, slot ? F<uint32_t>(slot, 0) : 0u);
                 std::string out(b);
                 char q[64];
-                snprintf(q, sizeof q, "  host cells destroyed < 2 s after their first send: %u;", g_quick_destroys);
+                snprintf(q, sizeof q, "  host cells destroyed < 2 s after their first send: %u;", g_n.quick_destroys);
                 out.pop_back();
                 out += q;
                 for (auto& [ra, n] : g_quick_destroy) {
@@ -5652,7 +5662,7 @@ std::string debug(const std::vector<std::string>& a)
             return "no such cell";
         char b[200];
         snprintf(b, sizeof b, "gap %s d=%.3f own=%.3f other=%.3f own_pairs=%u particles=%d/%d ailock=%d dead=%d\n", a[1].c_str(),
-                 net::dist(pos_of(c), pos_of(av)), F<float>(av, kSize), F<float>(c, kSize), g_own_pairs, F<int>(av, 0x250), F<int>(c, 0x250),
+                 net::dist(pos_of(c), pos_of(av)), F<float>(av, kSize), F<float>(c, kSize), g_n.own_pairs, F<int>(av, 0x250), F<int>(c, 0x250),
                  F<uint8_t>(c, kAiLock), F<uint8_t>(c, kDead) | F<uint8_t>(c, kDying));
         return b;
     }
@@ -5729,7 +5739,7 @@ std::string debug(const std::vector<std::string>& a)
                          H->time_seconds() - st->second.first, st->second.sends, slot ? F<uint32_t>(slot, 0) : 0u);
                 std::string out(b);
                 char q[64];
-                snprintf(q, sizeof q, "  host cells destroyed < 2 s after their first send: %u;", g_quick_destroys);
+                snprintf(q, sizeof q, "  host cells destroyed < 2 s after their first send: %u;", g_n.quick_destroys);
                 out.pop_back();
                 out += q;
                 for (auto& [ra, n] : g_quick_destroy) {
@@ -5766,9 +5776,9 @@ std::string debug(const std::vector<std::string>& a)
         if (!c || !a_EatFood)
             return "no such cell";
         g_touched[F<uint32_t>(c, 0)] = H->time_seconds(); // as the mouth contact would (HandleCollisionPair)
-        uint32_t before = g_own_food;
+        uint32_t before = g_n.own_food;
         skg::cdecl_call<void>(a_EatFood, avatar_idx(), F<uint32_t>(c, 0), F<void*>(c, kRes), 1.f / 30.f);
-        return "ate " + a[1] + " points=" + std::to_string(g_own_food - before);
+        return "ate " + a[1] + " points=" + std::to_string(g_n.own_food - before);
     }
     if (a.size() >= 2 && a[0] == "swallow") { // BUG-0746: our avatar's mouth touches a cell by its sync key and the
         // game's executor 0xE7E7F0 runs interaction kind 10 (meat swallowed whole, as a carnivore mouth at d 0/1) or
@@ -5792,9 +5802,9 @@ std::string debug(const std::vector<std::string>& a)
         float* f = (float*)in;
         f[6] = p.x; f[7] = p.y; f[8] = 0; // the contact point
         f[9] = dx / l; f[10] = dy / l; f[11] = 0; // the normal
-        uint32_t before = g_ko_swallows_blocked;
+        uint32_t before = g_n.ko_swallows_blocked;
         skg::cdecl_call<void>(a_ExecInter, in, 1.f / 30.f);
-        return "swallow " + a[1] + " kind " + std::to_string(in[2]) + (g_ko_swallows_blocked != before ? " blocked" : " run");
+        return "swallow " + a[1] + " kind " + std::to_string(in[2]) + (g_n.ko_swallows_blocked != before ? " blocked" : " run");
     }
     if (!a.empty() && a[0] == "kill") {
         // one bite of our avatar (DamageCell, hooked: a guest's goes to the host) on the NPC creature
@@ -5834,7 +5844,7 @@ std::string debug(const std::vector<std::string>& a)
         }
         char b[240];
         snprintf(b, sizeof b, "bit c%u %s at %.1f level=%d hp=%d pos=(%.1f %.1f) ring=%.2f rings=%u skip=%s lock=%d invuln=%d noattack=%d%s", key, kind_of(c), v[0].first, F<int>(c, kLevel), F<int>(c, kHp),
-                 pos_of(c).x, pos_of(c).y, rollover_of(F<uint32_t>(c, 0)), g_bite_rings, g_bite_ring_skip, F<uint8_t>(c, 0x17C), F<uint8_t>(c, kInvuln),
+                 pos_of(c).x, pos_of(c).y, rollover_of(F<uint32_t>(c, 0)), g_n.bite_rings, g_bite_ring_skip, F<uint8_t>(c, 0x17C), F<uint8_t>(c, kInvuln),
                  o_NoAttack_ptr() ? (int)o_NoAttack_ptr()(c, av) : -1, F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) ? " dying" : "");
         return b;
     }
@@ -6027,7 +6037,7 @@ std::string debug(const std::vector<std::string>& a)
         double s = std::clamp(atof(a[1].c_str()), 0.0, 30.0);
         g_statehold_until = s > 0 ? H->time_seconds() + s : 0;
         char b[96];
-        snprintf(b, sizeof b, "statehold %.1f s (dropped so far %u)", s, g_statehold_dropped);
+        snprintf(b, sizeof b, "statehold %.1f s (dropped so far %u)", s, g_n.statehold_dropped);
         return b;
     }
     if (a.size() >= 3 && a[0] == "cull") { // host, tests (BUG-0480): DestroyCell on <n> NPC cells within <r> m of the nearest partner
@@ -6101,7 +6111,7 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "stack2") { // tests (BUG-0307): two cells without a soft body onto one centre for <frames> steps
         if (a[1] == "?") {
             char b[200];
-            snprintf(b, sizeof b, "stack2 frames=%d pairs=%u nf=0x%X vmax=%g", g_stack2_frames, g_stack2_pairs, g_stack2_nf, g_stack2_vmax);
+            snprintf(b, sizeof b, "stack2 frames=%d pairs=%u nf=0x%X vmax=%g", g_stack2_frames, g_n.stack2_pairs, g_stack2_nf, g_stack2_vmax);
             return b;
         }
         net::Vec3 me = pos_of(av);
@@ -6125,7 +6135,7 @@ std::string debug(const std::vector<std::string>& a)
         g_stack2_a = g_stack2[0];
         g_stack2_nf = 0;
         g_stack2_vmax = 0;
-        g_stack2_pairs = 0;
+        g_n.stack2_pairs = 0;
         g_stack2_frames = atoi(a[1].c_str());
         net::Vec3 q = pos_of(v[0].second);
         char b[200];
@@ -6151,7 +6161,7 @@ std::string debug(const std::vector<std::string>& a)
         g_stack_frames = atoi(a[1].c_str());
         char b[200];
         snprintf(b, sizeof b, "stack c%u %s %.1f m away onto (%.2f %.2f) for %d steps (pairs before: %u)", g_stack_idx, kind_of(best), bd, me.x,
-                 me.y, g_stack_frames, g_stack_pairs);
+                 me.y, g_stack_frames, g_n.stack_pairs);
         return b;
     }
     if (!a.empty() && a[0] == "camsnap") { // tests (BUG-1064): our camera onto our own cell (a still cell's camera stays where a rescale left it)
@@ -6171,12 +6181,12 @@ std::string debug(const std::vector<std::string>& a)
         char b[320];
         snprintf(b, sizeof b, "cam=(%.2f %.2f) target=(%.2f %.2f) lag=(%.2f %.2f) avatar=(%.2f %.2f) off=%.2f follow=%u bc=%.2f snaps=%u scale=%.3f heals=%u",
                  d[0], d[1], t[0], t[1], l[0], l[1], me.x, me.y, std::hypot(d[0] - me.x, d[1] - me.y),
-                 F<uint32_t>(ui, 0xE0), F<float>(ui, 0xBC), g_camera_snaps, G() ? F<float>(G(), 0x514C) : 0.f, g_camera_heals);
+                 F<uint32_t>(ui, 0xE0), F<float>(ui, 0xBC), g_n.camera_snaps, G() ? F<float>(G(), 0x514C) : 0.f, g_n.camera_heals);
         return b;
     }
     if (a.size() >= 2 && a[0] == "noowncloud") { // tests (BUG-0892): 1 = our own avatar makes no poison cloud
         g_test_no_own_cloud = atoi(a[1].c_str()) != 0;
-        return "noowncloud " + std::to_string((int)g_test_no_own_cloud) + " held=" + std::to_string(g_own_clouds_held);
+        return "noowncloud " + std::to_string((int)g_test_no_own_cloud) + " held=" + std::to_string(g_n.own_clouds_held);
     }
     if (a.size() >= 3 && a[0] == "place" && !is_guest()) { // tests (BUG-0892): put the cell c<key> onto the cell c<to>
         // (a host creature onto a poison cloud: the game's own contact pair decides what it costs it)
@@ -6254,7 +6264,7 @@ std::string debug(const std::vector<std::string>& a)
             ts += " " + t + ":" + std::to_string(n);
         char b[160];
         snprintf(b, sizeof b, "staletarget: %d followers of leader c%u chasing dead c%u, stale_targets=%u, follower ai types", followers,
-                 F<uint32_t>(lc, 0), dead, g_stale_targets);
+                 F<uint32_t>(lc, 0), dead, g_n.stale_targets);
         return b + ts + "\n";
     }
     if (!a.empty() && a[0] == "parts") { // RE (BUG-0355): who holds the soft-body particles
@@ -6316,15 +6326,15 @@ std::string debug(const std::vector<std::string>& a)
         if (box)
             snprintf(bx, sizeof bx, " active_box=%.0fx%.0f m", box[3] - box[0], box[4] - box[1]);
         if (uint32_t* gp = gfx_pool())
-            snprintf(bx + strlen(bx), sizeof bx - strlen(bx), " gfx=%u/%u peak=%u soft_made=%u soft_refused=%u count0=%u", gp[3], gp[6], g_gfx_peak,
-                     g_soft_made, g_soft_refused, g_soft_count0);
+            snprintf(bx + strlen(bx), sizeof bx - strlen(bx), " gfx=%u/%u peak=%u soft_made=%u soft_refused=%u count0=%u", gp[3], gp[6], g_n.gfx_peak,
+                     g_n.soft_made, g_n.soft_refused, g_n.soft_count0);
         char b[800];
         snprintf(b, sizeof b,
                  "parts: used=%d held=%d (mirrors %d, within 60 m %d, beyond %d) tiers=%d/%d/%d/%d spare_cells=%d spare_refs=%d own_spare=%d "
                  "own_n=%d spare_at=(%.0f %.0f) farthest_particle=%.0f m nan_cells=%d nan_particles=%d room_runs=%u stripped=%u spare_freed=%u spare=%u tier0: size>=0.3 %d, +0x35C==G+0x4100 %d, no +0x248 %d near_bare=%d bare_moves=%u%s\n",
                  particles_used(), held, mir_held, near_held, far_held, tiers[0], tiers[1], tiers[2], tiers[3], spare_cells, spare_refs,
-                 own_spare, F<int>(av, 0x250), sp ? sp[0] : 0.f, sp ? sp[1] : 0.f, far_part, nan_cells, nan_parts, g_part_room_runs, g_part_stripped,
-                 g_part_spare_freed, g_part_spare, t0_big, t0_stamp, t0_nogfx, near_bare, g_bare_moves, bx);
+                 own_spare, F<int>(av, 0x250), sp ? sp[0] : 0.f, sp ? sp[1] : 0.f, far_part, nan_cells, nan_parts, g_n.part_room_runs, g_n.part_stripped,
+                 g_n.part_spare_freed, g_part_spare, t0_big, t0_stamp, t0_nogfx, near_bare, g_n.bare_moves, bx);
         return b;
     }
     if (!a.empty() && a[0] == "orphans") { // RE (BUG-0355): used particles no cell's list holds
@@ -6386,7 +6396,7 @@ std::string debug(const std::vector<std::string>& a)
                  used, high, free_n, owned, orphans, dead_owner, own_av, multi, big_lists, nogfx_lists);
         std::string first = b;
         snprintf(b, sizeof b, "  destroys of cells with particles: %u, particles %u, given back %u, without +0x248 %u, still alive after %u\n",
-                 g_dbg_destroys, g_dbg_expect, g_dbg_freed, g_dbg_nogfx, g_dbg_alive);
+                 g_n.dbg_destroys, g_n.dbg_expect, g_n.dbg_freed, g_n.dbg_nogfx, g_n.dbg_alive);
         std::string by;
         for (auto& [ra, n_] : g_dbg_destroy_by) {
             char h[96], mod[80];
@@ -6461,7 +6471,7 @@ std::string debug(const std::vector<std::string>& a)
             out += b;
             n++;
         }
-        snprintf(b, sizeof b, "collide: %d pairs with our cell %08X of %d, own_pairs=%u\n", n, me, np, g_own_pairs);
+        snprintf(b, sizeof b, "collide: %d pairs with our cell %08X of %d, own_pairs=%u\n", n, me, np, g_n.own_pairs);
         return out + b;
     }
     if (!a.empty() && a[0] == "sapme") { // tests (BUG-0342): our own cell's broadphase object [or c<key>'s]
@@ -6602,7 +6612,7 @@ std::string debug(const std::vector<std::string>& a)
         }
         char b[240];
         snprintf(b, sizeof b, "mirrornf c%u nf=0x%X pos=(%.2f %.2f) pmean=(%.2f %.2f) parts=%d heals=%u turns_skipped=%u\n", key,
-                 cell_nonfinite(c), pos_of(c).x, pos_of(c).y, mx, my, used, g_mirror_nan_heals, g_mirror_nan_turns);
+                 cell_nonfinite(c), pos_of(c).x, pos_of(c).y, mx, my, used, g_n.mirror_nan_heals, g_n.mirror_nan_turns);
         return b;
     }
     if (!a.empty() && a[0] == "rebuild" && is_host() && G()) { // tests (BUG-1000): the game rebuilds the level next frame
@@ -6620,7 +6630,7 @@ std::string debug(const std::vector<std::string>& a)
             g_area_mark.clear();
             g_centre_err_max = g_centre_err_moving = 0;
             memset(g_area_cull, 0, sizeof g_area_cull);
-            g_area_skips0 = g_tilecap_skips;
+            g_area_skips0 = g_n.tilecap_skips;
             if (!vb)
                 return "areas: no view boxes\n";
             float hx = (vb[3] - vb[0]) * 0.5f, hy = (vb[4] - vb[1]) * 0.5f;
@@ -6716,7 +6726,7 @@ std::string debug(const std::vector<std::string>& a)
                          c.lvl[4], c.lvl[5], c.lvl[6], c.lvl[7]);
                 out += b;
             }
-            snprintf(b, sizeof b, "passes skipped by the tile cap %u\n", g_tilecap_skips - g_area_skips0);
+            snprintf(b, sizeof b, "passes skipped by the tile cap %u\n", g_n.tilecap_skips - g_area_skips0);
             out += b;
             for (auto& v : g_views.list()) {
                 uint8_t* pc = v.player ? puppet_cell(v.player) : avatar();
@@ -6732,17 +6742,17 @@ std::string debug(const std::vector<std::string>& a)
     if (!a.empty() && a[0] == "tilestat") { // tests (BUG-0999, BUG-1000): the host's tile bookkeeping counters
         char b[320];
         snprintf(b, sizeof b, "tilestat views_empty_skips=%u flushes=%u handed=%u handed_flushed=%u resets=%u between_warns=%u "
-                 "check_warns=%u passes=%u lists=%u views=%u unshared=%u scale_flushes=%u\n", g_views_empty_skips, g_tiles_flush, g_tiles_handed, g_handed_flushed,
-                 g_tile_resets, g_tile_check_warns_between, g_tile_checks_bad, g_tile_passes, (unsigned)g_ptiles.size(), (unsigned)g_views.size(),
-                 g_tiles_unshared, g_tiles_scale_flush);
+                 "check_warns=%u passes=%u lists=%u views=%u unshared=%u scale_flushes=%u\n", g_n.views_empty_skips, g_n.tiles_flush, g_n.tiles_handed, g_n.handed_flushed,
+                 g_n.tile_resets, g_n.tile_check_warns_between, g_n.tile_checks_bad, g_n.tile_passes, (unsigned)g_ptiles.size(), (unsigned)g_views.size(),
+                 g_n.tiles_unshared, g_n.tiles_scale_flush);
         return b;
     }
     if (!a.empty() && a[0] == "lootbig") { // tests (BUG-1004): `lootbig <n>`: the next foreground loot drop makes <n> cells; `lootbig`: the counters
         if (a.size() > 1)
             g_loot_big_n = (uint32_t)std::clamp(atoi(a[1].c_str()), 0, 1000);
         char b[160];
-        snprintf(b, sizeof b, "lootbig armed=%u calls=%u cells=%u listed_last=%d listed_big=%d pool=%u tables=", g_loot_big_n, g_loot_calls,
-                 g_loot_cells, g_loot_listed_last, g_loot_listed_big, pool_live());
+        snprintf(b, sizeof b, "lootbig armed=%u calls=%u cells=%u listed_last=%d listed_big=%d pool=%u tables=", g_loot_big_n, g_n.loot_calls,
+                 g_n.loot_cells, g_loot_listed_last, g_loot_listed_big, pool_live());
         return b + g_loot_seen + "\n";
     }
     if (a.size() >= 4 && a[0] == "sendhit" && is_guest()) { // tests (BUG-1008): `sendhit c<key> <dmg> <type>`: a MSG_CELL_HIT as it is
@@ -6787,7 +6797,7 @@ std::string debug(const std::vector<std::string>& a)
             p0 = p1 + 1;
         }
         char b[96];
-        snprintf(b, sizeof b, "avatar=%u chunk_kills=%u puppets=", avatar_idx(), g_chunk_kills);
+        snprintf(b, sizeof b, "avatar=%u chunk_kills=%u puppets=", avatar_idx(), g_n.chunk_kills);
         out += b;
         if (C.puppets)
             for (auto& pp : C.puppets())
@@ -6839,8 +6849,8 @@ std::string debug(const std::vector<std::string>& a)
             for (auto& p : C.puppets())
                 as_puppet |= c && p.cell == c;
         snprintf(b, sizeof b, "self cell=%p opacity=%.2f hp=%d table_names_it=%d refused=%u handed_own=%u", (void*)c,
-                 c ? F<float>(c, kOpacity) : -1.f, c ? F<int>(c, kHp) : -1, (int)as_puppet, g_puppet_cell_refused,
-                 g_puppet_cell_own);
+                 c ? F<float>(c, kOpacity) : -1.f, c ? F<int>(c, kHp) : -1, (int)as_puppet, g_n.puppet_cell_refused,
+                 g_n.puppet_cell_own);
         return b;
     }
     if (a.size() >= 2 && a[0] == "selfhit") { // tests: our own cell takes a bite of <dmg> (a lethal one: KillCell)
@@ -6887,7 +6897,7 @@ std::string debug(const std::vector<std::string>& a)
             int ok = can ? (int)skg::cdecl_call<uint8_t>(can, who) : -1;
             snprintf(b, sizeof b, "borrow status: can=%d level=%d gfx=%08X model=%08X dead=%d state=%X poisoning=%d accum=%.2f md=%p poison=%.2f/%d part0=%d electric_period=%.2f clouds_made=%u cloud_cells=%d kept=%u puppet_clouds=%u puppet_poison_steps=%u\n",
                      ok, F<int>(who, kLevel), F<uint32_t>(who, 0x248), k[0], F<uint8_t>(who, 0x112), F<uint32_t>(who, 0x18C), F<uint8_t>(who, 0x1AC), F<float>(who, 0x374), md,
-                     md ? F<float>(md, 0x1270) : 0.f, md ? F<int>(md, 0x1274) : 0, md ? F<int>(md, 0x1278) : -1, md ? F<float>(md, 0x1260) : 0.f, g_clouds_made, (int)g_cloud_last, g_products_kept, g_puppet_clouds, g_puppet_poison_steps);
+                     md ? F<float>(md, 0x1270) : 0.f, md ? F<int>(md, 0x1274) : 0, md ? F<int>(md, 0x1278) : -1, md ? F<float>(md, 0x1260) : 0.f, g_n.clouds_made, (int)g_n.cloud_last, g_n.products_kept, g_n.puppet_clouds, g_n.puppet_poison_steps);
             return std::string(b) + "  destroyed by:" + (by.empty() ? " -" : by) + "\n";
         }
         if (a[1] == "off") {
@@ -7010,8 +7020,8 @@ std::string debug(const std::vector<std::string>& a)
     snprintf(b, sizeof b,
              "avatar hp=%d invuln=%d own_eats=%u own_points=%u bites_taken=%u damage_taken=%u pos=(%.1f %.1f) size=%.2f target=%.2f body=%.2f downed=%d dying=%d dead=%d ko_respawns=%u ko_deaths=%u partner_dist=%.1f "
              "revive_dist=%.1f local_gameplay_cells=%d own_pairs=%u ko_eats_blocked=%u ko_bites_blocked=%u ko_hits_refused=%u ko_swallows_blocked=%u\n",
-             F<int>(av, kHp), F<uint8_t>(av, kInvuln), g_own_eats, g_own_food, g_bites_taken, g_damage_taken, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
-             g_downed ? 1 : 0, (int)F<uint8_t>(av, kDying), (int)F<uint8_t>(av, kDead), g_respawns, g_ko_deaths, pd, revive_dist(av), local, g_own_pairs, g_ko_eats_blocked, g_ko_bites_blocked, g_ko_hits_refused, g_ko_swallows_blocked);
+             F<int>(av, kHp), F<uint8_t>(av, kInvuln), g_n.own_eats, g_n.own_food, g_n.bites_taken, g_n.damage_taken, pos_of(av).x, pos_of(av).y, F<float>(av, kSize), F<float>(av, kTargetSize), g_body,
+             g_downed ? 1 : 0, (int)F<uint8_t>(av, kDying), (int)F<uint8_t>(av, kDead), g_n.respawns, g_n.ko_deaths, pd, revive_dist(av), local, g_n.own_pairs, g_n.ko_eats_blocked, g_n.ko_bites_blocked, g_n.ko_hits_refused, g_n.ko_swallows_blocked);
     // cine=1: a caption waits for the player's OK (cinematic manager +0x2C, docs/re/space.md 7.2);
     // parts: the part states S+0x34 (13 ints, 0 locked; until BUG-0467 this read 13 bytes)
     void* cm = a_Cine ? skg::cdecl_call<void*>(a_Cine) : nullptr;
@@ -7023,7 +7033,7 @@ std::string debug(const std::vector<std::string>& a)
     snprintf(ob, sizeof ob, "avatar_opacity=%.2f cine=%d parts=%s chasing_me=%d chasing_partner=%d\n"
              "world_scale=%.4f target=%.4f scale_converted=%u\n",
              F<float>(av, kOpacity), cm && F<uint32_t>(cm, 0x2C) ? 1 : 0, parts.c_str(), chase_me, chase_partner,
-             world_scale(), G() ? F<float>(G(), 0x5150) : 0.f, g_scale_conv);
+             world_scale(), G() ? F<float>(G(), 0x5150) : 0.f, g_n.scale_conv);
     return b + std::string(ob) + ko + status() + away_status(); // the away line last: tests read the first food=
 }
 
@@ -7077,12 +7087,12 @@ std::string trace_line()
              F<float>(av, kSize), F<int>(av, kHp), k[0],
              !md ? "?" : md[0x1250] && md[0x1251] ? "omni" : md[0x1250] ? "carn" : md[0x1251] ? "herb" : "none", s ? F<int32_t>(s, 0x1C) : -1, s ? F<int32_t>(s, 0x20) : -1,
              plants, meat, creatures, near_plant, near_meat, all, (unsigned)g_mirrors.size(), (int)g_downed, g_body,
-             g_own_eats - l_eats, g_own_food - l_food, g_eats_sent - l_sent, g_eats_in - l_in, g_eats_late - l_late,
-             g_hits_sent - l_hits_sent, g_hits_in - l_hits_in, g_hits_spared - l_spared, g_kills_sent - l_kills_sent,
-             g_kills_in - l_kills_in);
-    l_eats = g_own_eats, l_food = g_own_food, l_sent = g_eats_sent, l_in = g_eats_in, l_late = g_eats_late;
-    l_hits_sent = g_hits_sent, l_hits_in = g_hits_in, l_spared = g_hits_spared, l_kills_sent = g_kills_sent;
-    l_kills_in = g_kills_in;
+             g_n.own_eats - l_eats, g_n.own_food - l_food, g_n.eats_sent - l_sent, g_n.eats_in - l_in, g_n.eats_late - l_late,
+             g_n.hits_sent - l_hits_sent, g_n.hits_in - l_hits_in, g_n.hits_spared - l_spared, g_n.kills_sent - l_kills_sent,
+             g_n.kills_in - l_kills_in);
+    l_eats = g_n.own_eats, l_food = g_n.own_food, l_sent = g_n.eats_sent, l_in = g_n.eats_in, l_late = g_n.eats_late;
+    l_hits_sent = g_n.hits_sent, l_hits_in = g_n.hits_in, l_spared = g_n.hits_spared, l_kills_sent = g_n.kills_sent;
+    l_kills_in = g_n.kills_in;
     return b;
 }
 
@@ -7092,25 +7102,25 @@ std::string status()
     vm.dwLength = sizeof vm;
     GlobalMemoryStatusEx(&vm);
     char d[320];
-    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u contacts_bad=%u contacts_bad_own=%u contacts_unit=%u contact_solves=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u leave_writes=%u leave_dropped=%u unknown_models=%u\n", g_creature_pairs, g_bite_events, g_nonfinite_sent_skipped, g_nonfinite_dropped, g_stale_targets, g_own_nf_events, g_contacts_bad, g_contacts_bad_own, g_contacts_unit, g_contact_solves, g_shared_parts, vm.ullAvailVirtual >> 20, g_created, g_destroyed, g_leave_writes, g_leave_dropped, modes::cell_unknown_models());
+    snprintf(d, sizeof d, "cell_contacts: creature_pairs=%u bite_events=%u nonfinite_skipped=%u nonfinite_dropped=%u stale_targets=%u own_nf=%u contacts_bad=%u contacts_bad_own=%u contacts_unit=%u contact_solves=%u shared_parts=%u vm_free_mb=%llu created=%u destroyed=%u leave_writes=%u leave_dropped=%u unknown_models=%u\n", g_n.creature_pairs, g_n.bite_events, g_n.nonfinite_sent_skipped, g_n.nonfinite_dropped, g_n.stale_targets, g_n.own_nf_events, g_n.contacts_bad, g_n.contacts_bad_own, g_n.contacts_unit, g_n.contact_solves, g_shared_parts, vm.ullAvailVirtual >> 20, g_n.created, g_n.destroyed, g_n.leave_writes, g_n.leave_dropped, modes::cell_unknown_models());
     char b[1400];
     uint8_t* s = S();
     int food = s ? F<int32_t>(s, 0x1C) : -1;
     if (C.sess && C.sess->role() == net::Role::Host)
         snprintf(b, sizeof b, "cell(host): food=%d ko_deaths=%u own_bites=%u own_hits=%u own_chunks=%u hits_in=%u hits_aggro=%u hits_spared=%u bitten_in=%u puppet_hits_dropped=%u eats_in=%u revives=%u respawns=%u pairs_skipped=%u "
-                 "puppet_saves=%u puppet_new=%u npc_deaths=%u loot_calls=%u loot_cells=%u kills_in=%u eats_late=%u guest_attacks=%u guest_attacks_spared=%u guest_attack_kills=%u guest_attack_types=%u/%u/%u/%u/%u/%u\n", food, g_ko_deaths, g_own_bites, g_own_hits, g_own_chunks, g_hits_in, g_hits_aggro, g_hits_spared, g_bitten_in,
-                 g_puppet_hits_dropped, g_eats_in, g_revives, g_respawns, g_pairs_skipped, g_puppet_saves, g_puppet_new, g_npc_deaths, g_loot_calls, g_loot_cells, g_kills_in, g_eats_late, g_guest_attacks, g_guest_attacks_spared, g_guest_attack_kills, g_guest_attack_types[0], g_guest_attack_types[1], g_guest_attack_types[2], g_guest_attack_types[3], g_guest_attack_types[4], g_guest_attack_types[5]);
+                 "puppet_saves=%u puppet_new=%u npc_deaths=%u loot_calls=%u loot_cells=%u kills_in=%u eats_late=%u guest_attacks=%u guest_attacks_spared=%u guest_attack_kills=%u guest_attack_types=%u/%u/%u/%u/%u/%u\n", food, g_n.ko_deaths, g_n.own_bites, g_n.own_hits, g_n.own_chunks, g_n.hits_in, g_n.hits_aggro, g_n.hits_spared, g_n.bitten_in,
+                 g_n.puppet_hits_dropped, g_n.eats_in, g_n.revives, g_n.respawns, g_n.pairs_skipped, g_n.puppet_saves, g_n.puppet_new, g_n.npc_deaths, g_n.loot_calls, g_n.loot_cells, g_n.kills_in, g_n.eats_late, g_n.guest_attacks, g_n.guest_attacks_spared, g_n.guest_attack_kills, g_guest_attack_types[0], g_guest_attack_types[1], g_guest_attack_types[2], g_guest_attack_types[3], g_guest_attack_types[4], g_guest_attack_types[5]);
     else
         snprintf(b, sizeof b,
                  "cell(guest): food=%d ko_deaths=%u mirrors=%u created=%u destroyed=%u purged=%u hits_sent=%u eats_sent=%u "
                  "revives=%u respawns=%u pairs_skipped=%u hurt_local=%u hurt_fwd=%u bitten_sent=%u soft_moves=%u soft_turns=%u chunks_sent=%u chunks_taken=%u breaks_sent=%u wipes=%u kept=%u puppet_saves=%u puppet_new=%u "
                  "npc_deaths=%u loot_calls=%u loot_cells=%u mirror_kills=%u kills_sent=%u death_replays=%u loot_skipped=%u "
                  "host_of=%u late_chunks=%u rounds_partial=%u meals_unacked=%u zaps=%u zap_hits=%u product_hits=%u product_pairs=%u products=%u foreign_hits=%u/%u/%u\n",
-                 food, g_ko_deaths, (unsigned)g_mirrors.size(), g_created, g_destroyed, g_purged, g_hits_sent, g_eats_sent,
-                 g_revives, g_respawns, g_pairs_skipped, g_hurt_local, g_hurt_fwd, g_bitten_sent, g_soft_moves, g_soft_turns, g_chunks_sent, g_chunks_taken, g_breaks_sent, g_wipes, g_kept, g_puppet_saves, g_puppet_new,
-                 g_npc_deaths, g_loot_calls, g_loot_cells, g_mirror_kills, g_kills_sent, g_death_replays, g_loot_skipped,
-                 (unsigned)g_host_of.size(), g_late_chunks, g_rounds_partial, (unsigned)g_meals.unacked.size(), g_zaps, g_zap_hits,
-                 g_product_hits, g_product_pairs, g_products_live, g_foreign_mirror, g_foreign_puppet, g_foreign_other);
+                 food, g_n.ko_deaths, (unsigned)g_mirrors.size(), g_n.created, g_n.destroyed, g_n.purged, g_n.hits_sent, g_n.eats_sent,
+                 g_n.revives, g_n.respawns, g_n.pairs_skipped, g_n.hurt_local, g_n.hurt_fwd, g_n.bitten_sent, g_n.soft_moves, g_n.soft_turns, g_n.chunks_sent, g_n.chunks_taken, g_n.breaks_sent, g_n.wipes, g_n.kept, g_n.puppet_saves, g_n.puppet_new,
+                 g_n.npc_deaths, g_n.loot_calls, g_n.loot_cells, g_n.mirror_kills, g_n.kills_sent, g_n.death_replays, g_n.loot_skipped,
+                 (unsigned)g_host_of.size(), g_n.late_chunks, g_n.rounds_partial, (unsigned)g_meals.unacked.size(), g_n.zaps, g_n.zap_hits,
+                 g_n.product_hits, g_n.product_pairs, g_n.products_live, g_n.foreign_mirror, g_n.foreign_puppet, g_n.foreign_other);
     char t[768];
     size_t pcount = 0;
     for (auto& [id, pt] : g_ptiles)
@@ -7118,25 +7128,25 @@ std::string status()
             pcount += (size_t)((pt.list->end - pt.list->begin) / 2);
     snprintf(t, sizeof t,
              "cell_tiles: centres=%u partner_lists=%u partner_tiles=%u populated=%u shared=%u bg_skipped=%u passes=%u kept=%u resets=%u drained=%u pool_full=%u flushes=%u unshared=%u handed=%u tile_pool=%u/%u starved=%u/%u fed=%u screen=%u send_capped=%u mirror_capped=%u cells=%u peak=%u level=%d nan_pop_skips=%u nan_heals=%u tilecap_skips=%u tilecap_max=%.0f\n",
-             (unsigned)g_views.size(), (unsigned)g_ptiles.size(), (unsigned)pcount, g_tiles_partner,
-             g_tiles_shared, g_tiles_bg, g_tile_passes, g_tiles_kept, g_tile_resets, g_tiles_drained, g_tiles_full, g_tiles_flush, g_tiles_unshared, g_tiles_handed,
-             G() ? F<uint32_t>(G(), 0x38 + 0xC) : 0, G() ? F<uint32_t>(G(), 0x38 + 0x18) : 0, g_tiles_starved,
-             (unsigned)g_starved.size(), g_tiles_fed, g_tiles_core, g_send_capped, g_mirror_capped, cells_live(), g_cells_peak, g_tile_level, g_nan_pop_skips, g_nan_heals, g_tilecap_skips, g_tilecap_max);
+             (unsigned)g_views.size(), (unsigned)g_ptiles.size(), (unsigned)pcount, g_n.tiles_partner,
+             g_n.tiles_shared, g_n.tiles_bg, g_n.tile_passes, g_n.tiles_kept, g_n.tile_resets, g_n.tiles_drained, g_n.tiles_full, g_n.tiles_flush, g_n.tiles_unshared, g_n.tiles_handed,
+             G() ? F<uint32_t>(G(), 0x38 + 0xC) : 0, G() ? F<uint32_t>(G(), 0x38 + 0x18) : 0, g_n.tiles_starved,
+             (unsigned)g_starved.size(), g_n.tiles_fed, g_n.tiles_core, g_n.send_capped, g_n.mirror_capped, cells_live(), g_n.cells_peak, g_tile_level, g_n.nan_pop_skips, g_n.nan_heals, g_n.tilecap_skips, g_tilecap_max);
     char j[96];
-    snprintf(j, sizeof j, "cell_guest_fx: joins_after_load=%u bite_rings=%u\n", g_joins_load, g_bite_rings); // BUG-0352, BUG-0350
+    snprintf(j, sizeof j, "cell_guest_fx: joins_after_load=%u bite_rings=%u\n", g_n.joins_load, g_n.bite_rings); // BUG-0352, BUG-0350
     char o[300]; // BUG-0632 / BUG-0636 (class BUG-0420), BUG-0635
     snprintf(o, sizeof o, "cell_once: kill_once=%d eat_once=%d kills_dup_sent=%u kills_dup_refused=%u eaten_skipped=%u gone_again=%u wipe_calls=%u wipe_kept=%u wipe_destroyed=%u wipe_near_lost=%u\n",
-             (int)g_fix_kill_once, (int)g_fix_eat_once, g_kills_dup_sent, g_kills_dup_refused, g_eaten_skipped, g_gone_again,
-             g_wipe_calls, g_wipe_kept, g_wipe_destroyed, g_wipe_near_lost);
+             (int)g_fix_kill_once, (int)g_fix_eat_once, g_n.kills_dup_sent, g_n.kills_dup_refused, g_n.eaten_skipped, g_n.gone_again,
+             g_n.wipe_calls, g_n.wipe_kept, g_n.wipe_destroyed, g_n.wipe_near_lost);
     char sc[160]; // BUG-0927
     snprintf(sc, sizeof sc, "cell_send_centres: fix=%d tile_pass_behind=%.1f max=%.1f tile_passes=%u\n", (int)g_fix_send_centres,
-             g_send_centre_lag, g_send_centre_lag_max, g_tile_passes);
+             g_send_centre_lag, g_send_centre_lag_max, g_n.tile_passes);
     char c1[200]; // 0.7.13 C1 (BUG-0798, 0799, 0821, 0827, 0835, 0792)
     snprintf(c1, sizeof c1, "cell_c1: down_scale=%.4g ko_clouds_blocked=%u kills_resent=%u swallows_marked=%u spawn_slot=%d\n",
-             g_downed ? g_down_scale : 0.f, g_ko_clouds_blocked, g_kills_resent, g_swallows_marked, g_spawn_slot);
+             g_downed ? g_down_scale : 0.f, g_n.ko_clouds_blocked, g_n.kills_resent, g_n.swallows_marked, g_spawn_slot);
     char pp[320]; // BUG-0958
     snprintf(pp, sizeof pp, "cell_partner_poison: fix=%d hurt_each_other=%d refused=%u taken=%u partner_clouds=%u last_hit=%s\n",
-             (int)g_fix_partner_poison, (int)players_hurt_each_other(), g_partner_poison_refused, g_partner_poison_taken,
+             (int)g_fix_partner_poison, (int)players_hurt_each_other(), g_n.partner_poison_refused, g_n.partner_poison_taken,
              (unsigned)g_partner_clouds.size(), g_own_hit_last);
     return b + std::string(d) + t + j + o + sc + c1 + pp;
 }
