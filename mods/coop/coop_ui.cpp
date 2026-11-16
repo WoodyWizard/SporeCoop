@@ -4505,6 +4505,45 @@ static bool ws_handle(Win w, const sui::Msg& m)
     x[13] += (0 - my) * (1 - f);
     return false;
 }
+// BUG-9241 (QA 2026-11-16, Civ at 125 %: "Buy Sea Vehicle" drawn about 1.25 x the pointer's place, 160 px right and
+// 120 px down): Spore places its tooltip window (0x03754E6C, in the layer 0x05B598F6 with other HUD pieces) at the
+// pointer's place on the real screen, but that layer is drawn scaled by f. Its own transform moves it back: its middle
+// drawn where the game put it (kept on the screen), still at the Interface Size. Off (`coop.fix ui.tooltip_place off`):
+// drawn at f x its place.
+constexpr uint32_t kTooltipWin = 0x03754E6Cu;
+static bool g_tooltip_place_fix = true;
+COOP_FIX("ui.tooltip_place", "BUG-9241", g_tooltip_place_fix,
+         "ui: Spore's tooltips stay at the pointer at an Interface Size other than 100 % (not drawn at 1.25 x its place)");
+static std::vector<std::pair<Win, uint32_t>> g_ws_tips; // tooltip windows with our proc
+static unsigned g_ws_tip_moves;
+static bool ws_tip_handle(Win w, const sui::Msg& m)
+{
+    if (m.type != sui::kMsgTransformed || !m.d || g_ns_factor == 1.f || !ws_on() || !g_tooltip_place_fix ||
+        sui::control_id(w) != kTooltipWin)
+        return false;
+    float* x = (float*)(uintptr_t)m.d;
+    if (IsBadWritePtr(x, 64)) return false;
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    const sui::Rect r = sui::screen_rect(w); // where the game put it (real screen coordinates), drawn at f x that
+    const float f = g_ns_factor, hw = r.w() * f / 2, hh = r.h() * f / 2;
+    float cx = (r.x1 + r.x2) / 2, cy = (r.y1 + r.y2) / 2;
+    const float tx = std::max(hw, std::min((float)sw - hw, cx)), ty = std::max(hh, std::min((float)sh - hh, cy));
+    x[12] += tx / f - cx; // (its parent's scale applies to this move too)
+    x[13] += ty / f - cy;
+    g_ws_tip_moves++;
+    return false;
+}
+static void ws_tip_hook(Win w)
+{
+    if (sui::control_id(w) != kTooltipWin) return;
+    for (auto& d : g_ws_tips)
+        if (d.first == w && d.second == kTooltipWin) return;
+    sui::add_handler(w, ws_tip_handle, 0xFFFF);
+    g_ws_tips.push_back({w, kTooltipWin});
+    if (g_ws_tips.size() > 64) g_ws_tips.erase(g_ws_tips.begin(), g_ws_tips.begin() + 16);
+    sui::invalidate_transform(w);
+}
 static void whole_scale_tick(float want);
 static double g_ws_editor_since = -1; // an editor was requested (its UI is built at 100 %), -1: none
 void editor_opening()
@@ -4581,6 +4620,8 @@ static void whole_scale_tick(float want)
                 for (Win c : sui::children(w)) stack.push_back(c);
                 continue;
             }
+            ws_tip_hook(w); // BUG-9241
+            if (g_tooltip_place_fix && sui::control_id(w) == kTooltipWin) continue; // (placed at the pointer, above)
             // a piece: placed in code for the real screen and reaching past the smaller one: kept at its side
             if (f <= 1.f || !sui::visible(w)) continue;
             const bool on_screen = r.x1 > -W * 0.05f && r.y1 > -Hh * 0.05f && r.x2 < W * 1.05f && r.y2 < Hh * 1.05f;
