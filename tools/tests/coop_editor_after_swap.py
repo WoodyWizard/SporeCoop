@@ -10,7 +10,8 @@ being built stayed black for good and could not be left (seen at 2-17 fps in leg
 2. The guest leaves and joins again (it loads the host's world, its own creature is put back).
 3. 3 s after it is back it asks for its editor (the game's own entry, `coop.vote editor`).
 4. Checked on the guest's game: the editor opens within 120 s, draws (the screen is not black) and
-   one click on the red cross brings the guest back to the Creature stage.
+   one click on its green check brings the guest back to the Creature stage (an evolution editor has no red cross
+   since BUG-0720; BUG-1199).
 
 --no-swap: the guest plays the world's own creature (no swap after the load: only the new avatar of
 the loaded world, lab 20261030-162204 showed the same black editor 1.7 s after such a load).
@@ -22,7 +23,7 @@ import time
 
 import creations_state
 import lane
-from coop_legless_guest import CANCEL, QUIT, mode, wait
+from coop_legless_guest import DONE, QUIT, mode, wait
 from twoinst import Checks, shot, start
 
 
@@ -93,12 +94,14 @@ def run(host, guest):
         drawn = b[-1] > 25 or b[-1] < 0
     print(f'  editor screen brightness: {b}', flush=True)
     ck(drawn, 'the editor draws (not a black screen)')
-    guest.call('click %d %d' % CANCEL)
+    # the request is the game's own evolution entry (`coop.vote editor`, the evolution flags since BUG-0720, 0.7.11): its
+    # editor has no red cross (only a creation editor has, BUG-0756), it is left with the green check (BUG-1199)
+    guest.call('click %d %d' % DONE)
     out = wait(lambda: 'Creature' in mode(guest), 30, 1)
     if not out:
         guest.call('click %d %d' % QUIT)
         out = wait(lambda: 'Creature' in mode(guest), 20, 1)
-    ck(out, 'the red cross brings the guest back to the Creature stage')
+    ck(out, 'the green check brings the guest back to the Creature stage')
     print(' ', [l for l in guest.call('log 200')['out'].splitlines() if 'body is built' in l or 'own avatar is now' in l][-3:],
           flush=True)
     guest.call('frame.limit auto')
