@@ -57,8 +57,9 @@ Switch: `coop.fix civ.specialty_runs off` (the guest's game stands until the ans
   20261115-203533 (guest 4 cities, the new nation's vehicles host 1 guest 0, `paused=1 04BF38A7=1`); PASS lab
   20261115-203410 and 20261115-203727 (x2).
 * civ_owners_reload: FAIL 2 of 2 on rel/0.7.15 9362bcdd (lab 20261115-192303-base9362) and on v0.7.14.1 (lab
-  20261115-203353); PASS 2 of 2 with the fix (lab 20261115-203727), gate included.
-* civ_buy_city 2 of 2 PASS (lab 20261115-203727).
+  20261115-203353) and on this branch with SPORE_FIX_OFF=civ.specialty_runs (lab 20261115-204557, the same
+  "v: 2 missing on the guest (v5 v6)"); PASS 2 of 2 with the fix (lab 20261115-203727), gate included.
+* civ_buy_city 2 of 2 PASS (lab 20261115-203727); play_civ --quick and civ_pause_city PASS (lab 20261115-204554).
 
 ## History
 - 2026-11-15: opened.
