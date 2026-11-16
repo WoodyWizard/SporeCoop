@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: owner decision 4S 2026-11-16
 role: both
 versions: 0.7.14.1-lineages60-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages61-dev
 branch: feat/lineages-47
 commits: COMMITS
 tests: manual Windows QA: TITAN host + guest (Dorger.spo), coop.memrefresh show / continue, screenshots
@@ -41,3 +41,4 @@ no-fail-run: a new feature (no earlier behaviour to fail). Not checked: a game s
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: done (4S, 4T A).
+- 2026-11-16: released in 0.7.14.1-lineages61-dev.

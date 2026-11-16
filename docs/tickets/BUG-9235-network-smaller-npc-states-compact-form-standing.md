@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: owner 2026-11-15 (4P A, step 2)
 role: all
 versions: 0.7.14.1-lineages60-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages61-dev
 branch: feat/lineages-47
 commits: 809bb049
 tests: manual Windows QA: the MSI two games, the net traffic line (A/B by the switch)
@@ -37,3 +37,4 @@ no-fail-run: Windows QA by hand; the lab test in net_tests.cpp is Linux only.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: done (4P A).
+- 2026-11-16: released in 0.7.14.1-lineages61-dev.

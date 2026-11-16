@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: owner play test 2026-11-16
 role: both
 versions: 0.7.14.1-lineages60-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages61-dev
 branch: feat/lineages-47
 commits: 7ea6c4ca
 tests: manual Windows QA: TITAN host + guest and the MSI guest at 125 % (Dorger.spo), screenshots A/B by the switches
@@ -40,3 +40,4 @@ no-fail-run: Windows QA by hand (screenshots); no lab test on the Linux lanes fo
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed (health bars layer, drawn places).
+- 2026-11-16: released in 0.7.14.1-lineages61-dev.

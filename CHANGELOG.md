@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages61-dev] - 2026-11-16
+
 - Memory: when Spore's memory runs low a box shows a live bar of how full it
   is (its green, yellow and red zones light up as it fills) with Ignore and Continue; Continue
   saves, restarts Spore and reconnects by itself (a host loads its world again

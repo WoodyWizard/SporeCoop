@@ -4,7 +4,7 @@
 
 Lineages is a fork of [WoodyWizard's SporeCoop](https://github.com/WoodyWizard/SporeCoop) for a co-op campaign where every player evolves their own species in one shared Spore world, from the tide pool to the galaxy. It is built on upstream SporeCoop 0.7.14.1 and keeps its crash guards, network code and tools.
 
-**Current build:** `0.7.14.1-lineages60-dev` ([Releases](https://github.com/PandizeLive/SporeCoop-Lineages/releases)). Everyone in a session needs the same build. A running game offers new builds itself (Co-op window, Check for Updates).
+**Current build:** `0.7.14.1-lineages61-dev` ([Releases](https://github.com/PandizeLive/SporeCoop-Lineages/releases)). Everyone in a session needs the same build. A running game offers new builds itself (Co-op window, Check for Updates).
 
 ## What Lineages adds
 
@@ -23,7 +23,7 @@ Also: a one-page Co-op window, Interface Size for Spore's whole UI, a loading sc
 - Three and four players: the difficulty scales for them, but full campaigns are not tested yet. More than four players is planned.
 - Known issues, each with how to reproduce it: [docs/known-issues.md](docs/known-issues.md). Changes per build: [CHANGELOG.md](CHANGELOG.md). Decisions and plan: [docs/ROADMAP.md](docs/ROADMAP.md). How the upstream 0.7.14.1 merge was done: [docs/merge-0.7.14.md](docs/merge-0.7.14.md).
 
-<details><summary>Build history (41-dev to 60-dev)</summary>
+<details><summary>Build history (41-dev to 61-dev)</summary>
 
 Done in 41-dev: 60% progress per extra seat, and one Difficulty Scaling slider (up to 400%) for progress, enemy health and damage, hunger, city takeover and Space raids.
 
@@ -45,6 +45,7 @@ Done in 51-dev: the connected player's own pack (Summon Flock, recruiting), mete
 Done in 52-dev: a connected player with their own custom creature gets their own village and chief again (Tribe, Civilization).
 Done in 53-dev: bones the other player digs up disappear on your screen too.
 Done in 54-dev: befriending works for connected players again, a partner's respawn no longer darkens your screen, Ctrl+Scroll FoV widens the view, partner villages use the partner's own creature, smoother sending on slow connections.
+Done in 61-dev: a memory box with a live bar when Spore runs low on memory (Continue saves, restarts Spore and reconnects by itself), health bars stay over their creature at any Interface Size, and about 65% less network traffic to each partner.
 Done in 60-dev: the host can add to its pack again after a guest's Summon Flock, a guest's flock follows the guest, and one world load per migration for partners.
 Done in 59-dev: fixes from the owner's play test (a guest's editor spends stay spent, the Cell knockout ring and spectator camera, the whole party respawns together, "Paused by host", no Party cards over editor buttons).
 Done in 58-dev: a player joining while the host is dead arrives once the host respawned, the host's Party card picture shows for creatures from Sporepedia or shared saves (and the cell in Cell), and the -NoShare- tag is hidden everywhere.
