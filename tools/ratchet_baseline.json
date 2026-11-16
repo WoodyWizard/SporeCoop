@@ -1,6 +1,6 @@
 {
  "object_alive": {
-  "total": 146,
+  "total": 142,
   "per_file": {
    "mods/coop/census.cpp": 2,
    "mods/coop/civ.cpp": 3,
