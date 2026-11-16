@@ -20,6 +20,7 @@ import re
 import sys
 import time
 
+import creations_state
 import lane
 from coop_legless_guest import CANCEL, QUIT, mode, wait
 from twoinst import Checks, shot, start
@@ -35,14 +36,39 @@ def brightness(con, name):
 
 def main():
     host, guest = start('creature')
+    # BUG-1176: the cold start puts the guest's worlds.ini back to the fixture state (no record, no choice: the guest
+    # plays the world's species); the swap case chooses its own creature (the newest of creations-guest), and the
+    # profile is put back at the end
+    st0 = creations_state.save(guest)
+    try:
+        return run(host, guest)
+    finally:
+        try:
+            creations_state.restore(guest, st0)
+        except OSError:
+            pass
+
+
+def world_own(guest, host):
+    """the guest's creature is the world's species (the host's), not one of its own creations"""
+    m = re.search(r"mine creature: ([0-9A-F]{8}) ''", guest.call('coop.creations')['out'])
+    h = re.search(r'key=0x([0-9A-F]{8})', host.call('coop.avatar')['out'])
+    return bool(m and h and m.group(1) == h.group(1))
+
+
+def run(host, guest):
     ck = Checks()
     if '--no-swap' in sys.argv:  # the world's own creature: nothing to swap after the load
         for _ in range(4):
-            guest.call('coop.creations prev creature')
-            if re.search(r"mine creature: [0-9A-F]{8} ''", guest.call('coop.creations')['out']):
+            if world_own(guest, host):
                 break
+            guest.call('coop.creations prev creature')
         time.sleep(8)
         print('  guest plays the world\'s own:', re.search(r'key=\S+', guest.call('coop.avatar')['out']).group(0), flush=True)
+        ck(world_own(guest, host), 'the guest plays the world\'s species (no swap after the load)')
+    else:
+        print('  guest chose its own creature:', creations_state.choose_own(guest), flush=True)
+        time.sleep(8)
     print('  guest:', guest.call('frame.limit 150')['out'].strip(), flush=True)
     guest.call('coop.leave')
     time.sleep(3)

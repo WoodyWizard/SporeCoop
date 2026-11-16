@@ -17,6 +17,7 @@ after the host's world was loaded again, and the swap came at least 3 s after th
 import sys
 import time
 
+import creations_state
 from harness import field, waiter
 import lane
 from twoinst import Checks, shot, start
@@ -41,8 +42,20 @@ wait = waiter(step=1)
 
 
 def main():
-    without = '--without-fix' in sys.argv
     host, guest = start()
+    # BUG-1176: the cold start puts the guest's worlds.ini back to the fixture state (no record: the guest plays the
+    # world's species, the host's); this test needs the guest's own creature, so it chooses it (the newest of
+    # creations-guest) and puts the profile back at the end
+    st0 = creations_state.save(guest)
+    print('  guest profile before:', st0, '| chose', creations_state.choose_own(guest), flush=True)
+    try:
+        return run(host, guest)
+    finally:
+        creations_state.restore(guest, st0)
+
+
+def run(host, guest):
+    without = '--without-fix' in sys.argv
     ck = Checks()
     if without:
         print(' ', guest.call('coop.npc worldfix off')['out'].strip())
