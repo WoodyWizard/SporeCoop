@@ -284,6 +284,10 @@ void tick(double now)
             leave_host_posse(c);
             g_reposse++;
         }
+        // BUG-9245: the summon event's end (drama::end_flock_event lets the flock go, the game's end then runs) takes
+        // its members out of every herd (herd 0: they stood still, runtime 2026-11-16): back into the puppet's herd
+        if (g_herd_fix && !game::herd_of(c))
+            into_puppet_herd(c, m.owner);
         if (m.target && (now > m.target_until || game::is_dead(m.target) || !game::object_alive(m.target)))
             m.target = nullptr;
         float d = net::dist(game::position(c), game::position(puppet));

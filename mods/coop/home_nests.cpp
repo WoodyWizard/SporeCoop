@@ -186,6 +186,13 @@ COOP_FIX("creature.nest_site_flat", "BUG-9167", g_flat_site,
 static bool g_closest_height = true;
 COOP_FIX("creature.nest_site_closest_height", "BUG-9173", g_closest_height,
          "creature: more spots for a player's nest (55-100 m), then the closest in height (up to 20 m) instead of none");
+// BUG-9246 (owner 2026-11-16, Dorger: "is the nest underwater?"): the spot was only checked against the host's nest
+// height (within 6 m), never against the sea: a host nest 3.5 m over the water put a partner's nest 2 m under it
+// (ground 497.9, water 500.0), its player respawning and its flock drowning there. On: a spot (and the ring around it)
+// must be 1 m over the water; off: 63-dev.
+static bool g_dry_site = true;
+COOP_FIX("creature.nest_site_dry", "BUG-9246", g_dry_site,
+         "creature: a player's new nest is never put under the sea (the spot and the land around it over the water)");
 // decision 2: a flat spot 45-80 m from the host's home nest, at its height (within 6 m), 25 m from every other nest
 static bool site_near(const net::Vec3& home, net::Vec3& out)
 {
@@ -193,6 +200,8 @@ static bool site_near(const net::Vec3& home, net::Vec3& out)
     const float h0 = game::ground_radius(home);
     if (!(r > 1) || !std::isfinite(h0))
         return false;
+    const float water = g_dry_site ? game::water_radius() : 0.f; // 0: unknown (no check)
+    auto wet = [&](float g) { return water > 1 && g < water + 1.f; };
     net::Vec3 n{home.x / r, home.y / r, home.z / r};
     net::Vec3 u{n.z, 0, -n.x};
     float ul = std::sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
@@ -220,7 +229,7 @@ static bool site_near(const net::Vec3& home, net::Vec3& out)
                 net::Vec3 p{c.x + r * (u.x * std::cos(b) + v.x * std::sin(b)), c.y + r * (u.y * std::cos(b) + v.y * std::sin(b)),
                             c.z + r * (u.z * std::cos(b) + v.z * std::sin(b))};
                 const float g = game::ground_radius(p);
-                if (!std::isfinite(g) || std::fabs(g - h0) > 6)
+                if (!std::isfinite(g) || std::fabs(g - h0) > 6 || wet(g))
                     return false;
             }
         return true;
@@ -228,7 +237,7 @@ static bool site_near(const net::Vec3& home, net::Vec3& out)
     // BUG-9173: the closest in height of the spots clear of other nests, when none is within 6 m of the home's height
     // (a host nest on a slope, Samuth 2026-11-13: 42 tries, no nest, the player's family the host's species: no mate)
     struct {
-        int no_ground = 0, height = 0, near_nest = 0;
+        int no_ground = 0, height = 0, near_nest = 0, wet = 0;
         float best_dh = 1e9f;
         net::Vec3 best{};
     } why;
@@ -253,6 +262,10 @@ static bool site_near(const net::Vec3& home, net::Vec3& out)
                     continue;
                 }
                 q = {q.x * g / len, q.y * g / len, q.z * g / len};
+                if (wet(g)) {
+                    why.wet += pass == 1;
+                    continue;
+                }
                 bool clear = true;
                 for (const auto& o : nests)
                     clear &= net::dist(o, q) >= 25.f;
@@ -278,8 +291,8 @@ static bool site_near(const net::Vec3& home, net::Vec3& out)
     static int told = 0;
     if (told++ < 5)
         H->log(M, SK_WARN, "home nests: no spot at the home's height (radius %.1f): %d no ground, %d off by more than 6 m "
-               "(the closest %.1f m), %d within 25 m of a nest", h0, why.no_ground, why.height,
-               why.best_dh < 1e8f ? why.best_dh : -1.f, why.near_nest);
+               "(the closest %.1f m), %d within 25 m of a nest, %d under the sea", h0, why.no_ground, why.height,
+               why.best_dh < 1e8f ? why.best_dh : -1.f, why.near_nest, why.wet);
     if (g_closest_height && why.best_dh < 20.f) {
         out = why.best;
         return true;

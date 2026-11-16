@@ -3882,3 +3882,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Next steps: a log line when the captain is set to 0 (hook `SporeCoop::cEmpire_SetCaptainKey`), so the next report
   names the species; then give such a world a captain from a species this game has.
 * Ticket: BUG-1111
+
+## Creature: a partner's nest already made under the sea stays there (2026-11-16, feat/lineages-47)
+<a id="issue-partner-nest-underwater"></a>
+
+* BUG-9246. Before the fix (63-dev and older) a partner's nest could be placed up to 6 m under the host's nest height without a sea check, so in the sea next to a low host nest (the owner's Dorger: seat 1, 2 m under). New nests are now made on dry land (creature.nest_site_dry); a nest already in the sea is noted per planet and kept: its player respawns in the water and can die to the sea monster at once. Moving it is decision 5A.
+* Reproduce: a creature world whose host nest is less than 7 m over the water (`coop.ground <nest>`: over_water), a partner joins with its own species: `coop.homes` lists its nest, `coop.ground` at it shows over_water < 0.

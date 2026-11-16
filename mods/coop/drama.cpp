@@ -282,13 +282,50 @@ bool summon_for(void* puppet)
     return ok;
 }
 
+// BUG-9245: the summon event's "done?" (vt+0x3C, Steam 0xC3D2F0) is true only when every creature in its herd's list
+// (prop 0x609F2F8 -> vt+0xC(0x52AA6117), +0x40..+0x44) has +0x135 == 0; only its update's end lets a member go, and
+// only one over 100 m from the leader. The duration alone ends nothing (the manager tick only counts it down). A
+// partner's flock is handed to that partner's pack and stays at its side, so the event never ended: no later Summon
+// Flock started, the host's included ("none idle"), and the list kept creatures that died (a dead one's memory reused:
+// the host's newborn in that list, runtime 2026-11-16). On: the hand-over lets each member go as the update's end
+// does (+0x135 = 0, +0xF90 = 0); the manager ends the event at its next tick. Off: 63-dev (the event runs on).
+static bool g_flock_release = true;
+COOP_FIX("creature.flock_release", "BUG-9245", g_flock_release,
+         "creature: a partner's Summon Flock event ends once its flock is the partner's (later summons start)");
+
+static void* flock_herd(void* ev)
+{
+    void** b = skg::field<void**>(ev, 0x5C);
+    void** e = skg::field<void**>(ev, 0x60);
+    if (!b || e <= b || e - b > 64 || !skg::readable(b, (e - b) * sizeof(void*)))
+        return nullptr;
+    for (void** p = b; p + 1 < e + 1 && p < e; p += 2) // (key, object) pairs
+        if ((uint32_t)(uintptr_t)p[0] == 0x609F2F8u && p[1] && skg::readable(p[1], 4))
+            return skg::vcall<void*>(p[1], 0xC / 4, 0x52AA6117u);
+    return nullptr;
+}
+
 bool end_flock_event()
 {
     void* ev = g_flock_event;
-    if (!ev || !skg::readable(ev, 0x30) || !((const uint8_t*)ev)[0xC])
+    if (!ev || !skg::readable(ev, 0x64) || !((const uint8_t*)ev)[0xC])
         return false;
     skg::field<uint32_t>(ev, 0x2C) = 0; // the duration left (docs/re/creature.md#creature-c2-audit-0713)
-    H->log(M, SK_INFO, "drama: the partner's summon event ends now (its flock leaves the host's pack, BUG-9233)");
+    int let_go = 0;
+    if (g_flock_release)
+        if (void* herd = flock_herd(ev); herd && skg::readable(herd, 0x48)) {
+            void** b = skg::field<void**>(herd, 0x40);
+            void** e = skg::field<void**>(herd, 0x44);
+            if (b && e > b && e - b <= 64 && skg::readable(b, (e - b) * sizeof(void*)))
+                for (void** p = b; p < e; ++p)
+                    if (*p && game::object_alive(*p)) {
+                        skg::field<uint8_t>(*p, 0x135) = 0;
+                        skg::field<uint32_t>(*p, 0xF90) = 0;
+                        let_go++;
+                    }
+        }
+    H->log(M, SK_INFO, "drama: the partner's summon event ends now (its flock leaves the host's pack, BUG-9233; %d let go, BUG-9245)",
+           let_go);
     return true;
 }
 

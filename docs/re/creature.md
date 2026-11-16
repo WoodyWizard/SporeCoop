@@ -5233,3 +5233,15 @@ BUG-9230. Steam = GOG 2024 code, but SporeKit maps the .sym addresses: `sym Spor
 * ✔ The meter tick (Steam ~0xD237CB): when +0x24 is set it takes the bars' window 0x562BD40 from the meter's layout (meter +0xC, UTFWin::UILayout::FindWindowByID(id, 1)) and calls its vt 0x90 (the redraw). A guest has no session to run it; social.meter_fill does that call.
 * ~ Steam 0xD224B0(i) ends a step (hi = pos, trims the list with 0xD22120(i)) and 0xD22EC0 is the win (both bars to the end, +0x26 full); not called by the mod.
 * CORRECTION (2026-11-16, feat/lineages-47): the .sym note on SocialMeter_SetBar ("the session tick 0xD9B9C0 sets it", BUG-0179) is right about SetBar, but SetBar is not what draws the fill; see above.
+
+## When a Summon Flock event ends (2026-11-16, feat/lineages-47)
+<a id="creature-summon-done"></a>
+
+BUG-9245. Steam build, the code read from a running QA game (`mem.read`, Steam = .sym - 0x110000).
+
+* ✔ The Drama Manager tick (Steam 0xC3E450, GOG 2024 0xD4E450) for an active event: duration +0x2C -= dt every tick, nothing else done with it; the event ends (+0xC = 0, then vt+0x34 end) only when +0x30 and the avatar's +0xB5E say so, when a time-of-day condition (+0x1C == 3, hours +0x20 / +0x24) is over, or when vt+0x3C "done?" returns true; else vt+0x40 update(dt).
+* ✔ cSummonCreatureEvent vtable (Steam 0x0136B398): +0x30 start 0xC40EA0, +0x34 end 0xC414F0, +0x3C done? 0xC3D2F0, +0x40 update 0xC412A0 (GOG 2024 0xD512A0).
+* ✔ done? (0xC3D2F0): the herd from the event's prop list +0x5C..+0x60 ({key, object} pairs, key 0x609F2F8, object vt+0xC(0x52AA6117)); true when there is no herd, its list +0x40..+0x44 is empty, or every creature in the list has +0x135 == 0.
+* ✔ update (0xC412A0): at its end (flag 0x614A7EA of prop list +0x44 set, or the duration <= 0) it posts "follow" to each member and lets go (+0x135 = 0, +0xF90 = 0) only a member over 100 m from the avatar (or 50 m, spatial vt 0x48 false). So the duration alone does not end a summon: a flock kept near its leader keeps it active.
+* ✔ end (0xC414F0): for each member in the list, a call with the member and cPosseSimulator 0xC43440(member, 0, 0); then the herd goes through cGameNounManager::DestroyInstance. Runtime: after it the members had herd 0 and stood still (their move_to did nothing).
+* ✔ The list is not maintained by Creature_SetHerd: members moved to another herd stay listed, and a member that dies stays listed; runtime: an entry at a freed address later held a newborn of another species with +0x135 = 1.
