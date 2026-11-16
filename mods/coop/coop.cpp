@@ -8671,6 +8671,15 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
         SAY("deferred puppets stay puppets: %s", argv[2]);
         return 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "aifreeze")) { // host (tests, BUG-9212): aifreeze <hex species | off>
+        game::set_ai_freeze(strcmp(argv[2], "off") ? (uint32_t)strtoul(argv[2], nullptr, 16) : 0u);
+        SAY("ai freeze %s", argv[2]);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "aifrozen")) {
+        SAY("ai frozen ticks %u", game::ai_frozen_ticks());
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "swapguard")) { // tests: off = no undo of a swap left open (BUG-0110)
         game::set_swap_guard(strcmp(argv[2], "off") != 0);
         SAY("swap guard %s", argv[2]);
