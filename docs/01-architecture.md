@@ -662,6 +662,50 @@ The split was made with a clang-AST tool (each top-level entity of namespace tri
 lands in): a name one file uses and another defines lost `static` and got its declaration in tribe_internal.h at the
 place of its first declaration; a type, alias, constexpr constant or template moved into the header. A later move of
 code between these files follows the same rule.
+## The NPC stage on the mirror registry (2026-11-15, feat/w51-npc)
+<a id="arch-npc-registry"></a>
+
+C1 for NPC (BUG-1140), the first stage adoption of docs/01-architecture.md#arch-mirror-registry. npc.cpp's two pairs of hand-kept maps are
+two registries: the host's `g_hreg` (`Registry<uint16_t, HostNpc>("npc.host")`, noun 0x18EB45E, not made by us) and the
+guest's `g_px` (`Registry<uint16_t, Proxy>("npc.proxies")`, made by us; `Proxy` has no pointer or serial of its own:
+the entry's ref is the creature). All access goes through a few helpers next to them (`hn_of`, `hn_obj`, `hn_walk`,
+`hn_forget`; `px_find`, `px_make`, `px_walk`, `px_id_of`, `px_bind`, `px_detach`, `px_erase`), so the reverse index
+(`is_proxy`, `proxy_id`, `id_of`, the damage filter, the social AI lookup) is the registry's.
+* Host pass (host_tick): the species / dead reuse rule (BUG-0044) still retires and forgets the entry first; then
+  `adopt` gives the object its id (`alloc_npc_id` as the allocator, so BUG-0023's "never an id in use" holds) and an
+  object at a known address with another serial (freed and built again there) loses the old id at the guests
+  (`retire`) and gets a new one (counted in `reused`). retire_pooled and the frozen pass (BUG-0274, BUG-0339, BUG-1089,
+  BUG-1100) ask each entry's ref (`game::alive`: the object list of the frame and the serial) instead of walking the
+  noun list and reading `object_alive`. `host_npc(id)` is the entry's object while it updated this frame and is alive.
+* Guest: the proxy's creature is bound when made (`px_bind`: a new creature at an address another entry still named
+  detaches that entry, `rebound`), detached by the identity check (BUG-0842), the list check (BUG-0300), a creature the
+  game destroyed and a world change; the stale drop is the registry's `sweep` (seen: `npc_rules::stale` is Fresh;
+  decide: Keep while the states thaw, BUG-0611, else Remove; remove: the creature through `destroy_proxy_object`).
+  The walks go by id (as the old ordered map did).
+* `coop.npc status` gains `npc registry:` lines (`Registry::status()` of both, `rebound=`).
+* What stays npc.cpp's own: the reuse rule, retire_pooled's pool test (herd null or at the centre), `g_known`, the
+  herds (`g_herds`, `g_local_herds`), the driving, meat, the flock effect, the cinematic hold (`game::destroy_creature`).
+
+## The NPC proxy rules (2026-11-15, feat/w51-npc)
+<a id="arch-npc-proxy-rules"></a>
+
+D3 for NPC (BUG-1159): `mods/coop/npc_proxy_rules.h` (namespace `npc_rules`), tests `test_proxy_rules` in
+tests/npc_tests.cpp. The guest's decisions about a proxy as functions of plain inputs: `states_flow` / `stale` (5 s
+without its state while a complete batch came within 0.5 s; Thaw for 5 s after the states flow again, BUG-0009,
+BUG-0611), `remake` (a body this game made and removed stays gone, BUG-0383), `keep_locals` (the update filter keeps
+the guest's own NPCs while the host is away, or while nothing is mirrored and the host is not here, BUG-0412),
+`place` (Air before anything for an NPC off its ground on the host, BUG-0550; Walk for a living proxy over 0.3 m/s
+within 8 m of its target in Creature / Tribe / Civ, BUG-0281 / BUG-0361; else Stand, or Corpse for a killed one) and
+`mound_lift` (BUG-0562), `editor_hold` (owner decision 2, BUG-1174). npc.cpp keeps every game call and asks these for
+the decision.
+
+Owner decision 2 in npc.cpp (BUG-1174, `coop.fix npc.editor_hold`): while the guest counts the host away because the
+host's latest state is in an editor (`Ctx::host_mode`), and until that away state ends, the guest holds its proxies
+(no away hand-over, its update filter keeps removing its own NPCs; no states come, so they stand and the stale drop
+waits: BUG-0611's thaw covers the first states after it). A host that goes from its editor to the main menu or a load
+is away for real. The host's pass does not count the time without a pass (its editor) as unseen, so its NPCs keep
+their ids. Lab: npc_editor_hold.
+
 ## C2 and C3 in the mod: one world identity, the session-end fan-out, the host's pause (2026-11-15, feat/w51-core2)
 <a id="arch-c2c3-wiring"></a>
 

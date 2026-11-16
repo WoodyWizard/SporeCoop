@@ -31,6 +31,9 @@
   why. It may join again.
 
 ### Fixed
+- Creature: while the host is in its evolution editor the animals on a guest's screen stay where they are and come
+  back to life with the host's game, instead of vanishing, being replaced by the guest's own and swapped again after the
+  editor (BUG-1174).
 - Civilization: while a guest's "choose the city's specialty" question is open (after buying or capturing a city),
   its world no longer stands still: cities the host's world founds meanwhile and their vehicles appear behind the
   question instead of only after the answer (BUG-1175).
@@ -85,6 +88,12 @@
   (worlds.ini), and lab run ids are unique across worktrees (BUG-1179, BUG-1176, BUG-1177).
 - Lab: the warm reset puts the co-op window back on the lobby page (`coop.uistate reset`), as at a cold start
   (BUG-1139).
+- NPC sync: the id tables of the host's NPCs and the guests' copies are the shared mirror registry (identity by the
+  game's object list and the object's serial; C1), the guest's proxy rules a portable header with unit tests
+  (`npc_proxy_rules.h`, D3) (BUG-1140, BUG-1159).
+- Tests: editor_desync's vote check, puppet_far_jump_caption's by-design failure and the Tribe raid timeout of the
+  campaign driver fixed; nest_follow, creature_mating and editor_now no longer depend on the lab's start-up length
+  (BUG-1166, BUG-1167, BUG-1169, BUG-1178, BUG-1182).
 - Lab: the invariant monitor reads every trace line (the Space galaxy view's, a NaN position: no false "not together"
   in space_allies), and space_rivalry passes warm after itself (BUG-1145, BUG-1146, BUG-1147).
 - Threads: one main-thread check for every module and `coop.threads`, which counts game calls made off the game's

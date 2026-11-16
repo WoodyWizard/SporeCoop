@@ -1,5 +1,6 @@
 // Native tests for the NPC id allocator (npc_ids.h, BUG-0023 / BUG-0044) and the joint-hunt hit
 // table (hunt_hits.h, BUG-0099) (make test; built with AddressSanitizer).
+#include <cmath>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -20,6 +21,7 @@
 #include "lifecycle.h"
 #include "call_guard.h"
 #include "off_main.h"
+#include "npc_proxy_rules.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -676,6 +678,68 @@ static void test_off_main()
     CHECK(t.total == 0 && t.used == 0 && t.status(0) == "off_main calls=0 sites=0\n");
 }
 
+// D3 (npc_proxy_rules.h): the guest's proxy rules of npc.cpp (staleness BUG-0009 / BUG-0611, a body that stays gone
+// BUG-0383, the guest's own NPCs BUG-0412, the placing BUG-0550 / BUG-0281, the nest mound BUG-0562)
+static void test_proxy_rules()
+{
+    printf("npc proxy rules\n");
+    using namespace npc_rules;
+    // the states flow only within 0.5 s of the last complete batch: a host standing still drops nothing
+    CHECK(states_flow(10.0, 9.6) && !states_flow(10.0, 9.4));
+    // fresh within 5 s of its own last state
+    CHECK(stale(100.0, 95.5, 0.0) == Stale::Fresh);
+    CHECK(stale(100.0, 95.0, 0.0) == Stale::Fresh); // (exactly 5 s: still fresh, `> 5` drops)
+    CHECK(stale(100.0, 94.0, 0.0) == Stale::Drop);
+    // BUG-0611: after a freeze every proxy's last state is old; for 5 s after the states flow again none is dropped
+    CHECK(stale(100.0, 60.0, 97.0) == Stale::Thaw);
+    CHECK(stale(100.0, 60.0, 95.0) == Stale::Thaw);
+    CHECK(stale(100.0, 60.0, 94.9) == Stale::Drop);
+    // BUG-0383: a body this game made and removed stays gone; a body first seen dead is made (it plays its death)
+    CHECK(!remake(true, true) && remake(true, false) && remake(false, true) && remake(false, false));
+    // BUG-0412: the own NPCs stay while the host is away, or while nothing is mirrored and the host is not here
+    CHECK(keep_locals(true, false, true, true));
+    CHECK(keep_locals(false, true, true, false));
+    CHECK(!keep_locals(false, true, true, true));   // the host is here: its NPCs come
+    CHECK(!keep_locals(false, false, true, false)); // proxies exist: the host owns NPCs
+    CHECK(!keep_locals(false, true, false, false)); // (no host_here callback: no hold)
+    // the placing
+    PlaceIn in;
+    in.speed = 4.f;
+    in.off = 1.f;
+    CHECK(place(in) == Place::Walk);
+    in.host_air = true;
+    CHECK(place(in) == Place::Air);   // BUG-0550: off its ground on the host, before any walk
+    in.host_dead = true;
+    CHECK(place(in) == Place::Walk);  // a dead NPC is never put in the air
+    in.host_air = in.host_dead = false;
+    in.off = 9.f;
+    CHECK(place(in) == Place::Stand); // too far from its target: driven (put in place) first
+    in.off = 1.f;
+    in.speed = 0.3f;
+    CHECK(place(in) == Place::Stand); // standing
+    in.speed = 4.f;
+    in.stage = false;
+    CHECK(place(in) == Place::Stand); // not a stage whose proxies are walked
+    in.stage = true;
+    in.killed = true;
+    CHECK(place(in) == Place::Corpse);
+    in.host_air = true;
+    CHECK(place(in) == Place::Corpse); // a corpse is never in the air or walked
+    // BUG-0562: a target 0.5 m inside the mound (surface 1000.5 over terrain 1000) goes 5 cm under the surface
+    float k = mound_lift(1000.f, 1000.5f, 1000.f);
+    CHECK(k > 1.f && std::fabs(1000.f * k - 1000.45f) < 1e-3f);
+    CHECK(mound_lift(1000.f, 1000.05f, 999.f) == 1.f); // on the surface already
+    CHECK(mound_lift(1000.f, 1003.f, 999.f) == 1.f);   // 3 m under: not a mound (a cliff, a cave)
+    CHECK(mound_lift(1000.f, 1000.5f, 1000.45f) == 1.f); // the surface is the terrain (no mound)
+    CHECK(mound_lift(0.5f, 1000.f, 999.f) == 1.f);     // no position
+    // BUG-1174 (owner decision 2): held through the host's editor and the second after it, not through a menu or load
+    CHECK(editor_hold(true, true, false, false));   // the host is away in its editor
+    CHECK(editor_hold(true, false, true, false));   // back in its stage, the away state not over yet
+    CHECK(!editor_hold(true, false, false, false)); // away for another reason from the start: the hand-over
+    CHECK(!editor_hold(true, true, true, true));    // editor -> main menu / load: away for real
+    CHECK(!editor_hold(false, true, true, false));  // not away: nothing to hold
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -696,6 +760,7 @@ int main(int argc, char** argv)
     test_fingerprint();
     test_call_guard();
     test_off_main();
+    test_proxy_rules();
     printf(g_fail ? "npc tests: %d FAILED\n" : "npc tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

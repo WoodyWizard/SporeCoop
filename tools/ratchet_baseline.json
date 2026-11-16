@@ -1,6 +1,6 @@
 {
  "object_alive": {
-  "total": 142,
+  "total": 135,
   "per_file": {
    "mods/coop/census.cpp": 2,
    "mods/coop/civ.cpp": 3,
@@ -19,7 +19,7 @@
    "mods/coop/mirror_fx.cpp": 1,
    "mods/coop/modes.cpp": 3,
    "mods/coop/nest.cpp": 7,
-   "mods/coop/npc.cpp": 22,
+   "mods/coop/npc.cpp": 15,
    "mods/coop/player_rules.cpp": 6,
    "mods/coop/realign.cpp": 1,
    "mods/coop/savestrip.cpp": 1,

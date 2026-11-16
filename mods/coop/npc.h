@@ -36,6 +36,9 @@ struct Ctx {
     std::function<bool(uint8_t id)> in_place;
     // guest: the host plays in this guest's world now (its latest state: same place, in the world). Unset = yes.
     std::function<bool()> host_here;
+    // guest: the game mode of the host's latest state (0: none yet); owner decision 2 (an editor visit is not a world
+    // change): the proxies are held through the host's editor (npc.editor_hold)
+    std::function<uint32_t()> host_mode;
 };
 
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);

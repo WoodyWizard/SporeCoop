@@ -8441,6 +8441,38 @@ E4 (BUG-1156..1158, docs/re/creations.md#creations-stage-designs).
   and a 70 min timeout. With 30 min it was stuck in 4 of 7 runs, v0.7.14.1 included: village 2 falls only after the
   plant, and the passes needed 25.5-26 of the 30 min.
 
+## Old failures checked against v0.7.14.1, the NPC registry's proof (2026-11-15, feat/w51-npc)
+<a id="testing-w51-npc"></a>
+
+Four tests the B1 impact run found failing on rel/0.7.15 were run on rel/0.7.15 5206247b+ (lane 2) and on a worktree of
+the tag v0.7.14.1 (lane 3) at the same time (lab 20261115-154901 in both trees): none is a regression of 0.7.15.
+* editor_desync (BUG-1166): FAIL on both since F1 of 0.7.12 moved the co-op window's rows: the check wanted the
+  rectangle `380 728 580 768` of the I'm ready button; it now waits for the button by name and caption
+  (`ready x0 y0 x1 y1 1 'I'm ready'`) and clicks its centre.
+* puppet_far_jump_caption (BUG-1167): failed every run by design (BUG-0658: with a caption holding the guest's game its
+  avatar stays inside the game's collision at hop 2 of the default seed, the host's copy 4.8-5.4 m up). It now checks
+  exactly that artefact (3-7.5 m at hop 2, the ground everywhere else); a lift anywhere else still fails.
+* sync_mobile (BUG-1168): civ/vehicles p90 4.1-4.2 m (one vehicle) on both, at a lab load of ~35 on 12 cores: BUG-0438's
+  class (the host's state ages under load).
+* campaign_tribe_noclick (BUG-1169): 0.7.14 failed it 2 of 3, v0.7.14.1 passed, rel/0.7.15 ran out of its 30 min Tribe
+  advance at 4/5. One cause in the driver: a raid whose hut was cut late (the host's raid click came late) was dropped
+  at 300 s with the hut at 39 of 750; a raid now gets 120 s after its hut's first cut (`CAMPAIGN_OLD_RAID_CUT=1`: 300 s).
+
+The NPC registry (C1, docs/01-architecture.md#arch-npc-registry) was proven with the stage's tests (npc_*, puppet_*,
+nest_*, creature, play_creature, civ_wild_*, creature_kills, creature_death_coop, creature_social_prompts,
+creature_eat) with `npc.registry` on, and `tools/refactor_dump.py compare` against rel/0.7.15 (only the switch's line
+differed). `coop.npc status` shows both registries (`npc registry: npc.host: ...`, `npc.proxies: ... rebound=`).
+
+Two tests broke with the lab's condition start-up waits of A9 (BUG-1112), which start a test about 7 s sooner after
+the load (`SPORE_START_FIXED=1` brings the old sleeps back and both pass): nest_follow (BUG-1178: the guest's game that
+gets the brain upgrade's DNA before ~11 s in the session plans no migration; the test lets it play 8 s first,
+`NEST_FOLLOW_NO_PLAY=1` not) and creature_mating / editor_now (BUG-1182: the host's game had picked no mate within
+mate_click's 30 s; now 60 s, `MATING_WAIT_S=30` the old). A test that acts on the game's own timers right after
+`start()` should wait for the game's state, not count on the start-up's length.
+
+npc_editor_hold (BUG-1174, owner decision 2): the host opens its editor (the mating click, or the stage's own
+evolution request `coop.vote evolve` when its game picked no mate in 20 s); the guest's copies must stay the same
+creatures under the same ids during the editor and after it, with fresh states after it. ~1.5 min.
 ## Civ: unit tests of the rules, and running civ_save_strip on your own lanes (2026-11-15, feat/w51-civ)
 <a id="testing-civ-rules"></a>
 
