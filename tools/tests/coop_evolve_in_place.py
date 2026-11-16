@@ -41,6 +41,7 @@ import re
 import sys
 import time
 
+from harness import field_dotall as field, mode, waiter
 from coop_ui import Ui
 from twoinst import Checks, shot, start
 
@@ -51,23 +52,7 @@ DONE = (1416, 1062)    # the creature editors' green check
 CANCEL = (1383, 1062)  # the red cross
 
 
-def mode(con):
-    return con.call('game.mode')['out']
-
-
-def field(text, pat):
-    m = re.search(pat, text or '', re.S)
-    return m.group(1) if m else None
-
-
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def in_editor(con):

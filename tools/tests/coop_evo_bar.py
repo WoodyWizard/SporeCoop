@@ -25,6 +25,7 @@ import re
 import sys
 import time
 
+from harness import waiter
 from coop_editor_sync import CANCEL, DONE, SAVE_NEW, add_part, back, confirm_captions, editor_ui, in_editor, mode
 from coop_ui import Ui
 from twoinst import Checks, shot, start
@@ -172,14 +173,7 @@ def editors_case(host, guest, ck):
     ck(near(g1[1], g0[1]), f"the guest's evolution bar unchanged by the two editors ({g0[1]} -> {g1[1]})")
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def main():

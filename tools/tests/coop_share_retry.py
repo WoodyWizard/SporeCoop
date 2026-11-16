@@ -21,13 +21,9 @@ import re
 import shutil
 import time
 
+from harness import world_of
 import lane
 from twoinst import Checks, start
-
-
-def world_of(con):
-    m = re.search(r"world '([^']*)'", con.call('coop.avatar')['out'])
-    return m.group(1) if m else None
 
 
 def main():

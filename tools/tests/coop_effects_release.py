@@ -20,16 +20,10 @@ The switch exists for this test (`coop.fix effects.release`).
 import re
 import time
 
+from harness import busy_line as busy
 from twoinst import Checks, start
 
 SECS = 60
-
-
-def busy(con):
-    for line in con.call('coop.status')['out'].splitlines():
-        if line.startswith('busy:'):
-            return line.split(':', 1)[1].strip()
-    return '?'
 
 
 def free_games(h, g, seconds=30):

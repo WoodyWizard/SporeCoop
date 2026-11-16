@@ -9,32 +9,16 @@ holds a newline, a fake log line, control characters, broken UTF-8 and 60 more l
 * no game logged a fault.
 `SPORE_FIX_OFF=net.name_clean` fails: the name arrives as sent and the injected text is a line of its own.
 """
-import os
 import re
 import time
 
+from harness import log_since, log_size
 from coop_net_robust import Peer, keep_frames
 from twoinst import Checks, start
 import lane
 
 NAME = b'Evil\nplanet X\r\n[12:00:00] FAKE LINE\x01\x1b[31m\xc3' + b'z' * 60
 CLEAN = 'Evilplanet X[12:00:00] F'  # the first 24 characters once the control bytes are gone
-
-
-def log_size(inst):
-    try:
-        return os.path.getsize(lane.game_log(inst))
-    except OSError:
-        return 0
-
-
-def log_since(inst, off):
-    try:
-        with open(lane.game_log(inst), 'rb') as f:
-            f.seek(off)
-            return f.read().decode('utf-8', 'replace').splitlines()
-    except OSError:
-        return []
 
 
 def main():

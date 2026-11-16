@@ -26,15 +26,12 @@ import re
 import sys
 import time
 
+from harness import mode
 import lane
 from coop_ui import Ui
 from twoinst import Checks, shot, start
 
 DONE = (1416, 1062)  # the green "done" check of the creature editor (1440x1080 test window)
-
-
-def mode(con):
-    return con.call('game.mode')['out']
 
 
 def herds(con):

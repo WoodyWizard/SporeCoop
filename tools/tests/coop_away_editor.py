@@ -25,20 +25,12 @@ import argparse
 import re
 import time
 
+from harness import dna, mode
 import census
 from coop_ui import Ui
 from twoinst import Checks, lane_state, shot, start
 
 DONE = (1416, 1062)  # the green "done" check of the creature editor (1440x1080 test window)
-
-
-def mode(con):
-    return con.call('game.mode')['out']
-
-
-def dna(con):
-    m = re.search(r'dna=(-?[\d.]+)', con.call('coop.dna')['out'])
-    return float(m.group(1)) if m else None
 
 
 def watch(guest, when, n=4, every=5.0):

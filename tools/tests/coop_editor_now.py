@@ -25,6 +25,7 @@ as before 0.7.11 (the guest sees "I'm ready", no Evolve now offer), the host's e
 import sys
 import time
 
+from harness import mode, waiter
 import settings_lib as sl
 import twoinst
 
@@ -37,22 +38,11 @@ CANCEL = (1383, 1062)  # the red cross
 EVOLVE = ('Evolve now', 'Эволюция')
 
 
-def mode(con):
-    return con.call('game.mode')['out']
-
-
 def in_editor(con):
     return 'Editor' in mode(con)
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def back(con, m0, secs=90):

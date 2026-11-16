@@ -18,6 +18,7 @@ SPORE_FIX_OFF=find.cinematic must FAIL.
 import re
 import time
 
+from harness import busy_word as busy
 from coop_cinematic_puppet import cinematic, eax, wait
 from twoinst import Checks, game_runs, keyframe, start
 
@@ -25,11 +26,6 @@ from twoinst import Checks, game_runs, keyframe, start
 def drawn(con):
     out = con.call('coop.find boxes').get('out') or ''
     return [m.group(2) for m in re.finditer(r'^box kind=(\S+) id=\d+ .* hidden=0 text=(.*)$', out, re.M)]
-
-
-def busy(con):
-    m = re.search(r'^busy: (\S+)', con.call('coop.status')['out'], re.M)
-    return m.group(1) if m else '?'
 
 
 def main():

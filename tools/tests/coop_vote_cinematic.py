@@ -40,22 +40,13 @@ import argparse
 import re
 import time
 
+from harness import busy_word as busy, cinematic, eax
 from coop_puppet_after_events import DONE, mode, settled
 from coop_ui import Ui
 from twoinst import Checks, shot, start
 
 FADE = 'CRG_Fade_From_Black_Egg'
 FADE_ID = 'F4F96E43'
-
-
-def eax(con, what):
-    m = re.search(r'eax=0x([0-9A-Fa-f]+)', con.call('call ' + what)['out'])
-    return int(m.group(1), 16) if m else None
-
-
-def cinematic(con):
-    m = re.search(r'cinematic ([0-9A-F]{8}) playing', con.call('coop.status')['out'])
-    return m.group(1) if m else None
 
 
 def lock(con):
@@ -165,11 +156,6 @@ def wait_quiet(host, guest, secs=40):
 
 
 SPOREPEDIA = (84, 1054)  # the 3rd small HUD button at the bottom left (1440x1080): pauses the game time
-
-
-def busy(con):
-    m = re.search(r'^busy: (\S+)', con.call('coop.status')['out'], re.M)
-    return m.group(1) if m else '?'
 
 
 def wait_free(con, secs=30):

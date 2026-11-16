@@ -18,6 +18,7 @@ import re
 import sys
 import time
 
+from harness import waiter
 import lane
 from coop_ui import Ui
 from twoinst import Checks, start, wait_guest_in
@@ -35,13 +36,7 @@ def lan_page(st):
     return (int(m.group(1)), int(m.group(2))) if m else None
 
 
-def wait(pred, timeout):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        if pred():
-            return True
-        time.sleep(0.5)
-    return False
+wait = waiter(step=0.5, as_bool=True)
 
 
 def main():

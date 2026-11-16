@@ -14,14 +14,8 @@ the 8 s life alone and ~600 without any stop), and after the load stops it must 
 import re
 import time
 
+from harness import busy_line as busy
 from twoinst import Checks, start
-
-
-def busy(con):
-    for line in con.call('coop.status')['out'].splitlines():
-        if line.startswith('busy:'):
-            return line.split(':', 1)[1].strip()
-    return '?'
 
 
 def free_games(h, g, seconds=30):

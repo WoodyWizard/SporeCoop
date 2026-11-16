@@ -19,6 +19,7 @@ import re
 import sys
 import time
 
+from harness import waiter
 import lane
 from coop_ui import Ui, wait_up
 from sporectl import Console
@@ -42,13 +43,7 @@ def intro(con):
     return 'menu intro)' in con.call('coop.status')['out']
 
 
-def wait(f, t):
-    t0 = time.time()
-    while time.time() - t0 < t:
-        if f():
-            return True
-        time.sleep(0.1)
-    return False
+wait = waiter(step=0.1, as_bool=True)
 
 
 def cold_menu():

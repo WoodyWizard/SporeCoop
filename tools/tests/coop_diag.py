@@ -22,6 +22,7 @@ import subprocess
 import sys
 import time
 
+from harness import waiter
 import lane
 from twoinst import Checks, lab_mark, start
 
@@ -48,14 +49,7 @@ def log_size(inst):
         return 0
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def session_time(con):

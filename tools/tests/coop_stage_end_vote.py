@@ -28,6 +28,7 @@ import re
 import sys
 import time
 
+from harness import mode_strip as mode
 import lane
 from coop_campaign import CAPTION_OK, EDITOR_DONE, HISTORY_BTN, HISTORY_OK
 from coop_ui import Ui
@@ -35,10 +36,6 @@ from twoinst import Checks, keyframe, start
 
 READY = ("I'm ready", 'Я готов')
 EVOLVE = ('Evolve now', 'Эволюция')
-
-
-def mode(con):
-    return con.call('game.mode')['out'].strip()
 
 
 def in_creature(con):

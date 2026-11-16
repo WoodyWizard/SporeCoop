@@ -7,18 +7,13 @@ before (ids are reused: alloc_id takes the lowest free one).
   coop_creations_rejoin.py [--without-fix]   (--without-fix: coop.fix core.creations_leave off and
                                               id_reuse 0 on the host, the code before the fix, so
                                               the test must FAIL)"""
-import re
 import sys
 import time
 
+from harness import field
 import creations_state
 import lane
 from twoinst import Checks, shot, start, wait_guest_in
-
-
-def field(out, pat):
-    m = re.search(pat, out)
-    return m.group(1) if m else None
 
 
 def puppet_species(host):

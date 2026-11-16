@@ -21,19 +21,12 @@ loaded machine and must stay under 5 % of the frames; from `coop.effects`' cost 
 check before, the whole tick's wall time, which the preemption and the workload made fail).
 """
 import argparse
-import math
 import re
 import time
 
+from harness import busy_line as busy, dist_or_none as dist
 from party import Party
 from twoinst import Checks
-
-
-def busy(con):
-    for line in con.call('coop.status')['out'].splitlines():
-        if line.startswith('busy:'):
-            return line.split(':', 1)[1].strip()
-    return '?'
 
 
 def free_games(p, seconds=30):
@@ -131,10 +124,6 @@ def relay_cost(a, b):
     share = d['slow_n'] / d['frames'] if d['frames'] > 0 else None
     return (d['hooks'] + d['fast']) / ms * 100, share, dict(pct, rx_msgs=int(d['rx_n']), frames=int(d['frames']),
                                                               slow_frames=int(d['slow_n']))
-
-
-def dist(a, b):
-    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b))) if a and b else None
 
 
 FX_ID = 'E1B24DDB'

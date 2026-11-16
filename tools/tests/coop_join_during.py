@@ -37,6 +37,7 @@ import re
 import threading
 import time
 
+from harness import avatar_pos as own_pos, mode
 import campaign_lib as cl
 import census
 import lane
@@ -53,15 +54,6 @@ def _host_away(st):
 W, H = 1440, 1080
 DONE = (1416, 1062)  # the green "done" of the creature editor (1440x1080)
 NEAR_HOST = 4.0
-
-
-def mode(con):
-    return con.call('game.mode')['out']
-
-
-def own_pos(con):
-    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
-    return tuple(map(float, m.groups())) if m else None
 
 
 NEAR_OWN = 70.0

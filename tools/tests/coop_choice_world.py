@@ -18,6 +18,7 @@ chosen creature, and the host's game shows the guest's puppet with that species.
 import re
 import time
 
+from harness import mode, waiter
 import creations_state
 import lane
 from coop_editor_desync import CANCEL, mating_call
@@ -26,10 +27,6 @@ from coop_ui import Ui
 from twoinst import Checks, shot, start
 
 VK_F9 = '0x78'
-
-
-def mode(con):
-    return con.call('game.mode')['out']
 
 
 def avatar(con):
@@ -42,14 +39,7 @@ def puppet(con, rid):
     return m.group(1) if m else None
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return cond()
+wait = waiter(step=1.0, final=True)
 
 
 def log_size(inst):

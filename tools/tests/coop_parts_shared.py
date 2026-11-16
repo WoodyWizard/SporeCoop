@@ -34,6 +34,7 @@ import re
 import time
 from types import SimpleNamespace
 
+from harness import cinematic, mode
 import lane
 from coop_ui import Ui
 from twoinst import Checks, shot, start, wait_guest_in
@@ -76,19 +77,10 @@ def wait_same(a, b, t=20):
     return False, pa, pb, time.time() - t0
 
 
-def mode(con):
-    return con.call('game.mode')['out']
-
-
 def editor_locked(con):
     out = con.call('coop.editor')['out'].strip()
     m = re.search(r'unlockable (\d+) locked (\d+)', out)
     return out, (int(m.group(1)), int(m.group(2))) if m else None
-
-
-def cinematic(con):
-    m = re.search(r'cinematic ([0-9A-F]{8}) playing', con.call('coop.status')['out'])
-    return m.group(1) if m else None
 
 
 CAPTION_OK = (1410, 1048)  # the green check of a caption that waits for the player (coop_campaign.py)

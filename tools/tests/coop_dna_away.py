@@ -17,15 +17,10 @@ when the host is back.
   SPORE_LANE=7 python3 tools/tests/coop_dna_away.py [--nofix]
 """
 import argparse
-import re
 import time
 
+from harness import dna
 from twoinst import Checks, lane_state, start
-
-
-def dna(con):
-    m = re.search(r'dna=(-?[\d.]+)', con.call('coop.dna')['out'])
-    return float(m.group(1)) if m else None
 
 
 def main():

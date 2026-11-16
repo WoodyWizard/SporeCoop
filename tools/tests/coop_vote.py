@@ -4,12 +4,9 @@ ready, then the editor opens; afterwards the guests get the evolved world."""
 import re
 import time
 
+from harness import mode
 from coop_ui import Ui
 from twoinst import Checks, shot, start
-
-
-def mode(con):
-    return con.call('game.mode')['out']
 
 
 def main():

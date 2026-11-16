@@ -26,16 +26,12 @@ import math
 import re
 import time
 
+from harness import busy_list as busy
 import uifind
 from twoinst import Checks, game_runs, keyframe, start
 
 HOST = 'Alice'
 FIXTURE = {'cell': 'cell', 'creature': 'creature', 'tribe': 'tribe', 'civ': 'civ', 'space': 'space'}
-
-
-def busy(con):
-    m = re.search(r'^busy: (\S+)', con.call('coop.status')['out'], re.M)
-    return m.group(1).split(',') if m else ['?']
 
 
 def toasts(con):

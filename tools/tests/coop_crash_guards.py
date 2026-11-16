@@ -23,6 +23,7 @@ import argparse
 import re
 import time
 
+from harness import faults
 import twoinst
 from twoinst import Checks, start
 from coop_world_objects import objs, wait
@@ -30,11 +31,6 @@ from coop_world_objects import objs, wait
 
 def status_num(con, pat):
     m = re.search(pat, con.call('coop.status')['out'])
-    return int(m.group(1)) if m else -1
-
-
-def faults(con):
-    m = re.search(r'total faults: (\d+)', con.call('exc')['out'])
     return int(m.group(1)) if m else -1
 
 

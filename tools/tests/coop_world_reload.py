@@ -14,10 +14,10 @@ after the host's world was loaded again, and the swap came at least 3 s after th
 
   coop_world_reload.py [--without-fix]   (--without-fix: coop.npc worldfix off, must FAIL)
 """
-import re
 import sys
 import time
 
+from harness import field, waiter
 import lane
 from twoinst import Checks, shot, start
 import twoinst
@@ -33,23 +33,11 @@ def guest_loads():
         return -1
 
 
-def field(out, pat):
-    m = re.search(pat, out)
-    return m.group(1) if m else None
-
-
 def swaps(con):
     return int(field(con.call('coop.status')['out'], r'avatar_swaps=(\d+)') or -1)
 
 
-def wait(fn, t):
-    t0 = time.time()
-    while time.time() - t0 < t:
-        v = fn()
-        if v:
-            return v
-        time.sleep(1)
-    return None
+wait = waiter(step=1)
 
 
 def main():

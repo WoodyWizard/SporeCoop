@@ -24,6 +24,7 @@ import shutil
 import sys
 import time
 
+from harness import world_of
 import lane
 from twoinst import Checks, start
 
@@ -31,11 +32,6 @@ from twoinst import Checks, start
 def num(pat, text, default=None):
     m = re.search(pat, text)
     return float(m.group(1)) if m else default
-
-
-def world_of(con):
-    m = re.search(r"world '([^']*)'", con.call('coop.avatar')['out'])
-    return m.group(1) if m else None
 
 
 def main():

@@ -18,6 +18,7 @@ import re
 import sys
 import time
 
+from harness import waiter
 import fixtures
 import lane
 import twoinst
@@ -27,14 +28,7 @@ HURT = 2       # the cells' health for the measurement (a cell has 6)
 MEASURE = 10.0  # s: the regeneration gives +1 every 3 s
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def get(con, key):

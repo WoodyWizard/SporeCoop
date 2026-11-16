@@ -14,13 +14,10 @@ import re
 import sys
 import time
 
+from harness import mode
 import lane
 from coop_ui import Ui
 from twoinst import Checks, start
-
-
-def mode(con):
-    return con.call('game.mode')['out']
 
 
 def vote(con):

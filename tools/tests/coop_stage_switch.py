@@ -15,6 +15,7 @@ usage: coop_stage_switch.py [--steps space,rejoin,space,cell,...]
 import argparse
 import time
 
+from harness import mode_id as mode
 import fixtures
 import lane
 from lane import sh
@@ -22,13 +23,6 @@ from twoinst import Checks, lane_state, start, wait_guest_in, build_id, Monitor
 
 ROUTE = 'space,rejoin,space,cell,space,creature,space,tribe,civ,cell'
 MODE = {'cell': 0x1654C00, 'creature': 0x1654C01, 'tribe': 0x1654C02, 'civ': 0x1654C04, 'space': 0x1654C05}
-
-
-def mode(con):
-    try:
-        return int(con.call('game.mode')['out'].split()[0], 16)
-    except (OSError, ValueError, IndexError):
-        return -1
 
 
 def faults(con):

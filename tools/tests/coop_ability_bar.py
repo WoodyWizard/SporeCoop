@@ -25,14 +25,10 @@ import re
 import struct
 import time
 
+from harness import eax, faults
 from twoinst import Checks, start
 
 KEYS = ('w', '1', '2', 'e', 'w', '1')
-
-
-def eax(con, what):
-    m = re.search(r'eax=0x([0-9A-Fa-f]+)', con.call('call ' + what)['out'])
-    return int(m.group(1), 16) if m else None
 
 
 def mem(con, a, n):
@@ -101,11 +97,6 @@ def play(con, inst, timeout=40):
             return True
         time.sleep(0.5)
     return False
-
-
-def faults(con):
-    m = re.search(r'total faults: (\d+)', con.call('exc')['out'])
-    return int(m.group(1)) if m else -1
 
 
 def main():

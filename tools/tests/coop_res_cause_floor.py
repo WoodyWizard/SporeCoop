@@ -17,12 +17,8 @@ import re
 import threading
 import time
 
+from harness import shared_food as food
 from twoinst import Checks, start
-
-
-def food(con):
-    m = re.search(r'shared food=(-?[\d.]+)', con.call('coop.res')['out'])
-    return float(m.group(1)) if m else None
 
 
 def toasts(con):

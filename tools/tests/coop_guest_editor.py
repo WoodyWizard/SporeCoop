@@ -9,6 +9,7 @@ import re
 import sys
 import time
 
+from harness import mode
 import creations_state
 from coop_ui import Ui
 from twoinst import Checks, shot, start
@@ -17,10 +18,6 @@ DONE = (1416, 1062)    # the green "done" check of the creature editor (1440x108
 # an edit that costs no DNA: move the white bow on the back of the guest's Kirgle (fixture
 # creations-guest) a bit up
 EDIT = (1110, 480, 1060, 420)
-
-
-def mode(con):
-    return con.call('game.mode')['out']
 
 
 def own(con, who='mine'):

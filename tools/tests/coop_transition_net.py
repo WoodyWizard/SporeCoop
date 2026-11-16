@@ -29,33 +29,13 @@ import re
 import time
 from types import SimpleNamespace
 
+from harness import avatar_pos as own_pos, log_since, log_size
 import campaign_lib as cl
 import lane
 from coop_campaign import Campaign, Player
 from coop_multi import sample
 from party import NEAR
 from twoinst import Checks, start
-
-
-def own_pos(con):
-    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
-    return tuple(map(float, m.groups())) if m else None
-
-
-def log_size(inst):
-    try:
-        return os.path.getsize(lane.game_log(inst))
-    except OSError:
-        return 0
-
-
-def log_since(inst, off):
-    try:
-        with open(lane.game_log(inst), 'rb') as f:
-            f.seek(off)
-            return f.read().decode('utf-8', 'replace').splitlines()
-    except OSError:
-        return []
 
 
 def main():

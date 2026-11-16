@@ -17,15 +17,9 @@ again (the guest's game creates them, active).
 import re
 import time
 
+from harness import busy_line as busy
 import uifind
 from twoinst import Checks, start
-
-
-def busy(con):
-    for line in con.call('coop.status')['out'].splitlines():
-        if line.startswith('busy:'):
-            return line.split(':', 1)[1].strip()
-    return '?'
 
 
 def free_games(h, g, seconds=30):

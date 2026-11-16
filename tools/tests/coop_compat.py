@@ -17,6 +17,7 @@ import re
 import struct
 import time
 
+from harness import dna, waiter
 import lane
 from twoinst import Checks, keyframe, start, wait_guest_in
 
@@ -25,24 +26,12 @@ def first(con):
     return (con.call('coop.status')['out'].splitlines() or [''])[0]
 
 
-def wait(pred, timeout=20, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        v = pred()
-        if v:
-            return v
-        time.sleep(step)
-    return pred()
+wait = waiter(timeout=20, step=0.5, final=True)
 
 
 def drops(con):
     m = re.search(r'dir_drops=(\d+) compat_refused=(\d+)', con.call('coop.manifest')['out'])
     return (int(m.group(1)), int(m.group(2))) if m else (-1, -1)
-
-
-def dna(con):
-    m = re.search(r'dna=(-?[\d.]+)', con.call('coop.dna')['out'])
-    return float(m.group(1)) if m else None
 
 
 def main():

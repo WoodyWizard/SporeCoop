@@ -16,6 +16,7 @@ import re
 import sys
 import time
 
+from harness import waiter
 from twoinst import Checks, start
 
 CELL = '--cell' in sys.argv
@@ -39,14 +40,7 @@ def gain(con, n):
     return con.call(f'coop.pool meal {n}' if CELL else f'coop.dna gain {n}')['out'].strip()
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def settle(host, guest, secs=12):

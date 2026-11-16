@@ -30,6 +30,7 @@ import re
 import sys
 import time
 
+from harness import field_dotall as field, mode, waiter
 import lane
 from twoinst import Checks, shot, start
 
@@ -47,23 +48,7 @@ QUIT = (944, 604)  # "Exiting will cause your changes to be lost": Quit
 OWN = ('new', 'replace')  # the guest keeps a creature it designed
 
 
-def mode(con):
-    return con.call('game.mode')['out']
-
-
-def field(text, pat):
-    m = re.search(pat, text or '', re.S)
-    return m.group(1) if m else None
-
-
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def editor_ui(con):

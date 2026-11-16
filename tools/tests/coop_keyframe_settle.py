@@ -10,18 +10,13 @@ how long it waited. Before the fix of twoinst the frame was shot at once, with t
 
   SPORE_LANE=4 python3 tools/tests/coop_keyframe_settle.py
 """
-import re
 import threading
 import time
 
+from harness import busy_word as busy
 from twoinst import Checks, keyframe, start  # (first: it puts tools/ on the path)
 import lane
 from sporectl import Console
-
-
-def busy(con):
-    m = re.search(r'^busy: (\S+)', con.call('coop.status')['out'], re.M)
-    return m.group(1) if m else '?'
 
 
 def main():

@@ -7,15 +7,10 @@ host's total does not change. The food half is in coop_cell_sync.py.
 SPORE_CELL_FIX=0: `coop.pool fix resend 0` on the host (the old behaviour, the run that must FAIL).
 """
 import os
-import re
 import time
 
+from harness import dna
 from twoinst import Checks, start
-
-
-def dna(con):
-    m = re.search(r'dna=(-?[\d.]+)', con.call('coop.dna')['out'])
-    return float(m.group(1)) if m else None
 
 
 def main():

@@ -27,6 +27,7 @@ import shutil
 import threading
 import time
 
+from harness import waiter
 from twoinst import Checks, wait_up
 from sporectl import Console
 import lane
@@ -96,14 +97,7 @@ def ustate(c):
     return (m.group(1) if m else '?'), (line.group(1) if line else ''), out.strip()
 
 
-def wait(cond, secs, step=0.1):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        v = cond()
-        if v:
-            return v
-        time.sleep(step)
-    return None
+wait = waiter(step=0.1)
 
 
 def main():

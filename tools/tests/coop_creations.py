@@ -15,18 +15,13 @@ Checked in the games' own state (the guest's avatar species key, the host's pupp
 
   coop_creations.py   (SPORE_FIX_OFF=creations.guest_world_species: in 1 the guest plays its newest own
                        creation in a world it never played it in: it FAILS)"""
-import re
 import time
 
+from harness import field, waiter
 import lane
 import creations_state
 from coop_ui import Ui
 from twoinst import Checks, shot, start
-
-
-def field(out, pat):
-    m = re.search(pat, out)
-    return m.group(1) if m else None
 
 
 def avatar(con):
@@ -37,14 +32,7 @@ def puppet(con, rid):
     return field(con.call('coop.status')['out'], r"remote %d '[^']*'.*\n.*species=([0-9A-F]{8})" % rid)
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return cond()
+wait = waiter(step=1.0, final=True)
 
 
 def told(inst, text, start):

@@ -27,6 +27,7 @@ import argparse
 import re
 import time
 
+from harness import mode_id as mode
 import fixtures
 import lane
 from lane import sh
@@ -35,13 +36,6 @@ from twoinst import Checks, Monitor, start, wait_guest_in
 CALL_AT = 0xB32CF0                 # galaxy-menu reset 0xB32C30: call SpacePlayerData_Reset 0x1022350
 CALL_BYTES = 'E8 5B F6 4E 00'      # GOG 2024 (dc04aee5)
 MODES = {'Tribe': 0x1654C02, 'Civ': 0x1654C04}
-
-
-def mode(con):
-    try:
-        return int(con.call('game.mode')['out'].split()[0], 16)
-    except (OSError, ValueError, IndexError):
-        return -1
 
 
 def call_bytes(con):

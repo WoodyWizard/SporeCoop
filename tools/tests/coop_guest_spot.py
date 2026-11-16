@@ -13,22 +13,13 @@ the guest's avatar never gets more than 3 m from where it stood after the join.
   coop_guest_spot.py [--hits N]
   SPORE_FIX_OFF=creations.guest_world_species: the guest plays its newest own creation (the swap)
 """
-import math
 import re
 import sys
 import time
 
+from harness import avatar_pos as pos, dist_or_none as dist
 from coop_creature_desync import npcs
 from twoinst import Checks, shot, start
-
-
-def pos(con):
-    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
-    return tuple(map(float, m.groups())) if m else None
-
-
-def dist(a, b):
-    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b))) if a and b else None
 
 
 def main():

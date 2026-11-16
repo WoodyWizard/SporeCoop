@@ -16,13 +16,10 @@ import re
 import sys
 import time
 
+from harness import mode
 from twoinst import Checks, start
 
 DONE = (1416, 1062)  # the green "done" check of the creature editor (1440x1080 test window)
-
-
-def mode(con):
-    return con.call('game.mode')['out']
 
 
 def vote(con):

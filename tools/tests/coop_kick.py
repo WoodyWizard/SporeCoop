@@ -10,6 +10,7 @@
 """
 import time
 
+from harness import waiter
 import lane
 from twoinst import Checks, start, wait_guest_in
 
@@ -20,14 +21,7 @@ def first(con):
     return (con.call('coop.status')['out'].splitlines() or [''])[0]
 
 
-def wait(pred, timeout=20, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        v = pred()
-        if v:
-            return v
-        time.sleep(step)
-    return pred()
+wait = waiter(timeout=20, step=0.5, final=True)
 
 
 def main():

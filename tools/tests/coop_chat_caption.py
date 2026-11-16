@@ -15,33 +15,16 @@ Each player, through real input:
 
 core.ui_locked_edit off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-151853:chat_caption): the click is dropped again, nothing is typed (the test fails).
 """
-import re
 import time
 
+from harness import cinematic, eax, waiter
 from coop_ui import Ui
 from twoinst import Checks, start
 
 CLAIM = '63B7060A'  # CRG_ClaimNest
 
 
-def eax(con, what):
-    m = re.search(r'eax=0x([0-9A-Fa-f]+)', con.call('call ' + what)['out'])
-    return int(m.group(1), 16) if m else None
-
-
-def cinematic(con):
-    m = re.search(r'cinematic ([0-9A-F]{8}) playing', con.call('coop.status')['out'])
-    return m.group(1) if m else None
-
-
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        v = cond()
-        if v:
-            return v
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def f9(con):

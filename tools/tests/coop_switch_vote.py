@@ -23,6 +23,7 @@ starts the Creature stage at once and the guest follows (SPORE_FIX_OFF=settings.
 import sys
 import time
 
+from harness import mode, waiter
 import settings_lib as sl
 import twoinst
 
@@ -34,18 +35,7 @@ HISTORY_OK = (1415, 1055)  # its check: closes History, or starts the next stage
 CAPTION_OK = (1410, 1048)
 
 
-def mode(con):
-    return con.call('game.mode')['out']
-
-
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def vote_open(host):

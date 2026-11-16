@@ -21,6 +21,7 @@ import re
 import sys
 import time
 
+from harness import faults
 import lane
 from twoinst import Checks, start
 
@@ -55,11 +56,6 @@ def keys(con, shift):
     con.call('key alt up')
     if shift:
         con.call('key shift up')
-
-
-def faults(con):
-    m = re.search(r'total faults: (\d+)', con.call('exc')['out'])
-    return int(m.group(1)) if m else -1
 
 
 def press(ck, con, name, shift):

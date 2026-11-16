@@ -31,20 +31,14 @@ import time
 
 from PIL import Image
 
+from harness import waiter
 import twoinst
 from twoinst import Checks, start
 
 PALETTE = {'yellow': 0, 'blue': 1, 'pink': 2, 'green': 3, 'orange': 4, 'purple': 5, 'cyan': 6, 'red': 7}
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def kv(line):

@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 
+from harness import mode
 import fixtures
 import lane
 from coop_ui import Ui
@@ -35,10 +36,6 @@ from twoinst import Checks, shot, start, wait_guest_in
 
 DONE = (1416, 1062)  # the green "done" check of the creature editor (1440x1080 test window)
 CREATURE = 'CreatureGame'
-
-
-def mode(con):
-    return con.call('game.mode')['out']
 
 
 def counters(con):

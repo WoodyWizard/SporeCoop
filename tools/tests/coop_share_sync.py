@@ -17,29 +17,13 @@ SPORE_FIX_OFF=diag.share_quiet: the check of the share's moment reports the plan
 
   SPORE_LANE=6 python3 tools/tests/coop_share_sync.py
 """
-import os
 import time
 
+from harness import log_since, log_size
 import lane
 from twoinst import Checks, lab_mark, start
 
 DURING = 12  # s after the share is asked for (the save ~2 s, the transfer ~1 s, the guest's load ~8 s)
-
-
-def log_size(inst):
-    try:
-        return os.path.getsize(lane.game_log(inst))
-    except OSError:
-        return 0
-
-
-def log_since(inst, off):
-    try:
-        with open(lane.game_log(inst), 'rb') as f:
-            f.seek(off)
-            return f.read().decode('utf-8', 'replace').splitlines()
-    except OSError:
-        return []
 
 
 def mismatches(lines):

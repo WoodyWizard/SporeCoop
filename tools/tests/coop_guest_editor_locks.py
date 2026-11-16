@@ -16,14 +16,11 @@ parts: locked 0, every part offered)."""
 import re
 import time
 
+from harness import mode
 from coop_ui import Ui
 from twoinst import Checks, shot, start
 
 DONE = (1416, 1062)    # the green "done" check of the creature editor (1440x1080 test window)
-
-
-def mode(con):
-    return con.call('game.mode')['out']
 
 
 def editor(con):

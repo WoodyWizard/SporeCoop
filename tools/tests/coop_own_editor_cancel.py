@@ -15,6 +15,7 @@ The owner wants the 0.7.10 own editor back (the cross, Save New / Replace / Don'
 """
 import time
 
+from harness import mode, waiter
 from coop_ui import Ui
 from twoinst import Checks, shot, start
 
@@ -23,22 +24,11 @@ CANCEL = (1383, 1062)  # the red cross
 CROSS_WIN = '90439D7C'
 
 
-def mode(con):
-    return con.call('game.mode')['out']
-
-
 def in_editor(con):
     return 'Editor' in mode(con)
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def back(con, m0, secs=60):
