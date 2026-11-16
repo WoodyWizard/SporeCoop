@@ -30,8 +30,8 @@ its 30 s fallback ("still plays <host species>: sending the world") does not fir
 species, not the host's. So no world is shared and nothing is loaded: the behaviour BUG-0508 wants. The last PASS runs
 of the test (20261108-071725, fix/w46-g4-tests) shared the world only through that fallback (the guest still played the
 host's species then). Inferred: the test's precondition (a load after every evolution) is older than BUG-0508 and the
-own creature; not caused by C2 (the decision and the fallback are unchanged code; the world identity does not take
-part).
+own creature; not caused by C2: the same FAIL on rel/0.7.15 9362bcdd without feat/w51-core2 (baseline worktree, lab
+20261115-180220) and again on the branch (20261115-174822).
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
