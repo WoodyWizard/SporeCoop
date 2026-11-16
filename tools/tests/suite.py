@@ -1019,10 +1019,10 @@ add('campaign_tribe_end', P + 'coop_campaign.py --from creature --to civ --minut
 # stuck as lab 20261113-181333)
 add('campaign_tribe_noclick', 'CAMPAIGN_PLANT_NOCLICK=18 ' + P + 'coop_campaign.py --from creature --to civ --minutes 2 --no-finale',
     (), minutes=45, timeout=3600)
-# BUG-1169: the Tribe stage of the campaign up to Civ with a planted late hut cut (CAMPAIGN_PLANT_LATE_CUT=280: the first
-# raid with the host's click gets no cut before 280 s of its 300): the raid gets 120 s after the cut and fells its hut
+# BUG-1169: the Tribe stage of the campaign up to Civ with a planted late hut cut (CAMPAIGN_PLANT_LATE_CUT=270: the first
+# raid with the host's click: no blow lands before 270 s of its 300, its first cut at 270 s): the raid gets 120 s after the cut and fells its hut
 # (CAMPAIGN_OLD_RAID_CUT=1: dropped at 300 s, a 'driver' finding: FAILS)
-add('campaign_tribe_latecut', 'CAMPAIGN_PLANT_LATE_CUT=280 ' + P + 'coop_campaign.py --from tribe --to civ --minutes 2 --no-finale',
+add('campaign_tribe_latecut', 'CAMPAIGN_PLANT_LATE_CUT=270 ' + P + 'coop_campaign.py --from tribe --to civ --minutes 2 --no-finale',
     (), minutes=45, timeout=3600)
 # BUG-1073 / BUG-1079: the campaign's jump path on its own planet: the Tribe end not tried (CAMPAIGN_OLD_TRIBE=1: 0.7.13's
 # raids, no village falls), the host loads the civ_npc fixture in game after 12 min, Civ is played and its end comes by

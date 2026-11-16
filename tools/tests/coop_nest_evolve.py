@@ -11,7 +11,12 @@ evolution each guest nest has the host's generation and species; the nest extinc
 guest's game. Off (SPORE_FIX_OFF=wsync.herd_evo): the guest evolves its own nests (its own thresholds, another moment)
 and the extinct nest to a new species.
 
-  coop_nest_evolve.py [--secs S]"""
+BUG-1181: the herds compared are the game's (the herds of our own, a puppet's or a proxy's: no nest and no archetype,
+are not; NEST_EVOLVE_OUR_HERDS=1 compares them too, the twin); also asserted: the live creatures of the game's nests of
+another species are of the same species on both games. --own: the guest plays its own creature (its puppet on the host
+is the host's copy of that creation, a key made in the run).
+
+  coop_nest_evolve.py [--secs S] [--own]"""
 import argparse
 import os
 import re
@@ -25,8 +30,8 @@ from twoinst import Checks, start
 ROW = re.compile(r'herd (\S+) should_evolve=(\d) gen=(-?\d+) evolved_keys=(-?\d+) threshold=(\S+) extinct=(\d) members=(-?\d+) '
                  r'species=\S+ skey=([0-9A-F]+) next=[0-9A-F]+ home=\((\S+) (\S+) (\S+)\) dist=\S+ nest=(\S+) arch=([0-9A-F]+) '
                  r'mkey=([0-9A-F]+)')
-# BUG-1181: only the game's nests are compared (a herd with a nest +0x160). The herds of our own (the partner's puppet,
-# NPC proxies: no nest, no archetype) are not the world's: a guest on its own creature has a puppet on the host of the
+# BUG-1181: only the game's herds are compared. The herds of our own (game::create_herd for the partner's puppet and
+# NPC proxies: no nest +0x160, no archetype +0x88) are not the world's: a guest on its own creature has a puppet on the host of the
 # host's copy of its creation (a key the host's game made in the run) and the host's puppet on the guest is of the
 # world's species; their herds stand where the two avatars stand. NEST_EVOLVE_OUR_HERDS=1: compare every herd (before
 # BUG-1181, the twin: FAILS with --own)
@@ -73,13 +78,14 @@ def match(hs, gs):
     return n, diffs
 
 
-def members_differ(hs, gs):
-    """(nests with live members on both games, [(home, host members' key, guest members' key)]): the game's nests whose
-    live members (the creatures the game shows) are of another species on the guest than on the host"""
+def members_differ(hs, gs, player_key):
+    """(nests with live members on both games, [(home, host members' key, guest members' key)]): the game's nests of
+    another species than the players' (the player species' home herd holds a guest's own creature too) whose live
+    members (the creatures the game shows) are of another species on the guest than on the host"""
     out, n = [], 0
     for home, h in hs.items():
         g = next((v for k, v in gs.items() if near(k, home)), None)
-        if not g or ours(h) or '00000000' in (h[6], g[6]):
+        if not g or ours(h) or '00000000' in (h[6], g[6]) or h[2] == player_key:
             continue
         n += 1
         if h[6] != g[6]:
@@ -181,14 +187,16 @@ def run(a, host, guest, ck):
     hs, gs = herds(host), herds(guest)
     thr = [(k, v[3], g[3]) for k, v in hs.items() for kk, g in gs.items() if near(k, kk) and v[1] > 0 and v[3] != g[3]]
     print(f'  evolved nests whose threshold +0x94 differs (home, host, guest): {thr[:4]}', flush=True)
-    mn, md = members_differ(hs, gs)
-    print(f'  nests with live members on both games {mn}; their members differ in species (home, host, guest): '
-          f'{len(md)} {md[:6]}', flush=True)
+    mn, md = members_differ(hs, gs, own_key(host))
+    print(f'  nests of other species with live members on both games {mn}; their members differ in species (home, host, '
+          f'guest): {len(md)} {md[:6]}', flush=True)
     print('  guest wsync:', [l for l in guest.call('coop.wsync')['out'].splitlines() if 'herd_evo' in l], flush=True)
     ck(evolved_host > 0, f'the host\'s game evolved NPC nests after the DNA ({evolved_host})')
     ck(samples >= 3 and bad == 0, f'every guest nest has the host\'s generation and species in every sample ({samples - bad}/{samples}'
        f' samples equal; first difference {first_diff})')
     ck(not thr, f'every evolved guest nest has the host\'s next threshold +0x94 ({len(thr)} differ)')
+    ck(mn >= 1 and not md, f'the live creatures of every nest of another species are of the same species on both games '
+       f'({mn} nests with members on both, {len(md)} differ: {md[:3]})')
     ck(not extinct_evolved, f'the nest extinct on the host is not evolved in the guest\'s game ({extinct_evolved[:3]})')
     for c in (host, guest):
         c.call('coop.team on')

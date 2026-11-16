@@ -841,7 +841,7 @@ static int c_nest(void*, int argc, const char* const* argv, SkOut* out)
                 // 0: none, FFFFFFFF: members of more than one species)
                 uint32_t mkey = 0;
                 for (void** m = b; b && e >= b && m < e && m < b + 64; m++)
-                    if (*m && game::object_alive(*m) && !IsBadReadPtr(*m, game::kSpeciesKeyOff + 4)) {
+                    if (*m && game::listed(*m) && !IsBadReadPtr(*m, game::kSpeciesKeyOff + 4)) {
                         uint32_t k = game::species_instance(*m);
                         mkey = !mkey || mkey == k ? k : 0xFFFFFFFFu;
                     }

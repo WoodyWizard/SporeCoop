@@ -1411,8 +1411,13 @@ class Campaign:
                               f'of its raid (CAMPAIGN_PLANT_LATE_CUT)')
                 if time.time() - raid['t0'] < PLANT_LATE_CUT:
                     if hit:
+                        raid['undone'] = raid.get('undone', 0) + 1
                         self.host.call('coop.tribe huthp %.2f %.2f %.2f %s' % (raid['hut'] + (mx.group(1),)))
                     return
+                if m and float(m.group(1)) > 45:
+                    near = True  # the first cut comes at PLANT_LATE_CUT s (a blow then)
+                    self.note(f'tribe: planted: the first cut of the hut of village {raid["tribe"]} at '
+                              f'{time.time() - raid["t0"]:.0f} s of its raid ({raid.get("undone", 0)} blows undone before)')
             if (near or hit) and m and float(m.group(1)) > 45:
                 if not raid['cut']:
                     self.note('shortcut: coop.tribe huthp: the raided hut\'s health cut to 40 (its 400-1000 hp take the '
