@@ -122,7 +122,13 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("own world: mode %08X world %08X elsewhere=%d space_other=%d host_left=%d\n", g_mode, g_world,
         (int)own_world::elsewhere(), (int)own_world::space_other(), (int)own_world::host_left()); // O1 (BUG-0427)
     SAY("space save: %s, load shares %u\n", g_space_key.empty() ? "-" : g_space_key.c_str(), g_space_load_shares); // BUG-0941
-    SAY("evolve in place: kept %u, sent after all %u, saves %u\n", g_evo_inplace, g_evo_fallback, g_evo_saves); // BUG-0508
+    {
+        unsigned checking = 0; // BUG-1170: guests kept in place whose 30 s species check still runs
+        for (auto& [id, r] : g_remotes)
+            checking += r.evo_check_until > 0;
+        SAY("evolve in place: kept %u, sent after all %u, saves %u, checking %u\n", g_evo_inplace, g_evo_fallback,
+            g_evo_saves, checking); // BUG-0508
+    }
     SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
         g_dna_owed_world, g_owed_dropped); // BUG-0233
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
