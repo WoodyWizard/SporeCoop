@@ -2319,8 +2319,8 @@ Fixed 2026-11-14 (72bc723c, feat/lineages-47): the card shows the host's creatur
   impress them.
 * Reproduce: not reproduced twice (Vandh.spo; the owner's Dorger.spo on TITAN): the guest reached 1 m of a standing herd,
   it did not move, and attacked.
-* Cause (2026-11-16): Spore's own "scared" relation: one adult of the species killed and the whole herd keeps away
-  from every player. Decision 4W (keep, explain with a notice, or change for co-op).
+* Cause: open. The 2026-11-16 guess (Spore's own "scared" relation after one kill) was rejected by the owner: the
+  creatures are pushed at the player's speed, not running. Not reproduced after 3 revives on TITAN.
 * Ticket: BUG-9212
 
 ## Creature: a player who joins while the host is dead arrives dead (2026-11-15, overnight tour)
