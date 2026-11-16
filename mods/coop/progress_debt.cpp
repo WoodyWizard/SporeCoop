@@ -127,7 +127,7 @@ void find_bar(void*)
     if (bar && g_mode == modes::kTribe) {
         for (int i = 0; i < 3; ++i)
             if (sui::Win s = sui::find(bar, kTribeSections[i])) {
-                const sui::Rect r = sui::screen_rect(s);
+                const sui::Rect r = sui::drawn_rect(s); // BUG-9238: where it shows
                 b.sx1[i] = r.x1;
                 b.sx2[i] = r.x2;
                 if (i == 0) { b.x1 = r.x1; b.y1 = r.y1; b.y2 = r.y2; }
@@ -136,7 +136,7 @@ void find_bar(void*)
         b.shown = b.sx2[0] > b.sx1[0] && b.x2 - b.x1 > 50 && b.y2 - b.y1 > 4;
     }
     if (fill) {
-        sui::Rect r = sui::screen_rect(fill);
+        sui::Rect r = sui::drawn_rect(fill); // BUG-9238
         // the green fill inside the window, measured on screenshots at 1440x1080 (both stages:
         // Creature 237..1354 in 236..1357, Cell 231..1345 in 231..1349)
         b.x1 = r.x1 + (g_mode == modes::kCreature ? 1.f : 0.f);
@@ -145,7 +145,7 @@ void find_bar(void*)
         b.y2 = r.y2 - (g_mode == modes::kCreature ? 2.f : 0.f);
         b.shown = b.x2 - b.x1 > 50 && b.y2 - b.y1 > 4;
         if (sui::Win marker = sui::find(bar, kMarkerId)) {
-            sui::Rect m = sui::screen_rect(marker);
+            sui::Rect m = sui::drawn_rect(marker);
             if (m.x1 >= b.x1 - 2 && m.x1 <= b.x2 + 4)
                 b.edge = std::clamp(m.x1, b.x1, b.x2);
         }

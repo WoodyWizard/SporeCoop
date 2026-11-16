@@ -305,3 +305,18 @@ BUG-0948. GOG 2024, lane 4, Creature (the guest's follow camera turned by SporeK
 * CORRECTION (2026-11-12, fix/w48-labels) to BUG-0948's "keep the viewer of the moment the game draws (a copy taken in
   the game's draw ...)": a copy at the first BeginScene after Present is the same as the viewer at Present (no help);
   the copy has to be taken at the draw's first SetTransform(VIEW).
+
+## The health bars over creatures: a world layer (2026-11-16, feat/lineages-47)
+<a id="graphics-world-bars-layer"></a>
+
+* ✔ (Creature, GOG 2024 / Steam, the MSI at 125 %) the health bar over a creature (the player's own when hurt or
+  starving, a selected one's) is a holder 0x93310E4A placed at the creature's screen point (in real screen pixels) with
+  the bar 0x026E0DF0 ('health'), 0x026E0DF2 ('hurt'), 0x026E0DF3 ('none') and the number 0x04D039A8 (its caption the
+  health) under it, and a hidden 0x933103EB. They lie in a layer of their own, 0xE9F70DF9 (the main window's child), made
+  when the first bar shows. Scaled with the HUD (3X A) they were drawn at f x their place: that layer is not scaled
+  (BUG-9238), like the hints' 0xCBDF6E1D.
+* ✔ sui::screen_rect() of a window in a scaled layer is its layout place (the 1/f screen); where it shows is its drawn
+  transform (render_xform, Window +0x148, type 1). A click posted at the drawn point is mapped back by ns_remap like
+  the player's, so a click aimed by screen_rect missed (the game saved box, BUG-9238).
+* ? Not looked at yet: the bars over Tribe members, Civ units and vehicles, Cell's health ring (cCellUI rollovers):
+  find their layer with `coop.ui at <x> <y>` on the bar, then `coop.ui path <id>`.

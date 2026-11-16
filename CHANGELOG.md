@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Interface Size other than 100 %: the health bars over creatures stay over
+  their creature, and the host's "game saved" box after a world share closes
+  by itself again (it stayed up and paused everyone) (BUG-9238).
+
 - Network: about 65 % less data to each guest in play: creature updates in a
   compact form, standing creatures once a second, far ones at half rate
   (BUG-9235), and unchanged world-object lists not sent again (BUG-9237).

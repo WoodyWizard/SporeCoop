@@ -127,6 +127,11 @@ void revalidate(Win w);
 // the window's transform as drawn (screen = local * scale + offset; Window +0x148, its type at +0x188: 0 identity,
 // 1 translation and scale, read live 2026-11-13); false for other types
 bool render_xform(Win w, float& sx, float& sy, float& tx, float& ty);
+// BUG-9238: the window's rectangle in screen pixels as drawn: at an Interface Size other than 100 % Spore's UI is laid
+// out for a smaller screen and drawn scaled (coop_ui 3X A), so screen_rect() is its layout place, not where it shows.
+// The drawn transform (render_xform, translation and scale) when the window has one; else screen_rect().
+// Off (`coop.fix ui.drawn_rect off`): screen_rect().
+Rect drawn_rect(Win w);
 // the window has a transform of its own (its local transform, Window +0xC0, type at +0x100, is not the identity: the
 // game's InflateEffect buttons while they grow); the game hit-tests such a window through its full transform
 bool has_own_transform(Win w);

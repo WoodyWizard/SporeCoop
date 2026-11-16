@@ -445,7 +445,7 @@ static void box_task(void*)
     // pause menu button and the host left the game to the main menu or quit Spore (chaos tests,
     // 2026-10-23: both 3-4 s after such an Enter).
     if (sui::Win ok = first_visible(box, kSavedBoxOk)) {
-        sui::Rect r = sui::screen_rect(ok);
+        sui::Rect r = sui::drawn_rect(ok); // BUG-9238: where it shows (the click is mapped back like the player's)
         int x = (int)((r.x1 + r.x2) / 2), y = (int)((r.y1 + r.y2) / 2);
         RECT cr{};
         HWND gw = (HWND)H->game_window();

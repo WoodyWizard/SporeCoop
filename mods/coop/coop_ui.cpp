@@ -3412,7 +3412,7 @@ void tick()
         world::menu_intro_playing()) {
         POINT c{};
         int cx = 0, cy = 0;
-        Rect r = sui::screen_rect(g_menu_btn);
+        Rect r = sui::screen_rect(g_menu_btn); // (the click as remapped: layout places, BUG-9238)
         mouse::last_click(cx, cy);
         bool at = mouse::g_fix ? (c = POINT{cx, cy}, true) : GetCursorPos(&c) && ScreenToClient(gw, &c);
         if (at && c.x >= r.x1 && c.x < r.x2 && c.y >= r.y1 && c.y < r.y2) {
@@ -4311,6 +4311,19 @@ COOP_FIX("ui.whole_scale", "BUG-9191", g_whole_scale,
          "ui: the Interface Size scales Spore's UI as one picture laid out for a smaller screen, not piece by piece");
 static bool ws_on() { return g_whole_scale && g_native_scale; }
 constexpr uint32_t kWorldHintLayer = 0xCBDF6E1Du; // hints over creatures ("to learn to charm"), placed by projection
+// BUG-9238 (owner 2026-11-16: at 125 % "text, health bars, and other overlay things were off center"): the health bars
+// over creatures (0x93310E4A holders with the bar 0x026E0DF0 and its number 0x04D039A8) are placed by the world's
+// projection in their own layer; scaled, they were drawn at 1.25 x their place (off to the right and down). Off
+// (`coop.fix ui.world_bars off`): that layer is scaled with the HUD.
+constexpr uint32_t kWorldBarLayer = 0xE9F70DF9u;
+static bool g_world_bars_fix = true;
+COOP_FIX("ui.world_bars", "BUG-9238", g_world_bars_fix,
+         "ui: the health bars over creatures stay at their place at an Interface Size other than 100 % (not scaled)");
+static bool ws_world_layer(Win layer)
+{
+    const uint32_t id = sui::control_id(layer);
+    return id == kWorldHintLayer || (g_world_bars_fix && id == kWorldBarLayer);
+}
 static std::vector<std::pair<Win, uint32_t>> g_ws_done; // layers with our proc
 struct WsMoved {
     Win w;
@@ -4320,7 +4333,7 @@ struct WsMoved {
 static std::vector<WsMoved> g_ws_moved; // pieces placed in code that we moved (their own place, to go back)
 static bool ws_skip(Win layer)
 {
-    return layer == g_ph.root || layer == D.root || layer == g_dh.root || sui::control_id(layer) == kWorldHintLayer;
+    return layer == g_ph.root || layer == D.root || layer == g_dh.root || ws_world_layer(layer);
 }
 static bool ws_handle(Win w, const sui::Msg& m)
 {
@@ -4378,6 +4391,15 @@ static void whole_scale_tick(float want)
     }
     std::vector<Win> relaid;
     for (Win layer : sui::children(main)) {
+        if (ws_world_layer(layer)) { // BUG-9238: a world layer keeps the whole screen (one made smaller before is put back)
+            const sui::Rect r = sui::area(layer);
+            if (std::abs(r.x1) <= 2 && std::abs(r.y1) <= 2 && (std::abs(r.w() - W) >= 2 || std::abs(r.h() - Hh) >= 2) &&
+                (full(r, was) || full(r, f))) {
+                sui::set_area(layer, {0, 0, W, Hh});
+                sui::invalidate_transform(layer);
+            }
+            continue;
+        }
         if (ws_skip(layer)) continue;
         const uint32_t id = sui::control_id(layer);
         bool done = false;

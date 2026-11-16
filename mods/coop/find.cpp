@@ -405,7 +405,7 @@ static void hud_scan(sui::Win w, int depth, int sw, int sh, std::vector<findx::B
     if (!w || depth > 24 || !sui::visible(w) || out.size() > 200)
         return;
     if (depth > 0 && sui::drawable(w)) {
-        sui::Rect r = sui::screen_rect(w);
+        sui::Rect r = sui::drawn_rect(w); // BUG-9238: the HUD where it shows
         float a = r.w() * r.h();
         if (r.w() >= 8 && r.h() >= 8 && a < sw * (float)sh / 3.f && r.x2 > 0 && r.y2 > 0 && r.x1 < sw && r.y1 < sh)
             out.push_back({r.x1, r.y1, r.x2, r.y2});

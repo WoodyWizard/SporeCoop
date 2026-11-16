@@ -1,6 +1,7 @@
 #include "sui.h"
 
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -546,6 +547,21 @@ bool render_xform(Win w, float& sx, float& sy, float& tx, float& ty)
     return sx > 0.01f && sy > 0.01f;
 }
 
+static bool g_drawn_rect_fix = true;
+COOP_FIX("ui.drawn_rect", "BUG-9238", g_drawn_rect_fix,
+         "ui: the mod places its marks and clicks by where Spore's windows are drawn (Interface Size), not by their layout");
+Rect drawn_rect(Win w)
+{
+    const Rect r = screen_rect(w);
+    if (!g_drawn_rect_fix || !w) return r;
+    const uint8_t* p = (const uint8_t*)w;
+    if (IsBadReadPtr(p + 0x148, 0x44) || *(const int*)(p + 0x188) != 1) return r; // (identity: drawn at its layout)
+    float sx, sy, tx, ty;
+    if (!render_xform(w, sx, sy, tx, ty) || !std::isfinite(tx) || !std::isfinite(ty)) return r;
+    const Rect a = real_area(w);
+    return Rect{tx, ty, tx + a.w() * sx, ty + a.h() * sy};
+}
+
 bool button_selected(Win w)
 {
     void* b = as_button(w);
@@ -842,6 +858,12 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
             H->out_printf(out, "%s", dump(p, 0, false).c_str());
         return 0;
     }
+    if (sub == "path" && argc > 2) { // path <hex address | control id>: the window and its parents (BUG-9238 tests)
+        Win w = arg_win(argv[2], out);
+        for (Win p = w; p; p = parent(p))
+            H->out_printf(out, "%s", dump(p, 0, false).c_str());
+        return w ? 0 : 1;
+    }
     if (sub == "at" && argc > 3) { // at <x> <y>: every visible window under a screen point (game bots)
         float x = (float)atof(argv[2]), y = (float)atof(argv[3]);
         std::vector<Win> stack{main_window()};
@@ -1057,7 +1079,7 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
 void register_commands()
 {
     H->command_add(M, "coop.ui",
-                   "coop.ui tree [depth] [all] [root] | find <caption> | where <hex id>... | at <x> <y> | layouts | load <inst> [group] | "
+                   "coop.ui tree [depth] [all] [root] | find <caption> | path <win> | where <hex id>... | at <x> <y> | layouts | load <inst> [group] | "
                    "show <win> [0|1] - Spore UI windows",
                    c_ui, nullptr, SK_CMD_OUTSIDE_FRAME);
 }
