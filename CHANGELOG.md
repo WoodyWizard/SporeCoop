@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Memory: when Spore's memory runs low a box shows a live bar of how full it
+  is (yellow from 20 % left, red from 10 %) with Ignore and Continue; Continue
+  saves, restarts Spore and reconnects by itself (a host loads its world again
+  and hosts, its partners rejoin on their own). First at 15 % left, again at
+  10 % (BUG-9239).
+
 - Interface Size other than 100 %: the health bars over creatures stay over
   their creature, and the host's "game saved" box after a world share closes
   by itself again (it stayed up and paused everyone) (BUG-9238).

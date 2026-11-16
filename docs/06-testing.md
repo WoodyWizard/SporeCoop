@@ -8927,3 +8927,16 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   logs "other hooks: d3d9.dll from the game folder"; the Co-op window and the HUD draw). Same average fps, steadier frames
   (fewer long frames), but about 260 MB less free address space in the 32-bit game (693 vs 952 MB free, largest block 352
   vs 686 MB). DXVK writes SporeApp_d3d9.log next to the exe.
+
+## The memory box and the restart (2026-11-16, feat/lineages-47)
+<a id="testing-memory-box"></a>
+
+* `coop.memrefresh show <percent left>` puts the box up as at that much left (the bar and its colour follow; `off` the
+  real measure again); `coop.memrefresh continue` / `ignore` press its buttons without the mouse; `status` shows the
+  level, the restart's steps (out / resume) and a guest's rejoins.
+* A real low address space: `coop.diag reserve <MB>` (a planted leak, never freed) or `coop.diag fill <left MB>`.
+* The restart on TITAN's QA copy keeps the instance and profile (the same command line): a guest is back in the
+  session in about 10 s, a host loads its planet again and hosts 30 s after the click. The new game's log starts with
+  `mem: started again after a memory restart`.
+* The QA copy runs the unstripped coop.dll: its image takes about 96 MB of the address space (`coop.memcensus`:
+  image:coop); the release's stripped one about 7 MB. Memory numbers from the QA copy are that much lower.

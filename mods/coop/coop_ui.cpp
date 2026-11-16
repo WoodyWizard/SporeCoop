@@ -3658,6 +3658,152 @@ bool set_downed_hud(bool show, bool box, const std::string& name, const Rect& gi
     return g_dh.give != nullptr || show; // the first frame: the parts are being made
 }
 
+// ---------------- the memory popup (decision 4S, BUG-9239) ----------------
+// Spore keeps what it loads until it is closed (a 32-bit game, 2 GB); near the end the player gets a box in the middle of
+// the screen: the owner's text, a live bar of how full the memory is (green, yellow from 20 % left, red from 10 %) and
+// two buttons, Ignore and Continue (save, restart Spore, reconnect: mem_refresh.cpp). Not scaled with Spore's UI.
+static struct {
+    Win root = nullptr, box = nullptr, edge[4] = {}, title = nullptr, msg[2] = {}, back = nullptr, fill = nullptr,
+        line = nullptr, ignore = nullptr, cont = nullptr;
+    bool failed = false;
+} g_mp;
+static MemoryPopup g_mp_want, g_mp_shown;
+static bool g_mp_queued;
+static void (*g_mp_click)(int);
+
+static bool mp_build()
+{
+    if (g_mp.cont) return true;
+    if (g_mp.failed) return false;
+    if (!D.root) {
+        build_dialog();
+        if (D.root) sui::set_visible(D.root, g_want_open);
+    }
+    Win main = sui::main_window();
+    if (!D.like_button || !main) { g_mp.failed = true; return false; }
+    g_mp.root = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    if (!g_mp.root) { g_mp.failed = true; return false; }
+    sui::set_flag(g_mp.root, sui::kFlagIgnoreMouse, false);
+    Win root = g_mp.root;
+    auto button = [&](const std::string& caption, int code, void* look) {
+        Win w = sui::button_like(root, D.like_button, {0, 0, 10, 10}, caption);
+        if (!w) return w;
+        sui::set_font(w, D.font_body);
+        if (look) sui::set_drawable(w, look);
+        sui::add_handler(w, [code](Win, const sui::Msg& m) {
+            if (!sui::is_click(m)) return false;
+            if (g_mp_click) g_mp_click(code);
+            return true;
+        });
+        return w;
+    };
+    const uint32_t panel = (menu_panel_fill() & 0x00FFFFFFu) | 0xE6000000u; // (nearly solid: text over the world)
+    g_mp.box = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    if (g_mp.box) sui::set_fill_color(g_mp.box, panel);
+    for (Win& e : g_mp.edge) {
+        e = sui::label(root, {0, 0, 1, 1}, "", D.font_body, kWhite, sui::kAlignCenter);
+        if (e) sui::set_fill_color(e, kMenuBoxEdge);
+    }
+    g_mp.title = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kGold, sui::kAlignCenter);
+    for (Win& m : g_mp.msg) m = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    g_mp.back = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    if (g_mp.back) sui::set_fill_color(g_mp.back, 0xFF15191Eu);
+    g_mp.fill = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    g_mp.line = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    g_mp.ignore = button("Ignore", 0, g_button_roles ? g_grey_look : nullptr);
+    g_mp.cont = button("Continue", 1, g_button_roles ? g_blue_look : nullptr);
+    if (!g_mp.cont || !g_mp.ignore || !g_mp.box || !g_mp.fill || !g_mp.back) {
+        g_mp.failed = !g_mp.cont;
+        H->log(M, SK_WARN, "ui: memory box parts missing (continue %p box %p bar %p)", g_mp.cont, g_mp.box, g_mp.fill);
+    }
+    for (Win w : {g_mp.box, g_mp.edge[0], g_mp.edge[1], g_mp.edge[2], g_mp.edge[3], g_mp.title, g_mp.msg[0], g_mp.msg[1],
+                  g_mp.back, g_mp.fill, g_mp.line, g_mp.ignore, g_mp.cont})
+        if (w) {
+            sui::add_ref(w);
+            sui::bring_to_front(root, w);
+            sui::set_visible(w, false);
+            if (w != g_mp.ignore && w != g_mp.cont) sui::set_flag(w, sui::kFlagIgnoreMouse, true);
+        }
+    sui::add_ref(root);
+    sui::set_visible(root, false);
+    return g_mp.cont != nullptr;
+}
+
+static void mp_apply(void*)
+{
+    g_mp_queued = false;
+    const MemoryPopup want = g_mp_want;
+    if (!mp_build()) return;
+    Win main = sui::main_window();
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    const float w = 540, h = 206, x = std::floor((sw - w) / 2), y = std::floor(sh * 0.38f - h / 2);
+    const Rect all{x, y, x + w, y + h};
+    if (want.show && main) {
+        sui::set_area(g_mp.root, all);
+        if (sui::parent(g_mp.root) != main) sui::add_child(main, g_mp.root);
+        sui::bring_to_front(main, g_mp.root);
+        sui::set_flag(g_mp.root, sui::kFlagAlwaysInFront, true);
+    }
+    sui::set_visible(g_mp.root, want.show);
+    auto place = [&](Win win, bool on, const Rect& r) { // r: inside the box
+        if (!win) return;
+        if (on) sui::set_area(win, r);
+        sui::set_visible(win, on);
+    };
+    const bool on = want.show;
+    place(g_mp.box, on, {0, 0, w, h});
+    place(g_mp.edge[0], on, {0, 0, w, 1});
+    place(g_mp.edge[1], on, {0, h - 1, w, h});
+    place(g_mp.edge[2], on, {0, 0, 1, h});
+    place(g_mp.edge[3], on, {w - 1, 0, w, h});
+    place(g_mp.title, on, {10, 12, w - 10, 34});
+    place(g_mp.msg[0], on, {10, 42, w - 10, 62});
+    place(g_mp.msg[1], on, {10, 62, w - 10, 82});
+    const float bx1 = 30, bx2 = w - 30, by1 = 98, by2 = 116;
+    const float used = std::clamp(want.used, 0.f, 1.f);
+    place(g_mp.back, on, {bx1, by1, bx2, by2});
+    place(g_mp.fill, on && used > 0.005f, {bx1, by1, bx1 + std::max(2.f, (bx2 - bx1) * used), by2});
+    if (g_mp.fill) sui::set_fill_color(g_mp.fill, want.bar_color);
+    place(g_mp.line, on, {10, 120, w - 10, 140});
+    place(g_mp.ignore, on && want.buttons, {w / 2 - 160, 156, w / 2 - 12, 190});
+    place(g_mp.cont, on && want.buttons, {w / 2 + 12, 156, w / 2 + 160, 190});
+    if (on) {
+        if (g_mp.title) sui::set_caption(g_mp.title, want.title);
+        for (int i = 0; i < 2; i++)
+            if (g_mp.msg[i]) sui::set_caption(g_mp.msg[i], want.msg[i]);
+        if (g_mp.line) sui::set_caption(g_mp.line, want.line);
+    }
+    g_mp_shown = want;
+}
+
+bool set_memory_popup(const MemoryPopup& want_in, void (*on_click)(int))
+{
+    if (!g_ok || g_mp.failed) return false;
+    g_mp_click = on_click;
+    MemoryPopup want = want_in;
+    if (!want.show) want = MemoryPopup{};
+    g_mp_want = want;
+    if (!(want == g_mp_shown) && !g_mp_queued) {
+        g_mp_queued = true;
+        H->run_outside_frame(mp_apply, nullptr);
+    }
+    static double s_front_at = 0; // (the stage's own UI reorders the main window's children: BUG-9171)
+    if (want.show && want == g_mp_shown && g_mp.root && !g_mp_queued && H->time_seconds() - s_front_at > 0.5) {
+        s_front_at = H->time_seconds();
+        g_mp_queued = true;
+        H->run_outside_frame([](void*) {
+            g_mp_queued = false;
+            Win main = sui::main_window();
+            if (main && g_mp.root && g_mp_shown.show) {
+                sui::bring_to_front(main, g_mp.root);
+                sui::set_flag(g_mp.root, sui::kFlagAlwaysInFront, true);
+            }
+        }, nullptr);
+    }
+    return true;
+}
+
 // ---------------- the Party cards (decision 3G, 2026-11-14) ----------------
 // One card per partner in the art of the stage that partner plays (images: data/ui/lineages_card_*.png,
 // tools/party_card_assets.py): a plate with the name, the place, the health bar and a second bar (Creature the hunger,
@@ -4333,7 +4479,7 @@ struct WsMoved {
 static std::vector<WsMoved> g_ws_moved; // pieces placed in code that we moved (their own place, to go back)
 static bool ws_skip(Win layer)
 {
-    return layer == g_ph.root || layer == D.root || layer == g_dh.root || ws_world_layer(layer);
+    return layer == g_ph.root || layer == D.root || layer == g_dh.root || layer == g_mp.root || ws_world_layer(layer);
 }
 static bool ws_handle(Win w, const sui::Msg& m)
 {

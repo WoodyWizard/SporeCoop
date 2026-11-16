@@ -93,6 +93,7 @@
 #include "partner_marker.h"
 #include "ring_timer.h"
 #include "progress_debt.h"
+#include "mem_refresh.h"
 #include "guest_pack.h"
 #include "notify.h"
 #include "hud_portrait.h"
@@ -478,8 +479,10 @@ void chat_log(const std::string& s, uint32_t argb = 0)
 }
 
 // an event everybody sees (feed + lobby chat): guests send it to the host, the host relays it
-void notice(const std::string& text, int from = -1)
+void notice(const std::string& text_in, int from = -1)
 {
+    // BUG-9239 (seen 2026-11-16: "Host-NoShare- evolves its own creature"): the -NoShare- tag never shows in a notice
+    const std::string text = net::g_fix.shown_names ? utf8::shown_name(text_in) : text_in;
     feed(text);
     chat_log("* " + text);
     net::Writer w;
@@ -5228,6 +5231,7 @@ void on_frame(void*, int, void*)
     double now = H->time_seconds();
     g_last_frame = now;
     support::tick(now); // first: its frame timing (FPS, hitches) and the session clock
+    mem_refresh::tick(now); // decision 4S (BUG-9239): the memory box, a restart's steps
     {
         bool clock_ok = false;
         double st = support::session_time(&clock_ok);
@@ -6714,7 +6718,9 @@ void on_overlay(void*, int, void*)
         H->world_to_screen(w, sc);
         const bool front = g_arrow_fix ? std::isfinite(sc[0]) && std::isfinite(sc[1]) : H->world_to_screen(w, sc) != 0;
         // (BUG-9191: not over the Sporepedia, the pause menu or a caption: the game time stands then, as the Party panel)
-        if (g_partner_arrows && sw > 0 && sh > 0 && !(g_partner_chevron && (game_busy() & (busy::kPaused | busy::kInputLock)))) {
+        // (BUG-9239: nor over the memory box: the marker is drawn over the UI)
+        if (g_partner_arrows && sw > 0 && sh > 0 && !(g_partner_chevron && (game_busy() & (busy::kPaused | busy::kInputLock))) &&
+            !mem_refresh::box_up()) {
             const float size = std::clamp(sh / 24.f,30.f,60.f);
             const bool visible = front && sc[0] >= 40 && sc[0] < sw-40 && sc[1] >= 70 && sc[1] < sh-70;
             float x = 0, y = 0, dx = 0, dy = 1;
@@ -7231,6 +7237,10 @@ void setup_callbacks()
             progress_debt::message(from, r);
             return;
         }
+        if (type == net::MSG_HOST_RESTART) { // BUG-9239: the host restarts for its memory: rejoin by ourselves
+            if (from == 0 && g_sess.role() == net::Role::Client) mem_refresh::host_restarting(r.u16());
+            return;
+        }
         if (type == net::MSG_DIAG) { // support diagnostics: clock, marks, sync-check (diag_coop.h)
             support::on_message(from, r);
             return;
@@ -7494,6 +7504,7 @@ void setup_callbacks()
         }
         if (type == net::MSG_NOTICE) {
             std::string t = r.str8();
+            if (net::g_fix.shown_names) t = utf8::shown_name(t); // (from an older host: BUG-9239)
             if (!r.ok())
                 return;
             if (g_sess.role() == net::Role::Host)
@@ -7757,7 +7768,7 @@ bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err, 
     return true;
 }
 
-bool do_join(const std::string& addr, std::string& err, const std::string& password = {})
+bool do_join(const std::string& addr, std::string& err, const std::string& password = {}, uint64_t token = 0)
 {
     if (!creations::campaign_content(COOP_VERSION, g_sess.campaign_profile, err))
         return false;
@@ -7765,6 +7776,7 @@ bool do_join(const std::string& addr, std::string& err, const std::string& passw
     reset_lobby();
     g_sess.resume_world = world::resume_world();
     g_sess.rejoin_token = rejoin::token_for_join(H->instance_id(), addr, g_name); // BUG-0235, BUG-1001
+    if (token) g_sess.rejoin_token = token; // BUG-9239: the same player after a memory restart
     if (!g_sess.join(addr, g_name, err, password))
         return false;
     { // the chat log goes into problem reports: no public address there
@@ -9280,7 +9292,7 @@ void init_ui()
     coop_ui::Api a;
     a.name = [] { return g_name; };
     a.set_name = [](const std::string& n) { g_name = utf8::player_name(n); };
-    a.join = do_join;
+    a.join = [](const std::string& addr, std::string& err, const std::string& pw) { return do_join(addr, err, pw); };
     a.host = do_host;
     a.queue_seats = [](unsigned seats, std::string& result) { return world::set_seats(g_sess,seats,result); };
     a.leave = do_leave;
@@ -10569,6 +10581,38 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return r;
                    }, nullptr, SK_CMD_MAIN_THREAD);
     progress_debt::init(H, &g_sess, notice); // BUG-9119
+    { // decision 4S (BUG-9239): the memory box and the restart
+        mem_refresh::Api api{};
+        api.role = [] { return g_sess.role() == net::Role::Host ? 1 : g_sess.role() == net::Role::Client ? 2 : 0; };
+        api.connected = [] { return g_sess.role() != net::Role::None && g_sess.connected(); };
+        api.host_address = [] { return g_sess.host_address(); };
+        api.password = [] { return g_sess.password(); };
+        api.port = [] { return g_sess.port(); };
+        api.seats = [] { return (unsigned)g_sess.seat_limit; };
+        api.name = [] { return g_name; };
+        api.token = [] { return g_sess.rejoin_token; };
+        api.join = [](const std::string& addr, const std::string& name, const std::string& pw, uint64_t token,
+                      std::string& err) {
+            if (!name.empty()) g_name = utf8::player_name(name);
+            return do_join(addr, err, pw, token);
+        };
+        api.host = [](uint16_t port, unsigned seats, const std::string& name, const std::string& pw, std::string& err) {
+            if (!name.empty()) g_name = utf8::player_name(name);
+            return do_host(port ? port : default_port(), seats >= 1 && seats <= 4 ? seats : 2, 100, err, pw);
+        };
+        api.leave = [] {
+            if (g_sess.role() == net::Role::Client) do_leave();
+            else if (g_sess.role() == net::Role::Host) end_open_session();
+        };
+        api.announce = [](uint16_t secs) {
+            net::Writer w;
+            w.u16(secs);
+            g_sess.broadcast_reliable(net::MSG_HOST_RESTART, w);
+            chat_log("* the host restarts Spore for its memory: the partners rejoin by themselves");
+        };
+        api.feed = [](const std::string& s) { feed(s); };
+        mem_refresh::init(H, M, api);
+    }
     H->command_add(M, "coop.debt", "coop.debt [add <n> | clear] - the party's progress debt (BUG-9119): what is owed, the bar; add / clear: tests (host)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        std::string text;

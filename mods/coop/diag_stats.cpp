@@ -1,6 +1,7 @@
 // Support diagnostics: FPS and hitches, the address space, network quality, session settings and
 // the session summary (diag_coop.h, docs/REPORTING.md#reporting-support-answers).
 #include "diag_coop.h"
+#include "mem_refresh.h"
 #include "net/traffic.h"
 
 #include <windows.h>
@@ -151,6 +152,16 @@ static void mem_start()
     }
     g_mem_thread = CreateThread(nullptr, 0, mem_walk, nullptr, 0, nullptr);
 }
+
+bool mem_now(int& free_mb, int& block_mb, int& total_mb, int& kept_mb)
+{
+    free_mb = g_mem_free_mb;
+    block_mb = g_mem_block_mb;
+    total_mb = g_mem_total_mb;
+    kept_mb = g_reserve ? (int)kReserveMB : 0;
+    return free_mb >= 0 && total_mb > 0;
+}
+void mem_walk_soon() { mem_start(); }
 
 // ---------------- network quality per peer ----------------
 struct PeerNet {
@@ -499,7 +510,7 @@ void stats_tick(double now)
             if (fr >= 0 && (fr < 300 || bl < 48) && g_fix_mem_reserve) {
                 if (g_reserve)
                     reserve_give("the address space runs low");
-                if (now - g_reserve_told > 600 && g_P.feed) { // every 10 minutes while it stays low
+                if (now - g_reserve_told > 600 && g_P.feed && !mem_refresh::enabled()) { // (4S: the memory box instead)
                     g_reserve_told = now;
                     g_P.feed("Your game is running out of memory: save and restart it soon (Spore is a 32-bit game "
                              "and keeps what it loads until it is closed)");

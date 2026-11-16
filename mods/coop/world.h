@@ -106,6 +106,8 @@ bool load_slot(const std::wstring& slot, const std::string& planet_file, std::st
                const std::string& share_host = "");
 // load Games\<slot_name>\<planet>.spo of the local profile (works from the galaxy menu)
 bool load_local(const std::string& slot_name, const std::string& planet, std::string& err);
+// BUG-9239 (4S): the save folder the game writes this game to and the planet played ("" in a menu)
+bool restart_point(std::wstring& slot, std::string& planet);
 // BUG-0332: after a live Creature -> Tribe change the host loads its own share save once it has gone out
 void host_reload_after_share();
 uint32_t host_reloads();

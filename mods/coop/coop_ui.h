@@ -166,6 +166,21 @@ bool set_party_hud(bool show, const std::vector<PartyRow>& rows, float scale, vo
 // the panel's screen rect while it is shown (empty when not)
 sui::Rect party_hud_area();
 void register_party_commands();
+
+// decision 4S (BUG-9239): the memory box in the middle of the screen (mem_refresh.cpp fills it); on_click(0) Ignore,
+// on_click(1) Continue. Callable in the frame (the change is made outside it).
+struct MemoryPopup {
+    bool show = false, buttons = true;
+    float used = 0;          // 0..1, the bar's fill
+    uint32_t bar_color = 0;  // ARGB
+    std::string title, msg[2], line;
+    bool operator==(const MemoryPopup& o) const
+    {
+        return show == o.show && buttons == o.buttons && (used - o.used) * (used - o.used) < 4e-6f &&
+               bar_color == o.bar_color && title == o.title && msg[0] == o.msg[0] && msg[1] == o.msg[1] && line == o.line;
+    }
+};
+bool set_memory_popup(const MemoryPopup& want, void (*on_click)(int));
 std::string debug_state();
 extern bool g_log_msgs; // debug: log UI messages reaching our handlers
 extern bool g_lan_pages_fix; // tests: `coop.corefix lan_pages 0` lists the first three games only (BUG-0183)

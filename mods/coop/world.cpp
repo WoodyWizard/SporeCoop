@@ -2858,6 +2858,14 @@ std::string status()
     return s;
 }
 
+bool restart_point(std::wstring& slot, std::string& planet)
+{
+    slot = current_db_dir(false);
+    planet = modes::current_world_name();
+    if (!is_planet_file(planet)) planet.clear();
+    return !slot.empty() && !planet.empty();
+}
+
 bool load_local(const std::string& slot_name, const std::string& planet, std::string& err)
 {
     std::string file = planet.size() > 4 && planet.compare(planet.size() - 4, 4, ".spo") == 0 ? planet : planet + ".spo";

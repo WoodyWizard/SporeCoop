@@ -134,6 +134,7 @@ public:
     };
     bool link_of(uint8_t id, Link& out) const;
     std::string host_address() const; // guest: "ip:port" of the host
+    const std::string& password() const { return password_; } // the session's password (BUG-9239: a restart rejoins)
     bool resolving() const { return lookup_ != nullptr; } // guest: the host name is being looked up
     struct Lookup; // a name lookup on a worker thread (BUG-0204)
     static constexpr uint32_t kLookupTimeoutMs = 20000;

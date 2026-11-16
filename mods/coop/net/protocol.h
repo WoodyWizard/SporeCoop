@@ -119,6 +119,8 @@ enum MsgType : uint8_t {
     MSG_SPACE_LAUNCH = 79, // reliable host offer and founder reply for a missed Civilization launch
     MSG_CIV_ECONOMY = 91, // host city routes and economic meter; civ_economy.h (BUG-9085: 64 belongs to Tribe)
     MSG_CIV_INFLUENCE = 92, // host native religious followers and meter; civ_influence.h
+    MSG_HOST_RESTART = 94, // reliable host -> guests (BUG-9239, decision 4S): u16 seconds; the host restarts Spore for
+                           // its memory and hosts the same world again: the guests rejoin by themselves meanwhile
     MSG_NPC_STATE_C = 93, // unreliable host -> guest (BUG-9235): MSG_NPC_STATE's batch in the compact form: u32 time_ms,
                           // u8 n, vec3 anchor, n x write_npc_c (23 B), then n x i16 height trailer
     MSG_ADVENTURE = 70, // reliable mission/run-scoped objective proposals and ordered host credits
