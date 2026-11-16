@@ -148,6 +148,11 @@
   line read by position, a jump that left the mate behind, a cell count taken before the guests spread) (BUG-1186).
 - Tests: tribe_duet holds the game's creature attack on the test's village (`coop.drama hold`), which the faster lab
   start had moved into the performance, and checks that the guest sees both members perform (BUG-1188).
+- Tests of the final check's Creature / NPC / Cell group: the invariant monitor tells two sessions of the same world
+  apart by their start (BUG-1194); avatar_stale_target and the name tag tests put the guest back where they were made
+  for since joining guests stand 5 m aside, the tag tests no longer read an off-screen arrow's label as a tag; proxy_ghost,
+  cell_mirror_nan and herd_help_stale no longer fail on what their own steps or the game's LOD did (BUG-1195, BUG-1197,
+  BUG-1200, BUG-1201, BUG-1207).
 
 ## [0.7.14.1] - 2026-11-14
 
