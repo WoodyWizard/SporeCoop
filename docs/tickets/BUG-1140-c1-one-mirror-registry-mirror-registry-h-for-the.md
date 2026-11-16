@@ -32,3 +32,6 @@ Unit tests tests/core_tests.cpp (registry_bind, registry_liveness, registry_adop
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-ccore): the portable core and its unit tests; no stage file changed. Open until the stage adoptions land.
+- 2026-11-15 (feat/w51-tribe): Tribe adopted it (`tribe.hm`, `tribe.gm`; the old maps g_hm_by_id / g_gid_of and the
+  switch tribe.registry deleted after the lab: on 20261115-162402 22/22, off 20261115-175152 5/5); tribe object_alive
+  39 -> 35. Commits f0181eb5, ba65cc5c, 6b960de3. NPC and Civ are their branches'.

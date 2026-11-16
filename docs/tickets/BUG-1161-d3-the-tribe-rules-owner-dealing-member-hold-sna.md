@@ -1,16 +1,16 @@
 ---
 id: BUG-1161
 title: D3: the Tribe rules (owner dealing, member hold, snapshot apply) in tribe_logic.h with unit tests
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/w51-tribe
-commits:
+commits: f0181eb5
 tests: tests/tribe_tests.cpp
 signature:
 docs: docs/01-architecture.md#arch-tribe-wave-c
@@ -34,8 +34,12 @@ tests/tribe_tests.cpp (`make test`, unit-cpp under ASan/UBSan): each rule with i
 behaviour where it has one.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- `make test` (unit-cpp: tests/tribe_tests.cpp under ASan / UBSan: 5 groups, all pass). The rules carry their old
+  behaviour where a switch has one (tribe.mirror_grow, tribe.join_body, tribe.ko off: the old answer is checked).
+- The lab runs of C1 that drive these functions: 20261115-162402 (22/22) and the final run (below).
+- no-fail-run: the rules were extracted unchanged (no bug behind them); a mutation (e.g. `<=` in pick_bind's 6 m,
+  the turn counted for a claim) fails tribe_tests.
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-15 (feat/w51-tribe): tribe_logic.h and tests/tribe_tests.cpp.

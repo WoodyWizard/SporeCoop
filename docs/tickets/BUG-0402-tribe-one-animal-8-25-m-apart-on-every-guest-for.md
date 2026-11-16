@@ -102,3 +102,6 @@ ground (`agl=0.00`, dist 530.6). So the gap is radial: the guest grounds a proxy
 ground (in water or sunk). Not a walking proxy trailing. Not a release blocker; left open.
 - 2026-11-05 (fix/w44-height): fourth kind analysed (a terrain difference; the proxy is where the rule puts it); left open.
 - 2026-11-08 (fix/w46-n2-desyncs, N2): not reproduced in 2 play_tribe (one over the players' network at 20 fps) and 8 four-player campaigns into Tribe (4 over SPORE_NET=players), detector on; closed with that evidence.
+- 2026-11-15 (feat/w51-tribe, seen again): campaign_tribe_noclick 20261115-163301, one NPC proxy (n139, a herd
+  animal 502 m from the guest) 12.6 m apart on one guest (extra1) at one sync-check (17:07:11), the lab's sync-check
+  gate failed the run; not analysed (outside the Tribe package).

@@ -32,3 +32,6 @@ Unit tests tests/core_tests.cpp (snapshot_tribe_civ: lost / cut / late older chu
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-ccore): the portable core and its unit tests; no stage file changed. Open until the stage adoptions land.
+- 2026-11-15 (feat/w51-tribe): Tribe adopted it (guest_state on net::SnapshotReceiver; g_cyc / g_cycle_ids /
+  g_incomplete and the switch tribe.snapshot_rx deleted after the lab: on 20261115-162402 22/22 with tribe_cycle_restart
+  and tribe_snapshot, off 20261115-175152 5/5). Commits 0d049e6c, ba65cc5c. Civ and the squadron are their branches'.

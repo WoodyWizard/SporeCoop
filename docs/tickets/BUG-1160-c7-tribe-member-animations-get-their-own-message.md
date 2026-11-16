@@ -1,16 +1,16 @@
 ---
 id: BUG-1160
 title: C7: Tribe member animations get their own message type (MSG_TRIBE_ANIM) instead of MSG_NPC_ANIM's whitelist
-status: open
+status: fixed
 kind: tooling
 stage: Tribe
 reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/w51-tribe
-commits:
+commits: f0181eb5, e57d8f2d, a2c1ef8a
 tests: tests/tribe_tests.cpp, tests/wire_tests.cpp, tests/validate_tests.cpp, mixed_version_tribe, tribe_mirror_anims, tribe_party_music, tribe_host_pause, tribe_gameover_wait
 signature:
 docs: docs/04-netcode.md#netcode-tribe-anim, docs/01-architecture.md#arch-tribe-wave-c
@@ -40,8 +40,20 @@ refused. Status: `tribe anim msg: fix= sent_new= sent_old= rx_new= rx_bad=` in c
 `coop.fix tribe.anim_msg off`: MSG_NPC_ANIM to everyone (0.7.14), kept: the lab's path for an old peer.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- Unit: tests/tribe_tests.cpp `anim_type` (the type per peer: none / tribe 1.0 / 1.1 / later minor / rev 2 / switch
+  off; the kinds equal 0.7.14's whitelist), tests/wire_tests.cpp `test_tribe_anim` (golden bytes of K_GAMEOVER,
+  K_HOST_PAUSE, K_AIR, K_HOLD_ITEM, a hold end, each against tribe.cpp's old writer), tests/validate_tests.cpp
+  `test_manifest` (71 TRIBE_ANIM the one type added after 0.7.14: Module, route Tribe on a guest, host-only).
+- Lab with a 0.7.14 peer (v0.7.14 built from `git archive`): `mixed_version_tribe` 20261115-181422 (this build hosts:
+  "the host sends MSG_TRIBE_ANIM to this build and MSG_NPC_ANIM to the old release (sent new / old (562, 321))",
+  Bob takes MSG_TRIBE_ANIM rx 562, Bob plays the relayed animations rx 337, the old Carol rx 203) and
+  `mixed_version_tribe_host` 20261115-181759 (a v0.7.14 host: this build's Carol gets no MSG_TRIBE_ANIM, plays them
+  from MSG_NPC_ANIM rx 236, the old Bob rx 331); both with the B6 warning and no fault.
+- The Tribe tests on this build: 20261115-162402 (22/22, f0181eb5) and the final run (below).
+- no-fail-run: a protocol move without a bug behind it; the old path is the one a 0.7.14 peer gets, both mixed runs
+  prove it.
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-15 (feat/w51-tribe): MSG_TRIBE_ANIM, tribe family 1.1, wire/tribe_anim.h, per-peer type; mixed runs both
+  directions.
