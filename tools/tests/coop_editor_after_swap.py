@@ -99,6 +99,7 @@ def run(host, guest):
     guest.call('click %d %d' % DONE)
     out = wait(lambda: 'Creature' in mode(guest), 30, 1)
     if not out:
+        shot(guest, 'editor_after_swap_exit.png')  # what is on the screen when the check did not end the editor
         guest.call('click %d %d' % QUIT)
         out = wait(lambda: 'Creature' in mode(guest), 20, 1)
     ck(out, 'the green check brings the guest back to the Creature stage')
