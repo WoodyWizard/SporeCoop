@@ -66,7 +66,10 @@ FAIL (SPORE_FIX_OFF=tribe.mirror_hunger_full): out/lab/20261116-000010 (lane 4: 
 after the host's 0), out/lab/20261116-000735 (lane 5, cold x3: step 5 3 of 3, step 4 2 of 3), out/lab/20261116-001814
 (lane 4, SPORE_START_FIXED=1, cold x3: step 4 bound and ok, step 5 FAIL 3 of 3).
 PASS: out/lab/20261116-000012 (lane 5), out/lab/20261116-001814-2 (lane 5, cold x3: the test's member's mirror was
-full in all three, "member #3's full time ends as in the host's game", step 4 and 5 ok).
+full in all three, "member #3's full time ends as in the host's game", step 4 and 5 ok), out/lab/20261116-020859 (lane 5,
+x2, the final tree). Tribe set (tribe_* and play_tribe --quick, lanes 4 / 5): out/lab/20261116-002240, 135 of 136
+(tribe_zero_fields ok; tribe_duet FAIL twice, PASS on v0.7.14.1 lane 4 with another selection: BUG-1188).
+Bisect run dirs in the worktrees fix/w51-tribefields-v07141, fix/w51-tribefields-bisA (lane 4), -bisB (lane 5).
 
 ## History
 - 2026-11-15: opened.
