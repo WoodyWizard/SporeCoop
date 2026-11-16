@@ -26,7 +26,8 @@ state the older tests read (the tool type, the leader) was the same on both game
      the partner must stand over a member of that partner: within 60 px of the member's real position (the host's
      game's, the authority's) + the tag's height, projected by this game's camera (`coop.find project`). The
      partner's chief (the member this game names chief, `coop.tribe` chiefs=) has a chief label within 60 px of it;
-     a chief off the screen gets both cameras on it first (BUG-1202). A key frame of kind `sameview`.
+     a chief off the screen gets both cameras on it first (BUG-1202; TAGS_CHIEF_AWAY=<m>: the host's chief put <m> m
+     away first, the scene of that ticket). A key frame of kind `sameview`.
   SPORE_FIX_OFF=tribe.pointer_tag: the name at the pinned pointer is ~9 m from every member: FAIL.
 
   SPORE_LANE=6 python3 tools/tests/coop_tribe_looks.py --part item|tags
@@ -272,6 +273,10 @@ def part_tags(ck, host, guest):
         for c in (host, guest):
             print('  pointer:', (c.call('coop.npc marker %.2f %.2f %.2f' % tuple(spot)).get('out') or '').strip()[:80],
                   flush=True)
+        if os.environ.get('TAGS_CHIEF_AWAY'):  # BUG-1202 twin of the scene: the host's chief off the guest's screen
+            print('  host: ' + (host.call('coop.tribe chief_away %s' % os.environ['TAGS_CHIEF_AWAY']).get('out') or '').strip(),
+                  flush=True)
+            time.sleep(1)
         ck(view_both(host, guest, mid, 24.0, 9.0), 'both cameras 24 m from the members')
         time.sleep(3)
         seen = {}
