@@ -69,23 +69,41 @@ def case_citizens(host, guest, ck):
         _, g = objs(guest, CITIZEN, c, 400)
         h = [x for x in h if math.dist(x['pos'], c) < 400]
         g = [x for x in g if math.dist(x['pos'], c) < 400]
-        # BUG-1210: the pairs nearest first over all of them (each citizen in one pair); in host order a host citizen
-        # took the nearest guest one even when that was its neighbour's partner (citizens stand in groups), and the
-        # neighbour then counted as elsewhere (or got a guest citizen of another size)
-        far, size, used, pair, miss = 0, 0, set(), {}, []
-        for d, a, b in sorted((math.dist(x['pos'], y['pos']), a, b) for a, x in enumerate(h) for b, y in enumerate(g)):
-            if d > 3.0:
-                break
-            if a not in pair and b not in used:
-                pair[a] = b
-                used.add(b)
+        # BUG-1210: as many host citizens as possible each get a guest citizen of their own within 3 m (a maximum
+        # matching, augmenting paths), at the host's size first; then the rest within 3 m at any size. Citizens stand
+        # in groups 0.5-2 m apart: a host citizen taking the nearest guest one in host order (or nearest first) took
+        # its neighbour's partner, and the neighbour counted as elsewhere or of another size although each had its own
+        def match(ok, pair):
+            owner = {b: a for a, b in pair.items()}
+
+            def aug(a, seen):
+                for b in range(len(g)):
+                    if b not in seen and ok(h[a], g[b]):
+                        seen.add(b)
+                        if b not in owner or aug(owner[b], seen):
+                            owner[b] = a
+                            return True
+                return False
+            for a in range(len(h)):
+                if a not in pair.keys() and a not in owner.values():
+                    aug(a, set())
+            return {a: b for b, a in owner.items()}
+
+        def near(x, y):
+            return math.dist(x['pos'], y['pos']) <= 3.0
+
+        def same(x, y):
+            return near(x, y) and abs(x['scale'] - y['scale']) <= 0.12 * max(x['scale'], 0.01)
+        pair = match(same, {})
+        pair = match(near, pair)
+        far, size, miss = 0, 0, []
         for a, x in enumerate(h):
             if a not in pair:
                 far += 1
                 miss.append(round(min((math.dist(x['pos'], y['pos']) for y in g), default=1e9), 1))
                 continue
             y = g[pair[a]]
-            if abs(x['scale'] - y['scale']) > 0.12 * max(x['scale'], 0.01):
+            if not same(x, y):
                 size += 1
                 miss.append(f"size {x['scale']:.2f}/{y['scale']:.2f}")
         print(f'  round {rnd}: host {len(h)} citizens near the guest, guest {len(g)}; {far} without a guest citizen within 3 m, '
