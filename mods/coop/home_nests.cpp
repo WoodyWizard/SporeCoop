@@ -287,8 +287,39 @@ static bool site_near(const net::Vec3& home, net::Vec3& out)
     return false;
 }
 
+// BUG-9234 (owner play test 2026-11-15: "is it possible to stop the double world loading ... when the player is loading
+// into their new nest?"): a migration sent the world at its start (the guest's game learns the migration only from it)
+// and again minutes later, when the host reached the new nest and the guest's own nest was made there. On: while the
+// host's species migrates (player property 0x514A219 is 1 or 2), the host's home is the migration's target nest
+// (CreatureGame_NestHerdFor(1), the nest the "Migrate" goal points at): the guest's nest is made next to it before the
+// migration's world goes out (the share waits for it, BUG-9210), so the guest loads once. Off: the nest the avatar has.
+static bool g_migration_target_fix = true;
+COOP_FIX("creature.nest_at_migration_target", "BUG-9234", g_migration_target_fix,
+         "creature: during a migration a partner's nest is made at the new nest at once (one world load, not two)");
+static bool migration_target(net::Vec3& out)
+{
+    static uintptr_t prop = H->sym("SporeCoop::Player_GetProperty"), herd_for = H->sym("SporeCoop::CreatureGame_NestHerdFor"),
+                     nest_pos = H->sym("SporeCoop::Herd_NestPosition");
+    void* nm = game::noun_manager();
+    void* player = nm && skg::readable((uint8_t*)nm + 0x74, 4) ? *(void**)((uint8_t*)nm + 0x74) : nullptr;
+    if (!prop || !herd_for || !nest_pos || !player)
+        return false;
+    const int st = skg::thiscall<int>(prop, player, 0x514A219u);
+    if (st != 1 && st != 2)
+        return false;
+    void* h = skg::cdecl_call<void*>(herd_for, 1);
+    if (!h || !skg::readable(h, 0x168) || !game::herd_nest(h) || h == game::avatar_herd())
+        return false;
+    const float* q = skg::thiscall<const float*>(nest_pos, h);
+    if (!q || !skg::readable((void*)q, 12))
+        return false;
+    out = {q[0], q[1], q[2]};
+    return true;
+}
 static bool host_home(net::Vec3& out)
 {
+    if (g_migration_target_fix && migration_target(out))
+        return true;
     void* av = game::avatar();
     return av && game::nest_position(av, out);
 }
