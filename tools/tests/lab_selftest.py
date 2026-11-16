@@ -424,10 +424,10 @@ def game_log_case(tree, tmp):
                        capture_output=True, text=True)
     got = dict(ln.split(': ', 1) for ln in r.stdout.splitlines() if ': ' in ln)
     check(got.get('same') == '[]', f'fingerprint: the cold start\'s state again: no difference (D2): {got.get("same") or r.stderr[-300:]}')
-    check(got.get('left') == "['guest test.planted_leftover cold - - now 00000007']",
+    check(got.get('left') == "['guest test.planted_leftover cold - now 00000007']",
           f'fingerprint: a leftover entry is named (D2): {got.get("left")}')
     check(got.get('old') == '[]', f'fingerprint: a game without coop.testreset is not compared (D2): {got.get("old")}')
-    check((got.get('file') or '').startswith("['guest SporeCoop/worlds.ini cold none - now "),
+    check((got.get('file') or '').startswith("['guest SporeCoop/worlds.ini cold none now "),
           f'fingerprint: a worlds.ini record is named (D2, BUG-1176): {got.get("file")}')
     check(got.get('empty') == 'none none', f'fingerprint: an ini without values and none at all are the fixture state: {got.get("empty")}')
 

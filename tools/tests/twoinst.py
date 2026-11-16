@@ -651,7 +651,7 @@ def fingerprint_now(host, guest, reset=True):
 
 
 def fingerprint_diff(want, now):
-    """['<who> <entry> cold <a> - now <b>', ...] where `now` differs from the cold start's `want` (a part either side
+    """['<who> <entry> cold <a> now <b>', ...] where `now` differs from the cold start's `want` (a part either side
     lacks, an older DLL, is not compared)"""
     diff = []
     for part in ('host', 'guest', 'files'):
@@ -660,7 +660,7 @@ def fingerprint_diff(want, now):
             continue
         for k in sorted(set(a) | set(b)):
             if a.get(k, '-') != b.get(k, '-'):
-                diff.append(f'{"" if part == "files" else part + " "}{k} cold {a.get(k, "-")} - now {b.get(k, "-")}')
+                diff.append(f'{"" if part == "files" else part + " "}{k} cold {a.get(k, "-")} now {b.get(k, "-")}')
     return diff
 
 
