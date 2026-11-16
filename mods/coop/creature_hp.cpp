@@ -314,6 +314,20 @@ static uint32_t g_party_answers = 0;
 static uintptr_t g_rel_lo, g_rel_hi, g_mode_lo, g_mode_hi;
 static uint32_t g_party_other_callers = 0;
 
+// BUG-9212 (diagnostics): the callers outside the two relation paths that ask about a partner's puppet (the herbivores
+// that back away from one guest's creature only; which game check sees the puppet as another species). Counted by
+// return address; `coop.hp callers` lists them, `coop.hp callers all` answers "player species" for the party in every
+// caller too (tests only: the hatchling of BUG-0499 needs the game's own answer).
+struct CallerCount { uintptr_t ret; uint32_t n; };
+static CallerCount g_puppet_callers[32];
+static bool g_party_all_callers = false;
+static void count_caller(uintptr_t ret)
+{
+    for (auto& e : g_puppet_callers) {
+        if (e.ret == ret) { e.n++; return; }
+        if (!e.ret) { e.ret = ret; e.n = 1; return; }
+    }
+}
 static bool SK_THISCALL h_IsPlayerSpecies(void* c)
 {
     uintptr_t ret = (uintptr_t)__builtin_return_address(0);
@@ -322,7 +336,9 @@ static bool SK_THISCALL h_IsPlayerSpecies(void* c)
         return r;
     if (!((ret >= g_rel_lo && ret < g_rel_hi) || (ret >= g_mode_lo && ret < g_mode_hi))) {
         g_party_other_callers++;
-        return r;
+        if (!game::is_puppet(c)) return r;
+        count_caller(ret);
+        if (!g_party_all_callers) return r;
     }
     void* sp = *(void**)((uint8_t*)c + game::kSpeciesOff);
     for (int i = 0; i < g_party_n; i++)
@@ -609,6 +625,20 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
         void* own = av ? skg::field<void*>(av, game::kSpeciesOff) : nullptr;
         H->out_printf(out, "player_species=%p avatar_species=%p same=%d override=%p own_scales=%u (+%u) lend_fix=%d\n", ps, own,
                       (int)(ps && ps == own), g_ps_override, g_own_scales, g_own_scales - before, (int)views::lend_ledger_on());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "callers")) { // BUG-9212 (diagnostics): callers asking about a puppet
+        if (argc > 2) g_party_all_callers = !strcmp(argv[2], "all");
+        if (argc > 2 && !strcmp(argv[2], "clear")) memset(g_puppet_callers, 0, sizeof g_puppet_callers);
+        const uintptr_t base = (uintptr_t)GetModuleHandleW(nullptr);
+        std::string text = g_party_all_callers ? "party answer in every caller: on\n" : "party answer in every caller: off\n";
+        for (auto& e : g_puppet_callers)
+            if (e.ret) {
+                char b[64];
+                snprintf(b, sizeof b, "caller SporeApp+%X x%u\n", (unsigned)(e.ret - base), e.n);
+                text += b;
+            }
+        H->out_printf(out, "%s", text.c_str());
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "pack")) {
