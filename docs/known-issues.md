@@ -263,18 +263,3 @@ anchor so other docs can link to it:
 * Reproduce: `coop.settings force all.friendly_fire on` on the host in Cell: a bite on the partner's cell does nothing.
 * Ticket: BUG-0899.
 
-## Lab: the guest's own creature in the fixture world depends on the lane's history (2026-11-15, fix/w51-evolve)
-<a id="issue-lab-worlds-ini"></a>
-
-* What happens: on a lane whose guest profile has `SporeCoop/worlds.ini` `[creature] 68AC222A=<creation>` (lanes 3,
-  9, 10 on 2026-11-15) the guest of every Creature test plays its own creature 3 s after each world load; on a clean
-  lane it plays the world's species. Tests that silently assumed one of the two passed or failed with the lane
-  (editor_strays BUG-1170, evolve_world BUG-1173).
-* Reproduce: `cat <lane guest profile>/SporeCoop/worlds.ini`; the guest's log says "from this world's record
-  (worlds.ini)" after the load.
-* Known: twoinst's cold start removes `choices.ini` only; an own editor's result or a choice writes `worlds.ini`
-  (BUG-0345, BUG-0638).
-* Next steps: the cold start removes `worlds.ini` and tests that need the own creature set it, then a Creature
-  regression run.
-* Ticket: BUG-1176
-
