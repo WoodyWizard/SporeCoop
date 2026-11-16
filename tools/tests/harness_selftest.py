@@ -9,6 +9,7 @@ No game: fake consoles and a fake clock.
   api       wait_until with a reason prints the time or the last value; poll; kv; npc_list of host and guest lines;
             pick_npc leaves out the host's species, its family, the dead, the weak, the ones the guest does not
             mirror and the excluded (BUG-0437); the result lines, and the lab reads inconclusive() as INCONCLUSIVE
+  lint      test_lint.py flags a test that copies a harness helper again
   codemod   harness_codemod.py --self-test (plan, rewrite, verify)
 """
 import contextlib
@@ -321,6 +322,17 @@ def main():
                 del sys.modules['lane']
     check_waits()
     check_api()
+    import test_lint
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, 'tools', 'tests'))
+        open(os.path.join(d, 'tools', 'harness_codemod.py'), 'w').close()
+        copy = "import re\n\n\ndef faults(con):\n    m = re.search(r'total faults: (\\d+)', con.call('exc')['out'])\n" \
+               "    return int(m.group(1)) if m else -1\n"
+        open(os.path.join(d, 'tools', 'tests', 'coop_copy.py'), 'w').write(copy)
+        open(os.path.join(d, 'tools', 'tests', 'coop_clean.py'), 'w').write('from harness import faults\n')
+        probs = test_lint.copy_problems(d)
+        ck(len(probs) == 1 and 'coop_copy.py: copies the harness helper(s) faults' in probs[0],
+           f'lint: test_lint flags a new copy of a harness helper ({probs})')
     r, text = captured(harness_codemod.self_test)
     ck(r == 0, 'codemod: harness_codemod.py --self-test' + ('' if r == 0 else '\n' + text))
     print('RESULT:', 'OK' if OK else 'FAIL')

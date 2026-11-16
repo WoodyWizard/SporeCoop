@@ -9,6 +9,9 @@
             other machine (CLAUDE.md 3: "check what the other player sees, not our bookkeeping"). Such a check
             needs a reason: `# counter: <reason>` on the check's line, or an entry of COUNTER_ALLOW below (the
             checks that were there when the lint came, each with why it may stay or what should replace it)
+  copy      a test that copies a helper of tools/tests/harness.py (a def the codemod tools/harness_codemod.py would
+            replace: a copy of mode / sp / num / faults / ..., the wait template): import it from harness instead
+            (D4 of 0.7.15, BUG-1185, docs/06-testing.md#testing-harness)
 
   test_lint.py [--root <checkout>]    exit 1 on a problem
 """
@@ -174,12 +177,29 @@ def suite_problems(root):
     return out
 
 
+def copy_problems(root):
+    """D4 (BUG-1185): a helper the tests share copied into a test again"""
+    tools = os.path.join(root, 'tools')
+    if not os.path.exists(os.path.join(tools, 'harness_codemod.py')):
+        return []
+    sys.path.insert(0, tools)
+    import harness_codemod  # noqa: E402
+    out = []
+    for f in sorted(glob.glob(os.path.join(tools, 'tests', 'coop_*.py'))):
+        p = harness_codemod.plan(f)
+        if p and (p['imports'] or p['waits']):
+            names = sorted(p['imports']) + ['wait'] * bool(p['waits'])
+            out.append(f'{os.path.relpath(f, root)}: copies the harness helper(s) {", ".join(names)}: import them from '
+                       f'tools/tests/harness.py (`tools/harness_codemod.py apply {os.path.relpath(f, root)}` does it)')
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--root', default=os.path.dirname(os.path.dirname(HERE)))
     a = ap.parse_args()
     keys = mod_counter_keys(a.root)
-    problems = suite_problems(a.root) + counter_problems(a.root, keys)
+    problems = suite_problems(a.root) + counter_problems(a.root, keys) + copy_problems(a.root)
     for p in problems:
         print(p)
     print(f'test_lint: {len(keys)} mod counter keys, {len(problems)} problem(s)')
