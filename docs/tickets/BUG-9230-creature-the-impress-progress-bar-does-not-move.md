@@ -31,3 +31,4 @@ no-fail-run: not reproduced: TITAN two games (Dorger.spo, guest coop.social goto
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-16: seen by the owner on the QA guest MSI (62-dev): "the on screen UI didn't fill up with the pink bar ... a fallback using notifications instead of the native UI". MSI's `coop.social meter`: opened=1 bars=1 frac_set=0.33 closed=1 win_msgs=0, and its log "Impressing: 33%" (the feed line social.cpp K_PROGRESS adds). So the meter opened and SocialMeter_SetBar(0, 0.33) was called, but the owner saw no pink fill: the bar set once per progress message is not drawn (the native tick moves the bars every frame, 0xDA4950 -> 0xD9B9C0). Not fixed yet.
