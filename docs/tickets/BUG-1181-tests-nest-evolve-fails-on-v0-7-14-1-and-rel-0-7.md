@@ -57,7 +57,7 @@ compared (the twin). `coop.nest evolve` prints each herd's nest, archetype and i
 
 ## Verification
 FAIL: 20261115-214417 (twin NEST_EVOLVE_OUR_HERDS=1, nest_evolve_own, lane 2: the puppets' herds differ).
-PASS: 20261115-214437 (lane 3, nest_evolve_own and nest_evolve), 20261115-220653 (lane 2), 20261115-222140 (lane 2, final).
+PASS: 20261115-214437 (lane 3, nest_evolve_own and nest_evolve), 20261115-220653 (lane 2), 20261115-222140 (lane 2, final), 20261115-224806 (lane 3, final).
 
 ## History
 - 2026-11-15: opened (feat/w51-npc), evidence above; for the orchestrator / the next Creature package.

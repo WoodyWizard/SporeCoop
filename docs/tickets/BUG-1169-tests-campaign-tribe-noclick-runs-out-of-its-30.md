@@ -10,10 +10,10 @@ role:
 versions: 0.7.14, v0.7.14.1, rel/0.7.15
 fixed_in: unreleased
 branch: feat/w51-npc
-commits: 08fcba55
-tests: campaign_tribe_noclick, campaign_tribe_end
+commits: 08fcba55, 7bfcaa33, d8b058e1, dbadec84
+tests: campaign_tribe_noclick, campaign_tribe_end, campaign_tribe_latecut
 signature:
-docs: docs/06-testing.md#testing-w51-npc
+docs: docs/06-testing.md#testing-w51-npc, docs/06-testing.md#testing-w51-nest
 related: BUG-1091, BUG-1073, BUG-1101
 ---
 
@@ -40,6 +40,19 @@ FAIL: 20261115-154901 (rel/0.7.15, lane 2: the dropped raid at 39/750, 4/5 at 30
 PASS: 20261115-203638 (lane 2, the final tree; this run had no late cut, so it does not show the fix at work: the
 flake's other causes, the bots' clicks, stay BUG-1091's class).
 
+## Verification (fix/w51-nest): the fix at work
+The case is planted (campaign_tribe_latecut, `CAMPAIGN_PLANT_LATE_CUT=270`, the Tribe stage to Civ): the first raid with
+the host's click takes no blow before 270 s (each blow undone), its hut is cut at the first pass after 270 s and no
+blow lands for 45 s more (the observed raid: cut, dropped 28 s later at 39 of 750); that raid must fell its hut, a drop
+is a `driver` finding. The campaign gates and the 30 min limit are unchanged.
+* FAIL (twin `CAMPAIGN_OLD_RAID_CUT=1`, lane 3): 20261115-222253: cut at 288 s, "dropped at 300 s before its hut fell
+  (health 40/400)", the only FAIL line (the run reached tribe -> civ in 25 min).
+* PASS (lane 2): 20261115-223337: cut at 285 s, the hut fell at 316 s of the raid (past the old 300 s), campaign OK;
+  20261115-225558 (lane 2: cut at 287 s, the hut fell at 345 s, campaign OK).
+* Two tries of the plant before it was right (not counted): without the hold the hut fell 38 s after the cut before
+  the 300 s check came (20261115-221100, stopped), without the forced cut no blow came after 280 s (20261115-220048).
+
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-npc): compared with v0.7.14.1, the driver's late-cut drop fixed.
+- 2026-11-15 (fix/w51-nest): the driver fix shown at work with a planted late cut (FAIL/PASS twin above); campaign_tribe_latecut in the suite.

@@ -66,8 +66,8 @@ cold start was slow (DNA at s 16.4): the timing decides, not the switch of a tes
 
 ## Verification (fix/w51-nest)
 FAIL: 20261115-215620 (nest_follow_early, `SPORE_LAB_FIXOFF=nest_follow_early=creations.swap_after_cinematic`, lane 2).
-PASS: 20261115-215204, 20261115-220653, 20261115-222140 (nest_follow_early, lane 2); 20261115-214800 (nest_follow with the DNA at
-s 6.3 and the world's species); 20261115-220240, 20261115-222140 (nest_follow_swap).
+PASS: 20261115-215204, 20261115-220653, 20261115-222140 (nest_follow_early, lane 2), 20261115-224806 (lane 3, also nest_follow and play_creature --quick); 20261115-214800 (nest_follow with the DNA at
+s 6.3 and the world's species); 20261115-220240, 20261115-222140, 20261115-224806 (nest_follow_swap).
 
 ## History
 - 2026-11-15: opened.
