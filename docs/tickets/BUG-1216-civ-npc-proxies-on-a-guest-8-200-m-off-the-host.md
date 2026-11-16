@@ -55,6 +55,10 @@ the herd's ids on a guest for kind C. Needs its own package with the segment rer
   code), 20261116-091255-2:campaign_segment#1 (v0.7.14.1, fix/w51-t4-v07141 worktree).
 * PASS: 20261116-084409:campaign_segment (fix/w51-t4); v0.7.14.1 20261116-091255-2 #2 and #3.
 * Rate of the segment: rel/0.7.15 1 of 2 failed, v0.7.14.1 1 of 3 (the lab's sync-check gate on `n apart`).
+* A third run on fix/w51-t4, 20261116-101838, failed the same gate on another kind: `v: 1 missing on the guest (v13)` on
+  Dave 10 s after the host's campaign shortcut founded a city (Dave: `the host has 3 cities, this game 2 and 3 founded
+  (on their way)`, then the vehicle design asked): BUG-0624's kind (an instant founding late on a guest at low fps;
+  load average 25 on the machine). Not analysed further.
 
 ## History
 - 2026-11-16: opened (fix/w51-t4, final-check triage 0.7.15): old, three kinds; not fixed in the triage.
