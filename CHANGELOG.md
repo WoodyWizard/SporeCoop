@@ -31,6 +31,9 @@
   why. It may join again.
 
 ### Fixed
+- Creature: a guest playing its own creature could be stuck for good right after joining (no clicks, the evolution's
+  editor never opened) when a brain upgrade came in the first seconds; its own creature now comes after the brain
+  upgrade's message (BUG-1173).
 - Tribe: tribe members no longer change hands every time a player joins or leaves, or after a game over: a child you
   bought or members you were given stay yours; a new player gets a fair share (BUG-1154).
 - Civilization: a city or vehicle of a player who left is kept for that player (the host looks after it) instead of
