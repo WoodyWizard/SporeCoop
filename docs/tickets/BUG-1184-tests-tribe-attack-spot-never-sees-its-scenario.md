@@ -1,16 +1,16 @@
 ---
 id: BUG-1184
 title: Tests: tribe_attack_spot never sees its scenario since tribe.form_pace (coop.tribe form held at food 15, no new tribe to attack)
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-15
 source: feat/w51-tribe lab 20261115-182010, rel/0.7.15 9362bcdd 20261115-212642
 role: host
 versions: rel/0.7.15
-fixed_in:
+fixed_in: unreleased
 branch: feat/w51-tribe
-commits:
+commits: 2a483b88
 tests: tribe_attack_spot
 signature:
 docs: docs/re/tribe.md#tribe-attack-spot
@@ -35,8 +35,10 @@ coop_tribe_attack_spot.py gives the host 300 food (`coop.res add food 300`) befo
 `ATTACK_SPOT_OLD_FOOD=1`: no food first (the old setup).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- FAIL (the old setup, no food first): feat/w51-tribe 20261115-182010 and 20261115-211527, rel/0.7.15 9362bcdd
+  20261115-212642 ("tribes 2 -> 2 ... pace: food 15 ... held", scenario (0, 0)).
+- PASS with the food: 20261115-212912 (the merged tree: "tribes 3 -> 4 ... pace: food 315 ... forms", "an attacker met
+  the missing spot and ended its attack (the scenario happened: (2, 0))", no fault).
 
 ## History
-- 2026-11-15: opened.
+- 2026-11-15: opened and fixed (feat/w51-tribe), found in the package's final Tribe run.

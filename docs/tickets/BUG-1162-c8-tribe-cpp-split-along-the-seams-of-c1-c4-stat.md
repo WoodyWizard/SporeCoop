@@ -47,6 +47,17 @@ Structure: one hub file.
 - Each of the five commits builds (`make -j8`); `make test` passes on b7e3706c.
 - The Tribe tests on the split tree: the final run (below).
 - no-fail-run: pure moves, no behaviour change.
+- The whole Tribe set on the split tree (b7e3706c + suite entry, a2c1ef8a): lab 20261115-182010, 136 of 142 (tribe_*,
+  play_tribe, campaign_ct 782 s, tribe_outfit); the 6 others: tribe_mirror_hold, tribe_village_cadian,
+  tribe_conquer_orders, tribe_bounce_mirrors OK in the rerun 20261115-211527 (known flakes of the host's own game:
+  the chief's staff, the terrain, the conquest cinematic, the game-over caption); tribe_save_strip OK in 20261115-215636
+  (its third game on lane 5: in 182010 the lab had given it lane 9, which another run took meanwhile); tribe_attack_spot
+  failed on rel/0.7.15 too: BUG-1184, fixed, OK in 20261115-212912.
+- After the merge of rel/0.7.15 b7f9ae9a (C2 / C3 of feat/w51-core2, d724de2c / 2a483b88): 20261115-212912 15 of 15
+  (play_tribe --quick, tribe_host_pause, tribe_gameover_wait, tribe_away, tribe_cycle_restart, tribe_mirror_lifetime,
+  tribe_owners_session, tribe_editor_world, tribe_bounce_world, tribe_host_reload_reset, tribe_other_world,
+  tribe_pause_leak, tribe_outfit, tribe_cmd_listed, tribe_attack_spot), 20261115-215251 (mixed_version_tribe,
+  mixed_version_tribe_host), 20261115-215636 (play_tribe --quick again, tribe_save_strip); make test passes.
 
 ## History
 - 2026-11-15: opened.

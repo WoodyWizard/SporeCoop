@@ -120,8 +120,9 @@
   golden-byte tests and fuzzing; the libFuzzer run is in CI (BUG-1132, BUG-1133). No change on the wire.
 - Tribe runs on those building blocks: its member tables and the host's snapshots use the shared mirror table and
   snapshot receiver, its rules are unit-tested (tribe_logic.h), the members' animations have their own message type
-  (a 0.7.14 player still gets them as before), tribe.cpp is split into five files by pure moves, and the planted
-  Tribe-end campaign test has a budget it can keep (BUG-1140, BUG-1143, BUG-1160, BUG-1161, BUG-1162, BUG-1165).
+  (a 0.7.14 player still gets them as before), tribe.cpp is split into five files by pure moves, the planted
+  Tribe-end campaign test has a budget it can keep and tribe_attack_spot forms its village again (BUG-1140, BUG-1143,
+  BUG-1160, BUG-1161, BUG-1162, BUG-1165, BUG-1184).
 
 ## [0.7.14.1] - 2026-11-14
 

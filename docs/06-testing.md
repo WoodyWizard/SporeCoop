@@ -8549,3 +8549,10 @@ host's new species arrives; the follow of BUG-0508 must wait for it and swap in 
 (docs/re/creations.md#creations-follow-cinematic). The host's own brain upgrade sends its world after its cinematic
 (BUG-0019), so "no load, no world" is not checked with `--cine`. Twin `creations.swap_after_cinematic` off fails on
 the wait (the swap under the cinematic), not on the picture (F4F96E43 ended by itself).
+* `tribe_save_strip` (and every test that plays a third game on SPORE_FREE_LANE / SPORE_LANE_B) takes a lane outside
+  the run's `--lane` list: the lab picks the first idle lane at the run's start (not 1 or 8). In a long run another
+  agent may take that lane meanwhile (feat/w51-tribe 20261115-182010: Carol on lane 9, "Carol plays the host's tribe"
+  failed). To keep such a test on your own lanes: `lab.py run tribe_save_strip --lane 4 --skip 2,3,6,7,9,10` (the free
+  lane is then 5, 20261115-215636).
+* `tribe_attack_spot` (BUG-1184): gives the host 300 food before `coop.tribe form` (tribe.form_pace, as BUG-0943);
+  `ATTACK_SPOT_OLD_FOOD=1` without.
