@@ -8447,3 +8447,21 @@ on, the guest does not wait and shows no line. `--guest-pause` (`host_pause_gues
 runs on. FAIL twins: SPORE_FIX_OFF=cell.busy_model / npc.busy_model / civ.busy_model / space.busy_model, Tribe
 tribe.busy_model,tribe.host_pause_wait (its 0.7.14 kind-21 wait still answers alone). `coop.status` "host busy:"
 shows the host's classified state, what the guest heard and its wait.
+
+## The evolution tests and the guest's own creature (2026-11-15, fix/w51-evolve)
+<a id="testing-evolve-own-creature"></a>
+
+* Whether the guest plays its own creature in the creature fixture's world depends on the lane: its profile's
+  `SporeCoop/worlds.ini` record survives the cold start (BUG-1176, docs/known-issues.md#issue-lab-worlds-ini).
+  Tests must work with both.
+* editor_strays (BUG-1170): after an evolution the host shares its world only when it needs to (BUG-0508); a guest
+  with its own creature is always kept in place. `wait_settled` takes either the share and the load or "kept in
+  place, nothing sent after all, its 30 s check over" (`evolve in place: ... checking 0` in the host's coop.status).
+* evolve_world (BUG-1173): the guest's own creature comes 3 s after a world load; DNA that crosses a brain level
+  before it plays the brain upgrade under the swap. Since A9 the start's settle is shorter than 3 s, so the test meets
+  that order by itself; when the start took longer it sends the host's world once more and adds the DNA as soon as the
+  guest's avatar is in it. It prints `guest plays its own creature: True, applied before the DNA was added: False`
+  when the race was set up. Twin: `SPORE_LAB_FIXOFF=evolve_world=creations.swap_after_cinematic` fails "the guest's
+  brain upgrade caption closed, its input is free".
+* Two `lab.py run` started in the same second got the same run id and wrote into one directory (20261115-193631):
+  start parallel runs a few seconds apart.

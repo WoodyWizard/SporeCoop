@@ -1495,3 +1495,20 @@ editor opens (0.7.14). Lab: the refusals in tribe_outfit / civ_designs; FAIL run
 * ? Not checked: a Civ outfitter (AccessoryEditorActivate 0x4D2B5FD in the Civ input actions, planner kind 4); the
   host's real Civ editor route (vote, building editor, save) end to end (the tests set the design with the game's
   setter); the anthem.
+
+## The own creature swap under a cinematic (2026-11-15, fix/w51-evolve)
+<a id="creations-swap-cinematic"></a>
+
+BUG-1173. Lane 10 probe (creature fixture, the guest plays its own creature from worlds.ini):
+* ✔ `cCreatureAnimal::SetSpecies` on the avatar (creations.cpp apply_own_avatar, 3 s after a new avatar) while the
+  brain upgrade CRG_BrainUpgrade1 (F6A4B1E1) plays leaves that cinematic playing for good: its caption never comes,
+  the game time is never paused (a normal brain upgrade pauses with reason 0600C4AE when the caption shows, ~14 s
+  in), Enter does nothing, and the game's input lock (cGameInputManager +0x110) holds until the next world load.
+  The brain upgrade had started 0.6 s after the DNA arrived (each game runs its own, the DNA total is synced).
+* ✔ The same DNA after the swap: the caption at ~14 s, gone on the first Enter.
+* ? Inferred: the cinematic waits for something of the avatar that SetSpecies rebuilds over the next frames (BUG-0318:
+  the body is built over several frames); which field was not looked for. Other cinematics (CRG_ClaimNest,
+  CRG_SpeciesMigrate) under a swap were not tried.
+* Fix `creations.swap_after_cinematic`: the swap waits while `world::cinematic_playing()`; "own avatar X waits:
+  cinematic Y plays (BUG-1173)" in the log, `swap waits for a cinematic: N ticks` in coop.status. Not covered: the
+  in-place follow of the host's new species (BUG-0508 `follow`) still calls SetSpecies without that wait.

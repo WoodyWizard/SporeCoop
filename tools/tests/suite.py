@@ -280,7 +280,7 @@ add('evolve_key', P + 'coop_evolve_in_place.py --case creature --nosave', minute
 add('editor_desync', P + 'coop_editor_desync.py', minutes=7)  # mating call and editors in Cell and Creature, real input (BUG-0411: --old-wait fails about 1 run in 2)
 add('cell_unknown_model', P + 'coop_cell_unknown_model.py', minutes=3, fixture='cell')  # the host sends a cell of a creation the guest does not have: no fault at 0xE83EC8, the mirror comes once the model is known (BUG-0455; cell.unknown_model off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-144746:cell_unknown_model))
 add('creature_desync', P + 'coop_creature_desync.py', minutes=4)  # editors, a crash and a reload: companion of a host-only species, no NPC copies, kills, the guest's look
-add('editor_strays', P + 'coop_editor_strays.py', minutes=6)  # two evolutions: no puppet left over, herd homes on the surface (crash 0xB88BEA)
+add('editor_strays', P + 'coop_editor_strays.py', minutes=6)  # two evolutions: no puppet left over, herd homes on the surface (crash 0xB88BEA); after each, the world loaded or the guest kept in place (BUG-0508, BUG-1170)
 add('creature_e84', P + 'coop_creature_e84.py', minutes=5)  # a save with the partner's puppet, loaded after a restart: no crash on attack (0xD48634), removed; BUG-0385: never an NPC of the host's world (SPORE_FIX_OFF=npc.stray_ids fails)
 add('save_hygiene', P + 'coop_save_hygiene.py', minutes=5)  # a save made with the partner's puppet holds no puppet, no herd of ours after a restart (BUG-0020; SPORE_SAVE_FIX=0 fails)
 add('save_hygiene_leave', P + 'coop_save_hygiene.py --leave', minutes=5)  # the partner left before the save: its empty herd is not saved either (BUG-0255; savestrip.empty_herds off failed (retired in 0.7.15, BUG-1138: FAIL run 20261029-003144:save_hygiene_leave))
@@ -365,7 +365,7 @@ add('legless_guest_done', P + 'coop_legless_guest.py --guest done', ('extended',
 add('legless_guest_cancel', P + 'coop_legless_guest.py --guest cancel', ('extended',), minutes=10, fixture='cell')  # BUG-0278: the same guest cancels (and confirms Quit): it plays the host's evolved species
 add('legless_guest_dontsave', P + 'coop_legless_guest.py --guest dontsave', ('extended',), minutes=10, fixture='cell')  # BUG-0278: the same guest adds legs and picks Don't Save: it plays the host's evolved species
 add('npc_rejoin_paused', P + 'coop_npc_rejoin_paused.py', warm=True, minutes=4, fixture='creature')  # BUG-0125: a guest that rejoins while the host is paused gets the NPCs around it (--without-fix fails)
-add('evolve_world', P + 'coop_evolve_world.py', minutes=6)  # BUG-0019: the world after an evolution that starts a migration waits for its cinematic: the guest grows up and migrates (--without-fix fails)
+add('evolve_world', P + 'coop_evolve_world.py', minutes=6)  # BUG-0019: the world after an evolution that starts a migration waits for its cinematic: the guest grows up and migrates (--without-fix fails); BUG-1173: the guest's brain upgrade caption under its own creature swap closes (SPORE_FIX_OFF=creations.swap_after_cinematic fails)
 add('creation_leave', P + 'coop_creation_leave.py', minutes=5)  # BUG-0055: after leaving, the guest's own creation under the host's key is its own again
 add('anim_teardown', P + 'coop_anim_teardown.py', minutes=8)  # BUG-0091: no animation on a puppet freed by a world teardown
 add('planner_leave', P + 'coop_planner_leave.py', minutes=8)  # BUG-0682: the city planner's editor is not trusted after the Space leaving frame (SPORE_FIX_OFF=civ.planner_stale must FAIL)
