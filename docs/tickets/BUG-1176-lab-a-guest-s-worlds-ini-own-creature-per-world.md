@@ -1,19 +1,19 @@
 ---
 id: BUG-1176
 title: lab: a guest's worlds.ini (own creature per world, BUG-0345) survives the cold start, so whether the guest plays its own creature in the fixture world depends on the lane's history
-status: open
+status: fixed
 kind: test
 stage: Tools
 reported: 2026-11-15
 source: fix/w51-evolve (BUG-1170, BUG-1173)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: feat/w51-labstate
+commits: eddafb3a, c2068f03
+tests: warm_fingerprint, evolve_world, editor_strays, guest_editor, puppet_jump
 signature:
-docs:
+docs: docs/06-testing.md#testing-warm-fingerprint, docs/archive/known-issues-2026.md#issue-lab-worlds-ini
 related: BUG-0345, BUG-0638, BUG-1170, BUG-1173, BUG-0689
 ---
 
@@ -35,11 +35,25 @@ cold start removes `worlds.ini` too and a test that needs the own creature sets 
 a PRESET_WORLDS like PRESET_CHOICES), then a Creature regression run.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+* tools/tests/twoinst.py `_start` (cold): removes `SporeCoop/worlds.ini` of both profiles with `choices.ini` (the
+  fixture state: no record; the guest plays the fixture world's species). `SPORE_WORLDS_INI_RESET_FIX=0`: the old start
+  (the twin).
+* The warm fingerprint (D2, BUG-1179) covers `choices.ini`, `worlds.ini` (entries with a value) and `EditorSaves.package`
+  of both profiles: a test that leaves a record, a choice or a new own creation makes its lane's next start cold.
+* Tests that need the own creature set it: evolve_world now chooses it (`creations_state.choose_own`, `restore` at the
+  end; BUG-1173 needs it); guest_editor and puppet_jump did already. editor_strays runs with the world's species now
+  (the "shared" branch of its wait, not run before: BUG-1170). Lanes 2-6, 9 and 10 had a record before (lane 7 none).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL (twin `SPORE_WORLDS_INI_RESET_FIX=0`, warm_fingerprint): out/lab/20261115-202555 (lane 10: after the cold start
+  the guest still has the record 290225CD for the fixture world).
+* PASS warm_fingerprint: out/lab/20261115-202307 (lane 9: the record refuses the warm reuse, the cold start leaves
+  worlds.ini with no record).
+* The tests that depend on it, lanes 9 and 10: out/lab/20261115-202828 (lane 10: editor_strays, evolve_world,
+  puppet_jump, guest_editor PASS); out/lab/20261115-202823 (lane 9: evolve_world, puppet_jump, guest_editor PASS;
+  editor_strays died with both games at once mid-test (no crash report, no fault; host log ends normally), PASS on the rerun out/lab/20261115-204255). evolve_world on both lanes: "guest profile before: record 00000000 | chose 290225CD",
+  the race of BUG-1173 set up ("own avatar ... waits: cinematic").
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-15: fixed on feat/w51-labstate (the cold start resets worlds.ini; evolve_world chooses the own creature).

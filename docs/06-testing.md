@@ -8494,3 +8494,10 @@ were in two trees (fix/w51-evolve and rel/0.7.15: one shell started the second `
 directory), not one; each tree kept its own results. The start line and the last line now print the full path of the
 run's directory. results.json is written to a temporary file and renamed. `SPORE_LAB_RUNID_TREE_ONLY=1`: the old ids
 (lab_selftest `two_trees` FAIL case).
+
+evolve_in_place_cine (BUG-1180, `coop_evolve_in_place.py --case creature --cine`): the host adds 250 DNA while still
+in its evolution editor (the guest back in its stage), so the guest's own game plays a cinematic (F4F96E43) when the
+host's new species arrives; the follow of BUG-0508 must wait for it and swap in place
+(docs/re/creations.md#creations-follow-cinematic). The host's own brain upgrade sends its world after its cinematic
+(BUG-0019), so "no load, no world" is not checked with `--cine`. Twin `creations.swap_after_cinematic` off fails on
+the wait (the swap under the cinematic), not on the picture (F4F96E43 ended by itself).

@@ -10,8 +10,8 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/w51-labstate
-commits:
-tests: lab_selftest two_trees_case
+commits: eddafb3a
+tests: tools/tests/lab_selftest.py (two_trees_case)
 signature:
 docs: docs/06-testing.md#testing-warm-fingerprint
 related: BUG-0353, BUG-0362

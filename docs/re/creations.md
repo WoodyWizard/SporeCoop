@@ -1512,3 +1512,19 @@ BUG-1173. Lane 10 probe (creature fixture, the guest plays its own creature from
 * Fix `creations.swap_after_cinematic`: the swap waits while `world::cinematic_playing()`; "own avatar X waits:
   cinematic Y plays (BUG-1173)" in the log, `swap waits for a cinematic: N ticks` in coop.status. Not covered: the
   in-place follow of the host's new species (BUG-0508 `follow`) still calls SetSpecies without that wait.
+
+## The in-place follow waits for a cinematic too (2026-11-15, feat/w51-labstate)
+<a id="creations-follow-cinematic"></a>
+
+BUG-1180. CORRECTION (2026-11-15, feat/w51-labstate) of #creations-swap-cinematic ("Not covered: the in-place follow
+... still calls SetSpecies without that wait"): ~ superseded. The follow of BUG-0508 makes no SetSpecies call of its
+own: `on_bundle` records the host's new key (`g_follow`), `mine()` returns it, and the avatar's species is set by
+`apply_own_avatar`, after BUG-1173's wait.
+* ✔ Runtime (evolve_in_place_cine, lanes 9 and 10): "follows it in place (BUG-0508)", "own avatar 29243096 waits:
+  cinematic F4F96E43 plays (BUG-1173)", "own avatar is now 29243096" 4 s later, before any world load.
+* ✔ 250 DNA added on the host while it is still in its evolution editor (the guest back in its stage) start a
+  cinematic F4F96E43 in the guest's game within 1 s, and the host's own brain upgrade makes it send its world after
+  its cinematic (BUG-0019), so the guest loads the host's world ~40 s later.
+* ~ With `creations.swap_after_cinematic` off, SetSpecies under F4F96E43 did not leave that cinematic stuck (it ended,
+  the input was free): BUG-1173's stuck caption was CRG_BrainUpgrade1 (F6A4B1E1); F4F96E43 under a swap is harmless
+  in this one run. Not tried: F6A4B1E1 under the follow.
