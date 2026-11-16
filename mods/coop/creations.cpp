@@ -2709,8 +2709,25 @@ static void apply_species(const std::vector<uint8_t>& data)
            (unsigned)b.recs.size());
 }
 
-void want_species(const Key& k)
+// BUG-9231 (owner play test 2026-11-15: "Some enemies BigTexas was unable to see"; the host's log: "player 1 asks for
+// species 7D8CD433 / 7D535D52: not found here" every 30 s for 6 minutes): a proxy of the host's own creation carries our
+// key of it (0x7D......, local_species); when this game could not build that key it asked the host for OUR key, which
+// the host never has: the creature stayed unbuilt (invisible) for good. The host's key is asked for now. Off: as asked.
+static bool is_crt(const Key& k);
+static bool g_ask_host_key_fix = true;
+COOP_FIX("creations.ask_host_key", "BUG-9231", g_ask_host_key_fix,
+         "creations: a guest asks the host for a species by the host's key, not by its own key of the host's creation");
+static unsigned g_asked_unmapped;
+void want_species(const Key& k_in)
 {
+    Key k = k_in;
+    if (g_ask_host_key_fix) {
+        auto um = is_crt(k) ? g_unmap.find(k.instance) : g_unmap.end();
+        if (um != g_unmap.end()) {
+            k.instance = um->second;
+            g_asked_unmapped++;
+        }
+    }
     if (!g_ask_species_fix || !C.sess || C.sess->role() != net::Role::Client || !C.sess->connected() || !k.instance ||
         k.type != kInfo[kCreature].type || k.group != kInfo[kCreature].group || g_species_db.count(k.instance))
         return;
@@ -5109,6 +5126,16 @@ std::string debug(const std::vector<std::string>& a)
                 n++;
             }
         return "sent to " + std::to_string(n) + " guest(s)\n";
+    }
+    if (a.size() >= 2 && a[0] == "breakremap" && !is_host()) { // tests (BUG-9231): our key of the host's creation is
+        // one this game cannot build (as when its package did not answer): a key nothing registered
+        uint32_t inst = (uint32_t)strtoul(a[1].c_str(), nullptr, 16), bad = 0x7DDEAD00u | (inst & 0xFFu);
+        auto it = g_remap.find(inst);
+        if (it != g_remap.end()) g_unmap.erase(it->second);
+        g_remap[inst] = bad;
+        g_unmap[bad] = inst;
+        return "the host's " + hex(inst) + " is " + hex(bad) + " here (nothing registered under it); asked by host key " +
+               std::to_string(g_asked_unmapped) + "\n";
     }
     if (a.size() >= 2 && a[0] == "local") { // local <hex crt inst>: the key the host's creation has here
         Key k = local_species({(uint32_t)strtoul(a[1].c_str(), nullptr, 16), kInfo[kCreature].type, kInfo[kCreature].group});

@@ -307,6 +307,7 @@ struct Proxy {
     float walk_sp = 0;      // BUG-0361: the host NPC's speed while it last moved
     net::Vec3 diag_want{};  // BUG-0363 (coop.bodyrec diag): the target of the last driving
     bool diag_have = false;
+    bool fallback_logged = false; // BUG-9231: built with the host's key (logged once)
     bool ever = false;      // BUG-0383: an object was made for it once (a body the guest's game removed stays gone)
     double made_at = 0;     // BUG-0399 (diagnostics): when its creature was made and the host's
     float made_agl = 0;     // position's height over this game's ground then (m)
@@ -326,6 +327,10 @@ static std::map<uint16_t, Proxy> g_proxies;
 // there when the guest joined): the host's player saw the body, the guest saw nothing. Now the proxy of a body
 // is made too and plays the death where the host's body lies, unless the guest's game had made and removed
 // it already (eaten, decayed). `coop.fix npc.dead_proxy off`: no proxy for a body (0.7.3.3).
+static bool g_species_fallback_fix = true;
+COOP_FIX("npc.species_fallback", "BUG-9231", g_species_fallback_fix,
+         "npc: a proxy of the host's own creation is built with the host's key when this game cannot build ours");
+static unsigned g_species_fallbacks;
 static bool g_dead_proxy_fix = true;
 COOP_FIX("npc.dead_proxy", "BUG-0383", g_dead_proxy_fix, "creature: a guest shows the bodies of NPCs that were dead before it came near");
 // BUG-0557 / BUG-0383: eating a body is each game's own act (the eat node 0xD70FD0 takes meat +0xB84 off the body in
@@ -2449,6 +2454,20 @@ static void guest_tick(double now)
             continue;
         if (!px.c) {
             void* species = game::species_by_key(px.key);
+            // BUG-9231: our key of the host's own creation not buildable here: the host's key (its records are
+            // registered under it too when this game had nothing there, creations apply_own_species)
+            if (!species && g_species_fallback_fix) {
+                const creations::Key hk = creations::host_species({px.key.instance, px.key.type, px.key.group});
+                if (hk.instance != px.key.instance) {
+                    species = game::species_by_key({hk.instance, hk.type, hk.group});
+                    if (species && !px.fallback_logged) {
+                        px.fallback_logged = true;
+                        g_species_fallbacks++;
+                        H->log(M, SK_WARN, "npc %u: species %08X (ours of the host's %08X) is not buildable here: built "
+                               "with the host's key (BUG-9231)", id, px.key.instance, hk.instance);
+                    }
+                }
+            }
             void* herd = species ? proxy_herd(px.key, px.flags, s.pos, species) : nullptr;
             int fail = !species ? 1 : !herd ? 2 : 0;
             if (!fail) {
