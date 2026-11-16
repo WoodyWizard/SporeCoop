@@ -10,11 +10,11 @@ role:
 versions: rel/0.7.15 since ec51786b (the lab start of A9)
 fixed_in: unreleased
 branch: feat/w51-npc
-commits: ef715c49
-tests: nest_follow
+commits: ef715c49, 7bfcaa33, d8b058e1
+tests: nest_follow, nest_follow_early, nest_follow_swap
 signature:
-docs: docs/06-testing.md#testing-w51-npc
-related: BUG-1112, BUG-0640
+docs: docs/06-testing.md#testing-w51-npc, docs/06-testing.md#testing-w51-nest, docs/re/creature.md#creature-nest-early-dna
+related: BUG-1112, BUG-0640, BUG-1173, BUG-1176, BUG-1181
 ---
 
 ## Report
@@ -34,6 +34,27 @@ game planned no migration (its next nest stayed its home nest, wsync's creature_
 threshold's migration planning in its first ~11 s in the world (after the join's hatch). A player whose host crosses a
 brain threshold within ~10 s of the join would not follow the next migration either (not seen in reports).
 
+## Root cause (fix/w51-nest)
+CORRECTION (2026-11-15, fix/w51-nest): the inference above ("the guest's game ignores the brain threshold's migration
+planning in its first ~11 s") is disproved, the cause is BUG-1173. Observed:
+* Early DNA alone is fine: with the world's species (a lane without a worlds.ini record) the guest got the DNA at s 6.3,
+  earlier than in any failed run, and followed the migration (claim, home, heal; lab 20261115-214800,
+  NEST_FOLLOW_NO_PLAY=1).
+* In all four failed runs the guest played its own creature from a worlds.ini record of the lane (BUG-1176) and its
+  game swapped it in 0.3-0.8 s after the DNA (s 6.5 -> 7.4, 7.9 -> 8.3, 7.9 -> 8.6); in the passing runs of the same
+  lanes the swap came before the DNA. That is BUG-1173: the swap inside the brain upgrade's cinematic CRG_BrainUpgrade1
+  leaves the cinematic playing for good (the guest's trace `input_lock=1` from then on, its position never changed, so
+  the test's `gopos` to the new nest did nothing and its game never claimed).
+* Reproduced on purpose with BUG-1173's switch off (nest_follow_early: the guest's own creature recorded for the world,
+  a rejoin, the DNA 0.3 s after it is in, the swap 1.35 s after the DNA): the same three FAILs, the brain level stayed
+  0 (1 after a normal upgrade), input locked (lab 20261115-215620). With the switch on: the swap waits for the
+  cinematic and the guest follows.
+* The moment between the DNA and the cinematic's start: a swap ordered at once after the DNA (nest_follow_swap) found
+  the cinematic already playing 0.12 s after the host's `coop.dna add` and waited (lab 20261115-220240); a swap in
+  that moment was not reached from the console (not reproduced; inferred: under a frame or two).
+A player hits it as BUG-1173 says (a guest on its own creature, a brain level crossed in the seconds before its own
+creature comes after a join); fixed there (`creations.swap_after_cinematic`, unreleased).
+
 ## Fix
 coop_nest_follow.py: the guest's game plays its world 8 s before the test gives the DNA (`GUEST_PLAY_S`, the old
 start's margin); `NEST_FOLLOW_NO_PLAY=1` gives it at once. Test-only.
@@ -43,6 +64,12 @@ FAIL: 20261115-165219, 20261115-192704, 20261115-192709, 20261115-195713 (A9's s
 PASS: 20261115-201309 (2 of 2 with the fix). The twin NEST_FOLLOW_NO_PLAY=1 passed once (20261115-200855) because that
 cold start was slow (DNA at s 16.4): the timing decides, not the switch of a test.
 
+## Verification (fix/w51-nest)
+FAIL: 20261115-215620 (nest_follow_early, `SPORE_LAB_FIXOFF=nest_follow_early=creations.swap_after_cinematic`, lane 2).
+PASS: 20261115-215204, 20261115-220653, 20261115-222140 (nest_follow_early, lane 2); 20261115-214800 (nest_follow with the DNA at
+s 6.3 and the world's species); 20261115-220240, 20261115-222140 (nest_follow_swap).
+
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-npc): bisected to the lab's start-up of A9, test fixed.
+- 2026-11-15 (fix/w51-nest): the early-DNA inference disproved; the failures were BUG-1173 (own creature swapped in under the brain upgrade); nest_follow_early and nest_follow_swap in the suite.

@@ -1020,7 +1020,7 @@ add('campaign_tribe_end', P + 'coop_campaign.py --from creature --to civ --minut
 add('campaign_tribe_noclick', 'CAMPAIGN_PLANT_NOCLICK=18 ' + P + 'coop_campaign.py --from creature --to civ --minutes 2 --no-finale',
     (), minutes=45, timeout=3600)
 # BUG-1169: the Tribe stage of the campaign up to Civ with a planted late hut cut (CAMPAIGN_PLANT_LATE_CUT=270: the first
-# raid with the host's click: no blow lands before 270 s of its 300, its first cut at 270 s): the raid gets 120 s after the cut and fells its hut
+# raid with the host's click: no blow lands before 270 s of its 300, its first cut at 270 s, then 45 s no blow): the raid gets 120 s after the cut and fells its hut
 # (CAMPAIGN_OLD_RAID_CUT=1: dropped at 300 s, a 'driver' finding: FAILS)
 add('campaign_tribe_latecut', 'CAMPAIGN_PLANT_LATE_CUT=270 ' + P + 'coop_campaign.py --from tribe --to civ --minutes 2 --no-finale',
     (), minutes=45, timeout=3600)
