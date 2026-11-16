@@ -39,6 +39,9 @@ GROUND = (720, 640)
 # lands (the planet turns): with the faster start of 0.7.15 (A9) the landing came 12 s earlier and the first hit fell
 # on a plateau already at that height, so the hits changed the ground there by 0.0-0.5 m (lab 20261116-025154).
 SPOT = (-5.0, -176.0, 557.0)
+# the guest's ship 30 m aside: right over the spot it stood under the host's click point, and the click hit its ship
+# ("You must choose a valid ground", lab 20261116-100807 space_sculpt_tool#2)
+GUEST_SPOT = (25.0, -176.0, 557.0)
 
 
 def num(con, key):
@@ -70,8 +73,8 @@ def main():
     for p in (ph, pg):
         p.land_retry(PLANET)
     ck(ph.ctx() == 'planet' and ph.place() == pg.place(), f'both on the planet {PLANET} ({ph.place()}, {pg.place()})')
-    for who, con in (('host', host), ('guest', guest)):  # BUG-1211: the same spot of the planet every run
-        print(f'  {who} over the spot: ' + sp(con, 'over', *(f'{v:.1f}' for v in SPOT)), flush=True)
+    for who, con, at in (('host', host, SPOT), ('guest', guest, GUEST_SPOT)):  # BUG-1211: the same spot every run
+        print(f'  {who} over the spot: ' + sp(con, 'over', *(f'{v:.1f}' for v in at)), flush=True)
     time.sleep(5)
     if a.away:  # BUG-0900: nobody else on the planet while the host sculpts and colours
         ck(pg.take_off(), f'the guest\'s ship leaves the planet ({pg.ctx()}, at {pg.place()})')
