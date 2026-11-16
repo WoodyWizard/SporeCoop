@@ -8743,9 +8743,10 @@ From the 0.7.15 final check triage of the Space group (BUG-1203, BUG-1210, BUG-1
 * coop_space_sculpt_tool.py puts both ships over the planet point (-5, -176, 557) (`coop.space over`) before the hits:
   where a landing puts a ship depends on when it lands, and since the faster start (A9) the first hit fell on a plateau
   already at the height the first sculpting tool raises the ground to, so the hits changed it by 0.0-0.5 m.
-* space_planet_citizens: one host citizen near the guest with no guest citizen within the bind radius (30 m) stayed
-  unbound in every run since 0.7.6 (`coop.wobj`: binds=18 own=1 of 19), 1 of 19 elsewhere per round, 3+ of 57 over the
-  three rounds against the 5 % limit (2.85). `space.citizen_relocate` binds it to the guest's nearest free citizen.
+* space_planet_citizens: citizens stand in groups 0.5-2 m apart; the test now counts with a maximum matching (each host
+  citizen its own guest citizen within 3 m, at its size first), the greedy pairing took a neighbour's partner (misses at
+  0.5-2 m, swapped sizes). A host citizen stacked on another with no guest citizen for it stayed unbound (`coop.wobj`
+  binds=18 own=1): `space.citizen_relocate` binds it to the guest's nearest free citizen. Each miss is printed.
 * space_npc_model and creature_ufo_nomodel start the host with an empty GraphicsCache (the lane's two
   GraphicsCache*.package files go aside and come back, `gfx_aside` / `gfx_back`): a lane whose cache baked the NPC
   ships' models never had the case and the tests were INCONCLUSIVE there ([space-gfx-cache-models](re/space.md#space-gfx-cache-models)).
