@@ -76,6 +76,7 @@ bool host_reloading(); // BUG-0332: the host's reload of the new Tribe world run
 // the galaxy menu's intro cinematic GGE_Intro plays (docs/re/space.md 7.9; ~10 s starting ~16 s after
 // the menu came up, its input lock drops all clicks on the menu); callable in the frame
 bool menu_intro_playing();
+bool menu_movie_playing(); // the start-up video plays (Movie::MovieSystem +0x34, BUG-1218)
 // tests (BUG-0167): the galaxy menu intro starts in the first tick of the next stage (coop.introstage)
 void arm_intro_in_stage();
 // a cinematic or a caption of the game plays (cCinematicManager +0x2C): the HUD is hidden, an editor

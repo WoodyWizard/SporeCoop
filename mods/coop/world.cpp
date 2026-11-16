@@ -971,6 +971,58 @@ static void menu_splash_tick()
     H->run_outside_frame(hide_menu_splash, nullptr); // (UI: outside the frame)
 }
 
+// BUG-1218: the start-up video (Movie::MovieSystem: the EA / Maxis logos, then the big SPORE logo over a starfield) is
+// still playing when a load leaves the galaxy menu within ~16 s of it (a guest that joins from its menu at once, a
+// host's quick load): the video's layer (DrawLayer) is drawn over the stage under the HUD until the video ends, and
+// its end (StopMovie, which posts 0x49731AD: the menu's GGE_intro, refused outside the menu by BUG-0626) comes only
+// then. In a stage the video is stopped as its own end stops it. Off (`coop.fix world.menu_movie off`): it plays on.
+static bool g_menu_movie_fix = true;
+COOP_FIX("world.menu_movie", "BUG-1218", g_menu_movie_fix,
+         "world: the start-up video (the SPORE logo) left playing by a quick load from the menu is stopped in the stage");
+static uint32_t g_movies_stopped;
+static double g_movie_seen;
+
+static uint8_t* movie_system()
+{
+    static uintptr_t get = H->sym("Movie::MovieSystem::Get");
+    uint8_t* ms = get ? skg::cdecl_call<uint8_t*>(get) : nullptr;
+    return ms && skg::readable(ms, 0x38) ? ms : nullptr;
+}
+
+// the start-up video plays (MovieIsPlaying: +0x34 the movie object)
+bool menu_movie_playing()
+{
+    uint8_t* ms = movie_system();
+    return ms && *(uint32_t*)(ms + 0x34);
+}
+
+static void stop_menu_movie(void*)
+{
+    static uintptr_t stop = H->sym("Movie::MovieSystem::StopMovie");
+    uint8_t* ms = movie_system();
+    if (!stop || !ms || !*(uint32_t*)(ms + 0x34) || !in_stage(game::mode_id()))
+        return;
+    skg::thiscall<int>(stop, ms);
+    g_movies_stopped++;
+    H->log(M, SK_INFO, "world: the start-up video was still playing in the stage (mode %08X): stopped (BUG-1218, %u)", game::mode_id(),
+           g_movies_stopped);
+}
+
+static void menu_movie_tick()
+{
+    if (!g_menu_movie_fix || !in_stage(game::mode_id()) || !menu_movie_playing()) {
+        g_movie_seen = 0;
+        return;
+    }
+    double now = H->time_seconds();
+    if (!g_movie_seen)
+        g_movie_seen = now;
+    if (g_movie_seen < 0 || now - g_movie_seen < 0.5) // (a stage's first frames: once per sighting)
+        return;
+    g_movie_seen = -1;
+    H->run_outside_frame(stop_menu_movie, nullptr); // (renderer, audio and a UI layout: outside the frame)
+}
+
 static void install_intro_hook()
 {
     if (uintptr_t a = H->sym("Simulator::cCinematicManager::PlayCinematic"))
@@ -1244,6 +1296,7 @@ void guest_tick()
     via_menu_tick();
     menu_intro_tick();
     menu_splash_tick();
+    menu_movie_tick();
     deferred_tick();
     box_tick();
 }
@@ -1254,6 +1307,7 @@ void tick(net::Session& s)
     via_menu_tick();
     menu_intro_tick();
     menu_splash_tick();
+    menu_movie_tick();
     deferred_tick();
     box_tick();
     if (g_drop_peer_fix) {
@@ -1871,8 +1925,9 @@ std::string status()
                  *(uint32_t*)(cm + kCineId) == kMenuIntroId ? " (menu intro)" : "");
         s += b;
     }
-    if (g_intros_ended || g_intros_at_once) {
-        snprintf(b, sizeof b, "menu intro ended %u (not started %u), menu splash hidden %u\n", g_intros_ended, g_intros_at_once, g_splash_hidden);
+    if (g_intros_ended || g_intros_at_once || g_movies_stopped || menu_movie_playing()) {
+        snprintf(b, sizeof b, "menu intro ended %u (not started %u), menu splash hidden %u, start-up video stopped %u (playing %d)\n",
+                 g_intros_ended, g_intros_at_once, g_splash_hidden, g_movies_stopped, (int)menu_movie_playing());
         s += b;
     }
     return s;
