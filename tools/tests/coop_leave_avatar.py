@@ -15,10 +15,10 @@ plays (several times, also right after the guest came back in, the campaign's ti
 
 --cell: the campaign's way in first: Cell fixture, the host finishes the Cell stage, both follow
 into the Creature stage, the host's first creature editor (the vote, the guest ready); then the rounds.
-Since BUG-0508 (0.7.4) the host's editor sends no world to a guest in the same world and stage: the guest takes the
-host's evolved creature in place (BUG-1196: also a guest with creations of its own that plays the world's species,
-as here since the cold start resets worlds.ini, BUG-1176). Checked after the editor: the host kept the guest in its
-world (no world after all) and the guest plays the host's new species; the rounds' shares are the leaving windows.
+Since BUG-0508 (0.7.4) the host's editor sends the world only when the guest still plays the pre-editor species 30 s
+later (the first editor after Cell keeps the species key: it does), and that share waits for the host's evolution
+cinematic: the test confirms its captions like a player (BUG-1215), then checks the leaving window of that share (or,
+when the host kept the guest in place, that it sent nothing); then the rounds.
 
   coop_leave_avatar.py [--rounds N] [--cell]   (SPORE_FIX_OFF=world.leave_avatar must FAIL)
 """
@@ -102,23 +102,27 @@ def cell_to_creature(ck, host, guest):
         time.sleep(4)
         guest.call('click %d %d' % CANCEL)
     ck(wait(lambda: 'Creature' in mode(host), 40), 'the host is back in the Creature stage')
-    # BUG-0508 / BUG-1196: the host keeps the guest in its world once the evolution's cinematic is over (its captions
-    # confirmed as a player does) and its 30 s species check found the guest playing the new species
+    # BUG-0508: after its editor the host keeps a guest of its world and stage in place, and sends it the world after all
+    # when the guest still plays the pre-editor species 30 s later (here: the first editor after Cell keeps the species
+    # key); that share waits for the host's evolution cinematic (BUG-0019), whose caption a player confirms (BUG-1215)
     def settled():
         for c in (host, guest):
             if cinematic(c):
                 c.call('key enter')
         kept, sent, checking = in_place(host)
-        return (kept > ip0[0] or sent > ip0[1]) and not checking
+        left = stats(guest).get('windows', 0) > s0.get('windows', 0)
+        return left or (kept > ip0[0] and sent == ip0[1] and not checking)
     wait(settled, 150, 2)
     kept, sent, checking = in_place(host)
+    left = stats(guest).get('windows', 0) > s0.get('windows', 0)
     print(f'  after the host\'s editor: evolve in place kept {ip0[0]} -> {kept}, sent after all {ip0[1]} -> {sent}, '
-          f'checking {checking}; avatars host {avatar_key(host)} guest {avatar_key(guest)}', flush=True)
-    ck(kept > ip0[0] and sent == ip0[1] and not checking,
-       'the host keeps the guest in its world after its editor (no world after all)')
+          f'checking {checking}; the guest left its stage: {left}; avatars host {avatar_key(host)} guest '
+          f'{avatar_key(guest)}', flush=True)
+    if sent > ip0[1]:  # the world after all: the guest leaves its stage for it (the campaign's leaving window)
+        ck(left, 'the guest leaves its stage for the world the host shares after its editor')
+    else:
+        ck(kept > ip0[0] and not checking and not left, 'the host keeps the guest in its world after its editor')
     ck(twoinst.wait_guest_in(host, guest), 'the guest plays in the host\'s evolved world')
-    hk = avatar_key(host)
-    ck(hk and avatar_key(guest) == hk, f'the guest plays the host\'s evolved species ({avatar_key(guest)}, the host {hk})')
     window_check(ck, guest, s0, 'after the host\'s editor')
 
 

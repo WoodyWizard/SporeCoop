@@ -8741,10 +8741,12 @@ Final check 20261116-025154 (0.7.15); the group around the guest's own creature,
 * `coop.vote editor` builds the game's evolution request (BUG-0720): its editor has no red cross, leave it with the
   green check (BUG-1199). Only the own editor a vote opens (`open_own_editor`, BUG-0756) has the cross.
 * A guest with creations of its own that plays the world's species follows the host's evolution in place since
-  BUG-1196 (before: the host's 30 s check sent it the whole world, which raced the next vote in parts_transition and
-  waited for the host's evolution caption in leave_avatar_cell). leave_avatar_cell confirms the host's evolution
-  caption like a player and checks "kept in place, no world after all" (`evolve in place:` of the host's coop.status)
-  and the guest's avatar on the host's new species; evolve_in_place_own (+ `_cell`) is the twin
-  (`SPORE_FIX_OFF=creations.follow_with_creations`).
+  BUG-1196; evolve_in_place_own is its twin (`SPORE_FIX_OFF=creations.follow_with_creations`; Creature only: the guest
+  fixture creations-guest has no cells of its own).
+* After the host's first creature editor (Cell -> Creature) the species key stays, so the host's 30 s check of
+  BUG-0508 sends the world after all, and that share waits for the host's evolution caption. leave_avatar_cell
+  confirms the captions like a player and then checks the leaving window of that share (or "kept in place, nothing
+  sent"); parts_transition waits for that world (`after 30 s: sending the world` ... `transfer to N acknowledged` in
+  the host's log) before its editor vote: a vote into the guest's load lost the guest's own editor (BUG-1215).
 * find_partners: a test place in deep water starts the guest game's sea monster (drama kind 6), whose cinematic pauses
   that game for good; the test holds it (`coop.drama hold 40` on the guest, BUG-1204).

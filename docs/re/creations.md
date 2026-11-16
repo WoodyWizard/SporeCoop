@@ -1537,12 +1537,17 @@ species follow the host's evolved one in place (`on_bundle` sets `g_follow`, `mi
 read "the guest has no creations of its own" (`g_opts[k].empty()`), the only way to play the world's species in 0.7.4.
 Since BUG-0345 (0.7.5) a guest with creations plays the world's species in every world it never played its own one in
 (no worlds.ini record, no choice), and `mine()` already answers `g_follow` for it (the BUG-0345 branch), but the follow
-was never recorded:
-* ✔ Lab (final check 20261116-025154, rerun 20261116-082820, lane 10, cell fixture, guest with 5 creations, none
-  chosen): after the host's first creature editor the host logs "evolved in place: Bob keeps its world", 30 s later
-  "Bob still plays <old species> after 30 s: sending the world"; that share waits for the host's evolution cinematic
-  (BUG-0019) and comes whenever its caption is closed (in parts_transition right into the next vote: the guest loaded
-  the world instead of opening its own editor).
-* Fix `creations.follow_with_creations`: with BUG-0345 on, the follow no longer asks for an empty creations list
-  (the key test `mine(k) == the host's previous creation` already keeps a guest playing its own creation out).
-  Off: 0.7.14 (only a guest without creations follows).
+was never recorded: its avatar kept the host's pre-editor species, and the host's 30 s check sent it the whole world
+("evolved in place: <guest> still plays <old species> after 30 s: sending the world").
+* Fix `creations.follow_with_creations`: with BUG-0345 on, the follow no longer asks for an empty creations list (the
+  key test `mine(k) == the host's previous creation` already keeps a guest playing its own creation out). Off: 0.7.14.
+* ✔ Lab (evolve_in_place_own, creature fixture, the guest with the 5 creations of creations-guest, none chosen):
+  "the host's creature changed 065CBE70 -> 2924DFDB: this game's world species follows it in place (BUG-0508)", the
+  guest stays in the stage, the host sends no world (`evolve in place: kept 1, sent after all 0`).
+* ✔ Not the same thing: the host's first creature editor after Cell (the Landfall editor FD4902BD) left the host's
+  species key as it was (`evolved in place: Bob keeps its world (host species 2924E0EB -> 2924E0EB ...)`, no new
+  bundle of the host after it), so the 30 s check finds the guest "still" on that key and sends the world after all,
+  with or without this fix (lab 20261116-090728 parts_transition; v0.7.14.1 20261116-084702 the same). That share
+  waits for the host's evolution cinematic (BUG-0019), i.e. until its caption is confirmed. ? Whether the Landfall
+  editor changes the species' content under the same key (so the world carries the new body) was not looked at.
+* The guest fixture creations-guest has no cells of its own: the Cell side of this fix has no lab test.
