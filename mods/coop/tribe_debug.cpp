@@ -904,13 +904,21 @@ std::string debug(const std::vector<std::string>& a)
     }
     // hunger <member id> <v>: tests (BUG-0935), the member's (host) or mirror's (guest) hunger through the game's setter,
     // as minutes of the game's own hunger update leave it (a guest's mirror that never eats: 0)
-    if (a.size() >= 3 && a[0] == "hunger") {
+    // BUG-1187: `hunger <id>` only reads; `hunger <id> <v> end` ends the member's full clock first (a member just made
+    // or just fed stays at 100 for its delay: the value would not hold); `full=` running / elapsed ms / delay ms
+    if (a.size() >= 2 && a[0] == "hunger") {
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
         if (!c || !has_body(c) || !a_SetHunger)
             return "no such member";
-        thiscall<void>(a_SetHunger, c, (float)atof(a[2].c_str()));
-        return "hunger " + std::to_string(F<float>(c, kHungerOff)) + " sets=" + std::to_string(g_hunger_sets) +
-               " fix=" + std::to_string((int)g_hunger_fix);
+        bool ended = a.size() >= 4 && a[3] == "end" && end_full_delay(c);
+        if (a.size() >= 3)
+            thiscall<void>(a_SetHunger, c, (float)atof(a[2].c_str()));
+        uint8_t* clk = (uint8_t*)c + kHungerClockOff;
+        char b[200];
+        snprintf(b, sizeof b, "hunger %f sets=%u fix=%d full=%d/%u/%u ended=%d full_ended=%u full_fix=%d", F<float>(c, kHungerOff),
+                 g_hunger_sets, (int)g_hunger_fix, (int)clk[0x18], a_ClockElapsed ? (unsigned)thiscall<uint64_t>(a_ClockElapsed, clk) : 0u,
+                 F<uint32_t>(c, kHungerDelayOff), (int)ended, g_hunger_full_ended, (int)g_hunger_full_fix);
+        return b;
     }
     if (a.size() >= 3 && a[0] == "sethp" && is_host()) { // sethp <member id> <hp>: tests (BUG-0759), the member's health
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
