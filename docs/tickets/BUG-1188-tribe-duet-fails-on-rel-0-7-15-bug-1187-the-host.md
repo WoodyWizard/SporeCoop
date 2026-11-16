@@ -10,7 +10,7 @@ role:
 versions: 0.7.15 dev
 fixed_in: unreleased
 branch: fix/w51-duet
-commits: e7764e8d, d4c0b6a4
+commits: e7764e8d, d4c0b6a4, 91d6feaa
 tests: tribe_duet
 signature:
 docs: docs/re/tribe.md#tribe-duet-attack, docs/06-testing.md#testing-tribe-duet-attack
@@ -71,6 +71,7 @@ FAIL (twin SPORE_DUET_DRAMA=1, the game's attack started before the orders): out
 member performed, the guest's check fails too).
 PASS (the fix, `coop.drama hold 80`): out/lab/20261116-023406 (lanes 4 / 5, 6 of 6, cold and warm; `held:
 creature_attack=3` in each, the guest's mirrors played the host's performance animations of both performers).
+Related: play_tribe --quick and tribe_duet_off PASS (out/lab/20261116-024350, lanes 4 / 5); make test passed.
 Old start (SPORE_START_FIXED=1): out/lab/20261116-023030 (the attack at 57.1-57.2 s again; the test stops earlier, the
 guest's first member is its chief, docs/06-testing.md#testing-tribe-duet-attack).
 
