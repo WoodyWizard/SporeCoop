@@ -49,7 +49,7 @@ ROOT = os.path.dirname(HERE)
 STAGES = ('Cell', 'Creature', 'Tribe', 'Civ', 'Space')
 
 STAGE_FILES = {
-    'Cell': ['mods/coop/cellsync.*', 'mods/coop/cell_logic.h'],
+    'Cell': ['mods/coop/cellsync.*', 'mods/coop/cellsync_*', 'mods/coop/cell_logic.h'],
     'Creature': ['mods/coop/npc.*', 'mods/coop/npc_ids.h', 'mods/coop/nest.*', 'mods/coop/creature_hp.*',
                  'mods/coop/hunt_hits.h', 'mods/coop/drama.*', 'mods/coop/social.*', 'mods/coop/teamplay.*',
                  'mods/coop/parts.*', 'mods/coop/hud_portrait.*'],

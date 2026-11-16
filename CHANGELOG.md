@@ -132,6 +132,8 @@
   (a 0.7.14 player still gets them as before), tribe.cpp is split into five files by pure moves, the planted
   Tribe-end campaign test has a budget it can keep and tribe_attack_spot forms its village again (BUG-1140, BUG-1143,
   BUG-1160, BUG-1161, BUG-1162, BUG-1165, BUG-1184).
+- Cell: cellsync.cpp (7.3k lines) is split into smaller files by pure moves (combat, physics, tiles, host, guest and the
+  `coop.pool` command), and the `coop.creations` command has a file of its own (BUG-1183). No change on the wire.
 
 ## [0.7.14.1] - 2026-11-14
 

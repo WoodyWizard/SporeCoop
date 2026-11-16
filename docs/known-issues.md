@@ -263,3 +263,29 @@ anchor so other docs can link to it:
 * Reproduce: `coop.settings force all.friendly_fire on` on the host in Cell: a bite on the partner's cell does nothing.
 * Ticket: BUG-0899.
 
+## Lab: the guest's own creature in the fixture world depends on the lane's history (2026-11-15, fix/w51-evolve)
+<a id="issue-lab-worlds-ini"></a>
+
+* What happens: on a lane whose guest profile has `SporeCoop/worlds.ini` `[creature] 68AC222A=<creation>` (lanes 3,
+  9, 10 on 2026-11-15) the guest of every Creature test plays its own creature 3 s after each world load; on a clean
+  lane it plays the world's species. Tests that silently assumed one of the two passed or failed with the lane
+  (editor_strays BUG-1170, evolve_world BUG-1173).
+* Reproduce: `cat <lane guest profile>/SporeCoop/worlds.ini`; the guest's log says "from this world's record
+  (worlds.ini)" after the load.
+* Known: twoinst's cold start removes `choices.ini` only; an own editor's result or a choice writes `worlds.ini`
+  (BUG-0345, BUG-0638).
+* Next steps: the cold start removes `worlds.ini` and tests that need the own creature set it, then a Creature
+  regression run.
+* Ticket: BUG-1176
+
+## Cell tests that fail on rel/0.7.15 (2026-11-15, feat/w51-cellsplit)
+<a id="known-cell-rel0715-fails"></a>
+
+* What happens: cell_swallow_gone (2 of 3 swallowed creatures gone on the host), cell_unknown_model (the mirror never
+  made once the model is known), cell_editor_timed (the guest's editor does not open at the mate) and cell_sap (the
+  host under 1100 cells) failed twice in a row on lanes 6 / 7, on the C8 split build and on rel/0.7.15 7a733c60 alike;
+  cell_kill_once once on each (a second break of one kill).
+* Reproduce: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_swallow_gone,cell_unknown_model,cell_editor_timed,cell_sap
+  --lane N --retry 0 --no-build` (load average 20-30 at the time).
+* Next steps: the same on v0.7.14 and on an idle machine; bisect rel/0.7.15 if only it fails.
+* Ticket: BUG-1186

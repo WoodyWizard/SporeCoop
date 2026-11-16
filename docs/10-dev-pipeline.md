@@ -424,3 +424,21 @@ claim becomes "<switch> off failed (retired in 0.7.15, BUG-1138: FAIL run <run>)
 "switch retired in 0.7.15, FAIL run <dir> on record". Proof per batch: `make -j8`, `make test`, the refactor dumps
 before and after (docs/10-dev-pipeline.md#pipeline-refactor-proof: the only differences are the retired switches in
 the `fix` section and the removed toggle commands in `commands`), and `lab.py run impact --base <base>`.
+
+## Finding what a file split shares, from the compiler (2026-11-15, feat/w51-cellsplit)
+<a id="pipeline-split-ast"></a>
+
+A split of a 7k-line file by hand misses names. The Cell split (BUG-1183, docs/01-architecture.md#arch-cell-files)
+took the list from clang instead: `i686-w64-mingw32-clang++ <the build's -std / -D / -I flags> -fsyntax-only -Xclang
+-ast-dump=json -Xclang -ast-dump-filter=<namespace> mods/coop/<file>.cpp` (about 100 MB of JSON, 3 s) gives every
+top-level declaration of the namespace with its byte range, its `previousDecl` (forward declarations) and, inside it,
+every `referencedDecl` id. Assign the declarations to the new files by line ranges; a variable or function used from
+another file than its definition's loses `static` (on every declaration) and gets an `extern` / a prototype in the
+`_internal.h`; a type, constant, using-declaration or template another file names (also in such a declaration's type)
+moves into the header, templates after the declarations they call. Pitfalls met: the JSON omits `file` and `line`
+when they did not change since the previous location (track them in document order, or count lines from `offset`); a
+macro's location has `spellingLoc` / `expansionLoc` (take the expansion); a prototype taken from a definition's head
+must drop comments between the head and the body; a default argument stays on the header's prototype only (cut from
+the `=`, not from the end of the parameter name: `bool patch[3] = nullptr`); keep every LIFECYCLE / WORLD_STATE /
+SESSION_STATE line in the original file (`keep` ranges), and name the new files `<file>_*.cpp` so they link after it
+(the static-init order of the original's registrations stays).
