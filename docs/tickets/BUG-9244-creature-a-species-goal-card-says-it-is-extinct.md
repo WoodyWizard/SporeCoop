@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: owner 2026-11-16 (62-dev QA)
 role: host, guest
 versions: 0.7.14.1-lineages62-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages63-dev
 branch: feat/lineages-47
 commits:
 tests: manual Windows QA (TITAN QA host, Dorger.spo copy: coop.social species with the fix off / on)
@@ -34,3 +34,4 @@ FAIL off / PASS on (TITAN QA host instance 9, Dorger.spo copy, hosting, 2026-11-
 ## History
 - 2026-11-16: opened from the owner's screenshot.
 - 2026-11-16: cause found (stale party marks, relation 6 = "done"); fixed (social.stale_party_marks); FAIL off / PASS on on the table.
+- 2026-11-16: released in 0.7.14.1-lineages63-dev.

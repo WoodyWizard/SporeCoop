@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages63-dev] - 2026-11-16
+
+- Creature: a guest's impress meter fills with the pink bars like the host's (it stayed empty, the progress only in
+  notices); the "Impressing" and "Answer it" notices are gone while the meter shows (BUG-9230).
+- Creature: no false "The ... species is extinct!" for a species a player used to play: the "best friends" mark of
+  old player species is cleared once nobody plays them (BUG-9244).
+- No "Spore runs at N fps without its frame cap" notice when you set a frame cap yourself (for example 120 or 144 fps);
+  only when there is no cap at all (BUG-9242).
+- Co-op window: "Searching your network..." starts inside its row, and the status line ("Lineages is up to date") sits
+  level with Check for Updates, clear of the host box, on one line (BUG-9243).
+- Tests and diagnostics: `coop.social meterfill`, `coop.social cards`, `coop.npc aifreeze`, `coop.hp callers`.
+
 ## [0.7.14.1-lineages62-dev] - 2026-11-16
 
 - Creature: a guest sees every enemy again; some of the host's own creatures
