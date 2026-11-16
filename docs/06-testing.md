@@ -8728,3 +8728,32 @@ v0.7.14.1 (a detached worktree of the tag, `make`) beside rel/0.7.15 on lanes 6 
 * A test that makes an NPC tribe in Tribe and needs its members calm for a minute should hold kind 7 the same way.
 * Under SPORE_START_FIXED=1 on rel/0.7.15 the test stops earlier (4 of 4, lab 20261116-023030): the guest's first
   member is its chief (#1, holding item 11), which never takes the instrument. Only that twin start shows it.
+
+## Final-check triage of 0.7.15: update tests, twins, start-up race (2026-11-16, fix/w51-t1)
+<a id="testing-w51-t1-triage"></a>
+
+* **A lane's coop.ini keeps a test's `[update]`** (BUG-1190): coop.ini is copied on the first deploy only, so what a test
+  writes into it stays for every later test of that lane. update_check.py (`update`, `update_api403`, `update_flaky`,
+  on the lab's free lane) appended `[update] url=http://127.0.0.1:<47999+lane>/...` and never removed it; update_leak
+  and reload_update then appended their own section after it and the game read the first one (a dead port: "the local
+  server offers 99.0.0" / "the new image logs only its own check"). Set an ini section with
+  `lane.ini_section(path, section, {key: value})` (every block of that section replaced, encoding and line ends kept;
+  it returns the old bytes to write back; `entries=None` removes it), never by appending. update_check.py removes its
+  section when it ends. In November 2026 lanes 2-5 still held such sections from older runs: harmless for the fixed
+  tests, but every game on those lanes checks a dead local url at its start until the section is removed.
+* **Twins that must FAIL are not in full** (BUG-1193): a suite entry that exists to FAIL (the old behaviour of a fix)
+  gets the `twin` tag (`lab.py run twin`, or by name); `full` needs every test to PASS. chat_held_send_oldcheck is one.
+  `campaign_segment` has the `segment` tag (only by name with `--segment <run>`, BUG-1192); without a segment it prints
+  `FAIL no segment given`, and `lab.py run impact` leaves it out unless `--segment` is given.
+* **The sync-check asked right after a share is not compared** (BUG-1191): the host leaves a guest out for 20 s after
+  it asked for a world share with it (BUG-0754, `diag.share_quiet`), and the next check comes 30 s later. A test that
+  wants the OK of `coop.diag sync now` soon after a start asks again until it comes (coop_diag.py: every 5 s, 45 s).
+* **report_shot's reference frame** (BUG-1206): a frame whose brightness held (two shots 1 s apart within 8), not the
+  first frame over 30 (the world still fading in).
+* **The second launch of a start waits for the first game's SporeKit** (BUG-1209): twoinst's `game_process_up` waits
+  until the guest's console answers `ping` (at most the old 2 s) before the host is launched; the game process alone
+  exists before the game runs, and both games then booted in the same millisecond on a loaded machine and the guest's
+  console reset (once in 836 starts). Twin: `SPORE_GAME_UP_PROCESS=1`.
+* **update_check.py's next-version build** passes `-DCOOP_VERSION=...` in CXX: every file that defines COOP_VERSION
+  must guard it with `#ifndef COOP_VERSION` (session_glue.cpp did not after B2: a redefinition under `-Werror`,
+  BUG-1189).
