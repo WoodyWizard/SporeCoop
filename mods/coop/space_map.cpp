@@ -59,6 +59,10 @@ constexpr double kPeriod = 5.0, kScan = 1.0;
 static bool g_colony_ids_fix = true;
 COOP_FIX("world.autosave_colony_ids", "BUG-1203", g_colony_ids_fix,
          "space: the host's autosave after a new colony comes once per colony, not after every save of its game");
+static bool g_planet_gap_fix = true;
+COOP_FIX("space.roster_planet_gap", "BUG-1203", g_planet_gap_fix,
+         "space: right after a save a colony of another star system stays in the player's roster (no colony gone and back)");
+static uint32_t g_planet_gaps; // reads that kept a star's colonies over its empty planet list (coop.space map status)
 static autosave::NewIds g_new_colonies; // host: the colonies of this Space world seen so far (its own, its guests' own)
 
 static uintptr_t a_PlayerEmpire, a_StarMgr, a_PlayerUFOGet;
@@ -199,12 +203,37 @@ static bool read_local(Roster& r)
         }
     }
     r.colonies.clear();
+    // BUG-1203: right after a save of the game a star system other than the current one has its planet list empty for
+    // a moment (its planet count +0xAC still says 3: lab 20261116-085747, star 0046000C), so its colonies were missing
+    // from that read and back in the next one. Such a star keeps the colonies the last read found there.
+    // `coop.fix space.roster_planet_gap off`: the read as it is (the colonies go and come back, 0.7.14).
+    static std::map<uint32_t, std::vector<Colony>> s_last; // star -> its colonies in the last read
+    static uint32_t s_last_world;
+    if (s_last_world != spaceext::world_epoch()) {
+        s_last.clear();
+        s_last_world = spaceext::world_epoch();
+    }
+    std::map<uint32_t, std::vector<Colony>> now;
     for (void* s : ptr_vec((uint8_t*)emp + 0x88, 1024)) {
         if (r.colonies.size() >= 250)
             break; // BUG-1040: the cap ends the whole scan, not only this star's planets
         if (!readable(s, 0x98))
             continue;
-        for (void* p : ptr_vec((uint8_t*)s + 0x84, 64)) {
+        std::vector<void*> planets = ptr_vec((uint8_t*)s + 0x84, 64);
+        uint32_t star = F<uint32_t>(s, 0x70) & 0xFFFFFFu;
+        if (planets.empty() && F<uint8_t>(s, 0xAC) && g_planet_gap_fix) {
+            auto it = s_last.find(star);
+            if (it != s_last.end()) {
+                g_planet_gaps++;
+                for (const Colony& c : it->second)
+                    if (r.colonies.size() < 250)
+                        r.colonies.push_back(c);
+                now[star] = it->second;
+            }
+            continue;
+        }
+        size_t first = r.colonies.size();
+        for (void* p : planets) {
             if (!readable(p, 0x1A4) || F<int>(p, 0x194) != 5)
                 continue;
             Colony col;
@@ -233,7 +262,10 @@ static bool read_local(Roster& r)
             if (r.colonies.size() >= 250)
                 break;
         }
+        if (r.colonies.size() > first)
+            now[star].assign(r.colonies.begin() + (ptrdiff_t)first, r.colonies.end());
     }
+    s_last.swap(now);
     return true;
 }
 
@@ -1383,9 +1415,9 @@ static std::string status()
     char b[300];
     snprintf(b, sizeof b,
              "map: rosters=%u changes=%u sent=%u got=%u reqs=%u version=%u tags=%u covered=%d drawn=%u hidden=%u "
-             "clicks=%u trips=%u trip_cost=%u",
+             "clicks=%u trips=%u trip_cost=%u planet_gaps=%u",
              (unsigned)g_rosters.size(), g_changes, g_sent, g_got, g_reqs, g_version, (unsigned)g_tags.size(),
-             (int)g_covered, g_frames_drawn, g_frames_covered, g_tag_clicks, g_trips, g_trip_cost);
+             (int)g_covered, g_frames_drawn, g_frames_covered, g_tag_clicks, g_trips, g_trip_cost, g_planet_gaps);
     return b;
 }
 

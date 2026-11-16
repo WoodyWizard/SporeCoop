@@ -3241,3 +3241,20 @@ BUG-1155 (audit of 0.7.15 wave E, Space item 4), after [the far records](#space-
   place enters that star, all of them to a partner it sees for the first time (a join). Both reset with the Space world
   (world epoch) and the session. The same holds for the ecosystem lists ([space-ecosystem](#space-ecosystem)). Test
   `space_terra_late` (`coop.space away`, `coop.space nogen`, `coop.space terrarec`, `coop.space jumpto`).
+
+## A star's planet list is empty for a moment after a save (2026-11-16, fix/w51-t3)
+<a id="space-save-planet-gap"></a>
+
+BUG-1203 (0.7.15 final check: the host's game saved itself every 8 s).
+* ✔ (runtime, diagnostic build, lab 20261116-085747 lane 6, space_allies_near): right after each save of the game
+  (`space: saved world`, the save hook of space_allies), the first read of the player empire's stars (cEmpire +0x88)
+  found the star of a colony in another star system (0046000C) with its planet list +0x84 empty while its planet count
+  +0xAC still said 3 (flags 00021038); one second later the list was back with the colony. Seen after every save of
+  the session (4 of 4), the same with the colonies 01460035 / 00460014 of the `space_free` fixture (lab 20261116-084330).
+* ? Who empties and refills the list (the save writing the planet records, or the star manager releasing the planets
+  of a star system other than the current one and the next RequirePlanetsForStar making them) is not checked.
+* Consequence for the mod: space_map.cpp's read of the own colonies (read_local) lost that colony for one read, so the
+  roster went 2 -> 1 -> 2 after every save: the guests' allies mirror of it went and came back, and the E2 autosave
+  took the count increase for "a colony founded" (a save, another gap, another save). Now a star whose planet list is
+  empty while its count is not keeps the colonies the last read found there (`space.roster_planet_gap`), and the
+  autosave's milestone is a colony id never seen in the world (`world.autosave_colony_ids`, autosave::NewIds).
