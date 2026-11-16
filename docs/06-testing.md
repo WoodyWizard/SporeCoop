@@ -8940,3 +8940,13 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   `mem: started again after a memory restart`.
 * The QA copy runs the unstripped coop.dll: its image takes about 96 MB of the address space (`coop.memcensus`:
   image:coop); the release's stripped one about 7 MB. Memory numbers from the QA copy are that much lower.
+
+* Space play test on TITAN (2026-11-16, 61-dev + BUG-9240/9231/9241, scratchpad script, about 6 min): host instance 9
+  DuoQAJiffSpace `coop.load Game0 "Jiff Peanutbutter.spo"` (the save name has a space: quote it, `.spo` included),
+  `coop.host`, guest 8 DuoQAStageGuest joins (in Space after about 60 s). Then the coop_space.py steps by hand:
+  `coop.fleet spawn 2` on the host, the ship mirrored on the guest (`coop.fleet list`), `coop.fleet shoot <id> 5` from
+  the guest (50 -> 48 hp, host hits_in=1), `coop.fleet hurt <id> 1` (guest damage_in=1); `coop.leave` and join again:
+  back in 6 s, each side's puppet of the other back within 20 s. All PASS, no crash.
+* The QA copy's Dorger.spo (Game7, the owner's world copy) loads with the host at 0 food / low health: it starves or is
+  killed within a minute, and while the host is on its death screen every host NPC freezes (the guest's proxies stand
+  still). Click the check mark (1243, 920 at 1280 x 960) before testing NPC behaviour there.
