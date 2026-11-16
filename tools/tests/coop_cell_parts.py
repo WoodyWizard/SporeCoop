@@ -13,6 +13,7 @@ the guest's game has it.
 import re
 import time
 
+from harness import waiter
 from twoinst import Checks, start
 
 
@@ -26,14 +27,7 @@ def mate_button(con):
     return int(m.group(1)) if m else None
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return cond()
+wait = waiter(step=1.0, final=True)
 
 
 def main():

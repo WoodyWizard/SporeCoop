@@ -36,6 +36,7 @@ import argparse
 import re
 import time
 
+from harness import pool_num as num
 import lane
 import uifind
 from coop_rejoin_net import log_times
@@ -47,11 +48,6 @@ CAP = 8192  # entries per pending array: 2 x the object capacity (4096)
 def sap(con):
     out = con.call('coop.pool sap')['out']
     return {k: int(v) for k, v in re.findall(r'\b(endpoints|pending|held|removed|open_at_end|dup_min|live_objects)=(-?\d+)', out)}
-
-
-def num(con, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', con.call('coop.pool')['out'])
-    return int(m.group(1)) if m else None
 
 
 def sync_counts(con):

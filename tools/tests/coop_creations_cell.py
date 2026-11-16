@@ -5,14 +5,10 @@ player sees the other's cell."""
 import re
 import time
 
+from harness import field
 from twoinst import Checks, shot, start
 
 OTHER_CELL = 'BAF1AD40'  # a premade player cell in Spore_Content
-
-
-def field(out, pat):
-    m = re.search(pat, out)
-    return m.group(1) if m else None
 
 
 def main():

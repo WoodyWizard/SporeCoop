@@ -28,13 +28,9 @@ import re
 import sys
 import time
 
+from harness import num, waiter
 from twoinst import Checks, lane_state, start
 from coop_editor_desync import CANCEL, HEART, mode
-
-
-def num(out, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', out)
-    return int(m.group(1)) if m else None
 
 
 def food(con):
@@ -55,14 +51,7 @@ def dist(a, b):
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def away_line(con):

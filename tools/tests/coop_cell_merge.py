@@ -24,13 +24,9 @@ import argparse
 import re
 import time
 
+from harness import num
 from party import Party
 from twoinst import Checks
-
-
-def num(out, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', out)
-    return int(m.group(1)) if m else None
 
 
 def own_pos(p):

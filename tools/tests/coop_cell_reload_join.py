@@ -14,16 +14,11 @@ host and outside its tiles (player report 2026-10-31).
 
 cell.join_after_load off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-131104:cell_reload_join): the run that must FAIL (the guest stays at the start).
 """
-import re
 import time
 
+from harness import cell_pos as own_pos, waiter
 from twoinst import Checks, start
 import twoinst
-
-
-def own_pos(con):
-    m = re.search(r'^avatar .*?pos=\((-?[\d.]+) (-?[\d.]+)\)', con.call('coop.pool')['out'], re.MULTILINE)
-    return (float(m.group(1)), float(m.group(2))) if m else None
 
 
 def puppet_pos(con, rid):
@@ -39,14 +34,7 @@ def dist(a, b):
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5 if a and b else None
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def main():

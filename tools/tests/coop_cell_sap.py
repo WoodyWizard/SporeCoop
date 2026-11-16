@@ -30,14 +30,10 @@ import time
 
 import math
 
+from harness import num
 from coop_multi import sample
 from party import Party
 from twoinst import Checks
-
-
-def num(out, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', out)
-    return int(m.group(1)) if m else None
 
 
 def own_pos(p):

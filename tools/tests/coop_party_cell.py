@@ -19,6 +19,7 @@ from Alice and stay side by side (`coop.pool tp <dx> <dy> <id>`: next to that pl
 import re
 import time
 
+from harness import num, waiter
 from party import Party
 from twoinst import Checks
 
@@ -27,25 +28,13 @@ def pool(p):
     return p.call('coop.pool')
 
 
-def num(out, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', out)
-    return int(m.group(1)) if m else None
-
-
 def ko(out, pid):
     """(state, opacity) of player pid as this game draws it"""
     m = re.search(rf'^ko\[{pid}\]=(\d) .*?op=(-?[\d.]+)', out, re.M)
     return (int(m.group(1)), float(m.group(2))) if m else (None, None)
 
 
-def wait(cond, secs, step=0.25):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.25)
 
 
 def main():

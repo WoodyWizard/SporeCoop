@@ -22,17 +22,8 @@ cell.pick_guard off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-12111
 import re
 import time
 
+from harness import faults, frame
 from twoinst import Checks, start
-
-
-def faults(con):
-    m = re.search(r'total faults: (\d+)', con.call('exc')['out'])
-    return int(m.group(1)) if m else -1
-
-
-def frame(con):
-    m = re.search(r'frame=(\d+)', con.call('frame').get('out', ''))
-    return int(m.group(1)) if m else -1
 
 
 def main():

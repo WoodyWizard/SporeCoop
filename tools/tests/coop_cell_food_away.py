@@ -17,6 +17,7 @@ pool.food_ack_away off failed (retired in 0.7.15, BUG-1138: FAIL run 20261028-23
 import re
 import time
 
+from harness import num, waiter
 from twoinst import Checks, start
 
 
@@ -25,19 +26,7 @@ def food(con):
     return int(m.group(1)) if m else None
 
 
-def num(out, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', out)
-    return int(m.group(1)) if m else None
-
-
-def wait(cond, secs, step=0.25):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.25)
 
 
 def main():

@@ -22,6 +22,7 @@ a fault at 0xE83EC8, or the puppet gone).
 import re
 import time
 
+from harness import faults
 from coop_cell_puppet_scale import playing, wait
 from twoinst import Checks, start
 
@@ -33,11 +34,6 @@ def applied(con, pid):
 
 def drawn(con, pid):
     return re.search(rf'\bp{pid}=\(', con.call('coop.pool scalepos')['out']) is not None
-
-
-def faults(con):
-    m = re.search(r'total faults: (\d+)', con.call('exc')['out'])
-    return int(m.group(1)) if m else -1
 
 
 def main():

@@ -23,6 +23,7 @@ and adds may differ for one check (extra / missing, rechecked 3 s later): not th
 import math
 import os
 
+from harness import waiter
 import lane
 import re
 import time
@@ -52,14 +53,7 @@ def playing(con):
     return m and int(m.group(1)) == 0 and 'cine=0' in con.call('coop.pool')['out']
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def p90(v):

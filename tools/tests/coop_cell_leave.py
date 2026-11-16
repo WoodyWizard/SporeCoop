@@ -21,6 +21,7 @@ the same disconnected callback (quitting one game would kill both games of the l
 import re
 import time
 
+from harness import mode, waiter
 import lane
 from twoinst import Checks, Monitor, alive, start
 
@@ -29,18 +30,7 @@ HISTORY_OK = (1415, 1055)
 CAPTION_OK = (1410, 1048)
 
 
-def mode(con):
-    return con.call('game.mode')['out']
-
-
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def mirrors(con):

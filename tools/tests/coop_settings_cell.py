@@ -18,20 +18,12 @@ SPORE_FIX_OFF=settings.all (every step-3 setting reads its default): steps 2 and
 import re
 import time
 
+from harness import num, pool
 import settings_lib as sl
 import twoinst
 from twoinst import Checks, start
 
 KEYS = ('cell.knockout', 'cell.respawn_small')
-
-
-def num(out, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', out)
-    return int(m.group(1)) if m else None
-
-
-def pool(con):
-    return con.call('coop.pool')['out']
 
 
 def respawns(guest):

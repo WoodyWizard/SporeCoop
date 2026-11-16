@@ -15,15 +15,10 @@ free address space) is read before and after.
   SPORE_LANE=2 python3 tools/tests/coop_cell_churn.py [--rounds 40] [--budget 150]
 """
 import argparse
-import re
 import time
 
+from harness import pool_num as num
 from twoinst import Checks, lab_mark, start
-
-
-def num(con, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', con.call('coop.pool')['out'])
-    return int(m.group(1)) if m else None
 
 
 def main():

@@ -24,20 +24,15 @@ cell.own_rebuild off failed (retired in 0.7.15, BUG-1138: FAIL run 20261031-1304
 game does not eat what it swims into (must FAIL at "after the reload ... still eats"; the switch goes
 off after the first load, so only the reload checks the old timing)."""
 import random
-import re
 import time
 
+from harness import field
 import twoinst
 from coop_cell_new_game import alive
 from play_cell import pool
 from twoinst import Checks, start
 
 OTHER_CELL = 'BAF1AD40'  # a premade player cell in Spore_Content (coop_creations_cell.py)
-
-
-def field(out, pat):
-    m = re.search(pat, out)
-    return m.group(1) if m else None
 
 
 def eat_plants(guest, host, want=3, timeout=90):

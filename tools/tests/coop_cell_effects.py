@@ -9,18 +9,11 @@ position, compared with the host cell puppet's position from `coop.status`.
 
   coop_cell_effects.py   (SPORE_FIX_OFF=creature.effects_relay must FAIL)
 """
-import math
 import re
 import time
 
+from harness import avatar_pos as own_pos, busy_line as busy, dist_or_none as dist
 from twoinst import Checks, start
-
-
-def busy(con):
-    for line in con.call('coop.status')['out'].splitlines():
-        if line.startswith('busy:'):
-            return line.split(':', 1)[1].strip()
-    return '?'
 
 
 def free_games(host, guest, seconds=25):
@@ -55,19 +48,10 @@ def last_rx(con, who):
             'active': int(m.group(7)), 'pos': tuple(float(x) for x in p.groups()) if p else None}
 
 
-def own_pos(con):
-    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
-    return tuple(float(x) for x in m.groups()) if m else None
-
-
 def puppet_pos(con, who):
     m = re.search(r"remote %d '.*?' puppet=\S+ state=\S+ age=[\d.]+s pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)" % who,
                   con.call('coop.status')['out'])
     return tuple(float(x) for x in m.groups()) if m else None
-
-
-def dist(a, b):
-    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b))) if a and b else None
 
 
 def main():

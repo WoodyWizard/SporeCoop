@@ -29,6 +29,7 @@ import math
 import re
 import time
 
+from harness import num
 from twoinst import Checks, lab_mark, start
 
 
@@ -37,11 +38,6 @@ MAX_STEP = 20.0  # m in one round (~3 s): shoves by the crowd reach 11 m (invuln
 
 def out(con, line):
     return con.call(line).get('out') or ''
-
-
-def num(text, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', text)
-    return int(m.group(1)) if m else None
 
 
 def own_pos(con):

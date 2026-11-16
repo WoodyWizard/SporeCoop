@@ -20,6 +20,7 @@ import math
 import re
 import time
 
+from harness import cell_pos as own_pos, waiter
 from twoinst import Checks, start
 
 LIMIT = 8.0
@@ -40,24 +41,12 @@ def on_screen(con):
     return len(lines), lines
 
 
-def own_pos(con):
-    m = re.search(r'^avatar .*?pos=\((-?[\d.]+) (-?[\d.]+)\)', con.call('coop.pool')['out'], re.MULTILINE)
-    return (float(m.group(1)), float(m.group(2))) if m else None
-
-
 def playing(con):
     m = re.search(r'input_lock=(-?\d+)', con.call('coop.uistate')['out'])
     return m and int(m.group(1)) == 0 and 'cine=0' in con.call('coop.pool')['out']
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def check_view(ck, con, name, what):

@@ -28,12 +28,8 @@ import math
 import re
 import time
 
+from harness import num
 from twoinst import Checks, start
-
-
-def num(out, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', out)
-    return int(m.group(1)) if m else None
 
 
 def clouds(con):

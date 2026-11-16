@@ -29,6 +29,7 @@ import argparse
 import re
 import time
 
+from harness import num, waiter
 import lane
 from twoinst import Checks, Monitor, alive, start
 
@@ -46,11 +47,6 @@ def out(con, line):
         return ''
 
 
-def num(text, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', text)
-    return int(m.group(1)) if m else None
-
-
 def mode(con):
     return out(con, 'game.mode')
 
@@ -66,14 +62,7 @@ def fps_over(con, secs=3.0):
     return (f1 - f0) / (t1 - t0) if f0 is not None and f1 is not None else 0.0
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def main():

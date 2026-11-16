@@ -20,6 +20,7 @@ own cell's position +0x4C, `coop.pool cam`):
 import re
 import time
 
+from harness import cell_pos as own_pos, num, waiter
 from twoinst import Checks, start
 
 LIMIT = 1.5
@@ -31,24 +32,7 @@ def cam(con):
     return (float(m.group(1)) if m else None), out.strip()
 
 
-def num(out, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', out)
-    return int(m.group(1)) if m else None
-
-
-def own_pos(con):
-    m = re.search(r'^avatar .*?pos=\((-?[\d.]+) (-?[\d.]+)\)', con.call('coop.pool')['out'], re.MULTILINE)
-    return (float(m.group(1)), float(m.group(2))) if m else None
-
-
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def playing(con):

@@ -22,6 +22,7 @@ import math
 import re
 import time
 
+from harness import pool
 import worlddiff
 from twoinst import Checks, start
 
@@ -81,10 +82,6 @@ def stale_sample(host, guest, gap):
 
 MISSING_R = 25.0
 STALE_AFTER = 1.0  # s: the guest's purge is one complete round (0.1 s) behind, 1 s after a lost chunk
-
-
-def pool(con):
-    return con.call('coop.pool')['out']
 
 
 def main():

@@ -29,13 +29,9 @@ import re
 import sys
 import time
 
+from harness import num
 from twoinst import Checks, start
 from coop_editor_desync import CANCEL, HEART, READY, mate, mode, wait
-
-
-def num(out, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', out)
-    return int(m.group(1)) if m else None
 
 
 def hp(con):

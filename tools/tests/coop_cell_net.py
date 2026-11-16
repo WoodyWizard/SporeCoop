@@ -14,6 +14,7 @@ import os
 import re
 import time
 
+from harness import pool, waiter
 from twoinst import Checks, start
 
 
@@ -22,22 +23,11 @@ def num(out, key, cast=int):
     return cast(m.group(1)) if m else None
 
 
-def pool(con):
-    return con.call('coop.pool')['out']
-
-
 def food(con):
     return num(pool(con), 'food')
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def mirror_map(guest):

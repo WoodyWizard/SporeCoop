@@ -28,9 +28,9 @@ its own cell was NaN in lab 20261030-104149); her free address space is sampled 
   SPORE_LANE=2 python3 tools/tests/coop_cell_4p.py [--food 300] [--far 200] [--near 50] [--seconds 60]
 """
 import argparse
-import re
 import time
 
+from harness import num
 from coop_multi import measure
 from party import Party
 from twoinst import Checks
@@ -40,11 +40,6 @@ CAP = 1800  # the budget keeps the host near 1300 (spikes of ~250 seen: loot, th
 
 def pool(p):
     return p.call('coop.pool')
-
-
-def num(out, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', out)
-    return int(m.group(1)) if m else None
 
 
 def on_screen(p):

@@ -31,6 +31,7 @@ import math
 import re
 import time
 
+from harness import pool_num as num
 from twoinst import Checks, start
 
 
@@ -45,11 +46,6 @@ def pos(con):
 
 def finite(p):
     return p is not None and all(math.isfinite(v) for v in p)
-
-
-def num(con, key):
-    m = re.search(r'\b' + key + r'=(-?\d+)', con.call('coop.pool')['out'])
-    return int(m.group(1)) if m else None
 
 
 def main():
