@@ -2319,8 +2319,12 @@ Fixed 2026-11-14 (72bc723c, feat/lineages-47): the card shows the host's creatur
   impress them.
 * Reproduce: not reproduced twice (Vandh.spo; the owner's Dorger.spo on TITAN): the guest reached 1 m of a standing herd,
   it did not move, and attacked.
-* Cause: open. The 2026-11-16 guess (Spore's own "scared" relation after one kill) was rejected by the owner: the
-  creatures are pushed at the player's speed, not running. Not reproduced after 3 revives on TITAN.
+* Cause: partly known (2026-11-16, TITAN test pair): herbivores' curious back-off (the GamerToes) ends after a moment
+  for the host's own creature but never for a partner's, so the partner is kept 3-5 m away. It is the creatures' own
+  AI (frozen, they let the partner walk up), not a push. Seen with an omnivore partner (prey species back off from it).
+  What keeps it going is not found (not the AI's target, stimuli or the "player species" checks). Parked by the owner
+  (decision 4Y, 2026-11-16).
+* Workaround: none known.
 * Ticket: BUG-9212
 
 ## Creature: a player who joins while the host is dead arrives dead (2026-11-15, overnight tour)
