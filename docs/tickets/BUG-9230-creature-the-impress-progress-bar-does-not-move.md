@@ -21,7 +21,7 @@ related:
 Owner play test 2026-11-15 (host Pandize on TITAN's Steam Spore, guest BigTexas over the internet, 58-dev): "The progress bar when impressing isn't moving on BigTexas' screen."
 
 ## Root cause
-Not known yet.
+Observed 2026-11-16 (TITAN QA pair, Dorger.spo copy, guest `coop.social goto/act` on a neutral proxy, screenshots out/shots/r66/meter_*.png): the guest's meter opens (the empty arc with the face at the top of the screen), but its bar never fills: the progress shows only as the mod's feed lines ("Impressing: 0%", "Answer it: 2/3"). `coop.social meter`: bar 0's ends lo and hi (+0x134 / +0x13C) are both 0.0 while the meter is open, so SocialMeter_SetBar 0xE31990 (pos = lerp(lo, hi, frac)) writes 0 whatever the progress (frac_set 0.01, 0.02, 0.33 seen). Inferred: the native session (SocialPropose 0xDA4360 / its tick) sets those ends or the fill some other way; the guest's meter_run never does. Not found yet: what sets them. The console cannot start a native session on the host (`coop.social post` on a neutral NPC: no engagement), so a native meter to compare needs a real social click. Note: the Steam SporeApp.exe is encrypted on disk; code is read from a running game (`mem.read`, scratchpad dis.sh).
 
 ## Fix
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
