@@ -263,3 +263,27 @@ anchor so other docs can link to it:
 * Reproduce: `coop.settings force all.friendly_fire on` on the host in Cell: a bite on the partner's cell does nothing.
 * Ticket: BUG-0899.
 
+
+## Civilization: animals on a guest's screen stand or walk 8-200 m from where the host has them (2026-11-16, fix/w51-t4)
+<a id="issue-civ-npc-apart"></a>
+
+* What happens: in the 4-player campaign's Civ, one guest (sometimes every guest) draws a few animals of a herd away
+  from the host's: on its own ground where the host's ground is 10 m lower, 8 m in the air, or 120-200 m off.
+* Reproduce: campaign_tc2, or its Civ segment again (`lab.py run campaign_segment --segment <segment.json>`, see
+  docs/06-testing.md#testing-final-triage-tribe-civ-0715): about 1 run in 2-3, on v0.7.14.1 too.
+* Known: three kinds, BUG-1216 (the terrain difference is BUG-0402's fourth kind).
+* Next steps: a package of its own (the sync-check at the guest's own height; grounding walked Civ proxies; the herd's
+  ids on one guest).
+* Ticket: BUG-1216
+
+## Civilization: after the host loads a save a few city citizens walk their own way on a guest (2026-11-16, fix/w51-t4)
+<a id="issue-civ-citizens-reload"></a>
+
+* What happens: after a reload of the world (the host loads its save, the guests follow) 2-5 of the city citizens near
+  a guest never get a partner of the host's: they walk on their own for as long as the game runs.
+* Reproduce: civ_citizens in warm runs (the lab reloads the fixture in running games): about 1 run in 4-5, v0.7.14.1
+  the same.
+* Known: the citizen kind binds within 30 m only and has no relocation (BUG-1221); a relocation within 60 m fixed the
+  places but the size check then failed in 2 of 6 runs, so it was not kept.
+* Next steps: nearest-pair binding after a reload, the host's size on a relocated citizen at once, a warm twin.
+* Ticket: BUG-1221
