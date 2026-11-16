@@ -18,12 +18,18 @@ notes are the player's). No test had ever started a performance (docs/re/tribe.m
 
 SPORE_FIX_OFF=tribe.duet must FAIL (the progress stays where the players' notes leave it: 0).
 
+BUG-1188: the host's game holds its creature attack event (`coop.drama hold 80`): its attacked village is the test's
+NPC village, and since the 0.7.15 lab start it began during the performance (one player's member stayed idle with the
+order). The guest's mirrors of both performers are sampled (`coop.tribe anims` on both games): the other player sees
+the performance animation. SPORE_DUET_DRAMA=1: the game's own attack, started right before the orders (FAIL).
+
 --duet-off (BUG-0768, the session setting tribe.duet off, `coop.settings force` before the performance): the same
 performance for one village, and the progress stays under 5 % for 25 s (SPORE_FIX_OFF=settings.all: it rises: FAIL).
 
   SPORE_LANE=7 python3 tools/tests/coop_tribe_duet.py
 """
 import math
+import os
 import random
 import re
 import sys
@@ -32,6 +38,7 @@ import time
 import play_tribe as pt
 import settings_lib as sl
 import twoinst
+from coop_tribe_mirror_anims import anims
 from coop_tribe_tools import members
 from twoinst import Checks, shot, start
 
@@ -114,7 +121,19 @@ def main():
             twoinst.forget_settings()
 
 
+# BUG-1188: the host's Drama Manager starts its creature attack (kind 7) ~30 s after the world load (rel/0.7.15's lab
+# start; ~57 s before), and its attacked village is the NPC tribe the game makes next: the test's. The attacked
+# village's members answer the attack, a performer ordered on one of them stays in an idle node with the order, and
+# only one player's member performed (FAIL 1 to 2 of 6). The test holds that event in the host's game (`coop.drama hold
+# 80`) until its world changes. SPORE_DUET_DRAMA=1 (the test's twin): no hold, and the host's game starts its creature
+# attack right before the players' orders (`coop.drama start 7`, the game's StartKind; nothing when the game's own
+# start came first), as the 0.7.15 lab start has it.
+OWN_DRAMA = os.environ.get('SPORE_DUET_DRAMA') == '1'
+
+
 def run(host, guest, ck, off):
+    if not OWN_DRAMA:
+        print('  host: ' + host.call('coop.drama hold 80')['out'].splitlines()[0], flush=True)
     time.sleep(5)
     mem = members(guest)
     gown = sorted(i for i, o in mem.items() if o != 0)
@@ -160,6 +179,8 @@ def run(host, guest, ck, off):
     time.sleep(1)
     ok_h, ok_g = prepare(hp, [chief, hid], centres[npc]), prepare(gp, [gid], centres[npc])
     ck(ok_h and ok_g, f'each player selected its instrument member (host {ok_h}, guest {ok_g})')
+    if OWN_DRAMA:
+        print('  host: ' + host.call('coop.drama start 7')['out'].strip().replace('\n', ' | ')[:200], flush=True)
     act_h, th = perform_click(hp, npc)
     act_g, tg = perform_click(gp, npc)
     for con, name, mid, act, target in ((host, 'host', hid, act_h, th), (guest, 'guest', gid, act_g, tg)):
@@ -167,12 +188,15 @@ def run(host, guest, ck, off):
             if name == 'guest':
                 con.call(f'coop.tribe select {mid} 1')
             r = con.call(f'coop.tribe act 26 {target}')['out'].strip()
-            print(f'  {name}: no click gave the order; DoActionForObjects: {r[:120]}', flush=True)
+            print(f'  {name}: no click gave the order; DoActionForObjects: {r[:220]}', flush=True)
             if 'ordered' in r:
                 act_h, act_g = (26, act_g) if name == 'host' else (act_h, 26)
+    st = pt.status(host)
+    print('  host: ' + '; '.join(l.strip() for l in st.splitlines() if 'last order' in l or 'last local order' in l)[:300] +
+          ' | ' + host.call('coop.drama target')['out'].strip()[:120], flush=True)
     ck(act_h == 26, f'the host\'s right-click on a member of the village gave CitizenAction 26 ({act_h})')
     ck(act_g == 26, f'the guest\'s order on a member of the village is CitizenAction 26 ({act_g})')
-    both, best, ticks, t0 = None, 0.0, 0, time.time()
+    both, best, ticks, t0, seen = None, 0.0, 0, time.time(), set()
     while time.time() - t0 < 25:
         ps, ticks = performers(host)
         owners = {}
@@ -184,11 +208,25 @@ def run(host, guest, ck, off):
             best = max([best] + [p['progress'] for p in ps if p['target'] == same[0]])
         print(f'  {time.time() - t0:4.1f} s: ' + '; '.join(f'#{p["id"]} o{p["owner"]} {p["target"]} s{p["state"]} '
                                                          f'{p["progress"]:.2f}' for p in ps) + f' ticks={ticks}', flush=True)
-        if both and best > 0.5 and not off:
+        ha, ga = anims(host), anims(guest)
+        print('    anims ' + ' '.join(f'#{i} host={"/".join(ha.get(i, ("-",)))} guest={ga.get(i, ("-",))[0]}'
+                                      for i in (hid, gid)), flush=True)
+        for i in (hid, gid):  # the guest's game plays the animation the host's performance tree started on the member
+            h, g = ha.get(i), ga.get(i)
+            if same and i in {p['id'] for p in ps} and h and g and h[0] == h[1] != '00000000' and g[0] == h[0]:
+                seen.add(i)
+        if time.time() - t0 < 3 or not both:  # BUG-1188: where each instrument member's tree is in the host's game
+            for mid in [hid, gid] + [t for t in (th, tg) if t is not None]:
+                print(f'    #{mid}: ' + host.call(f'coop.tribe ai {mid}')['out'].strip()[:150], flush=True)
+        if both and best > 0.5 and seen >= {hid, gid} and not off:
             break
         time.sleep(1)
     shot(host, 'duet_host.png')
+    print('  host: ' + ' | '.join(l.strip() for l in host.call('coop.drama')['out'].splitlines() if 'hold' in l or 'creature_attack' in l),
+          flush=True)
     ck(both is not None, f'both players\' members perform for the same village in the host\'s game ({both})')
+    ck(seen >= {hid, gid}, f'the guest\'s game shows both performers playing the host\'s performance animation '
+                           f'({sorted(seen)} of #{hid}, #{gid})')
     if off:
         ck(best < 0.05, f'duet off: the mini-game\'s progress did not rise by itself ({best:.2f}, duet ticks {ticks})')
     else:

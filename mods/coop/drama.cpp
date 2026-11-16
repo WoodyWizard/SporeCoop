@@ -29,6 +29,10 @@ static const char* kKind[9] = {"kind0", "night_predator", "ufo", "meteor", "baby
                                "sea_monster", "creature_attack", "summon"};
 static unsigned g_mask = 1u << 2;
 static unsigned g_started[9], g_refused[9];
+// tests (BUG-1188, `coop.drama hold <hex mask>`): this game's Drama Manager starts no event of these kinds (any role)
+// until the world changes; tribe_duet holds the creature attack, whose attacked village is the test's NPC village
+static unsigned g_test_hold, g_held[9];
+WORLD_STATE("drama.test_hold", nullptr, [] { g_test_hold = 0; }, []() -> size_t { return g_test_hold != 0; });
 static void* g_last_event[9];
 // BUG-1059: the last events belong to the drama manager of their world (coop.drama read them after a load)
 WORLD_STATE("drama.last_events", nullptr, [] {
@@ -137,6 +141,11 @@ static Start_t o_Start;
 static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
 {
     unsigned kind = ev ? *(const unsigned*)((const uint8_t*)ev + 0x14) : 99;
+    if (kind < 9 && (g_test_hold >> kind & 1)) { // BUG-1188 (tests): stays inactive, as a guest's held event
+        if (g_held[kind]++ < 3)
+            H->log(M, SK_INFO, "drama: %s event held (coop.drama hold, tests)", kKind[kind]);
+        return;
+    }
     if (kind < 9)
         g_last_event[kind] = ev;
     bool tribe_attack = g_guest_attacks_fix && kind == 7 && game::mode_id() == modes::kTribe;
@@ -256,6 +265,8 @@ std::string debug(const std::vector<std::string>& a)
     char b[256];
     if (a.size() >= 2 && a[0] == "mask") {
         g_mask = (unsigned)strtoul(a[1].c_str(), nullptr, 16);
+    } else if (a.size() >= 2 && a[0] == "hold") {
+        g_test_hold = (unsigned)strtoul(a[1].c_str(), nullptr, 16);
     } else if (a.size() >= 2 && a[0] == "start") {
         // the game's own "start every idle event of this kind" (0xD4D740, as the stage's start does)
         unsigned kind = (unsigned)atoi(a[1].c_str());
@@ -307,6 +318,16 @@ std::string debug(const std::vector<std::string>& a)
                  av && skg::readable(av + 0x1678, 4) ? *(int*)(av + 0x1678) : -1,
                  av && skg::readable(av + 0xB58, 4) ? *(uint32_t*)(av + 0xB58) : 0);
         return b;
+    }
+    if (g_test_hold) {
+        snprintf(b, sizeof b, "drama: test hold=%X held:", g_test_hold);
+        out += b;
+        for (int k = 0; k < 9; k++)
+            if (g_test_hold >> k & 1) {
+                snprintf(b, sizeof b, " %s=%u", kKind[k], g_held[k]);
+                out += b;
+            }
+        out += "\n";
     }
     snprintf(b, sizeof b, "drama: mask=%X guest=%d mode=%08X flock_relay=%d relayed=%u refused=%u updates=%u "
              "flock_event=%p forgotten=%u\n",
