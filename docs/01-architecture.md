@@ -662,3 +662,14 @@ host_away_tick and the modules' local play (not moved to HostView: their edges, 
 Tribe: a guest that heard MSG_HOST_BUSY ignores kind 21 (the host still sends it for 0.7.14 guests), the pause net
 (BUG-1101) counts the wait as held. Tribe and Civ hold a guest's commands in one `busy_model::HeldPump` each (the
 two HeldCommands copies, Civ's 5 s note throttle). `coop.status` "host busy:" line.
+
+## The lifecycle fingerprint (2026-11-15, feat/w51-labstate)
+<a id="arch-lifecycle-fingerprint"></a>
+
+D2 of docs/plan-0.7.15.md (BUG-1179). Every entry of the lifecycle registry (#arch-lifecycle-registry) has a digest
+of its state: its own `digest()` (`LIFECYCLE_STATE_D(name, scope, fix, reset, held, digest)`) or the count of its
+`held()`; 0 means it holds nothing. `lifecycle::fingerprint()` lists the entries with a digest and their fnv-1a hash;
+`lifecycle::reset_all(on)` runs both scopes' resets. A fresh game holds nothing, and so must a game right after
+reset_all: an entry that still holds something is state its own reset forgets. `coop.testreset` (reset_all, then the
+fingerprint) is the lab's warm reset contract (docs/06-testing.md#testing-warm-fingerprint); tests/npc_tests.cpp
+`test_fingerprint` checks the digest, the hash, a forgetting entry and the registry's switch.

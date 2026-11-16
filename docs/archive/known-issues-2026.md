@@ -3450,3 +3450,19 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: `lab.py run space_rivalry --repeat 2 --lane N` (warm, the second run), out/lab/20261115-042847.
 * Ticket: BUG-1146 (fixed, unreleased, fix/w51-tests): the counters are diagnostics no player sees; the test reads
   them as deltas from its start (docs/06-testing.md#testing-monitor-nowhere).
+
+## Lab: the guest's own creature in the fixture world depends on the lane's history (2026-11-15, fix/w51-evolve)
+<a id="issue-lab-worlds-ini"></a>
+
+* What happens: on a lane whose guest profile has `SporeCoop/worlds.ini` `[creature] 68AC222A=<creation>` (lanes 3,
+  9, 10 on 2026-11-15) the guest of every Creature test plays its own creature 3 s after each world load; on a clean
+  lane it plays the world's species. Tests that silently assumed one of the two passed or failed with the lane
+  (editor_strays BUG-1170, evolve_world BUG-1173).
+* Reproduce: `cat <lane guest profile>/SporeCoop/worlds.ini`; the guest's log says "from this world's record
+  (worlds.ini)" after the load.
+* Known: twoinst's cold start removes `choices.ini` only; an own editor's result or a choice writes `worlds.ini`
+  (BUG-0345, BUG-0638).
+* Next steps: the cold start removes `worlds.ini` and tests that need the own creature set it, then a Creature
+  regression run.
+* Ticket: BUG-1176 (fixed, unreleased, feat/w51-labstate): the cold start removes worlds.ini of both profiles,
+  evolve_world chooses the own creature, the warm fingerprint covers the file (docs/06-testing.md#testing-warm-fingerprint).
