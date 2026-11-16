@@ -1,20 +1,20 @@
 ---
 id: BUG-1217
 title: C3: a Tribe guest's game stops for 0.1 s with two cards ("game stands" / "goes on") on every join and host save: the host's own save was told as a caption stand
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-16
 source: plan
 role: 
 versions: unreleased
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
-related:
+fixed_in: unreleased
+branch: fix/w51-visual
+commits: 5b0db943
+tests: host_save_tribe, tests/core_tests.cpp busy_classify, host_pause_cell, host_pause_creature, host_pause_tribe, host_pause_civ, host_pause_space, host_pause_rivals, host_pause_guest
+signature: host busy: none (why 0060) told the guests ... why 0000 0.1 s later; guest: "<host>'s game stands: yours waits until it goes on"
+docs: docs/re/host-centric.md#host-centric-save-stand, docs/06-testing.md#testing-visual-0715
+related: BUG-1142, BUG-1086, BUG-0864, BUG-0531
 ---
 
 ## Report
@@ -47,8 +47,16 @@ classified as before). Unit test tests/core_tests.cpp busy_classify (a save's st
 the pause menu during a save).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test host_save_tribe (`coop_host_pause.py --stage tribe --host-save`, fix/w51-visual lanes 2/3): the host's autosave
+(`coop.autosave milestone`) and the share's save of the guest's leave and join; the guest sampled ~10 times a second.
+* FAIL with `SPORE_FIX_OFF=core.host_busy_save`: 20261116-093550 (both: the guest's time stood, both cards, waits 0 -> 1
+  -> 2), 20261116-094034 (the same with the final test).
+* PASS: 20261116-094321, 20261116-101029 (no stand sample, no card, waits 0 -> 0); 20261116-093556 / 20261116-094037
+  passed the autosave half and failed only an earlier draft of the test's rejoin watch (it ran into the guest's own
+  world load).
+* Unit: tests/core_tests.cpp busy_classify (make test).
+* The host_pause_* tests (BUG-1142) on the fixed build: see the History line of the final batch.
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16 (fix/w51-visual): fixed: the save is no stand (`core.host_busy_save`); test host_save_tribe.

@@ -1,20 +1,20 @@
 ---
 id: BUG-1219
 title: Visual: the Creature status block's "Pack: ..." line runs off the right screen edge
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-16
 source: plan
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
-related:
+fixed_in: unreleased
+branch: fix/w51-visual
+commits: 5b0db943
+tests: status_edge, tests/text_tests.cpp test_wrap_fields
+signature: Pack: ... | h (cut at the right edge)
+docs: docs/06-testing.md#testing-visual-0715
+related: BUG-0155, BUG-0949
 ---
 
 ## Report
@@ -35,8 +35,12 @@ close (regen)  |  rescue ready" and "joint hits N, rescues N  |  hits host N, pa
 `core.status_wrap` (off: one line as before, the rect as before).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test status_edge (coop_status_edge.py, Creature, both games' `coop.status` status block line, a key frame):
+* FAIL with `SPORE_FIX_OFF=core.status_wrap`: 20261116-094034 (widest line to x 1824 / 1842 of 1440; frame
+  out/lab/20261116-094034/frames/status_edge/01_status_block_host.jpg: the line cut at "| hi").
+* PASS: 20261116-094037, 20261116-101029 (to x 1419 of 1440; frame 20261116-094037 .../01_status_block_guest.jpg: two
+  green lines inside the screen).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16 (fix/w51-visual): fixed (`core.status_wrap`); test status_edge.

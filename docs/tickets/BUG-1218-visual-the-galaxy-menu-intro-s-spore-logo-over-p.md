@@ -1,20 +1,20 @@
 ---
 id: BUG-1218
-title: Visual: the galaxy menu intro's SPORE logo over play on the host after a quick load from the menu (menu_splash, civ_designs key frames)
-status: open
+title: Visual: the start-up video's SPORE logo over play after a quick load from the menu (menu_splash, civ_designs key frames; not the menu intro)
+status: fixed
 kind: bug
 stage: Menu
 reported: 2026-11-16
 source: plan
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
-related:
+fixed_in: unreleased
+branch: fix/w51-visual
+commits: d9a45070, e41bb9fb
+tests: menu_movie
+signature: world: the galaxy menu intro would start outside the menu (mode 01654C01): not started (BUG-0626), 0.3-0.9 s after a frame with the SPORE logo
+docs: docs/re/graphics.md#graphics-startup-video, docs/06-testing.md#testing-visual-0715
+related: BUG-0626, BUG-0607, BUG-0938
 ---
 
 ## Report
@@ -53,8 +53,16 @@ video was still playing in the stage (mode ...): stopped (BUG-1218, n)"; coop.st
 PauseMovie verified in data/symbols/overrides_dc04aee5.sym.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test menu_movie (coop_menu_movie.py, cold, the guest joins 0.5 s after its menu; its video held by PauseMovie right
+before the join; both games sampled twice a second from the join):
+* FAIL with `SPORE_FIX_OFF=world.menu_movie`: 20261116-100532, 20261116-100758 (the guest's video in its Creature stage
+  for the whole 20 s; frame out/lab/20261116-100758/frames/menu_movie/01_stage_8-0s_guest.jpg: the video over the
+  Creature HUD with letterbox bars).
+* PASS: 20261116-100640, 20261116-100857 (one sample with the video, then stopped by the mod; frames 8 s / 12 s after
+  the stage: Creature play, no logo).
+* Without the test seam (the natural race) the switch-off runs showed the video 0.6-3.5 s in the guest's stage
+  (20261116-100245 passed by the 2 s rule, 20261116-100032 failed): too short a window for a sure twin, hence the hold.
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16 (fix/w51-visual): a real overlay (the start-up video), fixed (`world.menu_movie`); test menu_movie.

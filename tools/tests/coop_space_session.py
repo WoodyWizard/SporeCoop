@@ -59,6 +59,27 @@ def close_reward(con, tries=3):
         time.sleep(1.5)
 
 
+def land_colony(con, planet, who):
+    """coop_space_map.land_on for a planet `coop.targets` lists as a colony of the own empire (key 'C<PlanetID>', tech 5)"""
+    from coop_space_map import context, place, targets
+    for key in ('C' + planet, 'P' + planet):
+        for _ in range(6):
+            t = targets(con)
+            if key not in t:
+                con.call('wheel 720 540 -4')
+                time.sleep(1.5)
+                continue
+            _, x, y = t[key]
+            con.call(f'click {x} {y}')
+            time.sleep(1.5)
+            if place(con)[2] == planet:
+                wait(lambda: targets(con).get(key, (1e9,))[0] < 40, 30)
+                print(f'  {who} land ({key}):', sp(con, 'land'), flush=True)
+                return wait(lambda: context(con) == 'planet', 30) is not None
+    print(f'  {who}: could not pick planet {planet} (C or P)', flush=True)
+    return False
+
+
 def colony_frame(host, guest, planet, tag, land=True):
     """BUG-1220: a key frame of the restored colony on both games: both land on it (each game's own ship; a caption or a
     badge's reward box closed first), the game's own camera over the ship (`coop.census all` lists no city in Space, so
@@ -80,9 +101,8 @@ def colony_frame(host, guest, planet, tag, land=True):
                 p.land_retry(planet, seconds=100)
                 if p.place()[0] == want:
                     break
-            if p.place()[0] != want:  # (the guest's own colony: the bot's click did not land there in the lab)
-                from coop_space_map import land_on
-                land_on(host if role == 'host' else guest, planet, role)
+            if p.place()[0] != want:  # (a colony of the player's own empire is a 'C' target, not a 'P')
+                land_colony(host if role == 'host' else guest, planet, role)
             seen[role] = f'{p.place()[0]:08X}'
         time.sleep(5)
         for role, con in (('host', host), ('guest', guest)):
