@@ -50,6 +50,9 @@ behaviour where it has one.
   tribe_owners_session, tribe_editor_world, tribe_bounce_world, tribe_host_reload_reset, tribe_other_world,
   tribe_pause_leak, tribe_outfit, tribe_cmd_listed, tribe_attack_spot), 20261115-215251 (mixed_version_tribe,
   mixed_version_tribe_host), 20261115-215636 (play_tribe --quick again, tribe_save_strip); make test passes.
+- After the merge of rel/0.7.15 4b06b7ab (feat/w51-npc, 6b7ac00b): make test passes; 20261115-220931 (play_tribe --quick,
+  tribe_member_air, tribe_mirror_lifetime, tribe_mirror_anims, tribe_party_music: 5 of 5) and 20261115-222232
+  (play_tribe --quick, mixed_version_tribe: 2 of 2).
 
 ## History
 - 2026-11-15: opened.
