@@ -1,4 +1,5 @@
 // Host-owned world state (wsync.h, docs/sync-architecture-plan.md#sync-wsync).
+#include "lifecycle.h"
 #include "wsync.h"
 
 #include <windows.h>
@@ -1504,6 +1505,7 @@ void on_session_end()
         h = HostRow{};
     g_force = true;
 }
+LIFECYCLE_HOOK("wsync.session", lifecycle::kSessionEnd, -13, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 void on_player_join() { g_force = true; }
 

@@ -1,4 +1,5 @@
 // Replicated state fields of mirrored objects (fields.h, docs/sync-architecture-plan.md#sync-fields).
+#include "lifecycle.h"
 #include "fields.h"
 #include "fixes.h"
 #include "player_life.h"
@@ -280,12 +281,15 @@ void on_world_change()
     g_want.clear();
     g_sent.clear();
 }
+// C2 (BUG-1141): a world that was open changed or closed (world_id.h; not an editor visit, decision 2)
+LIFECYCLE_HOOK("fields.world", lifecycle::kWorldChange, -86, [](const lifecycle::Ctx& c) { if (c.from_stage >= 0) on_world_change(); }, false);
 
 void on_session_end()
 {
     g_want.clear();
     g_sent.clear();
 }
+LIFECYCLE_HOOK("fields.session", lifecycle::kSessionEnd, -86, [](const lifecycle::Ctx&) { on_session_end(); }, false); // C2 (BUG-1141): end_session
 
 Stats stats(uint8_t kind) { return g_stats[kind]; }
 

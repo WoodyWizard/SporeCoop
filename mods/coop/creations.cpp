@@ -1,3 +1,4 @@
+#include "lifecycle.h"
 #include "creations.h"
 #include "player_life.h"
 
@@ -3114,6 +3115,7 @@ void on_session_end()
     g_swapped_avatar = nullptr;
     g_cell_set = {};
 }
+LIFECYCLE_HOOK("creations.session", lifecycle::kSessionEnd, -46, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 Key player_key(uint8_t player, Kind k)
 {

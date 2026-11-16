@@ -1,3 +1,4 @@
+#include "lifecycle.h"
 #include "squadron.h"
 #include "call_guard.h"
 #include "civ.h"
@@ -1199,6 +1200,7 @@ void on_session_end()
     g_rx.reset(); // (its counters stay)
     g_drop_left = 0;
 }
+LIFECYCLE_HOOK("squadron.session", lifecycle::kSessionEnd, -42, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 std::string status()
 {

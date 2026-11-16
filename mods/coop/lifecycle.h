@@ -130,6 +130,7 @@ struct Ctx {
     uint32_t from_world = 0;      // kWorldChange: world_id serial before / now (world_id.h)
     uint32_t to_world = 0;
     int8_t from_stage = -1, to_stage = -1;
+    uint8_t why = 0;              // kWorldChange: world_id::Why (the log, coop.lifecycle)
 };
 
 using HookFn = void (*)(const Ctx&);

@@ -9,6 +9,8 @@
 #include "civ_logic.h"
 #include "squadron.h"
 #include "lifecycle.h"
+#include "busy_model.h"
+#include "world_id.h"
 #include "mirror_registry.h"
 #include "player_life.h"
 #include "census.h"

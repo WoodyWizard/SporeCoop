@@ -1,3 +1,4 @@
+#include "lifecycle.h"
 #include "find.h"
 
 #include <algorithm>
@@ -227,6 +228,7 @@ void on_session_end()
     g_tab = findx::Colors();
     changed();
 }
+LIFECYCLE_HOOK("pfind.session", lifecycle::kSessionEnd, -100, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 // ---------------- arrows ----------------
 bool arrows_on() { return g_arrows_fix && settings::on(settings::kPartnerArrows); }

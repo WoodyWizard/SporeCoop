@@ -215,6 +215,8 @@ struct Vote {
 };
 
 // ---- defined in coop.cpp ----
+std::string world_id_status(); // C2 (BUG-1141): coop.lifecycle world
+char host_out_of_stage(); // 'm' menu, 'e' editor, 'l' load, 0: the host plays our stage (or unknown)
 extern bool g_anim_log;
 extern bool g_away_test;
 extern bool g_disc_on;
@@ -296,6 +298,13 @@ void give_target_cycle();
 void keepalive_start();
 void keepalive_stop();
 void notice(const std::string& text, int from = -1);
+
+// ---- defined in host_busy.cpp (C3, BUG-1142) ----
+void host_busy_tick(double now);
+void host_busy_pause_menu(bool shown);
+void host_busy_join(uint8_t id);
+void host_busy_message(uint8_t from, net::Reader& r);
+std::string host_busy_status();
 
 // ---- defined in coop_cmds.cpp ----
 void register_commands_cell();
@@ -423,6 +432,7 @@ int editor_pause_count();
 int evo_flag_now();
 uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void* model, int flag);
 unsigned game_busy();
+bool editor_coming(double now); // C3 (BUG-1142)
 void SK_CDECL h_CellToCreature();
 void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5);
 void drop_vote(const char* why);

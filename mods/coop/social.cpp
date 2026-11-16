@@ -1268,6 +1268,7 @@ void on_session_end()
     g_host_table.clear();
     g_sent.clear();
 }
+LIFECYCLE_HOOK("social.session", lifecycle::kSessionEnd, -55, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 std::string status()
 {

@@ -38,7 +38,7 @@
 #define FAMILY(name, id, rev, minor, stages, title, files)
 #endif
 
-FAMILY(session,   1, 1, 0, STAGE_ALWAYS, "session", "net/protocol.h")
+FAMILY(session,   1, 1, 1, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 0, STAGE_CREATURE, "Creature", "")
 FAMILY(npc,       4, 1, 0, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
@@ -121,6 +121,7 @@ MSG(66, SETTINGS,     R,  Host,  Session,   Settings,    Both,   session,   "the
 MSG(67, COLORS,       R,  Any,   Session,   Colors,      Both,   session,   "u8 kind: the player colour table, a guest's choice")
 MSG(68, REPORT,       R,  Any,   Session,   Report,      Both,   session,   "the session report (net/sreport.h)")
 MSG(69, HOST_WORLD,   R,  Host,  Session,   HostWorld,   Both,   session,   "u32 world: the host's save changed (BUG-0933)")
+MSG(70, HOST_BUSY,    R,  Host,  Session,   HostBusy,    Client, session,   "the host's game is paused, in an editor or away (busy_model.h, 14 bytes v1: u8 version, u8 state, u16 why, u32 mode, u32 world, u16 seq; BUG-1142)")
 
 #undef MSG
 #undef FAMILY
