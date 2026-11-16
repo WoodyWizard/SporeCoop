@@ -31,6 +31,9 @@
   why. It may join again.
 
 ### Fixed
+- Creature: a guest who plays its own creature (made in the Creature Creator) and calls a mate now gets its own editor,
+  with the red cross and its own parts allowed; before, the evolution editor opened, "done" only showed a parts error
+  and there was no way out of it (BUG-1222).
 - Tribe: a host's tribe member that gets hungry or starves shows it on a guest's screen right away; before, a member
   the guest's game had just made for it (when the guest joined, or a new member of the tribe) showed a full hunger
   bar there for up to two minutes (BUG-1187).

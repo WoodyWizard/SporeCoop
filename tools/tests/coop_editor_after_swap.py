@@ -8,10 +8,14 @@ being built stayed black for good and could not be left (seen at 2-17 fps in leg
 
 1. Two games on the creature fixture; the guest runs at ~6.7 fps (frame.limit 150).
 2. The guest leaves and joins again (it loads the host's world, its own creature is put back).
-3. 3 s after it is back it asks for its editor (the game's own entry, `coop.vote editor`).
-4. Checked on the guest's game: the editor opens within 120 s, draws (the screen is not black) and
-   one click on its green check brings the guest back to the Creature stage (an evolution editor has no red cross
-   since BUG-0720; BUG-1199).
+3. 3 s after it is back it asks for its editor as its mating call does (the creature stage's evolution request,
+   `coop.vote evolve`; since BUG-0720 `coop.vote editor` builds the same flags).
+4. Checked on the guest's game: the editor opens within 120 s, draws (the screen is not black) and can be left:
+   playing its own creature the guest gets its own editor (BUG-1222), left with one click on the red cross; playing the
+   world's species (--no-swap) it gets the game's evolution editor, which has no red cross, left with its green check
+   (BUG-1199). The pointer is moved onto the button first, a player clicks again (3 tries).
+   SPORE_FIX_OFF=creature.own_mating_editor: the guest playing its own creature gets the evolution editor, whose
+   check is blocked by the part-list error and which has no cross (FAIL).
 
 --no-swap: the guest plays the world's own creature (no swap after the load: only the new avatar of
 the loaded world, lab 20261030-162204 showed the same black editor 1.7 s after such a load).
@@ -23,7 +27,7 @@ import time
 
 import creations_state
 import lane
-from coop_legless_guest import DONE, QUIT, mode, wait
+from coop_legless_guest import CANCEL, DONE, QUIT, mode, wait
 from twoinst import Checks, shot, start
 
 
@@ -78,7 +82,7 @@ def run(host, guest):
     back = wait(lambda: 'Creature' in mode(guest) and guest.call('coop.avatar')['ok'], 180, 0.3)
     ck(left and back, 'the guest left its old world and is back in the host\'s')
     time.sleep(3)
-    print(' ', guest.call('coop.vote editor')['out'].splitlines()[0], flush=True)
+    print(' ', guest.call('coop.vote evolve')['out'].splitlines()[0], flush=True)
     t0 = time.time()
     opened = wait(lambda: 'Editor' in mode(guest), 120, 1)
     ck(opened, f'its editor opens ({time.time() - t0:.0f} s after the request)')
@@ -94,17 +98,29 @@ def run(host, guest):
         drawn = b[-1] > 25 or b[-1] < 0
     print(f'  editor screen brightness: {b}', flush=True)
     ck(drawn, 'the editor draws (not a black screen)')
-    # the request is the game's own evolution entry (`coop.vote editor`, the evolution flags since BUG-0720, 0.7.11): its
-    # editor has no red cross (only a creation editor has, BUG-0756), it is left with the green check (BUG-1199)
-    guest.call('click %d %d' % DONE)
-    out = wait(lambda: 'Creature' in mode(guest), 30, 1)
-    if not out:
-        shot(guest, 'editor_after_swap_exit.png')  # what is on the screen when the check did not end the editor
-        guest.call('click %d %d' % QUIT)
+    # BUG-1222: playing its own creature the guest's own editor opens (red cross); playing the world's species the game's
+    # evolution editor (no red cross since BUG-0720, its green check, BUG-1199)
+    own = '--no-swap' not in sys.argv
+    btn, what = (CANCEL, 'red cross') if own else (DONE, 'green check')
+    out = False
+    for n in range(3):
+        guest.call('move %d %d' % btn)
+        time.sleep(1)
+        guest.call('click %d %d' % btn)
         out = wait(lambda: 'Creature' in mode(guest), 20, 1)
-    ck(out, 'the green check brings the guest back to the Creature stage')
-    print(' ', [l for l in guest.call('log 200')['out'].splitlines() if 'body is built' in l or 'own avatar is now' in l][-3:],
-          flush=True)
+        if out:
+            print(f'  the {what} took click {n + 1}', flush=True)
+            break
+        if own:  # an unchanged creature: no box; an edited one asks "Exiting will cause your changes to be lost"
+            guest.call('click %d %d' % QUIT)
+            out = wait(lambda: 'Creature' in mode(guest), 10, 1)
+            if out:
+                break
+    if not out:
+        shot(guest, 'editor_after_swap_exit.png')  # what is on the screen when the editor could not be left
+    ck(out, f'the {what} brings the guest back to the Creature stage')
+    print(' ', [l for l in guest.call('log 300')['out'].splitlines() if 'body is built' in l or 'own avatar is now' in l
+                or 'BUG-1222' in l][-4:], flush=True)
     guest.call('frame.limit auto')
     ck.faults(host=host, guest=guest)
     return ck.result()

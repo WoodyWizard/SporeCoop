@@ -1547,3 +1547,25 @@ the world's species from following:
   sends the world after all (lab 20261116-090728 parts_transition; v0.7.14.1 20261116-084702 the same). That share
   waits for the host's evolution cinematic (BUG-0019), i.e. until its caption is confirmed. ? Whether the Landfall
   editor changes the species' content under the same key (so the world carries the new body) was not looked at.
+
+## A guest's own mating call while it plays its own creation (2026-11-16, fix/w51-t2)
+<a id="creations-own-mating-editor"></a>
+
+BUG-1222. Lab lane 10 (editor_after_swap: the guest chose its own creation 'Kirgle' 0x290225CD, left and joined
+again, then the creature stage's evolution request as its mating call builds it, `coop.vote evolve`, tag 0x12191CA):
+* ✔ The guest's `h_Submit` sends a guest's own in-stage request on as the game's (BUG-0516, "evolves its own
+  creature"): the evolution editor opens with the evolution flags (+0x39 / +0x3B = 0, +0x3C = 1), whose screen has
+  only the green check (no red cross, #creations-editor-request-builder). Its palette locks the parts the species has
+  not collected (BUG-0368).
+* ✔ The green check does nothing (three clicks, 20 s apart, at 6.7 fps and at normal fps; the screen unchanged):
+  the part-list error (bit 5 of `editor+0x48`, section 7 of this file) blocks "done" for a creation with Creature
+  Creator parts, and `h_BlockingErrors` waives it only in the own editor (`g_own_editor`). The guest cannot leave.
+  The world's species (editor_after_load) has no such error: its check works.
+* Fix `creature.own_mating_editor`: in the host's world (`host_world_now() == Same`) a guest playing one of its own
+  creations (`mine(kCreature)` is in `options(kCreature)`) has the game's request refused (`g_evo_flag_refused`,
+  BUG-0920) and its own editor scheduled as after a vote (`g_own_editor_due`, `own_editor_tick`: the stage settled,
+  the avatar's body built, BUG-0318): the red cross, the part-list waiver, no evolution tag (the world's species is
+  not evolved by it, BUG-0466 charges its price). Log: "evolution: this guest plays its own creation: its mating call
+  opens its own editor <id> (BUG-1222)". Off: the game's editor (0.7.14).
+* ? Not tried: the game's own mating call with real input (the test builds the same request), a guest in its own
+  world (left unchanged: the request goes on as before).
