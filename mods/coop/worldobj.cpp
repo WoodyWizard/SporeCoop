@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <unordered_map>
 #include <vector>
 
 #include "fields.h"
@@ -1211,6 +1212,16 @@ static bool g_tools_planet_fix = true;
 COOP_FIX("wobj.tools_planet", "BUG-0488", g_tools_planet_fix, "tribe: every village's tools on the planet are the host's in a guest's game, not only those near it");
 static float kind_range(int k) { return k == tool_kind() && g_tools_planet_fix ? 3000.f : g_kinds[k].range; }
 
+// BUG-9237 (4P A, 2026-11-15: world objects were the biggest item left of a guest's traffic, 210 KB a minute: each
+// kind's snapshot of the objects near the guest every 0.2-1 s, the same list nearly always): a snapshot whose object list
+// equals the last one sent to that guest goes again only after kSameSnapEvery s (the guest keeps its objects; a new or
+// changed object, or one gone, changes the list and goes at once). `coop.fix wobj.same_snapshot off`: every time.
+static bool g_same_snap_fix = true;
+COOP_FIX("wobj.same_snapshot", "BUG-9237", g_same_snap_fix, "wobj: an unchanged snapshot of world objects is sent again only every 3 s");
+constexpr double kSameSnapEvery = 3.0;
+struct SnapSent { uint32_t hash = 0; double at = -100; };
+static std::unordered_map<uint32_t, SnapSent> g_snap_sent;
+static uint32_t g_same_snaps;
 static void host_tick(double now)
 {
     uint8_t sb = stage_bit();
@@ -1259,6 +1270,7 @@ static void host_tick(double now)
             w.f32(c.y);
             w.f32(c.z);
             w.f32(r);
+            const size_t items_at = w.data.size();
             w.u8((uint8_t)close.size());
             for (auto& [d, it] : close) {
                 w.u32(it->id);
@@ -1273,6 +1285,16 @@ static void host_tick(double now)
                     w.f32(it->aux.y);
                     w.f32(it->aux.z);
                 }
+            }
+            if (g_same_snap_fix) { // BUG-9237: the same objects as last time: again only after kSameSnapEvery s
+                uint32_t h = 2166136261u;
+                for (size_t b = items_at; b < w.data.size(); b++) h = (h ^ w.data[b]) * 16777619u;
+                auto& last = g_snap_sent[((uint32_t)p.id << 8) | (uint32_t)k];
+                if (last.hash == h && now - last.at < kSameSnapEvery) {
+                    g_same_snaps++;
+                    continue;
+                }
+                last = {h, now};
             }
             C.sess->send_unreliable_to(p.id, net::MSG_WOBJ, w);
             g_st[k].tx++;

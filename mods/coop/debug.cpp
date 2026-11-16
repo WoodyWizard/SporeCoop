@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <algorithm>
 #include <atomic>
@@ -838,6 +839,7 @@ int c_sample(void*, int argc, const char* const* argv, SkOut* out)
     self.reserve(4096);
     stack.reserve(16384);
     uint32_t n = 0, outside = 0;
+    std::map<std::string, uint32_t> mods;
     DWORD t0 = GetTickCount();
     std::vector<uintptr_t> seen;
     seen.reserve(512);
@@ -861,8 +863,18 @@ int c_sample(void*, int argc, const char* const* argv, SkOut* out)
             uintptr_t eip = ctx.Eip;
             if (eip >= lo && eip < hi)
                 self[eip & ~(uintptr_t)0xF]++;
-            else
+            else {
                 outside++;
+                HMODULE mod = nullptr; // 4Q (2026-11-15): whose code the main thread runs outside the game's
+                if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                       (LPCSTR)eip, &mod) && mod) {
+                    char name[MAX_PATH] = {};
+                    GetModuleFileNameA(mod, name, sizeof name);
+                    const char* base = strrchr(name, '\\');
+                    mods[base ? base + 1 : name]++;
+                } else
+                    mods["(no module)"]++;
+            }
             seen.clear();
             for (size_t i = 0; i < got / 4; i++)
                 if (words[i] >= lo && words[i] < hi && std::find(seen.begin(), seen.end(), words[i]) == seen.end()) {
@@ -884,6 +896,14 @@ int c_sample(void*, int argc, const char* const* argv, SkOut* out)
         SAY("\n");
     };
     SAY("samples=%u outside_exe=%u ms=%d\n", n, outside, ms);
+    {
+        std::vector<std::pair<uint32_t, std::string>> v;
+        for (auto& [k, c] : mods) v.push_back({c, k});
+        std::sort(v.rbegin(), v.rend());
+        SAY("outside by module:");
+        for (size_t i = 0; i < v.size() && i < 10; i++) SAY(" %s=%u", v[i].second.c_str(), v[i].first);
+        SAY("\n");
+    }
     print("self", self);
     print("stack", stack);
     return 0;

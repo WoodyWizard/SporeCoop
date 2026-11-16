@@ -166,7 +166,7 @@ inline MsgClass msg_class(uint8_t type)
         return MsgClass::HostWorld;
     case net::MSG_ADVENTURE_ACTORS: // Lineages: gated by the adventure module (its mission and place)
         return MsgClass::Module;
-    case net::MSG_NPC_STATE: case net::MSG_NPC_SPAWN: case net::MSG_NPC_DESPAWN: case net::MSG_DAMAGE_REQ:
+    case net::MSG_NPC_STATE: case net::MSG_NPC_STATE_C: case net::MSG_NPC_SPAWN: case net::MSG_NPC_DESPAWN: case net::MSG_DAMAGE_REQ:
     case net::MSG_NPC_RESYNC: case net::MSG_NPC_ANIM: case net::MSG_NPC_MEAT: case net::MSG_WOBJ: case net::MSG_EFFECT:
     case net::MSG_CIV_CMD: case net::MSG_UFO_STATE: case net::MSG_UFO_HIT: case net::MSG_UFO_DAMAGE: case net::MSG_SPACE:
         return MsgClass::Module;

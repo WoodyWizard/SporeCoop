@@ -369,6 +369,7 @@ void set_ai_target_picker(AiTargetPicker fn);
 using AiSkip = bool (*)(void* npc);
 void set_ai_skip(AiSkip fn);
 uint32_t ai_swaps(); // NPC ticks run with a puppet as the player (diagnostics)
+void ai_timing(double& mod_ms, double& game_ms, uint64_t& ticks, bool reset); // 4Q: the NPC AI tick's cost (mod / game)
 // BUG-9156: fn(ctx) runs with creature t as mpAvatar (the follow camera of a spectating player), as an NPC tick does
 // (the avatar's tuning lent, swap_guard_tick undoes a swap a fault left open); t null or the avatar: fn runs as it is
 void run_as_avatar(void* t, void (*fn)(void*), void* ctx);

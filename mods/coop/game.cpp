@@ -1218,17 +1218,48 @@ static AiSkip g_ai_skip;
 void set_ai_skip(AiSkip fn) { g_ai_skip = fn; }
 uint32_t ai_swaps() { return g_ai_swaps; }
 
+// 4Q step 1 (2026-11-15): what the NPCs' AI costs per minute: the mod's part (the skip test and the target picker) and
+// the game's own AI tick, in QueryPerformanceCounter ticks (effects.cpp logs them with the minute's perf line)
+static uint64_t g_ai_mod_qpc, g_ai_game_qpc, g_ai_ticks;
+static inline uint64_t qpc() { LARGE_INTEGER v; QueryPerformanceCounter(&v); return (uint64_t)v.QuadPart; }
+void ai_timing(double& mod_ms, double& game_ms, uint64_t& ticks, bool reset)
+{
+    LARGE_INTEGER f;
+    QueryPerformanceFrequency(&f);
+    mod_ms = g_ai_mod_qpc * 1000.0 / (double)f.QuadPart;
+    game_ms = g_ai_game_qpc * 1000.0 / (double)f.QuadPart;
+    ticks = g_ai_ticks;
+    if (reset) g_ai_mod_qpc = g_ai_game_qpc = g_ai_ticks = 0;
+}
+static void SK_THISCALL h_NPCTickAI_inner(void* self, float dt, uint64_t t0);
 static void SK_THISCALL h_NPCTickAI(void* self, float dt)
 {
-    if (is_puppet(self))
+    const uint64_t t0 = qpc();
+    g_ai_ticks++;
+    h_NPCTickAI_inner(self, dt, t0);
+}
+static void call_ai(void* self, float dt, uint64_t t0)
+{
+    const uint64_t t1 = qpc();
+    g_ai_mod_qpc += t1 - t0;
+    o_NPCTickAI(self, dt);
+    g_ai_game_qpc += qpc() - t1;
+}
+static void SK_THISCALL h_NPCTickAI_inner(void* self, float dt, uint64_t t0)
+{
+    if (is_puppet(self)) {
+        g_ai_mod_qpc += qpc() - t0;
         return; // remote players drive their puppets, no local AI
-    if (g_ai_skip && g_ai_skip(self))
+    }
+    if (g_ai_skip && g_ai_skip(self)) {
+        g_ai_mod_qpc += qpc() - t0;
         return; // the host's game simulates it, its states drive it here (BUG-9114)
+    }
     void* t = g_ai_picker && !g_swap_real ? g_ai_picker(self) : nullptr;
     void* nm = t ? cdecl_call<void*>(a_NounGet) : nullptr;
     void* real = nm ? field<void*>(nm, kNounAvatarOff) : nullptr;
     if (!real || t == real || t == self) {
-        o_NPCTickAI(self, dt);
+        call_ai(self, dt, t0);
         return;
     }
     // the NPC's AI sees the partner as the player for this tick (its stimuli name the puppet as
@@ -1245,7 +1276,7 @@ static void SK_THISCALL h_NPCTickAI(void* self, float dt)
         tun = lent;
     g_swap_lent = lent;
     g_ai_swaps++;
-    o_NPCTickAI(self, dt);
+    call_ai(self, dt, t0);
     if (g_swap_fault_test) { // tests: as if the game faulted in the tick and its handler unwound past us
         g_swap_fault_test = false;
         return;

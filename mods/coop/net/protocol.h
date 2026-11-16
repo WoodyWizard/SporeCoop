@@ -2,6 +2,8 @@
 // See docs/04-netcode.md.
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -117,6 +119,8 @@ enum MsgType : uint8_t {
     MSG_SPACE_LAUNCH = 79, // reliable host offer and founder reply for a missed Civilization launch
     MSG_CIV_ECONOMY = 91, // host city routes and economic meter; civ_economy.h (BUG-9085: 64 belongs to Tribe)
     MSG_CIV_INFLUENCE = 92, // host native religious followers and meter; civ_influence.h
+    MSG_NPC_STATE_C = 93, // unreliable host -> guest (BUG-9235): MSG_NPC_STATE's batch in the compact form: u32 time_ms,
+                          // u8 n, vec3 anchor, n x write_npc_c (23 B), then n x i16 height trailer
     MSG_ADVENTURE = 70, // reliable mission/run-scoped objective proposals and ordered host credits
     MSG_LIBRARY = 71, // optional CAP_LIBRARY persistent creation PNG exchange
     MSG_ADVENTURE_ACTORS = 72, // unreliable host -> guest: scenario creatures' states (adventure_sync.h ActorBatch, BUG-9114)
@@ -592,6 +596,85 @@ struct NpcState {
         return r.ok();
     }
 };
+
+// BUG-9235: the compact NPC state. Positions are offsets from the batch's anchor in 1/64 m (i16: +-500 m), the rotation
+// is the smallest-three quaternion in 32 bits (2 bits: the largest component's index, 3 x 10 bits of the others in
+// [-1/sqrt2, 1/sqrt2], its sign made positive), the velocity in cm/s (i16), health f32, flags u8: 23 bytes for 47.
+constexpr size_t kNpcStateCSize = 2 + 6 + 4 + 6 + 4 + 1;
+constexpr float kNpcPosQ = 64.f;
+inline bool npc_pos_fits(const Vec3& p, const Vec3& anchor)
+{
+    const float lim = 32000.f / kNpcPosQ;
+    return std::fabs(p.x - anchor.x) < lim && std::fabs(p.y - anchor.y) < lim && std::fabs(p.z - anchor.z) < lim;
+}
+inline uint32_t pack_quat(Quat q)
+{
+    float c[4] = {q.x, q.y, q.z, q.w};
+    int big = 0;
+    for (int i = 1; i < 4; i++)
+        if (std::fabs(c[i]) > std::fabs(c[big])) big = i;
+    const float sign = c[big] < 0 ? -1.f : 1.f;
+    uint32_t out = (uint32_t)big << 30;
+    int k = 0;
+    for (int i = 0; i < 4; i++) {
+        if (i == big) continue;
+        float v = std::max(-0.70710678f, std::min(0.70710678f, c[i] * sign));
+        uint32_t qv = (uint32_t)std::lround((v + 0.70710678f) / 1.41421356f * 1023.f);
+        out |= (qv & 1023u) << (20 - 10 * k);
+        k++;
+    }
+    return out;
+}
+inline Quat unpack_quat(uint32_t v)
+{
+    const int big = (int)(v >> 30);
+    float c[4] = {};
+    float sum = 0;
+    int k = 0;
+    for (int i = 0; i < 4; i++) {
+        if (i == big) continue;
+        uint32_t qv = (v >> (20 - 10 * k)) & 1023u;
+        c[i] = qv / 1023.f * 1.41421356f - 0.70710678f;
+        sum += c[i] * c[i];
+        k++;
+    }
+    c[big] = std::sqrt(std::max(0.f, 1.f - sum));
+    Quat q;
+    q.x = c[0]; q.y = c[1]; q.z = c[2]; q.w = c[3];
+    return q;
+}
+inline int16_t q16(float v, float scale)
+{
+    float s = std::round(v * scale);
+    return (int16_t)std::max(-32767.f, std::min(32767.f, std::isfinite(s) ? s : 0.f));
+}
+inline void write_npc_c(Writer& w, const NpcState& st, const Vec3& anchor)
+{
+    w.u16(st.net_id);
+    w.u16((uint16_t)q16(st.pos.x - anchor.x, kNpcPosQ));
+    w.u16((uint16_t)q16(st.pos.y - anchor.y, kNpcPosQ));
+    w.u16((uint16_t)q16(st.pos.z - anchor.z, kNpcPosQ));
+    w.u32(pack_quat(st.rot));
+    w.u16((uint16_t)q16(st.vel.x, 100.f));
+    w.u16((uint16_t)q16(st.vel.y, 100.f));
+    w.u16((uint16_t)q16(st.vel.z, 100.f));
+    w.f32(st.health);
+    w.u8(st.flags);
+}
+inline bool read_npc_c(Reader& r, NpcState& st, const Vec3& anchor)
+{
+    st.net_id = r.u16();
+    st.pos.x = anchor.x + (int16_t)r.u16() / kNpcPosQ;
+    st.pos.y = anchor.y + (int16_t)r.u16() / kNpcPosQ;
+    st.pos.z = anchor.z + (int16_t)r.u16() / kNpcPosQ;
+    st.rot = unpack_quat(r.u32());
+    st.vel.x = (int16_t)r.u16() / 100.f;
+    st.vel.y = (int16_t)r.u16() / 100.f;
+    st.vel.z = (int16_t)r.u16() / 100.f;
+    st.health = r.f32();
+    st.flags = r.u8();
+    return r.ok();
+}
 
 struct DamageReq { // guest -> host
     uint16_t net_id = 0;

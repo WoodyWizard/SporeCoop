@@ -2251,6 +2251,7 @@ static void test_updater()
 static int fakepeer_host()
 {
     if (!net_init()) return 1;
+    test_npc_compact(); // BUG-9235
     Session host;
     host.build = 0xdc04aee5;
     host.world = 0x12345678;
@@ -4491,6 +4492,36 @@ static bool run_this(const char* name, size_t index)
     if (!g_only.empty())
         return g_only.find("," + std::string(name) + ",") != std::string::npos;
     return (int)(index % g_shards) == g_shard - 1;
+}
+
+// BUG-9235: the compact NPC state decodes to within its precision (1/64 m, 1 cm/s, the rotation to ~0.002)
+static void test_npc_compact()
+{
+    net::Vec3 anchor{120.5f, -310.25f, 44.0f};
+    net::NpcState a;
+    a.net_id = 4321;
+    a.pos = {anchor.x + 87.3f, anchor.y - 451.9f, anchor.z + 3.01f};
+    float qx = 0.12f, qy = -0.65f, qz = 0.31f, qw = 0.68f, l = std::sqrt(qx * qx + qy * qy + qz * qz + qw * qw);
+    a.rot.x = qx / l; a.rot.y = qy / l; a.rot.z = qz / l; a.rot.w = qw / l;
+    a.vel = {3.217f, -0.5f, 12.04f};
+    a.health = 87.25f;
+    a.flags = 0x5A;
+    CHECK(net::npc_pos_fits(a.pos, anchor));
+    CHECK(!net::npc_pos_fits({anchor.x + 600.f, anchor.y, anchor.z}, anchor));
+    net::Writer w;
+    net::write_npc_c(w, a, anchor);
+    CHECK(w.data.size() == net::kNpcStateCSize);
+    net::Reader r(w.data.data(), w.data.size());
+    net::NpcState b;
+    CHECK(net::read_npc_c(r, b, anchor));
+    CHECK(b.net_id == a.net_id && b.flags == a.flags && b.health == a.health);
+    CHECK(std::fabs(b.pos.x - a.pos.x) < 0.01f && std::fabs(b.pos.y - a.pos.y) < 0.01f && std::fabs(b.pos.z - a.pos.z) < 0.01f);
+    CHECK(std::fabs(b.vel.x - a.vel.x) < 0.006f && std::fabs(b.vel.z - a.vel.z) < 0.006f);
+    float dot = std::fabs(a.rot.x * b.rot.x + a.rot.y * b.rot.y + a.rot.z * b.rot.z + a.rot.w * b.rot.w);
+    CHECK(dot > 0.99999f);
+    net::Quat id; // the identity (w the largest)
+    net::Quat c = net::unpack_quat(net::pack_quat(id));
+    CHECK(std::fabs(c.w - 1.f) < 1e-4f && std::fabs(c.x) < 2e-3f);
 }
 
 int main(int argc, char** argv)

@@ -890,6 +890,15 @@ void tick(double)
                g_tick_max * 1000, (unsigned long long)g_tick_frames, c - g_perf_creates, mg - g_perf_mgr,
                wo - g_perf_world, an - g_perf_anim, pr - g_perf_probes, ev - g_perf_evicted,
                g_sent - g_perf_sent, g_load_n, g_load_ms);
+        { // 4Q step 1: the NPCs' AI this minute (the game's own tick and the mod's part of it)
+            double mod_ms = 0, game_ms = 0;
+            uint64_t ticks = 0;
+            game::ai_timing(mod_ms, game_ms, ticks, true);
+            if (ticks)
+                H->log(M, SK_INFO, "perf: npc ai %.1f ms of the game's own AI and %.1f ms of the mod's over %.0f s (%llu ticks, "
+                       "%.2f / %.2f ms per frame)", game_ms, mod_ms, wall, (unsigned long long)ticks,
+                       g_tick_frames ? game_ms / g_tick_frames : 0.0, g_tick_frames ? mod_ms / g_tick_frames : 0.0);
+        }
         g_tick_sum = g_tick_max = 0;
         g_tick_frames = 0;
         g_perf_creates = c;

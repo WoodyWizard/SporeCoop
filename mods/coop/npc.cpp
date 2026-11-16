@@ -68,6 +68,16 @@ static constexpr float kCivRelevance = 1e6f; // m: the whole planet
 // run had 25 wild creatures, 12.5 KB/s per guest. Most of them stand most of the time: a standing creature's state
 // (no speed, the same place, flags and health as the last one sent to that guest) goes once a second only (the
 // guest drops a proxy without states after 5 s). `coop.fix npc.civ_quiet off`: every 0.1 s.
+// BUG-9235 (4P A step 2, 2026-11-15: NPC states were 60 % of a guest's traffic, 49 B each at 10 Hz): a standing creature's
+// state goes once a second in every stage (as Civ's, BUG-0973; the guest drops a proxy only after 5 s without one), one
+// over kFarRate m from the guest goes every other round (5 Hz), and the batch goes in the compact form (MSG_NPC_STATE_C,
+// 23 B an entry) when every entry lies within +-500 m of the guest. Switches: npc.quiet_all, npc.far_half, npc.compact.
+static bool g_quiet_all_fix = true, g_far_half_fix = true, g_compact_fix = true;
+COOP_FIX("npc.quiet_all", "BUG-9235", g_quiet_all_fix, "npc: a standing creature's state goes to the guests once a second (every stage)");
+COOP_FIX("npc.far_half", "BUG-9235", g_far_half_fix, "npc: a creature far from a guest is sent at 5 Hz, a near one at 10 Hz");
+COOP_FIX("npc.compact", "BUG-9235", g_compact_fix, "npc: creature states go in the compact form (23 bytes for 47)");
+constexpr float kFarRate = 60.f;
+static uint32_t g_state_round, g_far_skipped, g_quiet_all_skipped, g_compact_batches;
 static bool g_civ_quiet_fix = true;
 COOP_FIX("npc.civ_quiet", "BUG-0973", g_civ_quiet_fix, "civ: a standing wild creature's state goes to the guests once a second");
 struct CivSent {
@@ -1929,8 +1939,10 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             ++it;
     }
     bool send_states = now - g_last_state >= kStateInterval;
-    if (send_states)
+    if (send_states) {
         g_last_state = now;
+        g_state_round++;
+    }
     const bool send_snap = now - g_anim_snap_at >= 1.0; // BUG-0464
     if (send_snap)
         g_anim_snap_at = now;
@@ -1978,13 +1990,18 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                 k = false;
             }
             if (k && send_states) {
+                if (g_far_half_fix && !civ && d > kFarRate && dv > kFarRate && (g_state_round & 1)) {
+                    g_far_skipped++; // BUG-9235: far from this guest: every other round
+                    continue;
+                }
                 net::NpcState st = host_state(id, c);
-                if (civ && g_civ_quiet_fix) { // BUG-0973: a standing creature's state once a second only
+                if ((civ && g_civ_quiet_fix) || g_quiet_all_fix) { // BUG-0973 / BUG-9235: a standing creature once a second
                     auto& q = g_civ_sent[p.id][id];
                     bool same = drive::speed(st.vel) < 0.05f && net::dist(st.pos, q.pos) < 0.05f && st.flags == q.flags &&
                                 std::fabs(st.health - q.health) < 0.01f;
                     if (same && now - q.at < 1.0) {
-                        g_civ_quiet_skipped++;
+                        if (civ) g_civ_quiet_skipped++;
+                        else g_quiet_all_skipped++;
                         continue;
                     }
                     q = {st.pos, st.flags, st.health, now};
@@ -1997,6 +2014,31 @@ static void host_tick(double now, const std::vector<void*>& creatures)
                     g_nanvel_sent++;
                 }
             }
+        }
+        // BUG-9235: the compact form when every entry lies within reach of the anchor (the guest's place)
+        net::Vec3 anchor = gp;
+        if (civ || !std::isfinite(anchor.x)) anchor = batch.empty() ? net::Vec3{} : batch.front().pos;
+        bool compact = g_compact_fix && !batch.empty();
+        for (size_t j = 0; compact && j < batch.size(); j++)
+            compact = net::npc_pos_fits(batch[j].pos, anchor);
+        if (compact) {
+            size_t perc = (net::kMaxPacket - 64 - 12) / (net::kNpcStateCSize + 2);
+            for (size_t i = 0; i < batch.size(); i += perc) {
+                net::Writer w;
+                w.u32(net::now_ms());
+                size_t n = std::min(perc, batch.size() - i);
+                w.u8((uint8_t)n);
+                w.f32(anchor.x); w.f32(anchor.y); w.f32(anchor.z);
+                for (size_t j = 0; j < n; j++)
+                    net::write_npc_c(w, batch[i + j], anchor);
+                for (size_t j = 0; j < n; j++) {
+                    float a = g_air_fix ? drive::over_ground(batch[i + j].pos) * 100.f : 0.f;
+                    w.u16((uint16_t)(int16_t)std::max(-32000.f, std::min(32000.f, std::round(a))));
+                }
+                C.sess->send_unreliable_to(p.id, net::MSG_NPC_STATE_C, w);
+                g_compact_batches++;
+            }
+            batch.clear();
         }
         // unreliable batches that fit in one packet
         // BUG-0550 trailer: n x i16, each NPC's height over the host's terrain in cm (older guests ignore it)
@@ -3125,18 +3167,23 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         destroy_proxy(id);
         break;
     }
-    case net::MSG_NPC_STATE: {
+    case net::MSG_NPC_STATE:
+    case net::MSG_NPC_STATE_C: {
         if (!is_guest())
             return;
+        const bool cform = type == net::MSG_NPC_STATE_C; // BUG-9235
         uint32_t t = r.u32();
         uint8_t n = r.u8();
+        net::Vec3 anchor{};
+        if (cform) { anchor.x = r.f32(); anchor.y = r.f32(); anchor.z = r.f32(); }
         bool whole = r.ok() && n > 0;
         // BUG-0550: the agl trailer after the n entries (an older host sends none)
-        const bool trailer = r.ok() && r.left() == (size_t)n * (net::NpcState::kSize + 2);
+        const size_t entry = cform ? net::kNpcStateCSize : net::NpcState::kSize;
+        const bool trailer = r.ok() && r.left() == (size_t)n * (entry + 2);
         std::vector<net::NpcState> sts;
         for (int i = 0; i < n && r.ok(); i++) {
             net::NpcState st;
-            if (!st.read(r)) {
+            if (cform ? !net::read_npc_c(r, st, anchor) : !st.read(r)) {
                 whole = false;
                 break;
             }

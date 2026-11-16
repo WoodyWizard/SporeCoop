@@ -5,6 +5,7 @@
 
 #include "fixes.h"
 #include "protocol.h"
+#include "traffic.h"
 
 namespace net {
 
@@ -33,6 +34,7 @@ static_assert(kRelPiece == Connection::kMaxSingle, "Connection::kMaxSingle is on
 
 void Connection::send_reliable(uint8_t type, const Writer& w)
 {
+    g_traffic_out.add(type, w.data.size() + 6);
     if (g_fix.big_reliable && w.data.size() > kRelPiece) {
         // BUG-0034: a message that fits no packet was never sent and blocked every reliable message
         // after it (and the due check sent a burst of empty packets every frame): split it into
@@ -113,6 +115,7 @@ void Connection::send_unreliable(uint8_t type, const Writer& w, bool first)
         stats.unrel_too_big_size = (uint32_t)w.data.size();
         return;
     }
+    g_traffic_out.add(type, w.data.size() + kMsgHeader);
     if (first)
         unrel_out_.emplace(unrel_out_.begin(), type, w.data);
     else
@@ -417,6 +420,7 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
             return false;
         const uint8_t* p = r.cur();
         r.skip(len);
+        g_traffic_in.add(type, len + ((flags & 1) ? 6 : 4));
         if (!(flags & 1)) {
             Reader pr(p, len);
             deliver(type, pr);

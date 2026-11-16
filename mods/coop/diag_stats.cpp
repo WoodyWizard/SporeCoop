@@ -1,6 +1,7 @@
 // Support diagnostics: FPS and hitches, the address space, network quality, session settings and
 // the session summary (diag_coop.h, docs/REPORTING.md#reporting-support-answers).
 #include "diag_coop.h"
+#include "net/traffic.h"
 
 #include <windows.h>
 
@@ -486,6 +487,14 @@ void stats_tick(double now)
                      "free, largest free block %d MB | %s",
                      avg, fps, (int)(g_frame_max * 1000), g_hitches_min, fr, (int)g_mem_total_mb, bl,
                      g_P.activity ? g_P.activity().c_str() : "?");
+            // 4P step 1: the minute's traffic by message type (out to every partner, in from them)
+            if (g_detail >= 1) {
+                const std::string o = net::traffic_text(net::g_traffic_out, 8), i = net::traffic_text(net::g_traffic_in, 6);
+                if (o != "0.0 KB:" || i != "0.0 KB:")
+                    SLOG("net: traffic this minute by message type: out %s | in %s", o.c_str(), i.c_str());
+                net::g_traffic_out.clear();
+                net::g_traffic_in.clear();
+            }
             // a 32-bit game: the largest block is what a big allocation (a planet, an editor) needs
             if (fr >= 0 && (fr < 300 || bl < 48) && g_fix_mem_reserve) {
                 if (g_reserve)

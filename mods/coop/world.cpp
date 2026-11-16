@@ -609,6 +609,9 @@ struct PendingShare {
     bool waited = false;    // BUG-9166: logged once
     bool held = false;      // BUG-9210: logged once
 };
+static bool g_world_window_fix = true;
+COOP_FIX("world.window_by_rate", "BUG-9236", g_world_window_fix,
+         "world: a world transfer keeps only what the link delivers in a round trip + 0.2 s queued (game events wait less)");
 static std::function<bool(uint8_t, uint64_t)> g_share_hold;
 static uint32_t g_shared_loads; // BUG-9223: loads of a received copy of the host's world (coop.cpp own_dna_tick) // BUG-9210: home_nests: this player's own nest comes first
 // BUG-0231: the final failure of a queued share ("cannot share the world"), for the caller's retry
@@ -2360,6 +2363,15 @@ void tick(net::Session& s)
         // a LAN / local peer (short round trip) gets a much bigger window
         int rtt = s.rtt_of(o.peer);
         size_t window = s.paced_world_transfer ? net::kPacedWorldWindow : (rtt >= 0 && rtt < 40 ? 600 : 160);
+        // BUG-9236 (4P A step 4, 2026-11-15): the chunks share the reliable queue with the game's own reliable messages
+        // (spawns, damage, effects), which wait behind every queued chunk: 160 chunks on a 125 KB/s link held them over a
+        // second. On: the window is what the link delivers in the round trip + 0.2 s (BUG-9098's measured rate, packets per
+        // ms), 24..160. Off: 160 (60-dev).
+        if (g_world_window_fix && !s.paced_world_transfer && rtt >= 40)
+            if (net::Connection* c = s.conn_to(o.peer)) {
+                const double w = c->pace_rate_ * (rtt + 200.0);
+                window = (size_t)std::max(24.0, std::min(160.0, w));
+            }
         int budget = 300;
         while (budget-- > 0 && s.pending_to(o.peer) < window && !o.done) {
             if (o.fi >= o.files.size()) {

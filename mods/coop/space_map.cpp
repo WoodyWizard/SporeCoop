@@ -1,5 +1,6 @@
 // Space feature "map" (MSG_SPACE kinds 10..19): the roster of every player's empire (space_map.h)
 // and the partners and their colonies on the galaxy map. docs/re/space.md 13.
+#define _USE_MATH_DEFINES // (before any header that may include <cmath>: net/protocol.h does, BUG-9235)
 #include "space_map.h"
 #include "player_life.h"
 
@@ -8,7 +9,6 @@
 #include <windows.h>
 
 #include <algorithm>
-#define _USE_MATH_DEFINES
 #include <cmath>
 #include <cstdio>
 #include <cstring>
