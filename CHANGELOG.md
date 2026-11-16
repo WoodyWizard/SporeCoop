@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 - Memory: when Spore's memory runs low a box shows a live bar of how full it
-  is (yellow from 20 % left, red from 10 %) with Ignore and Continue; Continue
+  is (its green, yellow and red zones light up as it fills) with Ignore and Continue; Continue
   saves, restarts Spore and reconnects by itself (a host loads its world again
   and hosts, its partners rejoin on their own). First at 15 % left, again at
   10 % (BUG-9239).

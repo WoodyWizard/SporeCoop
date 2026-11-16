@@ -172,12 +172,14 @@ void register_party_commands();
 struct MemoryPopup {
     bool show = false, buttons = true;
     float used = 0;          // 0..1, the bar's fill
-    uint32_t bar_color = 0;  // ARGB
+    // the bar's zones (owner 2026-11-16): green, yellow from yellow_at used, red from red_at used; each zone dim until
+    // the fill reaches it, bright where it is filled
+    float yellow_at = 0.8f, red_at = 0.9f;
     std::string title, msg[2], line;
     bool operator==(const MemoryPopup& o) const
     {
         return show == o.show && buttons == o.buttons && (used - o.used) * (used - o.used) < 4e-6f &&
-               bar_color == o.bar_color && title == o.title && msg[0] == o.msg[0] && msg[1] == o.msg[1] && line == o.line;
+               yellow_at == o.yellow_at && red_at == o.red_at && title == o.title && msg[0] == o.msg[0] && msg[1] == o.msg[1] && line == o.line;
     }
 };
 bool set_memory_popup(const MemoryPopup& want, void (*on_click)(int));

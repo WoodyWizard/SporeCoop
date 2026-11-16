@@ -31,7 +31,6 @@ bool box_up() { return g_fix && g_box; }
 constexpr float kFirstLeft = 15.f, kSecondLeft = 10.f;   // % left: the box (4S, 4T A: 15 %, then 10 % after Ignore)
 constexpr int kFirstBlock = 48, kSecondBlock = 24;       // MB: no free block this big counts the same
 constexpr float kYellowLeft = 20.f, kRedLeft = 10.f;     // the bar's colours (owner 2026-11-16)
-constexpr uint32_t kGreenBar = 0xFF46C35Au, kYellowBar = 0xFFE6C23Cu, kRedBar = 0xFFE04B4Bu;
 constexpr double kResumeMaxAge = 15 * 60;                // s: a restart file older than this is ignored
 constexpr double kRejoinFor = 6 * 60, kRejoinEvery = 20; // s: a guest's rejoins after the host's restart
 
@@ -518,12 +517,13 @@ void tick(double now)
     p.show = true;
     p.buttons = g_out == Out::None;
     p.used = 1.f - g_left / 100.f;
-    p.bar_color = g_left <= kRedLeft ? kRedBar : g_left <= kYellowLeft ? kYellowBar : kGreenBar;
+    p.yellow_at = 1.f - kYellowLeft / 100.f; // the zones: yellow from 20 % left, red from 10 %
+    p.red_at = 1.f - kRedLeft / 100.f;
     p.title = g_left <= kSecondLeft ? "Memory nearly full" : "Memory almost full";
     p.msg[0] = "Spore is natively unable to clear memory usage.";
     const int role = A.role ? A.role() : 0;
     p.msg[1] = role ? "Press continue below to restart Spore and reconnect."
-                    : "Press continue below to restart Spore and load your game again.";
+                    : "Press continue below to restart Spore and load your game.";
     char b[160];
     if (g_out != Out::None)
         p.line = g_out == Out::Saving ? "Saving your game..." : "Restarting Spore...";

@@ -3663,7 +3663,7 @@ bool set_downed_hud(bool show, bool box, const std::string& name, const Rect& gi
 // the screen: the owner's text, a live bar of how full the memory is (green, yellow from 20 % left, red from 10 %) and
 // two buttons, Ignore and Continue (save, restart Spore, reconnect: mem_refresh.cpp). Not scaled with Spore's UI.
 static struct {
-    Win root = nullptr, box = nullptr, edge[4] = {}, title = nullptr, msg[2] = {}, back = nullptr, fill = nullptr,
+    Win root = nullptr, box = nullptr, edge[4] = {}, title = nullptr, msg[2] = {}, dim[3] = {}, lit[3] = {},
         line = nullptr, ignore = nullptr, cont = nullptr;
     bool failed = false;
 } g_mp;
@@ -3706,18 +3706,24 @@ static bool mp_build()
     }
     g_mp.title = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kGold, sui::kAlignCenter);
     for (Win& m : g_mp.msg) m = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
-    g_mp.back = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
-    if (g_mp.back) sui::set_fill_color(g_mp.back, 0xFF15191Eu);
-    g_mp.fill = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    // the bar: green, yellow, red zones, each dim (not reached) under its bright part (reached)
+    static const uint32_t kDim[3] = {0xFF1F4A28u, 0xFF5A4C1Cu, 0xFF5A2222u}, kLit[3] = {0xFF46C35Au, 0xFFF0C83Cu, 0xFFE84848u};
+    for (int i = 0; i < 3; i++) {
+        g_mp.dim[i] = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+        if (g_mp.dim[i]) sui::set_fill_color(g_mp.dim[i], kDim[i]);
+        g_mp.lit[i] = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+        if (g_mp.lit[i]) sui::set_fill_color(g_mp.lit[i], kLit[i]);
+    }
     g_mp.line = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
     g_mp.ignore = button("Ignore", 0, g_button_roles ? g_grey_look : nullptr);
     g_mp.cont = button("Continue", 1, g_button_roles ? g_blue_look : nullptr);
-    if (!g_mp.cont || !g_mp.ignore || !g_mp.box || !g_mp.fill || !g_mp.back) {
+    if (!g_mp.cont || !g_mp.ignore || !g_mp.box || !g_mp.lit[0] || !g_mp.dim[2]) {
         g_mp.failed = !g_mp.cont;
-        H->log(M, SK_WARN, "ui: memory box parts missing (continue %p box %p bar %p)", g_mp.cont, g_mp.box, g_mp.fill);
+        H->log(M, SK_WARN, "ui: memory box parts missing (continue %p box %p bar %p)", g_mp.cont, g_mp.box, g_mp.lit[0]);
     }
     for (Win w : {g_mp.box, g_mp.edge[0], g_mp.edge[1], g_mp.edge[2], g_mp.edge[3], g_mp.title, g_mp.msg[0], g_mp.msg[1],
-                  g_mp.back, g_mp.fill, g_mp.line, g_mp.ignore, g_mp.cont})
+                  g_mp.dim[0], g_mp.dim[1], g_mp.dim[2], g_mp.lit[0], g_mp.lit[1], g_mp.lit[2], g_mp.line, g_mp.ignore,
+                  g_mp.cont})
         if (w) {
             sui::add_ref(w);
             sui::bring_to_front(root, w);
@@ -3737,7 +3743,7 @@ static void mp_apply(void*)
     Win main = sui::main_window();
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
-    const float w = 540, h = 206, x = std::floor((sw - w) / 2), y = std::floor(sh * 0.38f - h / 2);
+    const float w = 600, h = 206, x = std::floor((sw - w) / 2), y = std::floor(sh * 0.38f - h / 2);
     const Rect all{x, y, x + w, y + h};
     if (want.show && main) {
         sui::set_area(g_mp.root, all);
@@ -3762,9 +3768,14 @@ static void mp_apply(void*)
     place(g_mp.msg[1], on, {10, 62, w - 10, 82});
     const float bx1 = 30, bx2 = w - 30, by1 = 98, by2 = 116;
     const float used = std::clamp(want.used, 0.f, 1.f);
-    place(g_mp.back, on, {bx1, by1, bx2, by2});
-    place(g_mp.fill, on && used > 0.005f, {bx1, by1, bx1 + std::max(2.f, (bx2 - bx1) * used), by2});
-    if (g_mp.fill) sui::set_fill_color(g_mp.fill, want.bar_color);
+    const float edges[4] = {0.f, std::clamp(want.yellow_at, 0.f, 1.f), std::clamp(want.red_at, 0.f, 1.f), 1.f};
+    auto at = [&](float f) { return std::round(bx1 + (bx2 - bx1) * f); };
+    for (int i = 0; i < 3; i++) {
+        const float a = edges[i], b = std::max(a, edges[i + 1]);
+        place(g_mp.dim[i], on && b > a, {at(a), by1, at(b), by2});
+        const float lit_to = std::min(b, used); // the filled part of this zone
+        place(g_mp.lit[i], on && lit_to - a > 0.002f, {at(a), by1, at(lit_to), by2});
+    }
     place(g_mp.line, on, {10, 120, w - 10, 140});
     place(g_mp.ignore, on && want.buttons, {w / 2 - 160, 156, w / 2 - 12, 190});
     place(g_mp.cont, on && want.buttons, {w / 2 + 12, 156, w / 2 + 160, 190});
