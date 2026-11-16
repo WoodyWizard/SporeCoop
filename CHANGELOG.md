@@ -114,6 +114,8 @@
 - Space: the kept state of a rejoining guest (colonies, cargo hold, badges, Rivals budget) goes through one shared store
   instead of four hand-built copies, and every Space and shared-money message is decoded by a portable struct with
   golden-byte tests and fuzzing; the libFuzzer run is in CI (BUG-1132, BUG-1133). No change on the wire.
+- Cell: cellsync.cpp (7.3k lines) is split into smaller files by pure moves (combat, physics, tiles, host, guest and the
+  `coop.pool` command), and the `coop.creations` command has a file of its own (BUG-1183). No change on the wire.
 
 ## [0.7.14.1] - 2026-11-14
 

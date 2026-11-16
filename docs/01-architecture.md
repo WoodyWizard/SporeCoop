@@ -710,3 +710,41 @@ C1 and C4 of 0.7.15 for Civ (BUG-1140, BUG-1143), D3 (BUG-1163). The hand-made m
   The lifecycle registrations (LIFECYCLE_STATE / SESSION_STATE / PLAYER_STATE) and the hooks stay in civ.cpp, so the
   lifecycle table and the hook list keep their order; the switch and guard lists are dumped sorted (refactor_dump
   identical, BUG-1164).
+
+## The Cell module's files (2026-11-15, feat/w51-cellsplit)
+<a id="arch-cell-files"></a>
+
+C8 of 0.7.15 for Cell (BUG-1183, audit STG-7): cellsync.cpp (7.3k lines, the biggest stage file left) was split by
+pure moves, after its 165 diagnostic counters were grouped into one struct, `g_n` (`g_n.created`, ...; a rename, the
+printed keys stay). File:line pointers to cellsync.cpp in older texts (the audits, the tables above) refer to the file
+before the split (rel/0.7.15 7a733c60).
+
+* `cellsync.cpp`: the module's core: the session and pool helpers (is_host, G, avatar, ...), the shared state of the
+  host's table and the guest's mirrors with their switches, the knockout / revive / respawn and the camera, init with
+  every hook, tick, on_message, the session end, the overlay, the status / trace / census / DNA entry points, and every
+  lifecycle registration (cell.body, cell.food_queue, cell.own_good, cell.join, cell.session), so the lifecycle table
+  and the hook list keep their order;
+* `cellsync_combat.cpp`: what the cells do to each other: the guest's acts on the host's pool (MSG_CELL_EAT /
+  MSG_CELL_HIT senders), the damage, poison, electric, bite, chunk, kill, break, destroy, eat and swallow hooks, the
+  food that comes in (food_in_step, BUG-0633), the own cell's finite probes (BUG-0307), the collision pairs;
+* `cellsync_physics.cpp`: the guards in the game's cell physics: the contact solver (BUG-0307), the soft-body particle
+  pool and the graphics pool (BUG-0338, BUG-0355), the mirror's soft-body step (the host's facing), the broadphase
+  sweep and merge (BUG-0337, BUG-0718);
+* `cellsync_tiles.cpp`: the population: the guest's own population off, the level change's wipe, the host's tile
+  passes around every player (BUG-0174, BUG-0295, BUG-0975, BUG-1000), the world scale and the stack tests, the AI's
+  target guards (NoAttack, PickTargets) and the loot drops (BUG-1004);
+* `cellsync_host.cpp`: host_tick and send_state (MSG_CELL_STATE, BUG-0809, BUG-0927);
+* `cellsync_guest.cpp`: guest_state (the host's state as mirrors), the heals of the own cell and of a mirror
+  (BUG-0299, BUG-0307, BUG-1006), the join after a load (BUG-0352), guest_tick, the guest's own pool while the host is
+  away (solo, BUG-0205 / BUG-0797);
+* `cellsync_debug.cpp`: `debug()` (the `coop.pool` command) with its reports (kind_of, see, prey_report, sap_report);
+* `cellsync_internal.h`: what they share: the includes, the cell layout constants, `F<>`, `Counters`, the types and
+  constants more than one file uses, the hooks' function-pointer types, the `for_each_cell` template, and the
+  declarations (extern / prototypes) under the file that defines each; included only by mods/coop/cellsync*.cpp;
+* `cell_logic.h`: the portable rules (unchanged).
+
+The creations module's `debug()` (`coop.creations`, 410 lines) went the same way into `creations_debug.cpp`, with
+`creations_internal.h` declaring what it reads. With civ_debug.cpp (BUG-1164) and Tribe's (feat/w51-tribe) these are
+the four `debug()` functions of the plan. The proofs: refactor_dump identical after each step, `tools/refactor_dump.py
+moves` lists only dropped `static`s, header declarations, default arguments kept on the prototype, and the new files'
+heads (docs/10-dev-pipeline.md#pipeline-refactor-proof); the Cell lab tests on the split build (BUG-1183).
