@@ -1,19 +1,19 @@
 ---
 id: BUG-1200
 title: tag_camera: the label of a partner's off-screen arrow (it reaches ~190 px in from the edge) was read as a name tag over empty ground
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-16
 source: lab
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t5
+commits: a7df99c3
+tests: tag_camera, tag_height
 signature:
-docs:
+docs: docs/06-testing.md#testing-final-0715-t5
 related:
 ---
 
@@ -39,8 +39,9 @@ edge, 60 rows around) is no tag; (2) the guest's creature is put back onto the h
 switch: none (test only).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: final check 20261116-025154 tag_camera and tag_height; reruns 20261116-082817 tag_camera#1, #2, tag_height#1 (rel/0.7.15 tests); v0.7.14.1 lab 20261116-084839 tag_camera (3 shots, arrow labels at x 141): old since 0.7.14 (BUG-0989).
+PASS: lab 20261116-085451 tag_camera#1, #2 (12/12 and 7/12 over the body, 0 off, 0 empty; players 5.0 / 3.9 m apart), tag_height#1, #2 (0.44 / 0.46 m).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t5 (final-check triage of 0.7.15, group T5).

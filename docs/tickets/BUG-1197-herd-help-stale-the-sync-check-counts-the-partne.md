@@ -1,19 +1,19 @@
 ---
 id: BUG-1197
 title: herd_help_stale: the sync-check counts the partner's puppet the test takes away on purpose (coop.puppet respawn): p 1 extra on the guest when a check falls in that window
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-16
 source: lab
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t5
+commits: fa2352a0
+tests: herd_help_stale, avatar_stale_target
 signature:
-docs:
+docs: docs/06-testing.md#testing-final-0715-t5
 related:
 ---
 
@@ -35,8 +35,9 @@ guest's own player (`match=p: 1 extra on the guest \(p1\)`), with the reason. Ch
 final check's logs: without the allow FAIL, with it allowed. switch: none (test only).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: final check 20261116-025154 herd_help_stale, reruns 20261116-082817 herd_help_stale#1, #2 (rel/0.7.15 code), v0.7.14.1 lab 20261116-084839 herd_help_stale (the same gate): old.
+PASS: lab 20261116-085451 herd_help_stale#1, #2; the FAIL runs' findings re-judged with the new allow (loggates.check_logs): allowed.
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t5 (final-check triage of 0.7.15, group T5).

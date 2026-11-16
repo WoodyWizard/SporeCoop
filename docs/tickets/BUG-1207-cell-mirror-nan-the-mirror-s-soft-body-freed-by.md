@@ -1,19 +1,19 @@
 ---
 id: BUG-1207
 title: cell_mirror_nan: the mirror's soft body freed by the game's LOD (parts=0) was read as particles at (0 0), 149 m from the host's pose
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-16
 source: lab
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t5
+commits: 08528bad
+tests: cell_mirror_nan
 signature:
-docs:
+docs: docs/06-testing.md#testing-final-0715-t5
 related:
 ---
 
@@ -34,8 +34,9 @@ for a soft mirror for up to 20 s. The twin (`SPORE_FIX_OFF=cell.mirror_nan_heal`
 switch: none (test only).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: final check 20261116-025154 cell_mirror_nan (parts=0 read as 149 m); rerun 20261116-082817 cell_mirror_nan#2 SKIP (no soft mirror in 10 s).
+PASS: lab 20261116-085451 cell_mirror_nan#1, #2. Twin unchanged: lab 20261116-091833 cell_mirror_nan with SPORE_FIX_OFF=cell.mirror_nan_heal FAILS (non-finite fields 0x385, 0x284).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t5 (final-check triage of 0.7.15, group T5).

@@ -1,19 +1,19 @@
 ---
 id: BUG-1194
 title: monitor: drawn / hp rules matched a partner line with the subject's own line of another session of the same stage and world (sreport_leave)
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-16
 source: lab
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t5
+commits: 5b2b7c55
+tests: sreport_leave, gates_selftest
 signature:
-docs:
+docs: docs/06-testing.md#testing-final-0715-t5
 related:
 ---
 
@@ -46,7 +46,8 @@ before. Config `same_clock` (default 5.0 s; 0: the matching before). switch: non
 FAIL: lab 20261116-025154 sreport_leave (rel/0.7.15): `monitor.py replay` of its host and guest logs gives the drawn
 violation with the old monitor (and with `same_clock=0`), none with the fix. gates_selftest twin `f_drawn_sessions`
 (two Cell sessions of one world, the second's guest line closer by 15 ms: same_clock 0 fails, the default passes).
-PASS: see History (sreport_leave runs on fix/w51-t5).
+PASS: lab 20261116-085451 sreport_leave#1, #2 (fix/w51-t5, no monitor violation); gates_selftest f_drawn_sessions passes, f_drawn_sessions_old (same_clock 0) fails.
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t5 (final-check triage of 0.7.15, group T5).

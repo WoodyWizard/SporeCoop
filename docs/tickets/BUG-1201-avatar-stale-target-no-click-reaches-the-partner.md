@@ -1,19 +1,19 @@
 ---
 id: BUG-1201
 title: avatar_stale_target: no click reaches the partner's puppet since BUG-0989 puts the joining guest 5 m beside the host (outside the host's view on the fixture): 0 rounds by a real click
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-16
 source: lab
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t5
+commits: a7df99c3
+tests: avatar_stale_target
 signature:
-docs:
+docs: docs/06-testing.md#testing-final-0715-t5
 related:
 ---
 
@@ -33,8 +33,9 @@ tools/tests/coop_avatar_stale_target.py: right after the start the guest's creat
 (`coop.npc gopos`), where the test's clicks were made for (`SPORE_STALE_AS_JOINED=1`: as it joined). switch: none.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: final check 20261116-025154 avatar_stale_target, reruns 20261116-082817 avatar_stale_target#1, #2, v0.7.14.1 lab 20261116-084839 avatar_stale_target (0 rounds by a click each): old since 0.7.14 (BUG-0989).
+PASS: lab 20261116-085451 avatar_stale_target#1, #2 (7 rounds by a real click in #1).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t5 (final-check triage of 0.7.15, group T5).

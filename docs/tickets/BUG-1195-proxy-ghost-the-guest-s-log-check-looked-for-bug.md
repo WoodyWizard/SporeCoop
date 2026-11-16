@@ -1,19 +1,19 @@
 ---
 id: BUG-1195
 title: proxy_ghost: the guest's log check looked for BUG-0931's line only; BUG-0842's identity check (0.7.13) names the ghost proxy first, and its twin switch alone no longer fails
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-16
 source: lab
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t5
+commits: fa2352a0
+tests: proxy_ghost
 signature:
-docs:
+docs: docs/06-testing.md#testing-final-0715-t5
 related:
 ---
 
@@ -36,8 +36,9 @@ tools/tests/coop_proxy_ghost.py: counts per ghost proxy id a line of either chec
 switch: none (test only).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: final check 20261116-025154 proxy_ghost (rel/0.7.15) and v0.7.14.1 (detached worktree fix/w51-t5-v07141, lab 20261116-084839 proxy_ghost: the same `0 of 3`): an old failure since 0.7.13.
+PASS: lab 20261116-085451 proxy_ghost#1, #2 (3 of 3 named, made again, no fault); also 20261116-082817 proxy_ghost#1, #2. Twin: lab 20261116-091833 proxy_ghost with SPORE_FIX_OFF=npc.proxy_identity,npc.proxy_listed_now FAILS (72 caught faults).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t5 (final-check triage of 0.7.15, group T5).

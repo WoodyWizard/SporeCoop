@@ -9,12 +9,12 @@ source: lab
 role: 
 versions: 
 fixed_in:
-branch:
+branch: fix/w51-t5
 commits:
-tests:
+tests: nest_follow, npc_walk_player, creature_kills, sreport_leave, tag_height
 signature:
 docs:
-related:
+related: BUG-1194, BUG-1200
 ---
 
 ## Report
@@ -50,7 +50,8 @@ their numbers recorded here. switch: none (no change).
 ## Verification
 no-fail-run: flakes, recorded with numbers; the failing run is the final check 20261116-025154, the passing reruns
 are lab 20261116-082817 (nest_follow#1/#2, npc_walk_player#1/#2, creature_kills#1/#2, sreport_leave#1/#2) and the
-group's final runs on fix/w51-t5 (see History).
+group's final runs on fix/w51-t5 (lab 20261116-085451: all PASS twice).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: closed as flakes (fix/w51-t5): PASS twice in reruns 20261116-082817 and again in 20261116-085451.
