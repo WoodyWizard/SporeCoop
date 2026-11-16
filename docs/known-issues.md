@@ -262,3 +262,16 @@ anchor so other docs can link to it:
   stage only; in Cell, Tribe and Civilization players still cannot hurt each other (Space has its rivals mode).
 * Reproduce: `coop.settings force all.friendly_fire on` on the host in Cell: a bite on the partner's cell does nothing.
 * Ticket: BUG-0899.
+
+## Civ: civ_owners_reload fails the lab's sync-check gate: vehicles of the cities founded during the test are missing on the guest (2026-11-15, test, feat/w51-civ)
+<a id="issue-civ-owners-reload-sync-gate"></a>
+
+* What happens: civ_owners_reload's own checks pass, but the sync-check about 45 s in reports "v: 1-2 missing on the
+  guest": the host founded two cities a few seconds earlier and the guest's copies of them (and so the mirrors of
+  their vehicles, which wait for the host's design) come after the check.
+* Reproduce: `lab.py run civ_owners_reload --lane N --repeat 2` (2 of 2 FAIL on rel/0.7.15 9362bcdd and on
+  feat/w51-civ, lab 20261115-192303).
+* Known: a timing race between the check and the guest's catch-up of new cities (BUG-0319 / BUG-0380 class) and the
+  design request of BUG-0647; not a change of feat/w51-civ (the same on 9362bcdd).
+* Not checked: whether the guest's city catch-up is slower than it should be here, or the gate should wait for it.
+* Ticket: BUG-1175

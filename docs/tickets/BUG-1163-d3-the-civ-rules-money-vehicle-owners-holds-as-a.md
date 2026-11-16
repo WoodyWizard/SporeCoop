@@ -1,14 +1,14 @@
 ---
 id: BUG-1163
 title: D3: the Civ rules (money, vehicle owners, holds) as a portable header civ_logic.h with unit tests
-status: open
+status: fixed
 kind: tooling
 stage: Civ
 reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/w51-civ
 commits: 84d96518
 tests: tests/civ_tests.cpp
@@ -40,3 +40,4 @@ BUG-1140.
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-15 (feat/w51-civ): civ_logic.h and tests/civ_tests.cpp; civ.cpp calls the rules; the Civ lab set passed on it (BUG-1140).

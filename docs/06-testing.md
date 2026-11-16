@@ -8420,3 +8420,18 @@ E4 (BUG-1156..1158, docs/re/creations.md#creations-stage-designs).
   its own through the game's TransferStarOwnership; `force` also takes a home star or an empire's last star: the
   space_empire fixture's two met empires have one star each, their home). Durations on a quiet lane: space_session
   ~2.5 min, space_session_npc ~2 min, civ_owners_session ~3 min, tribe_owners_session ~2-5 min, autosave_* ~2 min.
+
+## Civ: unit tests of the rules, and running civ_save_strip on your own lanes (2026-11-15, feat/w51-civ)
+<a id="testing-civ-rules"></a>
+
+* `tests/civ_tests.cpp` (in `make test`, unit-cpp, ASan / UBSan) checks civ_logic.h: the shared money (the guest's own
+  income dropped, `can_pay` BUG-0613, `refund_amount` BUG-0807), the owners of the host's vehicles (`new_vehicle_owner`,
+  `orphan_owner` BUG-0031) and the holds (`unseen_mirror`, the deferred pump, `local_play`). A mutation of each rule
+  fails it (BUG-1163).
+* civ_save_strip needs a second lane for Carol (`uses_free_lane`): the lab takes the first lane 2..10 outside the run
+  whose games do not answer, which may be another agent's. To keep it on your own lanes, run it alone on one of them and
+  skip the others' lanes: `lab.py run civ_save_strip --lane 6 --skip 2,3,4,5,9,10` (Carol then plays on lane 7; its
+  games must be stopped first). Run with another test on both of your lanes it reports INCONCLUSIVE ("no second lane
+  free").
+* civ_role_damage measures each phase from the first hit (BUG-1172); civ_owners_reload's sync-check gate is a known
+  timing failure (BUG-1175, docs/known-issues.md#issue-civ-owners-reload-sync-gate).
