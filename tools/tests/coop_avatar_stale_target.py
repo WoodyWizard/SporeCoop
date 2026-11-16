@@ -37,7 +37,7 @@ import re
 import struct
 import time
 
-from harness import puppet
+from harness import avatar_pos, puppet
 from coop_creature_kills import read
 from twoinst import Checks, start
 
@@ -135,6 +135,14 @@ def main():
     host, guest = start()
     ck = Checks()
     time.sleep(2)
+    # BUG-1201: the rounds were made with the guest's creature where it starts, on the host's (the save's player spot),
+    # in the middle of the host's view. Since BUG-0989 (0.7.14) the joining guest is put 5 m beside the host, outside
+    # the host's view on this fixture: no click could reach the puppet (0 of 8 rounds by a click, 3 of 3 runs on
+    # rel/0.7.15). The guest's creature goes back onto the host's spot (SPORE_STALE_AS_JOINED=1: as it joined)
+    hp = avatar_pos(host)
+    if hp and os.environ.get('SPORE_STALE_AS_JOINED') != '1':
+        print('  guest: ' + (guest.call('coop.npc gopos %.2f %.2f %.2f' % tuple(hp)).get('out') or '').strip()[:100], flush=True)
+        time.sleep(1.5)
     # BUG-0913: with friendly fire off a click no longer picks the partner's creature (creature.partner_pass): this
     # test needs the old pick (the partner as the target is what it removes)
     print('  host: ' + host.call('coop.fix creature.partner_pass off')['out'].strip(), flush=True)

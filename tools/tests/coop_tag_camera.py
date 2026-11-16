@@ -10,7 +10,8 @@ compared with the same two in shots of the camera at rest. Per shot of a turn:
   over   the tag within --near px of where it is over the body at rest,
   off    the tag further from its body,
   empty  a tag and no body under it (the frame of BUG-0948),
-  none   no tag in the picture (an arrow at the edge, or the partner outside the view).
+  none   no tag in the picture (an arrow at the edge, or the partner outside the view; a label with the arrow's head
+         at the screen edge beside it is the arrow's, BUG-1200).
 Nothing but `shot`, `drag`, `key`, `coop.targets` and `coop.avatar` is used, so the test runs on old builds too
 (--colour 80FF80: the tags before 0.7.12 were green).
 
@@ -86,6 +87,12 @@ def measure(png, colour, origin=None):
             xs = [x for x in xs if abs(x - tx) < 120]  # (the text is short: stray pixels elsewhere do not count)
             if len(xs) < 40:
                 return {'tag': None, 'body': None, 'n': (len(xs), 0)}
+            # BUG-1200: an arrow's label reaches past the 130 px left out at the edges (find.cpp: tip 46 px in, the
+            # label 40 px behind the 28 px head, then its text: up to ~190 px), so the label of a partner off screen was
+            # read as a tag over empty ground. The arrow's head (its colour, filled) right at the edge beside those rows
+            # makes it an arrow: no tag in the picture
+            if arrow_beside(px, w, h, colour, by, tx):
+                return {'tag': None, 'body': None, 'n': (len(xs), 0), 'arrow': True}
             def red(x, y):
                 r, g, b = px[x, y]
                 return r > 140 and g < 70 and b < 70 and r > 2.4 * max(g, b, 1)
@@ -130,6 +137,22 @@ def measure(png, colour, origin=None):
                     'span': span if len(bx) >= 40 else None, 'tag_bottom': tag_bottom, 'body_top': top}
     except OSError:
         return None
+
+
+def arrow_beside(px, w, h, colour, by, tx, edge=90, need=40):
+    """BUG-1200: the label rows at by belong to an arrow at the screen edge: at least `need` pixels of the tag colour
+    within `edge` px of the edge on the label's side, within 60 rows of it (the arrow's head: find.cpp kMargin 46,
+    kSize 28)"""
+    xs = range(0, edge) if tx < w / 2 else range(w - edge, w)
+    n = 0
+    for y in range(max(0, by - 60), min(h, by + 90)):
+        for x in xs:
+            p = px[x, y]
+            if abs(p[0] - colour[0]) + abs(p[1] - colour[1]) + abs(p[2] - colour[2]) < 48:
+                n += 1
+                if n >= need:
+                    return True
+    return False
 
 
 def colour_count(png, colour):
@@ -242,15 +265,23 @@ def main():
     if not m:
         return ck.result()
     W, H = int(m.group(1)), int(m.group(2))
+
+    def place(con):
+        mm = re.search(r'pos=\(\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\)', con.call('coop.avatar').get('out') or '')
+        return [float(v) for v in mm.groups()] if mm else None
+    # BUG-1200: the test was made with the guest starting on the host's creature (the save's player spot) and the host
+    # walking off: ~5 m apart. Since BUG-0989 (0.7.14) the joining guest is put 5 m beside the host, and after the walk
+    # they stood 8.4-8.7 m apart: the partner small among the nest's red creatures, off the screen in half the turns.
+    # The guest's creature goes back onto the host's spot before the walk (SPORE_TAG_AS_JOINED=1: as it joined)
+    hp0 = place(host)
+    if hp0 and os.environ.get('SPORE_TAG_AS_JOINED') != '1':
+        guest.call('coop.npc gopos %.2f %.2f %.2f' % tuple(hp0))
+        time.sleep(1.0)
     if a.walk > 0:
         host.call('key 0x57 down')
         time.sleep(a.walk)
         host.call('key 0x57 up')
         time.sleep(2.5)
-
-    def place(con):
-        mm = re.search(r'pos=\(\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\)', con.call('coop.avatar').get('out') or '')
-        return [float(v) for v in mm.groups()] if mm else None
     hp, gp = place(host), place(guest)
     dist = sum((hp[i] - gp[i]) ** 2 for i in range(3)) ** 0.5 if hp and gp else -1
     print(f'  the players stand {dist:.1f} m apart', flush=True)
