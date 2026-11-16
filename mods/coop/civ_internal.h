@@ -116,7 +116,8 @@ struct Counters {
     uint32_t joint_hits = 0, military_hits = 0, religious_boosts = 0, alarms = 0, votes = 0;
     uint32_t siege_npc = 0;
     uint32_t city_buys_sent = 0, city_buys_done = 0, city_buys_refused = 0;
-    uint32_t spec_asked = 0, spec_shown = 0, spec_answered = 0, spec_applied = 0, spec_rejected = 0;
+    uint32_t spec_asked = 0, spec_shown = 0, spec_answered = 0, spec_applied = 0, spec_rejected = 0,
+             spec_unpaused = 0; // BUG-1175
     uint32_t boost_restored = 0; // tests: boosts put back on a living vehicle that left the tables (BUG-0773)
     uint32_t sw_refused = 0;
     unsigned sw_unvoted = 0; // superweapons fired without a vote (civ.superweapon_vote off; coop.civ sw_unvoted)

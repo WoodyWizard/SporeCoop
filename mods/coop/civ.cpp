@@ -1192,11 +1192,31 @@ std::deque<SpecialtyAsk> g_spec_queue; // guest: questions of the host not shown
 int g_spec_open = -1;                  // guest: the city index whose box is up (-1: none)
 static int g_spec_open_type = 0;
 static void* g_spec_answer_data;              // guest: the answer message taken (every city's listener gets it)
+// BUG-1175: the box's own pause (Pause 0x4BF38A7 in cCity_ShowSpecialtyBox) stopped the guest's game time while the
+// question was up: the cities the host's game founded meanwhile (the next site after a purchase or a capture) waited
+// for the game time (their appearance is a timed callback, docs/re/civ.md 9.3), and so did every vehicle of their
+// nations (no civilization here, no mirror): "v: 2 missing on the guest" until the answer. The host's world does not
+// stand for one player's question (the host's game is not paused either, BUG-0982): the guest releases the pause the
+// box took at once and its answer does not resume it again. Off (`coop.fix civ.specialty_runs off`): the guest's game
+// stands until the answer (0.7.14).
+static bool g_fix_specialty_runs = true;
+COOP_FIX("civ.specialty_runs", "BUG-1175", g_fix_specialty_runs,
+         "civ: the guest's world goes on while its specialty question is up (the host's new cities and their vehicles appear)");
+constexpr uint32_t kSpecialtyPause = 0x4BF38A7;
+static int g_spec_released;                   // guest: the box's pauses released at its showing (not resumed again)
+static int pause_count(uint32_t reason)
+{
+    for (auto& [r, c] : world::pause_reasons())
+        if (r == reason)
+            return c;
+    return 0;
+}
 LIFECYCLE_STATE("civ.specialty_questions", lifecycle::kSession | lifecycle::kWorld, &g_fix_specialty_buyer,
                 [] {
                     g_spec_queue.clear();
                     g_spec_open = -1;
                     g_spec_answer_data = nullptr;
+                    g_spec_released = 0;
                 },
                 []() -> size_t { return g_spec_queue.size() + (g_spec_open >= 0); });
 
@@ -1246,9 +1266,20 @@ static void spec_show_next()
                 g_spec_open = a.ci;
                 g_spec_open_type = a.type;
                 g_spec_answer_data = nullptr;
+                int before = pause_count(kSpecialtyPause);
                 thiscall<void>(a_ShowSpecialtyBox, city);
                 g_n.spec_shown++;
                 H->log(M, SK_INFO, "civ: the host asks this game for the specialty of city %u (BUG-0982)", (unsigned)a.ci);
+                g_spec_released = 0;
+                if (g_fix_specialty_runs) { // BUG-1175: the box stays up, the game time goes on
+                    int took = pause_count(kSpecialtyPause) - before;
+                    for (int k = 0; k < took; k++)
+                        world::time_pause(kSpecialtyPause, false);
+                    g_spec_released = took > 0 ? took : 0;
+                    g_n.spec_unpaused += g_spec_released;
+                    H->log(M, SK_INFO, "civ: the specialty box of city %u took %d pause(s): released, the world goes on "
+                           "(BUG-1175)", (unsigned)a.ci, took);
+                }
             }
         },
         nullptr);
@@ -1268,9 +1299,11 @@ static uint32_t SK_THISCALL h_CityListener(void* self, uint32_t msg, void* data)
         void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
         if (take && city && game::listed(city) && a_SetSpecialty)
             thiscall<void>(a_SetSpecialty, city, type, 1); // this game's copy at once (the host's follows)
-        if (a_TimeMgr && a_TimeResume)
+        if (g_spec_released > 0) // BUG-1175: released at its showing already (a second Resume would go under 0)
+            g_spec_released = 0;
+        else if (a_TimeMgr && a_TimeResume)
             if (void* tm = skg::cdecl_call<void*>(a_TimeMgr))
-                thiscall<int>(a_TimeResume, tm, 0x4BF38A7u); // the box's own pause
+                thiscall<int>(a_TimeResume, tm, kSpecialtyPause); // the box's own pause
         net::Writer w;
         w.u8(kCmdSpecialty);
         w.u8(ci);
