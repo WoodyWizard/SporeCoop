@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/w51-harness
-commits: 0eb42086, 9c7aab93, 2134cab8, dd944dcb, 0e1995ce, a09480bd, 74a6e5c3, 56b478b7, 34438ac3, 2299d8de, 5c365e41, d49a3978
+commits: 0eb42086, 9c7aab93, 2134cab8, dd944dcb, 0e1995ce, a09480bd, 74a6e5c3, 56b478b7, 34438ac3, 2299d8de, 5c365e41, d49a3978, cea69c59
 tests: tools/tests/harness_selftest.py (make test, unit-tools), tools/harness_codemod.py --self-test, tools/tests/test_lint.py (copy check)
 signature:
 docs: docs/06-testing.md#testing-harness
@@ -58,8 +58,12 @@ the new lint's FAIL case is planted in harness_selftest.py.
   10 ok; tag_cinematic FAIL, its cutscene did not end in 40 s of Enter, ok on the rerun 20261115-230446;
   tribe_zero_fields FAIL), 20261115-230746 (tribe_intro_camera, tribe_dead_member ok). tribe_zero_fields fails the
   same with the test's rel/0.7.15 text on the same build (20261115-230558): a regression of rel/0.7.15, BUG-1187.
-- After the merge of rel/0.7.15: smoke on lanes 4/5 20261115-231011 (13 of 14 ok; `unit` failed only on this
-  ticket's half-written state, the tickets check) and the sample again (below).
+- After the merge of rel/0.7.15 (57cff006): smoke on lanes 4/5 20261115-231011 (13 of 14 ok; `unit` failed only on
+  this ticket's half-written state, the tickets check); the sample again 20261115-232749: the 12 game tests ok
+  (cell_camera, cell_food_away, team, cinematic_puppet, tribe_food_zero, tribe_intro_camera, civ_shared,
+  civ_owners_reload, space_gift_refund, space_helper, guest_spot, tag_cinematic); `unit` there failed on a printed
+  text of harness_selftest ("RESULT: FAIL" inside an ok line, which the lab reads as a failed run), fixed
+  (cea69c59): `unit` ok 20261115-233915.
 
 ## History
 - 2026-11-15: opened.
