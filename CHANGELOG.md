@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- Network: about 65 % less data to each guest in play: creature updates in a
+  compact form, standing creatures once a second, far ones at half rate
+  (BUG-9235), and unchanged world-object lists not sent again (BUG-9237).
+- Network: during a world transfer the game's own messages (damage, effects)
+  wait at most about a round trip + 0.2 s behind it (BUG-9236).
+- Diagnostics: the log names traffic by message type each minute, the NPC AI's
+  frame time, and `coop.sample` names the modules the main thread runs in.
+
 ## [0.7.14.1-lineages60-dev] - 2026-11-15
 
 - Creature: the host can add creatures to its pack again after a guest used

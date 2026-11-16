@@ -8908,3 +8908,18 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   has no such check yet (its Steam had not updated).
   Until it is understood, cross-PC tests use the MSI's two games (`msi.ps1 start -Instance 2`, qa target msi2).
 
+## Measuring traffic and frame time on Windows (2026-11-15, feat/lineages-47)
+<a id="testing-traffic-frame-time"></a>
+
+* Every minute the log has `net: traffic this minute by message type: out <KB>: <type>=<KB>/<messages> ... | in ...`
+  (net/traffic.h: every message as queued or parsed, with its message header; packet headers not split by type) and
+  `perf: npc ai <ms> of the game's own AI and <ms> of the mod's` (game.cpp h_NPCTickAI timed with QueryPerformanceCounter).
+* `coop.sample <ms> <top>` samples the main thread; it now also lists the samples outside the game's code by module
+  (`outside by module: ntdll.dll=... d3d9.dll=... nvd3dum.dll=... coop...dll=...`).
+* Findings (TITAN, RTX 4090 laptop, Dorger.spo, 1280x960, no frame cap, Wardogs running beside it): about 157 fps; of the
+  main thread's samples about 46 % in ntdll (mostly the game's own frame limiter waiting), about 17 % in the DirectX 9 path
+  (d3d9, win32u, the NVIDIA driver), about 2 % in coop.dll, the rest the game's own code; NPC AI about 1-2 % of the frame,
+  the mod's part of it under 0.3 %. A world share's save freezes the host 0.6-1.0 s.
+* Traffic to one guest (the MSI, two games, Vandh.spo, Creature): 1238 KB a minute before BUG-9235 / 9237, about 430 KB
+  after (NPC states 780 -> 80 KB, world objects 213 -> 120 KB; player states 105 KB and world state 49 KB stay). A world
+  share: about 6 MB of files plus 2.3 MB of creation bundles; deflate shrinks a save only about 15 % (already packed).
