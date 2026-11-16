@@ -53,8 +53,10 @@ No switch: the mod is unchanged (one status field added).
 ## Verification
 * FAIL (the old test): rel/0.7.15 9362bcdd out/lab/20261115-180220 (feat/w51-core2-base, lane 10, both rounds); v0.7.14.1
   fix/w51-evolve-v07141/out/lab/20261115-191956 (lane 9, both rounds, "evolved in place: Bob keeps its world").
-* PASS (the new test, fix/w51-evolve): out/lab/20261115-192824 (lane 9, both rounds "in place"), and the final runs
-  below.
+* PASS (the new test, fix/w51-evolve): out/lab/20261115-192824 (lane 9, both rounds "in place"); final runs
+  out/lab/20261115-195303 and 20261115-195524 (lane 9, both rounds "in place" each).
+* Not run: the "shared" branch of the new wait on a lane whose guest plays the world's species (every lane here has
+  the worlds.ini record, BUG-1176); that branch is the old condition unchanged.
 
 ## History
 - 2026-11-15: opened.

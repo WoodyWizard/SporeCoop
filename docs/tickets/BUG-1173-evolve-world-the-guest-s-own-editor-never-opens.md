@@ -66,7 +66,8 @@ own creature and whether it was applied before the DNA.
   in their editors"). (20261115-193249-2 with the switch off passed: the swap came before the DNA, the reason for the
   reshare step of the test.)
 * PASS: out/lab/20261115-193249 (lane 10, "own avatar 290225CD waits: cinematic F6A4B1E1 plays"), 20261115-194127,
-  20261115-194407 (lane 10, own creature True, applied before the DNA False), and the final runs below.
+  20261115-194407 (lane 10, own creature True, applied before the DNA False); final runs out/lab/20261115-195303 and
+  20261115-195524 (lane 10, the race set up both times); play_creature --quick out/lab/20261115-195748 (lane 10) PASS.
 
 ## History
 - 2026-11-15: opened.
