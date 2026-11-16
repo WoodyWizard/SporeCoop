@@ -21,6 +21,7 @@ SPORE_FIX_OFF=fields.zero_values: 3 and 4 FAIL. SPORE_FIX_OFF=fields.player_stat
 import re
 import time
 
+from harness import waiter
 from coop_tribe import members
 from twoinst import Checks, start
 
@@ -33,14 +34,7 @@ def row(con, mid):
     return (int(m.group(1)), int(m.group(2)), float(m.group(3))) if m else None
 
 
-def wait(cond, secs=5.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(0.25)
-    return cond()
+wait = waiter(timeout=5.0, step=0.25, final=True)
 
 
 def npc_sent(host):

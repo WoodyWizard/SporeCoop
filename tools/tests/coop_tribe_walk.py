@@ -41,6 +41,7 @@ import re
 import threading
 import time
 
+from harness import pct
 import lane
 from play_tribe import Player, screen as objs_on_screen, tribe_state
 from twoinst import Checks, shot, start
@@ -92,11 +93,6 @@ def dump(con):
                          'sx': float(f[21]), 'sy': float(f[22]), 'hd': float(f[23]), 'ht': float(f[24]),
                          'id': int(f[25])})
     return rows
-
-
-def pct(xs, q):
-    xs = sorted(xs)
-    return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else 0.0
 
 
 def analyse(rows, owner, top, label):

@@ -27,10 +27,9 @@ the race on every start, whatever the join time.
 
   SPORE_LANE=9 python3 tools/tests/coop_tribe_camera_null.py
 """
-import os
-import re
 import time
 
+from harness import faults, log_since, log_size
 import lane
 import twoinst
 from twoinst import Checks, start
@@ -45,27 +44,6 @@ def mode(con):
         return int(con.call('game.mode')['out'].split()[0], 16)
     except (ValueError, IndexError, OSError):
         return None
-
-
-def log_size(inst):
-    try:
-        return os.path.getsize(lane.game_log(inst))
-    except OSError:
-        return 0
-
-
-def log_since(inst, off):
-    try:
-        with open(lane.game_log(inst), 'rb') as f:
-            f.seek(off)
-            return f.read().decode('utf-8', 'replace').splitlines()
-    except OSError:
-        return []
-
-
-def faults(con):
-    m = re.search(r'total faults: (\d+)', con.call('exc')['out'])
-    return int(m.group(1)) if m else -1
 
 
 def main():

@@ -22,14 +22,10 @@ import shutil
 import sys
 import time
 
+from harness import world_of
 import lane
 from coop_tribe import dist
 from twoinst import Checks, start
-
-
-def world_of(con):
-    m = re.search(r"world '([^']*)'", con.call('coop.avatar')['out'])
-    return m.group(1) if m else None
 
 
 def tribes(con):

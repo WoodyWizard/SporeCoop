@@ -28,6 +28,7 @@ import re
 import sys
 import time
 
+from harness import faults
 import lane
 import twoinst
 from coop_tribe_gameover import frames_go_on
@@ -46,11 +47,6 @@ def members(con):
         if m and m.group(1) != '0':
             out[int(m.group(1))] = (ti, int(m.group(2)), m.group(3) == '1')
     return out
-
-
-def faults(con):
-    m = re.search(r'total faults: (\d+)', con.call('exc')['out'])
-    return int(m.group(1)) if m else -1
 
 
 def main():

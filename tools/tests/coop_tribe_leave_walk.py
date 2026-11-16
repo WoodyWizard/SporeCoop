@@ -23,19 +23,13 @@ import argparse
 import re
 import time
 
+from harness import mode_id as mode
 import fixtures
 import lane
 from lane import sh
 from twoinst import Checks, Monitor, start, wait_guest_in
 
 MODES = {'Tribe': 0x1654C02, 'Civ': 0x1654C04}
-
-
-def mode(con):
-    try:
-        return int(con.call('game.mode')['out'].split()[0], 16)
-    except (OSError, ValueError, IndexError):
-        return -1
 
 
 def gf(con, key):

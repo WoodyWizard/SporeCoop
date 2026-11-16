@@ -19,6 +19,7 @@ SPORE_FIX_OFF=store.tribe_owners: the members are dealt anew in turns, the gift 
 """
 import time
 
+from harness import waiter
 from coop_tribe import members
 from twoinst import Checks, session_restart, start
 
@@ -32,14 +33,7 @@ def owners(con):
     return out
 
 
-def wait(pred, timeout, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        v = pred()
-        if v:
-            return v
-        time.sleep(step)
-    return pred()
+wait = waiter(step=1.0, final=True)
 
 
 def main():

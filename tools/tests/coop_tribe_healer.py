@@ -21,6 +21,7 @@ SPORE_FIX_OFF=tribe.heal_max must FAIL (BUG-0745: the heal happens, no food: the
 import re
 import time
 
+from harness import shared_food as food, waiter
 from coop_tribe_tools import tools
 from twoinst import Checks, shot, start
 
@@ -41,24 +42,12 @@ def roster(con):
     return out
 
 
-def food(con):
-    m = re.search(r'shared food=(-?[\d.]+)', con.call('coop.res')['out'])
-    return float(m.group(1)) if m else None
-
-
 def heals(con):
     m = re.search(r'heals=(\d+)', con.call('coop.status')['out'])
     return int(m.group(1)) if m else -1
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def main():

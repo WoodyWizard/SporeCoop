@@ -22,6 +22,7 @@ Alice hosts, Bob, Carol and Dave are guests (tools/tests/party.py). The host add
 import re
 import time
 
+from harness import waiter
 from coop_tribe import members
 from coop_tribe_chief_removed import chiefs
 from party import Party
@@ -33,14 +34,7 @@ def owners(con):
     return {i: v[0] for i, v in members(con).items() if v[3] == 'player'}
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def same_split(ck, p, label, want_owners):

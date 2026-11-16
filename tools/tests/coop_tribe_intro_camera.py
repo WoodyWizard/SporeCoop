@@ -21,6 +21,7 @@ import re
 import random
 import time
 
+from harness import waiter
 from coop_sync import wait_running
 from play_tribe import Player
 from twoinst import Checks, shot, start
@@ -36,13 +37,7 @@ def box(con):
     return bool(m and m.group(1) == '1')
 
 
-def wait(f, t):
-    t0 = time.time()
-    while time.time() - t0 < t:
-        if f():
-            return True
-        time.sleep(0.3)
-    return False
+wait = waiter(step=0.3, as_bool=True)
 
 
 def main():

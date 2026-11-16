@@ -9,18 +9,11 @@ member's position before the hit and the mirror's own position.
 
   coop_tribe_effects.py   (SPORE_FIX_OFF=creature.effects_relay must FAIL)
 """
-import math
 import re
 import time
 
+from harness import busy_line as busy, dist_or_none as dist
 from twoinst import Checks, start
-
-
-def busy(con):
-    for line in con.call('coop.status')['out'].splitlines():
-        if line.startswith('busy:'):
-            return line.split(':', 1)[1].strip()
-    return '?'
 
 
 def free_games(host, guest, seconds=25):
@@ -63,10 +56,6 @@ def members(con):
         if m:
             out[m.group(1)] = (int(m.group(2)), float(m.group(3)), float(m.group(4)), float(m.group(5)))
     return out
-
-
-def dist(a, b):
-    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b))) if a and b else None
 
 
 def main():

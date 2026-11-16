@@ -2,10 +2,10 @@
 """Tribe stage co-op ("Chiefs") on two instances: the host simulates every tribe, the guest
 mirrors them; the player tribe is split between the players; a player selects and orders only
 their own members; guest orders go through the host."""
-import math
 import re
 import time
 
+from harness import dist
 from twoinst import Checks, shot, start
 
 
@@ -22,10 +22,6 @@ def members(con):
             out[int(m.group(1))] = (int(m.group(2)), int(m.group(3)),
                                     tuple(float(m.group(i)) for i in (4, 5, 6)), tribe)
     return out
-
-
-def dist(a, b):
-    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
 
 
 def seg_dist(p, a, b):

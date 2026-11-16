@@ -28,6 +28,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
+from harness import mode_word as mode
 import lane  # noqa: E402
 import part_substitutes  # noqa: E402,F401
 import twoinst  # noqa: E402
@@ -39,11 +40,6 @@ TRIBE, EDITOR = '0x01654C02', '0x00DBDBA1'
 TAB2, BADGE, TAB3 = (204, 40), (44, 630), (260, 40)  # the planner's outfit tab, the card's edit badge, a clothes tab
 ITEM, ONTO = (84, 216), (975, 440)  # the tab's second piece (a shoulder leaf) and the creature's chest
 DONE, CANCEL = (1416, 1060), (1380, 1062)
-
-
-def mode(con):
-    out = con.call('game.mode')['out'].split()
-    return out[0] if out else ''
 
 
 def profile(con):

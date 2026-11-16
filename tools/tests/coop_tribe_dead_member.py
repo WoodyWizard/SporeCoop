@@ -37,6 +37,7 @@ import re
 import sys
 import time
 
+from harness import frame
 import lane
 
 import worlddiff
@@ -67,11 +68,6 @@ EAT_NODE = 0x0461300F
 def guest_node(con, i):
     m = re.search(r'node=([0-9A-Fa-f]{8})', con.call(f'coop.tribe ai {i}')['out'])
     return int(m.group(1), 16) if m else None
-
-
-def frame(con):
-    m = re.search(r'frame=(\d+)', con.call('frame').get('out', ''))
-    return int(m.group(1)) if m else -1
 
 
 def menu_exit(guest, ck):

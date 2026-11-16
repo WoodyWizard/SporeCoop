@@ -18,6 +18,7 @@ Without the fix (SPORE_FIX_OFF=tribe.hut_defeat_wait) the guest plays on: its ti
 import re
 import time
 
+from harness import busy_list as busy
 from coop_tribe_conquest_guest import near, planet
 from coop_tribe_own_hut_fall import home_of, hut_near
 from twoinst import Checks, game_runs, keyframe, start
@@ -32,11 +33,6 @@ def caption_up(con, text=HUT_CAPTION):
         return False
     fl = [int(m, 16) for m in re.findall(r' fl=0x([0-9A-Fa-f]+) ', out)]
     return bool(fl) and all(f & 1 for f in fl)
-
-
-def busy(con):
-    m = re.search(r'^busy: (\S+)', con.call('coop.status')['out'], re.M)
-    return m.group(1).split(',') if m else ['?']
 
 
 def mode(con):

@@ -19,15 +19,11 @@ MSG_HOST_BUSY, BUG-1142) the guest plays on with no word: step 2 FAILS.
 import re
 import time
 
+from harness import busy_list as busy
 import uifind
 from twoinst import Checks, game_runs, keyframe, start
 
 HOST = 'Alice'
-
-
-def busy(con):
-    m = re.search(r'^busy: (\S+)', con.call('coop.status')['out'], re.M)
-    return m.group(1).split(',') if m else ['?']
 
 
 def toasts(con):

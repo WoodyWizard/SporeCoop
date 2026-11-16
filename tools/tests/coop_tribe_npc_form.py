@@ -17,10 +17,10 @@ tribe.npc_tribes off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-1228
 
   SPORE_LANE=7 python3 tools/tests/coop_tribe_npc_form.py
 """
-import math
 import re
 import time
 
+from harness import dist
 from twoinst import Checks, start
 
 
@@ -36,10 +36,6 @@ def tribes(con):
         if m and out:
             out[-1][3].append((int(m.group(1)), tuple(float(m.group(i)) for i in (2, 3, 4))))
     return out
-
-
-def dist(a, b):
-    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
 
 
 def main():

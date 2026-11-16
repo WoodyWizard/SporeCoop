@@ -21,13 +21,9 @@ import re
 import sys
 import time
 
+from harness import faults
 from coop_tribe_gameover import frames_go_on, player_members
 from twoinst import Checks, start
-
-
-def faults(con):
-    m = re.search(r'total faults: (\d+)', con.call('exc')['out'])
-    return int(m.group(1)) if m else -1
 
 
 def spot_stats(con):

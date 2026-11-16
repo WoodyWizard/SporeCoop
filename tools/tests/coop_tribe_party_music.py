@@ -29,6 +29,7 @@ import argparse
 import re
 import time
 
+from harness import mode_word as mode
 from coop_ui import Ui
 
 from coop_tribe_gameover import player_members
@@ -37,11 +38,6 @@ from twoinst import Checks, start
 MUSIC = '19DC06DF'
 CANCEL = (1380, 1062)  # the red X of the creature editor (1440x1080 test window)
 TRIBE = '01654C02'
-
-
-def mode(con):
-    out = con.call('game.mode')['out'].split()
-    return out[0] if out else ''
 
 
 def audio(con):

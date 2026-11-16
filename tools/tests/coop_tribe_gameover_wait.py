@@ -15,16 +15,11 @@ stands.
 
   SPORE_LANE=5 python3 tools/tests/coop_tribe_gameover_wait.py
 """
-import re
 import time
 
+from harness import busy_list as busy
 from play_tribe import caption_up, tribe_state
 from twoinst import Checks, game_runs, keyframe, start
-
-
-def busy(con):
-    m = re.search(r'^busy: (\S+)', con.call('coop.status')['out'], re.M)
-    return m.group(1).split(',') if m else ['?']
 
 
 def mode(con):

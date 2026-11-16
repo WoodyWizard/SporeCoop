@@ -17,16 +17,11 @@ tribe.act_check off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-01093
   SPORE_LANE=8 python3 tools/tests/coop_tribe_act.py
 """
 import argparse
-import re
 import time
 
+from harness import faults
 from coop_tribe_gameover import player_members
 from twoinst import Checks, start
-
-
-def faults(con):
-    m = re.search(r'total faults: (\d+)', con.call('exc')['out'])
-    return int(m.group(1)) if m else -1
 
 
 def settle(con, f0, secs=40):

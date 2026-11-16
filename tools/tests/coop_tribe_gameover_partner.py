@@ -19,6 +19,7 @@ Key frame `caption`: both games while the caption is up (the host's caption, the
 import re
 import time
 
+from harness import busy_word as busy
 from play_tribe import GameOver, caption_up, tribe_state
 from twoinst import Checks, game_runs, keyframe, start
 
@@ -39,11 +40,6 @@ def chief_row(con):
             if m:
                 return [f'chief #{m.group(1)} hp={m.group(2)} dead={m.group(3)} bt={m.group(4)}']
     return ['no chief']
-
-
-def busy(con):
-    m = re.search(r'^busy: (\S+)', con.call('coop.status')['out'], re.M)
-    return m.group(1) if m else '?'
 
 
 def player_rows(con):
