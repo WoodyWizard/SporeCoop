@@ -7,28 +7,38 @@ stage: Cell
 reported: 2026-11-15
 source: B1 impact run 20261115-133237
 role: 
-versions: 
+versions: 0.7.12, 0.7.13, 0.7.14, 0.7.14.1, rel/0.7.15
 fixed_in:
-branch:
+branch: feat/w51-npc
 commits:
-tests:
+tests: editor_desync
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-w51-npc
+related: BUG-0765, BUG-1138
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+The B1 impact run (feat/w51-retire 20261115-034753, rerun 20261115-133237 lane 3) and rel/0.7.15 5206247b
+(20261115-141538) failed editor_desync at "the guest gets the vote with an I'm ready button"; the next check (the host's
+editor opens after the vote) passed, so the vote and the guest's click worked.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed: the guest's log has the vote (`vote: started by the host`), `ui: co-op dialog ready` 10 ms later and the
+test's click (`ui: click ready`, `own ready=1 set (vote on)`) 0.6 s after: the button was there. The check compared the
+whole `coop.uistate` line with the fixed rectangle `ready 380 728 580 768 1 'I'm ready'`; F1 of 0.7.12 (ea0f5a5b, BUG-0765:
+the window in steps, kH 644 -> 660) moved the window's rows by 8 px, so the string never matched again (the click at
+(478, 747) still lands inside the new rectangle). The last PASS of editor_desync on any branch is 2026-11-08
+(20261108-044355), before F1 reached the branches that ran it. Not a regression of 0.7.15: v0.7.14.1 fails the same
+(lane 3, 20261115-154901 of the tag's worktree).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+tools/tests/coop_editor_desync.py: the button is found by name and caption (`READY_BTN`, any rectangle), waited for up
+to 10 s, and clicked at its centre. Test-only.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL (the old check) on v0.7.14.1 lane 3 and rel/0.7.15 lane 2: 20261115-154901 (both trees).
+PASS: (pending)
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-15 (feat/w51-npc): root cause (the stale rectangle), test fixed.

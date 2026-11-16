@@ -9,26 +9,32 @@ source: plan
 role: 
 versions: 
 fixed_in:
-branch:
-commits:
-tests:
+branch: feat/w51-npc
+commits: 314a9f21, aa4b0a16
+tests: tests/npc_tests.cpp (test_proxy_rules)
 signature:
-docs:
-related:
+docs: docs/01-architecture.md#arch-npc-proxy-rules
+related: BUG-1140, BUG-0009, BUG-0611, BUG-0383, BUG-0412, BUG-0550, BUG-0562
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Plan item D3 of docs/plan-0.7.15.md (audit STG-8, TST-9) for NPC: the guest's proxy rules (staleness, placement, hold
+decisions) as a portable header with unit tests.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Structure: the rules lived inline in npc.cpp's guest_tick and update_filter, next to game calls, testable only in the lab.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+mods/coop/npc_proxy_rules.h (namespace npc_rules): `states_flow` / `stale` (Fresh / Thaw / Drop: BUG-0009, BUG-0611),
+`remake` (BUG-0383), `keep_locals` (BUG-0412), `place` (Air / Walk / Stand / Corpse: BUG-0550, BUG-0281, BUG-0361) and
+`mound_lift` (BUG-0562). npc.cpp asks them (guest_tick's stale drop, which is the registry's sweep since C1, the remake,
+the placing; update_filter; proxy_on_mound): the same decisions as before (a refactoring, no switch).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: a refactoring (the same decisions); tests/npc_tests.cpp test_proxy_rules (make test, ASan / UBSan) fails on
+mutations of the rules (no thaw, a body always remade: 4 checks fail). The lab proof is BUG-1140's run of the stage's
+tests (the rules are in the code those tests ran).
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-15 (feat/w51-npc): the header and its tests (314a9f21), npc.cpp asks it (aa4b0a16).

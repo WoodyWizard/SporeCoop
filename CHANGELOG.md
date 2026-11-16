@@ -67,6 +67,11 @@
   family has a wire revision with a lock in `make test` (`tools/msg_manifest.py`) (BUG-1136, BUG-1137).
 - Lab: the warm reset puts the co-op window back on the lobby page (`coop.uistate reset`), as at a cold start
   (BUG-1139).
+- NPC sync: the id tables of the host's NPCs and the guests' copies are the shared mirror registry (identity by the
+  game's object list and the object's serial; C1), the guest's proxy rules a portable header with unit tests
+  (`npc_proxy_rules.h`, D3) (BUG-1140, BUG-1159).
+- Tests: editor_desync's vote check, puppet_far_jump_caption's by-design failure and the Tribe raid timeout of the
+  campaign driver fixed (BUG-1166, BUG-1167, BUG-1169).
 - Lab: the invariant monitor reads every trace line (the Space galaxy view's, a NaN position: no false "not together"
   in space_allies), and space_rivalry passes warm after itself (BUG-1145, BUG-1146, BUG-1147).
 - Threads: one main-thread check for every module and `coop.threads`, which counts game calls made off the game's

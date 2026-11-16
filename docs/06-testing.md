@@ -8420,3 +8420,25 @@ E4 (BUG-1156..1158, docs/re/creations.md#creations-stage-designs).
   its own through the game's TransferStarOwnership; `force` also takes a home star or an empire's last star: the
   space_empire fixture's two met empires have one star each, their home). Durations on a quiet lane: space_session
   ~2.5 min, space_session_npc ~2 min, civ_owners_session ~3 min, tribe_owners_session ~2-5 min, autosave_* ~2 min.
+
+## Old failures checked against v0.7.14.1, the NPC registry's proof (2026-11-15, feat/w51-npc)
+<a id="testing-w51-npc"></a>
+
+Four tests the B1 impact run found failing on rel/0.7.15 were run on rel/0.7.15 5206247b+ (lane 2) and on a worktree of
+the tag v0.7.14.1 (lane 3) at the same time (lab 20261115-154901 in both trees): none is a regression of 0.7.15.
+* editor_desync (BUG-1166): FAIL on both since F1 of 0.7.12 moved the co-op window's rows: the check wanted the
+  rectangle `380 728 580 768` of the I'm ready button; it now waits for the button by name and caption
+  (`ready x0 y0 x1 y1 1 'I'm ready'`) and clicks its centre.
+* puppet_far_jump_caption (BUG-1167): failed every run by design (BUG-0658: with a caption holding the guest's game its
+  avatar stays inside the game's collision at hop 2 of the default seed, the host's copy 4.8-5.4 m up). It now checks
+  exactly that artefact (3-7.5 m at hop 2, the ground everywhere else); a lift anywhere else still fails.
+* sync_mobile (BUG-1168): civ/vehicles p90 4.1-4.2 m (one vehicle) on both, at a lab load of ~35 on 12 cores: BUG-0438's
+  class (the host's state ages under load).
+* campaign_tribe_noclick (BUG-1169): 0.7.14 failed it 2 of 3, v0.7.14.1 passed, rel/0.7.15 ran out of its 30 min Tribe
+  advance at 4/5. One cause in the driver: a raid whose hut was cut late (the host's raid click came late) was dropped
+  at 300 s with the hut at 39 of 750; a raid now gets 120 s after its hut's first cut (`CAMPAIGN_OLD_RAID_CUT=1`: 300 s).
+
+The NPC registry (C1, docs/01-architecture.md#arch-npc-registry) was proven with the stage's tests (npc_*, puppet_*,
+nest_*, creature, play_creature, civ_wild_*, creature_kills, creature_death_coop, creature_social_prompts,
+creature_eat) with `npc.registry` on, and `tools/refactor_dump.py compare` against rel/0.7.15 (only the switch's line
+differed). `coop.npc status` shows both registries (`npc registry: npc.host: ...`, `npc.proxies: ... rebound=`).
