@@ -1342,8 +1342,9 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9226](BUG-9226-cell-creature-when-the-whole-party-is-down-nobod.md) | fixed | bug | creature | 2026-11-15 | 0.7.14.1-lineages59-dev | Cell / Creature: when the whole party is down nobody is forced to respawn (they wait for a revive nobody can give) |
 | [BUG-9227](BUG-9227-guests-see-a-paused-by-host-cover-while-the-host.md) | fixed | feature | all | 2026-11-15 | 0.7.14.1-lineages59-dev | Guests see a 'Paused by host' cover while the host's game is paused |
 | [BUG-9228](BUG-9228-editor-the-party-cards-cover-the-paint-page-s-ne.md) | fixed | bug | creature | 2026-11-15 | 0.7.14.1-lineages59-dev | Editor: the Party cards cover the paint page's next-page button |
-| [BUG-9229](BUG-9229-creature-a-guest-s-summon-flock-does-not-follow.md) | open | bug | creature | 2026-11-15 |  | Creature: a guest's Summon Flock does not follow the guest |
+| [BUG-9229](BUG-9229-creature-a-guest-s-summon-flock-does-not-follow.md) | fixed | bug | creature | 2026-11-15 | unreleased | Creature: a guest's Summon Flock does not follow the guest |
 | [BUG-9230](BUG-9230-creature-the-impress-progress-bar-does-not-move.md) | open | bug | creature | 2026-11-15 |  | Creature: the impress progress bar does not move on the guest's screen |
 | [BUG-9231](BUG-9231-creature-some-enemies-are-invisible-on-the-guest.md) | open | bug | creature | 2026-11-15 |  | Creature: some enemies are invisible on the guest |
 | [BUG-9232](BUG-9232-creature-cells-appear-in-the-creature-stage.md) | open | bug | creature | 2026-11-15 |  | Creature: cells appear in the Creature stage |
-| [BUG-9233](BUG-9233-creature-the-host-cannot-add-creatures-to-its-pa.md) | open | bug | creature | 2026-11-15 |  | Creature: the host cannot add creatures to its pack while a guest's flock is out |
+| [BUG-9233](BUG-9233-creature-the-host-cannot-add-creatures-to-its-pa.md) | fixed | bug | creature | 2026-11-15 | unreleased | Creature: the host cannot add creatures to its pack while a guest's flock is out |
+| [BUG-9234](BUG-9234-creature-a-migration-loads-the-world-twice-for-a.md) | open | bug | creature | 2026-11-15 |  | Creature: a migration loads the world twice for a guest with its own species (at the start, then its new nest) |

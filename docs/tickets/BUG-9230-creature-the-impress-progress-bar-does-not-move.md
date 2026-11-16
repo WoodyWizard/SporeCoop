@@ -27,7 +27,7 @@ Not known yet.
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-no-fail-run: open, not reproduced yet
+no-fail-run: not reproduced: TITAN two games (Dorger.spo, guest coop.social goto/act on NPC 1): the guest's meter opened, moved twice (bars=2) and closed with a win (impressed 0 -> 1, win_msgs=1). The guest's own log of the play test is needed.
 
 ## History
 - 2026-11-15: opened.
