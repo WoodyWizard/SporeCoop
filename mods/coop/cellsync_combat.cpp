@@ -569,8 +569,14 @@ std::map<uintptr_t, uint32_t> g_quick_destroy;
 
 std::map<uintptr_t, uint32_t> g_product_destroys; // tests (BUG-0716): who destroys our poison clouds, by return address
 uintptr_t a_PoisonCullRet; // the visibility step's DestroyCell of a poison cell outside the active area (0xE78C37)
+uint32_t g_mate_gone_by;
+double g_mate_gone_at = -1;
 void SK_CDECL h_Destroy(uint32_t idx, bool loot, float f, int x)
 {
+    if (in_cell() && idx && idx == mate_idx() && modes::cell_at(idx)) { // tests (BUG-1186): who removes our mate
+        g_mate_gone_by = (uint32_t)((uintptr_t)__builtin_return_address(0) - H->rebase(0));
+        g_mate_gone_at = H->time_seconds();
+    }
     if (in_cell() && is_guest()) {
         uint8_t* pc = modes::cell_at(idx);
         uintptr_t ra = (uintptr_t)__builtin_return_address(0);

@@ -25,6 +25,8 @@ host's +0x111 clear, a bite of 1 (`coop.pool selfhit 1`, the bitten player's pat
 
   SPORE_LANE=3 python3 tools/tests/coop_cell_editor_timed.py [--revive] [--vote]
 """
+import math
+import os
 import re
 import sys
 import time
@@ -41,6 +43,21 @@ def num(out, key):
 def hp(con):
     m = re.search(r'^avatar hp=(-?\d+)', con.call('coop.pool')['out'], re.MULTILINE)
     return int(m.group(1)) if m else None
+
+
+def away_towards_mate(con, far=25.0):
+    """`coop.pool tp` offsets (from the host's cell) `far` m from the host on the side of the mate. BUG-1186: a fixed
+    `tp 25 0` put a mate that had come on the host's other side (-x) ~40 m from the guest's cell, outside its game's
+    active tiles, and the game's own cull (CellPhysicsStep 0xE7C080 -> ShouldCullCell 0xE5F8C0, DestroyCell return
+    address 0xE7C3E6, `coop.pool mate` gone_by) removed it within 0.5 s: no mate to touch after the knockout (5 of 5
+    runs with the mate on that side, labs 20261115-231325, -232616). On its side the mate stays ~10 m away.
+    CELL_EDITOR_TIMED_FIXED_TP=1: the old fixed `25 0` (the twin)."""
+    m = re.search(r'from_host=\((-?[\d.]+) (-?[\d.]+)\)', mate(con))
+    if os.environ.get('CELL_EDITOR_TIMED_FIXED_TP') == '1' or not m:
+        return f'{far:g} 0'
+    dx, dy = float(m.group(1)), float(m.group(2))
+    d = math.hypot(dx, dy)
+    return f'{far:g} 0' if d < 1 else f'{far * dx / d:.1f} {far * dy / d:.1f}'
 
 
 def host_vote(host, guest, ck):
@@ -87,8 +104,9 @@ def main():
     print('  mate: ' + mate(guest).strip())
     if not ck('alive=1' in mate(guest), 'the guest\'s mate is in the pool'):
         return ck.result()
-    print('  guest: ' + guest.call('coop.pool tp %s' % ('0.5 0' if revive else '25 0'))['out'])
+    print('  guest: ' + guest.call('coop.pool tp %s' % ('0.5 0' if revive else away_towards_mate(guest)))['out'])
     time.sleep(0.5)
+    print('  mate after the move: ' + mate(guest).strip())
     r = guest.call('coop.pool selfhit 250')['out']
     print('  guest: ' + r)
     if not ck(num(r, 'downed') == 1, 'the guest is knocked out'):
