@@ -33,14 +33,38 @@ never start the host's performer (or only on 0.7.15). Unrelated to BUG-1187 (hun
 To reproduce: `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_duet --lane 4 --retry 0 --no-build`.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+A test problem, not a 0.7.15 regression of the mod (no player-visible change): the host's Drama Manager creature attack
+(kind 7) now runs during the test's performance, on the test's own NPC village.
+Observed (lanes 4 / 5, the test with diagnostics: `coop.tribe ai` of both performers and their targets, `coop.drama
+target`, the game logs):
+* the attack's start, in session time, is the same within 1 s in every run of one start-up: 57.1-57.6 s on rel/0.7.12,
+  v0.7.14.1, feat/w51-tribe before the A9 merge and rel/0.7.15 with SPORE_START_FIXED=1 (lab 20261116-023030), but
+  30.6-31.5 s on rel/0.7.15's lab start (A9, d1fe9727 / BUG-1112; 12 runs, cold and warm). The test's NPC village is
+  made at ~12 s and its orders come at ~40-50 s: before, the attack started after the duet had passed.
+* its attacked tribe is the test's NPC village (`coop.drama target` = the performers' target in 3 of 3 printed runs;
+  SpawnNpcTribe's DramaManager_NoteNpcTribe makes the Nth NPC tribe the event's, docs/re/tribe.md#tribe-attack-event-target).
+* in a failing run one performer keeps the order (`rec=26`, target the villager) and stays in the idle node 0x04626360
+  (its 8 s wait starting again) for the whole 25 s while the other player's member performs (lab 20261116-022434 #2:
+  the host's #3; 20261116-022014 #1 and 20261116-002240: the guest's; 20261116-020859-2: the host's two after its
+  2-member click). Which player's member fails varies; the orders reach the host and run (host_command unchanged in
+  0.7.15 but for the C1 table, `tribe last order` resolved to the villager).
+* rel/0.7.15 without a test change: 2 FAILs in 10 runs (20261116-022014: 1 of 4, 20261116-022434: 1 of 6, the latter with the diagnostics only).
+Inferred: the attacked village's members answer the attack (stimulus 0x4000) and a performance for one of them does
+not start (vanilla behaviour). The selection difference of the report (chief + #3 with a right-click order vs #3 with
+the fallback) is not the cause: both paths passed and failed.
+Ruled out: Tribe C1 registry (owner_of / members / host_command compare equal), the tribe.cpp split (pure moves), C3
+host busy (no busy during the runs), B1 retired switches (tools/fix_retired.txt has no duet or selection switch;
+creature.guest_events' retirement keeps the host path).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Test: `coop_tribe_duet.py` holds the host's creature attack (`coop.drama hold 80`, a new test command in drama.cpp:
+the Drama Manager's start of these kinds returns as a guest's held event does, until the world changes; no
+behaviour for players) and prints the drama state. It also checks more than before: the guest's game shows both
+performers playing the host's performance animation (`coop.tribe anims` on both games). Twin `SPORE_DUET_DRAMA=1`:
+no hold and the game's own attack started right before the orders (`coop.drama start 7`). No coop.fix switch: no
+product behaviour changed.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
 ## History
 - 2026-11-16: opened.

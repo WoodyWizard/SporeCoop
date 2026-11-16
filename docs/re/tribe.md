@@ -4150,3 +4150,21 @@ coop_tribe_zero_fields.py). Follows #tribe-mirror-looks.
 * Fix `tribe.mirror_hunger_full`: a host value below 100 ends the mirror's full clock (the game's Stop, what the
   update does at the delay) before the setter; a host value of 100 lets the mirror's own clock run (the host's member
   is full too). Negative: the mirror's tree never runs (h_BTTick), so the 100 was not a meal.
+
+## The creature attack on a village the players perform for (2026-11-16, fix/w51-duet)
+<a id="tribe-duet-attack"></a>
+
+BUG-1188. GOG 2024, lab lanes 4 / 5, `coop_tribe_duet.py` with diagnostics (`coop.tribe ai`, `coop.drama target`).
+Follows #tribe-duet-test and #tribe-attack-event-target.
+* ✔ (runtime) The host's Drama Manager starts its creature attack (kind 7) at a session time that is the same within
+  1 s in every run of one start-up: ~57 s (57.1-57.6, rel/0.7.12, v0.7.14.1, and rel/0.7.15 with
+  SPORE_START_FIXED=1) and ~30.7 s (30.6-31.5, rel/0.7.15's lab start, A9 / BUG-1112, cold and warm). ? Why the old
+  start delays it by ~27 s (the wait counts game time, docs/re/creature.md#creature-drama-events): not looked for.
+* ✔ (runtime, 3 of 3 runs printed) Its attacked tribe (`coop.drama target`) is the NPC tribe the test makes with
+  `coop.tribe npc_tribe` (SpawnNpcTribe counts it, DramaManager_NoteNpcTribe makes it the pick's tribe).
+* ✔ (runtime) A member ordered with CitizenAction 26 on a member of that village while the attack runs can keep the
+  order record (`rec=26`, target the villager) and stay in the idle node 0x04626360 (depth 3, its wait counting down
+  8 s and starting again) for the whole 25 s, while the other player's member, ordered on another villager, performs
+  (state 1 -> 3 -> 5): lab 20261116-022434 #2 (the host's #3), 20261116-022014 #1 and 20261116-002240 (the guest's).
+  ~ Inferred: the attacked village's members answer the attack (stimulus 0x4000) and a performance for one of them
+  does not start. Not a mod path: the order reaches the member (host_command / the host's own click) as before.

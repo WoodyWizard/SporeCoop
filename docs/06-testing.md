@@ -8712,3 +8712,19 @@ v0.7.14.1 (a detached worktree of the tag, `make`) beside rel/0.7.15 on lanes 6 
   now also check that the mirror keeps the value for 1 s: the fields engine re-applies every 0.25 s, so without the fix
   a poll could catch the value for the one frame before the game's update put 100 back.
 * `coop.tribe hunger <id>` (no value) only reads; `hunger <id> <v> [end]` sets through the game's setter.
+
+## tribe_duet and the host's creature attack (2026-11-16, fix/w51-duet)
+<a id="testing-tribe-duet-attack"></a>
+
+* `tribe_duet` (BUG-1188) failed 1 to 2 of 6 on rel/0.7.15 (one player's member performed, the other stayed idle with
+  its CitizenAction 26): the host's Drama Manager starts its creature attack ~30.7 s after the session start since the
+  lab start-up of A9 (BUG-1112; ~57 s before, and with SPORE_START_FIXED=1), its attacked village is the test's NPC
+  village (docs/re/tribe.md#tribe-duet-attack), and the attack now falls into the performance. The test holds that
+  event in the host's game: `coop.drama hold <hex kind mask>` (tests; any role; `80` = kind 7; reset when the world
+  changes; `coop.drama` prints `test hold=80 held: creature_attack=<n>`). Twin: `SPORE_DUET_DRAMA=1` (no hold, and
+  `coop.drama start 7` right before the players' orders).
+* The test also checks what the guest sees: both performers' mirrors play the animation the host's performance tree
+  started (`coop.tribe anims` on both games: host `cur`/`bhv` equal, the guest's `cur` the same id), at least once each.
+* A test that makes an NPC tribe in Tribe and needs its members calm for a minute should hold kind 7 the same way.
+* Under SPORE_START_FIXED=1 on rel/0.7.15 the test stops earlier (4 of 4, lab 20261116-023030): the guest's first
+  member is its chief (#1, holding item 11), which never takes the instrument. Only that twin start shows it.

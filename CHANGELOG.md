@@ -146,6 +146,8 @@
 - Tests: the start of a test waits for the game's input lock too (a guest's cell hatching after its load), within the
   old wait; cell_unknown_model, cell_editor_timed and cell_sap no longer fail on what their own steps did (a status
   line read by position, a jump that left the mate behind, a cell count taken before the guests spread) (BUG-1186).
+- Tests: tribe_duet holds the game's creature attack on the test's village (`coop.drama hold`), which the faster lab
+  start had moved into the performance, and checks that the guest sees both members perform (BUG-1188).
 
 ## [0.7.14.1] - 2026-11-14
 
