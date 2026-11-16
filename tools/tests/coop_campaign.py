@@ -125,6 +125,9 @@ TRIBE_ADVANCE = 0x6454B47   # the HUD's advance button the full goal bar shows i
 # clicks on the first village raided while another stands never come (a planted view that does not reach it, the test's twin)
 OLD_RAID_SKIP = os.environ.get('CAMPAIGN_OLD_RAID_SKIP') == '1'
 PLANT_NOCLICK = float(os.environ.get('CAMPAIGN_PLANT_NOCLICK') or 0)
+# BUG-1169: a raid gets RAID_AFTER_CUT s after its hut's first cut (CAMPAIGN_OLD_RAID_CUT=1: dropped at 300 s however late the cut)
+OLD_RAID_CUT = os.environ.get('CAMPAIGN_OLD_RAID_CUT') == '1'
+RAID_AFTER_CUT = 120
 # BUG-1096: CAMPAIGN_OLD_EDITOR_DRAG=1: the old editor driver: the parts dragged once only, every wait in seconds (a drag
 # or the name's dice click lost at low fps: "done" forever)
 OLD_EDITOR_DRAG = os.environ.get('CAMPAIGN_OLD_EDITOR_DRAG') == '1'
@@ -1342,8 +1345,12 @@ class Campaign:
                           f'(goal bar {self.tribe_progress()})')
                 state['raid'] = None
                 return
-            if time.time() - raid['t0'] > 300:
-                self.note(f'tribe: the raid on village {raid["tribe"]} did not fell its hut in 300 s ({hs.strip()[:80]})')
+            # BUG-1169: a raid whose hut was cut late (its host click came late) gets RAID_AFTER_CUT s after the first cut:
+            # one dropped 28 s after it with the hut at 39 of 750 (lab 20261115-154901 village 3) and its village was
+            # raided from the start again later (the Tribe advance ran out of its 30 min at 4/5). CAMPAIGN_OLD_RAID_CUT=1: 300 s
+            limit = 300 if OLD_RAID_CUT or not raid.get('cut_at') else max(300, raid['cut_at'] - raid['t0'] + RAID_AFTER_CUT)
+            if time.time() - raid['t0'] > limit:
+                self.note(f'tribe: the raid on village {raid["tribe"]} did not fell its hut in {limit:.0f} s ({hs.strip()[:80]})')
                 state['raid'] = None
                 if not raid.get('host_click') and not OLD_RAID_SKIP and len(state.get('standing', [])) > 1:
                     # BUG-1091: a raid without the host's click never gets its hut cut and never falls; the nearest
@@ -1390,6 +1397,7 @@ class Campaign:
                               'raiders minutes; again whenever the village repairs it)')
                 self.host.call('coop.tribe huthp %.2f %.2f %.2f 40' % raid['hut'])
                 raid['cut'] = True
+                raid.setdefault('cut_at', time.time())  # BUG-1169
             elif m and 1.5 < float(m.group(1)) <= 45 and os.environ.get('CAMPAIGN_OLD_RAID') != '1':
                 # a hut at 4 of 750 stood for minutes once its raiders were dead (lab 20261113-145317): the next blow fells it
                 self.host.call('coop.tribe huthp %.2f %.2f %.2f 1' % raid['hut'])
