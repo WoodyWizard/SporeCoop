@@ -1,20 +1,20 @@
 ---
 id: BUG-1206
 title: report_shot: the reference frame before the mark is taken while the world still fades in
-status: open
+status: fixed
 kind: test
 stage: Tools
 reported: 2026-11-16
 source: final check 20261116-025154
 role: 
-versions: 
-fixed_in:
-branch:
-commits:
-tests:
+versions: 0.7.15 dev
+fixed_in: unreleased
+branch: fix/w51-t1
+commits: a6eb9577, 07113651
+tests: report_shot (tools/tests/coop_report_shot.py)
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-w51-t1-triage
+related: BUG-0442, BUG-1112
 ---
 
 ## Report
@@ -35,8 +35,12 @@ coop_report_shot.py takes as the reference a frame whose brightness held: two sh
 each other (still at most 45 s). The comparison itself (the mark's JPEG within 30 of the reference) is unchanged.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL: lab 20261116-025154 (the reference 61.8 taken while the world faded in, the mark 99.8).
+* Without the fix on lane 9: lab 20261116-082959 PASS, lab 20261116-084124 FAIL only "no hitch on the guest in the 5 s
+  after the mark (['214', '458'])" at a load average of 33 (other agents' labs), not this check.
+* PASS with the fix: lab 20261116-085443 (reference 105.5 after 1 s, mark 105.8) and lab 20261116-091534.
+* no-fail-run: the fade-in moment is not reproducible on purpose; the fix only waits for a steady frame.
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t1.

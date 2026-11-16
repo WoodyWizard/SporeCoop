@@ -1,20 +1,20 @@
 ---
 id: BUG-1192
 title: campaign_segment runs in the full suite without a segment and fails
-status: open
+status: fixed
 kind: test
 stage: Tools
 reported: 2026-11-16
 source: final check 20261116-025154
 role: 
-versions: 
-fixed_in:
-branch:
-commits:
-tests:
+versions: 0.7.15 dev
+fixed_in: unreleased
+branch: fix/w51-t1
+commits: 72c59ae5, cc2ce72e
+tests: campaign_segment, labverdict_selftest (make test)
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-w51-t1-triage
+related: BUG-1115, BUG-1138
 ---
 
 ## Report
@@ -37,8 +37,12 @@ without a segment prints `FAIL no segment given: ...` before its RESULT line. la
 campaign_segment for any change of coop_campaign.py).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL: lab 20261116-025154 (the full suite ran campaign_segment without a segment); labverdict_selftest's `suite:` check
+  against rel/0.7.15's suite.py: FAIL.
+* PASS: labverdict_selftest `suite: campaign_segment only in segment ...` (make test); `suite.select('full')` holds 832
+  tests (834 before, without campaign_segment and chat_held_send_oldcheck).
+* no-fail-run: a suite membership change (no game behaviour); proven by the unit check above.
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t1.

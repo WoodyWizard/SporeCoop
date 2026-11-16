@@ -1,20 +1,20 @@
 ---
 id: BUG-1189
 title: update: the next-version build of update_check.py fails, session_glue.cpp redefines COOP_VERSION (B2 split)
-status: open
+status: fixed
 kind: tooling
 stage: Tools
 reported: 2026-11-16
 source: final check 20261116-025154
 role: 
-versions: 
-fixed_in:
-branch:
-commits:
-tests:
+versions: 0.7.15 dev
+fixed_in: unreleased
+branch: fix/w51-t1
+commits: b2f27580, 07113651
+tests: update (tools/tests/update_check.py)
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-w51-t1-triage
+related: BUG-1128, BUG-1214
 ---
 
 ## Report
@@ -38,8 +38,15 @@ the fake build's text "coop 0.7.14.2, SporeKit ..." of the session's version lin
 change only: the normal build (no -D) makes the same coop.dll text as before. No switch (no behaviour of the game).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL: lab 20261116-025154 (`update`, the final check): `session_glue.cpp:9:9: error: 'COOP_VERSION' macro redefined`.
+* PASS of the build: `make B=build-vtest coop CXX='... -DCOOP_VERSION=\"0.7.14.2\"'` with the fix: coop.dll holds
+  "SporeCoop 0.7.14.2" and "coop 0.7.14.2, SporeKit" (the session's version line, now from the -D too).
+* PASS of the whole test (with BUG-1214): `update_check.py --lane 9` by hand twice, RESULT: OK (out/manual/
+  update_check-lane9-2.log, -3.log of fix/w51-t1: found 0.7.14.2, installed, 0.7.14.2 runs after the restart,
+  uninstalled). The lab runs `update` only on a free lane outside its run; with lane 9 as the only lane of this task
+  there is none, so the runs are by hand on lane 9.
+* `make -j8`, `make test` pass.
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t1.

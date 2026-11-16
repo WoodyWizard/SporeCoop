@@ -148,6 +148,10 @@
   line read by position, a jump that left the mate behind, a cell count taken before the guests spread) (BUG-1186).
 - Tests: tribe_duet holds the game's creature attack on the test's village (`coop.drama hold`), which the faster lab
   start had moved into the performance, and checks that the guest sees both members perform (BUG-1188).
+- Tests: the update tests replace a lane's `[update]` setting instead of adding a second one, the next-version build
+  of the updater test compiles again, twins that must fail and the campaign segment rerun are no longer in the full
+  suite, the second game of a start waits for the first one's SporeKit, and diag / report_shot wait for what they
+  check (BUG-1189, BUG-1190, BUG-1191, BUG-1192, BUG-1193, BUG-1206, BUG-1209).
 
 ## [0.7.14.1] - 2026-11-14
 

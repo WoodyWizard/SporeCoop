@@ -1,20 +1,20 @@
 ---
 id: BUG-1193
 title: chat_held_send_oldcheck, a twin that must FAIL, runs in the full suite and fails every run
-status: open
+status: fixed
 kind: test
 stage: Tools
 reported: 2026-11-16
 source: final check 20261116-025154
 role: 
-versions: 
-fixed_in:
-branch:
-commits:
-tests:
+versions: 0.7.11
+fixed_in: unreleased
+branch: fix/w51-t1
+commits: 72c59ae5, cc2ce72e
+tests: chat_held_send_oldcheck, chat_held_send, labverdict_selftest (make test)
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-w51-t1-triage
+related: BUG-0629
 ---
 
 ## Report
@@ -34,8 +34,12 @@ chat_held_send_oldcheck carries only it. The twin and its check are unchanged (i
 chat_held_send (the PASS half) stays in full.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL: lab 20261116-025154 (in full); the twin itself still FAILs as it must, lab 20261116-082959 (rel/0.7.15, lane 9:
+  "line 1 / line 2 ... seen on both games (0.0 s after the click)").
+* PASS: labverdict_selftest `suite: ... the must-FAIL twin chat_held_send_oldcheck only in twin` (make test; FAIL against
+  rel/0.7.15's suite.py).
+* no-fail-run: a suite membership change (no game behaviour); proven by the unit check above.
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t1.

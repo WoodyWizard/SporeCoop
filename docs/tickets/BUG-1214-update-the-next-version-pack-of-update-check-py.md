@@ -1,20 +1,20 @@
 ---
 id: BUG-1214
 title: update: the next-version pack of update_check.py holds the unstripped coop.dll (102 MB) and the in-game updater refuses it (96 MB limit)
-status: open
+status: fixed
 kind: test
 stage: Tools
 reported: 2026-11-16
 source: fix/w51-t1 rerun of update
 role: 
-versions: 
-fixed_in:
-branch:
-commits:
-tests:
+versions: 0.7.15 dev
+fixed_in: unreleased
+branch: fix/w51-t1
+commits: f7f2132d
+tests: update (tools/tests/update_check.py)
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-w51-t1-triage
+related: BUG-1189, BUG-1123
 ---
 
 ## Report
@@ -36,8 +36,11 @@ unstripped DLL over the limit (it was under it with 0.7.14.1's 78 MB).
 are unchanged.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL: `update_check.py --lane 9` by hand with BUG-1189 fixed (out/manual/update_check-lane9-1.log of fix/w51-t1):
+  "error=the download is too big", the pack 103 MB.
+* PASS: the same by hand twice (out/manual/update_check-lane9-2.log, -3.log): RESULT: OK.
+* no-fail-run: no lab run id: the lab runs `update` only on a free lane outside its run, and this task has lane 9 only.
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t1.

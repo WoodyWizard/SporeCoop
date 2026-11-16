@@ -1,20 +1,20 @@
 ---
 id: BUG-1190
 title: update_leak, reload_update: a stale [update] url that update_check.py left in a lane's coop.ini wins over the test's own
-status: open
+status: fixed
 kind: test
 stage: Tools
 reported: 2026-11-16
 source: final check 20261116-025154
 role: 
-versions: 
-fixed_in:
-branch:
-commits:
-tests:
+versions: 0.7.14.1
+fixed_in: unreleased
+branch: fix/w51-t1
+commits: b92b4496
+tests: update_leak, reload_update, update (tools/tests/update_check.py), harness_selftest (make test)
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-w51-t1-triage
+related: BUG-0241, BUG-0060, BUG-0211
 ---
 
 ## Report
@@ -44,8 +44,17 @@ section through it and removes it again when it ends (atexit), so no lane keeps 
 checks are unchanged.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL: lab 20261116-025154 (the final check, lane 3, its stale url 48002); lab 20261116-084124 (lane 9, the old tests,
+  a stale `[update] url=http://127.0.0.1:48008/latest` planted in lane 9's coop.ini as update_check.py leaves it):
+  update_leak "the local server offers 99.0.0" + "every attempt stopped at not newer (0/5)", reload_update "the new
+  image logs only its own check".
+* PASS with the same stale section planted: lab 20261116-085443 (update_leak `url=http://127.0.0.1:47979/latest`
+  available 99.0.0; reload_update its own 47999) and lab 20261116-091534.
+* update_check.py's cleanup: lane 9's coop.ini held no `[update]` after each of its runs (out/manual/
+  update_check-lane9-1..3.log). Unit: harness_selftest `ini:` (replace, remove, UTF-16, a missing file).
+* Lanes 2-5 still hold old sections (48001-48004) from runs before this fix: harmless for the fixed tests; a lane's
+  owner can drop them with `lane.ini_section(<lane>/SporebinEP1/mods/coop.ini, 'update')`.
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t1.
