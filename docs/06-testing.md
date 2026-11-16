@@ -8752,3 +8752,29 @@ v0.7.14.1 (a detached worktree of the tag, `make`) beside rel/0.7.15 on lanes 6 
 * `proxy_ghost` (BUG-1195): BUG-0842's identity check (every frame, before BUG-0931's list check, 0.7.13) finds the
   ghost proxy first; the test accepts either log line, and its twin is both switches off
   (`SPORE_FIX_OFF=npc.proxy_identity,npc.proxy_listed_now`): either one alone still catches it.
+
+## Visual fixes of the 0.7.15 key frame review (2026-11-16, fix/w51-visual)
+<a id="testing-visual-0715"></a>
+
+* `host_save_tribe` (BUG-1217, `coop_host_pause.py --stage tribe --host-save`): no pause at all, the host's own saves
+  (`coop.autosave milestone`, then the share's save of the guest's leave and join in its copy of the world). The guest
+  is sampled ~10 times a second: its game time never stands (busy without "paused"), coop.status `host busy: ... waits=`
+  stays, no "game stands" / "goes on" card. The rejoin's watch ends when the guest gets the host's world (`receiving
+  world`, the load stands its time on its own). SPORE_FIX_OFF=core.host_busy_save fails (both cards after each save).
+* `status_edge` (BUG-1219): Creature, both games: `coop.status` "status block (x1 y1 x2 y2) drawn to x <right> of
+  <screen width>": the widest drawn line ends inside the screen; a key frame. SPORE_FIX_OFF=core.status_wrap fails.
+* `menu_movie` (BUG-1218, cold): right after the cold start (the host loads ~4 s after its menu) both games are sampled
+  twice a second for 20 s: the start-up video ([[0x015FCC68] + 0x34], MovieIsPlaying) must not play in the stage for
+  more than 2 s; INCONCLUSIVE when no game had it in the stage. SPORE_FIX_OFF=world.menu_movie fails.
+* `tools/tests/keyviews.py`: a key frame must show what its note names. `look_at(con, pos, dist, height)` /
+  `look_both(...)` put a game's camera there (`coop.view set`), `view_off()` gives the game's own back (always, in a
+  `finally`), `nearest_row()` picks a census row near the camera, `burst(tag, note, n, gap, extra_fn)` takes n frames
+  `gap` s apart with a state line each (a pose that differs in one frame and matches in the next is the relay's lag).
+  Used by space_eco / space_eco_live (the same camera 50 m from and 40 m above the host's herd of a placed species), space_session
+  (both games landed on the restored colony; --npc: the game's own view, the colony is at another star),
+  tribe_outfit (`outfit_close`: a same-view frame 10 m from the chief), tribe_held_item / tribe_mirror_stale (three
+  chief frames 1.5 s apart with `coop.tribe anims` of both games).
+* Pitfalls seen: Space key frames on a planet wait for the planet's story caption ("Something is showing up on the
+  ship's radar", the games are `cinematic,paused`) and a badge's reward box holds the clicks: `no_movie()` first. A
+  guest's `coop.space eco place` (the test seam) adds a species to the record but spawns no animal in its own game (its
+  eco line shows `#0`); the host gets a herd from the mod (space_eco.cpp spawn_herd).

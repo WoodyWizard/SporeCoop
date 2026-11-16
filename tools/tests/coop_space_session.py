@@ -40,17 +40,29 @@ from coop_space_map import no_movie, rosters, sp, wait
 from coop_space_rival_merge import money, rivals
 import keyviews
 import lane
-import sameview as sv
 from play_space import Player
 from twoinst import Checks, keyframe, session_restart, start
 
-CITY_NOUN = '018C43E8'
+
+
+def close_reward(con, tries=3):
+    """a badge's "Reward" panel (the restored badges give one in the next session) waits for its green check and takes
+    the clicks (BUG-0268, coop_campaign.py REWARD_CHECK): closed like a player"""
+    import uifind
+    for _ in range(tries):
+        r = uifind.shown(con, 'Reward')
+        if not r or not 400 < r[0] < 1000:
+            return
+        con.call('move 932 844')
+        time.sleep(0.4)
+        con.call('click 932 844')
+        time.sleep(1.5)
 
 
 def colony_frame(host, guest, planet, tag, land=True):
-    """BUG-1220: a key frame of the restored colony on both games: both land on it (each game's own ship), each camera
-    looks at the nearest city of that planet from 140 m (the colony's cities: the guest's own two, the names
-    Bobton / Bobville). Never fails the test: what it saw is printed."""
+    """BUG-1220: a key frame of the restored colony on both games: both land on it (each game's own ship; a caption or a
+    badge's reward box closed first), the game's own camera over the ship (`coop.census all` lists no city in Space, so
+    there is no point to aim at). Never fails the test: what it saw is printed."""
     if not planet:
         return
     want = 0x40000000 | int(planet, 16)
@@ -58,7 +70,8 @@ def colony_frame(host, guest, planet, tag, land=True):
     seen = {}
     try:
         for role, inst, pid in (('host', lane.HOST, 0), ('guest', lane.GUEST, 1)):
-            no_movie(host if role == 'host' else guest, 20)  # a badge's reward box, a caption (they hold the clicks)
+            no_movie(host if role == 'host' else guest, 20)  # a caption (it holds the clicks)
+            close_reward(host if role == 'host' else guest)  # a badge's reward box
             p = Player(role, inst, pid, 7 + pid, end, {})
             if not land:  # (--npc: the colony is at another star than the ship: no flight there, the game's own view)
                 seen[role] = f'{p.place()[0]:08X} (not flown to)'
@@ -71,18 +84,12 @@ def colony_frame(host, guest, planet, tag, land=True):
         time.sleep(5)
         for role, con in (('host', host), ('guest', guest)):
             no_movie(con, 20)
-            r = keyviews.nearest_row(con, lambda r: r['noun'] == CITY_NOUN, census='coop.census all')
-            if r:
-                keyviews.look_at(con, r['pos'], dist=140, height=70, look_up=5)
-                seen[role] += f' city {r["pos"]}'
-            else:  # (the game's own camera over the landed ship)
-                nouns = sorted({x['noun'] for x in sv.parse_census(con.call('coop.census all').get('out') or '')})
-                seen[role] += f' no city row (nouns {nouns[:16]})'
+            close_reward(con)
         print(f'  colony key frame: {seen}', flush=True)
         time.sleep(1.5)
         if land:
-            note = (f'space, both games landed on the guest\'s restored colony {planet}: the camera 140 m from a city of '
-                    'it, or the game\'s own camera over the ship (the colony\'s buildings in the guest\'s empire\'s colour)')
+            note = (f'space, both games landed on the guest\'s restored colony {planet}, the game\'s own camera over the '
+                    'ship: the colony\'s buildings on both games')
         else:
             note = (f'space, next session: both games in their own view after the restore (the guest\'s colony {planet} '
                     'is at the NPC\'s star, not flown to): no reward box or caption left over')

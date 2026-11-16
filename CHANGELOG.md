@@ -82,7 +82,7 @@
 
 ### Development
 - Key frames for the new visible features: space_eco / space_eco_live (each game's camera at an animal the guest
-  placed), space_session / space_session_npc (both games landed on the restored colony, the camera on its city),
+  placed), space_session / space_session_npc (both games landed on the restored colony, a badge's reward box closed first),
   tribe_outfit (a same-view close-up of the outfit); `tools/tests/keyviews.py` puts a game's camera where a frame needs
   it (BUG-1220).
 - One answer to "did the world change?" (`world_id.h`: another stage, save or root object, the stage entered again; an

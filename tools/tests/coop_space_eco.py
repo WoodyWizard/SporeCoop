@@ -66,13 +66,13 @@ def eco_frame(host, guest, animals, tag):
             rows = sv.parse_census(con.call('coop.census creatures').get('out') or '')
             r = keyviews.nearest_row(con, lambda r: r['kind'] == 'c' and r['alive'] and r['key'] in inst)
             seen[role] = (r and (r['key'], r['pos']), f'{len(rows)} creature rows')
-        h = seen['host'][0]
-        if h:
-            keyviews.look_both((host, guest), h[1], dist=60, height=25, look_up=5)
+        r = keyviews.nearest_row(host, lambda r: r['kind'] == 'c' and r['alive'] and r['key'] in inst)  # (where it is now)
+        if r:
+            keyviews.look_both((host, guest), r['pos'], dist=50, height=40, look_up=3, settle=0.5)
         print(f'  key frame cameras at the placed species: {seen}', flush=True)
-        keyframe(tag, 'space, both on the planet the guest filled, the same camera 60 m from the host\'s creature of a '
+        keyframe(tag, 'space, both on the planet the guest filled, the same camera 50 m from and 40 m above the host\'s creature of a '
                       'species the guest placed (its herd there); the guest\'s game has the species in its record but no '
-                      'animal of it (the test seam spawns none)', extra=[f'{k}: {v}' for k, v in seen.items()])
+                      'animal of it (the test seam spawns none)', extra=[f'{k}: {v}' for k, v in seen.items()], settle=0)
     finally:
         keyviews.view_off(host, guest)
 

@@ -135,17 +135,20 @@ def outfit_closeup(host, guest):
     members of 20 px). A key frame of kind sameview; the game's own cameras after it."""
     import keyviews
     from coop_tribe_looks import members
-    ms = [m for m in members(host).values() if m['player'] and m['adult'] and m['owner'] == 0]
-    ms.sort(key=lambda m: not m['leader'])
+    ms = [(i, m) for i, m in members(host).items() if m['player'] and m['adult'] and m['owner'] == 0]
+    ms.sort(key=lambda im: not im[1]['leader'])
     if not ms:
         print('  (outfit close-up: no adult member of the host\'s tribe found)', flush=True)
         return
     try:
-        ok = keyviews.look_both((host, guest), ms[0]['pos'], dist=10, height=4, fov=40, look_up=4.0)
-        print(f'  outfit close-up at {ms[0]["pos"]} (leader {ms[0]["leader"]}): views set {ok}', flush=True)
-        twoinst.keyframe('outfit_close', 'same view 10 m from a member of the player tribe (the host\'s chief): the new '
-                                         'piece of clothing (a leaf on the chest) on both games', kind='sameview',
-                         settle=0)
+        for k, side in ((0, 'a'), (2, 'b')):  # (two opposite sides: the member faces one of them)
+            mid, m = ms[0]
+            pos = members(host).get(mid, m)['pos']  # (where it stands now)
+            ok = keyviews.look_both((host, guest), pos, dist=10, height=4, k=k, fov=40, look_up=4.0)
+            print(f'  outfit close-up {side} at {pos} (member #{mid}, leader {m["leader"]}): views set {ok}', flush=True)
+            twoinst.keyframe(f'outfit_close_{side}', 'same view 10 m from a member of the player tribe (the host\'s '
+                             'chief), two opposite sides: the new piece of clothing (a leaf on the chest) on both games',
+                             kind='sameview', settle=0)
     finally:
         keyviews.view_off(host, guest)
 
