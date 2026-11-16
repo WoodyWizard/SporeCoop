@@ -1866,3 +1866,22 @@ Before 0.7.15 the host's new designs never reached a guest kept in place (BUG-05
 changed only its own game. Now the wsync row `civ_design` carries the host's entries (the guest calls the same setter),
 a guest's own design editor is refused and its own pick goes back. Details and lab runs:
 docs/re/creations.md#creations-stage-designs.
+
+## The guest's specialty box stopped its game time (2026-11-15, fix/w51-civveh)
+<a id="civ-specialty-runs"></a>
+
+BUG-1175. GOG 2024, runtime, lanes 6 and 7, civ_npc.
+* ✔ (runtime) `cCity_ShowSpecialtyBox` (#civ-specialty-buyer) on the guest takes one Pause 0x4BF38A7 at once
+  (`coop.pauses` right after the box: `flags=3 paused=1 reasons: 04BF38A7=1`); the game time stands until the answer.
+  The host's game goes on (BUG-0982 does not pause it).
+* ✔ (runtime) A city the host's game founds while the guest's game stands is replayed on the guest (SpawnNextCity,
+  "here founded") but does not appear: the appearance is the timed callback of 9.3 and waits for the game time. The
+  guest then has no civilization of that political id, so `CivByPol` gives nothing and the new nation's vehicles get
+  no mirror (`v: N missing on the guest`). They appear 1-3 s after the answer (the city, then the design request of
+  BUG-0647 for its vehicle). civ_owners_reload left the box up 16 s and the game founded the next site after each
+  purchase (the host: "a tribe of the Tribe stage is destroyed", ApplyStamp of the new city ~20 s after the buy, held
+  by the capture cinematics): 2 of 2 MISMATCH on rel/0.7.15 9362bcdd.
+* ✔ (runtime) Resuming 0x4BF38A7 right after the box opened keeps the box up and working: its buttons answer (the
+  listener's message 0x40FAFDF), the specialty is set in both games, no pause is left counted; the game time runs
+  behind it (the new city and its vehicle on the guest within 5 s). Fix `civ.specialty_runs`: the guest counts the
+  box's pauses before and after ShowSpecialtyBox, resumes the difference and does not resume again at the answer.

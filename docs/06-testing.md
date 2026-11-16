@@ -8465,3 +8465,16 @@ shows the host's classified state, what the guest heard and its wait.
   brain upgrade caption closed, its input is free".
 * Two `lab.py run` started in the same second got the same run id and wrote into one directory (20261115-193631):
   start parallel runs a few seconds apart.
+
+## Civ: the guest's specialty question and the world behind it (2026-11-15, fix/w51-civveh)
+<a id="testing-civ-specialty-runs"></a>
+
+* `civ_specialty_runs` (civ_npc, ~1 min, BUG-1175): the guest buys the NPC city nearest the capital that is not
+  Economic (so the game asks it), the host founds the next site (`call Simulator::cCivExpansion::SpawnNextCity`, the
+  hooked call that broadcasts) while the box is still up; the guest's game must show the new city (by position) and
+  as many mirrors of the new nation's vehicles as the host has, the box still up; then it answers Economic (spec 2 in
+  both games, `coop.pauses` on the guest `paused=0`). Key frame `question`: the box on the guest's screen. Twin:
+  `SPORE_FIX_OFF=civ.specialty_runs` fails "the guest's game shows the host's new city while its question is up".
+* civ_owners_reload (and every test that buys or captures a city as a guest and leaves its box up) met this as a
+  sync-check MISMATCH `v: 1-2 missing on the guest` about 45 s in; it was not the test's founding: the game founds
+  the next site after a purchase by itself.

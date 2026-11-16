@@ -3450,3 +3450,18 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: `lab.py run space_rivalry --repeat 2 --lane N` (warm, the second run), out/lab/20261115-042847.
 * Ticket: BUG-1146 (fixed, unreleased, fix/w51-tests): the counters are diagnostics no player sees; the test reads
   them as deltas from its start (docs/06-testing.md#testing-monitor-nowhere).
+
+## Civ: civ_owners_reload fails the lab's sync-check gate: vehicles of the cities founded during the test are missing on the guest (2026-11-15, test, feat/w51-civ)
+<a id="issue-civ-owners-reload-sync-gate"></a>
+
+* What happens: civ_owners_reload's own checks pass, but the sync-check about 45 s in reports "v: 1-2 missing on the
+  guest": the host founded two cities a few seconds earlier and the guest's copies of them (and so the mirrors of
+  their vehicles, which wait for the host's design) come after the check.
+* Reproduce: `lab.py run civ_owners_reload --lane N --repeat 2` (2 of 2 FAIL on rel/0.7.15 9362bcdd and on
+  feat/w51-civ, lab 20261115-192303).
+* Known: a timing race between the check and the guest's catch-up of new cities (BUG-0319 / BUG-0380 class) and the
+  design request of BUG-0647; not a change of feat/w51-civ (the same on 9362bcdd).
+* Not checked: whether the guest's city catch-up is slower than it should be here, or the gate should wait for it.
+* Ticket: BUG-1175 (fixed, unreleased, fix/w51-civveh): not a race of the test: the guest's specialty box paused
+  its game, so the cities the host founded meanwhile (and their vehicles) waited for the answer; the guest now
+  releases the box's pause (`civ.specialty_runs`, docs/re/civ.md#civ-specialty-runs).

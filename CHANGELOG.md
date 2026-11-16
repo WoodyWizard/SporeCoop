@@ -31,6 +31,9 @@
   why. It may join again.
 
 ### Fixed
+- Civilization: while a guest's "choose the city's specialty" question is open (after buying or capturing a city),
+  its world no longer stands still: cities the host's world founds meanwhile and their vehicles appear behind the
+  question instead of only after the answer (BUG-1175).
 - Creature: a guest playing its own creature could be stuck for good right after joining (no clicks, the evolution's
   editor never opened) when a brain upgrade came in the first seconds; its own creature now comes after the brain
   upgrade's message (BUG-1173).
