@@ -11,7 +11,7 @@ versions: 0.7.14.1-lineages58-dev
 fixed_in: unreleased
 branch: feat/lineages-47
 commits: 5bfa5c88
-tests: manual Windows QA (TITAN host + guest, coop.creations breakremap)
+tests: manual Windows QA (TITAN host + guest, coop.creations breakremap + coop.npc spawn)
 signature:
 docs:
 related:
@@ -30,8 +30,10 @@ Inferred (no guest log): why ours was not buildable there (the guest's package f
 - Tests: `coop.creations breakremap <host key>` (guest) points ours of a host's creation to a key nothing registered.
 
 ## Verification
-no-fail-run: not reproduced on TITAN yet (the QA worlds' host creations build under ours); the next play test's guest log shows the fallback line if it happens.
+FAIL with the fix off, PASS on (TITAN QA copy 2026-11-16, host instance 9 Dorger.spo in Creature, guest instance 8 joined; on the guest `coop.creations breakremap 291EE52B` (the host's 'Clop', ours 7D53FB00 made 7DDEAD2B), on the host `coop.npc spawn 291EE52B` twice next to both players):
+- off (`coop.fix creations.ask_host_key off`, `coop.fix npc.species_fallback off`): both proxies "pending" for 60 s, "proxy spawn failed (unknown species) key=7DDEAD2B", and the host's log "player 1 asks for species 7DDEAD2B: not found here" every 30 s: the owner's signature.
+- on (both switched on in the same session): both proxies built 13 s later (the game's creature objects, game_dead=0), "species 7DDEAD2B (ours of the host's 291EE52B) is not buildable here: built with the host's key (BUG-9231)" (out/shots/r64/bug9231_on_guest.png).
 
 ## History
 - 2026-11-15: opened.
-- 2026-11-16: cause found in the host's log; fixed (ask by the host's key, build with it).
+- 2026-11-16: cause found in the host's log; fixed (ask by the host's key, build with it); FAIL off / PASS on with breakremap.
