@@ -57,6 +57,10 @@ it runs after Resume Game):
 * FAIL with the stage's switch off: cell.busy_model 20261115-163459, npc.busy_model 20261115-163626,
   tribe.busy_model,tribe.host_pause_wait 20261115-163744, civ.busy_model 20261115-163459-2, space.busy_model
   20261115-163601 (each: the guest's game plays on, no line).
+* Again on the final build (the C2 old paths deleted): 20261115-181512 (host_pause_cell, _creature, _civ, _space,
+  _rivals, _guest; _tribe was not started there, too little memory on the machine) and 20261115-190805 (host_pause_tribe)
+  PASS. tribe_host_pause (BUG-1086's test) FAILs with tribe.host_pause_wait,tribe.busy_model off: 20261115-190911 (its
+  suite claim now names both switches; tribe.host_pause_wait alone is the 0.7.14 host's fallback).
 * The away / held-command tests on the final build: tribe_host_pause, tribe_gameover_wait, cell_away, cell_pause
   (20261115-164230), civ_away, civ_away_buy, tribe_away (20261115-164240) PASS.
 

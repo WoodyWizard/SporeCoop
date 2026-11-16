@@ -67,7 +67,8 @@ space_allies_reload, space_down_reload, tribe_bounce_mirrors, civ_away, civ_away
 20261115-174822: world_reload PASS (its test fixed, BUG-1171), away_stages PASS (its first run failed on an invariant
 monitor line during the test's own forced menu state). editor_strays (BUG-1170) and evolve_world (BUG-1173) FAIL the
 same way on rel/0.7.15 9362bcdd without this branch (baseline worktree, lab 20261115-180220): not from C2. The C3 runs
-20261115-161010 ran the switch-on build.
+20261115-161010 ran the switch-on build. campaign_ct (Cell -> Creature -> Tribe in one run) PASS 20261115-174830;
+play_creature, play_tribe --quick PASS 20261115-181512, play_civ, play_space --quick PASS 20261115-182444.
 no-fail-run: refactoring (no behaviour to break on purpose); the proof is the dumps and the PASS runs above.
 
 ## History
