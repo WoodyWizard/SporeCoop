@@ -119,6 +119,14 @@ void world_record_set(int k, uint32_t world, uint32_t inst)
 static bool g_follow_fix = true;
 COOP_FIX("creations.follow_evolution", "BUG-0508", g_follow_fix,
          "creations: a guest that plays the world's species takes the host's evolved one in place");
+// BUG-1196: since BUG-0345 (0.7.5) a guest with creations of its own plays the world's species in a world it never
+// played its own one in, but the follow above still asked for no own creations at all: such a guest (most players)
+// kept the host's pre-editor species and got the whole world 30 s later (session_glue.cpp's fallback). Now it follows
+// in place whenever it plays the host's previous creation (mine() answers g_follow for it already). Off: only a guest
+// without creations follows (0.7.14).
+static bool g_follow_own_fix = true;
+COOP_FIX("creations.follow_with_creations", "BUG-1196", g_follow_own_fix,
+         "creations: a guest with creations of its own that plays the world's species takes the host's evolved one in place too");
 static Key g_follow[kKinds], g_seen_own[kKinds];
 static uint32_t g_follow_epoch[kKinds];
 static unsigned g_follows;
@@ -1794,7 +1802,8 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
     // BUG-0508: a guest that played the host's previous creation as the world's species follows it
     bool follow = false;
     if (g_follow_fix && owner == 0 && k != kUfo && C.sess && C.sess->role() == net::Role::Client && ap.orig.instance &&
-        b.key.instance && !(b.key == ap.orig) && g_opts[k].empty() && !g_chosen[k]) {
+        b.key.instance && !(b.key == ap.orig) && (g_opts[k].empty() || (g_follow_own_fix && g_guest_world_fix)) &&
+        !g_chosen[k]) {
         Key before = mine(k).key;
         if (!before.instance)
             before = g_seen_own[k];

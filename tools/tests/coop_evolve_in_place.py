@@ -28,6 +28,11 @@ Checked for 60 s after the host is back in its stage, on the guest's game:
   later); its world's player species must still become the host's new one.
   SPORE_FIX_OFF=creations.species_retry with --species-late: the write is lost (FAIL).
 
+  --guest-creations (BUG-1196): the guest has creations of its own (creations-guest) but none chosen and no record of
+  this world (BUG-0345: it plays the world's species, the host's): it follows in place all the same (most players have
+  creations). SPORE_FIX_OFF=creations.follow_with_creations: it kept the host's old species and got the whole world
+  after the 30 s check (FAIL: the guest leaves the stage, the host sends a world).
+
   --cine (Creature, BUG-1180): the follow of BUG-0508 comes while a cinematic of the guest's game plays: after the
   guest left its own editor and before the host's done, the host adds DNA (`coop.dna add 250`, a brain level: the
   guest's own game plays CRG_BrainUpgradeN, BUG-1173). The guest's avatar takes the host's new species only after
@@ -245,7 +250,8 @@ def host_creature_editor(host, guest, ck):
 def main():
     stage = sys.argv[sys.argv.index('--case') + 1] if '--case' in sys.argv else 'cell'
     kind = 'cell' if stage == 'cell' else 'creature'
-    host, guest = start('cell' if stage == 'cell' else 'creature', guest_creations=False)
+    with_own = '--guest-creations' in sys.argv  # BUG-1196: the guest has creations of its own, none chosen here
+    host, guest = start('cell' if stage == 'cell' else 'creature', guest_creations=with_own)
     ck = Checks()
     time.sleep(3)
     if '--nosave' in sys.argv:  # BUG-0517: no save of the host after its editor (as a host alone or without a share)
@@ -259,6 +265,10 @@ def main():
     print(f'  before: host plays {h0}, the guest draws it as {puppet_key(guest, stage)}, the guest plays {g0}, '
           f'world player species host {world_species(host)} guest {world_species(guest)}', flush=True)
     sh0 = shares(host)
+    if with_own:  # BUG-1196: it plays the world's species all the same (BUG-0345: no record, no choice of this world)
+        n_own = len([ln for ln in guest.call('coop.creations list')['out'].splitlines() if ln.startswith(kind + ' ')])
+        ck(n_own and g0 and g0 == h0, f"the guest has creations of its own ({n_own}) and plays the world's {kind} "
+                                     f"({g0}, the host's {h0})")
 
     (host_cell_editor if stage == 'cell' else host_creature_editor)(host, guest, ck)
 

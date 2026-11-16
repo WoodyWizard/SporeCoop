@@ -14,8 +14,11 @@ stay 0, and no game may fault or die. Rounds: the host saves and shares its worl
 plays (several times, also right after the guest came back in, the campaign's timing).
 
 --cell: the campaign's way in first: Cell fixture, the host finishes the Cell stage, both follow
-into the Creature stage, the host's first creature editor (the vote, the guest ready), and the world
-the host shares after it (the window the campaign's guests faulted in); then the rounds.
+into the Creature stage, the host's first creature editor (the vote, the guest ready); then the rounds.
+Since BUG-0508 (0.7.4) the host's editor sends no world to a guest in the same world and stage: the guest takes the
+host's evolved creature in place (BUG-1196: also a guest with creations of its own that plays the world's species,
+as here since the cold start resets worlds.ini, BUG-1176). Checked after the editor: the host kept the guest in its
+world (no world after all) and the guest plays the host's new species; the rounds' shares are the leaving windows.
 
   coop_leave_avatar.py [--rounds N] [--cell]   (SPORE_FIX_OFF=world.leave_avatar must FAIL)
 """
@@ -23,7 +26,7 @@ import re
 import sys
 import time
 
-from harness import mode, waiter
+from harness import cinematic, mode, waiter
 import twoinst
 from twoinst import Checks, shot, start
 
@@ -46,6 +49,18 @@ CANCEL = (1383, 1062)  # the editors' red cross
 STAGE_BTN = (1396, 1063)  # the cell HUD button under the portrait: History, then the next stage
 HISTORY_OK = (1415, 1055)
 CAPTION_OK = (1410, 1048)
+
+
+def in_place(host):
+    """the host's evolve-in-place counters (BUG-0508): (kept, sent after all, checks still running)"""
+    m = re.search(r'evolve in place: kept (\d+), sent after all (\d+), saves \d+, checking (\d+)',
+                  host.call('coop.status')['out'])
+    return tuple(int(g) for g in m.groups()) if m else (0, 0, 1)
+
+
+def avatar_key(con):
+    m = re.search(r'key=0x([0-9A-F]{8})', con.call('coop.avatar')['out'])
+    return m.group(1) if m else None
 
 
 def window_check(ck, guest, s0, what):
@@ -78,6 +93,7 @@ def cell_to_creature(ck, host, guest):
     window_check(ck, guest, s0, 'Cell -> Creature')
     time.sleep(3)
     s0 = stats(guest)
+    ip0 = in_place(host)
     guest.call('click %d %d' % READY)
     ck(wait(lambda: 'Editor' in mode(host), 40), 'the host is in the creature editor')
     time.sleep(5)
@@ -86,10 +102,23 @@ def cell_to_creature(ck, host, guest):
         time.sleep(4)
         guest.call('click %d %d' % CANCEL)
     ck(wait(lambda: 'Creature' in mode(host), 40), 'the host is back in the Creature stage')
-    # the host shares its evolved world a few seconds later: the guest leaves its stage for it
-    ck(wait(lambda: stats(guest).get('windows', 0) > s0.get('windows', 0), 90), 'the guest leaves its stage for '
-       'the world the host shares after its editor')
+    # BUG-0508 / BUG-1196: the host keeps the guest in its world once the evolution's cinematic is over (its captions
+    # confirmed as a player does) and its 30 s species check found the guest playing the new species
+    def settled():
+        for c in (host, guest):
+            if cinematic(c):
+                c.call('key enter')
+        kept, sent, checking = in_place(host)
+        return (kept > ip0[0] or sent > ip0[1]) and not checking
+    wait(settled, 150, 2)
+    kept, sent, checking = in_place(host)
+    print(f'  after the host\'s editor: evolve in place kept {ip0[0]} -> {kept}, sent after all {ip0[1]} -> {sent}, '
+          f'checking {checking}; avatars host {avatar_key(host)} guest {avatar_key(guest)}', flush=True)
+    ck(kept > ip0[0] and sent == ip0[1] and not checking,
+       'the host keeps the guest in its world after its editor (no world after all)')
     ck(twoinst.wait_guest_in(host, guest), 'the guest plays in the host\'s evolved world')
+    hk = avatar_key(host)
+    ck(hk and avatar_key(guest) == hk, f'the guest plays the host\'s evolved species ({avatar_key(guest)}, the host {hk})')
     window_check(ck, guest, s0, 'after the host\'s editor')
 
 
