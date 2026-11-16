@@ -814,6 +814,11 @@ def cmd_run(a):
         base, sel = labimpact.impact(getattr(a, 'base', None), tree)
         print(f'lab: impact against {base}: {len(sel)} tests (`lab.py impact --why` lists the reasons)')
         tests = [t for t, _ in sel]
+        if not getattr(a, 'segment', None):  # BUG-1192: campaign_segment without --segment only fails
+            need = [t['name'] for t in tests if '$CAMPAIGN_SEGMENT' in t['cmd']]
+            if need:
+                print(f'lab: impact: {", ".join(need)} left out (needs --segment <run>)')
+                tests = [t for t in tests if t['name'] not in need]
     else:
         tests = suite.select(a.tests)
     if getattr(a, 'segment', None):  # A6: campaign_segment plays this failed campaign segment again from its save
