@@ -54,7 +54,7 @@ STAGE_FILES = {
                  'mods/coop/hunt_hits.h', 'mods/coop/drama.*', 'mods/coop/social.*', 'mods/coop/teamplay.*',
                  'mods/coop/parts.*', 'mods/coop/hud_portrait.*'],
     'Tribe': ['mods/coop/tribe.*'],
-    'Civ': ['mods/coop/civ.*'],
+    'Civ': ['mods/coop/civ.*', 'mods/coop/civ_*'],
     'Space': ['mods/coop/space*', 'mods/coop/squadron.*'],
 }
 NOTHING = ['docs/*', '*.md', '.claude/*', '.github/ISSUE_TEMPLATE/*', 'LICENSE', '.gitattributes', '.gitignore']

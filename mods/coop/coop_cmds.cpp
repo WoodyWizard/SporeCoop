@@ -83,6 +83,7 @@ int c_leave(void*, int, const char* const*, SkOut* out)
 int c_status(void*, int, const char* const*, SkOut* out)
 {
     SAY("%s%sbusy: %s\n", g_sess.status().c_str(), world::status().c_str(), busy::names(game_busy()).c_str());
+    SAY("%s", host_busy_status().c_str()); // C3 (BUG-1142)
     for (auto& pl : g_sess.players()) // CAP_VERSION: each player's mod, SporeKit and game build
         SAY("version %u '%s': %s\n", pl.id, pl.name.c_str(), pl.version.empty() ? "unknown (pre-0.7.4)" : pl.version.c_str());
     SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
@@ -121,7 +122,13 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("own world: mode %08X world %08X elsewhere=%d space_other=%d host_left=%d\n", g_mode, g_world,
         (int)own_world::elsewhere(), (int)own_world::space_other(), (int)own_world::host_left()); // O1 (BUG-0427)
     SAY("space save: %s, load shares %u\n", g_space_key.empty() ? "-" : g_space_key.c_str(), g_space_load_shares); // BUG-0941
-    SAY("evolve in place: kept %u, sent after all %u, saves %u\n", g_evo_inplace, g_evo_fallback, g_evo_saves); // BUG-0508
+    {
+        unsigned checking = 0; // BUG-1170: guests kept in place whose 30 s species check still runs
+        for (auto& [id, r] : g_remotes)
+            checking += r.evo_check_until > 0;
+        SAY("evolve in place: kept %u, sent after all %u, saves %u, checking %u\n", g_evo_inplace, g_evo_fallback,
+            g_evo_saves, checking); // BUG-0508
+    }
     SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
         g_dna_owed_world, g_owed_dropped); // BUG-0233
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
@@ -794,11 +801,65 @@ static int c_lifecycle(void*, int argc, const char* const* argv, SkOut* out)
             lifecycle::resets(lifecycle::kWorld));
         return 0;
     }
-    SAY("lifecycle: fix=%d entries=%zu\n", (int)g_lifecycle_fix, lifecycle::table().size());
+    // C2 (BUG-1141): `world`: the world identity now; `hooks`: the observers with their calls and faults
+    if (argc > 1 && !strcmp(argv[1], "world")) {
+        SAY("%s", world_id_status().c_str());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "hooks")) {
+        auto& f = lifecycle::fanout();
+        SAY("hooks: %zu fired session=%u world=%u join=%u leave=%u faults=%u (last %s) nested=%u queued=%u\n",
+            f.hooks.size(), f.fired[0], f.fired[1], f.fired[2], f.fired[3], f.faults,
+            f.last_fault.empty() ? "-" : f.last_fault.c_str(), f.nested, f.queued);
+        SAY("%s", lifecycle::hooks_status().c_str());
+        return 0;
+    }
+    SAY("lifecycle: fix=%d entries=%zu hooks=%zu\n", (int)g_lifecycle_fix, lifecycle::table().size(),
+        lifecycle::fanout().hooks.size());
     for (auto& e : lifecycle::table())
         SAY("  %s %s%s%s held=%zu\n", e.name, (e.scope & lifecycle::kSession) ? "session" : "",
             e.scope == (lifecycle::kSession | lifecycle::kWorld) ? "+" : "", (e.scope & lifecycle::kWorld) ? "world" : "",
             e.held());
+    for (uint8_t ev : {lifecycle::kSessionEnd, lifecycle::kWorldChange}) // the observers in their order (no counts)
+        for (size_t i : lifecycle::hooks_of(ev)) {
+            const auto& h = lifecycle::fanout().hooks[i];
+            SAY("  hook %s %d %s%s\n", ev == lifecycle::kSessionEnd ? "session" : "world", h.order, h.name,
+                h.needs_game ? " game" : "");
+        }
+    return 0;
+}
+
+// D2 (docs/plan-0.7.15.md, audit TST-4): coop.testreset [fp | plant <n>]: the lab's warm reset contract. Without an
+// argument every registered session and world state is reset (lifecycle::reset_all: the resets a session end and a
+// world change run, mod state only; no hooks, no game calls), then the fingerprint is printed: what still holds
+// something, one "  <name> <digest>" line each. A fresh game prints none; twoinst.py compares a warm game's with its
+// cold start's and starts the lane cold when they differ (docs/06-testing.md#testing-warm-fingerprint). `fp`: the
+// fingerprint only, nothing reset. `plant <n>`: tests (the lab's self-test of the fingerprint): state of a module
+// whose reset forgets it (test.planted_leftover), as the absolute counters of BUG-0356 / BUG-0396 were.
+static uint32_t g_planted_leftover;
+SESSION_STATE("test.planted_leftover", nullptr, [] { /* forgets it on purpose (the planted leftover) */ },
+              []() -> size_t { return g_planted_leftover; });
+static int c_testreset(void*, int argc, const char* const* argv, SkOut* out)
+{
+    bool reset = true;
+    if (argc > 2 && !strcmp(argv[1], "plant")) {
+        g_planted_leftover = (uint32_t)strtoul(argv[2], nullptr, 0);
+        SAY("planted leftover: test.planted_leftover %u (no reset clears it)\n", g_planted_leftover);
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "fp"))
+        reset = false;
+    if (reset)
+        lifecycle::reset_all(g_lifecycle_fix);
+    lifecycle::Fingerprint f = lifecycle::fingerprint();
+    SAY("testreset: reset=%d fix=%d entries=%zu holding=%zu hash=%08X\n", (int)reset, (int)g_lifecycle_fix, f.entries,
+        f.holding, f.hash);
+    size_t a = 0;
+    while (a < f.lines.size()) {
+        size_t b = f.lines.find('\n', a);
+        SAY("  %s\n", f.lines.substr(a, b - a).c_str());
+        a = b + 1;
+    }
     return 0;
 }
 
@@ -1414,7 +1475,8 @@ void register_commands_core()
     H->command_add(M, "coop.overlay", "coop.overlay on|off|self", c_overlay, nullptr, MT);
     H->command_add(M, "coop.players", "coop.players [held <id>] - the per-player state modules keep (BUG-0422)", c_players, nullptr, MT);
     H->command_add(M, "coop.guard", "coop.guard [unwind <name> [n] | stick <name>] - the call guards of the modules and what the frame reset cleared (BUG-1047)", c_guard, nullptr, MT);
-    H->command_add(M, "coop.lifecycle", "coop.lifecycle [held] - the session / world state modules keep and what the last resets left (BUG-1055)", c_lifecycle, nullptr, MT);
+    H->command_add(M, "coop.testreset", "coop.testreset [fp|plant <n>] - reset every registered session and world state and print the fingerprint of what still holds (D2, the lab's warm reset)", c_testreset, nullptr, MT);
+    H->command_add(M, "coop.lifecycle", "coop.lifecycle [held|hooks|world] - the session / world state modules keep, what the last resets left (BUG-1055), the observers and the world identity (BUG-1141)", c_lifecycle, nullptr, MT);
     H->command_add(M, "coop.social", "coop.social [species | log | act <npc id> [slot] | goto <npc id>] - creature social games", c_social, nullptr, MT);
     H->command_add(M, "coop.fields", "coop.fields - replicated state fields of mirrored objects per kind (BUG-0419 G2, fields.h)",
                    [](void*, int argc, const char* const* argv, SkOut* out) -> int {

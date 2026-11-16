@@ -135,6 +135,9 @@ void cell_destroy(uint32_t idx);
 // BUG-0308: the Cell stage is being left (quit posted for a world load or the menu): no mirror creation
 // and no pool write of ours until the mode changes
 bool cell_leaving();
+// C3 (BUG-1142): the Cell step (SimUpdate) stands while on (a guest waiting for the host's pause); steps skipped
+void set_cell_hold(bool on);
+uint32_t cell_held_steps();
 // move a cell exactly (soft-body cells take their position from their particles, docs/re/cell.md §6)
 void cell_move(uint8_t* c, const net::Vec3& p, bool still = false);
 void mat_to_quat(const float* m, net::Quat& q);

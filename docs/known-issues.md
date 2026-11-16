@@ -262,3 +262,4 @@ anchor so other docs can link to it:
   stage only; in Cell, Tribe and Civilization players still cannot hurt each other (Space has its rivals mode).
 * Reproduce: `coop.settings force all.friendly_fire on` on the host in Cell: a bite on the partner's cell does nothing.
 * Ticket: BUG-0899.
+

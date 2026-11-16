@@ -1106,10 +1106,17 @@ static void test_manifest()
     int known = 0;
     for (int t = 0; t < 256; t++)
         known += msg_info((uint8_t)t).known;
-    const std::set<int> added = {71};
-    CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added.size()));
-    CHECK(MSG_TRIBE_ANIM == 71 && std::string(msg_info(71).name) == "TRIBE_ANIM" && msg_info(71).family == Family::tribe);
-    for (int t : added)
+    // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
+    // BUG-1160)
+    const std::set<int> added_types = {70, 71};
+    CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
+    CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
+          host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
+          dispatch_route(70, true) == Route::None);
+    CHECK(MSG_TRIBE_ANIM == 71 && std::string(msg_info(71).name) == "TRIBE_ANIM" && msg_info(71).family == Family::tribe &&
+          msg_dir(71) == MsgDir::Host && host_world::msg_class(71) == host_world::MsgClass::Module &&
+          dispatch_route(71, false) == Route::Tribe && dispatch_route(71, true) == Route::None);
+    for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);
     for (auto& g : golden0714::kTypes)
@@ -1119,12 +1126,8 @@ static void test_manifest()
     int bad = 0;
     for (int t = 0; t < 256; t++) {
         uint8_t u = (uint8_t)t;
-        if (added.count(t)) { // (a new type: its class and route are its row's, checked below)
-            CHECK(host_world::msg_class(u) == host_world::MsgClass::Module && dispatch_route(u, false) == Route::Tribe &&
-                  dispatch_route(u, true) == Route::None);
-            continue;
-        }
-        if (host_world::msg_class(u) != golden0714::msg_class(u)) {
+        bool added_type = added_types.count(t) == 1; // (its class and route checked above)
+        if (!added_type && host_world::msg_class(u) != golden0714::msg_class(u)) {
             printf("  type %d: class %d, 0.7.14 %d\n", t, (int)host_world::msg_class(u), (int)golden0714::msg_class(u));
             bad++;
         }
@@ -1136,7 +1139,7 @@ static void test_manifest()
             bad++;
         }
         for (bool host : {false, true})
-            if (dispatch_route(u, host) != golden0714::route(u, host)) {
+            if (!added_type && dispatch_route(u, host) != golden0714::route(u, host)) {
                 printf("  type %d on the %s: route %d, 0.7.14 %d\n", t, host ? "host" : "guest", (int)dispatch_route(u, host),
                        (int)golden0714::route(u, host));
                 bad++;
@@ -1152,7 +1155,7 @@ static void test_manifest()
     CHECK(bad == 0);
     // the direction gate: exactly the types only the host sends (the sender inventory of the B3 review), off: none
     const std::set<int> host_only = {2, 3, 4, 5, 9, 13, 14, 15, 16, 17, 19, 20, 22, 23, 25, 29, 31, 33, 37, 39, 40, 42, 43, 47,
-                                     50, 56, 59, 62, 64, 66, 69, 71};
+                                     50, 56, 59, 62, 64, 66, 69, 70, 71};
     for (int t = 0; t < 256; t++) {
         CHECK(dir_gate_drops((uint8_t)t) == (host_only.count(t) == 1));
         CHECK(!dir_gate_drops((uint8_t)t, false));

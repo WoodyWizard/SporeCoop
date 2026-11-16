@@ -3,6 +3,7 @@
 // sent, walking and clicking through the partners (BUG-0913), their animations (on_anim / on_remote_anim), and the
 // recorders that look at them: coop.track, coop.bodyrec, the invariant monitor's fields and the support trace
 // (trace_tick). The Remote table itself (g_remotes) and the session stay in coop.cpp.
+#include "lifecycle.h"
 #include "coop_state.h"
 
 namespace coop_core {
@@ -69,6 +70,12 @@ void forget_puppets() // world changed or the local player left it (editor, load
         r.puppet_adapter = nullptr;
     }
 }
+
+// C2 (BUG-1141): the puppets belong to the world that was open (world_id.h); first of the world-change hooks
+LIFECYCLE_HOOK("puppets.world", lifecycle::kWorldChange, -100, [](const lifecycle::Ctx& c) {
+    if (c.from_stage >= 0)
+        forget_puppets();
+}, true);
 
 void remove_strays(double now)
 {

@@ -1234,6 +1234,7 @@ void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
     }
 }
 
+// lifecycle-exempt: a Space feature (space_ext.h), run by spaceext::session_end_all from the spacecoop.session hook
 void on_session_end()
 {
     g = Contract{};

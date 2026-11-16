@@ -343,6 +343,7 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
     spaceext::send(K_BADGES_DONE, w);
 }
 
+// lifecycle-exempt: a Space feature (space_ext.h), run by spaceext::session_end_all from the spacecoop.session hook
 static void on_session_end()
 {
     g_win.session_end();

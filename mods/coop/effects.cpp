@@ -1,3 +1,4 @@
+#include "lifecycle.h"
 #include "effects.h"
 #include "player_life.h"
 
@@ -1048,6 +1049,7 @@ void on_session_end()
         g_live_dropped += (uint32_t)g_live_n;
     g_live_n = 0;
 }
+LIFECYCLE_HOOK("effects.session", lifecycle::kSessionEnd, -78, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 bool set_log(bool on)
 {

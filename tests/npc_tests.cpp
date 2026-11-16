@@ -578,6 +578,38 @@ static void test_lifecycle()
     CHECK(!w.changed(5) && w.changed(6) && !w.changed(6));
 }
 
+// D2 (audit TST-4): the warm-reset fingerprint: every entry with a digest (its own, else held()) is listed with it, the
+// hash follows the lines; reset_all clears both scopes; an entry whose reset forgets its state (a planted leftover)
+// stays in the fingerprint after reset_all, and its own digest is used instead of held()
+static uint32_t g_fp_value = 0, g_fp_forgot = 0;
+LIFECYCLE_STATE_D("t.digest", lifecycle::kWorld, nullptr, [] { g_fp_value = 0; },
+                  []() -> size_t { return g_fp_value ? 1 : 0; }, []() -> uint32_t { return g_fp_value; });
+SESSION_STATE("t.forgets", nullptr, [] {}, []() -> size_t { return g_fp_forgot; });
+static void test_fingerprint()
+{
+    lifecycle::reset_all(true);
+    lifecycle::Fingerprint clean = lifecycle::fingerprint();
+    CHECK(clean.lines.empty() && clean.holding == 0 && clean.entries == lifecycle::table().size());
+    g_fp_value = 0xABC;
+    g_lc_session = 2;
+    lifecycle::Fingerprint f = lifecycle::fingerprint();
+    CHECK(f.lines == "t.session 00000002\nt.digest 00000ABC\n" && f.holding == 2 && f.hash != clean.hash);
+    g_fp_value = 0xABD; // the same count (held 1), another state: the digest tells them apart
+    CHECK(lifecycle::fingerprint().hash != f.hash);
+    lifecycle::reset_all(true);
+    CHECK(lifecycle::fingerprint().hash == clean.hash && g_fp_value == 0 && g_lc_session == 0);
+    g_fp_forgot = 3; // a module whose reset forgets this
+    lifecycle::reset_all(true);
+    f = lifecycle::fingerprint();
+    CHECK(f.lines == "t.forgets 00000003\n" && f.hash != clean.hash);
+    g_fp_forgot = 0;
+    g_lc_world = 5;
+    lifecycle::reset_all(false); // the registry's switch off: nothing reset, all of it in the fingerprint
+    CHECK(lifecycle::fingerprint().lines == "t.world 00000005\n");
+    lifecycle::reset_all(true);
+    CHECK(lifecycle::fingerprint().hash == clean.hash);
+}
+
 // BUG-1047: the call guard registry: a hold sets and clears its guard; a hold a caught fault cut short (unwind) leaves
 // it set, and the frame's reset clears every registered guard (a flag or a depth counter) that is still set
 static bool g_cg_a, g_cg_b, g_cg_free;
@@ -661,6 +693,7 @@ int main(int argc, char** argv)
     test_fields_wire();
     test_realign_rule();
     test_lifecycle();
+    test_fingerprint();
     test_call_guard();
     test_off_main();
     printf(g_fail ? "npc tests: %d FAILED\n" : "npc tests: all passed\n", g_fail);

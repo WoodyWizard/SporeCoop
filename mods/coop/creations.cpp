@@ -1,3 +1,4 @@
+#include "lifecycle.h"
 #include "creations.h"
 #include "player_life.h"
 
@@ -24,6 +25,7 @@
 #include "net/partprops.h"
 #include "trace.h"
 #include "settings.h"
+#include "world.h"
 
 namespace creations {
 
@@ -2673,6 +2675,17 @@ static void swap_health(void* av, float hp0, float max0)
     H->log(M, SK_INFO, "creations: own avatar's health %.1f/%.1f -> %.1f/%.1f over the swap (BUG-0928)", hp0, max0, hp1, max1);
 }
 
+// BUG-1173: SetSpecies on the avatar while a cinematic of the game plays (CRG_BrainUpgradeN: the DNA shared at the
+// join crossed a brain level in the 3 s before the swap) left that cinematic playing for good: its camera part ran
+// on, its caption never came (no pause, no OK), so Enter did nothing and the game's input lock held the guest until
+// the next world load (no clicks, its own editor after the evolution vote never opened, lane 10 probe 2026-11-15:
+// F6A4B1E1 for 40 s, 8 Enters; the same DNA after the swap: caption at 14 s, gone on the first Enter). The swap
+// now waits until no cinematic plays. Off (`coop.fix creations.swap_after_cinematic off`): it swaps at once (0.7.14).
+static bool g_swap_cine_fix = true;
+COOP_FIX("creations.swap_after_cinematic", "BUG-1173", g_swap_cine_fix,
+         "creations: the guest's own creature is applied only when no cinematic of the game plays (a brain upgrade's caption stayed away)");
+static unsigned g_swap_cine_waits; // tests: ticks the swap waited for a cinematic
+static bool g_swap_cine_waiting;
 static void apply_own_avatar()
 {
     if (game::mode_id() == modes::kCell && C.sess && C.sess->connected()) {
@@ -2707,6 +2720,15 @@ static void apply_own_avatar()
     if (av == g_swapped_avatar && epoch == g_swapped_epoch && k == g_swapped_key)
         return;
     Key cur = avatar_species_key();
+    if (!(cur == k) && g_swap_cine_fix && world::cinematic_playing()) {
+        if (!g_swap_cine_waiting)
+            H->log(M, SK_INFO, "creations: own avatar %08X waits: cinematic %08X plays (BUG-1173)", k.instance,
+                   world::cinematic_id());
+        g_swap_cine_waiting = true;
+        g_swap_cine_waits++;
+        return;
+    }
+    g_swap_cine_waiting = false;
     if (!(cur == k)) {
         void* prof = game::species_by_key({k.instance, k.type, k.group});
         if (!prof) {
@@ -3114,6 +3136,7 @@ void on_session_end()
     g_swapped_avatar = nullptr;
     g_cell_set = {};
 }
+LIFECYCLE_HOOK("creations.session", lifecycle::kSessionEnd, -46, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 Key player_key(uint8_t player, Kind k)
 {
@@ -3194,6 +3217,8 @@ std::string status()
              "species asked=%u got=%u sent=%u missing=%u old_sent=%u own_out=%u own_in=%u rx_dropped=%u adopt_skipped=%u parts_refused=%u world_missing=%u paints_fb=%u unknown_logged=%u cc=%d%s%s\n",
              g_bundles_in, g_bundles_out, g_registered, g_swaps, g_waits_on_disk, g_unusable, g_world_swaps,
              g_species_asked, g_species_got, g_species_sent, g_species_missing, g_old_served, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_parts_refused, (unsigned)g_world_missing.size(), g_paints_fallback, g_unknown_logged, g_have_cc, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
+    s += b;
+    snprintf(b, sizeof b, "  swap waits for a cinematic: %u ticks (BUG-1173)\n", g_swap_cine_waits);
     s += b;
     snprintf(b, sizeof b, "  packages: open=%zu closing=%zu closed=%u kept=%u renamed=%u close_fix=%d\n", g_pkgs.size(),
              g_closing.size(), g_pkgs_closed, g_pkgs_close_kept, g_pkg_renames, (int)g_pkg_close_fix); // BUG-0996

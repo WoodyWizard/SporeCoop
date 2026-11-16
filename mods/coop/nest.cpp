@@ -677,6 +677,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 }
 
 void on_session_end() { clear_mirrors(); }
+LIFECYCLE_HOOK("nest.session", lifecycle::kSessionEnd, -88, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 void on_world_change()
 {
@@ -685,6 +686,8 @@ void on_world_change()
         drop_old_mirror(m); // BUG-0833 (off: forgotten, "freed with the world")
     g_mirrors.clear();
 }
+// C2 (BUG-1141): a world that was open changed or closed (world_id.h; not an editor visit, decision 2)
+LIFECYCLE_HOOK("nest.world", lifecycle::kWorldChange, -88, [](const lifecycle::Ctx& c) { if (c.from_stage >= 0) on_world_change(); }, true);
 
 // coop.nest objs [r]: eggs, fruit and nests within r m of the avatar (tests, BUG-0384)
 static void list_objs(SkOut* out, float r)

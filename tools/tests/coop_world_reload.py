@@ -18,8 +18,19 @@ import re
 import sys
 import time
 
+import lane
 from twoinst import Checks, shot, start
 import twoinst
+
+
+def guest_loads():
+    """the guest game's world loads so far (its whole log file: the console's `log 400` ring dropped the round before
+    once the log was busier, BUG-1171)"""
+    try:
+        with open(lane.game_log(lane.GUEST), 'rb') as f:
+            return f.read().decode('utf-8', 'replace').count('world: loading ')
+    except OSError:
+        return -1
 
 
 def field(out, pat):
@@ -47,8 +58,9 @@ def main():
     ck = Checks()
     if without:
         print(' ', guest.call('coop.npc worldfix off')['out'].strip())
-    ok = wait(lambda: swaps(guest) >= 1, 40)
     mine = field(guest.call('coop.creations')['out'], r"mine creature: ([0-9A-F]{8})")
+    # (a warm game counts the swaps of the test before it: wait for the own creature itself, BUG-1171)
+    ok = wait(lambda: swaps(guest) >= 1 and field(guest.call('coop.avatar')['out'], r'key=0x([0-9A-F]{8})') == mine, 40)
     av = field(guest.call('coop.avatar')['out'], r'key=0x([0-9A-F]{8})')
     h_av = field(host.call('coop.avatar')['out'], r'key=0x([0-9A-F]{8})')
     print(f'  guest own {mine}, guest avatar {av}, host avatar {h_av}')
@@ -57,11 +69,11 @@ def main():
     for rnd in (1, 2):
         n0 = swaps(guest)
         print(' ', guest.call('coop.creations sameaddr')['out'].strip())
-        loads0 = guest.call('log 400')['out'].count('world: loading ')
+        loads0 = guest_loads()
         out = host.call('coop.save')['out']
         ck('saved' in out, f'round {rnd}: the host saved ({out.strip()})')
         host.call('coop.share')
-        loaded = wait(lambda: guest.call('log 400')['out'].count('world: loading ') > loads0, 120)
+        loaded = wait(lambda: guest_loads() > loads0 >= 0, 120)
         ok = loaded and twoinst.wait_guest_in(host, guest)
         ck(ok, f'round {rnd}: the guest loaded the host\'s world again')
         t_in = time.time()

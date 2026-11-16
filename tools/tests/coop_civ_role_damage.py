@@ -27,6 +27,7 @@ from play_civ import civ_state, dist
 from twoinst import Checks, start, wait_guest_in
 
 PHASE = 30
+ARRIVE = 60  # BUG-1172: s for the first hit after the attack order (the drive from the player's city)
 
 
 def owners(con, ids):
@@ -63,6 +64,17 @@ def phase(host, ids, tgt, name):
     """the damage per hit on the host's buildings of city tgt over PHASE s (None: no hit seen)"""
     for i in ids:
         host.call(f'coop.civ attack {i} {tgt} 2')
+    # BUG-1172: the window starts with the first hit (at most ARRIVE s after the order): phase A's vehicles drive from
+    # the player's city first, and a 30 s window that began with the order saw 0-3 hits on a loaded lab
+    last, t0 = building_hp(host, tgt), time.time()
+    while time.time() - t0 < ARRIVE:
+        time.sleep(0.2)
+        now = building_hp(host, tgt)
+        hit = any(b in last and 0.5 < last[b] - hp for b, hp in now.items())
+        last = now
+        if hit:
+            break
+    print(f'  {name}: first hit after {time.time() - t0:.0f} s', flush=True)
     drops, last, t0 = [], building_hp(host, tgt), time.time()
     while time.time() - t0 < PHASE:
         time.sleep(0.2)

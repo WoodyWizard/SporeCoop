@@ -1073,6 +1073,14 @@ COOP_FIX("core.evo_flag_clear", "BUG-0920", g_evo_flag_fix,
          "core: an editor request that is refused or dropped does not leave the stage's screen black (the game's editor-pending flag is cleared)");
 unsigned g_evo_flags_cleared = 0; // coop.status, tests
 double g_evo_flag_idle_since = 0;
+// C3 (BUG-1142): an editor is on its way on this game (a vote, a held or queued request, the own editor, a request
+// submitted in the last 15 s; as evo_flag_tick reads it): the pause reason 0x4BF38A6 is then no Sporepedia
+bool editor_coming(double now)
+{
+    return g_vote.active || g_submit_later || g_submit_queued || g_own_editor_due || g_own_editor_queued ||
+           mode_switch_pending() || now - g_editor_submitted_at < 15.0;
+}
+
 int evo_flag_now()
 {
     uintptr_t f = H->sym("SporeCoop::CreatureEvolutionPending_flag");

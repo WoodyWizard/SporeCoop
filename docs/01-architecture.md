@@ -144,6 +144,7 @@ behaviour changed (the proof: docs/10-dev-pipeline.md#pipeline-refactor-proof).
 | vote.cpp | the evolution vote and action votes, the switch vote, the offers, the guest's own editor, the editor hooks, `game_busy` / `save_blocker`, the editor-pending flag |
 | puppets.cpp | the partners' puppets (make, drive, despawn, forget, strays), the local state that is sent, partner pass-through, animations, the recorders (coop.track, coop.bodyrec, the monitor's fields, the support trace) |
 | session_glue.cpp | the session callbacks (`setup_callbacks`, the message dispatch), `end_session`, host / join / leave, roles and ready flags, the host's world for its guests (on_mode_change, follow_phase, share retries and waits, the evolution in place, the lobby) |
+| host_busy.cpp | C3 (BUG-1142): the host's busy state for its guests (busy_model.h: classify, Announcer, MSG_HOST_BUSY, HostView) and the guest's wait for the host's pause (docs/01-architecture.md#arch-c2c3-wiring) |
 | coop_state.h | what more than one of these files uses: the shared types, constants and one declaration per shared global or function, grouped by the file that defines it. Only these six files include it |
 
 Rules: the six files are one namespace, `coop_core` (it was coop.cpp's anonymous namespace; coop_state.h has the
@@ -180,13 +181,13 @@ phases run in this order, and the order is part of the fixes named:
 
 | # | Phase | Contract |
 |---|---|---|
-| 1 | frame_observe | before any message: frame timing and the session clock (support::tick first), the stage counters (`game::stage_epoch_tick`, BUG-0217: before any message or module tick), the Tribe / Civ world checks, the world resets (`lifecycle_world_tick`, BUG-1055), the puppets forgotten when the world was torn down (`avatar_change_check`, BUG-0091), the puppets / proxies / bodies read as drawn (monitor, bodyrec) |
+| 1 | frame_observe | before any message: frame timing and the session clock (support::tick first), the stage counters (`game::stage_epoch_tick`, BUG-0217: before any message or module tick), the world identity (`world_id_tick`, C2: the world-change hooks and the WORLD_STATE resets, BUG-0217 / BUG-0223 / BUG-1055, #arch-c2c3-wiring), the puppets forgotten when the local entity went (`avatar_change_check`, BUG-0091), the puppets / proxies / bodies read as drawn (monitor, bodyrec) |
 | 2 | frame_receive | `g_sess.update()`: every message of this update; the host's WELCOME world and every handler see the last frame's `g_mode` / `g_world` / `g_local` (BUG-0231); then the partner pass-through list and the lobby |
 | 3 | frame_votes_and_ui | the guest's latency for the drive (BUG-0425, BUG-0651), votes, the own editor, offers, the co-op window, the menu |
 | 4 | frame_world_ticks | the host's world share tick (a guest: a received world waiting), the save strip, npc, player_rules, nest, fields (after the modules that make mirrors), wsync, worldobj, realign, parts, effects, social, the evolution keys, creature_hp, shared resources |
 | 5 | frame_send_totals | host: the DNA total (on a change, every 2 s) and the time of day (every 1 s) |
 | 6 | frame_local_update | this frame's `g_mode` (on_mode_change), `g_adapter`, `g_world`, `g_local`; settings, the HUD helpers, the probes, the second avatar check, join apart (BUG-0989) |
-| 7 | frame_stage_ticks | strays, follow_phase, the share wait, host away, DNA spends and notices, Tribe, Cell, Civ, the squadron, the updater, Space, teamplay |
+| 7 | frame_stage_ticks | strays, follow_phase, the share wait, host away, the host's busy state and a guest's wait (host_busy_tick, C3), DNA spends and notices, Tribe, Cell, Civ, the squadron, the updater, Space, teamplay |
 | 8 | frame_send_state | our player state (`net::state_due`: every 0.05 s, a stop at once, BUG-1093) and the echo test remote |
 | 9 | frame_drive | every partner's puppet driven (forgotten without a local entity), then coop.track and the support trace |
 
@@ -613,7 +614,8 @@ C1, C4, C7 and D3 of docs/plan-0.7.15.md for the Tribe stage (BUG-1140, BUG-1143
 [the recipe](#arch-wave-c):
 
 * **Tables** ([mirror registry](#arch-mirror-registry)): the host's member table is `mirror::Registry<uint16_t,
-  HMember> g_hm("tribe.hm")`, the guest's mirrors `mirror::Registry<uint16_t, GMember> g_gm("tribe.gm")`; the hand-kept
+  HMember>` "tribe.hm" (`g_host.members`), the guest's mirrors `mirror::Registry<uint16_t, GMember>` "tribe.gm"
+  (`g_guest.mirrors`); the hand-kept
   reverse maps `g_hm_by_id` and `g_gid_of` and the `c` / `serial` / `id` fields of the entries are gone (the entry's
   `ref` and `id`). Liveness is injected: the host's `hm_alive` = `kept_alive` (game::LiveRef with the serial;
   `tribe.kept_refs` off: the object's memory), the guest's `gm_alive` (LiveRef; `tribe.mirror_member_lifetime` off:
@@ -625,11 +627,11 @@ C1, C4, C7 and D3 of docs/plan-0.7.15.md for the Tribe stage (BUG-1140, BUG-1143
   BUG-0671 over both); the re-split when the players change is `resplit_owner`, a newcomer's share `balance`. Then
   `sweep(seen this pass)`: an unseen entry whose object is a dead member's body is `Keep` (sent with health 0, BUG-0620,
   `tribe_logic::body_hold`: at most kBodyMax 60 s, its last tribe in the table), every other one `Remove` (no game call).
-* **Guest snapshot** (guest_state) on `net::SnapshotReceiver<uint16_t> g_snap` ([C4](#arch-snapshot-rx), policy
+* **Guest snapshot** (guest_state) on `net::SnapshotReceiver<uint16_t>` `g_guest.snap` ([C4](#arch-snapshot-rx), policy
   `{255, net.cycle_order, 0x8000, sweep_once, last chunk}`; `tribe.cycle` resets it with the session and the world,
-  BUG-1051): per entry `g_gm.at(id)`, a dead object detached (`tribe_logic` decides grow up, make a mirror, the bind
+  BUG-1051): per entry `g_guest.mirrors.at(id)`, a dead object detached (`tribe_logic` decides grow up, make a mirror, the bind
   candidate `pick_bind`: the nearest unbound member of the mapped tribe within 6 m, else `spawn_member`, bound with
-  `made`); on the completing chunk `g_snap.finish(g_gm, Remove, remove_member when alive)`, then the orphan sweep of
+  `made`); on the completing chunk `snap.finish(mirrors, Remove, remove_member when alive)`, then the orphan sweep of
   local members of the mapped tribes that are not bound (stage-specific, as before). The save filter keeps its own
   `g_ours_c` (spawned mirrors by serial): it must outlive the table, which a session end clears while the mirrors stay
   in the guest's world until it leaves it.
@@ -660,3 +662,117 @@ The split was made with a clang-AST tool (each top-level entity of namespace tri
 lands in): a name one file uses and another defines lost `static` and got its declaration in tribe_internal.h at the
 place of its first declaration; a type, alias, constexpr constant or template moved into the header. A later move of
 code between these files follows the same rule.
+## C2 and C3 in the mod: one world identity, the session-end fan-out, the host's pause (2026-11-15, feat/w51-core2)
+<a id="arch-c2c3-wiring"></a>
+
+The wiring of #arch-world-id (BUG-1141) and #arch-busy-model (BUG-1142) into coop.dll. Proof runs in the tickets.
+
+Both C2 switches of the migration (`core.world_id`, `core.session_hooks`) and the old paths (tribe / civ `world_check`,
+`lifecycle_world_tick`, space_ext's own epoch counter, end_session's hand list, avatar_change_check's world resets)
+were deleted in this branch once the world-change tests passed with them on (plan rule: no new permanent switch).
+
+**World identity (C2).** coop.cpp `world_id_tick` (frame_observe, right after `game::stage_epoch_tick`,
+`modes::world_name_tick` and `modes::test_tick`) steps the one `world_id::tracker()` with the mode, the stage counter,
+the planet file (a real `<planet>.spo` only: `world_name::is_planet`, so "snapshot.spo" with nothing remembered is
+"not known" and its later save is no world change; Space: `spaceext::world_save`, which keeps `space.world_file`) and
+the anchor (`tribe::world_anchor`, `civ::world_anchor`, `spaceext::world_anchor`). A change logs `world: <from> -> <to>
+(<why>)` and fires `lifecycle::fire(kWorldChange)` at once (on_frame, game calls allowed). The hooks, in order: -100
+puppets (forget_puppets), -90 npc, -88 nest, -86 fields, -84 wobj (each when a world was open: `from_stage >= 0`), -50
+tribe, -44 civ (each when the world that changed was its stage's: the 0.7.14 world_check rule), then the WORLD_STATE
+resets at order 0. `spaceext::world_epoch()` is the serial of the last Space world of the tracker, and its ledger of
+owed refunds (BUG-0225) reads the tracker's open Space world. What changed against 0.7.14:
+* the WORLD_STATE entries are also reset when a world closes (the menu, a load) and on an in-stage save / anchor
+  change, not only when a stage counter moves (idempotent resets; `world.host_reload`, BUG-0332: set by on_mode_change
+  in phase 6 after the frame's change, and the share save of a new game no longer looks like another save);
+* decision 2: the local player's editor visit is no world change. `avatar_change_check` is no detector any more: it
+  forgets the puppets on every change of the local entity (BUG-0091, as frame_drive does without one) and resets npc,
+  nest, fields and wobj only when the local creature is replaced inside the same world (BUG-0833) or lost outside an
+  editor (a teardown before the mode changes, BUG-0308); never twice for one change (the tracker's fires).
+* Tribe and Civ: the hook fires on what their Watch saw, except an anchor that turns null (world_id keeps the last
+  non-null one) and "snapshot.spo" before the first save.
+`coop.lifecycle` lists the hooks after the entries (`hook session|world <order> <name> [game]`); `coop.lifecycle hooks`
+their calls and faults; `coop.lifecycle world` the tracker.
+
+**Session end (C2).** session_glue.cpp `end_session` is one `lifecycle::fire(kSessionEnd, path, kCellToo)`, run at
+once (every caller is the main thread; the 0.7.14 hand list ran inline too, so `game_ok` is true): pfind -100,
+support -99, npc -90, nest -88, fields -86, wobj -84, realign -82, parts -80, effects -78, social -55, tribe -50,
+cellsync -48 (only with kCellToo), creations -46, civ -44, squadron -42, spacecoop -40 (the Space features through
+`spaceext::session_end_all`), core.remotes -20 (despawn, views), core.vote -16, world.shares -15, shared -14, wsync -13,
+world -12, core.session -10 (the core's DNA / editor / share state, settings, the session report), then every
+SESSION_STATE at 0: the 0.7.14 order. Each module's hook is registered next to its function (the ratchet's
+"unregistered lifecycle functions" went from 51 to 21).
+
+**The host's busy state (C3).** host_busy.cpp, a seventh core file (coop_state.h). Host, every frame (phase 7, after
+host_away_tick): `busy_model::classify` over the mode, `game_busy()`, the pause reasons, `coop_ui::game_modal_up`,
+`editor_coming` (vote.cpp: a vote, a held / queued / own editor request, a request in the last 15 s) and in Cell the
+pause menu's window (coop.cpp menu_check_task, 5 times a second); the Announcer sends MSG_HOST_BUSY (type 70, session
+family 1.1) on every change, the state to a guest that joins (`host_busy_join` in player_join). Guest: HostView (the
+message from id 0 only; else the 0.7.14 fallback from `host_out_of_stage`), `busy_model::act(stage, edge,
+spaceext::rivals())`; Act::Wait in a stage whose switch is on, while this game plays the host's world (the host's
+mode = ours, not elsewhere / not another Space save) holds the game: `cGameTimeManager::Pause(0x4BF38A7)` once (Cell:
+`modes::set_cell_hold`, the cell step SimUpdate does not run, as under the game's own pause menu) with the line
+"<host> paused the game: yours waits until <host> goes on", released with "<host> (host) goes on: so does your game"
+when the host goes on, goes away, the stage or the session ends. The away / editor states stay coop.cpp's
+host_away_tick and the modules' local play (not moved to HostView: their edges, DNA and notes are unchanged).
+Tribe: a guest that heard MSG_HOST_BUSY ignores kind 21 (the host still sends it for 0.7.14 guests), the pause net
+(BUG-1101) counts the wait as held. Tribe and Civ hold a guest's commands in one `busy_model::HeldPump` each (the
+two HeldCommands copies, Civ's 5 s note throttle). `coop.status` "host busy:" line.
+
+## Civ on the mirror registry and the snapshot receiver (2026-11-15, feat/w51-civ)
+<a id="arch-civ-registry"></a>
+
+C1 and C4 of 0.7.15 for Civ (BUG-1140, BUG-1143), D3 (BUG-1163). The hand-made maps of civ.cpp are gone:
+
+* Host table: `g_hvr` = `mirror::Registry<uint16_t, HV>("civ.hv", game::alive)`, HV = {owner, pol}; the entry's ref
+  carries the vehicle and its serial (BUG-0951). The table pass in host_tick (every 0.1 s) is `g_hvr.sweep`: an entry
+  is seen while its vehicle is in the game's list with the same political id (BUG-0059) and, with
+  civ.mirror_lifetime, the same serial; the rest goes without a game call. A vehicle the table does not know gets its
+  id by `adopt` (`hv_add`, `net::alloc_id` over the registry: never a live id, never 0, BUG-0154) with the owner of
+  `civlogic::new_vehicle_owner`; the orphans of a player who left go by `civlogic::orphan_owner` (BUG-0031); E1's
+  claims (owner_claims.h, BUG-1153) stay keyed by the vehicle.
+* Guest mirrors: `g_gvr` = `mirror::Registry<uint16_t, GV>("civ.gv", gv_alive)`. `gv_alive` is the guest's own rule
+  (the vehicle's memory says it is not destroyed and, with civ.mirror_lifetime, its serial is the one bound): a
+  vehicle the mod just made joins the game's list later, and `prune_gone` (the game's list, every Civ frame) detaches
+  one the game took out of its list before it is freed. It is the one `object_alive` the registry keeps. Binding:
+  `gv_bind` (a local vehicle of the same nation / purpose / locomotion within 25 m, else CreateVehicle; an address
+  still bound to another mirror loses it to the new vehicle), `gv_unbind` (dead or another object at the address).
+* The snapshot: `g_rx` = `net::SnapshotReceiver<uint16_t>` with Tribe's policy (255 chunks, `keep_order` = net.cycle_order
+  read every chunk, older within 0x8000, only the last chunk completes, once). After a complete cycle
+  `g_rx.finish(g_gvr, decide, remove)`: an unseen mirror whose vehicle is alive and not dead is removed now
+  (`kill_local`), or `Defer` while the planner moves it or a cinematic plays (`civlogic::unseen_mirror`, BUG-0493);
+  the guest's own vehicles the host has not go through the same deferred list (`kill_wait` = `defer`). guest_tick runs
+  `g_gvr.pump` (a vehicle no longer in the game's list or dead is dropped without a call).
+* Save filter (BUG-0470): `g_gvr.ours(o, kVehicleNoun, true)` (any bound vehicle, or one waiting for its removal).
+* Status: `coop.civ tables` ends with a `registry:` line (both registries' `status()` and the receiver's counters);
+  the guest's `incomplete=` / `older_chunks=` in `coop.civ` are the receiver's.
+* Squadron (squadron.cpp): `g_rx` with the squadron's policy `{31, true, 99, true, false}` replaced the mask, the
+  older window and the done flag; its mirror table is not on the registry (not in C1's order). `coop.fleet chunkfix 0`
+  (fleet.chunk, BUG-0037's twin) keeps its own path: by the B1 rule (docs/10-dev-pipeline.md#pipeline-fix-retire)
+  fleet.chunk may not retire (a Space-file switch on the keep list, and no FAIL run id on record in its ticket).
+* Rules: civ_logic.h (money: the guest's own income dropped, `can_pay` BUG-0613, `refund_amount` BUG-0807; owners;
+  holds; `local_play` BUG-0151), unit tests tests/civ_tests.cpp.
+* Behaviour differences, on purpose: a duplicate of a completed cycle's last chunk does not sweep again (sweep_once);
+  the guest's `older_chunks` counter survives a world change (the receiver keeps its counters).
+* Files (C8, BUG-1164, pure moves after the counters were grouped): `civ.cpp` (init and the hooks, tick, on_message,
+  the city planner, the co-op features: siege, roles, alarm, superweapon, the Space builds, every lifecycle
+  registration), `civ_host.cpp` (E1's claims, dealing the cities, host_tick with the vehicle table pass and the snapshot
+  it sends, host_command), `civ_guest.cpp` (the host's cities, buildings and ruins on the guest, the vehicle mirrors and
+  guest_state / guest_tick / prune_gone, the save strip), `civ_shots.cpp` (the host's shots on the guests, BUG-0477;
+  the old Tribe villages, BUG-0539), `civ_tables.cpp` (the two registries with their accessors, the guest's liveness
+  rule `gv_alive`, the snapshot receiver `g_rx`), `civ_debug.cpp` (`debug()`, the `coop.civ` command), `civ_internal.h`
+  (what they share: includes, layout constants, the types, the `hv_each` / `gv_each` templates, the declarations),
+  `civ_logic.h` (the rules). The 129 diagnostic counters are one struct, `g_n` (`g_n.created`, ...).
+  The lifecycle registrations (LIFECYCLE_STATE / SESSION_STATE / PLAYER_STATE) and the hooks stay in civ.cpp, so the
+  lifecycle table and the hook list keep their order; the switch and guard lists are dumped sorted (refactor_dump
+  identical, BUG-1164).
+
+## The lifecycle fingerprint (2026-11-15, feat/w51-labstate)
+<a id="arch-lifecycle-fingerprint"></a>
+
+D2 of docs/plan-0.7.15.md (BUG-1179). Every entry of the lifecycle registry (#arch-lifecycle-registry) has a digest
+of its state: its own `digest()` (`LIFECYCLE_STATE_D(name, scope, fix, reset, held, digest)`) or the count of its
+`held()`; 0 means it holds nothing. `lifecycle::fingerprint()` lists the entries with a digest and their fnv-1a hash;
+`lifecycle::reset_all(on)` runs both scopes' resets. A fresh game holds nothing, and so must a game right after
+reset_all: an entry that still holds something is state its own reset forgets. `coop.testreset` (reset_all, then the
+fingerprint) is the lab's warm reset contract (docs/06-testing.md#testing-warm-fingerprint); tests/npc_tests.cpp
+`test_fingerprint` checks the digest, the hash, a forgetting entry and the registry's switch.
