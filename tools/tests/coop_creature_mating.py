@@ -26,6 +26,7 @@ from twoinst import Checks, shot, start
 
 W, H = 1440, 1080
 MATE_NODE = '02D852F0'
+MATE_WAIT_S = float(os.environ.get('MATING_WAIT_S') or 60)  # BUG-1182 (MATING_WAIT_S=30: the wait before it)
 
 
 def mate(con):
@@ -60,7 +61,9 @@ def mate_click(host, ck, other=False):
     click on it; True when the host's creature goes to mate (its node 02D852F0)"""
     mt = None
     t0 = time.time()
-    while time.time() - t0 < 30:
+    # BUG-1182: up to 60 s (was 30): since the lab's condition start-up waits (A9, BUG-1112) the test starts some 7 s
+    # sooner after the load and the host's game had picked no mate within 30 s (creature_mating, editor_now)
+    while time.time() - t0 < MATE_WAIT_S:
         mt = mate(host)
         if mt and mt['ptr'] and mt['flags'] & 0x10:
             break
