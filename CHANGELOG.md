@@ -135,6 +135,8 @@
 - Tests: one shared helper module for the game tests (`tools/tests/harness.py`: waiting with a reason, console
   parsing, positions, a wild NPC, the RESULT / INCONCLUSIVE lines); 314 copied helpers in 214 tests became imports
   of it by a codemod (`tools/harness_codemod.py`), `test_lint` flags a new copy; `run_all.sh` is gone (BUG-1185).
+- Cell: cellsync.cpp (7.3k lines) is split into smaller files by pure moves (combat, physics, tiles, host, guest and the
+  `coop.pool` command), and the `coop.creations` command has a file of its own (BUG-1183). No change on the wire.
 
 ## [0.7.14.1] - 2026-11-14
 
