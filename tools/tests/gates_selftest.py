@@ -368,6 +368,28 @@ def field_cases(tmp):
     check(not got, f'monitor: puppet_hp: a line is judged against the subject\'s own line of the same stage and world ({got})')
     got = scenario(tmp, 'f_php_sessions_old', *two, dict(same_session=0))
     check('puppet_hp' in got, f'monitor: puppet_hp: same_session 0 matches the session before at the same clock ({got})')
+    # BUG-1194: two sessions of the same stage and world (the guest left and joined again, sreport_leave
+    # 20261116-025154): the host's lines of the first were judged against the guest's own lines of the second at the
+    # same s (closer by some ms), 8 m off; lines of one session share the wall clock's session start (wall - s), so
+    # only the subject's lines of that session count; same_clock 0 (the rule before) fails it
+    def walled(lines, start, pos=None):
+        out = []
+        for ln in lines:
+            t = float(re.search(r'\[s ([\d.]+)\]', ln).group(1))
+            w = start + t
+            ln = f'{int(w // 3600):02d}:{int(w % 3600 // 60):02d}:{w % 60:06.3f}' + ln[len('12:00:00.000'):]
+            out.append(ln.replace('pos=(1.0 2.0 3.0)', f'pos={pos}') if pos else ln)
+        return out
+    ce1 = dict(h=dict(stage='Cell', world='9652F8AD'), g=dict(stage='Cell', world='9652F8AD'),
+               hs=dict(stage='Cell', world='9652F8AD'))
+    a_h, a_g = aligned_pair(n=4, host_sees=' drawn=(1.0 2.0 3.0) drawn_v=0.0', **ce1)
+    b_h, b_g = aligned_pair(n=4, host_sees=' drawn=(9.0 2.0 3.0) drawn_v=0.0', **ce1)
+    two = (walled(a_h, 43200) + walled(b_h, 43320),
+           walled(a_g, 43200) + walled(shift(b_g, -0.015), 43320, pos='(9.0 2.0 3.0)'))
+    got = scenario(tmp, 'f_drawn_sessions', *two)
+    check(not got, f'monitor: drawn: a line is judged against the subject\'s own line of the same session ({got})')
+    got = scenario(tmp, 'f_drawn_sessions_old', *two, dict(same_clock=0))
+    check('drawn' in got, f'monitor: drawn: same_clock 0 matches the next session at the same clock ({got})')
     h, g = aligned_pair()
     h.append("12:00:00.000 [s 33.0] [INF] coop: damage: 1 hit by pack owner=npc posse=1 amount=2.5 forwarded")
     g.append("12:00:00.000 [s 33.1] [INF] coop: damage: 1 hit by proxy owner=npc posse=? amount=2.5 from the host")
