@@ -872,18 +872,21 @@ static void list_objs(SkOut* out, float r)
 }
 
 // coop.nest herds: herds with eggs (mEggs +0x54), their nest, mbEggsInNest +0x198, mpEggLayer +0x194
-static void list_herds(SkOut* out)
+static void list_herds(SkOut* out, void* only = nullptr) // only: the herds of that species profile
 {
     void* av = game::avatar();
     net::Vec3 c = av ? game::position(av) : net::Vec3{};
     struct U {
         net::Vec3 c;
         SkOut* out;
-    } u{c, out};
+        void* only;
+    } u{c, out, only};
     game::for_each_object(
         [](void* o, uint32_t noun, void* p) {
             auto* u = (U*)p;
             if (noun != game::kHerdNoun || IsBadReadPtr(o, 0x220))
+                return true;
+            if (u->only && game::herd_species(o) != u->only)
                 return true;
             void** b = field<void**>(o, 0x54);
             void** e = field<void**>(o, 0x58);
@@ -891,10 +894,18 @@ static void list_herds(SkOut* out)
             void* ns = game::herd_nest(o);
             net::Vec3 q{};
             bool have = ns && game::object_position(ns, q);
-            H->out_printf(u->out, "herd %p nest=%p eggs=%d in_nest=%d layer=%p avatar=%d changed=%d index=%d enabled=%d dist=%.0f\n", o, ns, n,
+            // the species of its first member, the archetype group (+0x8C) and the personality (+0x15C) (BUG-9212)
+            void** mb = field<void**>(o, 0x40);
+            void** me = field<void**>(o, 0x44);
+            uint32_t sp = 0;
+            for (void** it = mb; it && it < me && it - mb < 32 && !sp; ++it)
+                if (*it && !IsBadReadPtr(*it, 0x800)) sp = game::species_instance(*it);
+            H->out_printf(u->out, "herd %p nest=%p eggs=%d in_nest=%d layer=%p avatar=%d changed=%d index=%d enabled=%d dist=%.0f "
+                          "species=%08X members=%d group=%u personality=%u at=(%.0f %.0f %.0f)\n", o, ns, n,
                           (int)field<uint8_t>(o, 0x198), field<void*>(o, 0x194), (int)field<uint8_t>(o, 0x84),
                           (int)field<uint8_t>(o, 0xFC), field<int>(o, 0x12C), (int)field<uint8_t>(o, 0x218),
-                          have ? net::dist(q, u->c) : -1.f);
+                          have ? net::dist(q, u->c) : -1.f, sp, mb && me >= mb ? (int)(me - mb) : -1, field<uint32_t>(o, 0x8C),
+                          field<uint32_t>(o, 0x15C), q.x, q.y, q.z);
             return true;
         },
         &u);
@@ -1102,8 +1113,13 @@ static int c_nest(void*, int argc, const char* const* argv, SkOut* out)
         list_objs(out, argc > 2 ? (float)atof(argv[2]) : 30.f);
         return 0;
     }
-    if (!strcmp(a, "herds")) {
-        list_herds(out);
+    if (!strcmp(a, "herds")) { // [<hex crt species>]: only its herds (BUG-9212)
+        void* only = argc > 2 ? game::species_by_key({(uint32_t)strtoul(argv[2], nullptr, 16), 0x2B978C46u, 0x40626200u}) : nullptr;
+        if (argc > 2 && !only) {
+            H->out_printf(out, "no such species here\n");
+            return 1;
+        }
+        list_herds(out, only);
         return 0;
     }
     H->out_printf(out, "%s", status().c_str());
@@ -1136,7 +1152,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_Surface = H->sym("SporeCoop::cPlanetModel_SurfacePoint");
     a_PlanetGet = H->sym("Simulator::cPlanetModel::Get");
     savestrip::add_filter(savestrip_filter); // BUG-0384: the guest's egg mirrors are not its world
-    H->command_add(M, "coop.nest", "coop.nest [objs [r]|herds|herd <h>|kill <h> <n> [raw]|respawn <h> <ms>|target <h> <n>|hatch <egg> <ms>|eat <egg>|look x y z [d]] - eggs at the nests (BUG-0384)", c_nest,
+    H->command_add(M, "coop.nest", "coop.nest [objs [r]|herds [species]|herd <h>|kill <h> <n> [raw]|respawn <h> <ms>|target <h> <n>|hatch <egg> <ms>|eat <egg>|look x y z [d]] - eggs at the nests (BUG-0384)", c_nest,
                    nullptr, SK_CMD_MAIN_THREAD);
 }
 
