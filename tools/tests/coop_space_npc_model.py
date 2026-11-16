@@ -75,6 +75,30 @@ def bad_cache():
     return None
 
 
+GFX_CACHES = ('GraphicsCache.package', 'GraphicsCache.001.package')
+
+
+def gfx_aside(tag):
+    """BUG-1213: the host's GraphicsCache (the game's baked models) goes aside for the run, the game starts with an empty
+    one. A lane that ever had those ships' models keeps them baked there: the resource manager knows their keys, so a
+    ship of the cache's summaries got its model and the case never came (lanes 2-4, 6, 7; a fresh one on lane 6: lab
+    20261116 exp, 2 ships defaulted at the first visit). Call before the games start; gfx_back(tag) after they ended"""
+    for n in GFX_CACHES:
+        f = os.path.join(lane.HOST_DIR, n)
+        if os.path.isfile(f) and not os.path.isfile(f + tag):
+            os.replace(f, f + tag)
+
+
+def gfx_back(tag):
+    """the lane's own GraphicsCache files again (the game's new ones go)"""
+    for n in GFX_CACHES:
+        f = os.path.join(lane.HOST_DIR, n)
+        if os.path.isfile(f + tag):
+            if os.path.isfile(f):
+                os.remove(f)
+            os.replace(f + tag, f)
+
+
 def main():
     arg = sys.argv[sys.argv.index('--cache') + 1] if '--cache' in sys.argv else 'bug0546'
     cache = bad_cache() if arg == 'bug0546' else None if arg == 'lane' else arg
@@ -88,13 +112,16 @@ def main():
         if os.path.isfile(own) and not os.path.isfile(keep):
             shutil.copy2(own, keep)
         shutil.copy(cache, own)
-        print(f'  host cache: {cache}', flush=True)
+        gfx_aside('.bug0546-own')
+        print(f'  host cache: {cache} (and an empty GraphicsCache)', flush=True)
     try:
         return run()
     finally:
         if cache and os.path.isfile(keep):
             lane.sh('kill')
             shutil.move(keep, own)
+        if cache:
+            gfx_back('.bug0546-own')
 
 
 def run():
@@ -139,7 +166,7 @@ def run():
 
     # the NPC empire's ships at its star take their models from the cache's UFO list, one picked per ship: the case
     # (a ship without its model) comes with some of them only. Up to VISITS arrivals there (out to the home star and
-    # back in between) until one ship needed the guard (BUG-1213: one visit was not enough on lanes 2-4, 6, 7)
+    # back in between) until one ship needed the guard (BUG-1213; with the empty GraphicsCache the first one had it)
     for visit in range(VISITS):
         if visit and home:
             fly(home, f'80{home:06X}')

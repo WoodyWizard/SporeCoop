@@ -3258,3 +3258,13 @@ BUG-1203 (0.7.15 final check: the host's game saved itself every 8 s).
   took the count increase for "a colony founded" (a save, another gap, another save). Now a star whose planet list is
   empty while its count is not keeps the colonies the last read found there (`space.roster_planet_gap`), and the
   autosave's milestone is a colony id never seen in the world (`world.autosave_colony_ids`, autosave::NewIds).
+
+## Why only lane 5 had NPC ships without a model (2026-11-16, fix/w51-t3)
+<a id="space-gfx-cache-models"></a>
+
+Follow-up of [lane 5's cache](#space-lane5-pollination) (its last point was inferred), BUG-1213.
+* ✔ With BUG-0546's Sporepedia cache, lane 6's host had no ship without its model in 4 arrivals at star 004A0014 (lab
+  20261116-090823); with its GraphicsCache.package and GraphicsCache.001.package moved aside (the game makes empty ones)
+  the first arrival had two (`ship models defaulted 2`, manual run 2026-11-16). The baked models in a profile's
+  GraphicsCache make those UFO keys known to the resource manager (vt 0x30 lookup, creations::key_known), so the game
+  builds the ship. A player whose GraphicsCache never baked those ships is in lane 5's case (the guard of BUG-0546).

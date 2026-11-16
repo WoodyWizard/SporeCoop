@@ -24,10 +24,10 @@ import time
 
 import twoinst  # noqa: F401 (first: tools/ on sys.path)
 import lane
-from coop_space_npc_model import bad_cache
+from coop_space_npc_model import bad_cache, gfx_aside, gfx_back
 from twoinst import Checks, alive, shot, start
 
-TRIES = 8  # BUG-1213: 5 visits brought none in 2 runs of 0.7.15 (lab 20261116-025154, -082811); 0.7.14.1 needed 4 (-085912)
+TRIES = 8  # BUG-1213: a backstop; 0.7.14.1 needed 4 visits with the lane's GraphicsCache (lab 20261116-085912)
 HOLD = 40.0
 
 
@@ -103,13 +103,16 @@ def main():
         if os.path.isfile(own) and not os.path.isfile(keep):
             shutil.copy2(own, keep)
         shutil.copy(cache, own)
-        print(f'  host cache: {cache}', flush=True)
+        gfx_aside('.bug0686-own')  # BUG-1213: an empty GraphicsCache (the lane's baked ship models are no model here)
+        print(f'  host cache: {cache} (and an empty GraphicsCache)', flush=True)
     try:
         return run()
     finally:
         if cache and os.path.isfile(keep):
             lane.sh('kill')
             shutil.move(keep, own)
+        if cache:
+            gfx_back('.bug0686-own')
 
 
 if __name__ == '__main__':
