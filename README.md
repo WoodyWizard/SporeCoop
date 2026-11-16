@@ -15,7 +15,7 @@ Lineages is a fork of [WoodyWizard's SporeCoop](https://github.com/WoodyWizard/S
 | **Difficulty Scaling** | The host reserves one to four seats; one Difficulty Scaling slider (up to 400%) sets progress, enemy health and damage, hunger, city takeover and Space raids. Joining an open seat keeps the stage's difficulty steady, and the host can start alone. |
 | **Custom Cells** | Cells the players made swim in the Cell stage as native species (about 1 in 6 spawns) and follow their mouth's diet (Player Cells in the lobby). With Foreign Creations on, creations your partners received from others come too. |
 
-Also: a one-page Co-op window, Interface Size for Spore's whole UI, a loading screen while joining, a guest's first creature made with the host's start parts, shared Cell and Creature parts, shared Adventure and Space enemies, and a Creature editor depth cube.
+Also: a one-page Co-op window, Interface Size for Spore's whole UI, a loading screen while joining, a guest's first creature made with the host's start parts, shared Cell and Creature parts, shared Adventure and Space enemies, a Creature editor depth cube, and a memory box that saves, restarts Spore and reconnects by itself when Spore runs low on memory.
 
 ## Status
 
