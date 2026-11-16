@@ -31,6 +31,9 @@
   why. It may join again.
 
 ### Fixed
+- Cell and Creature: after the host's evolution editor a guest who has creations of its own but plays the world's
+  creature takes the host's new body at once, without a reload; before, it kept the old body for half a minute and
+  then went through the galaxy menu to load the whole world again after every evolution of the host (BUG-1196).
 - Tribe: a host's tribe member that gets hungry or starves shows it on a guest's screen right away; before, a member
   the guest's game had just made for it (when the guest joined, or a new member of the tribe) showed a full hunger
   bar there for up to two minutes (BUG-1187).

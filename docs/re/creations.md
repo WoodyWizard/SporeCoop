@@ -1528,3 +1528,21 @@ own: `on_bundle` records the host's new key (`g_follow`), `mine()` returns it, a
 * ~ With `creations.swap_after_cinematic` off, SetSpecies under F4F96E43 did not leave that cinematic stuck (it ended,
   the input was free): BUG-1173's stuck caption was CRG_BrainUpgrade1 (F6A4B1E1); F4F96E43 under a swap is harmless
   in this one run. Not tried: F6A4B1E1 under the follow.
+
+## The in-place follow also for a guest with creations of its own (2026-11-16, fix/w51-t2)
+<a id="creations-follow-with-creations"></a>
+
+BUG-1196. #creations-evolve-in-place (BUG-0508, 0.7.4) made a guest that plays the host's creature as the world's
+species follow the host's evolved one in place (`on_bundle` sets `g_follow`, `mine()` returns it). Its condition still
+read "the guest has no creations of its own" (`g_opts[k].empty()`), the only way to play the world's species in 0.7.4.
+Since BUG-0345 (0.7.5) a guest with creations plays the world's species in every world it never played its own one in
+(no worlds.ini record, no choice), and `mine()` already answers `g_follow` for it (the BUG-0345 branch), but the follow
+was never recorded:
+* ✔ Lab (final check 20261116-025154, rerun 20261116-082820, lane 10, cell fixture, guest with 5 creations, none
+  chosen): after the host's first creature editor the host logs "evolved in place: Bob keeps its world", 30 s later
+  "Bob still plays <old species> after 30 s: sending the world"; that share waits for the host's evolution cinematic
+  (BUG-0019) and comes whenever its caption is closed (in parts_transition right into the next vote: the guest loaded
+  the world instead of opening its own editor).
+* Fix `creations.follow_with_creations`: with BUG-0345 on, the follow no longer asks for an empty creations list
+  (the key test `mine(k) == the host's previous creation` already keeps a guest playing its own creation out).
+  Off: 0.7.14 (only a guest without creations follows).

@@ -8728,3 +8728,23 @@ v0.7.14.1 (a detached worktree of the tag, `make`) beside rel/0.7.15 on lanes 6 
 * A test that makes an NPC tribe in Tribe and needs its members calm for a minute should hold kind 7 the same way.
 * Under SPORE_START_FIXED=1 on rel/0.7.15 the test stops earlier (4 of 4, lab 20261116-023030): the guest's first
   member is its chief (#1, holding item 11), which never takes the instrument. Only that twin start shows it.
+
+## Creature tests after the worlds.ini reset (2026-11-16, fix/w51-t2)
+<a id="testing-creature-after-worlds-reset"></a>
+
+Final check 20261116-025154 (0.7.15); the group around the guest's own creature, editors and stage changes:
+* Since BUG-1176 the cold start leaves the guest without a worlds.ini record: it plays the fixture world's species
+  (the host's) unless the test chooses its own creation. A test that needs the own creature calls
+  `creations_state.save` / `choose_own` at the start and `restore` at the end (world_reload, lend_ledger,
+  editor_after_swap; BUG-1198); a test that needs the world's species checks it instead of stepping with
+  `coop.creations prev` (that records the stepped-on creation for the world: editor_after_load).
+* `coop.vote editor` builds the game's evolution request (BUG-0720): its editor has no red cross, leave it with the
+  green check (BUG-1199). Only the own editor a vote opens (`open_own_editor`, BUG-0756) has the cross.
+* A guest with creations of its own that plays the world's species follows the host's evolution in place since
+  BUG-1196 (before: the host's 30 s check sent it the whole world, which raced the next vote in parts_transition and
+  waited for the host's evolution caption in leave_avatar_cell). leave_avatar_cell confirms the host's evolution
+  caption like a player and checks "kept in place, no world after all" (`evolve in place:` of the host's coop.status)
+  and the guest's avatar on the host's new species; evolve_in_place_own (+ `_cell`) is the twin
+  (`SPORE_FIX_OFF=creations.follow_with_creations`).
+* find_partners: a test place in deep water starts the guest game's sea monster (drama kind 6), whose cinematic pauses
+  that game for good; the test holds it (`coop.drama hold 40` on the guest, BUG-1204).
