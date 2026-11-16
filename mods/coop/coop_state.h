@@ -248,6 +248,7 @@ extern int g_lan_fake_n;
 extern net::Discovery g_disc;
 extern net::Session g_sess;
 extern std::array<int, 4> g_status_block;
+extern int g_status_drawn_right;
 extern std::atomic<bool> g_menu_up;
 extern std::atomic<bool> g_text_up;
 extern std::deque<std::pair<double, net::PlayerState>> g_echo_q;

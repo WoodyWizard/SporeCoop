@@ -532,6 +532,19 @@ static void busy_classify()
     CHECK(classify(cell).state == State::Paused && classify(cell).why == kWhyPauseMenu);
     // P under a caption is still the player's pause
     CHECK(classify(stand({{kReasonCine1, 1}, {kReasonKeyP, 1}}, false, true)).state == State::Paused);
+    // BUG-1217: the host's own save stands its game (the write, the "game saved" box): neither a caption nor a pause
+    Reading save = stand({{kReasonModal, 1}}, true);
+    save.saving = true;
+    CHECK(classify(save).state == State::None && classify(save).why == 0);
+    Reading save_bare = stand({});
+    save_bare.saving = true;
+    CHECK(classify(save_bare).state == State::None && classify(save_bare).why == 0);
+    save_bare.saving = false; // (the same stand without the save: the game's own, told to Tribe)
+    CHECK(classify(save_bare).why & kWhyCaption);
+    // the explicit pause during a save is still the player's pause (the pause menu's own Save)
+    Reading save_menu = stand({{kReasonMenu, 1}});
+    save_menu.saving = true;
+    CHECK(classify(save_menu).state == State::Paused && classify(save_menu).why == kWhyPauseMenu);
     CHECK(std::string(state_name(State::Paused)) == "paused");
 }
 

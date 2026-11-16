@@ -27,9 +27,10 @@ import sys
 import re
 import time
 
+import keyviews
 import lane
 from play_space import Player
-from twoinst import Checks, start
+from twoinst import Checks, keyframe, start
 
 PLANET = '02460035'
 SRC = '00460035'  # the home planet: 9 plants, 9 animals (6 herbivores, 3 carnivores)
@@ -48,6 +49,25 @@ def eco(con, planet=''):
     animals = [(k, d, int(n) if n else None)
                for k, d, n in re.findall(r'([0-9A-F]{8}:[0-9A-F]{8}:[0-9A-F]{8})/([hc?])(?:#(\d+))?', al)]
     return (int(m.group(2)) if m else -1), plants, animals, out.strip()
+
+
+def eco_frame(host, guest, animals, tag):
+    """a key frame of the planet's new life on both games (BUG-1220): each game's camera 14 m from its nearest
+    creature of a species the guest placed (the herds are each game's own: not one point for both)"""
+    inst = {k.split(':')[0].upper() for k in animals}
+    seen = {}
+    try:
+        for role, con in (('host', host), ('guest', guest)):
+            r = keyviews.nearest_row(con, lambda r: r['kind'] == 'c' and r['alive'] and r['key'] in inst)
+            seen[role] = r and (r['key'], r['pos'])
+            if r:
+                keyviews.look_at(con, r['pos'], dist=14, height=6)
+        print(f'  key frame cameras at the placed species: {seen}', flush=True)
+        time.sleep(1.5)
+        keyframe(tag, 'space, both on the planet the guest filled: each camera 14 m from a creature of a species the '
+                      'guest placed (the planet\'s plants around it): the same new animals on both games')
+    finally:
+        keyviews.view_off(host, guest)
 
 
 def main():
@@ -111,6 +131,7 @@ def main():
            f"the host's planet has the guest's species and is stabilized (level {hl})")
         ck(ha and all(n for _, _, n in ha),
            f"the host sees creatures of every animal species the guest placed ({[(k[:8], n) for k, _, n in ha]})")
+        eco_frame(host, guest, ga, 'eco_live')
         ck.faults(host=host, guest=guest)
         return ck.result()
     t_end = time.time() + 20
@@ -140,6 +161,7 @@ def main():
        f"on the planet the host's record and stabilized level are the guest's (level {hl})")
     ck(ha and all(n for _, _, n in ha),
        f"the host sees creatures of every animal species the guest placed ({[(k[:8], n) for k, _, n in ha]})")
+    eco_frame(host, guest, ga, 'eco_landed')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

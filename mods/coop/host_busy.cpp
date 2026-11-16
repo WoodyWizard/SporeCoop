@@ -37,6 +37,13 @@ COOP_FIX("civ.busy_model", "BUG-1142", g_civ_fix,
 COOP_FIX("space.busy_model", "BUG-1142", g_space_fix,
          "space: a guest's game waits while the host's game is paused (not in Rivals mode)");
 
+// BUG-1217: the host's own save (a world share's for a joining guest, an autosave) stands its game 1-2 s; told as a
+// caption stand, every Tribe guest stopped for 0.1 s with "<host>'s game stands" / "goes on" on each join and
+// autosave. Off: the save's stand is classified like any other stand (0.7.15 before the fix).
+static bool g_save_fix = true;
+COOP_FIX("core.host_busy_save", "BUG-1217", g_save_fix,
+         "core: the host's own save (a world share's, an autosave) is no stand its guests are told about or wait for");
+
 static busy_model::Announcer g_ann;
 static busy_model::HostView g_view;
 static busy_model::Edge g_edge;
@@ -119,6 +126,7 @@ static busy_model::Reading reading(double now)
     r.modal_window = coop_ui::game_modal_up();
     r.editor_coming = editor_coming(now);
     r.pause_menu_window = r.mode == modes::kCell && g_pause_menu_seen.load();
+    r.saving = g_save_fix && (world::save_busy() || world::saved_box_up());
     if (r.time_stands)
         r.reasons = world::pause_reasons();
     return r;

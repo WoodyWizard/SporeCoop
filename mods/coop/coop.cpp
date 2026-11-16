@@ -1422,6 +1422,11 @@ void menu_tick(double now)
 bool g_status_block_fix = true;   // BUG-0155
 COOP_FIX("core.status_block", "BUG-0155", g_status_block_fix, "ui: the status text and notifications start below the co-op window");
 std::array<int, 4> g_status_block{}; // the status block's screen rect of the last frame (coop.status)
+int g_status_drawn_right; // the right end of the block's widest drawn line (estimate, coop.status; BUG-1219)
+// BUG-1219: the Creature "Pack: ..." line of the status block ran off the screen's right edge (block at sw - 480)
+static bool g_status_wrap_fix = true;
+COOP_FIX("core.status_wrap", "BUG-1219", g_status_wrap_fix,
+         "ui: the status block's Creature \"Pack: ...\" line is cut into lines that end before the screen's right edge");
 
 // BUG-0939: the planet's size the partners' positions are held against: the own avatar's distance from the planet's
 // centre in the planet stages, 0 where the world has no such centre (Cell's plane, Space)
@@ -1624,11 +1629,21 @@ void on_overlay(void*, int, void*)
     int x = sw > 0 ? sw - 480 : 900, y = 70, wmax = utf8::overlay_width(head);
     H->overlay_text(x, y, 0xFFFFD040, head.c_str());
     y += 22;
+    g_status_drawn_right = x + wmax;
     if (g_sess.connected() && g_mode == modes::kCreature) {
         std::string t = teamplay::status();
         if (!t.empty()) {
-            H->overlay_text(x, y, 0xFF8CF08C, t.c_str());
-            y += 20;
+            // BUG-1219: the line (~100 letters) is wider than the block's 480 px: cut between its fields into lines that
+            // end before the screen's edge. Old: one line, cut off by the edge (and outside the block's rect).
+            int room = (sw > 0 ? sw : x + 480) - x - 12;
+            std::vector<std::string> lines = g_status_wrap_fix ? utf8::wrap_fields(t, "  |  ", room) : std::vector<std::string>{t};
+            for (auto& l : lines) {
+                H->overlay_text(x, y, 0xFF8CF08C, l.c_str());
+                g_status_drawn_right = std::max(g_status_drawn_right, x + utf8::overlay_width(l));
+                if (g_status_wrap_fix)
+                    wmax = std::max(wmax, utf8::overlay_width(l));
+                y += 20;
+            }
         }
     }
     for (auto& p : g_sess.players()) {
@@ -1640,6 +1655,7 @@ void on_overlay(void*, int, void*)
         }
         H->overlay_text(x, y, 0xFFFFFFFF, line.c_str());
         wmax = std::max(wmax, utf8::overlay_width(line));
+        g_status_drawn_right = std::max(g_status_drawn_right, x + utf8::overlay_width(line));
         y += 20;
     }
     g_status_block = {x, 70, x + wmax, y};

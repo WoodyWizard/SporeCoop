@@ -66,6 +66,22 @@ static void test_width()
 }
 
 // BUG-0129: notification lines by characters, valid UTF-8; chat never guessed from its words
+// BUG-1219: the Creature status block's "Pack: ..." line (99 letters, 891 px) went past the screen's right edge
+static void test_wrap_fields()
+{
+    const std::string pack = "Pack: Alice close (regen)  |  rescue ready  |  joint hits 0, rescues 0  |  hits host 0, partners 0";
+    auto l = utf8::wrap_fields(pack, "  |  ", 468);
+    CHECK(l.size() == 2);
+    for (auto& x : l)
+        CHECK(utf8::overlay_width(x) <= 468);
+    CHECK(l.size() == 2 && l[0] == "Pack: Alice close (regen)  |  rescue ready" &&
+          l[1] == "joint hits 0, rescues 0  |  hits host 0, partners 0");
+    CHECK(utf8::wrap_fields(pack, "  |  ", 2000).size() == 1 && utf8::wrap_fields(pack, "  |  ", 2000)[0] == pack);
+    CHECK(utf8::wrap_fields("a long field", "  |  ", 9).size() == 1); // a field is never cut
+    CHECK(utf8::wrap_fields("", "  |  ", 100).size() == 1);
+    CHECK(utf8::wrap_fields("a  |  b", "  |  ", 9).size() == 2);
+}
+
 static void test_notify_lines()
 {
     printf("notification lines: by characters, never inside one (BUG-0129)\n");
@@ -149,6 +165,7 @@ int main(int argc, char** argv)
     test_names();
     test_width();
     test_notify_lines();
+    test_wrap_fields();
     test_trace_rate();
     test_locked_typing();
     printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);

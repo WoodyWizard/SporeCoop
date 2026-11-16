@@ -38,7 +38,45 @@ from coop_space_badges_rejoin import badges, earned
 from coop_space_colony_rejoin import planet_line
 from coop_space_map import no_movie, rosters, sp, wait
 from coop_space_rival_merge import money, rivals
-from twoinst import Checks, session_restart, start
+import keyviews
+import lane
+from play_space import Player
+from twoinst import Checks, keyframe, session_restart, start
+
+CITY_NOUN = '018C43E8'
+
+
+def colony_frame(host, guest, planet, tag):
+    """BUG-1220: a key frame of the restored colony on both games: both land on it (each game's own ship), each camera
+    looks at the nearest city of that planet from 140 m (the colony's cities: the guest's own two, the names
+    Bobton / Bobville). Never fails the test: what it saw is printed."""
+    if not planet:
+        return
+    want = 0x40000000 | int(planet, 16)
+    end = time.time() + 400
+    seen = {}
+    try:
+        for role, inst, pid in (('host', lane.HOST, 0), ('guest', lane.GUEST, 1)):
+            p = Player(role, inst, pid, 7 + pid, end, {})
+            for _ in range(3):
+                p.land_retry(planet, seconds=100)
+                if p.place()[0] == want:
+                    break
+            seen[role] = f'{p.place()[0]:08X}'
+        time.sleep(5)
+        for role, con in (('host', host), ('guest', guest)):
+            r = keyviews.nearest_row(con, lambda r: r['noun'] == CITY_NOUN, census='coop.census all')
+            seen[role] += f' city {r and r["pos"]}'
+            if r:
+                keyviews.look_at(con, r['pos'], dist=140, height=70, look_up=5)
+        print(f'  colony key frame: {seen}', flush=True)
+        time.sleep(1.5)
+        keyframe(tag, f'space, both games landed on the guest\'s restored colony {planet}: each camera 140 m from a '
+                      'city of it (the guest\'s cities Bobton / Bobville, its empire\'s colour) on both games')
+    except Exception as e:  # (a frame never fails the test; Player raises Stop at its deadline)
+        print(f'  (colony key frame not taken: {e!r}; {seen})', flush=True)
+    finally:
+        keyviews.view_off(host, guest)
 
 
 def city_lines(con, planet):
@@ -100,6 +138,7 @@ def npc_main():
           + sp(guest, 'allies').splitlines()[0][-80:], flush=True)
     ck(r is not None, f'next session: the NPC\'s star {star} and colony {planet} are the guest\'s again in its game')
     ck(star_owner(host, star) == npc, f'the host\'s game keeps the NPC\'s star ({star_owner(host, star)})')
+    colony_frame(host, guest, planet, 'npc_colony')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
@@ -204,6 +243,7 @@ def main():
           f'host money {money(host)} | ' + sp(host, 'rivalry').splitlines()[-1].strip(), flush=True)
     ck(ok, f'next session: Rivals mode goes on and the guest\'s budget is its own {mg} again (it has {money(guest)})')
     ck(wait(lambda: relation(host, gid2) == 'war', 15), f'next session: still at war ({relation(host, gid2)})')
+    colony_frame(host, guest, planet, 'colony')
     ck.faults(host=host, guest=guest)
     if rivals(host):
         sp(host, 'rivalry mode allies')

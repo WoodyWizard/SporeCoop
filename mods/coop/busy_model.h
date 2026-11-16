@@ -93,6 +93,8 @@ struct Reading {
                                 // pending flag; a planner): its 0x4BF38A6 is not the Sporepedia
     bool pause_menu_window = false; // the pause menu ("Options", control 0x0615B50D) is shown: the Cell stage's only
                                     // sign (its pause menu sets no cGameTimeManager reason; SimUpdate stops)
+    bool saving = false; // the host's game writes a save of the mod's (a world share's, an autosave; world::save_busy
+                         // or its "game saved" box up): its stand is no pause and no caption (BUG-1217)
     std::vector<std::pair<uint32_t, int>> reasons; // the pause reasons counted now (> 0)
 };
 
@@ -142,6 +144,16 @@ inline Classified classify(const Reading& r)
         c.why |= kWhyModal;
     if (count_of(r, kReasonEditor) > 0 && !r.editor_coming)
         c.why |= kWhySporepedia;
+    if (r.saving) {
+        // BUG-1217: a save of the mod's stands the game for 1-2 s (the write, then its "game saved" box): told as a
+        // caption stand it made every Tribe guest stop for a moment with two cards on each join and autosave. Only
+        // the host's explicit pause (the pause menu, P, the Sporepedia) still counts while it saves; the box is no
+        // tutorial box.
+        c.why &= kWhyPauseMenu | kWhyKeyP | kWhySporepedia;
+        if (c.why)
+            c.state = State::Paused;
+        return c;
+    }
     if (c.why & (kWhyPauseMenu | kWhyKeyP | kWhyModal | kWhySporepedia))
         c.state = State::Paused;
     else
