@@ -52,3 +52,4 @@ PASS: out/lab/20261112-143653, out/lab/20261112-144021 (such holds 0.54-0.71 s).
 - 2026-11-12: opened.
 - 2026-11-12: measured (holds of the mirror's own, not phase), such holds end after 0.35 s (tribe.mirror_hold_only), fix/w48-rest.
 - 2026-11-12: released in 0.7.13.
+- 2026-11-16 (fix/w51-t4, final-check triage 0.7.15): tribe_hold_only failed in the final check 20261116-025154 (rel/0.7.15 11114769, lane 4: `missed [(119.3, 0.62, '04C6CB05')]`, one hold of the host's chief, 0.62 s, the mirror did not take); rerun on the same commit, lanes 4/5: PASS twice (20261116-082817-2: 2 and 6 shared holds, none missed). Ledger: 4 of 16 failed since 2026-11-12, mixed, the same kind as 0.7.13's (BUG-0971). Verdict: a flake, no code change.
