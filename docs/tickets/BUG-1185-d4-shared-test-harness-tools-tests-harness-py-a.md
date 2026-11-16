@@ -64,6 +64,8 @@ the new lint's FAIL case is planted in harness_selftest.py.
   civ_owners_reload, space_gift_refund, space_helper, guest_spot, tag_cinematic); `unit` there failed on a printed
   text of harness_selftest ("RESULT: FAIL" inside an ok line, which the lab reads as a failed run), fixed
   (cea69c59): `unit` ok 20261115-233915.
+- After the second merge of rel/0.7.15 (ef3a90d3, fix/w51-nest: the files left to the end, no copies in them):
+  20261115-234226 on lanes 4/5: unit (make test), nest_follow, nest_evolve, cell_camera, space_helper: 5 of 5 ok.
 
 ## History
 - 2026-11-15: opened.
