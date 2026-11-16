@@ -318,8 +318,9 @@ def game_log_case(tree, tmp):
     base = os.path.join(tmp, 'gl')
     repo = os.path.join(base, 'SPORE', 'SporeCoop')
     for f in ('tools/sporectl.py', 'tools/tests/lane.py', 'tools/tests/twoinst.py', 'tools/tests/fixtures.py',
-              'tools/tests/memprobe.py', 'tools/tests/startwait.py'):
-        if not os.path.exists(os.path.join(tree, f)):  # (memprobe.py: not before BUG-0916, startwait.py: BUG-1112)
+              'tools/tests/memprobe.py', 'tools/tests/startwait.py', 'tools/tests/harness.py'):
+        # (memprobe.py: not before BUG-0916, startwait.py: BUG-1112, harness.py: BUG-1185)
+        if not os.path.exists(os.path.join(tree, f)):
             continue
         os.makedirs(os.path.dirname(os.path.join(repo, f)), exist_ok=True)
         shutil.copy(os.path.join(tree, f), os.path.join(repo, f))
