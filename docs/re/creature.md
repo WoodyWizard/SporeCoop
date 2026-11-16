@@ -5210,3 +5210,14 @@ Guest on the creature fixture, `coop.npc reusehunt p<id> ...` with `coop.npc chu
   their own fresh blocks back, which the next try takes again.
 * The object's +8 before the destroy (13-21) says nothing about whether the block comes back; the distance to the
   guest's avatar neither (hits at 76-101 m and misses at 7-110 m).
+
+## A scared species keeps away from every player (2026-11-16, feat/lineages-47)
+<a id="creature-scared-relation"></a>
+
+* ✔ (runtime, TITAN, Vandh.spo, host + guest) One adult killed (`coop.npc hosthit <id> 500`) turned species 0680580B
+  from relation 3 to 1 with killed=1 (`coop.social species`), and the guest's game showed relation 1 within 3 s (the mod
+  carries relations). So the ApplyEvent 0 threshold (tuning +0x3FC) is 1 in this save: one kill is enough.
+* ✔ A relation 1 (scared) herd runs from both players: the guest walking up to 067B0F9E (saved relation 1) got no nearer
+  than about 8 m, the others went out to 25-28 m; the host the same (nearest 14.6 m). It is the host's NPC AI (the
+  guest's proxies only follow), so it is not a proxy or puppet fault (BUG-9212, "they move away at the same speed").
+* ✔ Being downed and revived (creature_rescue, six times by herd 291E6C6A) does not change that herd's relation.
