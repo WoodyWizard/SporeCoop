@@ -75,6 +75,8 @@
   host's with a message (BUG-1158).
 
 ### Development
+- Lab: tribe_name_tags checks the chief's label at the chief the game names (BUG-1202); tribe_caption_race is
+  INCONCLUSIVE when the host's game itself plays no conquest caption (BUG-1205).
 - One answer to "did the world change?" (`world_id.h`: another stage, save or root object, the stage entered again; an
   editor visit is none) fires every module's world change, and a session end runs every module's end, through one
   ordered list of hooks (`LIFECYCLE_HOOK`, `coop.lifecycle hooks`); Tribe's and Civilization's own world checks and
