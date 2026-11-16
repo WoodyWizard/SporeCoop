@@ -18,13 +18,20 @@ related:
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Final check of 0.7.15 (lab 20261116-025154, lane 3): `cell_mirror_nan` FAIL `its particles 149.0 m from the host's
+pose`: at 1 s the healed mirror was finite and in place (heals=1), at 3 s `mirrornf ... pos=(115.26 94.40)
+pmean=(0.00 0.00) parts=0`, the host at (115.29 94.39).
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed: the mirror's centre was 0.03 m from the host's pose; it had no soft body at that moment (parts=0), so the
+particle mean was (0 0). The game frees the soft body of every cell outside the active box around the camera
+(Simulator::Cell::SoftBodyLod, docs/re/cell.md, BUG-0355 notes); the NaN mirror was 12.5 m from the guest. A test
+artefact, old (the test is 0.7.14's, BUG-1006). One rerun also had no soft mirror near the camera within 10 s (SKIP).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+tools/tests/coop_cell_mirror_nan.py: with parts=0 the mirror's centre (pos, also covered by nf) is compared; it asks
+for a soft mirror for up to 20 s. The twin (`SPORE_FIX_OFF=cell.mirror_nan_heal`: nf stays non-zero) is unchanged.
+switch: none (test only).
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);

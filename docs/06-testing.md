@@ -8728,3 +8728,27 @@ v0.7.14.1 (a detached worktree of the tag, `make`) beside rel/0.7.15 on lanes 6 
 * A test that makes an NPC tribe in Tribe and needs its members calm for a minute should hold kind 7 the same way.
 * Under SPORE_START_FIXED=1 on rel/0.7.15 the test stops earlier (4 of 4, lab 20261116-023030): the guest's first
   member is its chief (#1, holding item 11), which never takes the instrument. Only that twin start shows it.
+
+## Final-check triage 0.7.15, group Creature / NPC / Cell (2026-11-16, fix/w51-t5)
+<a id="testing-final-0715-t5"></a>
+
+* Since BUG-0989 (0.7.14) a guest that joins in Creature is put 5 m beside the host's creature (always the same spot on
+  the creature fixture: (-171.6 -466.5 -88.9), outside the host's view). Tests calibrated with both creatures on one
+  spot changed with it: `avatar_stale_target` could not click the puppet any more (BUG-1201), the tag tests stood
+  8.4-8.7 m apart instead of ~5 m after the host's walk (BUG-1200). Both now put the guest's creature back on the host's
+  spot right after the start (`coop.npc gopos`); `SPORE_STALE_AS_JOINED=1` / `SPORE_TAG_AS_JOINED=1` keep the join's
+  place. A new test that needs the partner in view should place it, not rely on the join's spot.
+* `coop_tag_camera.py`: an off-screen partner's arrow label reaches ~190 px in from the screen edge (find.cpp kMargin
+  46, kSize 28, then the text), more than the 130 px the measure leaves out; such a label was read as a tag over empty
+  ground. A label with the arrow's head (the tag colour within 90 px of the edge, 60 rows around it) counts as no tag
+  (BUG-1200).
+* The monitor (`same_clock`, BUG-1194): two sessions of one stage and world in one test (leave and join again, host
+  again) have trace lines at the same session time; a partner line is now matched only with the subject's own lines of
+  the same session start (wall clock minus session time). `SPORE_MONITOR='{"same_clock": 0}'`: the matching before.
+* `cell_mirror_nan` (BUG-1207): a mirror outside the camera's active box has no soft body (parts=0, the LOD,
+  docs/re/cell.md); the test then compares its centre, not the particle mean (0 0).
+* `herd_help_stale` / `avatar_stale_target` (BUG-1197): the sync-check's `p: 1 extra on the guest (p1)` while the test's
+  own `coop.puppet respawn` keeps the partner's puppet away is allowed (two checks 3 s apart inside the 7 s window).
+* `proxy_ghost` (BUG-1195): BUG-0842's identity check (every frame, before BUG-0931's list check, 0.7.13) finds the
+  ghost proxy first; the test accepts either log line, and its twin is both switches off
+  (`SPORE_FIX_OFF=npc.proxy_identity,npc.proxy_listed_now`): either one alone still catches it.

@@ -18,13 +18,19 @@ related:
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Final check of 0.7.15 (lab 20261116-025154, lane 3) and both reruns on fix/w51-t5 (lab 20261116-082817
+avatar_stale_target#1, #2): FAIL `0 of these rounds had the target from a real click (>= 2)`; every click said `the
+puppet is not on the screen`; the other checks passed (the rounds ran by the game's SetTarget).
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed: `coop.targets` on the host never had the partner's puppet inside the screen. In every 0.7.15 run the host's
+partner line says d=5 and the guest's log `this creature started on the host's (0.0 m apart): put 5 m beside it
+(BUG-0989)`; the guest stands at (-171.6 -466.5 -88.9) on the creature fixture, outside the host's view. Before
+BUG-0989 (0.7.14) it stayed on the host's spot (d=0-1 in the 0.7.12 / 0.7.13 runs), in the middle of the host's view.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+tools/tests/coop_avatar_stale_target.py: right after the start the guest's creature goes back onto the host's spot
+(`coop.npc gopos`), where the test's clicks were made for (`SPORE_STALE_AS_JOINED=1`: as it joined). switch: none.
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
