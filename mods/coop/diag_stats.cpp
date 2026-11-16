@@ -392,6 +392,11 @@ COOP_FIX("core.rtss_note", "BUG-0782", g_fix_rtss_note, "core: when RivaTuner / 
 static bool g_fix_uncapped_note = true;
 COOP_FIX("core.uncapped_note", "BUG-0779", g_fix_uncapped_note, "core: when the game runs without Spore's frame cap for a minute, the player is told (once per start) that another program lifted it and how to stop the tearing");
 static bool g_rtss_told = false, g_uncapped_told = false;
+// BUG-9242 (owner 2026-11-16: "I have my FPS set to 120, why is it saying this?"): a frame cap the player set (Spore's
+// kFrameLimitMS 1-9 ms, e.g. 7 ms = about 143 fps by a framerate tool) is no lifted cap: only the log names it. The note
+// stays for no cap at all (0 ms). Off (`coop.fix core.set_cap_quiet off`): the note for any limit under 10 ms.
+static bool g_fix_set_cap_quiet = true;
+COOP_FIX("core.set_cap_quiet", "BUG-9242", g_fix_set_cap_quiet, "core: no frame-cap note when the player set a cap of their own (e.g. 7 ms, about 143 fps); only when there is no cap at all");
 static uint32_t g_env_notes = 0; // notes shown (tests)
 
 static const wchar_t* rtss_dll()
@@ -438,6 +443,10 @@ static void env_minute(int avg_fps)
     if (ms < 0 || ms >= 10 || avg_fps < 50)
         return; // capped (the game's own 16 ms, a limit another program set) or not fast anyway
     g_uncapped_told = true;
+    if (g_fix_set_cap_quiet && ms > 0) {
+        SLOG("env: a frame cap of %d ms (about %d fps) set by the player or a tool: no note (BUG-9242)", ms, 1000 / ms);
+        return;
+    }
     SWARN("env: the game runs without Spore's frame limit: %d fps, kFrameLimitMS %d ms (Spore's own 16); a mod or "
           "program lifted it; with vsync off the picture tears (docs/INSTALL.md#install-tearing) (BUG-0779)",
           avg_fps, ms);

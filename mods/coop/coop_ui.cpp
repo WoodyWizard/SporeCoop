@@ -273,6 +273,7 @@ std::string demo_text(std::string t)
 
 static float text_px(const std::string& t, bool small_font);
 static std::map<Win, bool> g_small_font; // labels drawn with the button font (narrower)
+constexpr float kLanTextInset = 10.f;     // the server list's text starts this far inside its row (BUG-9243)
 constexpr float kLabelMargin = 16.f;     // a label's inner margin on each side
 static void fit(Win w, const Cache& c)
 {
@@ -320,6 +321,16 @@ static void fit_right(Win w, const Cache& c, bool small_font)
     sui::set_area(w, r);
 }
 
+// BUG-9243 (owner 2026-11-16, the Co-op window: "Searching is outside the box, and the update is way too close to the host
+// setup. Text shouldn't wrap here, its too small of a space."): the server list's "Searching your network..." starts
+// inside its row (kLanTextInset), the status line under the host box sits lower (centred on Check for Updates), and a
+// status text longer than its line takes the narrower button font instead of wrapping onto a second line.
+// Off (`coop.fix ui.connect_lines off`): 62-dev's places, wrapped.
+static bool g_connect_lines_fix = true;
+COOP_FIX("ui.connect_lines", "BUG-9243", g_connect_lines_fix,
+         "ui: the Co-op window's server-list search line starts inside its row and the status line stays one line, clear of the host box");
+static std::map<Win, bool> g_one_line; // labels that take the button font rather than wrap
+static void one_line_font(Win w, const std::string& t, float width); // (after the window's fonts, D)
 static void text(Win w, const std::string& t0)
 {
     if (!w)
@@ -328,6 +339,7 @@ static void text(Win w, const std::string& t0)
     auto& c = g_cache[w];
     if (c.text != t) {
         c.text = t;
+        if (g_one_line.count(w)) one_line_font(w, t, c.box.x2 - c.box.x1);
         sui::set_caption(w, t);
         if (c.left)
             fit(w, c);
@@ -533,6 +545,15 @@ struct Dialog {
     std::function<void()> space_action[kSpaceRows];
 };
 static Dialog D;
+static void one_line_font(Win w, const std::string& t, float width) // BUG-9243
+{
+    if (!D.font_button || !D.font_body) return;
+    const bool small = g_connect_lines_fix && text_px(t, false) > width;
+    if (small == (g_small_font.count(w) != 0)) return;
+    sui::set_font(w, small ? D.font_button : D.font_body);
+    if (small) g_small_font[w] = true;
+    else g_small_font.erase(w);
+}
 static std::map<std::string, Win> g_named; // for tests (coop.uistate)
 
 static Win add_label(std::vector<Win>& page, const Rect& r, const std::string& t, uint32_t argb,
@@ -1246,7 +1267,8 @@ static void build_dialog()
         if (A.lan_scan) { A.lan_scan(false); A.lan_scan(true); }
         g_dirty = true;
     });
-    D.lan_hdr = add_label(P, {37, 177, 334, 199}, "", kDim);
+    D.lan_hdr = g_connect_lines_fix ? add_label(P, {35 + kLanTextInset, 177, 334, 202}, "", kDim) // (BUG-9243)
+                                    : add_label(P, {37, 177, 334, 199}, "", kDim);
     D.lan_track = sui::image_window(root, sui::fnv("lineages_scroll_track"), sui::fnv("sporecoop"), 342, 178);
     D.lan_thumb = sui::image_window(root, sui::fnv("lineages_scroll_thumb"), sui::fnv("sporecoop"), 342, 178);
     for (Win part : {D.lan_track, D.lan_thumb}) {
@@ -1357,7 +1379,9 @@ static void build_dialog()
         use_small_font(D.difficulty_value[i]);
     }
     D.host_btn = add_button(P, "host", {393, 497, 718, 534}, "Start Server", do_host);
-    D.status = add_label(P, {40, 535, 503, 558}, "", kYellow);
+    D.status = g_connect_lines_fix ? add_label(P, {40, 547, 503, 571}, "", kYellow) // centred on Check for Updates (BUG-9243)
+                                   : add_label(P, {40, 535, 503, 558}, "", kYellow);
+    if (D.status) g_one_line[D.status] = true;
     D.update_btn = add_button(P, "update", {515, 538, 718, 572}, "", [] {
         if (A.update_do) A.update_do();
         g_dirty = true;
