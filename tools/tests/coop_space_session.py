@@ -80,6 +80,9 @@ def colony_frame(host, guest, planet, tag, land=True):
                 p.land_retry(planet, seconds=100)
                 if p.place()[0] == want:
                     break
+            if p.place()[0] != want:  # (the guest's own colony: the bot's click did not land there in the lab)
+                from coop_space_map import land_on
+                land_on(host if role == 'host' else guest, planet, role)
             seen[role] = f'{p.place()[0]:08X}'
         time.sleep(5)
         for role, con in (('host', host), ('guest', guest)):

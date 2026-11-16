@@ -52,10 +52,11 @@ def eco(con, planet=''):
 
 
 def eco_frame(host, guest, animals, tag):
-    """a key frame of the planet's new life on both games (BUG-1220): both cameras at the same place, 60 m from the
-    host's nearest creature of a species the guest placed (the host's herd of it). The guest's own game has no creature
-    of them: `eco place` (the test seam) adds the species to the planet's record through the game's own function but
-    spawns no animal (its eco line shows #0), so the guest's picture shows the place without that herd."""
+    """a key frame of the planet's new life on both games (BUG-1220): both cameras at the same place, 30 m from and 18 m
+    above the host's nearest creature of a species the guest placed (the host's herd of it). The guest's own game may
+    have no creature of them there: `eco place` (the test seam) adds the species to the planet's record through the
+    game's own function and spawns no animal at once (its eco line showed #0 in 2 of 3 runs); the plants on a planet
+    are each game's own placement (the same species, other spots and sizes)."""
     from coop_space_map import no_movie
     import sameview as sv
     inst = {k.split(':')[0].upper() for k in animals}
@@ -68,9 +69,9 @@ def eco_frame(host, guest, animals, tag):
             seen[role] = (r and (r['key'], r['pos']), f'{len(rows)} creature rows')
         r = keyviews.nearest_row(host, lambda r: r['kind'] == 'c' and r['alive'] and r['key'] in inst)  # (where it is now)
         if r:
-            keyviews.look_both((host, guest), r['pos'], dist=50, height=40, look_up=3, settle=0.5)
+            keyviews.look_both((host, guest), r['pos'], dist=30, height=18, look_up=3, settle=0.5)
         print(f'  key frame cameras at the placed species: {seen}', flush=True)
-        keyframe(tag, 'space, both on the planet the guest filled, the same camera 50 m from and 40 m above the host\'s creature of a '
+        keyframe(tag, 'space, both on the planet the guest filled, the same camera 30 m from and 18 m above the host\'s creature of a '
                       'species the guest placed (its herd there); the guest\'s game has the species in its record but no '
                       'animal of it (the test seam spawns none)', extra=[f'{k}: {v}' for k, v in seen.items()], settle=0)
     finally:

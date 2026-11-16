@@ -8770,11 +8770,13 @@ v0.7.14.1 (a detached worktree of the tag, `make`) beside rel/0.7.15 on lanes 6 
   `look_both(...)` put a game's camera there (`coop.view set`), `view_off()` gives the game's own back (always, in a
   `finally`), `nearest_row()` picks a census row near the camera, `burst(tag, note, n, gap, extra_fn)` takes n frames
   `gap` s apart with a state line each (a pose that differs in one frame and matches in the next is the relay's lag).
-  Used by space_eco / space_eco_live (the same camera 50 m from and 40 m above the host's herd of a placed species), space_session
+  Used by space_eco / space_eco_live (the same camera 30 m from and 18 m above the host's herd of a placed species), space_session
   (both games landed on the restored colony; --npc: the game's own view, the colony is at another star),
   tribe_outfit (`outfit_close`: a same-view frame 10 m from the chief), tribe_held_item / tribe_mirror_stale (three
   chief frames 1.5 s apart with `coop.tribe anims` of both games).
 * Pitfalls seen: Space key frames on a planet wait for the planet's story caption ("Something is showing up on the
   ship's radar", the games are `cinematic,paused`) and a badge's reward box holds the clicks: `no_movie()` first. A
-  guest's `coop.space eco place` (the test seam) adds a species to the record but spawns no animal in its own game (its
-  eco line shows `#0`); the host gets a herd from the mod (space_eco.cpp spawn_herd).
+  guest's `coop.space eco place` (the test seam) adds a species to the record and often spawns no animal of it in its
+  own game at once (its eco line showed `#0` in 2 of 3 runs); the host gets a herd from the mod (space_eco.cpp
+  spawn_herd). The plant the guest placed stands by the guest's ship in its game only: the host has the species, not
+  that plant at that spot (same-view frame 20261116-101029 space_eco: a big tree on the guest, open ground on the host).
