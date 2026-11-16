@@ -8442,6 +8442,17 @@ The NPC registry (C1, docs/01-architecture.md#arch-npc-registry) was proven with
 nest_*, creature, play_creature, civ_wild_*, creature_kills, creature_death_coop, creature_social_prompts,
 creature_eat) with `npc.registry` on, and `tools/refactor_dump.py compare` against rel/0.7.15 (only the switch's line
 differed). `coop.npc status` shows both registries (`npc registry: npc.host: ...`, `npc.proxies: ... rebound=`).
+
+Two tests broke with the lab's condition start-up waits of A9 (BUG-1112), which start a test about 7 s sooner after
+the load (`SPORE_START_FIXED=1` brings the old sleeps back and both pass): nest_follow (BUG-1178: the guest's game that
+gets the brain upgrade's DNA before ~11 s in the session plans no migration; the test lets it play 8 s first,
+`NEST_FOLLOW_NO_PLAY=1` not) and creature_mating / editor_now (BUG-1182: the host's game had picked no mate within
+mate_click's 30 s; now 60 s, `MATING_WAIT_S=30` the old). A test that acts on the game's own timers right after
+`start()` should wait for the game's state, not count on the start-up's length.
+
+npc_editor_hold (BUG-1174, owner decision 2): the host opens its editor (the mating click, or the stage's own
+evolution request `coop.vote evolve` when its game picked no mate in 20 s); the guest's copies must stay the same
+creatures under the same ids during the editor and after it, with fresh states after it. ~1.5 min.
 ## The host's pause in every stage (2026-11-15, feat/w51-core2)
 <a id="testing-host-pause"></a>
 

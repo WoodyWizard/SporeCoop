@@ -82,7 +82,8 @@
   game's object list and the object's serial; C1), the guest's proxy rules a portable header with unit tests
   (`npc_proxy_rules.h`, D3) (BUG-1140, BUG-1159).
 - Tests: editor_desync's vote check, puppet_far_jump_caption's by-design failure and the Tribe raid timeout of the
-  campaign driver fixed (BUG-1166, BUG-1167, BUG-1169).
+  campaign driver fixed; nest_follow, creature_mating and editor_now no longer depend on the lab's start-up length
+  (BUG-1166, BUG-1167, BUG-1169, BUG-1178, BUG-1182).
 - Lab: the invariant monitor reads every trace line (the Space galaxy view's, a NaN position: no false "not together"
   in space_allies), and space_rivalry passes warm after itself (BUG-1145, BUG-1146, BUG-1147).
 - Threads: one main-thread check for every module and `coop.threads`, which counts game calls made off the game's
