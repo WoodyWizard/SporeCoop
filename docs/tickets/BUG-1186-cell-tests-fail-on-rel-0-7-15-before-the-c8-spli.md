@@ -93,4 +93,4 @@ No change in the mod's behaviour (only a debug command's output), no change on t
 - 2026-11-15: opened (feat/w51-cellsplit), evidence above.
 - 2026-11-16: fix/w51-cell: v0.7.14.1 beside rel/0.7.15; swallow_gone a 0.7.15 regression (A9 settle inside the
   hatch), the other three old test failures; fixed (unreleased). Final: the four tests x2 on lanes 6 / 7, 8 of 8 OK,
-  lab 20261116-001214 (load 11); make test clean.
+  lab 20261116-001214 (load 11); play_cell --quick OK 20261116-001740; make test clean.
