@@ -396,8 +396,14 @@ void apply_item_scale(void* c, float v);
 extern bool g_hunger_fix;
 extern uintptr_t a_SetHunger;
 extern uint32_t g_hunger_sets;
+extern uintptr_t a_ClockStop, a_ClockElapsed; // BUG-1187
+extern bool g_hunger_full_fix;     // BUG-1187 (tribe.mirror_hunger_full)
+extern uint32_t g_hunger_full_ended; // BUG-1187: mirrors' full clocks ended by the host's hunger
+bool end_full_delay(void* c);      // BUG-1187: ends the member's full clock (true: it was running)
 
 constexpr uintptr_t kHungerOff = 0xBBC;
+constexpr uintptr_t kHungerClockOff = 0xB90; // BUG-1187: the full clock (a game clock: +0x18 running)
+constexpr uintptr_t kHungerDelayOff = 0xB8C; // BUG-1187: how long a full member stays at 100 (ms)
 
 int tool_type(void* tool);
 void for_each_player_tool(void (*fn)(void* tool, int type, const net::Vec3& pos, void* user), void* user);

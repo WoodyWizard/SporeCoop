@@ -31,6 +31,9 @@
   why. It may join again.
 
 ### Fixed
+- Tribe: a host's tribe member that gets hungry or starves shows it on a guest's screen right away; before, a member
+  the guest's game had just made for it (when the guest joined, or a new member of the tribe) showed a full hunger
+  bar there for up to two minutes (BUG-1187).
 - Creature: while the host is in its evolution editor the animals on a guest's screen stay where they are and come
   back to life with the host's game, instead of vanishing, being replaced by the guest's own and swapped again after the
   editor (BUG-1174).

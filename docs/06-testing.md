@@ -8695,3 +8695,20 @@ v0.7.14.1 (a detached worktree of the tag, `make`) beside rel/0.7.15 on lanes 6 
   column (sweep_peak 1176 / 1311): OK 20261116-000455 x2; the old order FAIL 20261115-231325 (591 cells).
 * cell_kill_once (once in the ticket, at load 20-38): OK 3 of 3 with the settle fix (20261115-234347) and 3 of 3 with
   `SPORE_START_LOCKWAIT=0` (20261115-234748), load 5-15: not reproduced, not caused by the start.
+
+## tribe_zero_fields: a mirror that is full in its own game (2026-11-16, fix/w51-tribefields)
+<a id="testing-tribe-full-clock"></a>
+
+* `tribe_zero_fields` (BUG-1187) has a step 5: `coop.tribe spawn 1` on the host makes a member the guest's game has
+  no member for, so its mirror is spawned and full there (`coop.tribe hunger <id>` on the guest prints
+  `full=1/<elapsed ms>/120000`: its full clock runs, docs/re/tribe.md#tribe-full-clock); the host's member starves
+  (`coop.tribe hunger <id> 0 end`: `end` ends the host member's own full clock first, else the value is 100 again in the
+  next frame) and the guest's mirror must read hunger 0 within 5 s and keep it. Twin: SPORE_FIX_OFF=tribe.mirror_hunger_full
+  (the mirror stays at 100). A run where the new mirror was not full prints `RESULT: INCONCLUSIVE`.
+* Step 4 (the member chosen at the start) checked BUG-1043 only while that member's mirror was bound to a member of
+  the guest's loaded world: since the faster lab start-up (d1fe9727, A9) the guest joins ~2 s after the host is in
+  Tribe, the host's members walk more than 6 m during the guest's load, the mirror is spawned and full, and step 4
+  failed for the full clock (BUG-1187), not for the zero value (`SPORE_START_FIXED=1`: bound again). Both hunger steps
+  now also check that the mirror keeps the value for 1 s: the fields engine re-applies every 0.25 s, so without the fix
+  a poll could catch the value for the one frame before the game's update put 100 back.
+* `coop.tribe hunger <id>` (no value) only reads; `hunger <id> <v> [end]` sets through the game's setter.

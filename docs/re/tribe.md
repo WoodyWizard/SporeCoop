@@ -4120,3 +4120,33 @@ player's My Creations and reloads the tribe's species profile with it in place. 
 reached a guest kept in place (BUG-0508) and a guest's own outfit stayed in its own game. Now the wsync row
 `tribe_outfit` carries it, and a guest's own outfitter is refused. The route, the game's calls and the lab runs:
 docs/re/creations.md#creations-stage-designs.
+
+## A full member stays at 100: the full clock, and the mirrors the guest's game spawns (2026-11-16, fix/w51-tribefields)
+<a id="tribe-full-clock"></a>
+
+BUG-1187, GOG 2024, objdump of `SporeCoop::Creature_HungerUpdate` 0xC0D5A0 and lanes 4 / 5 (tribe fixture,
+coop_tribe_zero_fields.py). Follows #tribe-mirror-looks.
+* ✔ (objdump) +0xB90 (named mHungerDelayTimer by the serializer) is a simulator clock: +0x8/+0xC the elapsed u64,
+  +0x10/+0x14 the start, +0x18 the running byte, +0x1C its time function; Start 0xBC32A0, Stop `SporeCoop::Clock_Stop`
+  0xBC3280, Elapsed `SporeCoop::Clock_Elapsed` 0xBC3300. +0xB8C is the delay (u32 ms).
+* ✔ (objdump) The update, per frame: while that clock runs and its elapsed is under +0xB8C it calls the setter with 100
+  (the member stays full); at the delay it stops the clock and the hunger runs down by +0xBB8 x dt. An adult
+  (+0xB34 1) exactly at 100 with the clock stopped starts it (a meal that fills up, a member just made).
+* ✔ (runtime) The delay is 120000 ms (2 min) on the fixture's members. A member the game just made (SpawnMember, the
+  host's `coop.tribe spawn`, and every mirror the guest's game spawns, `ours=1`) is full: for 2 min any other value set
+  with the setter is 100 again in the next frame (`coop.tribe hunger <id>` prints `full=<running>/<elapsed>/<delay>`;
+  a new mirror read `full=1/410/120000`).
+* ✔ (runtime) BUG-1187: the BUG-0935 field applied the host's hunger to such a mirror and the update put 100 back every
+  frame (`fields tribe_member_hunger ... reapplied=74`; "member #3's hunger 100.0 -> 0.0" applied 8 times in 5 s): a
+  guest saw a starving host member well fed for up to 2 minutes after its mirror was made (a join, a rejoin, a member
+  born or a mirror made again). Which mirrors are spawned depends on the join: a host member more than 6 m
+  (tribe_logic::pick_bind kBindMax) from every free member of the guest's loaded world gets a new one. A guest that
+  joins in the first seconds of the host's stage (the save it loads holds the members where the stage put them, the
+  host's walk out meanwhile) gets new, full mirrors for most of them: since the lab start-up of d1fe9727 (A9,
+  BUG-1112: condition waits) the guest joins ~2 s after the host is in Tribe instead of ~8 s, and the test's member
+  #3 was spawned in 2 of 3 cold runs (feat/w51-harness runs 20261115-225537, -230446, -230558: "mirrors=6 spawned=3
+  removed=3" at the join); with SPORE_START_FIXED=1 (the old sleeps) or on ee9d9990 (its parent) it was bound in 6 of 6.
+  No Tribe C++ change of 0.7.15 is involved (9362bcdd, before them, fails the same).
+* Fix `tribe.mirror_hunger_full`: a host value below 100 ends the mirror's full clock (the game's Stop, what the
+  update does at the delay) before the setter; a host value of 100 lets the mirror's own clock run (the host's member
+  is full too). Negative: the mirror's tree never runs (h_BTTick), so the 100 was not a meal.

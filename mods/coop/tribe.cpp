@@ -1171,6 +1171,27 @@ COOP_FIX("tribe.mirror_hunger", "BUG-0935", g_hunger_fix, "tribe: a guest's mirr
 uintptr_t a_SetHunger;
 uint32_t g_hunger_sets;
 static float read_hunger(void* c) { return has_body(c) ? F<float>(c, kHungerOff) : 100.f; }
+// BUG-1187: a member that is full (hunger 100, an adult) starts its "full" clock (+0xB90, the game's clock: +0x18
+// running) and the hunger update 0xC0D5A0 sets 100 again every frame until that clock passes the member's delay
+// (+0xB8C ms); then it stops the clock and the hunger runs down. A mirror the guest's game spawned is full when it is
+// made (and so is one the host's value made full): for its own delay the update put 100 back over the host's value
+// every frame (lab: "member #3's hunger 100.0 -> 0.0" applied 8 times, the mirror at 100 while the host's member
+// starved). The host's member is the one that ate or is full: below 100 on the host, the mirror's full clock ends
+// (the game's own stop 0xBC3280, as the update does when the delay is over) before the setter.
+// `coop.fix tribe.mirror_hunger_full off`: the mirror's own full delay (0.7.14).
+bool g_hunger_full_fix = true;
+COOP_FIX("tribe.mirror_hunger_full", "BUG-1187", g_hunger_full_fix, "tribe: a guest's mirror that is full in its own game (a mirror just made) is as hungry as the host's member at once, not 100 for its own full time");
+uintptr_t a_ClockStop, a_ClockElapsed;
+uint32_t g_hunger_full_ended;
+bool end_full_delay(void* c)
+{
+    uint8_t* clk = (uint8_t*)c + kHungerClockOff;
+    if (!a_ClockStop || !clk[0x18])
+        return false;
+    thiscall<void>(a_ClockStop, clk);
+    g_hunger_full_ended++;
+    return true;
+}
 static void apply_hunger(void* c, float v)
 {
     if (!has_body(c) || !a_SetHunger || !(v >= 0.f && v <= 100.f))
@@ -1178,6 +1199,8 @@ static void apply_hunger(void* c, float v)
     if (g_hunger_sets++ < 10)
         H->log(M, SK_INFO, "tribe: member #%u's hunger %.1f -> %.1f as in the host's game (BUG-0935)", member_id(c),
                F<float>(c, kHungerOff), v);
+    if (g_hunger_full_fix && v < 100.f && end_full_delay(c) && g_hunger_full_ended <= 10) // BUG-1187
+        H->log(M, SK_INFO, "tribe: member #%u's full time ends as in the host's game (hunger %.1f, BUG-1187)", member_id(c), v);
     thiscall<void>(a_SetHunger, c, v);
 }
 static const fields::Field kHunger{fields::F_HUNGER, "hunger", read_hunger, apply_hunger, 0.02f, 0.f, 100.f}; // (0: starving, BUG-1043)
@@ -1507,6 +1530,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     fields::add_kind({fields::K_TRIBE_HUNGER, "tribe_member_hunger", &g_hunger_fix, kHungerFields, 1, member_each, member_mirror,
                       [] { return active(); }});
     a_SetHunger = H->sym("SporeCoop::Creature_SetHunger");
+    a_ClockStop = H->sym("SporeCoop::Clock_Stop"); // BUG-1187
+    a_ClockElapsed = H->sym("SporeCoop::Clock_Elapsed"); // BUG-1187 (coop.tribe hunger)
     a_TribeGroundStamp = H->sym("SporeCoop::cTribe_ApplyGroundStamp"); // BUG-0947
     game::set_idle_anim_listener(on_idle_anim); // BUG-0936
     a_SetHandheldItem = H->sym("SporeCoop::Citizen_SetHandheldItem");
