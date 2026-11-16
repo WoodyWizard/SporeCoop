@@ -8669,8 +8669,9 @@ tools/tests/run_all.sh (a 2026-10-23 copy of the suite list, unused since the la
   next frame) and the guest's mirror must read hunger 0 within 5 s and keep it. Twin: SPORE_FIX_OFF=tribe.mirror_hunger_full
   (the mirror stays at 100). A run where the new mirror was not full prints `RESULT: INCONCLUSIVE`.
 * Step 4 (the member chosen at the start) checked BUG-1043 only while that member's mirror was bound to a member of
-  the guest's loaded world: on a cold start the host's members can walk more than 6 m during the guest's load, the
-  mirror is spawned and full, and step 4 failed for the full clock (BUG-1187), not for the zero value. Both hunger steps
+  the guest's loaded world: since the faster lab start-up (d1fe9727, A9) the guest joins ~2 s after the host is in
+  Tribe, the host's members walk more than 6 m during the guest's load, the mirror is spawned and full, and step 4
+  failed for the full clock (BUG-1187), not for the zero value (`SPORE_START_FIXED=1`: bound again). Both hunger steps
   now also check that the mirror keeps the value for 1 s: the fields engine re-applies every 0.25 s, so without the fix
   a poll could catch the value for the one frame before the game's update put 100 back.
 * `coop.tribe hunger <id>` (no value) only reads; `hunger <id> <v> [end]` sets through the game's setter.
