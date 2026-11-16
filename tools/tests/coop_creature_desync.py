@@ -30,6 +30,7 @@ import subprocess
 import sys
 import time
 
+from harness import mode, waiter
 import lane
 from coop_ui import Ui
 from twoinst import Checks, Console, shot, start, wait_guest_in, wait_up, watch
@@ -40,18 +41,7 @@ WORLD_SPECIES = '065CBE70'   # the fixture's species (the host's creature, the g
 HOST_ONLY = '29020CC4'       # "Judge", a creature of the host's My Creations (fixture creations-host)
 
 
-def mode(con):
-    return con.call('game.mode')['out']
-
-
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def npcs(con):

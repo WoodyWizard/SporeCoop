@@ -24,6 +24,7 @@ import struct
 import sys
 import time
 
+from harness import cinematic, eax, mode
 from coop_ui import Ui
 import twoinst
 from twoinst import Checks, start
@@ -32,11 +33,6 @@ DONE = (1416, 1062)  # the green "done" check of the creature editor (1440x1080 
 MIGRATION = 0x514A219  # player property: 1 migration pending, 2 goal "Migrate" set, gone when claimed
 CINE_MIGRATE, CINE_CLAIM = 'FBB3661D', '63B7060A'  # FNV ids of CRG_SpeciesMigrate, CRG_ClaimNest
 DNA = float(next((a.split('=')[1] for a in sys.argv if a.startswith('--dna=')), 250))
-
-
-def eax(con, what):
-    m = re.search(r'eax=0x([0-9A-Fa-f]+)', con.call('call ' + what)['out'])
-    return int(m.group(1), 16) if m else None
 
 
 def mem(con, a, n):
@@ -88,15 +84,6 @@ def avatar_herd(con):
     nm = eax(con, 'Simulator::cGameNounManager::Get cdecl')
     av = nm and u32(con, nm + 0x54)
     return u32(con, av + 0x1674) if av else None
-
-
-def cinematic(con):
-    m = re.search(r'cinematic ([0-9A-F]{8}) playing', con.call('coop.status')['out'])
-    return m.group(1) if m else None
-
-
-def mode(con):
-    return con.call('game.mode')['out']
 
 
 def wait(cond, secs, step=1.0):

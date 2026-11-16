@@ -22,6 +22,7 @@ import math
 import re
 import time
 
+from harness import avatar_pos as pos
 from coop_npc_pooled import away
 from twoinst import Checks, shot, start
 
@@ -34,11 +35,6 @@ def own_hp(con):
 def puppet_hp(con, pid):
     m = re.search(rf'^puppet {pid}: hp=([-\d.]+)/([\d.]+)', con.call('coop.hp')['out'], re.M)
     return (float(m.group(1)), float(m.group(2))) if m else (None, None)
-
-
-def pos(con):
-    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
-    return tuple(map(float, m.groups())) if m else None
 
 
 def npcs(host):

@@ -28,6 +28,7 @@ import random
 import re
 import time
 
+from harness import pct
 import lane
 from coop_puppet_walk import Watch, back_to_partner, partner_dist, screen, settle
 from twoinst import Checks, shot, start
@@ -58,11 +59,6 @@ def dump_anims(con):
                          'ranim': f[27] if len(f) > 27 else '',
                          'f90': int(f[29]) if len(f) > 30 else None, 'lod': int(f[30]) if len(f) > 30 else None})
     return rows
-
-
-def pct(xs, q):
-    xs = sorted(xs)
-    return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else 0.0
 
 
 def npc_targets(con):

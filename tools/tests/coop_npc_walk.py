@@ -47,6 +47,7 @@ import re
 import threading
 import time
 
+from harness import pct
 import fpslimit
 import lane
 from twoinst import Checks, shot, start
@@ -188,11 +189,6 @@ class Watch(threading.Thread):
                 dx = 300 if not xy or not xy[0] or xy[1] > self.W // 2 else -300
                 self.con.call(f'drag {self.W // 2} {self.H // 2} {self.W // 2 + dx} {self.H // 2} right')
                 self.drags += 1
-
-
-def pct(xs, q):
-    xs = sorted(xs)
-    return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else 0.0
 
 
 def air_follow(rows):

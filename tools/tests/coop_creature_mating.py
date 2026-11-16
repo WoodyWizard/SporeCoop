@@ -21,6 +21,7 @@ import os
 import re
 import time
 
+from harness import mode_strip as mode
 from coop_ui import Ui
 from twoinst import Checks, shot, start
 
@@ -50,10 +51,6 @@ def screen_of(con, nid):
         if len(f) == 5 and f[0] == 'obj' and f[1] == 'n' + nid and 20 < int(f[3]) < W - 20 and 90 < int(f[4]) < H - 170:
             return int(f[3]), int(f[4])
     return None
-
-
-def mode(con):
-    return con.call('game.mode')['out'].strip()
 
 
 def mate_click(host, ck, other=False):

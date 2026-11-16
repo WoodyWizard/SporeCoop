@@ -20,14 +20,10 @@ the players saw).
 import re
 import time
 
+from harness import cinematic, eax, waiter
 from twoinst import Checks, start
 
 CLAIM = '63B7060A'  # CRG_ClaimNest
-
-
-def eax(con, what):
-    m = re.search(r'eax=0x([0-9A-Fa-f]+)', con.call('call ' + what)['out'])
-    return int(m.group(1), 16) if m else None
 
 
 def avatar_species(con):
@@ -55,11 +51,6 @@ def copies_of(host, guest, old, objs):
     return {o for o in objs if on_host.get(mine.get(int(o, 16))) == old}
 
 
-def cinematic(con):
-    m = re.search(r'cinematic ([0-9A-F]{8}) playing', con.call('coop.status')['out'])
-    return m.group(1) if m else None
-
-
 def puppet(con):
     m = re.search(r'remote 1 .*?puppet=([0-9A-F]{8})', con.call('coop.status')['out'])
     return int(m.group(1), 16) if m else 0
@@ -79,14 +70,7 @@ def creature_pos(con, ptr):
     return None
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        v = cond()
-        if v:
-            return v
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def main():

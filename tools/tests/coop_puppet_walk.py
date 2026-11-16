@@ -26,6 +26,7 @@ The drawn position is the puppet's position before the mod's frame (the mod runs
   (creature.puppet_walk off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-010809-fix-w29-puppet-move:puppet_walk))"""
 import argparse
 
+from harness import pct
 import body_trail  # noqa: E402
 import math
 import random
@@ -227,11 +228,6 @@ def walk(con, rng, secs, jumps=0.0):
             time.sleep(stop)
             log.append(f'stop {stop:.1f}s')
     return log
-
-
-def pct(xs, q):
-    xs = sorted(xs)
-    return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else 0.0
 
 
 FALL_ANIM = '0692E6A9'  # the game's fall animation (an airborne creature, +0x137 = 0)

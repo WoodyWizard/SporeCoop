@@ -26,6 +26,7 @@ Alice hosts, Bob, Carol and Dave are guests (tools/tests/party.py).
 import re
 import time
 
+from harness import waiter
 from coop_creature_kills import family, game_dead, killed, npcs, proxies, stimuli
 from party import Party
 from twoinst import Checks
@@ -43,14 +44,7 @@ def num(pat, text, default=0):
     return int(m.group(1)) if m else default
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def candidates(p, fam, guests):

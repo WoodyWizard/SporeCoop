@@ -36,6 +36,7 @@ import re
 import struct
 import time
 
+from harness import puppet
 from coop_creature_kills import read
 from coop_sync import sample, seg_dist
 import settings_lib as sl
@@ -53,11 +54,6 @@ def u32(con, a):
 
 def avatar(con):
     m = re.search(r'local=([0-9A-Fa-f]{8})', con.call('coop.avatar')['out'])
-    return int(m.group(1), 16) if m else 0
-
-
-def puppet(con):
-    m = re.search(r'puppet=([0-9A-F]{8})', con.call('coop.status')['out'])
     return int(m.group(1), 16) if m else 0
 
 

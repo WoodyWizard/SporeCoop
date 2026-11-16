@@ -29,6 +29,7 @@ import os
 import re
 import time
 
+from harness import avatar_pos as pos
 from coop_npc_pooled import SEA, away, ground, land_path
 from twoinst import Checks, shot, start
 
@@ -73,11 +74,6 @@ def proxies(con):
         g = re.search(r'game_dead=(-?\d)', m.group(3))  # the game's own dead flag of the proxy (not the mod's)
         out[int(m.group(1))] = (m.group(2) == 'spawned', bool(g and g.group(1) == '1'))
     return out
-
-
-def pos(con):
-    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
-    return tuple(map(float, m.groups())) if m else None
 
 
 def species_of_avatar(con):

@@ -15,6 +15,7 @@ import re
 import sys
 import time
 
+from harness import waiter
 import lane
 import uifind
 from twoinst import Checks, shot, start
@@ -30,14 +31,7 @@ def near_proxies(con, r=100.0):
     return n
 
 
-def wait(fn, t):
-    t0 = time.time()
-    while time.time() - t0 < t:
-        v = fn()
-        if v:
-            return v
-        time.sleep(1)
-    return None
+wait = waiter(step=1)
 
 
 def main():

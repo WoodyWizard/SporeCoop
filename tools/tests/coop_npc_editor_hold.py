@@ -23,6 +23,7 @@ of 4. SPORE_FIX_OFF=npc.editor_hold: destroyed in the editor (and new ids after 
 import re
 import time
 
+from harness import mode, waiter
 from coop_creature_mating import mate, mate_click
 from twoinst import Checks, start
 
@@ -30,22 +31,11 @@ DONE = (1416, 1062)  # the creature editors' green check (1440x1080 test window)
 PX = re.compile(r'#(\d+) species=[0-9A-F]+ spawned .*? age=([-\d.]+).*? ptr=([0-9A-Fa-fx]+)')
 
 
-def mode(con):
-    return con.call('game.mode')['out']
-
-
 def in_editor(con):
     return 'Editor' in mode(con)
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def proxies(guest):

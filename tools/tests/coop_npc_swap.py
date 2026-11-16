@@ -18,12 +18,8 @@ import struct
 import sys
 import time
 
+from harness import eax
 from twoinst import Checks, start
-
-
-def eax(con, what):
-    m = re.search(r'eax=0x([0-9A-Fa-f]+)', con.call('call ' + what)['out'])
-    return int(m.group(1), 16) if m else None
 
 
 def u32(con, a):

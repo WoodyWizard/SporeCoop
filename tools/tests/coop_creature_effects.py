@@ -13,20 +13,13 @@ this relay's case; they are listed in docs/re/creature.md#creature-effects-relay
 
   coop_creature_effects.py   (SPORE_FIX_OFF=creature.effects_relay must FAIL)
 """
-import math
 import re
 import time
 
+from harness import avatar_pos as own_pos, busy_line as busy, dist_or_none as dist
 from twoinst import Checks, start
 
 CHECK = (1418, 1044)  # the green check of a caption (brain upgrade, greeting)
-
-
-def busy(con):
-    for line in con.call('coop.status')['out'].splitlines():
-        if line.startswith('busy:'):
-            return line.split(':', 1)[1].strip()
-    return '?'
 
 
 def free_games(host, guest, seconds=25):
@@ -73,15 +66,6 @@ def puppet_pos(con, who):
     m = re.search(r"remote %d '.*?' puppet=\S+ state=\S+ age=[\d.]+s pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)" % who,
                   con.call('coop.status')['out'])
     return tuple(float(x) for x in m.groups()) if m else None
-
-
-def own_pos(con):
-    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
-    return tuple(float(x) for x in m.groups()) if m else None
-
-
-def dist(a, b):
-    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b))) if a and b else None
 
 
 def my_id(con):

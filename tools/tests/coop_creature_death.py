@@ -18,6 +18,7 @@ import argparse
 import re
 import time
 
+from harness import faults
 import uifind
 from twoinst import Checks, start
 
@@ -25,11 +26,6 @@ from twoinst import Checks, start
 def hp(con):
     m = re.search(r'hp=([-\d.]+)/', con.call('coop.avatar')['out'])
     return float(m.group(1)) if m else -1
-
-
-def faults(con):
-    m = re.search(r'total faults: (\d+)', con.call('exc')['out'])
-    return int(m.group(1)) if m else -1
 
 
 def close_pause(con):

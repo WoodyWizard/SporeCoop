@@ -23,6 +23,7 @@ import os
 import re
 import time
 
+from harness import avatar_pos as pos
 from coop_creature_social import KOOK, hold, num, objs, in_view, social, table
 from twoinst import Checks, shot, start
 from uifind import shown
@@ -96,11 +97,6 @@ def guest_list(guest):
         out[int(m.group(1))] = (m.group(2) == 'spawned', bool(imp and imp.group(1) == '1'),
                                 tuple(float(m.group(i)) for i in (3, 4, 5)))
     return out
-
-
-def pos(con):
-    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
-    return tuple(map(float, m.groups())) if m else None
 
 
 def main():

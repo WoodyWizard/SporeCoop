@@ -22,10 +22,10 @@ error box within seconds: R6025, BT_HerdHelpEval in the main thread's chain).
 """
 import argparse
 import random
-import re
 import struct
 import time
 
+from harness import frame
 from coop_creature_kills import family, npcs, proxies, read
 from coop_npc_lost_target import ATTACK_NODE, engage, puppet, u32
 from twoinst import Checks, start
@@ -47,11 +47,6 @@ def named(con, ptr, pup):
         snd += pup <= s < pup + SPAN
         oth += pup <= o < pup + SPAN
     return snd, oth
-
-
-def frame(con):
-    m = re.search(r'frame=(\d+)', con.call('frame').get('out', ''))
-    return int(m.group(1)) if m else -1
 
 
 def main():

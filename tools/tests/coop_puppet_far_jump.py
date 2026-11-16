@@ -29,9 +29,9 @@ two games agree (BUG-0658: a test artefact of the tours, docs/re/creature.md#cre
 import argparse
 import math
 import random
-import re
 import time
 
+from harness import avatar_pos as own_pos
 from coop_puppet_walk import dump
 from twoinst import Checks, start
 
@@ -54,11 +54,6 @@ def close_captions(con, tries=6):
         con.call('key enter')
         time.sleep(1.5)
     return not modal(con)
-
-
-def own_pos(con):
-    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
-    return tuple(float(x) for x in m.groups()) if m else None
 
 
 def main():

@@ -23,6 +23,7 @@ import os
 import re
 import time
 
+from harness import avatar_pos as own_pos, mode
 import lane
 import uifind
 from coop_alt_enter import fullscreen, keys as alt_enter
@@ -34,11 +35,6 @@ NEAR = 2.0
 WAIT = 20.0
 EVENTS = ('rejoin', 'editor', 'death', 'altenter', 'cinematic', 'share')
 DONE = (1416, 1062)  # the creature editor's "done" (coop_guest_editor_locks.py)
-
-
-def own_pos(con):
-    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
-    return tuple(map(float, m.groups())) if m else None
 
 
 def puppet_obj(con, pid):
@@ -58,10 +54,6 @@ def drawn(con, pid, secs=0.6):
         if len(f) >= 23 and int(f[1]) == pid:
             last = tuple(map(float, f[7:10]))
     return last
-
-
-def mode(con):
-    return con.call('game.mode')['out']
 
 
 def seen(ck, observer, partner, pid, oname, pname, label, wait=WAIT):

@@ -20,6 +20,7 @@ import os
 import re
 import time
 
+from harness import waiter
 from twoinst import Checks, shot, start
 
 NEAR = 80.0  # m: the creature camera is ~10-40 m from its avatar; the intro's camera is in space (km)
@@ -45,13 +46,7 @@ def camera(con):
     return o, a, math.dist(o, a)
 
 
-def wait(f, t):
-    t0 = time.time()
-    while time.time() - t0 < t:
-        if f():
-            return True
-        time.sleep(0.3)
-    return False
+wait = waiter(step=0.3, as_bool=True)
 
 
 def show(name, c):

@@ -23,6 +23,7 @@ import re
 import sys
 import time
 
+from harness import mode, waiter
 import twoinst
 from twoinst import Checks, shot, start
 
@@ -36,14 +37,7 @@ def loads(con):
     return con.call('log 600')['out'].count('world: loading ')
 
 
-def wait(fn, t, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < t:
-        v = fn()
-        if v:
-            return v
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 READY = (478, 747)     # "I'm ready" in the co-op window
@@ -52,10 +46,6 @@ CANCEL = (1383, 1062)  # the editors' red cross
 STAGE_BTN = (1396, 1063)  # the cell HUD button under the portrait: History, then the next stage
 HISTORY_OK = (1415, 1055)
 CAPTION_OK = (1410, 1048)
-
-
-def mode(con):
-    return con.call('game.mode')['out']
 
 
 def window_check(ck, guest, s0, what):

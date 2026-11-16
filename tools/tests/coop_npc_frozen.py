@@ -24,15 +24,11 @@ import math
 import re
 import time
 
+from harness import avatar_pos as own_pos
 import census
 from twoinst import Checks, start
 
 NEAR = 50.0
-
-
-def own_pos(con):
-    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
-    return tuple(map(float, m.groups())) if m else None
 
 
 def missing_near(host, guest, near=NEAR, pos_m=15.0):

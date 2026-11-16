@@ -13,6 +13,7 @@ import re
 import sys
 import time
 
+from harness import avatar_pos as pos
 from coop_sync import sample
 from twoinst import Checks, shot, start
 
@@ -26,11 +27,6 @@ def team(con):
 def hp(con):
     m = re.search(r'hp=([\d.]+)/([\d.]+)', con.call('coop.avatar')['out'])
     return (float(m.group(1)), float(m.group(2))) if m else (None, None)
-
-
-def pos(con):
-    m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', con.call('coop.avatar')['out'])
-    return tuple(map(float, m.groups())) if m else None
 
 
 def players_apart(host, guest):
