@@ -8736,11 +8736,12 @@ the same commit (fix/w51-t4) and, when it failed again, on v0.7.14.1 (a detached
 build and the 0.7.15 `tools/`, so the same tests and lab drive the old mod).
 * **Flakes** (PASS twice on the same commit, a mixed history, no code change; numbers in the tests' tickets):
   tribe_hold_only (BUG-0962), tribe_epic_damage (BUG-0515), tribe_walk_fps30 (BUG-0394), body_trail_tribe_player
-  (BUG-0410), civ_citizens (BUG-0476).
+  (BUG-0410).
 * **Test fixes**: tribe_name_tags (BUG-1202: the chief label is checked at the chief the game names; a chief off the
   screen gets the cameras; `TAGS_CHIEF_AWAY=<m>` replays the final check's scene), tribe_caption_race (BUG-1205:
   INCONCLUSIVE when the host's game itself played no conquest caption).
-* **Old failures**: campaign_tc2 (BUG-1216: Civ NPC proxies `n apart`, also on v0.7.14.1), campaign_tribe_noclick
+* **Old failures**: civ_citizens (BUG-1221: fails only in warm runs, the reload of the world; v0.7.14.1 the same line,
+  `40 of 152 without a partner`), campaign_tc2 (BUG-1216: Civ NPC proxies `n apart`, also on v0.7.14.1), campaign_tribe_noclick
   (BUG-0402's running-herd kind: one animal at 8.5 m/s 12.3 m off on one guest for one check pair; the same gate on
   rel/0.7.14 20261114-005006).
 * **A campaign that failed only on a lab gate has no segment.json** (its own `RESULT: OK` prints no CAMPAIGN-SEGMENT):
