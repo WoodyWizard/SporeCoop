@@ -278,14 +278,3 @@ anchor so other docs can link to it:
   regression run.
 * Ticket: BUG-1176
 
-## Cell tests that fail on rel/0.7.15 (2026-11-15, feat/w51-cellsplit)
-<a id="known-cell-rel0715-fails"></a>
-
-* What happens: cell_swallow_gone (2 of 3 swallowed creatures gone on the host), cell_unknown_model (the mirror never
-  made once the model is known), cell_editor_timed (the guest's editor does not open at the mate) and cell_sap (the
-  host under 1100 cells) failed twice in a row on lanes 6 / 7, on the C8 split build and on rel/0.7.15 7a733c60 alike;
-  cell_kill_once once on each (a second break of one kill).
-* Reproduce: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_swallow_gone,cell_unknown_model,cell_editor_timed,cell_sap
-  --lane N --retry 0 --no-build` (load average 20-30 at the time).
-* Next steps: the same on v0.7.14 and on an idle machine; bisect rel/0.7.15 if only it fails.
-* Ticket: BUG-1186

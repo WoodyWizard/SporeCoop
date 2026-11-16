@@ -8588,3 +8588,41 @@ the wait (the swap under the cinematic), not on the picture (F4F96E43 ended by i
   lane is then 5, 20261115-215636).
 * `tribe_attack_spot` (BUG-1184): gives the host 300 food before `coop.tribe form` (tribe.form_pace, as BUG-0943);
   `ATTACK_SPOT_OLD_FOOD=1` without.
+
+## Cell tests on rel/0.7.15: the hatch lock in the start, the mate's side, the status line (2026-11-15, fix/w51-cell)
+<a id="testing-cell-rel0715"></a>
+
+BUG-1186. cell_swallow_gone, cell_unknown_model, cell_editor_timed and cell_sap failed on rel/0.7.15; each one run on
+v0.7.14.1 (a detached worktree of the tag, `make`) beside rel/0.7.15 on lanes 6 / 7 at the same time (labs
+20261115-231325 of both trees):
+* **cell_swallow_gone** (0.7.15 regression, A9 BUG-1112): v0.7.14.1 OK, rel FAIL (2 of 3). The start's settle
+  ended 0.3 s after the guest was in Cell; the guest's own cell hatches for ~5 s with the game's input lock on
+  (docs/re/cell.md#cell-mate-cull) and the test's first bite and swallow ran inside it (`swallows_marked=2`). The
+  old fixed 4 s had covered it (`SPORE_START_FIXED=1`: OK, lab 20261115-232022). Now `startwait.settle` also waits
+  until no game's input lock stands (`coop.uistate` input_lock=0), within the same bound (4 s cold, 3 s warm): no
+  start is slower than before 0.7.15. Twin `SPORE_START_LOCKWAIT=0`: FAIL 20261115-232137; with the wait: OK
+  20261115-232233 x2. Unit: labstart_selftest (a lock of 2 s waited for, a lock over the bound ends at the bound,
+  the twin).
+* **cell_unknown_model** (old, since 0.7.12): the test read `created=` with a pattern `food=N mirrors=N created=N`
+  that the line `cell(guest): food=0 ko_deaths=0 mirrors=...` (BUG-0768 added ko_deaths) never matches: -1 -> -1,
+  FAIL on v0.7.14.1 too (lab 20261115-231325 of the v0.7.14.1 tree). The test reads the counter by name on that line
+  and checks first that the status shows its counters. OK 20261115-231325 (fix/w51-cell).
+* **cell_editor_timed** (old, also on v0.7.14.1): the guest jumped `tp 25 0` after calling its mate; a mate that had
+  come on the host's other side was then ~40 m away, outside the guest's active tiles, and the game's cell cull
+  removed it within 0.5 s (`coop.pool mate`: `gone_by=0x00E7C3E6`): nothing to touch after the knockout. Whether it
+  failed was the side the mate came from (labs 20261115-232616: 2 FAIL with the mate on -x, 1 OK on +x). The test
+  now jumps 25 m from the host on the mate's side (`from_host=` of `coop.pool mate`), the mate stays ~10 m away
+  (OK 20261115-233205 x3, the mate on -x in #2). `CELL_EDITOR_TIMED_FIXED_TP=1`: the old jump.
+* **cell_sap** (old, since 0.7.13; also on v0.7.14.1, not load: the code of 2026-11-02, 470627e5, passed at the same
+  load 26-30, lab 20261115-232114 of that tree): step 1 asked for 1130 host cells while all four players were still
+  together. Since BUG-0792 (`cell.spawn_slots`, 0.7.13) every guest stands in its own slot next to the host, the
+  host's game populates one area and holds 830-1080 cells after the level change, falling ~25 per 4 s (its own cull
+  0xE7C3E6 and NPC swallows 0xE7DA2E, nothing refills a tile; `coop.pool orphans` DestroyCell callers). The ~1300 of
+  before came from the two extra guests that had landed ~180 m away, in areas of their own: with
+  `SPORE_FIX_OFF=cell.spawn_slots` on rel/0.7.15 the test passes (lab 20261115-235845; the probe shows Carol and Dave at
+  (182, -67) and (168, -48)). A git bisect of 470627e5..v0.7.14.1 on that count was no use (it ended on a docs-only
+  commit: the count before BUG-0792 depends on where the extras land, 1105-1402). The test now sends the guests to
+  their own areas first (step 2 did that anyway) and then waits for over 1100 cells, the same count and the same
+  column (sweep_peak 1176 / 1311): OK 20261116-000455 x2; the old order FAIL 20261115-231325 (591 cells).
+* cell_kill_once (once in the ticket, at load 20-38): OK 3 of 3 with the settle fix (20261115-234347) and 3 of 3 with
+  `SPORE_START_LOCKWAIT=0` (20261115-234748), load 5-15: not reproduced, not caused by the start.

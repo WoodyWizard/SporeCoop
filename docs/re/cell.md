@@ -2385,3 +2385,23 @@ BUG-1064 (the rest after `cell.view_centre_scale`). GOG 2024, objdump of `SporeA
 * ✔ (runtime) a still cell's camera (CameraUpdate moves it only at 1.5 x the avatar's speed) stays where a level
   change's rescale left it: the host's visible box 7-40 m off its cell after a change in 2 of 8 runs, still 6-7 m
   off a second after `coop.pool camsnap` at some marks. Single-player behaviour.
+
+## The mate is culled with the tiles; the hatch holds the input lock (2026-11-15, fix/w51-cell)
+<a id="cell-mate-cull"></a>
+
+BUG-1186. GOG 2024, lane 7, `coop.pool mate` (now with `from_host=(dx dy)` and `gone_by=<DestroyCell return address>`).
+
+* ✔ (runtime) The mate `G+0x51D4` is NOT spared by the cell cull of CellPhysicsStep 0xE7C080 (ShouldCullCell
+  0xE5F8C0, DestroyCell return address **0xE7C3E6**; the step spares only `G+0x51B0` and a cell with its keep-alive
+  byte +0x354): the visibility step's 0xE5CDE0 spares the mate (section 8, SoftBodyLod in the .sym), this one does
+  not. A guest that called its mate and then jumped 25 m to the other side (`coop.pool tp 25 0` with the mate on the
+  host's -x side, ~40 m from the cell) lost the mate within 0.5 s, `gone_by=0x00E7C3E6` (labs 20261115-232616 #1 / #3);
+  on the same side it stayed alive (#2, and 20261115-233205 x3 with the jump towards the mate). Single-player rule: a
+  mate whose tile leaves the active range goes, as any cell. Lab runs before 2026-11-02 kept a mate on the far side
+  (cell_editor_timed's left-side mates of 20261030-133815, 20261101-162501 survived); not traced which change since
+  made the guest's active range smaller there (inferred: the guest's own tile pass and boxes, BUG-0174 / BUG-1064).
+* ✔ (runtime) After a load the own cell hatches with the game's input lock on (`coop.uistate` input_lock=1, the
+  trace's `input_lock=1`) for ~5.5 s after the Cell stage is entered on a guest at load 25-30 (lab 20261115-231325:
+  Cell at s 6.1, still locked at s 10.1, `cell: our new cell joined the host` at s 11.6, which waits for the lock).
+  A swallow (`coop.pool swallow`, the executor 0xE7E7F0 kind 10) run inside it never reached SwallowWhole 0xE7D880
+  (`swallows_marked` 2 of 3, the first one's mirror never destroyed on the guest), the same after the lock 3 of 3.

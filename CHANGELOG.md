@@ -134,6 +134,9 @@
   BUG-1160, BUG-1161, BUG-1162, BUG-1165, BUG-1184).
 - Cell: cellsync.cpp (7.3k lines) is split into smaller files by pure moves (combat, physics, tiles, host, guest and the
   `coop.pool` command), and the `coop.creations` command has a file of its own (BUG-1183). No change on the wire.
+- Tests: the start of a test waits for the game's input lock too (a guest's cell hatching after its load), within the
+  old wait; cell_unknown_model, cell_editor_timed and cell_sap no longer fail on what their own steps did (a status
+  line read by position, a jump that left the mate behind, a cell count taken before the guests spread) (BUG-1186).
 
 ## [0.7.14.1] - 2026-11-14
 
