@@ -10,7 +10,8 @@ under new ids: the guest's animals vanished, came back as others and were made a
 1. Both games on the creature fixture; the guest shows the host's NPCs (copies made: `coop.npc list` "spawned", the
    creature object of each and its id; a copy is listed only while its creature is in the guest's game's object list).
 2. The host mates the players' way (coop_creature_mating.mate_click: the game's own mating request opens its
-   editor at once, the guest stays in its Creature stage).
+   editor at once, the guest stays in its Creature stage); when its game picked no mate in 20 s, the creature stage's
+   own evolution request (`coop.vote evolve`) opens it.
 3. While the host edits (16 s, past the 4 s away delay): the guest's copies are the same creatures under the same ids.
 4. The host leaves its editor (done): 10 s later the guest still has those creatures under those ids, and the host's
    states reach them again (each copy's state age under 1.5 s).
@@ -22,7 +23,7 @@ of 4. SPORE_FIX_OFF=npc.editor_hold: destroyed in the editor (and new ids after 
 import re
 import time
 
-from coop_creature_mating import mate_click
+from coop_creature_mating import mate, mate_click
 from twoinst import Checks, start
 
 DONE = (1416, 1062)  # the creature editors' green check (1440x1080 test window)
@@ -68,11 +69,16 @@ def main():
     m0 = mode(host)
     print(f'  guest copies before: {sorted(before)}', flush=True)
 
-    # 2. the host's editor, the players' way
-    if not mate_click(host, ck):
-        ck.faults(host=host, guest=guest)
-        return ck.result()
+    # 2. the host's editor, the players' way when its game picked a mate near the nest (else the creature stage's own
+    # evolution request, as its handler builds it when the avatar meets its mate: `coop.vote evolve`); either way the
+    # guest's game stays in its Creature stage (an Evolve now offer)
+    mt = wait(lambda: (lambda m: m if m and m['ptr'] and m['flags'] & 0x10 else None)(mate(host)), 20)
+    if mt:
+        mate_click(host, ck)
+    else:
+        print('  no mate picked by the host\'s game in 20 s: ' + host.call('coop.vote evolve')['out'].strip()[:120], flush=True)
     ck(wait(lambda: in_editor(host), 120), f'the host is in its editor ({mode(host).strip()})')
+    ck(not in_editor(guest), f'the guest\'s game stays in its stage ({mode(guest).strip()})')
     before = proxies(guest) or before  # (the copies right before: a few come and go while the host walks to its mate)
 
     # 3. while the host edits
