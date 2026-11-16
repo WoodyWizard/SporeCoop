@@ -96,10 +96,9 @@ def main():
     mods = os.path.join(GAME, 'SporebinEP1', 'mods')
     ini = os.path.join(mods, 'coop.ini')
     pad = os.path.join(mods, 'pad.bin')
-    old = open(ini, 'rb').read() if os.path.exists(ini) else None
+    # BUG-1190: replaced, not appended (a stale [update] that update_check.py left came first and won)
+    old = lane.ini_section(ini, 'update', {'check': 1, 'url': url})
     try:
-        with open(ini, 'ab') as f:
-            f.write(f'\r\n[update]\r\ncheck=1\r\nurl={url}\r\n'.encode())
         lane.run_host()
         ck(wait_up(lane.HOST), 'the game starts')
         c = Console(lane.HOST)
