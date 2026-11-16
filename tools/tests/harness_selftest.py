@@ -298,7 +298,7 @@ def check_api():
     r, text = captured(harness.inconclusive, 'no free planet after a jump')
     ck(r == 0 and labverdict.output_verdict(text) == (labverdict.INCONCLUSIVE, 'no free planet after a jump'),
        f'api: the lab reads inconclusive() as INCONCLUSIVE ({text.strip()})')
-    ck(labverdict.output_verdict('  FAIL x\nRESULT: FAIL\n' + text)[0] is None, 'api: a RESULT: FAIL wins')
+    ck(labverdict.output_verdict('  FAIL x\nRESULT: FAIL\n' + text)[0] is None, 'api: a failed verdict line wins over INCONCLUSIVE')
 
 
 def main():
