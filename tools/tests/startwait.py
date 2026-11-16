@@ -58,11 +58,29 @@ def time_runs(con):
         return False
 
 
+def lock_wait():
+    """SPORE_START_LOCKWAIT=0 (the twin of BUG-1186): settle() does not wait for the game's input lock"""
+    return os.environ.get('SPORE_START_LOCKWAIT') != '0'
+
+
+def input_locked(con):
+    """the game's input lock stands (`coop.uistate` input_lock > 0: the hatch after a Cell load, a stage intro);
+    False when the console does not say (an old build, no answer): the lock is then not waited for"""
+    try:
+        m = re.search(r'input_lock=(-?\d+)', con.call('coop.uistate').get('out') or '')
+    except (OSError, ValueError):
+        return False
+    return bool(m) and int(m.group(1)) > 0
+
+
 def settle(cons, timeout, step=STEP, clock=time.monotonic, sleep=time.sleep):
     """the settle after a start step (was a fixed sleep of `timeout` s): every game in `cons` draws frames (its
-    counter moved since the first look) and its game time runs. Seconds waited, None after `timeout` (the old
-    sleep's length). A game standing on a stage entry's pause (twoinst.game_runs: 0-40 s) ends the wait at the
-    bound, as before; the tests that need the time to run wait for it themselves."""
+    counter moved since the first look), its game time runs and its input lock is off. Seconds waited, None after
+    `timeout` (the old sleep's length). A game standing on a stage entry's pause (twoinst.game_runs: 0-40 s) ends
+    the wait at the bound, as before; the tests that need the time to run wait for it themselves.
+    BUG-1186: the guest's cell hatches for ~5 s after its load with the game's input lock on (input_lock=1); a
+    settle that ended at 0.3 s started the Cell tests inside it (cell_swallow_gone's first swallow never played:
+    the old fixed 4 s had covered most of it), so the lock counts too, within the same bound."""
     first = {}
 
     def ok():
@@ -72,7 +90,7 @@ def settle(cons, timeout, step=STEP, clock=time.monotonic, sleep=time.sleep):
             if i not in first:
                 first[i] = f
                 good = False  # the counter must move after this first look
-            elif f < 0 or f <= first[i] or not time_runs(c):
+            elif f < 0 or f <= first[i] or not time_runs(c) or (lock_wait() and input_locked(c)):
                 good = False
         return good
     return until(ok, timeout, step, clock, sleep)

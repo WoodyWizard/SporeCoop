@@ -50,8 +50,9 @@ class Clock:
 
 class FakeGame:
     """a console: `frame` from a frame rate on the fake clock (or frozen), `coop.pauses` paused until a time"""
-    def __init__(self, clock, fps=30.0, runs_at=0.0, frozen=False, dead=False):
+    def __init__(self, clock, fps=30.0, runs_at=0.0, frozen=False, dead=False, unlocked_at=0.0):
         self.clock, self.fps, self.runs_at, self.frozen, self.dead = clock, fps, runs_at, frozen, dead
+        self.unlocked_at = unlocked_at  # the game's input lock (the Cell hatch) stands until then
         self.calls = []
 
     def call(self, line):
@@ -63,6 +64,8 @@ class FakeGame:
             return {'ok': True, 'out': f'frame={f} fps={self.fps:.1f} limit=33 own=0 changes=0'}
         if line == 'coop.pauses':
             return {'ok': True, 'out': f'paused={0 if self.clock() >= self.runs_at else 1} reasons=04BF38A7'}
+        if line == 'coop.uistate':
+            return {'ok': True, 'out': f'modal=0 input_lock={0 if self.clock() >= self.unlocked_at else 1} hud=1'}
         if line.startswith('wait.frames'):
             n = int(line.split()[1])
             self.clock.sleep(n / self.fps)
@@ -120,6 +123,23 @@ def case_settle():
     h, g = FakeGame(c, dead=True), FakeGame(c)
     w = startwait.settle([h, g], 3.0, clock=c, sleep=c.sleep)
     check(w is None and abs(c.t - 3.0) < 1e-9, 'a game that does not answer: to the bound, no exception')
+    # BUG-1186: the guest's Cell hatch holds the game's input lock after its load
+    c = Clock()
+    h, g = FakeGame(c), FakeGame(c, unlocked_at=2.0)
+    w = startwait.settle([h, g], 4.0, clock=c, sleep=c.sleep)
+    check(w is not None and 2.0 <= w <= 2.3, f'the guest\'s input lock (its hatch) stands for 2 s: waited for ({w})')
+    c = Clock()
+    h, g = FakeGame(c), FakeGame(c, unlocked_at=30)
+    w = startwait.settle([h, g], 4.0, clock=c, sleep=c.sleep)
+    check(w is None and abs(c.t - 4.0) < 1e-9, f'a lock longer than the bound: the old 4 s, not more ({c.t:.2f})')
+    os.environ['SPORE_START_LOCKWAIT'] = '0'
+    try:
+        c = Clock()
+        h, g = FakeGame(c), FakeGame(c, unlocked_at=2.0)
+        w = startwait.settle([h, g], 4.0, clock=c, sleep=c.sleep)
+        check(w is not None and w <= 0.3, f'SPORE_START_LOCKWAIT=0: the lock is not waited for ({w})')
+    finally:
+        del os.environ['SPORE_START_LOCKWAIT']
 
 
 def case_menu():

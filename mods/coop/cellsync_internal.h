@@ -396,6 +396,8 @@ extern uint32_t g_sim_frame;
 extern uintptr_t a_CullRet;
 extern Destroy_t o_Destroy;
 extern std::map<uintptr_t, uint32_t> g_dbg_destroy_by;
+extern uint32_t g_mate_gone_by; // tests (BUG-1186): the return address (rebased) of the DestroyCell of our mate G+0x51D4
+extern double g_mate_gone_at;
 extern std::unordered_map<uint32_t, double> g_touched;
 extern std::unordered_map<uint32_t, double> g_swallowed;
 extern std::unordered_map<int, void*> g_puppet_seen;

@@ -30,7 +30,9 @@ def counter(con, name):
 
 
 def created(con):
-    m = re.search(r'cell\(guest\): food=-?\d+ mirrors=\d+ created=(\d+)', con.call('coop.status')['out'])
+    # the guest's `cell(guest):` line; its other counters change (ko_deaths came before mirrors in 0.7.12,
+    # BUG-0768, and the -1 of a missed match failed the last check for good, BUG-1186): by name, on that line only
+    m = re.search(r'^cell\(guest\):[^\n]*? created=(\d+)', con.call('coop.status')['out'], re.MULTILINE)
     return int(m.group(1)) if m else -1
 
 
@@ -48,6 +50,7 @@ def main():
     if not src:
         return ck.result()
     u0, c0 = counter(guest, 'unknown_models'), created(guest)
+    ck(u0 >= 0 and c0 >= 0, f'the guest\'s coop.status shows its counters (unknown_models={u0} created={c0})')
     out = host.call(f'coop.cell spawn {src.group(1)} 5 0 {src.group(5)} {FAKE}')['out']
     m = re.search(r'created ([0-9A-F]+)', out)
     ck(m is not None and int(m.group(1), 16) != 0, f'the host made the cell ({out.strip()})')
