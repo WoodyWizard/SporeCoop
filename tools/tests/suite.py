@@ -1202,3 +1202,5 @@ add('host_pause_civ', P + 'coop_host_pause.py --stage civ', warm=True, minutes=4
 add('host_pause_space', P + 'coop_host_pause.py --stage space', warm=True, minutes=4, fixture='space')  # BUG-1142: Space (SPORE_FIX_OFF=space.busy_model fails)
 add('host_pause_rivals', P + 'coop_host_pause.py --stage space --rivals', warm=True, minutes=4, fixture='space')  # BUG-1142: Space in Rivals mode: the guest does not wait for the host's pause
 add('host_pause_guest', P + 'coop_host_pause.py --stage creature --guest-pause', warm=True, minutes=4, fixture='creature')  # BUG-1142: a guest's pause menu stops nobody: the host's game runs on
+# D2 of 0.7.15 (BUG-1179, docs/06-testing.md#testing-warm-fingerprint): a warm reset is taken only when the games' registered state and the profile files are the cold start's
+add('warm_fingerprint', P + 'coop_warm_fingerprint.py', warm=True, minutes=5, fixture='creature')  # D2: no leftover: the next start is warm; a planted leftover (coop.testreset plant) or a guest's worlds.ini record (BUG-1176) refuses it naming the entry, the cold start clears it (SPORE_WARM_FINGERPRINT_FIX=0 or SPORE_WORLDS_INI_RESET_FIX=0 fails)

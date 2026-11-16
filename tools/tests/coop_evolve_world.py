@@ -11,7 +11,7 @@ the migration at state 1, and the guest's game that loaded it never grew up nor 
 Checked on the guest's game after it loaded the host's world: the avatar's age (+0xB34) and the
 player property of the migration (0x514A219) are the host's.
 
-BUG-1173: the DNA reaches the guest while its own creature (worlds.ini, BUG-0345) is not applied yet (the swap
+BUG-1173: the DNA reaches the guest while its own creature (chosen by the test, BUG-1176; BUG-0345) is not applied yet (the swap
 comes 3 s after the avatar; the lab's start-up waits no fixed 3 s since A9): the guest's game plays its brain
 upgrade CRG_BrainUpgrade1 and the swap came in the middle of it; that cinematic never showed its caption and the
 input lock held the guest (its own editor after the vote never opened). Checked: the guest's caption closes with
@@ -24,6 +24,7 @@ import re
 import sys
 import time
 
+import creations_state
 import lane
 from coop_migration import CINE_MIGRATE, DNA, DONE, cinematic, close_boxes, confirm_captions, eax, migration, mode, total_dna, u32, wait
 from coop_ui import Ui
@@ -73,7 +74,20 @@ def main():
     ck = Checks()
     if without:
         print('  ', host.call('coop.npc sharecine off')['out'].strip())
-    own = own_record()
+    # BUG-1176: the cold start puts the guest's worlds.ini back to the fixture state (no record: it plays the world's
+    # species); BUG-1173 needs its own creature, so the test chooses it (the newest of creations-guest) and puts the
+    # profile back at the end
+    st0 = creations_state.save(guest)
+    mine = creations_state.choose_own(guest)
+    print('  guest profile before:', st0, '| chose', mine, flush=True)
+    wait(lambda: swapped_here(), 30, 0.5)
+    try:
+        return run(host, guest, ck, bool(mine) or own_record())
+    finally:
+        creations_state.restore(guest, st0)
+
+
+def run(host, guest, ck, own):
     if own and swapped_here():
         # BUG-1173 as players meet it: the DNA crosses a brain level within the 3 s after the guest's world load,
         # before its own creature is applied. The start took longer than that: the host's world once more, the DNA

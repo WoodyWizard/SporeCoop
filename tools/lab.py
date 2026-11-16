@@ -698,14 +698,41 @@ def new_run_dir(branch=None, now=None):
     if os.environ.get('SPORE_LAB_SHARED_RUNDIR') == '1':  # the old behaviour, for the self-test's FAIL case
         os.makedirs(os.path.join(base, stamp + tail), exist_ok=True)
         return stamp + tail, os.path.join(base, stamp + tail)
+    # BUG-1177: the id is also taken in the repository (every worktree's lab writes out/lab of its own tree): two runs
+    # started in one second from two trees got the same id (20261115-193631 in fix/w51-evolve and rel/0.7.15), and
+    # their reports and tickets could not tell them apart. An O_EXCL file per id in <git common dir>/lab-run-ids;
+    # SPORE_LAB_RUNID_TREE_ONLY=1: the old way (unique in this tree only), the self-test's FAIL case
+    ids = None if os.environ.get('SPORE_LAB_RUNID_TREE_ONLY') == '1' else run_id_registry()
     for k in range(1, 1000):
         run_id = stamp + ('' if k == 1 else f'-{k}') + tail
+        if ids:
+            try:
+                os.close(os.open(os.path.join(ids, run_id), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
+            except FileExistsError:
+                continue
         try:
             os.mkdir(os.path.join(base, run_id))
         except FileExistsError:
             continue
         return run_id, os.path.join(base, run_id)
     raise RuntimeError(f'lab: no free run directory for {stamp}{tail}')
+
+
+def run_id_registry():
+    """BUG-1177: the directory of the run ids taken in this repository (all worktrees), None outside git"""
+    try:
+        common = subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd=ROOT,
+                                capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if not common or not os.path.isdir(common):
+        return None
+    d = os.path.join(common, 'lab-run-ids')
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        return None
+    return d
 
 
 def ledger_rows(dirs=None):
@@ -835,7 +862,8 @@ def cmd_run(a):
         except Exception:  # noqa: BLE001
             return False
     os.environ['SPORE_FREE_LANE'] = str(next((n for n in range(2, 11) if _free(n)), ''))
-    print(f'lab run {run_id}: {len(tests)} tests on {a.lanes} lane(s), tree {tree} [{tree_branch}] ({head})'
+    print(f'lab run {run_id}: {len(tests)} tests on {a.lanes} lane(s), tree {tree} [{tree_branch}] ({head}), '
+          f'logs {logdir}'
           + (f'; QUICK: {sum(bool(t.get("quick_run")) for t in tests)} shortened' if quick else ''))
     got = take_lanes(a.lane_ids, run_id)
     if isinstance(got, tuple):  # BUG-1070: never kill the games of a lane another run is using
@@ -1088,9 +1116,13 @@ def cmd_run(a):
     repeats = [labverdict.repeat_line(b, [labverdict.verdict_of(r) for r in results if r['name'].split('#')[0] == b],
                                       a.repeat, repeat_stopped.get(b, ''))
                for b in sorted({r['name'].split('#')[0] for r in results})] if a.repeat > 1 else []
-    json.dump(dict(run=run_id, tree=tree, branch=tree_branch, head=head, skipped=skipped, lanes=a.lanes, seconds=round(total), ok=ok,
-                   quick=quick, repeat=dict(n=a.repeat, until=until, lines=repeats) if repeats else None, results=results),
-              open(os.path.join(logdir, 'results.json'), 'w'), indent=1)
+    # BUG-1177: written whole or not at all (a temporary file of this run, then renamed)
+    tmp_res = os.path.join(logdir, f'.results.json.{os.getpid()}')
+    with open(tmp_res, 'w') as f:
+        json.dump(dict(run=run_id, tree=tree, branch=tree_branch, head=head, skipped=skipped, lanes=a.lanes, seconds=round(total),
+                       ok=ok, quick=quick, repeat=dict(n=a.repeat, until=until, lines=repeats) if repeats else None,
+                       results=results), f, indent=1)
+    os.replace(tmp_res, os.path.join(logdir, 'results.json'))
     lines = [f'# lab run {run_id}', '', f'{tree_branch} {head} - {len(results)} tests, {a.lanes} lanes, '
              f'{total / 60:.1f} min, ' + (f'**all passed**{notes}' if ok else f'**FAILED**{notes}'), '']
     if quick:
@@ -1121,7 +1153,7 @@ def cmd_run(a):
         if x.startswith('- ') or x.startswith('## '):
             print(x[2:] if x.startswith('- ') else x[3:])
     print(f'{"PASSED" if ok else "FAILED"}: {passed}/{len(results)}{notes} in {total / 60:.1f} min '
-          f'-> out/lab/{run_id}/summary.md')
+          f'-> {os.path.join(logdir, "summary.md")}')  # BUG-1177: the full path (which tree's out/lab)
     return 0 if ok else 1
 
 

@@ -35,6 +35,8 @@ Cases (ticket):
                 a hitch of a load or of the frame source switch are handled
   same_second   two lab processes started in the same second: a run directory each, flaky.json counts
                 both (BUG-0353, BUG-0362); the old shared directory (SPORE_LAB_SHARED_RUNDIR=1) fails it
+  two_trees     two lab processes started in the same second from two worktrees: two run ids, each tree its own
+                results, the summary's full path printed (BUG-1177); SPORE_LAB_RUNID_TREE_ONLY=1 fails it
   mem_script    a test script over the lab's memory limit (SPORE_LAB_SCRIPT_RSS_MB) is killed and fails with
                 "the test script used N MB"; a small one passes with its peak in the result (BUG-0916)
   mem_gate      the memory gate: a 4-game test waits while MemAvailable is short and starts when it is back; the
@@ -397,6 +399,37 @@ def game_log_case(tree, tmp):
     check(got.get('same') == "''", f'knobs: the game reports the switches of its cold start: warm (BUG-0430): {got.get("same")}')
     check('pool.ko_grace' in got.get('game', ''),
           f'knobs: a switch the game reports off since its cold start refuses a warm reuse (BUG-0430): {got.get("game")}')
+    # D2 (BUG-1179): the warm fingerprint: `coop.testreset` answers parsed; a leftover entry or a changed profile file
+    # (worlds.ini with a record, BUG-1176) is named; an ini without values is the fixture state; an older DLL is not compared
+    code = ('import os, sys; sys.path.insert(0, "tools/tests"); import twoinst\n'
+            'class T:\n'
+            '    def __init__(self, out): self.out = out\n'
+            '    def call(self, line): return {"ok": True, "out": self.out}\n'
+            'clean = T("testreset: reset=1 fix=1 entries=55 holding=0 hash=811C9DC5\\n")\n'
+            'left = T("testreset: reset=1 fix=1 entries=55 holding=1 hash=12345678\\n  test.planted_leftover 00000007\\n")\n'
+            'old = T("unknown command coop.testreset")\n'
+            'cold = {"host": twoinst.game_fingerprint(clean), "guest": twoinst.game_fingerprint(clean), "files": {"guest SporeCoop/worlds.ini": "none"}}\n'
+            'print("same:", twoinst.fingerprint_diff(cold, {**cold}))\n'
+            'print("left:", twoinst.fingerprint_diff(cold, {**cold, "guest": twoinst.game_fingerprint(left)}))\n'
+            'print("old:", twoinst.fingerprint_diff(cold, {**cold, "guest": twoinst.game_fingerprint(old)}))\n'
+            'd = os.environ["FP_TMP"]; p = os.path.join(d, "worlds.ini")\n'
+            'open(p, "w").write("[creature]\\r\\n68AC222A=290225CD\\r\\n")\n'
+            'rec = twoinst.file_digest(p)\n'
+            'print("file:", twoinst.fingerprint_diff(cold, {**cold, "files": {"guest SporeCoop/worlds.ini": rec}}))\n'
+            'open(p, "w").write("[creature]\\r\\n[cell]\\r\\n")\n'
+            'print("empty:", twoinst.file_digest(p), twoinst.file_digest(os.path.join(d, "nope.ini")))\n')
+    fp_tmp = os.path.join(tmp, 'fp')
+    os.makedirs(fp_tmp, exist_ok=True)
+    r = subprocess.run([sys.executable, '-c', code], cwd=wt, env=dict(os.environ, SPORE_LANE='2', FP_TMP=fp_tmp),
+                       capture_output=True, text=True)
+    got = dict(ln.split(': ', 1) for ln in r.stdout.splitlines() if ': ' in ln)
+    check(got.get('same') == '[]', f'fingerprint: the cold start\'s state again: no difference (D2): {got.get("same") or r.stderr[-300:]}')
+    check(got.get('left') == "['guest test.planted_leftover cold - - now 00000007']",
+          f'fingerprint: a leftover entry is named (D2): {got.get("left")}')
+    check(got.get('old') == '[]', f'fingerprint: a game without coop.testreset is not compared (D2): {got.get("old")}')
+    check((got.get('file') or '').startswith("['guest SporeCoop/worlds.ini cold none - now "),
+          f'fingerprint: a worlds.ini record is named (D2, BUG-1176): {got.get("file")}')
+    check(got.get('empty') == 'none none', f'fingerprint: an ini without values and none at all are the fixture state: {got.get("empty")}')
 
 
 def watch_cases(tree, tmp):
@@ -717,6 +750,58 @@ def same_second_case(tree, tmp):
                   f'({runs})')
 
 
+def two_trees_case(tree, tmp):
+    """BUG-1177: two lab processes started in the same second from two worktrees of one repository get two run ids
+    (each tree's out/lab holds its own run, results.json with its own result only), and the final line names the full
+    path of the summary. SPORE_LAB_RUNID_TREE_ONLY=1 (the old way: unique in one tree only) must fail it."""
+    script = os.path.join(tmp, 'two_trees_child.py')
+    open(script, 'w').write(SAME_SECOND)
+
+    def two(old):
+        repo = os.path.join(tmp, 'tt_old' if old else 'tt')
+        subprocess.run(['git', 'init', '-q', '-b', 'main', repo], capture_output=True)
+        git(repo, 'commit', '-q', '--allow-empty', '-m', 'selftest')
+        other = os.path.join(tmp, ('tt_old' if old else 'tt') + '_wt')
+        git(repo, 'worktree', 'add', '-q', '-b', 'side', other)
+        roots = {'a': repo, 'b': other}
+        for r in roots.values():
+            os.makedirs(os.path.join(r, 'nogame', 'SporebinEP1', 'mods', 'logs'), exist_ok=True)
+        go = os.path.join(tmp, 'tt_go_old' if old else 'tt_go')
+        env = dict(os.environ)
+        env.pop('SPORE_LAB_RUNID_TREE_ONLY', None)
+        if old:
+            env['SPORE_LAB_RUNID_TREE_ONLY'] = '1'
+        kids = {w: subprocess.Popen([sys.executable, script, tree, roots[w], w, go], env=env, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True) for w in ('a', 'b')}
+        time.sleep(1.0)
+        open(go, 'w').close()
+        outs = {}
+        for w, k in kids.items():
+            try:
+                outs[w] = k.communicate(timeout=60)[0]
+            except subprocess.TimeoutExpired:
+                k.kill()
+                outs[w] = ''
+        ids, own = {}, {}
+        for w, r in roots.items():
+            ldir = os.path.join(r, 'out', 'lab')
+            runs = sorted(d for d in os.listdir(ldir) if os.path.isdir(os.path.join(ldir, d))) if os.path.isdir(ldir) else []
+            ids[w] = runs
+            try:
+                res = json.load(open(os.path.join(ldir, runs[0], 'results.json')))
+                own[w] = [x['name'] for x in res['results']] == ['same_' + w] and res['run'] == runs[0]
+            except (OSError, ValueError, IndexError, KeyError):
+                own[w] = False
+        paths = all(os.path.join(roots[w], 'out', 'lab') in outs[w] for w in roots)
+        ok = (all(len(v) == 1 for v in ids.values()) and ids['a'] != ids['b'] and all(own.values()) and paths)
+        return ok, ids, own, paths
+    ok, ids, own, paths = two(False)
+    check(ok, f'two_trees: two runs started in one second from two worktrees get two run ids ({ids}; own results {own}; '
+              f'full summary path {paths}) (BUG-1177)')
+    ok, ids, own, paths = two(True)
+    check(not ok, f'two_trees (old way, SPORE_LAB_RUNID_TREE_ONLY=1): the case catches the shared run id ({ids})')
+
+
 def quick_case(tree, tmp):
     """lab.py run --quick (docs/06-testing.md#testing-lab-speed): a test with a quick entry runs its shortened command
     (the flag's value replaced, or appended), is marked quick in results.json and summary.md and gets SPORE_LAB_QUICK=1;
@@ -885,7 +970,7 @@ def mem_cases(tree, tmp):
 
 
 CASES = ('lab_cases', 'quick_case', 'worktree_case', 'game_log_case', 'kill_case', 'mem_cases', 'same_second_case',
-         'lane_lock_case', 'gate_cases',
+         'two_trees_case', 'lane_lock_case', 'gate_cases',
          'watch_cases', 'interrupt_cases')
 
 
