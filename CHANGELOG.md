@@ -132,6 +132,9 @@
   (a 0.7.14 player still gets them as before), tribe.cpp is split into five files by pure moves, the planted
   Tribe-end campaign test has a budget it can keep and tribe_attack_spot forms its village again (BUG-1140, BUG-1143,
   BUG-1160, BUG-1161, BUG-1162, BUG-1165, BUG-1184).
+- Tests: one shared helper module for the game tests (`tools/tests/harness.py`: waiting with a reason, console
+  parsing, positions, a wild NPC, the RESULT / INCONCLUSIVE lines); 314 copied helpers in 214 tests became imports
+  of it by a codemod (`tools/harness_codemod.py`), `test_lint` flags a new copy; `run_all.sh` is gone (BUG-1185).
 
 ## [0.7.14.1] - 2026-11-14
 

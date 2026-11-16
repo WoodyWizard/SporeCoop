@@ -8588,3 +8588,48 @@ the wait (the swap under the cinematic), not on the picture (F4F96E43 ended by i
   lane is then 5, 20261115-215636).
 * `tribe_attack_spot` (BUG-1184): gives the host 300 food before `coop.tribe form` (tribe.form_pace, as BUG-0943);
   `ATTACK_SPOT_OLD_FOOD=1` without.
+
+## Shared test harness: tools/tests/harness.py (2026-11-15, feat/w51-harness)
+<a id="testing-harness"></a>
+
+D4 of 0.7.15 (BUG-1185, TST-5 of docs/audit-0.7.15/tests.md). The helpers every test carried a copy of are one module
+now; a new test imports them instead of copying (test_lint.py's `copy` check flags a new copy).
+
+* **Waiting.** `wait_until(cond, timeout, step=0.5, what=None, final=False)`: cond() every `step` s until it is truthy
+  (returned), else None, or with `final=True` one more call after the timeout. With `what` (the thing waited for) it
+  prints `  wait <what>: 3.2 s`, or on a timeout `  wait <what>: not within 30 s (last value ...)`: timings become
+  measurable. `waiter(timeout, step, final, as_bool)` makes a `wait(cond, timeout, step)` with a copy's defaults (the
+  codemod's form). `poll(fn, timeout, step, until)`: the values read on the way ("it never fell below").
+* **Console.** `out`, `mode` (and `mode_strip`, `mode_word`, `mode_id`: the four spellings tests used), `sp`
+  (`coop.space ...`), `pool`, `num(out, key)`, `pool_num`, `field(out, pat)`, `field_dotall`, `kv(out)` (every
+  `key=value` as text), `faults` (-1 without the line), `busy_line` / `busy_word` / `busy_list`, `cinematic`, `eax`,
+  `frame`, `world_of`, `puppet`.
+* **Positions and states.** `avatar_pos` (coop.avatar), `cell_pos` (the own cell of coop.pool), `dist`,
+  `dist_or_none`; `shared_money`, `shared_food` (coop.res), `dna`; `log_size(inst)`, `log_since(inst, off)`; `pct`,
+  `fnv`.
+* **A wild NPC.** `npc_list(con)` parses `coop.npc list` (host and guest lines, "not updated" ones left out);
+  `pick_npc(host, guest=None, wild=True, min_hp=5, min_dist, max_dist, exclude, timeout)` takes the first NPC that is
+  alive, not of the host's species, not of its family, mirrored by the guest when one is given: never "the first
+  listed" (BUG-0437, #testing-harness-g2). The tests that pick by hand (coop_team.py, coop_creature_air.py, the "not
+  checked yet" ones there) were left as they are: their picks differ in detail (thresholds, distances), and a test's
+  checks do not change in a codemod.
+* **Results.** `check_line(cond, msg)` (`  ok   ` / `  FAIL `, the lab's reasons), `result_line(ok)`, and
+  `inconclusive(why)`: `RESULT: INCONCLUSIVE <why>` (A15, #testing-lab-verdicts; never a pass, three in a row a
+  failure). `twoinst.Checks` prints through them and has `ck.inconclusive(why)` (RESULT: FAIL instead when a check
+  failed before). The tests that print `RESULT: SKIP ...` themselves keep doing so (same verdict).
+
+**The codemod** (`tools/harness_codemod.py plan | apply | verify <rev>`, run once over tools/tests/coop_*.py on rel/0.7.15
+3a7f4b25, committed by area: Creature, Tribe, Civ, Space, cross-stage, Cell): a top-level `def` byte for byte one of its
+COPIES table became `from harness import <name> [as <old name>]`; a `def wait` that is exactly the wait template (the
+same loop, sleep and end; names and defaults free) became `wait = waiter(...)` with its defaults, in place. Odd
+variants stay (a try around the call, a `while True` loop, a different regex). A def is left when its name is bound
+twice, is `global`, or a caller (also in a test that imports it) passes a keyword the harness function lacks. Stdlib
+imports only the copies used went with them. 214 files, 314 copies, 1539 lines fewer; 89 of the 94 `def wait`.
+
+Proofs: `verify` compares each file's syntax tree with its text at the base (the old tree minus the replaced copies and
+their imports plus the harness lines, nothing else) and its FAIL / RESULT / INCONCLUSIVE / SKIP texts;
+harness_selftest.py (make test) runs every COPIES text and its harness function on the same fake console answers (the
+same result and the same commands asked), and every wait form against its waiter on a fake clock (the same value,
+cond calls and sleeps); pyflakes over the changed files finds no new name problem; each changed module imports.
+
+tools/tests/run_all.sh (a 2026-10-23 copy of the suite list, unused since the lab) is gone; the lab is the only runner.
