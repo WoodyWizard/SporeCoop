@@ -11,10 +11,17 @@ guest's player id (1 = npc), counted as state of that player.
 2. The host gives it a weapon (`coop.tribe settool <id> 1`, the game's SetSpecializedTool): the guest's mirror has
    tool 1 within 5 s (the guest game's +0x102C).
 3. The host puts the tool down (`settool <id> 0`): the guest's mirror has tool 0 within 5 s.
-4. The host's member starves (`coop.tribe hunger <id> 0`, the game's setter): the guest's mirror reads hunger 0
-   (within 0.5) within 5 s; then 80 again.
-5. BUG-1044: the host's `coop.fields` statistics of kind npc (id 1) before and after the guest (id 1) leaves: kept.
-SPORE_FIX_OFF=fields.zero_values: 3 and 4 FAIL. SPORE_FIX_OFF=fields.player_state: 5 FAILs.
+4. The host's member starves (`coop.tribe hunger <id> 0 end`, the game's setter; `end`: a host member that is full
+   would be 100 again in its next frame, BUG-1187): the guest's mirror reads hunger 0
+   (within 0.5) within 5 s and keeps it for 1 s; then 80 again.
+5. BUG-1187: a member the host's game makes now (`coop.tribe spawn 1`): the guest's game spawns its mirror, which is
+   full there (hunger 100, its full clock +0xB90 running: the game's hunger update puts 100 back every frame until its
+   delay +0xB8C passed). The host's member starves (`coop.tribe hunger <id> 0 end`: its own full clock ended first):
+   the guest's mirror reads hunger 0 (within 0.5) within 5 s and keeps it for 1 s. Step 4 is this step when the
+   mirror of its member was spawned at the join (a host member that walked more than 6 m before it: cold starts).
+6. BUG-1044: the host's `coop.fields` statistics of kind npc (id 1) before and after the guest (id 1) leaves: kept.
+SPORE_FIX_OFF=fields.zero_values: 3 and 4 FAIL. SPORE_FIX_OFF=tribe.mirror_hunger_full: 5 FAILs (4 too when its mirror
+was spawned). SPORE_FIX_OFF=fields.player_state: 6 FAILs.
 
   SPORE_LANE=6 python3 tools/tests/coop_tribe_zero_fields.py
 """
@@ -35,6 +42,19 @@ def row(con, mid):
 
 
 wait = waiter(timeout=5.0, step=0.25, final=True)
+
+
+def starves(guest, mid):
+    """the guest's mirror mid reads hunger 0 (within 0.5) within 5 s and keeps it for 1 s (BUG-1187: the fields engine
+    applies every 0.25 s, the game's update can put 100 back in the next frame: one read of 0 is not the value)"""
+    zero = lambda: (lambda r: r is not None and abs(r[2]) <= 0.5)(row(guest, mid))
+    if not wait(zero):
+        return False
+    for _ in range(4):
+        time.sleep(0.25)
+        if not zero():
+            return False
+    return True
 
 
 def npc_sent(host):
@@ -69,11 +89,30 @@ def main():
     ck(h and h[0] == 0 and g, f"the host's member put the tool down and the guest's mirror has no tool either "
                               f"(host {h}, guest {row(guest, mid)})")
     # 4. hunger 0
-    print('  host:', host.call(f'coop.tribe hunger {mid} 0')['out'].strip(), flush=True)
-    g = wait(lambda: (lambda r: r is not None and abs(r[2]) <= 0.5)(row(guest, mid)))
+    print('  host:', host.call(f'coop.tribe hunger {mid} 0 end')['out'].strip(), flush=True)
+    g = starves(guest, mid)
     ck(g, f"the guest's mirror is as starving as the host's member (host {row(host, mid)}, guest {row(guest, mid)})")
-    host.call(f'coop.tribe hunger {mid} 80')
-    # 5. BUG-1044
+    host.call(f'coop.tribe hunger {mid} 80 end')
+    # 5. BUG-1187: a mirror the guest's game spawned, full in its own game
+    before = set(members(host))
+    print('  host:', host.call('coop.tribe spawn 1')['out'].strip(), flush=True)
+    nid = None
+    t1 = time.time()
+    while nid is None and time.time() - t1 < 15:
+        time.sleep(0.5)
+        new = [i for i, v in members(host).items() if i not in before and v[3] == 'player']
+        nid = new[0] if new and row(guest, new[0]) else None
+    if not ck(nid is not None, "the guest's game has a mirror of the member the host's game just made"):
+        return ck.result()
+    gfull = guest.call(f'coop.tribe hunger {nid}')['out'].strip()
+    print(f'  guest mirror #{nid} before: {gfull}', flush=True)
+    print('  host:', host.call(f'coop.tribe hunger {nid} 0 end')['out'].strip(), flush=True)
+    g = starves(guest, nid)
+    print(f'  guest mirror #{nid} after: {guest.call(f"coop.tribe hunger {nid}")["out"].strip()}', flush=True)
+    full = ' full=1/' in gfull  # the precondition: the mirror's own full clock runs (else this step proves nothing)
+    ck(g, f"the guest's mirror #{nid} (full in its own game: {int(full)}) starves with the host's member "
+          f"(host {row(host, nid)}, guest {row(guest, nid)})")
+    # 6. BUG-1044
     time.sleep(2)
     s0 = npc_sent(host)
     print(' ', guest.call('coop.leave')['out'].strip(), flush=True)
@@ -86,6 +125,8 @@ def main():
     else:
         print('  (no npc fields sent in this world: the statistics check says nothing)', flush=True)
     ck.faults(host=host, guest=guest)
+    if not full:
+        return ck.inconclusive(f"the guest's new mirror #{nid} was not full in its own game (no full clock)")
     return ck.result()
 
 
