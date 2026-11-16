@@ -10,7 +10,7 @@
    "mods/coop/civ_tables.cpp": 1,
    "mods/coop/coop.cpp": 1,
    "mods/coop/coop_cmds.cpp": 1,
-   "mods/coop/creations.cpp": 1,
+   "mods/coop/creations_debug.cpp": 1,
    "mods/coop/creature_hp.cpp": 3,
    "mods/coop/debug.cpp": 1,
    "mods/coop/drama.cpp": 3,
