@@ -10,7 +10,7 @@ role: both
 versions: 0.7.14.1-lineages60-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits: COMMITS
+commits: 7ea6c4ca
 tests: manual Windows QA: TITAN host + guest and the MSI guest at 125 % (Dorger.spo), screenshots A/B by the switches
 signature:
 docs: docs/re/graphics.md#graphics-world-bars-layer
