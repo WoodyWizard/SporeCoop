@@ -1,4 +1,4 @@
-"""Every automated test with its properties (used by tools/lab.py and tools/tests/run_all.sh).
+"""Every automated test with its properties (used by tools/lab.py).
 
   name      result logs: out/lab/<run>/<name>.log
   cmd       command line, run from the repository root with SPORE_LANE set

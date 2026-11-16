@@ -62,7 +62,7 @@ LAB_TOOLS = ['tools/lab.py', 'tools/labcov.py', 'tools/labverdict.py', 'tools/la
              'tools/tickets.py', 'tools/docs_lint.py', 'tools/re_lint.py', 'tools/glyph_lint.py', 'tools/wt_gc.py',
              'tools/tests/*_selftest.py', 'tools/tests/test_lint.py', 'tools/tests/state_fields_check.py',
              'tools/tests/shards.py', 'tools/tests/fakepeer_check.py', 'tools/crash_triage.py',
-             'tools/detector_report.py', 'tools/frames_review.py']
+             'tools/detector_report.py', 'tools/frames_review.py', 'tools/harness_codemod.py']
 UNIT_FILES = ['tests/*']
 WORD_STAGE = {'cell': 'Cell', 'creature': 'Creature', 'tribe': 'Tribe', 'civ': 'Civ', 'space': 'Space'}
 

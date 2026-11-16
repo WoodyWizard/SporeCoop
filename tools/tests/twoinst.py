@@ -16,6 +16,7 @@ import fixtures  # noqa: E402
 from lane import APPDATA, sh  # noqa: E402,F401
 import memprobe  # noqa: E402
 import startwait  # noqa: E402
+import harness  # noqa: E402
 
 memprobe.start()  # SPORE_MEMPROBE=1|trace: the test script's own memory (BUG-0916)
 
@@ -1143,7 +1144,7 @@ class Checks:
         self.ok = True
 
     def __call__(self, cond, msg):
-        print(('  ok   ' if cond else '  FAIL ') + msg, flush=True)
+        harness.check_line(cond, msg)  # the ok / FAIL line convention (D4, tools/tests/harness.py)
         self.ok &= bool(cond)
         return cond
 
@@ -1169,5 +1170,12 @@ class Checks:
 
     def result(self):
         monitor_flush()
-        print('RESULT:', 'OK' if self.ok else 'FAIL')
-        return 0 if self.ok else 1
+        return harness.result_line(self.ok)
+
+    def inconclusive(self, why):
+        """A15: the test's precondition did not happen (`RESULT: INCONCLUSIVE <why>`, never a pass); a check that failed
+        before still makes it RESULT: FAIL"""
+        if not self.ok:
+            return self.result()
+        monitor_flush()
+        return harness.inconclusive(why)
