@@ -8780,3 +8780,26 @@ v0.7.14.1 (a detached worktree of the tag, `make`) beside rel/0.7.15 on lanes 6 
 * **update_check.py's next-version build** passes `-DCOOP_VERSION=...` in CXX: every file that defines COOP_VERSION
   must guard it with `#ifndef COOP_VERSION` (session_glue.cpp did not after B2: a redefinition under `-Werror`,
   BUG-1189).
+## Final-check triage of 0.7.15: Tribe and Civ group (2026-11-16, fix/w51-t4)
+<a id="testing-final-triage-tribe-civ-0715"></a>
+
+The final check 20261116-025154 (rel/0.7.15 11114769) failed nine Tribe / Civ tests; each was rerun on lanes 4 / 5 of
+the same commit (fix/w51-t4) and, when it failed again, on v0.7.14.1 (a detached worktree of the tag with its own
+build and the 0.7.15 `tools/`, so the same tests and lab drive the old mod).
+* **Flakes** (PASS twice on the same commit, a mixed history, no code change; numbers in the tests' tickets):
+  tribe_hold_only (BUG-0962), tribe_epic_damage (BUG-0515), tribe_walk_fps30 (BUG-0394), body_trail_tribe_player
+  (BUG-0410).
+* **Test fixes**: tribe_name_tags (BUG-1202: the chief label is checked at the chief the game names; a chief off the
+  screen gets the cameras; `TAGS_CHIEF_AWAY=<m>` replays the final check's scene), tribe_caption_race (BUG-1205:
+  INCONCLUSIVE when the host's game itself played no conquest caption).
+* **Old failures**: civ_citizens (BUG-1221: fails only in warm runs, the reload of the world; v0.7.14.1 the same line,
+  `40 of 152 without a partner`), campaign_tc2 (BUG-1216: Civ NPC proxies `n apart`, also on v0.7.14.1), campaign_tribe_noclick
+  (BUG-0402's running-herd kind: one animal at 8.5 m/s 12.3 m off on one guest for one check pair; the same gate on
+  rel/0.7.14 20261114-005006).
+* **A campaign that failed only on a lab gate has no segment.json** (its own `RESULT: OK` prints no CAMPAIGN-SEGMENT):
+  write one by hand for `lab.py run campaign_segment --segment <file>`: `{"stage": "civ", "to": "civ", "save":
+  "<run>/segments/civ.tgz", "planet": "...", "seed": N, "minutes": 8}` (the seed and minutes from the run's log line
+  `campaign: 4 players, ... seed N`, the save from its `segment save of <stage>` line, out/lane<N>/campaign/<id>/).
+* **An old build with today's tests**: `git worktree add --detach ../SporeCoop-wt/<name> v0.7.14.1`, `make -j8`, then
+  `git checkout rel/0.7.15 -- tools/` in that worktree; `coop.save` / `coop.load` (the segment's commands) exist in
+  0.7.14.1. Lab runs there are tagged with the worktree's branch (detached).

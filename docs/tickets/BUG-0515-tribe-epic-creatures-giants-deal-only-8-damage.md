@@ -49,3 +49,4 @@ its herd and its blows (host TakeDamage).
 - 2026-11-03 (fix/w41-tribe-actions): the co-op epic's damage multiplier was 1 (game's epic 15); fixed.
 - 2026-11-04: released in 0.7.5.
 - 2026-11-15: switch `tribe.epic_tuning` retired in 0.7.15 (B1, BUG-1138): the old code path is gone, FAIL run 20261104-000238:tribe_epic_damage on record; its test runs PASS-only.
+- 2026-11-16 (fix/w51-t4, final-check triage 0.7.15): tribe_epic_damage failed in the final check 20261116-025154 (rel/0.7.15 11114769, lane 5, cold): the co-op epic, put next to member #1 every 5 s for 60 s, lost 418 health to the members and dealt no blow (the game's own epic hit twice for 67.5 meanwhile; its tuning x15 matched). Rerun on the same commit, lanes 4/5: PASS twice (20261116-082817-2: 2 blows of 120 each, next to #25). Ledger: 2 of 10 failed since 2026-11-03 (the other an old tuning failure). Verdict: a flake (whom the epic's herd AI attacks within the 60 s), no code change.

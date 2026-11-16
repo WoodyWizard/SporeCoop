@@ -25,7 +25,9 @@ state the older tests read (the tool type, the leader) was the same on both game
   2. Each game's name labels (`coop.find labels`: what the overlay drew in its last pass): every label that names
      the partner must stand over a member of that partner: within 60 px of the member's real position (the host's
      game's, the authority's) + the tag's height, projected by this game's camera (`coop.find project`). The
-     partner's chief, on the screen, has a label. A key frame of kind `sameview`.
+     partner's chief (the member this game names chief, `coop.tribe` chiefs=) has a chief label within 60 px of it;
+     a chief off the screen gets both cameras on it first (BUG-1202; TAGS_CHIEF_AWAY=<m>: the host's chief put <m> m
+     away first, the scene of that ticket). A key frame of kind `sameview`.
   SPORE_FIX_OFF=tribe.pointer_tag: the name at the pinned pointer is ~9 m from every member: FAIL.
 
   SPORE_LANE=6 python3 tools/tests/coop_tribe_looks.py --part item|tags
@@ -222,6 +224,13 @@ def labels(con):
     return out
 
 
+def chief_id(con, owner):
+    """the member id this game names the chief of that player (`coop.tribe` chiefs=, the table of its last tick)"""
+    m = re.search(r'chiefs=((?: \d+:#\d+)*)', con.call('coop.tribe').get('out') or '')
+    ids = dict((int(a), int(b)) for a, b in re.findall(r'(\d+):#(\d+)', m.group(1))) if m else {}
+    return ids.get(owner)
+
+
 def project(con, p):
     """(on screen, x, y) of a world point on this game's screen"""
     out = con.call('coop.find project %.2f %.2f %.2f' % tuple(p)).get('out') or ''
@@ -264,6 +273,10 @@ def part_tags(ck, host, guest):
         for c in (host, guest):
             print('  pointer:', (c.call('coop.npc marker %.2f %.2f %.2f' % tuple(spot)).get('out') or '').strip()[:80],
                   flush=True)
+        if os.environ.get('TAGS_CHIEF_AWAY'):  # BUG-1202 twin of the scene: the host's chief off the guest's screen
+            print('  host: ' + (host.call('coop.tribe chief_away %s' % os.environ['TAGS_CHIEF_AWAY']).get('out') or '').strip(),
+                  flush=True)
+            time.sleep(1)
         ck(view_both(host, guest, mid, 24.0, 9.0), 'both cameras 24 m from the members')
         time.sleep(3)
         seen = {}
@@ -286,9 +299,30 @@ def part_tags(ck, host, guest):
                         f'{worst:.0f} px; over nothing: {bad})')
             chief = min(theirs, key=lambda m: 0 if m['adult'] else 1, default=None)
             on_screen = [m for m, (on, x, y) in spots if on]
-            ck(not on_screen or any(l['kind'] == 'chief' for l in mine),
-               f'{name}: the partner\'s chief has its label ({len(on_screen)} of the partner\'s members on the screen, '
-               f'labels {[l["kind"] for l in mine]})')
+            # BUG-1202: the chief this game names (`coop.tribe` chiefs=) at the host's position; another member of the
+            # partner on the screen while the chief stood off it (an arrow "<name> (chief) 29 m" instead of a label,
+            # final check 20261116-025154) failed the old check. A chief off the screen gets both cameras on it.
+            cid = chief_id(con, partner)
+            cpos = hm[cid]['pos'] if cid in hm else None
+            con_on = cpos is not None and project(con, raised(cpos, TAG_UP))[0]
+            moved = cpos is not None and not con_on
+            if moved:
+                print(f'  {name}: the partner\'s chief #{cid} is off the screen ({len(on_screen)} of the partner\'s '
+                      f'members on it): both cameras 24 m from the chief', flush=True)
+                view_both(host, guest, cpos, 24.0, 9.0)
+                time.sleep(3)
+                cpos = members(host).get(cid, {}).get('pos', cpos)
+                mine = [l for l in labels(con) if l['id'] == partner]
+                con_on = project(con, raised(cpos, TAG_UP))[0]
+            on, cx, cy = project(con, raised(cpos, TAG_UP)) if cpos is not None else (False, 0.0, 0.0)
+            near = [l for l in mine if l['kind'] == 'chief' and math.hypot(l['sx'] - cx, l['sy'] - cy) <= 60]
+            ck(cid is not None and con_on and bool(near),
+               f'{name}: the partner\'s chief has its label (chief #{cid}, on the screen {int(bool(con_on))}, '
+               f'{len(on_screen)} of the partner\'s members on the screen, labels {[l["kind"] for l in mine]}, '
+               f'chief labels within 60 px of it: {len(near)})')
+            if moved:
+                view_both(host, guest, mid, 24.0, 9.0)
+                time.sleep(3)
             on, px, py = project(con, raised(spot, 0.5))
             seen[name] = f'{name}: {len(mine)} labels for the partner, the pinned pointer at ({px:.0f} {py:.0f}) on={int(on)}'
             ck(chief is not None, f'{name}: the partner has members')
