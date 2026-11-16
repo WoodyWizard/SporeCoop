@@ -20,5 +20,8 @@ std::string debug(const std::vector<std::string>& args);
 extern bool g_flock_relay;
 // host: the game's summon event started with a partner's puppet as the avatar (the flock comes to it); false: none
 bool summon_for(void* puppet);
+// BUG-9233: the summon event started by summon_for ends at its next update (its time left, +0x2C, to 0): the game takes
+// its flock out of the host's pack then; false when there is none
+bool end_flock_event();
 
 } // namespace drama

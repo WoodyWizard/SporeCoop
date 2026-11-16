@@ -10,6 +10,7 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "drama.h"
 #include "modes.h"
 #include "net/interp.h"
 #include "sporekit_game.hpp"
@@ -25,6 +26,13 @@ static bool g_herd_fix = true; // tests: `coop.gpack herd 0` keeps the member in
 COOP_FIX("creature.guest_pack", "BUG-9129", g_fix,
          "creature: a guest's Summon Flock and recruits join a pack the host runs for that guest (follows and fights for it)");
 
+static bool g_out_of_host_pack = true;
+COOP_FIX("creature.guest_flock_out_of_pack", "BUG-9233", g_out_of_host_pack,
+         "creature: a guest's flock never fills the host's pack (the host can recruit while it is out)");
+static uint32_t g_reposse;
+static bool g_flock_leader_fix = true;
+COOP_FIX("creature.guest_flock_leader", "BUG-9229", g_flock_leader_fix,
+         "creature: a guest's Summon Flock event runs with the guest's creature as its leader (it follows the guest)");
 struct Member {
     uint8_t owner = 0;
     uint32_t serial = 0;
@@ -152,7 +160,20 @@ int summon(uint8_t guest)
         return 0;
     g_summons++;
     auto before = host_posse();
-    skg::thiscall<void>(a_StartKind, mgr, 8, 0); // the game's own summon (cSummonCreatureEvent): a flock in the host's pack
+    // BUG-9229 (owner play test 2026-11-15: "Summon Flock isn't following BigTexas when they call it"; "I'm unable to add
+    // creatures to my Pack"): the event ran with the host's avatar as its leader: its update steers the members for its
+    // 2-3 minutes and at its end tells them to follow the host. On: the event runs with the guest's puppet as its avatar
+    // (drama::summon_for, the start and every update, BUG-0736). Off: the host's avatar (58-dev).
+    // BUG-9233: the summon counts its flock in the posse simulator (+0x1C, the summoned members: 0 -> 4 at a guest's
+    // flock, runtime 2026-11-15) and the pack takes no recruit while members + that count are at its size; the count drops
+    // only when the flock leaves the game's own way, so a flock handed to a guest left the host's pack "full" for good.
+    static uintptr_t posse_get = H->sym("SporeCoop::cPosseSimulator_Get");
+    uint8_t* posse = posse_get ? skg::cdecl_call<uint8_t*>(posse_get) : nullptr;
+    const bool have_count = posse && skg::readable(posse, 0x20);
+    const int32_t count_before = have_count ? skg::field<int32_t>(posse, 0x1C) : -1;
+    const bool for_puppet = g_flock_leader_fix && drama::summon_for(puppet);
+    if (!g_flock_leader_fix)
+        skg::thiscall<void>(a_StartKind, mgr, 8, 0); // the game's own summon (cSummonCreatureEvent): a flock in the host's pack
     int n = 0, slot = 0;
     for (void* c : host_posse()) {
         if (std::find(before.begin(), before.end(), c) != before.end() || !c || game::is_puppet(c))
@@ -163,6 +184,18 @@ int summon(uint8_t guest)
         n++;
     }
     g_summoned += n;
+    // BUG-9233: the game takes a summoned flock out of the host's pack only when its event ends (59-dev: the host could
+    // not recruit for its 2-3 minutes): it ends now, the guest's pack keeps the members at the guest's side
+    if (g_out_of_host_pack && for_puppet && n)
+        drama::end_flock_event();
+    if (have_count) {
+        const int32_t count_after = skg::field<int32_t>(posse, 0x1C);
+        const bool put_back = g_out_of_host_pack && n && count_after != count_before;
+        if (put_back)
+            skg::field<int32_t>(posse, 0x1C) = count_before;
+        H->log(M, SK_INFO, "guest_pack: the host's pack: summoned count %d -> %d%s (BUG-9233)", count_before, count_after,
+               put_back ? ", put back" : "");
+    }
     H->log(M, n ? SK_INFO : SK_WARN, "guest_pack: %s summoned %d for player %u", n ? "the flock" : "nothing", n, guest);
     return n;
 }
@@ -243,6 +276,14 @@ void tick(double now)
             continue;
         }
         m.next_move = now + 0.5;
+        // BUG-9233 (owner play test 2026-11-15: "I'm unable to add creatures to my Pack"): the summon event put a guest's
+        // flock back into the host's pack while it ran (pack bit 0x100, the noun manager's list), so the host's pack was
+        // full: its own recruits failed (MSI: 3 recruits join with no flock, none while a guest's flock is out). On: a
+        // member back in the host's pack leaves it again. Off: taken out once, at the summon (59-dev).
+        if (g_out_of_host_pack && (skg::field<uint32_t>(c, game::kFlagsOff) & 0x100u)) {
+            leave_host_posse(c);
+            g_reposse++;
+        }
         if (m.target && (now > m.target_until || game::is_dead(m.target) || !game::object_alive(m.target)))
             m.target = nullptr;
         float d = net::dist(game::position(c), game::position(puppet));
@@ -276,8 +317,19 @@ std::string status()
                   "guest_pack: fix=%d members=%zu summons=%u summoned=%u recruits=%u assists=%u defends=%u leashed=%u "
                   "teleports=%u dropped=%u herd_moves=%u herd_fix=%d\n",
                   (int)g_fix, g_members.size(), g_summons, g_summoned, g_recruits, g_assists, g_defends, g_leashed,
-                  g_teleports, g_dropped, g_herd_moves, (int)g_herd_fix);
+                  g_teleports, g_dropped, g_herd_moves, (int)g_herd_fix, g_reposse);
     std::string out = b;
+    // tests (BUG-9233): the posse simulator's 0x58 bytes and the host's pack list length
+    static uintptr_t posse_get = H->sym("SporeCoop::cPosseSimulator_Get");
+    if (uint8_t* ps = posse_get ? skg::cdecl_call<uint8_t*>(posse_get) : nullptr; ps && skg::readable(ps, 0x58)) {
+        out += "  posse:";
+        for (int i = 0; i < 0x58; i += 4) {
+            std::snprintf(b, sizeof b, " %08X", *(uint32_t*)(ps + i));
+            out += b;
+        }
+        std::snprintf(b, sizeof b, " | host pack list %zu\n", host_posse().size());
+        out += b;
+    }
     for (auto& [c, m] : g_members) {
         void* p = C.puppet_of ? C.puppet_of(m.owner) : nullptr;
         std::snprintf(b, sizeof b, "  %p owner=%u %s hp=%.1f dist=%.1f target=%p herd=%p puppet=%p puppet_herd=%p avatar_herd=%p\n", c,

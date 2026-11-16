@@ -282,6 +282,16 @@ bool summon_for(void* puppet)
     return ok;
 }
 
+bool end_flock_event()
+{
+    void* ev = g_flock_event;
+    if (!ev || !skg::readable(ev, 0x30) || !((const uint8_t*)ev)[0xC])
+        return false;
+    skg::field<uint32_t>(ev, 0x2C) = 0; // the duration left (docs/re/creature.md#creature-c2-audit-0713)
+    H->log(M, SK_INFO, "drama: the partner's summon event ends now (its flock leaves the host's pack, BUG-9233)");
+    return true;
+}
+
 bool host_ufo_here() { return g_shared_fix && is_guest(); }
 
 void on_message(uint8_t from, net::Reader& r)
