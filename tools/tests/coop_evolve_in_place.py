@@ -30,8 +30,8 @@ Checked for 60 s after the host is back in its stage, on the guest's game:
 
   --guest-creations (BUG-1196): the guest has creations of its own (creations-guest) but none chosen and no record of
   this world (BUG-0345: it plays the world's species, the host's): it follows in place all the same (most players have
-  creations). SPORE_FIX_OFF=creations.follow_with_creations: it kept the host's old species and got the whole world
-  after the 30 s check (FAIL: the guest leaves the stage, the host sends a world).
+  creations). Coverage of that configuration (the other cases run without creations); no twin: the follow goes through
+  mine()'s BUG-0345 branch (the host's applied creation), which no switch turns off.
 
   --cine (Creature, BUG-1180): the follow of BUG-0508 comes while a cinematic of the guest's game plays: after the
   guest left its own editor and before the host's done, the host adds DNA (`coop.dna add 250`, a brain level: the

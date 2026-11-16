@@ -8740,9 +8740,9 @@ Final check 20261116-025154 (0.7.15); the group around the guest's own creature,
   `coop.creations prev` (that records the stepped-on creation for the world: editor_after_load).
 * `coop.vote editor` builds the game's evolution request (BUG-0720): its editor has no red cross, leave it with the
   green check (BUG-1199). Only the own editor a vote opens (`open_own_editor`, BUG-0756) has the cross.
-* A guest with creations of its own that plays the world's species follows the host's evolution in place since
-  BUG-1196; evolve_in_place_own is its twin (`SPORE_FIX_OFF=creations.follow_with_creations`; Creature only: the guest
-  fixture creations-guest has no cells of its own).
+* evolve_in_place_own: the in-place evolution with a guest that has creations of its own and plays the world's
+  species (the other evolve_in_place cases run without creations); coverage, no twin (BUG-1196, not a bug). The guest
+  fixture creations-guest has no cells of its own: no Cell variant.
 * After the host's first creature editor (Cell -> Creature) the species key stays, so the host's 30 s check of
   BUG-0508 sends the world after all, and that share waits for the host's evolution caption. leave_avatar_cell
   confirms the captions like a player and then checks the leaving window of that share (or "kept in place, nothing

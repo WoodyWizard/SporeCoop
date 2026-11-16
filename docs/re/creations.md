@@ -1529,25 +1529,21 @@ own: `on_bundle` records the host's new key (`g_follow`), `mine()` returns it, a
   the input was free): BUG-1173's stuck caption was CRG_BrainUpgrade1 (F6A4B1E1); F4F96E43 under a swap is harmless
   in this one run. Not tried: F6A4B1E1 under the follow.
 
-## The in-place follow also for a guest with creations of its own (2026-11-16, fix/w51-t2)
+## The in-place follow for a guest with creations of its own (2026-11-16, fix/w51-t2)
 <a id="creations-follow-with-creations"></a>
 
-BUG-1196. #creations-evolve-in-place (BUG-0508, 0.7.4) made a guest that plays the host's creature as the world's
-species follow the host's evolved one in place (`on_bundle` sets `g_follow`, `mine()` returns it). Its condition still
-read "the guest has no creations of its own" (`g_opts[k].empty()`), the only way to play the world's species in 0.7.4.
-Since BUG-0345 (0.7.5) a guest with creations plays the world's species in every world it never played its own one in
-(no worlds.ini record, no choice), and `mine()` already answers `g_follow` for it (the BUG-0345 branch), but the follow
-was never recorded: its avatar kept the host's pre-editor species, and the host's 30 s check sent it the whole world
-("evolved in place: <guest> still plays <old species> after 30 s: sending the world").
-* Fix `creations.follow_with_creations`: with BUG-0345 on, the follow no longer asks for an empty creations list (the
-  key test `mine(k) == the host's previous creation` already keeps a guest playing its own creation out). Off: 0.7.14.
-* ✔ Lab (evolve_in_place_own, creature fixture, the guest with the 5 creations of creations-guest, none chosen):
-  "the host's creature changed 065CBE70 -> 2924DFDB: this game's world species follows it in place (BUG-0508)", the
-  guest stays in the stage, the host sends no world (`evolve in place: kept 1, sent after all 0`).
-* ✔ Not the same thing: the host's first creature editor after Cell (the Landfall editor FD4902BD) left the host's
-  species key as it was (`evolved in place: Bob keeps its world (host species 2924E0EB -> 2924E0EB ...)`, no new
-  bundle of the host after it), so the 30 s check finds the guest "still" on that key and sends the world after all,
-  with or without this fix (lab 20261116-090728 parts_transition; v0.7.14.1 20261116-084702 the same). That share
+BUG-1196 (not reproduced). `on_bundle`'s follow of #creations-evolve-in-place (BUG-0508) still asks for a guest without
+creations of its own (`g_opts[k].empty()`, older than BUG-0345). That does not keep a guest with creations that plays
+the world's species from following:
+* ✔ Lab (evolve_in_place_own, creature fixture, the guest with the 5 creations of creations-guest, none chosen, no
+  record): after the host's real evolution the guest's avatar takes the host's new species in place, the guest stays in
+  the stage and the host sends nothing (`evolve in place: kept 1, sent after all 0`), also with that condition
+  dropped and switched off again (20261116-090728 / 20261116-092810). Inferred: `mine()`'s BUG-0345 branch answers the
+  host's applied creation (`g_applied` orig, which the new bundle replaced) for such a guest, so `apply_own_avatar`
+  swaps to it without `g_follow`.
+* ✔ The world after all that looked like this bug: the host's first creature editor after Cell (the Landfall editor
+  FD4902BD) leaves the host's species key as it was (`evolved in place: Bob keeps its world (host species 2924E0EB ->
+  2924E0EB ...)`, no new bundle of the host after it), so the 30 s check finds the guest "still" on that key and
+  sends the world after all (lab 20261116-090728 parts_transition; v0.7.14.1 20261116-084702 the same). That share
   waits for the host's evolution cinematic (BUG-0019), i.e. until its caption is confirmed. ? Whether the Landfall
   editor changes the species' content under the same key (so the world carries the new body) was not looked at.
-* The guest fixture creations-guest has no cells of its own: the Cell side of this fix has no lab test.
