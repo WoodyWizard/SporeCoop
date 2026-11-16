@@ -641,7 +641,15 @@ BUG-0611), `remake` (a body this game made and removed stays gone, BUG-0383), `k
 the guest's own NPCs while the host is away, or while nothing is mirrored and the host is not here, BUG-0412),
 `place` (Air before anything for an NPC off its ground on the host, BUG-0550; Walk for a living proxy over 0.3 m/s
 within 8 m of its target in Creature / Tribe / Civ, BUG-0281 / BUG-0361; else Stand, or Corpse for a killed one) and
-`mound_lift` (BUG-0562). npc.cpp keeps every game call and asks these for the decision.
+`mound_lift` (BUG-0562), `editor_hold` (owner decision 2, BUG-1174). npc.cpp keeps every game call and asks these for
+the decision.
+
+Owner decision 2 in npc.cpp (BUG-1174, `coop.fix npc.editor_hold`): while the guest counts the host away because the
+host's latest state is in an editor (`Ctx::host_mode`), and until that away state ends, the guest holds its proxies
+(no away hand-over, its update filter keeps removing its own NPCs; no states come, so they stand and the stale drop
+waits: BUG-0611's thaw covers the first states after it). A host that goes from its editor to the main menu or a load
+is away for real. The host's pass does not count the time without a pass (its editor) as unseen, so its NPCs keep
+their ids. Lab: npc_editor_hold.
 
 ## C2 and C3 in the mod: one world identity, the session-end fan-out, the host's pause (2026-11-15, feat/w51-core2)
 <a id="arch-c2c3-wiring"></a>

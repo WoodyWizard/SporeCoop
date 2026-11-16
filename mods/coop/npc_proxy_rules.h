@@ -11,6 +11,7 @@
 //   place        how the proxy is moved this frame: in the air (BUG-0550), walked on the host's path (BUG-0281,
 //                BUG-0361), driven standing, or a corpse put where the host's lies
 //   mound_lift   where a target inside this game's nest mound is put (BUG-0562)
+//   editor_hold  the proxies stay through the host's editor visit (owner decision 2, BUG-1174)
 // docs/01-architecture.md#arch-npc-proxy-rules.
 #pragma once
 
@@ -67,6 +68,16 @@ inline Place place(const PlaceIn& in)
     if (!in.killed && in.stage && in.speed > kWalkSpeed && in.off < kWalkNear)
         return Place::Walk;
     return in.killed ? Place::Corpse : Place::Stand;
+}
+
+// owner decision 2 of docs/plan-0.7.15.md (BUG-1174): the host's editor visit is not a world change. While the host
+// counts as away (`away`) because it is in an editor (`host_editor`), and after that until the away state ends (`held`:
+// it held last frame; the host's mode is its stage again, the away state ends a second later), the guest keeps its
+// proxies (held, frozen: no states come) instead of handing the planet over to its own NPCs. A host that goes on to
+// the main menu or a load (`host_menu_or_load`) is away for real: the hand-over runs.
+inline bool editor_hold(bool away, bool host_editor, bool held, bool host_menu_or_load)
+{
+    return away && !host_menu_or_load && (host_editor || held);
 }
 
 // BUG-0562: a standing proxy's target at radius `r` under this game's surface radius `sr` (the nest mound) by more

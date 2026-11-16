@@ -463,6 +463,18 @@ static uint32_t g_deaths_played = 0; // guest: proxy deaths replayed (Die + anim
 static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0, g_kills_credited = 0;
 
 static bool g_host_away = false; // guest: the host is in the main menu, our own game runs the NPCs
+// BUG-1174 (owner decision 2 of docs/plan-0.7.15.md, C2: an editor visit is the host away, not a world change): the
+// host's editor ended the guests' proxies twice: the guest's away edge destroyed them (its own NPCs took the planet
+// over, 4 s into the host's editor), and the host, whose host pass does not run outside its stage, retired every NPC
+// 2 s after the editor (their last update was the editor's length ago) and spawned them again under new ids. Now the
+// guest holds its proxies (frozen, no states) while the host is in its editor and the host's pass does not count the
+// time without a pass as unseen. `coop.fix npc.editor_hold off`: destroyed and made again (0.7.14).
+static bool g_editor_hold_fix = true;
+COOP_FIX("npc.editor_hold", "BUG-1174", g_editor_hold_fix,
+         "creature: the animals on a guest's screen stay (the same, standing) while the host is in its editor");
+static bool g_editor_held = false; // guest: holding the proxies now
+static uint32_t g_editor_holds = 0, g_host_gaps = 0;
+static double g_host_pass_at = 0; // host: when host_tick last passed its avatar check
 static uint32_t g_away_proxies = 0;
 static uint32_t g_local_alive = 0; // guest: own NPCs that ran Update last frame (host away: the game's)
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
@@ -1717,6 +1729,15 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     bool rts = civ || (rts_stage() && C.stage_center && C.stage_center(center));
     if (!av && !rts)
         return;
+    // BUG-1174: no host pass for a while (its editor: not a world change since C2, the NPCs and their ids stay): that
+    // time does not count as unseen, or every NPC was retired 2 s after the editor and spawned again under a new id
+    if (g_editor_hold_fix && g_host_pass_at > 0 && now - g_host_pass_at > 1.0) {
+        const double gap = now - g_host_pass_at;
+        for (auto [c, hn] : hn_walk())
+            hn.last_seen += gap;
+        g_host_gaps++;
+    }
+    g_host_pass_at = now;
     // no creature updated this frame: the simulation stands still (pause menu, the death caption
     // waiting for OK, a cinematic). Not a reason to forget them: the guests lost every NPC after 2 s
     // and got them again when the host went on (play_creature.py 2026-10-23)
@@ -2739,6 +2760,18 @@ static void tick_frame(double now)
             n += !game::is_puppet(c) && c != game::avatar();
         g_local_alive = n;
         bool away = C.host_away && C.host_away();
+        // BUG-1174 (owner decision 2): the host in its editor is not a world change: the proxies are held (D3:
+        // npc_rules::editor_hold), the guest's game does not take the planet over
+        const uint32_t hm = C.host_mode ? C.host_mode() : 0u;
+        const bool hold = g_editor_hold_fix && npc_rules::editor_hold(away, hm == modes::kEdit || hm == modes::kEditor,
+                                                                      g_editor_held, hm == modes::kMenu || hm == modes::kLoad);
+        if (hold && !g_editor_held) {
+            g_editor_holds++;
+            H->log(M, SK_INFO, "npc: the host is in its editor: %u proxies held (npc.editor_hold)", (unsigned)px_count());
+        }
+        g_editor_held = hold;
+        if (hold)
+            away = false; // (no states come: they stand as during a pause; the stale drop waits for the states)
         if (away && !g_host_away) { // the host's NPCs stand frozen and nothing removes them: go
             std::vector<uint16_t> ids;
             for (auto [id, pe, px] : px_walk())
@@ -2876,6 +2909,8 @@ void on_session_end()
         H->time_seconds() - g_away_snap_at < 2.0)
         g_leave_locals_due = true;
     g_was_guest = false;
+    g_editor_held = false; // BUG-1174
+    g_host_pass_at = 0;
     std::vector<uint16_t> ids;
     for (auto [id, pe, px] : px_walk())
         ids.push_back(id);
@@ -3309,7 +3344,8 @@ static std::string meat_status() // BUG-0557
 static std::string registry_status()
 {
     char b[96];
-    snprintf(b, sizeof b, " rebound=%u\n", g_px_rebound);
+    snprintf(b, sizeof b, " rebound=%u editor_holds=%u held=%d host_gaps=%u\n", g_px_rebound, g_editor_holds, (int)g_editor_held,
+             g_host_gaps);
     return "npc registry: " + g_hreg.status() + "\nnpc registry: " + g_px.status() + b;
 }
 

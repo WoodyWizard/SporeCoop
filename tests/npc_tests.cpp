@@ -700,6 +700,12 @@ static void test_proxy_rules()
     CHECK(mound_lift(1000.f, 1003.f, 999.f) == 1.f);   // 3 m under: not a mound (a cliff, a cave)
     CHECK(mound_lift(1000.f, 1000.5f, 1000.45f) == 1.f); // the surface is the terrain (no mound)
     CHECK(mound_lift(0.5f, 1000.f, 999.f) == 1.f);     // no position
+    // BUG-1174 (owner decision 2): held through the host's editor and the second after it, not through a menu or load
+    CHECK(editor_hold(true, true, false, false));   // the host is away in its editor
+    CHECK(editor_hold(true, false, true, false));   // back in its stage, the away state not over yet
+    CHECK(!editor_hold(true, false, false, false)); // away for another reason from the start: the hand-over
+    CHECK(!editor_hold(true, true, true, true));    // editor -> main menu / load: away for real
+    CHECK(!editor_hold(false, true, true, false));  // not away: nothing to hold
 }
 
 int main(int argc, char** argv)

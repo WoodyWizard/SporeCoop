@@ -2412,6 +2412,10 @@ static void init_player_modules()
     // its own NPCs stay while it plays another world (BUG-0130), also until the host's first state
     // says where the host is (a join from inside a game of its own)
     ctx.host_away = [] { return host_absent_for(Absent::Npc); }; // BUG-0130, BUG-0231
+    ctx.host_mode = []() -> uint32_t { // BUG-1174 (npc.editor_hold)
+        auto it = g_remotes.find(0);
+        return it != g_remotes.end() && !it->second.buf.empty() ? it->second.buf.latest().mode : 0u;
+    };
     ctx.in_place = [](uint8_t id) {
         if (!g_place_fix)
             return true;

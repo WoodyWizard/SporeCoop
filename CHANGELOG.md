@@ -31,6 +31,9 @@
   why. It may join again.
 
 ### Fixed
+- Creature: while the host is in its evolution editor the animals on a guest's screen stay where they are and come
+  back to life with the host's game, instead of vanishing, being replaced by the guest's own and swapped again after the
+  editor (BUG-1174).
 - Tribe: tribe members no longer change hands every time a player joins or leaves, or after a game over: a child you
   bought or members you were given stay yours; a new player gets a fair share (BUG-1154).
 - Civilization: a city or vehicle of a player who left is kept for that player (the host looks after it) instead of
