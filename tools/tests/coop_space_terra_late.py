@@ -23,13 +23,10 @@ PASS: all three records are the sent values. SPORE_FIX_OFF=space.terra_rec_late 
 import re
 import time
 
+from harness import sp
 from twoinst import Checks, start
 
 HOME = '01460035'
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def rec(con, planet):

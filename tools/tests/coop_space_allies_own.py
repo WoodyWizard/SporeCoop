@@ -17,21 +17,11 @@ free there and the host could found its own colony on it.
 import re
 import time
 
+from harness import sp, waiter
 from twoinst import Checks, start
 
 
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
-
-
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return cond()
+wait = waiter(step=1.0, final=True)
 
 
 def planet_line(con, pid):

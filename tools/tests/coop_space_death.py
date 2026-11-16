@@ -16,11 +16,8 @@ Any fault caught by either game during the test fails it."""
 import re
 import time
 
+from harness import sp
 from twoinst import Checks, shot, start
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def stat(con, key):

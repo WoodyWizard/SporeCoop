@@ -18,15 +18,12 @@ import math
 import re
 import time
 
+from harness import sp
 import worlddiff
 from twoinst import Checks, shot, start
 
 CITIZEN, VEHICLE, ARTIFACT = 0x018EB4B7, 0x018C6DE8, 0x02DD8C42
 HOME_STAR = 4587573
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def place(con):

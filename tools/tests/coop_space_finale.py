@@ -23,6 +23,7 @@ import sys
 import tarfile
 import time
 
+from harness import sp, waiter
 import fixtures
 import lane
 from coop_ui import VK_F9, Ui
@@ -30,10 +31,6 @@ from twoinst import Checks, shot, start
 
 STAFF_TOOL = 0x72E076A7  # genesisdevice
 CORE_CINEMATIC = '2F7C7BDA'
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def fin(con):
@@ -60,14 +57,7 @@ def fixture_planet():
     return fixtures.planet_of('space')
 
 
-def wait(pred, timeout, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        r = pred()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def stray_window(con):

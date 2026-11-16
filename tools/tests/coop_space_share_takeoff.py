@@ -13,10 +13,10 @@ place after the load is the host's solar system, not a planet.
   SPORE_LANE=7 python3 tools/tests/coop_space_share_takeoff.py
   (world.share_settle_context off failed (retired in 0.7.15, BUG-1138: FAIL run 20261030-100130:space_share_takeoff), the guest's ship lands on the planet)
 """
-import os
 import re
 import time
 
+from harness import log_size, waiter
 import lane
 from coop_space_contracts import sp
 from twoinst import Checks, host_frame, start
@@ -27,13 +27,7 @@ def place(con):
     return int(m.group(1), 16) if m else 0
 
 
-def wait(cond, t):
-    t0 = time.time()
-    while time.time() - t0 < t:
-        if cond():
-            return True
-        time.sleep(1)
-    return False
+wait = waiter(step=1, as_bool=True)
 
 
 def log_tail(inst, offset):
@@ -43,13 +37,6 @@ def log_tail(inst, offset):
             return f.read().decode('utf-8', 'replace')
     except OSError:
         return ''
-
-
-def log_size(inst):
-    try:
-        return os.path.getsize(lane.game_log(inst))
-    except OSError:
-        return 0
 
 
 def main():

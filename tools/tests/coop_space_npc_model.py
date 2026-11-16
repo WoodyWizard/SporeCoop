@@ -21,6 +21,7 @@ import subprocess
 import sys
 import time
 
+from harness import sp
 import twoinst  # noqa: F401 (first: tools/ on sys.path)
 import fixtures
 import lane
@@ -29,10 +30,6 @@ from twoinst import Checks, alive, shot, start, wait_up
 
 FIXTURE = 'space_empire'
 STAR = 0x004A0014  # home star of the NPC empire 8000216E in the fixture
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def faults(con):

@@ -19,16 +19,13 @@ host's. SPORE_FIX_OFF=space.terra_apply must FAIL (the guest gets the deltas, it
 import re
 import time
 
+from harness import sp
 import lane
 from play_space import Player
 from twoinst import Checks, shot, start
 
 PLANET = '01460035'
 ATMOS_GEN = '0x931426A0'  # spacetools~ Atmosphere Generator (docs/re/space.md 14.1)
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def rec(con):

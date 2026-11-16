@@ -16,13 +16,10 @@ SPORE_FIX_OFF=space.load_follow: FAIL (the guest's game never loads).
 import re
 import time
 
+from harness import sp, waiter
 import fixtures
 import lane
 from twoinst import Checks, start, wait_guest_in
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def game_key(con):
@@ -37,14 +34,7 @@ def mode(con):
         return ''
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        v = cond()
-        if v:
-            return v
-        time.sleep(step)
-    return cond()
+wait = waiter(step=1.0, final=True)
 
 
 def main():

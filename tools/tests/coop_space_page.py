@@ -10,12 +10,9 @@ join (a guest stuck in the galaxy menu's intro had no HUD and its clicks were ea
 import re
 import time
 
+from harness import sp
 from coop_ui import VK_F9, Ui
 from twoinst import Checks, shot, start
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def bob_row(con):

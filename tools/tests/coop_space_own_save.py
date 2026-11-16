@@ -14,17 +14,12 @@ save (the CRC of its name) in WELCOME also in Space, and a guest in another Spac
 """
 import glob
 import os
-import re
 import shutil
 import time
 
+from harness import shared_money as money
 import lane
 from twoinst import Checks, start
-
-
-def money(con):
-    m = re.search(r'shared money=(-?[\d.]+)', con.call('coop.res')['out'])
-    return float(m.group(1)) if m else None
 
 
 def connected(con):

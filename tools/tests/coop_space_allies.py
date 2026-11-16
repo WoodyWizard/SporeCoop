@@ -19,6 +19,7 @@
 import re
 import time
 
+from harness import sp, waiter
 import fixtures
 import lane
 from coop_ui import VK_F9, Ui
@@ -26,10 +27,6 @@ from twoinst import Checks, shot, start, wait_guest_in
 
 VK_RETURN, VK_ESCAPE = 0x0D, 0x1B
 W, H = 1440, 1080
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def place(con):
@@ -42,14 +39,7 @@ def context(con):
     return 'planet' if p & 0x40000000 else 'system' if p & 0x80000000 else 'galaxy'
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def no_movie(con, secs=40, esc=False):

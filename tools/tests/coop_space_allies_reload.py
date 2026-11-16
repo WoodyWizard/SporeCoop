@@ -18,22 +18,12 @@ import re
 import sys
 import time
 
+from harness import sp, waiter
 import fixtures
 from twoinst import Checks, start
 
 
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
-
-
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        v = cond()
-        if v:
-            return v
-        time.sleep(step)
-    return cond()
+wait = waiter(step=1.0, final=True)
 
 
 def mirror(con, name):

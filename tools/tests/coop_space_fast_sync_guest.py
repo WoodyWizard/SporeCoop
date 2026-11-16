@@ -29,30 +29,11 @@ os.environ.setdefault('SPORE_NET', 'delay=40,jitter=20,spike_every=10,spike_s=6,
 # (at its next frame start); at 30 fps with 2 players the copy matched the ship in every check (0 differences in 79 and
 # in 104 checks, lab 20261108-142942 / 20261108-143539)
 os.environ.setdefault('SPORE_FPS', 'host:12')
+from harness import log_since, log_size, sp
 import fixtures  # noqa: E402
 import lane  # noqa: E402
 from play_space import Player  # noqa: E402
 from twoinst import Checks, lab_mark, start  # noqa: E402
-
-
-def log_size(inst):
-    try:
-        return os.path.getsize(lane.game_log(inst))
-    except OSError:
-        return 0
-
-
-def log_since(inst, off):
-    try:
-        with open(lane.game_log(inst), 'rb') as f:
-            f.seek(off)
-            return f.read().decode('utf-8', 'replace').splitlines()
-    except OSError:
-        return []
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def field(text, key):

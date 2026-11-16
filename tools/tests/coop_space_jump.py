@@ -10,12 +10,9 @@ the new system's planets (coop.targets all), an active planet of that star, the 
 import re
 import time
 
+from harness import sp
 from coop_ui import VK_F9, Ui
 from twoinst import Checks, shot, start
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def place(con):

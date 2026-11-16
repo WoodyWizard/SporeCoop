@@ -17,12 +17,9 @@
 import re
 import time
 
+from harness import sp, waiter
 import lane
 from twoinst import Checks, host_frame, start, wait_guest_in
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def money(con):
@@ -38,14 +35,7 @@ def in_space(con):
     return 'Space' in con.call('game.mode')['out']
 
 
-def wait(pred, timeout=20, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        v = pred()
-        if v:
-            return v
-        time.sleep(step)
-    return pred()
+wait = waiter(timeout=20, step=0.5, final=True)
 
 
 def close_modal(host):

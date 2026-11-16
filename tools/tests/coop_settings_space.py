@@ -17,6 +17,7 @@ SPORE_FIX_OFF=settings.all (every step-3 setting reads its default): the off che
 import re
 import time
 
+from harness import sp
 import fixtures
 import lane
 import settings_lib as sl
@@ -25,10 +26,6 @@ from play_space import Player
 from twoinst import Checks, start
 
 KEYS = ('space.trade', 'space.rivals', 'space.disable')
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def field(text, key):

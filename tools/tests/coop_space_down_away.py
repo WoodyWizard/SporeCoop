@@ -21,12 +21,9 @@
 import re
 import time
 
+from harness import sp, waiter
 import fixtures
 from twoinst import Checks, start
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def hp(con):
@@ -36,14 +33,7 @@ def hp(con):
                 out=out) if m else dict(hp=-1, down=-1, left=0, state=-1, out=out)
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        v = cond()
-        if v:
-            return v
-        time.sleep(step)
-    return cond()
+wait = waiter(step=0.5, final=True)
 
 
 def main():

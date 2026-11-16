@@ -13,6 +13,7 @@ contract timed out and nobody was paid. SPORE_FIX_OFF=space.survey_needed: FAIL.
 import re
 import time
 
+from harness import waiter
 from party import Party
 from twoinst import Checks
 
@@ -30,14 +31,7 @@ def cmoney(x):
     return int(m.group(1)) if m else -1
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def main():

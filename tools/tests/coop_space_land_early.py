@@ -16,14 +16,11 @@ import sys
 import threading
 import time
 
+from harness import sp
 import fixtures
 import lane
 from play_space import Player
 from twoinst import Checks, shot, start
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def try_land(p, con, home, t0, limit, out):

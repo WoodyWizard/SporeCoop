@@ -19,15 +19,11 @@ import os
 import re
 import time
 
+from harness import faults
 import lane
 from coop_space_contracts import sp
 from coop_space_share_takeoff import log_size, log_tail, place, wait
 from twoinst import Checks, host_frame, start
-
-
-def faults(con):
-    m = re.search(r'total faults: (\d+)', con.call('exc')['out'])
-    return int(m.group(1)) if m else -1
 
 
 def main():

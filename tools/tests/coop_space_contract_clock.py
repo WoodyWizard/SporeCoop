@@ -11,11 +11,8 @@
 import re
 import time
 
+from harness import sp
 from twoinst import Checks, start
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def left(con):

@@ -11,13 +11,10 @@ came back at the session end, 5 charges doubled (12 on the guest and 5 more on t
 import re
 import time
 
+from harness import sp, waiter
 from twoinst import Checks, start
 
 BOMB = '144DF50A'  # Antimatter Bomb
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def ammo(con, inst=BOMB):
@@ -25,14 +22,7 @@ def ammo(con, inst=BOMB):
     return int(m.group(1)) if m else 0
 
 
-def wait(pred, timeout=20):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        v = pred()
-        if v:
-            return v
-        time.sleep(0.5)
-    return pred()
+wait = waiter(timeout=20, step=0.5, final=True)
 
 
 def main():

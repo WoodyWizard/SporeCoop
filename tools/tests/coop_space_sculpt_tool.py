@@ -23,6 +23,7 @@ import argparse
 import re
 import time
 
+from harness import sp
 import lane
 from play_space import Player
 from twoinst import Checks, shot, start
@@ -33,10 +34,6 @@ SCULPT_TAB, COLOUR_TAB = 226, 186
 SCULPT_SLOT = (1108, 966)   # the sculpting palette's first tool (first row)
 COLOUR_SLOT = (1121, 966)   # the colouring palette's first colour (first row)
 GROUND = (720, 640)
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def num(con, key):

@@ -17,12 +17,9 @@ two games the way players do:
 import re
 import time
 
+from harness import sp, waiter
 from coop_ui import VK_F9, Ui
 from twoinst import Checks, shot, start
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def st(con):
@@ -50,14 +47,7 @@ def row_with(con, text, button):
     return -1
 
 
-def wait(pred, timeout, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        v = pred()
-        if v:
-            return v
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def space_page(ui, con):

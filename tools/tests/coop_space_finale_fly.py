@@ -20,6 +20,7 @@ SPORE_FIX_OFF=space.finale_fly_free: energy spent / hp lost / the disabled ship 
 import re
 import time
 
+from harness import waiter
 from coop_space_map import no_movie, sp, to_galaxy
 from twoinst import Checks, keyframe, start
 
@@ -40,14 +41,7 @@ def fly(con, star, extra=''):
     return (int(m.group(1)) if m else 0), r
 
 
-def wait(pred, t=20, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < t:
-        v = pred()
-        if v:
-            return v
-        time.sleep(step)
-    return pred()
+wait = waiter(timeout=20, step=0.5, final=True)
 
 
 def main():

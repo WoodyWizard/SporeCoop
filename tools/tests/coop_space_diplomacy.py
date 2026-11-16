@@ -23,6 +23,7 @@ import subprocess
 import tarfile
 import time
 
+from harness import sp, waiter
 import fixtures
 import lane
 from coop_ui import VK_F9, Ui
@@ -30,10 +31,6 @@ from twoinst import Checks, ROOT, shot, start, wait_guest_in
 
 GIFT, TALK = '526E51F', '5B6CF09'
 FIXTURE = 'space_empire'  # space + drive, money, colonies, first contact with two NPC empires
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def table(con):
@@ -56,13 +53,7 @@ def flags(con, pol):
     return int(m.group(1)) if m else 0
 
 
-def wait(pred, timeout=20):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        if pred():
-            return True
-        time.sleep(0.5)
-    return False
+wait = waiter(timeout=20, step=0.5, as_bool=True)
 
 
 def space_planet():

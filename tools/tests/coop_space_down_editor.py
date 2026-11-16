@@ -18,6 +18,7 @@ the test checks that the own ship takes damage after the disabled state ended wi
 import re
 import time
 
+from harness import mode_strip as mode, sp, waiter
 import play_space
 import uifind
 from coop_space_finale import fin, get_drive, settle, to_galaxy
@@ -25,10 +26,6 @@ from twoinst import Checks, start
 
 BADGE = (1390, 890)  # the rank badge over the ship's picture, 1440x1080
 HOME_STAR = 4587573
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def ds(con):
@@ -40,22 +37,11 @@ def ship(con):
     return d.get('ship'), d.get('serial')
 
 
-def mode(con):
-    return con.call('game.mode')['out'].strip()
-
-
 def ctx(con):
     return fin(con).get('ctx')
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        v = cond()
-        if v:
-            return v
-        time.sleep(step)
-    return cond()
+wait = waiter(step=0.5, final=True)
 
 
 def trip_land(con):

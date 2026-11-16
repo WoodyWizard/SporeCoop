@@ -17,14 +17,11 @@
 import re
 import time
 
+from harness import sp, waiter
 from coop_ui import VK_F9, Ui
 from twoinst import Checks, shot, start
 
 BOMB = '144DF50A'  # Antimatter Bomb (spacetools~ 0x144DF50A: uses ammo, 5 initial, 99 max)
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def ammo(con, inst=BOMB):
@@ -42,14 +39,7 @@ def cargo(con, inst):
     return int(m.group(1)) if m else 0
 
 
-def wait(pred, timeout=20):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        v = pred()
-        if v:
-            return v
-        time.sleep(0.5)
-    return pred()
+wait = waiter(timeout=20, step=0.5, final=True)
 
 
 def row_of(con, text):

@@ -26,13 +26,10 @@ import argparse
 import re
 import time
 
+from harness import sp, waiter
 from twoinst import Checks, start
 
 HOME, HOME_STAR = '00460035', 4587573
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def colonies(con):
@@ -47,14 +44,7 @@ def spice_of(con, planet):
     return colonies(con).get(planet, [])
 
 
-def wait(pred, timeout=20, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        v = pred()
-        if v:
-            return v
-        time.sleep(step)
-    return pred()
+wait = waiter(timeout=20, step=0.5, final=True)
 
 
 def case_away(host, guest, ck):

@@ -19,12 +19,9 @@ Also the campaign's repair before the finale: `coop.space heal` brings a damaged
 import re
 import time
 
+from harness import sp
 import coop_space_finale as fz
 from twoinst import Checks, keyframe, shot, start
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def field(hp, key):

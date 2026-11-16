@@ -20,15 +20,12 @@ same system.
 import re
 import time
 
+from harness import sp, waiter
 import lane
 from coop_ui import VK_F9, Ui
 from fixtures import FIXTURES
 from play_space import Player
 from twoinst import Checks, shot, start, wait_guest_in
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def riv(con):
@@ -50,14 +47,7 @@ def hp(con):
     return (float(m.group(1)), float(m.group(2)), int(m.group(3))) if m else (0, 0, -1)
 
 
-def wait(pred, t=20, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < t:
-        v = pred()
-        if v:
-            return v
-        time.sleep(step)
-    return pred()
+wait = waiter(timeout=20, step=0.5, final=True)
 
 
 def row_of(con, button):

@@ -20,15 +20,11 @@ must FAIL (the two prices differ: 9 of 10 times for a random factor, more when t
 import re
 import time
 
+from harness import shared_money as money, waiter
 from coop_space_jump import here, settle, sp
 from twoinst import Checks, shot, start
 
 STAR, POL = 0x0046102D, 0x80001FCC
-
-
-def money(con):
-    m = re.search(r'shared money=(-?[\d.]+)', con.call('coop.res')['out'])
-    return float(m.group(1)) if m else None
 
 
 def spice(con):
@@ -36,14 +32,7 @@ def spice(con):
     return int(m.group(1)) if m else None
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def sell(ck, seller, other, who):

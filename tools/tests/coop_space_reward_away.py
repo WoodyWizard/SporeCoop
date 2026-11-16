@@ -13,13 +13,10 @@ class BUG-0423: credits and effects dropped or undone).
 import re
 import time
 
+from harness import sp
 from twoinst import Checks, start
 
 LASER2 = '6DB0189A'
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def has(con):

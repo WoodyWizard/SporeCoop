@@ -21,15 +21,11 @@ SPORE_FIX_OFF=res.guest_send must FAIL (the guest's earning stays in the guest's
 import re
 import time
 
+from harness import shared_money as money
 from coop_space_jump import here, settle, sp
 from twoinst import Checks, shot, start
 
 EMPIRES = (('0x0046102D', 0x80001FCC), ('0x00460038', 0x80001F53))
-
-
-def money(con):
-    m = re.search(r'shared money=(-?[\d.]+)', con.call('coop.res')['out'])
-    return float(m.group(1)) if m else None
 
 
 def missions(con):

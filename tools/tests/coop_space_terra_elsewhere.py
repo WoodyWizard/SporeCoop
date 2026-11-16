@@ -19,6 +19,7 @@ lands. SPORE_FIX_OFF=space.terra_elsewhere must FAIL (the host's record keeps th
 import re
 import time
 
+from harness import sp
 import lane
 from play_space import Player
 from twoinst import Checks, shot, start
@@ -26,10 +27,6 @@ from twoinst import Checks, shot, start
 PLANET = '01460035'
 ATMOS_GEN = '0x931426A0'  # spacetools~ Atmosphere Generator (docs/re/space.md#space-terraform-flag)
 W, H = 1440, 1080
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def rec(con, planet=None):

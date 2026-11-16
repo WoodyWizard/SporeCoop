@@ -21,11 +21,8 @@ SPORE_FIX_OFF=space.war_npc_hits: 1 and 2 do nothing (FAIL).
 import re
 import time
 
+from harness import sp, waiter
 from twoinst import Checks, keyframe, start
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def ships(con):
@@ -53,14 +50,7 @@ def num(con, key):
     return int(m.group(1)) if m else -1
 
 
-def wait(pred, t=20, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < t:
-        v = pred()
-        if v:
-            return v
-        time.sleep(step)
-    return pred()
+wait = waiter(timeout=20, step=0.5, final=True)
 
 
 def spawned_id(host, before):

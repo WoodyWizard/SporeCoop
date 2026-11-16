@@ -21,6 +21,7 @@ import os
 import re
 import time
 
+from harness import sp, waiter
 import fixtures
 import lane
 from coop_ui import VK_F9, Ui
@@ -28,10 +29,6 @@ from twoinst import Checks, shot, start, wait_guest_in
 
 VK_RETURN = 0x0D
 DRIVE = 'interstellardrive'
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def place(con):
@@ -59,14 +56,7 @@ def rosters(con):
     return out
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def no_movie(con, secs=30):

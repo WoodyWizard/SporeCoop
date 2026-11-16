@@ -19,13 +19,10 @@ the guest's game faults on 1 or 2 (FAIL).
 import re
 import time
 
+from harness import sp
 from twoinst import Checks, start
 
 PLANET = '01460035'
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def faults(con):

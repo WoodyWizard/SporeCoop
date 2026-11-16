@@ -28,6 +28,7 @@ import argparse
 import re
 import time
 
+from harness import shared_money as money
 import lane
 from play_space import Player
 from twoinst import Checks, shot, start
@@ -48,11 +49,6 @@ def cities(con):
 def houses(con, ci):
     bl = con.call(f'coop.civ buildings s{ci}')['out'].splitlines()
     return len([ln for ln in bl if ln.startswith('building ')]), len([ln for ln in bl if HOUSE in ln]), bl
-
-
-def money(con):
-    m = re.search(r'shared money=(-?[\d.]+)', con.call('coop.res')['out'])
-    return float(m.group(1)) if m else None
 
 
 def city_positions(con):

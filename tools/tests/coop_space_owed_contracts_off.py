@@ -16,15 +16,12 @@ SPORE_FIX_OFF=space.owed_always: the owed list is not paid while contracts are o
 import re
 import time
 
+from harness import sp
 import settings_lib as sl
 import twoinst
 from twoinst import Checks, start
 
 LASER2 = '6DB0189A'
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def has(con):

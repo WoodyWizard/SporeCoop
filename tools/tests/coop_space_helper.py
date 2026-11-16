@@ -15,11 +15,8 @@ import os
 import re
 import time
 
+from harness import sp, waiter
 from twoinst import Checks, start
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def field(text, key):
@@ -27,14 +24,7 @@ def field(text, key):
     return float(m.group(1)) if m else -1
 
 
-def wait(cond, secs, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=0.5)
 
 
 def main():

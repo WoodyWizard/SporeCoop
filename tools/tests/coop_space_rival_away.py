@@ -15,11 +15,8 @@ last report, from before the trip) replaced it: the 5000 were gone (`restored` o
 import re
 import time
 
+from harness import sp, waiter
 from twoinst import Checks, start
-
-
-def sp(con, *a):
-    return con.call('coop.space ' + ' '.join(str(x) for x in a))['out'].strip()
 
 
 def money(con):
@@ -36,14 +33,7 @@ def rivals(con):
     return re.search(r'\brivals=1\b', sp(con, 'rivalry')) is not None
 
 
-def wait(pred, timeout=20, step=0.5):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        v = pred()
-        if v:
-            return v
-        time.sleep(step)
-    return pred()
+wait = waiter(timeout=20, step=0.5, final=True)
 
 
 def main():
