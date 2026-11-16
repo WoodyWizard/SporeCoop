@@ -36,7 +36,8 @@ PASS (TITAN, the QA copy, host Dorger.spo instance 9 + guest instance 8, console
 - the bar's zones lit up to the fill at 50 %, 14 % and 5 % left (out/shots/r63/bar_zones.png, bar_solo.png); the box at 14 % left (first version, one colour), "Memory used: 86% (286 MB left)"; at 8 %: red, "Memory nearly full" (out/shots/r63/box14.png, box8.png); no partner marker over it (box_nochevron.png).
 - guest Continue: the game ended (pid 35484), started again (pid 57040), rejoined as the same player after 11 s; 965 -> 1186 MB free.
 - host Continue at 12 %: saved Dorger.spo, the guest told, restarted, loaded Dorger.spo again, hosting again 30 s after the click; the guest rejoined by itself at the first try; both back in Creature (after_restart_8.png, after_restart_9.png).
-no-fail-run: a new feature (no earlier behaviour to fail). Not checked: a game started by Steam itself (its job object; the helper leaves it when it may), the MSI over the internet.
+no-fail-run: a new feature (no earlier behaviour to fail). Not checked: the MSI over the internet.
+PASS (MSI, 2026-11-16, a game Steam started itself: steam.exe -applaunch, host Vandh): Continue saved, the game ended and started again, loaded Vandh and hosted again 29 s after the click; Steam's own check passed on the restarted game.
 
 ## History
 - 2026-11-16: opened.

@@ -1,17 +1,17 @@
 ---
 id: BUG-9240
 title: Creature: guest crash (SporeApp+0x92C030, read 0x58) when a world share arrives while the host is in the creature editor (pregame editor opened with the load)
-status: open
+status: fixed
 kind: crash
 stage: creature
 reported: 2026-11-16
 source: QA 2026-11-16 (TITAN, BUG-9239 leak test)
 role: guest
 versions: 0.7.14.1-lineages60-dev
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: feat/lineages-47
+commits: a2dc0416
+tests: manual Windows QA: TITAN host + guest, the host in the Creature editor, forced shares (coop.share 1)
 signature: SporeApp.exe+0x92C030 read 0x58, stack CreatureGame_ReturnStateMachine / CreatureStun, mode Editor
 docs:
 related:
@@ -22,14 +22,15 @@ QA 2026-11-16 (TITAN QA copy, host instance 9 Dorger.spo, guest instance 8): the
 To reproduce (inferred): host in the Creature editor in a Creature world, a guest at the galaxy menu receives the host's world (a join or coop.share).
 
 ## Root cause
-Inferred, not analysed yet: the pregame editor (BUG-9207, meant for a host making a new world) is requested in the same frame as the world load; the editor's return state machine then runs on a creature game that is not set up (a null at +0x58). The pregame rule should not take a host in the Creature editor of an existing world for "making a new world".
+Observed in the guest's log (01:02:38.460 / .592): "world: loading from the galaxy menu 4.7 s after the request" and "pregame editor: the creature editor with the base creature while the host makes a new world" in the same frame. world.cpp's menu load clears its request (g_via_menu) and posts the load outside the frame; world::load_queued() is false from then on, so coop.cpp's pregame check (BUG-9207: host in an editor, "from the menu" because the host's first state seen here was the editor and its world was the guest's last one) saw no load coming and posted the editor request outside the frame too: the load and the editor started together and the editor's return ran on a creature game that was not set up (null at +0x58).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+- world::load_starting(): a load posted from the galaxy menu counts as coming until the game is in it (15 s at most, while the mode is still the menu or the load). The pregame editor (both the 9207 and the 9208 paths) waits while it is true, and the queued request checks again outside the frame (a load began meanwhile: not opened, logged "the host's world is loading (BUG-9240)"). Switch world.load_starting.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+PASS (TITAN, the fix on, the 01:02 setting forced the other way round: host Dorger.spo in the Creature editor by `coop.newcreature`, three forced shares `coop.share 1` to the guest): three loads from the galaxy menu, no pregame editor, no crash.
+no-fail-run: not reproduced with the fix off either (two runs, six tries: the guest saw the host in Creature first, or it never got the world while the host was in the editor). The crash needs the test's forced share while the host is in the editor: in play the host does not share from an editor (world save blocker), so players should not meet it; the guard closes the race anyway.
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed (world.load_starting); not reproducible without the forced share.
