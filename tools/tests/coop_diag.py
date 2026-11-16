@@ -83,9 +83,16 @@ def main():
         print(f'  clock: guest - host beyond the time between the reads: {[round(d * 1000, 1) for d in diffs]} ms')
         ck(diffs and min(diffs) < 0.05, f'host and guest agree on the session time (best {min(diffs) * 1000 if diffs else -1:.1f} ms)')
 
-        # 4a. the sync-check OK in this stage
-        host.call('coop.diag sync now')
-        okh = wait(lambda: re.search(r'sync-check: OK with player \d+ .*\(' + stage, log_from(lane.HOST, h0)), 25)
+        # 4a. the sync-check OK in this stage. BUG-1191: a check asked within 20 s of the host's world share with the guest
+        # (BUG-0754, diag.share_quiet) is not compared and the next one came 30 s later, after this wait: ask again every
+        # 5 s until the host's OK (at most 45 s: the quiet window and a check)
+        rx_okh = re.compile(r'sync-check: OK with player \d+ .*\(' + stage)
+        t_ask, asks, okh = time.time(), 0, None
+        while not okh and time.time() - t_ask < 45:
+            host.call('coop.diag sync now')
+            asks += 1
+            okh = wait(lambda: rx_okh.search(log_from(lane.HOST, h0)), 5)
+        print(f'  the host\'s sync-check OK after {time.time() - t_ask:.0f} s ({asks} asked)')
         okg = wait(lambda: re.search(r'sync-check: OK with the host \(' + stage, log_from(lane.GUEST, g0)), 10)
         ck(okh, f'the host logs a sync-check OK in {stage}' + (f': {okh.group(0)}' if okh else ''))
         ck(okg, f'the guest logs a sync-check OK in {stage}')
