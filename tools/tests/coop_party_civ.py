@@ -20,20 +20,14 @@ Alice hosts, Bob, Carol and Dave are guests (tools/tests/party.py), on the `civ`
 """
 import time
 
+from harness import waiter
 from coop_civ import civ, dist
 from coop_civ_sw_vote import COST, TOL, money, unlock
 from party import Party
 from twoinst import Checks
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def vowners(con):

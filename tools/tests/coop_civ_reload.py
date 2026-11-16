@@ -31,6 +31,7 @@ import re
 import struct
 import time
 
+from harness import mode_id as mode
 import fixtures
 import lane
 from lane import sh
@@ -39,13 +40,6 @@ from twoinst import Checks, Monitor, build_id, lane_state, start, wait_guest_in
 CIV = 0x1654C04
 VEH = re.compile(r'\s+veh #(\d+) (\S+) pol=(\w+) owner=(-?\d+) .*?sel=(\d+) .*?pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)'
                  r' order=(-?\d+)(?: opos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\))?')
-
-
-def mode(con):
-    try:
-        return int(con.call('game.mode')['out'].split()[0], 16)
-    except (OSError, ValueError, IndexError):
-        return -1
 
 
 def tables(con):

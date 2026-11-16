@@ -22,6 +22,7 @@ import random
 import re
 import time
 
+from harness import shared_money as money
 from play_civ import BTN_PLANNER, PLANNER_DONE, PLANNER_NAME, Player, civ_state
 from twoinst import Checks, shot, start
 
@@ -36,11 +37,6 @@ def buildings(con, ci):
         if m:
             out.append((int(m.group(2), 16), tuple(float(m.group(i)) for i in (4, 5, 6))))
     return out
-
-
-def money(con):
-    m = re.search(r'shared money=(-?[\d.]+)', con.call('coop.res')['out'])
-    return float(m.group(1)) if m else None
 
 
 def slots(con, ci):

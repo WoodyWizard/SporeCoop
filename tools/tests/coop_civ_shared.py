@@ -26,13 +26,9 @@ import re
 import threading
 import time
 
+from harness import shared_money as money
 import lane
 from twoinst import Checks, start, wait_guest_in
-
-
-def money(con):
-    m = re.search(r'shared money=(-?[\d.]+)', con.call('coop.res')['out'])
-    return float(m.group(1)) if m else None
 
 
 def role_lines(con):

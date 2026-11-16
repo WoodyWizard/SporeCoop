@@ -19,20 +19,14 @@ two NPC cities (`coop.civ capture`, the game's cCity::Capture): three cities for
 import re
 import time
 
+from harness import waiter
 import uifind
 from coop_civ import civ
 from party import Party
 from twoinst import Checks
 
 
-def wait(cond, secs, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < secs:
-        r = cond()
-        if r:
-            return r
-        time.sleep(step)
-    return None
+wait = waiter(step=1.0)
 
 
 def owners(con):

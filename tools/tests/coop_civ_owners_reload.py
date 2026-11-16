@@ -19,6 +19,7 @@ captured became the guest's (and the other way round).
 import re
 import time
 
+from harness import waiter
 import fixtures
 from coop_civ import civ, dist
 from play_civ import frame_city
@@ -32,14 +33,7 @@ def mode(con):
         return ''
 
 
-def wait(pred, timeout, step=1.0):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        v = pred()
-        if v:
-            return v
-        time.sleep(step)
-    return pred()
+wait = waiter(step=1.0, final=True)
 
 
 def by_pos(cities, pos):

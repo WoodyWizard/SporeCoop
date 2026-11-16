@@ -23,24 +23,14 @@ cycle, and founded cities up to the host's count.
 """
 import glob
 import os
-import re
 import shutil
 import sys
 import time
 
+from harness import shared_money as money, world_of
 import lane
 from census import dump
 from twoinst import Checks, start
-
-
-def world_of(con):
-    m = re.search(r"world '([^']*)'", con.call('coop.avatar')['out'])
-    return m.group(1) if m else None
-
-
-def money(con):
-    m = re.search(r'shared money=(-?[\d.]+)', con.call('coop.res')['out'])
-    return float(m.group(1)) if m else None
 
 
 def main():

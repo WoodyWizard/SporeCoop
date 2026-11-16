@@ -26,6 +26,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
+from harness import fnv
 import part_substitutes as ps  # noqa: E402
 
 import lane  # noqa: E402
@@ -52,13 +53,6 @@ def two_building_models():
             if len(out) == 2:
                 return out
     raise AssertionError('fewer than two building models in Spore_Content.package')
-
-
-def fnv(data):
-    h = 0x811C9DC5
-    for c in data:
-        h = ((h * 0x1000193) & 0xFFFFFFFF) ^ c
-    return h
 
 
 _orig_restore = twoinst.restore_creations
