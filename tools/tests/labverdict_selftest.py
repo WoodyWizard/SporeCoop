@@ -326,6 +326,13 @@ def impact_case(tree):
     T = suite.T
     names = lambda sel: {t['name'] for t, _ in sel}  # noqa: E731
     always = {t['name'] for t in T if 'smoke' in t['suites']} | {'unit'}
+    # BUG-1192 / BUG-1193: full needs every test to PASS: no entry that needs --segment, no twin that must FAIL
+    seg = [t['name'] for t in T if '$CAMPAIGN_SEGMENT' in t['cmd'] and {'full', 'nightly'} & t['suites']]
+    twin = [t for t in T if t['name'] == 'chat_held_send_oldcheck']
+    check(not seg and twin and twin[0]['suites'] == {'twin'}
+          and {t['name'] for t in suite.select('segment')} == {'campaign_segment'},
+          'suite: campaign_segment only in `segment`, the must-FAIL twin chat_held_send_oldcheck only in `twin`, '
+          'neither in full')
     sel = names(li.select(T, {'docs/06-testing.md': ['x'], 'CHANGELOG.md': ['y']}, tree))
     check(sel == always, f'impact: docs only -> smoke + unit ({len(sel)} tests)')
     sel = names(li.select(T, {'tools/lab.py': ['x']}, tree))
