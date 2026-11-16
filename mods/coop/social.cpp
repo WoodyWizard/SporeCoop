@@ -1,4 +1,5 @@
 #include "social.h"
+#include "party.h"
 #include "lifecycle.h"
 #include "mouse.h"
 #include "fixes.h"
@@ -582,6 +583,8 @@ static unsigned g_meter_missed, g_meter_test_null; // (tests: meter tasks that f
 static bool g_meter_fill_fix = true;
 COOP_FIX("social.meter_fill", "BUG-9230", g_meter_fill_fix, "creature: a guest's social meter fills its bars as the impressing goes on (both bars, the native look)");
 static uint32_t g_meter_fills = 0;
+// the meter is on screen for this NPC's social game, with its fill (then the feed lines are not needed)
+static bool meter_shows(int npc_id) { return g_meter_fill_fix && g_meter_npc == npc_id && g_meter_npc >= 0; }
 static void meter_fill(void* m, float frac)
 {
     uint8_t* u = (uint8_t*)m;
@@ -743,6 +746,33 @@ void debug_meter_fill(int done, int rounds, bool close)
 {
     g_test_done = done; g_test_rounds = std::max(1, rounds); g_test_close = close;
     H->run_outside_frame(meter_test_run, nullptr);
+}
+
+// tests (BUG-9244): every species goal card (noun 0x1406A572): its species (+0x80), state (+0x7C), cached impressed / killed
+// (+0x8C / +0x90), cached relation (+0xA0) and the table's record now
+std::string cards_dump()
+{
+    std::string out;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            if (noun != kSpeciesGoalNoun || !game::object_alive(o) || IsBadReadPtr(o, 0xC0)) return true;
+            auto& s = *(std::string*)u;
+            uint8_t* g = (uint8_t*)o;
+            char b[260];
+            uint32_t inst = *(uint32_t*)(g + 0x80);
+            int rel = -1, imp = -1, kil = -1;
+            if (void* mgr = rel_mgr(); mgr && a_RelRecord) {
+                ResourceKey k{inst, 0x2B978C46u, 0x40626200u};
+                if (uint32_t* rec = thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, &k)) { rel = (int)rec[0]; imp = (int)rec[2]; kil = (int)rec[3]; }
+            }
+            snprintf(b, sizeof b, "card %p species=%08X state=%d cached imp=%d killed=%d rel=%d | table rel=%d imp=%d killed=%d | +78=%08X +84=%08X +88=%08X\n",
+                     o, inst, *(int*)(g + 0x7C), *(int*)(g + 0x8C), *(int*)(g + 0x90), *(int*)(g + 0xA0), rel, imp, kil,
+                     *(uint32_t*)(g + 0x78), *(uint32_t*)(g + 0x84), *(uint32_t*)(g + 0x88));
+            s += b;
+            return true;
+        },
+        &out);
+    return out.empty() ? "no cards\n" : out;
 }
 
 std::string meter_dump() // tests: the game's meter object as the guest's screen has it
@@ -1187,6 +1217,38 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
         H->hook_create(M, (void*)a, (void*)h_GoalUpdate, (void**)&o_GoalUpdate);
 }
 
+// BUG-9244 (owner 2026-11-16: "The Crikiitis species is extinct!" on the Hunt card, twice, with Crikiitis standing next to
+// the player): set_party_ally gives every party species relation 6 (decision 7, best friends), the game's own "goal done"
+// (an Impress goal reads it as allied, a Hunt goal as extinct: 0xBA4750 writes 6 for an extinction too). A seat's species
+// changes (the player's own creature, an evolution, a guest that first reports the host's species: seat 1 of the TITAN QA
+// world went 0654D6B6 -> 066890BD -> 06538C27 -> 7C068C08 in one day) and the old species kept its 6 for good: a Hunt
+// goal on it (Bye Mouth 065D0889, an old seat species whose nest lives on) said "extinct". The game itself never leaves
+// 6 with no impressions and no kills on a species other than the player's: such a record that is no party species now is
+// set back to 0 (not set: the species' archetype decides again; the guests follow the host's table). Off
+// (`coop.fix social.stale_party_marks off`): the marks stay (62-dev).
+static bool g_stale_marks_fix = true;
+COOP_FIX("social.stale_party_marks", "BUG-9244", g_stale_marks_fix,
+         "creature: a species that was a player's (best friends, relation 6) is no longer marked once no player plays it (its Hunt card said 'extinct')");
+static uint32_t g_stale_marks_cleared = 0;
+static void clear_stale_marks()
+{
+    void* mgr = rel_mgr();
+    if (!g_stale_marks_fix || !mgr || !is_host() || !game::in_creature_stage()) return;
+    void* av = game::avatar();
+    const uint32_t own = av ? game::species_key(av).instance : 0;
+    uint8_t* map = (uint8_t*)mgr + 0x20;
+    void** buckets = field<void**>(map, 4);
+    uint32_t n = field<uint32_t>(map, 8), seen = 0;
+    for (uint32_t i = 0; buckets && i < n && i < 4096; i++)
+        for (uint32_t* nd = (uint32_t*)buckets[i]; nd && seen < 512; nd = (uint32_t*)nd[8], seen++) {
+            if ((int32_t)nd[3] != 6 || nd[5] || nd[6] || !nd[0] || nd[0] == own || party::party_species(nd[0])) continue;
+            nd[3] = 0;
+            if (++g_stale_marks_cleared <= 40)
+                H->log(M, SK_INFO, "social: species %08X kept relation 6 with no impressions or kills and plays for nobody now: set back "
+                       "to 0 (BUG-9244, %u)", nd[0], g_stale_marks_cleared);
+        }
+}
+
 void tick(double now)
 {
     if (game::lend_ledger_on()) // BUG-0882: outside every goal update (a fault inside one left it set)
@@ -1213,6 +1275,11 @@ void tick(double now)
         if (now - last < (g_table_fast_fix ? 0.25 : 1.0))
             return;
         last = now;
+        static double stale_at = 0;
+        if (now - stale_at > 3.0 && party::roster().seats.size()) { // BUG-9244 (once the roster is known)
+            stale_at = now;
+            clear_stale_marks();
+        }
         auto t = read_table();
         for (auto it = g_goal_paid.begin(); it != g_goal_paid.end();) { // an older save loaded again
             bool still = false;
@@ -1310,7 +1377,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_prompt_at = H->time_seconds();
         if (id == g_engaged)
             g_engaged_at = g_prompt_at;
-        if (C.feed && id == g_engaged && n > 1)
+        // (owner 2026-11-16, BUG-9230: "If the impress bar is working, we don't need the notifications anymore"): the feed
+        // lines only when no meter shows this social game
+        if (C.feed && id == g_engaged && n > 1 && !meter_shows(id))
             C.feed("Answer it: " + std::to_string(i + 1) + "/" + std::to_string(n));
         return;
     }
@@ -1340,7 +1409,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         int done = r.u8(), needed = r.u8();
         if (r.ok() && needed > 0 && id == g_engaged)
             meter_task(1, id, std::min(1.f, (float)done / needed));
-        if (r.ok() && done < needed && C.feed)
+        if (r.ok() && done < needed && C.feed && !meter_shows(id))
             C.feed("Impressing: " + std::to_string(100 * done / needed) + "%");
         return;
     }
@@ -1496,6 +1565,7 @@ bool debug_set_record(uint32_t inst, int relation, uint32_t impressed)
         return false;
     rec[0] = (uint32_t)relation;
     rec[2] = impressed;
+    H->run_outside_frame(refresh_cards, nullptr); // (BUG-9244 tests: the cards read the table again)
     return true;
 }
 
