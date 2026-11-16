@@ -43,3 +43,19 @@ def nearest_row(con, pred, census='coop.census creatures'):
         p = cam['rows'][3]
         rows.sort(key=lambda r: math.dist(r['pos'], p))
     return rows[0]
+
+
+def burst(tag, note, n=3, gap=1.5, extra_fn=None, **kw):
+    """n key frames `gap` s apart (tag, tag_t2, tag_t3, ...), each with extra_fn()'s lines in its manifest: a pose that
+    differs in one frame and matches in the next is the relay's lag, one that differs in every frame lasts (BUG-1220)"""
+    from twoinst import keyframe
+    for i in range(n):
+        if i:
+            time.sleep(gap)
+        try:
+            extra = list(extra_fn()) if extra_fn else []
+        except (OSError, ValueError, AttributeError) as e:
+            extra = [f'extra: {e!r}'[:120]]
+        if extra:
+            print(f'  ({tag} #{i + 1}: {"; ".join(extra)[:300]})', flush=True)
+        keyframe(tag if not i else f'{tag}_t{i + 1}', note, extra=extra, **(dict(kw, settle=0) if i else kw))

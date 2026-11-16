@@ -52,20 +52,27 @@ def eco(con, planet=''):
 
 
 def eco_frame(host, guest, animals, tag):
-    """a key frame of the planet's new life on both games (BUG-1220): each game's camera 14 m from its nearest
-    creature of a species the guest placed (the herds are each game's own: not one point for both)"""
+    """a key frame of the planet's new life on both games (BUG-1220): both cameras at the same place, 60 m from the
+    host's nearest creature of a species the guest placed (the host's herd of it). The guest's own game has no creature
+    of them: `eco place` (the test seam) adds the species to the planet's record through the game's own function but
+    spawns no animal (its eco line shows #0), so the guest's picture shows the place without that herd."""
+    from coop_space_map import no_movie
+    import sameview as sv
     inst = {k.split(':')[0].upper() for k in animals}
     seen = {}
     try:
         for role, con in (('host', host), ('guest', guest)):
+            no_movie(con, 20)  # the planet's story caption ("Something is showing up on the ship's radar")
+            rows = sv.parse_census(con.call('coop.census creatures').get('out') or '')
             r = keyviews.nearest_row(con, lambda r: r['kind'] == 'c' and r['alive'] and r['key'] in inst)
-            seen[role] = r and (r['key'], r['pos'])
-            if r:
-                keyviews.look_at(con, r['pos'], dist=14, height=6)
+            seen[role] = (r and (r['key'], r['pos']), f'{len(rows)} creature rows')
+        h = seen['host'][0]
+        if h:
+            keyviews.look_both((host, guest), h[1], dist=60, height=25, look_up=5)
         print(f'  key frame cameras at the placed species: {seen}', flush=True)
-        time.sleep(1.5)
-        keyframe(tag, 'space, both on the planet the guest filled: each camera 14 m from a creature of a species the '
-                      'guest placed (the planet\'s plants around it): the same new animals on both games')
+        keyframe(tag, 'space, both on the planet the guest filled, the same camera 60 m from the host\'s creature of a '
+                      'species the guest placed (its herd there); the guest\'s game has the species in its record but no '
+                      'animal of it (the test seam spawns none)', extra=[f'{k}: {v}' for k, v in seen.items()])
     finally:
         keyviews.view_off(host, guest)
 
