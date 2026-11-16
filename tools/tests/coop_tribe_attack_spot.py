@@ -16,6 +16,7 @@ PASS: no caught fault on the host or the guest, the host's attackers that met th
 
   SPORE_LANE=2 python3 tools/tests/coop_tribe_attack_spot.py [--cut]   (tribe.attack_spot off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-235517:tribe_attack_spot) --cut)
 """
+import os
 import re
 import sys
 import time
@@ -41,6 +42,11 @@ def main():
     ck = Checks()
     time.sleep(6)
     if '--no-form' not in sys.argv:
+        # BUG-1184 (as BUG-0943): tribe.form_pace holds the new tribe until the party's food is over the threshold times the
+        # players; without it the creature attack had no other village's spot to look up (the scenario never happened).
+        # ATTACK_SPOT_OLD_FOOD=1: no food first (stuck as lab 20261115-212642)
+        if os.environ.get('ATTACK_SPOT_OLD_FOOD') != '1':
+            print('  host: ' + host.call('coop.res add food 300')['out'].strip(), flush=True)
         print('  host: ' + host.call('coop.tribe form')['out'].strip(), flush=True)
     if cut:
         print('  host: ' + host.call('coop.spotcut')['out'].strip(), flush=True)
