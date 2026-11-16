@@ -1,6 +1,6 @@
 {
  "object_alive": {
-  "total": 148,
+  "total": 144,
   "per_file": {
    "mods/coop/census.cpp": 2,
    "mods/coop/civ.cpp": 13,
@@ -24,7 +24,10 @@
    "mods/coop/space_contracts.cpp": 1,
    "mods/coop/spacecoop.cpp": 6,
    "mods/coop/squadron.cpp": 5,
-   "mods/coop/tribe.cpp": 39,
+   "mods/coop/tribe.cpp": 27,
+   "mods/coop/tribe_debug.cpp": 5,
+   "mods/coop/tribe_host.cpp": 2,
+   "mods/coop/tribe_mirrors.cpp": 1,
    "mods/coop/worldobj.cpp": 8,
    "mods/coop/wstate.cpp": 2,
    "mods/coop/wsync.cpp": 4
