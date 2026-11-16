@@ -32,8 +32,10 @@ Checked for 60 s after the host is back in its stage, on the guest's game:
   guest left its own editor and before the host's done, the host adds DNA (`coop.dna add 250`, a brain level: the
   guest's own game plays CRG_BrainUpgradeN, BUG-1173). The guest's avatar takes the host's new species only after
   it (creations.cpp apply_own_avatar: "own avatar X waits: cinematic Y plays"), its caption comes and closes with
-  Enter, and its input is free. SPORE_FIX_OFF=creations.swap_after_cinematic: SetSpecies under the cinematic (FAIL
-  when the follow came inside it, as BUG-1173).
+  Enter, and its input is free. The host's game plays the brain upgrade too, so its world follows after that cinematic
+  (BUG-0019): "no load, no world" is not checked here, the follow in place before that load is.
+  SPORE_FIX_OFF=creations.swap_after_cinematic: SetSpecies under the cinematic (FAIL when the follow came inside it,
+  as BUG-1173).
 """
 import re
 import sys
@@ -203,8 +205,10 @@ def guest_follow_wait():
     i = t.rfind('follows it in place (BUG-0508)')
     if i < 0:
         return None, None
-    m = re.search(r'own avatar ([0-9A-F]{8}) waits: cinematic ([0-9A-F]{8}) plays', t[i:])
-    return (m.group(2) if m else None), 'own avatar is now' in t[i:]
+    k = t.find('-> Loading ', i)  # in place: before a load of the host's world (if one came after)
+    part = t[i:] if k < 0 else t[i:k]
+    m = re.search(r'own avatar ([0-9A-F]{8}) waits: cinematic ([0-9A-F]{8}) plays', part)
+    return (m.group(2) if m else None), 'own avatar is now' in part
 
 
 def input_lock(con):
@@ -297,8 +301,12 @@ def main():
     print(f'  guest modes: {" -> ".join(modes_seen)}; host shares {sh0} -> {sh1}', flush=True)
     print('  host:', host.call('coop.status')['out'].count('evolve in place'),
           field(host.call('coop.status')['out'], r'(evolve in place: [^\n]*)'), flush=True)
-    ck(not left, f"the guest's game stayed in the {m_stage} stage (no galaxy menu, no load): {left or 'none'}")
-    ck(sh1 == sh0, f'the host sent no world after its editor ({sh0} -> {sh1})')
+    if '--cine' in sys.argv:  # the host's game plays the brain upgrade too: its world follows that cinematic (BUG-0019)
+        print(f"  (--cine: the guest's game left the stage {left or 'never'}, the host's shares {sh0} -> {sh1}: not "
+              "checked, the follow in place before it is)", flush=True)
+    else:
+        ck(not left, f"the guest's game stayed in the {m_stage} stage (no galaxy menu, no load): {left or 'none'}")
+        ck(sh1 == sh0, f'the host sent no world after its editor ({sh0} -> {sh1})')
 
     h1 = host_own(host, stage)
     print(f'  host {kind} {h0} -> {h1}', flush=True)
@@ -343,7 +351,8 @@ def main():
            f"the guest's cinematic ended with its caption, its input is free (cinematic "
            f"{cinematic(guest) and cinematic(guest).group(1)}, input lock {input_lock(guest)})")
         ck(waited == CINE[0] and swapped,
-           f"the guest's avatar took the host's species after its cinematic {CINE[0]} (waited for {waited}, swap {swapped})")
+           f"the guest's avatar took the host's species in place after its cinematic {CINE[0]} (waited for {waited}, "
+           f"swap before any load {swapped})")
     shot(guest, f'evolve_in_place_{stage}_guest.png')
     shot(host, f'evolve_in_place_{stage}_host.png')
     ck.faults(host=host, guest=guest)
