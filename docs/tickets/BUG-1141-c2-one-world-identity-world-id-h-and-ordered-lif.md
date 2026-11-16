@@ -63,8 +63,11 @@ World-change lab tests on the final code (the switch-on path, old paths deleted)
 lifecycle_reset, wsync_transitions, tribe_editor_world, tribe_host_reload_reset, civ_reload, nest_mirror_epoch,
 tribe_host_pause, tribe_gameover_wait, cell_away, cell_pause PASS; world_reload FAIL, a test defect: BUG-1171) and
 20261115-164240 (lane 10: lifecycle_reset_cell, stage_switch, editor_sync_host, away_editor, space_trade_reload,
-space_allies_reload, space_down_reload, tribe_bounce_mirrors, civ_away, civ_away_buy, tribe_away PASS; editor_strays
-FAIL: BUG-1170, evolve_world and away_stages FAIL: see the reruns below). The C3 runs 20261115-161010 ran the switch-on build.
+space_allies_reload, space_down_reload, tribe_bounce_mirrors, civ_away, civ_away_buy, tribe_away PASS). Reruns
+20261115-174822: world_reload PASS (its test fixed, BUG-1171), away_stages PASS (its first run failed on an invariant
+monitor line during the test's own forced menu state). editor_strays (BUG-1170) and evolve_world (BUG-1173) FAIL the
+same way on rel/0.7.15 9362bcdd without this branch (baseline worktree, lab 20261115-180220): not from C2. The C3 runs
+20261115-161010 ran the switch-on build.
 no-fail-run: refactoring (no behaviour to break on purpose); the proof is the dumps and the PASS runs above.
 
 ## History
