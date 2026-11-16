@@ -1,16 +1,16 @@
 ---
 id: BUG-1166
 title: Tests: editor_desync fails 'the guest gets the vote with an I'm ready button' since 0.7.12 (the check's fixed button rectangle)
-status: open
+status: fixed
 kind: test
 stage: Cell
 reported: 2026-11-15
 source: B1 impact run 20261115-133237
 role: 
 versions: 0.7.12, 0.7.13, 0.7.14, 0.7.14.1, rel/0.7.15
-fixed_in:
+fixed_in: unreleased
 branch: feat/w51-npc
-commits:
+commits: c269fb11
 tests: editor_desync
 signature:
 docs: docs/06-testing.md#testing-w51-npc
@@ -37,7 +37,8 @@ to 10 s, and clicked at its centre. Test-only.
 
 ## Verification
 FAIL (the old check) on v0.7.14.1 lane 3 and rel/0.7.15 lane 2: 20261115-154901 (both trees).
-PASS: (pending)
+PASS: 20261115-202814 (2 of 2, lane 3, the final tree); the button check also in 20261115-194833 (that
+run failed a later check once, the guest's own evolved species, not seen again in the two runs after)
 
 ## History
 - 2026-11-15: opened.

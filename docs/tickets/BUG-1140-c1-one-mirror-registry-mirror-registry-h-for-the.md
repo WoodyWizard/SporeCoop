@@ -32,3 +32,18 @@ Unit tests tests/core_tests.cpp (registry_bind, registry_liveness, registry_adop
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-ccore): the portable core and its unit tests; no stage file changed. Open until the stage adoptions land.
+- 2026-11-15 (feat/w51-npc): NPC done (the stage part of C1). npc.cpp's host table (g_host_npcs / g_host_by_id) and guest
+  proxies (g_proxies / g_proxy_of) are `Registry<uint16_t, HostNpc>("npc.host")` and `Registry<uint16_t, Proxy>("npc.proxies")`
+  (docs/01-architecture.md#arch-npc-registry): host adopt with alloc_npc_id (the species / dead rule BUG-0044 first),
+  retire_pooled and the frozen pass by the entry's LiveRef, the guest's bind / detach, the stale drop as the registry's
+  sweep (Keep in the thaw). Behind `npc.registry` (aa4b0a16): refactor_dump base 20261115-154746 (rel/0.7.15 9362bcdd)
+  vs 20261115-165006: identical apart from the switch's line (fix count 581 -> 582); lane 2 + 3 run of the stage's tests
+  with it on, 20261115-165219: 71 of 74 PASS (npc_*, puppet_*, nest_*, creature, play_creature, civ_wild_*,
+  creature_kills, creature_death_coop, creature_social_prompts, creature_eat); the three FAILs fail the same with
+  `SPORE_FIX_OFF=npc.registry` (20261115-192704 lane 3 off, 20261115-192709 lane 2 on): nest_follow (BUG-1178, the
+  lab's start), nest_evolve (BUG-1181, also on v0.7.14.1 20261115-193814), nest_eggs_tribe (PASS on both reruns: a
+  flake). Then the old maps and the switch deleted (c502cc36); object_alive in npc.cpp 22 -> 15 (ratchet 148 -> 141).
+  Runs of the final tree (after the merge of rel/0.7.15 96e0fd4c): 20261115-194833 (npc_reuse, npc_pooled, npc_handler_live,
+  npc_destroy_once, npc_frozen_thaw, npc_frozen_pooled, nest_follow_own, away_editor ...), play_creature --quick (see the
+  final report). The ticket stays open until Tribe and Civ adopted the registry.
+

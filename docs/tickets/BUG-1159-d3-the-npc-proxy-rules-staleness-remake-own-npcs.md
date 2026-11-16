@@ -1,16 +1,16 @@
 ---
 id: BUG-1159
 title: D3: the NPC proxy rules (staleness, remake, own NPCs, placing, mound) in a portable header with unit tests
-status: open
+status: fixed
 kind: tooling
 stage: Creature, Tribe
 reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/w51-npc
-commits: 314a9f21, aa4b0a16
+commits: 314a9f21, aa4b0a16, 76cc685f
 tests: tests/npc_tests.cpp (test_proxy_rules)
 signature:
 docs: docs/01-architecture.md#arch-npc-proxy-rules

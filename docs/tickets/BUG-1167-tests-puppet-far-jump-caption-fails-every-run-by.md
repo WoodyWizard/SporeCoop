@@ -1,16 +1,16 @@
 ---
 id: BUG-1167
 title: Tests: puppet_far_jump_caption fails every run by design (BUG-0658's artefact), noise in the extended suite and impact runs
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-15
 source: B1 impact run 20261115-133237
 role: 
 versions: 0.7.10 .. 0.7.14.1, rel/0.7.15
-fixed_in:
+fixed_in: unreleased
 branch: feat/w51-npc
-commits:
+commits: 5f283c0d
 tests: puppet_far_jump_caption, puppet_far_jump
 signature:
 docs: docs/06-testing.md#testing-w51-npc, docs/re/creature.md#creature-far-goto
@@ -35,7 +35,7 @@ explanation of BUG-0658 no longer holds), fails. puppet_far_jump (captions close
 
 ## Verification
 FAIL (the old by-design check): 20261115-154901 (v0.7.14.1 lane 3 and rel/0.7.15 lane 2).
-PASS: (pending)
+PASS: 20261115-194833 (lane 2, the final tree: the artefact at hop 2, the ground elsewhere)
 
 ## History
 - 2026-11-15: opened.
