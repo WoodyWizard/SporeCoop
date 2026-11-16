@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: QA 2026-11-16 (TITAN, BUG-9239 leak test)
 role: guest
 versions: 0.7.14.1-lineages60-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages62-dev
 branch: feat/lineages-47
 commits: a2dc0416
 tests: manual Windows QA: TITAN host + guest, the host in the Creature editor, forced shares (coop.share 1)
@@ -34,3 +34,4 @@ no-fail-run: not reproduced with the fix off either (two runs, six tries: the gu
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed (world.load_starting); not reproducible without the forced share.
+- 2026-11-16: released in 0.7.14.1-lineages62-dev.

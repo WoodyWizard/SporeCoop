@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: QA 2026-11-16 (TITAN, BUG-9238 checks)
 role: both
 versions: 0.7.14.1-lineages61-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages62-dev
 branch: feat/lineages-47
 commits: 5dc60eb7
 tests: manual Windows QA (TITAN, Civ Abber.spo at 125 %, coop.fix ui.tooltip_place on/off)
@@ -31,3 +31,4 @@ FAIL with the fix off, PASS on (TITAN, the same session, `coop.fix ui.tooltip_pl
 
 ## History
 - 2026-11-16: opened; fixed (ui.tooltip_place).
+- 2026-11-16: released in 0.7.14.1-lineages62-dev.

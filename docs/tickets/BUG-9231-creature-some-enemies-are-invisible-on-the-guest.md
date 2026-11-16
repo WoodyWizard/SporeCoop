@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: owner play test 2026-11-15
 role: guest
 versions: 0.7.14.1-lineages58-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages62-dev
 branch: feat/lineages-47
 commits: 5bfa5c88
 tests: manual Windows QA (TITAN host + guest, coop.creations breakremap + coop.npc spawn)
@@ -37,3 +37,4 @@ FAIL with the fix off, PASS on (TITAN QA copy 2026-11-16, host instance 9 Dorger
 ## History
 - 2026-11-15: opened.
 - 2026-11-16: cause found in the host's log; fixed (ask by the host's key, build with it); FAIL off / PASS on with breakremap.
+- 2026-11-16: released in 0.7.14.1-lineages62-dev.

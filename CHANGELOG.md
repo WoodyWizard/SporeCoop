@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages62-dev] - 2026-11-16
+
+- Creature: a guest sees every enemy again; some of the host's own creatures
+  stayed invisible on the guest when its copy of them could not be built there
+  (BUG-9231).
+- Creature: no guest crash when the host's world arrives while the host is in
+  the creature editor (BUG-9240).
+- Interface Size other than 100 %: Spore's tooltips (for example "Buy Sea
+  Vehicle") stay at the pointer instead of appearing down and to the right of it
+  (BUG-9241).
+- Diagnostics: `coop.nest herds [species]` lists the nests with their species
+  and place.
+
 ## [0.7.14.1-lineages61-dev] - 2026-11-16
 
 - Memory: when Spore's memory runs low a box shows a live bar of how full it
