@@ -68,6 +68,8 @@ void reset_shares();
 void on_session_end();
 // guest: a world load waits (for the galaxy menu or for an editor to close): no own editor now
 bool load_queued();
+// BUG-9240: a load from the galaxy menu was just started and the game is not in it yet (15 s at most)
+bool load_starting();
 // guest (BUG-9208): hold a received world while the first-creature editor is requested or open
 void hold_for_editor(bool on);
 // host (BUG-9210): a player's share waits while this says its own nest is about to be made (2 min at most)

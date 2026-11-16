@@ -673,6 +673,10 @@ static bool g_world_reset_fix = true;  // BUG-0074: the session end drops the gu
 static bool g_drop_peer_fix = true;    // BUG-0166: shares for a player who left are dropped
 static bool g_one_save_fix = true;     // BUG-0112: one save for every share that waits at the same time
 static bool g_editor_load_fix = true;  // BUG-0157: a queued load never starts inside an editor
+static bool g_load_start_fix = true;
+COOP_FIX("world.load_starting", "BUG-9240", g_load_start_fix,
+         "world: a load started from the galaxy menu counts as coming until the game is in it (nothing else starts meanwhile)");
+static double g_menu_load_posted = -1e9; // BUG-9240: when a menu load was posted
 COOP_FIX("core.share_reset", "BUG-0140", g_share_reset_fix, "world: the session end drops the shares and transfers of its players");
 COOP_FIX("world.world_reset", "BUG-0074", g_world_reset_fix, "world: the session end drops the guest's queued world loads");
 COOP_FIX("world.share_drop_peer", "BUG-0166", g_drop_peer_fix, "world: shares for a player who left are dropped");
@@ -1352,6 +1356,7 @@ static void via_menu_tick()
         v = g_via_menu;
         g_via_menu = ViaMenu{};
         g_menu_since = 0; // a newer request settles again (the mode switches to the load later)
+        g_menu_load_posted = now; // BUG-9240
         H->log(M, SK_INFO, "world: loading from %s %.1f s after the request", other ? modes::mode_name(mode) : "the galaxy menu",
                now - v.since);
         H->run_outside_frame(
@@ -1446,6 +1451,15 @@ static void drop_share_loads()
 }
 
 bool load_queued() { return g_editor_load_fix && (g_via_menu.on || g_deferred.on); }
+// BUG-9240: a menu load was just started (posted outside the frame): load_queued() is already false then, but the
+// game has not switched to the load yet; anything else started in this window raced it (a guest's pregame editor
+// opened in the same frame as the host's world and crashed in the editor's return, 2026-11-16)
+bool load_starting()
+{
+    if (!g_load_start_fix) return false;
+    const uint32_t m = game::mode_id();
+    return H->time_seconds() - g_menu_load_posted < 15 && (m == modes::kMenu || m == modes::kLoad || m == 0);
+}
 
 bool local_intro_running()
 {

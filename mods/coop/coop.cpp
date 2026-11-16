@@ -3693,14 +3693,14 @@ static void pregame_editor_tick(double now)
             LOG("pregame editor: no world in 120 s: not held any more (BUG-9208)");
             return;
         }
-        if (receiving || !world::load_queued()) return;
+        if (receiving || !world::load_queued() || world::load_starting()) return;
         s_late_at = -1;
         late = true;
         // 3Z B: the host's start editor's parts known (a new world, the editor again after none was saved): the same
         g_pregame_start = g_same_start_parts && g_start_parts_at >= 0 && now - g_start_parts_at < 900;
     } else {
         const bool host_from_menu = s_host_before == modes::kMenu || (s_host_before == 0 && host_world == g_world);
-        if (s_done || !host_editing || !host_from_menu || world::load_queued() || receiving) return;
+        if (s_done || !host_editing || !host_from_menu || world::load_queued() || world::load_starting() || receiving) return;
         const uint32_t he = g_remotes[0].buf.latest().editor; // creatures only: the Creator, or the stage start editor (a new
         if (he != 0x465C50BAu && he != kCreatureStartEditor) return; // world from the galaxy wizard, 2026-11-14)
         // 3Z B: the host's start editor: the same, with the host's parts list (sent at its request; a host without it,
@@ -3714,6 +3714,10 @@ static void pregame_editor_tick(double now)
         s_done = true;
     }
     H->run_outside_frame([](void* late) {
+        if (!late && (world::load_starting() || game::mode_id() != modes::kMenu)) { // BUG-9240: a load began meanwhile
+            LOG("pregame editor: not opened: the host's world is loading (BUG-9240)");
+            return;
+        }
         creations::begin_first_creature();
         const bool r = g_pregame_start ? submit_new_creature_request(kCreatureStartEditor, &g_start_parts)
                                                 : submit_new_creature_request();
