@@ -4720,3 +4720,29 @@ Guest on the creature fixture, `coop.npc reusehunt p<id> ...` with `coop.npc chu
   their own fresh blocks back, which the next try takes again.
 * The object's +8 before the destroy (13-21) says nothing about whether the block comes back; the distance to the
   guest's avatar neither (hits at 76-101 m and misses at 7-110 m).
+
+## The guest's nest state after an early brain DNA, and the herds of our puppets (2026-11-15, fix/w51-nest)
+<a id="creature-nest-early-dna"></a>
+
+BUG-1178, BUG-1181. GOG 2024, lane 2, the creature fixture; `coop_nest_follow.py` prints the nest state
+(`nest_state`: the brain level, the point, the brain upgrade property, the avatar's herd and NestHerdFor(1)).
+
+* ✔ (runtime) The brain level `[0x169E370]` is 0 on the fixture and 1 after the brain upgrade of the first 250 DNA
+  (both games). On a guest whose brain upgrade cinematic hung (the own creature swapped in under it, BUG-1173 with
+  `creations.swap_after_cinematic` off) it stayed 0, its input locked for good and its game never claimed the host's
+  new nest (lab 20261115-215620).
+* ✔ (runtime) `[0x167EA30]` (the point `CreatureGame_NestHerdFor` ranks nests by) is 10-20 m from the avatar and moves
+  with it ((-181 -465 -93) and (-164 -474 -86) for a guest standing at (-172 -467 -89); the host's (-193 -472 -80)):
+  ~ the camera's focus (not checked). So NestHerdFor(1) of a guest standing at its home is its home while all nests
+  of the player species have the range 0..5 (also after the host's claim), and the host's new nest once the guest
+  stands there: the claim then works (consistent with #creature-nest-follow and BUG-0881's note).
+* ✔ (runtime) Player property 0x3A8D77C read 0 before the DNA, 0.18 s after it (the brain upgrade's cinematic
+  F6A4B1E1 already playing) and later: as read from the console it is not a "brain upgrade pending" flag.
+* ✔ (runtime) The brain upgrade cinematic plays 0.12-0.18 s after the host's `coop.dna add 250` on the guest (two
+  console round trips): a swap ordered at once already waits for it (BUG-1173's fix). The moment between the DNA and
+  the cinematic is shorter than a console round trip and was not hit from outside (lab 20261115-220240).
+* ✔ (runtime) The herds of our own (`game::create_herd`: no nest +0x160, no archetype +0x88) stand where the puppet
+  stands and carry the puppet's species: on the host the guest's puppet of its own creature has the host's copy of
+  that creation (a key made in the run, 7C... ), on the guest the host's puppet has the world's species. `coop.nest
+  evolve` lists them with the game's herds (it now prints `nest= arch= mkey=`, mkey: the species of the herd's live
+  members, FFFFFFFF for more than one: the guest's home herd with its own creature among the family).

@@ -292,9 +292,12 @@ add('species_table', P + 'coop_species_table.py', warm=True, minutes=3, fixture=
 add('migration', P + 'coop_migration.py', minutes=5)  # brain upgrade, editors, migration; both claim the new nest: no fault on the guest (0xC6AE60)
 add('migration_heal', P + 'coop_migration.py --heal', minutes=6)  # BUG-0496: after the migration both players heal at the new home nest (the game's own health)
 add('nest_follow', P + 'coop_nest_follow.py', minutes=8)  # BUG-0640, BUG-0496: the host's species migrates, the guest's own game claims the same new nest (cinematic, herd = respawn, heal) without a forced world (SPORE_FIX_OFF=wsync.creature_nest fails)
+add('nest_follow_early', P + 'coop_nest_follow.py --own-at-join --early', minutes=9)  # BUG-1178: the guest's own creature recorded for the world when it joins, the brain upgrade's DNA at once (before its game applies the own creature)
+add('nest_follow_swap', P + 'coop_nest_follow.py --swap-after-dna', minutes=9)  # BUG-1178: the guest's own creature applied right after the brain upgrade's DNA, before its game starts the upgrade's cinematic (planted order of the failed runs)
 add('nest_follow_own', P + 'coop_nest_follow.py --own', minutes=8)  # BUG-0642: the same with the guest on its own creature (another species than the world's): claim, home and heal hold for it
 add('migration_probe', P + 'coop_migration_probe.py --editor', ('extended',), minutes=6)  # BUG-0640 probe: migration property, nest herd, cinematics on both games after DNA and the editors (prints only)
 add('nest_evolve', P + 'coop_nest_evolve.py', minutes=5, fixture='creature')  # BUG-0668: the NPC nests evolve in the host's game only; every guest nest has the host's generation and species, a nest extinct on the host never evolves on the guest (SPORE_FIX_OFF=wsync.herd_evo fails)
+add('nest_evolve_own', P + 'coop_nest_evolve.py --own', minutes=6, fixture='creature')  # BUG-1181: the same with the guest on its own creature: its puppet's herd on the host (a runtime copy of its creation) is not a nest; every game nest still has the host's generation and species (NEST_EVOLVE_OUR_HERDS=1, the old comparison of every herd, fails)
 add('nest_evolve_probe', P + 'coop_nest_evolve_probe.py', ('extended',), minutes=6)  # BUG-0639 probe: an NPC nest after its species died out and after the brain upgrade, on both games (prints only)
 add('family_attack', P + 'coop_family_attack.py', ('extended',), minutes=5, fixture='creature')  # BUG-0639: the guest (world species, then its own creature) bites a family member with real input: the host's family member keeps its health, the guest's game answers it as friendly like the host's
 add('select', P + 'coop_select.py', ('smoke',), warm=True, minutes=3, fixture='creature')
@@ -1017,6 +1020,11 @@ add('campaign_tribe_end', P + 'coop_campaign.py --from creature --to civ --minut
 # BUG-1165: its Tribe advance has 18 + 20 min (CAMPAIGN_OLD_NOCLICK_BUDGET=1: 30 min, stuck in 3 of 5 runs, v0.7.14.1 too)
 add('campaign_tribe_noclick', 'CAMPAIGN_PLANT_NOCLICK=18 ' + P + 'coop_campaign.py --from creature --to civ --minutes 2 --no-finale',
     (), minutes=50, timeout=4200)
+# BUG-1169: the Tribe stage of the campaign up to Civ with a planted late hut cut (CAMPAIGN_PLANT_LATE_CUT=270: the first
+# raid with the host's click: no blow lands before 270 s of its 300, its first cut at 270 s, then 45 s no blow): the raid gets 120 s after the cut and fells its hut
+# (CAMPAIGN_OLD_RAID_CUT=1: dropped at 300 s, a 'driver' finding: FAILS)
+add('campaign_tribe_latecut', 'CAMPAIGN_PLANT_LATE_CUT=270 ' + P + 'coop_campaign.py --from tribe --to civ --minutes 2 --no-finale',
+    (), minutes=45, timeout=3600)
 # BUG-1073 / BUG-1079: the campaign's jump path on its own planet: the Tribe end not tried (CAMPAIGN_OLD_TRIBE=1: 0.7.13's
 # raids, no village falls), the host loads the civ_npc fixture in game after 12 min, Civ is played and its end comes by
 # the captures with their cinematics (stuck in every jump campaign before the fix), then Space and the finale

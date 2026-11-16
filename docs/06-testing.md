@@ -8469,6 +8469,10 @@ gets the brain upgrade's DNA before ~11 s in the session plans no migration; the
 `NEST_FOLLOW_NO_PLAY=1` not) and creature_mating / editor_now (BUG-1182: the host's game had picked no mate within
 mate_click's 30 s; now 60 s, `MATING_WAIT_S=30` the old). A test that acts on the game's own timers right after
 `start()` should wait for the game's state, not count on the start-up's length.
+CORRECTION (2026-11-15, fix/w51-nest): BUG-1178's "the guest's game plans no migration when the DNA comes in its first
+~11 s" is disproved: with the world's species the guest got the DNA at s 6.3 and followed (lab 20261115-214800). Every
+failed run had the guest on its own creature (a worlds.ini record of the lane, BUG-1176) swapped in 0.3-1.4 s after
+the DNA, inside the brain upgrade's cinematic: BUG-1173 (see #testing-w51-nest).
 
 npc_editor_hold (BUG-1174, owner decision 2): the host opens its editor (the mating click, or the stage's own
 evolution request `coop.vote evolve` when its game picked no mate in 20 s); the guest's copies must stay the same
@@ -8588,3 +8592,25 @@ the wait (the swap under the cinematic), not on the picture (F4F96E43 ended by i
   lane is then 5, 20261115-215636).
 * `tribe_attack_spot` (BUG-1184): gives the host 300 food before `coop.tribe form` (tribe.form_pace, as BUG-0943);
   `ATTACK_SPOT_OLD_FOOD=1` without.
+
+## nest_evolve, nest_follow after an early brain DNA, the campaign's late hut cut (2026-11-15, fix/w51-nest)
+<a id="testing-w51-nest"></a>
+
+* nest_evolve (BUG-1181) failed on v0.7.14.1 and rel/0.7.15 on lanes whose guest played its own creature (worlds.ini,
+  BUG-1176): `coop.nest evolve` lists every herd, also the herds of our own (game::create_herd: no nest, no archetype),
+  and the test compared the host's herd of the guest's puppet (the host's copy of the guest's creation, a key made in
+  the run) with the guest's herd of the host's puppet (the world's species) at the same rounded place. It compares
+  the game's herds only now and also asserts that the live creatures of the game's nests of other species are of the
+  same species on both games (`coop.nest evolve` prints `nest= arch= mkey=`). `--own` (nest_evolve_own): the guest
+  chooses its own creature first. `NEST_EVOLVE_OUR_HERDS=1`: every herd compared (the twin, FAILS with --own).
+* nest_follow (BUG-1178, BUG-1173): `--own-at-join --early` (nest_follow_early): the guest plays its own creature in the
+  world, joins it again (a warm reset: its record holds) and gets the brain upgrade's DNA 0.3 s after it is in; its own
+  creature comes 3 s after its avatar, so the DNA comes first. `SPORE_LAB_FIXOFF=nest_follow_early=creations.swap_after_cinematic`
+  FAILS (the swap inside CRG_BrainUpgrade1: level stays 0, input locked, no claim). `--swap-after-dna`
+  (nest_follow_swap): the guest chooses its own creature right after the DNA; the cinematic already plays 0.1-0.2 s
+  after the host's `coop.dna add`, so the swap waits (the moment before the cinematic is not reachable from the
+  console). The test prints the guest's nest state (`nest_state`: brain level, the point NestHerdFor ranks by, the
+  avatar's herd and NestHerdFor(1); docs/re/creature.md#creature-nest-early-dna). ~4-6 min each.
+* campaign_tribe_latecut (BUG-1169): `CAMPAIGN_PLANT_LATE_CUT=270`: the first raid with the host's click takes no blow
+  before 270 s of its raid (each one undone), its hut's first cut comes at 270 s and no blow lands for 45 s more (as
+  in lab 20261115-154901: cut, dropped 28 s later at 39); that raid must fell its hut, a drop is a `driver` finding. `CAMPAIGN_OLD_RAID_CUT=1`: dropped at 300 s (FAILS). ~30-45 min, four games on one lane.

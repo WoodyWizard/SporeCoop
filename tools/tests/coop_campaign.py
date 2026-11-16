@@ -133,6 +133,12 @@ OLD_NOCLICK_BUDGET = os.environ.get('CAMPAIGN_OLD_NOCLICK_BUDGET') == '1'
 # BUG-1169: a raid gets RAID_AFTER_CUT s after its hut's first cut (CAMPAIGN_OLD_RAID_CUT=1: dropped at 300 s however late the cut)
 OLD_RAID_CUT = os.environ.get('CAMPAIGN_OLD_RAID_CUT') == '1'
 RAID_AFTER_CUT = 120
+# BUG-1169: CAMPAIGN_PLANT_LATE_CUT=<s>: the first raid that gets its host click takes no blow before <s> s of its raid,
+# its hut is cut at <s> s and no blow lands for PLANT_CUT_HOLD s more (the late cut of lab 20261115-154901, planted);
+# that raid must fell its hut, a drop is a 'driver' finding (with
+# CAMPAIGN_OLD_RAID_CUT=1 it is dropped at 300 s: the twin)
+PLANT_LATE_CUT = float(os.environ.get('CAMPAIGN_PLANT_LATE_CUT') or 0)
+PLANT_CUT_HOLD = 45  # s after the planted cut in which no blow lands either
 # BUG-1096: CAMPAIGN_OLD_EDITOR_DRAG=1: the old editor driver: the parts dragged once only, every wait in seconds (a drag
 # or the name's dice click lost at low fps: "done" forever)
 OLD_EDITOR_DRAG = os.environ.get('CAMPAIGN_OLD_EDITOR_DRAG') == '1'
@@ -1351,6 +1357,9 @@ class Campaign:
                 state['best'] = max(state.get('best', 0), (self.tribe_progress() or (0, 0))[0])
                 self.note(f'tribe: the hut of village {raid["tribe"]} fell after {time.time() - raid["t0"]:.0f} s '
                           f'(goal bar {self.tribe_progress()})')
+                if raid.get('planted_cut'):
+                    self.note(f'tribe: the raid with the planted late cut (first cut at '
+                              f'{raid.get("cut_at", time.time()) - raid["t0"]:.0f} s) felled its hut (BUG-1169)')
                 state['raid'] = None
                 return
             # BUG-1169: a raid whose hut was cut late (its host click came late) gets RAID_AFTER_CUT s after the first cut:
@@ -1360,6 +1369,10 @@ class Campaign:
             if time.time() - raid['t0'] > limit:
                 self.note(f'tribe: the raid on village {raid["tribe"]} did not fell its hut in {limit:.0f} s ({hs.strip()[:80]})')
                 state['raid'] = None
+                if raid.get('planted_cut'):
+                    self.finding('driver', 'tribe:late_cut', f'the raid on village {raid["tribe"]} with the planted late cut '
+                                 f'(first cut at {raid.get("cut_at", time.time()) - raid["t0"]:.0f} s) was dropped at '
+                                 f'{limit:.0f} s before its hut fell ({hs.strip()[:60]}; BUG-1169)')
                 if not raid.get('host_click') and not OLD_RAID_SKIP and len(state.get('standing', [])) > 1:
                     # BUG-1091: a raid without the host's click never gets its hut cut and never falls; the nearest
                     # village was raided again and again (lab 20261113-181333: village 2 for 25 min, 750/750)
@@ -1399,6 +1412,28 @@ class Campaign:
             hit = m and mx and float(m.group(1)) < float(mx.group(1)) - 1  # a blow landed (raiders hit from 20-30 m)
             # cut again whenever it is over 40: the village's members repair their hut (damage type 10, docs/re/tribe.md
             # #tribe-hut-fall) while the raiders die (lab 20261113-092426: cut to 40, back at 306 of 750 four minutes later)
+            if PLANT_LATE_CUT and raid.get('planted_cut') and raid['cut'] and time.time() - raid['cut_at'] < PLANT_CUT_HOLD:
+                # (the plant, after its cut: the raiders' next blows do not land for PLANT_CUT_HOLD s either, as in lab
+                # 20261115-154901: cut to 40, dropped 28 s later at 39)
+                if m and float(m.group(1)) < 39:
+                    self.host.call('coop.tribe huthp %.2f %.2f %.2f 40' % raid['hut'])
+                return
+            if PLANT_LATE_CUT and not raid['cut'] and (raid.get('planted_cut') or not getattr(self, 'late_cut_planted', False)):
+                # BUG-1169's plant: the raiders' blows on this raid's hut do not land before PLANT_LATE_CUT s of the raid
+                # (each one undone: the hut back to its maximum, as when the host's click came late), and no cut before
+                if not raid.get('planted_cut'):
+                    self.late_cut_planted = raid['planted_cut'] = True
+                    self.note(f'tribe: planted: the hut of village {raid["tribe"]} takes no damage before {PLANT_LATE_CUT:.0f} s '
+                              f'of its raid (CAMPAIGN_PLANT_LATE_CUT)')
+                if time.time() - raid['t0'] < PLANT_LATE_CUT:
+                    if hit:
+                        raid['undone'] = raid.get('undone', 0) + 1
+                        self.host.call('coop.tribe huthp %.2f %.2f %.2f %s' % (raid['hut'] + (mx.group(1),)))
+                    return
+                if m and float(m.group(1)) > 45:
+                    near = True  # the first cut comes at PLANT_LATE_CUT s (a blow then)
+                    self.note(f'tribe: planted: the first cut of the hut of village {raid["tribe"]} at '
+                              f'{time.time() - raid["t0"]:.0f} s of its raid ({raid.get("undone", 0)} blows undone before)')
             if (near or hit) and m and float(m.group(1)) > 45:
                 if not raid['cut']:
                     self.note('shortcut: coop.tribe huthp: the raided hut\'s health cut to 40 (its 400-1000 hp take the '
