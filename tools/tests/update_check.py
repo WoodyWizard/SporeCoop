@@ -24,6 +24,7 @@ connection without an answer (GitHub's file host now and then); the in-game upda
 install, sporekit.log names the retries. With SPORE_FIX_OFF=update.retry (one attempt) it must FAIL.
 """
 import argparse
+import atexit
 import fcntl
 import hashlib
 import http.server
@@ -77,6 +78,9 @@ def build_new(dist):
     shutil.copytree(os.path.join(dist, 'stage'), stage)
     shutil.copy(os.path.join(ROOT, 'build-v' + NEW.replace('.', ''), 'coop.dll'),
                 os.path.join(stage, 'SporeCoop', 'mods', 'coop.dll'))
+    # BUG-1214: stripped as tools/package.sh strips a release's coop.dll (unstripped it is 100+ MB since 0.7.15, over
+    # the in-game updater's 96 MB download limit: "the download is too big")
+    run(f'{llvm}/bin/llvm-strip', os.path.join(stage, 'SporeCoop', 'mods', 'coop.dll'))
     pack = os.path.join(dist, f'SporeCoop-{NEW}.pack')
     run('python3', os.path.join(ROOT, 'tools', 'mkpack.py'), stage, NEW, pack)
     return pack
@@ -226,8 +230,10 @@ def main():
     ck(os.path.exists(vf) and open(vf).read().strip() == ver, f'installed version {ver}')
     # 3. the game asks our "GitHub"
     ini = os.path.join(b, 'mods', 'coop.ini')
-    with open(ini, 'a') as f:
-        f.write(f'\n[update]\ncheck=1\nurl={api}\n')
+    # BUG-1190: the lane's coop.ini survives the lab's deploys: this url stayed and won over the [update] of the
+    # update tests that ran on this lane later; set here (no stale one of an earlier run first), removed at the end
+    lane_mod.ini_section(ini, 'update', {'check': 1, 'url': api})
+    atexit.register(lane_mod.ini_section, ini, 'update')
     inst = 2 * lane - 1
 
     def start_game():

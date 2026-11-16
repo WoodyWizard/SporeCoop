@@ -102,13 +102,16 @@ def main():
         # the world shows some seconds after the guest's join (the screen is black before, but for the
         # overlay): a full screenshot (`shot`) of the game's frame first, the mark once it shows the world
         full = os.path.join(lane.out_dir('shots'), f'report_shot_full_{lane.GUEST}.png')
-        fmean, t0 = 0.0, time.time()
+        # BUG-1206: the first frame over 30 could be the world still fading in (61.8, the mark's shot 2 s later 99.8 in
+        # the 0.7.15 final check): the reference is a frame whose brightness held (two shots 1 s apart within 8)
+        fmean, prev, t0 = 0.0, None, time.time()
         while time.time() - t0 < 45:
             if guest.call('shot ' + full)['ok'] and os.path.exists(full):
                 fmean = image_stats(open(full, 'rb').read())[2]
-                if fmean > 30:
+                if fmean > 30 and prev is not None and abs(fmean - prev) < 8:
                     break
-            time.sleep(2)
+                prev = fmean if fmean > 30 else None
+            time.sleep(1 if prev is not None else 2)
         print(f'  the guest\'s frame before the mark: mean brightness {fmean:.1f} after {time.time() - t0:.0f} s')
         time.sleep(1)
         h0, g0 = log_size(lane.HOST), log_size(lane.GUEST)

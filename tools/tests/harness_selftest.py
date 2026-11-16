@@ -11,6 +11,7 @@ No game: fake consoles and a fake clock.
             mirror and the excluded (BUG-0437); the result lines, and the lab reads inconclusive() as INCONCLUSIVE
   lint      test_lint.py flags a test that copies a harness helper again
   codemod   harness_codemod.py --self-test (plan, rewrite, verify)
+  ini       lane.ini_section replaces or removes a section of the lane's coop.ini (BUG-1190)
 """
 import contextlib
 import io
@@ -301,6 +302,30 @@ def check_api():
     ck(labverdict.output_verdict('  FAIL x\nRESULT: FAIL\n' + text)[0] is None, 'api: a failed verdict line wins over INCONCLUSIVE')
 
 
+def check_ini_section():
+    """lane.ini_section (BUG-1190): a stale [update] that update_check.py left is replaced, not shadowing the new one"""
+    import lane
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, 'coop.ini')
+        open(p, 'wb').write(b'[coop]\r\nname=Alice\r\n[update]\r\ncheck=1\r\nurl=http://127.0.0.1:48002/latest\r\n'
+                            b'[ui]\r\nhost_port=1\r\n')
+        before = open(p, 'rb').read()
+        old = lane.ini_section(p, 'update', {'check': 1, 'url': 'http://127.0.0.1:47979/latest'})
+        now = open(p, 'rb').read()
+        ck(old == before and now.count(b'[update]') == 1 and b'48002' not in now and b'url=http://127.0.0.1:47979/latest\r\n'
+           in now and b'name=Alice\r\n[ui]\r\nhost_port=1\r\n' in now,
+           'ini: lane.ini_section replaces a stale [update] (one section, the new url, CRLF, other sections kept)')
+        lane.ini_section(p, 'update')
+        ck(b'[update]' not in open(p, 'rb').read(), 'ini: lane.ini_section(path, section) removes the section')
+        open(p, 'wb').write('[coop]\r\nname=\u0410\r\n'.encode('utf-16'))
+        lane.ini_section(p, 'update', {'check': 0})
+        b = open(p, 'rb').read()
+        ck(b[:2] == b'\xff\xfe' and b.decode('utf-16') == '[coop]\r\nname=\u0410\r\n[update]\r\ncheck=0\r\n',
+           'ini: a UTF-16 coop.ini stays UTF-16')
+        q = os.path.join(d, 'none.ini')
+        ck(lane.ini_section(q, 'update') is None and not os.path.exists(q), 'ini: removing from a missing file makes none')
+
+
 def main():
     with tempfile.TemporaryDirectory() as d:
         logs = {}
@@ -335,6 +360,7 @@ def main():
            f'lint: test_lint flags a new copy of a harness helper ({probs})')
     r, text = captured(harness_codemod.self_test)
     ck(r == 0, 'codemod: harness_codemod.py --self-test' + ('' if r == 0 else '\n' + text))
+    check_ini_section()
     print('RESULT:', 'OK' if OK else 'FAIL')
     return 0 if OK else 1
 

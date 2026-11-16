@@ -153,6 +153,10 @@
   for since joining guests stand 5 m aside, the tag tests no longer read an off-screen arrow's label as a tag; proxy_ghost,
   cell_mirror_nan and herd_help_stale no longer fail on what their own steps or the game's LOD did (BUG-1195, BUG-1197,
   BUG-1200, BUG-1201, BUG-1207).
+- Tests: the update tests replace a lane's `[update]` setting instead of adding a second one, the next-version build
+  of the updater test compiles again, twins that must fail and the campaign segment rerun are no longer in the full
+  suite, the second game of a start waits for the first one's SporeKit, and diag / report_shot wait for what they
+  check (BUG-1189, BUG-1190, BUG-1191, BUG-1192, BUG-1193, BUG-1206, BUG-1209).
 
 ## [0.7.14.1] - 2026-11-14
 

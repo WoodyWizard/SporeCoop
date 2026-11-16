@@ -41,10 +41,16 @@ def lane_down(timeout=2.0):
 
 
 def game_process_up(inst, timeout=2.0):
-    """A9: after a launch, until the instance's game process runs (its sandbox and wineserver are up: the next
-    launch no longer races it on the bottle), at most the old fixed 2 s between the two launches"""
-    return startwait.until(lambda: subprocess.run([lane.SPORE, 'pids', str(inst)], capture_output=True, text=True,
-                                                  timeout=10).stdout.strip(), timeout)
+    """A9: after a launch, until the instance's game runs SporeKit (its console answers: the sandbox, the wineserver
+    and the game are up, the next launch no longer races it on the bottle), at most the old fixed 2 s between the two
+    launches. BUG-1209: the game process alone was not enough: in the 0.7.15 final check (space_planner_build, lab
+    20261116-025154) the host was launched as soon as the guest's SporeApp.exe existed, both SporeKits booted in the
+    same millisecond (the only one of 836 starts) and the guest's console reset the test's first call.
+    SPORE_GAME_UP_PROCESS=1: the process only (the twin)."""
+    if os.environ.get('SPORE_GAME_UP_PROCESS') == '1':
+        return startwait.until(lambda: subprocess.run([lane.SPORE, 'pids', str(inst)], capture_output=True, text=True,
+                                                      timeout=10).stdout.strip(), timeout)
+    return startwait.until(lambda: Console(inst, timeout=1).call('ping')['ok'], timeout)
 
 
 def host_frame(con):

@@ -2055,6 +2055,8 @@ def main():
     a = ap.parse_args()
     seg_file = a.segment  # (the suite entry passes $CAMPAIGN_SEGMENT: other campaigns of that run ignore it)
     if seg_file is not None and not seg_file.strip():
+        # BUG-1192: a FAIL line with the reason (the lab names FAIL lines; a bare RESULT read as "without a FAIL line")
+        print('  FAIL no segment given: lab.py run campaign_segment --segment <lab run of a failed campaign>')
         print('RESULT: FAIL (no segment: lab.py run campaign_segment --segment <lab run of a failed campaign>)')
         return 1
     if seg_file:  # A6: play only the failed segment of another run, from its save

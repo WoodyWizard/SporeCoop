@@ -67,3 +67,4 @@ game killed (session_restart(save=False)), its save loaded again.
 ## History
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (feature idea, fork evidence only).
 - 2026-11-15: done on feat/w51-store (E2).
+- 2026-11-16: ui_golden's settings_menu / settings_host / settings_guest references updated on purpose on fix/w51-t1 (the new "Host autosave" row; "Vote before the Creature stage" moved to the next page): the 0.7.15 final check (lab 20261116-025154) and lab 20261116-082959 failed them at 2.67-2.93 %, the new references made on lane 9 with `coop_ui_golden.py --update --only settings_menu,settings_host,settings_guest` and looked at.

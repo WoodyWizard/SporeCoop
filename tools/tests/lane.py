@@ -100,3 +100,31 @@ def out_dir(*sub):
     p = os.path.join(ROOT, 'out', *(sub if LANE == 1 else (f'lane{LANE}',) + sub))
     os.makedirs(p, exist_ok=True)
     return p
+
+
+def ini_section(path, section, entries=None):
+    """BUG-1190: the lane's ini (coop.ini) with every `[section]` block replaced by one holding `entries` ({key: value};
+    None: the section only removed). A second `[update]` appended after a stale one that update_check.py left was not
+    read (the game takes the first). UTF-16 with a BOM or 8-bit, CRLF or LF, as the file is. Returns the old bytes (None:
+    there was no file) for the caller to write back."""
+    old = open(path, 'rb').read() if os.path.exists(path) else None
+    data = old or b''
+    utf16 = data[:2] in (b'\xff\xfe', b'\xfe\xff')
+    text = data.decode('utf-16') if utf16 else data.decode('utf-8', 'surrogateescape')
+    nl = '\r\n' if '\r\n' in text or not text else '\n'
+    keep, skip = [], False
+    for ln in text.splitlines(keepends=True):
+        s = ln.strip()
+        if s.startswith('[') and s.endswith(']'):
+            skip = s[1:-1].strip().lower() == section.lower()
+        if not skip:
+            keep.append(ln)
+    text = ''.join(keep)
+    if entries is not None:
+        if text and not text.endswith(('\n', '\r')):
+            text += nl
+        text += f'[{section}]{nl}' + ''.join(f'{k}={v}{nl}' for k, v in entries.items())
+    if old is not None or entries is not None:
+        with open(path, 'wb') as f:
+            f.write(text.encode('utf-16') if utf16 else text.encode('utf-8', 'surrogateescape'))
+    return old

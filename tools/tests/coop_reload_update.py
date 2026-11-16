@@ -46,10 +46,9 @@ def main():
     time.sleep(2)
     lane.sh('deploy')
     ini = os.path.join(GAME, 'SporebinEP1', 'mods', 'coop.ini')
-    old = open(ini).read() if os.path.exists(ini) else None
+    # BUG-1190: replaced, not appended (a stale [update] that update_check.py left came first and won)
+    old = lane.ini_section(ini, 'update', {'check': 1, 'url': f'http://127.0.0.1:{PORT}/latest'})
     try:
-        with open(ini, 'a') as f:
-            f.write(f'\n[update]\ncheck=1\nurl=http://127.0.0.1:{PORT}/latest\n')
         lane.run_host()
         ck(wait_up(lane.HOST), 'the game starts')
         c = Console(lane.HOST)
@@ -86,7 +85,7 @@ def main():
         if old is None:
             os.remove(ini)
         else:
-            open(ini, 'w').write(old)
+            open(ini, 'wb').write(old)
         srv.shutdown()
         lane.sh('kill', check=False)
     return ck.result()

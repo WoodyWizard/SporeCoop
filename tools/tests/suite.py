@@ -9,6 +9,9 @@
             mixed (the previous release and this build in one session, coop_mixed_version.py: in no other suite;
             it uses the neighbour lane too, run it alone: `lab.py run mixed --lane 9` with lane 10 idle)
             refactor (the dumps that prove a refactoring changed no registry, tools/refactor_dump.py: only by name)
+            twin (an entry that must FAIL: the old behaviour of a fix kept as its own test; never in full, whose
+            verdict needs every test to PASS: `lab.py run twin` or by name, BUG-1193)
+            segment (campaign_segment: needs `--segment <run>`, A6; only by name, BUG-1192)
             players (generated variants of chosen tests under the conditions of real players: the guest
             at 15 fps, a mobile / bursty network, both, four players; docs/06-testing.md#testing-degraded)
   warm      may reuse running games of the lane (twoinst.start with SPORE_WARM=1: the fixture is
@@ -56,7 +59,9 @@ def add(name, cmd, suites=('full',), warm=False, exclusive=False, minutes=4, fix
     """reports=True: the test makes crash / hang reports or faults on purpose and checks them itself;
     for every other test the lab fails it on a new crash-*/report-* file of its lane, a game that
     dies right after it, or a non-zero fault count in its log (tools/lab.py run_one, BUG-0036/0042)"""
-    if {'campaign', 'mixed', 'detector', 'refactor'} & set(suites):  # hours on one lane / a second lane / the detector / a refactoring's proof: only when asked for
+    # hours on one lane / a second lane / the detector / a refactoring's proof / a twin that must FAIL (BUG-1193) / a
+    # campaign segment that needs --segment (BUG-1192): only when asked for
+    if {'campaign', 'mixed', 'detector', 'refactor', 'twin', 'segment'} & set(suites):
         suites = set(suites)
     else:
         suites = set(suites) | ({'nightly'} if {'nightly', 'extended'} & set(suites) else {'full', 'nightly'})
@@ -1041,7 +1046,7 @@ add('campaign_ct', P + 'coop_campaign.py --from cell --to tribe --minutes 2 --no
 # A6 (BUG-1115, docs/06-testing.md#testing-campaign-segments): the failed segment of a campaign run played again from
 # the save it started from (owner decision 10: a final-check rerun may run only that segment; the full campaign still
 # runs once in the final check): `lab.py run campaign_segment --segment <lab run of the failed campaign>`
-add('campaign_segment', P + 'coop_campaign.py --segment "$CAMPAIGN_SEGMENT"', (), minutes=45, timeout=3600)
+add('campaign_segment', P + 'coop_campaign.py --segment "$CAMPAIGN_SEGMENT"', ('segment',), minutes=45, timeout=3600)  # only by name with --segment, never in full (BUG-1192)
 add('campaign_tribe_share', 'CAMPAIGN_SHARE_SPAM=1 ' + P + 'coop_campaign.py --from creature --to tribe --minutes 2 --no-finale', (),
     minutes=30, timeout=3600)
 
@@ -1075,7 +1080,8 @@ add('mem_census_tribe_solo', P + 'coop_mem_census.py --fixture tribe --idle --so
 add('mem_reserve', P + 'coop_mem_reserve.py', minutes=8, fixture='creature', allow=[allow('mem-low', 'BUG-0631', 'the test fills the host\'s address space to 260 MB free on purpose (coop.diag fill)', who='host')])  # BUG-0631: the host's address space filled with 16 MB blocks to 260 MB free: within 2.5 min a free block of 100+ MB is back and the screen says to save and restart; 3 min of play on (SPORE_FIX_OFF=core.mem_reserve fails)
 add('mem_census_short', P + 'coop_mem_census.py --minutes 4 --sample 2', ('extended',), minutes=10, fixture='creature')
 
-SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed', 'detector', 'refactor')
+SUITES = ('smoke', 'full', 'nightly', 'extended', 'campaign', 'multi', 'players', 'mixed', 'detector', 'refactor', 'twin',
+          'segment')
 
 
 def select(spec):
@@ -1178,7 +1184,7 @@ add('npc_frozen_pooled', P + 'coop_npc_frozen.py --case pooled', warm=True, minu
 add('guest_spot', P + 'coop_guest_spot.py', warm=True, minutes=2, fixture='creature')  # BUG-0333: the guest's avatar stays where it joined while it and the host hit NPCs (the team test's steps), sampled 4x a second
 add('guest_spot_swap', 'SPORE_FIX_OFF=creations.guest_world_species ' + P + 'coop_guest_spot.py', minutes=2, fixture='creature')  # BUG-0333: guest_spot with the guest's own creature put on its avatar after the join (SetSpecies, the path of the 2 runs that showed the drift)
 add('chat_held_send', P + 'coop_chat_held_send.py', warm=True, minutes=2, fixture='creature')  # BUG-0629: a chat line sent with the Send button while the host's main thread is held 2.5 s reaches both games, and the play bots' check (play_creature.chat_reached) sees it (SPORE_CHAT_WAIT=0, the old one look at 1.5 s, fails)
-add('chat_held_send_oldcheck', 'SPORE_CHAT_WAIT=0 ' + P + 'coop_chat_held_send.py', minutes=2, fixture='creature')  # BUG-0629 twin: the bots' old check (one look 1.5 s after the click) must FAIL here
+add('chat_held_send_oldcheck', 'SPORE_CHAT_WAIT=0 ' + P + 'coop_chat_held_send.py', ('twin',), minutes=2, fixture='creature')  # BUG-0629 twin: the bots' old check (one look 1.5 s after the click) must FAIL here; only by name or `lab.py run twin`, never in full (BUG-1193)
 add('editor_sync_host_late', P + 'coop_editor_sync.py --case host_late', minutes=6, fixture='creature')  # BUG-0457: the host evolves and leaves its editor first, the guest stays 25 s in its own editor (the host's new bundle reaches it there): the guest's game builds the host's puppet from the host's new creature (bem); BUG-0581: the held request's editor had the stage's DNA
 add('lifecycle_reset', P + 'coop_lifecycle_reset.py', minutes=16, fixture='creature')  # BUG-1055: every stage, play, end the session (Leave and drop) and change world: the lifecycle registry's resets leave nothing (coop.lifecycle held); SPORE_FIX_OFF=core.lifecycle_reset fails
 add('lifecycle_reset_cell', 'SPORE_STAGES=creature,cell,tribe ' + P + 'coop_lifecycle_reset.py', minutes=6, fixture='creature')  # BUG-1002: the Cell session and world state ends with them (SPORE_FIX_OFF=cell.session_reset fails)
