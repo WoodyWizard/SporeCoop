@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <set>
 #include <string>
+#include <vector>
 
 namespace autosave {
 
@@ -98,6 +100,33 @@ struct Clock {
     }
     // seconds since the last save, -1: none seen
     double ago(double now) const { return last_save < 0 ? -1 : now - last_save; }
+};
+
+// BUG-1203: "a colony founded" is a colony the host's world has not had before, not a count that went up. The host's
+// read of its colonies misses one for a moment after each of its game's saves (the planets of another star system are
+// not read back until something asks for them again), so the count went 2 -> 1 -> 2 after every save, every count
+// increase was a milestone and the host's game saved itself every 8 s for the whole session (lab 20261116-025154).
+// One set per player (the host's own colonies, each guest's own): a colony id seen once in this Space world is no
+// milestone again; the first read of a world (or of a player) is what it has, no milestone.
+struct NewIds {
+    uint32_t world = 0;
+    bool primed = false;
+    std::set<uint32_t> seen;
+    // the ids read now in Space world `w` (spaceext::world_epoch): true when one of them was never seen in this world
+    // before (and this is not the first read of it)
+    bool grew(uint32_t w, const std::vector<uint32_t>& ids)
+    {
+        if (w != world || !w) {
+            world = w;
+            primed = false;
+            seen.clear();
+        }
+        bool fresh = false;
+        for (uint32_t id : ids)
+            fresh |= seen.insert(id).second && primed;
+        primed = true;
+        return fresh;
+    }
 };
 
 // "saved 3 min ago" / "saved just now" / "not saved yet" (the co-op window); ru: Russian

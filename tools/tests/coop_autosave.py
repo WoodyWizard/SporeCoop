@@ -11,6 +11,8 @@ after a milestone and every N minutes (autosave.cpp; world::save_game, the pause
    host's autosave. --timer: the host's interval is 40 s (`coop.autosave interval 40`, a test seam for the setting's
    minutes). Within 60 s the host's game wrote a save of its own (`coop.autosave`: confirmed), with nothing else
    saving it (no join, no `coop.save`).
+   One colony makes one save: no milestone save in the 30 s after it (BUG-1203: a save every 8 s,
+   SPORE_FIX_OFF=world.autosave_colony_ids fails).
 3. Both games end without saving (twoinst.session_restart(save=False): spore.sh kill, as a crash) and start again;
    the host loads its save.
 PASS: the host's money after the load is the money it had before the crash (the 12345 are there).
@@ -62,6 +64,12 @@ def main():
     ck(a1 is not None and int(a1.get(kind, 0)) > int(a0.get(kind, 0)),
        f'the host\'s game saved itself ({"the timer" if timer else "after the colony"}): {a1 and a1.get(kind)}')
     time.sleep(3)
+    if not timer:  # BUG-1203: one colony, one save (the host's read missed a colony after each save: a save every 8 s)
+        n1 = int(autosave(host).get('milestone_saves', 0))
+        time.sleep(30)
+        a2 = autosave(host)
+        ck(int(a2.get('milestone_saves', 0)) == n1 and a2.get('pending') == '0',
+           f'... once: no milestone save in the next 30 s ({n1} -> {a2.get("milestone_saves")}, pending {a2.get("pending")})')
     m1 = money(host)
     # the host's co-op window (F9) says when its game last saved
     host.call('coop.uistate 1')

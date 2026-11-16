@@ -198,6 +198,26 @@ def cinematic(con):
     return m.group(1) if m else None
 
 
+def autosave_settled(con, timeout=45):
+    """E2 (BUG-0864, BUG-1203): the host's autosave has nothing on its way (no milestone waiting, every posted save
+    written) and the "game saved" box of a save made meanwhile had time to be confirmed, so a test's real input (Esc,
+    a click) does not land in the middle of a save. True when settled within `timeout` s (also for a game without the
+    command); the wait itself checks nothing of the test"""
+    def now():
+        a = kv(con.call('coop.autosave').get('out', ''))
+        if 'pending' not in a:
+            return True
+        try:
+            return a['pending'] == '0' and int(a['posted']) == int(a['confirmed']) + int(a['lost'])
+        except (KeyError, ValueError):
+            return True
+    if now():
+        return True
+    ok = wait_until(now, timeout, step=1.0) is not None
+    time.sleep(3)  # world.cpp confirms the box about 2 s after the write
+    return ok
+
+
 def eax(con, what):
     """the eax of `call <what>`, None without an answer"""
     m = re.search(r'eax=0x([0-9A-Fa-f]+)', con.call('call ' + what)['out'])

@@ -272,6 +272,22 @@ static void test_autosave()
           autosave::ago_text(185, false) == "saved 3 min ago" && autosave::ago_text(7300, false) == "saved 2 h ago");
 }
 
+// BUG-1203: "a colony founded" once per colony of a Space world, not after a read that missed one for a moment
+static void test_new_colonies()
+{
+    printf("autosave new colony ids\n");
+    autosave::NewIds n;
+    CHECK(!n.grew(1, {0x01460035u, 0x00460014u}));               // the first read of the world: what it has
+    CHECK(!n.grew(1, {0x01460035u}));                            // a read right after a save misses one
+    CHECK(!n.grew(1, {0x01460035u, 0x00460014u}));               // ... it is back: no milestone (the bug: 1 -> 2)
+    CHECK(n.grew(1, {0x01460035u, 0x00460014u, 0x0046000Cu}));   // a colony founded
+    CHECK(!n.grew(1, {0x01460035u, 0x00460014u, 0x0046000Cu}));  // ... only once
+    CHECK(!n.grew(1, {}) && !n.grew(1, {0x0046000Cu}));          // gone and back
+    CHECK(!n.grew(2, {0x0046000Cu, 0x02460035u}));               // another Space world: its first read again
+    CHECK(n.grew(2, {0x0046000Cu, 0x02460035u, 0x03460035u}));
+    CHECK(!n.grew(0, {0x05460035u}) && !n.grew(0, {0x05460035u, 0x06460035u})); // no Space world: never
+}
+
 // BUG-1153 / BUG-1154: owners by position across a load
 static void test_claims()
 {
@@ -308,6 +324,7 @@ static void test_claims()
 int main()
 {
     test_autosave();
+    test_new_colonies();
     test_claims();
     test_keys();
     test_round_trip();

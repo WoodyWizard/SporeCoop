@@ -23,6 +23,7 @@
 #include "sporekit_game.hpp"
 #include "space_kept.h"
 #include "kept_disk.h"
+#include "autosave.h"
 #include "autosave_glue.h"
 #include "wire/space_map.h"
 #include "cell_logic.h"
@@ -52,6 +53,13 @@ enum Kind : uint8_t {
 // packets are at most 1200 bytes (kind, origin and the session header come on top)
 constexpr size_t kChunkBytes = 1000;
 constexpr double kPeriod = 5.0, kScan = 1.0;
+// BUG-1203: the autosave's "a colony founded" is a colony id this Space world never had (autosave::NewIds), not a
+// count that went up: the host's read misses a colony for a moment after each save of its game, and the count's
+// 2 -> 1 -> 2 made it save itself every 8 s. `coop.fix world.autosave_colony_ids off`: the count (0.7.15 before the fix).
+static bool g_colony_ids_fix = true;
+COOP_FIX("world.autosave_colony_ids", "BUG-1203", g_colony_ids_fix,
+         "space: the host's autosave after a new colony comes once per colony, not after every save of its game");
+static autosave::NewIds g_new_colonies; // host: the colonies of this Space world seen so far (its own, its guests' own)
 
 static uintptr_t a_PlayerEmpire, a_StarMgr, a_PlayerUFOGet;
 
@@ -428,9 +436,15 @@ static void roster_tick(double now)
         static int s_mine = -1;
         static uint32_t s_epoch;
         int n = 0;
+        std::vector<uint32_t> ids;
         for (auto& c : r.colonies)
-            n += !c.home;
-        if (s_epoch == spaceext::world_epoch() && s_mine >= 0 && n > s_mine && spaceext::is_host())
+            if (!c.home) {
+                n++;
+                ids.push_back(c.planet);
+            }
+        bool grew = g_colony_ids_fix ? g_new_colonies.grew(spaceext::world_epoch(), ids) // BUG-1203: a colony never seen here
+                                     : s_epoch == spaceext::world_epoch() && s_mine >= 0 && n > s_mine;
+        if (grew && spaceext::is_host())
             autosave::milestone("a colony founded");
         s_mine = n;
         s_epoch = spaceext::world_epoch();
@@ -670,7 +684,9 @@ static void kept_roster(uint8_t id)
     for (auto& c : g_rosters[id].colonies)
         if (!c.home && own_colony(id, c))
             own.push_back(c.planet);
-    if (k.have && own.size() > k.value.size())
+    bool grew = g_colony_ids_fix ? g_new_colonies.grew(spaceext::world_epoch(), own) && k.have // BUG-1203
+                                 : k.have && own.size() > k.value.size();
+    if (grew)
         autosave::milestone("a colony founded"); // E2 (BUG-0864): a guest's new colony
     g_store.keep(k, std::move(own));
 }
