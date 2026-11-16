@@ -8923,3 +8923,7 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
 * Traffic to one guest (the MSI, two games, Vandh.spo, Creature): 1238 KB a minute before BUG-9235 / 9237, about 430 KB
   after (NPC states 780 -> 80 KB, world objects 213 -> 120 KB; player states 105 KB and world state 49 KB stay). A world
   share: about 6 MB of files plus 2.3 MB of creation bundles; deflate shrinks a save only about 15 % (already packed).
+* DXVK trial (2026-11-15, decision 4R): DXVK 3.1.1's x32 d3d9.dll next to SporeApp.exe works with SporeKit (sporekit
+  logs "other hooks: d3d9.dll from the game folder"; the Co-op window and the HUD draw). Same average fps, steadier frames
+  (fewer long frames), but about 260 MB less free address space in the 32-bit game (693 vs 952 MB free, largest block 352
+  vs 686 MB). DXVK writes SporeApp_d3d9.log next to the exe.
