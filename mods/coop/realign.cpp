@@ -1,4 +1,5 @@
 // Whole-planet re-alignment after transitions (realign.h, realign_rule.h, docs/re/tribe.md#tribe-realign).
+#include "lifecycle.h"
 #include "realign.h"
 #include "player_life.h"
 
@@ -417,6 +418,7 @@ void on_session_end()
     g_in_place.clear();
     g_list.clear();
 }
+LIFECYCLE_HOOK("realign.session", lifecycle::kSessionEnd, -82, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 std::string status()
 {

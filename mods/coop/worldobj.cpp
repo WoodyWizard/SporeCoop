@@ -1,5 +1,6 @@
 // World objects owned by the host: one generic L1 / L2 path for every kind (worldobj.h,
 // docs/sync-architecture-plan.md, docs/re/creature.md#creature-world-objects).
+#include "lifecycle.h"
 #include "worldobj.h"
 
 #include <windows.h>
@@ -1528,7 +1529,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 }
 
 void on_session_end() { guest_reset(); }
+LIFECYCLE_HOOK("wobj.session", lifecycle::kSessionEnd, -84, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 void on_world_change() { guest_reset(); }
+// C2 (BUG-1141): a world that was open changed or closed (world_id.h; not an editor visit, decision 2)
+LIFECYCLE_HOOK("wobj.world", lifecycle::kWorldChange, -84, [](const lifecycle::Ctx& c) { if (c.from_stage >= 0) on_world_change(); }, true);
 
 std::string status()
 {

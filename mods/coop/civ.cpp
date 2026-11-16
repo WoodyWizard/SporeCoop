@@ -2,6 +2,8 @@
 #include "call_guard.h"
 #include "squadron.h"
 #include "lifecycle.h"
+#include "busy_model.h"
+#include "world_id.h"
 #include "player_life.h"
 #include "census.h"
 
@@ -1424,22 +1426,18 @@ static int SK_THISCALL h_SetMoveOrder(void* v, float x, float y, float z, int fl
 static bool g_fix_cmd_hold = true;
 COOP_FIX("civ.cmd_hold", "BUG-0693", g_fix_cmd_hold,
          "civ: a guest's purchase, planner building, gift or superweapon request made while the host is away runs when it is back");
-static net::HeldCommands g_cmd_held;
-PLAYER_STATE("civ.held_cmds", [](uint8_t id) { g_cmd_held.forget(id); }, // BUG-0422 / BUG-0693: a leaver's held commands
-             [](uint8_t id) -> size_t {
-                 size_t n = 0;
-                 for (auto& c : g_cmd_held.q)
-                     n += c.from == id;
-                 return n;
-             });
+// C3 (BUG-1142): the one held-command pump of busy_model.h (Civ's row: held, run after kSettle s back in the stage,
+// the guest told at most every 5 s that its command waits)
+static busy_model::HeldPump g_held;
+static const busy_model::Row& held_row() { return *busy_model::row_of(stage_epoch::index_of(modes::kCiv)); }
+PLAYER_STATE("civ.held_cmds", [](uint8_t id) { g_held.forget(id); }, // BUG-0422 / BUG-0693: a leaver's held commands
+             [](uint8_t id) -> size_t { return g_held.held_of(id); });
 static uint32_t g_cmd_world; // BUG-0693: the save this game last played the stage in (modes::current_world)
-static double g_away_said = -100;
 static void say_host_away(const char* what)
 {
     double t = H ? H->time_seconds() : 0;
-    if (!g_fix_cmd_hold || !C.feed || t - g_away_said < 5)
+    if (!g_fix_cmd_hold || !C.feed || !g_held.say_due(held_row(), t))
         return;
-    g_away_said = t;
     C.feed(std::string(what) + " waits: " + C.sess->name_of(0) + " (host) is away, it is done when the host is back");
 }
 
@@ -4941,16 +4939,12 @@ void tick(double now)
         return;
     prune_gone();
     g_cmd_world = modes::current_world();
-    static double active_at, active_since;
-    if (now - active_at > 1.0) // the stage just came back (a load, an editor): its world settles first
-        active_since = now;
-    active_at = now;
-    if (is_host() && !g_cmd_held.q.empty() && now - active_since > net::HeldCommands::kSettle) // BUG-0693: the commands that came while this game was away
-        g_cmd_held.drain(modes::current_world(), now, [](const net::HeldCommands::Cmd& c) {
-            net::Reader r(c.bytes.data(), c.bytes.size());
-            H->log(M, SK_INFO, "civ: a command of player %u held while away runs now", c.from);
-            host_command(c.from, r);
-        });
+    // BUG-0693: the commands that came while this game was away run once the stage settled again (a load, an editor)
+    g_held.tick(held_row(), true, modes::current_world(), now, [](const net::HeldCommands::Cmd& c) {
+        net::Reader r(c.bytes.data(), c.bytes.size());
+        H->log(M, SK_INFO, "civ: a command of player %u held while away runs now", c.from);
+        host_command(c.from, r);
+    });
     if (is_host())
         host_tick(now);
     else if (is_guest())
@@ -5213,7 +5207,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (!active()) {
         if (type == net::MSG_CIV_CMD && g_fix_cmd_hold && g_ok && is_host() && r.left()) { // BUG-0693
-            g_cmd_held.push(from, r.cur(), r.left(), g_cmd_world, H->time_seconds());
+            g_held.hold(held_row(), from, r.cur(), r.left(), g_cmd_world, H->time_seconds());
             H->log(M, SK_INFO, "civ: a command of player %u held: this game is not in Civ (mode %08X)", from, game::mode_id());
         }
         if (type == net::MSG_CIV_BUILD && g_ok && is_guest()) {
@@ -5293,7 +5287,7 @@ static void clear_coop_tables(bool restore_speed)
 
 void on_session_end()
 {
-    g_cmd_held.clear(); // BUG-0693
+    g_held.clear(); // BUG-0693
     g_space_held.clear(); // BUG-0766 / BUG-0884
     g_space_out.clear();
     host_buildings_session_end(); // BUG-0670
@@ -5315,6 +5309,7 @@ void on_session_end()
     g_split_for.clear();
     g_city_short_since = -1;
 }
+LIFECYCLE_HOOK("civ.session", lifecycle::kSessionEnd, -44, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 // a load (or a stage change): every vehicle and city of the old world is freed. Before BUG-0059 civ
 // had no such reset: the host kept the old vehicle table (a new vehicle at a reused address kept an
@@ -5357,38 +5352,25 @@ void on_world_change()
 
 // BUG-0223: which Civ world is open. Before, a single frame without the stage's local entity (an
 // anchor built from the player civ's first city) counted as a world change: the host dropped the
-// vehicle table (every vehicle a new id, rebuilt on the guests), every city's owner (captures and
-// gifts) and the boosts while the world was still there. Now: the stage counter
-// (game::stage_epoch: a load, a received world, another stage), leaving Civ for a mode that is not
-// an editor, and the in-stage signals (another player civilization object, another save name).
-// Limit: a reload of the same save that reuses the player civ's address and never shows a
-// non-stage frame is not seen.
-static stage_epoch::Watch g_world_watch;
-static bool g_world_left = true;
+// vehicle table, every city's owner and the boosts while the world was still there. C2 (BUG-1141):
+// world_id.h is the one answer (the stage counter, leaving Civ for a mode that is not an editor,
+// another player civilization object or save file); coop.cpp fires the hook below.
 static uint32_t g_world_checks_fired;
 
-void world_check()
-{
-    uint32_t m = game::mode_id();
-    bool in = m == modes::kCiv;
-    bool editor = m == modes::kEdit || m == modes::kEditor;
-    void* pc = in && g_ok && nm() ? player_civ() : nullptr;
-    bool ch = stage_epoch::changed(g_world_watch, game::stage_epoch(modes::kCiv), in, pc, in ? modes::current_world() : 0);
-    bool fire = false;
-    if (!in && !editor) {
-        fire = !g_world_left;
-        g_world_left = true;
-    } else if (in) {
-        fire = ch && !g_world_left;
-        g_world_left = false;
-    }
-    if (fire) {
-        g_world_checks_fired++;
-        if (g_ok)
-            H->log(M, SK_INFO, "civ: the world changed (mode %08X, epoch %u)", m, game::stage_epoch(modes::kCiv));
-        on_world_change();
-    }
-}
+// C2 (BUG-1141): the Civ world that was open changed or closed (world_id.h fires it; an editor
+// visit keeps it, decision 2)
+LIFECYCLE_HOOK("civ.world", lifecycle::kWorldChange, -44, [](const lifecycle::Ctx& c) {
+    if (c.from_stage != stage_epoch::index_of(modes::kCiv))
+        return;
+    g_world_checks_fired++;
+    if (g_ok)
+        H->log(M, SK_INFO, "civ: the world changed (%s, epoch %u)", world_id::why_name((world_id::Why)c.why),
+               game::stage_epoch(modes::kCiv));
+    on_world_change();
+}, true);
+// the Civ world's root object for world_id.h (coop.cpp): the player civilization, null outside Civ
+const void* world_anchor() { return game::mode_id() == modes::kCiv && g_ok && nm() ? player_civ() : nullptr; }
+
 
 void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, bool city, void* user), void* user)
 {

@@ -1075,8 +1075,19 @@ bool cell_leaving()
     return game::leaving_stage();
 }
 
+// C3 (BUG-1142, host_busy.cpp): a guest's Cell waits for the host's pause menu: the cell step does not run, as under
+// the game's own pause menu (the Cell stage has no cGameTimeManager pause; docs/re/host-centric.md#host-centric-pause-reasons)
+static bool g_cell_hold;
+static uint32_t g_cell_held_steps;
+void set_cell_hold(bool on) { g_cell_hold = on; }
+uint32_t cell_held_steps() { return g_cell_held_steps; }
+
 static void __cdecl h_SimUpdate(float dt)
 {
+    if (g_cell_hold && !cell_leaving()) {
+        g_cell_held_steps++;
+        return;
+    }
     o_SimUpdate(dt);
     if (cell_leaving())
         return;

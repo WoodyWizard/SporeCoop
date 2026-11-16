@@ -684,6 +684,7 @@ void reset_shares()
 static void drop_share_loads();
 
 void on_session_end() { drop_share_loads(); }
+LIFECYCLE_HOOK("world.session", lifecycle::kSessionEnd, -12, [](const lifecycle::Ctx&) { on_session_end(); }, false); // C2 (BUG-1141): end_session
 
 bool share_waits_for_planet()
 {

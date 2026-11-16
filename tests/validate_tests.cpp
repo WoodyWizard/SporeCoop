@@ -1105,7 +1105,12 @@ static void test_manifest()
     int known = 0;
     for (int t = 0; t < 256; t++)
         known += msg_info((uint8_t)t).known;
-    CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0]));
+    // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142)
+    const std::set<int> added_types = {70};
+    CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
+    CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
+          host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
+          dispatch_route(70, true) == Route::None);
     for (auto& g : golden0714::kTypes)
         CHECK(msg_info(g.id).known && std::string(msg_info(g.id).name) == g.name);
     CHECK(MSG_HELLO == 1 && MSG_SPACE == 48 && MSG_NPC_ANIM == 59 && MSG_HOST_WORLD == 69);
@@ -1113,7 +1118,8 @@ static void test_manifest()
     int bad = 0;
     for (int t = 0; t < 256; t++) {
         uint8_t u = (uint8_t)t;
-        if (host_world::msg_class(u) != golden0714::msg_class(u)) {
+        bool added_type = added_types.count(t) == 1; // (its class and route checked above)
+        if (!added_type && host_world::msg_class(u) != golden0714::msg_class(u)) {
             printf("  type %d: class %d, 0.7.14 %d\n", t, (int)host_world::msg_class(u), (int)golden0714::msg_class(u));
             bad++;
         }
@@ -1125,7 +1131,7 @@ static void test_manifest()
             bad++;
         }
         for (bool host : {false, true})
-            if (dispatch_route(u, host) != golden0714::route(u, host)) {
+            if (!added_type && dispatch_route(u, host) != golden0714::route(u, host)) {
                 printf("  type %d on the %s: route %d, 0.7.14 %d\n", t, host ? "host" : "guest", (int)dispatch_route(u, host),
                        (int)golden0714::route(u, host));
                 bad++;
@@ -1141,7 +1147,7 @@ static void test_manifest()
     CHECK(bad == 0);
     // the direction gate: exactly the types only the host sends (the sender inventory of the B3 review), off: none
     const std::set<int> host_only = {2, 3, 4, 5, 9, 13, 14, 15, 16, 17, 19, 20, 22, 23, 25, 29, 31, 33, 37, 39, 40, 42, 43, 47,
-                                     50, 56, 59, 62, 64, 66, 69};
+                                     50, 56, 59, 62, 64, 66, 69, 70};
     for (int t = 0; t < 256; t++) {
         CHECK(dir_gate_drops((uint8_t)t) == (host_only.count(t) == 1));
         CHECK(!dir_gate_drops((uint8_t)t, false));

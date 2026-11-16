@@ -556,6 +556,7 @@ void on_session_end()
     memset(g_cell_tries, 0, sizeof g_cell_tries);
     g_cell_last_full = g_cell_last_poll = g_cell_last_tx = -100;
 }
+LIFECYCLE_HOOK("parts.session", lifecycle::kSessionEnd, -80, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 int find_part(int level)
 {

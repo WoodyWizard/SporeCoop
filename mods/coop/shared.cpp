@@ -1,3 +1,4 @@
+#include "lifecycle.h"
 #include "shared.h"
 #include "game.h"
 
@@ -285,6 +286,7 @@ void on_session_end()
         r.applied = 0;
     }
 }
+LIFECYCLE_HOOK("shared.session", lifecycle::kSessionEnd, -14, [](const lifecycle::Ctx&) { on_session_end(); }, false); // C2 (BUG-1141): end_session
 
 void on_player_leave(uint8_t id)
 {
