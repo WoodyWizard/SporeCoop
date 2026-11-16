@@ -1,20 +1,20 @@
 ---
 id: BUG-1188
 title: tribe_duet fails on rel/0.7.15 + BUG-1187: the host's instrument member does not perform after the right-click with its chief in the box
-status: open
+status: fixed
 kind: test
 stage: Tribe
 reported: 2026-11-16
 source: lab
 role: 
-versions: 
-fixed_in:
-branch:
-commits:
+versions: 0.7.15 dev
+fixed_in: unreleased
+branch: fix/w51-duet
+commits: e7764e8d, d4c0b6a4
 tests: tribe_duet
 signature:
-docs:
-related: BUG-0748, BUG-1187
+docs: docs/re/tribe.md#tribe-duet-attack, docs/06-testing.md#testing-tribe-duet-attack
+related: BUG-0748, BUG-1187, BUG-1112, BUG-1078
 ---
 
 ## Report
@@ -65,6 +65,16 @@ no hold and the game's own attack started right before the orders (`coop.drama s
 product behaviour changed.
 
 ## Verification
+FAIL (rel/0.7.15 test, no change): out/lab/20261116-022014 (lanes 4 / 5, 1 of 4), out/lab/20261116-022434 (diagnostics
+only, 1 of 6), and the report's 20261116-002240 / 20261116-020859-2 (fix/w51-tribefields).
+FAIL (twin SPORE_DUET_DRAMA=1, the game's attack started before the orders): out/lab/20261116-023931 (2 of 4: neither
+member performed, the guest's check fails too).
+PASS (the fix, `coop.drama hold 80`): out/lab/20261116-023406 (lanes 4 / 5, 6 of 6, cold and warm; `held:
+creature_attack=3` in each, the guest's mirrors played the host's performance animations of both performers).
+Old start (SPORE_START_FIXED=1): out/lab/20261116-023030 (the attack at 57.1-57.2 s again; the test stops earlier, the
+guest's first member is its chief, docs/06-testing.md#testing-tribe-duet-attack).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fix/w51-duet: cause found (the host's creature attack on the test's village, moved into the performance
+  by the A9 lab start); the test holds it (`coop.drama hold`) and checks the guest's view of the performance; fixed.
