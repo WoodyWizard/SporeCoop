@@ -327,3 +327,7 @@ BUG-0948. GOG 2024, lane 4, Creature (the guest's follow camera turned by SporeK
   pointer's REAL screen place (centred, about 20 px under it), not the remapped mouse place, so in a scaled layer it
   showed at f x the pointer. Fixed in its own transform (ui.tooltip_place); the layer itself stays scaled.
 * ~ (2026-11-16) A `move` posted by qa.py over a Creature ability button showed no tooltip (Civ's city buttons did).
+* ✔ (2026-11-16, 125 % on 1280 x 960) Tribe: the chieftain hut's health bar sits on the hut. Space (solar system view):
+  the planet name box and crosshair sit on the planet, the home marker on the home planet, and the tooltip window
+  (here "Main Tools", 0x03754E6C) shows just over the pointer with ui.tooltip_place on. With these, every stage's
+  overlays were looked at once (Cell, Creature, Tribe, Civ, Space).
