@@ -1495,3 +1495,36 @@ editor opens (0.7.14). Lab: the refusals in tribe_outfit / civ_designs; FAIL run
 * ? Not checked: a Civ outfitter (AccessoryEditorActivate 0x4D2B5FD in the Civ input actions, planner kind 4); the
   host's real Civ editor route (vote, building editor, save) end to end (the tests set the design with the game's
   setter); the anthem.
+
+## The own creature swap under a cinematic (2026-11-15, fix/w51-evolve)
+<a id="creations-swap-cinematic"></a>
+
+BUG-1173. Lane 10 probe (creature fixture, the guest plays its own creature from worlds.ini):
+* ✔ `cCreatureAnimal::SetSpecies` on the avatar (creations.cpp apply_own_avatar, 3 s after a new avatar) while the
+  brain upgrade CRG_BrainUpgrade1 (F6A4B1E1) plays leaves that cinematic playing for good: its caption never comes,
+  the game time is never paused (a normal brain upgrade pauses with reason 0600C4AE when the caption shows, ~14 s
+  in), Enter does nothing, and the game's input lock (cGameInputManager +0x110) holds until the next world load.
+  The brain upgrade had started 0.6 s after the DNA arrived (each game runs its own, the DNA total is synced).
+* ✔ The same DNA after the swap: the caption at ~14 s, gone on the first Enter.
+* ? Inferred: the cinematic waits for something of the avatar that SetSpecies rebuilds over the next frames (BUG-0318:
+  the body is built over several frames); which field was not looked for. Other cinematics (CRG_ClaimNest,
+  CRG_SpeciesMigrate) under a swap were not tried.
+* Fix `creations.swap_after_cinematic`: the swap waits while `world::cinematic_playing()`; "own avatar X waits:
+  cinematic Y plays (BUG-1173)" in the log, `swap waits for a cinematic: N ticks` in coop.status. Not covered: the
+  in-place follow of the host's new species (BUG-0508 `follow`) still calls SetSpecies without that wait.
+
+## The in-place follow waits for a cinematic too (2026-11-15, feat/w51-labstate)
+<a id="creations-follow-cinematic"></a>
+
+BUG-1180. CORRECTION (2026-11-15, feat/w51-labstate) of #creations-swap-cinematic ("Not covered: the in-place follow
+... still calls SetSpecies without that wait"): ~ superseded. The follow of BUG-0508 makes no SetSpecies call of its
+own: `on_bundle` records the host's new key (`g_follow`), `mine()` returns it, and the avatar's species is set by
+`apply_own_avatar`, after BUG-1173's wait.
+* ✔ Runtime (evolve_in_place_cine, lanes 9 and 10): "follows it in place (BUG-0508)", "own avatar 29243096 waits:
+  cinematic F4F96E43 plays (BUG-1173)", "own avatar is now 29243096" 4 s later, before any world load.
+* ✔ 250 DNA added on the host while it is still in its evolution editor (the guest back in its stage) start a
+  cinematic F4F96E43 in the guest's game within 1 s, and the host's own brain upgrade makes it send its world after
+  its cinematic (BUG-0019), so the guest loads the host's world ~40 s later.
+* ~ With `creations.swap_after_cinematic` off, SetSpecies under F4F96E43 did not leave that cinematic stuck (it ended,
+  the input was free): BUG-1173's stuck caption was CRG_BrainUpgrade1 (F6A4B1E1); F4F96E43 under a swap is harmless
+  in this one run. Not tried: F6A4B1E1 under the follow.

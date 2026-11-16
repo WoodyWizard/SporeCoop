@@ -1,20 +1,20 @@
 ---
 id: BUG-1170
 title: editor_strays waits for a world load after the evolution that the in-place evolution (BUG-0508) no longer makes when the guest plays its own creature
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-15
 source: lab 20261115-164240 (feat/w51-core2)
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w51-evolve
+commits: 54da09ad
 tests: editor_strays
 signature:
-docs:
-related: BUG-0508, BUG-0212, BUG-0689, BUG-1141
+docs: docs/06-testing.md#testing-evolve-own-creature, docs/re/creations.md#creations-swap-cinematic
+related: BUG-0508, BUG-0212, BUG-0689, BUG-1141, BUG-1176
 ---
 
 ## Report
@@ -34,11 +34,30 @@ own creature; not caused by C2: the same FAIL on rel/0.7.15 9362bcdd without fea
 20261115-180220) and again on the branch (20261115-174822).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+A stale test, not a mod bug: the same FAIL on v0.7.14.1 (a worktree of the tag, lane 9, 20261115-191956: the host's
+log says "evolved in place: Bob keeps its world" after both evolutions, the guest plays its own 'Kirgle'), so neither
+0.7.15 nor C2 changed it. The behaviour the test now checks is the one BUG-0508 (0.7.4,
+docs/re/creations.md#creations-evolve-in-place) documents: after an evolution the host sends its world only when it
+needs to; a guest of this version in the same world and stage is kept in place, and gets the world after all only
+when its avatar still plays the host's pre-editor species 30 s later. A guest that plays its own creature in this
+world (worlds.ini, BUG-0345; the lane's record, BUG-1176) is always kept in place.
+* `coop_editor_strays.py` `wait_settled`: settled when the cinematic is over, no destroy is pending, no world is being
+  sent or received and the guest is in Creature (all as before), and either the host shared and the guest loaded
+  (as before) or the host kept the guest in place (`kept` grew), sent nothing after all and its 30 s check is over.
+  A fallback world (`sent after all` grew) still needs the share and the load. The strays and herd-home checks after
+  it are unchanged.
+* `coop.status` (host): `evolve in place: kept N, sent after all M, saves S, checking C` (C: guests whose 30 s
+  species check still runs; tests only, no behaviour change).
+No switch: the mod is unchanged (one status field added).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL (the old test): rel/0.7.15 9362bcdd out/lab/20261115-180220 (feat/w51-core2-base, lane 10, both rounds); v0.7.14.1
+  fix/w51-evolve-v07141/out/lab/20261115-191956 (lane 9, both rounds, "evolved in place: Bob keeps its world").
+* PASS (the new test, fix/w51-evolve): out/lab/20261115-192824 (lane 9, both rounds "in place"); final runs
+  out/lab/20261115-195303 and 20261115-195524 (lane 9, both rounds "in place" each).
+* Not run: the "shared" branch of the new wait on a lane whose guest plays the world's species (every lane here has
+  the worlds.ini record, BUG-1176); that branch is the old condition unchanged.
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-15: fixed on fix/w51-evolve (the test follows BUG-0508; FAIL on rel/0.7.15 and v0.7.14.1, PASS runs above).

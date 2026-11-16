@@ -35,6 +35,7 @@ struct Entry {
     bool* fix;     // the entry's own switch (null: only the registry's)
     void (*reset)();
     size_t (*held)();
+    uint32_t (*digest)(); // D2: a small digest of the entry's state (null: held() is its digest)
 };
 
 struct State {
@@ -51,9 +52,9 @@ inline State& state()
 inline std::vector<Entry>& table() { return state().table; }
 
 struct Reg {
-    Reg(const char* name, uint8_t scope, bool* fix, void (*reset)(), size_t (*held)())
+    Reg(const char* name, uint8_t scope, bool* fix, void (*reset)(), size_t (*held)(), uint32_t (*digest)() = nullptr)
     {
-        table().push_back({name, scope, fix, reset, held});
+        table().push_back({name, scope, fix, reset, held, digest});
     }
 };
 
@@ -85,6 +86,47 @@ inline void reset(Scope s, bool on)
 }
 
 inline const std::string& left(Scope s) { return state().left[slot(s)]; }
+
+// ---- D2 of docs/plan-0.7.15.md (audit TST-4): the warm-reset fingerprint ----
+// Every entry reports a small digest of its state (its own digest(), else what held() counts; 0 = holds nothing).
+// fingerprint() lists "<name> <digest hex>\n" for every entry whose digest is not 0 (registration order: the link
+// order, the same in every game of one build) and its fnv-1a hash (`hash`): a fresh game holds nothing, and a game
+// whose resets just ran must hold the same. The lab (tools/tests/twoinst.py) compares a warm game's fingerprint after
+// `coop.testreset` (reset_all, then fingerprint) with a cold start's and starts the games again on a difference,
+// naming the entries (docs/06-testing.md#testing-warm-fingerprint).
+inline uint32_t digest_of(const Entry& e) { return e.digest ? e.digest() : (uint32_t)e.held(); }
+
+struct Fingerprint {
+    std::string lines; // "<name> <digest hex>\n" per entry with a digest
+    uint32_t hash = 2166136261u;
+    size_t entries = 0, holding = 0;
+};
+
+inline Fingerprint fingerprint()
+{
+    Fingerprint f;
+    char b[24];
+    for (auto& e : table()) {
+        f.entries++;
+        uint32_t d = digest_of(e);
+        if (!d)
+            continue;
+        f.holding++;
+        snprintf(b, sizeof b, " %08X\n", d);
+        std::string line = std::string(e.name) + b;
+        f.lines += line;
+        for (char c : line)
+            f.hash = (f.hash ^ (uint8_t)c) * 16777619u;
+    }
+    return f;
+}
+
+// both scopes reset (the registry's `on` and each entry's own switch as in reset()): what a fresh game holds
+inline void reset_all(bool on)
+{
+    reset(kSession, on);
+    reset(kWorld, on);
+}
 inline uint32_t resets(Scope s) { return state().resets[slot(s)]; }
 
 // the world counter: the sum of the stage counters (stage_epoch.h); a change is a new world
@@ -297,6 +339,9 @@ inline std::string hooks_status(uint8_t event = 0)
 #define LIFECYCLE_CAT(a, b) LIFECYCLE_CAT2(a, b)
 #define LIFECYCLE_STATE(name, scope, fix, reset, held)                                                                \
     static lifecycle::Reg LIFECYCLE_CAT(g_lifecycle_state_, __LINE__)(name, scope, fix, reset, held)
+// LIFECYCLE_STATE_D(name, scope, fix, reset, held, digest): with a digest of the state for the fingerprint (D2)
+#define LIFECYCLE_STATE_D(name, scope, fix, reset, held, digest)                                                      \
+    static lifecycle::Reg LIFECYCLE_CAT(g_lifecycle_state_, __LINE__)(name, scope, fix, reset, held, digest)
 #define SESSION_STATE(name, fix, reset, held) LIFECYCLE_STATE(name, lifecycle::kSession, fix, reset, held)
 #define WORLD_STATE(name, fix, reset, held) LIFECYCLE_STATE(name, lifecycle::kWorld, fix, reset, held)
 // LIFECYCLE_HOOK(name, events, order, fn, needs_game): an observer of the events (see Fanout above)

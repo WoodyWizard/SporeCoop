@@ -10,9 +10,14 @@ Before the fix two things went wrong when the players came back from the editor:
   surface. An NPC of such a herd searched land around that home and read past the planet's cube
   map (the host's crash). Both are checked here with `coop.npc herds`.
 
-The checks wait until the host's evolution cinematic is over and the guest loaded the world the host
-sends after it (BUG-0019 holds that share, BUG-0018 holds the removal of the old puppet until then):
-checked earlier, the guest is in its galaxy menu and the old puppet still waits (BUG-0212).
+The checks wait until the host's evolution cinematic is over and the world after the evolution is settled
+(BUG-0018 holds the removal of the old puppet until the cinematic is over): checked earlier, the guest may
+be in its galaxy menu and the old puppet still waits (BUG-0212). Since BUG-0508 (0.7.4) the host sends its
+world after an evolution only when it needs to (a migration started, the guest left the world, or its avatar
+still plays the host's pre-editor species 30 s later): either the guest loaded the world the host sent after
+the cinematic (BUG-0019 holds that share), or the host kept the guest in place and its 30 s check is over
+without a world (`evolve in place: ... checking 0` in coop.status). A guest that plays its own creature in
+this world (worlds.ini, BUG-0345) is always kept in place; the test waited for a load in that case (BUG-1170).
 core.strays + npc.strays off failed (core.strays retired in 0.7.15, BUG-1138: FAIL run 20261028-052840-fix-rel-strays:editor_strays) (left-over puppets).
 
   coop_editor_strays.py [--rounds N]
@@ -78,20 +83,32 @@ def guest_loads():
         return 0
 
 
-def wait_settled(host, guest, shares0, loads0, t=180):
+def in_place(host):
+    """the host's evolve-in-place counters (BUG-0508): (kept, sent after all, checks still running)"""
+    m = re.search(r'evolve in place: kept (\d+), sent after all (\d+), saves \d+, checking (\d+)',
+                  host.call('coop.status')['out'])
+    return tuple(int(g) for g in m.groups()) if m else (0, 0, 1)
+
+
+def wait_settled(host, guest, shares0, loads0, kept0, t=180):
     """After an evolution the host's game plays its cinematic (CRG_SpeciesMigrate): creatures we
-    remove meanwhile go when it is over (BUG-0018), and the host sends its world only then
-    (BUG-0019), the guest loads it. The checks are about the world after all that."""
+    remove meanwhile go when it is over (BUG-0018). Then the host either sends its world (BUG-0019 holds
+    the share until the cinematic is over) and the guest loads it, or keeps the guest in place (BUG-0508)
+    and its 30 s species check ends without a world. The checks are about the world after all that.
+    Returns how it settled: 'shared', 'in place', or None."""
     t0 = time.time()
     while time.time() - t0 < t:
         hs = host.call('coop.status')['out']
-        if host_shares(host) > shares0 and not re.search(r'cinematic \w+ playing', hs) and \
+        kept, sent, checking = in_place(host)
+        shared = host_shares(host) > shares0 and guest_loads() > loads0
+        # kept in place, and no world after all (a world sent after all must arrive and load: `shared`)
+        kept_here = kept > kept0[0] and sent == kept0[1] and not checking
+        if (shared or kept_here) and not re.search(r'cinematic \w+ playing', hs) and \
                 not re.search(r'destroys during cinematics: .*pending=[1-9]', hs) and 'sending world to' not in hs and \
-                guest_loads() > loads0 and 'Creature' in mode(guest) and \
-                'receiving world' not in guest.call('coop.status')['out']:
-            return True
+                'Creature' in mode(guest) and 'receiving world' not in guest.call('coop.status')['out']:
+            return 'shared' if shared else 'in place'
         time.sleep(2)
-    return False
+    return None
 
 
 def evolve(host, guest, ck, gu, order):
@@ -127,10 +144,10 @@ def main():
     for i in range(rounds):
         order = 'hg' if i % 2 == 0 else 'gh'
         print(f'  round {i + 1}: evolution, {"host" if order[0] == "h" else "guest"} back first')
-        shares0, loads0 = host_shares(host), guest_loads()
+        shares0, loads0, kept0 = host_shares(host), guest_loads(), in_place(host)
         evolve(host, guest, ck, gu, order)
-        ck(wait_settled(host, guest, shares0, loads0), 'the evolution cinematic is over, the guest loaded the '
-           'host\'s world after it')
+        how = wait_settled(host, guest, shares0, loads0, kept0)
+        ck(how, f'the evolution cinematic is over, the guest has the host\'s world after it ({how or "neither a load nor kept in place"})')
         ck(wait_together(host, guest), 'together again, each sees the other')
         time.sleep(5)  # (strays are removed on the first frame back; give the AI time to run too)
         shot(host, f'strays_host_{i + 1}.png')

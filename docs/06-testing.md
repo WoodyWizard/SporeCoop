@@ -8453,6 +8453,20 @@ mate_click's 30 s; now 60 s, `MATING_WAIT_S=30` the old). A test that acts on th
 npc_editor_hold (BUG-1174, owner decision 2): the host opens its editor (the mating click, or the stage's own
 evolution request `coop.vote evolve` when its game picked no mate in 20 s); the guest's copies must stay the same
 creatures under the same ids during the editor and after it, with fresh states after it. ~1.5 min.
+## Civ: unit tests of the rules, and running civ_save_strip on your own lanes (2026-11-15, feat/w51-civ)
+<a id="testing-civ-rules"></a>
+
+* `tests/civ_tests.cpp` (in `make test`, unit-cpp, ASan / UBSan) checks civ_logic.h: the shared money (the guest's own
+  income dropped, `can_pay` BUG-0613, `refund_amount` BUG-0807), the owners of the host's vehicles (`new_vehicle_owner`,
+  `orphan_owner` BUG-0031) and the holds (`unseen_mirror`, the deferred pump, `local_play`). A mutation of each rule
+  fails it (BUG-1163).
+* civ_save_strip needs a second lane for Carol (`uses_free_lane`): the lab takes the first lane 2..10 outside the run
+  whose games do not answer, which may be another agent's. To keep it on your own lanes, run it alone on one of them and
+  skip the others' lanes: `lab.py run civ_save_strip --lane 6 --skip 2,3,4,5,9,10` (Carol then plays on lane 7; its
+  games must be stopped first). Run with another test on both of your lanes it reports INCONCLUSIVE ("no second lane
+  free").
+* civ_role_damage measures each phase from the first hit (BUG-1172); civ_owners_reload's sync-check gate is a known
+  timing failure (BUG-1175, docs/known-issues.md#issue-civ-owners-reload-sync-gate).
 ## The host's pause in every stage (2026-11-15, feat/w51-core2)
 <a id="testing-host-pause"></a>
 
@@ -8465,3 +8479,85 @@ on, the guest does not wait and shows no line. `--guest-pause` (`host_pause_gues
 runs on. FAIL twins: SPORE_FIX_OFF=cell.busy_model / npc.busy_model / civ.busy_model / space.busy_model, Tribe
 tribe.busy_model,tribe.host_pause_wait (its 0.7.14 kind-21 wait still answers alone). `coop.status` "host busy:"
 shows the host's classified state, what the guest heard and its wait.
+
+## The evolution tests and the guest's own creature (2026-11-15, fix/w51-evolve)
+<a id="testing-evolve-own-creature"></a>
+
+* Whether the guest plays its own creature in the creature fixture's world depends on the lane: its profile's
+  `SporeCoop/worlds.ini` record survives the cold start (BUG-1176, docs/archive/known-issues-2026.md#issue-lab-worlds-ini).
+  Tests must work with both. ~ superseded (2026-11-15): the cold start removes worlds.ini since BUG-1176
+  (#testing-warm-fingerprint).
+* editor_strays (BUG-1170): after an evolution the host shares its world only when it needs to (BUG-0508); a guest
+  with its own creature is always kept in place. `wait_settled` takes either the share and the load or "kept in
+  place, nothing sent after all, its 30 s check over" (`evolve in place: ... checking 0` in the host's coop.status).
+* evolve_world (BUG-1173): the guest's own creature comes 3 s after a world load; DNA that crosses a brain level
+  before it plays the brain upgrade under the swap. Since A9 the start's settle is shorter than 3 s, so the test meets
+  that order by itself; when the start took longer it sends the host's world once more and adds the DNA as soon as the
+  guest's avatar is in it. It prints `guest plays its own creature: True, applied before the DNA was added: False`
+  when the race was set up. Twin: `SPORE_LAB_FIXOFF=evolve_world=creations.swap_after_cinematic` fails "the guest's
+  brain upgrade caption closed, its input is free".
+* Two `lab.py run` started in the same second got the same run id and wrote into one directory (20261115-193631):
+  start parallel runs a few seconds apart.
+
+## Civ: the guest's specialty question and the world behind it (2026-11-15, fix/w51-civveh)
+<a id="testing-civ-specialty-runs"></a>
+
+* `civ_specialty_runs` (civ_npc, ~1 min, BUG-1175): the guest buys the NPC city nearest the capital that is not
+  Economic (so the game asks it), the host founds the next site (`call Simulator::cCivExpansion::SpawnNextCity`, the
+  hooked call that broadcasts) while the box is still up; the guest's game must show the new city (by position) and
+  as many mirrors of the new nation's vehicles as the host has, the box still up; then it answers Economic (spec 2 in
+  both games, `coop.pauses` on the guest `paused=0`). Key frame `question`: the box on the guest's screen. Twin:
+  `SPORE_FIX_OFF=civ.specialty_runs` fails "the guest's game shows the host's new city while its question is up".
+* civ_owners_reload (and every test that buys or captures a city as a guest and leaves its box up) met this as a
+  sync-check MISMATCH `v: 1-2 missing on the guest` about 45 s in; it was not the test's founding: the game founds
+  the next site after a purchase by itself.
+  start parallel runs a few seconds apart. ~ superseded (2026-11-15): CORRECTION (feat/w51-labstate): the two runs
+  were in two trees (fix/w51-evolve and rel/0.7.15), each kept its results; run ids are unique in the repository since
+  BUG-1177 (#testing-warm-fingerprint).
+
+## The warm-reset fingerprint, the fixture state of worlds.ini, run ids (2026-11-15, feat/w51-labstate)
+<a id="testing-warm-fingerprint"></a>
+
+D2 of docs/plan-0.7.15.md (audit TST-4, BUG-1179). A warm reset used to be safe only as far as twoinst's own list of
+resets (warm_reset, forget_*, KNOBS, clear_faults) reached; each leak added a line. Now the games are asked:
+* `coop.testreset` (mods/coop/coop_cmds.cpp) resets every session and world state the modules registered
+  (`lifecycle::reset_all`, mods/coop/lifecycle.h: the resets of a session end and of a world change; mod state only,
+  no hooks, no game calls) and prints the fingerprint: `testreset: reset=1 fix=1 entries=N holding=M hash=H`, then
+  one `  <entry> <digest>` line per entry that still holds something. Each entry's digest is its own (`digest` of
+  `LIFECYCLE_STATE_D`) or what its `held()` counts. A fresh game prints no entry line. `coop.testreset fp`: the
+  fingerprint only; `coop.testreset plant <n>`: tests, a planted leftover (`test.planted_leftover`, an entry whose
+  reset forgets its state).
+* The profile files the tests depend on are part of it (twoinst `PROFILE_FILES`): both profiles' `SporeCoop/choices.ini`
+  and `SporeCoop/worlds.ini` (their entries with a value: an empty file, empty sections and no file are the same) and
+  `EditorSaves.package` (sha1).
+* The cold start records it in the lane state (`fingerprint`): the files right after its clean-up (before a test's
+  PRESET_CHOICES), each game in its galaxy menu (`coop.testreset` before the host's load and the guest's join). A warm
+  reset takes it after both games left (and after forget_holds / settings / store) and refuses the warm reuse on any
+  difference: `(no warm reuse: the state after the reset differs from the cold start: guest test.planted_leftover cold
+  - now 00000007; cold start)`. A refusal is no failure (lab_selftest `warm_refused`). The cost: 0.02-0.09 s per warm
+  reset (`fingerprint 0.05 s, same as the cold start` in the warm reset's line). A DLL without the command is not
+  compared. `SPORE_WARM_FINGERPRINT_FIX=0`: no comparison (the twin).
+* Test `warm_fingerprint` (coop_warm_fingerprint.py): a clean warm start stays warm; a planted leftover and a
+  worlds.ini record each refuse it, naming the entry, and the cold start clears them.
+
+BUG-1176: the cold start now removes `SporeCoop/worlds.ini` of both profiles with `choices.ini` (the fixture state:
+no record). The guest plays the creature fixture world's species unless a test chooses its own creature
+(`creations_state.choose_own`, and `restore` at the end): evolve_world does now (BUG-1173 needs the own creature);
+guest_editor and puppet_jump did already; editor_strays runs with the world's species (the "shared" branch of its
+wait). Before, lanes 2-6, 9 and 10 had a record from earlier tests and lane 7 none. `SPORE_WORLDS_INI_RESET_FIX=0`:
+the old start (the twin). A test that leaves a record (or a choice, or a new own creation in My Creations) makes the
+next start of its lane cold.
+
+BUG-1177: a run id is unique in the repository, not only in its tree: `lab.py run` takes it as an O_EXCL file in
+`<git common dir>/lab-run-ids/` before the directory (`-2`, `-3` suffixes as before). The two runs of 20261115-193631
+were in two trees (fix/w51-evolve and rel/0.7.15: one shell started the second `lab.py run` from the agent's start
+directory), not one; each tree kept its own results. The start line and the last line now print the full path of the
+run's directory. results.json is written to a temporary file and renamed. `SPORE_LAB_RUNID_TREE_ONLY=1`: the old ids
+(lab_selftest `two_trees` FAIL case).
+
+evolve_in_place_cine (BUG-1180, `coop_evolve_in_place.py --case creature --cine`): the host adds 250 DNA while still
+in its evolution editor (the guest back in its stage), so the guest's own game plays a cinematic (F4F96E43) when the
+host's new species arrives; the follow of BUG-0508 must wait for it and swap in place
+(docs/re/creations.md#creations-follow-cinematic). The host's own brain upgrade sends its world after its cinematic
+(BUG-0019), so "no load, no world" is not checked with `--cine`. Twin `creations.swap_after_cinematic` off fails on
+the wait (the swap under the cinematic), not on the picture (F4F96E43 ended by itself).

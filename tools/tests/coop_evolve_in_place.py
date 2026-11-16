@@ -27,6 +27,15 @@ Checked for 60 s after the host is back in its stage, on the guest's game:
   frames it tries to write the world's player species (`coop.creations ps_null N`, as a species registered a little
   later); its world's player species must still become the host's new one.
   SPORE_FIX_OFF=creations.species_retry with --species-late: the write is lost (FAIL).
+
+  --cine (Creature, BUG-1180): the follow of BUG-0508 comes while a cinematic of the guest's game plays: after the
+  guest left its own editor and before the host's done, the host adds DNA (`coop.dna add 250`, a brain level: the
+  guest's own game plays CRG_BrainUpgradeN, BUG-1173). The guest's avatar takes the host's new species only after
+  it (creations.cpp apply_own_avatar: "own avatar X waits: cinematic Y plays"), its caption comes and closes with
+  Enter, and its input is free. The host's game plays the brain upgrade too, so its world follows after that cinematic
+  (BUG-0019): "no load, no world" is not checked here, the follow in place before that load is.
+  SPORE_FIX_OFF=creations.swap_after_cinematic: SetSpecies under the cinematic (FAIL when the follow came inside it,
+  as BUG-1173).
 """
 import re
 import sys
@@ -183,6 +192,30 @@ def cinematic(con):
     return re.search(r'cinematic ([0-9A-F]{8}) playing', con.call('coop.status')['out'])
 
 
+CINE = [None]  # --cine: the guest's cinematic when the host left its editor
+
+
+def guest_follow_wait():
+    """--cine: the follow's swap waited for the guest's cinematic (its log, BUG-1173 / BUG-1180), and the swap after it"""
+    import lane
+    try:
+        t = open(lane.game_log(lane.GUEST), 'rb').read().decode('utf-8', 'replace')
+    except OSError:
+        return None, None
+    i = t.rfind('follows it in place (BUG-0508)')
+    if i < 0:
+        return None, None
+    k = t.find('-> Loading ', i)  # in place: before a load of the host's world (if one came after)
+    part = t[i:] if k < 0 else t[i:k]
+    m = re.search(r'own avatar ([0-9A-F]{8}) waits: cinematic ([0-9A-F]{8}) plays', part)
+    return (m.group(2) if m else None), 'own avatar is now' in part
+
+
+def input_lock(con):
+    m = re.search(r'input_lock=(-?\d+)', con.call('coop.uistate')['out'])
+    return int(m.group(1)) if m else -1
+
+
 def host_creature_editor(host, guest, ck):
     """coop_editor_sync.py --case host (fix/w40-cell-evo): a real evolution of the host's species"""
     dna = lambda c: float(field(c.call('coop.dna')['out'], r'dna=(-?[\d.]+)') or 0)
@@ -213,6 +246,14 @@ def host_creature_editor(host, guest, ck):
     print(f'  the host added a part: DNA in its editor {d_in} -> {dna(host)}', flush=True)
     guest.call('click %d %d' % CANCEL)  # the guest leaves its own editor unchanged
     time.sleep(2)
+    if '--cine' in sys.argv:  # BUG-1180: a brain upgrade of the guest's game plays when the host's new species comes
+        ck(wait(lambda: 'Creature' in mode(guest) and guest.call('coop.avatar')['ok'], 30, 0.5),
+           'the guest is back in the stage from its own editor')
+        print('  host:', host.call('coop.dna add 250')['out'].strip(), flush=True)
+        CINE[0] = wait(lambda: cinematic(guest), 10, 0.2)
+        CINE[0] = CINE[0] and CINE[0].group(1)
+        print(f'  the guest\'s game plays cinematic {CINE[0]} before the host\'s done', flush=True)
+        ck(CINE[0], 'a cinematic of the guest\'s game plays when the host leaves its editor (the case of BUG-1180)')
     host.call('click %d %d' % DONE)
 
 
@@ -260,8 +301,12 @@ def main():
     print(f'  guest modes: {" -> ".join(modes_seen)}; host shares {sh0} -> {sh1}', flush=True)
     print('  host:', host.call('coop.status')['out'].count('evolve in place'),
           field(host.call('coop.status')['out'], r'(evolve in place: [^\n]*)'), flush=True)
-    ck(not left, f"the guest's game stayed in the {m_stage} stage (no galaxy menu, no load): {left or 'none'}")
-    ck(sh1 == sh0, f'the host sent no world after its editor ({sh0} -> {sh1})')
+    if '--cine' in sys.argv:  # the host's game plays the brain upgrade too: its world follows that cinematic (BUG-0019)
+        print(f"  (--cine: the guest's game left the stage {left or 'never'}, the host's shares {sh0} -> {sh1}: not "
+              "checked, the follow in place before it is)", flush=True)
+    else:
+        ck(not left, f"the guest's game stayed in the {m_stage} stage (no galaxy menu, no load): {left or 'none'}")
+        ck(sh1 == sh0, f'the host sent no world after its editor ({sh0} -> {sh1})')
 
     h1 = host_own(host, stage)
     print(f'  host {kind} {h0} -> {h1}', flush=True)
@@ -294,6 +339,20 @@ def main():
         print(f'  world player species: host {ws_h}, guest {ws_g}', flush=True)
         print(' ', [ln.strip() for ln in creations(guest).splitlines() if 'world player species' in ln], flush=True)
         ck(ws_g and ws_g == ws_h == h1, f"the guest's world player species is the host's new species ({ws_g} / {ws_h})")
+    if '--cine' in sys.argv:  # BUG-1180
+        waited, swapped = guest_follow_wait()
+        print(f'  guest: the follow waited for cinematic {waited}, swapped after it: {swapped}', flush=True)
+        for _ in range(8):  # the caption of the guest's brain upgrade, as a player confirms it
+            if not cinematic(guest):
+                break
+            guest.call('key enter')
+            time.sleep(2)
+        ck(wait(lambda: not cinematic(guest) and input_lock(guest) == 0, 20),
+           f"the guest's cinematic ended with its caption, its input is free (cinematic "
+           f"{cinematic(guest) and cinematic(guest).group(1)}, input lock {input_lock(guest)})")
+        ck(waited == CINE[0] and swapped,
+           f"the guest's avatar took the host's species in place after its cinematic {CINE[0]} (waited for {waited}, "
+           f"swap before any load {swapped})")
     shot(guest, f'evolve_in_place_{stage}_guest.png')
     shot(host, f'evolve_in_place_{stage}_host.png')
     ck.faults(host=host, guest=guest)

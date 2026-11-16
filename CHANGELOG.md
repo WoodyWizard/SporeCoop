@@ -34,6 +34,12 @@
 - Creature: while the host is in its evolution editor the animals on a guest's screen stay where they are and come
   back to life with the host's game, instead of vanishing, being replaced by the guest's own and swapped again after the
   editor (BUG-1174).
+- Civilization: while a guest's "choose the city's specialty" question is open (after buying or capturing a city),
+  its world no longer stands still: cities the host's world founds meanwhile and their vehicles appear behind the
+  question instead of only after the answer (BUG-1175).
+- Creature: a guest playing its own creature could be stuck for good right after joining (no clicks, the evolution's
+  editor never opened) when a brain upgrade came in the first seconds; its own creature now comes after the brain
+  upgrade's message (BUG-1173).
 - Tribe: tribe members no longer change hands every time a player joins or leaves, or after a game over: a child you
   bought or members you were given stay yours; a new player gets a fair share (BUG-1154).
 - Civilization: a city or vehicle of a player who left is kept for that player (the host looks after it) instead of
@@ -76,6 +82,10 @@
 - Network: one message manifest (`net/messages.def`, `net/space_kinds.def`) generates the message ids, classes,
   directions, the dispatch and the docs tables; the host drops a host-only message a guest sends; every message
   family has a wire revision with a lock in `make test` (`tools/msg_manifest.py`) (BUG-1136, BUG-1137).
+- Lab: a warm reset is taken only when both games, after `coop.testreset` (every registered session and world state
+  reset), hold what a cold start holds and the profile files the tests read are the fixture's; otherwise the lane
+  starts cold and the log names what differed. The cold start resets the guest's per-world own creature records
+  (worlds.ini), and lab run ids are unique across worktrees (BUG-1179, BUG-1176, BUG-1177).
 - Lab: the warm reset puts the co-op window back on the lobby page (`coop.uistate reset`), as at a cold start
   (BUG-1139).
 - NPC sync: the id tables of the host's NPCs and the guests' copies are the shared mirror registry (identity by the
@@ -110,6 +120,10 @@
 - Shared building blocks for the stages, unit-tested before any stage uses them: one table of the mirrored objects,
   one receiver of the host's snapshots, one world identity with ordered session / world observers, and one model of
   the host's busy state (away, editor, pause) with the pause reasons of every stage measured (BUG-1140..1143).
+- Civ: the vehicle tables of the host and the guest's mirrors are one shared mirror table, the host's snapshots and
+  the Space squadron's ship snapshots arrive through the shared snapshot receiver, the Civ rules (shared money, vehicle
+  owners, removals that wait) have unit tests, and civ.cpp is split into smaller files by pure moves (BUG-1140,
+  BUG-1143, BUG-1163, BUG-1164). No change on the wire.
 - Space: the kept state of a rejoining guest (colonies, cargo hold, badges, Rivals budget) goes through one shared store
   instead of four hand-built copies, and every Space and shared-money message is decoded by a portable struct with
   golden-byte tests and fuzzing; the libFuzzer run is in CI (BUG-1132, BUG-1133). No change on the wire.

@@ -11,12 +11,21 @@ the migration at state 1, and the guest's game that loaded it never grew up nor 
 Checked on the guest's game after it loaded the host's world: the avatar's age (+0xB34) and the
 player property of the migration (0x514A219) are the host's.
 
+BUG-1173: the DNA reaches the guest while its own creature (chosen by the test, BUG-1176; BUG-0345) is not applied yet (the swap
+comes 3 s after the avatar; the lab's start-up waits no fixed 3 s since A9): the guest's game plays its brain
+upgrade CRG_BrainUpgrade1 and the swap came in the middle of it; that cinematic never showed its caption and the
+input lock held the guest (its own editor after the vote never opened). Checked: the guest's caption closes with
+Enter and leaves its input free. Twin: `coop.fix creations.swap_after_cinematic off` on the guest must FAIL here
+(when the swap came after the DNA, the test prints it).
+
   coop_evolve_world.py [--without-fix]   (--without-fix: coop.npc sharecine off on the host, must FAIL)
 """
 import re
 import sys
 import time
 
+import creations_state
+import lane
 from coop_migration import CINE_MIGRATE, DNA, DONE, cinematic, close_boxes, confirm_captions, eax, migration, mode, total_dna, u32, wait
 from coop_ui import Ui
 from twoinst import Checks, shot, start
@@ -26,6 +35,33 @@ def age(con):
     nm = eax(con, 'Simulator::cGameNounManager::Get cdecl')
     av = nm and u32(con, nm + 0x54)
     return u32(con, av + 0xB34) if av else None
+
+
+def guest_log():
+    try:
+        with open(lane.game_log(lane.GUEST), 'rb') as f:
+            return f.read().decode('utf-8', 'replace')
+    except OSError:
+        return ''
+
+
+def swapped_here():
+    """the guest's own creature was applied to the avatar of its last world load (BUG-1173)"""
+    t = guest_log()
+    i = t.rfind('-> Loading ')  # (the stage line of the load's start)
+    return i >= 0 and 'own avatar is now' in t[i:]
+
+
+def own_record():
+    """the guest plays its own creature in this world (worlds.ini record or choice, BUG-0345)"""
+    t = guest_log()
+    i = t.rfind('-> Loading ')
+    return i >= 0 and bool(re.search(r"body: own avatar species .*from (this world's record|choices\.ini)", t[i:]))
+
+
+def input_lock(con):
+    m = re.search(r'input_lock=(-?\d+)', con.call('coop.uistate')['out'])
+    return int(m.group(1)) if m else -1
 
 
 def loads(con):
@@ -38,14 +74,42 @@ def main():
     ck = Checks()
     if without:
         print('  ', host.call('coop.npc sharecine off')['out'].strip())
-    d0 = total_dna(guest)
+    # BUG-1176: the cold start puts the guest's worlds.ini back to the fixture state (no record: it plays the world's
+    # species); BUG-1173 needs its own creature, so the test chooses it (the newest of creations-guest) and puts the
+    # profile back at the end
+    st0 = creations_state.save(guest)
+    mine = creations_state.choose_own(guest)
+    print('  guest profile before:', st0, '| chose', mine, flush=True)
+    wait(lambda: swapped_here(), 30, 0.5)
+    try:
+        return run(host, guest, ck, bool(mine) or own_record())
+    finally:
+        creations_state.restore(guest, st0)
+
+
+def run(host, guest, ck, own):
+    if own and swapped_here():
+        # BUG-1173 as players meet it: the DNA crosses a brain level within the 3 s after the guest's world load,
+        # before its own creature is applied. The start took longer than that: the host's world once more, the DNA
+        # as soon as the guest's avatar is in it
+        n0 = guest_log().count('-> Loading ')
+        print('   the guest\'s own creature came before the DNA: the world again,', host.call('coop.share')['out'].strip())
+        wait(lambda: guest_log().count('-> Loading ') > n0 and
+             re.search(r'stage: Loading \w+ -> Creature', guest_log()[guest_log().rfind('-> Loading '):]), 120, 0.2)
+    d0, pre = total_dna(guest), swapped_here()
     host.call(f'coop.dna add {DNA}')
     ck(wait(lambda: total_dna(guest) >= d0 + DNA, 15), 'the guest has the host\'s DNA total')
+    print(f'   guest plays its own creature: {own}, applied before the DNA was added: {pre} '
+          f'(BUG-1173 needs True, False)')
     time.sleep(3)
     for con in (host, guest):
         c = cinematic(con)
         if c:
             confirm_captions(con, c)
+    # BUG-1173: the guest's brain upgrade caption came and went with Enter, its input is free
+    ck(wait(lambda: not cinematic(guest) and input_lock(guest) == 0, 15),
+       f'the guest\'s brain upgrade caption closed, its input is free (cinematic {cinematic(guest)}, '
+       f'input lock {input_lock(guest)})')
     m0 = mode(host)
     print('  ', host.call('coop.vote editor')['out'].strip().splitlines()[0])
     time.sleep(2)
