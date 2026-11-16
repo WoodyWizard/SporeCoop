@@ -588,9 +588,88 @@ def clear_faults(**cons):
     return cleared
 
 
-def warm_reset(host, guest, fixture, planet):
+# D2 (docs/plan-0.7.15.md, audit TST-4; docs/06-testing.md#testing-warm-fingerprint): the warm contract. A list of what
+# to reset (warm_reset, forget_*, KNOBS, clear_faults) grows with every leak; the fingerprint asks the games instead.
+# `coop.testreset` resets every session and world state the modules registered (mods/coop/lifecycle.h) and prints what
+# still holds something; with the digests of the profile files the tests depend on (PROFILE_FILES: the own-creation
+# choices and per-world records, BUG-1176, and My Creations) that is the fingerprint. The cold start records it (the
+# games in their galaxy menu, before the load and the join; the files after the start's clean-up); a warm reset takes
+# it after the leave and refuses the warm reuse on any difference, naming the entries ("(no warm reuse: the state
+# after the reset differs from the cold start: guest test.planted_leftover cold - now 00000007; cold start)").
+# SPORE_WARM_FINGERPRINT_FIX=0: no comparison (the twin: the old warm reset).
+PROFILE_FILES = ('SporeCoop/choices.ini', 'SporeCoop/worlds.ini', 'EditorSaves.package')
+LAST_WARM = {}  # the last _start's warm decision: {'warm': bool, 'why': str, 'fp_s': seconds the fingerprint took}
+
+
+def _ini_digest(data):
+    """the entries of an ini file with a value (section/key=value, case-insensitive names, sorted): an empty file, one
+    with empty sections and none at all are the same state (WritePrivateProfileString deletes a key, not its section)"""
+    import hashlib
+    text = data.decode('utf-16') if data[:2] in (b'\xff\xfe', b'\xfe\xff') else data.decode('latin-1')
+    sec, entries = '', []
+    for ln in text.splitlines():
+        ln = ln.strip()
+        if ln.startswith('[') and ln.endswith(']'):
+            sec = ln[1:-1].strip().lower()
+        elif '=' in ln and not ln.startswith(';'):
+            k, v = ln.split('=', 1)
+            if v.strip():
+                entries.append(f'{sec}/{k.strip().upper()}={v.strip()}')
+    return hashlib.sha1('\n'.join(sorted(entries)).encode()).hexdigest()[:12] if entries else 'none'
+
+
+def file_digest(path):
+    """'missing', an ini's entries (_ini_digest) or a file's sha1 (12 hex digits)"""
+    import hashlib
+    try:
+        data = open(path, 'rb').read()
+    except OSError:
+        return 'missing' if not path.endswith('.ini') else 'none'
+    return _ini_digest(data) if path.endswith('.ini') else hashlib.sha1(data).hexdigest()[:12]
+
+
+def profile_fingerprint():
+    """{'<who> <file>': digest} of PROFILE_FILES in both profiles of the lane"""
+    return {f'{who} {rel}': file_digest(os.path.join(d, rel)) for who, d in (('host', lane.HOST_DIR), ('guest', lane.GUEST_DIR))
+            for rel in PROFILE_FILES}
+
+
+def game_fingerprint(con, reset=True):
+    """{entry: digest} of what the game's registered state still holds after `coop.testreset` (reset=False: `fp`, no
+    reset); None when the game has no such command (an older DLL)"""
+    try:
+        out = con.call('coop.testreset' + ('' if reset else ' fp')).get('out') or ''
+    except (OSError, ValueError):
+        return None
+    if not out.startswith('testreset:'):
+        return None
+    return dict(ln.split()[:2] for ln in out.splitlines()[1:] if ln.startswith('  ') and len(ln.split()) >= 2)
+
+
+def fingerprint_now(host, guest, reset=True):
+    return {'host': game_fingerprint(host, reset), 'guest': game_fingerprint(guest, reset), 'files': profile_fingerprint()}
+
+
+def fingerprint_diff(want, now):
+    """['<who> <entry> cold <a> now <b>', ...] where `now` differs from the cold start's `want` (a part either side
+    lacks, an older DLL, is not compared)"""
+    diff = []
+    for part in ('host', 'guest', 'files'):
+        a, b = (want or {}).get(part), (now or {}).get(part)
+        if a is None or b is None:
+            continue
+        for k in sorted(set(a) | set(b)):
+            if a.get(k, '-') != b.get(k, '-'):
+                diff.append(f'{"" if part == "files" else part + " "}{k} cold {a.get(k, "-")} now {b.get(k, "-")}')
+    return diff
+
+
+def warm_reset(host, guest, fixture, planet, fingerprint=False):
     """the running games of the lane start the test again: the fixture goes into a fresh save
-    slot (the loaded one must not change on disk), the host loads it, the guest joins again"""
+    slot (the loaded one must not change on disk), the host loads it, the guest joins again.
+    fingerprint (D2, _start): after the leave the games' state and the profile files are compared with the cold
+    start's (lane state `fingerprint`); on a difference nothing is loaded and None is returned (a refusal, not a
+    failure: the caller starts the lane cold)"""
     t0 = time.time()
     st = lane_state()
     slot = 10 + (st.get('slot', 9) - 9) % 10
@@ -607,6 +686,17 @@ def warm_reset(host, guest, fixture, planet):
         forget_holds()
     forget_settings()
     forget_store()
+    if fingerprint and os.environ.get('SPORE_WARM_FINGERPRINT_FIX') != '0':
+        t1 = time.time()
+        now = fingerprint_now(host, guest)
+        diff = fingerprint_diff(st.get('fingerprint'), now)
+        LAST_WARM['fp_s'] = round(time.time() - t1, 3)
+        if diff:
+            LAST_WARM['why'] = 'the state after the reset differs from the cold start: ' + '; '.join(diff)
+            print(f'  (no warm reuse: {LAST_WARM["why"][:600]}; cold start)', flush=True)
+            return None
+        if st.get('fingerprint') is None:
+            print('  (warm reset: no fingerprint of the cold start to compare with)', flush=True)
     sh('fixture', 'slot', fixture, lane.HOST_PROFILE, str(slot))
     host.call(f'coop.load Game{slot} {planet.split("/")[1]}')
     phases = []
@@ -643,7 +733,9 @@ def warm_reset(host, guest, fixture, planet):
     phases.append(('settled', time.time() - t0))
     print(f'  (warm reset in {time.time() - t0:.0f} s: ' + ', '.join(f'{n} {t:.0f}' for n, t in phases)
           + f'; warm run {st.get("warm_runs", 0) + 1} of these games; settle '
-          + (f'{settled:.1f} s' if settled is not None else 'at the 3 s bound') + ')', flush=True)
+          + (f'{settled:.1f} s' if settled is not None else 'at the 3 s bound')
+          + (f'; fingerprint {LAST_WARM["fp_s"]:.2f} s, same as the cold start' if fingerprint and 'fp_s' in LAST_WARM else '')
+          + ')', flush=True)
     return True
 
 
@@ -884,13 +976,17 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
             and not PRESET_CHOICES and alive(lane.HOST) and alive(lane.GUEST):
         host, guest = Console(lane.HOST), Console(lane.GUEST)
         why = ''
+        LAST_WARM.clear()
         try:
             why = warm_refusal(st, host, guest)
             if why:
                 print(f'  (no warm reuse: {why}; cold start)', flush=True)
-            elif warm_reset(host, guest, fixture, planet):
+            elif (ok := warm_reset(host, guest, fixture, planet, fingerprint=True)) is None:
+                why = LAST_WARM.get('why') or 'fingerprint'  # D2: printed by warm_reset
+            elif ok:
                 watch(lane.HOST, lane.GUEST)
                 if check_fixture(host, fixture):
+                    LAST_WARM['warm'] = True
                     return host, guest
                 for m in _monitors:  # the reused games miss a fixture fact: start them again from the files
                     m.stop = True
@@ -899,6 +995,7 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
             print('  (warm reset failed:', e, ')', flush=True)
         if not why:
             print('  (warm reset failed: cold start)', flush=True)
+        LAST_WARM.update(warm=False, why=why or LAST_WARM.get('why') or 'the warm reset failed')
     lane_state()  # (the state is rewritten below once the games run)
     sh('kill')
     lane_down()  # A9: was a fixed 2 s
@@ -910,8 +1007,15 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
         forget_holds()
     forget_settings()
     forget_store()
-    for d in (lane.HOST_DIR, lane.GUEST_DIR):  # own-creation choices: back to the defaults
-        subprocess.run(['rm', '-f', d + '/SporeCoop/choices.ini'])
+    # own-creation choices and the per-world records of the own creature (worlds.ini, BUG-0345; BUG-1176: a record an
+    # earlier test left decided whether the guest played its own creature in the fixture world): back to the fixture
+    # state, none; a test that needs the own creature chooses it (creations_state.choose_own). SPORE_WORLDS_INI_RESET_FIX=0:
+    # the old start (worlds.ini kept), the twin of BUG-1176
+    for d in (lane.HOST_DIR, lane.GUEST_DIR):
+        subprocess.run(['rm', '-f', d + '/SporeCoop/choices.ini']
+                       + ([] if os.environ.get('SPORE_WORLDS_INI_RESET_FIX') == '0' else [d + '/SporeCoop/worlds.ini']))
+    # D2: the profile files of the fixture state (a test's PRESET_CHOICES below are not: its warm successor starts cold)
+    fp_cold = {'host': None, 'guest': None, 'files': profile_fingerprint()}
     for who, lines in PRESET_CHOICES.items():  # a test's choices from an earlier session (BUG-0342/0344)
         d = os.path.join(lane.HOST_DIR if who == 'host' else lane.GUEST_DIR, 'SporeCoop')
         os.makedirs(d, exist_ok=True)
@@ -954,6 +1058,7 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
             time.sleep(1 if startwait.fixed() else startwait.STEP)  # A9: a 0.25 s poll (was 1 s)
         phases.append(('host menu', time.time() - t_start))
         host.call('wait.frames 240 90000')  # the galaxy menu settles (8 s)
+        fp_cold['host'] = game_fingerprint(host)  # D2: what a fresh game holds (its galaxy menu, before the load)
         slot, name = planet.split('/')
         host.call(f'coop.load {slot} {name}')
         t0 = time.time()
@@ -1002,6 +1107,8 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
             time.sleep(0.25)
         else:
             print('  (the guest menu intro did not start)', flush=True)
+    if join_at is None:
+        fp_cold['guest'] = game_fingerprint(guest)  # D2: the guest's fresh game, before the join
     if before_join is not None:
         before_join(guest)
     phases.append(('guest join', time.time() - t_start))
@@ -1017,7 +1124,8 @@ def _start(fixture='creature', planet=None, load_args=(), join_in_intro=False, g
           + ', '.join(f'{n} {t:.0f}' for n, t in phases) + '; settle '
           + (f'{settled:.1f} s' if settled is not None else 'at the 4 s bound') + ')', flush=True)
     lane_state(build=build_id(), fixture=fixture, planet=planet, slot=9, warm_runs=0, guest_creations=guest_creations,
-               start_state={'host': start_state(host), 'guest': start_state(guest)})
+               start_state={'host': start_state(host), 'guest': start_state(guest)},
+               fingerprint=fp_cold)
     watch(lane.HOST, lane.GUEST)
     check_fixture(host, fixture)
     return host, guest

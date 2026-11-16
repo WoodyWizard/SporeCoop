@@ -79,6 +79,10 @@
 - Network: one message manifest (`net/messages.def`, `net/space_kinds.def`) generates the message ids, classes,
   directions, the dispatch and the docs tables; the host drops a host-only message a guest sends; every message
   family has a wire revision with a lock in `make test` (`tools/msg_manifest.py`) (BUG-1136, BUG-1137).
+- Lab: a warm reset is taken only when both games, after `coop.testreset` (every registered session and world state
+  reset), hold what a cold start holds and the profile files the tests read are the fixture's; otherwise the lane
+  starts cold and the log names what differed. The cold start resets the guest's per-world own creature records
+  (worlds.ini), and lab run ids are unique across worktrees (BUG-1179, BUG-1176, BUG-1177).
 - Lab: the warm reset puts the co-op window back on the lobby page (`coop.uistate reset`), as at a cold start
   (BUG-1139).
 - Lab: the invariant monitor reads every trace line (the Space galaxy view's, a NaN position: no false "not together"
