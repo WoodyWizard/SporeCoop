@@ -78,6 +78,9 @@ def build_new(dist):
     shutil.copytree(os.path.join(dist, 'stage'), stage)
     shutil.copy(os.path.join(ROOT, 'build-v' + NEW.replace('.', ''), 'coop.dll'),
                 os.path.join(stage, 'SporeCoop', 'mods', 'coop.dll'))
+    # BUG-1214: stripped as tools/package.sh strips a release's coop.dll (unstripped it is 100+ MB since 0.7.15, over
+    # the in-game updater's 96 MB download limit: "the download is too big")
+    run(f'{llvm}/bin/llvm-strip', os.path.join(stage, 'SporeCoop', 'mods', 'coop.dll'))
     pack = os.path.join(dist, f'SporeCoop-{NEW}.pack')
     run('python3', os.path.join(ROOT, 'tools', 'mkpack.py'), stage, NEW, pack)
     return pack
