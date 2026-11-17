@@ -49,6 +49,10 @@ private:
     intptr_t fd_ = -1;
 };
 
+// the address UdpSocket::open binds to (network byte order), 0 = every adapter (the default). The galaxy server sets it
+// to 127.0.0.1 for tests on one PC (`--local`): a program that listens on the network gets the Windows firewall's prompt.
+extern uint32_t g_bind_ip;
+
 bool net_init(); // WSAStartup on Windows
 uint32_t now_ms();
 

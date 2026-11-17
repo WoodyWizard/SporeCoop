@@ -52,6 +52,7 @@
 #include "drama.h"
 #include "identity.h"
 #include "bans.h"
+#include "galaxy_client.h"
 #include "party.h"
 #include "home_nests.h"
 #include "cellsync.h"
@@ -5421,6 +5422,7 @@ void on_frame(void*, int, void*)
     guest_pack::tick(now);                      // BUG-9129
     identity::tick(now);                        // BUG-9135
     bans::tick(now);                            // BUG-9251: a banned player whose identity arrived is removed
+    galaxy::tick(now);                          // decision 5O A: the galaxy server (alpha)
     party::tick(now);                           // roadmap 0b
     home_nests::host_tick(now);                 // roadmap phase 2
     tribe::tick(now);
@@ -10198,6 +10200,22 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        H->out_printf(out, "%s\n", argc > 1 ? bans::unban(argv[1]).c_str() : "coop.unban <name>");
                        return 0;
                    }, nullptr, MT);
+    H->command_add(M, "coop.galaxy", "coop.galaxy connect <address> | list | enter <planet> | leave | disconnect | status - the galaxy server (alpha, decision 5O)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) -> int {
+                       std::string r;
+                       const std::string sub = argc > 1 ? argv[1] : "status";
+                       std::string arg;
+                       for (int i = 2; i < argc; i++)
+                           arg += (i > 2 ? " " : "") + std::string(argv[i]);
+                       if (sub == "connect") r = arg.empty() ? "coop.galaxy connect <address>" : galaxy::connect(arg);
+                       else if (sub == "list") r = galaxy::list();
+                       else if (sub == "enter") r = galaxy::enter(arg);
+                       else if (sub == "leave") r = galaxy::leave();
+                       else if (sub == "disconnect") r = galaxy::disconnect();
+                       else r = galaxy::status();
+                       H->out_printf(out, "%s\n", r.c_str());
+                       return 0;
+                   }, nullptr, MT);
     H->command_add(M, "coop.bans", "coop.bans - the host's ban list",
                    [](void*, int, const char* const*, SkOut* out) -> int {
                        H->out_printf(out, "%s\n%s\n", bans::list().c_str(), bans::status().c_str());
@@ -11071,6 +11089,17 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         bc.feed = [](const std::string& t) { feed(t); };
         bc.notice = [](const std::string& t) { notice(t, -1); };
         bans::init(H, M, bc);
+    }
+    { // decision 5O A (alpha): the galaxy server: one address, planets hosted by players, their traffic relayed
+        galaxy::Ctx gx;
+        gx.sess = &g_sess;
+        gx.feed = [](const std::string& t) { feed(t); };
+        gx.name = [] { return g_name; };
+        gx.identity = [] { return identity::own(); };
+        gx.version = COOP_VERSION;
+        gx.host = [](std::string& err) { return do_host(default_port(), 4, 100, err); };
+        gx.join = [](const std::string& addr, std::string& err) { return do_join(addr, err); };
+        galaxy::init(H, M, gx);
     }
     party::init(H, M, &g_sess);    // roadmap 0b
     notify::init(H, M, [] { return coop_ui::text_font(); });

@@ -198,6 +198,8 @@ bool Endpoint::resolve_name(const std::string& host, uint32_t& ip, std::string& 
 
 UdpSocket::~UdpSocket() { close(); }
 
+uint32_t g_bind_ip = 0;
+
 bool UdpSocket::open(uint16_t port, std::string* err)
 {
     close();
@@ -210,7 +212,7 @@ bool UdpSocket::open(uint16_t port, std::string* err)
     sockaddr_in a{};
     a.sin_family = AF_INET;
     a.sin_port = htons(port);
-    a.sin_addr.s_addr = htonl(INADDR_ANY);
+    a.sin_addr.s_addr = g_bind_ip ? g_bind_ip : htonl(INADDR_ANY); // (galaxy server tests: 127.0.0.1 only)
     if (bind((decltype(socket(0, 0, 0)))s, (sockaddr*)&a, sizeof a) != 0) {
         if (err) *err = "bind() failed on port " + std::to_string(port);
         CLOSESOCK((decltype(socket(0, 0, 0)))s);
