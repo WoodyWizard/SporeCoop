@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.14.1, rel/0.7.15
 fixed_in: unreleased
 branch: fix/w51-civsync
-commits: e8284a09, 081b955f, 9828f4b6
+commits: e8284a09, 081b955f, 9828f4b6, c5718d0c, e995b718
 tests: civ_proxy_air, civ_wild_moved, net_tests test_diag_npc_agl, campaign_segment (from the run's Civ save), campaign_tc2
 signature: sync-check: MISMATCH with the host (Civilization A3930F03, ...): n: N apart
 docs: docs/re/civ.md#civ-npc-ground, docs/06-testing.md#testing-civ-proxy-air, docs/06-testing.md#testing-final-triage-tribe-civ-0715
@@ -99,7 +99,10 @@ Update 2026-11-17 (fix/w51-civsync), per kind, with what a player sees:
   * Civ segment of the campaign (4 games, lanes 5 + 9, the final check's Civ save): 20261117-122701 FAIL before
     npc.civ_jump (kind C, `n: 7 apart` 83-205 m on Dave), PASS 20261117-125728 with it (1-5 "drawn high" lines per
     guest, all 2-3 m single frames on a mountain slope, against 92-132); 20261117-130736 FAIL with npc.civ_jump, before
-    npc.frozen_moved (the pause kind above).
+    npc.frozen_moved (the pause kind above); with every fix: PASS 20261117-132944 (after one restart of an extra game
+    that did not start, an environment retry) and PASS 20261117-134154, no MISMATCH, 0-7 "drawn high" lines per guest.
+  * Related tests with every fix: civ_proxy_air, civ_wild_moved, civ_wild_pooled, civ_wild_reused, civ_wild_sync,
+    play_civ --quick all PASS (20261117-132159).
 
 ## History
 - 2026-11-16: opened (fix/w51-t4, final-check triage 0.7.15): old, three kinds; not fixed in the triage.
