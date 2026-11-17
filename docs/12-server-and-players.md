@@ -342,6 +342,34 @@ be the server's job?"
 * The hard part: keeping every player's galaxy copy in step with the server's list (a colony, a lost planet, a changed
   relation) without reloading, through the game's own functions.
 
+## The galaxy server, first milestone (2026-11-17, feat/lineages-alpha)
+<a id="server-galaxy-m1"></a>
+
+Decision 5O A. Code on the alpha branch only: server/galaxy/main.cpp (the server, `tools/build_galaxy.sh`: Windows with
+llvm-mingw, or Linux), net/galaxy.h (the protocol), mods/coop/galaxy_client.cpp (the game's side).
+
+* The server runs no Spore. Every player says HELLO (protocol, identity, name, version) and gets a slot. ENTER <planet>
+  makes the first player on a planet its host (ROLE host: the game hosts the world it has loaded) and every later one
+  a guest of that host (ROLE guest + the host's slot: the game joins it). LIST gives the planets with their players.
+  A player silent for 20 s is gone; a planet is forgotten when its last player leaves; HOSTGONE tells a planet's
+  players their host left.
+* Relay: a planet session's packets travel inside relay frames ('R', u16 slot, the packet). The game's RelayTransport
+  (a net::Transport) gives the session one virtual address per slot (10.88.<slot>, port 47900), so net::Session hosts
+  and joins as always and the whole mod above it is unchanged. The server forwards only within one planet and only
+  between its host and one of its players.
+* Console: `coop.galaxy connect <address>`, `list`, `enter <planet>`, `leave`, `disconnect`, `status`. The server:
+  `galaxy_server [--local] [port] [galaxy name]`; `--local` listens on 127.0.0.1 only (a program that listens on the
+  network gets the Windows firewall's prompt, which is the PC owner's to answer).
+* ✔ Runtime (TITAN, QA host 9 and partner 8 through a local galaxy server): the partner listed the planets ("Samuth
+  (1)"), entered Samuth, got the host's world (5.4 MB) through the relay and played: a partner's pack (5EA) killed its
+  target in 9 s, its 36 animations played on the host. Relay load: about 185 KB/s while the world was sent, then
+  10-16 KB/s for one partner in play. The host leaving: the partner's session ended within 5 s, both games left the
+  planet and turned the relay off, the server forgot the empty planet.
+* Found and fixed on the way: a host that left switched the relay off before its goodbye was sent (the partner's
+  session hung on); the relay now stays until the session is closed, and a partner told HOSTGONE ends its own.
+* Not yet: the server keeping each planet's world (the host's game hosts whatever it has loaded), the hand-over to the
+  next player, a menu in the Co-op window, a test across PCs (it needs the firewall allowance on the server's PC).
+
 ## Questions for the owner
 <a id="server-questions"></a>
 
