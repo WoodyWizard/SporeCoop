@@ -460,6 +460,20 @@ key of another era's creation, placed ahead of the avatar and moved every frame.
   (UFOController_Planet 0x1060E00), or placing from a hook that runs after the game's update and before drawing.
 * ? The thin vertical bars under the city hall: its own columns or the abduction ship's beam (type 7); to check with
   another carrier.
+* ✔ Height solved with a prop (decision 5T B, 2026-11-17, alpha commit "Era visitors: stand them on the ground as
+  props"): the default carrier is now a plain ornament, noun 0x18C88E4 (the object of a city's decorations,
+  docs/re/space.md#space-city-ornaments): `CreateInstance(0x18C88E4)`, AddRef, `cOrnament_SetModel` 0xC6F910 with the
+  key, then the spatial object's vt 0x94 SetModelKey(key). The truck stood on its wheels and drove its 12 m circle,
+  its position radius equal to the ground radius (505.3 / 506.0); the city hall stood on the ground. Removed with
+  `DestroyInstance` and Release. `coop.visit spawn ... [prop|ufo]` keeps the UFO carrier for comparison.
+* ✔ `cOrnament_SetModel` alone made an invisible prop (the object and its position were there, nothing drawn): the
+  model only drew after SetModelKey (spatial vt 0x94), as cVehicle::Load sets a vehicle's model.
+* ✔ A prop moves with SetPosition / SetOrientation (spatial vt 0x38 / vt 0x3C, as worldobj.cpp moves the city
+  decorations); SetPositionAndOrientation (vt 0x44) moved it once and later calls were ignored.
+* ✔ The bars under the city hall are its own columns: they stand on the ground under the prop as well.
+* ~ Our props are left out of saves by a save-strip filter (era_visitors.cpp); not tested with a real save yet.
+* ? Not checked: collision (creatures walked through the truck's spot in the screenshots, as expected of a prop),
+  how a prop looks at a distance (level of detail), and many props at once.
 
 ## Questions for the owner
 <a id="server-questions"></a>

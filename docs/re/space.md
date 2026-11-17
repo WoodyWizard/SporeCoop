@@ -2792,6 +2792,9 @@ GOG 2024 addresses (dc04aee5). Kind `city_ornament` of mods/coop/worldobj.cpp (B
   without a partner is removed. PASS lab 20261106-050848 (3 landings: sets=2 removed=45 relocated=39, no fault), FAIL
   with the switch off lab 20261106-050420. ~ The model variant (group) stays the guest's own.
 * ~ Civ cities run 0xBE6A50 too; the kind is Space only (no Civ detector row, not tested there).
+* ✔ (2026-11-17, feat/lineages-alpha) An ornament of this noun made by the mod in the Creature stage carries any
+  creation's model: 0xC6F910 alone drew nothing for a vehicle or building key, SetModelKey (spatial vt 0x94) after it
+  drew the model; vt 0x38 / vt 0x3C move it every frame, vt 0x44 only once. docs/12-server-and-players.md#server-era-spike.
 
 ## A guest's own cargo hold across a rejoin (2026-11-07, fix/w46-space-items)
 <a id="space-kept-hold"></a>
