@@ -916,6 +916,20 @@ static void space_citizen_drive(const Item& l, const net::Vec3& hp, const net::V
 }
 static bool g_space_cit_fix = true;
 COOP_FIX("space.citizens", "BUG-0490", g_space_cit_fix, "space: a colony's citizens stand where the host's stand (the host's citizens near a guest on its planet)");
+// BUG-1210: a host citizen with no guest citizen within the bind radius (30 m) stayed unbound, and the guest's own
+// citizen of that place stood elsewhere for good (binds=18 own=1 of 19 on the fixture's planet, the same in 0.7.14.1:
+// space_planet_citizens 3 of 57 elsewhere). Now such a host citizen takes the guest's nearest citizen without a
+// partner within the snapshot's range: it is put at the host's place and bound (then driven every frame as the others).
+// `coop.fix space.citizen_relocate off`: it stays unbound (0.7.14).
+static bool g_space_cit_relocate_fix = true;
+COOP_FIX("space.citizen_relocate", "BUG-1210", g_space_cit_relocate_fix,
+         "space: a host's colony citizen with no guest citizen near takes the guest's nearest free one (no citizen stands elsewhere)");
+static bool space_citizen_place(const Item& l, const net::Vec3& hp, uint32_t)
+{
+    game::stop(l.p);
+    game::place(l.p, hp, game::orientation(l.p));
+    return true;
+}
 static bool g_space_veh_fix = true;
 COOP_FIX("space.vehicles", "BUG-0490", g_space_veh_fix, "space: a colony's vehicles drive where the host's drive (on the planet both players are on)");
 constexpr uint32_t kVehicleNoun = 0x018C6DE8;
@@ -1027,7 +1041,8 @@ static Kind g_kinds[] = {
     // BUG-0490 (new kinds at the end: an older guest drops a kind index it does not know)
     {.name = "space_citizen", .fix = &g_space_cit_fix, .stages = kStSpace, .tol = 30.f, .range = 400.f, .max = 56,
      .collect = citizen_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
-     .gone_acted = false, .drop_own = false, .every = 0.5, .drive = space_citizen_drive},
+     .gone_acted = false, .drop_own = false, .every = 0.5, .drive = space_citizen_drive, .place = space_citizen_place,
+     .relocate = 400.f, .place_fix = &g_space_cit_relocate_fix},
     // the whole planet (the fixture's is ~510 m in radius): every vehicle binds to the nearest host vehicle of its class
     // (sea vehicles were 400+ m from their partner: the bind radius is the planet's size)
     {.name = "space_vehicle", .fix = &g_space_veh_fix, .stages = kStSpace, .tol = 1500.f, .range = 2500.f, .max = 44,

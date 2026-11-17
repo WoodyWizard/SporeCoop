@@ -8827,3 +8827,24 @@ Final check 20261116-025154 (0.7.15); the group around the guest's own creature,
   the host's log) before its editor vote: a vote into the guest's load lost the guest's own editor (BUG-1215).
 * find_partners: a test place in deep water starts the guest game's sea monster (drama kind 6), whose cinematic pauses
   that game for good; the test holds it (`coop.drama hold 40` on the guest, BUG-1204).
+## Space tests and the host's autosave; the sculpting spot (2026-11-16, fix/w51-t3)
+<a id="testing-space-autosave"></a>
+
+From the 0.7.15 final check triage of the Space group (BUG-1203, BUG-1210, BUG-1211):
+* The host's autosave (E2) saves a few seconds after a milestone, and in Space only off a planet: a colony founded
+  while the host stands on a planet is saved the moment the host leaves it (zooms out to the galaxy, jumps). A test
+  that sends real input right then (an Esc, a galaxy click) can land in the save (a 0.7-0.8 s hitch, the "game saved"
+  box the mod confirms about 2 s after the write). `harness.autosave_settled(host)` waits until no milestone waits and
+  every posted save is written, then 3 s; coop_space_map.py calls it before its pause-menu step. It checks nothing.
+* `coop.space map status` ends with `planet_gaps=N`: reads of the own colonies that kept a star's colonies over its
+  empty planet list right after a save ([space-save-planet-gap](re/space.md#space-save-planet-gap)).
+* coop_space_sculpt_tool.py puts both ships over the planet point (-5, -176, 557) (`coop.space over`) before the hits:
+  where a landing puts a ship depends on when it lands, and since the faster start (A9) the first hit fell on a plateau
+  already at the height the first sculpting tool raises the ground to, so the hits changed it by 0.0-0.5 m.
+* space_planet_citizens: citizens stand in groups 0.5-2 m apart; the test now counts with a maximum matching (each host
+  citizen its own guest citizen within 3 m, at its size first), the greedy pairing took a neighbour's partner (misses at
+  0.5-2 m, swapped sizes). A host citizen stacked on another with no guest citizen for it stayed unbound (`coop.wobj`
+  binds=18 own=1): `space.citizen_relocate` binds it to the guest's nearest free citizen. Each miss is printed.
+* space_npc_model and creature_ufo_nomodel start the host with an empty GraphicsCache (the lane's two
+  GraphicsCache*.package files go aside and come back, `gfx_aside` / `gfx_back`): a lane whose cache baked the NPC
+  ships' models never had the case and the tests were INCONCLUSIVE there ([space-gfx-cache-models](re/space.md#space-gfx-cache-models)).

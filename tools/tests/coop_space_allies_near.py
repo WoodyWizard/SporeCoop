@@ -12,7 +12,8 @@ next visitor spawn faulted at 0xC32817 (lab 20261115-030136 of feat/w51-space, "
 2. The guest visits that star and flies home: the game's list holds the mirror's star, with its empire.
 3. The guest saves at home (the mirror goes for the save): no star of the list is without an empire.
 4. The host leaves (the mirror goes for good); the guest stays 20 s in its home system: still none, no fault.
-PASS: 1 to 4 and no fault. SPORE_FIX_OFF=allies.near_rebuild: the list keeps the star of nobody at 3 (FAIL), and a
+PASS: 1 to 4 and no fault; the host's colony made at most one autosave (BUG-1203: SPORE_FIX_OFF=
+world.autosave_colony_ids,space.roster_planet_gap saves every 8 s; space.roster_planet_gap alone fails 2). SPORE_FIX_OFF=allies.near_rebuild: the list keeps the star of nobody at 3 (FAIL), and a
 visitor spawn in the window faults (about one run in three without the checks of the list).
 
   SPORE_LANE=6 python3 tools/tests/coop_space_allies_near.py
@@ -21,6 +22,7 @@ import re
 import time
 
 from coop_space_allies import VK_RETURN, no_movie, place, sp, star_info, status, travel, wait
+from harness import kv
 from twoinst import Checks, start
 
 
@@ -83,6 +85,12 @@ def main():
         guest.call(f'key {VK_RETURN}')
         time.sleep(1)
     ck(wait(lambda: status(guest).get('applied', 0) == 1, 20), 'after the save the mirror is back')
+
+    # BUG-1203: the host's colony was one milestone of its autosave: one save, not one after each save (the colony's
+    # star had an empty planet list right after every save: the roster lost and found it, a "new" colony each time)
+    a = kv(host.call('coop.autosave')['out'])
+    ck(a.get('milestone_saves') in ('0', '1') and int(a.get('milestones', '0') or 0) <= 1,
+       f'the host\'s colony made at most one autosave (milestones {a.get("milestones")}, saves {a.get("milestone_saves")})')
 
     # 4. the session ends: the mirror goes for good; the guest stays in its home system
     print('  host leaves:', host.call('coop.leave')['out'].strip(), flush=True)

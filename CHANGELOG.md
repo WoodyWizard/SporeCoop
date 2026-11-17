@@ -76,6 +76,11 @@
   civilization, so only the host changes them. A guest's own outfitter or design editor no longer opens just to have
   its work lost; the guest sees "only <host> changes it" instead, and a guest's own design pick goes back to the
   host's with a message (BUG-1158).
+- Space: on a colony planet every citizen of the host near a guest now stands at the same place in the guest's game;
+  one of them could stand somewhere else (BUG-1210).
+- Space: right after the host's game saves, a colony of the host in another star system no longer drops out of the
+  co-op roster for a moment (the guests' galaxy map and the allied empire of the Allies mode lost that star until the
+  next update) (BUG-1203).
 
 ### Development
 - Lab: tribe_name_tags checks the chief's label at the chief the game names (BUG-1202); tribe_caption_race is
@@ -162,6 +167,11 @@
   of the updater test compiles again, twins that must fail and the campaign segment rerun are no longer in the full
   suite, the second game of a start waits for the first one's SporeKit, and diag / report_shot wait for what they
   check (BUG-1189, BUG-1190, BUG-1191, BUG-1192, BUG-1193, BUG-1206, BUG-1209).
+- Tests: space_sculpt_tool hits a fixed spot of the planet (the faster start had moved the landing onto a plateau the
+  tool cannot raise), space_npc_model and creature_ufo_nomodel start the host with an empty GraphicsCache (a lane that
+  had baked the NPC ships' models never brought one without its model), space_map waits for the host's autosave before its
+  pause-menu step (`harness.autosave_settled`); the host's autosave after a colony comes once per colony
+  (BUG-1203, BUG-1211, BUG-1213).
 
 ## [0.7.14.1] - 2026-11-14
 
