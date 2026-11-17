@@ -2,7 +2,7 @@
 id: BUG-1231
 title: Civ: a guest's copies of standing city citizens never play the host's citizens' actions (gestures), only the plain idle
 status: open
-kind: desync
+kind: feature
 stage: Civ
 reported: 2026-11-17
 source: lab (fix/w51-citanim, BUG-1229 measurement)
@@ -39,3 +39,4 @@ members' animation relay (docs/re/tribe.md) for city citizens.
 
 ## History
 - 2026-11-17: opened.
+- 2026-11-17: kind feature (orchestrator): relaying the citizens' actions is a new relay (a message or an animation relay as in Tribe), not a fix of an existing path; backlog, not part of 0.7.15.
