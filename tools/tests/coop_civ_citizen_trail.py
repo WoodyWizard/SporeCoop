@@ -17,7 +17,9 @@ of them a copy stands over 2 m off its host citizen with another copy nearer (wh
 SPORE_FIX_OFF=civ.citizen_lead fails both. PASS also: the guest's moving copies play the host's run animation in at least
 RUN_SHARE of their moving samples, at most RUN_BELOW_HOST under the host's own share, and standing copies are in the run
 at most RUN_STANDING_OVER more often than the host's (BUG-1229: a copy kept the animation it had when it was bound, so it
-slid in the standing one or ran in place; SPORE_FIX_OFF=civ.citizen_run fails it).
+slid in the standing one or ran in place; SPORE_FIX_OFF=civ.citizen_run fails it). PASS also: the copies of standing host
+citizens within STAND_LIMIT m of them in 90 % of the standing samples (BUG-1230: the guest's own behaviour walked a copy
+8-12 m off and back; SPORE_FIX_OFF=civ.citizen_hold fails it).
 
   SPORE_LANE=4 python3 tools/tests/coop_civ_citizen_trail.py [--secs 60]
 """
@@ -46,6 +48,10 @@ RUN_BELOW_HOST = 0.08  # and at most this much under the host's own share
 # BUG-1229: the other half of it: a copy keeps the animation it had when it was bound (labs in the ticket), so one bound in
 # the run ran in place while it stood (standing samples in the run: host 5-6 %, guest up to 45 %)
 RUN_STANDING_OVER = 0.10  # at most this share of the guest's standing samples in the run over the host's own share
+# BUG-1230: while a host citizen stands, the guest's own behaviour walked its copy 8-12 m away and back now and then (the
+# mod walked it back only 1.5 s later): standing samples p90 2.3-6.4 m, over 3 m in 7-22 % (6 recordings of fix/w51-trail;
+# civ.citizen_hold off 3.41 m); with civ.citizen_hold p90 0.54-0.55 m, max 2.4-2.8 m (labs in the ticket)
+STAND_LIMIT = 1.5  # m, p90 of a standing host citizen's copy from it
 
 
 def crossings(hr, gr, own_min=0.0):
@@ -80,6 +86,31 @@ def crossings(hr, gr, own_min=0.0):
                 bad += 1
                 worst.append((own, k, other[1], other[0], t))
     return n, bad, sorted(worst, reverse=True)[:4]
+
+
+def standing(hr, gr):
+    """BUG-1230: the distances of the guest's copies from their host citizens (z<id>, by identity, at the guest's distance
+    from the centre) over the samples where the host's citizen stands (under body_trail.MOVING m/s)"""
+    hb, gb = body_trail._by_key([r for r in hr if r[1][0] == 'z']), body_trail._by_key([r for r in gr if r[1][0] == 'z'])
+    out = []
+    for key, gv in gb.items():
+        hv = hb.get(key)
+        if not hv:
+            continue
+        ht = [x[0] for x in hv]
+        for t, gp in gv:
+            i = bisect.bisect_left(ht, t)
+            h = body_trail.host_at(hv, ht, t)
+            if h is None:
+                continue
+            j0, j1 = max(0, i - 3), min(len(hv) - 1, i + 2)
+            dt = hv[j1][0] - hv[j0][0]
+            sp = math.dist(hv[j1][1], hv[j0][1]) / dt if dt > 0.02 else 0.0
+            rg, rh = body_trail._norm(gp), body_trail._norm(h)
+            if sp >= body_trail.MOVING or rg < 1 or rh < 1:
+                continue
+            out.append(math.dist(gp, tuple(x * rg / rh for x in h)))
+    return out
 
 
 def _anim(p):
@@ -217,6 +248,13 @@ def main():
        f'{bad / max(n, 1):.1%} of {n} moving samples (at most {CROSSED:.0%}: a neighbour\'s copy at its place)'
        + ('; e.g. ' + ', '.join(f'{k} own {d:.1f} m, {o} {od:.1f} m at {t - t_first:.1f} s' for d, k, o, od, t in worst[:3])
           if worst else ''))
+    st = standing(hr, gr)
+    ck(len(st) >= 1000, f'the host\'s citizens stood where the guest has copies ({len(st)} standing samples >= 1000)')
+    if st:
+        sp90 = body_trail.pct(st, .9)
+        ck(sp90 <= STAND_LIMIT, f'a standing citizen\'s copy is within {STAND_LIMIT} m of the host\'s citizen in 90 % of the '
+           f'standing samples (p50 {body_trail.pct(st, .5):.2f} p90 {sp90:.2f} m, over 3 m {sum(d > 3 for d in st) / len(st):.1%}, '
+           f'max {max(st):.1f} m; else it runs off and back while the host\'s stands, BUG-1230)')
     an = anim_report(hr, gr)
     ck(an is not None and an[2][1] >= 200, f"the guest's copies moved while the host's citizens ran "
        f'({an[2][1] if an else 0} moving samples >= 200)')

@@ -8986,3 +8986,15 @@ BUG-1227.
   Creature / Tribe variants were tried and dropped (docs/re/civ.md#civ-npc-slope): a held animal next to the avatars
   attacked them and was held thrown 10-13 m up on both games, one 30 m from them left the list; no such ground within
   100 m of the tribe fixture's village (animals held farther left the list).
+
+## Standing city citizens: civ_citizen_trail's hold check (2026-11-17, fix/w51-overrun)
+<a id="testing-civ-citizen-hold"></a>
+
+BUG-1230. civ_citizen_trail also judges the samples where the host's citizen stands (under 0.5 m/s, body_trail.MOVING):
+its own copy on the guest (by identity, at the guest's distance from the centre) within 1.5 m in 90 % of them, and at
+least 1000 such samples (a recording has 38-51 thousand). Printed with p50, the share over 3 m and the maximum. FAIL with
+`SPORE_FIX_OFF=civ.citizen_hold` (p90 3.41 / 4.50 m, over 3 m 11-14 %, max 11 m: labs 20261117-152003, -153909; the
+recordings of fix/w51-trail p90 2.3-6.4 m), PASS with it (p90 0.54-0.55 m, max 2.4-2.8 m). The same FAIL runs also
+fail BUG-1229's `a standing copy is not in the run` (32 % against the host's 10 %): the copies that ran off played the
+run; rel/0.7.15 without the hold failed it in 2 of 2 runs (21 % / 20 %, lane 6, 20261117-152008, -152224 with an
+early variant of the fix).
