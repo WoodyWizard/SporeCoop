@@ -368,6 +368,7 @@ void set_ai_target_picker(AiTargetPicker fn);
 // true: this creature's AI does not tick here (another game simulates it; BUG-9114 Adventure enemies)
 using AiSkip = bool (*)(void* npc);
 void set_ai_skip(AiSkip fn);
+void set_ai_skip_pack(AiSkip fn); // decision 5EA: guest_pack's members run by their partner's own game
 void set_ai_freeze(uint32_t species); // tests (BUG-9212): one species' NPCs run no AI, stopped every frame (0: off)
 uint32_t ai_frozen_ticks();
 uint32_t ai_swaps(); // NPC ticks run with a puppet as the player (diagnostics)

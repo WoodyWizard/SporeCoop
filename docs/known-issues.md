@@ -3898,6 +3898,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 ## Creature: a partner's own pack does not bite yet; one summon at a time per world (2026-11-17, feat/lineages-47)
 <a id="issue-partner-pack-no-bite"></a>
 
+* Update 2026-11-17 (decision 5EA, unreleased): the bite is fixed: the partner's own game runs its pack
+  (docs/re/creature.md#creature-pack-own-game). Still open: one Summon Flock at a time per world; impress help not tested.
+
 * BUG-9248, decision 5CD. A partner's pack is its own now (it follows, takes its summons and recruits, shows in its Pack
   panel, is kept in the save), but its members only walk up to what the partner attacks: they do not bite. The host's
   own pack does.

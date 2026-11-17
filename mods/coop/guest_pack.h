@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "net/protocol.h"
 #include "net/session.h"
 #include "sporekit.h"
 
@@ -53,5 +54,14 @@ void set_follow_test(bool on);   // tests: the follow stimulus by hand instead o
 void set_ctx_test(bool on);      // tests: off = members update outside their party
 std::string callers(bool start); // tests: `coop.gpack callers start|stop` (return addresses of cPosseSimulator_Get)
 void on_pack_list(const std::vector<std::pair<uint16_t, bool>>& ids); // guest
+// decision 5EA: each partner's own game runs its pack (`coop.fix creature.pack_own_game`, both games)
+constexpr uint8_t kPackStateKind = 15;  // guest -> host {u8 n, n x net::NpcState}: where its pack members are (10 Hz)
+bool own_game();                        // the switch (and party_mode)
+bool own_member(void* c);               // guest: c is a member of this player's pack that this game runs
+void on_pack_states(uint8_t from, const std::vector<net::NpcState>& v); // host
+std::string own_status();
+constexpr uint8_t kPackAnimKind = 16;   // guest -> host {u8 n, n x {u16 id, u32 anim, u8 how, u8 a, u32 b}}: their animations
+void own_anim(void* c, uint32_t anim, int how, int a, int b); // guest: a member this game runs started a behaviour animation
+void on_pack_anims(uint8_t from, net::Reader& r);             // host: played on the members
 
 } // namespace guest_pack

@@ -8965,3 +8965,21 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
 * Pitfalls: every `mod.reload coop` forgets the parties; their members keep the pack bit (cleared within 5 s since,
   orphans) and a running summon is no longer tracked (ended 60 s past its time since). The join sends the world twice
   (about 20 s apart): wait for the second before testing. `coop.npc spawn` creatures are never saved.
+
+## A partner's own game runs its pack: how it was tested (2026-11-17, feat/lineages-47)
+<a id="testing-pack-own-game"></a>
+
+* `py tools/qa_win/pack_own_game.py <partner: 8|msi> <player id> [victim species] [recruits]`: recruits herbivores into
+  the partner's pack (as its recruit), checks that the partner's game runs them (`own game (5EA)` line in `coop.gpack`:
+  lends, sent on the partner; got, driven on the host), gives the partner's own attack order (`coop.gpack hostorder
+  <id>` on the partner: its creature's SetTarget and Creature_PlayerCommand at the proxy) and follows the victim's
+  health on the host. The hits are in the host's log as `guest N hit npc <id>` (the watch line does not see them: they
+  land through apply_damage) and in the partner's as `proxy <id> hit here: attacker <member>`.
+* Results (TITAN host, TITAN partner and the MSI as a second partner): the target killed in 6-9 s (7-9 bites by the 2
+  recruits) for each partner; the same order with the switch off on both games: 0 bites in 30 s, then on again: dead in
+  6 s; a host creature hitting the partner (`coop.npc hurt <player> <id> 2`): killed by its pack in 6 s with no order;
+  follow after a 35 m walk: members at 6-7 m; a summoned flock of 4 runs on the partner's PC too (8 members driven
+  for 2 partners) and fights; the MSI left: its members let go, the other partner's untouched; 0 jumps on the host.
+* Pitfall: `coop.npc list` on the host gives each creature's id as `#N`; take the id of the creature just spawned by its
+  pointer, not the last line of its species (an old adult far away took the order once).
+* Pitfall: the MSI restore's version check proves nothing for a dev build (the same version string): compare the hashes.

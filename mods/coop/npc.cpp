@@ -882,6 +882,10 @@ static float g_anim_snap_quiet = 1.5f; // guest: no snapshot play this soon afte
 static void on_behaviour_anim(void* c, uint32_t anim, int how, int a, int b)
 {
     tribe::on_behaviour_anim(c, anim, how, a, b); // BUG-0569: a member's (its own checks)
+    if (is_guest() && npc_stage() && guest_pack::own_member(c)) { // decision 5EA: its game runs it, the host shows it
+        guest_pack::own_anim(c, anim, how, a, b);
+        return;
+    }
     if (!g_anims_fix || !is_host() || !npc_stage())
         return;
     auto it = g_host_npcs.find(c);
@@ -2508,8 +2512,13 @@ static void guest_tick(double now)
         }
         proxy_tuning(px);
         if (px.local_until > 0) { // BUG-9181: lent to this game's AI; back to the sync when the time is up
-            if (now < px.local_until)
+            // decision 5EA: a member of this player's own pack runs here; its health is the host's (the host's game takes
+            // every hit on it) and its death too: a dead one goes back to the sync, which plays the death
+            if (now < px.local_until && !(s.flags & net::NF_DEAD)) {
+                if (!px.killed && s.health > 0 && px.c && g_max_hp_fix && px.max_health > 0)
+                    creature_hp::drive_puppet(px.c, s.health, px.max_health);
                 continue;
+            }
             px.local_until = 0;
             if (px.c && game::object_alive(px.c))
                 game::puppet_register(px.c);
@@ -3305,7 +3314,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                     continue;
                 Proxy& px = it->second;
                 uint32_t cur = 0;
-                if (!px_live(px) || game::is_destroyed(px.c) || now - px.anim_fix_at < 2.0 || now - px.anim_rx_at < g_anim_snap_quiet ||
+                if (!px_live(px) || px.local_until > 0 || game::is_destroyed(px.c) || now - px.anim_fix_at < 2.0 || now - px.anim_rx_at < g_anim_snap_quiet ||
                     !game::drawn_state(px.c, nullptr, &cur) || cur == anim)
                     continue;
                 px.anim_fix_at = now; // (at most every 2 s: never restarts an animation that will not take)
@@ -3333,6 +3342,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 g_anims_noproxy++;
                 continue;
             }
+            if (it->second.local_until > 0) // decision 5EA: this game's AI runs it (its own animations)
+                continue;
             it->second.anim_rx_at = now;
             if (game::play_behaviour_anim(c, anim, how, a, b))
                 g_anims_played++;
@@ -3493,7 +3504,9 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             if (attacker == av && social::drop_social_hit(it->second))
                 return false; // BUG-0021: the social stance does not attack
             // BUG-9132: the Strike's area hits on the creatures around its target come with no attacker
-            if (attacker == av || (!attacker && av && player_rules::own_attack_running())) {
+            // decision 5EA: a member of this player's own pack (its AI runs here) bites like the player: the host applies it
+            if (attacker == av || (!attacker && av && player_rules::own_attack_running()) ||
+                (attacker && attacker != c && guest_pack::own_member(attacker))) {
                 net::DamageReq q;
                 q.net_id = it->second;
                 q.damage = damage;

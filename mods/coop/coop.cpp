@@ -9931,6 +9931,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            }
                            if (argc > 2 && !strcmp(argv[1], "hostorder")) { // tests (decision 5CD): the same for the host's own
                                void* t = npc::host_npc((uint16_t)atoi(argv[2]));       // creature (its click: target, command)
+                               if (!t) // (a guest: its own creature's command at proxy <id>, decision 5EA)
+                                   t = npc::proxy((uint16_t)atoi(argv[2]));
                                guest_pack::host_command(t);
                                H->out_printf(out, "host order at %p\n", t);
                            }

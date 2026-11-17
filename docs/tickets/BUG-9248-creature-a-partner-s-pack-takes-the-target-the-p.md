@@ -13,7 +13,7 @@ branch: feat/lineages-47
 commits:
 tests: manual Windows QA with tools/qa_win/qa.py (TITAN host 9 + guest 8, the MSI as player 2 over Tailscale; Samuth.spo)
 signature:
-docs: docs/re/creature.md#creature-pack-per-player
+docs: docs/re/creature.md#creature-pack-per-player, docs/re/creature.md#creature-pack-own-game
 related: BUG-9129, BUG-9233, BUG-9245, BUG-9247, BUG-9249, BUG-0512, BUG-0735
 ---
 
@@ -53,7 +53,21 @@ Earlier (2026-11-16): creature.guest_pack_attack gives the members the game's ow
 Not passed yet: with the order alone (switch on) the members still stood by (22:03, 22:05); one member in the game's pack fought (22:08).
 no-fail-run: Windows QA by hand (no lab on this PC).
 
+## Fix (decision 5EA, 2026-11-17)
+The partner's own game runs its pack (`coop.fix creature.pack_own_game`, both games): the members, proxies there, are lent
+to that game's AI and are its own pack, so the game's single-player follow, defend and attack order work unchanged; their
+states (10 Hz) and animations go to the host, which runs no AI for them and drives them with the proxies' driving; their
+bites go to the host as the partner's hits (npc::damage_filter). Code: guest_pack.cpp (own game section), npc.cpp (the
+lent member's bites, health and death, animation relay), game.cpp (set_ai_skip_pack), player_rules.cpp (K_PACKSTATE 15,
+K_PACKANIM 16; the attack order no longer goes to the host).
+
+## Test (5EA)
+tools/qa_win/pack_own_game.py, docs/06-testing.md#testing-pack-own-game. FAIL with the switch off on both games (0 bites
+in 30 s), PASS with it on (the same target dead in 6 s), TITAN partner and the MSI: targets dead in 6-9 s, defend with no
+order, follow, a summoned flock, leave. Not tested: impress help. Summon Flock: still one per world.
+
 ## History
 - 2026-11-16: opened during the owner-requested pack test.
 - 2026-11-16 (later): cause found (only members of the game's pack obey the pack's attack order); the order itself built (creature.guest_pack_attack); joining the pack is decision 5C.
 - 2026-11-17: decision 5CD built (phases 1-4, unreleased); tested on TITAN and with the MSI; the partner's pack does not bite yet (open).
+- 2026-11-17: decision 5EA built (the partner's own game runs its pack): the partner's pack bites, defends and follows; tested on TITAN and with the MSI; unreleased.

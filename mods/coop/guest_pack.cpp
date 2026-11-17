@@ -13,6 +13,7 @@
 #include "fixes.h"
 #include "game.h"
 #include "drama.h"
+#include "driver.h"
 #include "modes.h"
 #include "net/interp.h"
 #include "net/protocol.h"
@@ -65,6 +66,11 @@ struct Member {
     double target_until = 0;
     double next_move = 0;
     double next_follow = 0; // decision 5CD
+    net::NpcState drv{};    // decision 5EA: its latest state from its partner's game (which runs it)
+    double drv_at = 0;      // when that came (0: never)
+    drive::State dst;       // the host's walking of it on that path (the proxies' driving, npc.cpp)
+    bool drv_walk = false;
+    net::Vec3 drv_seen{};   // where it was drawn the frame before (a jump of more than 3 m is counted)
 };
 static std::unordered_map<void*, Member> g_members;
 static uint32_t g_summons, g_summoned, g_recruits, g_assists, g_defends, g_leashed, g_teleports, g_dropped;
@@ -81,6 +87,9 @@ static void save_start();
 static void save_end();
 static void send_lists(double now, bool force);
 static void party_leave(size_t tok);
+static bool driven(void* c);                     // decision 5EA (below)
+static void drive(void* c, Member& m, double now);
+static void own_tick_guest(double now);
 
 static bool alive(void* c, const Member& m)
 {
@@ -127,6 +136,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     if (!a_PossePtr || !a_PosseCtor || !a_PosseInit || !a_PosseRemove || !a_AddMember || !a_PosseGet)
         H->log(M, SK_WARN, "guest_pack: a pack symbol is missing: partners' packs stay the mod's (decision 5CD off)");
     game::set_party_context(ai_enter, party_leave);
+    game::set_ai_skip_pack(driven); // decision 5EA
     game::set_before_destroy(before_destroy);
     savestrip::add_save_hooks(save_start, save_end);
 }
@@ -914,6 +924,12 @@ static void party_tick(double now)
             g_dropped++;
             continue;
         }
+        if (driven(c)) { // decision 5EA: its partner's game runs it
+            drive(c, m, now);
+            ++it;
+            slot++;
+            continue;
+        }
         void* puppet = C.puppet_of ? C.puppet_of(m.owner) : nullptr;
         // Following: in the host's game a pack member follows the creature it senses with the avatar mark (Steam 0xAF9570
         // from cCreatureAnimal::Update posts stimulus 0x4000000 from it, value 5.0; runtime 2026-11-17: the host's recruit
@@ -1015,8 +1031,10 @@ void tick(double now)
 {
     heal_posse_count(now);
     clear_orphans(now);
-    if (C.sess && C.sess->role() == net::Role::Client)
+    if (C.sess && C.sess->role() == net::Role::Client) {
         mirror_tick();
+        own_tick_guest(now);
+    }
     if (!g_frames.empty()) { // a fault the game caught left a party open: the ledger gave the host's pack back already
         g_frames_lost += (uint32_t)g_frames.size();
         H->log(M, SK_WARN, "guest_pack: %zu party context(s) left open by a fault: dropped (decision 5CD)", g_frames.size());
@@ -1176,6 +1194,7 @@ std::string status()
                   g_mirror.size(), g_mirror_added, g_mirror_removed, g_mirror_refused, g_lists_got, g_lists_sent, g_notes_written,
                   g_pack_restored, g_orphans_cleared);
     out += b;
+    out += own_status();
     for (auto& [p, pt] : g_parties) {
         auto l = party_list(p);
         std::snprintf(b, sizeof b, "  party %u: pack manager %p size %d summoned %d members %zu\n", p, (void*)pt->posse,
@@ -1246,6 +1265,197 @@ void host_command(void* target)
         return;
     skg::vcall<void>(av, 0x84 / 4, (uint8_t*)target + game::kCombatOff, 1, 0);
     skg::thiscall<void*>(a_PlayerCmd, av, 0x10u, 0u, 0x7F7FFFFFu, 0u, 0u, target, 0u);
+}
+
+// ---------------------------------------------------------------- decision 5EA: each partner's own game runs its pack
+// The owner (2026-11-17, "is it possible to have each player run their own side of things instead of it being all on the
+// host?"): a partner's pack thinks in the partner's own game, where that player's creature is the game's own avatar and
+// the pack its own pack (phase 2 put the members, proxies of the host's creatures, into that game's pack list). There the
+// game's single-player code follows, defends and fights by the player's own orders (Creature_PlayerCommand, no relay to
+// the host). The partner's game sends where each member is (10 Hz); the host runs no AI for them and walks them there
+// (the host and the other partners see them as before). Their bites on the host's creatures go to the host like the
+// player's own (npc::damage_filter). The host keeps the members' health and deaths (every hit on them lands there).
+// A member without a state for kDriveStale s (the partner left, its game paused, the switch off there) thinks in the
+// host's game again (5CD). Both games need the switch: `coop.fix creature.pack_own_game off` = 5CD (the host runs it).
+static bool g_own_game = true;
+COOP_FIX("creature.pack_own_game", "BUG-9248", g_own_game,
+         "creature: a partner's own game runs its pack (follows, defends, fights by that player's orders); the host shows it");
+static constexpr double kDriveStale = 1.5;
+static double g_own_next_lend, g_own_next_send;
+static uint32_t g_own_lends, g_own_sent, g_own_got, g_own_bad, g_own_drives, g_own_jumps;
+struct OwnAnim {
+    uint16_t id;
+    uint32_t anim;
+    uint8_t how, a;
+    int32_t b;
+};
+static std::vector<OwnAnim> g_own_anims; // guest: started since the last send
+static uint32_t g_own_anims_sent, g_own_anims_played, g_own_anims_failed;
+
+void own_anim(void* c, uint32_t anim, int how, int a, int b)
+{
+    uint16_t id = npc::id_of(c);
+    if (id != 0xFFFF && g_own_anims.size() < 32)
+        g_own_anims.push_back({id, anim, (uint8_t)how, (uint8_t)(a & 0xFF), (int32_t)b});
+}
+
+static void send_own_anims()
+{
+    if (g_own_anims.empty())
+        return;
+    net::Writer w;
+    w.u8(kPackAnimKind);
+    w.u8((uint8_t)g_own_anims.size());
+    for (auto& e : g_own_anims) {
+        w.u16(e.id);
+        w.u32(e.anim);
+        w.u8(e.how);
+        w.u8(e.a);
+        w.u32((uint32_t)e.b);
+    }
+    C.sess->send_reliable_to(0, net::MSG_PLAYER_RULE, w);
+    g_own_anims_sent += (uint32_t)g_own_anims.size();
+    g_own_anims.clear();
+}
+
+void on_pack_anims(uint8_t from, net::Reader& r)
+{
+    uint8_t n = r.u8();
+    for (uint8_t i = 0; i < n && i < 32 && r.ok(); i++) {
+        uint16_t id = r.u16();
+        uint32_t anim = r.u32();
+        uint8_t how = r.u8(), a = r.u8();
+        int32_t b = (int32_t)r.u32();
+        if (!r.ok() || !own_game() || !is_host())
+            return;
+        void* c = npc::host_npc(id);
+        auto it = c ? g_members.find(c) : g_members.end();
+        if (it == g_members.end() || it->second.owner != from || game::is_dead(c))
+            continue;
+        if (game::play_behaviour_anim(c, anim, how, a, b))
+            g_own_anims_played++;
+        else
+            g_own_anims_failed++;
+    }
+}
+
+bool own_game() { return g_own_game && party_mode(); }
+
+bool own_member(void* c)
+{
+    return own_game() && c && std::find(g_mirror.begin(), g_mirror.end(), c) != g_mirror.end() && npc::lent_for(c) > 0;
+}
+
+static void own_tick_guest(double now)
+{
+    if (!own_game() || g_mirror.empty() || !C.sess || !C.sess->connected() || !game::in_creature_stage()) {
+        g_own_anims.clear();
+        return;
+    }
+    send_own_anims(); // (as they start: a bite shows on the host's screen when it lands)
+    if (now >= g_own_next_lend) {
+        g_own_next_lend = now + 0.5;
+        for (void* c : g_mirror)
+            if (game::listed(c) && !game::is_dead(c) && npc::lend_local_ai(c, 2.0))
+                g_own_lends++;
+    }
+    if (now < g_own_next_send)
+        return;
+    g_own_next_send = now + 0.1;
+    std::vector<net::NpcState> v;
+    for (void* c : g_mirror) {
+        uint16_t id = game::listed(c) && npc::lent_for(c) > 0 ? npc::id_of(c) : 0xFFFF;
+        if (id == 0xFFFF)
+            continue;
+        net::NpcState st;
+        st.net_id = id;
+        st.pos = game::position(c);
+        st.rot = game::orientation(c);
+        st.vel = game::velocity(c);
+        v.push_back(st);
+        if (v.size() == 16)
+            break;
+    }
+    if (v.empty())
+        return;
+    net::Writer w;
+    w.u8(kPackStateKind);
+    w.u8((uint8_t)v.size());
+    for (auto& st : v)
+        st.write(w);
+    C.sess->send_unreliable_to(0, net::MSG_PLAYER_RULE, w);
+    g_own_sent++;
+}
+
+void on_pack_states(uint8_t from, const std::vector<net::NpcState>& v)
+{
+    if (!own_game() || !is_host())
+        return;
+    const double now = H->time_seconds();
+    for (auto& st : v) {
+        void* c = npc::host_npc(st.net_id);
+        auto it = c ? g_members.find(c) : g_members.end();
+        if (it == g_members.end() || it->second.owner != from || !std::isfinite(st.pos.x) || !std::isfinite(st.pos.y) ||
+            !std::isfinite(st.pos.z) || !std::isfinite(st.vel.x) || !std::isfinite(st.vel.y) || !std::isfinite(st.vel.z)) {
+            g_own_bad++;
+            continue;
+        }
+        it->second.drv = st;
+        it->second.drv_at = now;
+        g_own_got++;
+    }
+}
+
+static bool driven(void* c)
+{
+    if (!g_own_game || g_members.empty())
+        return false;
+    auto it = g_members.find(c);
+    return it != g_members.end() && it->second.drv_at > 0 && H->time_seconds() - it->second.drv_at < kDriveStale;
+}
+
+static void drive(void* c, Member& m, double now)
+{
+    // the proxies' driving (npc.cpp guest_tick): a running member is walked by the game and placed on the partner's
+    // path (walk_place), a standing one is stepped to its spot (step); a new state is extrapolated by its age
+    const net::NpcState& st = m.drv;
+    const float age = (float)std::min(now - m.drv_at, 0.5);
+    const net::Vec3 at = game::position(c);
+    if (m.drv_seen.x != 0 || m.drv_seen.y != 0 || m.drv_seen.z != 0)
+        if (net::dist(at, m.drv_seen) > 3.f)
+            g_own_jumps++;
+    if (drive::speed(st.vel) > 0.3f && net::dist(at, st.pos) < 8.f) {
+        if (!m.drv_walk)
+            m.dst.kinematic = false; // a new walk: its first goal at once
+        drive::WalkPlace o;
+        o.ground = true;
+        o.max_dt = 0.4;
+        o.snap = 2.5f;
+        o.keep_lost = true;
+        o.catch_prop = true;
+        const net::Vec3 aim{st.pos.x + st.vel.x * age, st.pos.y + st.vel.y * age, st.pos.z + st.vel.z * age};
+        drive::walk_place(c, aim, st.rot, st.vel, m.dst, now, o);
+        m.drv_walk = true;
+    } else {
+        if (m.drv_walk) {
+            m.drv_walk = false;
+            if (m.dst.kinematic)
+                drive::walk_end(c, st.pos, m.dst, now);
+        }
+        drive::step(c, st.pos, st.rot, st.vel, m.dst, now, age, true, 8.f, true, true, false, true);
+    }
+    g_own_drives++;
+    m.drv_seen = game::position(c);
+}
+
+std::string own_status()
+{
+    char b[256];
+    std::snprintf(b, sizeof b, "own game (5EA): on=%d lends=%u sent=%u anims=%u (guest) got=%u bad=%u drives=%u jumps=%u driven=%d anims=%u/%u failed (host)\n",
+                  (int)own_game(), g_own_lends, g_own_sent, g_own_anims_sent, g_own_got, g_own_bad, g_own_drives, g_own_jumps,
+                  (int)std::count_if(g_members.begin(), g_members.end(), [](auto& e) { return driven(e.first); }),
+                  g_own_anims_played, g_own_anims_failed);
+    return b;
 }
 
 } // namespace guest_pack

@@ -5315,3 +5315,28 @@ Decision 5CD, BUG-9248. Steam code dumped live (Steam = GOG 2024 - 0x110000), ru
   and the world has one summon event: while it runs nobody summons (the host's own summon in single player as well).
 * ✔ Wild creatures from `coop.npc spawn` live in herds of the mod's kind and are never saved (savestrip): a save test
   needs creatures of the world's own nests.
+
+## A partner's own game runs its pack (2026-11-17, feat/lineages-47)
+<a id="creature-pack-own-game"></a>
+
+Decision 5EA, BUG-9248, `coop.fix creature.pack_own_game` (both games). Runtime on TITAN (host 9 + guest 8) and with
+the MSI as player 2 over Tailscale (Samuth.spo).
+
+* ✔ The pack's attack order, follow and defend work in the partner's own game with no change to the game's code: there
+  the partner's creature is the game's avatar and its pack members (proxies of the host's creatures, put into that
+  game's pack list by 5CD phase 2) are its own pack. Lent to that game's AI (npc::lend_local_ai, refreshed every 0.5 s),
+  they follow the player, defend it when something hits it, and attack what the player orders (Creature_PlayerCommand,
+  0x10), exactly as in single player.
+* ✔ Their bites on the host's creatures arrive in the partner's damage filter as hits on proxies with the member as the
+  attacker (type 2, 1.5 or 6.75 for 06539202); sent as MSG_DAMAGE_REQ they land on the host as the partner's own hits
+  (kill credit, assist). Hits with no attacker on dead proxies are the pack eating a body (not sent; the meat sync owns it).
+* ✔ The host runs no AI for a member with a fresh state (game::set_ai_skip_pack, 1.5 s) and moves it with the proxies'
+  driving (drive::walk_place while it runs, drive::step while it stands). A first version (MoveTo at the state, a
+  teleport past 6 m) jumped the members 31 times in a 40 s follow; with the proxies' driving 0 (`jumps=` in coop.gpack).
+* ✔ Their behaviour animations (the game's listener on the partner's side) go to the host and play there
+  (play_behaviour_anim): 29 of 29 played in one attack. The host's relay of them back to that partner is ignored for
+  lent proxies.
+* ✔ The host keeps their health and deaths: a lent proxy takes the host's health each frame and goes back to the sync
+  (which plays the death) when the host's state says dead.
+* ~ Not changed: the Summon Flock still runs on the host (one event per world, 5CD); the partner's own game does not
+  summon. Impress help not tested.

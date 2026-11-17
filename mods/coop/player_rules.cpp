@@ -43,7 +43,11 @@ enum Kind : uint8_t {
     K_PACKCMD = 13,    // guest -> host {u32 lo, u32 hi, f32 value, u32 c, u32 d, u16 target npc id or 0xFFFF}: the guest's
                        // own command to its creature that the game passes to the pack (decision 5CD)
     K_PACKLIST = 14,   // host -> guest {u8 n, n x {u16 npc id, u8 summoned}}: the guest's own pack (decision 5CD phase 2)
+    K_PACKSTATE = 15,  // guest -> host {u8 n, n x net::NpcState}: where the guest's game has its pack members (decision 5EA), 10 Hz
+    K_PACKANIM = 16,   // guest -> host {u8 n, n x {u16 id, u32 anim, u8 how, u8 a, u32 b}}: their behaviour animations (5EA)
 };
+static_assert(K_PACKANIM == guest_pack::kPackAnimKind, "guest_pack.h kPackAnimKind");
+static_assert(K_PACKSTATE == guest_pack::kPackStateKind, "guest_pack.h kPackStateKind");
 static_assert(K_PACKLIST == guest_pack::kPackListKind, "guest_pack.h kPackListKind");
 static unsigned g_flock_sent, g_flock_got;
 
@@ -541,8 +545,8 @@ static void* SK_THISCALL h_PlayerCmd(void* av, uint32_t lo, uint32_t hi, float v
 {
     void* r = o_PlayerCmd(av, lo, hi, v, c, d, tgt, keep);
     if (!g_packcmd_fix || !((lo & 0x70411u) | (hi & 0x40010u)) || !is_guest() || !av || av != game::avatar() ||
-        !game::in_creature_stage() || !guest_pack::enabled())
-        return r;
+        !game::in_creature_stage() || !guest_pack::enabled() || guest_pack::own_game())
+        return r; // (decision 5EA: the guest's own game gives it to its own pack)
     uint16_t id = 0xFFFF;
     if (tgt) {
         void* t = npc::is_proxy(tgt) ? tgt : nullptr;
@@ -1331,6 +1335,21 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (!r.ok() || from != 0 || !is_guest() || !game::in_creature_stage())
             return;
         guest_pack::on_pack_list(v);
+    } else if (kind == K_PACKANIM) { // decision 5EA
+        if (from == 0 || !is_host() || !game::in_creature_stage())
+            return;
+        guest_pack::on_pack_anims(from, r);
+    } else if (kind == K_PACKSTATE) { // decision 5EA
+        uint8_t n = r.u8();
+        std::vector<net::NpcState> v;
+        for (uint8_t i = 0; i < n && i < 32 && r.ok(); i++) {
+            net::NpcState st;
+            if (st.read(r))
+                v.push_back(st);
+        }
+        if (!r.ok() || from == 0 || !is_host() || !game::in_creature_stage())
+            return;
+        guest_pack::on_pack_states(from, v);
     } else if (kind == K_PACKCMD) { // decision 5CD
         uint32_t lo = r.u32(), hi = r.u32();
         float v = r.f32();

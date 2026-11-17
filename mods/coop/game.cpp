@@ -1229,6 +1229,8 @@ static bool g_swap_fault_test = false; // tests: the next swapped tick leaves li
 void set_ai_target_picker(AiTargetPicker fn) { g_ai_picker = fn; }
 static AiSkip g_ai_skip;
 void set_ai_skip(AiSkip fn) { g_ai_skip = fn; }
+static AiSkip g_ai_skip_pack; // decision 5EA: a partner's pack member that the partner's own game runs
+void set_ai_skip_pack(AiSkip fn) { g_ai_skip_pack = fn; }
 // tests (BUG-9212, `coop.npc aifreeze <hex species | off>`, host): the NPCs of one species run no AI and are stopped every
 // frame: whatever still moves them is not their behaviour (the physics, the mod)
 static uint32_t g_ai_freeze_species, g_ai_frozen_ticks;
@@ -1281,6 +1283,10 @@ static void SK_THISCALL h_NPCTickAI_inner(void* self, float dt, uint64_t t0)
     if (g_ai_skip && g_ai_skip(self)) {
         g_ai_mod_qpc += qpc() - t0;
         return; // the host's game simulates it, its states drive it here (BUG-9114)
+    }
+    if (g_ai_skip_pack && g_ai_skip_pack(self)) {
+        g_ai_mod_qpc += qpc() - t0;
+        return; // decision 5EA: its partner's game runs it, its states drive it here
     }
     if (g_ai_freeze_species && species_key(self).instance == g_ai_freeze_species) { // tests (BUG-9212)
         g_ai_frozen_ticks++;
