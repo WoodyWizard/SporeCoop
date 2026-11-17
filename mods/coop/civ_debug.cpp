@@ -503,10 +503,9 @@ std::string debug(const std::vector<std::string>& a)
         return b;
     }
     if (a.size() >= 6 && a[0] == "creatureshift") {
-        // creatureshift <x> <y> <z> <r> <d> [ground]: every wild creature of this game within r m of the place is set d m
+        // creatureshift <x> <y> <z> <r> <d>: every wild creature of this game within r m of the place is set d m
         // aside along the ground (tests, BUG-0970: this game's herd is no longer where the partner's is; wild
-        // creatures are not synced in Civ). ground (BUG-1216): onto this game's terrain at the new place (as a
-        // creature that walked there), not at its old distance from the planet's centre
+        // creatures are not synced in Civ)
         struct Q {
             net::Vec3 c;
             float r2;
@@ -540,13 +539,7 @@ std::string debug(const std::vector<std::string>& a)
             game::object_position(o, p);
             net::Vec3 n{p.x + t.x / tl * d, p.y + t.y / tl * d, p.z + t.z / tl * d};
             float nl = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z), pl = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
-            float to = pl;
-            if (a.size() >= 7 && a[6] == "ground") {
-                const float g = game::ground_radius(n);
-                if (g > 0)
-                    to = g;
-            }
-            n = {n.x / nl * to, n.y / nl * to, n.z / nl * to};
+            n = {n.x / nl * pl, n.y / nl * pl, n.z / nl * pl};
             game::set_object_position(o, n);
         }
         return "shifted " + std::to_string(q.found.size()) + " creatures";
