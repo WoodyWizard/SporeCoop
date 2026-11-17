@@ -1918,6 +1918,13 @@ BUG-1216 (the campaign's Civ segment failed the sync-check gate `n apart`). GOG 
   jump speed, BUG-0499), and a target that jumps more than 10 m in one frame puts the proxy there (onto this game's
   ground, a fresh path, no walk). civ_proxy_air: off 59 "drawn high" lines and a copy 2 samples in a row 58-62 m up
   (FAIL 20261117-125242), on none, 105 jumps (PASS 20261117-125257).
+* ✔ (runtime, campaign segment lab 20261117-130736) The pool also moves a tracked herd of the same species while the
+  host's game stands: during a 24 s pause of the host a herd of 7 was 392-398 m from where it had stood; host_tick
+  sends nothing in frames without creature updates and the frozen pass (#civ-wild-parked, #civ-wild-reused-frozen)
+  only retired objects at the centre or reused as another creature, so both guests kept it (states 20 s old,
+  `n: 7 apart`) until the game went on. Fix `npc.frozen_moved`: in Civ the frozen pass retires a tracked object more
+  than 20 m from where the game last updated it (no creature moves while none is updated). civ_wild_moved (the herd
+  set 60 m aside during the host's pause menu): off FAIL 20261117-131957, on PASS 20261117-132012.
 * ✔ (runtime, labs 20261117-121304, -121752, -122049, a lane 5 probe) Negative: a copy the game moved in one piece is
   grounded by the Civ game itself, like Tribe's (docs/re/tribe.md#tribe-animal-height): a herd the host's game set
   25 m aside onto ground 7.3 m lower, a walking creature shoved onto 3.2-4.6 m lower ground, and a walking copy put 8 m

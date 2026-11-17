@@ -11,7 +11,7 @@ versions: 0.7.14.1, rel/0.7.15
 fixed_in: unreleased
 branch: fix/w51-civsync
 commits: e8284a09, 081b955f, 9828f4b6
-tests: civ_proxy_air, net_tests test_diag_npc_agl, campaign_segment (from the run's Civ save), campaign_tc2
+tests: civ_proxy_air, civ_wild_moved, net_tests test_diag_npc_agl, campaign_segment (from the run's Civ save), campaign_tc2
 signature: sync-check: MISMATCH with the host (Civilization A3930F03, ...): n: N apart
 docs: docs/re/civ.md#civ-npc-ground, docs/06-testing.md#testing-civ-proxy-air, docs/06-testing.md#testing-final-triage-tribe-civ-0715
 related: BUG-0402, BUG-1106, BUG-0329, BUG-0339, BUG-1100, BUG-0499, BUG-0394, BUG-1228
@@ -73,6 +73,10 @@ Update 2026-11-17 (fix/w51-civsync), per kind, with what a player sees:
   sender's terrain (a trailer appended after the BUG-0606 scale: an older reader stops before it, an older sender's
   entries are compared absolutely); the host compares NPCs by the distance along the ground and the difference of the
   two heights. Wire: the digest message grows by 2 bytes + 4 per NPC; 0.7.14 and 0.7.15 still read each other's.
+* `npc.frozen_moved` (npc.cpp, a fourth kind found in the segment runs, lab 20261117-130736: a herd of 7 moved
+  392-398 m by the pool during a 24 s pause of the host, both guests kept it where it stood, `n: 7 apart`, states 20 s
+  old): in Civ the host's frozen pass retires a tracked object more than 20 m from where the game last updated it (as
+  BUG-1100's reused ones); host_tick gives it a new id at its new place when the game goes on. Off: kept (0.7.14).
 * Diagnostics: a guest logs `npc: proxy N ... drawn X m over this game's ground ... (BUG-1216)` (once per copy per 10
   s) for a Civ copy over 2 m up while its creature is on the host's ground.
 
@@ -90,10 +94,13 @@ Update 2026-11-17 (fix/w51-civsync), per kind, with what a player sees:
     in two samples in a row, 59 "drawn high" lines), PASS 20261117-125257:civ_proxy_air (none, 105 jumps).
   * sync.npc_agl (kind A): net_tests test_diag_npc_agl FAILs with `--nofix` (pos:n1, the terrain difference "apart"),
     passes with it; the final check's n406 (8.9 m absolute) is 1.7 m apart by height over the ground.
+  * civ_wild_moved (the pause kind): FAIL with `SPORE_FIX_OFF=npc.frozen_moved` 20261117-131957:civ_wild_moved (7 copies
+    60 m off for the whole pause), PASS 20261117-132012:civ_wild_moved.
   * Civ segment of the campaign (4 games, lanes 5 + 9, the final check's Civ save): 20261117-122701 FAIL before
     npc.civ_jump (kind C, `n: 7 apart` 83-205 m on Dave), PASS 20261117-125728 with it (1-5 "drawn high" lines per
-    guest, all 2-3 m single frames on a mountain slope, against 92-132).
+    guest, all 2-3 m single frames on a mountain slope, against 92-132); 20261117-130736 FAIL with npc.civ_jump, before
+    npc.frozen_moved (the pause kind above).
 
 ## History
 - 2026-11-16: opened (fix/w51-t4, final-check triage 0.7.15): old, three kinds; not fixed in the triage.
-- 2026-11-17 (fix/w51-civsync): kinds A (the check) and B / C (npc.civ_jump) fixed; the slope jitter seen with A split to BUG-1228.
+- 2026-11-17 (fix/w51-civsync): kinds A (the check), B / C (npc.civ_jump) and the pause kind (npc.frozen_moved) fixed; the slope jitter seen with A split to BUG-1228.

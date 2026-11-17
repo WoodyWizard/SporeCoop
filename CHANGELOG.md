@@ -33,7 +33,7 @@
 ### Fixed
 - Civilization: when the game moves wild animals elsewhere (it does so all the time as the cameras move over the
   planet), a guest sees them at their new place at once; before, they flew there through the air for a moment, or a
-  herd stood 80-200 m from where the host has it for seconds (BUG-1216).
+  herd stood 80-200 m from where the host has it for seconds, or for the whole of the host's pause (BUG-1216).
 - Tribe: a host's tribe member that gets hungry or starves shows it on a guest's screen right away; before, a member
   the guest's game had just made for it (when the guest joined, or a new member of the tribe) showed a full hunger
   bar there for up to two minutes (BUG-1187).

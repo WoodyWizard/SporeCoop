@@ -8821,3 +8821,7 @@ build and the 0.7.15 `tools/`, so the same tests and lab drive the old mod).
 * The campaign's Civ segment (`lab.py run campaign_segment --segment <segment.json> --lane 5 --lane 9 --skip
   2,3,4,6,7,10`: 4 games on 2 lanes, ~10 min) showed the herd 80-205 m off on one guest in 1 of 1 runs without
   npc.civ_jump (20261117-122701).
+* `civ_wild_moved` (BUG-1216, civ_npc, ~2 min): the host opens its pause menu, its game sets the herd 60 m aside
+  (`coop.civ creatureshift`, the pool's move during a stand); for 6 s no copy of the herd may stand more than 8 m from
+  the host's creatures on the guest (the host retires them), then after the pause the guest shows every wild creature
+  where the host has it. Twin `SPORE_FIX_OFF=npc.frozen_moved` (FAIL 20261117-131957, PASS 20261117-132012).
