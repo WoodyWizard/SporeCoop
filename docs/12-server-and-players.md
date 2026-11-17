@@ -417,6 +417,28 @@ while the host is in Cell, Creature or Civ.
 * Unlocks: tied to the world's creator, an away creator blocks everyone's later starts; Spore's own rule (a player starts
   any stage it has reached itself) does not. Moving on to the next stage by playing is always open.
 
+## Seeing other eras: visitors (2026-11-17)
+<a id="server-era-visitors"></a>
+
+Owner, 2026-11-17: "How can we resolve The Catch. I feel like that is a high priority for something like this. Seeing
+civilizations as a creature would be an amazing feat. Or seeing vehicles drive by you."
+
+* Eras stay separate sessions (one stage per planet surface in a game), but show each other as visitors: each era's
+  host sends a light stream of what moves in it (players, vehicles, ships, where cities and buildings stand) to the
+  galaxy server, which passes it to the other eras of that planet; each game draws them as look-alikes.
+* Space ships over any planet: as UFOs. Spore's Creature, Tribe and Civ stages fly UFOs (drama events), and the mod
+  already mirrors them (K_UFO, BUG-0558; UfoGfx_SetModel takes any ship model key). Likely easy.
+* Earlier eras in later ones: a Creature-era player as a creature in a Tribe or Civ game (those stages have wild
+  creatures; the creature puppets already work there). Likely easy.
+* Later eras in earlier ones, the hard part: vehicles and buildings in a Creature or Tribe game. Those stages have no
+  vehicles or cities, but they draw models on simple objects (fruit, eggs, rocks, ornaments: cInteractiveOrnament);
+  cVehicle::Load sets a vehicle's model through its locomotive's SetModel (vt+0x94) with the design's key. Unknown:
+  whether such an object accepts a vehicle or building model in the Creature stage and can be moved each frame. A
+  spike decides it.
+* Look-only at first: no fighting across eras, creatures do not react to cities (interaction is its own design later,
+  maybe for a few cases). Each era built its world on the same ground, so a city can stand where another era has a
+  nest.
+
 ## Questions for the owner
 <a id="server-questions"></a>
 
