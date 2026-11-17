@@ -109,6 +109,10 @@ struct Kind {
     // snapshot makes or binds one of the right class. The switch (nullptr: never)
     bool* reclass = nullptr;
     uint8_t reclass_stages = 0; // the stages it acts in
+    // BUG-1221: guest, a snapshot's new binds go by nearest pairs over all its host objects without a copy (not first
+    // come in the host's id order, which left a host object whose free copy stood beyond `tol` unbound). Acts while
+    // `place_fix` is on (nullptr: always)
+    bool pair_nearest = false;
 };
 static bool kind_on(const Kind& K) { return !K.fix || *K.fix; }
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
@@ -885,6 +889,24 @@ static void citizen_follow(const Item& l, const net::Vec3& hp, const net::Vec3& 
     st.at = now;
     g_cit_walks++;
 }
+// BUG-1221: after a load (the host loads a save, the guests follow) each game's pool of citizens starts at its own spots
+// and the first snapshot bound them first come (in the host's id order) within the 30 m bind radius: a host citizen
+// whose free guest partner stood farther stayed unbound and that guest citizen walked on its own for good (2-4 of 19,
+// civ_citizens warm runs, also 0.7.14.1). Now the new binds of a snapshot go by nearest pairs over all of its unbound
+// citizens (`pair_nearest`), and a host citizen still without a copy takes the guest's nearest free citizen within
+// kCitizenFar (the follow's own "far": a farther one is in the guest's other city), which is put at the host's
+// place and bound. `coop.fix civ.citizen_rebind off`: first come within 30 m, no relocation (0.7.14).
+static bool g_cit_rebind_fix = true;
+COOP_FIX("civ.citizen_rebind", "BUG-1221", g_cit_rebind_fix,
+         "civ: after a load every city citizen near a guest finds its partner (nearest pairs, the guest's free citizen within 60 m moved there)");
+static uint32_t g_cit_relocs;
+static bool citizen_place(const Item& l, const net::Vec3& hp, uint32_t)
+{
+    game::stop(l.p);
+    game::place(l.p, hp, game::orientation(l.p));
+    g_cit_relocs++;
+    return true;
+}
 
 // ---------------------------------------------------------------- kinds on a planet in Space (BUG-0490)
 // docs/re/space.md#space-planet-life. A colony planet's citizens (the same cCreatureCitizen noun) are a pool
@@ -1020,8 +1042,10 @@ static Kind g_kinds[] = {
     {"herd", nullptr, kStCreature, 1.0f, 3000.f, 48, herd_collect, herd_behind, herd_apply, herd_acted, herd_act, false, false},
     {"interactive_ornament", nullptr, kStCreature, 1.5f, 90.f, 40, orn_collect, orn_behind, orn_apply, orn_acted, orn_act, false, false},
     // the bind radius 30 m: 15 of 19 citizens were within 15 m of a partner without the fix (out/detector/20261103-final.md)
-    {"citizen", nullptr, kStCiv, 30.f, 200.f, 56, citizen_collect, citizen_behind, citizen_apply, citizen_acted, citizen_act, false, false,
-     citizen_follow, 0.5},
+    {.name = "citizen", .stages = kStCiv, .tol = 30.f, .range = 200.f, .max = 56, .collect = citizen_collect,
+     .behind = citizen_behind, .apply = citizen_apply, .acted = citizen_acted, .act = citizen_act, .gone_acted = false,
+     .drop_own = false, .follow = citizen_follow, .every = 0.5, .place = citizen_place, .relocate = kCitizenFar,
+     .place_fix = &g_cit_rebind_fix, .pair_nearest = true},
     {"tribe_tool", nullptr, kStTribe, 2.0f, 150.f, 48, tool_collect, tool_behind, tool_apply, tool_acted, tool_act, false, true, nullptr, 0, tool_make,
      tool_own, tool_buy},
     // BUG-0490 (new kinds at the end: an older guest drops a kind index it does not know)
@@ -1293,8 +1317,14 @@ static void reconcile(int k, double now, bool fresh)
         g_st[k].bound++;
         return G.binds.emplace(id, b).first->second;
     };
+    bool nearest = K.pair_nearest && (!K.place_fix || *K.place_fix);
+    std::vector<uint32_t> newids; // (nearest) host objects without a bind, bound after the loop
     for (auto& [id, ps] : S.objs) {
         auto bi = G.binds.find(id);
+        if (bi == G.binds.end() && nearest) {
+            newids.push_back(id);
+            continue;
+        }
         if (bi == G.binds.end()) {
             Item* best = nullptr;
             float bd = K.tol_for ? K.tol_for(ps.cls) : K.tol;
@@ -1325,6 +1355,34 @@ static void reconcile(int k, double now, bool fresh)
             }
         }
         update(id, ps, bi->second);
+    }
+    if (!newids.empty()) { // BUG-1221: nearest pairs first over every new bind of this snapshot
+        struct Cand {
+            float d;
+            uint32_t id;
+            Item* l;
+        };
+        std::vector<Cand> cand;
+        for (uint32_t id : newids) {
+            const Snap::Obj& ps = S.objs.at(id);
+            float tol = K.tol_for ? K.tol_for(ps.cls) : K.tol;
+            for (auto& l : local) {
+                float d = net::dist(l.pos, ps.first);
+                if (d < tol && !used.count({l.p, l.id}) && (!K.classes || l.cls == ps.cls))
+                    cand.push_back({d, id, &l});
+            }
+        }
+        std::stable_sort(cand.begin(), cand.end(), [](const Cand& a, const Cand& b) { return a.d < b.d; });
+        std::set<uint32_t> done;
+        for (auto& c : cand) {
+            if (done.count(c.id) || used.count({c.l->p, c.l->id}))
+                continue;
+            done.insert(c.id);
+            update(c.id, S.objs.at(c.id), bind(c.id, *c.l));
+        }
+        for (uint32_t id : newids)
+            if (!done.count(id))
+                unbound.push_back(id);
     }
     for (uint32_t id : unbound) {
         const Snap::Obj& ps = S.objs.at(id);
@@ -1550,8 +1608,8 @@ std::string status()
     snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u left_alone=%u; city decorations sets=%u removed=%u\n",
              g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_bundles_left_alone, g_corn_sets, g_corn_removed);
     s += b;
-    snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts, g_cit_far,
-             g_space_cit_puts, g_veh_drives);
+    snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u relocs=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts, g_cit_far,
+             g_cit_relocs, g_space_cit_puts, g_veh_drives);
     s += b;
     snprintf(b, sizeof b, "tools removed=%u buys_tx=%u buys_rx=%u buys_done=%u\n", g_tools_removed, g_tool_buys_tx,
              g_tool_buys_rx, g_tool_buys_done);
