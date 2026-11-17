@@ -53,6 +53,7 @@
 #include "identity.h"
 #include "bans.h"
 #include "galaxy_client.h"
+#include "era_visitors.h"
 #include "party.h"
 #include "home_nests.h"
 #include "cellsync.h"
@@ -5423,6 +5424,7 @@ void on_frame(void*, int, void*)
     identity::tick(now);                        // BUG-9135
     bans::tick(now);                            // BUG-9251: a banned player whose identity arrived is removed
     galaxy::tick(now);                          // decision 5O A: the galaxy server (alpha)
+    era_visitors::tick(now);                    // decision 5S A spike (alpha)
     party::tick(now);                           // roadmap 0b
     home_nests::host_tick(now);                 // roadmap phase 2
     tribe::tick(now);
@@ -10200,6 +10202,21 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        H->out_printf(out, "%s\n", argc > 1 ? bans::unban(argv[1]).c_str() : "coop.unban <name>");
                        return 0;
                    }, nullptr, MT);
+    H->command_add(M, "coop.visit", "coop.visit spawn <hex instance> <hex type> <hex group> [drive|stand] [lift m] [axes 0|1|2] | clear | status - another era's model in this Creature game (alpha spike, decision 5S)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) -> int {
+                       std::string r;
+                       const std::string sub = argc > 1 ? argv[1] : "status";
+                       if (sub == "spawn" && argc > 4)
+                           r = era_visitors::spawn((uint32_t)strtoul(argv[2], nullptr, 16), (uint32_t)strtoul(argv[3], nullptr, 16),
+                                                   (uint32_t)strtoul(argv[4], nullptr, 16), argc > 5 && !strcmp(argv[5], "drive"),
+                                                   argc > 6 ? (float)atof(argv[6]) : 0.f, argc > 7 ? atoi(argv[7]) : 0);
+                       else if (sub == "clear")
+                           r = era_visitors::clear();
+                       else
+                           r = era_visitors::status();
+                       H->out_printf(out, "%s\n", r.c_str());
+                       return 0;
+                   }, nullptr, MT);
     H->command_add(M, "coop.galaxy", "coop.galaxy connect <address> | list | enter <planet> | leave | disconnect | status - the galaxy server (alpha, decision 5O)",
                    [](void*, int argc, const char* const* argv, SkOut* out) -> int {
                        std::string r;
@@ -11101,6 +11118,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gx.join = [](const std::string& addr, std::string& err) { return do_join(addr, err); };
         galaxy::init(H, M, gx);
     }
+    era_visitors::init(H, M); // decision 5S A spike (alpha)
     party::init(H, M, &g_sess);    // roadmap 0b
     notify::init(H, M, [] { return coop_ui::text_font(); });
     creations::Ctx crc;

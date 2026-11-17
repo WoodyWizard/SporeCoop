@@ -1,0 +1,17 @@
+// Decision 5S A spike (alpha): another era's vehicles and buildings shown in a Creature game (era_visitors.cpp).
+#pragma once
+
+#include <cstdint>
+#include <string>
+
+#include "sporekit.h"
+
+namespace era_visitors {
+
+void init(const SkHost* host, SkMod* mod);
+void tick(double now);
+std::string spawn(uint32_t instance, uint32_t type, uint32_t group, bool drive, float lift = 0, int axes = 0);
+std::string clear();
+std::string status();
+
+} // namespace era_visitors
