@@ -30,6 +30,9 @@ building. The owner's decisions on it go to docs/ROADMAP.md (IDs from 5H).
   code (follow, defend, attack) worked unchanged once the pack ran on its player's PC.
 * Code: about 140 places ask "am I the host?". Many of them mean "am I the server", some mean "am I player 0". That
   difference matters for a server with no player of its own.
+  CORRECTION (2026-11-17, feat/lineages-alpha): about 1,000 places (765 calls of the modules' is_host / is_guest, 175
+  direct Role checks, 49 "from the host" checks); with player-hosted planets (5N A) they already mean the planet's host
+  (decision 5O).
 
 ## The model: one owner per thing
 <a id="server-model"></a>
