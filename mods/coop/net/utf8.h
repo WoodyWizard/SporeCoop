@@ -102,6 +102,32 @@ inline int columns(const std::string& s)
 // the overlay font's width estimate (Arial 18 bold: about 9 px per letter cell)
 inline int overlay_width(const std::string& s) { return columns(s) * 9; }
 
+// The overlay font's width of a line, letter by letter (Arial Bold, cell height 18: an em of about 16.1 px; the advance
+// widths of Arial Bold in 1/2048 em, rounded per letter as the font draws them); other letters: 9 px a cell. For text
+// centred in a box (the partner's name plate, owner 2026-11-17: the name sat left of the plate's middle, the flat 9 px
+// estimate is too wide for most names).
+inline int overlay_text_px(const std::string& s)
+{
+    static const unsigned short kAscii[95] = {
+        569,  682,  971,  1139, 1139, 1821, 1479, 487,  682,  682,  797,  1196, 569,  682,  569,  569,  // ' ' .. '/'
+        1139, 1139, 1139, 1139, 1139, 1139, 1139, 1139, 1139, 1139, 682,  682,  1196, 1196, 1196, 1251, // '0' .. '?'
+        1997, 1479, 1479, 1479, 1479, 1366, 1251, 1593, 1479, 569,  1139, 1479, 1251, 1706, 1479, 1593, // '@' .. 'O'
+        1366, 1593, 1479, 1366, 1251, 1479, 1366, 1933, 1366, 1366, 1251, 682,  569,  682,  1196, 1139, // 'P' .. '_'
+        682,  1139, 1251, 1139, 1251, 1139, 682,  1251, 1251, 569,  569,  1139, 569,  1821, 1251, 1251, // '`' .. 'o'
+        1251, 1251, 797,  1139, 682,  1251, 1139, 1593, 1139, 1139, 1024, 797,  573,  797,  1196};     // 'p' .. '~'
+    int px = 0;
+    size_t i = 0;
+    while (i < s.size()) {
+        if (cont((unsigned char)s[i])) {
+            i++;
+            continue;
+        }
+        const uint32_t cp = next(s, i);
+        px += cp >= 32 && cp < 127 ? (kAscii[cp - 32] * 161 + 10240) / 20480 : wide(cp) ? 18 : 9;
+    }
+    return px;
+}
+
 // a player name: at most kNameMax code points (the co-op window's limit), no control characters
 constexpr size_t kNameMax = 24;
 // BUG-9222 (the owner 2026-11-15): a player name holding "-NoShare-" (any case) marks a test / QA player: its

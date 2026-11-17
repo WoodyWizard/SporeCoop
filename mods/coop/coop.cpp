@@ -6795,7 +6795,8 @@ void on_overlay(void*, int, void*)
                 partner_marker::chevron(H, x, y, dx, dy, cs, partner_down ? 0xFFE85050 : 0xFF46AAE6);
                 name_line = r.name.substr(0, utf8::cut_bytes(r.name, 32));
                 dist_line = std::to_string(int(std::min(distance, 999999.f))) + " m";
-                const float w = (float)std::max(text_width(name_line), text_width(dist_line)) + 20, h = 38;
+                // (centred by the letters' real widths: the flat estimate put the name left of the middle, owner 2026-11-17)
+                const float w = (float)std::max(utf8::overlay_text_px(name_line), utf8::overlay_text_px(dist_line)) + 20, h = 38;
                 float cx = x, cy = y - cs * .55f - h * .5f - 4;
                 if (!visible) { // beside the chevron, towards the middle of the screen
                     const float l = std::hypot(dx, dy) > 0 ? std::hypot(dx, dy) : 1;
@@ -6830,10 +6831,10 @@ void on_overlay(void*, int, void*)
             }
             if (g_partner_chevron) {
                 partner_marker::plate(H, px1, py1, px2, py2, 17, 0xA5282828, 0xC8EBF0F5);
-                const int nx = (int)((px1 + px2) * .5f) - text_width(name_line) / 2;
-                const int dxl = (int)((px1 + px2) * .5f) - text_width(dist_line) / 2;
-                H->overlay_text(nx + 1, (int)py1 + 3, 0xFF000000, name_line.c_str());
-                H->overlay_text(nx, (int)py1 + 2, 0xFFFFFFFF, name_line.c_str());
+                const int nx = (int)((px1 + px2) * .5f) - utf8::overlay_text_px(name_line) / 2;
+                const int dxl = (int)((px1 + px2) * .5f) - utf8::overlay_text_px(dist_line) / 2;
+                H->overlay_text(nx + 1, (int)py1 + 5, 0xFF000000, name_line.c_str());
+                H->overlay_text(nx, (int)py1 + 4, 0xFFFFFFFF, name_line.c_str());
                 H->overlay_text(dxl, (int)py1 + 19, 0xFFD4DCE2, dist_line.c_str());
             } else {
                 H->overlay_text(tx+1,ty+1,0xFF000000,tag.c_str());
