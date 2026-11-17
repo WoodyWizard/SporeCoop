@@ -2891,6 +2891,102 @@ bool load_local(const std::string& slot_name, const std::string& planet, std::st
     return load_slot(slot, file, err);
 }
 
+constexpr uint32_t kGalaxyBlob = 0x31574353u; // "SCW1"
+
+bool galaxy_pack(std::vector<uint8_t>& blob, std::string& planet, std::string& err)
+{
+    std::string cur;
+    bool missing = false;
+    const std::wstring slot = current_slot(cur, missing);
+    if (missing) {
+        err = "the planet is not saved yet";
+        return false;
+    }
+    if (slot.empty()) {
+        err = "no saved game found";
+        return false;
+    }
+    std::vector<File> files;
+    if (!slotfs::collect(slot, files, err) || !creations::archive_world_designs(files, err))
+        return false;
+    if (files.empty() || files.size() > kMaxWorldFiles) {
+        err = files.empty() ? "the save folder is empty" : "too many files in the save";
+        return false;
+    }
+    planet = cur.size() > 4 ? cur.substr(0, cur.size() - 4) : "";
+    for (auto& f : files)
+        if (planet.empty() && is_planet_file(f.rel))
+            planet = f.rel.substr(0, f.rel.size() - 4);
+    net::Writer w;
+    w.u32(kGalaxyBlob);
+    w.str8(planet);
+    w.u16((uint16_t)files.size());
+    for (auto& f : files) {
+        w.str16(f.rel);
+        w.u32((uint32_t)f.data.size());
+        w.raw(f.data.data(), f.data.size());
+    }
+    if (w.data.size() > kMaxWorldBytes) {
+        err = "the world is over the size limit";
+        return false;
+    }
+    blob = std::move(w.data);
+    H->log(M, SK_INFO, "world: packed %s for the galaxy server (%u files, %u bytes)", narrow(slot).c_str(),
+           (unsigned)files.size(), (unsigned)blob.size());
+    return true;
+}
+
+bool galaxy_install(const std::vector<uint8_t>& blob, const std::string& owner, std::string& err)
+{
+    net::Reader r(blob.data(), blob.size());
+    if (r.u32() != kGalaxyBlob) {
+        err = "not a world of the galaxy server";
+        return false;
+    }
+    const std::string named = r.str8();
+    const uint16_t n = r.u16();
+    std::vector<File> files(n);
+    uint32_t crc = 0;
+    std::vector<std::string> rels;
+    for (auto& f : files) {
+        f.rel = r.str16();
+        const uint32_t size = r.u32();
+        if (!r.ok() || size > r.left() || !safe_rel(f.rel)) {
+            err = "the stored world is damaged";
+            return false;
+        }
+        f.data.resize(size);
+        r.raw(f.data.data(), size);
+        crc = net::crc32_update(crc, (const uint8_t*)f.rel.data(), f.rel.size());
+        crc = net::crc32_update(crc, f.data.data(), f.data.size());
+        rels.push_back(f.rel);
+    }
+    if (!r.ok() || n == 0) {
+        err = "the stored world is damaged";
+        return false;
+    }
+    std::string planet = planet_file(rels, named);
+    if (planet.empty() || planet == "snapshot.spo") {
+        err = "the planet " + named + " is not in the stored world";
+        return false;
+    }
+    std::string note;
+    std::wstring slot = slotfs::pick(games_dir(), current_db_dir(), owner, named, planet, !g_auto_load, note);
+    if (slot.empty()) {
+        err = "no free save slot";
+        return false;
+    }
+    std::vector<const File*> fs;
+    for (auto& f : files)
+        fs.push_back(&f);
+    bool moved = false;
+    if (!slotfs::write_or_fallback(games_dir(), slot, current_db_dir(), fs, owner, named, planet, crc, err, moved))
+        return false;
+    H->log(M, SK_INFO, "world: the galaxy's world of %s went into %s: loading %s", named.c_str(), narrow(slot).c_str(),
+           planet.c_str());
+    return load_slot(slot, planet, err);
+}
+
 static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
 {
     struct Sw {

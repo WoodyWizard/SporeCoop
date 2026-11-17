@@ -106,6 +106,12 @@ void set_host_stage_probe(uint32_t (*probe)());
 // player's own load (coop.load)
 bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err,
                const std::string& share_host = "");
+// Decision 5Q A (alpha, galaxy_client.cpp): the galaxy server keeps each planet's world. galaxy_pack: the save folder
+// of the world played now (saved before by the caller) as one blob (the files and the designs, as a share), `planet`
+// the planet played; galaxy_install: such a blob written into a co-op save slot of `owner` and loaded (as a received
+// world, but the player's own load: it hosts it)
+bool galaxy_pack(std::vector<uint8_t>& blob, std::string& planet, std::string& err);
+bool galaxy_install(const std::vector<uint8_t>& blob, const std::string& owner, std::string& err);
 // load Games\<slot_name>\<planet>.spo of the local profile (works from the galaxy menu)
 bool load_local(const std::string& slot_name, const std::string& planet, std::string& err);
 // BUG-9239 (4S): the save folder the game writes this game to and the planet played ("" in a menu)

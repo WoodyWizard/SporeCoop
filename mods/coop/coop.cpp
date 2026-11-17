@@ -10218,7 +10218,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        H->out_printf(out, "%s\n", r.c_str());
                        return 0;
                    }, nullptr, MT);
-    H->command_add(M, "coop.galaxy", "coop.galaxy connect <address> | list | enter <planet> | leave | disconnect | status - the galaxy server (alpha, decision 5O)",
+    H->command_add(M, "coop.galaxy", "coop.galaxy connect <address> | list | enter <planet> | leave | save | every <s> | disconnect | status - the galaxy server (alpha, decisions 5O, 5Q)",
                    [](void*, int argc, const char* const* argv, SkOut* out) -> int {
                        std::string r;
                        const std::string sub = argc > 1 ? argv[1] : "status";
@@ -10229,6 +10229,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        else if (sub == "list") r = galaxy::list();
                        else if (sub == "enter") r = galaxy::enter(arg);
                        else if (sub == "leave") r = galaxy::leave();
+                       else if (sub == "save") r = galaxy::save();
+                       else if (sub == "every") { galaxy::set_upload_every(atof(arg.c_str())); r = "upload every " + arg + " s"; }
                        else if (sub == "disconnect") r = galaxy::disconnect();
                        else r = galaxy::status();
                        H->out_printf(out, "%s\n", r.c_str());
@@ -11117,6 +11119,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gx.version = COOP_VERSION;
         gx.host = [](std::string& err) { return do_host(default_port(), 4, 100, err); };
         gx.join = [](const std::string& addr, std::string& err) { return do_join(addr, err); };
+        gx.ready = [] { return g_local != nullptr && !world::load_queued() && !world::load_starting(); };
         galaxy::init(H, M, gx);
     }
     era_visitors::init(H, M); // decision 5S A spike (alpha)

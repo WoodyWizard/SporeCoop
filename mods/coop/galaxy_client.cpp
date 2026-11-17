@@ -7,6 +7,7 @@
 
 #include "net/galaxy.h"
 #include "net/transport.h"
+#include "world.h"
 
 namespace galaxy {
 
@@ -29,12 +30,34 @@ static double g_next_ping, g_last_rx, g_hello_at;
 struct PlanetRow {
     std::string name;
     uint16_t players, host;
+    uint32_t stored; // bytes of its stored world (0 none)
 };
 static std::vector<PlanetRow> g_planets;
+
+// Decision 5Q A: the planet's world on the galaxy server. A host with a stored world downloads it (FETCH), loads it
+// and hosts it then; a host uploads its world every g_upload_every seconds and when it leaves.
+enum HostStep { kNoHost, kFetching, kLoading, kHosting };
+static HostStep g_hstep;
+static double g_hstep_at;
+static bool g_left_stage;     // kLoading: the old stage went away (the load started)
+static double g_ready_since;  // kLoading: playing since
+static uint32_t g_world_bytes; // ROLE: the planet's stored world
+static net::galaxy::XferIn g_down;
+static net::galaxy::XferOut g_up;
+enum UpStep { kUpIdle, kUpSaving, kUpSending };
+static UpStep g_upstep;
+static double g_up_at, g_next_upload, g_upload_every = 300;
+static bool g_leave_after, g_disconnect_after;
+static uint32_t g_uploads_done, g_downloads_done;
+static std::string g_last_upload;
 static std::deque<std::pair<uint16_t, std::vector<uint8_t>>> g_queue; // relay packets for the session
 static uint64_t g_rx, g_tx, g_rx_bytes, g_tx_bytes, g_queue_dropped;
 
 static void on_control(net::Reader& r);
+static void host_now();
+static void downloaded();
+static void upload_done(bool ok, const std::string& why);
+static std::string leave_now();
 
 // everything the galaxy server sent: control messages handled, relay packets queued for the session
 static void pump()
@@ -151,6 +174,7 @@ static void on_control(net::Reader& r)
             p.name = r.str8();
             p.players = r.u16();
             p.host = r.u16();
+            p.stored = r.u32();
             if (r.ok())
                 v.push_back(p);
         }
@@ -159,34 +183,74 @@ static void on_control(net::Reader& r)
         g_planets = v;
         std::string line = v.empty() ? "No planet has players yet: enter one to host it." : "Planets:";
         for (auto& p : v)
-            line += " " + p.name + " (" + std::to_string(p.players) + (p.host ? ")" : ", no host)");
+            line += " " + p.name + " (" + std::to_string(p.players) + (p.host ? "" : ", no host") +
+                    (p.stored ? ", saved" : "") + ")";
         say(line);
     } else if (type == ROLE) {
         std::string planet = r.str8();
         const uint8_t role = r.u8();
         const uint16_t host = r.u16();
+        const uint32_t stored = r.u32();
         if (!r.ok())
             return;
         g_planet = planet;
         g_role = role;
         g_host_slot = host;
+        g_world_bytes = stored;
         use_relay(true);
         std::string err;
         if (role == kHostRole) {
-            if (C.host && C.host(err))
-                say("You host " + planet + " for the galaxy.");
-            else
-                say("Could not host " + planet + ": " + err);
+            if (stored) { // its world first: download, load, then host
+                g_hstep = kFetching;
+                g_hstep_at = H->time_seconds();
+                g_down = {};
+                send_control(control(FETCH));
+                say("Downloading " + planet + " from the galaxy (" + std::to_string(stored >> 10) + " KB)...");
+            } else
+                host_now();
         } else {
             if (C.join && C.join(slot_endpoint(host).str(), err))
                 say("Joining " + planet + "...");
             else
                 say("Could not join " + planet + ": " + err);
         }
+    } else if (type == XBEGIN) { // the planet's stored world (FETCH)
+        net::galaxy::XferIn in;
+        if (!in.begin(r) || g_hstep != kFetching || (g_down.on && g_down.id == in.id))
+            return;
+        g_down = std::move(in);
+    } else if (type == XCHUNK) {
+        const uint32_t id = r.u32(), idx = r.u32();
+        if (!r.ok() || !g_down.on || g_down.id != id)
+            return;
+        const bool was = g_down.complete();
+        if (!g_down.chunk(idx, r))
+            return;
+        net::Writer a = control(XACK);
+        a.u32(id);
+        a.u32(idx);
+        send_control(a);
+        if (!was && g_down.complete())
+            downloaded();
+    } else if (type == XACK) {
+        const uint32_t id = r.u32(), idx = r.u32();
+        if (r.ok() && g_up.on && g_up.id == id)
+            g_up.on_ack(idx);
+    } else if (type == XDONE) {
+        const uint32_t id = r.u32();
+        const uint8_t ok = r.u8();
+        std::string why = r.str8();
+        if (!r.ok() || !g_up.on || g_up.id != id)
+            return;
+        upload_done(ok != 0, why);
     } else if (type == REFUSED) {
         g_last_refusal = r.str8();
         if (r.ok())
             say("Galaxy server: " + g_last_refusal);
+        if (r.ok() && g_hstep == kFetching) { // (no stored world after all)
+            g_hstep = kNoHost;
+            leave_now();
+        }
     } else if (type == HOSTGONE) {
         std::string planet = r.str8();
         if (!r.ok())
@@ -194,6 +258,150 @@ static void on_control(net::Reader& r)
         say("The host of " + planet + " left the galaxy.");
         if (g_role == kGuestRole && g_relay_on && C.sess && C.sess->role() != net::Role::None)
             C.sess->leave("the planet's host left"); // (tick takes it off the planet once the session is closed)
+    }
+}
+
+static void reset_planet_steps()
+{
+    g_hstep = kNoHost;
+    g_down = {};
+    g_up = {};
+    g_upstep = kUpIdle;
+    g_leave_after = false;
+}
+
+static void host_now()
+{
+    std::string err;
+    if (C.host && C.host(err)) {
+        g_hstep = kHosting;
+        send_control(control(READY));
+        g_next_upload = H->time_seconds() + (g_world_bytes ? g_upload_every : 60); // (a new planet: stored soon)
+        say("You host " + g_planet + " for the galaxy.");
+    } else {
+        g_hstep = kNoHost;
+        say("Could not host " + g_planet + ": " + err);
+    }
+}
+
+static void downloaded()
+{
+    net::Writer w = control(XDONE);
+    w.u32(g_down.id);
+    std::string err;
+    bool ok = g_down.valid();
+    if (!ok)
+        err = "the world arrived damaged";
+    else
+        ok = world::galaxy_install(g_down.data, "Galaxy " + g_galaxy, err);
+    w.u8(ok ? 1 : 0);
+    w.str8(err);
+    send_control(w);
+    g_down.data.clear();
+    g_down.data.shrink_to_fit();
+    if (!ok) {
+        say("Could not load " + g_planet + " from the galaxy: " + err);
+        g_hstep = kNoHost;
+        leave_now();
+        return;
+    }
+    g_downloads_done++;
+    g_hstep = kLoading;
+    g_hstep_at = H->time_seconds();
+    g_left_stage = false;
+    g_ready_since = 0;
+    say("Loading " + g_planet + "...");
+}
+
+static uint32_t ms(double t) { return (uint32_t)(int64_t)(t * 1000); }
+
+static void start_upload()
+{
+    if (g_upstep != kUpIdle || g_hstep != kHosting)
+        return;
+    std::string err;
+    if (!world::save_game(err)) { // (an editor, a cinematic, Space on a planet: again soon)
+        g_next_upload = H->time_seconds() + 15;
+        H->log(M, SK_INFO, "galaxy: no save for the upload now: %s", err.c_str());
+        if (g_leave_after)
+            say("Waiting to save " + g_planet + ": " + err);
+        return;
+    }
+    g_upstep = kUpSaving;
+    g_up_at = H->time_seconds();
+}
+
+static void upload_done(bool ok, const std::string& why)
+{
+    const uint32_t kb = (uint32_t)(g_up.data.size() >> 10), resent = g_up.resent;
+    g_up = {};
+    g_upstep = kUpIdle;
+    g_next_upload = H->time_seconds() + (ok ? g_upload_every : 30);
+    char b[160];
+    snprintf(b, sizeof b, "%s %u KB in %.1f s, %u chunks resent", ok ? "stored" : "not stored", kb,
+             H->time_seconds() - g_up_at, resent);
+    g_last_upload = b;
+    H->log(M, ok ? SK_INFO : SK_WARN, "galaxy: upload of %s: %s%s%s", g_planet.c_str(), b, why.empty() ? "" : ": ", why.c_str());
+    if (ok)
+        g_uploads_done++;
+    if (!ok || g_leave_after)
+        say(ok ? "Saved " + g_planet + " to the galaxy." : "Could not save " + g_planet + " to the galaxy: " + why);
+    if (g_leave_after) {
+        g_leave_after = false;
+        leave_now();
+        if (g_disconnect_after) {
+            g_disconnect_after = false;
+            disconnect();
+        }
+    }
+}
+
+static void upload_tick(double now)
+{
+    if (g_hstep != kHosting || g_role != kHostRole)
+        return;
+    if (g_upstep == kUpIdle && (now >= g_next_upload || g_leave_after) && C.sess && C.sess->role() == net::Role::Host)
+        start_upload();
+    if (g_upstep == kUpSaving && now - g_up_at > 4 && !world::save_busy()) {
+        std::vector<uint8_t> blob;
+        std::string planet, err;
+        if (!world::galaxy_pack(blob, planet, err)) {
+            g_upstep = kUpIdle;
+            upload_done(false, err);
+            return;
+        }
+        g_up.start(ms(now) ^ ((uint32_t)g_slot << 20), g_planet, std::move(blob));
+        g_up.begin_ms = ms(now);
+        send_control(g_up.begin());
+        g_upstep = kUpSending;
+    }
+    if (g_upstep == kUpSending) {
+        if (!g_up.acked && ms(now) - g_up.begin_ms > 500) {
+            g_up.begin_ms = ms(now);
+            send_control(g_up.begin());
+        }
+        g_up.pump(ms(now), [](const net::Writer& w) { send_control(w); });
+        if (now - g_up_at > 180)
+            upload_done(false, "the upload timed out");
+    }
+}
+
+// kLoading: the downloaded world loads; once the player plays in it, host it
+static void loading_tick(double now)
+{
+    if (g_hstep != kLoading)
+        return;
+    const bool ready = C.ready && C.ready();
+    if (!ready)
+        g_left_stage = true, g_ready_since = 0;
+    else if (g_left_stage && !g_ready_since)
+        g_ready_since = now;
+    if (g_ready_since && now - g_ready_since > 3)
+        host_now();
+    else if (now - g_hstep_at > 240) {
+        say("Loading " + g_planet + " took too long: left it.");
+        g_hstep = kNoHost;
+        leave_now();
     }
 }
 
@@ -232,7 +440,11 @@ std::string disconnect()
 {
     if (!g_sock.is_open())
         return "Not connected to a galaxy server.";
-    leave();
+    if (g_hstep == kHosting && g_role == kHostRole && !g_leave_after) { // its world first
+        g_disconnect_after = true;
+        return leave();
+    }
+    leave_now();
     g_sock.close();
     g_welcomed = false;
     g_planets.clear();
@@ -265,6 +477,30 @@ std::string leave()
 {
     if (g_planet.empty())
         return "Not on a planet of the galaxy.";
+    if (g_hstep == kHosting && g_role == kHostRole && C.sess && C.sess->role() == net::Role::Host) {
+        if (g_leave_after)
+            return "Saving " + g_planet + " to the galaxy before leaving...";
+        g_leave_after = true; // upload_tick saves and uploads it, upload_done leaves
+        return "Saving " + g_planet + " to the galaxy before leaving...";
+    }
+    return leave_now();
+}
+
+std::string save()
+{
+    if (g_hstep != kHosting || g_role != kHostRole)
+        return "Only the planet's host saves it to the galaxy.";
+    if (g_upstep != kUpIdle)
+        return "Saving " + g_planet + " to the galaxy already.";
+    g_next_upload = 0;
+    return "Saving " + g_planet + " to the galaxy...";
+}
+
+static std::string leave_now()
+{
+    if (g_planet.empty())
+        return "Not on a planet of the galaxy.";
+    reset_planet_steps();
     send_control(control(LEAVE));
     std::string p = g_planet;
     g_planet.clear();
@@ -284,6 +520,8 @@ void tick(double now)
         return;
     if (!g_relay_on || !C.sess || C.sess->role() == net::Role::None)
         pump(); // (while a planet session runs, its transport reads)
+    loading_tick(now);
+    upload_tick(now);
     if (now >= g_next_ping) {
         g_next_ping = now + 2;
         send_control(control(PING));
@@ -299,10 +537,11 @@ void tick(double now)
     if (g_relay_on && C.sess) {
         if (C.sess->role() != net::Role::None)
             g_session_seen = true;
-        else if (g_session_seen) {
+        else if (g_session_seen && g_hstep != kLoading && g_hstep != kFetching) {
             send_control(control(LEAVE));
             g_planet.clear();
             g_role = 0;
+            reset_planet_steps();
             use_relay(false);
         }
     }
@@ -319,7 +558,18 @@ std::string status()
              (int)g_relay_on, g_planets.size(), (unsigned long long)g_rx, (unsigned long long)(g_rx_bytes >> 10),
              (unsigned long long)g_tx, (unsigned long long)(g_tx_bytes >> 10), g_queue.size(),
              (unsigned long long)g_queue_dropped);
-    return b;
+    std::string s = b;
+    static const char* steps[] = {"-", "downloading", "loading", "hosting"};
+    snprintf(b, sizeof b,
+             "\nworld: %s stored=%u KB down=%u/%u chunks upload=%s (%u/%u chunks) next upload in %.0f s, uploads %u, "
+             "downloads %u, last upload: %s",
+             steps[g_hstep], g_world_bytes >> 10, g_down.got, (unsigned)g_down.have.size(),
+             g_upstep == kUpIdle ? "idle" : g_upstep == kUpSaving ? "saving" : "sending", g_up.acked,
+             g_up.on ? g_up.chunks() : 0u, g_hstep == kHosting ? g_next_upload - H->time_seconds() : 0.0,
+             g_uploads_done, g_downloads_done, g_last_upload.empty() ? "-" : g_last_upload.c_str());
+    return s + b;
 }
+
+void set_upload_every(double s) { g_upload_every = s < 10 ? 10 : s; }
 
 } // namespace galaxy

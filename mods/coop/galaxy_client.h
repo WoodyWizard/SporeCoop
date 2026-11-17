@@ -22,6 +22,7 @@ struct Ctx {
     std::string version;
     std::function<bool(std::string& err)> host;                     // host the loaded world (the relay is set)
     std::function<bool(const std::string& addr, std::string& err)> join; // join that address (the relay is set)
+    std::function<bool()> ready; // the player plays a stage now (no load waits): a downloaded world is loaded
 };
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx);
@@ -31,6 +32,8 @@ std::string disconnect();
 std::string list();                    // asks for the planets; the answer comes in the feed and status()
 std::string enter(const std::string& planet);
 std::string leave();
+std::string save(); // host: save the planet's world to the galaxy server now (also every few minutes and when leaving)
 std::string status();
+void set_upload_every(double seconds); // tests (300 by default)
 
 } // namespace galaxy
