@@ -9916,6 +9916,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
             auto it = g_remotes.find(id);
             return it != g_remotes.end() && !it->second.buf.empty() && (it->second.buf.latest().flags & net::PF_JUMPING);
         };
+        pc.feed = [](const std::string& t) { feed(net::g_fix.shown_names ? utf8::shown_name(t) : t); }; // decision 5FA
         player_rules::init(H, M, pc);
         guest_pack::Ctx gc; // BUG-9129
         gc.sess = &g_sess;
@@ -9941,6 +9942,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                guest_pack::pack_command((uint8_t)atoi(argv[2]), 0x10u, 0u, 3.4028235e38f, 0u, 0u, t);
                                H->out_printf(out, "order sent to %p\n", t);
                            }
+                           if (argc > 2 && !strcmp(argv[1], "summonlimit")) // decision 5FA: the party's summons out at once
+                               player_rules::set_summon_limit(atoi(argv[2]));
+                           if (argc > 2 && !strcmp(argv[1], "baruse")) // tests (5FA): press the avatar's ability <hex type> on the bar
+                               H->out_printf(out, "bar use: %s\n", player_rules::debug_bar_use((uint32_t)strtoul(argv[2], nullptr, 16)) ? "pressed" : "no such ability");
                            if (argc > 2 && !strcmp(argv[1], "ctx")) // tests (decision 5CD)
                                guest_pack::set_ctx_test(atoi(argv[2]) != 0);
                            if (argc > 2 && !strcmp(argv[1], "follow")) // tests (decision 5CD): the follow stimulus by hand
@@ -9956,6 +9961,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            else if (argc > 3 && !strcmp(argv[1], "recruit"))
                                H->out_printf(out, "recruit %d\n", (int)guest_pack::recruit((uint8_t)atoi(argv[2]), npc::host_npc((uint16_t)atoi(argv[3]))));
                            H->out_printf(out, "%s", guest_pack::status().c_str());
+                           H->out_printf(out, "%s", player_rules::summon_lock_status().c_str()); // decision 5FA
                            return 0;
                        }, nullptr, SK_CMD_MAIN_THREAD);
     }

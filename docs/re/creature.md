@@ -5340,3 +5340,16 @@ the MSI as player 2 over Tailscale (Samuth.spo).
   (which plays the death) when the host's state says dead.
 * ~ Not changed: the Summon Flock still runs on the host (one event per world, 5CD); the partner's own game does not
   summon. Impress help not tested.
+
+## The party's Summon Flock lock (2026-11-17, feat/lineages-47)
+<a id="creature-summon-lock"></a>
+
+Decision 5FA, BUG-9250, `coop.fix creature.summon_lock`.
+
+* ✔ AbilityBar_Use (0xD49560 GOG 2024) is the place to refuse an ability before the game spends it: the keys and the
+  bar's buttons both end there, and returning without calling it leaves no trace (no cooldown, no hint).
+* ✔ AbilityBar_Status of Summon Flock (0x33) in the QA world (Samuth.spo) is 10 on every player: the ability exists
+  (row 4) but is not on the bar yet, so a press does nothing; a test of the press itself needs a world where it is
+  unlocked. `coop.abilities reach` lists each ability's status and the bar's slots.
+* ✔ The host knows whose flock is out: drama::summon_running (an active summon updated within 2 s) and
+  drama::summon_puppet (the partner's puppet when the running event is the one started for it).

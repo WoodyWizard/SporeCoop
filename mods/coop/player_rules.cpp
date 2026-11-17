@@ -45,6 +45,7 @@ enum Kind : uint8_t {
     K_PACKLIST = 14,   // host -> guest {u8 n, n x {u16 npc id, u8 summoned}}: the guest's own pack (decision 5CD phase 2)
     K_PACKSTATE = 15,  // guest -> host {u8 n, n x net::NpcState}: where the guest's game has its pack members (decision 5EA), 10 Hz
     K_PACKANIM = 16,   // guest -> host {u8 n, n x {u16 id, u32 anim, u8 how, u8 a, u32 b}}: their behaviour animations (5EA)
+    K_SUMMONLOCK = 17, // host -> guests {u8 out, u8 limit, u8 owner player or 0xFF}: the party's Summon Flocks now (5FA), 1 Hz
 };
 static_assert(K_PACKANIM == guest_pack::kPackAnimKind, "guest_pack.h kPackAnimKind");
 static_assert(K_PACKSTATE == guest_pack::kPackStateKind, "guest_pack.h kPackStateKind");
@@ -467,6 +468,119 @@ static int ability_index(void* c, uint32_t type)
         if (ability_type(c, i) == type)
             return i;
     return -1;
+}
+
+// ---- decision 5FA: one Summon Flock out at a time in the party
+// The owner (2026-11-17): "let's lock summon flock when one is active in the party. This will allow for party tuning later
+// on when everyone can use powers at the same time." Spore's world has one summon event (docs/re/creature.md
+// #creature-pack-per-player): while it runs another Summon Flock did nothing at all and its cooldown was spent. Now the
+// press is refused before the game uses the ability (AbilityBar_Use, the one path of the keys and the bar's buttons) and
+// the player's feed says whose flock is out. The host counts the summons out (its own and the partners') and is the
+// authority: it tells the guests (K_SUMMONLOCK, 1 Hz and at a change) and refuses a guest's summon request while locked.
+// The limit is the party's (tuning, `coop.gpack summonlimit <n>` on the host); the game itself runs one at a time, so a
+// limit over 1 takes effect only once each player's summon is its own (decision 5D / 5FB). Off: 63-dev (no lock).
+static bool g_summon_lock_fix = true;
+COOP_FIX("creature.summon_lock", "BUG-9250", g_summon_lock_fix,
+         "creature: Summon Flock is locked while the party's flock is out (one at a time), with a line saying whose");
+static constexpr int kGameSummons = 1;   // summon events the game runs at once (one per world)
+static int g_summon_limit = 1;           // host: the party's limit
+static int g_lock_out = 0, g_lock_limit = 1; // guest: as the host said
+static uint8_t g_lock_owner = 0xFF;
+static double g_lock_rx_at = -1e9, g_lock_tx_at = -1e9, g_lock_said_at = -1e9;
+static int g_lock_sent_out = -1;
+static uint8_t g_lock_sent_owner = 0xFF;
+static uint32_t g_lock_blocked, g_lock_tx, g_lock_rx, g_lock_refused;
+
+void set_summon_limit(int n) { g_summon_limit = std::clamp(n, 1, 16); }
+
+// host: the summons out now and whose (0 the host, 0xFF none)
+static int host_summons_out(uint8_t& owner)
+{
+    owner = 0xFF;
+    if (!drama::summon_running())
+        return 0;
+    owner = 0;
+    if (void* pup = drama::summon_puppet())
+        for (uint8_t id = 1; id < 16; id++)
+            if (C.puppet_of && C.puppet_of(id) == pup)
+                owner = id;
+    return 1;
+}
+
+static bool locked(int& out, int& limit, uint8_t& owner)
+{
+    if (is_host()) {
+        out = host_summons_out(owner);
+        limit = g_summon_limit;
+    } else {
+        if (H->time_seconds() - g_lock_rx_at > 5) // (no word from the host: not locked here; the host still decides)
+            return false;
+        out = g_lock_out, limit = g_lock_limit, owner = g_lock_owner;
+    }
+    return out >= std::min(limit, kGameSummons);
+}
+
+static void summon_lock_tick(double now)
+{
+    if (!g_summon_lock_fix || !is_host() || !game::in_creature_stage())
+        return;
+    uint8_t owner;
+    int out = host_summons_out(owner);
+    if (out == g_lock_sent_out && owner == g_lock_sent_owner && now - g_lock_tx_at < 1.0)
+        return;
+    g_lock_sent_out = out, g_lock_sent_owner = owner, g_lock_tx_at = now;
+    net::Writer w;
+    w.u8(K_SUMMONLOCK);
+    w.u8((uint8_t)out);
+    w.u8((uint8_t)g_summon_limit);
+    w.u8(owner);
+    C.sess->broadcast_reliable(net::MSG_PLAYER_RULE, w);
+    g_lock_tx++;
+}
+
+bool summon_blocked(int idx)
+{
+    if (!g_summon_lock_fix || !C.sess || !C.sess->connected() || !game::in_creature_stage())
+        return false;
+    void* av = game::avatar();
+    if (!av || ability_type(av, idx) != kSummon)
+        return false;
+    int out = 0, limit = 1;
+    uint8_t owner = 0xFF;
+    if (!locked(out, limit, owner))
+        return false;
+    g_lock_blocked++;
+    const double now = H->time_seconds();
+    if (now - g_lock_said_at > 2 && C.feed) {
+        g_lock_said_at = now;
+        std::string who = owner == C.sess->my_id() ? std::string("Your") : owner == 0xFF ? std::string("A") : C.sess->name_of(owner) + "'s";
+        std::string line = "Summon Flock: " + who + " flock is out. ";
+        line += limit > kGameSummons ? "Spore runs one flock at a time in a world." : "One at a time in the party.";
+        C.feed(line);
+    }
+    return true;
+}
+
+bool debug_bar_use(uint32_t type) // tests (5FA): the avatar's ability of that type pressed as on the bar (its hook runs)
+{
+    static uintptr_t use = H->sym("SporeCoop::AbilityBar_Use");
+    int idx = ability_index(game::avatar(), type);
+    if (!use || idx < 0)
+        return false;
+    skg::cdecl_call<void>(use, idx);
+    return true;
+}
+
+std::string summon_lock_status()
+{
+    int out = 0, limit = 1;
+    uint8_t owner = 0xFF;
+    bool l = locked(out, limit, owner);
+    char b[200];
+    std::snprintf(b, sizeof b, "summon lock (5FA): fix=%d locked=%d out=%d limit=%d owner=%d blocked=%u refused=%u tx=%u rx=%u\n",
+                  (int)g_summon_lock_fix, (int)l, out, limit, owner == 0xFF ? -1 : (int)owner, g_lock_blocked, g_lock_refused,
+                  g_lock_tx, g_lock_rx);
+    return b;
 }
 
 static int __cdecl h_AbilityTick(void* c, int a2, int a3, int a4, int a5, uint32_t* st)
@@ -1161,6 +1275,7 @@ static bool ufo_save_filter(void* o, uint32_t noun)
 
 void tick(double now)
 {
+    summon_lock_tick(now); // decision 5FA
     if (g_carry_fix && (!g_thrown.empty() || !g_puts.empty() || !g_carried.empty() || !g_synced.empty()))
         carry_tick(now);
     if (is_host() && game::in_creature_stage() && now - g_ufo_tx_at >= 0.1) {
@@ -1315,6 +1430,14 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     } else if (kind == K_SUMMON) {
         if (!r.ok() || from == 0 || !is_host())
             return;
+        int out = 0, limit = 1;
+        uint8_t owner = 0xFF;
+        if (g_summon_lock_fix && locked(out, limit, owner)) { // decision 5FA: the host decides (a guest that missed the lock)
+            g_lock_refused++;
+            H->log(M, SK_INFO, "player_rules: player %u's Summon Flock refused: the party's flock is out (player %d, 5FA)", from,
+                   owner == 0xFF ? -1 : (int)owner);
+            return;
+        }
         int n = guest_pack::summon(from);
         if (n > 0 && C.sess)
             H->log(M, SK_INFO, "player_rules: player %u's Summon Flock: %d creatures", from, n);
@@ -1335,6 +1458,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (!r.ok() || from != 0 || !is_guest() || !game::in_creature_stage())
             return;
         guest_pack::on_pack_list(v);
+    } else if (kind == K_SUMMONLOCK) { // decision 5FA
+        uint8_t out = r.u8(), limit = r.u8(), owner = r.u8();
+        if (!r.ok() || from != 0 || !is_guest())
+            return;
+        g_lock_out = out, g_lock_limit = std::max<int>(1, limit), g_lock_owner = owner;
+        g_lock_rx_at = H->time_seconds();
+        g_lock_rx++;
     } else if (kind == K_PACKANIM) { // decision 5EA
         if (from == 0 || !is_host() || !game::in_creature_stage())
             return;

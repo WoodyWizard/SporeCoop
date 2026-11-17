@@ -417,6 +417,13 @@ bool end_flock_event()
 }
 
 bool summon_running() { return H && H->time_seconds() - g_summon_seen_at < 2.0; }
+void* summon_puppet() // decision 5FA: the partner's puppet whose summon runs now (null: none, or the host's own)
+{
+    return summon_running() && g_flock_event && g_seen_summon == g_flock_event && skg::readable(g_flock_event, 0x10) &&
+                   ((const uint8_t*)g_flock_event)[0xC]
+               ? g_flock_puppet
+               : nullptr;
+}
 
 bool host_ufo_here() { return g_shared_fix && is_guest(); }
 

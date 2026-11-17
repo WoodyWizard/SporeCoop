@@ -8983,3 +8983,12 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
 * Pitfall: `coop.npc list` on the host gives each creature's id as `#N`; take the id of the creature just spawned by its
   pointer, not the last line of its species (an old adult far away took the order once).
 * Pitfall: the MSI restore's version check proves nothing for a dev build (the same version string): compare the hashes.
+
+## The party's Summon Flock lock: how it was tested (2026-11-17, feat/lineages-47)
+<a id="testing-summon-lock"></a>
+
+* `coop.gpack` shows `summon lock (5FA): locked out limit owner blocked refused tx rx` on every game; `coop.gpack
+  baruse 33` presses the avatar's Summon Flock the way a key or a click does (the hook runs); `coop.gpack summonlimit
+  <n>` sets the party's limit on the host; `coop.gpack summon <player>` starts a partner's flock directly.
+* The feed lines are in each game's log (`Summon Flock: ...`).
+* Pitfall: Summon Flock is not unlocked in Samuth.spo (status 10): start the flock with `coop.gpack summon`, then press.

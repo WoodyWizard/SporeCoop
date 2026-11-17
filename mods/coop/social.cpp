@@ -15,6 +15,7 @@
 #include "player_life.h"
 #include "net/validate.h"
 #include "npc.h"
+#include "player_rules.h"
 #include "progress_debt.h"
 #include "sporekit_game.hpp"
 #include "world.h"
@@ -478,6 +479,8 @@ typedef void(SK_CDECL* BarUse_t)(int);
 static BarUse_t o_BarUse;
 static void SK_CDECL h_BarUse(int idx)
 {
+    if (player_rules::summon_blocked(idx)) // decision 5FA: the party's Summon Flock is out
+        return;
     void* av = is_guest() && g_bar_fix && g_engaged >= 0 && game::in_creature_stage() && !(C.blocked && C.blocked())
                    ? game::avatar()
                    : nullptr;

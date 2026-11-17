@@ -25,5 +25,6 @@ bool summon_for(void* puppet);
 bool end_flock_event();
 // a summon event (anyone's) ran its update within the last 2 s (the game updates an active one every tick)
 bool summon_running();
+void* summon_puppet(); // decision 5FA: the partner's puppet whose summon runs (null: none or the host's own)
 
 } // namespace drama
