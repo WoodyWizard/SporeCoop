@@ -3571,6 +3571,25 @@ COOP_FIX("creature.editor_after_intro", "BUG-9209", g_letterbox_wait,
          "creature: the guests' first-creature editor waits until the galaxy menu's intro bars are gone");
 // the galaxy menu's fly-in shows Spore's cinematic bars (letterbox_top / letterbox_bottom); an editor opened under them
 // kept the bars, and they took the clicks meant for the name field (BUG-9209, 2026-11-15)
+// BUG-9252: a guest that left a stage for the galaxy menu (to load the host's world) found the bars up with no
+// cinematic playing (the menu's intro was not started, BUG-0626) and they stayed: the held world waited for the editor,
+// the editor for the bars, forever (the 120 s limit was checked after the bars). On: bars up for 5 s with no cinematic
+// are stale and hidden, and the 120 s limit counts while the bars are waited for. Off: the old wait.
+static bool g_stale_bars_fix = true;
+COOP_FIX("creature.stale_intro_bars", "BUG-9252", g_stale_bars_fix,
+         "creature: intro bars left up on the galaxy menu with no cinematic are hidden; the first-creature editor's 120 s limit counts while it waits for them");
+static unsigned g_stale_bars_hidden;
+static bool hide_stale_bars()
+{
+    sui::Win main = sui::main_window();
+    bool any = false;
+    for (const char* cap : {"letterbox_top", "letterbox_bottom"})
+        if (sui::Win w = main ? sui::find_caption(main, cap) : nullptr; w && sui::visible(w)) {
+            sui::set_visible(w, false);
+            any = true;
+        }
+    return any;
+}
 static bool letterbox_shown() // (sui::Win)
 {
     sui::Win main = sui::main_window();
@@ -3681,7 +3700,32 @@ static void pregame_editor_tick(double now)
             host_world);
     }
     if ((game_busy() & busy::kEditorGate) || mode_switch_pending()) return; // (a held world counts as loading)
-    if (g_letterbox_wait && letterbox_shown()) return; // BUG-9209: not under the galaxy intro's bars
+    static double s_bars_since = -1; // BUG-9252: the bars up with no cinematic since
+    if (g_letterbox_wait && letterbox_shown()) { // BUG-9209: not under the galaxy intro's bars
+        const bool cine = world::cinematic_playing() || world::menu_intro_playing();
+        if (!g_stale_bars_fix || cine) {
+            s_bars_since = -1;
+            return;
+        }
+        if (s_bars_since < 0)
+            s_bars_since = now;
+        if (s_late_at >= 0 && now - s_late_at > 120) { // (the limit below, also while the bars are waited for)
+            s_late_at = -1;
+            s_bars_since = -1;
+            world::hold_for_editor(false);
+            LOG("pregame editor: no editor in 120 s (stale intro bars): the world is not held any more (BUG-9252)");
+            return;
+        }
+        if (now - s_bars_since < 5)
+            return;
+        s_bars_since = -1;
+        if (hide_stale_bars()) {
+            ++g_stale_bars_hidden;
+            LOG("pregame editor: the intro bars were up 5 s with no cinematic: hidden (BUG-9252)");
+        }
+        return; // (the editor opens on a later tick, without the bars)
+    }
+    s_bars_since = -1;
     uint32_t got = 0, total = 0;
     const bool receiving = world::progress(got, total);
     bool late = false;
