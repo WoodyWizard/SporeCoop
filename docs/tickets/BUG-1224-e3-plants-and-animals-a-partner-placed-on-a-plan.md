@@ -49,8 +49,10 @@ and landing); a plant's spot across a save and load was not checked.
 * FAIL with `SPORE_FIX_OFF=space.eco_spots` (SPORE_LAB_FIXOFF): 20261117-125031-2 (lane 7): space_eco `5304849A cell
   6/6 host [] guest ['5304849A']` and the host's creatures of the 3 species hp 3500 (epics); space_eco_live: the
   epics.
-* PASS: 20261117-124504 space_eco (lane 7, before the size check: cells equal, frame
-  space_eco/02_eco_landed_spot_{host,guest}.jpg the same trees).
+* PASS: 20261117-125525 and 20261117-130043-2 (lane 7, space_eco and space_eco_live): `5304849A cell 6/6 host
+  ['5304849A'] guest ['5304849A']`, the host's creatures of the 3 species hp 10 / 16 / 14; frames
+  space_eco/02_eco_landed_spot_{host,guest}.jpg and space_eco_live/02_eco_live_spot_* the same trees from the same
+  camera. Also 20261117-124504 (space_eco before the size check).
 
 ## History
 - 2026-11-17: opened.
