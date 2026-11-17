@@ -30,6 +30,7 @@ the NPC owns in the host's world. Next session: the star and its colony are the 
 
   SPORE_LANE=9 python3 tools/tests/coop_space_session.py [--npc]
 """
+import os
 import re
 import sys
 import time
@@ -59,6 +60,39 @@ def close_reward(con, tries=3):
         time.sleep(1.5)
 
 
+def close_rewards(con, quiet=8.0, secs=60):
+    """BUG-1223: every "Reward" box closed like a player (its green check) until none came for `quiet` s; how many"""
+    import uifind
+    n, t_quiet, end = 0, time.time(), time.time() + secs
+    while time.time() < end and time.time() - t_quiet < quiet:
+        r = uifind.shown(con, 'Reward')
+        if r and 300 < r[0] < 1200:
+            con.call('move 932 844')
+            time.sleep(0.4)
+            con.call('click 932 844')
+            n += 1
+            time.sleep(2.0)
+            t_quiet = time.time()
+            continue
+        time.sleep(1.0)
+    return n
+
+
+def reward_seen(con, secs):
+    """BUG-1223: the badge "Reward" box over the game within `secs` (polled; a restored badge must come back silently)"""
+    import uifind
+    end = time.time() + secs
+    while time.time() < end:
+        try:
+            r = uifind.shown(con, 'Reward')
+        except Exception:
+            r = None
+        if r and 300 < r[0] < 1200:
+            return r
+        time.sleep(1.0)
+    return None
+
+
 def land_colony(con, planet, who):
     """coop_space_map.land_on for a planet `coop.targets` lists as a colony of the own empire (key 'C<PlanetID>', tech 5)"""
     from coop_space_map import context, place, targets
@@ -76,7 +110,8 @@ def land_colony(con, planet, who):
                 wait(lambda: targets(con).get(key, (1e9,))[0] < 40, 30)
                 print(f'  {who} land ({key}):', sp(con, 'land'), flush=True)
                 return wait(lambda: context(con) == 'planet', 30) is not None
-    print(f'  {who}: could not pick planet {planet} (C or P)', flush=True)
+    print(f'  {who}: could not pick planet {planet} (C or P); targets ' + ' '.join(sorted(targets(con)))[:300]
+          + ' | ' + sp(con, 'star').replace('\n', ' | ')[:200], flush=True)
     return False
 
 
@@ -243,6 +278,14 @@ def main():
         return sorted(k for k, st in b.items() if st == 1 and gb0.get(k) != 1) or None
     new = wait(got_new, 40, 2)
     ck(new is not None, f'the guest\'s game gave it badges by itself ({new})')
+    # BUG-1223: the guest closes each badge's "Reward" box like a player. While a box is up the game's badge Update
+    # gives nothing: +60 explored systems earn Explorer 1 (B8E0B056, 15 systems) and Explorer 2 (B8E0B055, 50), the
+    # second one only after the first box closed. A box left open made the next session give Explorer 2 right after the
+    # restore (a new badge, not a restored one). SESSION_REWARDS_OPEN=1: left open (the old run; step 2's check fails)
+    if os.environ.get('SESSION_REWARDS_OPEN', '0') == '0':
+        closed = close_rewards(guest)
+        print(f'  guest: closed {closed} reward box(es); earned now '
+              f'{sorted(k for k, st in badges(guest)[1].items() if st in (0, 1) and gb0.get(k) not in (0, 1))}', flush=True)
     time.sleep(5)  # the tables reach the host (K_BADGES)
     no_movie(guest, 4)
     _, gb1, _ = badges(guest)
@@ -255,6 +298,17 @@ def main():
     # 2. a new evening
     host, guest, info = session_restart(host, guest)
     ck(info['saved'], 'the host saved its game before quitting')
+    # BUG-1223: the badges come back a few seconds after the join (`restored=1`); no "Reward" box for a badge earned
+    # last session, and no badge the game gives anew (the earned set is the one the guest left with)
+    wait(lambda: re.search(r'restored=[1-9]', sp(guest, 'badges')), 40, 1)
+    rw = reward_seen(guest, 15)
+    _, gbr, _ = badges(guest)
+    anew = sorted(earned(gbr) - earned(gb1))
+    print(f'  next session: guest reward box {rw}, earned anew {anew} | ' + sp(guest, 'badges').splitlines()[0][:200],
+          flush=True)
+    ck(rw is None and not anew, f'next session: the restored badges come back silently (no "Reward" box over the guest\'s '
+                                f'game: {rw}; badges earned anew {anew})')
+    close_reward(guest)
     print('  host: ' + host.call('coop.store')['out'].strip().replace('\n', ' | ')[:400], flush=True)
     time.sleep(3)
     no_movie(guest)
