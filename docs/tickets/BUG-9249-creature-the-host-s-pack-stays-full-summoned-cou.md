@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages63-dev (a count left by older builds, kept in saves)
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: 5455e4a5
 tests: manual Windows QA with tools/qa_win/qa.py (TITAN, Samuth.spo, host 9)
 signature:
 docs: docs/re/creature.md#creature-summon-pool
