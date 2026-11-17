@@ -1,20 +1,20 @@
 ---
 id: BUG-1198
 title: world_reload, lend_ledger, editor_after_swap / editor_after_load relied on the guest's own-creature record a lane's history left in worlds.ini (BUG-1176 resets it at the cold start)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t2
+commits: a3aada0c
+tests: world_reload, lend_ledger, editor_after_swap, editor_after_load
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-creature-after-worlds-reset
+related: BUG-1176, BUG-0345, BUG-0119, BUG-0882, BUG-0318
 ---
 
 ## Report
@@ -40,8 +40,11 @@ An intended change of 0.7.15 (BUG-1176), not a mod bug.
 Nothing the tests check was loosened.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL (the old tests): out/lab/20261116-025154 (rel/0.7.15 worktree, final check): world_reload "before: the guest plays its own creature", lend_ledger "the guest plays a
+  creature of another species"; editor_after_swap / editor_after_load also out/lab/20261116-082820 (lane 10).
+* PASS (the new tests): world_reload and lend_ledger out/lab/20261116-082820 (rel code, new tests), 20261116-090728;
+  final out/lab/20261116-100349 (lane 10, --repeat 2: both copies PASS).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t2 (runs above).

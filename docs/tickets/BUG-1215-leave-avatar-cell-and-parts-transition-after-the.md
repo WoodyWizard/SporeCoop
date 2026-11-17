@@ -1,20 +1,20 @@
 ---
 id: BUG-1215
 title: leave_avatar_cell and parts_transition: after the host's first creature editor the world goes only by BUG-0508's 30 s fallback, held by the host's evolution caption; one test never confirms it, the other votes into it
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t2
+commits: 78d6772b
+tests: leave_avatar_cell, parts_transition
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-creature-after-worlds-reset, docs/re/creations.md#creations-follow-with-creations
+related: BUG-0508, BUG-0019, BUG-0264, BUG-0441, BUG-1196
 ---
 
 ## Report
@@ -48,8 +48,11 @@ new body) was not looked at; not changed.
   running, a world sent after all acknowledged (the host's log), the guest in the stage receiving nothing.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL: out/lab/20261116-025154 (rel/0.7.15 worktree, final check) (both tests); out/lab/20261116-082820 (lane 10, both); leave_avatar_cell also on v0.7.14.1
+  fix/w51-t2-v07141/out/lab/20261116-084702 (parts_transition passed there by timing, see Root cause).
+* PASS: out/lab/20261116-092810 (lane 10: "sent after all 0 -> 1 ... the guest left its stage: True"; parts_transition
+  "the evolution of the host's first editor has settled"); final out/lab/20261116-100349 (lane 10, --repeat 2: both copies PASS).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t2 (runs above).

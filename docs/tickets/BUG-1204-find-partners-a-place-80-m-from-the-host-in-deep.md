@@ -1,20 +1,20 @@
 ---
 id: BUG-1204
 title: find_partners: a place 80 m from the host in deep water starts the guest game's sea monster; its cinematic pauses the guest's game and every later place fails
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t2
+commits: bf914c98
+tests: find_partners
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-creature-after-worlds-reset
+related: BUG-0764, BUG-1188, BUG-0486
 ---
 
 ## Report
@@ -37,8 +37,10 @@ coop_find_partners.py (Creature): the guest's game holds the sea monster event w
 unchanged.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL: out/lab/20261116-025154 (rel/0.7.15 worktree, final check); out/lab/20261116-082820 (lane 10); v0.7.14.1 fix/w51-t2-v07141/out/lab/20261116-084702: each with
+  "drama: sea_monster event starts (guest)" and the guest's game paused for good.
+* PASS (the guest's log: "drama: sea_monster event held"): out/lab/20261116-090728; final out/lab/20261116-100349 (lane 10, --repeat 2: both copies PASS).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t2 (runs above).

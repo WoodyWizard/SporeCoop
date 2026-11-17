@@ -1,20 +1,20 @@
 ---
 id: BUG-1212
 title: creature_e84: since BUG-0722 (0.7.11) the host gives the guest's puppet a tuning, so the save no longer brings an untuned creature back (the test's precondition)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t2
+commits: 30478b34
+tests: creature_e84
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-creature-after-worlds-reset
+related: BUG-0722, BUG-0020, BUG-0385
 ---
 
 ## Report
@@ -39,8 +39,10 @@ coop_creature_e84.py: before the save the host switches `npc.puppet_tuning` off 
 brings the switch back on. The rest of the test is unchanged.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL: out/lab/20261116-025154 (rel/0.7.15 worktree, final check); out/lab/20261116-082820 (lane 10); v0.7.14.1 fix/w51-t2-v07141/out/lab/20261116-084702 (untuned 0).
+* PASS: out/lab/20261116-090728 ("the guest's puppet is made again without a tuning ... untuned of ours 1", the
+  load brings it back untuned, the attack survives, the removal takes it); final out/lab/20261116-100349 (lane 10, --repeat 2: both copies PASS).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t2 (runs above).

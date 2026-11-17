@@ -8739,7 +8739,10 @@ Final check 20261116-025154 (0.7.15); the group around the guest's own creature,
   editor_after_swap; BUG-1198); a test that needs the world's species checks it instead of stepping with
   `coop.creations prev` (that records the stepped-on creation for the world: editor_after_load).
 * `coop.vote editor` builds the game's evolution request (BUG-0720): its editor has no red cross, leave it with the
-  green check (BUG-1199). Only the own editor a vote opens (`open_own_editor`, BUG-0756) has the cross.
+  green check (BUG-1199). Only the own editor (`open_own_editor`, BUG-0756) has the cross. A guest playing its own
+  creation gets that own editor from its mating call too since BUG-1222 (`coop.vote evolve` on the guest, the
+  creature stage's own request); editor_after_swap leaves it with the red cross (twin
+  `SPORE_FIX_OFF=creature.own_mating_editor`: the evolution editor, whose check the part-list error blocks).
 * evolve_in_place_own: the in-place evolution with a guest that has creations of its own and plays the world's
   species (the other evolve_in_place cases run without creations); coverage, no twin (BUG-1196, not a bug). The guest
   fixture creations-guest has no cells of its own: no Cell variant.
