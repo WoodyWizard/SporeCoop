@@ -1,16 +1,16 @@
 ---
 id: BUG-9251
 title: Host: no way to remove a player (kick) or keep one out (ban)
-status: open
+status: fixed
 kind: bug
 stage: all
 reported: 2026-11-17
 source: owner 2026-11-17 (decision 5I A)
 role: host
 versions: 0.7.14.1-lineages64-dev
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: d3c52d02
 tests: manual Windows QA with tools/qa_win/qa.py (TITAN host 9 + partner 8, the MSI as player 2): coop.say /kick|/ban|/unban, coop.kick
 signature:
 docs: docs/04-netcode.md#net-kick-ban
