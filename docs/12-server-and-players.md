@@ -512,6 +512,30 @@ world::galaxy_pack / galaxy_install (mods/coop/world.cpp).
 * Not yet: the hand-over while players stay (today everybody leaves when the host leaves, and the next to enter hosts
   the stored world), the galaxy menu showing the server's planets, eras.
 
+### Each player keeps their own creature on a stored planet (2026-11-17, feat/lineages-alpha)
+<a id="server-own-creatures"></a>
+
+Decision 5U A. Code on alpha: mods/coop/creations.cpp (switch `creations.host_own_record`).
+
+* Before: a guest already played its own creature per world (SporeCoop\worlds.ini of its profile, BUG-0345), but the
+  host always played the world's player species. On a stored planet that is the last host's creature, and the host
+  recorded nothing: the creator, back as a guest, was a new player there (the first-creature editor).
+* Now: the host records the own creature it plays in a world (one of its own creations; also after evolving), and a
+  host whose world has another player's creature plays its recorded own one (the existing avatar swap, as for a host's
+  choice in the Co-op window).
+* ✔ Runtime (TITAN, local galaxy server, QA games 9 and 8, Samuth): game 9 hosting with its record played its own
+  creature 2920607A ("own avatar is now 2920607A"); game 8 took the stored planet over and played its own 2920807D, not
+  game 9's; game 9 joined it as a guest with no editor and played 2920607A after the world loaded; game 9 took the
+  planet back from storage and played 2920607A again. With the record cleared, the hosting game wrote it again by
+  itself ("the host's own creature in world D296F25C is 2920607A (recorded, 5U A)").
+* ~ Test setup: game 9's own Samuth save had another creature as its player species, left by earlier co-op tests, so
+  its record was set by hand (`coop.creations worlds set creature 2920607A`) to start from "the creator has a record".
+* ? Not checked yet: a host evolving in the editor while it plays a recorded creature (the record should follow the new
+  creature); the host's nest, family and pack (they stay the world's species, the last host's creature); the record
+  lives on each player's PC (worlds.ini), so another PC is a new player there until the server keeps the records.
+* Alpha only: on the live branch the same rule would change which creature a host plays in a world it once received
+  from another host; to be decided before it goes to live.
+
 ### Owner's question: Civ and Creature eras talking to each other (2026-11-17)
 
 Owner: "Once we load Civ stage while someone's in creature stage, it shouldn't be too crazy to make them communicate I
