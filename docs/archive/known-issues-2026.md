@@ -3543,3 +3543,18 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   game's idle when both stand (`civ.citizen_run`; moving copies in the run 17-94 % -> 97-98 %, the host's 98-100 %):
   [../re/civ.md#civ-citizen-run](../re/civ.md#civ-citizen-run),
   [../06-testing.md#testing-civ-citizen-trail](../06-testing.md#testing-civ-citizen-trail)
+
+## Civilization: a guest's copy of a city citizen that stops runs on past it and back (2026-11-17, fix/w51-citanim)
+<a id="issue-civ-citizen-overrun"></a>
+
+* What happens: a city citizen that stops running on the host's screen runs on 8-10 m on a guest's and comes back.
+* Reproduce: civ_citizen_trail's json (rows z<id>): while the host's citizen stands its copy is over 3 m off in 5-24 % of
+  the samples (max 10-12 m), in every recording (also with civ.citizen_lead off); not judged by the test.
+* Known: citizen_follow's walk goal is 12 m ahead of a running citizen and is not replaced when the copy is within 1.5 m
+  of the stop point (inferred, [../re/civ.md#civ-citizen-run](../re/civ.md#civ-citizen-run)).
+* Next steps: a MoveTo to the stop point as soon as the host's citizen stands (drive::walk_end does this for the others).
+* Ticket: BUG-1230 (fixed, unreleased, fix/w51-overrun): not the stop: the guest's own behaviour walked the copy of a
+  standing host citizen off every 2-3 s and the mod walked it back only 1.5 s later; now the copy is held at its standing
+  host citizen (`civ.citizen_hold`; standing samples p90 3.4-4.5 m -> 0.54 m):
+  [../re/civ.md#civ-citizen-hold](../re/civ.md#civ-citizen-hold),
+  [../06-testing.md#testing-civ-citizen-hold](../06-testing.md#testing-civ-citizen-hold)

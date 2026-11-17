@@ -277,17 +277,6 @@ anchor so other docs can link to it:
   campaign (campaign_tc2, final check 0.7.15); the segment runs from the saved Civ do not show it.
 * Ticket: BUG-1228 (BUG-1216 fixed)
 
-## Civilization: a guest's copy of a city citizen that stops runs on past it and back (2026-11-17, fix/w51-citanim)
-<a id="issue-civ-citizen-overrun"></a>
-
-* What happens: a city citizen that stops running on the host's screen runs on 8-10 m on a guest's and comes back.
-* Reproduce: civ_citizen_trail's json (rows z<id>): while the host's citizen stands its copy is over 3 m off in 5-24 % of
-  the samples (max 10-12 m), in every recording (also with civ.citizen_lead off); not judged by the test.
-* Known: citizen_follow's walk goal is 12 m ahead of a running citizen and is not replaced when the copy is within 1.5 m
-  of the stop point (inferred, docs/re/civ.md#civ-citizen-run).
-* Next steps: a MoveTo to the stop point as soon as the host's citizen stands (drive::walk_end does this for the others).
-* Ticket: BUG-1230
-
 ## Civilization: a guest's copies of standing city citizens never gesture (2026-11-17, fix/w51-citanim)
 <a id="issue-civ-citizen-actions"></a>
 

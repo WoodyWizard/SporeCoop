@@ -2037,3 +2037,33 @@ game::drawn_state, on both games at the same moment) and Ghidra.
 * ✔ (runtime) Found on the way: when the host's citizen stops, its copy runs on 8-10 m and comes back (over 3 m off in
   5-24 % of the standing samples, max 10-12 m, with and without civ.citizen_lead): BUG-1230 (open; inferred: the walk goal
   12 m ahead is not replaced when the copy is within 1.5 m of the stop point).
+  ~ superseded (2026-11-17): see [civ-citizen-hold](#civ-citizen-hold) (the guest's own walks of a standing copy, not the stop).
+
+## A guest's copies of standing city citizens: their own walks (2026-11-17, fix/w51-overrun)
+<a id="civ-citizen-hold"></a>
+
+BUG-1230. GOG 2024, lanes 4 and 6, civ_npc; civ_citizen_trail's rows (z<id> both games' citizens, y<id> the guest's
+walk goals, a<id> animations), 6 recordings of fix/w51-trail and the labs below.
+* CORRECTION (2026-11-17, fix/w51-overrun): the inferred cause in [civ-citizen-run](#civ-citizen-run) ("the walk goal
+  12 m ahead is not replaced when the copy is within 1.5 m of the stop point") is not what happens. The far samples are
+  not at the stops: of a copy's standing samples over 3 m off, most come 3 s to more than 10 s after its host citizen
+  stopped (z3 of 20261117-141249: 12 within 1 s of the stop, 1214 later), and the walk goal y<id> is the host
+  citizen's place all the time (0.0 m from it).
+* ✔ (runtime, observed) While the host's citizen stands, the guest's own behaviour still walks its bound copy: every
+  2-3 s the copy, standing within 1 m, runs off at the citizens' 8 m/s, and citizen_follow (every 0.25 s and at each
+  snapshot) walks it back only when it is over kCitizenWalk (1.5 m) off and its last MoveTo to the same point is 1.5 s
+  old: 8-12 m out and back. Standing copies over 3 m off in 7-22 % of the standing samples, p90 2.3-6.4 m.
+* ✔ (runtime) StopMovement (cLocomotiveObject vt 0xEC) on a copy that starts such a walk, or a MoveTo back at once,
+  does not end it: the behaviour walks it again within a second (stop: 2-3 m out and back every 1-2 s, 1100-1600
+  StopMovements a minute, labs 20261117-152554, -153309) and plays the run again each time (the copies of standing host
+  citizens in the run 23-36 % of the samples against the host's 2-12 %).
+* ✔ (runtime) Placed every frame (no teleport mark) toward the host's citizen, a copy whose behaviour still walks it
+  rests about 0.5 m off it (its walk against the place); its behaviour then plays nothing new, so one idle refresh
+  ends its run. Some copies' walks end by themselves (6 000 against 24 000 places a minute in two sessions).
+* ✔ Fix `civ.citizen_hold` (worldobj.cpp `citizen_hold`, from the citizen kind's per-frame `drive` on a guest): while
+  the host's citizen stands (under 0.3 m/s), the copy is placed a part of the way to it (at the copy's own distance
+  from the planet's centre, time constant 0.06 s, at most 10 m/s; nothing within 0.15 m); one over 1.5 m off that moves
+  away gets a MoveTo back at once (at most every 0.3 s); within 1.5 m citizen_run takes it as standing (its own speed
+  from its walk against the place kept it in the run). Result: standing samples p90 0.54-0.55 m (off 3.41-4.50 m), max
+  2.4-2.8 m (off 11 m), standing copies in the run 0-1 % (host 4-5 %). Off: only citizen_follow's walk.
+* ? What in the citizens' behaviour tree keeps walking a bound copy (and whether it can be told to stand) is not traced.
