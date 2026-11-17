@@ -277,15 +277,24 @@ anchor so other docs can link to it:
   campaign (campaign_tc2, final check 0.7.15); the segment runs from the saved Civ do not show it.
 * Ticket: BUG-1228 (BUG-1216 fixed)
 
-## Civilization: a guest's copy of a running city citizen moves in its standing pose (2026-11-17, fix/w51-trail)
-<a id="issue-civ-citizens-slide"></a>
+## Civilization: a guest's copy of a city citizen that stops runs on past it and back (2026-11-17, fix/w51-citanim)
+<a id="issue-civ-citizen-overrun"></a>
 
-* What happens: a city citizen that runs on the host's screen (8 m/s) is at the same place on a guest's, but there it
-  often moves crouched in its standing pose instead of running.
-* Reproduce: civ_citizen_trail prints `guest copies (moving, animation)`: copies that move while they play 0x02481DE5
-  (the standing animation); the copies of running host citizens play the run (0x02481DB0) in 26-98 % (varies by session) of the samples
-  (8-28 % with civ.citizen_lead off, so it is older than BUG-1227's fix); key frames run1 / run2.
-* Known: the copy is walked by the game's MoveTo (and since BUG-1227 glided to the host's place); the host's citizens
-  run by their own behaviour (docs/re/civ.md#civ-citizens-trail).
-* Next steps: find the call that starts a citizen's run and give it to the copy, or play the host's animation on it.
-* Ticket: BUG-1229
+* What happens: a city citizen that stops running on the host's screen runs on 8-10 m on a guest's and comes back.
+* Reproduce: civ_citizen_trail's json (rows z<id>): while the host's citizen stands its copy is over 3 m off in 5-24 % of
+  the samples (max 10-12 m), in every recording (also with civ.citizen_lead off); not judged by the test.
+* Known: citizen_follow's walk goal is 12 m ahead of a running citizen and is not replaced when the copy is within 1.5 m
+  of the stop point (inferred, docs/re/civ.md#civ-citizen-run).
+* Next steps: a MoveTo to the stop point as soon as the host's citizen stands (drive::walk_end does this for the others).
+* Ticket: BUG-1230
+
+## Civilization: a guest's copies of standing city citizens never gesture (2026-11-17, fix/w51-citanim)
+<a id="issue-civ-citizen-actions"></a>
+
+* What happens: city citizens that cheer, work or talk on the host's screen just stand on a guest's.
+* Reproduce: civ_citizen_trail prints `host citizens (moving, animation)` (standing ones play 0x04A1DD75, 0x04A3442D,
+  0x050B5AB8, ...) and `guest copies (moving, animation)` (standing copies only 0x02481DE5).
+* Known: a copy's animation does not change by itself while the mod walks it (docs/re/civ.md#civ-citizen-run); the
+  citizen kind's snapshot carries no animation.
+* Next steps: send the host citizen's action (a wire change for new guests) or relay its animations as Tribe does.
+* Ticket: BUG-1231

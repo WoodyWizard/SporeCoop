@@ -47,6 +47,8 @@
   herd stood 80-200 m from where the host has it for seconds, or for the whole of the host's pause (BUG-1216).
 - Civilization: the city citizens running about near a guest are where the host's are; before, each ran 4-8 m behind
   its partner on the guest's screen, and where two ran past each other one was shown at the other's place (BUG-1227).
+- Civilization: the city citizens running about near a guest run on the guest's screen too; before, many slid over the
+  ground in their standing pose, and others kept running on the spot where they stood (BUG-1229).
 - Tribe: a host's tribe member that gets hungry or starves shows it on a guest's screen right away; before, a member
   the guest's game had just made for it (when the guest joined, or a new member of the tribe) showed a full hunger
   bar there for up to two minutes (BUG-1187).

@@ -909,48 +909,57 @@ static uint32_t g_cit_glides;
 static double g_drive_dt = 0; // the frame's time (drive_frame)
 // BUG-1229: a city citizen's run animation 0x02481DB0 is played by its behaviour tree's nodes (their enters and exits,
 // e.g. the node rows 0x1591648 / 0x1591608 / 0x1591400 of the citizens' table, docs/re/civ.md#civ-citizen-run), not by
-// the locomotion: a MoveTo walks a citizen without it, and the idle refresh (Creature_IdleRefresh, when no main animation
-// is left) gives a citizen the standing 0x02481DE5 however fast it moves (its walk gait word is always 0). A guest's copy
-// is walked by the mod's MoveTo while its own behaviour tree does what the guest's game wants: it showed the run only
-// while its own tree had played it (8-28 % of the moving samples without civ.citizen_lead, 26-98 % with it) and slid in
-// its standing pose otherwise. Now, while the host's citizen runs (from kCitizenRunOn m/s until it is under
-// kCitizenRunOff), the copy plays the run whenever another animation is on it (at most every kCitizenRunGap s); when the
-// host's stands again a run of ours is ended by the game's idle refresh. `coop.fix civ.citizen_run off`: the copy's own
-// animations only (0.7.14).
+// the locomotion: a MoveTo walks a citizen without it, and the idle refresh (Creature_IdleRefresh, only when no main
+// animation is left) would give a citizen the standing 0x02481DE5 however fast it moves (its walk gait word is always 0).
+// Measured (civ_citizen_trail, the a<id> rows of 4 sessions): a guest's copy keeps the animation it had when it was bound
+// for the whole minute while the mod walks it, the run or the idle: bound in the idle it slid in its standing pose
+// whenever it ran (the copies of running host citizens played the run in 8-98 % of the samples, by session: how many were
+// bound in the run), bound in the run it ran in place while it stood (guest 37-59 % of the standing samples, host 5-13 %).
+// Now, while the host's citizen or the copy itself moves (from kCitizenRunOn m/s until both are under kCitizenRunOff),
+// the copy plays the run when another animation is on it, and a standing copy in the run gets the game's idle refresh (at
+// most every kCitizenRunGap s each). `coop.fix civ.citizen_run off`: the copy's animation is left alone (0.7.14).
 constexpr uint32_t kCitizenRunAnim = 0x02481DB0;
-constexpr float kCitizenRunOn = 1.5f, kCitizenRunOff = 0.3f; // m/s, the host citizen's speed
-constexpr double kCitizenRunGap = 0.2;                       // s
+constexpr float kCitizenRunOn = 1.5f, kCitizenRunOff = 0.3f; // m/s
+constexpr double kCitizenRunGap = 0.2, kCitizenRunSmooth = 0.15; // s
 static bool g_cit_run_fix = true;
-COOP_FIX("civ.citizen_run", "BUG-1229", g_cit_run_fix, "civ: a guest's copies of running city citizens run, not slide in their standing pose");
+COOP_FIX("civ.citizen_run", "BUG-1229", g_cit_run_fix, "civ: a guest's copies of city citizens run while they move and stand still while they stand");
 struct CitizenRun {
-    bool on = false;
-    double at = -100; // the last play
+    bool on = false;      // moving (with the hysteresis above)
+    double at = -100;     // the last play or idle refresh
+    double seen = 0;      // when pos was read
+    net::Vec3 pos{};      // the copy's place then
+    float own = 0;        // the copy's own speed, smoothed (m/s)
 };
-static std::map<uint32_t, CitizenRun> g_cit_run; // the copy's id in this game -> its run (cleared with the binds)
+static std::map<uint32_t, CitizenRun> g_cit_run; // the copy's id in this game -> its state (cleared with the binds)
 static uint32_t g_cit_run_plays, g_cit_run_ends;
-static std::map<uint32_t, uint32_t> g_cit_run_over; // (diagnostics) the animation a running copy had instead of the run
-static void citizen_run(const Item& l, float sp, double now)
+static std::map<uint32_t, uint32_t> g_cit_run_over; // (diagnostics) the animation a moving copy had instead of the run
+static void citizen_run(const Item& l, float host_sp, double now)
 {
     if (!g_cit_run_fix)
         return;
-    auto it = g_cit_run.find(l.id);
-    bool on = it != g_cit_run.end() && it->second.on;
-    if (!on && sp < kCitizenRunOn)
-        return;
+    CitizenRun& r = g_cit_run[l.id];
+    double dt = now - r.seen;
+    if (r.seen > 0 && dt > 0 && dt < 0.5) {
+        float inst = net::dist(l.pos, r.pos) / (float)dt;
+        r.own += (inst - r.own) * (float)std::min(1.0, dt / kCitizenRunSmooth);
+    } else
+        r.own = 0;
+    r.seen = now;
+    r.pos = l.pos;
+    float sp = std::max(host_sp, r.own);
+    r.on = sp >= kCitizenRunOn || (r.on && sp >= kCitizenRunOff);
     uint32_t anim = 0;
-    if (!game::drawn_state(l.p, nullptr, &anim))
+    if (now - r.at < kCitizenRunGap || !game::drawn_state(l.p, nullptr, &anim))
         return;
-    CitizenRun& r = it != g_cit_run.end() ? it->second : g_cit_run[l.id];
-    if (sp < kCitizenRunOff) { // the host's stands: the game's own idle (a run the copy's own tree plays is left alone)
-        r.on = false;
+    if (!r.on) { // stands: a run left on it ends in the game's own idle
         if (anim == kCitizenRunAnim) {
             game::idle_refresh(l.p, true);
+            r.at = now;
             g_cit_run_ends++;
         }
         return;
     }
-    r.on = true;
-    if (anim == kCitizenRunAnim || now - r.at < kCitizenRunGap)
+    if (anim == kCitizenRunAnim)
         return;
     if (g_cit_run_over.size() < 64 || g_cit_run_over.count(anim))
         g_cit_run_over[anim]++;

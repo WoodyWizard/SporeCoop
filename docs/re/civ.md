@@ -1996,6 +1996,44 @@ so each copy is compared with its own host citizen; tools/tests/coop_civ_citizen
   every moving sample), a standing one 0x02481DE5 or an action (0x050A3F95, 0x04A1DD75, ...). A guest's copy of a
   running host citizen plays the run in only 8-28 % of the samples with `civ.citizen_lead off` and 26-98 % with it; the
   rest of the time it moves while it plays the standing 0x02481DE5 (key frames: the host's citizen in a run pose, the
-  copy crouched). Older than the glide, BUG-1229 (open). game::gait_state's gait word is 0 for every citizen (both
+  copy crouched). Older than the glide, BUG-1229 (fixed: a copy keeps the animation it was bound with,
+  [civ-citizen-run](#civ-citizen-run)). game::gait_state's gait word is 0 for every citizen (both
   games, moving or not): not a walk indicator for them.
 * Bandwidth: 19-56 citizens x 20 B every 0.25 s, about 1.6-4.6 KB/s per guest (was half).
+
+## City citizens' run animation, and why a guest's copies slid (2026-11-17, fix/w51-citanim)
+<a id="civ-citizen-run"></a>
+
+BUG-1229. GOG 2024, lanes 4 and 6, civ_npc; civ_citizen_trail's a<id> rows (each citizen's current animation,
+game::drawn_state, on both games at the same moment) and Ghidra.
+* ✔ (static) A city citizen's run 0x02481DB0 is played by its behaviour tree: about 30 sites in 0xD90E30..0xD97E98 (node
+  enters, ticks and exits of the citizens' node table, rows [id, enter, tick, exit] of 16 bytes at .data 0x15913xx-0x15916xx)
+  and 0xD57F30, each `cCreatureBase::PlayAnimation(0x2481DB0, -1, 0)`. Several nodes play it at their exit
+  (0x05DE40D5 exit 0xD90E30, 0x048F79DA exit 0xD91160, 0x04C0492C exit 0xD90FE0, overrides_dc04aee5.sym): between actions
+  a citizen goes back to its run. Nothing in the locomotion (MoveTo, cLocomotiveObject) plays it, and the idle refresh
+  (Creature_IdleRefresh 0xC148B0, only when no main animation is left) picks the plain idle 0x02481DE5 for a citizen
+  (Creature_ChooseIdleAnim needs a walk gait; a citizen's gait word is always 0, docs/re/civ.md#civ-citizens-trail).
+* ✔ (runtime) On the host every moving citizen sample (over 2 m/s) plays 0x02481DB0 (98-100 %); a standing one the idle
+  0x02481DE5 or an action (0x04A1DD75, 0x04A3442D, 0x050B5AB8, 0x050B3FA5, 0x050A3F95, 0x049C8AE2, ...), the run in
+  5-13 % of the standing samples (stops).
+* ✔ (runtime, observed) On a guest a bound copy keeps one animation for the whole 60 s recording while the mod walks it
+  (per copy, 4 recordings of 15 copies: every copy either 100 % 0x02481DB0 or 100 % 0x02481DE5, moving or not; the
+  copies that never moved stood in the idle): its own behaviour plays nothing on it there. So a copy bound in the idle
+  slid in its standing pose whenever it ran, a copy bound in the run ran in place while it stood (guest 37-59 % of the
+  standing samples in the run, host 5-13 %). The share of copies bound in the run varies by session: the copies of
+  running host citizens played the run in 8-98 % of the samples (BUG-1227's glide is not the cause: off and on alike).
+  The cause is neither the MoveTo goal (10-12 m ahead) nor the per-frame place (the same without civ.citizen_lead) nor
+  the speed (the copies run at the host's 8 m/s).
+* ? Why the guest's own behaviour of a bound citizen plays no animation for a minute (its tree held by the mod's MoveTo,
+  or the guest's game not running its citizens' behaviour near the host's capital) is not known; the copies of standing
+  host citizens never gesture either (BUG-1231).
+* ✔ Fix `civ.citizen_run` (worldobj.cpp `citizen_run`, from the citizen kind's per-frame `drive` on a guest): while the
+  host's citizen or the copy itself moves (1.5 m/s on, under 0.3 m/s off; the copy's own speed from its places, smoothed
+  over 0.15 s), the copy plays the run (`game::play_animation(c, 0x02481DB0, -1, false)`, as the nodes do) when another
+  animation is on it; a standing copy in the run gets the game's idle refresh (forced), at most every 0.2 s each. About
+  200 plays and 170 idle refreshes a minute for 15 copies; what the run replaced: 0x02481DE5 almost always, a few
+  0x04866DAB / 0x0490C8A6 / 0x0490C8B4. Moving copies in the run 97-98 % (host 98-100 %), standing ones 13-14 % (host
+  7-10 %). Off: the copy's animation is left alone (0.7.14).
+* ✔ (runtime) Found on the way: when the host's citizen stops, its copy runs on 8-10 m and comes back (over 3 m off in
+  5-24 % of the standing samples, max 10-12 m, with and without civ.citizen_lead): BUG-1230 (open; inferred: the walk goal
+  12 m ahead is not replaced when the copy is within 1.5 m of the stop point).

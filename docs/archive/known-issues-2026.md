@@ -3526,3 +3526,20 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   0.25 s (`civ.citizen_lead`, p90 7.3-7.9 m -> 1.4-1.7 m); civ_citizens compares sizes by identity:
   [../re/civ.md#civ-citizens-trail](../re/civ.md#civ-citizens-trail),
   [../06-testing.md#testing-civ-citizen-trail](../06-testing.md#testing-civ-citizen-trail)
+
+## Civilization: a guest's copy of a running city citizen moves in its standing pose (2026-11-17, fix/w51-trail)
+<a id="issue-civ-citizens-slide"></a>
+
+* What happens: a city citizen that runs on the host's screen (8 m/s) is at the same place on a guest's, but there it
+  often moves crouched in its standing pose instead of running.
+* Reproduce: civ_citizen_trail prints `guest copies (moving, animation)`: copies that move while they play 0x02481DE5
+  (the standing animation); the copies of running host citizens play the run (0x02481DB0) in 26-98 % (varies by session) of the samples
+  (8-28 % with civ.citizen_lead off, so it is older than BUG-1227's fix); key frames run1 / run2.
+* Known: the copy is walked by the game's MoveTo (and since BUG-1227 glided to the host's place); the host's citizens
+  run by their own behaviour ([../re/civ.md#civ-citizens-trail](../re/civ.md#civ-citizens-trail)).
+* Next steps: find the call that starts a citizen's run and give it to the copy, or play the host's animation on it.
+* Ticket: BUG-1229 (fixed, unreleased, fix/w51-citanim): a copy kept the animation it had when it was bound (the run or
+  the idle) for as long as the mod walked it; now it plays the citizens' run while it or its host citizen moves and the
+  game's idle when both stand (`civ.citizen_run`; moving copies in the run 17-94 % -> 97-98 %, the host's 98-100 %):
+  [../re/civ.md#civ-citizen-run](../re/civ.md#civ-citizen-run),
+  [../06-testing.md#testing-civ-citizen-trail](../06-testing.md#testing-civ-citizen-trail)

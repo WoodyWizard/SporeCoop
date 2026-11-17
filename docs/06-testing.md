@@ -8952,8 +8952,13 @@ BUG-1227.
   citizens, NPC proxies and Civ vehicles of the same session side by side; checks the citizens' p90 (2.5 m), the share
   of moving samples where a copy stands over 2 m off with another copy nearer (10 %). FAIL with
   `SPORE_FIX_OFF=civ.citizen_lead` (p90 7.2-7.9 m, crossed 44-56 %), PASS with it (p90 1.4-1.8 m, crossed 2-4 %).
-  Printed only: each game's (moving, animation) counts from rows a<id> (`kinds ...a`: a citizen's current animation as
-  (low 16 bits, high 16 bits, 1)) and how often the copies of running host citizens play the run 0x02481DB0 (BUG-1229);
+  Each game's (moving, animation) counts from rows a<id> (`kinds ...a`: a citizen's current animation as
+  (low 16 bits, high 16 bits, 1)) and how often the copies of running host citizens play the run 0x02481DB0 (printed);
+  BUG-1229 (fix/w51-citanim) judges them: the guest's moving copies (over 2 m/s, their own speed) play the host's run in
+  at least 90 % of their samples and at most 8 points under the host's share, and its standing copies are in the run at
+  most 10 points more often than the host's (a copy kept its bound animation: slid or ran in place). FAIL with
+  `SPORE_FIX_OFF=civ.citizen_run` (every one of 10 recordings fails one of the two: moving 17-94 %, standing 18-59 %),
+  PASS with it (97-98 % / 13-14 %, host 98-100 % / 7-10 %);
   two key frames (kind sameview: `coop.view set` on both games at a running host citizen) for the review by eye.
   `coop.wobj list` now ends its rows with `gait= anim=` (a creature kind's game::gait_state gait word and animation).
 * civ_citizens' size check pairs by identity: each host citizen against the guest citizen bound to it (`coop.wobj list
