@@ -367,8 +367,31 @@ llvm-mingw, or Linux), net/galaxy.h (the protocol), mods/coop/galaxy_client.cpp 
   planet and turned the relay off, the server forgot the empty planet.
 * Found and fixed on the way: a host that left switched the relay off before its goodbye was sent (the partner's
   session hung on); the relay now stays until the session is closed, and a partner told HOSTGONE ends its own.
+* ✔ Across PCs (5P A, 2026-11-17): the galaxy server on TITAN (its firewall rules already allowed it), TITAN hosting
+  Samuth through it, the MSI joining over Tailscale: it got the world and played (a pack fight across the PCs, 9 s).
+  The first relay doubled the round trip and lost up to 11 % (the server slept between polls: a 1 ms sleep lasts about
+  16 ms on Windows, with default socket buffers); waiting in select() with 4 MB / 1 MB buffers made it 103-106 ms and
+  0.1 % loss, as a direct connection (105-125 ms, up to 0.6 %). Relay load in play: 11-12 KB/s for one partner.
 * Not yet: the server keeping each planet's world (the host's game hosts whatever it has loaded), the hand-over to the
-  next player, a menu in the Co-op window, a test across PCs (it needs the firewall allowance on the server's PC).
+  next player, a menu.
+
+## The galaxy menu as the server's planets (owner's idea, 2026-11-17)
+<a id="server-galaxy-menu"></a>
+
+Owner, 2026-11-17: "Is it possible to make it so when a player connects to the galaxy server, it swaps out their Galaxy
+Menu saves with the server's and they can click a planet to begin almost like normal?"
+
+* Possible, and the most natural way in. Spore's galaxy menu builds its planets from the saves it finds
+  (cStarManager::ReadStarsFromSaveDB sends the message that rebuilds the menu's planet set: GGE_RebuildPlanets,
+  docs/re/creature.md via BUG-0676), each save on its own star.
+* The plan: while a player is connected, the menu reads an "online" folder of saves instead of the player's own: one
+  save per server planet, downloaded from the galaxy server. The player's own saves are never touched; leaving the
+  galaxy shows them again. A click on a planet is caught by the mod: it enters that planet on the server, then loads
+  the fresh copy (it hosts) or joins the planet's host (the world arrives as today). "New game" makes a new planet on
+  the server.
+* Needs first: the server storing each planet's world (the host uploads it; the next first player downloads it).
+* To find out: how the menu finds its saves and whether that folder can change while the game runs (or only at the
+  next start of the menu); where each planet shows on the menu's galaxy map.
 
 ## Questions for the owner
 <a id="server-questions"></a>
