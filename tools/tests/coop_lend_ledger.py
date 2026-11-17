@@ -10,7 +10,8 @@ once a frame; two newer detours were not in it:
 * the own creature's scale call (creature_hp.cpp, BUG-0732) sets the player species override: left set, the game's
   PlayerSpecies answers the guest's own species for good (relations, sizes, the herd rules of the whole world).
 
-Two games on the creature fixture, the guest playing its own creation (another species than the host's world).
+Two games on the creature fixture, the guest playing its own creation (another species than the host's world; chosen
+by the test since BUG-1176).
 Guest: `coop.hp scaleunwind` runs the own avatar's scale call (vt 0x80, as the game does) and leaves it like a
 fault; a second later the game's PlayerSpecies must answer the world's species again (`coop.hp species`: same=0).
 Host: `coop.views unwind` makes the next relevance pass with the guest leave like a fault; after the next passes the
@@ -21,6 +22,7 @@ SPORE_FIX_OFF=game.lend_ledger must FAIL.
 import re
 import time
 
+import creations_state
 from twoinst import Checks, start
 
 
@@ -33,7 +35,22 @@ def views(con):
 
 def main():
     host, guest = start('creature')
+    # BUG-1176: the cold start puts the guest's worlds.ini back to the fixture state (no record: the guest plays the
+    # world's species); the test needs the guest's own creation, so it chooses it (the newest of creations-guest) and
+    # puts the profile back at the end
+    st0 = creations_state.save(guest)
+    print('  guest profile before:', st0, '| chose', creations_state.choose_own(guest), flush=True)
+    try:
+        return run(host, guest)
+    finally:
+        creations_state.restore(guest, st0)
+
+
+def run(host, guest):
     ck = Checks()
+    t0 = time.time()  # the own creature is applied a few seconds after the choice (the swap waits for a calm stage)
+    while time.time() - t0 < 30 and 'same=0' not in guest.call('coop.hp species')['out']:
+        time.sleep(1)
     time.sleep(5)
     before = guest.call('coop.hp species')['out'].strip()
     print('  guest before: ' + before, flush=True)

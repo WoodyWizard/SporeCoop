@@ -1528,3 +1528,44 @@ own: `on_bundle` records the host's new key (`g_follow`), `mine()` returns it, a
 * ~ With `creations.swap_after_cinematic` off, SetSpecies under F4F96E43 did not leave that cinematic stuck (it ended,
   the input was free): BUG-1173's stuck caption was CRG_BrainUpgrade1 (F6A4B1E1); F4F96E43 under a swap is harmless
   in this one run. Not tried: F6A4B1E1 under the follow.
+
+## The in-place follow for a guest with creations of its own (2026-11-16, fix/w51-t2)
+<a id="creations-follow-with-creations"></a>
+
+BUG-1196 (not reproduced). `on_bundle`'s follow of #creations-evolve-in-place (BUG-0508) still asks for a guest without
+creations of its own (`g_opts[k].empty()`, older than BUG-0345). That does not keep a guest with creations that plays
+the world's species from following:
+* ✔ Lab (evolve_in_place_own, creature fixture, the guest with the 5 creations of creations-guest, none chosen, no
+  record): after the host's real evolution the guest's avatar takes the host's new species in place, the guest stays in
+  the stage and the host sends nothing (`evolve in place: kept 1, sent after all 0`), also with that condition
+  dropped and switched off again (20261116-090728 / 20261116-092810). Inferred: `mine()`'s BUG-0345 branch answers the
+  host's applied creation (`g_applied` orig, which the new bundle replaced) for such a guest, so `apply_own_avatar`
+  swaps to it without `g_follow`.
+* ✔ The world after all that looked like this bug: the host's first creature editor after Cell (the Landfall editor
+  FD4902BD) leaves the host's species key as it was (`evolved in place: Bob keeps its world (host species 2924E0EB ->
+  2924E0EB ...)`, no new bundle of the host after it), so the 30 s check finds the guest "still" on that key and
+  sends the world after all (lab 20261116-090728 parts_transition; v0.7.14.1 20261116-084702 the same). That share
+  waits for the host's evolution cinematic (BUG-0019), i.e. until its caption is confirmed. ? Whether the Landfall
+  editor changes the species' content under the same key (so the world carries the new body) was not looked at.
+
+## A guest's own mating call while it plays its own creation (2026-11-16, fix/w51-t2)
+<a id="creations-own-mating-editor"></a>
+
+BUG-1222. Lab lane 10 (editor_after_swap: the guest chose its own creation 'Kirgle' 0x290225CD, left and joined
+again, then the creature stage's evolution request as its mating call builds it, `coop.vote evolve`, tag 0x12191CA):
+* ✔ The guest's `h_Submit` sends a guest's own in-stage request on as the game's (BUG-0516, "evolves its own
+  creature"): the evolution editor opens with the evolution flags (+0x39 / +0x3B = 0, +0x3C = 1), whose screen has
+  only the green check (no red cross, #creations-editor-request-builder). Its palette locks the parts the species has
+  not collected (BUG-0368).
+* ✔ The green check does nothing (three clicks, 20 s apart, at 6.7 fps and at normal fps; the screen unchanged):
+  the part-list error (bit 5 of `editor+0x48`, section 7 of this file) blocks "done" for a creation with Creature
+  Creator parts, and `h_BlockingErrors` waives it only in the own editor (`g_own_editor`). The guest cannot leave.
+  The world's species (editor_after_load) has no such error: its check works.
+* Fix `creature.own_mating_editor`: in the host's world (`host_world_now() == Same`) a guest playing one of its own
+  creations (`mine(kCreature)` is in `options(kCreature)`) has the game's request refused (`g_evo_flag_refused`,
+  BUG-0920) and its own editor scheduled as after a vote (`g_own_editor_due`, `own_editor_tick`: the stage settled,
+  the avatar's body built, BUG-0318): the red cross, the part-list waiver, no evolution tag (the world's species is
+  not evolved by it, BUG-0466 charges its price). Log: "evolution: this guest plays its own creation: its mating call
+  opens its own editor <id> (BUG-1222)". Off: the game's editor (0.7.14).
+* ? Not tried: the game's own mating call with real input (the test builds the same request), a guest in its own
+  world (left unchanged: the request goes on as before).

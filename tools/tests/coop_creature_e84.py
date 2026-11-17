@@ -5,6 +5,9 @@ killed them"; the host crashed 3 times at 0xD48634, CreatureStageEventHandler re
 (+0xE84)->+0x32C of a creature without archetype tuning).
 
 1. Two games play together; the host saves (the puppet of the guest is in the world).
+   The puppet is made again without an archetype tuning first (`coop.fix npc.puppet_tuning off`, `coop.puppet
+   respawn`): since BUG-0722 (0.7.11) every puppet carries the player's, and a puppet saved with it comes back tuned
+   (BUG-1212); the reported saves (0.7.3) were made before that.
 2. Both games are restarted (like after a crash); the host loads that save alone, with the removal
    of such creatures switched off (`coop.npc strays off`): the puppet is back as a plain game
    creature without tuning (+0xE84 = 0), in a herd like ours (no archetype, no nest).
@@ -138,6 +141,17 @@ def run(host, guest):
     sp = wait_puppet(host, own_creation=True)
     ck(sp is not None, f'the host has the guest\'s puppet as the guest\'s own creature (species {sp}, '
        f'the host plays {own_species(host)})')
+    # BUG-1212: since BUG-0722 (0.7.11) the host gives the puppet the player's archetype tuning, so a puppet saved now
+    # comes back tuned; the saves of the report (0.7.3) hold one without. The puppet is made again without it (the
+    # switch off only until the restart below)
+    host.call('coop.fix npc.puppet_tuning off')
+    host.call('coop.puppet respawn')
+    sp2 = wait_puppet(host, own_creation=True)
+    t0 = time.time()
+    while time.time() - t0 < 10 and not (untuned(host)[0] or 0):
+        time.sleep(1)
+    ours0 = untuned(host)[0]
+    ck(sp2 and ours0, f'the guest\'s puppet is made again without a tuning, as before 0.7.11 ({sp2}, untuned of ours {ours0})')
     # a save as before BUG-0020 (the puppet and its herd in it): what older saves hold
     host.call('coop.savestrip 0')
     out = host.call('coop.save')['out']

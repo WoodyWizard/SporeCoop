@@ -8803,3 +8803,27 @@ build and the 0.7.15 `tools/`, so the same tests and lab drive the old mod).
 * **An old build with today's tests**: `git worktree add --detach ../SporeCoop-wt/<name> v0.7.14.1`, `make -j8`, then
   `git checkout rel/0.7.15 -- tools/` in that worktree; `coop.save` / `coop.load` (the segment's commands) exist in
   0.7.14.1. Lab runs there are tagged with the worktree's branch (detached).
+## Creature tests after the worlds.ini reset (2026-11-16, fix/w51-t2)
+<a id="testing-creature-after-worlds-reset"></a>
+
+Final check 20261116-025154 (0.7.15); the group around the guest's own creature, editors and stage changes:
+* Since BUG-1176 the cold start leaves the guest without a worlds.ini record: it plays the fixture world's species
+  (the host's) unless the test chooses its own creation. A test that needs the own creature calls
+  `creations_state.save` / `choose_own` at the start and `restore` at the end (world_reload, lend_ledger,
+  editor_after_swap; BUG-1198); a test that needs the world's species checks it instead of stepping with
+  `coop.creations prev` (that records the stepped-on creation for the world: editor_after_load).
+* `coop.vote editor` builds the game's evolution request (BUG-0720): its editor has no red cross, leave it with the
+  green check (BUG-1199). Only the own editor (`open_own_editor`, BUG-0756) has the cross. A guest playing its own
+  creation gets that own editor from its mating call too since BUG-1222 (`coop.vote evolve` on the guest, the
+  creature stage's own request); editor_after_swap leaves it with the red cross (twin
+  `SPORE_FIX_OFF=creature.own_mating_editor`: the evolution editor, whose check the part-list error blocks).
+* evolve_in_place_own: the in-place evolution with a guest that has creations of its own and plays the world's
+  species (the other evolve_in_place cases run without creations); coverage, no twin (BUG-1196, not a bug). The guest
+  fixture creations-guest has no cells of its own: no Cell variant.
+* After the host's first creature editor (Cell -> Creature) the species key stays, so the host's 30 s check of
+  BUG-0508 sends the world after all, and that share waits for the host's evolution caption. leave_avatar_cell
+  confirms the captions like a player and then checks the leaving window of that share (or "kept in place, nothing
+  sent"); parts_transition waits for that world (`after 30 s: sending the world` ... `transfer to N acknowledged` in
+  the host's log) before its editor vote: a vote into the guest's load lost the guest's own editor (BUG-1215).
+* find_partners: a test place in deep water starts the guest game's sea monster (drama kind 6), whose cinematic pauses
+  that game for good; the test holds it (`coop.drama hold 40` on the guest, BUG-1204).

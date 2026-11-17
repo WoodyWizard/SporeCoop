@@ -179,6 +179,9 @@ def creature(ck, host, guest, stage):
     for c in (host, guest):
         c.call('coop.team off')
     # 2. the guest 80 m away, the host off its screen in front of its camera
+    # (a place in deep water starts the guest game's sea monster: its cinematic pauses that game for good and the
+    # camera never turns again, every later place fails, BUG-1204: the guest's game holds that event, BUG-1188's knob)
+    print('  guest: ' + guest.call('coop.drama hold 40')['out'].strip().splitlines()[0], flush=True)
     hp = avatar(host)
     u, v = basis(hp)
     found = tag_dir = None
@@ -407,6 +410,7 @@ def main():
                 c.call('coop.find color none')
                 c.call('coop.npc marker')
                 c.call('coop.team on')
+                c.call('coop.drama hold 0')
             except OSError:
                 pass
         twoinst.forget_settings()

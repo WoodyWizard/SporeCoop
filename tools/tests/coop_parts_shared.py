@@ -109,6 +109,36 @@ def wait_no_cinematic(host, guest, t=90):
     return False
 
 
+def evolution_settled(host, guest):
+    """BUG-1215: after the host's first creature editor (--from-cell) BUG-0508 keeps the guest in place and sends it the
+    world after all when it still plays the pre-editor species 30 s later; that share waits for the host's evolution
+    cinematic. A vote into it loses the guest's own editor (the guest is loading). Settled: no 30 s check runs, a world
+    sent after all has arrived (the host's log), the guest plays in the stage and receives nothing"""
+    m = re.search(r'evolve in place: kept \d+, sent after all \d+, saves \d+, checking (\d+)', host.call('coop.status')['out'])
+    if not m or int(m.group(1)):
+        return False
+    try:
+        with open(lane.game_log(lane.HOST), 'rb') as f:
+            t = f.read().decode('utf-8', 'replace')
+    except OSError:
+        return False
+    i = t.rfind('after 30 s: sending the world')
+    if i >= 0 and not re.search(r'transfer to \d+ acknowledged', t[i:]):
+        return False
+    return 'Creature' in mode(guest) and guest.call('coop.avatar')['ok'] and \
+        'receiving world' not in guest.call('coop.status')['out']
+
+
+def wait_evolution_settled(host, guest, t=150):
+    t0 = time.time()
+    while time.time() - t0 < t:
+        wait_no_cinematic(host, guest, 20)
+        if evolution_settled(host, guest):
+            return wait_guest_in(host, guest)
+        time.sleep(2)
+    return False
+
+
 def editor_offers(out):
     """the parts the open editor's palette offers (its check 0x5C6820 over every item): count, hash"""
     m = re.search(r'available=(\d+):([0-9A-F]{8})', out)
@@ -234,6 +264,9 @@ def main():
     m0 = mode(host)
     party = parts(host)  # the party's set (the host's game holds it) before the editors
     wait_no_cinematic(host, guest)
+    if a.from_cell:  # BUG-1215: the world the host's first editor sends after all comes first
+        ck(wait_evolution_settled(host, guest), 'the evolution of the host\'s first editor has settled (the world it sent after '
+           'all is loaded, or the guest was kept in place)')
     print(' ', host.call('coop.vote editor')['out'].strip())
     time.sleep(2)
     gu.wait(lambda s: s['ready']['vis'], 10, 'ready button')

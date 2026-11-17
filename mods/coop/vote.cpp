@@ -667,6 +667,22 @@ ReqImage req_image(void* req)
         im.vec70.push_back(*q);
     return im;
 }
+// BUG-1222: a guest's own mating call while it plays its own creation (not the world's species) opens the own editor
+// (`coop.fix creature.own_mating_editor off`: the game's evolution editor, 0.7.14)
+static bool g_own_mating_fix = true;
+COOP_FIX("creature.own_mating_editor", "BUG-1222", g_own_mating_fix,
+         "creature: a guest playing its own creation evolves in its own editor (red cross, its parts allowed) after its mating call");
+unsigned g_own_mating_rerouted; // tests
+static bool guest_plays_own_creation()
+{
+    creations::Option m = creations::mine(creations::kCreature);
+    if (!m.key.instance)
+        return false;
+    for (const creations::Option& o : creations::options(creations::kCreature))
+        if (o.key.instance == m.key.instance)
+            return true;
+    return false;
+}
 bool SK_CDECL h_Submit(void* req)
 {
     if (g_editreq_capture) { // tests: the game's own request, kept and not submitted
@@ -753,6 +769,21 @@ bool SK_CDECL h_Submit(void* req)
             // shared tribe's outfit and civilization's designs are the host's, designs.h): refused, told why
             LOG("evolution: this guest's own editor %08X is refused: %s (BUG-1158)", editor, why.c_str());
             feed(why);
+            return false;
+        } else if (g_own_mating_fix && mode == modes::kCreature && in_stage && host_world_now() == host_world::HostWorld::Same &&
+                   guest_plays_own_creation()) {
+            // BUG-1222: a guest playing its own creation (the Creature Creator's parts) in the host's world got the game's
+            // evolution editor from its own mating call: done is blocked by the part-list error (bit 5, only the own editor waives it)
+            // and that editor has no red cross. It gets the own editor instead (open_own_editor, as after a vote:
+            // the cross, the waiver, no evolution of the world's species), when the stage has settled
+            offer_end("the own evolution");
+            notice(g_name + " evolves its own creature", -1);
+            set_ready(true);
+            g_own_mating_rerouted++;
+            g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
+            g_own_editor_due = editor;
+            g_own_editor_due_at = g_own_editor_due_first = H->time_seconds();
+            LOG("evolution: this guest plays its own creation: its mating call opens its own editor %08X (BUG-1222)", editor);
             return false;
         } else {
             offer_end("the own evolution"); // BUG-0516: this guest evolves on its own now
