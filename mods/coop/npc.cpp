@@ -215,6 +215,17 @@ COOP_FIX("npc.walk_ground", "BUG-0406", g_walk_ground_fix, "creature: a walking 
 // itself taken), so it crept at 0-3 m/s 3-8 m behind its walking host animal for seconds (the monitor's proxies gate).
 // Now such a placing is put back after the game's creature update and its physics update whenever they moved it away
 // from its target (game::place_hold). `coop.fix npc.proxy_hold off`: placed only (0.7.13).
+// BUG-1216: in Civ a wild creature's proxy was driven at its own distance from the planet's centre (own_height, BUG-0329)
+// and only put onto this game's ground from under it or from up to 0.5 m over it. A jump of its target (a snap of the
+// walk or of drive::step to where the host's creature is now, `tp=1`) onto ground lower than where the proxy stood kept
+// the old height: the copy walked 8 m in the air for good (campaign Civ segment, lab 20261116-085558, `agl=8.23
+// want_agl=0.02 grounded=0`); the Civ game does not ground a creature placed in the air (Tribe's does,
+// docs/re/tribe.md#tribe-animal-height). Now in Civ a proxy whose host creature's height over the host's terrain is
+// known (the batch's agl trailer) is driven at that height over this game's terrain (drive::at_sender_agl): on this
+// game's ground while the host's creature is on its own. `coop.fix npc.civ_ground off`: at its own height (0.7.14).
+static bool g_civ_ground_fix = true;
+COOP_FIX("npc.civ_ground", "BUG-1216", g_civ_ground_fix, "civ: a wild creature's copy stays on the guest's ground, never left hanging in the air after a jump");
+static uint32_t g_civ_ground_fixes; // (diagnostics: placings brought from over 1 m in the air onto the ground)
 static bool g_proxy_hold_fix = true;
 COOP_FIX("npc.proxy_hold", "BUG-0440", g_proxy_hold_fix, "tribe: a walking animal's copy that its game holds back is kept on the host animal's path");
 // BUG-1094 (`coop.fix npc.air_catch`): the first placings in the air put a proxy on its target at once: a walked proxy
@@ -2341,7 +2352,9 @@ static void guest_tick(double now)
             px.made_at = now;
             px.made_agl = drive::over_ground(s.pos);
             // BUG-0399: on this game's ground (Tribe: the ground can lie higher than the host's)
-            game::teleport(pe.ref.p, rts_stage() ? drive::out_of_ground(s.pos) : s.pos, s.rot);
+            const bool civ_made = g_civ_ground_fix && civ_stage() && net::agl_known(s.agl); // BUG-1216
+            game::teleport(pe.ref.p, civ_made ? drive::at_sender_agl(s.pos, s.agl) : rts_stage() ? drive::out_of_ground(s.pos) : s.pos,
+                           s.rot);
         }
         proxy_tuning(pe);
         proxy_epic_steps(pe.ref.p, rv_rep > 0.3f); // BUG-0669 (the host's NPC walks)
@@ -2360,6 +2373,8 @@ static void guest_tick(double now)
         const net::Vec3 drawn = game::position(pe.ref.p); // where the game drew it (before this frame's driving)
         bool placed = false, walked = false;
         const bool rts = rts_stage();
+        // BUG-1216: Civ: at the host's height over this game's terrain, not at the proxy's own distance from the centre
+        const bool civ_agl = g_civ_ground_fix && civ_stage() && net::agl_known(s.agl);
         // BUG-0361: the last 0.1 s of a walk is interpolated towards a state that stands (velocity 0): a
         // walked proxy goes on with the speed of its path to the stop point instead of standing there
         net::Vec3 vel = s.vel;
@@ -2435,7 +2450,7 @@ static void guest_tick(double now)
             if (!px.kinematic)
                 px.drv.kinematic = false; // a new walk: its first goal at once
             drive::WalkPlace o;
-            o.own_height = rts;     // BUG-0329
+            o.own_height = rts && !civ_agl; // BUG-0329 (BUG-1216: Civ at the sender's height, below)
             // BUG-0399: onto this game's ground, not only at its own height (proxies 1.3-1.7 m under after joins)
             o.ground = rts ? drive::g_out_of_ground_fix : g_walk_ground_fix; // BUG-0406 (Creature)
             o.walk_speed = walk_speed;
@@ -2451,6 +2466,12 @@ static void guest_tick(double now)
             net::Vec3 aim = s.pos;
             if (g_place_now_fix)
                 aim = {aim.x + vel.x * (float)g_frame_dt, aim.y + vel.y * (float)g_frame_dt, aim.z + vel.z * (float)g_frame_dt};
+            if (civ_agl) { // BUG-1216
+                const net::Vec3 was = drive::at_own_height(aim, game::position(pe.ref.p));
+                aim = drive::at_sender_agl(aim, s.agl);
+                if (drive::over_ground(was) - drive::over_ground(aim) > 1.f)
+                    g_civ_ground_fixes++;
+            }
             if (g_place_now_snap_fix) { // BUG-0997: the snap compares the path point, not the aim
                 o.has_path_pos = true;
                 o.path_pos = s.pos;
@@ -2480,7 +2501,8 @@ static void guest_tick(double now)
             // placed on the host's path this frame: no driving
         } else if (!px.killed) {
             const uint32_t gr = px.drv.grounded;
-            drive::step(pe.ref.p, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, true, rts_stage(), // own height in Tribe (BUG-0329)
+            drive::step(pe.ref.p, civ_agl ? drive::at_sender_agl(s.pos, s.agl) : s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f,
+                        g_stall_fix, true, rts_stage() && !civ_agl, // own height in Tribe (BUG-0329); Civ: BUG-1216
                         (rts_stage() || (g_proxy_ground_creature && game::in_creature_stage())) &&
                             drive::g_out_of_ground_fix); // and never under the ground (BUG-0399, BUG-0752)
             if (px.drv.grounded != gr && px.drv.grounded <= 3) // (diagnostics: the fix at work, the first times)
@@ -3384,12 +3406,12 @@ std::string status()
             spawned += pe.ref.p != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u proxy_holds=%u air_catches=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u proxy_holds=%u air_catches=%u civ_ground=%u\n",
                  (unsigned)px_count(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
                  g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut, g_mound_lifts, g_mound_targets, g_max_hp_applied,
-                 game::place_holds_kept(), g_air_catches);
+                 game::place_holds_kept(), g_air_catches, g_civ_ground_fixes);
     }
     char b3[128]; // F3 (BUG-0768)
     snprintf(b3, sizeof b3, "npc friendly fire: on=%d pvp_out=%u pvp_in=%u pvp_relayed=%u\n", (int)friendly_fire(), g_pvp_out,
