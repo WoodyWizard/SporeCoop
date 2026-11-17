@@ -219,7 +219,7 @@ Owner, 2026-11-17: "We'd need to rework the galaxy menu too for MMO version. We'
 Player starts Spore & presses F9 / SporeCoop, connects to the Galaxy Server, Galaxy either becomes the server's loaded
 worlds that you can select from or maybe a new menu to spawn the player somewhere? I'm unsure."
 
-* Two kinds of server: a **galaxy server** that is not Spore at all (a small program: the list of planets and their
+* Two kinds of program on one server (see #server-one-galaxy): a **galaxy server** that is not Spore at all (a small program: the list of planets and their
   servers, players' identities, parties, bans, which planet a player was on; it can run anywhere, a cheap Linux VPS
   too), and **planet servers** (hidden Spore instances, one per planet that has players, on a Windows PC; started when
   a player goes there, stopped some minutes after the last one leaves, the planet saved).
@@ -231,6 +231,26 @@ worlds that you can select from or maybe a new menu to spawn the player somewher
   in the dark (docs/08-ui.md). The Co-op window's list does the job first.
 * Space: flying to another planet becomes a hand-over from one planet server to another through the galaxy server
   (phase 6).
+
+## One galaxy server (owner 2026-11-17)
+<a id="server-one-galaxy"></a>
+
+Owner, 2026-11-17: "We'd need more than 4GBs of RAM, and we'd need 1 server hosting the galaxy of Spore, including the
+planets, not one instance per planet. Players should be allowed to choose a planet, progress through to space, fly to
+another planet, and see other players in the Creature stage."
+
+* What the players get is one server: one address, one galaxy, every planet in it, as asked.
+* Inside that server it cannot be one Spore program: Spore holds one planet at a time (one noun manager, one terrain,
+  the mod's "world"), and a 32-bit program stops at 4 GB. So the server machine runs the galaxy program and one hidden
+  Spore per planet that has players in it, and their memory adds up on the machine (32 or 64 GB of RAM serve many
+  planets). Spore's frame runs mostly on one core: separate planet programs also spread the work over the machine's
+  cores, and one planet that crashes does not take the galaxy down.
+* The players' journey on it: pick a planet (or "Find me a planet"), play Cell to Civ there with the others on that
+  planet, reach Space, fly to another planet: the galaxy server hands the player's ship to that planet's server, which
+  shows it the creature-stage players there (the planet server runs that planet's stage; the visitor's game shows them
+  as the partners are shown today).
+* Open research for that journey: a Space visitor on a planet whose server runs the Creature stage (two stages on one
+  planet: today every player in a session plays the same stage); what a visitor may do there (ROADMAP MMO questions).
 
 ## Questions for the owner
 <a id="server-questions"></a>
