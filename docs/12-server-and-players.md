@@ -330,6 +330,12 @@ be the server's job?"
   Spore's code in a player's game today. The server can start by keeping what happens where players are; running
   the galaxy's own life with nobody near would mean either a server-hosted Spore in Space or rewriting those rules in
   the server (later, if wanted).
+* Seeing each other (owner 2026-11-17: "would players be able to see eachother passing by in space?"): yes, as in co-op
+  today (docs/07-modes.md 7.5, space_map.cpp): in the same star system or at the same planet a player's ship is a
+  ship in the other's game (a puppet UFO moved by its owner's states); in the galaxy view, where Spore draws no ships,
+  a name tag on the star or on the moving ship, an arrow at the screen edge, a click flies there. With many players the
+  server sends each game only the ships in its system and, for the galaxy view, the players near it or in its party
+  (hundreds of tags would cover the map).
 * The hard part: keeping every player's galaxy copy in step with the server's list (a colony, a lost planet, a changed
   relation) without reloading, through the game's own functions.
 
