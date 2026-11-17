@@ -129,6 +129,30 @@ def my_creations(d):
     return {r[2] for r in read_pkg(p)} if os.path.exists(p) else set()
 
 
+def outfit_closeup(host, guest):
+    """BUG-1220: the outfit seen up close: both cameras at the same place 10 m from an adult member of the player tribe
+    (the host's chief first), so the new piece of clothing can be judged on both games (a frame 25 m away showed
+    members of 20 px). A key frame of kind sameview; the game's own cameras after it."""
+    import keyviews
+    from coop_tribe_looks import members
+    ms = [(i, m) for i, m in members(host).items() if m['player'] and m['adult'] and m['owner'] == 0]
+    ms.sort(key=lambda im: not im[1]['leader'])
+    if not ms:
+        print('  (outfit close-up: no adult member of the host\'s tribe found)', flush=True)
+        return
+    try:
+        for k, side in ((0, 'a'), (2, 'b')):  # (two opposite sides: the member faces one of them)
+            mid, m = ms[0]
+            pos = members(host).get(mid, m)['pos']  # (where it stands now)
+            ok = keyviews.look_both((host, guest), pos, dist=10, height=4, k=k, fov=40, look_up=4.0)
+            print(f'  outfit close-up {side} at {pos} (member #{mid}, leader {m["leader"]}): views set {ok}', flush=True)
+            twoinst.keyframe(f'outfit_close_{side}', 'same view 10 m from a member of the player tribe (the host\'s '
+                             'chief), two opposite sides: the new piece of clothing (a leaf on the chest) on both games',
+                             kind='sameview', settle=0)
+    finally:
+        keyviews.view_off(host, guest)
+
+
 def main():
     host, guest = start('tribe')
     ck = Checks()
@@ -201,6 +225,7 @@ def main():
         ck(not found, f'the guest\'s save names no key of ours ({gm[0]:08X} in {found or "no record"})')
     twoinst.keyframe('outfit', 'after the host\'s Tribal Outfitter: the tribe members on both games wear the new '
                                'piece of clothing (a leaf on the chest), both in Tribe play')
+    outfit_closeup(host, guest)
 
     # 3. the guest's own outfitter
     ck(open_outfitter(guest), 'the guest\'s hut planner opened')

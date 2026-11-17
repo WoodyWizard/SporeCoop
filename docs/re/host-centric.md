@@ -333,3 +333,16 @@ C3 (BUG-1142), the open question of docs/01-architecture.md#arch-busy-model ("ho
 * ~ The broadphase's pending list (docs/re/cell.md#cell-sap-pending, BUG-0348) grows while SimUpdate does not run and the guest makes mirrors;
   the host's cells stand while the host is paused, so few are made; `cell.sap_pending`'s hold applies as under a pause
   menu.
+
+## The host's own save stands its game: no pause, no caption (2026-11-16, fix/w51-visual)
+<a id="host-centric-save-stand"></a>
+
+* ✔ (lab logs, final check 20261116-025154) A save of the mod's (the world share's save for a joining guest,
+  world::save_game; the host autosave of E2) stands the host's game time for 1-2 s: the write (`perf: hitch 700-950 ms
+  (..., saving)`), then the game's "game saved" box until the mod confirms it, then ~0.1 s more. No explicit pause
+  reason is counted (`why 0060` = kWhyCaption | kWhyStill): busy_model::classify took it for a caption stand.
+* ✔ The Announcer's 1 s hold is wall time across that hitch: the first frame after the write is already past it, so the
+  stand was told at the END of the save and its end 0.1 s later (seq n / n+1, 0.1 s apart, in 800 host logs of the run).
+* Fix BUG-1217 (`core.host_busy_save`): while world::save_busy() or world::saved_box_up(), classify keeps only the
+  explicit pause bits. Real caption stands of Tribe (a village's cinematic, 7-9 s, BUG-0531) are still told and Tribe
+  guests still wait for them (BUG-1086's row).

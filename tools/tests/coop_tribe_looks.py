@@ -169,10 +169,13 @@ def check_item(ck, host, guest, tag, strict=True):
            f'{tag}: the copy of the host\'s chief #{lead} holds what the host\'s chief holds (host item '
            f'{h and h["item"]} model {h and h["model"]}, guest item {g and g["item"]} model {g and g["model"]})')
     if h and ck(view_both(host, guest, h['pos'], 14.0, 5.0), f'{tag}: both cameras 14 m from the chief'):
-        keyframe(f'chief_{tag}', f'the same camera on both games 14 m from the host\'s chief (member #{lead}): it holds '
-                 f'the chief\'s staff (a stick with a skull) on both screens; every member holds the same thing on both',
-                 kind='sameview', extra=[f'check: host item {h["item"]} model {h["model"]}, guest item '
-                                         f'{g and g["item"]} model {g and g["model"]}'])
+        import keyviews
+        from coop_same_view import chief_rows
+        check = f'check: host item {h["item"]} model {h["model"]}, guest item {g and g["item"]} model {g and g["model"]}'
+        keyviews.burst(f'chief_{tag}', f'the same camera on both games 14 m from the host\'s chief (member #{lead}): it '
+                                       f'holds the chief\'s staff (a stick with a skull) on both screens; every member '
+                                       f'holds the same thing on both', kind='sameview',
+                       extra_fn=lambda: [check, chief_rows(host, guest)])
 
 
 def rejoin(ck, host, guest):

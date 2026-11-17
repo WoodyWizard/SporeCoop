@@ -27,9 +27,10 @@ import sys
 import re
 import time
 
+import keyviews
 import lane
 from play_space import Player
-from twoinst import Checks, start
+from twoinst import Checks, keyframe, start
 
 PLANET = '02460035'
 SRC = '00460035'  # the home planet: 9 plants, 9 animals (6 herbivores, 3 carnivores)
@@ -48,6 +49,33 @@ def eco(con, planet=''):
     animals = [(k, d, int(n) if n else None)
                for k, d, n in re.findall(r'([0-9A-F]{8}:[0-9A-F]{8}:[0-9A-F]{8})/([hc?])(?:#(\d+))?', al)]
     return (int(m.group(2)) if m else -1), plants, animals, out.strip()
+
+
+def eco_frame(host, guest, animals, tag):
+    """a key frame of the planet's new life on both games (BUG-1220): both cameras at the same place, 30 m from and 18 m
+    above the host's nearest creature of a species the guest placed (the host's herd of it). The guest's own game may
+    have no creature of them there: `eco place` (the test seam) adds the species to the planet's record through the
+    game's own function and spawns no animal at once (its eco line showed #0 in 2 of 3 runs); the plants on a planet
+    are each game's own placement (the same species, other spots and sizes)."""
+    from coop_space_map import no_movie
+    import sameview as sv
+    inst = {k.split(':')[0].upper() for k in animals}
+    seen = {}
+    try:
+        for role, con in (('host', host), ('guest', guest)):
+            no_movie(con, 20)  # the planet's story caption ("Something is showing up on the ship's radar")
+            rows = sv.parse_census(con.call('coop.census creatures').get('out') or '')
+            r = keyviews.nearest_row(con, lambda r: r['kind'] == 'c' and r['alive'] and r['key'] in inst)
+            seen[role] = (r and (r['key'], r['pos']), f'{len(rows)} creature rows')
+        r = keyviews.nearest_row(host, lambda r: r['kind'] == 'c' and r['alive'] and r['key'] in inst)  # (where it is now)
+        if r:
+            keyviews.look_both((host, guest), r['pos'], dist=30, height=18, look_up=3, settle=0.5)
+        print(f'  key frame cameras at the placed species: {seen}', flush=True)
+        keyframe(tag, 'space, both on the planet the guest filled, the same camera 30 m from and 18 m above the host\'s creature of a '
+                      'species the guest placed (its herd there); the guest\'s game has the species in its record but no '
+                      'animal of it (the test seam spawns none)', extra=[f'{k}: {v}' for k, v in seen.items()], settle=0)
+    finally:
+        keyviews.view_off(host, guest)
 
 
 def main():
@@ -111,6 +139,7 @@ def main():
            f"the host's planet has the guest's species and is stabilized (level {hl})")
         ck(ha and all(n for _, _, n in ha),
            f"the host sees creatures of every animal species the guest placed ({[(k[:8], n) for k, _, n in ha]})")
+        eco_frame(host, guest, ga, 'eco_live')
         ck.faults(host=host, guest=guest)
         return ck.result()
     t_end = time.time() + 20
@@ -140,6 +169,7 @@ def main():
        f"on the planet the host's record and stabilized level are the guest's (level {hl})")
     ck(ha and all(n for _, _, n in ha),
        f"the host sees creatures of every animal species the guest placed ({[(k[:8], n) for k, _, n in ha]})")
+    eco_frame(host, guest, ga, 'eco_landed')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

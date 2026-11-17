@@ -197,3 +197,25 @@ BUG-0948. GOG 2024, lane 4, Creature (the guest's follow camera turned by SporeK
 * CORRECTION (2026-11-12, fix/w48-labels) to BUG-0948's "keep the viewer of the moment the game draws (a copy taken in
   the game's draw ...)": a copy at the first BeginScene after Present is the same as the viewer at Present (no help);
   the copy has to be taken at the draw's first SetTransform(VIEW).
+
+## The start-up video over a stage after a quick load from the menu (2026-11-16, fix/w51-visual)
+<a id="graphics-startup-video"></a>
+
+* ✔ (Ghidra, GOG 2024) `Movie::MovieSystem::Get` 0x67CAD0 returns the global [0x015FCC68]; +0x34 is the playing movie
+  (`MovieIsPlaying` 0xFD7550 reads only that), +0x30 the movie `DrawLayer` 0xFD7240 draws into the 3D view (under the UI
+  layers). `StopMovie` 0xFD79C0 (thiscall, no argument, plain ret) deletes the movie, hides its layout (+0x318) and
+  posts 0x49731AD, the message the galaxy menu's handler starts GGE_intro on (docs/re/space.md 7.9). `CheckEscape`
+  0xFD7580 (the player's Escape) posts 0x61D72DE (no intro) and stops it through vt 0x20.
+* ✔ (key frames of the 0.7.15 final check) The start-up video (the logos, then the big SPORE logo over a starfield and
+  a white flash, letterbox bars) keeps playing when a load leaves the galaxy menu before its end (~16 s after the menu
+  came up): Creature / Civ play is drawn with the HUD over the logo (frames menu_splash host 07:54:05.33, civ_designs
+  host 07:58:14.85), until the video's end posts 0x49731AD (`the galaxy menu intro would start outside the menu`,
+  0.3-0.9 s after those frames).
+* ✔ (lab, fix/w51-visual, a guest joining 0.5 s after its menu, the switch off) MovieIsPlaying stays set in the guest's
+  Creature stage until the video's own end: 0.6-3.5 s with the natural timing (20261116-100245, 20261116-100032); held
+  with PauseMovie it is drawn over the stage for good: out/lab/20261116-100758/frames/menu_movie/01_stage_8-0s_guest.jpg
+  (the video's picture under the Creature HUD, letterbox bars). The stage itself is black for its first ~5 s after the
+  mode change (the load), so frames earlier than that cannot show it.
+* Fix BUG-1218 (`world.menu_movie`): in a stage, a video still playing after 0.5 s is stopped outside the frame with
+  StopMovie, as its own end stops it; the posted GGE_intro start is refused outside the menu (BUG-0626): the log shows
+  "would start outside the menu" in the same millisecond as "the start-up video was still playing in the stage".

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace utf8 {
 
@@ -101,6 +102,33 @@ inline int columns(const std::string& s)
 
 // the overlay font's width estimate (Arial 18 bold: about 9 px per letter cell)
 inline int overlay_width(const std::string& s) { return columns(s) * 9; }
+
+// BUG-1219: one overlay line of fields ("a  |  b  |  c") as lines of at most max_px (overlay_width): cut between the
+// fields only (a field wider than max_px stays one line); the separator is not repeated at a line's start or end
+inline std::vector<std::string> wrap_fields(const std::string& s, const std::string& sep, int max_px)
+{
+    std::vector<std::string> out;
+    std::string line;
+    size_t i = 0;
+    while (i <= s.size()) {
+        size_t j = sep.empty() ? std::string::npos : s.find(sep, i);
+        std::string f = s.substr(i, j == std::string::npos ? std::string::npos : j - i);
+        if (line.empty())
+            line = f;
+        else if (overlay_width(line + sep + f) <= max_px)
+            line += sep + f;
+        else {
+            out.push_back(line);
+            line = f;
+        }
+        if (j == std::string::npos)
+            break;
+        i = j + sep.size();
+    }
+    if (!line.empty() || out.empty())
+        out.push_back(line);
+    return out;
+}
 
 // a player name: at most kNameMax code points (the co-op window's limit), no control characters
 constexpr size_t kNameMax = 24;

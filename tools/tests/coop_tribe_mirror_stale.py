@@ -96,8 +96,11 @@ def main():
           flush=True)
     h = row(host, cid)
     if h and view_both(host, guest, h[2], 10.0, 3.0):
-        keyframe('chief', f'the same camera on both games 10 m from the host\'s chief #{cid}: it stands or walks the '
-                          f'same way on both screens (not in a gesture with its staff on the guest)', kind='sameview')
+        import keyviews
+        from coop_same_view import chief_rows
+        keyviews.burst('chief', f'the same camera on both games 10 m from the host\'s chief #{cid}: it stands or walks the '
+                                f'same way on both screens (not in a gesture with its staff on the guest)', kind='sameview',
+                       extra_fn=lambda: [chief_rows(host, guest)])
     if done < 2:  # (the host's chief gestured the whole time: the case never came)
         print(f'RESULT: SKIP {done} rounds with the host\'s chief in its idle / walk in {a.secs:.0f} s (< 2)', flush=True)
         return 0

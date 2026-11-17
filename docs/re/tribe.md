@@ -4168,3 +4168,15 @@ Follows #tribe-duet-test and #tribe-attack-event-target.
   (state 1 -> 3 -> 5): lab 20261116-022434 #2 (the host's #3), 20261116-022014 #1 and 20261116-002240 (the guest's).
   ~ Inferred: the attacked village's members answer the attack (stimulus 0x4000) and a performance for one of them
   does not start. Not a mod path: the order reaches the member (host_command / the host's own click) as before.
+
+## The chief's pose host vs guest in same-view frames: the relay's lag (2026-11-17, fix/w51-visual)
+<a id="tribe-chief-pose-frames"></a>
+
+* ✔ (lab, keyviews.burst: three frames 1.5 s apart with both games' `coop.tribe anims` row of the host's chief, 18
+  frames in 6 runs of tribe_held_item / tribe_mirror_stale) The copy plays the host's chief's animation at the same
+  track time (within 0.1 s) in 16 of 18; the 2 others come right after the guest's rejoin (the host's chief walks
+  04866DAB, the copy still ends the staff gesture 04C6CB02, ~1 s) and match 1.7 s later. The pose differences of the
+  0.7.15 final check's frames S/101 / S/110 are that lag and the small blend / IK difference of the staff's angle within
+  one animation; not a lasting mismatch (BUG-0914 / BUG-0936 stay closed).
+* Negative: in idle (02481DE5 on both) the copy's behaviour id differs (guest 02C39200, host 00000000) without a
+  visible effect.

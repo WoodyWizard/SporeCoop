@@ -34,6 +34,12 @@
 - Creature: a guest who plays its own creature (made in the Creature Creator) and calls a mate now gets its own editor,
   with the red cross and its own parts allowed; before, the evolution editor opened, "done" only showed a parts error
   and there was no way out of it (BUG-1222).
+- Tribe: a guest's game no longer stops for a moment with "<host>'s game stands" and "<host> (host) goes on" each time
+  somebody joins or the host's game saves itself; only the host's real pause makes guests wait (BUG-1217).
+- A game that loads a world from the main menu right after starting (a guest that joins at once) no longer shows the
+  start-up video's big SPORE logo over the first seconds of play (BUG-1218).
+- Creature: the "Pack: ..." line of the co-op status at the top right is no longer cut off by the right screen edge;
+  it is shown in two lines (BUG-1219).
 - Tribe: a host's tribe member that gets hungry or starves shows it on a guest's screen right away; before, a member
   the guest's game had just made for it (when the guest joined, or a new member of the tribe) showed a full hunger
   bar there for up to two minutes (BUG-1187).
@@ -85,6 +91,10 @@
 ### Development
 - Lab: tribe_name_tags checks the chief's label at the chief the game names (BUG-1202); tribe_caption_race is
   INCONCLUSIVE when the host's game itself plays no conquest caption (BUG-1205).
+- Key frames for the new visible features: space_eco / space_eco_live (each game's camera at an animal the guest
+  placed), space_session / space_session_npc (both games landed on the restored colony, a badge's reward box closed first),
+  tribe_outfit (a same-view close-up of the outfit); `tools/tests/keyviews.py` puts a game's camera where a frame needs
+  it (BUG-1220).
 - One answer to "did the world change?" (`world_id.h`: another stage, save or root object, the stage entered again; an
   editor visit is none) fires every module's world change, and a session end runs every module's end, through one
   ordered list of hooks (`LIFECYCLE_HOOK`, `coop.lifecycle hooks`); Tribe's and Civilization's own world checks and

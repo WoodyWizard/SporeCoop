@@ -38,7 +38,90 @@ from coop_space_badges_rejoin import badges, earned
 from coop_space_colony_rejoin import planet_line
 from coop_space_map import no_movie, rosters, sp, wait
 from coop_space_rival_merge import money, rivals
-from twoinst import Checks, session_restart, start
+import keyviews
+import lane
+from play_space import Player
+from twoinst import Checks, keyframe, session_restart, start
+
+
+
+def close_reward(con, tries=3):
+    """a badge's "Reward" panel (the restored badges give one in the next session) waits for its green check and takes
+    the clicks (BUG-0268, coop_campaign.py REWARD_CHECK): closed like a player"""
+    import uifind
+    for _ in range(tries):
+        r = uifind.shown(con, 'Reward')
+        if not r or not 400 < r[0] < 1000:
+            return
+        con.call('move 932 844')
+        time.sleep(0.4)
+        con.call('click 932 844')
+        time.sleep(1.5)
+
+
+def land_colony(con, planet, who):
+    """coop_space_map.land_on for a planet `coop.targets` lists as a colony of the own empire (key 'C<PlanetID>', tech 5)"""
+    from coop_space_map import context, place, targets
+    for key in ('C' + planet, 'P' + planet):
+        for _ in range(6):
+            t = targets(con)
+            if key not in t:
+                con.call('wheel 720 540 -4')
+                time.sleep(1.5)
+                continue
+            _, x, y = t[key]
+            con.call(f'click {x} {y}')
+            time.sleep(1.5)
+            if place(con)[2] == planet:
+                wait(lambda: targets(con).get(key, (1e9,))[0] < 40, 30)
+                print(f'  {who} land ({key}):', sp(con, 'land'), flush=True)
+                return wait(lambda: context(con) == 'planet', 30) is not None
+    print(f'  {who}: could not pick planet {planet} (C or P)', flush=True)
+    return False
+
+
+def colony_frame(host, guest, planet, tag, land=True):
+    """BUG-1220: a key frame of the restored colony on both games: both land on it (each game's own ship; a caption or a
+    badge's reward box closed first), the game's own camera over the ship (`coop.census all` lists no city in Space, so
+    there is no point to aim at). Never fails the test: what it saw is printed."""
+    if not planet:
+        return
+    want = 0x40000000 | int(planet, 16)
+    end = time.time() + 400
+    seen = {}
+    try:
+        for role, inst, pid in (('host', lane.HOST, 0), ('guest', lane.GUEST, 1)):
+            no_movie(host if role == 'host' else guest, 20)  # a caption (it holds the clicks)
+            close_reward(host if role == 'host' else guest)  # a badge's reward box
+            p = Player(role, inst, pid, 7 + pid, end, {})
+            if not land:  # (--npc: the colony is at another star than the ship: no flight there, the game's own view)
+                seen[role] = f'{p.place()[0]:08X} (not flown to)'
+                continue
+            for _ in range(3):
+                p.land_retry(planet, seconds=100)
+                if p.place()[0] == want:
+                    break
+            if p.place()[0] != want:  # (a colony of the player's own empire is a 'C' target, not a 'P')
+                land_colony(host if role == 'host' else guest, planet, role)
+            seen[role] = f'{p.place()[0]:08X}'
+        time.sleep(5)
+        for role, con in (('host', host), ('guest', guest)):
+            no_movie(con, 20)
+            close_reward(con)
+        print(f'  colony key frame: {seen}', flush=True)
+        time.sleep(1.5)
+        if land:
+            note = (f'space, next session: each game tried to land on the guest\'s restored colony {planet} (its place in '
+                    'the extra: 4xxxxxxx landed, the game\'s own camera over the ship with the colony\'s buildings; '
+                    '8xxxxxxx its system view, the colony planet in orbit)')
+        else:
+            note = (f'space, next session: both games in their own view after the restore (the guest\'s colony {planet} '
+                    'is at the NPC\'s star, not flown to): no reward box or caption left over')
+        keyframe(tag, note, extra=[f'{k}: {v}' for k, v in seen.items()])
+    except Exception as e:  # (a frame never fails the test; Player raises Stop at its deadline)
+        print(f'  (colony key frame not taken: {e!r}; {seen})', flush=True)
+    finally:
+        keyviews.view_off(host, guest)
 
 
 def city_lines(con, planet):
@@ -100,6 +183,7 @@ def npc_main():
           + sp(guest, 'allies').splitlines()[0][-80:], flush=True)
     ck(r is not None, f'next session: the NPC\'s star {star} and colony {planet} are the guest\'s again in its game')
     ck(star_owner(host, star) == npc, f'the host\'s game keeps the NPC\'s star ({star_owner(host, star)})')
+    colony_frame(host, guest, planet, 'npc_colony', land=False)
     ck.faults(host=host, guest=guest)
     return ck.result()
 
@@ -204,6 +288,7 @@ def main():
           f'host money {money(host)} | ' + sp(host, 'rivalry').splitlines()[-1].strip(), flush=True)
     ck(ok, f'next session: Rivals mode goes on and the guest\'s budget is its own {mg} again (it has {money(guest)})')
     ck(wait(lambda: relation(host, gid2) == 'war', 15), f'next session: still at war ({relation(host, gid2)})')
+    colony_frame(host, guest, planet, 'colony')
     ck.faults(host=host, guest=guest)
     if rivals(host):
         sp(host, 'rivalry mode allies')

@@ -95,7 +95,12 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", cellsync::status().c_str());
     SAY("%s", notify::status().c_str());
     SAY("dna notices: shown=%u gathering=%u\n", g_dna_noticed, (unsigned)g_dna_notices.open());
-    SAY("status block (%d %d %d %d)\n", g_status_block[0], g_status_block[1], g_status_block[2], g_status_block[3]);
+    {
+        int sw = 0, sh = 0;
+        H->screen_size(&sw, &sh);
+        SAY("status block (%d %d %d %d) drawn to x %d of %d\n", g_status_block[0], g_status_block[1], g_status_block[2],
+            g_status_block[3], g_status_drawn_right, sw);
+    }
     SAY("%s", creations::status().c_str());
     SAY("%s", civ::status().c_str());
     SAY("%s", squadron::status().c_str());
