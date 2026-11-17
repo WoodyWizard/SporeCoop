@@ -5262,3 +5262,27 @@ BUG-9245, BUG-9247, BUG-9248. Steam build, TITAN QA (Samuth.spo), runtime only.
 * ✔ (22:00-22:09) The pack's attack order is the posse relay's CreatureCommandStimulus (Steam 0xC42E40 case 0x10 / 0x400, read live: the not-allied check 0xAFEA30(member, target, 6) and PosseMemberCanDefend first). Only a creature in the game's pack obeys it: the host's summoned flock killed a test creature after one host bite; the partner's flock and a recruit out of the pack stood by with the same order; one of them added with cPosseSimulator_AddMember (flag 0x100 and the pack list) went and fought. The flag alone did nothing (BUG-9248).
 * ✔ The posse simulator's +0x18 is the pack size (3) and +0x1C the summoned count; members + count at the size: AddMember and recruits refused. A count of 3 with no summon running came with a save (BUG-9249).
 * ✔ The relay's case 0x10 runs a different path in mode 0x1654C10 (not read).
+
+## What one pack is, and every user of it (2026-11-16, feat/lineages-47)
+<a id="creature-pack-map"></a>
+
+Decision 5CD (a pack per player, BUG-9248). Steam build: the decrypted code dumped from a running QA game (Steam = GOG
+2024 - 0x110000 in code) and read offline (scratchpad tools dumptext.py / xrefs.py / dis2.sh; the Steam exe on disk is
+encrypted, no GOG 2024 exe on TITAN).
+
+* ✔ A pack is three things: the pack manager cPosseSimulator, one object of 0x58 bytes in the global [0x158E5B8]
+  (Steam; getter 0xC43980 makes it on first use: allocate 0x58, ctor 0xC438A0, vt+0x1C); the member list in the noun
+  manager (+0x5C begin / +0x60 end / +0x64 capacity, getter 0xA0F900 `lea eax,[ecx+0x5C]`); and its leader, the
+  avatar (noun manager +0x54).
+* ✔ ctor 0xC438A0: vtable 0x136B760, +0x8 a second vtable 0x136B73C, +0x10 = 60000, +0x14 a float, +0x18 = 0 (the
+  pack size), +0x1C = 0 (the summoned count), +0x20/+0x24/+0x28 a small vector with inline storage at +0x38 (0x20
+  bytes), +0x34 = 0; it writes itself into the global (a second object made by the ctor must give the global back).
+* ✔ 0xC42DA0: real members = list size - summoned count (+0x1C). 0xC42DC0: the size limit = +0x18 when an avatar
+  exists, capped by [0x134C44C] above 3.
+* ✔ vtable 0x136B760: 0xC43680, 0x6F4A00, 0x7242E0, 0x343A80, 0xC43740, 0xC42C30, 0xF72A20, 0xC43A30 (+0x1C, called
+  once after the ctor), 0xC436E0. Which slot is the per-frame update: not read yet.
+* ✔ Callers (call rel32 scan): the pack manager getter 48 sites in 30 functions; the member list getter 41 sites in
+  33 functions; AddMember 0xC442E0 5 (the social recruit 0xC8F650, the summon start 0xC40EA0, 0xB10390, 0xE0D4B0,
+  0xE2B430); the relay 0xC42E40 3 (TakeDamage 0xAF75E0 and two more in 0xAF32F0 / 0xAF3CD0); GrowMembers 7;
+  PosseMemberCanDefend 5; AddPosseMember 0xA13430 only from AddMember. Most callers are in the Creature range
+  0xC2xxxx-0xC8xxxx; the 0xDExxxx-0xE3xxxx ones are not identified (UI or later stages).
