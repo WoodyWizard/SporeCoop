@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.15
 fixed_in: unreleased
 branch: fix/w51-slope
-commits: d7fd7a09
+commits: d7fd7a09, c7502dea
 tests: civ_npc_slope
 signature: "sync-check:   nNNN here: ... own=19-22 ... trail=N" growing on a guest while the host's creature stands
 docs: docs/re/civ.md#civ-npc-ground, docs/re/civ.md#civ-npc-slope, docs/06-testing.md#testing-npc-slope
@@ -60,7 +60,11 @@ Test commands: `coop.ground steep`, `coop.npctrack put <id> x y z [secs]`, `coop
   teleports, at most 0.1 m); earlier versions 20261117-142950, -150115, -150307.
 * Creature / Tribe (the same driving): the test's state could not be made there (docs/re/civ.md#civ-npc-slope: a held
   animal next to the avatars was thrown and held 10-13 m up on both games, others left the game's list; no such ground
-  near the tribe fixture's village). Regression tests: REGRESSION.
+  near the tribe fixture's village). Regression (fix on, lanes 5 + 9): 20261117-151225 PASS 20/20 (civ_wild_sync,
+  civ_proxy_air, civ_wild_pooled, civ_wild_reused, civ_wild_moved, npc_walk, npc_walk_slope, npc_walk_tribe, npc_walk_slow,
+  npc_walk_slow_creature, npc_walk_novel, npc_walk_fps30, npc_walk_player, tribe_proxy_held, proxy_identity,
+  proxy_identity_tribe, proxy_ghost, creature_stun_proxy, tribe_npc_dash, creature_npc_dash); play_civ and play_creature
+  --quick: 20261117-152623 PASS 2/2.
 * The campaign itself (live Tribe -> Civ, campaign_tc2) was not rerun (the final check's job).
 
 ## History
