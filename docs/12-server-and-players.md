@@ -1,6 +1,8 @@
 # 12. Server and players (design, 2026-11-17)
 
-Decision 5G B (owner, 2026-11-17: "5GB - let's plan this."). The plan for separating the server from the players, so
+Decision 5G B (owner, 2026-11-17: "5GB - let's plan this."). Built on the alpha branch feat/lineages-alpha (decision 5J B: not released publicly;
+what applies to the live builds goes to feat/lineages-47). The headless spike goes first (5H A); friends-level checks plus
+kick and ban (5I A). The plan for separating the server from the players, so
 the game runs smoothly on every player's PC while the server keeps control of what counts. A design to agree on before
 building. The owner's decisions on it go to docs/ROADMAP.md (IDs from 5H).
 
