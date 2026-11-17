@@ -894,11 +894,15 @@ static void citizen_follow(const Item& l, const net::Vec3& hp, const net::Vec3& 
 // whose free guest partner stood farther stayed unbound and that guest citizen walked on its own for good (2-4 of 19,
 // civ_citizens warm runs, also 0.7.14.1). Now the new binds of a snapshot go by nearest pairs over all of its unbound
 // citizens (`pair_nearest`), and a host citizen still without a copy takes the guest's nearest free citizen within
-// kCitizenFar (the follow's own "far": a farther one is in the guest's other city), which is put at the host's
-// place and bound. `coop.fix civ.citizen_rebind off`: first come within 30 m, no relocation (0.7.14).
+// kCitizenRelocate, which is put at the host's place and bound (lab 20261117-121708 with the switch off: the free
+// guest citizen of an unbound host one stood 35-76 m away, for up to 40 s and longer). A city's citizens stand within
+// ~80 m of each other and the cities are hundreds of metres apart (civ_npc: the far city 855 m from the capital), so
+// no citizen of the guest's other city (the one its camera is at, BUG-0553) is taken.
+// `coop.fix civ.citizen_rebind off`: first come within 30 m, no relocation (0.7.14).
+constexpr float kCitizenRelocate = 120.f;
 static bool g_cit_rebind_fix = true;
 COOP_FIX("civ.citizen_rebind", "BUG-1221", g_cit_rebind_fix,
-         "civ: after a load every city citizen near a guest finds its partner (nearest pairs, the guest's free citizen within 60 m moved there)");
+         "civ: after a load every city citizen near a guest finds its partner (nearest pairs, the guest's free citizen within 120 m moved there)");
 static uint32_t g_cit_relocs;
 static bool citizen_place(const Item& l, const net::Vec3& hp, uint32_t)
 {
@@ -1044,7 +1048,7 @@ static Kind g_kinds[] = {
     // the bind radius 30 m: 15 of 19 citizens were within 15 m of a partner without the fix (out/detector/20261103-final.md)
     {.name = "citizen", .stages = kStCiv, .tol = 30.f, .range = 200.f, .max = 56, .collect = citizen_collect,
      .behind = citizen_behind, .apply = citizen_apply, .acted = citizen_acted, .act = citizen_act, .gone_acted = false,
-     .drop_own = false, .follow = citizen_follow, .every = 0.5, .place = citizen_place, .relocate = kCitizenFar,
+     .drop_own = false, .follow = citizen_follow, .every = 0.5, .place = citizen_place, .relocate = kCitizenRelocate,
      .place_fix = &g_cit_rebind_fix, .pair_nearest = true},
     {"tribe_tool", nullptr, kStTribe, 2.0f, 150.f, 48, tool_collect, tool_behind, tool_apply, tool_acted, tool_act, false, true, nullptr, 0, tool_make,
      tool_own, tool_buy},
@@ -1383,6 +1387,33 @@ static void reconcile(int k, double now, bool fresh)
         for (uint32_t id : newids)
             if (!done.count(id))
                 unbound.push_back(id);
+        // and the relocation by nearest pairs too: a host object still without a copy takes the nearest free one
+        // within `relocate` (the loop below then has none left to take for it)
+        cand.clear();
+        if (placing && K.relocate > 0)
+            for (uint32_t id : unbound) {
+                const Snap::Obj& ps = S.objs.at(id);
+                for (auto& l : local) {
+                    float d = net::dist(l.pos, ps.first);
+                    if (d < K.relocate && !used.count({l.p, l.id}) && (!K.classes || l.cls == ps.cls))
+                        cand.push_back({d, id, &l});
+                }
+            }
+        std::stable_sort(cand.begin(), cand.end(), [](const Cand& a, const Cand& b) { return a.d < b.d; });
+        std::set<uint32_t> moved;
+        for (auto& c : cand) {
+            if (moved.count(c.id) || used.count({c.l->p, c.l->id}))
+                continue;
+            const Snap::Obj& ps = S.objs.at(c.id);
+            if (!K.place(*c.l, ps.first, ps.second))
+                continue;
+            moved.insert(c.id);
+            g_st[k].relocated++;
+            update(c.id, ps, bind(c.id, *c.l));
+        }
+        if (!moved.empty())
+            unbound.erase(std::remove_if(unbound.begin(), unbound.end(), [&](uint32_t id) { return moved.count(id) > 0; }),
+                          unbound.end());
     }
     for (uint32_t id : unbound) {
         const Snap::Obj& ps = S.objs.at(id);
@@ -1663,6 +1694,58 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "end n=%d\n", n);
         return 0;
     }
+    if (!strcmp(a, "loose") && argc > 4) { // loose <kind> <n> <m>: tests (BUG-1221): this guest drops the binds of its n
+        // bound copies nearest the snapshot's centre and puts each m metres farther out (along the ground, away from the
+        // centre): what a load leaves (the guest's free citizen 35-76 m from the host's unbound one)
+        int k = kind_of(argv[2]);
+        if (k < 0 || !g_kinds[k].follow) {
+            H->out_printf(out, "no such moving kind\n");
+            return 1;
+        }
+        GuestKind& G = g_g[k];
+        int n = atoi(argv[3]);
+        float m = (float)atof(argv[4]);
+        Items all;
+        g_kinds[k].collect(all);
+        std::vector<std::pair<float, uint32_t>> byc; // (distance to the centre, host id)
+        for (auto& [id, b] : G.binds)
+            for (auto& it : all)
+                if (it.p == b.p && it.id == b.serial)
+                    byc.push_back({net::dist(it.pos, G.snap.c), id});
+        std::sort(byc.begin(), byc.end());
+        int done = 0;
+        for (auto& [d, id] : byc) {
+            if (done >= n)
+                break;
+            Bind b = G.binds[id];
+            const Item* it = nullptr;
+            for (auto& x : all)
+                if (x.p == b.p && x.id == b.serial)
+                    it = &x;
+            if (!it)
+                continue;
+            net::Vec3 p = it->pos, c = G.snap.c;
+            float rp = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+            net::Vec3 up{p.x / rp, p.y / rp, p.z / rp}, v{p.x - c.x, p.y - c.y, p.z - c.z};
+            float dot = v.x * up.x + v.y * up.y + v.z * up.z;
+            v = {v.x - dot * up.x, v.y - dot * up.y, v.z - dot * up.z};
+            float lv = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+            if (lv < 1.f) { // at the centre: any direction along the ground
+                v = {up.y, -up.x, 0};
+                lv = std::sqrt(v.x * v.x + v.y * v.y) + 1e-6f;
+            }
+            net::Vec3 q{p.x + v.x / lv * m, p.y + v.y / lv * m, p.z + v.z / lv * m};
+            float rq = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
+            q = {q.x * rp / rq, q.y * rp / rq, q.z * rp / rq}; // the same height over the planet's centre
+            game::stop(b.p);
+            game::place(b.p, q, game::orientation(b.p));
+            G.binds.erase(id);
+            H->out_printf(out, "loose %p (bound to %u) from (%.1f %.1f %.1f) to (%.1f %.1f %.1f)\n", b.p, id, p.x, p.y, p.z, q.x, q.y, q.z);
+            done++;
+        }
+        H->out_printf(out, "loose n=%d\n", done);
+        return 0;
+    }
     if (!strcmp(a, "raw") && argc > 2) { // raw <noun hex> [r] [n bytes]: every object of a noun near the player with its first bytes
         uint32_t noun = strtoul(argv[2], nullptr, 16);
         float r = argc > 3 ? (float)atof(argv[3]) : 100.f;
@@ -1894,7 +1977,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     if (!a_FruitSetState || !a_DropFruit || !a_OrnUsed)
         H->log(M, SK_WARN, "wobj: symbols missing, world objects stay per game");
     H->command_add(M, "coop.wobj",
-                   "coop.wobj [list <kind> [r] [x y z] | use <ornament> | eat <fruit> | drop <tree> <slot>] - the host's world objects (fruit, trees, ornaments) on every game (BUG-0472, BUG-0459)",
+                   "coop.wobj [list <kind> [r] [x y z] | loose <kind> <n> <m> | use <ornament> | eat <fruit> | drop <tree> <slot>] - the host's world objects (fruit, trees, ornaments) on every game (BUG-0472, BUG-0459)",
                    c_wobj, nullptr, SK_CMD_OUTSIDE_FRAME);
 }
 
