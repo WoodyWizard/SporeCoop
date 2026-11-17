@@ -113,6 +113,11 @@ struct Kind {
     // come in the host's id order, which left a host object whose free copy stood beyond `tol` unbound). Acts while
     // `place_fix` is on (nullptr: always)
     bool pair_nearest = false;
+    // BUG-1227: while *fast_fix is on, the host sends the kind every `fast_every` s to guests of 0.7.15 or later (their
+    // HELLO carried the families; an older guest gets every `every` s: it takes a velocity only from snapshots over 0.3 s
+    // apart), and such a guest takes the velocity from snapshots over `fast_vel_dt` s apart (closer ones: kept)
+    bool* fast_fix = nullptr;
+    double fast_every = 0, fast_vel_dt = 0.3;
 };
 static bool kind_on(const Kind& K) { return !K.fix || *K.fix; }
 constexpr uint32_t kGone = 0xFFFFFFFFu; // the state of an object the host's game no longer has
@@ -889,6 +894,36 @@ static void citizen_follow(const Item& l, const net::Vec3& hp, const net::Vec3& 
     st.at = now;
     g_cit_walks++;
 }
+// BUG-1227: a walking copy ran at its host citizen's own speed (the game's walk, ~8 m/s for a running citizen) and so
+// kept the distance it lost at the walk's start (the velocity is known after two snapshots, 0.5-1 s): p50 4.7 / p90 7.4 m
+// behind the host's citizen at the same moment, the neighbours' copies crossed it (its own copy the nearest in 41 % of the
+// moving samples; NPC proxies p90 0.47 m, Civ vehicles 0.12 m in the same session, lab 20261117-133529). Now, every frame
+// while the host's citizen walks, the copy (still walked by the game's MoveTo, so it animates) is placed (no teleport
+// mark: the walk gait goes on, BUG-0360) a part of the way to where the host's is now: its last place moved on with its
+// velocity for the snapshot's age; the error closes in ~kCitizenGlide s, at most kCitizenGlideMax m/s over its own walk.
+// `coop.fix civ.citizen_lead off`: only the MoveTo (0.7.14).
+constexpr float kCitizenGlide = 0.12f, kCitizenGlideMax = 4.f, kCitizenAhead = 1.0f;
+static bool g_cit_lead_fix = true;
+COOP_FIX("civ.citizen_lead", "BUG-1227", g_cit_lead_fix, "civ: a guest's walking city citizens are where the host's are now, not metres behind");
+static uint32_t g_cit_glides;
+static double g_drive_dt = 0; // the frame's time (drive_frame)
+static void citizen_drive(const Item& l, const net::Vec3& hp, const net::Vec3& v, double age, uint32_t)
+{
+    float sp = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    if (!g_cit_lead_fix || sp < 0.3f || g_drive_dt <= 0)
+        return; // the host's stands: citizen_follow's walk and the game's idle
+    float t = (float)std::min(age, (double)kCitizenAhead);
+    net::Vec3 at{hp.x + v.x * t, hp.y + v.y * t, hp.z + v.z * t};
+    float d = net::dist(l.pos, at);
+    if (d <= 0.2f || d > kCitizenPut)
+        return; // there, or citizen_follow puts it
+    float dt = (float)std::min(g_drive_dt, 0.1);
+    float step = std::min(d * (1.f - std::exp(-dt / kCitizenGlide)), (sp + kCitizenGlideMax) * dt);
+    float k = step / d;
+    game::place(l.p, {l.pos.x + (at.x - l.pos.x) * k, l.pos.y + (at.y - l.pos.y) * k, l.pos.z + (at.z - l.pos.z) * k},
+                game::orientation(l.p));
+    g_cit_glides++;
+}
 // BUG-1221: after a load (the host loads a save, the guests follow) each game's pool of citizens starts at its own spots
 // and the first snapshot bound them first come (in the host's id order) within the 30 m bind radius: a host citizen
 // whose free guest partner stood farther stayed unbound and that guest citizen walked on its own for good (2-4 of 19,
@@ -1062,8 +1097,9 @@ static Kind g_kinds[] = {
     // the bind radius 30 m: 15 of 19 citizens were within 15 m of a partner without the fix (out/detector/20261103-final.md)
     {.name = "citizen", .stages = kStCiv, .tol = 30.f, .range = 200.f, .max = 56, .collect = citizen_collect,
      .behind = citizen_behind, .apply = citizen_apply, .acted = citizen_acted, .act = citizen_act, .gone_acted = false,
-     .drop_own = false, .follow = citizen_follow, .every = 0.5, .place = citizen_place, .relocate = kCitizenRelocate,
-     .place_fix = &g_cit_rebind_fix, .pair_nearest = true},
+     .drop_own = false, .follow = citizen_follow, .every = 0.5, .drive = citizen_drive, .place = citizen_place, .relocate = kCitizenRelocate,
+     .place_fix = &g_cit_rebind_fix, .pair_nearest = true,
+     .fast_fix = &g_cit_lead_fix, .fast_every = 0.25, .fast_vel_dt = 0.15},
     {"tribe_tool", nullptr, kStTribe, 2.0f, 150.f, 48, tool_collect, tool_behind, tool_apply, tool_acted, tool_act, false, true, nullptr, 0, tool_make,
      tool_own, tool_buy},
     // BUG-0490 (new kinds at the end: an older guest drops a kind index it does not know)
@@ -1156,6 +1192,7 @@ struct GuestKind {
 static GuestKind g_g[kKinds];
 static uint32_t g_epoch = 0;
 static double g_last_tx[16], g_last_guest = 0;
+static uint32_t g_slow_tick[16]; // BUG-1227: a kind's fast ticks (Kind::fast_every)
 struct Stat {
     uint32_t tx = 0, rx = 0, bound = 0, applied = 0, dropped = 0, req_tx = 0, req_rx = 0, acted = 0, missing = 0, made = 0, placed = 0, relocated = 0, reclassed = 0;
 };
@@ -1180,19 +1217,30 @@ static void guest_reset()
 // nearest a guest; the tribe fixture's planet has 10-20).
 static float kind_range(int k) { return k == tool_kind() ? 3000.f : g_kinds[k].range; }
 
+static std::set<uint32_t>* g_rec_sent = nullptr; // BUG-1227 (coop.bodyrec kinds z): the host's citizens sent to a guest
 static void host_tick(double now)
 {
     uint8_t sb = stage_bit();
     for (int k = 0; k < kKinds && k < 16; k++) {
         Kind& K = g_kinds[k];
-        if (!kind_on(K) || !(K.stages & sb) || K.max > kMaxPerSnap || now - g_last_tx[k] < (K.every > 0 ? K.every : kSnapInterval))
+        bool fast = K.fast_fix && *K.fast_fix && K.fast_every > 0;
+        double every = fast ? K.fast_every : K.every > 0 ? K.every : kSnapInterval;
+        if (!kind_on(K) || !(K.stages & sb) || K.max > kMaxPerSnap || now - g_last_tx[k] < every)
             continue;
         g_last_tx[k] = now;
+        // BUG-1227: a guest before 0.7.15 gets every `every` s (one fast tick of n)
+        bool slow_due = !fast || g_slow_tick[k]++ % std::max(1, (int)std::lround((K.every > 0 ? K.every : kSnapInterval) / K.fast_every)) == 0;
         Items all;
         K.collect(all);
         for (auto& p : C.sess->players()) {
             if (p.id == 0 || (C.in_place && !C.in_place(p.id)))
                 continue;
+            if (!slow_due) {
+                bool has = false;
+                std::vector<net::FamilyRev> fam;
+                if (!C.sess->peer_families(p.id, has, fam) || !has)
+                    continue;
+            }
             net::Vec3 c;
             if (sb == kStSpace) { // BUG-0490: a guest's ship on our planet, over the ground the objects stand on
                 // (BUG-0541: an empty list is sent too, from the ship: a planet whose cities have no decorations in the
@@ -1230,6 +1278,8 @@ static void host_tick(double now)
             w.f32(r);
             w.u8((uint8_t)close.size());
             for (auto& [d, it] : close) {
+                if (g_rec_sent && !strcmp(K.name, "citizen"))
+                    g_rec_sent->insert(it->id);
                 w.u32(it->id);
                 w.f32(it->pos.x);
                 w.f32(it->pos.y);
@@ -1308,7 +1358,10 @@ static void reconcile(int k, double now, bool fresh)
     auto update = [&](uint32_t id, const Snap::Obj& ps, Bind& b) {
         b.host_st = ps.second;
         double dt = now - b.host_at;
-        if (b.host_at > 0 && dt > 0.3 && dt < 3.0) {
+        bool fast = K.fast_fix && *K.fast_fix;
+        if (fast && b.host_at > 0 && dt <= K.fast_vel_dt) {
+            // BUG-1227: two snapshots in one frame or close (a hitch): the velocity of the step before is kept
+        } else if (b.host_at > 0 && dt > (fast ? K.fast_vel_dt : 0.3) && dt < 3.0) {
             net::Vec3 v{(ps.first.x - b.host_pos.x) / (float)dt, (ps.first.y - b.host_pos.y) / (float)dt,
                         (ps.first.z - b.host_pos.z) / (float)dt};
             float sp = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
@@ -1501,6 +1554,9 @@ static void reconcile(int k, double now, bool fresh)
 // (this frame's list only: a copy the game freed is not in it)
 static void drive_frame(double now, uint8_t sb, bool away)
 {
+    static double last = 0;
+    g_drive_dt = last > 0 ? now - last : 0;
+    last = now;
     for (int k = 0; k < kKinds; k++) {
         Kind& K = g_kinds[k];
         GuestKind& G = g_g[k];
@@ -1617,6 +1673,46 @@ void tick(double now)
         guest_tick(now);
 }
 
+// BUG-1227 (tests, `coop.bodyrec start kinds z`): the Civ city citizens as this game has them now, keyed by the host's
+// id so tools/tests/body_trail.py lines a guest's copy up with the host's citizen at the same moment: the host its own
+// (z<serial>), a guest its bound copies (z<the host citizen's serial>); y<id>: a guest's walk goal (diag)
+void for_each_body(void (*row)(const char* key, const net::Vec3& p, void* u), void* u, bool goals)
+{
+    int k = kind_of_name("citizen");
+    if (k < 0 || !(stage_bit() & kStCiv))
+        return;
+    Items local;
+    citizen_collect(local);
+    char key[16];
+    if (is_host()) {
+        static std::set<uint32_t> sent; // only the citizens a guest has copies of (a planet has ~150)
+        g_rec_sent = &sent;
+        for (auto& it : local) {
+            if (!sent.count(it.id))
+                continue;
+            snprintf(key, sizeof key, "z%x", it.id & 0xFFFFFF);
+            row(key, it.pos, u);
+        }
+        return;
+    }
+    if (!is_guest())
+        return;
+    std::map<std::pair<void*, uint32_t>, const Item*> by_key;
+    for (auto& it : local)
+        by_key[{it.p, it.id}] = &it;
+    for (auto& [id, b] : g_g[k].binds) {
+        auto f = by_key.find({b.p, b.serial});
+        if (f == by_key.end())
+            continue;
+        snprintf(key, sizeof key, "z%x", id & 0xFFFFFF);
+        row(key, f->second->pos, u);
+        if (goals && b.fol.at > 0) {
+            key[0] = 'y';
+            row(key, b.fol.goal, u);
+        }
+    }
+}
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
     if (type != net::MSG_WOBJ)
@@ -1654,8 +1750,8 @@ std::string status()
     snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u left_alone=%u; city decorations sets=%u removed=%u\n",
              g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_bundles_left_alone, g_corn_sets, g_corn_removed);
     s += b;
-    snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u relocs=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts, g_cit_far,
-             g_cit_relocs, g_space_cit_puts, g_veh_drives);
+    snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u relocs=%u glides=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts, g_cit_far,
+             g_cit_relocs, g_cit_glides, g_space_cit_puts, g_veh_drives);
     s += b;
     snprintf(b, sizeof b, "tools removed=%u buys_tx=%u buys_rx=%u buys_done=%u\n", g_tools_removed, g_tool_buys_tx,
              g_tool_buys_rx, g_tool_buys_done);
@@ -1702,8 +1798,16 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
             for (auto& [id, b] : g_g[k].binds)
                 if (b.p == it.p && b.serial == it.id)
                     host = id;
-            H->out_printf(out, "%s %p id=%u pos=(%.2f %.2f %.2f) st=%X dist=%.1f bound_to=%u cls=%X\n", g_kinds[k].name, it.p, it.id, it.pos.x,
-                          it.pos.y, it.pos.z, it.st, d, host, it.cls);
+            // BUG-1227 (tests): a creature's walk gait and animation (game::gait_state, drawn_state; -1 / 0: none)
+            int gait = -1, gait2 = 0, mv = 0, ss = 0;
+            uint32_t anim = 0;
+            bool creature = k == kind_of_name("citizen") || k == kind_of_name("space_citizen");
+            if (creature) {
+                game::gait_state(it.p, &gait, &gait2, &mv, &ss);
+                game::drawn_state(it.p, nullptr, &anim);
+            }
+            H->out_printf(out, "%s %p id=%u pos=(%.2f %.2f %.2f) st=%X dist=%.1f bound_to=%u cls=%X gait=%d anim=%08X\n", g_kinds[k].name, it.p,
+                          it.id, it.pos.x, it.pos.y, it.pos.z, it.st, d, host, it.cls, gait, anim);
             n++;
         }
         H->out_printf(out, "end n=%d\n", n);
