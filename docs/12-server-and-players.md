@@ -85,6 +85,37 @@ playing it: the headless route the owner suggested is that dedicated server, not
 * **One planet per server process**: Spore loads one planet at a time; an MMO is a server per busy planet (the
   ROADMAP's "per-planet sessions"), with the galaxy and the players' identities shared above them.
 
+## Phase 0, day 1: what a host's game does when nobody watches it (2026-11-17, feat/lineages-alpha)
+<a id="server-spike-day1"></a>
+
+TITAN, QA host 9 and partner 8 (Samuth.spo, the QA frame cap of 10 FPS, 1280x960), the host measured 20-30 s per
+condition: its CPU (share of one core), memory, frames, and how many of its creatures within 60-110 m of each player
+moved more than 0.5 m (scratchpad tool spike0.py; to go into tools/qa_win when phase 0 ends).
+
+| Host window | Frames | Host CPU | Creatures moving | Verdict |
+|---|---|---|---|---|
+| normal, on screen | 9.8 / s from Present | 22-24 % | 11/17 near each player | baseline |
+| moved off-screen (-4000, 0) | 9.7-10.2 / s from Present | 22-24 % | 10-13 of 17-19 | works: nobody sees it, nothing changes |
+| hidden (ShowWindow 0) | 446 / s from the game loop | 83 % | 0/20 | the game stops drawing and its world freezes; our frame runs uncapped |
+| minimized | 0 | 2 % | 0/17 | everything stops, the mod too: the players would lose the host |
+
+* ✔ Unknown 3 (what Spore simulates away from its own creature) is answered by what we already had: the game simulates
+  only around its camera (the relevance pass: herds within 100 m enabled, creatures beyond 250 m back to the pool), and
+  the mod adds every partner's position to that list (view_centres.h, BUG-0280). With the partner 411 m from the host's
+  creature, 19 of the 22 creatures within 110 m of the partner moved, and the host's live creatures rose from 46 to 76
+  (the second area loaded). So a server with no camera of its own can keep its players' areas alive through the same
+  list; its cost grows with the number of separate player areas, not with the planet.
+* ✔ A cutscene on the host freezes the world for everybody: teleporting the host's creature into deep water started
+  the game's "Dangerous creatures lurk in the deep" scene; while it showed, 0 of 18 creatures moved (CPU 15 %). A server
+  must never show cutscenes, tutorials or dialogs that wait for a click.
+* ✔ The off-screen window is a "headless" host already today (no code), at the full cost of drawing.
+* ~ Open for day 2: why a hidden window freezes the world (Spore's own pause when it is not visible or not active)
+  and whether that pause can be lifted, so the drawing can stop; a frame cap for loop frames (446 / s wastes a core);
+  what the drawing costs (a 320x240 window against 1280x960); a host whose own creature is parked or missing; the
+  memory over a long session (511 -> 589 MB in 15 min here, with a second area loaded).
+* Seen on the way: the partner, left standing 411 m away, was killed by that area's creatures; its respawn waited
+  for a click on its own screen (a test effect, not a bug).
+
 ## Cheating: trust, but check
 <a id="server-cheating"></a>
 
