@@ -933,11 +933,13 @@ struct CitizenRun {
 static std::map<uint32_t, CitizenRun> g_cit_run; // the copy's id in this game -> its state (cleared with the binds)
 static uint32_t g_cit_run_plays, g_cit_run_ends;
 static std::map<uint32_t, uint32_t> g_cit_run_over; // (diagnostics) the animation a moving copy had instead of the run
-static void citizen_run(const Item& l, float host_sp, double now)
+static void citizen_run(const Item& l, float host_sp, double now, bool still = false)
 {
     if (!g_cit_run_fix)
         return;
     CitizenRun& r = g_cit_run[l.id];
+    if (still) // BUG-1230: held at its standing host citizen (citizen_hold): stands, whatever its own walk does
+        r.seen = 0;
     double dt = now - r.seen;
     if (r.seen > 0 && dt > 0 && dt < 0.5) {
         float inst = net::dist(l.pos, r.pos) / (float)dt;
@@ -946,7 +948,7 @@ static void citizen_run(const Item& l, float host_sp, double now)
         r.own = 0;
     r.seen = now;
     r.pos = l.pos;
-    float sp = std::max(host_sp, r.own);
+    float sp = still ? 0.f : std::max(host_sp, r.own);
     r.on = sp >= kCitizenRunOn || (r.on && sp >= kCitizenRunOff);
     uint32_t anim = 0;
     if (now - r.at < kCitizenRunGap || !game::drawn_state(l.p, nullptr, &anim))
@@ -967,10 +969,72 @@ static void citizen_run(const Item& l, float host_sp, double now)
     r.at = now;
     g_cit_run_plays++;
 }
+// BUG-1230: while the host's citizen stands, the guest's own behaviour still walks the copy now and then (every few
+// seconds, at the citizens' 8 m/s, as each game walks its own citizens): citizen_follow walked it back only when it was
+// over kCitizenWalk off and its last MoveTo to the same point was 1.5 s old, so the copy ran 8-12 m away and back
+// (standing host citizens: their copies over 3 m off in 7-22 % of the samples, civ_citizen_trail's json of 6 sessions;
+// the walk goal y<id> was the host citizen's place all along, so not a goal left ahead at its stop). A StopMovement or
+// a MoveTo back as soon as it walks off is not enough: the behaviour walks it again within a second (2-3 m out and back
+// every 1-2 s, lab 20261117-152554). Now, every frame while the host's citizen stands, the copy is placed (no teleport
+// mark, at its own distance from the planet's centre) a part of the way to the host's citizen (time constant
+// kCitizenHoldGlide, at most kCitizenHoldMax m/s), and a walk of its own (over kCitizenHoldAway m/s away from it between
+// two frames) over kCitizenHoldFree m off is walked back with a MoveTo at once (at most every kCitizenHoldGap s: a
+// MoveTo every frame hardly walks, BUG-0281). Within kCitizenHoldFree m it is held, and citizen_run takes it as standing
+// (its own walk against the hold would keep it in the run). A StopMovement there made its behaviour walk again at once
+// and play the run again (2-5 stops a second per copy, lab 20261117-153309). `coop.fix civ.citizen_hold off`: only
+// citizen_follow's walk (0.7.14).
+constexpr float kCitizenHoldFree = kCitizenWalk, kCitizenHoldAway = 1.0f, kCitizenHoldNear = 0.15f; // m, m/s, m
+constexpr float kCitizenHoldGlide = 0.06f, kCitizenHoldMax = 10.f;                                  // s, m/s
+constexpr double kCitizenHoldGap = 0.3;                                                             // s
+static bool g_cit_hold_fix = true;
+COOP_FIX("civ.citizen_hold", "BUG-1230", g_cit_hold_fix, "civ: a guest's copy of a standing city citizen stays where the host's stands, not running 10 m off and back");
+struct CitizenHold {
+    double seen = 0;  // when it was read
+    float d = 0;      // its distance from the host's citizen then, after this mod's place
+    double at = -100; // the last MoveTo back
+};
+static std::map<uint32_t, CitizenHold> g_cit_hold; // the copy's id in this game -> its state (cleared with the binds)
+static uint32_t g_cit_holds, g_cit_hold_places;
+// true: the copy is held at its standing host citizen (within kCitizenHoldFree m)
+static bool citizen_hold(const Item& l, const net::Vec3& hp, float host_sp, double now)
+{
+    if (!g_cit_hold_fix)
+        return false;
+    CitizenHold& h = g_cit_hold[l.id];
+    float rl = std::sqrt(l.pos.x * l.pos.x + l.pos.y * l.pos.y + l.pos.z * l.pos.z);
+    float rh = std::sqrt(hp.x * hp.x + hp.y * hp.y + hp.z * hp.z);
+    net::Vec3 to = rh > 1.f ? net::Vec3{hp.x * rl / rh, hp.y * rl / rh, hp.z * rl / rh} : hp; // at its own height
+    float d = net::dist(l.pos, to);
+    double dt = now - h.seen;
+    bool away = h.seen > 0 && dt > 0 && dt < 0.5 && (d - h.d) / (float)dt > kCitizenHoldAway;
+    h.seen = now;
+    h.d = d;
+    if (host_sp >= 0.3f || d > kCitizenPut || g_drive_dt <= 0) {
+        h.seen = 0;
+        return false; // the host's walks (citizen_drive) or citizen_follow puts it
+    }
+    if (d > kCitizenHoldFree && away && now - h.at >= kCitizenHoldGap) { // ran off: walked back at once
+        game::move_to(l.p, hp, 0.5f);
+        g_cit_holds++;
+        h.at = now;
+    }
+    if (d <= kCitizenHoldNear)
+        return true;
+    float fdt = (float)std::min(g_drive_dt, 0.1);
+    float step = std::min(d * (1.f - std::exp(-fdt / kCitizenHoldGlide)), kCitizenHoldMax * fdt);
+    float k = step / d;
+    game::place(l.p, {l.pos.x + (to.x - l.pos.x) * k, l.pos.y + (to.y - l.pos.y) * k, l.pos.z + (to.z - l.pos.z) * k},
+                game::orientation(l.p));
+    h.d = d - step;
+    g_cit_hold_places++;
+    return d <= kCitizenHoldFree;
+}
 static void citizen_drive(const Item& l, const net::Vec3& hp, const net::Vec3& v, double age, uint32_t)
 {
     float sp = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-    citizen_run(l, sp, H->time_seconds());
+    double now = H->time_seconds();
+    bool still = citizen_hold(l, hp, sp, now); // BUG-1230
+    citizen_run(l, sp, now, still);
     if (!g_cit_lead_fix || sp < 0.3f || g_drive_dt <= 0)
         return; // the host's stands: citizen_follow's walk and the game's idle
     float t = (float)std::min(age, (double)kCitizenAhead);
@@ -1265,6 +1329,7 @@ static void guest_reset()
     g_tool_base.clear();
     g_tool_base_done = false;
     g_cit_run.clear();
+    g_cit_hold.clear();
     for (auto& g : g_g) {
         g.binds.clear();
         g.own.clear();
@@ -1825,8 +1890,8 @@ std::string status()
     snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u left_alone=%u; city decorations sets=%u removed=%u\n",
              g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_bundles_left_alone, g_corn_sets, g_corn_removed);
     s += b;
-    snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u relocs=%u glides=%u runs=%u run_ends=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks,
-             g_cit_puts, g_cit_far, g_cit_relocs, g_cit_glides, g_cit_run_plays, g_cit_run_ends, g_space_cit_puts, g_veh_drives);
+    snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u relocs=%u glides=%u runs=%u run_ends=%u holds=%u hold_places=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks,
+             g_cit_puts, g_cit_far, g_cit_relocs, g_cit_glides, g_cit_run_plays, g_cit_run_ends, g_cit_holds, g_cit_hold_places, g_space_cit_puts, g_veh_drives);
     s += b;
     if (!g_cit_run_over.empty()) { // BUG-1229 (diagnostics): what a running copy had on instead of the run, most first
         std::vector<std::pair<uint32_t, uint32_t>> v;
