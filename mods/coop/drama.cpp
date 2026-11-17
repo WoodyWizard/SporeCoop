@@ -203,12 +203,15 @@ static SummonUpdate_t o_SummonUpdate;
 static unsigned g_flock_updates;
 static void* g_seen_summon; // the last summon event the game updated (tests: `coop.drama summon`)
 static uint32_t g_stale_tidied;
+static double g_summon_seen_at = -1e9;
 static bool g_flock_release = true; // (BUG-9245, its switch below)
 static void* flock_herd(void* ev);
 static std::pair<int, int> tidy_summon_list(void* herd);
 static void SK_THISCALL h_SummonUpdate(void* ev, uint32_t a)
 {
     g_seen_summon = ev;
+    if (ev && skg::readable(ev, 0x10) && ((const uint8_t*)ev)[0xC])
+        g_summon_seen_at = H->time_seconds();
     // BUG-9245: a summon past its time (one a save brought back, one whose flock went to a partner) drops the creatures
     // that left its herd, so it can end; while its time runs, the game's start may still be placing them
     if (g_flock_release && ev && skg::readable(ev, 0x64) && ((const uint8_t*)ev)[0xC] && skg::field<float>(ev, 0x2C) < 0.f)
@@ -362,6 +365,8 @@ bool end_flock_event()
            "list, %d left in it, BUG-9245)", n.second, n.first);
     return true;
 }
+
+bool summon_running() { return H && H->time_seconds() - g_summon_seen_at < 2.0; }
 
 bool host_ufo_here() { return g_shared_fix && is_guest(); }
 

@@ -23,5 +23,7 @@ bool summon_for(void* puppet);
 // BUG-9233: the summon event started by summon_for ends at its next update (its time left, +0x2C, to 0): the game takes
 // its flock out of the host's pack then; false when there is none
 bool end_flock_event();
+// a summon event (anyone's) ran its update within the last 2 s (the game updates an active one every tick)
+bool summon_running();
 
 } // namespace drama

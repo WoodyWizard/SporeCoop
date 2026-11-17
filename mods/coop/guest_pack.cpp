@@ -41,6 +41,11 @@ static bool g_reuse_fix = true;
 COOP_FIX("creature.pack_member_reuse", "BUG-9247", g_reuse_fix,
          "creature: a partner's pack member whose object the game pooled or reused for another creature leaves the pack");
 static uint32_t g_reused, g_pooled;
+static bool g_attack_cmd = true;
+COOP_FIX("creature.guest_pack_attack", "BUG-9248", g_attack_cmd,
+         "creature: a partner's pack gets the game's own attack command for what the partner fights (it goes and fights)");
+static uintptr_t a_CmdStim, a_CanDefend;
+static uint32_t g_commands, g_declined;
 struct Member {
     uint8_t owner = 0;
     uint32_t serial = 0;
@@ -89,6 +94,8 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_DramaGet = H->sym("SporeCoop::DramaManager_Get");
     a_StartKind = H->sym("SporeCoop::DramaManager_StartKind");
     a_SetHerd = H->sym("SporeCoop::Creature_SetHerd");
+    a_CmdStim = H->sym("SporeCoop::CreatureCommandStimulus"); // BUG-9248
+    a_CanDefend = H->sym("SporeCoop::PosseMemberCanDefend");
 }
 
 bool enabled() { return g_fix; }
@@ -253,7 +260,20 @@ static void attack(void* c, Member& m, void* victim, double now)
 {
     if (!victim || victim == c || game::is_dead(victim))
         return;
-    skg::vcall<void>(c, 0x84 / 4, (uint8_t*)victim + game::kCombatOff, 1, 0); // SetTarget (as the charge test)
+    // BUG-9248 (owner 2026-11-16: "Does it actually attack"): SetTarget alone was kept (+0xE7C) but a summoned member
+    // stayed at the partner's side. On: the posse's own attack command, as cPosseSimulator 0xD52E40 gives the host's
+    // pack (CreatureCommandStimulus 0x10 with the target as its sender, BUG-0735). Off: SetTarget only (63-dev).
+    // (the relay's checks first, case 0x10 at Steam 0xC42FC0: the member qualifies, PosseMemberCanDefend 0xD7D0E0)
+    if (g_attack_cmd && a_CmdStim && a_CanDefend && skg::readable(skg::field<uint8_t*>(c, 0xB4C), 0x200)) {
+        if (!skg::cdecl_call<bool>(a_CanDefend, c)) {
+            g_declined++;
+            return;
+        }
+        skg::thiscall<void*>(a_CmdStim, c, 0x10u, 0u, 0x20030030u, 0x40040000u, 0x7F7FFFFFu, 0x100000u, 0u, 0u, 0u,
+                             victim, (uint32_t)0);
+        g_commands++;
+    } else
+        skg::vcall<void>(c, 0x84 / 4, (uint8_t*)victim + game::kCombatOff, 1, 0); // SetTarget (as the charge test)
     m.target = victim;
     m.target_until = now + 15;
 }
@@ -282,8 +302,35 @@ void defend(uint8_t guest, void* attacker)
         }
 }
 
+// BUG-9249 (TITAN QA 2026-11-16, Samuth.spo): the posse's summoned count (+0x1C; the pack takes no recruit while its
+// members + that count reach its size +0x18) read 3 of 3 with no summon running and nobody in the pack: the host's
+// recruit was refused ("cannot join"); the count came with the save (3 at the start of every session there), left by
+// flocks of older builds (BUG-9233). The game counts a summon's flock up at its start and down at its end, so with no
+// summon running the count is 0: a count left over then is cleared. `coop.fix creature.posse_count_heal off`: kept.
+static bool g_count_heal = true;
+COOP_FIX("creature.posse_count_heal", "BUG-9249", g_count_heal,
+         "creature: a summoned-creature count left in the pack with no summon running is cleared (the pack takes recruits again)");
+static uint32_t g_count_healed;
+static double g_next_count_check;
+static void heal_posse_count(double now)
+{
+    if (!g_count_heal || now < g_next_count_check || !game::in_creature_stage() || drama::summon_running() ||
+        (C.sess && C.sess->role() == net::Role::Client))
+        return;
+    g_next_count_check = now + 2;
+    static uintptr_t posse_get = H->sym("SporeCoop::cPosseSimulator_Get");
+    uint8_t* posse = posse_get ? skg::cdecl_call<uint8_t*>(posse_get) : nullptr;
+    if (!posse || !skg::readable(posse, 0x20) || skg::field<int32_t>(posse, 0x1C) <= 0)
+        return;
+    H->log(M, SK_INFO, "guest_pack: the pack's summoned count %d with no summon running: cleared (pack size %d, %zu member(s), BUG-9249)",
+           skg::field<int32_t>(posse, 0x1C), skg::field<int32_t>(posse, 0x18), host_posse().size());
+    skg::field<int32_t>(posse, 0x1C) = 0;
+    g_count_healed++;
+}
+
 void tick(double now)
 {
+    heal_posse_count(now);
     if (g_members.empty())
         return;
     if (!g_fix || !is_host() || !game::in_creature_stage()) {
@@ -345,9 +392,9 @@ std::string status()
     char b[320];
     std::snprintf(b, sizeof b,
                   "guest_pack: fix=%d members=%zu summons=%u summoned=%u recruits=%u assists=%u defends=%u leashed=%u "
-                  "teleports=%u dropped=%u herd_moves=%u herd_fix=%d reuse_fix=%d reused=%u pooled=%u\n",
+                  "teleports=%u dropped=%u herd_moves=%u herd_fix=%d reuse_fix=%d reused=%u pooled=%u attack_cmd=%d commands=%u declined=%u\n",
                   (int)g_fix, g_members.size(), g_summons, g_summoned, g_recruits, g_assists, g_defends, g_leashed,
-                  g_teleports, g_dropped, g_herd_moves, (int)g_herd_fix, (int)g_reuse_fix, g_reused, g_pooled);
+                  g_teleports, g_dropped, g_herd_moves, (int)g_herd_fix, (int)g_reuse_fix, g_reused, g_pooled, (int)g_attack_cmd, g_commands, g_declined);
     std::string out = b;
     // tests (BUG-9233): the posse simulator's 0x58 bytes and the host's pack list length
     static uintptr_t posse_get = H->sym("SporeCoop::cPosseSimulator_Get");

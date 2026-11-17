@@ -1362,3 +1362,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9246](BUG-9246-creature-a-partner-s-nest-is-made-under-the-sea.md) | open | bug | creature | 2026-11-16 |  | Creature: a partner's nest is made under the sea |
 | [BUG-9247](BUG-9247-creature-a-partner-s-pack-keeps-a-recycled-creat.md) | fixed | bug | Creature | 2026-11-16 | unreleased | Creature: a partner's pack keeps a recycled creature (another species) and teleports it to the partner |
 | [BUG-9248](BUG-9248-creature-a-partner-s-pack-takes-the-target-the-p.md) | open | bug | Creature | 2026-11-16 |  | Creature: a partner's pack takes the target the partner hits but does not go and fight it |
+| [BUG-9249](BUG-9249-creature-the-host-s-pack-stays-full-summoned-cou.md) | fixed | bug | Creature | 2026-11-16 | unreleased | Creature: the host's pack stays full (summoned count left in the save), recruits refused |

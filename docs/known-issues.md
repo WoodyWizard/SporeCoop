@@ -3892,5 +3892,5 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 ## Creature: a partner's pack does not go and fight what the partner hits (2026-11-16, feat/lineages-47)
 <a id="issue-partner-pack-no-attack"></a>
 
-* BUG-9248. The partner's summoned flock follows the partner and is told the target when the partner hits a creature, but stays at the partner's side instead of running at it. Whether it fights back when the partner is attacked was not seen clearly.
+* BUG-9248. The partner's summoned flock follows the partner and is told the target when the partner hits a creature, but stays at the partner's side instead of running at it: the game obeys its pack's attack order only from members of its own pack, and the partner's flock is kept out of it (BUG-9233). Decision 5C.
 * Reproduce: host + partner in the creature stage, `coop.gpack summon <player>` on the host, the partner hits a creature 20-90 m away (`coop.npc hit <id> 1` on the partner): `coop.gpack` shows the target, the members' distance to the partner stays 1-2 m.
