@@ -1946,7 +1946,7 @@ so each copy is compared with its own host citizen; tools/tests/coop_civ_citizen
   straight legs p90 1.1-1.6 m (the turn is known up to a snapshot late).
 * ✔ (runtime) Animations (bodyrec rows a<id>, game::drawn_state): a host citizen that moves plays 0x02481DB0 (its run,
   every moving sample), a standing one 0x02481DE5 or an action (0x050A3F95, 0x04A1DD75, ...). A guest's copy of a
-  running host citizen plays the run in only 8-15 % of the samples with `civ.citizen_lead off` and 26-91 % with it; the
+  running host citizen plays the run in only 8-28 % of the samples with `civ.citizen_lead off` and 26-98 % with it; the
   rest of the time it moves while it plays the standing 0x02481DE5 (key frames: the host's citizen in a run pose, the
   copy crouched). Older than the glide, BUG-1229 (open). game::gait_state's gait word is 0 for every citizen (both
   games, moving or not): not a walk indicator for them.

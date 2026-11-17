@@ -21,14 +21,14 @@ related: BUG-1227, BUG-0476
 civ_citizen_trail (BUG-1227) records every Civ city citizen's current animation on both games (`coop.bodyrec start
 kinds za`, rows a<id>, game::drawn_state). On the host a citizen that moves (over 2 m/s, they run at 8 m/s) plays
 0x02481DB0 (4755 of 4755 moving samples, lab 20261117-141344), a standing one 0x02481DE5 or an action. The guest's copy
-of a running host citizen plays 0x02481DB0 too in only 8-15 % of the samples with civ.citizen_lead off (labs
-20261117-141104, -141349) and 26-91 % with it (-141344, -141059); the rest of the time it moves while it plays
-0x02481DE5, the standing animation (3321-4550 moving samples with it, off). The key frames run1 / run2 of those runs
+of a running host citizen plays 0x02481DB0 too in only 8-28 % of the samples with civ.citizen_lead off (labs
+20261117-141104, -141349, -141710) and 26-98 % with it, by session (-141344 26 %, -141059 91 %, -141705 98 %, -141917 76 %); the rest of the time it moves while it plays
+0x02481DE5, the standing animation (3321-4550 such moving samples in a 60 s off run). The key frames run1 / run2 of those runs
 (the same camera on both games at a running host citizen) show the host's citizen in a run pose and the guest's copy
 crouched as if it stood.
 
 ## Root cause
-Not analysed. Observed: the old path (MoveTo alone) has it as much as the new one (the BUG-1227 glide is not the
+Not analysed. Observed: the old path (MoveTo alone) has it more than the new one (the BUG-1227 glide is not the
 cause: with it more copies run). Inferred: the copy's MoveTo walk is not the game's run of a citizen (the host's citizens
 run by their own behaviour, which plays 0x02481DB0; game::gait_state's gait word is 0 for every citizen, so the walk gait
 is not read that way), or the copy's own AI replaces the walk. Next: which call starts a citizen's run (the behaviour

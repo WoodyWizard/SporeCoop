@@ -282,8 +282,8 @@ anchor so other docs can link to it:
 * What happens: a city citizen that runs on the host's screen (8 m/s) is at the same place on a guest's, but there it
   often moves crouched in its standing pose instead of running.
 * Reproduce: civ_citizen_trail prints `guest copies (moving, animation)`: copies that move while they play 0x02481DE5
-  (the standing animation); the copies of running host citizens play the run (0x02481DB0) in 26-91 % of the samples
-  (8-15 % with civ.citizen_lead off, so it is older than BUG-1227's fix); key frames run1 / run2.
+  (the standing animation); the copies of running host citizens play the run (0x02481DB0) in 26-98 % (varies by session) of the samples
+  (8-28 % with civ.citizen_lead off, so it is older than BUG-1227's fix); key frames run1 / run2.
 * Known: the copy is walked by the game's MoveTo (and since BUG-1227 glided to the host's place); the host's citizens
   run by their own behaviour (docs/re/civ.md#civ-citizens-trail).
 * Next steps: find the call that starts a citizen's run and give it to the copy, or play the host's animation on it.
