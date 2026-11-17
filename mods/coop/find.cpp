@@ -48,6 +48,14 @@ COOP_FIX("find.placed", "BUG-0939", g_placed_fix, "all stages: no arrow, minimap
 // HUD hidden. Off: each where it falls (0.7.12).
 bool g_layout_fix = true;
 COOP_FIX("find.layout", "BUG-0949", g_layout_fix, "all stages: partner arrows and name tags are kept apart and off the minimap, the bottom bar and notification cards");
+// BUG-1226: a partner could have neither a name tag nor an arrow (0.7.15 final check, find_partners frame S/051):
+// * an arrow on the bottom edge (a partner behind or below the camera) lay on the game's bottom bar, which spans the
+//   screen: the layout slides a bottom arrow only sideways, found no free place and hid it;
+// * a partner at the left or right edge is in the view (no arrow), its tag centred over it reached past the edge, and
+//   the layout slides a tag only up: hidden too.
+// On: an arrow with no place along its edge tries above / below it, a tag is moved sideways into the screen first.
+static bool g_edge_fix = true;
+COOP_FIX("find.edge_labels", "BUG-1226", g_edge_fix, "all stages: a partner's arrow on the bottom bar moves above it and a name tag at the screen's side edge moves into the screen (they were hidden: neither tag nor arrow)");
 
 static findx::Colors g_tab;     // in force here (host: its own; guest: the host's)
 static uint32_t g_changes = 1;
@@ -339,6 +347,12 @@ void tag(const char* kind, uint8_t id, const std::string& text, float sx, float 
     uint32_t col = color_of(id);
     int tw = utf8::overlay_width(text);
     float x = (float)((int)sx - tw / 2), y = (float)((int)sy - 10);
+    if (g_edge_fix && layout_on()) { // BUG-1226: inside the screen sideways (the layout slides tags only up)
+        int sw = 0, sh = 0;
+        H->screen_size(&sw, &sh);
+        if (sw > tw)
+            x = std::clamp(x, 0.f, (float)(sw - tw));
+    }
     Queued q{};
     q.arrow = false;
     q.kind = kind;
@@ -379,6 +393,23 @@ void labels_flush()
     for (size_t i = 0; i < n; i++)
         in[i] = g_queue[i].in;
     findx::layout(in.data(), (int)n, hud.data(), (int)hud.size(), sw, sh, out.data());
+    if (g_edge_fix) // BUG-1226: an arrow with no free place along its edge (the bottom bar spans it): above / below
+        for (size_t i = 0; i < n; i++) {
+            if (!g_queue[i].arrow || !out[i].hidden || out[i].why != 2)
+                continue;
+            std::vector<findx::Box> keep = hud;
+            for (size_t j = 0; j < n; j++)
+                if (j != i && !out[j].hidden)
+                    keep.push_back({in[j].box.x0 + out[j].dx, in[j].box.y0 + out[j].dy, in[j].box.x1 + out[j].dx,
+                                    in[j].box.y1 + out[j].dy});
+            findx::LabelIn one = in[i];
+            one.slide = findx::Slide::Up;
+            one.anchor_rule = false;
+            findx::LabelOut o2;
+            findx::layout(&one, 1, keep.data(), (int)keep.size(), sw, sh, &o2, 10);
+            if (!o2.hidden)
+                out[i] = o2;
+        }
     for (size_t i = 0; i < n; i++) {
         const Queued& q = g_queue[i];
         const findx::LabelOut& o = out[i];

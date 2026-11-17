@@ -9,7 +9,8 @@ screen edge to the partners off screen, the partners on the game's minimap.
      camera: the guest's game draws an arrow at the screen edge whose direction is the direction to the host's real
      position (the host game's own creature position, projected by the guest's game), within 8 degrees; the
      arrow's pixels in the guest's screenshot have the host's colour; the distance shown is about 80 m;
-  3. the guest next to the host with the host on its screen: no arrow, the name tag;
+  3. the guest next to the host with the host on its screen: no arrow, the name tag; and at every place the host's game
+     shows the guest: its name tag (not hidden: a partner at the screen's side edge kept neither, BUG-1226) or an arrow;
   4. the host switches all.partner_arrows off in play (live): the guest's game gets it and draws no arrow (pixels),
      on again: the arrow is back; Rivals mode on the guest's game: no arrow;
   5. minimap: each game's minimap (the game's own blip list, read back from the game's map) has the partner at the
@@ -19,7 +20,7 @@ screen edge to the partners off screen, the partners on the game's minimap.
   Tribe also (BUG-0939): the guest without a chief and with its pointer never put on the planet (position 0 0 0) has
   no arrow, tag, name label or minimap blip on the host's game; with its pointer on the planet it has them there.
 Twins: SPORE_FIX_OFF=find.arrows fails 2 (no arrow), find.colors fails 1 (each game its own colours), find.map
-fails 5 (no blip), find.placed fails the Tribe part (an arrow / tag and a blip at 0 0 0).
+fails 5 (no blip), find.edge_labels fails 3 (the host hides the arrow to the guest on its bottom bar), find.placed fails the Tribe part (an arrow / tag and a blip at 0 0 0).
 
   SPORE_LANE=9 python3 tools/tests/coop_find_partners.py [--stage creature]
 """
@@ -67,6 +68,27 @@ def row_of(con, pid):
         if int(r['id']) == pid:
             return r
     return None
+
+
+def shows(con, pid):
+    """BUG-1226: does this game show partner pid after the label layout of its last overlay pass: an arrow, or its name
+    tag, whose box is not hidden (a tag whose point is under the game's HUD is hidden by design and counts); (ok, text)"""
+    r = row_of(con, pid)
+    if not r:
+        return False, 'no row'
+    out = con.call('coop.find boxes')['out']
+    hud = [tuple(float(v) for v in m) for m in re.findall(r'^hud x0=(\S+) y0=(\S+) x1=(\S+) y1=(\S+)', out, re.M)]
+    kind = 'arrow' if r['kind'] == 'arrow' else 'player'
+    sx, sy = float(r['x']), float(r['y'])
+    if kind == 'player' and any(x0 <= sx <= x1 and y0 <= sy <= y1 for x0, y0, x1, y1 in hud):
+        return True, f'tag under the HUD ({sx:.0f}, {sy:.0f})'
+    if kind == 'arrow' and r['drawn'] != '1':
+        return False, f'arrow not drawn ({sx:.0f}, {sy:.0f})'
+    for m in re.finditer(r'^box kind=(\w+) id=(\d+) x0=(\S+) y0=(\S+) x1=(\S+) y1=(\S+) hidden=(\d)', out, re.M):
+        if m.group(1) == kind and int(m.group(2)) == pid:
+            return m.group(7) == '0', (f'{r["kind"]} at ({sx:.0f}, {sy:.0f}) box {m.group(3)},{m.group(4)}..{m.group(5)},'
+                                       f'{m.group(6)} hidden={m.group(7)}')
+    return False, f'{r["kind"]} at ({sx:.0f}, {sy:.0f}) with no label box'
 
 
 def me_of(con):
@@ -185,14 +207,20 @@ def creature(ck, host, guest, stage):
     hp = avatar(host)
     u, v = basis(hp)
     found = tag_dir = None
+    host_missed = []  # BUG-1226: places where the host's game showed neither the guest's tag nor an arrow to it
     for k in range(16):
         a = k * math.pi / 8
         guest.call('coop.abilities goto %.3f %.3f %.3f' % at(hp, u, v, a, 80.0))
         time.sleep(2.0)
         r = row_of(guest, 0)
-        print(f'  dir {k}: {r and (r["kind"], r["filled"], r["x"], r["y"], r["dist"])}', flush=True)
+        hs = wait(lambda: shows(host, 1)[0], 3) is not None
+        hs_text = shows(host, 1)[1]
+        print(f'  dir {k}: {r and (r["kind"], r["filled"], r["x"], r["y"], r["dist"])} | host shows the guest: {hs} '
+              f'({hs_text})', flush=True)
         if not r or not 65 < float(r['dist']) < 100:  # the goto found no ground there: not 80 m away
             continue
+        if not hs:
+            host_missed.append(f'dir {k}: {hs_text}')
         if r['kind'] == 'tag' and tag_dir is None:  # 3. the host on the guest's screen: the name tag, no arrow
             tag_dir = a
             shot(guest, f'find_{stage}_onscreen.png')
@@ -203,6 +231,8 @@ def creature(ck, host, guest, stage):
             if tag_dir is not None:
                 break
     ck(found is not None, 'a place 80 m from the host where the host is off the guest\'s screen, in front of it')
+    ck(not host_missed, f'the host\'s game shows the guest at every place 80 m away: its name tag or an arrow '
+                        f'(BUG-1226: a tag at the screen\'s side edge or an arrow on the bottom bar was hidden; missed {host_missed})')
     if found is not None:
         time.sleep(1.0)
         r = row_of(guest, 0)
