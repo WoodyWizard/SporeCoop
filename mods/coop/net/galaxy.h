@@ -23,7 +23,7 @@
 namespace net::galaxy {
 
 constexpr uint16_t kDefaultPort = 47900;
-constexpr uint32_t kProto = 2; // 2: stored worlds (decision 5Q A)
+constexpr uint32_t kProto = 3; // 2: stored worlds (decision 5Q A); 3: the hand-over (5V A)
 constexpr uint8_t kControl = 'G', kRelay = 'R';
 
 enum Type : uint8_t {
@@ -45,6 +45,8 @@ enum Type : uint8_t {
     XCHUNK = 15,   // u32 id, u32 index, the chunk (kChunk bytes, the last one shorter)
     XACK = 16,     // receiver -> sender: u32 id, u32 index (each chunk that arrived)
     XDONE = 17,    // receiver -> sender: u32 id, u8 ok, str8 why (stored / loaded, or why not)
+    HOSTMOVE = 18, // server -> the planet's other players: str8 planet, u16 the new host's slot (5V A: the host left;
+                   //   the new host loads the stored world; once it is READY the server sends them ROLE guest again)
 };
 constexpr uint8_t kHostRole = 1, kGuestRole = 2;
 

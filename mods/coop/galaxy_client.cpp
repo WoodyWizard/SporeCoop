@@ -50,6 +50,11 @@ static double g_up_at, g_next_upload, g_upload_every = 300;
 static bool g_leave_after, g_disconnect_after;
 static uint32_t g_uploads_done, g_downloads_done;
 static std::string g_last_upload;
+// 5V A: the planet's host changes (HOSTMOVE): this guest's session ended, it waits on the planet for the new host
+static bool g_waiting_host;
+static double g_waiting_since;
+static std::string g_pending_join; // join this address once the old session is closed
+static uint32_t g_handovers;
 static std::deque<std::pair<uint16_t, std::vector<uint8_t>>> g_queue; // relay packets for the session
 static uint64_t g_rx, g_tx, g_rx_bytes, g_tx_bytes, g_queue_dropped;
 
@@ -193,12 +198,32 @@ static void on_control(net::Reader& r)
         const uint32_t stored = r.u32();
         if (!r.ok())
             return;
+        const bool handover = g_planet == planet && (g_waiting_host || g_role == kGuestRole);
         g_planet = planet;
         g_role = role;
         g_host_slot = host;
         g_world_bytes = stored;
+        g_waiting_host = false;
         use_relay(true);
         std::string err;
+        if (handover && C.sess && C.sess->role() != net::Role::None) // (a guest of the old host: that session ends)
+            C.sess->leave("the planet's host changes");
+        if (handover) {
+            g_handovers++;
+            if (role == kGuestRole) { // joined from tick once the old session is closed
+                g_pending_join = slot_endpoint(host).str();
+                say("Joining " + planet + "'s new host...");
+                return;
+            }
+            say("You host " + planet + " now: its host left.");
+            if (role == kHostRole && !stored) { // (no stored world: host the one it plays, once its old session closed)
+                g_hstep = kLoading;
+                g_hstep_at = H->time_seconds();
+                g_left_stage = true;
+                g_ready_since = 0;
+                return;
+            }
+        }
         if (role == kHostRole) {
             if (stored) { // its world first: download, load, then host
                 g_hstep = kFetching;
@@ -214,6 +239,17 @@ static void on_control(net::Reader& r)
             else
                 say("Could not join " + planet + ": " + err);
         }
+    } else if (type == HOSTMOVE) { // 5V A: the host left; the new one loads the world, then the server sends ROLE
+        std::string planet = r.str8();
+        const uint16_t next = r.u16();
+        if (!r.ok() || planet != g_planet)
+            return;
+        g_waiting_host = true;
+        g_waiting_since = H->time_seconds();
+        g_host_slot = next;
+        if (C.sess && C.sess->role() != net::Role::None)
+            C.sess->leave("the planet's host changes");
+        say("The host of " + planet + " left: another player takes it over, wait a moment...");
     } else if (type == XBEGIN) { // the planet's stored world (FETCH)
         net::galaxy::XferIn in;
         if (!in.begin(r) || g_hstep != kFetching || (g_down.on && g_down.id == in.id))
@@ -263,6 +299,8 @@ static void on_control(net::Reader& r)
 
 static void reset_planet_steps()
 {
+    g_waiting_host = false;
+    g_pending_join.clear();
     g_hstep = kNoHost;
     g_down = {};
     g_up = {};
@@ -522,6 +560,20 @@ void tick(double now)
         pump(); // (while a planet session runs, its transport reads)
     loading_tick(now);
     upload_tick(now);
+    if (!g_pending_join.empty() && C.sess && C.sess->role() == net::Role::None) { // 5V A: the new host
+        std::string err, addr = g_pending_join;
+        g_pending_join.clear();
+        if (C.join && C.join(addr, err))
+            say("Joining " + g_planet + "...");
+        else {
+            say("Could not join " + g_planet + "'s new host: " + err);
+            leave_now();
+        }
+    }
+    if (g_waiting_host && now - g_waiting_since > 360) {
+        say("The new host of " + g_planet + " did not come: left it.");
+        leave_now();
+    }
     if (now >= g_next_ping) {
         g_next_ping = now + 2;
         send_control(control(PING));
@@ -537,7 +589,8 @@ void tick(double now)
     if (g_relay_on && C.sess) {
         if (C.sess->role() != net::Role::None)
             g_session_seen = true;
-        else if (g_session_seen && g_hstep != kLoading && g_hstep != kFetching) {
+        else if (g_session_seen && g_hstep != kLoading && g_hstep != kFetching && !g_waiting_host &&
+                 g_pending_join.empty()) {
             send_control(control(LEAVE));
             g_planet.clear();
             g_role = 0;
@@ -561,12 +614,12 @@ std::string status()
     std::string s = b;
     static const char* steps[] = {"-", "downloading", "loading", "hosting"};
     snprintf(b, sizeof b,
-             "\nworld: %s stored=%u KB down=%u/%u chunks upload=%s (%u/%u chunks) next upload in %.0f s, uploads %u, "
-             "downloads %u, last upload: %s",
-             steps[g_hstep], g_world_bytes >> 10, g_down.got, (unsigned)g_down.have.size(),
+             "\nworld: %s%s stored=%u KB down=%u/%u chunks upload=%s (%u/%u chunks) next upload in %.0f s, uploads %u, "
+             "downloads %u, hand-overs %u, last upload: %s",
+             steps[g_hstep], g_waiting_host ? " (waiting for the new host)" : "", g_world_bytes >> 10, g_down.got, (unsigned)g_down.have.size(),
              g_upstep == kUpIdle ? "idle" : g_upstep == kUpSaving ? "saving" : "sending", g_up.acked,
              g_up.on ? g_up.chunks() : 0u, g_hstep == kHosting ? g_next_upload - H->time_seconds() : 0.0,
-             g_uploads_done, g_downloads_done, g_last_upload.empty() ? "-" : g_last_upload.c_str());
+             g_uploads_done, g_downloads_done, g_handovers, g_last_upload.empty() ? "-" : g_last_upload.c_str());
     return s + b;
 }
 

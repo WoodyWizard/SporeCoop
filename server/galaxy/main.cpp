@@ -9,7 +9,8 @@
 // each planet's world (one file per planet in the worlds folder, kept across restarts): the host uploads it (its game
 // saves and sends the save folder, every few minutes and when it leaves), and the next first player on the planet
 // downloads it, loads it and hosts it. Players entering while the host is not hosting yet are asked to wait.
-// Not yet: handing a planet's host over while players stay, identities and bans across planets.
+// Decision 5V A: when the host leaves (or times out) and players stay, the next one hosts the stored world (the host
+// uploads it before it leaves) and the others join it once it is READY. Not yet: identities and bans across planets.
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
@@ -109,13 +110,28 @@ static void leave_planet(Client& c, const char* why)
         if (p.host == c.slot) {
             p.host = 0;
             p.ready = false;
-            for (uint16_t m : p.members) { // their session's host is gone (the hand-over is a later step)
-                Writer w = control(HOSTGONE);
-                w.str8(c.planet);
-                send(g_clients[m], w);
-            }
-            say("planet '%s': its host %u '%s' left (%s), %zu player(s) without a host", c.planet.c_str(), c.slot,
-                c.name.c_str(), why, p.members.size());
+            if (!p.members.empty()) { // 5V A: the hand-over: the next player hosts the stored world, the others wait
+                const uint16_t next = *p.members.begin();
+                p.host = next;
+                auto st = g_stored.find(c.planet);
+                Writer role = control(ROLE);
+                role.str8(c.planet);
+                role.u8(kHostRole);
+                role.u16(next);
+                role.u32(st == g_stored.end() ? 0 : st->second.size);
+                send(g_clients[next], role);
+                for (uint16_t m : p.members)
+                    if (m != next) {
+                        Writer w = control(HOSTMOVE);
+                        w.str8(c.planet);
+                        w.u16(next);
+                        send(g_clients[m], w);
+                    }
+                say("planet '%s': its host %u '%s' left (%s): %u '%s' hosts it now (%s), %zu player(s) wait",
+                    c.planet.c_str(), c.slot, c.name.c_str(), why, next, g_clients[next].name.c_str(),
+                    st == g_stored.end() ? "no stored world: the one it plays" : "the stored world", p.members.size() - 1);
+            } else
+                say("planet '%s': its host %u '%s' left (%s)", c.planet.c_str(), c.slot, c.name.c_str(), why);
         } else
             say("planet '%s': %u '%s' left (%s)", c.planet.c_str(), c.slot, c.name.c_str(), why);
         if (p.members.empty()) {
@@ -324,6 +340,16 @@ static void on_control(const Endpoint& from, Reader& r)
         if (it != g_planets.end() && it->second.host == c->slot && !it->second.ready) {
             it->second.ready = true;
             say("planet '%s': hosted by %u '%s'", c->planet.c_str(), c->slot, c->name.c_str());
+            for (uint16_t m : it->second.members) // 5V A: the players who waited for the hand-over join it
+                if (m != c->slot) {
+                    Writer w = control(ROLE);
+                    w.str8(c->planet);
+                    w.u8(kGuestRole);
+                    w.u16(c->slot);
+                    w.u32(0);
+                    send(g_clients[m], w);
+                    say("planet '%s': %u '%s' joins its new host", c->planet.c_str(), m, g_clients[m].name.c_str());
+                }
         }
     } else if (type == FETCH) { // the planet's host wants its stored world
         auto it = g_planets.find(c->planet);
