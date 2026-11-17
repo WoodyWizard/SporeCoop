@@ -3584,4 +3584,17 @@ GOG 2024 / Steam (3010a413), read at runtime from a QA game's memory (SporeKit `
 * ✔ The slot's GGEUserData.dat is a DBPF (version 3) with one compressed record (418 bytes on disk) naming the saved
   games ("Samuth" readable in it).
 * ✔ A .spo of another galaxy copied into the slot is not listed: the same 8 entries, the copy ignored.
+* ✔ (Ghidra 2026-11-17, the Steam code dumped on TITAN, docs/05-re-notes.md#re-notes-ghidra-windows) Where the entries
+  come from: `SporeCoop::GGE_FillSaved` 0xDF7F30 fills one entry per star id in the star manager's list +0xF0..+0xF4
+  (the slot's saved games), `SporeCoop::GGE_FillEmpty` 0xDF7CB0 the empty stars, `SporeCoop::GGE_MakePanels` 0xDF9200
+  their panels. The entry: +0x00 the planet's name (eastl::wstring, the save is "<name>.spo" of the slot), +0x10 an
+  empty star's name, +0x3C the planet's species key and +0x48 its cSpeciesProfile (the creature on the panel), +0x80
+  the position, +0x8C the save's state (0 ok, 3 missing), +0xA8 the tech level (0 none / Cell, 1 Creature, 2 Tribe,
+  4 Civ, 5 Space; 5 also for empty stars), +0xAC a save, +0xAD shown. Supersedes the "?" guesses above for +0x00,
+  +0x10 and +0x3C.
+* ✔ Play on a saved planet: the menu's Play 0xDEC130 calls `SporeCoop::GGE_PlayByName` 0xDEBE70 (thiscall, the planet
+  name, ret 4), the only caller of LoadGameByName. A mod can fill the entries itself before the panels are made and
+  take the Play by the name (decision 5X B, docs/12-server-and-players.md#server-galaxy-menu-spike).
+* ~ The dump holds SporeKit's hooks: a hooked function (GGE_RebuildPlanets here) starts with a jump out of the image and
+  does not decompile; read those with `asm` past the first instruction, or dump a game before the mod hooks it.
 
