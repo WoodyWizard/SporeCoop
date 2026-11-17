@@ -1364,3 +1364,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9248](BUG-9248-creature-a-partner-s-pack-takes-the-target-the-p.md) | fixed | bug | Creature | 2026-11-16 | 0.7.14.1-lineages64-dev | Creature: a partner's pack takes the target the partner hits but does not go and fight it |
 | [BUG-9249](BUG-9249-creature-the-host-s-pack-stays-full-summoned-cou.md) | fixed | bug | Creature | 2026-11-16 | 0.7.14.1-lineages64-dev | Creature: the host's pack stays full (summoned count left in the save), recruits refused |
 | [BUG-9250](BUG-9250-creature-a-second-summon-flock-while-one-is-out.md) | fixed | bug | Creature | 2026-11-17 | 0.7.14.1-lineages64-dev | Creature: a second Summon Flock while one is out does nothing and spends the ability; lock it per party with a message |
+| [BUG-9251](BUG-9251-host-no-way-to-remove-a-player-kick-or-keep-one.md) | open | bug | all | 2026-11-17 |  | Host: no way to remove a player (kick) or keep one out (ban) |

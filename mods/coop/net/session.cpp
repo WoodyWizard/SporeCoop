@@ -439,6 +439,27 @@ void Session::broadcast_reliable(uint8_t type, const Writer& w, int except_id)
             p->conn.send_reliable(type, w);
 }
 
+bool Session::kick(uint8_t id, const std::string& text)
+{
+    if (role_ != Role::Host)
+        return false;
+    for (auto& p : peers_)
+        if (p->accepted && p->id == id && !p->bye && !p->kick_at) {
+            Reject rej;
+            rej.reason = REJ_VERSION; // (every client shows the text of this reason)
+            rej.text = text;
+            Writer w;
+            rej.write(w);
+            p->conn.send_reliable(MSG_REJECT, w);
+            const uint32_t t = now();
+            flush(t);
+            p->kick_at = t + 1000; // (its resends meanwhile; then gone even if it never answers)
+            logf(cb, "player %u (%s) removed by the host: %s", id, p->name.c_str(), text.c_str());
+            return true;
+        }
+    return false;
+}
+
 bool Session::send_reliable_to(uint8_t id, uint8_t type, const Writer& w)
 {
     for (auto& p : peers_)
@@ -1179,10 +1200,11 @@ void Session::update()
     } else {
         for (size_t i = 0; i < peers_.size();) {
             auto& p = peers_[i];
-            bool dead = p->bye || (p->accepted ? now - p->conn.last_recv_ms > timeout_ms
-                                               : now - p->conn.created_ms > 10000);
+            const bool kicked = p->kick_at && (int32_t)(now - p->kick_at) >= 0;
+            bool dead = p->bye || kicked || (p->accepted ? now - p->conn.last_recv_ms > timeout_ms
+                                                         : now - p->conn.created_ms > 10000);
             if (dead)
-                drop_peer(i, p->bye ? 0 : 1);
+                drop_peer(i, p->bye ? 0 : kicked ? 3 : 1);
             else
                 i++;
         }

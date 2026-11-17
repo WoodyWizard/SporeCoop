@@ -421,3 +421,21 @@ switch off (`net_tests --off <name>`, and with `--nofix`).
   every `enum Kind` of the space sources and fails for a kind without a direction.
 * **World effect scale** (BUG-1048, `effects.scale_check`): a received pool-5 effect needs 0 < scale <= 1000 (the
   sender's range, `copy_transform`), `net::effect_xf_ok`.
+
+## Kick and ban (2026-11-17, feat/lineages-47)
+<a id="net-kick-ban"></a>
+
+BUG-9251, decision 5I A. `Session::kick(id, text)` (host): MSG_REJECT with the text goes to that guest (any client
+leaves on a REJECT at any time, also after WELCOME, and shows its text), is flushed at once, and the peer is dropped
+1 s later (`Peer::kick_at`, drop reason 3) whether it answered or not. mods/coop/bans.cpp: the host's chat commands
+`/kick`, `/ban`, `/unban`, `/bans` (also `coop.kick|ban|unban|bans` in the console; `coop.say /ban X` takes the chat's
+path), a ban list per host profile (SporeCoop\bans.txt next to identity.bin: identity, name, date), and a check once a
+second that removes a player whose identity (MSG_IDENTITY, sent right after the join) is on the list.
+
+* ✔ Runtime (TITAN host, TITAN partner, the MSI over Tailscale): a kicked player leaves with "The host removed you from
+  the game." in its feed and does not rejoin by itself; it can join again (a kick is not a ban). A banned player that
+  joins again is removed 0.34 s after its join (its identity came 0.2 s after the join). `/unban` lets it in again. A
+  partner's `/kick` answers "Only the host can remove players." and sends no chat line.
+* ~ A banned player is in for a moment: the others see it join and leave, and the host starts its world share. A
+  refusal at HELLO would need the identity in the HELLO (a protocol change; same builds only, so possible later).
+* ~ A ban is only as strong as the identity: a new Spore profile has a new one.

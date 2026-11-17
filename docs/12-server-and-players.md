@@ -149,6 +149,7 @@ moved more than 0.5 m (scratchpad tool spike0.py; to go into tools/qa_win when p
   ability's own values (today only a cap, kMaxHit), how often (rate limits), summons and spawns only through the server.
 * What cannot be stopped: a modified game can lie inside those limits (a perfect aim, never missing a beat). No game that
   lets players' PCs simulate can prevent that; the big online games add logging, reports and bans.
+* Kick and ban are built (BUG-9251, docs/04-netcode.md#net-kick-ban): the host's `/kick`, `/ban`, `/unban`, `/bans`.
 * For co-op with friends: the checks above are plenty. For public servers later: logging of check failures, kick and
   ban tools for the server's owner, then more checks where players find holes.
 
@@ -190,6 +191,46 @@ looks. Phase 0 is small (one to two days) and goes first.
   needs its own tests for each.
 * 140 host checks to sort: slow, careful work; done stage by stage, Creature first.
 * A 32-bit game per planet: memory per instance limits players and creatures per server.
+
+## The server's game copy, its memory and its CPU (2026-11-17)
+<a id="server-copy"></a>
+
+Owner, 2026-11-17: "couldn't we use any sort of launcher we want for the server? Meaning we can get 4GBs, or even more?
+We don't need to worry about Steam for a server right? Would Spore consume less CPU if theres a host / server running
+the instance?"
+
+* 4 GB yes, more no: Spore is a 32-bit program. The Large Address Aware flag in the exe's header gives it 4 GB on 64-bit
+  Windows instead of 2 (docs/INSTALL.md#install-laa, tools/laa.py; the QA copy has it off: 0x102). No flag or launcher
+  takes a 32-bit program past 4 GB; more memory means more server processes (one per planet), which the design already
+  has.
+* No Steam needed: the GOG 2024 build is the same code as Steam's (docs/05-re-notes.md 5.1.1) and is not wrapped in
+  Steam's copy protection, so a server copy of it runs without Steam and can carry the LAA flag safely. The Steam exe
+  is encrypted on disk (its loader decrypts it) and needs Steam running. Each server still needs its own owned copy.
+* CPU on the players' PCs: the world's AI is cheap (0.1 s a minute on the host); each player's frame is mostly its own
+  drawing and animation of what it sees, which a server cannot take over. A server takes the extra work off whoever
+  hosts today and keeps the world running when that player leaves; it does not make the players' games lighter.
+* CPU on the server: a hidden server costs what a shown game costs (22 % of a core at 10 FPS on TITAN); cutting the
+  drawing and running at a low tick rate would lower it (phase 5).
+
+## Galaxy and planets for the MMO (2026-11-17)
+<a id="server-galaxy"></a>
+
+Owner, 2026-11-17: "We'd need to rework the galaxy menu too for MMO version. We'd need to have multiple planets working.
+Player starts Spore & presses F9 / SporeCoop, connects to the Galaxy Server, Galaxy either becomes the server's loaded
+worlds that you can select from or maybe a new menu to spawn the player somewhere? I'm unsure."
+
+* Two kinds of server: a **galaxy server** that is not Spore at all (a small program: the list of planets and their
+  servers, players' identities, parties, bans, which planet a player was on; it can run anywhere, a cheap Linux VPS
+  too), and **planet servers** (hidden Spore instances, one per planet that has players, on a Windows PC; started when
+  a player goes there, stopped some minutes after the last one leaves, the planet saved).
+* The player's way in, recommended: Spore, F9, "Online" connects to the galaxy server; a returning player goes back to
+  the planet they were on; a new player gets "Find me a planet" (the galaxy server picks one with room and players of
+  a similar stage) and the list of live planets (name, stage, players) to pick from. The planet server then sends its
+  world, as a host does today.
+* Spore's own galaxy screen comes later, if ever: it shows saves and planets of one save, and reworking it is UI work
+  in the dark (docs/08-ui.md). The Co-op window's list does the job first.
+* Space: flying to another planet becomes a hand-over from one planet server to another through the galaxy server
+  (phase 6).
 
 ## Questions for the owner
 <a id="server-questions"></a>
