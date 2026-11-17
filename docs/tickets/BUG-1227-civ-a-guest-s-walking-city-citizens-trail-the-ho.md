@@ -33,7 +33,11 @@ snapshot place, again only when that goal moved 2 m or after 1.5 s, and puts a c
 Inferred: the share of such pairs grows with the crowd's walking (right after a load, `pair distances: median 4-5 m`).
 
 ## Fix
-None yet. Options: a shorter walk lag for Civ citizens (a goal given every snapshot when it moved 1 m, a put beyond 6 m),
+None yet. Tried (fix/w51-citizens, not kept): after each MoveTo of a walking copy SetDesiredSpeed(host speed + up to
+3 m/s while behind) (switch civ.citizen_catchup): lab 20261117-125759, 4 runs: the runs' median pair distance 0.6-1.9 m
+against 0.5-2.6 m without (11 runs), crossings still with copies 5-6 m off (`the host's copy 16 5.5 m away`, two rounds
+6 s apart, so not a speed lag alone: a copy that stays 5 m off for 6 s is held by something else, the game's own idle
+walk of the citizen is the suspect). Options: a shorter walk lag for Civ citizens (a goal given every snapshot when it moved 1 m, a put beyond 6 m),
 or the size check on pairs that are each other's copy by more than one round. The test prints the cause of every size
 pair (what the guest's citizen is bound to, how far, its size).
 
