@@ -126,11 +126,13 @@ struct XferOut {
         const uint32_t end = std::min<uint32_t>((uint32_t)sent_ms.size(), next_unacked + kWindow);
         for (uint32_t i = next_unacked; i < end; i++) {
             uint32_t& t = sent_ms[i];
-            if (t == 1 || (t && now - t < kResendMs))
+            // (signed: the stamp `now | 2` was up to 2 ms ahead of the clock, and `now - t` wrapped to a huge age: a
+            // fresh chunk counted as overdue and went again)
+            if (t == 1 || (t && (int32_t)(now - t) < (int32_t)kResendMs))
                 continue;
             if (t)
                 resent++;
-            t = now | 2; // (never 0 or 1)
+            t = now < 2 ? 2 : now; // (never 0 or 1)
             Writer w = control_msg(XCHUNK);
             w.u32(id);
             w.u32(i);
