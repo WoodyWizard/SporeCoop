@@ -5286,3 +5286,32 @@ encrypted, no GOG 2024 exe on TITAN).
   0xE2B430); the relay 0xC42E40 3 (TakeDamage 0xAF75E0 and two more in 0xAF32F0 / 0xAF3CD0); GrowMembers 7;
   PosseMemberCanDefend 5; AddPosseMember 0xA13430 only from AddMember. Most callers are in the Creature range
   0xC2xxxx-0xC8xxxx; the 0xDExxxx-0xE3xxxx ones are not identified (UI or later stages).
+
+## A pack per player: what the game's pack needs (2026-11-17, feat/lineages-47)
+<a id="creature-pack-per-player"></a>
+
+Decision 5CD, BUG-9248. Steam code dumped live (Steam = GOG 2024 - 0x110000), runtime on TITAN and the MSI.
+
+* ✔ The pack manager has no per-frame update: only the Pack panel (0xC1B950) and the drama manager (0xC42270) ask for it
+  every frame (`coop.gpack callers`); nothing else reads its global directly. Its +8 interface is the save (attribute
+  tables 0x1473D30).
+* ✔ AddMember (Steam 0xC442E0): a summoned creature (its herd +0x192, or +0xE68) counts +0x1C up and has no limit; any
+  other is refused when list size - +0x1C >= 3 (a fixed 3, not +0x18) or when it is listed; it adds the portrait to the
+  Pack panel through App::cCreatureModeStrategy::Get() +0x68 (skipped when null), a name, the first-pack hint
+  0x533535DA. RemoveMember (0xC43440) counts down for a summoned one and removes the portrait the same way.
+* ✔ Creature_PlayerCommand (GOG 0xC032F0) is how the player's click becomes a pack order: the command stimulus on the
+  avatar, then cPosseSimulator_Relay; the relay's attack case reads the avatar's own target (SetTarget, +0xE7C), not
+  the command's.
+* ✔ Following: a creature's update (Steam 0xAF9570 from cCreatureAnimal::Update) posts stimulus 0x4000000 (value 5.0)
+  on its own brain from the sensed creature with the avatar mark (+0xB58 & 0x200); the host's recruit carried it from
+  the host's creature (brain +0x184 = the sender of slot 6). Not reproduced for a partner: the mark lent inside its
+  party, or the stimulus posted by hand at 4 Hz, did not make the member follow the puppet (posted by hand it walked
+  off). The mod walks members back instead.
+* ✔ The pack's bite: with the same recruits (06539202) and the same order the host's pack landed every hit
+  (`coop.gpack watch`: 6 hits by the two members), a partner's pack none (the members walked to 1.7 m and stood),
+  with its leader beside the target and with the members' own update inside or outside the party. Not found: which
+  check outside the swapped state (pack manager, list, leader, family herd, panel) stops the bite.
+* ✔ A summon's "done?" waits until its flock is 100 m from the leader; a pack kept at its leader's side keeps it active,
+  and the world has one summon event: while it runs nobody summons (the host's own summon in single player as well).
+* ✔ Wild creatures from `coop.npc spawn` live in herds of the mod's kind and are never saved (savestrip): a save test
+  needs creatures of the world's own nests.

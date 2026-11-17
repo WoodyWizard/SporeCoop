@@ -25,6 +25,7 @@ Observed (runtime): the posse simulator (cPosseSimulator_Get) read +0x18 = 3 and
 Inferred: left by a flock of an older build (before BUG-9233's put-back) whose count never went down; any world played with those builds can keep it.
 
 ## Fix
+2026-11-17: on every game (the guests too: a partner's own Pack panel counts its summoned mirrors there; a guest stood at -5 after hot reloads and its pack refused every member), and set to the number of summoned creatures the list holds, not only cleared.
 creature.posse_count_heal (guest_pack.cpp heal_posse_count): on the host (and alone) in the Creature stage, every 2 s, when no summon event ran its update in the last 2 s (drama::summon_running), a summoned count above 0 is cleared and logged. The game counts a flock up at its start and down at its end, so the count is 0 whenever no summon runs. `coop.fix creature.posse_count_heal off`: kept.
 
 ## Verification
@@ -34,3 +35,4 @@ no-fail-run: Windows QA by hand (no lab on this PC); the recruit after the autom
 
 ## History
 - 2026-11-16: opened and fixed during the pack attack QA (feat/lineages-47, unreleased).
+- 2026-11-17: on the guests too, set from the list (decision 5CD).

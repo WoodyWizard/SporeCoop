@@ -32,6 +32,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
 void host_tick(double now);
 // host: where `player` hatches and respawns: its seat's own nest, else the host's (false: no home nest known)
 bool home_for(uint8_t player, net::Vec3& out);
+// host (decision 5CD phase 4): `player`'s own nest herd (its family), null when it has none here (the host's species)
+void* family_herd(uint8_t player);
 bool enabled();
 void on_world_change();
 std::string status();

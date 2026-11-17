@@ -3894,3 +3894,15 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 
 * BUG-9248. The partner's summoned flock follows the partner and is told the target when the partner hits a creature, but stays at the partner's side instead of running at it: the game obeys its pack's attack order only from members of its own pack, and the partner's flock is kept out of it (BUG-9233). Decision 5C.
 * Reproduce: host + partner in the creature stage, `coop.gpack summon <player>` on the host, the partner hits a creature 20-90 m away (`coop.npc hit <id> 1` on the partner): `coop.gpack` shows the target, the members' distance to the partner stays 1-2 m.
+
+## Creature: a partner's own pack does not bite yet; one summon at a time per world (2026-11-17, feat/lineages-47)
+<a id="issue-partner-pack-no-bite"></a>
+
+* BUG-9248, decision 5CD. A partner's pack is its own now (it follows, takes its summons and recruits, shows in its Pack
+  panel, is kept in the save), but its members only walk up to what the partner attacks: they do not bite. The host's
+  own pack does.
+* The world has one Summon Flock event: while one player's summon runs (about two minutes), another player's summon
+  does nothing.
+* Reproduce: host + partner, `coop.gpack recruit <player> <id>` with two creatures of an attacking species, a test
+  creature beside the partner, `coop.gpack watch <id>`, the partner's `coop.npc hit <id> 1`: no "watched ... hit"
+  line from the members; with `coop.npc recruit <id>` (the host's pack) and `coop.gpack hostorder <id>` they hit.

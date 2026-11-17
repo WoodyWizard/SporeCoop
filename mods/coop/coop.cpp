@@ -9921,9 +9921,32 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gc.sess = &g_sess;
         gc.puppet_of = pc.puppet_of;
         gc.notice = [](const std::string& t) { notice(t, -1); };
+        gc.world = [] { return g_world; };
         guest_pack::init(H, M, gc);
         H->command_add(M, "coop.gpack", "coop.gpack [summon <guest> | recruit <guest> <npc id>] - the guests' packs the host runs (BUG-9129); summon / recruit: tests (host)",
                        [](void*, int argc, const char* const* argv, SkOut* out) {
+                           if (argc > 2 && !strcmp(argv[1], "watch")) { // tests (decision 5CD): who hits NPC <id>
+                               npc::g_damage_watch = npc::host_npc((uint16_t)atoi(argv[2]));
+                               H->out_printf(out, "watching %p\n", npc::g_damage_watch);
+                           }
+                           if (argc > 2 && !strcmp(argv[1], "hostorder")) { // tests (decision 5CD): the same for the host's own
+                               void* t = npc::host_npc((uint16_t)atoi(argv[2]));       // creature (its click: target, command)
+                               guest_pack::host_command(t);
+                               H->out_printf(out, "host order at %p\n", t);
+                           }
+                           if (argc > 3 && !strcmp(argv[1], "order")) { // tests (decision 5CD): the guest's attack command as it
+                               void* t = npc::host_npc((uint16_t)atoi(argv[3])); // arrives from its game (K_PACKCMD 0x10)
+                               guest_pack::pack_command((uint8_t)atoi(argv[2]), 0x10u, 0u, 3.4028235e38f, 0u, 0u, t);
+                               H->out_printf(out, "order sent to %p\n", t);
+                           }
+                           if (argc > 2 && !strcmp(argv[1], "ctx")) // tests (decision 5CD)
+                               guest_pack::set_ctx_test(atoi(argv[2]) != 0);
+                           if (argc > 2 && !strcmp(argv[1], "follow")) // tests (decision 5CD): the follow stimulus by hand
+                               guest_pack::set_follow_test(atoi(argv[2]) != 0);
+                           if (argc > 1 && !strcmp(argv[1], "callers")) { // tests (decision 5CD)
+                               H->out_printf(out, "%s", guest_pack::callers(argc > 2 && !strcmp(argv[2], "start")).c_str());
+                               return 0;
+                           }
                            if (argc > 2 && !strcmp(argv[1], "herd"))
                                guest_pack::set_herd_fix(atoi(argv[2]) != 0);
                            if (argc > 2 && !strcmp(argv[1], "summon"))

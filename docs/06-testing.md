@@ -8950,3 +8950,18 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
 * The QA copy's Dorger.spo (Game7, the owner's world copy) loads with the host at 0 food / low health: it starves or is
   killed within a minute, and while the host is on its death screen every host NPC freezes (the guest's proxies stand
   still). Click the check mark (1243, 920 at 1280 x 960) before testing NPC behaviour there.
+
+## A pack per player: test commands and tools (2026-11-17, feat/lineages-47)
+<a id="testing-pack-per-player"></a>
+
+* Host: `coop.gpack` (parties, members, the guest's own Pack panel counters on a guest), `coop.gpack summon|recruit
+  <player> ...`, `coop.gpack order <player> <npc id>` (the partner's forwarded attack order), `coop.gpack hostorder <npc
+  id>` (the host's own), `coop.gpack watch <npc id>` (every hit on it logged with its attacker), `coop.gpack ctx 0|1`
+  (members update outside / inside their party), `coop.gpack follow 0|1` (the follow stimulus by hand), `coop.gpack
+  callers start|stop` (who asks for the pack manager), `coop.drama summon|endsummon`.
+* Code without Ghidra: the decrypted Steam code dumped from a running QA game with ReadProcessMemory (0x401000 to
+  0x1340000) and searched offline for rel32 call sites and immediates, disassembled with llvm-objdump (2026-11-17,
+  scratchpad scripts dumptext.py, xrefs.py, imm.py, dis2.sh); much faster than `mem.read` per call.
+* Pitfalls: every `mod.reload coop` forgets the parties; their members keep the pack bit (cleared within 5 s since,
+  orphans) and a running summon is no longer tracked (ended 60 s past its time since). The join sends the world twice
+  (about 20 s apart): wait for the second before testing. `coop.npc spawn` creatures are never saved.

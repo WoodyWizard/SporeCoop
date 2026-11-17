@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -13,6 +15,13 @@
 #include "drama.h"
 #include "modes.h"
 #include "net/interp.h"
+#include "net/protocol.h"
+#include "npc.h"
+#include "creations.h"
+#include "home_nests.h"
+#include "identity.h"
+#include "player_rules.h"
+#include "savestrip.h"
 #include "sporekit_game.hpp"
 
 namespace guest_pack {
@@ -55,6 +64,7 @@ struct Member {
     void* target = nullptr;     // what it was told to attack
     double target_until = 0;
     double next_move = 0;
+    double next_follow = 0; // decision 5CD
 };
 static std::unordered_map<void*, Member> g_members;
 static uint32_t g_summons, g_summoned, g_recruits, g_assists, g_defends, g_leashed, g_teleports, g_dropped;
@@ -62,6 +72,15 @@ static uintptr_t a_DramaGet, a_StartKind, a_SetHerd;
 static uint32_t g_herd_moves;
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
+static uintptr_t a_PossePtr, a_PosseCtor, a_PosseInit, a_PosseRemove, a_AddMember, a_PosseGet, a_PlayerCmd, a_PostStim; // decision 5CD
+static uint32_t g_follow_posts;
+static bool g_follow_test; // tests: `coop.gpack follow 1`
+static size_t ai_enter(void* c);     // decision 5CD (below)
+static void before_destroy(void* c);
+static void save_start();
+static void save_end();
+static void send_lists(double now, bool force);
+static void party_leave(size_t tok);
 
 static bool alive(void* c, const Member& m)
 {
@@ -96,7 +115,22 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_SetHerd = H->sym("SporeCoop::Creature_SetHerd");
     a_CmdStim = H->sym("SporeCoop::CreatureCommandStimulus"); // BUG-9248
     a_CanDefend = H->sym("SporeCoop::PosseMemberCanDefend");
+    // decision 5CD
+    a_PossePtr = H->sym("SporeCoop::cPosseSimulator_ptr");
+    a_PosseCtor = H->sym("SporeCoop::cPosseSimulator_ctor");
+    a_PosseInit = H->sym("SporeCoop::cPosseSimulator_Init");
+    a_PosseRemove = H->sym("SporeCoop::cPosseSimulator_RemoveMember");
+    a_AddMember = H->sym("SporeCoop::cPosseSimulator_AddMember");
+    a_PosseGet = H->sym("SporeCoop::cPosseSimulator_Get");
+    a_PlayerCmd = H->sym("SporeCoop::Creature_PlayerCommand");
+    a_PostStim = H->sym("SporeCoop::BT_PostStimulus");
+    if (!a_PossePtr || !a_PosseCtor || !a_PosseInit || !a_PosseRemove || !a_AddMember || !a_PosseGet)
+        H->log(M, SK_WARN, "guest_pack: a pack symbol is missing: partners' packs stay the mod's (decision 5CD off)");
+    game::set_party_context(ai_enter, party_leave);
+    game::set_before_destroy(before_destroy);
+    savestrip::add_save_hooks(save_start, save_end);
 }
+
 
 bool enabled() { return g_fix; }
 
@@ -148,7 +182,7 @@ static void join(uint8_t guest, void* c, bool summoned)
     m.summoned = summoned;
     m.target = nullptr;
     m.next_move = 0;
-    if (g_herd_fix)
+    if (g_herd_fix && !party_mode()) // (5CD: a member keeps its own herd, as in the host's pack)
         into_puppet_herd(c, guest);
 }
 
@@ -165,6 +199,481 @@ static std::vector<void*> host_posse()
         return v;
     v.assign(b, e);
     return v;
+}
+
+// ---------------------------------------------------------------- decision 5CD: a pack per player
+// Owner 2026-11-16: "Every player will have their own creature and it will feel like single player vanilla ... everyone
+// is a host of their parties." The game has one pack: the pack manager ([cPosseSimulator_ptr]), its member list
+// (cGameNounManager +0x5C / +0x60 / +0x64) and its leader (the avatar, +0x54) (docs/re/creature.md#creature-pack-map).
+// Only a creature in that list obeys the pack's attack order (BUG-9248). Each partner gets a pack manager of its own (the
+// game's ctor and init) and a member list of its own; while the game's pack code runs for a partner (its members' AI
+// ticks, its recruit, its Summon Flock's start / update / end, the attack order) those three are the partner's, so the
+// game runs a single-player pack for it: its size limit, its summons, following and fighting. The host's own pack never
+// holds a partner's member. `coop.fix creature.party_packs off`: 63-dev's guest pack (members kept out of every pack,
+// leashed by the mod, the flock event ended at the hand-over).
+static bool g_party = true;
+COOP_FIX("creature.party_packs", "BUG-9248", g_party,
+         "creature: each partner has a pack of its own that the game runs as in single player (follows, fights, takes its summons and recruits)");
+// phase 4: the partner's family (its own nest herd) is the game's avatar herd inside its party, and its members think
+// inside that party (their parent is the partner, as the host's family's is the host). `coop.fix creature.party_family off`.
+static bool g_family_fix = true;
+COOP_FIX("creature.party_family", "BUG-9248", g_family_fix,
+         "creature: a partner's own family (its nest) treats the partner as its parent, as the host's does the host");
+static std::unordered_map<void*, uint8_t> g_family_of; // host: a partner's nest herd -> that partner (1 s old at most)
+static double g_next_family;
+static uint32_t g_family_enters;
+struct Party {
+    alignas(16) uint8_t posse[0x60] = {}; // the partner's cPosseSimulator (0x58 bytes, the game's ctor)
+    bool made = false;
+    void* list[3] = {nullptr, nullptr, nullptr}; // its member list (begin, end, capacity; the game's allocations)
+};
+static std::unordered_map<uint8_t, std::unique_ptr<Party>> g_parties;
+struct Frame {
+    uint8_t player;
+    size_t mark;
+    void* posse;
+    void* list[3];
+    void* avatar;
+    void* puppet;
+    void* lent;
+    void* herd = nullptr; // the avatar herd before (phase 4)
+    uint8_t* strategy = nullptr; // the creature mode strategy whose pack panel (+0x68) is hidden meanwhile
+    void* panel = nullptr;
+    bool family = false;
+};
+static std::vector<Frame> g_frames;
+static uint32_t g_enters, g_parties_made, g_frames_lost, g_party_removed, g_party_freed;
+
+static Party* party_of(uint8_t p, bool make)
+{
+    auto it = g_parties.find(p);
+    if (it != g_parties.end())
+        return it->second.get();
+    if (!make)
+        return nullptr;
+    auto& slot = g_parties[p];
+    slot = std::make_unique<Party>();
+    return slot.get();
+}
+
+static void* host_posse_obj() { return a_PosseGet ? skg::cdecl_call<void*>(a_PosseGet) : nullptr; }
+
+static void* party_posse(Party& pt)
+{
+    void* host = g_frames.empty() ? host_posse_obj() : g_frames.front().posse;
+    if (!host || !a_PossePtr || !a_PosseCtor || !a_PosseInit)
+        return nullptr;
+    if (!pt.made) {
+        void** gp = (void**)a_PossePtr;
+        void* was = *gp;
+        skg::thiscall<void*>(a_PosseCtor, (void*)pt.posse);
+        *gp = was; // (the ctor makes itself the world's pack manager)
+        skg::thiscall<void>(a_PosseInit, (void*)pt.posse);
+        pt.made = true;
+        g_parties_made++;
+        H->log(M, SK_INFO, "guest_pack: a pack manager of its own made at %p (decision 5CD)", (void*)pt.posse);
+    }
+    skg::field<int32_t>(pt.posse, 0x18) = skg::field<int32_t>(host, 0x18); // its size limit (the host's brain level for now)
+    return pt.posse;
+}
+
+static void** list_slot(void* nm, int i) { return &skg::field<void*>(nm, 0x5C + 4 * i); }
+
+// the game's pack is the player's own until party_leave(token); 0: not entered (no puppet, the switch off, inside it)
+static size_t party_enter(uint8_t p)
+{
+    void* nm = game::noun_manager();
+    void* pup = C.puppet_of ? C.puppet_of(p) : nullptr;
+    if (!g_party || !g_fix || !nm || !pup || !a_PossePtr || (!g_frames.empty() && g_frames.back().player == p))
+        return 0;
+    Party* pt = party_of(p, true);
+    void* posse = party_posse(*pt);
+    if (!posse)
+        return 0;
+    Frame f{p, game::swap_depth(), *(void**)a_PossePtr, {*list_slot(nm, 0), *list_slot(nm, 1), *list_slot(nm, 2)},
+            skg::field<void*>(nm, game::kNounAvatarOff), pup, nullptr};
+    game::swap_open(game::swap_undo_u32, (void*)a_PossePtr, (uintptr_t)f.posse, "party pack manager");
+    for (int i = 0; i < 3; i++)
+        game::swap_open(game::swap_undo_u32, list_slot(nm, i), (uintptr_t)f.list[i], "party pack list");
+    game::swap_open(game::swap_undo_u32, &skg::field<void*>(nm, game::kNounAvatarOff), (uintptr_t)f.avatar, "party leader");
+    // a puppet of the partner's own creature has no archetype tuning (+0xE84): it borrows the avatar's, as in the AI swap
+    void*& tun = skg::field<void*>(pup, 0xE84);
+    if (!tun && f.avatar && f.avatar != pup) {
+        f.lent = skg::field<void*>(f.avatar, 0xE84);
+        game::swap_open(game::swap_undo_u32, &tun, 0, "party tuning");
+        tun = f.lent;
+    }
+    // (the avatar mark +0xB58 & 0x200 is not lent: tried 2026-11-17 for following, no effect, see party_tick)
+    // the host's own Pack panel is not the partner's: AddMember / RemoveMember add or remove a portrait there (the creature
+    // mode strategy +0x68, skipped when null; runtime 2026-11-17: the host's panel showed 6, its 3 and the partners' 3)
+    static uintptr_t strat_get = H->sym("App::cCreatureModeStrategy::Get");
+    if (uint8_t* st = strat_get ? skg::cdecl_call<uint8_t*>(strat_get) : nullptr; st && skg::readable(st, 0x6C)) {
+        f.strategy = st;
+        f.panel = skg::field<void*>(st, 0x68);
+        game::swap_open(game::swap_undo_u32, st + 0x68, (uintptr_t)f.panel, "party: the host's pack panel");
+        skg::field<void*>(st, 0x68) = nullptr;
+    }
+    // phase 4: the leader's family is the partner's own nest herd (the game's avatar herd, cGameNounManager +0x58)
+    f.herd = skg::field<void*>(nm, game::kNounAvatarHerdOff);
+    if (void* fam = g_family_fix ? home_nests::family_herd(p) : nullptr) {
+        game::swap_open(game::swap_undo_u32, &skg::field<void*>(nm, game::kNounAvatarHerdOff), (uintptr_t)f.herd, "party family");
+        skg::field<void*>(nm, game::kNounAvatarHerdOff) = fam;
+        f.family = true;
+    }
+    *(void**)a_PossePtr = posse;
+    for (int i = 0; i < 3; i++)
+        *list_slot(nm, i) = pt->list[i];
+    skg::field<void*>(nm, game::kNounAvatarOff) = pup;
+    g_frames.push_back(f);
+    g_enters++;
+    return g_frames.size();
+}
+
+static void party_leave(size_t tok)
+{
+    if (!tok || tok != g_frames.size())
+        return; // (not entered, or a fault left frames: the frame tick drops them)
+    Frame f = g_frames.back();
+    g_frames.pop_back();
+    void* nm = game::noun_manager();
+    if (Party* pt = party_of(f.player, false); pt && nm)
+        for (int i = 0; i < 3; i++)
+            pt->list[i] = *list_slot(nm, i); // what the game made of it (it may have grown the vector)
+    *(void**)a_PossePtr = f.posse;
+    if (nm) {
+        for (int i = 0; i < 3; i++)
+            *list_slot(nm, i) = f.list[i];
+        skg::field<void*>(nm, game::kNounAvatarOff) = f.avatar;
+        if (f.family)
+            skg::field<void*>(nm, game::kNounAvatarHerdOff) = f.herd;
+    }
+    if (f.strategy)
+        skg::field<void*>(f.strategy, 0x68) = f.panel;
+    if (f.lent && skg::field<void*>(f.puppet, 0xE84) == f.lent)
+        skg::field<void*>(f.puppet, 0xE84) = nullptr;
+    game::swap_close(f.mark, 5 + (f.lent ? 1 : 0) + (f.family ? 1 : 0) + (f.strategy ? 1 : 0));
+}
+
+static std::vector<void*> party_list(uint8_t p)
+{
+    std::vector<void*> v;
+    Party* pt = party_of(p, false);
+    if (!pt)
+        return v;
+    // (inside the party's context the live list is the noun manager's)
+    void* nm = game::noun_manager();
+    void** b = (void**)pt->list[0];
+    void** e = (void**)pt->list[1];
+    if (!g_frames.empty() && g_frames.back().player == p && nm) {
+        b = (void**)*list_slot(nm, 0);
+        e = (void**)*list_slot(nm, 1);
+    }
+    if (b && e > b && e - b <= 64 && skg::readable(b, (e - b) * sizeof(void*)))
+        v.assign(b, e);
+    return v;
+}
+
+// the party's list loses an entry whose object is gone (freed or another noun now): not through the game (it would read it)
+static void party_drop_freed(uint8_t p)
+{
+    Party* pt = party_of(p, false);
+    void** b = pt ? (void**)pt->list[0] : nullptr;
+    void** e = pt ? (void**)pt->list[1] : nullptr;
+    if (!b || e <= b || e - b > 64 || !skg::readable(b, (e - b) * sizeof(void*)))
+        return;
+    void** w = b;
+    for (void** it = b; it < e; ++it)
+        if (*it && game::listed(*it))
+            *w++ = *it;
+        else
+            g_party_freed++;
+    pt->list[1] = w;
+}
+
+size_t party_enter_puppet(void* puppet)
+{
+    if (!g_party || !puppet || !C.sess)
+        return 0;
+    for (uint8_t id = 1; id < 16; id++)
+        if (C.puppet_of && C.puppet_of(id) == puppet)
+            return party_enter(id);
+    return 0;
+}
+void party_leave_token(size_t tok) { party_leave(tok); }
+bool party_mode() { return g_party && g_fix; }
+
+
+static uint32_t g_cmds_got, g_cmds_given;
+// ---------------------------------------------------------------- decision 5CD phase 2: the partner's own Pack panel
+// The host sends each partner its pack's NPC ids (kPackListKind, on a change and every 2 s); the partner's game puts
+// those proxies into its own pack list with the game's recruit (AddMember: the panel, a name, the first-pack hint), so the
+// partner sees its pack as in single player. The proxies keep no AI of their own there (the host's game moves them).
+// A summoned one is marked summoned (+0xE68) first: the game does not count it against the limit of 3, as for the
+// host's own flock. Before a save the guest's pack list is empty (its members are proxies, never saved), after it back.
+static std::vector<void*> g_mirror; // guest: proxies this game holds in its own pack list
+static std::unordered_map<uint8_t, std::vector<std::pair<uint16_t, bool>>> g_sent; // host: last list per partner
+static double g_next_send;
+static uint32_t g_lists_sent, g_lists_got, g_mirror_added, g_mirror_removed, g_mirror_refused;
+
+static void send_lists(double now, bool force)
+{
+    if (!C.sess || (!force && now < g_next_send))
+        return;
+    g_next_send = now + 2;
+    for (auto& [p, pt] : g_parties) {
+        std::vector<std::pair<uint16_t, bool>> v;
+        for (void* c : party_list(p)) {
+            uint16_t id = npc::id_of(c);
+            void* h = game::herd_of(c);
+            if (id != 0xFFFF)
+                v.push_back({id, h && skg::readable(h, 0x194) && skg::field<uint8_t>(h, 0x192)});
+        }
+        net::Writer w;
+        w.u8(kPackListKind);
+        w.u8((uint8_t)std::min<size_t>(v.size(), 32));
+        for (size_t i = 0; i < v.size() && i < 32; i++) {
+            w.u16(v[i].first);
+            w.u8(v[i].second ? 1 : 0);
+        }
+        C.sess->send_reliable_to(p, net::MSG_PLAYER_RULE, w);
+        g_sent[p] = v;
+        g_lists_sent++;
+    }
+}
+
+static void mirror_out(void* posse, void* c)
+{
+    if (a_PosseRemove && posse && game::listed(c))
+        skg::thiscall<void>(a_PosseRemove, posse, c, 0u, 0u);
+    if (game::listed(c))
+        skg::field<uint32_t>(c, game::kFlagsOff) &= ~0x100u;
+    g_mirror.erase(std::remove(g_mirror.begin(), g_mirror.end(), c), g_mirror.end());
+    g_mirror_removed++;
+}
+
+void on_pack_list(const std::vector<std::pair<uint16_t, bool>>& ids)
+{
+    g_lists_got++;
+    void* posse = party_mode() ? host_posse_obj() : nullptr;
+    if (!posse)
+        return;
+    std::vector<std::pair<void*, bool>> want;
+    for (auto& [id, s] : ids)
+        if (void* p = npc::proxy(id))
+            want.push_back({p, s});
+    for (void* c : std::vector<void*>(g_mirror)) {
+        bool keep = false;
+        for (auto& w : want)
+            keep |= w.first == c;
+        if (!keep || !game::listed(c))
+            mirror_out(posse, c);
+    }
+    for (auto& [c, s] : want) {
+        if (std::find(g_mirror.begin(), g_mirror.end(), c) != g_mirror.end())
+            continue;
+        if (s)
+            skg::field<uint8_t>(c, 0xE68) = 1;
+        if (player_rules::local_pack_add(posse, c)) {
+            g_mirror.push_back(c);
+            g_mirror_added++;
+        } else
+            g_mirror_refused++;
+    }
+}
+
+// a creature the mod removes leaves a pack list first (the guest's proxies; a host member of a partner's pack)
+static void before_destroy(void* c)
+{
+    if (std::find(g_mirror.begin(), g_mirror.end(), c) != g_mirror.end())
+        mirror_out(host_posse_obj(), c);
+}
+
+// ---------------------------------------------------------------- decision 5CD phase 3: each partner's pack in the save
+// The host's save keeps the host's pack (the game's own list). A partner's recruits are noted per planet in worlds.ini
+// (section "pack <identity key>": "species x y z;" per recruit, at the save's moment) and their pack bit is off while the
+// save is written (a creature saved with the bit and in no list would come back as a pack member of nobody). When that
+// partner is in this world again (the same planet, a load, a rejoin) the creatures standing at those spots with that
+// species join its pack again (the game's recruit, inside its party). A summoned flock is not kept (it leaves at its
+// summon's end in single player too).
+static std::vector<void*> g_unmarked;                        // host: members whose bit is off while a save is written
+static std::unordered_map<uint8_t, uint32_t> g_restored;     // host: party -> the world its pack was restored for
+static uint32_t g_notes_written, g_pack_restored;
+static double g_next_orphans;
+static void clear_orphans(double now);
+
+static std::string pack_section(uint8_t p) { return "pack " + identity::key(p); }
+
+static bool summoned_member(void* c)
+{
+    void* h = game::herd_of(c);
+    return (h && skg::readable(h, 0x194) && skg::field<uint8_t>(h, 0x192)) || skg::field<uint8_t>(c, 0xE68);
+}
+
+// one partner's pack into this planet's note (at a save: those here; at a leave: before its pack is let go)
+static void note_pack(uint8_t p)
+{
+    const uint32_t w = C.world ? C.world() : 0;
+    if (!w || !party_of(p, false))
+        return;
+    std::string v;
+    char b[80];
+    for (void* c : party_list(p))
+        if (game::listed(c, 0x18EB45Eu) && !game::is_dead(c) && !summoned_member(c)) {
+            net::Vec3 q = game::position(c);
+            std::snprintf(b, sizeof b, "%08X %.1f %.1f %.1f;", game::species_instance(c), q.x, q.y, q.z);
+            v += b;
+        }
+    creations::world_note_set(pack_section(p).c_str(), w, v);
+    g_notes_written++;
+}
+
+static void note_packs()
+{
+    for (auto& [p, pt] : g_parties)
+        if (C.puppet_of && C.puppet_of(p)) // (a partner who left: its note was written when it left)
+            note_pack(p);
+}
+
+struct RestoreQ {
+    uint32_t species;
+    net::Vec3 at;
+    void* found = nullptr;
+    float best = 10.f; // the nearest of that species within 10 m (it wandered between the load and the partner's return)
+};
+static void restore_pack(uint8_t p)
+{
+    const uint32_t w = C.world ? C.world() : 0;
+    if (!w || g_restored[p] == w)
+        return;
+    g_restored[p] = w;
+    const std::string note = creations::world_note(pack_section(p).c_str(), w);
+    if (!note.empty()) { // (a creature with a stale pack bit, in no pack, is free to come back)
+        g_next_orphans = 0;
+        clear_orphans(H->time_seconds());
+    }
+    int n = 0;
+    for (size_t i = 0; i < note.size();) {
+        size_t j = note.find(';', i);
+        if (j == std::string::npos)
+            break;
+        RestoreQ q{};
+        if (std::sscanf(note.substr(i, j - i).c_str(), "%x %f %f %f", &q.species, &q.at.x, &q.at.y, &q.at.z) == 4) {
+            game::for_each_object(
+                [](void* o, uint32_t noun, void* u) {
+                    auto& q = *(RestoreQ*)u;
+                    if (noun != 0x18EB45Eu || !game::object_alive(o) || game::is_dead(o) || game::is_puppet(o) ||
+                        game::pack_member(o) || o == game::avatar() || game::species_instance(o) != q.species)
+                        return true;
+                    const float d = net::dist(game::position(o), q.at);
+                    if (d < q.best) {
+                        q.best = d;
+                        q.found = o;
+                    }
+                    return true;
+                },
+                &q);
+            if (q.found && recruit(p, q.found))
+                n++;
+        }
+        i = j + 1;
+    }
+    if (n)
+        g_pack_restored += n;
+    if (!note.empty())
+        H->log(M, SK_INFO, "guest_pack: player %u's pack from this planet's note: %d of its recruits back (decision 5CD)", p, n);
+}
+
+// guest saves: the own pack list holds only proxies (never saved): empty while the save is written
+static void* g_saved_list[3];
+static bool g_list_hidden;
+static void save_start()
+{
+    void* nm = game::noun_manager();
+    if (!nm || !C.sess)
+        return;
+    if (C.sess->role() == net::Role::Host && party_mode() && !g_parties.empty()) {
+        note_packs();
+        for (auto& [p, pt] : g_parties)
+            for (void* c : party_list(p))
+                if (game::listed(c) && (skg::field<uint32_t>(c, game::kFlagsOff) & 0x100u)) {
+                    skg::field<uint32_t>(c, game::kFlagsOff) &= ~0x100u;
+                    g_unmarked.push_back(c);
+                }
+        return;
+    }
+    if (g_mirror.empty() || C.sess->role() != net::Role::Client)
+        return;
+    for (int i = 0; i < 3; i++) {
+        g_saved_list[i] = *list_slot(nm, i);
+        *list_slot(nm, i) = nullptr;
+    }
+    g_list_hidden = true;
+}
+static void save_end()
+{
+    for (void* c : g_unmarked)
+        if (game::listed(c))
+            skg::field<uint32_t>(c, game::kFlagsOff) |= 0x100u;
+    g_unmarked.clear();
+    void* nm = game::noun_manager();
+    if (!g_list_hidden || !nm)
+        return;
+    for (int i = 0; i < 3; i++)
+        *list_slot(nm, i) = g_saved_list[i];
+    g_list_hidden = false;
+}
+
+// tests (decision 5CD): who asks for the pack manager (return addresses of cPosseSimulator_Get), `coop.gpack callers`
+using PosseGet_t = void*(__cdecl*)();
+static PosseGet_t o_PosseGetHook;
+static std::unordered_map<uintptr_t, uint32_t> g_posse_callers;
+static bool g_count_callers;
+static void* __cdecl h_PosseGet()
+{
+    if (g_count_callers && g_posse_callers.size() < 256)
+        g_posse_callers[(uintptr_t)__builtin_return_address(0)]++;
+    return o_PosseGetHook();
+}
+void pack_command(uint8_t guest, uint32_t lo, uint32_t hi, float value, uint32_t c, uint32_t d, void* target)
+{
+    g_cmds_got++;
+    void* pup = C.puppet_of ? C.puppet_of(guest) : nullptr;
+    if (!party_mode() || !is_host() || !pup || !a_PlayerCmd || party_list(guest).empty())
+        return;
+    const size_t tok = party_enter(guest);
+    if (!tok)
+        return;
+    // the relay's attack case (0x10) sends the pack at the leader's own target (Steam 0xC42E40 reads it from the avatar,
+    // not from the command): the puppet takes the target the partner's click gave its creature in its own game
+    if ((lo & 0x10u) && target && !game::is_dead(target))
+        skg::vcall<void>(pup, 0x84 / 4, (uint8_t*)target + game::kCombatOff, 1, 0);
+    uint32_t vbits;
+    std::memcpy(&vbits, &value, 4);
+    // Creature_PlayerCommand(avatar = the puppet here, lo, hi, value, c, d, target, keep): the stimulus on the puppet,
+    // then cPosseSimulator_Relay to its pack (the puppet has no AI of its own: the stimulus is only read by the relay)
+    skg::thiscall<void*>(a_PlayerCmd, pup, lo, hi, vbits, c, d, target, 0u);
+    party_leave(tok);
+    g_cmds_given++;
+    // the relay's attack case did not reach the members in the QA runs (2026-11-17: the order arrived, the target set on
+    // the puppet, no hit): the pack's own attack command per member as well (runtime: recruits killed the target with it)
+    if ((lo & 0x10u) && target && !game::is_dead(target))
+        assist(guest, target);
+}
+
+static bool g_ctx_test = true; // tests: `coop.gpack ctx 0`: members update outside their party
+static size_t ai_enter(void* c)
+{
+    if (!g_party || !g_ctx_test || (g_members.empty() && g_family_of.empty()))
+        return 0;
+    auto it = g_members.find(c);
+    if (it != g_members.end())
+        return party_enter(it->second.owner);
+    if (!g_family_of.empty())
+        if (auto f = g_family_of.find(game::herd_of(c)); f != g_family_of.end()) {
+            g_family_enters++;
+            return party_enter(f->second);
+        }
+    return 0;
 }
 
 // out of the host's pack: the bit and the list entry (the summon event put it there for the host's avatar)
@@ -196,6 +705,27 @@ int summon(uint8_t guest)
     if (!puppet || !mgr)
         return 0;
     g_summons++;
+    if (party_mode()) {
+        // 5CD: the game's own Summon Flock inside the partner's pack: the start adds the flock to it (and counts it),
+        // its update steers it, its end takes it out again (drama.cpp runs both in the party), as for the host's own
+        const size_t tok = party_enter(guest);
+        if (!tok)
+            return 0;
+        auto before = party_list(guest);
+        const bool ok = drama::summon_for(puppet);
+        auto after = party_list(guest);
+        party_leave(tok);
+        int n = 0;
+        for (void* c : after)
+            if (c && std::find(before.begin(), before.end(), c) == before.end()) {
+                join(guest, c, true);
+                n++;
+            }
+        g_summoned += n;
+        H->log(M, n ? SK_INFO : SK_WARN, "guest_pack: %s: %d in player %u's own pack (event %s, decision 5CD)",
+               n ? "the flock summoned" : "nothing summoned", n, guest, ok ? "started" : "not started");
+        return n;
+    }
     auto before = host_posse();
     // BUG-9229 (owner play test 2026-11-15: "Summon Flock isn't following BigTexas when they call it"; "I'm unable to add
     // creatures to my Pack"): the event ran with the host's avatar as its leader: its update steers the members for its
@@ -242,6 +772,18 @@ bool recruit(uint8_t guest, void* npc)
     if (!g_fix || !is_host() || !npc || game::is_puppet(npc) || npc == game::avatar() || game::is_dead(npc) ||
         game::pack_member(npc) || g_members.count(npc))
         return false;
+    if (party_mode()) {
+        // 5CD: the game's own recruit into the partner's pack (its limit of 3, its name, the member's own herd kept)
+        const size_t tok = party_enter(guest);
+        if (!tok || !a_AddMember)
+            return false;
+        const bool ok = skg::thiscall<bool>(a_AddMember, *(void**)a_PossePtr, npc);
+        party_leave(tok);
+        if (!ok) {
+            H->log(M, SK_INFO, "guest_pack: player %u's pack refused %p (full, decision 5CD)", guest, npc);
+            return false;
+        }
+    }
     join(guest, npc, false);
     g_recruits++;
     H->log(M, SK_INFO, "guest_pack: player %u recruited %p", guest, npc);
@@ -283,11 +825,13 @@ void assist(uint8_t guest, void* victim)
     if (!g_fix || !victim || member(victim) || game::is_puppet(victim))
         return;
     double now = H->time_seconds();
+    const size_t tok = party_enter(guest); // (5CD: the pack's checks see the partner as the leader)
     for (auto& [c, m] : g_members)
         if (m.owner == guest && alive(c, m) && m.target != victim) {
             attack(c, m, victim, now);
             g_assists++;
         }
+    party_leave(tok);
 }
 
 void defend(uint8_t guest, void* attacker)
@@ -295,11 +839,13 @@ void defend(uint8_t guest, void* attacker)
     if (!g_fix || !attacker || member(attacker) || game::is_puppet(attacker) || attacker == game::avatar())
         return;
     double now = H->time_seconds();
+    const size_t tok = party_enter(guest);
     for (auto& [c, m] : g_members)
         if (m.owner == guest && alive(c, m) && m.target != attacker) {
             attack(c, m, attacker, now);
             g_defends++;
         }
+    party_leave(tok);
 }
 
 // BUG-9249 (TITAN QA 2026-11-16, Samuth.spo): the posse's summoned count (+0x1C; the pack takes no recruit while its
@@ -314,23 +860,184 @@ static uint32_t g_count_healed;
 static double g_next_count_check;
 static void heal_posse_count(double now)
 {
-    if (!g_count_heal || now < g_next_count_check || !game::in_creature_stage() || drama::summon_running() ||
-        (C.sess && C.sess->role() == net::Role::Client))
+    // (5CD: on every game, the guests too: a partner's own pack panel counts its summoned mirrors there; QA 2026-11-17 saw
+    // -5 on a guest after hot reloads, and its pack refused every member)
+    if (!g_count_heal || now < g_next_count_check || !game::in_creature_stage() || drama::summon_running() || !g_frames.empty())
         return;
     g_next_count_check = now + 2;
     static uintptr_t posse_get = H->sym("SporeCoop::cPosseSimulator_Get");
     uint8_t* posse = posse_get ? skg::cdecl_call<uint8_t*>(posse_get) : nullptr;
-    if (!posse || !skg::readable(posse, 0x20) || skg::field<int32_t>(posse, 0x1C) <= 0)
+    if (!posse || !skg::readable(posse, 0x20))
         return;
-    H->log(M, SK_INFO, "guest_pack: the pack's summoned count %d with no summon running: cleared (pack size %d, %zu member(s), BUG-9249)",
-           skg::field<int32_t>(posse, 0x1C), skg::field<int32_t>(posse, 0x18), host_posse().size());
-    skg::field<int32_t>(posse, 0x1C) = 0;
+    int32_t summoned = 0; // the summoned creatures the list really holds (a flock in it counts, as the game counts it)
+    for (void* c : host_posse())
+        if (c && game::listed(c) && summoned_member(c))
+            summoned++;
+    if (skg::field<int32_t>(posse, 0x1C) == summoned)
+        return;
+    H->log(M, SK_INFO, "guest_pack: the pack's summoned count %d with no summon running: set to %d (pack size %d, %zu member(s), BUG-9249)",
+           skg::field<int32_t>(posse, 0x1C), summoned, skg::field<int32_t>(posse, 0x18), host_posse().size());
+    skg::field<int32_t>(posse, 0x1C) = summoned;
     g_count_healed++;
+}
+
+// 5CD: each party's list loses objects that are gone and dead members (through the game's own removal, in the party);
+// the mod's bookkeeping follows the lists (a summon's end takes its flock out again, as for the host's own); a member
+// far from its partner (a respawn at a nest, a teleport) is put beside it as before
+static void party_tick(double now)
+{
+    for (auto& [p, pt] : g_parties) {
+        party_drop_freed(p);
+        std::vector<void*> dead;
+        for (void* c : party_list(p))
+            if (game::is_dead(c))
+                dead.push_back(c);
+        if (!dead.empty() && a_PosseRemove)
+            if (const size_t tok = party_enter(p)) {
+                for (void* c : dead) {
+                    skg::thiscall<void>(a_PosseRemove, *(void**)a_PossePtr, c, 0u, 0u);
+                    g_party_removed++;
+                }
+                party_leave(tok);
+            }
+    }
+    std::unordered_map<uint8_t, std::vector<void*>> lists;
+    int slot = 0;
+    for (auto it = g_members.begin(); it != g_members.end();) {
+        void* c = it->first;
+        Member& m = it->second;
+        auto li = lists.find(m.owner);
+        if (li == lists.end())
+            li = lists.emplace(m.owner, party_list(m.owner)).first;
+        if (!alive(c, m) || std::find(li->second.begin(), li->second.end(), c) == li->second.end()) {
+            it = g_members.erase(it);
+            g_dropped++;
+            continue;
+        }
+        void* puppet = C.puppet_of ? C.puppet_of(m.owner) : nullptr;
+        // Following: in the host's game a pack member follows the creature it senses with the avatar mark (Steam 0xAF9570
+        // from cCreatureAnimal::Update posts stimulus 0x4000000 from it, value 5.0; runtime 2026-11-17: the host's recruit
+        // carried it from the host's creature). A partner's member never took it from the partner's puppet, not with the
+        // mark lent inside the party nor with the stimulus posted by hand (the member walked off instead): the choice
+        // there is not understood yet. So the member is walked back to its partner as before (the game's MoveTo), and
+        // left alone while it fights near it. (`coop.gpack follow 1`, tests: the stimulus by hand at 4 Hz.)
+        if (puppet && a_PostStim && g_follow_test && now >= m.next_follow) {
+            m.next_follow = now + 0.25;
+            uint8_t* brain = skg::field<uint8_t*>(c, 0xB4C);
+            if (brain && skg::readable(brain, 0x200)) {
+                const float five = 5.f;
+                uint32_t v;
+                std::memcpy(&v, &five, 4);
+                skg::thiscall<void>(a_PostStim, brain + 8, 0x4000000u, 0u, v, puppet);
+                g_follow_posts++;
+            }
+        }
+        if (puppet && now >= m.next_move) {
+            m.next_move = now + 0.5;
+            if (m.target && (now > m.target_until || game::is_dead(m.target) || !game::object_alive(m.target)))
+                m.target = nullptr;
+            const float d = net::dist(game::position(c), game::position(puppet));
+            if (d > 80) {
+                place_near(c, puppet, slot);
+                g_teleports++;
+            } else if (m.target && d < 40) {
+                // fighting near the partner: the game's attack
+            } else if (d > 6 && !g_follow_test) {
+                game::move_to(c, game::position(puppet), 3.f);
+                g_leashed++;
+            }
+        }
+        ++it;
+        slot++;
+    }
+    send_lists(now, false); // phase 2
+}
+
+
+static void mirror_tick()
+{
+    // guest: a proxy freed without our removal (a load) leaves the own pack list by hand (the game would read it)
+    void* nm = game::noun_manager();
+    if (g_mirror.empty() || !nm)
+        return;
+    void** b = (void**)*list_slot(nm, 0);
+    void** e = (void**)*list_slot(nm, 1);
+    for (void* c : std::vector<void*>(g_mirror)) {
+        if (game::listed(c))
+            continue;
+        g_mirror.erase(std::remove(g_mirror.begin(), g_mirror.end(), c), g_mirror.end());
+        if (b && e > b && e - b <= 64) {
+            void** w = std::remove(b, e, c);
+            *list_slot(nm, 1) = w;
+            e = w;
+        }
+        g_mirror_removed++;
+    }
+}
+
+// 5CD: a creature with the pack bit in no pack list (the host's or a partner's) belongs to nobody: a pack lost by a fault,
+// a hot reload of the mod (tests) or a save made by an older build. The bit goes, so it can be recruited again and does
+// not take part in pack behaviour for nobody. (every 5 s, host)
+static uint32_t g_orphans_cleared;
+struct OrphanQ {
+    std::vector<void*> listed;
+    uint32_t cleared = 0;
+};
+static void clear_orphans(double now)
+{
+    if (now < g_next_orphans || !party_mode() || !is_host() || !game::in_creature_stage() || !g_frames.empty())
+        return;
+    g_next_orphans = now + 5;
+    OrphanQ q;
+    q.listed = host_posse();
+    for (auto& [p, pt] : g_parties)
+        for (void* c : party_list(p))
+            q.listed.push_back(c);
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto& q = *(OrphanQ*)u;
+            if (noun != 0x18EB45Eu || !game::object_alive(o) || game::is_puppet(o) || o == game::avatar() ||
+                !(skg::field<uint32_t>(o, game::kFlagsOff) & 0x100u) ||
+                std::find(q.listed.begin(), q.listed.end(), o) != q.listed.end() || npc::is_proxy(o))
+                return true;
+            skg::field<uint32_t>(o, game::kFlagsOff) &= ~0x100u;
+            q.cleared++;
+            return true;
+        },
+        &q);
+    if (q.cleared) {
+        g_orphans_cleared += q.cleared;
+        H->log(M, SK_INFO, "guest_pack: %u creature(s) with the pack bit in no pack: the bit cleared (decision 5CD)", q.cleared);
+    }
 }
 
 void tick(double now)
 {
     heal_posse_count(now);
+    clear_orphans(now);
+    if (C.sess && C.sess->role() == net::Role::Client)
+        mirror_tick();
+    if (!g_frames.empty()) { // a fault the game caught left a party open: the ledger gave the host's pack back already
+        g_frames_lost += (uint32_t)g_frames.size();
+        H->log(M, SK_WARN, "guest_pack: %zu party context(s) left open by a fault: dropped (decision 5CD)", g_frames.size());
+        g_frames.clear();
+    }
+    if (party_mode() && is_host() && game::in_creature_stage() && C.puppet_of) // phase 3: a pack noted on this planet
+        for (uint8_t id = 1; id < 16; id++)
+            if (void* pup = C.puppet_of(id); pup && !game::is_dead(pup))
+                restore_pack(id);
+    if (now >= g_next_family) { // phase 4: which nest herd is which partner's family (once a second)
+        g_next_family = now + 1;
+        g_family_of.clear();
+        if (g_family_fix && party_mode() && is_host() && game::in_creature_stage() && C.puppet_of)
+            for (uint8_t id = 1; id < 16; id++)
+                if (void* h = C.puppet_of(id) ? home_nests::family_herd(id) : nullptr; h && h != game::avatar_herd())
+                    g_family_of[h] = id;
+    }
+    if (party_mode() && is_host() && game::in_creature_stage() && !g_parties.empty()) {
+        party_tick(now);
+        return;
+    }
     if (g_members.empty())
         return;
     if (!g_fix || !is_host() || !game::in_creature_stage()) {
@@ -378,13 +1085,78 @@ void tick(double now)
     }
 }
 
+// 5CD: a partner who leaves takes nobody along: its pack's members are let go the game's way (in its party, while its
+// puppet is still there), as members leave a pack in single player
+static void disband(uint8_t id)
+{
+    Party* pt = party_of(id, false);
+    if (!pt)
+        return;
+    party_drop_freed(id);
+    auto l = party_list(id);
+    if (!l.empty() && a_PosseRemove)
+        if (const size_t tok = party_enter(id)) {
+            for (void* c : l) {
+                skg::thiscall<void>(a_PosseRemove, *(void**)a_PossePtr, c, 0u, 0u);
+                g_party_removed++;
+            }
+            party_leave(tok);
+        }
+    for (void* c : party_list(id)) // (no puppet any more: out by hand, the bit cleared)
+        if (c && game::listed(c))
+            skg::field<uint32_t>(c, game::kFlagsOff) &= ~0x100u;
+    pt->list[1] = pt->list[0];
+    H->log(M, SK_INFO, "guest_pack: player %u's pack let go (%zu member(s), decision 5CD)", id, l.size());
+}
+
 void on_player_leave(uint8_t id)
 {
+    if (is_host() && party_mode())
+        note_pack(id); // (phase 3: where its pack stood when it left)
+    disband(id);
+    g_restored.erase(id); // (5CD phase 3: a rejoin brings its noted pack back)
     for (auto it = g_members.begin(); it != g_members.end();)
         it = it->second.owner == id ? g_members.erase(it) : std::next(it);
 }
 
-void reset() { g_members.clear(); }
+void reset()
+{
+    g_members.clear();
+    g_frames.clear();
+    g_restored.clear(); // phase 3: a load (the same planet again) brings the noted packs back once more
+    // guest: after a load the old list and its proxies are gone; after an editor round trip the proxies still listed in the
+    // own pack list stay this game's mirror (else nothing would take them out before they are removed)
+    g_mirror.clear();
+    if (void* nm = game::noun_manager(); nm && C.sess && C.sess->role() == net::Role::Client) {
+        void** b = (void**)*list_slot(nm, 0);
+        void** e = (void**)*list_slot(nm, 1);
+        for (void** it = b; b && e > b && e - b <= 64 && it < e; ++it)
+            if (*it && game::listed(*it) && npc::is_proxy(*it))
+                g_mirror.push_back(*it);
+    }
+    // 5CD: the local entity changed: a load (every creature freed: the lists empty out) or an editor round trip (the
+    // world stays: a member still listed with the pack bit stays in its partner's pack; an object at a freed address
+    // is a new creature without the bit and leaves the list)
+    for (auto& [p, pt] : g_parties) {
+        party_drop_freed(p);
+        void** b = (void**)pt->list[0];
+        void** e = (void**)pt->list[1];
+        void** w = b;
+        int summoned = 0;
+        for (void** it = b; b && it < e; ++it)
+            if (game::listed(*it, 0x18EB45Eu) && (skg::field<uint32_t>(*it, game::kFlagsOff) & 0x100u) && !game::is_dead(*it)) {
+                *w++ = *it;
+                void* h = game::herd_of(*it);
+                const bool s = h && skg::readable(h, 0x194) && skg::field<uint8_t>(h, 0x192);
+                summoned += s;
+                join(p, *it, s);
+            }
+        if (b)
+            pt->list[1] = w;
+        if (pt->made)
+            skg::field<int32_t>(pt->posse, 0x1C) = summoned;
+    }
+}
 void set_herd_fix(bool on) { g_herd_fix = on; }
 
 std::string status()
@@ -396,6 +1168,27 @@ std::string status()
                   (int)g_fix, g_members.size(), g_summons, g_summoned, g_recruits, g_assists, g_defends, g_leashed,
                   g_teleports, g_dropped, g_herd_moves, (int)g_herd_fix, (int)g_reuse_fix, g_reused, g_pooled, (int)g_attack_cmd, g_commands, g_declined);
     std::string out = b;
+    std::snprintf(b, sizeof b, "parties: mode=%d made=%u enters=%u lost=%u removed=%u freed=%u open=%zu commands=%u/%u follow_posts=%u family=%zu/%u\n",
+                  (int)party_mode(), g_parties_made, g_enters, g_frames_lost, g_party_removed, g_party_freed, g_frames.size(),
+                  g_cmds_given, g_cmds_got, g_follow_posts, g_family_of.size(), g_family_enters);
+    out += b;
+    std::snprintf(b, sizeof b, "own pack panel (guest): mirror=%zu added=%u removed=%u refused=%u lists=%u got / %u sent, notes=%u restored=%u orphans=%u\n",
+                  g_mirror.size(), g_mirror_added, g_mirror_removed, g_mirror_refused, g_lists_got, g_lists_sent, g_notes_written,
+                  g_pack_restored, g_orphans_cleared);
+    out += b;
+    for (auto& [p, pt] : g_parties) {
+        auto l = party_list(p);
+        std::snprintf(b, sizeof b, "  party %u: pack manager %p size %d summoned %d members %zu\n", p, (void*)pt->posse,
+                      pt->made ? skg::field<int32_t>(pt->posse, 0x18) : -1, pt->made ? skg::field<int32_t>(pt->posse, 0x1C) : -1,
+                      l.size());
+        out += b;
+        for (void* c : l) {
+            std::snprintf(b, sizeof b, "    %p flags=%08X hp=%.1f species=%08X herd=%p\n", c,
+                          game::listed(c) ? skg::field<uint32_t>(c, game::kFlagsOff) : 0u, game::listed(c) ? game::health(c) : -1.f,
+                          game::listed(c) ? game::species_instance(c) : 0u, game::listed(c) ? game::herd_of(c) : nullptr);
+            out += b;
+        }
+    }
     // tests (BUG-9233): the posse simulator's 0x58 bytes and the host's pack list length
     static uintptr_t posse_get = H->sym("SporeCoop::cPosseSimulator_Get");
     if (uint8_t* ps = posse_get ? skg::cdecl_call<uint8_t*>(posse_get) : nullptr; ps && skg::readable(ps, 0x58)) {
@@ -417,6 +1210,42 @@ std::string status()
         out += b;
     }
     return out;
+}
+
+std::string callers(bool start)
+{
+    if (start) {
+        if (!o_PosseGetHook && a_PosseGet)
+            H->hook_create(M, (void*)a_PosseGet, (void*)h_PosseGet, (void**)&o_PosseGetHook);
+        g_posse_callers.clear();
+        g_count_callers = true;
+        return "counting\n";
+    }
+    g_count_callers = false;
+    std::vector<std::pair<uint32_t, uintptr_t>> v;
+    for (auto& [a, n] : g_posse_callers)
+        v.push_back({n, a});
+    std::sort(v.rbegin(), v.rend());
+    std::string out;
+    char b[64];
+    for (auto& [n, a] : v) {
+        std::snprintf(b, sizeof b, "  %08X x%u\n", (unsigned)a, n);
+        out += b;
+    }
+    return out;
+}
+
+void set_follow_test(bool on) { g_follow_test = on; }
+
+void set_ctx_test(bool on) { g_ctx_test = on; }
+
+void host_command(void* target)
+{
+    void* av = game::avatar();
+    if (!av || !target || !a_PlayerCmd || game::is_dead(target))
+        return;
+    skg::vcall<void>(av, 0x84 / 4, (uint8_t*)target + game::kCombatOff, 1, 0);
+    skg::thiscall<void*>(a_PlayerCmd, av, 0x10u, 0u, 0x7F7FFFFFu, 0u, 0u, target, 0u);
 }
 
 } // namespace guest_pack

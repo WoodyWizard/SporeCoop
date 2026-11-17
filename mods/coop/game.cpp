@@ -242,6 +242,8 @@ static void test_push_apply(void* c, int dt_ms)
         }
 }
 
+static size_t (*g_party_enter_upd)(void*);
+static void (*g_party_leave_upd)(size_t);
 static void SK_THISCALL h_Update(void* self, int dt)
 {
     g_seen.push_back(self);
@@ -249,6 +251,17 @@ static void SK_THISCALL h_Update(void* self, int dt)
         return;
     if (!g_test_push.empty())
         test_push_apply(self, dt);
+    // decision 5CD: a member of a partner's pack updates inside that party (its leader, its pack)
+    if (g_party_enter_upd)
+        if (size_t tok = g_party_enter_upd(self)) {
+            o_Update(self, dt);
+            g_party_leave_upd(tok);
+            if (!g_air.empty())
+                air_reassert(self, 0);
+            if (!g_place_hold.empty())
+                place_reassert(self);
+            return;
+        }
     o_Update(self, dt);
     if (!g_air.empty())
         air_reassert(self, 0);
@@ -1236,6 +1249,15 @@ void ai_timing(double& mod_ms, double& game_ms, uint64_t& ticks, bool reset)
     ticks = g_ai_ticks;
     if (reset) g_ai_mod_qpc = g_ai_game_qpc = g_ai_ticks = 0;
 }
+static PartyEnter g_party_enter;
+static PartyLeave g_party_leave;
+void set_party_context(PartyEnter enter, PartyLeave leave)
+{
+    g_party_enter = enter;
+    g_party_leave = leave;
+    g_party_enter_upd = enter;
+    g_party_leave_upd = leave;
+}
 static void SK_THISCALL h_NPCTickAI_inner(void* self, float dt, uint64_t t0);
 static void SK_THISCALL h_NPCTickAI(void* self, float dt)
 {
@@ -1266,6 +1288,13 @@ static void SK_THISCALL h_NPCTickAI_inner(void* self, float dt, uint64_t t0)
         g_ai_mod_qpc += qpc() - t0;
         return;
     }
+    // decision 5CD: a creature of a partner's party thinks inside that party's context (its pack, its leader)
+    if (g_party_enter && !g_swap_real)
+        if (size_t tok = g_party_enter(self)) {
+            call_ai(self, dt, t0);
+            g_party_leave(tok);
+            return;
+        }
     void* t = g_ai_picker && !g_swap_real ? g_ai_picker(self) : nullptr;
     void* nm = t ? cdecl_call<void*>(a_NounGet) : nullptr;
     void* real = nm ? field<void*>(nm, kNounAvatarOff) : nullptr;
@@ -1852,10 +1881,14 @@ static bool cinematic_running()
 
 bool cinematic_playing() { return g_ready && cinematic_running(); }
 
+static void (*g_before_destroy)(void*);
+void set_before_destroy(void (*fn)(void*)) { g_before_destroy = fn; }
 void destroy_creature(void* c)
 {
     if (!g_ready || !c)
         return;
+    if (g_before_destroy && noun_id(c) == 0x18EB45Eu) // decision 5CD: out of a pack list before it leaves the world
+        g_before_destroy(c);
     bool defer = g_destroy_defer && noun_id(c) == 0x18EB45Eu && cinematic_running();
     // a puppet or proxy that waits stays one (BUG-0066): no AI of its own (h_NPCTickAI), not an
     // NPC for host_tick to send to the guests. It leaves the puppet list when it is destroyed.

@@ -209,9 +209,10 @@ std::string world_note(const char* section, uint32_t world)
 {
     if (!world || !section || !find_paths())
         return {};
-    wchar_t key[16], buf[64] = {};
+    // (1024: a partner's pack note holds about 30 characters per member, decision 5CD phase 3; it was 64)
+    wchar_t key[16], buf[1024] = {};
     swprintf(key, 16, L"%08X", world);
-    GetPrivateProfileStringW(wide(section).c_str(), key, L"", buf, 64, (g_dir + L"\\worlds.ini").c_str());
+    GetPrivateProfileStringW(wide(section).c_str(), key, L"", buf, 1024, (g_dir + L"\\worlds.ini").c_str());
     std::string out;
     for (const wchar_t* p = buf; *p; ++p)
         out += (char)(*p < 128 ? *p : '?');

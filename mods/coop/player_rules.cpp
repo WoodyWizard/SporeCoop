@@ -40,7 +40,11 @@ enum Kind : uint8_t {
     K_FLOCK = 10,      // guest -> host {}: the guest's Summon Flock, made by the host's game for its puppet (BUG-0736)
     K_SUMMON = 11,     // guest -> host {}: the guest's Summon Flock: a flock in the guest's pack (BUG-9129; 3 before the 0.7.14 merge)
     K_RECRUIT = 12,    // guest -> host {u16 npc id}: the guest recruited host NPC id into its pack (BUG-9129; 4 before)
+    K_PACKCMD = 13,    // guest -> host {u32 lo, u32 hi, f32 value, u32 c, u32 d, u16 target npc id or 0xFFFF}: the guest's
+                       // own command to its creature that the game passes to the pack (decision 5CD)
+    K_PACKLIST = 14,   // host -> guest {u8 n, n x {u16 npc id, u8 summoned}}: the guest's own pack (decision 5CD phase 2)
 };
+static_assert(K_PACKLIST == guest_pack::kPackListKind, "guest_pack.h kPackListKind");
 static unsigned g_flock_sent, g_flock_got;
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
@@ -496,10 +500,13 @@ static int __cdecl h_AbilityTick(void* c, int a2, int a3, int a4, int a5, uint32
 // host NPC's proxy: it goes to the host as a request, the proxy stays out of this game's pack (and its saves).
 typedef bool(SK_THISCALL* AddMember_t)(void*, void*);
 static AddMember_t o_AddMember;
+static bool g_local_pack_add; // decision 5CD phase 2: the guest's own pack shows its members (local_pack_add)
 static bool SK_THISCALL h_AddMember(void* posse, void* c)
 {
     if (!c || !posse)
         return false;
+    if (g_local_pack_add)
+        return o_AddMember(posse, c);
     if (guest_pack::enabled() && is_guest() && c && npc::is_proxy(c)) {
         uint16_t id = npc::id_of(c);
         if (id != 0xFFFF) {
@@ -512,6 +519,68 @@ static bool SK_THISCALL h_AddMember(void* posse, void* c)
         return true;
     }
     return o_AddMember(posse, c);
+}
+
+// ---------------------------------------------------------------- decision 5CD
+// The game's pack follows and fights because the player's commands to its own creature (Creature_PlayerCommand 0xC032F0:
+// the command stimulus on the avatar, then for bits 0x70411 / hi 0x40010 cPosseSimulator_Relay to every pack member:
+// attack its target 0x10, follow, the other orders) go on to the pack. A partner gives them in its own game, where its
+// pack is not: the guest sends each such command, the host gives it to the partner's puppet inside the partner's own pack
+// (guest_pack::pack_command), so the partner's pack follows and fights as in single player.
+// `coop.fix creature.pack_commands off`: no command leaves the guest (its pack follows no order of the partner).
+static bool g_packcmd_fix = true;
+COOP_FIX("creature.pack_commands", "BUG-9248", g_packcmd_fix,
+         "creature: a partner's own commands to its creature reach its pack in the host's game (it follows and fights as in single player)");
+using PlayerCmd_t = void*(SK_THISCALL*)(void*, uint32_t, uint32_t, float, uint32_t, uint32_t, void*, uint32_t);
+static PlayerCmd_t o_PlayerCmd;
+static uint32_t g_packcmd_sent, g_packcmd_got, g_packcmd_skipped;
+static uint32_t g_last_lo, g_last_hi;
+static uint16_t g_last_id;
+static double g_last_cmd_at;
+static void* SK_THISCALL h_PlayerCmd(void* av, uint32_t lo, uint32_t hi, float v, uint32_t c, uint32_t d, void* tgt, uint32_t keep)
+{
+    void* r = o_PlayerCmd(av, lo, hi, v, c, d, tgt, keep);
+    if (!g_packcmd_fix || !((lo & 0x70411u) | (hi & 0x40010u)) || !is_guest() || !av || av != game::avatar() ||
+        !game::in_creature_stage() || !guest_pack::enabled())
+        return r;
+    uint16_t id = 0xFFFF;
+    if (tgt) {
+        void* t = npc::is_proxy(tgt) ? tgt : nullptr;
+        if (!t && skg::readable((uint8_t*)tgt - game::kCombatOff, 0x10) && npc::is_proxy((uint8_t*)tgt - game::kCombatOff))
+            t = (uint8_t*)tgt - game::kCombatOff; // (a combatant)
+        id = t ? npc::id_of(t) : 0xFFFF;
+        if (id == 0xFFFF) { // an object the host does not know by id (a fruit, an egg): not for the pack
+            g_packcmd_skipped++;
+            return r;
+        }
+    }
+    const double now = H->time_seconds();
+    if (lo == g_last_lo && hi == g_last_hi && id == g_last_id && now - g_last_cmd_at < 0.5)
+        return r; // (the same order again within half a second)
+    g_last_lo = lo, g_last_hi = hi, g_last_id = id, g_last_cmd_at = now;
+    net::Writer w;
+    w.u8(K_PACKCMD);
+    w.u32(lo);
+    w.u32(hi);
+    w.f32(v);
+    w.u32(c);
+    w.u32(d);
+    w.u16(id);
+    C.sess->send_reliable_to(0, net::MSG_PLAYER_RULE, w);
+    g_packcmd_sent++;
+    return r;
+}
+
+// decision 5CD phase 2 (guest): the game's own recruit of a proxy into this game's pack (its panel, name, hint), not sent
+// to the host as a recruit
+bool local_pack_add(void* posse, void* c)
+{
+    if (!o_AddMember || !posse || !c)
+        return false;
+    g_local_pack_add = true;
+    bool ok = o_AddMember(posse, c);
+    g_local_pack_add = false;
+    return ok;
 }
 
 struct RoarQ {
@@ -1251,6 +1320,29 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             return;
         g_recruit_got++;
         guest_pack::recruit(from, npc::host_npc(id));
+    } else if (kind == K_PACKLIST) { // decision 5CD phase 2
+        uint8_t n = r.u8();
+        std::vector<std::pair<uint16_t, bool>> v;
+        for (uint8_t i = 0; i < n && r.ok() && i < 32; i++) {
+            uint16_t id = r.u16();
+            bool s = r.u8() != 0;
+            v.push_back({id, s});
+        }
+        if (!r.ok() || from != 0 || !is_guest() || !game::in_creature_stage())
+            return;
+        guest_pack::on_pack_list(v);
+    } else if (kind == K_PACKCMD) { // decision 5CD
+        uint32_t lo = r.u32(), hi = r.u32();
+        float v = r.f32();
+        uint32_t c = r.u32(), d = r.u32();
+        uint16_t id = r.u16();
+        if (!r.ok() || from == 0 || !is_host() || !game::in_creature_stage())
+            return;
+        g_packcmd_got++;
+        void* t = id == 0xFFFF ? nullptr : npc::host_npc(id);
+        if (id != 0xFFFF && !t)
+            return;
+        guest_pack::pack_command(from, lo, hi, v, c, d, t);
     } else if (kind == K_ROAR) {
         uint32_t t = r.u32();
         float range = r.f32(), secs = r.f32();
@@ -1663,6 +1755,10 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_AbilityTick, (void**)&o_AbilityTick);
     if (uintptr_t a = H->sym("SporeCoop::cPosseSimulator_AddMember")) // BUG-9129
         H->hook_create(M, (void*)a, (void*)h_AddMember, (void**)&o_AddMember);
+    if (uintptr_t a = H->sym("SporeCoop::Creature_PlayerCommand")) // decision 5CD
+        H->hook_create(M, (void*)a, (void*)h_PlayerCmd, (void**)&o_PlayerCmd);
+    else
+        H->log(M, SK_WARN, "player_rules: SporeCoop::Creature_PlayerCommand missing: a partner's pack follows none of its orders");
     // (named coop.prules: coop.cpp's campaign "coop.rules" is registered later and took the name, so these test
     // subcommands were unreachable)
     H->command_add(M, "coop.prules", "coop.prules [stun <s> [npc id] | roar <type hex> | friendly <id> | ...] - the game's player rules carried between the games (P1, BUG-0554)",

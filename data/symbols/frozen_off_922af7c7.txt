@@ -402,3 +402,9 @@ SporeCoop::cCinematicManager_SetEnabled ; BUG-1073: game.cinematics_on_load: a l
 SporeCoop::CreatureDisplay_Show ; BUG-1111: the captain portrait guard (game.captain_portrait) is off on GOG 2016
 SporeCoop::SpaceGameUI_Get ; BUG-1111: tests only: coop.captain open does nothing (GOG 2016)
 SporeCoop::SpaceGameUI_ShowCaptainScreen ; BUG-1111: tests only: coop.captain open does nothing (GOG 2016)
+SporeCoop::Creature_PlayerCommand ; BUG-9248: a partner's commands do not reach its pack (decision 5CD) on GOG 2016
+SporeCoop::SummonEvent_End ; BUG-9248: a partner's summon does not end inside its own pack on GOG 2016
+SporeCoop::cPosseSimulator_Init ; BUG-9248: partners' own packs (creature.party_packs) are off on GOG 2016
+SporeCoop::cPosseSimulator_RemoveMember ; BUG-9248: partners' own packs (creature.party_packs) are off on GOG 2016
+SporeCoop::cPosseSimulator_ctor ; BUG-9248: partners' own packs (creature.party_packs) are off on GOG 2016
+SporeCoop::cPosseSimulator_ptr ; BUG-9248: partners' own packs (creature.party_packs) are off on GOG 2016

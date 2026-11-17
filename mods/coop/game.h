@@ -375,6 +375,13 @@ void ai_timing(double& mod_ms, double& game_ms, uint64_t& ticks, bool reset); //
 // BUG-9156: fn(ctx) runs with creature t as mpAvatar (the follow camera of a spectating player), as an NPC tick does
 // (the avatar's tuning lent, swap_guard_tick undoes a swap a fault left open); t null or the avatar: fn runs as it is
 void run_as_avatar(void* t, void (*fn)(void*), void* ctx);
+// decision 5CD ("everyone is a host of their parties"): a creature of a partner's party runs its AI tick inside that
+// party's context; enter returns 0 for a creature of nobody's party, else a token for leave (guest_pack.cpp)
+using PartyEnter = size_t (*)(void* creature);
+using PartyLeave = void (*)(size_t token);
+void set_party_context(PartyEnter enter, PartyLeave leave);
+// called by destroy_creature for a creature before the mod removes it (a pack member leaves its pack list first)
+void set_before_destroy(void (*fn)(void*));
 void swap_guard_tick();          // once per frame: undo an NPC tick's avatar swap a fault left open (BUG-0110)
 bool lend_ledger_on();           // BUG-0882 (game.lend_ledger): lent state in the ledger, call guards reset per frame
 uint32_t call_guards_reset();

@@ -1619,6 +1619,15 @@ static void pack_spares_partners(const std::vector<void*>& creatures)
         }
         for (void* pup : game::puppets())
             g_pack_stimuli_cleared += gamefixes::clear_stimuli_from(c, pup);
+        // decision 5CD: a partner's pack member spares the host's creature too (its party sees the host as a stranger)
+        if (void* av = game::avatar(); av && guest_pack::member(c)) {
+            const uint8_t* t = (const uint8_t*)skg::field<void*>(c, kTargetOff);
+            if (t >= (const uint8_t*)av && t < (const uint8_t*)av + kCreatureSpan) {
+                skg::vcall<void>(c, 0x84 / 4, (void*)nullptr, 1, 0);
+                g_pack_targets_cleared++;
+            }
+            g_pack_stimuli_cleared += gamefixes::clear_stimuli_from(c, av);
+        }
     }
 }
 
@@ -3457,8 +3466,14 @@ bool forward_hit(void* proxy, float damage, int type)
     return true;
 }
 
+void* g_damage_watch; // tests (decision 5CD): every hit on this creature is logged with its attacker (`coop.gpack watch <id>`)
 bool damage_filter(void* c, float& damage, int type, void* attacker)
 {
+    if (c && c == g_damage_watch)
+        H->log(M, SK_INFO, "npc: watched %p hit for %.1f by %p (%s, flags %08X, party %d)", c, damage, attacker,
+               !attacker ? "none" : attacker == game::avatar() ? "the host's creature" : game::is_puppet(attacker) ? "a partner's puppet" : "a creature",
+               attacker && skg::readable(attacker, game::kFlagsOff + 4) ? skg::field<uint32_t>(attacker, game::kFlagsOff) : 0u,
+               attacker ? guest_pack::owner(attacker) : -1);
     if (!g_enabled || !C.sess || !C.sess->connected())
         return true;
     void* av = game::avatar();
@@ -3521,6 +3536,12 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             if (protected_target && encounter_enemy(attacker))
                 damage = float(double(damage) * world::rules_for_current().enemy_damage_percent() / 100.0);
             else if (attacker == av || (attacker && game::is_puppet(attacker))) encounter_enemy(c);
+        }
+        // decision 5CD: a partner's own pack thinks with that partner as its leader, so the host's creature is a stranger to
+        // it; it never hurts the host (runtime 2026-11-17: a partner's recruit bit the host for 15.8 and 5.2, the host died)
+        if (c == av && attacker && guest_pack::member(attacker) && creature_hp::drop_party_hit(attacker)) {
+            log_hit(0, attacker, damage, "dropped (a partner's pack, npc.party_peace)");
+            return false;
         }
         if (c == av) {
             damage = teamplay::on_own_damage(av, damage);

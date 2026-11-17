@@ -207,6 +207,10 @@ static double g_summon_seen_at = -1e9;
 static bool g_flock_release = true; // (BUG-9245, its switch below)
 static void* flock_herd(void* ev);
 static std::pair<int, int> tidy_summon_list(void* herd);
+using SummonEnd_t = void(SK_THISCALL*)(void*);
+static SummonEnd_t o_SummonEnd;
+static void SK_THISCALL h_SummonEnd(void* ev); // decision 5CD (below)
+static uint32_t g_party_timeouts;
 static void SK_THISCALL h_SummonUpdate(void* ev, uint32_t a)
 {
     g_seen_summon = ev;
@@ -222,6 +226,34 @@ static void SK_THISCALL h_SummonUpdate(void* ev, uint32_t a)
         }
     if (g_flock_forget && ev && ev == g_flock_event && !((const uint8_t*)ev)[0xC])
         forget_flock("its update found it inactive"); // BUG-0800
+    // decision 5CD: a partner's summon runs inside that partner's own pack (its leader, its list, its count). 5 s past its
+    // time it ends the way the manager ends an event (+0xC = 0, then its end, inside the party: the flock leaves the
+    // partner's pack): its own "done?" waits for the flock to be 100 m from its leader, and a partner's flock stays at
+    // its side (runtime 2026-11-17: 32 s past its time, still active, every summon of the world refused meanwhile)
+    if (ev && ev == g_flock_event && guest_pack::party_mode() && skg::readable(ev, 0x64) && ((uint8_t*)ev)[0xC] &&
+        skg::field<float>(ev, 0x2C) < -5.f) {
+        ((uint8_t*)ev)[0xC] = 0;
+        h_SummonEnd(ev);
+        g_party_timeouts++;
+        return;
+    }
+    // any other summon a minute past its time (one a save brought back with its flock still in its herd, one the mod lost
+    // track of) ends the same way: else no Summon Flock of anyone starts again in that world
+    if (g_flock_release && ev && ev != g_flock_event && skg::readable(ev, 0x64) && ((uint8_t*)ev)[0xC] &&
+        skg::field<float>(ev, 0x2C) < -60.f) {
+        H->log(M, SK_INFO, "drama: a summon event %.0f s past its time ends now (the game's end, BUG-9245)", -skg::field<float>(ev, 0x2C));
+        ((uint8_t*)ev)[0xC] = 0;
+        o_SummonEnd(ev);
+        g_party_timeouts++;
+        return;
+    }
+    if (ev && ev == g_flock_event && guest_pack::party_mode())
+        if (const size_t tok = guest_pack::party_enter_puppet(g_flock_puppet)) {
+            o_SummonUpdate(ev, a);
+            guest_pack::party_leave_token(tok);
+            g_flock_updates++;
+            return;
+        }
     void* nm = ev && ev == g_flock_event && g_flock_relay ? game::noun_manager() : nullptr;
     void* pup = g_flock_puppet;
     if (!nm || !pup || !game::is_puppet(pup) || !game::object_alive(pup)) {
@@ -240,11 +272,29 @@ static void SK_THISCALL h_SummonUpdate(void* ev, uint32_t a)
     g_flock_updates++;
 }
 
+// decision 5CD: the summon's end (vt+0x34, SporeCoop::SummonEvent_End) takes each listed creature out of the pack
+// (cPosseSimulator_RemoveMember): a partner's flock leaves that partner's pack, inside its party
+static uint32_t g_party_ends;
+static void SK_THISCALL h_SummonEnd(void* ev)
+{
+    if (ev && ev == g_flock_event && guest_pack::party_mode())
+        if (const size_t tok = guest_pack::party_enter_puppet(g_flock_puppet)) {
+            o_SummonEnd(ev);
+            guest_pack::party_leave_token(tok);
+            g_party_ends++;
+            H->log(M, SK_INFO, "drama: a partner's summon ended inside its own pack (decision 5CD)");
+            return;
+        }
+    o_SummonEnd(ev);
+}
+
 void init(const SkHost* host, SkMod* mod, net::Session* sess)
 {
     H = host;
     M = mod;
     S = sess;
+    if (uintptr_t u = H->sym("SporeCoop::SummonEvent_End"))
+        H->hook_create(M, (void*)u, (void*)h_SummonEnd, (void**)&o_SummonEnd);
     uintptr_t a = H->sym("SporeCoop::DramaManager_StartEvent");
     a_Get = H->sym("SporeCoop::DramaManager_Get");
     a_StartKind = H->sym("SporeCoop::DramaManager_StartKind");

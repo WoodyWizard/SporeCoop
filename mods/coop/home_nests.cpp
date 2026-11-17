@@ -770,6 +770,17 @@ void host_tick(double now)
     }
 }
 
+void* family_herd(uint8_t player)
+{
+    if (!g_fix || !is_host())
+        return nullptr;
+    const int seat = party::seat_of_player(player);
+    net::Vec3 at;
+    if (seat <= 0 || seat >= (int)g_nests.size() || !g_nests[seat].herd || !nest_pos_of(g_nests[seat].herd, at))
+        return nullptr;
+    return g_nests[seat].herd;
+}
+
 bool home_for(uint8_t player, net::Vec3& out)
 {
     if (g_fix && is_host()) {

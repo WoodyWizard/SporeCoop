@@ -9,11 +9,11 @@ source: QA TITAN 2026-11-16
 role: host
 versions: 0.7.14.1-lineages63-dev
 fixed_in:
-branch:
+branch: feat/lineages-47
 commits:
-tests: manual Windows QA with tools/qa_win/qa.py (TITAN, Samuth.spo, host 9 + guest 8)
+tests: manual Windows QA with tools/qa_win/qa.py (TITAN host 9 + guest 8, the MSI as player 2 over Tailscale; Samuth.spo)
 signature:
-docs: docs/re/creature.md#creature-summon-pool
+docs: docs/re/creature.md#creature-pack-per-player
 related: BUG-9129, BUG-9233, BUG-9245, BUG-9247, BUG-9249, BUG-0512, BUG-0735
 ---
 
@@ -30,13 +30,30 @@ So the order works only for a creature in the game's pack (AddMember); the partn
 Not looked at: which part of AddMember the behaviour tree checks (the pack list, the posse simulator's own member entries).
 
 ## Fix
-Partly: creature.guest_pack_attack gives the partner's members the game's own order (with PosseMemberCanDefend first, as the relay does); it has effect once a member is in the game's pack. How the partner's pack joins the game's pack without filling the host's is decision 5C (docs/ROADMAP.md).
+Decision 5CD (owner 2026-11-16): a pack per player, the game's own pack code run for each partner (docs/re/creature.md#creature-pack-per-player).
+Built 2026-11-17 (feat/lineages-47, unreleased), `coop.fix creature.party_packs` (off: the guest pack of 63-dev):
+- Phase 1, the party context: each partner has its own pack manager (the game's ctor and init) and member list; its leader (the avatar), the family herd, the host's Pack panel (hidden) and the puppet's tuning are swapped in while the game's pack code runs for it: its members' AI tick and update, its recruit (AddMember), its Summon Flock (start, update, end), its forwarded commands, the attack order. Summon and recruit put creatures into the partner's own pack (the limit of 3 recruits per pack, the summoned count); the summon ends inside the party 5 s past its time (its "done?" waits for 100 m) and the flock leaves the partner's pack as in single player. Following: the member is walked back to its partner (the game's own follow was not reproduced, see the docs). A partner's own commands to its creature are forwarded (`creature.pack_commands`, K_PACKCMD) and given to its puppet inside the party (Creature_PlayerCommand, the relay). A partner's pack never hurts or targets the host (npc.party_peace, npc.pack_spares_partners extended).
+- Phase 2: the host sends each partner its pack (K_PACKLIST every 2 s); the partner's game puts those proxies into its own pack list with the game's recruit: its Pack panel, names, the first-pack hint. Its save hides that list (the proxies are never saved).
+- Phase 3: a partner's recruits are noted per planet at each host save and when it leaves (worlds.ini "pack <identity>"), their pack bit off while the save is written; on a load or a rejoin the creatures of that species nearest the noted spots (10 m) join its pack again.
+- Phase 4: the partner's own nest herd is the game's avatar herd inside its party, and its family's members think inside its party (`creature.party_family`).
+- Around it: a summon a minute past its time ends the game's way (BUG-9245); a creature with the pack bit in no pack list loses the bit (every 5 s); the summoned count is set to what the list holds whenever no summon runs, on every game (BUG-9249).
+Not achieved: the partner's pack does not bite. The members take the order and walk to the target, but no hit lands (0 hits logged), while the host's own pack, the same species and the same order (`coop.gpack hostorder`), lands every hit.
+Earlier (2026-11-16): creature.guest_pack_attack gives the members the game's own attack order.
 
 ## Verification
-FAIL (63-dev SetTarget, switch off, 21:54): the partner hit a wild 067C6931 35 m away; its health stayed 71.5; the 5 members never closed in and all died to its herd within 35 s.
+2026-11-17 (TITAN, then the MSI as player 2 over Tailscale, Samuth.spo):
+- PASS isolation: the MSI's pack (2 recruits) and the TITAN guest's (1) in their own lists, the host's list unchanged; the host recruited while both were out ("joined the pack").
+- PASS Summon Flock in a partner's pack: 5 summoned into player 1's pack (summoned 5), the event ended inside the party 5 s past its time (summoned 0, members 0), the host's own summon started right after; a summon left 60 s past its time by an older run ended by itself.
+- PASS the MSI's own Pack panel: its game's pack list held both members (mirror=2, its pack list 2).
+- PASS save and load: 2 recruits noted at a host save, both back in player 1's pack after the host reloaded the world ("2 of its recruits back"); the pack bits back on right after the save.
+- PASS follow (walked back): members within 6-18 m of the partner after a 30 m walk.
+- FAIL attack: host baseline (`coop.gpack hostorder`, 2 recruits 06539202 in the host's pack): 6 hits by the two members, the creature 18 -> 0 in 9 s; the same with the MSI's pack (2-3 recruits 06539202, its hit and its forwarded order, its creature beside the target, the members 1.7-2.1 m from it): 0 hits in 24 s. The same with the members' update outside the party (`coop.gpack ctx 0`): 0 hits.
+- Found and fixed on the way: a partner's recruit bit the host for 15.8 and 5.2 (the host died): now dropped and its target cleared; the host's Pack panel showed the partners' members (6 portraits): now hidden inside a party; the guest's summoned count stood at -5 (its pack refused every member): now set from the list.
+2026-11-16: FAIL (63-dev SetTarget, switch off, 21:54): the partner hit a wild 067C6931 35 m away; its health stayed 71.5; the 5 members never closed in and all died to its herd within 35 s.
 Not passed yet: with the order alone (switch on) the members still stood by (22:03, 22:05); one member in the game's pack fought (22:08).
 no-fail-run: Windows QA by hand (no lab on this PC).
 
 ## History
 - 2026-11-16: opened during the owner-requested pack test.
 - 2026-11-16 (later): cause found (only members of the game's pack obey the pack's attack order); the order itself built (creature.guest_pack_attack); joining the pack is decision 5C.
+- 2026-11-17: decision 5CD built (phases 1-4, unreleased); tested on TITAN and with the MSI; the partner's pack does not bite yet (open).
