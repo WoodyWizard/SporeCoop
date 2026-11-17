@@ -111,8 +111,9 @@ def colony_frame(host, guest, planet, tag, land=True):
         print(f'  colony key frame: {seen}', flush=True)
         time.sleep(1.5)
         if land:
-            note = (f'space, both games landed on the guest\'s restored colony {planet}, the game\'s own camera over the '
-                    'ship: the colony\'s buildings on both games')
+            note = (f'space, next session: each game tried to land on the guest\'s restored colony {planet} (its place in '
+                    'the extra: 4xxxxxxx landed, the game\'s own camera over the ship with the colony\'s buildings; '
+                    '8xxxxxxx its system view, the colony planet in orbit)')
         else:
             note = (f'space, next session: both games in their own view after the restore (the guest\'s colony {planet} '
                     'is at the NPC\'s star, not flown to): no reward box or caption left over')

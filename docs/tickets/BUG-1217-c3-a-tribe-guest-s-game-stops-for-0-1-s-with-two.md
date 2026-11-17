@@ -55,7 +55,8 @@ Test host_save_tribe (`coop_host_pause.py --stage tribe --host-save`, fix/w51-vi
   passed the autosave half and failed only an earlier draft of the test's rejoin watch (it ran into the guest's own
   world load).
 * Unit: tests/core_tests.cpp busy_classify (make test).
-* The host_pause_* tests (BUG-1142) on the fixed build: see the History line of the final batch.
+* The host_pause_* tests (BUG-1142) on the fixed build: host_pause_cell, _creature, _tribe, _civ, _space, _rivals, _guest
+  PASS in 20261116-102211.
 
 ## History
 - 2026-11-16: opened.
