@@ -536,6 +536,38 @@ Decision 5U A. Code on alpha: mods/coop/creations.cpp (switch `creations.host_ow
 * Alpha only: on the live branch the same rule would change which creature a host plays in a world it once received
   from another host; to be decided before it goes to live.
 
+### The hand-over: the next player takes the planet over (2026-11-17, feat/lineages-alpha)
+<a id="server-handover"></a>
+
+Decision 5V A. Code on alpha: server/galaxy/main.cpp, mods/coop/galaxy_client.cpp, net/galaxy.h (protocol 3).
+
+* When the planet's host leaves (it saves and uploads the world first) or times out (20 s silent) and players stay, the
+  server makes the next player the host: it gets ROLE host with the stored world, downloads it, loads it and hosts it.
+  The others get HOSTMOVE: their session ends and they wait on the planet ("another player takes it over, wait a
+  moment"); once the new host is READY the server sends them ROLE guest and they join it (the world arrives as for any
+  join). A new host without a stored world hosts the world it plays. A waiting player gives up after 6 minutes.
+* ✔ Runtime (TITAN, local galaxy server, QA games 9, 8 and 7 on Samuth): game 9 hosted, 8 and 7 joined; game 9 left:
+  its world was stored, game 8 hosted it 11 s later, game 7 joined game 8 at once and played there 25 s after that
+  (its own creature, the world received and loaded); game 8 saw game 7 at 56 m with its party card. Game 8 killed: the
+  server timed it out after 20 s, game 7 downloaded the stored world and hosted it 11 s later.
+* ~ A host that crashes loses what happened on the planet since the last upload (5 minutes at most; the test lost
+  about 2 minutes). Shorter uploads while players are on the planet would narrow it (each upload is a save, about 4 s).
+* ~ Every hand-over is a reload for everybody on the planet (the new host loads the stored world, the others the new
+  host's share): about 25-40 s on TITAN.
+
+### Owner's idea: deleting one's creature on a planet from the online galaxy menu (2026-11-17)
+
+Owner: "when a player is on the Online Galaxy Menu, we should allow them to delete their creature on the world still.
+Deleting their creature will let them rejoin that planet with a new one."
+
+* Good, and cheap with 5U A: the player's creature on a planet is the record in its worlds.ini; deleting it clears the
+  record (today `coop.creations worlds set creature 0` in that world), and the next join of that planet opens the
+  first-creature editor (BUG-9208).
+* Also to remove with it: the player's own nest and family in the stored world (BUG-9210 made one per player); left
+  there, they would stay as a nest of nobody. The planet's host would remove them (the player asks through the galaxy
+  server).
+* Goes with the galaxy menu work (#server-galaxy-menu): a "Delete my creature here" button on each server planet.
+
 ### Owner's question: Civ and Creature eras talking to each other (2026-11-17)
 
 Owner: "Once we load Civ stage while someone's in creature stage, it shouldn't be too crazy to make them communicate I
