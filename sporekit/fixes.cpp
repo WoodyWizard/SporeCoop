@@ -43,6 +43,7 @@ KitFix g_fix_vehbounds{"vehbounds", "the fault logger reads the faulting stack o
 KitFix g_fix_trireset{"trireset", "the overlay's state block is made anew on a new device, a failed CreateStateBlock is tried again after a Reset (BUG-1026)", 1};
 KitFix g_fix_cmdkeep{"cmdkeep", "mod.unload / mod.reload wait for the mod's console commands running on other threads (coop.sample) before its DLL is freed; one that does not return keeps the old image mapped (BUG-1018)", 1};
 KitFix g_fix_postinit{"postinit", "SK_EV_POST_INIT (main menu ready) is not fired when the game's own cSporeApp::Init failed (BUG-1021)", 1};
+KitFix g_fix_hiddenpaint{"hiddenpaint", "a hidden game window (a server nobody watches) is painted at the frame limit: Spore runs its whole frame, the world's update too, from WM_PAINT, which a hidden window never gets (decision 5H)", 1};
 KitFix g_fix_logprune{"logprune", "only the newest crash reports, dumps, reports and archives stay in mods\\logs (BUG-0137)", 1};
 
 std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &g_fix_reentry, &g_fix_hookkeep,
@@ -51,7 +52,7 @@ std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &
                                        &g_fix_exitwait, &g_fix_hookorig, &g_fix_hookfirst, &g_fix_initfail, &g_fix_hangloop, &g_fix_longout,
                                        &g_fix_frameunwind, &g_fix_outpump, &g_fix_presentlost, &g_fix_faultstorm, &g_fix_dialognote, &g_fix_framelimit, &g_fix_offstack, &g_fix_taskdrop, &g_fix_drawncam,
                                        &g_fix_stackvq, &g_fix_wheelmk, &g_fix_presentunwind, &g_fix_taskcut, &g_fix_crashcopy,
-                                       &g_fix_reportsafe, &g_fix_vehbounds, &g_fix_trireset, &g_fix_cmdkeep, &g_fix_postinit}; }
+                                       &g_fix_reportsafe, &g_fix_vehbounds, &g_fix_trireset, &g_fix_cmdkeep, &g_fix_postinit, &g_fix_hiddenpaint}; }
 
 KitFix* kit_fix_find(const char* name)
 {

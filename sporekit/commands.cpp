@@ -601,6 +601,13 @@ static int c_frames_source(void*, int argc, const char* const* argv, SkOut* o)
     return 0;
 }
 
+static int c_window_hidden(void*, int argc, const char* const* argv, SkOut* o) // decision 5H
+{
+    bool h = set_window_hidden(argc > 1 ? (strcmp(argv[1], "off") != 0) : -1);
+    outf(o, "window %s, %u paints sent while hidden", h ? "hidden" : "shown", hidden_paints());
+    return 0;
+}
+
 static int c_exc(void*, int argc, const char* const* argv, SkOut* o)
 {
     outf(o, "%s", exceptions_report().c_str());
@@ -1051,6 +1058,8 @@ void register_builtin_commands()
     command_add(k, "bg", "bg [on|off] - keep running when the window is unfocused", c_bg, nullptr, A);
     command_add(k, "frames.source", "frames.source [auto|loop] - where frames come from (loop: ignore Present, tests)",
                 c_frames_source, nullptr, A);
+    command_add(k, "window.hidden", "window.hidden [on|off] - hide the game window (a server nobody watches; it keeps running)",
+                c_window_hidden, nullptr, A);
 }
 
 } // namespace sk

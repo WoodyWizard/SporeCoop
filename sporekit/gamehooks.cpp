@@ -84,9 +84,44 @@ static int SK_THISCALL h_SporeAppInit(void* self, int a)
 // window messages; minimized it sleeps 200 ms). The frame source when Present is lost (d3d9hook.cpp).
 typedef int(SK_THISCALL* CanvasTick_t)(void*);
 static CanvasTick_t o_CanvasTick;
+// Decision 5H (docs/12-server-and-players.md#server-spike-hidden): Spore runs its whole frame, the world's update too,
+// from WM_PAINT (Canvas::Tick only invalidates the window and pumps its messages). A hidden window never gets WM_PAINT:
+// the world froze for every player and the loop spun (446 passes a second, 83 % of a core, 2026-11-17). A game window
+// that is hidden but not minimized is painted here at the frame limit (kFrameLimitMS, 33 ms when none) and the loop
+// sleeps 1 ms between: the hidden host ran on (10 of 17 creatures moving, as with the window shown). Minimized stays
+// the game's own pause. `kit.fix hiddenpaint 0`: the game's own behaviour (frozen while hidden).
+static double g_hidden_paint_at;
+static unsigned g_hidden_paints;
+unsigned hidden_paints() { return g_hidden_paints; }
+static void paint_hidden_window()
+{
+    HWND w = (HWND)game_window();
+    if (!fixed(g_fix_hiddenpaint) || !w || IsWindowVisible(w) || IsIconic(w))
+        return;
+    int ms = frame_limit_now();
+    if (ms <= 0)
+        ms = 33;
+    const double now = now_seconds();
+    if (now - g_hidden_paint_at >= ms / 1000.0) {
+        g_hidden_paint_at = now;
+        g_hidden_paints++;
+        SendMessageW(w, WM_PAINT, 0, 0);
+    } else
+        Sleep(1);
+}
+
+bool set_window_hidden(int on)
+{
+    HWND w = (HWND)game_window();
+    if (w && on >= 0)
+        ShowWindow(w, on ? SW_HIDE : SW_SHOWNOACTIVATE);
+    return w && !IsWindowVisible(w);
+}
+
 static int SK_THISCALL h_CanvasTick(void* self)
 {
     int r = o_CanvasTick(self);
+    paint_hidden_window();
     watchdog_loop_tick();
     frame_from_game_loop();
     return r;
