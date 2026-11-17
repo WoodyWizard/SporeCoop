@@ -3895,6 +3895,16 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * BUG-9248. The partner's summoned flock follows the partner and is told the target when the partner hits a creature, but stays at the partner's side instead of running at it: the game obeys its pack's attack order only from members of its own pack, and the partner's flock is kept out of it (BUG-9233). Decision 5C.
 * Reproduce: host + partner in the creature stage, `coop.gpack summon <player>` on the host, the partner hits a creature 20-90 m away (`coop.npc hit <id> 1` on the partner): `coop.gpack` shows the target, the members' distance to the partner stays 1-2 m.
 
+## Creature: a guest's first-creature editor sits under the loading screen and the menu splash (2026-11-17, feat/lineages-47)
+<a id="issue-pregame-editor-overlays"></a>
+
+* BUG-9252 (seen with its fix). A guest that left a stage for the galaxy menu to load the host's world, in a world where
+  it has no creature of its own, gets the first-creature editor (BUG-9208); the mod's "Bringing your nest" loading
+  screen stays over it until its 120 s limit, and the galaxy menu's splash text ("galactic adventures", the rating line)
+  is drawn over the editor.
+* Reproduce: host A plays a Creature world; guest B in another Creature world, with no creature of its own in A's,
+  joins A; B leaves its stage for the menu and the editor opens under the loading screen.
+
 ## Creature: a partner's own pack does not bite yet; one summon at a time per world (2026-11-17, feat/lineages-47)
 <a id="issue-partner-pack-no-bite"></a>
 

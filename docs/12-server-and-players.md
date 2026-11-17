@@ -475,6 +475,58 @@ key of another era's creation, placed ahead of the avatar and moved every frame.
 * ? Not checked: collision (creatures walked through the truck's spot in the screenshots, as expected of a prop),
   how a prop looks at a distance (level of detail), and many props at once.
 
+## The galaxy server keeps each planet's world (2026-11-17, feat/lineages-alpha)
+<a id="server-world-storage"></a>
+
+Decision 5Q A. Code on the alpha branch: server/galaxy/main.cpp, net/galaxy.h (protocol 2), mods/coop/galaxy_client.cpp,
+world::galaxy_pack / galaxy_install (mods/coop/world.cpp).
+
+* The server keeps one file per planet in its worlds folder (`--worlds <dir>`, "worlds" by default), read back when it
+  starts: a planet with a stored world stays on the list with nobody on it ("Samuth (0, no host, saved)").
+* Upload: the planet's host saves its game and sends the save folder with the designs, packed as a share packs it
+  (world::galaxy_pack): 60 s after a new planet is hosted, then every 5 minutes (`coop.galaxy every <s>`), on
+  `coop.galaxy save`, and before it leaves (`leave` and `disconnect` wait for it, 3 minutes at most). Only the planet's
+  host may store its world.
+* Download: the next first player on the planet gets the host role with the stored size, downloads the world
+  (FETCH), writes it into a co-op save slot and loads it (world::galaxy_install, the player's own load, from the galaxy
+  menu or from a stage), and hosts it once it plays there (READY). A player entering while the host is not hosting yet
+  is told to enter again in a moment.
+* Transfers: chunks of 1100 bytes, an ack each, 96 in flight, sent again after 1 s (XferOut / XferIn in net/galaxy.h,
+  shared by the server and the game).
+* ✔ Runtime (TITAN, local galaxy server, QA games 9 and 8): game 9 hosted Samuth (a new planet), its first upload
+  stored 4025 KB in 8.2 s (4 s of it the save); `leave` saved again (4031 KB) and then left. Game 8 entered from the
+  galaxy menu: downloaded the world in under a second, wrote it into a new save slot, loaded it and hosted it 4 s after
+  the load; its creature stood 1 m from where game 9's creature was when it left. Game 9 joined game 8 as a guest
+  through the relay and played (the party card, the partner 5 m away). Game 8's own 5-minute upload ran while it
+  hosted. The server restarted with the world still listed; game 9 then downloaded it (0 chunks resent) and hosted it
+  again.
+* Found and fixed on the way: a send stamp up to 2 ms ahead of the clock made fresh chunks count as overdue (a third to a
+  half of a download went twice); BUG-9252 (live): a guest leaving a stage for the galaxy menu waited forever for
+  intro bars nobody showed.
+* ~ A world hosted by another player changes hands: the new host plays its own creature in it (the world's player
+  species becomes the new host's, BUG-0508), so the planet's creator, back as a guest, was treated as a new player there
+  (no creature of its own: the first-creature editor). Each player keeping their own creature on a stored planet is
+  open (decision 5U).
+* ~ Seen with BUG-9252, not fixed: the mod's "Bringing your nest" loading screen stayed over that first-creature editor
+  until its 120 s limit, and the galaxy menu's splash text ("galactic adventures", the rating line) was drawn over it.
+* Not yet: the hand-over while players stay (today everybody leaves when the host leaves, and the next to enter hosts
+  the stored world), the galaxy menu showing the server's planets, eras.
+
+### Owner's question: Civ and Creature eras talking to each other (2026-11-17)
+
+Owner: "Once we load Civ stage while someone's in creature stage, it shouldn't be too crazy to make them communicate I
+assume."
+
+* Seeing each other: not too crazy, agreed. Both eras are sessions on the same planet through the same galaxy server;
+  each era's host sends a light stream (players, vehicles, ships, where buildings stand, a few times a second) that the
+  server passes to the planet's other eras, and each game draws look-alikes (the 5S spike and 5T B: vehicles and
+  buildings stand and drive on the ground in a Creature game). The ground is the same planet, so positions carry over.
+* Interacting is the hard part: a tank shooting a creature, a creature attacking a city. The two eras are separate
+  simulations with different contents (nests and herds where the other era has cities and roads), so every interaction
+  needs its own rule written by us (who decides the hit, what the other era's game does with it). Look-only first;
+  then a few chosen interactions.
+* Chat between eras is easy (the server relays it).
+
 ## Questions for the owner
 <a id="server-questions"></a>
 
