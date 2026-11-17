@@ -11,10 +11,11 @@ kind (`citizen`, worldobj.cpp: bound by position, walked to the host's) and thei
 1. Two games on civ_npc, 25 s to settle.
 2. 8 rounds 6 s apart: both games' own objects around the same centre (`coop.census all`, the detector's
    dump): the host's citizens within 128 m of the centre, the guest's within 160 m, paired greedily
-   within 15 m (the detector's rule); the sizes (GetScale) of the unambiguous pairs (each the other's nearest,
-   within 3 m, the next citizen 2 m farther) compared at 12 % (the detector's greedy pairs cross in a crowd).
-PASS: over all rounds at most 10 % of the host's citizens without a partner and at most 10 % of the unambiguous pairs
-with another size (fewer than 20 such pairs: up to 8 more rounds first).
+   within 15 m (the detector's rule); the sizes (GetScale) of each host citizen and the guest citizen bound to it
+   (its copy, `coop.wobj list citizen`, within 15 m of it) compared at 12 % (BUG-1227: nearest pairs, the detector's
+   greedy ones and even each other's nearest within 3 m, crossed where two walking copies passed each other).
+PASS: over all rounds at most 10 % of the host's citizens without a partner and at most 10 % of the pairs (a citizen and
+its copy) with another size (fewer than 20 such pairs: up to 8 more rounds first).
 --plant N: before the rounds (after each load) the guest drops the binds of its N citizens nearest the centre and puts
 them 60 m out (`coop.wobj loose citizen N 60`): the state a load leaves now and then, every time.
 --reload (civ_citizens_reload, BUG-1221): before the rounds the host loads the fixture again in the running games and the
@@ -37,6 +38,7 @@ import worlddiff
 from twoinst import Checks, start, warm_reset
 
 CITIZEN = 0x018EB4B7
+PAIR_M = 15.0  # m: a host citizen and its copy compared for size (the partner radius of the place check, the detector's)
 
 
 def citizens(w, c, r):
@@ -107,15 +109,15 @@ def main():
         n_host, n_unpaired, n_pairs, n_scale = (n_host + r[0], n_unpaired + r[1], n_pairs + r[2], n_scale + r[3])
         worst = max(worst, (r[1] / max(r[0], 1), r[1], r[0]))
     n_rounds = a.rounds * (a.reloads if a.reload else 1)
-    # BUG-1221: a walking crowd gives few unambiguous pairs (7 in 8 rounds, lab 20261117-124316 #1) and one crossing of
-    # two walking copies (BUG-1227) is then 8-14 %: more rounds until 20 pairs (at most 8 more), the limits unchanged
+    # BUG-1221: the nearest pairs of a walking crowd were few (7 in 8 rounds, lab 20261117-124316 #1); since BUG-1227 the
+    # pairs go by identity (about one per host citizen a round): more rounds until 20 pairs (at most 8 more), the limits unchanged
     extra = 0
     while n_pairs < 20 and extra < 8:
         r = rounds(host, guest, 1)
         n_host, n_unpaired, n_pairs, n_scale = (n_host + r[0], n_unpaired + r[1], n_pairs + r[2], n_scale + r[3])
         extra += 1
     if extra:
-        print(f'  {extra} more round(s) for 20 unambiguous pairs ({n_pairs})', flush=True)
+        print(f'  {extra} more round(s) for 20 pairs ({n_pairs})', flush=True)
         n_rounds += extra
     print(guest.call('coop.wobj')['out'].strip(), flush=True)
     print(guest.call('coop.fields')['out'].strip(), flush=True)
@@ -126,14 +128,14 @@ def main():
     if a.reload and a.reloads > 1:  # each load on its own (one bad load among good ones is still a player's bad load)
         ck(worst[0] <= 0.10, f'after every load: at most {worst[1]} of {worst[2]} without a partner ({worst[0]:.0%}, at most 10 %)')
     ss = n_scale / max(n_pairs, 1)
-    ck(n_pairs >= 10, f'unambiguous pairs to compare sizes ({n_pairs})')
-    ck(ss <= 0.10, f'the guest\'s citizens have the host\'s size: {n_scale} of {n_pairs} unambiguous pairs differ ({ss:.0%}, at most 10 %)')
+    ck(n_pairs >= 10, f'pairs (a citizen and its copy) to compare sizes ({n_pairs})')
+    ck(ss <= 0.10, f'the guest\'s citizens have the host\'s size: {n_scale} of {n_pairs} pairs (a citizen and its copy) differ ({ss:.0%}, at most 10 %)')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
 
 def rounds(host, guest, n_rounds):
-    """n_rounds checks 6 s apart: (host citizens, without a partner, unambiguous pairs, of another size)"""
+    """n_rounds checks 6 s apart: (host citizens, without a partner, pairs compared for size, of another size)"""
     n_host = n_unpaired = n_pairs = n_scale = 0
     for rnd in range(n_rounds):
         hw0, gw0 = worlddiff.pair_dump(host, guest)
@@ -148,20 +150,14 @@ def rounds(host, guest, n_rounds):
             continue
         h, g = citizens(hw, c, 128.0), citizens(gw, c, 160.0)
         pairs, uh, _ = worlddiff._match(h, g, 15.0)
-        # sizes: only unambiguous pairs (each the other's nearest, within 3 m, the next one 2 m farther): in a
-        # crowd the detector's greedy pairs cross (a pair 0.3 m apart of two different citizens)
-        clear = []
-        for x in h:
-            dg = sorted((math.dist(x['pos'], y['pos']), i) for i, y in enumerate(g))
-            if not dg or dg[0][0] > 3.0 or (len(dg) > 1 and dg[1][0] < dg[0][0] + 2.0):
-                continue
-            y = g[dg[0][1]]
-            # BUG-1221: x must be y's nearest host citizen too (the check took a pair whose guest citizen stood 0.3 m
-            # from another host citizen and 2.5 m from x: lab 20261117-123516 #1)
-            dh = sorted((math.dist(y['pos'], z['pos']), j) for j, z in enumerate(h))
-            if h[dh[0][1]] is not x or (len(dh) > 1 and dh[1][0] < dh[0][0] + 2.0):
-                continue
-            clear.append((x, y))
+        # sizes: each host citizen against the guest citizen bound to it (its copy, `coop.wobj list`), when that copy is
+        # within PAIR_M of it. BUG-1227: nearest pairs, even each other's nearest within 3 m, crossed where two walking
+        # copies passed each other (a neighbour's copy at a citizen's place, of the neighbour's size: lab 20261117-120456)
+        gmap = bound_map(guest, c)
+        gs = {y['ser']: y for y in g}
+        copy_of = {hid: gs[gser] for gser, hid in gmap.items() if hid and gser in gs}
+        clear = [(x, copy_of[x['ser']]) for x in h if x['ser'] in copy_of
+                 and math.dist(x['pos'], copy_of[x['ser']]['pos']) <= PAIR_M]
         pairs_all = pairs
         pairs = clear
         sc = [(x, y) for x, y in pairs if worlddiff._rel(x['scale'], y['scale']) > 0.12]
@@ -175,8 +171,7 @@ def rounds(host, guest, n_rounds):
         if ds:
             print(f'    pair distances: median {ds[len(ds) // 2]:.1f} m, max {ds[-1]:.1f} m; size pairs at {scd}', flush=True)
         print(f'  round {rnd + 1}: host {len(h)} citizens near {worlddiff._fmt(c)}, guest {len(g)}; {len(uh)} of the '
-              f'host\'s without a partner within 15 m; {len(sc)} of {len(pairs)} unambiguous pairs with another size{ex}', flush=True)
-        gmap = bound_map(guest, c)
+              f'host\'s without a partner within 15 m; {len(sc)} of {len(pairs)} pairs (a citizen and its copy) with another size{ex}', flush=True)
         hbound = set(gmap.values())
         hfree = [x for x in h if x['ser'] not in hbound]
         gfree = [y for y in g if not gmap.get(y['ser'])]
@@ -188,7 +183,7 @@ def rounds(host, guest, n_rounds):
         g0 = {y['ser']: y['pos'] for y in gw0.rows if y['kind'] == 'g' and y['noun'] == CITIZEN}
         stand = [(x, y) for x, y in pairs if x['ser'] in h0 and y['ser'] in g0 and math.dist(h0[x['ser']], x['pos']) < 0.5
                  and math.dist(g0[y['ser']], y['pos']) < 0.5]
-        print(f'      standing unambiguous pairs {len(stand)}, of another size '
+        print(f'      standing pairs {len(stand)}, of another size '
               f'{sum(1 for x, y in stand if worlddiff._rel(x["scale"], y["scale"]) > 0.12)}', flush=True)
         if uh or sc:
             misses(h, g, uh, sc, gmap)
