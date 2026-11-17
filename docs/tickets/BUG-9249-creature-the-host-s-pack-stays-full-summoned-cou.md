@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: QA TITAN 2026-11-16
 role: host
 versions: 0.7.14.1-lineages63-dev (a count left by older builds, kept in saves)
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages64-dev
 branch: feat/lineages-47
 commits: 5455e4a5
 tests: manual Windows QA with tools/qa_win/qa.py (TITAN, Samuth.spo, host 9)
@@ -36,3 +36,4 @@ no-fail-run: Windows QA by hand (no lab on this PC); the recruit after the autom
 ## History
 - 2026-11-16: opened and fixed during the pack attack QA (feat/lineages-47, unreleased).
 - 2026-11-17: on the guests too, set from the list (decision 5CD).
+- 2026-11-17: released in 0.7.14.1-lineages64-dev.

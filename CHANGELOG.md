@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages64-dev] - 2026-11-17
+
+- Creature: every player has their own pack. A partner's Summon Flock and recruits join that partner's pack (not the
+  host's), show in that partner's own Pack panel, and are kept when the host saves (decision 5CD).
+- Creature: a partner's pack now fights: it runs on the partner's own PC, so it follows, defends the partner and
+  attacks what the partner orders the way it does in single player; the host sees it move and bite (BUG-9248).
+- Creature: only one Summon Flock can be out at a time in the party; a second press is refused with a line saying whose
+  flock is out, instead of doing nothing (BUG-9250).
+- Creature: after a partner's Summon Flock, Summon Flock works again for everyone (the summon never ended), also after
+  loading a save made meanwhile (BUG-9245).
+- Creature: a partner's pack no longer keeps a creature the game recycled as another species (BUG-9247).
+- Creature: the host's pack no longer stays "full" from an old summon count kept in a save (BUG-9249).
+- Creature: a partner's pack never attacks the host's creature.
+- Creature: new nests for partners are made on dry land; a nest already under the sea stays (BUG-9246, open).
+- Tests and diagnostics: `coop.gpack` (parties, own game, summon lock), `coop.gpack baruse`, `coop.gpack summonlimit`,
+  `coop.drama summon|endsummon`, tools/qa_win/pack_own_game.py.
+
 ## [0.7.14.1-lineages63-dev] - 2026-11-16
 
 - Creature: a guest's impress meter fills with the pink bars like the host's (it stayed empty, the progress only in

@@ -1,16 +1,16 @@
 ---
 id: BUG-9250
 title: Creature: a second Summon Flock while one is out does nothing and spends the ability; lock it per party with a message
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-17
 source: owner 2026-11-17 (decision 5FA)
 role: host
 versions: 0.7.14.1-lineages63-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages64-dev
 branch: feat/lineages-47
-commits:
+commits: f867734e
 tests: manual Windows QA with tools/qa_win/qa.py (TITAN host 9 + partner 8, the MSI as player 2; Samuth.spo), `coop.gpack baruse 33`
 signature:
 docs: docs/re/creature.md#creature-summon-lock
@@ -46,3 +46,4 @@ no-fail-run: Windows QA by hand (no lab on this PC).
 
 ## History
 - 2026-11-17: opened and built (decision 5FA), tested on TITAN and with the MSI.
+- 2026-11-17: released in 0.7.14.1-lineages64-dev.

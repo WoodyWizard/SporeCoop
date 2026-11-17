@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: QA TITAN 2026-11-16
 role: host
 versions: 0.7.14.1-lineages63-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages64-dev
 branch: feat/lineages-47
 commits: 3083a39a, ae5c0ee5
 tests: manual Windows QA with tools/qa_win/qa.py (TITAN, Dorger.spo and Samuth.spo, host 9 + guest 8)
@@ -47,3 +47,4 @@ Not verified: the posse's summoned count +0x1C after the game's end; the host's 
 ## History
 - 2026-11-16: opened during the owner-requested pack and abilities QA; cause found (the summon's "done?"); fixed (creature.flock_release, re-herd in guest_pack); PASS on TITAN.
 - 2026-11-16 (later): the first fix froze the flock (+0x135); replaced by the list tidy, which also ends a stuck summon a save brought back; PASS on TITAN (Samuth.spo).
+- 2026-11-17: released in 0.7.14.1-lineages64-dev.

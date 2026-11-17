@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: QA TITAN 2026-11-16
 role: host
 versions: 0.7.14.1-lineages63-dev (unreleased first BUG-9245 fix)
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages64-dev
 branch: feat/lineages-47
 commits: ae5c0ee5
 tests: manual Windows QA with tools/qa_win/qa.py (TITAN, Samuth.spo, host 9 + guest 8)
@@ -38,3 +38,4 @@ no-fail-run: Windows QA by hand (no lab on this PC); a first species check by ke
 
 ## History
 - 2026-11-16: opened and fixed in the same QA session (feat/lineages-47, unreleased).
+- 2026-11-17: released in 0.7.14.1-lineages64-dev.
