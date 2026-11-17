@@ -85,8 +85,8 @@ playing it: the headless route the owner suggested is that dedicated server, not
 * **One planet per server process**: Spore loads one planet at a time; an MMO is a server per busy planet (the
   ROADMAP's "per-planet sessions"), with the galaxy and the players' identities shared above them.
 
-## Phase 0, day 1: what a host's game does when nobody watches it (2026-11-17, feat/lineages-alpha)
-<a id="server-spike-day1"></a>
+## Phase 0: what a host's game does when nobody watches it (2026-11-17, feat/lineages-alpha)
+<a id="server-spike-watch"></a>
 
 TITAN, QA host 9 and partner 8 (Samuth.spo, the QA frame cap of 10 FPS, 1280x960), the host measured 20-30 s per
 condition: its CPU (share of one core), memory, frames, and how many of its creatures within 60-110 m of each player
@@ -109,12 +109,36 @@ moved more than 0.5 m (scratchpad tool spike0.py; to go into tools/qa_win when p
   the game's "Dangerous creatures lurk in the deep" scene; while it showed, 0 of 18 creatures moved (CPU 15 %). A server
   must never show cutscenes, tutorials or dialogs that wait for a click.
 * ✔ The off-screen window is a "headless" host already today (no code), at the full cost of drawing.
-* ~ Open for day 2: why a hidden window freezes the world (Spore's own pause when it is not visible or not active)
+* ~ Open then (answered in #server-spike-hidden below): why a hidden window freezes the world (Spore's own pause when it is not visible or not active)
   and whether that pause can be lifted, so the drawing can stop; a frame cap for loop frames (446 / s wastes a core);
   what the drawing costs (a 320x240 window against 1280x960); a host whose own creature is parked or missing; the
   memory over a long session (511 -> 589 MB in 15 min here, with a second area loaded).
 * Seen on the way: the partner, left standing 411 m away, was killed by that area's creatures; its respawn waited
   for a click on its own screen (a test effect, not a bug).
+
+## Phase 0: a hidden host keeps running (2026-11-17, feat/lineages-alpha)
+<a id="server-spike-hidden"></a>
+
+* ✔ Why a hidden window froze the world: Spore runs its whole frame, the world's update included, from WM_PAINT.
+  App::Canvas::Tick (Steam 0x7382F0) only invalidates the window (an import called with (window, 0, 0)) and pumps its
+  messages; a minimized window sleeps 200 ms there instead. A hidden window gets no WM_PAINT, so no frame ran: no update,
+  no drawing, and no sleep for the frame limit (the loop spun).
+* ✔ Proof from outside: WM_PAINT sent to the hidden host's window at 10 Hz (SendMessageTimeout from another process)
+  brought it back: 7.7 frames a second, 10 of 17 creatures moving.
+* ✔ Built (alpha, SporeKit): a hidden, not minimized game window is painted from Canvas::Tick at the frame limit, the
+  loop sleeps 1 ms between (`kit.fix hiddenpaint`, `window.hidden on|off`). Measured on TITAN (QA cap 10 FPS,
+  tools/qa_win/headless_check.py): shown 10.0 frames, 21 % of a core, 9/17 moving; hidden 9.8 frames, 22 %, 12/16
+  moving; hidden with the switch off 425 frames from the loop, 77 %, 0/15 moving. With the host hidden, a partner's pack
+  (5EA) killed its target in 6 s and followed its partner as with a shown host (1254 paints in 3 min).
+* ✔ The drawing costs the graphics card next to nothing (1.2 % of TITAN's at 10 frames, 1280x960); the CPU of a frame is
+  mostly the game's own frame work (its creature AI is 0.1 s a minute). Cutting the drawing out of the frame is an
+  optimisation for later, not a blocker.
+* ✔ Memory: about 850 of the 2047 MB address space free in play (the game is 32-bit without large addresses): the
+  ceiling per server process, so one planet per process and a limit on players and creatures in it.
+* Verdict of phase 0: yes, a Spore instance nobody watches can be the server today (hidden window, view centres for
+  every player's area). Left for phase 5: the server's own creature (the game needs one: parked, protected, not shown
+  to the players), no cutscenes or click-to-continue dialogs on the server, an unattended launch, load and save, and
+  maybe cutting the drawing.
 
 ## Cheating: trust, but check
 <a id="server-cheating"></a>
@@ -146,7 +170,7 @@ Each phase ships on its own and keeps today's co-op working.
 
 | Phase | Work | Done when |
 |---|---|---|
-| 0 Spike | A QA Spore instance as a headless host on TITAN: drawing cut, its own creature hidden or absent, two players join, play 10 min. Measure CPU, memory, what still simulates | a yes / no / "only with a stand-in creature" on the headless server, with numbers |
+| 0 Spike | A QA Spore instance as a headless host on TITAN: drawing cut, its own creature hidden or absent, two players join, play 10 min. Measure CPU, memory, what still simulates | done 2026-11-17: yes (a hidden window, painted by SporeKit; #server-spike-hidden); the server's own creature and cutscenes left for phase 5 |
 | 1 Server role | "server" and "player" separate in the code (the ~140 host checks sorted); the host's own player goes through the same paths as a guest's where it can | today's tests pass; a player-host behaves as before |
 | 2 Ownership layer | 5EA generalised: any creature can be owned by a player (lease, states, animations, hits to the owner, hand-over, silence); the server's checks in one place | the pack runs on it; a creature can be handed from one player to another without a jump |
 | 3 Own Summon Flock | each player's Summon Flock runs on its own game (5FB); the party limit above 1 becomes real | two players' flocks out at once; the limit enforced by the server |
