@@ -3495,3 +3495,17 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   the guest's hatch, A9), the other three were tests that broke on their own steps (unknown_model since 0.7.12,
   editor_timed since 2026-11-08 at the latest, sap since 0.7.13):
   [../06-testing.md#testing-cell-rel0715](../06-testing.md#testing-cell-rel0715)
+
+## Civilization: after the host loads a save a few city citizens walk their own way on a guest (2026-11-16, fix/w51-t4)
+<a id="issue-civ-citizens-reload"></a>
+
+* What happens: after a reload of the world (the host loads its save, the guests follow) 2-5 of the city citizens near
+  a guest never get a partner of the host's: they walk on their own for as long as the game runs.
+* Reproduce: civ_citizens in warm runs (the lab reloads the fixture in running games): about 1 run in 4-5, v0.7.14.1
+  the same.
+* Known: the citizen kind binds within 30 m only and has no relocation (BUG-1221); a relocation within 60 m fixed the
+  places but the size check then failed in 2 of 6 runs, so it was not kept.
+* Next steps: nearest-pair binding after a reload, the host's size on a relocated citizen at once, a warm twin.
+* Ticket: BUG-1221 (fixed, unreleased, fix/w51-citizens): new binds by nearest pairs and a relocation of the guest's free
+  citizen within 120 m (`civ.citizen_rebind`); the first try's size failures were walking copies crossing (BUG-1227):
+  [../06-testing.md#testing-civ-citizens-reload](../06-testing.md#testing-civ-citizens-reload)

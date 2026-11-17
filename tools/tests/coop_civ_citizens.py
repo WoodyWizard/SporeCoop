@@ -14,7 +14,7 @@ kind (`citizen`, worldobj.cpp: bound by position, walked to the host's) and thei
    within 15 m (the detector's rule); the sizes (GetScale) of the unambiguous pairs (each the other's nearest,
    within 3 m, the next citizen 2 m farther) compared at 12 % (the detector's greedy pairs cross in a crowd).
 PASS: over all rounds at most 10 % of the host's citizens without a partner and at most 10 % of the unambiguous pairs
-with another size.
+with another size (fewer than 20 such pairs: up to 8 more rounds first).
 --plant N: before the rounds (after each load) the guest drops the binds of its N citizens nearest the centre and puts
 them 60 m out (`coop.wobj loose citizen N 60`): the state a load leaves now and then, every time.
 --reload (civ_citizens_reload, BUG-1221): before the rounds the host loads the fixture again in the running games and the
@@ -106,9 +106,19 @@ def main():
         r = rounds(host, guest, a.rounds)
         n_host, n_unpaired, n_pairs, n_scale = (n_host + r[0], n_unpaired + r[1], n_pairs + r[2], n_scale + r[3])
         worst = max(worst, (r[1] / max(r[0], 1), r[1], r[0]))
+    n_rounds = a.rounds * (a.reloads if a.reload else 1)
+    # BUG-1221: a walking crowd gives few unambiguous pairs (7 in 8 rounds, lab 20261117-124316 #1) and one crossing of
+    # two walking copies (BUG-1227) is then 8-14 %: more rounds until 20 pairs (at most 8 more), the limits unchanged
+    extra = 0
+    while n_pairs < 20 and extra < 8:
+        r = rounds(host, guest, 1)
+        n_host, n_unpaired, n_pairs, n_scale = (n_host + r[0], n_unpaired + r[1], n_pairs + r[2], n_scale + r[3])
+        extra += 1
+    if extra:
+        print(f'  {extra} more round(s) for 20 unambiguous pairs ({n_pairs})', flush=True)
+        n_rounds += extra
     print(guest.call('coop.wobj')['out'].strip(), flush=True)
     print(guest.call('coop.fields')['out'].strip(), flush=True)
-    n_rounds = a.rounds * (a.reloads if a.reload else 1)
     ck(n_host >= 10, f'the host had citizens near the centre ({n_host} over {n_rounds} rounds)')
     share = n_unpaired / max(n_host, 1)
     ck(share <= 0.10, f'the guest\'s citizens are where the host\'s are: {n_unpaired} of {n_host} without a partner '

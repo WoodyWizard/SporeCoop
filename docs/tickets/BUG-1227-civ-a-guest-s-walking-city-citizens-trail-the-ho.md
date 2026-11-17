@@ -13,7 +13,7 @@ branch:
 commits:
 tests: civ_citizens, civ_citizens_reload (coop_civ_citizens.py: the `size pair` and `standing unambiguous pairs` lines)
 signature: FAIL the guest's citizens have the host's size: N of M unambiguous pairs differ (11-14 %)
-docs: docs/re/civ.md#civ-citizens-reload
+docs: docs/re/civ.md#civ-citizens-reload, docs/known-issues.md#issue-civ-citizens-trail
 related: BUG-1221, BUG-0476, BUG-0475, BUG-1210
 ---
 

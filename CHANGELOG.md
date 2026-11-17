@@ -31,6 +31,8 @@
   why. It may join again.
 
 ### Fixed
+- Civilization: after the host loads a save, every city citizen near a guest walks where the host's walks again;
+  before, two to five of them on the guest's screen walked their own way for the rest of the game (BUG-1221).
 - Tribe: a host's tribe member that gets hungry or starves shows it on a guest's screen right away; before, a member
   the guest's game had just made for it (when the guest joined, or a new member of the tribe) showed a full hunger
   bar there for up to two minutes (BUG-1187).

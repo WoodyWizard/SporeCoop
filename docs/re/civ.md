@@ -1904,7 +1904,7 @@ of its citizens is bound to) next to both games' census (coop_civ_citizens.py pr
   120 m (also by nearest pairs), which is stopped and put at the host's place (game::stop + game::place, as
   citizen_follow's put) and bound. 120 m: a city's citizens stand within ~80 m of each other, the cities are hundreds of
   metres apart (civ_npc's far city 855 m), so a citizen of the guest's other city (its camera's, BUG-0553) is not taken.
-  With it on, 5-17 relocations per load (lab 20261117-120957), every host citizen bound within a second.
+  With it on, 5-18 relocations per load and `binds=19 own=0` after every load (lab 20261117-120957, -123516).
 * ✔ (runtime) The "another size" pairs of civ_citizens (the triage's relocation try, 2 of 6 runs) are no wrong sizes:
   the guest citizen at a host citizen's place is the copy of a neighbour 3-6 m away with that neighbour's size, and the
   host citizen's own copy stands 3-6 m away with its size (walking copies trail and cross, BUG-1227). 0 of 172 standing
