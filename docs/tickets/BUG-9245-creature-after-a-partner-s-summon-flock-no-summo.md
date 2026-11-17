@@ -10,8 +10,8 @@ role: host
 versions: 0.7.14.1-lineages63-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
-tests: manual Windows QA (TITAN, Dorger.spo and Samuth.spo, host 9 + guest 8)
+commits: 3083a39a, ae5c0ee5
+tests: manual Windows QA with tools/qa_win/qa.py (TITAN, Dorger.spo and Samuth.spo, host 9 + guest 8)
 signature:
 docs: docs/re/creature.md#creature-summon-done
 related: BUG-9129, BUG-9229, BUG-9233, BUG-0800, BUG-9246, BUG-9247, BUG-9248

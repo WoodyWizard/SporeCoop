@@ -11,7 +11,7 @@ versions: 0.7.14.1-lineages63-dev
 fixed_in:
 branch:
 commits:
-tests: manual Windows QA (TITAN, Samuth.spo, host 9 + guest 8)
+tests: manual Windows QA with tools/qa_win/qa.py (TITAN, Samuth.spo, host 9 + guest 8)
 signature:
 docs: docs/re/creature.md#creature-summon-pool
 related: BUG-9129, BUG-9245, BUG-9247, BUG-0512
