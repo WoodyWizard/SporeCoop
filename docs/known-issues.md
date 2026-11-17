@@ -282,7 +282,8 @@ anchor so other docs can link to it:
 * What happens: a city citizen that walks on the host's screen walks 3-6 m behind on a guest's; where two walk past each
   other the guest sees, for a few seconds, the other one (of another size) at a citizen's place.
 * Reproduce: civ_citizens / civ_citizens_reload print `size pair host X / guest Y: the guest's is bound to host Z 4-6 m
-  away` in about every second run; the size check fails when 10 % of the pairs are such (about 1 run in 12).
+  away` in about every second run; the size check fails when 10 % of the pairs are such (1 of 12 runs before 0.7.15's
+  BUG-1221 change, 1 of 4 in lab 20261117-125035, 0 of 4 in -130515; the check now takes rounds until 20 pairs).
 * Known: each copy has its host citizen's size; standing pairs never differ (0 of 172). The follow gives a MoveTo 1.5 s
   ahead, again after 2 m or 1.5 s, and puts only beyond 12 m (docs/re/civ.md#civ-citizens-reload).
 * Next steps: a shorter lag for walking citizens, or a size check over pairs that stay together for two rounds.

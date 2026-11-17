@@ -60,7 +60,12 @@ test's own mistake: it took a guest citizen 0.3 m from another host citizen as t
   Suite entry civ_citizens_reload.
 
 ## Verification
-* FAIL (switch off): 20261117-123109:civ_citizens_reload (`58 of 304 without a partner (19%)`, `after every load: at
+* FAIL (switch off, final code 5db61d41): 20261117-132335:civ_citizens_reload (`39 of 304 without a partner (13%)`,
+  `after every load: at most 33 of 152 (22%)`, relocs=0).
+* PASS (final code 5db61d41): 20261117-131240:civ_citizens_reload (`2 of 304`, `binds=19 own=0` after each load, 34
+  relocations); civ_citizens 4 of 4 (1 cold + 3 warm) 20261117-130515 (d23a0407, the same mod); civ_citizen_lod
+  (BUG-0553, the guest's other city keeps its citizens) and play_civ --quick PASS 20261117-131240.
+* FAIL (switch off, earlier test version): 20261117-123109:civ_citizens_reload (`58 of 304 without a partner (19%)`, `after every load: at
   most 49 of 152 (32%)`; the natural load 1 alone `binds=14 own=5`); natural, no plant: 20261117-121708:civ_citizens_reload#3
   (2 and 1 host citizens unbound for 30-40 s; FAIL on the size check, crossings).
 * PASS: 20261117-123516:civ_citizens_reload #1 #2 (`binds=19 own=0` after every load, 8-18 relocations per load).
