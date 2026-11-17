@@ -439,6 +439,28 @@ civilizations as a creature would be an amazing feat. Or seeing vehicles drive b
   maybe for a few cases). Each era built its world on the same ground, so a city can stand where another era has a
   nest.
 
+## Era visitors spike: vehicles and buildings in a Creature game (2026-11-17, feat/lineages-alpha)
+<a id="server-era-spike"></a>
+
+Decision 5S A. `coop.visit spawn <instance> <type> <group> [drive|stand] [lift m] [axes 0|1|2]` (alpha,
+mods/coop/era_visitors.cpp): a ship made by the game's SpawnUFO (type 7, the Creature stage's drama ship) with the model
+key of another era's creation, placed ahead of the avatar and moved every frame.
+
+* ✔ The Creature stage draws them: a Civ vehicle (0654CCD8/24682294/40646200, one of the Civ test world Abber's NPC
+  vehicles) and a city hall (067C4C2F/2399BE55/40636200) appeared in Samuth's Creature stage with their own models
+  (creations::ensure_model found them in a Creature profile: they are the game's own designs), and a house driven in a
+  12 m circle moved with it. Keys from a Civ world: `coop.civ bmodels` (buildings), `coop.civ` (vehicles).
+* ✔ Orientation: with local Y forward and Z up (axes 0) or X forward (axes 2) the vehicle stands upright; the
+  avatar's own rotation (axes 1) does not suit it.
+* ~ Height not solved: they float about 6 m over the ground. The ship's update keeps its hover height over the terrain
+  whatever the mod places (its read position stays 6 m up, mZoomAltitude +0x768 set to the ground did not change it),
+  because the mod's frame runs after the game's frame is drawn and the ship's update runs again before the next one.
+  Next ways: a carrier object that does not fly (an ornament or other static prop of the Creature stage with the model
+  set on it, SetModel vt 0x94 as cVehicle::Load uses), or the hover clamp in the planet UFO controller
+  (UFOController_Planet 0x1060E00), or placing from a hook that runs after the game's update and before drawing.
+* ? The thin vertical bars under the city hall: its own columns or the abduction ship's beam (type 7); to check with
+  another carrier.
+
 ## Questions for the owner
 <a id="server-questions"></a>
 
