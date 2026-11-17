@@ -225,9 +225,11 @@ struct PlaceHold {
     net::Quat rot;
     double t;
     float back_m; // a move away from aim up to this (m) in one update is the game's own walk: kept
+    bool still;   // BUG-1228: a standing body: put back without the teleport mark and without velocity
 };
 static std::vector<PlaceHold> g_place_hold;
 static uint32_t g_place_holds_kept = 0;
+static uint32_t g_still_holds_kept = 0; // BUG-1228: of them, standing bodies (still)
 struct TestPush {
     void* c;
     net::Vec3 dir;
@@ -252,18 +254,23 @@ static void place_reassert(void* c)
                 return;
             net::Vec3 p = position(c);
             if (vdist(p, h.aim) > vdist(h.pos, h.aim) + std::max(0.02f, h.back_m)) {
-                teleport(c, h.pos, h.rot);
+                if (h.still) {
+                    place(c, h.pos, h.rot);
+                    field<net::Vec3>(c, kVelOff) = net::Vec3{};
+                    g_still_holds_kept++;
+                } else
+                    teleport(c, h.pos, h.rot);
                 g_place_holds_kept++;
             }
             return;
         }
 }
-void place_hold(void* c, const net::Vec3& pos, const net::Quat& rot, const net::Vec3& aim, float back_m)
+void place_hold(void* c, const net::Vec3& pos, const net::Quat& rot, const net::Vec3& aim, float back_m, bool still)
 {
     double now = H->time_seconds();
     for (auto& h : g_place_hold)
         if (h.c == c) {
-            h = {c, pos, aim, rot, now, back_m};
+            h = {c, pos, aim, rot, now, back_m, still};
             return;
         }
     for (size_t i = 0; i < g_place_hold.size();) // (stale ones)
@@ -272,9 +279,18 @@ void place_hold(void* c, const net::Vec3& pos, const net::Quat& rot, const net::
         else
             i++;
     if (g_place_hold.size() < 64)
-        g_place_hold.push_back({c, pos, aim, rot, now, back_m});
+        g_place_hold.push_back({c, pos, aim, rot, now, back_m, still});
 }
 uint32_t place_holds_kept() { return g_place_holds_kept; }
+uint32_t still_holds_kept() { return g_still_holds_kept; }
+void place_release(void* c)
+{
+    for (size_t i = 0; i < g_place_hold.size(); i++)
+        if (g_place_hold[i].c == c) {
+            g_place_hold.erase(g_place_hold.begin() + i);
+            return;
+        }
+}
 void test_push(void* c, const net::Vec3& dir, float mps)
 {
     double now = H->time_seconds();

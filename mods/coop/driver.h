@@ -57,6 +57,7 @@ struct State {
     double under_since = -1; // BUG-0683: since when the standing puppet is under this game's terrain (-1: not)
     uint32_t ungrounded = 0; // BUG-0683: times it was put onto it
     float tgt_sp = 0;        // BUG-0408: the target's own speed last frame (a stop: it drops to 0.3 m/s or less)
+    net::Vec3 step_to;      // BUG-1228: where the last step drove it (its target after own_height and the ground)
     net::Vec3 drawn;        // BUG-0360 (coop.track): its position before this frame's driving, i.e. where the
                             // game's update put it and drew it (the mod's frame runs at Present)
 };
@@ -197,6 +198,7 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
         // kept there by own_height) is put onto it at once (walked or pulled it would stay under).
         // `ground` is the caller's switch (npc.proxy_ground, BUG-0444)
         pos = out_of_ground(pos, true);
+        ds.step_to = pos;
         if (net::dist(out_of_ground(cur, true), cur) > 0.01f) {
             ds.grounded_from = over_ground(cur);
             game::teleport(p, pos, rot);
@@ -208,6 +210,7 @@ inline void step(void* p, const net::Vec3& pos_in, const net::Quat& rot, const n
             return;
         }
     }
+    ds.step_to = pos;
     const double dt = ds.last_step > 0 && now > ds.last_step ? now - ds.last_step : 1.0 / 60;
     ds.last_step = now;
     if (ds.nudged && net::dist(cur, ds.nudged_to) < 0.5f)

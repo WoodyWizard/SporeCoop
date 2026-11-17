@@ -291,8 +291,60 @@ int c_ufoforget(void*, int, const char* const*, SkOut* out)
 // the point's own radius: how high a position is over this game's ground
 int c_ground(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 5 && !strcmp(argv[1], "steep")) {
+        // tests (BUG-1228): coop.ground steep <x> <y> <z> <r> [base m] [n]: the steepest ground within r m of the point (a
+        // grid of 2 m, r / 60 m from r = 120 m on; the slope is the rise of the terrain over `base` m (default 1) to each side along the ground), as a
+        // point on the ground and the slope in degrees; then the next steepest grid points over 30 degrees ("steep" lines,
+        // the steepest first: at most n, default 8)
+        net::Vec3 c{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        float r = (float)atof(argv[5]), cl = std::sqrt(c.x * c.x + c.y * c.y + c.z * c.z);
+        float base = argc > 6 ? std::max(0.5f, (float)atof(argv[6])) : 1.f;
+        int most = argc > 7 ? std::max(1, atoi(argv[7])) : 8;
+        if (cl < 1.f || r <= 0) {
+            SAY("no place");
+            return 1;
+        }
+        net::Vec3 up{c.x / cl, c.y / cl, c.z / cl};
+        net::Vec3 ax = std::fabs(up.z) < 0.9f ? net::Vec3{0, 0, 1} : net::Vec3{1, 0, 0};
+        net::Vec3 e1{up.y * ax.z - up.z * ax.y, up.z * ax.x - up.x * ax.z, up.x * ax.y - up.y * ax.x};
+        float l1 = std::sqrt(e1.x * e1.x + e1.y * e1.y + e1.z * e1.z);
+        e1 = {e1.x / l1, e1.y / l1, e1.z / l1};
+        net::Vec3 e2{up.y * e1.z - up.z * e1.y, up.z * e1.x - up.x * e1.z, up.x * e1.y - up.y * e1.x};
+        auto at = [&](float a, float b) { return net::Vec3{c.x + e1.x * a + e2.x * b, c.y + e1.y * a + e2.y * b, c.z + e1.z * a + e2.z * b}; };
+        struct S {
+            float deg;
+            net::Vec3 p;
+        };
+        std::vector<S> found;
+        const float step = std::max(2.f, r / 60.f);
+        for (float a = -r; a <= r; a += step)
+            for (float b = -r; b <= r; b += step) {
+                if (a * a + b * b > r * r)
+                    continue;
+                float g0 = game::ground_radius(at(a, b));
+                float ga = game::ground_radius(at(a + base, b)) - game::ground_radius(at(a - base, b));
+                float gb = game::ground_radius(at(a, b + base)) - game::ground_radius(at(a, b - base));
+                if (g0 <= 0)
+                    continue;
+                float deg = std::atan(std::sqrt(ga * ga + gb * gb) / (2.f * base)) * 57.29578f;
+                net::Vec3 q = at(a, b);
+                float ql = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
+                found.push_back({deg, {q.x / ql * g0, q.y / ql * g0, q.z / ql * g0}});
+            }
+        std::sort(found.begin(), found.end(), [](const S& x, const S& y) { return x.deg > y.deg; });
+        int n = 0;
+        for (const S& s : found) {
+            if (n >= most || (n > 0 && s.deg < 30.f))
+                break;
+            SAY("steep %.1f deg at (%.2f %.2f %.2f)\n", s.deg, s.p.x, s.p.y, s.p.z);
+            n++;
+        }
+        if (!n)
+            SAY("no ground");
+        return 0;
+    }
     if (argc < 4) {
-        SAY("usage: coop.ground <x> <y> <z>");
+        SAY("usage: coop.ground <x> <y> <z> | steep <x> <y> <z> <r> [base m] [n]");
         return 1;
     }
     net::Vec3 p{(float)atof(argv[1]), (float)atof(argv[2]), (float)atof(argv[3])};
