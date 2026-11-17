@@ -43,7 +43,7 @@ exec 9>&-
 
 rm -f "$OUTPUT"
 t0=$(date +%s%N)
-if ! "$GH_AH" "$RUN" spore -process SporeApp.exe -noanalysis -readOnly \
+if ! gh_ah "$RUN" spore -process SporeApp.exe -noanalysis -readOnly \
         -scriptPath "$GH_HERE" -postScript Q.java "$RUN/queries.txt" "$OUTPUT" \
         > "$RUN/ghidra.log" 2>&1 || ! [[ -s "$OUTPUT" ]]; then
     grep -E 'ERROR|Exception|error:' "$RUN/ghidra.log" | head -40 >&2

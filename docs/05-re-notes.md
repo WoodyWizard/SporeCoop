@@ -293,3 +293,21 @@ capacity and the world's objects). A "bound" is what keeps co-op counts below th
   stress runs show the world's object counts (`objects: all= creatures=`) for a later comparison.
 * The "same caught EIP every frame" signal BUG-0432 asks for exists in SporeKit (exceptions.cpp `storm_check`,
   BUG-0676); every caught fault fails a lab test (`p.faults`, the lab's log check).
+
+## Ghidra on the Windows PC (2026-11-17, feat/lineages-47)
+<a id="re-notes-ghidra-windows"></a>
+
+The Ghidra projects of 5.2b live on the Linux PC. On the Windows test PC (TITAN), for decision 5X B (the galaxy menu):
+
+* No GOG 2024 exe there, only the Steam one (3010a413, the same code), whose code is encrypted on disk. The code is read
+  from a running QA game instead: `py tools/qa_win/dumpexe.py <instance> <out.exe>` reads the whole image with SporeKit
+  `mem.read` (64 KB a call, about 400 calls, under a minute), undoes the ASLR relocation with the image's own .reloc
+  table (379 089 fixups) and writes a PE with image base 0x400000 whose file offsets equal its RVAs. Addresses then match
+  the `.sym` files. Its .data is the game's runtime state at the dump, not the initial values.
+* Ghidra 12.1.4 and Temurin JDK 21 unpacked in `%USERPROFILE%\.local\opt` (sha256 checked against the releases).
+  tools/ghidra/common.sh calls `analyzeHeadless.bat` with Windows paths under Git Bash and does without flock.
+  `SPORE_GHIDRA_ANY_EXE=1` lets mkproject.sh take an exe of the same code with another hash.
+* Ghidra refuses a project path with a folder starting with "." (".local"): the project is
+  `%USERPROFILE%\ghidra-projects\ghidra-2024` (`SPORE_GHIDRA_PROJ`).
+* Build: `SPORE_GHIDRA_PROJ=/c/Users/bandi/ghidra-projects/ghidra-2024 SPORE_GHIDRA_ANY_EXE=1 tools/ghidra/mkproject.sh
+  --build 2024 --exe <dump>`; queries: the same SPORE_GHIDRA_PROJ with `tools/ghidra/q.sh --build 2024`.
