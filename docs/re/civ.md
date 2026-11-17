@@ -1885,3 +1885,29 @@ BUG-1175. GOG 2024, runtime, lanes 6 and 7, civ_npc.
   listener's message 0x40FAFDF), the specialty is set in both games, no pause is left counted; the game time runs
   behind it (the new city and its vehicle on the guest within 5 s). Fix `civ.specialty_runs`: the guest counts the
   box's pauses before and after ShowSpecialtyBox, resumes the difference and does not resume again at the answer.
+
+## The city citizens' binds after a load (2026-11-17, fix/w51-citizens)
+<a id="civ-citizens-reload"></a>
+
+BUG-1221, BUG-1227. GOG 2024, runtime, lane 4, civ_npc; the guest's `coop.wobj list citizen` (which host citizen each
+of its citizens is bound to) next to both games' census (coop_civ_citizens.py prints it for every miss).
+* ✔ (runtime) After the host loads a save in running games (the lab's warm reset, `--reload`), the two games' 19 city
+  citizens near the capital stand at other spots: the guest's first snapshot bound them first come in the host's id
+  order within the kind's 30 m, and 2-5 host citizens were left without a free guest citizen within 30 m (`kind citizen
+  binds=14 own=5` after a load, lab 20261117-123109). Their free guest citizens stood 32-76 m away (`unbound host
+  citizens [2, 9]: the nearest free guest citizen 71 m, 37 m`, 20261117-121708 #3) and walked on their own; some came
+  within 30 m by themselves after 20-40 s, others not for the whole test (the final check's 5 of 19).
+* ✔ (runtime) The citizen serials (cGameData +0x24) after a load are small numbers again (host 2..20, guest 2..20): the
+  game numbers the new pool from the start. The fields kind's low-16 ids do not collide (150 distinct per planet).
+* ✔ Fix `civ.citizen_rebind` (worldobj.cpp): a snapshot's new binds go by nearest pairs over all its host citizens
+  without a copy (`pair_nearest`), then a host citizen still without one takes the guest's nearest free citizen within
+  120 m (also by nearest pairs), which is stopped and put at the host's place (game::stop + game::place, as
+  citizen_follow's put) and bound. 120 m: a city's citizens stand within ~80 m of each other, the cities are hundreds of
+  metres apart (civ_npc's far city 855 m), so a citizen of the guest's other city (its camera's, BUG-0553) is not taken.
+  With it on, 5-18 relocations per load and `binds=19 own=0` after every load (lab 20261117-120957, -123516).
+* ✔ (runtime) The "another size" pairs of civ_citizens (the triage's relocation try, 2 of 6 runs) are no wrong sizes:
+  the guest citizen at a host citizen's place is the copy of a neighbour 3-6 m away with that neighbour's size, and the
+  host citizen's own copy stands 3-6 m away with its size (walking copies trail and cross, BUG-1227). 0 of 172 standing
+  pairs (both moved under 0.5 m in a second) had another size; `fields civ_citizen differ=0`.
+* `coop.wobj loose <kind> <n> <m>` (tests): the guest drops the binds of its n bound copies nearest the snapshot's centre
+  and puts each m metres farther out along the ground: the state a load leaves, made at will.

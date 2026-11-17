@@ -276,14 +276,15 @@ anchor so other docs can link to it:
   ids on one guest).
 * Ticket: BUG-1216
 
-## Civilization: after the host loads a save a few city citizens walk their own way on a guest (2026-11-16, fix/w51-t4)
-<a id="issue-civ-citizens-reload"></a>
+## Civilization: a guest's walking city citizens trail the host's by a few metres (2026-11-17, fix/w51-citizens)
+<a id="issue-civ-citizens-trail"></a>
 
-* What happens: after a reload of the world (the host loads its save, the guests follow) 2-5 of the city citizens near
-  a guest never get a partner of the host's: they walk on their own for as long as the game runs.
-* Reproduce: civ_citizens in warm runs (the lab reloads the fixture in running games): about 1 run in 4-5, v0.7.14.1
-  the same.
-* Known: the citizen kind binds within 30 m only and has no relocation (BUG-1221); a relocation within 60 m fixed the
-  places but the size check then failed in 2 of 6 runs, so it was not kept.
-* Next steps: nearest-pair binding after a reload, the host's size on a relocated citizen at once, a warm twin.
-* Ticket: BUG-1221
+* What happens: a city citizen that walks on the host's screen walks 3-6 m behind on a guest's; where two walk past each
+  other the guest sees, for a few seconds, the other one (of another size) at a citizen's place.
+* Reproduce: civ_citizens / civ_citizens_reload print `size pair host X / guest Y: the guest's is bound to host Z 4-6 m
+  away` in about every second run; the size check fails when 10 % of the pairs are such (1 of 12 runs before 0.7.15's
+  BUG-1221 change, 1 of 4 in lab 20261117-125035, 0 of 4 in -130515; the check now takes rounds until 20 pairs).
+* Known: each copy has its host citizen's size; standing pairs never differ (0 of 172). The follow gives a MoveTo 1.5 s
+  ahead, again after 2 m or 1.5 s, and puts only beyond 12 m (docs/re/civ.md#civ-citizens-reload).
+* Next steps: a shorter lag for walking citizens, or a size check over pairs that stay together for two rounds.
+* Ticket: BUG-1227
