@@ -247,6 +247,7 @@ int main(int argc, char** argv)
         fprintf(stderr, "cannot open UDP port %u: %s\n", port, err.c_str());
         return 1;
     }
+    g_sock.set_buffers(4 << 20); // (bursts: a world sent to a joining player)
     say("galaxy server '%s' on UDP port %u (protocol %u)", g_name.c_str(), g_sock.local_port(), kProto);
     std::vector<uint8_t> buf(65536);
     uint32_t last_status = now_ms(), last_sweep = now_ms();
@@ -288,6 +289,6 @@ int main(int argc, char** argv)
             status_bytes = g_relay_bytes;
         }
         if (!any)
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            g_sock.wait(5); // (wakes as soon as a datagram arrives: a sleep waited ~16 ms on Windows)
     }
 }

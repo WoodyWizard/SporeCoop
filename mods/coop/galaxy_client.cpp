@@ -214,6 +214,7 @@ std::string connect(const std::string& address)
         return "Leave the current session first.";
     if (!g_sock.is_open() && !g_sock.open(0, &err))
         return "Could not open a UDP socket: " + err;
+    g_sock.set_buffers(1 << 20); // (the relay carries the whole session: a world arrives in bursts)
     g_server = ep;
     g_welcomed = false;
     net::Writer w = control(HELLO);

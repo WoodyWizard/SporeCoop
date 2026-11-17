@@ -43,6 +43,8 @@ public:
     // bytes, 0 = nothing pending, -1 = an error, -2 = one datagram too big for `cap` was dropped (BUG-1007)
     int recv_from(Endpoint& from, void* buf, size_t cap);
     uint16_t local_port() const;
+    bool wait(int ms);           // true when a datagram is waiting (select): the galaxy server sleeps here
+    void set_buffers(int bytes); // the socket's receive and send buffers (the galaxy relay: 1 MB)
     bool enable_broadcast(); // allow sending to 255.255.255.255 / subnet broadcast
 
 private:

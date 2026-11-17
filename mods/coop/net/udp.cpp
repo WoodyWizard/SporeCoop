@@ -296,6 +296,25 @@ bool UdpSocket::enable_broadcast()
     return setsockopt((decltype(socket(0, 0, 0)))fd_, SOL_SOCKET, SO_BROADCAST, (const char*)&on, sizeof on) == 0;
 }
 
+bool UdpSocket::wait(int ms)
+{
+    if (fd_ == -1)
+        return false;
+    fd_set r;
+    FD_ZERO(&r);
+    FD_SET((decltype(socket(0, 0, 0)))fd_, &r);
+    timeval tv{ms / 1000, (ms % 1000) * 1000};
+    return select((int)fd_ + 1, &r, nullptr, nullptr, &tv) > 0;
+}
+
+void UdpSocket::set_buffers(int bytes)
+{
+    if (fd_ == -1)
+        return;
+    setsockopt((decltype(socket(0, 0, 0)))fd_, SOL_SOCKET, SO_RCVBUF, (const char*)&bytes, sizeof bytes);
+    setsockopt((decltype(socket(0, 0, 0)))fd_, SOL_SOCKET, SO_SNDBUF, (const char*)&bytes, sizeof bytes);
+}
+
 uint16_t UdpSocket::local_port() const
 {
     if (fd_ == -1)
