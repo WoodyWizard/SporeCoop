@@ -369,6 +369,8 @@ own ticket and a test ([docs/tickets](docs/tickets/README.md)).
 Known issues: [docs/known-issues.md](docs/known-issues.md). Found a problem? Type `/bug <what you
 see>` in the co-op chat when it happens (it marks that moment in every player's log), then see
 [how to report it](docs/REPORTING.md).
+Hosting: `/kick <name>` in the co-op chat removes a player, `/ban <name>` also keeps them out of your games (on that
+Spore profile), `/bans` lists them and `/unban <name>` lets one in again.
 
 Next:
 

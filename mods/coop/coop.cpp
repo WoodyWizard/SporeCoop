@@ -51,6 +51,7 @@
 #include "tribe_late.h"
 #include "drama.h"
 #include "identity.h"
+#include "bans.h"
 #include "party.h"
 #include "home_nests.h"
 #include "cellsync.h"
@@ -5419,6 +5420,7 @@ void on_frame(void*, int, void*)
     civ_editor_first_tick(now); // BUG-9170
     guest_pack::tick(now);                      // BUG-9129
     identity::tick(now);                        // BUG-9135
+    bans::tick(now);                            // BUG-9251: a banned player whose identity arrived is removed
     party::tick(now);                           // roadmap 0b
     home_nests::host_tick(now);                 // roadmap phase 2
     tribe::tick(now);
@@ -7134,7 +7136,10 @@ void setup_callbacks()
         rejoin::clear(net::g_fix.join_seen); // the session ended (BUG-0235); kept for this host and name (BUG-1001)
         settings::on_disconnect();
         sreport::on_disconnect();
-        feed("disconnected: " + why);
+        // BUG-9251: the host's own words when it refused or removed this player ("The host removed you from the game."),
+        // without "disconnected: rejected: " in front; other ends keep their line
+        const bool refused = why.rfind("rejected: ", 0) == 0;
+        feed(refused ? why.substr(10) : "disconnected: " + why);
         coop_ui::session_event(false, why);
         chat_log("* disconnected: " + why);
         g_ready.clear();
@@ -8063,6 +8068,10 @@ int c_say(void*, int argc, const char* const* argv, SkOut* out)
     for (int i = 1; i < argc; i++) {
         if (i > 1) t += ' ';
         t += argv[i];
+    }
+    if (bans::chat_command(t)) { // BUG-9251: "/kick", "/ban", "/unban", "/bans" as typed in the chat (the answer is in the feed)
+        SAY("chat command handled");
+        return 0;
     }
     if (support::chat_command(t)) { // "/bug <text>": a mark in every player's log, not a chat line
         SAY("marked for the report");
@@ -9476,6 +9485,8 @@ void init_ui()
     a.say = [](const std::string& t) {
         if (support::chat_command(t)) // "/bug <text>" (docs/REPORTING.md#reporting-support)
             return;
+        if (bans::chat_command(t)) // BUG-9251: "/kick", "/ban", "/unban", "/bans" (the host)
+            return;
         if (g_sess.connected())
             g_sess.send_chat(t);
     };
@@ -10171,6 +10182,27 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     H->command_add(M, "coop.host", "coop.host [port] [name] [new-game seats 1-4] [scaling percent] - host a session", c_host, nullptr, MT);
     H->command_add(M, "coop.join", "coop.join <ip[:port]> [name] - join a host", c_join, nullptr, MT);
     H->command_add(M, "coop.leave", "leave the session", c_leave, nullptr, MT);
+    // BUG-9251 (decision 5I): kick and ban, as the host's chat commands /kick /ban /unban /bans
+    H->command_add(M, "coop.kick", "coop.kick <player id|name> - the host removes a player from the game",
+                   [](void*, int argc, const char* const* argv, SkOut* out) -> int {
+                       H->out_printf(out, "%s\n", argc > 1 ? [&] { static std::string r; r = bans::kick(argv[1], false); if (r.empty()) r = "done (the notice is in every feed)"; return r.c_str(); }() : "coop.kick <player>");
+                       return 0;
+                   }, nullptr, MT);
+    H->command_add(M, "coop.ban", "coop.ban <player id|name> - the host removes a player and keeps them out of its games",
+                   [](void*, int argc, const char* const* argv, SkOut* out) -> int {
+                       H->out_printf(out, "%s\n", argc > 1 ? [&] { static std::string r; r = bans::kick(argv[1], true); if (r.empty()) r = "done (the notice is in every feed)"; return r.c_str(); }() : "coop.ban <player>");
+                       return 0;
+                   }, nullptr, MT);
+    H->command_add(M, "coop.unban", "coop.unban <name|list number|identity> - let a banned player in again",
+                   [](void*, int argc, const char* const* argv, SkOut* out) -> int {
+                       H->out_printf(out, "%s\n", argc > 1 ? bans::unban(argv[1]).c_str() : "coop.unban <name>");
+                       return 0;
+                   }, nullptr, MT);
+    H->command_add(M, "coop.bans", "coop.bans - the host's ban list",
+                   [](void*, int, const char* const*, SkOut* out) -> int {
+                       H->out_printf(out, "%s\n%s\n", bans::list().c_str(), bans::status().c_str());
+                       return 0;
+                   }, nullptr, MT);
     H->command_add(M, "coop.sreport", "coop.sreport [status] | ask | answer yes|no | test none|big|overrun|badname|junk - the session report (F4, BUG-0767): the host asks every guest for its report",
                    sreport::command, nullptr, MT);
     H->command_add(M, "coop.settings", "coop.settings [list] | get <key> | set <key> on|off|default|<n> | force <key> <v> (tests) | stored - the session settings (the host decides; session ones before the start)",
@@ -11033,6 +11065,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     tribe::init(H, M, std::move(trc));
     drama::init(H, M, &g_sess); // BUG-0486
     identity::init(H, M, &g_sess); // BUG-9135
+    { // BUG-9251 (decision 5I): kick and ban
+        bans::Ctx bc;
+        bc.sess = &g_sess;
+        bc.feed = [](const std::string& t) { feed(t); };
+        bc.notice = [](const std::string& t) { notice(t, -1); };
+        bans::init(H, M, bc);
+    }
     party::init(H, M, &g_sess);    // roadmap 0b
     notify::init(H, M, [] { return coop_ui::text_font(); });
     creations::Ctx crc;

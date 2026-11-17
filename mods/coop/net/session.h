@@ -24,6 +24,7 @@ struct Peer {
     std::string name;
     bool accepted = false;
     bool bye = false; // said goodbye: dropped in update()
+    uint32_t kick_at = 0; // host (BUG-9251): removed by the host, dropped at this time (ms) once the refusal is out
     uint32_t caps = 0;      // its HELLO / WELCOME caps (BUG-0219); 0 = an older SporeCoop
     std::string version;    // CAP_VERSION text ("" = unknown: an older SporeCoop)
     bool has_token = false; // host: its HELLO carried a rejoin token (BUG-0235)
@@ -102,6 +103,8 @@ public:
     void send_chat(const std::string& text);
     void broadcast_reliable(uint8_t type, const Writer& w, int except_id = -1);
     bool send_reliable_to(uint8_t id, uint8_t type, const Writer& w); // host: guest id, client: 0
+    // host (BUG-9251, decision 5I): the guest is told `text` (MSG_REJECT: its game leaves with it) and dropped 1 s later
+    bool kick(uint8_t id, const std::string& text);
     // player event (reliable): client -> host, host relays to the other guests
     void send_event(uint8_t type, const Writer& w);
     size_t pending_to(uint8_t id) const;
