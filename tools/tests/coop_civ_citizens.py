@@ -146,8 +146,10 @@ def rounds(host, guest, n_rounds):
             if not dg or dg[0][0] > 3.0 or (len(dg) > 1 and dg[1][0] < dg[0][0] + 2.0):
                 continue
             y = g[dg[0][1]]
-            dh = sorted(math.dist(y['pos'], z['pos']) for z in h)
-            if len(dh) > 1 and dh[1] < dh[0] + 2.0:
+            # BUG-1221: x must be y's nearest host citizen too (the check took a pair whose guest citizen stood 0.3 m
+            # from another host citizen and 2.5 m from x: lab 20261117-123516 #1)
+            dh = sorted((math.dist(y['pos'], z['pos']), j) for j, z in enumerate(h))
+            if h[dh[0][1]] is not x or (len(dh) > 1 and dh[1][0] < dh[0][0] + 2.0):
                 continue
             clear.append((x, y))
         pairs_all = pairs

@@ -8803,3 +8803,19 @@ build and the 0.7.15 `tools/`, so the same tests and lab drive the old mod).
 * **An old build with today's tests**: `git worktree add --detach ../SporeCoop-wt/<name> v0.7.14.1`, `make -j8`, then
   `git checkout rel/0.7.15 -- tools/` in that worktree; `coop.save` / `coop.load` (the segment's commands) exist in
   0.7.14.1. Lab runs there are tagged with the worktree's branch (detached).
+
+## Civ citizens after a load: civ_citizens_reload (2026-11-17, fix/w51-citizens)
+<a id="testing-civ-citizens-reload"></a>
+
+BUG-1221. The lab starts a run with `SPORE_FIX_OFF` cold, so a fix that acts at a load cannot be shown off in a warm
+run. `coop_civ_citizens.py --reload --reloads N` loads the fixture again in the running games itself (twoinst.warm_reset:
+leave, load into a fresh slot, join), N times, the rounds after each; with SPORE_FIX_OFF the switch is off before the
+loads. `--plant N` makes the state a bad load leaves on every load: the guest lets its N citizens nearest the centre
+loose 60 m out (`coop.wobj loose citizen N 60`). Suite entry `civ_citizens_reload` = `--reload --reloads 2 --plant 4`
+(about 4 min): FAIL with `SPORE_FIX_OFF=civ.citizen_rebind` (19 % without a partner, a load at 32 %), PASS with it.
+A natural bad load (no plant) came 1 in about 4 loads (20261117-121708: 3 runs of 2 loads, one with 2 and 1 unbound).
+* Each round prints its misses: `unbound host citizens [..]: the nearest free guest citizen N m` (the guest's binds),
+  `unpaired host X: its copy Y d m away` and `size pair host X / guest Y: the guest's is bound to host Z d m away, size
+  s` (a crossing of walking copies, BUG-1227), and `standing unambiguous pairs N, of another size M`.
+* A check per load (`after every load: ...`) besides the total: one bad load among good ones is still a player's bad
+  load.
