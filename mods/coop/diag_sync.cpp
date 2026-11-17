@@ -288,6 +288,14 @@ static bool g_no_place_fix = true;
 COOP_FIX("sync.no_place", "BUG-0378", g_no_place_fix,
          "sync-check: no players / ships compared in world 0 (the galaxy view: nobody's ship is shown there)");
 
+// BUG-1216: NPCs are compared at their heights over each game's own terrain (dg::Limits::npc_agl): the host's live
+// Civ world and the guests' copy of its save differed by 10.5 m in height at a standing herd, every proxy stood on
+// its guest's ground, and the absolute positions were "n apart" on every guest (campaign_tc2, lab 20261116-025154).
+// Off: absolute positions (0.7.14).
+static bool g_npc_agl_fix = true;
+COOP_FIX("sync.npc_agl", "BUG-1216", g_npc_agl_fix,
+         "sync-check: animals are compared by their height over each game's own ground, not by an absolute height");
+
 // BUG-0378: in Space a player's allowed distance grows with its speed. The guest's digest is read
 // when the host's request arrives, the host's when the guest's digest arrives (both at the start of
 // the mod's frame, before any puppet is driven: what the frames showed); a puppet is drawn 0.10 s
@@ -499,6 +507,7 @@ static dg::Limits limits_for(uint32_t mode, uint32_t world)
     l.no_place = g_no_place_fix && world == 0;
     if (mode == modes::kTribe || mode == modes::kCiv)
         l.npc_missing = false; // RTS stages: NPCs are sent around the tribe / cities
+    l.npc_agl = g_npc_agl_fix; // BUG-1216
     return l;
 }
 
@@ -525,7 +534,8 @@ static dg::Digest build_digest(uint32_t seq)
     if (g_P.entries)
         for (auto& e : g_P.entries())
             if (uint32_t k = dg::parse_key(e.key))
-                d.entries.push_back({k, e.pos.x, e.pos.y, e.pos.z});
+                d.entries.push_back({k, e.pos.x, e.pos.y, e.pos.z,
+                                     dg::key_kind(k) == 'n' && g_P.over_ground ? g_P.over_ground(e.pos) : dg::kEntryNoAgl}); // BUG-1216
     // tests: a difference on purpose (coop.diag sync force ...)
     if (g_force == "shift")
         for (auto& e : d.entries)

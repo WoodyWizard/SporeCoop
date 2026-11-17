@@ -421,11 +421,17 @@ static void fuzz_diag(uint64_t seed, int iters)
         d.x.seq = R.u32(); d.x.self = R.u8(); d.x.mode = R.u32(); d.x.world = R.u32(); d.x.vote = R.u8(); d.x.vote_editor = R.u32();
         for (int n = (int)R.below(3), i = 0; i < n; i++) d.x.totals.push_back({R.u8(), (float)R.below(1000)});
         for (int n = (int)R.below(R.below(4) ? 20 : 400), i = 0; i < n; i++)
-            d.x.entries.push_back({R.u32(), (float)R.below(5000) - 2500, (float)R.below(500), (float)R.below(5000) - 2500});
+            d.x.entries.push_back({R.below(3) ? R.u32() : dg::make_key('n', R.u32()), (float)R.below(5000) - 2500, (float)R.below(500),
+                                   (float)R.below(5000) - 2500, R.below(2) ? ((float)R.below(60000) - 30000) / 100.f : dg::kEntryNoAgl}); // BUG-1216
         for (int n = (int)R.below(4), i = 0; i < n; i++) d.x.out.push_back(R.u8());
         d.x.scale = R.below(2) ? (float)R.below(20000) / 4 : 0.f;
         return d;
-    }, [](const NoKind<dg::Digest>& d) { return enc(d).size() - 4; }); // BUG-0606: the appended world scale
+    }, [](const NoKind<dg::Digest>& d) { // BUG-0606: the appended world scale; BUG-1216: the agl trailer after it
+        size_t ag = 0;
+        for (auto& e : d.x.entries)
+            ag += dg::key_kind(e.key) == 'n' && dg::entry_agl_known(e.agl) && std::fabs(e.agl) < 320.f;
+        return enc(d).size() - 4 - 2 - 4 * ag;
+    });
 }
 
 static void fuzz_misc(uint64_t seed, int iters)

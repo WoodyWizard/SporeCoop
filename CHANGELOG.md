@@ -42,6 +42,9 @@
   it is shown in two lines (BUG-1219).
 - Civilization: after the host loads a save, every city citizen near a guest walks where the host's walks again;
   before, two to five of them on the guest's screen walked their own way for the rest of the game (BUG-1221).
+- Civilization: when the game moves wild animals elsewhere (it does so all the time as the cameras move over the
+  planet), a guest sees them at their new place at once; before, they flew there through the air for a moment, or a
+  herd stood 80-200 m from where the host has it for seconds, or for the whole of the host's pause (BUG-1216).
 - Tribe: a host's tribe member that gets hungry or starves shows it on a guest's screen right away; before, a member
   the guest's game had just made for it (when the guest joined, or a new member of the tribe) showed a full hunger
   bar there for up to two minutes (BUG-1187).
@@ -99,6 +102,8 @@
 - Lab: space_session closes each badge's reward box in the first evening like a player and checks that the badges come
   back silently in the next one (the box seen there was a badge left pending, not a restored one) (BUG-1223, BUG-1225);
   space_eco compares the terrain cell where the guest planted and shows both games over that spot.
+- The sync-check compares the animals by their height over each game's own ground: where the host's live world and a
+  guest's copy of its save differ in height, a copy on the guest's ground was "apart" (BUG-1216).
 - Lab: tribe_name_tags checks the chief's label at the chief the game names (BUG-1202); tribe_caption_race is
   INCONCLUSIVE when the host's game itself plays no conquest caption (BUG-1205).
 - Key frames for the new visible features: space_eco / space_eco_live (each game's camera at an animal the guest

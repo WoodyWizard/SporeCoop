@@ -111,9 +111,13 @@ struct Mark {
 // ---------------- the sync self-check ----------------
 // an object of the shared world: kind letter in the top byte (p player, n NPC creature, c NPC cell,
 // t citizen, v vehicle, s ship), its number below (player id, host index / id)
+// BUG-1216: an entry's height over its sender's terrain that is not known (not an NPC, no terrain, an older sender)
+constexpr float kEntryNoAgl = -1e9f;
+inline bool entry_agl_known(float agl) { return agl > -1e6f; }
 struct Entry {
     uint32_t key = 0;
     float x = 0, y = 0, z = 0;
+    float agl = kEntryNoAgl; // BUG-1216: NPC entries, the height over the sender's own terrain (the agl trailer)
 };
 inline uint32_t make_key(char kind, uint32_t n) { return ((uint32_t)(uint8_t)kind << 24) | (n & 0xFFFFFF); }
 inline char key_kind(uint32_t k) { return (char)(k >> 24); }
@@ -150,6 +154,8 @@ struct Digest {
     // BUG-0606: the sender's Cell world scale (G+0x514C) when it built the digest, 0 elsewhere; appended
     // (an older reader stops before it, an older sender's digest reads 0 = not converted)
     float scale = 0;
+    // BUG-1216: appended after scale: u16 count, then (u16 entry index, i16 cm) for the NPC entries whose height over
+    // the sender's terrain is known (an older reader stops before it, an older sender's entries read unknown)
     void write(Writer& w) const
     {
         w.u8(kDigest);
@@ -174,6 +180,15 @@ struct Digest {
         for (size_t i = 0; i < out.size() && i < 255; i++)
             w.u8(out[i]);
         w.f32(scale);
+        std::vector<std::pair<uint16_t, int16_t>> ag;
+        for (size_t i = 0; i < n && i < 0xFFFF; i++)
+            if (key_kind(entries[i].key) == 'n' && entry_agl_known(entries[i].agl) && std::fabs(entries[i].agl) < 320.f)
+                ag.push_back({(uint16_t)i, (int16_t)std::lround(entries[i].agl * 100.f)});
+        w.u16((uint16_t)ag.size());
+        for (auto& [i, cm] : ag) {
+            w.u16(i);
+            w.u16((uint16_t)cm);
+        }
     }
     bool read(Reader& r)
     {
@@ -206,6 +221,16 @@ struct Digest {
             scale = r.f32();
             if (!std::isfinite(scale) || scale < 0)
                 scale = 0;
+        }
+        if (r.ok() && r.left() >= 2) { // BUG-1216: the agl trailer (a malformed one is ignored, not the digest)
+            size_t k = r.u16();
+            if (r.ok() && r.left() >= k * 4)
+                for (size_t j = 0; j < k; j++) {
+                    uint16_t i = r.u16();
+                    int16_t cm = (int16_t)r.u16();
+                    if (i < entries.size())
+                        entries[i].agl = cm / 100.f;
+                }
         }
         return r.ok() && std::all_of(entries.begin(), entries.end(), [](const Entry& e) {
                    return std::isfinite(e.x) && std::isfinite(e.y) && std::isfinite(e.z);
@@ -245,6 +270,11 @@ struct Limits {
     // "missing" although the guest had all 900 it was sent. Only the nearest cell_sure part of
     // cell_sent must be there (0.8: a ring of ~6 m at that crowding). 1 = the old compare.
     float cell_sure = 0.8f;
+    // BUG-1216: NPCs compared at their heights over each game's own terrain where both digests know them (agl): the
+    // terrains of the host's live world and of a guest's copy can differ by metres (BUG-0329, BUG-0402's fourth kind:
+    // a proxy on the guest's ground 10.5 m over the host's NPC on its ground was "n apart"). A proxy in the air, under
+    // the ground or off to the side is as far apart as before. false: absolute positions (0.7.14)
+    bool npc_agl = false;
     float pos(char kind) const
     {
         switch (kind) {
@@ -291,6 +321,22 @@ inline float dist(const Entry& a, const Entry& b)
 {
     float dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
     return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+// BUG-1216: the guest's entry put at its own height over the ground (g.agl) over the host's ground under the host's
+// entry (|h| - h.agl), in the guest's direction from the planet's centre: the distance along the ground and the
+// difference of the two heights over each game's own ground. Unknown heights: the absolute distance.
+inline float agl_dist(const Entry& h, const Entry& g)
+{
+    float rh = std::sqrt(h.x * h.x + h.y * h.y + h.z * h.z), rg = std::sqrt(g.x * g.x + g.y * g.y + g.z * g.z);
+    if (!entry_agl_known(h.agl) || !entry_agl_known(g.agl) || rh < 1.f || rg < 1.f)
+        return dist(h, g);
+    float k = (rh - h.agl + g.agl) / rg;
+    Entry m = g;
+    m.x *= k;
+    m.y *= k;
+    m.z *= k;
+    return dist(h, m);
 }
 
 // BUG-0430: what tells a late guest from the normal lag of a changing value. fresh: the host's totals of the last
@@ -392,7 +438,7 @@ inline Compared compare(const Digest& host, const Digest& guest, const Limits& l
             continue;
         }
         c.objects++;
-        float d = dist(*he, *it->second);
+        float d = lim.npc_agl && kind == 'n' ? agl_dist(*he, *it->second) : dist(*he, *it->second);
         if (d > lim.pos(kind) + lim.slack_of(k))
             c.issues.push_back({"pos:" + key_text(k), "pos", key_text(k), d, ""});
     }

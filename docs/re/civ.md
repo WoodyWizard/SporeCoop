@@ -1911,3 +1911,51 @@ of its citizens is bound to) next to both games' census (coop_civ_citizens.py pr
   pairs (both moved under 0.5 m in a second) had another size; `fields civ_citizen differ=0`.
 * `coop.wobj loose <kind> <n> <m>` (tests): the guest drops the binds of its n bound copies nearest the snapshot's centre
   and puts each m metres farther out along the ground: the state a load leaves, made at will.
+## Wild creatures' copies, the ground and the sync-check (2026-11-17, fix/w51-civsync)
+<a id="civ-npc-ground"></a>
+
+BUG-1216 (the campaign's Civ segment failed the sync-check gate `n apart`). GOG 2024, lanes 5 / 9.
+* ✔ (runtime, final check lab 20261116-025154 campaign_tc2) The host's live Civ world and the guests' copy of its save
+  can differ in terrain height: at a standing herd (species 067A147A) the host's creatures stood at agl 0.00 on the
+  host's ground, every guest's ground at that point was 9.2-10.5 m higher (`want_agl=-10.47`) and every copy stood on
+  its own guest's ground (`agl=0.00`). A player sees the herd on the ground; only the sync-check's absolute positions
+  were "8.0-10.2 apart". No terrain stamp of either game lies within 250 m of the point; why the heights differ is not
+  found (the segment runs, where every game loads the same save, never showed it). There the guest's ground is also a
+  steep slope: the copies slid and were trail-teleported back every ~2.5 s (BUG-1228).
+* ✔ Fix `sync.npc_agl`: every digest entry of an NPC carries its height over the sender's own terrain (an appended
+  trailer, older readers stop before it, an older sender's entries are compared absolutely), and the host compares a
+  copy at its height over the guest's ground put over the host's ground (net::diag::agl_dist: the distance along the
+  ground and the difference of the two heights). The final check's n406 is 1.7 m apart that way (net_tests
+  test_diag_npc_agl); a copy in the air, under the ground or off to the side is as far apart as before.
+* ✔ (runtime, civ_wild_sync / civ_proxy_air / the campaign segment, labs 20261117-122701, -124343, -125242) The Civ
+  game's pool (#civ-wild-sync, #civ-wild-reused-frozen) moves the host's wild creatures hundreds of metres at once
+  (often to and from an unplaced point with z = 0, e.g. (0 524.8 0)), and that happens all the time: 120-160 copies
+  are made in 70 s of civ_npc with the cameras panned twice, 57-132 copies a run "drawn 2-84 m over the guest's
+  ground" (the guest's `npc: proxy N ... drawn X m over this game's ground ... (BUG-1216)` line, its creature on the
+  host's ground). Two ways a guest showed that jump: (1) the proxy buffer blended across it (jump_speed 0): the target
+  slid along the chord through the planet, 59-115 m under the ground and 80-205 m from the host's creature for seconds
+  (the campaign's `n: 7 apart (n1030 205.2 ...)`, `want_agl=-96.42`); (2) the jump went into the proxy's path velocity
+  (drive::path_update's v_ema, 1000+ m/s for 0.2 s), a standing creature's proxy is walked at its path's speed
+  (BUG-0394), and walk_place took it the whole way in a few frames on the straight line from where it stood: over a
+  valley 10-80 m in the air ("before this frame 0.00 m up", after the walk 57 m up). Inferred: the campaign's two
+  walking copies 8.2 m over the ground (lab 20261116-085558, `tp=1`, made while the host's game refilled its herds in
+  a pause) were such a flight's end, kept at that height by own_height.
+* ✔ Fix `npc.civ_jump`: a Civ proxy's buffer does not blend across a step faster than 40 m/s (the partners' puppets'
+  jump speed, BUG-0499), and a target that jumps more than 10 m in one frame puts the proxy there (onto this game's
+  ground, a fresh path, no walk). civ_proxy_air: off 59 "drawn high" lines and a copy 2 samples in a row 58-62 m up
+  (FAIL 20261117-125242), on none, 105 jumps (PASS 20261117-125257).
+* ✔ (runtime, campaign segment lab 20261117-130736) The pool also moves a tracked herd of the same species while the
+  host's game stands: during a 24 s pause of the host a herd of 7 was 392-398 m from where it had stood; host_tick
+  sends nothing in frames without creature updates and the frozen pass (#civ-wild-parked, #civ-wild-reused-frozen)
+  only retired objects at the centre or reused as another creature, so both guests kept it (states 20 s old,
+  `n: 7 apart`) until the game went on. Fix `npc.frozen_moved`: in Civ the frozen pass retires a tracked object more
+  than 20 m from where the game last updated it (no creature moves while none is updated). civ_wild_moved (the herd
+  set 60 m aside during the host's pause menu): off FAIL 20261117-131957, on PASS 20261117-132012.
+* ✔ (runtime, labs 20261117-121304, -121752, -122049, a lane 5 probe) Negative: a copy the game moved in one piece is
+  grounded by the Civ game itself, like Tribe's (docs/re/tribe.md#tribe-animal-height): a herd the host's game set
+  25 m aside onto ground 7.3 m lower, a walking creature shoved onto 3.2-4.6 m lower ground, and a walking copy put 8 m
+  up on the guest (`coop.npctrack`-style probes) were at agl 0.00 within 50 ms, also with no NF_AIR from the host for
+  30 s. So own_height alone does not hold a Civ copy in the air (a switch that put walked Civ copies at the sender's
+  height over this game's ground had no failing twin and was dropped).
+* ✔ (runtime) civ_npc's walking creatures are sent with NF_AIR often (`air_catches` 450-1900 per test): their game's
+  grounded byte is 0 and they are more than kAirOver (0.15 m) off GetHeightAt at times.

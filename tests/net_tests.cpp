@@ -3206,9 +3206,9 @@ static void test_diag_messages()
     Reader rs(ws.data.data(), ws.size());
     dg::Digest d4;
     CHECK(rs.u8() == dg::kDigest && d4.read(rs) && d4.scale == 1.5f && d4.out.size() == 2);
-    Writer wo; // an older sender's digest (no scale at the end) reads scale 0
+    Writer wo; // an older sender's digest (no scale and no agl trailer at the end) reads scale 0
     d.write(wo);
-    wo.data.resize(wo.data.size() - 4);
+    wo.data.resize(wo.data.size() - 4 - 2);
     Reader ro(wo.data.data(), wo.size());
     dg::Digest d5;
     CHECK(ro.u8() == dg::kDigest && d5.read(ro) && d5.scale == 0 && d5.out.size() == 2);
@@ -3251,6 +3251,60 @@ static void test_diag_clock()
     for (int i = 0; i < 20; i++)
         c.add(100 + i, 100.5 + i, 100.25 + i + 7);
     CHECK(c.samples() == dg::ClockSync::kKeep && std::fabs(c.offset() - 7) < 1e-9); // old samples aged out
+}
+
+// BUG-1216 (sync.npc_agl): NPCs compared by their heights over each game's own terrain
+static void test_diag_npc_agl()
+{
+    printf("diag: NPCs are compared at their heights over each game's own ground (BUG-1216)\n");
+    namespace dg = net::diag;
+    const bool kFix = !SPORECOOP_TEST_NOFIX && !g_nofix;
+    // the agl trailer: NPC entries only, an older sender's digest has none
+    dg::Digest d;
+    d.mode = 0x1654C02;
+    d.world = 7;
+    d.entries = {{dg::make_key('p', 0), 1, 2, 3, 0.5f}, {dg::make_key('n', 4), 500, 0, 0, -10.47f}, {dg::make_key('n', 5), 0, 500, 0}};
+    Writer w;
+    d.write(w);
+    Reader r(w.data.data(), w.size());
+    dg::Digest d2;
+    CHECK(r.u8() == dg::kDigest && d2.read(r) && d2.entries.size() == 3);
+    CHECK(!dg::entry_agl_known(d2.entries[0].agl) && std::fabs(d2.entries[1].agl + 10.47f) < 0.006f && !dg::entry_agl_known(d2.entries[2].agl));
+    Writer wo;
+    d.write(wo);
+    wo.data.resize(wo.data.size() - 2 - 4); // (one trailer entry: index + cm)
+    Reader ro(wo.data.data(), wo.size());
+    dg::Digest d3;
+    CHECK(ro.u8() == dg::kDigest && d3.read(ro) && !dg::entry_agl_known(d3.entries[1].agl) && d3.scale == 0);
+    // the host's NPC on its ground at radius 500, the guest's terrain 10.47 m higher there: its proxy on its own ground
+    dg::Digest h, g;
+    h.mode = g.mode = 0x1654C02;
+    h.world = g.world = 7;
+    g.self = 1;
+    h.entries = {{dg::make_key('n', 1), 500, 0, 0, 0.f}, {dg::make_key('n', 2), 0, 500, 0, 0.f}, {dg::make_key('n', 3), 0, 0, 500, 0.f},
+                 {dg::make_key('n', 6), -500, 0, 0, 0.f}};
+    g.entries = {{dg::make_key('n', 1), 510.47f, 0, 0, 0.f},  // on the guest's higher ground: the same place to a player
+                 {dg::make_key('n', 2), 0, 509.f, 0, 9.f},    // 9 m in the air on the guest (BUG-1216 kind B)
+                 {dg::make_key('n', 3), 10.f, 0, 500, 0.f},   // 10 m to the side
+                 {dg::make_key('n', 6), -500, 0, 0}};         // an older guest: no height, absolute
+    dg::Limits lim;
+    lim.npc_missing = false;
+    lim.npc_agl = kFix;
+    std::set<std::string> ids;
+    for (auto& i : dg::compare(h, g, lim).issues)
+        ids.insert(i.id);
+    CHECK(!ids.count("pos:n1")); // fails with --nofix: the terrain difference was "n apart"
+    CHECK(ids.count("pos:n2") && ids.count("pos:n3") && !ids.count("pos:n6") && ids.size() == 2 + (kFix ? 0 : 1));
+    // the final check's n406 (lab 20261116-025154 campaign_tc2, s 1363): the host's at agl 0.00, Carol's copy on its
+    // own ground (agl 0.00, want_agl -10.47) 8.9 m apart absolutely, 1.7 m along the ground
+    {
+        dg::Entry hn{dg::make_key('n', 406), 503.7f, -63.3f, 73.3f, 0.f}, gn{dg::make_key('n', 406), 512.5f, -62.9f, 74.0f, 0.f};
+        CHECK(dg::dist(hn, gn) > 8.5f && dg::agl_dist(hn, gn) < 2.f);
+    }
+    // an NPC on the guest under its ground by as much as it is over it on the host: apart by the difference
+    g.entries[0].agl = -5.f;
+    h.entries[0].agl = 4.f;
+    CHECK(std::fabs(dg::agl_dist(h.entries[0], g.entries[0]) - 9.f) < 0.01f);
 }
 
 static void test_diag_compare()
@@ -4765,6 +4819,7 @@ int main(int argc, char** argv)
         {"test_diag_messages", test_diag_messages},
         {"test_diag_clock", test_diag_clock},
         {"test_diag_compare", test_diag_compare},
+        {"test_diag_npc_agl", test_diag_npc_agl},
         {"test_diag_session", test_diag_session},
         {"test_diag_conn_stats", test_diag_conn_stats},
         {"test_name_clean", test_name_clean},

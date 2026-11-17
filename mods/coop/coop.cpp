@@ -2283,6 +2283,12 @@ void support_init()
     };
     p.cell_food = [](int& v) { return g_mode == modes::kCell && cellsync::food_total(v); };
     p.cell_scale = [] { return g_mode == modes::kCell ? cellsync::scale_now() : 0.f; };
+    p.over_ground = [](const net::Vec3& v) { // BUG-1216: the planet stages only
+        if (g_mode != modes::kCreature && g_mode != modes::kTribe && g_mode != modes::kCiv)
+            return -1e9f; // (net::diag::kEntryNoAgl)
+        const float r = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z), g = r > 1.f ? game::ground_radius(v) : 0.f;
+        return g > 0 ? r - g : -1e9f;
+    };
     p.vote = [](uint32_t& editor) {
         editor = g_vote.editor;
         return g_vote.active;
