@@ -27,7 +27,7 @@ The nest is noted per planet (worlds.ini "nest<seat>", BUG-9173) and found again
 
 ## Fix
 - creature.nest_site_dry (home_nests.cpp site_near): a new nest spot and the ring of land around it must be 1 m over the water (game::water_radius; no check when it is unknown); the closest-height fallback takes dry spots only. Off: 63-dev.
-- Not done: moving a nest that is already in the sea (the owner's world has one). Removing it like the old-nest ring (BUG-9182) is unsafe here: the partner's puppet and its pack members are in that nest's herd. Decision 5A.
+- Not done, by decision: moving a nest that is already in the sea. Removing it like the old-nest ring (BUG-9182) is unsafe here: the partner's puppet and its pack members are in that nest's herd. Decision 5A, owner "5AC" (2026-11-16): leave it; it stays a known issue (docs/known-issues.md#issue-partner-nest-underwater).
 
 ## Verification
 Built only (the new-nest path was not exercised: the QA world's seat nest already existed). FAIL evidence: the readings above (63-dev).
@@ -35,3 +35,4 @@ no-fail-run: not run yet.
 
 ## History
 - 2026-11-16: opened from the owner's question; cause found; new nests fixed (not run); existing nests open (decision 5A).
+- 2026-11-16: decision 5A answered C (existing wet nests stay).
