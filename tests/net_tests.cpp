@@ -3295,6 +3295,12 @@ static void test_diag_npc_agl()
         ids.insert(i.id);
     CHECK(!ids.count("pos:n1")); // fails with --nofix: the terrain difference was "n apart"
     CHECK(ids.count("pos:n2") && ids.count("pos:n3") && !ids.count("pos:n6") && ids.size() == 2 + (kFix ? 0 : 1));
+    // the final check's n406 (lab 20261116-025154 campaign_tc2, s 1363): the host's at agl 0.00, Carol's copy on its
+    // own ground (agl 0.00, want_agl -10.47) 8.9 m apart absolutely, 1.7 m along the ground
+    {
+        dg::Entry hn{dg::make_key('n', 406), 503.7f, -63.3f, 73.3f, 0.f}, gn{dg::make_key('n', 406), 512.5f, -62.9f, 74.0f, 0.f};
+        CHECK(dg::dist(hn, gn) > 8.5f && dg::agl_dist(hn, gn) < 2.f);
+    }
     // an NPC on the guest under its ground by as much as it is over it on the host: apart by the difference
     g.entries[0].agl = -5.f;
     h.entries[0].agl = 4.f;

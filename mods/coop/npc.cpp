@@ -74,6 +74,23 @@ struct CivSent {
 };
 static std::map<uint8_t, std::unordered_map<uint16_t, CivSent>> g_civ_sent; // host: guest -> id -> last state sent
 static uint32_t g_civ_quiet_skipped;
+// BUG-1216: the Civ game takes wild creatures back into its pool and gives the objects out again (the relevance pass,
+// docs/re/civ.md#civ-wild-sync), several first at an unplaced point with z = 0 and a moment later at their new herd
+// (docs/re/civ.md#civ-wild-reused-frozen): the host's states of one NPC jump hundreds of metres. A guest's proxy
+// buffer blended across that step (jump_speed 0): its target slid along the chord through the planet (59-115 m under
+// the ground, 80-205 m from the host's creature: the campaign's "n apart", lab 20261117-122701), and the proxy, walked
+// after it at the path's speed, flew in a straight line 10-80 m over the guest's ground for seconds (the `drawn X m
+// over this game's ground` lines, 27 in a minute of civ_wild_sync). Now a Civ proxy's buffer takes a step faster than
+// modes' puppet jump speed (40 m/s) as a jump (BUG-0499's rule for the partners' puppets): the target is at the new
+// place at once and the proxy is put there. `coop.fix npc.civ_jump off`: blended (0.7.14).
+// The same jump also went into the proxy's path velocity (drive::path_velocity: a standing host creature's proxy is
+// walked at its path's speed, BUG-0394), 1000+ m/s for 0.2 s: the walk went the whole way in a few frames, in a
+// straight line over valleys. So a Civ target that jumps more than kCivJumpM in one frame puts the proxy there (onto
+// this game's ground) with a fresh path, as the partners' puppets (modes.cpp kJumpM, BUG-0499).
+static bool g_civ_jump_fix = true;
+COOP_FIX("npc.civ_jump", "BUG-1216", g_civ_jump_fix, "civ: a wild creature the game moves elsewhere is shown there at once, not flying there through the air");
+constexpr float kCivJumpM = 10.f; // m of the target in one frame (a lead jump up to smooth_max 8 m is smoothed before)
+static uint32_t g_civ_jumps;
 LIFECYCLE_STATE("npc.civ_sent", lifecycle::kSession | lifecycle::kWorld, &g_civ_quiet_fix, [] { g_civ_sent.clear(); },
                 []() -> size_t { return g_civ_sent.size(); });
 static bool civ_stage() { return g_civ_wild_fix && game::mode_id() == modes::kCiv; }
@@ -2365,6 +2382,28 @@ static void guest_tick(double now)
         // walked proxy goes on with the speed of its path to the stop point instead of standing there
         net::Vec3 vel = s.vel;
         float walk_speed = -1.f;
+        if (g_civ_jump_fix && civ_stage() && !px.killed) { // BUG-1216: the game put the host's creature elsewhere
+            const bool jumped = px.drv.jump_have && net::dist(s.pos, px.drv.jump_from) > kCivJumpM;
+            px.drv.jump_from = s.pos;
+            px.drv.jump_have = true;
+            if (jumped && net::dist(drawn, s.pos) > kCivJumpM) {
+                if (px.air) {
+                    px.air = false;
+                    game::air_hold(pe.ref.p, false);
+                }
+                drive::walk_end(pe.ref.p, s.pos, px.drv, now);
+                game::teleport(pe.ref.p, drive::out_of_ground(s.pos), s.rot);
+                *(net::Vec3*)((uint8_t*)pe.ref.p + game::kVelOff) = {0, 0, 0};
+                px.kinematic = false;
+                px.drv.teleports++;
+                px.drv.jumps++;
+                px.drv.path = drive::PathTrack{}; // (no path velocity across the jump)
+                px.drv.track = drive::Track{};
+                px.drv.last_step = now;
+                px.drv.last_cmd = now;
+                g_civ_jumps++;
+            }
+        }
         drive::path_update(px.drv, s.pos, now);
         {
             const drive::PathTrack& pt = px.drv.path;
@@ -2511,10 +2550,13 @@ static void guest_tick(double now)
             if (agl > 2.f) {
                 px.high_logged = now;
                 H->log(M, SK_WARN, "npc: proxy %u (species %08X) drawn %.2f m over this game's ground, the host's %.2f m over its "
-                       "own: %s, game grounded=%d dead=%d, host speed %.1f, made %.1f s ago at %.2f, tp=%u held=%d time paused=%d (BUG-1216)",
+                       "own: %s, game grounded=%d dead=%d, host speed %.1f, made %.1f s ago at %.2f, tp=%u held=%d time paused=%d; "
+                       "at (%.1f %.1f %.1f) r %.1f, before this frame %.2f m up, target (%.1f %.1f %.1f) r %.1f %.2f m up, age %.2f (BUG-1216)",
                        id, px.key.instance, agl, s.agl, walked ? "walked" : placed ? "placed" : "driven",
                        (int)game::grounded(pe.ref.p), (int)game::is_dead(pe.ref.p), drive::speed(s.vel), now - px.made_at,
-                       px.made_agl, px.drv.teleports, (int)px.drv.held, (int)world::time_paused());
+                       px.made_agl, px.drv.teleports, (int)px.drv.held, (int)world::time_paused(), at.x, at.y, at.z,
+                       drive::speed(at), drive::over_ground(drawn), s.pos.x, s.pos.y, s.pos.z, drive::speed(s.pos),
+                       drive::over_ground(s.pos), px.buf.age(now));
             }
         }
         if ((s.flags & net::NF_DEAD) && !px.killed) {
@@ -2979,6 +3021,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         px.buf.lead = true; // BUG-0425 (drive.lead): where the host has it now
         px.buf.late_lead = true; // BUG-0674 (drive.lead_fall): a late state brought in over time, its jumps smoothed
         px.buf.smooth_max = 8.f; // (a turn known late: 3.8-4 m, lab 20261108-013741 #2, proxy 22 at 23.2 s)
+        px.buf.jump_speed = g_civ_jump_fix && civ_stage() ? modes::puppet_jump_speed() : 0.f; // BUG-1216
         px.buf.push(s, now);
         px.last_rx = now;
         break;
@@ -3401,12 +3444,12 @@ std::string status()
             spawned += pe.ref.p != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u proxy_holds=%u air_catches=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u proxy_holds=%u air_catches=%u civ_jumps=%u\n",
                  (unsigned)px_count(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
                  g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut, g_mound_lifts, g_mound_targets, g_max_hp_applied,
-                 game::place_holds_kept(), g_air_catches);
+                 game::place_holds_kept(), g_air_catches, g_civ_jumps);
     }
     char b3[128]; // F3 (BUG-0768)
     snprintf(b3, sizeof b3, "npc friendly fire: on=%d pvp_out=%u pvp_in=%u pvp_relayed=%u\n", (int)friendly_fire(), g_pvp_out,
