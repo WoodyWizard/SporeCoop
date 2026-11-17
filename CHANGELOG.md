@@ -31,6 +31,8 @@
   why. It may join again.
 
 ### Fixed
+- Animals that stand on a steep slope no longer slide down and jump back up again and again on a guest's screen: the
+  guest's copy now stands where the host's animal stands (BUG-1228).
 - Creature: a guest who plays its own creature (made in the Creature Creator) and calls a mate now gets its own editor,
   with the red cross and its own parts allowed; before, the evolution editor opened, "done" only showed a parts error
   and there was no way out of it (BUG-1222).

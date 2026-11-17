@@ -3543,3 +3543,17 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   game's idle when both stand (`civ.citizen_run`; moving copies in the run 17-94 % -> 97-98 %, the host's 98-100 %):
   [../re/civ.md#civ-citizen-run](../re/civ.md#civ-citizen-run),
   [../06-testing.md#testing-civ-citizen-trail](../06-testing.md#testing-civ-citizen-trail)
+## Civilization: animals on a guest's screen stand or walk 8-200 m from where the host has them (2026-11-16, fix/w51-t4)
+<a id="issue-civ-npc-apart"></a>
+
+* What happens: in the 4-player campaign's Civ, one guest (sometimes every guest) draws a few animals of a herd away
+  from the host's: on its own ground where the host's ground is 10 m lower, 8 m in the air, or 120-200 m off.
+* Fixed (BUG-1216, fix/w51-civsync): the copies the Civ game moves elsewhere are put there at once (npc.civ_jump: no
+  flight through the air, no target through the planet), and the sync-check compares animals by their height over
+  each game's own ground (sync.npc_agl).
+* Left: where the host's live world and a guest's copy of its save differ in height and the guest's ground is a steep
+  slope, a standing animal's copy slides and is put back every ~2.5 s (BUG-1228); seen once, in a live Tribe -> Civ
+  campaign (campaign_tc2, final check 0.7.15); the segment runs from the saved Civ do not show it.
+* Ticket: BUG-1228 (fixed, unreleased, fix/w51-slope): a standing copy its game slides is held where its creature
+  stands (`npc.slope_hold`, test civ_npc_slope, docs/re/civ.md#civ-npc-slope); BUG-1216 fixed. Why the host's live
+  terrain and the guests' copy of its save differ in height there is still not known.

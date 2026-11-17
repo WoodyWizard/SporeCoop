@@ -2037,3 +2037,43 @@ game::drawn_state, on both games at the same moment) and Ghidra.
 * ✔ (runtime) Found on the way: when the host's citizen stops, its copy runs on 8-10 m and comes back (over 3 m off in
   5-24 % of the standing samples, max 10-12 m, with and without civ.citizen_lead): BUG-1230 (open; inferred: the walk goal
   12 m ahead is not replaced when the copy is within 1.5 m of the stop point).
+## A standing copy on steep ground: slid by its game, held by the mod (2026-11-17, fix/w51-slope)
+<a id="civ-npc-slope"></a>
+
+BUG-1228 (the final check's copies on a guest's steep ground, #civ-npc-ground). GOG 2024, lanes 5 / 9, civ_npc;
+test civ_npc_slope (docs/06-testing.md#testing-npc-slope).
+* ✔ (runtime, labs 20261117-142058, -142930) A guest's NPC copy (a puppet: no AI) put onto ground of 56-68 degrees
+  (the rise over 3 m to each side) is slid down by its game: its velocity reads 19-28 m/s while its remote stands
+  (rv 0), the model (AnimatedCreature +0x04) 0.2-0.5 m under the terrain, the grounded byte 0. The mod's driving of a
+  standing copy then fought it: over 0.8 m off it walked it (MoveTo) and nudged it every frame, the trail rule
+  (BUG-0305) teleported it back after 0.5 s and the nudge put it onto the target every frame for 1 s (kTrailQuiet,
+  k = 1): drawn 0.4-1.1 m off in every other frame, then a 2-3.5 m slide, then the next trail teleport, every
+  ~1.5 s, for as long as the remote stood (7 trail teleports and 45-53 m of movement in 12 s). The final check's
+  copies (own=19-22, trail every ~2.5 s, nudges in 97 % of the frames) were the same cycle.
+* ✔ The same copy on 39-53 degrees stays where it is put, or slides 0.4-0.8 m once and rests (labs 20261117-140524,
+  -140718, -141408): below the walk's 0.8 m nothing drives it again.
+* ✔ The host's game holding its own AI creature on such a spot (put there every frame) reads 5.5 m/s most of the time
+  (its AI walks it back to its herd) and 25-26 m/s only at times: not a usable sign of the slope. A host creature put
+  on 70 degrees left the host's object list within seconds (`no such host npc`, twice).
+* Inferred (BUG-1228's campaign): there the copies' target lay on the guest's ground, 10 m higher than the host's
+  (#civ-npc-ground), on a slope steep enough for this slide; the host's creature stood on its own, flatter, ground.
+  Why the two terrains differ there is still not known.
+* ✔ Fix `npc.slope_hold` (npc.cpp, every NPC proxy driven by drive::step, every stage): a standing copy (its remote
+  under 0.3 m/s) that its game moved more than 0.1 m between two frames (kSlideM: where the last frame's driving left
+  it vs where the game drew it) is held from then on while its remote stands: game::place_hold with `still` (the
+  game's next creature update and physics update may move it towards its target, drive::State::step_to, not away;
+  put back with game::place, no teleport mark, velocity cleared) and its velocity cleared each frame. The hold ends
+  (game::place_release) when the remote walks, the copy is placed, put elsewhere (npc.civ_jump) or dies.
+  `coop.npc status`: `slope_slides=` (copies found moved so, counted with the switch off too), `still_kept=` (updates
+  undone). civ_npc_slope off: FAIL 20261117-142930, -150616 (63 / 68 degrees: 7 trail teleports each); on: PASS
+  20261117-150636, -150855 (the same spots: 0 teleports, at most 0.1 m).
+* Creature / Tribe (the same NPC proxy driving, so the same fix): the test's state could not be made there. Creature
+  (lab 20261117-145748, `SLOPE_TRACK=1`): a host animal held on a 57 degree spot 8 m from both avatars targeted the
+  partner (`on_partner`) and both games held it thrown (loco mode +0x2B0 = 3) 10-13 m over the spot: the guest's copy
+  was snapped onto the target every frame (800 teleports in 12 s) and drawn back up there: not the slide, and with the
+  switch on the same (labs 20261117-144954 / -145014). Held 30 m from the avatars it left the host's list
+  (20261117-145900). Tribe: no bare ground of 55-68 degrees within 100 m of the fixture's village; animals held 150 m and
+  more away left the host's list within 3 s (20261117-145014, -145553). Not seen in Creature / Tribe play either; the
+  Creature slope tests (npc_walk_slope) run with the fix.
+* ✔ (runtime) The detection also finds copies in normal play: 8-17 standing copies a run of civ_npc_slope outside the
+  measured one (herd mates the game moved over 0.1 m in a frame); a hold only stops moves away from the target.

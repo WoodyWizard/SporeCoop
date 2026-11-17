@@ -91,6 +91,18 @@ static bool g_civ_jump_fix = true;
 COOP_FIX("npc.civ_jump", "BUG-1216", g_civ_jump_fix, "civ: a wild creature the game moves elsewhere is shown there at once, not flying there through the air");
 constexpr float kCivJumpM = 10.f; // m of the target in one frame (a lead jump up to smooth_max 8 m is smoothed before)
 static uint32_t g_civ_jumps;
+// BUG-1228: a guest's copy of a host creature that stands, on steep ground of the guest (a slope the host's creature
+// does not stand on: the final check's guest ground lay 10 m higher there), was slid down by its game (velocity
+// 19-26 m/s), pulled back up by the nudge and trail-teleported onto its target every ~2.5 s: a player saw it slide and
+// pop back. Now a standing copy that its game moves more than kSlideM in one frame (no creature stands still that way
+// on its own) is held from then on while its remote stands: the game's next creature and physics update may move it
+// towards its target, not away (game::place_hold, still: no teleport mark, no velocity). `coop.fix npc.slope_hold
+// off`: the game slides it (0.7.14).
+static bool g_slope_hold_fix = true;
+COOP_FIX("npc.slope_hold", "BUG-1228", g_slope_hold_fix,
+         "a copy of a standing wild creature on steep ground stands still, not sliding down and jumping back up");
+constexpr float kSlideM = 0.1f; // m its game moved a standing copy in one frame (6 m/s at 60 fps)
+static uint32_t g_slope_slides; // standing copies found moved by their game (held from then on with the switch)
 LIFECYCLE_STATE("npc.civ_sent", lifecycle::kSession | lifecycle::kWorld, &g_civ_quiet_fix, [] { g_civ_sent.clear(); },
                 []() -> size_t { return g_civ_sent.size(); });
 static bool civ_stage() { return g_civ_wild_fix && game::mode_id() == modes::kCiv; }
@@ -258,6 +270,10 @@ COOP_FIX_UNSAFE("npc.destroy_once", "BUG-0850", g_destroy_once_fix, "creature, t
 static uint16_t g_lift_id = 0;
 static float g_lift_m = 0;
 static double g_lift_until = 0;
+// tests (BUG-1228): coop.npctrack put <id> x y z <secs>: the host's NPC held at that point of its ground for secs
+static uint16_t g_pin_id = 0;
+static net::Vec3 g_pin_at{};
+static double g_pin_until = 0;
 // tests (coop.npctrack variant, drive::walk_place): 0 the fix; 1 place only (no walk goal); 2 walk goal +
 // teleport with the mark
 static int g_walk_variant = 0;
@@ -321,6 +337,9 @@ struct Proxy {
     double made_at = 0;     // BUG-0399 (diagnostics): when its creature was made and the host's
     float made_agl = 0;     // position's height over this game's ground then (m)
     double high_logged = -1e9; // BUG-1216 diagnostics: the last "drawn high over the ground" line of this proxy
+    net::Vec3 rest_at{};       // BUG-1228: where the last frame left the standing copy (after its driving)
+    bool rest_have = false;
+    bool slope_held = false;   // BUG-1228: its game slid it while its remote stood: held until the remote moves
     uint32_t tuning = 0;    // BUG-0462: the host NPC's archetype tuning key (spawn trailer), 0 unknown
     uint32_t tuning_set = 0; // the key last given to its creature
     double anim_fix_at = 0;  // BUG-0464: when the snapshot last played the host's animation on it
@@ -339,6 +358,13 @@ static ProxyReg g_px("npc.proxies", ref_alive);
 static PxE* px_find(uint16_t id) { return g_px.find(id); }
 // the entry of `id`, made empty when there is none
 static PxE& px_make(uint16_t id) { return g_px.at(id); }
+// BUG-1228: the standing copy's slope hold ends (its remote walks, it is placed or put elsewhere)
+static void slope_release(void* c, Proxy& px)
+{
+    if (px.slope_held && c)
+        game::place_release(c);
+    px.rest_have = px.slope_held = false;
+}
 static bool px_has(uint16_t id) { return g_px.has(id); }
 static size_t px_count() { return g_px.size(); }
 static bool px_empty() { return px_count() == 0; }
@@ -751,7 +777,7 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     a_StopFx = H->sym("Simulator::cCreatureBase::StopEffectFromPools");
     game::set_behaviour_anim_listener(on_behaviour_anim); // BUG-0464
     fields::add_kind({fields::K_NPC, "npc", nullptr, kNpcFields, 2, npc_each, npc_mirror, nullptr}); // BUG-0461
-    H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m]|stop|count|dump [from] [n]|walk <id> x y z <m/s>|shove <id> <m> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
+    H->command_add(M, "coop.npctrack", "coop.npctrack start [radius m [x y z]]|stop|count|dump [from] [n]|walk <id> x y z <m/s>|put <id> x y z [secs]|shove <id> <m> x y z <m/s> - every frame: the guest's NPC proxies (tests, BUG-0361)",
                    c_npctrack, nullptr, SK_CMD_MAIN_THREAD);
 }
 
@@ -1385,8 +1411,14 @@ static float g_ntrack_r = 40.f;
 static constexpr size_t kNtrackMax = 200000;
 
 // the guest's avatar, in Tribe the player tribe (no avatar there)
+static net::Vec3 g_ntrack_c{}; // tests (BUG-1228): `start <r> x y z` measures around this point (Civ: no avatar)
+static bool g_ntrack_c_set = false;
 static bool ntrack_centre(net::Vec3& c)
 {
+    if (g_ntrack_c_set) {
+        c = g_ntrack_c;
+        return true;
+    }
     if (void* av = game::avatar()) {
         c = game::position(av);
         return true;
@@ -1450,6 +1482,9 @@ static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
         g_ntrack_t0 = H->time_seconds();
         if (argc > 2)
             g_ntrack_r = (float)atof(argv[2]);
+        g_ntrack_c_set = argc > 5;
+        if (g_ntrack_c_set)
+            g_ntrack_c = {(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])};
     } else if (!strcmp(a, "stop"))
         g_ntrack_on = false;
     else if (!strcmp(a, "dump")) {
@@ -1529,6 +1564,25 @@ static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
         game::move_to(c, to, 0.5f);
         H->out_printf(out, "npc %s put from (%.1f %.1f %.1f) to (%.1f %.1f %.1f), walks on to (%.1f %.1f %.1f)\n", argv[2], p.x,
                       p.y, p.z, q.x, q.y, q.z, to.x, to.y, to.z);
+        return 0;
+    } else if (!strcmp(a, "put") && argc > 5) {
+        // host (tests, BUG-1228): host NPC #id put onto this game's ground at x y z and stopped there, held there for secs
+        // (put every frame, no velocity): put <id> x y z [secs]
+        void* c = host_npc((uint16_t)atoi(argv[2]));
+        if (!is_host() || !c) {
+            H->out_printf(out, "no such host npc\n");
+            return 1;
+        }
+        net::Vec3 q{(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5])};
+        float g = game::ground_radius(q), ql = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
+        if (g > 1.f && ql > 1.f)
+            q = {q.x / ql * g, q.y / ql * g, q.z / ql * g};
+        game::teleport(c, q, game::orientation(c));
+        *(net::Vec3*)((uint8_t*)c + game::kVelOff) = {0, 0, 0};
+        g_pin_id = (uint16_t)atoi(argv[2]);
+        g_pin_at = q;
+        g_pin_until = argc > 6 ? H->time_seconds() + atof(argv[6]) : 0;
+        H->out_printf(out, "npc %s put at (%.2f %.2f %.2f) ground %.2f\n", argv[2], q.x, q.y, q.z, g);
         return 0;
     } else if (!strcmp(a, "walk") && argc > 6) {
         // host (tests): the game walks host NPC #id to x y z at <m/s> (its own locomotion, MoveTo)
@@ -1876,6 +1930,11 @@ static void host_tick(double now, const std::vector<void*>& creatures)
             net::Vec3 p = game::position(c);
             ntrack_push(hn_of(c)->id, c, 4, game::is_dead(c) ? net::NF_DEAD : 0, 0, p, p,
                         drive::speed(game::velocity(c)), now);
+        }
+    if (now < g_pin_until) // tests (BUG-1228): coop.npctrack put ... <secs> (where the game drew it: in the track row above)
+        if (void* c = host_npc(g_pin_id)) {
+            game::teleport(c, g_pin_at, game::orientation(c));
+            *(net::Vec3*)((uint8_t*)c + game::kVelOff) = net::Vec3{};
         }
     if (now < g_lift_until) // tests (BUG-0550): coop.npc lift (after the track row: that is where the game drew it)
         if (void* c = host_npc(g_lift_id)) {
@@ -2382,6 +2441,7 @@ static void guest_tick(double now)
             px.tuning_set = 0; // (a new creature: its own Create's tuning)
             px.made_at = now;
             px.made_agl = drive::over_ground(s.pos);
+            px.rest_have = px.slope_held = false; // (BUG-1228: a new creature)
             // BUG-0399: on this game's ground (Tribe: the ground can lie higher than the host's)
             game::teleport(pe.ref.p, rts_stage() ? drive::out_of_ground(s.pos) : s.pos, s.rot);
         }
@@ -2422,6 +2482,7 @@ static void guest_tick(double now)
                 px.drv.teleports++;
                 px.drv.jumps++;
                 px.drv.path = drive::PathTrack{}; // (no path velocity across the jump)
+                slope_release(pe.ref.p, px); // (BUG-1228: put elsewhere)
                 px.drv.track = drive::Track{};
                 px.drv.last_step = now;
                 px.drv.last_cmd = now;
@@ -2542,11 +2603,26 @@ static void guest_tick(double now)
         }
         if (placed) {
             // placed on the host's path this frame: no driving
+            slope_release(pe.ref.p, px); // (BUG-1228)
         } else if (!px.killed) {
             const uint32_t gr = px.drv.grounded;
             drive::step(pe.ref.p, s.pos, s.rot, s.vel, px.drv, now, 0, true, 8.f, g_stall_fix, true, rts_stage(), // own height in Tribe (BUG-0329)
                         (rts_stage() || (g_proxy_ground_creature && game::in_creature_stage())) &&
                             drive::g_out_of_ground_fix); // and never under the ground (BUG-0399, BUG-0752)
+            if (drive::speed(vel) <= 0.3f) { // BUG-1228: its game slides the standing copy
+                if (px.rest_have && net::dist(drawn, px.rest_at) > kSlideM && !px.slope_held) {
+                    px.slope_held = true; // (counted with the switch off too: the tests' sign that a copy slid)
+                    g_slope_slides++;
+                }
+                const net::Vec3 at = game::position(pe.ref.p);
+                if (px.slope_held && g_slope_hold_fix) {
+                    game::place_hold(pe.ref.p, at, game::orientation(pe.ref.p), px.drv.step_to, 0.f, true);
+                    *(net::Vec3*)((uint8_t*)pe.ref.p + game::kVelOff) = {0, 0, 0};
+                }
+                px.rest_at = at;
+                px.rest_have = true;
+            } else
+                slope_release(pe.ref.p, px);
             if (px.drv.grounded != gr && px.drv.grounded <= 3) // (diagnostics: the fix at work, the first times)
                 H->log(M, SK_INFO, "npc: proxy %u (species %08X) was %.2f m under this game's ground, made %.1f s ago at %.2f m "
                        "over it: put onto it (npc.proxy_ground)", id, px.key.instance, -px.drv.grounded_from, now - px.made_at,
@@ -2554,6 +2630,7 @@ static void guest_tick(double now)
         }
         else { // a corpse lies where the host has it: the guest's dead proxy shot off into the sky
                // (~2.5 km/s away from the planet; driven, it stayed ~80 m up: play_tribe.py)
+            slope_release(pe.ref.p, px); // (BUG-1228)
             *(net::Vec3*)((uint8_t*)pe.ref.p + game::kVelOff) = {0, 0, 0};
             game::teleport(pe.ref.p, s.pos, s.rot);
         }
@@ -3438,7 +3515,7 @@ static std::string registry_status()
 
 std::string status()
 {
-    char b[768];
+    char b[1024];
     if (is_host()) {
         size_t known = 0;
         for (auto& [g, ks] : g_known)
@@ -3468,12 +3545,12 @@ std::string status()
             spawned += pe.ref.p != nullptr;
         snprintf(b, sizeof b, "npc(guest): proxies=%u spawned=%u local_removed=%u hits_sent=%u damage_in=%u lost=%u host_away=%d "
                  "away_dropped=%u local_alive=%u in_nest=%u nests=%u stale_dropped=%u strays_removed=%u hatch_helped=%u "
-                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u proxy_holds=%u air_catches=%u civ_jumps=%u\n",
+                 "deaths_played=%u kill_held=%u away_locals=%u unlisted=%u nospecies=%u leave_locals=%u thaw_kept=%u rxkeep_cut=%u mound_lifts=%u mound_targets=%u max_hp_applied=%u proxy_holds=%u air_catches=%u civ_jumps=%u slope_slides=%u still_kept=%u\n",
                  (unsigned)px_count(), spawned, g_removed_local, g_hits_sent, g_damage_in, g_proxy_lost, (int)g_host_away,
                  g_away_proxies, g_local_alive, g_proxies_in_nest, (unsigned)g_local_herds.size(), g_stale_dropped,
                  g_strays_removed, g_hatch_helped, g_deaths_played, (unsigned)g_kill.size(), g_away_locals, g_proxy_unlisted,
                  g_proxy_nospecies, g_leave_locals, g_thaw_kept, g_rxkeep_cut, g_mound_lifts, g_mound_targets, g_max_hp_applied,
-                 game::place_holds_kept(), g_air_catches, g_civ_jumps);
+                 game::place_holds_kept(), g_air_catches, g_civ_jumps, g_slope_slides, game::still_holds_kept());
     }
     char b3[128]; // F3 (BUG-0768)
     snprintf(b3, sizeof b3, "npc friendly fire: on=%d pvp_out=%u pvp_in=%u pvp_relayed=%u\n", (int)friendly_fire(), g_pvp_out,

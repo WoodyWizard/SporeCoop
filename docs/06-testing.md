@@ -8965,3 +8965,24 @@ BUG-1227.
   citizen`, its copy) within 15 m, no longer the nearest pairs, which crossed where two walking copies passed each
   other (BUG-1227). The limits (12 % size difference, at most 10 % of the pairs) are unchanged; about one pair per host
   citizen a round, so the extra rounds for 20 pairs no longer come.
+## NPC copies on steep ground: civ_npc_slope (2026-11-17, fix/w51-slope)
+<a id="testing-npc-slope"></a>
+
+* `civ_npc_slope` (BUG-1228, civ_npc, ~2.5 min): up to 3 spots of bare terrain of 55-68 degrees (`coop.ground steep`
+  around a known slippery spot of the fixture's planet, `ANCHOR`; `coop.ground`'s surface on the terrain); on each the host's game holds a creature the guest shows
+  (`coop.npctrack put`), 3 s later 1.5 m further up the slope; 3 s later 12 s of samples of its copy on the guest
+  (`coop.npc list` every 0.2 s). FAIL when on a spot the copy is teleported more than twice or moves 3 m or more;
+  INCONCLUSIVE without steep ground, without a measured spot, or when the guest's game slid no standing copy
+  (`slope_slides=` of `coop.npc status`). `SLOPE_TRACK=1`: the copy's frames too (`coop.npctrack`). Twin
+  `SPORE_FIX_OFF=npc.slope_hold` (FAIL 20261117-150616, PASS 20261117-150636, 20261117-150855).
+  docs/re/civ.md#civ-npc-slope.
+* Test commands (host or guest): `coop.ground steep <x> <y> <z> <r> [base m] [n]` (the steepest ground within r m: a
+  grid of 2 m, r / 60 m from r = 120 m on; the rise over `base` m to each side; `steep D deg at (x y z)` lines, the
+  steepest first); `coop.npctrack put <id> x y z [secs]` (host: its NPC onto its ground there, held there every frame
+  for secs, `0` ends a hold); `coop.npctrack start <r> x y z` (the per-frame track around a point: Civ has no avatar).
+* Pitfalls: the host's AI walks a held creature (5.5 m/s readings) and slides it only at times, so the host's speed
+  does not tell a slippery spot; the slide needs the copy below its target (the step up the slope), a copy put on its
+  target mostly rests; a host creature put on 70 degrees left the game's list within seconds (the test takes another).
+  Creature / Tribe variants were tried and dropped (docs/re/civ.md#civ-npc-slope): a held animal next to the avatars
+  attacked them and was held thrown 10-13 m up on both games, one 30 m from them left the list; no such ground within
+  100 m of the tribe fixture's village (animals held farther left the list).

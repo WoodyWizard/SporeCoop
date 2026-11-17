@@ -279,6 +279,8 @@ anchor so other docs can link to it:
 
 ## Civilization: a guest's copy of a city citizen that stops runs on past it and back (2026-11-17, fix/w51-citanim)
 <a id="issue-civ-citizen-overrun"></a>
+## Civilization: a guest's walking city citizens trail the host's by a few metres (2026-11-17, fix/w51-citizens)
+<a id="issue-civ-citizens-trail"></a>
 
 * What happens: a city citizen that stops running on the host's screen runs on 8-10 m on a guest's and comes back.
 * Reproduce: civ_citizen_trail's json (rows z<id>): while the host's citizen stands its copy is over 3 m off in 5-24 % of

@@ -138,9 +138,12 @@ void air_hold(void* c, bool on, const net::Vec3& pos = {}, const net::Quat& rot 
 // BUG-0440 (npc.proxy_hold): a body placed with the teleport mark this frame (drive::walk_place held) is put back where
 // it was placed when the game's next creature update or physics update moves it farther from `aim` (its target) by
 // more than back_m (its own walk in one frame: a turn or a reversal stays). An entry lives for one frame (place_hold
-// again every frame it is held)
-void place_hold(void* c, const net::Vec3& pos, const net::Quat& rot, const net::Vec3& aim, float back_m);
+// again every frame it is held). still (BUG-1228, npc.slope_hold): a standing body, put back with game::place (no
+// teleport mark: its idle animation goes on) and its velocity cleared
+void place_hold(void* c, const net::Vec3& pos, const net::Quat& rot, const net::Vec3& aim, float back_m, bool still = false);
 uint32_t place_holds_kept(); // how often an update's move back was undone
+uint32_t still_holds_kept(); // BUG-1228: of them, still holds
+void place_release(void* c);  // BUG-1228: its hold ends now (not up to 0.1 s later)
 // tests (BUG-0440, `coop.npc pushback`): in the game's next creature update (before it) c is moved m/s x the update's
 // time along dir (the class of the reports: the game moves a held proxy back while it is placed every frame)
 void test_push(void* c, const net::Vec3& dir, float mps);
