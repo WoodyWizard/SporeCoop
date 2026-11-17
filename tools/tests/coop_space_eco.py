@@ -12,12 +12,17 @@ off that planet sets its record's lists, a game on it adds the species through t
    stays in the system view (another place).
 2. The guest places the missing plant size class and two herbivores and a carnivore of its home planet's species,
    each through the game's own placement function with the player flag (`coop.space eco place`, the function a landed
-   cargo drop calls: PlanetEco_AddPlant 0xC81C50 / PlanetEco_AddAnimal 0xC82590; the cargo drop itself is not driven:
-   the planet's story scene covers the palette).
+   cargo drop calls: PlanetEco_AddPlant 0xC81C50 / PlanetEco_AddAnimal 0xC82590; an animal also gets the drop's own
+   creature at that spot, PlanetEco_DropAnimal 0xAD0450; the cargo drop itself is not driven: the planet's story scene
+   covers the palette).
 3. The host's record of the planet (by PlanetID, the host away), then the host lands on it.
 PASS: the guest's planet is stabilized (level 1); the host's record has the guest's plant and animal species in the
 same order and the game's own stabilized level 1 while away and after landing, and the host's planet shows creatures
-of each of the guest's animal species. SPORE_FIX_OFF=space.eco_sync must FAIL (the host keeps 2 plants, level 0).
+of each of the guest's animal species; the terrain cell at each spot where the guest planted holds that plant in the
+host's game too (BUG-1224: the flora is drawn per cell, so the same trees stand there; key frame `*_spot`, the same
+camera over the spot). SPORE_FIX_OFF=space.eco_sync must FAIL (the host keeps 2 plants, level 0);
+SPORE_FIX_OFF=space.eco_spots must FAIL the cell check (the species reach the record, the trees stand elsewhere) and,
+where the mod makes the creature, the size check (an epic of the species).
 --live: the host lands on the planet first, so the guest's species reach a game that is on it (the game's placement
 functions and a herd there, not the record alone); the same checks on the planet.
 
@@ -51,12 +56,44 @@ def eco(con, planet=''):
     return (int(m.group(2)) if m else -1), plants, animals, out.strip()
 
 
+def cell(con, pos):
+    """BUG-1224: the plant species of the terrain grid cell of a point on the planet this game is on (one per size class,
+    the game's flora there is drawn from them): (cell index, [keys])"""
+    out = sp(con, 'eco cell', *(f'{v:.1f}' for v in pos))
+    m = re.match(r'cell (\d+) n=\S+ (.*?) rest', out)
+    if not m:
+        return None, []
+    return int(m.group(1)), [k for k, n in re.findall(r'p\d=([0-9A-F:]{26})/(-?\d+)', m.group(2)) if k != '00000000:00000000:00000000']
+
+
+def ground_point(con, pos):
+    m = re.search(r'ground ([\d.]+) point ([\d.]+)', con.call('coop.ground %.1f %.1f %.1f' % tuple(pos))['out'])
+    if not m or float(m.group(2)) < 1:
+        return tuple(pos)
+    f = float(m.group(1)) / float(m.group(2))
+    return tuple(v * f for v in pos)
+
+
+def spot_frame(host, guest, spot, tag):
+    """BUG-1224: both cameras at the same place over the spot where the guest planted (70 m away, 45 m up: the trees of
+    the cell); the same trees must stand there in both games"""
+    from coop_space_map import no_movie
+    try:
+        for con in (host, guest):
+            no_movie(con, 20)
+        keyviews.look_both((host, guest), spot, dist=70, height=45, look_up=3, settle=1.0)
+        keyframe(tag, 'space, both on the planet the guest filled, the same camera 70 m from and 45 m above the spot where '
+                      'the guest planted: the same trees (the flora of that terrain cell) in both games',
+                 extra=[f'spot {tuple(round(v, 1) for v in spot)}'], settle=0)
+    finally:
+        keyviews.view_off(host, guest)
+
+
 def eco_frame(host, guest, animals, tag):
     """a key frame of the planet's new life on both games (BUG-1220): both cameras at the same place, 30 m from and 18 m
-    above the host's nearest creature of a species the guest placed (the host's herd of it). The guest's own game may
-    have no creature of them there: `eco place` (the test seam) adds the species to the planet's record through the
-    game's own function and spawns no animal at once (its eco line showed #0 in 2 of 3 runs); the plants on a planet
-    are each game's own placement (the same species, other spots and sizes)."""
+    above the host's nearest creature of a species the guest placed (the host's herd of it). A herd's place is each
+    game's own: the planet entry makes the herds of the planet's species at spots of its own choosing on every landing
+    (docs/re/space.md#space-eco-spots), so the guest's creature (the seam's drop creature) is elsewhere."""
     from coop_space_map import no_movie
     import sameview as sv
     inst = {k.split(':')[0].upper() for k in animals}
@@ -72,10 +109,48 @@ def eco_frame(host, guest, animals, tag):
             keyviews.look_both((host, guest), r['pos'], dist=30, height=18, look_up=3, settle=0.5)
         print(f'  key frame cameras at the placed species: {seen}', flush=True)
         keyframe(tag, 'space, both on the planet the guest filled, the same camera 30 m from and 18 m above the host\'s creature of a '
-                      'species the guest placed (its herd there); the guest\'s game has the species in its record but no '
-                      'animal of it (the test seam spawns none)', extra=[f'{k}: {v}' for k, v in seen.items()], settle=0)
+                      'species the guest placed (its herd there); each game places a herd where its planet entry chose, '
+                      'so the guest\'s own creature of it may be elsewhere', extra=[f'{k}: {v}' for k, v in seen.items()], settle=0)
     finally:
         keyviews.view_off(host, guest)
+
+
+def creature_hp(con, keys):
+    """{species instance: [hp of each living creature of it]} in this game (the game's own creature list)"""
+    out = {}
+    for m in re.finditer(r'key=([0-9A-Fa-f]{8}) alive=1 hp=([\d.]+)', con.call('coop.census creatures').get('out') or ''):
+        if m.group(1).upper() in keys:
+            out.setdefault(m.group(1).upper(), []).append(float(m.group(2)))
+    return out
+
+
+def check_normal(ck, host, animals):
+    """BUG-1224: the host's creatures of the guest's species are animals of their own size: BUG-1148's herd spawn
+    (PlanetEco_SpawnHerd, the planet's epic spawn) made one epic-size creature of each (hp 3500, scale ~15)"""
+    keys = {k.split(':')[0].upper() for k in animals}
+    hp = creature_hp(host, keys)
+    big = {k: max(v) for k, v in hp.items() if max(v) >= 1000}
+    print(f'  host creatures of the placed species (hp): { {k: sorted(v)[-3:] for k, v in hp.items()} }', flush=True)
+    ck(hp and not big, f'the host\'s creatures of the guest\'s animal species are of their own size, no epic ({big})')
+
+
+def check_spots(ck, host, guest, plant_spots):
+    """BUG-1224: the host's terrain cell at each spot where the guest planted holds that plant species, as the guest's
+    does (the game draws a cell's flora from its species: the same trees at the same place)"""
+    rows, ok = [], bool(plant_spots)
+    deadline = time.time() + 15
+    while True:
+        rows, ok = [], bool(plant_spots)
+        for k, p in plant_spots:
+            hc, hk = cell(host, p)
+            gc, gk = cell(guest, p)
+            rows.append(f'{k[:8]} cell {hc}/{gc} host {[x[:8] for x in hk]} guest {[x[:8] for x in gk]}')
+            ok = ok and k in gk and k in hk and hc == gc
+        if ok or time.time() > deadline:
+            break
+        time.sleep(2)
+    print('  spots: ' + ' | '.join(rows), flush=True)
+    ck(ok, f'the plants the guest placed are in the same terrain cell in the host\'s game (where it planted them): {rows}')
 
 
 def main():
@@ -116,9 +191,15 @@ def main():
     carn = [i for i, (k, d, _) in enumerate(sa) if d == 'c'][:1]
     picks += [('animal', i) for i in herb + carn]
     ck(len(herb) == 2 and len(carn) == 1, f'the home planet has two herbivores and a carnivore to place ({ts})')
+    spots = []  # (what, key, the point the guest placed it at)
     for what, i in picks:
-        print('  guest:', sp(guest, 'eco place', what, i, SRC).strip(), flush=True)
+        out = sp(guest, 'eco place', what, i, SRC).strip()
+        print('  guest:', out, flush=True)
+        m = re.search(r'placed \w+ (\S+) at (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)', out)
+        if m:
+            spots.append((what, m.group(1), tuple(float(m.group(k)) for k in (2, 3, 4))))
         time.sleep(1.5)
+    plant_spots = [(k, p) for w, k, p in spots if w == 'plant']
     time.sleep(3)
     lv1, p1, a1, t1 = eco(guest)
     print(f'  guest after: {t1}', flush=True)
@@ -139,7 +220,11 @@ def main():
            f"the host's planet has the guest's species and is stabilized (level {hl})")
         ck(ha and all(n for _, _, n in ha),
            f"the host sees creatures of every animal species the guest placed ({[(k[:8], n) for k, _, n in ha]})")
+        check_spots(ck, host, guest, plant_spots)
+        check_normal(ck, host, ga)
         eco_frame(host, guest, ga, 'eco_live')
+        if plant_spots:
+            spot_frame(host, guest, ground_point(guest, plant_spots[0][1]), 'eco_live_spot')
         ck.faults(host=host, guest=guest)
         return ck.result()
     t_end = time.time() + 20
@@ -169,7 +254,11 @@ def main():
        f"on the planet the host's record and stabilized level are the guest's (level {hl})")
     ck(ha and all(n for _, _, n in ha),
        f"the host sees creatures of every animal species the guest placed ({[(k[:8], n) for k, _, n in ha]})")
+    check_spots(ck, host, guest, plant_spots)
+    check_normal(ck, host, ga)
     eco_frame(host, guest, ga, 'eco_landed')
+    if plant_spots:
+        spot_frame(host, guest, ground_point(guest, plant_spots[0][1]), 'eco_landed_spot')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

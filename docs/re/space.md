@@ -3203,7 +3203,8 @@ BUG-1148 (a guest's populated, stabilized T1 planet was empty and not stabilized
   version of the sync).
 
 **How the planet's creatures come back when a player arrives.**
-* ✔ The planet entry 0xFF96B0 (from 0xFDF9E0 <- `cAppModeSpace_LandOnActivePlanet` 0xFE0E00) walks the record's
+* ~ superseded (2026-11-17): see [space-eco-spots](#space-eco-spots) (a species new to the record gets a herd of
+  its own at every landing). The planet entry 0xFF96B0 (from 0xFDF9E0 <- `cAppModeSpace_LandOnActivePlanet` 0xFE0E00) walks the record's
   planet objects +0x134 (`cPlanetObjectData`, 0x2C bytes: +0x28 flags): flag 4 with a key that is in +0xD0 gets a
   herd through `SporeCoop::PlanetEco_SpawnHerd` 0xACF320 (thiscall on `PlanetEco_HerdSpawner()` = [0x167EB3C],
   `(const ResourceKey*, const Vector3*)`, ret 8: CreateHerd, enabled, the members put on the ground by 0xACEB10);
@@ -3268,3 +3269,53 @@ Follow-up of [lane 5's cache](#space-lane5-pollination) (its last point was infe
   the first arrival had two (`ship models defaulted 2`, manual run 2026-11-16). The baked models in a profile's
   GraphicsCache make those UFO keys known to the resource manager (vt 0x30 lookup, creations::key_known), so the game
   builds the ship. A player whose GraphicsCache never baked those ships is in lane 5's case (the guard of BUG-0546).
+
+## Where placed plants and animals stand: the terrain grid, the herd homes (2026-11-17, fix/w51-space3)
+<a id="space-eco-spots"></a>
+
+BUG-1224 (key frames of [the ecosystem sync](#space-ecosystem): a tree the guest planted stood only in the guest's
+game; the host's herd and the guest's were at other places). GOG 2024, Ghidra and runtime lane 7 (`space_free`, planet
+02460035), 2026-11-17.
+
+**Plants.**
+* ✔ (Ghidra) `PlanetEco_AddPlant` 0xC81C50 puts the species into the terrain's **grid cell** of the point: the face of
+  the largest coordinate (+z 0, -z 1, +x 2, -x 3, +y 4, -y 5), i = (int)((a / b + 1) * 2), j = (int)((c / |b| + 1) * 2)
+  clamped to 3 (a, c the other two coordinates in the order of the code), cell n = i + (j + face * 4) * 4, at terrain
+  data **+0x50 + n * 0x54**. A cell: +0 a count, **+4 + class * 0x10 one plant species per size class** (class 0
+  3A8BE428, 1 029C388A, 2 6D60A1CC: key, amount; 0xC81A30 replaces the slot), +0x34 the animal slot(s) (key, amount).
+  The plant manager's 9 models (0xB2BD20, `cGamePlantManager`) come from the record's +0xBC; which of them grow where
+  is the cells'. `coop.space eco cell <x> <y> <z>` prints a point's cell.
+* ✔ (runtime) The flora of a cell is the same in every game whose cell holds the same species: the host's game,
+  given the guest's plant through AddPlant at the guest's point (player 0), showed the same trees at the same place
+  (same camera, lane 7 manual and lab 20261117-124504 frames space_eco/02_eco_landed_spot_*). The record's list alone
+  (what a game away from the planet got from K_ECO) left the host's cell without it: the trees stood only in the guest's
+  game (manual lane 7: the host landed, the same camera showed bare ground).
+* ✔ (runtime) The placing game keeps its cells while the session runs: the guest took off and landed again and its
+  trees stood where it planted them. ? Across a save and a load of the world: not checked.
+
+**Animals.**
+* ✔ (Ghidra) `SporeCoop::PlanetEco_DropAnimal` 0xAD0450 is the cargo drop's creature (thiscall on the herd spawner,
+  `(cSpeciesProfile*, const Vector3* pos)`): a herd of one, `cCreatureAnimal::Create(pos, profile, 1, herd, 0, 1)`.
+* ✔ (runtime) `PlanetEco_SpawnHerd` 0xACF320, which the ecosystem sync used for a partner's animal, makes **one
+  epic-size creature** (hp 3500, census scale 13..17, a giant on the screen, frame out/lane7/shots/w51space3/epic_g.png
+  of the manual run), not a herd of normal animals: it is the planet entry's spawn of its epic planet objects. The
+  drop's function makes one normal adult (hp 14, scale ~2.1) at the point, on the ground.
+* ✔ (runtime) **A herd's place is each game's own choice, on every landing**: after its record had the species, each
+  game's planet entry made a herd of 7 of it (hp 14, one young hp 7) and a planet object `[t0 f24 <species>]` in the
+  record's +0x134, at a spot of its own: the host (-37 159 453), after landing again (-125 107 480); the guest, after
+  landing again (-112 -117 479). So not even the placing game shows a dropped animal where it was dropped on its next
+  visit; another game cannot either. What every game agrees on is the species list, the stabilized level and (while
+  both are there) the drop's own creature at the drop point.
+* CORRECTION (2026-11-17, fix/w51-space3): "the planet entry 0xFF96B0 makes herds only of the record's planet objects of
+  flag 4 ... plus, with 2 % chance, one random species" ([space-ecosystem](#space-ecosystem)) does not hold for a
+  species new to the record: the entry made a herd of 7 of the one new animal species (0654E276) at every landing of
+  both games in the manual run above (and a flag 0x24 planet object for it). The BUG-1148 observation "the host landed
+  with the guest's 3 species and saw no creature of them in 15 s" was not reproduced here (lab 20261117-124504: the
+  spot herds were made 3 s after the landing because none of the 3 species had a creature yet).
+
+**What the sync does now** (space_eco.cpp, `space.eco_spots`): each species keeps the spot the sender placed it at
+(already in K_ECO; a known species placed at a new spot is sent too). A game on that planet puts each spot's species
+into the cell of the spot through the game's own AddPlant / AddAnimal (player 0), also a game that arrives later (3 s
+after its landing; once per spot and terrain: a planet loaded again is put again), and makes the drop's own creature
+(PlanetEco_DropAnimal, on the ground under the point) where it has none of that species. Off: the record's lists only,
+the old herd spawn (an epic).
