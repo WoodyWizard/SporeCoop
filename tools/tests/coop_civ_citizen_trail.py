@@ -14,8 +14,10 @@ comparison.
 3. Key frames (kind sameview, for the review by eye): the same camera on both games at a running host citizen.
 PASS: the guest's walking copies within LIMIT m of their host citizen in 90 % of the moving samples; in at most CROSSED
 of them a copy stands over 2 m off its host citizen with another copy nearer (what civ_citizens' size pairs saw).
-SPORE_FIX_OFF=civ.citizen_lead fails both. Printed only: how often the copies of running host citizens play the host's run
-animation (BUG-1229: often the standing one, with and without the fix).
+SPORE_FIX_OFF=civ.citizen_lead fails both. PASS also: the guest's moving copies play the host's run animation in at least
+RUN_SHARE of their moving samples, at most RUN_BELOW_HOST under the host's own share, and standing copies are in the run
+at most RUN_STANDING_OVER more often than the host's (BUG-1229: a copy kept the animation it had when it was bound, so it
+slid in the standing one or ran in place; SPORE_FIX_OFF=civ.citizen_run fails it).
 
   SPORE_LANE=4 python3 tools/tests/coop_civ_citizen_trail.py [--secs 60]
 """
@@ -36,6 +38,14 @@ from twoinst import Checks, keyframe, start
 # proxies p90 0.3-0.5 m, Civ vehicles 0.1 m in the same sessions (labs in the ticket)
 LIMIT = 2.5  # m, p90 of a walking citizen's copy from the host's citizen
 CROSSED = 0.10  # at most this share of moving samples: the copy over body_trail.TRAIL_M m off and another copy nearer
+# BUG-1229: a moving citizen (over RUN_SPEED m/s; they run at 8 m/s) plays the run: on the host in every moving sample; the
+# guest's moving copies did in 17-85 % (civ.citizen_run off, labs in the ticket)
+RUN_SPEED = 2.0  # m/s
+RUN_SHARE = 0.90  # at least this share of the guest's moving copies' samples in the host's run animation
+RUN_BELOW_HOST = 0.08  # and at most this much under the host's own share
+# BUG-1229: the other half of it: a copy keeps the animation it had when it was bound (labs in the ticket), so one bound in
+# the run ran in place while it stood (standing samples in the run: host 5-6 %, guest up to 45 %)
+RUN_STANDING_OVER = 0.10  # at most this share of the guest's standing samples in the run over the host's own share
 
 
 def crossings(hr, gr, own_min=0.0):
@@ -78,7 +88,8 @@ def _anim(p):
 
 def anim_report(hr, gr):
     """the run animation (a<id> rows: each citizen's current animation on both games): what the host's moving citizens
-    play most, and how often the copies of host citizens that run play it too (BUG-1229)"""
+    play most; how many of the moving samples play it on each game (BUG-1229: the guest's copies often moved in the
+    standing animation); how often the copies of host citizens that run play it too. None without a run"""
     from collections import Counter
     ha, ga = body_trail._by_key([r for r in hr if r[1][0] == 'a']), body_trail._by_key([r for r in gr if r[1][0] == 'a'])
     hz, gz = body_trail._by_key([r for r in hr if r[1][0] == 'z']), body_trail._by_key([r for r in gr if r[1][0] == 'z'])
@@ -101,21 +112,26 @@ def anim_report(hr, gr):
             if hs is None or gs is None:
                 continue
             h_an, g_an = _anim(hv[i][1]), _anim(gp)
-            hm[(hs > 2.0, h_an)] += 1
-            gm[(gs > 2.0, g_an)] += 1
-            if hs > 2.0:
+            hm[(hs > RUN_SPEED, h_an)] += 1
+            gm[(gs > RUN_SPEED, g_an)] += 1
+            if hs > RUN_SPEED:
                 both.append((h_an, g_an))
     print(f'  host citizens (moving, animation): {hm.most_common(6)}', flush=True)
     print(f'  guest copies (moving, animation): {gm.most_common(6)}', flush=True)
     run = Counter(a for (m, a), n in hm.items() if m for _ in range(n)).most_common(1)
     if not run:
-        return
+        return None
     run = run[0][0]
+
+    def share(m, moving=True):
+        n = sum(v for (mv, _), v in m.items() if mv == moving)
+        return m[(moving, run)] / max(n, 1), n
+
     walk = [g for h, g in both if h == run]
-    share = sum(1 for g in walk if g == run) / max(len(walk), 1)
-    # BUG-1229 (open, older than BUG-1227's fix): a copy often moves in its standing animation; printed, not judged
-    print(f'  the copies of running host citizens (animation {run}) play it too: {share:.0%} of {len(walk)} samples '
-          f'(BUG-1229)', flush=True)
+    pair = sum(1 for g in walk if g == run) / max(len(walk), 1)
+    print(f'  the copies of running host citizens (animation {run}) play it too: {pair:.0%} of {len(walk)} samples',
+          flush=True)
+    return run, share(hm), share(gm), share(hm, False), share(gm, False)
 
 
 def speed_at(rows, t, win=0.3):
@@ -201,7 +217,18 @@ def main():
        f'{bad / max(n, 1):.1%} of {n} moving samples (at most {CROSSED:.0%}: a neighbour\'s copy at its place)'
        + ('; e.g. ' + ', '.join(f'{k} own {d:.1f} m, {o} {od:.1f} m at {t - t_first:.1f} s' for d, k, o, od, t in worst[:3])
           if worst else ''))
-    anim_report(hr, gr)
+    an = anim_report(hr, gr)
+    ck(an is not None and an[2][1] >= 200, f"the guest's copies moved while the host's citizens ran "
+       f'({an[2][1] if an else 0} moving samples >= 200)')
+    if an:
+        run, (h_sh, h_n), (g_sh, g_n), (h_st, h_sn), (g_st, g_sn) = an
+        ck(g_sh >= RUN_SHARE and g_sh >= h_sh - RUN_BELOW_HOST,
+           f'a moving copy plays the host\'s run {run}: {g_sh:.0%} of {g_n} moving samples on the guest, host {h_sh:.0%} '
+           f'of {h_n} (at least {RUN_SHARE:.0%} and at most {RUN_BELOW_HOST:.0%} under the host; else it slides in its '
+           'standing pose, BUG-1229)')
+        ck(g_st <= h_st + RUN_STANDING_OVER,
+           f'a standing copy is not in the run: {g_st:.0%} of {g_sn} standing samples on the guest, host {h_st:.0%} of '
+           f'{h_sn} (at most {RUN_STANDING_OVER:.0%} over the host; else its legs run while it stands, BUG-1229)')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

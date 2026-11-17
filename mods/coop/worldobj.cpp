@@ -907,9 +907,61 @@ static bool g_cit_lead_fix = true;
 COOP_FIX("civ.citizen_lead", "BUG-1227", g_cit_lead_fix, "civ: a guest's walking city citizens are where the host's are now, not metres behind");
 static uint32_t g_cit_glides;
 static double g_drive_dt = 0; // the frame's time (drive_frame)
+// BUG-1229: a city citizen's run animation 0x02481DB0 is played by its behaviour tree's nodes (their enters and exits,
+// e.g. the node rows 0x1591648 / 0x1591608 / 0x1591400 of the citizens' table, docs/re/civ.md#civ-citizen-run), not by
+// the locomotion: a MoveTo walks a citizen without it, and the idle refresh (Creature_IdleRefresh, when no main animation
+// is left) gives a citizen the standing 0x02481DE5 however fast it moves (its walk gait word is always 0). A guest's copy
+// is walked by the mod's MoveTo while its own behaviour tree does what the guest's game wants: it showed the run only
+// while its own tree had played it (8-28 % of the moving samples without civ.citizen_lead, 26-98 % with it) and slid in
+// its standing pose otherwise. Now, while the host's citizen runs (from kCitizenRunOn m/s until it is under
+// kCitizenRunOff), the copy plays the run whenever another animation is on it (at most every kCitizenRunGap s); when the
+// host's stands again a run of ours is ended by the game's idle refresh. `coop.fix civ.citizen_run off`: the copy's own
+// animations only (0.7.14).
+constexpr uint32_t kCitizenRunAnim = 0x02481DB0;
+constexpr float kCitizenRunOn = 1.5f, kCitizenRunOff = 0.3f; // m/s, the host citizen's speed
+constexpr double kCitizenRunGap = 0.2;                       // s
+static bool g_cit_run_fix = true;
+COOP_FIX("civ.citizen_run", "BUG-1229", g_cit_run_fix, "civ: a guest's copies of running city citizens run, not slide in their standing pose");
+struct CitizenRun {
+    bool on = false;
+    double at = -100; // the last play
+};
+static std::map<uint32_t, CitizenRun> g_cit_run; // the copy's id in this game -> its run (cleared with the binds)
+static uint32_t g_cit_run_plays, g_cit_run_ends;
+static std::map<uint32_t, uint32_t> g_cit_run_over; // (diagnostics) the animation a running copy had instead of the run
+static void citizen_run(const Item& l, float sp, double now)
+{
+    if (!g_cit_run_fix)
+        return;
+    auto it = g_cit_run.find(l.id);
+    bool on = it != g_cit_run.end() && it->second.on;
+    if (!on && sp < kCitizenRunOn)
+        return;
+    uint32_t anim = 0;
+    if (!game::drawn_state(l.p, nullptr, &anim))
+        return;
+    CitizenRun& r = it != g_cit_run.end() ? it->second : g_cit_run[l.id];
+    if (sp < kCitizenRunOff) { // the host's stands: the game's own idle (a run the copy's own tree plays is left alone)
+        r.on = false;
+        if (anim == kCitizenRunAnim) {
+            game::idle_refresh(l.p, true);
+            g_cit_run_ends++;
+        }
+        return;
+    }
+    r.on = true;
+    if (anim == kCitizenRunAnim || now - r.at < kCitizenRunGap)
+        return;
+    if (g_cit_run_over.size() < 64 || g_cit_run_over.count(anim))
+        g_cit_run_over[anim]++;
+    game::play_animation(l.p, kCitizenRunAnim, -1, false); // as the citizens' nodes play it (PlayAnimation(run, -1, 0))
+    r.at = now;
+    g_cit_run_plays++;
+}
 static void citizen_drive(const Item& l, const net::Vec3& hp, const net::Vec3& v, double age, uint32_t)
 {
     float sp = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    citizen_run(l, sp, H->time_seconds());
     if (!g_cit_lead_fix || sp < 0.3f || g_drive_dt <= 0)
         return; // the host's stands: citizen_follow's walk and the game's idle
     float t = (float)std::min(age, (double)kCitizenAhead);
@@ -1203,6 +1255,7 @@ static void guest_reset()
     g_tool_buys.clear();
     g_tool_base.clear();
     g_tool_base_done = false;
+    g_cit_run.clear();
     for (auto& g : g_g) {
         g.binds.clear();
         g.own.clear();
@@ -1763,9 +1816,21 @@ std::string status()
     snprintf(b, sizeof b, "fruit made drops=%u fail=%u; bundles made=%u carried=%u removed=%u left_alone=%u; city decorations sets=%u removed=%u\n",
              g_fruit_made_drops, g_fruit_made_fail, g_bundles_made, g_bundles_carried, g_bundles_removed, g_bundles_left_alone, g_corn_sets, g_corn_removed);
     s += b;
-    snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u relocs=%u glides=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks, g_cit_puts, g_cit_far,
-             g_cit_relocs, g_cit_glides, g_space_cit_puts, g_veh_drives);
+    snprintf(b, sizeof b, "citizens walks=%u puts=%u far=%u relocs=%u glides=%u runs=%u run_ends=%u; space citizens puts=%u; space vehicles drives=%u\n", g_cit_walks,
+             g_cit_puts, g_cit_far, g_cit_relocs, g_cit_glides, g_cit_run_plays, g_cit_run_ends, g_space_cit_puts, g_veh_drives);
     s += b;
+    if (!g_cit_run_over.empty()) { // BUG-1229 (diagnostics): what a running copy had on instead of the run, most first
+        std::vector<std::pair<uint32_t, uint32_t>> v;
+        for (auto& [a, n] : g_cit_run_over)
+            v.push_back({n, a});
+        std::sort(v.rbegin(), v.rend());
+        s += "citizens run replaced:";
+        for (size_t i = 0; i < v.size() && i < 8; i++) {
+            snprintf(b, sizeof b, " %08X=%u", v[i].second, v[i].first);
+            s += b;
+        }
+        s += "\n";
+    }
     snprintf(b, sizeof b, "tools removed=%u buys_tx=%u buys_rx=%u buys_done=%u\n", g_tools_removed, g_tool_buys_tx,
              g_tool_buys_rx, g_tool_buys_done);
     s += b;
