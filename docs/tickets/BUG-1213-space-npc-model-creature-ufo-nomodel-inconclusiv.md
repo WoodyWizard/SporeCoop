@@ -1,20 +1,20 @@
 ---
 id: BUG-1213
 title: space_npc_model / creature_ufo_nomodel INCONCLUSIVE: no ship without its model came (one visit, five visits)
-status: open
+status: fixed
 kind: test
 stage: Space
 reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 0.7.14.1, unreleased
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t3
+commits: 3a2ed87f, c550f886
+tests: space_npc_model, creature_ufo_nomodel
 signature:
-docs:
-related:
+docs: docs/re/space.md#space-gfx-cache-models, docs/06-testing.md#testing-space-autosave
+related: BUG-0546, BUG-0686, BUG-1138
 ---
 
 ## Report
@@ -44,8 +44,14 @@ star in between) until a ship needed the guard (suite minutes 4 -> 7); creature_
 instead of 5 (minutes 6 -> 14). A run where the case still does not happen stays INCONCLUSIVE (SKIP).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: test change only. The case is random per arrival / visit: with the changes it happened in
+creature_ufo_nomodel out/lab/20261116-090823 (visit 1), -092001 #2 (visit 4), -100807 #2 (visit 1), INCONCLUSIVE in
+-092001 #1 and -100807 #1 (8 visits each); space_npc_model: manual run on lane 6 with the GraphicsCache aside (2 ships
+defaulted at the first arrival) and out/lab/20261116-092001 #2 (defaulted 2 at visit 1); INCONCLUSIVE in -090823,
+-092001 #1, -100807 #1 and #2 (4 arrivals each). v0.7.14.1 behaves the same (out/lab/20261116-085912: npc SKIP,
+creature at visit 4): not a 0.7.15 regression. Residual: INCONCLUSIVE in about half the runs on lanes 6 / 7; the case
+itself is the game's pick of a ship, which no test seam controls yet.
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t3 (tests: empty GraphicsCache, more visits); INCONCLUSIVE stays possible.

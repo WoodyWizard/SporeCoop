@@ -1,20 +1,20 @@
 ---
 id: BUG-1203
 title: Space: the host's game saves itself every 8 s (autosave 'a colony founded' after each of its own saves)
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-16
 source: final check 20261116-025154
 role: host
 versions: unreleased
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t3
+commits: 8655eaa9, 88466c8c, 780d561e
+tests: autosave_milestone, space_allies_near, space_allies, space_map, space_free, store_tests (make test)
 signature:
-docs:
-related:
+docs: docs/re/space.md#space-save-planet-gap, docs/06-testing.md#testing-space-autosave
+related: BUG-0864, BUG-1144, BUG-1149
 ---
 
 ## Report
@@ -45,8 +45,18 @@ harness.autosave_settled(); coop_space_map.py waits for the host's autosave (the
 milestone, saved when the host leaves the planet: just before its Esc) before the pause menu step.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL (rel/0.7.15, no change): the final check 20261116-025154 (space_allies 16 autosaves "a colony founded", space_free 9,
+space_allies_near "the game lists the mirror's star", space_map: the Esc landed in the save); rel/0.7.15 on lane 6:
+out/lab/20261116-082811 (space_allies_near FAIL, 9 / 4 / 3 autosaves in space_allies / space_free / space_allies_near).
+Diagnostic build (the read and the milestones logged): out/lab/20261116-084330 (lane 7) and -085747 (lane 6): after
+every save `n=2 s_mine=1` / `n=1 s_mine=0`, star 0046000C `planets=0 count=3`.
+FAIL (twins): `world.autosave_colony_ids` fix alone still FAILs space_allies_near (out/lab/20261116-085357, one legit save
+and the gap); `SPORE_LAB_FIXOFF=space_allies_near=space.roster_planet_gap` FAIL out/lab/20261116-091525; both switches off
+FAIL out/lab/20261116-102402 ("the host's colony made at most one autosave (milestones 3, saves 2)" and the near list).
+PASS (both fixes): out/lab/20261116-090711 (space_allies_near, space_map, lane 7), out/lab/20261116-094912 (lane 7, 2 of
+2 each: space_map, space_allies, space_allies_near, space_free, autosave_milestone; 12 of 12), autosave_timer 2 of 2 in
+out/lab/20261116-100807. Unit test `autosave new colony ids` (make test).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t3 (roster read over the post-save planet gap; milestone per colony id; tests).

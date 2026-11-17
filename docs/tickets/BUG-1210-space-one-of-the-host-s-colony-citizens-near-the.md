@@ -1,20 +1,20 @@
 ---
 id: BUG-1210
 title: Space: one of the host's colony citizens near the guest stands elsewhere in the guest's game (unbound: no guest citizen within 30 m)
-status: open
+status: fixed
 kind: desync
 stage: Space
 reported: 2026-11-16
 source: final check 20261116-025154 (space_planet_citizens)
 role: guest
 versions: 0.7.14.1, unreleased
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t3
+commits: e997739a, 73b8bc2a, ed659e12, c271236b
+tests: space_planet_citizens
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-space-autosave
+related: BUG-0490
 ---
 
 ## Report
@@ -50,8 +50,14 @@ of 57): an old failure, not a 0.7.15 regression.
   of another size) are unchanged. It prints each miss (the nearest guest citizen's distance, or host/guest size).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL (no change): final check 20261116-025154 (3 of 57), rel/0.7.15 lane 7 out/lab/20261116-082811 (7 of 57, binds=18
+own=1), v0.7.14.1 lane 6 out/lab/20261116-084330 (3 of 57, binds=18 own=1: an old failure).
+FAIL (maximum matching, no relocation): out/lab/20261116-094313 #3 of fix/w51-t3-dbg (3 of 57: a host citizen 0.1 m from
+a bound one, binds=18 own=1 missing=148); 3 of 4 passed there.
+FAIL twin `space.citizens` off with the new matching: out/lab/20261116-102402 (35 of 57 elsewhere): the test still catches
+the bug it was made for.
+PASS (relocation + maximum matching): out/lab/20261116-094912 (lane 7, 2 of 2).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t3 (test: maximum matching; mod: the unbound citizen takes the nearest free one).

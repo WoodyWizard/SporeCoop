@@ -1,20 +1,20 @@
 ---
 id: BUG-1211
 title: space_sculpt_tool / space_sculpt_away: the first hit falls on a plateau since the faster start (the hits change the ground by 0-0.5 m)
-status: open
+status: fixed
 kind: test
 stage: Space
 reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: unreleased
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w51-t3
+commits: ebe05841, 4b28e516
+tests: space_sculpt_tool, space_sculpt_away
 signature:
-docs:
-related:
+docs: docs/06-testing.md#testing-space-autosave
+related: BUG-0763, BUG-0900
 ---
 
 ## Report
@@ -39,8 +39,14 @@ Test only: after the landing both ships go over a fixed point of the planet (`co
 about 594 m there, below the tool's height) before the hits. The checks are unchanged.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL (rel/0.7.15, no change): final check 20261116-025154 and out/lab/20261116-082811 (both tests, the spot at 599.5 m).
+PASS v0.7.14.1: out/lab/20261116-084330. A pass with the old test on 0.7.15 only where the spot had room:
+out/lab/20261116-085357, -085402.
+First version of the fix (both ships over the spot): out/lab/20261116-100807 space_sculpt_tool #2 FAIL ("You must choose
+a valid ground": the guest's ship stood under the click point); the guest 30 m aside (4b28e516):
+PASS out/lab/20261116-102848 (lane 6, space_sculpt_tool 2 of 2, space_sculpt_away 2 of 2). no-fail-run: test change
+only (the mod is unchanged).
 
 ## History
 - 2026-11-16: opened.
+- 2026-11-16: fixed on fix/w51-t3 (test only).
