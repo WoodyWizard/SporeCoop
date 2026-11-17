@@ -211,5 +211,11 @@ BUG-0948. GOG 2024, lane 4, Creature (the guest's follow camera turned by SporeK
   came up): Creature / Civ play is drawn with the HUD over the logo (frames menu_splash host 07:54:05.33, civ_designs
   host 07:58:14.85), until the video's end posts 0x49731AD (`the galaxy menu intro would start outside the menu`,
   0.3-0.9 s after those frames).
+* ✔ (lab, fix/w51-visual, a guest joining 0.5 s after its menu, the switch off) MovieIsPlaying stays set in the guest's
+  Creature stage until the video's own end: 0.6-3.5 s with the natural timing (20261116-100245, 20261116-100032); held
+  with PauseMovie it is drawn over the stage for good: out/lab/20261116-100758/frames/menu_movie/01_stage_8-0s_guest.jpg
+  (the video's picture under the Creature HUD, letterbox bars). The stage itself is black for its first ~5 s after the
+  mode change (the load), so frames earlier than that cannot show it.
 * Fix BUG-1218 (`world.menu_movie`): in a stage, a video still playing after 0.5 s is stopped outside the frame with
-  StopMovie, as its own end stops it; the posted GGE_intro start is refused outside the menu (BUG-0626).
+  StopMovie, as its own end stops it; the posted GGE_intro start is refused outside the menu (BUG-0626): the log shows
+  "would start outside the menu" in the same millisecond as "the start-up video was still playing in the stage".
