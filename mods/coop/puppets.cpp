@@ -516,6 +516,18 @@ void bodyrec_tick(double now)
         r.p = e.pos;
         g_bodyrec.push_back(r);
     }
+    // BUG-1227: the Civ city citizens (z<host id>, y<id> a guest's walk goals, a<id> their animations) only when a test
+    // names them (`coop.bodyrec start kinds z[y][a]`): the detector's `bodyrec on` rows stay as they were
+    if (g_bodyrec_kinds.find('z') != std::string::npos)
+        wobj::for_each_body(
+            [](const char* key, const net::Vec3& p, void* u) {
+                BodyRow r{};
+                r.t = *(double*)u;
+                snprintf(r.key, sizeof r.key, "%s", key);
+                r.p = p;
+                g_bodyrec.push_back(r);
+            },
+            &now, g_bodyrec_kinds.find('y') != std::string::npos, g_bodyrec_kinds.find('a') != std::string::npos);
     if (g_bodyrec_diag) { // (K3 diagnostics: the driving's own targets, `coop.bodyrec start diag`)
         auto row = [](const char* key, const net::Vec3& p, void* u) {
             BodyRow r{};

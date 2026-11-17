@@ -277,15 +277,15 @@ anchor so other docs can link to it:
   campaign (campaign_tc2, final check 0.7.15); the segment runs from the saved Civ do not show it.
 * Ticket: BUG-1228 (BUG-1216 fixed)
 
-## Civilization: a guest's walking city citizens trail the host's by a few metres (2026-11-17, fix/w51-citizens)
-<a id="issue-civ-citizens-trail"></a>
+## Civilization: a guest's copy of a running city citizen moves in its standing pose (2026-11-17, fix/w51-trail)
+<a id="issue-civ-citizens-slide"></a>
 
-* What happens: a city citizen that walks on the host's screen walks 3-6 m behind on a guest's; where two walk past each
-  other the guest sees, for a few seconds, the other one (of another size) at a citizen's place.
-* Reproduce: civ_citizens / civ_citizens_reload print `size pair host X / guest Y: the guest's is bound to host Z 4-6 m
-  away` in about every second run; the size check fails when 10 % of the pairs are such (1 of 12 runs before 0.7.15's
-  BUG-1221 change, 1 of 4 in lab 20261117-125035, 0 of 4 in -130515; the check now takes rounds until 20 pairs).
-* Known: each copy has its host citizen's size; standing pairs never differ (0 of 172). The follow gives a MoveTo 1.5 s
-  ahead, again after 2 m or 1.5 s, and puts only beyond 12 m (docs/re/civ.md#civ-citizens-reload).
-* Next steps: a shorter lag for walking citizens, or a size check over pairs that stay together for two rounds.
-* Ticket: BUG-1227
+* What happens: a city citizen that runs on the host's screen (8 m/s) is at the same place on a guest's, but there it
+  often moves crouched in its standing pose instead of running.
+* Reproduce: civ_citizen_trail prints `guest copies (moving, animation)`: copies that move while they play 0x02481DE5
+  (the standing animation); the copies of running host citizens play the run (0x02481DB0) in 26-98 % (varies by session) of the samples
+  (8-28 % with civ.citizen_lead off, so it is older than BUG-1227's fix); key frames run1 / run2.
+* Known: the copy is walked by the game's MoveTo (and since BUG-1227 glided to the host's place); the host's citizens
+  run by their own behaviour (docs/re/civ.md#civ-citizens-trail).
+* Next steps: find the call that starts a citizen's run and give it to the copy, or play the host's animation on it.
+* Ticket: BUG-1229

@@ -8939,3 +8939,24 @@ A natural bad load (no plant) came 1 in about 4 loads (20261117-121708: 3 runs o
   (`coop.civ creatureshift`, the pool's move during a stand); for 6 s no copy of the herd may stand more than 8 m from
   the host's creatures on the guest (the host retires them), then after the pause the guest shows every wild creature
   where the host has it. Twin `SPORE_FIX_OFF=npc.frozen_moved` (FAIL 20261117-131957, PASS 20261117-132012).
+
+## Civ citizens at the same moment: civ_citizen_trail, identity size pairs (2026-11-17, fix/w51-trail)
+<a id="testing-civ-citizen-trail"></a>
+
+BUG-1227.
+* `coop.bodyrec start kinds z` (tests): the Civ city citizens too, keyed `z<host id>` on both games (the host its
+  citizens sent to a guest, a guest its bound copies), `y<id>` with `kinds ...y`: a guest's MoveTo goals. Only when a
+  test names `z`: the detector's `bodyrec on` rows are unchanged. body_trail.analyse(kinds='z') then compares every
+  copy with its own host citizen at the same moment.
+* `coop_civ_citizen_trail.py` (suite `civ_citizen_trail`, civ_npc, about 2 min): 60 s of rows after 25 s; prints city
+  citizens, NPC proxies and Civ vehicles of the same session side by side; checks the citizens' p90 (2.5 m), the share
+  of moving samples where a copy stands over 2 m off with another copy nearer (10 %). FAIL with
+  `SPORE_FIX_OFF=civ.citizen_lead` (p90 7.2-7.9 m, crossed 44-56 %), PASS with it (p90 1.4-1.8 m, crossed 2-4 %).
+  Printed only: each game's (moving, animation) counts from rows a<id> (`kinds ...a`: a citizen's current animation as
+  (low 16 bits, high 16 bits, 1)) and how often the copies of running host citizens play the run 0x02481DB0 (BUG-1229);
+  two key frames (kind sameview: `coop.view set` on both games at a running host citizen) for the review by eye.
+  `coop.wobj list` now ends its rows with `gait= anim=` (a creature kind's game::gait_state gait word and animation).
+* civ_citizens' size check pairs by identity: each host citizen against the guest citizen bound to it (`coop.wobj list
+  citizen`, its copy) within 15 m, no longer the nearest pairs, which crossed where two walking copies passed each
+  other (BUG-1227). The limits (12 % size difference, at most 10 % of the pairs) are unchanged; about one pair per host
+  citizen a round, so the extra rounds for 20 pairs no longer come.

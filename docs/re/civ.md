@@ -1959,3 +1959,43 @@ BUG-1216 (the campaign's Civ segment failed the sync-check gate `n apart`). GOG 
   height over this game's ground had no failing twin and was dropped).
 * ✔ (runtime) civ_npc's walking creatures are sent with NF_AIR often (`air_catches` 450-1900 per test): their game's
   grounded byte is 0 and they are more than kAirOver (0.15 m) off GetHeightAt at times.
+
+## Walking city citizens on a guest: the lag and the glide (2026-11-17, fix/w51-trail)
+<a id="civ-citizens-trail"></a>
+
+BUG-1227. GOG 2024, runtime, lanes 4 and 6, civ_npc; measured with both games' own positions at the same moment
+(`coop.bodyrec start kinds zvny`: z<host id> the host's citizens and the guest's bound copies, keyed by the host's id,
+so each copy is compared with its own host citizen; tools/tests/coop_civ_citizen_trail.py, suite `civ_citizen_trail`).
+* ✔ (runtime) The host's city citizens near the capital mostly stand; when they move they run at a steady 8.0 m/s
+  (7.4 % of the host's samples move), in straight legs with sharp turns and stops (not a slow walk).
+* ✔ (runtime) Before the fix (`civ.citizen_lead off`, labs 20261117-133529, -133940, -135246): a walking copy was p50
+  4.7-5.2 m, p90 7.3-7.9 m behind its host citizen (lag p50 0.59-0.65 s, p90 0.92 s), stretches over 2 m of 16-35 s; in
+  42-56 % of the moving samples the copy stood over 2 m off with another copy nearer the host citizen (the crossings of
+  civ_citizens' size pairs). In the same sessions NPC proxies were p90 0.27-0.54 m off (lag p50 0.008-0.023 s) and Civ
+  vehicles p90 0.08-0.13 m (lag p50 0.003-0.007 s): the citizens lagged 25-80 times more than the mod's other mirrored
+  walkers, so not the relay's normal lag.
+* ✔ Cause (observed): citizen_follow's MoveTo goal was right (1.5 s ahead, 10-12 m in front of the host's citizen), but
+  the copy runs at the citizen's own top speed, the host's 8 m/s, and keeps the distance it lost at the start of each
+  leg (a start is known a snapshot later and the velocity after two snapshots, 0.5-1 s, i.e. 4-8 m): the copy-to-goal
+  distance stayed constant for seconds (`zf` 7.3 m behind for 5 s). The same class as the Tribe animal proxies
+  (docs/re/tribe.md#tribe-animal-proxy-trail): the game's locomotion does not run a creature faster than its top
+  speed, so a MoveTo alone never catches up.
+* ✔ Fix `civ.citizen_lead` (worldobj.cpp `citizen_drive`, a `drive` of the citizen kind, every frame on the guest): while
+  the host's citizen moves (0.3 m/s or more), the copy (still walked by MoveTo, so it plays its run animation) is
+  placed without the teleport mark (game::place) a part of the way to where the host's citizen is now (its last
+  place moved on with its velocity for the snapshot's age, at most 1 s): the error closes with a 0.12 s time constant,
+  at most 4 m/s over the host's speed. The host sends the kind every 0.25 s instead of 0.5 s to guests of 0.7.15 on (an
+  older guest takes a velocity only from snapshots over 0.3 s apart, so it still gets every 0.5 s: `Kind::fast_every`,
+  the peer's HELLO families), and such a guest takes the velocity from snapshots over 0.15 s apart. Result (labs
+  20261117-135241 and the ticket's PASS runs): p50 0.28-0.31 m, p90 1.38-1.70 m, lag p50 0.035-0.039 s, crossed
+  samples 2.9-4.5 %. The glide alone at 0.5 s snapshots: p50 0.82, p90 3.43 m (-133935); 0.125 s snapshots gave p90
+  1.68-1.86 m against 1.93-2.00 m at 0.25 s with the slower glide (0.25 s): the cadence is not the limit, 0.25 s kept.
+* ✔ (runtime) What is left is the sharp turns at 8 m/s: samples within 0.6 s after a turn over 60 degrees p90 2.7-3.5 m,
+  straight legs p90 1.1-1.6 m (the turn is known up to a snapshot late).
+* ✔ (runtime) Animations (bodyrec rows a<id>, game::drawn_state): a host citizen that moves plays 0x02481DB0 (its run,
+  every moving sample), a standing one 0x02481DE5 or an action (0x050A3F95, 0x04A1DD75, ...). A guest's copy of a
+  running host citizen plays the run in only 8-28 % of the samples with `civ.citizen_lead off` and 26-98 % with it; the
+  rest of the time it moves while it plays the standing 0x02481DE5 (key frames: the host's citizen in a run pose, the
+  copy crouched). Older than the glide, BUG-1229 (open). game::gait_state's gait word is 0 for every citizen (both
+  games, moving or not): not a walk indicator for them.
+* Bandwidth: 19-56 citizens x 20 B every 0.25 s, about 1.6-4.6 KB/s per guest (was half).
