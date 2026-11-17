@@ -161,7 +161,7 @@ moved more than 0.5 m (scratchpad tool spike0.py; to go into tools/qa_win when p
 | Creature | host runs the world; own creature and (5EA) own pack per player | own Summon Flock (5FB); own nest family | wild creatures near each player (5EC) |
 | Tribe | host runs all tribes | each player's own tribe members | wild creatures and rival tribes near a player |
 | Civ | host runs the planet | each player's own cities and vehicles | rival cities near a player |
-| Space | each player flies in their own copy of the host's galaxy | already mostly per player | own empire per player (ROADMAP MMO questions) |
+| Space | each player flies in their own copy of the host's galaxy | already mostly per player | own empire per player; the galaxy's changes kept by the galaxy server (#server-space) |
 | Cell | host runs it | keep as is (short stage) | |
 
 ## Phases
@@ -308,6 +308,30 @@ spread the load to be more viable."
   the planet's host carries only its own area plus the checks: the load is spread over every player's PC.
 * Caveats as in #server-load-and-player-hosts: a hand-over means a short load for that planet's players, a host can
   cheat for its planet (the server still keeps each player's own progress), and the relay adds one hop of latency.
+
+## Space and the galaxy server (2026-11-17)
+<a id="server-space"></a>
+
+Owner, 2026-11-17: "What about space stage? Since that's basically a woven net to each player's instance, wouldn't that
+be the server's job?"
+
+* Partly yes: the galaxy's shared state is the server's. Today every player flies in its own copy of the host's galaxy,
+  linked by star and planet ids (ROADMAP MMO questions, Space briefing). Each copy starts from the same galaxy; what
+  players change in it (colonies, who owns a planet, terraforming, empires' relations and wars, where each ship is)
+  is world truth: the galaxy server keeps it as one list and sends it to every player's game, which applies it to its
+  copy (as space_map and space_allies already do for a partner's colonies).
+* The flying and fighting stay in the players' games: each player's game runs Space around its own ship, as in single
+  player. A star system with several players in it is hosted like a planet: the first player there runs the system's
+  enemies and events, the others join it through the server, the next takes over when it leaves (the 2026-11-12
+  recommendation "whoever of the party is there, handed over when they leave").
+* The net between players is the server's: it knows which system every ship is in, connects players who meet in the
+  same system, and hands a ship over to a planet's host when it lands there.
+* What the galaxy does on its own over time (empires expanding, raids on colonies while their owner is away) runs in
+  Spore's code in a player's game today. The server can start by keeping what happens where players are; running
+  the galaxy's own life with nobody near would mean either a server-hosted Spore in Space or rewriting those rules in
+  the server (later, if wanted).
+* The hard part: keeping every player's galaxy copy in step with the server's list (a colony, a lost planet, a changed
+  relation) without reloading, through the game's own functions.
 
 ## Questions for the owner
 <a id="server-questions"></a>
