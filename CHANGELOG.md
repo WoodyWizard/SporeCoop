@@ -68,6 +68,11 @@
 - Space: plants and animals a player places on a planet are now on that planet in every player's game, and the
   planet counts as stabilized there too (more colony cities); a player who flies there later finds the animals. Before,
   a planet a guest terraformed and populated was empty and not stabilized for the host (BUG-1148).
+- Space: a plant another player places on a planet grows at the same spot in your game (the same trees there), also
+  when you land on that planet later, and the animals it drops show up as animals of their normal size, not as one
+  giant; where a herd roams is each game's own, as in a single-player game (BUG-1224).
+- All stages: the arrow to a partner behind you or below you no longer disappears under the bottom bar (it sits just
+  above it), and a partner at the left or right edge of the screen keeps its name tag (BUG-1226).
 - Space: terraforming done by a partner is no longer lost for a player who was in an editor or an adventure at the
   time, or whose game had never been near that star; the host also hands it to a player who arrives in that star
   system later, so it reaches the host's save as well (BUG-1155).
@@ -89,6 +94,9 @@
   next update) (BUG-1203).
 
 ### Development
+- Lab: space_session closes each badge's reward box in the first evening like a player and checks that the badges come
+  back silently in the next one (the box seen there was a badge left pending, not a restored one) (BUG-1223, BUG-1225);
+  space_eco compares the terrain cell where the guest planted and shows both games over that spot.
 - Lab: tribe_name_tags checks the chief's label at the chief the game names (BUG-1202); tribe_caption_race is
   INCONCLUSIVE when the host's game itself plays no conquest caption (BUG-1205).
 - Key frames for the new visible features: space_eco / space_eco_live (each game's camera at an animal the guest

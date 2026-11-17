@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w51-space3
-commits:
+commits: 98350224
 tests: space_session
 signature:
 docs: docs/re/space.md#space-badges-reward, docs/06-testing.md#testing-space-session-rewards
@@ -58,7 +58,7 @@ box comes within 15 s and that no badge is earned anew. `SESSION_REWARDS_OPEN=1`
 * FAIL (the first box left open, the old test with the new check): 20261117-122124 (lane 6): `guest reward box (743,
   543)`, Explorer 2 given after the restore.
 * PASS: 20261117-124203 (lane 6): 2 boxes closed in the first session, none after the restore, the guest landed on its
-  colony (frame space_session/01_colony_guest.jpg).
+  colony (frame space_session/01_colony_guest.jpg); 20261117-125525-2 the same.
 
 ## History
 - 2026-11-16: opened.

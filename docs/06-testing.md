@@ -8876,3 +8876,24 @@ From the 0.7.15 final check triage of the Space group (BUG-1203, BUG-1210, BUG-1
   own game at once (its eco line showed `#0` in 2 of 3 runs); the host gets a herd from the mod (space_eco.cpp
   spawn_herd). The plant the guest placed stands by the guest's ship in its game only: the host has the species, not
   that plant at that spot (same-view frame 20261116-101029 space_eco: a big tree on the guest, open ground on the host).
+
+## Badge reward boxes in space_session, ecosystem spots, partners on the edge (2026-11-17, fix/w51-space3)
+<a id="testing-space-session-rewards"></a>
+
+* A badge's "Reward" box stops the game's badge Update: a counter that meets two badges of a chain (`badges event 2
+  60`: Explorer 1 and Explorer 2) gives the second only after the first box is closed. A test that leaves the box up
+  leaves a badge pending, and the next load (or E1's restore) gives it with a box (BUG-1223). space_session closes
+  every box like a player (`close_rewards`: the green check at 932 844 until none came for 8 s) and checks after the
+  restore (`restored=1` in `coop.space badges`) that no box comes and no badge is earned anew; `SESSION_REWARDS_OPEN=1`
+  leaves them open. `no_movie` does not close a Reward box (it only acts while a cinematic runs).
+* `uifind.shown(con, 'Reward')` can miss a box for some seconds after it appears (four reads of None while the box was
+  on the screenshot, lane 6): poll it for a while (space_session's `reward_seen`), never read it once.
+* space_session's `land_colony` prints the targets and the place when it cannot pick the colony (BUG-1225).
+* space_eco (BUG-1224): `coop.space eco cell <x> <y> <z>` prints the terrain grid cell of a point (its plant species
+  per size class; the flora there is drawn from them). The tests compare the cell at each spot the guest planted on
+  both games and take a key frame of both cameras over that spot (`*_spot`). `coop.space eco place animal ...` also
+  makes the cargo drop's own creature at the point (PlanetEco_DropAnimal), as a real drop; `noherd` after the PlanetID:
+  none. `coop.census creatures` gives a far creature's position as 0 0 0 (seen on the host 400 m from its ship): a
+  position check needs the creature near the game's ship.
+* find_partners (BUG-1226): `coop.find` says `drawn=1` for an arrow the label layout then hides; whether the player
+  sees it is `coop.find boxes` (`hidden=0`). The test's `shows()` reads both.
