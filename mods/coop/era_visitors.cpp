@@ -3,10 +3,16 @@
 // BUG-0558), and the game's SpawnUFO takes any model key: a ship made with a vehicle's or a building's model, placed on
 // the ground and moved every frame, is the cheapest look-alike to try.
 //
-//   coop.visit spawn <instance> <type> <group> [drive]   (hex; drive: it circles 12 m around a point near the avatar)
+//   coop.visit spawn <instance> <type> <group> [drive|stand] [lift] [axes] [prop|ufo]
+//     (hex; drive: it circles 12 m around a point near the avatar)
+//
+// The carrier (decision 5T B): `prop` (the default) is a plain ornament (noun 0x18C88E4, the object the game uses for a
+// city's decorations and the Tribe attack marker, docs/re/space.md#space-city-ornaments): it does not fly, so it stands
+// where it is put. `ufo` is the first try: SpawnUFO with the model, which the UFO's own update lifts 6 m over the ground.
 //   coop.visit clear | status
 //
-// Not saved: the spike clears its objects before a save is taken (do not save while they exist).
+// Not saved: the save-strip filter leaves our props out of a save (not tested yet); UFO carriers are not covered (do not
+// save while they exist).
 #include "era_visitors.h"
 
 #include <cmath>
@@ -14,6 +20,7 @@
 #include <vector>
 
 #include "creations.h"
+#include "savestrip.h"
 #include "game.h"
 #include "net/protocol.h"
 #include "sporekit_game.hpp"
@@ -22,13 +29,16 @@ namespace era_visitors {
 
 static const SkHost* H;
 static SkMod* M;
-static uintptr_t a_SpawnUFO;
+static uintptr_t a_SpawnUFO, a_NounGet, a_CreateInstance, a_DestroyInstance, a_OrnSetModel;
+constexpr uint32_t kOrnamentNoun = 0x018C88E4;
+static void* noun_mgr() { return a_NounGet ? skg::cdecl_call<void*>(a_NounGet) : nullptr; }
 
 struct Prop {
     void* u = nullptr;
     uint32_t serial = 0;
     uint32_t key[3]{};
     bool drive = false;
+    bool prop = false; // an ornament of ours (AddRef held), else a SpawnUFO ship
     net::Vec3 centre{};
     float angle = 0;
     float lift = 0; // m over the ground
@@ -85,6 +95,11 @@ static void place(void* u, const net::Vec3& p, const net::Quat& q)
         return;
     struct { float x, y, z; } vp{p.x, p.y, p.z};
     struct { float x, y, z, w; } vq{q.x, q.y, q.z, q.w};
+    if (game::noun_id(u) == kOrnamentNoun) { // a prop: SetPosition and SetOrientation, as worldobj.cpp moves the city
+        skg::vcall<void>(sp, 0x38 / 4, &vp); // decorations (one vt 0x44 call moved it once, later ones were ignored)
+        skg::vcall<void>(sp, 0x3C / 4, &vq);
+        return; // (no flight of its own)
+    }
     skg::vcall<void>(sp, 0x44 / 4, &vp, &vq); // SetPositionAndOrientation
     memcpy((uint8_t*)u + 0x718, &vp, 12);     // (the ship's own flight: next position and destination, as BUG-0558)
     memcpy((uint8_t*)u + 0x750, &vp, 12);
@@ -119,11 +134,13 @@ static void drive_prop(Prop& pr, float dt)
     place(pr.u, p, q);
 }
 
-std::string spawn(uint32_t inst, uint32_t type, uint32_t group, bool drive, float lift, int axes)
+std::string spawn(uint32_t inst, uint32_t type, uint32_t group, bool drive, float lift, int axes, bool prop)
 {
     void* av = game::avatar();
-    if (!a_SpawnUFO || !av || !game::in_creature_stage())
-        return "needs the Creature stage and Simulator::SpawnUFO";
+    if (!av || !game::in_creature_stage())
+        return "needs the Creature stage";
+    if (prop ? !(a_NounGet && a_CreateInstance && a_DestroyInstance && a_OrnSetModel) : !a_SpawnUFO)
+        return "missing a symbol for this carrier";
     creations::ModelKind kind = type == 0x24682294 ? creations::kMkVehicle
                                 : type == 0x2399BE55 ? creations::kMkBuilding
                                 : type == 0x476A98C7 ? creations::kMkUfo
@@ -133,12 +150,25 @@ std::string spawn(uint32_t inst, uint32_t type, uint32_t group, bool drive, floa
     uint32_t key[3] = {inst, type, group};
     if (m.key.instance)
         key[0] = m.key.instance, key[1] = m.key.type, key[2] = m.key.group;
-    uint32_t pol = 0;
-    void* u = skg::cdecl_call<void*>(a_SpawnUFO, 7, &pol, (void*)key);
-    if (!u)
-        return "SpawnUFO made nothing";
+    void* u = nullptr;
+    if (prop) {
+        void* nm = noun_mgr();
+        u = nm ? skg::thiscall<void*>(a_CreateInstance, nm, kOrnamentNoun) : nullptr;
+        if (!u || game::noun_id(u) != kOrnamentNoun)
+            return "CreateInstance made no ornament";
+        skg::vcall<void>(u, 0); // AddRef: ours until clear()
+        skg::thiscall<void>(a_OrnSetModel, u, key[0], key[1], key[2]);
+        if (void* sp = game::cast(u, 0x1186577)) // the creation's model by its key, as cVehicle::Load (spatial vt 0x94 SetModelKey)
+            skg::vcall<void>(sp, 0x94 / 4, (const uint32_t*)key);
+    } else {
+        uint32_t pol = 0;
+        u = skg::cdecl_call<void*>(a_SpawnUFO, 7, &pol, (void*)key);
+        if (!u)
+            return "SpawnUFO made nothing";
+    }
     Prop pr;
     pr.u = u;
+    pr.prop = prop;
     pr.serial = game::object_serial(u);
     memcpy(pr.key, key, sizeof key);
     pr.drive = drive;
@@ -160,7 +190,7 @@ std::string spawn(uint32_t inst, uint32_t type, uint32_t group, bool drive, floa
     place(u, p, q);
     g_props.push_back(pr);
     char b[200];
-    snprintf(b, sizeof b, "spawned %p model %08X/%08X/%08X (%s) at (%.1f %.1f %.1f)%s", u, key[0], key[1], key[2],
+    snprintf(b, sizeof b, "spawned %s %p model %08X/%08X/%08X (%s) at (%.1f %.1f %.1f)%s", prop ? "prop" : "ufo", u, key[0], key[1], key[2],
              m.status == creations::Model::kSame ? "its own model" : m.status == creations::Model::kSubstituted ? "a stand-in model" : "the key as given",
              p.x, p.y, p.z, drive ? ", driving" : "");
     H->log(M, SK_INFO, "era_visitors: %s", b);
@@ -170,11 +200,18 @@ std::string spawn(uint32_t inst, uint32_t type, uint32_t group, bool drive, floa
 std::string clear()
 {
     size_t n = 0;
-    for (auto& pr : g_props)
-        if (pr.u && game::object_alive(pr.u) && game::object_serial(pr.u) == pr.serial) {
+    for (auto& pr : g_props) {
+        const bool alive = pr.u && game::object_alive(pr.u) && game::object_serial(pr.u) == pr.serial;
+        if (alive && pr.prop) {
+            if (void* nm = noun_mgr())
+                skg::thiscall<void>(a_DestroyInstance, nm, pr.u);
+            skg::vcall<void>(pr.u, 1); // Release our reference
+            n++;
+        } else if (alive) {
             game::destroy_creature(pr.u); // (the deferred path: any cGameData)
             n++;
         }
+    }
     g_props.clear();
     return "cleared " + std::to_string(n);
 }
@@ -188,7 +225,7 @@ std::string status()
         if (alive)
             game::object_position(pr.u, v);
         char b[200];
-        snprintf(b, sizeof b, "  %p %s model %08X/%08X/%08X %s pos=(%.1f %.1f %.1f) ground=%.1f\n", pr.u, alive ? "alive" : "gone",
+        snprintf(b, sizeof b, "  %s %p %s model %08X/%08X/%08X %s pos=(%.1f %.1f %.1f) ground=%.1f\n", pr.prop ? "prop" : "ufo", pr.u, alive ? "alive" : "gone",
                  pr.key[0], pr.key[1], pr.key[2], pr.drive ? "driving" : "standing", v.x, v.y, v.z,
                  alive ? game::ground_radius(v) : 0.f);
         out += b;
@@ -196,11 +233,27 @@ std::string status()
     return out;
 }
 
+// our props are not the player's world (CLAUDE.md 2): a save never holds them
+static bool savestrip_filter(void* obj, uint32_t noun)
+{
+    if (noun != kOrnamentNoun)
+        return false;
+    for (auto& pr : g_props)
+        if (pr.prop && pr.u == obj)
+            return true;
+    return false;
+}
+
 void init(const SkHost* host, SkMod* mod)
 {
     H = host;
     M = mod;
     a_SpawnUFO = H->sym("Simulator::SpawnUFO");
+    a_NounGet = H->sym("Simulator::cGameNounManager::Get");
+    a_CreateInstance = H->sym("Simulator::cGameNounManager::CreateInstance");
+    a_DestroyInstance = H->sym("Simulator::cGameNounManager::DestroyInstance");
+    a_OrnSetModel = H->sym("SporeCoop::cOrnament_SetModel");
+    savestrip::add_filter(savestrip_filter);
 }
 
 void tick(double now)

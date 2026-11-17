@@ -10202,14 +10202,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        H->out_printf(out, "%s\n", argc > 1 ? bans::unban(argv[1]).c_str() : "coop.unban <name>");
                        return 0;
                    }, nullptr, MT);
-    H->command_add(M, "coop.visit", "coop.visit spawn <hex instance> <hex type> <hex group> [drive|stand] [lift m] [axes 0|1|2] | clear | status - another era's model in this Creature game (alpha spike, decision 5S)",
+    H->command_add(M, "coop.visit", "coop.visit spawn <hex instance> <hex type> <hex group> [drive|stand] [lift m] [axes 0|1|2] [prop|ufo] | clear | status - another era's model in this Creature game (alpha spike, decision 5S)",
                    [](void*, int argc, const char* const* argv, SkOut* out) -> int {
                        std::string r;
                        const std::string sub = argc > 1 ? argv[1] : "status";
                        if (sub == "spawn" && argc > 4)
                            r = era_visitors::spawn((uint32_t)strtoul(argv[2], nullptr, 16), (uint32_t)strtoul(argv[3], nullptr, 16),
                                                    (uint32_t)strtoul(argv[4], nullptr, 16), argc > 5 && !strcmp(argv[5], "drive"),
-                                                   argc > 6 ? (float)atof(argv[6]) : 0.f, argc > 7 ? atoi(argv[7]) : 0);
+                                                   argc > 6 ? (float)atof(argv[6]) : 0.f, argc > 7 ? atoi(argv[7]) : 0,
+                                                   !(argc > 8 && !strcmp(argv[8], "ufo")));
                        else if (sub == "clear")
                            r = era_visitors::clear();
                        else
