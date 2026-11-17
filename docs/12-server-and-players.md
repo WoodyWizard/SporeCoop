@@ -393,6 +393,30 @@ Menu saves with the server's and they can click a planet to begin almost like no
 * To find out: how the menu finds its saves and whether that folder can change while the game runs (or only at the
   next start of the menu); where each planet shows on the menu's galaxy map.
 
+## Players at different stages on one planet: eras (2026-11-17)
+<a id="server-eras"></a>
+
+Owner, 2026-11-17, two ways to start on a hosted world from the galaxy menu: (1) the later stages are greyed out until
+the world's creator unlocks them; the creator is away in Cell; a player who joins finishes Cell and starts Creature in
+the same world while the creator is still in Cell. (2) Every stage is open from the start: a player starts at Tribe
+while the host is in Cell, Creature or Civ.
+
+* The limit: a Spore game runs one stage at a time, and one planet surface cannot be in two stages at once (Creature has
+  nests and herds where Tribe has villages and Civ has cities; Cell is not on the surface at all). Today every player
+  of a session plays the host's stage (docs/07-modes.md 7.6).
+* The answer: one era per stage on each planet. Each era (Samuth Cell, Samuth Creature, Samuth Tribe, ...) is its own
+  hosted session with its own saved world on the galaxy server, hosted by a player in it (the first to arrive). Players
+  progress on their own: finishing a stage moves a player out of one era's session into the next era's (hosting it if
+  nobody is there). Both of the owner's cases work this way: (1) the joiner hosts Samuth's Creature era while the
+  creator idles in its Cell era and joins later; (2) "start at Tribe" enters Samuth's Tribe era while others play its
+  other eras.
+* Players see each other within an era; across eras they are parallel timelines of the planet (visitors across eras
+  maybe later, like Space visitors on a Creature planet, never one shared simulation).
+* Work it needs: a stage change today takes the whole session with the host; here each player changes era on its own
+  (leave one session, enter the next through the galaxy server).
+* Unlocks: tied to the world's creator, an away creator blocks everyone's later starts; Spore's own rule (a player starts
+  any stage it has reached itself) does not. Moving on to the next stage by playing is always open.
+
 ## Questions for the owner
 <a id="server-questions"></a>
 
