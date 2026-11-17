@@ -252,6 +252,45 @@ another planet, and see other players in the Creature stage."
 * Open research for that journey: a Space visitor on a planet whose server runs the Creature stage (two stages on one
   planet: today every player in a session plays the same stage); what a visitor may do there (ROADMAP MMO questions).
 
+## Load per planet, and planets hosted by players (2026-11-17)
+<a id="server-load-and-player-hosts"></a>
+
+Owner, 2026-11-17: "I'm worried that the Server will quickly hit a limit with 32 players even, crashing or maxing out
+quickly." And: "we let a player on the world be in control of that planet. The planet is detailed / saved on the server,
+so when a player connects to it, the server lets them know the state of the world, and it lets them host the planet.
+When they leave, it passes the control down. If no one's there, it's stored in the server for the next connection."
+
+* The concern is valid for many players on one planet, not for 32 players spread over planets. Measured so far
+  (#server-spike-watch): a planet program uses about 0.5-0.6 GB and 22 % of a core at 10 frames a second; one more
+  player area far from the others loaded about 30 more creatures and about 80 MB. Spread over ten planets, 32 players
+  are a few GB and a few cores. On one planet, every player standing in their own area multiplies the creatures the
+  planet's authority runs and animates; somewhere past 8-16 separate areas one Spore program would likely run out of
+  memory (4 GB) or of its one core (an estimate, not measured: a load test with added player areas measures it).
+* The answer to that limit is the ownership model, whoever hosts: when each player's game runs the creatures around
+  it (5EC, as 5EA does for packs), the planet's authority mostly keeps state and checks, and its load grows slowly with
+  players.
+* Player-hosted planets (the owner's alternative) work and fit what Lineages does today (a host is a player): the
+  galaxy server stores each planet's world and hands it to the first player who arrives; that player's game is the
+  planet's authority; the others join it; when it leaves, the authority passes to another player; an empty planet waits
+  in storage. What it needs and where it hurts:
+  1. Hand-over without a reload: today a guest's world is a mirror (proxies, the host's states); becoming the authority
+     means turning the mirrors into the game's own creatures (BUG-0412's leave_locals does this for a guest left
+     alone) and every other player switching to the new host. Simplest first version: the new host loads the latest
+     saved world, the others rejoin it: a short loading screen for everybody at each hand-over.
+  2. Saving to the server: the authority uploads the world regularly (a Creature save is a few MB); a host that
+     crashes loses what happened since the last upload.
+  3. Cheating: the authority decides everything on its planet, so a modified game hosting a planet can cheat for
+     everyone there. The galaxy server can still keep each player's own progress (DNA, their creature) and check what
+     hosts upload, but less than a server it runs itself.
+  4. The host's PC and connection carry the whole planet: a weak PC or a slow line slows everybody, and many players on
+     one planet hit that PC's limits first (the same limit as above, on weaker hardware).
+  5. Reaching a player's PC: hosts behind home routers need the galaxy server to relay their traffic (bandwidth, not
+     CPU, on the server).
+* Recommended: make "planet authority" a role, held by a player's game or by a server's hidden Spore, with the same
+  code (phase 1 makes "server" and "player" separate for this). Start with player-hosted planets and the galaxy server
+  storing worlds (cheap, closest to today); give busy or always-on planets a server-hosted authority later; build the
+  ownership model so neither hits the limit early.
+
 ## Questions for the owner
 <a id="server-questions"></a>
 
