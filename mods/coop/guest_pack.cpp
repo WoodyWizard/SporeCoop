@@ -33,9 +33,19 @@ static uint32_t g_reposse;
 static bool g_flock_leader_fix = true;
 COOP_FIX("creature.guest_flock_leader", "BUG-9229", g_flock_leader_fix,
          "creature: a guest's Summon Flock event runs with the guest's creature as its leader (it follows the guest)");
+// BUG-9247 (TITAN QA 2026-11-16): the game reuses a creature object for another creature without a new serial (the
+// pool, BUG-0044, docs/re/creature.md#creature-pool-ids): a summoned member's object came back as a hostile species and
+// the pack kept it, teleported it beside the partner and it attacked the partner. On: a member whose object is another
+// species now, or sits in the pool (no herd, at the planet's centre), leaves the pack. Off: 63-dev.
+static bool g_reuse_fix = true;
+COOP_FIX("creature.pack_member_reuse", "BUG-9247", g_reuse_fix,
+         "creature: a partner's pack member whose object the game pooled or reused for another creature leaves the pack");
+static uint32_t g_reused, g_pooled;
 struct Member {
     uint8_t owner = 0;
     uint32_t serial = 0;
+    uint32_t species = 0;
+    void* profile = nullptr;
     bool summoned = false;
     void* target = nullptr;     // what it was told to attack
     double target_until = 0;
@@ -50,7 +60,25 @@ static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.
 
 static bool alive(void* c, const Member& m)
 {
-    return c && game::object_alive(c) && game::object_serial(c) == m.serial && !game::is_dead(c) && game::health(c) > 0;
+    if (!c || !game::object_alive(c) || game::object_serial(c) != m.serial || game::is_dead(c) || game::health(c) <= 0)
+        return false;
+    if (!g_reuse_fix)
+        return true;
+    // (the species profile, not the key: a summoned creature's key reads 0 a few seconds after the summon, runtime
+    // 2026-11-16, while its profile stays)
+    if (game::species_profile(c) != m.profile) {
+        g_reused++;
+        H->log(M, SK_INFO, "guest_pack: member %p of player %u is another creature now (species %08X -> %08X, profile %p -> %p): out of the pack (BUG-9247)",
+               c, m.owner, m.species, game::species_instance(c), m.profile, game::species_profile(c));
+        return false;
+    }
+    net::Vec3 p = game::position(c);
+    if (!game::herd_of(c) && p.x * p.x + p.y * p.y + p.z * p.z < 1.f) {
+        g_pooled++;
+        H->log(M, SK_INFO, "guest_pack: member %p of player %u went to the game's pool: out of the pack (BUG-9247)", c, m.owner);
+        return false;
+    }
+    return true;
 }
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx)
@@ -108,6 +136,8 @@ static void join(uint8_t guest, void* c, bool summoned)
     auto& m = g_members[c];
     m.owner = guest;
     m.serial = game::object_serial(c);
+    m.species = game::species_instance(c);
+    m.profile = game::species_profile(c);
     m.summoned = summoned;
     m.target = nullptr;
     m.next_move = 0;
@@ -284,10 +314,6 @@ void tick(double now)
             leave_host_posse(c);
             g_reposse++;
         }
-        // BUG-9245: the summon event's end (drama::end_flock_event lets the flock go, the game's end then runs) takes
-        // its members out of every herd (herd 0: they stood still, runtime 2026-11-16): back into the puppet's herd
-        if (g_herd_fix && !game::herd_of(c))
-            into_puppet_herd(c, m.owner);
         if (m.target && (now > m.target_until || game::is_dead(m.target) || !game::object_alive(m.target)))
             m.target = nullptr;
         float d = net::dist(game::position(c), game::position(puppet));
@@ -319,9 +345,9 @@ std::string status()
     char b[320];
     std::snprintf(b, sizeof b,
                   "guest_pack: fix=%d members=%zu summons=%u summoned=%u recruits=%u assists=%u defends=%u leashed=%u "
-                  "teleports=%u dropped=%u herd_moves=%u herd_fix=%d\n",
+                  "teleports=%u dropped=%u herd_moves=%u herd_fix=%d reuse_fix=%d reused=%u pooled=%u\n",
                   (int)g_fix, g_members.size(), g_summons, g_summoned, g_recruits, g_assists, g_defends, g_leashed,
-                  g_teleports, g_dropped, g_herd_moves, (int)g_herd_fix, g_reposse);
+                  g_teleports, g_dropped, g_herd_moves, (int)g_herd_fix, (int)g_reuse_fix, g_reused, g_pooled);
     std::string out = b;
     // tests (BUG-9233): the posse simulator's 0x58 bytes and the host's pack list length
     static uintptr_t posse_get = H->sym("SporeCoop::cPosseSimulator_Get");
@@ -336,8 +362,9 @@ std::string status()
     }
     for (auto& [c, m] : g_members) {
         void* p = C.puppet_of ? C.puppet_of(m.owner) : nullptr;
-        std::snprintf(b, sizeof b, "  %p owner=%u %s hp=%.1f dist=%.1f target=%p herd=%p puppet=%p puppet_herd=%p avatar_herd=%p\n", c,
-                      m.owner, m.summoned ? "summoned" : "recruit", game::health(c),
+        std::snprintf(b, sizeof b, "  %p owner=%u %s species=%08X/%08X b135=%u b67=%u hp=%.1f dist=%.1f target=%p herd=%p puppet=%p puppet_herd=%p avatar_herd=%p\n", c,
+                      m.owner, m.summoned ? "summoned" : "recruit", m.species, game::species_instance(c),
+                      skg::field<uint8_t>(c, 0x135), skg::field<uint8_t>(c, 0xB67), game::health(c),
                       p ? net::dist(game::position(c), game::position(p)) : -1.f, m.target, game::herd_of(c), p,
                       p ? game::herd_of(p) : nullptr, game::avatar_herd());
         out += b;

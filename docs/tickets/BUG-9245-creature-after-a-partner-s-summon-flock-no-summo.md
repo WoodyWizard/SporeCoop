@@ -11,10 +11,10 @@ versions: 0.7.14.1-lineages63-dev
 fixed_in: unreleased
 branch: feat/lineages-47
 commits:
-tests: manual Windows QA (TITAN, Dorger.spo copy, host 9 + guest 8: coop.prules roar 0x33, coop.drama, coop.gpack)
+tests: manual Windows QA (TITAN, Dorger.spo and Samuth.spo, host 9 + guest 8)
 signature:
 docs: docs/re/creature.md#creature-summon-done
-related: BUG-9129, BUG-9229, BUG-9233, BUG-0800, BUG-9246
+related: BUG-9129, BUG-9229, BUG-9233, BUG-0800, BUG-9246, BUG-9247, BUG-9248
 ---
 
 ## Report
@@ -27,18 +27,23 @@ Observed (runtime, the Steam code read from the running game, Steam = .sym - 0x1
 * Its update (vt+0x40, Steam 0xC412A0) sets +0x135 = 0 (and +0xF90 = 0) only at its end and only for a member over 100 m from the leader (50 m when spatial vt 0x48 is false).
 * A partner's flock is handed to the partner's pack (BUG-9129) and kept at the partner's side, so no member was ever let go: BUG-9233's "ends now" (duration 0) never ended the event, and the one summon event stayed active for the session.
 * The list also kept creatures that had died: after the flock drowned at the partner's underwater nest (BUG-9246) one entry was a newborn of the host's species at a reused address (+0x135 = 1), so it could not end even by distance.
+* A save keeps the event as it is: a world autosaved while a partner's flock was out (switch off, TITAN Samuth 2026-11-16) loaded with the summon event active, 540-600 s past its time, its list naming 3 creatures that were in another herd; every Summon Flock in that world was refused ("none idle"), the host's own `coop.drama start 8` too, for good.
+* The game never takes a creature out of the list when it changes herd (Creature_SetHerd), and the list keeps entries whose object was freed and given out again.
 Inferred: the host's own flock ends by the posse code or distance (not checked).
 
 ## Fix
-- creature.flock_release (drama.cpp end_flock_event): at the hand-over each member in the summon herd's list is let go as the update's end does (+0x135 = 0, +0xF90 = 0); the manager ends the event at its next tick (the game's own end, vt+0x34).
-- The game's end takes the members out of every herd (runtime: herd 0, they stood still): guest_pack's tick puts a member without a herd back into the partner's puppet herd (guest_pack.cpp, under creature.guest_pack's herd fix).
+- creature.flock_release (drama.cpp tidy_summon_list): the summon herd's list keeps only the creatures still in that herd. At the hand-over (end_flock_event) every member is in the partner's pack's herd already, so the list empties; on every update of a summon past its time (one a save brought back) the same tidy runs. An empty list makes "done?" true: the manager ends the event at its next tick with the game's own end (vt+0x34), which finds nobody to take back. Creatures still in the herd (the host's own flock) stay listed and the game goes on with them as before.
+- CORRECTION (2026-11-16, feat/lineages-47): the first version (commit 3083a39a, not released) let each member go as the update's end does (+0x135 = 0, +0xF90 = 0). +0x135 == 0 takes a creature out of the game's update: the flock stood frozen next to the partner (never in the host's update list, no proxy on the partner's screen, no fight), and the game's end then sent it back to the pool (BUG-9247). The let-go and the re-herd in guest_pack's tick that came with it are gone.
 - `coop.fix creature.flock_release off`: 63-dev (the event runs on, later summons refused).
+- Tests: `coop.drama summon` (the last summon event the game updated and its list), `coop.drama endsummon` (the tidy now).
 
 ## Verification
-FAIL (63-dev, the fix not built yet; TITAN 2026-11-16 18:26-18:30): second and third guest summons "none idle"; the host's own `coop.drama start 8` refused too; summon active=1, its duration -184 -> -187 s; the herd list held 3 entries, one with +0x135 = 1.
-PASS (the fix, after a world reload, 18:40-18:42): summon 1: "5 let go", `coop.drama` summon active=0 at once, the 5 members back in the guest's puppet herd at 3.6 m (herd_moves 5 -> 10); summon 2 two minutes later: "3 let go", 3 more creatures (summons=2, summoned=8).
-no-fail-run: Windows QA by hand (no lab on this PC); the switch-off run was not repeated after the fix (the 63-dev run above is the failing one).
-Not verified: the flock following a long walk and attacking for the partner (the guest died to the sea monster at its underwater nest, BUG-9246, before those checks); the posse's summoned count +0x1C after the game's end. Seen once, not explained: after summon 2 two of the 5 listed members were in other herds (one in the host's nest herd, 18 hp).
+FAIL (63-dev, the fix not built yet; TITAN 2026-11-16 18:26-18:30, Dorger.spo): second and third guest summons "none idle"; the host's own `coop.drama start 8` refused too; summon active=1, its duration -184 -> -187 s; the herd list held 3 entries, one with +0x135 = 1.
+FAIL again (switch off, TITAN Samuth.spo 21:25-21:35): the summon stayed active; after an autosave and a world reload every summon "none idle", `coop.drama summon`: active=1 duration=-539.6, 3 listed creatures in another herd.
+PASS (the final fix, Samuth.spo 21:38-21:45): the stuck event of that save ended within a second of the fix loading ("602 s past its time: 3 creature(s) that left its herd out of its list, 0 left", active=0); summon 1: 5 creatures, event active=0 at once, the 5 in the host's update list (walking 1-5 m/s), on the partner's screen (8-11 proxies within 8 m), following a 70 m walk (12-42 m behind); summon 2 after the partner died: 3 creatures, event ended again.
+no-fail-run: Windows QA by hand (no lab on this PC).
+Not verified: the posse's summoned count +0x1C after the game's end; the host's own flock past its time (only the partner's and a saved one were seen).
 
 ## History
 - 2026-11-16: opened during the owner-requested pack and abilities QA; cause found (the summon's "done?"); fixed (creature.flock_release, re-herd in guest_pack); PASS on TITAN.
+- 2026-11-16 (later): the first fix froze the flock (+0x135); replaced by the list tidy, which also ends a stuck summon a save brought back; PASS on TITAN (Samuth.spo).

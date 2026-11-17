@@ -1360,3 +1360,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9244](BUG-9244-creature-a-species-goal-card-says-it-is-extinct.md) | fixed | bug | creature | 2026-11-16 | 0.7.14.1-lineages63-dev | Creature: a species' goal card says it is extinct while its creatures still live (the line shown twice) |
 | [BUG-9245](BUG-9245-creature-after-a-partner-s-summon-flock-no-summo.md) | fixed | bug | creature | 2026-11-16 | unreleased | Creature: after a partner's Summon Flock no Summon Flock starts again (the event never ends) |
 | [BUG-9246](BUG-9246-creature-a-partner-s-nest-is-made-under-the-sea.md) | open | bug | creature | 2026-11-16 |  | Creature: a partner's nest is made under the sea |
+| [BUG-9247](BUG-9247-creature-a-partner-s-pack-keeps-a-recycled-creat.md) | fixed | bug | Creature | 2026-11-16 | unreleased | Creature: a partner's pack keeps a recycled creature (another species) and teleports it to the partner |
+| [BUG-9248](BUG-9248-creature-a-partner-s-pack-takes-the-target-the-p.md) | open | bug | Creature | 2026-11-16 |  | Creature: a partner's pack takes the target the partner hits but does not go and fight it |

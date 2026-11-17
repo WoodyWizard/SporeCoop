@@ -5243,5 +5243,19 @@ BUG-9245. Steam build, the code read from a running QA game (`mem.read`, Steam =
 * ✔ cSummonCreatureEvent vtable (Steam 0x0136B398): +0x30 start 0xC40EA0, +0x34 end 0xC414F0, +0x3C done? 0xC3D2F0, +0x40 update 0xC412A0 (GOG 2024 0xD512A0).
 * ✔ done? (0xC3D2F0): the herd from the event's prop list +0x5C..+0x60 ({key, object} pairs, key 0x609F2F8, object vt+0xC(0x52AA6117)); true when there is no herd, its list +0x40..+0x44 is empty, or every creature in the list has +0x135 == 0.
 * ✔ update (0xC412A0): at its end (flag 0x614A7EA of prop list +0x44 set, or the duration <= 0) it posts "follow" to each member and lets go (+0x135 = 0, +0xF90 = 0) only a member over 100 m from the avatar (or 50 m, spatial vt 0x48 false). So the duration alone does not end a summon: a flock kept near its leader keeps it active.
+  CORRECTION (2026-11-16, feat/lineages-47): "lets go" is not harmless: a creature with +0x135 == 0 is no longer updated by the game (see #creature-summon-pool).
 * ✔ end (0xC414F0): for each member in the list, a call with the member and cPosseSimulator 0xC43440(member, 0, 0); then the herd goes through cGameNounManager::DestroyInstance. Runtime: after it the members had herd 0 and stood still (their move_to did nothing).
 * ✔ The list is not maintained by Creature_SetHerd: members moved to another herd stay listed, and a member that dies stays listed; runtime: an entry at a freed address later held a newborn of another species with +0x135 = 1.
+
+## A summon's end pools its flock; +0x135 is "updated" (2026-11-16, feat/lineages-47)
+<a id="creature-summon-pool"></a>
+
+BUG-9245, BUG-9247, BUG-9248. Steam build, TITAN QA (Samuth.spo), runtime only.
+
+* ✔ The summon event's end (vt+0x34, 0xC414F0) returns every creature still in its herd's list to the game's pool: right after it the flock was at (0 0 0) with herd 0; the pool later gave the same objects (same serial +0x24) out to other herds' spawns (a 0654E5F0 at 62.5 hp in a former flock member's object).
+* ✔ +0x135 decides whether the game updates a creature: summoned members with +0x135 = 0 (set by hand) never appeared in the cCreatureAnimal::Update list (`coop.npc list`) for 60 s and stood still; members with +0x135 = 1 in the same herd walked (1-5 m/s) and were listed. Wild NPCs read +0x135 = 1. Not linked to the herd: enabling the partner's puppet herd (cHerd::SetEnabled 1) changed nothing.
+* ✔ A summoned creature's species key (species_instance, the key at +0x...) read 0 about 7 s after its summon; its species profile stayed.
+* ✔ A save keeps an active summon event and its list: after a reload it was active 540-600 s past its duration, its 3 listed creatures in another herd; StartKind(8) (0xC3D740 Steam) starts only idle events (+0xC == 0), so every summon was refused.
+* ✔ Emptying the list (end = begin) makes "done?" true; the manager's next tick runs the game's own end, which then pools nobody (`coop.drama endsummon`, and the automatic tidy past the event's time).
+* ✔ A member's SetTarget (vt 0x84, the victim's combatant) is kept (+0xE7C) but a summoned member does not go to the target (BUG-9248, open).
+* ✔ The drama manager starts no event of another kind while one runs: a night_predator event (time-of-day window +0x20 21.0 h to +0x24 3.0 h) left every summon "none idle" (host and partner); setting its window to 12-13 h ended it at the next tick (tests only).

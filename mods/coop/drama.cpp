@@ -201,8 +201,22 @@ static uintptr_t a_Get, a_StartKind;
 using SummonUpdate_t = void(SK_THISCALL*)(void*, uint32_t);
 static SummonUpdate_t o_SummonUpdate;
 static unsigned g_flock_updates;
+static void* g_seen_summon; // the last summon event the game updated (tests: `coop.drama summon`)
+static uint32_t g_stale_tidied;
+static bool g_flock_release = true; // (BUG-9245, its switch below)
+static void* flock_herd(void* ev);
+static std::pair<int, int> tidy_summon_list(void* herd);
 static void SK_THISCALL h_SummonUpdate(void* ev, uint32_t a)
 {
+    g_seen_summon = ev;
+    // BUG-9245: a summon past its time (one a save brought back, one whose flock went to a partner) drops the creatures
+    // that left its herd, so it can end; while its time runs, the game's start may still be placing them
+    if (g_flock_release && ev && skg::readable(ev, 0x64) && ((const uint8_t*)ev)[0xC] && skg::field<float>(ev, 0x2C) < 0.f)
+        if (auto n = tidy_summon_list(flock_herd(ev)); n.second) {
+            g_stale_tidied++;
+            H->log(M, SK_INFO, "drama: a summon event %.0f s past its time: %d creature(s) that left its herd out of its list, "
+                   "%d left (BUG-9245)", -skg::field<float>(ev, 0x2C), n.second, n.first);
+        }
     if (g_flock_forget && ev && ev == g_flock_event && !((const uint8_t*)ev)[0xC])
         forget_flock("its update found it inactive"); // BUG-0800
     void* nm = ev && ev == g_flock_event && g_flock_relay ? game::noun_manager() : nullptr;
@@ -282,16 +296,18 @@ bool summon_for(void* puppet)
     return ok;
 }
 
-// BUG-9245: the summon event's "done?" (vt+0x3C, Steam 0xC3D2F0) is true only when every creature in its herd's list
-// (prop 0x609F2F8 -> vt+0xC(0x52AA6117), +0x40..+0x44) has +0x135 == 0; only its update's end lets a member go, and
-// only one over 100 m from the leader. The duration alone ends nothing (the manager tick only counts it down). A
-// partner's flock is handed to that partner's pack and stays at its side, so the event never ended: no later Summon
-// Flock started, the host's included ("none idle"), and the list kept creatures that died (a dead one's memory reused:
-// the host's newborn in that list, runtime 2026-11-16). On: the hand-over lets each member go as the update's end
-// does (+0x135 = 0, +0xF90 = 0); the manager ends the event at its next tick. Off: 63-dev (the event runs on).
-static bool g_flock_release = true;
+// BUG-9245: the summon event's "done?" (vt+0x3C, Steam 0xC3D2F0) is true only when its herd's list (prop 0x609F2F8 ->
+// vt+0xC(0x52AA6117), +0x40..+0x44) is empty or every creature in it has +0x135 == 0; only its update's end clears that
+// flag, for a member over 100 m from the leader. The duration alone ends nothing (the manager tick only counts it down).
+// A partner's flock is handed to that partner's pack and stays at its side, so the event never ended: no later Summon
+// Flock started, the host's included ("none idle"), and a save kept it so. On: the list drops the creatures that left
+// the summon's herd (tidy_summon_list) at the hand-over and on every update of a summon past its time; an empty list
+// ends the event at the manager's next tick, and its end (vt+0x34) finds nobody to send back: the end returns every
+// listed creature to the game's pool (runtime 2026-11-16: at (0 0 0), herd 0; the pool later gave the objects out as
+// other creatures, BUG-9247). +0x135 stays set: a creature with +0x135 == 0 is no longer updated by the game (runtime
+// 2026-11-16: the first version of this fix cleared it and the flock stood frozen). Off: 63-dev (the event runs on).
 COOP_FIX("creature.flock_release", "BUG-9245", g_flock_release,
-         "creature: a partner's Summon Flock event ends once its flock is the partner's (later summons start)");
+         "creature: a partner's Summon Flock event ends once its flock is the partner's (later summons start, the flock stays)");
 
 static void* flock_herd(void* ev)
 {
@@ -305,27 +321,45 @@ static void* flock_herd(void* ev)
     return nullptr;
 }
 
+// The summon herd's list keeps only the creatures still in that herd: a partner's flock is in the partner's pack's herd
+// by now (BUG-9233), an entry may be another object at a freed address, and a save keeps the list as it was (BUG-9245:
+// a world saved with a partner's flock out held its summon event active after the load, 9 min past its time, every
+// Summon Flock refused). The game never takes a creature out of this list when it changes herd (Creature_SetHerd).
+// An empty list makes "done?" true: the game's own end runs at the manager's next tick and finds nobody to take back
+// (it returns every listed creature to the game's pool, BUG-9247). Creatures still in the herd (the host's own flock)
+// stay listed: the game goes on with them as before. Returns {kept, taken out}.
+static std::pair<int, int> tidy_summon_list(void* herd)
+{
+    if (!herd || !skg::readable(herd, 0x48))
+        return {0, 0};
+    void** b = skg::field<void**>(herd, 0x40);
+    void** e = skg::field<void**>(herd, 0x44);
+    if (!b || e <= b || e - b > 64 || !skg::readable(b, (e - b) * sizeof(void*)))
+        return {0, 0};
+    void** w = b;
+    int out = 0;
+    for (void** p = b; p < e; ++p) {
+        void* c = *p;
+        if (c && skg::readable(c, 0x1680) && game::object_alive(c) && game::herd_of(c) == herd)
+            *w++ = c;
+        else
+            out++;
+    }
+    skg::field<void**>(herd, 0x44) = w; // (the vector's end moves back; its buffer stays the herd's)
+    return {(int)(w - b), out};
+}
+
 bool end_flock_event()
 {
     void* ev = g_flock_event;
     if (!ev || !skg::readable(ev, 0x64) || !((const uint8_t*)ev)[0xC])
         return false;
     skg::field<uint32_t>(ev, 0x2C) = 0; // the duration left (docs/re/creature.md#creature-c2-audit-0713)
-    int let_go = 0;
+    std::pair<int, int> n{0, 0};
     if (g_flock_release)
-        if (void* herd = flock_herd(ev); herd && skg::readable(herd, 0x48)) {
-            void** b = skg::field<void**>(herd, 0x40);
-            void** e = skg::field<void**>(herd, 0x44);
-            if (b && e > b && e - b <= 64 && skg::readable(b, (e - b) * sizeof(void*)))
-                for (void** p = b; p < e; ++p)
-                    if (*p && game::object_alive(*p)) {
-                        skg::field<uint8_t>(*p, 0x135) = 0;
-                        skg::field<uint32_t>(*p, 0xF90) = 0;
-                        let_go++;
-                    }
-        }
-    H->log(M, SK_INFO, "drama: the partner's summon event ends now (its flock leaves the host's pack, BUG-9233; %d let go, BUG-9245)",
-           let_go);
+        n = tidy_summon_list(flock_herd(ev));
+    H->log(M, SK_INFO, "drama: the partner's summon event ends now (its flock leaves the host's pack, BUG-9233; %d out of its "
+           "list, %d left in it, BUG-9245)", n.second, n.first);
     return true;
 }
 
@@ -361,6 +395,34 @@ std::string debug(const std::vector<std::string>& a)
         skg::thiscall<void>(a_StartKind, mgr, (int)kind, 0);
     }
     std::string out;
+    if (a.size() >= 1 && (a[0] == "summon" || a[0] == "endsummon")) {
+        // tests (BUG-9245): the last summon event the game updated, its list; endsummon: the list tidied now (the
+        // game's own end follows at the manager's next tick when nobody is left)
+        void* ev = g_seen_summon;
+        if (!ev || !skg::readable(ev, 0x64))
+            return "no summon event updated yet\n";
+        void* herd = flock_herd(ev);
+        if (a[0] == "endsummon") {
+            auto n = tidy_summon_list(herd);
+            snprintf(b, sizeof b, "tidied: %d left, %d out of the list\n", n.first, n.second);
+            out += b;
+        }
+        snprintf(b, sizeof b, "summon event %p active=%d duration=%.1f herd=%p ours=%d\n", ev, (int)((uint8_t*)ev)[0xC],
+                 skg::field<float>(ev, 0x2C), herd, (int)(ev == g_flock_event));
+        out += b;
+        void** lb = herd && skg::readable(herd, 0x48) ? skg::field<void**>(herd, 0x40) : nullptr;
+        void** le = lb ? skg::field<void**>(herd, 0x44) : nullptr;
+        for (void** p = lb; p && le > lb && le - lb <= 64 && p < le; ++p) {
+            void* c = *p;
+            const bool ok = c && skg::readable(c, 0x1680);
+            snprintf(b, sizeof b, "  %p alive=%d herd=%p in_herd=%d b135=%d species=%08X hp=%.1f\n", c,
+                     ok ? (int)game::object_alive(c) : -1, ok ? game::herd_of(c) : nullptr, ok && game::herd_of(c) == herd,
+                     ok ? (int)skg::field<uint8_t>(c, 0x135) : -1, ok ? game::species_instance(c) : 0u,
+                     ok ? game::health(c) : -1.f);
+            out += b;
+        }
+        return out;
+    }
     if (a.size() >= 1 && a[0] == "target") {
         // BUG-1078 tests: the creature attack event's attacked tribe (object property 0x5F11333); `target <obj hex>`
         // sets it with the game's own setter, as SpawnNpcTribe does for the NPC tribe of its pick (0xD516B0)

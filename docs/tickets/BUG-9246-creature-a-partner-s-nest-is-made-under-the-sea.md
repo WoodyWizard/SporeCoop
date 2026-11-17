@@ -36,3 +36,4 @@ no-fail-run: not run yet.
 ## History
 - 2026-11-16: opened from the owner's question; cause found; new nests fixed (not run); existing nests open (decision 5A).
 - 2026-11-16: decision 5A answered C (existing wet nests stay).
+- 2026-11-16: the new-nest path still not run: on Samuth the partner's new creature took over its seat's old nest (BUG-9151 follow), as designed; every seat there had a nest.
