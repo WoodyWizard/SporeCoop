@@ -291,6 +291,24 @@ When they leave, it passes the control down. If no one's there, it's stored in t
   storing worlds (cheap, closest to today); give busy or always-on planets a server-hosted authority later; build the
   ownership model so neither hits the limit early.
 
+## The galaxy server as the front door (2026-11-17)
+<a id="server-front-door"></a>
+
+Owner, 2026-11-17: "is there no way to host server from the galaxy server, but the connected player simulates it all? So
+like, you still connect to the galaxy server IP, but you can join other player's instances on that ip. I'm trying to
+spread the load to be more viable."
+
+* Yes: the galaxy server is the one address every player connects to and runs no Spore. It lists the planets, stores
+  their worlds, decides which player hosts each planet now (the first to arrive; the next when that one leaves) and
+  relays the players' traffic to that host, so to every player the planet is "on the server's address".
+* Its cost is bandwidth, not CPU: a partner in play gets about 20-30 KB/s from its host (ROADMAP 4P); relayed both ways
+  for 32 players that is roughly 2-5 MB/s. Introducing players to each other for direct connections (where their
+  routers allow) lowers it later.
+* With the ownership model on top (each player's game runs its own creature, pack and the wild creatures around it),
+  the planet's host carries only its own area plus the checks: the load is spread over every player's PC.
+* Caveats as in #server-load-and-player-hosts: a hand-over means a short load for that planet's players, a host can
+  cheat for its planet (the server still keeps each player's own progress), and the relay adds one hop of latency.
+
 ## Questions for the owner
 <a id="server-questions"></a>
 
