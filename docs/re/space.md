@@ -3569,3 +3569,19 @@ reporter's minidump.
   database has) gets the world's species when this game has it, else is skipped (0xAE7D90 checks the slot).
   `coop.captain [open | species <hex> | species restore]` prints the captain and the species; tests open the screen as
   the Space update does and emulate an uncopyable species. Test `space_captain_none`.
+
+## The galaxy menu's planet entries (2026-11-17, feat/lineages-alpha)
+<a id="space-menu-entries"></a>
+
+GOG 2024 / Steam (3010a413), read at runtime from a QA game's memory (SporeKit `mem.read`), no disassembly.
+
+* ✔ The planet set (`SporeCoop::GGE_PlanetSet_ptr` 0x16A15FC) of a slot with two saved planets held 8 entries of 0xBC
+  bytes: +0xAC 1 for the two with a save, 0 for the six empty stars; +0xAD 1 (shown) for all; +0x80 a position (3
+  floats); +0x3C the saved planet's player species (Samuth: 2920607A, its creature), 0 for an empty star; +0x30 a
+  different id per entry with +0x34 2F7D0004 and +0x38 02E9A2CA on all (? a key of the entry); +0x00..+0x0C and
+  +0x10..+0x1C each look like a {begin, end, capacity} vector, the first one filled for saved entries, the second one
+  for empty stars (? names).
+* ✔ The slot's GGEUserData.dat is a DBPF (version 3) with one compressed record (418 bytes on disk) naming the saved
+  games ("Samuth" readable in it).
+* ✔ A .spo of another galaxy copied into the slot is not listed: the same 8 entries, the copy ignored.
+

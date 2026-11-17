@@ -568,6 +568,42 @@ Deleting their creature will let them rejoin that planet with a new one."
   server).
 * Goes with the galaxy menu work (#server-galaxy-menu): a "Delete my creature here" button on each server planet.
 
+### Owner's idea: refreshing nests on a persistent planet (2026-11-17)
+<a id="server-nest-refresh"></a>
+
+Owner: "We'll need to rotate the nests to refresh them so they're never stale and all extinct or something ridiculous.
+We'll have like a 6 hour rotation or something. Maybe every 3 hours they refresh."
+
+* Agreed that a persistent planet needs it: with many players hunting, species go extinct and the planet empties.
+* Recommended shape: not one clock for the whole planet, but each extinct species coming back a set time after it went
+  extinct (3 hours, a server setting). Hunting a species out still counts (Spore's own "make extinct" goals and the
+  predator path keep working), and no planet stays empty. Done by the planet's host (the nests respawn the game's way:
+  `coop.nest respawn` already drives it), timed by the server's clock so it holds across hand-overs.
+* Players' own nests (BUG-9210) are another rule: removed after their player has been away for days, not hours (the
+  player may come back), or when the player deletes their creature there (#server-handover, the owner's delete idea).
+* Not built; a decision when the persistent planets get their rules.
+
+### The galaxy menu: what decides its planets (2026-11-17, feat/lineages-alpha, decision 5W A)
+<a id="server-galaxy-menu-spike"></a>
+
+Owner's choice 5W A: the galaxy menu showing the server's planets. A first look on TITAN (QA game 9, the menu, memory
+read through SporeKit; no Ghidra on this PC) before building it:
+
+* ✔ A save slot (Games\GameN) is one galaxy: its stars.db, planetRecords.pkp and GGEUserData.dat (a DBPF with one
+  compressed record that names the slot's saved games, "Samuth" in it) and one .spo per saved planet (Samuth and
+  Diplomavil share Game0 of the QA profile).
+* ✔ The menu's planet set (GGE_PlanetSet_ptr, 0xBC-byte entries) had 8 entries: 2 with a save (+0xAC = 1: Diplomavil,
+  and Samuth with its player species 2920607A at +0x3C) and 6 empty stars to start a new game; +0x80 the position.
+* ✔ A planet of another galaxy copied into the slot (Abber.spo of the Civ test profile, into a copy of Game0, shown with
+  `coop.menuslot`) did not appear: the menu lists the saves its galaxy's files name, not the .spo files in the folder.
+* So "the server's planets in the menu" needs one of: (1) one galaxy on the server (every planet made in the server's
+  galaxy, the server keeping its stars.db, planet records and menu list, merged from the hosts' uploads), or (2) the
+  mod filling the menu's entries itself (names, creatures, positions) and catching the click on one (enter it on the
+  server, then load). Both need the menu list's format and the entry panel's fields: reverse engineering that goes
+  fastest with Ghidra (not on this PC; the Ghidra projects are on the Linux PC, docs/05-re-notes.md 5.2b).
+* Meanwhile a simple "Online" page in the Co-op window (the server's planets, who is on each, Enter, Delete my
+  creature) would make the galaxy server playable without console commands.
+
 ### Owner's question: Civ and Creature eras talking to each other (2026-11-17)
 
 Owner: "Once we load Civ stage while someone's in creature stage, it shouldn't be too crazy to make them communicate I
