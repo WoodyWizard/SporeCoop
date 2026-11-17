@@ -1676,8 +1676,17 @@ void tick(double now)
 // BUG-1227 (tests, `coop.bodyrec start kinds z`): the Civ city citizens as this game has them now, keyed by the host's
 // id so tools/tests/body_trail.py lines a guest's copy up with the host's citizen at the same moment: the host its own
 // (z<serial>), a guest its bound copies (z<the host citizen's serial>); y<id>: a guest's walk goal (diag)
-void for_each_body(void (*row)(const char* key, const net::Vec3& p, void* u), void* u, bool goals)
+void for_each_body(void (*row)(const char* key, const net::Vec3& p, void* u), void* u, bool goals, bool anims)
 {
+    // a<id> (anims): the citizen's current animation id as (low 16 bits, high 16 bits, 1)
+    auto anim_row = [&](const char* key, void* c) {
+        uint32_t anim = 0;
+        if (!game::drawn_state(c, nullptr, &anim))
+            return;
+        char k2[16];
+        snprintf(k2, sizeof k2, "a%s", key + 1);
+        row(k2, net::Vec3{(float)(anim & 0xFFFF), (float)(anim >> 16), 1.f}, u);
+    };
     int k = kind_of_name("citizen");
     if (k < 0 || !(stage_bit() & kStCiv))
         return;
@@ -1692,6 +1701,8 @@ void for_each_body(void (*row)(const char* key, const net::Vec3& p, void* u), vo
                 continue;
             snprintf(key, sizeof key, "z%x", it.id & 0xFFFFFF);
             row(key, it.pos, u);
+            if (anims)
+                anim_row(key, it.p);
         }
         return;
     }
@@ -1706,6 +1717,8 @@ void for_each_body(void (*row)(const char* key, const net::Vec3& p, void* u), vo
             continue;
         snprintf(key, sizeof key, "z%x", id & 0xFFFFFF);
         row(key, f->second->pos, u);
+        if (anims)
+            anim_row(key, f->second->p);
         if (goals && b.fol.at > 0) {
             key[0] = 'y';
             row(key, b.fol.goal, u);

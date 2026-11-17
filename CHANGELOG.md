@@ -42,6 +42,8 @@
   it is shown in two lines (BUG-1219).
 - Civilization: after the host loads a save, every city citizen near a guest walks where the host's walks again;
   before, two to five of them on the guest's screen walked their own way for the rest of the game (BUG-1221).
+- Civilization: the city citizens running about near a guest are where the host's are; before, each ran 4-8 m behind
+  its partner on the guest's screen, and where two ran past each other one was shown at the other's place (BUG-1227).
 - Tribe: a host's tribe member that gets hungry or starves shows it on a guest's screen right away; before, a member
   the guest's game had just made for it (when the guest joined, or a new member of the tribe) showed a full hunger
   bar there for up to two minutes (BUG-1187).
@@ -96,6 +98,8 @@
   next update) (BUG-1203).
 
 ### Development
+- Lab: civ_citizen_trail measures the city citizens on both games at the same moment, next to the NPC proxies and Civ
+  vehicles; civ_citizens compares each citizen's size with its own copy's (BUG-1227).
 - Lab: space_session closes each badge's reward box in the first evening like a player and checks that the badges come
   back silently in the next one (the box seen there was a badge left pending, not a restored one) (BUG-1223, BUG-1225);
   space_eco compares the terrain cell where the guest planted and shows both games over that spot.

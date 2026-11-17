@@ -39,8 +39,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 void on_world_change();
 std::string status();
-// BUG-1227 (tests, coop.bodyrec kinds z): the Civ citizens as drawn, keyed z<host id>; goals: a guest's walk goals y<id>
-void for_each_body(void (*row)(const char* key, const net::Vec3& p, void* u), void* u, bool goals);
+// BUG-1227 (tests, coop.bodyrec kinds z): the Civ citizens as drawn, keyed z<host id>; goals: a guest's walk goals y<id>;
+// anims: each one's current animation a<id> = (low 16 bits, high 16 bits, 1)
+void for_each_body(void (*row)(const char* key, const net::Vec3& p, void* u), void* u, bool goals, bool anims);
 // BUG-0617 (census): where a food bundle (noun 0x18C431C) is: "ground" (the bundle manager's ground container),
 // "carried" (a creature's or citizen's own container: *carrier set), "held" (another container: a food mat's ...)
 const char* bundle_holder(void* bundle, void** carrier);
