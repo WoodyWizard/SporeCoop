@@ -8819,3 +8819,7 @@ A natural bad load (no plant) came 1 in about 4 loads (20261117-121708: 3 runs o
   s` (a crossing of walking copies, BUG-1227), and `standing unambiguous pairs N, of another size M`.
 * A check per load (`after every load: ...`) besides the total: one bad load among good ones is still a player's bad
   load.
+* civ_citizens' size check (BUG-1221, BUG-1227): a size pair is a host and a guest citizen that are each the other's
+  nearest (the check had taken a guest citizen 0.3 m from another host citizen as the pair of one 2.5 m away), and
+  with fewer than 20 such pairs after the rounds up to 8 more rounds run (a walking crowd gave 7 in 8 rounds, and one
+  crossing of two walking copies was then 8-14 %); the limits stay 10 %.
