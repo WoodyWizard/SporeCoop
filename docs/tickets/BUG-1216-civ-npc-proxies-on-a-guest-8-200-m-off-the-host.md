@@ -1,20 +1,20 @@
 ---
 id: BUG-1216
 title: Civ: NPC proxies on a guest 8-200 m off the host's NPCs in the 4-player campaign's Civ (sync-check n apart; campaign_tc2), also on v0.7.14.1
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-11-16
 source: final check 0.7.15 (lab 20261116-025154 campaign_tc2)
 role: guest
 versions: 0.7.14.1, rel/0.7.15
-fixed_in:
-branch: fix/w51-t4
-commits:
-tests: campaign_tc2, campaign_segment (from the run's Civ save)
+fixed_in: unreleased
+branch: fix/w51-civsync
+commits: e8284a09, 081b955f, 9828f4b6
+tests: civ_proxy_air, net_tests test_diag_npc_agl, campaign_segment (from the run's Civ save), campaign_tc2
 signature: sync-check: MISMATCH with the host (Civilization A3930F03, ...): n: N apart
-docs: docs/06-testing.md#testing-final-triage-tribe-civ-0715
-related: BUG-0402, BUG-1106, BUG-0329, BUG-0339
+docs: docs/re/civ.md#civ-npc-ground, docs/06-testing.md#testing-civ-proxy-air, docs/06-testing.md#testing-final-triage-tribe-civ-0715
+related: BUG-0402, BUG-1106, BUG-0329, BUG-0339, BUG-1100, BUG-0499, BUG-0394, BUG-1228
 ---
 
 ## Report
@@ -45,10 +45,36 @@ Three kinds, each from the `sync-check:   nNNN here:` lines of the host and the 
   inferred an id or target mix-up of that herd on one guest; not analysed further.
 Not a 0.7.15 regression (kind C on v0.7.14.1, BUG-0402 / BUG-1106 of 0.7.7-0.7.14 the same class).
 
+Update 2026-11-17 (fix/w51-civsync), per kind, with what a player sees:
+* A (observed): the host's live Civ world and the guests' copy of its save differ by 9.2-10.5 m at that herd; every
+  guest's copy stood on its own ground (`agl=0.00` on all three). A player sees the herd standing on the ground, so
+  the check was wrong, not the game: it compared absolute positions. Why the terrain differs is not found (no stamp
+  within 250 m; only a live Tribe -> Civ host shows it). Seen there too: the guest's ground is a steep slope where the
+  copies slide and are trail-teleported every ~2.5 s (a visible jitter; BUG-1228, open).
+* C (observed, reproduced on rel/0.7.15 in the segment, lab 20261117-122701: `n: 7 apart (n1030 205.2 ...)`, the
+  guest's targets 82-103 m under its ground): the Civ game's pool moves the host's wild creatures hundreds of metres at
+  once (to and from unplaced points with z = 0, docs/re/civ.md#civ-wild-reused-frozen). The guest's proxy buffer
+  blended across that step (no jump_speed for NPCs): the target slid along the chord through the planet for seconds.
+* B (observed in civ_npc, inferred for the campaign's two copies): the same jump went into the proxy's path velocity
+  (1000+ m/s for 0.2 s); a standing creature's proxy is walked at its path's speed (BUG-0394), so walk_place took it
+  the whole way in a few frames on the straight line from where it stood: 10-84 m over the guest's ground over a
+  valley (the new `drawn X m over this game's ground` line: 27 a minute in civ_wild_sync, 92-132 per guest in a
+  segment run). A player sees animals fly through the air. The campaign's two copies 8.2 m up (`tp=1`, made while
+  the host's game refilled its herds) were inferred such a flight's end held by own_height. Disproved on the way: the
+  Civ game does ground a copy the mod leaves in the air (herd shift, shove onto lower ground, a copy put 8 m up: agl
+  0.00 within 50 ms; labs 20261117-121304, -121752, -122049); a switch for that (walked Civ copies at the sender's
+  height) had no failing twin and was dropped.
+
 ## Fix
-None in this triage (fix/w51-t4 had the Tribe / Civ final-check failures to classify). Candidates: compare Tribe and
-Civ NPCs at the guest's own height (the monitor's proxies rule) for kind A; ground a walked Civ proxy (kind B); trace
-the herd's ids on a guest for kind C. Needs its own package with the segment rerun above as the test.
+* `npc.civ_jump` (npc.cpp): a Civ proxy's buffer does not blend across a step faster than 40 m/s (BUG-0499's puppet
+  jump speed), and a target that jumps more than 10 m in one frame puts the proxy there (onto this game's ground,
+  walk ended, a fresh path: no path velocity across the jump). Off: blended and walked (0.7.14).
+* `sync.npc_agl` (diag_sync.cpp, net/diagmsg.h): every NPC entry of a sync-check digest carries its height over the
+  sender's terrain (a trailer appended after the BUG-0606 scale: an older reader stops before it, an older sender's
+  entries are compared absolutely); the host compares NPCs by the distance along the ground and the difference of the
+  two heights. Wire: the digest message grows by 2 bytes + 4 per NPC; 0.7.14 and 0.7.15 still read each other's.
+* Diagnostics: a guest logs `npc: proxy N ... drawn X m over this game's ground ... (BUG-1216)` (once per copy per 10
+  s) for a Civ copy over 2 m up while its creature is on the host's ground.
 
 ## Verification
 * FAIL runs: 20261116-025154:campaign_tc2 (rel/0.7.15), 20261116-085558:campaign_segment (fix/w51-t4 = rel/0.7.15's mod
@@ -59,6 +85,15 @@ the herd's ids on a guest for kind C. Needs its own package with the segment rer
   Dave 10 s after the host's campaign shortcut founded a city (Dave: `the host has 3 cities, this game 2 and 3 founded
   (on their way)`, then the vehicle design asked): BUG-0624's kind (an instant founding late on a guest at low fps;
   load average 25 on the machine). Not analysed further.
+* Fix runs (fix/w51-civsync):
+  * civ_proxy_air (kind B/C): FAIL with `SPORE_FIX_OFF=npc.civ_jump` 20261117-125242:civ_proxy_air (a copy 58-62 m up
+    in two samples in a row, 59 "drawn high" lines), PASS 20261117-125257:civ_proxy_air (none, 105 jumps).
+  * sync.npc_agl (kind A): net_tests test_diag_npc_agl FAILs with `--nofix` (pos:n1, the terrain difference "apart"),
+    passes with it; the final check's n406 (8.9 m absolute) is 1.7 m apart by height over the ground.
+  * Civ segment of the campaign (4 games, lanes 5 + 9, the final check's Civ save): 20261117-122701 FAIL before
+    npc.civ_jump (kind C, `n: 7 apart` 83-205 m on Dave), PASS 20261117-125728 with it (1-5 "drawn high" lines per
+    guest, all 2-3 m single frames on a mountain slope, against 92-132).
 
 ## History
 - 2026-11-16: opened (fix/w51-t4, final-check triage 0.7.15): old, three kinds; not fixed in the triage.
+- 2026-11-17 (fix/w51-civsync): kinds A (the check) and B / C (npc.civ_jump) fixed; the slope jitter seen with A split to BUG-1228.

@@ -8803,3 +8803,21 @@ build and the 0.7.15 `tools/`, so the same tests and lab drive the old mod).
 * **An old build with today's tests**: `git worktree add --detach ../SporeCoop-wt/<name> v0.7.14.1`, `make -j8`, then
   `git checkout rel/0.7.15 -- tools/` in that worktree; `coop.save` / `coop.load` (the segment's commands) exist in
   0.7.14.1. Lab runs there are tagged with the worktree's branch (detached).
+## Civ wild creatures' copies: civ_proxy_air (2026-11-17, fix/w51-civsync)
+<a id="testing-civ-proxy-air"></a>
+
+* `civ_proxy_air` (BUG-1216, civ_npc, ~4 min): samples every copy on the guest and its creature on the host every
+  0.2 s (`coop.npc list`, the heights over each game's own terrain) from the join on, while both cameras pan to the far
+  side of the planet and back twice (the Civ game pools herds behind the cameras and puts herds out where they look:
+  120-160 copies made). FAIL when a copy is over 3 m above the guest's ground in two samples in a row while its
+  creature is on the host's ground; INCONCLUSIVE with under 10 copies made. Twin `SPORE_FIX_OFF=npc.civ_jump`
+  (FAIL 20261117-125242, PASS 20261117-125257).
+* The guest logs `npc: proxy N (species ...) drawn X m over this game's ground, the host's Y m over its own: ...
+  (BUG-1216)` (once per copy per 10 s) with how it was driven, its place before and after the frame's driving and its
+  target: count them in any Civ run (`grep -c BUG-1216 *.guest.game.log`); 0 with npc.civ_jump, 27-132 a run without.
+* A repro attempt that does not fail: a copy the host's game moved in one piece (`coop.civ creatureshift`,
+  `coop.npctrack shove`) or a walking copy put 8 m up on the guest is grounded by the Civ game itself within 50 ms
+  (docs/re/civ.md#civ-npc-ground).
+* The campaign's Civ segment (`lab.py run campaign_segment --segment <segment.json> --lane 5 --lane 9 --skip
+  2,3,4,6,7,10`: 4 games on 2 lanes, ~10 min) showed the herd 80-205 m off on one guest in 1 of 1 runs without
+  npc.civ_jump (20261117-122701).

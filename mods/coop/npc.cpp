@@ -1649,6 +1649,17 @@ static bool g_frozen_reused_fix = true;
 COOP_FIX("npc.frozen_reused", "BUG-1100", g_frozen_reused_fix,
          "an NPC object the game reuses for another creature while the host's game stands is a new NPC at the guests");
 static uint32_t g_frozen_reused;
+// BUG-1216: the pool also gives a tracked object out again as a creature of the same species at another place while the
+// host's game stands (the campaign's Civ segment, lab 20261117-130736: a herd of 7 moved 392-398 m during a 24 s pause
+// of the host; the guests kept it where it had stood, `n: 7 apart`, states 20 s old, until the game went on). No
+// creature moves while no creature is updated, so a tracked object found more than kFrozenMovedM from its last updated
+// place is retired like a reused one (host_tick gives it a new id at its new place when the game goes on).
+// `coop.fix npc.frozen_moved off`: kept where it was until the game goes on (0.7.14).
+static bool g_frozen_moved_fix = true;
+COOP_FIX("npc.frozen_moved", "BUG-1216", g_frozen_moved_fix,
+         "an animal the game moves elsewhere while the host's game stands (a pause) leaves its old place at the guests too");
+constexpr float kFrozenMovedM = 20.f;
+static uint32_t g_frozen_moved;
 // host, frozen: the tracked NPCs that are still creatures of the world in a herd off the planet's centre (with their
 // positions); those that are not (freed, pooled) are retired (BUG-0339)
 static std::vector<std::pair<void*, net::Vec3>> frozen_pooled_pass()
@@ -1684,6 +1695,19 @@ static std::vector<std::pair<void*, net::Vec3>> frozen_pooled_pass()
                            p.z, game::herd_of(c));
                 gone.push_back(c);
                 g_frozen_reused++;
+                continue;
+            }
+        }
+        if (!centre && g_frozen_moved_fix && civ_stage()) { // BUG-1216 (Civ only: where it was seen)
+            HostNpc* it = hn_of(c);
+            const net::Vec3 last = it ? it->pos_hist[it->hist_at] : net::Vec3{};
+            if (it && (last.x != 0 || last.y != 0 || last.z != 0) && net::dist(p, last) > kFrozenMovedM) {
+                if (g_frozen_moved < 40)
+                    H->log(M, SK_INFO, "npc: NPC %u's object %p is %.1f m from where the game last updated it while the host's "
+                           "game stands: at (%.1f %.1f %.1f) herd %p: retired (BUG-1216)", it->id, c, net::dist(p, last), p.x,
+                           p.y, p.z, game::herd_of(c));
+                gone.push_back(c);
+                g_frozen_moved++;
                 continue;
             }
         }
@@ -3427,10 +3451,10 @@ std::string status()
                  (unsigned)hn_count(), (unsigned)g_seen_now.size(), (unsigned)known, g_hits_applied,
                  g_kills_credited, g_strays_removed, g_hatch_helped, (int)g_partner_targets, (unsigned)on_partner,
                  g_ai_partner_picks, game::ai_swaps(), game::swaps_restored(), game::swap_ledger_restored(), g_reused, (unsigned)teamplay::hit_targets(), g_pooled_retired);
-        char b2[256]; // BUG-0512
-        snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u frozen_s=%.1f frozen_spawns=%u frozen_despawns=%u frozen_retired=%u frozen_reused=%u\n",
+        char b2[320]; // BUG-0512
+        snprintf(b2, sizeof b2, "npc(host) pack: partner_targets_cleared=%u partner_stimuli_cleared=%u frozen_s=%.1f frozen_spawns=%u frozen_despawns=%u frozen_retired=%u frozen_reused=%u frozen_moved=%u\n",
                  g_pack_targets_cleared, g_pack_stimuli_cleared, g_frozen_since > 0 ? H->time_seconds() - g_frozen_since : 0.0,
-                 g_frozen_spawns, g_frozen_despawns, g_frozen_retired, g_frozen_reused);
+                 g_frozen_spawns, g_frozen_despawns, g_frozen_retired, g_frozen_reused, g_frozen_moved);
         char b3[128]; // F3 (BUG-0768)
         snprintf(b3, sizeof b3, "npc friendly fire: on=%d pvp_out=%u pvp_in=%u pvp_relayed=%u\n", (int)friendly_fire(), g_pvp_out,
                  g_pvp_in, g_pvp_relayed);
