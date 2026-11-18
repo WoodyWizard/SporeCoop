@@ -31,6 +31,11 @@
   why. It may join again.
 
 ### Fixed
+- Tribe: the host's game no longer crashes late in the stage on a planet that has fewer kinds of creatures for new
+  villages than villages it allows (BUG-1233).
+- Tribe: on such a planet the last village never appeared once the others were conquered or allied, so the goal bar
+  stayed at 4 of 5 and the stage could not be finished; the last villages now come as on any other planet, with a kind
+  of creature the planet already has (BUG-1238).
 - Animals that stand on a steep slope no longer slide down and jump back up again and again on a guest's screen: the
   guest's copy now stands where the host's animal stands (BUG-1228).
 - Creature: a guest who plays its own creature (made in the Creature Creator) and calls a mate now gets its own editor,

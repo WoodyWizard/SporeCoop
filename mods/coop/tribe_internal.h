@@ -572,6 +572,18 @@ void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std::pair<n
                             const std::vector<void*>& locals);
 
 extern uint32_t g_forms_blocked;
+// BUG-1233: what NpcTribeController_FormTribe reads before it forms (tribe.cpp, h_Form)
+struct FormSpecies {
+    int tribes = -1, slots = -1, species = -1; // tribe nouns, its property list's count, the species list's size
+    bool past = false;                         // the next species would be read past the list's end
+};
+bool form_species_state(void* ctrl, FormSpecies& s);
+void form_species_recheck();
+extern bool g_form_species_fix;
+extern uint32_t g_forms_past;
+extern bool g_last_species_fix;
+extern uint32_t g_forms_last; // BUG-1238: villages formed with the list's last species (tribe.form_last_species)
+extern std::string g_form_species_last;
 extern bool g_form_pace_fix;
 extern uint32_t g_forms_paced;
 extern std::string g_pace_last;

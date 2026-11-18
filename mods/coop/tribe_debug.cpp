@@ -1328,6 +1328,27 @@ std::string debug(const std::vector<std::string>& a)
     if (!a.empty() && a[0] == "form_pace") // tests (BUG-0571): the last decision of tribe.form_pace
         return "form_pace fix=" + std::to_string((int)g_form_pace_fix) + " held=" + std::to_string(g_forms_paced) + " last: " +
                (g_pace_last.empty() ? "-" : g_pace_last);
+    // form_species: tests (BUG-1233), what the NPC tribe controller's FormTribe reads before it forms (nothing formed)
+    if (!a.empty() && a[0] == "form_species" && a_NpcCtrl) {
+        void* ctrl = skg::cdecl_call<void*>(a_NpcCtrl);
+        FormSpecies fs;
+        if (!form_species_state(ctrl, fs))
+            return "form_species: unreadable (no controller, property list or species list)";
+        // BUG-1238: the species of the list (their key instance, species +0x504) and the archetypes of the property list
+        std::string keys;
+        void** lb = F<void**>(ctrl, 0xD0);
+        for (int i = 0; i < fs.species && i < 16; i++) {
+            char b[16];
+            void* sp = lb[i];
+            snprintf(b, sizeof b, "%s%08X", i ? "," : "", sp && skg::readable((uint8_t*)sp + 0x504, 4) ? F<uint32_t>(sp, 0x504) : 0u);
+            keys += b;
+        }
+        char b[64];
+        snprintf(b, sizeof b, " saved_keys=%d", (int)((F<uintptr_t>(ctrl, 0x80) - F<uintptr_t>(ctrl, 0x7C)) / 12));
+        return "form_species fix=" + std::to_string((int)g_form_species_fix) + " held=" + std::to_string(g_forms_past) +
+               " last_fix=" + std::to_string((int)g_last_species_fix) + " last=" + std::to_string(g_forms_last) + " " +
+               g_form_species_last + " keys=" + keys + b;
+    }
     // form: tests (BUG-0483), this game's NPC tribe controller forms its next tribe now (what it does during play)
     if (!a.empty() && a[0] == "form" && o_Form && a_NpcCtrl) {
         void* ctrl = skg::cdecl_call<void*>(a_NpcCtrl);
@@ -1368,10 +1389,17 @@ std::string debug(const std::vector<std::string>& a)
             },
             &cnt);
         why += " (tribe nouns " + std::to_string(cnt.nouns) + ", tribe spawn markers " + std::to_string(cnt.markers) + ")";
-        uint32_t blocked0 = g_forms_blocked;
+        // BUG-1233: what FormTribe itself reads: its tribe nouns against the property list and its species list (with
+        // as many tribes as species it reads past the list: tribe.form_species holds it)
+        FormSpecies fs;
+        why += form_species_state(ctrl, fs) ? " (" + g_form_species_last + ")" : " (species list: unreadable)";
+        uint32_t blocked0 = g_forms_blocked, past0 = g_forms_past, last0 = g_forms_last;
+        form_species_recheck(); // decided for this call, not by the update's last second
         h_Form(ctrl, 0);
         return "tribes " + std::to_string(before) + " -> " + std::to_string(all_tribes().size()) + why +
                (g_forms_blocked != blocked0 ? " (blocked: tribe.guest_tribes)" : "") +
+               (g_forms_past != past0 ? " (held: tribe.form_species)" : "") +
+               (g_forms_last != last0 ? " (last species: tribe.form_last_species)" : "") +
                (g_pace_last.empty() ? "" : " (pace: " + g_pace_last + ")");
     }
     // markers: tests (BUG-0332), the NPC tribe spawn markers of this game (noun 0x36BE27E, +0x108 == 0x57F09E5E: where the

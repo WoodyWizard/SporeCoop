@@ -9022,3 +9022,28 @@ ran again on rel on 8 lanes (20261117-213354): 14 PASS. The other 7:
 
 Lesson: `lab.py run` of a v0.7.14.1 tree has no `--until` (C: error); its lab also counts memory, so the campaign
 comparison (three 4-game runs) held the other runs until it ended ("not started, too little memory after 1800 s").
+## tribe_form_species: the NPC tribe controller's species list (2026-11-18, fix/w52-formtribe)
+<a id="testing-tribe-form-species"></a>
+
+* `tribe_form_species` (coop_tribe_form_species.py, BUG-1233, cold, ~1 min, tribe fixture): the host's controller
+  list of species for new villages is made as short as the game built it on the final check's campaign planet (2
+  species with `mem.write` of controller +0xD4, the dword after them 0xFFFFFFFF as in that planet's save), one
+  `coop.tribe form` forms the third tribe, then the game's own update calls FormTribe every second for 12 s: no fault,
+  still 3 tribes; `coop.tribe form` once more says `held: tribe.form_species`; the list is put back.
+  `SPORE_FIX_OFF=tribe.form_species` fails (a fault a second at 0x406EFF, then the host crashes on the command): FAIL
+  20261118-002824 (lane 3), PASS 20261118-002819 (lane 2).
+* BUG-1238 (2026-11-18): the same test now also wants the villages after the list (`tribe.form_last_species`): the
+  planted list has no room either (capacity = size: the game's own insert moves it), tribes 3 -> 6 within 30 s (the
+  game's update at 3 / 4, `coop.tribe form` at 5), the new villages with the list's last species, the guest's copies
+  with the same species, no fault on either game, nothing past 6. FAIL `SPORE_FIX_OFF=tribe.form_species`
+  20261118-005109 (faults, crash), FAIL `SPORE_FIX_OFF=tribe.form_last_species` 20261118-005113 (3 tribes for 30 s),
+  PASS 20261118-005017. The final check's own Tribe segment (Scalinus, its 4-species list, 4 players) as a twin:
+  `lab.py run campaign_segment --segment out/bug1233/segment.json` (a copy of the run's segment.json pointing at a copy
+  of its save): PASS 20261118-005339 (the fifth village, goal bar 5/5, Civ), FAIL with tribe.form_last_species off
+  20261118-005344 (`the stage change tribe -> civ did not finish in 30 min (goal bar (4.0, 5.0))`).
+* `coop.tribe form_species` (host): `tribes N, property list C (x2 needed 2N), species list S` and whether the next
+  species would be read past the list (docs/re/tribe.md#tribe-form-species), the list's keys (species +0x504) and
+  `saved_keys` (+0x7C). `coop.tribe form` prints the numbers and `(last species: tribe.form_last_species)`.
+* The campaign's Tribe segment save (`<run>/segments/tribe.tgz`, loaded with `coop.load Game30 <planet>` after
+  `campaign_lib.unpack_slot`) reproduces the state without planting: species list 4, property list 10 (lab
+  20261118-002106, -002353).
