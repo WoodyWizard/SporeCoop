@@ -61,6 +61,10 @@ static void mating_count()
     }
     g_anim_seen = a;
 }
+static void spend_forget(int id); // BUG-1249
+static void spend_reset();
+static void spend_tick(bool cell, bool was_in_cell);
+static void spend_in(int from, int spent, uint32_t meal, bool cell);
 void* fg_query() { return G() ? F<void*>(G(), 0x40FC) : nullptr; }
 // cCellSerializableData: cCellGame+0x5190 (the global at 0x16B4DC0 holds the same pointer).
 // Only in the Cell stage: cCellGame stays allocated after it (the Creature stage), its pool and
@@ -943,6 +947,7 @@ static void reset_knockout()
 void on_player_leave(int id)
 {
     g_food_ack.erase(id);
+    spend_forget(id); // BUG-1249
     g_food_tx.erase(id);
     if (!g_fix_kostale)
         return;
@@ -1028,6 +1033,168 @@ static float cell_sphere(uint8_t* c, float* ctr)
     return F<float>(md, 0x1244) * sc;
 }
 
+// BUG-1249 (players' video: a guest left its own cell editor with new parts and still had its old DNA, 15, until the
+// host left its own editor, then 9): the Cell DNA is DNAForFood(food) - spent (S+0x2C, docs/re/cell.md#cell-editor-dna);
+// the food is the party's (MSG_CELL_FOOD), the spent count the host's (wsync row cell_spent, BUG-0560). The return from
+// a guest's own cell editor (its mating call, 0xE809A0) writes the guest's S+0x2C = DNAForFood(food) - remaining, and
+// the host's next row put the host's count back over it within half a second: the guest's purchase was free and its
+// DNA showed the old value until the host's own editor changed the host's count. On: the guest sends what its own
+// editor spent (a MSG_CELL_FOOD of 0 food with the spend after the meal number; an older host ignores it); the host adds
+// it to its count at once in Cell, or after its own editor's result when it is in an editor (the result is written
+// over S+0x2C), and tells which spend it took in the row cell_spend_ack (wsync), in the same message as its count, so
+// the guest shows the host's count plus its own spends the host has not taken yet. Off: nothing sent (0.7.15).
+static bool g_fix_guest_spend = true;
+COOP_FIX("cell.guest_spend", "BUG-1249", g_fix_guest_spend,
+         "cell: what a guest's own cell editor spent comes off the party's DNA and stays off in the guest's game (the host's count put the old DNA back)");
+static int g_spent_seen = 0;           // guest: S+0x2C in the last tick in Cell
+static bool g_spent_seen_ok = false;
+static bool g_own_ed_due = false;      // guest: back from its own cell editor, its spend not measured yet
+static int g_own_ed_before = 0;
+static int g_spend_pending = 0;        // guest: sent, not in a host count yet
+static uint32_t g_spend_meal = 0;      // guest: the meal number of the last spend sent
+struct Owed {
+    int spent = 0;
+    uint32_t meal = 0;
+};
+static std::unordered_map<int, Owed> g_spend_owed;        // host: spends that came while it had no Cell game
+static std::unordered_map<int, uint32_t> g_spend_acked;   // host: the last spend of each guest in its count
+static double g_cell_entered_at = -100;
+static unsigned g_spends_sent, g_spends_got, g_spends_owed_paid, g_spends_acked; // tests (coop.pool spend)
+
+static void spend_in(int from, int spent, uint32_t meal, bool cell)
+{
+    if (!is_host() || !g_fix_guest_spend || spent == 0)
+        return;
+    g_spends_got++;
+    uint8_t* s = cell && H->time_seconds() - g_cell_entered_at > 1.0 ? S() : nullptr;
+    if (!s || !g_spend_owed.empty()) { // (in order: an older spend still owed goes first)
+        Owed& o = g_spend_owed[from];
+        o.spent += spent;
+        o.meal = meal;
+        H->log(M, SK_INFO, "cell: player %d's own editor spent %d DNA: kept until this game is back in Cell (BUG-1249)", from, spent);
+        return;
+    }
+    int before = F<int32_t>(s, 0x2C);
+    F<int32_t>(s, 0x2C) = before + spent;
+    g_spend_acked[from] = meal;
+    H->log(M, SK_INFO, "cell: player %d's own editor spent %d DNA: spent %d -> %d (BUG-1249)", from, spent, before, before + spent);
+}
+
+static void spend_tick(bool cell, bool was_in_cell)
+{
+    double now = H->time_seconds();
+    if (cell && !was_in_cell)
+        g_cell_entered_at = now;
+    if (!C.sess || !C.sess->connected())
+        return;
+    if (is_host()) {
+        uint8_t* s = cell && avatar() && now - g_cell_entered_at > 1.0 ? S() : nullptr;
+        if (s && !g_spend_owed.empty()) {
+            for (auto& [id, o] : g_spend_owed) {
+                int before = F<int32_t>(s, 0x2C);
+                F<int32_t>(s, 0x2C) = before + o.spent;
+                g_spend_acked[id] = o.meal;
+                g_spends_owed_paid++;
+                H->log(M, SK_INFO, "cell: player %d's own editor spend of %d DNA taken now: spent %d -> %d (BUG-1249)", id,
+                       o.spent, before, before + o.spent);
+            }
+            g_spend_owed.clear();
+        }
+        return;
+    }
+    if (!is_guest())
+        return;
+    uint32_t m = game::mode_id();
+    if (m != modes::kCell && m != modes::kEditor) {
+        g_own_ed_due = false; // another stage: nothing of the Cell counts any more
+        g_spent_seen_ok = false;
+        g_spend_pending = 0;
+        return;
+    }
+    if (!cell && was_in_cell && m == modes::kEditor && g_spent_seen_ok) { // a guest's Cell editor is its own (9.4.1)
+        g_own_ed_due = true;
+        g_own_ed_before = g_spent_seen;
+    }
+    spend_measure();
+    if (uint8_t* s = cell ? S() : nullptr) {
+        g_spent_seen = F<int32_t>(s, 0x2C);
+        g_spent_seen_ok = true;
+    }
+}
+
+// guest: the own editor's spend, once its result is written (back in Cell); also from the row's apply, which may come
+// first in the frame of the return
+void spend_measure()
+{
+    uint8_t* s = g_own_ed_due && in_cell() && avatar() ? S() : nullptr;
+    if (!s)
+        return;
+    g_own_ed_due = false;
+    int d = F<int32_t>(s, 0x2C) - g_own_ed_before;
+    H->log(M, SK_INFO, "cell: our own editor: spent %d -> %d (%+d)%s (BUG-1249)", g_own_ed_before, F<int32_t>(s, 0x2C), d,
+           !g_fix_guest_spend ? ", not sent (cell.guest_spend off)" : d ? ", sent to the host" : "");
+    if (!g_fix_guest_spend || !d || !C.sess || !C.sess->connected())
+        return;
+    net::Writer w;
+    w.u32(0); // no food
+    w.u8(0);
+    g_spend_meal = g_meals.sent(0);
+    w.u32(g_spend_meal);
+    w.u32((uint32_t)d);
+    C.sess->send_reliable_to(0, net::MSG_CELL_FOOD, w);
+    g_spend_pending += d;
+    g_spends_sent++;
+}
+
+// guest: the host's count to show here (the host's own plus our spends it has not taken yet)
+int spent_guest_want(int host_spent)
+{
+    spend_measure();
+    return g_fix_guest_spend && is_guest() ? host_spent + g_spend_pending : host_spent;
+}
+
+// guest: the host's row cell_spend_ack: the last spend of ours in the count of the same message
+void spend_acked(uint32_t meal)
+{
+    if (g_spend_pending && (int32_t)(meal - g_spend_meal) >= 0) {
+        H->log(M, SK_INFO, "cell: the host took our editor's spend of %d DNA (BUG-1249)", g_spend_pending);
+        g_spend_pending = 0;
+        g_spends_acked++;
+    }
+}
+
+// host: the row cell_spend_ack (false: not in Cell; a spend still owed is not in it: the guest keeps adding it)
+bool spend_acks(std::vector<std::pair<int, uint32_t>>& out)
+{
+    if (!in_cell() || !S())
+        return false;
+    for (auto& [id, meal] : g_spend_acked)
+        out.push_back({id, meal});
+    return true;
+}
+bool spend_owed() { return !g_spend_owed.empty(); }
+
+static void spend_forget(int id)
+{
+    g_spend_owed.erase(id);
+    g_spend_acked.erase(id);
+}
+static void spend_reset()
+{
+    g_spend_owed.clear();
+    g_spend_acked.clear();
+    g_own_ed_due = g_spent_seen_ok = false;
+    g_spend_pending = 0;
+}
+std::string spend_status()
+{
+    char b[200];
+    snprintf(b, sizeof b, "spend: sent=%u got=%u owed_paid=%u acked=%u pending=%d owed=%d due=%d",
+             g_spends_sent, g_spends_got, g_spends_owed_paid, g_spends_acked, g_spend_pending, (int)g_spend_owed.size(),
+             g_own_ed_due ? 1 : 0);
+    return b;
+}
+
 void tick(double now)
 {
     static bool was_in_cell;
@@ -1052,6 +1219,7 @@ void tick(double now)
         g_dna_note_due = false;
         dna_note("on entering Cell");
     }
+    spend_tick(cell, was_in_cell); // BUG-1249
     was_in_cell = cell;
     mating_count(); // BUG-1245 (tests)
     if (cell && avatar() && game::leaving_stage()) { // BUG-0308: no pool writes while the stage is torn down
@@ -1101,6 +1269,8 @@ struct FoodMsg {
     int amount = 0;
     bool plant = false, valid = false, has_meal = false;
     uint32_t meal = 0;
+    bool has_spent = false; // BUG-1249: a guest's own cell editor spent DNA (older guests send no such field)
+    int spent = 0;
 };
 static FoodMsg read_food(net::Reader& r)
 {
@@ -1110,6 +1280,10 @@ static FoodMsg read_food(net::Reader& r)
     m.valid = r.ok();
     m.meal = r.u32();
     m.has_meal = r.ok();
+    if (m.has_meal) {
+        m.spent = (int)r.u32();
+        m.has_spent = r.ok() && m.spent > -10000 && m.spent < 10000;
+    }
     return m;
 }
 
@@ -1134,6 +1308,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         bool got = type == net::MSG_CELL_EAT ? read_eat(r, e) && e.has_meal : (f = read_food(r)).has_meal;
         if (got) // no game call here: outside Cell the pool can be gone, without an avatar AddFoodPoints is unsafe
             g_food_ack[from] = type == net::MSG_CELL_EAT ? e.meal : f.meal;
+        if (type == net::MSG_CELL_FOOD && f.has_spent)
+            spend_in(from, f.spent, f.meal, false); // BUG-1249: kept until our own editor's result is written
+
         trace::ev("eat", "refused away", "from %u: meal %u refused (this game is not in the Cell stage / has no cell)",
                   from, type == net::MSG_CELL_EAT ? e.meal : f.meal);
         return;
@@ -1326,7 +1503,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     } else if (type == net::MSG_CELL_FOOD) {
         if (is_host()) { // a guest ate something: add it to the shared progress
             FoodMsg f = read_food(r);
-            if (f.valid && f.amount > -1000 && f.amount < 1000)
+            if (f.has_spent)
+                spend_in(from, f.spent, f.meal, true); // BUG-1249
+            if (f.valid && f.amount > -1000 && f.amount < 1000 && !(f.has_spent && f.amount == 0))
                 food_in_step([from, f] {
                     uint8_t* s0 = S();
                     int before = s0 ? F<int32_t>(s0, 0x1C) : 0;
@@ -1386,6 +1565,7 @@ void on_session_end()
     g_meals.reset();
     g_food_ack.clear();
     g_food_tx.clear();
+    spend_reset(); // BUG-1249
     if (in_cell() || !g_fix_forget) // outside the Cell stage the indices point into a pool that is gone
         for (auto& [h, m] : g_mirrors)
             if (m.local)

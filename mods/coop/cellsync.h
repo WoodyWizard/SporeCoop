@@ -70,6 +70,13 @@ void set_fake_model(uint32_t idx, uint32_t inst);
 bool food_total(int& food); // the own game's food total S+0x1C (support sync-check); false outside Cell
 uint32_t forget_mate();           // BUG-1245: the mate G+0x51D4 is no longer the mate (its index, 0: none); the cell stays
 bool restore_mate(uint32_t idx);  // BUG-1245: ... the mate again (still alive, no new mate called meanwhile)
+// BUG-1249: a guest's own cell editor's spend (cell.guest_spend)
+void spend_measure();
+int spent_guest_want(int host_spent);                        // guest: the host's count plus our spends not in it yet
+void spend_acked(uint32_t meal);                             // guest: the host's row cell_spend_ack for us
+bool spend_acks(std::vector<std::pair<int, uint32_t>>& out); // host: that row (false: not in Cell)
+bool spend_owed();                                           // host: a guest's spend waits for our Cell game
+std::string spend_status();
 float scale_now(); // BUG-0606: the own game's world scale G+0x514C in Cell (sync-check), 0 outside Cell or when not sane
 
 } // namespace cellsync

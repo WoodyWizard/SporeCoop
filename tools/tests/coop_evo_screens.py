@@ -19,6 +19,10 @@ mate, the vote's I'm ready, History's check, the editors' parts and done), and t
                   after 45 s) or never: the host's game plays the mating scene and the egg laying once, not again
                   every ~10 s while the vote holds its editor; the co-op window with the vote stays on its screen
 
+  --part cell-dna  Cell fixture (BUG-1249): the guest buys a part in its own cell editor: back in the pool its DNA
+                  keeps the price off (the host's count put the old DNA back), the host's DNA has it off too, also
+                  after the host's own editor
+
   --ready click|none   the guest's I'm ready in the votes (none: it never presses; the vote's 60 s run out)
 
 Frames: key frames at every step (<run>/frames/evo_screens*), shots out/laneN/shots/evo_*.png.
@@ -319,6 +323,15 @@ def part_cell_eggs(host, guest, ck, ready, scr):
     print(f'  host during the vote (matings/egg layings since its start): {" ".join(rows)}', flush=True)
     ck(m1 - m0 == 0 and e1 - e0 == 0, f"the host's game plays the mating scene and the egg laying once, not again while the vote holds its editor ({m1 - m0} more matings, {e1 - e0} more egg layings in {time.time() - t_vote:.0f} s)")
     ck(shown and all(shown), f"the host's co-op window with the vote stays on its screen ({sum(shown)} of {len(shown)} looks)")
+    # what the host sees: each repeated mating scene drew the pool again for a moment (the black flickered)
+    rows_v = [r for r in sh.since(t_vote + 8) if r[0] <= time.time()]
+    flashes, was = 0, False
+    for _, _, w in rows_v:
+        drawn = w > sl.WORLD_MIN
+        flashes += drawn and not was
+        was = drawn
+    print(f'  host screen during the vote: {sh.text(t_vote)}', flush=True)
+    ck(flashes == 0, f"the host's picture behind the vote does not flash back to the pool ({flashes} flashes in {len(rows_v)} shots)")
     if ready == 'click':
         ck(press_ready(guest), "the guest's co-op window shows I'm ready (clicked late)")
     ck(wait(lambda: 'Editor' in mode(host), 60), f"the host's editor opens after the vote ({mode(host).strip()})")
@@ -336,6 +349,76 @@ def part_cell_eggs(host, guest, ck, ready, scr):
     check_black(ck, sh, 'host', 'after its editor', t_back)
     check_black(ck, sg, 'guest', "after the host's editor", t_back)
     keyframe('host_back', 'Cell: the host back in its pool with its new cell, no egg loop')
+
+
+def cell_dna(con):
+    """the Cell DNA this game shows (DNAForFood(food) - spent, the game's own fields) and its spent count"""
+    out = con.call('coop.pool spend')['out']
+    d, sp = re.search(r'dna=(-?\d+)', out), re.search(r' spent=(-?\d+)', out)
+    return (int(d.group(1)) if d else None), (int(sp.group(1)) if sp else None)
+
+
+def buy_part(con, frm=(105, 195), to=(880, 560)):
+    """drag a part of the cell editor's palette (the cilia, top left) onto the cell"""
+    con.call(f'move {frm[0]} {frm[1]}')
+    time.sleep(0.3)
+    con.call(f'button {frm[0]} {frm[1]} down')
+    time.sleep(0.3)
+    for k in range(1, 6):
+        con.call(f'move {frm[0] + (to[0] - frm[0]) * k // 5} {frm[1] + (to[1] - frm[1]) * k // 5}')
+        time.sleep(0.2)
+    time.sleep(0.4)
+    con.call(f'button {to[0]} {to[1]} up')
+    time.sleep(1)
+
+
+def part_cell_dna(host, guest, ck, ready, scr):
+    """BUG-1249: the guest buys a part in its own cell editor (its mating call): back in the pool its DNA shows the price
+    taken off and keeps it (the host's spent count put the old DNA back), and the party's DNA (the host's) has it off
+    too; also after the host's own editor"""
+    sh, sg = scr
+    host.call('coop.pool food 400')
+    time.sleep(8)
+    h0, g0 = cell_dna(host), cell_dna(guest)
+    print(f'  DNA before: host {h0} guest {g0}', flush=True)
+    ck(g0[0] and g0[0] > 15 and h0[0] == g0[0], f'both games show the same Cell DNA before ({h0[0]} / {g0[0]})')
+    reached = mating_call(guest, 'guest', lambda: 'Editor' in mode(guest))
+    ck(reached, "the guest reaches its mate: its own cell editor opens")
+    time.sleep(8)
+    buy_part(guest)
+    time.sleep(2)
+    keyframe('guest_editor_part', "Cell: the guest's own cell editor with a bought part (its DNA counter lower)", settle=0)
+    shot(guest, 'evo_dna_guest_editor.png')
+    edit_cell(guest, 'Bobcell')
+    ck(wait(lambda: 'Cell' in mode(guest) and cell_dna(guest)[0] is not None, 40), 'the guest is back in the pool')
+    t_back = time.time()
+    seen = []
+    while time.time() - t_back < 25:
+        seen.append((round(time.time() - t_back), cell_dna(guest)[0], cell_dna(host)[0]))
+        time.sleep(2.5)
+    print(f'  after the guest\'s editor (s, guest DNA, host DNA): {seen}', flush=True)
+    print(f'  guest {guest.call("coop.pool spend")["out"].strip()}', flush=True)
+    print(f'  host  {host.call("coop.pool spend")["out"].strip()}', flush=True)
+    paid = g0[0] - seen[0][1] if seen and seen[0][1] is not None else 0
+    ck(paid > 0, f"the guest's own editor took the part's price ({g0[0]} -> {seen[0][1] if seen else None})")
+    ck(paid > 0 and all(g == g0[0] - paid for _, g, _ in seen),
+       f"the guest's DNA keeps the price off while the host plays on ({[g for _, g, _ in seen]}, expected {g0[0] - paid})")
+    ck(paid > 0 and seen[-1][2] == g0[0] - paid, f"the party's DNA (the host's) has the guest's price off too ({seen[-1][2] if seen else None})")
+    keyframe('guest_back_dna', "Cell: the guest back in the pool: its DNA counter shows the part's price taken off", calm=3)
+    # the host's own editor afterwards (the players' video: the guest's DNA changed only when the host left its editor)
+    host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
+    if mating_call(host, 'host', host_vote):
+        press_ready(guest)
+        if wait(lambda: 'Editor' in mode(host), 70):
+            time.sleep(8)
+            edit_cell(host, 'Alicecell')
+            ck(wait(lambda: 'Cell' in mode(host), 40), 'the host is back in its pool')
+            time.sleep(15)
+            h2, g2 = cell_dna(host), cell_dna(guest)
+            print(f'  after the host\'s editor: host {h2} guest {g2}', flush=True)
+            ck(h2[0] == g2[0] and g2[0] is not None and g2[0] <= g0[0] - paid,
+               f"after the host's editor both games show the same DNA, the guest's price still off ({h2[0]} / {g2[0]}, at most {g0[0] - paid})")
+    keyframe('host_back_dna', 'Cell: both back in the pool, the same DNA on both')
 
 
 def add_legs(con, y=560):
@@ -485,6 +568,8 @@ def main():
             part_cell(host, guest, ck, ready, scr)
         elif part == 'cell-both':
             part_cell_both(host, guest, ck, ready, scr)
+        elif part == 'cell-dna':
+            part_cell_dna(host, guest, ck, ready, scr)
         elif part == 'cell-eggs':
             part_cell_eggs(host, guest, ck, ready, scr)
         else:

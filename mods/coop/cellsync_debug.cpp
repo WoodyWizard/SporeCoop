@@ -961,6 +961,13 @@ std::string debug(const std::vector<std::string>& a)
                  g ? F<uint32_t>(g, 0x5194) : 0u, ev, avatar_idx(), g ? F<int>(g, 0x5158) : -1);
         return o + b;
     }
+    if (!a.empty() && a[0] == "spend") { // tests (BUG-1249): the guest's own editor spends, the DNA this game shows
+        uint8_t* s = S();
+        char b[320];
+        snprintf(b, sizeof b, "%s spent=%d dna=%d food=%d", spend_status().c_str(), s ? F<int32_t>(s, 0x2C) : -1,
+                 editor_budget(), s ? F<int32_t>(s, 0x1C) : -1);
+        return b;
+    }
     if (!a.empty() && a[0] == "mate") { // tests: the mating-call button (S+0x69), the mate, where it is
         uint8_t* s = S();
         if (s && a.size() >= 2 && a[1] == "button")
