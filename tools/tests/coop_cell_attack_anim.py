@@ -167,7 +167,13 @@ def contact(host, guest, ck, part, attacker_name):
         print(f'  idle: the {oname}\'s cell {sorted(idle_o)}', flush=True)
         r, hits = '', 0
         while time.time() - t0 < 30:
-            m = re.search(r'^see (c\d+) creature ', att.call('coop.pool see 40')['out'], re.M)
+            # BUG-1267: a creature within 40 m first, then farther ones (the fixture's spot can be empty, or eaten
+            # empty by the first round): 0 swims is a test without its case, not a pass or a fail
+            m = None
+            for rad in (40, 120, 300):
+                m = re.search(r'^see (c\d+) creature ', att.call(f'coop.pool see {rad}')['out'], re.M)
+                if m:
+                    break
             if m:
                 r = att.call(f'coop.pool swimto {m.group(1)}')['out'].strip()
                 hits += 1
@@ -186,9 +192,13 @@ def contact(host, guest, ck, part, attacker_name):
     print(f'  {attacker_name} attacks ({hits} swims, last: {r[:60]}): its own cell {sorted(a_av)} | its puppet of the {oname} '
           f'{sorted(a_pup)} | the {oname}\'s own cell {sorted(o_av)} | the {oname}\'s puppet of the {attacker_name} {sorted(o_pup)}', flush=True)
     att_anims = a_av - {'0'}
+    if not hits:
+        print(f'  the {attacker_name} found no creature to ram within 300 m: no attack, its checks left out', flush=True)
+        return False
     ck(att_anims, f"the {attacker_name}'s own cell played attack / eat animations ({sorted(att_anims)})")
     ck(not (att_anims & (o_av - idle_o)), f"the {oname}'s own cell plays none of the {attacker_name}'s animations ({sorted(att_anims & (o_av - idle_o))})")
     ck(not ((a_pup - {'0'}) - o_av), f"the {attacker_name}'s game shows the {oname}'s cell only with animations its own game plays ({sorted((a_pup - {'0'}) - o_av)})")
+    return True
 
 
 def num_of(text, key):
@@ -202,10 +212,12 @@ def main():
         host, guest = start('cell')
         ck = Checks()
         time.sleep(3)
-        contact(host, guest, ck, part, 'host')
+        ran = [contact(host, guest, ck, part, 'host')]
         time.sleep(3)
-        contact(host, guest, ck, part, 'guest')
+        ran.append(contact(host, guest, ck, part, 'guest'))
         ck.faults(host=host, guest=guest)
+        if not all(ran):
+            return ck.inconclusive('a player found no creature to ram (no attack happened)')
         return ck.result()
     if '--electric' in sys.argv:
         host, guest = start('cell')
