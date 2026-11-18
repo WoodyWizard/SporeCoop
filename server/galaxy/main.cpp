@@ -43,11 +43,19 @@ struct Planet {
     std::set<uint16_t> members; // the host too
 };
 
-// a stored world (the worlds folder): file = GWS1, str8 planet, u32 bytes, u32 crc, the bytes
+// a stored world (the worlds folder): file = GWS2, str8 planet, u32 bytes, u32 crc, u8 tech level, u32 x3 species key,
+// the bytes (GWS1: without the tech level and species)
 struct Stored {
     std::string file;
     uint32_t size = 0, crc = 0;
+    uint8_t tech = 0;
+    uint32_t species[3]{};
 };
+struct Meta {
+    uint8_t tech = 0;
+    uint32_t species[3]{};
+};
+static std::map<uint16_t, Meta> g_upload_meta; // by player slot: the facts its upload carried
 static std::map<std::string, Stored> g_stored;
 static std::string g_worlds_dir = "worlds";
 static std::map<uint16_t, XferIn> g_uploads;    // by player slot
@@ -172,7 +180,12 @@ static void load_stored()
         Stored st;
         st.size = r.u32();
         st.crc = r.u32();
-        if (!r.ok() || magic != 0x31535747u || planet.empty())
+        if (magic == 0x32535747u) {
+            st.tech = r.u8();
+            for (auto& v : st.species)
+                v = r.u32();
+        }
+        if (!r.ok() || (magic != 0x31535747u && magic != 0x32535747u) || planet.empty())
             continue;
         st.file = e.path().string();
         g_stored[planet] = st;
@@ -180,7 +193,7 @@ static void load_stored()
     }
 }
 
-static bool store_world(const std::string& planet, const XferIn& in, std::string& why)
+static bool store_world(const std::string& planet, const XferIn& in, const Meta& meta, std::string& why)
 {
     const std::string file = world_file(planet), tmp = file + ".tmp";
     FILE* f = fopen(tmp.c_str(), "wb");
@@ -189,10 +202,13 @@ static bool store_world(const std::string& planet, const XferIn& in, std::string
         return false;
     }
     Writer w;
-    w.u32(0x31535747u); // "GWS1"
+    w.u32(0x32535747u); // "GWS2"
     w.str8(planet);
     w.u32(in.size);
     w.u32(in.crc);
+    w.u8(meta.tech);
+    for (uint32_t v : meta.species)
+        w.u32(v);
     bool ok = fwrite(w.data.data(), 1, w.data.size(), f) == w.data.size() &&
               (in.data.empty() || fwrite(in.data.data(), 1, in.data.size(), f) == in.data.size());
     ok = fclose(f) == 0 && ok;
@@ -208,6 +224,8 @@ static bool store_world(const std::string& planet, const XferIn& in, std::string
     st.file = file;
     st.size = in.size;
     st.crc = in.crc;
+    st.tech = meta.tech;
+    memcpy(st.species, meta.species, sizeof st.species);
     return true;
 }
 
@@ -223,9 +241,11 @@ static bool read_world(const Stored& st, std::vector<uint8_t>& out)
         all.insert(all.end(), buf, buf + n);
     fclose(f);
     Reader r(all.data(), all.size());
-    r.u32();
+    const uint32_t magic = r.u32();
     r.str8();
     const uint32_t size = r.u32(), crc = r.u32();
+    if (magic == 0x32535747u)
+        r.skip(1 + 12);
     if (!r.ok() || r.left() != size)
         return false;
     out.assign(r.cur(), r.cur() + size);
@@ -298,6 +318,9 @@ static void on_control(const Endpoint& from, Reader& r)
             w.u16(it == g_planets.end() ? 0 : (uint16_t)it->second.members.size());
             w.u16(it == g_planets.end() ? 0 : it->second.host);
             w.u32(st == g_stored.end() ? 0 : st->second.size);
+            w.u8(st == g_stored.end() ? 0 : st->second.tech);
+            for (int k = 0; k < 3; k++)
+                w.u32(st == g_stored.end() ? 0 : st->second.species[k]);
         }
         send(*c, w);
     } else if (type == ENTER) {
@@ -386,6 +409,13 @@ static void on_control(const Endpoint& from, Reader& r)
         XferIn in;
         if (!in.begin(r))
             return;
+        if (r.left() >= 13) { // the menu's facts of the planet (5X B)
+            Meta m;
+            m.tech = r.u8();
+            for (auto& v : m.species)
+                v = r.u32();
+            g_upload_meta[c->slot] = m;
+        }
         auto cur = g_uploads.find(c->slot);
         if (cur != g_uploads.end() && cur->second.id == in.id)
             return; // (its begin again)
@@ -416,7 +446,7 @@ static void on_control(const Endpoint& from, Reader& r)
             return;
         std::string why;
         const bool valid = in.valid();
-        const bool ok = valid && store_world(in.planet, in, why);
+        const bool ok = valid && store_world(in.planet, in, g_upload_meta[c->slot], why);
         if (!valid)
             why = "the world arrived damaged";
         Writer w = control(XDONE);

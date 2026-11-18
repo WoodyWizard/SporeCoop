@@ -2,12 +2,15 @@
 
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
 #include <deque>
 #include <vector>
 
 #include "net/galaxy.h"
 #include "net/transport.h"
 #include "world.h"
+#include "game.h"
+#include "modes.h"
 
 namespace galaxy {
 
@@ -27,12 +30,10 @@ static uint16_t g_host_slot;
 static bool g_relay_on;     // the session uses the relay transport now
 static bool g_session_seen; // the planet's session was up once (its end then means: left the planet)
 static double g_next_ping, g_last_rx, g_hello_at;
-struct PlanetRow {
-    std::string name;
-    uint16_t players, host;
-    uint32_t stored; // bytes of its stored world (0 none)
-};
+using PlanetRow = PlanetInfo;
 static std::vector<PlanetRow> g_planets;
+static uint32_t g_planets_ver;
+static double g_next_list;
 
 // Decision 5Q A: the planet's world on the galaxy server. A host with a stored world downloads it (FETCH), loads it
 // and hosts it then; a host uploads its world every g_upload_every seconds and when it leaves.
@@ -180,12 +181,23 @@ static void on_control(net::Reader& r)
             p.players = r.u16();
             p.host = r.u16();
             p.stored = r.u32();
+            p.tech = r.u8();
+            for (auto& v : p.species)
+                v = r.u32();
             if (r.ok())
                 v.push_back(p);
         }
         if (!r.ok())
             return;
+        bool same = v.size() == g_planets.size();
+        for (size_t i = 0; same && i < v.size(); i++)
+            same = v[i].name == g_planets[i].name && v[i].players == g_planets[i].players && v[i].host == g_planets[i].host &&
+                   v[i].stored == g_planets[i].stored && v[i].tech == g_planets[i].tech &&
+                   !memcmp(v[i].species, g_planets[i].species, sizeof v[i].species);
         g_planets = v;
+        if (same)
+            return; // (the menu's poll: said once)
+        g_planets_ver++;
         std::string line = v.empty() ? "No planet has players yet: enter one to host it." : "Planets:";
         for (auto& p : v)
             line += " " + p.name + " (" + std::to_string(p.players) + (p.host ? "" : ", no host") +
@@ -353,6 +365,28 @@ static void downloaded()
 
 static uint32_t ms(double t) { return (uint32_t)(int64_t)(t * 1000); }
 
+// the upload's XBEGIN with the menu's facts of the planet (5X B): its tech level and the host's creature
+static uint8_t g_up_tech;
+static uint32_t g_up_species[3];
+static net::Writer up_begin()
+{
+    net::Writer w = g_up.begin();
+    w.u8(g_up_tech);
+    for (uint32_t v : g_up_species)
+        w.u32(v);
+    return w;
+}
+static void up_facts()
+{
+    const uint32_t m = game::mode_id();
+    g_up_tech = m == modes::kCreature ? 1 : m == modes::kTribe ? 2 : m == modes::kCiv ? 4 : m == modes::kSpace ? 5 : 0;
+    g_up_species[0] = g_up_species[1] = g_up_species[2] = 0;
+    if (void* av = game::avatar()) {
+        const game::Key k = game::species_key(av);
+        g_up_species[0] = k.instance, g_up_species[1] = k.type, g_up_species[2] = k.group;
+    }
+}
+
 static void start_upload()
 {
     if (g_upstep != kUpIdle || g_hstep != kHosting)
@@ -410,13 +444,14 @@ static void upload_tick(double now)
         }
         g_up.start(ms(now) ^ ((uint32_t)g_slot << 20), g_planet, std::move(blob));
         g_up.begin_ms = ms(now);
-        send_control(g_up.begin());
+        up_facts();
+        send_control(up_begin());
         g_upstep = kUpSending;
     }
     if (g_upstep == kUpSending) {
         if (!g_up.acked && ms(now) - g_up.begin_ms > 500) {
             g_up.begin_ms = ms(now);
-            send_control(g_up.begin());
+            send_control(up_begin());
         }
         g_up.pump(ms(now), [](const net::Writer& w) { send_control(w); });
         if (now - g_up_at > 180)
@@ -560,6 +595,10 @@ void tick(double now)
         pump(); // (while a planet session runs, its transport reads)
     loading_tick(now);
     upload_tick(now);
+    if (g_welcomed && game::mode_id() == modes::kMenu && now >= g_next_list) { // the galaxy menu's list (5X B)
+        g_next_list = now + 10;
+        send_control(control(LIST));
+    }
     if (!g_pending_join.empty() && C.sess && C.sess->role() == net::Role::None) { // 5V A: the new host
         std::string err, addr = g_pending_join;
         g_pending_join.clear();
@@ -598,6 +637,16 @@ void tick(double now)
             use_relay(false);
         }
     }
+}
+
+bool online() { return g_sock.is_open() && g_welcomed; }
+uint32_t planets_version() { return g_planets_ver; }
+std::string current_planet() { return g_planet; }
+std::vector<PlanetInfo> planets_known()
+{
+    std::vector<PlanetInfo> v = g_planets;
+    std::stable_sort(v.begin(), v.end(), [](const PlanetInfo& a, const PlanetInfo& b) { return a.players > b.players; });
+    return v;
 }
 
 std::string status()

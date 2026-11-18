@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "net/session.h"
 #include "sporekit.h"
@@ -25,7 +26,20 @@ struct Ctx {
     std::function<bool()> ready; // the player plays a stage now (no load waits): a downloaded world is loaded
 };
 
+// a planet of the server's list (LIST), for the galaxy menu (5X B)
+struct PlanetInfo {
+    std::string name;
+    uint16_t players = 0, host = 0;
+    uint32_t stored = 0;
+    uint8_t tech = 0;          // the menu's tech level: 0 Cell, 1 Creature, 2 Tribe, 4 Civ, 5 Space
+    uint32_t species[3]{};     // its creature (the planet's last host's)
+};
+
 void init(const SkHost* host, SkMod* mod, Ctx ctx);
+bool online();                              // connected to a galaxy server (welcomed)
+std::vector<PlanetInfo> planets_known();    // the last list: the planets with players first
+uint32_t planets_version();                 // changes with the list
+std::string current_planet();               // the planet this player is on ("" none)
 void tick(double now);
 std::string connect(const std::string& address); // ip or name, [:port] (47900)
 std::string disconnect();

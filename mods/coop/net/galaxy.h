@@ -23,14 +23,15 @@
 namespace net::galaxy {
 
 constexpr uint16_t kDefaultPort = 47900;
-constexpr uint32_t kProto = 3; // 2: stored worlds (decision 5Q A); 3: the hand-over (5V A)
+constexpr uint32_t kProto = 4; // 2: stored worlds (5Q A); 3: the hand-over (5V A); 4: the menu facts (5X B)
 constexpr uint8_t kControl = 'G', kRelay = 'R';
 
 enum Type : uint8_t {
     HELLO = 1,    // player -> server: u32 proto, u64 identity, str8 name, str8 version
     WELCOME = 2,  // server -> player: u16 its slot, str8 galaxy name
     LIST = 3,     // player -> server
-    PLANETS = 4,  // server -> player: u8 n, n x {str8 planet, u16 players, u16 host slot (0 none), u32 stored world bytes}
+    PLANETS = 4,  // server -> player: u8 n, n x {str8 planet, u16 players, u16 host slot (0 none), u32 stored world bytes,
+                  //   u8 tech level, u32 x3 its creature's species key} (the last two: the galaxy menu, 5X B)
     ENTER = 5,    // player -> server: str8 planet (made when it does not exist yet)
     ROLE = 6,     // server -> player: str8 planet, u8 role (kHostRole / kGuestRole), u16 the host's slot,
                   //   u32 the planet's stored world (bytes, 0 none: a host then FETCHes it, loads it and hosts it)
@@ -41,7 +42,8 @@ enum Type : uint8_t {
     HOSTGONE = 11, // server -> the planet's players: str8 planet (its host left; the hand-over is a later step)
     READY = 12,    // host -> server: its session hosts the planet now (players entering before are asked to wait)
     FETCH = 13,    // host -> server: send me the planet's stored world (an XFER from the server follows)
-    XBEGIN = 14,   // sender -> receiver: u32 id, str8 planet, u32 bytes, u32 crc (a world: player uploads, server sends)
+    XBEGIN = 14,   // sender -> receiver: u32 id, str8 planet, u32 bytes, u32 crc (a world: player uploads, server sends);
+                   //   an upload adds u8 tech level, u32 x3 species key (the menu's facts of the planet, 5X B)
     XCHUNK = 15,   // u32 id, u32 index, the chunk (kChunk bytes, the last one shorter)
     XACK = 16,     // receiver -> sender: u32 id, u32 index (each chunk that arrived)
     XDONE = 17,    // receiver -> sender: u32 id, u8 ok, str8 why (stored / loaded, or why not)

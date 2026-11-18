@@ -54,6 +54,7 @@
 #include "bans.h"
 #include "galaxy_client.h"
 #include "era_visitors.h"
+#include "galaxy_menu.h"
 #include "party.h"
 #include "home_nests.h"
 #include "cellsync.h"
@@ -5469,6 +5470,7 @@ void on_frame(void*, int, void*)
     bans::tick(now);                            // BUG-9251: a banned player whose identity arrived is removed
     galaxy::tick(now);                          // decision 5O A: the galaxy server (alpha)
     era_visitors::tick(now);                    // decision 5S A spike (alpha)
+    galaxy_menu::tick(now);                     // decision 5X B (alpha)
     party::tick(now);                           // roadmap 0b
     home_nests::host_tick(now);                 // roadmap phase 2
     tribe::tick(now);
@@ -10263,6 +10265,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        H->out_printf(out, "%s\n", r.c_str());
                        return 0;
                    }, nullptr, MT);
+    H->command_add(M, "coop.gmenu", "coop.gmenu [status | on | off | rebuild] - the galaxy menu shows the galaxy server's planets (alpha, decision 5X B)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) -> int {
+                       H->out_printf(out, "%s\n", galaxy_menu::command(argc, argv).c_str());
+                       return 0;
+                   }, nullptr, MT);
     H->command_add(M, "coop.galaxy", "coop.galaxy connect <address> | list | enter <planet> | leave | save | every <s> | disconnect | status - the galaxy server (alpha, decisions 5O, 5Q)",
                    [](void*, int argc, const char* const* argv, SkOut* out) -> int {
                        std::string r;
@@ -11168,6 +11175,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         galaxy::init(H, M, gx);
     }
     era_visitors::init(H, M); // decision 5S A spike (alpha)
+    galaxy_menu::init(H, M);  // decision 5X B (alpha)
     party::init(H, M, &g_sess);    // roadmap 0b
     notify::init(H, M, [] { return coop_ui::text_font(); });
     creations::Ctx crc;

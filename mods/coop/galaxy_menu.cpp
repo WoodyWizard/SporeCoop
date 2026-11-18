@@ -1,0 +1,197 @@
+// Decision 5X B (docs/12-server-and-players.md#server-galaxy-menu-spike, alpha): while the player is connected to a
+// galaxy server, Spore's own galaxy menu shows the server's planets. The menu fills its entries from the slot's saved
+// games (SporeCoop::GGE_FillSaved) and empty stars, then makes their panels (SporeCoop::GGE_MakePanels): this module
+// rewrites the entries just before the panels are made (name, creature, tech level, "a save"), the rest of the menu's
+// stars become empty ones, and Play on a server planet (the Play step SporeCoop::GGE_PlayStep, before its check of the
+// save file) enters it on the server instead of loading a file (the galaxy client then downloads and hosts it, or joins
+// its host).
+// docs/re/space.md#space-menu-entries.
+#include "galaxy_menu.h"
+
+#include <windows.h>
+
+#include <cstring>
+#include <string>
+#include <vector>
+
+#include "galaxy_client.h"
+#include "game.h"
+#include "modes.h"
+#include "sporekit_game.hpp"
+
+namespace galaxy_menu {
+
+static const SkHost* H;
+static SkMod* M;
+static uintptr_t a_WCopy, a_StarGet, a_ReadStars;
+using PanelsFn = void(__fastcall*)(void*, void*);
+using StepFn = void(__fastcall*)(void*, void*, void*);
+static PanelsFn o_Panels;
+static StepFn o_Step;
+static uintptr_t a_Gge;
+static std::string g_play_name;
+static double g_play_at = -100;
+static bool g_on = true;
+static bool g_last_online;
+static uint32_t g_last_version;
+static double g_rebuild_at;
+static unsigned g_rewrites, g_plays, g_rebuilds;
+static std::string g_last;
+
+static bool active() { return g_on && galaxy::online() && game::mode_id() == modes::kMenu; }
+
+static std::u16string u16(const std::string& s)
+{
+    std::wstring w(s.size() + 1, L'\0');
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], (int)w.size());
+    std::u16string out;
+    for (int i = 0; i < n; i++)
+        out += (char16_t)w[i];
+    return out;
+}
+
+static std::string utf8(const char16_t* b, const char16_t* e)
+{
+    std::wstring w(b, e);
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s(n > 0 ? n : 0, '\0');
+    if (n > 0)
+        WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
+    return s;
+}
+
+static void set_name(uint8_t* str, const std::u16string& v) // an eastl::wstring of the game (its allocator)
+{
+    skg::thiscall<void>(a_WCopy, (void*)str, (const void*)v.data(), (const void*)(v.data() + v.size()));
+}
+
+static void rewrite(void* set)
+{
+    uint8_t* begin = *(uint8_t**)((uint8_t*)set + 8);
+    uint8_t* end = *(uint8_t**)((uint8_t*)set + 0xC);
+    if (!begin || end <= begin)
+        return;
+    const size_t n = (size_t)(end - begin) / 0xBC;
+    std::vector<galaxy::PlanetInfo> ps = galaxy::planets_known();
+    size_t shown = 0;
+    for (size_t i = 0; i < n; i++) {
+        uint8_t* e = begin + i * 0xBC;
+        uint32_t* key = (uint32_t*)(e + 0x3C);
+        if (i < ps.size()) {
+            const galaxy::PlanetInfo& p = ps[i];
+            set_name(e, u16(p.name));
+            void* prof = p.species[0] ? game::species_by_key({p.species[0], p.species[1], p.species[2]}) : nullptr;
+            key[0] = prof ? p.species[0] : 0;
+            key[1] = prof ? p.species[1] : 0;
+            key[2] = prof ? p.species[2] : 0;
+            *(void**)(e + 0x48) = prof;
+            *(uint32_t*)(e + 0x8C) = 0;      // the save is there (the server has it)
+            *(uint32_t*)(e + 0xA8) = p.tech; // the stage icon
+            e[0xAC] = 1;
+            e[0xAD] = 1;
+            shown++;
+        } else if (e[0xAC]) { // one of the player's own saves: an empty star while online
+            set_name(e, u"");
+            key[0] = key[1] = key[2] = 0;
+            *(void**)(e + 0x48) = nullptr;
+            *(uint32_t*)(e + 0xA8) = 5;
+            e[0xAC] = 0;
+        }
+    }
+    g_rewrites++;
+    g_last = std::to_string(shown) + " of " + std::to_string(ps.size()) + " server planet(s) in " + std::to_string(n) + " entries";
+    H->log(M, SK_INFO, "galaxy menu: %s (5X B)", g_last.c_str());
+}
+
+static void __fastcall h_Panels(void* set, void* edx)
+{
+    if (active() && set)
+        rewrite(set);
+    o_Panels(set, edx);
+}
+
+// the Play step (thiscall, one stack argument): step +0xC the picked entry, +0x8 a countdown (the action at 0)
+static void __fastcall h_Step(void* self, void* edx, void* arg)
+{
+    uint8_t* gge = a_Gge ? *(uint8_t**)a_Gge : nullptr;
+    uint8_t* e = self ? *(uint8_t**)((uint8_t*)self + 0xC) : nullptr;
+    if (active() && e && gge && *(int*)((uint8_t*)self + 8) <= 0 && !gge[0x1F0] && !gge[0x140] && e[0xAC]) {
+        const char16_t* b = *(const char16_t* const*)e;
+        const char16_t* en = *(const char16_t* const*)(e + 4);
+        const std::string planet = b && en > b ? utf8(b, en) : "";
+        for (auto& p : galaxy::planets_known())
+            if (p.name == planet) {
+                // the step comes again every frame until the menu is left: once, and never while on that planet (each
+                // ENTER of the planet it is on made the client leave and join again, 2026-11-17)
+                const double now = H->time_seconds();
+                if (galaxy::current_planet() != planet && (planet != g_play_name || now - g_play_at > 30)) {
+                    g_play_name = planet;
+                    g_play_at = now;
+                    g_plays++;
+                    H->log(M, SK_INFO, "galaxy menu: Play on the server planet '%s': entering it (5X B)", planet.c_str());
+                    galaxy::enter(planet);
+                }
+                return; // (no local file: the galaxy client loads it)
+            }
+    }
+    o_Step(self, edx, arg);
+}
+
+// the menu reads its stars again (cStarManager::ReadStarsFromSaveDB sends the message that rebuilds the entries)
+static void rebuild(void*)
+{
+    if (game::mode_id() != modes::kMenu || !a_StarGet || !a_ReadStars)
+        return;
+    if (void* sm = skg::cdecl_call<void*>(a_StarGet)) {
+        skg::thiscall<void>(a_ReadStars, sm);
+        g_rebuilds++;
+    }
+}
+
+void tick(double now)
+{
+    if (!o_Panels || game::mode_id() != modes::kMenu)
+        return;
+    const bool online = g_on && galaxy::online();
+    const uint32_t ver = galaxy::planets_version();
+    if ((online != g_last_online || (online && ver != g_last_version)) && now >= g_rebuild_at) {
+        g_last_online = online;
+        g_last_version = ver;
+        g_rebuild_at = now + 2;
+        H->run_outside_frame(rebuild, nullptr);
+    }
+}
+
+std::string command(int argc, const char* const* argv)
+{
+    const std::string sub = argc > 1 ? argv[1] : "status";
+    if (sub == "on" || sub == "off") {
+        g_on = sub == "on";
+        g_last_version = ~0u;
+    } else if (sub == "rebuild")
+        H->run_outside_frame(rebuild, nullptr);
+    char b[300];
+    snprintf(b, sizeof b, "galaxy menu (5X B): %s, hooks %s, active %d, rewrites %u, plays %u, rebuilds %u, last: %s",
+             g_on ? "on" : "off", o_Panels && o_Step ? "on" : "missing", (int)active(), g_rewrites, g_plays, g_rebuilds,
+             g_last.empty() ? "-" : g_last.c_str());
+    return b;
+}
+
+void init(const SkHost* host, SkMod* mod)
+{
+    H = host;
+    M = mod;
+    a_WCopy = H->sym("wstring_copy");
+    a_StarGet = H->sym("Simulator::cStarManager::Get");
+    a_ReadStars = H->sym("Simulator::cStarManager::ReadStarsFromSaveDB");
+    a_Gge = H->sym("SporeCoop::GalaxyGameEntry_ptr");
+    uintptr_t panels = H->sym("SporeCoop::GGE_MakePanels"), step = H->sym("SporeCoop::GGE_PlayStep");
+    const bool ok = a_WCopy && a_Gge && panels && step &&
+                    H->hook_create(M, (void*)panels, (void*)&h_Panels, (void**)&o_Panels) == 0 &&
+                    H->hook_create(M, (void*)step, (void*)&h_Step, (void**)&o_Step) == 0;
+    if (!ok)
+        o_Panels = nullptr, o_Step = nullptr;
+    H->log(M, SK_INFO, "galaxy menu: hooks %s (5X B)", ok ? "on" : "off");
+}
+
+} // namespace galaxy_menu
