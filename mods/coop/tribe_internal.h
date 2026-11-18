@@ -581,6 +581,8 @@ bool form_species_state(void* ctrl, FormSpecies& s);
 void form_species_recheck();
 extern bool g_form_species_fix;
 extern uint32_t g_forms_past;
+extern bool g_last_species_fix;
+extern uint32_t g_forms_last; // BUG-1238: villages formed with the list's last species (tribe.form_last_species)
 extern std::string g_form_species_last;
 extern bool g_form_pace_fix;
 extern uint32_t g_forms_paced;

@@ -2806,21 +2806,83 @@ static bool species_holds(void* ctrl, double now)
     g_species_checked = now;
     FormSpecies s;
     g_species_hold = form_species_state(ctrl, s) && s.past;
+    // BUG-1238: a list shorter than the villages the property list allows, said once per list (triage)
+    static int logged_species = -1, logged_slots = -1;
+    if (s.species >= 0 && s.slots > 0 && s.species * 2 < s.slots &&
+        (s.species != logged_species || s.slots != logged_slots)) {
+        logged_species = s.species;
+        logged_slots = s.slots;
+        H->log(M, SK_INFO, "tribe: the NPC tribe controller has %d species for %d NPC villages (property list %d)",
+               s.species, s.slots / 2, s.slots);
+    }
     return g_species_hold;
 }
 void form_species_recheck() { g_species_checked = -10; }
 
+// BUG-1238: with the list used up (BUG-1233) no village formed any more, and on a planet whose list is shorter than its
+// property list allows (the final check's campaign planet: 4 species, 5 NPC villages) the stage's fifth goal never
+// came: the campaign stood at "no village left to raid (goal bar 4 of 5)". The index min(size, tribes - 1) is one past
+// what the code obviously means (min(size - 1, tribes - 1): the last species for every tribe after the list; the game's
+// own list repeats a species now and then: two archetypes picked the same one, lab 20261118-004440), so the
+// call now sees the list as long as the tribes, its last species repeated: the next village takes the list's last species,
+// with the archetype of its own pair of the property list, as many villages as the property list allows. Only for the
+// call: the game's list (and the keys it saves, +0x7C) stays as the game built it. Room for the pointers: the list's
+// capacity, else the game's own EASTL insert (0xB96750, as 0xCC7140 grows it). Not on a guest
+// (tribe.guest_tribes: the host's villages come as copies). `coop.fix tribe.form_last_species off`: no village (BUG-1233).
+bool g_last_species_fix = true;
+COOP_FIX("tribe.form_last_species", "BUG-1238", g_last_species_fix,
+         "tribe: once the list of species for new villages is used up, the next village takes its last species (the "
+         "stage's last villages never came and the goal bar could not be filled)");
+uint32_t g_forms_last;
+static void* form_last_species(void* ctrl, int arg, int size, int tribes)
+{
+    static uintptr_t a_Insert = H->sym("SporeCoop::EASTL_VectorPtr_InsertValue");
+    auto* vec = (uint8_t*)ctrl + 0xD0;
+    void** lb = F<void**>(ctrl, 0xD0);
+    if (size <= 0 || tribes <= size || tribes > 64 || !lb || F<void**>(ctrl, 0xD4) != lb + size || !skg::readable(lb, size * 4u))
+        return nullptr;
+    void* last = lb[size - 1];
+    // the list as long as the tribes, its last species repeated: FormTribe's index tribes - 1 is then that last one
+    for (int n = size; n < tribes; n++) {
+        void** le = F<void**>(ctrl, 0xD4);
+        if (le < F<void**>(ctrl, 0xD8)) {
+            *le = last;
+            F<void**>(ctrl, 0xD4) = le + 1;
+        } else if (a_Insert) {
+            skg::thiscall<void>(a_Insert, vec, (void*)le, (void*)&last); // the game's own grow (new storage, the old freed)
+        }
+        if (F<void**>(ctrl, 0xD4) != F<void**>(ctrl, 0xD0) + n + 1) { // (no room and no insert: as BUG-1233, nothing)
+            F<void**>(ctrl, 0xD4) = F<void**>(ctrl, 0xD0) + size;
+            return nullptr;
+        }
+    }
+    g_forms_last++;
+    g_forms_run++;
+    void* r = o_Form(ctrl, arg);
+    // back to the game's size (FormTribe neither grows nor moves the list; the slots past it keep the repeated species)
+    F<void**>(ctrl, 0xD4) = F<void**>(ctrl, 0xD0) + size;
+    if (g_forms_last <= 5)
+        H->log(M, SK_INFO, "tribe: the NPC tribe controller's list of species is used up (%s): the village took its last "
+                           "species (tribe.form_last_species)", g_form_species_last.c_str());
+    return r;
+}
+
 void* SK_THISCALL h_Form(void* self, int arg)
 {
-    if (species_holds(self, H->time_seconds())) {
-        if (g_forms_past++ % 600 == 0)
-            H->log(M, SK_INFO, "tribe: the NPC tribe controller would read its next species past its list: no village "
-                               "formed (%s) (tribe.form_species)", g_form_species_last.c_str());
-        return nullptr;
-    }
     if (g_guest_tribes_fix && is_guest() && game::mode_id() == modes::kTribe) {
         if (g_forms_blocked++ < 5)
             H->log(M, SK_INFO, "tribe: this game's NPC tribe controller would form a tribe: not on a guest (tribe.guest_tribes)");
+        return nullptr;
+    }
+    if (species_holds(self, H->time_seconds())) {
+        FormSpecies s;
+        if (g_last_species_fix && form_species_state(self, s) && s.past && s.species > 0) {
+            form_species_recheck(); // the next call decides again (this one forms: the update waits a second now)
+            return form_last_species(self, arg, s.species, s.tribes);
+        }
+        if (g_forms_past++ % 600 == 0)
+            H->log(M, SK_INFO, "tribe: the NPC tribe controller would read its next species past its list: no village "
+                               "formed (%s) (tribe.form_species)", g_form_species_last.c_str());
         return nullptr;
     }
     if (pace_holds(H->time_seconds())) {
