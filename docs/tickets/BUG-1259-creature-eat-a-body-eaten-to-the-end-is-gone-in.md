@@ -1,14 +1,14 @@
 ---
 id: BUG-1259
 title: creature_eat: a body eaten to the end is gone in one game and at negative meat in the other at the check
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-18
 source: lab: fix/w53-puppet
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch:
 commits:
 tests:
@@ -30,11 +30,13 @@ Inferred: the test's check, not the game: a body eaten to the end (meat <= 0) is
 schedule. Fix idea: treat meat <= 0 like None in the check.
 
 ## Fix
+The check treats a body at meat <= 0 like a removed one (both eaten out agree).
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: a race of the test's own check (seen once in 20261118-124624); PASS with the new check out/lab/20261118-130835.
 
 ## History
 - 2026-11-18: opened.

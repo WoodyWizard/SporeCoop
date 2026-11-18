@@ -55,7 +55,9 @@ def eat_body(ck, eater, other, nid, who, secs=25.0):
     time.sleep(3.0)
     me, mo = meat(eater, nid), meat(other, nid)
     full = m0 or 100.0
-    ck(me is not None and mo is not None and abs(me - mo) <= 0.05 * full or (me in (None, 0.0) and mo in (None, 0.0)),
+    # BUG-1259: a body eaten to the end (meat <= 0) is removed by each game on its own schedule: gone and <= 0 agree
+    out = lambda v: v is None or v <= 0
+    ck(me is not None and mo is not None and abs(me - mo) <= 0.05 * full or (out(me) and out(mo)),
        f'{who}: the other game shows the body #{nid} eaten as far (meat {me} here, {mo} there)')
 
 
