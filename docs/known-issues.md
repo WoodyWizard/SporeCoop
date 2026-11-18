@@ -335,3 +335,32 @@ anchor so other docs can link to it:
   nor on v0.7.14.1; cell puppets never animate (only the effects relay shows a partner's attack).
 * Not checked: a partner's poison clouds, overlapping cells.
 * Ticket: BUG-1243
+
+## Menu: no main menu panel back in the galaxy menu after a very early load (2026-11-18, fix/w53-advorn)
+<a id="issue-menu-panel-early-load"></a>
+
+* What happens: a game that left the galaxy menu before its start-up video ended (a load or a join in the first
+  ~16 s) shows no main menu panel (Galactic Adventures, Sporepedia, Co-op) when it comes back to the galaxy menu; only
+  the galaxy, the Spore button and Register.
+* Reproduce: start('creature') (the lab's quick fixture load), `coop.menu`, wait: `coop.ui find "Galactic Adventures"`
+  shows the entry's panel 0x0615A5FF not visible.
+* Known: the video's end message 0x49731AD came in the stage, where BUG-0626 refuses the menu's intro; the menu shows
+  its panel at its intro's end. `coop.menuintro` (tests) sends the video's end in the menu: the panel comes 10 s later
+  (docs/re/adventure.md#adventure-puppet-herd).
+* Not checked: whether players meet it (they rarely load in the first 16 s, a guest joining at once may).
+* Next steps: remember a refused GGE_intro and send the video's end (or the skip) when the menu comes back.
+* Ticket: BUG-1260
+
+## Creature: bones the guest sees and the host does not (2026-11-18, fix/w53-advorn)
+<a id="issue-creature-bones-guest-only"></a>
+
+* What happens (players' video, BUG-1251): the guest sees bones the host does not have and cannot click them; the guest
+  digs a fossil where the host sees empty grass.
+* Reproduce: not reproduced. The creature fixture has the same 12 interactive ornaments in both games (from the
+  save, the same serials and places); a copied dig changes the same fields as the game's own (lab lane 9, 2026-11-18).
+* Known: the dug-up model of a fossil with a model list was not copied (fixed, `wobj.ornament_model`); a bone pile an
+  eaten body may leave is not looked at (docs/re/creature.md#creature-ornament-models).
+* Next steps: a save with fossils that change their model; eat a body to the bone in one game and list `coop.wobj orns`
+  in both.
+* Ticket: BUG-1261 (split from BUG-1251)
+

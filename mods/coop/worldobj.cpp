@@ -2163,7 +2163,7 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
         uint32_t msg[3] = {(uint32_t)(uintptr_t)av, (uint32_t)(uintptr_t)o, 0};
         if (st)
             thiscall<void>(a_ExecuteAction, st, kOrnMsg, (void*)msg);
-        H->out_printf(out, "used (next model %d) state=%X reward=%p\n", r, orn_state(o), (void*)orn_reward(o));
+        H->out_printf(out, "used (next model %d) state=%X reward=%p\n", r & 0xFF, orn_state(o), (void*)orn_reward(o)); // (a bool in al)
         return 0;
     }
     if (!strcmp(a, "eat") && argc > 2) { // eat <fruit>: eaten here (cFruit_SetState 5, as the eat node ends)

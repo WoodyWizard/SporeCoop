@@ -54,13 +54,25 @@ def wait(fn, t=10.0):
         time.sleep(1)
 
 
+def rotate(q, v):
+    """v turned by the quaternion q = (x, y, z, w)"""
+    x, y, z, w = q
+    tx, ty, tz = 2 * (y * v[2] - z * v[1]), 2 * (z * v[0] - x * v[2]), 2 * (x * v[1] - y * v[0])
+    return [v[0] + w * tx + y * tz - z * ty, v[1] + w * ty + z * tx - x * tz, v[2] + w * tz + x * ty - y * tx]
+
+
 def go_near(con, pos, side):
-    """the avatar 3 m beside a point (along a tangent of the planet)"""
+    """the avatar 4 m behind a point (the camera behind the avatar looks at it), side m to the side"""
     r = math.sqrt(sum(v * v for v in pos))
     up = [v / r for v in pos]
-    t = [0, -up[2], up[1]] if abs(up[0]) < 0.9 else [-up[2], 0, up[0]]
-    tl = math.sqrt(sum(v * v for v in t))
-    p = [pos[i] + side * 3 * t[i] / tl + up[i] * 1.0 for i in range(3)]
+    m = re.search(r'rot=\((\S+) (\S+) (\S+) (\S+)\)', con.call('coop.avatar')['out'])
+    f = rotate(tuple(map(float, m.groups())), (0.0, 1.0, 0.0)) if m else [0, -up[2], up[1]]
+    d = sum(f[i] * up[i] for i in range(3))
+    f = [f[i] - d * up[i] for i in range(3)]  # (along the ground)
+    fl = math.sqrt(sum(v * v for v in f)) or 1.0
+    f = [v / fl for v in f]
+    s = [up[1] * f[2] - up[2] * f[1], up[2] * f[0] - up[0] * f[2], up[0] * f[1] - up[1] * f[0]]
+    p = [pos[i] - 4 * f[i] + side * s[i] + up[i] * 1.0 for i in range(3)]
     return con.call('coop.npc gopos %.2f %.2f %.2f' % tuple(p))['out'].strip()
 
 
@@ -87,7 +99,7 @@ def main():
         dug = BONES[1] if mine['key'] == BONES[0] else BONES[0]
         for con, o in ((actor, mine), (other, theirs)):
             print(f'  {step}. ' + con.call(f'coop.wobj ornlist {o["p"]} {o["key"]} {dug}')['out'].strip(), flush=True)
-        print(f'  {step}. {an}: ' + go_near(actor, mine['pos'], 1) + f'; {on}: ' + go_near(other, theirs['pos'], 1),
+        print(f'  {step}. {an}: ' + go_near(actor, mine['pos'], 1.5) + f'; {on}: ' + go_near(other, theirs['pos'], -1.5),
               flush=True)
         time.sleep(4)
         keyframe(f'bone{step}_before', f'bone {step} (model {mine["key"]}) before the {an} digs it, the same on both games',

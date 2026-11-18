@@ -12,11 +12,12 @@ host's game showed the guest's puppet at its captain's feet as the guest's Creat
    adventure, and the copies' resource keys are the same in most lab runs (BF0CE0D0 on both games): the same place
    id on both games, the players' case. --own-places keeps the games' own place ids; by default both get one
    (`coop.adventure place`) so the case does not depend on the keys;
-4. the intro card is closed (Enter: play state 3) on both games, then 25 s of play;
+4. the intro card is closed (Enter: play state 3) on both games (a fault in the adventure's start leaves it at 0),
+   then 25 s of play;
 5. checks: both games are still in the adventure and running, with no fault and no crash report (the lab checks the
-   reports too); a puppet of the partner that a game shows is the partner's captain: its species is the one the
-   partner's own game reports for its captain, and its size is within 25 % of the captain's size on the partner's
-   game (x 1.15, the puppets' factor).
+   reports too); a puppet of the partner that a game shows has the captain's size (within 25 % of the captain's size on
+   the partner's game x 1.15, the puppets' factor) and it is a captain (the partner's when this game has its species, else this
+   game's own captain stands in: BUG-1262), not the partner's Creature-stage creature.
 SPORE_FIX_OFF=adventure.puppet_captain must FAIL.
 
   SPORE_LANE=N python3 tools/tests/coop_adventure_tutorial.py [--own-places]
@@ -79,9 +80,12 @@ def main():
     host, guest = start('creature')
     ck = Checks()
     time.sleep(4)
+    creature_body = set()  # the partners' Creature-stage creations (their puppets here)
     for who, c in (('host', host), ('guest', guest)):
-        print(f'  {who} in Creature: ' + ' | '.join(l.strip() for l in call(c, 'coop.status').splitlines()
-                                                  if 'puppet pos' in l)[:200], flush=True)
+        m = re.search(r'puppet pos=\([^)]*\) err=\S+ rot_err=\S+ species=([0-9A-F]{8})', call(c, 'coop.status'))
+        print(f'  {who} in Creature: the partner\'s puppet is {m and m.group(1)}', flush=True)
+        if m:
+            creature_body.add(m.group(1))
     # 2. the galaxy menu: the host first, then the guest
     for who, c in (('host', host), ('guest', guest)):
         print(f'  {who}: ' + call(c, 'coop.menu'), flush=True)
@@ -151,8 +155,12 @@ def main():
         print(f'  {who}\'s puppet of the {other}: {p}', flush=True)
         if p and other in caps:
             want_sp, want_sc = caps[other]
-            ck(p[0] == want_sp, f'5. the {who}\'s puppet of the {other} is the {other}\'s captain (species {p[0]}, '
-                                f'the captain {want_sp})')
+            # the partner's captain when this game has its species; else this game's own captain stands in (the
+            # captains' species are made per game: BUG-1262)
+            ck(p[0] in (want_sp, caps.get(who, (None,))[0]) and p[0] not in creature_body,
+               f'5. the {who}\'s puppet of the {other} is a captain, not the {other}\'s Creature-stage creature '
+               f'(species {p[0]}: the {other}\'s captain {want_sp}, the {who}\'s {caps.get(who, (None,))[0]}, '
+               f'Creature stage {sorted(creature_body)})')
             if want_sc and p[1]:
                 k = p[1] / (want_sc * 1.15)
                 ck(0.75 < k < 1.25, f'5. the {who}\'s puppet of the {other} has the captain\'s size ({p[1]:.2f}, the '
