@@ -31,6 +31,8 @@ constexpr uint32_t kProto = 5; // 2: stored worlds (5Q A); 3: the hand-over (5V 
                                 // 5: the warm hand-over token (6B C)
 constexpr uint8_t kControl = 'G', kRelay = 'R', kFan = 'F';
 constexpr size_t kMaxFanSlots = 64; // (kMaxPlanetPlayers)
+// the REFUSED text for a datagram from an address the server does not know (6H A: the game connects again on it)
+constexpr const char* kNotConnected = "Not connected to the galaxy server: connect first.";
 
 enum Type : uint8_t {
     HELLO = 1,    // player -> server: u32 proto, u64 identity, str8 name, str8 version

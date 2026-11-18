@@ -48,6 +48,9 @@ public:
         // a player (host: a guest; guest: the host, id 0) runs an older SporeCoop without the HELLO
         // extension: long chat lines reach them cut, messages above one packet not at all (BUG-0219)
         std::function<void(uint8_t id, const std::string& name)> old_peer;
+        // decision 6H A (host, through a galaxy): one unreliable message the galaxy server copies to these players
+        // (false: not possible now; the session sends one to each). Unset: one to each, as before.
+        std::function<bool(const std::vector<uint8_t>& ids, uint8_t type, const Writer& w)> fan_out;
     } cb;
 
     uint32_t build = 0;      // exe build id; mismatch = reject
@@ -100,6 +103,10 @@ public:
     void update(); // call every frame: receive, timeouts, send
 
     void send_state(PlayerState st);              // own state
+    // decision 6H A (guest): a message of the host copied by the galaxy server (MSG_PLAYER_STATE: as from the host)
+    void host_fan_in(uint8_t type, Reader& r);
+    uint64_t fan_states_sent() const { return fan_states_sent_; }
+    uint64_t fan_states_single() const { return fan_states_single_; }
     void send_chat(const std::string& text);
     void broadcast_reliable(uint8_t type, const Writer& w, int except_id = -1);
     bool send_reliable_to(uint8_t id, uint8_t type, const Writer& w); // host: guest id, client: 0
@@ -149,6 +156,10 @@ public:
     uint32_t (*clock)() = nullptr;
 
 private:
+    uint64_t fan_states_sent_ = 0, fan_states_single_ = 0; // 6H A: states sent once for several / to one
+    // 6H A: send `w` to these accepted peers: the CAP_FAN_IN ones through cb.fan_out when two or more, the rest one each
+    void send_unreliable_fanned(const std::vector<Peer*>& to, uint8_t type, const Writer& w, bool latest);
+    void client_player_state(Reader& r);
     std::string password_;
     void handle_packet(Peer& p, const uint8_t* data, size_t n, uint32_t now);
     void handle_msg(Peer& p, uint8_t type, Reader& r);

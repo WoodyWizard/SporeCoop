@@ -305,7 +305,7 @@ static void on_control(const Endpoint& from, Reader& r)
         Client tmp;
         tmp.ep = from;
         Writer w = control(REFUSED);
-        w.str8("Not connected to the galaxy server: connect first.");
+        w.str8(kNotConnected);
         send(tmp, w);
         return;
     }

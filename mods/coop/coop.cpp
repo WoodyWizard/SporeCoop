@@ -7173,6 +7173,26 @@ bool slow_lookup(const std::string& host, uint32_t& ip)
     return g_real_lookup(host, ip);
 }
 
+// decision 6H A (alpha): the players' states copied by the galaxy server. Off (`coop.fix net.fan_states off`): the host
+// sends each guest every other player's state itself (the square of the players)
+static bool g_fix_fan_states = true;
+COOP_FIX("net.fan_states", "6H A", g_fix_fan_states,
+         "net: on a galaxy planet the host sends each player's state once and the galaxy server copies it to the others");
+// 6F B / 6H A: one unreliable message the galaxy server copies to these guests (false: not hosting through a galaxy)
+static bool galaxy_fan_out(const std::vector<uint8_t>& ids, uint8_t type, const net::Writer& w)
+{
+    if (!galaxy::hosting() || (type == net::MSG_PLAYER_STATE && !g_fix_fan_states))
+        return false;
+    std::vector<uint16_t> slots;
+    for (uint8_t id : ids) {
+        const uint16_t slot = galaxy::slot_of(g_sess.peer_endpoint(id));
+        if (!slot)
+            return false;
+        slots.push_back(slot);
+    }
+    return galaxy::fan_out(slots, type, w);
+}
+
 void setup_callbacks()
 {
     net::g_spawn_thread = spawn_pinned;
@@ -7182,6 +7202,7 @@ void setup_callbacks()
     g_sess.version = std::string("coop " COOP_VERSION ", SporeKit ") + H->kit_version() + ", " + H->build_name() + " " +
                      std::string(H->exe_sha256()).substr(0, 8);
     g_sess.cb.log = [](const std::string& s) { LOG("net: %s", s.c_str()); };
+    g_sess.cb.fan_out = galaxy_fan_out; // 6H A: the player states copied by the galaxy server
     g_sess.cb.connected = [] {
         support::on_session_start();
         support::on_connected();
@@ -11222,9 +11243,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gx.join = [](const std::string& addr, std::string& err) { return do_join(addr, err); };
         gx.ready = [] { return g_local != nullptr && !world::load_queued() && !world::load_starting(); };
         gx.promote = [] { npc::promote_now(); };
-        gx.fan_in = [](uint8_t type, net::Reader& r) { // 6F B: the host's Cell state, copied by the galaxy server
+        gx.fan_in = [](uint8_t type, net::Reader& r) { // 6F B / 6H A: the host's messages copied by the galaxy server
             if (type == net::MSG_CELL_STATE_C && g_sess.cb.custom)
                 g_sess.cb.custom(type, 0, r);
+            else if (type == net::MSG_PLAYER_STATE)
+                g_sess.host_fan_in(type, r);
         };
         gx.hosted_stored = []() -> bool { // owner test 2026-11-17: a new host makes its own creature first
             if (!creations::host_needs_first_creature())
@@ -11386,18 +11409,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return g_mode == modes::kCell && same_place(state) && (state.flags & net::PF_IN_WORLD);
     };
     cc.host_away = [] { return g_host_away; }; // BUG-0205
-    cc.fan_out = [](const std::vector<uint8_t>& ids, uint8_t type, const net::Writer& w) { // 6F B
-        if (!galaxy::hosting())
-            return false;
-        std::vector<uint16_t> slots;
-        for (uint8_t id : ids) {
-            const uint16_t slot = galaxy::slot_of(g_sess.peer_endpoint(id));
-            if (!slot)
-                return false;
-            slots.push_back(slot);
-        }
-        return galaxy::fan_out(slots, type, w);
-    };
+    cc.fan_out = galaxy_fan_out; // 6F B
     cellsync::init(H, M, std::move(cc));
     H->command_add(M, "coop.pool", "coop.pool [bite | food <n> | hp <n> | hurt <player> <dmg>] - cell co-op",
                    [](void*, int argc, const char* const* argv, SkOut* out) {

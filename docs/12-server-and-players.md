@@ -816,6 +816,36 @@ Samuth (Creature, `coop.load Game0 Samuth`) hosted on the galaxy, guests enterin
     the steady 5-player minutes. No crash.
 * Not measured: Tribe (TITAN cannot carry it at this size either: the MSI or 4-5 games).
 
+### Player states copied by the galaxy server, and reconnecting (2026-11-18, feat/lineages-alpha, decision 6H A)
+<a id="server-fan-states"></a>
+
+Owner: "6HA. Also utilize MSI to ensure an even spread of computing power. In a real scenario, only one instance would
+be running on someone's computer."
+
+* The host sends each player's state (its own and each guest's it forwards) once for every guest with
+  net::CAP_FAN_IN; the galaxy server copies it to them (6F B's kFan frame). Session::send_unreliable_fanned: two or
+  more such guests and a galaxy host (Callbacks::fan_out, coop.cpp galaxy_fan_out), else one to each as before. A guest
+  takes a copied state through Session::host_fan_in (the same checks as a state from the host: the roster, never its
+  own id). Switch: `coop.fix net.fan_states off`.
+* Reconnecting: a game the galaxy server does not know (timed out, the server restarted) gets REFUSED
+  net::galaxy::kNotConnected on its next ping; it now leaves the planet and says HELLO again (at most every 5 s;
+  `coop.galaxy status`: reconnects).
+* Test spread over both PCs: TITAN the host and 3 guests, the MSI 3 guests (its own test games at 800 x 600, over
+  Tailscale to the galaxy server on TITAN), Samuth in Creature, every game at its normal 9-10 FPS. Host out, a minute
+  each way in the same session:
+
+| | Player states from the host | Host upload in all |
+|---|---|---|
+| One to each (net.fan_states off) | 38-42 KB/s | 58-63 KB/s |
+| Copied by the galaxy server | 9 KB/s (to the server) | 30-33 KB/s |
+
+  4.3 times less for the states with 6 guests, and it now grows with the players instead of their square: about
+  21 KB/s for 16 players at this rate instead of about 250. Each MSI game got about 28 000 copied states (2-5 refused
+  while it joined). Sync check 107 checks, 0 differences, 0 mismatches; no crash on either PC. The galaxy server
+  restarted under the 7 games: all 7 connected again by themselves within 25 s (each then off the planet, to enter
+  again).
+* Still open from #server-creature-many: a joiner's world from the galaxy server's copy (6H B), Tribe measured.
+
 ### Hand-over without a reload: research (2026-11-17, decision 6B C)
 <a id="server-warm-handover"></a>
 

@@ -518,9 +518,51 @@ void Session::send_state(PlayerState st)
     st.time_ms = now();
     Writer w;
     st.write(w);
+    std::vector<Peer*> to;
     for (auto& p : peers_)
         if (p->accepted || role_ == Role::Client)
-            p->conn.send_unreliable(MSG_PLAYER_STATE, w, true);
+            to.push_back(p.get());
+    send_unreliable_fanned(to, MSG_PLAYER_STATE, w, true);
+}
+
+void Session::send_unreliable_fanned(const std::vector<Peer*>& to, uint8_t type, const Writer& w, bool latest)
+{
+    std::vector<uint8_t> fan_ids;
+    if (role_ == Role::Host && cb.fan_out)
+        for (Peer* p : to)
+            if (p->accepted && (p->caps & CAP_FAN_IN))
+                fan_ids.push_back(p->id);
+    const bool fanned = fan_ids.size() >= 2 && cb.fan_out(fan_ids, type, w);
+    if (fanned)
+        fan_states_sent_++;
+    for (Peer* p : to) {
+        if (fanned && std::find(fan_ids.begin(), fan_ids.end(), p->id) != fan_ids.end())
+            continue;
+        p->conn.send_unreliable(type, w, latest);
+        fan_states_single_++;
+    }
+}
+
+void Session::host_fan_in(uint8_t type, Reader& r)
+{
+    if (role_ != Role::Client || !connected())
+        return;
+    if (type == MSG_PLAYER_STATE)
+        client_player_state(r);
+}
+
+void Session::client_player_state(Reader& r)
+{
+    PlayerState st;
+    if (!st.read(r) || st.id == my_id_ || !cb.player_state)
+        return;
+    // BUG-0109: the host relays a leaving guest's last state unreliably, behind the frame's
+    // snapshot chunks, so it can arrive after the reliable PLAYER_LEAVE: it made a ghost
+    // partner that stayed for the session (and passed its buffer to the next player of the id)
+    if (g_fix.state_roster && std::none_of(roster_.begin(), roster_.end(),
+                                           [&](const PlayerInfo& x) { return x.id == st.id; }))
+        return;
+    cb.player_state(st);
 }
 
 // BUG-0219: a peer that cannot join pieces gets a chat line that fits one packet (cut between two
@@ -798,9 +840,11 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                 cb.player_state(st);
             Writer w;
             st.write(w);
+            std::vector<Peer*> to;
             for (auto& o : peers_)
                 if (o->accepted && o->id != p.id)
-                    o->conn.send_unreliable(MSG_PLAYER_STATE, w);
+                    to.push_back(o.get());
+            send_unreliable_fanned(to, MSG_PLAYER_STATE, w, false); // 6H A: copied by the galaxy server
             break;
         }
         case MSG_CHAT: {
@@ -933,19 +977,9 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             cb.player_leave(pl.id, pl.reason);
         break;
     }
-    case MSG_PLAYER_STATE: {
-        PlayerState st;
-        if (!st.read(r) || st.id == my_id_ || !cb.player_state)
-            break;
-        // BUG-0109: the host relays a leaving guest's last state unreliably, behind the frame's
-        // snapshot chunks, so it can arrive after the reliable PLAYER_LEAVE: it made a ghost
-        // partner that stayed for the session (and passed its buffer to the next player of the id)
-        if (g_fix.state_roster && std::none_of(roster_.begin(), roster_.end(),
-                                               [&](const PlayerInfo& x) { return x.id == st.id; }))
-            break;
-        cb.player_state(st);
+    case MSG_PLAYER_STATE:
+        client_player_state(r);
         break;
-    }
     case MSG_CHAT: {
         Chat c;
         if (c.read(r) && cb.chat)

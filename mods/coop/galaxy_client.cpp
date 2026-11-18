@@ -31,6 +31,10 @@ static uint16_t g_slot;
 static_assert(kMaxPlanetPlayers == net::kMaxPlayers, "a planet's players are one session's");
 static uint8_t g_planet_players = kPlanetPlayers; // 6E B: what the server's WELCOME says a planet takes
 static uint64_t g_fan_tx, g_fan_tx_bytes, g_fan_rx, g_fan_rx_bytes, g_fan_refused; // 6F B
+static double g_reconnect_at = -100; // 6H A
+static uint32_t g_reconnects;
+static void send_hello();
+static void reset_planet_steps();
 static std::string g_galaxy, g_planet, g_last_refusal;
 static uint8_t g_role;      // kHostRole / kGuestRole on a planet, 0 none
 static uint16_t g_host_slot;
@@ -344,6 +348,26 @@ static void on_control(net::Reader& r)
         upload_done(ok != 0, why);
     } else if (type == REFUSED) {
         g_last_refusal = r.str8();
+        // 6H A: the server forgot this game (it timed it out: a game at 1 FPS, a server restart): connect again, at
+        // most every 5 s; the planet is left (the server dropped it from the planet, the host times its session out)
+        if (r.ok() && g_last_refusal == kNotConnected) {
+            const double now = H->time_seconds();
+            if (now - g_reconnect_at < 5.0)
+                return;
+            g_reconnect_at = now;
+            g_reconnects++;
+            say("The galaxy server lost this game: connecting again.");
+            if (!g_planet.empty()) {
+                if (g_relay_on && C.sess && C.sess->role() != net::Role::None)
+                    C.sess->leave("the galaxy server lost this game");
+                reset_planet_steps();
+                g_planet.clear();
+                g_role = 0;
+            }
+            g_welcomed = false;
+            send_hello();
+            return;
+        }
         if (r.ok())
             say("Galaxy server: " + g_last_refusal);
         if (r.ok() && g_hstep == kFetching) { // (no stored world after all)
@@ -606,6 +630,18 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     C = std::move(ctx);
 }
 
+static void send_hello()
+{
+    net::Writer w = control(HELLO);
+    w.u32(kProto);
+    w.u64(C.identity ? C.identity() : 0);
+    w.str8(C.name ? C.name() : "Player");
+    w.str8(C.version);
+    send_control(w);
+    g_hello_at = g_last_rx = H->time_seconds();
+    g_next_ping = g_hello_at + 2;
+}
+
 std::string connect(const std::string& address)
 {
     net::Endpoint ep;
@@ -619,14 +655,7 @@ std::string connect(const std::string& address)
     g_sock.set_buffers(1 << 20); // (the relay carries the whole session: a world arrives in bursts)
     g_server = ep;
     g_welcomed = false;
-    net::Writer w = control(HELLO);
-    w.u32(kProto);
-    w.u64(C.identity ? C.identity() : 0);
-    w.str8(C.name ? C.name() : "Player");
-    w.str8(C.version);
-    send_control(w);
-    g_hello_at = g_last_rx = H->time_seconds();
-    g_next_ping = g_hello_at + 2;
+    send_hello();
     return "Connecting to the galaxy server at " + ep.masked() + "...";
 }
 
@@ -847,9 +876,9 @@ std::string status()
              (unsigned long long)g_tx, (unsigned long long)(g_tx_bytes >> 10), g_queue.size(),
              (unsigned long long)g_queue_dropped);
     std::string s = b;
-    snprintf(b, sizeof b, " copies (6F B): sent %llu (%llu KB), got %llu (%llu KB), refused %llu",
+    snprintf(b, sizeof b, " copies (6F B): sent %llu (%llu KB), got %llu (%llu KB), refused %llu; reconnects %u",
              (unsigned long long)g_fan_tx, (unsigned long long)(g_fan_tx_bytes >> 10), (unsigned long long)g_fan_rx,
-             (unsigned long long)(g_fan_rx_bytes >> 10), (unsigned long long)g_fan_refused);
+             (unsigned long long)(g_fan_rx_bytes >> 10), (unsigned long long)g_fan_refused, g_reconnects);
     s += b;
     static const char* steps[] = {"-", "downloading", "loading", "hosting"};
     snprintf(b, sizeof b,
