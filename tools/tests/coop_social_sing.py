@@ -184,7 +184,8 @@ def run(host, guest, ck, gid):
     ck(not (social & set(ran.get('singer_puppet_of_other', []))),
        f"the {sname}'s game shows the {oname} running, not singing ({sorted(set(ran.get('singer_puppet_of_other', [])))})")
     ck(not (social & set(ran.get('other_avatar', []))), f"the {oname}'s own creature runs, not sings")
-    extra = set(ran.get('singer_puppet_of_other', [])) - set(ran.get('other_avatar', [])) - base
+    own_all = set(ran.get('other_avatar', [])) | set(sung.get('other_avatar', []))  # (a walk start variant may fall between samples)
+    extra = set(ran.get('singer_puppet_of_other', [])) - own_all - base
     ck(not extra, f"while the {oname} runs the {sname}'s game shows it with its own animations only ({sorted(extra)})")
 
     # 3. later
