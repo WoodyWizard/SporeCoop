@@ -7,6 +7,9 @@
   evolved the species and everybody gets the new body; the notice now says every player makes its own (BUG-1258).
 - Cell: while the host waits for the others' "I'm ready" after its mating call, its cell no longer mates and lays an
   egg again and again every few seconds behind the black screen; the mating plays once (BUG-1245).
+- Cell: after the host's mating call its cell editor now opens right away, as in a solo game; before, the host looked at
+  a black screen for up to a minute until everybody pressed "I'm ready". The others get a message that the host evolves
+  its cell and play on. The session setting "Host's editor opens at once" turned off brings the vote back (BUG-1263).
 - Cell -> Creature: the host's first Creature editor no longer keeps the host on a black screen for up to a minute
   while a guest with a slow connection is still loading the Creature world; that guest gets its own editor when it
   arrives (BUG-1245).
