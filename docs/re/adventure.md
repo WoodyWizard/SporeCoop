@@ -87,3 +87,40 @@ adventure "The Arena of Oorama" from the galaxy menu).
   "in another world": no puppet in an adventure by default (BUG-0845). `coop.adventure place <hex>` (tests) forces one
   place id: then each game has the partner's captain as a creature puppet, and act changes (the game's own and
   JumpToAct) ran with it in both orders of entry without a fault (lab 20261112-124436, 20261112-125719).
+* CORRECTION (2026-11-18, fix/w53-advorn): ~ superseded: the key is the same on both games in most runs (BF0CE0D0 in
+  8 of 11 adventure_duo runs), so two players in the same tutorial share a place id without any command; and the
+  puppets of the forced runs were clones of the own captain in the avatar's herd, which the act start skips. A puppet
+  from the partner's Creature-stage creation (after a Creature session) faults at 0xC0714E: see #adventure-puppet-herd.
+
+## A puppet outside the avatar's herd crashes the adventure's start (2026-11-18, fix/w53-advorn)
+<a id="adventure-puppet-herd"></a>
+
+BUG-1254 (players' video: the tutorial adventure "Adventure Town" after a Creature session; the guest's game crashed
+about 3 s after the host's game showed the guest's puppet). GOG 2024, objdump and lab lane 9 / 7
+(`tools/tests/coop_adventure_tutorial.py`).
+* ✔ (runtime) The adventure's resource key is the same on both games in most lab runs: BF0CE0D0/408A0000 for host and
+  guest in 8 of 11 adventure_duo runs found in the lab folders (the other 3: 288BE48A / 5292926C, 288BE48A / 6FCBCE96,
+  6FCBCE96 / E6F78525, the early runs of #adventure-two-captains), and on both games of this ticket's runs. So two players starting the same tutorial get the same place id without
+  any command: the "each game plays its own copy, no puppet by default" above holds only for the key, not the place.
+* ✔ (runtime) After a Creature session each game has the partner's creation (`creations::player_species`), so the
+  Adventure adapter (the Creature adapter's spawn) built the puppet from the partner's Creature-stage creature
+  (065CBE70 on the fixture, scale 1.08-1.12 against the captains' 3.0) in a herd of its own (`game::create_herd`).
+  The adventure_duo test never had a creation (it joins at the galaxy menu): its puppet was the fallback, a clone of
+  the own captain in the avatar's herd.
+* ✔ (runtime, both games) Right after the puppet was made (the load's 2.3 s hitch, "Alice appeared in the world"),
+  `cScenarioPlayMode::Initialize` -> `SetCurrentAct` faulted at **0xC0714E** (data 0x1, esi = the puppet), the fork's
+  signature of BUG-0845 (SporeApp+0x80714E). Under Wine the game's handler caught it: the play state stayed **0** for
+  good (the intro card never came, Enter did nothing). The players' guest (Windows) crashed.
+* ✔ (disassembly) SetCurrentAct 0xF1EE70 runs a pass (0xF1E5F0) over every creature (noun 0x18EB45E): a creature whose
+  herd (+0x1674) is not the avatar's herd (cGameNounManager +0x58) gets `Creature_ScenarioActSetup` 0xC070D0. In
+  kScenario it looks up the creature's scenario object (`cGameData_ScenarioObject` 0xB18470: cGameData +0x1C, -1 =
+  none) and its class's act row ([obj+0x70] + act * 0x4E0); with no object the row is 0 and +1 / +2 are read
+  unchecked. Any creature the adventure did not place crashes the start of every act unless it is in the avatar's herd.
+* ✔ (runtime) The captains' species keys are made per game: one run had host 2927BAE4 / guest 2927BAE2, another the
+  same key 2927BD73 on both games for two different captains (a green one and a robot, key frames of lab
+  20261118-131729). A partner's captain key means nothing in the other game (BUG-1262).
+* Fix `adventure.puppet_captain` (modes.cpp scenario_spawn / scenario_drive): an adventure's puppet is made in the
+  avatar's herd, from this game's own captain species (the stand-in for the partner's captain), at the captain's size
+  (PlayerState body: the captain's scale, 3.0 in the tutorial, sent in kScenario too, x 1.15 as the Creature puppets).
+* Lab only: a game that loaded before the galaxy menu's start-up video ended shows no main menu panel when it comes
+  back to the menu (BUG-1260); the test sends the video's end message first (`coop.menuintro`).

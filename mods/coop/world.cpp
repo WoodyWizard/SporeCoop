@@ -162,6 +162,28 @@ static void install_intro_hook();
 // coop.menuslot <GameN> (tests, BUG-0676): the galaxy menu shows the planets of another save slot, as when the player
 // picks that slot: the save database moves there and the star manager reads its stars (the menu rebuilds its planets
 // on the message 0x625D27D that sends). Outside the frame (it rebuilds UI).
+// coop.menuintro (tests, BUG-1254 / BUG-1260): a game that left the galaxy menu before its start-up video ended (the lab's
+// quick fixture load, a guest that joins at once) never got the video's end message 0x49731AD in the menu (BUG-0626
+// refuses its GGE_intro in the stage): back in the galaxy menu its main menu panel (Galactic Adventures, ...) stays
+// hidden. The video's own end message, sent here as StopMovie 0xFD79C0 sends it (MessageSend(0x49731AD, null, 0)), makes
+// the menu play its intro and show the panel.
+static int c_menuintro(void*, int, const char* const*, SkOut* out)
+{
+    if (game::mode_id() != modes::kMenu) {
+        H->out_printf(out, "not in the galaxy menu\n");
+        return 1;
+    }
+    uintptr_t get = H->sym("App::IMessageManager::Get");
+    void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!mm) {
+        H->out_printf(out, "no message manager\n");
+        return 1;
+    }
+    skg::vcall<void>(mm, 0x14 / 4, 0x49731ADu, (void*)nullptr, 0);
+    H->out_printf(out, "the start-up video's end message sent in the galaxy menu\n");
+    return 0;
+}
+
 static int c_menuslot(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc < 2 || game::mode_id() != modes::kMenu) {
@@ -199,6 +221,8 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     savestrip::set_write_watch(save_write_watch);
     H->command_add(M, "coop.menuslot", "coop.menuslot <GameN> - tests: the galaxy menu shows that save slot's planets (BUG-0676)",
                    c_menuslot, nullptr, SK_CMD_OUTSIDE_FRAME);
+    H->command_add(M, "coop.menuintro", "coop.menuintro - tests: in the galaxy menu, the start-up video's end message (the menu plays its "
+                   "intro and shows its main menu panel; BUG-1254)", c_menuintro, nullptr, SK_CMD_OUTSIDE_FRAME);
     install_intro_hook(); // BUG-0626
 }
 

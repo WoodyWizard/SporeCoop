@@ -4842,3 +4842,23 @@ lab lanes 4 / 5 (creature fixture). `coop.npc cur` prints for the own avatar and
   stance it got the green ring and its name plate, though no social game starts with a puppet. Fix
   `creature.partner_social_hover`: refused in the social stance always (Creature, outside Rivals).
 * The pack recruit of a guest is a missing feature: the native recruit and a design sketch are in BUG-1256.
+## Interactive ornaments: the dig's model change and the glow (2026-11-18, fix/w53-advorn)
+<a id="creature-ornament-models"></a>
+
+BUG-1251 (players' video: a fossil one player dug kept its model and glow in the other's game). GOG 2024, objdump and
+lab lane 9 (`coop.wobj orns`, `coop.wobj ornmem`, `tools/tests/coop_ornament_model.py`).
+* ✔ (disassembly) `cInteractiveOrnament_NextModel` 0xC40360: idx = +0x248 + 1; if idx < (+0x250 - +0x24C) / 12 it
+  sets +0x248 = idx, calls the spatial's SetModelKey (vt 0x94 of +0x34, `cSpatialObject::SetModelKey` 0xC889A0: the key
+  at spatial +0x90, i.e. the ornament's +0xC4..+0xCC) with list[idx], sets +0xA4 = 0 and returns 1; else returns 0 and
+  changes nothing. The interact node 0xD869B0 calls it, clears +0xA3 and posts 0xD3353638 (the reward).
+* ✔ (runtime) None of the creature fixture's 12 interactive ornaments has a model list (+0x248 -1, list empty); all have
+  +0xA4 1. Model keys (+0xC4, type and group 0): bones of sort 2 61C0F798 / 7AC5C47A, sort 6 C9A3A53x, sort 7 9F772D3D.
+* ✔ (runtime) The game's own dig of a fixture bone changes only the ornament's +0xA3 (1 -> 0) and its reward (+0x10
+  1 -> 0, +0x24 0 -> 1); the copy of it (worldobj orn_use) changed exactly the same fields on the other game. The bone's
+  sparkle stays after the dig on both games (the game's own dig too): it is part of the bone's model, not a state.
+* So a fossil with a model list (the players' planets; dug up: another model, without the glow) changes its model only
+  through NextModel, which the copy did not call. Fix `wobj.ornament_model`: orn_use calls NextModel first (as the
+  interact node does). Test: `coop.wobj ornlist` gives a fixture bone a list of two bone models on both games (the
+  mod's buffer: the test ends its games with a kill).
+* ? Not explained: "the guest sees bones the host does not have" (the same 12 ornaments are in both games of the
+  fixture, from the save); the bone pile an eaten body may leave is still not looked at.

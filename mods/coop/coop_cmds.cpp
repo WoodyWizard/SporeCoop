@@ -161,11 +161,14 @@ int c_status(void*, int, const char* const*, SkOut* out)
                 float dot = std::fabs(q.x * s.rot.x + q.y * s.rot.y + q.z * s.rot.z + q.w * s.rot.w);
                 rot_err = 2.f * std::acos(std::min(1.f, dot)) * 57.2958f;
             }
-            SAY("   puppet pos=(%.1f %.1f %.1f) err=%.2f rot_err=%.1f species=%08X\n", p.x, p.y, p.z,
+            SAY("   puppet pos=(%.1f %.1f %.1f) err=%.2f rot_err=%.1f species=%08X", p.x, p.y, p.z,
                 net::dist(p, s.pos), rot_err,
-                g_mode == modes::kCreature ? game::species_key(r.puppet).instance
+                g_mode == modes::kCreature || g_mode == modes::kScenario ? game::species_key(r.puppet).instance
                 : g_mode == modes::kCell   ? *(uint32_t*)((uint8_t*)r.puppet + 0xFC) // cell model
                                            : 0u);
+            if (g_mode == modes::kScenario) // tests (BUG-1254): the puppet's size against the partner's captain
+                SAY(" scale=%.3f", game::scale(r.puppet));
+            SAY("\n");
             if (g_mode == modes::kCreature)
                 SAY("   drive err=%.2f speed=%.2f nudges=%u kept=%u teleports=%u walk_goals=%u jumps=%u airs=%u stop_holds=%u\n", r.drv.last_err,
                     r.drv.last_speed, r.drv.nudges, r.drv.nudges_kept, r.drv.teleports, r.drv.goals, r.drv.jumps, r.drv.airs, r.drv.stop_holds);
@@ -242,6 +245,8 @@ int c_avatar(void*, int, const char* const*, SkOut* out)
             SAY("\nground=%.2f above=%.2f", g, r - g);
     }
 
+    if (g_adapter->mode == modes::kScenario) // tests (BUG-1254): the captain's size
+        SAY(" scale=%.3f", game::scale(av));
     if (g_adapter->mode == modes::kCreature) // age +0xB34 (0 hatchling, 1 adult), the hatchling waiting for its family
         SAY(" age=%d hatchling_waiting=%d", *(int*)((uint8_t*)av + 0xB34), (int)game::hatchling_waiting(av));
     SAY("\ngame_name '%s'", modes::raw_world_name().c_str()); // BUG-0258: CurrentGameName as is

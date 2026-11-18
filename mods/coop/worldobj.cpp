@@ -334,11 +334,22 @@ static uint32_t orn_state(void* o)
 }
 static bool orn_used(uint32_t s) { return s != kGone && (s & 1); }
 static void orn_collect(Items& out) { collect_noun(kOrnNoun, out, orn_state, orn_take); }
+// BUG-1251: the game's own dig (the interact node 0xD869B0) shows the ornament's next model first
+// (cInteractiveOrnament_NextModel 0xC40360: +0x248 + 1 of the 12-byte model list +0x24C..+0x250, set on the model,
+// +0xA4 = 0; nothing without a next model, as the Creature fixture's bones). The copy of a use in the other player's
+// game only marked the reward used and cleared +0xA3: a fossil with a model list (dug up: another model, no glow)
+// stayed as it was there. Now the copy of a use shows the next model the same way.
+// `coop.fix wobj.ornament_model off`: the reward and +0xA3 only (0.7.15).
+static bool g_orn_model_fix = true;
+COOP_FIX("wobj.ornament_model", "BUG-1251", g_orn_model_fix,
+         "creature: a fossil or bone one player digs shows its dug model (the game's next model) in the other player's game too");
 static void orn_use(void* o) // used up without the reward, as 0xD46BE0 leaves the last use (and the interact node the ornament)
 {
     uint8_t* r = orn_reward(o);
     if (!r || field<uint8_t>(r, 0x24))
         return;
+    if (g_orn_model_fix && a_OrnUsed)
+        thiscall<int>(a_OrnUsed, o); // (the interact node's own call, before it clears +0xA3)
     field<int>(r, 0x10) = 0;
     field<uint8_t>(r, 0x24) = 1;
     field<uint8_t>(o, 0xA3) = 0;
@@ -1929,6 +1940,60 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
         me = game::position(av);
     else if (C.stage_center)
         C.stage_center(me);
+    if (!strcmp(a, "ornmem") && argc > 2) { // ornmem <ornament>: its 0x260 bytes and its reward's 0x2C as dwords (BUG-1251)
+        uint8_t* o = (uint8_t*)strtoul(argv[2], nullptr, 16);
+        if (IsBadReadPtr(o, 0x260) || game::noun_id(o) != kOrnNoun) {
+            H->out_printf(out, "no such ornament\n");
+            return 1;
+        }
+        H->out_printf(out, "obj");
+        for (int i = 0; i < 0x260; i += 4)
+            H->out_printf(out, " %X", field<uint32_t>(o, i));
+        uint8_t* rw = orn_reward(o);
+        H->out_printf(out, "\nreward");
+        for (int i = 0; rw && i < 0x2C; i += 4)
+            H->out_printf(out, " %X", field<uint32_t>(rw, i));
+        H->out_printf(out, "\n");
+        return 0;
+    }
+    if (!strcmp(a, "ornlist") && argc > 3) { // ornlist <ornament> <model>...: tests (BUG-1251): a model list for an ornament
+        // that has none (no ornament of the fixtures has one). The list lives in a buffer of the mod that the game would
+        // free with the ornament: only in a test that ends its games (kill) without leaving the stage. Index 0 = shown.
+        uint8_t* o = (uint8_t*)strtoul(argv[2], nullptr, 16);
+        if (IsBadReadPtr(o, 0x260) || game::noun_id(o) != kOrnNoun || argc - 3 > 8) {
+            H->out_printf(out, "no such ornament (or more than 8 models)\n");
+            return 1;
+        }
+        static uint32_t lists[16][8 * 3]; // never freed: see above
+        static int next_list = 0;
+        uint32_t* l = lists[next_list++ % 16];
+        int n = argc - 3;
+        for (int i = 0; i < n; i++)
+            l[i * 3] = strtoul(argv[3 + i], nullptr, 16), l[i * 3 + 1] = 0, l[i * 3 + 2] = 0;
+        field<uint32_t*>(o, 0x24C) = l;
+        field<uint32_t*>(o, 0x250) = l + n * 3;
+        field<int>(o, 0x248) = 0;
+        H->out_printf(out, "model list of %d, shown %d (model %08X)\n", n, field<int>(o, 0x248), field<uint32_t>(o, 0xC4));
+        return 0;
+    }
+    if (!strcmp(a, "orns")) { // orns [r]: every interactive ornament near (BUG-1251): sort, model list, flags, reward
+        float r = argc > 2 ? (float)atof(argv[2]) : 90.f;
+        Items all;
+        collect_noun(kOrnNoun, all, orn_state);
+        std::sort(all.begin(), all.end(), [&](const Item& x, const Item& y) { return net::dist(x.pos, me) < net::dist(y.pos, me); });
+        for (auto& it : all) {
+            float d = net::dist(it.pos, me);
+            if (d > r)
+                break;
+            uint8_t* o = (uint8_t*)it.p;
+            int idx = field<int>(o, 0x248), n = (int)((field<uintptr_t>(o, 0x250) - field<uintptr_t>(o, 0x24C)) / 12);
+            uint8_t* rw = orn_reward(o);
+            H->out_printf(out, "orn %p id=%u pos=(%.2f %.2f %.2f) dist=%.1f sort=%d model=%d/%d a3=%d a4=%d reward=%p used=%d key=%08X\n",
+                          it.p, it.id, it.pos.x, it.pos.y, it.pos.z, d, field<int>(o, 0x110), idx, n, field<uint8_t>(o, 0xA3),
+                          field<uint8_t>(o, 0xA4), (void*)rw, rw ? (int)field<uint8_t>(rw, 0x24) : -1, field<uint32_t>(o, 0xC4));
+        }
+        return 0;
+    }
     if (!strcmp(a, "list") && argc > 2) { // list <kind> [r] [x y z]: this game's objects of a kind
         int k = kind_of(argv[2]);
         if (k < 0) {
@@ -2098,7 +2163,7 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
         uint32_t msg[3] = {(uint32_t)(uintptr_t)av, (uint32_t)(uintptr_t)o, 0};
         if (st)
             thiscall<void>(a_ExecuteAction, st, kOrnMsg, (void*)msg);
-        H->out_printf(out, "used (next model %d) state=%X reward=%p\n", r, orn_state(o), (void*)orn_reward(o));
+        H->out_printf(out, "used (next model %d) state=%X reward=%p\n", r & 0xFF, orn_state(o), (void*)orn_reward(o)); // (a bool in al)
         return 0;
     }
     if (!strcmp(a, "eat") && argc > 2) { // eat <fruit>: eaten here (cFruit_SetState 5, as the eat node ends)

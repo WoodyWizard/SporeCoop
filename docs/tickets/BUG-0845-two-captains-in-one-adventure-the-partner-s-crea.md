@@ -63,3 +63,4 @@ no-fail-run: not reproduced. With the partner's captain as a puppet in the scena
 ## History
 - 2026-11-10: opened from the audit of fork PR #196 (plan 0.7.13).
 - 2026-11-12 (fix/w48-small): not reproduced (no puppets in adventures by default; with forced places act changes passed in both orders).
+- 2026-11-18 (fix/w53-advorn): the fork's signature (0xC0714E in SetCurrentAct from Initialize) reproduced on our code with a puppet outside the avatar's herd (after a Creature session the puppet is the partner's creation in a herd of its own); the forced-place runs above had clones of the own captain in the avatar's herd, which the act start skips. Fixed under BUG-1254 (adventure.puppet_captain).

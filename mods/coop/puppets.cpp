@@ -697,7 +697,7 @@ void drive_puppet(Remote& r, double now)
             g_appeared_told++;
             feed(r.name + " appeared in the world");
         }
-        if (g_mode == modes::kCreature) // which body the partner got here and why (support trace)
+        if (g_mode == modes::kCreature || g_mode == modes::kScenario) // which body the partner got here and why (support trace)
             trace::line("body", "puppet of %u '%s': species %08X here; its creation here %s, its own game reports %08X%s",
                         r.id, r.name.c_str(), game::species_instance(r.puppet),
                         trace::hex(creations::player_key(r.id, creations::kCreature).instance).c_str(), s.species,

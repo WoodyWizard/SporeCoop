@@ -75,8 +75,8 @@ static void creature_fill(void* av, net::PlayerState& st)
     st.health = game::health(av);
     st.max_health = game::max_health(av);
     st.species = game::species_instance(av);
-    if (game::in_creature_stage())
-        st.body = game::scale(av); // BUG-0733
+    if (game::in_creature_stage() || game::mode_id() == kScenario)
+        st.body = game::scale(av); // BUG-0733; BUG-1254: the captain's size in an adventure
 }
 
 // BUG-0507: a guest crashed in drive_puppet -> creature_drive -> walk_place -> set_speed on a puppet whose
@@ -426,6 +426,54 @@ static void creature_despawn(void* p)
     g_puppet_serials.erase(p);
     creature_hp::forget_puppet(p);
     game::destroy_creature(p);
+}
+
+// BUG-1254: in an adventure the partner's puppet was made as in the Creature stage: from the partner's Creature-stage
+// creation (its old creature, at that creature's size) in a herd of its own (create_herd). The adventure's start
+// (cScenarioPlayMode::Initialize -> SetCurrentAct 0xF1EE70 -> the pass 0xF1E5F0 over every creature) gives each
+// creature that is not in the avatar's herd (noun manager +0x58) its act data through 0xC070D0: the creature's
+// scenario object (cGameData +0x1C, -1 for a creature the adventure did not place: none) -> its class's act row;
+// with none the row pointer is 0 and 0xC070D0 reads [0 + 1]: an access violation at 0xC0714E (both games in
+// lab 20261118 lane 9, the puppet in esi; the game's handler caught it under Wine, the adventure's play state stayed 0;
+// the players' guest crashed). A puppet in the avatar's herd is skipped there (the clone of the own captain the
+// adapter made without a partner's creation: adventure_duo, BUG-0845). Now an adventure's puppet is a captain (this
+// game's own captain stands in for the partner's: BUG-1262), in the avatar's herd, at the captain's size (PlayerState
+// body x 1.15, as the Creature puppets).
+// `coop.fix adventure.puppet_captain off`: the Creature stage's puppet (0.7.15).
+static bool g_adventure_puppet_fix = true;
+COOP_FIX("adventure.puppet_captain", "BUG-1254", g_adventure_puppet_fix,
+         "adventure: a partner in the same adventure is shown as its captain at the captain's size (its old creature in a herd of its own crashed the adventure's start)");
+static void* scenario_spawn(const net::PlayerState& s, void* av)
+{
+    if (!g_adventure_puppet_fix)
+        return creature_spawn(s, av);
+    void* herd = game::avatar_herd();
+    void* own = av ? game::species_profile(av) : nullptr;
+    if (!herd || !own)
+        return nullptr;
+    // (not the partner's captain species by its key: the captains' species keys are made per game, the same key is a
+    // different captain in each game: 2927BD73 a green and a robot captain in lab 20261118-131729; BUG-1262)
+    void* p = game::spawn_creature(s.pos, own, herd);
+    if (!p)
+        return nullptr;
+    game::puppet_register(p);
+    game::teleport(p, s.pos, s.rot);
+    float body = s.body > 0.05f && s.body < 50.f ? s.body : game::scale(av);
+    game::set_scale(p, body * kPuppetBodyK);
+    puppet_alive_note(p);
+    if (g_host_for_modes)
+        g_host_for_modes->log(g_mod_for_modes, SK_INFO, "adventure: the partner (its captain %08X there) shown as this game's captain, in the "
+                              "avatar's herd, size %.2f (BUG-1254)", s.species, body * kPuppetBodyK);
+    return p;
+}
+static void scenario_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
+{
+    creature_drive(p, s, ds, now);
+    if (!g_adventure_puppet_fix || !(s.body > 0.05f && s.body < 50.f))
+        return;
+    float want = s.body * kPuppetBodyK, have = game::scale(p);
+    if (!(have > 0 && std::fabs(have - want) <= 0.01f * want))
+        game::set_scale(p, want);
 }
 
 // BUG-0592 / BUG-0504: right after a guest's world load (the share after its "menu" or editor return) both players'
@@ -1621,7 +1669,7 @@ static const Adapter kAdapters[] = {
     {"Cell", kCell, nullptr, false, cell_local, cell_fill, cell_spawn, cell_drive, cell_despawn, cell_tag, cell_alive, true},
     {"Creature", kCreature, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag, creature_alive},
     // adventures are not saves: every player starts the same adventure, puppets meet inside it
-    {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag, creature_alive},
+    {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill, scenario_spawn, scenario_drive, creature_despawn, creature_tag, creature_alive},
     {"Space", kSpace, space_place, false, space_local, space_fill, space_spawn, space_drive, space_despawn, space_tag, space_alive},
 };
 

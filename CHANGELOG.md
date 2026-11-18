@@ -41,6 +41,12 @@ being able to befriend some animals. Both players should update: the fixes are i
 - Creature: the second player can befriend animals that ask for a charm, a dance or a pose: before, only singing
   counted for that player, the other social buttons and the keys 2-4 did nothing, and such an animal could not be
   impressed (BUG-1242).
+- Galactic Adventures: two players who start the same adventure (the tutorial too) after playing the Creature stage
+  together no longer crash: the partner's creature in the adventure broke the adventure's start (the guest's game
+  stopped, or the adventure never began). The partner is now shown as its captain, at the captain's size, instead of
+  its old Creature-stage creature at rabbit size (BUG-1254).
+- Creature: a fossil or bone with a "dug up" look that one player digs now looks dug up in the other player's game too
+  (BUG-1251).
 
 ## [0.7.15] - 2026-11-18
 
