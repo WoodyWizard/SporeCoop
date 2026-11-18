@@ -40,6 +40,7 @@ struct Client {
 struct Planet {
     uint16_t host = 0;
     bool ready = false;         // its host's session hosts it (READY)
+    uint64_t token = 0;         // 6B C: the last hand-over's token (players still in the world rejoin with it)
     std::set<uint16_t> members; // the host too
 };
 
@@ -124,23 +125,27 @@ static void leave_planet(Client& c, const char* why)
             if (!p.members.empty()) { // 5V A: the hand-over: the next player hosts the stored world, the others wait
                 const uint16_t next = *p.members.begin();
                 p.host = next;
+                p.token = ((uint64_t)rand() << 48) ^ ((uint64_t)rand() << 32) ^ ((uint64_t)rand() << 16) ^ (uint64_t)rand() ^
+                          ((uint64_t)now_ms() << 20) ^ 1; // (never 0)
                 auto st = g_stored.find(c.planet);
                 Writer role = control(ROLE);
                 role.str8(c.planet);
                 role.u8(kHostRole);
                 role.u16(next);
                 role.u32(st == g_stored.end() || g_warm_handover ? 0 : st->second.size);
+                role.u64(p.token);
                 send(g_clients[next], role);
                 for (uint16_t m : p.members)
                     if (m != next) {
                         Writer w = control(HOSTMOVE);
                         w.str8(c.planet);
                         w.u16(next);
+                        w.u64(p.token);
                         send(g_clients[m], w);
                     }
                 say("planet '%s': its host %u '%s' left (%s): %u '%s' hosts it now (%s), %zu player(s) wait",
                     c.planet.c_str(), c.slot, c.name.c_str(), why, next, g_clients[next].name.c_str(),
-                    st == g_stored.end() || g_warm_handover ? "the world it plays" : "the stored world", p.members.size() - 1);
+                    st == g_stored.end() || g_warm_handover ? "the world it plays" : "the world it plays, else the stored one", p.members.size() - 1);
             } else
                 say("planet '%s': its host %u '%s' left (%s)", c.planet.c_str(), c.slot, c.name.c_str(), why);
         } else
@@ -349,12 +354,15 @@ static void on_control(const Endpoint& from, Reader& r)
             w.u16(c->slot);
             auto st = g_stored.find(name);
             w.u32(st == g_stored.end() ? 0 : st->second.size);
+            w.u64(0);
+            p.token = 0;
             say("planet '%s': %u '%s' hosts it%s", name.c_str(), c->slot, c->name.c_str(),
                 st == g_stored.end() ? " (a new planet: its loaded world)" : " (from its stored world)");
         } else {
             w.u8(kGuestRole);
             w.u16(p.host);
             w.u32(0);
+            w.u64(0);
             say("planet '%s': %u '%s' joins host %u '%s'", name.c_str(), c->slot, c->name.c_str(), p.host,
                 g_clients[p.host].name.c_str());
         }
@@ -373,6 +381,7 @@ static void on_control(const Endpoint& from, Reader& r)
                     w.u8(kGuestRole);
                     w.u16(c->slot);
                     w.u32(0);
+                    w.u64(it->second.token);
                     send(g_clients[m], w);
                     say("planet '%s': %u '%s' joins its new host", c->planet.c_str(), m, g_clients[m].name.c_str());
                 }

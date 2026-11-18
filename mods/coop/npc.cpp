@@ -2939,6 +2939,23 @@ static void away_locals(double now)
            skipped);
 }
 
+unsigned promote_now()
+{
+    std::vector<AwaySnap> v;
+    for (auto& [id, px] : g_proxies) {
+        if (!px_live(px) || px.killed || !game::object_alive(px.c) || game::is_dead(px.c) || game::destroy_pending(px.c))
+            continue;
+        v.push_back({px.key, game::position(px.c), game::orientation(px.c)});
+    }
+    g_away_snap.swap(v);
+    g_away_snap_at = H->time_seconds();
+    g_away_snap_epoch = game::world_epoch();
+    g_leave_locals_due = !g_away_snap.empty(); // (away_locals once this game is no guest any more)
+    H->log(M, SK_INFO, "creature: promoted to host in place: %u proxies go on as NPCs of this game (6B C)",
+           (unsigned)g_away_snap.size());
+    return (unsigned)g_away_snap.size();
+}
+
 // A guest's own family: the copies of the host's members of this player's nest (the host's key of its creation, which
 // is this game's key of it too since BUG-9180) live in this player's own nest herd, the home the host told us. A copy
 // went into the nest herd of its key in this game's copy of the world; after the host gave the nest another key (an

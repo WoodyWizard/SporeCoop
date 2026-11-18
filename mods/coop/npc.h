@@ -44,7 +44,11 @@ struct Ctx {
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx);
 void tick(double now);                        // every frame (also when offline)
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
-void on_session_end();                        // destroy proxies, restore local NPCs
+void on_session_end();
+// decision 6B C (alpha): this guest becomes the planet's host in place (the warm hand-over): every living proxy goes on
+// as an NPC of this game (away_locals right after the session ends, with all of them, not only the nest herds' ones
+// of the last 2 s); the number taken
+unsigned promote_now();                        // destroy proxies, restore local NPCs
 void on_world_change();                       // world unloaded: forget (not destroy) proxies
 void on_player_leave(uint8_t id);             // host: the NPCs a player knew are not the next one's (BUG-0125)
 void set_death_fix(bool on);                  // tests: off = a killed proxy does not play the game's death (BUG-0015, BUG-0148)

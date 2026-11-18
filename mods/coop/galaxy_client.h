@@ -27,6 +27,7 @@ struct Ctx {
     // this game hosts a planet it loaded from the galaxy (the first creature): called until it returns true (done or not
     // needed), 10 minutes at most
     std::function<bool()> hosted_stored;
+    std::function<void()> promote; // 6B C: this guest becomes the host in place (its proxies go on as its NPCs)
 };
 
 // a planet of the server's list (LIST), for the galaxy menu (5X B)
@@ -46,6 +47,10 @@ std::string current_planet();               // the planet this player is on ("" 
 std::string galaxy_name();                  // the connected galaxy's name ("" when not connected)
 bool hosting();                             // this game hosts a planet of the galaxy now
 bool close_request();                       // Alt+F4 / the window's X (mouse.cpp): true = held, saved first (6A A)
+// decision 6B C (the warm hand-over): a player still in the planet's world rejoins its new host with the hand-over's
+// token (the session's resume receipt), and the new host sends it no world
+uint64_t warm_join_token();                 // for this join (0 none)
+bool accept_warm(uint64_t receipt);         // host: a joiner's receipt is this planet's hand-over token, same world
 void tick(double now);
 std::string connect(const std::string& address); // ip or name, [:port] (47900)
 std::string disconnect();

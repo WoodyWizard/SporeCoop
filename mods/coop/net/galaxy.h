@@ -23,7 +23,8 @@
 namespace net::galaxy {
 
 constexpr uint16_t kDefaultPort = 47900;
-constexpr uint32_t kProto = 4; // 2: stored worlds (5Q A); 3: the hand-over (5V A); 4: the menu facts (5X B)
+constexpr uint32_t kProto = 5; // 2: stored worlds (5Q A); 3: the hand-over (5V A); 4: the menu facts (5X B);
+                                // 5: the warm hand-over token (6B C)
 constexpr uint8_t kControl = 'G', kRelay = 'R';
 
 enum Type : uint8_t {
@@ -34,7 +35,8 @@ enum Type : uint8_t {
                   //   u8 tech level, u32 x3 its creature's species key} (the last two: the galaxy menu, 5X B)
     ENTER = 5,    // player -> server: str8 planet (made when it does not exist yet)
     ROLE = 6,     // server -> player: str8 planet, u8 role (kHostRole / kGuestRole), u16 the host's slot,
-                  //   u32 the planet's stored world (bytes, 0 none: a host then FETCHes it, loads it and hosts it)
+                  //   u32 the planet's stored world (bytes, 0 none: a host then FETCHes it, loads it and hosts it),
+                  //   u64 the hand-over token (0 none; 6B C: a player still in the planet's world rejoins with it)
     LEAVE = 7,    // player -> server: leaves its planet
     PING = 8,     // player -> server (every 2 s); the server answers PONG
     PONG = 9,
@@ -47,8 +49,9 @@ enum Type : uint8_t {
     XCHUNK = 15,   // u32 id, u32 index, the chunk (kChunk bytes, the last one shorter)
     XACK = 16,     // receiver -> sender: u32 id, u32 index (each chunk that arrived)
     XDONE = 17,    // receiver -> sender: u32 id, u8 ok, str8 why (stored / loaded, or why not)
-    HOSTMOVE = 18, // server -> the planet's other players: str8 planet, u16 the new host's slot (5V A: the host left;
-                   //   the new host loads the stored world; once it is READY the server sends them ROLE guest again)
+    HOSTMOVE = 18, // server -> the planet's other players: str8 planet, u16 the new host's slot, u64 the hand-over
+                   //   token (5V A: the host left; the new host keeps its world or loads the stored one; once it is
+                   //   READY the server sends them ROLE guest again)
 };
 constexpr uint8_t kHostRole = 1, kGuestRole = 2;
 

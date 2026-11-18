@@ -7260,6 +7260,12 @@ void setup_callbacks()
                 trace::line("world", "reusing the verified Cell world for player %u", p.id);
                 return;
             }
+            if (galaxy::accept_warm(g_sess.peer_resume_world(p.id))) { // decision 6B C (alpha): it kept this world
+                r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
+                r.joined_phase = true;
+                LOG("galaxy: %s rejoins after the hand-over with this world still loaded: no world sent (6B C)", p.name.c_str());
+                return;
+            }
             bool save = g_save_on_share && g_adapter; // only while playing, not from menus
             r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
             r.joined_phase = false;
@@ -7838,6 +7844,8 @@ bool do_join(const std::string& addr, std::string& err, const std::string& passw
     end_open_session();
     reset_lobby();
     g_sess.resume_world = world::resume_world();
+    if (uint64_t warm = galaxy::warm_join_token()) // decision 6B C (alpha): the galaxy's warm hand-over
+        g_sess.resume_world = warm;
     g_sess.rejoin_token = rejoin::token_for_join(H->instance_id(), addr, g_name); // BUG-0235, BUG-1001
     if (token) g_sess.rejoin_token = token; // BUG-9239: the same player after a memory restart
     if (!g_sess.join(addr, g_name, err, password))
@@ -11202,6 +11210,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gx.host = [](std::string& err) { return do_host(default_port(), 4, 100, err); };
         gx.join = [](const std::string& addr, std::string& err) { return do_join(addr, err); };
         gx.ready = [] { return g_local != nullptr && !world::load_queued() && !world::load_starting(); };
+        gx.promote = [] { npc::promote_now(); };
         gx.hosted_stored = []() -> bool { // owner test 2026-11-17: a new host makes its own creature first
             if (!creations::host_needs_first_creature())
                 return true;

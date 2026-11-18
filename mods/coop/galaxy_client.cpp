@@ -59,6 +59,12 @@ static bool g_waiting_host;
 static double g_waiting_since;
 static std::string g_pending_join; // join this address once the old session is closed
 static uint32_t g_handovers;
+// decision 6B C: the warm hand-over. g_planet_world: the world this game plays on the planet (a session up, in a stage);
+// g_token: the last hand-over's token; g_token_world: the world it is valid for (this game kept it loaded)
+static uint32_t g_planet_world;
+static uint64_t g_token;
+static uint32_t g_token_world;
+static uint32_t g_warm_hosts, g_warm_joins, g_warm_accepted;
 // decision 6A A: every way out saves first; saves are Spore's silent save (world::silent_save: no pause, no box)
 static bool g_up_nosave;          // the stage was left for the menu: Spore saved on the way, pack that save
 static bool g_close_after;        // Alt+F4 / the X: close the window once the planet is saved and left
@@ -219,6 +225,7 @@ static void on_control(net::Reader& r)
         const uint8_t role = r.u8();
         const uint16_t host = r.u16();
         const uint32_t stored = r.u32();
+        const uint64_t token = r.u64();
         if (!r.ok())
             return;
         const bool handover = g_planet == planet && (g_waiting_host || g_role == kGuestRole);
@@ -229,6 +236,13 @@ static void on_control(net::Reader& r)
         g_waiting_host = false;
         use_relay(true);
         std::string err;
+        // 6B C: still in the planet's world (playing it): keep it (no reload, the token for the others' rejoin)
+        const bool warm = handover && token && g_planet_world && modes::current_world() == g_planet_world &&
+                          C.ready && C.ready();
+        g_token = warm ? token : 0;
+        g_token_world = warm ? g_planet_world : 0;
+        if (warm && role == kHostRole && C.promote) // 6B C: the old host's creatures shown here go on as this game's
+            C.promote();                            //   (taken before the session end drops them)
         if (handover && C.sess && C.sess->role() != net::Role::None) // (a guest of the old host: that session ends)
             C.sess->leave("the planet's host changes");
         if (handover) {
@@ -239,7 +253,9 @@ static void on_control(net::Reader& r)
                 return;
             }
             say("You host " + planet + " now: its host left.");
-            if (role == kHostRole && !stored) { // (no stored world: host the one it plays, once its old session closed)
+            if (role == kHostRole && (!stored || warm)) { // (host the world it plays once its old session closed)
+                if (warm)
+                    g_warm_hosts++;
                 g_hstep = kLoading;
                 g_hstep_at = H->time_seconds();
                 g_left_stage = true;
@@ -267,9 +283,14 @@ static void on_control(net::Reader& r)
         const uint16_t next = r.u16();
         if (!r.ok() || planet != g_planet)
             return;
+        const uint64_t token = r.u64();
         g_waiting_host = true;
         g_waiting_since = H->time_seconds();
         g_host_slot = next;
+        // 6B C: still in the planet's world: the rejoin carries the token (the new host sends no world then)
+        const bool keep = token && g_planet_world && modes::current_world() == g_planet_world;
+        g_token = keep ? token : 0;
+        g_token_world = keep ? g_planet_world : 0;
         if (C.sess && C.sess->role() != net::Role::None)
             C.sess->leave("the planet's host changes");
         say("The host of " + planet + " left: another player takes it over, wait a moment...");
@@ -706,6 +727,10 @@ void tick(double now)
         say("No answer from the galaxy server.");
         g_hello_at = 0;
     }
+    if (!g_planet.empty() && C.sess && C.sess->connected() && C.ready && C.ready())
+        g_planet_world = modes::current_world(); // (6B C: the world this game plays on the planet)
+    if (g_planet.empty())
+        g_planet_world = 0;
     // the planet's session ended (left, removed, its host gone): off the planet, back to the plain network
     if (g_relay_on && C.sess) {
         if (C.sess->role() != net::Role::None)
@@ -725,6 +750,23 @@ bool online() { return g_sock.is_open() && g_welcomed; }
 uint32_t planets_version() { return g_planets_ver; }
 std::string current_planet() { return g_planet; }
 bool hosting() { return g_hstep == kHosting && g_role == kHostRole && C.sess && C.sess->role() == net::Role::Host; }
+
+uint64_t warm_join_token()
+{
+    if (!g_token || !g_token_world || modes::current_world() != g_token_world || !g_relay_on)
+        return 0;
+    g_warm_joins++;
+    return g_token;
+}
+
+bool accept_warm(uint64_t receipt)
+{
+    const bool ok = receipt && receipt == g_token && g_token_world && modes::current_world() == g_token_world &&
+                    hosting();
+    if (ok)
+        g_warm_accepted++;
+    return ok;
+}
 
 bool close_request()
 {
@@ -760,11 +802,11 @@ std::string status()
     static const char* steps[] = {"-", "downloading", "loading", "hosting"};
     snprintf(b, sizeof b,
              "\nworld: %s%s stored=%u KB down=%u/%u chunks upload=%s (%u/%u chunks) next upload in %.0f s, uploads %u, "
-             "downloads %u, hand-overs %u, silent saves %u (idle %u), quiet waits %u, menu hand-overs %u, close holds %u, last upload: %s",
+             "downloads %u, hand-overs %u (warm: hosted %u, rejoined %u, accepted %u), silent saves %u (idle %u), quiet waits %u, menu hand-overs %u, close holds %u, last upload: %s",
              steps[g_hstep], g_waiting_host ? " (waiting for the new host)" : "", g_world_bytes >> 10, g_down.got, (unsigned)g_down.have.size(),
              g_upstep == kUpIdle ? "idle" : g_upstep == kUpSaving ? "saving" : "sending", g_up.acked,
              g_up.on ? g_up.chunks() : 0u, g_hstep == kHosting ? g_next_upload - H->time_seconds() : 0.0,
-             g_uploads_done, g_downloads_done, g_handovers, g_silent_saves, g_idle_saves, g_quiet_waits, g_menu_handovers, g_close_holds,
+             g_uploads_done, g_downloads_done, g_handovers, g_warm_hosts, g_warm_joins, g_warm_accepted, g_silent_saves, g_idle_saves, g_quiet_waits, g_menu_handovers, g_close_holds,
              g_last_upload.empty() ? "-" : g_last_upload.c_str());
     return s + b;
 }
