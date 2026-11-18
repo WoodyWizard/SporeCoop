@@ -4822,7 +4822,9 @@ lab lanes 4 / 5 (creature fixture). `coop.npc cur` prints for the own avatar and
   life"): it does not.
 * The bubble stays on the puppet only when the stop is lost: effects.cpp took the key out of its sent list and then
   dropped the stop at the rate limit (40 a second; a burst of effects, a fight, empties it for seconds), and never sent
-  it again. Fix `effects.stop_always`: a stop passes an empty rate limit (`coop.effects stops_past_rate=`).
+  it again. ✔ (runtime, lab 20261118-124058) the guest ate during a burst with the bucket in debt: the host's puppet kept
+  the bubble (key frame), `stopped=0` on the host. Fix `effects.stop_always`: a stop passes an empty rate limit
+  (`coop.effects stops_past_rate=`; lab 20261118-124118: `stops_past_rate=1`, the bubble gone).
 
 ### The avatar's behaviour animations (BUG-1253)
 * ✔ (Ghidra) `SporeCoop::CreaturePlayAnim` 0xC122F0 and `cCreatureBase::PlayAnimation` 0xC12470 are separate: neither
@@ -4831,7 +4833,8 @@ lab lanes 4 / 5 (creature fixture). `coop.npc cur` prints for the own avatar and
   04F65995 through CreaturePlayAnim, the host's puppet of it stands (02481DE5) next to the body (key frame: the guest
   bends over the body on its screen, its creature stands idle on the host's).
 * Fix `creature.avatar_bhv_anims`: the avatar's own CreaturePlayAnim plays outside its idle refresh go out as MSG_ANIM
-  flag 4 (`a` in flag 8, `b` in block); the receiver plays the same call on the puppet.
+  flag 4 (`a` in flag 8, `b` in block); the receiver plays the same call on the puppet (lab 20261118-123633: 04F65995
+  on the puppet, the key frame shows it bending over the body).
 
 ### The partner under the cursor in the social stance (BUG-1250)
 * ✔ (asm) `Simulator::cGameViewManager::Get` 0xB3D340 returns [0x167EAC4]; +0x88 is the hover result. The Creature
