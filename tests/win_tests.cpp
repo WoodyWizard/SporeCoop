@@ -154,7 +154,8 @@ static void test_founders()
     CHECK(s1.workload_percent() == 100 && s1.enemy_health_percent() == 100 && s1.extra_total(1) == 0);
     CHECK(s4.civ_military_interval_ms() == 32800 && s4.civ_military_limit(10) == 12);
     CHECK(!(s4 == quartet));
-    CHECK(!founders::reserve(key,{0,100},err) && !founders::reserve(key,{5,100},err));
+    // 6E B: any count up to founders::kSeatCeiling (4 before); one more is refused
+    CHECK(!founders::reserve(key,{0,100},err) && !founders::reserve(key,{uint8_t(founders::kSeatCeiling + 1),100},err));
     CHECK(founders::reserve(key,quartet,err) && founders::reserve(key,quartet,err));
     CHECK(!founders::reserve(key,partial,err));
     CHECK(founders::read_rules(key,settings) == founders::RulesFile::Saved && settings == quartet);
@@ -223,7 +224,16 @@ static void test_founders()
     {
         founders::CampaignRules r{3,100};
         founders::SeatPlan p{1};
-        CHECK(!founders::raise_now(r,p,3,3) && !founders::raise_now(r,p,3,2) && !founders::raise_now(r,p,3,5));
+        CHECK(!founders::raise_now(r,p,3,3) && !founders::raise_now(r,p,3,2) &&
+              !founders::raise_now(r,p,3,founders::kSeatCeiling + 1));
+        {
+            founders::CampaignRules big{3,100};
+            founders::SeatPlan bp{1};
+            // 6E B: "Setting it to 17 shouldn't cause any issues"; difficulty stays a 4-seat party's
+            CHECK(founders::raise_now(big,bp,3,17) && big.seats == 17 && bp.seats_in(3,big.seats) == 17);
+            CHECK(big.enemy_health_percent() == quartet.enemy_health_percent() &&
+                  big.workload_percent() == quartet.workload_percent());
+        }
         CHECK(!founders::raise_now(r,p,0,4) && !founders::raise_now(r,p,6,4));
         CHECK(founders::raise_now(r,p,3,4) && r.seats == 4 && p.seats_in(3,r.seats) == 4);
         CHECK(r.enemy_health_percent() == quartet.enemy_health_percent());
@@ -418,7 +428,7 @@ static void test_founders_multi()
     auto twins = bound;
     twins.entries[3] = {9, 0x21D6, 0x1111};      // one player, two seats
     CHECK(!founders::record(key, twins, err));
-    // eight seats fit; a ninth does not exist; a hole in the seats is invalid
+    // every seat fits (founders::kMaxSeats, 6E B); one more does not exist; a hole in the seats is invalid
     auto eight = bound;
     for (size_t i = 3; i < founders::kMaxSeats; ++i)
         eight.entries[i] = {uint32_t(100 + i), uint32_t(0x2200 + i), 0};
@@ -501,7 +511,7 @@ static void test_party()
         party.seats.push_back({0x5000 + i, uint32_t(i), "p"});
     CHECK(founders::record_party(key, party, err) && founders::read_party(key, got) && got.seats.size() == founders::kMaxSeats);
     party.seats.push_back({0x9999, 9, "ninth"});
-    CHECK(!founders::record_party(key, party, err));      // eight at most
+    CHECK(!founders::record_party(key, party, err));      // founders::kMaxSeats at most
     put(planet + L".duoparty", get(planet + L".duoparty").substr(0, 20));
     CHECK(!founders::read_party(key, got));
     CHECK(!founders::record_party(key, got, err) || true); // an unreadable file is left as it is

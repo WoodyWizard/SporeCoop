@@ -29,7 +29,7 @@ constexpr uint8_t kControl = 'G', kRelay = 'R';
 
 enum Type : uint8_t {
     HELLO = 1,    // player -> server: u32 proto, u64 identity, str8 name, str8 version
-    WELCOME = 2,  // server -> player: u16 its slot, str8 galaxy name
+    WELCOME = 2,  // server -> player: u16 its slot, str8 galaxy name, u8 the players a planet takes (6E B; older: 4)
     LIST = 3,     // player -> server
     PLANETS = 4,  // server -> player: u8 n, n x {str8 planet, u16 players, u16 host slot (0 none), u32 stored world bytes,
                   //   u8 tech level, u32 x3 its creature's species key} (the last two: the galaxy menu, 5X B)
@@ -54,6 +54,10 @@ enum Type : uint8_t {
                    //   READY the server sends them ROLE guest again)
 };
 constexpr uint8_t kHostRole = 1, kGuestRole = 2;
+// decision 6E B (owner 2026-11-18): "Seats just mean how many players are allowed on a planet. We can set it to 16 per
+// planet." The server's --planet-players sets it (2 .. kMaxPlanetPlayers); "Setting it to 17 shouldn't cause any issues"
+constexpr uint8_t kPlanetPlayers = 16;
+constexpr uint8_t kMaxPlanetPlayers = 64; // the games' player ceiling (net::kMaxPlayers, protocol.h; galaxy_client.cpp checks)
 
 // A player slot as the session's address: 10.88.<slot hi>.<slot lo>, port kDefaultPort. (10/8 is private: logs keep
 // it as it is, docs/04-netcode.md.)

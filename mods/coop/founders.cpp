@@ -96,7 +96,7 @@ static std::string planet_digest(const std::string& key)
 bool save_cell_credit(const std::string& key, const CampaignRules& rules, const CellCredit& credit)
 {
     const auto path = path_for(key,L".duo-food");
-    if (path.empty() || !rules.seats || rules.seats > 4 || credit.health_carry >= 100 ||
+    if (path.empty() || !rules.seats || rules.seats > kSeatCeiling || credit.health_carry >= 100 ||
         credit.damage_carry >= 100) return false;
     auto digest = planet_digest(key);
     if (digest.empty()) return false;
@@ -228,13 +228,13 @@ RulesFile read_rules(const std::string& key, CampaignRules& value, SeatPlan* pla
         saved.extra_health_percent = r.u16();
         saved.extra_damage_percent = r.u16();
     }
-    if (!r.ok() || saved.seats < 1 || saved.seats > 4) return RulesFile::Unreadable;
+    if (!r.ok() || saved.seats < 1 || saved.seats > kSeatCeiling) return RulesFile::Unreadable;
     // Older saves did not record which seats had been claimed while offline.
     SeatPlan saved_plan{saved.seats};
     if (count >= 14) {
         saved_plan = {r.u8(),r.u8(),r.u8()};
         if (!r.ok() || !saved_plan.protected_seats || saved_plan.protected_seats > saved.seats ||
-            saved_plan.next_seats > 4 || saved_plan.queued_stage > 5 ||
+            saved_plan.next_seats > kSeatCeiling || saved_plan.queued_stage > 5 ||
             bool(saved_plan.next_seats) != bool(saved_plan.queued_stage) ||
             (saved_plan.next_seats && saved_plan.next_seats < saved_plan.protected_seats))
             return RulesFile::Unreadable;
@@ -243,7 +243,7 @@ RulesFile read_rules(const std::string& key, CampaignRules& value, SeatPlan* pla
     if (count >= 21) {
         for (auto& seats : saved_plan.previous_stage_seats) {
             seats = r.u8();
-            if (seats > 4) return RulesFile::Unreadable;
+            if (seats > kSeatCeiling) return RulesFile::Unreadable;
         }
     }
     if (count >= 23) saved.extra_takeover_percent = r.u16();
@@ -306,8 +306,8 @@ bool queue_seats(const std::string& key, uint8_t seats, uint8_t stage, std::stri
         error = "Open a saved, reserved campaign in a regular stage.";
         return false;
     }
-    if (seats < plan.protected_seats || seats > 4) {
-        error = "This campaign keeps " + std::to_string(plan.protected_seats) + " player slot(s) for players who joined. Choose up to four.";
+    if (seats < plan.protected_seats || seats > kSeatCeiling) {
+        error = "This campaign keeps " + std::to_string(plan.protected_seats) + " player slot(s) for players who joined. Choose up to " + std::to_string(kSeatCeiling) + ".";
         return false;
     }
     const auto previous = plan;
@@ -374,8 +374,8 @@ bool reserve(const std::string& key, const CampaignRules& requested, std::string
     RuleWriteLock lock;
     if (!lock.held) { err = "Player slot settings are busy. Try again."; return false; }
     auto path = path_for(key,L".duo-seats");
-    if (path.empty() || !requested.seats || requested.seats > 4) {
-        err = "A saved planet and one to four player slots are required.";
+    if (path.empty() || !requested.seats || requested.seats > kSeatCeiling) {
+        err = "A saved planet and 1 to " + std::to_string(kSeatCeiling) + " player slots are required.";
         return false;
     }
     CampaignRules saved;
@@ -658,7 +658,9 @@ bool record_outfit(const std::string& key, size_t seat, uint32_t expected, uint3
 }
 
 constexpr unsigned kMaxModel = 8u << 20;
-constexpr size_t kMaxModels = 16;
+// 6E B (alpha): archived creatures of a planet (partners' creatures, stand-ins, outfits): scales with the seats; a
+// planet with more is still read (the first ones kept), never refused (a 17th archive made the planet unloadable)
+constexpr size_t kMaxModels = kMaxSeats * 17;
 
 static std::wstring model_path(const std::string& key, uint32_t id)
 {
@@ -687,7 +689,8 @@ bool model_ids(const std::string& key, std::vector<uint32_t>& ids, std::string& 
         if (suffix.size() != 8 || suffix.find_first_not_of(L"0123456789abcdefABCDEF") != std::wstring::npos) continue;
         uint32_t id = wcstoul(suffix.c_str(), nullptr, 16);
         if ((id >> 24) != 0x7C || (entry.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) ||
-            entry.nFileSizeHigh || !entry.nFileSizeLow || entry.nFileSizeLow > kMaxModel || ids.size() >= kMaxModels) { ok = false; break; }
+            entry.nFileSizeHigh || !entry.nFileSizeLow || entry.nFileSizeLow > kMaxModel) { ok = false; break; }
+        if (ids.size() >= kMaxModels) break; // (the rest stay on disk unread: a load never fails on their number)
         ids.push_back(id);
     } while (FindNextFileW(h, &entry));
     if (ok && GetLastError() != ERROR_NO_MORE_FILES) ok = false;

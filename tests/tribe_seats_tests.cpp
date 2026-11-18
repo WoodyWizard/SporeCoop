@@ -67,14 +67,15 @@ int main()
         // a cut block is not read
         check(read_rescues(t.data() + 7 + 1, t.size() - 7 - 1, out, true) == 0, "cut N-seat block");
     }
-    // eight seats fit, nine do not exist
+    // every seat fits, one more does not exist (6E B: kMaxSeats, 8 before)
     {
         Rescues all{};
         for (size_t i = 0; i < kMaxSeats; ++i) all[i] = {(uint16_t)(i + 1), (uint16_t)(i * 10)};
-        auto t = tail_with(all, 9, 0);
+        auto t = tail_with(all, kMaxSeats + 1, 0);
         Rescues out;
-        check(t.size() == rescue_bytes(8) && read_rescues(t.data(), t.size(), out, true) == rescue_bytes(8) && out == all,
-              "eight seats");
+        check(t.size() == rescue_bytes(kMaxSeats) && read_rescues(t.data(), t.size(), out, true) == rescue_bytes(kMaxSeats) &&
+                  out == all,
+              "every seat");
     }
     // no trailer at all, a wrong tag, an impossible count
     {
@@ -101,11 +102,12 @@ int main()
 
     // command seats: 0 = not given (older peers), seat + 1, anything else refused
     int seat = 5;
-    check(seat_action(0) == 1 && seat_action(3) == 4 && seat_action(-1) == 0 && seat_action(8) == 0, "seat_action");
+    check(seat_action(0) == 1 && seat_action(3) == 4 && seat_action(-1) == 0 && seat_action((int)kMaxSeats) == 0 &&
+              seat_action(16) == 17, "seat_action");
     check(action_seat(0, seat) && seat == -1, "not given");
-    check(action_seat(1, seat) && seat == 0 && action_seat(4, seat) && seat == 3 && action_seat(8, seat) && seat == 7,
-          "given");
-    check(!action_seat(9, seat) && !action_seat(-1, seat) && !action_seat(0x7FFFFFFF, seat), "refused");
+    check(action_seat(1, seat) && seat == 0 && action_seat(4, seat) && seat == 3 && action_seat(8, seat) && seat == 7 &&
+              action_seat(17, seat) && seat == 16, "given");
+    check(!action_seat((int)kMaxSeats + 1, seat) && !action_seat(-1, seat) && !action_seat(0x7FFFFFFF, seat), "refused");
 
     // older saves: the BUG-9137 seat is taken over by the only unseated partner; an unknown seat holds founding
     {

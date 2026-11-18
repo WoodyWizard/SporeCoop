@@ -36,7 +36,9 @@ bool raise_seats_now(net::Session& session, unsigned seats, std::string& message
 // the Co-op window's Set Seats: more seats now (Cell to Civ), fewer (or any in Space) from the next stage
 bool set_seats(net::Session& session, unsigned seats, std::string& message);
 void invalidate_campaign_rules(); // native load, including reloading the same slot
-bool setup_campaign(net::Session& session, const founders::CampaignRules& requested, std::string& error);
+// seat_floor (6E B, alpha): a galaxy planet's player count: a save with fewer slots is raised to it (0: the save's)
+bool setup_campaign(net::Session& session, const founders::CampaignRules& requested, std::string& error,
+                    unsigned seat_floor = 0);
 // the game's own save (pause menu "Save"); also works on planets in space
 bool save_game(std::string& err);
 // owner 2026-11-17 ("seamless for uninterrupted gameplay", alpha): Spore's silent save (message 0x689C9B9 with data:

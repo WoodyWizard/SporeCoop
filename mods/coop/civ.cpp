@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bitset>
 #include <cmath>
 #include <cstdio>
 #include <deque>
@@ -83,7 +84,15 @@ static auto g_seat_player = [] { // host: the connected player commanding each s
 }();
 static int g_local_seat = -1;           // guest: the seat this game plays (civ_seats::own_seat)
 static double g_seats_refresh_at;
-static uint8_t g_founder_spawned_seats; // host: the seats whose capital was requested in this world (bit per seat)
+// 6E B (alpha): a set per seat (an 8-bit mask gave seats 8+ no bit: their capital was requested again every tick)
+using SeatSet = std::bitset<founders::kMaxSeats>;
+static bool seat_in(const SeatSet& b, int s) { return s >= 0 && (size_t)s < b.size() && b[(size_t)s]; }
+static void seat_put(SeatSet& b, int s, bool on)
+{
+    if (s >= 0 && (size_t)s < b.size())
+        b[(size_t)s] = on;
+}
+static SeatSet g_founder_spawned_seats; // host: the seats whose capital was requested in this world
 static bool g_founder_share_due;        // host: a capital was bound; the world goes out once no other one is founding
 // Roadmap phase 4 (owner decisions 4, 5; BUG-9135): a partner without a nation (a late joiner, or a Tribe roster seat
 // whose capital was not founded before NPC nations appeared) gets one capital at the next free native site, also
@@ -1566,7 +1575,7 @@ static void SK_THISCALL h_CivAI(void* country)
     // BUG-9135: while any seat's capital is founding, every nation that is neither the player's nor seated waits
     // (founding needs a world without NPC nations, so that is the new capital's)
     if (g_founder_control && g_auto_founders && active() && is_host() &&
-        (g_multi_founders ? (g_founder_spawned_seats >> g_founder_nations.seats()) != 0 &&
+        (g_multi_founders ? (g_founder_spawned_seats >> g_founder_nations.seats()).any() &&
                                 !g_founder_nations.contains_faction(pol_of(country))
                           : g_founder_spawned && !g_founder_nations.guest().faction) &&
         country != player_civ()) return;
@@ -4059,7 +4068,7 @@ static std::vector<civ_seats::City> founder_city_list(const std::vector<void*>& 
 // village needs the position field of the site records (not known yet; `coop.civ sites` dumps them), so for now the
 // distance is logged as the evidence.
 static std::array<net::Vec3, founders::kMaxSeats> g_founder_village;
-static uint8_t g_founder_village_known;
+static SeatSet g_founder_village_known;
 static void remember_village(int seat, uint32_t tribal_faction)
 {
     struct Find {
@@ -4067,7 +4076,7 @@ static void remember_village(int seat, uint32_t tribal_faction)
         net::Vec3 pos;
         bool found;
     } find{tribal_faction, {}, false};
-    g_founder_village_known &= uint8_t(~(1u << seat));
+    seat_put(g_founder_village_known, seat, false);
     if (!tribal_faction)
         return;
     game::for_each_object([](void* o, uint32_t noun, void* u) {
@@ -4078,7 +4087,7 @@ static void remember_village(int seat, uint32_t tribal_faction)
     }, &find);
     if (find.found) {
         g_founder_village[seat] = find.pos;
-        g_founder_village_known |= uint8_t(1u << seat);
+        seat_put(g_founder_village_known, seat, true);
     }
 }
 
@@ -4161,8 +4170,7 @@ static FoundStep found_next_capital(const std::string& planet, void* home, const
     }
     const auto cities = all_cities();
     const auto list = founder_city_list(cities, home);
-    const uint8_t bit = uint8_t(1u << seat);
-    if (!(g_founder_spawned_seats & bit)) {
+    if (!seat_in(g_founder_spawned_seats, seat)) {
         // Only while every city is the host's or a seated founder's: never repurpose an established NPC city, and the
         // new nation is the only unknown one (before: only from the native graduation's single capital).
         if (!civ_seats::only_founder_cities(list, current)) {
@@ -4172,8 +4180,8 @@ static FoundStep found_next_capital(const std::string& planet, void* home, const
         void* expansion = skg::cdecl_call<void*>(a_ExpansionGet);
         if (!expansion) return FoundStep::Idle;
         remember_village(seat, tribal.entries[seat].faction);
-        if (h_SpawnNextCity(expansion, 0, nullptr)) g_founder_spawned_seats |= bit;
-        const bool spawned = g_founder_spawned_seats & bit;
+        if (h_SpawnNextCity(expansion, 0, nullptr)) seat_put(g_founder_spawned_seats, seat, true);
+        const bool spawned = seat_in(g_founder_spawned_seats, seat);
         founder_report(!spawned ? std::string("No free native city site.")
                        : seat == 1 ? std::string("Native partner capital founding requested.")
                                    : "Native capital founding requested for partner seat " + std::to_string(seat) + ".");
@@ -4198,7 +4206,7 @@ static FoundStep found_next_capital(const std::string& planet, void* home, const
     g_combat_roster_ready = true;
     refresh_founder_seats();
     const auto at = city_pos(capital);
-    if (g_founder_village_known & bit)
+    if (seat_in(g_founder_village_known, seat))
         H->log(M, SK_INFO, "civ automatic founders: seat %d capital %08X at (%.0f %.0f %.0f), %.0f m from its former village",
                seat, faction, at.x, at.y, at.z, net::dist(at, g_founder_village[seat]));
     else
@@ -4269,7 +4277,7 @@ static void late_give_up(const std::string& why, bool stall)
     H->log(M, SK_WARN, "civ late capital: %s: no capital for %s (seat %d)%s", why.c_str(), g_late.who.c_str(), g_late.seat,
            stall ? "; no further late capital in this world" : "");
     if (g_late.seat >= 0 && g_late.seat < (int)founders::kMaxSeats && g_late.phase == LatePhase::Requested)
-        g_founder_spawned_seats &= uint8_t(~(1u << g_late.seat));
+        seat_put(g_founder_spawned_seats, g_late.seat, false);
     g_late = {};
     g_late_requested = false;
     g_late_stalled |= stall;
@@ -4471,13 +4479,12 @@ static void late_capital_tick(const std::string& planet, void* home, const found
         return;
     }
     next.before = founder_city_list(cities, home);
-    const uint8_t bit = uint8_t(1u << plan.seat);
-    g_founder_spawned_seats |= bit; // h_CivAI holds the other nations' AI: the new nation must not act as an NPC
+    seat_put(g_founder_spawned_seats, plan.seat, true); // h_CivAI holds the other nations' AI: the new nation must not act as an NPC
     g_late_spawning = true;
     const bool spawned = h_SpawnNextCity(ex, 0, nullptr);
     g_late_spawning = false;
     if (!spawned) {
-        g_founder_spawned_seats &= uint8_t(~bit);
+        seat_put(g_founder_spawned_seats, plan.seat, false);
         late_site_tell("No free city site is left for " + next.who + "'s capital.", true);
         return;
     }
@@ -4515,10 +4522,9 @@ static void founders_multi(const std::string& planet, void* home)
             // The roster may have reached disk immediately before an interrupted native save. Recreate only an absent
             // reserved capital, one at a time in seat order (the native political ids follow the founding order), and
             // only while every city is a founder's: never replace a different existing nation's city.
-            const uint8_t bit = uint8_t(1u << missing);
-            if (!(g_founder_spawned_seats & bit) && civ_seats::only_founder_cities(founder_city_list(cities, home), saved))
+            if (!seat_in(g_founder_spawned_seats, missing) && civ_seats::only_founder_cities(founder_city_list(cities, home), saved))
                 if (void* ex = skg::cdecl_call<void*>(a_ExpansionGet))
-                    if (h_SpawnNextCity(ex, 0, nullptr)) g_founder_spawned_seats |= bit;
+                    if (h_SpawnNextCity(ex, 0, nullptr)) seat_put(g_founder_spawned_seats, missing, true);
             founder_report("Waiting for the saved partner capital to finish founding."); return;
         }
         for (size_t s = 1; s < saved.seats(); ++s) {
@@ -4572,9 +4578,9 @@ static void founders_multi(const std::string& planet, void* home)
 // a new world or session: no seat founding, nobody seated (the roster is read anew)
 static void reset_founder_seats()
 {
-    g_founder_spawned_seats = 0;
+    g_founder_spawned_seats.reset();
     g_founder_share_due = false;
-    g_founder_village_known = 0;
+    g_founder_village_known.reset();
     g_founder_outfits = {};
     g_seat_player.fill(civ_seats::kNobody);
     g_local_seat = -1;
@@ -8025,7 +8031,7 @@ std::string status()
     // BUG-9135: the founder seats (host: who commands each; guest: its own seat)
     std::string fs = "founders: multi=" + std::to_string((int)g_multi_founders) + " seats=" +
                      std::to_string(g_founder_nations.seats()) + " local_seat=" + std::to_string(g_local_seat) +
-                     " spawning=" + std::to_string((unsigned)g_founder_spawned_seats) + " share_due=" +
+                     " spawning=" + std::to_string(g_founder_spawned_seats.count()) + " share_due=" +
                      std::to_string((int)g_founder_share_due) +
                      // roadmap phase 4: the late capital (phase 0 idle, 1 requested, 2 bound)
                      " late=" + std::to_string((int)g_late_capital) + "/" + std::to_string((int)g_late.phase) +

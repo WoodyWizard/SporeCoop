@@ -87,7 +87,7 @@ public:
     // private ranges)
     std::vector<uint32_t> lan_broadcasts;
     static constexpr uint32_t kDiscoverPerSecond = 20; // BUG-0776: discovery answers a second, all senders together
-    static constexpr size_t kMaxPeers = 16;            // host: accepted and half-open peers
+    static constexpr size_t kMaxPeers = 2 * kMaxPlayers; // host: accepted and half-open peers (rejoins overlap)
     static constexpr int kHalfOpenPerIp = 4;           // BUG-0778: half-open peers of one address (a NAT: several games)
     // BUG-1001: a player without a rejoin token comes back after the start by its name only within this time of its drop
     static constexpr uint32_t kRejoinNameMs = 10 * 60 * 1000;

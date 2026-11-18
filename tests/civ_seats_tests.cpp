@@ -36,7 +36,12 @@ int main()
     check(play_seats(two) == 2 && play_seats(four) == 4, "play seats");
     Roster five = four;
     five.entries[4] = {0x500, 0x21CE, 0xA4};
-    check(play_seats(five) == founders::kPlaySeats, "play seats capped at kPlaySeats");
+    // 6E B (owner 2026-11-18, "Setting it to 17 shouldn't cause any issues"): every seat up to kPlaySeats plays (4 before)
+    check(play_seats(five) == 5, "a fifth seat plays");
+    Roster full = five;
+    for (size_t i = 5; i < founders::kMaxSeats; ++i)
+        full.entries[i] = {uint32_t(0x600 + i), uint32_t(0x2200 + i), uint64_t(0xB00 + i)};
+    check(play_seats(full) == founders::kPlaySeats, "play seats capped at kPlaySeats");
 
     // seat_species: the nation's species or any look of the seat
     check(seat_species(four, outfits, 2, 0x300) && seat_species(four, outfits, 2, 0x2F0), "seat species, history");
@@ -61,7 +66,8 @@ int main()
     check(own_seat(four, outfits, 0x77, 0x200, 3) == -1, "a seat with another identity is not taken by species");
     check(own_seat(bound, {}, 0x77, 0x999, 1) == -1, "a bound partner seat is not taken by the sole partner rule");
     check(own_seat(four, outfits, 0xA0, 0x100, 3) == -1, "the host's seat is never a guest's");
-    check(own_seat(five, outfits, 0xA4, 0x500, 4) == -1, "seats past kPlaySeats are not played");
+    check(own_seat(five, outfits, 0xA4, 0x500, 4) == 4, "a fifth seat is played (6E B)");
+    check(own_seat(full, outfits, 0xB10, 0x610, 16) == 16, "seat 16 (the seventeenth player) is played");
 
     // owner_of_seat
     check(owner_of_seat(0, true, 0, -1, 0, false) == 0 && owner_of_seat(0, false, kNobody, 2, 2, false) == 0, "seat 0 is the host's");
@@ -79,7 +85,8 @@ int main()
     check(next_capital_seat(2, 2) == -1, "two founders: nothing more");
     check(next_capital_seat(0, 0) == -1 && next_capital_seat(0, 1) == -1, "no tribal partner: nothing");
     check(next_capital_seat(2, 4) == 2 && next_capital_seat(3, 4) == 3 && next_capital_seat(4, 4) == -1, "four: one at a time");
-    check(next_capital_seat(4, 6) == -1 && next_capital_seat(3, 8) == 3, "capped at kPlaySeats");
+    check(next_capital_seat(4, 6) == 4 && next_capital_seat(16, 17) == 16 && next_capital_seat(17, 17) == -1, "past four seats");
+    check(next_capital_seat(founders::kPlaySeats, founders::kPlaySeats + 4) == -1, "capped at kPlaySeats");
 
     // only_founder_cities and new_capital
     const Roster none;
@@ -167,8 +174,11 @@ int main()
     Joiner look = late;
     look.species = 0x200; // tribal seat 1's first look
     check(late_status(nations3, tribe3, looks3, host, look) == LateWhy::SharedSpecies, "a founder's species: no second nation");
-    check(late_status(nations4, tribe3, looks3, host, Joiner{2, 0xC4, 0x901, true, true, -1}) == LateWhy::SeatsFull,
-          "four nations: every play seat taken");
+    Roster nations_full = nations4; // every play seat with a nation
+    for (size_t i = 4; i < founders::kPlaySeats; ++i)
+        nations_full.entries[i] = {uint32_t(0xA00 + i), uint32_t(0x2300 + i), uint64_t(0xD00 + i)};
+    check(late_status(nations_full, tribe3, looks3, host, Joiner{2, 0xC4, 0x901, true, true, -1}) == LateWhy::SeatsFull,
+          "every play seat taken");
     // the Tribe roster's seats come first: seat 2 (no nation yet) is founded before any late joiner
     plan = late_capital(two, tribe3, looks3, host, {late}, &why);
     check(plan.seat == 2 && plan.joiner == -1 && why[0] == LateWhy::TribalFirst, "the tribal seat 2 first, then the late joiner");

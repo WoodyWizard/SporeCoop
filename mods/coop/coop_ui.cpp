@@ -101,7 +101,7 @@ static void* role_look(const std::string& name)
     if (!g_button_roles)
         return nullptr;
     static const char* const kBlue[] = {"settings", "space", "setback", "sback", "setprev", "setnext", "sprev", "snext"};
-    static const char* const kGrey[] = {"colour", "copyinvite", "chatup", "chatdown", "cprev", "cnext", "givenext",
+    static const char* const kGrey[] = {"colour", "copyinvite", "chatup", "chatdown", "playersup", "playersdown", "cprev", "cnext", "givenext",
                                         "refreshlan", "saveserver", "update", "rnosend"};
     for (const char* n : kBlue)
         if (name == n) return g_blue_look;
@@ -164,6 +164,7 @@ struct Cache {
 };
 static std::map<Win, Cache> g_cache;
 static int g_chat_scroll;            // chat lines scrolled up from the newest (BUG-0129)
+static int g_player_scroll;          // 6E B: the lobby's first player row shown (four rows, any player count)
 constexpr size_t kChatCols = 70;     // letter cells of a chat line (680 px)
 
 // BUG-9117: labels sized by measured character widths, aligned beside their fields; even rows; the
@@ -500,7 +501,7 @@ struct Dialog {
     Win version = nullptr, connect_version = nullptr, report_btn = nullptr, report_caption = nullptr;
     // connect page
     std::vector<Win> page_connect;
-    Win transfer_btn[2]{}, seat_btn[4]{}, difficulty_value[5]{};
+    Win transfer_btn[2]{}, seat_btn[2]{}, seats_edit{}, difficulty_value[5]{}; // seat_btn: - and + (6E B)
     Win name_edit = nullptr, addr_edit = nullptr, port_edit = nullptr, join_btn = nullptr, host_btn = nullptr;
     Win scaling_edit = nullptr, join_port = nullptr, join_password = nullptr, host_password = nullptr;
     Win selected_info = nullptr;
@@ -530,7 +531,7 @@ struct Dialog {
     Win row_name[4] = {}, row_color[4] = {}, row_stage[4] = {}, row_ping[4] = {}, row_ready[4] = {};
     Win color_btn = nullptr; // F2: the own row's colour swatch as a button: the next colour
     Win chat_lines[5] = {};
-    Win chat_up = nullptr, chat_down = nullptr;
+    Win chat_up = nullptr, chat_down = nullptr, players_up = nullptr, players_down = nullptr;
     Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr, give_next = nullptr, jump_btn = nullptr;
     Win space_btn = nullptr; // lobby -> the Space page (Space stage only)
     // settings page: group headers and the rows of settings_core.h kDefs, a value button and a scope tag each
@@ -1073,6 +1074,15 @@ static bool server_list_input(unsigned message, uintptr_t value, int x, int y)
     return false;
 }
 
+// 6E B: a typed player-slot count, 1 .. founders::kSeatCeiling (0: not one)
+static unsigned typed_seats(const std::string& t)
+{
+    if (t.empty() || t.size() > 3 || t.find_first_not_of("0123456789") != std::string::npos)
+        return 0;
+    const unsigned long n = strtoul(t.c_str(), nullptr, 10);
+    return n >= 1 && n <= founders::kSeatCeiling ? unsigned(n) : 0;
+}
+
 static void do_host()
 {
     apply_name();
@@ -1080,14 +1090,17 @@ static void do_host()
     if (port <= 0 || port > 65535)
         port = A.default_port;
     std::string err;
-    auto seats = std::to_string(D.seats);
+    const unsigned typed = typed_seats(sui::edit_text(D.seats_edit));
     auto scaling = sui::edit_text(D.scaling_edit);
-    if (seats.size() != 1 || seats[0] < '1' || seats[0] > '4' ||
-        scaling.empty() || scaling.find_first_not_of("0123456789") != std::string::npos ||
+    if (!typed || scaling.empty() || scaling.find_first_not_of("0123456789") != std::string::npos ||
         scaling.size() > 3 || strtoul(scaling.c_str(),nullptr,10) > founders::kMaxDifficultyPercent) {
-        set_status(T("Use 1-4 player slots and a difficulty from 0 to 400%.", "Укажите 1–4 места для игроков и сложность от 0 до 400%."),kRed);
+        const std::string n = std::to_string(founders::kSeatCeiling);
+        set_status(std::string(T("Use 1-", "Укажите 1–")) + n +
+                       T(" player slots and a difficulty from 0 to 400%.", " мест для игроков и сложность от 0 до 400%."),kRed);
         return;
     }
+    D.seats = typed;
+    auto seats = std::to_string(D.seats);
     if (!A.host((uint16_t)port,D.seats,unsigned(strtoul(scaling.c_str(),nullptr,10)),err,
                 sui::edit_text(D.host_password))) {
         set_status(std::string(T("Cannot host: ", "Не удалось создать игру: ")) + err, kRed);
@@ -1385,12 +1398,19 @@ static void build_dialog()
     D.host_password = add_edit(P, "hostpassword", {140, 402, 310, 428}, "", 48, !panel);
     privacy_button(P, "hidehostport", {311, 373, 351, 399}, D.port_edit, true); // (owner 2026-11-17: the address and ports hidden by default)
     privacy_button(P, "hidehostpassword", {311, 402, 351, 428}, D.host_password, true);
-    D.seats = std::clamp(atoi(load_str("ui", "new_founders", "2").c_str()), 1, 4);
-    for (unsigned i = 0; i < 4; ++i) {
-        const auto number = std::to_string(i + 1);
-        D.seat_btn[i] = add_button(P, ("seat" + number).c_str(), {140.f + i * 54, 431, 189.f + i * 54, 457},
-                                   number, [i] { D.seats = i + 1; g_dirty = true; });
-    }
+    // 6E B (owner 2026-11-18, "Setting it to 17 shouldn't cause any issues"): any count up to founders::kSeatCeiling,
+    // typed or stepped with - and + (the four buttons 1-4 before)
+    D.seats = std::clamp(atoi(load_str("ui", "new_founders", "2").c_str()), 1, int(founders::kSeatCeiling));
+    D.seats_edit = add_edit(P, "seats", {194, 431, 243, 457}, std::to_string(D.seats), 2, !panel);
+    for (unsigned i = 0; i < 2; ++i)
+        D.seat_btn[i] = add_button(P, i ? "seatmore" : "seatless", {140.f + i * 108, 431, 189.f + i * 108, 457},
+                                   i ? "+" : "-", [i] {
+            const unsigned now = typed_seats(sui::edit_text(D.seats_edit));
+            const int next = std::clamp(int(now ? now : D.seats) + (i ? 1 : -1), 1, int(founders::kSeatCeiling));
+            D.seats = unsigned(next);
+            sui::set_edit_text(D.seats_edit, std::to_string(next));
+            g_dirty = true;
+        });
     for (unsigned i = 0; i < 2; ++i) {
         D.transfer_btn[i] = add_button(P, i == 0 ? "optimal" : "fast", {140.f + i * 108, 460, 243.f + i * 108, 486},
                                        i == 0 ? "Optimal" : "Fast", [i] {
@@ -1448,15 +1468,16 @@ static void build_dialog()
     });
     // owner 2026-11-12: "Player Slots" with the count and an Apply button (more slots now, fewer from the next stage)
     D.slots_label = add_label(L, {40, 496, 150, 528}, T("Player Slots", "Места"), kWhite);
-    D.next_seats_edit = add_edit(L,"nextseats",{152,496,194,528},"",1);
+    D.next_seats_edit = add_edit(L,"nextseats",{152,496,194,528},"",2); // (6E B: up to founders::kSeatCeiling)
     D.queue_seats = add_button(L,"queueseats",{198,493,302,531},T("Apply","Применить"),[] {
-        auto value = sui::edit_text(D.next_seats_edit);
-        if (value.size() != 1 || value[0] < '1' || value[0] > '4') {
-            set_status(T("Enter 1 to 4 player slots.","Укажите от 1 до 4 мест."),kRed,8);
+        const unsigned value = typed_seats(sui::edit_text(D.next_seats_edit));
+        if (!value) {
+            const std::string n = std::to_string(founders::kSeatCeiling);
+            set_status(std::string(T("Enter 1 to ","Укажите от 1 до ")) + n + T(" player slots."," мест."),kRed,8);
             return;
         }
         std::string message;
-        bool ok = A.queue_seats(value[0] - '0',message);
+        bool ok = A.queue_seats(value,message);
         set_status(message,ok ? kGreen : kRed,10);
         g_dirty = true;
     });
@@ -1519,6 +1540,9 @@ static void build_dialog()
     std::vector<Win> arrows; // shown by refresh_lobby only when there is more to see
     D.chat_up = add_arrow_button(arrows, "chatup", {722, 337, 756, 367}, kArrowUp, [] { g_chat_scroll++; g_dirty = true; });
     D.chat_down = add_arrow_button(arrows, "chatdown", {722, 376, 756, 406}, kArrowDown, [] { g_chat_scroll--; g_dirty = true; });
+    // 6E B: more players than the four rows: the rows scroll (the arrows at the Players heading)
+    D.players_up = add_arrow_button(arrows, "playersup", {300, 129, 334, 159}, kArrowUp, [] { g_player_scroll--; g_dirty = true; });
+    D.players_down = add_arrow_button(arrows, "playersdown", {338, 129, 372, 159}, kArrowDown, [] { g_player_scroll++; g_dirty = true; });
     // the own creation of this stage: "My creature: Kirgle  < >"
     D.creation = add_label(L, {40, 416, 560, 444}, "", kGold); // a row of its own under the chat box
     D.creation_prev = add_arrow_button(L, "cprev", {570, 415, 640, 445}, kArrowLeft, [] {
@@ -1763,8 +1787,8 @@ static void refresh_connect()
     const bool paced = A.paced_transfer && A.paced_transfer();
     for (unsigned i = 0; i < 2; ++i)
         if (D.transfer_btn[i]) sui::set_shade_color(D.transfer_btn[i], (i == 0) == paced ? 0xFFFFFFFF : 0xFF949CA8);
-    for (unsigned i = 0; i < 4; ++i)
-        if (D.seat_btn[i]) sui::set_shade_color(D.seat_btn[i], i + 1 == D.seats ? 0xFFFFFFFF : 0xFF949CA8);
+    if (const unsigned typed = D.seats_edit ? typed_seats(sui::edit_text(D.seats_edit)) : 0)
+        D.seats = typed; // (the preview below follows what is typed)
     const std::pair<const char*, Win> privacy[] = {{"hideaddress", D.addr_edit}, {"hidejoinport", D.join_port},
         {"hidejoinpassword", D.join_password}, {"hidehostport", D.port_edit}, {"hidehostpassword", D.host_password}};
     for (const auto& [button, field] : privacy) {
@@ -1945,13 +1969,19 @@ static void refresh_lobby()
                                ? preview
                                : "");
     int own_row = -1;
+    // 6E B: four rows show players g_player_scroll.. (the players, then the open slots)
+    const int listed = std::max<int>((int)rows.size(), (int)std::min<unsigned>(seats, founders::kSeatCeiling));
+    g_player_scroll = std::clamp(g_player_scroll, 0, std::max(0, listed - 4));
+    show(D.players_up, g_player_scroll > 0);
+    show(D.players_down, g_player_scroll + 4 < listed);
     for (int i = 0; i < 4; i++) {
-        bool have = i < (int)rows.size();
-        if (have && rows[i].me)
+        const int k = i + g_player_scroll;
+        bool have = k < (int)rows.size();
+        if (have && rows[k].me)
             own_row = i;
-        const bool reserved = !have && static_cast<unsigned>(i) < seats;
+        const bool reserved = !have && static_cast<unsigned>(k) < seats;
         show(D.row_name[i], have || reserved);
-        show(D.row_color[i], have && !(rows[i].me && D.color_btn && A.color_next)); // (the own row: its button)
+        show(D.row_color[i], have && !(rows[k].me && D.color_btn && A.color_next)); // (the own row: its button)
         show(D.row_stage[i], have || reserved);
         show(D.row_ping[i], have);
         show(D.row_ready[i], have && vote);
@@ -1963,7 +1993,7 @@ static void refresh_lobby()
             }
             continue;
         }
-        const auto& p = rows[i];
+        const auto& p = rows[k];
         // BUG-9222: the -NoShare- tag is not shown; BUG-9221: the name fits its column by the font's glyph widths
         // (1 unit = 1 px at 768 lines): " (host)" only while the whole name fits with it (the host is the first row
         // anyway), else a name too wide is cut with "..."
@@ -2656,6 +2686,8 @@ static void refresh()
     if (!lobby || g_space_page || sett) {
         show(D.chat_up, false);
         show(D.chat_down, false);
+        show(D.players_up, false);
+        show(D.players_down, false);
     }
     text(D.subtitle, lobby && g_space_page ? (nations ? "NATIONS" : villages ? "VILLAGES" : T("SPACE", "КОСМОС"))
                      : sett ? T("SETTINGS", "НАСТРОЙКИ")
@@ -3297,10 +3329,8 @@ static const char* tip_for(const std::string& name)
         {"update", "Check or install updates", "Обновления"},
         {"optimal", "Steady world transfer", "Плавная передача"},
         {"fast", "Fastest world transfer", "Быстрая передача"},
-        {"seat1", "Player slots for a new campaign", "Места в кампании"},
-        {"seat2", "Player slots for a new campaign", "Места в кампании"},
-        {"seat3", "Player slots for a new campaign", "Места в кампании"},
-        {"seat4", "Player slots for a new campaign", "Места в кампании"},
+        {"seatless", "Fewer player slots for a new campaign", "Меньше мест в кампании"},
+        {"seatmore", "More player slots for a new campaign", "Больше мест в кампании"},
         {"hideaddress", "Show or hide", "Показать / скрыть"},
         {"hidejoinport", "Show or hide", "Показать / скрыть"},
         {"hidejoinpassword", "Show or hide", "Показать / скрыть"},
@@ -3311,6 +3341,8 @@ static const char* tip_for(const std::string& name)
         {"queueseats", "Apply: more slots now, fewer from the next stage", "Применить: больше мест сразу, меньше со следующего этапа"},
         {"chatup", "Older messages", "Ранние сообщения"},
         {"chatdown", "Newer messages", "Новые сообщения"},
+        {"playersup", "Earlier players", "Предыдущие игроки"},
+        {"playersdown", "More players", "Ещё игроки"},
         {"cprev", "Previous creation", "Предыдущее создание"},
         {"cnext", "Next creation", "Следующее создание"},
         {"jump", "Jump to your partner", "К партнёру"},
@@ -3916,7 +3948,7 @@ bool set_memory_popup(const MemoryPopup& want_in, void (*on_click)(int))
 // at the right edge from just above Spore's own UI there (the avatar or ship card, the Pack list, the Tribe and Military
 // tabs: measured, so nothing native is covered), the newest partner on top, with a "Party" tab in the art of this
 // player's own stage. The own card is the game's. Replaces the 2026-11-13 panel (header, plates, gold cards).
-constexpr int kPartyRows = 8;
+constexpr int kPartyRows = 8; // the HUD shows this many partner cards (screen room; 6E B: more players are not listed there, the lobby lists all)
 // the health bar as the game builds its own (the Creature HUD, layout 5ED10964, read 2026-11-13: the empty pill, a
 // clipping window (flag 0x400) as wide as the health holding the full pill, the edge on top)
 constexpr uint32_t kFlagClip = 0x400;

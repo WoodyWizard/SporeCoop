@@ -646,6 +646,42 @@ progression, etc. compared to other parties."
 * The host's cost grows with each partner (20-30 KB/s upload each): 16 players on one host's home connection is the
   risk to measure first (decision 6E).
 
+### Any player count: one ceiling, the planet's count a setting (2026-11-18, feat/lineages-alpha, decision 6E B)
+<a id="server-scalable-players"></a>
+
+Owner: "It needs to be scalable too. Setting it to 17 shouldn't cause any issues."
+
+* One ceiling in the code, net::kMaxPlayers 64 (protocol.h; ids 0..63, 0xFC and up stay markers), and
+  founders::kSeatCeiling 64 (founders.h): every table, mask and loop sizes itself from these (the Civ seat masks are
+  bitsets, the Tribe village count, the Cell loops over the players present, the view centres, the creature tables, the
+  pass-through list, the guest packs). How many a session takes is a setting: all.max_players (2..64) for co-op, the
+  galaxy server's `--planet-players <n>` (2..64, 16 by default) for its planets, sent in WELCOME (an older server: 4).
+* A galaxy planet's host hosts with that count: a stored planet saved with fewer Lineages slots is raised to it ("This
+  planet takes 16 players now (it had 5 slots)"); a full planet refuses the next player at the server ("Samuth is
+  full (5 players): pick another planet or try again later").
+* Difficulty stays one party's: the per-seat extras count 4 seats at most (CampaignRules::kScaledSeats), so 16 players
+  on a planet play at a 4-seat party's difficulty until each party has its own (#server-seats-16).
+* The Co-op window: Player Slots is a field with - and + (1..64, the four buttons before), the lobby's four player rows
+  scroll (arrows at the Players heading), Apply takes up to 64; `coop.seats` and `coop.host` take any count.
+* Fixed on the way: a galaxy guest that left sent its goodbye after LEAVE, the server had already ended its relay and
+  the host kept the place for the 30 s timeout (a full planet refused the next player). The goodbye goes first now.
+* Tests (TITAN, QA copy, a local test galaxy server, test worlds folder): with `--planet-players 5`: 5 players in the
+  host's session (5/5, "Player slots: 5", takeover 115% as at 4), the sixth refused as full; a guest left and the sixth
+  joined 4 s later in its place (before the fix: refused "session is full" for 30 s). With the default 16: 10 games on
+  one planet (players=10/16, ids 1..9, past the old internal limits of 4 and 8), the sync check OK with all nine,
+  every player's cell shown to every other, no crash. Unit tests: cell, civ seats, tribe seats, tribe late, party food,
+  npc, space, the founders part of win_tests (a 17-seat raise keeps a 4-seat difficulty).
+* Found, not fixed:
+  * The host's upload. In the Cell stage the host sent 163 MB in the minute the 10 players settled: 128 MB of it the
+    Cell snapshot (MSG_CELL_STATE, about 240 KB/s a guest), 28 MB world chunks. A home connection does not carry that
+    for 15 partners: the snapshot has to go to each player for its own area only (or the galaxy server fans it out)
+    before 16-player planets are practical. Measure Creature next (20-30 KB/s a partner before).
+  * The party cards on the right of the screen stack past the top with 9 partners (8 cards at most, at 800x600 they
+    go off the screen). On a galaxy planet they should show the own party only (#server-three-roles).
+  * Player colours repeat after 8 (find_core.h: 8 colours, player 9 shares one).
+  * Founder seats are still given once per identity and kept (party.cpp): 64 different players over a planet's life
+    fill them; reusing an absent player's seat is still open (#server-seats-16).
+
 ### Hand-over without a reload: research (2026-11-17, decision 6B C)
 <a id="server-warm-handover"></a>
 

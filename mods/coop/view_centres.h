@@ -55,8 +55,9 @@ std::string status(); // coop.views
 
 // ---- portable helpers (BUG-0174) ----
 
-// at most this many centres in a Set (4 players today, room for 8): the cost of a stage's passes
-constexpr std::size_t kMaxCentres = 8;
+// at most this many centres in a Set: one per player (6E B: from the one player ceiling, net::kMaxPlayers; the
+// per-planet limit in play keeps the passes' cost to the players actually there)
+constexpr std::size_t kMaxCentres = (std::size_t)net::kMaxPlayers;
 
 inline bool finite_pos(const net::Vec3& p)
 {

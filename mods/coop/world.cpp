@@ -1814,6 +1814,7 @@ struct CampaignSetup {
     std::string joined_world;
     uint8_t joined_floor = 1;
     uint64_t next_check = 0;
+    uint8_t seat_floor = 0; // 6E B (alpha): a galaxy planet's saved slots are raised to its player count (0 none)
 };
 static CampaignSetup g_campaign_setup;
 // A guest may still be flying its personal ship in a different local slot.
@@ -1881,7 +1882,7 @@ void receive_campaign_rules(const net::Session& session, uint8_t from, net::Read
     next.rules = {r.u8(),r.u16(),r.u16(),r.u16(),r.u16(),r.u16()};
     next.rules.model = r.u8(); // BUG-9100
     if (!r.ok() || r.left() || !next.world || !in_stage(next.mode) ||
-        !next.rules.seats || next.rules.seats > 4 || next.rules.model > 1) return;
+        !next.rules.seats || next.rules.seats > founders::kSeatCeiling || next.rules.model > 1) return; // (6E B)
     g_remote_rules = next;
 }
 
@@ -1932,12 +1933,17 @@ static bool apply_saved_rules(net::Session& session, const std::string& key, std
         uint8_t needed = 0;
         for (const auto& p : session.players()) needed = std::max<uint8_t>(needed, uint8_t(p.id + 1));
         const uint8_t had = plan.seats_in(stage,rules.seats);
+        const bool to_floor = g_campaign_setup.seat_floor > needed && g_campaign_setup.seat_floor > had; // (6E B)
+        if (to_floor)
+            needed = g_campaign_setup.seat_floor;
         std::string raise_error;
         if (needed > had && g_slots_on_load_fix && session.role() == net::Role::Host && stage >= 1 && stage <= 4 &&
-            needed <= 4 && founders::raise_seats(key,needed,stage,raise_error) &&
+            needed <= founders::kSeatCeiling && founders::raise_seats(key,needed,stage,raise_error) &&
             founders::read_rules(key,rules,&plan) == founders::RulesFile::Saved) {
-            g_feed("This save had " + std::to_string(had) + " player slot(s): raised to " + std::to_string(needed) +
-                   " so everyone stays (difficulty rises with them).");
+            g_feed(to_floor ? "This planet takes " + std::to_string(needed) + " players now (it had " +
+                                  std::to_string(had) + " slots)."
+                            : "This save had " + std::to_string(had) + " player slot(s): raised to " + std::to_string(needed) +
+                                  " so everyone stays (difficulty rises with them).");
         }
         for (const auto& p : session.players()) {
             if (p.id >= plan.seats_in(stage,rules.seats)) {
@@ -1971,11 +1977,13 @@ static bool apply_saved_rules(net::Session& session, const std::string& key, std
     return false;
 }
 
-bool setup_campaign(net::Session& session, const founders::CampaignRules& requested, std::string& error)
+bool setup_campaign(net::Session& session, const founders::CampaignRules& requested, std::string& error,
+                    unsigned seat_floor)
 {
     reset_campaign_setup();
     g_campaign_setup.host = &session;
     g_campaign_setup.requested = requested;
+    g_campaign_setup.seat_floor = (uint8_t)std::min<unsigned>(seat_floor, founders::kSeatCeiling);
     session.seat_limit = net::kMaxPlayers;
     if (game::mode_id() != modes::kMenu) return apply_saved_rules(session,current_game_key(),error);
     auto slot = current_db_dir(false);
@@ -2062,7 +2070,7 @@ bool change_seats(net::Session& session, unsigned seats, std::string& message)
     for (const auto& p : session.players()) {
         if (p.id >= seats) { message = "A connected player needs one of those slots."; return false; }
     }
-    if (seats < 1 || seats > 4 || !founders::queue_seats(key,uint8_t(seats),stage,message)) return false;
+    if (seats < 1 || seats > founders::kSeatCeiling || !founders::queue_seats(key,uint8_t(seats),stage,message)) return false;
     g_loaded_campaign.clear(); // a load before the host's request cannot activate it
     if (!apply_saved_rules(session,key,message)) return false;
     message = g_campaign_setup.status;
@@ -2079,7 +2087,7 @@ bool raise_seats_now(net::Session& session, unsigned seats, std::string& message
         message = "Only the host of an open campaign in Cell, Creature, Tribal or Civilization can add slots now.";
         return false;
     }
-    if (seats < 1 || seats > 4 || !founders::raise_seats(current_game_key(),uint8_t(seats),stage,message)) return false;
+    if (seats < 1 || seats > founders::kSeatCeiling || !founders::raise_seats(current_game_key(),uint8_t(seats),stage,message)) return false;
     if (!apply_saved_rules(session,current_game_key(),message)) return false;
     message = g_campaign_setup.status + " (applied now)";
     return true;
@@ -2088,7 +2096,7 @@ bool raise_seats_now(net::Session& session, unsigned seats, std::string& message
 bool set_seats(net::Session& session, unsigned seats, std::string& message)
 {
     const auto stage = uint8_t(stage_epoch::index_of(game::mode_id()) + 1);
-    if (session.role() == net::Role::Host && in_stage(game::mode_id()) && stage <= 4 && seats <= 4 &&
+    if (session.role() == net::Role::Host && in_stage(game::mode_id()) && stage <= 4 && seats <= founders::kSeatCeiling &&
         seats > rules_for_current().seats)
         return raise_seats_now(session,seats,message);
     return change_seats(session,seats,message);

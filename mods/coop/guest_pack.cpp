@@ -404,7 +404,7 @@ size_t party_enter_puppet(void* puppet)
 {
     if (!g_party || !puppet || !C.sess)
         return 0;
-    for (uint8_t id = 1; id < 16; id++)
+    for (uint8_t id = 1; id < (uint8_t)net::kMaxPlayers; id++)
         if (C.puppet_of && C.puppet_of(id) == puppet)
             return party_enter(id);
     return 0;
@@ -1041,14 +1041,14 @@ void tick(double now)
         g_frames.clear();
     }
     if (party_mode() && is_host() && game::in_creature_stage() && C.puppet_of) // phase 3: a pack noted on this planet
-        for (uint8_t id = 1; id < 16; id++)
+        for (uint8_t id = 1; id < (uint8_t)net::kMaxPlayers; id++)
             if (void* pup = C.puppet_of(id); pup && !game::is_dead(pup))
                 restore_pack(id);
     if (now >= g_next_family) { // phase 4: which nest herd is which partner's family (once a second)
         g_next_family = now + 1;
         g_family_of.clear();
         if (g_family_fix && party_mode() && is_host() && game::in_creature_stage() && C.puppet_of)
-            for (uint8_t id = 1; id < 16; id++)
+            for (uint8_t id = 1; id < (uint8_t)net::kMaxPlayers; id++)
                 if (void* h = C.puppet_of(id) ? home_nests::family_herd(id) : nullptr; h && h != game::avatar_herd())
                     g_family_of[h] = id;
     }

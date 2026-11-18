@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "net/galaxy.h"
+#include "net/protocol.h"
 #include "net/transport.h"
 #include "world.h"
 #include "mouse.h"
@@ -27,6 +28,8 @@ static net::UdpSocket g_sock;
 static net::Endpoint g_server;
 static bool g_welcomed;
 static uint16_t g_slot;
+static_assert(kMaxPlanetPlayers == net::kMaxPlayers, "a planet's players are one session's");
+static uint8_t g_planet_players = kPlanetPlayers; // 6E B: what the server's WELCOME says a planet takes
 static std::string g_galaxy, g_planet, g_last_refusal;
 static uint8_t g_role;      // kHostRole / kGuestRole on a planet, 0 none
 static uint16_t g_host_slot;
@@ -187,6 +190,8 @@ static void on_control(net::Reader& r)
         g_galaxy = r.str8();
         if (!r.ok())
             return;
+        const uint8_t cap = r.left() >= 1 ? r.u8() : 4; // (a server before 6E B: 4)
+        g_planet_players = cap < 2 ? 2 : cap > net::kMaxPlayers ? (uint8_t)net::kMaxPlayers : cap;
         g_welcomed = true;
         say("Connected to the galaxy '" + g_galaxy + "'.");
     } else if (type == PLANETS) {
@@ -676,15 +681,18 @@ static std::string leave_now()
     if (g_planet.empty())
         return "Not on a planet of the galaxy.";
     reset_planet_steps();
+    // 6E B (test 2026-11-18): the goodbye first, through the relay, then LEAVE. LEAVE first ended the relay at the
+    // server, the goodbye was dropped and the host kept the place 30 s (a full planet refused the next player)
+    const bool bye = C.sess && C.sess->role() != net::Role::None && g_relay_on;
+    if (bye)
+        C.sess->leave("left the planet"); // (the relay stays until the session is closed, tick switches it off)
     send_control(control(LEAVE));
     std::string p = g_planet;
     g_planet.clear();
     g_role = 0;
-    if (C.sess && C.sess->role() != net::Role::None && g_relay_on) {
-        // (its goodbye goes out through the relay: the relay stays until the session is closed, tick switches it off)
-        C.sess->leave("left the planet");
+    if (bye)
         g_session_seen = true;
-    } else
+    else
         use_relay(false);
     return "Left " + p + ".";
 }
@@ -749,6 +757,7 @@ void tick(double now)
 bool online() { return g_sock.is_open() && g_welcomed; }
 uint32_t planets_version() { return g_planets_ver; }
 std::string current_planet() { return g_planet; }
+unsigned planet_players() { return g_planet_players; }
 bool hosting() { return g_hstep == kHosting && g_role == kHostRole && C.sess && C.sess->role() == net::Role::Host; }
 
 uint64_t warm_join_token()

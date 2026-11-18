@@ -46,6 +46,7 @@ uint32_t planets_version();                 // changes with the list
 std::string current_planet();               // the planet this player is on ("" none)
 std::string galaxy_name();                  // the connected galaxy's name ("" when not connected)
 bool hosting();                             // this game hosts a planet of the galaxy now
+unsigned planet_players();                  // 6E B: the players a planet of this galaxy takes (16 by default)
 bool close_request();                       // Alt+F4 / the window's X (mouse.cpp): true = held, saved first (6A A)
 // decision 6B C (the warm hand-over): a player still in the planet's world rejoins its new host with the hand-over's
 // token (the session's resume receipt), and the new host sends it no world

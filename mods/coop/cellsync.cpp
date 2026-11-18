@@ -523,6 +523,8 @@ COOP_FIX("cell.spawn_slots", "BUG-0792", g_fix_spawn_slots, "cell: with 3-4 play
 static int g_spawn_slot = -1; // tests: the slot of our last placement (-1: the old rule)
 static bool guest_knocked_out(uint32_t from);
 static uint8_t* puppet_cell(int id);
+// 6E B (alpha): the players with a puppet now (any player count; the loops over ids 1..3 / 0..7 missed the rest)
+static std::vector<int> puppet_ids();
 // where our cell goes next to the others: *at (and the anchor's distance in *dist); false: nobody to go to.
 // helper: the anchor must be able to help (a respawn: not knocked out). old_dx / old_dy: the old offset.
 static bool spawn_spot(net::Vec3* at, float* dist, bool helper, float old_dx, float old_dy)
@@ -553,7 +555,7 @@ static bool crowded(uint8_t* a, float r)
 {
     if (!a || !C.sess)
         return false;
-    for (int id = 0; id < 8; id++)
+    for (int id : puppet_ids())
         if (uint8_t* pc = id != C.sess->my_id() ? puppet_cell(id) : nullptr)
             if (net::dist(pos_of(pc), pos_of(a)) < r)
                 return true;
@@ -624,6 +626,15 @@ static uint8_t* puppet_cell(int id)
             return (uint8_t*)p.cell;
         }
     return nullptr;
+}
+
+static std::vector<int> puppet_ids()
+{
+    std::vector<int> ids;
+    if (C.puppets)
+        for (auto& p : C.puppets())
+            ids.push_back(p.id);
+    return ids;
 }
 
 static std::string cell_debt(); // BUG-9119 (below)
@@ -1179,8 +1190,8 @@ static void puppet_poison(float dt)
     uint8_t* g = G();
     if (!g_fix_puppet_poison || !a_PoisonStep || !is_host() || !in_cell() || !g || !(dt > 0.f) || dt > 1.f)
         return;
-    for (int id = 1; id < 4; id++) {
-        uint8_t* pc = puppet_cell(id);
+    for (int id : puppet_ids()) {
+        uint8_t* pc = id >= 1 ? puppet_cell(id) : nullptr;
         if (!pc || F<uint8_t>(pc, kDead) || F<uint8_t>(pc, kDying) || !F<uint32_t>(pc, kModelKey))
             continue;
         if (g_fix_ko_no_poison && guest_knocked_out((uint32_t)id)) {
@@ -1237,8 +1248,8 @@ static bool ko_puppet(uint8_t* c)
 {
     if (!is_host() || !modes::cell_is_puppet(c))
         return false;
-    for (int id = 1; id < 8; id++)
-        if (puppet_cell(id) == c)
+    for (int id : puppet_ids())
+        if (id >= 1 && puppet_cell(id) == c)
             return guest_knocked_out((uint32_t)id);
     return false;
 }
@@ -1634,8 +1645,8 @@ static bool in_partner_view(uint8_t* c)
     float r = 1.7f * F<float>(c, kSize);
     if (!std::isfinite(r))
         return false;
-    for (int id = 1; id < 4; id++) {
-        uint8_t* pc = puppet_cell(id);
+    for (int id : puppet_ids()) {
+        uint8_t* pc = id >= 1 ? puppet_cell(id) : nullptr;
         if (!pc)
             continue;
         float dx = std::fabs(F<float>(c, kPos) - F<float>(pc, kPos)), dy = std::fabs(F<float>(c, kPos + 4) - F<float>(pc, kPos + 4));
@@ -7089,7 +7100,7 @@ std::string debug(const std::vector<std::string>& a)
         net::Vec3 me = pos_of(av);
         snprintf(b, sizeof b, "scale=%.6g me=(%.2f %.2f)", world_scale(), me.x, me.y);
         o = b;
-        for (int id = 0; id < 8; id++)
+        for (int id : puppet_ids())
             if (uint8_t* pc = puppet_cell(id)) {
                 net::Vec3 q = pos_of(pc);
                 snprintf(b, sizeof b, " p%d=(%.2f %.2f)", id, q.x, q.y);
@@ -7634,10 +7645,10 @@ std::string debug(const std::vector<std::string>& a)
                 return "areas: no view boxes\n";
             float hx = (vb[3] - vb[0]) * 0.5f, hy = (vb[4] - vb[1]) * 0.5f;
             std::vector<std::pair<int, net::Vec3>> ctr{{0, {(vb[0] + vb[3]) * 0.5f, (vb[1] + vb[4]) * 0.5f, 0.f}}};
-            for (int id = 1; id < 4; id++)
+            for (int id : puppet_ids())
                 if (uint8_t* pc = puppet_cell(id))
                     ctr.push_back({id, pos_of(pc)});
-            uint32_t n[4] = {};
+            uint32_t n[net::kMaxPlayers] = {}; // (6E B: by player id)
             for_each_cell([&](uint8_t* c, uint32_t idx) {
                 if (modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying))
                     return;

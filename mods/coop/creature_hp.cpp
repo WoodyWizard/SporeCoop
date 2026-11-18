@@ -20,6 +20,7 @@
 #include "world.h"
 #include "view_centres.h"
 #include "net/interp.h"
+#include "net/protocol.h"
 #include "sporekit_game.hpp"
 
 namespace creature_hp {
@@ -301,7 +302,7 @@ COOP_FIX("creature.relations", "BUG-0462", g_relations_fix, "creature: animals h
 
 typedef bool(SK_THISCALL* IsPlayerSpecies_t)(void*);
 static IsPlayerSpecies_t o_IsPlayerSpecies;
-static void* g_party_species[8];
+static void* g_party_species[net::kMaxPlayers]; // (6E B: one per player at most)
 static int g_party_n = 0;
 static uint32_t g_party_answers = 0;
 
@@ -356,7 +357,7 @@ void tick()
         void* ps = player_species();
         auto add = [&](void* c) {
             void* sp = c && skg::readable(c, 0xB24) ? skg::field<void*>(c, game::kSpeciesOff) : nullptr;
-            if (!sp || sp == ps || n >= 8)
+            if (!sp || sp == ps || n >= net::kMaxPlayers)
                 return;
             for (int i = 0; i < n; i++)
                 if (g_party_species[i] == sp)
@@ -365,8 +366,8 @@ void tick()
         };
         add(game::avatar());
         if (C.puppet_of)
-            for (uint8_t id = 0; id < 8; id++)
-                if (void* p = C.puppet_of(id))
+            for (int id = 0; id < net::kMaxPlayers; id++)
+                if (void* p = C.puppet_of((uint8_t)id))
                     if (game::is_puppet(p))
                         add(p);
     }
@@ -462,7 +463,7 @@ void pack_defend(void* puppet, void* attacker)
 // a puppet of the partner's own creature has no archetype tuning (+0xE84): GetRelationship's diet rule then read a
 // null (IsHerbivore 0xC0B8E8, data 0x608, lab 20261108-034334). While the game is asked about the party, each such
 // puppet borrows the avatar's tuning, as in the NPC AI swap (game.cpp h_NPCTickAI).
-struct Lent { void* p[8]; int n = 0; };
+struct Lent { void* p[net::kMaxPlayers]; int n = 0; };
 static Lent lend_tuning()
 {
     Lent l;
@@ -470,8 +471,8 @@ static Lent lend_tuning()
     void* tun = av ? skg::field<void*>(av, 0xE84) : nullptr;
     if (!tun || !C.puppet_of)
         return l;
-    for (uint8_t id = 1; id < 8 && l.n < 8; id++)
-        if (void* p = C.puppet_of(id))
+    for (int id = 1; id < net::kMaxPlayers && l.n < net::kMaxPlayers; id++)
+        if (void* p = C.puppet_of((uint8_t)id))
             if (game::is_puppet(p) && !skg::field<void*>(p, 0xE84)) {
                 skg::field<void*>(p, 0xE84) = tun;
                 l.p[l.n++] = p;
@@ -533,7 +534,7 @@ std::string status()
         out += b;
     }
     if (C.puppet_of)
-        for (uint8_t id = 0; id < 8; id++) {
+        for (uint8_t id = 0; id < (uint8_t)net::kMaxPlayers; id++) {
             void* p = C.puppet_of(id);
             if (!p || !game::is_puppet(p))
                 continue;
@@ -573,13 +574,13 @@ static std::string pack()
             continue;
         int from = 0;
         if (C.puppet_of)
-            for (uint8_t id = 1; id < 8; id++)
+            for (uint8_t id = 1; id < (uint8_t)net::kMaxPlayers; id++)
                 if (void* p = C.puppet_of(id))
                     from += stimuli_from(c, p);
         void* av = game::avatar();
         float dp = -1;
         if (C.puppet_of)
-            for (uint8_t id = 1; id < 8; id++)
+            for (uint8_t id = 1; id < (uint8_t)net::kMaxPlayers; id++)
                 if (void* p = C.puppet_of(id))
                     if (game::is_puppet(p) && (dp < 0 || net::dist(game::position(c), game::position(p)) < dp))
                         dp = net::dist(game::position(c), game::position(p));
@@ -842,7 +843,7 @@ static int c_sneak(void*, int argc, const char* const* argv, SkOut* out)
     if (av)
         line("own", -1, av);
     if (C.puppet_of)
-        for (uint8_t id = 0; id < 8; id++)
+        for (uint8_t id = 0; id < (uint8_t)net::kMaxPlayers; id++)
             if (void* p = C.puppet_of(id))
                 if (game::is_puppet(p))
                     line("puppet", id, p);

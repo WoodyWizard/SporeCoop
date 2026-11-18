@@ -277,13 +277,13 @@ bool Session::retired(uint32_t conn) const
 
 uint8_t Session::alloc_id() const
 {
-    for (uint8_t id = 1; id < seat_limit && id < kMaxPlayers; id++) {
+    for (int id = 1; id < seat_limit && id < kMaxPlayers; id++) { // (int: no wrap at a ceiling of 255)
         bool used = false;
         for (auto& p : peers_)
             if (p->accepted && p->id == id)
                 used = true;
         if (!used)
-            return id;
+            return (uint8_t)id;
     }
     return 0xFF;
 }
@@ -745,7 +745,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             p.resume_world = h.resume_world;
             p.hello_name = h.name;
             if (h.has_token && std::find(seen_tokens_.begin(), seen_tokens_.end(), h.token) == seen_tokens_.end()) {
-                if (seen_tokens_.size() >= 64)
+                if (seen_tokens_.size() >= 4 * (size_t)kMaxPlayers) // (every player of a full session, rejoins too)
                     seen_tokens_.erase(seen_tokens_.begin());
                 seen_tokens_.push_back(h.token);
             }

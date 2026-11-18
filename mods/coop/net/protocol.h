@@ -16,7 +16,12 @@ constexpr uint32_t kMagic = 0x4F435053; // 'SPCO'
 constexpr uint16_t kProtoVersion = 7; // 3: shared resources, ping marks; 4: lobby, LAN discovery; 5: 128-packet acks;
                                       // 6: connection id in the header, unreliable BYE; 7: space features (space_ext.h)
 constexpr uint16_t kDefaultPort = 47810;
-constexpr int kMaxPlayers = 4; // host + 3 guests (Spore pack size)
+// The ceiling of players in one session (ids 0..kMaxPlayers-1, the host 0). Owner 2026-11-18 (decision 6E B, alpha):
+// "It needs to be scalable too. Setting it to 17 shouldn't cause any issues": every table sizes itself from this one
+// number and the players a session takes are a setting (all.max_players, galaxy planets 16 by default). Ids from 0xFC
+// up are markers (kNobody 0xFF, kNoOwner 0xFE, kOtherSeat 0xFC): the ceiling stays below them.
+constexpr int kMaxPlayers = 64;
+static_assert(kMaxPlayers >= 2 && kMaxPlayers <= 0xFB, "player ids are one byte, 0xFC and up are markers");
 constexpr size_t kMaxPacket = 1200;
 
 enum MsgType : uint8_t {

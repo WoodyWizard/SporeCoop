@@ -228,7 +228,7 @@ static void partner_tiles()
     float nan = std::nanf("");
     CHECK(!c.add(3, {nan, 0, 0}) && !c.find(3)); // BUG-0292: a NaN partner is no centre
     CHECK(!c.add(3, {1e9f, 0, 0}));
-    for (int i = 3; i < 20; i++)
+    for (int i = 3; i < (int)views::kMaxCentres + 12; i++)
         c.add((uint8_t)i, {(float)i, 0, 0});
     CHECK(c.size() == views::kMaxCentres); // bounded
     views::Box b{-20, -15, 20, 15};

@@ -9,6 +9,9 @@
 
 namespace founders {
 
+// 6E B (alpha): the most player slots a campaign takes (the seats' ceiling, net::kMaxPlayers); see kMaxSeats
+constexpr unsigned kSeatCeiling = 64;
+
 // The highest Difficulty Scaling a new campaign accepts (player decision, 41-dev).
 // Saved campaigns keep whatever they were created with.
 constexpr unsigned kMaxDifficultyPercent = 400;
@@ -26,9 +29,14 @@ struct CampaignRules {
     // progress adds kProgressPerSeat percent per extra seat at 100%.
     uint8_t model = 0;
     static constexpr uint32_t kProgressPerSeat = 60;
+    // 6E B (alpha): difficulty rises with the seats of one party only (Spore's pack, 4). Owner 2026-11-18: "Difficulty
+    // scales on the individual party" (each party its own relations, damage, goals); until each party has its own, a
+    // 16-player galaxy planet plays at a 4-seat party's difficulty, not 16 seats'.
+    static constexpr uint32_t kScaledSeats = 4;
+    uint32_t seats_over() const { return seats > 1 ? std::min<uint32_t>(seats, kScaledSeats) - 1u : 0u; }
     // The whole bonus of the extra seats, rounded to the nearest unit.
     uint32_t extra_total(uint32_t per_seat) const {
-        const uint64_t seats_over = seats > 1 ? seats - 1u : 0u;
+        const uint64_t seats_over = this->seats_over();
         if (!model) return uint32_t(seats_over * per_seat);
         return uint32_t((seats_over * per_seat * difficulty_percent + 50u) / 100u);
     }
@@ -38,7 +46,7 @@ struct CampaignRules {
     uint32_t enemy_damage_percent() const { return 100u + extra_total(extra_damage_percent); }
     bool operator==(const CampaignRules&) const = default;
     uint32_t workload_percent() const {
-        return 100u + (model ? extra_total(kProgressPerSeat) : (seats - 1u) * difficulty_percent);
+        return 100u + (model ? extra_total(kProgressPerSeat) : seats_over() * difficulty_percent);
     }
     // 43-dev (player decision): a Cell predator group gets one extra member from three reserved
     // seats on (before: one per extra seat, three at four seats). Seats still raise difficulty.
@@ -69,11 +77,11 @@ struct CampaignRules {
     }
     uint32_t rival_target(uint16_t baseline) const {
         if (model) {
-            const uint64_t seats_over = seats > 1 ? seats - 1u : 0u;
+            const uint64_t seats_over = this->seats_over();
             return baseline + uint32_t((baseline * seats_over * kProgressPerSeat * difficulty_percent + 9999u) / 10000u);
         }
         const uint32_t added = (uint32_t(baseline) * difficulty_percent + 99u) / 100u;
-        return baseline + (seats - 1u) * added;
+        return baseline + seats_over() * added;
     }
 };
 struct CellCredit {
@@ -138,7 +146,7 @@ bool update_seats(const std::string& planet, uint8_t occupied, uint8_t stage, bo
 // Space keeps its own rule (from the next Space load). False: not a raise, or not a regular stage.
 inline bool raise_now(CampaignRules& rules, SeatPlan& plan, uint8_t stage, uint8_t seats)
 {
-    if (!stage || stage > plan.previous_stage_seats.size() || seats > 4 || seats <= plan.seats_in(stage, rules.seats))
+    if (!stage || stage > plan.previous_stage_seats.size() || seats > kSeatCeiling || seats <= plan.seats_in(stage, rules.seats))
         return false;
     // a stage the game returned to after its next one began (a crash before the next stage's first save): that
     // stage's own entry is the count it uses
@@ -152,7 +160,8 @@ bool reserve(const std::string& planet, const CampaignRules& requested, std::str
 
 // BUG-9135: founder seats a campaign can persist: the host (seat 0) and up to seven partners. The gameplay of the
 // stages still binds seats 0 and 1 (tribe.cpp / civ.cpp); the save formats and the player identity carry more.
-constexpr size_t kMaxSeats = 8;
+// 6E B (alpha): the seats scale with the player ceiling (net::kMaxPlayers); the files store their count (old files load).
+constexpr size_t kMaxSeats = kSeatCeiling;
 
 struct Founder {
     uint32_t species = 0, faction = 0;
@@ -267,7 +276,8 @@ bool add_stand_in(const std::string& planet_file, uint32_t key, std::string& err
 // the save (`.duoparty`, PTY1: u8 seats, per seat u64 player identity, u32 own creature species instance, str8 name).
 // Seat 0 is the host's. The seats of the founder rosters (Tribe villages, Civilization nations) and the Creature
 // nests are these seats. Data structures hold kMaxSeats; the game allows kPlaySeats players for now (owner decision).
-constexpr size_t kPlaySeats = 4;
+constexpr size_t kPlaySeats = kMaxSeats; // 6E B: the planet's limit is the campaign's seats / all.max_players
+static_assert(kPlaySeats <= kMaxSeats, "the rosters (std::array of kMaxSeats) are indexed by play seats");
 struct PartySeat {
     uint64_t player = 0;   // identity.h; 0 = not known yet (a seat taken over from a two-founder save)
     uint32_t species = 0;  // the seat's own creature (its key instance); 0 = plays the host's species

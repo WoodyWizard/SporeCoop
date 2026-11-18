@@ -6,6 +6,7 @@
 #include "lifecycle.h"
 #include "player_life.h"
 
+#include <bitset>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -2010,17 +2011,17 @@ static void* SK_THISCALL h_NounData(void* self, uintptr_t create, uintptr_t clea
         !active() || !is_host() || noun != kTribeNoun || !g_order_roster.guest().faction ||
         !skg::readable(data, 16)) return data;
     uintptr_t begin = F<uintptr_t>(data, 4), end = F<uintptr_t>(data, 8);
-    if (!begin || end < begin || (end-begin)%4 || end-begin < 8 || end-begin > 256 ||
+    if (!begin || end < begin || (end-begin)%4 || end-begin < 8 || end-begin > 4 * (64 + founders::kMaxSeats) ||
         !skg::readable((void*)begin, end-begin)) return data;
     // BUG-9135: every partner founder village present is left out of the count (seat 1 only before), each seat once
-    uint32_t present = 0;
+    std::bitset<founders::kMaxSeats> present; // (6E B: any seat count, not 32 bits)
     for (uintptr_t at = begin; at < end; at += 4) {
         void* tribe = *(void**)at;
         if (!tribe || !game::object_alive(tribe)) continue;
         const int seat = g_order_roster.seat_of_faction(F<uint32_t>(tribe, 0x30));
-        if (seat >= 1 && seat < (int)founder_seats()) present |= 1u << seat;
+        if (seat >= 1 && seat < (int)founder_seats() && (size_t)seat < present.size()) present[(size_t)seat] = true;
     }
-    const unsigned hidden = (unsigned)__builtin_popcount(present);
+    const unsigned hidden = (unsigned)present.count();
     if (!hidden || hidden * 4 > end - begin - 4) return data;
     // Both verified callers consume only (end-begin)/4 immediately after
     // returning, for appearance conditions or NPC quota/species selection.

@@ -71,7 +71,7 @@ struct Sphere {
     float x, y, z, enter_sq, leave_sq;
 };
 static_assert(sizeof(Sphere) == 0x14, "the game's sphere is 5 floats");
-constexpr size_t kMaxSpheres = 16;
+constexpr size_t kMaxSpheres = kMaxCentres + 8; // (6E B: every player's centre, the game's own spheres first)
 static Sphere g_buf[kMaxSpheres];
 static uint32_t g_passes, g_passes_extra, g_extra_max, g_game_spheres_max;
 static double g_last_extra_at;

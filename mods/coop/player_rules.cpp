@@ -18,6 +18,7 @@
 #include "game.h"
 #include "drama.h"
 #include "npc.h"
+#include "net/protocol.h"
 #include "sporekit_game.hpp"
 
 namespace player_rules {
@@ -84,9 +85,9 @@ static uint8_t puppet_player(void* c)
 {
     if (!C.puppet_of || !c || !game::is_puppet(c))
         return 0xFF;
-    for (uint8_t id = 1; id < 8; id++)
-        if (C.puppet_of(id) == c)
-            return id;
+    for (int id = 1; id < net::kMaxPlayers; id++) // (6E B: every player id)
+        if (C.puppet_of((uint8_t)id) == c)
+            return (uint8_t)id;
     return 0xFF;
 }
 
@@ -501,7 +502,7 @@ static int host_summons_out(uint8_t& owner)
         return 0;
     owner = 0;
     if (void* pup = drama::summon_puppet())
-        for (uint8_t id = 1; id < 16; id++)
+        for (uint8_t id = 1; id < (uint8_t)net::kMaxPlayers; id++)
             if (C.puppet_of && C.puppet_of(id) == pup)
                 owner = id;
     return 1;
@@ -1124,7 +1125,7 @@ static std::string carry_dump()
         }
     };
     slots("own", game::avatar());
-    for (uint8_t id = 0; id < 8 && C.puppet_of; id++)
+    for (uint8_t id = 0; id < (uint8_t)net::kMaxPlayers && C.puppet_of; id++)
         if (void* pp = C.puppet_of(id)) {
             char w[16];
             snprintf(w, sizeof w, "puppet%u", id);
@@ -1194,7 +1195,7 @@ static std::string ufo_dump()
             return true;
         },
         &u);
-    for (uint8_t id = 1; id < 8 && C.puppet_of; id++)
+    for (uint8_t id = 1; id < (uint8_t)net::kMaxPlayers && C.puppet_of; id++)
         if (void* pp = C.puppet_of(id)) {
             net::Vec3 v = game::position(pp);
             char b[128];

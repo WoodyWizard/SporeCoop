@@ -2,7 +2,7 @@
 // connects to. Runs no Spore: it keeps the players (a slot each), the planets (who hosts each one now, who is on it)
 // and relays the planet sessions' packets between a planet's host and its players (net/galaxy.h).
 //
-// usage: galaxy_server [--local] [--worlds <dir>] [--warm-handover] [port] [galaxy name]
+// usage: galaxy_server [--local] [--worlds <dir>] [--warm-handover] [--planet-players <n>] [port] [galaxy name]
 //        (port 47900 by default; --local: 127.0.0.1 only; worlds: the folder of stored worlds, "worlds" by default)
 //
 // Planets are made when a player enters one; the host is the first player on a planet. Decision 5Q A: the server keeps
@@ -65,6 +65,7 @@ static uint32_t g_next_xfer = 1;
 // decision 6B C research (--warm-handover): the new host of a hand-over keeps the world it plays (it was a guest of the
 // old host) instead of loading the stored one: no reload for it
 static bool g_warm_handover;
+static uint8_t g_planet_players = kPlanetPlayers; // 6E B: the players a planet takes (--planet-players)
 
 static UdpSocket g_sock;
 static std::map<uint16_t, Client> g_clients; // by slot
@@ -294,6 +295,7 @@ static void on_control(const Endpoint& from, Reader& r)
         Writer w = control(WELCOME);
         w.u16(c->slot);
         w.str8(g_name);
+        w.u8(g_planet_players);
         send(*c, w);
         say("player %u '%s' connected from %s (%s)", c->slot, c->name.c_str(), from.masked().c_str(), version.c_str());
         return;
@@ -339,6 +341,13 @@ static void on_control(const Endpoint& from, Reader& r)
         if (ex != g_planets.end() && ex->second.host && !ex->second.ready && ex->second.host != c->slot) {
             Writer w = control(REFUSED);
             w.str8(name + " is being loaded by its host: enter again in a moment.");
+            send(*c, w);
+            return;
+        }
+        if (ex != g_planets.end() && !ex->second.members.count(c->slot) &&
+            ex->second.members.size() >= g_planet_players) { // 6E B: a planet takes g_planet_players
+            Writer w = control(REFUSED);
+            w.str8(name + " is full (" + std::to_string((int)g_planet_players) + " players): pick another planet or try again later.");
             send(*c, w);
             return;
         }
@@ -512,6 +521,14 @@ int main(int argc, char** argv)
             g_worlds_dir = argv[++i];
         else if (!strcmp(argv[i], "--warm-handover"))
             g_warm_handover = true;
+        else if (!strcmp(argv[i], "--planet-players") && i + 1 < argc) { // 6E B: the players a planet takes
+            const int n = atoi(argv[++i]);
+            if (n < 2 || n > kMaxPlanetPlayers) {
+                fprintf(stderr, "--planet-players: 2 to %d\n", (int)kMaxPlanetPlayers);
+                return 1;
+            }
+            g_planet_players = (uint8_t)n;
+        }
         else
             args.push_back(argv[i]);
     }
@@ -530,8 +547,8 @@ int main(int argc, char** argv)
         return 1;
     }
     g_sock.set_buffers(4 << 20); // (bursts: a world sent to a joining player)
-    say("galaxy server '%s' on UDP port %u (protocol %u), worlds in '%s'", g_name.c_str(), g_sock.local_port(), kProto,
-        g_worlds_dir.c_str());
+    say("galaxy server '%s' on UDP port %u (protocol %u), worlds in '%s', %u players a planet", g_name.c_str(),
+        g_sock.local_port(), kProto, g_worlds_dir.c_str(), (unsigned)g_planet_players);
     load_stored();
     std::vector<uint8_t> buf(65536);
     uint32_t last_status = now_ms(), last_sweep = now_ms();

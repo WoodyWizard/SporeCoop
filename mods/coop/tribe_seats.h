@@ -21,7 +21,7 @@
 
 namespace tribe_seats {
 
-constexpr size_t kMaxSeats = 8; // founders::kMaxSeats (founders.h is not portable)
+constexpr size_t kMaxSeats = 64; // founders::kMaxSeats (founders.h is not portable; 6E B: the seat ceiling)
 
 // ---- the campaign's village counts (h_NounData, missing_last_objective, the six-rival trial) ----
 // The native Tribal goals expect the player village plus its NPC rivals; the partners' villages are counted next to

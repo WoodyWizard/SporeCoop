@@ -694,7 +694,7 @@ static bool g_partner_pass_fix = true;
 COOP_FIX("creature.partner_pass", "BUG-0913", g_partner_pass_fix, "creature: with friendly fire off a player walks through a partner's creature and a click goes to the animal behind it");
 // what the hooks read (they may run inside Havok's step): written once a frame by partner_pass_tick
 static void* volatile g_pass_avatar;
-static void* volatile g_pass_puppets[8];
+static void* volatile g_pass_puppets[net::kMaxPlayers]; // (6E B: one per player)
 static volatile bool g_pass_on;
 static uint32_t g_pass_pairs, g_pass_hover_skipped, g_pass_seen_own; // tests (coop.status)
 static uintptr_t a_AbilityModeCore;
@@ -705,10 +705,10 @@ static void partner_pass_tick()
     size_t n = 0;
     if (on)
         for (auto& [id, r] : g_remotes)
-            if (n < 8 && r.puppet && !r.echo)
+            if (n < (size_t)net::kMaxPlayers && r.puppet && !r.echo)
                 if (void* p = creature_puppet_live(id))
                     g_pass_puppets[n++] = p;
-    for (size_t i = n; i < 8; i++)
+    for (size_t i = n; i < (size_t)net::kMaxPlayers; i++)
         g_pass_puppets[i] = nullptr;
     g_pass_avatar = on ? game::avatar() : nullptr;
     g_pass_on = on && n > 0;
@@ -717,9 +717,12 @@ static void partner_pass_tick()
 static bool pass_is(void* who, void* o) { return who && o && (o == who || o == (char*)who + 0xC0); }
 static bool pass_partner(void* o)
 {
-    for (void* p : g_pass_puppets)
+    for (void* p : g_pass_puppets) {
+        if (!p)
+            break; // (filled from the front)
         if (pass_is(p, o))
             return true;
+    }
     return false;
 }
 // the game object of a Havok collidable: the root's owner (broadphase type 1 = an entity), its userData (+0xC)
@@ -5438,6 +5441,8 @@ void on_frame(void*, int, void*)
     g_local = g_adapter ? g_adapter->local() : nullptr;
     settings::tick(); // F3: the host's world opened or closed (its stored settings)
     g_sess.max_players = settings::get(settings::kPlayerLimit); // F3 (BUG-0768): the host's join rules
+    if (galaxy::hosting()) // 6E B (alpha): a galaxy planet takes the galaxy's count, not the co-op setting
+        g_sess.max_players = (decltype(g_sess.max_players))galaxy::planet_players();
     pfind::tick(H->time_seconds()); // F2: the partners on the minimap (outside the frame)
     portrait::tick(H->time_seconds()); // BUG-0937: the HUD portrait follows the avatar's species (outside the frame)
     pfind::hud_tick(H->time_seconds()); // BUG-0949: the UI windows the labels keep off (outside the frame)
@@ -7794,7 +7799,8 @@ void end_open_session()
     }
 }
 
-bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err, const std::string& password = {})
+bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err, const std::string& password = {},
+             unsigned seat_floor = 0)
 {
     if (!creations::campaign_content(COOP_VERSION, g_sess.campaign_profile, err))
         return false;
@@ -7826,7 +7832,7 @@ bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err, 
     requested.extra_takeover_percent = uint16_t(takeover);
     requested.extra_health_percent = uint16_t(health);
     requested.extra_damage_percent = uint16_t(damage);
-    if (!world::setup_campaign(g_sess,requested,err)) return false;
+    if (!world::setup_campaign(g_sess,requested,err,seat_floor)) return false;
     if (!g_sess.host(port, g_name, err, password))
         return false;
     support::on_session_start();
@@ -7932,13 +7938,15 @@ int share_all()
 int c_seats(void*, int argc, const char* const* argv, SkOut* out)
 {
     const bool now = argc == 3 && !strcmp(argv[2], "now");
-    if ((argc != 2 && !now) || !argv[1][0] || argv[1][1] || argv[1][0] < '1' || argv[1][0] > '4') {
-        SAY("Usage: coop.seats <1-4> [now]. Without now: from the next stage (the current size cancels a queued change); "
-            "now: more seats in this stage at once.");
+    char* end = nullptr;
+    const unsigned long seats = (argc == 2 || now) ? strtoul(argv[1], &end, 10) : 0;
+    if ((argc != 2 && !now) || !argv[1][0] || *end || seats < 1 || seats > founders::kSeatCeiling) { // (6E B: any count)
+        SAY("Usage: coop.seats <1-%u> [now]. Without now: from the next stage (the current size cancels a queued change); "
+            "now: more seats in this stage at once.", founders::kSeatCeiling);
         return 1;
     }
     std::string result;
-    const bool ok = now ? world::raise_seats_now(g_sess,argv[1][0] - '0',result) : world::change_seats(g_sess,argv[1][0] - '0',result);
+    const bool ok = now ? world::raise_seats_now(g_sess,unsigned(seats),result) : world::change_seats(g_sess,unsigned(seats),result);
     SAY("%s",result.c_str());
     return ok ? 0 : 1;
 }
@@ -7953,7 +7961,7 @@ int c_host(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 3) {
         char* end = nullptr;
         unsigned long n = strtoul(argv[3],&end,10);
-        if (!*argv[3] || *end || n < 1 || n > 4) { SAY("Reserve 1 to 4 founders."); return 1; }
+        if (!*argv[3] || *end || n < 1 || n > founders::kSeatCeiling) { SAY("Reserve 1 to %u founders.", founders::kSeatCeiling); return 1; }
         seats = unsigned(n);
     }
     if (argc > 4) {
@@ -9390,7 +9398,9 @@ void init_ui()
     a.name = [] { return g_name; };
     a.set_name = [](const std::string& n) { g_name = utf8::player_name(n); };
     a.join = [](const std::string& addr, std::string& err, const std::string& pw) { return do_join(addr, err, pw); };
-    a.host = do_host;
+    a.host = [](uint16_t port, unsigned seats, unsigned scaling, std::string& err, const std::string& pw) {
+        return do_host(port, seats, scaling, err, pw);
+    };
     a.queue_seats = [](unsigned seats, std::string& result) { return world::set_seats(g_sess,seats,result); };
     a.leave = do_leave;
     a.role = [] { return g_sess.role() == net::Role::Host ? 1 : g_sess.role() == net::Role::Client ? 2 : 0; };
@@ -10811,7 +10821,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         };
         api.host = [](uint16_t port, unsigned seats, const std::string& name, const std::string& pw, std::string& err) {
             if (!name.empty()) g_name = utf8::player_name(name);
-            return do_host(port ? port : default_port(), seats >= 1 && seats <= 4 ? seats : 2, 100, err, pw);
+            return do_host(port ? port : default_port(), seats >= 1 && seats <= founders::kSeatCeiling ? seats : 2, 100, err, pw);
         };
         api.leave = [] {
             if (g_sess.role() == net::Role::Client) do_leave();
@@ -11207,7 +11217,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gx.name = [] { return g_name; };
         gx.identity = [] { return identity::own(); };
         gx.version = COOP_VERSION;
-        gx.host = [](std::string& err) { return do_host(default_port(), 4, 100, err); };
+        // 6E B: a planet takes the galaxy's player count (16 by default; difficulty stays one party's, founders.h)
+        gx.host = [](std::string& err) { return do_host(default_port(), galaxy::planet_players(), 100, err, {}, galaxy::planet_players()); };
         gx.join = [](const std::string& addr, std::string& err) { return do_join(addr, err); };
         gx.ready = [] { return g_local != nullptr && !world::load_queued() && !world::load_starting(); };
         gx.promote = [] { npc::promote_now(); };
