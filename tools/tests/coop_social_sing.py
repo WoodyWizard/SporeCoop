@@ -78,6 +78,10 @@ def main():
     d = sum((a - b) ** 2 for a, b in zip(hp, gp)) ** 0.5 if hp and gp else None
     print(f'  host {hp} guest {gp} d={d}')
     ck(d is not None and d < 12, f'the guest stands next to the host ({d and round(d, 1)} m)')
+    for c in (host, guest):
+        c.call('coop.effects log on')
+    print('  host effects before:', host.call('coop.effects map')['out'].strip().replace('\n', ' | ')[:500])
+    print('  guest effects before:', guest.call('coop.effects map')['out'].strip().replace('\n', ' | ')[:500])
     ck(set_stance(host, 'social'), 'the host is in the social stance')
     sing_h, sing_g = social_anims(host), social_anims(guest)
     print(f'  social animations: host {sorted(sing_h)}, guest {sorted(sing_g)}')
