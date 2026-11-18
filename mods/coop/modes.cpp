@@ -300,30 +300,10 @@ static void puppet_body(void* p, const net::PlayerState& s)
     game::set_scale(p, want);
 }
 
-// BUG-1252 (players' video): a thought bubble with a gnawed bone hung over the guest's creature in the host's game. A
-// puppet is a creature of this game: its food meter (+0xBBC) runs down by the game's hunger update 0xC0D5A0 (it never
-// eats here), and the per-creature UI update 0xE8BF00 shows the hunger bubble (pool 2, key 0x062EDBA6: 0xDE4F1682
-// for a carnivore, 0xBDE1A55D / 0x275458DB for the others) while the mood 0xC02F50 (vt 0xA4, +0xCC0) is 2 or 3
-// (hungry, starving; docs/re/creature.md#creature-puppet-hunger); below 1 the game starves it (damage every frame).
-// The partner's own hunger is its own game's: it shows its own bubble there, and the effects relay brings that one
-// (pool 2 start / stop) here. The puppet is kept full. `coop.fix creature.puppet_full off`: its own meter (0.7.15).
-static bool g_puppet_full_fix = true;
-COOP_FIX("creature.puppet_full", "BUG-1252", g_puppet_full_fix, "creature: no hunger bubble over a partner's creature (its own meter ran down in this game)");
-static uint32_t g_puppet_fed;
-static void puppet_full(void* p)
-{
-    if (!g_puppet_full_fix || !game::in_creature_stage() || game::hunger(p) >= 99.f)
-        return;
-    if (game::set_hunger(p, 100.f))
-        g_puppet_fed++;
-}
-uint32_t puppets_fed() { return g_puppet_fed; }
-
 static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     puppet_sneak(p, s_in);
     puppet_body(p, s_in);
-    puppet_full(p);
     ds.drawn = game::position(p);
     net::PlayerState s = s_in;
     // BUG-0376: the partner is off the ground: never onto this game's ground

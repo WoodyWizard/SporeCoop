@@ -481,6 +481,10 @@ static void process_hit(uint32_t id, const net::Vec3& p)
     C.sess->send_event(net::MSG_EFFECT, w);
 }
 
+static bool g_stop_always_fix = true;
+COOP_FIX("effects.stop_always", "BUG-1252", g_stop_always_fix, "effects: the end of an effect of a player's creature always reaches the partners (a burst of effects dropped it and the effect stayed on the partner's screen)");
+static uint32_t g_stops_unlimited; // stops sent past the empty rate limit (coop.effects)
+
 static void process_local(void* creature, const game::EffectEvent& ev)
 {
     if (!g_fix || !creature)
@@ -518,13 +522,23 @@ static void process_local(void* creature, const game::EffectEvent& ev)
             g_sent_keys[g_sent_n++] = ev.key;
     }
     double t = now();
+    // BUG-1252: a stop is never dropped by the rate limit. Its key has just left g_sent_keys, so a dropped stop was
+    // never sent again and the partner's puppet kept the effect for good (the hunger bubble after the creature ate,
+    // a pool effect of an ability): in a burst of effects (a fight, `coop.effects load`) the bucket is empty for
+    // seconds. A stop is at most one per started key: it costs a token when there is one and goes anyway.
+    // `coop.fix effects.stop_always off`: a stop is dropped like a start (0.7.15).
     if (!take_token(t)) {
-        g_dropped++;
-        if (g_log)
-            H->log(M, SK_INFO, "effect: dropped by the rate limit: id %08X key %08X pool %u stop %d",
-                   ev.id, ev.key, ev.pool, ev.stop ? 1 : 0);
-        return;
+        if (ev.stop && g_stop_always_fix) {
+            g_stops_unlimited++;
+        } else {
+            g_dropped++;
+            if (g_log)
+                H->log(M, SK_INFO, "effect: dropped by the rate limit: id %08X key %08X pool %u stop %d",
+                       ev.id, ev.key, ev.pool, ev.stop ? 1 : 0);
+            return;
+        }
     }
+
     g_last_tx = Last{};
     g_last_tx.id = ev.id;
     g_last_tx.key = ev.key;
@@ -1174,8 +1188,10 @@ std::string status()
     std::string s;
     char b[480];
     snprintf(b, sizeof b,
-             "effects: fix=%d sent=%u received=%u played=%u stopped=%u skipped=%u failed=%u dropped_rate=%u world=%u gone=%u\n",
-             (int)g_fix, g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped, g_world, g_puppet_gone);
+             "effects: fix=%d sent=%u received=%u played=%u stopped=%u skipped=%u failed=%u dropped_rate=%u world=%u gone=%u "
+             "stops_past_rate=%u\n",
+             (int)g_fix, g_sent, g_rx, g_played, g_stopped, g_skipped, g_failed, g_dropped, g_world, g_puppet_gone,
+             g_stops_unlimited);
     s += b;
     uint32_t creates = 0, probes = 0, evicted = 0, mgr = 0, world = 0, anim = 0;
     game::effect_table_stats(creates, probes, evicted, mgr, world, anim);

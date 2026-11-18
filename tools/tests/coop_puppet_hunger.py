@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """BUG-1252 (players' video): a thought bubble with a gnawed bone hung over the guest's creature in the host's game
-for a long time, while the guest's own creature was not hungry.
+for a long time.
 
-A partner's puppet is a creature of the game that shows it: the game's hunger update runs its food meter (+0xBBC)
-down (it never eats there), and the per-creature UI update 0xE8BF00 shows the hunger bubble (pool 2, key 062EDBA6)
-while its mood is hungry (docs/re/creature.md#creature-puppet-hunger). Creature fixture, the guest 4 m in front of
-the host's camera.
-  1. the puppet's own meter runs down in the host's game: set to 60 (`coop.puppet hunger 60`, as two minutes after
-     its spawn leave it) it is read again 20 s later (the game's update ran it down, or the fix put it back to full);
-  2. the meter as minutes of the game's update leave it (`coop.puppet hunger 10`): 6 s later the host's puppet must
-     have no active hunger bubble (`coop.effects map`, key 062EDBA6) unless the guest's own avatar has one, and the
-     host's puppet's meter must be full again; key frame of the host's screen.
-SPORE_FIX_OFF=creature.puppet_full must FAIL (the bubble hangs over the puppet)."""
+Measured first (lab 20261118-123004): the host's puppet has no hunger of its own (its meter's change +0xBB8 is 0, its
+mood +0xCC0 is never computed), so the bubble on it is the guest's OWN hunger bubble: the guest's game shows it over
+its own creature when its meter is low (mood 2, pool 2 key 062EDBA6, Creature_ThoughtBubbleUpdate 0xE8BF00) and the
+effects relay starts and stops it on the puppet (docs/re/creature.md#creature-puppet-hunger). The bubble stays on the
+puppet only when the stop is lost: the relay's rate limit (40 a second) dropped a stop like a start, and the stop's
+key had already left the list of sent keys, so it was never sent again.
+Creature fixture, the guest 4 m in front of the host's camera:
+  1. the host's puppet's meter set low (`coop.puppet hunger 10`): no bubble (its own meter shows none);
+  2. the guest's own creature gets hungry (`coop.puppet ownhunger 10`, its own game's meter as minutes leave it): the
+     bubble on both games;
+  3. a burst of effects at the guest's creature (`coop.effects load 40 50`, as a fight's hits make them) while the guest
+     eats (`ownhunger 100`): its own bubble goes; the burst ends;
+  4. 10 s later the host's puppet must have no bubble either (`coop.effects map`, active); key frames.
+SPORE_FIX_OFF=effects.stop_always must FAIL (the bubble stays on the puppet)."""
 import re
 import time
 
@@ -51,28 +55,35 @@ def main():
     watch(host, guest, gid, 3, 'start', rows)
     # 1. the puppet's own meter in the host's game, as minutes of the game's update would leave it
     print('  host: ' + host.call('coop.puppet hunger 10')['out'].strip(), flush=True)
-    watch(host, guest, gid, 10, 'pup10', rows)
-    keyframe('puppet_hungry', 'the host\'s screen, the guest\'s creature 4 m ahead: NO thought bubble (gnawed bone) over it '
-             '(the guest\'s own creature is not hungry)', settle=0)
-    # 2. the guest's own creature gets hungry (its own game: its own bubble, relayed), then eats (its meter full)
+    watch(host, guest, gid, 8, 'pup10', rows)
+    keyframe('puppet_low', 'the host\'s screen, the guest\'s creature 4 m ahead: NO thought bubble over it (the guest\'s '
+             'own creature is not hungry)', settle=0)
+    # 2. the guest's own creature gets hungry: its own bubble, relayed
     print('  guest: ' + guest.call('coop.puppet ownhunger 10')['out'].strip(), flush=True)
-    watch(host, guest, gid, 10, 'own10', rows)
-    keyframe('guest_hungry', 'the guest\'s own creature is hungry: a bubble over it on the guest\'s screen if its own game shows '
-             'one, the same over it on the host\'s', settle=0)
+    watch(host, guest, gid, 8, 'own10', rows)
+    keyframe('guest_hungry', 'the guest\'s own creature is hungry: the thought bubble over it on both screens', settle=0)
+    # 3. it eats during a burst of effects at it
+    print('  guest: ' + guest.call('coop.effects load 40 50')['out'].strip(), flush=True)
+    time.sleep(1.5)
     print('  guest: ' + guest.call('coop.puppet ownhunger 100')['out'].strip(), flush=True)
-    watch(host, guest, gid, 10, 'own100', rows)
-    keyframe('guest_fed', 'the guest\'s own creature ate (full): NO bubble over it on either screen', settle=0)
+    watch(host, guest, gid, 3, 'burst', rows)
+    guest.call('coop.effects load 0')
+    # 4. later
+    watch(host, guest, gid, 10, 'after', rows)
+    keyframe('guest_fed', 'the guest\'s own creature ate (full): NO thought bubble over it on either screen', settle=0)
     for r in rows:
         print(f'    {r[0]:6} {r[1]:5.1f} host puppet {r[2]} bubble {r[3]} | guest avatar {r[4]} bubble {r[5]}', flush=True)
     m = re.search(r'remote animations.*', host.call('coop.status')['out'])
     print('  host: ' + (m.group(0) if m else '?'), flush=True)
     print('  host: ' + host.call('coop.effects')['out'].strip().splitlines()[0], flush=True)
     print('  guest: ' + guest.call('coop.effects')['out'].strip().splitlines()[0], flush=True)
-    late = [r for r in rows if r[1] > 5]
-    shown = [(r[0], r[1]) for r in late if r[3] and not r[5]]
-    ck(not shown, f'the host\'s puppet shows no hunger bubble the guest\'s own creature does not have ({shown[:4]})')
-    low = [(r[0], r[1], r[2][0]) for r in late if r[0] == 'pup10' and (r[2][0] is None or r[2][0] < 99)]
-    ck(not low, f'the host\'s puppet of the guest is full (its own meter is not the guest\'s): {low[:3]}')
+    pup = [(r[0], r[1]) for r in rows if r[0] == 'pup10' and r[1] > 3 and r[3] and not r[5]]
+    ck(not pup, f'the host\'s puppet shows no bubble of its own meter ({pup[:3]})')
+    both = [r for r in rows if r[0] == 'own10' and r[1] > 3]
+    ck(both and any(r[3] for r in both) and any(r[5] for r in both),
+       'the guest\'s own hunger bubble is on its creature in both games (the relay starts it)')
+    stays = [(r[0], r[1]) for r in rows if r[0] == 'after' and r[1] > 4 and r[3] and not r[5]]
+    ck(not stays, f'after the guest ate the host\'s puppet has no bubble either ({len(stays)} samples: {stays[:3]})')
     shot(host, 'puppet_hunger_host.png')
     shot(guest, 'puppet_hunger_guest.png')
     ck.faults(host=host, guest=guest)

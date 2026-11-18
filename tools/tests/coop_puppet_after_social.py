@@ -98,6 +98,7 @@ def main():
     ck = Checks()
     for c in (host, guest):
         c.call('coop.team hp 1000')
+        c.call('coop.effects log on')  # (every effect the creatures make, in the game logs: which one is the rings)
     gid = re.search(r'client id=(\d+)', guest.call('coop.status')['out'])
     gid = gid.group(1) if gid else '1'
     time.sleep(2)

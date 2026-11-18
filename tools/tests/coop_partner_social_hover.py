@@ -14,7 +14,7 @@ import struct
 import time
 
 from coop_creature_kills import read
-from coop_creature_partner_pass import aim
+from coop_creature_partner_pass import aim, targets
 from harness import avatar_pos as pos, puppet
 from twoinst import Checks, ability_mode, keyframe, set_stance, shot, start
 
@@ -29,17 +29,24 @@ def gvm(con):
     return int(m.group(1), 16) if m else 0
 
 
-def hovered(con, g, pup, x, y, n=8):
-    """[the game's hover result is the puppet] over n samples with the mouse moved onto (x, y)"""
+def hovered(con, g, pup, n=12):
+    """[the game's hover result is the puppet] over n samples, the mouse moved onto the host's creature each time (its
+    screen point from `coop.targets all`, 20-60 px above it: its body)"""
     ids = {pup, pup + 0xC0, u32(con, pup + 0xB54) or -1}
-    out, raw = [], set()
+    out, raw, at = [], set(), []
     for i in range(n):
-        con.call(f'move {x + (i % 3) - 1} {y + (i % 2)}')
+        o = targets(con).get('p0')
+        if not o or not (20 < o[1] < 1420 and 90 < o[2] < 900):
+            time.sleep(0.3)
+            continue
+        x, y = o[1], o[2] - (20, 40, 60)[i % 3]
+        con.call(f'move {x} {y}')
         time.sleep(0.35)
         h = u32(con, g + 0x88)
         raw.add(h)
+        at.append((x, y))
         out.append(h in ids)
-    return out, raw, ids
+    return out, raw, ids, at
 
 
 def main():
@@ -64,9 +71,10 @@ def main():
         if not o:
             print(f'  {stance}: the host\'s creature not on the guest\'s screen', flush=True)
             continue
-        hv, raw, ids = hovered(guest, g, pup, o[1], o[2] - 10)
-        res[stance] = hv
-        print(f'  {stance}: cursor on the host\'s creature at ({o[1]}, {o[2]}): hover is it {sum(hv)} of {len(hv)} '
+        hv, raw, ids, at = hovered(guest, g, pup)
+        if hv:
+            res[stance] = hv
+        print(f'  {stance}: cursor on the host\'s creature at {at[:3]}: hover is it {sum(hv)} of {len(hv)} '
               f'(hover {sorted("%x" % (r or 0) for r in raw)}, puppet {sorted("%x" % i for i in ids)}); '
               + guest.call('coop.partnerpass')['out'].strip(), flush=True)
         if stance == 'social':

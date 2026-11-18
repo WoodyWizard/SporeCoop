@@ -86,8 +86,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", host_busy_status().c_str()); // C3 (BUG-1142)
     for (auto& pl : g_sess.players()) // CAP_VERSION: each player's mod, SporeKit and game build
         SAY("version %u '%s': %s\n", pl.id, pl.name.c_str(), pl.version.empty() ? "unknown (pre-0.7.4)" : pl.version.c_str());
-    SAY("remote animations: received %u, played %u (behaviour %u); own behaviour sent %u; puppets fed %u\n", g_anims_rx, g_anims_played,
-        g_bhv_anims_played, g_own_bhv_anims, modes::puppets_fed());
+    SAY("remote animations: received %u, played %u (behaviour %u); own behaviour sent %u\n", g_anims_rx, g_anims_played,
+        g_bhv_anims_played, g_own_bhv_anims); // BUG-1253
     SAY("appeared notices: told %u, puppet rebuilds not told %u (BUG-0923)\n", g_appeared_told, g_appeared_quiet);
     SAY("%s", effects::status().c_str()); // BUG-0451
     SAY("%s", npc::status().c_str());
