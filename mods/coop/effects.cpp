@@ -769,6 +769,8 @@ static uint32_t g_load_ms = 1000;
 static uint32_t g_load_id; // 0: the last effect id the game created (a valid id in this stage)
 static uint32_t g_load_ok, g_load_failed;
 static double g_load_at;
+static bool g_load_fix = true; // coop.fix effects.load_stop off: the load's effects are never stopped (BUG-1268)
+COOP_FIX("effects.load_stop", "BUG-1268", g_load_fix, "effects: the test workload `coop.effects load` stops its effects after 8 s (they stayed at the player for the session)");
 
 static void load_tick(double t)
 {
@@ -787,10 +789,17 @@ static void load_tick(double t)
     uint8_t xf[0x44];
     make_transform(xf, p);
     for (uint32_t i = 0; i < g_load_n; i++) {
-        if (game::create_local_effect(id, xf))
+        void* fx = game::create_local_effect(id, xf);
+        if (fx) {
             g_load_ok++;
-        else
+            // BUG-1268: the load's effects go into the live list like relayed ones (stopped after 8 s or at the cap,
+            // dropped on a stage change). Kept nowhere before, a looping id stayed at the player for the rest of
+            // the session: on the host of the lab a white disc over its creature in the next tests of a warm game.
+            if (g_load_fix)
+                live_add(fx, t);
+        } else {
             g_load_failed++;
+        }
     }
 }
 
