@@ -8,9 +8,9 @@ reported: 2026-11-18
 source: final check 0.7.15.2
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: rel/0.7.15.2
+commits: 71aa3eb7
 tests: cell_attack_spike, cell_attack_jaw
 signature:
 docs:
