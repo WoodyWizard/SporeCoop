@@ -592,6 +592,12 @@ player. Their findings and what came of them (fixes on alpha, tested on TITAN QA
   purpose, writes (0.7-0.9 s) and shows the "game saved" box whose OK re-arms saving (docs/re/creature.md#creature-save-steps).
   The mod now moves that clock on: the save lands about 1.1 s after it starts instead of 1.8 s (✔ measured); the write
   itself stays. The box cannot be skipped (it would block every later save); the mod confirms it as it shows.
+  ~ superseded (2026-11-17, owner: "seamless for uninterrupted gameplay"): the galaxy now uses Spore's silent save
+  (message 0x689C9B9, docs/re/creature.md#creature-save-steps): no pause, no busy cursor, no wait, no box; only the
+  write (one 0.7 s frame). A due save waits up to 90 s for a moment the player does not feel it (the game paused, or 8 s
+  without input), then a quiet one. ✔ Tested: no box, the next host loaded the silently saved world. Left: the 0.7 s
+  write itself (Spore's own save on its main thread); a world streamed to the server instead of Spore saves would
+  remove it (the long-term model).
 * "It didn't give me a creature creator for the first time connecting. It loaded some other creature": a new host
   with no creature of its own on a stored planet gets the creature editor once its creature is alive and the game idle;
   the creation it saves becomes its creature there. ✔ The editor opened after the respawn. Not checked: saving the

@@ -5376,5 +5376,11 @@ galaxy's saves must not freeze the game).
   MessageSend with data 0): the same save steps at once, with no clock, no game-time pause, no busy cursor and
   SaveGame_Allowed untouched; the "game saved" box afterwards only when the message's data is 0 (a failed save always
   shows its box). Only the persistence manager listens to it (the scan finds the handler, that sender and its
-  registration in .rdata). So a save posted as 0x689C9B9 with non-zero data costs the write alone (0.7-0.9 s).
+  registration in .rdata). So a save sent as 0x689C9B9 with non-zero data costs the write alone (0.7-0.9 s).
+* ✔ (runtime, TITAN 2026-11-17) The message system keeps a message's data as a counted object (vt 0 AddRef, vt 4
+  Release): a plain non-null pointer crashed in MessagePost (`exception at App::cMessageManager::MessagePost+0x20`,
+  data 5). Posted (vt 0x18) from the mod's frame hook with a token object, the message hung the main thread in
+  MessageSend's lock (a hang report: Mutex_Unlock < MessageSend). Sent with MessageSend (vt 0x14) outside the frame
+  (SkHost::run_outside_frame), as the game's own leave-the-planet path sends it, with a static token object: the save
+  is written at once (one 0.7 s frame), no box, no pause, and the next host loaded it.
 
