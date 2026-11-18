@@ -2,7 +2,7 @@
 // connects to. Runs no Spore: it keeps the players (a slot each), the planets (who hosts each one now, who is on it)
 // and relays the planet sessions' packets between a planet's host and its players (net/galaxy.h).
 //
-// usage: galaxy_server [--local] [--worlds <dir>] [port] [galaxy name]
+// usage: galaxy_server [--local] [--worlds <dir>] [--warm-handover] [port] [galaxy name]
 //        (port 47900 by default; --local: 127.0.0.1 only; worlds: the folder of stored worlds, "worlds" by default)
 //
 // Planets are made when a player enters one; the host is the first player on a planet. Decision 5Q A: the server keeps
@@ -61,6 +61,9 @@ static std::string g_worlds_dir = "worlds";
 static std::map<uint16_t, XferIn> g_uploads;    // by player slot
 static std::map<uint16_t, XferOut> g_downloads; // by player slot
 static uint32_t g_next_xfer = 1;
+// decision 6B C research (--warm-handover): the new host of a hand-over keeps the world it plays (it was a guest of the
+// old host) instead of loading the stored one: no reload for it
+static bool g_warm_handover;
 
 static UdpSocket g_sock;
 static std::map<uint16_t, Client> g_clients; // by slot
@@ -126,7 +129,7 @@ static void leave_planet(Client& c, const char* why)
                 role.str8(c.planet);
                 role.u8(kHostRole);
                 role.u16(next);
-                role.u32(st == g_stored.end() ? 0 : st->second.size);
+                role.u32(st == g_stored.end() || g_warm_handover ? 0 : st->second.size);
                 send(g_clients[next], role);
                 for (uint16_t m : p.members)
                     if (m != next) {
@@ -137,7 +140,7 @@ static void leave_planet(Client& c, const char* why)
                     }
                 say("planet '%s': its host %u '%s' left (%s): %u '%s' hosts it now (%s), %zu player(s) wait",
                     c.planet.c_str(), c.slot, c.name.c_str(), why, next, g_clients[next].name.c_str(),
-                    st == g_stored.end() ? "no stored world: the one it plays" : "the stored world", p.members.size() - 1);
+                    st == g_stored.end() || g_warm_handover ? "the world it plays" : "the stored world", p.members.size() - 1);
             } else
                 say("planet '%s': its host %u '%s' left (%s)", c.planet.c_str(), c.slot, c.name.c_str(), why);
         } else
@@ -498,6 +501,8 @@ int main(int argc, char** argv)
             local = true; // only this PC can reach it (127.0.0.1): tests, no firewall prompt
         else if (!strcmp(argv[i], "--worlds") && i + 1 < argc)
             g_worlds_dir = argv[++i];
+        else if (!strcmp(argv[i], "--warm-handover"))
+            g_warm_handover = true;
         else
             args.push_back(argv[i]);
     }
