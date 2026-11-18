@@ -64,3 +64,4 @@ Not done (too big for the 0.7.15.1 batch). Design sketch, host-authoritative:
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-puppet): split from BUG-1250; static analysis of the native recruit and a design sketch; left open.
+- 2026-11-18: planned for 0.8 (the owner's 0.7.15 decision: the guest's own pack is 0.8 work).
