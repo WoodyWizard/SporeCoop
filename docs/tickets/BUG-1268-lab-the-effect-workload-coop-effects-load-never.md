@@ -31,15 +31,18 @@ looping id E1B24DDB (20/s for 30 s) and only checked the guest's relayed copies,
 The host's own ~600 copies stayed active for the session and a warm reset does not tear the creature world down.
 
 ## Fix
-The load's effects go into the same live list as relayed ones (`live_add`): stopped and released after 8 s or at the
-cap of 64, dropped without a call on a stage or world change. Switch `effects.load_stop` (off: the old behaviour).
+The load's effects go into a list of their own (`lload_add`, the same rules as the relay's live list): stopped and
+released after 8 s or at the cap of 64, dropped without a call on a stage or world change. Kept apart from the relay's
+live list so their upkeep counts as the workload's cost: in the relay's list effects_party_civ measured the relay at
+1.1 % (lab 20261118-170746, limit 1 %). `coop.effects` prints `effects load live: live= stopped=`. Switch `effects.load_stop` (off: the old behaviour).
 effects_live checks the host side too: its live list reaches the cap during the load and is back at 0 after.
 
 ## Verification
-* FAIL with `SPORE_LAB_FIXOFF=effects_live=effects.load_stop`: 20261118-170541 ("the host's own load effects are
-  listed and stopped (max 1, now (0, 1, 1))").
-* PASS with the fix: 20261118-170257-2 (effects_live max 64, after (0, 601, 64); creature_brain_hp after it on the
-  same warm games: no disc in its key frames, the white share of the centre 0.0 against 0.89 before).
+* FAIL with `SPORE_LAB_FIXOFF=effects_live=effects.load_stop`: 20261118-171400 ("the host's own load effects are
+  listed and stopped (max 0, now (0, 0))").
+* PASS with the fix: 20261118-171400-3 (load list max 64, after the load (0, 620); creature_brain_hp after it on the
+  same warm games: no disc, the white share of the centre 0.0 against 0.89 before). The effects tests twice each
+  (party in all stages, release, validate, creature_effects): 16 of 16, 20261118-171400-2.
 
 ## History
 - 2026-11-18: opened from the key-frame review of the 0.7.15.2 final check; fixed the same day.

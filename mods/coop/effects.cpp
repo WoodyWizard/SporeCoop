@@ -772,8 +772,63 @@ static double g_load_at;
 static bool g_load_fix = true; // coop.fix effects.load_stop off: the load's effects are never stopped (BUG-1268)
 COOP_FIX("effects.load_stop", "BUG-1268", g_load_fix, "effects: the test workload `coop.effects load` stops its effects after 8 s (they stayed at the player for the session)");
 
+// BUG-1268: the load's own effects, kept apart from the relay's live list (their upkeep is the workload's cost, not
+// the relay's: effects_party measures the relay under 1 %). Stopped and released after 8 s or at the cap, dropped
+// without a call on a stage or world change (the game tore them down), as the live list does.
+static Live g_lload[kLiveMax];
+static size_t g_lload_n;
+static uint32_t g_lload_mode, g_lload_world, g_lload_stopped;
+
+static void lload_drop(size_t i, bool stop)
+{
+    void* fx = g_lload[i].fx;
+    if (stop && game::effect_active(fx) && game::stop_world_effect(fx))
+        g_lload_stopped++;
+    game::release_world_effect(fx);
+}
+
+static void lload_tick(double t)
+{
+    uint32_t mode = game::mode_id(), world = C.world ? C.world() : 0;
+    if (mode != g_lload_mode || world != g_lload_world) {
+        g_lload_n = 0;
+        g_lload_mode = mode;
+        g_lload_world = world;
+        return;
+    }
+    size_t w = 0;
+    for (size_t i = 0; i < g_lload_n; i++) {
+        if (!game::effect_active(g_lload[i].fx)) {
+            lload_drop(i, false);
+            continue;
+        }
+        if (t - g_lload[i].at >= kLiveSec) {
+            lload_drop(i, true);
+            continue;
+        }
+        g_lload[w++] = g_lload[i];
+    }
+    g_lload_n = w;
+}
+
+static void lload_add(void* fx, double t)
+{
+    if (!g_lload_n) { // the world the list's effects live in
+        g_lload_mode = game::mode_id();
+        g_lload_world = C.world ? C.world() : 0;
+    }
+    if (g_lload_n >= kLiveMax) {
+        lload_drop(0, true);
+        memmove(g_lload, g_lload + 1, (g_lload_n - 1) * sizeof g_lload[0]);
+        g_lload_n--;
+    }
+    g_lload[g_lload_n++] = {fx, t};
+}
+
 static void load_tick(double t)
 {
+    if (g_lload_n)
+        lload_tick(t);
     if (!g_load_n || t < g_load_at || !C.local_pos)
         return;
     g_load_at = t + g_load_ms / 1000.0;
@@ -792,11 +847,10 @@ static void load_tick(double t)
         void* fx = game::create_local_effect(id, xf);
         if (fx) {
             g_load_ok++;
-            // BUG-1268: the load's effects go into the live list like relayed ones (stopped after 8 s or at the cap,
-            // dropped on a stage change). Kept nowhere before, a looping id stayed at the player for the rest of
-            // the session: on the host of the lab a white disc over its creature in the next tests of a warm game.
+            // BUG-1268: kept nowhere before, a looping id stayed at the player for the rest of the session: on the
+            // host of the lab a white disc over its creature in the next tests of a warm game
             if (g_load_fix)
-                live_add(fx, t);
+                lload_add(fx, t);
         } else {
             g_load_failed++;
         }
@@ -838,7 +892,7 @@ void tick(double)
     double t0 = H ? H->time_seconds() : 0;
     game::set_effect_relay_enabled(g_fix); // also notes the game's main thread id
     double load_wall = 0;
-    if (g_fix && H && g_load_n) {
+    if (g_fix && H && (g_load_n || g_lload_n)) {
         double a = H->time_seconds();
         load_tick(t0);
         load_wall = H->time_seconds() - a;
@@ -1110,6 +1164,8 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
     g_perf_hook_sum = 0;
     g_perf_hook_calls = 0;
     g_load_n = g_load_ms = g_load_id = g_load_ok = g_load_failed = 0;
+    g_lload_n = 0; // dropped without a call (as the live list on a world change)
+    g_lload_stopped = 0;
     g_perf_creates = g_perf_probes = g_perf_evicted = g_perf_sent = 0;
     g_live_n = 0;
     g_live_stopped = g_live_expired = g_live_released = g_live_dropped = 0;
@@ -1338,6 +1394,9 @@ std::string status()
              "effects world live: live=%u stopped=%u expired=%u released=%u dropped=%u release_fix=%d\n",
              (unsigned)g_live_n, g_live_stopped, g_live_expired, g_live_released, g_live_dropped,
              (int)g_release_fix);
+    s += b;
+    snprintf(b, sizeof b, "effects load live: live=%u stopped=%u fix=%d\n", (unsigned)g_lload_n, g_lload_stopped,
+             (int)g_load_fix); // BUG-1268
     s += b;
     {
         double hs = 0, hm = 0;

@@ -36,6 +36,11 @@ def live(con):
     return tuple(int(x) for x in m.groups()) if m else None
 
 
+def load_live(con):
+    m = re.search(r'effects load live: live=(\d+) stopped=(\d+)', con.call('coop.effects')['out'])
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
 def sent(con):
     m = re.search(r'effects: fix=\d sent=(\d+)', con.call('coop.effects')['out'])
     return int(m.group(1)) if m else 0
@@ -53,7 +58,7 @@ def main():
     t0 = time.time()
     while time.time() - t0 < 30:
         time.sleep(0.5)
-        hn = live(h)
+        hn = load_live(h)
         htop = max(htop, hn[0] if hn else 0)
         n = live(g)
         if n:
@@ -66,7 +71,7 @@ def main():
     t0 = time.time()
     while time.time() - t0 < 14:
         time.sleep(0.5)
-        if live(g)[0] == 0 and live(h)[0] == 0:
+        if live(g)[0] == 0 and (load_live(h) or (0,))[0] == 0:
             break
     n = live(g)
     print(f'  after the load stops: {n}', flush=True)
@@ -74,9 +79,9 @@ def main():
     ck(n is not None and n[1] > 0 and n[2] > 0, f'effects were stopped after 8 s and at the cap ({n})')
     # BUG-1268: the host's own load effects (a looping id at its creature) are stopped too; kept nowhere, they stayed
     # for the session (a white disc over the host's creature in the next tests of a warm game)
-    hn = live(h)
+    hn = load_live(h)
     print(f'  host: live max {htop}, after the load stops: {hn}', flush=True)
-    ck(htop >= 60 and hn is not None and hn[0] == 0 and hn[1] + hn[2] > 0,  # (relayed effects of the guest alone: 1-2)
+    ck(htop >= 60 and hn is not None and hn[0] == 0 and hn[1] > 0,
        f"the host's own load effects are listed and stopped (max {htop}, now {hn})")
     ck.faults(host=h, guest=g)
     raise SystemExit(ck.result())
