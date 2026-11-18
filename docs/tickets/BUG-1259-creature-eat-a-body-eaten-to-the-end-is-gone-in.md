@@ -10,8 +10,8 @@ role:
 versions: 
 fixed_in: unreleased
 branch:
-commits:
-tests:
+commits: f5313a97
+tests: creature_eat
 signature:
 docs:
 related:
