@@ -1195,7 +1195,7 @@ void register_commands_core()
                    nullptr, MT);
     H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
                    c_framefix, nullptr, MT);
-    H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill | hunger [v] - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",
+    H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill | hunger [v] | ownhunger <v> - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 2 && !strcmp(argv[1], "speedset")) { // tests (BUG-0788): SetDesiredSpeed on each Creature
                            for (auto& [id, r] : g_remotes) { // puppet now, and +0x1E0 read right after it (same frame)
@@ -1221,9 +1221,9 @@ void register_commands_core()
                            }
                            return 0;
                        }
-                       // tests (BUG-1252): hunger [v]: each Creature puppet's food meter (+0xBBC); with v set through the game's
-                       // setter, as minutes of the game's own hunger update leave a puppet that never eats
-                       if (argc > 2 && !strcmp(argv[1], "ownhunger")) { // tests (BUG-1252): the own avatar's meter
+                       // tests (BUG-1252): ownhunger <v>: the own avatar's food meter (+0xBBC) through the game's setter, as
+                       // minutes of its own hunger update leave it (or a meal fills it)
+                       if (argc > 2 && !strcmp(argv[1], "ownhunger")) {
                            void* av = game::avatar();
                            if (!av)
                                return 1;
@@ -1232,6 +1232,7 @@ void register_commands_core()
                            SAY("avatar hunger %.1f -> %.1f\n", before, game::hunger(av));
                            return 0;
                        }
+                       // tests (BUG-1252): hunger [v]: each Creature puppet's food meter; with v set through the game's setter
                        if (argc > 1 && !strcmp(argv[1], "hunger")) {
                            for (auto& [id, r] : g_remotes) {
                                if (!r.puppet || !creature_puppet(r.puppet_adapter) || !game::creature_listed(r.puppet))

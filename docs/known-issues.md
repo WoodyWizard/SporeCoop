@@ -322,6 +322,15 @@ anchor so other docs can link to it:
 * Also not reproduced with the guest on its own creature, walking next to the singer, the host's pack by, the guest
   singing, nor on v0.7.14.1 (BUG-1241).
 * Not checked: the mating call, low fps (the song did not start at 10 fps in the test).
+* Third round (2026-11-18, fix/w53-puppet): the guest's OWN social games (a real click on a Kook and the sing key at
+  each prompt; 1 and 3 Kooks, the key pressed again and again, both games at 10 fps, 250 ms delay with 5 % loss), then a
+  minute of standing, running and standing: the host's puppet ended the ability host_act plays on it within 2.4 s
+  (`coop.npc cur ability=`), played no social animation, kept no active pool effect (`coop.effects map active=`); the
+  only pool effect the guest sent was the DNA gain D7BE955C (one-shot). Not reproduced
+  (`lab.py run puppet_after_social,puppet_after_social_many,puppet_after_social_lowfps,puppet_after_social_net`).
+* Found on the way: a relayed pool effect stayed on the puppet for good when its stop met an empty rate limit (a burst
+  of effects, a fight): fixed by BUG-1252 (`effects.stop_always`). Inferred: one way to rings that stay, not shown to be
+  the video's.
 * Ticket: BUG-1241
 
 ## Cell: the partner's cell plays the attack animation of a player (2026-11-18, owner: players' video)
