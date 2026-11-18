@@ -180,7 +180,7 @@ static size_t g_sent_n;
 static uint8_t g_last_rx_from = 0xFF;
 // tests (BUG-1243): the last world effects sent and played here, with where the local player was then
 struct Recent {
-    char dir = 0; // 's' sent, 'p' played
+    char dir = 0; // 's' sent, 'p' played, 'm' made by this game (any world effect with a place)
     uint8_t player = 0;
     uint32_t id = 0;
     float x = 0, y = 0, z = 0, d = -1; // d: distance to the local player's object (-1: none)
@@ -450,14 +450,15 @@ static void on_local_effect(void* creature, const game::EffectEvent& ev)
 // an effect created for any object: keep it; tick reads the position the game gave it (+0x9C) and
 // decides whether it is on the local player's own object (the hooks run on the main thread only, so
 // no transform is copied here)
-// BUG-1243 (players' video: "I fought the air"): the Cell stage's respawn hatch, cell_egg_L0_autohatch (0xB4B06F12, FNV of
-// the name), is a picture for the player who hatches: it blacks out the screen and draws the egg and its whirl over the
-// view (seen: played in the host's game 57 m from its cell, the host's whole screen went black, then the egg stayed on
-// its screen for ~3 s, lab 20261118-131202). A guest knocked out while it fought far away respawns, and the effect came
-// to the host twice: its world effect relayed (process_world: it is made at the guest's own cell) and the host's own
-// play of it on the guest's puppet (cellsync on_ko, KO_RESPAWNED). The host's screen was swept into the hatch's whirl
-// while the host fought nothing. Now such an effect is neither sent nor played for a partner (the puppet gets
-// cell_hatch_ice, the revive's, instead). Old (`coop.fix effects.cell_own_only off`): relayed and played.
+// BUG-1243 (players' video: "I fought the air"): the Cell stage's hatch effects, cell_egg_L0_autohatch (0xB4B06F12, the
+// respawn's) and cell_hatch_ice (0x082BF046, the co-op revive's; FNV-1 of the names), are pictures for the player whose
+// cell hatches: they black out the whole screen and fade it in over ~1 s, the egg and its whirl drawn over the view.
+// Played in the host's game 70 m from its own cell, each blacked out the host's screen (brightness 129 -> 3-6, lab
+// 20261118-132515; docs/re/cell.md#cell-partner-hatch). A guest knocked out while it fought far away and revived or
+// respawned sent them to the host twice: its world effect relayed (process_world: made at the guest's own cell) and the
+// host's own play on the guest's puppet (cellsync on_ko). The host's screen went black and its cell was drawn in the
+// hatch's whirl while the host fought nothing. Now such an effect is neither sent nor played for a partner, and the
+// puppet gets none. Old (`coop.fix effects.cell_own_only off`): relayed and played.
 static bool g_own_only_fix = true;
 COOP_FIX("effects.cell_own_only", "BUG-1243", g_own_only_fix, "cell: a partner's respawn no longer plays the hatch's black screen and egg on your own screen (it looked as if your own cell was spun in a fight)");
 bool cell_own_only_fix() { return g_own_only_fix; }
@@ -470,7 +471,7 @@ static uint32_t fnv1(const char* s) // the game's effect id of a name (0x932E50(
 }
 static bool own_only(uint32_t id)
 {
-    static const uint32_t ids[] = {fnv1("cell_egg_L0_autohatch")};
+    static const uint32_t ids[] = {fnv1("cell_egg_L0_autohatch"), fnv1("cell_hatch_ice")};
     for (uint32_t x : ids)
         if (x == id)
             return true;
@@ -627,6 +628,7 @@ static void process_world(void* fx, uint32_t id)
             H->log(M, SK_INFO, "effect: world id %08X dropped, no position at %p", id, fx);
         return;
     }
+    note_recent('m', C.sess->my_id(), id, p); // tests (BUG-1243): every world effect this game made, with its place
     if (g_own_only_fix && own_only(id)) { // BUG-1243: the own cell's hatch is no picture for a partner
         g_own_only_held_tx++;
         return;

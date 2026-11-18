@@ -21,6 +21,7 @@ before), while the guest's own game did hatch (control).
 import math
 import os
 import re
+import sys
 import time
 
 from twoinst import Checks, keyframe, lane, start
@@ -48,8 +49,8 @@ def ko_state(con):
     return con.call('coop.pool selfstate')['out'].strip()[:120]
 
 
-def brightness(con, path):
-    """the mean brightness (0..255) of the game's picture now, None when no shot"""
+def brightness(con, path, keep=False):
+    """the mean brightness (0..255) of the game's picture now, None when no shot (keep: the shot stays, as a small JPEG)"""
     try:
         from PIL import Image, ImageStat
     except ImportError:
@@ -58,7 +59,10 @@ def brightness(con, path):
         return None
     try:
         with Image.open(path) as im:
-            v = ImageStat.Stat(im.convert('L').resize((240, 180))).mean[0]
+            small = im.convert('RGB').resize((480, 360))
+            v = ImageStat.Stat(small.convert('L')).mean[0]
+            if keep:
+                small.save(path[:-4] + '.jpg', quality=80)
         os.remove(path)
         return v
     except OSError:
@@ -82,6 +86,20 @@ def main():
     ck(d > 50, f'the guest is far from the host ({d:.1f} m)')
     shots = lane.out_dir('shots', 'partner_respawn')
     os.makedirs(shots, exist_ok=True)
+    if '--probe' in sys.argv:  # RE: which effect ids black out the host's screen, played where the guest is
+        g = own_pos(guest)
+        for fid in sys.argv[sys.argv.index('--probe') + 1].split(','):
+            host.call(f'coop.fix effects.cell_own_only off')
+            host.call(f'coop.effects inject 1 1 0 5 {fid} 0 {g[0]:.2f} {g[1]:.2f} 0')
+            bs = []
+            for i in range(6):
+                b = brightness(host, os.path.join(shots, f'probe_{fid}_{i}.png'), keep=True)
+                bs.append(round(b, 1) if b is not None else None)
+                time.sleep(0.15)
+            print(f'  probe {fid}: host brightness {bs}', flush=True)
+            time.sleep(4)
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     base = [b for b in (brightness(host, os.path.join(shots, f'base{i}.png')) for i in range(3)) if b is not None]
     b0 = sum(base) / len(base) if base else None
     h0, g0 = made(host), made(guest)
@@ -93,21 +111,29 @@ def main():
     while time.time() - t1 < 20:
         if hatched_at is None and made(guest) > g0:
             hatched_at = time.time()
-            keyframe('respawn', "Cell: the guest respawned (its own hatch); the host's screen, 70 m away, shows its own cell in the "
-                     "water: no black screen, no egg", settle=0)
-        b = brightness(host, os.path.join(shots, f's{shot_n}.png'))
+        # (no key frame in this loop: a second shot of the same game at the same moment can come back black)
+        b = brightness(host, os.path.join(shots, f's{shot_n}.png'), keep=True)
         shot_n += 1
         if b is not None:
-            lows.append((round(time.time() - t1, 1), round(b, 1)))
+            lows.append((round(time.time() - t1, 1), round(b, 1), shot_n - 1))
         if hatched_at and time.time() - hatched_at > 4:
             break
         time.sleep(0.2)
     h1, g1 = made(host), made(guest)
     print(f'  after: hatch effects made: host {h0} -> {h1}, guest {g0} -> {g1}; guest {ko_state(guest)}; '
           f'{apart(host, guest):.1f} m apart', flush=True)
+    keyframe('after_respawn', "Cell: the guest respawned next to the host; the host's screen shows its own cell in the water: "
+             "no black screen, no egg", settle=0)
     darkest = min(lows, key=lambda x: x[1]) if lows else None
-    print(f'  host brightness over {len(lows)} shots: darkest {darkest}, first {lows[:3]}', flush=True)
+    k = lows.index(darkest) if darkest else 0
+    print(f'  host brightness over {len(lows)} shots: darkest {darkest} (shot s{darkest[2] if darkest else -1}.jpg in {shots}), around it {lows[max(0, k - 3):k + 4]}',
+          flush=True)
     print('  host: ' + ' | '.join(l for l in host.call('coop.effects')['out'].splitlines() if 'own only' in l), flush=True)
+    rec = [l for l in host.call('coop.effects recent')['out'].splitlines() if l.startswith('recent')]
+    near = [l for l in rec if float(re.search(r'age=([\d.]+)', l).group(1)) < time.time() - t1 + 1]
+    print('  host world effects since the knockout (m: made by the host\'s game, p: a partner\'s played):', flush=True)
+    for l in near[-40:]:
+        print('    ' + l, flush=True)
     ck(hatched_at is not None, "the guest's own game hatched its respawn (control)")
     ck(h1 == h0, f"the host's game made no hatch effect of its own cell's ({h0} -> {h1})")
     ck(b0 is not None and darkest is not None and darkest[1] >= 0.35 * b0,
