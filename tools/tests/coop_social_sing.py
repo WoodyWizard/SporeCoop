@@ -119,6 +119,8 @@ def main():
     sample(4.0, probes, sung)
     print(f'  (the host sang after {time.time() - t_sing:.1f} s)')
     print('  while the host sings:', {k: sorted(set(v)) for k, v in sung.items()})
+    print("  host's puppet of the guest: " + (re.search(rf'^cur p{gid} .*$', host.call('coop.npc cur')['out'], re.M) or
+                                              re.search('$', '')).group(0), flush=True)
     ck(social & set(sung.get('host_avatar', [])), "the host's own creature sings (the key press worked)")
     ck(social & set(sung.get('guest_puppet_of_host', [])), "the guest's game shows the host singing (its puppet)")
     ck(not (social & set(sung.get('guest_avatar', []))),

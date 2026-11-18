@@ -1015,7 +1015,9 @@ std::string current_anims()
         uint32_t a = 0;
         net::Vec3 m;
         if (c && game::creature_listed(c) && game::drawn_state(c, &m, &a)) {
-            snprintf(b, sizeof b, "cur %s anim=%08X\n", name, a);
+            // BUG-1241 (tests): the creature's party bits here: the pack (+0xB58 & 0x100), the avatar's herd (family)
+            snprintf(b, sizeof b, "cur %s anim=%08X pack=%d family=%d\n", name, a, (int)game::pack_member(c),
+                     (int)(game::herd_of(c) && game::herd_of(c) == game::avatar_herd()));
             out += b;
         }
     };

@@ -97,7 +97,7 @@ def electric(host, guest, ck):
     sh, sg = Sampler(host), Sampler(guest)
     sh.start()
     sg.start()
-    z0h, z0g = host.call('coop.pool')['out'], guest.call('coop.pool')['out']
+    z0h, z0g = host.call('coop.pool anims')['out'], guest.call('coop.pool anims')['out']
     try:
         t0 = time.time()
         while time.time() - t0 < 25:
@@ -109,7 +109,7 @@ def electric(host, guest, ck):
     finally:
         sh.stop()
         sg.stop()
-    z1h, z1g = host.call('coop.pool')['out'], guest.call('coop.pool')['out']
+    z1h, z1g = host.call('coop.pool anims')['out'], guest.call('coop.pool anims')['out']
     h_av, h_pup = window(sh.avatar, t0, t1), window(sh.puppet, t0, t1)
     g_av, g_pup = window(sg.avatar, t0, t1), window(sg.puppet, t0, t1)
     print(f'  host avatar {sorted(h_av)} | host\'s puppet of the guest {sorted(h_pup)} | guest avatar {sorted(g_av)} | '
