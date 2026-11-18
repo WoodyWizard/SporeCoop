@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: lab: fix/w53-puppet
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch:
 commits: f5313a97
 tests: creature_eat
@@ -40,3 +40,4 @@ no-fail-run: a race of the test's own check (seen once in 20261118-124624); PASS
 
 ## History
 - 2026-11-18: opened.
+- 2026-11-18: released in 0.7.15.2.

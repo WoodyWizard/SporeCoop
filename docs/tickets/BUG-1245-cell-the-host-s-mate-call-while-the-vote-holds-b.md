@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video, second analysis
 role: host
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-cellvote
 commits: fb58d6c8 707817ca 9b1dca20 3c49737f dd36d05f
 tests: evo_screens_cell_eggs, evo_screens_cell_eggs_lowfps, evo_screens_switch_slow
@@ -71,3 +71,4 @@ Off: as 0.7.15.
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-cellvote): the egg loop reproduced on a plain vote (cell.vote_mate) and the landfall arrival wait (core.arrival_nowait) fixed; the missing vote window not reproduced.
+- 2026-11-18: released in 0.7.15.2.

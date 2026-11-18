@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video, second analysis
 role: guest
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-cellvote
 commits: 9b1dca20 37042f38 021477ff
 tests: evo_screens_switch, evo_screens_switch_slow
@@ -49,3 +49,4 @@ each player plays its own creature afterwards.
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-cellvote): reproduced at the landfall editor, fixed with creations.own_editor_no_replace.
+- 2026-11-18: released in 0.7.15.2.

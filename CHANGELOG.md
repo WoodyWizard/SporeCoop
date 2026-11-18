@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.15.2] - 2026-11-18
+
+More fixes for problems seen in a video of two players, mostly in the Cell stage and the move to the Creature stage:
+no more minute of black screen for the host after its mating call, mating that repeated behind a black screen, a
+guest's cell parts that cost no DNA, a guest's mate only the guest could see, and the second player's creature
+standing idle while eating. Galactic Adventures no longer break when two players start one after the Creature
+stage. Both players should update: the fixes are in the host's and the guest's game.
+
 ### Fixed
 - Cell: the second player's tutorial cutscene of the first part now shows the little golden cell and the cell that
   hunts it; before, it showed only empty water between the black bars (BUG-1248).

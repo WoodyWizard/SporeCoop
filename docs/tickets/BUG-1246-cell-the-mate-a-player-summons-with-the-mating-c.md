@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video, second analysis
 role: guest
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-cellvote
 commits: 9b1dca20 37042f38 39048c26
 tests: evo_screens_cell_mate
@@ -50,3 +50,4 @@ meets its mate.
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-cellvote): reproduced, fixed with cell.partner_mate (a passive copy of a guest's mate in the host's pool).
+- 2026-11-18: released in 0.7.15.2.

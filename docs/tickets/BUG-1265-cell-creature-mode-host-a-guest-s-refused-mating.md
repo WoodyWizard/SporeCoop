@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: fix/w53-cellnow
 role: guest
 versions: 0.7.15.1
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-cellnow
 commits: 6b871441 71e78582 27168d0e
 tests: evo_screens_cell_one
@@ -49,3 +49,4 @@ counters, its screen measured):
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-cellnow): fixed (cell.refused_mate).
+- 2026-11-18: released in 0.7.15.2.

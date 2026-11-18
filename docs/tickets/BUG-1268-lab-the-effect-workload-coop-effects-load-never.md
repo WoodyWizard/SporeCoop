@@ -8,9 +8,9 @@ reported: 2026-11-18
 source: key-frame review 0.7.15.2
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: rel/0.7.15.2
-commits: c9983d95
+commits: c9983d95 15accc78
 tests: effects_live, creature_brain_hp
 signature:
 docs:
@@ -46,3 +46,4 @@ effects_live checks the host side too: its live list reaches the cap during the 
 
 ## History
 - 2026-11-18: opened from the key-frame review of the 0.7.15.2 final check; fixed the same day.
+- 2026-11-18: released in 0.7.15.2.

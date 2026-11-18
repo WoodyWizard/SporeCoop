@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video, second analysis
 role: guest
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-advorn
 commits: 3d2d26cb e5c33562
 tests: adventure_tutorial
@@ -50,3 +50,4 @@ PASS runs show the intro card and the goal panel, each partner as a captain at t
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-advorn): reproduced (both games fault at 0xC0714E) and fixed (adventure.puppet_captain); new BUG-1260 (no main menu panel after an early load), BUG-1262 (the partner's captain look).
+- 2026-11-18: released in 0.7.15.2.

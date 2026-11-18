@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video, second analysis
 role: guest
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-cellvote
 commits: 707817ca 6878398c
 tests: evo_screens_cell_dna
@@ -50,3 +50,4 @@ the host's editor): the guest's DNA after its editor, the host's, and both after
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-cellvote): reproduced (the host's spent row undid the guest's editor), fixed with cell.guest_spend.
+- 2026-11-18: released in 0.7.15.2.

@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video
 role: all
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-cellfx
 commits: d4a043c1 0c2eeb16
 tests: cell_partner_respawn, cell_far_fight, cell_attack_anim, cell_attack_electric, cell_attack_jaw, cell_attack_spike, cell_attack_mouth, cell_electric
@@ -92,3 +92,4 @@ screen never goes darker than 35 % of before while the guest, 70 m away, is knoc
 - 2026-11-18 (fix/w52-evoeditor): second round (jaw, spike, mouth contact attacks, both directions, v0.7.14.1): still not reproduced.
 - 2026-11-18: a second analysis of the video: the HOST's cell swims in empty water and is spun in the combat whirl while the GUEST fights elsewhere ("I was fighting just now" / "and I fought the air"). So the guest's combat interaction or effect is played on the host's own cell. Reopened.
 - 2026-11-18 (fix/w53-cellfx): reproduced as a partner's revive / respawn hatch blacking out the other player's screen (the guest knocked out far away); fixed (`effects.cell_own_only`); cell_attack_anim made to measure landed bites.
+- 2026-11-18: released in 0.7.15.2.

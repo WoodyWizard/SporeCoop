@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video, second analysis
 role: guest
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-puppet
 commits: c93944fc
 tests: partner_social_hover (tools/tests/coop_partner_social_hover.py)
@@ -48,3 +48,4 @@ in the social stance; the game's own hover result must never be the puppet.
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-puppet): the hover fixed (creature.partner_social_hover); the recruit split into BUG-1256 (open, design sketch).
+- 2026-11-18: released in 0.7.15.2.

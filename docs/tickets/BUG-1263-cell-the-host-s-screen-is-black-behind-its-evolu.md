@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: fix/w53-cellvote (BUG-1245 follow-up)
 role: host
 versions: 0.7.15.1
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-cellnow
 commits: c0ac4ab0 22b0acda 2774e956 b2fbc72c ce5e78c1 52e2f9dc dd36d05f
 tests: evo_screens_cell_noready, evo_screens_cell
@@ -62,3 +62,4 @@ check back into "not black for 20 s".
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-cellnow): fixed: the host's Cell editor opens at once (cell.editor_now).
+- 2026-11-18: released in 0.7.15.2.

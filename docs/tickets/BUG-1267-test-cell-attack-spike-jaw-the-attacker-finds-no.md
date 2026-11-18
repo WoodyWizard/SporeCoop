@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: final check 0.7.15.2
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: rel/0.7.15.2
 commits: 71aa3eb7
 tests: cell_attack_spike, cell_attack_jaw
@@ -34,3 +34,4 @@ no-fail-run: test-only change (the precondition of the test, not the mod)
 
 ## History
 - 2026-11-18: opened; fixed in the test. Lab 20261118-165138: spike and jaw twice each: 3 OK (all checks pass when the attack happens), 1 INCONCLUSIVE (no creature even within 300 m on that run).
+- 2026-11-18: released in 0.7.15.2.

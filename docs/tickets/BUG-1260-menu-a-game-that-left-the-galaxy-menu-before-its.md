@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: fix/w53-advorn: found while testing BUG-1254
 role: both
 versions: <=0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-menuintro
 commits: c291dc58 89f9e9f8 da0280d1
 tests: menu_panel, adventure_tutorial
@@ -64,3 +64,4 @@ host's quick load hit the case; the guest (joining later) had state 6 already.
 ## History
 - 2026-11-18: opened (fix/w53-advorn, found while testing BUG-1254; the test works round it with `coop.menuintro`). Not fixed here: idea: remember a refused GGE_intro (BUG-0626) and, when the galaxy menu comes back, send the video's end there (or skip it as Escape does).
 - 2026-11-18 (fix/w53-menuintro): root cause (the refused intro leaves intro state 5, the panel needs 6); fixed with world.menu_intro_return (the intro's skip in the menu); test menu_panel; adventure_tutorial without coop.menuintro.
+- 2026-11-18: released in 0.7.15.2.

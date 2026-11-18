@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: fix/w53-cellnow
 role: host
 versions: unreleased (rel/0.7.15.2)
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-cellnow
 commits: 06c53236 41915a85
 tests: editor_desync
@@ -44,3 +44,4 @@ its editor it was empty, which let "the host plays its evolved creature" pass on
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-cellnow): the step follows the design of BUG-1245 / BUG-1240; fixed.
+- 2026-11-18: released in 0.7.15.2.

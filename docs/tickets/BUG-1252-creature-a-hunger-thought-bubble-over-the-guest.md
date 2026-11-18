@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video, second analysis
 role: host
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-puppet
 commits: 6750392e
 tests: puppet_hunger (tools/tests/coop_puppet_hunger.py)
@@ -58,3 +58,4 @@ puppet must have no bubble (`coop.effects map` active).
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-puppet): the puppet's own hunger ruled out (measured); the bubble is the guest's own, kept on the puppet by a stop the rate limit dropped; fixed (effects.stop_always).
+- 2026-11-18: released in 0.7.15.2.

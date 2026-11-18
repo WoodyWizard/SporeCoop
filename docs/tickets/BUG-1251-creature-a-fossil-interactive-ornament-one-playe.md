@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video, second analysis
 role: guest
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-advorn
 commits: 3d2d26cb
 tests: wobj_ornament_model
@@ -45,3 +45,4 @@ the other bone model on both.
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-advorn): fixed (wobj.ornament_model); the guest-only bones split to BUG-1261.
+- 2026-11-18: released in 0.7.15.2.

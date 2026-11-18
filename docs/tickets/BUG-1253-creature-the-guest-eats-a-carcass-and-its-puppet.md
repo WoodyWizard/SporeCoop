@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video, second analysis
 role: host
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.2
 branch: fix/w53-puppet
 commits: 7d01ccd6
 tests: puppet_eat_anim (tools/tests/coop_puppet_eat_anim.py)
@@ -50,3 +50,4 @@ click action) and eats; the animations its own creature plays while eating must 
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-puppet): reproduced, fixed (creature.avatar_bhv_anims).
+- 2026-11-18: released in 0.7.15.2.
