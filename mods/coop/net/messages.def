@@ -38,11 +38,14 @@
 #define FAMILY(name, id, rev, minor, stages, title, files)
 #endif
 
+// Minor bumps of fix/w53-cellvote: cell 1.1 (MSG_CELL_FOOD's own-editor spend, MSG_CELL_MATE: BUG-1249, BUG-1246),
+// npc 1.1 (wsync row cell_spend_ack, BUG-1249), creature 1.1 (no wire change: the guest opens its own landfall editor
+// after a late arrival, BUG-1240; a host does not wait for such a guest's arrival, vote.cpp core.arrival_nowait).
 FAMILY(session,   1, 1, 1, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
-FAMILY(creature,  3, 1, 0, STAGE_CREATURE, "Creature", "")
-FAMILY(npc,       4, 1, 0, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
-FAMILY(cell,      5, 1, 0, STAGE_CELL, "Cell", "")
+FAMILY(creature,  3, 1, 1, STAGE_CREATURE, "Creature", "")
+FAMILY(npc,       4, 1, 1, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
+FAMILY(cell,      5, 1, 1, STAGE_CELL, "Cell", "")
 FAMILY(tribe,     6, 1, 1, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
 FAMILY(civ,       7, 1, 0, STAGE_CIV | STAGE_SPACE, "Civilization", "")
 FAMILY(space,     8, 1, 2, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h")
@@ -89,7 +92,7 @@ MSG(32, TRIBE_CMD,    R,  Guest, HostWorld, Tribe,       Both,   tribe,     "an 
 MSG(33, CELL_STATE,   U,  Host,  HostWorld, Cell,        Both,   cell,      "NPC cells and food snapshot (chunked)")
 MSG(34, CELL_HIT,     R,  Any,   HostWorld, Cell,        Both,   cell,      "guest -> host: u32 host cell index, u8 damage, u8 type (host -> guest only from the test command coop.pool hurt)")
 MSG(35, CELL_EAT,     R,  Guest, HostWorld, Cell,        Both,   cell,      "u32 host cell index the guest ate or destroyed")
-MSG(36, CELL_FOOD,    R,  Any,   HostWorld, Cell,        Both,   cell,      "host: i32 food, i32 plant; guest: i32 delta, u8 plant")
+MSG(36, CELL_FOOD,    R,  Any,   HostWorld, Cell,        Both,   cell,      "host: i32 food, i32 plant; guest: i32 delta, u8 plant, u32 meal, i32 own cell editor spend (BUG-1249)")
 MSG(37, CIV_STATE,    U,  Host,  HostWorld, Civ,         Both,   civ,       "cities and vehicles snapshot (chunked)")
 MSG(38, CIV_CMD,      R,  Any,   Module,    Civ,         Both,   civ,       "guest -> host: a vehicle order, move, purchase or building; host -> guest: a specialty ask, a Space planner building")
 MSG(39, CIV_BUILD,    R,  Host,  HostWorld, Civ,         Both,   civ,       "a building appeared in a city, a city founded, the trade routes")
@@ -123,6 +126,7 @@ MSG(68, REPORT,       R,  Any,   Session,   Report,      Both,   session,   "the
 MSG(69, HOST_WORLD,   R,  Host,  Session,   HostWorld,   Both,   session,   "u32 world: the host's save changed (BUG-0933)")
 MSG(70, HOST_BUSY,    R,  Host,  Session,   HostBusy,    Client, session,   "the host's game is paused, in an editor or away (busy_model.h, 14 bytes v1: u8 version, u8 state, u16 why, u32 mode, u32 world, u16 seq; BUG-1142)")
 MSG(71, TRIBE_ANIM,   RU, Host,  Module,    Tribe,       Client, tribe,     "u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160)")
+MSG(72, CELL_MATE,    RU, Guest, HostWorld, Cell,        Host,   cell,      "u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246)")
 
 #undef MSG
 #undef FAMILY

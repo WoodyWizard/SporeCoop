@@ -19,6 +19,9 @@ mate, the vote's I'm ready, History's check, the editors' parts and done), and t
                   after 45 s) or never: the host's game plays the mating scene and the egg laying once, not again
                   every ~10 s while the vote holds its editor; the co-op window with the vote stays on its screen
 
+  --part cell-mate Cell fixture (BUG-1246): the guest calls its mate, the host swims next to the guest: the host's game
+                  draws the guest's mate where the guest's game has it (no second copy on the guest); when the
+                  guest meets it (its own editor) the host's copy goes
   --part cell-dna  Cell fixture (BUG-1249): the guest buys a part in its own cell editor: back in the pool its DNA
                   keeps the price off (the host's count put the old DNA back), the host's DNA has it off too, also
                   after the host's own editor
@@ -421,6 +424,54 @@ def part_cell_dna(host, guest, ck, ready, scr):
     keyframe('host_back_dna', 'Cell: both back in the pool, the same DNA on both')
 
 
+def mate_seen(con, x, y, model, rad=5.0):
+    """the cells of this game drawn within rad m of (x, y) with the mate's model (not a player's cell)"""
+    out = con.call(f'coop.pool near {x:.1f} {y:.1f} {rad}')['out']
+    return [l for l in out.splitlines() if f'model={model}' in l and 'puppet=0' in l and 'avatar=0' in l]
+
+
+def part_cell_mate(host, guest, ck, ready, scr):
+    """BUG-1246: the guest calls its mate; the host swims next to the guest and must see that mate in its own game (a
+    drawn cell of the guest's model where the guest's mate is), the guest no second copy of it; when the guest meets
+    its mate (its own editor) the host's copy goes"""
+    sh, sg = scr
+    gmate = lambda: re.search(r'alive=1 .*pos=\((-?[\d.]+) (-?[\d.]+)\) model=([0-9A-F]{8})', guest.call('coop.pool mate')['out'])
+    t0 = time.time()
+    mating_call(guest, 'guest', lambda: bool(gmate()) or time.time() - t0 > 60)
+    m = gmate()
+    ck(m, f"the guest's mating call brought its mate ({guest.call('coop.pool mate')['out'].strip()[:160]})")
+    if not m:
+        return
+    host.call('coop.pool tp 3 3')
+    time.sleep(4)
+    looks, hits = 0, 0
+    for _ in range(6):
+        m = gmate()
+        if not m:
+            break
+        x, y, model = float(m.group(1)), float(m.group(2)), m.group(3)
+        on_host = mate_seen(host, x, y, model)
+        on_guest = mate_seen(guest, x, y, model, 3.0)
+        looks += 1
+        hits += bool(on_host)
+        print(f'  guest mate at ({x:.1f} {y:.1f}) {model}: host {on_host[:1]} guest {len(on_guest)}', flush=True)
+        ck(len(on_guest) <= 1, f"the guest's game has its mate once, no copy of it from the host ({len(on_guest)})")
+        time.sleep(1.5)
+    print(f'  host: {host.call("coop.pool mate")["out"].strip()}', flush=True)
+    ck(looks and hits == looks, f"the host's game draws the guest's mate where the guest's game has it ({hits} of {looks} looks)")
+    keyframe('host_sees_guest_mate', "Cell: the host next to the guest: the guest's mate (the guest's species) is in the host's pool too", calm=2)
+    reached = mating_call(guest, 'guest', lambda: 'Editor' in mode(guest))
+    ck(reached, "the guest meets its mate: its own cell editor opens")
+    gone = wait(lambda: 'copies=0' in host.call('coop.pool mate')['out'], 10)
+    ck(gone, f"the host's copy of the guest's mate goes with it ({host.call('coop.pool mate')['out'].strip()[-160:]})")
+    time.sleep(6)
+    edit_cell(guest, 'Bobcell')
+    ck(wait(lambda: 'Cell' in mode(guest), 40), 'the guest is back in the pool')
+    time.sleep(10)
+    check_black(ck, sh, 'host', "while the guest called and met its mate", t0)
+    keyframe('guest_back', 'Cell: the guest back with its new cell, no mate left in either game')
+
+
 def add_legs(con, y=560):
     con.call('move 275 300')
     time.sleep(0.3)
@@ -489,9 +540,14 @@ def part_switch(host, guest, ck, ready, scr):
             shot(guest, 'evo_switch_guest_legs.png')
             guest.call('click %d %d' % DONE)
             time.sleep(3)
-            if 'Editor' in mode(guest):
+            dialog = 'Editor' in mode(guest)
+            if dialog:
                 shot(guest, 'evo_switch_guest_dialog.png')
+                keyframe('guest_save_dialog', "Creature start: the guest's done brought the game's save dialog (Save New / Replace the world's species)", settle=0)
                 guest.call('click %d %d' % SAVE_NEW)
+            # BUG-1255: the guest's first own creature is a new creation: no dialog that offers to replace the host's
+            # species (the world's, which the editor started from)
+            ck(not dialog, "the guest's done saves its first own creature without the dialog to replace the host's species")
             guest_done = True
         if k0 is None and 'Creature' in mh and 'Editor' not in mh and not host_ed:
             k0 = avatar_key(host)
@@ -560,6 +616,9 @@ def main():
         import twoinst
         twoinst.forget_settings()
         ck(settings_lib.force(host, [guest], 'creature.mode', 'host'), 'the guest got creature.mode host')
+    if '--own-keep' in sys.argv:  # exploration (BUG-1255): the own editor's request bytes kept at the constructor's
+        guest.call('coop.fix creations.own_editor_cancel off')
+        guest.call('coop.editreq keep ' + ARG('--own-keep', '7'))
     scr = (Screens(host, 'host'), Screens(guest, 'guest'))
     for x in scr:
         x.start()
@@ -568,6 +627,8 @@ def main():
             part_cell(host, guest, ck, ready, scr)
         elif part == 'cell-both':
             part_cell_both(host, guest, ck, ready, scr)
+        elif part == 'cell-mate':
+            part_cell_mate(host, guest, ck, ready, scr)
         elif part == 'cell-dna':
             part_cell_dna(host, guest, ck, ready, scr)
         elif part == 'cell-eggs':

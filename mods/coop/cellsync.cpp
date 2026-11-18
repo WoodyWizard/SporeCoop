@@ -948,6 +948,7 @@ void on_player_leave(int id)
 {
     g_food_ack.erase(id);
     spend_forget(id); // BUG-1249
+    mate_player_left(id); // BUG-1246
     g_food_tx.erase(id);
     if (!g_fix_kostale)
         return;
@@ -1210,6 +1211,7 @@ void tick(double now)
         partner_tiles_reset(false); // the tile pool went with the stage
         g_loot_recent.clear();
         modes::cell_forget(); // the partners' puppets were in the same pool
+        mate_forget();        // BUG-1246: and the copies of the partners' mates
     }
     if (!cell && (g_solo || g_solo_owed))
         solo_reset(); // BUG-0205: the stage was left
@@ -1232,6 +1234,7 @@ void tick(double now)
         camera_heal(avatar()); // BUG-0604: solo too (a session that ended keeps the lost view)
     if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())
         return;
+    mate_tick(now); // BUG-1246
     bg_cull(now);
     spare_tick(); // BUG-0355
     if (is_host())
@@ -1343,6 +1346,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (!cell)
         return;
+    if (type == net::MSG_CELL_MATE) { // BUG-1246: a guest's mate
+        mate_in(from, r);
+        return;
+    }
     if (g_solo && is_guest() && (type == net::MSG_CELL_STATE || type == net::MSG_CELL_FOOD))
         return; // BUG-0205: our own pool until the host's away state ends (a state of the host's pool comes then)
     if (g_solo_owed && is_guest() && (type == net::MSG_CELL_STATE || type == net::MSG_CELL_FOOD))
@@ -1566,6 +1573,7 @@ void on_session_end()
     g_food_ack.clear();
     g_food_tx.clear();
     spend_reset(); // BUG-1249
+    mate_session_end(); // BUG-1246
     if (in_cell() || !g_fix_forget) // outside the Cell stage the indices point into a pool that is gone
         for (auto& [h, m] : g_mirrors)
             if (m.local)

@@ -109,8 +109,15 @@ void host_tick(double now)
         const views::Centre* vc = per_guest ? vs.find((uint8_t)pl.id) : nullptr;
         std::vector<E> mine;
         const std::vector<E>* list = &all;
+        std::vector<E> not_own; // BUG-1246: the copy of this guest's own mate never goes back to it
+        if (uint32_t own = mate_copy_of(pl.id)) {
+            for (auto& e : all)
+                if (e.idx != own)
+                    not_own.push_back(e);
+            list = &not_own;
+        }
         if (vc) {
-            for (auto& e : all) {
+            for (auto& e : *list) {
                 net::Vec3 p = pos_of(e.c);
                 if (std::hypot(p.x - vc->pos.x, p.y - vc->pos.y) <= 120.f)
                     mine.push_back(e);

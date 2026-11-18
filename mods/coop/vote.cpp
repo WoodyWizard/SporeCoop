@@ -99,6 +99,32 @@ COOP_FIX("cell.vote_mate", "BUG-1245", g_vote_mate_fix,
 static uint32_t g_held_mate = 0;     // the mate taken out while the vote holds (0: none)
 static unsigned g_vote_mates_held = 0; // tests (coop.vote)
 unsigned vote_mates_held() { return g_vote_mates_held; }
+// BUG-1245 (the same class: the host's game black behind a vote that holds its editor request): the first Creature
+// editor after the switch vote (the landfall editor FD4902BD, BUG-0315's arrival vote) waited up to 60 s for every guest
+// to arrive in the host's Creature world; a guest still receiving the world over a slow link kept the host's screen
+// black (with the co-op window) for the whole 60 s (lab evo_screens_switch_slow, host 0-60 s black). Since BUG-1240
+// (core.own_editor_arrival) a guest on its way keeps its own editor due and opens it after its arrival, so the host's
+// editor need not wait for it. On: the arrival vote does not wait for a guest that is still on its way and has that
+// fix (its creature family minor >= 1, net/messages.def); it ends as soon as the guests that arrived are ready. Off, or
+// an older guest: waited for (0.7.15).
+static bool g_arrival_nowait_fix = true;
+COOP_FIX("core.arrival_nowait", "BUG-1245", g_arrival_nowait_fix,
+         "core: the host's first Creature editor does not wait for a guest still on its way (it gets its own editor when it arrives); the host's screen stayed black meanwhile");
+static unsigned g_arrival_not_waited = 0; // tests (coop.vote): arrival votes that did not wait for a guest on its way
+static int g_arrival_onway_last = 0;
+unsigned arrival_not_waited() { return g_arrival_not_waited; }
+// the guest takes its own landfall editor after a late arrival (BUG-1240): its build announces creature 1.1 or newer
+static bool peer_takes_arrival_editor(uint8_t id)
+{
+    bool has = false;
+    std::vector<net::FamilyRev> fam;
+    if (!g_sess.peer_families(id, has, fam) || !has)
+        return false;
+    for (auto& f : fam)
+        if (f.family == 3 && f.rev == 1 && f.minor >= 1) // creature (net/messages.def)
+            return true;
+    return false;
+}
 uint32_t g_offer_editor = 0;   // guest: the editor of the host's offer (0 = none)
 double g_offer_until = 0;
 bool g_offer_opened_ui = false;
@@ -1092,10 +1118,15 @@ void vote_tick(double now)
             }
         }
     bool all = true;
-    int away = 0, editing = 0;
+    int away = 0, editing = 0, onway = 0;
     for (auto& p : g_sess.players()) {
         if (p.id != 0 && g_vote_present_fix && own_world::peer_elsewhere((uint8_t)p.id)) {
             away++; // BUG-0801: plays another world, ignores the vote (BUG-0702): not waited for
+            continue;
+        }
+        if (p.id != 0 && g_vote.arrival && g_arrival_nowait_fix && !(g_ready.count(p.id) && g_ready[p.id]) &&
+            peer_takes_arrival_editor((uint8_t)p.id)) {
+            onway++; // BUG-1245: on its way, it opens its own editor when it arrives (BUG-1240): not waited for
             continue;
         }
         if (p.id != 0 && g_vote_editor_fix && !(g_ready.count(p.id) && g_ready[p.id]) && peer_in_editor((uint8_t)p.id)) {
@@ -1109,6 +1140,14 @@ void vote_tick(double now)
         if (editing) {
             g_vote_in_editor++;
             trace::line("vote", "%d player(s) in their own editor: not waited for (BUG-1239)", editing);
+        }
+    }
+    if (onway != g_arrival_onway_last) {
+        g_arrival_onway_last = onway;
+        if (onway) {
+            g_arrival_not_waited++;
+            trace::line("vote", "%d player(s) on their way to the Creature stage: not waited for, their own editor opens "
+                                "when they arrive (BUG-1245)", onway);
         }
     }
     if (away != g_vote_away_last) {

@@ -992,12 +992,28 @@ std::string debug(const std::vector<std::string>& a)
         // tests (BUG-1186): where the mate is from the host's cell (a guest: the host's puppet), and who removed it
         uint8_t* ref = is_guest() ? puppet_cell(0) : av;
         net::Vec3 rel = m && ref ? net::Vec3{pos_of(m).x - pos_of(ref).x, pos_of(m).y - pos_of(ref).y, 0.f} : net::Vec3{0, 0, 0};
-        char b[320];
-        snprintf(b, sizeof b, "goldie_done=%d mate_button=%d mate=%08X alive=%d dist=%.1f at %d %d from_host=(%.1f %.1f) gone_by=0x%08X %.1f s ago matings=%u egg_lays=%u",
+        char b[400];
+        snprintf(b, sizeof b, "goldie_done=%d mate_button=%d mate=%08X alive=%d dist=%.1f at %d %d from_host=(%.1f %.1f) gone_by=0x%08X %.1f s ago matings=%u egg_lays=%u pos=(%.1f %.1f) model=%08X",
                  s ? F<uint8_t>(s, 0x68) : -1, s ? F<uint8_t>(s, 0x69) : -1, mate_idx(), m ? 1 : 0, m ? net::dist(pos_of(m), pos_of(av)) : -1.f,
                  (int)sc[0], (int)sc[1], rel.x, rel.y, g_mate_gone_by, g_mate_gone_at < 0 ? -1.0 : H->time_seconds() - g_mate_gone_at,
-                 g_matings, g_egg_lays);
-        return b;
+                 g_matings, g_egg_lays, m ? pos_of(m).x : 0.f, m ? pos_of(m).y : 0.f, m ? F<uint32_t>(m, kModelKey) : 0u);
+        return b + mate_status();
+    }
+    if (a.size() >= 4 && a[0] == "near") { // tests (BUG-1246): the cells of this game within <r> m of <x y>
+        net::Vec3 p{(float)atof(a[1].c_str()), (float)atof(a[2].c_str()), 0.f};
+        float rad = (float)atof(a[3].c_str());
+        std::string o;
+        char b[160];
+        for_each_cell([&](uint8_t* c, uint32_t idx) {
+            net::Vec3 q = pos_of(c);
+            float d = std::hypot(q.x - p.x, q.y - p.y);
+            if (d > rad || o.size() > 3000)
+                return;
+            snprintf(b, sizeof b, "cell %08X model=%08X gfx=%d d=%.1f puppet=%d avatar=%d hp=%d\n", idx, F<uint32_t>(c, kModelKey),
+                     F<uint32_t>(c, 0x248) ? 1 : 0, d, modes::cell_is_puppet(c) ? 1 : 0, c == av ? 1 : 0, F<int>(c, kHp));
+            o += b;
+        });
+        return o.empty() ? "none" : o;
     }
     if (a.size() >= 4 && a[0] == "npcflag") { // host, tests: npcflag c<key> spare|invuln 0|1, hp <n> (BUG-0078)
         // spare: the NPC's species "won't attack the player" (resource data +0x300, all of its kind);
