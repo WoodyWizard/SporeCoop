@@ -156,6 +156,12 @@ def main():
     ck(not (social & set(later.get('host_puppet_of_guest', []))), "20 s later the host's game shows no singing guest")
     ck(not (social & set(later.get('guest_avatar', []))), "20 s later the guest's creature does not sing")
     print('  host effects later:', host.call('coop.effects map')['out'].strip()[:600])
+    # the pool effect a social win starts on each player's creature (D7BE955C, key 02C4C076): the partner's puppet
+    # keeps it only while the partner's own creature has it
+    from coop_brain_rings import mirrored, state
+    st = state(host, guest, gid)
+    print('  the social win effect 02C4C076 now:', st, flush=True)
+    ck(mirrored(st), f"no puppet keeps the social win's effect its player's own creature no longer has ({st})")
     keyframe('later', 'later: nobody sings, no rings effect on the guest\'s creature on either game', settle=0)
     shot(host, 'social_sing_host.png')
     shot(guest, 'social_sing_guest.png')
