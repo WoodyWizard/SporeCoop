@@ -39,7 +39,7 @@ same next model. `coop.fix wobj.ornament_model off`: the old copy. Test tools: `
 ## Verification
 wobj_ornament_model (two fixture bones given a list of two bone models, one dig each way): FAIL with
 `SPORE_FIX_OFF=wobj.ornament_model` out/lab/20261118-131226 (the other game's copy stays at model 0, both ways); PASS
-out/lab/20261118-131729 and RUN5. Key frames of the PASS run: the same view of each bone on both games, the dug bone shows
+out/lab/20261118-131729 and 20261118-132206 (with wobj_ornament, adventure_duo, adventure_save also passing). Key frames of the PASS run: the same view of each bone on both games, the dug bone shows
 the other bone model on both.
 
 ## History

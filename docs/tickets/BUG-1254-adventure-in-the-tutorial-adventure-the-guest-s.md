@@ -44,7 +44,7 @@ BUG-1262), at the captain's size (PlayerState body now carries the captain's sca
 adventure_tutorial (Creature fixture, both to the galaxy menu, both start the tutorial adventure): FAIL with
 `SPORE_FIX_OFF=adventure.puppet_captain` out/lab/20261118-131226 (the fault at 0xC0714E on both games, play state 0, the
 puppets the Creature-stage creature at 1.08 / 0.93); PASS out/lab/20261118-131729 (the earlier build that looked the
-partner's captain up by key), PASSRUNS (the final build). Key frames: the FAIL run has no intro card and no goal panel; the
+partner's captain up by key), out/lab/20261118-132906 and 20261118-133328 (the final build; adventure_duo and adventure_duo_host_first passed with it; 20261118-132206: adventure_duo, adventure_save). Key frames: the FAIL run has no intro card and no goal panel; the
 PASS runs show the intro card and the goal panel, each partner as a captain at the captain's size.
 
 ## History
