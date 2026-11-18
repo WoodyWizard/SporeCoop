@@ -80,6 +80,10 @@ def main():
     ck(d is not None and d < 12, f'the guest stands next to the host ({d and round(d, 1)} m)')
     for c in (host, guest):
         c.call('coop.effects log on')
+    # which herd the host's game keeps the guest's creature in (the avatar's herd is the host's family; a nestless
+    # herd of ours lists its members here)
+    hh = host.call('coop.npc herds')['out']
+    print('  host: the guest\'s puppet in a nestless herd of ours: ' + ('yes' if re.search(r'puppet=1', hh) else 'no (the avatar\'s herd?)'))
     print('  host effects before:', host.call('coop.effects map')['out'].strip().replace('\n', ' | ')[:500])
     print('  guest effects before:', guest.call('coop.effects map')['out'].strip().replace('\n', ' | ')[:500])
     ck(set_stance(host, 'social'), 'the host is in the social stance')
