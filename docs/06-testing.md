@@ -9115,7 +9115,7 @@ only with sing (docs/re/creature.md#creature-social-kinds).
   idle host (mouth, jaw, spike, electric, poison, bitten until knocked out); the host's own cell sampled at 10 Hz
   (`coop.pool anims`: +0x1B0, heading, the animation state +0x18C, DamageCell calls on it) and the world effects each
   game sent / played with their distance to the local player's cell (`coop.effects recent`).
-* `coop_cell_mirror_turn.py [--swim] [--fps N] [--crowd N]` (suites cell_mirror_turn, _net, _lowfps, _crowd,
+* `coop_cell_mirror_turn.py [--swim] [--fps N] [--crowd N] [--far M]` (suites cell_mirror_turn, _net, _lowfps, _far,
   BUG-1247): what each player sees of an NPC cell is its soft body: `coop.pool cloud` gives the angle of the first
   particle about the particles' mean for every NPC cell on screen (host: its own, guest: its mirrors by host key);
   the turn rates of the same cell on both screens are compared.

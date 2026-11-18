@@ -71,7 +71,7 @@ def attack(con, host, n=5):
     Returns the bites whose creature lost hp in the host's game (or died there): the attack really happened."""
     outs, landed = [], 0
     for _ in range(n):
-        m = re.search(r'^see c(\d+) creature \S+ (\d+) ([\d.]+) (\d+) (\d+)', con.call('coop.pool see 8')['out'], re.M)
+        m = re.search(r'^see c(\d+) creature \S+ (\d+) ([\d.]+) (\d+) (\d+)', con.call('coop.pool see 60')['out'], re.M)
         if not m:
             outs.append('no creature')
             time.sleep(1.0)

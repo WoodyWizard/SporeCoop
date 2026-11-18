@@ -21,7 +21,8 @@ import time
 from twoinst import Checks, keyframe, start  # (first: it puts tools/ on the path for sporectl)
 from sporectl import Console
 
-CLOUD_RE = re.compile(r'^cloud c(\d+) host=([-\d.]+) rot=([-\d.]+) cloud=([-\d.]+) soft_age=([-\d.]+) soft_d=([-\d.]+) d=([-\d.]+)', re.M)
+CLOUD_RE = re.compile(r'^cloud c(\d+) host=([-\d.]+) rot=([-\d.]+) cloud=([-\d.]+) soft_age=([-\d.]+) soft_d=([-\d.]+) d=([-\d.]+)'
+                      r'(?: level=\S+ fg=\S+ anim=([0-9A-F]+) state=([0-9A-F]+) speed=([-\d.]+))?', re.M)
 
 
 class Sampler(threading.Thread):
@@ -38,7 +39,8 @@ class Sampler(threading.Thread):
                 t = time.time()
                 for m in CLOUD_RE.finditer(c.call('coop.pool cloud 80')['out']):
                     self.rows.setdefault(m.group(1), []).append(
-                        (t, float(m.group(4)), float(m.group(2)), float(m.group(5)), float(m.group(6))))
+                        (t, float(m.group(4)), float(m.group(2)), float(m.group(5)), float(m.group(6)), m.group(8) or '-',
+                         m.group(9) or '-', float(m.group(10) or 0)))
                 self.stop_ev.wait(0.1)
         finally:
             c.sock and c.sock.close()
@@ -46,6 +48,11 @@ class Sampler(threading.Thread):
     def stop(self):
         self.stop_ev.set()
         self.join(10)
+
+
+def own_pos(con):
+    m = re.search(r'^anim avatar \S+ anim=\S+ head=\S+ angv=\S+ pos=\(([-\d.]+) ([-\d.]+)\)', con.call('coop.pool anims')['out'], re.M)
+    return (float(m.group(1)), float(m.group(2))) if m else None
 
 
 def turned(v):
@@ -58,12 +65,23 @@ def main():
     ap.add_argument('--fps', type=int, default=0)
     ap.add_argument('--crowd', type=int, default=0)
     ap.add_argument('--swim', action='store_true')
+    ap.add_argument('--far', type=float, default=0, help='the guest that far from the host: its mirrors there are cells off the host\'s screen')
     args = ap.parse_args()
     host, guest = start('cell')
     ck = Checks()
     time.sleep(3)
     if args.fps:
         print('  guest: ' + guest.call(f'frame.limit {int(1000 / args.fps)}')['out'].strip(), flush=True)
+    if args.far:  # (the join after a load puts a new own cell back next to the host for 30 s, BUG-0352: again until it holds)
+        t0 = time.time()
+        while time.time() - t0 < 50:
+            guest.call(f'coop.pool tp {args.far:.0f} 0')
+            time.sleep(6)
+            hp_, gp_ = own_pos(host), own_pos(guest)
+            if hp_ and gp_ and math.hypot(hp_[0] - gp_[0], hp_[1] - gp_[1]) > args.far * 0.7:
+                break
+        hp_, gp_ = own_pos(host), own_pos(guest)
+        print(f'  guest {math.hypot(hp_[0] - gp_[0], hp_[1] - gp_[1]):.1f} m from the host', flush=True)
     if args.crowd:
         print('  host: ' + host.call(f'coop.pool crowd {args.crowd} 12')['out'].strip()[:100], flush=True)
     time.sleep(3)
@@ -88,6 +106,8 @@ def main():
     rows = []
     for key, g in sg.rows.items():
         h = sh.rows.get(key)
+        if args.far:  # the host does not draw them: its heading as the guest got it is the reference
+            h = [(r[0], r[2]) + r[2:] for r in g]
         if not h or len(g) < 40 or len(h) < 40:
             continue
         ht, gt = turned([r[1] for r in h]), turned([r[1] for r in g])
@@ -98,6 +118,11 @@ def main():
         rows.append((key, ht / max(1, span_h), gt / max(1, span_g), hd / max(1, span_g), len(h), len(g),
                      max(ages) if ages else -1, big))
     rows.sort(key=lambda r: r[2] - r[1], reverse=True)
+    from collections import Counter
+    for name, smp in (('host', sh), ('guest', sg)):  # what the cells play (+0x1B0 / the state +0x18C) on each screen
+        an = Counter(r[5] for v in smp.rows.values() for r in v)
+        st = Counter(r[6] for v in smp.rows.values() for r in v)
+        print(f'  {name}: animations {dict(an.most_common(8))} states {dict(st.most_common(8))}', flush=True)
     print(f'  {len(rows)} cells on both screens (of {len(sh.rows)} on the host\'s, {len(sg.rows)} on the guest\'s)', flush=True)
     for r in rows[:12]:
         print(f'    c{r[0]}: turn rate host {r[1]:.2f} rad/s, guest {r[2]:.2f} rad/s (host heading as received {r[3]:.2f}), '

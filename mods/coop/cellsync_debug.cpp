@@ -998,11 +998,13 @@ std::string debug(const std::vector<std::string>& a)
                 modes::quat_to_mat(m->rot, want);
                 host = std::atan2(want[1], want[0]);
             }
-            char b[200];
-            snprintf(b, sizeof b, "cloud c%u host=%.3f rot=%.3f cloud=%.3f soft_age=%.2f soft_d=%.3f d=%.1f level=%d fg=%d\n", key, host,
-                     std::atan2(r[1], r[0]), std::atan2(fy - cy, fx - cx), m && m->soft_at > 0 ? now - m->soft_at : -1.0,
-                     m ? m->soft_d : 0.f, av ? net::dist(pos_of(c), pos_of(av)) : -1.f, F<int>(c, kLevel),
-                     F<void*>(c, kQuery) == fg_query() ? 1 : 0);
+            char b[280];
+            auto* v = (const float*)(c + kVel);
+            snprintf(b, sizeof b, "cloud c%u host=%.3f rot=%.3f cloud=%.3f soft_age=%.2f soft_d=%.3f d=%.1f level=%d fg=%d anim=%X state=%X "
+                     "speed=%.2f ailock=%d\n", key, host, std::atan2(r[1], r[0]), std::atan2(fy - cy, fx - cx),
+                     m && m->soft_at > 0 ? now - m->soft_at : -1.0, m ? m->soft_d : 0.f, av ? net::dist(pos_of(c), pos_of(av)) : -1.f,
+                     F<int>(c, kLevel), F<void*>(c, kQuery) == fg_query() ? 1 : 0, F<uint32_t>(c, 0x1B0), F<uint32_t>(c, 0x18C),
+                     std::hypot(v[0], v[1]), F<uint8_t>(c, kAiLock));
             out += b;
             left--;
         };
