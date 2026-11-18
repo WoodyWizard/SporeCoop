@@ -594,6 +594,40 @@ Owner, after the first test's hand-over: "it took a loading screen and leaving /
 people if there's 10 people on a single planet." Decision 6B C: research the in-place promotion (the new host keeps
 its loaded world and becomes the host; the others reconnect to it without a world transfer). Findings below.
 
+* ✔ Experiment (TITAN, 3 QA games, the galaxy server's `--warm-handover`: the new host keeps the world it plays):
+  game 9 hosted Samuth, 8 and 7 joined; game 9 left; game 8 was hosting 3 s later with no loading screen and played on
+  (no stage change); game 7 rejoined it and still reloaded (a full world share, as for any join). So the new host's half
+  works mechanically today; the others' half needs a Creature "resume" path.
+* What the promoted game carries over (a code inventory, file:line in the report of 2026-11-17; most host-only work is
+  decided per frame from the role and starts by itself once the role is Host):
+  1. Its creatures: as a guest it destroyed every native NPC it updated (npc.cpp update filter) and showed the old
+     host's NPCs as proxies (no AI, often in mod-made herds, health overridden). The session end destroys the proxies;
+     `away_locals` rebuilds the living ones in nest herds as natives only when its snapshot is under 2 s old, bodies and
+     own-herd proxies are lost, and the nests refill at their respawn time. Seen: 45 proxies and 56 natives removed as a
+     guest, 2 tracked NPCs right after the promotion (the herds themselves intact).
+  2. Species keys: a guest plays the host's creations under mod keys of its own (0x7D aliases, its own creature under
+     0x7C) and drops the host's packages at the session end: creatures already built keep keys that exist only on that
+     PC, and they would go into the new host's saves.
+  3. Host-only state the guest never had: every player's pack, the creation bundles for late joiners, the progress-debt
+     ledger, the knock-out / revive coordination, per-player nests (seat 0 is the host), the session settings (the
+     promoted game builds its own from its coop.ini).
+  4. "The host is player id 0" everywhere (net/session.cpp): the promoted game becomes 0 and the others get new ids;
+     everything keyed by the old host's object ids (NPC ids, egg serials, world-object serials) is invalid.
+  5. Joining without a world transfer exists only in Cell (a receipt the host minted for that world, epoch, file and
+     food total); a Creature version needs a lineage id every guest keeps (the planet and its host's generation, from
+     the galaxy server) and a Creature fingerprint (save name, stage epoch, no reload or save since). The proxies,
+     world objects, wsync and egg mirrors already reconcile a guest's loaded copy with a host's state.
+* Plan (the warm hand-over, galaxy only, behind a switch):
+  1. Promotion: when a guest is told to take a planet over, its session ends the "promotion" way: the living proxies
+     become natives at once (away_locals without the 2 s limit, bodies kept as bodies), pack proxies stay real pack
+     members, the creation packages and aliases stay registered, mod-only species keys are mapped back before its first
+     save; then it hosts in place (3 s).
+  2. Reconnect without reload: the galaxy server gives every hand-over a generation id; a guest that keeps the same
+     planet loaded rejoins the new host with it, and the new host skips the world share for it (states re-sync as for a
+     late joiner).
+  3. Per-player state that only the old host had (packs, ledgers, party seats, settings): kept by the galaxy server
+     per player and per planet; part of the three-roles split (#server-three-roles).
+
 ### Owner's idea: deleting one's creature on a planet from the online galaxy menu (2026-11-17)
 
 Owner: "when a player is on the Online Galaxy Menu, we should allow them to delete their creature on the world still.
