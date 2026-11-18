@@ -12,8 +12,9 @@ part does).
 
   1. Cell, guest: the mating call brings a mate that stays (the guest's sync removed it at once),
      reaching it opens the guest's own editor without a vote; cancel.
-  2. Cell, host: the mating call, the vote, the guest's "I'm ready": the host's editor opens and no
-     second vote starts (the game asked again right after the vote).
+  2. Cell, host: the mating call: the host's editor opens at once (BUG-1263, cell.editor_now; with the
+     session setting core.editor_now off: the vote and the guest's "I'm ready") and no vote starts
+     while it is open (the game asked again right after the request).
   3. Host edits and saves the cell: the guest gets the world and the host's new cell with its records
      (the bundle went out without them and the guest's game faulted building the puppet).
   4. Cell, guest: the mating call works again after the host's evolution.
@@ -185,14 +186,15 @@ def main():
     # 2. the host's mating call: the vote, then one editor
     host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
     alive, reached = mating_call(host, 'host', host_vote)
-    ck(reached, 'the host reaches its mate: the evolution vote starts')
-    # BUG-1166: the button by its name and caption, waited for (the window's rows moved with F1 of 0.7.12: the fixed
-    # rectangle 380 728 580 768 of before never matched again), clicked at its centre
-    btn = wait(lambda: READY_BTN.search(guest.call('coop.uistate')['out']), 10)
-    ck(btn, "the guest gets the vote with an I'm ready button")
-    at = ((int(btn.group(1)) + int(btn.group(3))) // 2, (int(btn.group(2)) + int(btn.group(4))) // 2) if btn else READY
-    guest.call('click %d %d' % at)
-    ck(wait(lambda: 'Editor' in mode(host), 30), 'the host editor opens after the vote')
+    ck(reached, 'the host reaches its mate: its editor opens (or the evolution vote starts)')
+    if 'vote active' in host.call('coop.vote')['out']:  # the session setting core.editor_now off (BUG-1263)
+        # BUG-1166: the button by its name and caption, waited for (the window's rows moved with F1 of 0.7.12: the fixed
+        # rectangle 380 728 580 768 of before never matched again), clicked at its centre
+        btn = wait(lambda: READY_BTN.search(guest.call('coop.uistate')['out']), 10)
+        ck(btn, "the guest gets the vote with an I'm ready button")
+        at = ((int(btn.group(1)) + int(btn.group(3))) // 2, (int(btn.group(2)) + int(btn.group(4))) // 2) if btn else READY
+        guest.call('click %d %d' % at)
+    ck(wait(lambda: 'Editor' in mode(host), 30), 'the host editor opens')
     second = False
     for _ in range(8):  # the game asks again while the mate is near (a race: not every time)
         second |= 'vote active' in host.call('coop.vote')['out']

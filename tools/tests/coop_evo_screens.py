@@ -5,8 +5,9 @@ mate, the vote's I'm ready, History's check, the editors' parts and done), and t
 (screen_look.py: a black picture is the symptom), not only game.mode.
 
   --part cell     Cell fixture, a guest without creations:
-                    1. the host's mating call, the vote (the guest's I'm ready by a click, or --ready none: the vote
-                       runs out), the host's editor: the guest's screen shows its Cell world all along (no black)
+                    1. the host's mating call, the host's editor at once (BUG-1263, cell.editor_now: no vote, the
+                       guest gets a notice; with --vote the vote: the guest's I'm ready by a click, or --ready none:
+                       the vote runs out): neither screen is black for long (the host's was black behind the vote)
                     2. the guest's own mating call: its own editor, the host plays on: the host's screen shows its
                        world all along
   --part switch   Cell fixture, a guest without creations: History's check, the switch vote (I'm ready), both reach
@@ -27,6 +28,8 @@ mate, the vote's I'm ready, History's check, the editors' parts and done), and t
                   after the host's own editor
 
   --ready click|none   the guest's I'm ready in the votes (none: it never presses; the vote's 60 s run out)
+  --vote    the session setting core.editor_now off: the host's Cell evolution goes through the vote (0.7.15; the
+            parts cell-eggs and cell-both test what the vote does meanwhile, BUG-1245, BUG-1239)
 
 Frames: key frames at every step (<run>/frames/evo_screens*), shots out/laneN/shots/evo_*.png.
 """
@@ -51,6 +54,7 @@ HISTORY_OK = (1415, 1055)
 CAPTION_OK = (1410, 1048)
 SAVE_NEW = (926, 604)  # the own editor's exit dialog after an edit: "Save New"
 BLACK_LIMIT = 20.0     # seconds of a black picture in a row that a player would call "a black screen"
+VOTE = '--vote' in sys.argv  # the session setting core.editor_now off: the host's Cell evolution through the vote (BUG-1263)
 
 wait = waiter(step=1.0)
 ARG = lambda k, d: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d
@@ -207,16 +211,27 @@ def edit_cell(host, name):
 
 def part_cell(host, guest, ck, ready, scr):
     sh, sg = scr
-    # 1. the host's mating call: the vote, the host's editor; the guest plays on and SEES its world
+    # 1. the host's mating call: its editor (at once since BUG-1263, cell.editor_now; through the vote with --vote or
+    # the switch off); the guest plays on and SEES its world, the host's picture is not black for long either
+    g_off = log_size(guest)
     host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
     reached = mating_call(host, 'host', host_vote)
-    ck(reached, 'the host reaches its mate: the evolution vote starts')
+    voted = 'vote active' in host.call('coop.vote')['out']
+    ck(reached, 'the host reaches its mate: its editor opens (or the evolution vote starts)')
     t_vote = time.time()
-    keyframe('host_vote', 'Cell: the host reached its mate, the vote runs (the guest sees its pool and the vote window)', settle=0)
-    if ready == 'click':
+    print(f"  host after its mate: {mode(host).strip()}, {'a vote runs' if voted else 'no vote'}", flush=True)
+    keyframe('host_vote', 'Cell: the host reached its mate: its editor opens at once (the guest sees its pool and a notice)'
+             if not voted else 'Cell: the host reached its mate, the vote runs (the guest sees its pool and the vote window)', settle=0)
+    if ready == 'click' and voted:
         ck(press_ready(guest), "the guest's co-op window shows I'm ready (clicked)")
-    ck(wait(lambda: 'Editor' in mode(host), 80), f"the host's editor opens after the vote ({mode(host).strip()})")
+    ck(wait(lambda: 'Editor' in mode(host), 80), f"the host's editor opens ({mode(host).strip()})")
     t_ed = time.time()
+    print(f'  host editor {t_ed - t_vote:.0f} s after its mate', flush=True)
+    if not VOTE:
+        ck(t_ed - t_vote < BLACK_LIMIT, f"the host's editor opens without waiting for the guest ({t_ed - t_vote:.0f} s, cell.editor_now)")
+        note = [l for l in log_since(guest, g_off) if 'evolves its cell' in l or 'evolves the creature of everybody' in l]
+        print(f"  guest's notice: {note[-1].strip()[-90:] if note else None}", flush=True)
+        ck(bool(note), "the guest is told that the host evolves its cell (a notice, no vote window)")
     time.sleep(4)
     keyframe('host_editor', "Cell: the host in its cell editor; the guest's screen shows its pool (not black)", settle=0)
     time.sleep(20)
@@ -224,16 +239,10 @@ def part_cell(host, guest, ck, ready, scr):
     ck(wait(lambda: 'Cell' in mode(host), 40), f"the host is back in its pool ({mode(host).strip()})")
     t_back = time.time()
     time.sleep(40)
-    if ready == 'none':
-        # the guest never answers: the host's Cell vote holds its editor for its 60 s and the host's picture is black
-        # behind the vote window meanwhile (docs/re/cell.md#cell-vote-black-screen, BUG-1263). Before BUG-1245 the
-        # repeated mating scenes drew the pool every ~10 s, which split the black into short runs: the black has to
-        # end with the vote, the window must be on it
-        lb = sh.longest_black(t_vote, t_ed)
-        print(f'  host screen while its vote runs: {sh.text(t_vote, t_ed)}', flush=True)
-        ck(lb <= 66, f"the host's black behind its vote ends with the vote (longest black {lb:.0f} s, the vote 60 s)")
-    else:
-        check_black(ck, sh, 'host', 'while its vote runs', t_vote, t_ed)
+    # BUG-1263: a guest that never answers kept the host's picture black behind the vote for its 60 s (the game had
+    # faded out after the egg laying, docs/re/cell.md#cell-vote-black-screen); with cell.editor_now there is no vote:
+    # the host's editor follows the egg laying as in a solo game (SPORE_FIX_OFF=cell.editor_now, --ready none: FAILS)
+    check_black(ck, sh, 'host', 'between its mate and its editor', t_vote, t_ed)
     check_black(ck, sg, 'guest', 'while the host\'s vote runs', t_vote, t_ed)
     check_black(ck, sg, 'guest', 'while the host is in its editor', t_ed, t_back)
     check_black(ck, sg, 'guest', 'after the host\'s editor', t_back)
@@ -466,7 +475,8 @@ def part_cell_dna(host, guest, ck, ready, scr):
     # the host's own editor afterwards (the players' video: the guest's DNA changed only when the host left its editor)
     host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
     if mating_call(host, 'host', host_vote):
-        press_ready(guest)
+        if 'vote active' in host.call('coop.vote')['out']:  # the Cell vote (core.editor_now off, BUG-1263)
+            press_ready(guest)
         if wait(lambda: 'Editor' in mode(host), 70):
             time.sleep(8)
             edit_cell(host, 'Alicecell')
@@ -676,6 +686,11 @@ def main():
         import twoinst
         twoinst.forget_settings()
         ck(settings_lib.force(host, [guest], 'creature.mode', 'host'), 'the guest got creature.mode host')
+    if VOTE:  # BUG-1263: the host's Cell editor through the vote (as 0.7.15, or a host who chose "everybody votes first")
+        import settings_lib
+        import twoinst
+        twoinst.forget_settings()
+        ck(settings_lib.force(host, [guest], 'core.editor_now', 'off'), 'the guest got core.editor_now off (the Cell vote)')
     if '--own-keep' in sys.argv:  # exploration (BUG-1255): the own editor's request bytes kept at the constructor's
         guest.call('coop.fix creations.own_editor_cancel off')
         guest.call('coop.editreq keep ' + ARG('--own-keep', '7'))
@@ -700,6 +715,9 @@ def main():
             x.stop()
         if one:
             settings_lib.reset([host], ('creature.mode',))
+            twoinst.forget_settings()
+        if VOTE:
+            settings_lib.reset([host], ('core.editor_now',))
             twoinst.forget_settings()
     ck.faults(host=host, guest=guest)
     return ck.result()

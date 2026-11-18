@@ -16,7 +16,7 @@ and the food it ate went to a host that dropped it.
    fell below its own on the way (read every 0.2-0.5 s).
 
 --editor: the host is in its own cell editor instead (its mating call by a real click, then onto the
-mate with `coop.pool mate tp`; its editor request waits for the vote: `coop.vote go`; the guest
+mate with `coop.pool mate tp`; its editor opens at once (BUG-1263; a vote, if any: `coop.vote go`); the guest
 stays in its pool; cancel after the checks). It counts as away after 4 s (in Cell since
 BUG-0205; BUG-0233 had left Cell out because nothing played on there).
 
@@ -81,7 +81,7 @@ def main():
             if 'alive=1' in host.call('coop.pool mate')['out']:
                 break
         print('  host mate: ' + host.call('coop.pool mate tp')['out'].strip())
-        # the host's editor request waits for the evolution vote (every player ready or 60 s): "Start now"
+        # the host's editor opens at once (BUG-1263, cell.editor_now); with a vote (core.editor_now off): "Start now"
         reached = wait(lambda: 'Editor' in mode(host) or (host.call('coop.vote go') and False), 60, 2)
         if not ck(reached, f'the host\'s own cell editor opens ({mode(host).strip()})'):
             return ck.result()

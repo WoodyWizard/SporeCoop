@@ -9,7 +9,9 @@ for the vote (h_Submit holds it), the game's post goes out at once with no liste
 config's start budget (100); on the way out the game books spent = budget - remaining, a negative spent
 (docs/re/cell.md#cell-editor-budget).
 
-1. Cell fixture. The host's mating call, the vote, the guest is ready, the host's editor opens.
+1. Cell fixture. The host's mating call: the host's editor opens (at once since BUG-1263, cell.editor_now: the game's
+   own post then reaches the editor as in a solo game; through the vote, the guest ready, with the session setting
+   core.editor_now off: the held request, BUG-0560's case).
 2. The host moves an eye (free) and saves (the editors' check). PASS: the host's game's spent DNA
    (cCellSerializableData +0x2C) is what it was before (the editor got the stage's budget and nothing was bought),
    and within 10 s the guest's game has the host's spent DNA (wsync row cell_spent).
@@ -36,10 +38,11 @@ def main():
     ck(s0 is not None, 'the host is in Cell with its DNA record')
     host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
     alive, reached = mating_call(host, 'host', host_vote)
-    ck(reached, 'the host reaches its mate: the evolution vote starts')
-    wait(lambda: guest.call('coop.uistate')['out'], 10)
-    guest.call('click %d %d' % READY)
-    ck(wait(lambda: 'Editor' in mode(host), 30), 'the host editor opens after the vote')
+    ck(reached, 'the host reaches its mate: its editor opens (or the evolution vote starts)')
+    if 'vote active' in host.call('coop.vote')['out']:  # the session setting core.editor_now off (BUG-1263)
+        wait(lambda: guest.call('coop.uistate')['out'], 10)
+        guest.call('click %d %d' % READY)
+    ck(wait(lambda: 'Editor' in mode(host), 30), 'the host editor opens')
     time.sleep(4)
     edit_cell(host, 'Budgetcell')
     ck(wait(lambda: 'Cell' in mode(host), 30), 'the host is back in the pool')
