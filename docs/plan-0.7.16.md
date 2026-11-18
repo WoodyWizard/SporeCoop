@@ -239,3 +239,4 @@ machine and a key frame, a save parse where it writes a field a save could see, 
   member or vehicle takes the receiver's species; `creature.mode` (own creature) switches Tribe and Civ too; the
   guest's captain and crew in Space come later.
 * Start: after 0.7.15.2 is out.
+* Added 2026-11-18: BUG-1262 (in an adventure each player sees the partner as a copy of its own captain: captain species keys are made per game) belongs to the per-player look work; with the Space captain item (later) unless it is cheap with WP-0.
