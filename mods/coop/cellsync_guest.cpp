@@ -17,6 +17,80 @@ void destroy_local(uint32_t idx)
     modes::cell_destroy(idx);
 }
 
+// BUG-1248: the game's "Goldie's demise" tutorial (0xE79720, the first part; docs/re/cell.md#cell-goldie-cutscene) runs
+// in each game on its own: it makes two cells next to the own avatar (Goldie and the cell that hunts it, both +0x354),
+// aims the cell camera at Goldie (cCellUI +0xE0), sets G+0x518C = 1 and an event of type 0x24 (G+0x5194, +0x28 Goldie,
+// +0x2C the hunter; 0xE5F160 keeps the camera on G+0x516C, the visible part-token cell, every frame) and plays the
+// cinematic goldies_demise. On a guest both cells are local cells the host does not have: the stray purge below
+// removed them with the next state of the host (0.1 s), so the guest's cutscene showed its letterbox over empty water
+// (the camera on a cell that was gone; near the host it jumped to the mirror of the host's own token ~2 s later).
+// Now they are kept while that tutorial runs (G+0x518C set), as the guest's own mate is: the guest sees its tutorial
+// as a single player does. After it (0xE794F0 clears G+0x518C) they go as before.
+// Old (`coop.fix cell.goldie_keep off`): purged.
+bool g_fix_goldie_keep = true;
+COOP_FIX("cell.goldie_keep", "BUG-1248", g_fix_goldie_keep, "cell: a guest's own first-part tutorial keeps its two cells (its cutscene showed empty water: they were removed as cells the host does not have)");
+// the event of the running tutorial (type 0x24, the one G+0x5198 waits on; G+0x5194 names it too until another event
+// takes that slot) in the event pool G+0x54; null: none
+static uint8_t* tutorial_event(char* why = nullptr, size_t n = 0)
+{
+    uint8_t* g = G();
+    if (!g || !F<uint8_t>(g, 0x518C)) {
+        if (why)
+            snprintf(why, n, "off");
+        return nullptr;
+    }
+    uint8_t* pool = g + 0x54;
+    uint8_t* data = F<uint8_t*>(pool, 0);
+    uint32_t high = F<uint32_t>(pool, 0x10), size = F<uint32_t>(pool, 0x14);
+    for (uint32_t at : {0x5198u, 0x5194u}) {
+        uint32_t ei = F<uint32_t>(g, at);
+        if (!ei || !data || size < 0x30 || (ei & 0xFFFF) >= high)
+            continue;
+        uint8_t* e = data + (size_t)(ei & 0xFFFF) * size;
+        if (skg::readable(e, 0x30) && F<uint32_t>(e, 0) == ei && F<uint32_t>(e, 0x24) == 0x24)
+            return e;
+        if (why)
+            snprintf(why, n, "G+%X=%08X size=%X high=%u e0=%08X type=%X", at, ei, size, high,
+                     skg::readable(e, 0x30) ? F<uint32_t>(e, 0) : 0u, skg::readable(e, 0x30) ? F<uint32_t>(e, 0x24) : 0u);
+    }
+    return nullptr;
+}
+// the tutorial's two cells while it runs: its event's (+0x28 Goldie, +0x2C the hunter), else the ones seen at its
+// start (the camera's cell and the cell hunting it, remembered); false: no tutorial
+static uint32_t g_tut_goldie, g_tut_hunter;
+bool tutorial_cells(uint32_t* goldie, uint32_t* hunter, char* why, size_t n)
+{
+    uint8_t* g = G();
+    if (!g || !F<uint8_t>(g, 0x518C)) {
+        g_tut_goldie = g_tut_hunter = 0;
+        if (why)
+            snprintf(why, n, "off");
+        return false;
+    }
+    if (uint8_t* e = tutorial_event(why, n)) {
+        g_tut_goldie = F<uint32_t>(e, 0x28);
+        g_tut_hunter = F<uint32_t>(e, 0x2C);
+    } else if (!g_tut_goldie) { // 0xE79720 aims the camera at Goldie and makes the hunter chase it (+0x22C, +0x230 = 1000)
+        uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+        uint32_t f = ui && skg::readable(ui + 0xE0, 4) ? F<uint32_t>(ui, 0xE0) : 0;
+        if (f && modes::cell_at(f) && !g_host_of.count(f)) {
+            g_tut_goldie = f;
+            for_each_cell([&](uint8_t* c, uint32_t idx) {
+                if (idx != f && F<uint32_t>(c, kChase) == f && F<uint8_t>(c, kKeepAlive) && !g_host_of.count(idx))
+                    g_tut_hunter = idx;
+            });
+        }
+    }
+    *goldie = g_tut_goldie;
+    *hunter = g_tut_hunter;
+    return g_tut_goldie != 0;
+}
+bool tutorial_cell(uint8_t* c, uint32_t idx)
+{
+    uint32_t goldie = 0, hunter = 0;
+    return c && idx && tutorial_cells(&goldie, &hunter, nullptr, 0) && (idx == goldie || idx == hunter);
+}
+
 void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
@@ -137,6 +211,10 @@ void guest_state(net::Reader& r)
     for_each_cell([&](uint8_t* c, uint32_t idx) {
         if (!g_host_of.count(idx) && !modes::cell_is_puppet(c) && F<uint8_t>(c, 0x110))
             g_n.products_live++; // tests (BUG-0716): our poison clouds and the like
+        if (g_fix_goldie_keep && tutorial_cell(c, idx)) {
+            g_n.goldie_kept++; // BUG-1248: our own tutorial's two cells (the cinematic looks at them)
+            return;
+        }
         if (!g_host_of.count(idx) && !modes::cell_is_puppet(c) && idx != mate)
             stray.push_back(idx);
     });

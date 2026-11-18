@@ -2,12 +2,15 @@
 """BUG-1243 (players' video): in the Cell stage, when one player attacks, the other player's cell plays the attack
 animation too. Cell fixture, both cells in one place.
 
-Each player in turn bites the nearest creature (`coop.pool kill -`: the game's own Bite from its avatar, as a ram
-does) a few times. Judged on the game's own animation of every player cell (+0x1B0, `coop.pool anims`: the own
-avatar and each partner's puppet) sampled on both games while it happens:
-  * the attacker's own cell plays its attack animations (control);
-  * the OTHER player's own cell plays none of the attacker's animations (on its own game);
-  * the attacker's game shows the other player's puppet without the attacker's animations.
+Each player in turn bites the nearest creature (`coop.pool kill c<key>`: the game's own Bite from its avatar, as a
+ram does) a few times. The fixture's cell has no weapon: its bite plays no attack animation of its own (+0x1B0 stays
+0 on the attacker too, lab 20261118-095915), so the control is that the bites land (the creature's hp in the host's
+game, the game's own field, falls). Judged on the game's own animation of every player cell (+0x1B0, `coop.pool
+anims`: the own avatar and each partner's puppet) sampled on both games while it happens:
+  * the bites land (control);
+  * the OTHER player's own cell, idle, plays no animation it did not play while idle (on its own game);
+  * the attacker's game shows the other player's puppet without an animation (cell puppets get none relayed).
+The weapon variants (--contact jaw|spike, --electric) do play attacker animations and check them.
 
   coop_cell_attack_anim.py
 """
@@ -57,18 +60,32 @@ def window(rows, t0, t1):
     return {a for t, a in rows if t0 <= t <= t1}
 
 
-def attack(con, n=5):
-    """swim at the nearest creature on the screen (clicks on it, as a player rams it), then the game's Bite on it"""
-    outs = []
+def host_hp(host, key):
+    """the creature's hp in the host's game (the game's own field), -1 when the host has it no more (killed, eaten)"""
+    m = re.search(r'\bhp=(-?\d+)', host.call(f'coop.pool cell c{key}')['out'])
+    return int(m.group(1)) if m else -1
+
+
+def attack(con, host, n=5):
+    """swim at the nearest creature on the screen (clicks on it, as a player rams it), then the game's Bite on it.
+    Returns the bites whose creature lost hp in the host's game (or died there): the attack really happened."""
+    outs, landed = [], 0
     for _ in range(n):
-        m = re.search(r'^see c\d+ creature \S+ \d+ ([\d.]+) (\d+) (\d+)', con.call('coop.pool see 8')['out'], re.M)
-        if m:
-            for _ in range(4):
-                con.call(f'click {m.group(2)} {m.group(3)}')
-                time.sleep(0.5)
-        outs.append(con.call('coop.pool kill -')['out'].strip()[:60])
+        m = re.search(r'^see c(\d+) creature \S+ (\d+) ([\d.]+) (\d+) (\d+)', con.call('coop.pool see 8')['out'], re.M)
+        if not m:
+            outs.append('no creature')
+            time.sleep(1.0)
+            continue
+        key = m.group(1)
+        for _ in range(4):
+            con.call(f'click {m.group(4)} {m.group(5)}')
+            time.sleep(0.5)
+        before = host_hp(host, key)
+        outs.append(con.call(f'coop.pool kill c{key}')['out'].strip()[:60])
         time.sleep(1.0)
-    return outs
+        after = host_hp(host, key)
+        landed += before > 0 and after < before
+    return outs, landed
 
 
 def electric(host, guest, ck):
@@ -208,36 +225,37 @@ def main():
         t0 = time.time()
         idle = (window(sh.avatar, 0, t0), window(sg.avatar, 0, t0), window(sh.puppet, 0, t0), window(sg.puppet, 0, t0))
         print(f'  idle: host avatar {sorted(idle[0])} guest avatar {sorted(idle[1])} host puppet {sorted(idle[2])} guest puppet {sorted(idle[3])}')
-        # 1. the host attacks
-        print('  host bites:', attack(host))
+        # 1. the host attacks (the fixture's cell has no weapon: its bite plays no attack animation of its own, +0x1B0
+        # stays 0 on the attacker; what is checked is that the bites land and the OTHER cell stays as idle as it was)
+        outs, landed = attack(host, host)
+        print('  host bites:', outs, f'landed {landed}', flush=True)
         keyframe('host_attacks', "Cell: the host bites; the guest's cell does not play the attack on either game", settle=0)
         t1 = time.time()
         time.sleep(2)
-        h_att = window(sh.avatar, t0, t1) - idle[0]
         g_own = window(sg.avatar, t0, t1 + 2)
         h_pup = window(sh.puppet, t0, t1 + 2)
         g_pup = window(sg.puppet, t0, t1 + 2)
         print(f'  host attacks: host avatar {sorted(window(sh.avatar, t0, t1))} | guest avatar {sorted(g_own)} | '
               f'host\'s puppet of guest {sorted(h_pup)} | guest\'s puppet of host {sorted(g_pup)}', flush=True)
-        ck(h_att, f"the host's own cell plays its attack animations ({sorted(h_att)})")
-        ck(not (h_att & g_own), f"the guest's own cell does not play the host's attack ({sorted(h_att & g_own)})")
-        ck(not (h_att & h_pup), f"the host's game shows the guest's cell without the host's attack ({sorted(h_att & h_pup)})")
+        ck(landed >= 1, f"the host's bites land: the bitten creature lost hp in the host's game ({landed} of {len(outs)})")
+        ck(not (g_own - idle[1]), f"the guest's own cell, idle, plays no new animation while the host attacks ({sorted(g_own - idle[1])})")
+        ck(not (h_pup - {'0'}), f"the host's game shows the guest's cell without an attack animation ({sorted(h_pup)})")
         time.sleep(3)
         # 2. the guest attacks
         t2 = time.time()
-        print('  guest bites:', attack(guest))
+        outs, landed = attack(guest, host)
+        print('  guest bites:', outs, f'landed {landed}', flush=True)
         keyframe('guest_attacks', "Cell: the guest bites; the host's cell does not play the attack on either game", settle=0)
         t3 = time.time()
         time.sleep(2)
-        g_att = window(sg.avatar, t2, t3) - idle[1]
         h_own = window(sh.avatar, t2, t3 + 2)
         g_pup2 = window(sg.puppet, t2, t3 + 2)
         h_pup2 = window(sh.puppet, t2, t3 + 2)
         print(f'  guest attacks: guest avatar {sorted(window(sg.avatar, t2, t3))} | host avatar {sorted(h_own)} | '
               f'guest\'s puppet of host {sorted(g_pup2)} | host\'s puppet of guest {sorted(h_pup2)}', flush=True)
-        ck(g_att, f"the guest's own cell plays its attack animations ({sorted(g_att)})")
-        ck(not (g_att & h_own), f"the host's own cell does not play the guest's attack ({sorted(g_att & h_own)})")
-        ck(not (g_att & g_pup2), f"the guest's game shows the host's cell without the guest's attack ({sorted(g_att & g_pup2)})")
+        ck(landed >= 1, f"the guest's bites land: the bitten creature lost hp in the host's game ({landed} of {len(outs)})")
+        ck(not (h_own - idle[0]), f"the host's own cell, idle, plays no new animation while the guest attacks ({sorted(h_own - idle[0])})")
+        ck(not (g_pup2 - {'0'}), f"the guest's game shows the host's cell without an attack animation ({sorted(g_pup2)})")
     finally:
         sh.stop()
         sg.stop()

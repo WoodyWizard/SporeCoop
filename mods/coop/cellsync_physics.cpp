@@ -414,6 +414,8 @@ void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
     memcpy(c + 0x24, want, sizeof want); // the shape matrix the fit wrote with it (blend 0: the same)
     F<uint16_t>(c, kFlags) |= 2;
     g_n.soft_turns++;
+    mit->second.soft_at = H->time_seconds();
+    mit->second.soft_d = d;
 }
 
 // ---- the cell broadphase's sweep (BUG-0337, docs/re/cell.md#cell-sap-active-list) ----

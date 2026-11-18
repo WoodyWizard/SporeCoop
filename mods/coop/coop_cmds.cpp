@@ -1460,6 +1460,10 @@ void register_commands_core()
                            SAY("%s", effects::probe((uint32_t)strtoul(argv[2], nullptr, 16)).c_str());
                            return 0;
                        }
+                       if (argc > 1 && !strcmp(argv[1], "recent")) { // tests (BUG-1243)
+                           SAY("%s", effects::recent().c_str());
+                           return 0;
+                       }
                        if (argc > 1 && !strcmp(argv[1], "map")) {
                            SAY("%s", effects::map_dump().c_str());
                            return 0;

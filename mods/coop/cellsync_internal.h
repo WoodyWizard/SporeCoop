@@ -82,6 +82,7 @@ struct Counters {
     uint32_t ko_deaths = 0; // timed-out knock-outs that ended in the game's own death (cell.respawn_small off; coop.cell status: ko_deaths)
     uint32_t chunk_kills = 0;
     uint32_t product_hits = 0, foreign_mirror = 0, foreign_puppet = 0, foreign_other = 0, product_pairs = 0, products_live = 0; // tests
+    uint32_t goldie_kept = 0; // BUG-1248: purges that kept our own tutorial's cells
     uint32_t puppet_poison_steps = 0;
     uint32_t ko_clouds_blocked = 0; // tests: clouds a knocked-out cell did not make (own avatar's and partners' steps)
     uint32_t partner_poison_refused = 0, partner_poison_taken = 0; // tests: refused / taken (switch off, ff, Rivals)
@@ -140,6 +141,8 @@ struct Mirror {
     double seen = 0;
     float scale = 0; // the host's world scale G+0x514C of the sample (0: an older host without it)
     bool product = false; // BUG-0958: a player's product on the host (+0x110: a poison cloud), state flag 4
+    double soft_at = 0;   // tests (BUG-1247): when h_Soft last turned it to the host's heading
+    float soft_d = 0;     // ... and by how much (rad)
 };
 
 struct FoodTx {
@@ -287,6 +290,9 @@ uint8_t* G();
 uint32_t avatar_idx();
 uint8_t* avatar();
 uint32_t mate_idx();
+extern bool g_fix_goldie_keep; // BUG-1248
+bool tutorial_cell(uint8_t* c, uint32_t idx); // BUG-1248: one of our own Goldie tutorial's two cells while it runs
+bool tutorial_cells(uint32_t* goldie, uint32_t* hunter, char* why, size_t n); // BUG-1248: the two cells of the running tutorial's event
 void* fg_query();
 uint8_t* S();
 net::Vec3 pos_of(uint8_t* c);

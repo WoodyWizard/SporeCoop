@@ -178,6 +178,33 @@ PLAYER_STATE("effects", [](uint8_t id) { g_last_rx.erase(id); g_last_rx_start.er
 static uint32_t g_sent_keys[64];
 static size_t g_sent_n;
 static uint8_t g_last_rx_from = 0xFF;
+// tests (BUG-1243): the last world effects sent and played here, with where the local player was then
+struct Recent {
+    char dir = 0; // 's' sent, 'p' played
+    uint8_t player = 0;
+    uint32_t id = 0;
+    float x = 0, y = 0, z = 0, d = -1; // d: distance to the local player's object (-1: none)
+    double at = 0;
+};
+static Recent g_recent[48];
+static size_t g_recent_at, g_recent_n;
+static void note_recent(char dir, uint8_t player, uint32_t id, const net::Vec3& p)
+{
+    Recent& r = g_recent[g_recent_at];
+    r.dir = dir;
+    r.player = player;
+    r.id = id;
+    r.x = p.x, r.y = p.y, r.z = p.z;
+    r.d = -1;
+    if (C.local_pos) {
+        net::Vec3 l = C.local_pos();
+        if (l.x != 0 || l.y != 0 || l.z != 0)
+            r.d = net::dist(l, p);
+    }
+    r.at = H ? H->time_seconds() : 0;
+    g_recent_at = (g_recent_at + 1) % 48;
+    g_recent_n = g_recent_n < 48 ? g_recent_n + 1 : 48;
+}
 // world effects already sent this frame (effect pointer, id): the manager and the world create
 // hooks both queue the same effect, so the second one is skipped. Open addressing keyed by the
 // pointer: one probe for nearly every effect, fixed size, no allocation, cleared once a frame
@@ -608,6 +635,7 @@ static void process_world(void* fx, uint32_t id)
     g_sent++;
     if (g_log)
         H->log(M, SK_INFO, "effect: sent world id %08X at %.2f %.2f %.2f", id, p.x, p.y, p.z);
+    note_recent('s', C.sess->my_id(), id, p);
     uint8_t xf[0x44];
     if (copy_transform(xf, fx, p))
         g_xform_sent++;
@@ -945,6 +973,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 last.z = p[2];
                 if (g_world_start)
                     g_world_start(player, id, fx, net::Vec3{p[0], p[1], p[2]});
+                note_recent('p', player, id, net::Vec3{p[0], p[1], p[2]});
             } else if (pool == 3) { // a one-shot effect has no pool entry: the game created it on the puppet
                 net::Vec3 p = game::position(puppet);
                 last.has_pos = true;
@@ -1165,6 +1194,20 @@ std::string watch(uint32_t id)
     one("own", g_watch_own, g_watch_own_at);
     one("rx", g_watch_rx, g_watch_rx_at);
     return out;
+}
+
+std::string recent()
+{
+    std::string s;
+    char b[160];
+    double t = now();
+    for (size_t i = 0; i < g_recent_n; i++) {
+        const Recent& r = g_recent[(g_recent_at + 48 - g_recent_n + i) % 48];
+        snprintf(b, sizeof b, "recent %c from=%u id=%08X at=(%.2f %.2f %.2f) local_d=%.2f age=%.1f\n", r.dir, r.player, r.id, r.x, r.y,
+                 r.z, r.d, t - r.at);
+        s += b;
+    }
+    return s.empty() ? std::string("recent: none\n") : s;
 }
 
 std::string status()
