@@ -1089,7 +1089,9 @@ static std::string pool_map(void* c, uint32_t off)
                 s += "map: bad node\n";
                 return s;
             }
-            snprintf(b, sizeof b, "  b%u key=%08X value=%p\n", i, *(uint32_t*)node, *(void**)(node + 4));
+            // BUG-1241 (tests): whether the pool's effect is still active (IVisualEffect vt 0x10)
+            snprintf(b, sizeof b, "  b%u key=%08X value=%p active=%d\n", i, *(uint32_t*)node, *(void**)(node + 4),
+                     game::effect_active(*(void**)(node + 4)) ? 1 : 0);
             s += b;
             n++;
             node = *(uint8_t**)(node + 8);

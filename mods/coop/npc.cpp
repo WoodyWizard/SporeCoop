@@ -994,7 +994,7 @@ std::string anims_status()
 std::string current_anims()
 {
     std::string out;
-    char b[80];
+    char b[200];
     auto line = [&](int id, void* c) {
         uint32_t a = 0;
         net::Vec3 m;
@@ -1016,8 +1016,10 @@ std::string current_anims()
         net::Vec3 m;
         if (c && game::creature_listed(c) && game::drawn_state(c, &m, &a)) {
             // BUG-1241 (tests): the creature's party bits here: the pack (+0xB58 & 0x100), the avatar's herd (family)
-            snprintf(b, sizeof b, "cur %s anim=%08X pack=%d family=%d\n", name, a, (int)game::pack_member(c),
-                     (int)(game::herd_of(c) && game::herd_of(c) == game::avatar_herd()));
+            // BUG-1241 / BUG-1252 (tests): the ability it performs now (+0xE8C) and its animation, its food meter
+            snprintf(b, sizeof b, "cur %s anim=%08X pack=%d family=%d ability=%d ability_anim=%08X hunger=%.1f\n", name, a,
+                     (int)game::pack_member(c), (int)(game::herd_of(c) && game::herd_of(c) == game::avatar_herd()),
+                     (int)game::ability_in_use(c), game::ability_anim_in_use(c), game::hunger(c));
             out += b;
         }
     };

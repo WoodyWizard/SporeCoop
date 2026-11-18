@@ -2403,6 +2403,7 @@ static void init_world_share()
     shared::set_feed([](const std::string& t) { feed(t); }); // BUG-0696
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);
+    game::set_own_behaviour_anim_listener(on_own_behaviour_anim); // BUG-1253
     game::set_dna_listener(on_dna);
 }
 

@@ -563,7 +563,7 @@ struct AnimEvent {
     uint8_t id = 0;
     uint32_t anim = 0;
     int32_t block = -1;
-    uint8_t flags = 0; // 1 = disable blend-in, 2 = was PlayAnimationTo (had a target)
+    uint8_t flags = 0; // 1 = disable blend-in, 2 = was PlayAnimationTo (had a target), 4 = CreaturePlayAnim (8: its a; block: its b; BUG-1253)
     void write(Writer& w) const { w.u8(id); w.u32(anim); w.u32((uint32_t)block); w.u8(flags); }
     bool read(Reader& r) { id = r.u8(); anim = r.u32(); block = (int32_t)r.u32(); flags = r.u8(); return r.ok(); }
 };

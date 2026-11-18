@@ -86,7 +86,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", host_busy_status().c_str()); // C3 (BUG-1142)
     for (auto& pl : g_sess.players()) // CAP_VERSION: each player's mod, SporeKit and game build
         SAY("version %u '%s': %s\n", pl.id, pl.name.c_str(), pl.version.empty() ? "unknown (pre-0.7.4)" : pl.version.c_str());
-    SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
+    SAY("remote animations: received %u, played %u (behaviour %u); own behaviour sent %u; puppets fed %u\n", g_anims_rx, g_anims_played,
+        g_bhv_anims_played, g_own_bhv_anims, modes::puppets_fed());
     SAY("appeared notices: told %u, puppet rebuilds not told %u (BUG-0923)\n", g_appeared_told, g_appeared_quiet);
     SAY("%s", effects::status().c_str()); // BUG-0451
     SAY("%s", npc::status().c_str());
@@ -1194,7 +1195,7 @@ void register_commands_core()
                    nullptr, MT);
     H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
                    c_framefix, nullptr, MT);
-    H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",
+    H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill | hunger [v] - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 2 && !strcmp(argv[1], "speedset")) { // tests (BUG-0788): SetDesiredSpeed on each Creature
                            for (auto& [id, r] : g_remotes) { // puppet now, and +0x1E0 read right after it (same frame)
@@ -1217,6 +1218,19 @@ void register_commands_core()
                                SAY("puppet %u desired=%.2f standard=%.2f vel=%.2f want=%.2f err=%.2f kinematic=%d\n", id,
                                    *(float*)(sp + 0x1E0), *(float*)(sp + 0x1E4), drive::speed(v), r.drv.last_want_speed,
                                    r.drv.last_err, (int)r.drv.kinematic);
+                           }
+                           return 0;
+                       }
+                       // tests (BUG-1252): hunger [v]: each Creature puppet's food meter (+0xBBC); with v set through the game's
+                       // setter, as minutes of the game's own hunger update leave a puppet that never eats
+                       if (argc > 1 && !strcmp(argv[1], "hunger")) {
+                           for (auto& [id, r] : g_remotes) {
+                               if (!r.puppet || !creature_puppet(r.puppet_adapter) || !game::creature_listed(r.puppet))
+                                   continue;
+                               float before = game::hunger(r.puppet);
+                               if (argc > 2)
+                                   game::set_hunger(r.puppet, (float)atof(argv[2]));
+                               SAY("puppet %u hunger %.1f -> %.1f\n", id, before, game::hunger(r.puppet));
                            }
                            return 0;
                        }

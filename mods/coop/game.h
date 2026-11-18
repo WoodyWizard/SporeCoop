@@ -169,6 +169,10 @@ void set_idle_anim_listener(IdleAnimListener fn);
 // BUG-0936: the game's idle refresh on c (force: also when the choice is the current animation), as its update does
 void idle_refresh(void* c, bool force);
 bool play_behaviour_anim(void* c, uint32_t anim_id, int how, int a, int b); // how 2 is played as 1
+// BUG-1253: the local avatar's own CreaturePlayAnim plays outside its idle refresh (its behaviour tree's: eating a body,
+// ...), which the PlayAnimation listener above never sees. Not for plays of the mod.
+using OwnBehaviourAnimListener = void (*)(void* avatar, uint32_t anim_id, int a, int b);
+void set_own_behaviour_anim_listener(OwnBehaviourAnimListener fn);
 void behaviour_anim_counts(uint32_t* seen, uint32_t* idle);
 
 // Visual effects of a creature (BUG-0451): every effect the game makes on or at a creature goes
@@ -291,6 +295,15 @@ float noise_radius(void* c);
 float sneak_alpha(void* c);
 // the game's own setter CreatureSetSneaking 0xC1B030 (c, on, force 1: no ability check); false: no symbol
 bool set_sneaking(void* c, bool on);
+// BUG-1252: a creature's food meter, cCreatureBase +0xBBC mHunger (0..100; docs/re/tribe.md#tribe-mirror-hunger); the
+// game's clamped setter Creature_SetHunger 0xC0BB30 (false: no symbol)
+constexpr uintptr_t kHungerOff = 0xBBC;
+inline float hunger(void* c) { return *(float*)((uint8_t*)c + kHungerOff); }
+bool set_hunger(void* c, float v);
+// BUG-1241: the ability the creature performs now (+0xE8C, -1 none; PlayAbility sets it, the ability tick 0xC1E8B0
+// ends it) and its animation (+0xE90)
+inline int32_t ability_in_use(void* c) { return *(int32_t*)((uint8_t*)c + 0xE8C); }
+inline uint32_t ability_anim_in_use(void* c) { return *(uint32_t*)((uint8_t*)c + 0xE90); }
 // A hatchling (age +0xB34 == 0) whose behaviour tree waits for a family member of its nest to greet it
 // (tree 0x9413EDEB): after a respawn or a hatch the greeting NPC makes it grow up (docs/re/creature.md 13).
 constexpr uint32_t kHatchlingTree = 0x9413EDEBu;

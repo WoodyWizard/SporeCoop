@@ -1203,6 +1203,36 @@ void on_anim(void* creature, uint32_t anim, int block, bool disable_blend, bool 
     }
 }
 
+// BUG-1253 (players' video): the guest ate a body and its creature stood idle next to it in the host's game. The
+// avatar's behaviour tree (the eat node after the player's click, ...) starts its animations with
+// SporeCoop::CreaturePlayAnim, not with PlayAnimation, so on_anim never saw them (only the NPCs' were relayed, BUG-0464).
+// Now the avatar's own CreaturePlayAnim plays outside its idle refresh go out as MSG_ANIM with flag 4 (its `a` in flag
+// 8, its `b` in block) and the partner plays the same call on the puppet. `coop.fix creature.avatar_bhv_anims off`:
+// not sent (0.7.15).
+static bool g_avatar_bhv_fix = true;
+COOP_FIX("creature.avatar_bhv_anims", "BUG-1253", g_avatar_bhv_fix, "creature: what a player's creature does by itself after a click (eating a body, ...) is shown on the partner's screen");
+uint32_t g_own_bhv_anims = 0, g_bhv_anims_played = 0; // tests (coop.status / coop.track)
+void on_own_behaviour_anim(void* creature, uint32_t anim, int a, int b)
+{
+    if (!g_avatar_bhv_fix || !creature || creature != game::avatar() || !game::in_creature_stage())
+        return;
+    if (g_anim_log)
+        LOG("avatar behaviour anim 0x%08X a=%d b=%d", anim, a, b);
+    net::AnimEvent ev;
+    ev.id = g_sess.my_id();
+    ev.anim = anim;
+    ev.block = b;
+    ev.flags = 4 | ((a & 0xFF) ? 8 : 0);
+    g_own_bhv_anims++;
+    g_own_anims++;
+    g_own_anim_last = anim;
+    if (g_sess.connected()) {
+        net::Writer w;
+        ev.write(w);
+        g_sess.send_event(net::MSG_ANIM, w);
+    }
+}
+
 uint32_t g_anims_rx = 0, g_anims_played = 0;
 
 static bool g_anim_creature_only_fix = true;
@@ -1231,7 +1261,11 @@ void on_remote_anim(const net::AnimEvent& ev)
         }
         g_anims_unlisted++;
     }
-    game::play_animation(it->second.puppet, ev.anim, ev.block, ev.flags & 1);
+    if (ev.flags & 4) { // BUG-1253: the partner's behaviour play, the same call (CreaturePlayAnim(anim, a, b))
+        game::play_behaviour_anim(it->second.puppet, ev.anim, 0, (ev.flags & 8) ? 1 : 0, ev.block);
+        g_bhv_anims_played++;
+    } else
+        game::play_animation(it->second.puppet, ev.anim, ev.block, ev.flags & 1);
     g_anims_played++;
     it->second.anims++;
     it->second.anim_last = ev.anim;

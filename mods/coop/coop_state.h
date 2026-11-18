@@ -509,6 +509,8 @@ void drive_puppet(Remote& r, double now);
 void forget_puppets();
 void monitor_frame_start(double now);
 void on_anim(void* creature, uint32_t anim, int block, bool disable_blend, bool to_target);
+void on_own_behaviour_anim(void* creature, uint32_t anim, int a, int b); // BUG-1253
+extern uint32_t g_own_bhv_anims, g_bhv_anims_played; // BUG-1253 (tests)
 void on_remote_anim(const net::AnimEvent& ev);
 void partner_pass_tick();
 void remove_strays(double now);
