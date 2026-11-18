@@ -57,10 +57,16 @@ def window(rows, t0, t1):
 
 
 def attack(con, n=5):
+    """swim at the nearest creature on the screen (clicks on it, as a player rams it), then the game's Bite on it"""
     outs = []
     for _ in range(n):
+        m = re.search(r'^see c\d+ creature \S+ \d+ ([\d.]+) (\d+) (\d+)', con.call('coop.pool see 8')['out'], re.M)
+        if m:
+            for _ in range(4):
+                con.call(f'click {m.group(2)} {m.group(3)}')
+                time.sleep(0.5)
         outs.append(con.call('coop.pool kill -')['out'].strip()[:60])
-        time.sleep(1.2)
+        time.sleep(1.0)
     return outs
 
 
@@ -68,6 +74,8 @@ def main():
     host, guest = start('cell')
     ck = Checks()
     time.sleep(4)
+    for con in (host, guest):
+        con.call('coop.effects log on')
     print('  host:', anims(host), '| guest:', anims(guest))
     sh, sg = Sampler(host), Sampler(guest)
     sh.start()
@@ -110,6 +118,8 @@ def main():
     finally:
         sh.stop()
         sg.stop()
+    for name, con in (('host', host), ('guest', guest)):
+        print(f'  {name} effects: ' + ' | '.join(con.call('coop.effects')['out'].splitlines()[:6]))
     ck.faults(host=host, guest=guest)
     return ck.result()
 
