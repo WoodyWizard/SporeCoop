@@ -678,9 +678,33 @@ Owner: "It needs to be scalable too. Setting it to 17 shouldn't cause any issues
     before 16-player planets are practical. Measure Creature next (20-30 KB/s a partner before).
   * The party cards on the right of the screen stack past the top with 9 partners (8 cards at most, at 800x600 they
     go off the screen). On a galaxy planet they should show the own party only (#server-three-roles).
+    Owner 2026-11-18: "The party cards are going to be limited to 4 because we'll limit parties to 4 members only.
+    They wont overfill." A party is 4 players at most; the cards show the own party.
   * Player colours repeat after 8 (find_core.h: 8 colours, player 9 shares one).
   * Founder seats are still given once per identity and kept (party.cpp): 64 different players over a planet's life
     fill them; reusing an absent player's seat is still open (#server-seats-16).
+
+### The host's upload with many players: what costs and what would cut it (2026-11-18, decision 6F)
+<a id="server-host-upload"></a>
+
+Measured in the 6E B test (#server-scalable-players), Cell stage, all players near each other, the QA games at 10 FPS:
+the host's Cell snapshot (MSG_CELL_STATE) cost 100-240 KB/s a guest (4 guests: 25-53 MB a minute; 9 guests: 128 MB).
+It is already per guest: each guest gets the cells within 120 m of its own centre, at most kSendCap 900, 10 times a
+second (cellsync.cpp send_cycle, BUG-0295, BUG-0809). Each cell is a full 63-byte record every time: index, resource
+instance, three model keys, level, size, position (3 floats), velocity (2), rotation (a quaternion, 4), hp, flags;
+about 33 of those bytes never change while the cell lives. So "only what is near" is done; the cost is the record and
+the rate. Theory for a 16-player planet (15 guests), not measured:
+
+| | Each guest | Host upload, 15 guests | Galaxy server |
+|---|---|---|---|
+| Today | 100-240 KB/s | 1.5-3.6 MB/s (12-29 Mbit/s) | relays it |
+| A: a compact snapshot (the fixed part of a cell once, then about 12 bytes: position and velocity as 16-bit offsets from the guest's centre, one angle, hp, flags; far cells less often) | about 20-40 KB/s (5-8x less) | 0.3-0.6 MB/s (2.4-4.8 Mbit/s) | relays it |
+| B: the galaxy server copies one stream to the players of one area | today's size | one stream per group of players near each other: 100-240 KB/s when all are together, today's 3.6 MB/s when all are apart | sends 1.5-3.6 MB/s a busy planet |
+| C: A, then B | about 20-40 KB/s | 20-40 KB/s per group | 0.3-0.6 MB/s a busy planet |
+
+A helps co-op too (live, 4 players: 0.3-0.7 MB/s today to about 0.1 MB/s) and costs no server bandwidth; B only helps
+players who stand together and moves the cost to the server; C is the MMO shape (the server carries the fan-out) on
+top of A. Creature, Tribe and Civ are not measured at this size yet (Creature: 20-30 KB/s a partner at 4 players).
 
 ### Hand-over without a reload: research (2026-11-17, decision 6B C)
 <a id="server-warm-handover"></a>
