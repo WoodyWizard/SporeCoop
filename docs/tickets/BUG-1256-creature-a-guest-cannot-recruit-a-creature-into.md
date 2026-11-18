@@ -13,7 +13,7 @@ branch:
 commits:
 tests:
 signature:
-docs:
+docs: docs/known-issues.md#issue-guest-pack-recruit
 related: BUG-1250, BUG-1242
 ---
 
