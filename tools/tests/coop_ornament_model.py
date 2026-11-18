@@ -15,7 +15,8 @@ fixture's bones (sort 2, an unused part reward, the same objects on both games) 
    message): the host's bone shows model 2 of its list; within 8 s the guest's copy shows model 2 too (+0x248, the
    spatial's model key +0xC4), its reward is used up and it is not usable (+0xA3 0);
 2. the other way round with bone B: the guest digs, the host's copy follows.
-Key frames at each bone before and after (both games: the same bone model). SPORE_FIX_OFF=wobj.ornament_model must FAIL.
+Key frames at each bone before and after, both cameras at the same place looking at it (`coop.view set`): the same
+bone model on both games. SPORE_FIX_OFF=wobj.ornament_model must FAIL.
 
   SPORE_LANE=N python3 tools/tests/coop_ornament_model.py
 """
@@ -54,26 +55,25 @@ def wait(fn, t=10.0):
         time.sleep(1)
 
 
-def rotate(q, v):
-    """v turned by the quaternion q = (x, y, z, w)"""
-    x, y, z, w = q
-    tx, ty, tz = 2 * (y * v[2] - z * v[1]), 2 * (z * v[0] - x * v[2]), 2 * (x * v[1] - y * v[0])
-    return [v[0] + w * tx + y * tz - z * ty, v[1] + w * ty + z * tx - x * tz, v[2] + w * tz + x * ty - y * tx]
-
-
 def go_near(con, pos, side):
-    """the avatar 4 m behind a point (the camera behind the avatar looks at it), side m to the side"""
+    """the avatar 3 m beside a point (along a tangent of the planet)"""
     r = math.sqrt(sum(v * v for v in pos))
     up = [v / r for v in pos]
-    m = re.search(r'rot=\((\S+) (\S+) (\S+) (\S+)\)', con.call('coop.avatar')['out'])
-    f = rotate(tuple(map(float, m.groups())), (0.0, 1.0, 0.0)) if m else [0, -up[2], up[1]]
-    d = sum(f[i] * up[i] for i in range(3))
-    f = [f[i] - d * up[i] for i in range(3)]  # (along the ground)
-    fl = math.sqrt(sum(v * v for v in f)) or 1.0
-    f = [v / fl for v in f]
-    s = [up[1] * f[2] - up[2] * f[1], up[2] * f[0] - up[0] * f[2], up[0] * f[1] - up[1] * f[0]]
-    p = [pos[i] - 4 * f[i] + side * s[i] + up[i] * 1.0 for i in range(3)]
+    t = [0, -up[2], up[1]] if abs(up[0]) < 0.9 else [-up[2], 0, up[0]]
+    tl = math.sqrt(sum(v * v for v in t))
+    p = [pos[i] + side * 3 * t[i] / tl + up[i] * 1.0 for i in range(3)]
     return con.call('coop.npc gopos %.2f %.2f %.2f' % tuple(p))['out'].strip()
+
+
+def look_at(cons, pos):
+    """both games' cameras at the same place 3.5 m from the bone, looking at it (`coop.view set`)"""
+    r = math.sqrt(sum(v * v for v in pos))
+    up = [v / r for v in pos]
+    t = [-up[2], 0, up[0]] if abs(up[1]) < 0.9 else [0, -up[2], up[1]]
+    tl = math.sqrt(sum(v * v for v in t))
+    eye = [pos[i] + 3.0 * t[i] / tl + up[i] * 2.0 for i in range(3)]
+    for c in cons:
+        c.call('coop.view set %.2f %.2f %.2f %.2f %.2f %.2f 50' % (*eye, *pos))
 
 
 def main():
@@ -99,9 +99,11 @@ def main():
         dug = BONES[1] if mine['key'] == BONES[0] else BONES[0]
         for con, o in ((actor, mine), (other, theirs)):
             print(f'  {step}. ' + con.call(f'coop.wobj ornlist {o["p"]} {o["key"]} {dug}')['out'].strip(), flush=True)
-        print(f'  {step}. {an}: ' + go_near(actor, mine['pos'], 1.5) + f'; {on}: ' + go_near(other, theirs['pos'], -1.5),
+        print(f'  {step}. {an}: ' + go_near(actor, mine['pos'], 1) + f'; {on}: ' + go_near(other, theirs['pos'], -1),
               flush=True)
         time.sleep(4)
+        look_at((host, guest), mine['pos'])
+        time.sleep(1)
         keyframe(f'bone{step}_before', f'bone {step} (model {mine["key"]}) before the {an} digs it, the same on both games',
                  settle=3)
         print(f'  {step}. {an}: ' + actor.call(f'coop.wobj use {mine["p"]}')['out'].strip(), flush=True)
@@ -120,6 +122,8 @@ def main():
         time.sleep(1)
         keyframe(f'bone{step}_after', f'bone {step} after the {an} dug it: the other bone model ({dug}) on both games',
                  settle=3)
+        for c in (host, guest):
+            c.call('coop.view off')
     ck.faults(host=host, guest=guest)
     lane.sh('kill')  # the model lists are the mod's buffers: the games never free them
     return ck.result()
