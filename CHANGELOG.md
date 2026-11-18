@@ -14,6 +14,8 @@
   impressed (BUG-1242).
 - Cell: the second player's tutorial cutscene of the first part now shows the little golden cell and the cell that
   hunts it; before, it showed only empty water between the black bars (BUG-1248).
+- Cell: when your partner is knocked out and comes back (revived or respawned), your screen no longer goes black and
+  shows the hatching egg over your own cell; it looked as if your cell was caught in a fight with nothing around (BUG-1243).
 
 ## [0.7.15] - 2026-11-18
 

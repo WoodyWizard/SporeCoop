@@ -9119,6 +9119,12 @@ only with sing (docs/re/creature.md#creature-social-kinds).
   BUG-1247): what each player sees of an NPC cell is its soft body: `coop.pool cloud` gives the angle of the first
   particle about the particles' mean for every NPC cell on screen (host: its own, guest: its mirrors by host key);
   the turn rates of the same cell on both screens are compared.
+* `coop_cell_partner_respawn.py` (suite cell_partner_respawn, ~1 min, BUG-1243): the guest 70 m away is knocked out
+  (`coop.pool selfhit 20`) and respawns; the host's game must make no hatch effect (`coop.effects` own only `made=`) and
+  its screen must not go black (`shot` every ~0.3 s, mean brightness under 35 % of before; the shots stay in
+  out/lane<N>/shots/partner_respawn). A key frame taken in the same moment as such a shot came back black once while
+  the shot was not: no key frames inside the loop. `--probe <hex ids>`: each id played in the host's game where the guest
+  is, with the host's brightness after it (RE). `SPORE_FIX_OFF=effects.cell_own_only` must FAIL.
 * `cell_attack_anim` (BUG-1243): the fixture's cell has no weapon and its bite plays no attack animation of its own
   (+0x1B0 stays 0 on the attacker); the control is now that the bites land (the creature's hp in the host's game), the
   check that the other, idle cell plays no new animation (it failed in every run before: its control asked for an

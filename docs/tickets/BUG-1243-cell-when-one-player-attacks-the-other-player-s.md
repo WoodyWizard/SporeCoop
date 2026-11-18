@@ -13,7 +13,7 @@ branch: fix/w52-evoeditor
 commits:
 tests: cell_attack_anim, cell_attack_electric, cell_attack_jaw, cell_attack_spike, cell_attack_mouth, cell_electric
 signature:
-docs: docs/known-issues.md#issue-partner-cell-attack-anim, docs/re/cell.md#cell-partner-attack-anim
+docs: docs/archive/known-issues-2026.md#issue-partner-cell-attack-anim, docs/re/cell.md#cell-partner-attack-anim, docs/re/cell.md#cell-partner-hatch
 related: BUG-1241, BUG-0715, BUG-0716
 ---
 

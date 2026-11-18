@@ -323,15 +323,3 @@ anchor so other docs can link to it:
   singing, nor on v0.7.14.1 (BUG-1241).
 * Not checked: the mating call, low fps (the song did not start at 10 fps in the test).
 * Ticket: BUG-1241
-
-## Cell: the partner's cell plays the attack animation of a player (2026-11-18, owner: players' video)
-<a id="issue-partner-cell-attack-anim"></a>
-
-* What happens: in the Cell stage, when one player attacks, the other player's cell plays the attack animation too.
-* Reproduce: not reproduced: `lab.py run cell_attack_anim,cell_attack_electric` (BUG-1243).
-* Known: no cell animation is relayed to puppets; the electric step never runs for a puppet cell (`coop.pool anims`
-  puppet_zaps 0); the fixture's cell has no jaw or spike.
-* Also not reproduced with both cells armed (jaw, spike, the herbivore mouth's chunk bites), either player attacking,
-  nor on v0.7.14.1; cell puppets never animate (only the effects relay shows a partner's attack).
-* Not checked: a partner's poison clouds, overlapping cells.
-* Ticket: BUG-1243
