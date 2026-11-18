@@ -683,8 +683,7 @@ static void host_equipment(double now)
         for (size_t i = start; i < end; ++i) {
             packet.u16(entries[i].id); packet.u8(entries[i].tool); packet.u8(entries[i].item);
         }
-        for (const auto& player : C.sess->players()) if (player.id)
-            C.sess->send_unreliable_to(player.id, net::MSG_TRIBE_EQUIPMENT, packet);
+        C.sess->send_unreliable_to_guests(net::MSG_TRIBE_EQUIPMENT, packet); // 6I A
     }
 }
 
@@ -750,8 +749,7 @@ static void host_buildings(double now)
             packet.f32(position.x); packet.f32(position.y); packet.f32(position.z);
             packet.f32(F<float>(object, 0x158)); packet.f32(F<float>(object, 0x14C));
         }
-        for (const auto& player : C.sess->players()) if (player.id)
-            C.sess->send_unreliable_to(player.id, net::MSG_TRIBE_BUILDINGS, packet);
+        C.sess->send_unreliable_to_guests(net::MSG_TRIBE_BUILDINGS, packet); // 6I A
     }
 }
 
@@ -973,8 +971,7 @@ static void host_relationships(double now)
         packet.u32(modes::current_world()); packet.u32(sequence);
         packet.u32(r.a); packet.u32(r.b); packet.u32(r.flags); packet.u8((uint8_t)r.events.size());
         for (const auto& [key, value] : r.events) { packet.u32(key); packet.f32(value); }
-        for (const auto& player : C.sess->players()) if (player.id)
-            C.sess->send_unreliable_to(player.id, net::MSG_TRIBE_RELATIONSHIPS, packet);
+        C.sess->send_unreliable_to_guests(net::MSG_TRIBE_RELATIONSHIPS, packet); // 6I A
     }
 }
 
@@ -1252,8 +1249,7 @@ static void host_tools(double now)
             packet.f32(q.x); packet.f32(q.y); packet.f32(q.z); packet.f32(q.w);
             packet.f32(F<float>(tool, 0x158)); packet.f32(F<float>(tool, 0x14C));
         }
-        for (const auto& player : C.sess->players()) if (player.id)
-            C.sess->send_unreliable_to(player.id, net::MSG_TRIBE_TOOLS, packet);
+        C.sess->send_unreliable_to_guests(net::MSG_TRIBE_TOOLS, packet); // 6I A
     }
 }
 
@@ -3426,9 +3422,7 @@ static void send_member_air()
             w.u16(v[i].first);
             w.f32(v[i].second);
         }
-        for (auto& p : C.sess->players())
-            if (p.id != 0)
-                C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
+        C.sess->send_unreliable_to_guests(net::MSG_NPC_ANIM, w); // 6I A
     }
     g_air_sent += (uint32_t)v.size();
 }
@@ -3558,13 +3552,12 @@ static void send_member_holds()
             if (with_item)
                 w.u8(items[k]);
         }
-        for (auto& p : C.sess->players())
-            if (p.id != 0) {
-                if (reliable)
+        if (reliable) {
+            for (auto& p : C.sess->players())
+                if (p.id != 0)
                     C.sess->send_reliable_to(p.id, net::MSG_NPC_ANIM, w);
-                else
-                    C.sess->send_unreliable_to(p.id, net::MSG_NPC_ANIM, w);
-            }
+        } else
+            C.sess->send_unreliable_to_guests(net::MSG_NPC_ANIM, w); // 6I A
         g_hold_sent += (uint32_t)list.size();
     }
 }
@@ -4871,12 +4864,11 @@ static void host_tick(double now)
             tribe_seats::write_rescues(w, rescues, rescue_seats);
         }
         for (auto& p : C.sess->players())
-            if (p.id != 0) {
+            if (p.id != 0)
                 for (auto& i : infos) // the host's own creation among them: its records first (creations.h)
                     if (i.key.instance)
                         creations::host_species_out(p.id, {i.key.instance, i.key.type, i.key.group});
-                C.sess->send_unreliable_to(p.id, net::MSG_TRIBE_STATE, w);
-            }
+        C.sess->send_unreliable_to_guests(net::MSG_TRIBE_STATE, w); // 6I A: the galaxy's copies when it can
     }
     send_member_anims(now); // BUG-0569
     send_member_air();      // BUG-0946

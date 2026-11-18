@@ -543,6 +543,17 @@ void Session::send_unreliable_fanned(const std::vector<Peer*>& to, uint8_t type,
     }
 }
 
+void Session::send_unreliable_to_guests(uint8_t type, const Writer& w)
+{
+    if (role_ != Role::Host)
+        return;
+    std::vector<Peer*> to;
+    for (auto& p : peers_)
+        if (p->accepted)
+            to.push_back(p.get());
+    send_unreliable_fanned(to, type, w, false);
+}
+
 void Session::host_fan_in(uint8_t type, Reader& r)
 {
     if (role_ != Role::Client || !connected())

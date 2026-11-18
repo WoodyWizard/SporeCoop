@@ -846,6 +846,41 @@ be running on someone's computer."
   again).
 * Still open from #server-creature-many: a joiner's world from the galaxy server's copy (6H B), Tribe measured.
 
+### Joining from the galaxy's copy; Tribe measured and shared (2026-11-18, feat/lineages-alpha, decision 6I A)
+<a id="server-stored-join"></a>
+
+Owner: "6IA. I want you to get as far as you can until you reach a decision that absolutely needs my attention."
+
+**A joiner loads the planet from the galaxy server.** A guest's ROLE carries the stored world's size, crc and age
+(net/galaxy.h; the server lets any player of the planet FETCH it now). When the stored copy is under 2 minutes old, the
+guest downloads it from the server, loads it, then joins the host with the receipt stored_receipt(crc, world). The host
+takes it (no world sent) only when that copy is its own last upload, nothing was saved since (world::
+current_save_write, the same rule as BUG-0235's resume: the guest has the host's newest save) and it was packed under
+150 s ago; else it sends its world as before and stores the planet again within 15 s. After any normal share the host
+stores the planet within 20 s, so the next joiners find a fresh copy. Switch: g_fix_stored_join (galaxy_client.cpp).
+
+* Test (TITAN host + 3, the MSI 3, Samuth in Creature): the first guest joined the usual way, the host stored the planet
+  20 s later; the next 5 (2 on TITAN, 3 on the MSI) loaded the galaxy's copy: "accepted 5, refused 0", the host sent no
+  world to any of them (about 20 MB of its upload saved); sync check OK with all 5 (0 mismatches). The MSI's downloads
+  through Tailscale resent about 700 of 3800 chunks (a relayed link) and still took 20 s.
+
+**Tribe measured** (7 players spread over TITAN and the MSI, every game at 9-10 FPS):
+
+* DuoQAJiffHost's Jiff Peanutbutter is worn out: its tribe's hut gets destroyed while the test idles (the game-over
+  caption "Your tribal hut has been destroyed!"); two guests then mismatched (15 extra members, 31 about 400 m apart).
+  Not used. DuoQAClythHost's Clyth: sync check 51 checks, 0 mismatches.
+* The host sent 163 KB/s for 6 guests (27 KB/s a guest): MSG_TRIBE_STATE 80 KB/s, MSG_NPC_ANIM 18, MSG_TRIBE_BUILDINGS
+  16, MSG_TRIBE_TOOLS 10, the rest less. MSG_TRIBE_STATE, the Tribe NPC_ANIM batches, BUILDINGS, TOOLS, RELATIONSHIPS
+  and EQUIPMENT are the same bytes for every guest: they now go through Session::send_unreliable_to_guests, which uses
+  the galaxy's copies (6H A's path; the switch `coop.fix net.fan_states off` covers them too).
+* With the copies, same session, a minute each way: host 168-200 KB/s (off) against about 67 KB/s (on: 39 KB/s in the
+  session, 28 KB/s up to the galaxy server, which sent out 154 KB/s). Sync check 78 checks, 0 mismatches; no crash on
+  either PC. At 16 players: about 125 KB/s from the host instead of about 450.
+* Still per guest (by its area): the creature NPC states (MSG_NPC_STATE_C), npc.cpp's NPC_ANIM, MSG_WOBJ (about 31 KB/s
+  of the 39 for 6 guests). Grouping players who stand together (as the Cell state, 6F B) would cut them.
+* Seen: a join's MSG_CREATION burst (each player's creations sent on to everyone, 3.4 MB in the minute 5 players
+  joined).
+
 ### Hand-over without a reload: research (2026-11-17, decision 6B C)
 <a id="server-warm-handover"></a>
 

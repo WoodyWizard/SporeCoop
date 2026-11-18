@@ -2950,6 +2950,12 @@ bool load_local(const std::string& slot_name, const std::string& planet, std::st
 
 constexpr uint32_t kGalaxyBlob = 0x31574353u; // "SCW1"
 
+uint64_t current_save_write()
+{
+    const std::wstring slot = current_db_dir(false);
+    return slot.empty() ? 0 : newest_write(slot);
+}
+
 bool galaxy_pack(std::vector<uint8_t>& blob, std::string& planet, std::string& err)
 {
     std::string cur;

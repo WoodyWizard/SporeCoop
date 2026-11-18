@@ -32,6 +32,15 @@ static_assert(kMaxPlanetPlayers == net::kMaxPlayers, "a planet's players are one
 static uint8_t g_planet_players = kPlanetPlayers; // 6E B: what the server's WELCOME says a planet takes
 static uint64_t g_fan_tx, g_fan_tx_bytes, g_fan_rx, g_fan_rx_bytes, g_fan_refused; // 6F B
 static double g_reconnect_at = -100; // 6H A
+// 6I A: the host's last upload the server stored (its crc, world, the save's newest write, when it was packed); a guest's
+// stored world to load before it joins (crc, 0 none)
+static uint32_t g_up_crc, g_up_world, g_last_crc, g_last_world;
+static uint64_t g_up_write, g_last_write;
+static double g_up_packed, g_last_packed = -1000;
+static uint32_t g_join_crc;
+static bool g_fix_stored_join = true; // ([galaxy] stored_join=0: a joiner gets the world from the host as before)
+static uint32_t g_stored_joins, g_stored_accepted, g_stored_refused;
+constexpr double kStoredJoinMaxAge = 150; // s: an older stored world is not offered as the joiner's world
 static uint32_t g_reconnects;
 static void send_hello();
 static void reset_planet_steps();
@@ -251,6 +260,8 @@ static void on_control(net::Reader& r)
         const uint64_t token = r.u64();
         if (!r.ok())
             return;
+        const uint32_t stored_crc = r.left() >= 4 ? r.u32() : 0; // (6I A; an older server: none)
+        const uint32_t stored_age = r.left() >= 4 ? r.u32() : 0xFFFFFFFFu;
         const bool handover = g_planet == planet && (g_waiting_host || g_role == kGuestRole);
         g_planet = planet;
         g_role = role;
@@ -295,6 +306,16 @@ static void on_control(net::Reader& r)
                 say("Downloading " + planet + " from the galaxy (" + std::to_string(stored >> 10) + " KB)...");
             } else
                 host_now();
+        } else if (g_fix_stored_join && stored && stored_crc && stored_age < kStoredJoinMaxAge - 30) {
+            // 6I A: a recent stored world: the planet from the galaxy, then its host (which takes it if nothing was saved
+            // since; else it sends its world as before)
+            g_join_crc = stored_crc;
+            g_hstep = kFetching;
+            g_hstep_at = H->time_seconds();
+            g_down = {};
+            g_stored_joins++;
+            send_control(control(FETCH));
+            say("Downloading " + planet + " from the galaxy (" + std::to_string(stored >> 10) + " KB)...");
         } else {
             if (C.join && C.join(slot_endpoint(host).str(), err))
                 say("Joining " + planet + "...");
@@ -512,8 +533,10 @@ static void upload_done(bool ok, const std::string& why)
              H->time_seconds() - g_up_at, resent);
     g_last_upload = b;
     H->log(M, ok ? SK_INFO : SK_WARN, "galaxy: upload of %s: %s%s%s", g_planet.c_str(), b, why.empty() ? "" : ": ", why.c_str());
-    if (ok)
+    if (ok) {
         g_uploads_done++;
+        g_last_crc = g_up_crc, g_last_world = g_up_world, g_last_write = g_up_write, g_last_packed = g_up_packed;
+    }
     if (!ok || g_leave_after)
         say(ok ? "Saved " + g_planet + " to the galaxy." : "Could not save " + g_planet + " to the galaxy: " + why);
     g_up_nosave = false;
@@ -587,6 +610,10 @@ static void upload_tick(double now)
             upload_done(false, err);
             return;
         }
+        g_up_crc = net::galaxy::crc32(0, blob.data(), blob.size()); // 6I A: which save the server will hold
+        g_up_world = modes::current_world();
+        g_up_write = world::current_save_write();
+        g_up_packed = now;
         g_up.start(ms(now) ^ ((uint32_t)g_slot << 20), g_planet, std::move(blob));
         g_up.begin_ms = ms(now);
         up_facts();
@@ -614,7 +641,17 @@ static void loading_tick(double now)
         g_left_stage = true, g_ready_since = 0;
     else if (g_left_stage && !g_ready_since)
         g_ready_since = now;
-    if (g_ready_since && now - g_ready_since > 3)
+    if (g_ready_since && now - g_ready_since > 3 && g_role == kGuestRole) { // 6I A: in the stored world: join its host
+        g_hstep = kNoHost;
+        g_token_world = modes::current_world();
+        g_token = net::galaxy::stored_receipt(g_join_crc, g_token_world);
+        g_join_crc = 0;
+        std::string err;
+        if (C.join && C.join(slot_endpoint(g_host_slot).str(), err))
+            say("Joining " + g_planet + "...");
+        else
+            say("Could not join " + g_planet + ": " + err);
+    } else if (g_ready_since && now - g_ready_since > 3)
         host_now();
     else if (now - g_hstep_at > 240) {
         say("Loading " + g_planet + " took too long: left it.");
@@ -801,6 +838,11 @@ bool online() { return g_sock.is_open() && g_welcomed; }
 uint32_t planets_version() { return g_planets_ver; }
 std::string current_planet() { return g_planet; }
 unsigned planet_players() { return g_planet_players; }
+void upload_soon(double secs)
+{
+    if (hosting())
+        g_next_upload = std::min(g_next_upload, H->time_seconds() + secs);
+}
 uint16_t slot_of(const net::Endpoint& peer) { return g_relay_on ? endpoint_slot(peer) : 0; }
 bool fan_out(const std::vector<uint16_t>& slots, uint8_t type, const net::Writer& body)
 {
@@ -840,9 +882,25 @@ bool accept_warm(uint64_t receipt)
 {
     const bool ok = receipt && receipt == g_token && g_token_world && modes::current_world() == g_token_world &&
                     hosting();
-    if (ok)
+    if (ok) {
         g_warm_accepted++;
-    return ok;
+        return true;
+    }
+    // 6I A: a guest that loaded the stored world: it is this host's last upload, nothing saved since, not too old
+    if (!receipt || !hosting() || !g_last_crc)
+        return false;
+    if (receipt != net::galaxy::stored_receipt(g_last_crc, g_last_world))
+        return false;
+    const double now = H->time_seconds();
+    const bool same = g_last_world == modes::current_world() && world::current_save_write() == g_last_write &&
+                      now - g_last_packed < kStoredJoinMaxAge;
+    if (same) {
+        g_stored_accepted++;
+        return true;
+    }
+    g_stored_refused++; // it gets the world from the host as before; the galaxy's copy is brought up to date soon
+    g_next_upload = std::min(g_next_upload, now + 15);
+    return false;
 }
 
 bool close_request()
@@ -876,9 +934,11 @@ std::string status()
              (unsigned long long)g_tx, (unsigned long long)(g_tx_bytes >> 10), g_queue.size(),
              (unsigned long long)g_queue_dropped);
     std::string s = b;
-    snprintf(b, sizeof b, " copies (6F B): sent %llu (%llu KB), got %llu (%llu KB), refused %llu; reconnects %u",
+    snprintf(b, sizeof b, " copies (6F B): sent %llu (%llu KB), got %llu (%llu KB), refused %llu; reconnects %u; "
+             "stored joins (6I A): loaded %u, accepted %u, refused %u",
              (unsigned long long)g_fan_tx, (unsigned long long)(g_fan_tx_bytes >> 10), (unsigned long long)g_fan_rx,
-             (unsigned long long)(g_fan_rx_bytes >> 10), (unsigned long long)g_fan_refused, g_reconnects);
+             (unsigned long long)(g_fan_rx_bytes >> 10), (unsigned long long)g_fan_refused, g_reconnects,
+             g_stored_joins, g_stored_accepted, g_stored_refused);
     s += b;
     static const char* steps[] = {"-", "downloading", "loading", "hosting"};
     snprintf(b, sizeof b,

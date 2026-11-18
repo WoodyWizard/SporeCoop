@@ -51,6 +51,7 @@ struct Stored {
     uint32_t size = 0, crc = 0;
     uint8_t tech = 0;
     uint32_t species[3]{};
+    int64_t at = 0; // 6I A: when it was stored (time(), 0: loaded from the folder at the start: its age unknown)
 };
 struct Meta {
     uint8_t tech = 0;
@@ -234,6 +235,7 @@ static bool store_world(const std::string& planet, const XferIn& in, const Meta&
     st.file = file;
     st.size = in.size;
     st.crc = in.crc;
+    st.at = (int64_t)time(nullptr);
     st.tech = meta.tech;
     memcpy(st.species, meta.species, sizeof st.species);
     return true;
@@ -365,14 +367,19 @@ static void on_control(const Endpoint& from, Reader& r)
             auto st = g_stored.find(name);
             w.u32(st == g_stored.end() ? 0 : st->second.size);
             w.u64(0);
+            w.u32(st == g_stored.end() ? 0 : st->second.crc);
             p.token = 0;
             say("planet '%s': %u '%s' hosts it%s", name.c_str(), c->slot, c->name.c_str(),
                 st == g_stored.end() ? " (a new planet: its loaded world)" : " (from its stored world)");
         } else {
             w.u8(kGuestRole);
             w.u16(p.host);
-            w.u32(0);
+            auto st = g_stored.find(name); // 6I A: the stored world on offer (the guest may load it first)
+            w.u32(st == g_stored.end() ? 0 : st->second.size);
             w.u64(0);
+            w.u32(st == g_stored.end() ? 0 : st->second.crc);
+            const int64_t age = st == g_stored.end() || !st->second.at ? -1 : (int64_t)time(nullptr) - st->second.at;
+            w.u32(age < 0 ? 0xFFFFFFFFu : (uint32_t)age); // its age in seconds (unknown: all ones)
             say("planet '%s': %u '%s' joins host %u '%s'", name.c_str(), c->slot, c->name.c_str(), p.host,
                 g_clients[p.host].name.c_str());
         }
@@ -396,11 +403,12 @@ static void on_control(const Endpoint& from, Reader& r)
                     say("planet '%s': %u '%s' joins its new host", c->planet.c_str(), m, g_clients[m].name.c_str());
                 }
         }
-    } else if (type == FETCH) { // the planet's host wants its stored world
+    } else if (type == FETCH) { // a player of the planet wants its stored world (its host; 6I A: a guest too)
         auto it = g_planets.find(c->planet);
         auto st = g_stored.find(c->planet);
         std::vector<uint8_t> data;
-        if (it == g_planets.end() || it->second.host != c->slot || st == g_stored.end() || !read_world(st->second, data)) {
+        if (it == g_planets.end() || !it->second.members.count(c->slot) || st == g_stored.end() ||
+            !read_world(st->second, data)) {
             Writer w = control(REFUSED);
             w.str8("The galaxy server has no stored world of " + c->planet + " for you.");
             send(*c, w);

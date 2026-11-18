@@ -31,6 +31,9 @@ constexpr uint32_t kProto = 5; // 2: stored worlds (5Q A); 3: the hand-over (5V 
                                 // 5: the warm hand-over token (6B C)
 constexpr uint8_t kControl = 'G', kRelay = 'R', kFan = 'F';
 constexpr size_t kMaxFanSlots = 64; // (kMaxPlanetPlayers)
+// decision 6I A: a guest that loaded the planet's stored world joins with this receipt; the host takes it (no world sent)
+// when the stored world is its own last upload and nothing was saved since (galaxy_client.cpp accept_warm)
+inline uint64_t stored_receipt(uint32_t crc, uint32_t world) { return ((uint64_t)crc << 32) | world; }
 // the REFUSED text for a datagram from an address the server does not know (6H A: the game connects again on it)
 constexpr const char* kNotConnected = "Not connected to the galaxy server: connect first.";
 
@@ -43,14 +46,18 @@ enum Type : uint8_t {
     ENTER = 5,    // player -> server: str8 planet (made when it does not exist yet)
     ROLE = 6,     // server -> player: str8 planet, u8 role (kHostRole / kGuestRole), u16 the host's slot,
                   //   u32 the planet's stored world (bytes, 0 none: a host then FETCHes it, loads it and hosts it),
-                  //   u64 the hand-over token (0 none; 6B C: a player still in the planet's world rejoins with it)
+                  //   u64 the hand-over token (0 none; 6B C: a player still in the planet's world rejoins with it),
+                  //   u32 the stored world's crc (6I A, 0 none; a guest: the planet's stored world is offered, it may
+                  //   FETCH and load it, then join with the receipt stored_receipt(crc, world)), u32 its age in
+                  //   seconds (a guest's ROLE; all ones: unknown)
     LEAVE = 7,    // player -> server: leaves its planet
     PING = 8,     // player -> server (every 2 s); the server answers PONG
     PONG = 9,
     REFUSED = 10, // server -> player: str8 why
     HOSTGONE = 11, // server -> the planet's players: str8 planet (its host left; the hand-over is a later step)
     READY = 12,    // host -> server: its session hosts the planet now (players entering before are asked to wait)
-    FETCH = 13,    // host -> server: send me the planet's stored world (an XFER from the server follows)
+    FETCH = 13,    // player -> server: send me the planet's stored world (an XFER from the server follows; its host,
+                   //   or 6I A a guest of the planet)
     XBEGIN = 14,   // sender -> receiver: u32 id, str8 planet, u32 bytes, u32 crc (a world: player uploads, server sends);
                    //   an upload adds u8 tech level, u32 x3 species key (the menu's facts of the planet, 5X B)
     XCHUNK = 15,   // u32 id, u32 index, the chunk (kChunk bytes, the last one shorter)

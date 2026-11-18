@@ -105,6 +105,8 @@ public:
     void send_state(PlayerState st);              // own state
     // decision 6H A (guest): a message of the host copied by the galaxy server (MSG_PLAYER_STATE: as from the host)
     void host_fan_in(uint8_t type, Reader& r);
+    // 6I A (host): one unreliable message the same for every guest: through the galaxy's copies when it can
+    void send_unreliable_to_guests(uint8_t type, const Writer& w);
     uint64_t fan_states_sent() const { return fan_states_sent_; }
     uint64_t fan_states_single() const { return fan_states_single_; }
     void send_chat(const std::string& text);

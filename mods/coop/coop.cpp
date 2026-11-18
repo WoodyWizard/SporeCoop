@@ -7181,8 +7181,8 @@ COOP_FIX("net.fan_states", "6H A", g_fix_fan_states,
 // 6F B / 6H A: one unreliable message the galaxy server copies to these guests (false: not hosting through a galaxy)
 static bool galaxy_fan_out(const std::vector<uint8_t>& ids, uint8_t type, const net::Writer& w)
 {
-    if (!galaxy::hosting() || (type == net::MSG_PLAYER_STATE && !g_fix_fan_states))
-        return false;
+    if (!galaxy::hosting() || (type != net::MSG_CELL_STATE_C && !g_fix_fan_states))
+        return false; // (net.fan_states off: the player states and the Tribe messages one to each, 6I A)
     std::vector<uint16_t> slots;
     for (uint8_t id : ids) {
         const uint16_t slot = galaxy::slot_of(g_sess.peer_endpoint(id));
@@ -7289,7 +7289,8 @@ void setup_callbacks()
             if (galaxy::accept_warm(g_sess.peer_resume_world(p.id))) { // decision 6B C (alpha): it kept this world
                 r.world_sent = ((uint64_t)g_mode << 32) | modes::current_world();
                 r.joined_phase = true;
-                LOG("galaxy: %s rejoins after the hand-over with this world still loaded: no world sent (6B C)", p.name.c_str());
+                LOG("galaxy: %s has this world loaded (the hand-over, 6B C, or the galaxy's stored copy, 6I A): no world sent",
+                    p.name.c_str());
                 return;
             }
             bool save = g_save_on_share && g_adapter; // only while playing, not from menus
@@ -7303,8 +7304,10 @@ void setup_callbacks()
             if (!world::share_with(p.id, err, save, r.join_serial)) {
                 feed("cannot share the world: " + err);
                 share_failed(p.id, r.join_serial, false);
-            } else
+            } else {
                 feed("sending the world to " + p.name);
+                galaxy::upload_soon(20); // 6I A: the share saved anew: the galaxy's copy follows (the next joiners use it)
+            }
         }
     };
     g_sess.cb.custom = [](uint8_t type, uint8_t from, net::Reader& r) {
@@ -11244,10 +11247,13 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gx.ready = [] { return g_local != nullptr && !world::load_queued() && !world::load_starting(); };
         gx.promote = [] { npc::promote_now(); };
         gx.fan_in = [](uint8_t type, net::Reader& r) { // 6F B / 6H A: the host's messages copied by the galaxy server
-            if (type == net::MSG_CELL_STATE_C && g_sess.cb.custom)
-                g_sess.cb.custom(type, 0, r);
-            else if (type == net::MSG_PLAYER_STATE)
+            if (type == net::MSG_PLAYER_STATE)
                 g_sess.host_fan_in(type, r);
+            else if ((type == net::MSG_CELL_STATE_C || type == net::MSG_TRIBE_STATE || type == net::MSG_NPC_ANIM ||
+                      type == net::MSG_TRIBE_BUILDINGS || type == net::MSG_TRIBE_TOOLS ||
+                      type == net::MSG_TRIBE_RELATIONSHIPS || type == net::MSG_TRIBE_EQUIPMENT) &&
+                     g_sess.cb.custom) // (6I A: the host's unreliable messages the same for every guest)
+                g_sess.cb.custom(type, 0, r);
         };
         gx.hosted_stored = []() -> bool { // owner test 2026-11-17: a new host makes its own creature first
             if (!creations::host_needs_first_creature())

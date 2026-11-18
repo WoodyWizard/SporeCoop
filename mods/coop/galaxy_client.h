@@ -52,6 +52,7 @@ bool hosting();                             // this game hosts a planet of the g
 // (net/galaxy.h kFan); false: not hosting through the galaxy, or too big (the caller sends it to each instead)
 bool fan_out(const std::vector<uint16_t>& slots, uint8_t type, const net::Writer& body);
 uint16_t slot_of(const net::Endpoint& peer);  // a session peer's galaxy slot (0: not a galaxy peer)
+void upload_soon(double secs);              // 6I A: host: store the planet within secs (the share saved anew)
 unsigned planet_players();                  // 6E B: the players a planet of this galaxy takes (16 by default)
 bool close_request();                       // Alt+F4 / the window's X (mouse.cpp): true = held, saved first (6A A)
 // decision 6B C (the warm hand-over): a player still in the planet's world rejoins its new host with the hand-over's
