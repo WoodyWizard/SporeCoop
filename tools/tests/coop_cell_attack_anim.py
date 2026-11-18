@@ -122,12 +122,68 @@ def electric(host, guest, ck):
        f"the host's game shows the guest's cell attacking only when the guest's own game does ({sorted(h_pup)})")
 
 
+def contact(host, guest, ck, part, attacker_name):
+    """BUG-1243 the players' way: both cells carry the same weapon (`coop.pool borrow <part> graft` on both games: the
+    world's species of both players, so each game's model data has it for the avatar and the partner's puppet); the
+    attacker swims into the nearest creature again and again (the game's own contact decides the attack, docs/re/cell.md
+    11), the other player does nothing and stays where it is, next to the attacker. The other player's own cell must
+    play none of the attacker's animations on its own game, and its puppet on the attacker's game only what its own
+    game plays."""
+    att, oth = (host, guest) if attacker_name == 'host' else (guest, host)
+    oname = 'guest' if attacker_name == 'host' else 'host'
+    for con, n in ((host, 'host'), (guest, 'guest')):
+        if part != 'none':
+            print(f'  {n}: ' + con.call(f'coop.pool borrow {part} graft')['out'].strip(), flush=True)
+    sa, so = Sampler(att), Sampler(oth)
+    sa.start()
+    so.start()
+    try:
+        time.sleep(3)
+        t0 = time.time()
+        idle_o = window(so.avatar, 0, t0)
+        print(f'  idle: the {oname}\'s cell {sorted(idle_o)}', flush=True)
+        r, hits = '', 0
+        while time.time() - t0 < 30:
+            m = re.search(r'^see (c\d+) creature ', att.call('coop.pool see 8')['out'], re.M)
+            if m:
+                r = att.call(f'coop.pool swimto {m.group(1)}')['out'].strip()
+                hits += 1
+            time.sleep(0.7)
+        t1 = time.time()
+        keyframe(f'{attacker_name}_contact_{part}', f"Cell: the {attacker_name} rams creatures with its {part}; the {oname}'s cell next to it does not attack on either game", settle=0)
+        time.sleep(2)
+    finally:
+        sa.stop()
+        so.stop()
+        for con in (host, guest):
+            if part != 'none':
+                con.call('coop.pool borrow off')
+    a_av = window(sa.avatar, t0, t1)
+    a_pup, o_av, o_pup = window(sa.puppet, t0, t1 + 2), window(so.avatar, t0, t1 + 2), window(so.puppet, t0, t1 + 2)
+    print(f'  {attacker_name} attacks ({hits} swims, last: {r[:60]}): its own cell {sorted(a_av)} | its puppet of the {oname} '
+          f'{sorted(a_pup)} | the {oname}\'s own cell {sorted(o_av)} | the {oname}\'s puppet of the {attacker_name} {sorted(o_pup)}', flush=True)
+    att_anims = a_av - {'0'}
+    ck(att_anims, f"the {attacker_name}'s own cell played attack / eat animations ({sorted(att_anims)})")
+    ck(not (att_anims & (o_av - idle_o)), f"the {oname}'s own cell plays none of the {attacker_name}'s animations ({sorted(att_anims & (o_av - idle_o))})")
+    ck(not ((a_pup - {'0'}) - o_av), f"the {attacker_name}'s game shows the {oname}'s cell only with animations its own game plays ({sorted((a_pup - {'0'}) - o_av)})")
+
+
 def num_of(text, key):
     m = re.search(r'\b' + key + r'=(\d+)', text)
     return int(m.group(1)) if m else None
 
 
 def main():
+    if '--contact' in sys.argv:
+        part = sys.argv[sys.argv.index('--contact') + 1]
+        host, guest = start('cell')
+        ck = Checks()
+        time.sleep(3)
+        contact(host, guest, ck, part, 'host')
+        time.sleep(3)
+        contact(host, guest, ck, part, 'guest')
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     if '--electric' in sys.argv:
         host, guest = start('cell')
         ck = Checks()

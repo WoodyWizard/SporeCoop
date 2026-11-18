@@ -1915,6 +1915,9 @@ std::string debug(const std::vector<std::string>& a)
             return "own model\n";
         }
         bool electric = a[1] == "electric";
+        // BUG-1243 (tests): `borrow jaw|spike [graft]`: a carnivore mouth (part type 2) / a weapon (part type 7, the
+        // interaction kind 8 of 0xE6A3F0, docs/re/cell.md 11), used by the game at a contact
+        int want = electric ? 6 : a[1] == "jaw" ? 2 : a[1] == "spike" ? 7 : -1;
         bool puppet_target = a.size() > 3 && a[3][0] == 'p';
         uint32_t found[3] = {};
         for_each_cell([&](uint8_t* c, uint32_t) {
@@ -1927,11 +1930,11 @@ std::string debug(const std::vector<std::string>& a)
             if (!md || !skg::readable(md, 0x1280))
                 return;
             bool ok = false;
-            if (electric) {
+            if (want >= 0) {
                 int n = F<int>(md, 0);
                 for (int i = 0; i < n && i < 64 && !ok; i++)
-                    ok = F<int>(md, 8 + 0x48 * i) == 6;
-                ok = ok && F<float>(md, 0x1260) != -1.f;
+                    ok = F<int>(md, 8 + 0x48 * i) == want;
+                ok = ok && (!electric || F<float>(md, 0x1260) != -1.f);
             } else
                 ok = F<float>(md, 0x1270) != 0.f && F<int>(md, 0x1274) > 0;
             if (ok)
@@ -1949,7 +1952,9 @@ std::string debug(const std::vector<std::string>& a)
                 memcpy(backup + 0x48, md + 0x125C, 0x20);
                 grafted = md;
             }
-            if (electric) {
+            if (want >= 0 && !electric) {
+                F<int>(md, 8) = want; // the first part becomes that part
+            } else if (electric) {
                 F<int>(md, 8) = 6;
                 F<float>(md, 0x125C) = 1.0f;  // the cooldown after a near target
                 F<float>(md, 0x1260) = 1.5f;  // the period
