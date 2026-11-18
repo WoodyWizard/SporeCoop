@@ -6902,7 +6902,10 @@ void on_overlay(void*, int, void*)
             y += 20;
         }
     }
-    if (g_sess.connected() && g_mode == modes::kCreature) {
+    // owner 2026-11-17: "Can we get rid of the top right text now, or is it needed?": the pack line is a developer's
+    // line (the partner's distance, rescue, joint hits): off unless [coop] pack_line=1 (or `coop.teamplay`)
+    static const bool pack_line = H->config_int(M, "coop", "pack_line", 0) != 0;
+    if (pack_line && g_sess.connected() && g_mode == modes::kCreature) {
         std::string t = teamplay::status();
         if (!t.empty()) {
             H->overlay_text(x, y, 0xFF8CF08C, t.c_str());
