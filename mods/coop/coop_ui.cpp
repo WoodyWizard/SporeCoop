@@ -1300,8 +1300,8 @@ static void build_dialog()
                            last_port == std::string::npos ? "47810" : last_address.substr(last_port + 1), 5, !panel);
     D.join_password = add_edit(P, "joinpassword", {489, 241, 677, 269}, "", 48, !panel);
     load_servers();
-    privacy_button(P, "hideaddress", {678, 177, 718, 205}, D.addr_edit, false);
-    privacy_button(P, "hidejoinport", {678, 209, 718, 237}, D.join_port, false);
+    privacy_button(P, "hideaddress", {678, 177, 718, 205}, D.addr_edit, true); // (owner 2026-11-17: the address and ports hidden by default)
+    privacy_button(P, "hidejoinport", {678, 209, 718, 237}, D.join_port, true); // (owner 2026-11-17: the address and ports hidden by default)
     privacy_button(P, "hidejoinpassword", {678, 241, 718, 269}, D.join_password, true);
     D.selected_info = add_label(P, {402, 273, 712, 295}, "", kDim); // inside its box, off the border
     D.join_btn = add_button(P, "join", {393, 298, 533, 331}, "Join",
@@ -1338,7 +1338,7 @@ static void build_dialog()
     add_label(P, {30, 460, 135, 486}, "Transfer", kWhite, sui::kAlignRight);
     D.port_edit = add_edit(P, "port", {140, 373, 310, 399}, load_str("ui", "host_port", std::to_string(A.default_port).c_str()), 5, !panel);
     D.host_password = add_edit(P, "hostpassword", {140, 402, 310, 428}, "", 48, !panel);
-    privacy_button(P, "hidehostport", {311, 373, 351, 399}, D.port_edit, false);
+    privacy_button(P, "hidehostport", {311, 373, 351, 399}, D.port_edit, true); // (owner 2026-11-17: the address and ports hidden by default)
     privacy_button(P, "hidehostpassword", {311, 402, 351, 428}, D.host_password, true);
     D.seats = std::clamp(atoi(load_str("ui", "new_founders", "2").c_str()), 1, 4);
     for (unsigned i = 0; i < 4; ++i) {
