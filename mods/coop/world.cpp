@@ -166,7 +166,8 @@ static void install_intro_hook();
 // quick fixture load, a guest that joins at once) never got the video's end message 0x49731AD in the menu (BUG-0626
 // refuses its GGE_intro in the stage): back in the galaxy menu its main menu panel (Galactic Adventures, ...) stays
 // hidden. The video's own end message, sent here as StopMovie 0xFD79C0 sends it (MessageSend(0x49731AD, null, 0)), makes
-// the menu play its intro and show the panel.
+// the menu play its intro and show the panel. Since world.menu_intro_return (BUG-1260) the mod does this by itself
+// (with the skip); the command stays for diagnosis.
 static int c_menuintro(void*, int, const char* const*, SkOut* out)
 {
     if (game::mode_id() != modes::kMenu) {
@@ -222,7 +223,7 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     H->command_add(M, "coop.menuslot", "coop.menuslot <GameN> - tests: the galaxy menu shows that save slot's planets (BUG-0676)",
                    c_menuslot, nullptr, SK_CMD_OUTSIDE_FRAME);
     H->command_add(M, "coop.menuintro", "coop.menuintro - tests: in the galaxy menu, the start-up video's end message (the menu plays its "
-                   "intro and shows its main menu panel; BUG-1254)", c_menuintro, nullptr, SK_CMD_OUTSIDE_FRAME);
+                   "intro and shows its main menu panel; BUG-1254, BUG-1260)", c_menuintro, nullptr, SK_CMD_OUTSIDE_FRAME);
     install_intro_hook(); // BUG-0626
 }
 
@@ -1047,6 +1048,66 @@ static void menu_movie_tick()
     H->run_outside_frame(stop_menu_movie, nullptr); // (renderer, audio and a UI layout: outside the frame)
 }
 
+// BUG-1260: the galaxy menu shows its main menu panel (Galactic Adventures, Sporepedia, Co-op) only once its intro state
+// ([GalaxyGameEntry_ptr] +0x1EC) is 6. The start-up video's end (0x49731AD) sets 5 and starts GGE_intro; the intro's end
+// (0x44F1189) or a skip (0x66F6B6F) sets 6. A load that left the menu before the video's end (a guest that joins at once,
+// a quick load) had the video's end come in the stage: state 5, the intro refused there (BUG-0626), and nothing ever
+// ends an intro that never started: back in the galaxy menu the panel stayed hidden for good. Now, in the menu, state 5
+// with no cinematic playing gets the game's own skip message (as the intro's skip: state 6, the panel at once, as on
+// any later visit of the menu). Off (`coop.fix world.menu_intro_return off`): as 0.7.15.
+static bool g_menu_intro_return_fix = true;
+COOP_FIX("world.menu_intro_return", "BUG-1260", g_menu_intro_return_fix,
+         "world: the galaxy menu shows its main menu panel again after a load that left it before its start-up video ended");
+static uint32_t g_intro_returns;
+static double g_intro_return_seen;
+constexpr uint32_t kMenuIntroSkip = 0x066F6B6Fu; // GalaxyGameEntry_IntroMessages: stop the intro, state 6, post 0x66F8F25
+
+static uint8_t* galaxy_menu()
+{
+    static uintptr_t gp = H->sym("SporeCoop::GalaxyGameEntry_ptr");
+    uint8_t* gge = gp && skg::readable((void*)gp, 4) ? *(uint8_t**)gp : nullptr;
+    return gge && skg::readable(gge + 0x1EC, 4) ? gge : nullptr;
+}
+
+static void menu_intro_return(void*)
+{
+    uint8_t* gge = galaxy_menu();
+    uint8_t* cm = (uint8_t*)cinematic_mgr();
+    if (game::mode_id() != modes::kMenu || !gge || *(uint32_t*)(gge + 0x1EC) != 5 || !cm || *(uint32_t*)(cm + kCineState) ||
+        menu_movie_playing())
+        return;
+    uintptr_t get = H->sym("App::IMessageManager::Get");
+    void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!mm)
+        return;
+    skg::vcall<void>(mm, 0x18 / 4, kMenuIntroSkip, (void*)nullptr, (void*)nullptr, 0); // MessagePost, as the game posts it
+    g_intro_returns++;
+    H->log(M, SK_INFO, "world: back in the galaxy menu with its intro never ended (state 5, no cinematic): skipped, the main "
+           "menu panel comes (BUG-1260, %u)", g_intro_returns);
+}
+
+static void menu_intro_return_tick()
+{
+    if (!g_menu_intro_return_fix || game::mode_id() != modes::kMenu) {
+        g_intro_return_seen = 0;
+        return;
+    }
+    uint8_t* gge = galaxy_menu();
+    uint8_t* cm = (uint8_t*)cinematic_mgr();
+    bool stuck = gge && *(uint32_t*)(gge + 0x1EC) == 5 && cm && !*(uint32_t*)(cm + kCineState) && !menu_movie_playing();
+    double now = H->time_seconds();
+    if (!stuck) {
+        g_intro_return_seen = 0;
+        return;
+    }
+    if (!g_intro_return_seen)
+        g_intro_return_seen = now;
+    if (g_intro_return_seen < 0 || now - g_intro_return_seen < 1.0) // (the menu's first second; once per sighting)
+        return;
+    g_intro_return_seen = -1;
+    H->run_outside_frame(menu_intro_return, nullptr);
+}
+
 static void install_intro_hook()
 {
     if (uintptr_t a = H->sym("Simulator::cCinematicManager::PlayCinematic"))
@@ -1321,6 +1382,7 @@ void guest_tick()
     menu_intro_tick();
     menu_splash_tick();
     menu_movie_tick();
+    menu_intro_return_tick();
     deferred_tick();
     box_tick();
 }
@@ -1332,6 +1394,7 @@ void tick(net::Session& s)
     menu_intro_tick();
     menu_splash_tick();
     menu_movie_tick();
+    menu_intro_return_tick();
     deferred_tick();
     box_tick();
     if (g_drop_peer_fix) {
@@ -1949,9 +2012,10 @@ std::string status()
                  *(uint32_t*)(cm + kCineId) == kMenuIntroId ? " (menu intro)" : "");
         s += b;
     }
-    if (g_intros_ended || g_intros_at_once || g_movies_stopped || menu_movie_playing()) {
-        snprintf(b, sizeof b, "menu intro ended %u (not started %u), menu splash hidden %u, start-up video stopped %u (playing %d)\n",
-                 g_intros_ended, g_intros_at_once, g_splash_hidden, g_movies_stopped, (int)menu_movie_playing());
+    if (g_intros_ended || g_intros_at_once || g_movies_stopped || g_intro_returns || menu_movie_playing()) {
+        snprintf(b, sizeof b, "menu intro ended %u (not started %u), menu splash hidden %u, start-up video stopped %u (playing %d), "
+                 "menu intro ended at the return %u\n",
+                 g_intros_ended, g_intros_at_once, g_splash_hidden, g_movies_stopped, (int)menu_movie_playing(), g_intro_returns);
         s += b;
     }
     return s;

@@ -7,6 +7,9 @@
   hunts it; before, it showed only empty water between the black bars (BUG-1248).
 - Cell: when your partner is knocked out and comes back (revived or respawned), your screen no longer goes black and
   shows the hatching egg over your own cell; it looked as if your cell was caught in a fight with nothing around (BUG-1243).
+- Galaxy menu: a player who joined (or loaded a game) while Spore's start-up video was still playing no longer comes
+  back to the galaxy menu without its main menu (no Play, Galactic Adventures, Sporepedia or Co-op entries); the menu
+  is complete again at once (BUG-1260).
 - Galactic Adventures: two players who start the same adventure (the tutorial too) after playing the Creature stage
   together no longer crash: the partner's creature in the adventure broke the adventure's start (the guest's game
   stopped, or the adventure never began). The partner is now shown as its captain, at the captain's size, instead of

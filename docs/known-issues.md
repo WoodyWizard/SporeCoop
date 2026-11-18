@@ -387,21 +387,6 @@ anchor so other docs can link to it:
   (docs/re/cell.md#cell-editor-vote-timing). Before BUG-1245 the repeated mating rounds broke the black every ~10 s.
 * Next steps: open the host's Cell editor at once (as Creature's core.editor_now), design sketch in the ticket.
 * Ticket: BUG-1263
-## Menu: no main menu panel back in the galaxy menu after a very early load (2026-11-18, fix/w53-advorn)
-<a id="issue-menu-panel-early-load"></a>
-
-* What happens: a game that left the galaxy menu before its start-up video ended (a load or a join in the first
-  ~16 s) shows no main menu panel (Galactic Adventures, Sporepedia, Co-op) when it comes back to the galaxy menu; only
-  the galaxy, the Spore button and Register.
-* Reproduce: start('creature') (the lab's quick fixture load), `coop.menu`, wait: `coop.ui find "Galactic Adventures"`
-  shows the entry's panel 0x0615A5FF not visible.
-* Known: the video's end message 0x49731AD came in the stage, where BUG-0626 refuses the menu's intro; the menu shows
-  its panel at its intro's end. `coop.menuintro` (tests) sends the video's end in the menu: the panel comes 10 s later
-  (docs/re/adventure.md#adventure-puppet-herd).
-* Not checked: whether players meet it (they rarely load in the first 16 s, a guest joining at once may).
-* Next steps: remember a refused GGE_intro and send the video's end (or the skip) when the menu comes back.
-* Ticket: BUG-1260
-
 ## Creature: bones the guest sees and the host does not (2026-11-18, fix/w53-advorn)
 <a id="issue-creature-bones-guest-only"></a>
 

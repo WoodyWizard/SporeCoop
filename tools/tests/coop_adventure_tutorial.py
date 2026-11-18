@@ -95,11 +95,9 @@ def main():
             time.sleep(1)
         print(f'  {who}: mode {mode(c)}', flush=True)
     ck(mode(host) == 'GalaxyGameEntry' and mode(guest) == 'GalaxyGameEntry', 'both games are at the galaxy menu')
-    # the lab's games left the menu before its start-up video ended (the fixture's quick load): back in the menu its
-    # main menu panel stays hidden until the video's end message comes (BUG-1260); players watched the video
-    time.sleep(3)
-    for who, c in (('host', host), ('guest', guest)):
-        print(f'  {who}: ' + call(c, 'coop.menuintro'), flush=True)
+    # the lab's games left the menu before its start-up video ended (the fixture's quick load): back in the menu the
+    # mod ends the menu intro that never started, and the main menu panel comes by itself (BUG-1260,
+    # world.menu_intro_return; `coop.menuintro` stays for diagnosis)
     for _ in range(40):
         if all(uifind.shown(c, 'Galactic Adventures') for c in (host, guest)):
             break

@@ -122,5 +122,6 @@ about 3 s after the host's game showed the guest's puppet). GOG 2024, objdump an
 * Fix `adventure.puppet_captain` (modes.cpp scenario_spawn / scenario_drive): an adventure's puppet is made in the
   avatar's herd, from this game's own captain species (the stand-in for the partner's captain), at the captain's size
   (PlayerState body: the captain's scale, 3.0 in the tutorial, sent in kScenario too, x 1.15 as the Creature puppets).
-* Lab only: a game that loaded before the galaxy menu's start-up video ended shows no main menu panel when it comes
-  back to the menu (BUG-1260); the test sends the video's end message first (`coop.menuintro`).
+* Lab only: a game that loaded before the galaxy menu's start-up video ended showed no main menu panel when it came
+  back to the menu (BUG-1260, fixed by world.menu_intro_return: docs/re/space.md#space-menu-intro-state); the test sent
+  the video's end message first (`coop.menuintro`) until then.

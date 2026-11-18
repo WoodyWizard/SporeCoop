@@ -3633,3 +3633,20 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   20261118-134729: the editor 0 s after the mate):
   [../re/cell.md#cell-editor-now](../re/cell.md#cell-editor-now),
   [../06-testing.md#testing-cell-editor-now](../06-testing.md#testing-cell-editor-now)
+## Menu: no main menu panel back in the galaxy menu after a very early load (2026-11-18, fix/w53-advorn)
+<a id="issue-menu-panel-early-load"></a>
+
+* What happens: a game that left the galaxy menu before its start-up video ended (a load or a join in the first
+  ~16 s) shows no main menu panel (Galactic Adventures, Sporepedia, Co-op) when it comes back to the galaxy menu; only
+  the galaxy, the Spore button and Register.
+* Reproduce: start('creature') (the lab's quick fixture load), `coop.menu`, wait: `coop.ui find "Galactic Adventures"`
+  shows the entry's panel 0x0615A5FF not visible.
+* Known: the video's end message 0x49731AD came in the stage, where BUG-0626 refuses the menu's intro; the menu shows
+  its panel at its intro's end. `coop.menuintro` (tests) sends the video's end in the menu: the panel comes 10 s later
+  ([../re/adventure.md#adventure-puppet-herd](../re/adventure.md#adventure-puppet-herd)).
+* Not checked: whether players meet it (they rarely load in the first 16 s, a guest joining at once may).
+* Next steps: remember a refused GGE_intro and send the video's end (or the skip) when the menu comes back.
+* Ticket: BUG-1260 (fixed, unreleased, fix/w53-menuintro): the refused intro left the menu's intro state at 5 for
+  good, and the panel comes only at 6; back in the menu the mod now sends the intro's skip (`world.menu_intro_return`):
+  [../re/space.md#space-menu-intro-state](../re/space.md#space-menu-intro-state),
+  [../06-testing.md#testing-menu-panel](../06-testing.md#testing-menu-panel)
