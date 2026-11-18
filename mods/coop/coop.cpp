@@ -9285,20 +9285,22 @@ static void open_player_menu(uint8_t id, float x, float y)
     std::vector<coop_ui::MenuItem> items;
     const uint8_t me = g_sess.my_id();
     const auto mine = parties::my_party();
-    items.push_back({"View Creature", kMenuView});
+    // our button colours (owner 2026-11-18): gold joins, red leaves or removes, blue the rest
+    items.push_back({"View Creature", kMenuView, coop_ui::kMenuBlue});
     if (id == me) {
         if (mine.size() > 1)
-            items.push_back({"Leave Party", kMenuLeave});
+            items.push_back({"Leave Party", kMenuLeave, coop_ui::kMenuRed});
     } else {
         if (parties::same_party(me, id)) {
             if (parties::i_lead()) {
-                items.push_back({"Make Leader", kMenuLead});
-                items.push_back({"Remove from Party", kMenuKick});
+                items.push_back({"Make Leader", kMenuLead, coop_ui::kMenuBlue});
+                items.push_back({"Remove from Party", kMenuKick, coop_ui::kMenuRed});
             }
         } else
-            items.push_back({"Invite to Party", kMenuInvite});
-        items.push_back({"Whisper", kMenuWhisper});
-        items.push_back(is_friend(id) ? coop_ui::MenuItem{"Remove Friend", kMenuUnfriend} : coop_ui::MenuItem{"Add Friend", kMenuFriend});
+            items.push_back({"Invite to Party", kMenuInvite, coop_ui::kMenuGold});
+        items.push_back({"Whisper", kMenuWhisper, coop_ui::kMenuBlue});
+        items.push_back(is_friend(id) ? coop_ui::MenuItem{"Remove Friend", kMenuUnfriend, coop_ui::kMenuGrey}
+                                      : coop_ui::MenuItem{"Add Friend", kMenuFriend, coop_ui::kMenuBlue});
     }
     std::string title = utf8::shown_name(player_name_of(id));
     if (parties::leader_of(id) == id && parties::same_party(me, id) && mine.size() > 1)
@@ -9323,7 +9325,8 @@ static void invite_prompt_tick()
     H->screen_size(&sw, &sh);
     g_menu_player = -2; // (the prompt)
     coop_ui::show_player_menu(sw * 0.5f - 100, sh * 0.32f, utf8::shown_name(parties::pending_name()) + " invites you",
-                              {{"Join Party", kMenuAccept}, {"Decline", kMenuDecline}}, on_menu_pick);
+                              {{"Join Party", kMenuAccept, coop_ui::kMenuGold}, {"Decline", kMenuDecline, coop_ui::kMenuRed}},
+                              on_menu_pick);
 }
 // every left / right press in the game window (mouse.cpp, before the UI scale remap)
 static uint32_t g_menu_presses; // (tests)

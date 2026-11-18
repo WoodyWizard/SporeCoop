@@ -3500,8 +3500,10 @@ bool step_aside(int x, int y, double secs)
 int input_lock_now() { return input_lock(); }
 bool game_modal_up() { return game_modal() != nullptr; }
 
+static void pm_hover_tick(); // 6J (the players' menu, below)
 void tick()
 {
+    pm_hover_tick(); // 6J: the menu item under the pointer
     if (!g_ok)
         return;
     // F9: show/hide the co-op window anywhere in the game. BUG-0713: a press the game window took (mouse.h), not
@@ -3947,8 +3949,15 @@ bool set_memory_popup(const MemoryPopup& want_in, void (*on_click)(int))
 // Built like the memory popup (a label root under the main window, always in front) in the Co-op window's panel look:
 // the box, a 1 px edge, the player's name in gold and up to kPmItems buttons stacked under it.
 constexpr int kPmItems = 6;
-constexpr uint32_t kPmItemFill = 0xFF2F5876; // (an item row: the Co-op window's blue, darker)
-constexpr float kPmW = 200, kPmTitle = 30, kPmRow = 30, kPmPad = 6;
+// owner 2026-11-18 ("The buttons look so bland ... Why aren't we using our own button layout and appropriate
+// colors?"): each item is our own button art (lineages_button_<colour>_normal / _hover, the Co-op window's buttons),
+// drawn as an image so it never takes Spore's disabled state; gold for joining, red for leaving or removing, blue for
+// the rest; the hover image while the pointer is on it (pm_hover_tick)
+static void* card_look(const std::string& stem);
+static const char* const kPmStyle[4] = {"blue", "gold", "red", "grey"};
+static int g_pm_hover = -1, g_pm_shown_hover = -2;
+static int g_pm_shown_style[kPmItems] = {-1, -1, -1, -1, -1, -1};
+constexpr float kPmW = 224, kPmTitle = 30, kPmRow = 31, kPmPad = 8;
 static struct {
     Win root = nullptr, box = nullptr, edge[4] = {}, title = nullptr, item[kPmItems] = {};
     bool failed = false;
@@ -3959,6 +3968,14 @@ static std::string g_pm_title;
 static std::vector<MenuItem> g_pm_items;
 static void (*g_pm_pick)(int);
 static Rect g_pm_rect; // (client pixels, while open)
+static void pm_set_look(int i, bool hover)
+{
+    if (i < 0 || i >= kPmItems || !g_pm.item[i] || i >= (int)g_pm_items.size()) return;
+    const int style = std::clamp(g_pm_items[i].style, 0, 3);
+    if (void* look = card_look(std::string("lineages_button_") + kPmStyle[style] + (hover ? "_hover" : "_normal")))
+        sui::set_drawable(g_pm.item[i], look);
+    sui::set_label_color(g_pm.item[i], style == kMenuGold ? 0xFF2A1E05u : kWhite);
+}
 
 static void pm_pick(int i)
 {
@@ -3994,9 +4011,7 @@ static bool pm_build()
     // the items: filled rows with white text (Spore drew a button outside the Co-op window in its disabled look, 6J test
     // 2026-11-18); the mouse hook takes the press (player_menu_press), so they work under the game's input lock too
     for (int i = 0; i < kPmItems; i++) {
-        Win w = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
-        g_pm.item[i] = w;
-        if (w) sui::set_fill_color(w, kPmItemFill);
+        g_pm.item[i] = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
     }
     for (Win w : {g_pm.box, g_pm.edge[0], g_pm.edge[1], g_pm.edge[2], g_pm.edge[3], g_pm.title})
         if (w) {
@@ -4062,9 +4077,13 @@ static void pm_apply(void*)
     if (g_pm.title) sui::set_caption(g_pm.title, g_pm_title);
     for (int i = 0; i < kPmItems; i++) {
         const float top = kPmPad + kPmTitle + i * kPmRow;
-        place(g_pm.item[i], i < n, {8, top, kPmW - 8, top + kPmRow - 4});
-        if (i < n && g_pm.item[i]) sui::set_caption(g_pm.item[i], g_pm_items[i].text);
+        place(g_pm.item[i], i < n, {10, top, kPmW - 10, top + kPmRow - 4});
+        if (i < n && g_pm.item[i]) {
+            sui::set_caption(g_pm.item[i], g_pm_items[i].text);
+            pm_set_look(i, i == g_pm_hover);
+        }
     }
+    g_pm_shown_hover = g_pm_hover;
 }
 
 void show_player_menu(float x, float y, const std::string& title, const std::vector<MenuItem>& items, void (*on_pick)(int))
@@ -4094,17 +4113,34 @@ void hide_player_menu()
 }
 
 bool player_menu_open() { return g_pm_open; }
-bool player_menu_press(float x, float y)
+static int pm_item_at(float x, float y)
 {
-    if (!g_pm_open || !point_in_player_menu(x, y)) return false;
+    if (!g_pm_open || !point_in_player_menu(x, y)) return -1;
     const int n = std::min<int>((int)g_pm_items.size(), kPmItems);
     for (int i = 0; i < n; i++) {
         const float top = g_pm_rect.y1 + kPmPad + kPmTitle + i * kPmRow;
-        if (x >= g_pm_rect.x1 + 8 && x < g_pm_rect.x2 - 8 && y >= top && y < top + kPmRow - 4) {
-            pm_pick(i);
-            return true;
-        }
+        if (x >= g_pm_rect.x1 + 10 && x < g_pm_rect.x2 - 10 && y >= top && y < top + kPmRow - 4) return i;
     }
+    return -1;
+}
+static void pm_hover_tick()
+{
+    int x = 0, y = 0;
+    const int h = g_pm_open && mouse::last_move(x, y) ? pm_item_at((float)x, (float)y) : -1;
+    if (h == g_pm_hover || g_pm_queued) return;
+    g_pm_hover = h;
+    H->run_outside_frame([](void*) {
+        if (!g_pm_open || g_pm_shown_hover == g_pm_hover) return;
+        pm_set_look(g_pm_shown_hover, false);
+        pm_set_look(g_pm_hover, true);
+        g_pm_shown_hover = g_pm_hover;
+    }, nullptr);
+}
+bool player_menu_press(float x, float y)
+{
+    if (!g_pm_open || !point_in_player_menu(x, y)) return false;
+    const int i = pm_item_at(x, y);
+    if (i >= 0) pm_pick(i);
     return true; // (the panel itself: nothing behind it gets the press)
 }
 bool point_in_player_menu(float x, float y)

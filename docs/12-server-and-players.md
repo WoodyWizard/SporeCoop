@@ -997,6 +997,16 @@ Plan, in steps (each one a build and a test on TITAN and the MSI):
 4. **Stage progress per party** (the bar, the stage end, leaving for the next stage) with the three roles (party
    leader, planet host, simulation host): needs decision 6N.
 
+Owner's answers (2026-11-18): **6M B** extinction stays one per planet (step 3 keeps the game's own extinction; only
+NPC targeting by relation is left in it); **6N A** a party that ends a stage moves on to its own next-stage world while
+the others stay (step 4: the stage end becomes the party's, the planet's host party included).
+
+**The menu's buttons** (owner 2026-11-18: "The buttons look so bland. Is that what Spore looks like? Why aren't we using
+our own button layout and appropriate colors?"): the items are our own button art now (data/ui/lineages_button_<colour>
+_normal / _hover, the Co-op window's buttons), drawn as images (a real button outside the Co-op window showed its
+disabled image): gold joins (Invite to Party, Join Party), red leaves or removes (Remove from Party, Leave Party,
+Decline), blue the rest, grey Remove Friend; the hover image under the pointer; the panel 224 px wide, 31 px rows.
+
 Hardest parts: crediting events to the right party (the game reports the victim), one NPC seen by several parties
 (its AI keeps targets between ticks), extinction being a world object, and the host's single progress bar.
 Feasible soon: steps 1 and 2.

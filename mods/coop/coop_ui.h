@@ -194,12 +194,14 @@ struct MemoryPopup {
 };
 bool set_memory_popup(const MemoryPopup& want, void (*on_click)(int));
 
+enum MenuStyle { kMenuBlue = 0, kMenuGold = 1, kMenuRed = 2, kMenuGrey = 3 };
 // decision 6J (owner 2026-11-18): the players' right-click menu ("View Creature, Invite to Party, Whisper, Add Friend",
 // "similar to all native menus"): a panel in the Co-op window's look at a screen point, a gold title and one button per
 // item; on_pick(code) when one is chosen (then it closes). x, y: client pixels.
 struct MenuItem {
     std::string text;
     int code = 0;
+    int style = kMenuBlue; // our button art: data/ui/lineages_button_<colour>_*.png
 };
 void show_player_menu(float x, float y, const std::string& title, const std::vector<MenuItem>& items,
                       void (*on_pick)(int code));
