@@ -162,7 +162,7 @@ static void install_intro_hook();
 // coop.menuslot <GameN> (tests, BUG-0676): the galaxy menu shows the planets of another save slot, as when the player
 // picks that slot: the save database moves there and the star manager reads its stars (the menu rebuilds its planets
 // on the message 0x625D27D that sends). Outside the frame (it rebuilds UI).
-// coop.menuintro (tests, BUG-1254 / BUG-1256): a game that left the galaxy menu before its start-up video ended (the lab's
+// coop.menuintro (tests, BUG-1254 / BUG-1260): a game that left the galaxy menu before its start-up video ended (the lab's
 // quick fixture load, a guest that joins at once) never got the video's end message 0x49731AD in the menu (BUG-0626
 // refuses its GGE_intro in the stage): back in the galaxy menu its main menu panel (Galactic Adventures, ...) stays
 // hidden. The video's own end message, sent here as StopMovie 0xFD79C0 sends it (MessageSend(0x49731AD, null, 0)), makes
