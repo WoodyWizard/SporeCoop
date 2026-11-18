@@ -572,6 +572,28 @@ show it's a special server?" Code on alpha: mods/coop/coop_ui.cpp (the connect p
   ("You were killed in battle"). Uploads could wait while the host is dead.
 * Not yet: leaving the galaxy from the window (today: quitting the game, or `coop.galaxy disconnect`).
 
+### "Host" means three roles today (owner's note, 2026-11-17)
+<a id="server-three-roles"></a>
+
+Owner: "Once we allow people to leave a party, this will be more prevalent. Currently a lot of our mentions of a Host
+actually mean the 'Party Leader' at the moment." (after a galaxy test where the host's evolution changed a partner's
+body and the partner's migration opened the host's editor)
+
+* Agreed. The code's "host" is three roles at once: the simulation host (whose game runs the world and decides hits
+  and deaths), the party leader (the group's decisions: the evolution vote, migrating together, the stage change) and,
+  on the galaxy, the planet's host. On a galaxy planet strangers share one simulation host but are in different
+  parties (or none): each player evolves and migrates on their own, and a party's leader decides only for that party.
+* Splitting them is a design step of its own (who leads a party, what a party decides, what stays the simulation
+  host's); until then the galaxy should not apply "everybody follows the host's evolution / migration" rules to players
+  who are not in the host's party.
+
+### Hand-over without a reload: research (2026-11-17, decision 6B C)
+<a id="server-warm-handover"></a>
+
+Owner, after the first test's hand-over: "it took a loading screen and leaving / returning. This would interrupt a lot of
+people if there's 10 people on a single planet." Decision 6B C: research the in-place promotion (the new host keeps
+its loaded world and becomes the host; the others reconnect to it without a world transfer). Findings below.
+
 ### Owner's idea: deleting one's creature on a planet from the online galaxy menu (2026-11-17)
 
 Owner: "when a player is on the Online Galaxy Menu, we should allow them to delete their creature on the world still.
