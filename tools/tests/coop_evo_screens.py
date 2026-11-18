@@ -287,6 +287,32 @@ def part_cell_both(host, guest, ck, ready, scr):
     keyframe('both_back', 'Cell: both back in the pool with their new cells')
 
 
+def save_dialog_up(con):
+    """the game's save dialog of an edit-a-creation editor is up ("Save <name> as a new creation or replace <name>"):
+    the game is still in the editor and its golden Replace / Save New buttons are drawn (the mode alone also stays
+    Editor during the editor's exit)"""
+    if 'Editor' not in mode(con):
+        return False
+    path = os.path.join(lane.out_dir('shots'), 'evo_switch_dialog_probe.png')
+    if not con.call('shot ' + path).get('ok'):
+        return False
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            im = im.convert('RGB')
+            w, h = im.size
+            n = gold = 0
+            for x in range(int(w * 0.545), int(w * 0.68), 2):
+                for y in range(int(h * 0.548), int(h * 0.572)):
+                    r, g, b = im.getpixel((x, y))
+                    n += 1
+                    gold += r > 140 and g > 110 and b < 90 and r > b + 60
+    except (OSError, ImportError):
+        return 'Editor' in mode(con)
+    print(f'  save dialog probe: {gold / max(n, 1):.2f} of the buttons\' area golden', flush=True)
+    return gold / max(n, 1) > 0.3
+
+
 def log_size(con):
     try:
         return os.path.getsize(lane.game_log(con.port - 47799))
@@ -557,7 +583,7 @@ def part_switch(host, guest, ck, ready, scr):
             shot(guest, 'evo_switch_guest_legs.png')
             guest.call('click %d %d' % DONE)
             time.sleep(3)
-            dialog = 'Editor' in mode(guest)
+            dialog = save_dialog_up(guest)
             if dialog:
                 shot(guest, 'evo_switch_guest_dialog.png')
                 keyframe('guest_save_dialog', "Creature start: the guest's done brought the game's save dialog (Save New / Replace the world's species)", settle=0)
