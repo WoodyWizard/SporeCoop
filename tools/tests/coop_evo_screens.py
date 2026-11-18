@@ -211,6 +211,14 @@ def part_cell(host, guest, ck, ready, scr):
     keyframe('host_back', "Cell: the host back in its pool with its new cell, the guest plays on")
 
     # 2. the guest's own mating call: its own editor; the host plays on and sees its world
+    if '--one' in sys.argv:  # creature.mode host: the guest's own evolution is refused; its screen must come back
+        t_g = time.time()
+        mating_call(guest, 'guest', lambda: 'Editor' in mode(guest) or time.time() - t_g > 45)
+        time.sleep(25)
+        check_black(ck, sg, 'guest', 'after its own mating call was refused (creature.mode host)', t_g)
+        check_black(ck, sh, 'host', "after the guest's refused mating call", t_g)
+        keyframe('guest_refused', 'Cell, creature.mode host: the guest\'s own mating call is refused; both games show the pool')
+        return
     reached = mating_call(guest, 'guest', lambda: 'Editor' in mode(guest))
     ck(reached, "the guest reaches its mate: its own cell editor opens")
     t_ged = time.time()
@@ -361,6 +369,12 @@ def main():
     host, guest = start('cell', guest_creations=False)
     ck = Checks()
     time.sleep(3)
+    one = '--one' in sys.argv  # the session setting creature.mode host (one creature for everyone, BUG-0769)
+    if one:
+        import settings_lib
+        import twoinst
+        twoinst.forget_settings()
+        ck(settings_lib.force(host, [guest], 'creature.mode', 'host'), 'the guest got creature.mode host')
     scr = (Screens(host, 'host'), Screens(guest, 'guest'))
     for x in scr:
         x.start()
@@ -372,6 +386,9 @@ def main():
     finally:
         for x in scr:
             x.stop()
+        if one:
+            settings_lib.reset([host], ('creature.mode',))
+            twoinst.forget_settings()
     ck.faults(host=host, guest=guest)
     return ck.result()
 
