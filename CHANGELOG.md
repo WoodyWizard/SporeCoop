@@ -18,6 +18,13 @@ being able to befriend some animals. Both players should update: the fixes are i
 - Creature: the second player can befriend animals that ask for a charm, a dance or a pose: before, only singing
   counted for that player, the other social buttons and the keys 2-4 did nothing, and such an animal could not be
   impressed (BUG-1242).
+- Creature: when a player eats a body, the partner now sees its creature eat; before, it stood idle next to the body on
+  the partner's screen (BUG-1253).
+- Creature: in the social stance the partner's creature no longer gets the green ring and its name under the cursor,
+  as if it could be befriended or taken into the pack; a click goes to the animal behind it (BUG-1250).
+- Creature: an effect over a player's creature, such as the thought bubble of a hungry creature, no longer stays on
+  the partner's screen after it ended for that player when many effects came at once, for example in a fight
+  (BUG-1252).
 
 ## [0.7.15] - 2026-11-18
 

@@ -154,12 +154,22 @@ void* volatile g_pass_puppets[8];
 volatile bool g_pass_on;
 uint32_t g_pass_pairs, g_pass_hover_skipped, g_pass_seen_own; // tests (coop.status)
 uintptr_t a_AbilityModeCore;
+// BUG-1250 (players' video): in the social stance the partner's creature got the green ring and its name plate under
+// the cursor, so the players thought it could be befriended or taken into the pack; a click on it starts nothing (no
+// social game with a puppet, BUG-1241). The hover filter refused it only in the combat stance and only with friendly
+// fire off (BUG-0913). Now it refuses a partner's puppet in the social stance always (in Creature, outside Rivals):
+// the hover and the click take the creature behind it. `coop.fix creature.partner_social_hover off`: as 0.7.15.
+static bool g_social_hover_fix = true;
+COOP_FIX("creature.partner_social_hover", "BUG-1250", g_social_hover_fix, "creature: in the social stance a partner's creature gets no green ring or name plate under the cursor (it cannot be befriended)");
+volatile bool g_social_hover_on;
+uint32_t g_social_hover_skipped; // tests (coop.partnerpass)
 void partner_pass_tick()
 {
-    bool on = g_partner_pass_fix && g_mode == modes::kCreature && g_sess.connected() &&
-              !settings::on(settings::kFriendlyFire) && !(spaceext::rivals() || pfind::g_test_rivals);
+    bool creature = g_mode == modes::kCreature && g_sess.connected() && !(spaceext::rivals() || pfind::g_test_rivals);
+    bool on = g_partner_pass_fix && creature && !settings::on(settings::kFriendlyFire);
+    bool social = g_social_hover_fix && creature;
     size_t n = 0;
-    if (on)
+    if (on || social)
         for (auto& [id, r] : g_remotes)
             if (n < 8 && r.puppet && !r.echo)
                 if (void* p = creature_puppet_live(id))
@@ -168,6 +178,7 @@ void partner_pass_tick()
         g_pass_puppets[i] = nullptr;
     g_pass_avatar = on ? game::avatar() : nullptr;
     g_pass_on = on && n > 0;
+    g_social_hover_on = social && n > 0;
 }
 // o is the creature (its base pointer, as the casts give it) or its spatial part (+0xC0)
 static bool pass_is(void* who, void* o) { return who && o && (o == who || o == (char*)who + 0xC0); }
@@ -230,12 +241,15 @@ uint8_t* SK_THISCALL h_CollEnabled(void* self, uint8_t* out, uint8_t* a, uint8_t
 HoverFilter_t o_HoverFilter;
 bool SK_CDECL h_HoverFilter(void** hit)
 {
-    if (g_pass_on && hit && hit[0] && a_AbilityModeCore && skg::cdecl_call<int>(a_AbilityModeCore) != 0) {
-        void* owner = *(void**)((uint8_t*)hit[0] + 0x64);
-        void* obj = owner ? skg::vcall<void*>(owner, 0xC / 4, 0x17F243Bu) : nullptr; // the hover filter's own cast
-        if (pass_partner(obj)) {
-            g_pass_hover_skipped++;
-            return false; // the next object along the ray (the animal behind the partner)
+    if ((g_pass_on || g_social_hover_on) && hit && hit[0] && a_AbilityModeCore) {
+        int mode = skg::cdecl_call<int>(a_AbilityModeCore); // 0 the social stance, 1 the combat stance
+        if ((g_pass_on && mode != 0) || (g_social_hover_on && mode == 0)) {
+            void* owner = *(void**)((uint8_t*)hit[0] + 0x64);
+            void* obj = owner ? skg::vcall<void*>(owner, 0xC / 4, 0x17F243Bu) : nullptr; // the hover filter's own cast
+            if (pass_partner(obj)) {
+                (mode == 0 ? g_social_hover_skipped : g_pass_hover_skipped)++;
+                return false; // the next object along the ray (the animal behind the partner)
+            }
         }
     }
     return o_HoverFilter(hit);
@@ -1203,6 +1217,36 @@ void on_anim(void* creature, uint32_t anim, int block, bool disable_blend, bool 
     }
 }
 
+// BUG-1253 (players' video): the guest ate a body and its creature stood idle next to it in the host's game. The
+// avatar's behaviour tree (the eat node after the player's click, ...) starts its animations with
+// SporeCoop::CreaturePlayAnim, not with PlayAnimation, so on_anim never saw them (only the NPCs' were relayed, BUG-0464).
+// Now the avatar's own CreaturePlayAnim plays outside its idle refresh go out as MSG_ANIM with flag 4 (its `a` in flag
+// 8, its `b` in block) and the partner plays the same call on the puppet. `coop.fix creature.avatar_bhv_anims off`:
+// not sent (0.7.15).
+static bool g_avatar_bhv_fix = true;
+COOP_FIX("creature.avatar_bhv_anims", "BUG-1253", g_avatar_bhv_fix, "creature: what a player's creature does by itself after a click (eating a body, ...) is shown on the partner's screen");
+uint32_t g_own_bhv_anims = 0, g_bhv_anims_played = 0; // tests (coop.status / coop.track)
+void on_own_behaviour_anim(void* creature, uint32_t anim, int a, int b)
+{
+    if (!g_avatar_bhv_fix || !creature || creature != game::avatar() || !game::in_creature_stage())
+        return;
+    if (g_anim_log)
+        LOG("avatar behaviour anim 0x%08X a=%d b=%d", anim, a, b);
+    net::AnimEvent ev;
+    ev.id = g_sess.my_id();
+    ev.anim = anim;
+    ev.block = b;
+    ev.flags = 4 | ((a & 0xFF) ? 8 : 0);
+    g_own_bhv_anims++;
+    g_own_anims++;
+    g_own_anim_last = anim;
+    if (g_sess.connected()) {
+        net::Writer w;
+        ev.write(w);
+        g_sess.send_event(net::MSG_ANIM, w);
+    }
+}
+
 uint32_t g_anims_rx = 0, g_anims_played = 0;
 
 static bool g_anim_creature_only_fix = true;
@@ -1231,7 +1275,11 @@ void on_remote_anim(const net::AnimEvent& ev)
         }
         g_anims_unlisted++;
     }
-    game::play_animation(it->second.puppet, ev.anim, ev.block, ev.flags & 1);
+    if (ev.flags & 4) { // BUG-1253: the partner's behaviour play, the same call (CreaturePlayAnim(anim, a, b))
+        game::play_behaviour_anim(it->second.puppet, ev.anim, 0, (ev.flags & 8) ? 1 : 0, ev.block);
+        g_bhv_anims_played++;
+    } else
+        game::play_animation(it->second.puppet, ev.anim, ev.block, ev.flags & 1);
     g_anims_played++;
     it->second.anims++;
     it->second.anim_last = ev.anim;

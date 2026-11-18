@@ -322,6 +322,15 @@ anchor so other docs can link to it:
 * Also not reproduced with the guest on its own creature, walking next to the singer, the host's pack by, the guest
   singing, nor on v0.7.14.1 (BUG-1241).
 * Not checked: the mating call, low fps (the song did not start at 10 fps in the test).
+* Third round (2026-11-18, fix/w53-puppet): the guest's OWN social games (a real click on a Kook and the sing key at
+  each prompt; 1 and 3 Kooks, the key pressed again and again, both games at 10 fps, 250 ms delay with 5 % loss), then a
+  minute of standing, running and standing: the host's puppet ended the ability host_act plays on it within 2.4 s
+  (`coop.npc cur ability=`), played no social animation, kept no active pool effect (`coop.effects map active=`); the
+  only pool effect the guest sent was the DNA gain D7BE955C (one-shot). Not reproduced
+  (`lab.py run puppet_after_social,puppet_after_social_many,puppet_after_social_lowfps,puppet_after_social_net`).
+* Found on the way: a relayed pool effect stayed on the puppet for good when its stop met an empty rate limit (a burst
+  of effects, a fight): fixed by BUG-1252 (`effects.stop_always`). Inferred: one way to rings that stay, not shown to be
+  the video's.
 * Ticket: BUG-1241
 
 ## Cell: the partner's cell plays the attack animation of a player (2026-11-18, owner: players' video)
@@ -356,3 +365,15 @@ anchor so other docs can link to it:
 * Known: since 0.7.15.1 the late guest gets its own editor when it arrives (BUG-1240), so the wait may no longer be
   needed; being worked on with the mating call's black screen.
 * Ticket: BUG-1245
+## Creature: the second player cannot take a creature into a pack (2026-11-18, owner: players' video)
+<a id="issue-guest-pack-recruit"></a>
+
+* What happens: the host recruits a creature of its kind into its pack; the guest tries the same with another one and
+  sings: nothing happens.
+* Reproduce: a guest's social game with a creature of its own kind or of an allied species (no test yet).
+* Known: a guest's social game is the host's (social.cpp) and its win only impresses; the native recruit (session flag
+  +0x1FC & 0x10, 0xD9F7A0 -> cPosseSimulator_AddMember) never runs for it. A design sketch (host-owned members that
+  follow the guest's creature through the mpAvatar swap) is in the ticket.
+* Not checked: where the native session sets its recruit flag (SocialPropose 0xDA43D0, likely).
+* Next steps: a feature branch after 0.7.15.1.
+* Ticket: BUG-1256

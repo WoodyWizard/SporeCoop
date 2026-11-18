@@ -4782,3 +4782,63 @@ game's data files (Data/PatchData.package) and lanes 6 / 7 (fixture `creature_ca
 * Fix `social.kinds` (social.cpp): every kind 1-4 is a social ability for the bar's hook; the key k plays the ability
   of kind k. `coop.social` (guest) prints `prompt_type= prompt_kind=` of the last prompt and `kind_acts=` (actions sent
   per kind 0-4); `coop.social herds` lists the herds with `profile=` (the species profile) and `kinds=<kind>:<type>:<points>,...`.
+
+## The partner's puppet after a song, its hunger bubble, its eating, its hover (2026-11-18, fix/w53-puppet)
+<a id="creature-puppet-hunger"></a>
+
+BUG-1241, BUG-1250, BUG-1252, BUG-1253, BUG-1256 (a players' video, second look). GOG 2024, Ghidra (`tools/ghidra/q.sh`) and
+lab lanes 4 / 5 (creature fixture). `coop.npc cur` prints for the own avatar and each puppet `ability=` (+0xE8C) and
+`ability_anim=` (+0xE90), `hunger=` (+0xBBC), `hunger_delta=` (+0xBB8) and `mood=` (+0xCC0); `coop.effects map` prints
+`active=` for every pool entry; `coop.puppet hunger [v]` / `coop.puppet ownhunger <v>` set a puppet's or the own meter.
+
+### The ability in use (BUG-1241)
+* ✔ (Ghidra) `cCreatureBase::PlayAbility` 0xC1E5C0 checks the ability (0xC19800: cooldown, energy, and +0xE8C == -1),
+  picks its animation, plays it with PlayAnimation / PlayAnimationTo and records the ability in use through 0xC07500
+  (+0xE8C index, +0xE90 animation, +0xE94 a timer for abilities with a duration +0xF4). It makes no effect itself: the
+  rings of a song are the animation's own events.
+* ✔ (Ghidra) `SporeCoop::Creature_AbilityTick` 0xC1E8B0 (vtable slot 0x68) ends the ability (+0xE8C = -1) when its
+  animation is over (0xC0E2D0) or its timer ran out. cCreatureAnimal::Update calls slot 0x68 for every creature, also
+  for our puppets (only NPCTickAI is skipped for them).
+* ✔ (runtime, lab 20261118-122628, -123004) host_act's PlayAbility on the guest's puppet in the host's game: the puppet
+  shows `ability=4 ability_anim=042A1CAF` at the song and -1 2.4 s later, as the guest's own avatar; after 1 and 3
+  befriended Kooks (the sing key pressed up to 12 times a Kook) no ability, no social animation and no active pool
+  effect stayed on the puppet for a minute of standing, running and standing.
+* ✔ (Ghidra) The gold DNA effect: `SporeCoop::DnaGainEffect_Tick` 0xD2D0B0 stops the avatar's key 0x02C4C076 and starts
+  0xD7BE955C under it (pool 2, with the amount as text and a sound) when DNA was earned: the "social win effect" of
+  BUG-1241's first round is this one, made by every DNA gain; a one-shot.
+
+### The hunger bubble (BUG-1252)
+* ✔ (Ghidra) The mood: `SporeCoop::Creature_MoodUpdate` 0xC02F50 (vtable slot 0xA4; the citizen's 0xC245E0) sets +0xCC0
+  from the health ratio and the food meter +0xBBC (1 fine, 2 hungry, 3 starving, 4 hurt, 5 both) and +0xB61 on a change.
+  `SporeCoop::Creature_ThoughtBubbleUpdate` 0xE8BF00 (from the per-creature UI update 0xE8C100) then stops the pool keys
+  0x06885174 / 0x062EDBA6 and for mood 2 or 3 starts the hunger bubble in pool 2 under 0x062EDBA6 (0xDE4F1682 a
+  carnivore: the gnawed bone; 0xBDE1A55D a herbivore; else 0x275458DB).
+* ✔ (runtime, lab 20261118-123004) The host's puppet of the guest has no hunger of its own: `hunger_delta=0.000` and
+  `mood=0` all along; set to 10 its meter stays 10 and no bubble comes. The guest's own avatar: delta -0.333 a second
+  (100 to empty in 5 minutes), mood 1; set to 10 it is mood 2, its own game shows the bubble over it, and the effects
+  relay starts it on the host's puppet (`active=1` within 1.7 s); fed (100) the guest's game stops it and the relayed
+  stop removes it from the puppet. So the bubble over the puppet is the guest's own hunger, shown on both screens.
+  CORRECTION (2026-11-18, fix/w53-puppet) of the ticket's suggested cause ("the puppet's own hunger lives its own
+  life"): it does not.
+* The bubble stays on the puppet only when the stop is lost: effects.cpp took the key out of its sent list and then
+  dropped the stop at the rate limit (40 a second; a burst of effects, a fight, empties it for seconds), and never sent
+  it again. ✔ (runtime, lab 20261118-124058) the guest ate during a burst with the bucket in debt: the host's puppet kept
+  the bubble (key frame), `stopped=0` on the host. Fix `effects.stop_always`: a stop passes an empty rate limit
+  (`coop.effects stops_past_rate=`; lab 20261118-124118: `stops_past_rate=1`, the bubble gone).
+
+### The avatar's behaviour animations (BUG-1253)
+* ✔ (Ghidra) `SporeCoop::CreaturePlayAnim` 0xC122F0 and `cCreatureBase::PlayAnimation` 0xC12470 are separate: neither
+  calls the other. The avatar relay (MSG_ANIM) hooked only PlayAnimation / PlayAnimationTo.
+* ✔ (runtime, lab 20261118-122628, switch off) The guest eats a body (the game's click action): its own creature plays
+  04F65995 through CreaturePlayAnim, the host's puppet of it stands (02481DE5) next to the body (key frame: the guest
+  bends over the body on its screen, its creature stands idle on the host's).
+* Fix `creature.avatar_bhv_anims`: the avatar's own CreaturePlayAnim plays outside its idle refresh go out as MSG_ANIM
+  flag 4 (`a` in flag 8, `b` in block); the receiver plays the same call on the puppet (lab 20261118-123633: 04F65995
+  on the puppet, the key frame shows it bending over the body).
+
+### The partner under the cursor in the social stance (BUG-1250)
+* ✔ (asm) `Simulator::cGameViewManager::Get` 0xB3D340 returns [0x167EAC4]; +0x88 is the hover result. The Creature
+  hover filter refused a partner's puppet only in the combat stance with friendly fire off (BUG-0913): in the social
+  stance it got the green ring and its name plate, though no social game starts with a puppet. Fix
+  `creature.partner_social_hover`: refused in the social stance always (Creature, outside Rivals).
+* The pack recruit of a guest is a missing feature: the native recruit and a design sketch are in BUG-1256.

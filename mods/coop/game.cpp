@@ -449,6 +449,15 @@ bool set_sneaking(void* c, bool on)
     return true;
 }
 
+bool set_hunger(void* c, float v)
+{
+    static uintptr_t a = H ? H->sym("SporeCoop::Creature_SetHunger") : 0;
+    if (!a || !c)
+        return false;
+    thiscall<void>(a, c, v);
+    return true;
+}
+
 bool hatchling_waiting(void* c)
 {
     if (!c || !skg::readable(c, 0xB50) || field<int32_t>(c, 0xB34) != 0)
@@ -656,18 +665,25 @@ CALL_GUARD_DEPTH("game.idle_depth", g_idle_depth); // BUG-1047
 static uint32_t g_bhv_seen = 0, g_bhv_idle = 0;
 
 static IdleAnimListener g_idle_listener;
+static OwnBehaviourAnimListener g_own_bhv_listener; // BUG-1253
 static void bhv_report(void* self, uint32_t id, int how, int a, int b)
 {
     if (g_idle_depth > 0) {
         g_bhv_idle++;
         if (g_idle_listener)
             g_idle_listener(self, id);
+        return;
     }
-    else if (g_bhv_listener && !g_in_puppet_anim) {
+    if (g_in_puppet_anim)
+        return;
+    if (how == 0 && g_own_bhv_listener && self && self == avatar()) // BUG-1253: the avatar's own behaviour plays
+        g_own_bhv_listener(self, id, a, b);
+    if (g_bhv_listener) {
         g_bhv_seen++;
         g_bhv_listener(self, id, how, a, b);
     }
 }
+void set_own_behaviour_anim_listener(OwnBehaviourAnimListener fn) { g_own_bhv_listener = fn; }
 
 static int SK_THISCALL h_CreaturePlayAnim(void* self, uint32_t id, int a, int b)
 {

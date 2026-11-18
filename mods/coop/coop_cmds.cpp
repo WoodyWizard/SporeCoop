@@ -86,7 +86,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("%s", host_busy_status().c_str()); // C3 (BUG-1142)
     for (auto& pl : g_sess.players()) // CAP_VERSION: each player's mod, SporeKit and game build
         SAY("version %u '%s': %s\n", pl.id, pl.name.c_str(), pl.version.empty() ? "unknown (pre-0.7.4)" : pl.version.c_str());
-    SAY("remote animations: received %u, played %u\n", g_anims_rx, g_anims_played);
+    SAY("remote animations: received %u, played %u (behaviour %u); own behaviour sent %u\n", g_anims_rx, g_anims_played,
+        g_bhv_anims_played, g_own_bhv_anims); // BUG-1253
     SAY("appeared notices: told %u, puppet rebuilds not told %u (BUG-0923)\n", g_appeared_told, g_appeared_quiet);
     SAY("%s", effects::status().c_str()); // BUG-0451
     SAY("%s", npc::status().c_str());
@@ -1194,7 +1195,7 @@ void register_commands_core()
                    nullptr, MT);
     H->command_add(M, "coop.framefix", "coop.framefix [0|1] - forget a torn-down world's puppets before the frame's messages (tests: 0 = the old order, BUG-0091)",
                    c_framefix, nullptr, MT);
-    H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",
+    H->command_add(M, "coop.puppet", "coop.puppet hold on|off | respawn [s] | gamekill | hunger [v] | ownhunger <v> - tests: the remote players' puppets are not moved (a seeded failure for coop_mode.py, BUG-0251); respawn: removed now, shown again next frame or after s seconds (BUG-0453); gamekill: the game destroys the Creature puppets behind the mod's back (BUG-0507)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 2 && !strcmp(argv[1], "speedset")) { // tests (BUG-0788): SetDesiredSpeed on each Creature
                            for (auto& [id, r] : g_remotes) { // puppet now, and +0x1E0 read right after it (same frame)
@@ -1217,6 +1218,29 @@ void register_commands_core()
                                SAY("puppet %u desired=%.2f standard=%.2f vel=%.2f want=%.2f err=%.2f kinematic=%d\n", id,
                                    *(float*)(sp + 0x1E0), *(float*)(sp + 0x1E4), drive::speed(v), r.drv.last_want_speed,
                                    r.drv.last_err, (int)r.drv.kinematic);
+                           }
+                           return 0;
+                       }
+                       // tests (BUG-1252): ownhunger <v>: the own avatar's food meter (+0xBBC) through the game's setter, as
+                       // minutes of its own hunger update leave it (or a meal fills it)
+                       if (argc > 2 && !strcmp(argv[1], "ownhunger")) {
+                           void* av = game::avatar();
+                           if (!av)
+                               return 1;
+                           float before = game::hunger(av);
+                           game::set_hunger(av, (float)atof(argv[2]));
+                           SAY("avatar hunger %.1f -> %.1f\n", before, game::hunger(av));
+                           return 0;
+                       }
+                       // tests (BUG-1252): hunger [v]: each Creature puppet's food meter; with v set through the game's setter
+                       if (argc > 1 && !strcmp(argv[1], "hunger")) {
+                           for (auto& [id, r] : g_remotes) {
+                               if (!r.puppet || !creature_puppet(r.puppet_adapter) || !game::creature_listed(r.puppet))
+                                   continue;
+                               float before = game::hunger(r.puppet);
+                               if (argc > 2)
+                                   game::set_hunger(r.puppet, (float)atof(argv[2]));
+                               SAY("puppet %u hunger %.1f -> %.1f\n", id, before, game::hunger(r.puppet));
                            }
                            return 0;
                        }
@@ -1444,6 +1468,11 @@ void register_commands_core()
                            SAY("%s", effects::status().c_str());
                            return 0;
                        }
+                       if (argc > 1 && !strcmp(argv[1], "drain")) { // tests (BUG-1252): drain [n] (default 10)
+                           effects::drain_tokens(argc > 2 ? atof(argv[2]) : 10.0);
+                           SAY("effects: the rate limit is %s tokens in debt\n", argc > 2 ? argv[2] : "10");
+                           return 0;
+                       }
                        if (argc > 1 && !strcmp(argv[1], "load")) {
                            uint32_t n = argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 10) : 0;
                            uint32_t ms = argc > 3 ? (uint32_t)strtoul(argv[3], nullptr, 10) : 1000;
@@ -1613,10 +1642,10 @@ void register_commands_core()
                        for (void* p : g_pass_puppets)
                            n += p != nullptr;
                        SAY("fix=%d on=%d puppets=%d pairs_skipped=%u own_pairs_seen=%u hover_skipped=%u ff=%d "
-                           "phantom_pairs=%u/%u/%u",
+                           "phantom_pairs=%u/%u/%u social_hover=%d social_hover_skipped=%u",
                            (int)g_partner_pass_fix, (int)g_pass_on, n, g_pass_pairs, g_pass_seen_own, g_pass_hover_skipped,
                            (int)settings::on(settings::kFriendlyFire), g_pass_phantom_pairs, g_pass_phantom_own,
-                           g_pass_phantom_partner);
+                           g_pass_phantom_partner, (int)g_social_hover_on, g_social_hover_skipped); // BUG-1250
                        return 0;
                    },
                    nullptr, MT);
