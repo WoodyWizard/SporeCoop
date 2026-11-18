@@ -2575,3 +2575,13 @@ BUG-1263. GOG 2024, lanes 2 / 3 (`coop_evo_screens.py --part cell`, both games' 
   guest's screen showed its pool and the notice (`01_host_vote_guest.jpg`), the guest took the host's new cell after it.
   The game posts the editor's DNA budget itself right after the request (BUG-0560 re-posts it only for a held one).
   With the setting off the vote of 0.7.15 runs (cell.vote_mate, core.vote_guest_editor still apply to it).
+
+## A refused mating call still meets its mate (2026-11-18, fix/w53-cellnow)
+<a id="cell-refused-mate"></a>
+
+* ✔ Refusing the Cell editor request (h_Submit) does not end the mating round: the mate G+0x51D4 stays next to the
+  cell, so the cell step's meeting 0xE78D10 plays the mating scene, the egg laying with its fade (0xE77930) and a new
+  request about every 10 s (#cell-mating-round). Seen on a guest in creature.mode host (BUG-1265).
+* ✔ The egg laying's fade is undone only by an editor's return or the next round: forgetting the mate after the fade
+  left the picture black (36 s). The mate has to be forgotten before the meeting starts (`cell.refused_mate`,
+  `cellsync::forget_mate` from vote.cpp evo_flag_tick, outside the game's call chain).
