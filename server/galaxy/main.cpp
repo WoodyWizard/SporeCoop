@@ -73,6 +73,7 @@ static std::map<std::string, Planet> g_planets;
 static std::string g_name = "SporeCoop galaxy";
 static uint16_t g_next_slot = 1;
 static uint64_t g_relay_bytes, g_relay_packets, g_relay_dropped;
+static uint64_t g_fan_in_bytes, g_fan_out_bytes, g_fan_packets, g_fan_dropped; // 6F B
 
 static void say(const char* fmt, ...)
 {
@@ -510,6 +511,46 @@ static void on_relay(const Endpoint& from, const uint8_t* data, size_t n)
     g_relay_packets++;
 }
 
+// decision 6F B: the planet's host sends one message for several of its players (net/galaxy.h kFan)
+static void on_fan(const Endpoint& from, const uint8_t* data, size_t n)
+{
+    Client* c = by_endpoint(from);
+    if (!c || n < 3 || c->planet.empty()) {
+        g_fan_dropped++;
+        return;
+    }
+    c->last_ms = now_ms();
+    auto pl = g_planets.find(c->planet);
+    if (pl == g_planets.end() || pl->second.host != c->slot) { // only the planet's host
+        g_fan_dropped++;
+        return;
+    }
+    const size_t count = data[1];
+    const size_t body_at = 2 + 2 * count;
+    if (!count || count > kMaxFanSlots || n <= body_at) {
+        g_fan_dropped++;
+        return;
+    }
+    const size_t body = n - body_at;
+    std::vector<uint8_t> out(3 + body);
+    out[0] = kFan;
+    std::memcpy(out.data() + 1, &c->slot, 2);
+    std::memcpy(out.data() + 3, data + body_at, body);
+    g_fan_in_bytes += n;
+    for (size_t i = 0; i < count; i++) {
+        uint16_t to;
+        std::memcpy(&to, data + 2 + 2 * i, 2);
+        auto it = g_clients.find(to);
+        if (to == c->slot || it == g_clients.end() || !pl->second.members.count(to)) {
+            g_fan_dropped++;
+            continue;
+        }
+        g_sock.send_to(it->second.ep, out.data(), out.size());
+        g_fan_out_bytes += out.size();
+        g_fan_packets++;
+    }
+}
+
 int main(int argc, char** argv)
 {
     std::vector<std::string> args;
@@ -552,7 +593,7 @@ int main(int argc, char** argv)
     load_stored();
     std::vector<uint8_t> buf(65536);
     uint32_t last_status = now_ms(), last_sweep = now_ms();
-    uint64_t status_bytes = 0;
+    uint64_t status_bytes = 0, status_fan_in = 0, status_fan_out = 0;
     for (;;) {
         Endpoint from;
         int n;
@@ -563,6 +604,8 @@ int main(int argc, char** argv)
             any = true;
             if (buf[0] == kRelay)
                 on_relay(from, buf.data(), (size_t)n);
+            else if (buf[0] == kFan)
+                on_fan(from, buf.data(), (size_t)n);
             else if (buf[0] == kControl && n >= 2) {
                 Reader r(buf.data() + 1, (size_t)n - 1);
                 on_control(from, r);
@@ -593,11 +636,17 @@ int main(int argc, char** argv)
         }
         if (now - last_status > 30000) {
             const double kbs = (g_relay_bytes - status_bytes) / 1024.0 / ((now - last_status) / 1000.0);
-            say("status: %zu player(s), %zu planet(s), relay %.1f KB/s (%llu packets, %llu dropped in all)",
+            const double secs = (now - last_status) / 1000.0;
+            say("status: %zu player(s), %zu planet(s), relay %.1f KB/s (%llu packets, %llu dropped in all), "
+                "copies: in %.1f KB/s out %.1f KB/s (%llu sent, %llu dropped in all)",
                 g_clients.size(), g_planets.size(), kbs, (unsigned long long)g_relay_packets,
-                (unsigned long long)g_relay_dropped);
+                (unsigned long long)g_relay_dropped, (g_fan_in_bytes - status_fan_in) / 1024.0 / secs,
+                (g_fan_out_bytes - status_fan_out) / 1024.0 / secs, (unsigned long long)g_fan_packets,
+                (unsigned long long)g_fan_dropped);
             last_status = now;
             status_bytes = g_relay_bytes;
+            status_fan_in = g_fan_in_bytes;
+            status_fan_out = g_fan_out_bytes;
         }
         if (!any)
             g_sock.wait(5); // (wakes as soon as a datagram arrives: a sleep waited ~16 ms on Windows)

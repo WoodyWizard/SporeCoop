@@ -255,8 +255,9 @@ enum Caps : uint32_t {
     CAP_JOIN_PROOF = 128, // HELLO only: connection-bound password proof
     CAP_LIBRARY = 32, // persistent, paced creation-library exchange (MSG_LIBRARY)
     CAP_COMPACT_CELL = 256, // 6F A: this guest reads MSG_CELL_STATE_C; no payload
+    CAP_FAN_IN = 512, // 6F B: this guest takes the host's messages copied by the galaxy server (net/galaxy.h kFan)
 };
-constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_LIBRARY | CAP_COMPACT_CELL; // token bit is per HELLO
+constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_LIBRARY | CAP_COMPACT_CELL | CAP_FAN_IN; // token bit is per HELLO
 
 struct Hello {
     uint16_t proto = kProtoVersion;

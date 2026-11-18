@@ -4359,6 +4359,20 @@ struct SendCell {
     uint32_t idx;
 };
 static void send_state(int dest, const std::vector<SendCell>& cells, const views::Centre* vc, const net::Vec3& me);
+static void send_state_bookkeeping(const std::vector<SendCell>& cells, double now_s);
+// 6F B: the guests of one stream: one guest, or a group of guests near each other whose stream the galaxy server copies
+struct StateGroup {
+    std::vector<uint8_t> ids;
+    std::vector<net::Vec3> centres; // empty: every cell near (a guest without a centre yet)
+    net::Vec3 anchor;
+};
+static void send_state_compact(const StateGroup& g, const std::vector<SendCell>& cells, double now_s);
+// decision 6F B (alpha): guests near each other share one compact stream that the galaxy server copies. Off
+// (`coop.fix cell.fan off`): one stream to each guest.
+static bool g_fix_compact_state = true; // 6F A (its switch: at send_state_compact)
+static bool g_fix_fan = true;
+COOP_FIX("cell.fan", "6F B", g_fix_fan,
+         "cell: guests near each other share one Cell state stream that the galaxy server copies to each of them");
 
 static void heal_own(uint8_t* a, const net::Vec3& me, bool bad);
 static void host_tick(double now)
@@ -4446,7 +4460,78 @@ static void host_tick(double now)
         all.push_back({c, idx});
     });
     g_cycle++;
+    // 6F B: guests whose centres are within cell_compact::kGroupDist of each other (a chain) share one compact stream,
+    // which the galaxy server copies to each of them; the rest are sent one by one below
+    std::set<uint8_t> grouped;
+    if (g_fix_fan && g_fix_compact_state && per_guest && C.fan_out) {
+        struct Cand { uint8_t id; net::Vec3 pos; int group; };
+        std::vector<Cand> cand;
+        for (uint8_t id : recipients) {
+            const uint32_t caps = C.sess->peer_caps(id);
+            const views::Centre* vc = vs.find(id);
+            if (vc && (caps & net::CAP_COMPACT_CELL) && (caps & net::CAP_FAN_IN) &&
+                !(g_fix_send_here && !own_world::peer_here(id)))
+                cand.push_back({id, vc->pos, -1});
+        }
+        int groups = 0;
+        for (size_t i = 0; i < cand.size(); i++) { // single link: a guest joins the group of any guest near it
+            if (cand[i].group >= 0)
+                continue;
+            cand[i].group = groups;
+            std::vector<size_t> todo{i};
+            while (!todo.empty()) {
+                const size_t at = todo.back();
+                todo.pop_back();
+                for (size_t k = 0; k < cand.size(); k++)
+                    if (cand[k].group < 0 && std::hypot(cand[k].pos.x - cand[at].pos.x, cand[k].pos.y - cand[at].pos.y) <=
+                                                 cell_compact::kGroupDist) {
+                        cand[k].group = groups;
+                        todo.push_back(k);
+                    }
+            }
+            groups++;
+        }
+        for (int gi = 0; gi < groups; gi++) {
+            StateGroup g;
+            for (auto& c : cand)
+                if (c.group == gi) {
+                    g.ids.push_back(c.id);
+                    g.centres.push_back(c.pos);
+                }
+            if (g.ids.size() < 2)
+                continue; // (alone: its own stream below)
+            g.anchor = {0, 0, 0};
+            for (auto& c : g.centres) {
+                g.anchor.x += c.x / g.centres.size();
+                g.anchor.y += c.y / g.centres.size();
+            }
+            // the cells within 120 m of any member, at most kSendCap, the nearest to a member first
+            std::vector<std::pair<float, size_t>> d;
+            for (size_t i = 0; i < all.size(); i++) {
+                const net::Vec3 p = pos_of(all[i].c);
+                float best = 1e30f;
+                for (auto& c : g.centres)
+                    best = std::min(best, (p.x - c.x) * (p.x - c.x) + (p.y - c.y) * (p.y - c.y));
+                if (best <= 120.f * 120.f)
+                    d.push_back({best, i});
+            }
+            if (g_fix_budget && d.size() > kSendCap) {
+                std::nth_element(d.begin(), d.begin() + kSendCap, d.end());
+                d.resize(kSendCap);
+                g_send_capped++;
+            }
+            std::vector<E> list;
+            list.reserve(d.size());
+            for (auto& [dist, at] : d)
+                list.push_back(all[at]);
+            send_state_bookkeeping(list, H->time_seconds());
+            send_state_compact(g, list, H->time_seconds());
+            grouped.insert(g.ids.begin(), g.ids.end());
+        }
+    }
     for (uint8_t id : recipients) {
+        if (grouped.count(id))
+            continue; // 6F B: in a group's stream
         if (g_fix_send_here && !own_world::peer_here(id)) {
             g_send_held++; // BUG-0809
             continue;
@@ -4495,7 +4580,6 @@ void set_fake_model(uint32_t idx, uint32_t inst)
 
 // decision 6F A (alpha): the compact state (cell_compact.h). Off (`coop.fix cell.compact_state off`): the classic one to
 // every guest.
-static bool g_fix_compact_state = true;
 COOP_FIX("cell.compact_state", "6F A", g_fix_compact_state,
          "cell: the host sends the compact Cell state to guests that read it (fixed parts once, far cells less often)");
 struct FullSent {
@@ -4508,11 +4592,11 @@ static double g_full_pruned;
 static uint64_t g_state_bytes[2], g_state_cells[2]; // [classic, compact] (coop.cell compact)
 static uint64_t g_compact_full, g_compact_keep, g_compact_near, g_compact_far;
 static uint64_t g_compact_got, g_compact_unknown, g_compact_kept;
-static void send_state_compact(int dest, const std::vector<SendCell>& cells, const views::Centre* vc,
-                               const net::Vec3& me, double now_s)
+static uint64_t g_fan_groups, g_fan_members, g_fan_sent_bytes, g_fan_failed; // 6F B (coop.pool compact)
+static void send_state_compact(const StateGroup& g, const std::vector<SendCell>& cells, double now_s)
 {
     namespace cc = cell_compact;
-    const net::Vec3 a = vc ? vc->pos : me;
+    const net::Vec3 a = g.anchor;
     float span_p = 1.f, span_v = 1.f;
     for (auto& e : cells) {
         const net::Vec3 p = pos_of(e.c);
@@ -4541,6 +4625,7 @@ static void send_state_compact(int dest, const std::vector<SendCell>& cells, con
         w.f32(ps); w.f32(vs);
     };
     begin_chunk();
+    std::vector<FullSent*> fss(g.ids.size());
     for (auto& e : cells) {
         if (!cc::encodable(e.idx))
             continue; // (never: a pool slot is below 4096)
@@ -4556,9 +4641,14 @@ static void send_state_compact(int dest, const std::vector<SendCell>& cells, con
         const auto* key = (uint32_t*)(c + kModelKey);
         const uint32_t key0 = g_fake_inst && e.idx == g_fake_idx ? g_fake_inst : key[0];
         const uint8_t level = (uint8_t)F<int>(c, kLevel);
-        auto& fs = g_full_sent[((uint64_t)(uint32_t)dest << 32) | e.idx];
-        const bool full = now_s - fs.at > cc::kFullEvery || fs.key0 != key0 || fs.level != level;
-        const bool near = !vc || (flags & 3) || cc::near_box(p.x - vc->pos.x, p.y - vc->pos.y);
+        bool full = false; // a member has not had its fixed part for kFullEvery, or it changed
+        for (size_t m = 0; m < g.ids.size(); m++) {
+            fss[m] = &g_full_sent[((uint64_t)g.ids[m] << 32) | e.idx];
+            full = full || now_s - fss[m]->at > cc::kFullEvery || fss[m]->key0 != key0 || fss[m]->level != level;
+        }
+        bool near = g.centres.empty() || (flags & 3);
+        for (size_t m = 0; !near && m < g.centres.size(); m++)
+            near = cc::near_box(p.x - g.centres[m].x, p.y - g.centres[m].y);
         counts.back()++;
         g_state_cells[1]++;
         if (!full && !near && !cc::far_turn(g_cycle, e.idx)) {
@@ -4584,21 +4674,35 @@ static void send_state_compact(int dest, const std::vector<SendCell>& cells, con
             w.u32(inst);
             w.u32(key0); w.u32(key[1]); w.u32(key[2]);
             w.u8(level);
-            fs = {now_s, key0, level};
+            for (FullSent* fs : fss)
+                *fs = {now_s, key0, level};
             g_compact_full++;
         }
+    }
+    const bool fan = g.ids.size() > 1 && C.fan_out;
+    if (fan) {
+        g_fan_groups++;
+        g_fan_members += g.ids.size();
     }
     for (size_t k = 0; k < chunks.size(); k++) {
         chunks[k].data[3] = (uint8_t)chunks.size();
         chunks[k].data[4] = counts[k];
-        g_state_bytes[1] += chunks[k].data.size();
-        C.sess->send_unreliable_to(dest, net::MSG_CELL_STATE_C, chunks[k]);
+        if (fan && C.fan_out(g.ids, net::MSG_CELL_STATE_C, chunks[k])) { // one copy up, the galaxy server copies it
+            g_state_bytes[1] += chunks[k].data.size();
+            g_fan_sent_bytes += chunks[k].data.size();
+            continue;
+        }
+        if (fan)
+            g_fan_failed++;
+        for (uint8_t id : g.ids) { // (one guest, or the copies refused: one to each)
+            g_state_bytes[1] += chunks[k].data.size();
+            C.sess->send_unreliable_to(id, net::MSG_CELL_STATE_C, chunks[k]);
+        }
     }
 }
 
-static void send_state(int dest, const std::vector<SendCell>& cells, const views::Centre* vc, const net::Vec3& me)
+static void send_state_bookkeeping(const std::vector<SendCell>& cells, double now_s)
 {
-    double now_s = H->time_seconds();
     if (now_s - g_sent_pruned > 5.0) {
         g_sent_pruned = now_s;
         for (auto it = g_sent_at.begin(); it != g_sent_at.end();)
@@ -4614,8 +4718,19 @@ static void send_state(int dest, const std::vector<SendCell>& cells, const views
             f->second.sends++;
         }
     }
+}
+
+static void send_state(int dest, const std::vector<SendCell>& cells, const views::Centre* vc, const net::Vec3& me)
+{
+    double now_s = H->time_seconds();
+    send_state_bookkeeping(cells, now_s);
     if (g_fix_compact_state && (C.sess->peer_caps((uint8_t)dest) & net::CAP_COMPACT_CELL)) {
-        send_state_compact(dest, cells, vc, me, now_s);
+        StateGroup g;
+        g.ids.push_back((uint8_t)dest);
+        g.anchor = vc ? vc->pos : me;
+        if (vc)
+            g.centres.push_back(vc->pos);
+        send_state_compact(g, cells, now_s);
         return;
     }
     g_state_cells[0] += cells.size();
@@ -7313,10 +7428,11 @@ std::string debug(const std::vector<std::string>& a)
         return "swimming";
     }
     if (!a.empty() && a[0] == "compact") { // 6F A: the state's bytes and cells, classic and compact, since the start
-        char b[400];
+        char b[640];
         snprintf(b, sizeof b,
                  "fix=%d host: classic %llu B / %llu cells (%.1f B a cell), compact %llu B / %llu cells (%.1f B a cell): "
-                 "full %llu near %llu far %llu keep %llu | guest: got %llu kept %llu unknown %llu\n",
+                 "full %llu near %llu far %llu keep %llu | guest: got %llu kept %llu unknown %llu | groups (6F B, "
+                 "fix=%d): %llu streams for %llu guests, %llu B sent once, %llu copies refused\n",
                  (int)g_fix_compact_state, (unsigned long long)g_state_bytes[0], (unsigned long long)g_state_cells[0],
                  g_state_cells[0] ? (double)g_state_bytes[0] / (double)g_state_cells[0] : 0.0,
                  (unsigned long long)g_state_bytes[1], (unsigned long long)g_state_cells[1],
@@ -7324,7 +7440,9 @@ std::string debug(const std::vector<std::string>& a)
                  (unsigned long long)g_compact_full, (unsigned long long)g_compact_near,
                  (unsigned long long)g_compact_far, (unsigned long long)g_compact_keep,
                  (unsigned long long)g_compact_got, (unsigned long long)g_compact_kept,
-                 (unsigned long long)g_compact_unknown);
+                 (unsigned long long)g_compact_unknown, (int)g_fix_fan, (unsigned long long)g_fan_groups,
+                 (unsigned long long)g_fan_members, (unsigned long long)g_fan_sent_bytes,
+                 (unsigned long long)g_fan_failed);
         return b;
     }
     if (!a.empty() && a[0] == "scalepos") { // tests (BUG-0519): world scale, own cell and every partner's puppet, one frame

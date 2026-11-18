@@ -28,6 +28,8 @@ struct Ctx {
     // needed), 10 minutes at most
     std::function<bool()> hosted_stored;
     std::function<void()> promote; // 6B C: this guest becomes the host in place (its proxies go on as its NPCs)
+    // 6F B: a message of the planet's host copied by the galaxy server (from the host: dispatched as the session's)
+    std::function<void(uint8_t type, net::Reader& r)> fan_in;
 };
 
 // a planet of the server's list (LIST), for the galaxy menu (5X B)
@@ -46,6 +48,10 @@ uint32_t planets_version();                 // changes with the list
 std::string current_planet();               // the planet this player is on ("" none)
 std::string galaxy_name();                  // the connected galaxy's name ("" when not connected)
 bool hosting();                             // this game hosts a planet of the galaxy now
+// decision 6F B: the planet's host sends one unreliable message the galaxy server copies to these players' slots
+// (net/galaxy.h kFan); false: not hosting through the galaxy, or too big (the caller sends it to each instead)
+bool fan_out(const std::vector<uint16_t>& slots, uint8_t type, const net::Writer& body);
+uint16_t slot_of(const net::Endpoint& peer);  // a session peer's galaxy slot (0: not a galaxy peer)
 unsigned planet_players();                  // 6E B: the players a planet of this galaxy takes (16 by default)
 bool close_request();                       // Alt+F4 / the window's X (mouse.cpp): true = held, saved first (6A A)
 // decision 6B C (the warm hand-over): a player still in the planet's world rejoins its new host with the hand-over's

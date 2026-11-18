@@ -127,6 +127,7 @@ public:
     // round trip time to a player in ms (host: any guest, guest: the host), -1 if unknown
     int rtt_of(uint8_t id) const;
     uint32_t peer_caps(uint8_t id) const;
+    Endpoint peer_endpoint(uint8_t id) const; // an accepted peer's address ({} none)
     uint64_t peer_resume_world(uint8_t id) const;
     // BUG-0651: the q-quantile of the last round-trip samples to that peer (ms), -1 = none (yet)
     float rtt_quantile_of(uint8_t id, float q) const;

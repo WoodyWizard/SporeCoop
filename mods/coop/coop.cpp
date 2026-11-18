@@ -11222,6 +11222,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gx.join = [](const std::string& addr, std::string& err) { return do_join(addr, err); };
         gx.ready = [] { return g_local != nullptr && !world::load_queued() && !world::load_starting(); };
         gx.promote = [] { npc::promote_now(); };
+        gx.fan_in = [](uint8_t type, net::Reader& r) { // 6F B: the host's Cell state, copied by the galaxy server
+            if (type == net::MSG_CELL_STATE_C && g_sess.cb.custom)
+                g_sess.cb.custom(type, 0, r);
+        };
         gx.hosted_stored = []() -> bool { // owner test 2026-11-17: a new host makes its own creature first
             if (!creations::host_needs_first_creature())
                 return true;
@@ -11382,6 +11386,18 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         return g_mode == modes::kCell && same_place(state) && (state.flags & net::PF_IN_WORLD);
     };
     cc.host_away = [] { return g_host_away; }; // BUG-0205
+    cc.fan_out = [](const std::vector<uint8_t>& ids, uint8_t type, const net::Writer& w) { // 6F B
+        if (!galaxy::hosting())
+            return false;
+        std::vector<uint16_t> slots;
+        for (uint8_t id : ids) {
+            const uint16_t slot = galaxy::slot_of(g_sess.peer_endpoint(id));
+            if (!slot)
+                return false;
+            slots.push_back(slot);
+        }
+        return galaxy::fan_out(slots, type, w);
+    };
     cellsync::init(H, M, std::move(cc));
     H->command_add(M, "coop.pool", "coop.pool [bite | food <n> | hp <n> | hurt <player> <dmg>] - cell co-op",
                    [](void*, int argc, const char* const* argv, SkOut* out) {

@@ -30,6 +30,7 @@ static bool g_welcomed;
 static uint16_t g_slot;
 static_assert(kMaxPlanetPlayers == net::kMaxPlayers, "a planet's players are one session's");
 static uint8_t g_planet_players = kPlanetPlayers; // 6E B: what the server's WELCOME says a planet takes
+static uint64_t g_fan_tx, g_fan_tx_bytes, g_fan_rx, g_fan_rx_bytes, g_fan_refused; // 6F B
 static std::string g_galaxy, g_planet, g_last_refusal;
 static uint8_t g_role;      // kHostRole / kGuestRole on a planet, 0 none
 static uint16_t g_host_slot;
@@ -107,6 +108,19 @@ static void pump()
             g_queue.emplace_back(slot, std::vector<uint8_t>(buf + 3, buf + n));
             g_rx++;
             g_rx_bytes += (uint64_t)n;
+        } else if (buf[0] == kFan && n >= 4) { // 6F B: a copy of the host's message, from the galaxy server
+            uint16_t slot;
+            memcpy(&slot, buf + 1, 2);
+            g_fan_rx++;
+            g_fan_rx_bytes += (uint64_t)n;
+            // only from this planet's host, while this game plays the planet as a guest through the relay
+            if (slot != g_host_slot || g_role != kGuestRole || !g_relay_on || !C.sess ||
+                C.sess->role() != net::Role::Client || !C.sess->connected() || !C.fan_in) {
+                g_fan_refused++;
+                continue;
+            }
+            net::Reader r(buf + 4, (size_t)n - 4);
+            C.fan_in(buf[3], r);
         } else if (buf[0] == kControl && n >= 2) {
             net::Reader r(buf + 1, (size_t)n - 1);
             on_control(r);
@@ -758,6 +772,31 @@ bool online() { return g_sock.is_open() && g_welcomed; }
 uint32_t planets_version() { return g_planets_ver; }
 std::string current_planet() { return g_planet; }
 unsigned planet_players() { return g_planet_players; }
+uint16_t slot_of(const net::Endpoint& peer) { return g_relay_on ? endpoint_slot(peer) : 0; }
+bool fan_out(const std::vector<uint16_t>& slots, uint8_t type, const net::Writer& body)
+{
+    if (!g_relay_on || !g_sock.is_open() || g_role != kHostRole || slots.empty() || slots.size() > kMaxFanSlots)
+        return false;
+    std::vector<uint8_t> f;
+    f.reserve(3 + 2 * slots.size() + body.data.size());
+    f.push_back(kFan);
+    f.push_back((uint8_t)slots.size());
+    for (uint16_t s : slots) {
+        if (!s)
+            return false;
+        f.push_back((uint8_t)(s & 0xFF));
+        f.push_back((uint8_t)(s >> 8));
+    }
+    f.push_back(type);
+    f.insert(f.end(), body.data.begin(), body.data.end());
+    if (f.size() > 1400)
+        return false;
+    if (!g_sock.send_to(g_server, f.data(), f.size()))
+        return false;
+    g_fan_tx++;
+    g_fan_tx_bytes += f.size();
+    return true;
+}
 bool hosting() { return g_hstep == kHosting && g_role == kHostRole && C.sess && C.sess->role() == net::Role::Host; }
 
 uint64_t warm_join_token()
@@ -808,6 +847,10 @@ std::string status()
              (unsigned long long)g_tx, (unsigned long long)(g_tx_bytes >> 10), g_queue.size(),
              (unsigned long long)g_queue_dropped);
     std::string s = b;
+    snprintf(b, sizeof b, " copies (6F B): sent %llu (%llu KB), got %llu (%llu KB), refused %llu",
+             (unsigned long long)g_fan_tx, (unsigned long long)(g_fan_tx_bytes >> 10), (unsigned long long)g_fan_rx,
+             (unsigned long long)(g_fan_rx_bytes >> 10), (unsigned long long)g_fan_refused);
+    s += b;
     static const char* steps[] = {"-", "downloading", "loading", "hosting"};
     snprintf(b, sizeof b,
              "\nworld: %s%s stored=%u KB down=%u/%u chunks upload=%s (%u/%u chunks) next upload in %.0f s, uploads %u, "

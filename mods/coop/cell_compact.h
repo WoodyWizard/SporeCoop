@@ -21,6 +21,8 @@ constexpr uint32_t kKeep = 0x8000, kFull = 0x4000, kFlagBits = kKeep | kFull;
 constexpr double kFullEvery = 2.0;
 constexpr uint32_t kFarEvery = 5;          // a far cell: 2 times a second at the host's 10
 constexpr float kNearX = 40.f, kNearY = 32.f; // the near box about the guest's centre (its view is about 15 x 11)
+// 6F B: guests whose centres are this close (a chain) share one stream, copied by the galaxy server
+constexpr float kGroupDist = 40.f;
 constexpr size_t kChunkBytes = 950;        // a chunk's payload (the classic: 14 x 63 + 9)
 constexpr size_t kMaxRecord = 4 + 18 + 17;
 constexpr int kSizeBias = 32768, kSizeScale = 2048; // size = 2^((u - bias) / scale); 0: zero

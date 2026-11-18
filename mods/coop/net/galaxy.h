@@ -10,6 +10,10 @@
 //   kControl  'G'  u8 type, then the type's fields (below)
 //   kRelay    'R'  u16 slot, then a session packet as it is. Player -> server: slot = where it goes (a slot on the
 //                  same planet); server -> player: slot = where it came from.
+//   kFan      'F'  decision 6F B (owner "6FC"): one unreliable message the server copies to several players of the
+//                  planet. Host -> server: u8 n, n x u16 slot, then u8 message type and its body; server -> each of
+//                  those players: u16 the host's slot, then the message type and body. Only the planet's host sends
+//                  it, only to the planet's players: the host's upload carries one copy for players who stand together.
 #pragma once
 
 #include <cstdint>
@@ -25,7 +29,8 @@ namespace net::galaxy {
 constexpr uint16_t kDefaultPort = 47900;
 constexpr uint32_t kProto = 5; // 2: stored worlds (5Q A); 3: the hand-over (5V A); 4: the menu facts (5X B);
                                 // 5: the warm hand-over token (6B C)
-constexpr uint8_t kControl = 'G', kRelay = 'R';
+constexpr uint8_t kControl = 'G', kRelay = 'R', kFan = 'F';
+constexpr size_t kMaxFanSlots = 64; // (kMaxPlanetPlayers)
 
 enum Type : uint8_t {
     HELLO = 1,    // player -> server: u32 proto, u64 identity, str8 name, str8 version

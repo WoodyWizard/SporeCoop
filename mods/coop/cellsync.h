@@ -41,6 +41,9 @@ struct Ctx {
         void* cell;
     };
     std::function<std::vector<Puppet>()> puppets; // remote players' cells in our pool
+    // 6F B: one unreliable message the galaxy server copies to these guests (false: not through a galaxy; the caller
+    // sends one to each)
+    std::function<bool(const std::vector<uint8_t>& ids, uint8_t type, const net::Writer& w)> fan_out;
     std::function<bool(uint8_t)> peer_in_pool; // guests that can apply live Cell snapshots
     std::function<bool()> host_away; // guest: the host is away (coop.cpp g_host_away): we play our own pool (BUG-0205)
     // BUG-0510 (dna_pace.h): an own meal's share of the shared food; the host's divisor to send; a

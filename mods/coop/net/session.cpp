@@ -338,6 +338,13 @@ std::vector<PlayerInfo> Session::players_raw() const
     return v;
 }
 
+Endpoint Session::peer_endpoint(uint8_t id) const
+{
+    for (const auto& peer : peers_)
+        if (peer->id == id && peer->accepted) return peer->conn.remote;
+    return {};
+}
+
 uint32_t Session::peer_caps(uint8_t id) const
 {
     for (const auto& peer : peers_)

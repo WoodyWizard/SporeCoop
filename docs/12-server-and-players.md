@@ -739,6 +739,40 @@ state yet), Creature / Tribe / Civ (their own messages, not changed).
 
 Next (6F part B): the galaxy server copies one stream to the players of one area.
 
+### The galaxy server copies the Cell state to players together (2026-11-18, feat/lineages-alpha, decision 6F B)
+<a id="server-fan-out"></a>
+
+Owner: "Start part B" (6F C: A, then B). The host groups the guests whose centres are within 40 m of each other (a
+chain: cell_compact::kGroupDist) and sends each group one compact Cell stream (the cells within 120 m of any member, at
+most 900, the near box of any member at 10 a second); the galaxy server copies it to the group's players.
+
+* net/galaxy.h kFan 'F': host -> server: u8 n, n x u16 slot, then u8 message type and body; server -> each player:
+  u16 the host's slot, the type and body. The server takes it only from the planet's host and sends it only to the
+  planet's players; the game takes it only from its planet's host, as a guest through the relay, and only
+  MSG_CELL_STATE_C (coop.cpp gx.fan_in): it is then dispatched as the session's own message from the host.
+* A guest gets the group stream only when it announces net::CAP_FAN_IN and CAP_COMPACT_CELL; alone, or an older game,
+  or not through a galaxy: its own stream as before. A full record goes out when any member needs it (each member's
+  "had it" time is kept). Copies refused by the galaxy client fall back to one stream each.
+* Switch: `coop.fix cell.fan off` (one stream per guest); counters: `coop.pool compact` (groups), `coop.galaxy status`
+  (copies sent / got / refused), the server's status line (copies in / out KB/s).
+
+Measured (TITAN, 6 games together on Samuth in Cell, 2 minutes each way in the same session):
+
+| | Host's Cell upload, 5 guests | Each guest gets | Galaxy server sends |
+|---|---|---|---|
+| One stream each (cell.fan off) | 192 KB/s | about 38 KB/s (its own area) | relays it |
+| Group streams (cell.fan on) | 75 KB/s | about 76 KB/s (the group's area) | about 380 KB/s |
+
+2.6 times less from the host; a guest downloads the group's area (about twice its own here). 4.8 guests a stream on
+average (1218 guest updates in 252 streams). Sync check 72 checks, 0 mismatches; copies 0 dropped; the guests' "full
+record not had yet" count did not grow during the run (0 to 3 new per guest); no crash. With A, against the classic
+state at the same cells: about 7 times less host upload in all.
+
+For a 16-player planet with everyone together: one stream from the host (about 75-110 KB/s, the same for 5 or 15
+guests), the galaxy server sends it 15 times (about 1.1-1.7 MB/s a busy planet). Players apart: one stream per group.
+Not done: Creature, Tribe and Civ (their own messages: measure next), a group's stream for the session's other
+unreliable messages.
+
 ### Hand-over without a reload: research (2026-11-17, decision 6B C)
 <a id="server-warm-handover"></a>
 
