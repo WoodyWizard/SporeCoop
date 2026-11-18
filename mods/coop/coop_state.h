@@ -394,6 +394,7 @@ extern unsigned g_own_editor_arrivals;
 unsigned vote_in_editor_count(); // BUG-1239 (tests)
 unsigned vote_mates_held();      // BUG-1245 (tests)
 unsigned arrival_not_waited();   // BUG-1245 (tests)
+unsigned cell_editor_now_count(); // BUG-1263 (tests)
 unsigned own_no_replace_count(); // BUG-1255 (tests)
 extern unsigned g_evo_flags_cleared;
 extern unsigned g_offers_expired;

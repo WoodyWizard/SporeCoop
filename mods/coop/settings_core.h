@@ -40,7 +40,7 @@ enum Id : int {
     kCellRespawn,    // Cell: nobody revived the knocked-out cell in 10 s: it respawns next to the partner, small
     kSwitchVote,     // Cell -> Creature: the host's switch waits for a vote of everybody (BUG-0315)
     kCreatureMode,   // Cell, Creature: 0 every player's own creature, 1 everybody plays the host's (F5)
-    kEditorNow,      // Creature: the host's evolution editor opens at once, guests get an offer (BUG-0516)
+    kEditorNow,      // Cell, Creature: the host's evolution editor opens at once, guests get an offer in Creature (BUG-0516, BUG-1263)
     kTribePincer,    // Tribe: members of two players hitting one tribe within 10 s deal +50 %
     kTribeAura,      // Tribe: members near their own chief hit +20 %, a chief next to a partner's member keeps 30 %
     kTribeDuet,      // Tribe: performances of two players for one village fill its mini-game faster
@@ -122,7 +122,7 @@ inline const Def kDefs[kCount] = {
      "own: every player plays its own creature and evolves it; host: everybody plays the host's creature, only the host evolves it (the partners get no editor)",
      0, 0, 1, Scope::Session, nullptr, false, "own|host"},
     {"core.editor_now", "Creature", "Host's editor opens at once",
-     "on: the host's evolution editor opens at once, each partner gets an Evolve now offer; off: everybody votes first",
+     "on: the host's evolution editor opens at once (Cell: the others get a notice; Creature: each partner gets an Evolve now offer); off: everybody votes first",
      1, 0, 1, Scope::Session, nullptr, false},
     {"tribe.pincer", "Tribe", "Pincer bonus",
      "on: members of two players hitting the same tribe within 10 s deal +50 % damage; off: no bonus",
