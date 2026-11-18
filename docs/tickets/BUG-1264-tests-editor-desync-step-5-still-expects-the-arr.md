@@ -1,19 +1,19 @@
 ---
 id: BUG-1264
 title: Tests: editor_desync step 5 still expects the arrival vote and a guest in Creature (stale since BUG-1245 core.arrival_nowait)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-18
 source: fix/w53-cellnow
 role: host
 versions: unreleased (rel/0.7.15.2)
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w53-cellnow
+commits: 06c53236 41915a85
 tests: editor_desync
 signature:
-docs:
+docs: docs/06-testing.md#testing-cell-editor-now
 related: BUG-1245, BUG-1240, BUG-0315
 ---
 
@@ -32,12 +32,15 @@ designed since BUG-1245; the step's expectations are stale (inferred: the step p
 rel/0.7.15.1 out/lab/20261118-110806).
 
 ## Fix
-Open. Sketch: step 5 accepts the host's editor without a seen vote, waits for the guest in Creature or in its own
-editor (leaving the guest's own editor with cancel as the step does later), and clicks READY only while a vote runs.
+Test only (coop_editor_desync.py step 5): the host's first editor is accepted with or without a vote seen, the guest
+"follows" when it is in Creature or in its own first editor (BUG-1240; it is cancelled later in the step as before),
+READY is clicked only while a vote runs, and the host's creature key is read right after it entered Creature (read in
+its editor it was empty, which let "the host plays its evolved creature" pass on any key).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL (the old step): out/lab/20261118-135513 (fix/w53-cellnow) and rel/0.7.15.2 out/lab/20261118-134852.
+* PASS: out/lab/20261118-141734 (lane 2, editor_desync OK, all steps).
 
 ## History
 - 2026-11-18: opened.
+- 2026-11-18 (fix/w53-cellnow): the step follows the design of BUG-1245 / BUG-1240; fixed.
