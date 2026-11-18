@@ -1,20 +1,21 @@
 ---
 id: BUG-1245
 title: Cell: the host's mate call while the vote holds: black screen without the vote window, the mating scene and egg laying repeat (6+ eggs)
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-18
 source: owner: players' video, second analysis
 role: host
 versions: <0.7.15
-fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
-related: BUG-1239
+fixed_in: unreleased
+branch: fix/w53-cellvote
+commits: fb58d6c8 9b1dca20
+tests: evo_screens_cell_eggs, evo_screens_cell_eggs_lowfps, evo_screens_switch_slow
+signature: host log "cell: DNA at the editor request" every ~10 s while "vote=on" in Cell; or the host Creature/black for 60 s behind the arrival vote of editor FD4902BD
+docs: docs/re/cell.md#cell-mating-round
+related: BUG-1239, BUG-1240, BUG-0315
+switch: cell.vote_mate, core.arrival_nowait
 ---
 
 ## Report
@@ -22,14 +23,42 @@ A players' video (the guest had just called a mate and its editor opened at once
 A second analysis of the video suggests: vote.cpp's Submit hook holds the host's EditorRequest during the vote while the Cell stage has already started its fade and, with the mate still near, replays the mating scene and the egg laying (0xE78D10 -> Submit). Likely the same start as BUG-1239 (the guest in its own editor); the egg loop and the missing vote window are to be checked on 0.7.15 and with the BUG-1239 fix, also for a plain vote (the guest not in an editor).
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (Ghidra GOG 2024; lab lanes 2 / 3, `coop_evo_screens.py --part cell-eggs`, the BUG-1239 fix in the base):
+* The egg loop is a plain vote's, not only the BUG-1239 case: while the host's vote holds its Cell editor request,
+  the avatar and the mate stay within the meeting distance, and the cell step's meeting 0xE78D10 runs the whole round
+  again every ~10 s: mating scene 0xE75EA0, egg laying 0xE77930, the editor request 0xE72AC0 -> 0xE59800 (refused by
+  h_Submit: one vote per editor). Lab 20261118-122608 / -123203 (`cell.vote_mate` off): 4 more mating scenes and 5-6
+  more egg layings in 46 s, and 3 flashes of the drawn pool behind the vote window in 19 host shots (the "flicker").
+  The host log of the BUG-1239 run 20261118-094043 (evo_screens_cell_noready) already had a request every 9.7 s for
+  the vote's 60 s. With the guest in its own editor the BUG-1239 fix ends the vote at once (no loop there); the loop
+  needs a guest that answers late or never.
+* The same black-behind-the-vote at the Creature start (coordinator's evidence, evo_screens_switch_slow failing on
+  rel/0.7.15.1): BUG-0315's arrival vote holds the landfall editor until every guest arrived; over 512 kbit/s the host
+  was black 62 s (lab 20261118-123948, `core.arrival_nowait` off: "host editor at 62 s").
+* Not reproduced: the missing vote window. The host's co-op window stayed drawn in 15 of 15 looks during the vote,
+  with the fix on and off, also at 10 fps (frames host_vote_1 / _2). Inferred: the players closed it (red cross) or
+  read the flashes as its absence.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+One rule for both (vote.cpp vote_tick: what a vote that holds the host's editor does meanwhile):
+* `cell.vote_mate`: while the vote holds the host's Cell request, the mate index G+0x51D4 is forgotten (the cell stays;
+  restored if the vote is dropped while the stage goes on): the round plays once. `coop.vote` counts it; `coop.pool
+  mate` prints `matings=` / `egg_lays=` (the avatar's animation entering 0x42 / 0x29).
+* `core.arrival_nowait`: the arrival vote does not wait for a guest still on its way whose build takes its own landfall
+  editor on arrival (BUG-1240; its creature family minor >= 1, bumped here); an older guest is still waited for.
+Off: as 0.7.15.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* `evo_screens_cell_eggs` (cell fixture, real clicks: the host's mating call and swim, the guest's I'm ready after
+  45 s): FAIL out/lab/20261118-122608 and 20261118-123203 (`SPORE_FIX_OFF=cell.vote_mate`, lane 2: 4 more matings,
+  5-6 egg layings, 3 flashes); PASS out/lab/20261118-122633 and 20261118-123223 (lane 3: 0, 0, 0 flashes; the host's
+  editor, its return, both pools drawn).
+* `evo_screens_switch_slow` (SPORE_NET=lowband): FAIL out/lab/20261118-123948 (`SPORE_FIX_OFF=core.arrival_nowait`,
+  lane 2: the host black 62 s); PASS out/lab/20261118-124008 (lane 3: the host's editor 10 s after the switch, longest
+  black 12 s, the guest's own editor on arrival, two own creatures). Both runs also fail the lab's sync-check gate
+  (Cell objects missing on the guest under lowband: in every run of this test since it exists, not this ticket) and
+  BUG-1255's dialog check (fixed later on this branch).
 
 ## History
 - 2026-11-18: opened.
+- 2026-11-18 (fix/w53-cellvote): the egg loop reproduced on a plain vote (cell.vote_mate) and the landfall arrival wait (core.arrival_nowait) fixed; the missing vote window not reproduced.

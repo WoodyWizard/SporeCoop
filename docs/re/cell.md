@@ -2468,3 +2468,17 @@ BUG-1245, BUG-1249. GOG 2024, Ghidra and lanes 2 / 3 (`tools/tests/coop_evo_scre
   (wsync id 18, the same message as cell_spent) tells the guest which spend is in the count; until then the guest
   shows the host's count plus its own. Lab 20261118-123223: the guest 28 -> 13 and kept, the host 13 too, still both
   13 after the host's own editor.
+
+## A guest's mate in the host's pool (2026-11-18, fix/w53-cellvote)
+<a id="cell-partner-mate"></a>
+
+BUG-1246. GOG 2024, lanes 2 / 3 (`coop_evo_screens.py --part cell-mate`).
+* ✔ (runtime, lab 20261118-123948) A guest's mating call makes the mate in the guest's pool only: the host's game has no
+  cell near it. The guest's mate is 12-16 m from the guest when called and swims to it (`coop.pool mate` pos=).
+* ✔ (runtime, lab 20261118-124008, -124955) A cell made in the host's pool with the mate's resource instance (its +0x108
+  reference's first dword) and model key (+0xFC) through CreateCellObject, with +0x16C (AI lock), +0x354 (keep-alive)
+  and +0x111 (invulnerable) set, and moved like a guest's mirror (soft body: cell_move with its particles; else the
+  velocity toward the pose) is drawn where the guest's mate is (0.0-0.1 m) with the mating call's hearts effect. The
+  guest's mate is never in the host's G+0x51D4, so the host's own meeting 0xE78D10 ignores it.
+* ✔ The guest sends nothing while it is in its editor (the cell tick returns outside Cell): the copy goes by its 2 s
+  timeout, and the "gone" message comes when the guest is back in Cell.

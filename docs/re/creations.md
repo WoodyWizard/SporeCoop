@@ -1594,3 +1594,22 @@ check, I'm ready, the parts dragged in both editors, Save New; both screens shot
 * What the waiting guest sees while the host is in its editor: its Cell world while the world is received, the galaxy
   menu, the loading screen and then the stage-entry pause (black, 4-12 s in the lab); the black part grows with a slow
   PC or link, and that is the "black screen" of the report as far as the lab shows it (BUG-1239).
+
+## The own editor from the world's species: no replace dialog (2026-11-18, fix/w53-cellvote)
+<a id="creations-own-editor-world-species"></a>
+
+BUG-1255, BUG-1258. GOG 2024, lanes 2 / 3 (`coop_evo_screens.py --part switch`, a guest without creations).
+* ✔ (runtime, lab 20261118-124934, frame 04_guest_save_dialog_guest) The guest's own first Creature editor (the
+  landfall editor after Cell, BUG-1240) starts from the avatar's species, the world's (the host's creation): with
+  BUG-0756's request bytes (+0x39 = 1, +0x3B = 1, +0x3C = 0) done after an edit shows the game's dialog "Save
+  '<the host's species>' as a new creation or replace '<it>' before exiting?" (Don't Save, Cancel, Replace, Save New).
+* ✔ (runtime, lab 20261118-124955, -125715) With +0x39 = 0, +0x3B = 1, +0x3C = 1 (`coop.editreq keep 2`, now
+  `creations.own_editor_no_replace` for a guest that does not play its own creation) the editor keeps its red cross
+  and done leaves without the dialog; the result comes with tag 0 and the price (remaining DNA 65 of 115), the guest
+  plays its own new creature (a new key, registered on the host as its creation) and each game draws the other's.
+  So +0x39 / +0x3C bring the dialog (the "not separated" of #creations-own-editor-cancel); +0x3B alone is the cross.
+* ✔ The game's mode stays Editor for ~3 s after done during the editor's exit, also without a dialog: a test reads the
+  dialog by its golden buttons (`save_dialog_up`), not by the mode.
+* The host's phase notice after its editor said "everybody gets the new body" in Creature, also while the guest made
+  its own creature (BUG-1258): now "made its creature: every player makes its own" / "evolved its creature" unless
+  creature.mode host.
