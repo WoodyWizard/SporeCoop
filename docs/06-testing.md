@@ -9102,3 +9102,23 @@ only with sing (docs/re/creature.md#creature-social-kinds).
   social mode 0 for every animal: skipped after 10 s); it fails ("the guest mirrors animals of that nest") after that.
 * `SPORE_FIX_OFF=social.kinds`: the other kind's click / key does nothing (no animation on either game, `kind_acts=`
   stays 0 for it), the game fails after its prompt list.
+
+## The tutorial adventure after a Creature session; fossils with a model list (2026-11-18, fix/w53-advorn)
+<a id="testing-adventure-after-creature"></a>
+
+* `adventure_tutorial` (`coop_adventure_tutorial.py`, BUG-1254, cold, ~12 min, fixture creature): both games in the
+  Creature fixture (each has the partner's creation), `coop.menu` on both, `coop.menuintro` (the menu panel, BUG-1260),
+  one place id (`coop.adventure place`, the keys are equal anyway in most runs), both start the tutorial adventure at
+  once (adventure_start.py), Enter on both. Checks: play state 3 on both (a fault in Initialize -> SetCurrentAct leaves
+  it at 0), no fault, a puppet is a captain (not the partner's Creature-stage creature) at the captain's size x 1.15.
+  Key frames: the intro card, then both captains. SPORE_FIX_OFF=adventure.puppet_captain fails (the fault at 0xC0714E
+  on both games, play state 0, the Creature-stage creature at scale ~1.1).
+* `wobj_ornament_model` (`coop_ornament_model.py`, BUG-1251, cold, ~4 min, fixture creature): no ornament of the
+  fixtures has a model list, so `coop.wobj ornlist` gives two of the fixture's bones a list of two bone models on both
+  games (a buffer of the mod: the test kills its games at the end); one dig each way (`coop.wobj use`, the game's way):
+  the other game's copy shows the same model index and key (`coop.wobj orns`). SPORE_FIX_OFF=wobj.ornament_model fails.
+* Tools: `coop.wobj orns [r]` (every interactive ornament: sort, model index / count, +0xA3, +0xA4, reward, model key),
+  `coop.wobj ornmem <p>` (its 0x260 bytes and its reward), `coop.menuintro`, `coop.status` puppet line with
+  `scale=` in an adventure, `coop.avatar` `scale=` of the captain.
+* Pitfall: the lab's games load their fixture before the galaxy menu's start-up video ends; back in the galaxy menu
+  they show no main menu panel until `coop.menuintro` (BUG-1260): adventure_start.py's clicks are lost otherwise.
