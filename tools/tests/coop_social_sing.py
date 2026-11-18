@@ -15,6 +15,7 @@ current animation of the own avatar, `cur avatar`, and of each partner's puppet,
   coop_social_sing.py
 """
 import re
+import sys
 import time
 
 from harness import avatar_pos, waiter
@@ -22,6 +23,7 @@ from coop_creature_partner_pass import aim
 from twoinst import Checks, keyframe, set_stance, shot, start
 
 KOOK = '065CB8AB'  # the fixture's Kook nest: a species that takes part in a social game
+TO_PARTNER = '--to-partner' in sys.argv  # the host sings to the guest's creature (a click on it, not on a Kook)
 
 wait = waiter(step=0.5)
 
@@ -89,14 +91,15 @@ def main():
 
     # 1. the host engages the Kook (a click on it in the social stance, as a player) and sings
     engaged = False
+    target = f'p{gid}' if TO_PARTNER else f'n{kook}'
     for _ in range(6):
-        o = aim(host, f'n{kook}') if kook else None
+        o = aim(host, target) if kook or TO_PARTNER else None
         if o:
             host.call(f'click {o[1]} {o[2]}')
             time.sleep(1.0)
             engaged = True
             break
-    ck(engaged, f'the host clicked the Kook n{kook} in the social stance')
+    ck(engaged, f'the host clicked {target} in the social stance')
     sung = {}
     t_sing = time.time()
     for _ in range(8):  # the social game starts a moment after the click (the Kook's answer): a player presses again
@@ -114,6 +117,9 @@ def main():
        f"the guest's own creature does not sing with the host ({sorted(social & set(sung.get('guest_avatar', [])))})")
     ck(not (social & set(sung.get('host_puppet_of_guest', []))),
        f"the host's game does not show the guest singing ({sorted(social & set(sung.get('host_puppet_of_guest', [])))})")
+    base = set().union(*[set(v) for v in before.values()])
+    extra = set(sung.get('host_puppet_of_guest', [])) - set(sung.get('guest_avatar', [])) - base
+    ck(not extra, f"the host's game shows the guest's creature only with animations the guest's own game plays ({sorted(extra)})")
     print('  host effects:', host.call('coop.effects map')['out'].strip()[:600])
     print('  guest effects:', guest.call('coop.effects map')['out'].strip()[:600])
 
@@ -131,6 +137,8 @@ def main():
     ck(not (social & set(ran.get('host_puppet_of_guest', []))),
        f"the host's game shows the guest running, not singing ({sorted(set(ran.get('host_puppet_of_guest', [])))})")
     ck(not (social & set(ran.get('guest_avatar', []))), "the guest's own creature runs, not sings")
+    extra = set(ran.get('host_puppet_of_guest', [])) - set(ran.get('guest_avatar', [])) - base
+    ck(not extra, f"while the guest runs the host's game shows it with the guest's own animations only ({sorted(extra)})")
 
     # 3. later
     time.sleep(15)
