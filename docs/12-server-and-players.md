@@ -773,6 +773,49 @@ guests), the galaxy server sends it 15 times (about 1.1-1.7 MB/s a busy planet).
 Not done: Creature, Tribe and Civ (their own messages: measure next), a group's stream for the session's other
 unreliable messages.
 
+### Creature with many players: measured (2026-11-18, feat/lineages-alpha, decision 6G A)
+<a id="server-creature-many"></a>
+
+Owner: "6GA". TITAN, QA copy, a local test galaxy server (worlds folder out/galaxy/worlds_6ga), DuoQACreatureHost's
+Samuth (Creature, `coop.load Game0 Samuth`) hosted on the galaxy, guests entering it.
+
+* 10 Creature games on one PC do not run: the host fell to 3 FPS, guests to 1 FPS (the QA cap is 10), three guests
+  timed out of the session (10 -> 7) and one out of the galaxy server. The numbers of that run are frame-bound and not
+  used. Cell ran 10 games at 10 FPS (#server-scalable-players); Creature needs the MSI or fewer games per PC.
+* Measured with 5 (host + 4 guests at 7-9 FPS, one steady minute, no world transfer):
+
+| Message (host out) | KB a minute | Note |
+|---|---|---|
+| MSG_PLAYER_STATE (6) | 697 | every player's state to every other through the host: 4 x 4 streams, about 8 a second each |
+| MSG_WOBJ (54) | 425 | world objects |
+| MSG_LIBRARY (71) | 279 | creation pictures (once per new creation) |
+| MSG_WSTATE (62) | 184 | world state rows |
+| MSG_NEST (52) and the rest | 203 | |
+| all | 1788 (30 KB/s, 7.5 KB/s a guest) | |
+
+* Projection to 16 players (15 guests), same frame rate: everything but the player states grows with the guests
+  (about 4.5 KB/s each: 68 KB/s); the player states grow with the square (each guest gets every other player's state
+  through the host: 15 x 15 streams, about 160 KB/s at 8 states a second, more at a real frame rate). The player states
+  are the Creature stage's wall, as the Cell snapshot was Cell's. Fix (6F B's mechanism): the host sends each player's
+  state once and the galaxy server copies it to the others (linear: about 11 KB/s for 15 at 8 a second).
+* A join costs the host the whole world again (MSG_WORLD_CHUNK, 3.2-4.2 MB a guest): 9 joins about 38 MB. The galaxy
+  server already stores the planet (every 2 minutes and on leave): a joiner could load that copy from the server.
+* Found on the way (not fixed):
+  * A guest new to a Creature planet gets the first-creature editor (as designed, BUG-9208): a fresh profile first gets
+    Spore's "Register your game" screen over it; the creature needs a mouth and a name before it saves (owner
+    2026-11-18: "A creature needs a name / mouth to be saved"). The QA run skipped registration on the test profiles
+    ("Don't prompt me again") and saved a mouth on the starting body with a dice name.
+  * A guest with no saved game at all first starts a new Spore game (its world 'SaveGame', the new game's creature
+    editor) instead of the host's world; quitting that editor drops it to the galaxy menu while it stays in the
+    session.
+  * Saving a new creature sends the host's world to that guest again and reloads it; with several new players the
+    guests went in and out of editors for about 15 minutes.
+  * A game the galaxy server timed out (1 FPS) kept "connected" and never said HELLO again: every ping answered "Not
+    connected to the galaxy server: connect first". The client should connect again on that answer.
+  * Sync check: 5 mismatches, all during that churn (guests loading: "missing on the guest", 2 NPCs apart); none in
+    the steady 5-player minutes. No crash.
+* Not measured: Tribe (TITAN cannot carry it at this size either: the MSI or 4-5 games).
+
 ### Hand-over without a reload: research (2026-11-17, decision 6B C)
 <a id="server-warm-handover"></a>
 
