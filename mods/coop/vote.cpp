@@ -110,6 +110,18 @@ COOP_FIX("cell.editor_now", "BUG-1263", g_cell_now_fix,
          "cell: the host's Cell evolution editor (its mating call) opens at once, the others get a notice (the vote kept the host's screen black up to 60 s)");
 static unsigned g_cell_now = 0; // tests (coop.vote): the host's Cell editors opened without a vote
 unsigned cell_editor_now_count() { return g_cell_now; }
+// BUG-1265 (evo_screens_cell_one, creature.mode host: one creature for everyone, only the host evolves): a guest's own
+// mating call in Cell is refused at h_Submit, but its mate G+0x51D4 stayed next to its cell, so the cell step's meeting
+// 0xE78D10 played the mating scene, the egg laying with the game's fade and the refused request again every ~10 s: the
+// guest's screen went black again and again (the loop of BUG-1245 on a refused request). On: the refusal forgets the mate
+// (cellsync::forget_mate, on the next frame, outside the game's own call chain): the round plays once. Off: the meetings
+// go on (0.7.15).
+static bool g_refused_mate_fix = true;
+COOP_FIX("cell.refused_mate", "BUG-1265", g_refused_mate_fix,
+         "cell: a guest's refused mating call (creature.mode host) forgets its mate: the mating scene and the black fade no longer repeat every 10 s");
+static bool g_refused_mate_due = false;
+static unsigned g_refused_mates = 0; // tests (coop.vote)
+unsigned refused_mates_count() { return g_refused_mates; }
 static unsigned g_vote_mates_held = 0; // tests (coop.vote)
 unsigned vote_mates_held() { return g_vote_mates_held; }
 // BUG-1245 (the same class: the host's game black behind a vote that holds its editor request): the first Creature
@@ -807,6 +819,7 @@ bool SK_CDECL h_Submit(void* req)
             LOG("evolution: creature.mode host: this guest's editor request is refused (the host evolves)");
             feed("the host evolves the creature for everybody (session setting: one creature for everyone)");
             g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
+            g_refused_mate_due = g_refused_mate_fix && mode == modes::kCell; // BUG-1265
             return false;
         } else if (cell_now) {
             g_cell_now++;
@@ -1266,6 +1279,13 @@ int evo_flag_now()
 }
 void evo_flag_tick(double now)
 {
+    if (g_refused_mate_due) { // BUG-1265: the refused request's mate meets the cell no more
+        g_refused_mate_due = false;
+        if (uint32_t m = cellsync::forget_mate()) {
+            g_refused_mates++;
+            LOG("cell: the refused evolution's mate %08X does not meet our cell again (BUG-1265)", m);
+        }
+    }
     bool refused = g_evo_flag_refused;
     g_evo_flag_refused = false;
     uintptr_t f = g_evo_flag_fix ? H->sym("SporeCoop::CreatureEvolutionPending_flag") : 0;
