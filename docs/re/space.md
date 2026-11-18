@@ -3595,6 +3595,10 @@ GOG 2024 / Steam (3010a413), read at runtime from a QA game's memory (SporeKit `
 * ✔ Play on a saved planet: the menu's Play 0xDEC130 calls `SporeCoop::GGE_PlayByName` 0xDEBE70 (thiscall, the planet
   name, ret 4), the only caller of LoadGameByName. A mod can fill the entries itself before the panels are made and
   take the Play by the name (decision 5X B, docs/12-server-and-players.md#server-galaxy-menu-spike).
+  ~ superseded (2026-11-17): GGE_PlayByName comes after the file check. CORRECTION (2026-11-17, feat/lineages-alpha):
+  the Play step `SporeCoop::GGE_PlayStep` 0xDEC130 first checks "<name>.spo" in the slot (0xB27580) and shows "Bad or
+  Missing Saved Game" when it is not there (seen on TITAN with a server planet in the menu: the box, no PlayByName); a
+  mod taking Play for a planet without a local file hooks the step.
 * ~ The dump holds SporeKit's hooks: a hooked function (GGE_RebuildPlanets here) starts with a jump out of the image and
   does not decompile; read those with `asm` past the first instruction, or dump a game before the mod hooks it.
 
