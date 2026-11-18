@@ -85,8 +85,23 @@ def hits(rows, t0, t1):
 
 
 def recent(con):
-    return [(m.group(1), int(m.group(2)), m.group(3), float(m.group(7)), float(m.group(8)))
+    return [(m.group(1), int(m.group(2)), m.group(3), float(m.group(7)), float(m.group(8)),
+             (float(m.group(4)), float(m.group(5)), float(m.group(6))))
             for m in RECENT_RE.finditer(con.call('coop.effects recent')['out'])]
+
+
+def inject_each(host, sent):
+    """every effect id the guest sent, played once more in the host's game where the guest made it (a relayed start as
+    it comes, `coop.effects inject`), each with a key frame of the host's screen: none may show on the host's own cell"""
+    first = {}
+    for r in sent:
+        first.setdefault(r[2], r[5])
+    for fid, (x, y, z) in sorted(first.items()):
+        host.call(f'coop.effects inject 1 1 0 5 {fid} 0 {x:.2f} {y:.2f} {z:.2f}')
+        time.sleep(0.4)
+        keyframe(f'inject_{fid}', f"Cell: the guest's effect {fid} played again where the guest made it, far from the host: the host's "
+                 "own cell shows nothing of it", players={'host': host}, settle=0)
+    return sorted(first)
 
 
 def own_pos(con):
@@ -187,6 +202,8 @@ def main():
     print(f'  guest sent {len(sent)} world effects (ids {sorted({r[2] for r in sent})})', flush=True)
     print(f'  host played {len(played)} of the guest\'s world effects; within 6 m of its own cell: {len(near)} '
           f'(ids {sorted({r[2] for r in near})}); distances {sorted(round(r[3], 1) for r in played)[:20]}', flush=True)
+    if '--inject' in sys.argv:
+        print(f'  injected on the host: {inject_each(host, sent)}', flush=True)
     for name, con in (('host', host), ('guest', guest)):
         print(f'  {name} effects: ' + ' | '.join(con.call('coop.effects')['out'].splitlines()[:1]), flush=True)
     t, big, n = turned(sh.rows, tf0, tf1)

@@ -974,11 +974,12 @@ std::string debug(const std::vector<std::string>& a)
         double now = H->time_seconds();
         auto line = [&](uint32_t key, uint8_t* c, const Mirror* m) {
             int n = c ? F<int>(c, 0x250) : 0;
-            if (!c || !parts || left <= 0 || !F<uint32_t>(c, 0x248) || n < 2 || n > 64 || !on_screen_dbg(c))
+            if (!c || !parts || left <= 0 || !F<uint32_t>(c, 0x248) || n > 64 || !on_screen_dbg(c))
                 return;
+            bool bare = n < 2; // no soft body: what is drawn is the heading after the step (step_head; the host: +0x5C)
             float cx = 0, cy = 0, fx = 0, fy = 0;
-            int used = 0;
-            for (int i = 0; i < n; i++) {
+            int used = bare ? 1 : 0;
+            for (int i = 0; i < n && !bare; i++) {
                 uint32_t k = F<uint32_t>(c, 0x254 + 4 * i);
                 if (k >= 1500)
                     continue;
@@ -992,6 +993,7 @@ std::string debug(const std::vector<std::string>& a)
                 return;
             cx /= used, cy /= used;
             const float* r = (const float*)(c + kRot);
+            float drawn = bare ? (m ? m->step_head : std::atan2(r[1], r[0])) : std::atan2(fy - cy, fx - cx);
             float host = std::atan2(r[1], r[0]);
             if (m) {
                 float want[9];
@@ -1001,10 +1003,10 @@ std::string debug(const std::vector<std::string>& a)
             char b[280];
             auto* v = (const float*)(c + kVel);
             snprintf(b, sizeof b, "cloud c%u host=%.3f rot=%.3f cloud=%.3f soft_age=%.2f soft_d=%.3f d=%.1f level=%d fg=%d anim=%X state=%X "
-                     "speed=%.2f ailock=%d\n", key, host, std::atan2(r[1], r[0]), std::atan2(fy - cy, fx - cx),
+                     "speed=%.2f ailock=%d bare=%d\n", key, host, std::atan2(r[1], r[0]), drawn,
                      m && m->soft_at > 0 ? now - m->soft_at : -1.0, m ? m->soft_d : 0.f, av ? net::dist(pos_of(c), pos_of(av)) : -1.f,
                      F<int>(c, kLevel), F<void*>(c, kQuery) == fg_query() ? 1 : 0, F<uint32_t>(c, 0x1B0), F<uint32_t>(c, 0x18C),
-                     std::hypot(v[0], v[1]), F<uint8_t>(c, kAiLock));
+                     std::hypot(v[0], v[1]), F<uint8_t>(c, kAiLock), bare ? 1 : 0);
             out += b;
             left--;
         };

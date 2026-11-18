@@ -22,7 +22,7 @@ from twoinst import Checks, keyframe, start  # (first: it puts tools/ on the pat
 from sporectl import Console
 
 CLOUD_RE = re.compile(r'^cloud c(\d+) host=([-\d.]+) rot=([-\d.]+) cloud=([-\d.]+) soft_age=([-\d.]+) soft_d=([-\d.]+) d=([-\d.]+)'
-                      r'(?: level=\S+ fg=\S+ anim=([0-9A-F]+) state=([0-9A-F]+) speed=([-\d.]+))?', re.M)
+                      r'(?: level=\S+ fg=\S+ anim=([0-9A-F]+) state=([0-9A-F]+) speed=([-\d.]+) ailock=\d+(?: bare=(\d))?)?', re.M)
 
 
 class Sampler(threading.Thread):
@@ -40,7 +40,7 @@ class Sampler(threading.Thread):
                 for m in CLOUD_RE.finditer(c.call('coop.pool cloud 80')['out']):
                     self.rows.setdefault(m.group(1), []).append(
                         (t, float(m.group(4)), float(m.group(2)), float(m.group(5)), float(m.group(6)), m.group(8) or '-',
-                         m.group(9) or '-', float(m.group(10) or 0)))
+                         m.group(9) or '-', float(m.group(10) or 0), m.group(11) == '1'))
                 self.stop_ev.wait(0.1)
         finally:
             c.sock and c.sock.close()
@@ -85,6 +85,7 @@ def main():
     ap.add_argument('--crowd', type=int, default=0)
     ap.add_argument('--swim', action='store_true')
     ap.add_argument('--editor', action='store_true', help='first the host\'s evolution (mating call, vote, editors) and the reload')
+    ap.add_argument('--bare', action='store_true', help='the guest\'s particle pool full: its mirrors made again come without a soft body (BUG-0355)')
     ap.add_argument('--far', type=float, default=0, help='the guest that far from the host: its mirrors there are cells off the host\'s screen')
     args = ap.parse_args()
     host, guest = start('cell', **({'guest_creations': False} if args.editor else {}))
@@ -104,6 +105,13 @@ def main():
                 break
         hp_, gp_ = own_pos(host), own_pos(guest)
         print(f'  guest {math.hypot(hp_[0] - gp_[0], hp_[1] - gp_[1]):.1f} m from the host', flush=True)
+    if args.bare:  # the guest's mirrors made again from a full particle pool (coop_cell_particles.py's recipe)
+        for _ in range(2):
+            print('  guest: ' + guest.call('coop.pool particles 1499')['out'].strip()[:80], flush=True)
+            print('  guest: ' + guest.call('coop.pool zap 5000')['out'].strip()[:80], flush=True)
+            time.sleep(1.5)
+        guest.call('coop.pool particles 1499')
+        time.sleep(3)
     if args.crowd:
         print('  host: ' + host.call(f'coop.pool crowd {args.crowd} 12')['out'].strip()[:100], flush=True)
     time.sleep(3)
@@ -138,7 +146,7 @@ def main():
         ages = [r[3] for r in g if r[3] >= 0]
         big = sum(1 for r in g if abs(r[4]) > 0.5)
         rows.append((key, ht / max(1, span_h), gt / max(1, span_g), hd / max(1, span_g), len(h), len(g),
-                     max(ages) if ages else -1, big))
+                     max(ages) if ages else -1, big, sum(1 for r in g if len(r) > 8 and r[8])))
     rows.sort(key=lambda r: r[2] - r[1], reverse=True)
     from collections import Counter
     for name, smp in (('host', sh), ('guest', sg)):  # what the cells play (+0x1B0 / the state +0x18C) on each screen
@@ -148,9 +156,12 @@ def main():
     print(f'  {len(rows)} cells on both screens (of {len(sh.rows)} on the host\'s, {len(sg.rows)} on the guest\'s)', flush=True)
     for r in rows[:12]:
         print(f'    c{r[0]}: turn rate host {r[1]:.2f} rad/s, guest {r[2]:.2f} rad/s (host heading as received {r[3]:.2f}), '
-              f'samples {r[4]}/{r[5]}, soft age max {r[6]:.2f}, corrections > 0.5 rad {r[7]}', flush=True)
+              f'samples {r[4]}/{r[5]}, soft age max {r[6]:.2f}, corrections > 0.5 rad {r[7]}, bare samples {r[8]}', flush=True)
     spin = [r for r in rows if r[2] > 2 * r[1] + 0.6]
     ck(len(rows) >= 3, f'cells seen on both screens ({len(rows)})')
+    if args.bare:
+        nb = sum(1 for r in rows if r[8] >= 20)
+        ck(nb >= 2, f'mirrors without a soft body among them ({nb})')
     ck(not spin, f'no mirror spins on the guest\'s screen ({len(spin)} of {len(rows)} turn over twice the host\'s rate + 0.6 rad/s: '
        f'{[(r[0], round(r[1], 2), round(r[2], 2)) for r in spin[:6]]})')
     ck.faults(host=host, guest=guest)

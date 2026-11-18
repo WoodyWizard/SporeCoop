@@ -742,6 +742,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_SpawnLoot, (void*)h_SpawnLoot, (void**)&o_SpawnLoot);
     if (a_Soft)
         H->hook_create(M, (void*)a_Soft, (void*)h_Soft, (void**)&o_Soft);
+    modes::set_cell_after_step(mirrors_after_step); // BUG-1247
     if (a_ContactPass && a_ContactSolve) { // GOG 2024 only (BUG-0307)
         H->hook_create(M, (void*)a_ContactPass, (void*)h_ContactPass, (void**)&o_ContactPass);
         H->hook_create(M, (void*)a_ContactSolve, (void*)h_ContactSolve, (void**)&o_ContactSolve);

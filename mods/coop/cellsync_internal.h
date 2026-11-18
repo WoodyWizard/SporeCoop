@@ -122,7 +122,7 @@ struct Counters {
     uint32_t loot_calls = 0, loot_cells = 0;
     uint32_t part_bad_frees = 0, particles_peak = 0;
     uint32_t soft_refused = 0, soft_made = 0, gfx_peak = 0, soft_count0 = 0;
-    uint32_t part_room_runs = 0, part_stripped = 0, part_spare_freed = 0, bare_moves = 0;
+    uint32_t part_room_runs = 0, part_stripped = 0, part_spare_freed = 0, bare_moves = 0, bare_turns = 0; // bare_turns: BUG-1247
     uint32_t mirror_nan_heals = 0, mirror_nan_turns = 0;
     uint32_t sap_over = 0, sap_peak = 0, sap_sweeps = 0, sap_left = 0;
     uint32_t sap_pairs = 0, sap_pair_cap = 0, sap_pairs_full = 0; // tests (BUG-0342): pairs of the last sweep, the pair list size, sweeps that filled it
@@ -143,6 +143,8 @@ struct Mirror {
     bool product = false; // BUG-0958: a player's product on the host (+0x110: a poison cloud), state flag 4
     double soft_at = 0;   // tests (BUG-1247): when h_Soft last turned it to the host's heading
     float soft_d = 0;     // ... and by how much (rad)
+    float step_head = 0;  // tests (BUG-1247): its heading (+0x5C) right after the cell step, before ours is written back
+    double step_at = 0;
 };
 
 struct FoodTx {
@@ -291,6 +293,7 @@ uint32_t avatar_idx();
 uint8_t* avatar();
 uint32_t mate_idx();
 extern bool g_fix_goldie_keep; // BUG-1248
+void mirrors_after_step(); // BUG-1247: right after each cell step (modes' SimUpdate hook)
 bool tutorial_cell(uint8_t* c, uint32_t idx); // BUG-1248: one of our own Goldie tutorial's two cells while it runs
 bool tutorial_cells(uint32_t* goldie, uint32_t* hunter, char* why, size_t n); // BUG-1248: the two cells of the running tutorial's event
 void* fg_query();

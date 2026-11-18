@@ -1082,6 +1082,8 @@ static uint32_t g_cell_held_steps;
 void set_cell_hold(bool on) { g_cell_hold = on; }
 uint32_t cell_held_steps() { return g_cell_held_steps; }
 
+static void (*g_cell_after_step)();
+void set_cell_after_step(void (*fn)()) { g_cell_after_step = fn; }
 static void __cdecl h_SimUpdate(float dt)
 {
     if (g_cell_hold && !cell_leaving()) {
@@ -1102,6 +1104,8 @@ static void __cdecl h_SimUpdate(float dt)
         *(uint16_t*)(c + 0x48) |= 2; // rotation dirty
         ++it;
     }
+    if (g_cell_after_step)
+        g_cell_after_step();
 }
 
 static void* cell_local()
