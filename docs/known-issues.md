@@ -297,3 +297,15 @@ anchor so other docs can link to it:
 * Not checked: which member path (drive.lead, the hold after a stop) makes the jump.
 * Next steps: the next release.
 * Ticket: BUG-1235
+
+## Civ: a guest gets an "earned money (shared)" card every few seconds (2026-11-18, key-frame review)
+<a id="issue-civ-money-cards"></a>
+
+* What happens: through the whole Civilization stage a guest's game shows "<host> earned N money (shared)" about every
+  6 s: the cities' regular income is said as if it were an event.
+* Reproduce: any Civ session with a guest (lab civ fixtures); the guests' logs of the 0.7.15 final check have about
+  700 such lines.
+* Known: old (since 0.7.10, BUG-0696); mods/coop/shared.cpp leaves changes under kCauseMin = 25 unsaid, but the
+  income ticks are 40-380.
+* Next steps: the next release.
+* Ticket: BUG-1236

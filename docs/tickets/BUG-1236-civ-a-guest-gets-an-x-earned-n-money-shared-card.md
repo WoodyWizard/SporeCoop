@@ -13,7 +13,7 @@ branch:
 commits:
 tests:
 signature:
-docs:
+docs: docs/known-issues.md#issue-civ-money-cards
 related: BUG-0696
 ---
 
