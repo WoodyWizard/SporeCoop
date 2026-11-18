@@ -559,11 +559,12 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "anims") { // tests (BUG-1243): the animation of the own cell and of the partners' puppets
         uint8_t* av = avatar();
-        char b[200];
+        char b[360];
         const float* m = av ? (const float*)(av + kRot) : nullptr;
-        snprintf(b, sizeof b, "anim avatar %08X anim=%X head=%.3f angv=%.3f pos=(%.2f %.2f) hp=%d\n", av ? F<uint32_t>(av, 0) : 0u,
-                 av ? F<uint32_t>(av, 0x1B0) : 0u, m ? std::atan2(m[1], m[0]) : 0.f, av ? F<float>(av, 0x1D0) : 0.f,
-                 av ? pos_of(av).x : 0.f, av ? pos_of(av).y : 0.f, av ? F<int>(av, kHp) : 0);
+        snprintf(b, sizeof b, "anim avatar %08X anim=%X head=%.3f angv=%.3f pos=(%.2f %.2f) hp=%d state=%X hits=%u last_hit=%s\n",
+                 av ? F<uint32_t>(av, 0) : 0u, av ? F<uint32_t>(av, 0x1B0) : 0u, m ? std::atan2(m[1], m[0]) : 0.f,
+                 av ? F<float>(av, 0x1D0) : 0.f, av ? pos_of(av).x : 0.f, av ? pos_of(av).y : 0.f, av ? F<int>(av, kHp) : 0,
+                 av ? F<uint32_t>(av, 0x18C) : 0u, g_own_hits_n, g_own_hit_last);
         char z[128];
         snprintf(z, sizeof z, "zaps=%u puppet_zaps=%u\n", g_n.zaps, g_n.puppet_zaps);
         return std::string(b) + z + modes::cell_puppet_anims();

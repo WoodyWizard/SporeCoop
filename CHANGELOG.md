@@ -12,6 +12,8 @@
 - Creature: the second player can befriend animals that ask for a charm, a dance or a pose: before, only singing
   counted for that player, the other social buttons and the keys 2-4 did nothing, and such an animal could not be
   impressed (BUG-1242).
+- Cell: the second player's tutorial cutscene of the first part now shows the little golden cell and the cell that
+  hunts it; before, it showed only empty water between the black bars (BUG-1248).
 
 ## [0.7.15] - 2026-11-18
 

@@ -372,6 +372,7 @@ void puppet_poison(float dt);
 extern bool g_fix_partner_poison;
 extern std::unordered_set<uint32_t> g_partner_clouds;
 extern char g_own_hit_last[160];
+extern uint32_t g_own_hits_n; // tests (BUG-1243)
 bool players_hurt_each_other();
 extern Cloud_t o_Cloud;
 extern bool g_test_no_own_cloud;

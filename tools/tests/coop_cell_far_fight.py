@@ -23,7 +23,8 @@ import time
 from twoinst import Checks, keyframe, start  # (first: it puts tools/ on the path for sporectl)
 from sporectl import Console
 
-ANIM_RE = re.compile(r'^anim avatar \S+ anim=([0-9A-F]+) head=([-\d.]+) angv=([-\d.naif]+) pos=\(([-\d.]+) ([-\d.]+)\) hp=(-?\d+)', re.M)
+ANIM_RE = re.compile(r'^anim avatar \S+ anim=([0-9A-F]+) head=([-\d.]+) angv=([-\d.naif]+) pos=\(([-\d.]+) ([-\d.]+)\) hp=(-?\d+)'
+                     r'(?: state=([0-9A-F]+) hits=(\d+) last_hit=(\S+))?', re.M)
 RECENT_RE = re.compile(r'^recent (\w) from=(\d+) id=([0-9A-F]{8}) at=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\) local_d=([-\d.]+) age=([\d.]+)', re.M)
 
 
@@ -46,7 +47,8 @@ class Sampler(threading.Thread):
             while not self.stop_ev.is_set():
                 m = ANIM_RE.search(c.call('coop.pool anims')['out'])
                 if m:
-                    self.rows.append((time.time(), m.group(1), float(m.group(2)), float(m.group(4)), float(m.group(5)), int(m.group(6))))
+                    self.rows.append((time.time(), m.group(1), float(m.group(2)), float(m.group(4)), float(m.group(5)), int(m.group(6)),
+                                      m.group(7) or '0', int(m.group(8) or 0), m.group(9) or '-'))
                 self.stop_ev.wait(0.1)
         finally:
             c.sock and c.sock.close()
@@ -69,6 +71,17 @@ def turned(rows, t0, t1):
 
 def anims(rows, t0, t1):
     return sorted({r[1] for r in rows if t0 <= r[0] <= t1})
+
+
+def states(rows, t0, t1):
+    """the cell's animation state +0x18C (0xE..0x11: the hurt reaction DamageCell starts, 0xE59010)"""
+    return sorted({r[6] for r in rows if t0 <= r[0] <= t1})
+
+
+def hits(rows, t0, t1):
+    """DamageCell calls on the own cell by another cell in the window, and the last one"""
+    w = [r for r in rows if t0 <= r[0] <= t1]
+    return (w[-1][7] - w[0][7], w[-1][8]) if w else (0, '-')
 
 
 def recent(con):
@@ -154,7 +167,7 @@ def main():
             tp1 = time.time()
             t, big, n = turned(sh.rows, tp0, tp1)
             print(f'  guest fought with {part}: {swims} swims, {bites} bites | host turned {t:.2f} rad (largest step {big:.2f}) '
-                  f'in {n} samples, anims {anims(sh.rows, tp0, tp1)}', flush=True)
+                  f'in {n} samples, anims {anims(sh.rows, tp0, tp1)} states {states(sh.rows, tp0, tp1)} hits {hits(sh.rows, tp0, tp1)}', flush=True)
             keyframe(f'fight_{part}', f"Cell: the guest fights creatures {dist:.0f} m away with {part}; the host's cell swims alone, "
                      "no fight effect or whirl on the host's screen", settle=0)
             gp = own_pos(guest)
@@ -180,6 +193,12 @@ def main():
     ck(not near, f"no effect of the guest's fight {dist:.0f} m away is played on the host's own cell ({len(near)} within 6 m)")
     ck(not (set(fight_anims) - set(base_anims) - {'0'}),
        f"the host's own cell plays no attack / hurt animation while the guest fights far away ({fight_anims}, baseline {base_anims})")
+    hurt_states = {'E', 'F', '10', '11'}
+    f_states, b_states = states(sh.rows, tf0, tf1), states(sh.rows, tb0, tb1)
+    n_hits, last_hit = hits(sh.rows, tf0, tf1)
+    print(f'  host states: baseline {b_states}, while the guest fought {f_states}; hits on the host\'s cell {n_hits} (last {last_hit})', flush=True)
+    ck(not (set(f_states) & hurt_states), f"the host's own cell plays no hurt reaction while the guest fights far away (states {f_states})")
+    ck(n_hits == 0, f"nothing hits the host's own cell while the guest fights far away ({n_hits}, last {last_hit})")
     ck(rate_f <= max(2 * rate_b, 0.35), f"the host's own cell does not spin while the guest fights far away ({rate_f:.3f} rad/s, baseline {rate_b:.3f})")
     ck.faults(host=host, guest=guest)
     return ck.result()

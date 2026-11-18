@@ -2436,3 +2436,29 @@ the own cell and the puppets, the zap counters).
   0; the electric attacker plays 0x1E; swims and `swimto ... tp` show 0x12, 0x32, 0x33 and 0xB on the own cell.
 * ✔ Cell puppets get no relayed animation (MSG_ANIM dropped for cells, BUG-0796); a partner's attack shows through the
   effects relay (world effects near the attacker).
+
+## The first-part tutorial on a guest: its two cells and the cutscene camera (2026-11-18, fix/w53-cellfx)
+<a id="cell-goldie-cutscene"></a>
+
+BUG-1248. GOG 2024, Ghidra and lane 6 (`tools/tests/coop_cell_goldie_view.py`, `coop.pool goldie`). Extends
+[#cell-goldie](#cell-goldie) and [#cell-goldie-button](#cell-goldie-button).
+* ✔ (Ghidra) **0xE79720** (`SporeCoop::Cell_GoldieDemise`, from AddFoodPoints) destroys the cells within 5 m and
+  15 m of the avatar (0xE78B20) and the cell at G+0x516C, makes two cells next to the avatar: **Goldie** (resource
+  0xE4CC90(1, 2)) and its **hunter** (0xE4CC90(2, 3), +0x22C chase = Goldie, +0x230 = 1000), both +0x354 = 1 (keep
+  alive), aims the cell camera at Goldie (`cCellUI +0xE0` = Goldie, `+0xF4` = 10), sets G+0x518C = 1, makes the event
+  of type 0x24 (+0x28 Goldie, +0x2C the hunter; its index at G+0x5194 and G+0x5198) and plays the cinematic
+  goldies_demise.
+* ✔ (Ghidra) The event's step **0xE5F160** (`SporeCoop::Cell_GoldieEventStep`) aims the camera at **G+0x516C** every
+  frame while that cell lives (+0xE0, +0xF4 = 5, zoom +0x80 = 10) and steers the hunter (event +0x2C) at it; it locks
+  the avatar (+0x170 = event +0x28). G+0x516C is "the part-token cell on screen": the per-cell visibility step 0xE78C00
+  makes a cell of cell type 6 that becomes visible G+0x516C (destroying the old one), or destroys the newcomer while
+  G+0x516C is alive (0xE5D340). 0xE794F0 (the button / Esc) clears +0xE0 and G+0x518C.
+* ✔ (runtime) On a guest the two cells are local cells the host does not have: guest_state's stray purge destroyed
+  them with the next host state. The guest's `coop.pool goldie` right after the start: G+0x516C = 0, the camera on a
+  dead index (8946032C) for ~2 s, then on whatever part-token mirror of the host's pool the visibility step saw first
+  (lab 20261118-122658, -123002: a host cell 11 m from the guest, 60 m from the host); without such a mirror near
+  the guest the letterbox stays on empty water (the players' video).
+* G+0x5194 can name another event meanwhile; the tutorial's event is found by G+0x5198 (the button wait) first.
+* Fix `cell.goldie_keep` (cellsync_guest.cpp `tutorial_cells`): while G+0x518C is set the purge keeps the event's
+  two cells (else the camera's cell and the cell chasing it, seen at the start). Seen after it: Goldie and its hunter
+  alive and Goldie on the guest's screen in 19 of 19 samples, the same scene as the host's (lab 20261118-123823).

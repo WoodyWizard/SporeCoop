@@ -144,6 +144,7 @@ bool g_fix_partner_poison = true;
 COOP_FIX("cell.partner_poison", "BUG-0958", g_fix_partner_poison, "cell: with friendly fire off a partner's poison clouds do not hurt a player's cell");
 std::unordered_set<uint32_t> g_partner_clouds; // host: cells its game made as clouds of a partner's puppet
 char g_own_hit_last[160] = "-";                // tests: the last hit our cell took (attacker kind, origin, type)
+uint32_t g_own_hits_n;                         // tests (BUG-1243): DamageCell calls on our own cell by another cell
 bool players_hurt_each_other()
 {
     return settings::on(settings::kFriendlyFire) || spaceext::rivals() || pfind::g_test_rivals;
@@ -340,7 +341,8 @@ bool SK_CDECL h_DamageCell(uint8_t* victim, uint8_t* attacker, const float* dir,
         bool mirror_product = mm != g_mirrors.end() && mm->second.product;
         bool partner_cloud = is_host() && g_partner_clouds.count(F<uint32_t>(attacker, 0)) && F<uint8_t>(attacker, 0x110);
         const char* k = kind_of(attacker);
-        snprintf(g_own_hit_last, sizeof g_own_hit_last, "%s c%u type=%d %s%s hp=%d", k, F<uint32_t>(attacker, 0), type,
+        g_own_hits_n++;
+        snprintf(g_own_hit_last, sizeof g_own_hit_last, "%s_c%u_type=%d_%s%s_hp=%d", k, F<uint32_t>(attacker, 0), type,
                  am != g_host_of.end() ? "mirror" : modes::cell_is_puppet(attacker) ? "puppet" : "local",
                  mirror_product || partner_cloud ? " partner_product" : F<uint8_t>(attacker, 0x110) ? " own_product" : "",
                  F<int>(victim, kHp));
