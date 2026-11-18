@@ -94,6 +94,21 @@ def press_ready(con, secs=15):
     return True
 
 
+def margins(path):
+    """the brightness of the picture beside the middle (the left and right thirds below the notices): the co-op
+    window of a vote covers the middle of the view, so a black game behind it looked drawn to screen_look's `world`
+    region (it read the window). The brighter side counts; -1 without Pillow or a picture"""
+    try:
+        from PIL import Image, ImageStat
+        with Image.open(path) as im:
+            g = im.convert('L')
+            w, h = g.size
+            return max(ImageStat.Stat(g.crop((int(a * w), int(b * h), int(c * w), int(d * h)))).mean[0]
+                       for a, b, c, d in ((0.0, 0.10, 0.20, 0.85), (0.80, 0.35, 1.0, 0.85)))
+    except (OSError, ImportError, SyntaxError, ValueError):
+        return -1
+
+
 class Screens(threading.Thread):
     """a game's screen measured every `step` s in the background (its own console connection, so the test's clicks
     and drags do not stop it): (t, mode, world brightness); black runs are judged on these rows"""
@@ -114,8 +129,7 @@ class Screens(threading.Thread):
                 path = os.path.join(lane.out_dir('shots'), f'evo_{self.label}_{self.n % 400:03d}.png')
                 self.n += 1
                 ok = c.call('shot ' + path).get('ok')
-                s = sl.measure(path) if ok else None
-                self.rows.append((t, m, s['world'] if s else -1))
+                self.rows.append((t, m, margins(path) if ok else -1))
                 self.stop_ev.wait(max(0.2, self.step - (time.time() - t)))
         finally:
             c.sock and c.sock.close()
@@ -234,6 +248,36 @@ def part_cell(host, guest, ck, ready, scr):
     check_black(ck, sh, 'host', "after the guest's editor", t_gback)
     check_black(ck, sg, 'guest', "after its own editor", t_gback)
     keyframe('guest_back', 'Cell: both in the pool after the guest\'s own editor')
+
+
+def part_cell_both(host, guest, ck, ready, scr):
+    """BUG-1239: the guest calls its mate first and sits in its own cell editor; then the host's mating call: the host's
+    vote must not keep the host waiting on a black screen for the guest, who cannot answer from its editor"""
+    sh, sg = scr
+    reached = mating_call(guest, 'guest', lambda: 'Editor' in mode(guest))
+    ck(reached, "the guest reaches its mate: its own cell editor opens")
+    time.sleep(3)
+    host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
+    reached = mating_call(host, 'host', host_vote)
+    ck(reached, 'the host reaches its mate while the guest is in its own editor')
+    t_vote = time.time()
+    keyframe('host_vote_guest_editing', 'Cell: the host reached its mate while the guest edits its own cell; the host waits for no one in an editor', settle=0)
+    opened = wait(lambda: 'Editor' in mode(host), 80)
+    t_ed = time.time()
+    print(f'  host editor {t_ed - t_vote:.0f} s after its mate (guest {mode(guest).strip()})', flush=True)
+    ck(opened, f"the host's editor opens ({mode(host).strip()})")
+    ck(t_ed - t_vote < BLACK_LIMIT, f"the host's editor opens without waiting for the guest in its editor ({t_ed - t_vote:.0f} s)")
+    time.sleep(1)
+    check_black(ck, sh, 'host', 'between its mating call and its editor (the guest in its own editor)', t_vote, t_ed)
+    time.sleep(8)
+    edit_cell(guest, 'Bobcell')
+    edit_cell(host, 'Alicecell')
+    ck(wait(lambda: 'Cell' in mode(host) and 'Cell' in mode(guest), 60), f'both back in the pool ({mode(host).strip()} / {mode(guest).strip()})')
+    t_back = time.time()
+    time.sleep(25)
+    check_black(ck, sh, 'host', 'after both editors', t_back)
+    check_black(ck, sg, 'guest', 'after both editors', t_back)
+    keyframe('both_back', 'Cell: both back in the pool with their new cells')
 
 
 def add_legs(con, y=560):
@@ -381,6 +425,8 @@ def main():
     try:
         if part == 'cell':
             part_cell(host, guest, ck, ready, scr)
+        elif part == 'cell-both':
+            part_cell_both(host, guest, ck, ready, scr)
         else:
             part_switch(host, guest, ck, ready, scr)
     finally:
