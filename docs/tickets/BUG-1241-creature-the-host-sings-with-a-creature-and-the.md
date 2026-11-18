@@ -1,7 +1,7 @@
 ---
 id: BUG-1241
 title: Creature: the host sings with a creature and the other player's creature starts the sing animation too and keeps it (rings effect) while it runs about, without end
-status: not-reproduced
+status: open
 kind: bug
 stage: Creature
 reported: 2026-11-18
@@ -63,3 +63,4 @@ flakiness (the host's song starts in about half of the runs, the guest put by th
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w52-evoeditor): not reproduced in 12 runs of social_sing / social_sing_partner / brain_rings; known-issues entry.
 - 2026-11-18 (fix/w52-evoeditor): second round (own creature, walk, pack, reverse, 10 fps, v0.7.14.1): still not reproduced.
+- 2026-11-18: a second analysis of the video: the gold sing rings come from the GUEST's puppet (seen in the host's game) for about 3 minutes (also while the guest runs, fights or stands with its mouth shut), and again later for half a minute; the guest had been befriending creatures by singing (one song befriended a level-1 creature). Suggested causes to check: social::host_act calls cCreatureBase::PlayAbility on the guest's puppet in the host's game (the puppet has no AI tick to end the ability); StartOrStopEffectFromPool1/2 stops are not hooked (only StopEffectFromPools); puppet pool effects (1/2/3) have no 8 s auto stop like world effects (5); a single stop in effects.cpp drops the key from g_sent_keys before the rate limit and goes through send_event. Reopened.

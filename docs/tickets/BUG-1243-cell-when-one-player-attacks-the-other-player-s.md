@@ -1,7 +1,7 @@
 ---
 id: BUG-1243
 title: Cell: when one player attacks, the other player's cell plays the attack animation too
-status: not-reproduced
+status: open
 kind: bug
 stage: Cell
 reported: 2026-11-18
@@ -62,3 +62,4 @@ no-fail-run: not reproduced on v0.7.15 (runs above).
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w52-evoeditor): not reproduced (bites, the electric part); known-issues entry.
 - 2026-11-18 (fix/w52-evoeditor): second round (jaw, spike, mouth contact attacks, both directions, v0.7.14.1): still not reproduced.
+- 2026-11-18: a second analysis of the video: the HOST's cell swims in empty water and is spun in the combat whirl while the GUEST fights elsewhere ("I was fighting just now" / "and I fought the air"). So the guest's combat interaction or effect is played on the host's own cell. Reopened.
