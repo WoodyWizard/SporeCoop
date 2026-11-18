@@ -126,8 +126,9 @@ def compare(a, b, tol_px=120.0, need=0.75):
 
 def tangent_basis(p):
     """two unit vectors along the ground at p on a planet (centre at 0) and its up"""
-    r = math.sqrt(sum(x * x for x in p)) or 1.0
-    up = [x / r for x in p]
+    r = math.sqrt(sum(x * x for x in p))
+    # a census row at the origin (a creature the game made but has not placed yet) has no up: any basis, no crash
+    up = [x / r for x in p] if r > 1e-6 else [0.0, 0.0, 1.0]
     ref = (0.0, 0.0, 1.0) if abs(up[2]) < 0.9 else (1.0, 0.0, 0.0)
     e1 = [up[1] * ref[2] - up[2] * ref[1], up[2] * ref[0] - up[0] * ref[2], up[0] * ref[1] - up[1] * ref[0]]
     n = math.sqrt(sum(x * x for x in e1))

@@ -97,14 +97,17 @@ def eco_frame(host, guest, animals, tag):
     from coop_space_map import no_movie
     import sameview as sv
     inst = {k.split(':')[0].upper() for k in animals}
+
+    def placed(r):  # a creature still at the origin is made but not placed yet (its camera had no up: ZeroDivisionError)
+        return sum(x * x for x in r['pos']) > 1.0
     seen = {}
     try:
         for role, con in (('host', host), ('guest', guest)):
             no_movie(con, 20)  # the planet's story caption ("Something is showing up on the ship's radar")
             rows = sv.parse_census(con.call('coop.census creatures').get('out') or '')
-            r = keyviews.nearest_row(con, lambda r: r['kind'] == 'c' and r['alive'] and r['key'] in inst)
+            r = keyviews.nearest_row(con, lambda r: r['kind'] == 'c' and r['alive'] and r['key'] in inst and placed(r))
             seen[role] = (r and (r['key'], r['pos']), f'{len(rows)} creature rows')
-        r = keyviews.nearest_row(host, lambda r: r['kind'] == 'c' and r['alive'] and r['key'] in inst)  # (where it is now)
+        r = keyviews.nearest_row(host, lambda r: r['kind'] == 'c' and r['alive'] and r['key'] in inst and placed(r))  # (where it is now)
         if r:
             keyviews.look_both((host, guest), r['pos'], dist=30, height=18, look_up=3, settle=0.5)
         print(f'  key frame cameras at the placed species: {seen}', flush=True)
