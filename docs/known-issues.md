@@ -319,7 +319,9 @@ anchor so other docs can link to it:
 * Known: the host's game keeps the guest's puppet out of its pack and family; the social win's and the brain
   upgrade's pool effects end on both creatures and puppets; the host's own sing is not even shown on its puppet
   (BUG-1244).
-* Not checked: a guest with its own species, a pack or ally next to the players, the mating call, low fps.
+* Also not reproduced with the guest on its own creature, walking next to the singer, the host's pack by, the guest
+  singing, nor on v0.7.14.1 (BUG-1241).
+* Not checked: the mating call, low fps (the song did not start at 10 fps in the test).
 * Ticket: BUG-1241
 
 ## Cell: the partner's cell plays the attack animation of a player (2026-11-18, owner: players' video)
@@ -329,5 +331,7 @@ anchor so other docs can link to it:
 * Reproduce: not reproduced: `lab.py run cell_attack_anim,cell_attack_electric` (BUG-1243).
 * Known: no cell animation is relayed to puppets; the electric step never runs for a puppet cell (`coop.pool anims`
   puppet_zaps 0); the fixture's cell has no jaw or spike.
-* Not checked: a jaw / spike part, overlapping cells, a partner's poison clouds.
+* Also not reproduced with both cells armed (jaw, spike, the herbivore mouth's chunk bites), either player attacking,
+  nor on v0.7.14.1; cell puppets never animate (only the effects relay shows a partner's attack).
+* Not checked: a partner's poison clouds, overlapping cells.
 * Ticket: BUG-1243
