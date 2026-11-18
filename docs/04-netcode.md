@@ -95,7 +95,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 33 | `CELL_STATE` | U | host | HostWorld | Cell | cell | NPC cells and food snapshot (chunked) |
 | 34 | `CELL_HIT` | R | any | HostWorld | Cell | cell | guest -> host: u32 host cell index, u8 damage, u8 type (host -> guest only from the test command coop.pool hurt) |
 | 35 | `CELL_EAT` | R | guest | HostWorld | Cell | cell | u32 host cell index the guest ate or destroyed |
-| 36 | `CELL_FOOD` | R | any | HostWorld | Cell | cell | host: i32 food, i32 plant; guest: i32 delta, u8 plant |
+| 36 | `CELL_FOOD` | R | any | HostWorld | Cell | cell | host: i32 food, i32 plant; guest: i32 delta, u8 plant, u32 meal, i32 own cell editor spend (BUG-1249) |
 | 37 | `CIV_STATE` | U | host | HostWorld | Civ | civ | cities and vehicles snapshot (chunked) |
 | 38 | `CIV_CMD` | R | any | Module | Civ | civ | guest -> host: a vehicle order, move, purchase or building; host -> guest: a specialty ask, a Space planner building |
 | 39 | `CIV_BUILD` | R | host | HostWorld | Civ | civ | a building appeared in a city, a city founded, the trade routes |
@@ -129,14 +129,15 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 69 | `HOST_WORLD` | R | host | Session | HostWorld | session | u32 world: the host's save changed (BUG-0933) |
 | 70 | `HOST_BUSY` | R | host | Session | HostBusy (guest) | session | the host's game is paused, in an editor or away (busy_model.h, 14 bytes v1: u8 version, u8 state, u16 why, u32 mode, u32 world, u16 seq; BUG-1142) |
 | 71 | `TRIBE_ANIM` | RU | host | Module | Tribe (guest) | tribe | u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160) |
+| 72 | `CELL_MATE` | RU | guest | HostWorld | Cell (host) | cell | u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246) |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
 | session (session) | 1 | 1.1 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY` |
 | world (world transfer) | 2 | 1.0 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
-| creature (Creature) | 3 | 1.0 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT` |
-| npc (mirrored creature and world state) | 4 | 1.0 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
-| cell (Cell) | 5 | 1.0 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN` |
+| creature (Creature) | 3 | 1.1 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT` |
+| npc (mirrored creature and world state) | 4 | 1.1 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
+| cell (Cell) | 5 | 1.1 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
 | tribe (Tribe) | 6 | 1.1 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
 | civ (Civilization) | 7 | 1.0 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |
 | space (Space) | 8 | 1.2 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |

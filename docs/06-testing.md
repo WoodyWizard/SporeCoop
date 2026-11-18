@@ -9128,3 +9128,27 @@ BUG-1241, BUG-1250, BUG-1252, BUG-1253 (creature fixture, warm; docs/re/creature
   turned to it, the mouse moved onto its body (from `coop.targets all`) in the social stance; the game's own hover
   result (cGameViewManager::Get +0x88) must never be the puppet. `SPORE_FIX_OFF=creature.partner_social_hover` fails
   (12 of 12 samples hover it; key frame: its name plate with health and a green face).
+## The Cell vote's mating round, a guest's cell editor DNA, a guest's mate (2026-11-18, fix/w53-cellvote)
+<a id="testing-cell-vote-rounds"></a>
+
+* `coop_evo_screens.py --part cell-eggs` (`evo_screens_cell_eggs`, `_cell_eggs_lowfps` with SPORE_FPS=host:10, BUG-1245):
+  the host's mating call and a vote the guest answers after 45 s (or never): `coop.pool mate` prints `matings=` and
+  `egg_lays=` (the own avatar's animation +0x1B0 entering 0x42 / 0x29, sampled every frame: the game's own state), the
+  host's `coop.uistate` window line says whether the co-op window is drawn, and the host's screen thread counts the
+  flashes of a drawn pool behind the vote (a round of the mating scene). `matings=` is 2 after one scene (the avatar's
+  animation enters 0x42 twice per scene): compare differences only.
+* `--part cell-dna` (`evo_screens_cell_dna`, BUG-1249): `coop.pool food 400` gives 28 DNA; `buy_part` drags the cilia
+  (palette 105,195 at 1440x1080) onto the cell in the guest's own editor (15 DNA). `coop.pool spend` prints the game's
+  spent S+0x2C, the DNA the HUD shows (DNAForFood(food) - spent) and the spend bookkeeping. At food 400 the cells are
+  big and predators knock the guest out now and then: the checks read the DNA, not the cell.
+* `--part cell-mate` (`evo_screens_cell_mate`, BUG-1246): `coop.pool mate` on a guest prints the mate's world position
+  and model; `coop.pool near <x> <y> <r>` lists this game's cells there (model, gfx, puppet, avatar): the host must have
+  a drawn cell of the guest's mate's model where the guest's game has the mate, the guest none but its own.
+* `--part switch` also checks (BUG-1255) that the guest's done in its first own Creature editor brings no save dialog
+  (the game's "Save as new or replace <the world's species>"), and (BUG-1258) that the guest's log has no notice
+  "everybody gets the new body" while it makes its own creature. `--own-keep <mask>` (exploration) sets
+  `coop.editreq keep` on the guest with `creations.own_editor_cancel` off.
+* `evo_screens_cell_noready` (BUG-1263): with the mating rounds gone the host's black behind a vote nobody answers is one
+  run of up to 60 s; the check accepts it up to the vote's end (the flashes of the rounds used to split it).
+  `evo_screens_switch_noready` saw the guest's stage-entry black at 22 s once (limit 20 s) under load: rerun before
+  blaming a change.

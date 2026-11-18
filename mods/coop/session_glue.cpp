@@ -102,6 +102,16 @@ static bool evolve_inplace_ok(uint8_t id, const Remote& r, uint32_t stage)
     return (ls.mode == stage || editor) && world && ls.world == world;
 }
 
+// BUG-1258 (lab evo_screens_switch_slow: a guest in its OWN first Creature editor read "Alice evolved the species:
+// everybody gets the new body"): the host's return from an editor was told to everybody as the species' new body for
+// all. In Creature every player makes its own creature (the landfall editor: own editors, BUG-0315 / BUG-1240; the
+// mating evolution: offers, BUG-0516) unless the session plays one creature (creature.mode host). On: the notice says
+// the host made / evolved its creature. Off: "everybody gets the new body" (0.7.15).
+static bool g_evolve_notice_fix = true;
+COOP_FIX("core.evolve_notice", "BUG-1258", g_evolve_notice_fix,
+         "creature: the host's evolution is told as its own creature's, not as everybody's new body (each player evolves its own)");
+bool evolve_own_text(uint32_t to) { return g_evolve_notice_fix && to == modes::kCreature && !host_creature_mode(); }
+
 // BUG-0941: a host that loads another Space save from the galaxy menu sent no world to its connected guests: the
 // stage is the same and in Space the state's world is the place (star, planet), so nothing told the guests the save
 // was another one; they played on in their copy of the old save. The host's save file (world::current_game_key: the
@@ -189,6 +199,10 @@ void on_mode_change(uint32_t from, uint32_t to)
            : designs::outfit_texts(to, g_last_editor_req) ? g_name + " made a new outfit for the tribe: everybody's tribe wears it"
            // BUG-0588: the City Hall and vehicle editors of the end of Tribe are no evolution
            : to == modes::kTribe && (tribe::stage_end() || tribe_civ_editor(g_last_editor_req)) ? g_name + " made a design for the Civilization stage: it comes next"
+           // BUG-1258: in Creature each player evolves its own creature (own editors, offers): only creature.mode host
+           // gives everybody the host's new body
+           : evolve_own_text(to) ? g_name + (g_last_editor_req == kEditorLandfall ? " made its creature: every player makes its own"
+                                                                                  : " evolved its creature")
                               : g_name + " evolved the species: everybody gets the new body",
            -1);
 }

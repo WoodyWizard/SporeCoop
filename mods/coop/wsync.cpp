@@ -506,11 +506,44 @@ static bool r_spent(Table& out)
 static int s_spent(const Table& want, bool apply)
 {
     int v;
-    if (want.empty() || !cellsync::spent_dna(v) || v == (int)want[0].v[0])
+    if (want.empty() || !cellsync::spent_dna(v))
+        return 0;
+    int w = cellsync::spent_guest_want((int)want[0].v[0]); // BUG-1249: plus our own editor's spend not in it yet
+    if (v == w)
         return 0;
     if (apply)
-        cellsync::set_spent_dna((int)want[0].v[0]);
+        cellsync::set_spent_dna(w);
     return 1;
+}
+// ---- row: Cell, the last own-editor spend of each guest the host's count has taken (BUG-1249, cell.guest_spend; key
+// the player, v0 its meal number). Sent with cell_spent in the same message; the guest takes it when the message
+// arrives (on_message), before it applies cell_spent. An older guest ignores the row (an unknown id).
+static bool r_spend_ack(Table& out)
+{
+    std::vector<std::pair<int, uint32_t>> acks;
+    if (!cellsync::spend_acks(acks))
+        return false;
+    for (auto& [id, meal] : acks) {
+        Entry e;
+        e.key = (uint32_t)id;
+        e.v[0] = meal;
+        out.push_back(e);
+    }
+    return true;
+}
+static int s_spend_ack(const Table& want, bool apply)
+{
+    if (!apply || !C.sess)
+        return 0;
+    for (auto& e : want)
+        if (e.key == C.sess->my_id())
+            cellsync::spend_acked(e.v[0]);
+    return 0;
+}
+static std::string f_spend_ack(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "player %u spend meal %u", e.key, e.v[0]);
+    return g_fmt;
 }
 static std::string f_spent(const Entry& e)
 {
@@ -1473,6 +1506,7 @@ static const Row kRows[] = {
     {15, "tribe_marker", 6, &g_marker_fix, tribe_mode, r_marker, s_marker, false, f_marker},
     {16, "tribe_outfit", 6, &designs::g_outfit_fix, tribe_mode, r_outfit, s_outfit, false, f_outfit}, // BUG-1156
     {17, "civ_design", 3, &designs::g_civ_fix, civ_mode, r_design, s_design, false, f_design},       // BUG-1157
+    {18, "cell_spend_ack", 1, &kRowOn, cell_mode, r_spend_ack, s_spend_ack, false, f_spend_ack},     // BUG-1249
 };
 constexpr int kNRows = sizeof kRows / sizeof kRows[0];
 
@@ -1668,6 +1702,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& rd)
                 g_guest[i].mode = mode;
                 g_guest[i].t = now;
                 g_guest[i].received++;
+                if (kRows[i].sync == s_spend_ack) // BUG-1249: before cell_spent of the same message is applied
+                    s_spend_ack(g_guest[i].want, true);
                 break;
             }
     }

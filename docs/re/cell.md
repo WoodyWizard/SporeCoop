@@ -2436,3 +2436,49 @@ the own cell and the puppets, the zap counters).
   0; the electric attacker plays 0x1E; swims and `swimto ... tp` show 0x12, 0x32, 0x33 and 0xB on the own cell.
 * ✔ Cell puppets get no relayed animation (MSG_ANIM dropped for cells, BUG-0796); a partner's attack shows through the
   effects relay (world effects near the attacker).
+
+## The mating round repeats while the vote holds the editor; a guest's own editor's spend (2026-11-18, fix/w53-cellvote)
+<a id="cell-mating-round"></a>
+
+BUG-1245, BUG-1249. GOG 2024, Ghidra and lanes 2 / 3 (`tools/tests/coop_evo_screens.py --part cell-eggs`, `--part cell-dna`).
+* ✔ (Ghidra) One mating round of the Cell stage: the cell step's meeting `SporeCoop::Cell_MateMeeting` 0xE78D10 (avatar
+  G+0x411C and mate G+0x51D4 alive, closer than 4 m) -> `Cell_MateStart` 0xE75EA0 (not dying, not locked +0x188, same
+  level: animations 0x41 / 0x42, locks 0xE75C30, event 0x2D) -> `Cell_MateEnd` 0xE78DE0 (event 0x2D) -> `Cell_LayEgg`
+  0xE77930 (the avatar's animation 0x29, event 0x1E, the fade 0xE598E0) -> `Cell_EditorAfterEgg` 0xE72AC0 (event 0x1E:
+  the editor request 0xE59800(0), the effect 0xA1B0293D). Nothing in the round forgets the mate: the editor's return
+  (RebuildLevel) does.
+* ✔ (runtime, lab 20261118-122608 / -123203, `cell.vote_mate` off) While the host's vote holds the request the round
+  runs again every ~10 s: 4 more mating scenes and 5-6 more egg layings in 46 s (the avatar's +0x1B0 entering 0x42 /
+  0x29, `coop.pool mate` matings= / egg_lays=), and each round draws the pool again for a moment behind the vote window
+  (3 flashes in 19 host shots; frame `out/lane2/shots/evo_host_023.png`: the pool letterboxed under the window). The
+  host's log shows the requests: "cell: DNA at the editor request" every 9.7 s during a 60 s vote (also in the BUG-1239
+  run 20261118-094043, evo_screens_cell_noready). That is the players' "black screen, it flickers, 6 eggs".
+* ✔ Fix `cell.vote_mate`: when the vote holds the host's Cell request the mate index G+0x51D4 is set to 0 (the cell
+  stays; given back if the vote is dropped while the stage goes on): one round, 0 more in 46 s, no flash (lab
+  20261118-122633, -123223).
+* ✗ Not reproduced: the vote window missing over the black. The co-op window stayed open and drawn in 15 of 15 looks
+  during a 46 s vote, with the fix on and off (`coop.uistate` window line, the key frames host_vote_1 / _2). Inferred:
+  the players had closed it (its red cross) or the flashes hid it to the eye.
+* ✔ (Ghidra) `Cell_EditorResult` 0xE809A0 (message 0x30C11C7) writes the spent count as an absolute value: S+0x2C =
+  DNAForFood(food now) - remaining. On a guest the host's wsync row cell_spent (BUG-0560) put the host's count back
+  within half a second, so the price of the guest's own cell editor was never taken: guest log "spent 0 -> 15" then
+  the HUD showed 28 again (lab 20261118-123203, frame 02_guest_back_dna_guest: "28" after a 15 DNA part). Fix
+  `cell.guest_spend`: the guest sends its editor's spend (MSG_CELL_FOOD of 0 food, the spend after the meal number),
+  the host adds it to its count (after its own editor's result when it is in an editor), and the row cell_spend_ack
+  (wsync id 18, the same message as cell_spent) tells the guest which spend is in the count; until then the guest
+  shows the host's count plus its own. Lab 20261118-123223: the guest 28 -> 13 and kept, the host 13 too, still both
+  13 after the host's own editor.
+
+## A guest's mate in the host's pool (2026-11-18, fix/w53-cellvote)
+<a id="cell-partner-mate"></a>
+
+BUG-1246. GOG 2024, lanes 2 / 3 (`coop_evo_screens.py --part cell-mate`).
+* ✔ (runtime, lab 20261118-123948) A guest's mating call makes the mate in the guest's pool only: the host's game has no
+  cell near it. The guest's mate is 12-16 m from the guest when called and swims to it (`coop.pool mate` pos=).
+* ✔ (runtime, lab 20261118-124008, -124955) A cell made in the host's pool with the mate's resource instance (its +0x108
+  reference's first dword) and model key (+0xFC) through CreateCellObject, with +0x16C (AI lock), +0x354 (keep-alive)
+  and +0x111 (invulnerable) set, and moved like a guest's mirror (soft body: cell_move with its particles; else the
+  velocity toward the pose) is drawn where the guest's mate is (0.0-0.1 m) with the mating call's hearts effect. The
+  guest's mate is never in the host's G+0x51D4, so the host's own meeting 0xE78D10 ignores it.
+* ✔ The guest sends nothing while it is in its editor (the cell tick returns outside Cell): the copy goes by its 2 s
+  timeout, and the "gone" message comes when the guest is back in Cell.

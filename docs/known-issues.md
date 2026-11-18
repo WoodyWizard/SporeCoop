@@ -377,3 +377,13 @@ anchor so other docs can link to it:
 * Not checked: where the native session sets its recruit flag (SocialPropose 0xDA43D0, likely).
 * Next steps: a feature branch after 0.7.15.1.
 * Ticket: BUG-1256
+## Cell: the host's screen is black behind its evolution vote (2026-11-18, fix/w53-cellvote)
+<a id="issue-cell-vote-black"></a>
+
+* What happens: after the host's mating scene in Cell the host's picture is black (the co-op window with the vote over
+  it) until every guest pressed I'm ready, at most 60 s.
+* Reproduce: `lab.py run evo_screens_cell_noready` (the guest never presses: 54-60 s black on the host).
+* Known: the vote holds the host's editor request after the game faded out; the Cell vote opens nothing for the guests
+  (docs/re/cell.md#cell-editor-vote-timing). Before BUG-1245 the repeated mating rounds broke the black every ~10 s.
+* Next steps: open the host's Cell editor at once (as Creature's core.editor_now), design sketch in the ticket.
+* Ticket: BUG-1263

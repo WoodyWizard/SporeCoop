@@ -392,6 +392,9 @@ extern bool g_own_editor_arriving;  // BUG-1240
 extern bool g_own_editor_arrival_fix;
 extern unsigned g_own_editor_arrivals;
 unsigned vote_in_editor_count(); // BUG-1239 (tests)
+unsigned vote_mates_held();      // BUG-1245 (tests)
+unsigned arrival_not_waited();   // BUG-1245 (tests)
+unsigned own_no_replace_count(); // BUG-1255 (tests)
 extern unsigned g_evo_flags_cleared;
 extern unsigned g_offers_expired;
 extern unsigned g_offers_got;
@@ -428,6 +431,7 @@ bool SK_THISCALL h_CreatureGameMsg(void* self, uint32_t id, void* data);
 bool SK_THISCALL h_StageMsg(void* self, uint32_t id, void* msg);
 bool design_stage(uint32_t m);
 bool host_creature_mode();
+bool evolve_own_text(uint32_t to); // BUG-1258: the host's evolution notice names its own creature (Creature, not one creature)
 bool start_action_vote(const std::string& text, const std::string& done, std::function<void()> action);
 bool tribe_civ_editor(uint32_t id);
 bool tribe_graduating();

@@ -86,6 +86,45 @@ COOP_FIX("core.editor_now", "BUG-0516", g_editor_now_fix, "core: the host's Crea
 static bool g_editor_tag_fix = true;
 COOP_FIX("core.editor_now_tag", "BUG-1085", g_editor_tag_fix, "core: Creature: the mating evolution opens at once with offers, the stage-end editor (Creature -> Tribe) waits for the vote and a guest cannot start it alone");
 unsigned g_stage_end_votes, g_stage_end_guest_refused; // tests (coop.vote)
+// BUG-1245 (players' video: the host's mating call, then a black screen for 25+ s on which the mating scene and the egg
+// laying came again and again, 6 eggs): the Cell game asks for its editor after the mating scene; while the vote holds
+// that request the avatar and the mate stay within the meeting distance, so the cell step's meeting 0xE78D10 played the
+// mating, the egg laying and the request again every ~10 s (each refused by h_Submit: one vote per editor), and each
+// round faded the picture in and out. On: as soon as the vote holds the host's Cell request, the mate G+0x51D4 is no
+// longer the mate (its index forgotten, the cell stays; given back when the vote is dropped and the stage goes on), so
+// the scene plays once. Off: the meetings go on while the vote holds (0.7.15).
+static bool g_vote_mate_fix = true;
+COOP_FIX("cell.vote_mate", "BUG-1245", g_vote_mate_fix,
+         "cell: while the host's evolution vote holds its editor the mate does not meet the host's cell again (the mating scene and the eggs repeated every 10 s)");
+static uint32_t g_held_mate = 0;     // the mate taken out while the vote holds (0: none)
+static unsigned g_vote_mates_held = 0; // tests (coop.vote)
+unsigned vote_mates_held() { return g_vote_mates_held; }
+// BUG-1245 (the same class: the host's game black behind a vote that holds its editor request): the first Creature
+// editor after the switch vote (the landfall editor FD4902BD, BUG-0315's arrival vote) waited up to 60 s for every guest
+// to arrive in the host's Creature world; a guest still receiving the world over a slow link kept the host's screen
+// black (with the co-op window) for the whole 60 s (lab evo_screens_switch_slow, host 0-60 s black). Since BUG-1240
+// (core.own_editor_arrival) a guest on its way keeps its own editor due and opens it after its arrival, so the host's
+// editor need not wait for it. On: the arrival vote does not wait for a guest that is still on its way and has that
+// fix (its creature family minor >= 1, net/messages.def); it ends as soon as the guests that arrived are ready. Off, or
+// an older guest: waited for (0.7.15).
+static bool g_arrival_nowait_fix = true;
+COOP_FIX("core.arrival_nowait", "BUG-1245", g_arrival_nowait_fix,
+         "core: the host's first Creature editor does not wait for a guest still on its way (it gets its own editor when it arrives); the host's screen stayed black meanwhile");
+static unsigned g_arrival_not_waited = 0; // tests (coop.vote): arrival votes that did not wait for a guest on its way
+static int g_arrival_onway_last = 0;
+unsigned arrival_not_waited() { return g_arrival_not_waited; }
+// the guest takes its own landfall editor after a late arrival (BUG-1240): its build announces creature 1.1 or newer
+static bool peer_takes_arrival_editor(uint8_t id)
+{
+    bool has = false;
+    std::vector<net::FamilyRev> fam;
+    if (!g_sess.peer_families(id, has, fam) || !has)
+        return false;
+    for (auto& f : fam)
+        if (f.family == 3 && f.rev == 1 && f.minor >= 1) // creature (net/messages.def)
+            return true;
+    return false;
+}
 uint32_t g_offer_editor = 0;   // guest: the editor of the host's offer (0 = none)
 double g_offer_until = 0;
 bool g_offer_opened_ui = false;
@@ -272,6 +311,19 @@ COOP_FIX("creations.editor_request", "BUG-0720", g_editor_request_fix, "creature
 static bool g_own_editor_cancel_fix = true;
 COOP_FIX("creations.own_editor_cancel", "BUG-0756", g_own_editor_cancel_fix, "creature: a guest's own editor has its red cross and the save dialog (the request's +0x39 / +0x3B / +0x3C as the constructor's)");
 unsigned g_own_keep_ctor = 0; // tests (coop.editreq keep): own-editor bytes left at the constructor's value (1 +0x39, 2 +0x3B, 4 +0x3C, 16 vec70)
+// BUG-1255 (players' video: the guest's first own creature, the evolution editor of the host's world, asked on its check
+// mark to replace the host's species): the own editor starts from the avatar's species; for a guest playing the
+// world's species (no creation of its own yet: the first Creature editor after Cell, an offer after the host's
+// evolution) that is the host's creation, and BUG-0756's edit-a-creation bytes (+0x39 = 1, +0x3C = 0) bring the game's
+// "Save as a new creation or replace <the host's species>" dialog. On: such an own editor keeps only the red cross of
+// the constructor (+0x3B = 1) and the evolution's +0x39 = 0 / +0x3C = 1 (no replace dialog: done saves a new creature);
+// a guest playing its own creation keeps BUG-0756's dialog (replacing its own creation is its choice). Off: 0.7.15.
+static bool g_own_no_replace_fix = true;
+COOP_FIX("creations.own_editor_no_replace", "BUG-1255", g_own_no_replace_fix,
+         "creature: a guest's first own creature (from the world's species) is saved as new without the dialog that offered to replace the host's species");
+static bool g_own_from_world = false; // the own editor being built starts from the world's species (not ours)
+unsigned g_own_no_replace = 0;        // tests (coop.vote)
+unsigned own_no_replace_count() { return g_own_no_replace; }
 static void* the_player()
 {
     uintptr_t nouns = H->sym("Simulator::cGameNounManager::Get"), getp = H->sym("SporeCoop::cGameNounManager_GetPlayer");
@@ -314,6 +366,10 @@ void* build_editor_request(EditKind kind, uint32_t editor_id, const game::Key& k
         skg::field<uint8_t>(req, 0x3D) = 1;
         if (kind == EditKind::Own) {
             unsigned keep = g_own_keep_ctor | (g_own_editor_cancel_fix ? 7u : 0u);
+            if (g_own_no_replace_fix && g_own_from_world && g_own_editor_cancel_fix && !g_own_keep_ctor) {
+                keep = 2u; // BUG-1255: the cross only, no dialog offering to replace the world's (the host's) species
+                g_own_no_replace++;
+            }
             if (keep & 1) skg::field<uint8_t>(req, 0x39) = 1;
             if (keep & 2) skg::field<uint8_t>(req, 0x3B) = 1;
             if (keep & 4) skg::field<uint8_t>(req, 0x3C) = 0;
@@ -326,6 +382,7 @@ void* build_editor_request(EditKind kind, uint32_t editor_id, const game::Key& k
     return req;
 }
 
+static bool guest_plays_own_creation();
 // the creature editor for the own creature (EditorRequest + Submit, like ModAPI mods do)
 bool open_own_editor(uint32_t editor_id)
 {
@@ -333,7 +390,10 @@ bool open_own_editor(uint32_t editor_id)
     void* av = game::avatar();
     if (!submit || !av)
         return false;
+    // BUG-1255: a guest without a creation of its own in play edits the world's species (the host's)
+    g_own_from_world = g_sess.role() == net::Role::Client && !guest_plays_own_creation();
     void* req = build_editor_request(EditKind::Own, editor_id, game::species_key(av));
+    g_own_from_world = false;
     if (!req)
         return false;
     bool r{};
@@ -897,6 +957,7 @@ void finish_vote(const char* why)
         return;
     void* req = g_vote.request;
     g_vote.active = false;
+    g_held_mate = 0; // BUG-1245: the editor follows (its return rebuilds the pool)
     {
         int ready = 0, n = 0;
         for (auto& p : g_sess.players()) {
@@ -1003,6 +1064,9 @@ void drop_vote(const char* why)
         return;
     LOG("the vote '%s' is dropped: %s", g_vote.text.c_str(), why);
     g_votes_dropped++;
+    if (g_held_mate && cellsync::restore_mate(g_held_mate)) // BUG-1245: the stage goes on, its mate with it
+        LOG("cell: the mate %08X is the mate again (the vote was dropped)", g_held_mate);
+    g_held_mate = 0;
     void* req = g_vote.request;
     g_vote = Vote{};
     g_vote_action = nullptr;
@@ -1056,6 +1120,12 @@ void vote_tick(double now)
         }
     }
     g_vote.left = (int)(60 - (now - g_vote.t0));
+    if (g_vote_mate_fix && g_vote.request && g_vote.mode == modes::kCell)
+        if (uint32_t m = cellsync::forget_mate()) {
+            g_held_mate = m;
+            g_vote_mates_held++;
+            LOG("cell: the vote holds the editor: the mate %08X does not meet our cell again (BUG-1245)", m);
+        }
     if (g_vote.arrival) // BUG-0315: a guest that plays the host's Creature world now voted for it in Cell
         for (auto& [id, r] : g_remotes) {
             if (r.echo || r.buf.empty() || (g_ready.count(id) && g_ready[id]))
@@ -1069,10 +1139,15 @@ void vote_tick(double now)
             }
         }
     bool all = true;
-    int away = 0, editing = 0;
+    int away = 0, editing = 0, onway = 0;
     for (auto& p : g_sess.players()) {
         if (p.id != 0 && g_vote_present_fix && own_world::peer_elsewhere((uint8_t)p.id)) {
             away++; // BUG-0801: plays another world, ignores the vote (BUG-0702): not waited for
+            continue;
+        }
+        if (p.id != 0 && g_vote.arrival && g_arrival_nowait_fix && !(g_ready.count(p.id) && g_ready[p.id]) &&
+            peer_takes_arrival_editor((uint8_t)p.id)) {
+            onway++; // BUG-1245: on its way, it opens its own editor when it arrives (BUG-1240): not waited for
             continue;
         }
         if (p.id != 0 && g_vote_editor_fix && !(g_ready.count(p.id) && g_ready[p.id]) && peer_in_editor((uint8_t)p.id)) {
@@ -1086,6 +1161,14 @@ void vote_tick(double now)
         if (editing) {
             g_vote_in_editor++;
             trace::line("vote", "%d player(s) in their own editor: not waited for (BUG-1239)", editing);
+        }
+    }
+    if (onway != g_arrival_onway_last) {
+        g_arrival_onway_last = onway;
+        if (onway) {
+            g_arrival_not_waited++;
+            trace::line("vote", "%d player(s) on their way to the Creature stage: not waited for, their own editor opens "
+                                "when they arrive (BUG-1245)", onway);
         }
     }
     if (away != g_vote_away_last) {

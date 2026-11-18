@@ -287,6 +287,16 @@ uint8_t* G();
 uint32_t avatar_idx();
 uint8_t* avatar();
 uint32_t mate_idx();
+extern uint32_t g_matings, g_egg_lays; // tests (BUG-1245)
+// BUG-1246 (cellsync_mate.cpp): a guest's mate in the host's game
+void mate_in(int from, net::Reader& r);
+void mate_tick(double now);
+void mate_forget();
+void mate_player_left(int id);
+void mate_session_end();
+std::string mate_status();
+uint32_t mate_copy_of(int id);
+bool is_mate_copy(uint32_t idx);
 void* fg_query();
 uint8_t* S();
 net::Vec3 pos_of(uint8_t* c);
