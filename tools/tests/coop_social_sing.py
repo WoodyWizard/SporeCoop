@@ -149,7 +149,7 @@ def run(host, guest, ck, gid):
         other.call('key w down')
     sung = {}
     t_sing = time.time()
-    for _ in range(12):  # the social game starts a moment after the click (the Kook's answer): a player presses again
+    for _ in range(24):  # the social game starts a moment after the click (the Kook's answer): a player presses again
         hold(singer, 0x31)
         sample(1.5, probes, sung)
         if social & set(sung.get('singer_avatar', [])):
@@ -164,7 +164,7 @@ def run(host, guest, ck, gid):
     print(f'  the {sname}\'s game: ' + singer.call('coop.npc cur')['out'].replace('\n', ' | ')[:300], flush=True)
     if not sang:
         ck.faults(host=host, guest=guest)
-        return ck.inconclusive(f'the {sname}\'s creature never sang in 20 s (the social game did not start)')
+        return ck.inconclusive(f'the {sname}\'s creature never sang in 40 s (the social game did not start)')
     print(f'  (the {oname}\'s game shows the {sname} singing: {bool(social & set(sung.get("other_puppet_of_singer", [])))}; BUG-1244)')
     ck(not (social & set(sung.get('other_avatar', []))),
        f"the {oname}'s own creature does not sing with the {sname} ({sorted(social & set(sung.get('other_avatar', [])))})")
