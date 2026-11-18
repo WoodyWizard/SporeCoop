@@ -1072,6 +1072,13 @@ bool set_log(bool on)
     return g_log;
 }
 
+// tests (BUG-1252): the rate limit's bucket in debt by n tokens, as a burst of effects leaves it (n / 40 s to refill)
+void drain_tokens(double n)
+{
+    g_tokens = -n;
+    g_tokens_at = now();
+}
+
 void set_load(uint32_t n, uint32_t period_ms, uint32_t id)
 {
     g_load_n = n;

@@ -57,6 +57,7 @@ bool set_log(bool on);
 // the frame-time workload (`coop.effects load`): `n` effects every `period_ms` at the local player,
 // created through the game's effect manager like an effect of the game's own code. 0 stops it.
 void set_load(uint32_t n, uint32_t period_ms, uint32_t id);
+void drain_tokens(double n); // tests (BUG-1252): the rate limit's bucket n tokens in debt
 // tests: the game's own effect pools of `key` on the local avatar and every partner's puppet:
 // `game=<pointer> active=<0|1>` for each (empty when the game symbols are missing)
 std::string probe(uint32_t key);

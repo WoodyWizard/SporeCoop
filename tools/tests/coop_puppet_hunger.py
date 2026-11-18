@@ -13,7 +13,8 @@ Creature fixture, the guest 4 m in front of the host's camera:
   2. the guest's own creature gets hungry (`coop.puppet ownhunger 10`, its own game's meter as minutes leave it): the
      bubble on both games;
   3. a burst of effects at the guest's creature (`coop.effects load 40 10 E1A4BD93`: the being-hit effect, as a fight's hits make it) while the guest
-     eats (`ownhunger 100`): its own bubble goes; the burst ends;
+     eats (`ownhunger 100`, right after `coop.effects drain 10`: the rate limit in debt as a burst leaves it, at any frame
+     rate): its own bubble goes; the burst ends;
   4. 10 s later the host's puppet must have no bubble either (`coop.effects map`, active); key frames.
 SPORE_FIX_OFF=effects.stop_always must FAIL (the bubble stays on the puppet)."""
 import re
@@ -65,6 +66,8 @@ def main():
     # 3. it eats during a burst of effects at it
     print('  guest: ' + guest.call('coop.effects load 40 10 E1A4BD93')['out'].strip(), flush=True)
     time.sleep(1.5)
+    # (the bucket as the burst leaves it right then: in debt, so the stop meets an empty limit at any frame rate)
+    print('  guest: ' + guest.call('coop.effects drain 10')['out'].strip(), flush=True)
     print('  guest: ' + guest.call('coop.puppet ownhunger 100')['out'].strip(), flush=True)
     watch(host, guest, gid, 3, 'burst', rows)
     guest.call('coop.effects load 0')

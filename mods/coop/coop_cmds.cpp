@@ -1467,6 +1467,11 @@ void register_commands_core()
                            SAY("%s", effects::status().c_str());
                            return 0;
                        }
+                       if (argc > 1 && !strcmp(argv[1], "drain")) { // tests (BUG-1252): drain [n] (default 10)
+                           effects::drain_tokens(argc > 2 ? atof(argv[2]) : 10.0);
+                           SAY("effects: the rate limit is %s tokens in debt\n", argc > 2 ? argv[2] : "10");
+                           return 0;
+                       }
                        if (argc > 1 && !strcmp(argv[1], "load")) {
                            uint32_t n = argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 10) : 0;
                            uint32_t ms = argc > 3 ? (uint32_t)strtoul(argv[3], nullptr, 10) : 1000;
