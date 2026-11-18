@@ -9053,3 +9053,25 @@ each on rel: 12 of 12 PASS (20261118-033459, lanes 2-5); on v0.7.14.1: 10 of 12,
 * The campaign's Tribe segment save (`<run>/segments/tribe.tgz`, loaded with `coop.load Game30 <planet>` after
   `campaign_lib.unpack_slot`) reproduces the state without planting: species list 4, property list 10 (lab
   20261118-002106, -002353).
+
+## Social games with every social kind: creature_social_kinds (2026-11-18, fix/w52-social)
+<a id="testing-social-kinds"></a>
+
+BUG-1242. The `creature` fixture's nests prompt only to sing (kind 1), so no social test could see a guest that answers
+only with sing (docs/re/creature.md#creature-social-kinds).
+* `coop_creature_social_kinds.py [--keys]` (suites `creature_social_kinds`, `creature_social_kinds_keys`, fixture
+  `creature_cadian`, ~3-4 min cold): reads the guest's social abilities (`coop.social abil -1`: `key=` is the kind),
+  picks the nearest nest whose prompt candidates (`coop.social herds`: `kinds=<kind>:<type>:<points>`) include
+  another kind than sing and are all kinds the guest has with at least the prompt's points, takes both players there,
+  then plays as a player on the guest: the social stance, a click on an animal of the nest, and for each prompt
+  (`coop.social`: `prompt_kind=`) a click on the bar's button of that kind (`coop.social bar`: the bar's slots, their
+  kinds and button windows, placed with `coop.ui where`; `--keys`: the key of the kind). An animal whose prompts were
+  all sing is impressed and the next one is tried. Checked: each charm / dance / pose answer plays the ability's
+  animation on the guest's avatar and on the host's puppet of it (`coop.npc cur`), the animal is impressed in both
+  games (the NPC's and the mirror's own flag), the species table counts it in both. Key frames: the prompt, the result.
+* The players' creature in `creature_cadian` is not the same in every cold start (the world's species the guest's log
+  names, `own avatar species - -> ...`: seen 06538DD6, 065CB857, 06806931, 065CB8B4; with sing only, sing + dance,
+  sing + charm + pose, all four): the test adapts the nest to it and starts the games again (at most 3 starts) while
+  the creature has only sing; it fails ("the world has a nest ...") after that.
+* `SPORE_FIX_OFF=social.kinds`: the other kind's click / key does nothing (no animation on either game, `kind_acts=`
+  stays 0 for it), the game fails after its prompt list.
