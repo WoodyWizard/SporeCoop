@@ -142,8 +142,9 @@ def play(host, guest, nid, buttons, ck, anims=None, gid='1'):
                 kind = int(num(r'prompt_kind=(\d+)', s, 0))
                 seen.append(kind)
                 pending, prompt_t, tries = kind, time.time(), 0
-                print(f'  #{nid}: prompt {len(seen)} kind {kind} ({KIND_NAME.get(kind, "?")}) type '
-                      f'{re.search(r"prompt_type=(\S+)", s).group(1)} anim {re.search(r"prompt_anim=(\S+)", s).group(1)}', flush=True)
+                ptype, panim = re.search(r'prompt_type=(\S+)', s).group(1), re.search(r'prompt_anim=(\S+)', s).group(1)
+                print(f'  #{nid}: prompt {len(seen)} kind {kind} ({KIND_NAME.get(kind, "?")}) type {ptype} anim {panim}',
+                      flush=True)
                 if len(seen) == 1:
                     keyframe('prompt', f'the guest is in a social game with animal #{nid}: on the guest\'s screen its mirror '
                              'performs the prompt, the social meter and "Answer it" are up; on the host\'s the guest\'s creature stands at the nest '
