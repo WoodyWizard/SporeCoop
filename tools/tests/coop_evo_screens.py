@@ -253,8 +253,18 @@ def part_cell(host, guest, ck, ready, scr):
     # 2. the guest's own mating call: its own editor; the host plays on and sees its world
     if '--one' in sys.argv:  # creature.mode host: the guest's own evolution is refused; its screen must come back
         t_g = time.time()
-        mating_call(guest, 'guest', lambda: 'Editor' in mode(guest) or time.time() - t_g > 45)
-        time.sleep(25)
+        refused = lambda: 'request is refused' in ''.join(log_since(guest, g_off2))  # noqa: E731
+        g_off2 = log_size(guest)
+        mating_call(guest, 'guest', lambda: 'Editor' in mode(guest) or refused() or time.time() - t_g > 45)
+        ck(wait(refused, 40), "the guest's own mating call reached its mate and was refused (creature.mode host)")
+        m0, e0 = mate_counts(guest)
+        time.sleep(35)
+        m1, e1 = mate_counts(guest)
+        n = sum('request is refused' in l for l in log_since(guest, g_off2))
+        print(f'  guest after the refusal: {m1 - m0} more matings, {e1 - e0} more egg layings in 35 s, {n} refusals', flush=True)
+        # BUG-1265: the refused request left the mate next to the cell: the round and its black fade came every ~10 s
+        ck(m1 - m0 == 0 and e1 - e0 == 0 and n == 1,
+           f"the guest's refused mating round plays once ({m1 - m0} more matings, {e1 - e0} more egg layings, {n} refusals)")
         check_black(ck, sg, 'guest', 'after its own mating call was refused (creature.mode host)', t_g)
         check_black(ck, sh, 'host', "after the guest's refused mating call", t_g)
         keyframe('guest_refused', 'Cell, creature.mode host: the guest\'s own mating call is refused; both games show the pool')
