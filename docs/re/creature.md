@@ -5353,3 +5353,23 @@ Decision 5FA, BUG-9250, `coop.fix creature.summon_lock`.
   unlocked. `coop.abilities reach` lists each ability's status and the bar's slots.
 * ✔ The host knows whose flock is out: drama::summon_running (an active summon updated within 2 s) and
   drama::summon_puppet (the partner's puppet when the running event is the one started for it).
+
+## The pause menu's save, step by step (2026-11-17, feat/lineages-alpha)
+<a id="creature-save-steps"></a>
+
+GOG 2024 / Steam (3010a413), Ghidra on the TITAN dump (docs/05-re-notes.md#re-notes-ghidra-windows). Decision 6A A (the
+galaxy's saves must not freeze the game).
+
+* ✔ `SporeCoop::SaveGame_MessageHandler` 0xB29960: the Save message 0x1CD20F0 clears `SporeCoop::SaveGame_Allowed`
+  (0x15689AC), starts `SporeCoop::SaveGame_Clock` (0x167DF70), shows the busy cursor, pauses the game time (reason
+  0x4BF38A7) and posts 0x685DBFA; 0x685DBFA posts itself again until the clock shows 1000 ms, then the clock pauses,
+  the game time and the cursor come back, the star record's tech level and flags are set and
+  cGamePersistenceManager_SaveGame(CurrentGameName, 1) writes the save (the 0.7-0.9 s frame measured in the alpha
+  test), then the "game saved" box shows.
+* ✔ The box's OK (listener 0x1568A7C, 0xB269F0) starts a second clock (0x167DF88) and posts 0x685DBFA, which 1500 ms
+  later sets SaveGame_Allowed again: a box that is never confirmed (or a save whose box is skipped) blocks every later
+  save. So the box is not skipped; the mod confirms it as soon as it shows (world.cpp).
+* ✔ The Clock: +0 start ticks, +8 accumulated ticks, +0x10 mode (1 rdtsc), +0x14 float ms per tick
+  (Clock::GetElapsedTicks 0x93A310). Adding 1000 ms worth of ticks to +8 once the Save message was handled lets the
+  next 0x685DBFA write the save at once: the game time is paused for a frame or two instead of a second.
+
