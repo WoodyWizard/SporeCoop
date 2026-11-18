@@ -363,8 +363,9 @@ def retired():
 
 # where a retired switch must not be named any more: the tests and the lab's tools (any mention), the current docs (a
 # use: `coop.fix <name>`, SPORE_FIX_OFF=..., SPORE_LAB_FIXOFF=...). History keeps its names: the tickets, the
-# CHANGELOG, docs/archive, the audits and plans, and docs/re's labels of a fix ("(pool.ko_grace, BUG-0238)")
-HISTORY = re.compile(r'^(docs/(tickets|archive|audit-[\d.]+)/|docs/plan-|CHANGELOG\.md$)')
+# CHANGELOG, docs/archive, the audits and plans, and docs/re's labels of a fix ("(pool.ko_grace, BUG-0238)"); notes.md
+# is the tag build's release notes, a CHANGELOG section that release_check.sh writes before `make test`
+HISTORY = re.compile(r'^(docs/(tickets|archive|audit-[\d.]+)/|docs/plan-|CHANGELOG\.md$|notes\.md$)')
 DOC_USE = r'coop\.fix\s+{n}\b|SPORE_(?:LAB_)?FIX_?OFF=[^\s`)]*(?<![\w.]){n}(?![\w])'
 
 
