@@ -274,3 +274,26 @@ anchor so other docs can link to it:
   citizen kind's snapshot carries no animation.
 * Next steps: send the host citizen's action (a wire change for new guests) or relay its animations as Tribe does.
 * Ticket: BUG-1231
+
+## Creature: after a caption a host NPC near the guest is drawn 16-18 m off for a few seconds (2026-11-18, test npc_frozen_thaw)
+<a id="issue-creature-thaw-proxy-off"></a>
+
+* What happens: the host's game stood still under a caption (the brain upgrade); when it closes, one of the host's
+  NPCs near the guest is drawn 16-18 m from where the host has it for about 3 s, then it is back in place.
+* Reproduce: `lab.py run npc_frozen_thaw --repeat 6` (creature fixture, cold starts): about half the runs.
+* Known: not a 0.7.15 regression (v0.7.14.1 the same rate on the same lanes); the proxy is not dropped (BUG-0611's
+  case), it drifts. Runs after a warm reset pass.
+* Not checked: which side moves (the host's NPC jumping on after the thaw or the guest's proxy lagging).
+* Next steps: the next release.
+* Ticket: BUG-1234
+
+## Tribe: at 30 fps over a real network a guest sees a tribe member jump once or walk unevenly (2026-11-18, test tribe_walk_player)
+<a id="issue-tribe-walk-player-jumps"></a>
+
+* What happens: at 30 fps with the player network profile, the guest's copies of tribe members (its own and the
+  host's) sometimes jump once while walking, or start and stop unevenly in 12-14% of the frames (the test allows 10%).
+* Reproduce: `lab.py run tribe_walk_player --repeat 4` (about 3 of 4 runs fail on both builds).
+* Known: not a 0.7.15 regression (v0.7.14.1 fails 4 of 4 the same night); worse when the headless Xwayland is saturated.
+* Not checked: which member path (drive.lead, the hold after a stop) makes the jump.
+* Next steps: the next release.
+* Ticket: BUG-1235
