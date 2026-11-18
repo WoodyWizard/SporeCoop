@@ -480,6 +480,8 @@ extern uint32_t g_despawns_unlisted;
 extern uint32_t g_local_refused;
 extern uint32_t g_mode;
 extern uint32_t g_pass_hover_skipped;
+extern uint32_t g_social_hover_skipped; // BUG-1250
+extern volatile bool g_social_hover_on;
 extern uint32_t g_pass_pairs;
 extern uint32_t g_pass_phantom_own;
 extern uint32_t g_pass_phantom_pairs;

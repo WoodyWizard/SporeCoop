@@ -1017,9 +1017,12 @@ std::string current_anims()
         if (c && game::creature_listed(c) && game::drawn_state(c, &m, &a)) {
             // BUG-1241 (tests): the creature's party bits here: the pack (+0xB58 & 0x100), the avatar's herd (family)
             // BUG-1241 / BUG-1252 (tests): the ability it performs now (+0xE8C) and its animation, its food meter
-            snprintf(b, sizeof b, "cur %s anim=%08X pack=%d family=%d ability=%d ability_anim=%08X hunger=%.1f\n", name, a,
-                     (int)game::pack_member(c), (int)(game::herd_of(c) && game::herd_of(c) == game::avatar_herd()),
-                     (int)game::ability_in_use(c), game::ability_anim_in_use(c), game::hunger(c));
+            // (+0xBB8 the meter's change a second, +0xCC0 the mood 0xC02F50 gives the thought bubble from)
+            snprintf(b, sizeof b, "cur %s anim=%08X pack=%d family=%d ability=%d ability_anim=%08X hunger=%.1f hunger_delta=%.3f "
+                     "mood=%d\n", name, a, (int)game::pack_member(c),
+                     (int)(game::herd_of(c) && game::herd_of(c) == game::avatar_herd()), (int)game::ability_in_use(c),
+                     game::ability_anim_in_use(c), game::hunger(c), *(float*)((uint8_t*)c + 0xBB8),
+                     *(int32_t*)((uint8_t*)c + 0xCC0));
             out += b;
         }
     };

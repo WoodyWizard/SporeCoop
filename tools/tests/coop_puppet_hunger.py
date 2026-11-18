@@ -23,8 +23,17 @@ BUBBLE = '062EDBA6'  # the hunger bubble's pool key (0xE8BF00)
 
 
 def hunger(con, who):
-    m = re.search(rf'^cur {who} .*hunger=([-\d.]+)', con.call('coop.npc cur')['out'], re.M)
-    return float(m.group(1)) if m else None
+    m = re.search(rf'^cur {who} .*hunger=([-\d.]+) hunger_delta=([-\d.]+) mood=(-?\d+)', con.call('coop.npc cur')['out'], re.M)
+    return (float(m.group(1)), float(m.group(2)), int(m.group(3))) if m else (None, None, None)
+
+
+def watch(host, guest, gid, secs, label, rows):
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        hp_, gp = pools(host, gid), pools(guest, 'avatar')
+        rows.append((label, round(time.time() - t0, 1), hunger(host, 'p' + gid), hp_.get(BUBBLE), hunger(guest, 'avatar'),
+                     gp.get(BUBBLE)))
+        time.sleep(0.5)
 
 
 def main():
@@ -38,32 +47,32 @@ def main():
     hp = pos(host)
     guest.call('coop.npc gopos %.2f %.2f %.2f' % (hp[0] + 4, hp[1], hp[2]))
     time.sleep(4)
-    print(f'  puppet {cur(host, "p" + gid)}, hunger host puppet {hunger(host, "p" + gid)}, guest own {hunger(guest, "avatar")}', flush=True)
-
-    # 1. the puppet's own meter in the host's game
-    print('  host: ' + host.call('coop.puppet hunger 60')['out'].strip(), flush=True)
-    time.sleep(20)
-    h1 = hunger(host, 'p' + gid)
-    print(f'  20 s later: host puppet hunger {h1}, guest own {hunger(guest, "avatar")}', flush=True)
-
-    # 2. hungry as minutes of the game's update leave it
-    print('  host: ' + host.call('coop.puppet hunger 10')['out'].strip(), flush=True)
     rows = []
-    t0 = time.time()
-    while time.time() - t0 < 8:
-        hp_, gp = pools(host, gid), pools(guest, 'avatar')
-        rows.append((round(time.time() - t0, 1), hunger(host, 'p' + gid), hp_.get(BUBBLE), gp.get(BUBBLE)))
-        time.sleep(0.5)
-    keyframe('bubble', 'the host\'s screen, the guest\'s creature 4 m ahead: NO thought bubble (gnawed bone) over it '
+    watch(host, guest, gid, 3, 'start', rows)
+    # 1. the puppet's own meter in the host's game, as minutes of the game's update would leave it
+    print('  host: ' + host.call('coop.puppet hunger 10')['out'].strip(), flush=True)
+    watch(host, guest, gid, 10, 'pup10', rows)
+    keyframe('puppet_hungry', 'the host\'s screen, the guest\'s creature 4 m ahead: NO thought bubble (gnawed bone) over it '
              '(the guest\'s own creature is not hungry)', settle=0)
-    print(f'  (s, host puppet hunger, its bubble active, the guest avatar\'s bubble active) {rows}', flush=True)
+    # 2. the guest's own creature gets hungry (its own game: its own bubble, relayed), then eats (its meter full)
+    print('  guest: ' + guest.call('coop.puppet ownhunger 10')['out'].strip(), flush=True)
+    watch(host, guest, gid, 10, 'own10', rows)
+    keyframe('guest_hungry', 'the guest\'s own creature is hungry: a bubble over it on the guest\'s screen if its own game shows '
+             'one, the same over it on the host\'s', settle=0)
+    print('  guest: ' + guest.call('coop.puppet ownhunger 100')['out'].strip(), flush=True)
+    watch(host, guest, gid, 10, 'own100', rows)
+    keyframe('guest_fed', 'the guest\'s own creature ate (full): NO bubble over it on either screen', settle=0)
+    for r in rows:
+        print(f'    {r[0]:6} {r[1]:5.1f} host puppet {r[2]} bubble {r[3]} | guest avatar {r[4]} bubble {r[5]}', flush=True)
     m = re.search(r'remote animations.*', host.call('coop.status')['out'])
     print('  host: ' + (m.group(0) if m else '?'), flush=True)
-    late = rows[len(rows) // 2:]
-    shown = [r for r in late if r[2] and not r[3]]
-    ck(not shown, f'the host\'s puppet shows no hunger bubble the guest\'s own creature does not have ({shown[:3]})')
-    ck(late and all(r[1] is not None and r[1] >= 99 for r in late),
-       f'the host\'s puppet of the guest is full (its own meter does not run down there): {[r[1] for r in late]}')
+    print('  host: ' + host.call('coop.effects')['out'].strip().splitlines()[0], flush=True)
+    print('  guest: ' + guest.call('coop.effects')['out'].strip().splitlines()[0], flush=True)
+    late = [r for r in rows if r[1] > 5]
+    shown = [(r[0], r[1]) for r in late if r[3] and not r[5]]
+    ck(not shown, f'the host\'s puppet shows no hunger bubble the guest\'s own creature does not have ({shown[:4]})')
+    low = [(r[0], r[1], r[2][0]) for r in late if r[0] == 'pup10' and (r[2][0] is None or r[2][0] < 99)]
+    ck(not low, f'the host\'s puppet of the guest is full (its own meter is not the guest\'s): {low[:3]}')
     shot(host, 'puppet_hunger_host.png')
     shot(guest, 'puppet_hunger_guest.png')
     ck.faults(host=host, guest=guest)

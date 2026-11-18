@@ -1223,6 +1223,15 @@ void register_commands_core()
                        }
                        // tests (BUG-1252): hunger [v]: each Creature puppet's food meter (+0xBBC); with v set through the game's
                        // setter, as minutes of the game's own hunger update leave a puppet that never eats
+                       if (argc > 2 && !strcmp(argv[1], "ownhunger")) { // tests (BUG-1252): the own avatar's meter
+                           void* av = game::avatar();
+                           if (!av)
+                               return 1;
+                           float before = game::hunger(av);
+                           game::set_hunger(av, (float)atof(argv[2]));
+                           SAY("avatar hunger %.1f -> %.1f\n", before, game::hunger(av));
+                           return 0;
+                       }
                        if (argc > 1 && !strcmp(argv[1], "hunger")) {
                            for (auto& [id, r] : g_remotes) {
                                if (!r.puppet || !creature_puppet(r.puppet_adapter) || !game::creature_listed(r.puppet))
@@ -1627,10 +1636,10 @@ void register_commands_core()
                        for (void* p : g_pass_puppets)
                            n += p != nullptr;
                        SAY("fix=%d on=%d puppets=%d pairs_skipped=%u own_pairs_seen=%u hover_skipped=%u ff=%d "
-                           "phantom_pairs=%u/%u/%u",
+                           "phantom_pairs=%u/%u/%u social_hover=%d social_hover_skipped=%u",
                            (int)g_partner_pass_fix, (int)g_pass_on, n, g_pass_pairs, g_pass_seen_own, g_pass_hover_skipped,
                            (int)settings::on(settings::kFriendlyFire), g_pass_phantom_pairs, g_pass_phantom_own,
-                           g_pass_phantom_partner);
+                           g_pass_phantom_partner, (int)g_social_hover_on, g_social_hover_skipped); // BUG-1250
                        return 0;
                    },
                    nullptr, MT);
