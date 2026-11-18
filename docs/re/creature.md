@@ -5372,4 +5372,9 @@ galaxy's saves must not freeze the game).
 * ✔ The Clock: +0 start ticks, +8 accumulated ticks, +0x10 mode (1 rdtsc), +0x14 float ms per tick
   (Clock::GetElapsedTicks 0x93A310). Adding 1000 ms worth of ticks to +8 once the Save message was handled lets the
   next 0x685DBFA write the save at once: the game time is paused for a frame or two instead of a second.
+* ✔ The silent save, message 0x689C9B9 (same handler; its one other use: the leave-the-planet path 0xB638CD,
+  MessageSend with data 0): the same save steps at once, with no clock, no game-time pause, no busy cursor and
+  SaveGame_Allowed untouched; the "game saved" box afterwards only when the message's data is 0 (a failed save always
+  shows its box). Only the persistence manager listens to it (the scan finds the handler, that sender and its
+  registration in .rdata). So a save posted as 0x689C9B9 with non-zero data costs the write alone (0.7-0.9 s).
 
