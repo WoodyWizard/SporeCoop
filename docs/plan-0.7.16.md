@@ -224,3 +224,18 @@ machine and a key frame, a save parse where it writes a field a save could see, 
    WP-X2) in 0.7.17?
 8. **Space**: the guest's captain and crew species (cEmpire's species, the captain's portrait, BUG-1111) are the
    host's empire's today; in scope for this line, or later?
+
+## Owner decisions (2026-11-18)
+<a id="plan-0716-decisions"></a>
+
+* Scope: everything in 0.7.16 (Cell kin, Tribe members and outfits, Civ citizens, vehicles, buildings and the guest's
+  own editors, the stage transitions).
+* Saves: the host's game save keeps only the host's species and designs (the guest's keys are put back for the
+  write); the guest's look is kept by the mod in the host's per-player store and applied after the load.
+* Cell kin: each player's kin swim near that player (a mix where the players are together).
+* Civ shared capital: its citizens are of the species of the player who founded or captured it (changes with the
+  owner).
+* The coordinator's defaults (the owner did not object): the tribe list portraits stay the tribe's species; a gifted
+  member or vehicle takes the receiver's species; `creature.mode` (own creature) switches Tribe and Civ too; the
+  guest's captain and crew in Space come later.
+* Start: after 0.7.15.2 is out.
