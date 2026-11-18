@@ -562,8 +562,7 @@ std::string debug(const std::vector<std::string>& a)
         char b[96];
         snprintf(b, sizeof b, "anim avatar %08X anim=%X\n", av ? F<uint32_t>(av, 0) : 0u, av ? F<uint32_t>(av, 0x1B0) : 0u);
         char z[128];
-        snprintf(z, sizeof z, "zaps=%u puppet_zaps=%u held=%u puppet_zap_anims=%u\n", g_n.zaps, g_n.puppet_zaps,
-                 g_n.puppet_zaps_held, g_n.puppet_zap_anims);
+        snprintf(z, sizeof z, "zaps=%u puppet_zaps=%u\n", g_n.zaps, g_n.puppet_zaps);
         return std::string(b) + z + modes::cell_puppet_anims();
     }
     if (!a.empty() && a[0] == "diet") { // what each cell's mouth eats (the model data CanEat 0xE68470 reads)
