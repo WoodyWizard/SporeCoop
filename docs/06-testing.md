@@ -9053,3 +9053,22 @@ each on rel: 12 of 12 PASS (20261118-033459, lanes 2-5); on v0.7.14.1: 10 of 12,
 * The campaign's Tribe segment save (`<run>/segments/tribe.tgz`, loaded with `coop.load Game30 <planet>` after
   `campaign_lib.unpack_slot`) reproduces the state without planting: species list 4, property list 10 (lab
   20261118-002106, -002353).
+
+## Black screens around the evolution editors, measured (2026-11-18, fix/w52-evoeditor)
+<a id="testing-evo-screens"></a>
+
+* `coop_evo_screens.py` (suites `evo_screens_cell`, `_cell_noready`, `_cell_one`, `_cell_both`, `evo_screens_switch`,
+  `_switch_slow` (SPORE_NET=lowband), `_switch_noready`, `_switch_lowfps` (SPORE_FPS=guest:10); BUG-1239, BUG-1240):
+  a background thread per game (its own console connection, so the test's drags do not stop it) shoots the screen every
+  2 s with the game's mode; a run of black pictures longer than 20 s outside the player's own editor fails. The
+  picture is measured beside the middle (the left and right thirds below the notices): the co-op window of a vote covers
+  the middle and screen_look's `world` region read the window over a black game as "drawn". After the editors it
+  compares the avatar keys and what each game draws for the partner (a creation of the partner is registered under a
+  content key 0x7C......: compare with `coop.creations` "player N creature", not the raw key).
+* `coop_social_sing.py` (`social_sing`, `social_sing_partner`), `coop_brain_rings.py` (`brain_rings`) and
+  `coop_cell_attack_anim.py` (`cell_attack_anim`, `coop.pool anims`: the cell animation +0x1B0 of the own cell and the
+  puppets): the other player's creature must play only its own animations and pool effects (BUG-1241, BUG-1243).
+  Pitfalls: a social ability plays only inside a social game with an animal (the host clicks a Kook first and presses
+  the key until its creature sings; about half of the runs get no song in 20 s); the guest put 4 m from the host by
+  `coop.abilities goto` can stand against the nest rocks and not move on W; the cell fixture has no weapon part, so
+  `coop.pool kill -` (the game's Bite from 9-14 m) plays no attack animation on the attacker (+0x1B0 stays 0).

@@ -144,6 +144,9 @@ Shared contracts between the features:
   Ready: Alice ✔, Bob …". The transition starts when everyone is ready or after 60 s.
 * The host goes through the editor and the cutscene, then the world is sent to guests automatically.
 * A guest cannot advance alone: their transition button leads to the vote.
+* The vote does not wait for a guest that is in its own editor (its own mating call, BUG-1239); a guest still on its
+  way to the host's Creature world when the first Creature editor's vote ends gets its own editor when it arrives
+  (BUG-1240).
 * An editor within a phase (for example, the creature editor after the mating call) does not kick guests out.
 * Cell -> Creature (BUG-0315, `core.switch_vote`): the host's click on History's check starts the vote "wants to move on
   to the Creature stage"; the first Creature editor's vote that follows counts every player who has arrived as ready.
