@@ -16,8 +16,8 @@ host's game showed the guest's puppet at its captain's feet as the guest's Creat
    then 25 s of play;
 5. checks: both games are still in the adventure and running, with no fault and no crash report (the lab checks the
    reports too); a puppet of the partner that a game shows has the captain's size (within 25 % of the captain's size on
-   the partner's game x 1.15, the puppets' factor) and it is a captain (the partner's when this game has its species, else this
-   game's own captain stands in: BUG-1262), not the partner's Creature-stage creature.
+   the partner's game x 1.15, the puppets' factor) and it is a captain (this game's own captain stands in for the partner's: the
+   captains' species are made per game, BUG-1262), not the partner's Creature-stage creature.
 SPORE_FIX_OFF=adventure.puppet_captain must FAIL.
 
   SPORE_LANE=N python3 tools/tests/coop_adventure_tutorial.py [--own-places]
@@ -155,8 +155,8 @@ def main():
         print(f'  {who}\'s puppet of the {other}: {p}', flush=True)
         if p and other in caps:
             want_sp, want_sc = caps[other]
-            # the partner's captain when this game has its species; else this game's own captain stands in (the
-            # captains' species are made per game: BUG-1262)
+            # this game's own captain stands in for the partner's (the captains' species are made per game: BUG-1262;
+            # the same key can be both games' captains)
             ck(p[0] in (want_sp, caps.get(who, (None,))[0]) and p[0] not in creature_body,
                f'5. the {who}\'s puppet of the {other} is a captain, not the {other}\'s Creature-stage creature '
                f'(species {p[0]}: the {other}\'s captain {want_sp}, the {who}\'s {caps.get(who, (None,))[0]}, '

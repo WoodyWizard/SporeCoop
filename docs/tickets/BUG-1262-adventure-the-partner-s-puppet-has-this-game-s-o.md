@@ -24,8 +24,9 @@ right size.
 
 ## Root cause
 * Observed (runtime): the captains' species keys are made per game (host 2927BAE4, guest 2927BAE2 in one run; 2927B941 /
-  2927B940 in another, type and group as the own captain's): `GetSpeciesProfile` of the partner's key finds nothing, so
-  the BUG-1254 fix (adventure.puppet_captain) uses this game's own captain as the stand-in.
+  2927B940 in another; the same key 2927BD73 for two different captains in lab 20261118-131729): the partner's key does
+  not name its captain in this game, so the BUG-1254 fix (adventure.puppet_captain) uses this game's own captain as the
+  stand-in.
 * Inferred: showing the partner's captain needs its creation (the captain's creature records) sent like the Creature
   stage's creations (creations.cpp bundles) and a species built from it here; part of co-op adventures (BUG-0793).
 

@@ -436,9 +436,9 @@ static void creature_despawn(void* p)
 // with none the row pointer is 0 and 0xC070D0 reads [0 + 1]: an access violation at 0xC0714E (both games in
 // lab 20261118 lane 9, the puppet in esi; the game's handler caught it under Wine, the adventure's play state stayed 0;
 // the players' guest crashed). A puppet in the avatar's herd is skipped there (the clone of the own captain the
-// adapter made without a partner's creation: adventure_duo, BUG-0845). Now an adventure's puppet is the partner's
-// captain (its species from the partner's state when this game has it, else this game's own captain), in the
-// avatar's herd, at the captain's size (PlayerState body x 1.15, as the Creature puppets).
+// adapter made without a partner's creation: adventure_duo, BUG-0845). Now an adventure's puppet is a captain (this
+// game's own captain stands in for the partner's: BUG-1262), in the avatar's herd, at the captain's size (PlayerState
+// body x 1.15, as the Creature puppets).
 // `coop.fix adventure.puppet_captain off`: the Creature stage's puppet (0.7.15).
 static bool g_adventure_puppet_fix = true;
 COOP_FIX("adventure.puppet_captain", "BUG-1254", g_adventure_puppet_fix,
@@ -451,13 +451,9 @@ static void* scenario_spawn(const net::PlayerState& s, void* av)
     void* own = av ? game::species_profile(av) : nullptr;
     if (!herd || !own)
         return nullptr;
-    void* sp = nullptr;
-    if (s.species) { // the partner's captain: the same type and group as this game's captain
-        game::Key k = game::species_key(av);
-        k.instance = s.species;
-        sp = game::species_by_key(k);
-    }
-    void* p = game::spawn_creature(s.pos, sp ? sp : own, herd);
+    // (not the partner's captain species by its key: the captains' species keys are made per game, the same key is a
+    // different captain in each game: 2927BD73 a green and a robot captain in lab 20261118-131729; BUG-1262)
+    void* p = game::spawn_creature(s.pos, own, herd);
     if (!p)
         return nullptr;
     game::puppet_register(p);
@@ -466,8 +462,8 @@ static void* scenario_spawn(const net::PlayerState& s, void* av)
     game::set_scale(p, body * kPuppetBodyK);
     puppet_alive_note(p);
     if (g_host_for_modes)
-        g_host_for_modes->log(g_mod_for_modes, SK_INFO, "adventure: the partner's captain %08X shown as %s, in the avatar's herd, size %.2f (BUG-1254)",
-                              s.species, sp ? "its own species" : "this game's captain (its species is not here)", body * kPuppetBodyK);
+        g_host_for_modes->log(g_mod_for_modes, SK_INFO, "adventure: the partner (its captain %08X there) shown as this game's captain, in the "
+                              "avatar's herd, size %.2f (BUG-1254)", s.species, body * kPuppetBodyK);
     return p;
 }
 static void scenario_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)

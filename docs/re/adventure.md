@@ -116,9 +116,11 @@ about 3 s after the host's game showed the guest's puppet). GOG 2024, objdump an
   kScenario it looks up the creature's scenario object (`cGameData_ScenarioObject` 0xB18470: cGameData +0x1C, -1 =
   none) and its class's act row ([obj+0x70] + act * 0x4E0); with no object the row is 0 and +1 / +2 are read
   unchecked. Any creature the adventure did not place crashes the start of every act unless it is in the avatar's herd.
+* ✔ (runtime) The captains' species keys are made per game: one run had host 2927BAE4 / guest 2927BAE2, another the
+  same key 2927BD73 on both games for two different captains (a green one and a robot, key frames of lab
+  20261118-131729). A partner's captain key means nothing in the other game (BUG-1262).
 * Fix `adventure.puppet_captain` (modes.cpp scenario_spawn / scenario_drive): an adventure's puppet is made in the
-  avatar's herd, from the partner's captain species (its state's species with this game's captain key type and group,
-  when `GetSpeciesProfile` finds it; else this game's own captain), at the captain's size (PlayerState body: the
-  captain's scale, sent in kScenario too, x 1.15 as the Creature puppets).
+  avatar's herd, from this game's own captain species (the stand-in for the partner's captain), at the captain's size
+  (PlayerState body: the captain's scale, 3.0 in the tutorial, sent in kScenario too, x 1.15 as the Creature puppets).
 * Lab only: a game that loaded before the galaxy menu's start-up video ended shows no main menu panel when it comes
   back to the menu (BUG-1260); the test sends the video's end message first (`coop.menuintro`).
