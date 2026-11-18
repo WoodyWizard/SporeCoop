@@ -60,3 +60,4 @@ Lab, lanes 6 / 7, fixture space_free (runs in out/lab/ of the fix/w51-eco worktr
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: RE (docs/re/space.md#space-ecosystem), K_ECO sync, tests space_eco / space_eco_live (fix/w51-eco).
+- 2026-11-18: final check 20261117-154911: space_eco_live ZeroDivisionError in its key-frame camera (a census creature at the origin, made but not placed yet); test fix 61a50d39, PASS in 20261117-213354.
