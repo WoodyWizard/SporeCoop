@@ -1,20 +1,20 @@
 ---
 id: BUG-1243
 title: Cell: when one player attacks, the other player's cell plays the attack animation too
-status: open
+status: fixed
 kind: bug
 stage: Cell
 reported: 2026-11-18
 source: owner: players' video
 role: all
 versions: <0.7.15
-fixed_in:
-branch: fix/w52-evoeditor
-commits:
-tests: cell_attack_anim, cell_attack_electric, cell_attack_jaw, cell_attack_spike, cell_attack_mouth, cell_electric
+fixed_in: unreleased
+branch: fix/w53-cellfx
+commits: d4a043c1 0c2eeb16
+tests: cell_partner_respawn, cell_far_fight, cell_attack_anim, cell_attack_electric, cell_attack_jaw, cell_attack_spike, cell_attack_mouth, cell_electric
 signature:
 docs: docs/archive/known-issues-2026.md#issue-partner-cell-attack-anim, docs/re/cell.md#cell-partner-attack-anim, docs/re/cell.md#cell-partner-hatch
-related: BUG-1241, BUG-0715, BUG-0716
+related: BUG-1241, BUG-0715, BUG-0716, BUG-0238
 ---
 
 ## Report
@@ -52,14 +52,42 @@ both games, every 0.05 s) and `coop.effects` (cell fixture, both cells the world
 Not tried: poison clouds of a partner (BUG-0716 makes them in the host's game on purpose), a mouth that swallows the
 prey whole, a long session.
 
+Second look (2026-11-18, fix/w53-cellfx; docs/re/cell.md#cell-partner-hatch). Observed:
+* The guest fighting far from the host (70-90 m; mouth, jaw, spike, electric, poison; `coop_cell_far_fight.py`, lab
+  20261118-124151, -125953, -131202, -132850) changed nothing on the host's own cell: no DamageCell on it, its
+  animation +0x1B0 and state +0x18C stayed 0, it turned no more than when idle, no partner effect was played within
+  6 m of it. Every world effect id the guest sent, played again where the guest made it (-131202): two of them, and
+  only those, change the host's screen.
+* cell_egg_L0_autohatch (0xB4B06F12) and cell_hatch_ice (0x082BF046), the hatch of a respawn and of a co-op revive,
+  black out the whole screen of the game that plays them, wherever they are (brightness 124 -> 3, -132515), and the egg
+  stays drawn over the view for ~3 s.
+* A guest knocked out 70 m from the host and respawning (`coop.pool selfhit 20`, nobody near to revive it): the host's
+  screen went black (brightness 129 -> 4) and the egg came in, its own cell in the middle (-131912, -132735; the key
+  frame is black but for the notices). Both ways bring it: the guest's own hatch is a world effect at its cell and was
+  relayed, and the host's on_ko played it on the guest's puppet (KO_RESPAWNED: cell_egg_L0_autohatch; KO_REVIVED:
+  cell_hatch_ice).
+Inferred for the video: the guest was knocked out in its fight and came back; the host saw its own cell in the hatch's
+black screen and whirl ("and I fought the air"). The first report (the partner's cell plays the attack animation) was
+never seen: a puppet cell plays no animation at all.
+
 ## Fix
-None: not reproduced.
+`effects.cell_own_only` (effects.cpp `own_only`; cellsync.cpp on_ko): the two hatch effects are neither relayed (sender)
+nor played (receiver, also from an older partner) for a partner, and a partner's puppet gets no effect on its revive or
+respawn. Off: relayed and played (old). Also: cell_attack_anim's control asked for an attacker animation the fixture's
+mouthless bite never plays (it failed in every run); it now checks that the bites land (the creature's hp in the host's
+game) and that the other, idle cell plays no new animation.
 
 ## Verification
-no-fail-run: not reproduced on v0.7.15 (runs above).
+`tools/tests/coop_cell_partner_respawn.py` (suite cell_partner_respawn): the host's game makes no hatch effect and its
+screen never goes darker than 35 % of before while the guest, 70 m away, is knocked out and respawns.
+* FAIL (`SPORE_FIX_OFF=effects.cell_own_only`): out/lab/20261118-132735 (made 0 -> 1, darkest 3.9 of 130), also
+  -131912 (the black key frame).
+* PASS: out/lab/20261118-132850 (made 0 -> 0, darkest 117 of 113; the key frame shows the host's cell and the guest's
+  respawned one).
 
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w52-evoeditor): not reproduced (bites, the electric part); known-issues entry.
 - 2026-11-18 (fix/w52-evoeditor): second round (jaw, spike, mouth contact attacks, both directions, v0.7.14.1): still not reproduced.
 - 2026-11-18: a second analysis of the video: the HOST's cell swims in empty water and is spun in the combat whirl while the GUEST fights elsewhere ("I was fighting just now" / "and I fought the air"). So the guest's combat interaction or effect is played on the host's own cell. Reopened.
+- 2026-11-18 (fix/w53-cellfx): reproduced as a partner's revive / respawn hatch blacking out the other player's screen (the guest knocked out far away); fixed (`effects.cell_own_only`); cell_attack_anim made to measure landed bites.
