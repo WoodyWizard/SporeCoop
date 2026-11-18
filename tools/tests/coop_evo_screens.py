@@ -474,6 +474,7 @@ def part_cell_dna(host, guest, ck, ready, scr):
     ck(paid > 0 and seen[-1][2] == g0[0] - paid, f"the party's DNA (the host's) has the guest's price off too ({seen[-1][2] if seen else None})")
     keyframe('guest_back_dna', "Cell: the guest back in the pool: its DNA counter shows the part's price taken off", calm=3)
     # the host's own editor afterwards (the players' video: the guest's DNA changed only when the host left its editor)
+    sp1 = cell_dna(host)[1]  # the game's spent count with the guest's price in it
     host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
     if mating_call(host, 'host', host_vote):
         if 'vote active' in host.call('coop.vote')['out']:  # the Cell vote (core.editor_now off, BUG-1263)
@@ -485,8 +486,12 @@ def part_cell_dna(host, guest, ck, ready, scr):
             time.sleep(15)
             h2, g2 = cell_dna(host), cell_dna(guest)
             print(f'  after the host\'s editor: host {h2} guest {g2}', flush=True)
-            ck(h2[0] == g2[0] and g2[0] is not None and g2[0] <= g0[0] - paid,
-               f"after the host's editor both games show the same DNA, the guest's price still off ({h2[0]} / {g2[0]}, at most {g0[0] - paid})")
+            # the price is judged by the game's spent count (S+0x2C), not by the DNA: either player may eat after the
+            # editor (food 400 -> 409 gave DNA 13 -> 14 with the spend kept, lab 20261118-135513)
+            ck(h2[0] == g2[0] and g2[0] is not None and h2[1] is not None and g2[1] == h2[1] and sp1 is not None and
+               h2[1] >= sp1 >= paid,
+               f"after the host's editor both games show the same DNA and keep the guest's price in the spent count "
+               f"(DNA {h2[0]} / {g2[0]}, spent {h2[1]} / {g2[1]}, before the host's editor {sp1}, the price {paid})")
     keyframe('host_back_dna', 'Cell: both back in the pool, the same DNA on both')
 
 
