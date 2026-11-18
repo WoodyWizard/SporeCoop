@@ -2422,3 +2422,17 @@ beside the co-op window, which covers the middle of the view and made screen_loo
   its mate (lab 20261118-101722, -101728).
 * ✔ The same black picture at the start of the Creature stage: the host's game behind BUG-0315's arrival vote of the
   landfall editor until the guest arrived (up to the vote's 60 s over a slow link; docs/re/creations.md#creations-own-editor-arrival).
+
+## A partner's attack on the other cell: what runs for a puppet (2026-11-18, fix/w52-evoeditor)
+<a id="cell-partner-attack-anim"></a>
+
+BUG-1243 (not reproduced). GOG 2024, lanes 2-4, `tools/tests/coop_cell_attack_anim.py` (`coop.pool anims`: +0x1B0 of
+the own cell and the puppets, the zap counters).
+* ✔ (runtime) The electric attack 0xE71520 is called for the avatar (with the part: `coop.pool borrow electric graft`)
+  and never for a partner's puppet, although the puppet of a player of the same species shares the model data with
+  the part (`puppet_zaps` 0 over 25 s next to a creature, lab 20261118-102744): the puppet's AI lock / its state keeps
+  the step from it.
+* ✔ (runtime) The attacker's +0x1B0 during a bite of the fixture's cell (no weapon, the game's Bite from 9-14 m) stays
+  0; the electric attacker plays 0x1E; swims and `swimto ... tp` show 0x12, 0x32, 0x33 and 0xB on the own cell.
+* ✔ Cell puppets get no relayed animation (MSG_ANIM dropped for cells, BUG-0796); a partner's attack shows through the
+  effects relay (world effects near the attacker).

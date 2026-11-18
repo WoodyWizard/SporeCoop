@@ -309,3 +309,25 @@ anchor so other docs can link to it:
   income ticks are 40-380.
 * Next steps: the next release.
 * Ticket: BUG-1236
+
+## Creature: the partner's creature sings along with the host and keeps the rings (2026-11-18, owner: players' video)
+<a id="issue-partner-sings-along"></a>
+
+* What happens: the host sings (social stance) with a creature; the other player's creature starts the sing animation
+  too and keeps it, with a rings effect, while it runs about (seen on a players' video, before 0.7.15).
+* Reproduce: not reproduced: `lab.py run social_sing,social_sing_partner,brain_rings` (BUG-1241 lists the runs).
+* Known: the host's game keeps the guest's puppet out of its pack and family; the social win's and the brain
+  upgrade's pool effects end on both creatures and puppets; the host's own sing is not even shown on its puppet
+  (BUG-1244).
+* Not checked: a guest with its own species, a pack or ally next to the players, the mating call, low fps.
+* Ticket: BUG-1241
+
+## Cell: the partner's cell plays the attack animation of a player (2026-11-18, owner: players' video)
+<a id="issue-partner-cell-attack-anim"></a>
+
+* What happens: in the Cell stage, when one player attacks, the other player's cell plays the attack animation too.
+* Reproduce: not reproduced: `lab.py run cell_attack_anim,cell_attack_electric` (BUG-1243).
+* Known: no cell animation is relayed to puppets; the electric step never runs for a puppet cell (`coop.pool anims`
+  puppet_zaps 0); the fixture's cell has no jaw or spike.
+* Not checked: a jaw / spike part, overlapping cells, a partner's poison clouds.
+* Ticket: BUG-1243
