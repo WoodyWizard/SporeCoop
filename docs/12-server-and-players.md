@@ -572,6 +572,40 @@ show it's a special server?" Code on alpha: mods/coop/coop_ui.cpp (the connect p
   ("You were killed in battle"). Uploads could wait while the host is dead.
 * Not yet: leaving the galaxy from the window (today: quitting the game, or `coop.galaxy disconnect`).
 
+### The owner's first alpha test and its fixes (2026-11-17, feat/lineages-alpha, decisions 6A A, 6C A)
+<a id="server-alpha-test-1"></a>
+
+The owner played on TITAN in a separate alpha copy (its own profile) through the galaxy server, the MSI as the second
+player. Their findings and what came of them (fixes on alpha, tested on TITAN QA games with the visible galaxy server):
+
+* "I pressed join, but the co-op menu did not change ... I can't leave the server": a galaxy Join now closes the window
+  once connected ("pick a planet in the galaxy menu"); while connected, Join reads "Leave Galaxy" and leaves. ✔ Tested.
+  (The first click after the window opens only gives it the focus: a second click selected the galaxy row.)
+* "Leaving to main menu should have stopped the host": leaving the stage for the menu as a planet's host uploads
+  Spore's own quit-save and hands the planet over. ✔ Tested ("You left Samuth for the menu", stored, left).
+* 6A A, "the world always saved if the host leaves, even using Alt+F4": Stop Hosting saves first (✔ stored, then the
+  guest hosted it 10 s later); Alt+F4 and the window's X are held in the input hook until the planet is saved and left,
+  then the window closes (✔ 8 s); saves every 2 minutes while others are on the planet (✔ 2 min 8 s apart), at a quiet
+  moment, never with the host's creature dead. Not caught: a crash or a killed game (the last save counts), Spore's own
+  Quit button from the pause menu (not checked).
+* "make sure it doesn't freeze the game anymore": Spore's save pauses the game time, waits 1000 ms on its clock on
+  purpose, writes (0.7-0.9 s) and shows the "game saved" box whose OK re-arms saving (docs/re/creature.md#creature-save-steps).
+  The mod now moves that clock on: the save lands about 1.1 s after it starts instead of 1.8 s (✔ measured); the write
+  itself stays. The box cannot be skipped (it would block every later save); the mod confirms it as it shows.
+* "It didn't give me a creature creator for the first time connecting. It loaded some other creature": a new host
+  with no creature of its own on a stored planet gets the creature editor once its creature is alive and the game idle;
+  the creation it saves becomes its creature there. ✔ The editor opened after the respawn. Not checked: saving the
+  creature (a fresh QA profile showed Spore's own "Register your game" sign-in screen over the editor, which the tests
+  leave alone).
+* "Can we get rid of the top right text": the green Pack line is off by default (live too; [coop] pack_line=1 shows it).
+* "Editing my creature forced a migration / reconnect for MSI, then the creature creator again while fighting": the MSI
+  had no creature of its own and played the host's; the host's evolution changed its body and its "migration" opened
+  the host's editor for "final touches". On a galaxy planet each player evolves on its own: the three roles below.
+* "it took a loading screen and leaving / returning" (the hand-over): decision 6B C, #server-warm-handover.
+* Seen in the tests, not fixed: Lineages' campaign seats ("First gets no seat, the campaign's 4 seats are taken"): a
+  stored planet keeps every player who ever played it in its 4 seats, so new players get none; the galaxy needs seats
+  by who is on the planet now. A planet stored with its host dead loads with the death screen (fixed for new uploads).
+
 ### "Host" means three roles today (owner's note, 2026-11-17)
 <a id="server-three-roles"></a>
 
