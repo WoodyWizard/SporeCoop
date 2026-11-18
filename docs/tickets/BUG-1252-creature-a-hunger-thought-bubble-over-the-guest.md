@@ -50,7 +50,8 @@ puppet must have no bubble (`coop.effects map` active).
 - FAIL with SPORE_FIX_OFF=effects.stop_always: out/lab/20261118-124058 (lane 4; 9 samples with the bubble on the host's
   puppet only; key frame: the bubble over the guest's creature on the host's screen), out/lab/20261118-123615 (the
   test's earlier shape).
-- PASS: out/lab/20261118-124118 (lane 5, `stops_past_rate=1`, no bubble in the key frame).
+- PASS: out/lab/20261118-124118 (lane 5, `stops_past_rate=1`, no bubble in the key frame), again out/lab/20261118-124624.
+  creature_effects, effects_live OK there.
 - With the test's earlier burst every 50 ms the stop found a token at the lab's frame rate and the fix-off run passed
   (out/lab/20261118-123755): hence the drain.
 

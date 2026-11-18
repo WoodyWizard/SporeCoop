@@ -41,7 +41,11 @@ Test `puppet_eat_anim` (creature fixture): the host kills an NPC by the players,
 click action) and eats; the animations its own creature plays while eating must be played by the host's puppet of it.
 - FAIL with SPORE_FIX_OFF=creature.avatar_bhv_anims: out/lab/20261118-122628 (lane 5): the guest's own 04F65995, the
   host's puppet none of it (key frame: the puppet stands upright at the body while the guest bends over it).
-- PASS: out/lab/20261118-123633 (lane 5): 04F65995 on both (key frame: the puppet bends over the body).
+- PASS: out/lab/20261118-123633 (lane 5): 04F65995 on both (key frame: the puppet bends over the body); again
+  out/lab/20261118-124624 and -125657.
+- Regression (out/lab/20261118-124624): npc_anims, creature_effects, effects_live, puppet_walk, creature_mating,
+  partner_pass, creature_social_prompts OK; creature_eat failed once on its own check race (BUG-1259), OK on the rerun
+  out/lab/20261118-125657.
 
 ## History
 - 2026-11-18: opened.

@@ -42,7 +42,8 @@ Test `partner_social_hover` (creature fixture): the guest's mouse moved onto the
 in the social stance; the game's own hover result must never be the puppet.
 - FAIL with SPORE_FIX_OFF=creature.partner_social_hover: out/lab/20261118-123440 (lane 5): 12 of 12 samples hover the
   puppet; key frame: the host's creature's name plate with health 10 and a green face on the guest's screen.
-- PASS: out/lab/20261118-123633 (lane 5): 0 of 12 (the hover took nothing behind it); key frame without a plate.
+- PASS: out/lab/20261118-123633 (lane 5): 0 of 12 (the hover took nothing behind it); key frame without a plate; again
+  out/lab/20261118-124624 and -125657. partner_pass (BUG-0913) OK in out/lab/20261118-124624.
 
 ## History
 - 2026-11-18: opened.
