@@ -40,6 +40,7 @@ bool online();                              // connected to a galaxy server (wel
 std::vector<PlanetInfo> planets_known();    // the last list: the planets with players first
 uint32_t planets_version();                 // changes with the list
 std::string current_planet();               // the planet this player is on ("" none)
+std::string galaxy_name();                  // the connected galaxy's name ("" when not connected)
 void tick(double now);
 std::string connect(const std::string& address); // ip or name, [:port] (47900)
 std::string disconnect();

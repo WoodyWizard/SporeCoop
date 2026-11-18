@@ -25,6 +25,8 @@ struct PlayerRow {
     uint32_t color = 0; // the player's colour (ARGB, F2 of 0.7.12 fills it); 0 = none yet (the lobby shows "-")
 };
 
+std::string load_ui_str(const char* key); // [ui] <key> of the Co-op window's settings ("" none)
+
 struct LanGame {
     std::string name, address, info;
     int players = 0, max_players = 0;
@@ -101,6 +103,10 @@ struct Api {
     std::function<std::vector<std::string>()> chat;
     std::function<std::vector<uint32_t>()> chat_colors; // F2: per chat() line its writer's colour (0: the default)
     std::function<std::vector<LanGame>()> lan_games;
+    // decision 5Y A (alpha): the galaxy server pinned at the top of the server list. galaxy_info: its name and its line
+    // (connected: the planets and players), false when the build has none; galaxy_connect: connect to that address
+    std::function<bool(std::string& name, std::string& line, bool& connected)> galaxy_info;
+    std::function<bool(const std::string& address, std::string& err)> galaxy_connect;
     std::function<void(bool)> lan_scan; // start/stop looking for games on the network
     std::function<std::vector<std::string>()> local_addresses;
     std::function<uint32_t()> mode; // game mode id

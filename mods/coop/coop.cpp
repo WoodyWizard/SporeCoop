@@ -9551,6 +9551,28 @@ void init_ui()
         return v;
     };
     a.lan_scan = lan_scan;
+    a.galaxy_info = [](std::string& name, std::string& line, bool& connected) { // decision 5Y A (alpha)
+        connected = galaxy::online();
+        name = connected ? galaxy::galaxy_name() : "Galaxy Server";
+        if (connected) {
+            const auto ps = galaxy::planets_known();
+            unsigned players = 0;
+            for (auto& p : ps)
+                players += p.players;
+            line = std::to_string(ps.size()) + (ps.size() == 1 ? " planet, " : " planets, ") + std::to_string(players) +
+                   (players == 1 ? " player" : " players") + " online";
+        } else
+            line = coop_ui::load_ui_str("galaxy_address").empty() ? "Online worlds  -  port 47900"
+                                                                  : "Online worlds  -  select, then Join";
+        return true;
+    };
+    a.galaxy_connect = [](const std::string& addr, std::string& err) {
+        const std::string r = galaxy::connect(addr);
+        if (r.rfind("Connecting", 0) == 0)
+            return true;
+        err = r;
+        return false;
+    };
     a.local_addresses = [] {
         std::vector<std::string> v;
         for (auto& l : local_addresses())

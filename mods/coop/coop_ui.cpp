@@ -515,6 +515,7 @@ struct Dialog {
     Win lan_hdr = nullptr, host_hint = nullptr, status = nullptr, update_btn = nullptr;
     Win lan_rows[kLanRows] = {};
     std::string lan_addr[kLanRows];
+    Win galaxy_row = nullptr, galaxy_name = nullptr, galaxy_line = nullptr; // decision 5Y A (alpha)
     std::map<Win, bool> hidden_fields;
     Win lan_track = nullptr, lan_thumb = nullptr;
     // lobby page
@@ -879,6 +880,9 @@ static std::string load_str(const char* section, const char* key, const char* de
     return b;
 }
 
+// decision 5Y A (alpha): the saved galaxy server address ([ui] galaxy_address), for the server list's line
+std::string load_ui_str(const char* key) { return load_str("ui", key, ""); }
+
 // the connect page's Username field (Join, Start Server and Enter in the field take it)
 static void apply_name()
 {
@@ -913,6 +917,16 @@ static void do_join(const std::string& address)
     if (addr.find(':') == std::string::npos && !port.empty())
         addr += ":" + port;
     std::string err;
+    // decision 5Y A (alpha): the galaxy server's port: connect to the galaxy (its planets appear in the galaxy menu)
+    if (A.galaxy_connect && addr.size() > 6 && addr.compare(addr.size() - 6, 6, ":47900") == 0) {
+        if (!A.galaxy_connect(addr, err)) {
+            set_status(std::string("Cannot connect to the galaxy server: ") + err, kRed, g_status_fix ? 30 : 0);
+            return;
+        }
+        save_str("ui", "galaxy_address", addr);
+        set_status("Connecting to the galaxy server: its planets appear in the galaxy menu.", kYellow);
+        return;
+    }
     if (!A.join(addr, err, sui::edit_text(D.join_password))) {
         set_status(std::string(T("Cannot join: ", "Не удалось подключиться: ")) + err, kRed, g_status_fix ? 30 : 0);
         return;
@@ -1275,6 +1289,24 @@ static void build_dialog()
         if (!part) continue;
         sui::set_flag(part, sui::kFlagIgnoreMouse, true);
         P.push_back(part);
+    }
+    if (A.galaxy_info) { // decision 5Y A (alpha): the galaxy server, pinned, two rows tall
+        D.galaxy_row = add_button(P, "galaxyrow", {35, 177, 334, 228}, "", [] {
+            const auto saved = load_str("ui", "galaxy_address", "");
+            const auto colon = saved.rfind(':');
+            sui::set_edit_text(D.addr_edit, colon == std::string::npos ? saved : saved.substr(0, colon));
+            sui::set_edit_text(D.join_port, "47900");
+            sui::set_edit_text(D.join_password, "");
+            g_dirty = true;
+        });
+        // (the body font is the window's large one: the name in it, the line in the rows' small button font)
+        D.galaxy_name = add_label(P, {35, 178, 334, 204}, "", kWhite, sui::kAlignCenter);
+        D.galaxy_line = add_label(P, {35, 204, 334, 226}, "", kWhite, sui::kAlignCenter);
+        if (D.galaxy_line && D.font_button)
+            sui::set_font(D.galaxy_line, D.font_button);
+        for (Win w : {D.galaxy_name, D.galaxy_line})
+            if (w)
+                sui::set_flag(w, sui::kFlagIgnoreMouse, true);
     }
     for (int i = 0; i < kLanRows; ++i) {
         char name[16];
@@ -1776,8 +1808,24 @@ static void refresh_connect()
                        (selected->settings & 1 ? "Optimal" : "Fast") +
                        (selected->settings & 2 ? "  |  Password" : "  |  Open");
     } else if (!address.empty()) details = "Server Status: direct connection";
+    // decision 5Y A (alpha): the galaxy server's row, pinned above the network games (they move two rows down)
+    std::string g_name, g_line;
+    bool g_connected = false;
+    const bool galaxy = D.galaxy_row && A.galaxy_info && A.galaxy_info(g_name, g_line, g_connected);
+    const int first_row = galaxy ? 2 : 0;
+    if (galaxy) {
+        const bool galaxy_selected = address.size() > 6 && address.compare(address.size() - 6, 6, ":47900") == 0;
+        text(D.galaxy_name, g_name);
+        text(D.galaxy_line, g_line);
+        sui::set_shade_color(D.galaxy_row, galaxy_selected ? 0xFFFFFFFF : 0xFFADB6C2);
+        if (galaxy_selected)
+            details = g_connected ? "Galaxy server: connected" : "Galaxy server: Join connects to it";
+    }
+    show(D.galaxy_row, galaxy && scanning);
+    show(D.galaxy_name, galaxy && scanning);
+    show(D.galaxy_line, galaxy && scanning);
     text(D.selected_info, details);
-    g_lan_max = g_lan_pages_fix ? std::max(0, (int)games.size() - kLanRows) : 0;
+    g_lan_max = g_lan_pages_fix ? std::max(0, (int)games.size() - (kLanRows - first_row)) : 0;
     g_lan_first = std::clamp(g_lan_first, 0, g_lan_max);
     text(D.lan_hdr, T("Searching your network...", "Поиск игр в вашей сети..."));
     show(D.lan_hdr, games.empty() && scanning);
@@ -1788,8 +1836,8 @@ static void refresh_connect()
         sui::set_area(D.lan_thumb, {342, y, 353, y + 28});
     }
     for (int i = 0; i < kLanRows; ++i) {
-        int k = g_lan_first + i;
-        bool have = k < (int)games.size() && (g_lan_pages_fix || i < 3);
+        int k = g_lan_first + i - first_row;
+        bool have = i >= first_row && k < (int)games.size() && (g_lan_pages_fix || i < 3);
         if (have) {
             const auto& g = games[k];
             auto name = g.name;

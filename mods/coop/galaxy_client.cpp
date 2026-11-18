@@ -642,6 +642,7 @@ void tick(double now)
 bool online() { return g_sock.is_open() && g_welcomed; }
 uint32_t planets_version() { return g_planets_ver; }
 std::string current_planet() { return g_planet; }
+std::string galaxy_name() { return g_welcomed ? g_galaxy : ""; }
 std::vector<PlanetInfo> planets_known()
 {
     std::vector<PlanetInfo> v = g_planets;
