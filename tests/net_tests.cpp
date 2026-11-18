@@ -4329,7 +4329,9 @@ static void test_queue_cap()
            h.limit_stats().queue_drops);
     if (fix) {
         CHECK(!b_in && h.limit_stats().queue_drops == 1 && most <= h.queue_cap + 256 * 1024);
-        tick({&h, &a, &b}, 300); // B's game runs again: it reads why
+        // B's game runs again: it reads why (behind up to 2 MB of the queue: a slow CI runner needs more than 300 ms)
+        for (int i = 0; i < 50 && why.empty(); i++)
+            tick({&h, &a, &b}, 100);
         printf("  the dropped guest: '%s'\n", why.c_str());
         CHECK(why.find("too much data") != std::string::npos && !b.connected());
         CHECK(id_named(h, "Bob") != 0xFF); // A is still there: only the queue was over
