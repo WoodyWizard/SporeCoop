@@ -60,6 +60,8 @@ enum MsgType : uint8_t {
     MSG_CELL_STATE = 33,  // host -> guests: NPC cells and food snapshot (chunked)
     // decision 6F A (alpha): the compact MSG_CELL_STATE, to guests with CAP_COMPACT_CELL (cell_compact.h)
     MSG_CELL_STATE_C = 95,
+    MSG_PARTY = 96,   // reliable (decision 6J): parties of 4 (parties_net.h)
+    MSG_WHISPER = 97, // reliable (decision 6J): guest -> host u8 to, str16 text; host -> guest u8 from, str16 text
     MSG_CELL_HIT = 34,    // guest -> host: u32 host cell index, u8 damage, u8 type
     MSG_CELL_EAT = 35,    // guest -> host: u32 host cell index (eaten / destroyed by the guest)
     MSG_CELL_FOOD = 36,   // host -> guests: i32 food, i32 plant | guest -> host: i32 delta, u8 plant

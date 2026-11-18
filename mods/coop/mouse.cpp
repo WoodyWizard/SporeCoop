@@ -40,6 +40,7 @@ static bool ours(HWND w)
     return w && g_wnd && (w == g_wnd || IsChild(g_wnd, w));
 }
 
+static bool (*g_player_menu_input)(unsigned, int, int); // 6J
 static bool (*g_close_request)();
 void set_close_request(bool (*handler)()) { g_close_request = handler; }
 static uint64_t g_last_input;
@@ -59,6 +60,15 @@ static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
              (m->message == WM_NCLBUTTONDOWN && m->wParam == HTCLOSE)) &&
             g_close_request())
             m->message = WM_NULL;
+        // decision 6J: the players' menu, before the UI scale remap (it hit-tests what is drawn, in client pixels)
+        if (g_player_menu_input && ours(m->hwnd) &&
+            (m->message == WM_RBUTTONDOWN || m->message == WM_RBUTTONUP || m->message == WM_LBUTTONDOWN)) {
+            POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
+            if (m->hwnd != g_wnd)
+                MapWindowPoints(m->hwnd, g_wnd, &p, 1);
+            if (g_player_menu_input(m->message, p.x, p.y))
+                m->message = WM_NULL;
+        }
         // BUG-9191 (3H): first, so the game and every handler below see the point the UI's layout expects
         if (g_remap && ours(m->hwnd) && ((m->message >= WM_MOUSEFIRST && m->message <= WM_MBUTTONDBLCLK) ||
                                          m->message == WM_MOUSEWHEEL)) {
@@ -160,6 +170,7 @@ void install(const void* game_window)
 
 void set_fov_wheel(bool (*handler)(int delta)) { g_fov_wheel = handler; }
 void set_tribe_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_tribe_input = handler; }
+void set_player_menu_input(bool (*handler)(unsigned, int, int)) { g_player_menu_input = handler; }
 void set_remap(bool (*handler)(unsigned, int&, int&)) { g_remap = handler; }
 void set_graphics_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_graphics_input = handler; }
 void set_list_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_list_input = handler; }

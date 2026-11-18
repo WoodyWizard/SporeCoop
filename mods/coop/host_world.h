@@ -154,6 +154,7 @@ inline MsgClass msg_class(uint8_t type)
     case net::MSG_CIV_STATE: case net::MSG_CIV_BUILD: case net::MSG_CIV_ALARM:
         return MsgClass::HostWorld;
     // Lineages (merge 2026-11-15): the session and the player's own data, wherever the guest plays
+    case net::MSG_PARTY: case net::MSG_WHISPER: // 6J: the session's parties and private lines
     case net::MSG_IDENTITY: case net::MSG_LIBRARY: case net::MSG_CAMPAIGN_RULES: case net::MSG_TRIBE_LATE:
     case net::MSG_DNA_OWN: case net::MSG_START_PARTS: case net::MSG_MIGRATE: case net::MSG_PROGRESS_DEBT:
     case net::MSG_SPACE_LAUNCH: case net::MSG_CREATURE_RESCUE: case net::MSG_TRIBE_OUTFIT: case net::MSG_ADVENTURE:

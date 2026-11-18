@@ -23,6 +23,9 @@ struct PlayerRow {
     bool host = false, me = false, ready = false;
     int ping_ms = -1;
     uint32_t color = 0; // the player's colour (ARGB, F2 of 0.7.12 fills it); 0 = none yet (the lobby shows "-")
+    bool buddy = false;     // 6J: on this player's friends list (the name in light blue)
+    bool party = false;     // 6J: in this player's party
+    bool leads = false;     // 6J: leads its party (more than one in it)
 };
 
 std::string load_ui_str(const char* key); // [ui] <key> of the Co-op window's settings ("" none)
@@ -190,6 +193,27 @@ struct MemoryPopup {
     }
 };
 bool set_memory_popup(const MemoryPopup& want, void (*on_click)(int));
+
+// decision 6J (owner 2026-11-18): the players' right-click menu ("View Creature, Invite to Party, Whisper, Add Friend",
+// "similar to all native menus"): a panel in the Co-op window's look at a screen point, a gold title and one button per
+// item; on_pick(code) when one is chosen (then it closes). x, y: client pixels.
+struct MenuItem {
+    std::string text;
+    int code = 0;
+};
+void show_player_menu(float x, float y, const std::string& title, const std::vector<MenuItem>& items,
+                      void (*on_pick)(int code));
+void hide_player_menu();
+bool player_menu_open();
+bool point_in_player_menu(float x, float y); // client pixels
+// the press at a client pixel on one of the menu's items: chosen (true); the mouse hook does it itself, so a menu works
+// under the game's input lock (a caption, the death screen) too
+bool player_menu_press(float x, float y);
+// the player of the Co-op window's lobby row or the Party card drawn at a client pixel (-1 none)
+int player_at(float x, float y);
+// the Co-op window opens with its chat line holding `text` (a whisper: "/w <name> ")
+void chat_prefill(const std::string& text);
+std::string player_at_debug(); // tests: the rows' drawn rectangles and players
 std::string debug_state();
 extern bool g_log_msgs; // debug: log UI messages reaching our handlers
 extern bool g_lan_pages_fix; // tests: `coop.corefix lan_pages 0` lists the first three games only (BUG-0183)

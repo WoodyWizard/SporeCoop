@@ -165,6 +165,7 @@ struct Cache {
 static std::map<Win, Cache> g_cache;
 static int g_chat_scroll;            // chat lines scrolled up from the newest (BUG-0129)
 static int g_player_scroll;          // 6E B: the lobby's first player row shown (four rows, any player count)
+static int g_row_ids[4] = {-1, -1, -1, -1}; // 6J: the lobby's four rows: their players (refresh_lobby)
 constexpr size_t kChatCols = 70;     // letter cells of a chat line (680 px)
 
 // BUG-9117: labels sized by measured character widths, aligned beside their fields; even rows; the
@@ -1977,6 +1978,7 @@ static void refresh_lobby()
     for (int i = 0; i < 4; i++) {
         const int k = i + g_player_scroll;
         bool have = k < (int)rows.size();
+        g_row_ids[i] = have ? rows[k].id : -1; // (6J: the right-click menu's rows)
         if (have && rows[k].me)
             own_row = i;
         const bool reserved = !have && static_cast<unsigned>(k) < seats;
@@ -2011,7 +2013,7 @@ static void refresh_lobby()
         } else if (p.host && n.size() <= 12)
             n += T(" (host)", " (хост)");
         text(D.row_name[i], n);
-        color(D.row_name[i], p.me ? kGold : kWhite);
+        color(D.row_name[i], p.me ? kGold : p.buddy ? 0xFF8FD3FFu : kWhite); // (6J: a friend in light blue)
         // the player's colour (F2 of upstream 0.7.12 assigns it): a swatch in that colour, "-" while it has none; the
         // own row's swatch is the colour button
         uint32_t pc = p.color ? p.color : g_test_color ? g_test_color : 0;
@@ -3941,6 +3943,208 @@ bool set_memory_popup(const MemoryPopup& want_in, void (*on_click)(int))
     return true;
 }
 
+// ---------------- the players' right-click menu (decision 6J) ----------------
+// Built like the memory popup (a label root under the main window, always in front) in the Co-op window's panel look:
+// the box, a 1 px edge, the player's name in gold and up to kPmItems buttons stacked under it.
+constexpr int kPmItems = 6;
+constexpr uint32_t kPmItemFill = 0xFF2F5876; // (an item row: the Co-op window's blue, darker)
+constexpr float kPmW = 200, kPmTitle = 30, kPmRow = 30, kPmPad = 6;
+static struct {
+    Win root = nullptr, box = nullptr, edge[4] = {}, title = nullptr, item[kPmItems] = {};
+    bool failed = false;
+} g_pm;
+static bool g_pm_open, g_pm_queued;
+static float g_pm_x, g_pm_y;
+static std::string g_pm_title;
+static std::vector<MenuItem> g_pm_items;
+static void (*g_pm_pick)(int);
+static Rect g_pm_rect; // (client pixels, while open)
+
+static void pm_pick(int i)
+{
+    const int code = i < (int)g_pm_items.size() ? g_pm_items[i].code : -1;
+    auto pick = g_pm_pick;
+    hide_player_menu();
+    if (pick && code >= 0) pick(code);
+}
+
+static bool pm_build()
+{
+    if (g_pm.root) return true;
+    if (g_pm.failed) return false;
+    if (!D.root) {
+        build_dialog();
+        if (D.root) sui::set_visible(D.root, g_want_open);
+    }
+    Win main = sui::main_window();
+    if (!D.like_button || !main) { g_pm.failed = true; return false; }
+    g_pm.root = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    if (!g_pm.root) { g_pm.failed = true; return false; }
+    sui::set_flag(g_pm.root, sui::kFlagIgnoreMouse, false);
+    sui::set_enabled(g_pm.root, true);
+    Win root = g_pm.root;
+    const uint32_t panel = (menu_panel_fill() & 0x00FFFFFFu) | 0xF0000000u;
+    g_pm.box = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    if (g_pm.box) sui::set_fill_color(g_pm.box, panel);
+    for (Win& e : g_pm.edge) {
+        e = sui::label(root, {0, 0, 1, 1}, "", D.font_body, kWhite, sui::kAlignCenter);
+        if (e) sui::set_fill_color(e, kMenuBoxEdge);
+    }
+    g_pm.title = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kGold, sui::kAlignCenter);
+    // the items: filled rows with white text (Spore drew a button outside the Co-op window in its disabled look, 6J test
+    // 2026-11-18); the mouse hook takes the press (player_menu_press), so they work under the game's input lock too
+    for (int i = 0; i < kPmItems; i++) {
+        Win w = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+        g_pm.item[i] = w;
+        if (w) sui::set_fill_color(w, kPmItemFill);
+    }
+    for (Win w : {g_pm.box, g_pm.edge[0], g_pm.edge[1], g_pm.edge[2], g_pm.edge[3], g_pm.title})
+        if (w) {
+            sui::add_ref(w);
+            sui::bring_to_front(root, w);
+            sui::set_flag(w, sui::kFlagIgnoreMouse, true);
+        }
+    for (Win w : g_pm.item)
+        if (w) {
+            sui::add_ref(w);
+            sui::bring_to_front(root, w);
+            sui::set_flag(w, sui::kFlagIgnoreMouse, true);
+            sui::set_visible(w, false);
+        }
+    sui::add_ref(root);
+    sui::set_visible(root, false);
+    return true;
+}
+
+static void pm_apply(void*)
+{
+    g_pm_queued = false;
+    if (!pm_build()) return;
+    Win main = sui::main_window();
+    if (!g_pm_open || !main) {
+        sui::set_visible(g_pm.root, false);
+        return;
+    }
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    const int n = std::min<int>((int)g_pm_items.size(), kPmItems);
+    const float h = kPmTitle + n * kPmRow + kPmPad * 2;
+    // at the pointer, kept on the screen (a menu near the right or the bottom edge opens to the other side)
+    float x = g_pm_x, y = g_pm_y;
+    if (x + kPmW > sw) x = std::max(0.f, x - kPmW);
+    if (y + h > sh) y = std::max(0.f, y - h);
+    x = std::floor(x), y = std::floor(y);
+    g_pm_rect = {x, y, x + kPmW, y + h};
+    // over the open Co-op window: inside it (the window manager hit-tests the Co-op window before a sibling drawn over
+    // it, 6J test 2026-11-18); else under the main window
+    Win host = D.root && sui::visible(D.root) ? D.root : main;
+    const Rect origin = host == main ? Rect{} : sui::screen_rect(host);
+    sui::set_area(g_pm.root, {x - origin.x1, y - origin.y1, x - origin.x1 + kPmW, y - origin.y1 + h});
+    if (sui::parent(g_pm.root) != host) {
+        if (Win old = sui::parent(g_pm.root)) sui::remove_child(old, g_pm.root);
+        sui::add_child(host, g_pm.root);
+    }
+    sui::bring_to_front(host, g_pm.root);
+    sui::set_flag(g_pm.root, sui::kFlagAlwaysInFront, true);
+    sui::set_visible(g_pm.root, true);
+
+    auto place = [&](Win win, bool on, const Rect& r) {
+        if (!win) return;
+        if (on) sui::set_area(win, r);
+        sui::set_visible(win, on);
+    };
+    place(g_pm.box, true, {0, 0, kPmW, h});
+    place(g_pm.edge[0], true, {0, 0, kPmW, 1});
+    place(g_pm.edge[1], true, {0, h - 1, kPmW, h});
+    place(g_pm.edge[2], true, {0, 0, 1, h});
+    place(g_pm.edge[3], true, {kPmW - 1, 0, kPmW, h});
+    place(g_pm.title, true, {6, kPmPad, kPmW - 6, kPmPad + kPmTitle - 4});
+    if (g_pm.title) sui::set_caption(g_pm.title, g_pm_title);
+    for (int i = 0; i < kPmItems; i++) {
+        const float top = kPmPad + kPmTitle + i * kPmRow;
+        place(g_pm.item[i], i < n, {8, top, kPmW - 8, top + kPmRow - 4});
+        if (i < n && g_pm.item[i]) sui::set_caption(g_pm.item[i], g_pm_items[i].text);
+    }
+}
+
+void show_player_menu(float x, float y, const std::string& title, const std::vector<MenuItem>& items, void (*on_pick)(int))
+{
+    if (!g_ok || g_pm.failed) return;
+    g_pm_x = x, g_pm_y = y;
+    g_pm_title = title;
+    g_pm_items = items;
+    g_pm_pick = on_pick;
+    g_pm_open = true;
+    g_pm_rect = {x, y, x + kPmW, y + kPmTitle + kPmRow * std::min<int>((int)items.size(), kPmItems) + kPmPad * 2};
+    if (!g_pm_queued) {
+        g_pm_queued = true;
+        H->run_outside_frame(pm_apply, nullptr);
+    }
+}
+
+void hide_player_menu()
+{
+    if (!g_pm_open) return;
+    g_pm_open = false;
+    g_pm_pick = nullptr;
+    if (!g_pm_queued) {
+        g_pm_queued = true;
+        H->run_outside_frame(pm_apply, nullptr);
+    }
+}
+
+bool player_menu_open() { return g_pm_open; }
+bool player_menu_press(float x, float y)
+{
+    if (!g_pm_open || !point_in_player_menu(x, y)) return false;
+    const int n = std::min<int>((int)g_pm_items.size(), kPmItems);
+    for (int i = 0; i < n; i++) {
+        const float top = g_pm_rect.y1 + kPmPad + kPmTitle + i * kPmRow;
+        if (x >= g_pm_rect.x1 + 8 && x < g_pm_rect.x2 - 8 && y >= top && y < top + kPmRow - 4) {
+            pm_pick(i);
+            return true;
+        }
+    }
+    return true; // (the panel itself: nothing behind it gets the press)
+}
+bool point_in_player_menu(float x, float y)
+{
+    return g_pm_open && x >= g_pm_rect.x1 && x < g_pm_rect.x2 && y >= g_pm_rect.y1 && y < g_pm_rect.y2;
+}
+
+std::string player_at_debug()
+{
+    std::string s = "root " + std::to_string(D.root && sui::visible(D.root)) + " space " + std::to_string(g_space_page) +
+                    " settings " + std::to_string(g_settings_page) + ";";
+    {
+        const Rect r = g_pm.root ? sui::drawn_rect(g_pm.root) : Rect{};
+        char b[200];
+        Win hit = sui::window_at(250, 283);
+        s += std::string(" hit(250,283) ") + (hit ? sui::type_name(hit) : "none") + " '" + (hit ? sui::caption(hit) : "") +
+             "' is_item1 " + std::to_string(hit == g_pm.item[1]) + " parent_root " +
+             std::to_string(hit && sui::parent(hit) == g_pm.root) + ";";
+        snprintf(b, sizeof b, " menu root %p failed %d vis %d parent-is-main %d (%.0f %.0f %.0f %.0f) item0 vis %d;", g_pm.root,
+                 (int)g_pm.failed, g_pm.root ? (int)sui::visible(g_pm.root) : -1,
+                 g_pm.root ? (int)(sui::parent(g_pm.root) == sui::main_window()) : -1, r.x1, r.y1, r.x2, r.y2,
+                 g_pm.item[0] ? (int)sui::visible(g_pm.item[0]) : -1);
+        s += b;
+    }
+    for (int i = 0; i < 4; i++) {
+        const Rect r = D.row_name[i] ? sui::drawn_rect(D.row_name[i]) : Rect{};
+        char b[120];
+        snprintf(b, sizeof b, " row%d id %d vis %d (%.0f %.0f %.0f %.0f)", i, g_row_ids[i],
+                 D.row_name[i] ? (int)sui::visible(D.row_name[i]) : -1, r.x1, r.y1, r.x2, r.y2);
+        s += b;
+    }
+    return s;
+}
+
+void chat_prefill(const std::string& text)
+{
+    open(true);
+    if (D.chat_edit) sui::set_edit_text(D.chat_edit, text);
+}
+
 // ---------------- the Party cards (decision 3G, 2026-11-14) ----------------
 // One card per partner in the art of the stage that partner plays (images: data/ui/lineages_card_*.png,
 // tools/party_card_assets.py): a plate with the name, the place, the health bar and a second bar (Creature the hunger,
@@ -5096,5 +5300,31 @@ std::string test_nudge(const std::string& name, float dx, float dy, bool hide, f
     return b;
 }
 
-} // namespace coop_ui
+// 6J (after the Party cards' state)
+int player_at(float x, float y)
+{
+    auto in = [&](Win w) {
+        if (!w || !sui::visible(w)) return false;
+        const Rect r = sui::drawn_rect(w);
+        return x >= r.x1 && x < r.x2 && y >= r.y1 && y < r.y2;
+    };
+    if (D.root && sui::visible(D.root) && !g_space_page && !g_settings_page)
+        for (int i = 0; i < 4; i++) { // the whole row: from its colour swatch to its ping, the name's height
+            if (g_row_ids[i] < 0 || !D.row_name[i] || !sui::visible(D.row_name[i])) continue;
+            const Rect n = sui::drawn_rect(D.row_name[i]);
+            float x1 = n.x1, x2 = n.x2;
+            for (Win w : {D.row_color[i], D.row_stage[i], D.row_ping[i], D.row_ready[i]})
+                if (w) {
+                    const Rect r = sui::drawn_rect(w);
+                    if (r.x2 > r.x1) x1 = std::min(x1, r.x1), x2 = std::max(x2, r.x2);
+                }
+            if (x >= x1 - 4 && x < x2 && y >= n.y1 - 2 && y < n.y2 + 2)
+                return g_row_ids[i];
+        }
+    for (int i = 0; i < kPartyRows && i < (int)g_ph_cards.size(); ++i)
+        if (in(g_ph.rows[i].frame) || in(g_ph.rows[i].portrait) || in(g_ph.rows[i].name))
+            return g_ph_cards[i].player;
+    return -1;
+}
 
+} // namespace coop_ui

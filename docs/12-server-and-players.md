@@ -881,6 +881,63 @@ stores the planet within 20 s, so the next joiners find a fresh copy. Switch: g_
 * Seen: a join's MSG_CREATION burst (each player's creations sent on to everyone, 3.4 MB in the minute 5 players
   joined).
 
+### Parties of 4: the owner's rules (2026-11-18, decision 6J)
+<a id="server-parties"></a>
+
+Owner, answering 6J:
+
+1. "A party is formed by opening the connection menu and right clicking a name to 'view creature, invite to party,
+   whisper, add friend'." The menu "should be similar to all native menus"; "allow a player to rightclick another
+   player's creature / nametag directly".
+2. The leader: "The person who invited or the person you joined. The leader can then right click in the connection
+   menu (F9) or the party panel to set another player as a leader."
+3. "When the party leader leaves, the longest standing member receives the Leader status. Our normal continuation plan
+   proceeds (You continue from the progress you gained, the original leader will catch up to the new progress.)"
+4. Across stages: "We can deny cross stage invites for now, and we can think about a non-linked party where everyone
+   can help eachother, but they each have unique progression like single player."
+
+Earlier (2026-11-18): a party is 4 players at most; its cards show the own party only; difficulty, creature relations,
+damage modifiers and goals are each party's own (#server-seats-16).
+
+### Parties of 4: built (2026-11-18, feat/lineages-alpha, decision 6J)
+<a id="server-parties-built"></a>
+
+The owner's rules (#server-parties), on alpha:
+
+* **The book** (mods/coop/parties.h, tests/party_tests.cpp): every player in one party, 4 at most; an invite (any
+  member may invite; the inviter's party keeps its leader, an inviter alone leads); the invited player accepts or
+  declines within 60 s; a yes leaves the old party; the leader hands the lead to a member; a leader who leaves: the
+  longest standing member leads; no invite across stages (a menu, an editor or a load counts as no stage). A plain
+  co-op join puts the player in the host's party ("the person you joined"); on a galaxy planet a player starts alone.
+* **The messages** (parties.cpp, parties_net.h): the host keeps the book and sends it (MSG_PARTY kTable, reliable) on
+  every change; guests ask (invite, answer, leave, lead), the host offers the invite to the invited player and answers
+  the asking one. MSG_WHISPER: a line only the other player sees, through the host. Console: `coop.party [status |
+  invite | yes | no | leave | lead]`, `coop.whisper <id> <text>`, "/w <name> <text>" in the chat line.
+* **The right-click menu** (coop_ui.cpp show_player_menu, coop.cpp player_menu_input): on a lobby row of the Co-op
+  window (F9), a Party card, a partner's name tag or plate, or near its creature on the screen. Items: View Creature
+  (the game's Sporepedia card), Invite to Party / Make Leader (your party, when you lead), Whisper (the chat line gets
+  "/w <name> "), Add / Remove Friend; on your own row: Leave Party. An invite shows the same panel with Join Party /
+  Decline. The panel is in the Co-op window's look (its panel colour, a 1 px edge, the name in gold, blue item rows).
+  The presses are the mouse hook's (mouse::set_player_menu_input, before the UI scale remap): the menu works under
+  the game's input lock (a caption, the death screen) too.
+* **Friends**: this profile's list in <coop dir>\friends.txt (identity key and name); a friend's name is light blue in
+  the lobby.
+* **Party cards**: the own party's only (a galaxy planet's other players have none).
+* Found while building it: Spore hit-tests the Co-op window before a sibling window drawn over it (the menu sits
+  inside the Co-op window while it is open); buttons made outside the Co-op window drew in the disabled look (the menu
+  items are filled rows instead); a hot reload (`mod.reload coop`) leaves the old build's windows on the screen (tests
+  restart the game).
+* Tested (TITAN, 3 games on a galaxy planet, Creature): a right-click on a lobby row opened QA7's menu; Invite reached
+  QA7 as the Join Party / Decline panel (QA7 on the death screen); Join Party made QA8 + QA7 a party led by QA8 (the
+  host's book the same); a right-click on QA7's name plate in the world opened its menu; Add Friend wrote the list and
+  the lobby showed QA7 in light blue; Whisper filled the chat line, the line reached QA7 only; the host handed the lead
+  to QA8, QA8 left the session, the host led again (the longest standing); Decline told the inviter. Not checked by
+  eye: the Party cards with two in a party (the deaths hid them); View Creature from the menu (the same call as the
+  card's portrait click).
+* Not yet: per-party difficulty, creature relations and goals (#server-seats-16); the parties survive a hand-over
+  (a new host starts everyone alone); the Co-op window's "Players who can join" setting still reads 4 on a galaxy
+  planet (the planet takes the galaxy's count).
+
 ### Hand-over without a reload: research (2026-11-17, decision 6B C)
 <a id="server-warm-handover"></a>
 

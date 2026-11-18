@@ -183,7 +183,9 @@ unit-cpp: sanitizer-probe
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/editor_depth_axis_tests tests/editor_depth_axis_tests.cpp
 	$(B)/host/editor_depth_axis_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/party_food_tests tests/party_food_tests.cpp
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/party_tests tests/party_tests.cpp
 	$(B)/host/party_food_tests
+	$(B)/host/party_tests
 	@mkdir -p $(B)/host/jpeg
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -o $(B)/host/jpeg_tests tests/jpeg_tests.cpp sporekit/jpeg.cpp
 	$(B)/host/jpeg_tests $(B)/host/jpeg

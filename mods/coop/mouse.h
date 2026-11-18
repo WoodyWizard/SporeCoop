@@ -25,6 +25,9 @@ void set_graphics_input(bool (*handler)(unsigned message, uintptr_t value, int x
 void set_list_input(bool (*handler)(unsigned message, uintptr_t value, int x, int y));
 // BUG-9154: Tribe, right presses and releases (client coordinates); true consumes the message
 void set_tribe_input(bool (*handler)(unsigned message, uintptr_t value, int x, int y));
+// decision 6J: the players' right-click menu sees left and right presses first (x, y: the client pixel as the player
+// clicked it, before any UI scale remap); true: the press is the menu's (the game does not get it)
+void set_player_menu_input(bool (*handler)(unsigned message, int x, int y));
 // BUG-9191 (3H): every mouse message's point (client pixels) may be moved before the game and the other handlers see
 // it (Spore's scaled UI pieces take the mouse in their unscaled places); true = moved
 void set_remap(bool (*handler)(unsigned message, int& x, int& y));

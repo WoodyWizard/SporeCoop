@@ -1,0 +1,311 @@
+// Decision 6J: parties of 4, the messages (parties.h has the rules). The host keeps the book and sends it to every
+// guest (MSG_PARTY kTable, reliable) on every change; a guest asks the host (invite, answer, leave, lead) and the host
+// answers the asking player (kResult) and offers an invite to the invited one (kOffer).
+#include "parties.h"
+#include "parties_net.h"
+
+#include <cstdio>
+
+namespace parties {
+
+static const SkHost* H;
+static SkMod* M;
+static Ctx C;
+static Book g_book;
+static int g_offer_from = -1; // this game: who invited it (-1 none)
+static double g_offer_at;
+static uint32_t g_tables_sent, g_tables_got, g_requests;
+
+static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
+static uint8_t me() { return C.sess ? C.sess->my_id() : 0; }
+static std::string name(uint8_t id) { return C.name_of ? C.name_of(id) : "player " + std::to_string(id); }
+static void feed(const std::string& s)
+{
+    H->log(M, SK_INFO, "party: %s", s.c_str());
+    if (C.feed)
+        C.feed(s);
+}
+
+static void send_table()
+{
+    if (!is_host())
+        return;
+    net::Writer w;
+    w.u8(kTable);
+    const auto& all = g_book.all();
+    w.u8((uint8_t)std::min<size_t>(all.size(), 255));
+    for (size_t i = 0; i < all.size() && i < 255; i++) {
+        w.u16(all[i].id);
+        w.u8(all[i].leader);
+        w.u8((uint8_t)all[i].members.size());
+        for (uint8_t m : all[i].members)
+            w.u8(m);
+    }
+    for (auto& p : C.sess->players())
+        if (p.id != me())
+            C.sess->send_reliable_to(p.id, net::MSG_PARTY, w);
+    g_tables_sent++;
+    if (C.changed)
+        C.changed();
+}
+
+static void result_to(uint8_t to, uint8_t what, uint8_t other, Result r)
+{
+    if (to == me()) {
+        if (r != Result::Ok)
+            feed(std::string("Party: ") + text(r) + ".");
+        return;
+    }
+    net::Writer w;
+    w.u8(kResult);
+    w.u8(what);
+    w.u8(other);
+    w.u8((uint8_t)r);
+    C.sess->send_reliable_to(to, net::MSG_PARTY, w);
+}
+
+static void offer_to(uint8_t to, uint8_t from)
+{
+    if (to == me()) {
+        g_offer_from = from;
+        g_offer_at = H->time_seconds();
+        feed(name(from) + " invites you to their party.");
+        if (C.changed)
+            C.changed();
+        return;
+    }
+    net::Writer w;
+    w.u8(kOffer);
+    w.u8(from);
+    C.sess->send_reliable_to(to, net::MSG_PARTY, w);
+}
+
+static uint32_t stage(uint8_t id) { return C.stage_of ? C.stage_of(id) : 0; }
+
+// host: a request of player `from` (the host's own too)
+static void host_request(uint8_t from, uint8_t kind, uint8_t other, uint8_t flag)
+{
+    const double now = H->time_seconds();
+    g_requests++;
+    Result r = Result::Ok;
+    switch (kind) {
+    case kInvite:
+        r = g_book.invite(from, other, stage(from), stage(other), now);
+        if (r == Result::Ok) {
+            offer_to(other, from);
+            feed(name(from) + " invited " + name(other) + " to their party.");
+        }
+        result_to(from, kind, other, r);
+        break;
+    case kAnswer: {
+        r = g_book.answer(from, other, flag != 0, now);
+        result_to(other, kind, from, r); // (the inviter hears how it went)
+        if (r == Result::Ok) {
+            feed(name(from) + " joined " + name(other) + "'s party.");
+            send_table();
+        } else if (r != Result::Declined)
+            result_to(from, kind, other, r);
+        else
+            feed(name(from) + " declined " + name(other) + "'s invite.");
+        break;
+    }
+    case kLeave:
+        r = g_book.leave(from);
+        if (r == Result::Ok) {
+            feed(name(from) + " left their party.");
+            send_table();
+        }
+        result_to(from, kind, from, r);
+        break;
+    case kLead:
+        r = g_book.set_leader(from, other);
+        if (r == Result::Ok) {
+            feed(name(other) + " leads the party now.");
+            send_table();
+        }
+        result_to(from, kind, other, r);
+        break;
+    default:
+        break;
+    }
+}
+
+static std::string request(uint8_t kind, uint8_t other, uint8_t flag)
+{
+    if (!C.sess || !C.sess->connected())
+        return "Not in a session.";
+    if (is_host()) {
+        host_request(me(), kind, other, flag);
+        return "";
+    }
+    net::Writer w;
+    w.u8(kind);
+    w.u8(other);
+    w.u8(flag);
+    C.sess->send_reliable_to(0, net::MSG_PARTY, w);
+    return "";
+}
+
+void init(const SkHost* host, SkMod* mod, Ctx ctx)
+{
+    H = host;
+    M = mod;
+    C = std::move(ctx);
+}
+
+void on_session_start()
+{
+    g_book.clear();
+    g_offer_from = -1;
+    if (is_host())
+        g_book.add(me());
+}
+
+void on_session_end()
+{
+    g_book.clear();
+    g_offer_from = -1;
+    if (C.changed)
+        C.changed();
+}
+
+void on_player_join(uint8_t id)
+{
+    if (!is_host())
+        return;
+    if (!g_book.find(me()))
+        g_book.add(me());
+    // a plain co-op join: the host's party ("the person you joined"); a galaxy planet: alone
+    g_book.add(id, C.galaxy && C.galaxy() ? -1 : (int)me());
+    send_table();
+}
+
+void on_player_leave(uint8_t id)
+{
+    if (g_offer_from == id)
+        g_offer_from = -1;
+    if (!is_host())
+        return;
+    g_book.remove(id);
+    send_table();
+}
+
+void on_message(uint8_t from, net::Reader& r)
+{
+    const uint8_t kind = r.u8();
+    if (!r.ok())
+        return;
+    if (is_host()) {
+        if (kind != kInvite && kind != kAnswer && kind != kLeave && kind != kLead)
+            return;
+        const uint8_t other = r.u8(), flag = r.u8();
+        if (r.ok())
+            host_request(from, kind, other, flag);
+        return;
+    }
+    if (from != 0) // a guest takes the book and its answers from the host only
+        return;
+    if (kind == kTable) {
+        std::vector<Party> v;
+        const uint8_t n = r.u8();
+        for (uint8_t i = 0; i < n && r.ok(); i++) {
+            Party q;
+            q.id = r.u16();
+            q.leader = r.u8();
+            const uint8_t k = r.u8();
+            for (uint8_t j = 0; j < k && r.ok(); j++)
+                q.members.push_back(r.u8());
+            if (q.members.size() > kMaxMembers || !q.has(q.leader))
+                return; // (a broken table: keep the last good one)
+            v.push_back(std::move(q));
+        }
+        if (!r.ok())
+            return;
+        g_book.set_all(std::move(v));
+        g_tables_got++;
+        if (C.changed)
+            C.changed();
+    } else if (kind == kOffer) {
+        const uint8_t inviter = r.u8();
+        if (r.ok())
+            offer_to(me(), inviter);
+    } else if (kind == kResult) {
+        const uint8_t what = r.u8(), other = r.u8(), code = r.u8();
+        if (!r.ok())
+            return;
+        const Result res = (Result)code;
+        if (what == kAnswer && res == Result::Declined)
+            feed(name(other) + " declined your invite.");
+        else if (what == kAnswer && res == Result::Ok)
+            feed(name(other) + " joined your party.");
+        else if (res != Result::Ok)
+            feed(std::string("Party: ") + text(res) + ".");
+    }
+}
+
+void tick(double now)
+{
+    if (is_host())
+        g_book.lapse(now);
+    if (g_offer_from >= 0 && now - g_offer_at > kInviteSeconds) {
+        g_offer_from = -1;
+        if (C.changed)
+            C.changed();
+    }
+}
+
+std::string invite(uint8_t to) { return request(kInvite, to, 0); }
+std::string answer(bool yes)
+{
+    if (g_offer_from < 0)
+        return "No party invite to answer.";
+    const uint8_t from = (uint8_t)g_offer_from;
+    g_offer_from = -1;
+    if (C.changed)
+        C.changed();
+    return request(kAnswer, from, yes ? 1 : 0);
+}
+std::string leave() { return request(kLeave, me(), 0); }
+std::string make_leader(uint8_t to) { return request(kLead, to, 0); }
+
+int pending_invite() { return g_offer_from; }
+const Book& book() { return g_book; }
+bool same_party(uint8_t a, uint8_t b)
+{
+    const Party* q = g_book.find(a);
+    return q && q->has(b);
+}
+std::vector<uint8_t> my_party()
+{
+    const Party* q = g_book.find(me());
+    return q ? q->members : std::vector<uint8_t>{me()};
+}
+int leader_of(uint8_t p)
+{
+    const Party* q = g_book.find(p);
+    return q ? q->leader : -1;
+}
+bool i_lead()
+{
+    const Party* q = g_book.find(me());
+    return !q || q->leader == me();
+}
+
+std::string status()
+{
+    std::string s;
+    char b[160];
+    snprintf(b, sizeof b, "parties: %zu (tables sent %u, got %u, requests %u), my invite from %d\n", g_book.all().size(),
+             g_tables_sent, g_tables_got, g_requests, g_offer_from);
+    s = b;
+    for (auto& q : g_book.all()) {
+        snprintf(b, sizeof b, "  party %u: leader %u '%s', members", q.id, q.leader, name(q.leader).c_str());
+        s += b;
+        for (uint8_t m : q.members)
+            s += " " + std::to_string(m) + " '" + name(m) + "'";
+        s += "\n";
+    }
+    return s;
+}
+
+} // namespace parties
