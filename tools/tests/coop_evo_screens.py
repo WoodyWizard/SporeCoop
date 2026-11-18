@@ -214,6 +214,7 @@ def part_cell(host, guest, ck, ready, scr):
     # 1. the host's mating call: its editor (at once since BUG-1263, cell.editor_now; through the vote with --vote or
     # the switch off); the guest plays on and SEES its world, the host's picture is not black for long either
     g_off = log_size(guest)
+    t_call = time.time()  # the host's black comes with the egg laying, before its editor (or its vote) starts
     host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
     reached = mating_call(host, 'host', host_vote)
     voted = 'vote active' in host.call('coop.vote')['out']
@@ -242,7 +243,7 @@ def part_cell(host, guest, ck, ready, scr):
     # BUG-1263: a guest that never answers kept the host's picture black behind the vote for its 60 s (the game had
     # faded out after the egg laying, docs/re/cell.md#cell-vote-black-screen); with cell.editor_now there is no vote:
     # the host's editor follows the egg laying as in a solo game (SPORE_FIX_OFF=cell.editor_now, --ready none: FAILS)
-    check_black(ck, sh, 'host', 'between its mate and its editor', t_vote, t_ed)
+    check_black(ck, sh, 'host', 'from its mating call to its editor', t_call, t_ed)
     check_black(ck, sg, 'guest', 'while the host\'s vote runs', t_vote, t_ed)
     check_black(ck, sg, 'guest', 'while the host is in its editor', t_ed, t_back)
     check_black(ck, sg, 'guest', 'after the host\'s editor', t_back)
