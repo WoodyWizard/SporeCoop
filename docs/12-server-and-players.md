@@ -555,6 +555,23 @@ Decision 5V A. Code on alpha: server/galaxy/main.cpp, mods/coop/galaxy_client.cp
 * ~ Every hand-over is a reload for everybody on the planet (the new host loads the stored world, the others the new
   host's share): about 25-40 s on TITAN.
 
+### The galaxy server in the server list (2026-11-17, feat/lineages-alpha, decision 5Y A)
+<a id="server-list-galaxy"></a>
+
+Owner: "I was thinking we just add it as a native server in the server list at the top. Maybe give it a larger size to
+show it's a special server?" Code on alpha: mods/coop/coop_ui.cpp (the connect page), coop.cpp (galaxy_info).
+
+* The server list's first row, two rows tall, pinned above the network games: "Galaxy Server / Online worlds - port
+  47900"; connected: the galaxy's name and "N planets, M players online". A click fills in the saved galaxy address
+  and port 47900; Join with port 47900 connects to the galaxy server instead of a game ([ui] galaxy_address remembers
+  it). The galaxy menu then shows the server's planets (#server-galaxy-menu-built).
+* ✔ Runtime (TITAN, QA game 8): the row in the window, the address typed, Join: "TITAN test galaxy, 1 planet, 0
+  players online"; the galaxy menu showed Samuth; Play on it with nobody hosting downloaded the stored world and hosted
+  it 5 s later (the gap left open in #server-galaxy-menu-built).
+* ~ Seen: a host whose creature is dead keeps uploading, and the next player loads the planet into the death caption
+  ("You were killed in battle"). Uploads could wait while the host is dead.
+* Not yet: leaving the galaxy from the window (today: quitting the game, or `coop.galaxy disconnect`).
+
 ### Owner's idea: deleting one's creature on a planet from the online galaxy menu (2026-11-17)
 
 Owner: "when a player is on the Online Galaxy Menu, we should allow them to delete their creature on the world still.
