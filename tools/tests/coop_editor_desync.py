@@ -252,17 +252,24 @@ def main():
                 host.call('click %d %d' % HISTORY_OK)
             time.sleep(4)
         ck('Creature' in mode(host), f'the host entered the Creature stage ({mode(host)})')
-        ck(wait(lambda: 'vote active' in host.call('coop.vote')['out'], 30), 'its first editor waits for the vote')
-        ck(wait(lambda: 'Creature' in mode(guest) and guest.call('coop.avatar')['ok'], 90), 'the guest follows')
-        k0 = field(host.call('coop.avatar')['out'], r'key=0x([0-9A-F]{8})')
+        k0 = field(host.call('coop.avatar')['out'], r'key=0x([0-9A-F]{8})')  # before its first editor (BUG-1264)
+        # BUG-1264: since BUG-1245 (core.arrival_nowait) the first editor's arrival vote does not wait for a guest still
+        # on its way: the host's editor may open without a vote the test sees, and the guest gets its own first editor
+        # when it has arrived (BUG-1240), so it may already be in that editor
+        ck(wait(lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host), 30),
+           f"its first editor comes (the arrival vote or the editor: {mode(host).strip()})")
+        ck(wait(lambda: ('Creature' in mode(guest) and guest.call('coop.avatar')['ok']) or 'Editor' in mode(guest), 90),
+           f'the guest follows (its Creature stage or its own first editor: {mode(guest).strip()})')
+        k0 = k0 or field(host.call('coop.avatar')['out'], r'key=0x([0-9A-F]{8})')
         time.sleep(3)
-        guest.call('click %d %d' % READY)
+        if 'vote active' in host.call('coop.vote')['out']:
+            guest.call('click %d %d' % READY)
         ck(wait(lambda: 'Editor' in mode(host), 40), 'the host is in the creature editor')
         time.sleep(6)
         add_legs(host)
         shot(host, 'editor_desync_legs.png')
         host.call('click %d %d' % DONE)
-        if wait(lambda: 'Editor' in mode(guest), 20):  # the guest's own editor (the vote opened it)
+        if wait(lambda: 'Editor' in mode(guest), 20):  # the guest's own editor (the vote or its arrival opened it)
             ui = wait(lambda: editor_ui(guest), 40)
             shot(guest, 'editor_desync_guest_editor.png')
             ck(ui, "the guest's own editor shows its interface (parts, done, cancel)")
