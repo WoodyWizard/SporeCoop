@@ -4307,6 +4307,7 @@ static void test_queue_cap()
     Session h, a, b;
     a.rejoin_token = 1;
     b.rejoin_token = 2;
+    b.timeout_ms = 2000; // a reason lost to a full socket buffer (below) ends in a timeout soon
     h.queue_cap = 2u << 20;
     relay_space(h);
     std::string err, why;
@@ -4329,11 +4330,22 @@ static void test_queue_cap()
            h.limit_stats().queue_drops);
     if (fix) {
         CHECK(!b_in && h.limit_stats().queue_drops == 1 && most <= h.queue_cap + 256 * 1024);
-        // B's game runs again: it reads why (behind up to 2 MB of the queue: a slow CI runner needs more than 300 ms)
+        // B's game runs again: it reads why. The reason goes as 3 datagrams behind the data in flight: B's socket asks
+        // for 4 MB (udp.cpp; Windows gives it), but a Linux kernel caps it at net.core.rmem_max (208 KB on the CI
+        // runner): there the full buffer drops the reason and B ends by its timeout instead
+        bool small_buf = false;
+#ifdef __linux__
+        if (FILE* f = fopen("/proc/sys/net/core/rmem_max", "r")) {
+            long v = 0;
+            small_buf = fscanf(f, "%ld", &v) == 1 && v < (4l << 20);
+            fclose(f);
+        }
+#endif
         for (int i = 0; i < 50 && why.empty(); i++)
             tick({&h, &a, &b}, 100);
-        printf("  the dropped guest: '%s'\n", why.c_str());
-        CHECK(why.find("too much data") != std::string::npos && !b.connected());
+        printf("  the dropped guest: '%s'%s\n", why.c_str(), small_buf ? " (rmem_max below 4 MB: a timeout may stand in)" : "");
+        CHECK((why.find("too much data") != std::string::npos ||
+               (small_buf && why.find("timeout") != std::string::npos)) && !b.connected());
         CHECK(id_named(h, "Bob") != 0xFF); // A is still there: only the queue was over
     } else
         CHECK(!b_in && most <= h.queue_cap + 256 * 1024); // fails: the queue grows past the cap
