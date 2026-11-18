@@ -31,6 +31,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..'))
 import lane  # noqa: E402
+import uifind  # noqa: E402
 from twoinst import Checks, keyframe, start  # noqa: E402
 
 
@@ -90,6 +91,16 @@ def main():
             time.sleep(1)
         print(f'  {who}: mode {mode(c)}', flush=True)
     ck(mode(host) == 'GalaxyGameEntry' and mode(guest) == 'GalaxyGameEntry', 'both games are at the galaxy menu')
+    # the lab's games left the menu before its start-up video ended (the fixture's quick load): back in the menu its
+    # main menu panel stays hidden until the video's end message comes (BUG-1256); players watched the video
+    time.sleep(3)
+    for who, c in (('host', host), ('guest', guest)):
+        print(f'  {who}: ' + call(c, 'coop.menuintro'), flush=True)
+    for _ in range(40):
+        if all(uifind.shown(c, 'Galactic Adventures') for c in (host, guest)):
+            break
+        time.sleep(1)
+    ck(all(uifind.shown(c, 'Galactic Adventures') for c in (host, guest)), 'both games show the main menu panel')
     if not a.own_places:
         for who, c in (('host', host), ('guest', guest)):
             print(f'  {who}: ' + call(c, 'coop.adventure place 0ADF0E01'), flush=True)
@@ -116,6 +127,9 @@ def main():
                 c.call('key enter')
             time.sleep(5)
         print(f'  {who}: play state and act {act(c)}', flush=True)
+    # the adventure's start (Initialize -> SetCurrentAct) ran through: a fault in it leaves the play state at 0
+    ck(all((act(c) or (0, 0))[0] == 3 for c in (host, guest)),
+       f'4. both games play the adventure (play state 3: host {act(host)}, guest {act(guest)})')
     t0 = time.time()
     seen = {}
     while time.time() - t0 < a.play:
