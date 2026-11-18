@@ -83,7 +83,8 @@ screen never goes darker than 35 % of before while the guest, 70 m away, is knoc
 * FAIL (`SPORE_FIX_OFF=effects.cell_own_only`): out/lab/20261118-132735 (made 0 -> 1, darkest 3.9 of 130), also
   -131912 (the black key frame).
 * PASS: out/lab/20261118-132850 (made 0 -> 0, darkest 117 of 113; the key frame shows the host's cell and the guest's
-  respawned one).
+  respawned one), out/lab/20261118-133339 (with cell_coop, cell_respawn, cell_effects, cell_rescue, cell_goldie_view,
+  cell_attack_anim, cell_mirror_turn: all passed).
 
 ## History
 - 2026-11-18: opened.
