@@ -3588,3 +3588,34 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   campaign planet's list was short at the stage's start is not known (33 rebuilds of its list in a session gave 5 each):
   [../re/tribe.md#tribe-form-last-species](../re/tribe.md#tribe-form-last-species),
   [../06-testing.md#testing-tribe-form-species](../06-testing.md#testing-tribe-form-species)
+
+## Cell: the guest's mirrors of the host's NPC cells spin or dance in place (2026-11-18, players' video, fix/w53-cellfx)
+<a id="issue-cell-mirror-spin"></a>
+
+* What happens: in the guest's game every NPC cell around spins / dances in place while in the host's game they swim.
+* Reproduce: not reproduced: `lab.py run cell_mirror_turn,cell_mirror_turn_net,cell_mirror_turn_bare` and
+  `coop_cell_mirror_turn.py --fps 15 | --far 70 | --editor` (the drawn angle of each NPC cell's soft body on both
+  screens, `coop.pool cloud`).
+* Known: a mirror's soft body is turned to the host's heading after every soft-body step (BUG-0001's h_Soft); a mirror
+  without one (a full particle pool) keeps the host's heading through the cell step;
+  [../re/cell.md#cell-mirror-turn](../re/cell.md#cell-mirror-turn).
+* Not checked: a guest at another world scale (level) than the host, three or more players, a long session, a warm reset.
+* Ticket: BUG-1247 (not-reproduced)
+
+## Cell: the partner's cell plays the attack animation of a player (2026-11-18, owner: players' video)
+<a id="issue-partner-cell-attack-anim"></a>
+
+* What happens: in the Cell stage, when one player attacks, the other player's cell plays the attack animation too.
+* Reproduce: not reproduced: `lab.py run cell_attack_anim,cell_attack_electric` (BUG-1243).
+* Known: no cell animation is relayed to puppets; the electric step never runs for a puppet cell (`coop.pool anims`
+  puppet_zaps 0); the fixture's cell has no jaw or spike.
+* Also not reproduced with both cells armed (jaw, spike, the herbivore mouth's chunk bites), either player attacking,
+  nor on v0.7.14.1; cell puppets never animate (only the effects relay shows a partner's attack).
+* Not checked: a partner's poison clouds, overlapping cells.
+* Second look at the video: the HOST's cell, alone, was swept into a whirl while the guest fought far away.
+* Ticket: BUG-1243 (fixed, unreleased, fix/w53-cellfx): a partner knocked out and revived or respawned played its
+  hatch (cell_egg_L0_autohatch / cell_hatch_ice) in the other player's game, relayed and on its puppet: these effects
+  black out the whole screen of whoever plays them and draw the egg over it (`effects.cell_own_only`). No attack
+  animation of a partner was ever seen on a player's own cell:
+  [../re/cell.md#cell-partner-hatch](../re/cell.md#cell-partner-hatch),
+  [../06-testing.md#testing-cell-cellfx](../06-testing.md#testing-cell-cellfx)

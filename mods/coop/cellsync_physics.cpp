@@ -414,6 +414,26 @@ void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
     memcpy(c + 0x24, want, sizeof want); // the shape matrix the fit wrote with it (blend 0: the same)
     F<uint16_t>(c, kFlags) |= 2;
     g_n.soft_turns++;
+    mit->second.soft_at = H->time_seconds();
+    mit->second.soft_d = d;
+}
+
+// tests (BUG-1247): every mirror's heading right after the cell step (modes' SimUpdate hook), before guest_tick writes
+// the host's again: what a mirror without a soft body is drawn with (h_Soft turns the soft ones). Measured: a guest's bare
+// mirrors kept the host's heading there (lab 20261118-131028), so nothing is written back.
+void mirrors_after_step()
+{
+    if (!is_guest() || !in_cell() || g_mirrors.empty() || modes::cell_leaving())
+        return;
+    double now = H->time_seconds();
+    for (auto& [h, m] : g_mirrors) {
+        uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
+        if (!c || !F<uint32_t>(c, 0x248)) // drawn only with graphics
+            continue;
+        const float* r = (const float*)(c + kRot);
+        m.step_head = std::atan2(r[1], r[0]);
+        m.step_at = now;
+    }
 }
 
 // ---- the cell broadphase's sweep (BUG-0337, docs/re/cell.md#cell-sap-active-list) ----

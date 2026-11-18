@@ -2482,3 +2482,75 @@ BUG-1246. GOG 2024, lanes 2 / 3 (`coop_evo_screens.py --part cell-mate`).
   guest's mate is never in the host's G+0x51D4, so the host's own meeting 0xE78D10 ignores it.
 * ✔ The guest sends nothing while it is in its editor (the cell tick returns outside Cell): the copy goes by its 2 s
   timeout, and the "gone" message comes when the guest is back in Cell.
+## The first-part tutorial on a guest: its two cells and the cutscene camera (2026-11-18, fix/w53-cellfx)
+<a id="cell-goldie-cutscene"></a>
+
+BUG-1248. GOG 2024, Ghidra and lane 6 (`tools/tests/coop_cell_goldie_view.py`, `coop.pool goldie`). Extends
+[#cell-goldie](#cell-goldie) and [#cell-goldie-button](#cell-goldie-button).
+* ✔ (Ghidra) **0xE79720** (`SporeCoop::Cell_GoldieDemise`, from AddFoodPoints) destroys the cells within 5 m and
+  15 m of the avatar (0xE78B20) and the cell at G+0x516C, makes two cells next to the avatar: **Goldie** (resource
+  0xE4CC90(1, 2)) and its **hunter** (0xE4CC90(2, 3), +0x22C chase = Goldie, +0x230 = 1000), both +0x354 = 1 (keep
+  alive), aims the cell camera at Goldie (`cCellUI +0xE0` = Goldie, `+0xF4` = 10), sets G+0x518C = 1, makes the event
+  of type 0x24 (+0x28 Goldie, +0x2C the hunter; its index at G+0x5194 and G+0x5198) and plays the cinematic
+  goldies_demise.
+* ✔ (Ghidra) The event's step **0xE5F160** (`SporeCoop::Cell_GoldieEventStep`) aims the camera at **G+0x516C** every
+  frame while that cell lives (+0xE0, +0xF4 = 5, zoom +0x80 = 10) and steers the hunter (event +0x2C) at it; it locks
+  the avatar (+0x170 = event +0x28). G+0x516C is "the part-token cell on screen": the per-cell visibility step 0xE78C00
+  makes a cell of cell type 6 that becomes visible G+0x516C (destroying the old one), or destroys the newcomer while
+  G+0x516C is alive (0xE5D340). 0xE794F0 (the button / Esc) clears +0xE0 and G+0x518C.
+* ✔ (runtime) On a guest the two cells are local cells the host does not have: guest_state's stray purge destroyed
+  them with the next host state. The guest's `coop.pool goldie` right after the start: G+0x516C = 0, the camera on a
+  dead index (8946032C) for ~2 s, then on whatever part-token mirror of the host's pool the visibility step saw first
+  (lab 20261118-122658, -123002: a host cell 11 m from the guest, 60 m from the host); without such a mirror near
+  the guest the letterbox stays on empty water (the players' video).
+* G+0x5194 can name another event meanwhile; the tutorial's event is found by G+0x5198 (the button wait) first.
+* Fix `cell.goldie_keep` (cellsync_guest.cpp `tutorial_cells`): while G+0x518C is set the purge keeps the event's
+  two cells (else the camera's cell and the cell chasing it, seen at the start). Seen after it: Goldie and its hunter
+  alive and Goldie on the guest's screen in 19 of 19 samples, the same scene as the host's (lab 20261118-123823).
+
+## How a guest's mirrors are drawn turning: the soft body against the host's heading (2026-11-18, fix/w53-cellfx)
+<a id="cell-mirror-turn"></a>
+
+BUG-1247 (not reproduced). GOG 2024, lane 6, `tools/tests/coop_cell_mirror_turn.py` (`coop.pool cloud`). Extends
+section 10 (BUG-0001's soft-body facing).
+* `coop.pool cloud [n]`: for every NPC cell with graphics on the screen, the angle of its first soft-body particle about
+  the particles' mean (the drawn picture turns with it), the heading the host sent (guest) / +0x5C (host), the age of the
+  last h_Soft turn and its size, +0x1B0, +0x18C, the speed; a cell without a soft body ("bare", +0x250 < 2) reports its
+  heading right after the cell step (`mirrors_after_step`, from modes' SimUpdate hook).
+* ✔ (runtime) The same cell's drawn turn rate on both screens agreed within 0.01-0.07 rad/s in every condition tried:
+  both in one place with the host swimming (lab 20261118-124151, -125953), SPORE_NET delay 250 ms loss 5 % (-124151),
+  the guest at 15 fps (-124151, -125953), the guest 70 m away against the host's heading as received (-125159, 12
+  cells), after the host's evolution and editor (-125953), and the guest's mirrors made again from a full particle pool
+  (all bare, -131028): h_Soft's correction was over 0.5 rad in at most 2 samples of a cell.
+* ✔ (runtime) A bare mirror's heading right after the cell step is the host's (guest_tick wrote it, its velocity 0):
+  the step does not turn a held cell (-131028). A write-back after the step (as the puppets get) changed nothing and was
+  taken out.
+* ✔ (runtime) +0x1B0 equals the animation state +0x18C in nearly every sample. The guest's own game plays the swim
+  animations 0x30 / 0x32 / 0x33 on ~1.5 % of the mirror samples where the host's cells play 0 / 1 / 0x12 / 0xB / 0x16
+  (-131028): it picks them for a cell the mod moves; no turn comes with them.
+
+## The hatch effects black out the screen of whoever plays them; a partner's respawn did it on the host (2026-11-18, fix/w53-cellfx)
+<a id="cell-partner-hatch"></a>
+
+BUG-1243 (the second look at the players' video: the host's cell "spun in the combat whirl" while the guest fought far
+away, "I fought the air"). GOG 2024, lane 6, `tools/tests/coop_cell_partner_respawn.py` (`--probe <ids>`),
+`coop_cell_far_fight.py`, `coop.effects recent`. Extends [#cell-partner-attack-anim](#cell-partner-attack-anim).
+* ✔ (runtime) Effect ids are FNV-1 of the lower-case name (0x932E50(name, 0x811C9DC5, 1)): cell_egg_L0_autohatch
+  0xB4B06F12, cell_hatch_ice 0x082BF046, cell_death_oneshot 0xF3BA1C83, cell_death_break 0xBABFCCEA.
+* ✔ (runtime) cell_egg_L0_autohatch and cell_hatch_ice are the player's own hatch: played anywhere in a game (a world
+  effect 70 m from its avatar, `coop.effects inject`) they black out that game's whole screen and fade it in over ~1 s
+  (mean brightness 124 -> 3 and 129 -> 3, lab 20261118-132515), then the egg is drawn over the view for ~3 s (-131202's
+  key frames). The other effects a fighting cell makes (0x17AAB61F, 0x2C34420C, 0x44894CD7, 0x94AF0B82, 0x9E70861B,
+  0xA6D4590B, 0xBABFCCEA, 0xF3BA1C83, 0xF8EB2D4D, 0xF9B607C1, 0xFC1CD6A3, 0x1B23B27A, 0x988D8969, 0xB71008DB) show nothing
+  on the host's screen from there.
+* ✔ (runtime) The guest fighting far from the host (mouth, jaw, spike, electric, poison, -125953 / -131202) changed
+  nothing on the host's own cell: no DamageCell on it, its animation and state +0x18C stayed 0, it did not turn, no
+  partner effect was played within 6 m of it. The guest knocked out there (`coop.pool selfhit 20`) and respawning
+  (cell.respawn_small: next to the host) blacked out the host's screen: brightness 129 -> 4 at the respawn, the key
+  frame black but for the notices (-131912). The co-op revive does the same with cell_hatch_ice.
+* The two ways: the guest's own game plays the hatch on its cell (downed_tick) and its world effect is relayed (made at
+  the local player's cell), and the host's on_ko plays it on the guest's puppet (KO_RESPAWNED: cell_egg_L0_autohatch,
+  KO_REVIVED: cell_hatch_ice). Inferred for the video: the guest, knocked out in its fight, came back, and the host's
+  screen showed its own cell inside the hatch.
+* Fix `effects.cell_own_only` (effects.cpp `own_only`): these two ids are neither sent nor played for a partner, and the
+  puppet gets no effect on a revive or a respawn.

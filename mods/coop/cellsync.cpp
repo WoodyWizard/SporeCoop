@@ -1,4 +1,5 @@
 #include "cellsync_internal.h"
+#include "effects.h"
 
 namespace cellsync {
 
@@ -537,7 +538,7 @@ static void on_ko(int id, uint8_t state, float left, float hold)
         effect(c, "cell_death_oneshot");
         k.fx += c != nullptr;
     }
-    else if (state == KO_REVIVED)
+    else if (state == KO_REVIVED && !effects::cell_own_only_fix()) // BUG-1243: cell_hatch_ice blacks out this screen
         effect(c, "cell_hatch_ice");
     else if (state == KO_RESPAWNED)
         k.fx_at = k.since + 0.4; // after the puppet has moved next to its partner
@@ -784,6 +785,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_SpawnLoot, (void*)h_SpawnLoot, (void**)&o_SpawnLoot);
     if (a_Soft)
         H->hook_create(M, (void*)a_Soft, (void*)h_Soft, (void**)&o_Soft);
+    modes::set_cell_after_step(mirrors_after_step); // BUG-1247
     if (a_ContactPass && a_ContactSolve) { // GOG 2024 only (BUG-0307)
         H->hook_create(M, (void*)a_ContactPass, (void*)h_ContactPass, (void**)&o_ContactPass);
         H->hook_create(M, (void*)a_ContactSolve, (void*)h_ContactSolve, (void**)&o_ContactSolve);
@@ -857,7 +859,10 @@ static void symbiosis_tick(double now)
             F<float>(c, kOpacity) = kKoOpacity;
         if (k.fx_at > 0 && now >= k.fx_at) {
             k.fx_at = 0;
-            effect(c, "cell_egg_L0_autohatch");
+            // BUG-1243: the respawn's hatch (cell_egg_L0_autohatch) blacks out this player's screen and draws the egg
+            // over it: not for a partner's puppet (effects.cell_own_only)
+            if (!effects::cell_own_only_fix())
+                effect(c, "cell_egg_L0_autohatch");
         }
     }
     if (g_downed) {

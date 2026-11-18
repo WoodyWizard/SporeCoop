@@ -138,6 +138,8 @@ void cell_destroy(uint32_t idx);
 bool cell_leaving();
 // C3 (BUG-1142): the Cell step (SimUpdate) stands while on (a guest waiting for the host's pause); steps skipped
 void set_cell_hold(bool on);
+// BUG-1247: called right after each Cell step (SimUpdate), before the frame is drawn (cellsync: the guest's mirrors)
+void set_cell_after_step(void (*fn)());
 uint32_t cell_held_steps();
 // move a cell exactly (soft-body cells take their position from their particles, docs/re/cell.md §6)
 void cell_move(uint8_t* c, const net::Vec3& p, bool still = false);

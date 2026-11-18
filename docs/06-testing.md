@@ -9171,3 +9171,29 @@ BUG-1241, BUG-1250, BUG-1252, BUG-1253 (creature fixture, warm; docs/re/creature
   `scale=` in an adventure, `coop.avatar` `scale=` of the captain.
 * Pitfall: the lab's games load their fixture before the galaxy menu's start-up video ends; back in the galaxy menu
   they show no main menu panel until `coop.menuintro` (BUG-1260): adventure_start.py's clicks are lost otherwise.
+## Cell: the guest's tutorial cutscene, a fight far from the host, the mirrors' drawn turn (2026-11-18, fix/w53-cellfx)
+<a id="testing-cell-cellfx"></a>
+
+* `coop_cell_goldie_view.py` (suite cell_goldie_view, ~1.5 min, BUG-1248): the guest 60 m from the host (`coop.pool tp`
+  again until it holds: the join after a load puts a new own cell back next to the host for 30 s, BUG-0352), the host's
+  food crosses the tutorial window in steps of 10 (`coop.pool food 50` steps can jump over it on the guest, which gets
+  the host's totals); `coop.pool goldie` on the guest: the tutorial's Goldie, its hunter, the camera's cell.
+  `SPORE_FIX_OFF=cell.goldie_keep` must FAIL.
+* `coop_cell_far_fight.py [--parts ...] [--dist 70]` (suite cell_far_fight, BUG-1243): the guest fights far from an
+  idle host (mouth, jaw, spike, electric, poison, bitten until knocked out); the host's own cell sampled at 10 Hz
+  (`coop.pool anims`: +0x1B0, heading, the animation state +0x18C, DamageCell calls on it) and the world effects each
+  game sent / played with their distance to the local player's cell (`coop.effects recent`).
+* `coop_cell_mirror_turn.py [--swim] [--fps N] [--crowd N] [--far M]` (suites cell_mirror_turn, _net, _lowfps, _far,
+  BUG-1247): what each player sees of an NPC cell is its soft body: `coop.pool cloud` gives the angle of the first
+  particle about the particles' mean for every NPC cell on screen (host: its own, guest: its mirrors by host key);
+  the turn rates of the same cell on both screens are compared.
+* `coop_cell_partner_respawn.py` (suite cell_partner_respawn, ~1 min, BUG-1243): the guest 70 m away is knocked out
+  (`coop.pool selfhit 20`) and respawns; the host's game must make no hatch effect (`coop.effects` own only `made=`) and
+  its screen must not go black (`shot` every ~0.3 s, mean brightness under 35 % of before; the shots stay in
+  out/lane<N>/shots/partner_respawn). A key frame taken in the same moment as such a shot came back black once while
+  the shot was not: no key frames inside the loop. `--probe <hex ids>`: each id played in the host's game where the guest
+  is, with the host's brightness after it (RE). `SPORE_FIX_OFF=effects.cell_own_only` must FAIL.
+* `cell_attack_anim` (BUG-1243): the fixture's cell has no weapon and its bite plays no attack animation of its own
+  (+0x1B0 stays 0 on the attacker); the control is now that the bites land (the creature's hp in the host's game), the
+  check that the other, idle cell plays no new animation (it failed in every run before: its control asked for an
+  attacker animation the fixture never plays).

@@ -178,6 +178,34 @@ PLAYER_STATE("effects", [](uint8_t id) { g_last_rx.erase(id); g_last_rx_start.er
 static uint32_t g_sent_keys[64];
 static size_t g_sent_n;
 static uint8_t g_last_rx_from = 0xFF;
+// tests (BUG-1243): the last world effects sent and played here, with where the local player was then
+struct Recent {
+    char dir = 0; // 's' sent, 'p' played, 'm' made by this game (any world effect with a place)
+    uint8_t player = 0;
+    uint32_t id = 0;
+    float x = 0, y = 0, z = 0, d = -1; // d: distance to the local player's object (-1: none)
+    double at = 0;
+};
+static constexpr size_t kRecent = 160;
+static Recent g_recent[kRecent];
+static size_t g_recent_at, g_recent_n;
+static void note_recent(char dir, uint8_t player, uint32_t id, const net::Vec3& p)
+{
+    Recent& r = g_recent[g_recent_at];
+    r.dir = dir;
+    r.player = player;
+    r.id = id;
+    r.x = p.x, r.y = p.y, r.z = p.z;
+    r.d = -1;
+    if (C.local_pos) {
+        net::Vec3 l = C.local_pos();
+        if (l.x != 0 || l.y != 0 || l.z != 0)
+            r.d = net::dist(l, p);
+    }
+    r.at = H ? H->time_seconds() : 0;
+    g_recent_at = (g_recent_at + 1) % kRecent;
+    g_recent_n = g_recent_n < kRecent ? g_recent_n + 1 : kRecent;
+}
 // world effects already sent this frame (effect pointer, id): the manager and the world create
 // hooks both queue the same effect, so the second one is skipped. Open addressing keyed by the
 // pointer: one probe for nearly every effect, fixed size, no allocation, cleared once a frame
@@ -422,10 +450,40 @@ static void on_local_effect(void* creature, const game::EffectEvent& ev)
 // an effect created for any object: keep it; tick reads the position the game gave it (+0x9C) and
 // decides whether it is on the local player's own object (the hooks run on the main thread only, so
 // no transform is copied here)
+// BUG-1243 (players' video: "I fought the air"): the Cell stage's hatch effects, cell_egg_L0_autohatch (0xB4B06F12, the
+// respawn's) and cell_hatch_ice (0x082BF046, the co-op revive's; FNV-1 of the names), are pictures for the player whose
+// cell hatches: they black out the whole screen and fade it in over ~1 s, the egg and its whirl drawn over the view.
+// Played in the host's game 70 m from its own cell, each blacked out the host's screen (brightness 129 -> 3-6, lab
+// 20261118-132515; docs/re/cell.md#cell-partner-hatch). A guest knocked out while it fought far away and revived or
+// respawned sent them to the host twice: its world effect relayed (process_world: made at the guest's own cell) and the
+// host's own play on the guest's puppet (cellsync on_ko). The host's screen went black and its cell was drawn in the
+// hatch's whirl while the host fought nothing. Now such an effect is neither sent nor played for a partner, and the
+// puppet gets none. Old (`coop.fix effects.cell_own_only off`): relayed and played.
+static bool g_own_only_fix = true;
+COOP_FIX("effects.cell_own_only", "BUG-1243", g_own_only_fix, "cell: a partner's respawn no longer plays the hatch's black screen and egg on your own screen (it looked as if your own cell was spun in a fight)");
+bool cell_own_only_fix() { return g_own_only_fix; }
+static uint32_t fnv1(const char* s) // the game's effect id of a name (0x932E50(name, 0x811C9DC5, 1): FNV-1, lower case)
+{
+    uint32_t h = 0x811C9DC5u;
+    for (; *s; s++)
+        h = (h * 0x01000193u) ^ (uint8_t)(*s >= 'A' && *s <= 'Z' ? *s + 32 : *s);
+    return h;
+}
+static bool own_only(uint32_t id)
+{
+    static const uint32_t ids[] = {fnv1("cell_egg_L0_autohatch"), fnv1("cell_hatch_ice")};
+    for (uint32_t x : ids)
+        if (x == id)
+            return true;
+    return false;
+}
+static uint32_t g_own_only_made, g_own_only_held_tx, g_own_only_held_rx; // tests: made in this game, not sent, not played
 static void on_world_effect(void* fx, uint32_t id)
 {
     if (!fx || !id)
         return;
+    if (own_only(id))
+        g_own_only_made++;
     Pending p;
     p.world = true;
     p.fx = fx;
@@ -584,6 +642,11 @@ static void process_world(void* fx, uint32_t id)
             H->log(M, SK_INFO, "effect: world id %08X dropped, no position at %p", id, fx);
         return;
     }
+    note_recent('m', C.sess->my_id(), id, p); // tests (BUG-1243): every world effect this game made, with its place
+    if (g_own_only_fix && own_only(id)) { // BUG-1243: the own cell's hatch is no picture for a partner
+        g_own_only_held_tx++;
+        return;
+    }
     if (g_watch_id && id == g_watch_id) {
         g_watch_own = fx;
         g_watch_own_at = now();
@@ -622,6 +685,7 @@ static void process_world(void* fx, uint32_t id)
     g_sent++;
     if (g_log)
         H->log(M, SK_INFO, "effect: sent world id %08X at %.2f %.2f %.2f", id, p.x, p.y, p.z);
+    note_recent('s', C.sess->my_id(), id, p);
     uint8_t xf[0x44];
     if (copy_transform(xf, fx, p))
         g_xform_sent++;
@@ -902,6 +966,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             H->log(M, SK_INFO, "effect: from %u skipped, not in this place (id %08X pool %u)", player, id, pool);
         return;
     }
+    if (!stop && pool == 5 && g_own_only_fix && own_only(id)) { // BUG-1243: an older partner's hatch
+        g_own_only_held_rx++;
+        return;
+    }
     if (!stop && pool == 5 && foreign_id(id)) {
         g_rx_foreign++;
         if (g_log)
@@ -959,6 +1027,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 last.z = p[2];
                 if (g_world_start)
                     g_world_start(player, id, fx, net::Vec3{p[0], p[1], p[2]});
+                note_recent('p', player, id, net::Vec3{p[0], p[1], p[2]});
             } else if (pool == 3) { // a one-shot effect has no pool entry: the game created it on the puppet
                 net::Vec3 p = game::position(puppet);
                 last.has_pos = true;
@@ -1190,6 +1259,20 @@ std::string watch(uint32_t id)
     return out;
 }
 
+std::string recent()
+{
+    std::string s;
+    char b[160];
+    double t = now();
+    for (size_t i = 0; i < g_recent_n; i++) {
+        const Recent& r = g_recent[(g_recent_at + kRecent - g_recent_n + i) % kRecent];
+        snprintf(b, sizeof b, "recent %c from=%u id=%08X at=(%.2f %.2f %.2f) local_d=%.2f age=%.1f\n", r.dir, r.player, r.id, r.x, r.y,
+                 r.z, r.d, t - r.at);
+        s += b;
+    }
+    return s.empty() ? std::string("recent: none\n") : s;
+}
+
 std::string status()
 {
     std::string s;
@@ -1230,6 +1313,9 @@ std::string status()
              g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
     s += b;
     snprintf(b, sizeof b, "effects onto own ground: %u\n", g_ground_moved); // BUG-0608
+    s += b;
+    snprintf(b, sizeof b, "effects cell own only: fix=%d made=%u held_tx=%u held_rx=%u\n", (int)g_own_only_fix, g_own_only_made,
+             g_own_only_held_tx, g_own_only_held_rx); // BUG-1243
     s += b;
     snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u other_stages=%d space=%d stage_skipped=%u\n",
              g_elsewhere_tx, g_elsewhere_rx, (int)g_other_stages, (int)g_space, g_stage_skipped);

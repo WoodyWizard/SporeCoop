@@ -559,8 +559,12 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "anims") { // tests (BUG-1243): the animation of the own cell and of the partners' puppets
         uint8_t* av = avatar();
-        char b[96];
-        snprintf(b, sizeof b, "anim avatar %08X anim=%X\n", av ? F<uint32_t>(av, 0) : 0u, av ? F<uint32_t>(av, 0x1B0) : 0u);
+        char b[360];
+        const float* m = av ? (const float*)(av + kRot) : nullptr;
+        snprintf(b, sizeof b, "anim avatar %08X anim=%X head=%.3f angv=%.3f pos=(%.2f %.2f) hp=%d state=%X hits=%u last_hit=%s\n",
+                 av ? F<uint32_t>(av, 0) : 0u, av ? F<uint32_t>(av, 0x1B0) : 0u, m ? std::atan2(m[1], m[0]) : 0.f,
+                 av ? F<float>(av, 0x1D0) : 0.f, av ? pos_of(av).x : 0.f, av ? pos_of(av).y : 0.f, av ? F<int>(av, kHp) : 0,
+                 av ? F<uint32_t>(av, 0x18C) : 0u, g_own_hits_n, g_own_hit_last);
         char z[128];
         snprintf(z, sizeof z, "zaps=%u puppet_zaps=%u\n", g_n.zaps, g_n.puppet_zaps);
         return std::string(b) + z + modes::cell_puppet_anims();
@@ -966,6 +970,84 @@ std::string debug(const std::vector<std::string>& a)
         char b[320];
         snprintf(b, sizeof b, "%s spent=%d dna=%d food=%d", spend_status().c_str(), s ? F<int32_t>(s, 0x2C) : -1,
                  editor_budget(), s ? F<int32_t>(s, 0x1C) : -1);
+        return b;
+    }
+    if (!a.empty() && a[0] == "cloud") { // tests (BUG-1247): how the NPC cells on screen are drawn: the angle of their soft
+        // body's first particle about the particles' mean (the picture turns with it); on a guest for its mirrors (key = the
+        // host's index) with the host's heading, on the host for its own NPC cells
+        std::string out;
+        int left = a.size() > 1 ? atoi(a[1].c_str()) : 40;
+        uint8_t* parts = G() ? F<uint8_t*>(G(), 0x4108) : nullptr;
+        double now = H->time_seconds();
+        auto line = [&](uint32_t key, uint8_t* c, const Mirror* m) {
+            int n = c ? F<int>(c, 0x250) : 0;
+            if (!c || !parts || left <= 0 || !F<uint32_t>(c, 0x248) || n > 64 || !on_screen_dbg(c))
+                return;
+            bool bare = n < 2; // no soft body: what is drawn is the heading after the step (step_head; the host: +0x5C)
+            float cx = 0, cy = 0, fx = 0, fy = 0;
+            int used = bare ? 1 : 0;
+            for (int i = 0; i < n && !bare; i++) {
+                uint32_t k = F<uint32_t>(c, 0x254 + 4 * i);
+                if (k >= 1500)
+                    continue;
+                auto* q = (float*)(parts + 4 + 12 * (size_t)k);
+                if (!used)
+                    fx = q[0], fy = q[1];
+                cx += q[0], cy += q[1];
+                used++;
+            }
+            if (!used)
+                return;
+            cx /= used, cy /= used;
+            const float* r = (const float*)(c + kRot);
+            float drawn = bare ? (m ? m->step_head : std::atan2(r[1], r[0])) : std::atan2(fy - cy, fx - cx);
+            float host = std::atan2(r[1], r[0]);
+            if (m) {
+                float want[9];
+                modes::quat_to_mat(m->rot, want);
+                host = std::atan2(want[1], want[0]);
+            }
+            char b[280];
+            auto* v = (const float*)(c + kVel);
+            snprintf(b, sizeof b, "cloud c%u host=%.3f rot=%.3f cloud=%.3f soft_age=%.2f soft_d=%.3f d=%.1f level=%d fg=%d anim=%X state=%X "
+                     "speed=%.2f ailock=%d bare=%d\n", key, host, std::atan2(r[1], r[0]), drawn,
+                     m && m->soft_at > 0 ? now - m->soft_at : -1.0, m ? m->soft_d : 0.f, av ? net::dist(pos_of(c), pos_of(av)) : -1.f,
+                     F<int>(c, kLevel), F<void*>(c, kQuery) == fg_query() ? 1 : 0, F<uint32_t>(c, 0x1B0), F<uint32_t>(c, 0x18C),
+                     std::hypot(v[0], v[1]), F<uint8_t>(c, kAiLock), bare ? 1 : 0);
+            out += b;
+            left--;
+        };
+        if (is_guest())
+            for (auto& [h, m] : g_mirrors)
+                line(h, m.local ? modes::cell_at(m.local) : nullptr, &m);
+        else
+            for_each_cell([&](uint8_t* c, uint32_t idx) {
+                if (c != av && !modes::cell_is_puppet(c))
+                    line(idx, c, nullptr);
+            });
+        return out.empty() ? std::string("cloud: none\n") : out;
+    }
+    if (!a.empty() && a[0] == "goldie") { // tests (BUG-1248): the Goldie tutorial's cells and what the camera follows
+        uint8_t* g = G();
+        uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+        uint32_t gi = g ? F<uint32_t>(g, 0x516C) : 0, fi = ui && skg::readable(ui + 0xE0, 4) ? F<uint32_t>(ui, 0xE0) : 0;
+        uint8_t* gc = gi ? modes::cell_at(gi) : nullptr;
+        uint8_t* fc = fi ? modes::cell_at(fi) : nullptr;
+        uint32_t ev_goldie = 0, ev_hunter = 0;
+        char why[120] = "-";
+        bool ev = tutorial_cells(&ev_goldie, &ev_hunter, why, sizeof why);
+        uint8_t* ec = ev && ev_goldie ? modes::cell_at(ev_goldie) : nullptr;
+        int eaters = ev && ev_hunter && modes::cell_at(ev_hunter) ? 1 : 0;
+        if (ev && ev_goldie) { // the tutorial's own Goldie (G+0x516C is whichever part-token cell the visibility step saw first)
+            gi = ev_goldie;
+            gc = ec;
+        }
+        char b[480];
+        snprintf(b, sizeof b, "goldie running=%d idx=%08X alive=%d onscreen=%d dist=%.1f eaters=%d follow=%08X follow_alive=%d "
+                 "follow_onscreen=%d done=%d kept=%u fix=%d tut=%08X/%08X mirror=%d why=%s\n", g ? F<uint8_t>(g, 0x518C) : -1, gi, gc ? 1 : 0, gc ? on_screen_dbg(gc) : 0,
+                 gc && av ? net::dist(pos_of(gc), pos_of(av)) : -1.f, eaters, fi, fc ? 1 : 0, fc ? on_screen_dbg(fc) : 0,
+                 S() ? F<uint8_t>(S(), 0x68) : -1, g_n.goldie_kept, (int)g_fix_goldie_keep, ev_goldie, ev_hunter,
+                 gi && g_host_of.count(gi) ? 1 : 0, why);
         return b;
     }
     if (!a.empty() && a[0] == "mate") { // tests: the mating-call button (S+0x69), the mate, where it is
