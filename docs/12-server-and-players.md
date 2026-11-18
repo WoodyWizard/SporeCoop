@@ -667,6 +667,19 @@ its loaded world and becomes the host; the others reconnect to it without a worl
      late joiner).
   3. Per-player state that only the old host had (packs, ledgers, party seats, settings): kept by the galaxy server
      per player and per planet; part of the three-roles split (#server-three-roles).
+* ✔ Steps 1 and 2 built (2026-11-18, alpha, protocol 5): the server gives each hand-over a token (ROLE, HOSTMOVE);
+  the new host, still playing the planet's world, keeps it: every living proxy goes on as its own NPC
+  (`npc::promote_now`, through away_locals), its guest session ends and it hosts in place; the others, still in that
+  world, rejoin with the token as their resume receipt and get no world (`galaxy::accept_warm` in the join). A player
+  who left the world (a menu, a load) gets the stored world and the normal share. Tested on TITAN, three QA games:
+  the host left; the next player turned 32 of 34 proxies into NPCs and hosted 3 s later with no stage change; the
+  third rejoined it with "no world sent" and showed its 24 NPCs, no loading screen; a second hand-over the same way
+  (34 of 36); a fresh player then loaded the world the twice-promoted host had saved: no creature or model warnings,
+  53 NPCs (the original world about 54).
+* ~ Not covered yet: step 3 (packs, the progress-debt ledger, revive tracking, party seats stay with the old host);
+  the 2 proxies per hand-over whose species has no nest herd in the world copy (they are dropped); the mod-only species
+  keys (no warnings were seen on a fresh load, not proven for every creature); stages other than Creature (Tribe and
+  Civ have their own guest mirrors).
 
 ### Owner's idea: deleting one's creature on a planet from the online galaxy menu (2026-11-17)
 
