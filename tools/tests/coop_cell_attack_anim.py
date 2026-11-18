@@ -15,9 +15,8 @@ import re
 import threading
 import time
 
-import lane
+from twoinst import Checks, keyframe, start  # (first: it puts tools/ on the path for sporectl)
 from sporectl import Console
-from twoinst import Checks, keyframe, start
 
 
 def anims(con):
