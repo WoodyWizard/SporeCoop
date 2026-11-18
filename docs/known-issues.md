@@ -344,3 +344,16 @@ anchor so other docs can link to it:
   nor on v0.7.14.1; cell puppets never animate (only the effects relay shows a partner's attack).
 * Not checked: a partner's poison clouds, overlapping cells.
 * Ticket: BUG-1243
+
+## Creature: the second player cannot take a creature into a pack (2026-11-18, owner: players' video)
+<a id="issue-guest-pack-recruit"></a>
+
+* What happens: the host recruits a creature of its kind into its pack; the guest tries the same with another one and
+  sings: nothing happens.
+* Reproduce: a guest's social game with a creature of its own kind or of an allied species (no test yet).
+* Known: a guest's social game is the host's (social.cpp) and its win only impresses; the native recruit (session flag
+  +0x1FC & 0x10, 0xD9F7A0 -> cPosseSimulator_AddMember) never runs for it. A design sketch (host-owned members that
+  follow the guest's creature through the mpAvatar swap) is in the ticket.
+* Not checked: where the native session sets its recruit flag (SocialPropose 0xDA43D0, likely).
+* Next steps: a feature branch after 0.7.15.1.
+* Ticket: BUG-1256
