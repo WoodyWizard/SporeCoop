@@ -1192,6 +1192,19 @@ bool cell_is_puppet(void* c)
     return cell_at(it->second) == (uint8_t*)c;
 }
 
+// tests (BUG-1243): every partner's puppet cell in this game with the animation it plays (+0x1B0)
+std::string cell_puppet_anims()
+{
+    std::string out;
+    char b[96];
+    for (auto& [p, idx] : g_cell_ids)
+        if (uint8_t* c = cell_at(idx); c == (uint8_t*)p) {
+            snprintf(b, sizeof b, "anim puppet %08X anim=%X\n", skg::field<uint32_t>(c, 0), skg::field<uint32_t>(c, 0x1B0));
+            out += b;
+        }
+    return out;
+}
+
 // The Cell stage was left (an editor, the Creature stage, a load): the pool the puppets lived in is
 // rebuilt or gone. Stale entries could match a new cell at the same address and index in the next
 // pool (h_SimUpdate would then pose an NPC as the partner); coop.cpp forgets the puppets themselves.

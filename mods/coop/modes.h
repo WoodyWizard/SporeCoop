@@ -80,6 +80,7 @@ bool cell_sap_room();
 uint32_t cell_sap_held();
 extern bool cell_at_fix;           // coop.pool fix cellat 0: the old bound (slot == highWater passed, BUG-0083)
 bool cell_is_puppet(void* cell);  // a remote player's cell
+std::string cell_puppet_anims(); // tests (BUG-1243): the puppet cells and their animation
 void own_ground_tick(double now); // BUG-0592: once per frame, before the drives
 extern uint32_t g_own_grounded;       // BUG-0592: times the own creature was put onto its ground
 extern uint32_t g_puppets_gone_alive; // BUG-0507: Creature puppets found freed by the game

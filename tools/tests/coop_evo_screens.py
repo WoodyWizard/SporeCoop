@@ -312,14 +312,26 @@ def part_switch(host, guest, ck, ready, scr):
     check_black(ck, sh, 'host', 'from the switch to the end of both editors (outside its own editor)', t_go)
 
     def ident():
-        return dict(host=avatar_key(host), guest=avatar_key(guest), host_shows_guest=shown_species(host, 'Bob'),
-                    guest_shows_host=shown_species(guest, 'Alice'), host_mode=mode(host).strip(), guest_mode=mode(guest).strip())
+        hc, gc = host.call('coop.creations')['out'], guest.call('coop.creations')['out']
+        hk, gk = avatar_key(host), avatar_key(guest)
+        return dict(host=hk, guest=gk, host_shows_guest=shown_species(host, 'Bob'),
+                    guest_shows_host=shown_species(guest, 'Alice'),
+                    guest_creation_on_host=field(hc, r"player 1 creature: ([0-9A-F]{8})"),
+                    host_creation_on_guest=field(gc, r"player 0 creature: ([0-9A-F]{8})"),
+                    host_key_on_guest=(field(gc, rf'host species {hk} = ([0-9A-F]{{8}}) here') or hk) if hk else None,
+                    host_mode=mode(host).strip(), guest_mode=mode(guest).strip())
 
     def good():
         s = ident()
         if not all((s['host'], s['guest'], s['host_shows_guest'], s['guest_shows_host'])):
             return None
-        return s if s['host'] != s['guest'] and s['host_shows_guest'] == s['guest'] and s['host'] != k0 and s['guest'] != k0 else None
+        own = s['host'] != s['guest'] and k0 not in (s['host'], s['guest'])
+        # the host draws the guest with the guest's own creation (registered here under a content key), not with
+        # the host's creature; the guest draws the host with the host's new one
+        host_draws = s['host_shows_guest'] == s['guest_creation_on_host'] and s['host_shows_guest'] not in (k0, s['host'])
+        guest_draws = s['guest_shows_host'] in (s['host_creation_on_guest'], s['host_key_on_guest'], s['host']) and \
+            s['guest_shows_host'] != s['guest']
+        return s if own and host_draws and guest_draws else None
 
     time.sleep(10)
     r = wait(good, 150, 3)

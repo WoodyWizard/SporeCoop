@@ -557,6 +557,12 @@ std::string debug(const std::vector<std::string>& a)
                  F<uint8_t>(c, kAiLock), F<uint8_t>(c, kKeepAlive), rollover_of(F<uint32_t>(c, 0)), F<uint32_t>(c, 0x1B0), F<uint32_t>(c, 0), on_screen_dbg(c));
         return pre + b;
     }
+    if (!a.empty() && a[0] == "anims") { // tests (BUG-1243): the animation of the own cell and of the partners' puppets
+        uint8_t* av = avatar();
+        char b[96];
+        snprintf(b, sizeof b, "anim avatar %08X anim=%X\n", av ? F<uint32_t>(av, 0) : 0u, av ? F<uint32_t>(av, 0x1B0) : 0u);
+        return std::string(b) + modes::cell_puppet_anims();
+    }
     if (!a.empty() && a[0] == "diet") { // what each cell's mouth eats (the model data CanEat 0xE68470 reads)
         std::string out;
         auto line = [&](const char* who, uint8_t* c) {
