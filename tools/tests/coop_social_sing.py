@@ -98,10 +98,15 @@ def main():
             break
     ck(engaged, f'the host clicked the Kook n{kook} in the social stance')
     sung = {}
-    hold(host, 0x31)
-    sample(1.5, probes, sung)
+    t_sing = time.time()
+    for _ in range(8):  # the social game starts a moment after the click (the Kook's answer): a player presses again
+        hold(host, 0x31)
+        sample(1.5, probes, sung)
+        if social & set(sung.get('host_avatar', [])):
+            break
     keyframe('host_sings', 'the host sings (its puppet on the guest sings); the guest\'s creature does NOT sing on either game', settle=0)
     sample(4.0, probes, sung)
+    print(f'  (the host sang after {time.time() - t_sing:.1f} s)')
     print('  while the host sings:', {k: sorted(set(v)) for k, v in sung.items()})
     ck(social & set(sung.get('host_avatar', [])), "the host's own creature sings (the key press worked)")
     ck(social & set(sung.get('guest_puppet_of_host', [])), "the guest's game shows the host singing (its puppet)")
@@ -114,11 +119,11 @@ def main():
 
     # 2. the guest runs off
     ran = {}
-    guest.call('key 87 down')  # W
+    guest.call('key w down')
     sample(2.0, probes, {})
     sample(4.0, probes, ran)
     keyframe('guest_runs', "the guest runs off: its creature runs on both games, no sing pose, no rings", settle=0)
-    guest.call('key 87 up')
+    guest.call('key w up')
     print('  while the guest runs:', {k: sorted(set(v)) for k, v in ran.items()})
     gp2 = avatar_pos(guest)
     moved = sum((a - b) ** 2 for a, b in zip(gp, gp2)) ** 0.5 if gp and gp2 else 0
