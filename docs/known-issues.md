@@ -333,18 +333,6 @@ anchor so other docs can link to it:
   the video's.
 * Ticket: BUG-1241
 
-## Cell: the partner's cell plays the attack animation of a player (2026-11-18, owner: players' video)
-<a id="issue-partner-cell-attack-anim"></a>
-
-* What happens: in the Cell stage, when one player attacks, the other player's cell plays the attack animation too.
-* Reproduce: not reproduced: `lab.py run cell_attack_anim,cell_attack_electric` (BUG-1243).
-* Known: no cell animation is relayed to puppets; the electric step never runs for a puppet cell (`coop.pool anims`
-  puppet_zaps 0); the fixture's cell has no jaw or spike.
-* Also not reproduced with both cells armed (jaw, spike, the herbivore mouth's chunk bites), either player attacking,
-  nor on v0.7.14.1; cell puppets never animate (only the effects relay shows a partner's attack).
-* Not checked: a partner's poison clouds, overlapping cells.
-* Ticket: BUG-1243
-
 ## Cell: the wild cells of the players' species are all the host's design (2026-11-18, owner: players' video)
 <a id="issue-cell-kin-host-species"></a>
 
@@ -355,16 +343,6 @@ anchor so other docs can link to it:
 * Planned: an own species per player in the shared world (the 0.8 Rivals work).
 * Ticket: BUG-1257
 
-## Cell -> Creature: over a slow connection the host sees a black screen for up to a minute before its first editor (2026-11-18, test evo_screens_switch_slow)
-<a id="issue-landfall-host-black-wait"></a>
-
-* What happens: after the switch vote the host's game enters Creature and its first Creature editor waits up to 60 s
-  for a guest that is still receiving the host's world; the host sees black (and the co-op window) meanwhile.
-* Reproduce: `lab.py run evo_screens_switch_slow` (the guest's link at 512 kbit/s): "the host's screen is not black
-  ... (longest black 60 s)".
-* Known: since 0.7.15.1 the late guest gets its own editor when it arrives (BUG-1240), so the wait may no longer be
-  needed; being worked on with the mating call's black screen.
-* Ticket: BUG-1245
 ## Creature: the second player cannot take a creature into a pack (2026-11-18, owner: players' video)
 <a id="issue-guest-pack-recruit"></a>
 
@@ -377,16 +355,6 @@ anchor so other docs can link to it:
 * Not checked: where the native session sets its recruit flag (SocialPropose 0xDA43D0, likely).
 * Next steps: a feature branch after 0.7.15.1.
 * Ticket: BUG-1256
-## Cell: the host's screen is black behind its evolution vote (2026-11-18, fix/w53-cellvote)
-<a id="issue-cell-vote-black"></a>
-
-* What happens: after the host's mating scene in Cell the host's picture is black (the co-op window with the vote over
-  it) until every guest pressed I'm ready, at most 60 s.
-* Reproduce: `lab.py run evo_screens_cell_noready` (the guest never presses: 54-60 s black on the host).
-* Known: the vote holds the host's editor request after the game faded out; the Cell vote opens nothing for the guests
-  (docs/re/cell.md#cell-editor-vote-timing). Before BUG-1245 the repeated mating rounds broke the black every ~10 s.
-* Next steps: open the host's Cell editor at once (as Creature's core.editor_now), design sketch in the ticket.
-* Ticket: BUG-1263
 ## Creature: bones the guest sees and the host does not (2026-11-18, fix/w53-advorn)
 <a id="issue-creature-bones-guest-only"></a>
 

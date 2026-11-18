@@ -3650,3 +3650,15 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   good, and the panel comes only at 6; back in the menu the mod now sends the intro's skip (`world.menu_intro_return`):
   [../re/space.md#space-menu-intro-state](../re/space.md#space-menu-intro-state),
   [../06-testing.md#testing-menu-panel](../06-testing.md#testing-menu-panel)
+
+## Cell -> Creature: over a slow connection the host sees a black screen for up to a minute before its first editor (2026-11-18, test evo_screens_switch_slow)
+<a id="issue-landfall-host-black-wait"></a>
+
+* What happens: after the switch vote the host's game enters Creature and its first Creature editor waits up to 60 s
+  for a guest that is still receiving the host's world; the host sees black (and the co-op window) meanwhile.
+* Reproduce: `lab.py run evo_screens_switch_slow` (the guest's link at 512 kbit/s): "the host's screen is not black
+  ... (longest black 60 s)".
+* Known: since 0.7.15.1 the late guest gets its own editor when it arrives (BUG-1240), so the wait may no longer be
+  needed; being worked on with the mating call's black screen.
+* Ticket: BUG-1245
+* Fixed 2026-11-18 (fix/w53-cellvote): core.arrival_nowait, the landfall editor no longer waits for a guest that opens its own editor on arrival.
