@@ -364,3 +364,14 @@ anchor so other docs can link to it:
   in both.
 * Ticket: BUG-1261 (split from BUG-1251)
 
+
+## Adventure: the partner looks like a copy of the own captain (2026-11-18, fix/w53-advorn)
+<a id="issue-adventure-captain-look"></a>
+
+* What happens: two players in the same adventure see each other at the right place and size, but with the look of
+  their own captain, not the partner's.
+* Reproduce: `tools/tests/coop_adventure_tutorial.py` (key frames 02_played: two identical captains on each game).
+* Known: the captains' species keys are made per game, the partner's is not found here; BUG-1254's fix uses the own
+  captain as the stand-in (docs/re/adventure.md#adventure-puppet-herd).
+* Next steps: send the captain's creation like the Creature stage's creations (co-op adventures, BUG-0793).
+* Ticket: BUG-1262
