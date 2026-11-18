@@ -335,3 +335,12 @@ anchor so other docs can link to it:
   nor on v0.7.14.1; cell puppets never animate (only the effects relay shows a partner's attack).
 * Not checked: a partner's poison clouds, overlapping cells.
 * Ticket: BUG-1243
+
+## Cell: the wild cells of the players' species are all the host's design (2026-11-18, owner: players' video)
+<a id="issue-cell-kin-host-species"></a>
+
+* What happens: in the Cell stage the wild cells of the players' own species are all copies of the host's cell; none
+  of the guest's design swim about (seen on a players' video).
+* Why: the host's game fills the world (Simulator::Cell::PopulateTiles) from the world's one player species, and the
+  guest's game shows the host's pool (cellsync.cpp). The world has no second player species.
+* Planned: an own species per player in the shared world (the 0.8 Rivals work).
