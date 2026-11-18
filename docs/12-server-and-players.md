@@ -604,6 +604,28 @@ read through SporeKit; no Ghidra on this PC) before building it:
 * Meanwhile a simple "Online" page in the Co-op window (the server's planets, who is on each, Enter, Delete my
   creature) would make the galaxy server playable without console commands.
 
+### The galaxy menu shows the server's planets (2026-11-17, feat/lineages-alpha, decision 5X B)
+<a id="server-galaxy-menu-built"></a>
+
+Owner's choice 5X B: Ghidra on TITAN first (docs/05-re-notes.md#re-notes-ghidra-windows), then the menu. The reverse
+engineering: docs/re/space.md#space-menu-entries. Code on alpha: mods/coop/galaxy_menu.cpp (`coop.gmenu`).
+
+* While the player is connected to a galaxy server, the mod rewrites the menu's entries just before their panels are
+  made: each server planet gets an entry (its name, its stage icon, its creature when this game has the creature), the
+  player's own saves turn into empty stars while online, and Play on a server planet enters it on the server (the
+  galaxy client joins its host, or downloads the stored world and hosts it). The menu refreshes when the server's list
+  changes (polled every 10 s in the menu). Protocol 4: an upload carries the planet's stage and its host's creature.
+* ✔ Runtime (TITAN, local galaxy server): game 9 hosted Samuth; game 8, on the galaxy menu, connected: one star became
+  "Samuth, Creature Stage" in Spore's own planet panel (Play, the bin, the date); Play joined game 9 and loaded game 8
+  into Samuth.
+* Found on the way: (1) Play checks "<name>.spo" before it loads ("Bad or Missing Saved Game"): the mod takes the Play
+  step, not the load; (2) the step comes again every frame until the menu is left: entering the planet again made the
+  client leave and join in a loop (fixed: never while already on that planet).
+* ? Not checked yet: Play on a planet nobody hosts (download and host from the menu), a planet whose creature this game
+  lacks shows "?" (the creature's design is not sent with the list), more server planets than the menu's entries (6-8
+  here), the bin on the panel (it could become "Delete my creature here"), the stage card and creature row that
+  flashed under the joining screen.
+
 ### Owner's question: Civ and Creature eras talking to each other (2026-11-17)
 
 Owner: "Once we load Civ stage while someone's in creature stage, it shouldn't be too crazy to make them communicate I
