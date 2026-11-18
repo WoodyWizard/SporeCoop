@@ -985,10 +985,11 @@ std::string debug(const std::vector<std::string>& a)
         // tests (BUG-1186): where the mate is from the host's cell (a guest: the host's puppet), and who removed it
         uint8_t* ref = is_guest() ? puppet_cell(0) : av;
         net::Vec3 rel = m && ref ? net::Vec3{pos_of(m).x - pos_of(ref).x, pos_of(m).y - pos_of(ref).y, 0.f} : net::Vec3{0, 0, 0};
-        char b[240];
-        snprintf(b, sizeof b, "goldie_done=%d mate_button=%d mate=%08X alive=%d dist=%.1f at %d %d from_host=(%.1f %.1f) gone_by=0x%08X %.1f s ago",
+        char b[320];
+        snprintf(b, sizeof b, "goldie_done=%d mate_button=%d mate=%08X alive=%d dist=%.1f at %d %d from_host=(%.1f %.1f) gone_by=0x%08X %.1f s ago matings=%u egg_lays=%u",
                  s ? F<uint8_t>(s, 0x68) : -1, s ? F<uint8_t>(s, 0x69) : -1, mate_idx(), m ? 1 : 0, m ? net::dist(pos_of(m), pos_of(av)) : -1.f,
-                 (int)sc[0], (int)sc[1], rel.x, rel.y, g_mate_gone_by, g_mate_gone_at < 0 ? -1.0 : H->time_seconds() - g_mate_gone_at);
+                 (int)sc[0], (int)sc[1], rel.x, rel.y, g_mate_gone_by, g_mate_gone_at < 0 ? -1.0 : H->time_seconds() - g_mate_gone_at,
+                 g_matings, g_egg_lays);
         return b;
     }
     if (a.size() >= 4 && a[0] == "npcflag") { // host, tests: npcflag c<key> spare|invuln 0|1, hp <n> (BUG-0078)

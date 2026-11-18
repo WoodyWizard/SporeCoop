@@ -86,6 +86,19 @@ COOP_FIX("core.editor_now", "BUG-0516", g_editor_now_fix, "core: the host's Crea
 static bool g_editor_tag_fix = true;
 COOP_FIX("core.editor_now_tag", "BUG-1085", g_editor_tag_fix, "core: Creature: the mating evolution opens at once with offers, the stage-end editor (Creature -> Tribe) waits for the vote and a guest cannot start it alone");
 unsigned g_stage_end_votes, g_stage_end_guest_refused; // tests (coop.vote)
+// BUG-1245 (players' video: the host's mating call, then a black screen for 25+ s on which the mating scene and the egg
+// laying came again and again, 6 eggs): the Cell game asks for its editor after the mating scene; while the vote holds
+// that request the avatar and the mate stay within the meeting distance, so the cell step's meeting 0xE78D10 played the
+// mating, the egg laying and the request again every ~10 s (each refused by h_Submit: one vote per editor), and each
+// round faded the picture in and out. On: as soon as the vote holds the host's Cell request, the mate G+0x51D4 is no
+// longer the mate (its index forgotten, the cell stays; given back when the vote is dropped and the stage goes on), so
+// the scene plays once. Off: the meetings go on while the vote holds (0.7.15).
+static bool g_vote_mate_fix = true;
+COOP_FIX("cell.vote_mate", "BUG-1245", g_vote_mate_fix,
+         "cell: while the host's evolution vote holds its editor the mate does not meet the host's cell again (the mating scene and the eggs repeated every 10 s)");
+static uint32_t g_held_mate = 0;     // the mate taken out while the vote holds (0: none)
+static unsigned g_vote_mates_held = 0; // tests (coop.vote)
+unsigned vote_mates_held() { return g_vote_mates_held; }
 uint32_t g_offer_editor = 0;   // guest: the editor of the host's offer (0 = none)
 double g_offer_until = 0;
 bool g_offer_opened_ui = false;
@@ -897,6 +910,7 @@ void finish_vote(const char* why)
         return;
     void* req = g_vote.request;
     g_vote.active = false;
+    g_held_mate = 0; // BUG-1245: the editor follows (its return rebuilds the pool)
     {
         int ready = 0, n = 0;
         for (auto& p : g_sess.players()) {
@@ -1003,6 +1017,9 @@ void drop_vote(const char* why)
         return;
     LOG("the vote '%s' is dropped: %s", g_vote.text.c_str(), why);
     g_votes_dropped++;
+    if (g_held_mate && cellsync::restore_mate(g_held_mate)) // BUG-1245: the stage goes on, its mate with it
+        LOG("cell: the mate %08X is the mate again (the vote was dropped)", g_held_mate);
+    g_held_mate = 0;
     void* req = g_vote.request;
     g_vote = Vote{};
     g_vote_action = nullptr;
@@ -1056,6 +1073,12 @@ void vote_tick(double now)
         }
     }
     g_vote.left = (int)(60 - (now - g_vote.t0));
+    if (g_vote_mate_fix && g_vote.request && g_vote.mode == modes::kCell)
+        if (uint32_t m = cellsync::forget_mate()) {
+            g_held_mate = m;
+            g_vote_mates_held++;
+            LOG("cell: the vote holds the editor: the mate %08X does not meet our cell again (BUG-1245)", m);
+        }
     if (g_vote.arrival) // BUG-0315: a guest that plays the host's Creature world now voted for it in Cell
         for (auto& [id, r] : g_remotes) {
             if (r.echo || r.buf.empty() || (g_ready.count(id) && g_ready[id]))

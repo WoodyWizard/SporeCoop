@@ -23,6 +23,44 @@ uint32_t avatar_idx() { return G() ? F<uint32_t>(G(), 0x411C) : 0; }
 uint8_t* avatar() { return G() ? modes::cell_at(avatar_idx()) : nullptr; }
 // the mate the player's mating call brought (0 = none); the editor opens when the avatar reaches it
 uint32_t mate_idx() { return G() ? F<uint32_t>(G(), 0x51D4) : 0; }
+
+// BUG-1245: the mating meeting 0xE78D10 runs in every cell step while the avatar and the mate G+0x51D4 are alive and
+// within 4 m; a request the host's vote holds leaves both there, so the game played the mating scene, the egg laying
+// (0xE77930) and asked for the editor again every ~10 s. Forgetting the index (the cell itself stays, nothing is
+// freed) ends the meetings; restore_mate puts it back (the vote dropped while the stage goes on).
+uint32_t forget_mate()
+{
+    uint8_t* g = in_cell() ? G() : nullptr;
+    uint32_t m = g ? F<uint32_t>(g, 0x51D4) : 0;
+    if (!m || !modes::cell_at(m))
+        return 0;
+    F<uint32_t>(g, 0x51D4) = 0;
+    return m;
+}
+bool restore_mate(uint32_t m)
+{
+    uint8_t* g = in_cell() ? G() : nullptr;
+    if (!g || !m || F<uint32_t>(g, 0x51D4) || !modes::cell_at(m))
+        return false;
+    F<uint32_t>(g, 0x51D4) = m;
+    return true;
+}
+// tests (BUG-1245): the mating scenes the own avatar played (its animation +0x1B0 entering 0x42, 0xE75EA0) and egg
+// layings (0x29, 0xE77930) in this game
+uint32_t g_matings = 0, g_egg_lays = 0;
+static uint32_t g_anim_seen = 0;
+static void mating_count()
+{
+    uint8_t* av = in_cell() ? avatar() : nullptr;
+    uint32_t a = av ? F<uint32_t>(av, 0x1B0) : 0;
+    if (a != g_anim_seen) {
+        if (a == 0x42)
+            g_matings++;
+        if (a == 0x29)
+            g_egg_lays++;
+    }
+    g_anim_seen = a;
+}
 void* fg_query() { return G() ? F<void*>(G(), 0x40FC) : nullptr; }
 // cCellSerializableData: cCellGame+0x5190 (the global at 0x16B4DC0 holds the same pointer).
 // Only in the Cell stage: cCellGame stays allocated after it (the Creature stage), its pool and
@@ -1015,6 +1053,7 @@ void tick(double now)
         dna_note("on entering Cell");
     }
     was_in_cell = cell;
+    mating_count(); // BUG-1245 (tests)
     if (cell && avatar() && game::leaving_stage()) { // BUG-0308: no pool writes while the stage is torn down
         if (modes::cell_leaving())
             return;

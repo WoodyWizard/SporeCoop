@@ -392,6 +392,7 @@ extern bool g_own_editor_arriving;  // BUG-1240
 extern bool g_own_editor_arrival_fix;
 extern unsigned g_own_editor_arrivals;
 unsigned vote_in_editor_count(); // BUG-1239 (tests)
+unsigned vote_mates_held();      // BUG-1245 (tests)
 extern unsigned g_evo_flags_cleared;
 extern unsigned g_offers_expired;
 extern unsigned g_offers_got;

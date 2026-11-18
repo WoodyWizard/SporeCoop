@@ -15,6 +15,10 @@ mate, the vote's I'm ready, History's check, the editors' parts and done), and t
                   (the avatar keys differ) and each game draws the partner with the partner's creature. While either
                   is in its editor the other's screen is never black for long (an editor or the world is drawn).
 
+  --part cell-eggs  Cell fixture (BUG-1245): the host's mating call, the guest answers the vote late (--ready click:
+                  after 45 s) or never: the host's game plays the mating scene and the egg laying once, not again
+                  every ~10 s while the vote holds its editor; the co-op window with the vote stays on its screen
+
   --ready click|none   the guest's I'm ready in the votes (none: it never presses; the vote's 60 s run out)
 
 Frames: key frames at every step (<run>/frames/evo_screens*), shots out/laneN/shots/evo_*.png.
@@ -276,6 +280,64 @@ def part_cell_both(host, guest, ck, ready, scr):
     keyframe('both_back', 'Cell: both back in the pool with their new cells')
 
 
+def mate_counts(con):
+    """the mating scenes and egg layings the game's own avatar played (its animation entering 0x42 / 0x29)"""
+    out = con.call('coop.pool mate')['out']
+    m, e = re.search(r'matings=(\d+)', out), re.search(r'egg_lays=(\d+)', out)
+    return (int(m.group(1)) if m else -1), (int(e.group(1)) if e else -1)
+
+
+def window_shown(con):
+    """the co-op window is open and drawn (its frame visible) in this game"""
+    m = re.search(r'^window (-?\d+) (-?\d+) (-?\d+) (-?\d+) (\d)', con.call('coop.uistate')['out'], re.M)
+    return bool(m) and m.group(5) == '1' and int(m.group(3)) > int(m.group(1))
+
+
+def part_cell_eggs(host, guest, ck, ready, scr):
+    """BUG-1245: the host's mating call and a vote the guest answers late (or never): while the vote holds the host's
+    editor, the host's game must not play the mating scene and the egg laying again (the players' video: 6 eggs on a
+    flickering black screen), and the co-op window with the vote stays on the host's screen"""
+    sh, sg = scr
+    host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
+    reached = mating_call(host, 'host', host_vote)
+    ck(reached and 'vote active' in host.call('coop.vote')['out'], 'the host reaches its mate: the evolution vote starts')
+    t_vote = time.time()
+    m0, e0 = mate_counts(host)
+    print(f'  host at the vote: matings={m0} egg_lays={e0} {host.call("coop.pool mate")["out"].strip()}', flush=True)
+    hold = 45 if ready == 'click' else 70
+    shown, rows = [], []
+    k = 0
+    while time.time() - t_vote < hold and 'Editor' not in mode(host):
+        shown.append(window_shown(host))
+        m, e = mate_counts(host)
+        rows.append(f'{time.time() - t_vote:.0f}s:{m - m0}/{e - e0}')
+        if k in (0, 3) and time.time() - t_vote > (12 if k == 0 else 33):
+            keyframe('host_vote_%d' % (k // 3 + 1), 'Cell: %.0f s into the host\'s vote: one mating scene, no new eggs; the vote window on the host\'s screen' % (time.time() - t_vote), settle=0)
+            k += 3
+        time.sleep(3)
+    m1, e1 = mate_counts(host)
+    print(f'  host during the vote (matings/egg layings since its start): {" ".join(rows)}', flush=True)
+    ck(m1 - m0 == 0 and e1 - e0 == 0, f"the host's game plays the mating scene and the egg laying once, not again while the vote holds its editor ({m1 - m0} more matings, {e1 - e0} more egg layings in {time.time() - t_vote:.0f} s)")
+    ck(shown and all(shown), f"the host's co-op window with the vote stays on its screen ({sum(shown)} of {len(shown)} looks)")
+    if ready == 'click':
+        ck(press_ready(guest), "the guest's co-op window shows I'm ready (clicked late)")
+    ck(wait(lambda: 'Editor' in mode(host), 60), f"the host's editor opens after the vote ({mode(host).strip()})")
+    t_ed = time.time()
+    time.sleep(4)
+    keyframe('host_editor', "Cell: the host in its cell editor after the late vote", settle=0)
+    time.sleep(8)
+    edit_cell(host, 'Alicecell')
+    ck(wait(lambda: 'Cell' in mode(host), 40), f"the host is back in its pool ({mode(host).strip()})")
+    t_back = time.time()
+    time.sleep(25)
+    m2, e2 = mate_counts(host)
+    ck(m2 - m1 == 0, f'no mating scene after the editor ({m2 - m1})')
+    check_black(ck, sg, 'guest', "while the host's vote runs", t_vote, t_ed)
+    check_black(ck, sh, 'host', 'after its editor', t_back)
+    check_black(ck, sg, 'guest', "after the host's editor", t_back)
+    keyframe('host_back', 'Cell: the host back in its pool with its new cell, no egg loop')
+
+
 def add_legs(con, y=560):
     con.call('move 275 300')
     time.sleep(0.3)
@@ -423,6 +485,8 @@ def main():
             part_cell(host, guest, ck, ready, scr)
         elif part == 'cell-both':
             part_cell_both(host, guest, ck, ready, scr)
+        elif part == 'cell-eggs':
+            part_cell_eggs(host, guest, ck, ready, scr)
         else:
             part_switch(host, guest, ck, ready, scr)
     finally:

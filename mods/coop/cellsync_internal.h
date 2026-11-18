@@ -287,6 +287,7 @@ uint8_t* G();
 uint32_t avatar_idx();
 uint8_t* avatar();
 uint32_t mate_idx();
+extern uint32_t g_matings, g_egg_lays; // tests (BUG-1245)
 void* fg_query();
 uint8_t* S();
 net::Vec3 pos_of(uint8_t* c);
