@@ -321,7 +321,14 @@ def part_switch(host, guest, ck, ready, scr):
                     host_key_on_guest=(field(gc, rf'host species {hk} = ([0-9A-F]{{8}}) here') or hk) if hk else None,
                     host_mode=mode(host).strip(), guest_mode=mode(guest).strip())
 
+    def confirm_captions():
+        """a player confirms the stage's caption ("It is the beginning of a new day...") with its check"""
+        for con in (host, guest):
+            if re.search(r'cinematic ([0-9A-F]{8}) playing', con.call('coop.status')['out']):
+                con.call('key enter')
+
     def good():
+        confirm_captions()
         s = ident()
         if not all((s['host'], s['guest'], s['host_shows_guest'], s['guest_shows_host'])):
             return None
