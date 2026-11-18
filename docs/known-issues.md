@@ -274,3 +274,15 @@ anchor so other docs can link to it:
   citizen kind's snapshot carries no animation.
 * Next steps: send the host citizen's action (a wire change for new guests) or relay its animations as Tribe does.
 * Ticket: BUG-1231
+
+## Tribe: the last NPC village never forms on some planets, the goal bar stays at 4 of 5 (2026-11-18, fix/w52-formtribe)
+<a id="issue-tribe-species-list-short"></a>
+
+* What happens: on a planet whose NPC tribe controller built its species list shorter than the villages it allows
+  (the final check's campaign planet: 4 species, 5 NPC villages), the fifth village never forms after the fourth one
+  is conquered; the goal bar stays at 4 of 5. Before 0.7.15 the game read past the list there every second and the
+  host could crash (BUG-1233, fixed: the call is held now).
+* Reproduce: the campaign's Tribe segment save of lab 20261117-154911 (`coop.load`), `coop.tribe form_species`
+  says `tribes 5, property list 10 (x2 needed 10), species list 4: the next species would be read past the list`.
+* Known: docs/re/tribe.md#tribe-form-species. Not checked: why the list is short, single player.
+* Ticket: BUG-1238.

@@ -1565,6 +1565,10 @@ What `coop.wstate` (mods/coop/wstate.cpp, docs/06-testing.md#testing-detector-st
   0x36BE27E with +0x108 == 0x57F09E5E): the next species (list +0xD0, index min(tribes - 1, size - 1)) must have its
   model baked: `Editors::IBakeManager::Get()` vt 0x1C(species + 0x504, 0); when 0 it asks for the bake (vt 0x3C,
   else vt 0x4C with key 0x609B763 / 0x40000) and returns without forming. The game calls it again later.
+  ~ superseded (2026-11-18): the index is not min(tribes - 1, size - 1), see below.
+  CORRECTION (2026-11-18, fix/w52-formtribe): the index is **min(size, tribes - 1)** (0xCC6521: `cmp size, tribes - 1;
+  jl` keeps the size): with as many tribes as species it reads the dword after the list's end (BUG-1233,
+  [tribe-form-species](#tribe-form-species)); measured: tribes 5, species list 4 read past it, the bake check faulted.
 * ✔ (runtime, lane 2) The tribe fixture has 4 spawn markers; each formed tribe uses one (4 -> 1 after three).
 * ✔ The pause bit (cGameTimeManager +0x48 = 3, held with mem.write) does not stop the forming (`tribes 2 -> 3`).
 * ✔ With tribe.guest_tribes on, a guest's controller never reaches the bake request (the hook blocks the call), so the
@@ -4180,3 +4184,44 @@ Follows #tribe-duet-test and #tribe-attack-event-target.
   one animation; not a lasting mismatch (BUG-0914 / BUG-0936 stay closed).
 * Negative: in idle (02481DE5 on both) the copy's behaviour id differs (guest 02C39200, host 00000000) without a
   visible effect.
+
+## FormTribe reads past its species list (2026-11-18, fix/w52-formtribe)
+<a id="tribe-form-species"></a>
+
+BUG-1233. GOG 2024, Ghidra (tools/ghidra/q.sh) and lab runs on lanes 2 / 3 (tribe fixture, coop_tribe_form_species.py,
+and the Tribe segment save of the final check's campaign 20261117-154911).
+
+* ✔ (Ghidra) `NpcTribeController_FormTribe` 0xCC6440, in order: the timer global 0x157E940 = 1.0; the tribe nouns
+  `cGameNounManager::GetData(0xCD7E90, 0xD3D3D0, 0xACCAF0, 0xB1E440, 0x18C6D19)` (count (+8 - +4) / 4, alive or
+  not); `App::Property::GetArrayUInt32(TribeProps_ptr, controller +0xFC, &count, &data)` and `tribes x 2 <= count`
+  (else return); `cSpeciesManager_PlayerSpecies` (its result unused), the player tribe's +0x120 vt 0x2C; then, when the
+  species list +0xD0..+0xD4 is not empty, **species = list[min(size, tribes - 1)]**; non-null: IBakeManager vt
+  0x1C(species + 0x504, 0) (0x406EF0 reads [key + 8] first: the fault at 0x406EFF of a garbage species), not baked:
+  vt 0x3C / 0x4C and return; baked: OTDB vt 0x58; then the archetype data[tribes x 2 - 2], the marker, SpawnNpcTribe.
+  The return address 0xCC6559 (+0x119) is after the bake call; the frames PlayerSpecies / GetArrayUInt32 /
+  GetProperty of a crash report's stack scan are stale return addresses of the calls before.
+* ✔ (Ghidra) The species list: vt 0x1C 0xCC6160 (the stage's start, only while the saved key list +0x7C
+  `mNPCTribeSpeciesKeys` is empty) clears +0xD0, picks the property key at +0xFC by the player tribe's archetype
+  (0xF7426B5E, 0x8DA58D04, ... ; cPlayer +0x1100 overrides one of them) and, for each pair of that property list
+  (archetype id, ...), pushes one species of the archetype the species manager has (0x4E00C0 / 0x4E0060 > 0): an
+  archetype without a species pushes nothing, so the list can be shorter than count / 2. vt 0x18 0xCC7140 (a load)
+  rebuilds it from the saved keys (GetSpeciesProfile of each 12-byte key, null kept). vt 0x20 0xCC5CD0 clears it.
+* ✔ (Ghidra) The update vt 0x10 0xCC6A90 returns during a cinematic (cCinematicManager +0x2C 1 / 2) and while the game
+  time stands (cGameTimeManager +0x48 & 1); every second (the timer FormTribe resets) by the tribe nouns: 1 the
+  first-tribe timers (properties 0x3D346A77 / 0x1A09D79E), 2 a goal done or the food over 0x4C87E711, **3 and 4
+  always**, 5 with three goals in the history (TribeStage +0x40..+0x44, 16-byte entries), 6 or more never; then the
+  relationship / raid loop over the NPC tribes. A fault inside FormTribe skips that loop for the second.
+* ✔ (runtime) Tribe fixture (Zorispe): property list 10 (5 NPC tribes), species list 5, the controller forms up to 6
+  tribes and stops (`tribes x 2 <= 10`). The campaign's own planet (Scalinus, made by the stage wizard, its Tribe
+  save from the start of the stage): property list 10, **species list 4**: at 5 tribes FormTribe read list[4]
+  (0xFFFFFFFF there in the save's run) and faulted at 0x406EFF (data 0x50B) on every call, the console's
+  `coop.tribe form` too (lab 20261118-002353 with `tribe.form_species` off, the same crash report signature as the
+  final check's: FormTribe+0x119, 0x406EFF). In the final check the read value was 0x3EF5D8FD (eax = edi = +0x504).
+* ✔ (runtime) With 3 tribes and a list of 2 (the test's planted state) the game's own update faulted once a second
+  (11 in 12 s, caught by the game's handler) and the next `coop.tribe form` crashed the host (lab 20261118-002824).
+* Fix `tribe.form_species` (h_Form): no call while list[min(size, tribes - 1)] is past the list (decided once a
+  second; the update then calls every frame, as with tribe.form_pace); `coop.tribe form` says "held:
+  tribe.form_species", `coop.tribe form_species` prints the three numbers. Nothing is formed then, what the game
+  ends with too when its read faults. ? Why the campaign's planet has one species fewer (an archetype without a
+  species in the test profile, or the saved keys) is not known; the fifth village never forms there (BUG-1238).
+

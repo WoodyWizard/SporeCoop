@@ -8998,3 +8998,19 @@ recordings of fix/w51-trail p90 2.3-6.4 m), PASS with it (p90 0.54-0.55 m, max 2
 fail BUG-1229's `a standing copy is not in the run` (32 % against the host's 10 %): the copies that ran off played the
 run; rel/0.7.15 without the hold failed it in 2 of 2 runs (21 % / 20 %, lane 6, 20261117-152008, -152224 with an
 early variant of the fix).
+
+## tribe_form_species: the NPC tribe controller's species list (2026-11-18, fix/w52-formtribe)
+<a id="testing-tribe-form-species"></a>
+
+* `tribe_form_species` (coop_tribe_form_species.py, BUG-1233, cold, ~1 min, tribe fixture): the host's controller
+  list of species for new villages is made as short as the game built it on the final check's campaign planet (2
+  species with `mem.write` of controller +0xD4, the dword after them 0xFFFFFFFF as in that planet's save), one
+  `coop.tribe form` forms the third tribe, then the game's own update calls FormTribe every second for 12 s: no fault,
+  still 3 tribes; `coop.tribe form` once more says `held: tribe.form_species`; the list is put back.
+  `SPORE_FIX_OFF=tribe.form_species` fails (a fault a second at 0x406EFF, then the host crashes on the command): FAIL
+  20261118-002824 (lane 3), PASS 20261118-002819 (lane 2).
+* `coop.tribe form_species` (host): `tribes N, property list C (x2 needed 2N), species list S` and whether the next
+  species would be read past the list (docs/re/tribe.md#tribe-form-species). `coop.tribe form` prints the same.
+* The campaign's Tribe segment save (`<run>/segments/tribe.tgz`, loaded with `coop.load Game30 <planet>` after
+  `campaign_lib.unpack_slot`) reproduces the state without planting: species list 4, property list 10 (lab
+  20261118-002106, -002353).
