@@ -1862,7 +1862,8 @@ void register_commands_editor()
                            "switch votes %u (host clicks held %u, guest clicks held %u, arrivals ready %u)\n"
                            "evolve offers sent %u got %u taken %u expired %u, offer now %d\n"
                            "editor-pending flag %d, cleared %u (BUG-0920)\n"
-                           "stage-end votes %u, guest stage-end requests refused %u (BUG-1085)",
+                           "stage-end votes %u, guest stage-end requests refused %u (BUG-1085)\n"
+                           "own editors kept for an arrival %u, arriving now %d (BUG-1240)",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
                            g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
                            g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,
@@ -1871,7 +1872,7 @@ void register_commands_editor()
                            editor_pause_count(), g_vote_elsewhere, g_switch_votes, g_switch_held, g_switch_guest_held,
                            g_switch_arrivals, g_offers_sent, g_offers_got, g_offers_taken, g_offers_expired,
                            g_offer_editor ? 1 : 0, evo_flag_now(), g_evo_flags_cleared, g_stage_end_votes,
-                           g_stage_end_guest_refused);
+                           g_stage_end_guest_refused, g_own_editor_arrivals, g_own_editor_arriving ? 1 : 0);
                        return 0;
                    },
                    // outside the frame: `editor` submits an editor request, which the game does

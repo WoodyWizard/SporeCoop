@@ -598,8 +598,10 @@ static void core_state_end()
     g_dna_out.clear();
     g_dna_notices.clear();
     g_state_mode_override = 0; // tests
-    if (g_own_editor_end_fix)
+    if (g_own_editor_end_fix) {
         g_own_editor_due = 0; // BUG-0234 (a task already queued reads it first and returns)
+        g_own_editor_arriving = false; // BUG-1240
+    }
     if (g_give_pick_reset_fix)
         g_give_pick = net::kNoGiveTarget; // BUG-0234: a new session starts with no pick
     if (g_share_cine_each_fix) { // BUG-0232: no wait of an old session shortens a later one
@@ -948,6 +950,19 @@ void setup_callbacks()
                 !host_creature_mode()) {
                 g_own_editor_due = g_vote.editor;
                 g_own_editor_due_at = g_own_editor_due_first = H->time_seconds();
+                g_own_editor_arriving = false;
+            } else if (ended && g_own_editor_arrival_fix && g_vote.editor == kEditorLandfall && g_mode != modes::kCreature &&
+                       g_mode != modes::kTribe && g_mode != modes::kCiv && g_mode != modes::kSpace &&
+                       !(g_vote_world_fix && guest_elsewhere()) && !host_creature_mode()) {
+                // BUG-1240: the first Creature editor's vote ended while this guest is still on its way to the host's
+                // Creature world (Cell, the galaxy menu, the load): its own editor opens when it has arrived
+                g_own_editor_due = g_vote.editor;
+                g_own_editor_due_at = g_own_editor_due_first = H->time_seconds();
+                g_own_editor_arriving = true;
+                g_own_editor_arrivals++;
+                LOG("own editor: the first Creature editor's vote ended before this guest arrived (%s): it opens after the arrival (BUG-1240)",
+                    modes::mode_name(g_mode));
+                feed("evolution: your own editor opens when you have arrived in the Creature stage");
             }
             g_vote.active = on;
             g_vote.left = left;

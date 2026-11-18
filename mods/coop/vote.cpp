@@ -1080,6 +1080,19 @@ void vote_tick(double now)
 // 6-15 s after the avatar appeared (the screen stayed black before). It waits until the avatar has
 // played for 15 s and no cinematic or caption is up, at most 90 s.
 uint32_t g_own_editor_due = 0;
+// BUG-1240 (players' video: at Cell -> Creature one player had the Creature editor, the other a black screen, and both
+// played the same creature afterwards): the first Creature editor's vote (the landfall editor, BUG-0315's arrival vote)
+// ends when every guest arrived in the host's Creature world, or after 60 s. A guest whose way there was slow (the
+// host's Creature world still on its way over a slow link, its load, its galaxy menu) was not in Creature when the
+// vote ended, so it got no own editor at all: it arrived while the host was in its editor, played the world's species
+// (the host's creature) and then followed the host's evolved one (BUG-0508). On: the landfall editor's end keeps the
+// guest's own editor due while it is on its way (Cell, the galaxy menu, the load); its 90 s start when it arrives in
+// Creature (at most 300 s in all). Off: no own editor unless the guest is in Creature when the vote ends (0.7.15).
+bool g_own_editor_arrival_fix = true;
+COOP_FIX("core.own_editor_arrival", "BUG-1240", g_own_editor_arrival_fix,
+         "core: a guest still on its way to the host's Creature world when the first Creature editor's vote ends gets its own editor when it arrives");
+bool g_own_editor_arriving = false; // the due own editor waits for this guest's arrival in Creature
+unsigned g_own_editor_arrivals = 0; // tests (coop.vote): own editors kept for an arrival
 double g_own_editor_due_at = 0;
 double g_own_editor_due_first = 0; // (BUG-0404: the 90 s may be pushed by pauses, not past 300 s)
 bool g_own_editor_queued = false;
@@ -1161,6 +1174,23 @@ void own_editor_tick(double now)
     if (host_creature_mode() && g_sess.role() == net::Role::Client) { // F5 (BUG-0769): the host evolves for everybody
         g_own_editor_due = 0;
         return;
+    }
+    if (g_own_editor_arriving) { // BUG-1240: on its way to the host's Creature world
+        if (g_mode == modes::kCreature && av) {
+            g_own_editor_arriving = false;
+            g_own_editor_due_at = now; // the 90 s count from the arrival
+            LOG("own editor: arrived in the Creature stage, the own editor opens when the stage has settled (BUG-1240)");
+        } else if (now - g_own_editor_due_first > 300.0 || g_mode == modes::kTribe || g_mode == modes::kCiv ||
+                   g_mode == modes::kSpace) {
+            g_own_editor_arriving = false;
+            g_own_editor_due = 0;
+            LOG("own editor not opened: this guest did not arrive in the Creature stage (BUG-1240)");
+            feed("evolution: your editor did not open; evolve at your nest later");
+            return;
+        } else {
+            g_own_editor_waits++;
+            return;
+        }
     }
     unsigned b = game_busy() & busy::kEditorGate;
     if ((b & busy::kPaused) && dt > 0 && dt < 5.0)

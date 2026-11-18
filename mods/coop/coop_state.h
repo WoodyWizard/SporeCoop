@@ -388,6 +388,9 @@ extern uint32_t g_last_editor_req;
 extern uint32_t g_last_stage;
 extern uint32_t g_offer_editor;
 extern uint32_t g_own_editor_due;
+extern bool g_own_editor_arriving;  // BUG-1240
+extern bool g_own_editor_arrival_fix;
+extern unsigned g_own_editor_arrivals;
 extern unsigned g_evo_flags_cleared;
 extern unsigned g_offers_expired;
 extern unsigned g_offers_got;
