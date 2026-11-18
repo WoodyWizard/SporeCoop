@@ -24,6 +24,7 @@ from twoinst import Checks, keyframe, shot, start
 
 GAMES = int(sys.argv[sys.argv.index('--games') + 1]) if '--games' in sys.argv else 1
 SPAM = '--spam' in sys.argv
+SANG = []  # the first song is shot (key frame)
 
 
 def cur(con, who):
@@ -75,7 +76,12 @@ def play_game(host, guest, nid):
                 hold(guest, 0x31)
                 presses += 1
                 time.sleep(0.8)
-                if num(r'acts_sent=(\d+)', social(guest), 0) > a0 and not SPAM:
+                sent = num(r'acts_sent=(\d+)', social(guest), 0) > a0
+                if sent and not SANG:
+                    SANG.append(nid)
+                    keyframe('sings', 'the guest sings to a Kook: its creature sings with the song\'s rings on both screens '
+                             '(the guest\'s own and the host\'s puppet of it)', settle=0)
+                if sent and not SPAM:
                     break
         if num(r'engaged=(-?\d+)', s, -1) != nid and time.time() - t0 > 5:
             engage(guest, nid, 15)
