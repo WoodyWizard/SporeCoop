@@ -1,4 +1,5 @@
 #include "cellsync.h"
+#include "cell_compact.h"
 #include "lineage_cells.h"
 #include "creations.h"
 #include <random>
@@ -148,6 +149,11 @@ struct Mirror {
     double seen = 0;
     float scale = 0; // the host's world scale G+0x514C of the sample (0: an older host without it)
     bool product = false; // BUG-0958: a player's product on the host (+0x110: a poison cloud), state flag 4
+    // 6F A: the fixed part of the host's cell (its resource instance, model key and level), from its last full record;
+    // a compact record of a cell without it is skipped until its full record comes
+    bool fixed = false;
+    uint32_t inst = 0, key[3] = {};
+    uint8_t level = 0;
 };
 static std::unordered_map<uint32_t, Mirror> g_mirrors;   // host index -> mirror
 static std::unordered_map<uint32_t, uint32_t> g_host_of; // local index -> host index
@@ -4352,7 +4358,7 @@ struct SendCell {
     uint8_t* c;
     uint32_t idx;
 };
-static void send_state(int dest, const std::vector<SendCell>& cells);
+static void send_state(int dest, const std::vector<SendCell>& cells, const views::Centre* vc, const net::Vec3& me);
 
 static void heal_own(uint8_t* a, const net::Vec3& me, bool bad);
 static void host_tick(double now)
@@ -4472,10 +4478,10 @@ static void host_tick(double now)
             for (size_t i = 0; i < kSendCap; i++)
                 closest.push_back((*list)[d[i].second]);
             g_send_capped++;
-            send_state(id, closest);
+            send_state(id, closest, vc, me);
             continue;
         }
-        send_state(id, *list);
+        send_state(id, *list, vc, me);
     }
 }
 
@@ -4487,7 +4493,110 @@ void set_fake_model(uint32_t idx, uint32_t inst)
 }
 
 
-static void send_state(int dest, const std::vector<SendCell>& cells)
+// decision 6F A (alpha): the compact state (cell_compact.h). Off (`coop.fix cell.compact_state off`): the classic one to
+// every guest.
+static bool g_fix_compact_state = true;
+COOP_FIX("cell.compact_state", "6F A", g_fix_compact_state,
+         "cell: the host sends the compact Cell state to guests that read it (fixed parts once, far cells less often)");
+struct FullSent {
+    double at = 0;
+    uint32_t key0 = 0;
+    uint8_t level = 0;
+};
+static std::unordered_map<uint64_t, FullSent> g_full_sent; // (guest << 32 | host index) -> its last full record
+static double g_full_pruned;
+static uint64_t g_state_bytes[2], g_state_cells[2]; // [classic, compact] (coop.cell compact)
+static uint64_t g_compact_full, g_compact_keep, g_compact_near, g_compact_far;
+static uint64_t g_compact_got, g_compact_unknown, g_compact_kept;
+static void send_state_compact(int dest, const std::vector<SendCell>& cells, const views::Centre* vc,
+                               const net::Vec3& me, double now_s)
+{
+    namespace cc = cell_compact;
+    const net::Vec3 a = vc ? vc->pos : me;
+    float span_p = 1.f, span_v = 1.f;
+    for (auto& e : cells) {
+        const net::Vec3 p = pos_of(e.c);
+        const float* v = (float*)(e.c + kVel);
+        span_p = std::max({span_p, std::fabs(p.x - a.x), std::fabs(p.y - a.y), std::fabs(p.z - a.z)});
+        span_v = std::max({span_v, std::fabs(v[0]), std::fabs(v[1])});
+    }
+    const float ps = cc::step_for(span_p), vs = cc::step_for(span_v);
+    if (now_s - g_full_pruned > 5.0) {
+        g_full_pruned = now_s;
+        for (auto it = g_full_sent.begin(); it != g_full_sent.end();)
+            it = now_s - it->second.at > 10.0 ? g_full_sent.erase(it) : std::next(it);
+    }
+    std::vector<net::Writer> chunks;
+    std::vector<uint8_t> counts;
+    auto begin_chunk = [&] {
+        chunks.emplace_back();
+        counts.push_back(0);
+        net::Writer& w = chunks.back();
+        w.u16(g_cycle);
+        w.u8((uint8_t)(chunks.size() - 1));
+        w.u8(0); // chunks: written below
+        w.u8(0); // n: written below
+        w.f32(world_scale());
+        w.f32(a.x); w.f32(a.y); w.f32(a.z);
+        w.f32(ps); w.f32(vs);
+    };
+    begin_chunk();
+    for (auto& e : cells) {
+        if (!cc::encodable(e.idx))
+            continue; // (never: a pool slot is below 4096)
+        if (chunks.back().data.size() + cc::kMaxRecord > cc::kChunkBytes || counts.back() == 255)
+            begin_chunk();
+        net::Writer& w = chunks.back();
+        uint8_t* c = e.c;
+        const net::Vec3 p = pos_of(c);
+        const uint8_t flags = (uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0) |
+                                        (F<uint8_t>(c, 0x110) ? 4 : 0));
+        void* ref = F<void*>(c, kRes);
+        const uint32_t inst = ref ? *(uint32_t*)ref : 0;
+        const auto* key = (uint32_t*)(c + kModelKey);
+        const uint32_t key0 = g_fake_inst && e.idx == g_fake_idx ? g_fake_inst : key[0];
+        const uint8_t level = (uint8_t)F<int>(c, kLevel);
+        auto& fs = g_full_sent[((uint64_t)(uint32_t)dest << 32) | e.idx];
+        const bool full = now_s - fs.at > cc::kFullEvery || fs.key0 != key0 || fs.level != level;
+        const bool near = !vc || (flags & 3) || cc::near_box(p.x - vc->pos.x, p.y - vc->pos.y);
+        counts.back()++;
+        g_state_cells[1]++;
+        if (!full && !near && !cc::far_turn(g_cycle, e.idx)) {
+            w.u32(e.idx | cc::kKeep);
+            g_compact_keep++;
+            continue;
+        }
+        (near ? g_compact_near : g_compact_far)++;
+        w.u32(e.idx | (full ? cc::kFull : 0u));
+        const auto* v = (float*)(c + kVel);
+        net::Quat q;
+        modes::mat_to_quat((float*)(c + kRot), q);
+        w.u16((uint16_t)cc::q16(p.x - a.x, ps));
+        w.u16((uint16_t)cc::q16(p.y - a.y, ps));
+        w.u16((uint16_t)cc::q16(p.z - a.z, ps));
+        w.u16((uint16_t)cc::q16(v[0], vs));
+        w.u16((uint16_t)cc::q16(v[1], vs));
+        w.u8((uint8_t)cc::q8(q.x)); w.u8((uint8_t)cc::q8(q.y)); w.u8((uint8_t)cc::q8(q.z)); w.u8((uint8_t)cc::q8(q.w));
+        w.u16(cc::size_code(F<float>(c, kSize)));
+        w.u8(cell_logic::hp_byte(F<int>(c, kHp)));
+        w.u8(flags);
+        if (full) {
+            w.u32(inst);
+            w.u32(key0); w.u32(key[1]); w.u32(key[2]);
+            w.u8(level);
+            fs = {now_s, key0, level};
+            g_compact_full++;
+        }
+    }
+    for (size_t k = 0; k < chunks.size(); k++) {
+        chunks[k].data[3] = (uint8_t)chunks.size();
+        chunks[k].data[4] = counts[k];
+        g_state_bytes[1] += chunks[k].data.size();
+        C.sess->send_unreliable_to(dest, net::MSG_CELL_STATE_C, chunks[k]);
+    }
+}
+
+static void send_state(int dest, const std::vector<SendCell>& cells, const views::Centre* vc, const net::Vec3& me)
 {
     double now_s = H->time_seconds();
     if (now_s - g_sent_pruned > 5.0) {
@@ -4505,6 +4614,11 @@ static void send_state(int dest, const std::vector<SendCell>& cells)
             f->second.sends++;
         }
     }
+    if (g_fix_compact_state && (C.sess->peer_caps((uint8_t)dest) & net::CAP_COMPACT_CELL)) {
+        send_state_compact(dest, cells, vc, me, now_s);
+        return;
+    }
+    g_state_cells[0] += cells.size();
     size_t per = 14, chunks = std::max<size_t>(1, (cells.size() + per - 1) / per);
     for (size_t k = 0; k < chunks; k++) {
         net::Writer w;
@@ -4535,6 +4649,7 @@ static void send_state(int dest, const std::vector<SendCell>& cells)
             w.u8((uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0) | (F<uint8_t>(c, 0x110) ? 4 : 0)));
         }
         w.f32(world_scale()); // BUG-0511: the scale these poses are in (a guest without the field stops before it)
+        g_state_bytes[0] += w.data.size();
         C.sess->send_unreliable_to(dest, net::MSG_CELL_STATE, w);
     }
 }
@@ -4571,22 +4686,98 @@ static void destroy_local(uint32_t idx)
     modes::cell_destroy(idx);
 }
 
-static void guest_state(net::Reader& r)
+// a chunk of a host's state round (MSG_CELL_STATE / MSG_CELL_STATE_C): false when a newer round overtook it
+static bool state_round_chunk(uint16_t cycle, uint8_t chunk)
 {
-    uint16_t cycle = r.u16();
-    uint8_t chunk = r.u8(), chunks = r.u8(), n = r.u8();
-    if (!r.ok())
-        return;
     switch (g_rounds.on_chunk(cycle, chunk, g_fix_purge)) {
     case cell_logic::Rounds::OLD_CHUNK: // overtaken by a newer round: it would start that one again
         g_late_chunks++;
-        return;
+        return false;
     case cell_logic::Rounds::NEW_ROUND:
         g_cycle_seen.clear();
         break;
     default:
         break;
     }
+    return true;
+}
+
+// one host cell of a state round: its mirror made or moved (the classic and the compact state, 6F A)
+static void apply_host_cell(uint32_t hidx, uint32_t inst, const uint32_t key[3], int level, float size, net::Vec3 p,
+                            net::Vec3 v, net::Quat q, int hp, uint8_t flags, float host_scale, float k, double now)
+{
+    if (g_fix_finite && (!pose_finite(p, v.x, v.y, size) || !std::isfinite(q.x) || !std::isfinite(q.y) ||
+                         !std::isfinite(q.z) || !std::isfinite(q.w))) {
+        if (!g_nonfinite_dropped++)
+            H->log(M, SK_WARN, "coop: cell: host cell %08X arrived with a pose that is not finite: not mirrored (BUG-0292)", hidx);
+        return; // not in this round: its mirror goes with the round's purge
+    }
+    if (g_fix_eat_once && g_eaten.has(hidx, now)) {
+        g_eaten_skipped++; // BUG-0636: we ate it, the host's state has not dropped it yet
+        return;
+    }
+    g_cycle_seen.insert(hidx);
+    auto& m = g_mirrors[hidx];
+    m.pos = p; m.vel = v; m.rot = q; m.size = size; m.hp = hp; m.seen = now;
+    m.fixed = true; m.inst = inst; m.key[0] = key[0]; m.key[1] = key[1]; m.key[2] = key[2]; m.level = (uint8_t)level;
+    m.product = (flags & 4) != 0; // BUG-0958
+    m.scale = g_fix_world_scale ? host_scale : 0.f; // the pose stays in the host's scale; drawn in ours
+    size *= k;
+    uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
+    if (!c && g_fix_budget && cells_live() >= kMirrorCap) {
+        g_mirror_capped++; // BUG-0295: the pool is full enough (an older host sends more)
+        return;
+    }
+    uint32_t use[3] = {key[0], key[1], key[2]};
+    if (!c && key[0] && g_fix_mirror_model) {
+        // BUG-9111: the host's Lineages cells reach us under a key of our own (creations::host_cell_out);
+        // a model this game does not have is never built (it faulted at 0xE83EC8, BUG-0004): wait for it
+        creations::Key l = creations::local_species({key[0], key[1], key[2]});
+        if (!creations::key_known(l)) {
+            g_lin_unknown_mirror++;
+            return;
+        }
+        use[0] = l.instance, use[1] = l.type, use[2] = l.group;
+        if (l.instance != key[0])
+            preload_cell_model(use); // a host's Lumio cell: drawn from our own key
+    }
+    if (!c) { // dead ones too: the host shows a creature it killed until it is gone
+        uint32_t idx = modes::cell_create({p.x * k, p.y * k, p.z * k}, ref_for(inst), level, use, &q);
+        c = modes::cell_at(idx);
+        if (c) {
+            if (m.local && g_fix_hostof) // the old local cell is gone (BUG-0088)
+                g_host_of.erase(m.local);
+            m.local = idx;
+            g_host_of[idx] = hidx;
+            g_created++;
+        }
+    }
+    if (c) {
+        F<uint8_t>(c, kAiLock) = 1;    // passive: no behaviour, the host decides
+        F<uint8_t>(c, kKeepAlive) = 1; // we own the lifetime, not the tile streaming
+        F<float>(c, kSize) = size;
+        F<float>(c, kTargetSize) = size;
+        F<int>(c, kHp) = hp;
+        if ((flags & 3) && !F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead)) {
+            // the host's creature died: the same death here (effect, dying / dead animation,
+            // locks, event 6 -> dead). Its loot is the host's (SpawnLoot is off on the guest).
+            {
+                callguard::Hold replay(g_replay);
+                o_KillCell(c, 0, nullptr, false, 6, 0.f);
+            }
+            g_death_replays++;
+        }
+    }
+}
+
+static void state_round_end(uint8_t chunk, uint8_t chunks, double now);
+
+static void guest_state(net::Reader& r)
+{
+    uint16_t cycle = r.u16();
+    uint8_t chunk = r.u8(), chunks = r.u8(), n = r.u8();
+    if (!r.ok() || !state_round_chunk(cycle, chunk))
+        return;
     double now = H->time_seconds();
     // BUG-0511: the host's world scale after the n cells (63 bytes each), when this host sends it
     constexpr size_t kRec = 4 + 4 + 12 + 1 + 4 + 12 + 8 + 16 + 1 + 1;
@@ -4613,68 +4804,92 @@ static void guest_state(net::Reader& r)
         uint8_t flags = r.u8();
         if (!r.ok())
             return;
-        if (g_fix_finite && (!pose_finite(p, v.x, v.y, size) || !std::isfinite(q.x) || !std::isfinite(q.y) ||
-                             !std::isfinite(q.z) || !std::isfinite(q.w))) {
-            if (!g_nonfinite_dropped++)
-                H->log(M, SK_WARN, "coop: cell: host cell %08X arrived with a pose that is not finite: not mirrored (BUG-0292)", hidx);
-            continue; // not in this round: its mirror goes with the round's purge
-        }
-        if (g_fix_eat_once && g_eaten.has(hidx, now)) {
-            g_eaten_skipped++; // BUG-0636: we ate it, the host's state has not dropped it yet
+        apply_host_cell(hidx, inst, key, level, size, p, v, q, hp, flags, host_scale, k, now);
+    }
+    state_round_end(chunk, chunks, now);
+}
+
+// decision 6F A: the compact state (cell_compact.h)
+static void guest_state_compact(net::Reader& r)
+{
+    namespace cc = cell_compact;
+    uint16_t cycle = r.u16();
+    uint8_t chunk = r.u8(), chunks = r.u8(), n = r.u8();
+    float host_scale = r.f32();
+    net::Vec3 a;
+    a.x = r.f32(); a.y = r.f32(); a.z = r.f32();
+    const float ps = r.f32(), vs = r.f32();
+    if (!r.ok() || !std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(a.z) || !(ps > 0.f) || !(vs > 0.f) ||
+        !std::isfinite(ps) || !std::isfinite(vs) || !state_round_chunk(cycle, chunk))
+        return;
+    const double now = H->time_seconds();
+    if (!std::isfinite(host_scale) || host_scale <= 1e-6f || host_scale > 1e9f)
+        host_scale = 0.f;
+    const float own_scale = world_scale();
+    const float k = g_fix_world_scale && host_scale > 0 && own_scale > 0 ? host_scale / own_scale : 1.f;
+    if (k != 1.f)
+        g_scale_conv++;
+    for (int i = 0; i < n && r.ok(); i++) {
+        const uint32_t raw = r.u32();
+        const uint32_t hidx = raw & ~cc::kFlagBits;
+        if (!r.ok())
+            return;
+        if (raw & cc::kKeep) { // still there: its mirror goes on along its velocity
+            if (g_mirrors.count(hidx)) {
+                g_cycle_seen.insert(hidx);
+                g_compact_kept++;
+            }
             continue;
         }
-        g_cycle_seen.insert(hidx);
-        auto& m = g_mirrors[hidx];
-        m.pos = p; m.vel = v; m.rot = q; m.size = size; m.hp = hp; m.seen = now;
-        m.product = (flags & 4) != 0; // BUG-0958
-        m.scale = g_fix_world_scale ? host_scale : 0.f; // the pose stays in the host's scale; drawn in ours
-        size *= k;
-        uint8_t* c = m.local ? modes::cell_at(m.local) : nullptr;
-        if (!c && g_fix_budget && cells_live() >= kMirrorCap) {
-            g_mirror_capped++; // BUG-0295: the pool is full enough (an older host sends more)
-            continue;
+        net::Vec3 p, v;
+        p.x = a.x + cc::dq16((int16_t)r.u16(), ps);
+        p.y = a.y + cc::dq16((int16_t)r.u16(), ps);
+        p.z = a.z + cc::dq16((int16_t)r.u16(), ps);
+        v.x = cc::dq16((int16_t)r.u16(), vs);
+        v.y = cc::dq16((int16_t)r.u16(), vs);
+        v.z = 0;
+        net::Quat q;
+        q.x = (int8_t)r.u8() / 127.f;
+        q.y = (int8_t)r.u8() / 127.f;
+        q.z = (int8_t)r.u8() / 127.f;
+        q.w = (int8_t)r.u8() / 127.f;
+        const float qn = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+        if (qn > 1e-3f) {
+            q.x /= qn; q.y /= qn; q.z /= qn; q.w /= qn;
+        } else {
+            q.x = q.y = q.z = 0.f;
+            q.w = 1.f;
         }
-        uint32_t use[3] = {key[0], key[1], key[2]};
-        if (!c && key[0] && g_fix_mirror_model) {
-            // BUG-9111: the host's Lineages cells reach us under a key of our own (creations::host_cell_out);
-            // a model this game does not have is never built (it faulted at 0xE83EC8, BUG-0004): wait for it
-            creations::Key l = creations::local_species({key[0], key[1], key[2]});
-            if (!creations::key_known(l)) {
-                g_lin_unknown_mirror++;
+        const float size = cc::size_of(r.u16());
+        const int hp = r.u8();
+        const uint8_t flags = r.u8();
+        uint32_t inst = 0, key[3] = {};
+        int level = 0;
+        if (raw & cc::kFull) {
+            inst = r.u32();
+            key[0] = r.u32(); key[1] = r.u32(); key[2] = r.u32();
+            level = r.u8();
+        }
+        if (!r.ok())
+            return;
+        g_compact_got++;
+        if (!(raw & cc::kFull)) {
+            auto it = g_mirrors.find(hidx);
+            if (it == g_mirrors.end() || !it->second.fixed) {
+                g_compact_unknown++; // its full record was lost: it comes again within cell_compact::kFullEvery
                 continue;
             }
-            use[0] = l.instance, use[1] = l.type, use[2] = l.group;
-            if (l.instance != key[0])
-                preload_cell_model(use); // a host's Lumio cell: drawn from our own key
+            inst = it->second.inst;
+            key[0] = it->second.key[0]; key[1] = it->second.key[1]; key[2] = it->second.key[2];
+            level = it->second.level;
         }
-        if (!c) { // dead ones too: the host shows a creature it killed until it is gone
-            uint32_t idx = modes::cell_create({p.x * k, p.y * k, p.z * k}, ref_for(inst), level, use, &q);
-            c = modes::cell_at(idx);
-            if (c) {
-                if (m.local && g_fix_hostof) // the old local cell is gone (BUG-0088)
-                    g_host_of.erase(m.local);
-                m.local = idx;
-                g_host_of[idx] = hidx;
-                g_created++;
-            }
-        }
-        if (c) {
-            F<uint8_t>(c, kAiLock) = 1;    // passive: no behaviour, the host decides
-            F<uint8_t>(c, kKeepAlive) = 1; // we own the lifetime, not the tile streaming
-            F<float>(c, kSize) = size;
-            F<float>(c, kTargetSize) = size;
-            F<int>(c, kHp) = hp;
-            if ((flags & 3) && !F<uint8_t>(c, kDying) && !F<uint8_t>(c, kDead)) {
-                // the host's creature died: the same death here (effect, dying / dead animation,
-                // locks, event 6 -> dead). Its loot is the host's (SpawnLoot is off on the guest).
-                {
-                    callguard::Hold replay(g_replay);
-                    o_KillCell(c, 0, nullptr, false, 6, 0.f);
-                }
-                g_death_replays++;
-            }
-        }
+        apply_host_cell(hidx, inst, key, level, size, p, v, q, hp, flags, host_scale, k, now);
     }
+    state_round_end(chunk, chunks, now);
+}
+
+static void state_round_end(uint8_t chunk, uint8_t chunks, double now)
+{
     g_cells_peak = std::max(g_cells_peak, cells_live());
     if (chunk + 1 < chunks)
         return;
@@ -5418,7 +5633,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (modes::cell_leaving()) {
             g_leave_dropped++;
             cell = false;
-        } else if (type == net::MSG_CELL_STATE)
+        } else if (type == net::MSG_CELL_STATE || type == net::MSG_CELL_STATE_C)
             g_leave_writes++;
     }
     // BUG-0239: a guest's meal that reaches us in an editor (or without an avatar, around a rebuild)
@@ -5500,16 +5715,19 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (!cell)
         return;
-    if (g_solo && is_guest() && (type == net::MSG_CELL_STATE || type == net::MSG_CELL_FOOD))
+    if (g_solo && is_guest() && (type == net::MSG_CELL_STATE || type == net::MSG_CELL_STATE_C || type == net::MSG_CELL_FOOD))
         return; // BUG-0205: our own pool until the host's away state ends (a state of the host's pool comes then)
-    if (g_solo_owed && is_guest() && (type == net::MSG_CELL_STATE || type == net::MSG_CELL_FOOD))
+    if (g_solo_owed && is_guest() && (type == net::MSG_CELL_STATE || type == net::MSG_CELL_STATE_C || type == net::MSG_CELL_FOOD))
         solo_send(); // before the host's first total is applied: it then counts them as on the way (no dip)
-    if (type == net::MSG_CELL_STATE && is_guest()) {
+    if ((type == net::MSG_CELL_STATE || type == net::MSG_CELL_STATE_C) && is_guest()) {
         if (g_statehold_until > 0 && H->time_seconds() < g_statehold_until) {
             g_statehold_dropped++;
             return; // tests: the host's state lost on the way (coop.pool statehold)
         }
-        guest_state(r);
+        if (type == net::MSG_CELL_STATE_C)
+            guest_state_compact(r);
+        else
+            guest_state(r);
     } else if (type == net::MSG_CELL_HIT && is_host()) {
         uint32_t idx = r.u32();
         int dmg = r.u8(), t = r.u8();
@@ -7093,6 +7311,21 @@ std::string debug(const std::vector<std::string>& a)
         t[2] = p.z;
         F<uint8_t>(av, 0x04) = 0;
         return "swimming";
+    }
+    if (!a.empty() && a[0] == "compact") { // 6F A: the state's bytes and cells, classic and compact, since the start
+        char b[400];
+        snprintf(b, sizeof b,
+                 "fix=%d host: classic %llu B / %llu cells (%.1f B a cell), compact %llu B / %llu cells (%.1f B a cell): "
+                 "full %llu near %llu far %llu keep %llu | guest: got %llu kept %llu unknown %llu\n",
+                 (int)g_fix_compact_state, (unsigned long long)g_state_bytes[0], (unsigned long long)g_state_cells[0],
+                 g_state_cells[0] ? (double)g_state_bytes[0] / (double)g_state_cells[0] : 0.0,
+                 (unsigned long long)g_state_bytes[1], (unsigned long long)g_state_cells[1],
+                 g_state_cells[1] ? (double)g_state_bytes[1] / (double)g_state_cells[1] : 0.0,
+                 (unsigned long long)g_compact_full, (unsigned long long)g_compact_near,
+                 (unsigned long long)g_compact_far, (unsigned long long)g_compact_keep,
+                 (unsigned long long)g_compact_got, (unsigned long long)g_compact_kept,
+                 (unsigned long long)g_compact_unknown);
+        return b;
     }
     if (!a.empty() && a[0] == "scalepos") { // tests (BUG-0519): world scale, own cell and every partner's puppet, one frame
         std::string o;

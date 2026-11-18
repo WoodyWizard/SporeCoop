@@ -706,6 +706,39 @@ A helps co-op too (live, 4 players: 0.3-0.7 MB/s today to about 0.1 MB/s) and co
 players who stand together and moves the cost to the server; C is the MMO shape (the server carries the fan-out) on
 top of A. Creature, Tribe and Civ are not measured at this size yet (Creature: 20-30 KB/s a partner at 4 players).
 
+### The compact Cell state (2026-11-18, feat/lineages-alpha, decision 6F A)
+<a id="server-compact-cell"></a>
+
+Owner: "6FC" (A first, then the galaxy server copies the stream). Part A: MSG_CELL_STATE_C (mods/coop/cell_compact.h
+has the format), sent by the host to every guest that announces net::CAP_COMPACT_CELL; an older guest gets the classic
+MSG_CELL_STATE. Switch: `coop.fix cell.compact_state off` (the classic state to everyone); counters: `coop.pool compact`.
+
+* A cell's fixed part (resource instance, model key, level) goes in a full record when the guest has not had it for
+  2 s or it changed; otherwise position and velocity as 16-bit steps from the guest's centre, the rotation in 4 bytes,
+  the size in 2 (log2), hp and flags: 22 bytes, 39 with the fixed part, 4 for "still there".
+* Cells outside a 40 x 32 box about the guest (its view is about 15 x 11) are sent 2 times a second instead of 10, a
+  "still there" in the other cycles (the guest goes on along the cell's velocity, as between any two states). A dying
+  or dead cell is always sent.
+* A chunk holds about 60 cells instead of 14 (fewer packets too).
+
+Measured (TITAN, QA copy, a local test galaxy server, 6 games on Samuth in Cell, all players near each other, two
+minutes each way in the same session):
+
+| | Bytes a cell | Cells a guest a cycle | Each guest | Host, 5 guests |
+|---|---|---|---|---|
+| Classic | 63.6 | 281 | 179 KB/s | 894 KB/s |
+| Compact | 15.5 | 393 | 61 KB/s | 305 KB/s |
+
+Per cell 4.1 times smaller; at the compact window's 393 cells the classic would have cost about 250 KB/s a guest. The
+players stood together, so 73 % of the cells were near (sent 10 times a second); spread out, more of them are far and it
+costs less. A 16-player planet with everyone together: about 0.9 MB/s (7 Mbit/s) from the host instead of 3.7 MB/s.
+Guests skipped 0 to 4 of about 550 000 records each (a lost full record, back within 2 s). The sync check: 112 checks,
+0 mismatches (36 momentary differences, gone on the 3 s recheck). Unit tests: cell_tests (packing round trips, the far
+cells' turns). Not tested: an older guest against a new host on alpha (the capability decides; live has no compact
+state yet), Creature / Tribe / Civ (their own messages, not changed).
+
+Next (6F part B): the galaxy server copies one stream to the players of one area.
+
 ### Hand-over without a reload: research (2026-11-17, decision 6B C)
 <a id="server-warm-handover"></a>
 

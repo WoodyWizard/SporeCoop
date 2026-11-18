@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "cell_logic.h"
+#include "cell_compact.h"
 #include "view_centres.h"
 
 using namespace cell_logic;
@@ -298,6 +299,47 @@ static void active_set()
     CHECK(active_tiles(1, 0, NAN, vb, sizes, 17) > 511);  // garbage: no pass
 }
 
+// decision 6F A: the compact Cell state's packing (cell_compact.h)
+static void compact()
+{
+    namespace cc = cell_compact;
+    // positions: 16 bits over the largest offset, the error at most half a step
+    const float span = 150.f, ps = cc::step_for(span);
+    for (float d : {0.f, 1.2345f, -77.7f, 149.99f, -150.f}) {
+        const float back = cc::dq16(cc::q16(d, ps), ps);
+        CHECK(std::fabs(back - d) <= ps * 0.5f + 1e-6f);
+    }
+    CHECK(ps < 0.005f);                                      // 150 m in steps under 5 mm
+    CHECK(cc::q16(1e9f, ps) == 32767 && cc::q16(-1e9f, ps) == -32767); // clamped, never wrapped
+    CHECK(cc::q16(NAN, ps) == 0 && cc::step_for(NAN) > 0.f && cc::step_for(0.f) > 0.f);
+    // sizes: 2^-16 .. 2^16 within 0.04 %
+    for (float sz : {0.01f, 0.5f, 1.f, 3.7f, 250.f, 9000.f}) {
+        const float back = cc::size_of(cc::size_code(sz));
+        CHECK(std::fabs(back - sz) <= sz * 4e-4f);
+    }
+    CHECK(cc::size_code(0.f) == 0 && cc::size_of(0) == 0.f && cc::size_code(-1.f) == 0 && cc::size_code(NAN) == 0);
+    // rotations: a unit quaternion component in 8 bits
+    CHECK(cc::q8(1.f) == 127 && cc::q8(-1.f) == -127 && cc::q8(0.70710678f) == 90 && cc::q8(NAN) == 0);
+    // the index flags: a pool slot is below 4096, bits 14 and 15 are free
+    CHECK(cc::encodable(4095) && cc::encodable(0x00010FFFu) && !cc::encodable(0x8000) && !cc::encodable(0x4001));
+    // a far cell gets exactly one turn in kFarEvery cycles, spread over the cycles
+    int per_cycle[cc::kFarEvery] = {};
+    for (uint32_t idx = 1; idx <= 1000; idx++) {
+        int turns = 0;
+        for (uint32_t cyc = 0; cyc < cc::kFarEvery; cyc++)
+            if (cc::far_turn(100 + cyc, idx)) {
+                turns++;
+                per_cycle[cyc]++;
+            }
+        CHECK(turns == 1);
+    }
+    for (int n : per_cycle)
+        CHECK(n == 200);
+    CHECK(cc::near_box(0, 0) && cc::near_box(-40, 32) && !cc::near_box(41, 0) && !cc::near_box(0, -33));
+    // the largest record fits a chunk with room for the header
+    CHECK(cc::kMaxRecord == 39 && cc::kChunkBytes + 32 < 1200);
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -317,6 +359,7 @@ int main(int argc, char** argv)
     once();
     kill_word_ko();
     active_set();
+    compact();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;

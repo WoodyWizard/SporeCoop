@@ -7681,7 +7681,7 @@ void setup_callbacks()
             return;
         }
         if ((type >= net::MSG_CELL_STATE && type <= net::MSG_CELL_FOOD) || type == net::MSG_CELL_KO ||
-            type == net::MSG_CELL_COMBAT || type == net::MSG_CELL_BITTEN) {
+            type == net::MSG_CELL_COMBAT || type == net::MSG_CELL_BITTEN || type == net::MSG_CELL_STATE_C) {
             cellsync::on_message(type, from, r);
             return;
         }

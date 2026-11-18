@@ -147,7 +147,7 @@ inline MsgClass msg_class(uint8_t type)
     case net::MSG_VOTE: // session-wide; the editor start it brings is gated in its handler (core.vote_world)
     case net::MSG_RES:  // held inside shared.cpp (res.elsewhere), not at dispatch
         return MsgClass::Session;
-    case net::MSG_DNA: case net::MSG_WORLD_TIME: case net::MSG_CELL_STATE: case net::MSG_CELL_HIT:
+    case net::MSG_DNA: case net::MSG_WORLD_TIME: case net::MSG_CELL_STATE: case net::MSG_CELL_STATE_C: case net::MSG_CELL_HIT:
     case net::MSG_CELL_EAT: case net::MSG_CELL_FOOD: case net::MSG_CELL_KO: case net::MSG_CELL_BITTEN:
     case net::MSG_TRIBE_STATE: case net::MSG_TRIBE_CMD: case net::MSG_SPECIES: case net::MSG_SOCIAL: case net::MSG_NEST:
     case net::MSG_PARTS: case net::MSG_FIELDS: case net::MSG_WSTATE: case net::MSG_PLAYER_RULE: case net::MSG_MIRROR_FX:

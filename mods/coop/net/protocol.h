@@ -58,6 +58,8 @@ enum MsgType : uint8_t {
     MSG_TRIBE_STATE = 31, // host -> guests: tribes + citizens snapshot (chunked)
     MSG_TRIBE_CMD = 32,   // guest -> host: order for own tribe members
     MSG_CELL_STATE = 33,  // host -> guests: NPC cells and food snapshot (chunked)
+    // decision 6F A (alpha): the compact MSG_CELL_STATE, to guests with CAP_COMPACT_CELL (cell_compact.h)
+    MSG_CELL_STATE_C = 95,
     MSG_CELL_HIT = 34,    // guest -> host: u32 host cell index, u8 damage, u8 type
     MSG_CELL_EAT = 35,    // guest -> host: u32 host cell index (eaten / destroyed by the guest)
     MSG_CELL_FOOD = 36,   // host -> guests: i32 food, i32 plant | guest -> host: i32 delta, u8 plant
@@ -252,8 +254,9 @@ enum Caps : uint32_t {
     CAP_RESUME_WORLD = 64, // HELLO only: u64 receipt for a still-loaded world
     CAP_JOIN_PROOF = 128, // HELLO only: connection-bound password proof
     CAP_LIBRARY = 32, // persistent, paced creation-library exchange (MSG_LIBRARY)
+    CAP_COMPACT_CELL = 256, // 6F A: this guest reads MSG_CELL_STATE_C; no payload
 };
-constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_LIBRARY; // token bit is per HELLO
+constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_LIBRARY | CAP_COMPACT_CELL; // token bit is per HELLO
 
 struct Hello {
     uint16_t proto = kProtoVersion;
