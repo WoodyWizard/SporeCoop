@@ -12,7 +12,7 @@ Creature fixture, the guest 4 m in front of the host's camera:
   1. the host's puppet's meter set low (`coop.puppet hunger 10`): no bubble (its own meter shows none);
   2. the guest's own creature gets hungry (`coop.puppet ownhunger 10`, its own game's meter as minutes leave it): the
      bubble on both games;
-  3. a burst of effects at the guest's creature (`coop.effects load 40 10`, as a fight's hits make them) while the guest
+  3. a burst of effects at the guest's creature (`coop.effects load 40 10 E1A4BD93`: the being-hit effect, as a fight's hits make it) while the guest
      eats (`ownhunger 100`): its own bubble goes; the burst ends;
   4. 10 s later the host's puppet must have no bubble either (`coop.effects map`, active); key frames.
 SPORE_FIX_OFF=effects.stop_always must FAIL (the bubble stays on the puppet)."""
@@ -63,7 +63,7 @@ def main():
     watch(host, guest, gid, 8, 'own10', rows)
     keyframe('guest_hungry', 'the guest\'s own creature is hungry: the thought bubble over it on both screens', settle=0)
     # 3. it eats during a burst of effects at it
-    print('  guest: ' + guest.call('coop.effects load 40 10')['out'].strip(), flush=True)
+    print('  guest: ' + guest.call('coop.effects load 40 10 E1A4BD93')['out'].strip(), flush=True)
     time.sleep(1.5)
     print('  guest: ' + guest.call('coop.puppet ownhunger 100')['out'].strip(), flush=True)
     watch(host, guest, gid, 3, 'burst', rows)

@@ -9102,3 +9102,29 @@ only with sing (docs/re/creature.md#creature-social-kinds).
   social mode 0 for every animal: skipped after 10 s); it fails ("the guest mirrors animals of that nest") after that.
 * `SPORE_FIX_OFF=social.kinds`: the other kind's click / key does nothing (no animation on either game, `kind_acts=`
   stays 0 for it), the game fails after its prompt list.
+
+## The partner's puppet after a song, its hunger bubble, its eating, its hover (2026-11-18, fix/w53-puppet)
+<a id="testing-puppet-after-social"></a>
+
+BUG-1241, BUG-1250, BUG-1252, BUG-1253 (creature fixture, warm; docs/re/creature.md#creature-puppet-hunger).
+* `puppet_after_social` (`coop_puppet_after_social.py [--games N] [--spam]`; variants `puppet_after_social_many`,
+  `_lowfps` SPORE_FPS=10, `_net` delay 250 ms + 5 % loss): the guest befriends Kooks by singing as a player (the social
+  stance, a click, the sing key at each prompt; `--spam` presses it again and again), then stands, runs (W) and stands
+  for a minute. Read every ~0.4 s on both games: `coop.npc cur` (`ability=` the ability in use +0xE8C) and
+  `coop.effects map` (`active=`). Checked: once the guest's own creature performs nothing, the host's puppet performs no
+  ability, plays no social animation and keeps no active pool effect the guest's own creature lacks. Key frames: the
+  song, the win, standing, running, a minute later. `coop.effects log on` is set on both games (the game logs list every
+  effect the creatures make).
+* `puppet_hunger` (`coop_puppet_hunger.py`): the host's puppet's meter set to 10 (`coop.puppet hunger 10`: no bubble, it
+  has no hunger of its own), the guest's own meter to 10 (`coop.puppet ownhunger 10`: its bubble, key 062EDBA6, on both
+  games), then the guest eats (`ownhunger 100`) during a burst of effects every frame (`coop.effects load 40 10 E1A4BD93`, the being-hit effect, as a
+  fight makes): the bubble must be gone from the host's puppet 4 s after the burst. `SPORE_FIX_OFF=effects.stop_always`
+  fails (the stop is dropped by the empty rate limit).
+* `puppet_eat_anim` (`coop_puppet_eat_anim.py`): the host kills an NPC by both players, the guest clicks its body (the
+  game's click action, `coop.rules click`) and eats; the animations its own creature plays then (not seen before while
+  walking and standing) must be played by the host's puppet of it. `SPORE_FIX_OFF=creature.avatar_bhv_anims` fails
+  (the guest's eat 04F65995 is never on the puppet; key frame: the puppet stands idle at the body).
+* `partner_social_hover` (`coop_partner_social_hover.py`): the host's creature 5 m from the guest's, the guest's camera
+  turned to it, the mouse moved onto its body (from `coop.targets all`) in the social stance; the game's own hover
+  result (cGameViewManager::Get +0x88) must never be the puppet. `SPORE_FIX_OFF=creature.partner_social_hover` fails
+  (12 of 12 samples hover it; key frame: its name plate with health and a green face).
