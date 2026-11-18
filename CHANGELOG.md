@@ -10,6 +10,8 @@
 - Cell: after the host's mating call its cell editor now opens right away, as in a solo game; before, the host looked at
   a black screen for up to a minute until everybody pressed "I'm ready". The others get a message that the host evolves
   its cell and play on. The session setting "Host's editor opens at once" turned off brings the vote back (BUG-1263).
+- Cell, with the session setting "one creature for everyone": a partner's own mating call (which only the host may
+  evolve) no longer makes its cell mate and lay an egg again and again behind a black screen; it plays once (BUG-1265).
 - Cell -> Creature: the host's first Creature editor no longer keeps the host on a black screen for up to a minute
   while a guest with a slow connection is still loading the Creature world; that guest gets its own editor when it
   arrives (BUG-1245).

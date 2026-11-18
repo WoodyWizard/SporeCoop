@@ -1906,7 +1906,7 @@ void register_commands_editor()
                            "arrival votes that did not wait for a guest on its way %u (BUG-1245)\n"
                            "own editors from the world's species without the replace dialog %u (BUG-1255)\n"
                            "host Cell editors opened without a vote %u (BUG-1263)\n"
-                           "mates forgotten after a refused Cell evolution %u (BUG-1265)",
+                           "guest mates forgotten in creature.mode host (Cell) %u (BUG-1265)",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
                            g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
                            g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,

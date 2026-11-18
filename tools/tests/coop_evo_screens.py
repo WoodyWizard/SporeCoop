@@ -252,19 +252,21 @@ def part_cell(host, guest, ck, ready, scr):
 
     # 2. the guest's own mating call: its own editor; the host plays on and sees its world
     if '--one' in sys.argv:  # creature.mode host: the guest's own evolution is refused; its screen must come back
-        t_g = time.time()
-        refused = lambda: 'request is refused' in ''.join(log_since(guest, g_off2))  # noqa: E731
+        # BUG-1265: the guest's mating call in that mode brings no mating round: its mate is forgotten at once (no
+        # mating scene, no egg laying, no fade); before, the refused request's round and its black fade came every ~10 s
         g_off2 = log_size(guest)
-        mating_call(guest, 'guest', lambda: 'Editor' in mode(guest) or refused() or time.time() - t_g > 45)
-        ck(wait(refused, 40), "the guest's own mating call reached its mate and was refused (creature.mode host)")
         m0, e0 = mate_counts(guest)
+        t_g = time.time()
+        mating_call(guest, 'guest', lambda: 'Editor' in mode(guest) or time.time() - t_g > 30)
         time.sleep(35)
         m1, e1 = mate_counts(guest)
-        n = sum('request is refused' in l for l in log_since(guest, g_off2))
-        print(f'  guest after the refusal: {m1 - m0} more matings, {e1 - e0} more egg layings in 35 s, {n} refusals', flush=True)
-        # BUG-1265: the refused request left the mate next to the cell: the round and its black fade came every ~10 s
-        ck(m1 - m0 == 0 and e1 - e0 == 0 and n == 1,
-           f"the guest's refused mating round plays once ({m1 - m0} more matings, {e1 - e0} more egg layings, {n} refusals)")
+        lines = log_since(guest, g_off2)
+        n = sum('request is refused' in l for l in lines)
+        told = any('the host evolves the cell for everybody' in l for l in lines)
+        print(f'  guest after its mating call: {m1 - m0} matings, {e1 - e0} egg layings, {n} refused requests, told {told}', flush=True)
+        ck(m1 - m0 == 0 and e1 - e0 == 0 and n == 0,
+           f"the guest's own mating call starts no mating round in creature.mode host ({m1 - m0} matings, {e1 - e0} egg layings, {n} refused requests)")
+        ck(told, 'the guest is told that the host evolves the cell for everybody')
         check_black(ck, sg, 'guest', 'after its own mating call was refused (creature.mode host)', t_g)
         check_black(ck, sh, 'host', "after the guest's refused mating call", t_g)
         keyframe('guest_refused', 'Cell, creature.mode host: the guest\'s own mating call is refused; both games show the pool')

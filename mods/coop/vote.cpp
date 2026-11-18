@@ -113,12 +113,15 @@ unsigned cell_editor_now_count() { return g_cell_now; }
 // BUG-1265 (evo_screens_cell_one, creature.mode host: one creature for everyone, only the host evolves): a guest's own
 // mating call in Cell is refused at h_Submit, but its mate G+0x51D4 stayed next to its cell, so the cell step's meeting
 // 0xE78D10 played the mating scene, the egg laying with the game's fade and the refused request again every ~10 s: the
-// guest's screen went black again and again (the loop of BUG-1245 on a refused request). On: the refusal forgets the mate
-// (cellsync::forget_mate, on the next frame, outside the game's own call chain): the round plays once. Off: the meetings
-// go on (0.7.15).
+// guest's screen went black again and again (the loop of BUG-1245 on a refused request). Forgetting the mate only at the
+// refusal ended the loop but left the guest's picture black (the fade of the egg laying is undone only by an editor's
+// return or the next round, lab 20261118-142112: 36 s). On: in that mode a guest's mate is forgotten as soon as its
+// mating call brings it (cellsync::forget_mate, every frame from evo_flag_tick, outside the game's own call chain), so
+// no mating scene, egg or fade starts, and the guest reads why; a request that still comes is refused and its mate
+// forgotten too. Off: the meetings go on (0.7.15).
 static bool g_refused_mate_fix = true;
 COOP_FIX("cell.refused_mate", "BUG-1265", g_refused_mate_fix,
-         "cell: a guest's refused mating call (creature.mode host) forgets its mate: the mating scene and the black fade no longer repeat every 10 s");
+         "cell: creature.mode host: a guest's mating call brings no mating round (its mate is forgotten): no mating scene, egg and black fade every 10 s");
 static bool g_refused_mate_due = false;
 static unsigned g_refused_mates = 0; // tests (coop.vote)
 unsigned refused_mates_count() { return g_refused_mates; }
@@ -1279,11 +1282,17 @@ int evo_flag_now()
 }
 void evo_flag_tick(double now)
 {
-    if (g_refused_mate_due) { // BUG-1265: the refused request's mate meets the cell no more
+    // BUG-1265: creature.mode host: a guest's mate never meets its cell (no evolution of its own in that mode)
+    bool one_guest = g_refused_mate_fix && g_sess.connected() && g_sess.role() == net::Role::Client &&
+                     host_creature_mode() && game::mode_id() == modes::kCell;
+    if (g_refused_mate_due || one_guest) {
+        bool refused = g_refused_mate_due;
         g_refused_mate_due = false;
         if (uint32_t m = cellsync::forget_mate()) {
             g_refused_mates++;
-            LOG("cell: the refused evolution's mate %08X does not meet our cell again (BUG-1265)", m);
+            LOG("cell: the mate %08X does not meet our cell (creature.mode host: the host evolves, %s, BUG-1265)", m,
+                refused ? "after a refused request" : "at the mating call");
+            feed("the host evolves the cell for everybody (session setting: one creature for everyone)");
         }
     }
     bool refused = g_evo_flag_refused;
