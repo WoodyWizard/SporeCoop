@@ -356,20 +356,24 @@ def part_cell_eggs(host, guest, ck, ready, scr):
     hold = 45 if ready == 'click' else 70
     shown, rows = [], []
     k = 0
-    while time.time() - t_vote < hold and 'Editor' not in mode(host):
-        shown.append(window_shown(host))
+    m1, e1 = m0, e0
+    while time.time() - t_vote < hold and 'Editor' not in mode(host) and 'vote active' in host.call('coop.vote')['out']:
         m, e = mate_counts(host)
+        if m < 0 or 'Cell' not in mode(host):
+            break  # the vote ran out: the editor comes (the counts are read in Cell only)
+        shown.append(window_shown(host))
+        m1, e1 = m, e
         rows.append(f'{time.time() - t_vote:.0f}s:{m - m0}/{e - e0}')
         if k in (0, 3) and time.time() - t_vote > (12 if k == 0 else 33):
             keyframe('host_vote_%d' % (k // 3 + 1), 'Cell: %.0f s into the host\'s vote: one mating scene, no new eggs; the vote window on the host\'s screen' % (time.time() - t_vote), settle=0)
             k += 3
         time.sleep(3)
-    m1, e1 = mate_counts(host)
+    t_end = time.time()
     print(f'  host during the vote (matings/egg layings since its start): {" ".join(rows)}', flush=True)
-    ck(m1 - m0 == 0 and e1 - e0 == 0, f"the host's game plays the mating scene and the egg laying once, not again while the vote holds its editor ({m1 - m0} more matings, {e1 - e0} more egg layings in {time.time() - t_vote:.0f} s)")
+    ck(m1 - m0 == 0 and e1 - e0 == 0, f"the host's game plays the mating scene and the egg laying once, not again while the vote holds its editor ({m1 - m0} more matings, {e1 - e0} more egg layings in {t_end - t_vote:.0f} s)")
     ck(shown and all(shown), f"the host's co-op window with the vote stays on its screen ({sum(shown)} of {len(shown)} looks)")
     # what the host sees: each repeated mating scene drew the pool again for a moment (the black flickered)
-    rows_v = [r for r in sh.since(t_vote + 8) if r[0] <= time.time()]
+    rows_v = [r for r in sh.since(t_vote + 8) if r[0] <= t_end and 'Cell' in r[1]]
     flashes, was = 0, False
     for _, _, w in rows_v:
         drawn = w > sl.WORLD_MIN
