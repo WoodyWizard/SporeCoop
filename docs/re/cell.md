@@ -2436,3 +2436,28 @@ the own cell and the puppets, the zap counters).
   0; the electric attacker plays 0x1E; swims and `swimto ... tp` show 0x12, 0x32, 0x33 and 0xB on the own cell.
 * ✔ Cell puppets get no relayed animation (MSG_ANIM dropped for cells, BUG-0796); a partner's attack shows through the
   effects relay (world effects near the attacker).
+
+## The wild cells of a player's species: one key per population pass (2026-11-18, plan/0.7.16)
+<a id="cell-kin-species"></a>
+
+Research for docs/plan-0.7.16.md item 3 (BUG-1257). GOG 2024, Ghidra, the earlier runtime of #cell-own-species.
+
+* ✔ (Ghidra) `GetModelKeyForCellResource` 0xE65640 has one caller, `CreateCellObject` 0xE74A20; CreateCellObject has
+  14 callers (0xE750C0, 0xE75350, 0xE75900, the mating call 0xE760F0, 0xE76360, 0xE76AF0, 0xE76D70, 0xE78230,
+  0xE783D0, 0xE78570, 0xE786B0, 0xE78FC0, 0xE79720, 0xE81120). `PopulateMarker` 0xE7C500 is called by itself (0xE7C643)
+  and by `PopulateTile` 0xE7C6C0 only. The resource entry kinds 3 (fixed model), 4 (random creature) and 5 (the
+  player's cell: `S+0x10`) are read at 0xE6568A..0xE65697 (as docs/re/creations.md 2.2).
+* ✔ (runtime, #cell-own-species) The population puts 6-8 cells of model `S+0x10` (the own cell) into each level next
+  to the level's species, and a rebuild after an own-cell change puts the new model there.
+* So the world's kin are the cells whose resource has a kind-5 entry, made inside a population pass (PopulateTiles
+  0xE7D370 -> PopulateTile -> PopulateMarker -> ... -> CreateCellObject -> GetModelKeyForCellResource). The avatar and
+  its respawn, the mate of the mating call and RebuildLevel's avatar are made outside PopulateTiles.
+* The mod already hooks GetModelKeyForCellResource (modes.cpp h_GetModelKey: a forced key for puppets, BUG-0455's
+  unknown-key check) and PopulateTiles (cellsync_tiles.cpp h_PopTiles), and a guest's mirror carries the host cell's
+  model key in the state (cellsync_guest.cpp guest_state: key[3] per cell). A kin cell of a partner's species on the
+  host therefore needs only the hook's answer inside the pass (another player's cell key in place of `S+0x10`); every
+  guest draws it with that key, with no protocol change.
+* ? Not checked: whether a kin cell's AI reads "own species" from the resource (kind 5) or from the model key (the
+  host's game would treat a partner's kin like its own: inferred harmless); whether the cell's model data of a
+  partner's creation is built on first use on the host (BUG-0455 says a forced key builds it, `creations::key_known`
+  first); the Cell save holds no pool cells (~ inferred: the pool is rebuilt on load from S).
