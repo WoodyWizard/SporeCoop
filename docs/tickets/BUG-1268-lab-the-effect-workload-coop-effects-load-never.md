@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: rel/0.7.15.2
-commits:
+commits: c9983d95
 tests: effects_live, creature_brain_hp
 signature:
 docs:
