@@ -4746,3 +4746,39 @@ BUG-1178, BUG-1181. GOG 2024, lane 2, the creature fixture; `coop_nest_follow.py
   that creation (a key made in the run, 7C... ), on the guest the host's puppet has the world's species. `coop.nest
   evolve` lists them with the game's herds (it now prints `nest= arch= mkey=`, mkey: the species of the herd's live
   members, FFFFFFFF for more than one: the guest's home herd with its own creature among the family).
+
+## The social kinds of the abilities: a guest answered only with sing (2026-11-18, fix/w52-social)
+<a id="creature-social-kinds"></a>
+
+BUG-1242 (players' video before 0.7.15: the second player could not befriend the creatures). GOG 2024, Ghidra, the
+game's data files (Data/PatchData.package) and lanes 6 / 7 (fixture `creature_cadian`).
+
+* ✔ (Ghidra) `cCreatureAbility::Parse` 0x4D9310 fills +8 from property 0x01BA8C38 (the type), +0xC from 0x01EF3BE2 (the
+  bar row) and **+0x10 from 0x0743BDD6**. CORRECTION (2026-11-18, fix/w52-social): +0x10 is not "1 on the social ability"
+  (8.3, #creature-social-prompts): it is the social KIND.
+* ✔ (data) The four social parents of group 0xD2FCB262 in PatchData.package carry 0x0743BDD6: type 0x25 (sing,
+  "Vocalize") 1, 0x22 (charm) 2, 0x24 (dance) 3, 0x23 (pose) 4; every other ability has no such property (+0x10 0). Their
+  levels (group 0xDD91AC58, parent 0xB2CCCB) are 1-5, with the points +0x3C = the level (Vocalize 1..5: animations
+  042A1CAF..042A1CB3).
+* ✔ (Ghidra) So the native answer check 0xD9B070 (prompt's +0x10 == answer's +0x10) is a kind match (sing to a sing
+  prompt), and the pack's join in 0xD9C100 (species +0x6D4 searched by 0x4D47B0 for the same +0x10) makes the pack
+  members perform the same kind.
+* ✔ (Ghidra) The HUD bar: `AbilityBar_Rebuild` 0xD49400 puts ability i at [+0xC row][`AbilityBar_Column` 0xD48FA0(type)];
+  in the social row the columns are 0 sing 0x25, 1 charm 0x22, 2 dance 0x24, 3 pose 0x23, i.e. the key k is the kind k.
+  The social row's buttons are windows 0x1012010 + column (AbilityBar_ptr +0xD0), the combat row's 0x1012020 + column.
+* ✔ (runtime, `coop.social abil -1`, creature_cadian) the players' creature has sing (kind 1) and dance (kind 3), 1 point
+  each (species 065CB8B4, 11 abilities). ? In the first exploration run both avatars had 13 abilities with all four
+  kinds (0x24 points 4, 0x23 2, 0x25 3, 0x22 3, the same list as the family NPCs 06538F92): why the avatar's ability
+  list differed between two cold starts of the same fixture is not known. Seen on one screen: a social row with an
+  empty column (AbilityBar_Rebuild also asks 0xD1FA20, not looked at).
+* ✔ (runtime, `coop.social herds`: every nest herd's prompt candidates, species profile +0x7A4 indices into +0x6D4) the
+  `creature` fixture's nests prompt only to sing (kind 1, points 1): every older social test passed. In creature_cadian
+  the nests near the start do too, but from about 175 m on most nests prompt to charm, dance or pose as well (levels up
+  to 5 far away).
+* The bug: social.cpp took `+0x10 == 1` as "a social ability": the bar's hook (AbilityBar_Use) passed a charm / dance /
+  pose to the game (which does nothing without its own session), and the keys 2-4 found no "second social ability".
+  The host's prompt picks and its answer check were right (they compare +0x10), so such a prompt could only be answered
+  by singing (0.1 of its points) and the game failed after the list ("It does not want to socialize now").
+* Fix `social.kinds` (social.cpp): every kind 1-4 is a social ability for the bar's hook; the key k plays the ability
+  of kind k. `coop.social` (guest) prints `prompt_type= prompt_kind=` of the last prompt and `kind_acts=` (actions sent
+  per kind 0-4); `coop.social herds` lists the herds with `kinds=<kind>:<type>:<points>,...`.

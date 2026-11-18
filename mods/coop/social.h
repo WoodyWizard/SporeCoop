@@ -45,6 +45,8 @@ extern unsigned g_stage_msg_win; // 0x60B4123 (a social win) seen by the creatur
 std::string games_dump(); // coop.social games (tests, BUG-0831): the host's social games, their prompts' animations
 std::string meter_dump(); // coop.social meter (tests, BUG-0179): the game's social meter object
 bool debug_answer(uint16_t id, uint32_t type); // coop.social answer <npc id> <hex type> (tests, BUG-0525)
+std::string bar_dump(); // coop.social bar (tests, BUG-1242): the HUD bar's slots, their abilities' kinds and buttons
+std::string herds_dump(); // coop.social herds (tests, BUG-1242): nest herds and their prompt kinds
 std::string abilities_dump(int id); // coop.social abil <npc id | -1> (tests, BUG-0525): abilities and prompt candidates
 std::string relations_dump(); // coop.social rel (tests, BUG-0462): each NPC's relation to the own avatar as the game sees it
 bool debug_send_goal(uint32_t crt_instance, int outcome, float dna); // guest, tests: a goal card's reward (K_GOAL)

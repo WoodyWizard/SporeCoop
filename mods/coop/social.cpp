@@ -53,6 +53,7 @@ static constexpr uint32_t kFailAnim = 0x53685D8Fu; // the NPC's animation of a f
 static uint32_t g_prompts_sent = 0, g_prompts_in = 0, g_answers = 0, g_answers_wrong = 0, g_answers_early = 0,
                 g_prompt_fails = 0;
 static uint32_t g_prompt_anim = 0;  // guest: the animation of the last prompt it got
+static uint32_t g_prompt_type = 0, g_prompt_kind = 0; // guest: its ability type (+8) and social kind (+0x10; tests)
 static int g_prompt_npc = -1;       // guest: the proxy it was for
 static double g_prompt_at = -100;   // guest: when
 
@@ -383,17 +384,37 @@ bool goal_dna(float delta)
     return true;
 }
 
-// abilities of a creature: vt 0xB0 count, vt 0xB4 get(i); ability +8 type, +0x10 1 on the social
-// ones (sing, ...; docs/re/creature.md 8)
+// abilities of a creature: vt 0xB0 count, vt 0xB4 get(i); ability +8 type, +0x10 the social kind (docs/re/creature.md 8,
+// docs/re/creature.md#creature-social-kinds)
 static int ability_count(void* c) { return c ? vcall<int>(c, 0xB0 / 4) : 0; }
 static void* ability(void* c, int i) { return vcall<void*>(c, 0xB4 / 4, i); }
 
-static int social_ability(void* c, int slot) // index of the slot-th social ability, -1
+// BUG-1242 (players' video: "the second player cannot befriend the creatures"): an ability's +0x10 (property 0x0743BDD6,
+// cCreatureAbility::Parse 0x4D9310) is the social KIND, not a "social" flag: 1 sing (type 0x25), 2 charm (0x22), 3 dance
+// (0x24), 4 pose (0x23), 0 every other ability (docs/re/creature.md#creature-social-kinds). The guest's game took only kind
+// 1 as a social ability (the bar's hook and the keys 1-4): a click on charm or pose, or the keys 2-4, next to an engaged
+// animal did nothing, so a prompt of those kinds (the NPC's species profile picks them, any later nest has them) could
+// only be answered by singing (a tenth of the points) and the social game failed. The fixtures' nests prompt only to
+// sing, so every test passed. Now every social kind is taken, and the key k is the bar's social slot k (the ability of
+// kind k). `coop.fix social.kinds off`: only kind 1 (0.7.15)
+static bool g_kinds_fix = true;
+COOP_FIX("social.kinds", "BUG-1242", g_kinds_fix, "creature: a guest answers a social game with every social ability (charm, dance, pose, not only sing)");
+static uint32_t g_kind_acts[5]; // guest: actions sent per social kind 0..4 (tests)
+
+static bool is_social(void* a) // a social ability of the creature (sing, charm, dance, pose)
+{
+    uint32_t k = a ? field<uint32_t>(a, 0x10) : 0;
+    return g_kinds_fix ? k >= 1 && k <= 4 : k == 1;
+}
+
+static int social_ability(void* c, int slot) // the ability of the key slot+1 in the social stance, -1
 {
     int n = ability_count(c);
     for (int i = 0, k = 0; i < n && i < 64; i++) {
         void* a = ability(c, i);
-        if (a && field<uint32_t>(a, 0x10) == 1 && k++ == slot)
+        if (!a)
+            continue;
+        if (g_kinds_fix ? field<uint32_t>(a, 0x10) == (uint32_t)slot + 1 : field<uint32_t>(a, 0x10) == 1 && k++ == slot)
             return i;
     }
     return -1;
@@ -434,7 +455,9 @@ static bool act_index(int idx)
         return false;
     if (idx < 0 || !play_ability(av, idx))
         return false; // no such ability, cooling down or no energy
-    send_act((uint16_t)g_engaged, field<uint32_t>(ability(av, idx), 8));
+    void* a = ability(av, idx);
+    send_act((uint16_t)g_engaged, field<uint32_t>(a, 8));
+    g_kind_acts[std::min<uint32_t>(field<uint32_t>(a, 0x10), 4)]++;
     g_engaged_at = g_last_act = H->time_seconds();
     return true;
 }
@@ -461,7 +484,7 @@ static void SK_CDECL h_BarUse(int idx)
                    : nullptr;
     if (av && a_AbilityMode && cdecl_call<int>(a_AbilityMode) == 0 && idx >= 0 && idx < ability_count(av)) {
         void* a = ability(av, idx);
-        if (a && field<uint32_t>(a, 0x10) == 1) { // a social ability (sing, dance, ...)
+        if (is_social(a)) { // a social ability (sing, charm, dance, pose; BUG-1242)
             if (H->time_seconds() - g_last_act < 0.5 || act_index(idx)) {
                 g_bar_acts++; // (a key press also reaches here: the poll sent it a moment ago)
                 return;
@@ -1183,9 +1206,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     if (kind == K_PROMPT && is_guest()) { // BUG-0525: the NPC's prompt: its mirror performs it
         int i = r.u8(), n = r.u8();
         uint32_t type = r.u32(), key = r.u32(), anim = r.u32();
-        (void)type; (void)key;
         if (!r.ok())
             return;
+        g_prompt_type = type;
+        g_prompt_kind = key;
         g_prompts_in++;
         void* px = npc::proxy(id);
         if (px && a_PlayReaction && !game::is_dead(px))
@@ -1272,7 +1296,7 @@ LIFECYCLE_HOOK("social.session", lifecycle::kSessionEnd, -55, [](const lifecycle
 
 std::string status()
 {
-    char b[640];
+    char b[900];
     if (is_host())
         snprintf(b, sizeof b,
                  "social(host): acts_in=%u impressed=%u refused=%u games=%u species_tx=%u goal_dna_paid=%u "
@@ -1285,10 +1309,12 @@ std::string status()
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
                  "events_dropped=%u cards_refreshed=%u goal_dna_sent=%u social_hits_dropped=%u bar_acts=%u bar_passed=%u "
-                 "prompts_in=%u prompt_npc=%d prompt_anim=%08X prompt_age=%.1f table_forgot=%u\n",
+                 "prompts_in=%u prompt_npc=%d prompt_anim=%08X prompt_age=%.1f table_forgot=%u prompt_type=%X prompt_kind=%u "
+                 "kind_acts=%u,%u,%u,%u,%u\n",
                  g_engaged, g_engages, g_acts_sent, g_results_in, g_table_rx, g_table_fixed, g_events_dropped,
                  g_cards_refreshed, g_goal_dna_dropped, g_social_hits_dropped, g_bar_acts, g_bar_passed, g_prompts_in,
-                 g_prompt_npc, g_prompt_anim, H->time_seconds() - g_prompt_at, g_table_forgot);
+                 g_prompt_npc, g_prompt_anim, H->time_seconds() - g_prompt_at, g_table_forgot, g_prompt_type, g_prompt_kind,
+                 g_kind_acts[0], g_kind_acts[1], g_kind_acts[2], g_kind_acts[3], g_kind_acts[4]);
     return b;
 }
 
@@ -1449,6 +1475,77 @@ std::string abilities_dump(int id)
         out += "\n";
     }
     return out;
+}
+
+// tests (BUG-1242): every nest herd's species and the social kinds (+0x10) of its prompt candidates (species profile
+// +0x7A4: indices into its ability vector +0x6D4), with the herd's home (+0x34) and its distance to the own avatar
+std::string herds_dump()
+{
+    struct U {
+        std::string out;
+        net::Vec3 a;
+    } u{{}, game::avatar() ? game::position(game::avatar()) : net::Vec3{}};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* p) {
+            auto* u = (U*)p;
+            if (noun != game::kHerdNoun || !game::object_alive(o) || IsBadReadPtr(o, 0x220) || u->out.size() > 12000)
+                return true;
+            uint8_t* sp = field<uint8_t*>(o, 0xA4);
+            if (!sp || IsBadReadPtr(sp + 0x6D4, 8) || IsBadReadPtr(sp + 0x7A4, 8))
+                return true;
+            void** a0 = *(void***)(sp + 0x6D4);
+            void** a1 = *(void***)(sp + 0x6D8);
+            int na = a0 && a1 > a0 && a1 - a0 < 64 ? (int)(a1 - a0) : 0;
+            int* p0 = *(int**)(sp + 0x7A4);
+            int* p1 = *(int**)(sp + 0x7A8);
+            auto& h = field<net::Vec3>(o, 0x34);
+            void** m0 = field<void**>(o, 0x40);
+            void** m1 = field<void**>(o, 0x44);
+            void* m = m0 && m1 > m0 && !IsBadReadPtr(m0, 4) ? m0[0] : nullptr;
+            char b[200];
+            snprintf(b, sizeof b, "herd %p species=%08X members=%d home=(%.1f %.1f %.1f) dist=%.0f kinds=", o,
+                     m && game::object_alive(m) ? game::species_key(m).instance : 0u, m1 >= m0 ? (int)(m1 - m0) : -1, h.x,
+                     h.y, h.z, net::dist(h, u->a));
+            u->out += b;
+            for (int* q = p0; q && q < p1 && q - p0 < 16 && !IsBadReadPtr(q, 4); q++) {
+                uint8_t* ab = *q >= 0 && *q < na && !IsBadReadPtr(a0 + *q, 4) ? (uint8_t*)a0[*q] : nullptr;
+                if (ab && !IsBadReadPtr(ab, 0x40))
+                    snprintf(b, sizeof b, "%u:%X:%.0f,", *(uint32_t*)(ab + 0x10), *(uint32_t*)(ab + 8), *(float*)(ab + 0x3C));
+                else
+                    snprintf(b, sizeof b, "?,");
+                u->out += b;
+            }
+            u->out += "\n";
+            return true;
+        },
+        &u);
+    return u.out.empty() ? std::string("no herds\n") : u.out;
+}
+
+// tests (BUG-1242): the HUD bar's slots (AbilityBar_ptr: row * 0x28 + column * 8 = the avatar's ability index, rows
+// +0xC8, columns +0xCC, the buttons of row 0 / 1 are windows +0xD0 / +0xD4 + column) with each ability's type and kind
+std::string bar_dump()
+{
+    static uintptr_t bp = H->sym("SporeCoop::AbilityBar_ptr");
+    void* av = game::avatar();
+    uint8_t* bar = bp ? *(uint8_t**)bp : nullptr;
+    if (!av || !bar || IsBadReadPtr(bar, 0xD8))
+        return "no bar\n";
+    std::string out;
+    char b[160];
+    int rows = std::clamp(*(int*)(bar + 0xC8), 0, 5), cols = std::clamp(*(int*)(bar + 0xCC), 0, 5);
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < cols; c++) {
+            int idx = *(int*)(bar + r * 0x28 + c * 8);
+            void* a = idx >= 0 && idx < ability_count(av) ? ability(av, idx) : nullptr;
+            if (!a)
+                continue;
+            uint32_t win = r < 2 ? *(uint32_t*)(bar + (r ? 0xD4 : 0xD0)) + c : 0;
+            snprintf(b, sizeof b, "slot row=%d col=%d idx=%d type=0x%X kind=%u win=%08X\n", r, c, idx, field<uint32_t>(a, 8),
+                     field<uint32_t>(a, 0x10), win);
+            out += b;
+        }
+    return out.empty() ? "bar empty\n" : out;
 }
 
 bool debug_goto(uint16_t id) // tests: the guest's avatar steps next to proxy #id (2.5 m)

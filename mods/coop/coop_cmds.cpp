@@ -916,6 +916,14 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", social::abilities_dump(atoi(argv[2])).c_str());
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "bar")) { // tests (BUG-1242): the HUD bar's slots with their abilities' kinds
+        SAY("%s", social::bar_dump().c_str());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "herds")) { // tests (BUG-1242): nest herds, their species and prompt kinds
+        SAY("%s", social::herds_dump().c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "games")) { // tests (BUG-0831): the host's social games and their prompts
         SAY("%s", social::games_dump().c_str());
         return 0;
