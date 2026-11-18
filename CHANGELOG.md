@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.15.1] - 2026-11-18
+
+Fixes for problems seen in a video of two players: a black screen for one player while the other was in the
+evolution editor, both players ending up with the same creature after leaving the water, and the second player not
+being able to befriend some animals. Both players should update: the fixes are in the host's and the guest's game.
+
 ### Fixed
 - Cell -> Creature: a guest whose game was slow to get the host's new Creature world (a slow connection or PC) now gets
   its own Creature editor when it arrives and makes its own creature; before, the host's editor vote ran out while

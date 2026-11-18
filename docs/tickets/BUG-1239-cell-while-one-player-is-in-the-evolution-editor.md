@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video
 role: host
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.1
 branch: fix/w52-evoeditor
 commits: ac41e25c
 tests: evo_screens_cell_both, evo_screens_cell, evo_screens_cell_noready, evo_screens_cell_one, evo_screens_switch_slow
@@ -68,3 +68,4 @@ waiting for the guest in its editor and the host's picture is not black for 20 s
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w52-evoeditor): the black screens measured on every evolution path; fixed the host's vote waiting for a guest in its own editor (core.vote_guest_editor); the slow Cell -> Creature path is BUG-1240.
+- 2026-11-18: released in 0.7.15.1.

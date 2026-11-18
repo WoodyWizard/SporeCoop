@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video
 role: guest
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.1
 branch: fix/w52-evoeditor
 commits: 1dc8adbf
 tests: evo_screens_switch_slow, evo_screens_switch, evo_screens_switch_noready, evo_screens_switch_lowfps
@@ -62,7 +62,14 @@ screens shot every 2 s; then the avatar keys and what each game draws for the pa
   taken there): out/lab/20261118-095451 evo_screens_switch, out/lab/20261118-100540 evo_screens_switch_noready,
   out/lab/20261118-100543 evo_screens_switch_lowfps, all OK.
 
+* Note (2026-11-18, integration on rel/0.7.15.1): the lab marks every run of evo_screens_switch_slow FAILED for two
+  checks outside this fix: the lab's sync-check gate (about 300 Cell objects missing on the guest under the 512 kbit/s
+  link, in every run since the test exists, the PASS runs above too) and, since 907f5ad2 measures the picture beside
+  the co-op window, the host's 60 s of black while its landfall editor waits for the slow guest's arrival (out/lab/
+  20261118-110806, -121937; behaviour of 0.7.15 too, BUG-1245). The checks of this fix (the guest's own editor, two
+  species) pass in those runs.
 
 ## History
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w52-evoeditor): reproduced over a slow link (the landfall vote runs out before the guest arrives), fixed with core.own_editor_arrival (FAIL/PASS runs above).
+- 2026-11-18: released in 0.7.15.1.

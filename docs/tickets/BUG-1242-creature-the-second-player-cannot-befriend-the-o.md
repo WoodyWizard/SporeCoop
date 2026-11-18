@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video
 role: guest
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15.1
 branch: fix/w52-social
 commits: 21fe1d86 3dfa164f
 tests: creature_social_kinds, creature_social_kinds_keys (tools/tests/coop_creature_social_kinds.py)
@@ -68,3 +68,4 @@ flag), the species table counts it.
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w52-social): root cause found (the social kind +0x10 read as a flag), fixed (social.kinds), FAIL/PASS
   twin creature_social_kinds (+ _keys) on the campaign's world.
+- 2026-11-18: released in 0.7.15.1.

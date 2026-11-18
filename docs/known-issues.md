@@ -344,3 +344,14 @@ anchor so other docs can link to it:
 * Why: the host's game fills the world (Simulator::Cell::PopulateTiles) from the world's one player species, and the
   guest's game shows the host's pool (cellsync.cpp). The world has no second player species.
 * Planned: an own species per player in the shared world (the 0.8 Rivals work).
+
+## Cell -> Creature: over a slow connection the host sees a black screen for up to a minute before its first editor (2026-11-18, test evo_screens_switch_slow)
+<a id="issue-landfall-host-black-wait"></a>
+
+* What happens: after the switch vote the host's game enters Creature and its first Creature editor waits up to 60 s
+  for a guest that is still receiving the host's world; the host sees black (and the co-op window) meanwhile.
+* Reproduce: `lab.py run evo_screens_switch_slow` (the guest's link at 512 kbit/s): "the host's screen is not black
+  ... (longest black 60 s)".
+* Known: since 0.7.15.1 the late guest gets its own editor when it arrives (BUG-1240), so the wait may no longer be
+  needed; being worked on with the mating call's black screen.
+* Ticket: BUG-1245
