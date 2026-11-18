@@ -9123,3 +9123,7 @@ only with sing (docs/re/creature.md#creature-social-kinds).
   (the game's "Save as new or replace <the world's species>"), and (BUG-1258) that the guest's log has no notice
   "everybody gets the new body" while it makes its own creature. `--own-keep <mask>` (exploration) sets
   `coop.editreq keep` on the guest with `creations.own_editor_cancel` off.
+* `evo_screens_cell_noready` (BUG-1263): with the mating rounds gone the host's black behind a vote nobody answers is one
+  run of up to 60 s; the check accepts it up to the vote's end (the flashes of the rounds used to split it).
+  `evo_screens_switch_noready` saw the guest's stage-entry black at 22 s once (limit 20 s) under load: rerun before
+  blaming a change.

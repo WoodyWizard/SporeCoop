@@ -64,7 +64,9 @@ Off: as 0.7.15.
 * Related, kept: evo_screens_cell_both, cell_editor_budget OK (out/lab/20261118-125348); evo_screens_cell, switch_vote
   OK (out/lab/20261118-125715). With the flicker gone, evo_screens_cell_noready shows the host's black behind a vote
   nobody answers as one 54 s run: the vote's own wait (BUG-1263, open with a design sketch), the test accepts it up to
-  the vote's end.
+  the vote's end: OK out/lab/20261118-132953. evo_screens_switch_noready failed once on the guest's stage-entry black
+  (22 s, the same timeline as before the fix: the guest arrives before the host's editor) and passed on its rerun
+  out/lab/20261118-133008; evo_screens_switch and _lowfps OK (out/lab/20261118-131548).
 
 ## History
 - 2026-11-18: opened.
