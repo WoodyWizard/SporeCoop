@@ -224,7 +224,16 @@ def part_cell(host, guest, ck, ready, scr):
     ck(wait(lambda: 'Cell' in mode(host), 40), f"the host is back in its pool ({mode(host).strip()})")
     t_back = time.time()
     time.sleep(40)
-    check_black(ck, sh, 'host', 'while its vote runs', t_vote, t_ed)
+    if ready == 'none':
+        # the guest never answers: the host's Cell vote holds its editor for its 60 s and the host's picture is black
+        # behind the vote window meanwhile (docs/re/cell.md#cell-vote-black-screen, BUG-1263). Before BUG-1245 the
+        # repeated mating scenes drew the pool every ~10 s, which split the black into short runs: the black has to
+        # end with the vote, the window must be on it
+        lb = sh.longest_black(t_vote, t_ed)
+        print(f'  host screen while its vote runs: {sh.text(t_vote, t_ed)}', flush=True)
+        ck(lb <= 66, f"the host's black behind its vote ends with the vote (longest black {lb:.0f} s, the vote 60 s)")
+    else:
+        check_black(ck, sh, 'host', 'while its vote runs', t_vote, t_ed)
     check_black(ck, sg, 'guest', 'while the host\'s vote runs', t_vote, t_ed)
     check_black(ck, sg, 'guest', 'while the host is in its editor', t_ed, t_back)
     check_black(ck, sg, 'guest', 'after the host\'s editor', t_back)
