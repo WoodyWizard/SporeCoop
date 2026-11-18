@@ -9,6 +9,9 @@
 - Cell: when the host calls a mate while the guest is in its own cell editor, the host's evolution starts at once;
   before, the host's screen stayed black for a minute waiting for the guest's "I'm ready", which a player in an editor
   cannot press (BUG-1239).
+- Creature: the second player can befriend animals that ask for a charm, a dance or a pose: before, only singing
+  counted for that player, the other social buttons and the keys 2-4 did nothing, and such an animal could not be
+  impressed (BUG-1242).
 
 ## [0.7.15] - 2026-11-18
 
