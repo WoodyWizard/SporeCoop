@@ -1328,6 +1328,15 @@ std::string debug(const std::vector<std::string>& a)
     if (!a.empty() && a[0] == "form_pace") // tests (BUG-0571): the last decision of tribe.form_pace
         return "form_pace fix=" + std::to_string((int)g_form_pace_fix) + " held=" + std::to_string(g_forms_paced) + " last: " +
                (g_pace_last.empty() ? "-" : g_pace_last);
+    // form_species: tests (BUG-1233), what the NPC tribe controller's FormTribe reads before it forms (nothing formed)
+    if (!a.empty() && a[0] == "form_species" && a_NpcCtrl) {
+        void* ctrl = skg::cdecl_call<void*>(a_NpcCtrl);
+        FormSpecies fs;
+        if (!form_species_state(ctrl, fs))
+            return "form_species: unreadable (no controller, property list or species list)";
+        return "form_species fix=" + std::to_string((int)g_form_species_fix) + " held=" + std::to_string(g_forms_past) +
+               " " + g_form_species_last;
+    }
     // form: tests (BUG-0483), this game's NPC tribe controller forms its next tribe now (what it does during play)
     if (!a.empty() && a[0] == "form" && o_Form && a_NpcCtrl) {
         void* ctrl = skg::cdecl_call<void*>(a_NpcCtrl);
@@ -1368,10 +1377,16 @@ std::string debug(const std::vector<std::string>& a)
             },
             &cnt);
         why += " (tribe nouns " + std::to_string(cnt.nouns) + ", tribe spawn markers " + std::to_string(cnt.markers) + ")";
-        uint32_t blocked0 = g_forms_blocked;
+        // BUG-1233: what FormTribe itself reads: its tribe nouns against the property list and its species list (with
+        // as many tribes as species it reads past the list: tribe.form_species holds it)
+        FormSpecies fs;
+        why += form_species_state(ctrl, fs) ? " (" + g_form_species_last + ")" : " (species list: unreadable)";
+        uint32_t blocked0 = g_forms_blocked, past0 = g_forms_past;
+        form_species_recheck(); // decided for this call, not by the update's last second
         h_Form(ctrl, 0);
         return "tribes " + std::to_string(before) + " -> " + std::to_string(all_tribes().size()) + why +
                (g_forms_blocked != blocked0 ? " (blocked: tribe.guest_tribes)" : "") +
+               (g_forms_past != past0 ? " (held: tribe.form_species)" : "") +
                (g_pace_last.empty() ? "" : " (pace: " + g_pace_last + ")");
     }
     // markers: tests (BUG-0332), the NPC tribe spawn markers of this game (noun 0x36BE27E, +0x108 == 0x57F09E5E: where the

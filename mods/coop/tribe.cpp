@@ -2741,8 +2741,83 @@ static bool pace_holds(double now)
     return g_pace_hold;
 }
 
+// BUG-1233: NpcTribeController_FormTribe 0xCC6440 takes the next tribe's species from the controller's list
+// (+0xD0..+0xD4) at index min(size, tribes - 1) (0xCC6521: `cmp size, tribes - 1; jl` keeps the size), not
+// min(size - 1, tribes - 1): with as many tribes as species or more, it reads the dword after the list's end and
+// passes it + 0x504 to IBakeManager vt 0x1C (0x406EF0 reads [key + 8]). Its only guard before is the property list
+// (TribeProps_ptr, key at +0xFC): tribes x 2 <= its count. The list is built per pair of that property list, only for
+// the archetypes the species manager has a species for (0xCC6160), or from the saved keys (+0x7C, 0xCC7140), so it can
+// hold fewer than count / 2. The game's update (0xCC6A90) calls FormTribe once a second with 3-4 tribes (5 after three
+// goals): from then on every call read garbage. Seen in a 4-player campaign (final check 20261117-154911): 454 faults
+// the game's handler caught (one a second from the fourth village's fall on), the frame cut off on three test
+// commands, and the fourth crashed the host. `coop.fix tribe.form_species off`: the game's own read (0.7.14).
+bool g_form_species_fix = true;
+COOP_FIX("tribe.form_species", "BUG-1233", g_form_species_fix,
+         "tribe: the NPC tribe controller forms no village once its list of species for new villages is used up (it "
+         "read past the list and the game could crash)");
+uint32_t g_forms_past;
+std::string g_form_species_last;
+
+bool form_species_state(void* ctrl, FormSpecies& s)
+{
+    s = FormSpecies{};
+    static uintptr_t a_Props = H->sym("SporeCoop::TribeProps_ptr"), a_Arr = H->sym("App::Property::GetArrayUInt32"),
+                     a_Mgr = H->sym("Simulator::cGameNounManager::Get"),
+                     a_Data = H->sym("Simulator::cGameNounManager::GetData"),
+                     a_Cb1 = H->sym("SporeCoop::MissionNouns_Cb1"), a_Cb2 = H->sym("SporeCoop::MissionNouns_Cb2"),
+                     a_Cb3 = H->sym("SporeCoop::TribeNouns_Cb3"), a_Cb4 = H->sym("SporeCoop::TribeNouns_Cb4");
+    if (!ctrl || !skg::readable((uint8_t*)ctrl + 0xD0, 0x30) || !a_Props || !a_Arr || !a_Mgr || !a_Data || !a_Cb1 ||
+        !a_Cb2 || !a_Cb3 || !a_Cb4)
+        return false;
+    // the tribe nouns as FormTribe counts them (0xCC6478: GetData with the same callbacks, (+8 - +4) / 4)
+    void* nm = skg::cdecl_call<void*>(a_Mgr);
+    void* list = nm ? skg::thiscall<void*>(a_Data, nm, a_Cb1, a_Cb2, a_Cb3, a_Cb4, kTribeNoun) : nullptr;
+    if (!skg::readable(list, 12))
+        return false;
+    s.tribes = (int)((F<uintptr_t>(list, 8) - F<uintptr_t>(list, 4)) / 4);
+    void* props = *(void**)a_Props;
+    int n = 0;
+    void* data = nullptr;
+    if (!props || !skg::cdecl_call<char>(a_Arr, props, F<uint32_t>(ctrl, 0xFC), &n, &data))
+        return false;
+    s.slots = n;
+    void** lb = F<void**>(ctrl, 0xD0);
+    void** le = F<void**>(ctrl, 0xD4);
+    s.species = le >= lb ? (int)(le - lb) : -1;
+    // FormTribe reads the list only past its property-list guard and with a non-empty list (0xCC650C)
+    s.past = s.species > 0 && s.tribes * 2 <= s.slots && s.tribes - 1 >= s.species;
+    char b[160];
+    snprintf(b, sizeof b, "tribes %d, property list %d (x2 needed %d), species list %d: %s", s.tribes, s.slots,
+             s.tribes * 2, s.species, s.past ? "the next species would be read past the list" : "in the list");
+    g_form_species_last = b;
+    return true;
+}
+
+static double g_species_checked = -10;
+static bool g_species_hold;
+static bool species_holds(void* ctrl, double now)
+{
+    if (!g_form_species_fix || !a_NpcCtrl)
+        return false;
+    // the update calls again every frame while it is held (its timer is reset only inside FormTribe): decided once a
+    // second; a test command (coop.tribe form) decides now
+    if (now - g_species_checked < 1.0 && now >= g_species_checked)
+        return g_species_hold;
+    g_species_checked = now;
+    FormSpecies s;
+    g_species_hold = form_species_state(ctrl, s) && s.past;
+    return g_species_hold;
+}
+void form_species_recheck() { g_species_checked = -10; }
+
 void* SK_THISCALL h_Form(void* self, int arg)
 {
+    if (species_holds(self, H->time_seconds())) {
+        if (g_forms_past++ % 600 == 0)
+            H->log(M, SK_INFO, "tribe: the NPC tribe controller would read its next species past its list: no village "
+                               "formed (%s) (tribe.form_species)", g_form_species_last.c_str());
+        return nullptr;
+    }
     if (g_guest_tribes_fix && is_guest() && game::mode_id() == modes::kTribe) {
         if (g_forms_blocked++ < 5)
             H->log(M, SK_INFO, "tribe: this game's NPC tribe controller would form a tribe: not on a guest (tribe.guest_tribes)");
