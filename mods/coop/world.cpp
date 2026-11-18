@@ -166,7 +166,8 @@ static void install_intro_hook();
 // quick fixture load, a guest that joins at once) never got the video's end message 0x49731AD in the menu (BUG-0626
 // refuses its GGE_intro in the stage): back in the galaxy menu its main menu panel (Galactic Adventures, ...) stays
 // hidden. The video's own end message, sent here as StopMovie 0xFD79C0 sends it (MessageSend(0x49731AD, null, 0)), makes
-// the menu play its intro and show the panel.
+// the menu play its intro and show the panel. Since world.menu_intro_return (BUG-1260) the mod does this by itself
+// (with the skip); the command stays for diagnosis.
 static int c_menuintro(void*, int, const char* const*, SkOut* out)
 {
     if (game::mode_id() != modes::kMenu) {
@@ -222,7 +223,7 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     H->command_add(M, "coop.menuslot", "coop.menuslot <GameN> - tests: the galaxy menu shows that save slot's planets (BUG-0676)",
                    c_menuslot, nullptr, SK_CMD_OUTSIDE_FRAME);
     H->command_add(M, "coop.menuintro", "coop.menuintro - tests: in the galaxy menu, the start-up video's end message (the menu plays its "
-                   "intro and shows its main menu panel; BUG-1254)", c_menuintro, nullptr, SK_CMD_OUTSIDE_FRAME);
+                   "intro and shows its main menu panel; BUG-1254, BUG-1260)", c_menuintro, nullptr, SK_CMD_OUTSIDE_FRAME);
     install_intro_hook(); // BUG-0626
 }
 

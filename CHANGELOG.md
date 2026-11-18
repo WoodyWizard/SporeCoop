@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Galaxy menu: a player who joined (or loaded a game) while Spore's start-up video was still playing no longer comes
+  back to the galaxy menu without its main menu (no Play, Galactic Adventures, Sporepedia or Co-op entries); the menu
+  is complete again at once (BUG-1260).
 - Galactic Adventures: two players who start the same adventure (the tutorial too) after playing the Creature stage
   together no longer crash: the partner's creature in the adventure broke the adventure's start (the guest's game
   stopped, or the adventure never began). The partner is now shown as its captain, at the captain's size, instead of

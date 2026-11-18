@@ -3319,3 +3319,32 @@ into the cell of the spot through the game's own AddPlant / AddAnimal (player 0)
 after its landing; once per spot and terrain: a planet loaded again is put again), and makes the drop's own creature
 (PlanetEco_DropAnimal, on the ground under the point) where it has none of that species. Off: the record's lists only,
 the old herd spawn (an epic).
+
+## The galaxy menu's intro state and its main menu panel (2026-11-18, fix/w53-menuintro)
+<a id="space-menu-intro-state"></a>
+
+* ✔ (Ghidra, GOG 2024) `GalaxyGameEntry_IntroMessages` 0xDEA820 (thiscall(handler, msg, data), ret 8) keeps the intro
+  state at [GalaxyGameEntry_ptr 0x16A1344] +0x1EC: 0x61D72DE (the player's Escape on the video, `CheckEscape`) -> 3;
+  0x49731AD (the video's end, `StopMovie`) -> 4 when the state is 3 (no intro), else 5 and PlayCinematic "GGE_intro"
+  (its result ignored); 0x44F1189 whose data +8 is the GGE_Intro id (`EndCinematic`) -> 0xAD7DC0(0) (hides the cinematic
+  manager's letterbox windows, +0x44), 6, posts 0x66F8F25 and releases [gge +0x1AC]; 0x66F6B6F (the skip, also posted by
+  `GalaxyGameEntry_SplashEnd` when gge +0x1F3 is set) -> the same without the id check. The key handler 0xDEA5B0: Escape
+  while the video plays (and IAppSystem vt 0x54) -> SplashEnd, 6, posts 0x66F8F25.
+* ✔ (Ghidra) The menu's update 0xDEAF70 (thiscall(this, float dt)): the splash tick, then, only when no movie plays and
+  the state is 6, the "UI/DBCheck" once (the lanes' "Network play disabled" box) and then 0xDE9550. 0x66F8F25 is also
+  taken by the music state handler 0xEA9DA0 (menu music 0xF9FE9926). ? Which call shows the main menu panel 0x0615A5FF
+  at state 6 was not traced (0xDF9740, vt +0x18 of the menu UI state vtable 0x147EF70, shows it when gge +0x108 == 2).
+* ✔ (runtime, lab 20261118-135136, `world.menu_intro_return` off) the lab's quick load: the host's video ended in the
+  Creature stage, the handler set 5 and BUG-0626 refused the intro there ("would start outside the menu"). The state
+  stayed 5 for good; back in the galaxy menu (`coop.menu`) the panel 0x0615A5FF stayed hidden (fl=0x2): only the galaxy,
+  the Spore button and Register (key frame 01_menu_host.jpg). The guest of the same run (joined after its video) had 6
+  and its panel. Before BUG-0626 (0.7.8) the intro played in the stage and `menu_intro_tick` ended it with EndCinematic:
+  0x44F1189 set 6, so this is a side effect of the 0.7.9 refusal.
+* Who meets it (inferred): a load that leaves the menu before its video ended (~16 s): the lab's fixture loads, a
+  player who opens the co-op window with F9 during the video and joins (the panel and its Co-op entry are not up yet).
+* ✔ (runtime) `coop.menuintro` (MessageSend 0x49731AD in the menu) plays the intro there and the panel comes ~10 s
+  later; the skip 0x66F6B6F (MessagePost, as the game posts it) gives 6 and the panel within a second.
+* Fix BUG-1260 (`world.menu_intro_return`, world.cpp): in the galaxy menu, state 5 with no cinematic playing and no video
+  for 1 s gets the skip 0x66F6B6F outside the frame (log "back in the galaxy menu with its intro never ended";
+  `coop.status` "menu intro ended at the return N"). Lab 20261118-135316: the host's panel shown at once (16 s into the
+  session), 01_menu_host.jpg shows Play / Create / Share / Galactic Adventures / Co-op.

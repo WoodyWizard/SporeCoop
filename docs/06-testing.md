@@ -9156,7 +9156,8 @@ BUG-1241, BUG-1250, BUG-1252, BUG-1253 (creature fixture, warm; docs/re/creature
 <a id="testing-adventure-after-creature"></a>
 
 * `adventure_tutorial` (`coop_adventure_tutorial.py`, BUG-1254, cold, ~12 min, fixture creature): both games in the
-  Creature fixture (each has the partner's creation), `coop.menu` on both, `coop.menuintro` (the menu panel, BUG-1260),
+  Creature fixture (each has the partner's creation), `coop.menu` on both, the menu panel shown (BUG-1260: since
+  world.menu_intro_return it comes by itself, the test no longer sends `coop.menuintro`),
   one place id (`coop.adventure place`, the keys are equal anyway in most runs), both start the tutorial adventure at
   once (adventure_start.py), Enter on both. Checks: play state 3 on both (a fault in Initialize -> SetCurrentAct leaves
   it at 0), no fault, a puppet is a captain (not the partner's Creature-stage creature) at the captain's size x 1.15.
@@ -9170,4 +9171,17 @@ BUG-1241, BUG-1250, BUG-1252, BUG-1253 (creature fixture, warm; docs/re/creature
   `coop.wobj ornmem <p>` (its 0x260 bytes and its reward), `coop.menuintro`, `coop.status` puppet line with
   `scale=` in an adventure, `coop.avatar` `scale=` of the captain.
 * Pitfall: the lab's games load their fixture before the galaxy menu's start-up video ends; back in the galaxy menu
-  they show no main menu panel until `coop.menuintro` (BUG-1260): adventure_start.py's clicks are lost otherwise.
+  they showed no main menu panel until `coop.menuintro` (BUG-1260, fixed by world.menu_intro_return; with that switch
+  off adventure_start.py's clicks are lost).
+
+## The galaxy menu's panel after a quick load (2026-11-18, fix/w53-menuintro)
+<a id="testing-menu-panel"></a>
+
+* `menu_panel` (`coop_menu_panel.py`, BUG-1260, cold, ~1 min, fixture creature): the lab's quick load leaves the menu
+  before its start-up video ends (the host in every run so far; the guest joins later and has its panel anyway); both
+  games go back to the galaxy menu with `coop.menu` (the game's own quit); for up to 25 s each must show "Galactic
+  Adventures" (`uifind.shown`, `coop.ui find`); the intro state [[0x16A1344] +0x1EC] is printed (5 = stuck, 6 = done).
+  A key frame of both menus. INCONCLUSIVE when no game had its intro refused in the stage (`coop.status` "not
+  started" 0). SPORE_FIX_OFF=world.menu_intro_return fails (the host's panel never comes).
+* The lanes' galaxy menu shows the game's "Network play disabled" box (the DBCheck at intro state 6) over the galaxy:
+  normal offline, not a bug of the test.
