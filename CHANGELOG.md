@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+- Cell -> Creature: a guest whose game was slow to get the host's new Creature world (a slow connection or PC) now gets
+  its own Creature editor when it arrives and makes its own creature; before, the host's editor vote ran out while
+  that guest was still loading, it never got an editor and ended up playing the host's creature (BUG-1240).
+- Cell: when the host calls a mate while the guest is in its own cell editor, the host's evolution starts at once;
+  before, the host's screen stayed black for a minute waiting for the guest's "I'm ready", which a player in an editor
+  cannot press (BUG-1239).
+
 ## [0.7.15] - 2026-11-18
 
 A quality update: many parts of the mod were reworked to be sturdier, and problems found by the tests were fixed in

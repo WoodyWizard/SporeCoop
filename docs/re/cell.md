@@ -2405,3 +2405,20 @@ BUG-1186. GOG 2024, lane 7, `coop.pool mate` (now with `from_host=(dx dy)` and `
   Cell at s 6.1, still locked at s 10.1, `cell: our new cell joined the host` at s 11.6, which waits for the lock).
   A swallow (`coop.pool swallow`, the executor 0xE7E7F0 kind 10) run inside it never reached SwallowWhole 0xE7D880
   (`swallows_marked` 2 of 3, the first one's mirror never destroyed on the guest), the same after the lock 3 of 3.
+
+## The host's mating vote shows a black picture (2026-11-18, fix/w52-evoeditor)
+<a id="cell-vote-black-screen"></a>
+
+BUG-1239. GOG 2024, lanes 3-5, `tools/tests/coop_evo_screens.py` (both games shot every 2 s; the picture measured
+beside the co-op window, which covers the middle of the view and made screen_look's `world` region read the window).
+* ✔ (runtime) After the host's mating scene its Cell game fades the picture out and submits the editor request; while
+  the vote holds it (h_Submit) the host's screen is black behind the vote's window, until the vote ends (every guest
+  ready, "Start now" or 60 s). The guest plays on in its drawn pool meanwhile and during the host's editor; after the
+  editor neither game reloads (BUG-0508) and both stay drawn.
+* ✔ (runtime) A guest's own mating call opens its own cell editor without a vote; its state then reports the Editor
+  mode (0xDBDBA1, no PF_IN_WORLD). Its co-op window cannot be used from the editor, so a host vote started meanwhile
+  waited the full 60 s on the host's black screen (lab 20261118-101725). Fix `core.vote_guest_editor`: vote_tick does
+  not wait for a guest whose latest state is an editor mode (0xDBDBA1 or 0x1654C06); the host's editor opened 0 s after
+  its mate (lab 20261118-101722, -101728).
+* ✔ The same black picture at the start of the Creature stage: the host's game behind BUG-0315's arrival vote of the
+  landfall editor until the guest arrived (up to the vote's 60 s over a slow link; docs/re/creations.md#creations-own-editor-arrival).
