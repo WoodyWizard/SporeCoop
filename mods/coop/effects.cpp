@@ -450,10 +450,39 @@ static void on_local_effect(void* creature, const game::EffectEvent& ev)
 // an effect created for any object: keep it; tick reads the position the game gave it (+0x9C) and
 // decides whether it is on the local player's own object (the hooks run on the main thread only, so
 // no transform is copied here)
+// BUG-1243 (players' video: "I fought the air"): the Cell stage's respawn hatch, cell_egg_L0_autohatch (0xB4B06F12, FNV of
+// the name), is a picture for the player who hatches: it blacks out the screen and draws the egg and its whirl over the
+// view (seen: played in the host's game 57 m from its cell, the host's whole screen went black, then the egg stayed on
+// its screen for ~3 s, lab 20261118-131202). A guest knocked out while it fought far away respawns, and the effect came
+// to the host twice: its world effect relayed (process_world: it is made at the guest's own cell) and the host's own
+// play of it on the guest's puppet (cellsync on_ko, KO_RESPAWNED). The host's screen was swept into the hatch's whirl
+// while the host fought nothing. Now such an effect is neither sent nor played for a partner (the puppet gets
+// cell_hatch_ice, the revive's, instead). Old (`coop.fix effects.cell_own_only off`): relayed and played.
+static bool g_own_only_fix = true;
+COOP_FIX("effects.cell_own_only", "BUG-1243", g_own_only_fix, "cell: a partner's respawn no longer plays the hatch's black screen and egg on your own screen (it looked as if your own cell was spun in a fight)");
+bool cell_own_only_fix() { return g_own_only_fix; }
+static uint32_t fnv1(const char* s) // the game's effect id of a name (0x932E50(name, 0x811C9DC5, 1): FNV-1, lower case)
+{
+    uint32_t h = 0x811C9DC5u;
+    for (; *s; s++)
+        h = (h * 0x01000193u) ^ (uint8_t)(*s >= 'A' && *s <= 'Z' ? *s + 32 : *s);
+    return h;
+}
+static bool own_only(uint32_t id)
+{
+    static const uint32_t ids[] = {fnv1("cell_egg_L0_autohatch")};
+    for (uint32_t x : ids)
+        if (x == id)
+            return true;
+    return false;
+}
+static uint32_t g_own_only_made, g_own_only_held_tx, g_own_only_held_rx; // tests: made in this game, not sent, not played
 static void on_world_effect(void* fx, uint32_t id)
 {
     if (!fx || !id)
         return;
+    if (own_only(id))
+        g_own_only_made++;
     Pending p;
     p.world = true;
     p.fx = fx;
@@ -596,6 +625,10 @@ static void process_world(void* fx, uint32_t id)
         g_w_no_pos++;
         if (g_log)
             H->log(M, SK_INFO, "effect: world id %08X dropped, no position at %p", id, fx);
+        return;
+    }
+    if (g_own_only_fix && own_only(id)) { // BUG-1243: the own cell's hatch is no picture for a partner
+        g_own_only_held_tx++;
         return;
     }
     if (g_watch_id && id == g_watch_id) {
@@ -915,6 +948,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_elsewhere_rx++;
         if (g_log)
             H->log(M, SK_INFO, "effect: from %u skipped, not in this place (id %08X pool %u)", player, id, pool);
+        return;
+    }
+    if (!stop && pool == 5 && g_own_only_fix && own_only(id)) { // BUG-1243: an older partner's hatch
+        g_own_only_held_rx++;
         return;
     }
     if (!stop && pool == 5 && foreign_id(id)) {
@@ -1249,6 +1286,9 @@ std::string status()
              g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);
     s += b;
     snprintf(b, sizeof b, "effects onto own ground: %u\n", g_ground_moved); // BUG-0608
+    s += b;
+    snprintf(b, sizeof b, "effects cell own only: fix=%d made=%u held_tx=%u held_rx=%u\n", (int)g_own_only_fix, g_own_only_made,
+             g_own_only_held_tx, g_own_only_held_rx); // BUG-1243
     s += b;
     snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u other_stages=%d space=%d stage_skipped=%u\n",
              g_elsewhere_tx, g_elsewhere_rx, (int)g_other_stages, (int)g_space, g_stage_skipped);

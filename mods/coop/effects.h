@@ -52,6 +52,7 @@ void on_session_end();
 using WorldStartFn = void (*)(uint8_t from, uint32_t id, void* fx, const net::Vec3& pos);
 void set_world_start_observer(WorldStartFn fn);
 std::string watch(uint32_t id); // tests (BUG-0465): watch an effect id; its last own / received object and transform
+bool cell_own_only_fix(); // BUG-1243: effects.cell_own_only (the own cell's hatch is never a partner's picture)
 std::string recent(); // tests (BUG-1243): the last world effects sent / played here and their distance to the local player
 std::string status(); // counters and the last sent / received effect (coop.effects, coop.status)
 bool set_log(bool on);

@@ -1,4 +1,5 @@
 #include "cellsync_internal.h"
+#include "effects.h"
 
 namespace cellsync {
 
@@ -816,7 +817,9 @@ static void symbiosis_tick(double now)
             F<float>(c, kOpacity) = kKoOpacity;
         if (k.fx_at > 0 && now >= k.fx_at) {
             k.fx_at = 0;
-            effect(c, "cell_egg_L0_autohatch");
+            // BUG-1243: the respawn's own hatch (cell_egg_L0_autohatch) blacks out this player's screen and draws the
+            // egg over it; a partner's puppet gets the revive's effect instead (effects.cell_own_only)
+            effect(c, effects::cell_own_only_fix() ? "cell_hatch_ice" : "cell_egg_L0_autohatch");
         }
     }
     if (g_downed) {

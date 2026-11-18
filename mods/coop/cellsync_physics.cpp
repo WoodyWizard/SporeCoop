@@ -418,16 +418,9 @@ void SK_CDECL h_Soft(uint8_t* c, void* res, float dt)
     mit->second.soft_d = d;
 }
 
-// BUG-1247 (players' video): in the guest's game the host's NPC cells spun / danced in place. A mirror without a soft
-// body (the game's "no particles" form: the full particle pool of a crowded guest strips the farthest ones, BUG-0355,
-// or a full graphics pool gives a new one none) has no soft-body step, so h_Soft never turns it: the cell step turns it
-// towards where it swims, and guest_tick holds it still (velocity 0) at the host's pose. What was drawn was the step's
-// heading of a cell at rest, not the host's. The partners' puppets had the same problem and get their pose written back
-// right after the step (modes.cpp h_SimUpdate); now the guest's bare mirrors get the host's rotation there too, so the
-// drawn heading is the host's. `coop.pool cloud` reports the step's own heading (step_head) for every mirror on screen.
-// Old (`coop.fix cell.mirror_pose_after_step off`): only guest_tick's write before the step.
-bool g_fix_mirror_pose_after_step = true;
-COOP_FIX("cell.mirror_pose_after_step", "BUG-1247", g_fix_mirror_pose_after_step, "cell: the host's cells without a soft body face on a guest's screen as on the host's (the cell step turned them in place)");
+// tests (BUG-1247): every mirror's heading right after the cell step (modes' SimUpdate hook), before guest_tick writes
+// the host's again: what a mirror without a soft body is drawn with (h_Soft turns the soft ones). Measured: a guest's bare
+// mirrors kept the host's heading there (lab 20261118-131028), so nothing is written back.
 void mirrors_after_step()
 {
     if (!is_guest() || !in_cell() || g_mirrors.empty() || modes::cell_leaving())
@@ -440,12 +433,6 @@ void mirrors_after_step()
         const float* r = (const float*)(c + kRot);
         m.step_head = std::atan2(r[1], r[0]);
         m.step_at = now;
-        int n = F<int>(c, 0x250);
-        if (!g_fix_mirror_pose_after_step || (n > 1 && n <= 64)) // a soft body: h_Soft turned it
-            continue;
-        modes::quat_to_mat(m.rot, (float*)(c + kRot));
-        F<uint16_t>(c, kFlags) |= 2;
-        g_n.bare_turns++;
     }
 }
 
