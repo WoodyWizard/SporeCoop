@@ -627,6 +627,25 @@ body and the partner's migration opened the host's editor)
   host's); until then the galaxy should not apply "everybody follows the host's evolution / migration" rules to players
   who are not in the host's party.
 
+### Seats: 16 players per planet, difficulty per party (owner, 2026-11-18)
+<a id="server-seats-16"></a>
+
+Owner: "Seats just mean how many players are allowed on a planet. We can set it to 16 per planet. Difficulty scales on
+the individual party. Meaning they get their own relations with creatures, their own damage modifiers, their own goal
+progression, etc. compared to other parties."
+
+* Today "seat" is two things in the code: the player cap (the network's kMaxPlayers 4, the Co-op window's Player Slots
+  1-4) and Lineages' founder seats, given once per player identity and kept with the planet (party.cpp: a planet's
+  seats fill up with everyone who ever played it, so a stored planet refused a fifth new player), each seat owning its
+  player's nest (Creature), village (Tribe) and nation (Civ); the founder files hold 8.
+* For the galaxy: up to 16 players on a planet at once; a founder seat held by a player who is not on the planet can be
+  given to a newcomer (the player gets one back when they return and one is free).
+* Per-party difficulty (each party its own creature relations, damage modifiers and goal progression) is the
+  three-roles split's party side (#server-three-roles): today these follow the session's host and its difficulty
+  scaling.
+* The host's cost grows with each partner (20-30 KB/s upload each): 16 players on one host's home connection is the
+  risk to measure first (decision 6E).
+
 ### Hand-over without a reload: research (2026-11-17, decision 6B C)
 <a id="server-warm-handover"></a>
 
