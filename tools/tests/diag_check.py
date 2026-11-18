@@ -109,11 +109,15 @@ def main():
     c.call(f'key {VK_F9}')
 
     if crash:
-        # a fault in the frame: the game's own handler takes it and the game stops drawing: a hang
-        # report after 30 s without frames
-        # (the game's own handler usually swallows a fault of its frame and stops drawing: a hang
-        # report after 30 s; sometimes the fault reaches the unhandled filter: a crash report)
+        # a fault in the frame, three outcomes: it reaches the unhandled filter (a crash report); the game's own
+        # handler swallows it and the game stops drawing (a hang report after 30 s without frames); or the handler
+        # swallows it and SporeKit finds the frame cut off and lets the frames go on (BUG-0667, SporeKit 0.3.11):
+        # the game lives on, no report (seen in most runs of the 0.7.15 final check)
         n0 = set(glob.glob(os.path.join(LOGDIR, 'report-*.txt')) + glob.glob(os.path.join(LOGDIR, 'crash-*.txt')))
+        try:
+            log0 = os.path.getsize(logname())
+        except OSError:
+            log0 = 0
         try:
             c.call('call 0x1 cdecl')
         except (OSError, ValueError):
@@ -126,7 +130,25 @@ def main():
                    if re.search(r'hang|crash', open(p, errors='replace').readline())]
             if got:
                 break
-        ck(got, f'a fault in the frame: a hang or a crash report ({[os.path.basename(p) for p in got]})')
+            # the third way: the game's handler caught the fault and SporeKit found the frame cut off (BUG-0667,
+            # BUG-0966: "frames go on"); the game lives on and draws, so neither report comes (it did not crash)
+            try:
+                with open(logname(), errors='replace') as f:
+                    f.seek(log0)
+                    tail = f.read()
+            except OSError:
+                tail = ''
+            m = re.search(r'frames: the frame \d+ was cut off by a fault the game\'s handler caught.*frames go on', tail)
+            if m:
+                try:  # it lives: a new console answers and frames go on
+                    r = Console(lane.HOST).call('wait.frames 30 10000')
+                    alive = (r.get('out') or '').startswith('frame=')
+                except (OSError, ValueError):
+                    alive = False
+                if alive:
+                    got = ['survived: ' + m.group(0)[:80]]
+                    break
+        ck(got, f'a fault in the frame: a hang or a crash report, or the game lives on (BUG-0667) ({[os.path.basename(p) for p in got]})')
         # a fault nobody handles (a thread of its own): the crash report and the minidump
         c = start_host(ck)
         n0 = set(glob.glob(os.path.join(LOGDIR, 'crash-*')))
