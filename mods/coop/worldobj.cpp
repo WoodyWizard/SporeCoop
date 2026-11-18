@@ -1929,6 +1929,24 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
         me = game::position(av);
     else if (C.stage_center)
         C.stage_center(me);
+    if (!strcmp(a, "orns")) { // orns [r]: every interactive ornament near (BUG-1251): sort, model list, flags, reward
+        float r = argc > 2 ? (float)atof(argv[2]) : 90.f;
+        Items all;
+        collect_noun(kOrnNoun, all, orn_state);
+        std::sort(all.begin(), all.end(), [&](const Item& x, const Item& y) { return net::dist(x.pos, me) < net::dist(y.pos, me); });
+        for (auto& it : all) {
+            float d = net::dist(it.pos, me);
+            if (d > r)
+                break;
+            uint8_t* o = (uint8_t*)it.p;
+            int idx = field<int>(o, 0x248), n = (int)((field<uintptr_t>(o, 0x250) - field<uintptr_t>(o, 0x24C)) / 12);
+            uint8_t* rw = orn_reward(o);
+            H->out_printf(out, "orn %p id=%u pos=(%.2f %.2f %.2f) dist=%.1f sort=%d model=%d/%d a3=%d a4=%d reward=%p used=%d\n",
+                          it.p, it.id, it.pos.x, it.pos.y, it.pos.z, d, field<int>(o, 0x110), idx, n, field<uint8_t>(o, 0xA3),
+                          field<uint8_t>(o, 0xA4), (void*)rw, rw ? (int)field<uint8_t>(rw, 0x24) : -1);
+        }
+        return 0;
+    }
     if (!strcmp(a, "list") && argc > 2) { // list <kind> [r] [x y z]: this game's objects of a kind
         int k = kind_of(argv[2]);
         if (k < 0) {
