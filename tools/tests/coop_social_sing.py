@@ -18,7 +18,10 @@ import re
 import time
 
 from harness import avatar_pos, waiter
+from coop_creature_partner_pass import aim
 from twoinst import Checks, keyframe, set_stance, shot, start
+
+KOOK = '065CB8AB'  # the fixture's Kook nest: a species that takes part in a social game
 
 wait = waiter(step=0.5)
 
@@ -57,9 +60,17 @@ def main():
         c.call('coop.team hp 1000')
     gid = re.search(r'client id=(\d+)', guest.call('coop.status')['out'])
     gid = gid.group(1) if gid else '1'
+    # a Kook for the host to sing to (a social ability plays only inside a social game with an animal, as players do)
+    kooks = [m.group(1) for m in re.finditer(r'#(\d+) (?:[0-9A-Fa-f]{8} )?species=' + KOOK + r' hp=([\d.]+) dist=([\d.]+)(?! DEAD)',
+                                             host.call('coop.npc list')['out']) if float(m.group(2)) > 0]
+    ck(kooks, f'the host has Kooks around ({kooks[:5]})')
+    kook = kooks[0] if kooks else None
+    if kook:
+        print('  host: ' + host.call(f'coop.npc gonpc {kook} 3.0')['out'].strip(), flush=True)
+        time.sleep(1.5)
     hp = avatar_pos(host)
     if hp:
-        guest.call('coop.abilities goto %.1f %.1f %.1f' % (hp[0] + 4, hp[1], hp[2]))
+        guest.call('coop.abilities goto %.1f %.1f %.1f' % (hp[0] + 3, hp[1], hp[2]))
     time.sleep(4)
     gp = avatar_pos(guest)
     d = sum((a - b) ** 2 for a, b in zip(hp, gp)) ** 0.5 if hp and gp else None
@@ -76,7 +87,16 @@ def main():
     sample(2.0, probes, before)
     print('  before:', {k: sorted(set(v)) for k, v in before.items()})
 
-    # 1. the host sings
+    # 1. the host engages the Kook (a click on it in the social stance, as a player) and sings
+    engaged = False
+    for _ in range(6):
+        o = aim(host, f'n{kook}') if kook else None
+        if o:
+            host.call(f'click {o[1]} {o[2]}')
+            time.sleep(1.0)
+            engaged = True
+            break
+    ck(engaged, f'the host clicked the Kook n{kook} in the social stance')
     sung = {}
     hold(host, 0x31)
     sample(1.5, probes, sung)
