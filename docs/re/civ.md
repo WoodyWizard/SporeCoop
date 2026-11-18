@@ -2107,3 +2107,49 @@ walk goals, a<id> animations), 6 recordings of fix/w51-trail and the labs below.
   from its walk against the place kept it in the run). Result: standing samples p90 0.54-0.55 m (off 3.41-4.50 m), max
   2.4-2.8 m (off 11 m), standing copies in the run 0-1 % (host 4-5 %). Off: only citizen_follow's walk.
 * ? What in the citizens' behaviour tree keeps walking a bound copy (and whether it can be told to stand) is not traced.
+
+## The species of a city's citizens and per-object designs (2026-11-18, plan/0.7.16)
+<a id="civ-own-species"></a>
+
+Research for docs/plan-0.7.16.md item 2 (a guest's cities and vehicles of its own species and designs). GOG 2024,
+Ghidra (`tools/ghidra/q.sh`), no runtime probe of these paths yet.
+
+* ✔ (Ghidra) **`City_Species` 0xBD9F90**: thiscall(cCity*) -> cSpeciesProfile*, 11 bytes: `mov ecx,[ecx+0x590]` (the
+  city's civilization) then `jmp 0xBEFAA0` = `Civ_Species`: `GetSpeciesProfile(&civ +0x268)`. So a city's citizens are of
+  its **civilization's species key cCivilization +0x268** (12 bytes); null falls back to `cSpeciesManager_PlayerSpecies`
+  in the callers. Its five callers are all citizen code: the citizen init vt 0xE8 0xC27330 (a citizen of a city),
+  0xD5BF50, 0xD5C6D0, 0xD5CCA0 and the city citizen manager's update 0xD5FB10. One hook of 0xBD9F90 answers per city.
+* ✔ (Ghidra) `CityCitizens_Sync` 0xD5BF50 (thiscall(mgr, bool) ret 4; mgr +0xAF0 the city it runs, +0xA64 vector of its
+  citizens, the manager of the city near the camera, docs/re/civ.md#civ-roads-citizens): takes the city's species
+  (City_Species, else PlayerSpecies), makes or drops pool citizens (0xAD1130 noun 0x18EB4B7) until the count matches,
+  **and sets every citizen whose species (+0xB20, getter 0xC0BD30) differs to the city's species**
+  (SetSpeciesProfile 0xC22450). It runs from the update 0xD5FB10 when the count differs, from 0xAC8C10 (the manager of
+  that city) and 0xD60EB0. So a citizen's species can not be set one by one: the next sync puts it back; the city's
+  answer is the lever. All citizens of one city are one species.
+* ✔ (Ghidra) `Civ_SetSpeciesKey` 0xBEBF20: thiscall(civ, const ResourceKey*) ret 4, writes +0x268..+0x270 only.
+  `cSpeciesManager_SetPlayerSpecies` 0x4DF380: thiscall(mgr, const ResourceKey*) ret 4, writes mgr +0xA4..+0xAC (the
+  world's player species), tells the OTDB and posts a message. The Civ editor return 0xCFBD70 (a creature result, type
+  0x2B978C46: the Civ outfitter) calls SetPlayerSpecies, Civ_SetSpeciesKey on the civilizations of its loop (~ the
+  condition inside the loop not read), 0xAC8C10 for their cities (the citizens re-synced) and puts the new profile
+  into every cTribe's species slot (0xC8E9C0(profile, 0), docs/re/tribe.md#tribe-two-species).
+* ✔ (Ghidra) The Tribe -> Civ end (`TribeGame_AdvanceProc` 0xCDBEA0, the advance button with the bar full): it records the player
+  tribe's species slot key (`cTribe_SpeciesKey` 0xC8ECE0 = slot +0x504) in the stage history (0xE39890 with the
+  consequence trait, property 0x8FD1273C), gives it to the window +0x1104 (0x555F70) and posts 0x73E46F6 with it,
+  then TRG2CVG_PreEditor. The Civ stage's species is the tribe's slot: **the game carries no member's own species
+  into Civ**; a guest's line has to be carried by the mod.
+* ✔ (Ghidra) `Civ_SetDesign` 0xBF4C50 (#civ-culture-sync): for a vehicle design id it calls only the model object's
+  vt 0x94 SetModelKey on each vehicle of the civilization (+0xB0) whose locomotion +0xB1C and purpose +0xB20 match; for a
+  building id 0xBE3870 per city. The vehicle's hit points that change with the design (362 -> 314 in BUG-1157's run)
+  therefore follow SetModelKey alone: **a per-vehicle SetModelKey gives that vehicle the design's model and stats**
+  (~ inferred from that run; the per-vehicle stats were not read field by field).
+* Consequences for an own design per owner (the culture set is one per civilization, #civ-culture-sync, BUG-1158):
+  * citizens: hook City_Species: a city owned by a guest answers the guest's species profile; every game knows the
+    city owners (civ.cpp owner labels), each game's citizens are its own pool, so nothing is sent per citizen and
+    nothing is saved (the pool is rebuilt; +0x268 is never written).
+  * vehicles and buildings: SetModelKey per object (the path of civ.host_buildings / civ::redesign_vehicles), with the
+    object's culture key written back into +0xC4 while a save is written (the savestrip pattern of
+    civ.host_buildings, #civ-host-buildings). `Civ_SetDesign` on the host's civilization re-models every vehicle of
+    a locomotion and purpose: a guest's vehicles must be re-keyed after it (hook its end).
+  * ? Not checked: whether a vehicle's or building's SetModelKey with a key the game does not know on load faults or
+    leaves an empty model (the reason a save must never keep a key of ours); whether captured cities (cCity::ChangeOwner
+    0xBE8A20 reads Civ_Species) need more.

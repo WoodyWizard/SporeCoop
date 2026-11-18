@@ -369,3 +369,14 @@ docs/re/civ.md). Known starting points: the guest-to-host direction of creations
 6/7/8) for vehicles and buildings, and the key collision of buildings (BUG-0670). A tribe has one species in the game,
 so an own species per player needs RE first; it fits Rivals, where each player has a tribe of its own anyway.
 A player asked for it on Discord (2026-11-13).
+
+## Own species per player: the research of plan/0.7.16 (2026-11-18, plan/0.7.16)
+<a id="rivals-own-species-research"></a>
+
+The open point of #rivals-own-designs ("a tribe has one species in the game, so an own species per player needs RE
+first") is answered: one player tribe holds members of several species (a member's species is its own field, kept by
+the game and by a save, docs/re/tribe.md#tribe-two-species), a city's citizens take the species of `City_Species`
+(one hook per city, docs/re/civ.md#civ-own-species), vehicles and buildings take a design per object, and every NPC
+tribe and civilization has its own native species slot (`cTribe_SetSpeciesSlot`, `Civ_SetSpeciesKey`) for R2's taken-over
+factions. docs/plan-0.7.16.md builds the per-player species line (its WP-0) and the per-owner application for the
+co-op mode first; its section "What can be shared with the Rivals plan" lists what 0.8 reuses.

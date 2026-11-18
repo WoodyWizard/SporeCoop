@@ -34,3 +34,4 @@ pool. A feature for the own species per player (0.8 Rivals), docs/known-issues.m
 
 ## History
 - 2026-11-18: opened.
+- 2026-11-18: researched on plan/0.7.16 (docs/re/cell.md#cell-kin-species); planned as WP-L1 of docs/plan-0.7.16.md.

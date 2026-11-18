@@ -229,7 +229,7 @@ u16 1`. Content per creation: `bem` (required), optional `creaturedata`, `pollen
 | 0xC09B00 | `cCreatureAnimal::Create(pos*, profile, age, herd, isAvatar, bool)` | ✔ (overrides) |
 | 0xC05E60 | cCreatureAnimal Read: `GetSpeciesProfile(+0xB28)` → `SetSpecies(p, 0, 1)` | ✔ |
 | 0xC22590 | cCreatureBase Read part: re-resolves `+0xB28`, SetSpeciesProfile if changed | ✔ |
-| 0xD5BFA0 | tribe: after the editor every member gets `SetSpeciesProfile(tribeSpecies)` when it differs | ✔ (decompiled) |
+| 0xD5BFA0 | tribe: after the editor every member gets `SetSpeciesProfile(tribeSpecies)` when it differs | ~ superseded (2026-11-18): the city citizens' sync, see [creations-species-setters](#creations-species-setters) |
 
 SetSpeciesProfile ✔: writes `+0xB20`, `+0xB24 = p+0x53C`, `+0xB28..+0xB30 = p+0x504` (key);
 null → default profile 0x4DF450; then (unless global byte 0x168E8E4) 0xC21D10(changed, same)
@@ -298,7 +298,8 @@ How cell abilities (mouth/weapons/movement) derive from the model parts was not 
    isAvatar 0)` (npc.cpp path); local avatar `SetSpecies(avatar, ownProfile, age, 1)` after the
    host world is loaded. Cell puppets: forced model key = remote key; local avatar: `S+0x10` +
    RebuildLevel right after the world arrives. Space: `SpawnUFO(6, &pol, &remoteUfoKey)`.
-   Tribe/civ citizens: SetSpeciesProfile per owned citizen (as 0xD5BFA0 does).
+   Tribe/civ citizens: SetSpeciesProfile per owned citizen (as 0xD5BFA0 does). ~ superseded (2026-11-18): see
+   [creations-species-setters](#creations-species-setters) (members yes, city citizens through City_Species).
 5. `net::PlayerState.species` (u32 instance) must become a full key per stage.
 
 Runtime checks still needed: baking of a never-seen creation on first spawn (IBakeManager::Get
@@ -1613,3 +1614,19 @@ BUG-1255, BUG-1258. GOG 2024, lanes 2 / 3 (`coop_evo_screens.py --part switch`, 
 * The host's phase notice after its editor said "everybody gets the new body" in Creature, also while the guest made
   its own creature (BUG-1258): now "made its creature: every player makes its own" / "evolved its creature" unless
   creature.mode host.
+## Who sets a creature's species: 0xD5BFA0 is the city citizens, not the tribe (2026-11-18, plan/0.7.16)
+<a id="creations-species-setters"></a>
+
+CORRECTION (2026-11-18, plan/0.7.16) of 4.1's row "0xD5BFA0 | tribe: after the editor every member gets
+`SetSpeciesProfile(tribeSpecies)` when it differs | ✔ (decompiled)" and of 6.4 "Tribe/civ citizens: SetSpeciesProfile per
+owned citizen (as 0xD5BFA0 does)": ~ superseded. That function (GOG 2016 0xD5BFA0, GOG 2024 0xD5BF50,
+`SporeCoop::CityCitizens_Sync`) belongs to the city citizen manager: its +0xAF0 is a cCity, the species is
+`City_Species` (the civilization's key +0x268), and it re-sets every citizen of that city whose species differs, each
+time it runs (docs/re/civ.md#civ-own-species). The tribe's members are not touched by it; the Tribe outfitter's return
+is 0xCDCC90 (#creations-stage-designs), which reloads the tribe's slot profile in place and calls no SetSpeciesProfile.
+Evidence: Ghidra GOG 2024 (callers of SetSpeciesProfile 0xC22450: SetSpecies 0xC03920, the herd spawn 0xC0A100, the
+serializer's post-read 0xC225D0, Citizen_Init 0xC27330, CityCitizens_Sync 0xD5BF50, a BT node 0xD7EA30 (+0x1004, the
+herd evolution key), 0xF41A50 (adventures), cDropCargoToolStrategy::WhileFiring 0x105AA10).
+* Consequence: a city citizen's own species can not be kept by a SetSpeciesProfile (the next sync puts the city's back);
+  the per-city lever is `City_Species`. A tribe member's can (docs/re/tribe.md#tribe-two-species, runtime 40 s and a
+  save).

@@ -4257,3 +4257,58 @@ BUG-1238 (after BUG-1233, [tribe-form-species](#tribe-form-species)). GOG 2024, 
   test command at 5), the list moved to new storage of 8, the three new villages with the list's last species, the
   guest's copies with the same species, no fault on either game.
 * The host logs once per list: `tribe: the NPC tribe controller has 4 species for 5 NPC villages (property list 10)`.
+
+## One player tribe, two species: what reads the tribe's species (2026-11-18, plan/0.7.16)
+<a id="tribe-two-species"></a>
+
+Research for docs/plan-0.7.16.md item 1 (a guest's members of the guest's own creature). GOG 2024, Ghidra
+(`tools/ghidra/q.sh`) and one lab probe on lane 4 (`tools/tests/coop_tribe_species_probe.py`, suite
+`tribe_species_probe`, lab 20261118-132622, tribe fixture: 3 members, 2 of the host and the guest's chief).
+
+**The species slot and its readers (Ghidra).**
+* ✔ cTribe +0x18CC is an array of species profiles: `cTribe_SpeciesSlot` 0xC8E9B0 (thiscall(tribe, i) ret 4) reads
+  `[tribe + i*4 + 0x18CC]`, `cTribe_SetSpeciesSlot` 0xC8E9C0 writes it; every caller seen passes 0. Further direct
+  readers of +0x18CC (disp32 0x18CC, 32 sites): the diet tests 0xC8E9E0 / 0xC8EA00 (+0x60C / +0x608), 0xC8EB20,
+  0xC8EB80, the key `cTribe_SpeciesKey` 0xC8ECE0 (slot +0x504), SpawnNpcTribe, the ctor 0xC98430, the layout 0xC98940,
+  `cTribe_SpeciesSize` 0xC996E0, 0xC99F50 and others in 0xC8F..0xC9A (all tribe-wide: food, spots, names, size).
+* ✔ **A new member takes the slot**: cTribe::SpawnMember 0xC983C0 -> cTribe::CreateCitizen 0xC8E730 -> citizen vt 0xE8
+  `Citizen_Init` 0xC27330 (city 0, tribe, n, pos) -> species = cTribe_SpeciesSlot(tribe, 0) -> SetSpeciesProfile
+  0xC22450. Babies (TribeStage_BabyBorn 0xCD74A0) go the same way. There is no species argument: a member of another
+  species is made by a SetSpecies after the spawn.
+* ✔ **A member's look is its own profile**: `Creature_RebuildModel` 0xC21D50 builds the model from the member's +0xB20
+  (+0x510 the model key for an adult, +0x504 else), not from the tribe. The outfitter's return 0xCDCC90 reloads the
+  slot profile in place (0x4DFBC0) and then, for every member, writes +0xB24 = slot +0x53C, SetScale(vt 0x80(1)),
+  RebuildModel(1, 1), the tool and the animation slot: a member of another species is rebuilt with its own model
+  (harmless; its +0xB24 is set back to its own generation by the rebuild).
+* ✔ Size: the citizen's vt 0x80 is `Citizen_ComputeScale` 0xC23E50 (not cCreatureAnimal_ComputeScale 0xC04B50): the
+  member's own species size normalised (0xCE6AE0) times the age / leader / brain factors; no PlayerSpecies read.
+* ✔ Relations: the citizen's vt 0xD0 `Citizen_IsPlayerSpecies` 0xC228B0 answers true in the Tribe and Civ modes
+  whatever the species (cCreatureBase_IsPlayerSpecies 0xC0C430 first). The direct PlayerSpecies compares of the
+  creature code (docs/re/creature.md#creature-player-species-callers) are cCreatureAnimal paths, not the citizen's.
+* ✔ Abilities follow the member's own species (SporeCoop::Citizen_AbilityCount 0xC24DB0 reads +0xB20, BUG-0583).
+* ✔ The Tribe -> Civ end (TribeGame_AdvanceProc 0xCDBEA0) records the slot's key (cTribe_SpeciesKey) as the species
+  that goes on, and the Civ outfitter's return (CivGame_EditorReturn 0xCFBD70) writes the new profile into every
+  cTribe's slot 0 (docs/re/civ.md#civ-own-species). No member's own species is carried by the game.
+* ✔ The save: `cCreatureBase_PostRead` 0xC225D0 (the creature serializer's slot .rdata 0x146A5CC) resolves the species
+  key +0xB28 it read for **each creature**; a key the game does not know gives null and SetSpeciesProfile(null) the
+  default profile (the world's player species, docs/re/creations.md 2.1). The tribe's slot is saved as its profile's
+  +0x504 (#creations-stage-designs).
+* ✔ The roster portraits are of the tribe's species key (+0x1904 list, #tribe-portraits): a member of another
+  species keeps the tribe's portrait (not checked on screen).
+
+**The probe (runtime, lab 20261118-132622).** The host's members all got the host's creation 290229B9
+(`coop.tribe setspecies`), then the host's two went back to the fixture's 067B3E4A (SetSpecies with their old
+profile) and the tribe's key +0x1920 was written back, so only the guest's chief was of the other species.
+* ✔ One player tribe holds two species: 40 s later still 067B3E4A for owners [0, 0] and 290229B9 for owner [1];
+  nothing of the game put the member back; the tribe's slot stayed 1099E560 (+0x504 067B3E4A). No fault on either game.
+* ✔ The member of the other species: cCreatureBase_IsPlayerSpecies 0, citizen vt 0xD0 1, abilities 10 (its species'),
+  the host's members 17 (the chief) and 10. The screenshots show the guest's chief as another creature (an orange
+  four-legged one next to the host's red members, out/lane4/shots/tribe_species_probe_host_40s.png).
+* ✔ The species is each game's own field: the guest's copies of the same members stayed 067B3E4A (nothing sends it).
+* ✔ **A save keeps each member's species**: after the guest's game started again and loaded the host's world (a save
+  of it), its player tribe had the same mix (067B3E4A [0, 0], 290229B9 [1]); 290229B9 was known there (the host's
+  creation bundle, `coop.creations png` known=1). So a guest's species set on a member of the host's world goes into
+  the host's save unless it is put back while the save is written.
+* ? Not tried: a load of a save with a member key the game does not know (Ghidra: the default profile, the world's
+  species); orders, combat and the hut tools on a member of another species over minutes; the outfitter with a
+  mixed tribe; a baby born to a mixed tribe (the slot's species, by the code above).
