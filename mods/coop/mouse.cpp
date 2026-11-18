@@ -42,11 +42,16 @@ static bool ours(HWND w)
 
 static bool (*g_close_request)();
 void set_close_request(bool (*handler)()) { g_close_request = handler; }
+static uint64_t g_last_input;
+uint64_t last_input_ms() { return g_last_input; }
 
 static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
 {
     if (code == HC_ACTION && wp == PM_REMOVE && lp) {
         MSG* m = (MSG*)lp;
+        if (ours(m->hwnd) && ((m->message >= WM_KEYFIRST && m->message <= WM_KEYLAST) ||
+                              (m->message >= WM_MOUSEFIRST && m->message <= WM_MOUSELAST)))
+            g_last_input = GetTickCount64(); // (the galaxy's saves wait for an idle moment)
         // decision 6A A: the two ways a player closes the window by hand start as posted messages (the close itself is
         // sent later by DefWindowProc): held here when the handler wants to save first
         if (g_close_request && ours(m->hwnd) &&

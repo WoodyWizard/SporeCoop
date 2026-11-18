@@ -39,6 +39,10 @@ void invalidate_campaign_rules(); // native load, including reloading the same s
 bool setup_campaign(net::Session& session, const founders::CampaignRules& requested, std::string& error);
 // the game's own save (pause menu "Save"); also works on planets in space
 bool save_game(std::string& err);
+// owner 2026-11-17 ("seamless for uninterrupted gameplay", alpha): Spore's silent save (message 0x689C9B9 with data:
+// no game-time pause, no busy cursor, no wait, no "game saved" box; docs/re/creature.md#creature-save-steps), the same
+// checks as save_game; only the write itself remains (0.7-0.9 s)
+bool silent_save(std::string& err);
 // Host milestone, saved once the native save path is ready.
 void request_autosave();
 // Tribal reconstruction: confirm a new native save, transfer it to connected

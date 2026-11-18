@@ -591,6 +591,55 @@ bool save_game(std::string& err)
     return true;
 }
 
+bool silent_save(std::string& err)
+{
+    using namespace skg;
+    if (g_adventure_fix && game::mode_id() == modes::kScenario) {
+        err = "an adventure is played";
+        return false;
+    }
+    if (const char* why = g_save_blocker ? g_save_blocker() : nullptr) {
+        err = why;
+        return false;
+    }
+    if (g_saved_box_fix && g_saved_box_visible) {
+        err = "the previous save's box is up";
+        return false;
+    }
+    uintptr_t get = H->sym("App::IMessageManager::Get");
+    void* mm = get ? cdecl_call<void*>(get) : nullptr;
+    if (!mm) {
+        err = "no message manager";
+        return false;
+    }
+    if (game::mode_id() == 0x1654C05) {
+        uintptr_t ctx = H->sym("Simulator::GetCurrentContext");
+        if (ctx && cdecl_call<int>(ctx) == 0) {
+            err = "leave the planet to save (space stage saves only in a solar system or the galaxy)";
+            return false;
+        }
+    }
+    // the message's data: not null = no "game saved" box (its handler only compares it with 0). The message system keeps
+    // its data as a counted object (vt 0 AddRef, vt 4 Release): a plain pointer crashed in MessagePost (2026-11-17,
+    // TITAN): a static token with stub counting, never freed
+    struct Token {
+        static int __fastcall add_ref(void*, void*) { return 2; }
+        static int __fastcall release(void*, void*) { return 1; }
+        static void* __fastcall cast(void* self, void*, uint32_t) { return self; }
+    };
+    static void* s_vt[4] = {(void*)&Token::add_ref, (void*)&Token::release, (void*)&Token::cast, (void*)&Token::cast};
+    static void* s_token[2] = {(void*)s_vt, nullptr};
+    // MessageSend (vt 0x14) outside the frame, as the game's own leave-the-planet path sends it: posted from the frame hook
+    // (vt 0x18) it hung the main thread in MessageSend's lock (2026-11-17, TITAN hang report)
+    H->run_outside_frame([](void*) {
+        uintptr_t get = H->sym("App::IMessageManager::Get");
+        if (void* m = get ? skg::cdecl_call<void*>(get) : nullptr)
+            skg::vcall<void>(m, 0x14 / 4, 0x689C9B9u, (void*)s_token, 0);
+    }, nullptr);
+    g_saves_posted++;
+    return true;
+}
+
 static bool g_planet_missing; // the last share_now failed because the played planet has no file yet
 
 struct PendingShare {
