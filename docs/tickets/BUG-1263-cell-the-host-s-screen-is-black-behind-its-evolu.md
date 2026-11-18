@@ -10,7 +10,7 @@ role: host
 versions: 0.7.15.1
 fixed_in: unreleased
 branch: fix/w53-cellnow
-commits: c0ac4ab0 22b0acda 2774e956
+commits: c0ac4ab0 22b0acda 2774e956 b2fbc72c ce5e78c1 52e2f9dc dd36d05f
 tests: evo_screens_cell_noready, evo_screens_cell
 signature:
 docs: docs/re/cell.md#cell-editor-now, docs/06-testing.md#testing-cell-editor-now, docs/09-coop-design.md
