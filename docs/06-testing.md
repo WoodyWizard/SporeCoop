@@ -8998,3 +8998,27 @@ recordings of fix/w51-trail p90 2.3-6.4 m), PASS with it (p90 0.54-0.55 m, max 2
 fail BUG-1229's `a standing copy is not in the run` (32 % against the host's 10 %): the copies that ran off played the
 run; rel/0.7.15 without the hold failed it in 2 of 2 runs (21 % / 20 %, lane 6, 20261117-152008, -152224 with an
 early variant of the fix).
+
+## Second final check of 0.7.15: triage (2026-11-18, rel/0.7.15)
+<a id="testing-final-check-0715-b"></a>
+
+Run 20261117-154911 (rel/0.7.15 34b52d3c, 841 tests, 4 lanes, 344 min): 819 PASS, 20 FAIL, 1 INCONCLUSIVE. All 21
+ran again on rel on 8 lanes (20261117-213354): 14 PASS. The other 7:
+
+* `diag`: the fault in the frame sometimes ends in neither a hang nor a crash report: the game's handler catches it and
+  SporeKit lets the frames go on (BUG-0667). The test now takes that third outcome too (BUG-1232). civ, diag and
+  npc_frozen_thaw passed at 11114769 and failed at 34b52d3c; bisect builds (b715/<sha>: 01217ee9, 34ab3598, 5e36ab76,
+  dc89655d) showed civ and diag passing at every point and on rel itself later: no code change, random outcomes.
+* `npc_frozen_thaw`: v0.7.14.1 3 of 6, rel 4 of 6 the same night: old (BUG-1234, known issue).
+* `tribe_walk_player`: v0.7.14.1 4 of 4, rel 3 of 4: old (BUG-1235, known issue).
+* `latency_step_ingame`: mixed on bisect points (dc89655d PASS, 5e36ab76 FAIL, 01217ee9 PASS): a flake (the guest
+  walker lost its way back, 505 m, "not found"; Xwayland saturated).
+* `campaign_tribe_noclick`: rel 0 of 2 and v0.7.14.1 1 of 2, each time another reason (sync-check t missing, proxy
+  monitor, the campaign stopped in Tribe): the known flake. The first run's host crash in FormTribe after the test's
+  `coop.tribe form` is BUG-1233.
+* `space_npc_model`: INCONCLUSIVE as BUG-1213 says (random case); one PASS in 20261117-232700.
+* `space_eco_live`: a key-frame camera on a creature at the origin (not placed yet) divided by zero: test fixed
+  (61a50d39, BUG-1148 History).
+
+Lesson: `lab.py run` of a v0.7.14.1 tree has no `--until` (C: error); its lab also counts memory, so the campaign
+comparison (three 4-game runs) held the other runs until it ended ("not started, too little memory after 1800 s").

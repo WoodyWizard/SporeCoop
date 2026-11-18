@@ -55,3 +55,4 @@ itself is the game's pick of a ship, which no test seam controls yet.
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t3 (tests: empty GraphicsCache, more visits); INCONCLUSIVE stays possible.
+- 2026-11-18: second final check 20261117-154911 INCONCLUSIVE again (lane 4), rerun 20261117-213354 INCONCLUSIVE; with --repeat 4 (out/lab/20261117-232700) PASS in #4 (lane 3, the guard replaced a ship model), INCONCLUSIVE in #3: the case stays random, the guard works.
