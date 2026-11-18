@@ -62,6 +62,8 @@ when its read faults. Decided once a second (the update calls every frame while 
 `coop.tribe form` decides now). `coop.tribe form` adds `(held: tribe.form_species)` and the three numbers;
 `coop.tribe form_species` prints them alone. `coop.fix tribe.form_species off`: the game's own read (0.7.14).
 Symbols added: `App::Property::GetArrayUInt32` (verified), `SporeCoop::TribeNouns_Cb3` / `Cb4`. Wire bytes unchanged.
+Since BUG-1238 (same branch) the held call is made with the list's last species instead (`tribe.form_last_species`): the
+hold alone is what `coop.fix tribe.form_last_species off` gives.
 
 ## Verification
 Test `tribe_form_species` (tools/tests/coop_tribe_form_species.py, tribe fixture, cold): the host's species list made as
@@ -82,3 +84,5 @@ short as the campaign planet's for the fixture's tribes (2 species, 0xFFFFFFFF p
   allows (the campaign's planet: 4 of 5); the game's own update faulted every second, the test command crashed the
   host. Fixed with `tribe.form_species` on fix/w52-formtribe; FAIL 20261118-002824, PASS 20261118-002819. BUG-1238
   opened for the village that never forms there.
+- 2026-11-18: BUG-1238 on the same branch: the villages after the list take its last species (the hold stays as
+  `tribe.form_last_species off`); tribe_form_species checks both (FAIL 20261118-005109 with tribe.form_species off).

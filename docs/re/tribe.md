@@ -4225,3 +4225,35 @@ and the Tribe segment save of the final check's campaign 20261117-154911).
   ends with too when its read faults. ? Why the campaign's planet has one species fewer (an archetype without a
   species in the test profile, or the saved keys) is not known; the fifth village never forms there (BUG-1238).
 
+
+## The villages after a used-up species list: the list's last species (2026-11-18, fix/w52-formtribe)
+<a id="tribe-form-last-species"></a>
+
+BUG-1238 (after BUG-1233, [tribe-form-species](#tribe-form-species)). GOG 2024, Ghidra and lab runs on lanes 2-4.
+
+* ✔ (Ghidra) How 0xCC6160 picks a species per archetype pair: `cTribeArchetype::GetTribeArchetype(id)` +0x50 is a key;
+  0x4E00C0 (species manager, hash map +0xB4 / +0xB8) gives its entry; 0x4E0060 -> 0x4D2270 asks the Sporepedia's
+  object template DB (OTDB vt 0x24, or vt 0x3C with a species' +0x504) for **2** candidates matching the entry's filter
+  (+0x14), skips the player's species (cSpeciesManager_PlayerSpecies) and every candidate without a species profile
+  (and removes that one from the OTDB, vt 0x74), and gives the first one left. 0 found: the archetype adds nothing, the
+  list is one shorter. The keys are kept at +0x7C (`mNPCTribeSpeciesKeys`, 12 bytes each) as the list is built (after
+  a rebuild `saved_keys` = the list's size).
+* ✔ (runtime) **The game's own list repeats species**: of 37 rebuilds (`call 0xCC6160 thiscall <ctrl>` after emptying
+  +0x7C..+0x80; lab 20261118-004440 lane 2, -005438 lane 4) 23 had a species twice or three times (two archetypes
+  picked the same creature), e.g. `2926CCF2,2926CCEF,2926CCF2,2926CCEC,2926CCF1`. The pool differs per lane profile:
+  stock creatures (065C..., 0672...) on lane 2, only the profile's own creations (2926CCEA..2926CCF2) on lane 4.
+* ~ (runtime) Why the campaign planet's list had 4 at the start of its Tribe stage (saved_keys=4 in its segment save of
+  15:55:33, 4-player session) is not known: 33 rebuilds of that planet's list in a 2-player session gave 5 every time,
+  the fixture 5 of 5 (4 rebuilds). Negative: the mod has no hook on this path (0xCC6160, 0x4D2270, the OTDB); the one
+  hooked function it calls, cSpeciesManager_PlayerSpecies (creature_hp.cpp, BUG-0732), answers its override only inside
+  cCreatureAnimal_ComputeScale; savestrip filters only the mod's own nouns. Likely the random pick at the stage's start
+  (2 candidates: the player's species and one without a profile), not checked.
+* Fix `tribe.form_last_species` (h_Form, host and solo; a guest forms none): when FormTribe would read past the list
+  (BUG-1233) the list is made as long as the tribes for that call, its last species repeated (in its capacity, else the
+  game's own EASTL insert `SporeCoop::EASTL_VectorPtr_InsertValue` 0xB96750, which moves it to 2x storage), then its
+  size is put back: the next village takes the list's last species with the archetype of its own property list pair,
+  up to the property list's limit (6 tribes for 10). The game's list and saved keys stay as the game made them.
+  Runtime (tribe_form_species, list planted to 2 with no room): tribes 3 -> 6 (the game's own update at 3 / 4, the
+  test command at 5), the list moved to new storage of 8, the three new villages with the list's last species, the
+  guest's copies with the same species, no fault on either game.
+* The host logs once per list: `tribe: the NPC tribe controller has 4 species for 5 NPC villages (property list 10)`.

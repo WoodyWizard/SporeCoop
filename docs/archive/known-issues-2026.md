@@ -3572,3 +3572,19 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   host citizen (`civ.citizen_hold`; standing samples p90 3.4-4.5 m -> 0.54 m):
   [../re/civ.md#civ-citizen-hold](../re/civ.md#civ-citizen-hold),
   [../06-testing.md#testing-civ-citizen-hold](../06-testing.md#testing-civ-citizen-hold)
+
+## Tribe: the last NPC village never forms on some planets, the goal bar stays at 4 of 5 (2026-11-18, fix/w52-formtribe)
+<a id="issue-tribe-species-list-short"></a>
+
+* What happens: on a planet whose NPC tribe controller built its species list shorter than the villages it allows
+  (the final check's campaign planet: 4 species, 5 NPC villages), the fifth village never forms after the fourth one
+  is conquered; the goal bar stays at 4 of 5. Before 0.7.15 the game read past the list there every second and the
+  host could crash (BUG-1233, fixed: the call is held now).
+* Reproduce: the campaign's Tribe segment save of lab 20261117-154911 (`coop.load`), `coop.tribe form_species`
+  says `tribes 5, property list 10 (x2 needed 10), species list 4: the next species would be read past the list`.
+* Known: [../re/tribe.md#tribe-form-species](../re/tribe.md#tribe-form-species). Not checked: why the list is short, single player.
+* Ticket: BUG-1238 (fixed, unreleased, fix/w52-formtribe): the villages after a used-up list now take its last
+  species, as many as the planet allows (`tribe.form_last_species`); the game's own list repeats species too. Why the
+  campaign planet's list was short at the stage's start is not known (33 rebuilds of its list in a session gave 5 each):
+  [../re/tribe.md#tribe-form-last-species](../re/tribe.md#tribe-form-last-species),
+  [../06-testing.md#testing-tribe-form-species](../06-testing.md#testing-tribe-form-species)
