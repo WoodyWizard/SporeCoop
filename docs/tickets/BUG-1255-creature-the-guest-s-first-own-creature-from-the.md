@@ -10,7 +10,7 @@ role: guest
 versions: <0.7.15
 fixed_in: unreleased
 branch: fix/w53-cellvote
-commits: 37042f38
+commits: 9b1dca20 37042f38 021477ff
 tests: evo_screens_switch, evo_screens_switch_slow
 signature: the guest's own first Creature editor (landfall FD4902BD) shows "Save '<host species>' as a new creation or replace" on done
 docs: docs/re/creations.md#creations-own-editor-world-species

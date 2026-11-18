@@ -10,7 +10,7 @@ role: guest
 versions: <0.7.15
 fixed_in: unreleased
 branch: fix/w53-cellvote
-commits: 9b1dca20 37042f38
+commits: 9b1dca20 37042f38 39048c26
 tests: evo_screens_cell_mate
 signature: guest `coop.pool mate` alive=1 while the host's `coop.pool near <its pos> 5` lists no cell of the mate's model
 docs: docs/re/cell.md#cell-partner-mate

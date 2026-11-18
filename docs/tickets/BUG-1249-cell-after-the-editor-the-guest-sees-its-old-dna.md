@@ -10,7 +10,7 @@ role: guest
 versions: <0.7.15
 fixed_in: unreleased
 branch: fix/w53-cellvote
-commits: 707817ca
+commits: 707817ca 6878398c
 tests: evo_screens_cell_dna
 signature: guest log "cell: DNA on entering Cell: ... spent=N" after its own editor, then the HUD's DNA back at the host's count within 0.5 s
 docs: docs/re/cell.md#cell-mating-round

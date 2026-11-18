@@ -10,7 +10,7 @@ role: host
 versions: <0.7.15
 fixed_in: unreleased
 branch: fix/w53-cellvote
-commits: fb58d6c8 9b1dca20
+commits: fb58d6c8 707817ca 9b1dca20 3c49737f dd36d05f
 tests: evo_screens_cell_eggs, evo_screens_cell_eggs_lowfps, evo_screens_switch_slow
 signature: host log "cell: DNA at the editor request" every ~10 s while "vote=on" in Cell; or the host Creature/black for 60 s behind the arrival vote of editor FD4902BD
 docs: docs/re/cell.md#cell-mating-round
@@ -58,6 +58,13 @@ Off: as 0.7.15.
   black 12 s, the guest's own editor on arrival, two own creatures). Both runs also fail the lab's sync-check gate
   (Cell objects missing on the guest under lowband: in every run of this test since it exists, not this ticket) and
   BUG-1255's dialog check (fixed later on this branch).
+* `evo_screens_cell_eggs_lowfps` (the host at 10 fps, the vote runs out): FAIL out/lab/20261118-130445 (lane 2,
+  `SPORE_FIX_OFF=cell.vote_mate`: 5 more matings, 6 egg layings, 3 flashes in 58 s); PASS out/lab/20261118-131528
+  (lane 2).
+* Related, kept: evo_screens_cell_both, cell_editor_budget OK (out/lab/20261118-125348); evo_screens_cell, switch_vote
+  OK (out/lab/20261118-125715). With the flicker gone, evo_screens_cell_noready shows the host's black behind a vote
+  nobody answers as one 54 s run: the vote's own wait (BUG-1263, open with a design sketch), the test accepts it up to
+  the vote's end.
 
 ## History
 - 2026-11-18: opened.
