@@ -25,7 +25,7 @@ import sys
 import threading
 import time
 
-from harness import field_dotall as field, mode, waiter
+from harness import field_dotall as field, mode, pool, waiter
 import screen_look as sl
 import lane
 from sporectl import Console
@@ -43,10 +43,6 @@ BLACK_LIMIT = 20.0     # seconds of a black picture in a row that a player would
 
 wait = waiter(step=1.0)
 ARG = lambda k, d: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d
-
-
-def pool(con):
-    return con.call('coop.pool')['out']
 
 
 def hud_ready(con):

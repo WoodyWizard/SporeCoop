@@ -1569,3 +1569,28 @@ again, then the creature stage's evolution request as its mating call builds it,
   opens its own editor <id> (BUG-1222)". Off: the game's editor (0.7.14).
 * ? Not tried: the game's own mating call with real input (the test builds the same request), a guest in its own
   world (left unchanged: the request goes on as before).
+
+## The first Creature editor's vote and a guest still on its way (2026-11-18, fix/w52-evoeditor)
+<a id="creations-own-editor-arrival"></a>
+
+BUG-1240 (players' video: at Cell -> Creature one player had the editor, the other a black screen, then both played
+the same creature). GOG 2024, lanes 2-5, `tools/tests/coop_evo_screens.py --part switch` (real clicks: History's
+check, I'm ready, the parts dragged in both editors, Save New; both screens shot every 2 s).
+* ✔ (runtime) After BUG-0315's switch vote the host's game enters Creature and asks for the landfall editor
+  FD4902BD within a second; its vote is the arrival vote (a guest that plays the host's Creature world counts as
+  ready, else 60 s). The host shares its Creature world 2 s after entering (3.1-3.3 MB for the cell fixture's
+  planet). On a clean link the guest receives and loads it in about 10 s (Cell -> galaxy menu -> Loading ->
+  Creature, the galaxy menu drawn, the Creature stage black for 4-12 s: the game's stage-entry pause, BUG-0313),
+  the vote counts it and its own editor opens 15 s after its avatar appeared.
+* ✔ (runtime) Over 512 kbit/s (`SPORE_NET=lowband`) the transfer takes about a minute: the vote ends "time is up"
+  while the guest is still in Cell receiving. Before the fix the guest took no own editor (the vote handler only
+  takes one in Creature, `own_editor_tick` drops it in another stage), arrived playing the world's species (the host's
+  creature) and followed the host's evolved one in place (BUG-0508): both games then play the same species
+  (lab 20261118-094043, 20261118-095457).
+* Fix `core.own_editor_arrival`: the landfall editor's end keeps the guest's own editor due while it is on its way
+  (Cell, galaxy menu, load); it opens after the arrival and the 15 s settle, the guest saves its own creature and
+  each game draws the other's (lab 20261118-095454: the guest's editor 25 s after the host's, two species, the host's
+  puppet of the guest its own creation).
+* What the waiting guest sees while the host is in its editor: its Cell world while the world is received, the galaxy
+  menu, the loading screen and then the stage-entry pause (black, 4-12 s in the lab); the black part grows with a slow
+  PC or link, and that is the "black screen" of the report as far as the lab shows it (BUG-1239).
