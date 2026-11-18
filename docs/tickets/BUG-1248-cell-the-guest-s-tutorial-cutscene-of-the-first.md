@@ -40,7 +40,7 @@ the cell chasing it seen at the start). After it the game clears G+0x518C and th
 the window in steps of 10; the guest's `coop.pool goldie` sampled for 6 s of the cutscene, key frames of both games.
 * FAIL (`SPORE_FIX_OFF=cell.goldie_keep`): out/lab/20261118-124015 (Goldie / camera cell / hunter alive in 0 of 17
   samples; the guest's key frame: its own cell, no Goldie, no hunter). Earlier versions of the test: -122658, -123002.
-* PASS: out/lab/20261118-123823 (19 of 19; the guest's key frame shows Goldie and its hunter as the host's does).
+* PASS: out/lab/20261118-123823 (19 of 19; the guest's key frame shows Goldie and its hunter as the host's does), out/lab/20261118-125159 (19 of 19).
 
 ## History
 - 2026-11-18: opened.

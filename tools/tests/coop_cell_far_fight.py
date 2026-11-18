@@ -161,7 +161,10 @@ def main():
         print(f'  baseline: host turned {base_turn:.2f} rad (largest step {base_big:.2f}) in {base_n} samples, anims {base_anims}', flush=True)
         recent(host)  # (read once: the baseline's own effects stay in the ring with their age)
         tf0 = time.time()
+        rec_fight = None
         for part in parts:
+            if part == 'hurt' and rec_fight is None:  # (a knocked-out guest respawns next to the host: its effects are there)
+                rec_fight = (recent(host), time.time())
             tp0 = time.time()
             swims, bites = hurt(host, guest, 20) if part == 'hurt' else fight(guest, part, 20)
             tp1 = time.time()
@@ -177,7 +180,8 @@ def main():
         tf1 = time.time()
     finally:
         sh.stop()
-    played = [r for r in recent(host) if r[0] == 'p' and r[4] <= tf1 - tf0 + 2]
+    rec, rec_at = rec_fight or (recent(host), time.time())
+    played = [r for r in rec if r[0] == 'p' and r[4] <= rec_at - tf0 + 2]
     sent = [r for r in recent(guest) if r[0] == 's']
     near = [r for r in played if 0 <= r[3] < 6.0]
     print(f'  guest sent {len(sent)} world effects (ids {sorted({r[2] for r in sent})})', flush=True)

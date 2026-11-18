@@ -50,6 +50,25 @@ class Sampler(threading.Thread):
         self.join(10)
 
 
+def after_editor(ck, host, guest):
+    """the host's mating call, the vote, the editors (each player's own when it has one), then the guest's reload"""
+    from coop_editor_desync import READY, edit_cell, mating_call, mode, wait, wait_reload
+    host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
+    _, reached = mating_call(host, 'host', host_vote)
+    ck(reached, 'the host reaches its mate: the evolution vote starts')
+    wait(lambda: guest.call('coop.uistate')['out'], 10)
+    guest.call('click %d %d' % READY)
+    ck(wait(lambda: 'Editor' in mode(host), 30), 'the host editor opens after the vote')
+    time.sleep(4)
+    if 'Editor' in mode(guest):
+        edit_cell(guest, 'Turnguest')
+    edit_cell(host, 'Turncell')
+    ck(wait(lambda: 'Cell' in mode(host), 30), 'the host is back in the pool')
+    print(f'  guest reloaded the host\'s world: {wait_reload(guest, 60)}', flush=True)
+    wait(lambda: 'Cell' in mode(guest) and 'Cell' in mode(host), 30)
+    time.sleep(8)
+
+
 def own_pos(con):
     m = re.search(r'^anim avatar \S+ anim=\S+ head=\S+ angv=\S+ pos=\(([-\d.]+) ([-\d.]+)\)', con.call('coop.pool anims')['out'], re.M)
     return (float(m.group(1)), float(m.group(2))) if m else None
@@ -65,11 +84,14 @@ def main():
     ap.add_argument('--fps', type=int, default=0)
     ap.add_argument('--crowd', type=int, default=0)
     ap.add_argument('--swim', action='store_true')
+    ap.add_argument('--editor', action='store_true', help='first the host\'s evolution (mating call, vote, editors) and the reload')
     ap.add_argument('--far', type=float, default=0, help='the guest that far from the host: its mirrors there are cells off the host\'s screen')
     args = ap.parse_args()
-    host, guest = start('cell')
+    host, guest = start('cell', **({'guest_creations': False} if args.editor else {}))
     ck = Checks()
     time.sleep(3)
+    if args.editor:
+        after_editor(ck, host, guest)
     if args.fps:
         print('  guest: ' + guest.call(f'frame.limit {int(1000 / args.fps)}')['out'].strip(), flush=True)
     if args.far:  # (the join after a load puts a new own cell back next to the host for 30 s, BUG-0352: again until it holds)

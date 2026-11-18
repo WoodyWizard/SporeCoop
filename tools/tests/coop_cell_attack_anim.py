@@ -67,22 +67,28 @@ def host_hp(host, key):
 
 
 def attack(con, host, n=5):
-    """swim at the nearest creature on the screen (clicks on it, as a player rams it), then the game's Bite on it.
-    Returns the bites whose creature lost hp in the host's game (or died there): the attack really happened."""
-    outs, landed = [], 0
+    """swim at the nearest creature on the screen (clicks on it, as a player rams it), then the game's Bite on it (with no
+    creature on the screen: the nearest one, by the game's Bite from where the cell is). Returns the outputs and the bites
+    whose creature lost hp in the host's game (or died there): the attack really happened."""
+    outs, landed, key = [], 0, None
     for _ in range(n):
         m = re.search(r'^see c(\d+) creature \S+ (\d+) ([\d.]+) (\d+) (\d+)', con.call('coop.pool see 60')['out'], re.M)
-        if not m:
-            outs.append('no creature')
-            time.sleep(1.0)
-            continue
-        key = m.group(1)
-        for _ in range(4):
-            con.call(f'click {m.group(4)} {m.group(5)}')
-            time.sleep(0.5)
+        if m:
+            key = m.group(1)
+            for _ in range(4):
+                con.call(f'click {m.group(4)} {m.group(5)}')
+                time.sleep(0.5)
+        elif key is None or host_hp(host, key) <= 0:
+            r = con.call('coop.pool kill -')['out'].strip()  # (names the nearest creature; this bite is not counted)
+            k = re.match(r'bit c(\d+) ', r)
+            key = k.group(1) if k and 'dying' not in r else None
+            outs.append('first ' + r[:50])
+            time.sleep(1.2)
+            if key is None:
+                continue
         before = host_hp(host, key)
         outs.append(con.call(f'coop.pool kill c{key}')['out'].strip()[:60])
-        time.sleep(1.0)
+        time.sleep(1.2)
         after = host_hp(host, key)
         landed += before > 0 and after < before
     return outs, landed

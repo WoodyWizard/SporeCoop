@@ -186,7 +186,8 @@ struct Recent {
     float x = 0, y = 0, z = 0, d = -1; // d: distance to the local player's object (-1: none)
     double at = 0;
 };
-static Recent g_recent[48];
+static constexpr size_t kRecent = 160;
+static Recent g_recent[kRecent];
 static size_t g_recent_at, g_recent_n;
 static void note_recent(char dir, uint8_t player, uint32_t id, const net::Vec3& p)
 {
@@ -202,8 +203,8 @@ static void note_recent(char dir, uint8_t player, uint32_t id, const net::Vec3& 
             r.d = net::dist(l, p);
     }
     r.at = H ? H->time_seconds() : 0;
-    g_recent_at = (g_recent_at + 1) % 48;
-    g_recent_n = g_recent_n < 48 ? g_recent_n + 1 : 48;
+    g_recent_at = (g_recent_at + 1) % kRecent;
+    g_recent_n = g_recent_n < kRecent ? g_recent_n + 1 : kRecent;
 }
 // world effects already sent this frame (effect pointer, id): the manager and the world create
 // hooks both queue the same effect, so the second one is skipped. Open addressing keyed by the
@@ -1202,7 +1203,7 @@ std::string recent()
     char b[160];
     double t = now();
     for (size_t i = 0; i < g_recent_n; i++) {
-        const Recent& r = g_recent[(g_recent_at + 48 - g_recent_n + i) % 48];
+        const Recent& r = g_recent[(g_recent_at + kRecent - g_recent_n + i) % kRecent];
         snprintf(b, sizeof b, "recent %c from=%u id=%08X at=(%.2f %.2f %.2f) local_d=%.2f age=%.1f\n", r.dir, r.player, r.id, r.x, r.y,
                  r.z, r.d, t - r.at);
         s += b;
