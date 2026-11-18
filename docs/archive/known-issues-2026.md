@@ -3619,3 +3619,17 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   animation of a partner was ever seen on a player's own cell:
   [../re/cell.md#cell-partner-hatch](../re/cell.md#cell-partner-hatch),
   [../06-testing.md#testing-cell-cellfx](../06-testing.md#testing-cell-cellfx)
+## Cell: the host's screen is black behind its evolution vote (2026-11-18, fix/w53-cellvote)
+<a id="issue-cell-vote-black"></a>
+
+* What happens: after the host's mating scene in Cell the host's picture is black (the co-op window with the vote over
+  it) until every guest pressed I'm ready, at most 60 s.
+* Reproduce: `lab.py run evo_screens_cell_noready` (the guest never presses: 54-60 s black on the host).
+* Known: the vote holds the host's editor request after the game faded out; the Cell vote opens nothing for the guests
+  ([../re/cell.md#cell-editor-vote-timing](../re/cell.md#cell-editor-vote-timing)). Before BUG-1245 the repeated mating rounds broke the black every ~10 s.
+* Next steps: open the host's Cell editor at once (as Creature's core.editor_now), design sketch in the ticket.
+* Ticket: BUG-1263 (fixed, unreleased, fix/w53-cellnow): the host's Cell editor opens at once, the others get a
+  notice (`cell.editor_now`, with the session setting `core.editor_now`; FAIL 20261118-134724: 54 s black, PASS
+  20261118-134729: the editor 0 s after the mate):
+  [../re/cell.md#cell-editor-now](../re/cell.md#cell-editor-now),
+  [../06-testing.md#testing-cell-editor-now](../06-testing.md#testing-cell-editor-now)

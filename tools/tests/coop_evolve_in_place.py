@@ -6,8 +6,8 @@ the whole world again (a 3 MB save) and went Cell / Creature -> galaxy menu -> l
 new creature had already reached it. The guest here has no creations of its own (it plays the host
 world's species, the case where the reload gave the guest's own avatar its new body).
 
-  --case cell      cell fixture: the host's mating call, the vote, the guest's "I'm ready", the host moves
-                   an eye and names the cell, done.
+  --case cell      cell fixture: the host's mating call (its editor at once since BUG-1263; the vote and the
+                   guest's "I'm ready" with core.editor_now off), the host moves an eye and names the cell, done.
   --case creature  creature fixture: +40 DNA, `coop.vote evolve` (the game's evolution request), the
                    guest's "I'm ready", the host drags a mouth onto its creature (a real evolution: a new
                    species key), done; the guest leaves its own editor with the red cross.
@@ -118,7 +118,7 @@ def hud_ready(con):
 
 
 def host_cell_editor(host, guest, ck):
-    """coop_editor_desync.py parts 2-3: the mating call, the vote, the host's cell editor"""
+    """coop_editor_desync.py parts 2-3: the mating call, the host's cell editor (at once since BUG-1263)"""
     vote = lambda: 'vote active' in host.call('coop.vote')['out'] or in_editor(host)
     for _ in range(3):
         wait(lambda: hud_ready(host), 40)
@@ -136,9 +136,10 @@ def host_cell_editor(host, guest, ck):
             x, y = (min(max(int(v), 20), lim) for v, lim in ((m.group(1), 1420), (m.group(2), 1000)))
             host.call(f'click {x} {y}')
         time.sleep(2)
-    ck(vote(), 'the host reaches its mate: the evolution vote starts')
-    wait(lambda: "'I'm ready'" in guest.call('coop.uistate')['out'], 10)
-    guest.call('click %d %d' % READY)
+    ck(vote(), 'the host reaches its mate: its editor opens (or the evolution vote starts)')
+    if 'vote active' in host.call('coop.vote')['out']:  # the session setting core.editor_now off (BUG-1263)
+        wait(lambda: "'I'm ready'" in guest.call('coop.uistate')['out'], 10)
+        guest.call('click %d %d' % READY)
     ck(wait(lambda: in_editor(host), 30), 'the host is in its cell editor')
     time.sleep(6)
     host.call('move 866 540')  # the second eye to the back

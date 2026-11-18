@@ -152,7 +152,13 @@ Shared contracts between the features:
   to the Creature stage"; the first Creature editor's vote that follows counts every player who has arrived as ready.
 * An evolution inside the Creature stage (BUG-0516, `core.editor_now`) has no vote: the host's editor opens at once and
   every guest gets "Evolve now" (90 s) for its own editor; a guest who does not take it plays on and evolves at its
-  nest later. The Cell stage's evolution, stage starts and design editors keep the vote.
+  nest later. Stage starts and design editors keep the vote.
+* The Cell stage's evolution (BUG-1263, `cell.editor_now`, the same session setting `core.editor_now`) has no vote
+  either: the host's mating call opens its cell editor at once (the game has faded out after the egg laying; the vote
+  kept the host on that black picture until every guest answered, up to 60 s) and the others get a notice "<host>
+  evolves its cell". There is no offer: the vote never opened an editor for the guests in Cell, a guest evolves through
+  its own mating call, and a guest that plays the host's cell takes the new one in place after the host's editor. With
+  the setting off the host's Cell evolution waits for the vote as before.
 * Creature -> Tribe (BUG-1085, `core.editor_now_tag`): "an evolution inside the Creature stage" is the mating
   editor's request (tag 0x12191CA; not the first Creature editor after Cell); the Timeline's evolve button at the end
   of the stage (tag 0x64AA168) is a stage start: the host's press starts the vote "wants to move on to the Tribe
@@ -204,7 +210,8 @@ analysis - [docs/re/creations.md](re/creations.md)):
   the edited creature (or cell) becomes the player's own and is sent to the others, always with its
   records (a new creation is sent once it is in the My Creations file: [re/creations.md](re/creations.md) 8);
 * Cell stage: a guest calls its own mate (the mating-call button) and evolves its own cell in its
-  own editor without a vote; the host's mating call goes through the vote (one vote per call), and
+  own editor without a vote; the host's mating call opens the host's editor at once (BUG-1263; through the vote,
+  one vote per call, with the session setting `core.editor_now` off), and
   after the host's editor everybody gets the host's new cell in place (no world reload since BUG-0508,
   [re/creations.md](re/creations.md#creations-evolve-in-place))
   ([re/cell.md](re/cell.md) 10, `coop_editor_desync.py`).

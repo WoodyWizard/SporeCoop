@@ -9149,7 +9149,7 @@ BUG-1241, BUG-1250, BUG-1252, BUG-1253 (creature fixture, warm; docs/re/creature
   "everybody gets the new body" while it makes its own creature. `--own-keep <mask>` (exploration) sets
   `coop.editreq keep` on the guest with `creations.own_editor_cancel` off.
 * `evo_screens_cell_noready` (BUG-1263): with the mating rounds gone the host's black behind a vote nobody answers is one
-  run of up to 60 s; the check accepts it up to the vote's end (the flashes of the rounds used to split it).
+  run of up to 60 s; the check accepts it up to the vote's end (the flashes of the rounds used to split it). Superseded (2026-11-18, fix/w53-cellnow): no vote, no long black allowed, #testing-cell-editor-now.
   `evo_screens_switch_noready` saw the guest's stage-entry black at 22 s once (limit 20 s) under load: rerun before
   blaming a change.
 ## The tutorial adventure after a Creature session; fossils with a model list (2026-11-18, fix/w53-advorn)
@@ -9197,3 +9197,19 @@ BUG-1241, BUG-1250, BUG-1252, BUG-1253 (creature fixture, warm; docs/re/creature
   (+0x1B0 stays 0 on the attacker); the control is now that the bites land (the creature's hp in the host's game), the
   check that the other, idle cell plays no new animation (it failed in every run before: its control asked for an
   attacker animation the fixture never plays).
+
+## The host's Cell evolution without a vote: the tests of the Cell vote (2026-11-18, fix/w53-cellnow)
+<a id="testing-cell-editor-now"></a>
+
+* BUG-1263 (`cell.editor_now`): the host's Cell mating call opens its editor at once. `evo_screens_cell` and
+  `evo_screens_cell_noready` measure the host's picture from the mating call to its editor (the fade comes with the egg
+  laying, before the request: measuring from the vote's start saw nothing once there was no vote) and require no black
+  of BLACK_LIMIT (20 s), plus the guest's notice "<host> evolves its cell" in the guest's log.
+  `SPORE_FIX_OFF=cell.editor_now` with `--ready none` fails (54 s black).
+* `coop_evo_screens.py --vote` (and `coop_cell_editor_timed.py --vote`) set the session setting `core.editor_now` off
+  (settings_lib.force, reset afterwards): the Cell vote of 0.7.15. The tests of what the vote does meanwhile need it:
+  `evo_screens_cell_eggs` / `_lowfps` (BUG-1245, cell.vote_mate), `evo_screens_cell_both` (BUG-1239,
+  core.vote_guest_editor), `cell_editor_vote` / `_revive` (BUG-0237, the host knocked out during its vote).
+* Tests that pressed the guest's I'm ready after the host's Cell mating call now do it only while `coop.vote` says
+  `vote active` (editor_desync, cell_editor_budget, evolve_in_place_cell, evo_screens_cell_dna): a blind click at the
+  ready button's place landed in the guest's pool.

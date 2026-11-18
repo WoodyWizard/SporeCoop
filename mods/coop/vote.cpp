@@ -97,6 +97,34 @@ static bool g_vote_mate_fix = true;
 COOP_FIX("cell.vote_mate", "BUG-1245", g_vote_mate_fix,
          "cell: while the host's evolution vote holds its editor the mate does not meet the host's cell again (the mating scene and the eggs repeated every 10 s)");
 static uint32_t g_held_mate = 0;     // the mate taken out while the vote holds (0: none)
+// BUG-1263 (the players' video: "a black screen for 25+ s" after the host's mating call in Cell): the host's Cell
+// evolution (the request after the egg laying, 0xE72AC0) waited for the vote while the game had already faded its picture
+// out, so the host saw one black picture until every guest pressed I'm ready (up to 60 s). The vote gave the guests
+// nothing: it opens no editor for them in Cell (docs/re/cell.md#cell-editor-vote-timing), a guest evolves through its own
+// mating call, and after the host's editor a guest that plays the host's cell takes the new one in place either way
+// (BUG-0508). On, with the session setting core.editor_now (the host's editor opens at once): the host's Cell request
+// goes to the game at once (only the save / new-body holds), the guests get a notice; the Cell -> Creature switch keeps
+// its vote (BUG-0315). Off, or that setting off: the vote of 0.7.15 (cell.vote_mate keeps its round single).
+static bool g_cell_now_fix = true;
+COOP_FIX("cell.editor_now", "BUG-1263", g_cell_now_fix,
+         "cell: the host's Cell evolution editor (its mating call) opens at once, the others get a notice (the vote kept the host's screen black up to 60 s)");
+static unsigned g_cell_now = 0; // tests (coop.vote): the host's Cell editors opened without a vote
+unsigned cell_editor_now_count() { return g_cell_now; }
+// BUG-1265 (evo_screens_cell_one, creature.mode host: one creature for everyone, only the host evolves): a guest's own
+// mating call in Cell is refused at h_Submit, but its mate G+0x51D4 stayed next to its cell, so the cell step's meeting
+// 0xE78D10 played the mating scene, the egg laying with the game's fade and the refused request again every ~10 s: the
+// guest's screen went black again and again (the loop of BUG-1245 on a refused request). Forgetting the mate only at the
+// refusal ended the loop but left the guest's picture black (the fade of the egg laying is undone only by an editor's
+// return or the next round, lab 20261118-142112: 36 s). On: in that mode a guest's mate is forgotten as soon as its
+// mating call brings it (cellsync::forget_mate, every frame from evo_flag_tick, outside the game's own call chain), so
+// no mating scene, egg or fade starts, and the guest reads why; a request that still comes is refused and its mate
+// forgotten too. Off: the meetings go on (0.7.15).
+static bool g_refused_mate_fix = true;
+COOP_FIX("cell.refused_mate", "BUG-1265", g_refused_mate_fix,
+         "cell: creature.mode host: a guest's mating call brings no mating round (its mate is forgotten): no mating scene, egg and black fade every 10 s");
+static bool g_refused_mate_due = false;
+static unsigned g_refused_mates = 0; // tests (coop.vote)
+unsigned refused_mates_count() { return g_refused_mates; }
 static unsigned g_vote_mates_held = 0; // tests (coop.vote)
 unsigned vote_mates_held() { return g_vote_mates_held; }
 // BUG-1245 (the same class: the host's game black behind a vote that holds its editor request): the first Creature
@@ -781,6 +809,9 @@ bool SK_CDECL h_Submit(void* req)
                 stage_end ? "the stage's end" : in_stage ? "an evolution in the stage" : "other");
         bool now_ok = g_editor_now_fix && settings::on(settings::kEditorNow) && g_sess.role() == net::Role::Host &&
                       !g_vote.active && mode == modes::kCreature && in_stage;
+        // BUG-1263: the host's Cell evolution opens at once too (no offer: a guest evolves through its own mating call)
+        bool cell_now = g_cell_now_fix && settings::on(settings::kEditorNow) && g_sess.role() == net::Role::Host &&
+                        !g_vote.active && mode == modes::kCell;
         // F5 (BUG-0769): creature.mode host: one creature for everyone, only the host evolves it (no vote, no offer);
         // a guest's own editor request is refused (the game's nest / mating call of a guest)
         bool one = host_creature_mode() && (mode == modes::kCell || mode == modes::kCreature);
@@ -791,7 +822,12 @@ bool SK_CDECL h_Submit(void* req)
             LOG("evolution: creature.mode host: this guest's editor request is refused (the host evolves)");
             feed("the host evolves the creature for everybody (session setting: one creature for everyone)");
             g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
+            g_refused_mate_due = g_refused_mate_fix && mode == modes::kCell; // BUG-1265
             return false;
+        } else if (cell_now) {
+            g_cell_now++;
+            LOG("evolution: the host's Cell editor opens at once, the others get a notice (cell.editor_now, BUG-1263)");
+            notice(g_name + " evolves its cell", -1);
         } else if (now_ok) { // BUG-0516: the host's evolution goes on now, the guests get an offer
             uint32_t id = skg::field<uint32_t>(req, 0xC);
             LOG("evolution: the host's editor opens at once, the others get an offer (core.editor_now)");
@@ -1246,6 +1282,19 @@ int evo_flag_now()
 }
 void evo_flag_tick(double now)
 {
+    // BUG-1265: creature.mode host: a guest's mate never meets its cell (no evolution of its own in that mode)
+    bool one_guest = g_refused_mate_fix && g_sess.connected() && g_sess.role() == net::Role::Client &&
+                     host_creature_mode() && game::mode_id() == modes::kCell;
+    if (g_refused_mate_due || one_guest) {
+        bool refused = g_refused_mate_due;
+        g_refused_mate_due = false;
+        if (uint32_t m = cellsync::forget_mate()) {
+            g_refused_mates++;
+            LOG("cell: the mate %08X does not meet our cell (creature.mode host: the host evolves, %s, BUG-1265)", m,
+                refused ? "after a refused request" : "at the mating call");
+            feed("the host evolves the cell for everybody (session setting: one creature for everyone)");
+        }
+    }
     bool refused = g_evo_flag_refused;
     g_evo_flag_refused = false;
     uintptr_t f = g_evo_flag_fix ? H->sym("SporeCoop::CreatureEvolutionPending_flag") : 0;

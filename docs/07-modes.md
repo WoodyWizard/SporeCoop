@@ -254,7 +254,7 @@ to know them. A module reads a value with `settings::on(settings::kX)` / `settin
 | `cell.respawn_small` | Cell | on | session | - | cellsync.cpp downed_tick |
 | `core.switch_vote` | Cell | on | session | - | coop.cpp h_CellToCreature, start_vote (arrival) |
 | `creature.mode` | Creature | own (own / host) | session | - | creations.cpp mine, cycle; coop.cpp h_Submit, the offer; coop_ui.cpp |
-| `core.editor_now` | Creature | on | session | - | coop.cpp h_Submit |
+| `core.editor_now` | Creature (also the Cell evolution, BUG-1263) | on | session | - | vote.cpp h_Submit |
 | `tribe.pincer` | Tribe | on | session | - | tribe.cpp h_CitizenTD |
 | `tribe.chief_aura` | Tribe | on | session | - | tribe.cpp h_CitizenTD (+20 %, the chief keeps 30 %) |
 | `tribe.duet` | Tribe | on | session | - | tribe.cpp duet_tick |

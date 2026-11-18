@@ -12,8 +12,9 @@ part does).
 
   1. Cell, guest: the mating call brings a mate that stays (the guest's sync removed it at once),
      reaching it opens the guest's own editor without a vote; cancel.
-  2. Cell, host: the mating call, the vote, the guest's "I'm ready": the host's editor opens and no
-     second vote starts (the game asked again right after the vote).
+  2. Cell, host: the mating call: the host's editor opens at once (BUG-1263, cell.editor_now; with the
+     session setting core.editor_now off: the vote and the guest's "I'm ready") and no vote starts
+     while it is open (the game asked again right after the request).
   3. Host edits and saves the cell: the guest gets the world and the host's new cell with its records
      (the bundle went out without them and the guest's game faulted building the puppet).
   4. Cell, guest: the mating call works again after the host's evolution.
@@ -185,14 +186,15 @@ def main():
     # 2. the host's mating call: the vote, then one editor
     host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
     alive, reached = mating_call(host, 'host', host_vote)
-    ck(reached, 'the host reaches its mate: the evolution vote starts')
-    # BUG-1166: the button by its name and caption, waited for (the window's rows moved with F1 of 0.7.12: the fixed
-    # rectangle 380 728 580 768 of before never matched again), clicked at its centre
-    btn = wait(lambda: READY_BTN.search(guest.call('coop.uistate')['out']), 10)
-    ck(btn, "the guest gets the vote with an I'm ready button")
-    at = ((int(btn.group(1)) + int(btn.group(3))) // 2, (int(btn.group(2)) + int(btn.group(4))) // 2) if btn else READY
-    guest.call('click %d %d' % at)
-    ck(wait(lambda: 'Editor' in mode(host), 30), 'the host editor opens after the vote')
+    ck(reached, 'the host reaches its mate: its editor opens (or the evolution vote starts)')
+    if 'vote active' in host.call('coop.vote')['out']:  # the session setting core.editor_now off (BUG-1263)
+        # BUG-1166: the button by its name and caption, waited for (the window's rows moved with F1 of 0.7.12: the fixed
+        # rectangle 380 728 580 768 of before never matched again), clicked at its centre
+        btn = wait(lambda: READY_BTN.search(guest.call('coop.uistate')['out']), 10)
+        ck(btn, "the guest gets the vote with an I'm ready button")
+        at = ((int(btn.group(1)) + int(btn.group(3))) // 2, (int(btn.group(2)) + int(btn.group(4))) // 2) if btn else READY
+        guest.call('click %d %d' % at)
+    ck(wait(lambda: 'Editor' in mode(host), 30), 'the host editor opens')
     second = False
     for _ in range(8):  # the game asks again while the mate is near (a race: not every time)
         second |= 'vote active' in host.call('coop.vote')['out']
@@ -250,17 +252,24 @@ def main():
                 host.call('click %d %d' % HISTORY_OK)
             time.sleep(4)
         ck('Creature' in mode(host), f'the host entered the Creature stage ({mode(host)})')
-        ck(wait(lambda: 'vote active' in host.call('coop.vote')['out'], 30), 'its first editor waits for the vote')
-        ck(wait(lambda: 'Creature' in mode(guest) and guest.call('coop.avatar')['ok'], 90), 'the guest follows')
-        k0 = field(host.call('coop.avatar')['out'], r'key=0x([0-9A-F]{8})')
+        k0 = field(host.call('coop.avatar')['out'], r'key=0x([0-9A-F]{8})')  # before its first editor (BUG-1264)
+        # BUG-1264: since BUG-1245 (core.arrival_nowait) the first editor's arrival vote does not wait for a guest still
+        # on its way: the host's editor may open without a vote the test sees, and the guest gets its own first editor
+        # when it has arrived (BUG-1240), so it may already be in that editor
+        ck(wait(lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host), 30),
+           f"its first editor comes (the arrival vote or the editor: {mode(host).strip()})")
+        ck(wait(lambda: ('Creature' in mode(guest) and guest.call('coop.avatar')['ok']) or 'Editor' in mode(guest), 90),
+           f'the guest follows (its Creature stage or its own first editor: {mode(guest).strip()})')
+        k0 = k0 or field(host.call('coop.avatar')['out'], r'key=0x([0-9A-F]{8})')
         time.sleep(3)
-        guest.call('click %d %d' % READY)
+        if 'vote active' in host.call('coop.vote')['out']:
+            guest.call('click %d %d' % READY)
         ck(wait(lambda: 'Editor' in mode(host), 40), 'the host is in the creature editor')
         time.sleep(6)
         add_legs(host)
         shot(host, 'editor_desync_legs.png')
         host.call('click %d %d' % DONE)
-        if wait(lambda: 'Editor' in mode(guest), 20):  # the guest's own editor (the vote opened it)
+        if wait(lambda: 'Editor' in mode(guest), 20):  # the guest's own editor (the vote or its arrival opened it)
             ui = wait(lambda: editor_ui(guest), 40)
             shot(guest, 'editor_desync_guest_editor.png')
             ck(ui, "the guest's own editor shows its interface (parts, done, cancel)")

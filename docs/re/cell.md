@@ -2554,3 +2554,24 @@ away, "I fought the air"). GOG 2024, lane 6, `tools/tests/coop_cell_partner_resp
   screen showed its own cell inside the hatch.
 * Fix `effects.cell_own_only` (effects.cpp `own_only`): these two ids are neither sent nor played for a partner, and the
   puppet gets no effect on a revive or a respawn.
+
+## The host's Cell evolution without a vote (2026-11-18, fix/w53-cellnow)
+<a id="cell-editor-now"></a>
+
+BUG-1263. GOG 2024, lanes 2 / 3 (`coop_evo_screens.py --part cell`, both games' screens every 2 s).
+* ✔ (runtime, lab 20261118-134724, `SPORE_FIX_OFF=cell.editor_now`, the guest never answers) What the vote cost: the
+  host's picture went black with the egg laying (the game's fade 0xE598E0 in `Cell_LayEgg` 0xE77930, then the request
+  0xE72AC0, #cell-mating-round) and stayed black behind the vote window for 54 s; the editor opened 59 s after the mate
+  (frame `01_host_vote_host.jpg`: the black game, "ready 1/2 - 59 s"). The guest played on in its drawn pool all along.
+* ✔ What the vote protected in Cell, checked one by one: it opens no editor for a guest (MSG_VOTE's end sets a guest's
+  own editor only in Creature, session_glue.cpp; #cell-editor-vote-timing), a guest's ready changes nothing in the
+  host's game, the host's editor return is in place for every guest (BUG-0508; a guest that plays the host's cell
+  follows the new one, docs/re/creations.md#creations-evolve-in-place), and "Start now" / 60 s let the host go without
+  the guests anyway. The tickets that brought the stage votes (BUG-0315 the Cell -> Creature switch, BUG-0178 item 1)
+  are about the stage switch, which keeps its vote. Nothing else waits on the Cell vote.
+* ✔ Fix `cell.editor_now` (vote.cpp h_Submit; with the session setting `core.editor_now`, default on): the host's Cell
+  request goes to the game at once (only the share-save and new-body holds stay; no vote is running), every player
+  gets the notice "<host> evolves its cell". The host's editor opened 0 s after the mate in lab 20261118-134729; the
+  guest's screen showed its pool and the notice (`01_host_vote_guest.jpg`), the guest took the host's new cell after it.
+  The game posts the editor's DNA budget itself right after the request (BUG-0560 re-posts it only for a held one).
+  With the setting off the vote of 0.7.15 runs (cell.vote_mate, core.vote_guest_editor still apply to it).

@@ -22,6 +22,8 @@ opens with it: the vote moves only the host). The host calls and reaches its mat
 knocked out while the vote is open, and the moment its knockout ends the guest clicks "I'm ready": the host's
 editor opens without a mating cinematic in between, so the 2-3 s window is reachable this way. Then cancel, the
 host's +0x111 clear, a bite of 1 (`coop.pool selfhit 1`, the bitten player's path) lowers the host's hp.
+Since BUG-1263 (cell.editor_now) the host's Cell editor opens at once when the session setting core.editor_now is
+on: --vote sets it off (the Cell vote, as 0.7.15 and for a host who chose "everybody votes first").
 
   SPORE_LANE=3 python3 tools/tests/coop_cell_editor_timed.py [--revive] [--vote]
 """
@@ -87,8 +89,16 @@ def main():
     ck = Checks()
     wait(lambda: 'cine=0' in guest.call('coop.pool')['out'], 30)
     ck(wait(lambda: (num(guest.call('coop.pool')['out'], 'mirrors') or 0) > 5, 30), 'the guest mirrors the host pool')
-    if by_vote:
-        return main_vote(host, guest, ck, revive, window)
+    if by_vote:  # BUG-1263: the Cell vote exists only with the session setting core.editor_now off
+        import settings_lib
+        import twoinst
+        twoinst.forget_settings()
+        ck(settings_lib.force(host, [guest], 'core.editor_now', 'off'), 'the guest got core.editor_now off (the Cell vote)')
+        try:
+            return main_vote(host, guest, ck, revive, window)
+        finally:
+            settings_lib.reset([host], ('core.editor_now',))
+            twoinst.forget_settings()
     # 1. the mate, then the knockout
     for _ in range(3):
         guest.call('coop.pool mate button')
