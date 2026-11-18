@@ -1023,6 +1023,26 @@ void drop_vote(const char* why)
 static bool g_vote_present_fix = true;
 COOP_FIX("core.vote_present", "BUG-0801", g_vote_present_fix, "core: a vote does not wait for a guest that plays another world");
 static int g_vote_away_last = 0;
+// BUG-1239 (players' video: while one player was in the evolution editor the other's screen stayed black): the host's
+// evolution vote (the Cell mating call; the game has already faded its picture out and holds the editor request) waited
+// for every guest's I'm ready, also for a guest that sat in its own editor at that moment (its own mating call opens it
+// without a vote, docs/09-coop-design.md 9.4.1): that guest cannot answer, so the host stared at a black screen until
+// the 60 s ran out. On: a guest whose game is in an editor is not waited for (it evolves already); the vote ends as
+// soon as the others are ready. Off: waited for (0.7.15).
+static bool g_vote_editor_fix = true;
+COOP_FIX("core.vote_guest_editor", "BUG-1239", g_vote_editor_fix,
+         "core: the host's evolution vote does not wait for a guest that is in its own editor (the host's screen stayed black meanwhile)");
+static unsigned g_vote_in_editor = 0; // tests (coop.vote): votes that stopped waiting for a guest in its editor
+static int g_vote_editor_last = 0;
+static bool peer_in_editor(uint8_t id)
+{
+    auto it = g_remotes.find(id);
+    if (it == g_remotes.end() || it->second.echo || it->second.buf.empty())
+        return false;
+    uint32_t m = it->second.buf.latest().mode;
+    return m == modes::kEditor || m == modes::kEdit;
+}
+unsigned vote_in_editor_count() { return g_vote_in_editor; }
 void vote_tick(double now)
 {
     if (!g_vote.active || g_sess.role() != net::Role::Host)
@@ -1049,13 +1069,24 @@ void vote_tick(double now)
             }
         }
     bool all = true;
-    int away = 0;
+    int away = 0, editing = 0;
     for (auto& p : g_sess.players()) {
         if (p.id != 0 && g_vote_present_fix && own_world::peer_elsewhere((uint8_t)p.id)) {
             away++; // BUG-0801: plays another world, ignores the vote (BUG-0702): not waited for
             continue;
         }
+        if (p.id != 0 && g_vote_editor_fix && !(g_ready.count(p.id) && g_ready[p.id]) && peer_in_editor((uint8_t)p.id)) {
+            editing++; // BUG-1239: in its own editor, it cannot answer: not waited for
+            continue;
+        }
         all &= g_ready.count(p.id) && g_ready[p.id];
+    }
+    if (editing != g_vote_editor_last) {
+        g_vote_editor_last = editing;
+        if (editing) {
+            g_vote_in_editor++;
+            trace::line("vote", "%d player(s) in their own editor: not waited for (BUG-1239)", editing);
+        }
     }
     if (away != g_vote_away_last) {
         g_vote_away_last = away;
