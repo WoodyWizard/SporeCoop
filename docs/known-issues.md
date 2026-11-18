@@ -344,6 +344,7 @@ anchor so other docs can link to it:
 * Why: the host's game fills the world (Simulator::Cell::PopulateTiles) from the world's one player species, and the
   guest's game shows the host's pool (cellsync.cpp). The world has no second player species.
 * Planned: an own species per player in the shared world (the 0.8 Rivals work).
+* Ticket: BUG-1257
 
 ## Cell -> Creature: over a slow connection the host sees a black screen for up to a minute before its first editor (2026-11-18, test evo_screens_switch_slow)
 <a id="issue-landfall-host-black-wait"></a>
