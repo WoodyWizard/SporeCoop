@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-harness
 commits: 0eb42086, 9c7aab93, 2134cab8, dd944dcb, 0e1995ce, a09480bd, 74a6e5c3, 56b478b7, 34438ac3, 2299d8de, 5c365e41, d49a3978, cea69c59
 tests: tools/tests/harness_selftest.py (make test, unit-tools), tools/harness_codemod.py --self-test, tools/tests/test_lint.py (copy check)
@@ -69,3 +69,4 @@ the new lint's FAIL case is planted in harness_selftest.py.
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-18: released in 0.7.15.

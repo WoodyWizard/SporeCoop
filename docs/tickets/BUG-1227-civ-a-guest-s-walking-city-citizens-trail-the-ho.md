@@ -8,7 +8,7 @@ reported: 2026-11-17
 source: lab (fix/w51-citizens, BUG-1221 diagnostics)
 role: guest
 versions: 0.7.14.1, rel/0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-trail
 commits: b9ebfb92, 937b638d, fa196259
 tests: civ_citizen_trail (coop_civ_citizen_trail.py, new), civ_citizens, civ_citizens_reload (coop_civ_citizens.py: sizes by identity)
@@ -90,3 +90,4 @@ pair (what the guest's citizen is bound to, how far, its size).
 ## History
 - 2026-11-17: opened.
 - 2026-11-17: fixed on fix/w51-trail (civ.citizen_lead, civ_citizen_trail, civ_citizens sizes by identity); BUG-1229 opened.
+- 2026-11-18: released in 0.7.15.

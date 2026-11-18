@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-guards
 commits: cb1fd10d, 18d03991
 tests: tools/tests/coop_threads.py (suite threads), tests/npc_tests.cpp test_off_main
@@ -60,3 +60,4 @@ BUG-0451; the planet generation threads, BUG-0123) added its own.
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-guards (cb1fd10d, 18d03991); the lab runs 022337 / 022356 / 022425 ran the build of
   18d03991 before its commit (the same tree).
+- 2026-11-18: released in 0.7.15.

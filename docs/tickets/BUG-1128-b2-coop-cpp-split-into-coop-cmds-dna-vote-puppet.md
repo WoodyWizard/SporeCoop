@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-split
 commits: f37ab85f, f0031517, 728dc06c, 8397caab, 1f4594c4, b97ce418, 07a2ed60, 3fa72b95, a3b1d81c, 9681105a, d03e7301, 12bc9b41, b7eb4260
 tests: refactor_dump (tools/refactor_dump.py, suite refactor), smoke on lane 10
@@ -69,3 +69,4 @@ passed; lab `kick` ok (out/lab/20261115-021813).
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: split and phases done on feat/w51-split (B2); rel/0.7.15 merged in, A4 / A11 replayed; fixed.
+- 2026-11-18: released in 0.7.15.

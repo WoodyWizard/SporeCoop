@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t5
 commits: fa2352a0
 tests: proxy_ghost
@@ -42,3 +42,4 @@ PASS: lab 20261116-085451 proxy_ghost#1, #2 (3 of 3 named, made again, no fault)
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t5 (final-check triage of 0.7.15, group T5).
+- 2026-11-18: released in 0.7.15.

@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: discord
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-store
 commits: 1bb53ffb, f5e9e809, f20b267f
 tests: space_session, store_tests (make test)
@@ -59,3 +59,4 @@ moved to .bad).
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-store (E1): the per-player store on the host's disk, Space colonies and badges.
+- 2026-11-18: released in 0.7.15.

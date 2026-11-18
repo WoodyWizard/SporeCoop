@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-labverdict
 commits: 0481ee6e, c22c393a, 5a48f2dd, 91e5668c
 tests: content_civ, tools/tests/labverdict_selftest.py (make test)
@@ -58,3 +58,4 @@ set no flee / chase target of its kind)", was one of the two FAIL runs confirmin
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-labverdict (unreleased).
 - 2026-11-15: on rel/0.7.15 the lab test `unit` failed (run 20261115-022440, rc 0): labverdict_selftest printed check texts holding the result marker, which the lab reads as a failed test; the self-test now writes it as `RESULT=`.
+- 2026-11-18: released in 0.7.15.

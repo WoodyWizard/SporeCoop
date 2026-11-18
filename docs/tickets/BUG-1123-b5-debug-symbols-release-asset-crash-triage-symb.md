@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-build
 commits: acf0ef0e, 8cb05198
 tests: tools/tests/triage_symbols_check.py (make test part unit-symbols), tools/tests/tools_selftest.py triage
@@ -46,3 +46,4 @@ build the tag. --no-symbols turns it off. No coop.fix switch (tooling).
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-18: released in 0.7.15.

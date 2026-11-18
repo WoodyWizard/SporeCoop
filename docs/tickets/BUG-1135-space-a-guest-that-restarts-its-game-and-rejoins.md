@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: test
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-space2
 commits: a99b5826, 3e61f162
 tests: space_badges_rejoin (RESTART=1), space_kept_key, space_tests test_rejoin_kept
@@ -63,3 +63,4 @@ restarted guest too.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on fix/w51-space2 (net.rejoin_disk), FAIL/PASS twin with space_badges_rejoin.
+- 2026-11-18: released in 0.7.15.

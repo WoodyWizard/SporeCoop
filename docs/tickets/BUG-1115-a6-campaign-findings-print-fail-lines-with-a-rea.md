@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-labverdict
 commits: 0481ee6e, dd60d4f5, bee6f533, 5a48f2dd, 91e5668c
 tests: campaign_ct, campaign_segment, tools/tests/labverdict_selftest.py (make test)
@@ -65,3 +65,4 @@ on 2026-10-29): CORRECTION recorded in docs/06-testing.md#testing-campaign-segme
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-labverdict (unreleased).
+- 2026-11-18: released in 0.7.15.

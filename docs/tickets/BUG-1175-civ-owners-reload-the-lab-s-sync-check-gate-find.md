@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: lab
 role: guest
 versions: 0.7.14, 0.7.14.1
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-civveh
 commits: b497d7ba
 tests: civ_specialty_runs, civ_owners_reload
@@ -64,3 +64,4 @@ Switch: `coop.fix civ.specialty_runs off` (the guest's game stands until the ans
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (fix/w51-civveh): the guest's specialty box paused its game: cities founded meanwhile and their vehicles waited for the answer; fix civ.specialty_runs, test civ_specialty_runs.
+- 2026-11-18: released in 0.7.15.

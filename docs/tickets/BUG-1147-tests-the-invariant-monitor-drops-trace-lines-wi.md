@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: test
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-tests
 commits: 648fc446
 tests: gates_selftest (parses own / partner line), space_allies
@@ -45,3 +45,4 @@ dropped before). That is the rule doing its job on an old build, not a false ala
 
 ## History
 - 2026-11-15: opened and fixed on fix/w51-tests.
+- 2026-11-18: released in 0.7.15.

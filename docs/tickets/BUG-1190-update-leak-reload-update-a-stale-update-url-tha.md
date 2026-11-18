@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 0.7.14.1
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t1
 commits: b92b4496
 tests: update_leak, reload_update, update (tools/tests/update_check.py), harness_selftest (make test)
@@ -58,3 +58,4 @@ checks are unchanged.
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t1.
+- 2026-11-18: released in 0.7.15.

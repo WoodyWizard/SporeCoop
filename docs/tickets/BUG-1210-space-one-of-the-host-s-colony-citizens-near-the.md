@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 20261116-025154 (space_planet_citizens)
 role: guest
 versions: 0.7.14.1, unreleased
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t3
 commits: e997739a, 73b8bc2a, ed659e12, c271236b
 tests: space_planet_citizens
@@ -61,3 +61,4 @@ PASS (relocation + maximum matching): out/lab/20261116-094912 (lane 7, 2 of 2).
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t3 (test: maximum matching; mod: the unbound citizen takes the nearest free one).
+- 2026-11-18: released in 0.7.15.

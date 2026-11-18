@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-labstart
 commits: ee9d9990 ff5df396 7fdc676c 6c35515c 06a43616
 tests: labstart_selftest.py (displays), tools_selftest.py headless
@@ -43,3 +43,4 @@ labstart_selftest (headless.sh name == labbudget.display_name for lanes 1-10, 1-
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-labstart.
+- 2026-11-18: released in 0.7.15.

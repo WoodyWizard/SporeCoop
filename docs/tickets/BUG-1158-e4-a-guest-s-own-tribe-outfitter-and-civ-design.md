@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: guest
 versions: 0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-editors
 commits: cebe2441, ea6cf28b
 tests: tribe_outfit, civ_designs
@@ -46,3 +46,4 @@ PASS (after the merge of rel/0.7.15 5901c362): out/lab/20261115-133408 (two runs
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: reproduced and fixed in fix/w51-editors.
+- 2026-11-18: released in 0.7.15.

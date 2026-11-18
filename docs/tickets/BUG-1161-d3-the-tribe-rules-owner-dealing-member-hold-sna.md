@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-tribe
 commits: f0181eb5
 tests: tests/tribe_tests.cpp
@@ -57,3 +57,4 @@ behaviour where it has one.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-tribe): tribe_logic.h and tests/tribe_tests.cpp.
+- 2026-11-18: released in 0.7.15.

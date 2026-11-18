@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 0.7.15 (lab 20261116-025154)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t4
 commits: d9c70eee
 tests: tribe_caption_race (coop_tribe_conquest_guest.py --click-at-close)
@@ -48,3 +48,4 @@ guest still FAILS as before. No mod change.
 
 ## History
 - 2026-11-16: opened and fixed (fix/w51-t4, final-check triage 0.7.15): the test's verdict, no mod change.
+- 2026-11-18: released in 0.7.15.

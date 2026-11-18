@@ -9022,6 +9022,12 @@ ran again on rel on 8 lanes (20261117-213354): 14 PASS. The other 7:
 
 Lesson: `lab.py run` of a v0.7.14.1 tree has no `--until` (C: error); its lab also counts memory, so the campaign
 comparison (three 4-game runs) held the other runs until it ended ("not started, too little memory after 1800 s").
+Verification after the fix/w52-formtribe merge (2026-11-18): every Tribe- and campaign-named test of `full` plus
+`smoke`, 176 tests on 8 lanes, 20261118-013526: 172 PASS (the lab self-tests' expected failures not counted), FAIL
+`body_trail_tribe_player`, `tribe_gameover`, `civ_tribe_left`, `tribe_mirror_jump` (all four known flakes). Rerun 3x
+each on rel: 12 of 12 PASS (20261118-033459, lanes 2-5); on v0.7.14.1: 10 of 12, `body_trail_tribe_player` and
+`tribe_gameover` fail there with the same checks (old flakes, no 0.7.15 regression).
+
 ## tribe_form_species: the NPC tribe controller's species list (2026-11-18, fix/w52-formtribe)
 <a id="testing-tribe-form-species"></a>
 

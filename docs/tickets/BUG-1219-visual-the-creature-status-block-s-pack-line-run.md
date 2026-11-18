@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-visual
 commits: 5b0db943
 tests: status_edge, tests/text_tests.cpp test_wrap_fields
@@ -44,3 +44,4 @@ Test status_edge (coop_status_edge.py, Creature, both games' `coop.status` statu
 ## History
 - 2026-11-16: opened.
 - 2026-11-16 (fix/w51-visual): fixed (`core.status_wrap`); test status_edge.
+- 2026-11-18: released in 0.7.15.

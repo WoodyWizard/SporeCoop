@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: guest
 versions: 0.7.14
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-editors
 commits: cebe2441, ea6cf28b
 tests: civ_designs
@@ -47,3 +47,4 @@ yet is not sent (a guest's own pick there stays its own until the host makes one
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: reproduced and fixed in fix/w51-editors.
+- 2026-11-18: released in 0.7.15.

@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-civ
 commits: d1a4d5c5
 tests: civ_role_damage
@@ -43,3 +43,4 @@ Confirmed: in the PASS runs phase A's first hit came 25 s after the order, M's a
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-civ): the phases measure from the first hit; PASS 3 of 3, role.fix off still FAILs.
+- 2026-11-18: released in 0.7.15.

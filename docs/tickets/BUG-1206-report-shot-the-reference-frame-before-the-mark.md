@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 0.7.15 dev
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t1
 commits: a6eb9577, 07113651
 tests: report_shot (tools/tests/coop_report_shot.py)
@@ -44,3 +44,4 @@ each other (still at most 45 s). The comparison itself (the mark's JPEG within 3
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t1.
+- 2026-11-18: released in 0.7.15.

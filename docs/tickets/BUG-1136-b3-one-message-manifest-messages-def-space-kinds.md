@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-manifest
 commits: 911cbf15, 5389d944, e8f08925, bd4fd00b
 tests: validate_tests test_manifest; net_tests test_dir_gate (--off dir_gate fails); tools/msg_manifest.py check / --self-test; lab compat
@@ -58,3 +58,4 @@ No single description of the message layer.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-manifest (manifest, golden tests, direction gate, docs tables).
+- 2026-11-18: released in 0.7.15.

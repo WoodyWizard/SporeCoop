@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-build
 commits: acf0ef0e, 2eb9710f
 tests: tools/ci_lint.py (make test)
@@ -43,3 +43,4 @@ No coop.fix switch (tooling).
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-18: released in 0.7.15.

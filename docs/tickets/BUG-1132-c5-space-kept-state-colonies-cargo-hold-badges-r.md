@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-space
 commits: a52441a2, ffeaa831, b2b463c1, 97ac395f, 971d3322, 781e7848
 tests: tests/space_tests.cpp (test_kept_store, test_kept_map, test_kept_rivals, test_restore_window), lab space_kept_key space_colony_rejoin space_colony_crash space_items_rejoin space_items_missed space_items_limits space_trade_restore space_rival_merge space_rival_away space_badges_rejoin
@@ -60,3 +60,4 @@ paths and the switch were deleted (no new switch remains). docs/01-architecture.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-space (unreleased).
+- 2026-11-18: released in 0.7.15.

@@ -8,7 +8,7 @@ reported: 2026-11-17
 source: lab (fix/w51-citanim, BUG-1229 measurement)
 role: guest
 versions: 0.7.14.1, rel/0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-overrun
 commits: aabe3e90
 tests: civ_citizen_trail (coop_civ_citizen_trail.py: `a standing citizen's copy is within 1.5 m of the host's citizen`), civ_citizens
@@ -60,3 +60,4 @@ samples: the copy within 1.5 m of its host citizen in 90 % of them (FAIL 3.41-4.
 ## History
 - 2026-11-17: opened.
 - 2026-11-17: cause observed (the guest's own walks of a standing copy, not the stop); fixed on fix/w51-overrun (civ.citizen_hold), civ_citizen_trail judges standing copies.
+- 2026-11-18: released in 0.7.15.

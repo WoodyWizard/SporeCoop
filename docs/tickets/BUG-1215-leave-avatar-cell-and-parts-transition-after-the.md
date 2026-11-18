@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t2
 commits: 78d6772b
 tests: leave_avatar_cell, parts_transition
@@ -56,3 +56,4 @@ new body) was not looked at; not changed.
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t2 (runs above).
+- 2026-11-18: released in 0.7.15.

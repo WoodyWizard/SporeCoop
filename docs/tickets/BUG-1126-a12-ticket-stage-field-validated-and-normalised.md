@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-hygiene
 commits: 21bb1846, ef2d817c, a1208147, 1b9a79ba
 tests: make test (tools_selftest tickets / tickets_check, tickets.py check, docs_lint)
@@ -51,3 +51,4 @@ tickets closed.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: done on feat/w51-hygiene (21bb1846, ef2d817c, a1208147, 1b9a79ba).
+- 2026-11-18: released in 0.7.15.

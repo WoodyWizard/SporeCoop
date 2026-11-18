@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-store
 commits: 1bb53ffb
 tests: store_tests (make test)
@@ -36,3 +36,4 @@ KeptFile::ttl (rejoin_kept.h): 30 days with `coop.fix net.rejoin_month` (rejoin.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-store: 30 days.
+- 2026-11-18: released in 0.7.15.

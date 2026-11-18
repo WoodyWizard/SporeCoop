@@ -8,7 +8,7 @@ reported: 2026-11-17
 source: BUG-1216 analysis (final check 0.7.15, lab 20261116-025154 campaign_tc2)
 role: guest
 versions: rel/0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-slope
 commits: d7fd7a09, c7502dea
 tests: civ_npc_slope
@@ -70,3 +70,4 @@ Test commands: `coop.ground steep`, `coop.npctrack put <id> x y z [secs]`, `coop
 ## History
 - 2026-11-17: opened.
 - 2026-11-17: fix/w51-slope: reproduced on civ_npc (slope + driving cycle), fixed with npc.slope_hold.
+- 2026-11-18: released in 0.7.15.

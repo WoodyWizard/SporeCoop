@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-ccore, feat/w51-core2
 commits: 423016ca, 8a24f582, 8e9aa765, c8725107, 10cb551e, beebd81e, a0e87040, d84fdf0e, bec12b3f
 tests: tests/core_tests.cpp, refactor_dump, lifecycle_reset, lifecycle_reset_cell, stage_switch, tribe_host_reload_reset, tribe_editor_world, civ_reload, nest_mirror_epoch, wsync_transitions, editor_sync_host, away_editor, space_trade_reload, space_allies_reload, space_down_reload, tribe_bounce_mirrors, campaign_ct
@@ -75,3 +75,4 @@ no-fail-run: refactoring (no behaviour to break on purpose); the proof is the du
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-ccore): the portable core and its unit tests; no stage file changed. Open until the stage adoptions land.
 - 2026-11-15 (feat/w51-core2): wired into the mod, the old detectors and hand lists deleted; fixed (unreleased).
+- 2026-11-18: released in 0.7.15.

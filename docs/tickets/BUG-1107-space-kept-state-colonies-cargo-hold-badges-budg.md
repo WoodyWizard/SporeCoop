@@ -8,7 +8,7 @@ reported: 2026-11-14
 source: audit 2026-11-14 (0.7.15) NET-2
 role: host
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-net
 commits: a74f8819
 tests: space_kept_key, net_tests test_player_key
@@ -60,3 +60,4 @@ rejoin tests space_items_rejoin, badges rejoin, colony rejoin keep one guest and
 ## History
 - 2026-11-14: opened.
 - 2026-11-15: fixed on fix/w51-net (plan 0.7.15 A10): kept state keyed by the rejoin token.
+- 2026-11-18: released in 0.7.15.

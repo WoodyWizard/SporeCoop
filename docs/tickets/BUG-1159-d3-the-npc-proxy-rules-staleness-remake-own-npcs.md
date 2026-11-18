@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-npc
 commits: 314a9f21, aa4b0a16, 76cc685f
 tests: tests/npc_tests.cpp (test_proxy_rules)
@@ -38,3 +38,4 @@ tests (the rules are in the code those tests ran).
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-npc): the header and its tests (314a9f21), npc.cpp asks it (aa4b0a16).
+- 2026-11-18: released in 0.7.15.

@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: fix/w51-t1 rerun of update
 role: 
 versions: 0.7.15 dev
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t1
 commits: f7f2132d
 tests: update (tools/tests/update_check.py)
@@ -44,3 +44,4 @@ are unchanged.
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t1.
+- 2026-11-18: released in 0.7.15.

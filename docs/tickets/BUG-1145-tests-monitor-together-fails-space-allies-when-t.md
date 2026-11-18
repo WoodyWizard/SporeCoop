@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: test
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-tests
 commits: 7c883a1d
 tests: space_allies (monitor gate), gates_selftest (together_galaxy, together_space_apart, together_both_galaxy)
@@ -60,3 +60,4 @@ away, no new violation (with BUG-1147 one campaign_ct ground, see there).
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on fix/w51-tests (the monitor reads world=- lines, world - is no place for together).
+- 2026-11-18: released in 0.7.15.

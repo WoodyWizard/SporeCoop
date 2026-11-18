@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t5
 commits: a7df99c3
 tests: tag_camera, tag_height
@@ -45,3 +45,4 @@ PASS: lab 20261116-085451 tag_camera#1, #2 (12/12 and 7/12 over the body, 0 off,
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t5 (final-check triage of 0.7.15, group T5).
+- 2026-11-18: released in 0.7.15.

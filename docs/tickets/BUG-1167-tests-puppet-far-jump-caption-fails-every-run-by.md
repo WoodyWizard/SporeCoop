@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: B1 impact run 20261115-133237
 role: 
 versions: 0.7.10 .. 0.7.14.1, rel/0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-npc
 commits: 5f283c0d
 tests: puppet_far_jump_caption, puppet_far_jump
@@ -40,3 +40,4 @@ PASS: 20261115-194833 (lane 2, the final tree: the artefact at hop 2, the ground
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-npc): the variant checks the documented artefact.
+- 2026-11-18: released in 0.7.15.

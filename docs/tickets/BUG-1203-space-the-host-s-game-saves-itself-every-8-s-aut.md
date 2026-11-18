@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 20261116-025154
 role: host
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t3
 commits: 8655eaa9, 88466c8c, 780d561e
 tests: autosave_milestone, space_allies_near, space_allies, space_map, space_free, store_tests (make test)
@@ -60,3 +60,4 @@ out/lab/20261116-100807. Unit test `autosave new colony ids` (make test).
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t3 (roster read over the post-save planet gap; milestone per colony id; tests).
+- 2026-11-18: released in 0.7.15.

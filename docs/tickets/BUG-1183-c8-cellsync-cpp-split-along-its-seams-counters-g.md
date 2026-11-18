@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-cellsplit
 commits: 0668e144, 4b6d040e, adddaa5b, 23ea0af4
 tests: refactor_dump, make test, cell_*, play_cell
@@ -58,3 +58,4 @@ The shared names came from clang's AST dump (docs/10-dev-pipeline.md#pipeline-sp
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-cellsplit): counters grouped, six Cell files and creations_debug.cpp split out by pure moves,
   dumps identical.
+- 2026-11-18: released in 0.7.15.

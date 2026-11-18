@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 0.7.15 (lab 20261116-025154 civ_citizens)
 role: guest
 versions: 0.7.14.1, rel/0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-citizens
 commits: bc15e41b, 09baa3e9, b9219d1c
 tests: civ_citizens_reload (coop_civ_citizens.py --reload --reloads 2 --plant 4), civ_citizens (warm runs)
@@ -75,3 +75,4 @@ test's own mistake: it took a guest citizen 0.3 m from another host citizen as t
 ## History
 - 2026-11-16: opened (fix/w51-t4, final-check triage 0.7.15): old (v0.7.14.1 the same), warm runs only; a relocation fix tried and dropped (sizes).
 - 2026-11-17: fixed (fix/w51-citizens): nearest-pair binds and a relocation within 120 m (civ.citizen_rebind); the size failures of the first try were walking copies crossing (BUG-1227); civ_citizens_reload with a planted bad load.
+- 2026-11-18: released in 0.7.15.

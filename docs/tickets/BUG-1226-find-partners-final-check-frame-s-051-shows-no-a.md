@@ -8,7 +8,7 @@ reported: 2026-11-17
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-space3
 commits: 21ddaa71
 tests: find_partners
@@ -48,3 +48,4 @@ under the HUD counts).
 ## History
 - 2026-11-17: opened.
 - 2026-11-17: opened and fixed on fix/w51-space3.
+- 2026-11-18: released in 0.7.15.

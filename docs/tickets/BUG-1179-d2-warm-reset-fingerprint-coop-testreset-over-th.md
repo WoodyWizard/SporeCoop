@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-labstate
 commits: eddafb3a, ede74ddb
 tests: warm_fingerprint (coop_warm_fingerprint.py), npc_tests test_fingerprint, lab_selftest game_log_case (fingerprint)
@@ -62,3 +62,4 @@ checked that the games were where a cold start leaves them.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-labstate (coop.testreset, the fingerprint in twoinst, warm_fingerprint).
+- 2026-11-18: released in 0.7.15.

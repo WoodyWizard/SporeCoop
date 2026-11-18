@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: test
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-tests
 commits: 7e63b1a9
 tests: space_rivalry (warm after space_rivalry)
@@ -53,3 +53,4 @@ pvp_deaths + 1. No mod change.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on fix/w51-tests (the test reads the counters as deltas; they are diagnostics no player sees).
+- 2026-11-18: released in 0.7.15.

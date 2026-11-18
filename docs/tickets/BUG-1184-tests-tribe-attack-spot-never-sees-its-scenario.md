@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: feat/w51-tribe lab 20261115-182010, rel/0.7.15 9362bcdd 20261115-212642
 role: host
 versions: rel/0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-tribe
 commits: 2a483b88
 tests: tribe_attack_spot
@@ -42,3 +42,4 @@ coop_tribe_attack_spot.py gives the host 300 food (`coop.res add food 300`) befo
 
 ## History
 - 2026-11-15: opened and fixed (feat/w51-tribe), found in the package's final Tribe run.
+- 2026-11-18: released in 0.7.15.

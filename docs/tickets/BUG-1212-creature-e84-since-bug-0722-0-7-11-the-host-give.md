@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t2
 commits: 30478b34
 tests: creature_e84
@@ -46,3 +46,4 @@ brings the switch back on. The rest of the test is unchanged.
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t2 (runs above).
+- 2026-11-18: released in 0.7.15.

@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: feat/w51-npc lab 20261115-165219
 role: 
 versions: rel/0.7.15 since ec51786b (the lab start of A9)
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-npc
 commits: ef715c49, 7bfcaa33, d8b058e1
 tests: nest_follow, nest_follow_early, nest_follow_swap
@@ -73,3 +73,4 @@ s 6.3 and the world's species); 20261115-220240, 20261115-222140, 20261115-22480
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-npc): bisected to the lab's start-up of A9, test fixed.
 - 2026-11-15 (fix/w51-nest): the early-DNA inference disproved; the failures were BUG-1173 (own creature swapped in under the brain upgrade); nest_follow_early and nest_follow_swap in the suite.
+- 2026-11-18: released in 0.7.15.

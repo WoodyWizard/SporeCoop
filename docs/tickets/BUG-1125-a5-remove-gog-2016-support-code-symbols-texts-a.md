@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-hygiene
 commits: 6d9ec899, 65bbb8ee, 7e6e614d, 21bb1846
 tests: make test (re_lint, tools_selftest relint / triage / symlist)
@@ -65,3 +65,4 @@ no-fail-run: a removal, not a fix with a failing test. Proofs that GOG 2024 beha
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: done on feat/w51-hygiene (6d9ec899, 65bbb8ee, 7e6e614d, 21bb1846).
+- 2026-11-18: released in 0.7.15.

@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 0.7.14.1, unreleased
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t3
 commits: 3a2ed87f, c550f886
 tests: space_npc_model, creature_ufo_nomodel
@@ -56,3 +56,4 @@ itself is the game's pick of a ship, which no test seam controls yet.
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t3 (tests: empty GraphicsCache, more visits); INCONCLUSIVE stays possible.
 - 2026-11-18: second final check 20261117-154911 INCONCLUSIVE again (lane 4), rerun 20261117-213354 INCONCLUSIVE; with --repeat 4 (out/lab/20261117-232700) PASS in #4 (lane 3, the guard replaced a ship model), INCONCLUSIVE in #3: the case stays random, the guard works.
+- 2026-11-18: released in 0.7.15.

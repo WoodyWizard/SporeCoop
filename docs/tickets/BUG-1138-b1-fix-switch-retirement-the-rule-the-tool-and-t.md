@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 0.7.14.1
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-retire
 commits: a8f38fb1, 6356bbb5, 881975d3, 82c0cce9, 51e819e8, e2613445, 7fded022, eb555bc4, eef77022, fd80e750, f80e31b6, bd2f8118
 tests: refactor_dump, leave_cleanup, make test (tools/fix_retire.py check --self-test)
@@ -77,3 +77,4 @@ second surface on the same bools.
 - 2026-11-15: opened.
 - 2026-11-15: rule, tool and first batch on feat/w51-retire (five file groups in parallel worktrees, merged).
 - 2026-11-15: rel/0.7.15 5206247b merged (E1 claims kept next to the retired civ switches); impact run triaged.
+- 2026-11-18: released in 0.7.15.

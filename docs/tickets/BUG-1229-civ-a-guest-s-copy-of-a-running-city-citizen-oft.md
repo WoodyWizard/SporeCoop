@@ -8,7 +8,7 @@ reported: 2026-11-17
 source: lab (fix/w51-trail, BUG-1227 measurement)
 role: guest
 versions: rel/0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-citanim
 commits: 4bebf0b9, ea51c4c0
 tests: civ_citizen_trail (coop_civ_citizen_trail.py: `a moving copy plays the host's run`, `a standing copy is not in the run`; the key frames run1 / run2)
@@ -74,3 +74,4 @@ that overran a stop (BUG-1230) sliding: moving 94-95 %.
 ## History
 - 2026-11-17: opened.
 - 2026-11-17: fixed on fix/w51-citanim (civ.citizen_run; civ_citizen_trail judges the animations); BUG-1230, BUG-1231 opened.
+- 2026-11-18: released in 0.7.15.

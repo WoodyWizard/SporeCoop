@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-visual
 commits: 67a42202, e41bb9fb, f77d99f7, 4a2d3e10
 tests: space_eco, space_eco_live, space_session, space_session_npc, tribe_outfit, tribe_held_item, tribe_mirror_stale
@@ -66,3 +66,4 @@ frames, and the frames were looked at:
   the gesture 04C6CB02 for ~1 s, the same animation 1.7 s later). The relay's lag after a rejoin, not a lasting
   mismatch: no ticket. Within one animation and phase the staff's angle still differs a little (blend / IK of each
   game), as in S/101 and S/110.
+- 2026-11-18: released in 0.7.15.

@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-store
 commits: f5e9e809
 tests: space_session
@@ -37,3 +37,4 @@ out/lab/20261115-134708.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-store.
+- 2026-11-18: released in 0.7.15.

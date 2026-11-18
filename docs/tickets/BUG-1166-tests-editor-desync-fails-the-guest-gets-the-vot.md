@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: B1 impact run 20261115-133237
 role: 
 versions: 0.7.12, 0.7.13, 0.7.14, 0.7.14.1, rel/0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-npc
 commits: c269fb11
 tests: editor_desync
@@ -43,3 +43,4 @@ run failed a later check once, the guest's own evolved species, not seen again i
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-npc): root cause (the stale rectangle), test fixed.
+- 2026-11-18: released in 0.7.15.

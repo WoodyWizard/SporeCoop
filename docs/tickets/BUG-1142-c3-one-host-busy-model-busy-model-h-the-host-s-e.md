@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-ccore, feat/w51-core2
 commits: 423016ca, 546746af, 8a24f582, 8e9aa765, 10cb551e, 5e0f356c
 tests: tests/core_tests.cpp, host_pause_cell, host_pause_creature, host_pause_tribe, host_pause_civ, host_pause_space, host_pause_rivals, host_pause_guest
@@ -68,3 +68,4 @@ it runs after Resume Game):
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-ccore): the portable core and its unit tests; no stage file changed. Open until the stage adoptions land.
 - 2026-11-15 (feat/w51-core2): wired into every stage (MSG_HOST_BUSY, the guest's wait, Cell's held step, one HeldPump); fixed (unreleased).
+- 2026-11-18: released in 0.7.15.

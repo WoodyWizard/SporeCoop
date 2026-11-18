@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: lab 20261115-164230 (feat/w51-core2)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-core2
 commits: 74d13db9
 tests: world_reload
@@ -37,3 +37,4 @@ FAIL (the old test) 20261115-164230:world_reload; PASS (the fixed test, same bui
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-18: released in 0.7.15.

@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-build
 commits: acf0ef0e, 1f1911fa
 tests: smoke (lab run 20261115-014032, lane 9), make test, make release-dry
@@ -52,3 +52,4 @@ space_allies / space_contracts, by design). No coop.fix switch: a build flag, no
 
 ## History
 - 2026-11-15: opened.
+- 2026-11-18: released in 0.7.15.

@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: lab 20261115-164240 (feat/w51-core2), baseline 20261115-180220
 role: guest
 versions: 0.7.14.1 (the swap never waited for a cinematic; older versions inferred)
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-evolve
 commits: bfa52150, 2c625750
 tests: evolve_world
@@ -72,3 +72,4 @@ own creature and whether it was applied before the DNA.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: a mod bug (kind bug): fixed on fix/w51-evolve (creations.swap_after_cinematic; FAIL twin and PASS runs above).
+- 2026-11-18: released in 0.7.15.

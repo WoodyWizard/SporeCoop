@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan (orchestrator, after feat/w51-core2)
 role: 
 versions: 0.7.14.1, rel/0.7.15 96e0fd4c
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-npc
 commits: 76cc685f, 04a9d820
 tests: npc_editor_hold, tests/npc_tests.cpp (test_proxy_rules)
@@ -45,3 +45,4 @@ again). Unit: test_proxy_rules (editor_hold). away_editor (BUG-0205) PASS with i
 ## History
 - 2026-11-15: opened (orchestrator's request after feat/w51-core2).
 - 2026-11-15 (feat/w51-npc): fixed behind npc.editor_hold, test npc_editor_hold.
+- 2026-11-18: released in 0.7.15.

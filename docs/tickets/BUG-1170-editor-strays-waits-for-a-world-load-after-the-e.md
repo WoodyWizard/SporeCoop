@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: lab 20261115-164240 (feat/w51-core2)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-evolve
 commits: 54da09ad
 tests: editor_strays
@@ -61,3 +61,4 @@ No switch: the mod is unchanged (one status field added).
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on fix/w51-evolve (the test follows BUG-0508; FAIL on rel/0.7.15 and v0.7.14.1, PASS runs above).
+- 2026-11-18: released in 0.7.15.

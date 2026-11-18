@@ -8,7 +8,7 @@ reported: 2026-11-17
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-space3
 commits: ed2043b6
 tests: space_eco, space_eco_live
@@ -57,3 +57,4 @@ and landing); a plant's spot across a save and load was not checked.
 ## History
 - 2026-11-17: opened.
 - 2026-11-17: opened and fixed on fix/w51-space3 (cells of the spots, the drop's creature instead of the epic spawn).
+- 2026-11-18: released in 0.7.15.

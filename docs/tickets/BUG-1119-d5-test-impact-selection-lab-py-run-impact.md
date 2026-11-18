@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-labverdict
 commits: 0481ee6e, c22c393a, 5a48f2dd, 91e5668c
 tests: smoke, tools/tests/labverdict_selftest.py (make test)
@@ -50,3 +50,4 @@ of `full`; always smoke + unit. The final check and the release rule stay full. 
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-labverdict (unreleased).
+- 2026-11-18: released in 0.7.15.

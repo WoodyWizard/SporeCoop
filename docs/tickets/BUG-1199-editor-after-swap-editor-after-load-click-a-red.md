@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t2
 commits: bf914c98, a678425c, 5db495f3
 tests: editor_after_load, editor_after_swap
@@ -45,3 +45,4 @@ still fails it (an editor that does not draw takes no click).
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t2 (runs above).
+- 2026-11-18: released in 0.7.15.

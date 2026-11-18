@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t2
 commits: a3aada0c
 tests: world_reload, lend_ledger, editor_after_swap, editor_after_load
@@ -48,3 +48,4 @@ Nothing the tests check was loosened.
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t2 (runs above).
+- 2026-11-18: released in 0.7.15.

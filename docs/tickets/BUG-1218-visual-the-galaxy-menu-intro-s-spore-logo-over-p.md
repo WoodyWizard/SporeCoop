@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-visual
 commits: d9a45070, e41bb9fb
 tests: menu_movie
@@ -66,3 +66,4 @@ before the join; both games sampled twice a second from the join):
 ## History
 - 2026-11-16: opened.
 - 2026-11-16 (fix/w51-visual): a real overlay (the start-up video), fixed (`world.menu_movie`); test menu_movie.
+- 2026-11-18: released in 0.7.15.

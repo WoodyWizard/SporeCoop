@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: fork PandizeLive/SporeCoop-Lineages feat/lineages-43 lineages36-dev (autosave.h, world.cpp)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-store
 commits: a3f08970
 tests: autosave_milestone, autosave_timer, store_tests (make test)
@@ -68,3 +68,4 @@ game killed (session_restart(save=False)), its save loaded again.
 - 2026-11-10: opened from the fork review for the 0.7.13 plan (feature idea, fork evidence only).
 - 2026-11-15: done on feat/w51-store (E2).
 - 2026-11-16: ui_golden's settings_menu / settings_host / settings_guest references updated on purpose on fix/w51-t1 (the new "Host autosave" row; "Vote before the Creature stage" moved to the next page): the 0.7.15 final check (lab 20261116-025154) and lab 20261116-082959 failed them at 2.67-2.93 %, the new references made on lane 9 with `coop_ui_golden.py --update --only settings_menu,settings_host,settings_guest` and looked at.
+- 2026-11-18: released in 0.7.15.

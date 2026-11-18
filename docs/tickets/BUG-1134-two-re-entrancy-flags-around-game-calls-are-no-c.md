@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: B4 lint
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-guards2
 commits: 50b79778 2e60640b
 tests: call_guard_game
@@ -81,3 +81,4 @@ guest's game. The fault is injected (the hold's destructor skipped), as in BUG-1
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on fix/w51-guards2 (registered call guards, core.call_guard_reset; CORRECTION: BUG-0882 already cleared both once a frame).
+- 2026-11-18: released in 0.7.15.

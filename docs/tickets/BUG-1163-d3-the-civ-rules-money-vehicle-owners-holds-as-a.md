@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-civ
 commits: 84d96518
 tests: tests/civ_tests.cpp
@@ -41,3 +41,4 @@ BUG-1140.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-civ): civ_logic.h and tests/civ_tests.cpp; civ.cpp calls the rules; the Civ lab set passed on it (BUG-1140).
+- 2026-11-18: released in 0.7.15.

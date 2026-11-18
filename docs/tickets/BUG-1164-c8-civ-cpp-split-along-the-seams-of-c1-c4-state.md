@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-civ
 commits: 01f39d03, 92ac086f, f8be9a3d
 tests: refactor_dump, make test
@@ -51,3 +51,4 @@ Structure (one hub file).
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-civ): counters grouped, six files split out by pure moves, dumps identical.
+- 2026-11-18: released in 0.7.15.

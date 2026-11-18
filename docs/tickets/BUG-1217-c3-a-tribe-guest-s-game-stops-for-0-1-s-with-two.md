@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: plan
 role: 
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-visual
 commits: 5b0db943
 tests: host_save_tribe, tests/core_tests.cpp busy_classify, host_pause_cell, host_pause_creature, host_pause_tribe, host_pause_civ, host_pause_space, host_pause_rivals, host_pause_guest
@@ -62,3 +62,4 @@ Test host_save_tribe (`coop_host_pause.py --stage tribe --host-save`, fix/w51-vi
 - 2026-11-16: opened.
 - 2026-11-16 (fix/w51-visual): fixed: the save is no stand (`core.host_busy_save`); test host_save_tribe.
 - 2026-11-18: key-frame review of the second 0.7.15 final check (out/frames-0.7.15-b.md): 235 card lines instead of 836; left: 13 pairs under 0.5 s right after the host loads the world (a guest joining in its first second, the lab's warm start) and 21 of about 2 s after the host comes back from an editor (S/130 tribe_outfit).
+- 2026-11-18: released in 0.7.15.

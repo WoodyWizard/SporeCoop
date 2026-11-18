@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: final check 20261117-154911
 role: host
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w52-formtribe
 commits: 7dcfcb0c
 tests: tribe_form_species
@@ -86,3 +86,4 @@ short as the campaign planet's for the fixture's tribes (2 species, 0xFFFFFFFF p
   opened for the village that never forms there.
 - 2026-11-18: BUG-1238 on the same branch: the villages after the list take its last species (the hold stays as
   `tribe.form_last_species off`); tribe_form_species checks both (FAIL 20261118-005109 with tribe.form_species off).
+- 2026-11-18: released in 0.7.15.

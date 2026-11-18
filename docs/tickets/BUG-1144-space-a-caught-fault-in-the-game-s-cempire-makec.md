@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: test
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-space2
 commits: e3c7441b
 tests: space_allies_near, space_allies
@@ -71,3 +71,4 @@ cEmpire_SpawnVisitorUFO (the last makes the next report name the real function).
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: cause found (the near-star list, not MakeContact), reproduced on purpose, fixed on fix/w51-space2 (allies.near_rebuild).
+- 2026-11-18: released in 0.7.15.

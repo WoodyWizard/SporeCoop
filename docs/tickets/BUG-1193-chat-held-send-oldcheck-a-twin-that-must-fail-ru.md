@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 0.7.11
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t1
 commits: 72c59ae5, cc2ce72e
 tests: chat_held_send_oldcheck, chat_held_send, labverdict_selftest (make test)
@@ -43,3 +43,4 @@ chat_held_send (the PASS half) stays in full.
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t1.
+- 2026-11-18: released in 0.7.15.

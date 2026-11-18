@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: final check 20261117-154911
 role: 
 versions: 0.7.14.1, unreleased
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: rel/0.7.15
 commits: 00208f5f
 tests: diag
@@ -43,3 +43,4 @@ run #2 by the new outcome "survived: frames: the frame 330 was cut off ...", the
 
 ## History
 - 2026-11-18: opened in the 0.7.15 final-check triage; fixed (test only).
+- 2026-11-18: released in 0.7.15.

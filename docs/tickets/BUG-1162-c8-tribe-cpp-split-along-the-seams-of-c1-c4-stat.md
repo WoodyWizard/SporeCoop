@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-tribe
 commits: 12ba3f2e, 1bade063, 87d96a1b, c3cb68f4, b7e3706c
 tests: refactor_dump, make test
@@ -65,3 +65,4 @@ Structure: one hub file.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-tribe): grouping and four pure moves; dumps identical.
+- 2026-11-18: released in 0.7.15.

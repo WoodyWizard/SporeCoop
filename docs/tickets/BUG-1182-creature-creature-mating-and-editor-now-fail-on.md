@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: feat/w51-npc lab 20261115-194833, 20261115-202054
 role: 
 versions: rel/0.7.15 96e0fd4c, feat/w51-npc
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-npc
 commits: 8841da2b
 tests: creature_mating, editor_now
@@ -41,3 +41,4 @@ PASS (60 s): 20261115-204504 (creature_mating, editor_now, lane 3).
 ## History
 - 2026-11-15: opened (feat/w51-npc).
 - 2026-11-15 (feat/w51-npc): the A9 start-up timing found (old sleeps pass), the wait lengthened.
+- 2026-11-18: released in 0.7.15.

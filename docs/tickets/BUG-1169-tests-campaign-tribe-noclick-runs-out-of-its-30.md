@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: B1 impact run 20261115-133237
 role: 
 versions: 0.7.14, v0.7.14.1, rel/0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-npc
 commits: 08fcba55, 7bfcaa33, d8b058e1, dbadec84
 tests: campaign_tribe_noclick, campaign_tribe_end, campaign_tribe_latecut
@@ -56,3 +56,4 @@ is a `driver` finding. The campaign gates and the 30 min limit are unchanged.
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-npc): compared with v0.7.14.1, the driver's late-cut drop fixed.
 - 2026-11-15 (fix/w51-nest): the driver fix shown at work with a planted late cut (FAIL/PASS twin above); campaign_tribe_latecut in the suite.
+- 2026-11-18: released in 0.7.15.

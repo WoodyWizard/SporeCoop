@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 0.7.15 (lab 20261116-025154 campaign_tc2)
 role: guest
 versions: 0.7.14.1, rel/0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-civsync
 commits: e8284a09, 081b955f, 9828f4b6, c5718d0c, e995b718
 tests: civ_proxy_air, civ_wild_moved, net_tests test_diag_npc_agl, campaign_segment (from the run's Civ save), campaign_tc2
@@ -107,3 +107,4 @@ Update 2026-11-17 (fix/w51-civsync), per kind, with what a player sees:
 ## History
 - 2026-11-16: opened (fix/w51-t4, final-check triage 0.7.15): old, three kinds; not fixed in the triage.
 - 2026-11-17 (fix/w51-civsync): kinds A (the check), B / C (npc.civ_jump) and the pause kind (npc.frozen_moved) fixed; the slope jitter seen with A split to BUG-1228.
+- 2026-11-18: released in 0.7.15.

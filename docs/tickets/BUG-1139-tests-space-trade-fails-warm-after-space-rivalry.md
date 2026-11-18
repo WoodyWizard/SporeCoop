@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: test
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-space2
 commits: 49165803
 tests: space_trade (warm after space_rivalry), space_rivalry
@@ -48,3 +48,4 @@ switch, players' F9 keeps its page as before.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on fix/w51-space2 (`coop.uistate reset` in the warm reset).
+- 2026-11-18: released in 0.7.15.

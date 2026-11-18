@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 0.7.15 (lab 20261116-025154)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t4
 commits: 7a27fc15, 308317a8
 tests: tribe_name_tags (coop_tribe_looks.py --part tags)
@@ -47,3 +47,4 @@ the cameras go back to the members for the rest of the test and the key frame. N
 
 ## History
 - 2026-11-16: opened (fix/w51-t4, final-check triage 0.7.15); the test's check fixed, the scene reproduced with TAGS_CHIEF_AWAY.
+- 2026-11-18: released in 0.7.15.

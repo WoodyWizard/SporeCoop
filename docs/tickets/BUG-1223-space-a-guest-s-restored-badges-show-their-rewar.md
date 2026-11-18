@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-space3
 commits: 98350224
 tests: space_session
@@ -64,3 +64,4 @@ box comes within 15 s and that no badge is earned anew. `SESSION_REWARDS_OPEN=1`
 - 2026-11-16: opened.
 - 2026-11-17: fix/w51-space3: cause found (a pending Explorer 2 left behind the open Explorer 1 box, given by the
   game after the restore; the restore is silent); test closes the boxes like a player and checks the restore is silent.
+- 2026-11-18: released in 0.7.15.

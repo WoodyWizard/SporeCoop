@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-tribe
 commits: f0181eb5, e57d8f2d, a2c1ef8a
 tests: tests/tribe_tests.cpp, tests/wire_tests.cpp, tests/validate_tests.cpp, mixed_version_tribe, tribe_mirror_anims, tribe_party_music, tribe_host_pause, tribe_gameover_wait
@@ -71,3 +71,4 @@ refused. Status: `tribe anim msg: fix= sent_new= sent_old= rx_new= rx_bad=` in c
 - 2026-11-15: opened.
 - 2026-11-15 (feat/w51-tribe): MSG_TRIBE_ANIM, tribe family 1.1, wire/tribe_anim.h, per-peer type; mixed runs both
   directions.
+- 2026-11-18: released in 0.7.15.

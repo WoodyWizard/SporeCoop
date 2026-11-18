@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: lab
 role: 
 versions: 0.7.15 dev
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-duet
 commits: e7764e8d, d4c0b6a4, 91d6feaa
 tests: tribe_duet
@@ -79,3 +79,4 @@ guest's first member is its chief, docs/06-testing.md#testing-tribe-duet-attack)
 - 2026-11-16: opened.
 - 2026-11-16: fix/w51-duet: cause found (the host's creature attack on the test's village, moved into the performance
   by the A9 lab start); the test holds it (`coop.drama hold`) and checks the guest's view of the performance; fixed.
+- 2026-11-18: released in 0.7.15.

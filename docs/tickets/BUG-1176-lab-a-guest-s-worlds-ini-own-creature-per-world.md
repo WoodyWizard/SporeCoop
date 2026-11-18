@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: fix/w51-evolve (BUG-1170, BUG-1173)
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-labstate
 commits: eddafb3a, c2068f03
 tests: warm_fingerprint, evolve_world, editor_strays, guest_editor, puppet_jump
@@ -57,3 +57,4 @@ a PRESET_WORLDS like PRESET_CHOICES), then a Creature regression run.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-labstate (the cold start resets worlds.ini; evolve_world chooses the own creature).
+- 2026-11-18: released in 0.7.15.

@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-hygiene
 commits: 1c075c0d
 tests: make test (tools_selftest wtgc)
@@ -44,3 +44,4 @@ are listed. Tooling, no switch.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: done on feat/w51-hygiene (1c075c0d); only the dry run was run.
+- 2026-11-18: released in 0.7.15.

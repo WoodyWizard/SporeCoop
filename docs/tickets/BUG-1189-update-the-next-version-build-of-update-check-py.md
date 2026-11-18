@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: 0.7.15 dev
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t1
 commits: b2f27580, 07113651
 tests: update (tools/tests/update_check.py)
@@ -50,3 +50,4 @@ change only: the normal build (no -D) makes the same coop.dll text as before. No
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t1.
+- 2026-11-18: released in 0.7.15.

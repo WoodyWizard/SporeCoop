@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: fix/w51-t2 (editor_after_swap)
 role: guest
 versions: 0.7.14.1 and older (inferred: the guest's own-evolution path of BUG-0516 is unchanged)
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t2
 commits: 5db495f3
 tests: editor_after_swap
@@ -54,3 +54,4 @@ Not changed: a guest in its own world (its request goes on as the game's), the g
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t2 (runs above).
+- 2026-11-18: released in 0.7.15.

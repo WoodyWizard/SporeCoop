@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-manifest
 commits: 911cbf15, 5389d944, e8f08925, bd4fd00b
 tests: net_tests test_families_wire, test_family_check (--off family_check fails); validate_tests test_compat; msg_manifest.py --self-test; lab compat, mixed_plant_guest, mixed_plant_host, mixed_plant_unused, mixed_version_guest, mixed_version_host (v0.7.14)
@@ -70,3 +70,4 @@ Nothing could tell where two versions' messages really differ.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-manifest (revisions, CAP_FAMILIES, refusal and warnings, reports, lock).
+- 2026-11-18: released in 0.7.15.

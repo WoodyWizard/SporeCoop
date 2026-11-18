@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: BUG-1233 analysis (final check 20261117-154911)
 role: host
 versions: 0.7.14.1, unreleased
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w52-formtribe
 commits: 48fb7f20
 tests: tribe_form_species, campaign_segment (the final check's Tribe segment)
@@ -77,3 +77,4 @@ out/bug1233/segment.json`, a copy of the run's segment.json pointing at a copy o
 - 2026-11-18: opened from the BUG-1233 analysis (fix/w52-formtribe).
 - 2026-11-18: fixed on fix/w52-formtribe (`tribe.form_last_species`); the cause of the short list at the stage's start
   not found (the mod not involved as far as checked).
+- 2026-11-18: released in 0.7.15.

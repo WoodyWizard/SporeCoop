@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-eco
 commits: 193ff437
 tests: space_terra_late
@@ -45,3 +45,4 @@ Lab, lanes 6 / 7, fixture space_free (out/lab/ of the fix/w51-eco worktree):
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: pending and kept records, test space_terra_late (fix/w51-eco).
+- 2026-11-18: released in 0.7.15.

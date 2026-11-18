@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: final check 20261116-025154
 role: 
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t3
 commits: ebe05841, 4b28e516
 tests: space_sculpt_tool, space_sculpt_away
@@ -50,3 +50,4 @@ only (the mod is unchanged).
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t3 (test only).
+- 2026-11-18: released in 0.7.15.

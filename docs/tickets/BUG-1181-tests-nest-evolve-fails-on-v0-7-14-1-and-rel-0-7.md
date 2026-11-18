@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: feat/w51-npc lab 20261115-165219
 role: 
 versions: v0.7.14.1, rel/0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-nest
 commits: 94cbeab2, d8b058e1
 tests: nest_evolve, nest_evolve_own
@@ -62,3 +62,4 @@ PASS: 20261115-214437 (lane 3, nest_evolve_own and nest_evolve), 20261115-220653
 ## History
 - 2026-11-15: opened (feat/w51-npc), evidence above; for the orchestrator / the next Creature package.
 - 2026-11-15 (fix/w51-nest): cause found (the test compared the herds of the puppets), test fixed; FAIL/PASS twin above.
+- 2026-11-18: released in 0.7.15.

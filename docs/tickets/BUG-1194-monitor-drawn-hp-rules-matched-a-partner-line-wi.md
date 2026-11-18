@@ -8,7 +8,7 @@ reported: 2026-11-16
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-t5
 commits: 5b2b7c55
 tests: sreport_leave, gates_selftest
@@ -51,3 +51,4 @@ PASS: lab 20261116-085451 sreport_leave#1, #2 (fix/w51-t5, no monitor violation)
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: fixed on fix/w51-t5 (final-check triage of 0.7.15, group T5).
+- 2026-11-18: released in 0.7.15.

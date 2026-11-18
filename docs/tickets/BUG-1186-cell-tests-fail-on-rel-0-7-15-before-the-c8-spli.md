@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-cell
 commits: 07164f0d, 2fb72dd8, 8407195d, 572c5d34
 tests: cell_swallow_gone, cell_unknown_model, cell_editor_timed, cell_sap, cell_kill_once, labstart_selftest.py
@@ -94,3 +94,4 @@ No change in the mod's behaviour (only a debug command's output), no change on t
 - 2026-11-16: fix/w51-cell: v0.7.14.1 beside rel/0.7.15; swallow_gone a 0.7.15 regression (A9 settle inside the
   hatch), the other three old test failures; fixed (unreleased). Final: the four tests x2 on lanes 6 / 7, 8 of 8 OK,
   lab 20261116-001214 (load 11); play_cell --quick OK 20261116-001740; make test clean.
+- 2026-11-18: released in 0.7.15.

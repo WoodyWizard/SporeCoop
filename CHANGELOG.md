@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.7.15] - 2026-11-18
+
+A quality update: many parts of the mod were reworked to be sturdier, and problems found by the tests were fixed in
+every stage. New: play one world over several evenings (the host's game remembers what belongs to each player and
+saves itself every 10 minutes while it hosts), a pause by the host pauses everybody, the host can remove a player
+with `coop.kick`, and players with different 0.7.x versions can play together. Among the fixes: plants and animals
+placed on a planet in Space are now there in every player's game, a host crash late in the Tribe stage and a Tribe
+stage whose last village never appeared, city citizens that walked behind or slid on a guest's screen in
+Civilization, and many smaller ones.
+Both players should update: the versions can play together, but several fixes need both sides.
+
 ### Changed
 - The old GOG 2016 build of Spore is no longer supported at all: on it the game now starts without co-op and shows
   "this game version (GOG 2016) is not supported, please update to the current GOG or Steam version"; the setup says

@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: feat/w51-labverdict, lab 20261115-014727 unit
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: rel/0.7.15
 commits: cdb65d1c
 tests: make test (unit-lint)
@@ -44,3 +44,4 @@ line.
 - 2026-11-15: opened.
 - 2026-11-15: after feat/w51-labverdict merged rel/0.7.15 (which has those commits) the check is clean there; branches made before that merge still see it.
 - 2026-11-15: fixed on rel/0.7.15 (private findings are notes).
+- 2026-11-18: released in 0.7.15.

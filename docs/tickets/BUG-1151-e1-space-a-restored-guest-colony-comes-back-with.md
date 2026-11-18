@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-store
 commits: 8edf9682, 53f904d2
 tests: space_session, space_session_npc, wire_tests (make test)
@@ -50,3 +50,4 @@ ornaments and walls are not carried (docs/re/space.md#space-colony-cities).
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-store: colony cities and NPC stars at the restore.
+- 2026-11-18: released in 0.7.15.

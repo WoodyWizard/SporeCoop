@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: lab
 role: 
 versions: 0.7.14, 0.7.14.1, 0.7.15 dev
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-tribefields
 commits: 930651a4, 5bb993ba, 39df71db
 tests: tribe_zero_fields
@@ -74,3 +74,4 @@ Bisect run dirs in the worktrees fix/w51-tribefields-v07141, fix/w51-tribefields
 ## History
 - 2026-11-15: opened.
 - 2026-11-16: fixed on fix/w51-tribefields (tribe.mirror_hunger_full; trigger d1fe9727's faster lab start-up).
+- 2026-11-18: released in 0.7.15.

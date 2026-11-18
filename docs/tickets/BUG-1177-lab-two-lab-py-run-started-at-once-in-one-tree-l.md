@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: fix/w51-evolve
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-labstate
 commits: eddafb3a
 tests: tools/tests/lab_selftest.py (two_trees_case)
@@ -54,3 +54,4 @@ runs since: out/lab/20261115-202550 (lane 9) and 20261115-202555 (lane 10), star
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: feat/w51-labstate: the runs were in two trees (CORRECTION above); run ids unique in the repository, full paths printed.
+- 2026-11-18: released in 0.7.15.

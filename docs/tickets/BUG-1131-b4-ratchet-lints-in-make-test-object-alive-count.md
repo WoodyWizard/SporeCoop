@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-guards
 commits: 42c13712, ae215268
 tests: tools/ratchet_lint.py --self-test (make test part unit-lint)
@@ -58,3 +58,4 @@ counts, refused while anything is above). No coop.fix switch (tooling, no mod co
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-guards (42c13712, ae215268).
+- 2026-11-18: released in 0.7.15.

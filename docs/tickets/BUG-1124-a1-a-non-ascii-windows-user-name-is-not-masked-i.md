@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-hygiene
 commits: 28e2259c
 tests: make test (unit: tests/path_mask_tests.cpp, path_mask_tests --old)
@@ -55,3 +55,4 @@ were, also logs of earlier runs written before any fix.
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-hygiene (28e2259c): wide reads, UTF-8 case-folded masks, masked archive texts.
+- 2026-11-18: released in 0.7.15.

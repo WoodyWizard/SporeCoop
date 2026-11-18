@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-space
 commits: a52441a2, 19f55ac8, db6744cd, a3ed71dc, b2b463c1, 97ac395f, 971d3322, 781e7848
 tests: tests/wire_tests.cpp (59 shapes), tests/fuzz_decoders.cpp fuzz_wire, make fuzz, .github/workflows/fuzz.yml
@@ -60,3 +60,4 @@ resends K_KEPT after 10 s, before: partly applied and counted as answered); a K_
 ## History
 - 2026-11-15: opened.
 - 2026-11-15: fixed on feat/w51-space (unreleased).
+- 2026-11-18: released in 0.7.15.

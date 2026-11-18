@@ -8,7 +8,7 @@ reported: 2026-11-17
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: fix/w51-space3
 commits: 98350224
 tests: space_session
@@ -44,3 +44,4 @@ Test only: BUG-1223's change (the first session closes the boxes, none comes in 
 ## History
 - 2026-11-17: opened.
 - 2026-11-17: fix/w51-space3: the colony is there; the landing failed under BUG-1223's box (inferred); test fixed with BUG-1223.
+- 2026-11-18: released in 0.7.15.

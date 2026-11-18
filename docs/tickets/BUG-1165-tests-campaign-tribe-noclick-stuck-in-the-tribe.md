@@ -8,7 +8,7 @@ reported: 2026-11-15
 source: lab 20261115-154852 (v0.7.14.1), feat/w51-retire 20261115-133237
 role: host
 versions: v0.7.14.1, rel/0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.15
 branch: feat/w51-tribe
 commits: 3effe3dd
 tests: campaign_tribe_noclick
@@ -52,3 +52,4 @@ the 30 min. suite.py: the entry 50 min, timeout 4200 s. No mod change.
 
 ## History
 - 2026-11-15: opened (feat/w51-tribe), the v0.7.14.1 comparison run, the budget.
+- 2026-11-18: released in 0.7.15.
