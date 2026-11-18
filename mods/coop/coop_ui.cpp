@@ -898,6 +898,7 @@ static void apply_name()
 }
 
 static std::string g_join_line; // tests: the status line of the last join (a failed name lookup replaces it at once)
+static double g_galaxy_close_at; // decision 5Y A (alpha): a galaxy Join waits for its welcome, then closes the window
 
 static void do_join(const std::string& address)
 {
@@ -917,6 +918,17 @@ static void do_join(const std::string& address)
     if (addr.find(':') == std::string::npos && !port.empty())
         addr += ":" + port;
     std::string err;
+    // owner 2026-11-17 (alpha test): "I pressed join, but the co-op menu did not change ... I can't leave the server":
+    // while connected to the galaxy (no planet session), Join reads "Leave Galaxy" and leaves it
+    {
+        std::string g_name, g_line;
+        bool g_connected = false;
+        if (A.galaxy_info && A.galaxy_disconnect && A.role() == 0 && A.galaxy_info(g_name, g_line, g_connected) && g_connected) {
+            A.galaxy_disconnect();
+            set_status("Left the galaxy.", kYellow);
+            return;
+        }
+    }
     // decision 5Y A (alpha): the galaxy server's port: connect to the galaxy (its planets appear in the galaxy menu)
     if (A.galaxy_connect && addr.size() > 6 && addr.compare(addr.size() - 6, 6, ":47900") == 0) {
         if (!A.galaxy_connect(addr, err)) {
@@ -925,6 +937,7 @@ static void do_join(const std::string& address)
         }
         save_str("ui", "galaxy_address", addr);
         set_status("Connecting to the galaxy server: its planets appear in the galaxy menu.", kYellow);
+        g_galaxy_close_at = H->time_seconds() + 20; // (the window closes once connected: the menu shows the planets)
         return;
     }
     if (!A.join(addr, err, sui::edit_text(D.join_password))) {
@@ -1822,6 +1835,15 @@ static void refresh_connect()
             details = g_connected ? "Galaxy server: connected" : "Galaxy server: Join connects to it";
     }
     show(D.galaxy_row, galaxy && scanning);
+    // owner 2026-11-17: Join leaves the galaxy while connected; the window steps aside once a Join connected
+    text(D.join_btn, galaxy && g_connected && A.role() == 0 ? "Leave Galaxy" : "Join");
+    if (galaxy && g_connected && g_galaxy_close_at > 0) {
+        g_galaxy_close_at = 0;
+        notify::show("Connected to " + g_name + ": pick a planet in the galaxy menu.", "info");
+        set_status("Connected to " + g_name + ".", kGreen);
+        open(false);
+    } else if (g_galaxy_close_at > 0 && H->time_seconds() > g_galaxy_close_at)
+        g_galaxy_close_at = 0;
     show(D.galaxy_name, galaxy && scanning);
     show(D.galaxy_line, galaxy && scanning);
     text(D.selected_info, details);

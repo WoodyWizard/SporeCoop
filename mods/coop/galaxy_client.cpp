@@ -9,6 +9,8 @@
 #include "net/galaxy.h"
 #include "net/transport.h"
 #include "world.h"
+#include "sporekit_game.hpp"
+#include <windows.h>
 #include "game.h"
 #include "modes.h"
 
@@ -56,6 +58,16 @@ static bool g_waiting_host;
 static double g_waiting_since;
 static std::string g_pending_join; // join this address once the old session is closed
 static uint32_t g_handovers;
+// decision 6A A: every way out saves first; the game's own Save waits 1 s on its clock (SaveGame_Clock): moved on
+static bool g_up_nosave;          // the stage was left for the menu: Spore saved on the way, pack that save
+static bool g_close_after;        // Alt+F4 / the X: close the window once the planet is saved and left
+static double g_close_asked;
+static bool g_fast_pending;       // the save message was posted: move its clock on once it was handled
+static double g_fast_posted;
+static double g_last_hurt = -100, g_quiet_wait_since = -1;
+static float g_last_hp = -1;
+static uint32_t g_fast_saves, g_quiet_waits, g_menu_handovers, g_close_holds;
+static double g_hosted_stored_at = -1; // hosting a stored planet since: the first creature is asked for
 static std::deque<std::pair<uint16_t, std::vector<uint8_t>>> g_queue; // relay packets for the session
 static uint64_t g_rx, g_tx, g_rx_bytes, g_tx_bytes, g_queue_dropped;
 
@@ -328,6 +340,7 @@ static void host_now()
         send_control(control(READY));
         g_next_upload = H->time_seconds() + (g_world_bytes ? g_upload_every : 60); // (a new planet: stored soon)
         say("You host " + g_planet + " for the galaxy.");
+        g_hosted_stored_at = g_world_bytes ? H->time_seconds() : -1; // (hosted_stored_tick asks)
     } else {
         g_hstep = kNoHost;
         say("Could not host " + g_planet + ": " + err);
@@ -392,6 +405,11 @@ static void start_upload()
     if (g_upstep != kUpIdle || g_hstep != kHosting)
         return;
     std::string err;
+    if (g_up_nosave) { // (Spore saved when it left the stage for the menu)
+        g_upstep = kUpSaving;
+        g_up_at = H->time_seconds();
+        return;
+    }
     if (!world::save_game(err)) { // (an editor, a cinematic, Space on a planet: again soon)
         g_next_upload = H->time_seconds() + 15;
         H->log(M, SK_INFO, "galaxy: no save for the upload now: %s", err.c_str());
@@ -401,6 +419,46 @@ static void start_upload()
     }
     g_upstep = kUpSaving;
     g_up_at = H->time_seconds();
+    g_fast_pending = true; // (the save message is handled in a later frame)
+    g_fast_posted = g_up_at;
+}
+
+// decision 6A A: once Spore handled the Save message (SaveGame_Allowed cleared, its clock running), the clock is moved
+// on by its 1000 ms wait: the save is written on the next step instead of a second later, with the game time paused
+// meanwhile (docs/re/creature.md#creature-save-steps)
+static void fast_save_tick(double now)
+{
+    if (!g_fast_pending)
+        return;
+    static uintptr_t clock = H->sym("SporeCoop::SaveGame_Clock"), allowed = H->sym("SporeCoop::SaveGame_Allowed");
+    if (!clock || !allowed || now - g_fast_posted > 5) {
+        g_fast_pending = false;
+        return;
+    }
+    uint8_t* c = (uint8_t*)clock;
+    const uint64_t start = *(uint64_t*)c;
+    const float ms_per_tick = *(float*)(c + 0x14);
+    if (*(uint8_t*)allowed || !start || !(ms_per_tick > 0))
+        return; // (not handled yet)
+    *(uint64_t*)(c + 8) += (uint64_t)(1000.0 / ms_per_tick);
+    g_fast_pending = false;
+    g_fast_saves++;
+}
+
+// no hit taken in the last 4 s, no cinematic, the creature alive: a save's hitch is least felt then, and a planet is
+// never stored with its host dead (the next host loaded into the death screen, owner test 2026-11-17)
+static bool quiet(double now)
+{
+    void* av = game::avatar();
+    return now - g_last_hurt > 4 && !world::cinematic_playing() && !(av && game::health(av) <= 0);
+}
+
+static void hosted_stored_tick(double now)
+{
+    if (g_hosted_stored_at < 0 || g_hstep != kHosting)
+        return;
+    if (now - g_hosted_stored_at > 600 || !C.hosted_stored || C.hosted_stored()) // (a death screen may wait minutes for its OK)
+        g_hosted_stored_at = -1;
 }
 
 static void upload_done(bool ok, const std::string& why)
@@ -418,6 +476,7 @@ static void upload_done(bool ok, const std::string& why)
         g_uploads_done++;
     if (!ok || g_leave_after)
         say(ok ? "Saved " + g_planet + " to the galaxy." : "Could not save " + g_planet + " to the galaxy: " + why);
+    g_up_nosave = false;
     if (g_leave_after) {
         g_leave_after = false;
         leave_now();
@@ -425,15 +484,54 @@ static void upload_done(bool ok, const std::string& why)
             g_disconnect_after = false;
             disconnect();
         }
+        if (g_close_after) { // Alt+F4 / the X: the planet is saved and left, the window closes now
+            g_close_after = false;
+            if (HWND w = (HWND)H->game_window())
+                PostMessageW(w, WM_CLOSE, 0, 0);
+        }
     }
 }
 
 static void upload_tick(double now)
 {
+    if (g_close_after && now - g_close_asked > 30) { // (the save did not come: close anyway)
+        g_close_after = false;
+        if (HWND w = (HWND)H->game_window())
+            PostMessageW(w, WM_CLOSE, 0, 0);
+    }
     if (g_hstep != kHosting || g_role != kHostRole)
         return;
-    if (g_upstep == kUpIdle && (now >= g_next_upload || g_leave_after) && C.sess && C.sess->role() == net::Role::Host)
+    // owner 2026-11-17: leaving to the main menu while hosting leaves the planet: Spore saved on the way, that save goes
+    // to the galaxy and the planet is handed over
+    if (game::mode_id() == modes::kMenu && !g_leave_after && C.sess && C.sess->role() == net::Role::Host) {
+        g_leave_after = true;
+        g_up_nosave = true;
+        g_menu_handovers++;
+        say("You left " + g_planet + " for the menu: saving it to the galaxy and handing it over.");
+    }
+    // decision 6A A: every 2 minutes while others are on the planet (a crashed host loses less), else every 5
+    const bool others = C.sess && C.sess->players().size() > 1;
+    const double every = others ? std::min(g_upload_every, 120.0) : g_upload_every;
+    if (g_upstep == kUpIdle && !g_leave_after && g_next_upload > now + every)
+        g_next_upload = now + every;
+    if (void* av = game::avatar()) { // (a hit taken: the hp went down)
+        const float hp = game::health(av);
+        if (g_last_hp >= 0 && hp < g_last_hp - 0.01f)
+            g_last_hurt = now;
+        g_last_hp = hp;
+    }
+    if (g_upstep == kUpIdle && (now >= g_next_upload || g_leave_after) && C.sess && C.sess->role() == net::Role::Host) {
+        if (!g_leave_after && !quiet(now)) { // a quiet moment first, 60 s at most
+            if (g_quiet_wait_since < 0) {
+                g_quiet_wait_since = now;
+                g_quiet_waits++;
+            }
+            if (now - g_quiet_wait_since < 60)
+                return;
+        }
+        g_quiet_wait_since = -1;
         start_upload();
+    }
     if (g_upstep == kUpSaving && now - g_up_at > 4 && !world::save_busy()) {
         std::vector<uint8_t> blob;
         std::string planet, err;
@@ -595,6 +693,8 @@ void tick(double now)
         pump(); // (while a planet session runs, its transport reads)
     loading_tick(now);
     upload_tick(now);
+    fast_save_tick(now);
+    hosted_stored_tick(now);
     if (g_welcomed && game::mode_id() == modes::kMenu && now >= g_next_list) { // the galaxy menu's list (5X B)
         g_next_list = now + 10;
         send_control(control(LIST));
@@ -642,6 +742,19 @@ void tick(double now)
 bool online() { return g_sock.is_open() && g_welcomed; }
 uint32_t planets_version() { return g_planets_ver; }
 std::string current_planet() { return g_planet; }
+bool hosting() { return g_hstep == kHosting && g_role == kHostRole && C.sess && C.sess->role() == net::Role::Host; }
+
+bool close_request()
+{
+    if (!hosting() || g_close_after)
+        return g_close_after; // (a second Alt+F4 while saving is held too)
+    g_close_after = true;
+    g_close_asked = H->time_seconds();
+    g_close_holds++;
+    g_leave_after = true;
+    say("Saving " + g_planet + " to the galaxy before closing...");
+    return true;
+}
 std::string galaxy_name() { return g_welcomed ? g_galaxy : ""; }
 std::vector<PlanetInfo> planets_known()
 {
@@ -665,11 +778,12 @@ std::string status()
     static const char* steps[] = {"-", "downloading", "loading", "hosting"};
     snprintf(b, sizeof b,
              "\nworld: %s%s stored=%u KB down=%u/%u chunks upload=%s (%u/%u chunks) next upload in %.0f s, uploads %u, "
-             "downloads %u, hand-overs %u, last upload: %s",
+             "downloads %u, hand-overs %u, fast saves %u, quiet waits %u, menu hand-overs %u, close holds %u, last upload: %s",
              steps[g_hstep], g_waiting_host ? " (waiting for the new host)" : "", g_world_bytes >> 10, g_down.got, (unsigned)g_down.have.size(),
              g_upstep == kUpIdle ? "idle" : g_upstep == kUpSaving ? "saving" : "sending", g_up.acked,
              g_up.on ? g_up.chunks() : 0u, g_hstep == kHosting ? g_next_upload - H->time_seconds() : 0.0,
-             g_uploads_done, g_downloads_done, g_handovers, g_last_upload.empty() ? "-" : g_last_upload.c_str());
+             g_uploads_done, g_downloads_done, g_handovers, g_fast_saves, g_quiet_waits, g_menu_handovers, g_close_holds,
+             g_last_upload.empty() ? "-" : g_last_upload.c_str());
     return s + b;
 }
 

@@ -7853,6 +7853,10 @@ bool do_join(const std::string& addr, std::string& err, const std::string& passw
 
 void do_leave()
 {
+    if (galaxy::hosting()) { // decision 6A A (alpha): a galaxy planet's host saves it first, then leaves (galaxy_client)
+        H->log(M, SK_INFO, "%s", galaxy::leave().c_str());
+        return;
+    }
     g_sess.leave("user");
     // a clean leave: the next join is a new player (BUG-0235), except a join back to this host under this name, which
     // keeps the token: the host takes it back while it takes no new players (BUG-1001, off with net.join_seen)
@@ -9569,6 +9573,7 @@ void init_ui()
                                                                   : "Online worlds  -  select, then Join";
         return true;
     };
+    a.galaxy_disconnect = [] { H->log(M, SK_INFO, "%s", galaxy::disconnect().c_str()); };
     a.galaxy_connect = [](const std::string& addr, std::string& err) {
         const std::string r = galaxy::connect(addr);
         if (r.rfind("Connecting", 0) == 0)
@@ -11197,7 +11202,26 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gx.host = [](std::string& err) { return do_host(default_port(), 4, 100, err); };
         gx.join = [](const std::string& addr, std::string& err) { return do_join(addr, err); };
         gx.ready = [] { return g_local != nullptr && !world::load_queued() && !world::load_starting(); };
+        gx.hosted_stored = []() -> bool { // owner test 2026-11-17: a new host makes its own creature first
+            if (!creations::host_needs_first_creature())
+                return true;
+            // not under a death screen, a cinematic or a busy game (the editor opened there stayed black, 2026-11-17)
+            void* av = game::avatar();
+            if (!av || game::health(av) <= 0 || world::cinematic_playing() || game_busy() || mode_switch_pending())
+                return false;
+            H->run_outside_frame([](void*) {
+                if (!creations::host_needs_first_creature())
+                    return;
+                creations::host_first_creature_begin();
+                const bool r = submit_new_creature_request();
+                LOG("galaxy: the new host's first-creature editor -> %d", (int)r);
+                if (r)
+                    feed("Make your creature for this planet: you play it when you save it.");
+            }, nullptr);
+            return true;
+        };
         galaxy::init(H, M, gx);
+        mouse::set_close_request(galaxy::close_request); // decision 6A A (alpha): Alt+F4 / the X save the planet first
     }
     era_visitors::init(H, M); // decision 5S A spike (alpha)
     galaxy_menu::init(H, M);  // decision 5X B (alpha)

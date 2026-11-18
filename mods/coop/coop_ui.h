@@ -107,6 +107,7 @@ struct Api {
     // (connected: the planets and players), false when the build has none; galaxy_connect: connect to that address
     std::function<bool(std::string& name, std::string& line, bool& connected)> galaxy_info;
     std::function<bool(const std::string& address, std::string& err)> galaxy_connect;
+    std::function<void()> galaxy_disconnect;
     std::function<void(bool)> lan_scan; // start/stop looking for games on the network
     std::function<std::vector<std::string>()> local_addresses;
     std::function<uint32_t()> mode; // game mode id

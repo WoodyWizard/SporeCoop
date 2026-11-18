@@ -1,5 +1,5 @@
 # The galaxy server on this PC in a visible console window (owner 2026-11-17: "can we give it a visible cmd prompt so I
-# know its running or not?"), its lines also in out\galaxy\galaxy.log.
+# know its running or not?"), its lines also in out\galaxy\galaxy.log (UTF-8).
 #   tools/qa_win/galaxy.ps1 start [-Name "Lineages Alpha Galaxy"] [-Port 47900] [-Worlds out\galaxy\worlds] [-Extra '--warm-handover']
 #   tools/qa_win/galaxy.ps1 stop       closes it (the window too)
 #   tools/qa_win/galaxy.ps1 status     running or not, the last lines of the log
@@ -18,7 +18,7 @@ switch ($Action) {
         if (Test-Path $log) { Move-Item -Force $log ($log -replace '\.log$', '.previous.log') }
         $cmd = "`$host.UI.RawUI.WindowTitle = 'SporeCoop Galaxy Server - $Name (port $Port)'; " +
                "Set-Location '$root'; Write-Host 'SporeCoop Galaxy Server: close this window to stop it.' -ForegroundColor Cyan; " +
-               "& '$exe' --worlds '$Worlds' $Extra $Port '$Name' 2>&1 | Tee-Object -FilePath '$log'"
+               "& '$exe' --worlds '$Worlds' $Extra $Port '$Name' 2>&1 | ForEach-Object { `$_; Add-Content -LiteralPath '$log' -Value `$_ -Encoding UTF8 }"
         Start-Process powershell -ArgumentList '-NoProfile', '-NoExit', '-Command', $cmd | Out-Null
         Start-Sleep -Seconds 2
         $p = Get-Process galaxy_server -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }

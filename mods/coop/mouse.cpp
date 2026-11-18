@@ -40,10 +40,20 @@ static bool ours(HWND w)
     return w && g_wnd && (w == g_wnd || IsChild(g_wnd, w));
 }
 
+static bool (*g_close_request)();
+void set_close_request(bool (*handler)()) { g_close_request = handler; }
+
 static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
 {
     if (code == HC_ACTION && wp == PM_REMOVE && lp) {
         MSG* m = (MSG*)lp;
+        // decision 6A A: the two ways a player closes the window by hand start as posted messages (the close itself is
+        // sent later by DefWindowProc): held here when the handler wants to save first
+        if (g_close_request && ours(m->hwnd) &&
+            ((m->message == WM_SYSKEYDOWN && m->wParam == VK_F4 && (GetKeyState(VK_MENU) & 0x8000)) ||
+             (m->message == WM_NCLBUTTONDOWN && m->wParam == HTCLOSE)) &&
+            g_close_request())
+            m->message = WM_NULL;
         // BUG-9191 (3H): first, so the game and every handler below see the point the UI's layout expects
         if (g_remap && ours(m->hwnd) && ((m->message >= WM_MOUSEFIRST && m->message <= WM_MBUTTONDBLCLK) ||
                                          m->message == WM_MOUSEWHEEL)) {

@@ -24,6 +24,9 @@ struct Ctx {
     std::function<bool(std::string& err)> host;                     // host the loaded world (the relay is set)
     std::function<bool(const std::string& addr, std::string& err)> join; // join that address (the relay is set)
     std::function<bool()> ready; // the player plays a stage now (no load waits): a downloaded world is loaded
+    // this game hosts a planet it loaded from the galaxy (the first creature): called until it returns true (done or not
+    // needed), 10 minutes at most
+    std::function<bool()> hosted_stored;
 };
 
 // a planet of the server's list (LIST), for the galaxy menu (5X B)
@@ -41,6 +44,8 @@ std::vector<PlanetInfo> planets_known();    // the last list: the planets with p
 uint32_t planets_version();                 // changes with the list
 std::string current_planet();               // the planet this player is on ("" none)
 std::string galaxy_name();                  // the connected galaxy's name ("" when not connected)
+bool hosting();                             // this game hosts a planet of the galaxy now
+bool close_request();                       // Alt+F4 / the window's X (mouse.cpp): true = held, saved first (6A A)
 void tick(double now);
 std::string connect(const std::string& address); // ip or name, [:port] (47900)
 std::string disconnect();

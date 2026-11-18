@@ -30,6 +30,9 @@ void set_tribe_input(bool (*handler)(unsigned message, uintptr_t value, int x, i
 void set_remap(bool (*handler)(unsigned message, int& x, int& y));
 // remove it (on_unload: the hook procedure lives in this DLL)
 void shutdown();
+// decision 6A A (alpha): Alt+F4 or a click on the window's close button; the handler returns true to hold the close
+// (it posts WM_CLOSE itself when it is ready)
+void set_close_request(bool (*handler)());
 // primary clicks seen so far; a consumer keeps the last value it handled
 uint32_t clicks();
 // BUG-0482: the characters (WM_CHAR) the game window took from its queue since the last call, and

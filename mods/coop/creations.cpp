@@ -3833,6 +3833,67 @@ void begin_first_creature()
 }
 void cancel_first_creature() { g_first_pending = false; }
 bool first_creature_pending() { return g_first_pending; } // BUG-9209
+
+static uint32_t g_host_first_world;   // the world the host's first-creature editor was opened for (0 none)
+static double g_host_first_until = -1; // back from that editor: the new creation is looked for until then
+static double g_host_first_read;
+static std::set<uint32_t> g_host_first_before;
+static unsigned g_host_first_made;
+bool host_needs_first_creature()
+{
+    if (!g_host_own_record || !C.sess || C.sess->role() != net::Role::Host || game::mode_id() != modes::kCreature)
+        return false;
+    const uint32_t world = modes::current_world();
+    const Key a = avatar_species_key();
+    if (!world || world_record(kCreature, world) || (g_chosen[kCreature] && !g_choice[kCreature].instance))
+        return false;
+    return !(a.instance && own_option(kCreature, a));
+}
+void host_first_creature_begin()
+{
+    g_opts_read = -100;
+    refresh_options(H->time_seconds());
+    g_host_first_before.clear();
+    for (auto& o : g_opts[kCreature])
+        g_host_first_before.insert(o.key.instance);
+    g_host_first_world = modes::current_world();
+    g_host_first_until = -1;
+}
+// back in the Creature stage from that editor: the newest own creation that was not there before is recorded for the
+// world (mine() then plays it: the avatar swap)
+static void host_first_tick(double now)
+{
+    if (!g_host_first_world)
+        return;
+    const uint32_t m = game::mode_id();
+    if (m == modes::kEditor || m == modes::kEdit) {
+        g_host_first_until = now + 30;
+        return;
+    }
+    if (g_host_first_until < 0 || m != modes::kCreature || modes::current_world() != g_host_first_world)
+        return;
+    if (now > g_host_first_until) {
+        H->log(M, SK_INFO, "creations: the new host's first-creature editor saved nothing: it plays the world's creature");
+        g_host_first_world = 0;
+        return;
+    }
+    if (now - g_host_first_read < 2.0)
+        return;
+    g_host_first_read = now;
+    g_opts_read = -100;
+    refresh_options(now);
+    for (auto& o : g_opts[kCreature]) // newest first
+        if (!g_host_first_before.count(o.key.instance)) {
+            world_record_set(kCreature, g_host_first_world, o.key.instance);
+            g_host_first_made++;
+            H->log(M, SK_INFO, "creations: the new host's first creature %08X is its creature in world %08X (owner test 2026-11-17)",
+                   o.key.instance, g_host_first_world);
+            if (C.feed)
+                C.feed("Your new creature is your creature on this planet.");
+            g_host_first_world = 0;
+            return;
+        }
+}
 bool first_creature_made() { return g_first_key != 0; }
 // BUG-9208: a guest about to enter the host's world `world` (PlayerState.world) has no creature of its own there yet:
 // none recorded (worlds.ini, BUG-0345), no campaign creature for it (choices.ini [landfall]), no first creature made
@@ -4376,6 +4437,7 @@ void tick(double now)
     if (landfall_tick(now)) return;
     if (adopt_after_editor(now))
         return;
+    host_first_tick(now);
     own_world_tick();
     if (now - g_last_check > 2.0) {
         g_last_check = now;
