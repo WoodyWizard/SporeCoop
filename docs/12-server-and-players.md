@@ -938,6 +938,69 @@ The owner's rules (#server-parties), on alpha:
   (a new host starts everyone alone); the Co-op window's "Players who can join" setting still reads 4 on a galaxy
   planet (the planet takes the galaxy's count).
 
+### Parties kept by the galaxy server, kick, the friends list's place (2026-11-18, feat/lineages-alpha, decision 6K)
+<a id="server-parties-galaxy"></a>
+
+Owner (with "6KA"): "Let's also allow kicking from party. We need a location for a friends list to allow faster
+partying and whispering. (Make a mockup of where it'd be) We need to allow partying in the galaxy menu. Parties
+shouldn't be reset/disbanded if the host changes. Ensure it's clean, well spaced, and polished."
+
+* **The galaxy server keeps the parties** (server/galaxy/main.cpp, parties::BasicBook<uint16_t> by player slot;
+  net/galaxy.h PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS). A player is in a party from the moment it connects, in the
+  galaxy menu too, and stays in it across planets and hand-overs. Requests name the other player by its identity
+  (identity::known on any machine); each member gets its party's view (slot, identity, name, planet, stage) and an
+  invite in it. A game that drops and comes back (a new slot, the same identity) goes back into its party for 5
+  minutes. The stage each plays comes with its requests (the cross-stage rule). Without a galaxy (plain co-op) the
+  session's host keeps them as in 6J.
+* **Kick**: the leader's "Remove from Party" (menu, `coop.party kick`, `gkick <name>` in the galaxy menu): the player
+  plays alone, and hears "<leader> removed you from the party".
+* **The galaxy menu** (until its panel is built, decision 6L): `coop.party online`, `ginvite <name>`, `gkick <name>`;
+  the invite panel (Join Party / Decline) shows over the galaxy menu too.
+* Tested over TITAN (the host, QA8) and the MSI (one game): QA8 invited the MSI game in the galaxy menu, the MSI's
+  Join Party made them a party there; both entered Samuth (the view showed both on it; QA8's menu on the MSI player
+  offered Make Leader and Remove from Party); the host left, QA8 took the planet over and the party stayed whole;
+  QA8 removed the MSI player (alone, leading its own party). The server logged each step.
+* **The friends list's place**: mockups images/mockup_friends_A_galaxy.png, mockup_friends_A_world.png (a "Friends &
+  Party" panel at the right edge, F8 anywhere, a Friends button under Co-op in the galaxy menu: the party, friends
+  online with where they play, Invite and Whisper on each row, the galaxy's players) and mockup_friends_B_coop.png (a
+  Friends tab in the Co-op window's lobby). Decision 6L.
+
+### Each party its own progression: the plan (2026-11-18, decision 6K A)
+<a id="server-party-progression"></a>
+
+Research (read of the code and docs/re, 6K A). Today one game simulates the planet and every player shares its
+relations, difficulty and goals:
+
+* **Relations**: one table per game (cSpeciesRelationshipManager, the map at mgr+0x20: relation, impressed, killed per
+  species, docs/re/creature.md); GetRelationship 0xBA40E0 is always called with a creature pair (the player's creature
+  and the NPC), so the host can answer per player; BUG-0462 gives every player the host's answer today. Events
+  (ApplyEvent 0xBA49E0: impress, kill, attacked) name the victim, not the actor. The host sends its table to the guests
+  (MSG_SPECIES, social.cpp) and already can send one to a single player.
+* **Difficulty**: CampaignRules by the campaign's seats (4 at most since 6E B); enemy health is one factor per NPC,
+  damage is scaled per hit in the host's damage filter where the hit player is known (npc.cpp, tribe.cpp, civ.cpp,
+  cellsync.cpp). Space already counts the players in one system (squadron::party_rules): the same idea per party.
+* **Goals**: the progress bar, the DNA pace (gains divided by all players in the world), the progress debt, the goal
+  rewards (once per session), extinction, nests, collected parts and the stage end are one per world on the host;
+  spendable DNA, the own creature and editor, health and rescue are already per player.
+
+Plan, in steps (each one a build and a test on TITAN and the MSI):
+
+1. **Difficulty per party**: the seats that scale a hit are the hit (or hitting) player's party size; health factors
+   become damage factors per party (one NPC, many parties: the attacker's damage is divided by its party's health
+   factor instead of the NPC's health changing). DNA pace and progress debt counted per party.
+2. **Relations per party**: the host keeps one table per party (the game's own table stands for the host's party);
+   GetRelationship answers for the party of the player creature in the pair; impress / kill / attack events are
+   credited to the acting player's party (the social win and the hit already know the player); each party's guests
+   get their party's table (MSG_SPECIES per party). Goal rewards paid once per party.
+3. **Extinction and nests per party** and **NPCs that pick targets by relation** (the target picker is distance only
+   today): needs decision 6M.
+4. **Stage progress per party** (the bar, the stage end, leaving for the next stage) with the three roles (party
+   leader, planet host, simulation host): needs decision 6N.
+
+Hardest parts: crediting events to the right party (the game reports the victim), one NPC seen by several parties
+(its AI keeps targets between ticks), extinction being a world object, and the host's single progress bar.
+Feasible soon: steps 1 and 2.
+
 ### Hand-over without a reload: research (2026-11-17, decision 6B C)
 <a id="server-warm-handover"></a>
 

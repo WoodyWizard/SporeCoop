@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "../../mods/coop/net/galaxy.h"
+#include "../../mods/coop/parties.h"
 
 using namespace net;
 using namespace net::galaxy;
@@ -35,6 +36,7 @@ struct Client {
     std::string name, version, planet;
     uint64_t identity = 0;
     uint32_t last_ms = 0;
+    uint32_t stage = 0; // 6K: the game mode it plays (its PARTY kPartyStage; 0 a menu or a load)
 };
 
 struct Planet {
@@ -264,6 +266,11 @@ static bool read_world(const Stored& st, std::vector<uint8_t>& out)
     return crc32(0, out.data(), out.size()) == crc;
 }
 
+static void party_player_in(Client& c); // 6K (below)
+static void party_player_out(const Client& c);
+static void on_party(Client& c, Reader& r);
+static void send_players(const Client& c);
+
 static void on_control(const Endpoint& from, Reader& r)
 {
     const uint8_t type = r.u8();
@@ -301,6 +308,7 @@ static void on_control(const Endpoint& from, Reader& r)
         w.u8(g_planet_players);
         send(*c, w);
         say("player %u '%s' connected from %s (%s)", c->slot, c->name.c_str(), from.masked().c_str(), version.c_str());
+        party_player_in(*c); // 6K
         return;
     }
     if (!c) { // anything but HELLO from an unknown address
@@ -312,6 +320,14 @@ static void on_control(const Endpoint& from, Reader& r)
         return;
     }
     c->last_ms = now_ms();
+    if (type == PARTY) { // 6K
+        on_party(*c, r);
+        return;
+    }
+    if (type == WHO) {
+        send_players(*c);
+        return;
+    }
     if (type == PING) {
         send(*c, control(PONG));
     } else if (type == LIST) { // the planets with players, then the stored ones nobody is on
@@ -491,6 +507,227 @@ static void on_control(const Endpoint& from, Reader& r)
     }
 }
 
+
+// ---------------- decision 6K: the parties, kept here (parties.h) ----------------
+static parties::BasicBook<uint16_t> g_parties;
+// a player that dropped (timed out, reconnected under another slot): its party for a while, by identity
+struct PartyGhost {
+    uint16_t party = 0;
+    uint32_t at = 0;
+};
+static std::map<uint64_t, PartyGhost> g_party_ghosts;
+static uint64_t g_party_requests, g_party_views;
+constexpr uint32_t kPartyGhostMs = 5 * 60 * 1000;
+
+static Client* by_identity(uint64_t id)
+{
+    if (!id)
+        return nullptr;
+    for (auto& [s, c] : g_clients)
+        if (c.identity == id)
+            return &c;
+    return nullptr;
+}
+
+static void send_party_view(uint16_t slot)
+{
+    auto it = g_clients.find(slot);
+    if (it == g_clients.end())
+        return;
+    const auto* q = g_parties.find(slot);
+    Writer w = control(PARTYVIEW);
+    w.u16(q ? q->id : 0);
+    w.u16(q ? q->leader : slot);
+    const size_t n = q ? q->members.size() : 0;
+    w.u8((uint8_t)n);
+    for (size_t i = 0; i < n; i++) {
+        const Client& m = g_clients[q->members[i]];
+        w.u16(m.slot);
+        w.u64(m.identity);
+        w.str8(m.name);
+        w.str8(m.planet);
+        w.u32(m.stage);
+    }
+    const int from = g_parties.pending_from(slot);
+    const Client* f = from > 0 && g_clients.count((uint16_t)from) ? &g_clients[(uint16_t)from] : nullptr;
+    w.u16(f ? f->slot : 0);
+    w.u64(f ? f->identity : 0);
+    w.str8(f ? f->name : "");
+    send(it->second, w);
+    g_party_views++;
+}
+
+// the views of every member of these players' parties (after a change)
+static void send_party_views(std::initializer_list<uint16_t> slots)
+{
+    std::set<uint16_t> to;
+    for (uint16_t s : slots)
+        if (const auto* q = g_parties.find(s))
+            to.insert(q->members.begin(), q->members.end());
+        else
+            to.insert(s);
+    for (uint16_t s : to)
+        send_party_view(s);
+}
+
+static void party_note(const Client& to, uint8_t kind, parties::Result r, const std::string& other)
+{
+    Writer w = control(PARTYNOTE);
+    w.u8(kind);
+    w.u8((uint8_t)r);
+    w.str8(other);
+    send(to, w);
+}
+
+// a player came (WELCOME): its own party, or the one it had when it dropped (a reconnect)
+static void party_player_in(Client& c)
+{
+    if (Client* old = by_identity(c.identity); old && old->slot != c.slot) { // the same game under a new slot
+        if (const auto* q = g_parties.find(old->slot); q && q->members.size() > 1)
+            g_party_ghosts[c.identity] = {q->id, now_ms()};
+        g_parties.remove(old->slot);
+    }
+    if (g_parties.find(c.slot))
+        return;
+    auto g = g_party_ghosts.find(c.identity);
+    if (g != g_party_ghosts.end() && now_ms() - g->second.at < kPartyGhostMs && g_parties.rejoin(c.slot, g->second.party)) {
+        say("party: %u '%s' is back in its party %u", c.slot, c.name.c_str(), g->second.party);
+        g_party_ghosts.erase(g);
+        send_party_views({c.slot});
+        return;
+    }
+    g_parties.add(c.slot);
+    send_party_view(c.slot);
+}
+
+// a player went (timed out): out of its party (the longest standing member leads), its place kept for a while
+static void party_player_out(const Client& c)
+{
+    const auto* q = g_parties.find(c.slot);
+    std::vector<uint16_t> others;
+    if (q) {
+        for (uint16_t m : q->members)
+            if (m != c.slot)
+                others.push_back(m);
+        if (!others.empty() && c.identity)
+            g_party_ghosts[c.identity] = {q->id, now_ms()};
+    }
+    g_parties.remove(c.slot);
+    for (uint16_t m : others)
+        send_party_view(m);
+}
+
+static void on_party(Client& c, Reader& r)
+{
+    const uint8_t kind = r.u8();
+    const uint64_t other_id = r.u64();
+    const uint8_t flag = r.u8();
+    const uint32_t stage = r.u32();
+    if (!r.ok())
+        return;
+    c.stage = stage;
+    g_party_requests++;
+    if (kind == kPartyStage) {
+        send_party_views({c.slot}); // (the members see the stage)
+        return;
+    }
+    Client* o = other_id ? by_identity(other_id) : nullptr;
+    const std::string oname = o ? o->name : "";
+    const uint32_t now = now_ms();
+    parties::Result res = parties::Result::Unknown;
+    switch (kind) {
+    case kPartyInvite:
+        if (!o)
+            break;
+        res = g_parties.invite(c.slot, o->slot, c.stage, o->stage, now / 1000.0);
+        if (res == parties::Result::Ok) {
+            say("party: %u '%s' invites %u '%s'", c.slot, c.name.c_str(), o->slot, o->name.c_str());
+            send_party_view(o->slot); // (its view carries the invite)
+        }
+        break;
+    case kPartyAnswer: {
+        if (!o)
+            break;
+        const uint16_t old_party = g_parties.find(c.slot) ? g_parties.find(c.slot)->id : 0;
+        std::vector<uint16_t> old_members;
+        if (const auto* q = g_parties.find(c.slot))
+            old_members = q->members;
+        res = g_parties.answer(c.slot, o->slot, flag != 0, now / 1000.0);
+        party_note(*o, kPartyAnswer, res, c.name); // (the inviter hears how it went)
+        if (res == parties::Result::Ok) {
+            say("party: %u '%s' joined %u '%s''s party", c.slot, c.name.c_str(), o->slot, o->name.c_str());
+            for (uint16_t m : old_members)
+                if (m != c.slot)
+                    send_party_view(m);
+        }
+        (void)old_party;
+        send_party_views({c.slot, o->slot});
+        if (res == parties::Result::Declined)
+            return;
+        break;
+    }
+    case kPartyLeave: {
+        std::vector<uint16_t> was;
+        if (const auto* q = g_parties.find(c.slot))
+            was = q->members;
+        res = g_parties.leave(c.slot);
+        for (uint16_t m : was)
+            send_party_view(m);
+        break;
+    }
+    case kPartyLead:
+        if (!o)
+            break;
+        res = g_parties.set_leader(c.slot, o->slot);
+        if (res == parties::Result::Ok)
+            send_party_views({c.slot});
+        break;
+    case kPartyKick: {
+        if (!o)
+            break;
+        std::vector<uint16_t> was;
+        if (const auto* q = g_parties.find(c.slot))
+            was = q->members;
+        res = g_parties.kick(c.slot, o->slot);
+        if (res == parties::Result::Ok) {
+            say("party: %u '%s' removed %u '%s'", c.slot, c.name.c_str(), o->slot, o->name.c_str());
+            party_note(*o, kPartyKick, parties::Result::Kicked, c.name);
+            for (uint16_t m : was)
+                send_party_view(m);
+        }
+        break;
+    }
+    default:
+        return;
+    }
+    party_note(c, kind, res, oname);
+}
+
+static void send_players(const Client& c)
+{
+    Writer w = control(PLAYERS);
+    std::vector<const Client*> v;
+    for (auto& [s, o] : g_clients)
+        v.push_back(&o);
+    size_t n = 0, bytes = 3;
+    for (; n < v.size(); n++) { // (one datagram: as many as fit)
+        const size_t b = 2 + 8 + 1 + v[n]->name.size() + 1 + v[n]->planet.size() + 2;
+        if (bytes + b > 1150)
+            break;
+        bytes += b;
+    }
+    w.u16((uint16_t)n);
+    for (size_t i = 0; i < n; i++) {
+        const auto* q = g_parties.find(v[i]->slot);
+        w.u16(v[i]->slot);
+        w.u64(v[i]->identity);
+        w.str8(v[i]->name);
+        w.str8(v[i]->planet);
+        w.u16(q ? q->id : 0);
+    }
+    send(c, w);
+}
+
 static void on_relay(const Endpoint& from, const uint8_t* data, size_t n)
 {
     Client* c = by_endpoint(from);
@@ -639,6 +876,7 @@ int main(int argc, char** argv)
             for (uint16_t s : gone) {
                 say("player %u '%s' timed out", s, g_clients[s].name.c_str());
                 leave_planet(g_clients[s], "timed out");
+                party_player_out(g_clients[s]); // 6K
                 g_clients.erase(s);
             }
         }
@@ -646,11 +884,12 @@ int main(int argc, char** argv)
             const double kbs = (g_relay_bytes - status_bytes) / 1024.0 / ((now - last_status) / 1000.0);
             const double secs = (now - last_status) / 1000.0;
             say("status: %zu player(s), %zu planet(s), relay %.1f KB/s (%llu packets, %llu dropped in all), "
-                "copies: in %.1f KB/s out %.1f KB/s (%llu sent, %llu dropped in all)",
+                "copies: in %.1f KB/s out %.1f KB/s (%llu sent, %llu dropped in all), parties %zu (%llu requests, %llu views)",
                 g_clients.size(), g_planets.size(), kbs, (unsigned long long)g_relay_packets,
                 (unsigned long long)g_relay_dropped, (g_fan_in_bytes - status_fan_in) / 1024.0 / secs,
                 (g_fan_out_bytes - status_fan_out) / 1024.0 / secs, (unsigned long long)g_fan_packets,
-                (unsigned long long)g_fan_dropped);
+                (unsigned long long)g_fan_dropped, g_parties.all().size(), (unsigned long long)g_party_requests,
+                (unsigned long long)g_party_views);
             last_status = now;
             status_bytes = g_relay_bytes;
             status_fan_in = g_fan_in_bytes;

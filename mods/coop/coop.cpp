@@ -6314,7 +6314,7 @@ COOP_FIX("ui.party_editor_hide", "BUG-9228", g_party_editor_hide, "ui: the Party
 static bool update_party_panel(bool labels)
 {
     std::vector<coop_ui::PartyRow> rows;
-    const bool by_party = !parties::book().all().empty(); // 6J: the own party's cards only
+    const bool by_party = parties::active(); // 6J: the own party's cards only (6K: on a galaxy, the server's party)
     for (auto& p : g_sess.players()) {
         if (by_party && !parties::same_party(g_sess.my_id(), p.id))
             continue;
@@ -9253,7 +9253,7 @@ static void set_friend(uint8_t id, bool on)
 }
 
 enum MenuCode { kMenuView = 1, kMenuInvite, kMenuLead, kMenuWhisper, kMenuFriend, kMenuUnfriend, kMenuLeave, kMenuAccept,
-                kMenuDecline };
+                kMenuDecline, kMenuKick };
 static int g_menu_player = -1;
 static int g_prompted_from = -1; // the invite the prompt shows (-1 none)
 static bool g_swallow_rup;
@@ -9271,6 +9271,7 @@ static void on_menu_pick(int code)
     case kMenuFriend: if (id >= 0) set_friend((uint8_t)id, true); break;
     case kMenuUnfriend: if (id >= 0) set_friend((uint8_t)id, false); break;
     case kMenuLeave: r = parties::leave(); break;
+    case kMenuKick: if (id >= 0) r = parties::kick((uint8_t)id); break;
     case kMenuAccept: r = parties::answer(true); g_prompted_from = -1; break;
     case kMenuDecline: r = parties::answer(false); g_prompted_from = -1; break;
     default: break;
@@ -9290,8 +9291,10 @@ static void open_player_menu(uint8_t id, float x, float y)
             items.push_back({"Leave Party", kMenuLeave});
     } else {
         if (parties::same_party(me, id)) {
-            if (parties::i_lead())
+            if (parties::i_lead()) {
                 items.push_back({"Make Leader", kMenuLead});
+                items.push_back({"Remove from Party", kMenuKick});
+            }
         } else
             items.push_back({"Invite to Party", kMenuInvite});
         items.push_back({"Whisper", kMenuWhisper});
@@ -9319,7 +9322,7 @@ static void invite_prompt_tick()
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
     g_menu_player = -2; // (the prompt)
-    coop_ui::show_player_menu(sw * 0.5f - 100, sh * 0.32f, utf8::shown_name(player_name_of((uint8_t)from)) + " invites you",
+    coop_ui::show_player_menu(sw * 0.5f - 100, sh * 0.32f, utf8::shown_name(parties::pending_name()) + " invites you",
                               {{"Join Party", kMenuAccept}, {"Decline", kMenuDecline}}, on_menu_pick);
 }
 // every left / right press in the game window (mouse.cpp, before the UI scale remap)
@@ -10634,7 +10637,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    }, nullptr, MT);
     // 6J: parties of 4 and whispers (the right-click menu calls the same)
-    H->command_add(M, "coop.party", "coop.party [status | invite <player> | yes | no | leave | lead <player>] - parties of 4 (6J); <player>: id or name",
+    H->command_add(M, "coop.party", "coop.party [status | invite | kick | lead <player> | yes | no | leave | online | ginvite | gkick <name>] - parties of 4 (6J, 6K); <player>: id or name",
                    [](void*, int argc, const char* const* argv, SkOut* out) -> int {
                        const std::string sub = argc > 1 ? argv[1] : "status";
                        std::string arg;
@@ -10678,6 +10681,21 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                         p.x1, p.y1, p.x2, p.y2, p.cx, p.cy, p.reach, H->time_seconds() - p.at);
                                r += b;
                            }
+                       } else if (sub == "kick") {
+                           const int id = who();
+                           r = id >= 0 ? parties::kick((uint8_t)id) : "No such player: " + arg;
+                       } else if (sub == "online") { // 6K: the galaxy's players (asked now; the list as it last came)
+                           parties::ask_online();
+                           for (auto& o : parties::online())
+                               r += std::to_string(o.slot) + " '" + o.name + "' " + (o.planet.empty() ? "[menu]" : "[" + o.planet + "]") +
+                                    " party " + std::to_string(o.party) + "\n";
+                           if (r.empty()) r = "(asked the galaxy server: ask again)";
+                       } else if (sub == "ginvite" || sub == "gkick") { // 6K: a galaxy player by name (the galaxy menu)
+                           uint64_t id = 0;
+                           for (auto& o : parties::online())
+                               if (o.name == arg || utf8::shown_name(o.name) == arg) id = o.identity;
+                           r = !id ? "Not online (coop.party online first): " + arg
+                               : sub == "ginvite" ? parties::invite_identity(id) : parties::kick_identity(id);
                        } else if (sub == "yes" || sub == "no")
                            r = parties::answer(sub == "yes");
                        else if (sub == "leave")
@@ -11607,6 +11625,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gx.join = [](const std::string& addr, std::string& err) { return do_join(addr, err); };
         gx.ready = [] { return g_local != nullptr && !world::load_queued() && !world::load_starting(); };
         gx.promote = [] { npc::promote_now(); };
+        gx.party_in = [](uint8_t type, net::Reader& r) { parties::on_galaxy(type, r); }; // 6K
         gx.fan_in = [](uint8_t type, net::Reader& r) { // 6F B / 6H A: the host's messages copied by the galaxy server
             if (type == net::MSG_PLAYER_STATE)
                 g_sess.host_fan_in(type, r);
@@ -11655,6 +11674,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         pc.name_of = [](uint8_t id) { return utf8::shown_name(player_name_of(id)); };
         pc.feed = [](const std::string& t) { feed(t); };
         pc.changed = [] { g_lobby_dirty = true; };
+        pc.galaxy_welcomed = [] { return galaxy::welcomed(); }; // 6K: the galaxy server keeps the parties
+        pc.galaxy_slot = [] { return galaxy::my_slot(); };
+        pc.galaxy_send = [](uint8_t kind, uint64_t other, uint8_t flag, uint32_t stage) {
+            return galaxy::party_send(kind, other, flag, stage);
+        };
+        pc.galaxy_who = [] { galaxy::ask_players(); };
+        pc.identity_of = [](uint8_t id) -> uint64_t {
+            return id == g_sess.my_id() || !g_sess.connected() ? identity::own() : identity::known(id);
+        };
         parties::init(H, M, std::move(pc));
     }
     mouse::set_player_menu_input(player_menu_input); // 6J

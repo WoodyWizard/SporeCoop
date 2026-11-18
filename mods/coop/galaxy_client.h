@@ -30,6 +30,8 @@ struct Ctx {
     std::function<void()> promote; // 6B C: this guest becomes the host in place (its proxies go on as its NPCs)
     // 6F B: a message of the planet's host copied by the galaxy server (from the host: dispatched as the session's)
     std::function<void(uint8_t type, net::Reader& r)> fan_in;
+    // 6K: the galaxy server's party messages (PARTYVIEW, PARTYNOTE, PLAYERS) for parties.cpp
+    std::function<void(uint8_t type, net::Reader& r)> party_in;
 };
 
 // a planet of the server's list (LIST), for the galaxy menu (5X B)
@@ -53,6 +55,11 @@ bool hosting();                             // this game hosts a planet of the g
 bool fan_out(const std::vector<uint16_t>& slots, uint8_t type, const net::Writer& body);
 uint16_t slot_of(const net::Endpoint& peer);  // a session peer's galaxy slot (0: not a galaxy peer)
 void upload_soon(double secs);              // 6I A: host: store the planet within secs (the share saved anew)
+// 6K: the parties kept by the galaxy server
+bool welcomed();                             // connected to a galaxy server now (it keeps this game's party)
+uint16_t my_slot();
+bool party_send(uint8_t kind, uint64_t other_identity, uint8_t flag, uint32_t stage);
+void ask_players();                          // WHO: the server answers PLAYERS (to C.party_in)
 unsigned planet_players();                  // 6E B: the players a planet of this galaxy takes (16 by default)
 bool close_request();                       // Alt+F4 / the window's X (mouse.cpp): true = held, saved first (6A A)
 // decision 6B C (the warm hand-over): a player still in the planet's world rejoins its new host with the hand-over's

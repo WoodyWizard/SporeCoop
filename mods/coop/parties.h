@@ -32,6 +32,7 @@ enum class Result : uint8_t {
     NotLeader,  // only the leader hands the lead on
     NotMember,  // not in the leader's party
     Declined,   // the invited player said no
+    Kicked,     // (a note to the kicked player: the leader took it out of the party)
 };
 
 inline const char* text(Result r)
@@ -47,40 +48,46 @@ inline const char* text(Result r)
     case Result::NotLeader: return "only the party's leader can do that";
     case Result::NotMember: return "that player is not in your party";
     case Result::Declined: return "declined";
+    case Result::Kicked: return "you were removed from the party";
     }
     return "?";
 }
 
-struct Party {
+template <class Id>
+struct BasicParty {
     uint16_t id = 0;
-    uint8_t leader = 0;
-    std::vector<uint8_t> members; // the longest standing first
-    bool has(uint8_t p) const { return std::find(members.begin(), members.end(), p) != members.end(); }
+    Id leader = 0;
+    std::vector<Id> members; // the longest standing first
+    bool has(Id p) const { return std::find(members.begin(), members.end(), p) != members.end(); }
 };
 
-class Book {
+// Id: a session's player id (uint8_t) or a galaxy server's player slot (uint16_t, decision 6K: the server keeps the
+// parties, so they last across planets, hand-overs and the galaxy menu)
+template <class Id>
+class BasicBook {
 public:
+    using Party = BasicParty<Id>;
     // a new player: in `with`'s party when it has room (a plain co-op join: the host's), else alone
-    void add(uint8_t p, int with = -1)
+    void add(Id p, int with = -1)
     {
         if (find(p))
             return;
         if (with >= 0)
-            if (Party* q = find((uint8_t)with); q && q->members.size() < kMaxMembers) {
+            if (Party* q = find((Id)with); q && q->members.size() < kMaxMembers) {
                 q->members.push_back(p);
                 return;
             }
         alone(p);
     }
     // a player left the session: out of its party; a leader that leaves: the longest standing member leads
-    void remove(uint8_t p)
+    void remove(Id p)
     {
         drop_member(p);
         for (auto it = invites_.begin(); it != invites_.end();)
             it = it->first == p || it->second.from == p ? invites_.erase(it) : std::next(it);
     }
     // a player leaves its party (back to a party of its own)
-    Result leave(uint8_t p)
+    Result leave(Id p)
     {
         Party* q = find(p);
         if (!q)
@@ -92,7 +99,7 @@ public:
         return Result::Ok;
     }
     // stage: the game mode each one plays (0: unknown, never refused for it)
-    Result invite(uint8_t from, uint8_t to, uint32_t from_stage, uint32_t to_stage, double now)
+    Result invite(Id from, Id to, uint32_t from_stage, uint32_t to_stage, double now)
     {
         Party* a = find(from);
         Party* b = find(to);
@@ -110,7 +117,7 @@ public:
         return Result::Ok;
     }
     // the invited player answers: on yes it joins the inviter's party (checked again: it may be full by now)
-    Result answer(uint8_t to, uint8_t from, bool yes, double now)
+    Result answer(Id to, Id from, bool yes, double now)
     {
         auto it = invites_.find(to);
         if (it == invites_.end() || it->second.from != from || now - it->second.at > kInviteSeconds)
@@ -130,7 +137,7 @@ public:
         a->members.push_back(to);
         return Result::Ok;
     }
-    Result set_leader(uint8_t by, uint8_t to)
+    Result set_leader(Id by, Id to)
     {
         Party* q = find(by);
         if (!q)
@@ -147,19 +154,47 @@ public:
         for (auto it = invites_.begin(); it != invites_.end();)
             it = now - it->second.at > kInviteSeconds ? invites_.erase(it) : std::next(it);
     }
-    int pending_from(uint8_t to) const
+    int pending_from(Id to) const
     {
         auto it = invites_.find(to);
         return it == invites_.end() ? -1 : it->second.from;
     }
-    Party* find(uint8_t p)
+    // the leader takes `who` out of the party (it plays alone then)
+    Result kick(Id by, Id who)
+    {
+        Party* q = find(by);
+        if (!q || !find(who))
+            return Result::Unknown;
+        if (by == who)
+            return Result::Self;
+        if (q->leader != by)
+            return Result::NotLeader;
+        if (!q->has(who))
+            return Result::NotMember;
+        drop_member(who);
+        alone(who);
+        return Result::Ok;
+    }
+    // a player back after a drop (a galaxy reconnect): into party `party_id` again when it still exists and has room
+    bool rejoin(Id p, uint16_t party_id)
+    {
+        if (find(p))
+            return false;
+        for (auto& q : parties_)
+            if (q.id == party_id && q.members.size() < kMaxMembers) {
+                q.members.push_back(p);
+                return true;
+            }
+        return false;
+    }
+    Party* find(Id p)
     {
         for (auto& q : parties_)
             if (q.has(p))
                 return &q;
         return nullptr;
     }
-    const Party* find(uint8_t p) const { return const_cast<Book*>(this)->find(p); }
+    const Party* find(Id p) const { return const_cast<BasicBook*>(this)->find(p); }
     const std::vector<Party>& all() const { return parties_; }
     void clear()
     {
@@ -171,14 +206,14 @@ public:
 
 private:
     struct Pending {
-        uint8_t from = 0;
+        Id from = 0;
         double at = 0;
     };
     std::vector<Party> parties_;
-    std::map<uint8_t, Pending> invites_; // invited player -> its invite (one at a time: the newest)
+    std::map<Id, Pending> invites_; // invited player -> its invite (one at a time: the newest)
     uint16_t next_id_ = 1;
 
-    void alone(uint8_t p)
+    void alone(Id p)
     {
         Party q;
         q.id = next_id_++;
@@ -188,7 +223,7 @@ private:
         q.members.push_back(p);
         parties_.push_back(q);
     }
-    void drop_member(uint8_t p)
+    void drop_member(Id p)
     {
         for (auto it = parties_.begin(); it != parties_.end(); ++it) {
             auto m = std::find(it->members.begin(), it->members.end(), p);
@@ -203,5 +238,8 @@ private:
         }
     }
 };
+
+using Party = BasicParty<uint8_t>;
+using Book = BasicBook<uint8_t>;
 
 } // namespace parties

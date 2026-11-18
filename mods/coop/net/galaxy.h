@@ -66,7 +66,18 @@ enum Type : uint8_t {
     HOSTMOVE = 18, // server -> the planet's other players: str8 planet, u16 the new host's slot, u64 the hand-over
                    //   token (5V A: the host left; the new host keeps its world or loads the stored one; once it is
                    //   READY the server sends them ROLE guest again)
+    // decision 6K (owner 2026-11-18: "Parties shouldn't be reset/disbanded if the host changes", "allow partying in the
+    // galaxy menu"): the galaxy server keeps the parties (parties.h, by player slot), across planets and hand-overs
+    PARTY = 19,     // player -> server: u8 kind (kPartyInvite .. kPartyStage), u64 the other player's identity (0 none),
+                    //   u8 flag (an answer: 1 yes), u32 the sender's stage (its game mode: 0 a menu or a load)
+    PARTYVIEW = 20, // server -> player: its party: u16 party id, u16 the leader's slot, u8 n, n x {u16 slot, u64
+                    //   identity, str8 name, str8 planet, u32 stage} (the longest standing first), u16 who invites it
+                    //   (0 none), u64 its identity, str8 its name
+    PARTYNOTE = 21, // server -> player: u8 the request's kind, u8 parties::Result, str8 the other player's name
+    WHO = 22,       // player -> server: the players online
+    PLAYERS = 23,   // server -> player: u16 n, n x {u16 slot, u64 identity, str8 name, str8 planet, u16 party id}
 };
+enum PartyKind : uint8_t { kPartyInvite = 1, kPartyAnswer, kPartyLeave, kPartyLead, kPartyKick, kPartyStage };
 constexpr uint8_t kHostRole = 1, kGuestRole = 2;
 // decision 6E B (owner 2026-11-18): "Seats just mean how many players are allowed on a planet. We can set it to 16 per
 // planet." The server's --planet-players sets it (2 .. kMaxPlanetPlayers); "Setting it to 17 shouldn't cause any issues"

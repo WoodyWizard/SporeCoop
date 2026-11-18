@@ -221,6 +221,9 @@ static void on_control(net::Reader& r)
         g_planet_players = cap < 2 ? 2 : cap > net::kMaxPlayers ? (uint8_t)net::kMaxPlayers : cap;
         g_welcomed = true;
         say("Connected to the galaxy '" + g_galaxy + "'.");
+    } else if (type == PARTYVIEW || type == PARTYNOTE || type == PLAYERS) { // 6K
+        if (C.party_in)
+            C.party_in(type, r);
     } else if (type == PLANETS) {
         const uint8_t n = r.u8();
         std::vector<PlanetRow> v;
@@ -838,6 +841,25 @@ bool online() { return g_sock.is_open() && g_welcomed; }
 uint32_t planets_version() { return g_planets_ver; }
 std::string current_planet() { return g_planet; }
 unsigned planet_players() { return g_planet_players; }
+bool welcomed() { return g_sock.is_open() && g_welcomed; }
+uint16_t my_slot() { return g_slot; }
+bool party_send(uint8_t kind, uint64_t other, uint8_t flag, uint32_t stage)
+{
+    if (!welcomed())
+        return false;
+    net::Writer w = control(PARTY);
+    w.u8(kind);
+    w.u64(other);
+    w.u8(flag);
+    w.u32(stage);
+    send_control(w);
+    return true;
+}
+void ask_players()
+{
+    if (welcomed())
+        send_control(control(WHO));
+}
 void upload_soon(double secs)
 {
     if (hosting())

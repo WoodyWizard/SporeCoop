@@ -1,8 +1,11 @@
 // Decision 6J: parties of 4, the messages (parties.h has the rules). The host keeps the book and sends it to every
 // guest (MSG_PARTY kTable, reliable) on every change; a guest asks the host (invite, answer, leave, lead) and the host
 // answers the asking player (kResult) and offers an invite to the invited one (kOffer).
+// Decision 6K: connected to a galaxy server, the server keeps the parties instead (net/galaxy.h PARTY .. PLAYERS): they
+// last across planets and hand-overs and work in the galaxy menu; this game holds its own party's view (g_gx).
 #include "parties.h"
 #include "parties_net.h"
+#include "net/galaxy.h"
 
 #include <cstdio>
 
@@ -15,6 +18,30 @@ static Book g_book;
 static int g_offer_from = -1; // this game: who invited it (-1 none)
 static double g_offer_at;
 static uint32_t g_tables_sent, g_tables_got, g_requests;
+// 6K: the galaxy server's view of this game's party
+static struct {
+    bool on = false; // a PARTYVIEW arrived while connected
+    uint16_t party = 0, leader = 0, inviter = 0;
+    std::vector<Member> members;
+    uint64_t inviter_id = 0;
+    std::string inviter_name;
+    double invite_at = 0;
+} g_gx;
+static std::vector<Online> g_online;
+static uint32_t g_stage_sent = 0xFFFFFFFF;
+static uint32_t g_views_got, g_notes_got;
+
+bool galaxy() { return g_gx.on && C.galaxy_welcomed && C.galaxy_welcomed(); }
+static uint64_t ident(uint8_t id) { return C.identity_of ? C.identity_of(id) : 0; }
+static bool in_gx_party(uint64_t id)
+{
+    if (!id)
+        return false;
+    for (auto& m : g_gx.members)
+        if (m.identity == id)
+            return true;
+    return false;
+}
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 static uint8_t me() { return C.sess ? C.sess->my_id() : 0; }
@@ -117,6 +144,24 @@ static void host_request(uint8_t from, uint8_t kind, uint8_t other, uint8_t flag
         }
         result_to(from, kind, from, r);
         break;
+    case kKick: {
+        r = g_book.kick(from, other);
+        if (r == Result::Ok) {
+            feed(name(from) + " removed " + name(other) + " from the party.");
+            send_table();
+            if (other != me()) { // (the removed player hears it)
+                net::Writer w;
+                w.u8(kResult);
+                w.u8(kKick);
+                w.u8(from);
+                w.u8((uint8_t)Result::Kicked);
+                C.sess->send_reliable_to(other, net::MSG_PARTY, w);
+            } else
+                feed(std::string("Party: ") + text(Result::Kicked) + ".");
+        }
+        result_to(from, kind, other, r);
+        break;
+    }
     case kLead:
         r = g_book.set_leader(from, other);
         if (r == Result::Ok) {
@@ -171,7 +216,7 @@ void on_session_end()
 
 void on_player_join(uint8_t id)
 {
-    if (!is_host())
+    if (!is_host() || galaxy())
         return;
     if (!g_book.find(me()))
         g_book.add(me());
@@ -184,7 +229,7 @@ void on_player_leave(uint8_t id)
 {
     if (g_offer_from == id)
         g_offer_from = -1;
-    if (!is_host())
+    if (!is_host() || galaxy())
         return;
     g_book.remove(id);
     send_table();
@@ -196,7 +241,7 @@ void on_message(uint8_t from, net::Reader& r)
     if (!r.ok())
         return;
     if (is_host()) {
-        if (kind != kInvite && kind != kAnswer && kind != kLeave && kind != kLead)
+        if (kind != kInvite && kind != kAnswer && kind != kLeave && kind != kLead && kind != kKick)
             return;
         const uint8_t other = r.u8(), flag = r.u8();
         if (r.ok())
@@ -247,6 +292,23 @@ void tick(double now)
 {
     if (is_host())
         g_book.lapse(now);
+    if (C.galaxy_welcomed && C.galaxy_welcomed()) { // 6K: the server learns the stage this game plays (cross-stage rule)
+        const uint32_t st = C.stage_of ? C.stage_of(me()) : 0;
+        if (st != g_stage_sent && C.galaxy_send && C.galaxy_send(net::galaxy::kPartyStage, 0, 0, st))
+            g_stage_sent = st;
+    } else {
+        g_stage_sent = 0xFFFFFFFF;
+        if (g_gx.on) {
+            g_gx = {};
+            if (C.changed)
+                C.changed();
+        }
+    }
+    if (g_gx.inviter && now - g_gx.invite_at > kInviteSeconds) {
+        g_gx.inviter = 0;
+        if (C.changed)
+            C.changed();
+    }
     if (g_offer_from >= 0 && now - g_offer_at > kInviteSeconds) {
         g_offer_from = -1;
         if (C.changed)
@@ -254,9 +316,35 @@ void tick(double now)
     }
 }
 
-std::string invite(uint8_t to) { return request(kInvite, to, 0); }
+static std::string gx_request(uint8_t kind, uint64_t other, uint8_t flag)
+{
+    if (!C.galaxy_send || !C.galaxy_send(kind, other, flag, C.stage_of ? C.stage_of(me()) : 0))
+        return "Not connected to the galaxy server.";
+    g_requests++;
+    return "";
+}
+static std::string gx_by_id(uint8_t kind, uint8_t id)
+{
+    const uint64_t other = ident(id);
+    if (!other)
+        return "That player is not known to the galaxy yet.";
+    return gx_request(kind, other, 0);
+}
+std::string invite(uint8_t to) { return galaxy() ? gx_by_id(net::galaxy::kPartyInvite, to) : request(kInvite, to, 0); }
+std::string kick(uint8_t id) { return galaxy() ? gx_by_id(net::galaxy::kPartyKick, id) : request(kKick, id, 0); }
+std::string invite_identity(uint64_t id) { return gx_request(net::galaxy::kPartyInvite, id, 0); }
+std::string kick_identity(uint64_t id) { return gx_request(net::galaxy::kPartyKick, id, 0); }
 std::string answer(bool yes)
 {
+    if (galaxy()) {
+        if (!g_gx.inviter)
+            return "No party invite to answer.";
+        const uint64_t from = g_gx.inviter_id;
+        g_gx.inviter = 0;
+        if (C.changed)
+            C.changed();
+        return gx_request(net::galaxy::kPartyAnswer, from, yes ? 1 : 0);
+    }
     if (g_offer_from < 0)
         return "No party invite to answer.";
     const uint8_t from = (uint8_t)g_offer_from;
@@ -265,28 +353,156 @@ std::string answer(bool yes)
         C.changed();
     return request(kAnswer, from, yes ? 1 : 0);
 }
-std::string leave() { return request(kLeave, me(), 0); }
-std::string make_leader(uint8_t to) { return request(kLead, to, 0); }
+std::string leave() { return galaxy() ? gx_request(net::galaxy::kPartyLeave, 0, 0) : request(kLeave, me(), 0); }
+std::string make_leader(uint8_t to) { return galaxy() ? gx_by_id(net::galaxy::kPartyLead, to) : request(kLead, to, 0); }
 
-int pending_invite() { return g_offer_from; }
+int pending_invite() { return galaxy() ? (g_gx.inviter ? (int)g_gx.inviter : -1) : g_offer_from; }
+std::string pending_name()
+{
+    if (galaxy())
+        return g_gx.inviter ? g_gx.inviter_name : "";
+    return g_offer_from >= 0 ? name((uint8_t)g_offer_from) : "";
+}
+bool active() { return galaxy() || !g_book.all().empty(); }
+std::vector<Member> members()
+{
+    std::vector<Member> v;
+    if (galaxy())
+        return g_gx.members;
+    const Party* q = g_book.find(me());
+    if (!q) {
+        Member m;
+        m.name = name(me()), m.leader = true, m.me = true;
+        v.push_back(m);
+        return v;
+    }
+    for (uint8_t p : q->members) {
+        Member m;
+        m.identity = ident(p);
+        m.name = name(p);
+        m.leader = p == q->leader;
+        m.me = p == me();
+        v.push_back(m);
+    }
+    return v;
+}
+std::vector<Online> online() { return g_online; }
+void ask_online()
+{
+    if (C.galaxy_who)
+        C.galaxy_who();
+}
+void on_galaxy(uint8_t type, net::Reader& r)
+{
+    using namespace net::galaxy;
+    if (type == PARTYVIEW) {
+        decltype(g_gx) v;
+        v.on = true;
+        v.party = r.u16();
+        v.leader = r.u16();
+        const uint8_t n = r.u8();
+        const uint16_t mine = C.galaxy_slot ? C.galaxy_slot() : 0;
+        for (uint8_t i = 0; i < n && r.ok(); i++) {
+            Member m;
+            m.slot = r.u16();
+            m.identity = r.u64();
+            m.name = r.str8();
+            m.planet = r.str8();
+            m.stage = r.u32();
+            m.leader = m.slot == v.leader;
+            m.me = m.slot == mine;
+            v.members.push_back(std::move(m));
+        }
+        v.inviter = r.u16();
+        v.inviter_id = r.u64();
+        v.inviter_name = r.str8();
+        if (!r.ok() || n > kMaxMembers)
+            return;
+        const bool new_invite = v.inviter && v.inviter != g_gx.inviter;
+        const size_t was = g_gx.members.size();
+        v.invite_at = new_invite ? H->time_seconds() : g_gx.invite_at;
+        g_gx = std::move(v);
+        g_views_got++;
+        if (new_invite)
+            feed(g_gx.inviter_name + " invites you to their party.");
+        if (g_gx.members.size() != was && was)
+            H->log(M, SK_INFO, "party: %zu in this game's party now", g_gx.members.size());
+        if (C.changed)
+            C.changed();
+    } else if (type == PARTYNOTE) {
+        const uint8_t kind = r.u8(), code = r.u8();
+        const std::string other = r.str8();
+        if (!r.ok())
+            return;
+        g_notes_got++;
+        const Result res = (Result)code;
+        if (kind == kPartyAnswer && res == Result::Declined)
+            feed(other + " declined your invite.");
+        else if (kind == kPartyAnswer && res == Result::Ok)
+            feed(other + " joined your party.");
+        else if (kind == kPartyKick && res == Result::Kicked)
+            feed(other + " removed you from the party.");
+        else if (kind == kPartyKick && res == Result::Ok)
+            feed(other + " is out of your party.");
+        else if (kind == kPartyInvite && res == Result::Ok)
+            feed("Invited " + other + ".");
+        else if (res != Result::Ok)
+            feed(std::string("Party: ") + text(res) + ".");
+    } else if (type == PLAYERS) {
+        std::vector<Online> v;
+        const uint16_t n = r.u16();
+        for (uint16_t i = 0; i < n && r.ok(); i++) {
+            Online o;
+            o.slot = r.u16();
+            o.identity = r.u64();
+            o.name = r.str8();
+            o.planet = r.str8();
+            o.party = r.u16();
+            v.push_back(std::move(o));
+        }
+        if (r.ok())
+            g_online = std::move(v);
+        if (C.changed)
+            C.changed();
+    }
+}
 const Book& book() { return g_book; }
 bool same_party(uint8_t a, uint8_t b)
 {
+    if (galaxy()) // (only this game's own party is known here)
+        return a == b || (in_gx_party(ident(a)) && in_gx_party(ident(b)));
     const Party* q = g_book.find(a);
     return q && q->has(b);
 }
 std::vector<uint8_t> my_party()
 {
+    if (galaxy()) { // the session's players in this game's party
+        std::vector<uint8_t> v{me()};
+        if (C.sess)
+            for (auto& p : C.sess->players())
+                if (p.id != me() && in_gx_party(ident(p.id)))
+                    v.push_back(p.id);
+        return v;
+    }
     const Party* q = g_book.find(me());
     return q ? q->members : std::vector<uint8_t>{me()};
 }
 int leader_of(uint8_t p)
 {
+    if (galaxy()) {
+        const uint64_t id = ident(p);
+        for (auto& m : g_gx.members)
+            if (m.leader && m.identity == id)
+                return p;
+        return -1;
+    }
     const Party* q = g_book.find(p);
     return q ? q->leader : -1;
 }
 bool i_lead()
 {
+    if (galaxy())
+        return g_gx.members.size() <= 1 || (C.galaxy_slot && g_gx.leader == C.galaxy_slot());
     const Party* q = g_book.find(me());
     return !q || q->leader == me();
 }
@@ -298,6 +514,16 @@ std::string status()
     snprintf(b, sizeof b, "parties: %zu (tables sent %u, got %u, requests %u), my invite from %d\n", g_book.all().size(),
              g_tables_sent, g_tables_got, g_requests, g_offer_from);
     s = b;
+    if (galaxy()) { // 6K
+        snprintf(b, sizeof b, "galaxy party %u (views %u, notes %u), leader slot %u, invite from %u '%s', online %zu:",
+                 g_gx.party, g_views_got, g_notes_got, g_gx.leader, g_gx.inviter, g_gx.inviter_name.c_str(), g_online.size());
+        s += b;
+        for (auto& m : g_gx.members)
+            s += " " + std::to_string(m.slot) + " '" + m.name + "'" + (m.leader ? " (leader)" : "") + (m.me ? " (me)" : "") +
+                 (m.planet.empty() ? " [menu]" : " [" + m.planet + "]");
+        s += "\n";
+        return s;
+    }
     for (auto& q : g_book.all()) {
         snprintf(b, sizeof b, "  party %u: leader %u '%s', members", q.id, q.leader, name(q.leader).c_str());
         s += b;

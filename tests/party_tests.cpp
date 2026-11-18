@@ -91,6 +91,24 @@ int main()
         b.remove(1);
         CHECK(b.pending_from(7) == -1);
     }
+    // 6K: kick (the leader only, a member only), a rejoin after a drop, the galaxy server's 16-bit slots
+    {
+        BasicBook<uint16_t> b;
+        b.add(300);
+        b.add(301, 300);
+        b.add(302, 300);
+        CHECK(b.kick(301, 302) == Result::NotLeader && b.kick(300, 300) == Result::Self);
+        b.add(900);
+        CHECK(b.kick(300, 900) == Result::NotMember);
+        CHECK(b.kick(300, 302) == Result::Ok && b.find(302)->members.size() == 1 && b.find(300)->members.size() == 2);
+        const uint16_t pid = b.find(300)->id;
+        b.remove(301);
+        CHECK(b.rejoin(301, pid) && b.find(301) == b.find(300) && b.find(300)->leader == 300);
+        CHECK(!b.rejoin(301, pid)); // (in a party already)
+        b.remove(300);
+        b.remove(301); // the party is gone
+        CHECK(!b.rejoin(301, pid) && !b.find(301));
+    }
     if (g_fail) {
         printf("party_tests: %d FAILED\n", g_fail);
         return 1;

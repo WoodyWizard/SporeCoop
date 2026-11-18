@@ -15,7 +15,7 @@
 
 namespace parties {
 
-enum Kind : uint8_t { kTable = 0, kInvite = 1, kAnswer = 2, kLeave = 3, kLead = 4, kOffer = 5, kResult = 6 };
+enum Kind : uint8_t { kTable = 0, kInvite = 1, kAnswer = 2, kLeave = 3, kLead = 4, kOffer = 5, kResult = 6, kKick = 7 };
 
 struct Ctx {
     net::Session* sess = nullptr;
@@ -24,6 +24,27 @@ struct Ctx {
     std::function<std::string(uint8_t id)> name_of;
     std::function<void(const std::string&)> feed;
     std::function<void()> changed;                     // the book or the invite changed (the UI)
+    // 6K: on a galaxy server the server keeps the parties (net/galaxy.h PARTY): this game's own party comes from it
+    std::function<bool()> galaxy_welcomed;             // connected to a galaxy server
+    std::function<uint16_t()> galaxy_slot;             // this game's slot there
+    std::function<bool(uint8_t kind, uint64_t other, uint8_t flag, uint32_t stage)> galaxy_send;
+    std::function<void()> galaxy_who;                  // ask for the players online
+    std::function<uint64_t(uint8_t id)> identity_of;   // a session player's identity (0 unknown; the own game's too)
+};
+
+// a member of this game's party as the galaxy server sends it (6K)
+struct Member {
+    uint16_t slot = 0;
+    uint64_t identity = 0;
+    std::string name, planet;
+    uint32_t stage = 0;
+    bool leader = false, me = false;
+};
+// a player online on the galaxy server (the galaxy menu's list, 6K)
+struct Online {
+    uint16_t slot = 0, party = 0;
+    uint64_t identity = 0;
+    std::string name, planet;
 };
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx);
@@ -39,7 +60,17 @@ std::string answer(bool yes); // the pending invite
 std::string leave();
 std::string make_leader(uint8_t to);
 
-int pending_invite(); // who invited this game (-1 none)
+int pending_invite(); // who invited this game (-1 none; on a galaxy: its slot)
+std::string pending_name(); // who invited this game ("" none)
+bool active();         // parties are in use (a galaxy server's, or this session's)
+bool galaxy();         // the galaxy server keeps them (6K)
+std::string kick(uint8_t id);            // the leader takes a member out (6K)
+std::string invite_identity(uint64_t id); // a player of the galaxy (the galaxy menu: maybe not in this session)
+std::string kick_identity(uint64_t id);
+std::vector<Member> members();           // this game's party, the longest standing first (on a galaxy: anywhere)
+std::vector<Online> online();            // the galaxy's players (after ask_online)
+void ask_online();
+void on_galaxy(uint8_t type, net::Reader& r); // PARTYVIEW / PARTYNOTE / PLAYERS
 const Book& book();
 bool same_party(uint8_t a, uint8_t b);
 std::vector<uint8_t> my_party(); // this game's party (the longest standing first)
