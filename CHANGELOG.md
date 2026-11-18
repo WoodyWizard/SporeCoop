@@ -3,6 +3,18 @@
 ## [Unreleased]
 
 ### Fixed
+- Cell: while the host waits for the others' "I'm ready" after its mating call, its cell no longer mates and lays an
+  egg again and again every few seconds behind the black screen; the mating plays once (BUG-1245).
+- Cell -> Creature: the host's first Creature editor no longer keeps the host on a black screen for up to a minute
+  while a guest with a slow connection is still loading the Creature world; that guest gets its own editor when it
+  arrives (BUG-1245).
+- Cell: the parts a guest buys in its own cell editor now cost DNA: back in the pool its DNA shows the price taken off
+  (and the party's DNA too); before, the guest's DNA jumped back to the old value at once and changed only when the
+  host left its own editor (BUG-1249).
+- Cell: the mate a guest calls with the mating call now swims in the host's game too, so the host sees it next to the
+  guest; before, only the guest could see its mate (BUG-1246).
+- Cell -> Creature: a guest's first own creature is saved as a new creature when it leaves the editor; before, the
+  game asked whether to replace the host's creature with it (BUG-1255).
 - Cell -> Creature: a guest whose game was slow to get the host's new Creature world (a slow connection or PC) now gets
   its own Creature editor when it arrives and makes its own creature; before, the host's editor vote ran out while
   that guest was still loading, it never got an editor and ended up playing the host's creature (BUG-1240).

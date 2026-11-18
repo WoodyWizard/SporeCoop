@@ -1800,7 +1800,7 @@ std::vector<syncdbg::Entry> sync_entries()
     };
     if (is_host()) {
         for_each_cell([&](uint8_t* c, uint32_t idx) {
-            if (!modes::cell_is_puppet(c))
+            if (!modes::cell_is_puppet(c) && !is_mate_copy(idx)) // BUG-1246: a guest's mate is its own game's
                 entry(c, idx);
         });
     } else {
@@ -1836,14 +1836,14 @@ void census_rows(std::vector<census::Row>& out)
     };
     if (is_guest()) {
         for_each_cell([&](uint8_t* c, uint32_t idx) {
-            if (modes::cell_is_puppet(c))
+            if (modes::cell_is_puppet(c) || (idx && idx == mate_idx())) // BUG-1246: our mate is ours (its copy is on the host)
                 return;
             auto it = g_host_of.find(idx);
             row(c, it != g_host_of.end() ? (int)it->second : -1, it != g_host_of.end() ? "proxy" : "local");
         });
     } else {
         for_each_cell([&](uint8_t* c, uint32_t idx) {
-            if (!modes::cell_is_puppet(c))
+            if (!modes::cell_is_puppet(c) && !is_mate_copy(idx)) // BUG-1246
                 row(c, (int)idx, "npc");
         });
     }

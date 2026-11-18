@@ -287,6 +287,22 @@ def part_cell_both(host, guest, ck, ready, scr):
     keyframe('both_back', 'Cell: both back in the pool with their new cells')
 
 
+def log_size(con):
+    try:
+        return os.path.getsize(lane.game_log(con.port - 47799))
+    except OSError:
+        return 0
+
+
+def log_since(con, off):
+    try:
+        with open(lane.game_log(con.port - 47799), 'rb') as f:
+            f.seek(off)
+            return f.read().decode('utf-8', 'replace').splitlines()
+    except OSError:
+        return []
+
+
 def mate_counts(con):
     """the mating scenes and egg layings the game's own avatar played (its animation entering 0x42 / 0x29)"""
     out = con.call('coop.pool mate')['out']
@@ -513,6 +529,7 @@ def part_switch(host, guest, ck, ready, scr):
     sh, sg = scr
     t_go = time.time()
     t0 = time.time()
+    g_log0 = log_size(guest)
     host_ed = guest_ed = None
     host_done = guest_done = False
     k0 = None
@@ -555,6 +572,10 @@ def part_switch(host, guest, ck, ready, scr):
             break
         time.sleep(1)
     time.sleep(20)
+    # BUG-1258: what the guest is told while it makes its own creature (each player its own: no "new body for all")
+    told = [l for l in log_since(guest, g_log0) if 'everybody gets the new body' in l]
+    print(f'  the guest was told: {told[:2]}', flush=True)
+    ck(not told, f"the guest making its own creature is not told that everybody gets the host's new body ({len(told)})")
     ck(host_ed, "the host's first Creature editor opened")
     ck(guest_ed, "the guest's OWN first Creature editor opened (each player makes its own creature)")
     check_black(ck, sg, 'guest', 'from the switch to the end of both editors (outside its own editor)', t_go)

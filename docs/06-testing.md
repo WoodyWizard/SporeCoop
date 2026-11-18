@@ -9102,3 +9102,24 @@ only with sing (docs/re/creature.md#creature-social-kinds).
   social mode 0 for every animal: skipped after 10 s); it fails ("the guest mirrors animals of that nest") after that.
 * `SPORE_FIX_OFF=social.kinds`: the other kind's click / key does nothing (no animation on either game, `kind_acts=`
   stays 0 for it), the game fails after its prompt list.
+
+## The Cell vote's mating round, a guest's cell editor DNA, a guest's mate (2026-11-18, fix/w53-cellvote)
+<a id="testing-cell-vote-rounds"></a>
+
+* `coop_evo_screens.py --part cell-eggs` (`evo_screens_cell_eggs`, `_cell_eggs_lowfps` with SPORE_FPS=host:10, BUG-1245):
+  the host's mating call and a vote the guest answers after 45 s (or never): `coop.pool mate` prints `matings=` and
+  `egg_lays=` (the own avatar's animation +0x1B0 entering 0x42 / 0x29, sampled every frame: the game's own state), the
+  host's `coop.uistate` window line says whether the co-op window is drawn, and the host's screen thread counts the
+  flashes of a drawn pool behind the vote (a round of the mating scene). `matings=` is 2 after one scene (the avatar's
+  animation enters 0x42 twice per scene): compare differences only.
+* `--part cell-dna` (`evo_screens_cell_dna`, BUG-1249): `coop.pool food 400` gives 28 DNA; `buy_part` drags the cilia
+  (palette 105,195 at 1440x1080) onto the cell in the guest's own editor (15 DNA). `coop.pool spend` prints the game's
+  spent S+0x2C, the DNA the HUD shows (DNAForFood(food) - spent) and the spend bookkeeping. At food 400 the cells are
+  big and predators knock the guest out now and then: the checks read the DNA, not the cell.
+* `--part cell-mate` (`evo_screens_cell_mate`, BUG-1246): `coop.pool mate` on a guest prints the mate's world position
+  and model; `coop.pool near <x> <y> <r>` lists this game's cells there (model, gfx, puppet, avatar): the host must have
+  a drawn cell of the guest's mate's model where the guest's game has the mate, the guest none but its own.
+* `--part switch` also checks (BUG-1255) that the guest's done in its first own Creature editor brings no save dialog
+  (the game's "Save as new or replace <the world's species>"), and (BUG-1258) that the guest's log has no notice
+  "everybody gets the new body" while it makes its own creature. `--own-keep <mask>` (exploration) sets
+  `coop.editreq keep` on the guest with `creations.own_editor_cancel` off.

@@ -1849,8 +1849,9 @@ std::string ui_world_line()
     // the host is evolving in an editor: everybody gets the new body afterwards
     uint32_t host_mode = g_sess.role() == net::Role::Host ? g_mode
                          : (g_remotes.count(0) && !g_remotes[0].buf.empty() ? g_remotes[0].buf.latest().mode : 0);
-    if (host_mode == modes::kEdit || host_mode == modes::kEditor)
-        return g_sess.name_of(0) + " is evolving the species in the editor: everybody gets the new body";
+    if (host_mode == modes::kEdit || host_mode == modes::kEditor) // BUG-1258: in Creature each its own creature
+        return evolve_own_text(g_mode) ? g_sess.name_of(0) + " is in the editor"
+                                       : g_sess.name_of(0) + " is evolving the species in the editor: everybody gets the new body";
     if (g_sess.role() == net::Role::Host && g_sess.players().size() > 1 && !(g_adapter && g_local))
         return "Load or start a game: the guests get your world automatically";
     if (g_sess.role() == net::Role::Client && g_sess.connected() && !g_adapter)

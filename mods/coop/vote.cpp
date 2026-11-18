@@ -311,6 +311,19 @@ COOP_FIX("creations.editor_request", "BUG-0720", g_editor_request_fix, "creature
 static bool g_own_editor_cancel_fix = true;
 COOP_FIX("creations.own_editor_cancel", "BUG-0756", g_own_editor_cancel_fix, "creature: a guest's own editor has its red cross and the save dialog (the request's +0x39 / +0x3B / +0x3C as the constructor's)");
 unsigned g_own_keep_ctor = 0; // tests (coop.editreq keep): own-editor bytes left at the constructor's value (1 +0x39, 2 +0x3B, 4 +0x3C, 16 vec70)
+// BUG-1255 (players' video: the guest's first own creature, the evolution editor of the host's world, asked on its check
+// mark to replace the host's species): the own editor starts from the avatar's species; for a guest playing the
+// world's species (no creation of its own yet: the first Creature editor after Cell, an offer after the host's
+// evolution) that is the host's creation, and BUG-0756's edit-a-creation bytes (+0x39 = 1, +0x3C = 0) bring the game's
+// "Save as a new creation or replace <the host's species>" dialog. On: such an own editor keeps only the red cross of
+// the constructor (+0x3B = 1) and the evolution's +0x39 = 0 / +0x3C = 1 (no replace dialog: done saves a new creature);
+// a guest playing its own creation keeps BUG-0756's dialog (replacing its own creation is its choice). Off: 0.7.15.
+static bool g_own_no_replace_fix = true;
+COOP_FIX("creations.own_editor_no_replace", "BUG-1255", g_own_no_replace_fix,
+         "creature: a guest's first own creature (from the world's species) is saved as new without the dialog that offered to replace the host's species");
+static bool g_own_from_world = false; // the own editor being built starts from the world's species (not ours)
+unsigned g_own_no_replace = 0;        // tests (coop.vote)
+unsigned own_no_replace_count() { return g_own_no_replace; }
 static void* the_player()
 {
     uintptr_t nouns = H->sym("Simulator::cGameNounManager::Get"), getp = H->sym("SporeCoop::cGameNounManager_GetPlayer");
@@ -353,6 +366,10 @@ void* build_editor_request(EditKind kind, uint32_t editor_id, const game::Key& k
         skg::field<uint8_t>(req, 0x3D) = 1;
         if (kind == EditKind::Own) {
             unsigned keep = g_own_keep_ctor | (g_own_editor_cancel_fix ? 7u : 0u);
+            if (g_own_no_replace_fix && g_own_from_world && g_own_editor_cancel_fix && !g_own_keep_ctor) {
+                keep = 2u; // BUG-1255: the cross only, no dialog offering to replace the world's (the host's) species
+                g_own_no_replace++;
+            }
             if (keep & 1) skg::field<uint8_t>(req, 0x39) = 1;
             if (keep & 2) skg::field<uint8_t>(req, 0x3B) = 1;
             if (keep & 4) skg::field<uint8_t>(req, 0x3C) = 0;
@@ -365,6 +382,7 @@ void* build_editor_request(EditKind kind, uint32_t editor_id, const game::Key& k
     return req;
 }
 
+static bool guest_plays_own_creation();
 // the creature editor for the own creature (EditorRequest + Submit, like ModAPI mods do)
 bool open_own_editor(uint32_t editor_id)
 {
@@ -372,7 +390,10 @@ bool open_own_editor(uint32_t editor_id)
     void* av = game::avatar();
     if (!submit || !av)
         return false;
+    // BUG-1255: a guest without a creation of its own in play edits the world's species (the host's)
+    g_own_from_world = g_sess.role() == net::Role::Client && !guest_plays_own_creation();
     void* req = build_editor_request(EditKind::Own, editor_id, game::species_key(av));
+    g_own_from_world = false;
     if (!req)
         return false;
     bool r{};
