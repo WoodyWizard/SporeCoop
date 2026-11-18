@@ -4781,4 +4781,4 @@ game's data files (Data/PatchData.package) and lanes 6 / 7 (fixture `creature_ca
   by singing (0.1 of its points) and the game failed after the list ("It does not want to socialize now").
 * Fix `social.kinds` (social.cpp): every kind 1-4 is a social ability for the bar's hook; the key k plays the ability
   of kind k. `coop.social` (guest) prints `prompt_type= prompt_kind=` of the last prompt and `kind_acts=` (actions sent
-  per kind 0-4); `coop.social herds` lists the herds with `kinds=<kind>:<type>:<points>,...`.
+  per kind 0-4); `coop.social herds` lists the herds with `profile=` (the species profile) and `kinds=<kind>:<type>:<points>,...`.

@@ -32,13 +32,14 @@ KIND_NAME = {1: 'sing', 2: 'charm', 3: 'dance', 4: 'pose'}
 
 
 def herds(host):
-    """[(addr, species, members, home, dist, [(kind, type, points)])] of the host's game"""
+    """[(addr, species, members, home, dist, [(kind, type, points)], species profile)] of the host's game"""
     out = []
-    for m in re.finditer(r'^herd (\S+) species=(\S+) members=(-?\d+) home=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\) dist=(\d+) kinds=(\S*)$',
+    for m in re.finditer(r'^herd (\S+) species=(\S+) members=(-?\d+) home=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\) dist=(\d+) profile=(\S+) kinds=(\S*)$',
                          host.call('coop.social herds')['out'], re.M):
         kinds = [tuple(int(x, 16) if i == 1 else int(float(x)) for i, x in enumerate(k.split(':')))
-                 for k in m.group(8).split(',') if k and k != '?']
-        out.append((m.group(1), m.group(2), int(m.group(3)), tuple(float(m.group(i)) for i in (4, 5, 6)), int(m.group(7)), kinds))
+                 for k in m.group(9).split(',') if k and k != '?']
+        out.append((m.group(1), m.group(2), int(m.group(3)), tuple(float(m.group(i)) for i in (4, 5, 6)), int(m.group(7)), kinds,
+                    m.group(8)))
     return out
 
 
@@ -145,21 +146,25 @@ def play(host, guest, nid, buttons, ck, anims=None, gid='1'):
                       f'{re.search(r"prompt_type=(\S+)", s).group(1)} anim {re.search(r"prompt_anim=(\S+)", s).group(1)}', flush=True)
                 if len(seen) == 1:
                     keyframe('prompt', f'the guest is in a social game with animal #{nid}: on the guest\'s screen its mirror '
-                             'performs the prompt and the social meter is up; on the host\'s the animal performs it next to the guest')
+                             'performs the prompt, the social meter and "Answer it" are up; on the host\'s the guest\'s creature stands at the nest '
+                             '(the host\'s camera may not show the animal)')
         if pending is not None and time.time() - prompt_t > 1.5:
             k = pending if pending in buttons or KEYS or not buttons else 1  # a kind the bar lacks: the player sings
             a0 = kind_acts(guest)
             answer(guest, k, buttons)
+            pg = ph = None
             if k != 1 and anims and anims.get(k):  # what both players see: the guest's creature performs it
                 pg, ph = performed(host, guest, gid, anims[k])
-                PERFORMED.append((k, pg, ph))
                 print(f'  #{nid}: the {KIND_NAME[k]} answer {anims[k]} played on the guest\'s avatar {pg}, on the host\'s '
                       f'puppet {ph}', flush=True)
             else:
                 time.sleep(0.8)
             a1 = kind_acts(guest)
             tries += 1
-            if a1[k] > a0[k]:
+            sent = a1[k] > a0[k]
+            if pg is not None and (sent or tries >= 4):  # (a press while the ability cools down is no answer)
+                PERFORMED.append((k, pg, ph))
+            if sent:
                 print(f'  #{nid}: answered {KIND_NAME[k]} ({"key" if KEYS else "click"}), sent', flush=True)
                 pending = None
             elif tries >= 4:
@@ -209,7 +214,10 @@ def main():
         ck.faults(host=host, guest=guest)
         return ck.result()
     ids, species, herd = [], None, None
-    for herd in hs[:4]:  # (a nest whose animals cannot be socialized now, social mode 0: the next one)
+    no_social = set()  # species profiles whose animals cannot be socialized now (social mode 0)
+    for herd in hs[:8]:
+        if herd[6] in no_social:
+            continue
         home = herd[3]
         host.call('coop.npc gopos %.2f %.2f %.2f' % (home[0] + 6, home[1], home[2]))
         time.sleep(2)
@@ -228,6 +236,9 @@ def main():
             hl = host_list(host)
             seen = {i: (v[1], v[2], v[3], md.get(i, ('', None))[1], gl.get(i, (False,))[0]) for i, v in hl.items() if v[0] == species}
             ids = [i for i, (hp_, dead, imp, mode, mir) in seen.items() if hp_ > 0 and not dead and not imp and mode and mir]
+            if seen and time.time() - t0 > 10 and all(v[3] == 0 for v in seen.values()):
+                no_social.add(herd[6])
+                break
         print(f'  nest {herd[0]} at {herd[4]} m, species {species}: animals {ids} after {time.time() - t0:.0f} s '
               f'(id: hp, dead, impressed, social mode, mirrored: {seen})', flush=True)
         if ids:
@@ -279,7 +290,7 @@ def main():
         time.sleep(1.5)
         h, g = host_list(host).get(nid), guest_list(guest).get(nid)
         keyframe('result', f'the social game with #{nid} ended ({how}): on both screens the animal is impressed (green face '
-                 'over it on the guest\'s screen), the meter closed')
+                 'over it on the guest\'s screen, "Impressed!" in its feed; "<guest> impressed a creature" in the host\'s)')
         ck(h is not None and h[3], f'#{nid}: the host\'s game has the animal impressed after the guest answered its charm / '
            f'dance / pose prompts ({how})')
         ck(g is not None and g[1], f'#{nid}: the guest\'s game shows the animal impressed')

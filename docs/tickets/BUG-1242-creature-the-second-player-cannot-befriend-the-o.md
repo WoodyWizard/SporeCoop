@@ -1,20 +1,21 @@
 ---
 id: BUG-1242
 title: Creature: the second player cannot befriend the other creatures (social game)
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-18
 source: owner: players' video
-role: 
+role: guest
 versions: <0.7.15
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w52-social
+commits: 21fe1d86
+tests: creature_social_kinds, creature_social_kinds_keys (tools/tests/coop_creature_social_kinds.py)
 signature:
-docs:
-related:
+docs: docs/re/creature.md#creature-social-kinds, docs/06-testing.md#testing-social-kinds
+related: BUG-0179, BUG-0518, BUG-0525
+switch: social.kinds
 ---
 
 ## Report
@@ -46,8 +47,22 @@ kind 1 (0.7.15). Test commands: `coop.social herds` (each nest herd's prompt kin
 slots, their kinds and button windows); `coop.social` (guest) prints `prompt_type= prompt_kind=` and `kind_acts=`.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `creature_social_kinds` (tools/tests/coop_creature_social_kinds.py, fixture creature_cadian): the guest's real
+clicks on the bar's social buttons answer each prompt of an animal of a nest that prompts to charm / dance / pose (the
+`--keys` twin `creature_social_kinds_keys`: the keys 1-4). Checked in both games: each answer of another kind than sing
+plays its animation on the guest's avatar and the host's puppet, the animal is impressed (the NPC's and the mirror's own
+flag), the species table counts it.
+- FAIL with SPORE_FIX_OFF=social.kinds: out/lab/20261118-103216-2 (both tests: the charm / pose clicks and keys play
+  nothing on either game, the games fail after their prompt lists), out/lab/20261118-101931 (both), 20261118-101553-2.
+- PASS: out/lab/20261118-102942 (lane 7, both tests), out/lab/20261118-102942-2 (lane 6, both tests),
+  out/lab/20261118-102434 / -2 (the click test).
+- Regression: creature_social_ally, creature_social_bar, creature_social_meter, social_console out/lab/20261118-103216
+  (ok); creature_social_prompts failed there once (its known flake: "the host counts that social game as failed"),
+  PASS on the rerun out/lab/20261118-103837.
+- Seen with the fix off (out/lab/20261118-100728): a guest whose sing outweighs the animal's prompts still impressed it
+  by singing only; the players' creatures (low levels against later nests) could not, as in the video.
 
 ## History
 - 2026-11-18: opened.
+- 2026-11-18 (fix/w52-social): root cause found (the social kind +0x10 read as a flag), fixed (social.kinds), FAIL/PASS
+  twin creature_social_kinds (+ _keys) on the campaign's world.

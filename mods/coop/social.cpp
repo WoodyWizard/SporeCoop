@@ -1488,7 +1488,7 @@ std::string herds_dump()
     game::for_each_object(
         [](void* o, uint32_t noun, void* p) {
             auto* u = (U*)p;
-            if (noun != game::kHerdNoun || !game::object_alive(o) || IsBadReadPtr(o, 0x220) || u->out.size() > 12000)
+            if (noun != game::kHerdNoun || IsBadReadPtr(o, 0x220) || u->out.size() > 12000) // (the list's own objects)
                 return true;
             uint8_t* sp = field<uint8_t*>(o, 0xA4);
             if (!sp || IsBadReadPtr(sp + 0x6D4, 8) || IsBadReadPtr(sp + 0x7A4, 8))
@@ -1503,9 +1503,10 @@ std::string herds_dump()
             void** m1 = field<void**>(o, 0x44);
             void* m = m0 && m1 > m0 && !IsBadReadPtr(m0, 4) ? m0[0] : nullptr;
             char b[200];
-            snprintf(b, sizeof b, "herd %p species=%08X members=%d home=(%.1f %.1f %.1f) dist=%.0f kinds=", o,
-                     m && game::object_alive(m) ? game::species_key(m).instance : 0u, m1 >= m0 ? (int)(m1 - m0) : -1, h.x,
-                     h.y, h.z, net::dist(h, u->a));
+            // the first member's species (a member is a creature of the same list: listed, noun cCreatureAnimal)
+            snprintf(b, sizeof b, "herd %p species=%08X members=%d home=(%.1f %.1f %.1f) dist=%.0f profile=%p kinds=", o,
+                     m && game::listed(m, 0x18EB45Eu) ? game::species_key(m).instance : 0u, m1 >= m0 ? (int)(m1 - m0) : -1,
+                     h.x, h.y, h.z, net::dist(h, u->a), (void*)sp);
             u->out += b;
             for (int* q = p0; q && q < p1 && q - p0 < 16 && !IsBadReadPtr(q, 4); q++) {
                 uint8_t* ab = *q >= 0 && *q < na && !IsBadReadPtr(a0 + *q, 4) ? (uint8_t*)a0[*q] : nullptr;
