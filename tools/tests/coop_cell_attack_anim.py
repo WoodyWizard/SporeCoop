@@ -12,6 +12,7 @@ avatar and each partner's puppet) sampled on both games while it happens:
   coop_cell_attack_anim.py
 """
 import re
+import sys
 import threading
 import time
 
@@ -70,7 +71,73 @@ def attack(con, n=5):
     return outs
 
 
+def electric(host, guest, ck):
+    """BUG-1243 with a weapon the game uses by itself: the host's cell gets the electric part (`coop.pool borrow electric
+    graft`: the game's electric step then zaps creatures near it, animation 0x1E on the attacker). Both players' cells
+    are the world's species (a guest without creations), so the host's game has the same model data for the guest's
+    puppet. Both cells next to the same creature; only the host's game has the part. The guest's own game never
+    zaps: its cell must not be shown attacking (0x1E) in the host's game either."""
+    gm = re.search(r'client id=(\d+)', guest.call('coop.status')['out'])
+    gid = gm.group(1) if gm else '1'
+    got = host.call('coop.pool borrow electric graft')['out'].strip()
+    print('  host: ' + got, flush=True)
+    ck(got.startswith('borrowed'), f"the host's cell has the game's electric part ({got[:80]})")
+    key, r = None, ''
+    for _ in range(15):
+        r = host.call('coop.pool kill - hit')['out']  # names the nearest creature
+        m = re.match(r'bit (c\d+) ', r)
+        if m and 'dying' not in r:
+            key = m.group(1)
+            break
+        time.sleep(1)
+    ck(key is not None, f'a creature next to the host ({r.strip()[:80]})')
+    if not key:
+        return
+    print('  ' + host.call(f'coop.pool npcflag {key} hp 200')['out'].strip(), flush=True)
+    sh, sg = Sampler(host), Sampler(guest)
+    sh.start()
+    sg.start()
+    z0h, z0g = host.call('coop.pool')['out'], guest.call('coop.pool')['out']
+    try:
+        t0 = time.time()
+        while time.time() - t0 < 25:
+            host.call(f'coop.pool swimto {key} tp')
+            guest.call(f'coop.pool swimto {key} tp')  # (the guest's mirror of the same creature: its key is the host's)
+            time.sleep(1.5)
+        t1 = time.time()
+        keyframe('host_zaps', "Cell: the host's electric part zaps; the guest's cell, next to the same creature, does not zap on either game", settle=0)
+    finally:
+        sh.stop()
+        sg.stop()
+    z1h, z1g = host.call('coop.pool')['out'], guest.call('coop.pool')['out']
+    h_av, h_pup = window(sh.avatar, t0, t1), window(sh.puppet, t0, t1)
+    g_av, g_pup = window(sg.avatar, t0, t1), window(sg.puppet, t0, t1)
+    print(f'  host avatar {sorted(h_av)} | host\'s puppet of the guest {sorted(h_pup)} | guest avatar {sorted(g_av)} | '
+          f'guest\'s puppet of the host {sorted(g_pup)}', flush=True)
+    for k in ('zaps', 'puppet_zaps'):
+        print(f'  {k}: host {num_of(z0h, k)} -> {num_of(z1h, k)}, guest {num_of(z0g, k)} -> {num_of(z1g, k)}', flush=True)
+    ck('1E' in h_av, f"the host's own cell plays its electric attack (0x1E) ({sorted(h_av)})")
+    ck('1E' not in g_av, f"the guest's own cell does not zap in its own game ({sorted(g_av)})")
+    ck('1E' not in h_pup or '1E' in g_av,
+       f"the host's game shows the guest's cell attacking only when the guest's own game does ({sorted(h_pup)})")
+
+
+def num_of(text, key):
+    m = re.search(r'\b' + key + r'=(\d+)', text)
+    return int(m.group(1)) if m else None
+
+
 def main():
+    if '--electric' in sys.argv:
+        host, guest = start('cell')
+        ck = Checks()
+        time.sleep(3)
+        try:
+            electric(host, guest, ck)
+        finally:
+            host.call('coop.pool borrow off')
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     host, guest = start('cell')
     ck = Checks()
     time.sleep(4)

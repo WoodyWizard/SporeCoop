@@ -88,6 +88,7 @@ struct Counters {
     uint32_t clouds_made = 0, cloud_last = 0xFFFFFFFF, puppet_clouds = 0;
     uint32_t own_clouds_held = 0;
     uint32_t zaps = 0, zap_hits = 0; // tests
+    uint32_t puppet_zaps = 0, puppet_zaps_held = 0, puppet_zap_anims = 0; // tests (BUG-1243)
     uint32_t bite_rings = 0; // tests
     uint32_t mirror_kills = 0, npc_deaths = 0; // npc_deaths: NPCs of this pool killed / broken by the game
     uint32_t wipe_kept = 0, wipe_destroyed = 0, wipe_near_lost = 0, wipe_calls = 0; // host: per session (tests)

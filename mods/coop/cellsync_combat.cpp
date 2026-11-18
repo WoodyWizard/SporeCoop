@@ -227,8 +227,25 @@ static bool g_fix_electric = true;
 COOP_FIX("cell.electric", "BUG-0715", g_fix_electric, "cell: a guest's electric part hurts the host's creatures (its chain attack is sent to the host, the mirrors keep the host's health)");
 Zap_t o_Zap;
 uintptr_t a_Zap;
+// BUG-1243 (players' video: when one player attacked in the Cell stage, the other player's cell played the attack too):
+// the electric step 0xE71980 runs for every cell whose model has the part, a partner's puppet included, and the two
+// players' cells share their model whenever both play the world's species (a guest without creations; any two players
+// of one creation). So each game let the partner's puppet zap on its own whenever it was near creatures here: the
+// attack animation 0x1E on the puppet and the hits on this game's creatures, while that player's own game had not
+// attacked (its real attacks come as MSG_CELL_HIT, BUG-0715). On: a puppet's zap is not run; the attack animation is
+// played on the puppet when its player's electric hit arrives (host, guest_attack type 1). Off: as 0.7.15.
+static bool g_fix_puppet_zap = true;
+COOP_FIX("cell.puppet_zap", "BUG-1243", g_fix_puppet_zap,
+         "cell: a partner's cell does not attack (electric) by itself in this game; its attack animation comes with its player's own attack");
 void SK_CDECL h_Zap(uint8_t* att, uint32_t a2, uint32_t* first)
 {
+    if (in_cell() && att && modes::cell_is_puppet(att)) {
+        g_n.puppet_zaps++;
+        if (g_fix_puppet_zap) {
+            g_n.puppet_zaps_held++;
+            return;
+        }
+    }
     if (in_cell() && att && att == avatar())
         g_n.zaps++; // our avatar's electric attacks, with the fix or without
     if (!g_fix_electric || !in_cell() || !is_guest() || !att || att != avatar() || g_downed) {
@@ -1026,6 +1043,13 @@ bool guest_attack(uint32_t from, uint8_t* c, uint8_t* pc, int dmg, int t, bool l
         }
     }
     g_forced.att = g_forced.vic = nullptr;
+    // BUG-1243: the guest's electric attack (type 1) shows on its puppet here with the game's attack animation (the
+    // puppet's own zap is not run), as Cell_ElectricAttack plays 0x1E on the attacker
+    static uintptr_t a_PlayAnim = H->sym("Simulator::Cell::PlayAnimation");
+    if (g_fix_puppet_zap && t == 1 && !lethal && a_PlayAnim && F<uint32_t>(pc, 0x1B0) != 0x1Eu) {
+        skg::cdecl_call<float>(a_PlayAnim, pc, 0, 0x1E, F<uint32_t>(pc, 0x1B0));
+        g_n.puppet_zap_anims++;
+    }
     g_n.guest_attacks++;
     g_guest_attack_types[(lethal ? 4 : t) & 7]++;
     bool died = F<uint8_t>(c, kDying) || F<uint8_t>(c, kDead) || F<int>(c, kHp) <= 0;
