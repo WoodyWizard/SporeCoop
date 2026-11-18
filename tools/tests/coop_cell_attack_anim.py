@@ -144,7 +144,7 @@ def contact(host, guest, ck, part, attacker_name):
         print(f'  idle: the {oname}\'s cell {sorted(idle_o)}', flush=True)
         r, hits = '', 0
         while time.time() - t0 < 30:
-            m = re.search(r'^see (c\d+) creature ', att.call('coop.pool see 8')['out'], re.M)
+            m = re.search(r'^see (c\d+) creature ', att.call('coop.pool see 40')['out'], re.M)
             if m:
                 r = att.call(f'coop.pool swimto {m.group(1)}')['out'].strip()
                 hits += 1
