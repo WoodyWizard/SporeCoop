@@ -10,7 +10,7 @@ role: guest
 versions: <0.7.15
 fixed_in: unreleased
 branch: fix/w52-social
-commits: 21fe1d86
+commits: 21fe1d86 3dfa164f
 tests: creature_social_kinds, creature_social_kinds_keys (tools/tests/coop_creature_social_kinds.py)
 signature:
 docs: docs/re/creature.md#creature-social-kinds, docs/06-testing.md#testing-social-kinds
@@ -52,10 +52,12 @@ clicks on the bar's social buttons answer each prompt of an animal of a nest tha
 `--keys` twin `creature_social_kinds_keys`: the keys 1-4). Checked in both games: each answer of another kind than sing
 plays its animation on the guest's avatar and the host's puppet, the animal is impressed (the NPC's and the mirror's own
 flag), the species table counts it.
-- FAIL with SPORE_FIX_OFF=social.kinds: out/lab/20261118-103216-2 (both tests: the charm / pose clicks and keys play
-  nothing on either game, the games fail after their prompt lists), out/lab/20261118-101931 (both), 20261118-101553-2.
-- PASS: out/lab/20261118-102942 (lane 7, both tests), out/lab/20261118-102942-2 (lane 6, both tests),
-  out/lab/20261118-102434 / -2 (the click test).
+- FAIL with SPORE_FIX_OFF=social.kinds: out/lab/20261118-105625 (lane 6, both tests: the guest's charm / dance clicks
+  and keys play nothing on either game, the games fail after their prompt lists), out/lab/20261118-105625-2 (lane 7,
+  the click test; its keys run found no usable creature / nest in 4 starts), earlier versions of the test:
+  20261118-103216-2, 20261118-101931, 20261118-101553-2.
+- PASS: out/lab/20261118-105411 (lane 7) and out/lab/20261118-105411-2 (lane 6), both tests each (dance, pose, charm
+  answers performed on both games, the animal impressed in both); earlier versions 20261118-104620 / -2, 20261118-102942 / -2.
 - Regression: creature_social_ally, creature_social_bar, creature_social_meter, social_console out/lab/20261118-103216
   (ok); creature_social_prompts failed there once (its known flake: "the host counts that social game as failed"),
   PASS on the rerun out/lab/20261118-103837.

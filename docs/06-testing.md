@@ -9071,7 +9071,8 @@ only with sing (docs/re/creature.md#creature-social-kinds).
   games (the NPC's and the mirror's own flag), the species table counts it in both. Key frames: the prompt, the result.
 * The players' creature in `creature_cadian` is not the same in every cold start (the world's species the guest's log
   names, `own avatar species - -> ...`: seen 06538DD6, 065CB857, 06806931, 065CB8B4; with sing only, sing + dance,
-  sing + charm + pose, all four): the test adapts the nest to it and starts the games again (at most 3 starts) while
-  the creature has only sing; it fails ("the world has a nest ...") after that.
+  sing + charm + pose, all four): the test adapts the nest to it and starts the games again (at most 4 starts) while
+  the creature has only sing or no nest it can answer has an animal to socialize now (the nests of some species answer
+  social mode 0 for every animal: skipped after 10 s); it fails ("the guest mirrors animals of that nest") after that.
 * `SPORE_FIX_OFF=social.kinds`: the other kind's click / key does nothing (no animation on either game, `kind_acts=`
   stays 0 for it), the game fails after its prompt list.

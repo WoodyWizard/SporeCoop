@@ -177,42 +177,34 @@ def play(host, guest, nid, buttons, ck, anims=None, gid='1'):
     return seen, False, 'no end in 90 s'
 
 
-def setup():
-    """start the campaign's world; the players' creature differs between starts (the world's species: seen with sing
-    only, sing + dance, sing + charm + pose, all four): started again (at most 3 starts) until the guest has another
-    social kind than sing and a nest prompts it. (host, guest, the guest's kinds, the nests)"""
-    for n in range(3):
-        host, guest = start('creature_cadian')
-        for c in (host, guest):
-            c.call('coop.team hp 1000')
-        time.sleep(2)
-        # the guest's social abilities: a nest whose prompts it can all answer (its kinds, points at least the prompt's),
-        # at least one of them another kind than sing; the nearest one away from the players' own family
-        own, t0, t_change = own_social(guest), time.time(), time.time()
-        while time.time() - t0 < 40 and time.time() - t_change < 8:  # (the ability list may still grow after the load)
-            time.sleep(1)
-            o = own_social(guest)
-            if o != own:
-                own, t_change = o, time.time()
-        print(f'  start {n + 1}: the guest\'s social abilities {own} (settled after {t_change - t0:.0f} s)', flush=True)
-        fam = [tuple(float(x) for x in m.groups()) for m in re.finditer(
-            r'^\s*#\d+ \S+ species=\S+ .*?pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\).* family', host.call('coop.npc list')['out'], re.M)]
-        hs = [h for h in herds(host) if 80 <= h[4] <= 600 and any(k != 1 for k, _, _ in h[5])
-              and all(k in own and own[k][1] >= p for k, _, p in h[5]) and all(math.dist(h[3], f) > 30 for f in fam)]
-        hs.sort(key=lambda h: (round(sum(k == 1 for k, _, _ in h[5]) / len(h[5]), 1), h[4]))  # the least sing first
-        print(f'  nests prompting the guest\'s other social kinds: {[(h[0], h[4], h[5]) for h in hs[:5]]}', flush=True)
-        if hs:
-            break
+def setup(n):
+    """start n of the campaign's world; the players' creature differs between starts (the world's species: seen with
+    sing only, sing + dance, sing + charm + pose, all four). (host, guest, the guest's kinds, the nests it can answer)"""
+    host, guest = start('creature_cadian')
+    for c in (host, guest):
+        c.call('coop.team hp 1000')
+    time.sleep(2)
+    # the guest's social abilities: a nest whose prompts it can all answer (its kinds, points at least the prompt's),
+    # at least one of them another kind than sing; the nearest one away from the players' own family
+    own, t0, t_change = own_social(guest), time.time(), time.time()
+    while time.time() - t0 < 40 and time.time() - t_change < 8:  # (the ability list may still grow after the load)
+        time.sleep(1)
+        o = own_social(guest)
+        if o != own:
+            own, t_change = o, time.time()
+    print(f'  start {n + 1}: the guest\'s social abilities {own} (settled after {t_change - t0:.0f} s)', flush=True)
+    fam = [tuple(float(x) for x in m.groups()) for m in re.finditer(
+        r'^\s*#\d+ \S+ species=\S+ .*?pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\).* family', host.call('coop.npc list')['out'], re.M)]
+    hs = [h for h in herds(host) if 80 <= h[4] <= 600 and any(k != 1 for k, _, _ in h[5])
+          and all(k in own and own[k][1] >= p for k, _, p in h[5]) and all(math.dist(h[3], f) > 30 for f in fam)]
+    hs.sort(key=lambda h: (round(sum(k == 1 for k, _, _ in h[5]) / len(h[5]), 1), h[4]))  # the least sing first
+    print(f'  nests prompting the guest\'s other social kinds: {[(h[0], h[4], h[5]) for h in hs[:5]]}', flush=True)
     return host, guest, own, hs
 
 
-def main():
-    host, guest, own, hs = setup()
-    ck = Checks()
-    ck(hs, 'the world has a nest whose species prompts to another social kind than sing that the guest has (coop.social herds)')
-    if not hs:
-        ck.faults(host=host, guest=guest)
-        return ck.result()
+def animals(host, guest, hs):
+    """both players go to the nests in turn until one has animals the guest can socialize (alive, not impressed, social
+    mode not 0, mirrored on the guest): (ids, species, herd)"""
     ids, species, herd = [], None, None
     no_social = set()  # species profiles whose animals cannot be socialized now (social mode 0)
     for herd in hs[:8]:
@@ -243,6 +235,17 @@ def main():
               f'(id: hp, dead, impressed, social mode, mirrored: {seen})', flush=True)
         if ids:
             break
+    return ids, species, herd
+
+
+def main():
+    for n in range(4):  # (a creature with only sing, or no animal to socialize now at its nests: started again)
+        host, guest, own, hs = setup(n)
+        ids, species, herd = animals(host, guest, hs) if hs else ([], None, None)
+        if ids:
+            break
+    ck = Checks()
+    ck(hs, 'the world has a nest whose species prompts to another social kind than sing that the guest has (coop.social herds)')
     ck(ids, f'the guest mirrors animals of that nest ({species}: {ids})')
     if not ids:
         ck.faults(host=host, guest=guest)
