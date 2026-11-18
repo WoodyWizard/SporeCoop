@@ -525,6 +525,7 @@ static int frames_mode_read()
 // the work of one frame that does not draw: counters, frame limit, tasks, SK_EV_FRAME
 static void frame_common()
 {
+    pace_frame_target();
     g_frame++;
     double t = now_seconds();
     float dt = g_last_t > 0 ? (float)(t - g_last_t) : 0.f;
@@ -536,8 +537,10 @@ static void frame_common()
     // the game sizes/centers its window around device resets: place test windows afterwards
     if (g_frame == 2 || g_frame == 120 || g_frame == 600)
         run_outside_frame(place_test_window);
-    if (g_frame % 10 == 1)
+    if (g_frame % 10 == 1) {
         apply_frame_limit();
+        maintain_borderless();
+    }
     if (g_frame % 10 == 2)
         game_mode_cache_tick(); // BUG-1022
 
@@ -735,6 +738,7 @@ static HRESULT WINAPI h_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp)
     if (SUCCEEDED(hr) && pp) {
         g_bb_w = pp->BackBufferWidth;
         g_bb_h = pp->BackBufferHeight;
+        borderless_video_mode(pp->Windowed != FALSE);
     }
     if (g_font && SUCCEEDED(hr))
         ((HRESULT(WINAPI*)(void*))vt(g_font)[17])(g_font); // OnResetDevice
@@ -783,6 +787,8 @@ static HRESULT WINAPI h_CreateDevice(IDirect3D9* d3d, UINT ad, D3DDEVTYPE t, HWN
         }
         g_hwnd = w ? w : (pp ? pp->hDeviceWindow : nullptr);
         focus_attach_window(g_hwnd);
+        if (pp)
+            borderless_video_mode(pp->Windowed != FALSE);
         font_release();
         g_font_failed = false;
         if (fixed(g_fix_trireset)) { // BUG-1026: the state block belonged to the old device

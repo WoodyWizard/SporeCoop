@@ -57,6 +57,7 @@ struct Release {
     bool from_web = false;             // BUG-0392: found through the release page, not the API
 };
 bool parse_release(const std::string& json, Release& out);
+bool parse_preview_releases(const std::string& json, Release& out);
 
 // BUG-0392: the GitHub API allows 60 calls an hour per IP without a login; a shared IP or a VPN
 // gets 403 (or 429) and the setup could not install at all. The web page <owner>/<repo>/releases/latest

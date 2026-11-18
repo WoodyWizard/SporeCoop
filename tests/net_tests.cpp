@@ -18,7 +18,12 @@
 #include <thread>
 #include <tuple>
 #include <type_traits>
+#ifdef _WIN32
+#include <winsock2.h>
+#undef small // rpcndr.h defines this as char
+#else
 #include <arpa/inet.h>
+#endif
 #include <unistd.h>
 
 #include "net/connection.h"
@@ -31,6 +36,10 @@
 #include "net/shared_ledger.h"
 #include "net/session.h"
 #include "net/ipmask.h"
+#include "civ_economy.h"
+#include "civ_influence.h"
+#include "autosave.h"
+#include <limits>
 #include "net/utf8.h"
 
 using namespace net;
@@ -44,6 +53,75 @@ static bool g_nofix = false; // --nofix: the code before the wave 2 netcode fixe
             g_fail++;                                                    \
         }                                                                \
     } while (0)
+
+static void test_civ_economic_packet()
+{
+    printf("Civilization economic packet bounds\n");
+    civ::EconomicState state;
+    state.world=0x1234; state.sequence=7; state.city={0,0x2232,{424,-193,192}};
+    state.progress=16.813276f; state.buyer=0x2231;
+    for (unsigned i=1;i<=civ::EconomicState::max_routes;++i)
+        state.routes.push_back({{uint8_t(i),0x2300+i,{float(i),100,400}},0});
+    for (unsigned i=1;i<=civ::EconomicState::max_routes;++i) state.credits.push_back({0x2300+i,float(i)});
+    Writer w; state.write(w);
+    CHECK(w.size()>kMaxPacket-48 && w.size()<2*(kMaxPacket-48));
+    civ::EconomicState copy;
+    Reader full(w.data.data(),w.size());
+    CHECK(copy.read(full) && copy.routes.size()==state.routes.size() && copy.buyer==state.buyer);
+    for (size_t size=0;size<w.size();++size) {
+        Reader short_packet(w.data.data(),size);
+        CHECK(!copy.read(short_packet));
+    }
+    auto invalid=[&] {
+        Writer out; state.write(out); Reader r(out.data.data(),out.size());
+        CHECK(!copy.read(r));
+    };
+    state.routes[1]=state.routes[0]; invalid(); // Duplicate partner.
+    state.routes.clear(); state.credits[1]=state.credits[0]; invalid();
+    state.credits.clear(); state.credits.push_back({1,std::numeric_limits<float>::quiet_NaN()}); invalid();
+    state.credits.clear();
+    state.routes.clear(); state.progress=std::numeric_limits<float>::quiet_NaN(); invalid();
+    state.progress=101; invalid();
+    state.progress=0; state.world=0; invalid();
+    state.world=1; state.city.index=250; invalid();
+    state.city.index=0; state.routes.push_back({state.city,0}); invalid();
+    state.routes[0].partner.index=1; state.routes[0].kind=3; invalid();
+    state.routes.clear(); Writer extra; state.write(extra); extra.u8(0);
+    Reader trailing(extra.data.data(),extra.size()); CHECK(!copy.read(trailing));
+}
+
+static void test_civ_religious_packet()
+{
+    printf("Civilization religious packet bounds\n");
+    civ::ReligiousState state;
+    state.world=0x1234; state.sequence=9; state.city={2,0x2232,{424,-193,192}};
+    state.converter=0x800021CA; state.progress=32;
+    for (unsigned i=0;i<civ::ReligiousState::max_factions;++i)
+        state.followers.push_back({0x800021CA+i,int32_t(i)});
+    Writer w; state.write(w);
+    CHECK(w.size()<=kMaxPacket-48);
+    civ::ReligiousState copy;
+    Reader full(w.data.data(),w.size());
+    CHECK(copy.read(full) && copy.followers.size()==128 && copy.converter==state.converter && copy.progress==32);
+    CHECK(copy.followers[127].count==127 && copy.followers[0].faction==0x800021CA);
+    for (size_t size=0;size<w.size();++size) {
+        Reader shortened(w.data.data(),size); CHECK(!copy.read(shortened));
+    }
+    auto invalid=[&] {
+        Writer out; state.write(out); Reader r(out.data.data(),out.size()); CHECK(!copy.read(r));
+    };
+    state.followers.push_back({1,0}); invalid();
+    state.followers.resize(2); state.followers[1]=state.followers[0]; invalid();
+    state.followers.resize(1); state.followers[0].count=-1; invalid();
+    state.followers[0]={0,1}; invalid();
+    state.followers.clear(); state.progress=std::numeric_limits<float>::quiet_NaN(); invalid();
+    state.progress=-1; invalid(); state.progress=101; invalid();
+    state.progress=0; state.city.position.x=std::numeric_limits<float>::infinity(); invalid();
+    state.city.position.x=0; state.city.index=250; invalid();
+    state.city.index=0; state.world=0; invalid();
+    state.world=1; Writer extra; state.write(extra); extra.u8(0);
+    Reader trailing(extra.data.data(),extra.size()); CHECK(!copy.read(trailing));
+}
 
 static void test_buffer()
 {
@@ -76,7 +154,7 @@ static void test_buffer()
     Reader r4(w4.data.data(), w4.size());
     PlayerState t4;
     CHECK(t4.read(r4) && t4.scale == 1.5f && r4.left() == 0);
-    Reader r5(w4.data.data(), w4.size() - 12); // (BUG-0733: the body after the agl)
+    Reader r5(w4.data.data(), w4.size() - 20); // merged layout: scale, agl, body (upstream), captain_scale, energy (Lineages)
     PlayerState t5;
     CHECK(t5.read(r5) && t5.scale == 0.f && t5.world == 0x80B16021 && !agl_known(t5.agl));
     // BUG-0425: the sender's agl after the scale; a 0.7.7 sender's state (scale, no agl) reads as kNoAgl
@@ -86,9 +164,59 @@ static void test_buffer()
     Reader r6(w6.data.data(), w6.size());
     PlayerState t6;
     CHECK(t6.read(r6) && t6.agl == 2.5f && t6.scale == 1.5f && r6.left() == 0);
-    Reader r7(w6.data.data(), w6.size() - 8);
+    Reader r7(w6.data.data(), w6.size() - 16); // agl, body (upstream), captain_scale, energy (Lineages)
     PlayerState t7;
     CHECK(t7.read(r7) && t7.scale == 1.5f && !agl_known(t7.agl));
+    // Lineages (Adventure, BUG-9113): the captain's scale is written after upstream's scale and agl,
+    // then the optional gate (16 bytes)
+    s.mode = 0x1654C10;
+    s.gate = {42, 1, 1210, 35};
+    Writer away;
+    s.write(away);
+    Reader ar(away.data.data(), away.size());
+    CHECK(t2.read(ar) && t2.gate.visit == 42 && t2.gate.act == 1 && t2.gate.target == 1210 && t2.gate.credit == 35);
+    CHECK(t2.captain_scale == 0 && t2.scale == 1.5f && t2.agl == 2.5f);
+    s.captain_scale = 2.093f;
+    Writer sc;
+    s.write(sc);
+    Reader rsc(sc.data.data(), sc.size());
+    CHECK(t2.read(rsc) && t2.gate.visit == 42 && t2.captain_scale > 2.09f && t2.captain_scale < 2.1f);
+    CHECK(t2.scale == 1.5f && t2.agl == 2.5f && rsc.left() == 0);
+    Reader rso(sc.data.data() + sc.size() - 36, 36); // scale, agl, body, captain_scale, energy, gate
+    CHECK(rso.f32() == 1.5f && rso.f32() == 2.5f && rso.f32() == 0.f);
+    float cs = rso.f32();
+    CHECK(cs > 2.09f && cs < 2.1f && rso.f32() == -1.f && rso.u32() == 42);
+    s.gate = {};
+    Writer sc2;
+    s.write(sc2);
+    Reader rsc2(sc2.data.data(), sc2.size());
+    CHECK(t2.read(rsc2) && t2.gate.visit == 0 && t2.captain_scale > 2.09f && t2.captain_scale < 2.1f);
+    Reader rso2(sc2.data.data() + sc2.size() - 20, 20); // scale, agl, body, captain_scale, energy, no gate
+    CHECK(rso2.f32() == 1.5f && rso2.f32() == 2.5f && rso2.f32() == 0.f);
+    cs = rso2.f32();
+    CHECK(cs > 2.09f && cs < 2.1f && rso2.f32() == -1.f && rso2.left() == 0);
+    // 3G: the second bar's value (0..1) travels; anything else is none
+    s.energy = 0.25f;
+    Writer en;
+    s.write(en);
+    Reader ren(en.data.data(), en.size());
+    CHECK(t2.read(ren) && t2.energy == 0.25f && t2.gate.visit == 0 && ren.left() == 0);
+    s.energy = -1;
+    // BUG-9191: the open editor's id, written only while in an editor, after captain_scale (no gate then)
+    s.editor = 0x96B24187;
+    Writer ed;
+    s.write(ed);
+    Reader red(ed.data.data(), ed.size());
+    CHECK(t2.read(red) && t2.editor == 0x96B24187 && t2.gate.visit == 0 && red.left() == 0);
+    CHECK(t2.captain_scale > 2.09f && t2.captain_scale < 2.1f);
+    s.editor = 0;
+    Writer ned;
+    s.write(ned);
+    Reader rned(ned.data.data(), ned.size());
+    CHECK(t2.read(rned) && t2.editor == 0 && ned.size() == sc2.size());
+    s.captain_scale = 0;
+    Reader old_state(w2.data.data(), w2.size());
+    CHECK(t2.read(old_state) && !t2.gate.visit && !t2.gate.credit && t2.captain_scale == 0);
     // BUG-0733: the sender's creature size after the agl; an older sender's state reads as 0
     s.body = 1.21f;
     Writer w8;
@@ -96,9 +224,10 @@ static void test_buffer()
     Reader r8(w8.data.data(), w8.size());
     PlayerState t8;
     CHECK(t8.read(r8) && t8.body == 1.21f && t8.agl == 2.5f && r8.left() == 0);
-    Reader r9(w8.data.data(), w8.size() - 4);
+    Reader r9(w8.data.data(), w8.size() - 12); // body, captain_scale, energy
     PlayerState t9;
     CHECK(t9.read(r9) && t9.body == 0.f && t9.agl == 2.5f);
+    s.body = 0;
     // shared resource message payload (u8 id, f64)
     Writer w3;
     w3.u8(3);
@@ -357,6 +486,27 @@ static void test_session()
     pump(host, bad, 300);
     CHECK(why.find("build") != std::string::npos);
     CHECK(bad.role() == Role::None);
+}
+
+static void test_session_password()
+{
+    puts("session requires the configured password before admitting a peer");
+    Session host, guest;
+    std::string error, disconnected;
+    guest.cb.disconnected = [&](const std::string& reason) { disconnected = reason; };
+    CHECK(host.host(0, "host", error, "shared password"));
+    const auto address = "127.0.0.1:" + std::to_string(host.port());
+    for (auto password : {"", "wrong password"}) {
+        disconnected.clear();
+        CHECK(guest.join(address, "guest", error, password));
+        pump(host, guest, 300);
+        CHECK(guest.role() == Role::None);
+        CHECK(disconnected.find("password") != std::string::npos);
+        CHECK(host.players().size() == 1);
+    }
+    CHECK(guest.join(address, "guest", error, "shared password"));
+    pump(host, guest, 300);
+    CHECK(guest.connected() && host.players().size() == 2);
 }
 
 // F3 (BUG-0768): the host's player limit (all.max_players) and the late-join rule (all.late_join off once the host
@@ -1790,6 +1940,107 @@ static BusyResult bulk_busy_case(bool fix, bool busy, uint32_t delay, float loss
     return {got, (now - 1000) / 1000.0, a.stats.packets_sent, a.stats.resends};
 }
 
+// BUG-9098: a slow path that drops bursts (a phone hotspot / hotel Wi-Fi: a 250 KB/s bottleneck with a 16-packet queue,
+// 60 ms each way). The host's flush offers 42 packets a frame; without pacing most of every burst is dropped and sent
+// again. With net.pacing the reliable packets follow the rate the guest acknowledges.
+struct ChokeResult {
+    int got = 0;
+    double secs = 0;
+    uint32_t sent = 0, resends = 0, dropped = 0;
+    double state_ratio = 0; // the player-state packets (unreliable, one a frame) that arrived
+};
+static ChokeResult bulk_choke_case(bool pacing, int seed)
+{
+    bool was = g_fix.pacing;
+    g_fix.pacing = pacing;
+    struct Pk {
+        uint32_t t;
+        std::vector<uint8_t> d;
+    };
+    Connection a, b;
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<float> U(0, 1);
+    std::deque<Pk> queue, wire, back; // the bottleneck's queue, then the propagation delay; the return path
+    const uint32_t kOneWay = 60, kServiceMs = 5; // 200 packets per second through the bottleneck
+    const size_t kQueue = 16;
+    uint32_t next_service = 0, dropped = 0;
+    const int N = 1500; // a cell world: ~1.5 MB in 1 KB chunks
+    int queued = 0, got = 0;
+    bool ordered = true;
+    uint32_t now = 1000;
+    std::vector<uint8_t> pkt;
+    int state_sent = 0, state_got = 0;
+    for (; got < N && now < 1000 + 180000; now += 1) {
+        if (now % 33 == 0) { // the host's frame
+            Writer st; // the player state: first in the flush, as Session sends it
+            st.u32(state_sent++);
+            std::vector<uint8_t> body(60, 1);
+            st.raw(body.data(), body.size());
+            a.send_unreliable(7, st, true);
+            size_t window = a.rtt_ms < 40 ? 600 : 160;
+            while (queued < N && a.pending_reliable() < window) {
+                Writer w;
+                w.u32(queued++);
+                std::vector<uint8_t> pad(1010, 0x55);
+                w.raw(pad.data(), pad.size());
+                a.send_reliable(42, w);
+            }
+            int burst = a.rtt_ms < 40.f ? (int)kAckWindow : (int)kAckWindow / 3;
+            for (int i = 0; i < burst && a.build_packet(now, pkt); i++) {
+                if (queue.size() < kQueue && U(rng) > 0.01f)
+                    queue.push_back({now, pkt});
+                else
+                    dropped++;
+            }
+            a.drop_unreliable();
+        }
+        if (!queue.empty() && now >= next_service) { // the bottleneck
+            wire.push_back({now + kOneWay, std::move(queue.front().d)});
+            queue.pop_front();
+            next_service = now + kServiceMs;
+        }
+        while (!wire.empty() && wire.front().t <= now) {
+            b.on_packet(wire.front().d.data(), wire.front().d.size(), now, [&](uint8_t type, Reader& r) {
+                if (type == 42 && r.u32() != (uint32_t)got++)
+                    ordered = false;
+                if (type == 7)
+                    state_got++;
+            });
+            wire.pop_front();
+        }
+        if (now % 33 == 16) // the guest's frame
+            while (b.build_packet(now, pkt))
+                back.push_back({now + kOneWay, pkt});
+        while (!back.empty() && back.front().t <= now) {
+            a.on_packet(back.front().d.data(), back.front().d.size(), now, [](uint8_t, Reader&) {});
+            back.pop_front();
+        }
+    }
+    g_fix.pacing = was;
+    CHECK(ordered);
+    return {got, (now - 1000) / 1000.0, a.stats.packets_sent, a.stats.resends, dropped,
+            state_sent ? state_got / (double)state_sent : 0};
+}
+
+static void test_bulk_choke()
+{
+    printf("bulk transfer through a 200 packet/s bottleneck with a 16-packet queue (BUG-9098)\n");
+    double off_s = 0, on_s = 0, off_state = 0, on_state = 0;
+    uint32_t off_drop = 0, on_drop = 0;
+    for (int seed = 1; seed <= 3; seed++) {
+        ChokeResult off = bulk_choke_case(false, seed), on = bulk_choke_case(true, seed);
+        printf("  seed %d: pacing off %d in %.1f s (sent %u, resends %u, dropped %u, player state arrived %.0f%%); on %d in %.1f s "
+               "(sent %u, resends %u, dropped %u, state %.0f%%)\n", seed, off.got, off.secs, off.sent, off.resends, off.dropped,
+               off.state_ratio * 100, on.got, on.secs, on.sent, on.resends, on.dropped, on.state_ratio * 100);
+        CHECK(on.got == 1500);
+        off_s += off.secs, on_s += on.secs, off_drop += off.dropped, on_drop += on.dropped;
+        off_state += off.state_ratio / 3, on_state += on.state_ratio / 3;
+    }
+    CHECK(on_s <= off_s * 1.05);       // not slower (the link is the limit either way)
+    CHECK(on_drop * 4 < off_drop);     // a fraction of the packets thrown away at the bottleneck
+    CHECK(on_state >= off_state - 0.02); // the player's state (first in every flush) arrives as before (~98 %)
+}
+
 static void test_bulk_busy_receiver()
 {
     printf("bulk transfer to a guest that loads (BUG-0405)\n");
@@ -1907,6 +2158,20 @@ static void test_updater_paths()
     CHECK(upd::canonical_path("SporebinEP1/mods/COOP.dll") == "sporebinep1/mods/coop.dll");
 }
 
+static void test_autosave_clock()
+{
+    world::AutosaveClock autosave;
+    autosave.saved(1000);
+    CHECK(!autosave.due(600999));
+    CHECK(autosave.due(601000));
+    autosave.event_pending = true;
+    CHECK(autosave.due(2000));
+    autosave.event_pending = false;
+    autosave.saved(2000);
+    CHECK(!autosave.due(601000));
+    CHECK(autosave.due(602000));
+}
+
 static void test_updater()
 {
     printf("updater: packs, paths, versions, release answer\n");
@@ -1939,6 +2204,17 @@ static void test_updater()
           upd::compare_versions("0.10.0", "0.9.9") == 1 && upd::compare_versions("1.0", "1.0.1") == -1);
     CHECK(upd::compare_versions("0.7.2.1", "0.7.2") == 1 && upd::compare_versions("0.7.3", "0.7.2.1") == 1 &&
           upd::compare_versions("v0.7.2.1", "0.7.2.1") == 0);
+    CHECK(upd::compare_versions("v0.7.3.6-lineages31-dev", "0.7.3.6-lineages30-dev") == 1);
+    auto preview = [](int number, const std::string& owner) {
+        const std::string version = "0.7.3.6-lineages" + std::to_string(number) + "-dev";
+        const std::string prefix = "https://github.com/" + owner + "/SporeCoop-Lineages/releases/download/v" + version + '/';
+        return "{\"tag_name\":\"v" + version + "\",\"assets\":[{\"browser_download_url\":\"" + prefix +
+               "SporeCoop-" + version + ".pack\"},{\"browser_download_url\":\"" + prefix + "SHA256SUMS.txt\"}]}";
+    };
+    upd::Release preview_release;
+    CHECK(upd::parse_preview_releases("[" + preview(30, "PandizeLive") + "," + preview(99, "Other") + "," +
+                                     preview(31, "PandizeLive") + "]", preview_release));
+    CHECK(preview_release.version == "0.7.3.6-lineages31-dev");
     const char* json = R"({"html_url":"https://github.com/WoodyWizard/SporeCoop/releases/tag/v0.5.1","tag_name":"v0.5.1",
       "assets":[{"name":"SporeCoop-0.5.1.zip","browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.5.1/SporeCoop-0.5.1.zip"},
       {"name":"SporeCoop-0.5.1.pack","browser_download_url":"https://github.com/WoodyWizard/SporeCoop/releases/download/v0.5.1/SporeCoop-0.5.1.pack"},
@@ -1975,6 +2251,7 @@ static void test_updater()
 static int fakepeer_host()
 {
     if (!net_init()) return 1;
+    test_npc_compact(); // BUG-9235
     Session host;
     host.build = 0xdc04aee5;
     host.world = 0x12345678;
@@ -2384,6 +2661,41 @@ static void tick(std::vector<Session*> v, int ms)
 
 // CAP_VERSION (0.7.4): every peer learns the mod / SporeKit / game versions of the others; an
 // older peer (no extension) reads as "" and still joins; the old message shapes still read
+static void test_campaign_profiles()
+{
+    auto connect_pair = [](const std::string& local, const std::string& remote, bool allowed, bool launch = false, uint8_t seats = kMaxPlayers) {
+        Session host, guest;
+        host.campaign_profile = local;
+        host.seat_limit = seats;
+        guest.campaign_profile = remote;
+        guest.personal_launch = launch;
+        std::string err, refusal;
+        bool welcomed = false;
+        guest.cb.connected = [&] { welcomed = true; };
+        guest.cb.disconnected = [&](const std::string& why) { refusal = why; };
+        CHECK(host.host(0, "host", err));
+        CHECK(guest.join("127.0.0.1:" + std::to_string(host.port()), "guest", err));
+        for (int i = 0; i < 200 && !welcomed && refusal.empty(); ++i) {
+            host.update();
+            guest.update();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        CHECK(welcomed == allowed);
+        if (welcomed) CHECK(bool(host.peer_caps(guest.my_id()) & CAP_PERSONAL_LAUNCH) == launch);
+        CHECK(allowed || !refusal.empty());
+        if (!allowed && !local.empty())
+            CHECK(host.players().size() == 1);
+    };
+    connect_pair("Duo 1 / Creepy & Cute", "Duo 1 / Creepy & Cute", true);
+    connect_pair("Duo 1 / base parts", "Duo 1 / base parts", true);
+    connect_pair("Duo 1 / Creepy & Cute", "Duo 1 / Creepy & Cute", true, true);
+    connect_pair("Duo 1 / Creepy & Cute", "Duo 1 / base parts", false);
+    connect_pair("Duo 1 / base parts", "Duo 1 / base parts", false,false,1);
+    connect_pair("Duo 1 / base parts", "Duo 1 / base parts", true,false,2);
+    connect_pair("Duo 1 / base parts", "", false);
+    connect_pair("", "Duo 1 / base parts", false);
+}
+
 static void test_peer_versions()
 {
     printf("peer versions in HELLO / WELCOME / PLAYER_JOIN, an old-shape peer reads as unknown\n");
@@ -2400,12 +2712,15 @@ static void test_peer_versions()
         Hello h2;
         h2.has_token = true;
         h2.token = 77;
+        h2.resume_world = 0xB53B23456789ABCFull;
+        h2.campaign_profile = "lineages test";
         h2.version = "coop 1.2.3, SporeKit 0.3.4, GOG 2024 dc04aee5";
         Writer w2;
         h2.write(w2);
         Reader r2(w2.data.data(), w2.size());
         Hello g2;
-        CHECK(g2.read(r2) && g2.token == 77 && g2.version == h2.version);
+        CHECK(g2.read(r2) && g2.token == 77 && g2.version == h2.version &&
+              g2.resume_world == h2.resume_world && g2.campaign_profile == h2.campaign_profile);
         Writer wj;
         wj.u8(3);
         wj.str8("Old");
@@ -4179,8 +4494,50 @@ static bool run_this(const char* name, size_t index)
     return (int)(index % g_shards) == g_shard - 1;
 }
 
+// BUG-9235: the compact NPC state decodes to within its precision (1/64 m, 1 cm/s, the rotation to ~0.002)
+static void test_npc_compact()
+{
+    net::Vec3 anchor{120.5f, -310.25f, 44.0f};
+    net::NpcState a;
+    a.net_id = 4321;
+    a.pos = {anchor.x + 87.3f, anchor.y - 451.9f, anchor.z + 3.01f};
+    float qx = 0.12f, qy = -0.65f, qz = 0.31f, qw = 0.68f, l = std::sqrt(qx * qx + qy * qy + qz * qz + qw * qw);
+    a.rot.x = qx / l; a.rot.y = qy / l; a.rot.z = qz / l; a.rot.w = qw / l;
+    a.vel = {3.217f, -0.5f, 12.04f};
+    a.health = 87.25f;
+    a.flags = 0x5A;
+    CHECK(net::npc_pos_fits(a.pos, anchor));
+    CHECK(!net::npc_pos_fits({anchor.x + 600.f, anchor.y, anchor.z}, anchor));
+    net::Writer w;
+    net::write_npc_c(w, a, anchor);
+    CHECK(w.data.size() == net::kNpcStateCSize);
+    net::Reader r(w.data.data(), w.data.size());
+    net::NpcState b;
+    CHECK(net::read_npc_c(r, b, anchor));
+    CHECK(b.net_id == a.net_id && b.flags == a.flags && b.health == a.health);
+    CHECK(std::fabs(b.pos.x - a.pos.x) < 0.01f && std::fabs(b.pos.y - a.pos.y) < 0.01f && std::fabs(b.pos.z - a.pos.z) < 0.01f);
+    CHECK(std::fabs(b.vel.x - a.vel.x) < 0.006f && std::fabs(b.vel.z - a.vel.z) < 0.006f);
+    float dot = std::fabs(a.rot.x * b.rot.x + a.rot.y * b.rot.y + a.rot.z * b.rot.z + a.rot.w * b.rot.w);
+    CHECK(dot > 0.99999f);
+    net::Quat id; // the identity (w the largest)
+    net::Quat c = net::unpack_quat(net::pack_quat(id));
+    CHECK(std::fabs(c.w - 1.f) < 1e-4f && std::fabs(c.x) < 2e-3f);
+}
+
 int main(int argc, char** argv)
 {
+    if (!net_init()) return 1;
+    if (argc==2 && std::string(argv[1])=="--civ-economy") {
+        test_civ_economic_packet();
+        test_civ_religious_packet();
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n",g_fail);
+        return g_fail ? 1 : 0;
+    }
+    if (argc == 2 && std::string(argv[1]) == "--campaign-profiles") {
+        test_campaign_profiles();
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
         return fakepeer_host();
     // `--off <name>[,<name>]`: one wave 5 switch off (its test must fail), the rest on
@@ -4333,6 +4690,12 @@ int main(int argc, char** argv)
         {"test_welcome_split", test_welcome_split},
         {"test_recv_skip_big", test_recv_skip_big},
         {"test_dbpf_flag4", test_dbpf_flag4},
+        {"test_autosave_clock", test_autosave_clock},
+        {"test_civ_economic_packet", test_civ_economic_packet},
+        {"test_civ_religious_packet", test_civ_religious_packet},
+        {"test_bulk_choke", test_bulk_choke},
+        {"test_session_password", test_session_password},
+        {"test_campaign_profiles", test_campaign_profiles},
     };
     for (size_t i = 0; i < sizeof tests / sizeof tests[0]; i++) {
         if (!run_this(tests[i].first, i))

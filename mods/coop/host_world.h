@@ -153,7 +153,21 @@ inline MsgClass msg_class(uint8_t type)
     case net::MSG_PARTS: case net::MSG_FIELDS: case net::MSG_WSTATE: case net::MSG_PLAYER_RULE: case net::MSG_MIRROR_FX:
     case net::MSG_CIV_STATE: case net::MSG_CIV_BUILD: case net::MSG_CIV_ALARM:
         return MsgClass::HostWorld;
-    case net::MSG_NPC_STATE: case net::MSG_NPC_SPAWN: case net::MSG_NPC_DESPAWN: case net::MSG_DAMAGE_REQ:
+    // Lineages (merge 2026-11-15): the session and the player's own data, wherever the guest plays
+    case net::MSG_IDENTITY: case net::MSG_LIBRARY: case net::MSG_CAMPAIGN_RULES: case net::MSG_TRIBE_LATE:
+    case net::MSG_DNA_OWN: case net::MSG_START_PARTS: case net::MSG_MIGRATE: case net::MSG_PROGRESS_DEBT:
+    case net::MSG_SPACE_LAUNCH: case net::MSG_CREATURE_RESCUE: case net::MSG_TRIBE_OUTFIT: case net::MSG_ADVENTURE:
+    case net::MSG_HOST_RESTART:
+        return MsgClass::Session;
+    // Lineages: rows of the host's world (Tribe, Civ, the Drama Manager, Cell contact hits)
+    case net::MSG_TRIBE_BUILDINGS: case net::MSG_TRIBE_EQUIPMENT: case net::MSG_TRIBE_TOOLS:
+    case net::MSG_TRIBE_RELATIONSHIPS: case net::MSG_TRIBE_FOOD: case net::MSG_TRIBE_PERFORMANCE:
+    case net::MSG_TRIBE_COMBAT: case net::MSG_CIV_TURRETS: case net::MSG_CIV_ECONOMY: case net::MSG_CIV_INFLUENCE:
+    case net::MSG_DRAMA: case net::MSG_CELL_COMBAT:
+        return MsgClass::HostWorld;
+    case net::MSG_ADVENTURE_ACTORS: // Lineages: gated by the adventure module (its mission and place)
+        return MsgClass::Module;
+    case net::MSG_NPC_STATE: case net::MSG_NPC_STATE_C: case net::MSG_NPC_SPAWN: case net::MSG_NPC_DESPAWN: case net::MSG_DAMAGE_REQ:
     case net::MSG_NPC_RESYNC: case net::MSG_NPC_ANIM: case net::MSG_NPC_MEAT: case net::MSG_WOBJ: case net::MSG_EFFECT:
     case net::MSG_CIV_CMD: case net::MSG_UFO_STATE: case net::MSG_UFO_HIT: case net::MSG_UFO_DAMAGE: case net::MSG_SPACE:
         return MsgClass::Module;

@@ -15,6 +15,7 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "guest_pack.h"
 #include "modes.h"
 #include "sporekit_game.hpp"
 
@@ -22,7 +23,7 @@ namespace drama {
 
 static const SkHost* H;
 static SkMod* M;
-static const net::Session* S;
+static net::Session* S;
 
 static bool g_guest_events_fix = true;
 COOP_FIX("creature.guest_events", "BUG-0486", g_guest_events_fix,
@@ -33,6 +34,19 @@ COOP_FIX("creature.guest_events", "BUG-0486", g_guest_events_fix,
 static const char* kKind[9] = {"kind0", "night_predator", "ufo", "meteor", "baby_game", "rain",
                                "sea_monster", "creature_attack", "summon"};
 static unsigned g_mask = 1u << 2;
+// BUG-9131: meteors, rain storms and the night predator ran in each game by itself, at different times (the owner saw
+// meteors and the sky out of step between the players). The host's world owns them: a guest's own game starts
+// none of these; the meteor strike and the rain storm the host starts are started on the guests too (MSG_DRAMA);
+// the night predator is a creature the host's NPC sync already shows. Off: each game its own (0.7.8-lineages50).
+static bool g_shared_fix = true;
+COOP_FIX("creature.shared_events", "BUG-9131", g_shared_fix,
+         "creature: meteors and rain storms follow the host's (a guest starts none of its own); no night predator of a guest's own");
+// meteor strike, rain storm, and (owner, 2026-11-11: "the space ship wasn't synced") the UFO visit: on a guest the
+// host's UFO comes as its own game's UFO that takes nothing (player_rules: every creature is "epic" to its pick)
+static constexpr unsigned kRelay = (1u << 2) | (1u << 3) | (1u << 5);
+static constexpr unsigned kHostOnly = 1u << 1;            // night predator (the host's creature is mirrored)
+static bool g_from_host = false;                          // starting a kind the host sent
+static unsigned g_relayed_tx[9], g_relayed_rx[9];
 static unsigned g_started[9], g_refused[9];
 static void* g_last_event[9];
 // BUG-1059: the last events belong to the drama manager of their world (coop.drama read them after a load)
@@ -73,10 +87,7 @@ static unsigned g_flock_forgotten;
 // once the whole-planet re-alignment had removed villages the host's world has not, the event's start faulted
 // on a null (0xD521BA, data 0x120, lab 20261104-211318). The host's world has its own attacks (its members and
 // the animals' mirrors are what the guest shows): on a guest in Tribe the kind does not start.
-// `coop.fix tribe.guest_attacks off`: a guest starts it (0.7.6).
-static bool g_guest_attacks_fix = true;
-COOP_FIX("tribe.guest_attacks", "BUG-0564", g_guest_attacks_fix,
-         "tribe: a guest's own game starts no creature attack on a village (Drama Manager event of the host's world)");
+// (Its switch tribe.guest_attacks was retired 2026-11-12, roadmap 0e: stable since 0.7.7.)
 
 // BUG-1078: the creature attack event (kind 7) keeps its attacked tribe as a counted reference (object property
 // 0x5F11333): SpawnNpcTribe hands it the Nth NPC tribe the game makes (DramaManager_NoteNpcTribe 0xD516B0). A guest's
@@ -144,12 +155,27 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
     unsigned kind = ev ? *(const unsigned*)((const uint8_t*)ev + 0x14) : 99;
     if (kind < 9)
         g_last_event[kind] = ev;
-    bool tribe_attack = g_guest_attacks_fix && kind == 7 && game::mode_id() == modes::kTribe;
-    if (g_flock_relay && kind == 8 && is_guest() && game::in_creature_stage()) {
-        g_flock_refused++; // BUG-0736: the host makes it (player_rules sent the ability)
+    if (g_shared_fix && kind < 9 && (kRelay >> kind & 1) && S && S->role() == net::Role::Host && S->connected() &&
+        game::mode_id() == modes::kCreature) { // BUG-9131: the guests start it too
+        net::Writer w;
+        w.u8((uint8_t)kind);
+        S->broadcast_reliable(net::MSG_DRAMA, w);
+        g_relayed_tx[kind]++;
+    }
+    if (g_shared_fix && kind < 9 && ((kRelay | kHostOnly) >> kind & 1) && is_guest() && !g_from_host &&
+        game::mode_id() == modes::kCreature) {
+        if (g_refused[kind]++ < 5)
+            H->log(M, SK_INFO, "drama: %s is the host's world event: not started on its own here (creature.shared_events)", kKind[kind]);
         return;
     }
-    if (((g_guest_events_fix && kind < 9 && (g_mask >> kind & 1)) || tribe_attack) && is_guest()) {
+    bool tribe_attack = kind == 7 && game::mode_id() == modes::kTribe;
+    // BUG-9129: a guest's summon is the host's (its Summon Flock goes to the host as a request)
+    tribe_attack = tribe_attack || (kind == 8 && guest_pack::enabled());
+    if (g_flock_relay && kind == 8 && is_guest() && game::in_creature_stage() && !guest_pack::enabled()) {
+        g_flock_refused++; // BUG-0736: the host makes it (player_rules sent the ability); Lineages' guest pack wins
+        return;
+    }
+    if (((g_guest_events_fix && kind < 9 && (g_mask >> kind & 1)) || tribe_attack) && is_guest() && !g_from_host) {
         if (g_refused[kind]++ < 5)
             H->log(M, SK_INFO, "drama: this game would start its own %s event: not on a guest, the host's world has "
                                "its own (creature.guest_events)", kKind[kind]);
@@ -175,10 +201,59 @@ static uintptr_t a_Get, a_StartKind;
 using SummonUpdate_t = void(SK_THISCALL*)(void*, uint32_t);
 static SummonUpdate_t o_SummonUpdate;
 static unsigned g_flock_updates;
+static void* g_seen_summon; // the last summon event the game updated (tests: `coop.drama summon`)
+static uint32_t g_stale_tidied;
+static double g_summon_seen_at = -1e9;
+static bool g_flock_release = true; // (BUG-9245, its switch below)
+static void* flock_herd(void* ev);
+static std::pair<int, int> tidy_summon_list(void* herd);
+using SummonEnd_t = void(SK_THISCALL*)(void*);
+static SummonEnd_t o_SummonEnd;
+static void SK_THISCALL h_SummonEnd(void* ev); // decision 5CD (below)
+static uint32_t g_party_timeouts;
 static void SK_THISCALL h_SummonUpdate(void* ev, uint32_t a)
 {
+    g_seen_summon = ev;
+    if (ev && skg::readable(ev, 0x10) && ((const uint8_t*)ev)[0xC])
+        g_summon_seen_at = H->time_seconds();
+    // BUG-9245: a summon past its time (one a save brought back, one whose flock went to a partner) drops the creatures
+    // that left its herd, so it can end; while its time runs, the game's start may still be placing them
+    if (g_flock_release && ev && skg::readable(ev, 0x64) && ((const uint8_t*)ev)[0xC] && skg::field<float>(ev, 0x2C) < 0.f)
+        if (auto n = tidy_summon_list(flock_herd(ev)); n.second) {
+            g_stale_tidied++;
+            H->log(M, SK_INFO, "drama: a summon event %.0f s past its time: %d creature(s) that left its herd out of its list, "
+                   "%d left (BUG-9245)", -skg::field<float>(ev, 0x2C), n.second, n.first);
+        }
     if (g_flock_forget && ev && ev == g_flock_event && !((const uint8_t*)ev)[0xC])
         forget_flock("its update found it inactive"); // BUG-0800
+    // decision 5CD: a partner's summon runs inside that partner's own pack (its leader, its list, its count). 5 s past its
+    // time it ends the way the manager ends an event (+0xC = 0, then its end, inside the party: the flock leaves the
+    // partner's pack): its own "done?" waits for the flock to be 100 m from its leader, and a partner's flock stays at
+    // its side (runtime 2026-11-17: 32 s past its time, still active, every summon of the world refused meanwhile)
+    if (ev && ev == g_flock_event && guest_pack::party_mode() && skg::readable(ev, 0x64) && ((uint8_t*)ev)[0xC] &&
+        skg::field<float>(ev, 0x2C) < -5.f) {
+        ((uint8_t*)ev)[0xC] = 0;
+        h_SummonEnd(ev);
+        g_party_timeouts++;
+        return;
+    }
+    // any other summon a minute past its time (one a save brought back with its flock still in its herd, one the mod lost
+    // track of) ends the same way: else no Summon Flock of anyone starts again in that world
+    if (g_flock_release && ev && ev != g_flock_event && skg::readable(ev, 0x64) && ((uint8_t*)ev)[0xC] &&
+        skg::field<float>(ev, 0x2C) < -60.f) {
+        H->log(M, SK_INFO, "drama: a summon event %.0f s past its time ends now (the game's end, BUG-9245)", -skg::field<float>(ev, 0x2C));
+        ((uint8_t*)ev)[0xC] = 0;
+        o_SummonEnd(ev);
+        g_party_timeouts++;
+        return;
+    }
+    if (ev && ev == g_flock_event && guest_pack::party_mode())
+        if (const size_t tok = guest_pack::party_enter_puppet(g_flock_puppet)) {
+            o_SummonUpdate(ev, a);
+            guest_pack::party_leave_token(tok);
+            g_flock_updates++;
+            return;
+        }
     void* nm = ev && ev == g_flock_event && g_flock_relay ? game::noun_manager() : nullptr;
     void* pup = g_flock_puppet;
     if (!nm || !pup || !game::is_puppet(pup) || !game::object_alive(pup)) {
@@ -197,11 +272,29 @@ static void SK_THISCALL h_SummonUpdate(void* ev, uint32_t a)
     g_flock_updates++;
 }
 
-void init(const SkHost* host, SkMod* mod, const net::Session* sess)
+// decision 5CD: the summon's end (vt+0x34, SporeCoop::SummonEvent_End) takes each listed creature out of the pack
+// (cPosseSimulator_RemoveMember): a partner's flock leaves that partner's pack, inside its party
+static uint32_t g_party_ends;
+static void SK_THISCALL h_SummonEnd(void* ev)
+{
+    if (ev && ev == g_flock_event && guest_pack::party_mode())
+        if (const size_t tok = guest_pack::party_enter_puppet(g_flock_puppet)) {
+            o_SummonEnd(ev);
+            guest_pack::party_leave_token(tok);
+            g_party_ends++;
+            H->log(M, SK_INFO, "drama: a partner's summon ended inside its own pack (decision 5CD)");
+            return;
+        }
+    o_SummonEnd(ev);
+}
+
+void init(const SkHost* host, SkMod* mod, net::Session* sess)
 {
     H = host;
     M = mod;
     S = sess;
+    if (uintptr_t u = H->sym("SporeCoop::SummonEvent_End"))
+        H->hook_create(M, (void*)u, (void*)h_SummonEnd, (void**)&o_SummonEnd);
     uintptr_t a = H->sym("SporeCoop::DramaManager_StartEvent");
     a_Get = H->sym("SporeCoop::DramaManager_Get");
     a_StartKind = H->sym("SporeCoop::DramaManager_StartKind");
@@ -256,6 +349,100 @@ bool summon_for(void* puppet)
     return ok;
 }
 
+// BUG-9245: the summon event's "done?" (vt+0x3C, Steam 0xC3D2F0) is true only when its herd's list (prop 0x609F2F8 ->
+// vt+0xC(0x52AA6117), +0x40..+0x44) is empty or every creature in it has +0x135 == 0; only its update's end clears that
+// flag, for a member over 100 m from the leader. The duration alone ends nothing (the manager tick only counts it down).
+// A partner's flock is handed to that partner's pack and stays at its side, so the event never ended: no later Summon
+// Flock started, the host's included ("none idle"), and a save kept it so. On: the list drops the creatures that left
+// the summon's herd (tidy_summon_list) at the hand-over and on every update of a summon past its time; an empty list
+// ends the event at the manager's next tick, and its end (vt+0x34) finds nobody to send back: the end returns every
+// listed creature to the game's pool (runtime 2026-11-16: at (0 0 0), herd 0; the pool later gave the objects out as
+// other creatures, BUG-9247). +0x135 stays set: a creature with +0x135 == 0 is no longer updated by the game (runtime
+// 2026-11-16: the first version of this fix cleared it and the flock stood frozen). Off: 63-dev (the event runs on).
+COOP_FIX("creature.flock_release", "BUG-9245", g_flock_release,
+         "creature: a partner's Summon Flock event ends once its flock is the partner's (later summons start, the flock stays)");
+
+static void* flock_herd(void* ev)
+{
+    void** b = skg::field<void**>(ev, 0x5C);
+    void** e = skg::field<void**>(ev, 0x60);
+    if (!b || e <= b || e - b > 64 || !skg::readable(b, (e - b) * sizeof(void*)))
+        return nullptr;
+    for (void** p = b; p + 1 < e + 1 && p < e; p += 2) // (key, object) pairs
+        if ((uint32_t)(uintptr_t)p[0] == 0x609F2F8u && p[1] && skg::readable(p[1], 4))
+            return skg::vcall<void*>(p[1], 0xC / 4, 0x52AA6117u);
+    return nullptr;
+}
+
+// The summon herd's list keeps only the creatures still in that herd: a partner's flock is in the partner's pack's herd
+// by now (BUG-9233), an entry may be another object at a freed address, and a save keeps the list as it was (BUG-9245:
+// a world saved with a partner's flock out held its summon event active after the load, 9 min past its time, every
+// Summon Flock refused). The game never takes a creature out of this list when it changes herd (Creature_SetHerd).
+// An empty list makes "done?" true: the game's own end runs at the manager's next tick and finds nobody to take back
+// (it returns every listed creature to the game's pool, BUG-9247). Creatures still in the herd (the host's own flock)
+// stay listed: the game goes on with them as before. Returns {kept, taken out}.
+static std::pair<int, int> tidy_summon_list(void* herd)
+{
+    if (!herd || !skg::readable(herd, 0x48))
+        return {0, 0};
+    void** b = skg::field<void**>(herd, 0x40);
+    void** e = skg::field<void**>(herd, 0x44);
+    if (!b || e <= b || e - b > 64 || !skg::readable(b, (e - b) * sizeof(void*)))
+        return {0, 0};
+    void** w = b;
+    int out = 0;
+    for (void** p = b; p < e; ++p) {
+        void* c = *p;
+        if (c && skg::readable(c, 0x1680) && game::object_alive(c) && game::herd_of(c) == herd)
+            *w++ = c;
+        else
+            out++;
+    }
+    skg::field<void**>(herd, 0x44) = w; // (the vector's end moves back; its buffer stays the herd's)
+    return {(int)(w - b), out};
+}
+
+bool end_flock_event()
+{
+    void* ev = g_flock_event;
+    if (!ev || !skg::readable(ev, 0x64) || !((const uint8_t*)ev)[0xC])
+        return false;
+    skg::field<uint32_t>(ev, 0x2C) = 0; // the duration left (docs/re/creature.md#creature-c2-audit-0713)
+    std::pair<int, int> n{0, 0};
+    if (g_flock_release)
+        n = tidy_summon_list(flock_herd(ev));
+    H->log(M, SK_INFO, "drama: the partner's summon event ends now (its flock leaves the host's pack, BUG-9233; %d out of its "
+           "list, %d left in it, BUG-9245)", n.second, n.first);
+    return true;
+}
+
+bool summon_running() { return H && H->time_seconds() - g_summon_seen_at < 2.0; }
+void* summon_puppet() // decision 5FA: the partner's puppet whose summon runs now (null: none, or the host's own)
+{
+    return summon_running() && g_flock_event && g_seen_summon == g_flock_event && skg::readable(g_flock_event, 0x10) &&
+                   ((const uint8_t*)g_flock_event)[0xC]
+               ? g_flock_puppet
+               : nullptr;
+}
+
+bool host_ufo_here() { return g_shared_fix && is_guest(); }
+
+void on_message(uint8_t from, net::Reader& r)
+{
+    uint8_t kind = r.u8();
+    if (!r.ok() || from != 0 || !is_guest() || kind > 8 || !(kRelay >> kind & 1) || !g_shared_fix ||
+        game::mode_id() != modes::kCreature)
+        return;
+    void* mgr = a_Get ? skg::cdecl_call<void*>(a_Get) : nullptr;
+    if (!mgr || !a_StartKind)
+        return;
+    g_relayed_rx[kind]++;
+    g_from_host = true;
+    skg::thiscall<void>(a_StartKind, mgr, (int)kind, 0);
+    g_from_host = false;
+    H->log(M, SK_INFO, "drama: the host's %s starts here too", kKind[kind]);
+}
+
 std::string debug(const std::vector<std::string>& a)
 {
     char b[256];
@@ -270,6 +457,34 @@ std::string debug(const std::vector<std::string>& a)
         skg::thiscall<void>(a_StartKind, mgr, (int)kind, 0);
     }
     std::string out;
+    if (a.size() >= 1 && (a[0] == "summon" || a[0] == "endsummon")) {
+        // tests (BUG-9245): the last summon event the game updated, its list; endsummon: the list tidied now (the
+        // game's own end follows at the manager's next tick when nobody is left)
+        void* ev = g_seen_summon;
+        if (!ev || !skg::readable(ev, 0x64))
+            return "no summon event updated yet\n";
+        void* herd = flock_herd(ev);
+        if (a[0] == "endsummon") {
+            auto n = tidy_summon_list(herd);
+            snprintf(b, sizeof b, "tidied: %d left, %d out of the list\n", n.first, n.second);
+            out += b;
+        }
+        snprintf(b, sizeof b, "summon event %p active=%d duration=%.1f herd=%p ours=%d\n", ev, (int)((uint8_t*)ev)[0xC],
+                 skg::field<float>(ev, 0x2C), herd, (int)(ev == g_flock_event));
+        out += b;
+        void** lb = herd && skg::readable(herd, 0x48) ? skg::field<void**>(herd, 0x40) : nullptr;
+        void** le = lb ? skg::field<void**>(herd, 0x44) : nullptr;
+        for (void** p = lb; p && le > lb && le - lb <= 64 && p < le; ++p) {
+            void* c = *p;
+            const bool ok = c && skg::readable(c, 0x1680);
+            snprintf(b, sizeof b, "  %p alive=%d herd=%p in_herd=%d b135=%d species=%08X hp=%.1f\n", c,
+                     ok ? (int)game::object_alive(c) : -1, ok ? game::herd_of(c) : nullptr, ok && game::herd_of(c) == herd,
+                     ok ? (int)skg::field<uint8_t>(c, 0x135) : -1, ok ? game::species_instance(c) : 0u,
+                     ok ? game::health(c) : -1.f);
+            out += b;
+        }
+        return out;
+    }
     if (a.size() >= 1 && a[0] == "target") {
         // BUG-1078 tests: the creature attack event's attacked tribe (object property 0x5F11333); `target <obj hex>`
         // sets it with the game's own setter, as SpawnNpcTribe does for the NPC tribe of its pick (0xD516B0)
@@ -322,8 +537,9 @@ std::string debug(const std::vector<std::string>& a)
         const uint8_t* ev = (const uint8_t*)g_last_event[k];
         if (!ev && !g_started[k] && !g_refused[k])
             continue;
-        snprintf(b, sizeof b, "  %-16s started=%u refused=%u event=%p active=%d\n", kKind[k], g_started[k], g_refused[k],
-                 (const void*)ev, ev && skg::readable(ev + 0xC, 1) ? (int)ev[0xC] : -1); // BUG-1059
+        snprintf(b, sizeof b, "  %-16s started=%u refused=%u relayed_tx=%u relayed_rx=%u event=%p active=%d\n", kKind[k],
+                 g_started[k], g_refused[k], g_relayed_tx[k], g_relayed_rx[k], (const void*)ev,
+                 ev && skg::readable(ev + 0xC, 1) ? (int)ev[0xC] : -1); // BUG-1059
         out += b;
     }
     return out;

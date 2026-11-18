@@ -34,14 +34,24 @@ struct Ctx {
     // this frame's world); a Cell cell, a Tribe marker, a freed or reused one: null
     std::function<void*(uint8_t id)> puppet_live;
     std::function<bool(uint8_t id)> airborne;   // player id's latest state says its creature is in the air (PF_JUMPING)
+    std::function<void(const std::string&)> feed; // a line in this player's own feed (decision 5FA)
 };
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx);
 void on_message(uint8_t type, uint8_t from, net::Reader& r); // MSG_PLAYER_RULE
 std::string status();
 void tick(double now); // once a frame: the host's drama UFOs to the guests, their mirrors on a guest (BUG-0558)
-bool air_hit_now(); // host: inside a melee hit on an airborne partner's puppet: carry no damage to the partner (BUG-0555)
+bool local_pack_add(void* posse, void* c); // guest (decision 5CD phase 2): the game's recruit of a proxy into this game's pack
+bool air_hit_now();
+// decision 5FA: the party's Summon Flock lock. AbilityBar_Use of the avatar's Summon Flock is refused (with a feed line)
+// while the party has its limit of summons out; the host decides and tells the guests (K_SUMMONLOCK)
+bool summon_blocked(int ability_index);
+void set_summon_limit(int n); // host (tests, party tuning later): summons out at once in the party
+std::string summon_lock_status();
+bool debug_bar_use(uint32_t type); // tests: the avatar's ability of that type pressed on the bar // host: inside a melee hit on an airborne partner's puppet: carry no damage to the partner (BUG-0555)
 uint32_t hit_ability_type(); // the ability type (+8) of the creature ability hit running now, 0 none (BUG-0555)
+// BUG-9132: inside the own avatar's attack (CreatureAttackTarget): its area hits on others come with no attacker
+bool own_attack_running();
 // guest, MSG_DAMAGE: the hit of a melee ability from an NPC 1 m or more away while the own creature is in the air (BUG-0555)
 bool guest_drops_air_hit(void* avatar, void* attacker, uint32_t ability);
 

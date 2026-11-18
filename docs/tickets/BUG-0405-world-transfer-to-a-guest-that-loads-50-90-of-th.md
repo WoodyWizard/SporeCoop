@@ -75,7 +75,32 @@ Unit test net_tests `bulk_busy_receiver` (make test) runs each case with the swi
 (the simulated transfer collapses: 100 % resends), PASSES on: 0 resends, 40 ms / 3 %: 59 % -> 3 %, 150 ms / 10 %:
 50 % -> 10 %, never slower.
 
+Lineages selective port (2026-11-07, fix/lineages-player-session, 75b3901b; tests/world_transfer_tests.cpp,
+tests/net_tests.cpp): FAIL in out/player-report-20261107-223741/transfer-before.log; PASS in
+transfer-after.log and transfer-repeat.log in that same folder. Full net-regression.log is ALL OK. Native
+delayed-rejoin-final.log passes against the final Lineages 28 binary. See the selective-port section below.
+
+## Lineages selective port (2026-11-07)
+
+Historical: replaced by upstream's implementation in the 0.7.8 merge. Upstream
+v0.7.9 connection.cpp/session.cpp provides the validated implementation: urgent
+acknowledgements while draining receive bursts, and retransmission only with
+newer acknowledged traffic or a longer timeout. Guard: net.bulk_acks. Wire format
+unchanged. See docs/re/cell.md#cell-lineages-player-report.
+
+Verification: out/player-report-20261107-223741/transfer-before.log is FAIL;
+transfer-after.log and transfer-repeat.log are PASS (five cases). Full Windows
+net-regression.log is ALL OK. Native delayed-rejoin.log completed in 13.75 s;
+the final versioned binary completed in 19.78 s (delayed-rejoin-final.log), both
+with loopback 60 ms each way and deterministic 2% loss. No claim of the same
+throughput on the player's physical connection.
+
 ## History
+- 2026-11-07: Lineages 27 player report has a 2.7 MiB transfer taking 539.8 seconds
+  to queue over a roughly 130 ms RTT link, with heavy retransmissions. The fork
+  lacks upstream bulk_acks. Selective port tracked with BUG-9096.
 - 2026-11-01: opened.
 - 2026-11-04: fixed on fix/w41-infra (net.bulk_acks), measured before / after.
 - 2026-11-04: released in 0.7.5.
+- 2026-11-10: 0.7.8 merge into Lineages: upstream's net.bulk_acks is kept; the Lineages selective
+  port (75b3901b) is replaced by it.

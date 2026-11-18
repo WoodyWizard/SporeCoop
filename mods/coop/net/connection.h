@@ -38,6 +38,9 @@ struct AckBits {
     bool test(unsigned k) const { return k < 128 && (((k < 64 ? lo : hi) >> (k & 63)) & 1); }
 };
 constexpr unsigned kAckWindow = 128;
+constexpr uint32_t kPacedWorldIntervalMs = 40;
+constexpr size_t kPacedWorldChunkBytes = 384;
+constexpr size_t kPacedWorldWindow = 12;
 // reliable messages the receiver buffers ahead of a missing one; the sender never sends a message
 // this far past the oldest unacknowledged one, so the buffer can never overflow (it used to drop the
 // message of a packet it still acknowledged: lost for good, the world transfer stalled forever)
@@ -117,10 +120,9 @@ public:
     }
 
     // Builds the next datagram if anything is due (messages, acks, keepalive).
-    bool build_packet(uint32_t now, std::vector<uint8_t>& out);
+    bool build_packet(uint32_t now, std::vector<uint8_t>& out, bool pace_world = false);
     // Parses a datagram, updates acks, delivers messages in order. false = invalid packet.
     bool on_packet(const uint8_t* data, size_t n, uint32_t now, const Deliver& deliver);
-
     // BUG-0405: so many packets arrived since our last one that the oldest of them would fall out
     // of the ack bits of the next one: acknowledge now, not at the end of the frame
     bool ack_urgent() const { return g_fix.bulk_acks && recv_since_send_ >= kAckEvery; }
@@ -159,6 +161,25 @@ private:
     bool have_remote_ = false;
     bool ack_pending_ = false;
     uint32_t last_send_ms_ = 0;
+    // paced world transfer (Lineages): when the last world chunk went out
+    uint32_t last_world_chunk_ms_ = 0;
+    bool sent_world_chunk_ = false;
+    // BUG-9098 (net.pacing): packets that carry reliable messages go out at a rate measured from what the peer
+    // acknowledges (a token bucket refilled at pace_rate_ packets per ms). A path that drops bursts (a phone
+    // hotspot, hotel Wi-Fi: 4 of 80 game-sized datagrams in a burst arrived, 27 of 80 spaced) no longer gets 40+
+    // packets per frame. Random loss does not shrink the rate (it follows delivered x 1.25, or x 1.05 at heavy loss).
+    void pace_refill(uint32_t now);
+    void pace_update(uint32_t now);
+    double pace_tokens_ = 8;
+    uint32_t pace_refill_ms_ = 0, pace_win_start_ = 0;
+    uint32_t pace_sent_win_ = 0, pace_acked_win_ = 0, pace_resent_win_ = 0;
+    bool pace_limited_win_ = false;
+public:
+    double pace_rate_ = 0.5; // packets per ms (0.5 = 500 per second, ~600 KB/s), adapts
+    uint32_t pace_holds = 0; // packets with reliable messages held back by the rate (diagnostics)
+    static constexpr double kPaceMin = 0.02, kPaceMax = 12.0; // 20 to 12000 packets per second
+    static constexpr float kPaceLanRtt = 20.f;                 // below: no pacing (a LAN never needs it)
+private:
     // BUG-0405: packets received since our last packet (its ack bits cover 128 back), and the newest
     // of our packets the peer acknowledged (a message sent before it and not acknowledged is lost)
     unsigned recv_since_send_ = 0;

@@ -11,8 +11,15 @@ bool g_fix = true;
 COOP_FIX("map.click", "BUG-0090 BUG-0145", g_fix, "space: map name tags react only to clicks in the game window");
 static HHOOK g_hook;
 static HWND g_wnd;
+static bool (*g_fov_wheel)(int);
+static bool (*g_graphics_input)(unsigned, uintptr_t, int, int);
+static bool (*g_list_input)(unsigned, uintptr_t, int, int);
+static bool (*g_depth_input)(unsigned, uintptr_t, int, int);
+static bool (*g_tribe_input)(unsigned, uintptr_t, int, int); // BUG-9154: right presses on a party member's hut
+static bool (*g_remap)(unsigned, int&, int&);                  // BUG-9191: the scaled UI's unscaled places
 static volatile uint32_t g_clicks;
 static volatile int g_x, g_y;
+static volatile int g_mx = -1, g_my = -1; // the last mouse move over the game window (client pixels)
 static std::u16string g_chars; // BUG-0482: WM_CHAR seen since the last take_chars (main thread)
 static size_t g_click_pos = std::u16string::npos; // BUG-0551: where in g_chars the last click came
 static bool g_own_armed, g_last_own;
@@ -36,7 +43,69 @@ static bool ours(HWND w)
 static LRESULT CALLBACK proc(int code, WPARAM wp, LPARAM lp)
 {
     if (code == HC_ACTION && wp == PM_REMOVE && lp) {
-        const MSG* m = (const MSG*)lp;
+        MSG* m = (MSG*)lp;
+        // BUG-9191 (3H): first, so the game and every handler below see the point the UI's layout expects
+        if (g_remap && ours(m->hwnd) && ((m->message >= WM_MOUSEFIRST && m->message <= WM_MBUTTONDBLCLK) ||
+                                         m->message == WM_MOUSEWHEEL)) {
+            POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
+            if (m->message == WM_MOUSEWHEEL)
+                ScreenToClient(g_wnd, &p);
+            else if (m->hwnd != g_wnd)
+                MapWindowPoints(m->hwnd, g_wnd, &p, 1);
+            int x = p.x, y = p.y;
+            if (g_remap(m->message, x, y)) {
+                p = {x, y};
+                if (m->message == WM_MOUSEWHEEL)
+                    ClientToScreen(g_wnd, &p);
+                else if (m->hwnd != g_wnd)
+                    MapWindowPoints(g_wnd, m->hwnd, &p, 1);
+                m->lParam = MAKELPARAM((WORD)(short)p.x, (WORD)(short)p.y);
+            }
+        }
+        if (g_list_input && ours(m->hwnd) &&
+            (m->message == WM_MOUSEWHEEL || m->message == WM_LBUTTONDOWN ||
+             m->message == WM_LBUTTONUP || m->message == WM_MOUSEMOVE)) {
+            POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
+            if (m->message == WM_MOUSEWHEEL)
+                ScreenToClient(g_wnd, &p);
+            else if (m->hwnd != g_wnd)
+                MapWindowPoints(m->hwnd, g_wnd, &p, 1);
+            if (g_list_input(m->message, m->wParam, p.x, p.y))
+                m->message = WM_NULL;
+        }
+        // BUG-9103: the creature editor's depth square takes its own presses, drags and releases
+        if (g_depth_input && ours(m->hwnd) &&
+            (m->message == WM_LBUTTONDOWN || m->message == WM_LBUTTONUP || m->message == WM_MOUSEMOVE)) {
+            POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
+            if (m->hwnd != g_wnd)
+                MapWindowPoints(m->hwnd, g_wnd, &p, 1);
+            if (g_depth_input(m->message, m->wParam, p.x, p.y))
+                m->message = WM_NULL;
+        }
+        if (g_tribe_input && ours(m->hwnd) && (m->message == WM_RBUTTONDOWN || m->message == WM_RBUTTONUP)) {
+            POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
+            if (m->hwnd != g_wnd)
+                MapWindowPoints(m->hwnd, g_wnd, &p, 1);
+            if (g_tribe_input(m->message, m->wParam, p.x, p.y))
+                m->message = WM_NULL;
+        }
+        if (g_graphics_input && ours(m->hwnd) &&
+            g_graphics_input(m->message, m->wParam, (short)LOWORD(m->lParam), (short)HIWORD(m->lParam)))
+            m->message = WM_NULL;
+        // BUG-9099: the key must be physically down now. The queue's key state (MK_CONTROL,
+        // GetKeyState) stays "down" when Ctrl was released in another window, and then every
+        // plain scroll widened the lens instead of zooming.
+        if (m->message == WM_MOUSEWHEEL && ours(m->hwnd) && g_fov_wheel &&
+            (LOWORD(m->wParam) & MK_CONTROL) && (GetAsyncKeyState(VK_CONTROL) & 0x8000) &&
+            g_fov_wheel((short)HIWORD(m->wParam)))
+            m->message = WM_NULL;
+        if (m->message == WM_MOUSEMOVE && ours(m->hwnd)) {
+            POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
+            if (m->hwnd != g_wnd)
+                MapWindowPoints(m->hwnd, g_wnd, &p, 1);
+            g_mx = p.x;
+            g_my = p.y;
+        }
         if ((m->message == WM_LBUTTONDOWN || m->message == WM_LBUTTONDBLCLK) && ours(m->hwnd)) {
             POINT p{(short)LOWORD(m->lParam), (short)HIWORD(m->lParam)};
             if (m->hwnd != g_wnd)
@@ -73,6 +142,13 @@ void install(const void* game_window)
         return;
     g_hook = SetWindowsHookExW(WH_GETMESSAGE, proc, nullptr, GetCurrentThreadId());
 }
+
+void set_fov_wheel(bool (*handler)(int delta)) { g_fov_wheel = handler; }
+void set_tribe_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_tribe_input = handler; }
+void set_remap(bool (*handler)(unsigned, int&, int&)) { g_remap = handler; }
+void set_graphics_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_graphics_input = handler; }
+void set_list_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_list_input = handler; }
+void set_depth_input(bool (*handler)(unsigned, uintptr_t, int, int)) { g_depth_input = handler; }
 
 void shutdown()
 {

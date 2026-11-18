@@ -1,12 +1,17 @@
+#include "down_time.h"
 #include "tribe.h"
+#include "chief_arrival.h"
+#include "creature_hp.h"
 #include "call_guard.h"
 #include "lifecycle.h"
 #include "player_life.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <initializer_list>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
@@ -14,10 +19,22 @@
 #include "civ.h"
 #include "coop_ui.h"
 #include "creations.h"
+#include "founders.h"
+#include "identity.h"
+#include "party.h"
+#include "tribe_late.h"
+#include "tribe_seats.h"
+#include "world.h"
 #include "driver.h"
 #include "effects.h"
 #include "game.h"
+#include "progress_debt.h"
 #include "modes.h"
+#include "mouse.h"
+#include "shared.h"
+#include "party_food.h"
+#include "gamefixes.h"
+#include "notify.h"
 #include "npc.h"
 #include "savestrip.h"
 #include "space_ext.h"
@@ -29,6 +46,7 @@
 #include "net/interp.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
+#include "give_up.h"
 #include "fixes.h"
 #include "settings.h"
 #include "fields.h"
@@ -45,7 +63,9 @@ static bool g_ok;
 
 // ---- layout (docs/re/tribe.md) ----
 constexpr uint32_t kTribeNoun = 0x18C6D19;
+constexpr uint32_t kHutNoun = 0x1E4DAAE, kToolNoun = 0x18C8F0C;
 constexpr uintptr_t kMembersOff = 0x340;   // cTribe: vector<cCreatureCitizen*>
+constexpr uintptr_t kNativeLeaderOff = 0x11C; // cCommunity::mpLeader
 constexpr uintptr_t kTribePosOff = 0x124;  // cTribe spatial position
 constexpr uintptr_t kOwnerTribeOff = 0x1014; // cCreatureCitizen::mpOwnerTribe
 constexpr uintptr_t kAgeOff = 0xB34;       // 0 baby, 1 adult
@@ -55,7 +75,7 @@ constexpr uint32_t kTreeNoun = 0x6ABEE7E;    // cTreeData (planet flora: fruit t
 static uintptr_t a_TreeVt;    // Simulator::cTreeData::vftable (main vtable)
 
 static uintptr_t a_GetPlayerTribe, a_DoAction, a_SetValueVector3, a_BTTick, a_DoActionForObjects, a_WalkSelected,
-    a_SetSelected, a_CreateCitizen, a_AddMember, a_SpawnNpcTribe, a_MaxPop;
+    a_SetSelected, a_CreateCitizen, a_AddMember, a_SpawnNpcTribe, a_SetChieftain, a_SetLeader, a_MaxPop;
 
 template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
@@ -71,10 +91,38 @@ COOP_FIX("tribe.away", "BUG-0151", g_fix_away, "tribe: while the host is away th
 static uint32_t g_away_orders;
 static bool local_play() { return g_fix_away && is_guest() && C.host_away && C.host_away(); }
 
-static void* player_tribe()
+// BUG-9153: while a guest's game shows its own village as the player's (tribe.own_player_village, persp_update), the
+// mod keeps meaning the host's village by player_tribe(); native_player_tribe() is the game's field
+static void* g_persp_host;
+static void* g_own_village; // guest: its own village (members it owns outside the host's), refreshed by guest_tick (BUG-9152)
+static bool g_own_player = true; // tribe.own_player_village (BUG-9153, the switch below)
+static bool g_food_share = true; // tribe.food_share (BUG-9154, the switch with party_gift)
+static bool g_party_wipe = true; // tribe.party_wipe (BUG-9155, the switch with party_wipe)
+static void* native_player_tribe()
 {
     void* nm = game::noun_manager();
     return nm ? thiscall<void*>(a_GetPlayerTribe, nm) : nullptr;
+}
+static void* player_tribe()
+{
+    if (g_persp_host && game::object_alive(g_persp_host)) return g_persp_host;
+    return native_player_tribe();
+}
+// BUG-9153: Tribe_HutStateIs2 (C90730) reads tribe->mpHut without a null check; the Tribe UI's ring code called it
+// for a citizen whose owner had no hut right after a guest's game showed its own village as the player's (MSI crash
+// 2026-11-12 14:07, read of 0x154). A tribe without a hut has no hut in that state: false.
+static uint32_t g_hutless_reads;
+static void* g_hutless_last;
+using HutState_t = bool(SK_THISCALL*)(void*);
+static HutState_t o_HutState;
+static bool SK_THISCALL h_HutState(void* tribe)
+{
+    if (!tribe || IsBadReadPtr((uint8_t*)tribe + 0x368, 4) || !F<void*>(tribe, 0x368)) {
+        ++g_hutless_reads;
+        g_hutless_last = tribe;
+        return false;
+    }
+    return o_HutState(tribe);
 }
 
 static bool is_citizen(void* c) { return c && !IsBadReadPtr(c, 8) && *(uintptr_t*)c == a_CitizenVt; }
@@ -305,6 +353,56 @@ static std::unordered_map<uint16_t, void*> g_hm_by_id;
 static uint16_t g_next_id = 1;
 static uint32_t g_player_members_seen = 0;
 static std::vector<uint8_t> g_split_for; // player ids the player tribe was split for
+static founders::Roster g_order_roster; // host opt-in for this world and session only
+// BUG-9135 (roadmap phase 3, docs/re/tribe.md#tribe-multi-founders): up to four founders, the host and up to three
+// partners, each partner with a village of their own: founding per unseated partner, orders, food, rescue, outfits and
+// performances per founder seat, and the campaign rules counting every founder. `coop.fix tribe.multi_founders off`:
+// the two-founder co-op as before (exactly two players, seat 1 the only partner).
+static bool g_multi_founders = true;
+COOP_FIX("tribe.multi_founders", "BUG-9135", g_multi_founders,
+         "tribe: a village of their own for every partner (up to four founders); orders, food, rescue and outfits per seat");
+static founders::Outfits g_outfits;
+struct OutfitVote {
+    uint32_t world = 0, token = 0, previous = 0, model = 0;
+    uint8_t owner = 0;
+    bool ready = false, saved = false, host_entered = false;
+};
+static OutfitVote g_outfit; // guest: its own outfit vote
+// host: the outfit vote of each partner founder seat (1..); with tribe.multi_founders off seat 1 only (BUG-9135)
+static std::array<OutfitVote, founders::kMaxSeats> g_votes;
+static uint32_t g_outfit_serial;
+static bool g_outfit_queued;
+static double g_outfit_poll;
+static double g_outfit_settled;
+static bool g_outfit_recovery = true;
+COOP_FIX("tribe.outfit_recovery", "BUG-9044", g_outfit_recovery,
+         "tribe: accept a new voted outfit from a recognized earlier founder appearance");
+static bool founder_model(size_t seat, uint32_t model)
+{
+    return model && (g_outfits.contains(seat, model) || g_order_roster.entries[seat].species == model);
+}
+static bool g_restore_village_orders = true;
+static bool g_guest_order_mode;
+static bool g_repair_requested, g_repair_served, g_guest_orders_held;
+static double g_extra_since = -1;
+static uint32_t g_form_skipped;
+static int g_food_cycle = -1;
+static float g_home_food = -1, g_guest_food = -1; // guest: the host's village and its own
+static std::array<float, founders::kMaxSeats> unknown_food()
+{
+    std::array<float, founders::kMaxSeats> food;
+    food.fill(-1);
+    return food;
+}
+static std::array<float, founders::kMaxSeats> g_seat_food = unknown_food(); // host: every founder village's food by seat
+static size_t founder_seats();
+bool village_orders() { return is_host() ? g_order_roster.guest().faction != 0 : g_guest_order_mode; }
+std::string village_food_line()
+{
+    if (!village_orders()) return {};
+    if (is_host()) return tribe_seats::food_line_host(g_seat_food.data(), founder_seats());
+    return tribe_seats::food_line_guest(g_home_food, g_guest_food, g_multi_founders);
+}
 // BUG-0671 (below, h_BabyBorn)
 using BabyBorn_t = void(SK_THISCALL*)(void*, float, float, float);
 static BabyBorn_t o_BabyBorn;
@@ -313,9 +411,52 @@ static double g_last_send;
 static uint16_t g_cycle;
 static uint32_t g_cmds_done, g_cmds_rejected;
 static std::string g_last_cmd; // the last order (guest: sent, host: done or why it was rejected), tests
+struct PerformanceDispatch {
+    uint32_t sequence = 0;
+    unsigned target = 0, requested = 0, dispatched = 0, records = 0;
+    bool deferred = false;
+};
+static PerformanceDispatch g_perform_dispatch;
 static std::string g_last_local; // the host's own last order (tests)
 static uint32_t g_local_orders;
 static uint32_t g_gifts;
+
+struct FounderRescue {
+    uint16_t member = 0;
+    uint32_t faction = 0;
+    double until = 0, near_since = -1, grace_until = 0;
+    net::Vec3 anchor;
+    uint32_t attacker_faction = 0;
+    bool hut_down = false;
+    bool gave_up = false; // BUG-9118: the founder gave up (hold G / a guest's CMD_GIVE_UP): the timer's result now
+};
+// by founder seat (BUG-9135; two seats before): the host's rescues, a guest's view of them from MSG_TRIBE_STATE
+static std::array<FounderRescue, founders::kMaxSeats> g_founder_rescues;
+static std::array<std::pair<uint16_t, double>, founders::kMaxSeats> g_remote_rescues;
+// BUG-9118: a downed founder waits 30 s for its partner (10 before); `coop.fix tribe.down_30 off`: 10 s
+static bool g_down_30 = true;
+COOP_FIX("tribe.down_30", "BUG-9118", g_down_30, "tribe: a downed last villager or village waits 30 s for the partner (10 before)");
+static double down_time() { return downed::seconds(g_down_30, 10.0); } // BUG-9149: a minute (core.down_60)
+static bool g_give_up_now; // coop.giveup (tests)
+// the rescue trailer of MSG_TRIBE_STATE: TRRV for two founder seats as before, TRRS for 3+ (tribe_seats.h)
+static_assert(tribe_seats::kMaxSeats == founders::kMaxSeats, "tribe_seats.h mirrors founders::kMaxSeats");
+// BUG-9016: replacing the guest's citizens discarded their native chief. The
+// co-op chief markers do not restore cCommunity::mpLeader or the native staff.
+static bool g_native_chiefs_fix = true;
+COOP_FIX("tribe.native_chiefs", "BUG-9016", g_native_chiefs_fix, "tribe: mirror the host's native chieftain after a complete citizen snapshot");
+static bool g_growth_fix = true;
+COOP_FIX("tribe.growth", "BUG-9021", g_growth_fix,
+         "tribe: mirror native baby growth without replacing the citizen");
+constexpr uint32_t kNativeChiefsTag = 0x46484354; // TCHF
+static bool founder_downed(void* c)
+{
+    auto it = g_hm.find(c);
+    if (it == g_hm.end()) return false;
+    for (const auto& rescue : g_founder_rescues)
+        if (rescue.until > 0 && (rescue.member == it->second.id ||
+            (rescue.hut_down && F<uint32_t>(c, 0x30) == rescue.faction))) return true;
+    return false;
+}
 
 // ---------------- guest ----------------
 static float g_test_lift = 0.f; // tests (BUG-0329): `coop.tribe lift <m>` on a guest
@@ -432,6 +573,7 @@ static net::CycleTracker g_cyc;                    // the cycle being received a
 static uint32_t g_incomplete;                      // cycles whose cleanup was skipped (a chunk missing)
 // BUG-0612 (the older-cycle part of BUG-0425's umbrella): a late chunk of an older snapshot cycle started that cycle
 // again (the newer cycle's chunks forgotten, older states over newer ones). Off: 0.7.8 (any other cycle restarts).
+// (Lineages had backported this as BUG-9090; upstream's ticket and text are kept.)
 bool g_cycle_order_fix = true;
 COOP_FIX("net.cycle_order", "BUG-0612", g_cycle_order_fix, "net: a late chunk of an older Tribe / Civ snapshot or realign planet-list cycle is dropped, not taken as a new cycle (BUG-0886 too)");
 static uint32_t g_spawned, g_removed, g_cmds_sent;
@@ -467,6 +609,772 @@ COOP_FIX("tribe.world_map", "BUG-0672", g_world_map_fix,
          "tribe: right after a world load the guest never builds the host's tool buildings into a tribe of the old world");
 static uint32_t g_map_stale_skipped;
 static bool g_state_hold; // tests (BUG-0672): the guest ignores the host's tribe states (the mapping is not renewed)
+static double g_march_until;
+static uint32_t g_march_click;
+static bool g_attack_click;
+static bool g_raid_click;
+static bool g_equip_click;
+static bool g_heal_click;
+static bool g_gift_click;
+static bool g_perform_click;
+static bool g_performance_fix = true;
+COOP_FIX("tribe.performance", "BUG-9035", g_performance_fix,
+         "tribe: route guest performances and instrument choices through native sessions");
+static bool g_gift_orders = true;
+COOP_FIX("tribe.gift_orders", "BUG-9033", g_gift_orders,
+         "tribe: relay validated guest food gifts through native citizen AI");
+// BUG-9185: the host checks a guest's order against a list of the game's own orders; Hunt (10, an animal) and Party
+// (12, the fire pit) were not on it, so a guest's right-click on an animal or its fire pit did nothing (the MSI
+// 2026-11-13: "rejected=1" for action 12). Off: both refused as before.
+static bool g_hunt_party_orders = true;
+COOP_FIX("tribe.hunt_party_orders", "BUG-9185", g_hunt_party_orders,
+         "tribe: guest villagers can hunt an animal and party at the fire pit by right-click");
+static bool g_heal_orders = true;
+static bool g_eat_orders = true;
+COOP_FIX("tribe.eat_orders", "BUG-9032", g_eat_orders,
+         "tribe: guest villagers can eat from their own native food mat");
+COOP_FIX("tribe.heal_orders", "BUG-9031", g_heal_orders,
+         "tribe: equipped guest healers can heal living founder citizens");
+static int g_build_kind;
+static bool g_target_ray = true;
+COOP_FIX("tribe.target_ray", "BUG-9019", g_target_ray,
+         "tribe: visible targets above the home village sphere can be clicked");
+
+static bool target_near_side(const net::Vec3& camera, const net::Vec3& point)
+{
+    net::Vec3 direction{point.x - camera.x, point.y - camera.y, point.z - camera.z};
+    float length = drive::speed(direction);
+    if (length < 1) return false;
+    float radius = drive::speed(point) * 0.985f;
+    float b = (camera.x * direction.x + camera.y * direction.y + camera.z * direction.z) / length;
+    float c = camera.x * camera.x + camera.y * camera.y + camera.z * camera.z - radius * radius;
+    float disc = b * b - c;
+    return disc <= 0 || -b - std::sqrt(disc) >= length - 2;
+}
+static uint32_t g_building_sequence, g_building_applied;
+static double g_building_sent;
+static std::unordered_map<uint32_t, uint32_t> g_building_received;
+
+static bool g_equipment_fix = true;
+COOP_FIX("tribe.equipment", "BUG-9022", g_equipment_fix,
+         "tribe: mirror native citizen specialization and held tool models");
+static uint32_t g_equipment_sequence;
+static double g_equipment_sent;
+static std::unordered_map<uint16_t, uint32_t> g_equipment_received;
+
+static void host_equipment(double now)
+{
+    if (now - g_equipment_sent < 0.3) return;
+    g_equipment_sent = now;
+    ++g_equipment_sequence;
+    struct Entry { uint16_t id; uint8_t tool, item; };
+    std::vector<Entry> entries;
+    for (const auto& [citizen, member] : g_hm) {
+        if (!game::object_alive(citizen) || !is_citizen(citizen)) continue;
+        unsigned tool = F<uint32_t>(citizen, 0x102C), item = F<uint32_t>(citizen, 0xFFC);
+        if (tool <= 11 && item <= 23) entries.push_back({member.id, (uint8_t)tool, (uint8_t)item});
+    }
+    for (size_t start = 0; start < entries.size(); start += 128) {
+        net::Writer packet;
+        packet.u32(modes::current_world()); packet.u32(g_equipment_sequence);
+        size_t end = std::min(start + 128, entries.size());
+        packet.u8((uint8_t)(end - start));
+        for (size_t i = start; i < end; ++i) {
+            packet.u16(entries[i].id); packet.u8(entries[i].tool); packet.u8(entries[i].item);
+        }
+        for (const auto& player : C.sess->players()) if (player.id)
+            C.sess->send_unreliable_to(player.id, net::MSG_TRIBE_EQUIPMENT, packet);
+    }
+}
+
+static bool leader_keeps_staff(void* c, int tool); // BUG-0583 (below, with tribe.leader_tool)
+static void guest_equipment(net::Reader& packet)
+{
+    if (!g_equipment_fix) return;
+    uint32_t world = packet.u32(), sequence = packet.u32();
+    unsigned count = packet.u8();
+    if (!packet.ok() || !world || world != modes::current_world() || count > 128 || packet.left() != count * 4) return;
+    struct Entry { uint16_t id; uint8_t tool, item; };
+    std::vector<Entry> entries;
+    for (unsigned i = 0; i < count; ++i) {
+        Entry e{packet.u16(), packet.u8(), packet.u8()};
+        if (!e.id || e.tool > 11 || e.item > 23) return;
+        entries.push_back(e);
+    }
+    static uintptr_t specialize = H->sym("SporeCoop::Citizen_SetSpecializedTool");
+    static uintptr_t hold = H->sym("SporeCoop::Citizen_SetHandheldItem");
+    if (!specialize || !hold) return;
+    for (const auto& e : entries) {
+        auto previous = g_equipment_received.find(e.id);
+        if (previous != g_equipment_received.end() && (int32_t)(sequence - previous->second) <= 0) continue;
+        auto member = g_gm.find(e.id);
+        if (member == g_gm.end()) continue; // state may arrive after equipment; retry next snapshot
+        void* citizen = member->second.c;
+        if (!game::object_alive(citizen) || !is_citizen(citizen) || F<uint32_t>(citizen, kAgeOff) != 1) continue;
+        // BUG-0583 (upstream tribe.leader_tool): never a weapon or instrument on this game's tribe leader
+        if (F<uint32_t>(citizen, 0x102C) != e.tool && !leader_keeps_staff(citizen, e.tool))
+            thiscall<void>(specialize, citizen, (int)e.tool);
+        // Use the local species' preferred grasper. Host limb indices are not portable.
+        if (F<uint32_t>(citizen, 0xFFC) != e.item) thiscall<void>(hold, citizen, (int)e.item, -1);
+        g_equipment_received[e.id] = sequence;
+    }
+}
+
+static void host_buildings(double now)
+{
+    if (!village_orders() || now - g_building_sent < 0.3) return;
+    g_building_sent = now;
+    std::vector<void*> buildings;
+    game::for_each_object([](void* object, uint32_t noun, void* data) {
+        if ((noun == kHutNoun || noun == kToolNoun) && game::object_alive(object)) {
+            float hp = F<float>(object, 0x158), maximum = F<float>(object, 0x14C);
+            net::Vec3 position{};
+            if (std::isfinite(hp) && std::isfinite(maximum) && hp >= 0 && maximum > 0 && hp <= maximum &&
+                maximum <= 1e7f && game::object_position(object, position))
+                ((std::vector<void*>*)data)->push_back(object);
+        }
+        return true;
+    }, &buildings);
+    ++g_building_sequence;
+    for (size_t start = 0; start < buildings.size(); start += 24) {
+        net::Writer packet;
+        packet.u32(modes::current_world()); packet.u32(g_building_sequence);
+        size_t end = std::min(start + 24, buildings.size());
+        packet.u8((uint8_t)(end - start));
+        for (size_t i = start; i < end; ++i) {
+            void* object = buildings[i];
+            net::Vec3 position{};
+            game::object_position(object, position);
+            packet.u32(F<uint32_t>(object, 0x24)); packet.u32(game::noun_id(object)); packet.u32(F<uint32_t>(object, 0x30));
+            packet.f32(position.x); packet.f32(position.y); packet.f32(position.z);
+            packet.f32(F<float>(object, 0x158)); packet.f32(F<float>(object, 0x14C));
+        }
+        for (const auto& player : C.sess->players()) if (player.id)
+            C.sess->send_unreliable_to(player.id, net::MSG_TRIBE_BUILDINGS, packet);
+    }
+}
+
+static bool g_tools_fix = true;
+COOP_FIX("tribe.tools", "BUG-9023", g_tools_fix,
+         "tribe: reconcile native rack creation, placement and removal from host inventories");
+static uint32_t g_tools_sequence;
+static double g_tools_sent;
+static std::unordered_map<uint32_t, uint32_t> g_tools_received;
+static uint16_t g_tool_unlocks;
+struct TribeInfo {
+    game::Key key{};
+    uint8_t arch = 0xFF;
+};
+static TribeInfo tribe_info(void* t);
+
+static bool g_npc_food_fix = true;
+COOP_FIX("tribe.npc_food", "BUG-9034", g_npc_food_fix,
+         "tribe: mirror NPC food stores after gifts and native food interactions");
+static double g_npc_food_sent;
+static uint32_t g_npc_food_sequence, g_npc_food_received;
+struct VillageStore { uint32_t faction, species; net::Vec3 position; float amount; };
+
+// A locally spawned mirror has its own political ID; even an equal number
+// may identify an entirely different NPC (BUG-9063). Reuse the authoritative
+// village inventory. Keep only scalar IDs across frames and loads.
+static bool g_faction_mapping_fix = true;
+COOP_FIX("tribe.faction_mapping", "BUG-9063", g_faction_mapping_fix,
+         "tribe: resolve host political IDs to the corresponding local villages");
+struct LocalFaction {
+    uint32_t object, faction;
+    net::Vec3 host_site, ground_offset;
+};
+static std::unordered_map<uint32_t, LocalFaction> g_local_factions;
+static uint32_t g_faction_world;
+
+static uint32_t local_faction(uint32_t remote, const std::vector<void*>& tribes)
+{
+    if (!g_faction_mapping_fix) return remote;
+    auto it = g_local_factions.find(remote);
+    if (it == g_local_factions.end() || g_faction_world != modes::current_world()) return 0;
+    for (void* t : tribes)
+        if (F<uint32_t>(t, 0x24) == it->second.object && F<uint32_t>(t, 0x30) == it->second.faction)
+            return it->second.faction;
+    return 0;
+}
+
+static void bind_factions(uint32_t world, const std::vector<VillageStore>& stores, const std::vector<void*>& tribes)
+{
+    g_faction_world = world;
+    g_local_factions.clear();
+    std::unordered_map<uint32_t, unsigned> uses;
+    for (const auto& s : stores) {
+        void* match = nullptr;
+        for (void* t : tribes) {
+            const auto pos = tribe_pos(t);
+            const float distance = net::dist(pos, s.position);
+            if (!(distance < 12.f)) continue;
+            auto key = tribe_info(t).key;
+            if (!key.instance || (key.instance != s.species && key.instance !=
+                creations::local_species({s.species, key.type, key.group}).instance)) continue;
+            if (distance >= 3.f) {
+                // A reloaded village can stand on a different local terrain
+                // radius (BUG-0332). Require the same bearing, local ground,
+                // species, world and unique native village before binding.
+                const float remote_radius = drive::speed(s.position), local_radius = drive::speed(pos);
+                if (!(remote_radius > 1.f && local_radius > 1.f)) continue;
+                const float scale = local_radius / remote_radius;
+                const net::Vec3 projected{s.position.x*scale, s.position.y*scale, s.position.z*scale};
+                if (!(net::dist(projected, pos) < .75f &&
+                      std::fabs(local_radius - game::ground_radius(pos)) < 1.f)) continue;
+            }
+            if (match) { match = nullptr; break; }
+            match = t;
+        }
+        if (!match) continue;
+        const auto pos = tribe_pos(match);
+        LocalFaction local{F<uint32_t>(match, 0x24), F<uint32_t>(match, 0x30), s.position, {}};
+        if (net::dist(pos, s.position) >= 3.f)
+            local.ground_offset = {pos.x-s.position.x, pos.y-s.position.y, pos.z-s.position.z};
+        if (!local.object || !local.faction) continue;
+        g_local_factions.emplace(s.faction, local);
+        ++uses[local.faction];
+    }
+    for (auto it = g_local_factions.begin(); it != g_local_factions.end();)
+        if (uses[it->second.faction] != 1) it = g_local_factions.erase(it); else ++it;
+}
+
+static void host_npc_food(double now)
+{
+    if (!g_npc_food_fix || !g_order_roster.guest().faction || now - g_npc_food_sent < 1) return;
+    auto tribes = all_tribes();
+    if (tribes.size() > 32) return;
+    std::vector<VillageStore> stores;
+    for (void* t : tribes) {
+        double amount = 0;
+        uint32_t species = tribe_info(t).key.instance;
+        if (!species || !shared::tribe_food(t, amount) || !std::isfinite(amount) || amount < 0 || amount > 1000000) continue;
+        stores.push_back({F<uint32_t>(t, 0x30), species, tribe_pos(t), (float)amount});
+    }
+    net::Writer packet;
+    packet.u32(modes::current_world()); packet.u32(++g_npc_food_sequence);
+    packet.u8((uint8_t)stores.size());
+    for (const auto& s : stores) {
+        packet.u32(s.faction); packet.u32(s.species);
+        packet.f32(s.position.x); packet.f32(s.position.y); packet.f32(s.position.z); packet.f32(s.amount);
+    }
+    g_npc_food_sent = now;
+    for (const auto& player : C.sess->players()) if (player.id)
+        C.sess->send_unreliable_to(player.id, net::MSG_TRIBE_FOOD, packet);
+}
+
+static void guest_npc_food(net::Reader& packet)
+{
+    uint32_t world = packet.u32(), sequence = packet.u32();
+    unsigned count = packet.u8();
+    if ((!g_npc_food_fix && !g_faction_mapping_fix) || !packet.ok() || !world || world != modes::current_world() || count > 32 ||
+        packet.left() != count * 24 || (g_npc_food_received && (int32_t)(sequence - g_npc_food_received) <= 0)) return;
+    std::vector<VillageStore> stores;
+    std::unordered_set<uint32_t> seen;
+    for (unsigned i = 0; i < count; ++i) {
+        VillageStore s{packet.u32(), packet.u32(), {packet.f32(), packet.f32(), packet.f32()}, packet.f32()};
+        if (!s.faction || !s.species || !seen.insert(s.faction).second || !std::isfinite(s.position.x) ||
+            !std::isfinite(s.position.y) || !std::isfinite(s.position.z) || !std::isfinite(s.amount) || s.amount < 0 || s.amount > 1000000) return;
+        stores.push_back(s);
+    }
+    auto tribes = all_tribes();
+    if (g_faction_mapping_fix) bind_factions(world, stores, tribes);
+    g_npc_food_received = sequence;
+    if (!g_npc_food_fix) return;
+    for (const auto& s : stores) for (void* t : tribes) {
+        if (F<uint32_t>(t, 0x30) != local_faction(s.faction, tribes) ||
+            (!g_faction_mapping_fix && net::dist(tribe_pos(t), s.position) > 3)) continue;
+        // Founder stores already follow the more frequent complete citizen cycle.
+        if (t == player_tribe()) break;
+        bool mine = false;
+        for (const auto& [id, member] : g_gm) if (member.c && member.owner == C.sess->my_id() &&
+            F<void*>(member.c, kOwnerTribeOff) == t) { mine = true; break; }
+        if (mine) break;
+        auto key = tribe_info(t).key;
+        if (key.instance == s.species || key.instance == creations::local_species({s.species, key.type, key.group}).instance)
+            shared::mirror_village_food(t, s.amount);
+        break;
+    }
+}
+
+static bool g_relationships_fix = true;
+COOP_FIX("tribe.relationships", "BUG-9033", g_relationships_fix,
+         "tribe: reconcile ordered native relationship records from the host");
+static double g_relationships_sent;
+static uint32_t g_relationships_sequence;
+static std::map<std::pair<uint32_t, uint32_t>, uint32_t> g_relationships_received;
+struct Relationship {
+    uint32_t a, b, flags;
+    std::vector<std::pair<uint32_t, float>> events;
+};
+
+template<class Fn> static bool relationship_walk(void* map, Fn fn)
+{
+    if (!map || !skg::readable(map, 0x18)) return false;
+    std::vector<void*> stack;
+    std::unordered_set<void*> seen;
+    void* node = F<void*>(map, 0xC);
+    while (node || !stack.empty()) {
+        while (node) {
+            if (!skg::readable(node, 0x40) || seen.size() >= 256 || !seen.insert(node).second) return false;
+            stack.push_back(node);
+            node = F<void*>(node, 4);
+        }
+        node = stack.back(); stack.pop_back();
+        fn(node);
+        node = F<void*>(node, 0);
+    }
+    return true;
+}
+
+static void* relationship_manager()
+{
+    uintptr_t get = H->sym("Simulator::cRelationshipManager::Get");
+    return get ? skg::cdecl_call<void*>(get) : nullptr;
+}
+
+static void* relationship_record(void* manager, uint32_t a, uint32_t b)
+{
+    void* result = nullptr;
+    relationship_walk((uint8_t*)manager + 0x24, [&](void* node) {
+        if (F<uint32_t>(node, 0x10) == a && F<uint32_t>(node, 0x14) == b) result = (uint8_t*)node + 0x18;
+    });
+    return result;
+}
+
+static bool relationship_events(void* record, std::vector<std::pair<uint32_t, float>>& events)
+{
+    bool ok = relationship_walk((uint8_t*)record + 8, [&](void* node) {
+        events.emplace_back(F<uint32_t>(node, 0x10), F<float>(node, 0x14));
+    });
+    if (!ok || events.size() > 64) return false;
+    for (const auto& [key, value] : events) if (!key || !std::isfinite(value)) return false;
+    return true;
+}
+
+static void host_relationships(double now)
+{
+    if (!g_relationships_fix || !g_order_roster.guest().faction || now - g_relationships_sent < 1) return;
+    g_relationships_sent = now;
+    void* manager = relationship_manager();
+    if (!manager) return;
+    std::unordered_set<uint32_t> factions;
+    for (void* t : all_tribes()) factions.insert(F<uint32_t>(t, 0x30));
+    std::vector<Relationship> records;
+    if (!relationship_walk((uint8_t*)manager + 0x24, [&](void* node) {
+        Relationship r{F<uint32_t>(node, 0x10), F<uint32_t>(node, 0x14), F<uint32_t>(node, 0x1C) & 3u, {}};
+        if (r.a != r.b && factions.count(r.a) && factions.count(r.b) && relationship_events((uint8_t*)node + 0x18, r.events))
+            records.push_back(std::move(r));
+    })) return;
+    uint32_t sequence = ++g_relationships_sequence;
+    for (const auto& r : records) {
+        net::Writer packet;
+        packet.u32(modes::current_world()); packet.u32(sequence);
+        packet.u32(r.a); packet.u32(r.b); packet.u32(r.flags); packet.u8((uint8_t)r.events.size());
+        for (const auto& [key, value] : r.events) { packet.u32(key); packet.f32(value); }
+        for (const auto& player : C.sess->players()) if (player.id)
+            C.sess->send_unreliable_to(player.id, net::MSG_TRIBE_RELATIONSHIPS, packet);
+    }
+}
+
+static void guest_relationships(net::Reader& packet)
+{
+    uint32_t world = packet.u32(), sequence = packet.u32();
+    Relationship r{packet.u32(), packet.u32(), packet.u32(), {}};
+    unsigned count = packet.u8();
+    if (!g_relationships_fix || !packet.ok() || world != modes::current_world() || !world ||
+        !r.a || !r.b || r.a == r.b || r.flags > 3 || count > 64 || packet.left() != count * 8) return;
+    uint32_t last = 0;
+    for (unsigned i = 0; i < count; ++i) {
+        uint32_t key = packet.u32(); float value = packet.f32();
+        if (key <= last || !std::isfinite(value)) return;
+        r.events.emplace_back(key, value); last = key;
+    }
+    const auto tribes = all_tribes();
+    r.a = local_faction(r.a, tribes);
+    r.b = local_faction(r.b, tribes);
+    if (!r.a || !r.b || r.a == r.b) return;
+    auto pair = std::make_pair(r.a, r.b);
+    auto previous = g_relationships_received.find(pair);
+    if (previous != g_relationships_received.end() && (int32_t)(sequence - previous->second) <= 0) return;
+    bool have_a = false, have_b = false;
+    for (void* t : tribes) { have_a |= F<uint32_t>(t, 0x30) == r.a; have_b |= F<uint32_t>(t, 0x30) == r.b; }
+    if (!have_a || !have_b) return;
+    void* manager = relationship_manager();
+    uintptr_t reset = H->sym("Simulator::cRelationshipManager::ResetRelationship");
+    uintptr_t index = H->sym("SporeCoop::RelEventMap_Index");
+    uintptr_t calculate = H->sym("Simulator::cRelationshipManager::CalculateRelationship");
+    if (!manager || !reset || !index || !calculate) return;
+    void* record = relationship_record(manager, r.a, r.b);
+    std::vector<std::pair<uint32_t, float>> mine;
+    bool same = record && relationship_events(record, mine) && mine == r.events;
+    if (!same) {
+        thiscall<void>(reset, manager, r.a, r.b);
+        record = relationship_record(manager, r.a, r.b);
+        if (!record) return;
+        for (const auto& [key, value] : r.events) {
+            float* slot = thiscall<float*>(index, (uint8_t*)record + 8, &key);
+            if (!slot) return;
+            *slot = value;
+        }
+    }
+    F<uint32_t>(record, 4) = (F<uint32_t>(record, 4) & ~3u) | r.flags;
+    if (!same) thiscall<float>(calculate, manager, r.a, r.b, 0);
+    g_relationships_received[pair] = sequence;
+}
+
+static bool g_conquest_refresh = true;
+COOP_FIX("tribe.conquest_refresh", "BUG-9025", g_conquest_refresh,
+         "tribe: register guest raid goals and transfer settled native campaign records");
+static std::unordered_map<uint32_t, bool> g_village_defeats;
+static uint16_t g_campaign_unlocks;
+static uint32_t g_campaign_segments;
+static bool g_campaign_observed;
+static double g_campaign_refresh_at;
+static double g_campaign_poll_at;
+static uint64_t g_campaign_epoch;
+static std::unordered_set<uint32_t> g_campaign_targets;
+
+// Isolated six-rival qualification. The native planet stores fractional
+// goal progress. The sidecar identifies the one reward deferred to the next
+// totem milestone. Only a deliberately enrolled campaign uses this path.
+static founders::SixRivals g_six;
+static bool g_six_loaded, g_six_hook_ready;
+static uintptr_t g_earned_result_return, a_GrantEarnedTools;
+using QueueResult = void(SK_THISCALL*)(void*, unsigned, void*);
+static QueueResult o_QueueResult;
+
+static void* tribal_player()
+{
+    void* manager = game::noun_manager();
+    return manager ? F<void*>(manager, 0x74) : nullptr;
+}
+
+static void load_six_trial()
+{
+    if (g_six_loaded || !g_order_roster.guest().faction) return;
+    auto planet = world::current_game_key();
+    if (planet.empty()) return;
+    founders::read_six_rivals(planet, g_order_roster, g_six);
+    g_six_loaded = true;
+}
+
+static void SK_THISCALL h_QueueResult(void* self, unsigned outcome, void* target)
+{
+    if (!g_six.extra || (uintptr_t)__builtin_return_address(0) != g_earned_result_return ||
+        !is_host() || !active() || !target || (outcome != 1 && outcome != 2)) {
+        o_QueueResult(self, outcome, target); return;
+    }
+    auto* player = tribal_player();
+    if (!player || F<float>(player, 0x10F4) != 5.f) return;
+    float& points = F<float>(player, 0x10F0);
+    if (!game::object_alive(target) || !std::isfinite(points) || points < 3.f || points >= 5.f) return;
+    const uint32_t faction = F<uint32_t>(target, 0x30);
+    if (!faction || g_order_roster.contains_faction(faction)) return;
+    // The remaining three objectives occupy two native milestones (3 to 5).
+    int step = (int)std::lround((points - 3.f) * 1.5f);
+    if (step > 2 || std::fabs(points - (3.f + step * (2.f / 3.f))) > .001f) return;
+    if (!step) {
+        auto next = g_six;
+        next.deferred = faction; next.outcome = outcome;
+        if (!founders::save_six_rivals(world::current_game_key(), g_order_roster, next, false)) {
+            if (C.notice) C.notice("Could not record the extended Tribal objective. Check the campaign save.");
+            return;
+        }
+        g_six = next;
+    } else {
+        if (!g_six.deferred || faction == g_six.deferred) return;
+        const float old = points, tier = std::floor(points);
+        // Let the native queue grant exactly one milestone, with its normal
+        // color, tool unlocks and cinematic, then publish the full fraction.
+        size_t rollback = game::swap_open(game::swap_undo_u32, &points, F<uint32_t>(player, 0x10F0), "Tribal trial goal points");
+        points = tier;
+        o_QueueResult(self, outcome, target);
+        bool awarded = points == tier + 1.f;
+        points = old;
+        game::swap_close(rollback);
+        if (!awarded) return;
+        if (step == 1) for (void* tribe : all_tribes()) {
+            if (F<uint32_t>(tribe, 0x30) == g_six.deferred) {
+                skg::cdecl_call<void>(a_GrantEarnedTools, tribe); break;
+            }
+        }
+    }
+    points = 3.f + (step + 1) * (2.f / 3.f);
+    g_campaign_refresh_at = H->time_seconds() + 2;
+}
+
+static void register_campaign_target(uint32_t faction)
+{
+    if (!g_conquest_refresh || !g_campaign_targets.insert(faction).second) return;
+    struct Pending { uint32_t faction; uint64_t epoch; };
+    H->run_outside_frame([](void* value) {
+        Pending pending = *static_cast<Pending*>(value);
+        delete static_cast<Pending*>(value);
+        if (pending.epoch != g_campaign_epoch || !active() || !is_host()) return;
+        uintptr_t get = H->sym("SporeCoop::TribeGoalUI_Get");
+        uintptr_t select = H->sym("SporeCoop::TribeGoalUI_SelectTarget");
+        void* ui = get ? skg::cdecl_call<void*>(get) : nullptr;
+        if (ui && select) for (void* tribe : all_tribes()) {
+            if (F<uint32_t>(tribe, 0x30) != pending.faction) continue;
+            // Native raid input registers this goal before issuing action 15.
+            // Resolve by faction here: the world may have changed since receipt.
+            thiscall<void>(select, ui, tribe);
+            return;
+        }
+        g_campaign_targets.erase(pending.faction);
+    }, new Pending{faction, g_campaign_epoch});
+}
+
+static uint16_t tool_unlocks()
+{
+    uintptr_t get = H->sym("SporeCoop::TribalGame_Get");
+    uintptr_t check = H->sym("SporeCoop::TribalGame_IsToolUnlocked");
+    void* game = get ? skg::cdecl_call<void*>(get) : nullptr;
+    uint16_t mask = 0;
+    if (game && check) for (int kind = 1; kind <= 9; ++kind)
+        if (thiscall<bool>(check, game, kind)) mask |= (uint16_t)(1u << kind);
+    return mask;
+}
+
+static void host_campaign_tick(double now)
+{
+    if (!g_conquest_refresh || !g_order_roster.guest().faction || now < g_campaign_poll_at) return;
+    g_campaign_poll_at = now + .5;
+    bool changed = false;
+    for (void* t : all_tribes()) {
+        uint32_t faction = F<uint32_t>(t, 0x30);
+        if (g_order_roster.contains_faction(faction)) continue;
+        bool defeated = F<uint8_t>(t, 0x556) != 0;
+        auto previous = g_village_defeats.find(faction);
+        if (previous != g_village_defeats.end() && !previous->second && defeated) changed = true;
+        g_village_defeats[faction] = defeated;
+    }
+    uint16_t unlocked = tool_unlocks();
+    if (g_campaign_observed && unlocked != g_campaign_unlocks) changed = true;
+    g_campaign_unlocks = unlocked;
+    // Alliances can award a segment without unlocking a new tool. Observe the
+    // native result itself so those victories also reach the guest checkpoint.
+    void* home = player_tribe();
+    void* totem = home ? F<void*>(home, 0x19D0) : nullptr;
+    if (totem && skg::readable(totem, 0x124)) {
+        uintptr_t begin = F<uintptr_t>(totem, 0x11C), end = F<uintptr_t>(totem, 0x120);
+        if (end >= begin && (end - begin) % 4 == 0 && (end - begin) / 4 <= 64) {
+            uint32_t segments = (uint32_t)((end - begin) / 4);
+            if (g_campaign_observed && segments != g_campaign_segments) changed = true;
+            g_campaign_segments = segments;
+        }
+    }
+    g_campaign_observed = true;
+    if (changed) {
+        g_campaign_refresh_at = now + 2;
+        world::request_autosave();
+    }
+    if (!g_campaign_refresh_at || now < g_campaign_refresh_at || world::cinematic_playing() ||
+        world::load_queued() || world::save_busy()) return;
+    // The native goal system owns rewards and totem history. A health packet
+    // cannot reproduce those records. Reuse the confirmed-save transfer path;
+    // the host keeps playing and an absent partner receives them on reconnect.
+    for (const auto& rescue : g_founder_rescues) if (rescue.until) return;
+    bool queued = false;
+    for (const auto& player : C.sess->players()) if (player.id) {
+        std::string error;
+        if (!world::share_with(player.id, error, true)) {
+            g_campaign_refresh_at = now + 2;
+            return;
+        }
+        queued = true;
+    }
+    g_campaign_refresh_at = 0;
+    if (queued && C.notice) C.notice("Saving Tribal conquest for your partner...");
+}
+
+static bool tool_cost(int kind, int& cost)
+{
+    uintptr_t get = H->sym("Simulator::GetTribeToolData");
+    void* data = kind >= 1 && kind <= 9 && get ? skg::cdecl_call<void*>(get, kind) : nullptr;
+    if (!data || IsBadReadPtr(data, 0x7C) || F<int>(data, 0xC) != kind) return false;
+    cost = F<int>(data, 0x38);
+    return cost >= 0 && cost <= 1000000;
+}
+
+std::string village_tool_line(int kind)
+{
+    static const char* names[] = {"", "Flaming Torches", "Stone Axes", "Throwing Spears", "Wooden Horns",
+        "Maracas", "Didgeridoos", "Gathering Canes", "Fishing Spears", "Healing Rods"};
+    int cost;
+    if (!tool_cost(kind, cost)) return "Tool unavailable on this game build.";
+    uint16_t mask = is_host() ? tool_unlocks() : g_tool_unlocks;
+    return std::string(names[kind]) + ((mask & (1u << kind)) ? " (" + std::to_string(cost) + " food)." : " (ally or conquer to unlock).");
+}
+
+// placed_ok (BUG-9153): a rack the planner left marked (+0x84 bit 8) counts; a guest's own planner leaves it so
+static bool tool_inventory(void* tribe, std::array<void*, 11>& tools, bool placed_ok = false)
+{
+    void** begin = F<void**>(tribe, 0x36C), **end = F<void**>(tribe, 0x370);
+    if (begin == end) return true;
+    if (!begin || end < begin || end - begin > 10 || IsBadReadPtr(begin, (end - begin) * 4)) return false;
+    for (void** it = begin; it < end; ++it) {
+        void* tool = *it;
+        if (!tool || IsBadReadPtr(tool, 0x250) || !game::object_alive(tool) || game::noun_id(tool) != kToolNoun) return false;
+        unsigned kind = F<uint32_t>(tool, 0x1FC);
+        // The native planner creates a temporary dragged rack before placement.
+        // Defer the whole inventory, including deletions, until it is committed.
+        if (!kind || kind > 10 || tools[kind] || ((F<uint32_t>(tool, 0x84) & 8) && !placed_ok) ||
+            F<void*>(tool, 0x1F8) != tribe) return false;
+        tools[kind] = tool;
+    }
+    return true;
+}
+
+static void host_tools(double now)
+{
+    if (now - g_tools_sent < 0.5) return;
+    g_tools_sent = now;
+    ++g_tools_sequence;
+    uint16_t unlocked = tool_unlocks();
+    for (void* tribe : all_tribes()) {
+        std::array<void*, 11> tools{};
+        if (!tool_inventory(tribe, tools)) continue;
+        net::Writer packet;
+        packet.u32(modes::current_world()); packet.u32(g_tools_sequence);
+        packet.u32(F<uint32_t>(tribe, 0x30));
+        net::Vec3 anchor = tribe_pos(tribe);
+        packet.f32(anchor.x); packet.f32(anchor.y); packet.f32(anchor.z);
+        packet.u16(unlocked);
+        packet.u8((uint8_t)std::count_if(tools.begin(), tools.end(), [](void* p) { return p; }));
+        for (unsigned kind = 1; kind <= 10; ++kind) if (void* tool = tools[kind]) {
+            packet.u8((uint8_t)kind);
+            const auto& p = F<net::Vec3>(tool, 0x38);
+            const auto& q = F<net::Quat>(tool, 0x44);
+            packet.f32(p.x); packet.f32(p.y); packet.f32(p.z);
+            packet.f32(q.x); packet.f32(q.y); packet.f32(q.z); packet.f32(q.w);
+            packet.f32(F<float>(tool, 0x158)); packet.f32(F<float>(tool, 0x14C));
+        }
+        for (const auto& player : C.sess->players()) if (player.id)
+            C.sess->send_unreliable_to(player.id, net::MSG_TRIBE_TOOLS, packet);
+    }
+}
+
+// BUG-9153: a guest's native Tribal Planner (the hut's tools button) places a rack on its own game only. When the host's
+// inventory lacks a rack the guest's own village has after the planner (no rack in a drag any more), it is a purchase:
+// sent to the host (CMD_BUILD: unlock, food, spot and spacing checked there) instead of removed; the host's state wins
+// 4 s later (a refused rack goes). A moved rack goes back to the host's place (no order for that).
+static std::array<double, 11> g_rack_asked{};
+static uint32_t g_native_tools;
+static bool own_rack_purchase(void* tribe, unsigned kind, void* tool);
+static void guest_tools(net::Reader& packet)
+{
+    if (!g_tools_fix) return;
+    uint32_t world = packet.u32(), sequence = packet.u32(), faction = packet.u32();
+    net::Vec3 anchor{packet.f32(), packet.f32(), packet.f32()};
+    uint16_t unlocked = packet.u16();
+    unsigned count = packet.u8();
+    auto finite = [](const net::Vec3& p) { return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z); };
+    if (!packet.ok() || !world || world != modes::current_world() || !faction || !finite(anchor) ||
+        (unlocked & ~0x3FEu) || count > 10 || packet.left() != count * 37) return;
+    struct State { bool present = false; net::Vec3 position; net::Quat rotation; float hp, maximum; };
+    std::array<State, 11> states{};
+    for (unsigned i = 0; i < count; ++i) {
+        unsigned kind = packet.u8();
+        if (!kind || kind > 10 || states[kind].present) return;
+        auto& s = states[kind]; s.present = true;
+        s.position = {packet.f32(), packet.f32(), packet.f32()};
+        s.rotation = {packet.f32(), packet.f32(), packet.f32(), packet.f32()};
+        s.hp = packet.f32(); s.maximum = packet.f32();
+        float norm = s.rotation.x*s.rotation.x + s.rotation.y*s.rotation.y + s.rotation.z*s.rotation.z + s.rotation.w*s.rotation.w;
+        if (!finite(s.position) || net::dist(s.position, anchor) > 200 || !std::isfinite(norm) || norm < 0.9f || norm > 1.1f ||
+            !std::isfinite(s.hp) || !std::isfinite(s.maximum) || s.hp < 0 || s.maximum <= 0 || s.hp > s.maximum || s.maximum > 1e7f) return;
+    }
+    auto previous = g_tools_received.find(faction);
+    if (previous != g_tools_received.end() && (int32_t)(sequence - previous->second) <= 0) return;
+    void* tribe = nullptr;
+    const auto tribes = all_tribes();
+    // The original shared-village mode does not broadcast separate village stores.
+    uint32_t local = (g_guest_order_mode || g_faction_world) ? local_faction(faction, tribes) : faction;
+    if (!local) return;
+    net::Vec3 offset{};
+    auto binding = g_local_factions.find(faction);
+    if (g_faction_mapping_fix && binding != g_local_factions.end()) {
+        if (net::dist(anchor, binding->second.host_site) >= 3) return;
+        offset = binding->second.ground_offset;
+    }
+    const net::Vec3 site{anchor.x+offset.x, anchor.y+offset.y, anchor.z+offset.z};
+    for (void* t : tribes) if (F<uint32_t>(t, 0x30) == local && net::dist(tribe_pos(t), site) < 3) { tribe = t; break; }
+    if (!tribe || !F<void*>(tribe, 0x18CC)) return;
+    std::array<void*, 11> tools{};
+    // BUG-9153: the guest's own planner is closed: its placements count (a purchase below, or the host's rack)
+    const bool own_placed = g_own_player && g_persp_host && tribe == g_own_village && !civ::planner_open();
+    if (!tool_inventory(tribe, tools, own_placed)) return;
+    static uintptr_t layout = H->sym("SporeCoop::Tribe_UpdateToolLayout");
+    if (!layout) return;
+    for (unsigned kind = 1; kind <= 10; ++kind) {
+        const auto& s = states[kind];
+        void* tool = tools[kind];
+        if (!s.present) {
+            if (tool && !own_rack_purchase(tribe, kind, tool)) vcall<void>(tribe, 0xB8 / 4, tool);
+            continue;
+        }
+        if (kind < g_rack_asked.size()) g_rack_asked[kind] = 0;
+        if (tool && own_placed && (F<uint32_t>(tool, 0x84) & 8)) { // the host's rack replaces the planner's placement
+            vcall<void>(tribe, 0xB8 / 4, tool);
+            tool = nullptr;
+        }
+        bool created = !tool;
+        if (!tool) {
+            tool = vcall<void*>(tribe, 0xB4 / 4, (int)kind);
+            if (!tool) return;
+            vcall<void>(tool, 0x64 / 4, tribe);
+        }
+        const net::Vec3 placement{s.position.x+offset.x, s.position.y+offset.y, s.position.z+offset.z};
+        if (created || net::dist(F<net::Vec3>(tool, 0x38), placement) > 0.01f ||
+            std::memcmp(&F<net::Quat>(tool, 0x44), &s.rotation, sizeof(s.rotation))) {
+            vcall<void>((uint8_t*)tool + 0x34, 0x44 / 4, &placement, &s.rotation);
+            thiscall<void>(layout, tribe, (int)kind);
+        }
+        F<float>(tool, 0x158) = s.hp; F<float>(tool, 0x14C) = s.maximum;
+    }
+    g_tools_received[faction] = sequence;
+    g_tool_unlocks = unlocked;
+}
+
+static void guest_buildings(net::Reader& packet)
+{
+    uint32_t world = packet.u32(), sequence = packet.u32();
+    unsigned count = packet.u8();
+    if (!packet.ok() || !world || world != modes::current_world() || count > 24 || packet.left() != count * 32) return;
+    struct State { uint32_t id, noun, faction; net::Vec3 position; float hp, maximum; };
+    std::vector<State> states;
+    for (unsigned i = 0; i < count; ++i) {
+        State state{packet.u32(), packet.u32(), packet.u32(), {packet.f32(), packet.f32(), packet.f32()}, packet.f32(), packet.f32()};
+        if (!state.id || (state.noun != kHutNoun && state.noun != kToolNoun) ||
+            !std::isfinite(state.position.x) || !std::isfinite(state.position.y) || !std::isfinite(state.position.z) ||
+            !std::isfinite(state.hp) || !std::isfinite(state.maximum) || state.hp < 0 || state.maximum <= 0 ||
+            state.hp > state.maximum || state.maximum > 1e7f) return;
+        states.push_back(state);
+    }
+    const auto tribes = all_tribes();
+    for (const auto& state : states) {
+        auto previous = g_building_received.find(state.id);
+        if (previous != g_building_received.end() && (int32_t)(sequence - previous->second) <= 0) continue;
+        uint32_t faction = local_faction(state.faction, tribes);
+        if (!faction) continue;
+        auto position = state.position;
+        auto binding = g_local_factions.find(state.faction);
+        if (g_faction_mapping_fix && binding != g_local_factions.end()) {
+            const auto offset = binding->second.ground_offset;
+            position = {position.x+offset.x, position.y+offset.y, position.z+offset.z};
+        }
+        void* object = game::find_object(state.noun, position, 3.f);
+        if (!object || !game::object_alive(object) || F<uint32_t>(object, 0x30) != faction) continue;
+        // Ownership and destruction are native world changes, reconciled by checkpoints.
+        // Health snapshots never run a guest-side TakeDamage or its game-over events.
+        F<float>(object, 0x158) = state.hp;
+        F<float>(object, 0x14C) = state.maximum;
+        g_building_received[state.id] = sequence;
+        ++g_building_applied;
+    }
+}
 
 uint8_t owner_of(void* c)
 {
@@ -481,6 +1389,76 @@ uint8_t owner_of(void* c)
 }
 
 // ---------------- hooks ----------------
+// a registered partner founder village (BUG-9135: any partner seat; with tribe.multi_founders off seat 1 only)
+static bool registered_guest_village(void* t, void* home);
+static bool g_guest_ai_fix = true;
+COOP_FIX("tribe.guest_ai", "BUG-9020", g_guest_ai_fix,
+         "tribe: recognize the registered guest village as player-owned for native citizen AI");
+// BUG-9152 (owner 2026-11-12: "why can't they play their village? ... We shouldn't need this button"): on a guest's game
+// the game's one player tribe is the host's village; the guest's own village is an NPC tribe there, so the native
+// selection (box, click: the terrain cursor's candidate list, cursor +0x164 = the player tribe's mSelectableMembers
+// +0x354) and the right-click orders never reached it (the Village page's buttons were the only way). Now, as the Civ
+// side does for a guest's nation (civ.cpp h_TerrainCursor, BUG-9135), the cursor's candidates are the guest's own
+// village's selectable members and that village counts as player-owned on the guest's game; its orders go to the host
+// through the existing hooks (h_DoActionForObjects, h_WalkSelected). `coop.fix tribe.guest_native off`: as before.
+static bool g_guest_native = true;
+COOP_FIX("tribe.guest_native", "BUG-9152", g_guest_native,
+         "tribe: a guest selects and orders its own villagers with the game's own controls (box, click, right-click)");
+static uint32_t g_own_village_binds;
+static void* own_village_now()
+{
+    void* home = player_tribe();
+    for (const auto& [id, m] : g_gm)
+        if (m.c && m.owner == C.sess->my_id() && game::object_alive(m.c))
+            if (void* t = F<void*>(m.c, kOwnerTribeOff); t && t != home && game::object_alive(t)) return t;
+    return nullptr;
+}
+void* guest_cursor_candidates()
+{
+    if (!g_guest_native || !active() || !is_guest() || local_play() || !g_own_village || !game::object_alive(g_own_village))
+        return nullptr;
+    ++g_own_village_binds;
+    return (uint8_t*)g_own_village + 0x354;
+}
+void* native_cursor_candidates()
+{
+    void* home = game::mode_id() == modes::kTribe ? player_tribe() : nullptr;
+    return home ? (uint8_t*)home + 0x354 : nullptr;
+}
+using TribePlayerOwned_t = bool(SK_THISCALL*)(void*);
+static TribePlayerOwned_t o_TribePlayerOwned;
+static bool SK_THISCALL h_TribePlayerOwned(void* spatial)
+{
+    if (g_guest_ai_fix && active() && is_host() && g_order_roster.guest().faction &&
+        registered_guest_village((uint8_t*)spatial - 0x120, player_tribe())) return true;
+    // BUG-9152: on a guest's game its own village is its player's (selection, the right-click's choice of order)
+    if (g_guest_native && g_own_village && active() && is_guest() && !local_play() &&
+        (uint8_t*)spatial - 0x120 == (uint8_t*)g_own_village) return true;
+    return o_TribePlayerOwned(spatial);
+}
+static bool g_shared_capacity = true;
+COOP_FIX("tribe.shared_capacity", "BUG-9039", g_shared_capacity,
+         "tribe: both founding villages use the shared campaign population limit");
+using MaxPopulation_t = int(SK_THISCALL*)(void*);
+static MaxPopulation_t o_MaxPopulation;
+static int SK_THISCALL h_MaxPopulation(void* tribe)
+{
+    if (g_shared_capacity && active() && village_orders() && !local_play()) {
+        void* home = player_tribe();
+        if (home && tribe && tribe != home && game::object_alive(home) && game::object_alive(tribe)) {
+            bool founder = is_host() && registered_guest_village(tribe, home);
+            if (is_guest()) for (const auto& [id, member] : g_gm) {
+                if (member.owner == C.sess->my_id() && member.c && game::object_alive(member.c) &&
+                    F<void*>(member.c, kOwnerTribeOff) == tribe) { founder = true; break; }
+            }
+            // Query the original native getter on the campaign tribe. This
+            // follows earned level changes and native/modded tuning without
+            // changing the guest's species, faction or village object.
+            if (founder) return o_MaxPopulation(home);
+        }
+    }
+    return o_MaxPopulation(tribe);
+}
 using BTTick_t = int(SK_CDECL*)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 static BTTick_t o_BTTick;
 static uint32_t g_bt_skipped, g_bt_calls; // diagnostics (coop.tribe): mirrors' AI ticks skipped / all ticks
@@ -585,6 +1563,16 @@ static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
                              uint32_t a7, uint32_t a8)
 {
     g_bt_calls++;
+    if (active() && is_host() && founder_downed((void*)self)) return 0;
+    // C26E70 caches IsPlayerOwned in citizen AI flags at creation. Re-evaluate
+    // only our registered guest citizens, including those loaded from a save.
+    if (active() && is_host() && g_order_roster.guest().faction && is_citizen((void*)self) &&
+        registered_guest_village(F<void*>((void*)self, kOwnerTribeOff), player_tribe())) {
+        if (void* ai = F<void*>((void*)self, 0xB4C)) {
+            auto& flags = F<uint32_t>(ai, 0x5FC);
+            flags = (flags & ~1u) | (g_guest_ai_fix ? 1u : 0u);
+        }
+    }
     if (g_body_teardown_fix && g_detached.count((void*)self)) { // BUG-0667: a detached body's tree stays ended
         g_bt_skipped++;
         return 0;
@@ -712,7 +1700,11 @@ static Target read_target(net::Reader& r)
     return t;
 }
 
-enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2, CMD_BABY = 3, CMD_CONQUER = 4 };
+enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2, CMD_FORAGE = 3, CMD_REPAIR = 4, CMD_REBUILD = 5, CMD_BABY = 6, CMD_BUILD = 7, CMD_INSTRUMENT = 8, CMD_GIVE_UP = 9,
+                 CMD_LATE_EDITING = 10, // BUG-9159: action 1 in the creature editor, 2 saved (its creature follows), 0 left without
+                 CMD_CONQUER = 11 };    // BUG-0879 (upstream numbers it 4; renumbered after the Lineages kinds)
+// CMD_BABY carries one of two payloads: one member id (Lineages BUG-9153: a guest's own village buys a baby,
+// buy_guest_baby) or no id and the birth place (upstream BUG-0671: a guest's purchase in the shared tribe, h_BabyBorn).
 
 // BUG-0879: while the host is away the guest's own game plays (tribe.away): a raid of its members can end an NPC
 // village there (the hut's fall, the village's conquered flag +0x556, the conquest cinematic), and nothing told the
@@ -725,10 +1717,46 @@ COOP_FIX("tribe.away_conquest", "BUG-0879", g_away_conquest_fix,
          "tribe: a village a guest conquers while the host is away is conquered in the host's game when it is back");
 static uint32_t g_conquests_sent, g_conquests_done, g_conquests_refused;
 
-static void send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action, const Target& tgt, const net::Vec3& pos)
+// BUG-9159 (owner decision 2M): host: until when a partner without a creature is making one in the editor (their village
+// waits for it instead of a stand-in); 15 minutes at most, a minute after they saved (their creature's key follows)
+static double g_late_editing_until[256];
+constexpr double kLateEditingMax = 900, kLateEditingSaved = 60;
+// host: when each partner was asked to make their creature in the editor (MSG_TRIBE_LATE; 0: not asked in this world)
+static double g_editor_asked_at[256];
+static bool g_editor_first = true;
+COOP_FIX("tribe.late_editor_first", "BUG-9159",
+         g_editor_first, "tribe: a late joiner without a creature of their own goes into the creature editor first; the village follows their save");
+static bool queue_instrument(uint8_t from, uint16_t id, unsigned tool, uint32_t token);
+static bool request_instrument(unsigned tool);
+static bool release_completed_performers(uint8_t from);
+struct PendingPerformance {
+    std::vector<uint16_t> ids;
+    Target target;
+    uint32_t world = 0;
+    uint8_t from = 0;
+    double due = 0;
+};
+static PendingPerformance g_pending_performance;
+using AbilityKey_t = bool(SK_CDECL*)(int);
+static AbilityKey_t o_AbilityKey;
+static bool SK_CDECL h_AbilityKey(int key)
 {
-    if (ids.empty())
-        return;
+    if (active() && is_guest() && !local_play() && village_orders() &&
+        key >= '1' && key <= '3' && !performance_line().empty()) {
+        request_instrument((unsigned)(key - '1' + 4));
+        return true;
+    }
+    return o_AbilityKey(key);
+}
+// `seat`: the buyer's founder seat (BUG-9135), `action`: CMD_REBUILD's action word (the seat to rebuild + 1, or 0)
+static bool buy_guest_baby(uint8_t from, int seat, uint16_t witness);
+static bool buy_guest_tool(uint8_t from, int seat, uint16_t witness, int kind, net::Vec3 pos);
+static bool queue_partner_rebuild(uint8_t from, uint16_t member, int action);
+
+static bool send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action, const Target& tgt, const net::Vec3& pos)
+{
+    if (kind != CMD_REPAIR && kind != CMD_GIVE_UP && kind != CMD_LATE_EDITING && (ids.empty() || g_guest_orders_held))
+        return false;
     net::Writer w;
     w.u8(kind);
     w.u8((uint8_t)std::min<size_t>(ids.size(), 64));
@@ -737,16 +1765,35 @@ static void send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action,
     w.u32((uint32_t)action);
     write_target(w, tgt);
     w.f32(pos.x); w.f32(pos.y); w.f32(pos.z);
-    C.sess->send_reliable_to(0, net::MSG_TRIBE_CMD, w);
+    if (kind == CMD_INSTRUMENT) w.u32(modes::current_world());
+    if (!C.sess->send_reliable_to(0, net::MSG_TRIBE_CMD, w)) return false;
     g_cmds_sent++;
     char b[128];
     snprintf(b, sizeof b, "kind=%u n=%u action=%d target=%u/%u/%X (%.1f %.1f %.1f)", kind, (unsigned)ids.size(), action,
              tgt.kind, tgt.id, tgt.noun, tgt.pos.x, tgt.pos.y, tgt.pos.z);
     g_last_cmd = b;
+    return true;
 }
 
+static std::vector<uint16_t> guest_village_ids(bool selected_only);
+static bool own_rack_purchase(void* tribe, unsigned kind, void* tool)
+{
+    if (!g_own_player || !g_persp_host || tribe != g_own_village || kind > 9) return false;
+    const double now = H->time_seconds();
+    double& asked = g_rack_asked[kind];
+    if (asked > 0 && now - asked >= 4.0) { asked = 0; return false; } // refused or lost: the host's state wins
+    if (asked > 0) return true;                                        // waiting for the host's answer
+    const auto ids = guest_village_ids(false);
+    if (ids.empty()) return false;
+    send_cmd(CMD_BUILD, {ids.front()}, (int)kind, {}, F<net::Vec3>(tool, 0x38));
+    asked = now;
+    ++g_native_tools;
+    return true;
+}
 static void ring_order(int action, void* target, const std::vector<uint16_t>& ids); // BUG-0570
 
+static int seat_of_village(void* t, void* home);          // BUG-9154 (below)
+static bool party_gift(uint8_t from, int from_seat, int to_seat);
 // cTribeInputStrategy::DoActionForObjects(vector<cSpatialObject*>*, action, target, prop) - every
 // order on an object goes through it; on guests the order goes to the host instead
 using DoActionForObjects_t = int(SK_THISCALL*)(void*, void*, int, void*, void*);
@@ -758,6 +1805,15 @@ static int SK_THISCALL h_DoActionForObjects(void* self, void* vec, int action, v
         return o_DoActionForObjects(self, vec, action, target, prop);
     }
     if (!is_guest() || game::mode_id() != modes::kTribe) {
+        // BUG-9154: the host's own Gift on a partner's village moves the food (the game's gift is for other tribes)
+        if (is_host() && active() && game::mode_id() == modes::kTribe && action == 9 && g_food_share && target &&
+            founder_seats()) {
+            const int to_seat = seat_of_village(target, player_tribe());
+            if (to_seat > 0) {
+                party_gift(0, 0, to_seat);
+                return 0;
+            }
+        }
         if (is_host() && game::mode_id() == modes::kTribe) {
             char lb[96];
             snprintf(lb, sizeof lb, "action=%d n=%d obj=%p noun=%X", action,
@@ -903,6 +1959,138 @@ static int SK_THISCALL h_WalkSelected(void* self, const float* pos)
 
 static void coop_init();
 
+// BUG-9002: identify which native path formed a village while following the host.
+static bool g_founder_npc_budget = true;
+COOP_FIX("tribe.founder_npc_budget", "BUG-9047", g_founder_npc_budget,
+         "tribe: keep cooperative founders out of the native NPC objective budget");
+using NounData_t = void*(SK_THISCALL*)(void*, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uint32_t);
+static NounData_t o_NounData;
+static uintptr_t g_form_count_return;
+static uintptr_t g_spawn_count_return;
+static bool g_founder_spawn_gate = true;
+COOP_FIX("tribe.founder_spawn_gate", "BUG-9059", g_founder_spawn_gate,
+         "tribe: exclude the partner village from native rival appearance conditions");
+static unsigned g_form_calls, g_form_budget_filtered, g_form_budget_total;
+static bool g_allied_consequence = true;
+COOP_FIX("tribe.allied_consequence", "BUG-9066", g_allied_consequence,
+         "tribe: count a guest-earned NPC alliance in the native graduation score");
+using FactionFlag = bool(SK_THISCALL*)(void*, const uint32_t*);
+static FactionFlag o_FactionFlag;
+static uintptr_t g_consequence_flag_return;
+static bool SK_THISCALL h_FactionFlag(void* profile, const uint32_t* faction)
+{
+    if (o_FactionFlag(profile, faction)) return true;
+    if (!g_allied_consequence || (uintptr_t)__builtin_return_address(0) != g_consequence_flag_return ||
+        !active() || !is_host() || !faction || !g_order_roster.guest().faction ||
+        g_order_roster.contains_faction(*faction)) return false;
+    // This caller is iterating live tribes and passed the current tribe's
+    // political ID. Require the earned diplomatic result on both founders.
+    // The game still weighs opinions, history, and its own role thresholds.
+    void* manager = relationship_manager();
+    static uintptr_t calculate = H->sym("Simulator::cRelationshipManager::CalculateRelationship");
+    if (!manager || !calculate) return false;
+    const float allied = F<float>(manager, 0x1C);
+    if (!std::isfinite(allied) || allied <= 0) return false;
+    auto allied_with = [&](uint32_t founder) {
+        return thiscall<float>(calculate, manager, *faction, founder, 0) >= allied;
+    };
+    // BUG-9135: allied with every founder (two before)
+    for (size_t seat = 0; seat < founder_seats(); ++seat)
+        if (!allied_with(g_order_roster.entries[seat].faction)) return false;
+    return true;
+}
+static void* SK_THISCALL h_NounData(void* self, uintptr_t create, uintptr_t clear,
+                                  uintptr_t add, uintptr_t filter, uint32_t noun)
+{
+    void* data = o_NounData(self, create, clear, add, filter, noun);
+    uintptr_t caller = (uintptr_t)__builtin_return_address(0);
+    bool factory_count = caller == g_form_count_return && g_founder_npc_budget;
+    bool spawn_count = caller == g_spawn_count_return && g_founder_spawn_gate;
+    if ((!factory_count && !spawn_count) ||
+        !active() || !is_host() || noun != kTribeNoun || !g_order_roster.guest().faction ||
+        !skg::readable(data, 16)) return data;
+    uintptr_t begin = F<uintptr_t>(data, 4), end = F<uintptr_t>(data, 8);
+    if (!begin || end < begin || (end-begin)%4 || end-begin < 8 || end-begin > 256 ||
+        !skg::readable((void*)begin, end-begin)) return data;
+    // BUG-9135: every partner founder village present is left out of the count (seat 1 only before), each seat once
+    uint32_t present = 0;
+    for (uintptr_t at = begin; at < end; at += 4) {
+        void* tribe = *(void**)at;
+        if (!tribe || !game::object_alive(tribe)) continue;
+        const int seat = g_order_roster.seat_of_faction(F<uint32_t>(tribe, 0x30));
+        if (seat >= 1 && seat < (int)founder_seats()) present |= 1u << seat;
+    }
+    const unsigned hidden = (unsigned)__builtin_popcount(present);
+    if (!hidden || hidden * 4 > end - begin - 4) return data;
+    // Both verified callers consume only (end-begin)/4 immediately after
+    // returning, for appearance conditions or NPC quota/species selection.
+    // Supply a private count view; never remove a village from the native
+    // noun manager or alter the shared vector used by other game systems.
+    static thread_local uintptr_t count_view[4];
+    memcpy(count_view, data, sizeof count_view);
+    count_view[2] -= 4 * hidden;
+    ++g_form_budget_filtered;
+    g_form_budget_total = (unsigned)((end-begin)/4);
+    return count_view;
+}
+
+using SpawnVillage = void*(SK_CDECL*)(const skg::Vector3*, int, int, int, bool, void*);
+static SpawnVillage o_SpawnVillage;
+// NpcTribeController_FormVillage (0xCC6440) is the same function as upstream's
+// NpcTribeController_FormTribe: one hook (h_Form, below) does both sides' checks.
+static void* SK_CDECL h_SpawnVillage(const skg::Vector3* pos, int archetype, int count, int food, bool flag, void* species)
+{
+    void* tribe = o_SpawnVillage(pos, archetype, count, food, flag, species);
+    if (tribe && is_guest()) {
+        uintptr_t caller = (uintptr_t)__builtin_return_address(0) - H->rebase(0);
+        H->log(M, SK_INFO, "tribe: guest village created caller=%08X faction=%08X members=%d food=%d", (unsigned)caller,
+               F<uint32_t>(tribe, 0x30), count, food);
+    }
+    return tribe;
+}
+
+// A fresh replacement needs the factory's planner/chief initialization, but
+// its descendants must inherit the registered founder's political identity.
+// Consume this synchronous request before SpawnTribe creates any descendants.
+using SpawnTribe_t = void(SK_THISCALL*)(void*, const skg::Vector3*, int, int, bool);
+static SpawnTribe_t o_SpawnTribe;
+static uint32_t g_refound_faction;
+static bool g_refound_ready;
+static void SK_THISCALL h_SpawnTribe(void* tribe, const skg::Vector3* pos, int count, int food, bool flag)
+{
+    if (g_refound_faction) {
+        uint32_t faction = g_refound_faction;
+        g_refound_faction = 0;
+        vcall<void>(tribe, 0x48 / 4, faction); // native cGameData::SetPoliticalID
+    }
+    o_SpawnTribe(tribe, pos, count, food, flag);
+}
+
+using TribeMessage_t = bool(SK_THISCALL*)(void*, uint32_t, void*);
+static TribeMessage_t o_TribeMessage;
+static bool SK_THISCALL h_TribeMessage(void* listener, uint32_t message, void* data);
+using PlayCinematic_t = void*(SK_THISCALL*)(void*, const char*, int, int, int, int, int);
+static PlayCinematic_t o_PlayCinematic;
+static void* SK_THISCALL h_PlayCinematic(void* mgr, const char* name, int a, int b, int c, int d, int e);
+
+using ToolLayout_t = void(SK_THISCALL*)(void*, int);
+static ToolLayout_t o_ToolLayout;
+static bool g_layout_profile_fix = true;
+COOP_FIX("tribe.layout_profile", "BUG-9009", g_layout_profile_fix,
+         "tribe: defer a structure layout after its tribe species has been cleared");
+static uint32_t g_layout_deferred;
+static void SK_THISCALL h_ToolLayout(void* tribe, int kind)
+{
+    // The native cleanup clears the profile while a hut can still retain its
+    // tribe and request a layout. CE6AE0 reads the profile's dimensions directly.
+    if (g_layout_profile_fix && !F<void*>(tribe, 0x18CC)) {
+        if (++g_layout_deferred <= 8)
+            H->log(M, SK_INFO, "tribe: deferred structure layout %d for cleared species (mode %08X)", kind, game::mode_id());
+        return;
+    }
+    o_ToolLayout(tribe, kind);
+}
+
 // BUG-0475: a member's size is its own game's pick (cCreatureCitizen GetDesiredScale vt 0x80: a random
 // size per member, the chief's bigger): the guest's mirror (bound to a local member or spawned) kept a
 // size of its own (3.79 host, 4.47 guest). The members are one kind of the field replication (fields.h):
@@ -951,7 +2139,7 @@ static void* member_mirror(uint16_t id)
 // its mirror with the game's SetSpecializedTool. `coop.fix tribe.tool_hold off`: mirrors keep their own.
 constexpr uintptr_t kToolsOff = 0x36C;    // cTribe: vector<cTribeTool*> mTools
 constexpr uintptr_t kHeldToolOff = 0x102C; // cCreatureCitizen: mSpecializedTool
-static uintptr_t a_SetChieftain; // BUG-0652
+// (a_SetChieftain: declared above; BUG-0652 and Lineages use the same address 0x00C8FEE0)
 static uint16_t member_id(void* c);
 static uintptr_t a_SetSpecializedTool, a_ToolModelReset, a_SetToolPurchased, a_ToolLayout, a_IsLeader;
 static bool g_tool_hold_fix = true;
@@ -968,6 +2156,15 @@ static bool g_leader_tool_fix = true;
 COOP_FIX("tribe.leader_tool", "BUG-0583", g_leader_tool_fix, "tribe: a guest's tribe leader never holds a weapon or instrument from the host's member (the game faulted every frame)");
 static uint32_t g_tool_sets, g_leader_tools_kept;
 static bool is_leader(void* c) { return a_IsLeader && is_citizen(c) && thiscall<bool>(a_IsLeader, c); }
+// Lineages' MSG_TRIBE_EQUIPMENT sets the tool too: the same rule for it
+static bool leader_keeps_staff(void* c, int tool)
+{
+    if (!g_leader_tool_fix || tool < 1 || tool > 6 || !is_leader(c))
+        return false;
+    if (g_leader_tools_kept++ < 5)
+        H->log(M, SK_INFO, "tribe: this game's tribe leader keeps its staff (the host's member holds tool %d, BUG-0583)", tool);
+    return true;
+}
 static float read_held_tool(void* c) { return is_citizen(c) ? (float)F<int>(c, kHeldToolOff) : 0.f; }
 static void apply_held_tool(void* c, float v)
 {
@@ -1611,9 +2808,96 @@ static void baby_forget();
 static void on_world_effect_start(uint8_t from, uint32_t id, void* fx, const net::Vec3& pos); // BUG-0824 (below)
 static void save_start();
 static void save_end();
-
 static void on_idle_anim(void* c, uint32_t anim);
 static uintptr_t a_TribeGroundStamp; // BUG-0947 (village_stamps_tick)
+
+// BUG-9153 (owner 2026-11-12, decision 2L: the Village page goes, a guest plays its village with the game's own
+// controls): Spore has one player tribe per game (noun manager +0x70); on a guest's game it was the host's village, so
+// the HUD's food counter, the villager cards, the hut's menu and the tutorial hints were the host's. Now a guest's game
+// makes its own village the player tribe with the game's setter (SetPlayerTribe: the replacement retained, the former
+// released; the host's village stays alive in the object lists) and puts the host's village back for saves, a stage
+// or world change, the session's end, the host away (local play) and the mod's unload. The mod's own logic keeps
+// meaning the host's village by player_tribe(). The hut's Add Baby on a guest goes to the host (CMD_BABY: food and the
+// population cap checked there), never the guest's own game. `coop.fix tribe.own_player_village off`: as before.
+COOP_FIX("tribe.own_player_village", "BUG-9153", g_own_player,
+         "tribe: a guest's game shows its own village as the player's (food counter, villager cards, hut menu)");
+static bool g_persp_saving;
+static bool g_persp_cam_pending = true; // BUG-9153: the first swap after a world load points the camera at the own village
+static uint32_t g_persp_swaps, g_persp_restores, g_native_babies;
+static uintptr_t a_SetPlayerTribe;
+static bool persp_set(void* t)
+{
+    void* mgr = game::noun_manager();
+    if (!a_SetPlayerTribe || !mgr || !t || !game::object_alive(t)) return false;
+    thiscall<void>(a_SetPlayerTribe, mgr, t);
+    return native_player_tribe() == t;
+}
+static void persp_restore(const char* why)
+{
+    if (!g_persp_host) return;
+    void* host = g_persp_host;
+    g_persp_host = nullptr;
+    if (game::object_alive(host) && native_player_tribe() != host) persp_set(host);
+    ++g_persp_restores;
+    H->log(M, SK_INFO, "tribe: the host's village is the player's again (%s, BUG-9153)", why);
+}
+static void persp_update()
+{
+    const bool want = g_own_player && !g_persp_saving && active() && is_guest() && !local_play() &&
+                      g_own_village && game::object_alive(g_own_village);
+    if (g_persp_host && (!want || !game::object_alive(g_persp_host) || native_player_tribe() != g_own_village))
+        persp_restore(!want ? "not needed" : "changed");
+    if (!want || g_persp_host) return;
+    void* host = native_player_tribe();
+    if (!host || host == g_own_village || !persp_set(g_own_village)) return;
+    g_persp_host = host;
+    ++g_persp_swaps;
+    H->log(M, SK_INFO, "tribe: this game shows its own village as the player's (BUG-9153)");
+    net::Vec3 home = tribe_pos(g_own_village);
+    const float at[3] = {home.x, home.y, home.z};
+    if (g_persp_cam_pending && std::isfinite(home.x) && gamefixes::tribe_camera_to(at)) g_persp_cam_pending = false;
+}
+// TribeHutUI_HandleMessage (CDBEA0): the hut menu's buttons; 0x0625CD52 Add Baby buys a baby for the player tribe
+using HutUI_t = bool(SK_THISCALL*)(void*, void*, void*);
+static HutUI_t o_HutUI;
+static bool SK_THISCALL h_HutUI(void* self, void* window, void* msg)
+{
+    if (msg && !IsBadReadPtr(msg, 0x10) && F<uint32_t>(msg, 8) == 0x287259F6 && F<uint32_t>(msg, 0xC) == 0x0625CD52 &&
+        active() && is_guest() && !local_play() && village_orders()) {
+        // (merge 0.7.14: only with a village of its own; in the shared tribe the game's own purchase goes on to
+        // upstream's h_BabyBorn relay, BUG-0671, instead of being swallowed here)
+        auto ids = guest_village_ids(false);
+        if (!ids.empty()) send_cmd(CMD_BABY, {ids.front()}, 0, {}, {});
+        ++g_native_babies;
+        return true; // the host buys it (its food and cap); the baby comes with its snapshots
+    }
+    return o_HutUI(self, window, msg);
+}
+
+// BUG-9158: Totem_AddSegment (0xC8DDA0) puts the new piece's model into slot <pieces> of the totem's model vector
+// (+0x108 / +0x10C, 5 slots: the stage's 5 wins) without a bounds check; a 6th piece released whatever lay past the
+// vector (0x131, 0x19) and crashed in Graphics::Model::Release (MSI 2026-11-12, twice, a test copy whose totem had more
+// pieces than wins). A full totem now gets no further piece (the win itself counts as before).
+static bool g_totem_guard = true;
+COOP_FIX("tribe.totem_full", "BUG-9158", g_totem_guard, "tribe: a full totem gets no further piece instead of a crash");
+static uint32_t g_totem_guarded;
+typedef void(SK_THISCALL* AddSegment_t)(void*, int, const void*);
+static AddSegment_t o_AddSegment;
+static void SK_THISCALL h_AddSegment(void* totem, int kind, const void* color)
+{
+    if (g_totem_guard && totem && skg::readable((uint8_t*)totem + 0x108, 0x30)) {
+        const uintptr_t pieces = (F<uintptr_t>(totem, 0x120) - F<uintptr_t>(totem, 0x11C)) / 4;
+        const uintptr_t slots = (F<uintptr_t>(totem, 0x10C) - F<uintptr_t>(totem, 0x108)) / 4;
+        if (slots > 0 && slots < 64 && pieces >= slots) {
+            if (g_totem_guarded++ < 8)
+                H->log(M, SK_WARN, "tribe: totem %p is full (%u pieces, %u slots): no further piece (BUG-9158)", totem,
+                       (unsigned)pieces, (unsigned)slots);
+            return;
+        }
+    }
+    o_AddSegment(totem, kind, color);
+}
+
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
     H = host;
@@ -1654,6 +2938,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_CitizenVt = H->sym("Simulator::cCreatureCitizen::vftable");
     a_TreeVt = H->sym("Simulator::cTreeData::vftable");
     a_SpawnNpcTribe = H->sym("Simulator::SpawnNpcTribe"); // BUG-0381 (optional)
+    a_SetChieftain = H->sym("SporeCoop::Tribe_SetChieftain");
+    a_SetLeader = H->sym("SporeCoop::Community_SetLeader");
     a_MaxPop = H->sym("SporeCoop::cTribe_MaxPopulation"); // BUG-0645 (optional)
     g_ok = a_GetPlayerTribe && a_DoAction && a_SetValueVector3 && a_BTTick && a_DoActionForObjects && a_WalkSelected &&
            a_SetSelected && a_CreateCitizen && a_AddMember && a_CitizenVt && a_TreeVt;
@@ -1662,9 +2948,44 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         return false;
     }
     H->hook_create(M, (void*)a_BTTick, (void*)h_BTTick, (void**)&o_BTTick);
+    if (uintptr_t a = H->sym("SporeCoop::Totem_AddSegment")) // BUG-9158
+        H->hook_create(M, (void*)a, (void*)h_AddSegment, (void**)&o_AddSegment);
+    if (uintptr_t key = H->sym("SporeCoop::AbilityBar_OnKey"))
+        H->hook_create(M, (void*)key, (void*)h_AbilityKey, (void**)&o_AbilityKey);
+    if (uintptr_t hut = H->sym("SporeCoop::Tribe_HutStateIs2")) // BUG-9153
+        H->hook_create(M, (void*)hut, (void*)h_HutState, (void**)&o_HutState);
+    a_SetPlayerTribe = H->sym("Simulator::cGameNounManager::SetPlayerTribe"); // BUG-9153
+    if (uintptr_t ui = H->sym("SporeCoop::TribeHutUI_HandleMessage"))
+        H->hook_create(M, (void*)ui, (void*)h_HutUI, (void**)&o_HutUI);
+    if (uintptr_t owned = H->sym("SporeCoop::Tribe_IsPlayerOwned"))
+        H->hook_create(M, (void*)owned, (void*)h_TribePlayerOwned, (void**)&o_TribePlayerOwned);
+    if (uintptr_t capacity = H->sym("SporeCoop::Tribe_MaxPopulation"))
+        H->hook_create(M, (void*)capacity, (void*)h_MaxPopulation, (void**)&o_MaxPopulation);
     H->hook_create(M, (void*)a_SetSelected, (void*)h_SetSelected, (void**)&o_SetSelected);
     H->hook_create(M, (void*)a_DoActionForObjects, (void*)h_DoActionForObjects, (void**)&o_DoActionForObjects);
     H->hook_create(M, (void*)a_WalkSelected, (void*)h_WalkSelected, (void**)&o_WalkSelected);
+    if (a_SpawnNpcTribe)
+        H->hook_create(M, (void*)a_SpawnNpcTribe, (void*)h_SpawnVillage, (void**)&o_SpawnVillage);
+    if (uintptr_t spawn = H->sym("SporeCoop::Tribe_Spawn"))
+        g_refound_ready = H->hook_create(M, (void*)spawn, (void*)h_SpawnTribe, (void**)&o_SpawnTribe) == 0;
+    g_form_count_return = H->sym("SporeCoop::FormVillage_TribeCountReturn");
+    g_spawn_count_return = H->sym("SporeCoop::NpcTribeUpdate_TribeCountReturn");
+    g_earned_result_return = H->sym("SporeCoop::Tribe_CompletedGoalResultReturn");
+    a_GrantEarnedTools = H->sym("SporeCoop::Tribe_GrantEarnedTools");
+    if (uintptr_t result = H->sym("SporeCoop::Tribe_QueueEarnedResult"); result && g_earned_result_return && a_GrantEarnedTools)
+        g_six_hook_ready = H->hook_create(M, (void*)result, (void*)h_QueueResult, (void**)&o_QueueResult) == 0;
+    g_consequence_flag_return = H->sym("SporeCoop::TribeConsequence_FactionFlagReturn");
+    if (uintptr_t flag = H->sym("SporeCoop::Planet_FactionFlag"); flag && g_consequence_flag_return)
+        H->hook_create(M, (void*)flag, (void*)h_FactionFlag, (void**)&o_FactionFlag);
+    if (uintptr_t get = H->sym("Simulator::cGameNounManager::GetData"); get && (g_form_count_return || g_spawn_count_return))
+        H->hook_create(M, (void*)get, (void*)h_NounData, (void**)&o_NounData);
+    if (uintptr_t handle = H->sym("SporeCoop::TribalGame_HandleMessage"))
+        H->hook_create(M, (void*)handle, (void*)h_TribeMessage, (void**)&o_TribeMessage);
+    // (merge 0.7.14: the BUG-9183 support log's PlayCinematic hook is not installed: upstream's world.cpp hooks the
+    // same function (BUG-0626) and is initialised first, so a second hook_create would fail; h_PlayCinematic below
+    // stays for a move of its log into world.cpp's hook)
+    if (uintptr_t layout = H->sym("SporeCoop::Tribe_UpdateToolLayout"))
+        H->hook_create(M, (void*)layout, (void*)h_ToolLayout, (void**)&o_ToolLayout);
     a_RingDraw = H->sym("SporeCoop::TribeTargetRing_Draw"); // BUG-0570 (optional)
     a_TribeUI = H->sym("SporeCoop::TribeUI_ptr");
     if (uintptr_t a = H->sym("SporeCoop::TribeTargetRings_Update"))
@@ -1677,6 +2998,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     if (uintptr_t a = H->sym("SporeCoop::cCreatureCitizen_Teardown")) // BUG-0667 (optional)
         H->hook_create(M, (void*)a, (void*)h_CitizenTeardown, (void**)&o_CitizenTeardown);
     a_Form = H->sym("SporeCoop::NpcTribeController_FormTribe"); // BUG-0483 (optional)
+    if (!a_Form) // the same function under the Lineages name (BUG-9002)
+        a_Form = H->sym("SporeCoop::NpcTribeController_FormVillage");
     a_NpcCtrl = H->sym("Simulator::cNpcTribeController::Get");
     if (a_Form)
         H->hook_create(M, (void*)a_Form, (void*)h_Form, (void**)&o_Form);
@@ -1698,6 +3021,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 // `coop.fix tribe.place_chiefs off`: chiefs stay where the game put them.
 static bool g_place_fix = true;
 COOP_FIX("tribe.place_chiefs", "BUG-0340", g_place_fix, "tribe: at arrival and after a rejoin every player's chief too close to another gets its own spot round the village");
+// (Lineages had backported this as BUG-9091 with chief_arrival::Movement; upstream's version is kept.)
 // BUG-0610: place_chiefs looked at every chief for 60 s after an arrival, also one that walked past another chief: a
 // member walking at 6-9 m/s on its player's order was teleported 9-22 m onto its spot (both games saw the jump). Only a
 // chief that stands is put on its spot now (as spread_chiefs). Off: 0.7.8 (walking chiefs too).
@@ -1734,10 +3058,6 @@ constexpr uint32_t kTribeInfoTag = 0x49425254u; // "TRBI": the tribe table's spe
 constexpr size_t kTribeInfo = 12 + 1;           // species key (instance, type, group) + archetype (0xFF: none)
 constexpr uintptr_t kTribeArchetypeOff = 0x550; // cTribe: the archetype SpawnNpcTribe stores (< 0x20)
 static uint32_t g_npc_tribes_made, g_npc_tribes_failed;
-struct TribeInfo {
-    game::Key key{};
-    uint8_t arch = 0xFF;
-};
 static TribeInfo tribe_info(void* t)
 {
     TribeInfo i;
@@ -1752,6 +3072,261 @@ static TribeInfo tribe_info(void* t)
     }
     return i;
 }
+
+// the only partner of a two-player session whose creature is seat 1's founder or one of its outfits (the two-founder
+// binding; with tribe.multi_founders on it is seat 1's player for diagnostics only)
+static uint8_t village_commander()
+{
+    if (C.sess->players().size() == 2)
+        for (const auto& p : C.sess->players())
+            if (p.id && founder_model(1, creations::player_key(p.id, creations::kCreature).instance))
+                return p.id;
+    return 0xFE; // no matching guest in this session
+}
+
+// ---- founder seats (BUG-9135, docs/re/tribe.md#tribe-multi-founders) ----
+// Seats are g_order_roster's: 0 the host's village (the native player tribe), 1.. the partners' villages. A player is
+// bound to a seat by their persistent identity (Founder::player, identity.h); a seat of an older save without one
+// belongs to the connected partner whose creature is its founder or one of its outfits (the creature match the
+// two-founder co-op always used), and learns that partner's identity once (bind_founder_identities).
+
+// the founder seats in play: 0 without a partner village, all of the roster's (two with tribe.multi_founders off)
+static size_t founder_seats()
+{
+    if (!g_order_roster.guest().faction) return 0;
+    return g_multi_founders ? std::min(g_order_roster.seats(), founders::kMaxSeats) : 2;
+}
+
+// party::LegacyMatch: `player`'s creature is seat `seat`'s founder or one of its outfits
+static bool founder_creature_match(int seat, uint8_t player)
+{
+    return seat >= 0 && seat < (int)founders::kMaxSeats &&
+           founder_model((size_t)seat, creations::player_key(player, creations::kCreature).instance);
+}
+
+// the founder seat `player` commands: 0 the host, 1.. a partner's village, -1 none
+static int seat_of_player(uint8_t player)
+{
+    if (player >= 0xFE || !founder_seats()) return -1;
+    if (!g_multi_founders) return player == 0 ? 0 : player == village_commander() ? 1 : -1;
+    const int seat = party::founder_seat_of(g_order_roster, player, founder_creature_match);
+    return seat >= 0 && seat < (int)founder_seats() ? seat : -1;
+}
+
+// the connected player commanding founder seat `seat` (0: the host), 0xFE: nobody (offline, unknown)
+static uint8_t player_of_seat(int seat)
+{
+    if (seat < 0 || seat >= (int)founder_seats()) return 0xFE;
+    if (seat == 0) return 0;
+    if (!g_multi_founders) return seat == 1 ? village_commander() : 0xFE;
+    const uint8_t player = party::founder_player_of(g_order_roster, seat, founder_creature_match);
+    return player >= 0xFE ? 0xFE : player;
+}
+
+// `t` is the village registered for partner seat `seat` next to the host's village `home`
+static bool seat_village_match(void* t, void* home, int seat)
+{
+    return seat >= 1 && seat < (int)founder_seats() && t && home && t != home &&
+           F<uint32_t>(home, 0x30) == g_order_roster.home().faction &&
+           F<uint32_t>(t, 0x30) == g_order_roster.entries[seat].faction && founder_model((size_t)seat, tribe_info(t).key.instance);
+}
+
+// the founder seat of village `t`: 0 the host's village, 1.. a registered partner village, -1 none
+static int seat_of_village(void* t, void* home)
+{
+    if (!t || !home || !founder_seats()) return -1;
+    if (t == home) return F<uint32_t>(home, 0x30) == g_order_roster.home().faction ? 0 : -1;
+    const int seat = g_order_roster.seat_of_faction(F<uint32_t>(t, 0x30));
+    return seat_village_match(t, home, seat) ? seat : -1;
+}
+
+static bool registered_guest_village(void* t, void* home) { return seat_of_village(t, home) >= 1; }
+
+// the live village of founder seat `seat` (0: the host's), null: none (not loaded, captured, no partner founded yet)
+static void* founder_village(int seat)
+{
+    void* home = player_tribe();
+    if (!home || !founder_seats() || F<uint32_t>(home, 0x30) != g_order_roster.home().faction) return nullptr;
+    if (seat == 0) return home;
+    if (seat < 0 || seat >= (int)founder_seats()) return nullptr;
+    for (void* t : all_tribes()) if (seat_village_match(t, home, seat)) return t;
+    return nullptr;
+}
+
+// ---- outfit votes: one per partner seat (the two-founder co-op had one, for seat 1) ----
+static bool vote_pending(const OutfitVote& vote)
+{
+    if (!vote.token || vote.world != modes::current_world()) return false;
+    for (const auto& p : C.sess->players()) if (p.id == vote.owner) return true;
+    return false;
+}
+
+void begin_outfit_vote()
+{
+    if (!active() || !is_host() || !village_orders()) return;
+    for (int seat = 1; seat < (int)founder_seats(); ++seat) {
+        const uint8_t guest = player_of_seat(seat);
+        if (!guest || guest >= 0xFE) continue;
+        auto& vote = g_votes[seat];
+        vote = {modes::current_world(), ++g_outfit_serial, creations::player_key(guest, creations::kCreature).instance, 0, guest};
+        if (!vote.token) vote.token = ++g_outfit_serial;
+        net::Writer w;
+        w.u8(0); w.u32(vote.world); w.u32(vote.token); w.u32(vote.previous); w.u32(0);
+        if (!C.sess->send_reliable_to(guest, net::MSG_TRIBE_OUTFIT, w)) vote = {};
+    }
+}
+
+void finish_own_outfit(bool saved)
+{
+    if (is_guest() && g_outfit.world == modes::current_world() && g_outfit.token) {
+        g_outfit.ready = true; g_outfit.saved = saved;
+    }
+}
+
+void cancel_outfit_vote() { g_outfit = {}; g_votes = {}; }
+
+bool outfits_pending()
+{
+    if (!is_host()) return false;
+    for (const auto& vote : g_votes) if (vote_pending(vote)) return true;
+    return false;
+}
+
+static void receive_outfit(uint8_t from, net::Reader& r)
+{
+    unsigned kind = r.u8();
+    uint32_t world = r.u32(), token = r.u32(), previous = r.u32(), model = r.u32();
+    if (!r.ok() || r.left() || !world || world != modes::current_world() || !token || !previous) return;
+    if (kind == 0 && from == 0 && is_guest() && active() && !model) {
+        g_outfit = {world, token, previous, 0, C.sess->my_id()};
+    } else if (kind == 1 && is_host()) {
+        for (auto& vote : g_votes) // the sender's own vote (the vote's owner is its seat's player)
+            if (from == vote.owner && vote.token == token && vote.world == world && vote.previous == previous && model) {
+                vote.model = model; vote.ready = true;
+                break;
+            }
+    } else if (kind == 2 && from == 0 && is_guest() && g_outfit.token == token &&
+               g_outfit.world == world && g_outfit.previous == previous && g_outfit.model == model && model) {
+        creations::confirm_tribal_outfit();
+        g_outfit = {};
+    }
+}
+
+static bool g_founder_survival = true;
+COOP_FIX("tribe.founder_survival", "BUG-9007", g_founder_survival,
+         "tribe: a surviving founding village prevents the host population rewind");
+static uint32_t g_founder_rewinds_held;
+// BUG-9147: the rewind was held only with a partner online; a host playing alone while the partners' villages live on
+// (an offline player's village is the AI's) got the native game over for everyone's world (the MSI 2026-11-12: a save
+// whose host village was already empty). Now it is held with nobody else online too, and a host village with no living
+// member (and no knockout under way) gets one villager back at its home 2 s later (the party goes on, as after a party
+// wipe, BUG-9155). Off: a partner must be online; an empty village stays empty.
+static bool g_alone_survival = true;
+COOP_FIX("tribe.founder_survival_alone", "BUG-9147", g_alone_survival,
+         "tribe: the population rewind is held while a partner founder village lives, also alone; an empty host village gets a villager back");
+static double g_home_respawn_at = -1;
+static bool g_wipe_all_due; // nobody's founder village had a living member: the party wipe (owner decision 1U) instead
+static uint32_t g_home_respawns, g_wipes_all, g_wipes_all_held;
+// the game posts the event again after the wipe's reload (seen on the MSI: every 20 s, a party wipe each time): one party
+// wipe per kWipeAllGap s, the later events are only held
+static double g_last_wipe_all_at = -1e9;
+constexpr double kWipeAllGap = 300;
+// BUG-9183: since a guest's game shows its own village as the player's (BUG-9153), its game posts the population event
+// when that village is wiped out and showed the native game over ("Alas! Your population has fallen below the minimum")
+// while the party played on (the MSI 2026-11-13, log: "population event ... host=0"). The host decides what a wiped
+// village costs (the rescue, the party wipe, a villager back: BUG-9147, BUG-9155), so a connected guest's game never
+// runs the event. Off: the guest's game runs it.
+static bool g_guest_pop_hold = true;
+COOP_FIX("tribe.guest_pop_hold", "BUG-9183", g_guest_pop_hold,
+         "tribe: a guest's game holds the population event (the host decides a wiped village's loss)");
+static uint32_t g_guest_pops_held;
+
+// BUG-9183 (support log): the host showed the population game over (FBCD6489) with no population event through
+// h_TribeMessage before it (TITAN 2026-11-13 14:18): which code starts a Tribe cinematic (TRG_*), and from where
+static void* SK_THISCALL h_PlayCinematic(void* mgr, const char* name, int a, int b, int c, int d, int e)
+{
+    // every cinematic in the Tribe stage, not only TRG_*: the game over's own one (FBCD6489, a hashed name, no code
+    // constant; TRG_PRE_PopDestroyed is pushed at CD8B01 only) may come by another name (BUG-9184, 2026-11-14)
+    static unsigned logs = 0;
+    if (name && !IsBadReadPtr(name, 4) && (!strncmp(name, "TRG_", 4) || game::mode_id() == modes::kTribe) && logs++ < 200)
+        H->log(M, SK_INFO, "tribe: cinematic %s started from %08X (host=%d)", name,
+               (unsigned)((uintptr_t)__builtin_return_address(0) - H->rebase(0)), (int)is_host());
+    return o_PlayCinematic(mgr, name, a, b, c, d, e);
+}
+
+static bool SK_THISCALL h_TribeMessage(void* listener, uint32_t message, void* data)
+{
+    // The event's native body also changes the camera and loss state before it
+    // starts TRG_PRE_PopDestroyed. Keep the whole event out of a surviving duo.
+    // BUG-9135: any partner village that survives (seat 1 of exactly two players before)
+    static unsigned s_pop_logs = 0;
+    const bool pop_log = message == 0x05C80207 && s_pop_logs++ < 20;
+    if (pop_log) { // support log (BUG-9147): why a rewind was or was not held (data: [+8] the citizen that died, ~)
+        founders::Roster roster;
+        void* home = player_tribe();
+        const bool rr = founders::read(world::current_game_key(), roster);
+        uint32_t d[4] = {};
+        if (data && skg::readable(data, 16)) memcpy(d, data, 16);
+        H->log(M, SK_INFO, "tribe: the population event (05C80207): survival=%d active=%d host=%d players=%u home=%p "
+               "roster=%d (%zu seats) home faction %08X roster's %08X data %p [%08X %08X %08X %08X]", (int)g_founder_survival,
+               (int)active(), (int)is_host(), C.sess ? (unsigned)C.sess->players().size() : 0u, home, (int)rr,
+               rr ? roster.seats() : (size_t)0, home ? F<uint32_t>(home, 0x30) : 0u, rr ? roster.home().faction : 0u, data,
+               d[0], d[1], d[2], d[3]);
+        for (void* t : all_tribes()) { // which village the event names, if any
+            const uint32_t tp = (uint32_t)(uintptr_t)t;
+            if (tp == d[0] || tp == d[1] || tp == d[2] || tp == d[3] || t == data)
+                H->log(M, SK_INFO, "tribe: the population event names village %08X (%p)%s", F<uint32_t>(t, 0x30), t,
+                       t == home ? " (the host's)" : "");
+        }
+    }
+    if (message == 0x05C80207 && g_guest_pop_hold && active() && is_guest()) {
+        if (g_guest_pops_held++ < 20) H->log(M, SK_INFO, "tribe: the population event on a guest: held, the host decides (BUG-9183)");
+        return false;
+    }
+    if (message == 0x05C80207 && g_founder_survival && active() && is_host() &&
+        (g_multi_founders ? C.sess->players().size() >= (g_alone_survival ? 1u : 2u) : C.sess->players().size() == 2)) {
+        founders::Roster roster;
+        void* home = player_tribe();
+        if (home && founders::read(world::current_game_key(), roster) && F<uint32_t>(home, 0x30) == roster.home().faction) {
+            const size_t seats = g_multi_founders ? roster.seats() : 2;
+            for (void* t : all_tribes()) {
+                const int seat = roster.seat_of_faction(F<uint32_t>(t, 0x30));
+                if (pop_log && t != home && seat >= 1 && seat < (int)seats) { // support log (BUG-9147)
+                    int alive = 0;
+                    for (void* c : members(t)) alive += game::health(c) > 0 && !F<uint8_t>(c, 0xB5E);
+                    H->log(M, SK_INFO, "tribe: population event: seat %d village %08X defeated=%d species %08X (roster %08X) "
+                           "living %d", seat, F<uint32_t>(t, 0x30), (int)F<uint8_t>(t, 0x556), tribe_info(t).key.instance,
+                           roster.entries[seat].species, alive);
+                }
+                if (t == home || seat < 1 || seat >= (int)seats || F<uint8_t>(t, 0x556) ||
+                    (tribe_info(t).key.instance != roster.entries[seat].species &&
+                     !g_outfits.contains((size_t)seat, tribe_info(t).key.instance))) continue;
+                for (void* c : members(t)) {
+                    if (game::health(c) <= 0 || F<uint8_t>(c, 0xB5E)) continue;
+                    g_founder_rewinds_held++;
+                    if (C.notice) C.notice("Your partner's village survives. The shared world continues.");
+                    if (g_alone_survival && !rescue_pending()) { // BUG-9147: nobody left at home: one comes back
+                        bool anyone = false;
+                        for (void* m : members(home)) anyone |= game::health(m) > 0;
+                        if (!anyone) g_home_respawn_at = H->time_seconds() + 2;
+                    }
+                    return false;
+                }
+            }
+            // BUG-9147 (owner decision 1U: "a players whole tribe causes the loss of progression for both players"):
+            // no founder village has a living member either: the party wipe and a villager back at every empty founder
+            // village, not the native rewind (a reload of the last save for everyone)
+            if (g_alone_survival && g_multi_founders && roster.seats() >= 2 && !rescue_pending()) {
+                g_wipe_all_due = true;
+                g_home_respawn_at = H->time_seconds() + 2;
+                g_founder_rewinds_held++;
+                return false;
+            }
+        }
+    }
+    return o_TribeMessage(listener, message, data);
+}
+
 // BUG-0569: a guest saw its village's members stand still while the host's fought, gathered, danced and built.
 // The behaviour tree of a guest's mirror does not run (h_BTTick: the host's member decides), and the animations of
 // the members' actions are started by those trees (SporeCoop::CreaturePlayAnim: fights, gathering, the grab, the
@@ -3105,6 +4680,14 @@ static void host_tick(double now)
     gameover_host_tick(now); // BUG-0960
     baby_tick(now); // BUG-0671
     void* pt = player_tribe();
+    if (pt && g_restore_village_orders) {
+        founders::Roster saved;
+        std::string error;
+        if (founders::read(world::current_game_key(), saved) && F<uint32_t>(pt, 0x30) == saved.home().faction &&
+            founders::read_outfits(world::current_game_key(), g_outfits, error))
+            g_order_roster = saved;
+        g_restore_village_orders = false;
+    }
     auto tribes = all_tribes();
     std::vector<uint8_t> players;
     for (auto& p : C.sess->players())
@@ -3129,8 +4712,17 @@ static void host_tick(double now)
         bool body = false; // BUG-0620
     };
     std::vector<Entry> entries;
+    const bool village_orders = g_order_roster.guest().faction != 0;
+    // BUG-9135: the members of each partner village belong to that seat's player (seat 1's only before)
+    std::array<uint8_t, founders::kMaxSeats> seat_player;
+    seat_player.fill(0xFE);
+    for (int seat = 1; village_orders && seat < (int)founder_seats(); ++seat) seat_player[seat] = player_of_seat(seat);
+    std::vector<int> village_seat(std::min<size_t>(tribes.size(), 32), -1);
+    for (size_t ti = 0; ti < village_seat.size(); ti++)
+        village_seat[ti] = tribes[ti] == pt ? 0 : village_orders ? seat_of_village(tribes[ti], pt) : -1;
     for (size_t ti = 0; ti < tribes.size() && ti < 32; ti++) {
         bool player = tribes[ti] == pt;
+        const uint8_t village_owner = player ? 0 : (village_seat[ti] >= 1 ? seat_player[village_seat[ti]] : 0xFE);
         for (void* c : members(tribes[ti])) {
             alive.insert(c);
             auto it = g_hm.find(c);
@@ -3162,6 +4754,8 @@ static void host_tick(double now)
             }
             it->second.tribe = tribes[ti];
             it->second.body_since = 0;
+            if (village_orders || !player)
+                it->second.owner = village_owner;
             entries.push_back({it->second.id, (uint8_t)ti, it->second.owner, F<uint8_t>(c, kAgeOff), c});
         }
     }
@@ -3192,11 +4786,30 @@ static void host_tick(double now)
     // removed those mirrors at the end of every cycle (play_tribe.py: the guest's tribe emptied)
     g_cycle++;
     size_t nt = std::min<size_t>(tribes.size(), 32);
+    struct Food { uint32_t species = 0; double amount = 0; };
+    std::vector<Food> food(nt);
+    size_t food_bytes = 0;
+    if (village_orders) {
+        g_seat_food = unknown_food();
+        for (size_t i = 0; i < nt; ++i) {
+            void* t = tribes[i];
+            if (village_seat[i] < 0) continue; // the host's village and every partner village (BUG-9135)
+            auto species = tribe_info(t).key.instance;
+            if (species && shared::tribe_food(t, food[i].amount)) {
+                food[i].species = species;
+                food_bytes += 8;
+                g_seat_food[village_seat[i]] = (float)food[i].amount;
+            }
+        }
+    }
+    const size_t rescue_seats = std::max<size_t>(2, founder_seats()); // two: the TRRV trailer as before
     std::vector<TribeInfo> infos; // BUG-0381
     if (g_npc_tribes_fix)
         for (size_t ti = 0; ti < nt; ti++)
             infos.push_back(tribes[ti] == pt ? TribeInfo{} : tribe_info(tribes[ti]));
-    size_t head = 2 + 1 + 1 + 1 + nt * 13 + 1 + kTrailerSize + (infos.empty() ? 0 : 4 + 1 + nt * kTribeInfo);
+    size_t head = 2 + 1 + 1 + 1 + nt * 13 + food_bytes + 1 + kTrailerSize + (infos.empty() ? 0 : 4 + 1 + nt * kTribeInfo);
+    if (village_orders) head += tribe_seats::rescue_bytes(rescue_seats);
+    if (g_native_chiefs_fix) head += 5 + nt * 2;
     size_t per = std::max<size_t>(1, (net::kMaxPacket - 64 - head) / kEntry);
     size_t chunks = std::max<size_t>(1, (entries.size() + per - 1) / per);
     for (size_t k = 0; k < chunks; k++) {
@@ -3208,7 +4821,12 @@ static void host_tick(double now)
         for (size_t ti = 0; ti < tribes.size() && ti < 32; ti++) {
             net::Vec3 p = tribe_pos(tribes[ti]);
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
-            w.u8(tribes[ti] == pt ? 1 : 0);
+            bool home = tribes[ti] == pt;
+            w.u8((home ? 1 : 0) | (food[ti].species ? 2 : 0) | (home && village_orders ? 4 : 0));
+            if (food[ti].species) {
+                w.u32(food[ti].species);
+                w.f32((float)food[ti].amount);
+            }
         }
         size_t from = k * per, to = std::min(entries.size(), from + per);
         w.u8((uint8_t)(to - from));
@@ -3231,6 +4849,25 @@ static void host_tick(double now)
                 w.u32(i.key.instance); w.u32(i.key.type); w.u32(i.key.group);
                 w.u8(i.arch);
             }
+        }
+        if (g_native_chiefs_fix) {
+            w.u32(kNativeChiefsTag);
+            w.u8((uint8_t)nt);
+            for (size_t ti = 0; ti < nt; ++ti) {
+                void* chief = F<void*>(tribes[ti], kNativeLeaderOff);
+                auto found = g_hm.find(chief);
+                w.u16(found != g_hm.end() && F<void*>(chief, kOwnerTribeOff) == tribes[ti] ? found->second.id : 0);
+            }
+        }
+        if (village_orders) {
+            // by founder seat: TRRV for two seats (as before), TRRS for 3+ (BUG-9135, tribe_seats.h)
+            tribe_seats::Rescues rescues{};
+            for (size_t seat = 0; seat < rescue_seats && seat < rescues.size(); ++seat) {
+                const auto& rescue = g_founder_rescues[seat];
+                rescues[seat] = {rescue.until > 0 ? rescue.member : (uint16_t)0, // BUG-9118: up to 30 s
+                                 (uint16_t)std::clamp(std::ceil((rescue.until - now) * 10), 0.0, (double)tribe_seats::kMaxRescueTenths)};
+            }
+            tribe_seats::write_rescues(w, rescues, rescue_seats);
         }
         for (auto& p : C.sess->players())
             if (p.id != 0) {
@@ -3307,9 +4944,23 @@ static void* resolve_target(const Target& t)
     return nullptr;
 }
 
+static bool gift_cost(int& cost)
+{
+    uintptr_t tuning = H->sym("SporeCoop::TribeTuning_ptr");
+    uintptr_t fallback = H->sym("SporeCoop::TribeGiftCost_default");
+    uintptr_t get = H->sym("App::Property::GetFloat");
+    if (!tuning || !fallback || !get) return false;
+    float value = *(const float*)fallback;
+    if (void* list = *(void**)tuning) skg::cdecl_call<bool>(get, list, 0xFD444753u, &value);
+    if (!std::isfinite(value) || value < 1 || value > 1000000) return false;
+    cost = (int)value;
+    return true;
+}
+
 // host: members of `from` change hands (a gift); owners travel with the snapshots
 static void give_on_host(uint8_t from, uint8_t to, const std::vector<uint16_t>& ids)
 {
+    if (g_order_roster.guest().faction) return;
     void* pt = player_tribe();
     int n = 0;
     for (uint16_t id : ids) {
@@ -3325,6 +4976,115 @@ static void give_on_host(uint8_t from, uint8_t to, const std::vector<uint16_t>& 
     if (n && C.notice)
         C.notice(C.sess->name_of(from) + " gave " + std::to_string(n) + (n == 1 ? " tribe member to " : " tribe members to ") +
                  C.sess->name_of(to));
+}
+
+// ---- BUG-9154: the party's food (owner decision 2P) ----
+// A quarter of every delivery into a present player's village goes to the other present players' villages, split
+// evenly, each at least 1 food (party_food.h); the gatherer keeps three quarters. The host sees deliveries as rises of a
+// founder village's native food store (its own villagers' gathering, hunting, fishing, raids), checked 4 times a
+// second against a baseline the mod's own changes move with them (shares, gifts, purchases charge on their own and
+// read as a fall). A gift with the game's own Gift (social stance, right-click a party member's village) moves the
+// game's gift price from the giver's village to theirs at once, both told. `coop.fix tribe.food_share off`: as before
+// (no share; gifts to party villages refused).
+COOP_FIX("tribe.food_share", "BUG-9154", g_food_share,
+         "tribe: a quarter of each delivery split among the partners (at least 1 each), food gifts between party villages");
+static std::array<void*, founders::kMaxSeats> g_share_village{};
+static std::array<double, founders::kMaxSeats> g_share_base{};
+static uint32_t g_share_world, g_shares, g_party_gifts;
+static double g_share_given, g_share_created;
+static bool intact_village(void* t);
+static bool tell_buyer(uint8_t from, const char* reason);
+static void notice_to(uint8_t player, const std::string& text)
+{
+    if (player == 0) { notify::show(text, "info"); return; } // the host only (C.notice goes to every player)
+    if (player >= 0xFE || !net::is_player(*C.sess, player)) return;
+    net::Writer w;
+    w.str8(text);
+    C.sess->send_reliable_to(player, net::MSG_NOTICE, w);
+}
+static void share_moved(void* village, double delta) // a change of ours: not a delivery
+{
+    for (size_t seat = 0; seat < g_share_village.size(); ++seat)
+        if (g_share_village[seat] == village) g_share_base[seat] += delta;
+}
+static void food_share_tick(double now)
+{
+    static double at;
+    if (now - at < 0.25) return;
+    at = now;
+    const size_t seats = founder_seats();
+    if (!g_food_share || seats < 2) return;
+    if (g_share_world != modes::current_world()) {
+        g_share_world = modes::current_world();
+        g_share_village.fill(nullptr);
+    }
+    std::array<double, founders::kMaxSeats> food{};
+    std::vector<int> here;
+    for (size_t seat = 0; seat < seats && seat < food.size(); ++seat) {
+        void* v = founder_village((int)seat);
+        double f = 0;
+        if (!v || !intact_village(v) || player_of_seat((int)seat) >= 0xFE || !shared::tribe_food(v, f)) {
+            g_share_village[seat] = nullptr;
+            continue;
+        }
+        if (g_share_village[seat] != v) { // a village new to the share: its food so far is not a delivery
+            g_share_village[seat] = v;
+            g_share_base[seat] = f;
+            continue;
+        }
+        food[seat] = f;
+        here.push_back((int)seat);
+    }
+    for (int seat : here) {
+        const double gathered = food[seat] - g_share_base[seat];
+        if (gathered < party_food::kDelivery) {
+            if (gathered < 0) g_share_base[seat] = food[seat]; // eaten or spent
+            continue;
+        }
+        const int partners = (int)here.size() - 1;
+        const auto s = party_food::split(gathered, partners);
+        if (partners <= 0 || s.each <= 0) { g_share_base[seat] = food[seat]; continue; }
+        food[seat] = g_share_base[seat] + s.keep;
+        shared::mirror_village_food(g_share_village[seat], food[seat]);
+        g_share_base[seat] = food[seat];
+        for (int p : here) if (p != seat) {
+            food[p] += s.each;
+            shared::mirror_village_food(g_share_village[p], food[p]);
+            g_share_base[p] += s.each;
+        }
+        ++g_shares;
+        g_share_given += s.each * partners;
+        g_share_created += party_food::created(gathered, partners);
+    }
+}
+// a gift of food from seat `from_seat`'s village to seat `to_seat`'s (asked by player `from`)
+static bool party_gift(uint8_t from, int from_seat, int to_seat)
+{
+    void* giver = founder_village(from_seat);
+    void* to = founder_village(to_seat);
+    int price = 0;
+    double gf = 0, tf = 0;
+    if (!giver || !to || giver == to || !gift_cost(price) || !shared::tribe_food(giver, gf) || !shared::tribe_food(to, tf))
+        return from ? tell_buyer(from, "That gift could not be given just now.") : false;
+    if (!party_food::can_gift(gf, price)) {
+        const std::string text = "Your village needs " + std::to_string(price) + " food for a gift.";
+        if (from) return tell_buyer(from, text.c_str());
+        notice_to(0, text);
+        return false;
+    }
+    shared::mirror_village_food(giver, gf - price);
+    shared::mirror_village_food(to, tf + price);
+    share_moved(giver, -price);
+    share_moved(to, price);
+    ++g_party_gifts;
+    ++g_cmds_done;
+    const uint8_t to_player = player_of_seat(to_seat);
+    const std::string giver_name = C.sess->name_of(from);
+    notice_to(to_player, giver_name + " gave your village " + std::to_string(price) + " food.");
+    notice_to(from, "You gave " + (to_player < 0xFE ? C.sess->name_of(to_player) : std::string("your partner")) +
+                        "'s village " + std::to_string(price) + " food.");
+    H->log(M, SK_INFO, "tribe: party gift of %d food, seat %d -> seat %d (BUG-9154)", price, from_seat, to_seat);
+    return true;
 }
 
 // BUG-0671: "a member the guest buys is made in the guest's game only and removed again". A click on the own hut
@@ -3582,7 +5342,7 @@ static void* target_village(void* o)
     return std::find(ts.begin(), ts.end(), t) != ts.end() ? t : nullptr;
 }
 
-static void host_command(uint8_t from, net::Reader& r)
+static void host_command(uint8_t from, net::Reader& r, bool resumed = false)
 {
     uint8_t kind = r.u8(), n = r.u8();
     std::vector<uint16_t> ids;
@@ -3594,18 +5354,113 @@ static void host_command(uint8_t from, net::Reader& r)
     pos.x = r.f32(); pos.y = r.f32(); pos.z = r.f32();
     if (!r.ok())
         return;
-    if (kind == CMD_BABY) { // BUG-0671
+    if (kind == CMD_CONQUER) { // BUG-0879
+        if (g_away_conquest_fix && from != 0 && game::mode_id() == modes::kTribe)
+            conquer_on_host(from, pos);
+        else
+            g_cmds_rejected++;
+        return;
+    }
+    if (kind == CMD_BABY && ids.empty()) { // BUG-0671: a guest's purchase in the shared tribe (the birth place)
         if (g_guest_baby_fix && from != 0 && game::mode_id() == modes::kTribe)
             baby_on_host(from, pos);
         else
             g_cmds_rejected++;
         return;
     }
-    if (kind == CMD_CONQUER) { // BUG-0879
-        if (g_away_conquest_fix && from != 0 && game::mode_id() == modes::kTribe)
-            conquer_on_host(from, pos);
-        else
+    if (kind == CMD_LATE_EDITING) { // BUG-9159: a partner without a creature makes one in the editor (or is done)
+        const double now = H->time_seconds();
+        if (from < 0xFE)
+            g_late_editing_until[from] = action == 1 ? now + kLateEditingMax : action == 2 ? now + kLateEditingSaved : 0;
+        H->log(M, SK_INFO, "tribe: %s %s (BUG-9159)", C.sess->name_of(from).c_str(),
+               action == 1 ? "makes a creature in the editor: their village waits for it"
+                           : action == 2 ? "saved a creature: their village follows it" : "left the editor without a creature");
+        return;
+    }
+    const bool village_orders = g_order_roster.guest().faction != 0;
+    // BUG-9135: the sender's founder seat and its village (seat 1, the only partner, before)
+    const int sender_seat = village_orders ? seat_of_player(from) : -1;
+    const bool commander = from < 0xFE && sender_seat >= 1;
+    if (kind != CMD_INSTRUMENT && from == g_pending_performance.from)
+        g_pending_performance = {}; // a newer player order supersedes the queued performance
+    if (kind == CMD_INSTRUMENT) {
+        uint32_t world = r.u32();
+        // Target kind4 carries the opaque native session token, not an object address.
+        if (!r.ok() || r.left() || world != modes::current_world() || !world || !village_orders ||
+            !g_performance_fix || ids.size() != 1 || tgt.kind != 4 ||
+            !queue_instrument(from, ids.front(), (unsigned)action, tgt.noun)) ++g_cmds_rejected;
+        else ++g_cmds_done;
+        return;
+    }
+    if (kind == CMD_ACTION && action == 26 && tgt.kind == 1 && !resumed)
+        g_perform_dispatch = {g_perform_dispatch.sequence + 1, tgt.id, n};
+    void* forage_target = nullptr;
+    if (kind == CMD_BUILD) {
+        if (!village_orders || ids.size() != 1 || !commander ||
+            !buy_guest_tool(from, sender_seat, ids[0], action, pos)) g_cmds_rejected++;
+        return;
+    }
+    if (kind == CMD_BABY) {
+        if (!village_orders || ids.size() != 1 || !commander ||
+            !buy_guest_baby(from, sender_seat, ids[0])) g_cmds_rejected++;
+        return;
+    }
+    if (kind == CMD_REBUILD) { // the action word: the seat to rebuild + 1, 0 = not given (tribe_seats.h)
+        if (!village_orders || ids.size() != 1 || !commander ||
+            !queue_partner_rebuild(from, ids[0], action)) g_cmds_rejected++;
+        return;
+    }
+    if (kind == CMD_GIVE_UP) { // BUG-9118: a partner founder gives up its rescue (the action word: its seat + 1, or 0)
+        int claimed = -1;
+        const bool seat_ok = !g_multi_founders || (tribe_seats::action_seat(action, claimed) && (claimed < 0 || claimed == sender_seat));
+        if (from < 0xFE && seat_ok && sender_seat >= 1 && g_founder_rescues[sender_seat].until)
+            g_founder_rescues[sender_seat].gave_up = true;
+        return;
+    }
+    if (kind == CMD_REPAIR) {
+        if (!village_orders || g_repair_served || !commander) return;
+        g_repair_served = true;
+        std::string err;
+        bool queued = world::share_with(from, err, true);
+        if (C.notice) C.notice(queued ? "An extra guest village was detected. Reloading the host's saved planet on the guest." :
+                              "Could not repair the guest's village roster: " + err);
+        return;
+    }
+    if (kind == CMD_FORAGE) {
+        if (!village_orders || !commander) { g_cmds_rejected++; return; }
+        void* fruit = nullptr;
+        float nearest = 300.f;
+        if (void* t = founder_village(sender_seat)) { // the sender's own village (BUG-9135)
+            const net::Vec3 site = tribe_pos(t);
+            for_each_tree([&](void* tree, const net::Vec3& p) {
+                float d = net::dist(site, p);
+                if (d < nearest && F<uint32_t>(tree, 0x48)) { nearest = d; fruit = tree; }
+            });
+        }
+        if (!fruit) {
             g_cmds_rejected++;
+            if (C.notice) C.notice("No fruit tree within 300 metres of the guest village.");
+            return;
+        }
+        kind = CMD_ACTION;
+        action = 2;
+        tgt = encode_target(fruit);
+        forage_target = fruit;
+    }
+    const bool gather = kind == CMD_ACTION && action == 2 && tgt.kind == 3 && tgt.noun == kTreeNoun;
+    const bool attack = kind == CMD_ACTION && action == 7 && tgt.kind == 1;
+    const bool raid = kind == CMD_ACTION && action == 15 && tgt.kind == 2 && (tgt.noun == kHutNoun || tgt.noun == kToolNoun);
+    const bool equip = kind == CMD_ACTION && action == 3 && tgt.kind == 2 && tgt.noun == kToolNoun;
+    const bool heal = g_heal_orders && kind == CMD_ACTION && action == 5 && tgt.kind == 1;
+    const bool eat = g_eat_orders && kind == CMD_ACTION && action == 0 && tgt.kind == 2 && tgt.noun == 0x629BAFE;
+    const bool gift = g_gift_orders && kind == CMD_ACTION && action == 9 && tgt.kind == 2 && tgt.noun == kTribeNoun;
+    const bool perform = g_performance_fix && kind == CMD_ACTION && action == 26 && tgt.kind == 1;
+    const bool hunt = g_hunt_party_orders && kind == CMD_ACTION && action == 10 && tgt.kind == 2 && tgt.noun == 0x18EB45E;
+    const bool party = g_hunt_party_orders && kind == CMD_ACTION && action == 12 && tgt.kind == 2 && tgt.noun == 0x18C8F0C;
+    if (village_orders && ((kind != CMD_WALK && !gather && !attack && !raid && !equip && !heal && !eat && !gift && !perform &&
+                            !hunt && !party) || !commander || !std::isfinite(pos.x) ||
+                           !std::isfinite(pos.y) || !std::isfinite(pos.z))) {
+        g_cmds_rejected++;
         return;
     }
     if (kind == CMD_GIVE) {
@@ -3623,7 +5478,70 @@ static void host_command(uint8_t from, net::Reader& r)
     if (kind != CMD_ACTION && kind != CMD_WALK)
         return;
     void* pt = player_tribe();
-    void* target = kind == CMD_ACTION ? resolve_target(tgt) : nullptr;
+    if (village_orders && (!std::isfinite(tgt.pos.x) || !std::isfinite(tgt.pos.y) || !std::isfinite(tgt.pos.z))) {
+        g_cmds_rejected++;
+        return;
+    }
+    void* target = forage_target ? forage_target : (kind == CMD_ACTION ? resolve_target(tgt) : nullptr);
+    if (village_orders && equip && (!target || !game::object_alive(target) || game::noun_id(target) != kToolNoun ||
+        F<float>(target, 0x158) <= 0 || sender_seat < 1 || F<uint32_t>(target, 0x30) != g_order_roster.entries[sender_seat].faction ||
+        F<uint32_t>(target, 0x1FC) < 1 || F<uint32_t>(target, 0x1FC) > 9)) {
+        g_cmds_rejected++;
+        return;
+    }
+    if (village_orders && raid && (!target || !game::object_alive(target) || game::noun_id(target) != tgt.noun ||
+        F<float>(target, 0x158) <= 0 || g_order_roster.contains_faction(F<uint32_t>(target, 0x30)))) {
+        g_cmds_rejected++;
+        return;
+    }
+    if (village_orders && (attack || perform) && (!target || !is_citizen(target) || !game::object_alive(target) ||
+        game::health(target) <= 0 || F<uint8_t>(target, 0xB5E) ||
+        g_order_roster.contains_faction(F<uint32_t>(target, 0x30)))) {
+        g_cmds_rejected++;
+        return;
+    }
+    if (village_orders && gather && (!target || !F<uint32_t>(target, 0x48))) {
+        g_cmds_rejected++;
+        return;
+    }
+    if (village_orders && heal && (!target || !is_citizen(target) || !game::object_alive(target) ||
+        game::health(target) <= 0 || F<uint8_t>(target, 0xB5E) || founder_downed(target) ||
+        game::health(target) >= game::max_health(target) ||
+        !g_order_roster.contains_faction(F<uint32_t>(target, 0x30)))) {
+        g_cmds_rejected++;
+        return;
+    }
+    if (village_orders && eat && (!target || !game::object_alive(target) || game::noun_id(target) != 0x629BAFE)) {
+        g_cmds_rejected++;
+        return;
+    }
+    if (village_orders && party && (!target || !game::object_alive(target) || game::noun_id(target) != 0x18C8F0C)) {
+        g_cmds_rejected++;
+        return;
+    }
+    if (village_orders && hunt && (!target || !game::object_alive(target) || is_citizen(target) ||
+                                   game::health(target) <= 0 || F<uint8_t>(target, 0xB5E))) { // an animal, alive
+        g_cmds_rejected++;
+        return;
+    }
+    int gift_price = 0;
+    if (village_orders && gift && g_food_share && target && sender_seat >= 0) { // BUG-9154: a party member's village
+        const int to_seat = seat_of_village(target, player_tribe());
+        if (to_seat >= 0 && to_seat != sender_seat) {
+            if (!party_gift(from, sender_seat, to_seat)) g_cmds_rejected++;
+            return;
+        }
+    }
+    if (village_orders && gift) {
+        auto tribes = all_tribes();
+        if (!target || std::find(tribes.begin(), tribes.end(), target) == tribes.end() ||
+            g_order_roster.contains_faction(F<uint32_t>(target, 0x30)) || F<uint8_t>(target, 0x556) ||
+            !F<void*>(target, 0x260) || !F<void*>(target, 0x368) ||
+            F<float>(F<void*>(target, 0x368), 0x158) <= 0 || !gift_cost(gift_price)) {
+            g_cmds_rejected++;
+            return;
+        }
+    }
     char b[160];
     snprintf(b, sizeof b, "from=%u kind=%u n=%u action=%d target=%u/%u/%X (%.1f %.1f %.1f) -> %p", from, kind,
              (unsigned)ids.size(), action, tgt.kind, tgt.id, tgt.noun, tgt.pos.x, tgt.pos.y, tgt.pos.z, target);
@@ -3640,6 +5558,13 @@ static void host_command(uint8_t from, net::Reader& r)
         g_last_cmd += tgt.kind == 1 && g_hm_by_id.count(tgt.id) ? " rejected: the target is gone (BUG-1053)" : " rejected: no such target here";
         return; // the object is gone on the host
     }
+    if (village_orders && perform && !resumed && release_completed_performers(from)) {
+        g_perform_dispatch.deferred = true;
+        // Cancellation replans on the following simulation ticks. Reissuing
+        // action26 in this frame would reinstate the action before it exits.
+        g_pending_performance = {ids, tgt, modes::current_world(), from, H->time_seconds() + .15};
+        return;
+    }
     int ran = 0;
     for (uint16_t id : ids) {
         auto it = g_hm_by_id.find(id);
@@ -3648,10 +5573,44 @@ static void host_command(uint8_t from, net::Reader& r)
             continue;
         }
         void* c = it->second;
+        if (founder_downed(c)) { g_cmds_rejected++; continue; }
         auto hm = g_hm.find(c);
+        // (BUG-1053 liveness; the tribe check is the village-aware one below, BUG-9135)
         if (hm == g_hm.end() || hm->second.owner != from ||
-            (g_cmd_listed_fix ? !hm_live(c) : !game::object_alive(c)) || F<void*>(c, kOwnerTribeOff) != pt) { // (BUG-1053)
+            (g_cmd_listed_fix ? !hm_live(c) : !game::object_alive(c))) {
             g_cmds_rejected++;
+            continue;
+        }
+        void* actual_tribe = F<void*>(c, kOwnerTribeOff);
+        if (village_orders ? seat_of_village(actual_tribe, pt) != sender_seat : actual_tribe != pt) { // the sender's village
+            g_cmds_rejected++;
+            continue;
+        }
+        if (village_orders && equip && (F<void*>(target, 0x1F8) != actual_tribe ||
+            F<uint32_t>(c, kAgeOff) != 1 || F<void*>(actual_tribe, kNativeLeaderOff) == c)) {
+            g_cmds_rejected++;
+            continue;
+        }
+        if (village_orders && heal && (game::health(c) <= 0 || F<uint8_t>(c, 0xB5E) ||
+            F<uint32_t>(c, kAgeOff) != 1 || F<int>(c, 0x102C) != 9 || c == target)) {
+            g_cmds_rejected++;
+            continue;
+        }
+        if (village_orders && eat && (game::health(c) <= 0 || F<uint8_t>(c, 0xB5E) ||
+            F<uint32_t>(c, kAgeOff) != 1 || F<void*>(actual_tribe, 0x260) != target ||
+            F<void*>(target, 0x10C) != actual_tribe || vcall<int>(actual_tribe, 0xA4 / 4) <= 0)) {
+            g_cmds_rejected++;
+            continue;
+        }
+        if (village_orders && gift && (game::health(c) <= 0 || F<uint8_t>(c, 0xB5E) ||
+            F<uint32_t>(c, kAgeOff) != 1 || vcall<int>(actual_tribe, 0xA4 / 4) < gift_price)) {
+            g_cmds_rejected++;
+            continue;
+        }
+        if (village_orders && perform && (game::health(c) <= 0 || F<uint8_t>(c, 0xB5E) ||
+            F<uint32_t>(c, kAgeOff) != 1 || (F<int>(c, 0x102C) != 11 &&
+            (F<int>(c, 0x102C) < 4 || F<int>(c, 0x102C) > 6)))) {
+            ++g_cmds_rejected;
             continue;
         }
         if (kind == CMD_WALK) {
@@ -3659,8 +5618,14 @@ static void host_command(uint8_t from, net::Reader& r)
             float p[3] = {pos.x, pos.y, pos.z};
             if (rec)
                 thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)p);
-        } else
-            thiscall<void*>(a_DoAction, c, action, target, (void*)nullptr);
+        } else {
+            if (village_orders && (raid || gift || perform)) register_campaign_target(F<uint32_t>(target, 0x30));
+            void* record = thiscall<void*>(a_DoAction, c, action, target, (void*)nullptr);
+            if (perform) {
+                ++g_perform_dispatch.dispatched;
+                if (record) ++g_perform_dispatch.records;
+            }
+        }
         g_cmds_done++;
         ran++;
     }
@@ -3801,7 +5766,7 @@ static void remove_member(void* c)
 // like the game's own (0.7.4).
 static bool g_fix_save_strip = true;
 COOP_FIX("tribe.save_strip", "BUG-0495", g_fix_save_strip, "saves: a Tribe guest's mirrors of the host's members and tribes are kept out of its saves");
-constexpr uint32_t kCitizenNoun = 0x18EB4B7, kHutNoun = 0x1E4DAAE, kToolNoun = 0x18C8F0C, kFoodMatNoun = 0x629BAFE;
+constexpr uint32_t kCitizenNoun = 0x18EB4B7, kFoodMatNoun = 0x629BAFE; // kHutNoun, kToolNoun: layout (top)
 static std::unordered_map<void*, uint32_t> g_ours_c, g_ours_t; // spawned mirrors / made tribes -> serial
 static std::unordered_set<void*> g_strip_now;                  // this save's objects of ours
 static uint32_t g_save_stripped, g_save_saves;
@@ -3841,6 +5806,8 @@ static bool mat_of(void* o, void* t)
 }
 static void save_start()
 {
+    g_persp_saving = true; // BUG-9153: a save keeps the host's village as the player's
+    persp_restore("save");
     g_strip_now.clear();
     if (!g_fix_save_strip || !is_guest() || game::mode_id() != modes::kTribe)
         return;
@@ -3901,6 +5868,7 @@ static void save_start()
 }
 static void save_end()
 {
+    g_persp_saving = false; // BUG-9153: the next tick shows the own village again
     for (auto& t : g_took_t) { // back at the end of the list (the capacity is the one they left)
         void**& e = F<void**>(t.t, t.off + 4);
         if (game::object_alive(t.t) && e < F<void**>(t.t, t.off + 8))
@@ -4035,6 +6003,8 @@ static void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std:
         g_npc_tribe_made.clear();
 }
 
+static std::vector<uint16_t> guest_village_ids(bool selected_only = false);
+
 // BUG-0483: a whole village (tribe, hut, tools, food mat, members) stood in a guest's game only (the
 // detector's Tribe:guest_only:tribe and the rest, after the live Creature -> Tribe change of campaign_ct).
 // Two ways a guest's game keeps a tribe the host's has not:
@@ -4088,14 +6058,24 @@ static bool pace_holds(double now)
         return false;
     if (F<void*>(stage, 0x40) != F<void*>(stage, 0x44)) // a goal done: the game's own rule
         return false;
-    size_t tribes = 0;
+    // Lineages village mode: the partner founders' villages are player villages, not NPC ones (as in h_NounData's
+    // count view), so they are not counted (BUG-9135: every partner seat's; seat 1's before)
+    struct Count {
+        size_t tribes = 0;
+        std::array<uint32_t, founders::kMaxSeats> skip{};
+    } count;
+    for (size_t seat = 1; seat < founder_seats(); ++seat) count.skip[seat] = g_order_roster.entries[seat].faction;
     game::for_each_object(
         [](void* o, uint32_t noun, void* u) {
-            if (noun == kTribeNoun)
-                ++*(size_t*)u;
+            auto* c = (Count*)u;
+            if (noun != kTribeNoun) return true;
+            const uint32_t faction = F<uint32_t>(o, 0x30);
+            if (!faction || std::find(c->skip.begin(), c->skip.end(), faction) == c->skip.end())
+                ++c->tribes;
             return true;
         },
-        &tribes);
+        &count);
+    size_t tribes = count.tribes;
     if (tribes != 2) // (1: the first neighbour after 25 s; 3 / 4 / 5: the game's rule, the threshold is passed)
         return false;
     int threshold = 100;
@@ -4113,6 +6093,13 @@ static bool pace_holds(double now)
 
 static void* SK_THISCALL h_Form(void* self, int arg)
 {
+    if (is_host())
+        ++g_form_calls; // Lineages diagnostics (BUG-9002)
+    // Lineages two-village mode (BUG-9002): a guest following the host forms no village of its own
+    if (g_guest_order_mode && is_guest() && game::mode_id() == modes::kTribe && !local_play()) {
+        ++g_form_skipped;
+        return nullptr;
+    }
     if (g_guest_tribes_fix && g_npc_tribes_fix && is_guest() && game::mode_id() == modes::kTribe) {
         if (g_forms_blocked++ < 5)
             H->log(M, SK_INFO, "tribe: this game's NPC tribe controller would form a tribe: not on a guest (tribe.guest_tribes)");
@@ -4306,7 +6293,7 @@ static void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
     uint8_t chunk = r.u8(), chunks = r.u8(), nt = r.u8();
-    if (!r.ok() || !net::cycle_chunk_ok(chunk, chunks))
+    if (!r.ok() || nt > 32 || !net::cycle_chunk_ok(chunk, chunks))
         return;
     bool started = false;
     if (!g_cyc.begin(cycle, g_cycle_order_fix, &started))
@@ -4314,12 +6301,24 @@ static void guest_state(net::Reader& r)
     if (started)
         g_cycle_ids.clear();
     std::vector<std::pair<net::Vec3, bool>> htribes;
+    struct Food { uint8_t index; uint32_t species; float amount; };
+    std::vector<Food> food;
+    bool separate_food = false;
     for (int i = 0; i < nt && r.ok(); i++) {
         net::Vec3 p;
         p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
-        htribes.push_back({p, r.u8() != 0});
+        uint8_t flags = r.u8();
+        if (flags & ~7 || ((flags & 4) && !(flags & 1))) return;
+        htribes.push_back({p, (flags & 1) != 0});
+        separate_food |= (flags & 4) != 0;
+        if (flags & 2) {
+            Food f{(uint8_t)i, r.u32(), r.f32()};
+            if (!f.species || !std::isfinite(f.amount) || f.amount < 0 || f.amount > 1000000 ||
+                food.size() >= tribe_seats::max_food_entries(g_multi_founders)) return; // every founder village's (BUG-9135)
+            food.push_back(f);
+        }
     }
-    if (!r.ok())
+    if (!r.ok() || (!separate_food && !food.empty()))
         return;
     // host tribe index -> local tribe (the player tribe directly, others by position)
     auto locals = all_tribes();
@@ -4346,8 +6345,29 @@ static void guest_state(net::Reader& r)
     uint32_t host_ms = 0;
     // BUG-0381: the tribe table's species / archetype after the trailer (a host with tribe.npc_tribes)
     size_t extra = r.ok() && r.left() >= n * kEntry + kTrailerSize ? r.left() - n * kEntry - kTrailerSize : 0;
+    g_remote_rescues = {};
+    { // by founder seat: TRRV (two seats), TRRS (3+, BUG-9135; tribe_seats.h)
+        tribe_seats::Rescues rescues;
+        const size_t used = tribe_seats::read_rescues(r.cur() + r.left() - extra, extra, rescues, g_multi_founders);
+        extra -= used;
+        for (size_t seat = 0; used && seat < g_remote_rescues.size(); ++seat) {
+            const auto& rescue = rescues[seat];
+            if (rescue.member && rescue.tenths <= tribe_seats::kMaxRescueTenths) // BUG-9118: up to 30 s
+                g_remote_rescues[seat] = {rescue.member, now + rescue.tenths / 10.0};
+        }
+    }
+    std::vector<uint16_t> native_chiefs;
+    const size_t chiefs_bytes = 5 + htribes.size() * 2;
+    if (extra >= chiefs_bytes) {
+        net::Reader tail(r.cur() + n * kEntry + kTrailerSize + extra - chiefs_bytes, chiefs_bytes);
+        if (tail.u32() == kNativeChiefsTag) {
+            if (tail.u8() != htribes.size()) return;
+            for (size_t i = 0; i < htribes.size(); ++i) native_chiefs.push_back(tail.u16());
+            extra -= chiefs_bytes;
+        }
+    }
     bool info = extra >= 5 && extra == 5 + (size_t)r.cur()[n * kEntry + kTrailerSize + 4] * kTribeInfo;
-    if (r.ok() && (r.left() == n * kEntry + kTrailerSize || info)) {
+    if (r.ok() && r.left() >= n * kEntry + kTrailerSize && (!extra || info)) {
         const uint8_t* t = r.cur() + n * kEntry;
         uint32_t magic;
         memcpy(&magic, t, 4);
@@ -4367,7 +6387,7 @@ static void guest_state(net::Reader& r)
         m.vel.x = r.f32(); m.vel.y = r.f32(); m.vel.z = r.f32();
         m.rot.x = r.f32(); m.rot.y = r.f32(); m.rot.z = r.f32(); m.rot.w = r.f32();
         m.hp = r.f32();
-        if (!r.ok())
+        if (!r.ok() || m.age > 1)
             return;
         g_cycle_ids.insert(id);
         auto& g = g_gm[id];
@@ -4405,6 +6425,8 @@ static void guest_state(net::Reader& r)
             g.air = false;
             g.c = c = nullptr;
         }
+        // (Lineages tribe.growth, BUG-9021, grew mirrors the same way; upstream's guarded call is kept, and
+        // tribe.growth still gates the same-age binding below)
         if (c && g_mirror_grow_fix && m.age == 1 && !m.body && F<uint8_t>(c, kAgeOff) == 0 && !game::is_dead(c)) {
             vcall<void>(c, 0x78 / 4); // BUG-0857: the citizen's own GrowUp (vt 0x78, plain ret)
             g_mirrors_grown++;
@@ -4426,6 +6448,8 @@ static void guest_state(net::Reader& r)
         float best = 6.f;
         for (void* lc : members(t)) {
             if (g_gid_of.count(lc))
+                continue;
+            if (g_growth_fix && F<uint32_t>(lc, kAgeOff) != m.age)
                 continue;
             float d = net::dist(game::position(lc), m.pos);
             if (d < best) {
@@ -4466,8 +6490,48 @@ static void guest_state(net::Reader& r)
         g_incomplete++;
         return;
     }
-    // end of a full snapshot: members the host no longer has go away, and so do local members
-    // the host does not know (the guest's tribes are only mirrors)
+    // Apply both stores and audit local villages from one complete cycle. Ignore late cycles.
+    const bool new_complete_cycle = g_food_cycle < 0 || (int16_t)(cycle - g_food_cycle) > 0;
+    if (new_complete_cycle) {
+        g_food_cycle = cycle;
+        g_guest_order_mode = separate_food;
+        bool extra = separate_food && !local_play() && htribes.size() < 32 &&
+                     std::none_of(g_local_tribe_of.begin(), g_local_tribe_of.end(), [](void* t) { return !t; }) &&
+                     std::any_of(locals.begin(), locals.end(), [](void* t) {
+                         return std::find(g_local_tribe_of.begin(), g_local_tribe_of.end(), t) == g_local_tribe_of.end();
+                     });
+        if (!extra) {
+            g_extra_since = -1;
+            g_guest_orders_held = false;
+        } else if (g_extra_since < 0) {
+            g_extra_since = now;
+        } else if (now - g_extra_since >= 6 && !g_guest_orders_held && !guest_village_ids().empty()) {
+            g_guest_orders_held = true;
+            if (!g_repair_requested) {
+                g_repair_requested = true;
+                send_cmd(CMD_REPAIR, {}, 0, {}, {});
+            }
+            if (C.feed) C.feed("Village orders paused until the guest and host have the same villages.");
+        }
+        g_home_food = g_guest_food = -1;
+        // BUG-9135: the own village is the one of this player's members (several partner villages); the only partner
+        // village of two founders is the own one as before
+        int own_index = -1;
+        if (g_multi_founders)
+            for (const auto& [id, m] : g_gm)
+                if (m.owner == C.sess->my_id() && g_cycle_ids.count(id)) { own_index = m.tribe; break; }
+        for (const auto& f : food) {
+            void* t = g_local_tribe_of[f.index];
+            if (!t) continue;
+            auto local = tribe_info(t).key;
+            if (local.instance == f.species || local.instance == creations::local_species({f.species, local.type, local.group}).instance) {
+                shared::mirror_village_food(t, f.amount);
+                if (htribes[f.index].second) g_home_food = f.amount;
+                else if (!g_multi_founders || (int)f.index == own_index || (own_index < 0 && food.size() <= 2)) g_guest_food = f.amount;
+            }
+        }
+    }
+    // The guest's tribes are mirrors. Remove members no longer present on the host.
     for (auto it = g_gm.begin(); it != g_gm.end();) {
         if (!g_cycle_ids.count(it->first)) {
             if (mirror_ok(it->second)) { // (BUG-0844)
@@ -4489,6 +6553,29 @@ static void guest_state(net::Reader& r)
                     remove_member(lc);
                     g_removed++;
                 }
+    if (new_complete_cycle && timed && g_native_chiefs_fix && a_SetChieftain && a_SetLeader &&
+        native_chiefs.size() == g_local_tribe_of.size()) {
+        for (size_t i = 0; i < native_chiefs.size(); ++i) {
+            void* t = g_local_tribe_of[i];
+            if (!t || std::find(locals.begin(), locals.end(), t) == locals.end())
+                continue; // a newly created tribe is checked against the next live list
+            void* chief = nullptr;
+            if (native_chiefs[i]) {
+                auto found = g_gm.find(native_chiefs[i]);
+                if (found == g_gm.end() || !g_cycle_ids.count(found->first) || found->second.tribe != i)
+                    continue;
+                chief = found->second.c;
+                auto live = members(t);
+                if (!chief || std::find(live.begin(), live.end(), chief) == live.end() ||
+                    F<void*>(chief, kOwnerTribeOff) != t)
+                    continue;
+            }
+            if (F<void*>(t, kNativeLeaderOff) != chief) {
+                if (chief) thiscall<void>(a_SetChieftain, t, chief);
+                else thiscall<void>(a_SetLeader, t, nullptr); // SetChieftain(0) elects a new chief
+            }
+        }
+    }
     unmapped_tick(locals, pt, now); // BUG-0483
 }
 
@@ -4670,6 +6757,7 @@ static void mirror_drive(GMember& g, double now)
     mirror_step(g, pos, rot, vel, now, age);
 }
 
+static bool party_gift_input(unsigned message, uintptr_t, int x, int y); // BUG-9154 (below)
 // BUG-1084 (docs/re/tribe.md#tribe-away-tree-end): while the host is away the guest's game runs its mirrors' trees
 // (tribe.away); when the host is back they are skipped again (h_BTTick), frozen in whatever node they were, and the
 // world-object sync then changes what the mirror holds (a carried bundle the host's game has not is removed,
@@ -4710,6 +6798,15 @@ static void away_tree_end_tick()
 
 static void guest_tick(double now)
 {
+    static double own_village_at;
+    if (g_persp_host) { // BUG-9154: the right press on a party member's hut
+        mouse::install(H->game_window());
+        mouse::set_tribe_input(party_gift_input);
+    }
+    if (now - own_village_at > 0.5) { // BUG-9152
+        own_village_at = now;
+        g_own_village = local_play() ? nullptr : own_village_now();
+    }
     if (local_play())
         return; // the last states would hold the members for 3 s
     for (auto& [id, g] : g_gm) {
@@ -4809,6 +6906,240 @@ COOP_FIX("tribe.epic_herd", "BUG-0121", g_fix_epic_herd, "tribe: the epic's herd
 static uint32_t g_epic_herd_reused, g_epic_saved_out;
 constexpr uint32_t kEpicArchetype = 0xFC811218u;
 static double g_epic_next, g_last_duet, g_duet_told;
+
+struct Performance {
+    uint16_t member = 0, round = 0, rounds = 0;
+    uint32_t token = 0;
+    uint8_t phase = 0, request = 0, ready = 0;
+    float progress = 0;
+};
+static std::vector<Performance> g_performances;
+static uint32_t g_performance_sequence, g_performance_received;
+static double g_performance_sent, g_performance_seen;
+static std::unordered_set<uint32_t> g_performance_rewarded;
+static bool g_performance_campaign_fix = true;
+COOP_FIX("tribe.performance_campaign", "BUG-9038", g_performance_campaign_fix,
+         "tribe: share native-earned performance relationships with the linked campaign");
+
+static void* native_performance(void* c, uint32_t& token, bool include_finished = false)
+{
+    if (!is_citizen(c) || !game::object_alive(c) || game::health(c) <= 0 || F<uint8_t>(c, 0xB5E)) return nullptr;
+    void* ai = F<void*>(c, 0xB4C);
+    if (!ai || !skg::readable(ai, 0x604) || F<uint32_t>(ai, 0x1D8) != 0xB46E8803u) return nullptr;
+    void* block = F<void*>(ai, 0x600);
+    if (!block || !skg::readable(block, 0x1AC) || !a_SessionGet) return nullptr;
+    token = F<uint32_t>(block, 0x1A8);
+    void* session = skg::cdecl_call<void*>(a_SessionGet, token);
+    return session && skg::readable(session, 0x1E4) && F<uint32_t>(session, 4) < (include_finished ? 7u : 6u) &&
+        F<void*>(session, 8) == F<void*>(c, kOwnerTribeOff) ? session : nullptr;
+}
+
+static bool g_performance_repeat_fix = true;
+COOP_FIX("tribe.performance_repeat", "BUG-9037", g_performance_repeat_fix,
+         "tribe: release completed native performances before starting another guest performance");
+static bool release_completed_performers(uint8_t from)
+{
+    const int seat = from < 0xFE ? seat_of_player(from) : -1; // the performer's seat (BUG-9135)
+    if (!g_performance_repeat_fix || seat < 1) return false;
+    uintptr_t cancel = H->sym("SporeCoop::Citizen_CancelAction");
+    if (!cancel) return false;
+    bool released = false;
+    void* home = player_tribe();
+    // Native terminal node9 retains the old action26 after the audience leaves.
+    // Cancel every completed member before issuing any new order, so another
+    // member cannot rejoin that finished session. Active sessions stay intact.
+    for (const auto& [c, member] : g_hm) {
+        if (member.owner != from || !game::object_alive(c) ||
+            seat_of_village(F<void*>(c, kOwnerTribeOff), home) != seat) continue;
+        uint32_t token;
+        void* session = native_performance(c, token, true);
+        if (session && F<uint32_t>(session, 4) == 6) {
+            skg::cdecl_call<bool>(cancel, c, 26);
+            released = true;
+        }
+    }
+    return released;
+}
+
+static void resume_performance(double now)
+{
+    if (g_pending_performance.ids.empty() || now < g_pending_performance.due) return;
+    PendingPerformance pending = std::move(g_pending_performance);
+    g_pending_performance = {};
+    if (pending.world != modes::current_world() || !g_performance_repeat_fix || !village_orders()) return;
+    net::Writer packet;
+    packet.u8(CMD_ACTION); packet.u8((uint8_t)pending.ids.size());
+    for (uint16_t id : pending.ids) packet.u16(id);
+    packet.u32(26); write_target(packet, pending.target);
+    packet.f32(0); packet.f32(0); packet.f32(0);
+    net::Reader reader(packet.data.data(), packet.size());
+    host_command(pending.from, reader, true); // resolves and validates all objects again
+}
+
+static bool queue_instrument(uint8_t from, uint16_t id, unsigned tool, uint32_t expected)
+{
+    const int seat = from < 0xFE ? seat_of_player(from) : -1; // the performer's seat (BUG-9135)
+    if (!g_performance_fix || seat < 1 || tool < 4 || tool > 6) return false;
+    auto it = g_hm_by_id.find(id);
+    if (it == g_hm_by_id.end()) return false;
+    void* c = it->second;
+    auto member = g_hm.find(c);
+    if (member == g_hm.end() || member->second.owner != from || !game::object_alive(c) ||
+        seat_of_village(F<void*>(c, kOwnerTribeOff), player_tribe()) != seat || founder_downed(c) ||
+        F<uint32_t>(c, kAgeOff) != 1 || F<uint32_t>(c, 0x102C) != tool) return false;
+    uint32_t token;
+    void* session = native_performance(c, token);
+    if (!session || token != expected || F<uint32_t>(session, 4) < 4 || !F<uint8_t>(session, 0x51)) return false;
+    uintptr_t abilities = H->sym("SporeCoop::TribeAbilities"), find = H->sym("SporeCoop::Creature_AbilityIndex");
+    uintptr_t post = H->sym("SporeCoop::BT_PostStimulus"), lifetime = H->sym("SporeCoop::TribeGiftCost_default");
+    if (!abilities || !find || !post || !lifetime) return false;
+    void* ability = ((void**)abilities)[tool - 1];
+    int index = ability ? skg::cdecl_call<int>(find, c, ability) : -1;
+    void* cooldowns = F<void*>(c, 0xC28);
+    if (index < 0 || index >= 128 || !cooldowns || !skg::readable(cooldowns, (index + 1) * 16)) return false;
+    float ready = F<float>(cooldowns, index * 16 + 4);
+    if (!std::isfinite(ready) || ready < 1.f) return false;
+    // D1FE00 queues both fields in the same frame. Never substitute PlayAbility
+    // or write progress: the native session owns timing, scoring and rewards.
+    void* stimulus = thiscall<void*>(post, (uint8_t*)F<void*>(c, 0xB4C) + 8,
+                                   0x10000000u, 0u, *(float*)lifetime, (void*)nullptr);
+    if (!stimulus) return false;
+    F<int>(stimulus, 0xC) = index;
+    return true;
+}
+
+// `seat`: the performer's founder seat (BUG-9135: the relationship that seat's village earned; seat 1's before)
+static void share_performance_result(void* session, uint32_t token, int seat)
+{
+    if (!g_performance_campaign_fix || g_performance_rewarded.count(token) || seat < 1 || seat >= (int)founder_seats()) return;
+    void* ui = F<void*>(session, 0xE8);
+    void* target = F<void*>(session, 0xC);
+    uintptr_t success = H->sym("SporeCoop::TribePerformance_Succeeded");
+    uintptr_t calculate = H->sym("Simulator::cRelationshipManager::CalculateRelationship");
+    void* manager = relationship_manager();
+    unsigned result = F<uint32_t>(session, 0xEC);
+    if (!ui || !skg::readable(ui, 0x6C) || !target || !game::object_alive(target) ||
+        !success || !calculate || !manager || (result != 1 && result != 2) ||
+        !thiscall<bool>(success, ui)) return;
+    uint32_t faction = F<uint32_t>(target, 0x30);
+    if (g_order_roster.contains_faction(faction)) return;
+    float earned = thiscall<float>(calculate, manager, faction, g_order_roster.entries[seat].faction, 0);
+    if (!std::isfinite(earned)) return;
+    struct Earned {
+        uint64_t epoch;
+        uint32_t world, target, guest, home;
+        float value;
+    };
+    g_performance_rewarded.insert(token);
+    // Native goal C2F750/C2F7F0 evaluates the campaign player's faction. Share
+    // the guest's proven native result with that faction, then let the ordinary
+    // goal system award the alliance, history, tools and totem. UI work runs
+    // outside Present; the callback retains scalar identities only.
+    H->run_outside_frame([](void* data) {
+        Earned earned = *static_cast<Earned*>(data);
+        delete static_cast<Earned*>(data);
+        if (!g_performance_campaign_fix || !active() || !is_host() ||
+            earned.epoch != g_campaign_epoch || earned.world != modes::current_world() ||
+            earned.home != g_order_roster.home().faction || g_order_roster.seat_of_faction(earned.guest) < 1 ||
+            g_order_roster.seat_of_faction(earned.guest) >= (int)founder_seats() || world::load_queued()) return;
+        bool present = false;
+        for (void* tribe : all_tribes())
+            present |= F<uint32_t>(tribe, 0x30) == earned.target && !F<uint8_t>(tribe, 0x556);
+        void* manager = relationship_manager();
+        uintptr_t calculate = H->sym("Simulator::cRelationshipManager::CalculateRelationship");
+        uintptr_t apply = H->sym("Simulator::cRelationshipManager::ApplyRelationship");
+        if (!present || !manager || !calculate || !apply) return;
+        float guest = thiscall<float>(calculate, manager, earned.target, earned.guest, 0);
+        float home = thiscall<float>(calculate, manager, earned.target, earned.home, 0);
+        if (!std::isfinite(guest) || !std::isfinite(home) || guest < earned.value || home >= earned.value) return;
+        (void)thiscall<float>(apply, manager, earned.target, earned.home, 0x0530CF07u, earned.value - home);
+    }, new Earned{g_campaign_epoch, modes::current_world(), faction,
+                  g_order_roster.entries[seat].faction, g_order_roster.home().faction, earned});
+}
+
+// the performances of each partner seat's members, to that seat's player (BUG-9135; seat 1's before)
+static void host_performances(double now)
+{
+    if (now - g_performance_sent < 0.2 || !g_order_roster.guest().faction) return;
+    g_performance_sent = now;
+    void* home = player_tribe();
+    for (int seat = 1; seat < (int)founder_seats(); ++seat) {
+        const uint8_t performer = player_of_seat(seat);
+        std::vector<Performance> rows;
+        if (g_performance_fix) for (const auto& [c, member] : g_hm) {
+            if (member.owner != performer || rows.size() >= 64 || !game::object_alive(c) ||
+                seat_of_village(F<void*>(c, kOwnerTribeOff), home) != seat) continue;
+            Performance p; p.member = member.id;
+            void* session = native_performance(c, p.token, true);
+            if (!session) continue;
+            p.phase = (uint8_t)F<uint32_t>(session, 4);
+            if (p.phase == 6) { share_performance_result(session, p.token, seat); continue; }
+            g_performance_rewarded.erase(p.token);
+            int request = F<int>(session, 0x1DC);
+            p.request = request == 0 ? 5 : request == 1 ? 6 : request == 2 ? 4 : 0;
+            p.ready = F<uint8_t>(session, 0x51) != 0;
+            p.round = (uint16_t)std::min<uint32_t>(F<uint32_t>(session, 0x44), 65535);
+            p.rounds = (uint16_t)std::min<uint32_t>(F<uint32_t>(session, 0x48), 65535);
+            void* ui = F<void*>(session, 0xE8);
+            if (ui && skg::readable(ui, 0x6C)) p.progress = F<float>(ui, 0x68);
+            if (!std::isfinite(p.progress)) continue;
+            p.progress = std::clamp(p.progress, 0.f, 1.f);
+            rows.push_back(p);
+        }
+        net::Writer packet;
+        packet.u32(modes::current_world()); packet.u32(++g_performance_sequence); packet.u8((uint8_t)rows.size());
+        for (const auto& p : rows) {
+            packet.u16(p.member); packet.u32(p.token); packet.u8(p.phase); packet.u8(p.request); packet.u8(p.ready);
+            packet.f32(p.progress); packet.u16(p.round); packet.u16(p.rounds);
+        }
+        C.sess->send_unreliable_to(performer, net::MSG_TRIBE_PERFORMANCE, packet);
+    }
+}
+
+static void guest_performances(net::Reader& packet)
+{
+    uint32_t world = packet.u32(), sequence = packet.u32();
+    unsigned count = packet.u8();
+    if (!g_performance_fix || !packet.ok() || !world || world != modes::current_world() || count > 64 ||
+        packet.left() != count * 17 || (g_performance_received && (int32_t)(sequence - g_performance_received) <= 0)) return;
+    std::vector<Performance> rows;
+    std::unordered_set<uint16_t> seen;
+    for (unsigned i = 0; i < count; ++i) {
+        Performance p;
+        p.member = packet.u16(); p.token = packet.u32(); p.phase = packet.u8(); p.request = packet.u8(); p.ready = packet.u8();
+        p.progress = packet.f32(); p.round = packet.u16(); p.rounds = packet.u16();
+        if (!p.member || !seen.insert(p.member).second || p.phase >= 6 || p.ready > 1 ||
+            (p.request && (p.request < 4 || p.request > 6)) || !std::isfinite(p.progress) || p.progress < 0 || p.progress > 1)
+            return;
+        rows.push_back(p);
+    }
+    g_performances = std::move(rows); g_performance_received = sequence; g_performance_seen = H->time_seconds();
+}
+
+std::string performance_line()
+{
+    if (!g_performance_fix || !active() || !is_guest() || local_play() ||
+        g_performances.empty() || H->time_seconds() - g_performance_seen > 2) return {};
+    const auto& p = g_performances.front();
+    const char* request = p.request == 4 ? "Horns [1]" : p.request == 5 ? "Maracas [2]" : "Didgeridoos [3]";
+    return "Performance " + std::to_string((int)(p.progress * 100)) + "%: " +
+        (p.ready && p.request ? std::string(request) : "wait for the audience");
+}
+
+static bool request_instrument(unsigned tool)
+{
+    if (tool < 4 || tool > 6 || performance_line().empty()) return false;
+    auto selected = guest_village_ids(true);
+    bool sent = false;
+    for (const auto& p : g_performances) if (p.ready && std::find(selected.begin(), selected.end(), p.member) != selected.end()) {
+        auto member = g_gm.find(p.member);
+        if (member == g_gm.end() || !member->second.c || member->second.owner != C.sess->my_id() ||
+            !game::object_alive(member->second.c) || F<uint32_t>(member->second.c, 0x102C) != tool) continue;
+        Target target; target.kind = 4; target.noun = p.token;
+        send_cmd(CMD_INSTRUMENT, {p.member}, (int)tool, target, {}); sent = true;
+    }
+    return sent;
+}
 
 static uint16_t member_id(void* c)
 {
@@ -4962,6 +7293,100 @@ static bool near_own_chief(void* c, uint8_t owner)
 // cCreatureCitizen TakeDamage 0xC26920 (this = citizen+0x5A8): every hit on a citizen
 using CTD_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const void*, void*);
 static CTD_t o_CitizenTD;
+static CTD_t o_HutTD;
+static bool protect_founder(void* victim, float damage, uint32_t attacker);
+static bool protect_founder_hut(void* hut, float damage, uint32_t attacker);
+static bool queue_founder_capture(int seat, uint32_t attacker);
+static std::set<uint32_t> g_combat_factions;
+static std::map<uint16_t,float> g_remote_enemy_max, g_sent_enemy_max;
+static double g_combat_poll, g_combat_resend;
+static uint32_t g_combat_world;
+
+static bool founder_village(void* village)
+{
+    return village && (village == player_tribe() || g_order_roster.contains_faction(F<uint32_t>(village,0x30)));
+}
+
+static bool village_allied_with_founder(void* village)
+{
+    auto home = player_tribe();
+    auto manager = relationship_manager();
+    static uintptr_t calculate = H->sym("Simulator::cRelationshipManager::CalculateRelationship");
+    if (!home || !manager || !calculate) return true;
+    const auto faction = F<uint32_t>(village,0x30);
+    const float allied = F<float>(manager,0x1C);
+    if (!(allied > 0) || !std::isfinite(allied)) return true;
+    // the host's village and every partner founder's (BUG-9135; seat 1's before)
+    std::array<uint32_t, founders::kMaxSeats + 1> partners{F<uint32_t>(home,0x30), g_order_roster.guest().faction};
+    for (size_t seat = 2; seat < founder_seats(); ++seat) partners[seat] = g_order_roster.entries[seat].faction;
+    for (auto partner : partners) {
+        if (partner && thiscall<float>(calculate,manager,faction,partner,0) >= allied) return true;
+    }
+    return false;
+}
+
+static float hostile_hit(void* target, void* attacker, float damage)
+{
+    if (damage <= 0 || !is_citizen(attacker) || !is_citizen(target)) return damage;
+    void* attack_village = F<void*>(attacker,kOwnerTribeOff);
+    void* target_village = F<void*>(target,kOwnerTribeOff);
+    if (!attack_village || !target_village || attack_village == target_village) return damage;
+    const bool defending = founder_village(target_village);
+    if (defending == founder_village(attack_village)) return damage;
+    auto village = defending ? attack_village : target_village;
+    auto enemy = defending ? attacker : target;
+    if (F<unsigned>(enemy,kAgeOff) != 1 || village_allied_with_founder(village)) return damage;
+    auto rules = world::rules_for_current();
+    if (rules.enemy_health_percent() != 100) {
+        g_combat_factions.insert(F<uint32_t>(village,0x30));
+        creature_hp::set_enemy_health(enemy,rules.enemy_health_percent());
+    }
+    return defending ? float(double(damage) * rules.enemy_damage_percent() / 100.0) : damage;
+}
+
+float reported_enemy_max(void* citizen)
+{
+    if (g_remote_enemy_max.empty()) return 0;
+    auto it = g_gid_of.find(citizen);
+    if (it == g_gid_of.end()) return 0;
+    auto hp = g_remote_enemy_max.find(it->second);
+    return hp == g_remote_enemy_max.end() ? 0.f : hp->second;
+}
+
+static void combat_tick(double now)
+{
+    if (!is_host() || now < g_combat_poll) return;
+    g_combat_poll = now + .5;
+    auto world = modes::current_world();
+    if (world != g_combat_world) {
+        g_combat_factions.clear();
+        g_sent_enemy_max.clear();
+        g_combat_world = world;
+    }
+    if (g_combat_factions.empty() && g_sent_enemy_max.empty()) return;
+    std::map<uint16_t,float> scaled;
+    const auto rules = world::rules_for_current();
+    for (auto village : all_tribes()) {
+        const auto faction = F<uint32_t>(village,0x30);
+        if (!g_combat_factions.count(faction)) continue;
+        bool hostile = !founder_village(village) && !village_allied_with_founder(village);
+        if (!hostile) g_combat_factions.erase(faction);
+        for (auto c : members(village)) {
+            if (!is_citizen(c) || !game::object_alive(c) || F<unsigned>(c,kAgeOff) != 1) continue;
+            creature_hp::set_enemy_health(c,hostile ? rules.enemy_health_percent() : 100);
+            if (hostile && member_id(c)) scaled[member_id(c)] = game::max_health(c);
+        }
+    }
+    if (scaled.size() > 2048 || (scaled == g_sent_enemy_max && now < g_combat_resend)) return;
+    g_combat_resend = now + 5;
+    g_sent_enemy_max = scaled;
+    net::Writer w;
+    w.u32(world);
+    w.u16(uint16_t(scaled.size()));
+    for (auto [id,hp] : scaled) { w.u16(id); w.f32(hp); }
+    C.sess->broadcast_reliable(net::MSG_TRIBE_COMBAT,w);
+}
+
 struct EpicBlows {
     uint32_t n = 0;
     float last = 0, max = 0;
@@ -5006,12 +7431,14 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
         void* pt = player_tribe();
         void* vt = F<void*>(victim, kOwnerTribeOff);
         void* ac = att && !IsBadReadPtr(att, 4) ? vcall<void*>(att, 0xC / 4) : nullptr;
+        if (founder_downed(ac)) return 0;
         if (ac && !g_hm.count(ac) && is_epic_animal(ac)) {
             auto& b = g_epic_blows[ac];
             b.n++;
             b.last = dmg;
             b.max = std::max(b.max, dmg);
         }
+        dmg = hostile_hit(victim,ac,dmg);
         uint8_t ao = ac && g_hm.count(ac) ? g_hm[ac].owner : 0xFF;
         double now = H->time_seconds();
         if (ao < 0xFE && vt && vt != pt) { // our member hits another tribe
@@ -5054,7 +7481,1754 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
             }
         }
     }
+    if (active() && is_host() && protect_founder((uint8_t*)comb - 0x5A8, dmg, pol)) return 0;
     return o_CitizenTD(comb, dmg, pol, type, pos, att);
+}
+
+static int SK_THISCALL h_HutTD(void* combatant, float damage, uint32_t faction, int type, const void* position, void* attacker)
+{
+    if (active() && is_host() && protect_founder_hut((uint8_t*)combatant - 0x120, damage, faction)) return 0;
+    return o_HutTD(combatant, damage, faction, type, position, attacker);
+}
+
+static bool living(void* citizen)
+{
+    return game::health(citizen) > 0 && !F<uint8_t>(citizen, 0xB5E) && !founder_downed(citizen);
+}
+
+static bool intact_village(void* t)
+{
+    void* hut = t ? F<void*>(t, 0x368) : nullptr;
+    return t && !F<uint8_t>(t, 0x556) && hut && game::object_alive(hut) && F<float>(hut, 0x158) > 0 &&
+           F<void*>(hut, 0x230) == t && F<uint32_t>(hut, 0x30) == F<uint32_t>(t, 0x30);
+}
+
+// every founder village is loaded and intact (BUG-9135: all seats; both before)
+static bool founders_intact()
+{
+    if (!founder_seats()) return false;
+    for (int seat = 0; seat < (int)founder_seats(); ++seat)
+        if (!intact_village(founder_village(seat))) return false;
+    return true;
+}
+
+static bool g_shared_hut_upgrade = true;
+COOP_FIX("tribe.shared_hut_upgrade", "BUG-9045", g_shared_hut_upgrade,
+         "tribe: apply earned campaign hut upgrades to the guest founder");
+static bool g_hut_upgrade_queued;
+static double g_hut_upgrade_poll;
+
+// a partner village (BUG-9135: every partner seat's; seat 1's before) whose hut is behind the host's earned level
+static void* behind_hut_level(void* home)
+{
+    for (int seat = 1; seat < (int)founder_seats(); ++seat) {
+        void* guest = founder_village(seat);
+        if (intact_village(guest) && F<int>(home, 0x38) != F<int>(guest, 0x38)) return guest;
+    }
+    return nullptr;
+}
+
+static void shared_hut_upgrade_tick(double now)
+{
+    if (!g_shared_hut_upgrade || !is_host() || g_hut_upgrade_queued || now < g_hut_upgrade_poll ||
+        world::load_queued() || world::save_busy() || world::time_paused() || world::cinematic_playing() ||
+        rescue_pending() || outfits_pending()) return;
+    g_hut_upgrade_poll = now + 1;
+    void* home = founder_village(0);
+    if (!intact_village(home) || !behind_hut_level(home)) return;
+    g_hut_upgrade_queued = true;
+    H->run_outside_frame([](void* context) {
+        uint64_t epoch = *(uint64_t*)context; delete (uint64_t*)context;
+        g_hut_upgrade_queued = false;
+        if (epoch != g_campaign_epoch || !active() || !is_host() || !g_shared_hut_upgrade ||
+            world::load_queued() || world::save_busy() || world::time_paused() || world::cinematic_playing() ||
+            rescue_pending() || outfits_pending()) return;
+        void* home = founder_village(0);
+        if (!intact_village(home)) return;
+        int level = F<int>(home, 0x38);
+        uintptr_t set = H->sym("SporeCoop::Community_SetLevel");
+        uintptr_t refresh = H->sym("SporeCoop::Tribe_UpdateHutModel");
+        if (!set || !refresh || level < 0 || level > 4) return;
+        // The native upgrade selects the species-appropriate hut, updates its
+        // maximum health and layout, and refills health. Apply it once per
+        // changed level, keeping the hut, purchases, village and citizens.
+        for (int seat = 1; seat < (int)founder_seats(); ++seat) {
+            void* guest = founder_village(seat);
+            if (!intact_village(guest) || level == F<int>(guest, 0x38)) continue;
+            thiscall<void>(set, guest, level);
+            thiscall<void>(refresh, guest);
+            g_campaign_refresh_at = H->time_seconds() + 2;
+            H->log(M, SK_INFO, "tribe: guest founder hut received shared campaign level %d (seat %d)", level, seat);
+        }
+    }, new uint64_t(g_campaign_epoch));
+}
+
+static bool g_objective_backfill_queued;
+static double g_objective_backfill_poll;
+static bool missing_last_objective()
+{
+    void* home = founder_village(0);
+    if (!founders_intact()) return false;
+    void* totem = F<void*>(home, 0x19D0);
+    if (!totem || !game::object_alive(totem)) return false;
+    uintptr_t begin = F<uintptr_t>(totem, 0x11C), end = F<uintptr_t>(totem, 0x120);
+    if (!begin || end < begin || end-begin != 4*4) return false;
+    auto tribes = all_tribes();
+    // the founders and only four normal NPC objectives (two founders: six villages)
+    if (tribes.size() != tribe_seats::villages_with(founder_seats(), 4)) return false;
+    void* manager = relationship_manager();
+    uintptr_t relation = H->sym("Simulator::cRelationshipManager::CalculateRelationship");
+    if (!manager || !relation) return false;
+    for (void* tribe : tribes) {
+        uint32_t faction = F<uint32_t>(tribe, 0x30);
+        if (g_order_roster.contains_faction(faction) || !intact_village(tribe)) continue;
+        float feeling = thiscall<float>(relation, manager, faction, g_order_roster.home().faction, 0);
+        if (!std::isfinite(feeling) || feeling < 7) return false;
+    }
+    return true;
+}
+
+static void objective_backfill_tick(double now)
+{
+    if (!g_founder_npc_budget || !g_form_count_return || g_objective_backfill_queued ||
+        now < g_objective_backfill_poll || world::time_paused() || world::cinematic_playing() ||
+        world::load_queued() || world::save_busy() || rescue_pending() || outfits_pending()) return;
+    g_objective_backfill_poll = now + 5;
+    if (!missing_last_objective()) return;
+    g_objective_backfill_queued = true;
+    H->run_outside_frame([](void* context) {
+        uint64_t epoch = *(uint64_t*)context; delete (uint64_t*)context;
+        g_objective_backfill_queued = false;
+        if (epoch != g_campaign_epoch || !active() || !is_host() || !g_founder_npc_budget ||
+            world::time_paused() || world::cinematic_playing() || world::load_queued() || world::save_busy() ||
+            rescue_pending() || outfits_pending() || !missing_last_objective()) return;
+        uintptr_t get = H->sym("Simulator::cNpcTribeController::Get");
+        uintptr_t form = H->sym("SporeCoop::NpcTribeController_FormVillage");
+        void* controller = get ? skg::cdecl_call<void*>(get) : nullptr;
+        if (!controller || !form) return;
+        // An older save may have consumed its native formation trigger already.
+        // Retry that same native operation, with its corrected NPC budget. It
+        // chooses an available marker/species and grants no campaign progress.
+        // Its EAX is not a success flag; inspect the actual village count.
+        thiscall<void>(form, controller, uint32_t(0));
+        if (all_tribes().size() == tribe_seats::villages_with(founder_seats(), 5)) { // two founders: seven
+            g_campaign_refresh_at = H->time_seconds() + 2;
+            H->log(M, SK_INFO, "tribe: native controller restored the fifth NPC objective");
+        }
+    }, new uint64_t(g_campaign_epoch));
+}
+
+static bool g_auto_founders = true;
+COOP_FIX("tribe.auto_founders", "BUG-9040", g_auto_founders,
+         "tribe: found and save a distinct guest species village automatically");
+static double g_auto_found_at;
+static bool g_auto_found_queued, g_auto_found_refresh;
+static bool g_auto_found_manual_off;
+static founders::Roster g_auto_found_created;
+static std::string g_auto_found_notice;
+// BUG-9137 (see wrong_founder_tick): found with the partner's settled own creature
+static bool g_found_settle_fix = true;
+COOP_FIX("tribe.founder_settle", "BUG-9137", g_found_settle_fix,
+         "tribe: the partner's village is founded with the partner's settled own creature (and a wrong one is repaired)");
+static double g_auto_found_entered;
+static bool founder_creature_settled(uint8_t guest, double now)
+{
+    return now - g_auto_found_entered >= 15 &&
+           now - creations::player_key_changed_at(guest, creations::kCreature) >= 10;
+}
+
+// two unit directions across the planet's surface at `c` (u, then v = c x u / |c|); false at a degenerate point
+static bool surface_frame(const net::Vec3& c, net::Vec3& u, net::Vec3& v)
+{
+    u = {c.z, 0, -c.x};
+    float radius = drive::speed(c), ul = drive::speed(u);
+    if (ul < .001f) { u = {0, -c.z, c.y}; ul = drive::speed(u); }
+    if (!std::isfinite(radius) || radius < 1 || ul < .001f) return false;
+    u = {u.x/ul, u.y/ul, u.z/ul};
+    v = {(c.y*u.z-c.z*u.y)/radius, (c.z*u.x-c.x*u.z)/radius, (c.x*u.y-c.y*u.x)/radius};
+    return true;
+}
+
+// a founding spot at `q` (put onto the ground): the ground within [low, high], level within 3 m 20 m away along u and
+// v, 70 m from every occupied spot
+static bool level_clear_site(net::Vec3& q, float low, float high, const std::vector<net::Vec3>& occupied,
+                             const net::Vec3& u, const net::Vec3& v)
+{
+    float ground = game::ground_radius(q), length = drive::speed(q);
+    if (!std::isfinite(ground) || ground < low || ground > high || length < 1) return false;
+    q = {q.x*ground/length, q.y*ground/length, q.z*ground/length};
+    for (const auto& other : occupied) if (net::dist(q, other) < 70.f) return false;
+    bool clear = true;
+    for (const auto& direction : {u, v}) for (float sign : {-1.f, 1.f}) {
+        net::Vec3 edge{q.x+direction.x*20*sign, q.y+direction.y*20*sign, q.z+direction.z*20*sign};
+        float edge_height = game::ground_radius(edge);
+        if (!std::isfinite(edge_height) || std::fabs(edge_height-ground) > 3) clear = false;
+    }
+    return clear;
+}
+
+static void add_clear_sites(net::Vec3 c, std::vector<net::Vec3>& occupied, size_t limit)
+{
+    net::Vec3 u, v;
+    float height = game::ground_radius(c);
+    if (!surface_frame(c, u, v) || !std::isfinite(height) || height < 1) return;
+    for (float distance : {100.f, 140.f, 180.f}) for (int step = 0; step < 16; ++step) {
+        float angle = step * .3926990817f;
+        net::Vec3 q{c.x+distance*(u.x*std::cos(angle)+v.x*std::sin(angle)),
+                    c.y+distance*(u.y*std::cos(angle)+v.y*std::sin(angle)),
+                    c.z+distance*(u.z*std::cos(angle)+v.z*std::sin(angle))};
+        // Stay at least as high as the inhabited home site, on similarly flat
+        // ground. This deliberately declines valleys or steep terrain.
+        if (level_clear_site(q, height, height+3, occupied, u, v)) occupied.push_back(q);
+        if (occupied.size() >= limit) return;
+    }
+}
+
+// BUG-9135 (owner: "the nest becomes the village"): the partner's own Creature-stage nest as their village's site: the
+// nearest live nest herd of their species (home_nests.cpp's) within 400 m of the host's village, on level ground within
+// 6 m of the host village's height (home_nests' rule for a seat's nest), 70 m from every village. The nest herd stays.
+static bool nest_founding_site(uint8_t player, void* home, net::Vec3& result)
+{
+    void* profile = creations::player_species(player);
+    const net::Vec3 at = tribe_pos(home);
+    const float height = game::ground_radius(at);
+    if (!profile || !std::isfinite(height) || height < 1) return false;
+    struct NestScan {
+        void* profile;
+        net::Vec3 at;
+        std::vector<std::pair<float, net::Vec3>> nests;
+    } scan{profile, at, {}};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            auto& s = *(NestScan*)u;
+            net::Vec3 q;
+            if (noun != game::kHerdNoun || !game::object_alive(o) || !skg::readable(o, 0x21C) || game::herd_species(o) != s.profile ||
+                F<uint8_t>(o, 0x190)) // extinct
+                return true;
+            void* nest = game::herd_nest(o);
+            if (nest && game::object_alive(nest) && game::object_position(nest, q) && net::dist(q, s.at) <= 400.f && s.nests.size() < 64)
+                s.nests.push_back({net::dist(q, s.at), q});
+            return true;
+        },
+        &scan);
+    std::sort(scan.nests.begin(), scan.nests.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::vector<net::Vec3> villages;
+    for (void* t : all_tribes()) villages.push_back(tribe_pos(t));
+    for (const auto& nest : scan.nests) {
+        net::Vec3 q = nest.second, u, v;
+        if (surface_frame(q, u, v) && level_clear_site(q, height - 6, height + 6, villages, u, v)) {
+            result = q;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool founding_site(void* home, net::Vec3& result)
+{
+    std::vector<net::Vec3> occupied;
+    for (auto village : all_tribes()) occupied.push_back(tribe_pos(village));
+    size_t target = occupied.size() + 1;
+    add_clear_sites(tribe_pos(home),occupied,target);
+    // BUG-9135: a third or fourth founder: the rings around the host's village can be full (its rivals, the other
+    // partners; seen 2026-11-12 on the owner's Jiff save: no site for seat 2). The other founders' villages are
+    // inhabited, dry, level sites too: the same search around each of them keeps the founders' villages together.
+    if (g_multi_founders)
+        for (int seat = 1; occupied.size() != target && seat < (int)founder_seats(); ++seat)
+            if (void* village = founder_village(seat); village && village != home)
+                add_clear_sites(tribe_pos(village), occupied, target);
+    if (occupied.size() != target) return false;
+    result = occupied.back();
+    return true;
+}
+
+// the two-founder automatic founding (tribe.multi_founders off): exactly one partner, seat 1
+static void auto_founders_two(double now)
+{
+    if (!g_auto_founders || g_auto_found_manual_off || !is_host() || g_auto_found_queued || now < g_auto_found_at ||
+        C.sess->players().size() != 2 || world::cinematic_playing() || world::time_paused() ||
+        world::load_queued() || world::save_busy() || world::save_pending()) return;
+    g_auto_found_at = now + 5;
+    if (g_order_roster.guest().faction && !g_auto_found_refresh) return;
+    g_auto_found_queued = true;
+    H->run_outside_frame([](void* context) {
+        uint64_t epoch = *(uint64_t*)context; delete (uint64_t*)context;
+        if (epoch != g_campaign_epoch) return;
+        g_auto_found_queued = false;
+        if (!g_auto_founders || g_auto_found_manual_off || !active() || !is_host() ||
+            C.sess->players().size() != 2 || world::load_queued() || world::save_busy() ||
+            world::save_pending() || world::cinematic_playing() || world::time_paused()) return;
+        auto report = [](const std::string& text) {
+            if (text == g_auto_found_notice) return;
+            g_auto_found_notice = text;
+            H->log(M, SK_INFO, "tribe automatic founders: %s", text.c_str());
+            if (C.notice) C.notice(text);
+        };
+        auto planet = world::current_game_key();
+        void* home = player_tribe();
+        if (planet.empty() || !home || !intact_village(home) || !a_SpawnNpcTribe) return;
+        uint8_t guest = 0;
+        for (const auto& p : C.sess->players()) if (p.id) guest = p.id;
+        auto key = creations::player_key(guest, creations::kCreature);
+        void* species = guest ? creations::player_species(guest) : nullptr;
+        uint32_t home_species = tribe_info(home).key.instance, home_faction = F<uint32_t>(home, 0x30);
+        if (!guest || !species || !key.instance || !home_species || key.instance == home_species) return;
+        if (g_auto_found_created.guest().faction &&
+            (g_auto_found_created.home().species != home_species || g_auto_found_created.home().faction != home_faction ||
+             g_auto_found_created.guest().species != key.instance)) {
+            report("A founding operation is unfinished for the previous species. Keep that species selected to finish saving.");
+            return;
+        }
+        founders::Roster saved;
+        std::string error;
+        if (founders::read(planet, saved)) {
+            if (saved.home().species != home_species || saved.home().faction != home_faction ||
+                saved.guest().species != key.instance) {
+                report("The selected species do not match this planet's founders."); return;
+            }
+            g_order_roster = saved;
+        } else {
+            if (g_found_settle_fix && !g_auto_found_created.guest().faction) { // BUG-9137
+                if (!founder_creature_settled(guest, H->time_seconds())) return; // its creature for this world may still come
+                if (creations::plays_host_creation(guest, creations::kCreature)) {
+                    report("Your partner plays one of your creatures here. They need a creature of their own for their own village.");
+                    return;
+                }
+            }
+            // Validate the destination before creating native objects. This
+            // placeholder is never persisted; the factory supplies its faction.
+            uint32_t placeholder = home_faction == 0xFFFFFFFFu ? 0xFFFFFFFEu : 0xFFFFFFFFu;
+            if (!founders::can_record(planet, {home_species, key.instance, home_faction, placeholder}, error)) {
+                report(error); return;
+            }
+            void* village = nullptr;
+            for (void* t : all_tribes()) if (t != home && tribe_info(t).key.instance == key.instance) {
+                if (village || !g_auto_found_created.guest().faction ||
+                    F<uint32_t>(t, 0x30) != g_auto_found_created.guest().faction) {
+                    report("This species already belongs to another village; automatic founding stopped."); return;
+                }
+                village = t;
+            }
+            if (!creations::archive_guest_model(guest, planet, error)) { report(error); return; }
+            if (!village) {
+                net::Vec3 site;
+                if (!founding_site(home, site)) { report("No clear, level founding site near your village is available yet."); return; }
+                skg::Vector3 pos{site.x, site.y, site.z};
+                village = skg::cdecl_call<void*>(a_SpawnNpcTribe, &pos, 0, 3, 15, 0, species);
+                if (!village) { report("The native game could not create your partner's village."); return; }
+                g_auto_found_created = {home_species, key.instance, home_faction, F<uint32_t>(village, 0x30)};
+            }
+            if (!intact_village(village) || members(village).empty()) {
+                report("Your partner's native village is incomplete; automatic founding stopped."); return;
+            }
+            if (!founders::record(planet, g_auto_found_created, error)) { report(error); return; }
+            g_order_roster = g_auto_found_created;
+            g_auto_found_refresh = true;
+        }
+        if (g_auto_found_refresh) {
+            if (!world::checkpoint_reload(error)) { report("Founders registered; checkpoint retry pending: " + error); return; }
+            g_auto_found_refresh = false;
+            report("Both species have their own villages. Saving and refreshing the shared campaign.");
+        }
+    }, new uint64_t(g_campaign_epoch));
+}
+
+// ---- BUG-9135: a village for every partner; the identities of older seats ----
+struct FoundPending {
+    uint8_t player = 0xFF;
+    uint64_t id = 0;                   // the partner's identity (0: a partner of an older version)
+    uint32_t species = 0, faction = 0; // the village made for them, its seat not saved yet
+};
+static std::vector<FoundPending> g_found_pending;
+static uint32_t g_found_made, g_found_at_nest, g_identities_bound;
+static bool g_bind_queued;
+static double g_bind_poll;
+
+static FoundPending* found_pending_of(uint8_t player)
+{
+    const uint64_t id = identity::of(player);
+    for (auto& p : g_found_pending)
+        if (id ? p.id == id : (!p.id && p.player == player)) return &p;
+    return nullptr;
+}
+
+// BUG-9137: a seat founded with one of the host's own creations, no outfit since
+static bool wrong_founder_seat(int seat)
+{
+    return seat >= 1 && seat < (int)founder_seats() && g_outfits.species[seat].size() == 1 &&
+           creations::host_owns(g_order_roster.entries[seat].species);
+}
+
+// the partner seats as tribe_seats::claimable_seat / founding_held see them (index 0 = seat 1)
+static std::vector<tribe_seats::PartnerSeat> partner_seats_view()
+{
+    std::vector<tribe_seats::PartnerSeat> out;
+    for (int seat = 1; seat < (int)founder_seats(); ++seat)
+        out.push_back({g_order_roster.entries[seat].player != 0, player_of_seat(seat) < 0xFE, wrong_founder_seat(seat)});
+    return out;
+}
+
+// the only unseated partner taking over seat `seat` of an older save that was founded with one of the host's creations
+// (BUG-9137: their own creature came after the founding), 0xFE: none
+static uint8_t wrong_seat_claimant(int seat)
+{
+    if (!g_multi_founders || seat < 1 || seat >= (int)founder_seats()) return 0xFE;
+    const auto unseated = party::unseated_partners(g_order_roster, founder_creature_match);
+    return !unseated.empty() && tribe_seats::claimable_seat(partner_seats_view(), unseated.size()) == seat - 1 ? unseated.front() : 0xFE;
+}
+
+// ---- BUG-9135 roadmap phase 4 (decision 4): a partner without a creature of their own (tribe_late.h) ----
+// The partner and the host are told why there is no village (one notice, the host's Co-op window status line), and the
+// partner's Co-op window asks them to choose their own creature (coop_ui.cpp); their pick reaches the host as their
+// creature and found_partners founds the village. Off: the notice of before, addressed to the host only, no prompt.
+static bool g_late_prompt = true;
+COOP_FIX("tribe.late_prompt", "BUG-9135", g_late_prompt,
+         "tribe: a partner without a creature of their own is told why they have no village and asked to choose one in the Co-op window");
+// BUG-9138: a partner who plays a founder's species (the host's species, an outfit of it, another partner's) was taken
+// as ready, so found_partners stopped at them every tick (silently for the host's species): no partner after them in
+// join order got a village. Now they wait with a reason and the next partner is founded. Off: as before.
+static bool g_founding_skip = true;
+COOP_FIX("tribe.founding_skip", "BUG-9138", g_founding_skip,
+         "tribe: a partner who plays a founder's species waits with a reason; the partners after them are still founded");
+// BUG-9150 (owner decision 14, "1B"): a partner without a creature of their own (none, one of the host's creations, a
+// founder's species) gets their village at once, founded with a stand-in: a copy of the host's creature under a key of
+// their own (creations::make_stand_in, listed in <planet>.duostandins). When they choose or make a creature of their
+// own, the founder repair (wrong_founder_tick, BUG-9137) puts it on the same villagers in place (the outfit path).
+// Off: they wait for a creature of their own as before (tribe.late_prompt).
+static bool g_stand_in = true;
+COOP_FIX("tribe.stand_in", "BUG-9150", g_stand_in,
+         "tribe: a late joiner without a creature of their own gets a village at once, with a stand-in of the host's creature");
+static std::vector<uint32_t> g_stand_ins; // this planet's stand-in keys (host and guests: read from the save)
+static std::string g_stand_ins_planet;
+static double g_stand_ins_read;
+static uint32_t g_stand_ins_made, g_stand_ins_swapped;
+static bool stand_in_key(uint32_t key)
+{
+    if (!key) return false;
+    const auto planet = world::current_game_key();
+    const double now = H->time_seconds();
+    if (planet != g_stand_ins_planet || now - g_stand_ins_read > 5) { // a share or a checkpoint brings a new list
+        g_stand_ins_planet = planet;
+        g_stand_ins_read = now;
+        if (!founders::read_stand_ins(planet, g_stand_ins)) g_stand_ins.clear();
+    }
+    return std::find(g_stand_ins.begin(), g_stand_ins.end(), key) != g_stand_ins.end();
+}
+static uint8_t g_founding_wait_player = 0xFF; // host: the partner the status line is about (0xFF: none)
+static tribe_late::Wait g_founding_wait_kind = tribe_late::Wait::Ready;
+
+// the creature is the species of a founder's village or one of its outfits (the host's village's species included)
+static bool founder_species(uint32_t creature)
+{
+    if (!creature) return false;
+    if (void* home = player_tribe(); home && tribe_info(home).key.instance == creature) return true;
+    for (size_t seat = 0; seat < g_order_roster.seats(); ++seat)
+        if (g_order_roster.entries[seat].species == creature || g_outfits.contains(seat, creature)) return true;
+    return false;
+}
+
+static tribe_late::Wait founding_wait(uint8_t partner, double now)
+{
+    tribe_late::PartnerState s;
+    s.pending = found_pending_of(partner) != nullptr;
+    const uint32_t creature = creations::player_key(partner, creations::kCreature).instance;
+    s.has_creature = creature && creations::player_species(partner);
+    // its creature for this world may still come; without any creature: told only once they play in this world (a
+    // partner still receiving the world sends no creature yet)
+    s.settled = founder_creature_settled(partner, now) && (s.has_creature || (C.here && C.here(partner)));
+    s.host_creation = s.has_creature && creations::plays_host_creation(partner, creations::kCreature);
+    s.founder_species = s.has_creature && founder_species(creature);
+    s.editing = g_late_editing_until[partner] > now; // BUG-9159
+    const auto wait = tribe_late::founding_wait(s, g_found_settle_fix, g_founding_skip, g_stand_in && g_late_prompt);
+    // BUG-9159 (decision 2M): before a stand-in, the partner is asked to make their creature in the editor
+    const auto ask = tribe_late::editor_ask(wait, g_editor_first, g_editor_asked_at[partner], now);
+    if (ask == tribe_late::Ask::AskNow) {
+        g_editor_asked_at[partner] = now;
+        net::Writer w;
+        w.u8(1);
+        w.u32(modes::current_world());
+        C.sess->send_reliable_to(partner, net::MSG_TRIBE_LATE, w);
+        H->log(M, SK_INFO, "tribe: %s has no creature of their own: asked to make one in the editor (BUG-9159)",
+               C.sess->name_of(partner).c_str());
+    }
+    return ask == tribe_late::Ask::None ? wait : tribe_late::Wait::Editing;
+}
+
+// the partner is ready for a village of their own (BUG-9137 guards, BUG-9138); `why`: a reason worth telling, `kind`
+// its wait
+static bool founding_ready(uint8_t partner, double now, std::string* why, tribe_late::Wait* kind = nullptr)
+{
+    const auto wait = founding_wait(partner, now);
+    if (kind) *kind = wait;
+    if (why && tribe_late::told(wait)) {
+        const std::string name = C.sess->name_of(partner);
+        if (g_late_prompt) *why = tribe_late::wait_text(wait, name);
+        else if (wait == tribe_late::Wait::HostCreation)
+            *why = name + " plays one of your creatures here. They need a creature of their own for their own village.";
+        else if (wait == tribe_late::Wait::FounderSpecies)
+            *why = name + " plays the creature of another founder's village. They need a creature of their own for their own village.";
+        // a partner without any creature was not told before tribe.late_prompt
+    }
+    return tribe_late::founds_now(wait);
+}
+
+// host: the status line of the Co-op window while a connected partner waits for a creature of their own
+std::string founding_wait_line()
+{
+    if (!g_late_prompt || !is_host() || !active() || g_founding_wait_player >= 0xFE) return {};
+    for (const auto& p : C.sess->players())
+        if (p.id == g_founding_wait_player) return tribe_late::host_status(g_founding_wait_kind, C.sess->name_of(p.id));
+    return {};
+}
+
+// guest: a member of this player's own village is here (the host's state names its owner; the host's village does
+// not count). Unknown (no state yet): true, so nobody is asked too early.
+static bool guest_has_village()
+{
+    void* home = player_tribe();
+    if (!home || g_gm.empty()) return true;
+    for (const auto& [id, m] : g_gm)
+        if (m.c && m.owner == C.sess->my_id() && game::object_alive(m.c) && F<void*>(m.c, kOwnerTribeOff) != home) return true;
+    return false;
+}
+
+// guest, BUG-9150: this player's own village still wears its stand-in (its members' species is one of the save's stand-ins)
+static bool guest_village_stand_in()
+{
+    if (!g_stand_in) return false;
+    void* home = player_tribe();
+    for (const auto& [id, m] : g_gm)
+        if (m.c && m.owner == C.sess->my_id() && game::object_alive(m.c) && F<void*>(m.c, kOwnerTribeOff) != home)
+            return stand_in_key(game::species_key(m.c).instance);
+    return false;
+}
+
+// BUG-9159 (owner decision 2M): a guest who joined without a creature of their own goes into the creature editor at once
+// (opened by coop.cpp outside the frame, which calls late_editor_opened); tried every 3 s up to 10 times per world while
+// the game is busy. Off: the Co-op window's choice and the stand-in only, as before.
+static uint32_t g_editor_first_world, g_editor_first_opened_world;
+static double g_editor_first_asked = -1e9;
+static uint32_t g_editor_asked_world; // guest: the world the host asked this player to make their creature in
+static int g_editor_first_tries;
+static uint32_t g_editor_first_opened;
+bool late_needs_creature()
+{
+    if (!g_late_prompt || !active() || !is_guest() || local_play() || creations::plays_own_creature()) return false;
+    return g_editor_asked_world == modes::current_world() || !guest_has_village();
+}
+static void late_editor_first_tick(double now)
+{
+    if (!g_editor_first || !g_late_prompt || !is_guest() || local_play() || !C.open_creature_editor) return;
+    const uint32_t world = modes::current_world();
+    if (world != g_editor_first_world) { g_editor_first_world = world; g_editor_first_tries = 0; }
+    if (now - g_editor_first_asked < 3) return;
+    const bool asked = world && g_editor_asked_world == world;
+    if (!tribe_late::editor_first(true, asked, creations::plays_own_creature(), g_editor_first_opened_world == world,
+                                  g_editor_first_tries)) {
+        if (asked && g_editor_first_tries >= tribe_late::kEditorTries && g_editor_first_opened_world != world) {
+            g_editor_asked_world = 0; // the editor would not open: the host's stand-in now
+            late_editor_done(false);
+        }
+        return;
+    }
+    g_editor_first_asked = now;
+    ++g_editor_first_tries;
+    C.open_creature_editor();
+}
+void late_editor_opened()
+{
+    if (!is_guest()) return;
+    g_editor_first_opened_world = modes::current_world();
+    ++g_editor_first_opened;
+    send_cmd(CMD_LATE_EDITING, {}, 1, {}, {});
+}
+void late_editor_done(bool saved)
+{
+    if (is_guest()) send_cmd(CMD_LATE_EDITING, {}, saved ? 2 : 0, {}, {});
+}
+
+int late_prompt()
+{
+    if (!g_late_prompt || !active() || !is_guest() || local_play()) return 0;
+    const bool has = guest_has_village();
+    return (int)tribe_late::prompt(true, has, creations::plays_own_creature(), H->time_seconds() - g_auto_found_entered,
+                                   has && guest_village_stand_in());
+}
+
+// a seat of an older save learns its player's identity (outside the frame: it writes the planet's founder roster)
+struct BindRequest {
+    uint64_t epoch, id;
+    int seat;
+};
+static void queue_identity_bind(int seat, uint64_t id)
+{
+    g_bind_queued = true;
+    H->run_outside_frame([](void* context) {
+        BindRequest request = *(BindRequest*)context;
+        delete (BindRequest*)context;
+        g_bind_queued = false;
+        if (request.epoch != g_campaign_epoch || !active() || !is_host() || world::load_queued() || world::save_busy()) return;
+        auto planet = world::current_game_key();
+        founders::Roster saved;
+        std::string error;
+        if (planet.empty() || !founders::read(planet, saved) || request.seat < 1 || request.seat >= (int)saved.seats() ||
+            request.seat >= (int)founder_seats()) return;
+        auto& entry = saved.entries[request.seat];
+        const auto& live = g_order_roster.entries[request.seat];
+        if (entry.player || live.player || entry.species != live.species || entry.faction != live.faction ||
+            saved.seat_of_player(request.id) >= 0) return;
+        entry.player = request.id;
+        if (!founders::record(planet, saved, error)) {
+            H->log(M, SK_WARN, "tribe founders: seat %d did not learn its player's identity: %s", request.seat, error.c_str());
+            return;
+        }
+        g_order_roster.entries[request.seat].player = request.id;
+        g_identities_bound++;
+        H->log(M, SK_INFO, "tribe founders: seat %d (species %08X) belongs to player identity %08X... now (BUG-9135)", request.seat,
+               entry.species, (unsigned)(request.id >> 32));
+    }, new BindRequest{g_campaign_epoch, id, seat});
+}
+
+// host: a seat without identity (a DUO1 save, a partner of an older version) learns the identity of the partner the
+// creature match found for it (or of the partner taking over a BUG-9137 seat), once
+static void bind_founder_identities(double now)
+{
+    if (!g_multi_founders || !is_host() || g_bind_queued || now < g_bind_poll || founder_seats() < 2 ||
+        world::load_queued() || world::save_busy() || world::save_pending()) return;
+    g_bind_poll = now + 2;
+    for (int seat = 1; seat < (int)founder_seats(); ++seat) {
+        if (g_order_roster.entries[seat].player) continue;
+        uint8_t player = player_of_seat(seat);
+        // a partner who plays one of the host's creations (a rejoin, BUG-9137) is not taken for its seat's player
+        if (player < 0xFE && (creations::plays_host_creation(player, creations::kCreature) || !founder_creature_settled(player, now)))
+            continue;
+        if (player >= 0xFE) {
+            player = wrong_seat_claimant(seat);
+            if (player >= 0xFE || !founder_creature_settled(player, now)) continue;
+        }
+        const uint64_t id = identity::of(player);
+        if (!id || g_order_roster.seat_of_player(id) >= 0) continue;
+        queue_identity_bind(seat, id);
+        return;
+    }
+}
+
+// the checkpoint after new founders were saved (both games load the planet with the new villages)
+static void founders_refresh(const std::function<void(const std::string&)>& report)
+{
+    if (!g_auto_found_refresh) return;
+    std::string error;
+    if (!world::checkpoint_reload(error)) { report("Founders registered; checkpoint retry pending: " + error); return; }
+    g_auto_found_refresh = false;
+    report(g_order_roster.seats() <= 2 ? std::string("Both species have their own villages. Saving and refreshing the shared campaign.")
+                                       : std::to_string(g_order_roster.seats()) +
+                                             " founders have their own villages. Saving and refreshing the shared campaign.");
+}
+
+// ---- BUG-9135 roadmap phase 4 (decision 5): a partner village founded late is caught up to the host's village ----
+static bool g_late_catch_up = true;
+COOP_FIX("tribe.late_catch_up", "BUG-9135", g_late_catch_up,
+         "tribe: a partner village founded after the start gets the host village's member count, hut level and tool racks");
+static uint32_t g_catch_ups, g_catch_up_members, g_catch_up_racks; // coop.tribe
+static void catch_up_village(int seat, void* village, void* home);
+
+// outside the frame: one partner without a village gets one (their own nest's site, else the next free one)
+static const char* g_found_skip = ""; // BUG-9159: why the last automatic founding did nothing (coop.tribe late)
+static void found_partners()
+{
+    if (!g_auto_founders || g_auto_found_manual_off || !active() || !is_host() || C.sess->players().size() < 2 ||
+        world::load_queued() || world::save_busy() || world::save_pending() || world::cinematic_playing() || world::time_paused()) {
+        g_found_skip = "off, alone, or the game is busy (load, save, cinematic, pause)";
+        return;
+    }
+    auto report = [](const std::string& text) {
+        if (text == g_auto_found_notice) return;
+        g_auto_found_notice = text;
+        H->log(M, SK_INFO, "tribe automatic founders: %s", text.c_str());
+        if (C.notice) C.notice(text);
+    };
+    auto planet = world::current_game_key();
+    void* home = player_tribe();
+    if (planet.empty() || !home || !intact_village(home) || !a_SpawnNpcTribe) {
+        g_found_skip = planet.empty() ? "no planet" : !home ? "no host village" : !a_SpawnNpcTribe ? "no symbol"
+                                                                               : "the host's village is not intact (its hut)";
+        return;
+    }
+    const uint32_t home_species = tribe_info(home).key.instance, home_faction = F<uint32_t>(home, 0x30);
+    if (!home_species) { g_found_skip = "the host's village has no species"; return; }
+    g_found_skip = "";
+    std::string error;
+    // the planet's founders: those of this session (restored at the world's entry, recorded here), else the saved ones,
+    // else a new roster of the host's village
+    founders::Roster roster = g_order_roster;
+    founders::Outfits outfits = g_outfits;
+    bool registered = roster.guest().faction != 0;
+    if (!registered && founders::read(planet, roster)) {
+        founders::read_outfits(planet, outfits, error);
+        registered = true;
+    } else if (!registered) {
+        roster = {};
+        roster.entries[0] = {home_species, home_faction, 0};
+    }
+    // the host's village wears its founding species or one of its outfits
+    if (roster.home().faction != home_faction || (roster.home().species != home_species && !outfits.contains(0, home_species))) {
+        report("The selected species do not match this planet's founders."); return;
+    }
+    if (registered && !(roster == g_order_roster)) {
+        g_order_roster = roster;
+        g_outfits = outfits;
+    }
+    const double now = H->time_seconds();
+    const auto unseated = party::unseated_partners(g_order_roster, founder_creature_match);
+    const auto view = partner_seats_view();
+    if (tribe_seats::founding_held(view, unseated.size())) {
+        // a seat of an older save: its partner may be here with another creature, or takes it over (BUG-9137)
+        if (tribe_seats::claimable_seat(view, unseated.size()) < 0)
+            for (size_t i = 0; i < view.size(); ++i)
+                if (!view[i].identity && !view[i].matched && !unseated.empty()) {
+                    report("Village seat " + std::to_string(i + 1) + " was founded before player identities and nobody here plays its "
+                           "founder's creature. New partners' villages wait (or the host binds the seat: coop.tribe bind_founder " +
+                           std::to_string(i + 1) + " <player>).");
+                    break;
+                }
+        founders_refresh(report);
+        return;
+    }
+    uint8_t partner = 0xFE, why_player = 0xFF;
+    tribe_late::Wait why_kind = tribe_late::Wait::Ready, partner_kind = tribe_late::Wait::Ready;
+    std::string why;
+    for (uint8_t p : unseated) {
+        std::string reason;
+        tribe_late::Wait kind;
+        if (founding_ready(p, now, &reason, &kind)) { partner = p; partner_kind = kind; break; }
+        if (why.empty() && !reason.empty()) { why = reason; why_player = p; why_kind = kind; }
+    }
+    if (partner >= 0xFE) { // the host's status line names them (tribe.late_prompt)
+        g_founding_wait_player = why_player;
+        g_founding_wait_kind = why_kind;
+    }
+    if (partner >= 0xFE && !why.empty()) report(why);
+    if (partner >= 0xFE) { founders_refresh(report); return; }
+    // after a failure a checkpoint already due for founders saved before still runs
+    auto stop = [&](const std::string& text) {
+        if (!text.empty()) report(text);
+        founders_refresh(report);
+    };
+    const size_t seat = roster.seats();
+    if (seat >= founders::kPlaySeats) {
+        report("Every founder seat is taken (" + std::to_string(founders::kPlaySeats) + " villages). " + C.sess->name_of(partner) +
+               " plays along with the founders' villages.");
+        founders_refresh(report);
+        return;
+    }
+    auto key = creations::player_key(partner, creations::kCreature);
+    void* species = creations::player_species(partner);
+    const uint64_t id = identity::of(partner);
+    // BUG-9150: no creature of their own: a stand-in of the host's creature (the same key on every try: owner + content)
+    const bool stand_in = partner_kind == tribe_late::Wait::StandIn;
+    if (stand_in) {
+        creations::Key s;
+        if (!creations::make_stand_in(partner, {home_species, 0x2B978C46, 0x40626200}, planet, s, error)) { stop(error); return; }
+        key = s;
+        species = game::species_by_key({s.instance, s.type, s.group});
+    }
+    if (!species || !key.instance || key.instance == home_species) { stop({}); return; }
+    for (size_t s = 0; s < seat; ++s)
+        if (roster.entries[s].species == key.instance || g_outfits.contains(s, key.instance)) {
+            stop(C.sess->name_of(partner) + " plays the creature of another founder's village. They need a creature of their own for their own village.");
+            return;
+        }
+    FoundPending* pending = found_pending_of(partner);
+    if (pending && pending->species != key.instance) {
+        stop("A founding operation is unfinished for the previous species. Keep that species selected to finish saving.");
+        return;
+    }
+    // Validate the destination before creating native objects. This placeholder is never persisted; the factory
+    // supplies the village's faction.
+    founders::Roster next = roster;
+    uint32_t placeholder = 0xFFFFFFFFu;
+    while (next.contains_faction(placeholder)) --placeholder;
+    next.entries[seat] = {key.instance, placeholder, id};
+    if (!founders::can_record(planet, next, error)) { stop(error); return; }
+    void* village = nullptr;
+    for (void* t : all_tribes()) if (t != home && tribe_info(t).key.instance == key.instance) {
+        if (village || !pending || F<uint32_t>(t, 0x30) != pending->faction) {
+            stop("This species already belongs to another village; automatic founding stopped."); return;
+        }
+        village = t;
+    }
+    if (!stand_in && !creations::archive_guest_model(partner, planet, error)) { stop(error); return; }
+    auto forget_pending = [&]() {
+        g_found_pending.erase(std::remove_if(g_found_pending.begin(), g_found_pending.end(),
+                                             [&](const FoundPending& p) { return id ? p.id == id : (!p.id && p.player == partner); }),
+                              g_found_pending.end());
+    };
+    bool at_nest = false;
+    if (!village) {
+        forget_pending(); // a village made earlier is gone (destroyed before its seat was saved): a new one
+        net::Vec3 site;
+        at_nest = nest_founding_site(partner, home, site);
+        if (!at_nest && !founding_site(home, site)) { stop("No clear, level founding site near your village is available yet."); return; }
+        skg::Vector3 pos{site.x, site.y, site.z};
+        village = skg::cdecl_call<void*>(a_SpawnNpcTribe, &pos, 0, 3, 15, 0, species);
+        if (!village) { stop("The native game could not create your partner's village."); return; }
+        g_found_pending.push_back({partner, id, key.instance, F<uint32_t>(village, 0x30)});
+        const net::Vec3 at = tribe_pos(village);
+        H->log(M, SK_INFO, "tribe automatic founders: village for player %u (seat %zu, species %08X) at (%.0f %.0f %.0f), %.0f m from the host's, %s",
+               partner, seat, key.instance, at.x, at.y, at.z, net::dist(at, tribe_pos(home)),
+               at_nest ? "at their own nest" : "at the next free site");
+        if (at_nest) g_found_at_nest++;
+    }
+    if (!intact_village(village) || members(village).empty()) {
+        stop("Your partner's native village is incomplete; automatic founding stopped."); return;
+    }
+    next.entries[seat].faction = F<uint32_t>(village, 0x30);
+    if (!founders::record(planet, next, error)) { stop(error); return; }
+    g_order_roster = next;
+    if (stand_in) { // BUG-9150: listed, so the repair puts their own creature on the village later
+        std::string list_error;
+        if (!founders::add_stand_in(planet, key.instance, list_error))
+            H->log(M, SK_WARN, "tribe automatic founders: stand-in %08X not listed: %s", key.instance, list_error.c_str());
+        g_stand_ins_read = -1e9;
+        g_stand_ins_made++;
+        if (C.notice)
+            C.notice(C.sess->name_of(partner) + " has no creature of their own yet: their village starts with the host's creature. "
+                     "Choose or make one in the Co-op window (F9) and the village takes it.");
+    }
+    if (g_outfits.species[seat].empty()) g_outfits.species[seat] = {key.instance};
+    forget_pending();
+    g_found_made++;
+    g_auto_found_refresh = true;
+    H->log(M, SK_INFO, "tribe automatic founders: seat %zu is player %u's (identity %08X..., species %08X, faction %08X)", seat, partner,
+           (unsigned)(id >> 32), key.instance, next.entries[seat].faction);
+    // roadmap phase 4 (decision 5): the new village like the host's (once: this seat is never founded again), before
+    // the checkpoint below saves it; a village of an older save is never touched (decision 9)
+    if (g_late_catch_up) catch_up_village((int)seat, village, home);
+    // another partner ready now is founded first (one a tick); the checkpoint comes after the last one
+    for (uint8_t p : party::unseated_partners(g_order_roster, founder_creature_match))
+        if (founding_ready(p, now, nullptr) && g_order_roster.seats() < founders::kPlaySeats) return;
+    founders_refresh(report);
+}
+
+// the multi-founder automatic founding (tribe.multi_founders): every connected partner without a village, one a tick
+static void auto_founders_multi(double now)
+{
+    if (!g_auto_founders || g_auto_found_manual_off || !is_host() || g_auto_found_queued || now < g_auto_found_at ||
+        C.sess->players().size() < 2 || world::cinematic_playing() || world::time_paused() ||
+        world::load_queued() || world::save_busy() || world::save_pending()) return;
+    g_auto_found_at = now + 5;
+    if (!g_auto_found_refresh && g_order_roster.guest().faction &&
+        party::unseated_partners(g_order_roster, founder_creature_match).empty()) {
+        g_founding_wait_player = 0xFF; // nobody waits for a village
+        g_found_skip = "every connected partner has a seat";
+        return;
+    }
+    g_auto_found_queued = true;
+    H->run_outside_frame([](void* context) {
+        uint64_t epoch = *(uint64_t*)context; delete (uint64_t*)context;
+        if (epoch != g_campaign_epoch) return;
+        g_auto_found_queued = false;
+        found_partners();
+    }, new uint64_t(g_campaign_epoch));
+}
+
+static void auto_founders_tick(double now)
+{
+    if (g_multi_founders) auto_founders_multi(now);
+    else auto_founders_two(now);
+}
+
+static bool birth_cost(float& cost)
+{
+    uintptr_t address = H ? H->sym("SporeCoop::Tribe_BabyFoodCost") : 0;
+    if (!address) return false;
+    cost = *(const float*)address;
+    return std::isfinite(cost) && cost >= 0 && cost <= 1000000;
+}
+
+std::string village_birth_line()
+{
+    float cost;
+    if (!birth_cost(cost)) return "Births are unavailable on this game build.";
+    char text[96];
+    snprintf(text, sizeof text, "Add a baby (%.2f food from your village).", cost);
+    return text;
+}
+
+static bool g_tool_slots = true;
+COOP_FIX("tribe.tool_slots", "BUG-9024", g_tool_slots,
+         "tribe: purchase into a native building slot so placement survives reload");
+
+static bool place_committed_tool(void* village, int kind, void* slot, uintptr_t occupy,
+                                 const net::Vec3& pos, uintptr_t layout)
+{
+    void* tool = vcall<void*>(village, 0xB4 / 4, kind);
+    if (!tool) return false;
+    vcall<void>(tool, 0x64 / 4, village);
+    if (slot) thiscall<void>(occupy, slot, tool);
+    vcall<void>((uint8_t*)tool + 0x34, 0x38 / 4, &pos);
+    vcall<void>(tool, 0x64 / 4, village);
+    thiscall<void>(layout, village, kind);
+    return true;
+}
+
+// a free native building slot of the village's layout (tribe +0x3B4, CommunityLayout_NearestSlot) 12 to 35 m from its
+// centre: the slot nearest to points on rings of `radii` metres around it (16 directions each), the first one found
+static bool free_rack_slot(void* village, uintptr_t nearest, std::initializer_list<float> radii, void*& slot_out, net::Vec3& pos_out)
+{
+    net::Vec3 center = tribe_pos(village);
+    float radius = drive::speed(center);
+    if (!(radius > 1.f)) return false;
+    net::Vec3 up{center.x/radius, center.y/radius, center.z/radius};
+    net::Vec3 u{up.z, 0, -up.x};
+    if (drive::speed(u) < .01f) u = {0, -up.z, up.y};
+    float length = drive::speed(u);
+    u = {u.x/length, u.y/length, u.z/length};
+    net::Vec3 v{up.y*u.z-up.z*u.y, up.z*u.x-up.x*u.z, up.x*u.y-up.y*u.x};
+    for (float ring : radii) for (int i=0; i<16; ++i) {
+        float x=ring*std::cos(i*.3926990817f), y=ring*std::sin(i*.3926990817f);
+        net::Vec3 point{center.x+u.x*x+v.x*y,center.y+u.y*x+v.y*y,center.z+u.z*x+v.z*y};
+        void* slot=thiscall<void*>(nearest, (uint8_t*)village + 0x3B4, &point);
+        if (!slot || !skg::readable(slot,24) || F<uint8_t>(slot,0) || F<void*>(slot,4)) continue;
+        const auto pos=F<net::Vec3>(slot,0xC);
+        float distance=net::dist(pos,center);
+        if (distance >= 12 && distance <= 35) {
+            slot_out = slot;
+            pos_out = pos;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool stock_trial_instrument(void* village)
+{
+    // The raw NPC factory creates a hut and members. A social audience also
+    // needs an instrument rack. Use a free native slot and the same complete
+    // ownership/placement operation used by the village planner.
+    std::array<void*,11> tools{};
+    if (!tool_inventory(village, tools)) return false;
+    if (tools[4] || tools[5] || tools[6]) return true;
+    uintptr_t nearest = H->sym("SporeCoop::CommunityLayout_NearestSlot");
+    uintptr_t occupy = H->sym("SporeCoop::CommunitySlot_SetObject");
+    uintptr_t layout = H->sym("SporeCoop::Tribe_UpdateToolLayout");
+    if (!nearest || !occupy || !layout) return false;
+    void* slot = nullptr;
+    net::Vec3 pos;
+    return free_rack_slot(village, nearest, {22.f}, slot, pos) && place_committed_tool(village,5,slot,occupy,pos,layout);
+}
+
+// the host-side shape of a village for the catch-up: hut level, living members by age, its racks and fire pit
+static tribe_late::Village village_shape(void* t)
+{
+    tribe_late::Village v;
+    v.level = F<int>(t, 0x38);
+    for (void* c : members(t))
+        if (living(c)) ++(F<uint8_t>(c, kAgeOff) ? v.adults : v.babies);
+    std::array<void*, 11> tools{};
+    if (tool_inventory(t, tools))
+        for (int kind = 1; kind <= 10; ++kind)
+            if (tools[kind]) v.tools = (uint16_t)(v.tools | (1u << kind));
+    return v;
+}
+
+// BUG-9135 phase 4 (decision 5): the partner village of `seat`, founded this moment, like the host's village: the
+// host's hut level (the native upgrade pair shared_hut_upgrade uses), the host's member count (the game's own
+// SpawnMember, vt 0x98, under the population limit the founders share: tribe.shared_capacity), the host's racks (the
+// village planner's own operations into free layout slots, purchase history set). The host's village is only read.
+static void catch_up_village(int seat, void* village, void* home)
+{
+    if (!village || !home || village == home || !intact_village(village) || !intact_village(home)) return;
+    const auto plan = tribe_late::catch_up_plan(village_shape(home), village_shape(village));
+    if (!plan.any()) {
+        H->log(M, SK_INFO, "tribe late catch-up: seat %d: the host's village is at the start, nothing to add", seat);
+        return;
+    }
+    int level_set = -1;
+    if (plan.level >= 0) {
+        uintptr_t set = H->sym("SporeCoop::Community_SetLevel"), refresh = H->sym("SporeCoop::Tribe_UpdateHutModel");
+        if (set && refresh) {
+            thiscall<void>(set, village, plan.level);
+            thiscall<void>(refresh, village);
+            level_set = plan.level;
+        }
+    }
+    // after the level: a partner village's own limit follows its level when the shared limit is off
+    uint32_t adults = 0, babies = 0;
+    while (adults < plan.adults && vcall<void*>(village, 0x98 / 4, 1)) ++adults; // null: the population limit
+    while (babies < plan.babies && vcall<void*>(village, 0x98 / 4, 0)) ++babies;
+    uint16_t racks = 0;
+    if (plan.tools) {
+        uintptr_t nearest = H->sym("SporeCoop::CommunityLayout_NearestSlot");
+        uintptr_t occupy = H->sym("SporeCoop::CommunitySlot_SetObject");
+        uintptr_t layout = H->sym("SporeCoop::Tribe_UpdateToolLayout");
+        uintptr_t purchased = H->sym("SporeCoop::Tribe_SetPurchasedTool");
+        for (int kind : tribe_late::kinds(plan.tools)) {
+            void* slot = nullptr;
+            net::Vec3 pos;
+            if (!nearest || !occupy || !layout || !purchased || !free_rack_slot(village, nearest, {22.f, 16.f, 28.f, 34.f}, slot, pos))
+                break;
+            if (!place_committed_tool(village, kind, slot, occupy, pos, layout)) continue;
+            thiscall<void>(purchased, village, kind);
+            racks = (uint16_t)(racks | (1u << kind));
+        }
+    }
+    g_catch_ups++;
+    g_catch_up_members += adults + babies;
+    g_catch_up_racks += (uint32_t)tribe_late::kinds(racks).size();
+    H->log(M, SK_INFO, "tribe late catch-up: seat %d (faction %08X): %s", seat, F<uint32_t>(village, 0x30),
+           tribe_late::describe(plan, level_set, adults, babies, racks).c_str());
+}
+
+// BUG-9153: a refused purchase is told to the player who asked (their native hut and planner have no other answer;
+// before, the host read it), and logged on the host
+static bool tell_buyer(uint8_t from, const char* reason)
+{
+    net::Writer w;
+    w.str8(reason);
+    C.sess->send_reliable_to(from, net::MSG_NOTICE, w);
+    H->log(M, SK_INFO, "tribe: player %u's purchase refused: %s", (unsigned)from, reason);
+    return false;
+}
+
+static bool buy_guest_tool(uint8_t from, int seat, uint16_t witness, int kind, net::Vec3 pos)
+{
+    auto reject = [from](const char* reason) { return tell_buyer(from, reason); };
+    auto found = g_hm_by_id.find(witness);
+    void* village = seat >= 1 ? founder_village(seat) : nullptr; // the buyer's own village (BUG-9135)
+    if (!village || !intact_village(village) || found == g_hm_by_id.end() || !living(found->second) ||
+        owner_of(found->second) != from || F<void*>(found->second, kOwnerTribeOff) != village ||
+        world::load_queued() || world::save_busy() || world::save_pending())
+        return reject("The host could not check that rack just now (your village, or a save running). Try again.");
+    int cost;
+    uintptr_t layout = H->sym("SporeCoop::Tribe_UpdateToolLayout");
+    uintptr_t purchased = H->sym("SporeCoop::Tribe_SetPurchasedTool");
+    if (!layout || !purchased || !tool_cost(kind, cost)) return reject("The game could not price that rack.");
+    if (!(tool_unlocks() & (1u << kind))) return reject("Ally with or conquer other tribes to unlock that tool.");
+    std::array<void*, 11> tools{};
+    if (!tool_inventory(village, tools) || tools[kind]) return reject("That rack already exists, or the village planner is busy.");
+    double food;
+    if (!shared::tribe_food(village, food) || food < cost) return reject("Your village needs more food for that rack.");
+    if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) return reject("Choose ground near your village for the rack.");
+    net::Vec3 anchor = tribe_pos(village);
+    float distance = net::dist(pos, anchor);
+    if (distance < 12.f || distance > 35.f) return reject("Place the rack on clear ground 12 to 35 metres from your hut.");
+    float radius = std::sqrt(pos.x*pos.x + pos.y*pos.y + pos.z*pos.z);
+    float ground = game::ground_radius(pos), home_ground = game::ground_radius(anchor);
+    if (!std::isfinite(ground) || ground < 1 || radius < 1 || std::fabs(radius-ground) > 4 ||
+        !std::isfinite(home_ground) || std::fabs(ground-home_ground) > 3)
+        return reject("Choose level ground near your village for the rack.");
+    pos = {pos.x*ground/radius, pos.y*ground/radius, pos.z*ground/radius};
+    void* slot = nullptr;
+    uintptr_t occupy = H->sym("SporeCoop::CommunitySlot_SetObject");
+    if (g_tool_slots) {
+        uintptr_t nearest = H->sym("SporeCoop::CommunityLayout_NearestSlot");
+        if (!nearest || !occupy) return reject("The game could not find the building spots of your village.");
+        slot = thiscall<void*>(nearest, (uint8_t*)village + 0x3B4, &pos);
+        if (!slot || IsBadReadPtr(slot, 24) || F<uint8_t>(slot, 0) || F<void*>(slot, 4))
+            return reject("Choose an empty building spot around your village.");
+        net::Vec3 snapped = F<net::Vec3>(slot, 0xC);
+        if (!std::isfinite(snapped.x) || !std::isfinite(snapped.y) || !std::isfinite(snapped.z) ||
+            net::dist(snapped, pos) > 12.f || net::dist(snapped, anchor) > 35.f)
+            return reject("Choose ground closer to a building spot around your village.");
+        pos = snapped;
+    }
+    struct Clearance { net::Vec3 pos; bool blocked = false; } clearance{pos};
+    game::for_each_object([](void* object, uint32_t noun, void* context) {
+        auto& c = *(Clearance*)context;
+        // Ignore moving creatures; preserve eight metres around buildings.
+        // The village's food mat is checked by its native reference below.
+        if (noun != kHutNoun && noun != kToolNoun) return true;
+        net::Vec3 at;
+        if (game::object_alive(object) && game::object_position(object, at) && net::dist(at, c.pos) < 8.f) c.blocked = true;
+        return true;
+    }, &clearance);
+    void* mat = F<void*>(village, 0x260);
+    net::Vec3 mat_pos;
+    if (mat && game::object_position(mat, mat_pos) && net::dist(mat_pos, pos) < 8.f) clearance.blocked = true;
+    if (clearance.blocked) return reject("Leave eight metres between the new rack and existing village buildings.");
+    if (!place_committed_tool(village,kind,slot,occupy,pos,layout)) return reject("The game could not create that tool rack.");
+    thiscall<void>(purchased, village, kind);
+    shared::mirror_village_food(village, food-cost);
+    ++g_cmds_done;
+    if (C.notice) C.notice("Your partner built a tool rack in their village.");
+    return true;
+}
+
+static bool buy_guest_baby(uint8_t from, int seat, uint16_t witness)
+{
+    auto found = g_hm_by_id.find(witness);
+    void* village = seat >= 1 ? founder_village(seat) : nullptr; // the buyer's own village (BUG-9135)
+    if (!village || !intact_village(village) || found == g_hm_by_id.end() ||
+        !game::object_alive(found->second) || !is_citizen(found->second) ||
+        owner_of(found->second) != from || !living(found->second) ||
+        F<void*>(found->second, kOwnerTribeOff) != village || world::load_queued() ||
+        world::save_busy() || world::save_pending())
+        return tell_buyer(from, "The host could not add that baby just now (your village, or a save running). Try again.");
+    float cost;
+    double food;
+    uintptr_t get = H->sym("SporeCoop::TribalGame_Get");
+    uintptr_t blocked = H->sym("SporeCoop::TribalGame_BirthBlocked");
+    void* ui = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!birth_cost(cost) || !blocked || !ui || !F<uint8_t>(ui, 0x3A3) ||
+        skg::cdecl_call<bool>(blocked)) {
+        return tell_buyer(from, "Births are not available at this point in the Tribal campaign.");
+    }
+    if (!shared::tribe_food(village, food) || food < cost) {
+        return tell_buyer(from, "Your village needs more food to add a baby.");
+    }
+    // Use the capped native path, never the mirror helper's uncapped fallback.
+    // SpawnMember has no price side effect. Charge only after successful creation.
+    void* baby = vcall<void*>(village, 0x98 / 4, 0);
+    if (!baby) {
+        return tell_buyer(from, "Your village is at its population limit.");
+    }
+    shared::mirror_village_food(village, food - cost);
+    ++g_cmds_done;
+    if (C.notice) C.notice("A baby joined your partner's original species village.");
+    return true;
+}
+
+// BUG-9135: a downed founder of seat `seat` can be helped: its partners are here (two players with the partner
+// commanding, as before; several: the seat's own player), and another founder village (of a player who is here) has a
+// living member. Before, "the partner" was the other one of two villages.
+static bool rescue_players_here(int seat)
+{
+    if (!g_multi_founders) return C.sess->players().size() == 2 && village_commander() < 0xFE;
+    return player_of_seat(seat) < 0xFE;
+}
+static bool rescue_helper_alive(int seat)
+{
+    for (int other = 0; other < (int)founder_seats(); ++other) {
+        if (other == seat || (g_multi_founders && player_of_seat(other) >= 0xFE)) continue;
+        if (void* village = founder_village(other))
+            for (void* c : members(village)) if (living(c)) return true;
+    }
+    return false;
+}
+
+static bool protect_founder(void* victim, float damage, uint32_t attacker)
+{
+    if (!std::isfinite(damage) || damage <= 0 || !g_order_roster.guest().faction) return false;
+    if (founder_downed(victim)) return true;
+    auto tracked = g_hm.find(victim);
+    if (tracked == g_hm.end()) return false;
+    double now = H->time_seconds();
+    for (const auto& rescue : g_founder_rescues)
+        if (rescue.member == tracked->second.id && now < rescue.grace_until) return true;
+    if (damage < game::health(victim) || game::health(victim) <= 0 || F<uint8_t>(victim, 0xB5E)) return false;
+    void* tribe = F<void*>(victim, kOwnerTribeOff);
+    const int seat = seat_of_village(tribe, player_tribe()); // the downed founder's seat (BUG-9135)
+    if (seat < 0 || !rescue_players_here(seat) || tribe != founder_village(seat) || !intact_village(tribe)) return false;
+    for (void* c : members(tribe)) if (c != victim && living(c)) return false;
+    // BUG-9147: with no partner villager alive the last one died the game's way (the host's: the native game over for
+    // everyone). With the party wipe (BUG-9155) it goes down anyway: a partner may respawn and come, else the window ends
+    // in the party wipe and it gets up at its village.
+    if (!rescue_helper_alive(seat) && !g_party_wipe) return false;
+    auto& rescue = g_founder_rescues[seat];
+    rescue = {tracked->second.id, F<uint32_t>(tribe, 0x30), now + down_time(), -1, 0, game::position(victim)};
+    rescue.attacker_faction = attacker;
+    game::set_health(victim, 1);
+    game::stop(victim);
+    if (C.notice) C.notice("Last villager down. Bring a partner villager within 15 metres for 1.5 seconds to revive. " + std::to_string((int)down_time()) + " seconds before respawn or capture (hold G to give up).");
+    return true;
+}
+
+static bool protect_founder_hut(void* hut, float damage, uint32_t attacker)
+{
+    if (!std::isfinite(damage) || damage <= 0 || !village_orders()) return false;
+    void* tribe = F<void*>(hut, 0x230);
+    const int seat = tribe ? seat_of_village(tribe, player_tribe()) : -1; // the village's seat (BUG-9135)
+    if (seat < 0 || !rescue_players_here(seat) || tribe != founder_village(seat) || F<void*>(tribe, 0x368) != hut ||
+        !intact_village(tribe)) return false;
+    auto& rescue = g_founder_rescues[seat];
+    double now = H->time_seconds();
+    if (rescue.faction == F<uint32_t>(tribe, 0x30) && now < rescue.grace_until) return true;
+    if (rescue.until && rescue.hut_down) return true;
+    float health = F<float>(hut, 0x158);
+    if (!std::isfinite(health) || health <= 0 || damage < health) return false;
+    if (!rescue_helper_alive(seat)) return false;
+    if (!rescue.until) {
+        void* representative = nullptr;
+        for (void* person : members(tribe)) if (living(person) && g_hm.count(person)) { representative = person; break; }
+        if (!representative) return false;
+        rescue = {g_hm[representative].id, F<uint32_t>(tribe, 0x30), now + down_time(), -1, 0, game::position(representative)};
+        rescue.attacker_faction = attacker;
+        game::set_health(representative, 1);
+    }
+    rescue.hut_down = true;
+    F<float>(hut, 0x158) = 1;
+    for (void* person : members(tribe)) game::stop(person);
+    if (C.notice) C.notice("Village down. Bring a partner villager to the marked survivor within " + std::to_string((int)down_time()) + " seconds to prevent capture (hold G to give up).");
+    return true;
+}
+
+// ---- BUG-9155: the party wipe (owner decision 1U, changed 2026-11-12: "a players whole tribe causes the loss of
+// progression for both players, encouraging rescues") ----
+// When any founder's last villager is not revived in its window (or its player gives up), the whole party pays instead
+// of that village being captured: the newest win of the campaign is undone (the stage's goal history, TribeUI +0x40 /
+// +0x44, records {vt, kind 1 conquered / 2 allied, cTribe*, 0}; the record goes, cPlayer +0x10F0 drops by one, the
+// top totem piece goes from every founder village's totem, and an ally becomes a rival again: its relation to every
+// founder village is set to kRivalRelation); with no win yet every present founder village loses 10% of its food. The
+// villager gets up at its village; the world is saved and reloaded (checkpoint_reload) so the totem and the bar are the
+// game's own again on every game. Unlocks and the tools stay. `coop.fix tribe.party_wipe off`: the capture as before.
+COOP_FIX("tribe.party_wipe", "BUG-9155", g_party_wipe,
+         "tribe: a founder village wiped out costs the whole party its newest win (or 10% food) instead of a capture");
+static uint32_t g_party_wipes;
+static std::string g_last_wipe;
+// the wipe's world refresh, when the game was saving (a win's autosave) or loading at that moment: tried again each
+// second for a minute (seen 2026-11-12: a wipe right after a win kept the partner's old bar and totem)
+static double g_wipe_refresh_until = 0, g_wipe_refresh_next = 0;
+static void wipe_refresh(double now)
+{
+    std::string error;
+    if (world::checkpoint_reload(error)) { g_wipe_refresh_until = 0; return; }
+    if (!g_wipe_refresh_until) {
+        g_wipe_refresh_until = now + 60;
+        H->log(M, SK_INFO, "tribe: party wipe refresh waits: %s (BUG-9155)", error.c_str());
+    }
+    g_wipe_refresh_next = now + 1;
+}
+constexpr float kRivalRelation = -5.f;
+
+struct GoalRecord { uintptr_t vt; int kind; void* tribe; uintptr_t zero; };
+static_assert(sizeof(GoalRecord) == 16, "tTribeGoalData");
+
+static bool goal_history(void*& ui, GoalRecord*& begin, GoalRecord*& end)
+{
+    uintptr_t get = H->sym("SporeCoop::cTribeUI_Get");
+    ui = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!ui || !skg::readable((uint8_t*)ui + 0x40, 12)) return false;
+    begin = F<GoalRecord*>(ui, 0x40);
+    end = F<GoalRecord*>(ui, 0x44);
+    if (begin == end) return true;
+    if (!begin || end < begin || end - begin > 64 || !skg::readable(begin, (end - begin) * sizeof(GoalRecord))) return false;
+    return true;
+}
+
+static std::string goal_history_line()
+{
+    void* ui;
+    GoalRecord *b, *e;
+    if (!goal_history(ui, b, e)) return "goal history: unreadable";
+    std::string out = "goal history: " + std::to_string(e - b) + " win(s)";
+    for (GoalRecord* r = b; r < e; ++r) {
+        char line[96];
+        snprintf(line, sizeof line, "\n  %s %08X", r->kind == 1 ? "conquered" : r->kind == 2 ? "allied" : "kind?",
+                 r->tribe && game::object_alive(r->tribe) ? F<uint32_t>(r->tribe, 0x30) : 0u);
+        out += line;
+    }
+    void* nm = game::noun_manager();
+    void* player = nm ? F<void*>(nm, 0x74) : nullptr;
+    if (player && skg::readable((uint8_t*)player + 0x10F0, 8)) {
+        char line[64];
+        snprintf(line, sizeof line, "\n  progress %.1f / %.1f", F<float>(player, 0x10F0), F<float>(player, 0x10F4));
+        out += line;
+    }
+    return out;
+}
+
+// the top piece off every founder village's totem that has `count` pieces (the game redraws it on the reload)
+static void drop_totem_piece(size_t count)
+{
+    for (size_t seat = 0; seat < founder_seats(); ++seat) {
+        void* village = founder_village((int)seat);
+        void* totem = village ? F<void*>(village, 0x19D0) : nullptr;
+        if (!totem || !game::object_alive(totem) || !skg::readable((uint8_t*)totem + 0x11C, 0x1C)) continue;
+        uintptr_t types = F<uintptr_t>(totem, 0x11C), end = F<uintptr_t>(totem, 0x120);
+        uintptr_t colors = F<uintptr_t>(totem, 0x130), colors_end = F<uintptr_t>(totem, 0x134);
+        if (end < types || (end - types) % 4 || (end - types) / 4 != count || count == 0 ||
+            colors_end < colors || colors_end - colors != (end - types) * 3) continue;
+        F<uintptr_t>(totem, 0x120) = end - 4;
+        F<uintptr_t>(totem, 0x134) = colors_end - 12;
+    }
+}
+
+static std::string party_wipe(int seat)
+{
+    void* ui;
+    GoalRecord *b, *e;
+    std::string lost;
+    if (goal_history(ui, b, e) && e > b) {
+        GoalRecord last = e[-1];
+        F<GoalRecord*>(ui, 0x44) = e - 1; // the newest win leaves the history
+        void* nm = game::noun_manager();
+        void* player = nm ? F<void*>(nm, 0x74) : nullptr;
+        if (player && skg::readable((uint8_t*)player + 0x10F0, 4)) {
+            const float before = F<float>(player, 0x10F0);
+            F<float>(player, 0x10F0) = std::max(0.f, before - 1.f);
+            progress_debt::step_lost(before); // decision 1U: the lost step shows red on the bar until it is won back
+        }
+        drop_totem_piece((size_t)(e - b));
+        void* village = last.tribe && game::object_alive(last.tribe) ? last.tribe : nullptr;
+        std::string name = "a village";
+        if (village) {
+            const uint32_t faction = F<uint32_t>(village, 0x30);
+            char id[16];
+            snprintf(id, sizeof id, "%08X", faction);
+            name = id;
+            void* manager = relationship_manager();
+            uintptr_t calculate = H->sym("Simulator::cRelationshipManager::CalculateRelationship");
+            uintptr_t apply = H->sym("Simulator::cRelationshipManager::ApplyRelationship");
+            if (last.kind == 2 && manager && calculate && apply)
+                for (size_t s = 0; s < founder_seats(); ++s) {
+                    void* founder = founder_village((int)s);
+                    if (!founder) continue;
+                    const uint32_t f = F<uint32_t>(founder, 0x30);
+                    const float now_rel = thiscall<float>(calculate, manager, faction, f, 0);
+                    if (std::isfinite(now_rel) && now_rel > kRivalRelation)
+                        (void)thiscall<float>(apply, manager, faction, f, 0x0530CF07u, kRivalRelation - now_rel);
+                }
+        }
+        lost = last.kind == 2 ? "its newest ally (" + name + ") is a rival again, a totem piece and a step of progress are lost"
+                              : "its newest conquest no longer counts: a totem piece and a step of progress are lost";
+    } else {
+        int villages = 0;
+        for (size_t s = 0; s < founder_seats(); ++s) {
+            void* v = founder_village((int)s);
+            double food = 0;
+            if (!v || player_of_seat((int)s) >= 0xFE || !shared::tribe_food(v, food) || !(food > 0)) continue;
+            const double cost = std::ceil(food * 0.10);
+            shared::mirror_village_food(v, std::max(0.0, food - cost));
+            share_moved(v, -cost);
+            ++villages;
+        }
+        lost = "no win to lose yet: every village lost 10% of its food";
+    }
+    ++g_party_wipes;
+    const uint8_t player = player_of_seat(seat);
+    const std::string who = player < 0xFE ? C.sess->name_of(player) + "'s village" : "A party village";
+    g_last_wipe = who + " was wiped out: " + lost + ".";
+    H->log(M, SK_INFO, "tribe: party wipe, seat %d: %s (BUG-9155)", seat, g_last_wipe.c_str());
+    return g_last_wipe;
+}
+
+static void founder_rescue_tick(double now)
+{
+    if (g_wipe_refresh_until && now >= g_wipe_refresh_next) {
+        if (now > g_wipe_refresh_until) {
+            g_wipe_refresh_until = 0;
+            H->log(M, SK_WARN, "tribe: party wipe refresh gave up after 60 s (BUG-9155)");
+            if (C.notice) C.notice("The party wipe could not refresh the world: partners see the old totem until the next load.");
+        } else
+            wipe_refresh(now);
+    }
+    for (size_t seat = 0; seat < g_founder_rescues.size(); ++seat) {
+        auto& rescue = g_founder_rescues[seat];
+        if (!rescue.until) continue;
+        if (seat == 0 && !rescue.gave_up && (give_up::held(H, now) || g_give_up_now)) rescue.gave_up = true; // BUG-9118: the host's founder
+        if (rescue.gave_up) rescue.until = std::min(rescue.until, now);
+        auto found = g_hm_by_id.find(rescue.member);
+        void* t = founder_village((int)seat);
+        if (!t || F<uint32_t>(t, 0x30) != rescue.faction || found == g_hm_by_id.end()) { rescue = {}; continue; }
+        void* body = found->second;
+        auto people = members(t);
+        if (std::find(people.begin(), people.end(), body) == people.end() || F<uint8_t>(body, 0xB5E)) { rescue = {}; continue; }
+        if (!intact_village(t)) {
+            rescue = {};
+            skg::Vector3 direction{};
+            o_CitizenTD((uint8_t*)body + 0x5A8, 1e6f, 0xFFFFFFFFu, 0, &direction, nullptr);
+            continue;
+        }
+        game::set_health(body, 1);
+        game::stop(body);
+        if (rescue.hut_down) for (void* person : people) game::stop(person);
+        if (net::dist(game::position(body), rescue.anchor) > 0.4f)
+            game::teleport(body, rescue.anchor, game::orientation(body));
+        bool partner_near = false; // a living member of another founder village (BUG-9135: any; the other one of two before)
+        for (int other = 0; other < (int)founder_seats(); ++other)
+            if (void* partner = other != (int)seat ? founder_village(other) : nullptr)
+                for (void* c : members(partner))
+                    if (living(c) && net::dist(game::position(c), rescue.anchor) <= 15) partner_near = true;
+        if (!partner_near) rescue.near_since = -1;
+        else if (rescue.near_since < 0) rescue.near_since = now;
+        bool revived = !rescue.gave_up && partner_near && rescue.near_since + 1.5 <= std::min(now, rescue.until);
+        if (!revived && now < rescue.until) continue;
+        bool wiped = false; // BUG-9155: the party pays instead of a capture
+        if (!revived && g_party_wipe) {
+            if (C.notice) C.notice(party_wipe((int)seat));
+            wiped = true;
+        }
+        if (!revived && !wiped && queue_founder_capture((int)seat, rescue.attacker_faction)) continue;
+        double cost = 0;
+        if (!revived) {
+            double food = 0;
+            if (!wiped && shared::tribe_food(t, food) && std::isfinite(food) && food > 0) {
+                cost = std::min(food, std::ceil(food * 0.10));
+                shared::mirror_village_food(t, food - cost);
+            }
+            net::Vec3 at = tribe_pos(t);
+            if (void* mat = F<void*>(t, 0x260); mat && game::object_alive(mat)) game::object_position(mat, at);
+            game::teleport(body, at, game::orientation(body));
+        }
+        game::set_health(body, std::max(1.f, game::max_health(body) * 0.4f));
+        bool refresh_hut = rescue.hut_down;
+        if (refresh_hut) {
+            void* hut = F<void*>(t, 0x368);
+            F<float>(hut, 0x158) = std::max(1.f, F<float>(hut, 0x14C) * 0.4f);
+        }
+        rescue.until = 0;
+        rescue.grace_until = now + 2;
+        if (C.notice && !wiped) C.notice(revived ? "Your partner revived the last villager." :
+            "The last villager respawned at its village. Food setback " + std::to_string((int)cost) + ".");
+        if (wiped) { // BUG-9155: the reload redraws the totem and the bar on every game (again later if busy now)
+            wipe_refresh(now);
+            refresh_hut = false;
+        }
+        if (refresh_hut) {
+            std::string error;
+            if (!world::checkpoint_reload(error) && C.notice) C.notice("Village recovered; world refresh failed: " + error);
+        }
+    }
+}
+
+float revive_seconds(void* c)
+{
+    double now = H->time_seconds();
+    uint16_t id = id_of(c);
+    if (!id) return 0;
+    if (is_host()) {
+        for (const auto& rescue : g_founder_rescues)
+            if (rescue.member == id && rescue.until > 0) return (float)std::max(0.1, rescue.until - now);
+    } else {
+        for (const auto& rescue : g_remote_rescues)
+            if (rescue.first == id && rescue.second > now) return (float)(rescue.second - now);
+    }
+    return 0;
+}
+
+float revive_total() { return (float)down_time(); }
+
+float revive_progress(void* c)
+{
+    const uint16_t id = id_of(c);
+    if (!id || !is_host()) return 0.f; // the host decides (near_since); the guests see the time only
+    const double now = H->time_seconds();
+    for (const auto& rescue : g_founder_rescues)
+        if (rescue.member == id && rescue.until > 0 && rescue.near_since >= 0)
+            return (float)std::clamp((now - rescue.near_since) / 1.5, 0.0, 1.0);
+    return 0.f;
+}
+
+bool rescue_pending()
+{
+    if (!active()) return false;
+    if (is_host()) {
+        for (const auto& rescue : g_founder_rescues) if (rescue.until > 0) return true;
+    } else {
+        for (const auto& rescue : g_remote_rescues) if (rescue.second > H->time_seconds()) return true;
+    }
+    return false;
+}
+
+// Shared native reconstruction operation. The explicit host probe below is
+// retained for regression fixtures; normal requests come from a living helper.
+static std::string g_home_probe_result;
+static std::string g_home_probe_world;
+static bool g_home_probe_pending;
+static bool g_refound_campaign = true;
+COOP_FIX("tribe.refound_campaign", "BUG-9030", g_refound_campaign,
+         "tribe: preserve earned totem history and level when rebuilding a founder");
+
+static bool restore_founder_campaign(void* old, void* replacement)
+{
+    uintptr_t level = H->sym("SporeCoop::Community_SetLevel");
+    uintptr_t create = H->sym("SporeCoop::Tribe_CreateTotem");
+    uintptr_t append = H->sym("SporeCoop::Totem_AddSegment");
+    uintptr_t hut_model = H->sym("SporeCoop::Tribe_UpdateHutModel");
+    int earned_level = F<int>(old, 0x38);
+    if (!level || !create || !append || !hut_model || earned_level < 0 || earned_level > 4) return false;
+    void* prior = F<void*>(old, 0x19D0);
+    if (prior) {
+        if (!game::object_alive(prior)) return false;
+        uintptr_t types = F<uintptr_t>(prior, 0x11C), end = F<uintptr_t>(prior, 0x120);
+        uintptr_t colors = F<uintptr_t>(prior, 0x130), colors_end = F<uintptr_t>(prior, 0x134);
+        if (end < types || end - types > 256 || (end - types) % 4 ||
+            colors_end < colors || colors_end - colors != (end - types) * 3) return false;
+        size_t count = (end - types) / 4;
+        if (count && (IsBadReadPtr((void*)types, count * 4) || IsBadReadPtr((void*)colors, count * 12))) return false;
+        for (size_t i = 0; i < count; ++i) {
+            if (((int*)types)[i] < 0 || ((int*)types)[i] > 1) return false;
+            for (int k = 0; k < 3; ++k) if (!std::isfinite(((float*)colors)[i * 3 + k])) return false;
+        }
+        if (F<void*>(replacement, 0x19D0) || !thiscall<bool>(create, replacement)) return false;
+        void* totem = F<void*>(replacement, 0x19D0);
+        if (!totem || !game::object_alive(totem)) return false;
+        F<int>(totem, 0x144) = F<int>(prior, 0x144);
+        for (size_t i = 0; i < count; ++i)
+            thiscall<void>(append, totem, ((int*)types)[i], (const float*)(colors + i * 12));
+    }
+    thiscall<void>(level, replacement, earned_level);
+    return true;
+}
+
+// `defeated_seat`: the founder seat rebuilt (0 the host's), `helper_seat`: the seat whose village helps (-1: the other
+// one of two founders, as before). BUG-9135: any partner seat for both.
+static std::string rebuild_founder(uint32_t conqueror_id, int defeated_seat = 0, int helper_seat = -1, const net::Vec3* chosen = nullptr)
+{
+    if (!active() || !is_host() || (g_multi_founders ? C.sess->players().size() < 2 : C.sess->players().size() != 2) ||
+        rescue_pending() || !g_refound_ready)
+        return "Requires a two-player Tribal campaign with no pending rescue.";
+    if (world::save_busy() || world::load_queued()) return "Wait for the current save or load to finish.";
+    founders::Roster roster;
+    void* home = player_tribe();
+    if (!home || !founders::read(world::current_game_key(), roster) ||
+        F<uint32_t>(home, 0x30) != roster.home().faction)
+        return "The original host founder is not loaded.";
+    const int seats = g_multi_founders ? (int)roster.seats() : 2;
+    if (helper_seat < 0) helper_seat = defeated_seat == 0 ? 1 : 0;
+    if (defeated_seat < 0 || defeated_seat >= seats || helper_seat >= seats || helper_seat == defeated_seat)
+        return "Requires an enemy conqueror and an intact surviving partner village.";
+    const bool defeated_guest = defeated_seat != 0;
+    void* conqueror = nullptr;
+    void* survivor = nullptr;
+    auto tribes = all_tribes();
+    for (void* t : tribes) {
+        if (F<uint32_t>(t, 0x30) == conqueror_id) conqueror = t;
+        if (F<uint32_t>(t, 0x30) == roster.entries[helper_seat].faction) survivor = t;
+    }
+    if (defeated_guest) {
+        home = nullptr;
+        for (void* t : tribes) if (F<uint32_t>(t, 0x30) == roster.entries[defeated_seat].faction) home = t;
+        if (!home) return "The defeated guest founder is not loaded.";
+    }
+    uint32_t founder_faction = roster.entries[defeated_seat].faction;
+    if (!conqueror || !survivor || conqueror == home || conqueror == survivor || !intact_village(survivor))
+        return "Requires an enemy conqueror and an intact surviving partner village.";
+    auto old_people = members(home);
+    for (void* c : old_people) if (game::health(c) > 0 && !F<uint8_t>(c, 0xB5E))
+        return "Your partner still has a living villager and does not need a new village.";
+    auto helpers = members(survivor);
+    if (std::none_of(helpers.begin(), helpers.end(), living)) return "No surviving partner member.";
+    void* hut = F<void*>(home, 0x368);
+    void* mat = F<void*>(home, 0x260);
+    void* species = F<void*>(home, 0x18CC);
+    if (!hut || !mat || !species || !game::object_alive(hut) || !game::object_alive(mat))
+        return "The native host buildings or species are missing.";
+    uintptr_t selective = H->sym("SporeCoop::Tribe_RemoveSelectable");
+    uintptr_t defeat = H->sym("SporeCoop::Tribe_SetDefeated");
+    uintptr_t assign = H->sym("SporeCoop::IntrusivePtr_Assign");
+    uintptr_t owner = H->sym("SporeCoop::GameData_SetOwner2");
+    uintptr_t destroy = H->sym("Simulator::cGameNounManager::DestroyInstance");
+    uintptr_t set_player = H->sym("Simulator::cGameNounManager::SetPlayerTribe");
+    void* manager = game::noun_manager();
+    if (!selective || !defeat || !assign || !owner || !destroy || !set_player || !manager || !a_SpawnNpcTribe)
+        return "The native replacement methods are unavailable.";
+    net::Vec3 c = tribe_pos(survivor), tangent{c.z, 0, -c.x};
+    float radius = drive::speed(c), length = drive::speed(tangent);
+    if (radius < 1 || length < 1) return "No valid test-site direction.";
+    net::Vec3 q{c.x + tangent.x * 120 / length, c.y, c.z + tangent.z * 120 / length};
+    float qr = drive::speed(q);
+    skg::Vector3 pos{q.x * radius / qr, q.y * radius / qr, q.z * radius / qr};
+    if (chosen) {
+        if (!std::isfinite(chosen->x) || !std::isfinite(chosen->y) || !std::isfinite(chosen->z) ||
+            std::abs(drive::speed(*chosen) - radius) > 30) return "The rebuilding site is not on this planet.";
+        pos = {chosen->x, chosen->y, chosen->z};
+    }
+    for (void* t : tribes)
+        if (net::dist(tribe_pos(t), {pos.x, pos.y, pos.z}) < 60)
+            return "The host replacement test site is occupied.";
+    // Prepare the new tribe before modifying the defeated settlement. A null
+    // factory result must leave the native player and captured-site candidates
+    // untouched. The outside-frame operation does not expose duplicate factions
+    // to a simulation tick.
+    g_refound_faction = founder_faction;
+    void* replacement = skg::cdecl_call<void*>(a_SpawnNpcTribe, &pos, 0, 3, 15, 0, species);
+    g_refound_faction = 0;
+    if (!replacement) return "Native replacement failed; the original settlement was retained.";
+    auto new_people = members(replacement);
+    if (F<uint32_t>(replacement, 0x30) != founder_faction || new_people.size() != 3 ||
+        !intact_village(replacement) || std::any_of(new_people.begin(), new_people.end(), [](void* person) {
+            return !living(person);
+        })) {
+        thiscall<void>(destroy, manager, replacement);
+        return "Native replacement was incomplete; the original settlement was retained.";
+    }
+    // Reconstruct scalar campaign history through the native factory and segment
+    // method. The old totem remains alive until replacement preparation succeeds.
+    if (g_refound_campaign && !restore_founder_campaign(home, replacement)) {
+        thiscall<void>(destroy, manager, replacement);
+        return "Campaign history could not be restored; the original settlement was retained.";
+    }
+    vcall<int>(home, 0); vcall<int>(hut, 0); vcall<int>(mat, 0);
+    for (void* body : old_people) {
+        vcall<int>(body, 0);
+        vcall<void>(home, 0x9C / 4, body, 1);
+        thiscall<void>(selective, home, body);
+        vcall<int>(body, 1);
+    }
+    thiscall<void>(defeat, home, true);
+    vcall<void>(hut, 0x54 / 4, conqueror);
+    vcall<void>(mat, 0x54 / 4, conqueror);
+    if (F<void*>(hut, 0x2C) == home) thiscall<void>(owner, hut, conqueror);
+    // Keep the native player getter valid during the synchronous replacement.
+    // The old primary references must be detached before DestroyInstance,
+    // which otherwise retires the captured buildings too (BUG-9017).
+    if (!defeated_guest) thiscall<void>(set_player, manager, survivor);
+    for (unsigned count = 0; count < 32; ++count) {
+        void** begin = F<void**>(home, 0x36C);
+        if (begin == F<void**>(home, 0x370)) break;
+        vcall<void>(home, 0xB8 / 4, *begin);
+    }
+    thiscall<void>(assign, (uint8_t*)home + 0x368, nullptr);
+    thiscall<void>(assign, (uint8_t*)home + 0x260, nullptr);
+    thiscall<void>(destroy, manager, home);
+    if (!defeated_guest) thiscall<void>(set_player, manager, replacement);
+    if (g_refound_campaign)
+        thiscall<void>(H->sym("SporeCoop::Tribe_UpdateHutModel"), replacement);
+    vcall<int>(mat, 1); vcall<int>(hut, 1); vcall<int>(home, 1);
+    char result[140];
+    snprintf(result, sizeof result, "%s replacement %08X faction %08X: %u members, native player=%d",
+             defeated_guest ? "Guest" : "Host", F<uint32_t>(replacement, 0x24), F<uint32_t>(replacement, 0x30),
+             (unsigned)members(replacement).size(), player_tribe() == replacement);
+    return result;
+}
+
+static bool g_rebuild_pending;
+static std::string g_rebuild_world;
+// the founder village of a seat other than `helper` that an enemy captured (its hut owned by another tribe), -1: none
+static int captured_founder_seat(int helper)
+{
+    for (int seat = 0; seat < (int)founder_seats(); ++seat) {
+        if (seat == helper) continue;
+        void* defeated = nullptr;
+        for (void* t : all_tribes()) if (F<uint32_t>(t, 0x30) == g_order_roster.entries[seat].faction) defeated = t;
+        void* hut = defeated ? F<void*>(defeated, 0x368) : nullptr;
+        if (hut && game::object_alive(hut) && F<void*>(hut, 0x230) != defeated) return seat;
+    }
+    return -1;
+}
+
+static bool queue_partner_rebuild(uint8_t from, uint16_t member, int action)
+{
+    if (!active() || !is_host() || !village_orders() || g_rebuild_pending || !member || !net::is_player(*C.sess, from) ||
+        (g_multi_founders ? C.sess->players().size() < 2 : C.sess->players().size() != 2)) return false;
+    auto found = g_hm_by_id.find(member);
+    if (found == g_hm_by_id.end() || owner_of(found->second) != from || !living(found->second)) return false;
+    // BUG-9135: the helper's seat and the seat rebuilt (the action word's seat, else the captured one; the other one of
+    // two founders before)
+    int target = from == 0 ? 1 : 0;
+    if (g_multi_founders) {
+        const int helper = seat_of_player(from);
+        int asked = -1;
+        if (helper < 0 || !tribe_seats::action_seat(action, asked)) return false;
+        target = asked >= 0 ? asked : captured_founder_seat(helper);
+        if (target < 0) target = helper == 0 ? 1 : 0; // nothing captured: the lambda says so as before
+        if (target == helper || target >= (int)founder_seats()) return false;
+    }
+    g_rebuild_world = world::current_game_key();
+    if (g_rebuild_world.empty()) return false;
+    g_rebuild_pending = true;
+    H->run_outside_frame([](void* data) {
+        g_rebuild_pending = false;
+        uint8_t from = (uint8_t)((uintptr_t)data >> 16);
+        uint16_t member = (uint16_t)(uintptr_t)data;
+        const int target = (int)(((uintptr_t)data >> 24) & 0xFF);
+        if (!active() || !is_host() || g_rebuild_world != world::current_game_key()) return;
+        auto found = g_hm_by_id.find(member);
+        if (found == g_hm_by_id.end() || owner_of(found->second) != from || !living(found->second)) return;
+        const int helper = g_multi_founders ? seat_of_player(from) : (target == 0 ? 1 : 0);
+        if (helper < 0 || helper == target || target >= (int)founder_seats()) return;
+        uint32_t faction = g_order_roster.entries[target].faction;
+        void* defeated = nullptr;
+        for (void* t : all_tribes()) if (F<uint32_t>(t, 0x30) == faction) defeated = t;
+        void* hut = defeated ? F<void*>(defeated, 0x368) : nullptr;
+        if (!hut || !game::object_alive(hut) || F<void*>(hut, 0x230) == defeated) {
+            if (C.notice) C.notice("Your partner has no captured village to rebuild.");
+            return;
+        }
+        net::Vec3 site = game::position(found->second);
+        struct SiteCheck { net::Vec3 site; bool occupied = false; } check{site};
+        game::for_each_object([](void* object, uint32_t noun, void* data) {
+            auto& check = *static_cast<SiteCheck*>(data);
+            net::Vec3 position;
+            if (noun == 0x1E4DAAE && game::object_alive(object) && game::object_position(object, position) &&
+                net::dist(position, check.site) < 60) check.occupied = true;
+            return true;
+        }, &check);
+        if (check.occupied) {
+            if (C.notice) C.notice("Move the selected helper at least 60 metres from existing village huts, then rebuild.");
+            return;
+        }
+        auto result = rebuild_founder(F<uint32_t>(hut, 0x30), target, helper, &site);
+        if (!result.starts_with("Host replacement ") && !result.starts_with("Guest replacement ")) {
+            if (C.notice) C.notice(result);
+            return;
+        }
+        std::string error;
+        if (C.notice) C.notice(world::checkpoint_reload(error) ?
+            "Your partner's original species has a new village. Saving and refreshing both worlds." :
+            "Village rebuilt, but the world refresh failed: " + error);
+    }, (void*)(((uintptr_t)target << 24) | ((uintptr_t)from << 16) | member));
+    return true;
+}
+
+static bool g_capture_pending;
+static std::string g_capture_world;
+// `seat`: the founder seat whose village is captured (BUG-9135; the host's or the guest's before)
+static bool queue_founder_capture(int seat, uint32_t attacker)
+{
+    if (g_capture_pending) return true;
+    if (!attacker || g_order_roster.contains_faction(attacker))
+        return false;
+    bool enemy = false;
+    for (void* t : all_tribes())
+        if (F<uint32_t>(t, 0x30) == attacker && intact_village(t)) enemy = true;
+    if (!enemy) return false; // Wildlife or an unavailable conqueror uses food-loss respawn.
+    if (!H->sym("SporeCoop::Tribe_SetDefeated") || !H->sym("SporeCoop::GameData_SetOwner2")) return false;
+    if (seat < 0 || seat >= (int)g_founder_rescues.size()) return false;
+    void* victim_tribe = founder_village(seat);
+    void* mat = victim_tribe ? F<void*>(victim_tribe, 0x260) : nullptr;
+    if (!mat || !game::object_alive(mat)) return false;
+    if (world::save_busy() || world::load_queued()) return true;
+    g_capture_world = world::current_game_key();
+    if (g_capture_world.empty()) return false;
+    g_capture_pending = true;
+    H->run_outside_frame([](void* value) {
+        const int seat = (int)(uintptr_t)value;
+        g_capture_pending = false;
+        if (!active() || !is_host() || g_capture_world != world::current_game_key()) return;
+        auto& rescue = g_founder_rescues[seat];
+        void* tribe = founder_village(seat);
+        void* conqueror = nullptr;
+        for (void* t : all_tribes())
+            if (F<uint32_t>(t, 0x30) == rescue.attacker_faction && intact_village(t)) conqueror = t;
+        auto found = g_hm_by_id.find(rescue.member);
+        uintptr_t defeat = H->sym("SporeCoop::Tribe_SetDefeated");
+        uintptr_t owner = H->sym("SporeCoop::GameData_SetOwner2");
+        if (!rescue.until || !tribe || !conqueror || !intact_village(tribe) ||
+            found == g_hm_by_id.end() || !defeat || !owner) return;
+        void* body = found->second;
+        auto population = members(tribe);
+        if (std::find(population.begin(), population.end(), body) == population.end()) return;
+        for (void* person : population) if (person != body && living(person)) return;
+        void* hut = F<void*>(tribe, 0x368);
+        void* mat = F<void*>(tribe, 0x260);
+        if (!mat || !game::object_alive(mat)) return;
+        // Keep the original native tribe and its primary references while it
+        // waits for a helper. This captured state survives native save/load.
+        thiscall<void>(defeat, tribe, true);
+        vcall<void>(hut, 0x54 / 4, conqueror);
+        vcall<void>(mat, 0x54 / 4, conqueror);
+        if (F<void*>(hut, 0x2C) == tribe) thiscall<void>(owner, hut, conqueror);
+        uint32_t attacker = rescue.attacker_faction;
+        bool village_down = rescue.hut_down;
+        if (village_down) F<float>(hut, 0x158) = std::max(1.f, F<float>(hut, 0x14C) * 0.4f);
+        rescue = {};
+        skg::Vector3 direction{};
+        auto casualties = village_down ? population : std::vector<void*>{body};
+        for (void* person : casualties) vcall<int>(person, 0);
+        for (void* person : casualties) {
+            if (game::health(person) > 0 && !F<uint8_t>(person, 0xB5E))
+                o_CitizenTD((uint8_t*)person + 0x5A8, 1e6f, attacker, 0, &direction, nullptr);
+            vcall<int>(person, 1);
+        }
+        std::string error;
+        if (!world::checkpoint_reload(error)) {
+            if (C.notice) C.notice("Village captured; world refresh failed: " + error);
+        } else if (C.notice) C.notice("Village captured. Your partner can help rebuild your original species at a new site.");
+    }, (void*)(uintptr_t)seat);
+    return true;
 }
 
 static void bonus_food(int n)
@@ -5776,6 +9950,8 @@ static void coop_init()
     spaceext::on_save(before_save); // space_allies' save hook (the one hook on SaveGame)
     if (a_CitizenTD)
         H->hook_create(M, (void*)a_CitizenTD, (void*)h_CitizenTD, (void**)&o_CitizenTD);
+    if (uintptr_t hut_damage = H->sym("SporeCoop::cTribeHut_TakeDamage"))
+        H->hook_create(M, (void*)hut_damage, (void*)h_HutTD, (void**)&o_HutTD);
     if (a_HealTick && a_PatientOf)
         H->hook_create(M, (void*)a_HealTick, (void*)h_HealTick, (void**)&o_HealTick);
     H->log(M, SK_INFO, "tribe co-op: citizen damage %s, heal %s, duet %s, epic %s", a_CitizenTD ? "on" : "off",
@@ -5799,6 +9975,462 @@ static void drop_foreign_selection()
             g_unselected++;
         }
     }
+}
+
+static std::vector<uint16_t> guest_village_ids(bool selected_only)
+{
+    std::vector<uint16_t> ids;
+    void* home = player_tribe();
+    for (const auto& [id, m] : g_gm)
+        if (home && m.c && m.owner == C.sess->my_id() && game::object_alive(m.c) && F<void*>(m.c, kOwnerTribeOff) != home &&
+            game::health(m.c) > 0 && !F<uint8_t>(m.c, 0xB5E) && (!selected_only || F<uint8_t>(m.c, kSelectedOff)))
+            ids.push_back(id);
+    return ids;
+}
+
+static const char* request_performance(const Target& target)
+{
+    const auto ids = guest_village_ids(true);
+    if (ids.empty()) return "Select your villagers before choosing Perform.";
+    if (g_guest_orders_held) return "Village orders are paused while the campaign synchronizes.";
+    if (!send_cmd(CMD_ACTION, ids, 26, target, {})) return "Could not send the performance order to the host.";
+    return "Performance requested.";
+}
+
+// BUG-9154: a guest's game offers no Gift on a party member's village (no action comes from a right press on its hut,
+// left or right, social stance or not: seen 2026-11-12 on the MSI); the game's own gesture for other tribes is the right
+// press in the social stance with villagers selected. That press on a party member's hut (within 9 m of it) sends the
+// gift order (CMD_ACTION 9 on that village: party_gift on the host) and the game does not get it.
+static bool g_gift_press;
+static uint32_t g_gift_presses;
+// BUG-9186: the same holds for a rival village on a guest's game (the MSI 2026-11-13: social stance, own villager
+// selected, the rival's hover card shown, a right press on its hut: no order; the guest's copy of a rival runs no game
+// AI). That press on a rival's hut sends the gift order too; the host checks it as a native gift (BUG-9033: a live
+// recipient with a hut, the game's price, the sender's food) and runs the game's own gift. Off: party villages only.
+static bool g_rival_gift = true;
+COOP_FIX("tribe.rival_gift_click", "BUG-9186", g_rival_gift,
+         "tribe: a guest's social right-click on a rival village's hut gives it food (the game's own gift on the host)");
+static bool party_village_here(void* t)
+{
+    if (!t || t == g_own_village) return false;
+    if (t == g_persp_host) return true;
+    for (const auto& [id, m] : g_gm)
+        if (m.c && m.owner < 0xFE && game::object_alive(m.c) && F<void*>(m.c, kOwnerTribeOff) == t) return true;
+    return false;
+}
+static bool party_gift_input(unsigned message, uintptr_t, int x, int y)
+{
+    if (message == WM_RBUTTONUP) {
+        const bool ours = g_gift_press;
+        g_gift_press = false;
+        return ours;
+    }
+    if (message != WM_RBUTTONDOWN || !g_food_share || !g_own_player || !g_persp_host || !active() || !is_guest() ||
+        local_play() || ui_mode() != 0)
+        return false;
+    const auto ids = guest_village_ids(true);
+    net::Vec3 at;
+    if (ids.empty() || !modes::planet_at_pixel(x, y, at)) return false;
+    void* best = nullptr;
+    float nearest = 9.f;
+    for (void* t : all_tribes()) {
+        if (!party_village_here(t) && !(g_rival_gift && t && t != g_own_village && !F<uint8_t>(t, 0x556))) continue;
+        void* hut = F<void*>(t, 0x368);
+        net::Vec3 p;
+        if (!hut || !game::object_alive(hut) || !game::object_position(hut, p)) continue;
+        const float d = net::dist(p, at);
+        if (d < nearest) { nearest = d; best = t; }
+    }
+    if (!best) return false;
+    send_cmd(CMD_ACTION, ids, 9, encode_target(best), {});
+    g_gift_press = true;
+    ++g_gift_presses;
+    return true;
+}
+
+static void march_click(double now)
+{
+    if (!g_march_until) return;
+    if (now >= g_march_until || coop_ui::is_open() || local_play()) {
+        g_march_until = 0;
+        return;
+    }
+    if (mouse::clicks() == g_march_click) return;
+    g_march_until = 0;
+    int x, y;
+    mouse::last_click(x, y);
+    net::Vec3 pos;
+    if (g_build_kind) {
+        int kind = g_build_kind; g_build_kind = 0;
+        auto ids = guest_village_ids();
+        if (!ids.empty() && modes::planet_at_pixel(x, y, pos)) send_cmd(CMD_BUILD, {ids.front()}, kind, {}, pos);
+        else if (C.feed) C.feed("No village ground under that click. Choose Build again to retry.");
+        return;
+    }
+    if (g_attack_click) {
+        g_attack_click = false;
+        net::Vec3 camera, direction;
+        if (!modes::camera_ray_at_pixel(x, y, camera, direction)) return;
+        if (!g_target_ray && !modes::planet_at_pixel(x, y, pos)) return;
+        if (g_raid_click || g_equip_click || g_gift_click) {
+            // BUG-9135: a gift goes to a native village, never to a founder's: this game's player village and every
+            // village with a player's members (this guest knows no founder roster)
+            std::vector<uint32_t> founder_factions;
+            if (g_multi_founders && g_gift_click) {
+                if (void* own = player_tribe()) founder_factions.push_back(F<uint32_t>(own, 0x30));
+                for (const auto& [id, m] : g_gm)
+                    if (m.c && m.owner < 0xFE && game::object_alive(m.c))
+                        if (void* t = F<void*>(m.c, kOwnerTribeOff)) founder_factions.push_back(F<uint32_t>(t, 0x30));
+            }
+            struct Pick { int x, y; net::Vec3 surface, camera; void* object = nullptr; float distance = 24.f * 24.f;
+                          const std::vector<uint32_t>* founders = nullptr; } pick{x, y, pos, camera};
+            pick.founders = &founder_factions;
+            game::for_each_object([](void* object, uint32_t noun, void* data) {
+                auto& pick = *(Pick*)data;
+                if ((noun != kHutNoun && noun != kToolNoun) || !game::object_alive(object) || F<float>(object, 0x158) <= 0)
+                    return true;
+                if (g_equip_click && (noun != kToolNoun || F<uint32_t>(object, 0x1FC) < 1 || F<uint32_t>(object, 0x1FC) > 9)) return true;
+                if (g_gift_click && (noun != kHutNoun || F<uint32_t>(object, 0x30) == g_order_roster.home().faction ||
+                    F<uint32_t>(object, 0x30) == g_order_roster.guest().faction)) return true;
+                if (g_gift_click && std::find(pick.founders->begin(), pick.founders->end(), F<uint32_t>(object, 0x30)) != pick.founders->end())
+                    return true;
+                net::Vec3 point;
+                if (!game::object_position(object, point) || (g_target_ray ? !target_near_side(pick.camera, point) :
+                    net::dist(point, pick.surface) > 25.f)) return true;
+                float world[3] = {point.x, point.y, point.z}, screen[2];
+                if (!H->world_to_screen(world, screen)) return true;
+                float d = (screen[0] - pick.x) * (screen[0] - pick.x) + (screen[1] - pick.y) * (screen[1] - pick.y);
+                if (std::isfinite(d) && d < pick.distance) { pick.distance = d; pick.object = object; }
+                return true;
+            }, &pick);
+            if (pick.object) {
+                void* target = g_gift_click ? vcall<void*>(pick.object, 0x58 / 4) : pick.object;
+                if (target) send_cmd(CMD_ACTION, guest_village_ids(true), g_gift_click ? 9 : g_equip_click ? 3 : 15, encode_target(target), {});
+            }
+            else if (C.feed) C.feed(g_gift_click ? "No other tribe's hut under that click. Choose Gift food again to retry." :
+                                  g_equip_click ? "No tool rack under that click. Choose Equip again to retry." :
+                                  "No hut or tool building under that click. Choose Raid again to retry.");
+            return;
+        }
+        uint16_t target = 0;
+        float distance = 24.f * 24.f;
+        for (const auto& [id, member] : g_gm) {
+            if (!member.c || (g_heal_click ? member.owner >= 0xFE : member.owner < 0xFE) ||
+                !game::object_alive(member.c) || game::health(member.c) <= 0 ||
+                F<uint8_t>(member.c, 0xB5E)) continue;
+            if (g_heal_click && (game::health(member.c) >= game::max_health(member.c) || founder_downed(member.c))) continue;
+            net::Vec3 point = game::position(member.c);
+            if (g_target_ray ? !target_near_side(camera, point) : net::dist(point, pos) > 25.f) continue;
+            float world[3] = {point.x, point.y, point.z}, screen[2];
+            if (!H->world_to_screen(world, screen)) continue;
+            float d = (screen[0] - x) * (screen[0] - x) + (screen[1] - y) * (screen[1] - y);
+            if (std::isfinite(d) && d < distance) { distance = d; target = id; }
+        }
+        if (target) {
+            Target encoded; encoded.kind = 1; encoded.id = target;
+            if (g_perform_click) {
+                const char* result = request_performance(encoded);
+                if (C.feed) C.feed(result);
+            } else send_cmd(CMD_ACTION, guest_village_ids(true), g_heal_click ? 5 : 7, encoded, {});
+        } else if (C.feed) C.feed(g_perform_click ? "No NPC villager under that click. Choose Perform again to retry." :
+                                 g_heal_click ? "No friendly villager under that click. Choose Heal again to retry." :
+                                 "No enemy villager under that click. Choose Attack again to retry.");
+        return;
+    }
+    if (modes::planet_at_pixel(x, y, pos)) send_cmd(CMD_WALK, guest_village_ids(), 4, {}, pos);
+}
+
+// the partner founder village of seat `seat` (its members and its species slots) gets the founder model `target` (an
+// outfit; BUG-9135: any partner seat, seat 1 before)
+static bool apply_guest_model(void* guest, uint32_t target, int seat, std::string& error)
+{
+    uintptr_t set_tribe = H->sym("SporeCoop::Tribe_SetSpeciesProfile");
+    uintptr_t set_member = H->sym("Simulator::cCreatureBase::SetSpeciesProfile");
+    void* profile = game::species_by_key({target, 0x2B978C46, 0x40626200});
+    auto people = members(guest);
+    if (seat < 1 || !profile || !set_tribe || !set_member || people.empty()) { error = "The saved guest model is not ready."; return false; }
+    for (void* person : people)
+        if (!game::object_alive(person) || !founder_model((size_t)seat, game::species_key(person).instance)) {
+            error = "Village membership changed while applying the outfit."; return false;
+        }
+    // Species profiles are owned by the species manager. The native
+    // cTribe Save derives1904 keys from this raw14-profile array.
+    for (unsigned i = 0; i < 14; ++i) {
+        void* old = F<void*>(guest, 0x18CC + 4*i);
+        if (old && founder_model((size_t)seat, F<uint32_t>(old, 0x504)))
+            thiscall<void>(set_tribe, guest, profile, (int)i);
+    }
+    for (void* person : people) thiscall<void>(set_member, person, profile);
+    return true;
+}
+
+// BUG-9137: the automatic founders took the partner's creature key at the arrival in Tribe. A partner that rejoined
+// in the host's Creature world still reported the host's creature it played there (sent by key, no records), and its
+// own creature for the Tribe world came 2 s after the founding (owner's save, 2026-11-11: the guest seat bound to the
+// host's 291EE5B5 'Clop', the partner plays 7C67F1C3 'Squart'). The partner then commands nothing: the village is not
+// of its creature. Now (1) the founding waits until the partner's creature has not changed for 10 s, 15 s after the
+// world was entered, and never uses one of the host's own creations; (2) a village already founded with one of the
+// host's own creations gets the partner's own creature as its outfit (the same native change as an editor outfit),
+// once, on the host. `coop.fix tribe.founder_settle off`: as before (0.7.8-lineages53). (Switch: next to the founders.)
+// BUG-9135: per partner seat; the seat's player (identity or creature match), or the only unseated partner taking over
+// an older save's seat (wrong_seat_claimant). With tribe.multi_founders off: seat 1, the only partner of two players.
+static bool g_wrong_founder_queued;
+static uint32_t g_wrong_founder_repairs;
+
+// the partner a repair of seat `seat` is for, 0: none
+static uint8_t wrong_founder_partner(int seat)
+{
+    if (!g_multi_founders) {
+        if (seat != 1 || C.sess->players().size() != 2) return 0;
+        uint8_t guest = 0;
+        for (const auto& p : C.sess->players()) if (p.id) guest = p.id;
+        return guest;
+    }
+    uint8_t player = player_of_seat(seat);
+    if (player >= 0xFE) player = wrong_seat_claimant(seat);
+    return player >= 0xFE ? 0 : player;
+}
+
+// the creature `model` is the founder or an outfit of a seat other than `seat`
+static bool other_founder_model(int seat, uint32_t model)
+{
+    for (int other = 0; other < (int)founder_seats(); ++other)
+        if (other != seat && founder_model((size_t)other, model)) return true;
+    return false;
+}
+
+static void wrong_founder_tick(double now)
+{
+    static double poll;
+    bool voting = false;
+    for (const auto& vote : g_votes) voting |= vote.token != 0;
+    if (!g_found_settle_fix || g_wrong_founder_queued || now < poll || !is_host() ||
+        (g_multi_founders ? C.sess->players().size() < 2 : C.sess->players().size() != 2) ||
+        !g_order_roster.guest().faction || voting || world::cinematic_playing() || world::time_paused() ||
+        world::load_queued() || world::save_busy() || world::save_pending()) return;
+    poll = now + 2;
+    for (int seat = 1; seat < (int)founder_seats(); ++seat) {
+        const uint8_t guest = wrong_founder_partner(seat);
+        const uint32_t model = guest ? creations::player_key(guest, creations::kCreature).instance : 0;
+        const uint32_t founded = g_order_roster.entries[seat].species;
+        if (!model || !founded || founder_model((size_t)seat, model) || other_founder_model(seat, model) ||
+            g_outfits.species[seat].size() != 1 || !(creations::host_owns(founded) || (g_stand_in && stand_in_key(founded))) ||
+            creations::plays_host_creation(guest, creations::kCreature) || !founder_creature_settled(guest, now) ||
+            !creations::player_species(guest)) continue;
+        g_wrong_founder_queued = true;
+        struct Repair { uint64_t epoch; int seat; };
+        H->run_outside_frame([](void* context) {
+            const Repair repair = *(Repair*)context; delete (Repair*)context;
+            g_wrong_founder_queued = false;
+            if (repair.epoch != g_campaign_epoch || !active() || !is_host() || world::load_queued() ||
+                (g_multi_founders ? C.sess->players().size() < 2 : C.sess->players().size() != 2)) return;
+            const int seat = repair.seat;
+            const uint8_t guest = wrong_founder_partner(seat);
+            const uint32_t model = guest ? creations::player_key(guest, creations::kCreature).instance : 0;
+            auto planet = world::current_game_key();
+            std::string error;
+            void* village = founder_village(seat);
+            if (!village || !model || founder_model((size_t)seat, model) || other_founder_model(seat, model)) return;
+            auto fail = [&](const std::string& message) {
+                H->log(M, SK_WARN, "tribe: founder repair (BUG-9137) not applied: %s", message.c_str());
+                if (C.notice) C.notice("The partner's village could not take their creature yet: " + message);
+            };
+            if (!creations::archive_guest_model(guest, planet, error) ||
+                !founders::record_outfit(planet, (size_t)seat, g_outfits.current((size_t)seat), model, error) ||
+                !founders::read_outfits(planet, g_outfits, error) || !apply_guest_model(village, model, seat, error)) { fail(error); return; }
+            g_wrong_founder_repairs++;
+            const bool was_stand_in = stand_in_key(g_order_roster.entries[seat].species);
+            if (was_stand_in) g_stand_ins_swapped++;
+            H->log(M, SK_INFO, "tribe: founder repair (BUG-9137%s): the guest village was founded with %08X, now %08X (seat %d)",
+                   was_stand_in ? ", BUG-9150 stand-in" : "", g_order_roster.entries[seat].species, model, seat);
+            if (C.notice)
+                C.notice(was_stand_in ? C.sess->name_of(guest) + "'s village now wears their own creature."
+                                      : std::string("Your partner's village now uses their own creature."));
+            if (!world::checkpoint_reload(error)) fail("Native outfit applied; checkpoint could not start: " + error);
+        }, new Repair{g_campaign_epoch, seat});
+        return; // one a tick
+    }
+}
+
+// the model seat `seat`'s village should wear: its vote's new outfit, else its current saved one (0: none saved)
+static uint32_t seat_outfit_target(int seat)
+{
+    const auto& vote = g_votes[seat];
+    return vote.token && vote.model != vote.previous ? vote.model : g_outfits.current((size_t)seat);
+}
+
+static void outfit_tick(double now)
+{
+    if (is_host() && (world::time_paused() || world::cinematic_playing() || world::load_queued())) {
+        g_outfit_settled = 0;
+        return;
+    }
+    if (g_outfit_queued || now < g_outfit_poll || world::load_queued() || world::save_busy()) return;
+    g_outfit_poll = now + 1;
+    if (is_guest()) {
+        if (!g_outfit.token || !g_outfit.ready || g_outfit.model || g_outfit.world != modes::current_world()) return;
+        uint32_t model = g_outfit.saved ? creations::player_key(C.sess->my_id(), creations::kCreature).instance : g_outfit.previous;
+        if (!model || (g_outfit.saved && model == g_outfit.previous)) return; // own bundle has not been published yet
+        net::Writer w;
+        w.u8(1); w.u32(g_outfit.world); w.u32(g_outfit.token); w.u32(g_outfit.previous); w.u32(model);
+        if (C.sess->send_reliable_to(0, net::MSG_TRIBE_OUTFIT, w)) g_outfit.model = model;
+        return;
+    }
+    if (!is_host() || !g_order_roster.guest().faction || world::cinematic_playing() || world::time_paused()) return;
+    // Closing the native planner resumes time before all outfit callbacks have
+    // updated the host citizens. Let those deferred native changes settle before
+    // taking a checkpoint (the same five-second model gate
+    // used by Creature edits), rather than racing a second save against a reload.
+    if (!g_outfit_settled) g_outfit_settled = now;
+    if (now - g_outfit_settled < 5) return;
+    for (auto& vote : g_votes) if (vote.token && !vote_pending(vote)) vote = {};
+    for (const auto& vote : g_votes) if (vote.token && (!vote.ready || !vote.host_entered)) return; // every partner's result
+    void* home = player_tribe();
+    if (!home) return;
+    uint32_t home_model = tribe_info(home).key.instance;
+    bool villages = false, due = false;
+    for (int seat = 1; seat < (int)founder_seats(); ++seat) { // BUG-9135: every partner seat (seat 1 before)
+        void* guest = founder_village(seat);
+        if (!guest) continue;
+        villages = true;
+        uint32_t guest_model = tribe_info(guest).key.instance;
+        uint32_t target = seat_outfit_target(seat);
+        if (!target) target = guest_model;
+        due |= g_votes[seat].token || target != guest_model;
+    }
+    if (!villages || (!due && founder_model(0, home_model))) return;
+    g_outfit_queued = true;
+    H->run_outside_frame([](void* context) {
+        uint64_t epoch = *(uint64_t*)context; delete (uint64_t*)context;
+        g_outfit_queued = false;
+        if (epoch != g_campaign_epoch || !active() || !is_host() || world::load_queued()) return;
+        static std::string last_error;
+        auto fail = [&](const std::string& message) {
+            if (message != last_error && C.notice) C.notice("Outfit not applied: " + message);
+            last_error = message;
+        };
+        auto planet = world::current_game_key();
+        std::string error;
+        if (!founders::read_outfits(planet, g_outfits, error)) { fail(error); return; }
+        void* home = player_tribe();
+        if (!home) return;
+        uint32_t home_model = tribe_info(home).key.instance;
+        if (!home_model) return;
+        struct SeatOutfit { int seat; void* village; uint32_t old_model, target; };
+        std::vector<SeatOutfit> seats;
+        for (int seat = 1; seat < (int)founder_seats(); ++seat) {
+            void* guest = founder_village(seat);
+            if (!guest) continue;
+            const auto& vote = g_votes[seat];
+            uint32_t old_guest = tribe_info(guest).key.instance;
+            uint32_t target = seat_outfit_target(seat);
+            if (vote.token && (!vote.ready || !vote.host_entered || !vote_pending(vote))) return; // every partner's result
+            if (!target || !founder_model((size_t)seat, old_guest)) continue;
+            if (vote.token && target != vote.previous &&
+                (creations::player_key(vote.owner, creations::kCreature).instance != target ||
+                 (g_outfit_recovery ? !g_outfits.contains((size_t)seat, vote.previous) :
+                                     vote.previous != g_outfits.current((size_t)seat)))) continue;
+            seats.push_back({seat, guest, old_guest, target});
+        }
+        if (seats.empty()) return;
+        bool changed = false;
+        // The native host editor already applied this model. Keep its original
+        // founding identity, recording only the newly saved appearance.
+        if (!g_outfits.contains(0, home_model)) {
+            if (!founders::record_outfit(planet, 0, g_outfits.current(0), home_model, error) ||
+                !founders::read_outfits(planet, g_outfits, error)) { fail(error); return; }
+            changed = true;
+        }
+        for (const auto& s : seats) {
+            const auto& vote = g_votes[s.seat];
+            if (!g_outfits.contains((size_t)s.seat, s.target)) {
+                if (!vote.token || !creations::archive_guest_model(vote.owner, planet, error) ||
+                    !founders::record_outfit(planet, (size_t)s.seat, g_outfits.current((size_t)s.seat), s.target, error) ||
+                    !founders::read_outfits(planet, g_outfits, error)) { fail(error); return; }
+                changed = true;
+            }
+            if (s.old_model != s.target) {
+                if (!apply_guest_model(s.village, s.target, s.seat, error)) { fail(error); return; }
+                changed = true;
+            }
+        }
+        for (const auto& s : seats) {
+            auto& vote = g_votes[s.seat];
+            if (vote.token) {
+                net::Writer w;
+                w.u8(2); w.u32(vote.world); w.u32(vote.token); w.u32(vote.previous); w.u32(vote.model);
+                if (!C.sess->send_reliable_to(vote.owner, net::MSG_TRIBE_OUTFIT, w)) return;
+            }
+            vote = {};
+        }
+        last_error.clear();
+        if (changed) {
+            std::string more;
+            for (size_t i = 1; i < seats.size(); ++i) {
+                char b[40];
+                snprintf(b, sizeof b, " seat%d=%08X", seats[i].seat, seats[i].target);
+                more += b;
+            }
+            H->log(M, SK_INFO, "tribe: founder outfits saved home=%08X guest=%08X%s", home_model, seats.front().target, more.c_str());
+            if (!world::checkpoint_reload(error)) fail("Native outfit applied; checkpoint could not start: " + error);
+        }
+    }, new uint64_t(g_campaign_epoch));
+}
+
+// BUG-9147: the host's village with no living member (a partner founder village lives) gets one villager at its home
+// one villager back at the home of village t when it has no living member (not spawn_member: it refuses an empty player
+// tribe, BUG-0172, a member added under the game-over caption faulted; the caption is held here, h_TribeMessage)
+static bool villager_back(void* t)
+{
+    for (void* m : members(t))
+        if (game::health(m) > 0 && !F<uint8_t>(m, 0xB5E)) return false;
+    // once per village per kWipeAllGap s (a member made here that did not count as living came back every event: the MSI)
+    static std::map<uint32_t, double> last;
+    const double now = H->time_seconds();
+    auto it = last.find(F<uint32_t>(t, 0x30));
+    if (it != last.end() && now - it->second < kWipeAllGap) return false;
+    last[F<uint32_t>(t, 0x30)] = now;
+    void* c = vcall<void*>(t, 0x98 / 4, 1);
+    if (!c && a_CreateCitizen && a_AddMember) {
+        c = thiscall<void*>(a_CreateCitizen, t, 1);
+        if (c) thiscall<void>(a_AddMember, t, c, 1);
+    }
+    if (!c) {
+        H->log(M, SK_WARN, "tribe: village %08X got no villager back (BUG-9147)", F<uint32_t>(t, 0x30));
+        return false;
+    }
+    net::Vec3 at = tribe_pos(t);
+    if (void* mat = F<void*>(t, 0x260); mat && game::object_alive(mat)) game::object_position(mat, at);
+    game::teleport(c, at, game::orientation(c));
+    ++g_home_respawns;
+    H->log(M, SK_INFO, "tribe: village %08X had no living member: one villager is back at its home (BUG-9147)", F<uint32_t>(t, 0x30));
+    return true;
+}
+
+static void home_respawn_tick(double now)
+{
+    if (g_home_respawn_at < 0 || now < g_home_respawn_at) return;
+    g_home_respawn_at = -1;
+    void* home = player_tribe();
+    if (!home || rescue_pending()) return;
+    if (g_wipe_all_due) { // every founder village down: the party wipe, then a villager at each empty one
+        g_wipe_all_due = false;
+        for (size_t seat = 0; seat < founder_seats(); ++seat)
+            if (void* t = founder_village((int)seat)) villager_back(t);
+        if (now - g_last_wipe_all_at < kWipeAllGap) {
+            ++g_wipes_all_held;
+            H->log(M, SK_INFO, "tribe: the population event again %.0f s after the party wipe: held, no second wipe (BUG-9147)",
+                   now - g_last_wipe_all_at);
+            return;
+        }
+        g_last_wipe_all_at = now;
+        ++g_wipes_all;
+        if (C.notice) C.notice(party_wipe(0));
+        wipe_refresh(now);
+        return;
+    }
+    if (villager_back(home) && C.notice)
+        C.notice("A villager returned to your village. A partner's village kept the tribe going.");
 }
 
 // tests (BUG-0672): `coop.tribe frametool <tribe index> <type> <metres>`: the host's tool made in this game's tribe of
@@ -5936,6 +10568,7 @@ static void village_stamps_tick(double now)
 
 void tick(double now)
 {
+    persp_update(); // BUG-9153 (also puts the host's village back when the session or the stage ends)
     tribe_hunt_tick();
     if (is_guest() || g_go_paused)
         gameover_guest_tick(now); // BUG-0960 (also outside Tribe: the wait ends there)
@@ -5958,14 +10591,53 @@ void tick(double now)
             H->log(M, SK_INFO, "tribe: a command of player %u held while away runs now", c.from);
             host_command(c.from, r);
         });
+    auto_founders_tick(now);
+    bind_founder_identities(now); // BUG-9135
+    wrong_founder_tick(now); // BUG-9137
     drop_foreign_selection();
     away_conquest_tick(now); // BUG-0879 (guest)
-    if (is_host())
+    if (!is_host()) {
+        // the own founder's rescue: seat 1 of two founders; BUG-9135: the seat whose downed member is this player's
+        int own = g_multi_founders ? -1 : 1;
+        for (int seat = 0; g_multi_founders && seat < (int)g_remote_rescues.size(); ++seat) {
+            auto member = g_remote_rescues[seat].first ? g_gm.find(g_remote_rescues[seat].first) : g_gm.end();
+            if (member != g_gm.end() && member->second.owner == C.sess->my_id()) { own = seat; break; }
+        }
+        if (own >= 0 && g_remote_rescues[own].first && g_remote_rescues[own].second > now && (give_up::held(H, now) || g_give_up_now)) {
+            // BUG-9118: the guest founder is down and gives up (its seat in the action word, tribe_seats.h)
+            send_cmd(CMD_GIVE_UP, {}, g_multi_founders ? (int)tribe_seats::seat_action(own) : 0, {}, {});
+            g_give_up_now = false;
+        }
+        late_editor_first_tick(now); // BUG-9159
+    }
+    if (is_host()) {
+        for (uint8_t p = 1; p < 0xFE; ++p) // BUG-9159: a partner who left is asked again when they come back
+            if (g_editor_asked_at[p] && !net::is_player(*C.sess, p)) g_editor_asked_at[p] = g_late_editing_until[p] = 0;
+        founder_rescue_tick(now);
+        g_give_up_now = false;
+        home_respawn_tick(now); // BUG-9147
         host_tick(now);
+        food_share_tick(now); // BUG-9154
+        combat_tick(now);
+        load_six_trial();
+        outfit_tick(now);
+        shared_hut_upgrade_tick(now);
+        objective_backfill_tick(now);
+        host_buildings(now);
+        host_equipment(now);
+        host_tools(now);
+        host_relationships(now);
+        host_npc_food(now);
+        host_performances(now);
+        resume_performance(now);
+        host_campaign_tick(now);
+    }
     else if (is_guest()) {
+        outfit_tick(now);
         away_tree_end_tick(); // BUG-1084
         guest_tick(now);
         held_items_tick(now); // BUG-0906
+        march_click(now);
     }
     coop_tick(now);
 }
@@ -5974,15 +10646,51 @@ static uint32_t g_rx, g_rx_skipped, g_resets;
 
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
+    if (type == net::MSG_TRIBE_COMBAT) {
+        if (!active() || !is_guest() || from != 0 || r.u32() != modes::current_world()) return;
+        uint16_t count = r.u16();
+        if (!r.ok() || count > 2048 || r.left() != size_t(count)*6) return;
+        std::map<uint16_t,float> next;
+        for (unsigned i = 0; i < count; ++i) {
+            auto id = r.u16();
+            auto max_hp = r.f32();
+            if (!id || !(max_hp > 0) || !std::isfinite(max_hp) || !next.emplace(id,max_hp).second) return;
+        }
+        g_remote_enemy_max = std::move(next);
+        return;
+    }
+
+    if (type == net::MSG_TRIBE_LATE) { // BUG-9159: the host asks this player to make their creature in the editor
+        const uint8_t kind = r.u8();
+        const uint32_t world = r.u32();
+        if (r.ok() && from == 0 && is_guest() && kind == 1 && world && world == modes::current_world()) {
+            g_editor_asked_world = world;
+            H->log(M, SK_INFO, "tribe: the host asks for a creature of our own: the creature editor opens (BUG-9159)");
+        }
+        return;
+    }
     if (!g_ok)
         return;
+    if (type == net::MSG_TRIBE_OUTFIT) { receive_outfit(from, r); return; }
     if (type == net::MSG_TRIBE_STATE) {
         g_rx++;
         if (!is_guest() || game::mode_id() != modes::kTribe)
             g_rx_skipped++;
     }
-    if (type == net::MSG_TRIBE_STATE && is_guest() && game::mode_id() == modes::kTribe && !g_state_hold)
+    if (type == net::MSG_TRIBE_STATE && from == 0 && is_guest() && game::mode_id() == modes::kTribe && !g_state_hold)
         guest_state(r);
+    else if (type == net::MSG_TRIBE_BUILDINGS && from == 0 && is_guest() && game::mode_id() == modes::kTribe && !local_play())
+        guest_buildings(r);
+    else if (type == net::MSG_TRIBE_EQUIPMENT && from == 0 && is_guest() && game::mode_id() == modes::kTribe && !local_play())
+        guest_equipment(r);
+    else if (type == net::MSG_TRIBE_TOOLS && from == 0 && is_guest() && game::mode_id() == modes::kTribe && !local_play())
+        guest_tools(r);
+    else if (type == net::MSG_TRIBE_RELATIONSHIPS && from == 0 && is_guest() && game::mode_id() == modes::kTribe && !local_play())
+        guest_relationships(r);
+    else if (type == net::MSG_TRIBE_FOOD && from == 0 && is_guest() && game::mode_id() == modes::kTribe && !local_play())
+        guest_npc_food(r);
+    else if (type == net::MSG_TRIBE_PERFORMANCE && from == 0 && is_guest() && game::mode_id() == modes::kTribe && !local_play())
+        guest_performances(r);
     else if (type == net::MSG_TRIBE_CMD && is_host() && game::mode_id() == modes::kTribe)
         host_command(from, r);
     else if (type == net::MSG_TRIBE_CMD && is_host() && g_cmd_hold_fix && r.left()) { // BUG-0693: run when back
@@ -5997,6 +10705,65 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 // (tribe.epic_herd) and runs whatever tribe.chiefs says (BUG-0214: one bug per switch)
 static void forget_world_tables()
 {
+    g_combat_factions.clear();
+    g_remote_enemy_max.clear();
+    g_sent_enemy_max.clear();
+    g_combat_poll = g_combat_resend = 0;
+    g_combat_world = 0;
+
+    g_outfit = {};
+    g_votes = {};
+    g_outfits = {};
+    g_seat_food = unknown_food();
+    g_found_pending.clear(); // BUG-9135
+    g_founding_wait_player = 0xFF;
+    g_bind_poll = 0;
+    g_outfit_queued = false;
+    g_outfit_poll = 0;
+    g_outfit_settled = 0;
+    g_hut_upgrade_queued = false;
+    g_hut_upgrade_poll = 0;
+    g_objective_backfill_queued = false;
+    g_objective_backfill_poll = 0;
+    g_auto_found_at = 0;
+    g_auto_found_entered = H ? H->time_seconds() : 0; // BUG-9137
+    g_auto_found_queued = g_auto_found_refresh = false;
+    g_auto_found_manual_off = false;
+    g_auto_found_created = {};
+    g_auto_found_notice.clear();
+    g_building_received.clear();
+    g_equipment_received.clear();
+    g_tools_received.clear();
+    g_tool_unlocks = 0;
+    g_relationships_received.clear();
+    g_local_factions.clear();
+    g_faction_world = 0;
+    g_relationships_sent = 0;
+    g_npc_food_sent = 0;
+    g_npc_food_received = 0;
+    g_performances.clear(); g_performance_received = 0; g_performance_seen = 0; g_performance_sent = 0;
+    g_perform_click = false;
+    g_pending_performance = {};
+    g_performance_rewarded.clear();
+    g_village_defeats.clear();
+    g_campaign_unlocks = 0;
+    g_campaign_segments = 0;
+    g_six = {}; g_six_loaded = false;
+    g_perform_dispatch = {};
+    g_campaign_observed = false;
+    g_campaign_refresh_at = 0;
+    g_campaign_poll_at = 0;
+    ++g_campaign_epoch;
+    g_campaign_targets.clear();
+    g_build_kind = 0;
+    g_restore_village_orders = true;
+    g_founder_rescues = {};
+    g_own_village = nullptr; // BUG-9152: a world change frees the old villages
+    g_persp_host = nullptr;  // BUG-9153: the game's own teardown let go of both villages
+    g_share_village.fill(nullptr); // BUG-9154
+    g_persp_cam_pending = true;    // BUG-9153: the new world's set-up looks at the host's village
+    g_rack_asked = {};
+    g_remote_rescues = {};
     g_epic_blows.clear(); // BUG-0515 diagnostics: keys are animals of the world left
     if (g_fix_chiefs) {
         g_chief_scale.clear();
@@ -6049,6 +10816,7 @@ void before_save()
 
 void on_session_end()
 {
+    persp_restore("session end"); // BUG-9153 (also the mod's unload)
     g_cmd_held.clear(); // BUG-0693
     g_hold_seen.clear(); // BUG-0906
     for (auto& [c, t] : g_detached) // BUG-0667: the bodies stay in this world; the game tears them down later
@@ -6062,6 +10830,15 @@ void on_session_end()
     party_forget(); // BUG-0646
     baby_forget(); // BUG-0671
     clear_coop_tables(true);
+    std::fill(std::begin(g_late_editing_until), std::end(g_late_editing_until), 0.0); // BUG-9159
+    std::fill(std::begin(g_editor_asked_at), std::end(g_editor_asked_at), 0.0);
+    g_editor_first_opened_world = g_editor_asked_world = 0;
+    g_food_cycle = -1;
+    g_guest_order_mode = false;
+    g_extra_since = -1;
+    g_guest_orders_held = g_repair_requested = g_repair_served = false;
+    g_march_until = 0;
+    g_order_roster = {};
     g_split_for.clear();
     g_hm.clear();
     g_hm_by_id.clear();
@@ -6069,6 +10846,8 @@ void on_session_end()
         if (g.air)
             game::air_hold(g.c, false);
     g_gm.clear();
+    g_cyc.reset();
+    g_cycle_ids.clear();
     g_gid_of.clear();
     g_npc_tribe_made.clear(); // BUG-0381
     g_npc_tribe_tried.clear();
@@ -6086,6 +10865,12 @@ void on_world_change()
     party_forget(); // BUG-0646
     baby_forget(); // BUG-0671
     g_resets++;
+    g_food_cycle = -1;
+    g_guest_order_mode = false;
+    g_extra_since = -1;
+    g_guest_orders_held = g_repair_requested = g_repair_served = false;
+    g_march_until = 0;
+    g_order_roster = {};
     forget_world_tables(); // every citizen of the old world is freed: nothing to restore
     g_detached.clear(); // (BUG-0667: freed with the world)
     g_left_tribe.clear();
@@ -6097,6 +10882,8 @@ void on_world_change()
         if (g.air)
             game::air_hold(g.c, false);
     g_gm.clear();
+    g_cyc.reset();
+    g_cycle_ids.clear();
     g_gid_of.clear();
     g_npc_tribe_made.clear(); // BUG-0381
     g_npc_tribe_tried.clear();
@@ -6128,6 +10915,9 @@ void world_check()
     uint32_t m = game::mode_id();
     bool in = m == modes::kTribe;
     bool editor = m == modes::kEdit || m == modes::kEditor;
+    if (editor && is_host())
+        for (auto& vote : g_votes) // every partner seat's vote (BUG-9135)
+            if (vote.token) { vote.host_entered = true; g_outfit_settled = 0; }
     void* pt = in && g_ok ? player_tribe() : nullptr;
     bool ch = stage_epoch::changed(g_world_watch, game::stage_epoch(modes::kTribe), in, pt,
                                    in ? modes::current_world() : 0);
@@ -6218,9 +11008,12 @@ std::string status()
 {
     char b[1024];
     if (C.sess && C.sess->role() == net::Role::Host)
-        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u member_moves=%u/%u cmd_gone=%u guest_missions=%u\n",
+        snprintf(b, sizeof b, "tribe(host): members=%u cmds_done=%u rejected=%u gifts=%u unselected=%u bodies_sent=%u village_captions_closed=%u member_moves=%u/%u cmd_gone=%u guest_missions=%u "
+                 "commander=%u founder_guest=%08X outfit_guest=%08X founder_repairs=%u\n",
                  (unsigned)g_hm.size(), g_cmds_done, g_cmds_rejected, g_gifts, g_unselected, g_bodies_sent, g_village_captions_closed,
-                 g_member_moves, g_member_moves_unowned, g_cmd_gone, g_guest_missions);
+                 g_member_moves, g_member_moves_unowned, g_cmd_gone, g_guest_missions,
+                 (unsigned)(g_multi_founders ? player_of_seat(1) : village_commander()),
+                 g_order_roster.guest().species, g_outfits.current(1), g_wrong_founder_repairs);
     else
         snprintf(b, sizeof b,
                  "tribe(guest): mirrors=%u spawned=%u removed=%u cmds_sent=%u rx=%u skipped=%u resets=%u "
@@ -6232,6 +11025,30 @@ std::string status()
                  (unsigned)g_ours_t.size(), g_save_stripped, g_save_saves, g_forms_blocked, g_forms_run, g_unmapped_removed, g_bodies_detached, g_teardown_restored, g_slot_null_skipped, g_teardown_tribe_back,
                  g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies, g_mirrors_grown, g_away_trees_ended);
     std::string out = b;
+    if (C.sess && C.sess->role() == net::Role::Host && founder_seats()) { // BUG-9135: every founder seat
+        snprintf(b, sizeof b, "tribe founders: multi=%d seats=%u made=%u at_nest=%u identities_bound=%u pending=%u\n", (int)g_multi_founders,
+                 (unsigned)founder_seats(), g_found_made, g_found_at_nest, g_identities_bound, (unsigned)g_found_pending.size());
+        out += b;
+        // roadmap phase 4: the partner waiting for a creature of their own, the catch-ups of late villages
+        snprintf(b, sizeof b, "tribe late: prompt=%d skip=%d catch_up=%d stand_in=%d made=%u swapped=%u catch_ups=%u members_added=%u racks_added=%u waiting=%u\n",
+                 (int)g_late_prompt, (int)g_founding_skip, (int)g_late_catch_up, (int)g_stand_in, g_stand_ins_made, g_stand_ins_swapped,
+                 g_catch_ups, g_catch_up_members, g_catch_up_racks,
+                 (unsigned)g_founding_wait_player);
+        out += b;
+        for (int seat = 0; seat < (int)founder_seats(); ++seat) {
+            const auto& f = g_order_roster.entries[seat];
+            snprintf(b, sizeof b, "  seat %d: species=%08X faction=%08X identity=%08X commander=%u outfit=%08X village=%d food=%.2f\n",
+                     seat, f.species, f.faction, (unsigned)(f.player >> 32), (unsigned)player_of_seat(seat),
+                     g_outfits.current((size_t)seat), founder_village(seat) ? 1 : 0, g_seat_food[seat]);
+            out += b;
+        }
+    }
+    out += "tribe building health applied=" + std::to_string(g_building_applied) + "\n";
+    out += "founder population rewinds held=" + std::to_string(g_founder_rewinds_held) + " guest population events held=" +
+           std::to_string(g_guest_pops_held) + "\n";
+    out += "tribe cleared-species layouts deferred=" + std::to_string(g_layout_deferred) + "\n";
+    if (village_orders()) out += "founder worlds: native village formation skipped=" + std::to_string(g_form_skipped) +
+                                " guest orders held=" + std::to_string(g_guest_orders_held) + "\n";
     if (!g_last_cmd.empty())
         out += "tribe last order: " + g_last_cmd + "\n";
     out += "tribe ui mode=" + std::to_string(ui_mode()) + " (0 social, 1 attack)\n";
@@ -6319,6 +11136,148 @@ COOP_FIX("tribe.hit_dead", "BUG-0171", g_fix_hit_dead, "tribe: the test commands
 
 std::string debug(const std::vector<std::string>& a)
 {
+    // tests (BUG-9135 roadmap phase 4): the late joiner's state on this game (guest: the Co-op window's prompt; host:
+    // who waits for a creature of their own, the catch-ups made)
+    if (a.size() == 1 && a[0] == "late") {
+        char line[300];
+        if (is_guest())
+            snprintf(line, sizeof line, "late prompt=%d has_village=%d plays_own=%d in_world=%.0f s switch=%d", late_prompt(),
+                     (int)guest_has_village(), (int)creations::plays_own_creature(), H->time_seconds() - g_auto_found_entered,
+                     (int)g_late_prompt);
+        else
+            snprintf(line, sizeof line, "late waiting=%u line='%s' skipped='%s' catch_ups=%u members_added=%u racks_added=%u skip=%d catch_up=%d",
+                     (unsigned)g_founding_wait_player, founding_wait_line().c_str(), g_found_skip, g_catch_ups, g_catch_up_members,
+                     g_catch_up_racks, (int)g_founding_skip, (int)g_late_catch_up);
+        std::string out = line;
+        if (is_host()) { // BUG-9159: each unseated partner's wait and why
+            const double now = H->time_seconds();
+            for (uint8_t p : party::unseated_partners(g_order_roster, founder_creature_match)) {
+                const uint32_t creature = creations::player_key(p, creations::kCreature).instance;
+                snprintf(line, sizeof line,
+                         "\n  player %u: wait=%d creature=%08X species=%d entered=%.0f s ago key_changed=%.0f s ago here=%d "
+                         "editing=%.0f s asked=%.0f s ago",
+                         (unsigned)p, (int)founding_wait(p, now), creature, (int)(creations::player_species(p) != nullptr),
+                         now - g_auto_found_entered, now - creations::player_key_changed_at(p, creations::kCreature),
+                         (int)(C.here && C.here(p)), g_late_editing_until[p] > now ? g_late_editing_until[p] - now : 0.0,
+                         g_editor_asked_at[p] ? now - g_editor_asked_at[p] : -1.0);
+                out += line;
+            }
+        }
+        return out;
+    }
+    // tests (BUG-9135 phase 4, decision 5): every village of this game as the catch-up compares them (the game's own
+    // objects: on a guest its loaded world, not the host's state): faction, species, hut level, living members by age,
+    // rack kinds (bit k: kind k; 10 the fire pit)
+    if (a.size() == 1 && a[0] == "shapes") {
+        if (!active()) return "Open the tribal planet first.";
+        std::string out;
+        void* home = player_tribe();
+        for (void* t : all_tribes()) {
+            const auto v = village_shape(t);
+            char row[200];
+            snprintf(row, sizeof row, "village faction=%08X species=%08X player=%d level=%d adults=%u babies=%u racks=%03X\n",
+                     F<uint32_t>(t, 0x30), tribe_info(t).key.instance, (int)(t == home), v.level, v.adults, v.babies, (unsigned)v.tools);
+            out += row;
+        }
+        return out.empty() ? "No villages." : out;
+    }
+    // hut_level <0..4>: test setup (BUG-9135 phase 4), the host's village at an earned hut level, through the native
+    // upgrade pair shared_hut_upgrade uses (outside the frame); shared_hut_upgrade then gives it to every partner
+    if (a.size() == 2 && a[0] == "hut_level") {
+        const int level = atoi(a[1].c_str());
+        if (!active() || !is_host() || level < 0 || level > tribe_late::kMaxLevel) return "Set a level 0 to 4 on the Tribal host.";
+        H->run_outside_frame([](void* context) {
+            const int level = (int)(intptr_t)context;
+            void* home = player_tribe();
+            uintptr_t set = H->sym("SporeCoop::Community_SetLevel"), refresh = H->sym("SporeCoop::Tribe_UpdateHutModel");
+            if (!active() || !home || !intact_village(home) || !set || !refresh) return;
+            thiscall<void>(set, home, level);
+            thiscall<void>(refresh, home);
+            H->log(M, SK_INFO, "tribe: test hut level %d on the host's village", level);
+        }, (void*)(intptr_t)level);
+        return "Hut level " + std::to_string(level) + " queued for the host's village.";
+    }
+    if (a.size() == 1 && a[0] == "planned_sites") {
+        if (!active() || !is_host()) return "Open a hosted Tribal campaign.";
+        const auto rules = world::rules_for_current();
+        const size_t target = rules.seats + rules.rival_target(5);
+        if (target > 128) return "The requested site count exceeds the placement probe limit.";
+        std::vector<net::Vec3> sites;
+        for (auto village : all_tribes()) sites.push_back(tribe_pos(village));
+        const size_t existing = sites.size();
+        for (size_t i = 0; i < sites.size() && sites.size() < target; ++i)
+            add_clear_sites(sites[i],sites,target);
+        std::string out = "terrain sites " + std::to_string(sites.size()) + "/" + std::to_string(target) +
+                          ", live villages " + std::to_string(existing) + "\n";
+        for (size_t i = existing; i < sites.size(); ++i) {
+            char line[96];
+            snprintf(line,sizeof line,"clear %.2f %.2f %.2f\n",sites[i].x,sites[i].y,sites[i].z);
+            out += line;
+        }
+        return out;
+    }
+    if (a.size() == 2 && a[0] == "combat_hp") {
+        const auto id = uint16_t(strtoul(a[1].c_str(),nullptr,10));
+        // Use the current native village member list, including the guest's
+        // live mirror bindings, instead of dereferencing a saved pointer.
+        for (auto t : all_tribes()) for (auto c : members(t)) {
+            if (member_id(c) != id || !is_citizen(c) || !game::object_alive(c)) continue;
+            char text[150];
+            snprintf(text,sizeof text,"member %u hp=%.3f max=%.3f faction=%08X founder=%u native=%.3f",
+                     id,game::health(c),game::max_health(c),F<uint32_t>(t,0x30),founder_village(t) ? 1u : 0u,creature_hp::native_citizen_max(c));
+            return text;
+        }
+        return "No live Tribal member for this ID.";
+    }
+    if (a.size() == 1 && a[0] == "performance_orders" && active() && is_host()) {
+        char line[160];
+        snprintf(line, sizeof line, "sequence=%u target=%u requested=%u dispatched=%u records=%u deferred=%u",
+                 g_perform_dispatch.sequence, g_perform_dispatch.target, g_perform_dispatch.requested,
+                 g_perform_dispatch.dispatched, g_perform_dispatch.records, g_perform_dispatch.deferred ? 1u : 0u);
+        return line;
+    }
+    if (a.size() == 2 && a[0] == "six_rival_trial") {
+        if (!active() || !is_host() || !g_six_hook_ready || !g_order_roster.guest().faction)
+            return "Requires the connected Tribal founder campaign.";
+        load_six_trial();
+        if (g_six.extra) return "Six-rival trial already active.";
+        char* end = nullptr;
+        const auto faction = (uint32_t)strtoul(a[1].c_str(), &end, 16);
+        auto tribes = all_tribes();
+        auto* player = tribal_player();
+        // the founders and six NPC villages (two founders: eight)
+        if (!player || tribes.size() != tribe_seats::villages_with(founder_seats(), 6) || !faction || !end || *end ||
+            g_order_roster.contains_faction(faction) ||
+            F<float>(player, 0x10F0) != 3.f || F<float>(player, 0x10F4) != 5.f ||
+            std::none_of(tribes.begin(), tribes.end(), [&](void* t){ return F<uint32_t>(t, 0x30) == faction; }))
+            return "Requires three earned victories, both founders and six distinct NPC factions.";
+        founders::SixRivals trial{faction, 0, 0};
+        if (!founders::save_six_rivals(world::current_game_key(), g_order_roster, trial, true))
+            return "Could not create the six-rival trial record.";
+        g_six = trial; g_six_loaded = true;
+        return "Six-rival trial active.";
+    }
+    if (a.size() == 1 && a[0] == "npc_budget")
+        return "native formation calls=" + std::to_string(g_form_calls) + " filtered=" +
+               std::to_string(g_form_budget_filtered) + " last_total=" + std::to_string(g_form_budget_total);
+    if (a.size() == 1 && a[0] == "outfits") {
+        founders::Outfits saved;
+        std::string error;
+        bool ok = founders::read_outfits(world::current_game_key(), saved, error);
+        char line[240];
+        const OutfitVote& vote = is_host() ? g_votes[1] : g_outfit; // the host: seat 1's vote (more seats below)
+        snprintf(line, sizeof line, "outfits readable=%d home=%08X guest=%08X token=%u previous=%08X result=%08X ready=%d host_entered=%d pending=%d\n",
+                 (int)ok, saved.current(0), saved.current(1), vote.token, vote.previous, vote.model,
+                 (int)vote.ready, (int)vote.host_entered, (int)outfits_pending());
+        std::string out = line;
+        for (size_t seat = 2; is_host() && seat < founder_seats(); ++seat) { // BUG-9135
+            snprintf(line, sizeof line, "  seat %u outfit=%08X token=%u previous=%08X result=%08X ready=%d host_entered=%d owner=%u\n",
+                     (unsigned)seat, saved.current(seat), g_votes[seat].token, g_votes[seat].previous, g_votes[seat].model,
+                     (int)g_votes[seat].ready, (int)g_votes[seat].host_entered, (unsigned)g_votes[seat].owner);
+            out += line;
+        }
+        return out + (ok ? "" : error);
+    }
     // tests of the co-op mechanics through the game's damage path (host): ids as in coop.tribe
     auto hit = [](void* victim, void* attacker, float dmg) {
         float before = F<float>(victim, 0x5E0);
@@ -7460,14 +12419,397 @@ std::string debug(const std::vector<std::string>& a)
         }
         return "spawned " + std::to_string(n);
     }
+    if (a.size() == 3 && a[0] == "tool_fixture") {
+        // Tests only: CreateTool leaves its owner unset. A raw console call followed
+        // by SetTribe in a later frame crashes native tool Update at owner+556.
+        if (!active() || !is_host()) return "Create a rack fixture on the active Tribal host.";
+        unsigned kind = (unsigned)strtoul(a[1].c_str(), nullptr, 10);
+        unsigned id = (unsigned)strtoul(a[2].c_str(), nullptr, 10);
+        auto member = g_hm_by_id.find((uint16_t)id);
+        if (kind < 1 || kind > 9 || id > 65535 || member == g_hm_by_id.end() || !living(member->second)) return "Invalid rack fixture.";
+        void* citizen = member->second;
+        void* tribe = F<void*>(citizen, kOwnerTribeOff);
+        std::array<void*, 11> tools{};
+        if (!tribe || !tool_inventory(tribe, tools) || tools[kind]) return "Rack exists or village is busy.";
+        void* tool = vcall<void*>(tribe, 0xB4 / 4, (int)kind);
+        if (!tool) return "Native rack creation failed.";
+        vcall<void>(tool, 0x64 / 4, tribe);
+        auto position = game::position(citizen);
+        auto rotation = game::orientation(citizen);
+        vcall<void>((uint8_t*)tool + 0x34, 0x44 / 4, &position, &rotation);
+        if (uintptr_t layout = H->sym("SporeCoop::Tribe_UpdateToolLayout")) thiscall<void>(layout, tribe, (int)kind);
+        return "Native rack fixture created without a purchase.";
+    }
+    if (a.size() == 1 && a[0] == "food") {
+        if (!active()) return "Open the tribal planet first.";
+        std::string result;
+        for (void* t : all_tribes()) {
+            double food;
+            if (!shared::tribe_food(t, food)) continue;
+            char row[80];
+            snprintf(row, sizeof row, "species=%08X food=%.2f\n", tribe_info(t).key.instance, food);
+            result += row;
+        }
+        return result;
+    }
+    if (a.size() == 1 && a[0] == "gather") {
+        if (!active() || !is_guest() || local_play()) return "Gather on the guest in the host's Tribe world.";
+        auto ids = guest_village_ids();
+        if (ids.empty()) return "The host must enable orders for your registered village.";
+        send_cmd(CMD_FORAGE, ids, 0, {}, {});
+        return "Gather requested. The host will find the nearest tree with fruit.";
+    }
+    if (a.size() == 1 && a[0] == "performance") {
+        std::string result = performance_line();
+        for (const auto& p : g_performances) {
+            result += "\nmember=" + std::to_string(p.member) + " token=" + std::to_string(p.token) +
+                " phase=" + std::to_string(p.phase) + " request=" + std::to_string(p.request) +
+                " ready=" + std::to_string(p.ready) + " progress=" + std::to_string(p.progress);
+        }
+        return result.empty() ? "No active guest performance." : result;
+    }
+    if (a.size() == 2 && a[0] == "instrument")
+        return request_instrument((unsigned)strtoul(a[1].c_str(), nullptr, 10)) ?
+            "Instrument choice sent." : "Select your performers and wait for the audience's request.";
+    if (a.size() == 2 && (a[0] == "gift_to" || a[0] == "perform_to") && active() && is_guest() && !local_play()) {
+        uint32_t faction = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        for (void* target : all_tribes()) if (F<uint32_t>(target, 0x30) == faction) {
+            if (a[0] == "perform_to") {
+                void* chief = F<void*>(target, kNativeLeaderOff);
+                if (!chief || !game::object_alive(chief)) return "That tribe has no living chief.";
+                return request_performance(encode_target(chief));
+            }
+            send_cmd(CMD_ACTION, guest_village_ids(true), 9, encode_target(target), {});
+            return "Food gift requested.";
+        }
+        return "No such tribe.";
+    }
+    if (a.size() == 3 && a[0] == "relation" && active()) {
+        uint32_t from = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        uint32_t to = (uint32_t)strtoul(a[2].c_str(), nullptr, 16);
+        bool have_from = false, have_to = false;
+        for (void* t : all_tribes()) { have_from |= F<uint32_t>(t, 0x30) == from; have_to |= F<uint32_t>(t, 0x30) == to; }
+        void* manager = relationship_manager();
+        uintptr_t calculate = H->sym("Simulator::cRelationshipManager::CalculateRelationship");
+        if (!have_from || !have_to || !manager || !calculate) return "No such live tribe pair.";
+        char line[96];
+        snprintf(line, sizeof line, "relation %08X/%08X=%.6f", from, to, thiscall<float>(calculate, manager, from, to, 0));
+        return line;
+    }
+    if (a.size() == 1 && a[0] == "eat") {
+        if (!active() || !is_guest() || local_play()) return "Eat from the guest's Village page.";
+        auto ids = guest_village_ids(true);
+        if (ids.empty()) return "Select your villagers before choosing Eat.";
+        void* citizen = g_gm.at(ids.front()).c;
+        void* owner = citizen ? F<void*>(citizen, kOwnerTribeOff) : nullptr;
+        void* mat = owner ? F<void*>(owner, 0x260) : nullptr;
+        if (!mat || !game::object_alive(mat)) return "Your village has no food mat.";
+        send_cmd(CMD_ACTION, ids, 0, encode_target(mat), {});
+        return "Your selected villagers will eat at their village's food mat.";
+    }
+    if (a.size() == 2 && a[0] == "build") {
+        int kind = atoi(a[1].c_str());
+        if (!active() || !is_guest() || local_play() || guest_village_ids().empty() || kind < 1 || kind > 9)
+            return "Build from the guest's Village page while your village has a living member.";
+        if (!(g_tool_unlocks & (1u << kind))) return "Ally with or conquer other tribes to unlock that tool.";
+        mouse::install(H->game_window());
+        g_build_kind = kind;
+        g_attack_click = g_raid_click = g_equip_click = g_heal_click = g_gift_click = g_perform_click = false;
+        g_march_click = mouse::clicks();
+        g_march_until = H->time_seconds() + 30;
+        return "Click clear ground 12 to 35 metres from your hut within 30 seconds. Leave eight metres around other buildings.";
+    }
+    if (a.size() == 1 && a[0] == "baby") {
+        if (!active() || !is_guest() || local_play()) return "Add a baby from the guest's Village page.";
+        auto ids = guest_village_ids();
+        if (ids.empty()) return "Your village needs a living member before adding a baby.";
+        send_cmd(CMD_BABY, {ids.front()}, 0, {}, {});
+        return "Birth requested. The host checks your village's food and population limit.";
+    }
+    if ((a.size() == 1 || a.size() == 2) && a[0] == "rebuild") {
+        if (!active() || !village_orders()) return "Rebuilding requires a two-founder Tribal campaign.";
+        // `rebuild <seat>` (BUG-9135): the founder seat to rebuild (0 the host's); without one the captured founder village
+        int action = 0;
+        if (a.size() == 2) {
+            char* end = nullptr;
+            const long seat = strtol(a[1].c_str(), &end, 10);
+            if (!end || *end || seat < 0 || seat >= (long)founders::kMaxSeats) return "Supply a founder seat (0 is the host's village).";
+            action = (int)tribe_seats::seat_action((int)seat);
+        }
+        uint16_t helper = 0;
+        if (is_host()) {
+            for (const auto& [person, entry] : g_hm)
+                if (entry.owner == 0 && living(person) && F<uint8_t>(person, kSelectedOff)) { helper = entry.id; break; }
+            return helper && queue_partner_rebuild(0, helper, action) ? "Rebuilding requested." : "Select a living villager to help your partner rebuild.";
+        }
+        for (const auto& [id, entry] : g_gm)
+            if (entry.c && entry.owner == C.sess->my_id() && F<uint8_t>(entry.c, kSelectedOff)) { helper = id; break; }
+        if (!helper) return "Select a living villager to help your partner rebuild.";
+        send_cmd(CMD_REBUILD, {helper}, action, {}, {});
+        return "Rebuilding requested.";
+    }
+    // bind_founder <seat> <player>: host (BUG-9135), a seat of an older save (no identity, its partner not recognised
+    // by creature) belongs to connected player <player> from now on
+    if (a.size() == 3 && a[0] == "bind_founder") {
+        if (!active() || !is_host() || !g_multi_founders) return "Requires the Tribe host with tribe.multi_founders on.";
+        const int seat = atoi(a[1].c_str());
+        const int player = atoi(a[2].c_str());
+        if (seat < 1 || seat >= (int)founder_seats()) return "No such partner founder seat.";
+        if (g_order_roster.entries[seat].player) return "That seat already knows its player.";
+        if (player <= 0 || player >= 0xFE || !net::is_player(*C.sess, (uint8_t)player)) return "No such connected player.";
+        const uint64_t id = identity::of((uint8_t)player);
+        if (!id) return "That player has not sent an identity (an older version?).";
+        if (g_order_roster.seat_of_player(id) >= 0) return "That player already has a founder seat.";
+        if (g_bind_queued) return "A seat binding is being saved; try again.";
+        queue_identity_bind(seat, id);
+        return "Binding queued; coop.tribe shows the seat's identity once saved.";
+    }
+    if (a.size() == 1 && (a[0] == "march" || a[0] == "attack" || a[0] == "raid" || a[0] == "equip" || a[0] == "heal" || a[0] == "gift_food" || a[0] == "perform")) {
+        if (!active() || !is_guest() || local_play() || guest_village_ids().empty())
+            return "The host must enable village orders for your registered species.";
+        mouse::install(H->game_window());
+        g_build_kind = 0;
+        g_raid_click = a[0] == "raid";
+        g_equip_click = a[0] == "equip";
+        g_heal_click = a[0] == "heal";
+        g_gift_click = a[0] == "gift_food";
+        g_perform_click = a[0] == "perform";
+        g_attack_click = a[0] == "attack" || g_raid_click || g_equip_click || g_heal_click || g_gift_click || g_perform_click;
+        if (g_attack_click && guest_village_ids(true).empty()) return "Select your villagers before choosing this action.";
+        g_march_click = mouse::clicks();
+        g_march_until = H->time_seconds() + 30;
+        return g_perform_click ? "Left-click an NPC villager within 30 seconds. Bring your chief and musicians, then answer requests with 1, 2 or 3." :
+            g_gift_click ? "Left-click another tribe's hut within 30 seconds. Your selected villagers will deliver food from your village." :
+            g_heal_click ? "Left-click an injured friendly villager within 30 seconds. Selected villagers with healing tools will help them." :
+            g_equip_click ? "Left-click a rack in your village within 30 seconds. Selected adult villagers will collect tools; your chief keeps their staff." :
+            g_raid_click ? "Left-click an enemy hut or tool building within 30 seconds. Your selected villagers will raid it." :
+            g_attack_click ? "Left-click an enemy villager within 30 seconds. Your selected villagers will attack." :
+            "Left-click the destination within 30 seconds.";
+    }
+    if (a.size() == 1 && a[0] == "select_village") {
+        if (!active() || !is_guest()) return "Select the village on the guest in Tribe Stage.";
+        unsigned selected = 0;
+        for (uint16_t id : guest_village_ids()) {
+            void* c = g_gm.at(id).c;
+            vcall<int>((uint8_t*)c + 0xC0, 0x54 / 4, 1);
+            selected += F<uint8_t>(c, kSelectedOff) != 0;
+        }
+        return "Guest villagers selected: " + std::to_string(selected);
+    }
+    if (a.size() == 2 && a[0] == "village_orders") {
+        if (!active() || !is_host()) return "Change village orders on the Tribe host.";
+        if (rescue_pending()) return "Wait for the last villager to revive or respawn.";
+        g_restore_village_orders = false;
+        if (a[1] == "off") {
+            g_auto_found_manual_off = true;
+            g_order_roster = {};
+            g_split_for.clear(); // restore the normal split on the next snapshot
+            return "Shared tribe orders restored.";
+        }
+        founders::Roster roster;
+        if (a[1] != "on") return "Use village_orders on or off.";
+        if (!founders::read(world::current_game_key(), roster)) return "Register both founding villages first.";
+        g_auto_found_manual_off = false;
+        g_order_roster = roster;
+        return "Village walking orders enabled for this host session.";
+    }
+    if (a.size() == 1 && a[0] == "register_guest") {
+        if (!active() || !is_host() || C.sess->players().size() != 2)
+            return "Register founders on the Tribe host with exactly one guest.";
+        uint8_t guest = 0;
+        for (const auto& player : C.sess->players())
+            if (player.id) guest = player.id;
+        auto key = creations::player_key(guest, creations::kCreature);
+        void* home = player_tribe();
+        if (!home || !guest || !key.instance || !creations::player_species(guest))
+            return "Waiting for the guest's selected creature.";
+        void* village = nullptr;
+        for (void* t : all_tribes()) {
+            if (tribe_info(t).key.instance != key.instance) continue;
+            if (t == home || village) return "Founders need two distinct, identifiable villages.";
+            village = t;
+        }
+        if (!village) return "No village matches the guest's selected species.";
+        founders::Roster roster{tribe_info(home).key.instance, key.instance,
+                               F<uint32_t>(home, 0x30), F<uint32_t>(village, 0x30)};
+        std::string err;
+        auto planet = world::current_game_key();
+        if (!founders::can_record(planet, roster, err) || !creations::archive_guest_model(guest, planet, err)) return err;
+        return founders::record(planet, roster, err) ? founders::describe(roster) : err;
+    }
+    if (a.size() == 1 && a[0] == "wins") return goal_history_line() + "\nparty wipes: " + std::to_string(g_party_wipes) +
+        (g_last_wipe.empty() ? "" : "\nlast: " + g_last_wipe); // BUG-9155
+    if (a.size() == 1 && a[0] == "totems") { // BUG-9155 tests: each founder village's totem: pieces and model slots
+        std::string out;
+        for (size_t seat = 0; seat < founder_seats(); ++seat) {
+            void* village = founder_village((int)seat);
+            void* t = village ? F<void*>(village, 0x19D0) : nullptr;
+            char line[512];
+            if (!t || !game::object_alive(t) || !skg::readable((uint8_t*)t + 0x80, 0xC0)) {
+                snprintf(line, sizeof line, "seat %zu: no totem\n", seat);
+                out += line;
+                continue;
+            }
+            const uintptr_t types = F<uintptr_t>(t, 0x11C), types_end = F<uintptr_t>(t, 0x120);
+            const uintptr_t slots = F<uintptr_t>(t, 0x108);
+            snprintf(line, sizeof line,
+                     "seat %zu totem %p: pieces %d (cap %d) colours %d; +108 %08X +10C %08X +110 %08X +114 %08X "
+                     "+118 %08X; height +80 %.2f radius +90 %.2f\n  slots:",
+                     seat, t, (int)((types_end - types) / 4), (int)((F<uintptr_t>(t, 0x124) - types) / 4),
+                     (int)((F<uintptr_t>(t, 0x134) - F<uintptr_t>(t, 0x130)) / 12), (unsigned)slots,
+                     F<uint32_t>(t, 0x10C), F<uint32_t>(t, 0x110), F<uint32_t>(t, 0x114), F<uint32_t>(t, 0x118),
+                     F<float>(t, 0x80), F<float>(t, 0x90));
+            out += line;
+            for (int i = 0; i < 8 && slots && skg::readable((void*)(slots + i * 4), 4); ++i) {
+                snprintf(line, sizeof line, " %08X", *(uint32_t*)(slots + i * 4));
+                out += line;
+            }
+            out += "\n";
+        }
+        return out.empty() ? "no founder villages" : out;
+    }
+    if (a.size() == 2 && a[0] == "win") { // BUG-9155 tests (host): an alliance with village <faction hex> as a native win
+        if (!active() || !is_host()) return "Requires the Tribe host.";
+        const uint32_t faction = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        void* village = nullptr;
+        for (void* t : all_tribes()) if (F<uint32_t>(t, 0x30) == faction) village = t;
+        uintptr_t get = H->sym("SporeCoop::cTribeUI_Get"), add = H->sym("SporeCoop::TribeStage_AddGoalProgress");
+        uintptr_t calculate = H->sym("Simulator::cRelationshipManager::CalculateRelationship");
+        uintptr_t apply = H->sym("Simulator::cRelationshipManager::ApplyRelationship");
+        void* ui = get ? skg::cdecl_call<void*>(get) : nullptr;
+        void* manager = relationship_manager();
+        void* home = player_tribe();
+        void* totem = home ? F<void*>(home, 0x19D0) : nullptr;
+        if (!village || !ui || !add || !calculate || !apply || !manager || !totem || g_order_roster.contains_faction(faction))
+            return "No such NPC village, or the goal functions are missing.";
+        const float allied = F<float>(manager, 0x1C);
+        for (size_t s = 0; s < founder_seats(); ++s)
+            if (void* founder = founder_village((int)s)) {
+                const uint32_t f = F<uint32_t>(founder, 0x30);
+                const float now_rel = thiscall<float>(calculate, manager, faction, f, 0);
+                (void)thiscall<float>(apply, manager, faction, f, 0x0530CF07u, allied + 1 - now_rel);
+            }
+        // the queued win; its totem piece comes from the game itself (TribeGame_ModeChanged runs the reward queue,
+        // 0xCDAC90, which calls Totem_AddSegment). Until 2026-11-12 this command added a piece too: two per test win,
+        // which filled the test copy's totem past its 5 model slots (BUG-9158).
+        thiscall<void>(add, ui, 2, village);
+        return "Allied with " + a[1] + " as a win. " + goal_history_line();
+    }
+    if (a.size() == 2 && a[0] == "wipe") { // BUG-9155 tests (host): the party wipe of seat N now, then the reload
+        if (!active() || !is_host() || !founder_seats()) return "Requires the Tribe host with founder villages.";
+        const std::string text = party_wipe(atoi(a[1].c_str()));
+        if (C.notice) C.notice(text);
+        wipe_refresh(H->time_seconds());
+        return text + (g_wipe_refresh_until ? " (the refresh waits for the save)" : "");
+    }
+    if ((a.size() == 1 || a.size() == 2) && a[0] == "camera") { // BUG-9153: `camera own`: look at the own village now
+        std::string out = gamefixes::camera_status();
+        if (a.size() == 2 && a[1] == "own" && g_own_village && game::object_alive(g_own_village)) {
+            net::Vec3 home = tribe_pos(g_own_village);
+            const float at[3] = {home.x, home.y, home.z};
+            out += gamefixes::tribe_camera_to(at) ? " -> moved to the own village" : " -> not moved";
+        }
+        return out;
+    }
+    if (a.size() == 1 && a[0] == "foodshare") { // BUG-9154: the party's food share (host)
+        char b[200];
+        snprintf(b, sizeof b, "party food: share=%d shares=%u given=%.2f created=%.2f gifts=%u presses=%u", (int)g_food_share,
+                 g_shares, g_share_given, g_share_created, g_party_gifts, g_gift_presses);
+        std::string out = b;
+        for (size_t seat = 0; seat < founder_seats() && seat < g_share_village.size(); ++seat) {
+            double f = -1;
+            if (g_share_village[seat]) shared::tribe_food(g_share_village[seat], f);
+            snprintf(b, sizeof b, "\n  seat %u: player=%u food=%.2f base=%.2f", (unsigned)seat, (unsigned)player_of_seat((int)seat),
+                     f, g_share_base[seat]);
+            out += b;
+        }
+        return out;
+    }
+    if (a.size() == 1 && a[0] == "perspective") { // BUG-9153
+        char b[256];
+        snprintf(b, sizeof b, "perspective native=%p host=%p own=%p swaps=%u restores=%u babies=%u tools=%u hutless=%u last=%p",
+                 native_player_tribe(), g_persp_host, g_own_village, g_persp_swaps, g_persp_restores, g_native_babies,
+                 g_native_tools, g_hutless_reads, g_hutless_last);
+        return b;
+    }
+    if (a.size() == 2 && a[0] == "test_perspective") {
+        if (!active() || !is_guest()) return "Requires a guest in Tribe Stage.";
+        char* end = nullptr;
+        uint32_t species = (uint32_t)strtoul(a[1].c_str(), &end, 16);
+        if (!species || !end || *end) return "Supply the guest's creature instance in hex.";
+        uintptr_t set = H->sym("Simulator::cGameNounManager::SetPlayerTribe");
+        void* mgr = game::noun_manager();
+        void* original = player_tribe();
+        if (!set || !mgr || !original) return "Native tribe selection unavailable on this build.";
+        void* other = nullptr;
+        for (void* t : all_tribes()) {
+            if (tribe_info(t).key.instance != species) continue;
+            if (t == original || other) return "Expected one distinct guest village.";
+            other = t;
+        }
+        if (!other) return "Guest village has not arrived.";
+        // One main-thread call. Keep the original alive until the native manager holds it again.
+        vcall<int>(original, 0);
+        thiscall<void>(set, mgr, other);
+        bool selected = player_tribe() == other;
+        thiscall<void>(set, mgr, original);
+        bool restored = player_tribe() == original;
+        vcall<int>(original, 1);
+        return selected && restored ? "Native guest village selected and original restored." :
+                                      "Native tribe selection check failed.";
+    }
+    if (!a.empty() && a[0] == "villages") {
+        if (!active()) return "Open a Tribe-stage session first.";
+        std::string out;
+        for (void* t : all_tribes()) {
+            auto people = members(t);
+            char line[180];
+            snprintf(line, sizeof line, "village %08X species=%08X members=%u native_player=%d\n",
+                     F<uint32_t>(t, 0x30), tribe_info(t).key.instance, (unsigned)people.size(), t == player_tribe());
+            out += line;
+        }
+        return out;
+    }
+    // Explicit founding probes remain for fixtures. Normal campaign entry uses
+    // auto_founders_tick with placement, archive, registration and checkpoint guards.
+    if (a.size() == 1 && a[0] == "refound_home_status") return g_home_probe_result;
+    if (a.size() == 2 && a[0] == "refound_home_probe") {
+        char* end = nullptr;
+        uint32_t conqueror = (uint32_t)strtoul(a[1].c_str(), &end, 16);
+        if (!conqueror || !end || *end) return "Supply the enemy conqueror faction in hex.";
+        if (g_home_probe_pending) return "Host refounding probe already queued.";
+        g_home_probe_pending = true;
+        g_home_probe_result = "pending";
+        g_home_probe_world = world::current_game_key();
+        H->run_outside_frame([](void* value) {
+            g_home_probe_result = !g_home_probe_world.empty() && g_home_probe_world == world::current_game_key()
+                ? rebuild_founder((uint32_t)(uintptr_t)value) : "The test world changed; host replacement cancelled.";
+            if (g_home_probe_result.starts_with("Host replacement ")) {
+                std::string error;
+                if (world::checkpoint_reload(error)) {
+                    if (C.notice) C.notice("Rebuilding village: saving and refreshing both players' worlds.");
+                } else {
+                    g_home_probe_result += "; recovery refresh failed: " + error;
+                    if (C.notice) C.notice(g_home_probe_result);
+                }
+            }
+            g_home_probe_pending = false;
+            H->log(M, SK_INFO, "tribe: %s", g_home_probe_result.c_str());
+        }, (void*)(uintptr_t)conqueror);
+        return "Host refounding probe queued. Read refound_home_status.";
+    }
+    bool refounding = a.size() == 1 && a[0] == "refound_guest";
+    bool founding = refounding || (!a.empty() && a[0] == "found_guest");
+    if (founding && (!active() || !is_host() || !a_SpawnNpcTribe || C.sess->players().size() != 2))
+        return "Founding requires a host and one guest in Tribe Stage.";
     // npc_tribe <members> <metres>: tests (BUG-0381), the host's game forms an NPC tribe that far from the
     // village (as the game's tribe controller does during play: the guests' games do not)
-    if (a.size() >= 3 && a[0] == "npc_tribe" && is_host() && a_SpawnNpcTribe) {
+    if (founding || (a.size() >= 3 && a[0] == "npc_tribe" && is_host() && a_SpawnNpcTribe)) {
         void* pt = player_tribe();
         if (!pt)
             return "no player tribe";
         net::Vec3 c = tribe_pos(pt);
-        float r = drive::speed(c), d = (float)atof(a[2].c_str());
+        float r = drive::speed(c), d = founding ? (refounding ? -120.f : 120.f) : (float)atof(a[2].c_str());
         if (r < 1)
             return "no village position";
         // a direction across the surface: c x (0,1,0) (or x (1,0,0) at a pole), then back onto the sphere
@@ -7478,9 +12820,67 @@ std::string debug(const std::vector<std::string>& a)
         net::Vec3 q{c.x + u.x / ul * d, c.y + u.y / ul * d, c.z + u.z / ul * d};
         float ql = drive::speed(q);
         skg::Vector3 pos{q.x / ql * r, q.y / ql * r, q.z / ql * r};
-        void* t = skg::cdecl_call<void*>(a_SpawnNpcTribe, &pos, 0, atoi(a[1].c_str()), 0, 0, (void*)nullptr);
+        if (!founding && a[2] == "clear") {
+            net::Vec3 site;
+            bool found = false;
+            for (void* anchor : all_tribes()) {
+                if (founding_site(anchor, site)) { found = true; break; }
+            }
+            if (!found) return "No clear, level rival site was found.";
+            pos = {site.x, site.y, site.z};
+        }
+        void* species = nullptr;
+        uint32_t replacement_faction = 0;
+        int archetype = 0;
+        if (!founding && a.size() == 4 && a[2] == "clear") {
+            char* end = nullptr;
+            const auto instance = (uint32_t)strtoul(a[3].c_str(), &end, 16);
+            if (!instance || !end || *end) return "Supply the rival's creature model key.";
+            for (void* village : all_tribes())
+                if (tribe_info(village).key.instance == instance) return "That creature already has a village.";
+            species = game::species_by_key({instance, 0x2B978C46, 0x40626200});
+            if (!species) return "The requested rival species is unavailable.";
+            // Use the first native rival's configuration for a three-member
+            // opponent. The raw factory leaves both archetypes without an
+            // instrument, so stock the new opponent before returning.
+            archetype = 2;
+        }
+        if (founding) {
+            uint8_t guest = 0;
+            for (const auto& player : C.sess->players())
+                if (player.id) guest = player.id;
+            auto key = creations::player_key(guest, creations::kCreature);
+            if (!guest || !key.instance || !(species = creations::player_species(guest)))
+                return "Waiting for the guest's selected creature. No village created.";
+            for (void* other : all_tribes()) {
+                if (tribe_info(other).key.instance == key.instance)
+                    return "This species already has a village. No village created.";
+                if (net::dist(tribe_pos(other), {pos.x, pos.y, pos.z}) < 60.f)
+                    return "The test founding site is occupied. No village created.";
+            }
+            std::string err;
+            auto planet = world::current_game_key();
+            founders::Roster prior;
+            bool registered = founders::read(planet, prior);
+            if (refounding) {
+                if (!registered || !g_refound_ready || prior.guest().species != key.instance ||
+                    prior.home().faction != F<uint32_t>(pt, 0x30) || prior.home().species != tribe_info(pt).key.instance)
+                    return "Refounding requires the original two founders and the supported native factory.";
+                for (void* other : all_tribes())
+                    if (F<uint32_t>(other, 0x30) == prior.guest().faction)
+                        return "Retire the defeated village before refounding its faction.";
+                replacement_faction = prior.guest().faction;
+            } else if (registered) return "This planet already has two registered founders. No village created.";
+            if (!creations::archive_guest_model(guest, planet, err)) return err;
+        }
+        g_refound_faction = replacement_faction;
+        void* t = skg::cdecl_call<void*>(a_SpawnNpcTribe, &pos, archetype, founding ? 3 : atoi(a[1].c_str()),
+                                          founding ? 15 : 0, 0, species);
+        g_refound_faction = 0;
         if (!t)
             return "SpawnNpcTribe returned null";
+        if (archetype == 2 && !stock_trial_instrument(t))
+            return "Rival village founded, but no native instrument slot could be filled.";
         net::Vec3 tp = tribe_pos(t);
         char b[160];
         snprintf(b, sizeof b, "npc tribe %p at (%.1f %.1f %.1f): %u members, %.0f m from the village", t, tp.x, tp.y, tp.z,
@@ -7667,11 +13067,12 @@ std::string debug(const std::vector<std::string>& a)
             &q);
         std::sort(q.v.begin(), q.v.end());
         std::string out;
-        for (size_t i = 0; i < q.v.size() && i < 40; i++)
+        const size_t max = a.size() >= 3 ? std::clamp<size_t>(strtoul(a[2].c_str(), nullptr, 10), 1, 2000) : 40; // tests: objs <noun> [max]
+        for (size_t i = 0; i < q.v.size() && i < max; i++)
             out += q.v[i].second;
         return out + std::to_string(q.v.size()) + " objects";
     }
-    return "usage: coop.tribe select <id> <0|1> | select_own <n> <0|1> | walk <x> <y> <z> | act <action> <target id> | objs <noun hex>";
+    return "usage: coop.tribe select <id> <0|1> | select_own <n> <0|1> | walk <x> <y> <z> | act <action> <target id> | objs <noun hex> [max]";
 }
 
 // the citizen's current behaviour-tree node (ai = c+0xB4C, node id at ai+0x1D8; docs/re/tribe.md B)
@@ -7728,13 +13129,13 @@ std::string list()
                 }
             }
             snprintf(b, sizeof b,
-                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f ours=%d tool=%d leader=%d item=%d model=%d hold=%d iscale=%.3f scale=%.3f maxhp=%.1f hunger=%.2f/%.2f/%.2f idle=%08X anim=%08X\n",
+                     "  #%u %p owner=%d age=%u sel=%u hp=%.1f pos=(%.1f %.1f %.1f) speed=%.1f host_speed=%.1f dead=%d bt=%08X radius=%.2f ours=%d tool=%d leader=%d item=%d model=%d hold=%d iscale=%.3f scale=%.3f maxhp=%.1f hunger=%.2f/%.2f/%.2f idle=%08X anim=%08X revive=%.1f\n",
                      id, c, ow == 0xFF ? -1 : (int)ow, F<uint8_t>(c, kAgeOff), F<uint8_t>(c, kSelectedOff),
                      game::health(c), cp.x, cp.y, cp.z, drive::speed(v), drive::speed(sv), (int)game::is_dead(c),
                      bt_node(c), game::bounding_radius(c), (int)ours_in(g_ours_c, c), F<int>(c, kHeldToolOff), (int)is_leader(c),
                      F<int>(c, kHeldItemOff), hand_model(c), hold_modifier(c, false) ? 1 : 0, read_item_scale(c), game::scale(c), game::max_health(c),
-                     F<float>(c, 0xBBC), F<float>(c, 0xBB8), F<float>(c, 0xB90), F<uint32_t>(c, 0xE3C), cur_anim(c)); // (BUG-0906: what the hand holds,
-            // whether a model is attached, 1 while the item is still being taken: not in the resting grip)
+                     F<float>(c, 0xBBC), F<float>(c, 0xBB8), F<float>(c, 0xB90), F<uint32_t>(c, 0xE3C), cur_anim(c), // (BUG-0906: what the hand holds,
+                     revive_seconds(c)); // whether a model is attached, 1 while the item is still being taken: not in the resting grip)
             out += b;
             if (ds) { // guests: how the mirror is driven (drive::step)
                 snprintf(b, sizeof b, "     drive err=%.2f nudges=%u kept=%u teleports=%u\n", ds->last_err, ds->nudges,
@@ -7808,4 +13209,5 @@ int give_selected(uint8_t to)
     return (int)ids.size();
 }
 
+void give_up_now() { g_give_up_now = true; }
 } // namespace tribe

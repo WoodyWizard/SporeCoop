@@ -8,7 +8,6 @@
 #include "core.h"
 #include "task_drop.h"
 
-#include <condition_variable>
 #include <deque>
 #include <map>
 #include <memory>
@@ -180,7 +179,7 @@ struct CmdBusy {
     int other = 0; // on other threads
 };
 static std::map<SkMod*, CmdBusy> g_busy;
-static std::condition_variable g_busy_cv;
+// (a short poll instead of std::condition_variable: the Windows build toolchain has no <condition_variable>)
 
 // a found command, counted as running until release (the lookup's lock held by the caller)
 static bool cmd_hold_locked(const Cmd& c)
@@ -201,7 +200,6 @@ static void cmd_release(SkMod* mod, bool held)
         CmdBusy& b = g_busy[mod];
         (GetCurrentThreadId() == g_main_tid ? b.main : b.other)--;
     }
-    g_busy_cv.notify_all();
 }
 
 struct CmdHeld {
@@ -222,7 +220,13 @@ bool commands_wait_idle(SkMod* mod, DWORD ms, std::string& why)
         return true;
     int n = g_busy[mod].other;
     DWORD t0 = GetTickCount();
-    bool ok = g_busy_cv.wait_for(lk, std::chrono::milliseconds(ms), idle);
+    bool ok = idle();
+    while (!ok && GetTickCount() - t0 < ms) {
+        lk.unlock();
+        Sleep(2);
+        lk.lock();
+        ok = idle();
+    }
     if (!ok)
         why = std::to_string(g_busy[mod].other) + " of its commands still run on other threads after " + std::to_string(ms) + " ms";
     else

@@ -12,7 +12,9 @@
 #include <string>
 #include <vector>
 
+#include "drama.h"
 #include "fixes.h"
+#include "guest_pack.h"
 #include "game.h"
 #include "drama.h"
 #include "npc.h"
@@ -36,7 +38,18 @@ enum Kind : uint8_t {
     K_SPIT_NPC = 8,    // guest -> host {u16 npc id, f32 seconds}: the guest's spit hit a host NPC's mirror (BUG-0641)
     K_STUN_PROXY = 9,  // host -> guests {u16 npc id, f32 seconds}: the host's game stunned its NPC (BUG-0700)
     K_FLOCK = 10,      // guest -> host {}: the guest's Summon Flock, made by the host's game for its puppet (BUG-0736)
+    K_SUMMON = 11,     // guest -> host {}: the guest's Summon Flock: a flock in the guest's pack (BUG-9129; 3 before the 0.7.14 merge)
+    K_RECRUIT = 12,    // guest -> host {u16 npc id}: the guest recruited host NPC id into its pack (BUG-9129; 4 before)
+    K_PACKCMD = 13,    // guest -> host {u32 lo, u32 hi, f32 value, u32 c, u32 d, u16 target npc id or 0xFFFF}: the guest's
+                       // own command to its creature that the game passes to the pack (decision 5CD)
+    K_PACKLIST = 14,   // host -> guest {u8 n, n x {u16 npc id, u8 summoned}}: the guest's own pack (decision 5CD phase 2)
+    K_PACKSTATE = 15,  // guest -> host {u8 n, n x net::NpcState}: where the guest's game has its pack members (decision 5EA), 10 Hz
+    K_PACKANIM = 16,   // guest -> host {u8 n, n x {u16 id, u32 anim, u8 how, u8 a, u32 b}}: their behaviour animations (5EA)
+    K_SUMMONLOCK = 17, // host -> guests {u8 out, u8 limit, u8 owner player or 0xFF}: the party's Summon Flocks now (5FA), 1 Hz
 };
+static_assert(K_PACKANIM == guest_pack::kPackAnimKind, "guest_pack.h kPackAnimKind");
+static_assert(K_PACKSTATE == guest_pack::kPackStateKind, "guest_pack.h kPackStateKind");
+static_assert(K_PACKLIST == guest_pack::kPackListKind, "guest_pack.h kPackListKind");
 static unsigned g_flock_sent, g_flock_got;
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
@@ -153,17 +166,73 @@ static void* g_hit_attacker_fwd() { return g_hit_attacker; }
 static bool hit_body(void* attacker, void* target, uint32_t idx, uint32_t a4);
 static void spit_after_hit(void* attacker, void* victim, uint32_t idx); // BUG-0641 (below)
 
+// BUG-9132: the guest's Strike (ability 0x21: 6 points, the area effect kind 3) hurt a proxy without a TakeDamage of the
+// avatar on it, so nothing reached the host ("bite works, strike doesn't"). An own attack on a proxy that sent no hit
+// sends one now: the ability's points (+0x3C, what a bite reports: points 1 -> damage 1). Off: as before.
+static bool g_strike_fix = true;
+COOP_FIX("creature.guest_strike", "BUG-9132", g_strike_fix, "creature: a guest's own attack that hit a host creature without a forwarded hit (Strike) reaches the host");
+static uint32_t g_strike_sent, g_attacks_seen;
+// BUG-9136: the BUG-9132 fallback sent the points of every own ability that reached a proxy without damage, the social
+// ones too: a partner's sing / dance / charm / pose next to a creature it was befriending reached the host as a bite
+// (owner, 2026-11-11: "friendly creatures are attacking connected players. They aren't able to befriend them"; the host
+// log had both guests "hit" npc 253 of 291E6BFD while the party befriended that species). A social ability (+0x10 not 0,
+// the kind a social answer must match) or any ability used in the social stance (GetAbilityMode 0) is no attack: no hit
+// is forwarded for it, and the no-attacker hits while it runs are not the guest's (npc.cpp damage_filter).
+// `coop.fix creature.social_no_hit off`: forwarded as in 0.7.8-lineages51..53.
+static bool g_social_fix = true;
+COOP_FIX("creature.social_no_hit", "BUG-9136", g_social_fix, "creature: a guest's social ability (sing, dance, charm, pose) never reaches the host as a hit");
+static uintptr_t a_AbilityMode;
+static bool g_hit_social = false; // the own ability hit running now is a social one
+static uint32_t g_social_kept;
+static bool social_use(void* attacker, uint32_t idx)
+{
+    if (a_AbilityMode && skg::cdecl_call<int>(a_AbilityMode) == 0)
+        return true;
+    uint8_t* ab = (int)idx < skg::vcall<int>(attacker, 0xB0 / 4) ? skg::vcall<uint8_t*>(attacker, 0xB4 / 4, (int)idx) : nullptr;
+    return ab && skg::readable(ab, 0x40) && *(uint32_t*)(ab + 0x10) != 0;
+}
+bool own_attack_running()
+{
+    return g_strike_fix && g_hit_attacker && g_hit_attacker == game::avatar() && !(g_social_fix && g_hit_social);
+}
 static bool SK_THISCALL h_AttackTarget(void* attacker, void* target, uint32_t idx, uint32_t a4)
 {
     void* was = g_hit_attacker;
     uint32_t was_idx = g_hit_idx;
+    const bool was_social = g_hit_social;
     g_hit_attacker = attacker;
     g_hit_idx = idx;
+    const bool own = is_guest() && attacker && attacker == game::avatar() && target && game::in_creature_stage();
+    const bool social = own && social_use(attacker, idx);
+    g_hit_social = social;
+    const uint32_t sent_before = own ? npc::hits_sent_count() : 0;
     bool r = hit_body(attacker, target, idx, a4);
+    if (own) {
+        g_attacks_seen++;
+        void* victim = (uint8_t*)target - game::kCombatOff;
+        uint8_t* ab = (int)idx < skg::vcall<int>(attacker, 0xB0 / 4) ? skg::vcall<uint8_t*>(attacker, 0xB4 / 4, (int)idx) : nullptr;
+        const uint32_t type = ab && skg::readable(ab, 0x40) ? *(uint32_t*)(ab + 8) : 0;
+        const float points = ab && skg::readable(ab, 0x40) ? *(float*)(ab + 0x3C) : 0.f;
+        const bool sent = npc::hits_sent_count() != sent_before;
+        bool fwd = false, kept = false;
+        if (g_strike_fix && !sent && npc::is_proxy(victim) && points > 0 && points < 1000) {
+            if (g_social_fix && social)
+                kept = true, g_social_kept++; // BUG-9136: a social ability is no attack
+            else
+                fwd = npc::forward_hit(victim, points, 2);
+        }
+        g_strike_sent += fwd;
+        static unsigned logged;
+        if (logged++ < 40)
+            H->log(M, SK_INFO, "player_rules: own attack ability %u type 0x%X points %.2f on %p (proxy %d, social %d): %s", idx, type,
+                   points, victim, (int)npc::is_proxy(victim), (int)social,
+                   sent ? "hit sent by the game's damage" : fwd ? "hit sent (BUG-9132)" : kept ? "social: no hit (BUG-9136)" : "no hit");
+    }
     if (target) // (the game's spit rule in 0xC20390 runs before the damage, whatever the hit returns)
         spit_after_hit(attacker, (uint8_t*)target - game::kCombatOff, idx); // BUG-0641
     g_hit_attacker = was;
     g_hit_idx = was_idx;
+    g_hit_social = was_social;
     return r;
 }
 
@@ -374,7 +443,8 @@ typedef int(__cdecl* AbilityTick_t)(void*, int, int, int, int, uint32_t*);
 static AbilityTick_t o_AbilityTick;
 static uintptr_t a_PostStim, a_GoalStart, a_StimClear, a_GoalFind, a_GoalEnd, a_IsEpic;
 static uint32_t g_roar_sent, g_roar_got, g_roar_played, g_roar_hit, g_roar_bad, g_roar_last_type;
-static constexpr uint32_t kRoar = 0x31;
+static constexpr uint32_t kRoar = 0x31, kSummon = 0x33;
+static uint32_t g_summon_sent, g_recruit_sent, g_recruit_got;
 static constexpr uint32_t kCreatureNoun = 0x18EB45Eu;
 
 static uint8_t* ability_ptr(void* c, int idx)
@@ -400,11 +470,130 @@ static int ability_index(void* c, uint32_t type)
     return -1;
 }
 
+// ---- decision 5FA: one Summon Flock out at a time in the party
+// The owner (2026-11-17): "let's lock summon flock when one is active in the party. This will allow for party tuning later
+// on when everyone can use powers at the same time." Spore's world has one summon event (docs/re/creature.md
+// #creature-pack-per-player): while it runs another Summon Flock did nothing at all and its cooldown was spent. Now the
+// press is refused before the game uses the ability (AbilityBar_Use, the one path of the keys and the bar's buttons) and
+// the player's feed says whose flock is out. The host counts the summons out (its own and the partners') and is the
+// authority: it tells the guests (K_SUMMONLOCK, 1 Hz and at a change) and refuses a guest's summon request while locked.
+// The limit is the party's (tuning, `coop.gpack summonlimit <n>` on the host); the game itself runs one at a time, so a
+// limit over 1 takes effect only once each player's summon is its own (decision 5D / 5FB). Off: 63-dev (no lock).
+static bool g_summon_lock_fix = true;
+COOP_FIX("creature.summon_lock", "BUG-9250", g_summon_lock_fix,
+         "creature: Summon Flock is locked while the party's flock is out (one at a time), with a line saying whose");
+static constexpr int kGameSummons = 1;   // summon events the game runs at once (one per world)
+static int g_summon_limit = 1;           // host: the party's limit
+static int g_lock_out = 0, g_lock_limit = 1; // guest: as the host said
+static uint8_t g_lock_owner = 0xFF;
+static double g_lock_rx_at = -1e9, g_lock_tx_at = -1e9, g_lock_said_at = -1e9;
+static int g_lock_sent_out = -1;
+static uint8_t g_lock_sent_owner = 0xFF;
+static uint32_t g_lock_blocked, g_lock_tx, g_lock_rx, g_lock_refused;
+
+void set_summon_limit(int n) { g_summon_limit = std::clamp(n, 1, 16); }
+
+// host: the summons out now and whose (0 the host, 0xFF none)
+static int host_summons_out(uint8_t& owner)
+{
+    owner = 0xFF;
+    if (!drama::summon_running())
+        return 0;
+    owner = 0;
+    if (void* pup = drama::summon_puppet())
+        for (uint8_t id = 1; id < 16; id++)
+            if (C.puppet_of && C.puppet_of(id) == pup)
+                owner = id;
+    return 1;
+}
+
+static bool locked(int& out, int& limit, uint8_t& owner)
+{
+    if (is_host()) {
+        out = host_summons_out(owner);
+        limit = g_summon_limit;
+    } else {
+        if (H->time_seconds() - g_lock_rx_at > 5) // (no word from the host: not locked here; the host still decides)
+            return false;
+        out = g_lock_out, limit = g_lock_limit, owner = g_lock_owner;
+    }
+    return out >= std::min(limit, kGameSummons);
+}
+
+static void summon_lock_tick(double now)
+{
+    if (!g_summon_lock_fix || !is_host() || !game::in_creature_stage())
+        return;
+    uint8_t owner;
+    int out = host_summons_out(owner);
+    if (out == g_lock_sent_out && owner == g_lock_sent_owner && now - g_lock_tx_at < 1.0)
+        return;
+    g_lock_sent_out = out, g_lock_sent_owner = owner, g_lock_tx_at = now;
+    net::Writer w;
+    w.u8(K_SUMMONLOCK);
+    w.u8((uint8_t)out);
+    w.u8((uint8_t)g_summon_limit);
+    w.u8(owner);
+    C.sess->broadcast_reliable(net::MSG_PLAYER_RULE, w);
+    g_lock_tx++;
+}
+
+bool summon_blocked(int idx)
+{
+    if (!g_summon_lock_fix || !C.sess || !C.sess->connected() || !game::in_creature_stage())
+        return false;
+    void* av = game::avatar();
+    if (!av || ability_type(av, idx) != kSummon)
+        return false;
+    int out = 0, limit = 1;
+    uint8_t owner = 0xFF;
+    if (!locked(out, limit, owner))
+        return false;
+    g_lock_blocked++;
+    const double now = H->time_seconds();
+    if (now - g_lock_said_at > 2 && C.feed) {
+        g_lock_said_at = now;
+        std::string who = owner == C.sess->my_id() ? std::string("Your") : owner == 0xFF ? std::string("A") : C.sess->name_of(owner) + "'s";
+        std::string line = "Summon Flock: " + who + " flock is out. ";
+        line += limit > kGameSummons ? "Spore runs one flock at a time in a world." : "One at a time in the party.";
+        C.feed(line);
+    }
+    return true;
+}
+
+bool debug_bar_use(uint32_t type) // tests (5FA): the avatar's ability of that type pressed as on the bar (its hook runs)
+{
+    static uintptr_t use = H->sym("SporeCoop::AbilityBar_Use");
+    int idx = ability_index(game::avatar(), type);
+    if (!use || idx < 0)
+        return false;
+    skg::cdecl_call<void>(use, idx);
+    return true;
+}
+
+std::string summon_lock_status()
+{
+    int out = 0, limit = 1;
+    uint8_t owner = 0xFF;
+    bool l = locked(out, limit, owner);
+    char b[200];
+    std::snprintf(b, sizeof b, "summon lock (5FA): fix=%d locked=%d out=%d limit=%d owner=%d blocked=%u refused=%u tx=%u rx=%u\n",
+                  (int)g_summon_lock_fix, (int)l, out, limit, owner == 0xFF ? -1 : (int)owner, g_lock_blocked, g_lock_refused,
+                  g_lock_tx, g_lock_rx);
+    return b;
+}
+
 static int __cdecl h_AbilityTick(void* c, int a2, int a3, int a4, int a5, uint32_t* st)
 {
     if (g_roar_fix && c && st && st[1] == 0 && is_guest() && c == game::avatar() && game::in_creature_stage()) {
         uint8_t* ab = ability_ptr(c, (int)st[0]);
-        if (ab && *(uint32_t*)(ab + 8) == 0x33 && drama::g_flock_relay) { // BUG-0736: the own Summon Flock
+        if (ab && *(uint32_t*)(ab + 8) == kSummon && guest_pack::enabled()) {
+            // BUG-9129: the guest's Summon Flock: the host makes the flock (in this game its own drama event 8 is refused)
+            net::Writer w;
+            w.u8(K_SUMMON);
+            C.sess->send_reliable_to(0, net::MSG_PLAYER_RULE, w);
+            g_summon_sent++;
+        } else if (ab && *(uint32_t*)(ab + 8) == 0x33 && drama::g_flock_relay) { // BUG-0736 (without the guest pack)
             net::Writer w;
             w.u8(K_FLOCK);
             C.sess->send_reliable_to(0, net::MSG_PLAYER_RULE, w);
@@ -423,6 +612,93 @@ static int __cdecl h_AbilityTick(void* c, int a2, int a3, int a4, int a5, uint32
         }
     }
     return o_AbilityTick(c, a2, a3, a4, a5, st);
+}
+
+// BUG-9129: a guest's recruit (the end of a social game with an ally, 0xD9F7A0 -> cPosseSimulator_AddMember) is a
+// host NPC's proxy: it goes to the host as a request, the proxy stays out of this game's pack (and its saves).
+typedef bool(SK_THISCALL* AddMember_t)(void*, void*);
+static AddMember_t o_AddMember;
+static bool g_local_pack_add; // decision 5CD phase 2: the guest's own pack shows its members (local_pack_add)
+static bool SK_THISCALL h_AddMember(void* posse, void* c)
+{
+    if (!c || !posse)
+        return false;
+    if (g_local_pack_add)
+        return o_AddMember(posse, c);
+    if (guest_pack::enabled() && is_guest() && c && npc::is_proxy(c)) {
+        uint16_t id = npc::id_of(c);
+        if (id != 0xFFFF) {
+            net::Writer w;
+            w.u8(K_RECRUIT);
+            w.u16(id);
+            C.sess->send_reliable_to(0, net::MSG_PLAYER_RULE, w);
+            g_recruit_sent++;
+        }
+        return true;
+    }
+    return o_AddMember(posse, c);
+}
+
+// ---------------------------------------------------------------- decision 5CD
+// The game's pack follows and fights because the player's commands to its own creature (Creature_PlayerCommand 0xC032F0:
+// the command stimulus on the avatar, then for bits 0x70411 / hi 0x40010 cPosseSimulator_Relay to every pack member:
+// attack its target 0x10, follow, the other orders) go on to the pack. A partner gives them in its own game, where its
+// pack is not: the guest sends each such command, the host gives it to the partner's puppet inside the partner's own pack
+// (guest_pack::pack_command), so the partner's pack follows and fights as in single player.
+// `coop.fix creature.pack_commands off`: no command leaves the guest (its pack follows no order of the partner).
+static bool g_packcmd_fix = true;
+COOP_FIX("creature.pack_commands", "BUG-9248", g_packcmd_fix,
+         "creature: a partner's own commands to its creature reach its pack in the host's game (it follows and fights as in single player)");
+using PlayerCmd_t = void*(SK_THISCALL*)(void*, uint32_t, uint32_t, float, uint32_t, uint32_t, void*, uint32_t);
+static PlayerCmd_t o_PlayerCmd;
+static uint32_t g_packcmd_sent, g_packcmd_got, g_packcmd_skipped;
+static uint32_t g_last_lo, g_last_hi;
+static uint16_t g_last_id;
+static double g_last_cmd_at;
+static void* SK_THISCALL h_PlayerCmd(void* av, uint32_t lo, uint32_t hi, float v, uint32_t c, uint32_t d, void* tgt, uint32_t keep)
+{
+    void* r = o_PlayerCmd(av, lo, hi, v, c, d, tgt, keep);
+    if (!g_packcmd_fix || !((lo & 0x70411u) | (hi & 0x40010u)) || !is_guest() || !av || av != game::avatar() ||
+        !game::in_creature_stage() || !guest_pack::enabled() || guest_pack::own_game())
+        return r; // (decision 5EA: the guest's own game gives it to its own pack)
+    uint16_t id = 0xFFFF;
+    if (tgt) {
+        void* t = npc::is_proxy(tgt) ? tgt : nullptr;
+        if (!t && skg::readable((uint8_t*)tgt - game::kCombatOff, 0x10) && npc::is_proxy((uint8_t*)tgt - game::kCombatOff))
+            t = (uint8_t*)tgt - game::kCombatOff; // (a combatant)
+        id = t ? npc::id_of(t) : 0xFFFF;
+        if (id == 0xFFFF) { // an object the host does not know by id (a fruit, an egg): not for the pack
+            g_packcmd_skipped++;
+            return r;
+        }
+    }
+    const double now = H->time_seconds();
+    if (lo == g_last_lo && hi == g_last_hi && id == g_last_id && now - g_last_cmd_at < 0.5)
+        return r; // (the same order again within half a second)
+    g_last_lo = lo, g_last_hi = hi, g_last_id = id, g_last_cmd_at = now;
+    net::Writer w;
+    w.u8(K_PACKCMD);
+    w.u32(lo);
+    w.u32(hi);
+    w.f32(v);
+    w.u32(c);
+    w.u32(d);
+    w.u16(id);
+    C.sess->send_reliable_to(0, net::MSG_PLAYER_RULE, w);
+    g_packcmd_sent++;
+    return r;
+}
+
+// decision 5CD phase 2 (guest): the game's own recruit of a proxy into this game's pack (its panel, name, hint), not sent
+// to the host as a recruit
+bool local_pack_add(void* posse, void* c)
+{
+    if (!o_AddMember || !posse || !c)
+        return false;
+    g_local_pack_add = true;
+    bool ok = o_AddMember(posse, c);
+    g_local_pack_add = false;
+    return ok;
 }
 
 struct RoarQ {
@@ -527,6 +803,10 @@ static bool pick_epic(void* c)
         return r;
     g_ufo_seen++;
     if (g_ufo_fix && is_host() && puppet_player(c) != 0xFF) {
+        g_ufo_skipped++;
+        return true;
+    }
+    if (drama::host_ufo_here()) { // BUG-9131: a guest's copy of the host's UFO takes nothing (the host's takes them)
         g_ufo_skipped++;
         return true;
     }
@@ -995,6 +1275,7 @@ static bool ufo_save_filter(void* o, uint32_t noun)
 
 void tick(double now)
 {
+    summon_lock_tick(now); // decision 5FA
     if (g_carry_fix && (!g_thrown.empty() || !g_puts.empty() || !g_carried.empty() || !g_synced.empty()))
         carry_tick(now);
     if (is_host() && game::in_creature_stage() && now - g_ufo_tx_at >= 0.1) {
@@ -1146,6 +1427,71 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         void* p = C.puppet_of ? C.puppet_of(from) : nullptr;
         if (p && !game::is_dead(p))
             drama::summon_for(p);
+    } else if (kind == K_SUMMON) {
+        if (!r.ok() || from == 0 || !is_host())
+            return;
+        int out = 0, limit = 1;
+        uint8_t owner = 0xFF;
+        if (g_summon_lock_fix && locked(out, limit, owner)) { // decision 5FA: the host decides (a guest that missed the lock)
+            g_lock_refused++;
+            H->log(M, SK_INFO, "player_rules: player %u's Summon Flock refused: the party's flock is out (player %d, 5FA)", from,
+                   owner == 0xFF ? -1 : (int)owner);
+            return;
+        }
+        int n = guest_pack::summon(from);
+        if (n > 0 && C.sess)
+            H->log(M, SK_INFO, "player_rules: player %u's Summon Flock: %d creatures", from, n);
+    } else if (kind == K_RECRUIT) {
+        uint16_t id = r.u16();
+        if (!r.ok() || from == 0 || !is_host())
+            return;
+        g_recruit_got++;
+        guest_pack::recruit(from, npc::host_npc(id));
+    } else if (kind == K_PACKLIST) { // decision 5CD phase 2
+        uint8_t n = r.u8();
+        std::vector<std::pair<uint16_t, bool>> v;
+        for (uint8_t i = 0; i < n && r.ok() && i < 32; i++) {
+            uint16_t id = r.u16();
+            bool s = r.u8() != 0;
+            v.push_back({id, s});
+        }
+        if (!r.ok() || from != 0 || !is_guest() || !game::in_creature_stage())
+            return;
+        guest_pack::on_pack_list(v);
+    } else if (kind == K_SUMMONLOCK) { // decision 5FA
+        uint8_t out = r.u8(), limit = r.u8(), owner = r.u8();
+        if (!r.ok() || from != 0 || !is_guest())
+            return;
+        g_lock_out = out, g_lock_limit = std::max<int>(1, limit), g_lock_owner = owner;
+        g_lock_rx_at = H->time_seconds();
+        g_lock_rx++;
+    } else if (kind == K_PACKANIM) { // decision 5EA
+        if (from == 0 || !is_host() || !game::in_creature_stage())
+            return;
+        guest_pack::on_pack_anims(from, r);
+    } else if (kind == K_PACKSTATE) { // decision 5EA
+        uint8_t n = r.u8();
+        std::vector<net::NpcState> v;
+        for (uint8_t i = 0; i < n && i < 32 && r.ok(); i++) {
+            net::NpcState st;
+            if (st.read(r))
+                v.push_back(st);
+        }
+        if (!r.ok() || from == 0 || !is_host() || !game::in_creature_stage())
+            return;
+        guest_pack::on_pack_states(from, v);
+    } else if (kind == K_PACKCMD) { // decision 5CD
+        uint32_t lo = r.u32(), hi = r.u32();
+        float v = r.f32();
+        uint32_t c = r.u32(), d = r.u32();
+        uint16_t id = r.u16();
+        if (!r.ok() || from == 0 || !is_host() || !game::in_creature_stage())
+            return;
+        g_packcmd_got++;
+        void* t = id == 0xFFFF ? nullptr : npc::host_npc(id);
+        if (id != 0xFFFF && !t)
+            return;
+        guest_pack::pack_command(from, lo, hi, v, c, d, t);
     } else if (kind == K_ROAR) {
         uint32_t t = r.u32();
         float range = r.f32(), secs = r.f32();
@@ -1180,6 +1526,12 @@ std::string status()
     snprintf(b, sizeof b, "player_rules: allies fix=%d answers=%u hook=%d\n", (int)g_allies_fix, g_allies_answers,
              (int)(o_Friendly != nullptr));
     out += b;
+    snprintf(b, sizeof b, "player_rules: guest strike fix=%d attacks=%u forwarded=%u social_fix=%d social_kept=%u\n", (int)g_strike_fix,
+             g_attacks_seen, g_strike_sent, (int)g_social_fix, g_social_kept);
+    out += b;
+    snprintf(b, sizeof b, "player_rules: guest pack summon_sent=%u recruit_sent=%u recruit_got=%u addmember_hook=%d\n", g_summon_sent,
+             g_recruit_sent, g_recruit_got, (int)(o_AddMember != nullptr));
+    out += b;
     snprintf(b, sizeof b, "player_rules: roar fix=%d sent=%u got=%u played=%u heard=%u bad=%u last=0x%X hook=%d\n", (int)g_roar_fix,
              g_roar_sent, g_roar_got, g_roar_played, g_roar_hit, g_roar_bad, g_roar_last_type, (int)(o_AbilityTick != nullptr));
     out += b;
@@ -1206,6 +1558,33 @@ static int c_rules(void*, int argc, const char* const* argv, SkOut* out)
         skg::thiscall<void>(a, c, (float)atof(argv[2]));
         g_hit_attacker = was;
         H->out_printf(out, "stun called on %p\n", c);
+        return 0;
+    }
+    // tests (guest, BUG-9136): play <proxy id> <hex ability type>: the own avatar aims at proxy <id> (SetTarget vt 0x84
+    // with its combatant, as a click on it does) and plays its ability of that type (PlayAbility), as a key would
+    if (argc > 3 && !strcmp(argv[1], "play")) {
+        void* av = game::avatar();
+        void* px = is_guest() ? npc::proxy((uint16_t)atoi(argv[2])) : nullptr;
+        uintptr_t pa = H->sym("Simulator::cCreatureBase::PlayAbility");
+        const uint32_t want = (uint32_t)strtoul(argv[3], nullptr, 16);
+        if (!av || !px || !pa) {
+            H->out_printf(out, "no avatar, proxy or PlayAbility\n");
+            return 1;
+        }
+        int idx = -1, cnt = skg::vcall<int>(av, 0xB0 / 4);
+        for (int i = 0; i < cnt && idx < 0; i++) {
+            uint8_t* ab = skg::vcall<uint8_t*>(av, 0xB4 / 4, i);
+            if (ab && skg::readable(ab, 0x40) && *(uint32_t*)(ab + 8) == want)
+                idx = i;
+        }
+        if (idx < 0) {
+            H->out_printf(out, "the avatar has no ability of type 0x%X\n", want);
+            return 1;
+        }
+        skg::vcall<void>(av, 0x84 / 4, (uint8_t*)px + game::kCombatOff, 1, 0);
+        int r = skg::thiscall<int>(pa, av, idx, (void*)nullptr);
+        H->out_printf(out, "ability %d (type 0x%X) played on proxy %s: %d, stance %d\n", idx, want, argv[2], r,
+                      a_AbilityMode ? skg::cdecl_call<int>(a_AbilityMode) : -1);
         return 0;
     }
     // tests (host): charge <npc id> <player>: NPC <id> aims at player <player>'s puppet (SetTarget vt 0x84 with its
@@ -1503,6 +1882,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_AttackTarget, (void**)&o_AttackTarget);
     if (uintptr_t a = H->sym("SporeCoop::CreatureStun"))
         H->hook_create(M, (void*)a, (void*)h_Stun, (void**)&o_Stun);
+    a_AbilityMode = H->sym("Simulator::cCreatureGameData::GetAbilityMode"); // BUG-9136: 0 social stance, 1 combat
     a_PostStim = H->sym("SporeCoop::BT_PostStimulus");
     a_GoalStart = H->sym("SporeCoop::BT_GoalSlotStart");
     a_StimClear = H->sym("SporeCoop::BT_ClearStimulus");
@@ -1522,7 +1902,15 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_UfoTick, (void**)&o_UfoTick);
     if (uintptr_t a = H->sym("SporeCoop::BT_SpecialAbilityTick"))
         H->hook_create(M, (void*)a, (void*)h_AbilityTick, (void**)&o_AbilityTick);
-    H->command_add(M, "coop.rules", "coop.rules [stun <s> [npc id]] - the game's player rules carried between the games (P1, BUG-0554)",
+    if (uintptr_t a = H->sym("SporeCoop::cPosseSimulator_AddMember")) // BUG-9129
+        H->hook_create(M, (void*)a, (void*)h_AddMember, (void**)&o_AddMember);
+    if (uintptr_t a = H->sym("SporeCoop::Creature_PlayerCommand")) // decision 5CD
+        H->hook_create(M, (void*)a, (void*)h_PlayerCmd, (void**)&o_PlayerCmd);
+    else
+        H->log(M, SK_WARN, "player_rules: SporeCoop::Creature_PlayerCommand missing: a partner's pack follows none of its orders");
+    // (named coop.prules: coop.cpp's campaign "coop.rules" is registered later and took the name, so these test
+    // subcommands were unreachable)
+    H->command_add(M, "coop.prules", "coop.prules [stun <s> [npc id] | roar <type hex> | friendly <id> | ...] - the game's player rules carried between the games (P1, BUG-0554)",
                    c_rules, nullptr, SK_CMD_MAIN_THREAD);
 }
 

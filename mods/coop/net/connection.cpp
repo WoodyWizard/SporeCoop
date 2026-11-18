@@ -5,6 +5,7 @@
 
 #include "fixes.h"
 #include "protocol.h"
+#include "traffic.h"
 
 namespace net {
 
@@ -33,6 +34,7 @@ static_assert(kRelPiece == Connection::kMaxSingle, "Connection::kMaxSingle is on
 
 void Connection::send_reliable(uint8_t type, const Writer& w)
 {
+    g_traffic_out.add(type, w.data.size() + 6);
     if (g_fix.big_reliable && w.data.size() > kRelPiece) {
         // BUG-0034: a message that fits no packet was never sent and blocked every reliable message
         // after it (and the due check sent a burst of empty packets every frame): split it into
@@ -113,15 +115,57 @@ void Connection::send_unreliable(uint8_t type, const Writer& w, bool first)
         stats.unrel_too_big_size = (uint32_t)w.data.size();
         return;
     }
+    g_traffic_out.add(type, w.data.size() + kMsgHeader);
     if (first)
         unrel_out_.emplace(unrel_out_.begin(), type, w.data);
     else
         unrel_out_.emplace_back(type, w.data);
 }
 
-bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
+void Connection::pace_refill(uint32_t now)
+{
+    if (!pace_refill_ms_) {
+        pace_refill_ms_ = now;
+        return;
+    }
+    uint32_t dt = now - pace_refill_ms_;
+    pace_refill_ms_ = now;
+    // about one frame's worth may go at once (the game flushes once per frame)
+    double cap = std::max(8.0, pace_rate_ * 40.0);
+    pace_tokens_ = std::min(cap, pace_tokens_ + dt * pace_rate_);
+}
+
+// BUG-9098: once per window (1.5 round trips): grow by a quarter while (almost) nothing had to be sent again;
+// otherwise follow what the peer acknowledged (x 1.25 under random loss, x 1.0 when a fifth or more was lost:
+// the link is full). Only a window in which the rate held packets back measures the path (an idle sender
+// does not); a window without acknowledgements (a peer that loads, frames of up to a second) changes nothing.
+void Connection::pace_update(uint32_t now)
+{
+    if (!pace_win_start_) {
+        pace_win_start_ = now;
+        return;
+    }
+    uint32_t span = now - pace_win_start_;
+    if (span < std::max<uint32_t>(60, (uint32_t)(rtt_ms * 1.5f)))
+        return;
+    if (pace_limited_win_ && pace_sent_win_ >= 4 && pace_acked_win_ >= 2) {
+        double delivered = pace_acked_win_ / (double)span;
+        double resent = pace_resent_win_ / (double)pace_sent_win_;
+        double next = resent < 0.05 ? std::max(pace_rate_, delivered) * 1.25 : resent < 0.2 ? delivered * 1.25 : delivered;
+        pace_rate_ = std::clamp(next, kPaceMin, kPaceMax);
+    }
+    pace_win_start_ = now;
+    pace_sent_win_ = pace_acked_win_ = pace_resent_win_ = 0;
+    pace_limited_win_ = false;
+}
+
+bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out, bool pace_world)
 {
     uint32_t rto = (uint32_t)std::max(100.f, rtt_ms * 1.5f + 20.f);
+    const bool paced = g_fix.pacing && rtt_ms >= kPaceLanRtt; // BUG-9098
+    if (paced)
+        pace_refill(now);
+    const bool rel_ok = !paced || pace_tokens_ >= 1.0;
     uint16_t oldest = rel_out_.empty() ? 0 : rel_out_.front().rel_id; // rel_out_ is in rel_id order
     // BUG-0405: a guest that loads reads and acks its packets once per frame (frames of 200-950 ms):
     // every message sent in the last stall was resent at the rto although it waited in the guest's
@@ -129,7 +173,11 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
     // when the peer has said nothing for a long while (both lost, or a stall); the rto first in both.
     uint32_t silent_rto = std::max<uint32_t>(rto * 4, 1000);
     bool evidence = g_fix.bulk_acks;
+    // paced world transfer (Lineages): at most one world chunk per kPacedWorldIntervalMs
+    const bool world_due = !sent_world_chunk_ || now - last_world_chunk_ms_ >= kPacedWorldIntervalMs;
     auto due = [&](const OutMsg& m) {
+        if (pace_world && m.type == MSG_WORLD_CHUNK && !world_due)
+            return false;
         if ((uint16_t)(m.rel_id - oldest) >= kRelWindow)
             return false;
         if (m.sends == 0)
@@ -148,6 +196,11 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
             any_rel_due = true;
             break;
         }
+    }
+    if (any_rel_due && !rel_ok) { // BUG-9098: the rate holds it for a later frame
+        pace_limited_win_ = true;
+        pace_holds++;
+        any_rel_due = false;
     }
     uint32_t since = now - last_send_ms_;
     bool keepalive = since >= 250 || (ack_pending_ && since >= 30) || ack_urgent();
@@ -195,7 +248,10 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
         used++;
     }
     unrel_out_.erase(unrel_out_.begin(), unrel_out_.begin() + used);
+    bool resent_any = false;
     for (auto& m : rel_out_) {
+        if (!rel_ok)
+            break;
         if ((uint16_t)(m.rel_id - oldest) >= kRelWindow)
             break;
         if (!due(m))
@@ -207,15 +263,28 @@ bool Connection::build_packet(uint32_t now, std::vector<uint8_t>& out)
         w.u16((uint16_t)m.payload.size());
         w.u16(m.rel_id);
         w.raw(m.payload.data(), m.payload.size());
-        if (m.sends > 0)
+        if (m.sends > 0) {
             stats.resends++;
+            resent_any = true;
+        }
         m.sends++;
         m.last_sent = now;
         m.last_seq = seq;
         sp.rel_ids.push_back(m.rel_id);
         count++;
+        if (m.type == MSG_WORLD_CHUNK) {
+            sent_world_chunk_ = true;
+            last_world_chunk_ms_ = now;
+            // One bulk chunk per paced datagram, including retransmissions.
+            if (pace_world) break;
+        }
     }
     w.data[count_pos] = count;
+    if (paced && !sp.rel_ids.empty()) { // BUG-9098
+        pace_tokens_ -= 1.0;
+        pace_sent_win_++;
+        pace_resent_win_ += resent_any;
+    }
     sent_.push_back(std::move(sp));
     while (sent_.size() > 1024)
         sent_.pop_front();
@@ -254,6 +323,8 @@ void Connection::ack_packet(SentPkt& p, uint32_t now)
         stats.rtt_max = sample;
     stats.rtt_sum += sample;
     stats.rtt_n++;
+    if (!p.rel_ids.empty())
+        pace_acked_win_++; // BUG-9098: the delivery rate
     for (uint16_t id : p.rel_ids) {
         auto it = std::find_if(rel_out_.begin(), rel_out_.end(),
                                [id](const OutMsg& m) { return m.rel_id == id; });
@@ -335,6 +406,8 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
             stats.lost++;
         }
     }
+    if (g_fix.pacing && rtt_ms >= kPaceLanRtt)
+        pace_update(now); // BUG-9098
 
     for (int i = 0; i < count; i++) {
         uint8_t type = r.u8();
@@ -347,6 +420,7 @@ bool Connection::on_packet(const uint8_t* data, size_t n, uint32_t now, const De
             return false;
         const uint8_t* p = r.cur();
         r.skip(len);
+        g_traffic_in.add(type, len + ((flags & 1) ? 6 : 4));
         if (!(flags & 1)) {
             Reader pr(p, len);
             deliver(type, pr);

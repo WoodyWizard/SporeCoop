@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "fixes.h"
+#include "../../../updater/sha256.h"
 #include "ipmask.h"
 
 namespace net {
@@ -40,13 +41,22 @@ static uint32_t new_conn_id(uint32_t now, uint32_t salt)
     return (uint32_t)x ? (uint32_t)x : 1u;
 }
 
-bool Session::host(uint16_t port, const std::string& name, std::string& err)
+static std::string join_proof(const std::string& password, uint32_t connection)
+{
+    Writer input;
+    input.u32(connection);
+    input.raw(password.data(), password.size());
+    return upd::sha256_hex(input.data);
+}
+
+bool Session::host(uint16_t port, const std::string& name, std::string& err, std::string password)
 {
     restart_leave();
     gen_++;
     if (!tr_->open(port, &err))
         return false;
     role_ = Role::Host;
+    password_ = std::move(password);
     my_id_ = 0;
     my_name_ = name;
     welcomed_ = true;
@@ -87,7 +97,7 @@ static void lookup_main(void* arg)
     delete ref;
 }
 
-bool Session::join(const std::string& addr, const std::string& name, std::string& err)
+bool Session::join(const std::string& addr, const std::string& name, std::string& err, std::string password)
 {
     restart_leave();
     gen_++;
@@ -103,6 +113,7 @@ bool Session::join(const std::string& addr, const std::string& name, std::string
     if (!tr_->open(0, &err))
         return false;
     role_ = Role::Client;
+    password_ = std::move(password);
     my_name_ = name;
     welcomed_ = false;
     welcome_world_ = 0;
@@ -139,9 +150,13 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
     h.build = build;
     h.name = my_name_;
     h.ext = send_caps;
+    if (personal_launch) h.caps |= CAP_PERSONAL_LAUNCH;
     h.version = version;
+    h.campaign_profile = campaign_profile;
     h.has_token = rejoin_token != 0;
     h.token = rejoin_token;
+    h.resume_world = resume_world;
+    if (!password_.empty()) h.join_proof = join_proof(password_, p->conn.conn_id);
     Writer w;
     h.write(w);
     p->conn.send_reliable(MSG_HELLO, w);
@@ -229,7 +244,7 @@ void Session::end_session(const char* why)
         std::vector<uint8_t> pkt;
         for (int i = 0; i < 3; i++) {
             p->conn.send_unreliable(MSG_BYE, w, true);
-            if (p->conn.build_packet(now + 1000, pkt))
+            if (p->conn.build_packet(now + 1000, pkt, paced_world_transfer))
                 tr_->send_to(p->conn.remote, pkt.data(), pkt.size());
         }
     }
@@ -241,6 +256,7 @@ void Session::end_session(const char* why)
     retired_.clear();
     tr_->close();
     role_ = Role::None;
+    password_.clear();
     welcomed_ = false;
     welcome_world_ = 0;
     logf(cb, "session closed (%s)", why);
@@ -261,7 +277,7 @@ bool Session::retired(uint32_t conn) const
 
 uint8_t Session::alloc_id() const
 {
-    for (uint8_t id = 1; id < kMaxPlayers; id++) {
+    for (uint8_t id = 1; id < seat_limit && id < kMaxPlayers; id++) {
         bool used = false;
         for (auto& p : peers_)
             if (p->accepted && p->id == id)
@@ -273,6 +289,20 @@ uint8_t Session::alloc_id() const
 }
 
 std::string Session::name_of(uint8_t id) const
+{
+    return g_fix.shown_names ? utf8::shown_name(name_raw_of(id)) : name_raw_of(id);
+}
+
+std::vector<PlayerInfo> Session::players() const
+{
+    auto v = players_raw();
+    if (g_fix.shown_names)
+        for (auto& p : v)
+            p.name = utf8::shown_name(p.name);
+    return v;
+}
+
+std::string Session::name_raw_of(uint8_t id) const
 {
     if (id == my_id_ && role_ != Role::None)
         return my_name_;
@@ -288,7 +318,7 @@ std::string Session::name_of(uint8_t id) const
     return "player" + std::to_string(id);
 }
 
-std::vector<PlayerInfo> Session::players() const
+std::vector<PlayerInfo> Session::players_raw() const
 {
     std::vector<PlayerInfo> v;
     if (role_ == Role::Host) {
@@ -306,6 +336,20 @@ std::vector<PlayerInfo> Session::players() const
             v.push_back({my_id_, my_name_, version});
     }
     return v;
+}
+
+uint32_t Session::peer_caps(uint8_t id) const
+{
+    for (const auto& peer : peers_)
+        if (peer->id == id && peer->accepted) return peer->caps;
+    return 0;
+}
+
+uint64_t Session::peer_resume_world(uint8_t id) const
+{
+    for (const auto& peer : peers_)
+        if (peer->id == id && peer->accepted) return peer->resume_world;
+    return 0;
 }
 
 int Session::rtt_of(uint8_t id) const
@@ -351,7 +395,7 @@ std::string Session::status() const
         return "offline\n";
     if (role_ == Role::Host)
         snprintf(b, sizeof b, "host port=%u players=%d/%d\n", tr_->local_port(),
-                 (int)players().size(), max_players);
+                 (int)players().size(), std::min<int>(seat_limit, max_players));
     else
         snprintf(b, sizeof b, "client id=%u %s\n", my_id_, welcomed_ ? "connected" : "connecting");
     s += b;
@@ -393,6 +437,27 @@ void Session::broadcast_reliable(uint8_t type, const Writer& w, int except_id)
     for (auto& p : peers_)
         if (p->accepted && (int)p->id != except_id)
             p->conn.send_reliable(type, w);
+}
+
+bool Session::kick(uint8_t id, const std::string& text)
+{
+    if (role_ != Role::Host)
+        return false;
+    for (auto& p : peers_)
+        if (p->accepted && p->id == id && !p->bye && !p->kick_at) {
+            Reject rej;
+            rej.reason = REJ_VERSION; // (every client shows the text of this reason)
+            rej.text = text;
+            Writer w;
+            rej.write(w);
+            p->conn.send_reliable(MSG_REJECT, w);
+            const uint32_t t = now();
+            flush(t);
+            p->kick_at = t + 1000; // (its resends meanwhile; then gone even if it never answers)
+            logf(cb, "player %u (%s) removed by the host: %s", id, p->name.c_str(), text.c_str());
+            return true;
+        }
+    return false;
 }
 
 bool Session::send_reliable_to(uint8_t id, uint8_t type, const Writer& w)
@@ -557,6 +622,23 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                 h.version = utf8::clean_text(h.version, kVersionMax);
             }
             Reject rej;
+            if (!password_.empty() && h.join_proof != join_proof(password_, p.conn.conn_id)) {
+                rej.reason = REJ_VERSION; // older clients still display the rejection text
+                rej.text = "Incorrect or missing server password.";
+                Writer w;
+                rej.write(w);
+                p.conn.send_reliable(MSG_REJECT, w);
+                return;
+            }
+            if (!campaign_profile.empty() && campaign_profile != h.campaign_profile) {
+                rej.reason = REJ_VERSION;
+                rej.text = h.campaign_profile.empty() ? "This host needs SporeCoop Lineages." :
+                    "Campaign mismatch. Host: " + campaign_profile + ", guest: " + h.campaign_profile;
+                Writer w;
+                rej.write(w);
+                p.conn.send_reliable(MSG_REJECT, w);
+                return;
+            }
             // BUG-0235: the same game after a crash (its HELLO carries the token of the old entry,
             // which has been silent for 2 s) replaces that entry now, before the full check (a crash
             // rejoin into 4/4 was refused) and before WELCOME (its roster held its own old entry).
@@ -660,6 +742,7 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             p.caps = h.caps;
             p.has_token = h.has_token;
             p.token = h.token;
+            p.resume_world = h.resume_world;
             p.hello_name = h.name;
             if (h.has_token && std::find(seen_tokens_.begin(), seen_tokens_.end(), h.token) == seen_tokens_.end()) {
                 if (seen_tokens_.size() >= 64)
@@ -671,9 +754,10 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             Welcome wl;
             wl.your_id = p.id;
             wl.world = world;
-            wl.players = players();
+            wl.players = players_raw(); // BUG-9222: the guests keep the tag too
             wl.ext = send_caps;
             wl.host_version = version;
+            wl.campaign_profile = campaign_profile;
             Writer w;
             wl.write(w);
             p.conn.send_reliable(MSG_WELCOME, w);
@@ -754,11 +838,18 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
     }
 
     // ---- client ----
+    if (!campaign_profile.empty() && !welcomed_ && type != MSG_WELCOME && type != MSG_REJECT)
+        return;
     switch (type) {
     case MSG_WELCOME: {
         Welcome wl;
         if (!wl.read(r))
             return;
+        if (!campaign_profile.empty() && wl.campaign_profile != campaign_profile) {
+            pending_disc_ = "The host needs the same Lineages build and Creepy & Cute configuration.";
+            leave("incompatible host");
+            return;
+        }
         my_id_ = wl.your_id;
         welcome_world_ = wl.world; // BUG-0231: the host's world before its first state
         welcomed_ = true;
@@ -897,7 +988,7 @@ void Session::flush(uint32_t now)
         // so they all go out (up to 64 more packets): a cell pool snapshot is one ~900-byte chunk per
         // 14 cells and used to push the player state queued after it past the limit
         int burst = p->conn.rtt_ms < 40.f ? (int)kAckWindow : (int)kAckWindow / 3;
-        for (int i = 0; (i < burst || (i < burst + 64 && p->conn.unreliable_queued() > 0)) && p->conn.build_packet(now, pkt); i++)
+        for (int i = 0; (i < burst || (i < burst + 64 && p->conn.unreliable_queued() > 0)) && p->conn.build_packet(now, pkt, paced_world_transfer); i++)
             tr_->send_to(p->conn.remote, pkt.data(), pkt.size());
         p->conn.drop_unreliable();
         auto& st = p->conn.stats; // BUG-0612: an unreliable message too big for any packet, said (the first, then 1 in 100)
@@ -1013,10 +1104,12 @@ void Session::update()
             rep.port = tr_->local_port();
             rep.name = my_name_;
             rep.players = (uint8_t)players().size();
-            rep.max_players = (uint8_t)max_players;
+            rep.max_players = (uint8_t)std::min<int>(seat_limit, max_players); // Lineages seats and upstream's limit
             rep.info = lobby_info;
             rep.has_id = g_fix.lan_dedup;
             rep.host_id = lan_id_;
+            rep.scaling = lobby_scaling;
+            rep.settings = (paced_world_transfer ? 1 : 0) | (password_.empty() ? 0 : 2);
             Writer w;
             rep.write(w);
             tr_->send_to(from, w.data.data(), w.size());
@@ -1081,10 +1174,11 @@ void Session::update()
         if (g_fix.restart_gen && gen_ != frame_gen)
             return; // BUG-0861: a callback started a new session: its first update is the next frame's
         // BUG-0405: a world transfer brings hundreds of packets per frame to a guest that loads; one
-        // ack at the end of the frame covers the last 128 only, the rest was sent again
+        // ack at the end of the frame covers the last 128 only, the rest was sent again (the
+        // callback can remove p, so the peer is looked up again)
         if (Peer* q = find_peer(from); q && q->conn.ack_urgent()) {
             std::vector<uint8_t> ack;
-            if (q->conn.build_packet(now, ack))
+            if (q->conn.build_packet(now, ack, paced_world_transfer))
                 tr_->send_to(q->conn.remote, ack.data(), ack.size());
         }
     }
@@ -1106,10 +1200,11 @@ void Session::update()
     } else {
         for (size_t i = 0; i < peers_.size();) {
             auto& p = peers_[i];
-            bool dead = p->bye || (p->accepted ? now - p->conn.last_recv_ms > timeout_ms
-                                               : now - p->conn.created_ms > 10000);
+            const bool kicked = p->kick_at && (int32_t)(now - p->kick_at) >= 0;
+            bool dead = p->bye || kicked || (p->accepted ? now - p->conn.last_recv_ms > timeout_ms
+                                                         : now - p->conn.created_ms > 10000);
             if (dead)
-                drop_peer(i, p->bye ? 0 : 1);
+                drop_peer(i, p->bye ? 0 : kicked ? 3 : 1);
             else
                 i++;
         }

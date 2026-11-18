@@ -3,10 +3,12 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "../updater/winupdate.h"
+#include "../sdk/include/lineages_graphics.h"
 
 namespace inst {
 
@@ -15,7 +17,12 @@ struct Options {
     std::wstring pack_dir;      // the setup's own folder
     std::string api = upd::kLatestUrl;
     bool downgrade = false;     // /downgrade or the player said yes: a version older than the installed one is fine
+    std::optional<lineages_graphics::Settings> graphics;
+    const uint8_t* bundled_pack = nullptr; // embedded in the setup executable
+    size_t bundled_size = 0;
 };
+
+std::wstring graphics_file(const std::wstring& root);
 
 bool is_game(const std::wstring& root); // root\SporebinEP1\SporeApp.exe exists
 

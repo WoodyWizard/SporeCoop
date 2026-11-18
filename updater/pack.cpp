@@ -293,6 +293,18 @@ std::string pick_pack(const std::vector<std::string>& names)
     return best;
 }
 
+static int preview_number(const std::string& version)
+{
+    const auto marker = version.find("-lineages");
+    if (marker == std::string::npos || marker == 0) return -1;
+    const size_t base = version.front() == 'v' || version.front() == 'V' ? 1 : 0;
+    if (base == marker || version.find_first_not_of("0123456789.", base) != marker) return -1;
+    const size_t first = marker + 9;
+    const auto end = version.find_first_not_of("0123456789", first);
+    if (end == first || end == std::string::npos || end - first > 6 || version.substr(end) != "-dev") return -1;
+    return std::stoi(version.substr(first, end - first));
+}
+
 int compare_versions(const std::string& a, const std::string& b)
 {
     auto parts = [](std::string s) {
@@ -323,6 +335,8 @@ int compare_versions(const std::string& a, const std::string& b)
     for (int i = 0; i < 4; i++)
         if (x[i] != y[i])
             return x[i] < y[i] ? -1 : 1;
+    const int pa = preview_number(a), pb = preview_number(b);
+    if (pa >= 0 && pb >= 0) return (pa > pb) - (pa < pb);
     return 0;
 }
 
@@ -383,6 +397,37 @@ bool parse_release(const std::string& json, Release& out)
             out.setup_url = url;
     }
     return !out.version.empty();
+}
+
+bool parse_preview_releases(const std::string& json, Release& out)
+{
+    out = {};
+    constexpr char download[] = "https://github.com/PandizeLive/SporeCoop-Lineages/releases/download/";
+    bool quoted = false, escaped = false;
+    size_t start = 0;
+    int depth = 0;
+    for (size_t i = 0; i < json.size(); ++i) {
+        const char c = json[i];
+        if (quoted) {
+            if (escaped) escaped = false;
+            else if (c == '\\') escaped = true;
+            else if (c == '"') quoted = false;
+        } else if (c == '"') {
+            quoted = true;
+        } else if (c == '{') {
+            if (depth++ == 0) start = i;
+        } else if (c == '}' && depth > 0 && --depth == 0) {
+            Release candidate;
+            if (!parse_release(json.substr(start, i - start + 1), candidate) ||
+                preview_number(candidate.version) < 0) continue;
+            const std::string prefix = download + candidate.tag + '/';
+            if (candidate.pack_url != prefix + "SporeCoop-" + candidate.version + ".pack" ||
+                candidate.sums_url != prefix + "SHA256SUMS.txt") continue;
+            if (out.tag.empty() || compare_versions(candidate.version, out.version) > 0)
+                out = std::move(candidate);
+        }
+    }
+    return !out.tag.empty();
 }
 
 std::string web_latest_url(const std::string& api_url)

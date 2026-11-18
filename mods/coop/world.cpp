@@ -12,10 +12,17 @@
 #include <algorithm>
 #include <deque>
 #include <map>
+#include <set>
 
 #include "game.h"
+#include "autosave.h"
+#include "founders.h"
+#include "creations.h"
+#include "civ.h"
+#include "cellsync.h"
 #include "sporekit_game.hpp"
 #include "modes.h"
+#include "stage_epoch.h"
 #include "mouse.h"
 #include "coop_ui.h"
 #include "slotfs.h"
@@ -24,7 +31,6 @@
 #include "net/utf8.h"
 #include "sui.h"
 #include "fixes.h"
-#include "creations.h"
 #include "savestrip.h"
 #include "spacecoop.h"
 
@@ -33,13 +39,59 @@ namespace world {
 static const SkHost* H;
 static SkMod* M;
 static std::function<void(const std::string&)> g_feed;
+static AutosaveClock g_autosave;
+static bool g_autosave_enabled;
+static bool g_autosave_show_confirmation;
+static uint32_t g_autosave_world;
+static uint64_t g_autosave_posted, g_autosave_retry, g_autosave_before;
+static std::wstring g_autosave_slot;
+
+static void autosave_world(uint32_t world)
+{
+    if (world == g_autosave_world) return;
+    g_autosave_world = world;
+    g_autosave = {};
+    g_autosave_posted = g_autosave_retry = g_autosave_before = 0;
+    g_autosave_show_confirmation = false;
+    g_autosave_slot.clear();
+}
+
+void request_autosave()
+{
+    if (!g_autosave_enabled) return;
+    const auto world = modes::current_world();
+    if (!world) return;
+    autosave_world(world);
+    g_autosave.event_pending = true;
+    // Give an existing milestone share time to post its own native save first.
+    g_autosave_retry = GetTickCount64() + 3000;
+}
+struct CheckpointReload {
+    std::wstring slot;
+    std::string planet, key;
+    uint64_t requested = 0, previous_write = 0, latest_write = 0, stable_since = 0;
+};
+static CheckpointReload g_checkpoint_reload;
 
 using File = slotfs::File;
+
+struct ResumeWorld {
+    uint64_t receipt = 0;
+    std::wstring slot;
+    uint32_t world = 0, epoch = 0;
+    uint64_t write = 0;
+    int food = 0;
+};
+static std::deque<ResumeWorld> g_sent_resume;
+static ResumeWorld g_guest_resume, g_wait_resume;
+static uint64_t g_wait_resume_until;
+static bool g_resume_world = true;
 
 struct Out {
     uint8_t peer;
     std::vector<File> files;
     uint32_t world_id = 0;
+    uint64_t receipt = 0;
     std::string planet;
     size_t fi = 0, off = 0;
     bool header_sent = false;
@@ -195,6 +247,7 @@ void init(const SkHost* host, SkMod* mod, std::function<void(const std::string&)
     H = host;
     M = mod;
     g_feed = std::move(feed);
+    g_autosave_enabled = H->config_int(M, "coop", "autosave", 1) != 0;
     H->command_add(M, "coop.worldfix",
                    "coop.worldfix [<name> 0|1 | queue <id>... | failnext | retry <ms> | landsave <ms>|-1] - world sharing fix switches (tests: 0 = the old behaviour); "
                    "queue: shares for these players in one frame, each with a save",
@@ -274,6 +327,8 @@ static std::wstring current_slot(std::string& planet, bool& missing)
 constexpr uint32_t kSavedBoxId = 0x06318E78;
 static uint64_t g_saved_at, g_box_watch_until, g_box_seen_at, g_box_next_check, g_box_last_enter;
 static bool g_box_task;
+// BUG-9057 / BUG-9101 (Lineages): merged into upstream's world.saved_box_only (BUG-0846) and
+// world.saved_box_cursor (BUG-0804) below; the box is looked for every 50 ms while one is expected.
 bool g_box_hold = false; // tests (BUG-0482): the saved box stays up until `coop.save confirm`
 
 static sui::Win first_visible(sui::Win w, uint32_t id, int depth = 0)
@@ -371,6 +426,7 @@ static void box_task(void*)
         return;
     }
     uint64_t now = GetTickCount64();
+    if (g_saved_box_fix) g_box_watch_until = now + 30000;
     if (!g_box_seen_at)
         H->log(M, SK_INFO, "world: the game saved box is up %llu ms after the save: confirming it",
                (unsigned long long)(now - g_saved_at));
@@ -389,7 +445,7 @@ static void box_task(void*)
     // pause menu button and the host left the game to the main menu or quit Spore (chaos tests,
     // 2026-10-23: both 3-4 s after such an Enter).
     if (sui::Win ok = first_visible(box, kSavedBoxOk)) {
-        sui::Rect r = sui::screen_rect(ok);
+        sui::Rect r = sui::drawn_rect(ok); // BUG-9238: where it shows (the click is mapped back like the player's)
         int x = (int)((r.x1 + r.x2) / 2), y = (int)((r.y1 + r.y2) / 2);
         RECT cr{};
         HWND gw = (HWND)H->game_window();
@@ -400,10 +456,14 @@ static void box_task(void*)
             g_box_enters++;
         } else {
             char cmd[64];
-            snprintf(cmd, sizeof cmd, g_box_cursor_fix ? "click %d %d left release" : "click %d %d", x, y);
             mouse::own_click(x, y); // BUG-0551: not the player's click
             if (g_box_aside_fix && coop_ui::step_aside(x, y, 0.6))
                 H->log(M, SK_INFO, "world: the co-op window steps aside for the click on the game saved box");
+            if (g_saved_box_fix) { // BUG-9057: hover first so captions release their acknowledgement focus
+                snprintf(cmd, sizeof cmd, "move %d %d", x, y);
+                H->command_exec(cmd, nullptr);
+            }
+            snprintf(cmd, sizeof cmd, g_box_cursor_fix ? "click %d %d left release" : "click %d %d", x, y);
             if (H->command_exec(cmd, nullptr) == 0)
                 return;
         }
@@ -421,7 +481,7 @@ static void box_tick()
     uint64_t now = GetTickCount64();
     if (now >= g_box_watch_until || g_box_task || now < g_box_next_check)
         return;
-    g_box_next_check = now + 200;
+    g_box_next_check = now + (g_box_cursor_fix && !g_box_seen_at ? 50 : 200);
     g_box_task = true;
     H->run_outside_frame(box_task, nullptr);
 }
@@ -519,6 +579,15 @@ bool save_game(std::string& err)
     g_saved_at = GetTickCount64();
     g_box_seen_at = 0;
     g_box_watch_until = g_saved_at + 30000;
+    // Existing checkpoint and share saves count too. A pending milestone
+    // already covered by this write does not need a second native save.
+    if (g_autosave_enabled && g_autosave_world && g_autosave_world == modes::current_world()) {
+        g_autosave_slot = current_db_dir(false);
+        g_autosave_before = g_autosave_slot.empty() ? 0 : newest_write(g_autosave_slot);
+        g_autosave_posted = g_autosave_slot.empty() ? 0 : g_saved_at;
+        g_autosave_show_confirmation = false;
+        if (g_autosave_posted) g_autosave.event_pending = false;
+    }
     return true;
 }
 
@@ -535,7 +604,16 @@ struct PendingShare {
     int saves = 0;     // saves made for this share (the planet's file did not appear: save again)
     uint32_t tag = 0;  // the caller's tag, given back on a failure (coop.cpp: the guest's join serial)
     bool on_planet = false; // the last save was refused: the ship is on a planet (BUG-0382: share_wait)
+    uint64_t asked = 0;     // BUG-9166: when the share was asked for (a save posted before it lacks what changed since)
+    uint64_t posted = 0;    // when its save was posted
+    bool waited = false;    // BUG-9166: logged once
+    bool held = false;      // BUG-9210: logged once
 };
+static bool g_world_window_fix = true;
+COOP_FIX("world.window_by_rate", "BUG-9236", g_world_window_fix,
+         "world: a world transfer keeps only what the link delivers in a round trip + 0.2 s queued (game events wait less)");
+static std::function<bool(uint8_t, uint64_t)> g_share_hold;
+static uint32_t g_shared_loads; // BUG-9223: loads of a received copy of the host's world (coop.cpp own_dna_tick) // BUG-9210: home_nests: this player's own nest comes first
 // BUG-0231: the final failure of a queued share ("cannot share the world"), for the caller's retry
 static void (*g_share_failed)(uint8_t peer, uint32_t tag, bool planet_missing);
 void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing)) { g_share_failed = f; }
@@ -561,6 +639,7 @@ bool share_with(uint8_t peer, std::string& err, bool save_first, uint32_t tag)
             }
         PendingShare ps{peer, 0, true};
         ps.tag = tag;
+        ps.asked = GetTickCount64();
         g_pending.push_back(ps);
         return true;
     }
@@ -594,10 +673,21 @@ static bool g_world_reset_fix = true;  // BUG-0074: the session end drops the gu
 static bool g_drop_peer_fix = true;    // BUG-0166: shares for a player who left are dropped
 static bool g_one_save_fix = true;     // BUG-0112: one save for every share that waits at the same time
 static bool g_editor_load_fix = true;  // BUG-0157: a queued load never starts inside an editor
+static bool g_load_start_fix = true;
+COOP_FIX("world.load_starting", "BUG-9240", g_load_start_fix,
+         "world: a load started from the galaxy menu counts as coming until the game is in it (nothing else starts meanwhile)");
+static double g_menu_load_posted = -1e9; // BUG-9240: when a menu load was posted
 COOP_FIX("core.share_reset", "BUG-0140", g_share_reset_fix, "world: the session end drops the shares and transfers of its players");
 COOP_FIX("world.world_reset", "BUG-0074", g_world_reset_fix, "world: the session end drops the guest's queued world loads");
 COOP_FIX("world.share_drop_peer", "BUG-0166", g_drop_peer_fix, "world: shares for a player who left are dropped");
 COOP_FIX("world.share_one_save", "BUG-0112", g_one_save_fix, "world: one save for every share that waits at the same time");
+// BUG-9166: a share asked for while another share's save is being written went out with that save, made before the
+// reason for the share (2026-11-13: three home nests made 2 s apart after a migration; the second guest's world came
+// from the save posted for the first one, without its own new nest: "the host's home nest has no nest herd here").
+// Such a share now waits until that save is done and gets a save of its own. Off: it goes out with the older save.
+static bool g_fresh_save_fix = true;
+COOP_FIX("world.share_fresh_save", "BUG-9166", g_fresh_save_fix,
+         "world: a share asked for after another share's save was posted waits for a save of its own");
 // BUG-0276: the host's share save posted 70 ms after the game entered the Tribe stage was never
 // written (no "game saved" box, no file); after 10 s the share went out anyway with the slot's
 // previous files, a Creature save, and every guest loaded Creature while the host played Tribe.
@@ -688,9 +778,21 @@ static unsigned g_menu_player_cleared; // tests
 static unsigned g_shares_dropped;      // shares dropped because their player left (tests)
 static unsigned g_loads_dropped;       // guest: queued loads dropped at a session end (tests)
 static unsigned g_loads_held;          // guest: queued loads moved behind an editor (tests)
+static std::string g_intro_planet;
+static uint32_t (*g_host_stage)();
+static bool g_local_intro = true;
+COOP_FIX("world.personal_space_intro", "BUG-9071", g_local_intro,
+         "Space: let a guest finish its first flight before loading the shared orbital save");
+
+void begin_local_space_intro()
+{
+    if (g_local_intro) g_intro_planet = modes::current_world_name();
+}
 
 void reset_shares()
 {
+    g_checkpoint_reload = {};
+    g_sent_resume.clear();
     if (!g_share_reset_fix)
         return;
     if (!g_pending.empty() || !g_out.empty())
@@ -707,8 +809,16 @@ void reset_shares()
 // The player's own coop.load stays. (g_deferred and g_via_menu are defined further down.)
 static void drop_share_loads();
 
+static void reset_launch_offers();
+static void reset_campaign_setup();
+
 void on_session_end()
 {
+    autosave_world(0);
+    reset_launch_offers();
+    g_wait_resume = {};
+    reset_campaign_setup();
+    g_intro_planet.clear();
     if (g_world_reset_fix)
         drop_share_loads();
 }
@@ -729,6 +839,19 @@ bool save_pending()
     return false;
 }
 
+static bool queue_slot(uint8_t peer, const std::wstring& slot, const std::string& cur_planet,
+                       bool historical, std::string& err);
+
+static bool checkpoint_checksum(const std::wstring& slot, uint32_t& crc)
+{
+    FILE* marker = _wfopen((slot + L"\\sporecoop.txt").c_str(), L"rb");
+    unsigned value = 0;
+    bool ok = marker && fscanf(marker, "host_slot %8x", &value) == 1;
+    if (marker) fclose(marker);
+    if (ok) crc = value;
+    return ok;
+}
+
 bool share_now(uint8_t peer, std::string& err)
 {
     std::string cur_planet;
@@ -747,6 +870,12 @@ bool share_now(uint8_t peer, std::string& err)
         err = "no saved game found (save the game before hosting)";
         return false;
     }
+    return queue_slot(peer, slot, cur_planet, false, err);
+}
+
+static bool queue_slot(uint8_t peer, const std::wstring& slot, const std::string& cur_planet,
+                       bool historical, std::string& err)
+{
     Out o;
     o.peer = peer;
     // BUG-0847: a file that cannot be read completely (Windows: held by a scanner, or still being
@@ -763,13 +892,38 @@ bool share_now(uint8_t peer, std::string& err)
         err = "save folder is empty";
         return false;
     }
+    if (historical) {
+        std::sort(o.files.begin(), o.files.end(), [](const File& a, const File& b){ return a.rel < b.rel; });
+    } else if (!creations::archive_world_designs(o.files, err)) return false;
+    if (o.files.size() > kMaxWorldFiles) { err = "too many files in the save"; return false; }
     uint32_t crc = 0, total = 0;
     for (auto& f : o.files) {
+        if (f.data.size() > kMaxWorldBytes - total) { err = "world transfer exceeds its size limit"; return false; }
         crc = net::crc32_update(crc, (const uint8_t*)f.rel.data(), f.rel.size());
         crc = net::crc32_update(crc, f.data.data(), f.data.size());
         total += (uint32_t)f.data.size();
     }
+    if (historical) {
+        uint32_t expected;
+        if (!checkpoint_checksum(slot, expected) || expected != crc) {
+            err = "launch checkpoint failed its saved checksum";
+            return false;
+        }
+    }
     o.world_id = crc;
+    int food = 0;
+    if (g_resume_world && !historical && game::mode_id() == modes::kCell &&
+        modes::current_world() && cellsync::food_total(food)) {
+        LARGE_INTEGER counter{};
+        QueryPerformanceCounter(&counter);
+        static uint64_t serial;
+        o.receipt = (uint64_t(counter.QuadPart) << 16) ^ ++serial ^ (uint64_t(GetCurrentProcessId()) << 32);
+        if (o.receipt) {
+            g_sent_resume.push_back({o.receipt, slot, modes::current_world(), game::stage_epoch(modes::kCell),
+                                    newest_write(slot), food});
+            if (g_sent_resume.size() > 32) g_sent_resume.pop_front();
+        }
+    }
     if (g_share_hook) { // reliable and ordered: ahead of the offer (sent by tick)
         std::vector<const std::vector<uint8_t>*> fs;
         for (auto& f : o.files)
@@ -785,11 +939,6 @@ bool share_now(uint8_t peer, std::string& err)
                 o.planet = f.rel.substr(0, f.rel.size() - 4);
                 break;
             }
-    net::WorldOffer off;
-    off.world_id = crc;
-    off.total_size = total;
-    off.file_count = (uint16_t)o.files.size();
-    off.planet = o.planet;
     H->log(M, SK_INFO, "world: sharing %s, planet %s (%u files, %u bytes, id %08X) with player %u",
            narrow(slot).c_str(), o.planet.c_str(), (unsigned)o.files.size(), total, crc, peer);
     o.header_sent = false;
@@ -804,7 +953,6 @@ bool share_now(uint8_t peer, std::string& err)
         }
     g_out.push_back(std::move(o));
     // offer is sent by tick() so it is ordered before the files
-    (void)off;
     return true;
 }
 
@@ -818,6 +966,7 @@ struct ViaMenu {
     std::string host;
 };
 static ViaMenu g_via_menu;
+static bool g_intro_offer_checked;
 
 // a load that waits while the player is in an editor (host: "" for the player's own coop.load)
 struct Deferred {
@@ -827,6 +976,10 @@ struct Deferred {
     double back_since = 0;
 };
 static Deferred g_deferred;
+// BUG-9208: a guest's first-creature editor is requested (or open): a received world waits for it like for an open
+// editor, also in the frames before the editor mode starts
+static bool g_editor_hold;
+void hold_for_editor(bool on) { g_editor_hold = on; }
 static const double kMenuSettle = 3.0, kStageSettle = 3.0;
 static double g_menu_since; // when the galaxy menu came up (0: not in it, or a load started from it)
 static double g_stage_since;    // when the current stage mode began (0: not in a stage)
@@ -856,6 +1009,12 @@ static void* cinematic_mgr()
 {
     uintptr_t get = H->sym("Simulator::cCinematicManager::Get");
     return get ? skg::cdecl_call<void*>(get) : nullptr;
+}
+
+uint32_t cinematic_id()
+{
+    uint8_t* cm = (uint8_t*)cinematic_mgr();
+    return cm && *(uint32_t*)(cm + kCineState) ? *(uint32_t*)(cm + kCineId) : 0;
 }
 
 // ends the running cinematic when it is the menu intro (or any, with any=true); true if it did
@@ -1018,12 +1177,6 @@ bool cinematic_playing()
     return cm && *(uint32_t*)(cm + kCineState);
 }
 
-uint32_t cinematic_id()
-{
-    uint8_t* cm = (uint8_t*)cinematic_mgr();
-    return cm && *(uint32_t*)(cm + kCineState) ? *(uint32_t*)(cm + kCineId) : 0;
-}
-
 bool time_paused()
 {
     static uintptr_t get = H->sym("Simulator::cGameTimeManager::Get");
@@ -1115,6 +1268,8 @@ bool post_quit_to_menu(std::string& err)
     return true;
 }
 
+static void launch_load_failed(const std::wstring& slot);
+
 static void via_menu_tick()
 {
     double now = H->time_seconds();
@@ -1134,7 +1289,7 @@ static void via_menu_tick()
         g_playable_since = now;
     uint32_t place = g_place ? g_place() : 0;
     int ctx = -1;
-    if (g_settle_ctx_fix && mode == modes::kSpace) {
+    if ((g_settle_ctx_fix || !g_intro_planet.empty()) && mode == modes::kSpace) {
         uintptr_t get = H->sym("Simulator::GetCurrentContext");
         ctx = get ? skg::cdecl_call<int>(get) : -1;
     }
@@ -1145,6 +1300,33 @@ static void via_menu_tick()
     g_settle_mode = mode;
     g_settle_place = place;
     g_settle_ctx = ctx;
+    if (g_local_intro && g_intro_planet.empty() && !g_intro_offer_checked && g_via_menu.on &&
+        g_via_menu.share && g_via_menu.planet == modes::current_world_name() &&
+        g_host_stage && g_host_stage() == modes::kSpace &&
+        ((mode == modes::kCiv && civ::founder_space_ready()) || (mode == modes::kSpace && ctx == 0))) {
+        g_intro_offer_checked = true;
+        if (creations::needs_local_space_intro(narrow(g_via_menu.slot + L"\\" + widen(g_via_menu.planet)),
+                                              mode == modes::kCiv)) {
+            begin_local_space_intro();
+            if (mode == modes::kCiv && creations::schedule_training_restart())
+                g_feed("Open Civilization History and confirm your saved spacecraft to restart flight training with your captain.");
+            else g_feed(mode == modes::kCiv ? "Your partner is in orbit. Open History to design your own spacecraft."
+                                            : "Your partner is in orbit. Finish your flight training when you are ready.");
+        }
+    }
+    // The received save is staged in a different slot. Only the load waits.
+    // A personal launch does not hold explicit loads or another host planet.
+    if (!g_intro_planet.empty()) {
+        if (mode == modes::kSpace && (ctx == 1 || ctx == 2)) {
+            if (g_intro_planet == modes::current_world_name()) creations::finish_local_space_intro();
+            g_intro_planet.clear();
+        } else if (mode == modes::kMenu)
+            g_intro_planet.clear();
+        else if (g_local_intro && g_via_menu.on && g_via_menu.share &&
+                 g_via_menu.planet == g_intro_planet && modes::current_world_name() == g_intro_planet &&
+                 (mode == modes::kSpace || (mode == modes::kCiv && g_host_stage && g_host_stage() == modes::kSpace)))
+            return;
+    }
     if (!g_via_menu.on)
         return;
     // other modes (an adventure, an editor, before the first menu): load from there as before, but
@@ -1153,7 +1335,7 @@ static void via_menu_tick()
     // BUG-0157: an editor that opened after the load was queued (the player's own, or the own
     // editor after a vote): loading under an open editor crashed the game (see finish). The
     // received world waits like one that arrives in the editor: 2 s after the editor is left.
-    if (g_editor_load_fix && (mode == modes::kEditor || mode == modes::kEdit)) {
+    if (g_editor_load_fix && (mode == modes::kEditor || mode == modes::kEdit || g_editor_hold)) {
         g_deferred = Deferred{true, g_via_menu.slot, g_via_menu.planet, g_via_menu.share ? g_via_menu.host : "", 0};
         g_via_menu = ViaMenu{};
         g_loads_held++;
@@ -1174,13 +1356,16 @@ static void via_menu_tick()
         v = g_via_menu;
         g_via_menu = ViaMenu{};
         g_menu_since = 0; // a newer request settles again (the mode switches to the load later)
+        g_menu_load_posted = now; // BUG-9240
         H->log(M, SK_INFO, "world: loading from %s %.1f s after the request", other ? modes::mode_name(mode) : "the galaxy menu",
                now - v.since);
         H->run_outside_frame(
             [](void*) {
                 std::string err;
-                if (!load_now(v.slot, v.planet, err))
+                if (!load_now(v.slot, v.planet, err)) {
+                    if (v.share) launch_load_failed(v.slot);
                     g_feed("the world could not be loaded: " + err);
+                }
             },
             nullptr);
         return;
@@ -1198,6 +1383,7 @@ static void via_menu_tick()
             return;
         std::string err;
         if (!post_quit_to_menu(err)) {
+            if (g_via_menu.share) launch_load_failed(g_via_menu.slot);
             g_via_menu = ViaMenu{};
             g_feed("the world could not be loaded: " + err);
             return;
@@ -1207,6 +1393,7 @@ static void via_menu_tick()
         return;
     }
     if (now - g_via_menu.since > 60.0) {
+        if (g_via_menu.share) launch_load_failed(g_via_menu.slot);
         g_via_menu = ViaMenu{};
         game::stage_leave_cancel(); // BUG-0264: the stage stays, its avatar too
         H->log(M, SK_WARN, "world: the game did not go to the galaxy menu, load cancelled");
@@ -1222,7 +1409,7 @@ static void deferred_tick()
         return;
     uint32_t mode = game::mode_id();
     double now = H->time_seconds();
-    if (mode == modes::kEditor || mode == modes::kEdit || mode == modes::kLoad) {
+    if (mode == modes::kEditor || mode == modes::kEdit || mode == modes::kLoad || g_editor_hold) {
         g_deferred.back_since = 0;
         return;
     }
@@ -1264,15 +1451,695 @@ static void drop_share_loads()
 }
 
 bool load_queued() { return g_editor_load_fix && (g_via_menu.on || g_deferred.on); }
-
-void guest_tick()
+// BUG-9240: a menu load was just started (posted outside the frame): load_queued() is already false then, but the
+// game has not switched to the load yet; anything else started in this window raced it (a guest's pregame editor
+// opened in the same frame as the host's world and crashed in the editor's return, 2026-11-16)
+bool load_starting()
 {
+    if (!g_load_start_fix) return false;
+    const uint32_t m = game::mode_id();
+    return H->time_seconds() - g_menu_load_posted < 15 && (m == modes::kMenu || m == modes::kLoad || m == 0);
+}
+
+bool local_intro_running()
+{
+    return g_local_intro && !g_intro_planet.empty() && modes::current_world_name() == g_intro_planet;
+}
+
+bool incoming(float& fraction)
+{
+    if (!g_in.active) return false;
+    fraction = g_in.offer.total_size ? std::min(1.f, (float)g_in.received / (float)g_in.offer.total_size) : 0.f;
+    return true;
+}
+
+static void guest_launch_tick(net::Session& s);
+
+void guest_tick(net::Session& s)
+{
+    guest_launch_tick(s);
+    if (g_wait_resume.receipt) {
+        int food = 0;
+        if (!s.connected() || GetTickCount64() >= g_wait_resume_until) {
+            g_wait_resume = {};
+        } else if (game::mode_id() == modes::kCell && g_playing && g_playing() &&
+                   game::stage_epoch(modes::kCell) != g_wait_resume.epoch &&
+                   _wcsicmp(current_db_dir(false).c_str(), g_wait_resume.slot.c_str()) == 0 &&
+                   cellsync::food_total(food)) {
+            g_guest_resume = std::move(g_wait_resume);
+            g_wait_resume = {};
+            g_guest_resume.world = modes::current_world();
+            g_guest_resume.epoch = game::stage_epoch(modes::kCell);
+            g_guest_resume.food = food;
+        }
+    }
     intro_in_stage_tick();
     via_menu_tick();
     menu_intro_tick();
     menu_splash_tick();
     deferred_tick();
     box_tick();
+}
+
+static uint64_t checkpoint_planet_write(const CheckpointReload& request)
+{
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    auto path = request.slot + L"\\" + widen(request.planet);
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data) ||
+        (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || (!data.nFileSizeHigh && !data.nFileSizeLow)) return 0;
+    return ((uint64_t)data.ftLastWriteTime.dwHighDateTime << 32) | data.ftLastWriteTime.dwLowDateTime;
+}
+
+// Keep the host's first confirmed Space-ready Civilization outside the live
+// galaxy. The same roster and planet identify it after native slot rotation.
+static std::wstring launch_archive(const std::string& planet, const founders::Roster& pair)
+{
+    wchar_t key[64];
+    swprintf(key, 64, L"%08X-%08X-%08X-%08X-%08X",
+             net::crc32_update(0, (const uint8_t*)planet.data(), planet.size()),
+             pair.home().species, pair.guest().species, pair.home().faction, pair.guest().faction);
+    auto games = games_dir();
+    return games.empty() ? L"" : games + L"-sporecoop-launch\\" + key;
+}
+
+enum class LaunchMessage : uint8_t { Offer, Request, Continue, Ready, Cancel };
+struct LaunchOffer {
+    uint32_t join = 0;
+    std::string planet;
+    founders::Roster pair;
+    LaunchMessage phase = LaunchMessage::Offer;
+    uint64_t since = 0;
+    uint32_t checksum = 0;
+    std::wstring received_slot;
+};
+static std::map<uint8_t,LaunchOffer> g_host_launch;
+static LaunchOffer g_guest_launch;
+
+static void launch_load_failed(const std::wstring& slot)
+{
+    if (g_guest_launch.join && slot == g_guest_launch.received_slot)
+        g_guest_launch.phase = LaunchMessage::Cancel;
+}
+
+static void reset_launch_offers()
+{
+    g_host_launch.clear();
+    g_guest_launch = {};
+}
+
+static bool reply_launch(net::Session& s, uint8_t peer, LaunchMessage phase, uint32_t join)
+{
+    net::Writer w;
+    w.u8((uint8_t)phase);
+    w.u32(join);
+    return s.send_reliable_to(peer, net::MSG_SPACE_LAUNCH, w);
+}
+
+// BUG-9187: the launch offer carried seats 0 and 1 (species, nation) and the guest compared it with its whole saved
+// roster, player identities included: a CIV2 roster (identities) or a third founder never matched, so a guest never
+// took the host's Civ victory as its own. The offer now carries every founded seat and the guest compares the seats
+// only. Off: two seats, the whole roster compared.
+static bool g_launch_all_seats = true;
+COOP_FIX("space.launch_all_seats", "BUG-9187", g_launch_all_seats,
+         "space: the launch offer carries every founder seat and matches them without player identities");
+
+static bool matching_launch_world(const LaunchOffer& offer)
+{
+    if (offer.planet != modes::current_world_name()) return false;
+    founders::Roster local;
+    if (!founders::read(current_game_key(),local,founders::Stage::Civilization)) return false;
+    return g_launch_all_seats ? local.same_seats(offer.pair) : local == offer.pair;
+}
+
+bool offer_launch(net::Session& s, uint8_t peer, uint32_t join)
+{
+    if (!g_local_intro || game::mode_id() != modes::kSpace || !join ||
+        !(s.peer_caps(peer) & net::CAP_PERSONAL_LAUNCH)) return false;
+    auto& offer = g_host_launch[peer];
+    std::string planet = modes::current_world_name();
+    if (offer.join == join && offer.planet == planet)
+        return offer.phase != LaunchMessage::Continue;
+    offer = {join,planet,{},LaunchMessage::Continue,GetTickCount64()};
+    if (!is_planet_file(planet) || !founders::read(current_game_key(),offer.pair,founders::Stage::Civilization))
+        return false;
+    auto slot = launch_archive(planet,offer.pair);
+    if (slot.empty() || !checkpoint_checksum(slot,offer.checksum)) return false;
+    net::Writer w;
+    w.u8((uint8_t)LaunchMessage::Offer);
+    w.u32(join);
+    w.str8(planet);
+    w.u32(offer.checksum);
+    const size_t seats = g_launch_all_seats ? std::max<size_t>(2, offer.pair.seats()) : 2;
+    for (size_t i = 0; i < seats; ++i) { // seats 2.. after the two older guests read (BUG-9187)
+        w.u32(offer.pair.entries[i].species);
+        w.u32(offer.pair.entries[i].faction);
+    }
+    if (!s.send_reliable_to(peer,net::MSG_SPACE_LAUNCH,w)) return false;
+    offer.phase = LaunchMessage::Offer;
+    return true;
+}
+
+void on_launch_message(net::Session& s, uint8_t from, net::Reader& r)
+{
+    auto kind = (LaunchMessage)r.u8();
+    auto join = r.u32();
+    if (!r.ok() || !join) return;
+    if (s.role() == net::Role::Client && from == 0) {
+        if (kind == LaunchMessage::Cancel && join == g_guest_launch.join) {
+            g_guest_launch = {};
+            g_feed("The host could not read your Civilization checkpoint. Reconnect after the host checks the save.");
+            return;
+        }
+        if (kind != LaunchMessage::Offer) return;
+        LaunchOffer offered;
+        offered.join = join;
+        offered.planet = r.str8();
+        offered.checksum = r.u32();
+        for (size_t i = 0; i < offered.pair.entries.size() && (i < 2 || r.left() >= 8); ++i) {
+            offered.pair.entries[i].species = r.u32();
+            offered.pair.entries[i].faction = r.u32();
+        }
+        if (!r.ok() || r.left() || !safe_rel(offered.planet) || !is_planet_file(offered.planet)) return;
+        auto mode = game::mode_id();
+        bool local_intro = (mode == modes::kSpace || (mode == modes::kCiv && civ::founder_space_ready())) &&
+                           matching_launch_world(offered);
+        bool need = g_local_intro && g_auto_load && !local_intro &&
+                    creations::needs_launch_checkpoint(offered.planet, offered.pair);
+        g_guest_launch = need ? offered : LaunchOffer{};
+        reply_launch(s,0,need ? LaunchMessage::Request : LaunchMessage::Continue,join);
+        if (need) g_feed("Loading your Civilization victory so you can design your spacecraft.");
+        return;
+    }
+    if (s.role() != net::Role::Host || !from || r.left()) return;
+    auto it = g_host_launch.find(from);
+    if (it == g_host_launch.end() || it->second.join != join) return;
+    auto& offer = it->second;
+    if (kind == LaunchMessage::Cancel && offer.phase == LaunchMessage::Request) {
+        offer.phase = kind;
+        g_feed("Your partner could not load the Civilization checkpoint. Their current game is still available.");
+        return;
+    }
+    if (kind == LaunchMessage::Ready && offer.phase == LaunchMessage::Request) {
+        offer.phase = LaunchMessage::Continue;
+        return;
+    }
+    if (offer.phase != LaunchMessage::Offer) return;
+    if (kind == LaunchMessage::Continue) { offer.phase = kind; return; }
+    if (kind != LaunchMessage::Request) return;
+    std::string err;
+    auto slot = launch_archive(offer.planet,offer.pair);
+    if (game::mode_id() == modes::kSpace && matching_launch_world(offer) &&
+        !slot.empty() && queue_slot(from,slot,offer.planet,true,err)) {
+        offer.phase = kind;
+        H->log(M, SK_INFO, "world: player %u requested retained launch %s (join %u)", from,offer.planet.c_str(),join);
+    } else {
+        offer.phase = LaunchMessage::Cancel;
+        reply_launch(s,from,LaunchMessage::Cancel,join);
+        g_feed("Could not send the saved Civilization launch: " + err);
+    }
+}
+
+static void guest_launch_tick(net::Session& s)
+{
+    if (g_guest_launch.join && g_guest_launch.phase == LaunchMessage::Cancel) {
+        if (reply_launch(s,0,LaunchMessage::Cancel,g_guest_launch.join)) {
+            g_guest_launch = {};
+            g_feed("Civilization recovery stopped. Reconnect after resolving the reported load error.");
+        }
+        return;
+    }
+    if (g_guest_launch.received_slot.empty() || game::mode_id() != modes::kCiv) return;
+    uint64_t now = GetTickCount64();
+    if (now < g_guest_launch.since) return;
+    g_guest_launch.since = now + 500;
+    if (_wcsicmp(current_db_dir(false).c_str(),g_guest_launch.received_slot.c_str()) ||
+        !civ::founder_space_ready() || !matching_launch_world(g_guest_launch)) return;
+    if (reply_launch(s,0,LaunchMessage::Ready,g_guest_launch.join)) {
+        begin_local_space_intro();
+        g_guest_launch = {};
+        if (creations::schedule_training_restart())
+            g_feed("Open Civilization History and confirm your saved spacecraft to restart flight training with your captain.");
+        else g_feed("Open Civilization History to design your spacecraft and start your own flight tutorial.");
+    }
+}
+
+static void retain_launch_tick(net::Session& session)
+{
+    static CheckpointReload request;
+    static std::string retained;
+    static uint64_t next_check;
+    if (!g_local_intro || session.role() != net::Role::Host || game::mode_id() != modes::kCiv) {
+        request = {};
+        retained.clear();
+        return;
+    }
+    uint64_t now = GetTickCount64();
+    if (now < next_check) return;
+    next_check = now + 1000;
+    std::string key = current_game_key();
+    if (key.empty() || retained == key || !civ::founder_space_ready() || load_queued()) return;
+    founders::Roster pair;
+    if (!founders::read(key, pair, founders::Stage::Civilization)) return;
+    std::string planet = modes::current_world_name();
+    auto archive = launch_archive(planet, pair);
+    if (archive.empty()) return;
+    if (dir_has(archive, L"sporecoop.txt")) { retained = key; request = {}; return; }
+    if (request.key != key || now > request.requested + 30000) {
+        if (save_busy() || save_pending() || cinematic_playing() || time_paused()) return;
+        CheckpointReload pending;
+        pending.slot = current_db_dir(false);
+        pending.planet = planet;
+        pending.key = key;
+        pending.previous_write = checkpoint_planet_write(pending);
+        std::string err;
+        if (pending.slot.empty() || !save_game(err)) return;
+        pending.requested = now;
+        request = std::move(pending);
+        return;
+    }
+    auto wrote = checkpoint_planet_write(request);
+    if (request.latest_write != wrote) {
+        request.latest_write = wrote;
+        request.stable_since = now;
+    }
+    if (wrote <= request.previous_write || now < request.stable_since + 1500 ||
+        g_box_seen_at < request.requested || save_busy()) return;
+    std::vector<File> files;
+    uint32_t bytes = 0;
+    std::string err;
+    (void)bytes;
+    if (slotfs::collect(request.slot, files, err) && creations::archive_world_designs(files, err)) {
+        std::sort(files.begin(), files.end(), [](const File& a, const File& b){ return a.rel < b.rel; });
+        std::vector<const File*> views;
+        uint32_t crc = 0;
+        for (const auto& f : files) {
+            views.push_back(&f);
+            crc = net::crc32_update(crc, (const uint8_t*)f.rel.data(), f.rel.size());
+            crc = net::crc32_update(crc, f.data.data(), f.data.size());
+        }
+        auto parent = archive.substr(0,archive.find_last_of(L'\\'));
+        if (!CreateDirectoryW(parent.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS)
+            err = "cannot create the launch archive directory";
+        else if (checkpoint_planet_write(request) != wrote)
+            err = "the native victory save changed during capture";
+        else if (slotfs::write(archive, views, "launch", planet, crc, err)) {
+            retained = key;
+            H->log(M, SK_INFO, "world: retained Space-ready Civilization %s (%u files, %u bytes, %08X)",
+                   planet.c_str(), (unsigned)views.size(), bytes, crc);
+        }
+    }
+    if (!err.empty()) {
+        H->log(M, SK_WARN, "world: could not keep the launch checkpoint: %s", err.c_str());
+        next_check = now + 15000;
+    }
+    request = {};
+}
+
+struct CampaignSetup {
+    net::Session* host = nullptr;
+    founders::CampaignRules requested;
+    std::wstring menu_slot;
+    std::set<std::wstring> existing_planets;
+    std::string checked, status;
+    uint32_t checked_mode = 0;
+    std::string joined_world;
+    uint8_t joined_floor = 1;
+    uint64_t next_check = 0;
+};
+static CampaignSetup g_campaign_setup;
+// A guest may still be flying its personal ship in a different local slot.
+struct RemoteCampaignRules {
+    uint32_t world = 0, mode = 0;
+    founders::CampaignRules rules;
+};
+static RemoteCampaignRules g_remote_rules;
+// A fresh native named planet load qualifies a Space request. Opening the lobby,
+// leaving an adventure or visiting a planet never supplies this event.
+static std::string g_loaded_campaign;
+static uint32_t g_rules_mode;
+static std::string g_rules_key;
+static founders::CampaignRules g_rules_value{1,0};
+void invalidate_campaign_rules() { g_rules_key.clear(); }
+static void reset_campaign_setup() { g_campaign_setup = {}; g_remote_rules = {}; invalidate_campaign_rules(); }
+
+static std::wstring lowercase(std::wstring name)
+{
+    for (auto& ch : name) ch = towlower(ch);
+    return name;
+}
+
+founders::CampaignRules rules_for_current()
+{
+    if (g_remote_rules.world && g_remote_rules.world == modes::current_world() &&
+        g_remote_rules.mode == game::mode_id()) return g_remote_rules.rules;
+    auto key = current_game_key();
+    if (key.empty()) return {1,0};
+    const auto mode = game::mode_id();
+    if (key != g_rules_key || mode != g_rules_mode) {
+        g_rules_value = {1,0}; // preserve a legacy save
+        founders::SeatPlan plan;
+        auto state = founders::read_rules(key,g_rules_value,&plan);
+        const uint8_t stage = uint8_t(stage_epoch::index_of(mode)+1);
+        g_rules_value.seats = plan.seats_in(stage,g_rules_value.seats);
+        g_rules_mode = mode;
+        const auto& setup = g_campaign_setup;
+        // Encounter creation can run before the first world tick of the new stage.
+        if (setup.host && setup.host->role() == net::Role::Host && plan.due(stage,g_loaded_campaign == key)) {
+            uint8_t floor = setup.joined_world == key ? setup.joined_floor : plan.protected_seats;
+            for (const auto& player : setup.host->players()) floor = std::max(floor,uint8_t(player.id + 1));
+            if (plan.next_seats >= floor) g_rules_value.seats = plan.next_seats;
+        }
+        if (state == founders::RulesFile::Missing && !setup.menu_slot.empty() &&
+            current_db_dir(true) == setup.menu_slot &&
+            !setup.existing_planets.count(lowercase(widen(modes::current_world_name()))))
+            g_rules_value = setup.requested; // the new disc's first native save is still pending
+        g_rules_key = key;
+    }
+    return g_rules_value;
+}
+
+bool host_campaign()
+{
+    return g_remote_rules.world && g_remote_rules.world == modes::current_world() && g_remote_rules.mode == game::mode_id();
+}
+
+void receive_campaign_rules(const net::Session& session, uint8_t from, net::Reader& r)
+{
+    if (session.role() != net::Role::Client || from != 0) return;
+    RemoteCampaignRules next;
+    next.world = r.u32();
+    next.mode = r.u32();
+    next.rules = {r.u8(),r.u16(),r.u16(),r.u16(),r.u16(),r.u16()};
+    next.rules.model = r.u8(); // BUG-9100
+    if (!r.ok() || r.left() || !next.world || !in_stage(next.mode) ||
+        !next.rules.seats || next.rules.seats > 4 || next.rules.model > 1) return;
+    g_remote_rules = next;
+}
+
+static void send_campaign_rules(net::Session& session, const founders::CampaignRules& rules)
+{
+    if (session.players().size() < 2) return;
+    net::Writer w;
+    w.u32(modes::current_world());
+    w.u32(game::mode_id());
+    w.u8(rules.seats);
+    w.u16(rules.difficulty_percent);
+    w.u16(rules.extra_health_percent);
+    w.u16(rules.extra_damage_percent);
+    w.u16(rules.extra_hunger_basis_points);
+    w.u16(rules.extra_takeover_percent);
+    w.u8(rules.model);
+    session.broadcast_reliable(net::MSG_CAMPAIGN_RULES,w);
+}
+
+void native_campaign_loaded(const std::string& key)
+{
+    g_loaded_campaign = key;
+    invalidate_campaign_rules();
+    g_campaign_setup.checked.clear();
+}
+
+// BUG-9143: a loaded save with fewer player slots than players connected gets more (owner 2026-11-12, "2A")
+static bool g_slots_on_load_fix = true;
+COOP_FIX("core.slots_on_load", "BUG-9143", g_slots_on_load_fix,
+         "a save loaded with fewer player slots than players connected gets more slots (off: the session ends)");
+static bool apply_saved_rules(net::Session& session, const std::string& key, std::string& error)
+{
+    founders::CampaignRules rules;
+    founders::SeatPlan plan;
+    const uint8_t stage = uint8_t(stage_epoch::index_of(game::mode_id()) + 1);
+    switch (founders::read_rules(key,rules,&plan)) {
+    case founders::RulesFile::Missing:
+        session.seat_limit = net::kMaxPlayers;
+        g_campaign_setup.status.clear();
+        return true;
+    case founders::RulesFile::Unreadable:
+        error = "Cannot read this planet's player slots. Restore its campaign settings before hosting it.";
+        return false;
+    case founders::RulesFile::Saved: {
+        // BUG-9143 (owner 2026-11-12, "2A"): a save with fewer player slots than the players connected gets more slots
+        // (difficulty up), told in the chat; before, the whole session ended. Space keeps its next-load rule, and off
+        // (`coop.fix core.slots_on_load off`) the session ends as before.
+        uint8_t needed = 0;
+        for (const auto& p : session.players()) needed = std::max<uint8_t>(needed, uint8_t(p.id + 1));
+        const uint8_t had = plan.seats_in(stage,rules.seats);
+        std::string raise_error;
+        if (needed > had && g_slots_on_load_fix && session.role() == net::Role::Host && stage >= 1 && stage <= 4 &&
+            needed <= 4 && founders::raise_seats(key,needed,stage,raise_error) &&
+            founders::read_rules(key,rules,&plan) == founders::RulesFile::Saved) {
+            g_feed("This save had " + std::to_string(had) + " player slot(s): raised to " + std::to_string(needed) +
+                   " so everyone stays (difficulty rises with them).");
+        }
+        for (const auto& p : session.players()) {
+            if (p.id >= plan.seats_in(stage,rules.seats)) {
+                error = "This save has fewer player slots than players connected. Rehost from this planet.";
+                return false;
+            }
+        }
+    }
+        rules.seats = plan.seats_in(stage,rules.seats);
+        if (stage && session.role() == net::Role::Host) {
+            uint8_t occupied = g_campaign_setup.joined_world == key ? g_campaign_setup.joined_floor : 1;
+            for (const auto& player : session.players())
+                occupied = std::max(occupied,uint8_t(player.id + 1));
+            if (!founders::update_seats(key,occupied,stage,g_loaded_campaign == key,rules,plan,error))
+                return false;
+            g_campaign_setup.joined_world.clear();
+            g_campaign_setup.joined_floor = 1;
+            if (g_loaded_campaign == key) g_loaded_campaign.clear();
+            send_campaign_rules(session,rules);
+            invalidate_campaign_rules();
+        }
+        session.seat_limit = rules.seats;
+        g_campaign_setup.status = "Player slots: " + std::to_string(rules.seats) +
+            ", difficulty scaling " + std::to_string(rules.difficulty_percent) + "%" +
+            ", city takeover effort " + std::to_string(rules.takeover_percent()) + "%";
+        if (plan.next_seats)
+            g_campaign_setup.status += ", queued " + std::to_string(plan.next_seats) +
+                (plan.queued_stage == 5 ? " on next Space load" : " for next stage");
+        return true;
+    }
+    return false;
+}
+
+bool setup_campaign(net::Session& session, const founders::CampaignRules& requested, std::string& error)
+{
+    reset_campaign_setup();
+    g_campaign_setup.host = &session;
+    g_campaign_setup.requested = requested;
+    session.seat_limit = net::kMaxPlayers;
+    if (game::mode_id() != modes::kMenu) return apply_saved_rules(session,current_game_key(),error);
+    auto slot = current_db_dir(false);
+    if (slot.empty()) { error = "Wait for the galaxy menu before setting up a new campaign."; return false; }
+    // Snapshot the native galaxy's named planets before any new game starts.
+    // Loading any existing disc or changing to a different slot cannot enroll
+    // an old save as a new campaign.
+    WIN32_FIND_DATAW fd{};
+    HANDLE h = FindFirstFileW((slot + L"\\*.spo").c_str(),&fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                g_campaign_setup.existing_planets.insert(lowercase(fd.cFileName));
+        } while (FindNextFileW(h,&fd));
+        const auto last = GetLastError();
+        FindClose(h);
+        if (last != ERROR_NO_MORE_FILES) { error = "Could not read the galaxy's existing planets."; return false; }
+    } else if (GetLastError() != ERROR_FILE_NOT_FOUND) {
+        error = "Could not read the galaxy's existing planets.";
+        return false;
+    }
+    g_campaign_setup.menu_slot = lowercase(slot);
+    session.seat_limit = requested.seats;
+    g_campaign_setup.status = "New campaign: " + std::to_string(requested.seats) + " player slot(s).";
+    return true;
+}
+
+static void campaign_setup_tick(net::Session& session)
+{
+    auto& setup = g_campaign_setup;
+    const auto now = GetTickCount64();
+    if (session.role() != net::Role::Host || now < setup.next_check) return;
+    setup.next_check = now + 1000;
+    if (!in_stage(game::mode_id())) return;
+    const auto planet = modes::current_world_name();
+    if (!is_planet_file(planet)) return;
+    const auto path = current_db_dir(true), file = lowercase(widen(planet));
+    if (path.empty() || !dir_has(path,file)) return; // wait for the first real save
+    const auto key = narrow(path + L"\\" + file);
+    if (setup.checked == key && setup.checked_mode == game::mode_id()) return;
+    std::string error;
+    if (path == setup.menu_slot && !setup.existing_planets.count(file)) {
+        if (!founders::reserve(key,setup.requested,error)) {
+            if (setup.status != error) g_feed(error);
+            setup.status = error;
+            return;
+        }
+        setup.existing_planets.insert(file);
+        invalidate_campaign_rules();
+    }
+    if (!apply_saved_rules(session,key,error)) {
+        g_feed(error);
+        session.leave(error.c_str());
+        return;
+    }
+    setup.checked = key;
+    setup.checked_mode = game::mode_id();
+}
+
+void campaign_guest_joined(net::Session& session)
+{
+    if (session.role() != net::Role::Host) return;
+    g_campaign_setup.checked.clear();
+    g_campaign_setup.next_check = 0;
+    // The join callback is inside HELLO processing. Defer any failure/leave
+    // until the world tick so the network layer can finish using that peer.
+    const auto key = current_game_key();
+    if (key.empty() || !in_stage(game::mode_id())) return;
+    auto& setup = g_campaign_setup;
+    if (setup.joined_world != key) setup.joined_floor = 1;
+    setup.joined_world = key;
+    for (const auto& player : session.players())
+        setup.joined_floor = std::max(setup.joined_floor,uint8_t(player.id + 1));
+}
+
+bool change_seats(net::Session& session, unsigned seats, std::string& message)
+{
+    if (session.role() != net::Role::Host || !in_stage(game::mode_id())) {
+        message = "Only the host of an open campaign can change its player slots.";
+        return false;
+    }
+    const auto key = current_game_key();
+    const auto stage = uint8_t(stage_epoch::index_of(game::mode_id()) + 1);
+    for (const auto& p : session.players()) {
+        if (p.id >= seats) { message = "A connected player needs one of those slots."; return false; }
+    }
+    if (seats < 1 || seats > 4 || !founders::queue_seats(key,uint8_t(seats),stage,message)) return false;
+    g_loaded_campaign.clear(); // a load before the host's request cannot activate it
+    if (!apply_saved_rules(session,key,message)) return false;
+    message = g_campaign_setup.status;
+    return true;
+}
+
+// Owner decision 2026-11-12 (founders::raise_now): more seats in this stage at once. apply_saved_rules then raises the
+// session's seat limit (a late joiner past the old count is admitted), sends the rules to the guests and drops the
+// cached rules, so every difficulty extra reads the new count from the next call of rules_for_current().
+bool raise_seats_now(net::Session& session, unsigned seats, std::string& message)
+{
+    const auto stage = uint8_t(stage_epoch::index_of(game::mode_id()) + 1);
+    if (session.role() != net::Role::Host || !in_stage(game::mode_id()) || stage > 4) {
+        message = "Only the host of an open campaign in Cell, Creature, Tribal or Civilization can add slots now.";
+        return false;
+    }
+    if (seats < 1 || seats > 4 || !founders::raise_seats(current_game_key(),uint8_t(seats),stage,message)) return false;
+    if (!apply_saved_rules(session,current_game_key(),message)) return false;
+    message = g_campaign_setup.status + " (applied now)";
+    return true;
+}
+
+bool set_seats(net::Session& session, unsigned seats, std::string& message)
+{
+    const auto stage = uint8_t(stage_epoch::index_of(game::mode_id()) + 1);
+    if (session.role() == net::Role::Host && in_stage(game::mode_id()) && stage <= 4 && seats <= 4 &&
+        seats > rules_for_current().seats)
+        return raise_seats_now(session,seats,message);
+    return change_seats(session,seats,message);
+}
+
+bool checkpoint_reload(std::string& err)
+{
+    if (g_checkpoint_reload.requested || game::mode_id() != modes::kTribe || load_queued() || save_busy()) {
+        err = "Wait for the current save or stage change before rebuilding.";
+        return false;
+    }
+    CheckpointReload request;
+    bool missing = false;
+    request.slot = current_slot(request.planet, missing);
+    request.key = current_game_key();
+    if (request.slot.empty() || request.key.empty() || missing) {
+        err = "Save this Tribal campaign before rebuilding.";
+        return false;
+    }
+    request.previous_write = checkpoint_planet_write(request);
+    if (!save_game(err)) return false;
+    request.requested = GetTickCount64();
+    g_checkpoint_reload = std::move(request);
+    return true;
+}
+
+static void checkpoint_reload_tick(net::Session& s)
+{
+    auto& request = g_checkpoint_reload;
+    if (!request.requested) return;
+    uint64_t now = GetTickCount64();
+    if (game::mode_id() != modes::kTribe || request.key != current_game_key()) {
+        request = {};
+        if (g_feed) g_feed("Rebuild reload cancelled because the active world changed.");
+        return;
+    }
+    uint64_t wrote = checkpoint_planet_write(request);
+    if (wrote != request.latest_write) {
+        request.latest_write = wrote;
+        request.stable_since = now;
+    }
+    // Never reload the old file merely because a timeout elapsed. Require
+    // positive write evidence and a quiet interval after the last write.
+    if (wrote <= request.previous_write || now < request.stable_since + 1500 || save_busy()) {
+        if (now > request.requested + 30000) {
+            request = {};
+            if (g_feed) g_feed("Rebuild reload stopped: the new save was not confirmed. The current world remains open.");
+        }
+        return;
+    }
+    std::string error;
+    for (const auto& player : s.players()) {
+        if (player.id && !share_now(player.id, error)) {
+            request = {};
+            if (g_feed) g_feed("Rebuild world transfer failed: " + error);
+            return;
+        }
+    }
+    auto completed = std::move(request);
+    request = {};
+    if (!load_slot(completed.slot, completed.planet, error) && g_feed)
+        g_feed("Rebuild reload failed: " + error);
+}
+
+static void autosave_tick(net::Session& s)
+{
+    if (!g_autosave_enabled || !s.connected() || !g_playing || !g_playing()) return;
+    const auto world = modes::current_world();
+    if (!world) return;
+    autosave_world(world);
+    const auto now = GetTickCount64();
+    if (!g_autosave.since) g_autosave.saved(now);
+    if (g_autosave_posted) {
+        if (g_box_seen_at >= g_autosave_posted && newest_write(g_autosave_slot) > g_autosave_before) {
+            g_autosave.saved(now);
+            g_autosave_posted = 0;
+            if (g_autosave_show_confirmation) {
+                g_autosave_show_confirmation = false;
+                H->log(M, SK_INFO, "world: campaign autosave confirmed");
+                g_feed("Campaign autosaved");
+            }
+        } else if (now >= g_autosave_posted + 30000) {
+            g_autosave_posted = 0;
+            g_autosave.event_pending = true;
+            g_autosave_retry = now + 15000;
+        }
+        return;
+    }
+    if (!g_autosave.due(now) || now < g_autosave_retry || save_busy() || save_pending() ||
+        load_queued() || cinematic_playing() || time_paused() || g_checkpoint_reload.requested ||
+        (game::mode_id() == modes::kCell && cellsync::rescue_pending()))
+        return;
+    g_autosave_retry = now + 5000;
+    if (current_db_dir(false).empty()) return;
+    const bool event = g_autosave.event_pending;
+    std::string error;
+    if (save_game(error)) {
+        g_autosave_show_confirmation = g_autosave_posted != 0;
+        H->log(M, SK_INFO, "world: %s autosave requested", event ? "event" : "interval");
+    }
 }
 
 void tick(net::Session& s)
@@ -1283,6 +2150,10 @@ void tick(net::Session& s)
     menu_splash_tick();
     deferred_tick();
     box_tick();
+    checkpoint_reload_tick(s);
+    retain_launch_tick(s);
+    campaign_setup_tick(s);
+    autosave_tick(s);
     if (g_drop_peer_fix) {
         // BUG-0166: a player who left takes its shares and transfers with it (the host saved for
         // nobody, held its editors up to 15 s and read the slot for a peer that was gone)
@@ -1312,21 +2183,47 @@ void tick(net::Session& s)
     for (size_t i = 0; i < g_pending.size();) {
         auto& p = g_pending[i];
         uint64_t now = GetTickCount64();
+        // BUG-9210: a guest whose own nest is about to be made gets the world with it (the nest's share joins this one,
+        // share_with), not before: it spawned at the host's nest and reloaded minutes later ("Bringing your nest").
+        // 2 minutes at most.
+        if (p.need_save && g_share_hold && p.asked && now < p.asked + 120000 && g_share_hold(p.peer, now - p.asked)) {
+            if (!p.held) {
+                p.held = true;
+                H->log(M, SK_INFO, "world: the share for player %u waits for its own nest (BUG-9210)", p.peer);
+            }
+            ++i;
+            continue;
+        }
         if (p.need_save && g_one_save_fix) {
             // BUG-0112: a save for another share is posted already and not written yet (2+ guests
             // waiting at a stage change, or a guest that joins during another one's save): this
             // share goes out with it. N saves in one frame (or a second one during the first) may
             // break the slot and left a "game saved" box open on the host.
+            bool older = false; // BUG-9166: a save posted before this share was asked for is being written
             for (auto& q : g_pending)
                 if (&q != &p && !q.need_save && q.latest && now < q.latest) {
+                    if (g_fresh_save_fix && p.asked && q.posted && q.posted < p.asked) {
+                        older = true;
+                        continue;
+                    }
                     p.need_save = false;
                     p.at = q.at;
                     p.latest = q.latest;
                     p.mode = q.mode;
+                    p.posted = q.posted;
                     H->log(M, SK_INFO, "world: the share for player %u goes out with the save for player %u",
                            p.peer, q.peer);
                     break;
                 }
+            if (p.need_save && older) { // one save at a time: this one after it
+                if (!p.waited) {
+                    H->log(M, SK_INFO, "world: the share for player %u waits for a save of its own (one posted before it was "
+                                       "asked for is being written, BUG-9166)", p.peer);
+                    p.waited = true;
+                }
+                i++;
+                continue;
+            }
         }
         if (p.need_save) {
             // a stage that just began (loading screen, setup) is saved once the player controls
@@ -1350,6 +2247,7 @@ void tick(net::Session& s)
                     p.need_save = false;
                     p.at = now + 2500;
                     p.latest = now + 10000;
+                    p.posted = now;
                     p.mode = game::mode_id();
                     if (g_land_after_ms >= 0 && p.mode == modes::kSpace) { // tests: the ship lands before the save is written
                         g_land_at = now + (uint64_t)g_land_after_ms;
@@ -1478,12 +2376,22 @@ void tick(net::Session& s)
         // flow control: keep a bounded number of reliable messages in flight
         // a LAN / local peer (short round trip) gets a much bigger window
         int rtt = s.rtt_of(o.peer);
-        size_t window = rtt >= 0 && rtt < 40 ? 600 : 160;
+        size_t window = s.paced_world_transfer ? net::kPacedWorldWindow : (rtt >= 0 && rtt < 40 ? 600 : 160);
+        // BUG-9236 (4P A step 4, 2026-11-15): the chunks share the reliable queue with the game's own reliable messages
+        // (spawns, damage, effects), which wait behind every queued chunk: 160 chunks on a 125 KB/s link held them over a
+        // second. On: the window is what the link delivers in the round trip + 0.2 s (BUG-9098's measured rate, packets per
+        // ms), 24..160. Off: 160 (60-dev).
+        if (g_world_window_fix && !s.paced_world_transfer && rtt >= 40)
+            if (net::Connection* c = s.conn_to(o.peer)) {
+                const double w = c->pace_rate_ * (rtt + 200.0);
+                window = (size_t)std::max(24.0, std::min(160.0, w));
+            }
         int budget = 300;
         while (budget-- > 0 && s.pending_to(o.peer) < window && !o.done) {
             if (o.fi >= o.files.size()) {
                 net::Writer w;
                 w.u32(o.world_id);
+                if (o.receipt) w.raw(&o.receipt, sizeof o.receipt);
                 s.send_reliable_to(o.peer, net::MSG_WORLD_DONE, w);
                 o.done = true;
                 uint64_t ms = GetTickCount64() - o.t0;
@@ -1508,7 +2416,8 @@ void tick(net::Session& s)
             net::WorldChunk ch;
             ch.index = (uint16_t)o.fi;
             ch.offset = (uint32_t)o.off;
-            size_t n = std::min<size_t>(1000, f.data.size() - o.off);
+            // Smaller datagrams also reduce loss on the constrained Hamachi path.
+            size_t n = std::min<size_t>(s.paced_world_transfer ? net::kPacedWorldChunkBytes : 1000, f.data.size() - o.off);
             ch.data.assign(f.data.begin() + o.off, f.data.begin() + o.off + n);
             net::Writer w;
             ch.write(w);
@@ -1577,9 +2486,8 @@ static std::wstring current_db_dir(bool lower)
     return w;
 }
 
-std::string current_game_key()
+std::string game_key_for_planet(const std::string& planet)
 {
-    std::string planet = modes::current_world_name();
     if (!is_planet_file(planet))
         return "";
     std::wstring db = current_db_dir(true);
@@ -1590,6 +2498,8 @@ std::string current_game_key()
         ch = towlower(ch);
     return narrow(db + L"\\" + f);
 }
+
+std::string current_game_key() { return game_key_for_planet(modes::current_world_name()); }
 
 static void (*g_slot_replaced)(const std::string&);
 void set_slot_replaced_hook(void (*fn)(const std::string& dir)) { g_slot_replaced = fn; }
@@ -1603,6 +2513,7 @@ void set_slot_replaced_hook(void (*fn)(const std::string& dir)) { g_slot_replace
 void set_auto_load(bool on) { g_auto_load = on; }
 void set_playing_probe(bool (*probe)()) { g_playing = probe; }
 void set_place_probe(uint32_t (*probe)()) { g_place = probe; }
+void set_host_stage_probe(uint32_t (*probe)()) { g_host_stage = probe; }
 
 static bool in_stage(uint32_t m)
 {
@@ -1632,6 +2543,7 @@ bool load_slot(const std::wstring& slot, const std::string& planet_file, std::st
     double since = g_via_menu.on ? g_via_menu.since : H->time_seconds();
     double posted = g_via_menu.on ? g_via_menu.posted : 0;
     g_via_menu = ViaMenu{true, slot, planet_file, since, posted, !share_host.empty(), share_host};
+    g_intro_offer_checked = false;
     via_menu_tick();
     return true;
 }
@@ -1659,6 +2571,8 @@ static bool load_now(const std::wstring& slot, const std::string& planet_file, s
     std::u16string name; // UTF-8 -> UTF-16 (a planet named "Земля" did not load)
     for (wchar_t c : widen(planet_file))
         name += (char16_t)c;
+    // Refuse a damaged or incompatible creator attachment before switching the save DB.
+    if (!creations::restore_guest_model(narrow(slot + L"\\" + widen(planet_file)), err)) return false;
     skg::vcall<bool>(db, 0x1C / 4); // Close
     if (!skg::vcall<bool>(db, 0x2C / 4, dir.c_str())) { // SetLocation
         err = "SetLocation failed";
@@ -1687,21 +2601,29 @@ static bool load_now(const std::wstring& slot, const std::string& planet_file, s
     // the menu intro must not survive into the stage (see end_menu_intro); in the menu nothing else plays
     end_menu_intro(game::mode_id() == modes::kMenu, "at the load");
     skg::thiscall<void>(loadby, mgr, name.c_str());
+    g_shared_loads++; // BUG-9223: a copy of the host's world is loaded here
     H->log(M, SK_INFO, "world: loading %s from %s", planet_file.c_str(), narrow(slot).c_str());
     return true;
 }
 
-static void finish(const std::string& host_name)
+static bool finish(const std::string& host_name, uint64_t receipt)
 {
     uint32_t crc = 0;
     for (auto& [i, f] : g_in.files) {
         crc = net::crc32_update(crc, (const uint8_t*)f.rel.data(), f.rel.size());
         crc = net::crc32_update(crc, f.data.data(), f.data.size());
     }
-    if (crc != g_in.offer.world_id) {
+    if (crc != g_in.offer.world_id || g_in.files.size() != g_in.offer.file_count ||
+        g_in.received != g_in.offer.total_size) {
         g_feed("world transfer failed: checksum mismatch");
         g_in = In{};
-        return;
+        return false;
+    }
+    const bool launch = g_guest_launch.join && g_guest_launch.planet == g_in.offer.planet + ".spo" &&
+                        g_guest_launch.checksum == crc;
+    if (g_guest_launch.join && !launch && g_guest_launch.received_slot.empty()) {
+        g_in = In{};
+        return true; // a different transfer was already in flight before the launch request
     }
     // BUG-0847: every file of the offer, in full (the checksum covers only what arrived)
     uint64_t got = 0;
@@ -1712,13 +2634,13 @@ static void finish(const std::string& host_name)
                (unsigned)g_in.files.size(), (unsigned)g_in.offer.file_count, (unsigned long long)got, g_in.offer.total_size);
         g_feed("world transfer failed: the world is incomplete");
         g_in = In{};
-        return;
+        return false;
     }
     std::vector<std::string> rels;
     for (auto& [i, f] : g_in.files) {
         if (!safe_rel(f.rel)) { // checked on arrival already; never write outside the slot
             g_in = In{};
-            return;
+            return false;
         }
         rels.push_back(f.rel);
     }
@@ -1728,7 +2650,7 @@ static void finish(const std::string& host_name)
     if (slot.empty()) {
         g_feed("world transfer failed: no free save slot");
         g_in = In{};
-        return;
+        return false;
     }
     if (!note.empty())
         g_feed(note);
@@ -1748,8 +2670,9 @@ static void finish(const std::string& host_name)
         H->log(M, SK_WARN, "world: could not write the world into %s: %s", narrow(slot).c_str(), werr.c_str());
         g_feed("could not save the world of " + host_name + ": " + werr);
         g_in = In{};
-        return;
+        return false;
     }
+    if (launch) g_guest_launch.received_slot = slot;
     if (g_slot_replaced) { // BUG-0225: refunds owed to the game that was in this slot are void
         std::wstring low = slot;
         while (!low.empty() && low.back() == L'\\')
@@ -1780,28 +2703,35 @@ static void finish(const std::string& host_name)
                "not have (BUG-0452)", planet.c_str(), need.c_str());
         g_feed("cannot load " + host_name + "'s world: their creature " + need + " uses parts this game does "
                "not have. Install the pack or mod they come from, or the host replaces those parts");
-        return;
+        return false;
     }
     // a player in its own editor (everybody evolves its own creature) loads it when it is back:
     // loading a world under an open editor crashed the game
     uint32_t mode = game::mode_id();
-    if (g_auto_load && !planet.empty() && (mode == modes::kEditor || mode == modes::kEdit)) {
+    if (g_auto_load && !planet.empty() && (mode == modes::kEditor || mode == modes::kEdit || g_editor_hold)) {
         g_deferred = Deferred{true, slot, planet, host_name, 0};
         g_feed("the world of " + host_name + " is loaded when you leave the editor");
-        return;
+        return true;
     }
     if (g_auto_load && !planet.empty() && load_slot(slot, planet, err, host_name)) {
+        if (receipt && !launch) {
+            g_wait_resume = {receipt, slot, 0, game::stage_epoch(modes::kCell), 0, 0};
+            g_wait_resume_until = GetTickCount64() + 30000;
+        }
         g_feed("loading the world of " + host_name + "...");
-        return;
+        return true;
     }
     g_feed("world of " + host_name + " saved as " + slot_name + ": load it from the main menu" +
            (err.empty() ? "" : " (" + err + ")"));
+    return err.empty();
 }
 
 void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
 {
     switch (type) {
     case net::MSG_WORLD_OFFER: {
+        g_guest_resume = {};
+        g_wait_resume = {};
         g_in = In{};
         bool got = g_in.offer.read(r);
         if (got && net::g_fix.name_clean) // BUG-0774: the planet name goes into logs and the slot marker
@@ -1824,6 +2754,7 @@ void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
                 H->log(M, SK_WARN, "world: rejected file %u '%s' (%u bytes) from %s", wf.index,
                        utf8::clean_text(wf.path, 200).c_str(), wf.size, host_name.c_str()); // BUG-0774: a refused name may hold anything
                 g_feed("the world from " + host_name + " was rejected (bad file name or size)");
+                if (g_guest_launch.join) g_guest_launch.phase = LaunchMessage::Cancel;
                 g_in = In{};
                 break;
             }
@@ -1844,11 +2775,42 @@ void on_message(uint8_t type, net::Reader& r, const std::string& host_name)
         }
         break;
     }
-    case net::MSG_WORLD_DONE:
-        if (g_in.active)
-            finish(host_name);
+    case net::MSG_WORLD_DONE: {
+        uint64_t receipt = 0;
+        if (r.left() >= 4 + sizeof receipt && r.u32() == g_in.offer.world_id)
+            r.raw(&receipt, sizeof receipt);
+        if (g_in.active && !finish(host_name, receipt) && g_guest_launch.join)
+            g_guest_launch.phase = LaunchMessage::Cancel;
         break;
     }
+    }
+}
+
+uint64_t resume_world()
+{
+    int food = 0;
+    if (!g_resume_world || !g_guest_resume.receipt || game::mode_id() != modes::kCell ||
+        !g_playing || !g_playing() || !g_guest_resume.world ||
+        g_guest_resume.world != modes::current_world() || g_guest_resume.epoch != game::stage_epoch(modes::kCell) ||
+        !cellsync::food_total(food) || food != g_guest_resume.food ||
+        _wcsicmp(current_db_dir(false).c_str(), g_guest_resume.slot.c_str()) != 0)
+        return 0;
+    return g_guest_resume.receipt;
+}
+
+bool can_resume_world(uint64_t receipt)
+{
+    if (!g_resume_world || !receipt || game::mode_id() != modes::kCell ||
+        save_pending() || save_busy() || (g_save_blocker && g_save_blocker()))
+        return false;
+    const auto it = std::find_if(g_sent_resume.begin(), g_sent_resume.end(),
+                                 [receipt](const ResumeWorld& r) { return r.receipt == receipt; });
+    int food = 0;
+    return it != g_sent_resume.end() && it->world == modes::current_world() &&
+           it->epoch == game::stage_epoch(modes::kCell) && it->write &&
+           cellsync::food_total(food) && food == it->food &&
+           _wcsicmp(current_db_dir(false).c_str(), it->slot.c_str()) == 0 &&
+           it->write == newest_write(it->slot);
 }
 
 bool progress(uint32_t& got, uint32_t& total)
@@ -1860,7 +2822,12 @@ bool progress(uint32_t& got, uint32_t& total)
 
 std::string status()
 {
-    std::string s;
+    std::string s = g_campaign_setup.status.empty() ? "" : g_campaign_setup.status + "\n";
+    if (g_remote_rules.world && g_remote_rules.world == modes::current_world() && g_remote_rules.mode == game::mode_id())
+        s += "Host campaign rules: " + std::to_string(g_remote_rules.rules.seats) + " player slots.\n" +
+             "Host city takeover effort: " + std::to_string(g_remote_rules.rules.takeover_percent()) + "%\n";
+    if (!g_intro_planet.empty() && g_via_menu.on && g_via_menu.share && g_via_menu.planet == g_intro_planet)
+        s += "shared orbital save waiting for your first flight\n";
     char b[200];
     for (auto& o : g_out) {
         snprintf(b, sizeof b, "sending world to %u: file %u/%u\n", o.peer, (unsigned)o.fi, (unsigned)o.files.size());
@@ -1903,6 +2870,14 @@ std::string status()
         s += b;
     }
     return s;
+}
+
+bool restart_point(std::wstring& slot, std::string& planet)
+{
+    slot = current_db_dir(false);
+    planet = modes::current_world_name();
+    if (!is_planet_file(planet)) planet.clear();
+    return !slot.empty() && !planet.empty();
 }
 
 bool load_local(const std::string& slot_name, const std::string& planet, std::string& err)
@@ -1964,5 +2939,9 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
         H->out_printf(out, "%s %d\n", x.name, *x.on ? 1 : 0);
     return 0;
 }
+
+// BUG-9210
+void set_share_hold(std::function<bool(uint8_t, uint64_t)> hold) { g_share_hold = std::move(hold); }
+uint32_t shared_loads() { return g_shared_loads; }
 
 } // namespace world

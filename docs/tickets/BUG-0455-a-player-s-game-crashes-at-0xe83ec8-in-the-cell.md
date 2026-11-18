@@ -26,14 +26,34 @@ Target: 0.7.4.
 Observed (dump crash-20261102-144335.dmp, symbolized with a v0.7.3.4 build): the guest's main thread, coop.dll `cellsync::guest_state` -> `modes::cell_create` -> CreateCellObject (0xE74ED9) -> 0xE6CAF7 -> 0xE69726 -> 0xE67A41 (GetCellModelData: the model data of the forced key, built on first use) -> 0xE83E30: Editors::cEditor::LoadCreatureData returned nothing, `[0+0x9C]` read at 0xE83EC8. Lab: a host cell sent with a model instance the guest lacks faults the guest at 0xE83EC8 with the same chain; it made no further mirrors.
 Inferred: after the host left its Cell editor, the host's cells of its new creation reached the guest before that creation's records (BUG-0004 fixed this for the host's puppet only; the NPC mirrors of cellsync were another path).
 
+Lineages reproduced the same fault on the host when a guest saved a free
+rename of an imported cell. The received DBPF contained only a metadata record.
+Registering it under a remapped key left that key without a model when native
+Cell puppet creation tried to resolve it. The guest's local EditorSaves had
+the new metadata and the original model was already in a mounted package.
+
 ## Fix
 mods/coop/modes.cpp: every forced model key is checked with creations::key_known first; cell_create makes no cell of an unknown creation (cellsync tries again with the next state round, so the mirror comes once the creation's records are here), cell_spawn (puppets) falls back to the own avatar's model. Switch `coop.fix cell.unknown_model off`.
 
+For a metadata-only Cell save, combine the new metadata with the unchanged
+model from the mounted source package. If the model cannot be read, wait to
+send the bundle. A receiver leaves its existing appearance in place when
+an older sender sends a partial Cell bundle.
+
 ## Verification
 coop_cell_unknown_model.py (suite cell_unknown_model): FAIL with SPORE_FIX_OFF=cell.unknown_model: out/lab/20261103-144746 (guest fault at 0xE83EC8, no mirrors after it); PASS: out/lab/20261103-144842.
+
+Two-PC Steam/Tailscale regression in disposable profiles. Before the fix, a
+real guest editor rename produced one metadata record and the host faulted
+at rebased `0xE83EC8`. After the fix, the host received two consecutive fresh
+guest renames with two records each and recorded zero native faults. Each edit
+preserved the guest's 5 DNA and current world. The intermediate build changed
+back and forth between older names after joining. Reusing the cached model
+for catalog lookup removed the repeated switching in the final sample.
 
 ## History
 - 2026-11-02: opened.
 - 2026-11-03: root cause (cellsync mirrors with an unknown model key), fixed on fix/w40-crashes (cell.unknown_model).
 - 2026-11-03: seen again in a player report 2026-11-02 (0.7.3.4, Steam guest, reports 20261102-231251 and -231730, two crashes, same chain: coop.dll 0.7.3.4 +0xCD31E CreateCellObject <- +0x108F7 cellsync::guest_state; 'host is back' from its Cell editor 0.07 s before the fault; the player: 'when the host goes from the editor to the game and the guest opens the editor at the same time, the guest crashes'), fixed in 0.7.4 (unreleased).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-08: reproduced the metadata-only variant on a Steam Lineages 29 development candidate.

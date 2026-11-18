@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <unordered_map>
 #include <vector>
 
 #include "fields.h"
@@ -337,6 +338,17 @@ static uint32_t orn_state(void* o)
 }
 static bool orn_used(uint32_t s) { return s != kGone && (s & 1); }
 static void orn_collect(Items& out) { collect_noun(kOrnNoun, out, orn_state, orn_take); }
+// BUG-9124: the interact node also moves the ornament to its next model (0xC40360: the dug-up bones of a real
+// save; the fixture's bones have no model list, so it was never seen). orn_use left it, so the other player
+// still saw the bones and could not use them. Off (`coop.fix wobj.ornament_model off`): the model stays.
+static bool g_orn_model_fix = true;
+COOP_FIX("wobj.ornament_model", "BUG-9124", g_orn_model_fix,
+         "creature: bones a partner used change to their used model here too (they no longer stay)");
+static uint32_t g_orn_models; // tests: next models applied for a partner's use
+static bool g_orn_gone_fix = true;
+COOP_FIX("wobj.ornament_gone", "BUG-9124", g_orn_gone_fix,
+         "creature: bones a partner dug up (no model left) disappear here too, as on the digger's screen");
+static uint32_t g_orn_removed; // tests: bones removed for a partner's dig
 static void orn_use(void* o) // used up without the reward, as 0xD46BE0 leaves the last use (and the interact node the ornament)
 {
     uint8_t* r = orn_reward(o);
@@ -345,6 +357,17 @@ static void orn_use(void* o) // used up without the reward, as 0xD46BE0 leaves t
     field<int>(r, 0x10) = 0;
     field<uint8_t>(r, 0x24) = 1;
     field<uint8_t>(o, 0xA3) = 0;
+    if (g_orn_model_fix && a_OrnUsed) {
+        if (thiscall<int>(a_OrnUsed, o)) // as the interact node does: the next (dug-up) model
+            g_orn_models++;
+        else if (g_orn_gone_fix) {
+            // BUG-9124 (2026-11-11, QA Samuth.spo bone 9188): with no model left the dig takes the bones away on the
+            // digger's screen (its model links cleared); here they stayed, looking diggable. Gone here too.
+            H->log(M, SK_INFO, "wobj: bones %p used by a partner have no model left: removed here (%u)", o, g_orn_removed + 1);
+            game::destroy_instance(o);
+            g_orn_removed++;
+        }
+    }
 }
 static bool orn_behind(uint32_t local, uint32_t host) { return orn_used(host) && !orn_used(local); }
 static void orn_apply(const Item& l, uint32_t) { orn_use(l.p); }
@@ -409,7 +432,10 @@ static void herd_act(const Item&, uint32_t) {}
 // partner) is a request to the host, which places the same there (the old one of the type goes, as the
 // palette does); the guest's copy is bound to it at the next snapshot. The food was paid in the guest's game
 // (the shared food ledger takes its change to the host).
-static bool g_tool_fix = true, g_tool_all_fix = true, g_tool_buy_fix = true;
+// Lineages (0.7.8 merge): off by default. Lineages syncs the tribes' tools itself (tribe.tools, BUG-9023,
+// MSG_TRIBE_TOOLS: per village, with the founders' own villages and their ground offset); this kind would
+// work on the same tools and remove a guest founder's own village tools the host has not.
+static bool g_tool_fix = false, g_tool_all_fix = false, g_tool_buy_fix = false;
 COOP_FIX("wobj.tribe_tool", "BUG-0514", g_tool_fix, "tribe: a tool building (weapon rack, ...) the host built is in every player's game");
 COOP_FIX("wobj.tribe_tools_all", "BUG-0523", g_tool_all_fix,
          "tribe: every tribe's tools stand where the host's stand (NPC tribes too); a guest's own copy elsewhere goes");
@@ -898,15 +924,14 @@ static uint32_t g_cit_walks, g_cit_puts, g_cit_far;
 // game to the city the guest looks at: left there (it was put back at the host's city, the guest's city empty).
 // `coop.fix civ.citizen_far off`: put back however far (0.7.5).
 constexpr float kCitizenFar = 60.f;
-static bool g_cit_far_fix = true;
-COOP_FIX("civ.citizen_far", "BUG-0553", g_cit_far_fix, "civ: a guest's citizens the game moved to the city its camera is at stay there");
+// (its switch civ.citizen_far was retired 2026-11-12, roadmap 0e: stable since 0.7.6)
 
 static void citizen_follow(const Item& l, const net::Vec3& hp, const net::Vec3& v, double age, Follow& st, double now)
 {
     float t = (float)std::min(age, 1.5);
     net::Vec3 at{hp.x + v.x * t, hp.y + v.y * t, hp.z + v.z * t};
     float d = net::dist(l.pos, at);
-    if (g_cit_far_fix && d > kCitizenFar) {
+    if (d > kCitizenFar) {
         g_cit_far++;
         return;
     }
@@ -1187,6 +1212,16 @@ static bool g_tools_planet_fix = true;
 COOP_FIX("wobj.tools_planet", "BUG-0488", g_tools_planet_fix, "tribe: every village's tools on the planet are the host's in a guest's game, not only those near it");
 static float kind_range(int k) { return k == tool_kind() && g_tools_planet_fix ? 3000.f : g_kinds[k].range; }
 
+// BUG-9237 (4P A, 2026-11-15: world objects were the biggest item left of a guest's traffic, 210 KB a minute: each
+// kind's snapshot of the objects near the guest every 0.2-1 s, the same list nearly always): a snapshot whose object list
+// equals the last one sent to that guest goes again only after kSameSnapEvery s (the guest keeps its objects; a new or
+// changed object, or one gone, changes the list and goes at once). `coop.fix wobj.same_snapshot off`: every time.
+static bool g_same_snap_fix = true;
+COOP_FIX("wobj.same_snapshot", "BUG-9237", g_same_snap_fix, "wobj: an unchanged snapshot of world objects is sent again only every 3 s");
+constexpr double kSameSnapEvery = 3.0;
+struct SnapSent { uint32_t hash = 0; double at = -100; };
+static std::unordered_map<uint32_t, SnapSent> g_snap_sent;
+static uint32_t g_same_snaps;
 static void host_tick(double now)
 {
     uint8_t sb = stage_bit();
@@ -1235,6 +1270,7 @@ static void host_tick(double now)
             w.f32(c.y);
             w.f32(c.z);
             w.f32(r);
+            const size_t items_at = w.data.size();
             w.u8((uint8_t)close.size());
             for (auto& [d, it] : close) {
                 w.u32(it->id);
@@ -1249,6 +1285,16 @@ static void host_tick(double now)
                     w.f32(it->aux.y);
                     w.f32(it->aux.z);
                 }
+            }
+            if (g_same_snap_fix) { // BUG-9237: the same objects as last time: again only after kSameSnapEvery s
+                uint32_t h = 2166136261u;
+                for (size_t b = items_at; b < w.data.size(); b++) h = (h ^ w.data[b]) * 16777619u;
+                auto& last = g_snap_sent[((uint32_t)p.id << 8) | (uint32_t)k];
+                if (last.hash == h && now - last.at < kSameSnapEvery) {
+                    g_same_snaps++;
+                    continue;
+                }
+                last = {h, now};
             }
             C.sess->send_unreliable_to(p.id, net::MSG_WOBJ, w);
             g_st[k].tx++;
@@ -1650,6 +1696,18 @@ static int c_wobj(void*, int argc, const char* const* argv, SkOut* out)
             n++;
         }
         H->out_printf(out, "end n=%d\n", n);
+        return 0;
+    }
+    if (!strcmp(a, "screen") && argc > 2) { // screen <object>: where it is on the screen (tests: click it as a player, BUG-9124)
+        void* o = (void*)strtoul(argv[2], nullptr, 16);
+        net::Vec3 p;
+        if (IsBadReadPtr(o, 0x40) || !game::object_position(o, p)) {
+            H->out_printf(out, "no such object\n");
+            return 1;
+        }
+        float w[3] = {p.x, p.y, p.z}, sc[2] = {-1, -1};
+        int on = H->world_to_screen(w, sc);
+        H->out_printf(out, "screen %.0f %.0f on=%d\n", sc[0], sc[1], on);
         return 0;
     }
     if (!strcmp(a, "raw") && argc > 2) { // raw <noun hex> [r] [n bytes]: every object of a noun near the player with its first bytes

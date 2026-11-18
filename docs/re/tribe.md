@@ -1167,6 +1167,1536 @@ world pointer 0x167FB50). BUG-0449.
   `coop.physorphan` (tests) makes a live body of kind 0 without an owner past the pool's high water, which no
   owner refers to (coop_physics_orphan.py). Taking the owner off a body that an owner still refers to faults
   elsewhere first: 0xB3DD60 (0xB3DCB0 via 0xB47FE0 from the dirty-object loops at 0xB4C55F).
+## Duo guest village on Steam 2024
+<a id="tribe-duo-guest-village"></a>
+
+The native player-tribe setter on the unpacked Steam 3010a413 build takes a cTribe pointer,
+retains it, changes the same manager field returned by GetPlayerTribe, and releases the former
+tribe. This verifies the setter signature only. Input strategy, UI, AI and economy have their
+own state. Changing the pointer alone does not transfer authority over those systems.
+
+On the disposable Clyth planet the host founded a village with guest species 0680BF38. The
+host and guest each read three native citizens of that species. Political IDs for that
+village differed across instances (000021CB and 000021CC). Resolve local objects using the
+host's mapping before dispatching a guest order. The native player tribe on both machines
+initially remained the host's species 067B3E4A. Repeating the founding request made no
+additional village. Reproduce with tools/tests/duo_villages.py.
+
+The same two species and three citizens each survived a native host save, full process
+restart and guest rejoin. After the fresh world transfer the two political IDs matched
+on both games. The guest's test_perspective command temporarily selected the guest village
+through the native setter, verified it through GetPlayerTribe, and restored the original
+within one frame. Stable player control, UI selection and independent food were not part
+of this check. Run duo_villages.py with --restored on the saved fixture.
+
+On the v0.7.3.6-based fork, the host registered the two saved villages. A freshly started
+guest received the planet and both games returned `Founding species: host 067B3E4A, guest
+0680BF38` from `coop.founders`. `--restored --transferred-roster` checks the native villagers
+and compares the two rosters after that transfer. These IDs identify the two built-in
+creations used for the test. Custom creation assets need their own persistence test.
+
+On the two Steam instances on Clyth, the host's existing member snapshots carried the
+native guest village's three member IDs and a distinct owner for each. A guest using
+the matching species could select those three, could not select a host citizen, and
+sent a WalkTo order that moved all three toward its target on both games. Changing
+to the home species removed guest ownership. Normal native right-click ignored all
+five ground clicks tested while the player tribe remained the host tribe. The Duo
+`march` cheat instead arms the existing game-window primary-click hook once. The in-game
+alias and one click issued exactly three orders; a second click issued none. Reproduce
+with tools/tests/duo_orders.py. The native food mat and standard HUD were not switched.
+
+In the Duo 3 Clyth run the host executed Gather (citizen action 2, cTreeData target) on
+the registered guest tribe. Its food went from 1.25 to 6.25. The host village stayed at
+4, while the guest's copy of the second food store still showed 2.25 without the sync.
+The host now supplies the two native food balances in its tribe table and chooses a
+tree with remaining fruit when the guest asks to gather. After the change, both native
+games reported the guest store rising from 31.25 to 36.25 and the home store staying
+at 0. The +100 guest-only food change was reconciled. Food stores can be fractional.
+Run tools/tests/duo_food.py on the registered disposable fixture.
+
+In the Windows BUG-9002 test the guest received one test-only native village with
+three citizens and 12 food. On Duo 3 the native controller then called SpawnNpcTribe
+from return address 0xCC66FD twice, forming additional villages with five citizens
+and 200 food each. Neither village existed on the host. The specific forming routine
+at 0xCC6440 uses ECX, takes one DWORD argument and returns with `ret 4` on both paths.
+Duo 4 skips that routine only on a guest in the host's two-village world. The same
+seed then stayed at one extra village. At six seconds the guest held orders and the
+host queued a save-and-share. The guest loaded a new co-op slot with the original
+native village roster and the same founding species. See tools/tests/duo_npc_repair.py.
+
+Duo 5 uses the same creator archive for custom guest villagers as it uses for Civ
+founders, before SpawnNpcTribe or registering a known guest village. The cold native
+test of archive restoration used a Civilization world. See docs/re/civ.md#civ-duo-founders.
+
+## Founder population recovery (2026-11-03, duo-species)
+<a id="tribe-founder-recovery"></a>
+
+On Clyth the native host lost every healthy member while the registered guest
+still had three. Both tribes had mbDefeated (+556) false and both huts had 400
+health. Population loss and hut destruction are distinct native events. The
+community SDK separately describes the tribe's defeat flag and the hut's tribe
+reference. https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Simulator/cTribe.h
+
+The native Tribal listener starts at CD81F0, takes message ID and data through
+thiscall, returns bool in AL and ends with ret 8. Message 05C80207 branches at
+CD8212 to CD8A2A. It changes camera/loss state and calls PlayCinematic at CD8B0C.
+The first argument is the string TRG_PRE_PopDestroyed, seen by the live probe.
+That cinematic becomes FBCD6489 and offers the population rewind. Message
+058BADDD takes the separate hut-destruction branch and uses TRG_PRE_HutDestroyed.
+Suppressing only PlayCinematic would leave preceding side effects.
+
+BUG-9007 intercepts the population event only on a two-player host with a saved
+matching founding roster and a living, undefeated guest village. Shared-tribe
+campaigns retain the native event. The switch is tribe.founder_survival. The
+test disables village orders to exercise a genuine death outside the new
+rescue window. The guest subsequently issued a walk and its citizens moved in
+both games. See tools/tests/duo_tribe_survival.py.
+
+Duo 8's last-member rescue runs in the host's native citizen damage path after
+damage modifiers. It identifies a founder by the saved faction and species,
+holds the member at 1 HP, skips its behaviour tick and rejects guest orders
+for it. A healthy member of the other founder can revive it within 10 seconds
+by staying within 15 metres for 1.5 seconds. The initial health after recovery
+is 40%, followed by two seconds of damage protection. Unattended expiry at an
+intact village moves the same citizen to its native food mat and debits 10%
+of that village's food once. This return uses a native transform on a living
+citizen and retains its body. Rate and range are provisional. Captured-hut
+ownership and refounding remain under development.
+
+The optional TRRV snapshot tail has two pairs of member ID (u16) and remaining
+tenths of seconds (u16), following the existing native tribe metadata. Both
+games show the timer. The authoritative record uses the existing member ID
+and validates it against the current tribe member list each tick. World and
+session changes clear the records. The co-op checkpoint blocker rejects a
+pending rescue. Only the host changes the native food store.
+
+The clean sequential Windows run used DuoQARecoverySequential4/5. Host rescue
+left its balance unchanged, expiry reduced 90 to 81. Guest rescue also kept
+its balance, expiry reduced 276.25 to 248.25. Native species remained 067B3E4A
+and 0680BF38. Both games stayed fault-free. A later save and full process
+restart restored the founders and native balances 180 and 248.25 on both
+games. The intervening guest test donated 100 test food to the host and its
+native member consumed one. Test logs are under out/duo8.
+
+Additional read-only ownership research verified hut SetTribe at C9C3E0
+(vt+54, ret 4) retains its new tribe, releases the old and sets its political
+ID. cGameData::SetGameDataOwner2 at B18490 retains/releases the owner at +2C
+and copies its political ID. A full village transfer needs additional handling.
+C8E8C0 changes mbDefeated and empties the tribe's resource bundles when setting
+true. These findings are recorded for the upcoming conquest implementation.
+
+## Native refounding prototype (2026-11-03, duo-species)
+<a id="tribe-refounding-prototype"></a>
+
+The disposable RefoundResearch pair demonstrated a native ownership transfer
+and a replacement settlement. The guest tribe kept political ID 000021CB and
+species 0680BF38. Its old hut and food mat were assigned to conqueror 000021E0.
+The same guest cTribe was rebuilt roughly 234 metres away using its native
+SpawnTribe method. The conqueror retained its own primary hut as well.
+
+Both host and guest restored the occupied old site and the separate new site
+after a native save and full process restart. Read-only checks resolved each
+hut and mat from the live noun list, checked their native owner references,
+checked both primary-hut references, and read the actual new villagers' species.
+Evidence and scripts are in build/local/refound-native.py, refound-native.json,
+refound-native.log and refound-check.py. This was a manual native experiment.
+The gameplay trigger, rebuilding cost, timer, partner action and repeated
+capture rules are pending integration.
+
+Verified native methods on Steam 3010a413 are SpawnTribe at C9A290 (vt+8C,
+thiscall(tribe, position pointer, count, food, bool), ret 10h), hut SetTribe at
+C9C3E0 (vt+54, ret 4), and food-mat SetTribe at C9BD10 (vt+54, ret 4). The mat
+setter also calls SetGameDataOwner2 and updates its tribe reference at +10C.
+Native references kept the captured hut and mat alive after the experiment's
+extra references were released. Their remaining counts were 8 and 5.
+
+Population accounting still needs investigation. Rebuilding with count 3
+immediately produced two native citizens. SpawnTribe calculates its additions
+from the existing selectable-object vector at +354, which can contain more
+than citizens. Before integrating repeated construction, inspect that vector
+after defeat and remove obsolete ownership through the appropriate native
+path. The original prototype also removed the defeated tribe's old tools.
+
+BUG-9009 exposed a late layout callback during guest unload. Tribe cleanup at
+~ Superseded address attribution (2026-11-04): C98430 is the constructor,
+not stage cleanup. See the correction below. A retained tribe can still
+receive C98940(12), which calls CE6BC0 with the first cleared profile and then
+faults at CE6AE7 reading profile+554. C98940 takes this and one integer kind,
+returns void, and both exits use ret 4. The next-build guard skips that layout
+while the profile is null. A test with a genuinely retained tribe and native
+stage cleanup passed with the guard and reproduced the identical fault with
+tribe.layout_profile off. See tools/tests/duo_tribe_layout_exit.py.
+
+Checkpoint status is Duo 8 packaged and verified, with the Duo 9 layout guard
+in source. Refounding remains a prototype. Development was paused at the
+user's request before gameplay integration.
+
+## Refounding population control (2026-11-03, duo-species)
+<a id="tribe-refounding-population-control"></a>
+
+CORRECTION to the suspected non-citizen entry in the prototype: a fresh native
+trace identifies the remaining +354 entry as the removed citizen's +C0 spatial
+interface. The entry is still present immediately after native RemoveMember,
+while +340 is empty and the leader pointer is null. Defeat, building ownership
+transfer and tool removal do not remove it. SpawnTribe then adds two citizens;
+the selectable vector contains those two plus the old citizen interface.
+Thus the claim in the earlier RemoveMember table that it unconditionally
+removes both vector entries is not true for this dead-member sequence.
+Evidence: build/local/m2-refound-inspect.log on fresh DuoQAM2Refound4/5.
+BUG-9013 tracks the incomplete native cleanup; no count adjustment is a fix.
+
+CORRECTION (2026-11-04, duo-species): C98430 constructs cTribe. It calls the
+base constructors, writes vtables and initializes fields, including the
+species-cache array. It is not a cleanup routine and must not be called on
+a live tribe. tools/tests/duo_tribe_layout_exit.py does not call C98430: it
+retains a tribe, uses coop.menu for a real native stage exit, observes the
+cleared species and invokes the late layout. BUG-9009's native positive and
+negative tests therefore remain valid. No production code used this mistaken
+address attribution. Evidence: land-C98430.asm and the regression source.
+
+## Retiring a captured settlement and mirroring its replacement (2026-11-04, duo-species)
+<a id="tribe-refounding-retirement"></a>
+
+The native replacement prototype now keeps the old hut and mat under conqueror
+21E0, retires defeated tribe 21CB, and creates fresh tribe 21F2 with the same
+guest species 0680BF38. This is a disposable experiment, not the player rebuild
+action. Current campaign-roster rebinding and the helper's action remain pending.
+
+- BUG-9013: retaining a removed citizen, calling RemoveMember(c, true), then
+  C95280(tribe, citizen) and releasing it removes the stale selectable reference.
+  C95280 is thiscall, void, ret 4. It finds the citizen's +C0 spatial interface
+  in +354/+358, compacts the vector and releases it. Calling it before
+  RemoveMember did not fix the count. Evidence: m2-refound-clean-control.log
+  and m2-refound-after-observe.log. Do not merely request an extra citizen.
+- BUG-9014: reuse of the defeated tribe still loses new citizens after about
+  20-37 seconds. Explicitly setting a chief, enabling village orders and
+  save/reload each failed to prevent this. RemoveMember(c, false) was called
+  by the behavior-tree death routine at DA7A2F. Its trigger is unresolved.
+  SpawnNpcTribe creates a fresh initialized tribe, including a native chief
+  and planner setup, and retained three living citizens for over 90 seconds.
+  A zero species in the `villages` diagnostic with no members does not prove
+  the cached species was cleared: tribe_info derives its key from a member.
+- BUG-9015: leaving the defeated old tribe in the world after removing its
+  tools crashed on cold load at C99B00. That instruction dereferences +34
+  after GetToolByType(10) returned null. The crash dump does not identify the
+  tribe directly. Retiring the old object through DestroyInstance prevented
+  the observed crash in the next control; do not invoke its constructor or
+  destructor on a live object.
+
+Working native sequence: transfer retained old buildings, create the new tribe
+with SpawnNpcTribe, transfer the old hut's cGameData owner if it still points
+at the old tribe, detach the old tribe's primary hut (+368) and mat (+260)
+through IntrusivePtr_Assign, then retire it with the noun manager's
+DestroyInstance. Release the extra building references afterward. The new
+tribe receives three citizens and 15 starting food. These are experiment
+parameters, not an approved player cost. The full native constructor is C98430;
+the destructor is C97F70, reached by the deleting destructor C98840.
+
+Evidence: build/local/m2-retired-tribe.log (live population),
+m2-retired-cold-ownership.log (both games), m2-retired-cold-population.log
+(host population after restart). The older ownership helper's output labels
+the new tribe 21CB incorrectly; its assertions read 21F2 from the JSON record.
+The committed duo_tribe_rebuild_checkpoint.py prints the actual record ID.
+
+BUG-9016 exposed a separate guest gap: three correct mirrored citizens but
+no native chief at tribe+11C. TCHF now carries one host member ID per tribe
+after the species table and before TRRV. Its bytes count toward packet sizing.
+Guests apply it only after a complete, newer cycle and validate the target
+against that tribe's native members. SetChieftain at C8FEE0 (thiscall, ret 4)
+sets the leader, staff 11, scale and native refresh state. Community_SetLeader
+at C007A0 (thiscall, ret 4) retains/releases +11C; it clears an explicitly
+absent chief. SetChieftain(0) instead elects a member and must not clear it.
+These are modern Steam/GOG 2024 addresses, distinct from the older table above.
+
+The native test fails with tribe.native_chiefs off (m2-chief-nofix.log) and
+passes with it on (m2-chief-positive.log). A fresh process pair also passes
+initial mapping, explicit leader clearing and changed-chief replication
+(m2-chief-cold-positive.log). A lethal host hit leaves the native chief dead
+with zero health on both games (m2-chief-ko.log). The full replacement
+checkpoint now passes native building owners, three living original-species
+citizens, native chiefs and absence of the retired tribe on both games
+(m2-retired-native-checkpoint-fixed.log). Native faults remain zero. These
+results do not prove a playable capture/rebuild flow or current-roster rebinding.
+
+## Original faction in a fresh replacement tribe (2026-11-04, duo-species)
+<a id="tribe-refounding-original-faction"></a>
+
+The next control preserves faction 21CB while replacing native tribe object
+A0C with 3EF4. Retiring the old native object before creation avoids duplicate
+live faction owners. The native SpawnNpcTribe factory is retained in full.
+A scoped request assigns the original faction through native SetPoliticalID
+at the start of its one SpawnTribe call, before any hut, mat or citizens are
+created. The replacement's children therefore inherit the same faction.
+
+Verified on Steam: tribe/citizen/hut/mat vt+48 resolves to 804910, whose entire
+body is `mov eax,[esp+4]; mov [ecx+30],eax; ret 4`. SpawnTribe at C9A290 takes
+position/count/food/bool, ret 10h. Its initial SetGameDataOwner2(null) does
+not reset political ID. The adjacent native factory at C93430 also sets a
+tribe's political ID before its SpawnTribe call. These findings support the
+ordering; they do not justify invoking a constructor on a live object.
+Primary type reference: Spore-Community/Spore-ModAPI,
+Spore ModAPI/Spore/Simulator/cGameData.h (SetPoliticalID vt+48 and mID +24).
+
+The experimental host command `coop tribe refound_guest` requires the two
+registered founders, their original species, a retired old guest faction,
+no other village of that species and an unoccupied test site opposite the
+initial founding direction. It creates a three-member village using the
+native factory and existing archived species. It is not the partner's final
+rebuild UI, cost or capture trigger. `found_guest` still refuses an existing
+roster; a second refounding also refuses the existing village.
+
+Evidence on DuoQAM2Identity4/5: m2-identity-prototype.log confirms native
+retirement, original political IDs on all children and a stable population
+over 90 seconds. The last part also enabled village orders and posted a save.
+m2-identity-checkpoint.log verifies both peers after a world share;
+m2-identity-orders.log passes the existing guest selection/movement test.
+After a native save, clean process exit and restart, m2-identity-cold.log
+preserves building ownership, the new native object ID, original faction,
+species, three living citizens and chief on both peers. The old native ID
+is absent. m2-identity-cold-orders.log confirms the guest controls the new
+village through the unchanged founding roster. Native faults are zero.
+Gameplay capture, helper interaction and the host-as-defeated-founder case
+remain pending. No second binding ledger was needed for this guest control.
+
+The earlier 21F2 replacement fails the existing walking test at its guest
+ownership assertion (m2-new-faction-orders-negative.log), after its native
+checkpoint passes (m2-new-faction-control-ready.log). An initial attempt was
+started before loading completed and is retained separately as
+m2-new-faction-orders-before-load.log; that is not ownership evidence.
+Retrying refound_guest on the completed 21CB replacement refuses to create
+a duplicate village. The final pair exited with zero native faults.
+
+## Replacing the native host tribe (2026-11-04, duo-species)
+<a id="tribe-refounding-host-player"></a>
+
+The host also needs cGameNounManager::SetPlayerTribe to point at the fresh
+tribe. The experimental refound_home_probe runs as one outside-frame task,
+checks the current world again on execution, and requires the original host
+founder to have no living citizens while the guest survives. It does not
+implement the final capture trigger, timer or helper UI.
+
+The first control retained old primary-building references across
+DestroyInstance. It produced a stable three-member host replacement but lost
+the conquered hut and mat (BUG-9017). Its walking test also failed; that cause
+was not independently isolated. Do not infer playability from population.
+
+The corrected operation retains the old tribe/buildings, transfers the old
+buildings to the conqueror, temporarily points the native player getter at
+the surviving guest, removes obsolete tools and detaches primary references
+before retirement. DestroyInstance queues the native object for cleanup and
+removes it from the current world; strong references keep it valid for the
+remainder of this operation. The full factory creates the original host
+species under its original 800021CA faction, and SetPlayerTribe installs it.
+Extra references are released only after that swap. No frame is intentionally
+run with a missing native player tribe.
+
+On fresh DuoQAM2HostDetach4/5, native object 3CE0 replaces 6F3. Both old
+buildings remain under conqueror 21E0. The host stays at three living citizens
+for 60 seconds (m2-host-detach-probe.log). After native save, clean exit and
+restart, both peers retain that ownership, the new object, species 067B3E4A,
+faction, native chief and population (m2-host-detach-cold.log).
+duo_tribe_host_orders.py selects and walks all three through native input,
+checking their movement on both peers (m2-host-detach-cold-orders.log).
+Native faults remain zero. These results qualify a checkpoint reload after
+host replacement; they do not establish live UI recovery without reloading.
+
+The final compiled development DLL repeats both checks successfully on
+2026-11-04 (m2-host-detach-final-checkpoint.log and
+m2-host-detach-final-orders.log). The queued probe refuses to replace a host
+with living villagers. Both games report zero faults and exit cleanly; the
+latest crash report remains the earlier BUG-9015 control. The world-key
+cancellation branch is compiled, but a mid-queue world switch was not forced.
+These checks do not qualify an installer or a second PC.
+
+## Automatic reconstruction refresh (2026-11-04, duo-species)
+
+The replacement is now prepared and checked before retiring the old tribe.
+A null or incomplete factory result leaves the old settlement in place. The
+null-result branch has not yet been forced in the native lab. Preparation
+and retirement run outside the frame; a simulation tick must not observe two
+tribes with the same founder faction.
+
+The prepared control stayed populated for 60 seconds but failed immediate
+native walking (m2-prepared-live-orders.log). Its later population was empty;
+the cause was not isolated, so that observation is not a stable-gameplay pass.
+On a fresh copy, the host passed immediate ownership checks but the guest
+still lacked the new buildings. A native host save/reload restored movement
+(m2-prepared-b-reload-orders.log); a world transfer restored both peers'
+building ownership and population (m2-prepared-b-resync.log).
+
+The host probe now requests world::checkpoint_reload after reconstruction.
+That operation confirms a newer nonempty planet file and a quiet write
+interval, waits for saving to finish, transfers the snapshot, and queues the
+existing host menu/load path. A session end or world change cancels it. A
+30-second timeout reports failure and keeps the current world open; it never
+substitutes a stale checkpoint. Native gameplay remains active while saving.
+
+PASS tools/tests/duo_tribe_rebuild_recovery.py on fresh DuoQAM2AutoFinal4/5:
+m2-auto-final-recovery.log. The test performs native defeat as fixture setup,
+then issues only the replacement request. The mod saves, transfers and loads
+without manual refresh commands. Both peers retain the conquered buildings,
+original founder species/faction, three living citizens and chief; native
+selection and walking pass. Both processes exit with zero recorded faults.
+The user-facing capture trigger and partner rebuilding action remain required.
+
+## Enemy capture and partner rebuilding (2026-11-04, duo-species)
+
+Last-villager rescue now retains the attacking political identity. On an
+unrevived enemy defeat, an outside-frame callback transfers the hut and mat,
+keeps the old founder object and primary references, finishes the native death,
+and requests automatic checkpoint refresh. Wildlife or unavailable conquerors
+retain the food-loss respawn path. Capture is inferred after load from native
+building ownership, not mbDefeated: the native save/load resets that flag to
+false. The old species profile remains present. The hold-state control passed
+full process restart on both peers (m2-capture-held-cold.log).
+
+The surviving player selects a living helper and chooses Rebuild on the F9
+Village page. Host validation checks the sender's ownership, current world,
+two-founder roster, defeated population, captured hut, surviving village and
+site distance from every hut, including earlier captured extra huts. The new
+settlement is placed at the helper's host-authoritative position. No selected
+helper or an occupied site produces no replacement. The shared factory path
+now handles either founder; only a host replacement changes the native player
+tribe. Save, host reload and guest transfer run automatically. Village orders
+restore from the registered roster on world load; the explicit debug off
+switch remains available for tests.
+
+PASS tools/tests/duo_tribe_capture_rebuild.py in both directions on
+DuoQAM2ClickControl4/5: m2-click-control-host.log and
+m2-click-control-guest.log. Each covers native enemy damage, rescue expiry,
+captured waiting state on both peers, invalid helper/site requests, helper
+walking, F9 Rebuild, original species/faction, conquered old buildings, native
+chief/population and restored walking. The host case also reproduces the
+ignored native UI click with core.ui_tribal_clicks off and verifies recovered
+delivery after enabling it in the same session (BUG-9018). The earlier
+successful cold-start UI check had not exercised the fallback; it is not
+used as fix evidence. Native hut destruction remains a separate open path.
+Final development-build cold restart also passes both original-species
+checkpoints on both peers (m2-duo10-cold-host.log and
+m2-duo10-cold-guest.log). The development identifier is 0.7.3.6-duo10-dev;
+packaged Duo 9 is unchanged. Both processes reported zero faults before exit.
+
+Modern hut damage lookup: the live hut combatant is hut+120; its vtable+18
+resolves to unrebased C9CA30. The body reads HP at combatant+38 and owner tribe
+at +110, calls the native base damage handler and posts 058BADDD on lethal
+Tribal damage. Its exits at +318, +400 and +61A use ret14h. Evidence retained
+in build/local/land-C9CA30.asm.
+
+The named modern hut-damage hook now holds lethal founder-hut damage at one
+HP while the partner has a living village. All members of the downed village
+stop taking orders, damage and AI turns. A representative carries the normal
+ten-second revival marker; another hit does not extend its deadline. Revival
+restores the hut to 40% HP, preserves the population and food, and refreshes
+both worlds. Expiry with an enemy conqueror transfers the old buildings and
+finishes native death for every member before the existing partner-rebuild
+flow. Wildlife retains the food-loss respawn. Saves are refused during rescue.
+
+Control: the unhooked hut hit reached zero HP and subsequently opened the
+native hut-destruction story caption (DuoQAM2HutControl4/5). The early probe
+log checked the caption too soon; the later console observation confirmed it.
+PASS on DuoQAM2HutRescue4/5: m2-hut-host.log, m2-hut-repeat-host.log and
+m2-hut-guest.log cover capture/rebuild, including a three-citizen host village.
+m2-hut-revive-host.log and m2-hut-revive-guest.log cover three-citizen revival
+on both sides without changing native settlement identity or charging food.
+Tests: duo_tribe_capture_rebuild.py --hut and duo_tribe_hut_rescue.py.
+Ordinary nonlethal building-health replication and full combat remain open;
+these checks qualify the loss/revival flow only.
+
+## Guest villager combat (2026-11-04, duo-species)
+
+The registered guest commander can issue CitizenAction 7 against a live enemy
+citizen. The host resolves the synchronized ID, checks its type, native life
+state and faction, and rejects either founding faction. Existing member
+ownership and downed-state checks still run for each attacker. F9 Village
+now exposes Select and Attack; Attack consumes one click near a projected
+enemy on the visible planet surface and sends only selected owned citizens.
+
+PASS tools/tests/duo_tribe_combat.py, build/local/m2-combat-guest.log on
+DuoQAM2Combat4/5. Relocation arranged the fixture; no damage was injected.
+F9 Select and Attack produced three native orders and actual enemy health
+loss on host and guest. Friendly and mistyped targets produced no orders;
+a second click did not repeat the one-shot action. Both fault counters zero.
+Hut raids, purchases and social commands are separate remaining requirements.
+
+## Guest native combat ownership and raised-target picking (2026-11-04, duo-species)
+<a id="tribe-guest-native-combat"></a>
+
+Verified modern Steam 3010a413 bodies: cTribe spatial IsPlayerOwned C8E660
+takes spatial=this+120, plain ret, and compares this-120 to GetPlayerTribe.
+Citizen spatial IsPlayerOwned C24590 delegates to owner city+1010 or
+tribe+1014. Citizen Init C27330 calls C26E70, which caches player-owned at
+citizen AI (+B4C)+5FC bit 0; bit 1 is adult, bit 5 is chief. Host adult flags
+were 3/23, guest 2/22. Both native ownership and cached flag are needed:
+changing only political high bits or only the AI bit did not restore raids.
+The rebuilt guest village's planner+290 was null, so it was not stealing
+orders. Do not infer player ownership from political IDs.
+
+BUG-9020 scopes the native ownership override and cached-bit refresh to the
+host's registered guest faction with its original species. No faction ID or
+native player-tribe pointer is changed. DoAction(15, enemy hut) then causes
+native fighting. BUG-9019 separately fixes visible raised targets whose
+camera rays miss the lower home-height sphere: use the native camera ray
+and projected target proximity with target-height near-side exclusion.
+
+PASS duo_tribe_raid.py --target-control --ai-control on
+DuoQAM2RaidAcceptance4/5, build/local/m2-raid-acceptance.log. Each disabled
+fix reproduced its own failure; enabled fixes produced three native orders,
+hut damage and matching remote native HP. Host citizens stayed distant,
+friendly raids were refused, native faults remained zero. The building HP
+stream is world-gated and sequenced per object; it never executes guest
+TakeDamage. Building creation/destruction still needs reconciliation beyond
+the existing capture/refound checkpoint path.
+
+CORRECTION (2026-11-04, duo-species): the earlier citizen-combat test observed
+health loss but did not explicitly exclude nearby host fighters. A strengthened
+test now requires those host fighters to stay away; do not generalize the
+earlier result to full guest combat qualification before that check passes.
+
+Native test input: a Spore registration modal can remain open while F9 works
+through its fallback. coop.uistate input_lock=0 does not exclude this modal.
+Dismiss it in disposable profiles and verify the UI tree before native input
+tests. Tribal camera panning uses arrow keys, unlike the Civ driver's WASD.
+
+Strengthened citizen combat PASS: build/local/m2-combat-ownership.log on
+DuoQAM2CombatOwnership4/5. The F9 attack reduced enemy native HP on both
+peers while host citizens remained outside 40 m of the target. Friendly and
+mistyped targets were rejected; native fault counters remained zero.
+
+## Native citizen growth reconciliation (2026-11-04, duo-species)
+<a id="tribe-native-growth"></a>
+
+Modern citizen GrowUp is primary vtable+78, C248C0, plain thiscall ret at
++161. It calls base GrowUp C223A0 (sets age 1, model and scale), adds the
+citizen to the tribe selectable collection through C95E50, updates identity
+color and AI adult bit 2 at AI+5FC, clears the baby hit sphere and starts
+the native growth effect. Use it only for a native 0-to-1 transition.
+SetAge C22370 alone does not perform the citizen selectable-list work.
+Live disassembly retained in build/local/land-C248C0.asm and
+land-C22370.asm. The [ModAPI base header](https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Simulator/cCreatureBase.h)
+also identifies primary vtable+78 as GrowUp.
+
+BUG-9021: snapshot age was only written to GMember bookkeeping. The existing
+native mirror skipped all age work. guest_state now grows an existing baby
+when the host reports adult, and binds new mirrors only to same-age locals.
+No citizen replacement or constructor call is involved.
+
+PASS duo_tribe_growth.py --control, build/local/m2-growth-fixed.log on
+DuoQAM2GrowthFixed4/5. Disabled fix leaves host adult / guest baby; enabling
+it produces native age 1, exactly one selectable entry, original species,
+stable pointer and zero faults. The test uses native SpawnMember and GrowUp
+to arrange the transition; it does not qualify purchase UI or natural growth
+timing. Unpatched reproduction: m2-growth-control.log.
+
+## Guest village birth purchases (2026-11-04, duo-species)
+<a id="tribe-guest-birth-purchases"></a>
+
+Modern birth cost is the float global 0158133C, observed 10.0 in the stock
+fixture. Verified reads: native tooltip B6B024, eligibility CD58F2, purchase
+CDC7C9, NPC birth CE3A1A. Read the configured value rather than assuming ten.
+TribalGame_Get CD4230 returns [0169B2C8], plain ret. CanAddBaby CD58D0 checks
+its +3A3 unlock flag and BirthBlocked CD4620 (no arguments, plain ret), then
+own food and population. BirthBlocked returns true without native player-data
+property 056D1871. The native purchase spends through the bundle manager,
+not cTribe_AddFood. Its UI button is 0625CD52; native tooltip says Add Baby
+(10 Food). The earlier no-hit AddFood probe did not imply no purchase.
+
+Guest Village Add baby now submits a reliable host command. The host checks
+the registered commander, a live owned witness, intact original-species
+village, native unlock rules and food, then calls capped SpawnMember(0).
+Unlike mirror spawning, purchases never fall back to uncapped CreateCitizen.
+Only a successful spawn charges the guest village; failure leaves food alone.
+Snapshots and BUG-9021 handle the baby and later native growth on the guest.
+
+PASS tools/tests/duo_tribe_birth.py, build/local/m2-birth-isolated.log on
+DuoQAM2BirthIsolated4/5: F9 refused an unaffordable birth, created original
+species babies on both peers, deducted the configured cost exactly once from
+the guest store, and refused the native six-member cap without charging.
+Native faults zero. The first attempt (m2-birth.log) found host food changing
+during the test; normal host eating was a confound. The passing check keeps
+host villagers away from their food mat during the charge assertion.
+
+Later read-only observations on the same pair showed purchased IDs 32/33/34
+change from native age 0 to age 1 on both peers, without a forced GrowUp call.
+The natural-growth monitor was started after all three had grown, so its
+initial-baby precondition failed; it is not recorded as an automated pass.
+
+## Native equipment mirrors (2026-11-04, duo-species)
+<a id="tribe-native-equipment"></a>
+
+BUG-9022: citizen snapshots had no specialization or held-item state. The
+separate MSG_TRIBE_EQUIPMENT (56) carries world/sequence, count, and four-byte
+entries (u16 citizen, u8 tool, u8 item). Bound native adults accept only newer
+per-citizen entries from the host in the same world. Parse the entire packet
+before mutation; retry unbound citizens in the next snapshot.
+
+Verified modern setters: C27B00 thiscall(citizen, tool), ret4 at +D1, writes
++102C and rebuilds abilities/HUD; chief initialization calls it with 11 at
+C8FF67. C250A0 thiscall(citizen, item, grasper), ret8 at +4D4, replaces the
+model attachment and writes +FFC when using the preferred grasper. Pass -1
+to use local +FC4, never a remote species' limb index. C26470 supplies the
+mapped tool item followed by grasper in its native call at +58. Model lookup
+C0E130 thiscall(citizen, attachment id), ret4, returns attachment+8C. Preferred
+hand id is 02735300 + grasper. Disassembly retained in build/local/land-*.asm.
+The [ModAPI citizen header](https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Simulator/cCreatureCitizen.h)
+independently documents the specialization, item and preferred-grasper fields.
+
+PASS duo_tribe_equipment.py --control, build/local/m2-equipment-fixed.log on
+DuoQAM2EquipmentFixed4/5: fix off reproduced stale guest specialization; on
+mirrored weapon 1/item 1, instrument 4/item 14, utility 7/item 16 and unequip.
+Native model lookup succeeded on both peers for all three equipped types;
+original species and mirror pointer stayed intact; zero native faults.
+The fixture uses native setters, so this check does not qualify purchases or
+GrabTool orders. The first attempted run stopped at missing lab symbols
+before a native change; the lab now refreshes symbols alongside the DLL.
+
+## Native rack inventories and collection orders (2026-11-04, duo-species)
+<a id="tribe-native-rack-inventory"></a>
+
+BUG-9023: MSG_TRIBE_TOOLS (57) sends a complete village inventory every 0.5s:
+world, sequence, faction, village anchor, count, then 37-byte entries containing
+kind, position, rotation and current/max HP. Validate all entries before native
+changes. Match faction and anchor, reject stale snapshots, and defer a village
+with any unfinished planner drag (tool+84 bit 8). Reconcile creation, transforms
+and removal through native methods; building health snapshots alone cannot do so.
+
+Verified modern CreateTool is tribe vtable+B4, C96170, thiscall(tribe, kind),
+ret4 at +167. It creates/registers the object but leaves owner unset. SetTribe
+is tool vtable+64, C9D5D0, ret4 at +82. Perform both in the same callback before
+native Update can run. Native planner D13B20+FC/+11C uses these calls. Placement
+uses tool spatial interface+34 vtable+44 SetTransform followed by C98940
+Tribe_UpdateToolLayout(kind), ret4 at C992B6/C992CA. RemoveTool is tribe vtable+B8,
+C97020, ret4 at +18A; it updates collections and disposes/unregisters the rack.
+These calls do not implement the player's food charge or campaign unlocks.
+
+PASS duo_tribe_tools.py --control, build/local/m2-tools-atomic.log on
+DuoQAM2ToolsAtomic4/5: disabled sync reproduced the missing rack; enabled sync
+created it with native owner/transform, moved the same object, and removed it.
+Both games reported zero faults. The initial m2-tools.log fixture crashed the
+host because separate console frames separated CreateTool and SetTribe; native
+E93A8C read unset owner+556. Atomic tool_fixture fixes test setup; production
+already initialized the owner in the same callback.
+
+F9 Village Equip sends native action 3 for selected adults. Host validation
+requires a live rack owned by the registered guest village, kind 1..9, matching
+actor tribe and adult age. Skip the chief to retain its native staff. PASS
+duo_tribe_equip_orders.py, build/local/m2-equip-orders.log on
+DuoQAM2EquipOrders4/5: both non-chief villagers collected axes through native
+AI, specialization/held items matched on both peers, foreign rack was refused,
+species and chief staff stayed intact, zero faults. No forced specialization
+setter was used in this check. Earlier attempts stopped at test menu timing
+and a registration modal hidden beyond the console tree output limit; caption
+queries now check the modal directly.
+
+## Tribal tool unlock predicate (2026-11-04, duo-species)
+<a id="tribe-tool-unlocks"></a>
+
+The native planner's palette inventory (editor+68, vtable+10) calls D082E0.
+At +BE it gets TribalGame through CD4230, then +C5 calls CD7070(kind).
+False produces status 7 and the tooltip telling the player to ally/conquer
+other tribes. CD7070 is thiscall(TribalGame*, int), ret4 at +61/+6A. It checks
+game configuration and a native tool set at +A8. Read-only calls on the initial
+Clyth fixture returned true only for 1 (Flaming Torches) and 5 (Maracas), matching
+the visible planner. Disassembly retained in land-D082E0.asm/land-CD7070.asm.
+
+Negative results: neither player+10E8 nor the temporary planner collection
+editor+78 supplies this rule; IsUnlocked returned true for all nine tool keys.
+The planner uses its inventory status in addition to collectable unlocks.
+Tribe+19D8 is purchased history, not permission. Tribal placement vectors
+at +294/+2A8 are not an unlock list. Do not mutate these to unlock tools.
+
+Prices come from GetTribeToolData(kind)+38, also read by the native planner's
+price calculation at D0AD40+45/+4A; the stock fixture has 25 for kinds 1..6,
+20 for 7..9. This layout is independently documented in the
+[ModAPI tool data header](https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Simulator/cTribeToolData.h).
+Native localized labels read from data+68 were Flaming Torches, Stone Axes,
+Throwing Spears, Wooden Horns, Maracas, Didgeridoos, Gathering Canes, Fishing
+Spears, Healing Rods. The guest Build list currently uses these English labels.
+
+CORRECTION (2026-11-04): registration's main visible text is embedded browser
+content and is absent from native captions, not merely beyond the tree output
+limit. The fixture now detects visible browser 0451A4C0 plus Login 0519E168,
+and checks the native Quit registration confirmation before that underlying
+browser. The live confirmation was detected and dismissed successfully.
+
+## Guest rack purchases and native slots (2026-11-04, duo-species)
+<a id="tribe-rack-purchases"></a>
+
+F9 Village Build submits CMD_BUILD (7) with one living owned witness, tool kind
+and ground position. The host rechecks registered ownership, intact village,
+save/load state, native campaign unlock, configured price, balance, duplicates
+and placement. Only successful creation charges the guest food store. Set the
+native purchase-history bit via C8ED70. The rack inventory snapshot also carries
+a u16 host unlock mask so the guest list can label locked tools.
+
+BUG-9024: placing only a transform passes live replication but fails cold-load
+persistence. Native C99A50 rebuilds the village layout during load and snaps each
+rack to its nearest slot (observed C99D89 SetPosition through C9DB80). Native
+NearestSlot AFACF0 takes (layout, Vector3*), returns slot pointer, ret4 +2F/+3D.
+Slot+0C is its position. SetObject AF9FB0 takes (slot, gameData*), ret4 +32;
+sets occupied byte +0 and retain/releases pointer +4. Native reload calls them
+at C99D30/C99D3E; planner assignment calls SetObject at D113B6. Use tribe+3B4
+layout, refuse occupied slots, and snap the purchase before it is visible.
+SetPosition then SetTribe aligns the rack to the planet at its final position;
+refresh the tool's pickup layout afterward. No arbitrary native field writes
+are used to manufacture a layout slot.
+
+PASS duo_tribe_tool_purchase.py, m2-tool-slot-purchase.log: F9 refuses insufficient
+food, locked tools, overlapping placement and duplicate purchases; success
+creates a native rack on both peers and charges only guest food exactly once.
+PASS duo_tribe_tool_persistence.py, m2-tool-slot-persistence.log: cold restart
+of DuoQAM2ToolSlots4/5 with a fresh host-world transfer preserves rack owner,
+position and native purchase history. Both games report zero faults.
+Failing unpatched control: m2-tool-persistence.log, recorded before cold restart
+in m2-tool-persistence.json. Fix switch: tribe.tool_slots.
+## Native conquest records and reward qualification (2026-11-04, duo-species)
+<a id="tribe-conquest-records"></a>
+
+Native hut destruction alone is not a sufficient campaign reward test. On the
+early Clyth fixture, tribe 21E0 (06785BC2) has the active native goal; later
+fixture tribes 21E1/21E2 do not yet have their own reward records. The initial
+test attacked 21E2 and incorrectly expected unlocks. This failed equally for
+host and guest attackers. Corrected host and guest attacks on 21E0 immediately
+grant a native totem segment and tools (1,3,4,5,7) on the host. The guest keeps
+its old campaign state (BUG-9025), even if SetDefeated is subsequently invoked
+on its local defeated tribe. See m2-conquest-active-goal-host.log,
+m2-conquest-guest-goal.log and m2-conquest-native-mirror.log.
+
+Verified Steam native path: goal method C2F7F0 checks completion (+7C), owns
+the target tribe at +80 and queues a native conquest result through CDB520.
+CDB520 is thiscall(manager, outcome, tribe), ret8 at +7E; it queues a retained
+16-byte record at manager+40 and increments player data+10F0. CDAC90 processes
+that queue, obtains the native player tribe and its totem through C905F0,
+and grants the target tribe's tools through CD97E0. CD97E0 is cdecl(tribe),
+plain ret at +F9; it enumerates the tribe's tools and updates TribalGame+ A8.
+These are disassembly findings, not new production calls.
+
+CDAC90 marks the queue item processed before checking for a player totem and
+skips the remaining reward path when it is missing. Rebuilt-host checkpoints
+currently have no totem, unlike the original host. Native factory C992D0 is
+bool thiscall(tribe), no stack arguments, ret at +2A5/+2AC; it checks config
++2D4 and an absent +19D0 before creating, retaining, owning and positioning a
+totem. Native village setup calls it at C9A06E. Calling it on a disposable
+rebuilt host created a valid totem without faults (m2-totem-factory.log), but
+that test still attacked an inactive goal target: it does not qualify reward
+recovery. Preserve the original totem/history when implementing refounding.
+
+The ModAPI cTotemPole header confirms segment vector +11C/+120 and owner
+inheritance from cGameData. Never construct a replacement object over a live
+totem or copy its intrusive pointers as plain memory.
+
+CORRECTION (2026-11-04, BUG-9025): the initial target goal is not guaranteed
+by the saved fixture. Goal records are created when native input selects a
+target. A fresh ConquestRefresh pair had no goal objects and even 21E0 granted
+no reward (m2-conquest-refresh.log). CD0DA4 gets the goal UI with CD35C0;
+CD0DAB calls CD3D70 with the target tribe before issuing action 15. CD3D70 is
+thiscall(goalUI, gameData target), ret4 at +208. It resolves tribe/citizen
+interfaces, looks up the tribe's political ID in map +78, creates missing
+5436411A goals, retains them in its list and displays the goal card. A guest
+order must perform this native registration outside the frame. The map makes
+repeated selection idempotent; do not construct goals or invent rewards.
+Calling this path after the failed conquest granted the missing host segment
+and tools (1,3,4,5,7), with zero faults (m2-register-goal.log).
+
+Negative findings: CD3930 is goal-map deserialization, not registration.
+CD3840 is its serialization callback. CD4F10 constructs NPC planners, not
+goals. The actual goal factory B1F760 allocates a fresh object and tail-jumps
+to constructor C2F5D0; a direct-call-only cross-reference search misses it.
+
+PASS m2-conquest-goale.log (DuoQAConquestGoalE4/5): guest native AI destroys
+the hut, the host earns tools (1,3,4,5,7) and one totem segment, and automatic
+saved-world transfer restores those native records on the guest. Zero faults
+on both. Test food and one-hit hut health isolate reward completion from
+battle balance. Result captions require two native Continue clicks, with a
+brief cinematic gap between conquest and hut upgrade; wait through both.
+The automatic save waits until they finish and uses confirmed disk writes.
+
+## Refounding campaign history investigation (2026-11-04, duo-species)
+<a id="tribe-refounding-campaign"></a>
+
+FAIL m2-totem-preserve-control.log, earned-conquest checkpoint: partner capture
+and rebuilding complete, but the rebuilt host has no native totem (BUG-9030).
+CORRECTION: do not use the ModAPI cTribe header's tentative +32C upgrade field.
+The live native maximum-population method C8EC70 calls A1AC90, which reads
+community+38 for the player tribe's level. +32C is not established as upgrade
+state. Verify setter and hut regeneration before restoring level.
+
+Native totem segment addition C8DDA0 is thiscall(totem, int type, ColorRGB*),
+ret8 at +22B/+23A. It appends both the type vector +11C and color vector +130,
+and updates rendered attachments when its model is loaded. Native conquest
+CDADC0+AF calls with type 0 and target color. The factory C992D0 creates a
+correctly placed totem for a new tribe. These native methods can reconstruct
+history from scalar segment/color values without copying intrusive pointers.
+
+Verified native level setter FF0260 is thiscall(community, int level), ret4
+at +7, writes +38; Tribal upgrade CDA594 and SpawnTribe C9A7E2/C9A824 call it.
+Hut refresh C99DC0 is thiscall(tribe), plain ret +18E. It selects the hut model
+from the native player/NPC species and community level, updates maximum health
+and refreshes layout12. SpawnTribe C9A7E9 calls it after setting level. It needs
+a live primary hut; call after replacing the native player reference so the
+new host gets the player hut model.
+
+PASS m2-totem-preserve.log: capture retains the old site under faction21E1;
+F9 Rebuild creates three original-species host citizens. The native factory
+and segment method restore the earned type/color history, ownership, placement
+and tribe level1. Native hut maximum health matches the pre-defeat value.
+Both peers pass after automatic save/reload, the retired tribe is absent,
+and all three host citizens obey movement orders. Zero faults. Negative
+control m2-totem-preserve-control.log fails on the missing rebuilt totem.
+
+PASS m2-totem-cold.log: fresh DuoQATotemCold4/5 processes retain the rebuilt
+village's native history, level, hut health, ownership and three citizens.
+PASS m2-totem-next-conquest.log: guest native AI conquers faction21E2 after
+refounding; both peers retain two totem segments and matching expanded tool
+unlocks (1,2,3,4,5,6,7) after automatic transfer. Zero faults on both.
+
+## Separate-village healing (2026-11-04, duo-species)
+<a id="tribe-village-healing"></a>
+
+BUG-9031: the village order allowlist blocked native CitizenAction5 even with
+tool9 equipped. FAIL m2-heal-control.log verifies the host rejection on an
+injured founder. The existing native input hook and native DoAction can be
+reused; no alternate health-grant implementation is necessary.
+
+PASS m2-heal-disk.log: F9 Heal orders a guest adult equipped with tool9 to heal
+the host chief. The host citizen enters native BT node0562C0FB, native patient
+health rises, and the guest receives matching health. Zero native faults.
+Equipment and initial injury are fixture setup; healing itself is native AI.
+The host validates actor ownership/adult/tool and living injured founder target;
+pending rescue remains the separate revive flow.
+
+PASS m2-heal-final-retry.log: final picker and host authorization reject an
+unequipped actor and an enemy target before F9 performs the partner heal.
+Fixture note: a citizen can resume eating/sleeping during long camera setup.
+Reset its native action before the injury and require the healer's BT node;
+health increase alone could otherwise be ordinary recovery.
+
+## Gift command investigation (2026-11-04, duo-species)
+<a id="tribe-village-gift-investigation"></a>
+
+Native DoActionGeneric CD0C20 converts the clicked hut to its owning cTribe,
+registers that tribe with TribeGoalUI_SelectTarget, and issues CitizenAction9
+with the **tribe** as target (+395..+3A9). Do not pass the hut to action9.
+Its eligibility branch reads tuning property FD444753 through 4E1CE0 using
+the property list at 158128C and default float at 1473BF0; it compares the
+player tribe's native food total before submitting the order. The native
+gift behavior table at 1593B40 identifies tick DBC730 (node04623E0C).
+
+Probe m2-gift-probe.log: issuing action9 to one registered guest adult charges
+10 food through the native game. Delivery and relationship effects are not
+yet qualified. The actor walked for the observation interval; do not treat
+the charge alone as a successful gift.
+
+CORRECTION: reading function bytes directly from the Steam 3010a413 executable
+on disk does not yield its decoded runtime instructions. A trial C27710 dump
+produced invalid instruction boundaries. Discard that static dump and continue
+using verified runtime bytes; do not infer new call signatures from packed data.
+
+The decoded .text was subsequently cached from the isolated runtime, verified
+against C230B0's seven-byte owner-tribe getter. This cache permits static reads
+with the lab games closed, avoiding unrelated progression while analysing code.
+
+## Separate-village eating (2026-11-04, duo-species)
+<a id="tribe-village-eating"></a>
+
+BUG-9032: native CitizenAction0 takes the tribe's food mat (noun0629BAFE), whose
+owner is +10C and which is referenced by tribe+260. Both links are checked on
+the host. F9 Eat sends selected guest adults to that native object.
+PASS m2-eat-final.log: old allowlist rejection reproduced with the fix disabled;
+native eating node0461300F consumes food and restores health with it enabled.
+Both peers agree, species remains unchanged, and empty stores refuse further
+orders. Zero faults. Injury and food provisioning are fixture setup only.
+
+## Native gift delivery correction (2026-11-04, duo-species)
+<a id="tribe-gift-delivery"></a>
+
+CORRECTION to the gift investigation: action9 runs node0462855E, whose
+runtime table at1593B00 names enterDB00C0, tickDBB7D0, exitDB0950. Node04623E0C
+is a different food interaction and must not be used as the gift-delivery
+assertion. m2-gift-bounded.log observes node0462855E, payer food309->299 and
+recipient230->240, with zero faults. Placement occurs before the order so no
+previous path is retained. A neutral recipient produces no relationship event.
+
+DBB7D0+9C4 credits recipient food through native AddFood. +9E9 obtains the
+actual actor's tribe; +A21 calculates recipient feelings toward that tribe.
+Only a negative value below level2 applies event0530CF06 with minus the current
+value (+A87). This is native neutralization, not an arbitrary friendship bonus.
+The input and tick both read propertyFD444753 from plist158128C with the
+default float1473BF0. Existing App::Property::GetFloat can read that tuning.
+
+Relationship records must keep the ordered political-ID pair. D00B60 only
+swaps a player-first pair in Tribe; it does not sort arbitrary NPC/guest IDs.
+The Space adapter's either-or record lookup is not appropriate for Tribal
+snapshots. No guest-gift relationship result is claimed by the neutral probe.
+
+PASS m2-gift-native-f.log and m2-gift-ui-g.log (BUG-9033/9034): native gift
+delivery takes ten food from the registered guest village, credits its recipient,
+and changes recipient->guest opinion from -4 to0. F9 Gift food and its hut
+picker use the same relay. Both games agree on native stores and calculated
+opinion; disabling command/relationship/NPC-food fixes reproduces each failure.
+Empty payer requests are refused, species is retained, and both games finish
+with zero native faults. This does not yet qualify performances or alliances.
+
+## Guest performance input investigation (2026-11-04, duo-species)
+<a id="tribe-guest-performance-input"></a>
+
+BUG-9035 remains open. Native action26 against an NPC citizen starts node
+B46E8803 for the guest founder's own citizens. The observed session retains
+the guest tribe at +8 and NPC tribe at +C; it reaches state4 with a minigame
+object at +E8. This alone does not establish a playable performance or alliance.
+Disposable SocialUiB and SocialInputA probes exited with zero caught faults.
+
+CORRECTION (2026-11-04, duo-species): the earlier unresolved action id in
+the social notes is action26, submitted by CD0C20+617..61E for input0x27.
+The current-build node table at15933FC has enterD9F120, tickDA2F30,
+exitC2E640. The current minigame primary vtable is14818B8, not the older
+14823F8. Its +68 remains the progress float; E310D0 reads it for success.
+
+Instrument input is separate from DoAction. D48AB0 dispatches a Tribal
+extra ability to D1FE00(index0..5), which gathers the native selection.
+Slots3/4/5 from the six-pointer table169DE64 require tools4/5/6 respectively.
+It checks nodeB46E8803, finds the actor's actual ability index through
+D1E5C0 cdecl(actor, ability), and requires actor+0xC28[index*16+4] >=1.
+It posts BT stimulus(maskLo=10000000, maskHi=0, lifetime=10.0, sender=null)
+to ai+8, then writes the actor-local ability index to returned slot+C in
+the same call. Native D1FB30 additionally checks session+51 when reporting
+button availability. Do not infer that its nonzero return means success;
+it returns an availability/status enum.
+
+SocialInputA posted the stimulus and wrote its index with separate console
+calls: native cooldown stayed1, session remained state4, no progress.
+This is a negative result, not a passing input test. A same-frame diagnostic
+is being qualified before network/UI integration. Do not call constructors
+on the existing minigame, overwrite its meter, or grant alliance rewards
+to work around an unresponsive native session.
+
+CORRECTION (2026-11-04, duo-species, BUG-9036): atomic input alone does not
+resolve the stalled probe. SocialInputB still has state4 and zero rounds.
+The Windows launcher used -nosound, disabling native performance timing.
+DA2F30+431/+444/+457 and instrument-count writes call5CA970, which calls
+AudioSystem::Get A20670 and posts audio properties. Session listener DA1F20
+receives message041638CA: events79836BA6/F69FF317 supply round length/count;
+FF77507F opens a request, ACEB7EA7 advances a round. With the audio engine
+enabled and disposable AudioMasterVolume0, SocialAudioA reaches state5,
+five rounds and native progress0.77 from instrument stimuli, with zero faults.
+This distinguishes a disabled audio engine from muted output. Keep audio
+processing enabled for performance qualification.
+
+CORRECTION to the earlier gift eligibility description: negative alone is not
+enough. The native level must be below2. This fixture's thresholds at manager
++10..+1C are -7,-3,3,7, so -0.5 remains neutral and correctly receives no peace
+event. Use disliked -4 for the test; furious -8 beside NPCs can kill the courier
+during setup. Position it only immediately before the actual gift order.
+
+Relationship packets58 carry one ordered pair and up to64 native event values;
+reconciliation uses existing native reset/map-insertion helpers and calculates
+the result, without replaying reward events. NPC food packets59 carry up to32
+faction/species/position/amount records. Both are host-only, world-gated and
+sequence-checked. Citizen snapshots keep their existing founder-food format.
+
+CORRECTION (2026-11-04, duo-species, BUG-9035): the first guest keyboard
+handler mistakenly gated on g_order_roster, a host-only opt-in structure.
+Use village_orders(), which reads g_guest_order_mode on guests. With this
+correction, PerformanceD receives actual guest keys and native score reaches
+0.60. Its two horn players cannot answer maraca requests; this is not a win.
+PerformanceB additionally stayed in approach phase1 after the fixture stacked
+the performers on the NPC chief. PerformanceD places them at the village
+center before ordering and lets native approach/formation run. PerformanceC
+started from home but exhausted the test's 20-second session-start timeout.
+These failed runs are retained; none qualifies an alliance reward.
+
+Runtime instrument-table inspection confirms entries3/4/5 have native ability
+types5/6/7 at ability+8. Native request enums2/0/1 therefore map to tools4/5/6
+(horns/maracas/didgeridoos). Guest input uses the host's opaque session token,
+world id, owned member and matching equipped instrument. The host validates
+the live native session, request window and cooldown before posting input.
+Packet61 carries native progress and requests; it never grants score/rewards.
+
+PASS PerformanceE (m2-performance-band-e.log): a capped six-member band,
+prepared through native SpawnMember(age1) and specialization, follows guest
+keyboard requests to native progress1.0. NPC-to-guest relation increases0 to3
+and reconciles on the guest. Species remain distinct and both instances report
+zero faults on exit. The disabled-fix control rejects action26. This qualifies
+a friendly win, not yet the second win's shared campaign/alliance reward.
+
+## Repeated performance and alliance completion (2026-11-04, duo-species)
+<a id="tribe-repeated-performance"></a>
+
+BUG-9037: completed performers retain terminal node9 in B46E8803 and session
+state6. A repeated action26 alone keeps the old session (AllianceB/C failures).
+Ordinary guest movement clears it; CompletionA then wins again and reaches
+NPC-to-guest relation7. Native CancelAction DA61D0 is bool cdecl(citizen,action),
+plain ret+56, called at DA2F30+AA with26 and caller cleanup8. It clears the
+matching native action/stimulus and replans. Same-frame cancellation/reissue
+fails (RepeatA). Waiting150ms before revalidating/reissuing succeeds (RepeatB):
+two wins, relationships0/3/7 on both peers, zero faults, no manual movement.
+The pending request carries ids/world only; newer commands or world cleanup
+discard it. No active session is cancelled.
+
+BUG-9038: CompletionA and RepeatB both retain one campaign totem segment after
+the second win. Native goal update C2F750 calls D00BD0 with target tribe id and
+the native player faction, completing only when relationship level is4 (or the
+target is defeated). Completion C2F7F0 repeats that native-player relationship
+check to distinguish outcome2 (alliance) from outcome1 (conquest). Directly
+calling completion without the correct relationship would misclassify rewards.
+This is distinct from the already-earned NPC-to-guest relationship7.
+
+BUG-9038 fix: only a completed native session with result mode1/2 and native
+E310D0 success may share its already-earned relationship with the campaign
+faction. E310D0 is bool thiscall(UI), plain ret+13/+16, reading progress+68
+against the native threshold. The outside-frame callback uses native
+ApplyRelationship(event0530CF07, earned-current), revalidating world, founder
+factions and NPC existence. Native goal update/completion then grants the
+ordinary alliance reward; no completion flag or totem vector is fabricated.
+The checkpoint observer watches native segment count as well as tools/defeat.
+
+CORRECTION (2026-11-04): AllianceCreditA's guest persistence timeout occurred
+while the host awaited the native victory Continue screen. As in the conquest
+test, acknowledgement is required before a production checkpoint is safe.
+PASS AllianceResumeA: native wins0/3/7, host segment and confirmed checkpoint
+transfer, guest segment, zero faults. PASS AllianceColdA: cold restart and fresh
+transfer preserve native segment kinds[0,1], colors, level1, unlocks1..7,
+both founders and NPC8674 allied to both. F9 start still needs its UI check.
+
+## Player-facing performance and founder slots (2026-11-04, duo-species)
+<a id="tribe-performance-ui-founder-slots"></a>
+
+PASS m2-performance-ui-b.log: F9 Perform, an actual NPC target click and native
+instrument keys earn relationship3 on both peers, preserving the guest species.
+With tribe.performance off, the same UI action reproduces rejection. Both
+processes exit with zero faults. The first UI attempt (m2-performance-ui-a.log)
+was a test navigation error: Previous clamps on page1 instead of wrapping to
+the page containing Perform. The test now starts at page1 and searches forward.
+
+Founder storage now uses four bounded campaign slots; only the existing first
+two may be persisted with DUO1/CIV1. Slot indices are campaign identities, not
+network IDs. Existing constructors and duo accessors retain the duo semantics;
+team membership uses the collection. win_tests --founders-only checks exact
+legacy bytes, lookup and rejection of extra slots without replacing the save.
+PASS m2-founder-slots-cold-a.log: two fresh games load an existing alliance
+checkpoint with identical native history, colors, unlocks, level, species,
+factions and both-founder NPC relationships. Both exit with zero faults.
+
+## Shared native population capacity (2026-11-04, duo-species)
+<a id="tribe-shared-population-capacity"></a>
+
+Native MaxPopulation C8EC70 is int thiscall(tribe), plain returns at +3B/+62/+6E.
+SpawnMember C983C0 calls it at C983F2 and compares EAX to its actual member
+count before creation. Archetypes1..31 use their tuning; archetype0 uses
+community level only for player-owned tribes, otherwise level2's default.
+
+CORRECTION: the rebuilt guest in AllianceResumeA has archetype0, not the initial
+founding archetype15. m2-capacity-control-a.log reads home level1/capacity9,
+guest level0/capacity6 on the host (guest_ai marks it player-owned), and guest
+capacity12 on the client (native non-player fallback). Merely aligning an
+archetype would not fix this mismatch.
+
+tribe.shared_capacity routes the guest founder's capacity query through the
+original getter on the shared campaign tribe. Host matching uses the saved
+founder; client matching uses a live member of the host-assigned own village.
+No object pointer survives a call. It preserves native tuning and cap checks.
+PASS m2-capacity-fixed-a.log: off-control reproduces9/6/12, on gives9 for both
+founders on both games. F9 births7/8/9 succeed; birth10 is refused without food
+charge; NPC caps are unchanged; zero native faults on exit (BUG-9039).
+
+## Automatic distinct-species founding (2026-11-05, duo-species)
+<a id="tribe-automatic-founding"></a>
+
+The first live native Vantiegan transition retained host Gaal291489FF and
+guest Stabbella (network key7CF26CCB), but supplied no separate guest village
+or saved founder roster. tribe.auto_founders now waits for two players,
+unpaused gameplay, a readable planet and received guest resources. It chooses
+a site100/140/180 metres from home with70-metre village clearance and sampled
+flat ground at least as high as the home site. It refuses conflicting rosters
+and unrelated villages of the requested species. SpawnNpcTribe arguments are
+(position, archetype0, members3, food15, flag0, guest profile), not archetype15.
+
+The operation runs outside the frame, archives before spawning, records the
+native assigned faction and uses checkpoint_reload. Scalar pending identities
+prevent repeated creation after a roster-write retry. World changes invalidate
+queued work. Explicit village_orders off suppresses automatic activation in
+that world. This implementation remains limited to two active players.
+
+PASS m2-auto-found-d.log: off-control reproduces the absent guest village;
+enabled creates and saves it without setup commands. Both peers retain one
+village per species, correct ownership, native walking and zero faults. PASS
+m2-auto-found-cold-a.log: fresh processes and a new guest transfer retain
+291489FF/7CF26CCB, ownership and walking. Run c had already passed creation
+and refresh, but its short movement destination failed the progress assertion;
+the revised test uses a40-metre tangent destination and prints positions.
+PASS m2-live-complete-b.log: a fresh original landfall pair, final patch enabled
+throughout, fills the evolution bar (fixture shortcut), then uses native
+History, the guest's Ready button, both own editors and native cinematic/intro
+Continue controls. Editors retain291489FF/29148A01; automatic founding archives
+guest7CF26CCB, saves/reloads both games, and passes one village per species,
+ownership and actual guest movement on both peers, zero faults on exit.
+The driver is retained as tools/tests/duo_creature_tribe.py. Its earlier run
+m2-live-transition-final.log stopped on the mode change before the intro and
+founding completed; this was a test wait error, not a founding failure.
+Interrupted writes and exhausted founding terrain need
+additional qualification; these component passes do not prove the whole stage.
+
+## Native Tribal outfitter requests (2026-11-05, duo-species)
+<a id="tribe-native-outfitter-request"></a>
+
+BUG-9043: the live native planner opens editor156276D1. Steam decoded code
+D13280..D13442 copies the selected portrait's model into EditorRequest+10,
+then uses TribalGame_Get CD4230 and **TribalGame+19C** for the collected
+clothing items at request+94 (IntrusivePtr_Assign B5FAB0). This is not the
+Creature collection at cPlayer+10E8. It appends five consequence IDs from
+cPlayer+10FC..110C to request+70 using thiscall UIntVector_PushBack454D30,
+ret4 verified. Flags35/3C/6D are true;34/36/37/38/39/3D/64 are false.
+The native request sets90=0116DD1B for its own result routing; the guest's
+independent request must not send that result to the host-species planner.
+
+Live DuoQAOutfitterA: equipping a hat changes the native host species from
+291489FF to2915E497. Its regular world share reaches the guest. The original
+founder record remains291489FF/7CF26CCB. Current exact-model ownership and
+Civilization roster comparisons therefore need explicit outfit lineage.
+The host's input_lock/paused planner delays Submit60 seconds through the
+existing busy timeout; this is not an indefinite deadlock.
+
+C8E9C0 is a raw thiscall(cTribe*, profile*, index), ret8, assigning
+profile array18CC[index]. CFcb6F calls it with index0. The separate1904
+field is a vector header, not inline ResourceKeys (C8FBF0 dereferences it).
+~ Superseded qualification status: see the runtime validation below. These
+initial observations alone did not qualify native guest model application.
+
+CORRECTION (2026-11-05, duo-species): native host outfit members change after
+the Planner closes, not merely when the editor returns to Tribe mode. The
+old model may remain through deferred native callbacks. The final patch waits
+for five uninterrupted seconds without pause/cinematic before committing both
+founders, and holds automatic campaign saves until the voted guest result.
+
+Guest application uses verified CreatureBase::SetSpeciesProfile C22450
+(thiscall(profile), ret4 at16C/178) for each still-owned native member, and
+Tribe_SetSpeciesProfile C8E9C0 for matching entries in the14-profile array.
+Native Save C8FA50 copies those profiles'504 keys into the1904 vector.
+Live m2-outfit-final-a.log passed two distinct editors, matching clothing
+unlocks, equipping native hats, original-founder retention, new native models
+on both peers after checkpoint, and actual guest walking with zero faults.
+That run also exposed overlapping checkpoint requests during host callbacks;
+the five-second settling guard addresses this timing, requiring a fresh run.
+
+The immutable20-byte DUO1 roster is unchanged. A bounded OFT1 sidecar at
+planet.spo.duooutfits binds up to16 historical model keys per founder to that
+roster. Atomic replacement retains the previous file on failure; malformed
+history, cross-founder keys and stale expected-current updates are rejected.
+Guest models remain validated immutable duoguest archives. The sidecar follows
+the existing whole-save transfer. Voted outfit messages62 carry kind, world,
+token, prior shared key and result shared key; host accepts only its invited
+guest's matching result and waits for that guest's model bundle. Cancelling
+or leaving without an edit retains the current model.
+
+Final m2-outfit-final-b.log passes with the settling guard, native current
+2915EFF4/7C80100E, all six citizens, walking and zero faults. The guard prevents
+the overlapping-checkpoint error, but does not coalesce the deferred native
+host update: this run used two sequential outfit checkpoints. A single reload
+is not claimed. Interrupted editor adoption/reconnect still needs qualification.
+
+Cold m2-outfit-cold-b.log passed original291489FF/7CF26CCB founders, current
+2915ED24/7CC17A40, three citizens each, correct native ownership and walking on
+both games. Setup and assertions now run consecutively: cold-a waited too
+long before asserting and an exposed guest citizen died while the test waited;
+that run failed, despite the initial native load reporting all three. This is
+not counted as a cold pass. Both runs exited with zero native faults.
+
+## Interrupted outfit choice recovery (2026-11-05, duo-species)
+<a id="tribe-outfit-recovery"></a>
+
+BUG-9044: m2-outfit-leave-control-b.log reproduces native owner254 for all
+three guest citizens after an abandoned outfit and reconnect. Local adoption
+had persisted before host acceptance. creations.outfit_ack now journals the
+previous campaign/explicit choice before adoption. Message62 kind2 acknowledges
+the matching world/token/previous/result after host archive, lineage and native
+appearance application. Only then is the local rollback journal removed.
+Clean disconnect and initial profile loading restore an outstanding journal.
+The actual pre-editor body is pinned when the campaign has no stored choice,
+so updating the newest My Creations entry cannot change that fallback first.
+
+PASS m2-outfit-leave-fixed-c.log: clean leave/rejoin restores three native
+guest citizens owned by1 and walking on both peers. PASS
+m2-outfit-ack-normal-a.log: accepted models2915F4EA/7C0CBC65, unchanged founders,
+three citizens each, walking, retained guest choice2915F4EE and empty journal.
+PASS m2-outfit-hard-exit-d.log: terminate only the disposable guest process,
+restart with its same profile, reconnect and walk with all three guest citizens.
+All passed exits report zero native faults. A host may commit before detecting
+the crash: the guest then restores an earlier recognized appearance, and the
+host keeps the accepted village appearance. Earlier appearance keys remain in
+the founder's lineage, so control survives a lost acceptance acknowledgement.
+This does not promise preservation of an unconfirmed cosmetic edit.
+
+CORRECTION: Win32 WritePrivateProfileString(NULL,NULL,NULL,path) returns zero
+when flushing its cache, not just on failure. Check the preceding actual write,
+not the flush return. Microsoft's API contract:
+https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-writeprivateprofilestringa
+Hard-exit-a/b failed before coop loaded because the restart helper omitted the
+lab's SteamAppId/SteamGameId24720. Hard-exit-c's old assertion incorrectly
+required the original appearance despite correct ownership after host commit.
+These runs are retained as failed tests and are not counted as passes.
+
+PASS m2-outfit-cancel-b.log: both native red-cross buttons return to Tribe,
+clear the vote, preserve both original models and allow guest walking on both
+games. The unchanged-editor detection takes up to30 seconds before reporting
+cancellation. Cancel-a failed its coordinate-based vote-entry prerequisite.
+
+A lost acknowledgement also leaves a valid older local appearance. The next
+editor must accept that previous key from its own founder's saved history,
+not require it to equal the latest key. tribe.outfit_recovery keeps the vote
+and actual sender-bundle guards. Resumed-editor control-a stays pending with
+previous7CF26CCB/current7C08BC0C/result7CCFED43. Fixed-a passes another native
+edit and save, models2915F883/7CEA50EB, unchanged founders, three citizens each,
+ownership/walking on both games and zero faults.
+
+## Shared founder hut upgrade (2026-11-05, duo-species)
+<a id="tribe-shared-hut-upgrade"></a>
+
+BUG-9045 control-a reads home level1/max750/current750 and guest
+level0/max400/current400 on both peers. Shared birth capacity alone does not
+upgrade a guest hut. tribe.shared_hut_upgrade compares the two registered
+founders, resolves their live native objects again outside-frame, and uses
+the verified Community_SetLevel FF0260 and Tribe_UpdateHutModel C99DC0.
+It waits through loading, saving, pauses, cinematics, rescue and outfit votes.
+The normal confirmed campaign-save transfer persists the changed level.
+
+Cached decoded C99DC0 calls the native level getter A1AC90 at +EF, assigns a
+species-appropriate model to the existing primary hut, updates maximum health
+and refreshes layout12. CORRECTION: its health setter refills to the new maximum;
+it does not preserve current HP. Runtime fixed-a observes400 becoming750.
+Keep the native upgrade behavior and apply only when the earned level differs.
+
+PASS m2-hut-upgrade-fixed-a.log: both huts reach native level1/max750 with
+unchanged factions and zero faults. PASS m2-hut-upgrade-cold-a.log: fresh
+processes reload the saved level1/max750 on both peers with the repair switch
+off before loading. This verifies persistence, not repeated runtime repair.
+
+## Native Tribal graduation editor pause (2026-11-05, duo-species)
+<a id="tribe-graduation-editor-pause"></a>
+
+BUG-9048 runtime: the normal five-victory History check and native graduation
+caption submit a blank City Hall editor99E92F05. The native request at327121D0
+has key+10=0, return mode+1C=01654C02 and community context+90=0116DD1B.
+The vote finishes with both ready, but the host remains black at input_lock,paused
+without an active cinematic. The generic BUG-0404 gate waits for a pause owned
+by the transition itself. Disabling core.editor_cinematic opens the requested
+City Hall editor within2 seconds, with zero faults; it was immediately reenabled.
+This is diagnosis, not qualification of a replacement guard.
+
+The scoped fix recognizes those request fields while still in Tribe, admits
+its native pause/input lock, and retains the cinematic wait and outside-frame
+pause-menu/message-box guard. Other requests retain the generic guard.
+
+## Graduation with an absent animal pen (2026-11-05, duo-species)
+<a id="tribe-graduation-animal-pen"></a>
+
+BUG-9049: the native City Hall save returns to Tribe, then graduation crashes
+at CDD466 with EAX0. CDD461 calls C90060, verified mov eax,[ecx+19C4]; ret.
+The [community SDK cTribe definition](https://raw.githubusercontent.com/Spore-Community/Spore-ModAPI/master/Spore%20ModAPI/Spore/Simulator/cTribe.h)
+identifies19C4 as mpDomesticatedAnimalsPen. This exact native sequence calls
+its virtual54 with argument0, without checking for a missing optional pen.
+All seven tribes in the cold restored Clyth fixture have pen0 and egg-pen0.
+CORRECTION: the initial crash label referred to a camera frame in the stack;
+the faulting object is the pen, not the camera. The isolated crash report is
+crash-20261105-023757-i4.txt. A byte-verified instruction hook at CDD466 skips
+only the null virtual call to CDD471, retaining all registers, flags and stack.
+Present pens follow the original trampoline. The guard has its own switch.
+
+## Founders and the native NPC objective budget (2026-11-05, duo-species)
+<a id="tribe-founder-objective-budget"></a>
+
+BUG-9047: an extra cooperative village counted toward the native NPC formation
+quota, leaving only four possible victories. FormVillage CC6440 calls noun
+manager GetData B212D0 atCC6478. The return atCC647D consumes only the vector
+size, uses twice that size for its tuning quota and size-1 for the next species.
+GetData has five stack arguments and ret14. A caller-scoped copied16-byte
+header subtracts one pointer from its count only if the registered guest
+village is actually present. The native array and all other callers stay intact.
+
+An old stranded save has already consumed its formation trigger. At exactly
+four earned segments, six villages, both founders intact, and no remaining
+nonallied intact NPC, recovery retries the native FormVillage operation outside
+the frame. The controller chooses its own marker, species and village setup.
+Its EAX is not a Boolean result: count actual villages. The recovery waits
+through saving, loading, cinematics, pause, rescue and outfit completion.
+
+The saved Clyth control had no fifth objective. The fixed native controller
+created2228/species067B3AFA, giving seven villages on both games without changing
+four earned segments. Guest orders subsequently conquered that village and
+native goals awarded the fifth segment on both games. History offered native
+graduation, with both founders surviving and zero faults. Fresh automatic
+founding remains separate coverage before closing BUG-9047.
+
+## Save boundaries during native Tribal graduation (2026-11-05, duo-species)
+<a id="tribe-graduation-save-boundary"></a>
+
+BUG-9050: native graduation visits Editor(City Hall99E92F05), Tribe for its
+construction cinematic, then requests Editor(first vehicleF670AA43), before
+Civilization. Returning to Tribe between designs is not a species evolution.
+The generic on_mode_change scheduled a world share after the first design.
+When the native cinematic ended at the vehicle request, that share serialized
+the dismantled intermediate village and crashed at BCAB07. Evidence:
+m2-graduation-pen-fixed-a.log and crash-20261105-024857-i4.txt.
+
+A world-scoped graduation marker now suppresses those intermediate evolution
+shares and blocks co-op saves while the host is in the Tribal transition.
+Actual Civilization entry uses the existing stage-change share. Leaving the
+world/stage clears the marker; five seconds of genuinely playable Tribe after
+a native cancellation also clears it. Editors, cinematic/input lock/pause and
+pending votes/requests reset that cancellation interval. Actual save writes
+still finish before an editor, but a queued share blocked by graduation cannot
+delay its editor. Cancellation and reconnect remain explicit test cases.
+
+## Cached guest citizens after local play (2026-11-05, duo-species)
+<a id="tribe-guest-member-lifetime"></a>
+
+BUG-9051: game::object_alive only reads an object's destroyed flag. It does not
+prove that a saved address still belongs to that object. During a long host
+vehicle edit, the guest continued local Tribal simulation. On host return,
+guest_tick reused a dead mirror and RemoveMember called through its stale
+ownerE89E7FE2. The exact deployed DLL's RVA1889AE resolves to tribe.cpp1896
+via llvm-addr2line. Report crash-20261105-025826-i5.txt.
+
+A fresh native membership map now validates cached pointers before guest state
+application and before mirror movement/death replacement. It is built once per
+state packet/tick from live native tribes and their member vectors, including
+citizen type and matching owner. Invalid bindings are forgotten without calling
+into freed memory; the next authoritative state rebinds/spawns them. Removal
+also resolves the owner from current native membership rather than trusting the
+cached citizen's owner pointer. No global simulation pause or forced deletion
+is used for recovery. FullA and FullB reach Civilization without recorded faults.
+The longer interrupted-editor reproduction still needs a dedicated replay.
+
+## Native graduation replay checkpoint (2026-11-05, duo-species)
+<a id="tribe-graduation-full-b"></a>
+
+DuoQAGraduationFullB4/5, log build/local/m2-graduation-full-b-ready.log:
+both native Civilization, busy clear, original founder species retained, zero
+recorded faults. First-use tutorials were disabled only in the fresh lab profiles
+before launch (BUG-9052 remains open). The driver needed a registration-dialog
+race correction: native stage loading may close the dialog before its confirmation
+appears. This is a stage-entry checkpoint, not proof of separate civilizations.
+The custom city hall and vehicle differ on the guest (BUG-9053).
+
+## First rival appearance with two founders (2026-11-05, duo-species)
+<a id="tribe-first-rival-gate"></a>
+
+BUG-9059: CC6A90, controller primary vtable+10, calls GetData B212D0 atCC6B5D.
+ReturnCC6B62 reads vector end+8 minus begin+4, shifts by2, subtracts1 and
+switches on the resulting count. It never dereferences a vector element through
+that header. Two founder villages therefore select the second-rival condition.
+The existing count correction inside FormVillage is too late for this gate.
+Fresh Vantiegan completes the native outfitter, then stalls at zero victories,
+two founders, and zero formation calls (tribal-final-campaign-a.log).
+
+The adapter extends the existing private count view to this exact callsite,
+under a separate control switch. The game retains its appearance timer and
+native prerequisites, and all other noun queries still return both founders.
+
+Fresh Vantiegan qualification: tribal-final-campaign-g.log and
+tribal-final-campaign-h.log reach five native victories, all earned by guest
+raids. Fixture food/travel/nonlethal damage only shorten the fights; the native
+controller supplies every rival and native AI delivers the final blows.
+tribal-final-five-readback.log checks actual hut ownership and population,
+matching native totem type/color arrays and unlocks, immutable founder keys,
+and zero recorded faults on both games. The partner helped rebuild the host
+after a real NPC conquest; the conqueror retained the old village.
+
+Test fixture correction: native Game0.old contains no co-op sidecars. Copying
+it alone into a new slot reinitializes the roster and can found another guest.
+tribal-host-final-a.log therefore proves mouse-command delivery only, not
+founder persistence. Replays must include matching founder/archive/outfit
+metadata and assert the original founder keys before performing actions.
+Never copy current sidecars onto an arbitrary older save; this adjacent
+checkpoint replay has unchanged founding identities and appearance lineage.
+
+tribal-host-final-b.log uses the complete adjacent checkpoint and asserts the
+original291489FF/7CF26CCB roster before actions. Real native box selection and
+right-click emit action15 against NPC21E2; native host AI earns victory5.
+Both games retain the original founders, native hut ownership, populations,
+five matching totem type/color arrays and all nine tool unlocks, with zero
+recorded faults. This runs the Tribal-only candidate DLL, without the parked
+Civilization progress-bar experiment. No host-order production change was needed.
+
+## Graduation lifetime qualification (2026-11-05, duo-species)
+<a id="tribe-graduation-lifetime-qualified"></a>
+
+tribal-graduation-lifetime-final.log removes a guest-local citizen via native
+RemoveMember after the host opens the first vehicle editor. Native membership
+is checked immediately; the host holds that editor for90 seconds before saving
+the native design. Both games return safely through Tribe and enter Civilization,
+retaining immutable founders and matching custom city hall/vehicle resources.
+tribal-graduation-capitals-final.log confirms both original species' separate
+native capitals. Both games exit cleanly with zero recorded faults. This is
+targeted cached-lifetime coverage for BUG-9051, not a general multiplayer soak.
+
+## Graduation vehicle roles (2026-11-05, duo-species)
+<a id="tribe-graduation-vehicle-roles"></a>
+
+BUG-9060: five-conquest Vantiegan requests military land editor7D433FAD, not
+economic F670AA43. The live request has blank model+10, return mode Tribe+1C
+and community0116DD1B+90, matching the prior economic request. The existing
+gate misses it and waits60 seconds after both players ready before the generic
+fallback opens it. tribal-offline-final.log also exposes the economic-only
+test assertion. Accept the three native land roles within the same scoped
+graduation context, retaining real pause-dialog and cinematic protection.
+The third role, cultural/religious9AD7D4AA, is named in the primary community
+SDK [CommonIDs.h](https://raw.githubusercontent.com/Spore-Community/Spore-ModAPI/master/Spore%20ModAPI/Spore/CommonIDs.h).
+This source establishes IDs; live gameplay still establishes behavior.
+
+tribal-roles-offline-final.log reproduces the hold with the role fix disabled
+(still pending after12 seconds), then enabling it opens the same native request
+in0.62 seconds. Both actual military design editors finish and the guest rejoins
+after host advancement with its own current outfit/capital and original founder
+identity. The generic cinematic and real pause-dialog guards stay enabled.
+
+tribal-absent-final.log initially stops at the native Continue caption: the
+offline test branch omitted the button handling used by its connected branch.
+The corrected driver dismisses it normally; tribal-absent-final-resume.log
+finishes the same native sequence with the guest absent before History, then
+rejoins both current species' capitals and matching designs. No extra production
+patch was needed. tribal-package-cold-final.log runs the stripped packaged DLL
+in new processes: host restores the saved capitals before guest join, then both
+games retain original291489FF/7CF26CCB founders, outfits2916C9C5/7CFFC56B and
+matching custom military designs. All these final runs exit with zero faults.
+
+## Full population diagnostics (2026-11-05, duo-species)
+<a id="tribe-full-population-diagnostics"></a>
+
+SporeKit h_out_printf formats at most8191 bytes per call. The single-call
+coop.tribe status plus list exceeded that during the late native Clyth campaign,
+ending mid-citizen on both peers and misleading population assertions. Native
+member vectors independently confirmed12 guest citizens on each game while
+the truncated guest text showed only11. Emit the diagnostic in6000-byte chunks;
+no gameplay or wire state changes. BUG-9061 and duo_tribe_diagnostics.py retain
+the failing raw lengths and passing per-tribe header/member counts:52 citizens,
+seven tribes, guest10934 bytes, zero faults. Earlier missing-member evidence
+whose native count also changed remains inconclusive, not retroactively passed.
+
+## Bounded walking and lossy reconnect checks (2026-11-05, duo-species)
+<a id="tribe-bounded-walk-validation"></a>
+
+duo_tribe_walk_connected.py reuses the upstream per-frame limits on an already
+connected pair. It issues native selection/walk orders; it is not mouse-input
+qualification. Two guest30-FPS runs flag relocations also present on the host
+while the host's speed is zero; the guest's aim/speed diagnostics remain stale
+around those moves. Preserve both failed results in BUG-9062. No movement
+implementation or threshold was changed to make these checks pass.
+
+A separate30-FPS host-chief run passes jumps, speed windows and gait; there
+are too few slow-speed frames to qualify stop-and-go. A45-second guest-group
+run through netem mobile (seed61) passes all upstream checks, with nine members,
+10370 walking frames,100% coverage and citizen path-error p900.226m. Native
+world transfer and subsequent direct reconnect retain both founders. This is
+local simulation of a lossy network, not a real two-PC/VPN session. The initial
+mobile attempt stops before recording at selection; the driver now reacquires
+membership after camera setup and logs the exact failure response. That initial
+failure has no per-frame evidence and does not count as a movement result.
+
+## Fresh NPC political identities (2026-11-05, duo-species)
+<a id="tribe-npc-faction-mapping"></a>
+
+CORRECTION (2026-11-05, duo-species): matching native faction numbers on the
+saved Clyth fixture does not establish identity across fresh NPC creation.
+Vantiegan native readback has host/guest NPC factions21CE/21D0,21CF/21D1,
+21D0/21D2 and21D1/21D3 for the same respective species and mirrored chiefs.
+Both founders still agree. The guest factory allocates local political IDs;
+the tribe-state stream maps citizens by village position and network identity.
+Existing MSG_TRIBE_FOOD carries bounded host faction/species/position records
+for all populated tribes once per second. These provide a mapping source
+without changing native IDs or adding another wire format. Unknown or
+ambiguous identities must defer faction-addressed snapshots, never fall back
+to an accidentally matching integer. See BUG-9063 and tribal-friendly-roster.log.
+
+## Native graduation role lookup (2026-11-05, duo-species)
+<a id="tribe-native-graduation-role"></a>
+
+The Steam graduation caller at CDC746 obtains the consequence from CDBBD0
+(no arguments, integer result) and stores it at cPlayer+1104. CD2308 reads
+that trait: C2CA9495 selects the economic vehicle F670AA43, 60A78928 the
+religious vehicle 9AD7D4AA, otherwise military 7D433FAD. CDBBD0 compares its
+native float helper result to +/-1/3. CDBA30 uses filtered native tribe
+relationships with manager bounds and a UITimeline contribution obtained via
+E3F7A0(AD56080C). Both helpers return floats through x87 and must not be
+called using the diagnostic console's integer-return path. The full meaning
+of the native filter and timeline contribution remains unverified.
+
+The Clyth fixture earned one conquest and four alliances. Both games retained
+exactly those five victory markers on cold load, but its native History page
+also showed earlier combat events and an Industrious result. The integer getter
+returned C2CA9495, and the real editor asked for F670AA43. Both capitals and
+custom City Hall/vehicle survived the transition. A count of alliance markers
+is not evidence that a particular editor was qualified. See tribal-role-probe.log,
+tribal-role-history.png, tribal-validation-religious-handoff.log (negative),
+and tribal-validation-mixed-handoff.log (economic pass) under build/local.
+
+## Tribal scaling limits and action tracing (2026-11-06, duo-species)
+<a id="tribe-scaling-limits"></a>
+
+In the unpacked Steam build, the existing CDB520 goal-result path compares
+the native player's floats at +10F4 (maximum) and +10F0 (current) before
+queuing a native reward and increasing current progress. The four-alliance
+Vantiegan readback is 4.0 and 5.0 (current and maximum). Totem_AddSegment
+at C8DDA0+57..71 uses the current segment count as an index into the visual
+attachment table whose begin pointer is at totem+108. The table contains
+exactly five pointers at both three and four earned victories. The actual
+segment and color vectors grow separately. A larger vector capacity is not
+evidence that a sixth visible piece is safe. Keep at most five native reward
+milestones in an extended campaign and keep all individual rival results.
+See tribal-scaling-layout.log and tribal-scaling-layout-four.log in build/local.
+
+Steam's DA61D0+0B calls BCA430 for the current action. Its leaf compares the
+first pointer at ai+60C to that list sentinel, returning null if empty, else
+the first list node+8. The record contains the action at +0 and native target
+at +28. Traces A/B/C use this read-only path to distinguish an actual native
+action26 and target from a transmitted order or a displayed request.
+
+The native SDK names the player fields mCurrentGoalProgress (+10F0),
+mGoalProgressTotal (+10F4) and mTribeConsequenceTrait (+1104). See
+[cPlayer.h](https://github.com/Spore-Community/Spore-ModAPI/blob/721b87f46f3673d8fd0cf4380655b1b7e54bd969/Spore%20ModAPI/Spore/Simulator/cPlayer.h).
+At five earned alliances the two progress fields both read 5.0. CDBA30+BE
+calls C74680 with the address of the NPC's political ID. A false return at
+CDBAF3 skips its opinion. All five NPCs returned false despite their earned
+alliances with both founders. The caller-scoped allied check changes the actual
+graduation trait from aggressive to friendly in the same world, followed by
+native religious vehicle editing and both capitals (BUG-9066).
+
+### Sixth rival trial (Steam 3010a413)
+
+The game's native visible totem models occupy five pointers at totem+108.
+The earned result and color vectors at +11C and +130 grow separately.
+C8DDA0 indexes the former using the result count. Never submit a sixth
+native segment merely because the result vector has spare capacity.
+C2F7F0 calls the result queue CDB520 (thiscall, result and tribe pointer,
+ret8) at C2F8C4. Only the return at C2F8C9 handles the opted-in trial.
+Six-native-five.log records actual native score fractions on both peers.
+
+A fresh NPC factory call with archetype2 supplied only one tool and no
+instrument. Atomic rack creation in a vacant native slot produced a playable
+audience. The cold copies of this village have the same bearing and species
+but terrain radii 508.10 and 500.77 (six-cold-radii.log). Each village stands
+within 0.05 metres of its own native ground. Raw XYZ separation alone can
+therefore reject a correct village identity (BUG-0332, BUG-9069).
+
+## Hostile citizen health and terrain capacity (2026-11-06, duo-species)
+<a id="tribe-reserved-combat-sites"></a>
+
+The native citizen combatant vtable at 146AAB0 uses C24F50 at offset 0x58.
+On Vantiegan a 162-HP rival citizen had 283.5 HP on both peers. A four-point
+attack took 5.2 HP from a founder after native cinematic protection ended.
+On QuartetTribe a read-only survey found one live village and 23 further
+sites meeting the slope and separation checks. This measures terrain on that
+seed. It does not establish AI routes or native support for 24 live villages.
+See four-warriors-b-combat.log and tribe-layout-a-save.log (BUG-9072).
+
+## Upstream arrival and snapshot guards (2026-11-07)
+<a id="tribe-lineages-upstream-079"></a>
+
+BUG-9090 ports v0.7.9's wrapping CycleTracker to both Tribal and Civilization
+receivers. A delayed older cycle is rejected before changing bindings or units;
+session/world teardown resets sequence state. Complete-cycle cleanup still waits
+for all unique chunks. BUG-9091 exempts a chief from arrival repositioning once
+movement is observed in that arrival window, even after it stops or returns to
+its original position. This is a plausible protection against upstream BUG-0610,
+not evidence that the unexplained Lineages BUG-9062 relocations share that cause.
 
 ## The size of the members' mirrors (2026-11-03, fix/w40-scale)
 <a id="tribe-member-scale"></a>
@@ -1862,6 +3392,430 @@ the first four return addresses into the game's code: the creator of every effec
   (out/lab/20261105-140001).
 * ~ NPCs of the Creature stage go through the same path (npc::id_of / npc::proxy); not tested there.
 
+## The automatic founders wait for the partner's settled own creature (2026-11-11, feat/lineages-47)
+<a id="tribe-founder-settle"></a>
+
+BUG-9137, `tribe.founder_settle`. Windows QA, a copy of the owner's save in profile DuoQAJiffHost.
+
+* ✔ (owner's log) A partner that rejoins while the host is still in another world reports the creature it played there
+  first: the host's own creation, sent by key without records (creations.cpp share_own: `b.key = hk`). Its own creature
+  for the Tribe world came 11 s after the host's arrival, 2 s after the first founding try (5 s tick). The DUO1 roster
+  then bound seat 1 to the host's creation; village_commander() found nobody (`coop.tribe`: commander=254).
+* ✔ (QA) The partner's chosen creature (`coop.creations choose creature <key>` in the Galaxy menu) was reset by the
+  join into the host's world: `mine creature: 00000000` until chosen again in Tribe.
+* Now: the founding waits 15 s after the world was entered and 10 s after the partner's creature last changed
+  (creations::player_key_changed_at), and refuses a partner creature that is one of the host's own creations sent
+  without records (creations::plays_host_creation). A roster whose seat 1 species is in the host's My Creations and has
+  no outfit gets the partner's settled own creature as an outfit (wrong_founder_tick: archive, record_outfit seat 1,
+  Tribe_SetSpeciesProfile on the 14 slots + SetSpeciesProfile on the members, checkpoint reload). QA: repair 12 s after
+  the creature arrived, commander=1 after the reload; a new founding with the host's creation: refused with the switch
+  on, went on to the site search with it off.
+* `coop.tribe` (host) prints `commander= founder_guest= outfit_guest= founder_repairs=`.
+
+## Up to four founders: a village for every partner (2026-11-12, feat/lineages-47)
+<a id="tribe-multi-founders"></a>
+
+BUG-9135, roadmap phase 3 (Tribe), `tribe.multi_founders` (off: the two-founder co-op exactly as before: two players,
+seat 1 the only partner). Code: tribe.cpp, the pure parts in tribe_seats.h (tests/tribe_seats_tests.cpp). Not yet run
+in a game (to verify with three game instances, see the ticket).
+
+* Seats are the founder roster's (founders::Roster, `.duofounders`): 0 the host's village (the native player tribe),
+  1.. the partners' villages in the order they were founded, contiguous, up to founders::kPlaySeats (4). They are not
+  the party's seats (`.duoparty`): a roster cannot have gaps, so a partner who was offline at the Tribe start gets the
+  next free founder seat.
+* Binding: `seat_of_player(player)` = party::founder_seat_of (identity first: Founder::player; for a seat of an older
+  save without identity the creature match the two-founder co-op used: the player's creature is the seat's founder or
+  one of its outfits); `player_of_seat(seat)` = party::founder_player_of (0xFE: nobody). `seat_of_village(t)`: by the
+  village's faction (+0x30), then its species must be the seat's founder or an outfit. `founder_village(seat)`.
+  `village_commander()` stays for the switch-off path (and `commander=` in `coop.tribe`, now seat 1's player).
+* A seat without identity learns it once (bind_founder_identities, outside the frame, founders::record: DUO1 becomes
+  DUO2) when a connected partner matches it by creature, its creature settled (15 s after the world, 10 s after its
+  last change) and not one of the host's creations. `coop.tribe bind_founder <seat> <player>` (host) binds by hand.
+* Founding (auto_founders_multi / found_partners, every 5 s, one partner per tick, outside the frame): every connected
+  partner without a seat (party::unseated_partners) gets a village, with the BUG-9137 guards per partner (settled own
+  creature, never one of the host's creations); a village made but not yet saved is remembered per partner (by
+  identity, else network id) and reused, never made twice. Site: the partner's own Creature nest when one is usable
+  (a live, not extinct nest herd of their species within 400 m of the host's village, level within 3 m 20 m away to
+  four sides, ground within 6 m of the host village's height, 70 m from every village; the nest herd stays), else the
+  next free site of founding_site (100/140/180 m rings, 70 m from every village). The new seat records the partner's
+  identity. The checkpoint reload runs once after the last partner ready now (a later failure still runs a due one).
+* Founding waits while a seat without identity has no connected player (its partner may be here with another creature:
+  a second village would be theirs twice): tribe_seats::founding_held. Exception (BUG-9137 with several partners): a
+  seat founded with one of the host's creations and no outfit since is taken over by the only unseated partner
+  (tribe_seats::claimable_seat): its identity is bound and wrong_founder_tick gives the village that partner's
+  creature. More than one unseated partner and such a seat: nobody takes it, founding waits (`bind_founder` decides).
+* Ownership and orders: each partner village's members belong to its seat's player in MSG_TRIBE_STATE (0xFE while
+  offline: the village runs as before for an absent partner). host_command takes the sender's seat: build, baby,
+  forage, equip (the tool of its own village), the member's village check, performances and instruments, give-up.
+* Rules counting founders: h_NounData hides every partner village present from the two counting callers (each seat
+  once); pace_holds skips every partner faction; missing_last_objective expects founders + 4 villages (two founders:
+  6) and the backfill founders + 5 (7); the six-rival trial founders + 6 (8); h_FactionFlag needs an alliance with
+  every founder; village_allied_with_founder any founder; shared_hut_upgrade gives the host's earned level to every
+  partner village; the population rewind is held while any partner village has a living member.
+* Rescue (BUG-9118) per seat: g_founder_rescues / g_remote_rescues by seat. A downed founder is protected when its
+  seat's player is here and another founder village of a player who is here has a living member (two founders: as
+  before, both players); any other founder village's living member within 15 m revives; capture and rebuild name the
+  seat. CMD_REBUILD and CMD_GIVE_UP carry a seat in their action word (seat + 1, 0 = not given; older hosts ignore the
+  action of both): rebuild without a seat takes the captured founder village other than the helper's; give-up's seat
+  must be the sender's own. `coop.tribe rebuild [seat]`.
+* Outfit vote per seat: one vote per connected partner seat (g_votes), each result recorded to its seat
+  (record_outfit) and applied to its village (apply_guest_model with the seat), one checkpoint for all.
+* Wire (MSG_TRIBE_STATE): two seats keep every form byte for byte. Food entries: one per founder village (a guest with
+  the switch accepts up to 8; before 2, a third dropped the whole packet); the guest's own food is the village of its
+  own members. Rescue trailer, read from the end of the packet: TRRV (u32 0x56525254, 2 x {u16 member, u16 tenths})
+  for two seats; TRRS for 3+: n x {u16 member, u16 tenths}, u8 n, u32 0x53525254 (tag last, so the variable block is
+  found from the end; n 3..8). HUD: host `Village food   Host X   Guests Y, Z` (two seats: `... Guest Y` as before),
+  guest `Village food   Host X   You Y`.
+* `coop.tribe` (host) adds `tribe founders: multi= seats= made= at_nest= identities_bound= pending=` and a line per
+  seat (species, faction, identity, commander, outfit, village, food). `coop.tribe outfits` lists seats 2.. too.
+* ? Whether a partner's Creature nest herd (home_nests.cpp) still exists in the Tribe world (the stage change may
+  drop or keep other species' nests): the site falls back to the free-site search either way.
+* Still for two founders only (fixtures, not campaign play): `coop.tribe register_guest`, `found_guest`,
+  `refound_guest` (tests with exactly one guest). A guest's own game sees the other partners' villages as NPC
+  villages holding mirrors of their members.
+* ✔ Live, three players on two PCs (2026-11-12, feat/lineages-47; host and one partner on the QA copy at 5 FPS, the
+  MSI as the third; a fresh copy of the owner's Jiff Peanutbutter save, whose seat 1 was founded with the host's
+  291EE5B5, BUG-9137): the first partner alone claimed seat 1 (`seat 1 ... belongs to player identity ... now`), the
+  BUG-9137 repair put its own creature on the village once it played it; the MSI, joining next, got party seat 2 and
+  a founded village (`village for player 2 (seat 2, ...) ... 224 m from the host's, at the next free site`), one
+  checkpoint; all three games list the same three villages; `select_village` + `gather` on each guest: 5 orders
+  done (2 + 3 villagers), 0 rejected; HUD food: host `Host 12.00   Guests 72.88, 15.00`, each guest `You` its own
+  village's; the MSI left and joined again: the same seat 2 and commander, no new village.
+* ✔ CORRECTION of the free-site search for 3+ founders (2026-11-12): the rings 100-180 m around the host's village
+  (16 directions, ground 0-3 m above the home's, level within 3 m 20 m out, 70 m from every village) had no spot for
+  seat 2 on that save ("No clear, level founding site near your village is available yet."). founding_site now also
+  searches the same rings around every other founder village (inhabited, dry and level, so the rule stays as strict):
+  found 224 m from the host's, beside seat 1's village.
+* Not yet live: a fresh Creature -> Tribe start with three own nests (the founding at the own nest), rescue and
+  give-up per seat, the three-way outfit vote, the switch off with two players.
+
+## Joining late: the own-creature prompt and the catch-up (2026-11-12, phase4-tribe)
+<a id="tribe-late-joiners"></a>
+
+BUG-9135, roadmap phase 4 (owner decisions 4, 5 and 9), and BUG-9138. Code: tribe.cpp (founding_wait, late_prompt,
+founding_wait_line, catch_up_village), creations.cpp (plays_own_creature, begin_new_creature), coop.cpp and
+coop_ui.cpp (the Co-op window); the pure rules in tribe_late.h (tests/tribe_late_tests.cpp). Written without a game
+running: nothing here is live-tested yet (the checks are in the ticket). No new game symbol: every call below is
+already in overrides_dc04aee5.sym.
+
+**Decision 4, first half: a returning player keeps their species.** ✔ (code) It already works; no code was added.
+* A guest's creature is creations::mine(kCreature), in this order: an explicit choice (choices.ini `[creations]
+  creature`: the Co-op window's arrows or `coop.creations choose`, every world); the campaign creature (choices.ini
+  `[landfall]`, key `FNV-1(host name)-crc32(planet file)`: written when the guest's own cell became its land creature,
+  or by an editor's result while it had one); the own creation recorded for this planet (worlds.ini `[creature]
+  <crc32(planet file)>`, written while its avatar wore it in Creature or by its own editor there); else the host's
+  species, which follows the host's evolution (BUG-0508).
+* The planet file name stays the same from Creature to Tribe (`snapshot.spo` is read as the planet's,
+  #tribe-snapshot-name), so a creature recorded in Creature still answers in Tribe.
+* share_own sends it with its records every 2 s; on the host plays_host_creation is false and found_partners founds
+  the village of an unseated partner, or a returning partner is recognised by identity and commands their seat again
+  (#tribe-multi-founders).
+* ~ The campaign entry is keyed by the host's name: after the host renames, only the worlds.ini record (by planet)
+  still answers, and only when the guest wore its creature in that world.
+* ? QA 2026-11-12 (#tribe-multi-founders) saw `mine creature: 00000000` after a join although a creature had been
+  chosen in the Galaxy menu. Code reading does not explain it: key 0 is what an explicit "the world's own" choice gives
+  in Tribe (no avatar there), and a restored `U:` outfit journal clears the choice. Live check: `coop.creations` on the
+  guest before and after the join.
+
+**Decision 4, second half: a late joiner without a creature of their own** (`tribe.late_prompt`, on).
+* Host: founding_ready asks tribe_late::founding_wait: Ready, NoCreatureYet, NoCreature, Settling (BUG-9137: 15 s
+  after the world, 10 s after the creature last changed), HostCreation (one of the host's creations, sent without
+  records) or FounderSpecies (`tribe.founding_skip`, below). HostCreation and FounderSpecies are told once to everybody
+  (MSG_NOTICE, so the words fit both sides): "<name> plays one of the host's creatures, so they have no village of their
+  own. They can choose their own creature in the Co-op window (F9)." The host's Co-op window status line says "<name>
+  has no village yet: they play one of your creatures." while that partner is connected and waiting
+  (tribe::founding_wait_line).
+* ✔ (code) A guest who joins straight into Tribe and plays the host's species usually sends no creature at all:
+  mine(kCreature) falls back to the avatar's species, and there is no avatar in Tribe (avatar_species_key reads it in
+  Creature and Adventures only), so share_own sends nothing and the host has no player_key for them. Before, such a
+  partner waited without a word. Now, once they play in this world (Ctx::here: their last state has the host's mode and
+  world, so a partner still receiving the world is not meant) and the world is 15 s old, the wait is NoCreature: "<name>
+  has no creature of their own here, so they have no village yet. They can choose their own creature in the Co-op
+  window (F9)."; status line "<name> has no village yet: they have no creature of their own." (tribe.late_prompt off:
+  silent, as before).
+* Guest: tribe::late_prompt() (in the host's Tribe world, the host not away, 15 s after the world was entered, the
+  host's member state received) is 1 when no member of a village other than the host's belongs to this player and
+  creations::plays_own_creature() is false (mine() is not one of their My Creations, or is "the world's own"); 2 when
+  they play their own creature and their village is not there yet. The lobby page then shows the creature row in
+  Tribe too: "Choose your own creature for this game: <name | none yet>" with the usual < > arrows (2: "Your creature
+  for this game: ..."), and the status line "You have no village: you play one of the host's creatures. Choose your
+  own below." (2: "You play your own creature: the host founds your village with it shortly."). Without own creations
+  the row reads "No creatures of your own yet: make one in a creature editor".
+* ✔ (code) A pick reaches the founding without a rejoin: the arrows call creations::cycle, then choose (choices.ini,
+  share at once), share_own sends the creature with its records within 2 s, the host's apply sets player_key and
+  player_key_changed_at, auto_founders_multi runs found_partners every 5 s, founding_ready passes 10 s after the last
+  change, the village is founded and one checkpoint reloads every game. Every click restarts those 10 s: the village
+  gets the creature shown 10 s after the last click.
+* BUG-9138 (`tribe.founding_skip`, on): before, a partner on a founder's species was "ready": the host's species when
+  it is not in the host's My Creations (a Sporepedia or premade creature, so plays_host_creation is false), an outfit
+  of it, or another partner's founder. found_partners took the first ready partner in join order and stopped at them
+  every tick (without a word for the host's species), so no partner after them got a village. Now they wait with the
+  reason above and the next partner is founded.
+
+**The creature editor from Tribe for a new creature** (`tribe.late_create_editor`, OFF by default).
+* Known: ✔ (#tribe-stage-epoch) a creature editor request in Tribe (CreatureEditorExtraLarge 0x465C50BA with a
+  member's species key) opens the editor within 1 s; the route is kTribe, kEditor, kTribe with no non-stage frame, and
+  tribe::world_check ignores the editor frames. Its Done was blocked by the part-list error (bit 5), which
+  h_BlockingErrors waives while g_own_editor is set. ✔ (#tribe-native-outfitter-request) a guest's own editor request
+  from Tribe (the outfitter 0x156276D1) opens and comes back to Tribe, live on two games. ✔
+  (docs/re/creations.md#creations-own-editor-items) a request without +0x94 offers every part.
+* Built: the button "Create New Creature" (where the vote's Ready button sits, a guest whose late_prompt is not 0)
+  queues outside the frame: a new EditorRequest (0x9C bytes, EditorRequest_ctor), +0xC 0x465C50BA, +0x10..+0x18 zero
+  (no creation), no evolution tag (+0x90) and no collected parts (+0x94); Submit with the vote bypassed and g_own_editor
+  set; creations::begin_new_creature. Back in the same Tribe world adopt_after_editor takes the newest own creation
+  that was not in My Creations when the editor opened (every 2 s for 30 s), as after a Creature editor, and the
+  founding follows. Everybody gets the notice "<name> is making a creature of their own in the editor".
+* ? Not checked (no Ghidra project and no game on the PC this was written on): (1) what the creature editor does with
+  an empty creation key (expected: a blank body, as the Creature Creator's "new" and ModAPI mods open it); (2) that its
+  exit returns to Tribe for a request the stage did not make (cGameModeManager::SubmitEditorRequest 0xB1DE20 keeps
+  the request, #tribe-civ-transition); (3) that Save writes a new key to My Creations (the own editor of an existing
+  creation kept its key on "Save New", docs/re/creations.md#creations-own-editor-save); (4) what a host checkpoint or
+  world share does to a guest who is in the editor (the outfit vote holds the host's saves, this path does not);
+  (5) whether the guest's Tribe mirrors resume afterwards as after the outfitter. Ghidra, next session: the reads of
+  request +0x10 in cEditor::OnEnter and the creature editor's load (an empty key), and its Save path for a new creation.
+
+**Decision 5: a late village catches up to the host's village** (`tribe.late_catch_up`, on).
+* ✔ (code) shared_hut_upgrade already covered a village founded later: its tick (every second) compares the host's
+  level with every partner seat's (founder_seats() grows with the roster) and applies Community_SetLevel +
+  Tribe_UpdateHutModel; the campaign refresh then saves it with a share 2 s later. The catch-up now sets the level
+  before the founding's checkpoint, so that tick finds nothing left to do.
+* found_partners, right after the new seat is recorded and before founders_refresh's checkpoint, calls
+  catch_up_village(seat, village, home). It reads both villages (level +0x38, living members by age +0xB34, racks by
+  tool_inventory) and plans with tribe_late::catch_up_plan: the host's level when it differs (0..4); members up to the
+  host's count (adults up to the host's adults, then babies; never removed; at most 40); the host's racks 1..9 the new
+  village lacks (10 is the fire pit every village has). Then, in this order: the level (the hut pair above); members
+  with the game's SpawnMember (tribe vt 0x98, null at the population limit; the seat is recorded first, so the founders
+  share the host's limit through tribe.shared_capacity); racks with free_rack_slot (CommunityLayout_NearestSlot on
+  tribe +0x3B4, the nearest slot to points on 22/16/28/34 m rings, free and 12-35 m from the centre; stock_trial_instrument
+  uses the same with 22 m), place_committed_tool (CreateTool vt 0xB4, SetTribe, CommunitySlot_SetObject, SetPosition,
+  Tribe_UpdateToolLayout) and Tribe_SetPurchasedTool. Log: `tribe late catch-up: seat N (faction F): hut level L,
+  members +A of B (x adults, y babies), racks k ...`.
+* Once per founding: found_partners records a seat once. Villages of older saves and seats bound by identity or
+  creature are never founded again, so never caught up (decision 9). The host's village is only read. The two-founder
+  path (tribe.multi_founders off, auto_founders_two) is unchanged.
+* ~ A rack the host is dragging in its planner makes tool_inventory refuse the host's inventory: no racks are copied
+  then (the log says "racks none").
+* Not copied: food (decision 5 names members, hut upgrades and tools), held tools, the campaign's tool unlocks (shared
+  already).
+* Tests: `coop.tribe shapes` lists every village of this game (faction, species, player, level, adults, babies, rack
+  mask), on a guest its own loaded world; `coop.tribe late` the late-joiner state (guest: prompt, has_village,
+  plays_own; host: waiting, catch-ups, members and racks added); `coop.tribe` prints a `tribe late:` line.
+* ✔ Live (2026-11-12, feat/lineages-47, two PCs, the Jiff test save with 3 reserved founders): a joiner with no
+  choice and no campaign memory played the host's 291EE5B5; host log "Late plays one of the host's creatures, so
+  they have no village of their own ..." 13 s after their seat; their Co-op window (opened by `coop.uistate 1`):
+  "You have no village: you play one of the host's creatures. Choose your own below." and "Choose your own creature
+  for this game: none yet" with the arrows. `coop.creations next creature` (the arrow): village for seat 3 about
+  2 min later at 5 FPS ("77 m from the host's"), `tribe late catch-up: seat 3 ...: hut level 1, members +4 of 4,
+  racks 1 5`, one checkpoint; all three connected games list the same four founder villages (`coop.tribe shapes`);
+  the joiner's prompt is gone, 7 villagers selected, a gather done (0 rejected). The MSI's earlier late village
+  (seat 2) got the same catch-up; the old seat 1 village kept its 2 adults and racks (decision 9).
+* ~ A guest's `coop.creations choose creature none` does not make it play the host's species when it has a campaign
+  creature for this planet (choices.ini [landfall]): "none" clears the explicit choice and the campaign memory
+  answers (seen on the MSI: it founded with Duckulon). Use `coop.creations unchoose creature` on a profile without
+  that campaign's memory to test a joiner without a creature.
+* ? The MSI's late village went from 7 adults to 5 within about 10 minutes with nobody ordering it (an epic creature
+  visited the area at that time); not looked into.
+  ~ explained (2026-11-12, feat/lineages-47): the co-op epic (spawn_epic, "an epic creature comes!") comes every 10
+  minutes (host log 06:18, 06:28, 06:38 ...); left alone for 4 hours at 5 FPS the host, MSI and old partner villages
+  were down to their chief (1 member each), the newest village to 7. Undefended villages lose members to it: normal
+  play, not a bug (BUG-9135 ticket, "Seats added mid-stage").
+
+## Late joiners' stand-in villages (2026-11-12, feat/lineages-47)
+<a id="tribe-stand-in"></a>
+
+BUG-9150, owner decision 14 ("1B"). Switch `tribe.stand_in` (on). Code: creations.cpp make_stand_in, founders.cpp
+read_stand_ins / add_stand_in, tribe.cpp found_partners / wrong_founder_tick / late_prompt, tribe_late.h.
+
+* A partner whose wait would be NoCreature, HostCreation or FounderSpecies ([tribe-late-joiners](#tribe-late-joiners))
+  is founded at once: StandIn. The stand-in species is the host village's species re-keyed for that player:
+  records_from_game(host key) keeps the model (kBem) and metadata (kMeta) records, pack() adds part descriptions, the key
+  is shared_instance(player, fnv(payload)) (the same on every try), and the archive is a normal founder archive
+  (DGA1 header, owner = the player), so decode_founder checks it, the save restores it before the planet loads
+  (restore_guest_model) and guests get it with the world. The stand-in keys are listed in `<planet>.duostandins`.
+* ✔ (live) The repair of BUG-9137 (wrong_founder_tick) treats a listed stand-in like a village founded with one of the
+  host's creations: once the seat's player has a creature of their own (records, settled, no founder's species), the
+  outfit history gets it and apply_guest_model puts it on the same members (no member is replaced), then a checkpoint.
+* Guest: its own village (members owned by it outside the host's village) whose species is listed is a stand-in:
+  late_prompt 3 (choose) / 4 (chosen, coming); 0 once the members wear its own creature.
+* ~ Open: a seat still on its stand-in at the Tribe -> Civ graduation gets a capital with the stand-in species
+  (outfits.current); a player who never comes back keeps a village that looks like the host's.
+
+## A guest commands its own village with the game's own controls (2026-11-12, feat/lineages-47)
+<a id="tribe-guest-native-control"></a>
+
+BUG-9152. Switch `tribe.guest_native` (on).
+* ✔ (live) Before: on a guest's game the native selection and right-click orders only reach the host's village (the
+  player tribe there); the guest's own village is an NPC tribe in its game. The terrain cursor's candidate list
+  (GetTerrainCursor B30EB0, cursor +0x164) is a borrowed vector pointer: civ.cpp h_TerrainCursor now points it at the
+  guest's own village's mSelectableMembers (+0x354) in Tribe (the MSI read back its village's +0x354, 3 members), and
+  h_TribePlayerOwned answers true for that village on the guest's game. With its villagers selected, a real
+  right-click on the ground went to the host as a walk (h_WalkSelected) and all three walked.
+* ? Not yet seen: a real box around the guest's villagers (they went home before the box), and each Village page
+  action natively (raid, tools and racks, the hut's baby, eating, gifts, performances). The right-hand member cards on a
+  guest's game still show the host's villagers.
+* Seen on the way: a guest's villagers walk back home soon after a walk order ends (the host's idle AI).
+
+## A guest's game with its own village as the player's (2026-11-12, feat/lineages-47)
+<a id="tribe-guest-own-player-village"></a>
+
+BUG-9153 (the Village page goes, decision 2L). Experiment `coop.tribe perspective own|host|status` (guest).
+* ✔ (live, MSI guest) The guest's own village made the player tribe with the native setter
+  (cGameNounManager::SetPlayerTribe B1FD50, manager +0x70; the former tribe AddRef'd by us while swapped): the HUD's food
+  counter shows the own village's food at once, the villager cards on the right become the own villagers, a card click
+  selects the own chief (selected flag on the guest), and the game's own "Populate: click on your hut and add a baby"
+  hint appears. The mod keeps `player_tribe()` = the host's village while swapped (74 uses in tribe.cpp assume it).
+* ✔ (live) Crash on the first try, about 15 s after the swap (MSI crash-20261112-140751, read of 0x154): the Tribe UI's
+  ring code, from TribalGame_HandleMessage (CD81F0) message type 3 at CD8268 -> CD5190 (TribeUI +0x240 ring owner, the
+  object cast with interface 4F176642) -> CCC580 -> CC95E0 -> Tribe_HutStateIs2 C90730 (`mov ecx,[ecx+368]` mpHut,
+  `add ecx,120`, getter 8E8230 `mov eax,[ecx+34]`, al = (eax == 2), no null check) with the owner (+0x1014, getter
+  C230B0) of a citizen whose hut was null. Both founder villages had huts (+0x368 read on the MSI); which tribe had none is
+  not known. Guarded (h_HutState: a tribe without a hut is not in state 2). With the guard the swap ran over 6 minutes, 0
+  faults, the guard never needed.
+* ✔ (live) The camera stays at the host's village after the swap: the minimap click, Home and the A key did not move it to
+  the own village (at 5 FPS a console `key` may be too short for the camera; not checked further).
+* ? Not yet tried: the own hut's panel and Add Baby (button 0625CD52), the tool planner, gathering into the own food,
+  what the guest's game does with the host's village as an NPC tribe over a long time, the swap across stage and world
+  changes and a rejoin.
+* Method: no Ghidra on the Windows PC; `tools/qa_win/dis.py` disassembles code read from a running QA game and turns a
+  crash's stack scan into real call sites (docs/06-testing.md#testing-dis-without-ghidra).
+
+## A guest plays its own village with the game's hut menu and planner (2026-11-12, feat/lineages-47)
+<a id="tribe-guest-native-hut-planner"></a>
+
+BUG-9153 step 2, switch `tribe.own_player_village`. Follows docs/re/tribe.md#tribe-guest-own-player-village.
+* ✔ (live) The swap as a normal state: on every tick a guest in a session (not local play) with its own village makes it
+  the player tribe; the host's village comes back for a save (save_start; the next tick swaps again), the session's end
+  and the mod's unload (on_session_end), local play, and when the own village goes. A world change only forgets the
+  pointer. Seen on the MSI: join, mod reload, a save during a rejoin, and two world loads in a row after a rejoin (the
+  camera went back to the host's village each time).
+* ✔ (live) The hut menu: clicking the guest's own hut opens the game's panel ("Clop Village 1/12", tools and Add Baby).
+  TribeHutUI_HandleMessage CDBEA0 = bool thiscall(this, IWindow*, Message*) ret 8, msg+8 type 0x287259F6 (button),
+  msg+C id; 0x0625CD52 Add Baby (dispatch at CDC3DC -> CDC7C5: Tribe_BabyFoodCost, GetPlayerTribe, food vt+A4,
+  population C8F530 / C8EC70, the spend on tribe+20C). On a guest it now sends CMD_BABY: the host added the baby, both
+  games showed it.
+* ✔ (live) The Tribal Planner (the hut's tools button) opens for the guest's village with its own food. Hovering a
+  palette item lights the free building spots; a drop on one places the rack on the guest's game only, marked
+  +0x84 = 0x9 (selected) / 0x8, and the mark stays after the planner closes (on the host its own purchases clear it).
+  tool_inventory refused such a village, so the guest's tool sync stopped for it. Now, with the planner closed
+  (civ::planner_open: the community editor's update within 3 frames), the marked rack counts; a kind the host lacks is
+  sent as CMD_BUILD (the host checks unlock, food, spot, spacing) and the host's rack replaces the marked one (flags
+  0x0 after). Palette unlocks on the guest's game matched the host's (TribalGame_IsToolUnlocked: 3 and 4 on both).
+* ~ The camera: after the swap and after each world load it stays at the host's village; Home, the minimap house and
+  double-clicking a villager card do not move it. Held W/A/S/D pan it (about 50 m/s at 5 FPS). SimCamera_LookAt B12D10
+  = thiscall(camera, const Vector3* target, const void* orientation (4 floats from TribeGame setup CD7C40), bool
+  instant) ret C; not called by us yet (the orientation is unknown).
+* Seen on the way: the host's purchase refusals were shown on the host's screen only; now sent to the buyer
+  (MSG_NOTICE). The guest's game raised the profile achievement "Deja Vu" while swapped (harmless). An idle host's
+  village starved (food 0, members dying): not related to the swap (the host's game is never swapped).
+
+## The party's food: a share of each delivery, gifts between party villages (2026-11-12, feat/lineages-47)
+<a id="tribe-party-food"></a>
+
+BUG-9154, owner decision 2P, switch `tribe.food_share`.
+* ✔ (live) Deliveries are rises of a founder village's native store on the host (shared::tribe_food, the bundles at tribe
+  +0x20C): a delivery of 9.24 into the guest's village and of 5.0 later; nothing else raised a store in 20 minutes of an
+  idle host. The share writes with mirror_village_food (the game's "+N" over the food mat shows for 1 or more).
+* ✔ (live) A guest's game offers no Gift on a party member's village: neither a right nor a left press on the host's hut
+  (social stance, villagers selected) reached DoActionForObjects, and the left press opened no panel. The host's
+  village on a guest's game is the former player tribe (BUG-9153): it has no NPC controller. The mod's right press
+  (mouse.cpp set_tribe_input, within 9 m of the hut) sends CMD_ACTION 9 on that village.
+* ✔ (live) The game's gift price is 10 food here (TribeTuning 0xFD444753, gift_cost).
+* ? The host's own native Gift on a guest's village (an NPC tribe on the host's game) is taken in h_DoActionForObjects
+  (action 9 on a founder village) without running the game's gift; not seen live (clicks on the owner's PC).
+* Seen on the way: C.notice on the host goes to every player (the host relays it); a host-only line is notify::show.
+  A villager card press on the guest did not select its villager this time (it did on 2026-11-12 earlier, BUG-9152).
+
+## The party wipe: undoing the newest win (2026-11-12, feat/lineages-47)
+<a id="tribe-party-wipe"></a>
+
+BUG-9155, switch `tribe.party_wipe`.
+* ✔ (live) The goal history is a vector of 16-byte records {vt 0x1477434, kind, cTribe*, 0} at TribeUI +0x40 / +0x44
+  (TribeStage_AddGoalProgress appends them). Popping the last one and lowering cPlayer +0x10F0 by one, then a save
+  and reload (world::checkpoint_reload), gives a game with one win less: 1 -> 0 wins, progress 1.0 -> 0.0, 0 faults.
+* ✔ (live) An alliance undone: ApplyRelationship(manager, npc, founder, 0x0530CF07, -5 - current) per founder village
+  read back -5.0 for both.
+* ~ The totem's top piece: the kind and colour vectors (+0x11C / +0x120, +0x130 / +0x134) are shortened by one before
+  the save; the reload rebuilds the totem from them. Not looked at closely on screen (800x600 test window).
+* ? A conquest as the newest win: the record and the progress go; the village stays conquered (+0x556 is not undone:
+  Tribe_SetDefeated(false) is untried and a conquered village may have no hut, see the null-hut guard, BUG-9153).
+
+## A guest's camera starts at its own village (2026-11-12, feat/lineages-47)
+<a id="tribe-guest-camera-start"></a>
+
+BUG-9153. The Tribe set-up's SimCamera_LookAt (B12D10) call is recorded by the camera guard (gamefixes.cpp): the
+camera, the target (the host's village on a guest's game) and the orientation (4 floats, a quaternion x, y, z, w).
+After the first swap of a world, the guest's camera looks at its own village with that orientation turned by the
+rotation from the old target's up to the new one's (LookAt + SimCamera_Update, instant). ✔ (live, MSI) after a join
+the camera stood over the guest's own village, level with the ground. `coop.tribe camera [own]` shows / repeats it.
+
+## The party wipe from a real revive window; the guest's member cards (2026-11-12, feat/lineages-47)
+<a id="tribe-wipe-live-cards"></a>
+
+* ✔ (live, two games on the MSI, Jiff copy) The host's chief, knocked out by a rival village with the guest's chief
+  alive, was not revived in its window: "Host's village was wiped out: no win to lose yet: every village lost 10% of
+  its food" (host 14.31 -> 12.31, guest 497.56 -> 447.56: ceil of 10% each), the world reloaded, 0 faults.
+* ✔ (live) On a guest (its village the player tribe, BUG-9153) a press on its villager's card selects it (sel 1). The
+  small card above the villager cards (a red icon) selected nothing on the guest; what it does natively is not known.
+* BUG-9147: the knockout no longer needs a living partner villager when the party wipe is on (not seen live).
+
+## The totem's model slots, the reward queue and the progress bar (2026-11-12, feat/lineages-47)
+<a id="tribe-totem-model-slots"></a>
+
+* ✔ (disassembly 0xC8DDA0, runtime) Totem_AddSegment(totem, kind, colour): the model from the totem's factory (+0xD4,
+  vt 0xC, two keys per kind), assigned to slot <pieces> of the model vector **+0x108 / +0x10C / +0x110** (5 slots on
+  every totem seen) by the intrusive pointer assign 0x4792B0 (AddRef +0x40, Release of the old), **no bounds check**;
+  then the height (+0x80) grows by the model's box, +0x90 the radius, +0xA8 = 1, and kind / colour are appended
+  (+0x11C, +0x130). A 6th piece crashes in Graphics::Model::Release (BUG-9158; guarded by tribe.totem_full).
+* ✔ (disassembly 0xCDF162) TribeGame_ModeChanged runs the reward queue (0xCDAC90) when it comes back to the Tribe game:
+  a win queued by TribeStage_AddGoalProgress (0xCDB520) gets its totem piece there, not at once. A command that adds a
+  win must not add the piece too.
+* ✔ (runtime, 1280x960) The Tribe progress bar is the same window as Creature's (0x051B5478, 231-1202 x 931-959) with
+  three sections 0x051B54C0 (233-422), 0x051B54C1 (423-804), 0x051B54C2 (808-1179) for the 5 wins (1, 2 and 2 steps);
+  the fill window 0x0652A628 and the marker 0x051B5168 are missing there; the step icons 0x05594A01..04 sit in it.
+  `coop.tribe totems`: each founder village's pieces and model slots.
+
+## The editor first for a joiner without a creature (2026-11-12, feat/lineages-47)
+<a id="tribe-editor-first"></a>
+
+BUG-9159, owner decision 2M. ✔ (live, three games on the MSI) The host asks, the guest obeys:
+* Host: founding_wait of a partner who would get a stand-in (tribe_late Wait::StandIn: no creature of their own, one of
+  the host's creations, a founder's species) sends MSG_TRIBE_LATE {u8 1, u32 world} once (reset when they leave the
+  session) and counts them as Wait::Editing: 20 s for the answer (tribe_late::editor_ask), then the stand-in as before.
+* Guest: the message opens the creature editor for a new creature (CreatureEditorExtraLarge 0x465C50BA, no creation key;
+  coop.cpp open_new_creature_editor) and sends CMD_LATE_EDITING 1 (host: Editing for 15 minutes at most); back from it,
+  creations.cpp sends 2 when a new own creation was adopted (host: a minute for the creature key) or 0 when none was
+  saved in 30 s (host: the stand-in now). The creature key comes as for any choice; the founding waits the BUG-9137
+  settle (10 s after a key change) and founds with their own species: about 15 s after the save.
+* ✔ A guest cannot decide this by itself: its member state (g_gm) came 33 s after a join on the MSI (the first
+  messages are skipped while the world settles), and right after a rejoin of the same planet the world-entry time is
+  the old one.
+* The editor needs a mouth: "done" refused a body alone (the own editor's waiver is the part-list error, not this).
+  Tests: the palette drag needs the mouse moved in steps (`button x y down`, several `move`, `button up`); a fresh
+  test profile shows Spore's account window first (close it: X, then OK on "Quit registration?").
+* Host `coop.tribe late`: each unseated partner's wait (0 Ready .. 6 StandIn, 7 Editing), creature, settle times,
+  editing and when asked; `skipped=` why the last automatic founding did nothing.
+
+## The population event with the host alone or every founder village down (2026-11-13, feat/lineages-47)
+<a id="tribe-population-event-alone"></a>
+
+BUG-9147. ✔ (runtime, MSI) The native population event 05C80207 (Tribal listener CD81F0, TRG_PRE_PopDestroyed then
+FBCD6489) comes about 3 minutes after loading a save whose player village has no member, and again every 10-20 s while a
+rival's raiders kill the new villagers. Its data: [+0] 0147B844, [+4] 0, [+8] changes with each death (~ the citizen),
+[+0xC] data + 0x28. A lone host is `connected()` (Role::Host), so tribe::active() holds. A member made with SpawnMember
+(vt 0x98, age 1) for a non-player founder village did not count as living at the next event (health or +0xB5E), cause
+not found. After party_wipe the newest ally is a rival (relation -5) and raids at once.
+
+## Who starts the population game over (2026-11-14, feat/lineages-47)
+<a id="tribe-gameover-routes"></a>
+
+BUG-9184. Steam QA copy, `coop.memfind <value> <max> code` (scans executable and read-only memory, unaligned).
+* ✔ "TRG_PRE_PopDestroyed" (0x1477678 at image base 0x400000) is the only string with "PopDestroyed"; one code
+  reference: the push at CD8B01 in the Tribal listener
+  CD81F0 (the 05C80207 branch, section "Founder population recovery").
+* ✔ 05C80207 appears in code at C26B80 (the poster: `push 0; push data; push 0x5C80207; call [msgmgr vt+0x14]`,
+  msgmgr from 0x67DC80) and CD8208 (the listener); also at 0147746C (data, ~ a listener registration table).
+* ✔ FBCD6489 (the game over cinematic) is no constant in the code: a hashed name.
+* ? Another listener of 05C80207, or a route that starts FBCD6489 by name, is not ruled out.
 ## The flora grid's handle slots, and what BUG-0359's float was not (2026-11-05, fix/w45-crashes)
 <a id="tribe-flora-grid-slots"></a>
 

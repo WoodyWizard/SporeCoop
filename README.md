@@ -1,3 +1,67 @@
+# SporeCoop: Lineages
+
+**Separated Lives - Partied - Difficulty Scaling - Custom Cells**
+
+Lineages is a fork of [WoodyWizard's SporeCoop](https://github.com/WoodyWizard/SporeCoop) for a co-op campaign where every player evolves their own species in one shared Spore world, from the tide pool to the galaxy. It is built on upstream SporeCoop 0.7.14.1 and keeps its crash guards, network code and tools.
+
+**Current build:** `0.7.14.1-lineages64-dev` ([Releases](https://github.com/PandizeLive/SporeCoop-Lineages/releases)). Everyone in a session needs the same build. A running game offers new builds itself (Co-op window, Check for Updates).
+
+## What Lineages adds
+
+| | |
+| --- | --- |
+| **Separated Lives** | Each player keeps their own species through the stages: their own cell and creature, their own nest, village and chief, their own nation and cities, their own ship and captain. Creations are shared between players' Sporepedias through the Lineages Cache. |
+| **Partied** | Players progress together: one world, and the stage ends for the whole party by the host's vote (other editors stay personal). Every partner has a Party card in the style of the stage they play. A downed player has 30 seconds for a partner to revive them (hold G to give up); if nobody comes, the party owes 10% of the progress bar instead of losing DNA or food. |
+| **Difficulty Scaling** | The host reserves one to four seats; one Difficulty Scaling slider (up to 400%) sets progress, enemy health and damage, hunger, city takeover and Space raids. Joining an open seat keeps the stage's difficulty steady, and the host can start alone. |
+| **Custom Cells** | Cells the players made swim in the Cell stage as native species (about 1 in 6 spawns) and follow their mouth's diet (Player Cells in the lobby). With Foreign Creations on, creations your partners received from others come too. |
+
+Also: a one-page Co-op window, Interface Size for Spore's whole UI, a loading screen while joining, a guest's first creature made with the host's start parts, shared Cell and Creature parts, shared Adventure and Space enemies, a Creature editor depth cube, and a memory box that saves, restarts Spore and reconnects by itself when Spore runs low on memory.
+
+## Status
+
+- Two players: all five stages (Cell, Creature, Tribe, Civilization, Space) were played together on two PCs with the 56-dev merge, with no crashes. Galactic Adventures: combat adventures are shared; dialogue, multi-goal acts and captain XP still run separately.
+- Three and four players: the difficulty scales for them, but full campaigns are not tested yet. More than four players is planned.
+- Known issues, each with how to reproduce it: [docs/known-issues.md](docs/known-issues.md). Changes per build: [CHANGELOG.md](CHANGELOG.md). Decisions and plan: [docs/ROADMAP.md](docs/ROADMAP.md). How the upstream 0.7.14.1 merge was done: [docs/merge-0.7.14.md](docs/merge-0.7.14.md).
+
+<details><summary>Build history (41-dev to 64-dev)</summary>
+
+Done in 41-dev: 60% progress per extra seat, and one Difficulty Scaling slider (up to 400%) for progress, enemy health and damage, hunger, city takeover and Space raids.
+
+Done in 42-dev: a depth cube in the Creature editor pushes details and weapons into the body or pulls them out; received creations have their own Lineages Cache tab; Share Onward lets you allow hosts to pass your creations on; and the co-op window's buttons have short tooltips.
+
+Done in 43-dev: Foreign Creations (receive what partners got from others, off by default) replaces Share Onward; player cells (the host's older ones, the lobby's, and with Foreign Creations the rest of the host's Cache) swim in the Cell stage as native creatures, about one in four spawns, and follow their mouth's diet; part-dropping species keep their look; the host switches it in the lobby (Player Cells). Cell crowding: one extra predator per group from three seats on, placed clear of other cells, and plant food is worth 25% more meanwhile.
+
+Done in 44-dev: combat adventures together (every goal shared, anything destroyed is destroyed for everyone, the host's win or loss ends the mission for all, captains revive each other), and an Adventure partner is a captain of the right size instead of a name tag. Enemies still move separately in each game.
+
+Done in 45-dev: Cell parts are shared like Creature parts: a part anyone picks up is unlocked for everyone, and the parts either player already had are merged when you join.
+
+Done in 46-dev: built on SporeCoop 0.7.8 (upstream fixes for creature relations, the guest's social meter, roar, bones, NPC animations and crash guards), and alpha creatures are marked for guests.
+
+Done in 47-dev: the Creature editor depth cube moves parts straight in and out of the skin and zooms with the other handles.
+Done in 48-dev: a tidier Co-op window, 30 s to be revived with give-up (hold G), and progress debt instead of lost DNA or food.
+Done in 49-dev: Spore's Settings no longer vanishes on the Audio and other tabs.
+Done in 50-dev: progression debt (10% of the bar), a visible downed state, no endless heal, the guest's home follows a nest migration, and Cell fixes (no black screen on a partner's respawn, arrows to off-screen partners, the shared DNA explained, custom cells 1 in 6).
+Done in 51-dev: the connected player's own pack (Summon Flock, recruiting), meteors / rain / the UFO shared from the host, and the connected player's Strike splash.
+Done in 52-dev: a connected player with their own custom creature gets their own village and chief again (Tribe, Civilization).
+Done in 53-dev: bones the other player digs up disappear on your screen too.
+Done in 54-dev: befriending works for connected players again, a partner's respawn no longer darkens your screen, Ctrl+Scroll FoV widens the view, partner villages use the partner's own creature, smoother sending on slow connections.
+Done in 63-dev: the impress meter fills on a partner's screen, no false "species is extinct" for old player species, no frame-cap notice for a cap you set, Co-op window text placement.
+Done in 64-dev: every player has their own pack (summons, recruits, Pack panel, kept in saves), a partner's pack runs on the partner's PC and fights, one Summon Flock out at a time in the party with a message.
+Done in 62-dev: guests see every enemy again, no guest crash when the host's world arrives during the host's creature editor, and tooltips stay at the pointer at any Interface Size.
+Done in 61-dev: a memory box with a live bar when Spore runs low on memory (Continue saves, restarts Spore and reconnects by itself), health bars stay over their creature at any Interface Size, and about 65% less network traffic to each partner.
+Done in 60-dev: the host can add to its pack again after a guest's Summon Flock, a guest's flock follows the guest, and one world load per migration for partners.
+Done in 59-dev: fixes from the owner's play test (a guest's editor spends stay spent, the Cell knockout ring and spectator camera, the whole party respawns together, "Paused by host", no Party cards over editor buttons).
+Done in 58-dev: a player joining while the host is dead arrives once the host respawned, the host's Party card picture shows for creatures from Sporepedia or shared saves (and the cell in Cell), and the -NoShare- tag is hidden everywhere.
+Done in 57-dev: a tidier Co-op window (even spacing, Settings in the World & Session box, Stop Hosting bottom right, Copy Server IP, blue page buttons and grey helpers), and "-NoShare-" test names whose creations never reach anyone's Lineages Cache.
+Done in 56-dev: built on upstream SporeCoop 0.7.14.1 (its crash and network fixes, player colours, session settings, problem reports), Creature stage end by the host's vote for the whole party, tidier shared-money notices.
+Done in 55-dev: every partner gets a Party card in their stage's style, Interface Size scales Spore's whole UI, joining shows a loading screen, a new player makes their first creature with the host's start parts before the world loads, shared Adventure and Space enemies, and fixes from the 2026-11-15 play test (naming, nests, Settings, cells shared as creatures).
+
+</details>
+
+See [campaign development notes](docs/DUO.md) for setup and recorded test details.
+
+<details><summary>Original SporeCoop project README</summary>
+
 <p align="center">
   <img src="docs/media/banner.svg" alt="SporeCoop - play every stage of Spore together" width="100%">
 </p>
@@ -305,6 +369,8 @@ own ticket and a test ([docs/tickets](docs/tickets/README.md)).
 Known issues: [docs/known-issues.md](docs/known-issues.md). Found a problem? Type `/bug <what you
 see>` in the co-op chat when it happens (it marks that moment in every player's log), then see
 [how to report it](docs/REPORTING.md).
+Hosting: `/kick <name>` in the co-op chat removes a player, `/ban <name>` also keeps them out of your games (on that
+Spore profile), `/bans` lists them and `/unban <name>` lets one in again.
 
 Next:
 
@@ -369,3 +435,5 @@ If this project is useful to you, you can support the author - it really helps t
 
 <a href="https://buymeacoffee.com/chamomilewoods"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="50"></a>
 <!-- support:bottom:end -->
+
+</details>

@@ -41,6 +41,8 @@ struct Options {
 } g_opt;
 
 HWND g_wnd, g_dir, g_game, g_inst, g_latest, g_status, g_install, g_remove, g_close;
+HWND g_fps, g_borderless;
+std::wstring g_graphics_root;
 HFONT g_font, g_bold;
 // BUG-0077: the release check's result, shared by the check thread, the window and the install job
 // (each copies it under the box's lock; the job never writes a global the others read)
@@ -251,6 +253,13 @@ void refresh()
 {
     std::string note; // BUG-0391: "Galactic Adventures is installed in ...\Spore 24720: using that folder."
     std::wstring root = chosen_root(&note);
+    if (g_fps && root != g_graphics_root) {
+        g_graphics_root = root;
+        const auto settings = is_game(root) ? lineages_graphics::read(inst::graphics_file(root))
+                                           : lineages_graphics::Settings{};
+        SetWindowTextW(g_fps, settings.fps ? std::to_wstring(settings.fps).c_str() : L"");
+        SendMessageW(g_borderless, BM_SETCHECK, settings.borderless ? BST_CHECKED : BST_UNCHECKED, 0);
+    }
     std::wstring game;
     if (!is_game(root))
         game = upd::widen("Game: " + inst::folder_problem(root));
@@ -277,10 +286,14 @@ void refresh()
                                      (ri.rel.from_web ? " (from the release page)" : "")
                          : !ri.done ? "Newest release: checking GitHub..."
                                     : "Newest release: GitHub not reachable (" + ri.err + ")";
-    SetWindowTextW(g_latest, upd::widen(latest).c_str());
+    SetWindowTextW(g_latest, g_opt.inst.bundled_pack ? L"This installer includes the Lineages game files." :
+                   g_opt.inst.api.empty() ? L"Lineages preview uses the release pack next to this setup." :
+                   upd::widen(latest).c_str());
     // BUG-0094: the version the button installs, as do_install chooses it: the pack next to the
     // setup, or GitHub's release when that is newer
     std::string next = upd::pack_version_of(upd::narrow(inst::local_pack(g_opt.inst)));
+    if (next.empty() && g_opt.inst.bundled_pack)
+        next = SETUP_VERSION;
     if (ri.ok && (next.empty() || upd::compare_versions(ri.rel.version, next) > 0))
         next = ri.rel.version;
     if (!inst::g_fix) // the old label: GitHub's release only
@@ -295,6 +308,8 @@ void refresh()
     EnableWindow(g_remove, is_game(root) && inst::has_sporecoop(root) && !g_busy); // BUG-0851: also half removed
     if (g_close && inst::g_fix) // BUG-0139: no closing while files are swapped
         EnableWindow(g_close, !g_busy);
+    if (g_fps) EnableWindow(g_fps, !g_busy);
+    if (g_borderless) EnableWindow(g_borderless, !g_busy);
 }
 
 DWORD WINAPI check_thread(void*)
@@ -348,6 +363,21 @@ void start_job(bool uninstall, bool downgrade = false)
 {
     if (g_busy)
         return;
+    auto opt = g_opt.inst;
+    if (!uninstall) {
+        wchar_t input[8]{};
+        GetWindowTextW(g_fps, input, 8);
+        wchar_t* end = nullptr;
+        const long fps = wcstol(input, &end, 10);
+        if (*input && (*end || fps < 1 || fps > 360)) {
+            MessageBoxW(g_wnd, L"Enter a whole number from 1 to 360, or leave it blank for Spore's default.",
+                        L"Frame Rate Cap", MB_OK | MB_ICONWARNING);
+            SetFocus(g_fps);
+            return;
+        }
+        opt.graphics = lineages_graphics::Settings{
+            (int)fps, SendMessageW(g_borderless, BM_GETCHECK, 0, 0) == BST_CHECKED};
+    }
     if (!g_test_mode && game_running() &&
         MessageBoxW(g_wnd, L"Spore is running. Close it first for a clean install.\n\nContinue anyway?",
                     L"SporeCoop Setup", MB_YESNO | MB_ICONWARNING) != IDYES)
@@ -355,7 +385,7 @@ void start_job(bool uninstall, bool downgrade = false)
     g_busy = true;
     SetWindowTextW(g_status, uninstall ? L"Removing SporeCoop..." : L"Installing SporeCoop...");
     refresh();
-    auto* j = new Job{uninstall, chosen_root(), g_opt.inst, {}, false};
+    auto* j = new Job{uninstall, chosen_root(), opt, {}, false};
     j->opt.downgrade = j->opt.downgrade || downgrade;
     if (g_job)
         CloseHandle(g_job);
@@ -393,7 +423,7 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         lf.lfWeight = FW_BOLD;
         lf.lfHeight = lf.lfHeight * 3 / 2;
         g_bold = CreateFontIndirectW(&lf);
-        add(L"STATIC", L"SporeCoop " SETUP_VERSION, 0, 20, 14, 520, 28, 0, true);
+        add(L"STATIC", L"SporeCoop Lineages " SETUP_VERSION, 0, 20, 14, 520, 28, 0, true);
         add(L"STATIC", L"Play every stage of Spore together. This installs the mod into your game folder.", 0, 20,
             44, 520, 20);
         add(L"STATIC", L"Game folder (the one with SporebinEP1):", 0, 20, 78, 520, 18);
@@ -404,14 +434,19 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         g_game = add(L"STATIC", L"", 0, 20, 134, 520, 50);
         g_inst = add(L"STATIC", L"", 0, 20, 186, 520, 18);
         g_latest = add(L"STATIC", L"", 0, 20, 208, 520, 34);
-        g_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 20, 252, 170, 32, ID_INSTALL);
-        g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 200, 252, 120, 32, ID_REMOVE);
-        g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 252, 100, 32, ID_CLOSE);
-        g_status = add(L"STATIC", L"", 0, 20, 296, 520, 52);
-        add(L"STATIC", L"github.com/WoodyWizard/SporeCoop  -  every player needs the same SporeCoop version", 0, 20,
-            356, 520, 18);
+        add(L"STATIC", L"Frame rate cap (blank uses Spore's default)", 0, 20, 251, 280, 20);
+        g_fps = add(L"EDIT", L"", WS_TABSTOP | ES_NUMBER | ES_AUTOHSCROLL, 303, 248, 48, 24);
+        SendMessageW(g_fps, EM_SETLIMITTEXT, 3, 0);
+        g_borderless = add(L"BUTTON", L"Borderless Window", WS_TABSTOP | BS_AUTOCHECKBOX, 371, 247, 170, 26);
+        g_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 20, 285, 170, 32, ID_INSTALL);
+        g_remove = add(L"BUTTON", L"Uninstall", BS_PUSHBUTTON, 200, 285, 120, 32, ID_REMOVE);
+        g_close = add(L"BUTTON", L"Close", BS_PUSHBUTTON, 440, 285, 100, 32, ID_CLOSE);
+        g_status = add(L"STATIC", L"", 0, 20, 328, 520, 52);
+        add(L"STATIC", L"Lineages fork of WoodyWizard's SporeCoop. Use matching builds on every PC.", 0, 20,
+            388, 520, 18);
         refresh();
-        CloseHandle(CreateThread(nullptr, 0, check_thread, nullptr, 0, nullptr));
+        if (!g_opt.inst.api.empty())
+            CloseHandle(CreateThread(nullptr, 0, check_thread, nullptr, 0, nullptr));
         return 0;
     }
     case WM_COMMAND:
@@ -554,14 +589,22 @@ void parse_args()
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
 {
     parse_args();
+    if (HRSRC resource = FindResourceW(inst, MAKEINTRESOURCEW(101), RT_RCDATA)) {
+        if (HGLOBAL bytes = LoadResource(inst, resource)) {
+            g_opt.inst.bundled_pack = static_cast<const uint8_t*>(LockResource(bytes));
+            g_opt.inst.bundled_size = SizeofResource(inst, resource);
+        }
+    }
     upd::g_log = log; // the download retries (BUG-0755) go to the /log: file
-    g_libs = steam_libraries();
     g_opt.inst.pack_dir = self_dir();
     wchar_t delay[16] = {};
     if (GetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", delay, 16)) { // tests (BUG-0139)
         upd::g_swap_delay_ms = _wtoi(delay);
         g_test_mode = true;
     }
+    // A fixture with base Spore only must never resolve to the computer's real Steam install.
+    if (!g_test_mode)
+        g_libs = steam_libraries();
     if (GetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DONE_DELAY", delay, 16)) // tests (BUG-0853)
         g_done_delay_ms = _wtoi(delay);
     if (g_opt.silent) {
@@ -588,9 +631,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
     wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(1));
     wc.lpszClassName = L"SporeCoopSetup";
     RegisterClassW(&wc);
-    RECT r{0, 0, 560, 386};
+    RECT r{0, 0, 560, 418};
     AdjustWindowRect(&r, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
-    HWND w = CreateWindowW(L"SporeCoopSetup", L"SporeCoop Setup", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+    HWND w = CreateWindowW(L"SporeCoopSetup", L"SporeCoop Lineages Setup", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                            CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, nullptr);
     if (!g_opt.dir.empty())
         SetWindowTextW(g_dir, (inst::g_ga_fix ? inst::game_root_of(g_opt.dir) : g_opt.dir).c_str());

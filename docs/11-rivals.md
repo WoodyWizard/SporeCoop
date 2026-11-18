@@ -313,6 +313,9 @@ Test: `coop_space_map.py` already founds a guest colony and checks that it is go
 (the line to turn around).
 
 2026-11-04 (fix/w42-space-life, BUG-0195): steps 1 (memory only, no side file), 2 and 5 are done
+
+2026-11-13 (feat/lineages-47, BUG-9189): step 1's side file is done: `<planet>.spo.duospace`, keyed by the
+player identity; read when the host's Space world loads. Live: a host restart keeps a guest's colony.
 (`space.keep_colonies`, space_map.cpp; test `coop_space_colony_rejoin.py`, and `coop_space_map.py`'s last
 check now expects the colony back). Step 4 (cities, spice) is not: the colony comes back with one city.
 

@@ -33,13 +33,22 @@ Inferred: the reports "after the editor" are the same jump (join after load); no
 ## Fix
 `cell.camera_snap` (cellsync.cpp camera_snap): a stop_at of the own cell more than 2 m from where it is sets the
 three camera points to the new place, as the game's own jumps do. Off: 0.7.4. `coop.pool cam` prints the camera.
+Lineages had ported the same camera reset selectively (2026-11-07, fix/lineages-player-session,
+75b3901b); the 0.7.8 merge keeps upstream's implementation.
 
 ## Verification
 FAIL: SPORE_FIX_OFF=cell.camera_snap cell_camera, lab 20261104-020658 (7.0 m after the guest's move and after the
 host's respawn).
 PASS: cell_camera, lab 20261104-020550 (0.08 m / 0.22 m).
+Lineages port (2026-11-07, tools/tests/lineages_cell_report.py --camera-only):
+out/player-report-20261107-223741/native-camera.log records the negative-control FAIL (fix off, camera
+offset 7.0) and PASS twice (0.06 and 0.07). Both runs used native lethal hits, the ten-second knockout and
+actual respawn, not a direct camera write from the test. No caught native faults.
 
 ## History
+- 2026-11-07: reported again in Lineages 27. The fork still lacks upstream's
+  camera-snap change. Investigating a selective port on fix/lineages-player-session
+  with isolated Cell profiles; user report also tracked by BUG-9096.
 - 2026-10-31: opened from the host's report zip (mark and cell trace).
 - 2026-11-02: reported again on Discord ('Decentered screen': when the host evolves the cell in the Cell stage, the other player's screen is off centre when it reappears), 0.7.3.4. Target 0.7.4.
 - 2026-11-03: reported again (0.7.3.4 forum post): 'decentered screen in the Cell stage (after the editor)'; the trigger the player names is the editor, not a death: maybe a second path. No log evidence in the reports.

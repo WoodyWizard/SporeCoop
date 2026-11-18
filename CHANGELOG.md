@@ -2,6 +2,704 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages64-dev] - 2026-11-17
+
+- Creature: every player has their own pack. A partner's Summon Flock and recruits join that partner's pack (not the
+  host's), show in that partner's own Pack panel, and are kept when the host saves (decision 5CD).
+- Creature: a partner's pack now fights: it runs on the partner's own PC, so it follows, defends the partner and
+  attacks what the partner orders the way it does in single player; the host sees it move and bite (BUG-9248).
+- Creature: only one Summon Flock can be out at a time in the party; a second press is refused with a line saying whose
+  flock is out, instead of doing nothing (BUG-9250).
+- Creature: after a partner's Summon Flock, Summon Flock works again for everyone (the summon never ended), also after
+  loading a save made meanwhile (BUG-9245).
+- Creature: a partner's pack no longer keeps a creature the game recycled as another species (BUG-9247).
+- Creature: the host's pack no longer stays "full" from an old summon count kept in a save (BUG-9249).
+- Creature: a partner's pack never attacks the host's creature.
+- Creature: new nests for partners are made on dry land; a nest already under the sea stays (BUG-9246, open).
+- Tests and diagnostics: `coop.gpack` (parties, own game, summon lock), `coop.gpack baruse`, `coop.gpack summonlimit`,
+  `coop.drama summon|endsummon`, tools/qa_win/pack_own_game.py.
+
+## [0.7.14.1-lineages63-dev] - 2026-11-16
+
+- Creature: a guest's impress meter fills with the pink bars like the host's (it stayed empty, the progress only in
+  notices); the "Impressing" and "Answer it" notices are gone while the meter shows (BUG-9230).
+- Creature: no false "The ... species is extinct!" for a species a player used to play: the "best friends" mark of
+  old player species is cleared once nobody plays them (BUG-9244).
+- No "Spore runs at N fps without its frame cap" notice when you set a frame cap yourself (for example 120 or 144 fps);
+  only when there is no cap at all (BUG-9242).
+- Co-op window: "Searching your network..." starts inside its row, and the status line ("Lineages is up to date") sits
+  level with Check for Updates, clear of the host box, on one line (BUG-9243).
+- Tests and diagnostics: `coop.social meterfill`, `coop.social cards`, `coop.npc aifreeze`, `coop.hp callers`.
+
+## [0.7.14.1-lineages62-dev] - 2026-11-16
+
+- Creature: a guest sees every enemy again; some of the host's own creatures
+  stayed invisible on the guest when its copy of them could not be built there
+  (BUG-9231).
+- Creature: no guest crash when the host's world arrives while the host is in
+  the creature editor (BUG-9240).
+- Interface Size other than 100 %: Spore's tooltips (for example "Buy Sea
+  Vehicle") stay at the pointer instead of appearing down and to the right of it
+  (BUG-9241).
+- Diagnostics: `coop.nest herds [species]` lists the nests with their species
+  and place.
+
+## [0.7.14.1-lineages61-dev] - 2026-11-16
+
+- Memory: when Spore's memory runs low a box shows a live bar of how full it
+  is (its green, yellow and red zones light up as it fills) with Ignore and Continue; Continue
+  saves, restarts Spore and reconnects by itself (a host loads its world again
+  and hosts, its partners rejoin on their own). First at 15 % left, again at
+  10 % (BUG-9239).
+
+- Interface Size other than 100 %: the health bars over creatures stay over
+  their creature, and the host's "game saved" box after a world share closes
+  by itself again (it stayed up and paused everyone) (BUG-9238).
+
+- Network: about 65 % less data to each guest in play: creature updates in a
+  compact form, standing creatures once a second, far ones at half rate
+  (BUG-9235), and unchanged world-object lists not sent again (BUG-9237).
+- Network: during a world transfer the game's own messages (damage, effects)
+  wait at most about a round trip + 0.2 s behind it (BUG-9236).
+- Diagnostics: the log names traffic by message type each minute, the NPC AI's
+  frame time, and `coop.sample` names the modules the main thread runs in.
+
+## [0.7.14.1-lineages60-dev] - 2026-11-15
+
+- Creature: the host can add creatures to its pack again after a guest used
+  Summon Flock (the guest's flock kept the host's pack "full") (BUG-9233), and a
+  guest's flock follows the guest (BUG-9229).
+- Creature: during a nest migration a partner's own nest is made at the new
+  nest right away, so the partner loads the world once instead of twice
+  (BUG-9234; not tested in a real migration yet, `coop.fix
+  creature.nest_at_migration_target off` turns it off).
+
+## [0.7.14.1-lineages59-dev] - 2026-11-15
+
+Fixes from the owner's play test of 2026-11-15.
+
+- Creature: a guest's spending in their own editor stays spent (the DNA from
+  before the editor came back after the mating call's editor and cocoon, so
+  parts were free) (BUG-9223).
+- Cell: the knocked-out ring now empties over the time left (it stayed full to
+  the last second) (BUG-9224), and the spectator camera jumps to the partner
+  instead of crawling there (BUG-9225).
+- Cell and Creature: when the whole party is down, everyone respawns at once
+  instead of waiting out their timers (BUG-9226).
+- Guests see a "Paused by host" cover while the host's game is paused
+  (BUG-9227).
+- Editors: the Party cards are hidden while an editor is open, so they no
+  longer cover the paint page's next-page button (BUG-9228).
+
+## [0.7.14.1-lineages58-dev] - 2026-11-15
+
+- Party cards: the host's picture no longer stays blank when its creature came
+  from Sporepedia, another player or a shared save, and in Cell the card shows
+  the cell (BUG-9216).
+- Creature: a player who joins while the host is dead no longer arrives dead:
+  their world waits until the host respawns (2 minutes at most), and the host
+  is told someone is joining (BUG-9215).
+- The "-NoShare-" tag is now hidden everywhere a name shows: name tags, Party
+  cards, messages (BUG-9222).
+
+## [0.7.14.1-lineages57-dev] - 2026-11-15
+
+- Co-op window: even spacing throughout; Stop Hosting / Leave sit bottom right,
+  "Copy Host Address" is now "Copy Server IP" in the row above, and long names
+  are cut short instead of running into the stage column (BUG-9221).
+- A player name with "-NoShare-" added (for example "MSI-NoShare-") shares none
+  of its creations and none are kept in anyone's Lineages Cache; the tag is
+  hidden in the player list. Test games use it (BUG-9222).
+- Co-op window: Settings is a button of the World & Session box instead of
+  floating above it; the Ask for Reports button is gone (Report Issue already
+  asks every player for their report) (decision 4I A, BUG-9219).
+- Co-op window: blue buttons go to another page (Settings, Space / Nations >,
+  < Lobby, page arrows), grey ones are small helpers (the color button, Copy
+  Host Address, arrows); "colour" now reads "color" (BUG-9220).
+
+## [0.7.14.1-lineages56-dev] - 2026-11-15
+
+- Built on upstream SporeCoop 0.7.14.1 (was 0.7.8): its crash guards and network
+  fixes, player colours (the square button next to your name), a session
+  settings page, a "report a problem" round, Evolve Now and stability fixes.
+  Lineages keeps its own one-page Co-op window, Party, per-player villages and
+  cities, the guest pack and the first creature (decisions 4E, 4F).
+- Creature: leaving the Creature stage is the host's vote and takes the whole
+  party to Tribe; every other Creature editor stays personal (decision 4F A).
+- Space: sharing a Space world no longer fails with "Unexpected resource in
+  saved Civilization designs" (found in the merge's stage tour).
+- Civilization: shared money notices ("Host earned 40 money (shared)") are
+  summed into one line every 10 seconds instead of one per city payout
+  (BUG-9217).
+- Co-op window: your colour button no longer covers the first letter of your
+  name (BUG-9218).
+- Every player in a session needs this build: the network messages changed.
+
+## [0.7.8-lineages55-dev] - 2026-11-15
+
+- Creature: the first creature's editor no longer opens under the galaxy menu's
+  intro bars, which took the clicks meant for the name field. Leaving it
+  without saving brings it back once, then the world loads (BUG-9209).
+- Creature: a joining player's own nest is made before their world is sent, so
+  they no longer load a second time ("Bringing your nest") after spawning
+  (BUG-9210).
+- Settings: the Settings window keeps Spore's own layout, so opening it again
+  after Accept no longer shows the Options buttons over it, and the Borderless
+  button shows its state again. The Interface Size stays within what the
+  screen holds (BUG-9211).
+- Lineages Cache: a creature fresh from the Cell stage is no longer shared
+  while it still carries its cell picture (partners saw a cell as its icon and
+  Sporepedia card) (BUG-9213).
+- Stability: a crash guard (stale stimulus senders, BUG-0456) and the Civ guard
+  that keeps relayed shots from hurting vehicles twice (BUG-0477) were silently
+  off, because two hooks claimed the same game function. Both work again
+  (BUG-9214, from upstream's BUG-0623).
+- Creature: guests making their first creature while the host makes a new world get the host's own start editor
+  with the same parts (the host's diet mouth), not the full Creature Creator (decision 3Z B, BUG-9207).
+- Interface Size: checked in every stage and the galaxy menu; editors open at 100 % (BUG-9191). A new world from the
+  galaxy wizard (its stage start editor) also sends waiting guests into their editor (BUG-9207).
+- Interface Size: Spore's UI grows as one picture (laid out for a smaller screen, then scaled), so HUD pieces stay
+  together and on the screen edges (decision 3X A, BUG-9191).
+- Creature: a guest joining a world where it has no creature of its own makes its first one (the base creature)
+  before the world loads, so no old body, family or cocoon shows at the host's nest (BUG-9208).
+- Creature: guests waiting while the host makes a new world get the creature editor with the base creature; its
+  check stays greyed until the host's world is ready, and what they save is their creature there (BUG-9207, decision 3U).
+- Creature (owner play test 2026-11-14): a guest whose old co-op creature pick came along gets its own editor in a new
+  world too (BUG-9203); the Party cards no longer cover the editor's stats (BUG-9191); one cocoon, the creature shrinking
+  with the spin (BUG-9194); partners' bodies have their real size, and a guest's hatchling its hatchling size at once
+  (BUG-9206); a loading screen over the black after the editor (BUG-9205); every party nest is discovered on the minimap
+  (BUG-9204); a stalled mating restarts sooner and more often (BUG-9175).
+- Joining: a partner who joins now sees the loading screen ("Joining <host>",
+  the host saving, the world arriving, loading) instead of the plain galaxy
+  menu and a black screen. It and the mid-game reload screen stay up until the
+  world is really shown, and lift as soon as a Space partner can play their own
+  homeworld (BUG-9202).
+- Space: a partner's homeworld card shows the species' picture, not a blank
+  white box (BUG-9188).
+- Adventures: the host's game now runs the enemies for everyone, so all
+  players see the same fight. The enemies attack a partner too (BUG-9200), a
+  partner's hits count on the host, and a partner's game no longer keeps
+  extra enemies or ones that should be dead (BUG-9201, BUG-9114).
+- Space: enemy ships are as strong as the number of players in that system
+  (raids: the players online), not the reserved seats (BUG-9199).
+- Space: a partner who rejoins under another name keeps their wars,
+  alliances and budget, and shows as one empire, not two (BUG-9198).
+- Space: partners in a system without the host see the same enemy ships and
+  fights: the first player there runs them for everyone (BUG-9197).
+- Party: each partner has a card in the style of the stage they play
+  (Cell, Creature, Tribe, Civ, Space) with their picture, name, place, health
+  and hunger (Creature) or energy (Space), stacked above the game's own cards
+  at the right edge; a click on the picture opens their Sporepedia card.
+- Settings: the Graphic page has an Interface box with an Interface Size
+  slider (50-200 %) that scales Spore's own menus, dialogs and HUD as well as
+  the mod's; Frame Rate (with up / down steps) sits in the Screen Size box and
+  Borderless Mode under Full Screen Mode (ticking one unticks the other).
+  The Screen Size list shows each resolution once, at its highest refresh
+  rate (the frame rate cap still holds the frame rate).
+- Creature: enemies leave a downed player alone and go back to their own
+  business (BUG-9192).
+- Creature: a player joining late starts at their own nest, and a joiner
+  still making their first creature no longer puts the host's family into
+  cocoons (BUG-9193); a cocoon is one shell again (BUG-9194); the one reload
+  that brings a new player's nest happens behind the loading screen instead
+  of the galaxy menu (BUG-9195).
+- A crash in the Sporepedia (My Creations in the galaxy menu after a game) is
+  fixed (BUG-9196). A Party portrait opens that creature's own card.
+- UI: the Party panel replaces the CO-OP player list: each player's name, where
+  they are, their creature's picture and a health bar like the game's own;
+  clicking a picture opens the Sporepedia. A UI Scale setting sits under
+  Borderless in Spore's Settings (BUG-9191).
+- Tribe: a guest whose own village is wiped out no longer gets the game's own
+  game-over screen while the party plays on; the host decides (BUG-9183).
+- Tribe: a guest's villagers hunt an animal and party at their fire pit by
+  right-click; the host refused both before (BUG-9185).
+- Space: a player's own colonies come back after the host restarts its game:
+  the host keeps them per player in a file next to its save (BUG-9189).
+- Space: a player who joins while the host is already in Space launches from
+  the saved Civilization victory with 3-4 founders too (BUG-9187).
+- Tribe: a guest gives food to a rival village by right-clicking its hut in
+  the social stance, as the host does (BUG-9186).
+- Creature / Adventure: the downed screen as the owner drew it: a SPECTATING
+  box with the partner's name and arrows, a GIVE UP button and the revive ring
+  at the bottom of the screen (BUG-9156). The box, arrows and button use the
+  Co-op window's own colours and buttons (a rounded see-through panel, a red
+  Leave-style button as wide as the panel).
+- Creature: a crash when a player who joined dead confirmed the death message
+  is fixed (BUG-9157).
+- Creature: everyone evolves on their own (no vote): after the mating call
+  the creature goes into the game's own cocoon, the editor opens, and the
+  others see it in the cocoon at the nest until it comes out with the new
+  design (BUG-9160).
+- Creature: after a mating the egg scene no longer hangs; the editor opens
+  (BUG-9161).
+- Creature: every player has their own DNA to spend; the progress bar stays the
+  party's (BUG-9162).
+- Creature: when anyone's species starts migrating, everyone is warned and gets
+  their editor 10 s later, and the party migrates together (BUG-9163).
+- Creature: a player who joins without a creature of their own gets their own
+  editor first; what they save is their creature, with its own nest (BUG-9164).
+- Creature: a guest keeps their own DNA when the host's world is loaded again
+  (BUG-9165).
+- Creature: a partner who evolves keeps their nest; its family takes the new
+  species (no second nest, no world reload) (BUG-9151).
+- Creature: a migration started by a guest's own evolution now warns everyone,
+  and one migration is one round of editors (BUG-9163).
+- Creature: after a migration every player moves into their own new nest: its
+  world waits for its first family member and a save of its own, and the guest's
+  copies of the family go to the right nest (BUG-9166, BUG-9167, BUG-9168).
+- Creature: a guest's own family wears the guest's own species (the mate offer),
+  and the host's family stays out of a guest's own nest (BUG-9169).
+- Creature: a guest evolves the game's own way: the mate answers and walks
+  in, the dance, the egg; the family waits in cocoons while the player edits
+  and comes out first; the player hatches from the egg (BUG-9181).
+- Creature: a partner's mating call rings no longer stay on for good; the
+  old ring of player nests round the host's nest is removed once (BUG-9182).
+- Creature: a player's creature has one species id on every game, the same
+  after a rejoin; its family needs no conversion and "your species is
+  extinct" is gone (BUG-9180, BUG-9176).
+- Brighter buttons across the mod: our own gold and a real red (the game's
+  were dim and grimy), lighter under the mouse (BUG-9179).
+- Every arrow button (the downed screen, the Co-op window) shows a triangle
+  in the middle of the button; the downed box grows with the partner's name
+  (one line).
+- Creature: the mate's card shows the pink mate face again: the game's player
+  species is the creature the player plays, on every game (BUG-9177).
+- Creature: a guest can evolve through its own mate: the click on the mate
+  ends in the cocoon and its editor (the game's pairing cannot run with the
+  host's copy); a player's nest whose family died gets a member back in
+  seconds (BUG-9175).
+- Creature: a guest's nest offers a copy of its family as mate: the mate icon
+  and hearts, as on the host (BUG-9174).
+- Creature: a returning player gets their old nest back when their creature
+  comes back under another species id, instead of a new nest each session;
+  more spots for a new nest when old ones crowd the home (BUG-9173).
+- Tests: `coop.evolve mates` in Cell no longer crashes the game (BUG-9172).
+- Cell: a knocked-out cell watches a partner (SPECTATING <name>, Tab for the
+  next one) until it is up again (BUG-9171).
+- Civ: a late joiner without a creature of their own goes into the creature
+  editor first; a loading screen shows while their capital is founded
+  (BUG-9170).
+- Tribe: no more native game over while the party plays on: a host alone keeps
+  playing while a partner's village lives; when every founder village is down
+  the party wipe applies and a villager returns to each empty village
+  (BUG-9147).
+- Tribe: a player who joins without a creature of their own goes straight
+  into the creature editor; their village is founded with their creature when
+  they save it, behind a "Founding your village" loading screen (BUG-9159).
+- Tribe: a step lost to a party wipe shows red on the progress bar until the
+  party wins it back (BUG-9155); a wipe right after a win now refreshes every
+  player's world as soon as the game has saved.
+- Tribe: a crash when a totem got more pieces than its five slots is fixed
+  (BUG-9158).
+- Tribe: a player's last villager is knocked out even when no partner
+  villager is alive, so the host's game no longer ends; nobody reviving it
+  leads to the party wipe instead (BUG-9147).
+- Civ: the same party rule as in Tribe. When a player is about to lose their
+  last city to another nation, they keep it, and the party gives up its newest
+  captured city instead (with no captured city yet, every party nation loses
+  10% of its money) (BUG-9155).
+- Creature / Adventure: a downed creature lies in the game's own death pose
+  until it is revived, and its player watches a partner meanwhile: SPECTATING
+  and their name under the revive ring, Tab or the arrow buttons to switch, a
+  red edge round the screen (BUG-9156).
+- Tribe: when one player's whole village is wiped out and nobody revives
+  their last villager in time, the whole party pays: the newest ally becomes a
+  rival again (or the newest conquest stops counting), a totem piece and a step
+  of progress are lost; with no win yet, every village loses 10% of its food.
+  The village is no longer captured, so it never needs rebuilding (BUG-9155).
+- Tribe: a connected player's camera now starts at their own village
+  (BUG-9153).
+- Tribe: the party shares its food. A quarter of every delivery into a
+  player's village goes to the other players' villages, split evenly, each at
+  least 1 food; the gatherer keeps three quarters. Food can be given to a party
+  member's village: in the social stance, with your villagers selected,
+  right-click their hut (10 food, the game's gift price) (BUG-9154).
+- Tribe: the Co-op window's "Village >" page is gone: a connected player plays
+  their own village with the game's own controls. Their game now treats their
+  village as theirs: the food counter, the villager cards, the hut's Add Baby and
+  the Tribal Planner's tool racks are their village's (the host checks and
+  carries out each purchase, and tells them why when it can't) (BUG-9153).
+- Creature: every player who plays their own creature gets their own nest,
+  about 60 m from the host's. They hatch and respawn there, it moves with the
+  host's nest when the species migrates, and if it died out while they were
+  away it is made again when they come back. Nobody in the party can hunt
+  another player's species (BUG-9135, roadmap phase 2).
+- Tribe: up to four founders. Every partner with their own creature gets
+  their own village (next to their Creature nest when it is still there,
+  else the nearest free level spot by any founder's village), commands only
+  that village, and sees its own food. A partner who leaves and comes back
+  gets the same village back (BUG-9135, roadmap phase 3).
+- Civilization: up to four founder nations, one capital per Tribe founder
+  (BUG-9135, roadmap phase 5; not yet tested in a live game).
+- Joining late: a player who joins a Tribe game without a creature of their own
+  is told why they have no village and can pick one of their own creatures in
+  the Co-op window (F9); their village is then founded right away and caught
+  up to the host's (hut level, villagers, tool racks). In Civilization a late
+  joiner gets one capital with the host capital's buildings and turrets, and
+  one without a creature of their own gets the same choice in the Co-op window
+  (BUG-9135, roadmap phase 4).
+- Tribe: a partner on the host's species no longer stops the village founding
+  of the partners who joined after them (BUG-9138).
+- Co-op window: "Player Slots" with an Apply button. More slots apply at once
+  in the middle of a stage, so a friend who joins late fits right away; the
+  difficulty of the extra slots applies at once too. Fewer slots still apply
+  from the next stage (BUG-9135, BUG-9144).
+- Co-op window: no "Send World" button any more: the world goes to every
+  player by itself. During a ready vote the host's "Start Now" stays
+  (BUG-9144).
+- A downed player's countdown is now a ring that drains as time runs out,
+  with a green fill while a partner revives: in Cell, Creature, Adventures,
+  Tribe and Space (BUG-9141).
+- A downed player now waits a whole minute for a partner on every stage
+  (was 30 seconds) (BUG-9149).
+- Loading a save with fewer player slots than the players connected no longer
+  ends the session: the slots rise to fit everyone, and the chat says so
+  (BUG-9143).
+- Co-op window: the "Give To" button is gone (BUG-9148).
+- Tribe: a connected player's right-click orders now reach their own villagers
+  with the game's own controls; before, only the Co-op window's Village page
+  could order them (BUG-9152).
+- Tribe: a friend who joins without a creature of their own gets their village
+  right away, wearing the host's creature for now; when they choose or make
+  their own creature, the same villagers take it on (BUG-9150).
+- Creature and Adventures: with three or four players a downed player can be
+  revived by any partner. Before, only two-player games had the knockout; with
+  more players a lethal hit was a plain death (BUG-9146).
+- Creature editor: the depth cube can be dragged in every view. When a part
+  faced the camera or the screen's edge, the cube lit up but did not move; a
+  part facing the camera now moves out when you drag up (BUG-9145).
+
+## [0.7.8-lineages54-dev] - 2026-11-12
+
+- Creature: a connected player's sing, dance, charm and pose no longer reach
+  the host as a bite. Since Lineages 51 every social move hurt the creature,
+  so creatures being befriended fought back and could not be befriended
+  (BUG-9136).
+- Tribe: a connected player's own village is founded with their own creature.
+  It could take the host's creature they had played a moment before (after a
+  rejoin in another world); such a village now switches to the connected
+  player's own creature by itself (BUG-9137).
+- Cell: when someone else respawns, your screen no longer fades to black as
+  if you respawned (their own respawn effect was copied to every screen)
+  (BUG-9122).
+- Creature: Ctrl+Scroll widens the field of view again (it changed the setting
+  since Lineages 36 but not the picture) (BUG-9130). The notification for each
+  change is gone.
+- Online: the host paces what it sends by what the other player actually
+  receives, instead of sending everything at once each frame. On a slow or
+  choked connection far fewer packets are lost and sent again (BUG-9098).
+- Diagnostics for two reports that could not be reproduced: meat that stays
+  huge after a partner ate it (BUG-9125) and a heal sound that keeps going at
+  a nest (BUG-9133). If you see either, type /bug in the co-op chat right away.
+- Groundwork for 3-4 players with their own villages: every player now has a
+  permanent ID that survives a rejoin, and saves can hold up to 8 founders
+  (gameplay is still 2 founders) (BUG-9135).
+
+## [0.7.8-lineages53-dev] - 2026-11-11
+
+- Creature: bones the other player digs up disappear on your screen too (they
+  stayed and looked diggable) (BUG-9124).
+
+## [0.7.8-lineages52-dev] - 2026-11-11
+
+- Tribe / Civilization: a connected player who plays their own custom creature
+  gets their own village again (with their creature as chief). Since Lineages
+  46 the founding refused any custom creature (BUG-9134).
+
+## [0.7.8-lineages51-dev] - 2026-11-11
+
+- Creature: the connected player's Strike now hurts the host's creatures in
+  full: its splash on the creatures around the target was dropped, so a
+  Strike that only splashed did nothing (BUG-9132).
+- Creature: meteors, rain storms and the UFO visit follow the host's world: the
+  host's events show on the guest, and the guest's game no longer starts its
+  own (nor its own night predator) (BUG-9131).
+- Creature: the connected player has a pack of their own. Their Summon Flock
+  now summons a flock that follows and fights for them, and they can recruit
+  allied creatures; the host's game runs that pack (BUG-9129).
+
+## [0.7.8-lineages50-dev] - 2026-11-11
+
+- Creature: after the host migrates to a new nest, the connected player's
+  home moves there too, so they respawn at the new nest (BUG-9128).
+- Progress debt is now progression, not DNA: a death owes 10% of the stage's
+  progress bar so far (Creature and Cell alike), so every death adds to it.
+  Spendable DNA never changes (BUG-9119).
+- Creature: the heal effect no longer loops forever. The pack regen starts
+  below 95% health and stops at full (BUG-9126).
+- Creature: being downed is visible: a red countdown for the downed player, a
+  "Revive" line and a red arrow for the partner, and a "<name> is down!"
+  message for everybody (BUG-9127).
+- Cell: a partner's respawn no longer blacks out your screen (BUG-9122).
+- Arrows to an off-screen partner (and map marks) point at them instead of
+  straight down (BUG-9121).
+- Cell: the shared DNA is explained: when a partner's editor spends it, the
+  others see "A partner spent N of the shared DNA" (BUG-9123).
+- Cell: your own creations make up 1 in 6 of a species' spawns (was 1 in 4).
+- Creature: bones a partner used also move to their used look here, where the
+  save's bones have one (BUG-9124, partly).
+
+## [0.7.8-lineages49-dev] - 2026-11-11
+
+- Spore's Settings no longer vanishes when you open Audio Settings (or Game &
+  Capture, Online, Credits). The Lineages Frame Rate Cap controls confused
+  Spore's tab switching since Lineages 41 (BUG-9120).
+
+## [0.7.8-lineages48-dev] - 2026-11-11
+
+- The Co-op window is tidier: labels sit beside their fields, rows are evenly
+  spaced, the difficulty has a proper field, ping never wraps, the lobby drops
+  the extra heading and lines that did not apply, and update messages are short
+  ("Lineages 48 is available") (BUG-9117).
+- A downed player now has 30 seconds for a partner to come (Space: 30 instead
+  of 20), and can give up by holding G for a second: the same as the timer
+  running out, including its loss (BUG-9118).
+- Progress debt: a downed player who is not revived (or gives up) no longer
+  costs the party DNA or food. The party owes the progress instead: a deep red
+  stretch at the end of the progress bar that new DNA (Creature) or food (Cell)
+  refills first, keeping the bar's tick marks and shine. Nothing earned is ever
+  taken away. Creature: 10% of the DNA; Cell: 10% of the editor's DNA, as food
+  (BUG-9119).
+
+## [0.7.8-lineages47-dev] - 2026-11-11
+
+- Creature editor depth cube: it now moves a part straight in and out of the
+  skin where the part sits (it followed a slanted line from the spine), and it
+  zooms with Spore's arrows and balls instead of staying one fixed size
+  (BUG-9116).
+
+## [0.7.8-lineages46-dev] - 2026-11-11
+
+- Built on SporeCoop 0.7.8: every upstream fix from 0.7.4 to 0.7.8 is in,
+  including creature relations (creatures no longer stay scared of a guest),
+  the guest's social game with the game's own meter and prompts (no instant
+  win), the guest's roar scaring the host's creatures, host-owned bones and
+  skeletons, NPC animations on the guest, sneaking, and many crash guards.
+- Alpha creatures are marked as alphas for guests too (BUG-9115).
+- Inside a Lineages campaign its own workload setting paces DNA and Cell food;
+  upstream's per-player pace applies only outside campaigns.
+- Lineages keeps its own Tribe tool sync for the founders' villages.
+
+## [0.7.3.6-lineages45-dev] - 2026-11-10
+
+- Cell parts are shared: a part any player picks up in the Cell stage is
+  unlocked for everyone, and when you join, the parts either of you already
+  had are merged. Creature parts (bones, skeletons) were already shared
+  (BUG-0467).
+
+## [0.7.3.6-lineages44-dev] - 2026-11-10
+
+- Combat adventures together: every goal is shared (destroy, defend and the
+  rest), anything one player destroys is destroyed for everyone, and the host's
+  success or failure ends the mission for all. A downed captain can be revived
+  by a partner within 10 seconds, or gets back up beside them; the mission fails
+  only if every captain is down (BUG-9089).
+- Adventure partners are real captains now, the same size as your own, instead
+  of a floating name tag (BUG-9113).
+- Enemies in an Adventure still move separately in each game. Host-run enemy
+  movement is in this build but switched off until enemies can attack a
+  partner (BUG-9114).
+
+## [0.7.3.6-lineages43-dev] - 2026-11-10
+
+- Player Cells: cells from your group now swim in the Cell stage as native
+  creatures, about one in four spawns of a species. They come from the host's
+  older cells, the cells of everyone in the lobby, and, when the host turns on
+  Foreign Creations, the other cells in its Lineages Cache. Nobody's current cell is used, and
+  Spore's own spread of your species is untouched. A carnivore mouth hunts and
+  a herbivore mouth grazes. Species that drop cell parts keep their own look.
+  The host can switch it off in the lobby (Player Cells: On/Off) (BUG-9111).
+- Cell difficulty: predator groups get one extra member from three reserved
+  seats on, instead of one per extra seat, and extras no longer appear
+  overlapping other cells, which could fling them across the pool (BUG-9109).
+- Cell food: plant food is worth 25% more while those extra predators spawn,
+  so finishing the stage as an omnivore stays within reach (BUG-9110).
+- Foreign Creations replaces Share Onward: you always get your partners' own
+  creations, and only with Foreign Creations on also the creations they got
+  from other people. Off by default; the lobby button sits where Share Onward
+  was (BUG-9112).
+
+## [0.7.3.6-lineages42-dev] - 2026-11-10
+
+- Creature editor: select a detail or weapon and drag the new depth cube to
+  push it into the body or pull it out. Limbs, hands and feet keep their
+  placement, mirrored parts move together, and Undo and saving work as usual
+  (BUG-9103).
+- Lineages Cache: creations received from partners move to their own tab and
+  no longer fill My Creations. They still appear in your worlds (BUG-9104).
+- Share Onward: choose in the lobby whether hosts may pass your creations on
+  to players you have not met. It is off until you turn it on (BUG-9105).
+- A received creation that failed to import once is tried again a minute
+  later instead of being lost (BUG-9106).
+- Co-op window buttons show short tooltips in Spore's own style after a short
+  rest (BUG-9107).
+- Developer console: `coop.ui` commands refuse a window that does not exist
+  instead of crashing the game (BUG-9108).
+
+## [0.7.3.6-lineages41-dev] - 2026-11-09
+
+- Return the third-person field of view to normal when you leave Creature or
+  Adventure play, show a message when it changes, and only react to Ctrl+Scroll
+  while Ctrl is really held (BUG-9099).
+- New campaigns: each extra seat adds 60% to stage progress at 100% Difficulty
+  Scaling, and the slider now also scales enemy health and damage, hunger, city
+  takeover effort and Space raid size. Difficulty Scaling goes up to 400%.
+  Saved campaigns keep their rules (BUG-9100).
+- Give the mouse back right after an autosave instead of about 5 seconds later,
+  and confirm Spore's "game saved" box sooner (BUG-9101).
+- Frame Rate Cap: click the field and type to replace the value (Delete clears
+  it), and Settings opens again after you change it (BUG-9102).
+
+## [0.7.3.6-lineages40-dev] - 2026-11-09
+
+- Use Ctrl+Scroll for third-person field of view. Scroll down to widen and up to return to the native field of view.
+- Match world clicks to the widened view while preserving native zoom travel.
+- Prevent repeated restoration of the same Creature mating heart effect (BUG-0177).
+
+## [0.7.3.6-lineages39-dev] - 2026-11-09
+
+- Restore native mating hearts and allow the selected Creature-stage mate to respond just beyond its nest radius (BUG-0177).
+
+## [0.7.3.6-lineages38-dev] - 2026-11-09
+
+- Add a temporary clickable Mate marker that uses Spore's mating sequence (BUG-0177).
+- Let Backspace edit the frame rate cap without closing Graphic Settings.
+- Give full stage names enough room in the lobby roster.
+- Allow Alt+Scroll in the Creature follow camera while the simulation is paused.
+- Replace the preview toggle with Check for Updates.
+
+## [0.7.3.6-lineages37-dev] - 2026-11-09
+
+- Keep hidden connection fields editable with Spore's native masking.
+- Reapply saved borderless mode if Spore restores window borders or resizes
+  the game window during startup or a graphics reset.
+
+## [0.7.3.6-lineages36-dev] - 2026-11-09
+
+- Add the framed Co-op server browser and connection panels, saved server
+  addresses, privacy toggles, and optional session passwords.
+- Add the host seat selector, a live difficulty breakdown, and explicit
+  Optimal (paced) and Fast (unmanaged) transfer choices.
+- Show six servers at a time with wheel scrolling and a draggable scrollbar.
+  Keep successfully joined servers in most-recent-first order, mark discovered
+  hosts as LAN, and use eye icons for connection field visibility.
+- Draw one background per connection field and show difficulty changes
+  relative to vanilla rather than the resulting totals.
+
+- Separate the Co-op connection screen into server, address, and host sections.
+  Use the native Spore logo with the Lineages wordmark over the native header.
+  Give the lobby a player roster, world panel, and Ready controls during votes.
+  Move Report Issue to the top and use light captions on the muted red buttons.
+- Add host checkpoints after campaign milestones and a ten-minute fallback
+  when no checkpoint has completed. Show a confirmation after an autosave writes.
+- Retry interrupted update asset downloads, including temporary GitHub server
+  errors (upstream BUG-0755). Remove Co-op settings during uninstall.
+- Add a live frame rate cap of 1–360 FPS and a borderless window setting to
+  Spore's Graphic Settings. Setup can set both, and its Windows executable
+  can carry the release pack for a standalone offline install.
+
+## [0.7.3.6-lineages30-dev] - 2026-11-08
+
+- Open personal Cell edits without a Ready vote. Partners get a passive notice
+  and keep playing. Shared stage transitions still use the vote.
+- Keep the Cell model when sharing a rename that saved only metadata. Reject
+  incomplete bundles before rebuilding a partner's cell (BUG-0455).
+- Restore the Cell DNA allowance when a co-op vote delays opening the editor
+  (BUG-0560). This prevents new inflated balances after a save.
+- Reuse a verified, unchanged Cell world on a warm reconnect. Save changes,
+  stage changes and cold reconnects still follow the normal world-share path.
+- Confirm the native save dialog with Enter if its OK button is off-screen
+  after a video reset (BUG-9057).
+- Hold Shift and scroll in the Creature and Adventure follow cameras to
+  widen the local field of view by up to 18 degrees on Steam and GOG 2024.
+
+- Add an opt-in Paced world transfer setting for constrained UDP links.
+  Keep Normal transfer as the default. Send live Cell snapshots only after
+  the guest has entered the host's Cell world. Use title case on Co-op action
+  buttons and widen the report button to fit its localized label.
+
+## Earlier Lineages previews
+
+- Lineages 28: port upstream bulk acknowledgements and conservative retries
+  for world transfers to loading guests (BUG-0405); recenter the Cell camera
+  after teleport/respawn (BUG-0343). Keep joined Cell partners in their world
+  after an editor visit while designs update live (BUG-9096). Add large partner
+  direction arrows with names and distance (BUG-9097).
+
+- Add the native Lineages Cache category and persistent bidirectional authored
+  library sharing, including host relay, background transfers and reconnect
+  deduplication. Fix native feed captions, stream lifetime and provisional
+  Cell-to-Creature PNG exports (BUG-9093, BUG-9094, BUG-9095).
+
+- Adapt upstream 0.7.9 snapshot ordering and chief arrival-placement fixes
+  (BUG-9090, BUG-9091). Separate shared Creature DNA spending from earned
+  stage progress while retaining shared death penalties (BUG-9092).
+
+- Share required-once Adventure conversations through a host-ordered journal,
+  including parallel goals and warm reconnect catch-up (BUG-9089, partial).
+  Combat objectives, partner bodies and terminal rewards remain unfinished.
+
+- Initialize missing native city preaching capacity for remote religious
+  battles without moving the host camera or spawning visual crowds (BUG-9086).
+
+- Use Lineages for new build labels. Synchronize native religious follower
+  counts and conversion meters, including reconnect (BUG-9084). Give Civilization
+  economy its own message ID so it cannot intercept Tribal combat (BUG-9085).
+
+- Let guests negotiate economic city purchases as their own founder. The host
+  validates and settles payment/capture once; refused offers reset shared
+  trade eligibility without charging (BUG-9082).
+
+- Synchronize Civilization trade routes, economic purchase meters and native
+  pricing credits to guests, including route removal and reconnect (BUG-9081).
+
+- Record full guest homeworld Space training, personal orbital handoff,
+  reconnect and two-founder core-ending qualification (BUG-9071). The ending
+  test uses drive/travel fixture shortcuts; uninterrupted campaign play
+  remains unqualified. Package the religious bonus fix in Duo 22.
+
+- Attribute religious governor conversion bonuses to their own religious
+  vehicles, excluding economic vehicles and other nations (BUG-9078).
+
+- Add 5% city takeover effort per extra reserved founder across military,
+  religious and economic routes. Keep native prices/income and combat
+  bonuses, and preserve fractional conversion across saves and joining
+  guests (BUG-9077).
+
+- Apply reserved-founder combat scaling to destructible Civilization
+  buildings and synchronize their partial health. Native saves retain
+  unscaled maximum HP and the wound fraction (BUG-9076).
+
+- Defer an incoming city capture and building changes while the guest's
+  native city planner holds its objects, then reconcile after closing it
+  (BUG-9075). Native economic and religious city transfers also pass local
+  two-game ownership checks (BUG-9074).
+
+## [0.7.3.6-duo9] - 2026-11-03
+
+- Guards a late Tribal layout callback after the
+  native species cache is cleared (BUG-9009). Its positive and negative native
+  regressions passed. Conquered-village refounding remains a lab prototype.
+- An active Creature recovery survives a guest leaving. A departed victim's
+  pending DNA penalty stays with the host world and cannot affect a reused
+  player slot as an old knockout (BUG-9010).
+- Creature guests validate wildlife proxy lifetime before each movement pass,
+  avoiding a freed-object crash after a long native death screen (BUG-9012).
+
+## [0.7.3.6-duo8] - 2026-11-03
+
+### Added
+- In experimental two-village mode, the last villager has ten seconds for a
+  partner's nearby member to revive it. Expiry at an intact village returns
+  the member to its food mat with a provisional 10% loss of its village's food.
+  Both players see the timer. The co-op checkpoint command waits for recovery.
+
+### Fixed
+- A living second founding village can keep the world running through native
+  host population loss (BUG-9007). Both founding populations lost still invoke
+  the native rewind.
+- Wildlife sync diagnostics and proxy creation resolve cached native herds
+  through the current object list before using them (BUG-9008).
 ## [0.7.14.1] - 2026-11-14
 
 A crash fix on top of 0.7.14. Only the player who opens the captain screen needs it, but both players should update

@@ -1,7 +1,7 @@
 ---
 id: BUG-0351
 title: Cell: the host reports 'a bunch of DNA' after its second cell editor (cause not known)
-status: wontfix
+status: open
 kind: bug
 stage: Cell
 reported: 2026-10-31
@@ -75,3 +75,13 @@ returning 0 (the call works, no fault). Status stays open until then.
 - 2026-10-31: the diagnostics added on fix/w22-reports2.
 - 2026-11-01: fix/w30-progress: the 0.7.3.3 reports explain it (game editor refund, shared food and DNA); wontfix (by design).
 - 2026-11-01: the shared DNA now names its cause on screen and in the logs (`dna: a -> b cause=...`, "+9 DNA from Bob's hunt", Cell "+10 food (DNA) from Bob's meals"): BUG-0389 (feature), fix/w31-creature-gate.
+
+## Follow-up qualification (2026-11-07, Lineages 27 report)
+
+The present isolated host's first saved starter model changed spent DNA 0 -> -88
+while food stayed 125 and earned DNA stayed 12. Earlier/later cancel returns did
+not change spent. Shared food scaling and repeated totals pass independently.
+The old vanilla sell-back explanation remains an inference, not a qualified solo
+comparison. Preserve legitimate part refunds; do not automatically clamp this
+field in player saves. Further evidence: docs/re/cell.md#cell-lineages-player-report
+and BUG-9096. Reopened for the outstanding editor valuation control.

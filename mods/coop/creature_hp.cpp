@@ -12,7 +12,12 @@
 #include <vector>
 
 #include "fixes.h"
+#include "guest_pack.h"
 #include "game.h"
+#include "modes.h"
+#include "npc.h"
+#include "tribe.h"
+#include "world.h"
 #include "view_centres.h"
 #include "net/interp.h"
 #include "sporekit_game.hpp"
@@ -22,6 +27,28 @@ namespace creature_hp {
 static const SkHost* H;
 static SkMod* M;
 static Ctx C;
+
+// UpdateHunger also owns the native meal delay and starvation damage. Adjust
+// only its decreasing meter write. The native setter still clamps the result.
+using SetHunger = void(SK_THISCALL*)(void*,float);
+static SetHunger o_SetHunger;
+static uintptr_t a_HungerUpdateReturn;
+static struct { unsigned samples; float previous, requested, result; } g_hunger_probe;
+static void SK_THISCALL h_SetHunger(void* creature, float value)
+{
+    if ((uintptr_t)__builtin_return_address(0) == a_HungerUpdateReturn &&
+        (skg::field<uint32_t>(creature,0xB58) & 0x200) && C.in_session() &&
+        game::in_creature_stage() && creature == game::avatar()) {
+        const float previous = skg::field<float>(creature,0xBBC);
+        if (value < previous && previous > 0) {
+            const float factor = world::rules_for_current().hunger_factor();
+            o_SetHunger(creature,previous + (value - previous) * factor);
+            g_hunger_probe = {g_hunger_probe.samples + 1,previous,value,skg::field<float>(creature,0xBBC)};
+            return;
+        }
+    }
+    o_SetHunger(creature,value);
+}
 
 // ---------------------------------------------------------------- BUG-0373
 // The partner's puppet used to be pinned to its own full health every frame ("puppets mirror the
@@ -57,7 +84,7 @@ COOP_FIX("creature.own_brain_hp", "BUG-0375", g_own_brain_hp, "creature: an own 
 constexpr uint32_t kAvatarBit = 0x200, kPackBit = 0x100;
 
 typedef float(SK_THISCALL* MaxHp_t)(void*);
-static MaxHp_t o_BaseMaxHp, o_GetMaxHp;
+static MaxHp_t o_BaseMaxHp, o_GetMaxHp, o_CitizenMaxHp;
 static uintptr_t a_SpeciesMgrGet, a_PlayerSpecies, a_LevelHealth;
 
 struct PuppetHp {
@@ -102,6 +129,66 @@ static float SK_THISCALL h_BaseMaxHp(void* c)
     return o_BaseMaxHp(c);
 }
 
+struct EnemyHealth {
+    uint32_t serial;
+    float factor;
+};
+static std::unordered_map<void*,EnemyHealth> g_enemies;
+static unsigned g_save_depth;
+
+bool enemy_scaled(void* c)
+{
+    auto it = g_enemies.find(c);
+    return it != g_enemies.end() && it->second.serial == game::object_serial(c);
+}
+
+void set_enemy_health(void* c, unsigned percent)
+{
+    if (!o_GetMaxHp || !c || g_save_depth || (game::mode_id() == modes::kTribe && !o_CitizenMaxHp)) return;
+    auto it = g_enemies.find(c);
+    const auto serial = game::object_serial(c);
+    if (!serial) return;
+    float previous = it != g_enemies.end() && it->second.serial == serial ? it->second.factor : 1.f;
+    float factor = percent / 100.f;
+    if (factor == previous) return;
+    float hp = game::health(c);
+    if (!std::isfinite(hp)) return;
+    if (factor == 1.f) g_enemies.erase(c);
+    else g_enemies[c] = {serial,factor};
+    if (hp > 0) game::set_health(c,hp * (factor / previous));
+}
+
+static void convert_live_enemy_hp(bool to_native)
+{
+    if (g_enemies.empty()) return;
+    game::for_each_object([](void* c,uint32_t,void* context) {
+        if (!g_enemies.count(c) || !game::object_alive(c) || !enemy_scaled(c)) return true;
+        float hp = game::health(c);
+        if (hp > 0 && std::isfinite(hp)) {
+            const float factor = g_enemies.at(c).factor;
+            game::set_health(c,*static_cast<bool*>(context) ? hp / factor : hp * factor);
+        }
+        return true;
+    },&to_native);
+}
+void before_native_save()
+{
+    if (++g_save_depth == 1) convert_live_enemy_hp(true);
+}
+void after_native_save()
+{
+    if (g_save_depth && --g_save_depth == 0) convert_live_enemy_hp(false);
+}
+void clear_enemy_health()
+{
+    if (!g_save_depth) convert_live_enemy_hp(true);
+    g_enemies.clear();
+}
+
+static bool g_species_guard = true; // BUG-9157
+static uint32_t g_species_guarded;
+COOP_FIX("creature.max_hp_species", "BUG-9157", g_species_guard,
+         "creature: a creature without a species keeps its max health instead of faulting in the game's base");
 // ---------------------------------------------------------------- BUG-0732 (class BUG-0418)
 // A creature's size is creature vt 0x80 (0xC04B50, thiscall(creature, bool) -> float, applied with SetScale by the
 // callers: the brain upgrade 0xD3FCA0 gives the avatar SetScale(vt 0x80(0))): the avatar normalizing scale
@@ -169,7 +256,33 @@ static float SK_THISCALL h_GetMaxHp(void* combatant)
         if (it != g_puppets.end() && it->second.max > 0 && game::is_puppet(c))
             return it->second.max;
     }
-    return o_GetMaxHp(combatant);
+    void* creature = (uint8_t*)combatant - game::kCombatOff;
+    // BUG-9157: the native base (0xC04170) reads the species profile (+0xB20, its +0x56C) without a check when the
+    // creature has neither a herd health nor a tuning: a creature without a species (a guest's herd update right after
+    // its death caption's OK, MSI 2026-11-12, twice) faulted there. Such a creature keeps the max it has.
+    if (g_species_guard && skg::readable((uint8_t*)creature + 0xB24, 4) && !skg::field<void*>(creature, 0xB20)) {
+        ++g_species_guarded;
+        const float kept = skg::field<float>(creature, game::kMaxHpOff);
+        return kept > 0 && std::isfinite(kept) ? kept : 1.f;
+    }
+    const float base = o_GetMaxHp(combatant);
+    if (!g_save_depth && enemy_scaled(creature)) return base * g_enemies.at(creature).factor;
+    const float mirror = npc::reported_enemy_max(creature);
+    return mirror > 0 ? mirror : base;
+}
+
+float native_citizen_max(void* citizen)
+{
+    return o_CitizenMaxHp ? o_CitizenMaxHp((uint8_t*)citizen + game::kCombatOff) : 0;
+}
+
+static float SK_THISCALL h_CitizenMaxHp(void* combatant)
+{
+    const float base = o_CitizenMaxHp(combatant);
+    void* c = (uint8_t*)combatant - game::kCombatOff;
+    if (!g_save_depth && enemy_scaled(c)) return base * g_enemies.at(c).factor;
+    const float remote = tribe::reported_enemy_max(c);
+    return remote > 0 ? remote : base;
 }
 
 // ---------------------------------------------------------------- BUG-0462
@@ -201,6 +314,20 @@ static uint32_t g_party_answers = 0;
 static uintptr_t g_rel_lo, g_rel_hi, g_mode_lo, g_mode_hi;
 static uint32_t g_party_other_callers = 0;
 
+// BUG-9212 (diagnostics): the callers outside the two relation paths that ask about a partner's puppet (the herbivores
+// that back away from one guest's creature only; which game check sees the puppet as another species). Counted by
+// return address; `coop.hp callers` lists them, `coop.hp callers all` answers "player species" for the party in every
+// caller too (tests only: the hatchling of BUG-0499 needs the game's own answer).
+struct CallerCount { uintptr_t ret; uint32_t n; };
+static CallerCount g_puppet_callers[32];
+static bool g_party_all_callers = false;
+static void count_caller(uintptr_t ret)
+{
+    for (auto& e : g_puppet_callers) {
+        if (e.ret == ret) { e.n++; return; }
+        if (!e.ret) { e.ret = ret; e.n = 1; return; }
+    }
+}
 static bool SK_THISCALL h_IsPlayerSpecies(void* c)
 {
     uintptr_t ret = (uintptr_t)__builtin_return_address(0);
@@ -209,7 +336,9 @@ static bool SK_THISCALL h_IsPlayerSpecies(void* c)
         return r;
     if (!((ret >= g_rel_lo && ret < g_rel_hi) || (ret >= g_mode_lo && ret < g_mode_hi))) {
         g_party_other_callers++;
-        return r;
+        if (!game::is_puppet(c)) return r;
+        count_caller(ret);
+        if (!g_party_all_callers) return r;
     }
     void* sp = *(void**)((uint8_t*)c + game::kSpeciesOff);
     for (int i = 0; i < g_party_n; i++)
@@ -268,6 +397,8 @@ bool host_party(void* c)
 {
     if (!c)
         return false;
+    if (guest_pack::member(c)) // BUG-9129: a guest's pack is the party's too
+        return true;
     if (skg::field<uint32_t>(c, game::kFlagsOff) & kPackBit)
         return true;
     void* herd = game::herd_of(c);
@@ -463,6 +594,23 @@ static std::string pack()
 static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
 {
     auto say = [&](const std::string& s) { H->out_printf(out, "%s", s.c_str()); };
+    if (argc == 2 && !strcmp(argv[1],"hunger")) {
+        H->out_printf(out,"drain samples=%u previous=%.8f requested=%.8f result=%.8f",
+                      g_hunger_probe.samples,g_hunger_probe.previous,g_hunger_probe.requested,g_hunger_probe.result);
+        return 0;
+    }
+    if (argc == 3 && !strcmp(argv[1],"enemy")) {
+        uint16_t id = uint16_t(strtoul(argv[2],nullptr,10));
+        void* c = C.is_host && C.is_host() ? npc::host_npc(id) : npc::proxy(id);
+        if (!c || !o_GetMaxHp) { say("No live creature for this ID."); return 1; }
+        const float native = o_GetMaxHp((uint8_t*)c + game::kCombatOff);
+        char line[160];
+        auto worth = H->sym("SporeCoop::CreatureDnaWorth");
+        float reward = worth ? skg::thiscall<float>(worth,c,0) : 0;
+        snprintf(line,sizeof line,"enemy %u hp=%.3f max=%.3f native=%.3f worth=%.3f",id,game::health(c),game::max_health(c),native,reward);
+        say(line);
+        return 0;
+    }
     // tests (BUG-0882): species: what the game's PlayerSpecies answers now and the avatar's species; scaleunwind: the own
     // avatar's scale call (vt 0x80, as the game makes it) runs once and leaves like a fault unwound past the reset
     if (argc > 1 && (!strcmp(argv[1], "species") || !strcmp(argv[1], "scaleunwind"))) {
@@ -477,6 +625,20 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
         void* own = av ? skg::field<void*>(av, game::kSpeciesOff) : nullptr;
         H->out_printf(out, "player_species=%p avatar_species=%p same=%d override=%p own_scales=%u (+%u) lend_fix=%d\n", ps, own,
                       (int)(ps && ps == own), g_ps_override, g_own_scales, g_own_scales - before, (int)views::lend_ledger_on());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "callers")) { // BUG-9212 (diagnostics): callers asking about a puppet
+        if (argc > 2) g_party_all_callers = !strcmp(argv[2], "all");
+        if (argc > 2 && !strcmp(argv[2], "clear")) memset(g_puppet_callers, 0, sizeof g_puppet_callers);
+        const uintptr_t base = (uintptr_t)GetModuleHandleW(nullptr);
+        std::string text = g_party_all_callers ? "party answer in every caller: on\n" : "party answer in every caller: off\n";
+        for (auto& e : g_puppet_callers)
+            if (e.ret) {
+                char b[64];
+                snprintf(b, sizeof b, "caller SporeApp+%X x%u\n", (unsigned)(e.ret - base), e.n);
+                text += b;
+            }
+        H->out_printf(out, "%s", text.c_str());
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "pack")) {
@@ -693,9 +855,14 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     H = host;
     M = mod;
     C = std::move(ctx);
+    a_HungerUpdateReturn = H->sym("SporeCoop::CreatureHungerUpdateReturn");
+    if (uintptr_t setter = H->sym("SporeCoop::CreatureSetHunger"); setter && a_HungerUpdateReturn)
+        H->hook_create(M,(void*)setter,(void*)h_SetHunger,(void**)&o_SetHunger);
     a_SpeciesMgrGet = H->sym("Editors::cSpeciesManager::Get");
     a_PlayerSpecies = H->sym("SporeCoop::cSpeciesManager_PlayerSpecies");
     a_LevelHealth = H->sym("SporeCoop::CreatureLevelHealth");
+    if (uintptr_t a = H->sym("SporeCoop::Citizen_MaxHitPoints"))
+        H->hook_create(M,(void*)a,(void*)h_CitizenMaxHp,(void**)&o_CitizenMaxHp);
     if (uintptr_t a = H->sym("SporeCoop::cCreatureAnimal_BaseMaxHitPoints"))
         H->hook_create(M, (void*)a, (void*)h_BaseMaxHp, (void**)&o_BaseMaxHp);
     g_rel_lo = H->sym("Simulator::cSpeciesRelationshipManager::GetRelationship");
@@ -715,7 +882,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     }
     a_CmdStim = H->sym("SporeCoop::CreatureCommandStimulus"); // BUG-0735
     a_CanDefend = H->sym("SporeCoop::PosseMemberCanDefend");
-    H->command_add(M, "coop.hp", "coop.hp [pack|attack <player>|packhit <player> <hp>|packtarget <player> [combatant]] - creature health of the own avatar, partners' puppets, the pack (tests)",
+    H->command_add(M, "coop.hp", "coop.hp [enemy <npc>|pack|attack <player>|packhit <player> <hp>|packtarget <player> [combatant]] - creature health of the own avatar, partners' puppets, the pack (tests)",
                    c_hp, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.sneak", "coop.sneak [on|off|force] - the sneak state of the own avatar and the partners' puppets (tests, BUG-0463)",
                    c_sneak, nullptr, SK_CMD_MAIN_THREAD);

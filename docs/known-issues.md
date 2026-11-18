@@ -1768,6 +1768,152 @@ Reproduce a full game: `tools/lab.py run campaign --lane N` (about 85 min) or `c
 * Not fixed: a strip needs the civ / tribe / space object registry and a null-safe removal from
   `civ+0xB0` / `civ+0xD4` and the city's lists (BUG-0020's null rule), with a save + reload test per stage.
 * Ticket: BUG-0470
+
+## Duo Creature guest held in migration after death (2026-11-03, duo-species)
+<a id="issue-duo-guest-respawn-migration"></a>
+
+* A distinct-species guest on the saved Vantiegan landfall can enter native
+  CRG_SpeciesMigrate after its death screen. It remains a hatchling with input
+  locked and no caption to acknowledge. The full native recovery test fails.
+* Reproduce with tools/tests/duo_creature_rescue.py on the saved distinct-species
+  pair, using --victim guest after the host has completed its migration.
+* This blocks the first playable Duo milestone. The recovery accounting check
+  alone does not demonstrate a completed respawn.
+* Ticket: BUG-9011
+
+Update (2026-11-04): the migration stall did not recur in the subsequent fresh
+native recovery sequences, including a 125-second death caption. Duo 9 passed
+Cell-to-Creature acceptance locally. The original stall's root cause remains
+unproven; BUG-9011 is not-reproduced, and its regression is retained.
+
+## Duo Tribal rebuilding is a native prototype (2026-11-04, duo-species)
+<a id="issue-duo-tribal-rebuild-prototype"></a>
+
+Reusing a defeated tribe leaves a stale selectable citizen and later loses
+new citizens (BUG-9013, BUG-9014). Creating a fresh tribe while retaining the
+old tool-less tribe also crashed on cold load (BUG-9015). A fresh tribe with
+normal retirement of the old one passes the native population and cold-save
+controls. The capture trigger, partner rebuild action, campaign identity and
+control rebinding are not implemented. See
+docs/re/tribe.md#tribe-refounding-retirement. Packaged Duo 9 does not expose
+this experimental rebuilding path.
+
+CORRECTION (2026-11-04): duo10-dev now implements capture, F9 partner rebuilding,
+identity/control restoration and automatic checkpoint refresh, qualified by
+BUG-9017/9018. The packaged Duo 9 remains unchanged. Rebuilt-host totem/history
+preservation and complete stage progression are still unfinished.
+
+CORRECTION (2026-11-04): BUG-9030 now preserves rebuilt-host native totem/history,
+level and hut model. Cold restart and further conquest pass on both peers.
+Complete stage progression remains unfinished.
+
+## Intermittent Windows save-slot regression (2026-11-04, duo-species)
+<a id="issue-windows-second-slot"></a>
+
+BUG-9028: the full Windows test run failed its second save-slot write twice;
+the isolated rerun passes. Exact diagnostics were added. Root cause remains
+unproven; this is an open qualification issue, not a claimed fixed bug.
+
+BUG-9029: one Windows installer test run protected the active installation
+correctly but timed out closing afterward. Its file/version checks passed;
+the preceding run did not reproduce the close timeout.
+
+CORRECTION (2026-11-04): BUG-9029 was a completion race in the test. Waiting for
+the Close control to re-enable passes focused and full-suite installer checks.
+BUG-9028 remains open; the next full run failed test_slot_match instead.
+
+CORRECTION (2026-11-04): BUG-9028 now handles brief staged-folder rename locks
+with a bounded retry. A real Win32 lock fails before the fix and passes afterward;
+persistent-lock and occupied-destination checks preserve data. The focused save
+suite and full Windows suite pass (m2-win-staged-move-fixed.log). The process
+responsible for the original intermittent locks has not been identified.
+
+## Separate Civilization campaign integration (2026-11-05, duo-species)
+<a id="issue-civ-founder-campaign"></a>
+
+BUG-9056: native two-species capitals and mouse vehicle control are qualified.
+Shared capture credit, technology and unlock integration is under test.
+Native history event city counts, the progress bar, complete stage readiness
+and the one-empire Space handoff are not yet qualified. This work is confined
+to duo10-dev; it is not a finished multiplayer release.
+
+BUG-9057: native saved confirmation and captured-city specialty questions use
+the same window ID. The save watcher must distinguish their buttons and must
+not interpret a pending player choice as save completion. Regression work is
+in progress.
+
+## Tribe: walking villagers jump on both peers (2026-11-05, duo-species)
+<a id="issue-tribe-authoritative-relocations"></a>
+
+* What happens: two late Clyth walks failed the no-jump check. A villager
+  changed position on the host at zero speed, then the guest followed. One
+  run also showed additional guest movement after the host relocation.
+* Reproduce: run tools/tests/duo_tribe_walk_connected.py on the five-victory
+  Clyth pair with guest species 0680BF38 at 30 FPS.
+* Next: identify what moves the villager on the host and measure how the guest
+  recovers. Its tracking target and speed stayed stale during the correction.
+* Ticket: [BUG-9062](tickets/BUG-9062-tribal-walk-check-flags-host-relocations.md).
+
+## Tribe: repeat performance stalls (2026-11-05, duo-species)
+<a id="issue-tribe-fresh-repeat-performance"></a>
+
+In a fresh alliance-only Vantiegan campaign, the guest earns its first shared
+alliance and reaches friendly status with its next rival. Its repeat group
+order targets the correct NPC chief but does not start a performance within
+45 seconds. The cause is open; both games reported zero faults. See
+[BUG-9064](tickets/BUG-9064-fresh-tribal-repeat-performance-stalls.md).
+
+## Civilization economic state on Duo 22 (2026-11-07, feat/lineages-civ-combat)
+<a id="issue-civ-economic-state"></a>
+
+The private Duo 22 package omits guest trade routes, purchase progress and
+pricing credits. Duo 23 includes BUG-9081's verified synchronization and
+BUG-9082's native guest purchase, cancellation, refusal and reconnect fixes. See
+[BUG-9081](tickets/BUG-9081-civ-economic-state-not-replicated.md).
+
+## Packed Steam symbol reload (2026-11-07, development tools)
+<a id="issue-packed-steam-symbol-reload"></a>
+
+Running sym.reload followed by mod.reload coop can discard the packed executable's
+symbol database and leave the mod unloaded. Cold-launch a preserved checkpoint
+when symbols change. Normal startup works; this is a development-console
+limitation, not a campaign blocker. See
+[BUG-9083](tickets/BUG-9083-packed-steam-symbol-hot-reload.md).
+
+## Adventure: shared mission work remains partial (2026-11-07, feat/lineages-adventures)
+<a id="issue-adventure-shared-mission"></a>
+
+* What happens: shared MoveTo/Talk credits now work, but combat and other goal
+  types still run independently. Remote captain bodies are an opt-in prototype
+  with incorrect visual scale; the default still shows position markers.
+* Reproduce: use a paired Adventure with combat, collection or defend objectives.
+* Known: required-once conversations, parallel goals and warm reconnect passed
+  native two-instance checks. The replayed first gate also passed. Marker-only
+  mode still reports player-object sync mismatches.
+* Not checked: four native peers, simultaneous dialogue, full actor replication,
+  terminal rewards, campaign Adventure return and arbitrary modded missions.
+* Next steps: finish native captain scale/lifetime, then shared actor ownership
+  and combat before broadening objective types. Do not package as complete.
+* Ticket: BUG-9089
+
+## Session: remaining Lineages player-report uncertainty (2026-11-07, player report)
+<a id="issue-lineages-session-followup"></a>
+
+* What happens: reported first-hit display delay, disappearing nearby objects,
+  repeated meal notices and unexpectedly generous Cell editor budgets.
+* Reproduce: original slow Internet session. Host report only; no matching
+  guest trace. The targeted delayed-link hit test applied the first hit and
+  matched HP, and repeated food totals did not duplicate rewards.
+* Known: transfer retry flooding and redundant Cell editor shares are fixed in
+  Lineages 28. They can delay authoritative state. That does not prove all
+  disappearance or health-display cases share this cause. The native Cell ring
+  divides HP by six, whereas enemy scaling can raise HP above six.
+* Not checked: visual ring behavior for each scaled one-point hit, the original
+  guest's object removals, and a solo control for the first editor refund.
+* Next steps: compare native first-editor model valuation with solo; capture
+  guest object keys and host removals if disappearance persists on Lineages 28.
+* Tickets: BUG-9096, BUG-0351. See
+  [observations](re/cell.md#cell-lineages-player-report).
 ## Civ: city citizens have another size on each game (2026-11-03, fix/w40-scale)
 <a id="issue-civ-citizen-scale"></a>
 
@@ -2103,12 +2249,110 @@ Player reports 2026-11-04 (0.7.5, Discord bug-reports; not analysed yet):
   prints the host's plays). docs/re/tribe.md#tribe-mirror-fx. (fixed on fix/w45-tribe, unreleased: effects.hit_targets,
   the event's object is the attack's target: docs/re/tribe.md#tribe-hit-impacts)
 - BUG-0604: Cell: after the guest's level-up its screen showed only water (no cell drawn, nothing on screen for 7 min) in one cell_new_game run (`tools/lab.py run cell_new_game`; not analysed)
+
+- BUG-9125 (Cell): meat a partner ate stays on the other screen at a huge size. Not reproduced with ambient meat;
+  likely loot from a kill or a chunk bitten off a big cell.
+- BUG-9130 (Creature): Ctrl+Scroll's wider field of view is computed but not drawn.
+- BUG-9133 (Creature): after a fight, healing at a nest, the connected player hears a heal sound repeating. Not
+  reproduced in QA.
+
+## Tribe / Civ: with three or more players no partner gets a village of their own (2026-11-11, owner report 0.7.8-lineages53-dev)
+
+* The automatic founders run only with exactly two players (tribe.cpp auto_founders_tick, civ.cpp founder_tick); the
+  roster save format holds two founders and about 40 places assume one partner. With 3 players nothing happens and no
+  message is shown. Workaround: Tribe and Civ with two players. Needs a persistent player identity first (network ids
+  are reused, a custom creature's shared key contains the owner id).
+* Ticket: BUG-9135.
+
+## Cell: a partner's respawn still looks like this player's own respawn (2026-11-11, owner report 0.7.8-lineages53-dev)
+
+* Reopened after the Lineages 50 fix (no autohatch effect on the partner's puppet): the owner's screen still acts as if
+  they respawn when a partner respawns (3-player session). Not reproduced on Windows QA yet. Ticket: BUG-9122.
+
+## Tribe: a captured partner village cannot be rebuilt by hand any more (2026-11-12, BUG-9153)
+
+* The Co-op window's Village page (with Rebuild) was removed (owner decision 2L). With the party wipe (BUG-9155) a
+  wiped-out village is no longer captured, so this only matters with `coop.fix tribe.party_wipe off` or an older save
+  whose partner village was captured before. For tests the page comes back with `coop.fix ui.village_page on`.
+  Ticket: BUG-9153.
+
+## Tribe: the host's game can still show the population game over after repeated wipes (2026-11-13, BUG-9184)
+<a id="issue-tribe-host-gameover-other-route"></a>
+
+* What happens: on a worn 3-player Tribe save whose host village was wiped twice in two minutes, the host's game showed
+  the native "Alas! Your population has fallen below the minimum" caption with no population event through the mod's
+  hold before it. OK reloads the last save; play goes on.
+* Reproduce: not on demand (once in about an hour on the DuoQAJiffStand copy).
+* Known: the cinematic support log (tribe.cpp, every cinematic in the Tribe stage since 2026-11-14) names the
+  caller the next time; the static search: docs/re/tribe.md#tribe-gameover-routes.
+* Ticket: BUG-9184.
+
+## Space: a guest's homeworld card is blank after a personal launch (2026-11-13, BUG-9188)
+<a id="issue-space-guest-blank-card"></a>
+
+Fixed 2026-11-14 (72bc723c, feat/lineages-47): the card shows the host's creature.
+
+* What happens: the communication card next to the minimap shows a blank white picture on every guest; the host's
+  shows its species. Cosmetic.
+* Reproduce: the four-founder launch (profile DuoQAJiffSpaceReady, docs/re/space.md#space-four-founder-launch).
+* Ticket: BUG-9188.
+
+
+## Creature: the first creature's name field does not open on one profile (2026-11-15, owner play test and overnight tour)
+<a id="issue-pregame-name-field"></a>
+
+* What happens: a player joining a world where they have no creature gets the pre-game creature editor; a click on
+  "Name Your Creature" raises the description and tags panel, but the name stays a label (no text box, no dice), so
+  typing goes nowhere and the check says a name is needed.
+* Reproduce: the MSI test PC with its long-used profile MSIGuest, joining TITAN's Vantiegan.spo (no own creature there).
+* Known: the name edit window (control C7CEB1BD) stays hidden. Not the cause (each names fine): a fresh profile on the
+  same PC, TITAN at 1280 x 960, ui_scale=100, the Creepy & Cute pack, a background window, the profile's old
+  SporeCoopportrait packages, Preferences.prop. The in-world editor named fine on the same profile. Since 55-dev a
+  second unsaved exit loads the world (the player is never trapped).
+* Not checked: the profile's EditorSaves and Games contents; the Discord overlay (on the MSI only).
+* Ticket: BUG-9209
+
+## Creature: creatures keep away from a guest (2026-11-15, owner play test)
+<a id="issue-npc-keep-away"></a>
+
+* What happens (owner): walking up to creatures, they moved away at the same speed, so the guest could not attack or
+  impress them.
+* Reproduce: not reproduced twice (Vandh.spo; the owner's Dorger.spo on TITAN): the guest reached 1 m of a standing herd,
+  it did not move, and attacked.
+* Cause: partly known (2026-11-16, TITAN test pair): herbivores' curious back-off (the GamerToes) ends after a moment
+  for the host's own creature but never for a partner's, so the partner is kept 3-5 m away. It is the creatures' own
+  AI (frozen, they let the partner walk up), not a push. Seen with an omnivore partner (prey species back off from it).
+  What keeps it going is not found (not the AI's target, stimuli or the "player species" checks). Parked by the owner
+  (decision 4Y, 2026-11-16).
+* Workaround: none known.
+* Ticket: BUG-9212
+
+## Creature: a player who joins while the host is dead arrives dead (2026-11-15, overnight tour)
+<a id="issue-join-host-dead"></a>
+
+* What happens: if the host is on its death screen when a player joins, the player arrives at the host's spot with 0
+  health and sees "You were killed in battle". OK respawns them at their nest.
+* Reproduce: host loads a save where it dies (Vandh.spo, Vantiegan.spo), a player joins before the host respawns.
+* Known: inferred, the shared world is saved with the host's avatar dead and the joiner takes its place.
+* Ticket: BUG-9215
+* FIXED (2026-11-15, feat/lineages-47, BUG-9215): the joiner's world waits until the host respawned (2 minutes at
+  most) and the host is told to respawn; checked on TITAN + the MSI.
+
+## Party: the host's picture is blank on a guest's Party card (2026-11-15, overnight tour)
+<a id="issue-host-party-picture"></a>
+
+* What happens: in Cell, Tribe and Civ the guest's card of the host shows no picture (Creature showed it).
+* Known: the host sends its picture only when its creature has a PNG in its own My Creations; the QA host profiles were
+  made from copied saves. Probably a test-profile gap.
+* Ticket: BUG-9216
 - BUG-0606: Cell -> Creature, 4 players: every guest's sync-check found the host's cell 359-740 apart right after the
   campaign's food 1000 shortcut in the Cell advance (lab 20261105-233139 campaign_ct#1, once; not analysed).
 - BUG-0608: Tribe / Creature: a relayed world effect (a hit impact of BUG-0603) is made at the sender's absolute
   position: on a guest whose village ground is 5-6 m off the host's (BUG-0332, campaign planets only) it would be
   under or over the copies' feet (inferred, not seen; `CAMPAIGN_GROUND=1 tools/lab.py run campaign_ct` shows the
   ground difference when it happens)
+* FIXED (2026-11-15, feat/lineages-47, BUG-9216): the picture also comes from the package the game loaded the creation
+  from (Pollination etc.), and in Cell the cell's; checked on TITAN + the MSI in Creature and Cell.
 
 ## A remote body's error at the start of a walk over a bad network (2026-11-06, fix/w45-remote-bodies)
 <a id="known-walk-start-latency"></a>
@@ -3435,6 +3679,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Fixed (2026-11-13, fix/w49-tctl2; `tribe.foreign_note`, test tribe_foreign_click) **BUG-1087** (Tribe, guest): a
   click on another player's member or its roster card selected nothing and said nothing (the split of the player tribe
   is by design). Reproduce: Tribe, two players, the guest clicks a host member.
+* UPDATE (2026-11-15, Lineages): BUG-1068 is fixed upstream in 0.7.14; Lineages has it since 56-dev (the 0.7.14.1 merge).
+
 ## Cell: a level down removes more of the cells round a partner than round the host in the host's game (2026-11-13, fix/w49-cell2 test)
 <a id="issue-cell-first-down-partner"></a>
 
@@ -3583,6 +3829,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   slot cleared without a Resume by the next start). Next hit: the net's log line names the reason; with
   `coop.pauses trace` on the guest also its caller.
 * Ticket: [BUG-1101](tickets/BUG-1101-tribe-a-guest-s-game-time-stays-paused-for-the-r.md)
+* UPDATE (2026-11-15, Lineages): upstream's BUG-1101 net (0.7.14) is in Lineages since 56-dev: the stand lasts about
+  20 s, not the stage. Not reproduced in Lineages.
 
 ## Tribe: a partner's member 1.0-1.5 m under the host's ground for 10-20 s (2026-11-14, final check 0.7.14)
 <a id="issue-tribe-member-under-host"></a>
@@ -3634,3 +3882,40 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Next steps: a log line when the captain is set to 0 (hook `SporeCoop::cEmpire_SetCaptainKey`), so the next report
   names the species; then give such a world a captain from a species this game has.
 * Ticket: BUG-1111
+
+## Creature: a partner's nest already made under the sea stays there (2026-11-16, feat/lineages-47)
+<a id="issue-partner-nest-underwater"></a>
+
+* BUG-9246. Before the fix (63-dev and older) a partner's nest could be placed up to 6 m under the host's nest height without a sea check, so in the sea next to a low host nest (the owner's Dorger: seat 1, 2 m under). New nests are now made on dry land (creature.nest_site_dry); a nest already in the sea is noted per planet and kept: its player respawns in the water and can die to the sea monster at once. Decision 5A, owner "5AC" (2026-11-16): not moved; a new world gets dry nests.
+* Reproduce: a creature world whose host nest is less than 7 m over the water (`coop.ground <nest>`: over_water), a partner joins with its own species: `coop.homes` lists its nest, `coop.ground` at it shows over_water < 0.
+
+## Creature: a partner's pack does not go and fight what the partner hits (2026-11-16, feat/lineages-47)
+<a id="issue-partner-pack-no-attack"></a>
+
+* BUG-9248. The partner's summoned flock follows the partner and is told the target when the partner hits a creature, but stays at the partner's side instead of running at it: the game obeys its pack's attack order only from members of its own pack, and the partner's flock is kept out of it (BUG-9233). Decision 5C.
+* Reproduce: host + partner in the creature stage, `coop.gpack summon <player>` on the host, the partner hits a creature 20-90 m away (`coop.npc hit <id> 1` on the partner): `coop.gpack` shows the target, the members' distance to the partner stays 1-2 m.
+
+## Creature: a guest's first-creature editor sits under the loading screen and the menu splash (2026-11-17, feat/lineages-47)
+<a id="issue-pregame-editor-overlays"></a>
+
+* BUG-9252 (seen with its fix). A guest that left a stage for the galaxy menu to load the host's world, in a world where
+  it has no creature of its own, gets the first-creature editor (BUG-9208); the mod's "Bringing your nest" loading
+  screen stays over it until its 120 s limit, and the galaxy menu's splash text ("galactic adventures", the rating line)
+  is drawn over the editor.
+* Reproduce: host A plays a Creature world; guest B in another Creature world, with no creature of its own in A's,
+  joins A; B leaves its stage for the menu and the editor opens under the loading screen.
+
+## Creature: a partner's own pack does not bite yet; one summon at a time per world (2026-11-17, feat/lineages-47)
+<a id="issue-partner-pack-no-bite"></a>
+
+* Update 2026-11-17 (decision 5EA, unreleased): the bite is fixed: the partner's own game runs its pack
+  (docs/re/creature.md#creature-pack-own-game). Still open: one Summon Flock at a time per world; impress help not tested.
+
+* BUG-9248, decision 5CD. A partner's pack is its own now (it follows, takes its summons and recruits, shows in its Pack
+  panel, is kept in the save), but its members only walk up to what the partner attacks: they do not bite. The host's
+  own pack does.
+* The world has one Summon Flock event: while one player's summon runs (about two minutes), another player's summon
+  does nothing.
+* Reproduce: host + partner, `coop.gpack recruit <player> <id>` with two creatures of an attacking species, a test
+  creature beside the partner, `coop.gpack watch <id>`, the partner's `coop.npc hit <id> 1`: no "watched ... hit"
+  line from the members; with `coop.npc recruit <id>` (the host's pack) and `coop.gpack hostorder <id>` they hit.

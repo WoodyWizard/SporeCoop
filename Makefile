@@ -27,9 +27,9 @@ all: loader sporekit coop res setup $(B)/test/rtsshooks.dll
 # game resources (icons, ...) for SporeCoop: Data/SporeCoop.package
 UI_PNG := $(wildcard data/ui/*.png)
 res: $(B)/SporeCoop.package
-$(B)/SporeCoop.package: tools/mkpackage.py $(UI_PNG)
+$(B)/SporeCoop.package: tools/mkpackage.py tools/build_lineages_resources.py tools/build_lineages_cache_category.py $(UI_PNG)
 	@mkdir -p $(B)
-	python3 tools/mkpackage.py $@ $(foreach f,$(UI_PNG),sporecoop!$(basename $(notdir $(f))).png=$(f))
+	python3 tools/build_lineages_resources.py $@
 
 # tests: a do-nothing DLL under another program's name (BUG-0782, coop_rtss_note.py)
 $(B)/test/rtsshooks.dll: tests/dll/stand_in.c
@@ -134,6 +134,11 @@ unit-net:
 	@mkdir -p $(B)/host
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall -Imods/coop -o $(B)/host/net_tests mods/coop/net/*.cpp updater/pack.cpp updater/sha256.cpp tests/net_tests.cpp
 	python3 tools/tests/shards.py $(NET_SHARDS) $(B)/host/net_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -DLINEAGES_BULK_ACKS -Imods/coop -o $(B)/host/world_transfer_tests tests/world_transfer_tests.cpp mods/coop/net/connection.cpp
+	$(B)/host/world_transfer_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/library_sync_tests tests/library_sync_tests.cpp mods/coop/net/library_sync.cpp updater/sha256.cpp
+	$(B)/host/library_sync_tests
+	python3 tools/tests/test_cache_category.py
 	python3 tools/tests/fakepeer_check.py $(B)/host/net_tests
 
 unit-lab:
@@ -151,6 +156,14 @@ unit-cpp: sanitizer-probe
 	@mkdir -p $(B)/host/jpeg
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/validate_tests tests/validate_tests.cpp
 	$(B)/host/validate_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/dna_sync_tests tests/dna_sync_tests.cpp
+	$(B)/host/dna_sync_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/progress_debt_tests tests/progress_debt_tests.cpp
+	$(B)/host/progress_debt_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/chief_arrival_tests tests/chief_arrival_tests.cpp
+	$(B)/host/chief_arrival_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/adventure_sync_tests tests/adventure_sync_tests.cpp
+	$(B)/host/adventure_sync_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/cell_tests tests/cell_tests.cpp
 	$(B)/host/cell_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/npc_tests tests/npc_tests.cpp
@@ -159,6 +172,19 @@ unit-cpp: sanitizer-probe
 	$(B)/host/space_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp
 	$(B)/host/text_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/civ_seats_tests tests/civ_seats_tests.cpp
+	$(B)/host/civ_seats_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/tribe_seats_tests tests/tribe_seats_tests.cpp
+	$(B)/host/tribe_seats_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/tribe_late_tests tests/tribe_late_tests.cpp
+	$(B)/host/tribe_late_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/ring_timer_tests tests/ring_timer_tests.cpp
+	$(B)/host/ring_timer_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/editor_depth_axis_tests tests/editor_depth_axis_tests.cpp
+	$(B)/host/editor_depth_axis_tests
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/party_food_tests tests/party_food_tests.cpp
+	$(B)/host/party_food_tests
+	@mkdir -p $(B)/host/jpeg
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -o $(B)/host/jpeg_tests tests/jpeg_tests.cpp sporekit/jpeg.cpp
 	$(B)/host/jpeg_tests $(B)/host/jpeg
 	python3 tools/tests/jpeg_check.py $(B)/host/jpeg
@@ -205,9 +231,9 @@ test-tsan: sanitizer-probe
 # Windows-side unit tests (file handling of the updater and of received worlds), run under Wine in
 # a lane's bottle by tools/tests/win_unit.py (lab test win_unit)
 test-win: $(B)/win_tests.exe $(B)/SporeCoopSetup.exe
-$(B)/win_tests.exe: tests/win_tests.cpp installer/install.cpp installer/install.h mods/coop/slotfs.cpp mods/coop/slotfs.h updater/winupdate.cpp updater/pending.h updater/pack.cpp updater/sha256.cpp sporekit/inifile.cpp sporekit/inifile.h
+$(B)/win_tests.exe: tests/win_tests.cpp installer/install.cpp installer/install.h mods/coop/slotfs.cpp mods/coop/slotfs.h mods/coop/founders.cpp mods/coop/founders.h updater/winupdate.cpp updater/pending.h updater/pack.cpp updater/sha256.cpp sporekit/inifile.cpp sporekit/inifile.h
 	@mkdir -p $(B)
-	$(CXX) $(CXXFLAGS) -static -o $@ tests/win_tests.cpp installer/install.cpp mods/coop/slotfs.cpp updater/winupdate.cpp updater/pack.cpp updater/sha256.cpp sporekit/inifile.cpp -lwinhttp -lws2_32
+	$(CXX) $(CXXFLAGS) -static -o $@ $(filter %.cpp,$^) -lwinhttp -lws2_32
 
 clean:
 	rm -rf $(B)

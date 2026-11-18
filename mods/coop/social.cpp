@@ -1,4 +1,5 @@
 #include "social.h"
+#include "party.h"
 #include "lifecycle.h"
 #include "mouse.h"
 #include "fixes.h"
@@ -14,7 +15,10 @@
 #include "player_life.h"
 #include "net/validate.h"
 #include "npc.h"
+#include "player_rules.h"
+#include "progress_debt.h"
 #include "sporekit_game.hpp"
+#include "world.h"
 
 using namespace skg;
 
@@ -332,8 +336,7 @@ static void* g_goal = nullptr; // the card being updated
 static uint32_t g_goal_dna_dropped = 0, g_goal_dna_paid = 0;
 // BUG-0205: a guest's goal reward (K_GOAL) that reaches the host while it has no creature (an editor,
 // a load) waits here and is checked and paid when the host's creature is back. false: dropped (tests)
-bool g_goal_owe_fix = true;
-COOP_FIX("core.away_goal", "BUG-0205", g_goal_owe_fix, "creature: a goal reward that reaches a host without a creature is paid later");
+// (its switch core.away_goal was retired 2026-11-12, roadmap 0e: stable since 0.7.3.2)
 struct OwedGoal {
     ResourceKey k;
     int outcome;
@@ -357,6 +360,12 @@ static int goal_outcome(const ResourceKey& k) // the species' relation now: 6 al
     return mgr && a_RelGet ? thiscall<int>(a_RelGet, mgr, &k, (void*)nullptr, (void*)nullptr) : 0;
 }
 
+int creature_relationship(void* c)
+{
+    auto key = game::species_key(c);
+    return goal_outcome({key.instance,key.type,key.group});
+}
+
 static uint64_t key64(const ResourceKey& k) { return ((uint64_t)k.group << 32) | k.instance; }
 
 // host: a card's reward, from its own card or reported by a guest; false = paid already
@@ -367,6 +376,7 @@ static bool host_goal_pay(const ResourceKey& k, int outcome)
         return false;
     g_goal_paid[id] = true;
     g_goal_dna_paid++;
+    world::request_autosave();
     return true;
 }
 
@@ -469,6 +479,8 @@ typedef void(SK_CDECL* BarUse_t)(int);
 static BarUse_t o_BarUse;
 static void SK_CDECL h_BarUse(int idx)
 {
+    if (player_rules::summon_blocked(idx)) // decision 5FA: the party's Summon Flock is out
+        return;
     void* av = is_guest() && g_bar_fix && g_engaged >= 0 && game::in_creature_stage() && !(C.blocked && C.blocked())
                    ? game::avatar()
                    : nullptr;
@@ -563,6 +575,62 @@ COOP_FIX("social.meter_retry", "BUG-1058", g_meter_retry_fix, "creature: a guest
 constexpr double kMeterRetry = 0.25;
 static double g_meter_missed_at;
 static unsigned g_meter_missed, g_meter_test_null; // (tests: meter tasks that find no meter window)
+// BUG-9230 (owner 2026-11-16 on MSI: "the on screen UI didn't fill up with the pink bar"): the meter has two bars that grow
+// towards each other from the arc's ends (+0x3C and +0x40, Steam/GOG 2024 0.626 and 2.516: each bar's full length is half
+// the gap, 0.945); the meter is full when they meet. SocialMeter_SetBar(i, f) only puts bar i between the ends of its
+// current step (pos = lo + (hi - lo) * f, lo / pos / hi at +0x134 / +0x138 / +0x13C + i * 0xA4); the native session sets
+// those ends for every round (TITAN 2026-11-16, a native meter: after round 1 of 3 both bars lo 0, hi 0.315). The guest's
+// meter never got them (lo = hi = 0: every SetBar drew nothing, the progress only in the feed lines). Now both bars get
+// their step's ends (lo = where it stands, hi = progress x the bar's length) and SetBar moves them there.
+// Off (`coop.fix social.meter_fill off`): bar 0 only, without ends (62-dev).
+static bool g_meter_fill_fix = true;
+COOP_FIX("social.meter_fill", "BUG-9230", g_meter_fill_fix, "creature: a guest's social meter fills its bars as the impressing goes on (both bars, the native look)");
+static uint32_t g_meter_fills = 0;
+// the meter is on screen for this NPC's social game, with its fill (then the feed lines are not needed)
+static bool meter_shows(int npc_id) { return g_meter_fill_fix && g_meter_npc == npc_id && g_meter_npc >= 0; }
+static void meter_fill(void* m, float frac)
+{
+    uint8_t* u = (uint8_t*)m;
+    if (IsBadWritePtr(u + 0x134, 0xB0)) return;
+    const float a = *(float*)(u + 0x3C), b = *(float*)(u + 0x40);
+    if (!(b > a) || !std::isfinite(a) || !std::isfinite(b)) return;
+    const float len = (b - a) / 2, to = std::max(0.f, std::min(1.f, frac)) * len;
+    // what is drawn: each bar's list of finished steps (vector begin / end / capacity at +0xA4 / +0xA8 / +0xAC + i * 0xA4,
+    // its own storage for 6 at +0xBC + i * 0xA4; entries of 0x14 bytes {the step's end on the arc, 1.0, -FLT_MAX, 0, 0.01},
+    // read from a native meter: bar 0 ends at +0x3C + its length so far, bar 1 at +0x40 - it, the last at pi / 2 where they
+    // meet). The guest's list was empty: nothing drawn. Rebuilt for the rounds done (rounds at +0x44).
+    const int rounds = *(int*)(u + 0x44);
+    const int done = rounds > 0 ? std::min(rounds, (int)std::lround(std::max(0.f, std::min(1.f, frac)) * rounds)) : 0;
+    for (int i = 0; i < 2; i++) {
+        uint8_t* v = u + 0xA4 + i * 0xA4;
+        uint8_t* own = u + 0xBC + i * 0xA4;
+        if (*(uint8_t**)v != own || done > 6) continue; // (not its own storage: left alone)
+        for (int k = 0; k < done; k++) {
+            float* e = (float*)(own + k * 0x14);
+            const float at = len * (k + 1) / rounds;
+            e[0] = i == 0 ? a + at : b - at;
+            e[1] = 1.0f;
+            e[2] = -3.40282347e38f; // -FLT_MAX
+            e[3] = 0.0f;
+            e[4] = 0.01f;
+        }
+        *(uint8_t**)(v + 4) = own + done * 0x14;
+    }
+    for (int i = 0; i < 2; i++) {
+        float* lo = (float*)(u + 0x134 + i * 0xA4);
+        lo[0] = lo[1]; // the step starts where the bar stands
+        lo[2] = to;
+        thiscall<void>(a_MeterBar, m, i, 1.0f); // pos = hi (+0x24 set: "redraw")
+    }
+    // the redraw: the native meter tick (Steam 0xD237CB) does this when +0x24 is set; a guest has no session to tick it.
+    // FindWindowByID(meter's layout +0xC, the bars' window 0x562BD40, recursive) and that window's vt 0x90
+    static uintptr_t a_find = H->sym("UTFWin::UILayout::FindWindowByID");
+    if (a_find)
+        if (void* w = thiscall<void*>(a_find, u + 0xC, 0x562BD40u, 1))
+            skg::vcall<void>(w, 0x90 / 4);
+    g_meter_fills++;
+}
+
 static void meter_run(void*) // outside the frame: the meter is UI
 {
     auto v = std::move(g_meter_tasks);
@@ -591,12 +659,14 @@ static void meter_run(void*) // outside the frame: the meter is UI
             g_meter_frac = 0;
             g_meter_opened++;
         } else if (t.op == 1 && t.npc == g_meter_npc && a_MeterBar) {
-            thiscall<void>(a_MeterBar, m, 0, t.frac);
+            if (g_meter_fill_fix) meter_fill(m, t.frac); // BUG-9230
+            else thiscall<void>(a_MeterBar, m, 0, t.frac);
             g_meter_frac = t.frac;
             g_meter_bars++;
         } else if (t.op == 2 && t.npc == g_meter_npc) {
             g_meter_vis_at_win = meter_visible(m);
-            if (a_MeterBar)
+            if (a_MeterBar && g_meter_fill_fix) meter_fill(m, 1.0f); // BUG-9230: both bars meet
+            else if (a_MeterBar)
                 thiscall<void>(a_MeterBar, m, 0, 1.0f);
             g_meter_frac = 1;
             if (a_MeterFinish)
@@ -658,10 +728,60 @@ static void meter_tick()
 
 void debug_meter_null(unsigned n) { g_meter_test_null = n; } // tests (BUG-1058)
 
+// tests (BUG-9230): `coop.social meterfill <done> <rounds> [close]`: the meter opened (as op 0 does) and filled to done / rounds
+static int g_test_done, g_test_rounds, g_test_close;
+static void meter_test_run(void*)
+{
+    void* m = meter_ui();
+    if (!m || !a_MeterVisible) return;
+    if (g_test_close) { thiscall<void>(a_MeterVisible, m, 0); return; }
+    if (a_MeterReset && a_MeterRounds) {
+        thiscall<void>(a_MeterReset, m);
+        thiscall<void>(a_MeterRounds, m, g_test_rounds);
+        thiscall<void>(a_MeterVisible, m, 1);
+    }
+    if (a_MeterBar && g_test_done > 0) { // as op 1 does (the switch off: 62-dev's one SetBar)
+        if (g_meter_fill_fix) meter_fill(m, (float)g_test_done / g_test_rounds);
+        else thiscall<void>(a_MeterBar, m, 0, (float)g_test_done / g_test_rounds);
+    }
+}
+void debug_meter_fill(int done, int rounds, bool close)
+{
+    g_test_done = done; g_test_rounds = std::max(1, rounds); g_test_close = close;
+    H->run_outside_frame(meter_test_run, nullptr);
+}
+
+// tests (BUG-9244): every species goal card (noun 0x1406A572): its species (+0x80), state (+0x7C), cached impressed / killed
+// (+0x8C / +0x90), cached relation (+0xA0) and the table's record now
+std::string cards_dump()
+{
+    std::string out;
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* u) {
+            if (noun != kSpeciesGoalNoun || !game::object_alive(o) || IsBadReadPtr(o, 0xC0)) return true;
+            auto& s = *(std::string*)u;
+            uint8_t* g = (uint8_t*)o;
+            char b[260];
+            uint32_t inst = *(uint32_t*)(g + 0x80);
+            int rel = -1, imp = -1, kil = -1;
+            if (void* mgr = rel_mgr(); mgr && a_RelRecord) {
+                ResourceKey k{inst, 0x2B978C46u, 0x40626200u};
+                if (uint32_t* rec = thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, &k)) { rel = (int)rec[0]; imp = (int)rec[2]; kil = (int)rec[3]; }
+            }
+            snprintf(b, sizeof b, "card %p species=%08X state=%d cached imp=%d killed=%d rel=%d | table rel=%d imp=%d killed=%d | +78=%08X +84=%08X +88=%08X\n",
+                     o, inst, *(int*)(g + 0x7C), *(int*)(g + 0x8C), *(int*)(g + 0x90), *(int*)(g + 0xA0), rel, imp, kil,
+                     *(uint32_t*)(g + 0x78), *(uint32_t*)(g + 0x84), *(uint32_t*)(g + 0x88));
+            s += b;
+            return true;
+        },
+        &out);
+    return out.empty() ? "no cards\n" : out;
+}
+
 std::string meter_dump() // tests: the game's meter object as the guest's screen has it
 {
     void* m = meter_ui();
-    char b[400];
+    char b[560];
     if (!m)
         return "meter: none\n";
     uint8_t* u = (uint8_t*)m;
@@ -669,9 +789,10 @@ std::string meter_dump() // tests: the game's meter object as the guest's screen
     float lo = *(float*)(u + 0x134), pos = *(float*)(u + 0x138), hi = *(float*)(u + 0x13C);
     float frac = hi != lo ? (pos - lo) / (hi - lo) : 0;
     snprintf(b, sizeof b,
-             "meter: ui=%p visible=%d visible_at_win=%d raw=%.3f/%.3f/%.3f full=%d rounds=%d bar0=%.2f open_for=%d opened=%u bars=%u closed=%u win_msgs=%u stage_win_msgs=%u "
+             "meter: ui=%p visible=%d visible_at_win=%d raw=%.3f/%.3f/%.3f bar1=%.3f/%.3f/%.3f fills=%u full=%d rounds=%d bar0=%.2f open_for=%d opened=%u bars=%u closed=%u win_msgs=%u stage_win_msgs=%u "
              "frac_set=%.2f missed=%u\n",
-             m, meter_visible(m), g_meter_vis_at_win, lo, pos, hi, (int)u[0x26], *(int*)(u + 0x44), frac, g_meter_npc, g_meter_opened, g_meter_bars, g_meter_closed, g_win_msgs,
+             m, meter_visible(m), g_meter_vis_at_win, lo, pos, hi, *(float*)(u + 0x1D8), *(float*)(u + 0x1DC), *(float*)(u + 0x1E0),
+             g_meter_fills, (int)u[0x26], *(int*)(u + 0x44), frac, g_meter_npc, g_meter_opened, g_meter_bars, g_meter_closed, g_win_msgs,
              g_stage_msg_win, g_meter_frac, g_meter_missed);
     return b;
 }
@@ -868,6 +989,8 @@ static void apply_success(uint8_t player, uint16_t id)
         dna = thiscall<float>(a_DnaWorth, c, 1);
         if (dna > 0 && dna < 10000 && C.pace)
             dna = C.pace(dna); // BUG-0510: the party's pace (a guest's friend, as the host's own are in on_dna)
+        if (dna > 0 && dna < 10000)
+            dna = progress_debt::absorb(dna); // BUG-9119: a progress debt is repaid first
         if (dna > 0 && dna < 10000)
             game::dna_add_raw(dna); // the host's pool, shared with everybody (MSG_DNA)
     }
@@ -1097,6 +1220,38 @@ void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
         H->hook_create(M, (void*)a, (void*)h_GoalUpdate, (void**)&o_GoalUpdate);
 }
 
+// BUG-9244 (owner 2026-11-16: "The Crikiitis species is extinct!" on the Hunt card, twice, with Crikiitis standing next to
+// the player): set_party_ally gives every party species relation 6 (decision 7, best friends), the game's own "goal done"
+// (an Impress goal reads it as allied, a Hunt goal as extinct: 0xBA4750 writes 6 for an extinction too). A seat's species
+// changes (the player's own creature, an evolution, a guest that first reports the host's species: seat 1 of the TITAN QA
+// world went 0654D6B6 -> 066890BD -> 06538C27 -> 7C068C08 in one day) and the old species kept its 6 for good: a Hunt
+// goal on it (Bye Mouth 065D0889, an old seat species whose nest lives on) said "extinct". The game itself never leaves
+// 6 with no impressions and no kills on a species other than the player's: such a record that is no party species now is
+// set back to 0 (not set: the species' archetype decides again; the guests follow the host's table). Off
+// (`coop.fix social.stale_party_marks off`): the marks stay (62-dev).
+static bool g_stale_marks_fix = true;
+COOP_FIX("social.stale_party_marks", "BUG-9244", g_stale_marks_fix,
+         "creature: a species that was a player's (best friends, relation 6) is no longer marked once no player plays it (its Hunt card said 'extinct')");
+static uint32_t g_stale_marks_cleared = 0;
+static void clear_stale_marks()
+{
+    void* mgr = rel_mgr();
+    if (!g_stale_marks_fix || !mgr || !is_host() || !game::in_creature_stage()) return;
+    void* av = game::avatar();
+    const uint32_t own = av ? game::species_key(av).instance : 0;
+    uint8_t* map = (uint8_t*)mgr + 0x20;
+    void** buckets = field<void**>(map, 4);
+    uint32_t n = field<uint32_t>(map, 8), seen = 0;
+    for (uint32_t i = 0; buckets && i < n && i < 4096; i++)
+        for (uint32_t* nd = (uint32_t*)buckets[i]; nd && seen < 512; nd = (uint32_t*)nd[8], seen++) {
+            if ((int32_t)nd[3] != 6 || nd[5] || nd[6] || !nd[0] || nd[0] == own || party::party_species(nd[0])) continue;
+            nd[3] = 0;
+            if (++g_stale_marks_cleared <= 40)
+                H->log(M, SK_INFO, "social: species %08X kept relation 6 with no impressions or kills and plays for nobody now: set back "
+                       "to 0 (BUG-9244, %u)", nd[0], g_stale_marks_cleared);
+        }
+}
+
 void tick(double now)
 {
     if (game::lend_ledger_on()) // BUG-0882: outside every goal update (a fault inside one left it set)
@@ -1108,7 +1263,8 @@ void tick(double now)
         g_goal_owed.clear();
         for (auto& o : owed)
             if (goal_outcome(o.k) == o.outcome && host_goal_pay(o.k, o.outcome)) {
-                game::dna_add_raw(o.dna);
+                if (float left = progress_debt::absorb(o.dna); left > 0) // BUG-9119: the debt first
+                    game::dna_add_raw(left);
                 g_goal_owed_paid++;
                 if (C.feed)
                     C.feed(std::string(o.outcome == 6 ? "A species became our ally" : "A goal was reached") +
@@ -1122,6 +1278,11 @@ void tick(double now)
         if (now - last < (g_table_fast_fix ? 0.25 : 1.0))
             return;
         last = now;
+        static double stale_at = 0;
+        if (now - stale_at > 3.0 && party::roster().seats.size()) { // BUG-9244 (once the roster is known)
+            stale_at = now;
+            clear_stale_marks();
+        }
         auto t = read_table();
         for (auto it = g_goal_paid.begin(); it != g_goal_paid.end();) { // an older save loaded again
             bool still = false;
@@ -1219,7 +1380,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_prompt_at = H->time_seconds();
         if (id == g_engaged)
             g_engaged_at = g_prompt_at;
-        if (C.feed && id == g_engaged && n > 1)
+        // (owner 2026-11-16, BUG-9230: "If the impress bar is working, we don't need the notifications anymore"): the feed
+        // lines only when no meter shows this social game
+        if (C.feed && id == g_engaged && n > 1 && !meter_shows(id))
             C.feed("Answer it: " + std::to_string(i + 1) + "/" + std::to_string(n));
         return;
     }
@@ -1231,13 +1394,14 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         // a card pays when its species became allied (6) or extinct (5): the host's own table (the
         // one every guest follows) must say so too
         bool sane = r.ok() && std::isfinite(dna) && dna > 0 && dna < 10000 && (outcome == 5 || outcome == 6);
-        if (sane && !game::avatar() && g_goal_owe_fix) {
+        if (sane && !game::avatar()) {
             if (g_goal_owed.size() < 64)
                 g_goal_owed.push_back({k, outcome, dna});
             return;
         }
         if (sane && goal_outcome(k) == outcome && game::avatar() && host_goal_pay(k, outcome)) {
-            game::dna_add_raw(dna);
+            if (float left = progress_debt::absorb(dna); left > 0) // BUG-9119: the debt first
+                game::dna_add_raw(left);
             if (C.feed)
                 C.feed(std::string(outcome == 6 ? "A species became our ally" : "A goal was reached") + ": +" +
                        std::to_string((int)(dna + 0.5f)) + " DNA");
@@ -1248,7 +1412,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         int done = r.u8(), needed = r.u8();
         if (r.ok() && needed > 0 && id == g_engaged)
             meter_task(1, id, std::min(1.f, (float)done / needed));
-        if (r.ok() && done < needed && C.feed)
+        if (r.ok() && done < needed && C.feed && !meter_shows(id))
             C.feed("Impressing: " + std::to_string(100 * done / needed) + "%");
         return;
     }
@@ -1378,6 +1542,21 @@ bool debug_send_goal(uint32_t inst, int outcome, float dna)
 }
 
 // tests: the host's record of a creature species (as the game's ApplyEvent keeps it), sent on change
+// roadmap phase 2 (owner decision 7): a party species (a player's own creature with its own nest) is best friends with
+// the host's: relation 6 in the host's table (the game's own "allied"; the guests follow the host's table)
+bool set_party_ally(uint32_t inst)
+{
+    void* mgr = rel_mgr();
+    if (!mgr || !a_RelRecord || !is_host() || !inst)
+        return false;
+    ResourceKey k{inst, 0x2B978C46u, 0x40626200u};
+    uint32_t* rec = thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, &k);
+    if (!rec)
+        return false;
+    rec[0] = 6;
+    return true;
+}
+
 bool debug_set_record(uint32_t inst, int relation, uint32_t impressed)
 {
     void* mgr = rel_mgr();
@@ -1389,6 +1568,7 @@ bool debug_set_record(uint32_t inst, int relation, uint32_t impressed)
         return false;
     rec[0] = (uint32_t)relation;
     rec[2] = impressed;
+    H->run_outside_frame(refresh_cards, nullptr); // (BUG-9244 tests: the cards read the table again)
     return true;
 }
 

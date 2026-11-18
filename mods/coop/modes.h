@@ -26,7 +26,7 @@ struct Adapter {
     void* (*local)();
     // fill position/orientation/velocity/health/flags from the local entity
     void (*fill)(void* local, net::PlayerState& st);
-    // create the visible copy of a remote player; `local` helps to pick a model/herd
+    // create the visible copy of a remote player; null for a position label with no game object
     void* (*spawn)(const net::PlayerState& s, void* local);
     // move the puppet towards the remote state
     void (*drive)(void* puppet, const net::PlayerState& s, drive::State& ds, double now);
@@ -43,10 +43,15 @@ struct Adapter {
 net::Vec3 entity_pos(const Adapter* a, void* e);
 
 const Adapter* for_mode(uint32_t mode);
+bool adventure_progress(int& act, int& state, int& completed);
+uint8_t* adventure_play();
+bool adventure_body_ready(); // partner bodies on and the mission playing (no body during the intro)
 // the species a remote player's creature puppet is built from (its own creation), nullptr = local
 extern void* (*g_species_for_player)(uint8_t player);
 // the model a remote player's cell (kind 1) / spaceship (kind 2) puppet uses; false = the local one
 extern bool (*g_model_for_player)(uint8_t player, int kind, uint32_t key[3]);
+// BUG-9111: asked for every native cell's model key (true: use out instead of native)
+void set_cell_model_chooser(bool (*f)(void* res, const uint32_t native[3], uint32_t out[3]));
 const char* mode_name(uint32_t mode);
 uint32_t current_world(); // crc32 of the current save name, 0 if none
 // tests (BUG-0223): Tribe's and Civ's local entity is null for the next `frames` frames
@@ -59,6 +64,8 @@ void test_pin_marker(bool pin, const net::Vec3& p);
 // Tribe / Civ: the pointer marker `e` of adapter `a` (own or a partner's) moved in the last `within` s
 // (false for every other adapter); the sync-check leaves a moving pointer out (BUG-0380)
 bool rts_marker_moving(const Adapter* a, void* e, double within);
+bool planet_at_pixel(int x, int y, net::Vec3& out);
+bool camera_ray_at_pixel(int x, int y, net::Vec3& origin, net::Vec3& direction);
 // Tribe / Civ: seconds since the pointer marker `e` of adapter `a` last moved (-1: not a pointer); the trace's
 // `ptr_still=` (BUG-0416: the monitor judges a partner's copy only of a pointer that stood still)
 double rts_marker_still(const Adapter* a, void* e);
@@ -82,6 +89,7 @@ extern bool cell_at_fix;           // coop.pool fix cellat 0: the old bound (slo
 bool cell_is_puppet(void* cell);  // a remote player's cell
 // BUG-0271 (core.stale_local): no cell is read from a pool block the game already freed
 extern bool stale_fix;
+extern bool g_size_sync; // BUG-9206: a partner's Creature body copies the partner's own size
 void own_ground_tick(double now); // BUG-0592 (creature.own_ground): once per frame, before the drives
 extern uint32_t g_own_grounded;       // BUG-0592: times the own creature was put onto its ground
 extern uint32_t g_puppets_gone_alive; // BUG-0507: Creature puppets found freed by the game (creature.puppet_alive)
@@ -131,7 +139,12 @@ void space_retired_clear(const char* why); // session end, unload
 // tests: impostor_id (the recorded serial changes), impostor_mission on|off, else the counters
 std::string space_ident_test(void* u, const std::string& what, bool on);
 void cell_forget();               // the Cell stage was left: forget the puppets' pool indices
-uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot);
+struct CellSpawnSize {
+    float elevation = 0, factor = 1, size = 0;
+    int apply = 1;
+};
+uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot,
+                     CellSpawnSize scale = {});
 uint32_t cell_unknown_models(); // BUG-0455: cells not made because their model's creation is not here
 void cell_destroy(uint32_t idx);
 // BUG-0308: the Cell stage is being left (quit posted for a world load or the menu) and coop.fix

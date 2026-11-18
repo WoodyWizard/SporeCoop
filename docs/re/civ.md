@@ -386,7 +386,8 @@ the religious cVehicle).
 * `+0x750` is **recomputed every tick** in 0xBE2240:
   `200·followers[convertID] / (followers[convertID] + followers[owner])`, clamped 0..100:
   so writing +0x750 has no lasting effect; the state is the followers map. ✔
-* **ConvertCitizens 0xBEB1C0** - thiscall(city, uint32 converterPol, int count) ret 8: moves
+* ~ superseded for competing religions: see [correction](#civ-religious-governor-attribution).
+  **ConvertCitizens 0xBEB1C0** - thiscall(city, uint32 converterPol, int count) ret 8: moves
   up to `count` followers from the owner (or from a rival converter) to `converterPol`, sets
   +0x754, notifies (0xB3D550→0xAC8BD0) and calls `CheckReligiousConversion` 0xBEAB60 ✔.
   Called only from the per-slot preach tick 0xBEB2F0 (thiscall(city, int slot)), which first
@@ -673,6 +674,36 @@ and BUG-0106:
 ## The other nations' vehicle purchases (2026-10-28, fix/w2-civ)
 <a id="civ-ai-vehicle-spawns"></a>
 
+**Reserved-founder military production, Steam/GOG 2024.** The native
+`VehicleSlotsLeft` at `0x00BF2240` returns zero once the nation's vehicle
+vector holds 36 pointers. Otherwise it counts vehicles of the requested
+purpose and subtracts that count from the native purpose allowance at
+`0x00BF2110`. Duo 15 scales the allowance for military purpose 0 on the
+host. Duo 16 uses the native result below 36. When the native check refuses a
+military purchase at 36 or more, the host reads the original purpose allowance
+and counts military entries in the nation's native vehicle vector. Free slots
+are the smaller of the remaining military allowance and the remaining national
+overflow. A full fleet never produces a negative or duplicate allowance.
+The purchase, budget debit, and fleet serialization still run through Spore.
+This is an admission check on purchases. In a two-seat live run a rival
+captured a second city. Its fleet then held 32 economic and seven military
+vehicles, and the military slot query returned zero. A changed owner or
+allowance never causes this hook to discard existing units.
+At 50% Difficulty Scaling the bonus is 5% per extra reserved seat. The host
+rounds the total extra slots up once. A disabled or one-seat campaign takes
+the native capacity and timing. Founder nations, neutral nations and formal
+allies are excluded from rival production scaling.
+
+The military branch in `0x00BFA7A0` calls `GetElapsed` on nation+0x148
+at `0x00BFA974`, then requires more than 40,000 milliseconds. The religious
+branch reads nation+0x168 at a different site and compares against 50,000.
+Only the military caller receives the timing adjustment. Spore can bypass
+the timer when it changes targets. The purchase loop checks the expansion
+budget against the vehicle's price at `0x00BFB058`, checks slots at
+`0x00BFB067`, spawns at `0x00BFB0B1` and subtracts the price at
+`0x00BFB0CB`. A four-seat fixture bought eight vehicles for 24,000 total
+after crossing 28,000 ms, filling a native allowance of seven to ten.
+
 GOG 2024 addresses. Callers of `cCity::SpawnVehicle` 0xBDDEF0 (Ghidra `callers`): 0xBD72B0,
 0xBDE5F0, 0xBE5890, 0xBE75C0, 0xBF9960, 0xBF9FB0, 0xBFA7A0, 0xBFB160, 0xBFBA70, 0xBFBD30,
 0xCF3350, 0xCF72B0, 0xCFB7C0, 0xD09200 (9 sites), UI::RolloverCivCity::HandleUIMessage.
@@ -888,6 +919,691 @@ docs/re/creations.md#creations-content-all-kinds.
   fault, the save slot names the design's own key (0x29030001) and no key of the mod's
   (`out/lab/20261102-213135`; with `coop.fix content.model_key off`, the first version's 0x7D72C793:
   `out/lab/20261102-213354` FAIL). The mirror vehicles themselves stay in the save, which is BUG-0470.
+## Duo founding species on a native Civilization save (2026-11-03, duo-species)
+<a id="civ-duo-founders"></a>
+
+On the disposable Steam planet Anisa the native player civilization (800021CA) had
+species 067B4002. Its capital's species key was empty. Spore formed a second nation
+(000021CB) with a distinct treasury, initially with empty country and city species keys.
+The community SDK places cCivilization::mSpeciesKey at +0x268 and cCity::mSpeciesKey
+at +0x658. The test changed just those two ResourceKeys for the second nation and city
+to the guest's built-in creature 0680BF38, type 2B978C46, group 40626200. Immediately
+afterwards both fields read back correctly. After saving, the nation retained the key
+and the city cleared its own. This result repeated after full process restarts and a
+guest rejoin. The original nation and its species were untouched.
+
+In the initial home camera view, 19 live citizens belonged to the home city and used
+067B4002. On bringing the second city into view, 19 citizens belonging to that city
+used 0680BF38 on both host and guest after another cold start. A city's temporarily empty native species key did not prevent Spore
+from generating its citizens with its nation's species. To test it, use `coop civ nations`
+and `coop civ citizens` and compare owner political ID as well as species. The native
+citizen noun is 0x018EB4B7 and its owning-city pointer is at +0x1010. Many registered
+citizens in this save had no live owning city. They are not evidence about either city.
+
+`tools/tests/duo_civ_species.py` requires the named disposable fixture and verifies the
+initial values before writing anything. Its `--restored --citizens` path only reads the
+world and moves the camera. This was a direct-start Civ fixture, with stock creations.
+It did not exercise the Tribe graduation or prove persistence of remapped custom models.
+
+The later custom fixture used a third, previously unclaimed nation on a private copy
+of Anisa. The guest selected 5D00C0C1. Its original BEM and metadata produced the
+native key 7C93828D on the host. Without the archive, `coop.creations parts` and
+`paints` both returned `none` on a cold host while the guest was offline. Duo 5 stored
+the 7,646-byte model archive and a 20-byte nation roster alongside Anisa.spo. The
+in-game `coop civ bind_guest` command assigned that guest to nation 000021CC. A clean
+profile that received only the save slot and display preferences (no creator database
+or co-op package cache) refused a copy with a damaged archive header and stayed in
+the galaxy menu. Restoring the intact copy allowed the offline game to load. It
+reported 19 live citizens of 7C93828D, all 48 parts including one pack part, and the
+two original pack paints. Reproduce with tools/tests/duo_civ_custom.py.
+
+A separate clean profile also loaded this save through the game's normal galaxy menu.
+Selecting Anisa and clicking Play triggered the archive hook before the planet loaded.
+The offline readback and citizen census passed. Uninstall restored the original Steam
+DLL and retained the planet and its archived model.
+
+## Custom graduation designs in transferred saves (2026-11-05, duo-species)
+<a id="civ-graduation-design-archive"></a>
+
+BUG-9053: entering native Civ does not prove the guest has the host's designs.
+DuoQAGraduationFullB had host city hall and economic vehicle instance29160CE8;
+guest GetDesignKey returned stock hall068044ED and zero vehicle. The guest's
+resource manager could not resolve either custom model. GetDesignKey here is
+the existing verified thiscall symbol, called on city+590 with design99E92F05
+or F670AA43. It can choose a fallback when the original is unavailable.
+
+The shared save now carries a .spo.duo-designs attachment containing referenced
+custom building/vehicle records. It is assembled in the outgoing snapshot,
+without changing the loaded host save, then registered before native load.
+Validation restricts groups/types, requires a model for every design, rejects
+duplicate records and missing parts/paints, and bounds records/decompressed size.
+Packages use a content hash filename and the original resource keys; session end
+removes their overrides. This does not yet qualify arbitrary downloaded designs
+or same-key conflicting baked caches.
+
+Regression: m2-civ-designs-control.log FAIL differing native culture keys;
+m2-civ-designs-fixed-a.log PASS equal keys, resources available, zero faults.
+The attached building and vehicle share instance29160CE8, so group/type must
+remain part of identity. One instance-only map would lose one of the designs.
+
+Cold standalone replay passed (m2-civ-designs-cold-ready.log). Full native
+graduation also passed with newly edited designs29161241 on both games
+(m2-graduation-designs-full-a.log), retaining both original founders and zero
+recorded faults. Neither result implements separate player civilizations.
+
+## Automatic founder capitals and native control (2026-11-05, duo-species)
+<a id="civ-automatic-founders-control"></a>
+
+BUG-9046: after native graduation, a saved Tribal/OFT1 roster supplies the current
+host and guest species even if the guest is disconnected. From the single native
+capital, SpawnNextCity(0,nullptr) reserves the next native site. The appearance
+callback completes later; the previously blank new nation receives the saved
+guest model and CIV1 roster, then a native save/share is requested. Existing NPC
+cities with no reservation are not reassigned. Interrupted native-save recovery
+only recreates an absent reserved capital and requires its recorded faction.
+
+Control m2-civ-auto-founders-control.log FAIL: one capital. Fixed
+m2-civ-auto-founders-fixed-a.log PASS: native factions800021CA/2231 with species
+067B3E4A/0680BF38 on both games and zero faults. This test establishes founding,
+not the entire Civilization gameplay contract.
+
+BUG-9054: the initial separate nation remained NPC controlled. Native state
+showed city owner-1, vehicle owner254 and autonomous order9. Verified control
+entry points on Steam3010a413:
+- City spatial vt58 points to BD8300, bool thiscall(spatial=city+120), plain ret.
+  Reads byte+21C, which is city+33C. BD8310 is SetIsPlayerCity(bool), ret4.
+- Vehicle spatial vt58 points to C9E820, bool thiscall(spatial=vehicle+34),
+  plain ret. It compares native player political ID and the vehicle's ID.
+- BFBD30 is the native nation AI update, ECX=nation, no stack arguments,
+  plain ret BFC4B7. City simulator calls it at AE62E6 and ignores the result.
+  BFBD68 calls GetPlayerCivilization, then BFBD6D compares ESI against EAX.
+  The comparison is pointer based: changing the nation's +89 flag alone would
+  not select the player branch. Common economy updates occur before the branch.
+
+The scoped AI wrapper changes only that GetPlayerCivilization call's result for
+a registered founder nation, preserving common updates and avoiding NPC orders.
+Other native lookups retain the original player country. GetMoney/SpendMoney
+and income redirect founder transactions to that country's shared treasury;
+the secondary raw mWealth is not a second spendable player balance. City/vehicle
+ownership hooks use the current player assignment. The host purchase path uses
+the purchasing city's actual nation for its vehicle design and capacity.
+
+m2-civ-founder-control-off.log FAIL unassigned second city; fixed-a PASS native
+city ownership via vtable dispatch, no idle AI purchasing, guest purchase in its
+own nation and authoritative native move order. A subsequent actual city-menu
+click also purchased a vehicle. The guest screenshot has BUG-9055 artifacts;
+visual rendering and native cursor selection remain separate qualification.
+Shared city-count unlocks/history and the Space handoff remain unfinished.
+
+The settled-startup ControlB replay passes native shared available-money checks
+as well (m2-civ-founder-control-b-ready.log). Both countries and both games report
+the same available balance, and a guest purchase debits it. The secondary raw
+wealth stays4000 while shared available money changes; do not sum raw wealth.
+Waiting for GalaxyGameEntry plus600frames before loading eliminates the observed
+guest rendering artifacts in this replay (BUG-9055), without a rendering patch.
+
+CORRECTION (2026-11-05, duo-species): the old provisional MoveSelectedToGround
+signature above is not argument-free. Modern CF2680 ends with ret0C at CF2A48;
+live input supplies target, mouse flags and position pointer. No new direct call
+to that function is used by the fix.
+
+Native mouse input needs the partner's selectable list, not only IsPlayerOwned.
+On ControlB, cursor+164 referenced the home country's empty +D4 vector while
+the guest country's +D4 held its vehicle+34 spatial pointer. The cursor's modern
+SetObjects (vt58, B2FC70) only stores this borrowed pointer, ret4. GetSelected
+(vt5C, B310F0), box selection (vt7C, B31170), and ApplySelection (vt80, B30920)
+all read that list. The GetTerrainCursor cdecl getter B30EB0 returns at +107.
+Its wrapper now binds the live guest country's native vector in active Civ;
+native insert/remove operations own the entries. Switch-off/disconnect restores
+the home list only if another stage has not already replaced it. No vehicle
+pointer collection or ownership change is introduced by this adapter.
+
+Native probe correction: an initial right click beside the vehicle landed on
+the host city, not on ground. With the guest list installed, a ground click at
+600,400 produced host order6 and actual vehicle movement. Also wait at least
+40 native frames after drag; the upstream helper's 0.4s delay can finish before
+the 14-frame input sequence. Empty ground clicks/empty boxes need not deselect.
+The regression explicitly deselects first, then tests actual drag and movement.
+
+Unpatched m2-civ-native-input-control.log FAIL: native guest drag cannot select
+its own vehicle. Regression: tools/tests/duo_civ_native_controls.py. Offline
+host control of both nations' vehicle lists and cross-nation vehicle gifts are
+not yet covered by this guest-country adapter.
+
+Patched m2-civ-native-input-fixed-a.log PASS: both players drag-select their own
+vehicles and move them through ground clicks; the host buys through the actual
+city menu; neither game selects the other player's vehicle. Both remain alive
+with zero recorded faults. Setup m2-civ-native-input-ready.log also passes
+automatic capitals, archived designs and shared available-money checks. Its
+optional city-menu probe overlapped the subsequent camera test and returned no
+buttons, so that probe is not claimed as additional UI evidence. This regression
+does not qualify city planning, shared capture history or stage completion.
+
+## Separate founder campaign credit (2026-11-05, duo-species)
+<a id="civ-founder-campaign-credit"></a>
+
+BUG-9056. Modern GetCityCount BF0320 is thiscall(country), plain ret +F,
+returning (country+A0 minus country+9C)/4. Most callers need actual ownership
+bounds. Only the unlock tooltip return E05ECF and tech tooltip return E06345
+have been verified as count comparisons without city-vector indexing.
+
+AddCity BF44B0 calls SetVehicleTech BEF8C0 at BF4611. The latter takes one
+integer, ret4 +66, raises country+298 monotonically and refreshes native player
+feedback. Thresholds in AddCity are one city -> tech2, four -> tech3, final
+tuning count -> tech4. BEFE80 is the no-argument cdecl final-count getter,
+return +35/+43, reading Civ tuning+AC. Highest owned count is country+4D0.
+
+RefreshUnlocks BF2510 is thiscall(country), plain ret +229. It clears twelve
+bytes at +484, maps the shared player history traits, and compares city counts
+to native thresholds. It reads the first city's specialty for fallback global
+weapons; it disables those weapons when the final count is reached. Its only
+country inputs are city-vector length/first city; it does not mutate that
+vector. The adapter synchronously borrows a complete combined read-only vector
+with the country's own capital first, runs this calculator, then restores all
+three original pointers. The fault rollback ledger also holds those original
+pointers. No city is inserted in both nations' persistent ownership vectors.
+
+ChangeOwner BE8A20 compares the acquiring country with GetPlayerCivilization
+at BE8A85, return BE8A8A. Scoping that single lookup to the acquiring founder
+selects native campaign history/goals while retaining the actual city owner.
+The native +4C0/+4C4/+4C8 counters count military/religious/economic captures.
+The home country's counters are the canonical campaign totals; a guest capture
+adds to them once on the host. The guest country's raw counters remain its own
+record. A deferred authoritative checkpoint carries the native history and
+campaign fields; the ordinary city mirror still carries ownership immediately.
+
+Control m2-civ-team-progress-control.log reproduces the missing team credit:
+guest native city count becomes two and its military counter becomes one,
+while the home counter remains zero. Both games report zero faults afterward.
+The regression tools/tests/duo_civ_team_progress.py uses explicit native fixture
+spawn/capture calls; it is not evidence of ordinary player-earned combat.
+Shared history UI, progress bar, final readiness and Space handoff still need
+separate qualification. Keep BUG-9056 open until those requirements are met.
+
+Run A reached native capture totals two and tech3 but failed convergence while
+a save box/caption overlapped. Run B exposed a test polling race during the
+guest checkpoint load; wait for a live Civilization nation before reading it.
+Run C answered captions but not the captured-city specialty question. The
+host's native pause remained active and correctly deferred the second save.
+After choosing Military (05107B1A), the automatic checkpoint made both games
+agree on captures2, tech3, highest4, matching unlocks, own city counts2/2 and
+unchanged species, with zero faults (c-specialty-followup.log).
+
+CORRECTION (2026-11-05): window 06318E78 is a shared native message layout,
+not uniquely a saved confirmation. A captured religious city's specialty
+question uses the same window with choices 05107B19/05107B1A. Save confirmation
+uses FFFFFFF1. BUG-9057 excludes choice dialogs from the save watcher. The
+watcher moves the native cursor before clicking and keeps watching while its
+OK dialog remains visible. The progression callback rechecks cinematic/pause
+after SetVehicleTech, which can start the native air-vehicle caption.
+
+Additional read-only RE: ChangeOwner's history event builder is AE3740,
+thiscall(tuning, int kind, Vector3 position by value), ret10 at +12D; its ECX
+is not used. Its preceding getter B26910 is Civ tuning, not history manager.
+AE3740 requests history stage3, kinds3/4/5 for military/religious/economic.
+It writes the home country's own city-vector length to event payload+4.
+This is still a separate-nation history-count gap. The native history getter
+67DE50 is cdecl(), plain ret+5, loading global165D910; AddEvent7EC230 takes
+stage and kind, ret8+B2. Stage-map lookup7EC0A0 takes a key pointer, ret4,
+and can insert on a miss, so it is not a read-only getter to call casually.
+
+Native m2-civ-team-progress-fixed-d.log PASS without manual input: captures2,
+tech3, highest4, matching unlocks and original species on both games, actual
+native ownership vectors2/2, zero faults after the checks. The test driver
+answers the native specialty choice; save confirmations close automatically.
+Readback of the native history stage3 list confirms two type3 events with
+payload city counts1/2. Thus event emission works, but the history count still
+needs team aggregation. This pass does not close the remaining stage scope.
+
+History readback layout: manager67DE50 result+10 is the bucket array, +14 is
+bucket count. Each stage node has stage key+0, embedded list sentinel+4,
+next bucket-chain pointer+0C. A history list node has next+0, previous+4,
+event object+8; event kind is node+10 and payload vector is node+14/+18.
+Bounded read-only traversal in tools/tests/duo_civ_history.py reproduces home
+counts1/2 (m2-civ-history-control.log FAIL). The scoped AE3740 wrapper replaces
+only payload+4 with the actual sum of founder cities, while ChangeOwner is
+emitting a founder capture event; native timestamps, kind, positions and all
+other history fields are preserved. Historical vehicle/spice statistics still
+use the home nation; their team-wide display is not qualified by this patch.
+
+Native Space readiness CF7730 ignores incoming ECX, takes no stack arguments,
+returns AL and plain ret+1E/+21: native player country+298 >=4. ChangeOwner
+calls it at BE8E5D. Thus the earned team tech4 is the relevant readiness input.
+The separate native campaign fraction is CF8F80: no stack arguments, float in
+x87 ST0, ret+8F/+95. It reads the home city vector and divides by final Civ
+tuning count, returning zero if country/denominator is unavailable. Do not
+call it through the integer-only console call command, which leaves ST0 live.
+Its caller/vtable and rendered progress still need qualification.
+
+CORRECTION (2026-11-05): AE3740's payload contains nine words (36 bytes) at
+return. ChangeOwner resizes to ten words at BE8D97 and appends specialty+24.
+The first wrapper wrongly required forty bytes before changing payload+4;
+m2-civ-history-fixed-a.log therefore still failed counts1/2 with zero faults.
+The bounds check now covers the actual field written, the first eight bytes.
+
+CORRECTION (2026-11-05): native serializer7EBC70 follows stage hash-chain
+links at node+10, not +0C. The list sentinel remains node+4. The reader now
+uses the verified chain offset. Run B records correct host counts3/4 but guest
+stage3 is absent after reload (BUG-9058); the earlier native history transfer
+assumption was wrong. Pre-save7EBDB0(manager,-1) alone did not repair transfer.
+
+CORRECTION (2026-11-05, duo-species): earlier AE3740/67DE50 gameplay-history
+claims in this section are superseded. The manager is telemetry, established
+by telemetry.dat, App/Telemetry and native writer7EB6D0. Its stage3 records do
+not prove player-visible timeline contents or a campaign-save defect. BUG-9058
+is not reproduced. The experimental AE3740 hook was removed; no telemetry
+rewrite or pre-save flush is shipped. Native capture totals, unlocks and city
+ownership evidence remains valid. Player-visible history needs its own test.
+
+The Civilization HUD calls CF8F80 at CEAB7F, returns to CEAB84, stores
+the x87 float to the stack at CEAB87 and passes it to widget setter E04510.
+CF8F80 reads the native city vector header and divides by tuning+AC.
+The co-op hook scopes its adjustment to that caller. Diagnostic samples
+come from actual HUD calls and record the original and displayed fraction.
+
+At ten team cities the native Space readiness getter CF7730 returned true
+on both games. On a cold replay, Civ History submitted a 0x9C editor request
+with ID96B24187 at +0C, blank model at +10, return mode01654C04 at +1C and
+context0116D51D at +90. After the normal co-op vote the host reported
+input_lock,paused, without a running cinematic. This request owns that
+pause; retain the actual outside-frame pause-menu check before submitting.
+
+### Reserved-seat military vehicle combat (Steam/GOG 2024, BUG-9072)
+
+The cached active executable's vehicle combatant vtable at `0x01474CE8`
+points to `0x00CAB6F0` at +0x18. The receiver is the vehicle's +0x508
+combatant. The native +0x58 getter (`0x00BFCC50`) reads combatant+0x2C
+in Civilization. The current HP field is combatant+0x38. Direct damage
+qualification uses real military vehicles and the original vtable entry.
+`coop.civ` reports the native getter as `max_hp` for comparison with the
+host and the guest mirror.
+
+The turret has a separate combatant vtable at `0x01466C28`. Its +0x18 slot
+points to `0x00BD0660`; the prologue subtracts 0x588 from the receiver
+and checks incoming attackers for the turret type 0x0436F315. The city helper at
+`0x00BE39A0` found an empty wall slot, constructed one turret through
+`0x00BE2100`, and added it to city+0x354. Its city pointer at +0x688 and
+combatant vtable matched the in-game instance. The native damage entry
+measured ten points offline and 11.5 on four-seat rules against a founder
+vehicle. Its guest mirror received the same wound. The test supplies the
+turret as the attacker. A separate run loaded the wounded turret cold and
+issued an attack order to a nearby founder vehicle. The turret's native weapon
+targeted that vehicle and its damage entry received 3.0 and applied 3.45.
+Both object serials matched the fixture. The active build’s indexed placement
+routine at `0x00BE3AE0` rejects occupied or missing slots, then calls the
+constructor. Removal at `0x00BE21C0` detaches the turret from its layout and
+city list. A two-peer test added a second rival turret to a free wall slot
+during play, verified it on the guest and removed it from both.
+
+The [ModAPI city header](https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Simulator/cCity.h)
+documents the city's turret list and wall layout.
+
+## Economic and religious capture qualification (2026-11-06, Lineages)
+<a id="civ-lineages-capture-paths"></a>
+
+On the active Steam/GOG 2024 executable, BuyByCiv is at 0x00BE99A0.
+The disassembly verifies its affordability check through GetMoney at
+0x00BE9A04, SpendMoney at 0x00BE9A1E, and Capture with type 2.
+BuyCity is at 0x00BF0520 and FinishBuyCity is at 0x00BF0600.
+The latter reads the pending city at nation+0x440 and converts the signed
+integer price at +0x444 to float before calling BuyByCiv at 0x00BF063B.
+These entry points are distinct from the old GOG 2016 addresses above.
+
+The religious fixture must allow city updates between ConvertCitizens calls.
+One call moved followers without completing a capture in the saved Clyth
+fixture. Repeated native preaching across frames completed the transfer.
+The host and guest then agreed on the guest founder's three buildings and
+one wall turret, with zero faults. This qualifies the ownership repair
+after native conversion. It does not qualify selecting a religious vehicle
+and issuing a preaching order through the game UI.
+
+In two local games, BuyByCiv with a 2,500 price reduced shared funds from
+4,020 to 1,520. The host and guest then agreed on three buildings and
+one turret owned by founder 2231. Zero faults were reported.
+
+## Incoming capture during native planning (2026-11-06, Lineages)
+<a id="civ-lineages-planner-capture"></a>
+
+The CommunityEditor_Update hook records the live city's pointer and frame.
+A city remains held while its editor has updated within three frames.
+The guest updates its network ownership map immediately, but defers native
+ChangeOwner, building reconciliation and incremental building additions.
+Periodic host snapshots supply the latest state after planning ends.
+
+Before this guard, an incoming capture changed the city from faction 2231
+to 2230 while the editor was still open and left buildings of both factions
+inside it. The native parts-owner repair's own planner check could not
+protect the earlier ChangeOwner call or the independent construction path.
+The first guarded run kept the original faction and building list while
+editing and reconciled the city after the native green check closed it.
+
+## Reserved-founder destructible buildings (2026-11-06, Lineages)
+<a id="civ-lineages-building-combat"></a>
+
+BUG-9076: houses, factories and entertainment buildings use the combatant
+at object+0x120, current HP at +0x158 and maximum HP at +0x14C. The existing
+building TakeDamage hook handled governor bonuses and capture attribution,
+but omitted the reserved-founder combat scaler used by vehicles and turrets.
+The four-seat Duo 19 native test measured an incoming hit of 10 instead of
+11.5 and a rival building maximum of 800 instead of 1,160.
+
+The corrected hook reuses the vehicle/turret authority and diplomacy checks.
+A live-object health map preserves the native maximum for normalization
+before saving, after leaving, and when a hostile building changes allegiance.
+Building snapshot records now carry current HP and scaled maximum alongside
+noun, position and ruined state (25 bytes per record). The guest applies
+these to its own native building after the city planner releases it. A zero
+scaled maximum means native health. Both peers must use the same Duo build.
+
+The first corrected native run measured 800 to 1,160 maximum HP and 11.5
+incoming damage, with equal current and maximum health on the guest.
+City Hall is deliberately separate: its native Civilization damage path
+adds capture progress only when the other buildings are destroyed (or for
+special damage types). The initial test aimed at City Hall and measured
+zero HP loss; it was corrected to target an ordinary house. This change
+does not alter military capture resistance.
+
+Two corrected runs matched on both peers. Saving a 60% wound and restarting
+offline restored maximum 800 and current HP 479.99997, rather than baking
+1,160 into the campaign. A separate installed-package run captured the
+wounded rival city and both peers returned its buildings to native maximum.
+
+## Reserved-founder takeover resistance (2026-11-06, Lineages)
+<a id="civ-lineages-takeover-resistance"></a>
+
+The approved default adds 5% takeover effort per extra reserved founder.
+Two, three and four reserved seats therefore use 105%, 110% and 115%.
+This is a separate campaign coefficient like enemy HP/damage; the rival
+count's Difficulty Scaling percentage does not multiply it. It applies
+only when a founder acts on a city outside the founding team. NPC-versus-NPC
+actions and actions targeting a founder city keep their native progress.
+
+Military AddCaptureDamage and economic AddBuyProgress receive the native
+contribution divided by the takeover multiplier. Existing governor and
+joint-siege bonuses remain upstream of resistance. Religious ConvertCitizens
+uses integer division with a retained remainder per city serial, current
+owner and attacking founder. It changes the conversion contribution, not
+the native follower population or the UI's completion threshold.
+
+The active executable's economic entry at 0x00BDD270 takes (float amount,
+uint32 buyerPol) with this=city and ret8 at 0x00BDD31E. It updates city+0x758
+and buyer+0x75C, using amount*8/(buyerCityCount+6). The native vehicle calls
+it at 0x00DCCBFB after computing influence at 0x00BD9590. TradeDelivery and
+GetBuyPrice are separate functions and are not hooked by this feature.
+
+The native follower map is at city+0x5A0: root+0x0C, count+0x14, node right+0,
+left+4, key+0x10 and integer followers+0x14. Runtime reads matched the
+declared map count and observed native conversion changes.
+
+In the first four-seat native run, military progress changed from 10 to
+8.695652 and economic progress from 11.428572 to 9.937887. Turning the
+resistance switch off restored native contributions. One raw citizen
+produced no immediate conversion and retained 100/115 fractional credit.
+The test compared the military meter on both peers; it does not qualify
+economic or religious progress rendering on the guest.
+
+Campaign settings use FST6, appending the takeover coefficient after the
+five previous-stage seat counts. FST1 through FST5 read with the new default
+5 while retaining their prior combat/hunger fields. New campaigns may use
+campaign.takeover_per_extra_founder in coop.ini. Saved settings prevail.
+Fractional religious credit uses a bounded .spo.duo-conversion attachment,
+CCV1, with city/owner/attacker/remainder records, the applicable percentage
+and the native planet's SHA-256. A mismatched checkpoint cannot import credit.
+
+The first cold replay exposed a save-order error: joining triggered a native
+save before the first preaching action read the attachment, invalidating its
+digest. Reading the attachment before native SaveGame and publishing it after
+the native file changes fixes the loss. Two cold replays (one with the installed
+package) preserved the pending fraction and then completed religious conversion
+on both peers. The installed build also completed military capture and economic
+purchase after filling their scaled meters; the purchase still debited 2,500.
+
+## Native trade input qualification (2026-11-06, feat/lineages-civ-combat)
+<a id="civ-native-trade-qualification"></a>
+
+On TradeControlsC with installed Duo 21, the guest's native land purchase
+button created a purpose-2 vehicle on the host and guest. A completed click
+selected it; the native create-route button 037E95BC delivered order 9 with
+the correct host city pointer. The trader moved to that city on both peers.
+This qualifies input and forwarding, not a completed economic campaign.
+
+The fixture's guest-to-rival relationship category was 1; the reverse was 2.
+GOG 2024 D00BD0 is thiscall(manager, polA, polB, bool), ret 0xC, returning
+category 0..4. Its prologue, callers and live category reads were checked.
+The route acceptance helper CEEF90 takes (city*, requesting cCivilization*)
+on the stack, ret 8, returning a float. An ASLR-adjusted entry probe observed
+the route behavior call at DCA391 with exactly those objects. For a requesting
+nation whose +89 mIsPlayerOwned is false, it first returns zero for relationship
+category <=1. It also has later player/AI and neutral-city distinctions.
+No route appearing in this hostile fixture is therefore not evidence of
+broken route creation (BUG-9079). Friendly acceptance and guest progress
+rendering remain unqualified.
+
+Test pitfalls:
+* input_click releases after six rendered frames. At 10 FPS, waiting 0.5
+  seconds reads a rollover during the unfinished click. Wait at least eight
+  frames before querying the menu or issuing another click.
+* A broad drag starting on a parked vehicle or city part may grab that object.
+  Use a completed click on the native projected trader position for this test.
+* Diagnostic addresses need the current process's ASLR delta. Verify bytes
+  before probing; an unadjusted CEEF90 probe hit nothing in this session.
+* DeclareAlliance / DeclarePeace take Space cEmpire pointers, not Civilization
+  political IDs. The wrong diagnostic call crashed at IsAtWar+22 while reading
+  0x2232+0x84 (BUG-9080). See docs/re/space.md for the full API signatures.
+
+## Religious governor attribution (2026-11-06, feat/lineages-civ-combat)
+<a id="civ-religious-governor-attribution"></a>
+
+BUG-9078: native VehiclePurpose 1 is cultural/religious; 2 is economic.
+The inherited conversion hook required purpose 2 and did not match the
+vehicle's political ID to the ConvertCitizens attacker. With the guest
+governing as religious, a native purpose-2 vehicle near the rival changed
+a one-citizen contribution into two on installed Duo 21. The corrected
+hook requires purpose 1 and matching political IDs. The regression switch
+civ.religious_attribution retains the former predicate when off.
+
+CORRECTION (2026-11-06): the earlier conversion summary was incomplete
+for competing religions. BEB216 compares the caller with city+754. When
+they differ, BEB244..BEB268 removes followers from the current converter
+and returns them to the city owner. Only a contribution left over after
+that reversal switches +754 to the new converter and starts new gains.
+ReligiousBonusB observed zero followers gained for the new nation after
+one such contribution; that is expected native behavior. The regression
+checks that exactly one existing conversion is undone, not two, when the
+nearby governor's preacher belongs to the other nation.
+
+## Economic state replication (2026-11-07, feat/lineages-civ-combat)
+<a id="civ-economic-state-replication"></a>
+
+BUG-9081: the friendly TradeE fixture produced a real native route and
+delivery from guest mouse commands. Host route count became one and the
+rival's +758 meter reached 16.813276 for buyer 2231; guest route count and
+meter stayed zero. The older military-only snapshot omitted this state.
+Logs: playability-trade-e-controls.log, playability-trade-e-progress.log,
+bug9081-before.log. This is not BUG-9079's hostile-route rejection.
+
+The corrected native state includes both endpoints' +55C route vectors,
++758/+75C purchase meter/buyer, and the +570 per-buyer trade-value map.
+GetBuyPrice BE93A0 reads that map before its price tuning; a matching visible
+meter alone is insufficient. Initial route/meter-only tests passed but
+bug9081-price-map.log exposed missing/different map entries on the guest.
+The strengthened regression failed in bug9081-price-before.log.
+
+Verified live GOG-2024-layout routines:
+* AddTradeRoute BE1490: thiscall(city, partner, type), ret 8 at BE196A.
+  Appends both endpoints' route vectors but creates the +570 entry only
+  on the first endpoint. Calling it in an arbitrary endpoint order cannot
+  reproduce both native pricing maps.
+* RemoveTradeRoute BDFA70: thiscall(city, partner), ret 4. Removes only
+  the selected endpoint entry. Remove both ends before rebuilding a route.
+* CityTradeMap_Index BE08E0: thiscall(map, key pointer), ret 4, returns
+  node+14 float*. It uses signed integer key comparison and initializes a
+  missing value to zero. Callers BE14E9 and BE93E0 use city+570.
+* FloatMap_EraseIterator 8DB190: thiscall(map, output iterator pointer,
+  node iterator by value), ret 8. D05F27 confirms the hidden output pointer
+  and node order. It decrements map+14, rebalances and frees the flat scalar
+  node without a value destructor. The result is the next node pointer.
+
+MSG_CIV_ECONOMY is an optional message, leaving the old city snapshot intact.
+It validates bounded counts, duplicate keys, finite values, world, sequence,
+city index, faction and position. Native mutations are queued outside the
+render frame and revalidate live cities and the current world epoch. Open
+planners defer both endpoints; a later periodic snapshot retries. Native
+trade AI and treasury operations still run only through the existing paths.
+Ordinary snapshots fit one datagram; rosters exceeding its budget use the
+existing reliable fragmentation. The bounded format holds 60 routes and
+60 historical pricing entries per city; larger maps are not truncated.
+
+Fixture notes: native route acceptance CEEF90 first rejects a non-player
+requesting nation at relationship category <=1, then requires category >=3
+from the target for that AI-flagged nation. TradeE set one existing scalar
+diplomacy event per direction to the positive cheat event 0526E5DC with
+value 100, producing category 4. This is test setup, not earned diplomacy.
+Negative values on the original attack event did not create friendship.
+No route or purchase progress was set in the original reproduction.
+The Steam executable is packed on disk; live ASLR-adjusted bytes were used
+for signature checks. Raw on-disk disassembly was not usable evidence.
+## Guest native city negotiation (2026-11-07, feat/lineages-civ-combat)
+<a id="civ-guest-city-negotiation"></a>
+
+The native command handler starts at CF3350 on the active 2024 code. Its
+Buy City branch calls CanBuyCity BD8110 at CF35F1 and GetBuyPrice BE93A0 at
+CF361F, both with the native player political ID. The guest's real trading
+founder differs from that ID. CanBuyCity requires city+75C equal to the buyer
+and city+758 at least 100; the enabled menu alone does not prove this gate.
+
+BuyCity BF0520 keeps the pending target at nation+440, selected integer offer
+at +444 and float quote at +448. Its dialogue uses five native offers: 32,000,
+24,000, 16,000, 8,000 and 4,000. The CFFC7F offer handler reads the original
+player country's scratch fields and wealth, so that context must remain the
+native player country. CFFCC9 subtracts the 120-point fair-offer tolerance
+at preferred address 013F1EF4 from the quote. Fair offers and overpayment
+accept; lower offers run refusal responses. This is not random acceptance.
+
+With only UI attribution fixed, a guest accepted 32,000, shared SpendMoney
+reached the host, but h_Capture suppressed its local capture. Both peers kept
+the rival city: bug9082-transaction-before.log. Intercept BuyByCiv before its
+payment and forward the transaction to the host with the guest founder.
+FinishBuyCity(false) instead zeros the meter and resets buyer to FFFFFFFF;
+its refusal must also reach the host or the next snapshot restores eligibility.
+
+The purchase-only regression prepares eligibility/funds on an isolated saved
+trade checkpoint, then clicks the real negotiation. bug9082-purchase-j.log
+passes own-founder ownership on both peers, one shared payment and one team
+economic capture-history increment. It does not replay the trade journey.
+
+Native Nevermind... closes the discussion through its cancellation path and
+retains the full meter. It is distinct from a rejected low offer followed by
+Oops., which calls FinishBuyCity(false) and clears eligibility. Both behaviors
+were exercised through the guest dialogue: bug9082-purchase-k3.log and
+bug9082-purchase-l2.log. The latter also verifies captured city parts and
+single team history credit after reconnect into a new native save slot.
+
+## Religious state replication (2026-11-07, feat/lineages-civ-combat)
+<a id="civ-religious-state-replication"></a>
+
+BUG-9084: host native follower counts at city+5A0 and converter at +754 were
+absent on the guest. In bug9084-before.log the host had three guest followers
+and convert=6.666667, while the guest had none and convert=0. Writing only
+the meter cannot repair this because the native city update recomputes it.
+
+CityFollowersMap_Index 643A00 is thiscall(map, const uint32* key), ret 4.
+Live disassembly of ConvertCitizens BEB235 and BEB2A1 calls and the complete
+index function verifies unsigned jb/jae comparisons and a node+14 int return.
+Do not reuse the economic BE08E0 index: its keys compare as signed integers.
+FloatMap_EraseIterator 8DB190 operates on the same scalar node layout with no
+value destructor: map+14 count, map+4 anchor, output iterator pointer and
+node iterator value, ret 8. Religious entries are integer values, not floats.
+
+The bounded influence packet carries world, sequence, city index/faction/
+position, progress, converter and up to 128 native follower entries. Its
+maximum 1058-byte payload fits one datagram. Apply outside the frame only
+after session epoch, world, live city identity and planner/save guards pass.
+Do not replay ConvertCitizens on the guest: capture, history and diplomacy
+remain host-authoritative. The transient +5BC/+5D8 delta maps are not replayed.
+
+BUG-9085: economy originally used ID 64, colliding with Tribal combat and
+intercepting its dispatch. Assign economy 68 and influence 69. The registry
+test checks every declared message ID for uniqueness. Keep Tribal combat
+explicitly in the world gate after removing the accidental alias.
+
+The preliminary religious-control fixture reused military vehicle art for a
+religious-purpose vehicle. That is adequate for attribution tests, but does
+not qualify the native preaching AI. The control test now requests the actual
+religious design. Earlier unit deaths or cached paths are test limitations,
+not evidence that religious city capture is broken.
+
+## Camera-independent native preaching (2026-11-07, feat/lineages-civ-combat)
+<a id="civ-remote-preaching"></a>
+
+BUG-9086: a cold rival city's four 128-byte preaching slots (city+618/+61C)
+have zero capacities at +0/+4 until the host camera visits. The native
+preacher attaches and suffers retaliation from BEB6F8, but cannot convert.
+Moving only the host camera initializes capacities to 10/2 and the same
+native AI captures the city. CORRECTION (2026-11-07): the earlier tentative
+explanation that more preachers were needed is superseded by BUG-9086 and
+lineages-religion-n5-controls.log.
+
+D57B00 updates the city crowd controller's formations; controller+AF0 holds
+the city. Its callers are D616DF (city binding) and D61A55 (refresh). The
+manager at AC8C80 has a single controller at +A4, conditional on that city.
+Do not repeatedly bind it to remote cities: it owns the current visual crowd.
+
+The two formations use cCommunityLayout::SetParameters AF9C70, ret 16,
+and AFDF60, ret 4, with float spacing 1.5 (13EED94). Inner radius is 7
+(1486054), outer radius 3 (13EB950). AFDF60 computes trunc(radius squared
+/ spacing squared * 0.5); its loop appends exactly that many 24-byte slots.
+Terrain projects positions without rejecting entries. D57D16 passes both
+vector lengths to BD9FF0, thiscall(city, slot, innerCount, outerCount), ret 12.
+That setter changes only slot+0/+4, not timers or active conversion counters.
+
+BEB310 is thiscall(city, int slot, int activePreachers), ret 8 at BEB708.
+Its sole caller BEB7EA passes the slot and the integer count of active
+preaching slot objects. It is not a delta-time argument. The hook only
+initializes both-zero capacities with a valid native slot spatial object
+at +78, on the authoritative connected Civilization host. Existing nonzero
+capacities are retained. It then runs the original native logic unchanged.
+No controller, rendered crowd, camera or persistent raw pointer is created.
+
+## First-use camera and founder timing (2026-11-07, Lineages)
+<a id="civ-first-use-camera"></a>
+
+BUG-9052: LineagesTutorialA reached native vehicle selection after ordinary
+repeated arrow input and wheel input, without changing tutorial state. The
+successful sequence moved the cursor into the world before repeating VK_UP.
+A single held key in the earlier sequence moved the camera without advancing
+the lesson. Cursor placement versus repeat messages still needs isolation.
+
+GetKeyboardState is not evidence of the cause: a temporary lab hook recorded
+zero calls during this lesson. It was unloaded and its DLL removed. Do not
+patch the game or the input layer based on the import alone.
+
+The native vehicle-selection lesson, geyser explanation and Goals tooltip
+follow camera training. Acknowledge the visible Goals checkmark as well as the
+cinematic caption. founder_tick deliberately waits for time_paused() to clear;
+the second native city can exist with no species while the tutorial is paused.
+That intermediate state alone is not a missing-capital defect. After normal
+input completed the lessons, both peers showed 067B3E4A and 0680BF38 capitals.
+Native design retention and guest purchase/ownership/order tests then passed.
+Both games exited normally with zero faults and no probes left installed.
+
+CORRECTION (2026-11-07): TutorialC isolates key repetition from cursor position.
+With the cursor centered in both variants, one two-second held message still
+fails, while repeated down messages followed by key-up pass pan and zoom.
+lineages-tutorial-c-pan-control.log and lineages-tutorial-c-pan-repeat.log are
+the controlled evidence. No change to native tutorial conditions is required.
+
+## First-use capture lesson (2026-11-07, Lineages)
+<a id="civ-first-use-capture-lesson"></a>
+
+BUG-9088: a nation gaining a second city opens the native Communications Panel
+lesson (title 01510D07, box 06318E78, checkmark FFFFFFF1). It pauses the first-use
+capture checkpoint until acknowledged. The capture regression now checks that
+specific visible caption before normal checkmark input; it does not click
+arbitrary OK/save boxes. With the lesson answered, both native campaigns
+converge and further capture unlocks survive the automatic world transfer.
+TutorialC's initial timeout and assisted continuation remain separate from
+TutorialD's uninterrupted two-capture pass. See the ticket for exact logs.
 
 ## The city planner, discovery cards and vehicle removal on a guest (2026-11-03, fix/w40-civ-crashes)
 <a id="civ-planner-lifetime"></a>
@@ -1200,6 +1916,188 @@ BUG-0593. GOG 2024, Ghidra (tools/ghidra/q.sh --build 2024) and lab lane 7 (civ_
 * ~ civ_coop's `Civilization:state:money` row ("-800 on the host, 0 on the guest"): the test's `coop.civ build`
   on the host spends without the game's price check (the host's wealth went 400 -> -800); a guest's shared total
   is floored at 0 (res.floor, BUG-0106). Not a player's case (the game refuses a building it cannot pay); not changed.
+
+## Founder nations of up to four players (2026-11-12, feat/lineages-47)
+<a id="civ-multi-founders"></a>
+
+BUG-9135, roadmap phase 5. Switch `civ.multi_founders` (on; off = the two nations of
+[civ-automatic-founders-control](#civ-automatic-founders-control) exactly as before). Code: civ.cpp `founders_multi`,
+`refresh_founder_seats`, `founder_owner`; the pure rules in mods/coop/civ_seats.h (tests/civ_seats_tests.cpp).
+Nothing here is new reverse engineering; the open game question is marked ?.
+
+* Seats: Civilization seat i is the Tribe roster's seat i (founders::can_record refuses a Civ seat whose species is
+  not a look of that tribal founder, `.duooutfits`). Seat 0 is the host's nation (the native player country), seats
+  1..3 the partners'. A partner without a Tribe seat gets no capital here (joining late is roadmap phase 4).
+* Founding, one capital at a time in seat order (`civ_seats::next_capital_seat`, at most founders::kPlaySeats):
+  the next seat's species is `outfits.current(seat)` (it must be a known resource and differ from every seated one);
+  `SpawnNextCity(ex, 0, 0)` only while every live city belongs to the host's or a seated founder's nation
+  (`only_founder_cities`; before: only the graduation's single capital), so the new nation is the only unknown one
+  (`new_capital`: one new nation whose city and nation species keys are blank, else "already has a species"). The
+  roster (CIV1 for two founders without identities, else CIV2) is written after each capital; the world is saved or
+  shared once after the last capital (or when the next one cannot be founded now). While a seat's capital is
+  founding, the AI of every nation that is neither the player's nor seated is held (h_CivAI), as before for one.
+* Recovery after an interrupted native save: the first saved seat without a live capital is founded again, one at a
+  time, only while every city is a founder's; the native political ids follow the founding order. ~ (by the
+  two-founder evidence; not run with three seats)
+* Who commands a seat's cities and vehicles (`founder_owner`, IsPlayerOwned hooks, host owner tables):
+  * host: `party::founder_player_of(roster, seat, founder_legacy_match)`: the seat's identity (Founder::player), else
+    the connected partner playing its species (the nation's species or any look in the seat's outfit history), else
+    in a two-founder roster with exactly one partner present that partner (the rule before BUG-9135: every partner
+    commanded the second nation). An away seat is the host's while offline control is on, else nobody's (0xFE).
+    Cached every 0.25 s and on a join or leave; a changed seat player re-assigns the founder nations' vehicles.
+  * guest: its own seat (`civ_seats::own_seat`): its identity (identity::own) in its copy of the roster (the save the
+    host shared), else its creature's species, else the two-founder rule. Other partners' nations are someone else's
+    (0xFC, never sent); the host's vehicle owners in MSG_CIV_STATE still decide gifts.
+* Identity: a seat without one learns the identity of the connected partner who alone plays its species (written to
+  the roster once; the roster becomes CIV2). The guests' copies change only with the next world share; until then a
+  guest finds its seat by species or the two-founder rule.
+* Per seat now: the guest's purchase dialogue buyer (`purchase_ui_buyer`) and terrain cursor list are its own
+  nation's; CMD_CITY_PURCHASE (11 since the 0.7.14 merge) buys for the sender's seat; the host's offline selection merges every absent seat's
+  nation list (before: the one partner's, only while the host was alone); `campaign_tick` merges tech (+0x298),
+  highest count (+0x4D0) and the twelve unlock bytes (+0x484) over every founder nation; the HUD progress (CF8F80
+  caller) adds every partner nation's city count. Captures by any founder already counted for the team
+  ([civ-founder-campaign-credit](#civ-founder-campaign-credit)) and every seated nation already ran the AI's player
+  branch (h_CivAI, contains_faction).
+* Offline control: `.duo-command` (CMD1) binds the home and seat 1 factions and its one flag; the flag now covers
+  every absent partner seat. A permission bound to every seat's faction needs a new format (CMD2, founders.cpp).
+* `coop.civ bind_guest <nation> [player]` (stage-chooser saves without a Tribe roster) binds the next seat; the
+  player id is needed when more than one partner has no nation. `coop.civ` status prints a `founders:` line (seats,
+  each seat's political id, species, identity known, commanding player; a guest's own seat).
+* ? Choosing the free city site nearest a partner's former Tribe village: SpawnNextCity takes the free site with the
+  lowest appearance order ([its arguments](#civ-spawn-next-city-args); records at cCivExpansion +0x14, stride 0x64,
+  +0x2C order, +0x30 appeared, +0x38 owner); the record's position field is not known, and a guest replays the
+  founding as "the next site" too, so a chosen site would need the guests told which one. For now the founding logs
+  `seat N capital <pol> at (x y z), D m from its former village` (the cTribe with the Tribe roster seat's political id
+  at +0x30, or "is gone"), and `coop.civ sites` dumps every record's 25 words (hex and float) to find the position.
+
+## Late capitals and their catch-up (2026-11-12, phase4-civ)
+<a id="civ-late-capital"></a>
+
+BUG-9135, roadmap phase 4 (owner decisions 4, 5, 9). Switch `civ.late_capital` (on; needs `civ.multi_founders`; off:
+a partner without a Tribe roster seat gets no capital and none is founded once NPC nations exist, as in
+[civ-multi-founders](#civ-multi-founders)). Code: civ.cpp `late_capital_tick`, `late_bind`, `late_catch_up`; pure
+rules civ_seats.h `late_status`, `late_capital`, `site_state`, `new_city_since`, `catch_up_buildings`,
+`catch_up_turrets` and founders.h `nations_descend` (tests/civ_seats_tests.cpp, tests/win_tests.cpp). No new game
+symbol: every call is one the co-op already makes. Not yet run in a game.
+
+* Who (host, every founder tick of 2 s): a connected partner with a party seat (`party::seat_of_player`, its
+  identity), a creature of its own (`creations::player_key`, not `plays_host_creation`, not the host nation's
+  species) that is loaded and known here, whose species no nation and no tribal founder's look has, and no founder
+  seat (`party::founder_seat_of` with the species / two-founder match). Seats stay contiguous: the Tribe roster's
+  seats come first (`next_capital_seat`), then late joiners in party seat order, one at a time, up to
+  founders::kPlaySeats. A partner who plays the host's species gets no capital and every player a notice (decision 4:
+  the Tribe side asks them to create a creature). `coop.civ late` lists every partner's status.
+* Also the Tribe roster's next seat once NPC nations exist (before: "The partner capital was not reserved before
+  other nations appeared."): the same path, the seat's species from its outfit history, its identity from the Tribe
+  roster.
+* A game with neither roster gets late capitals only when it is a co-op campaign (saved campaign rules,
+  `.duo-seats`); a stage-chooser game keeps one shared nation, as before.
+* Roster: founders::can_record (Stage::Civilization) accepts a seat past the Tribe roster when it has its player's
+  identity and a species that is no tribal founder's look (`nations_descend`); tribal seats keep the look rule. The
+  roster the founding will write is checked first (a placeholder political id), and the partner's creature is
+  archived into the planet (`creations::archive_guest_model`, as `coop.civ bind_guest` does) before any city is
+  founded, so a refusal never leaves an unbound city. CIV1 stays byte for byte for two founders without identities;
+  a late seat always makes CIV2.
+* Founding: the next free native site, `SpawnNextCity(ex, 0, 0)` as for founder capitals (the lowest appearance
+  order; [its arguments](#civ-spawn-next-city-args)), only when `site_state` says Ready: cCivExpansion +0xAC all
+  sites, +0xB0 not founded yet ([civ-city-burst](#civ-city-burst)). No site left: a notice. A count that stays one
+  ahead of the live cities for 30 s of running game is taken as a founding the world never finished.
+* ✔ (by earlier evidence, [civ-duo-founders](#civ-duo-founders)) Spore forms new nations with empty country and
+  city species keys, so "the only blank nation" (`new_capital`) cannot tell the new capital once NPC nations exist.
+  The late founding snapshots the live cities (object addresses) before SpawnNextCity; the new capital is the one
+  city that was not there, with a fresh, blank nation whose political id no earlier city had (`new_city_since`;
+  anything else: nothing bound, no further late capital in this world). While it is on its way the host's own
+  non-instant SpawnNextCity calls (the planet tick) return false without founding (the block guests already use,
+  "both callers ignore the result"; counted as `late_deferred`), and h_CivAI holds every nation that is neither the
+  player's nor seated, as for founder capitals. No appearance within 60 s of running game: given up.
+* Bind: the roster (seat 0 the host's nation, seat N {species, political id, identity}), the nation's species key
+  (+0x268), the seat owners refreshed; then at once (the appearance makes a city's first buildings with it) the
+  catch-up, then one save (host alone) or world share.
+* Catch-up (decision 5: the host's capital, not its empire). The host capital is the player nation's first city (as
+  `civ::center`). Its intact houses, factories and entertainment buildings beyond the counts the new capital has,
+  types taken in turn so that a capital with fewer free slots still gets the mix, each at the host building's slot
+  index when that slot is free in the new capital, else the first free slot, through `build_in_city` (the planner
+  sequence of section 2, Building placement: CreateInstance, SetBuildingModel from the new nation's culture set,
+  SnapBuildingToSlot, AddBuilding; free; the host's AddBuilding hook sends each one to the guests). Turrets: one
+  `SporeCoop::City_AddTurret` call (the next free wall slot, BUG-0484) per turret the host's capital has more. The
+  host's and NPC cities are never touched.
+* ? The "level" of decision 5: no Civilization city level is known. The nation's tech level (+0x298), highest city
+  count (+0x4D0) and twelve unlock bytes (+0x484) already follow the host's through campaign_tick for every founder
+  nation ([civ-founder-campaign-credit](#civ-founder-campaign-credit)); the money is shared. A cCommunity keeps a
+  level at +0x38 (`SporeCoop::Community_SetLevel`, tribes); whether a cCity is a cCommunity with a level there is not
+  known. `coop.civ late` prints each founder capital's +0x38 word next to its building and turret counts: compare it
+  between a fresh capital and the host's grown one in a game.
+* ? Choosing the free site nearest the host's capital (asked by the owner) is not done: the site record's position
+  field is still unknown ([civ-multi-founders](#civ-multi-founders), `coop.civ sites`), and SpawnNextCity's `who`
+  argument (dereferenced when non-zero) is not understood. The bind logs the new capital's distance to the host's
+  capital as the evidence.
+* Open: a late capital whose roster reached disk but whose city did not reach the save (a crash between the bind
+  and the save) is not founded again once NPC nations exist (the recovery in founders_multi needs a world without NPC
+  nations, as before); the log then repeats "Waiting for the saved partner capital to finish founding.".
+* Live (2026-11-12, feat/lineages-47, TITAN host + two TITAN guests + the MSI; the Abber Civ test save of the
+  DuoQACivHost profile: a co-op campaign with 2 reserved founders, no founder roster, one host capital):
+  * `coop.seats 4 now` on the host (decision 13) let the three partners join a 2-seat campaign mid-stage.
+  * The host capital was grown first with `coop.civ build 0 house|factory|fun` and `coop.civ addturret 0` (4
+    buildings, 2 turrets).
+  * Late (own creature 7C0B35F6): "gets a capital"; SpawnNextCity founded a city with a blank nation (000021CD) at
+    once, but the bind waited while the host sat in the Civ tutorial's captions (the game's time stood still: the
+    60 s are of running game) and came 3 minutes later after two caption clicks: "seat 1 (Late) capital 000021CD at
+    (167 -479 -3), 335 m from the host's capital; roster written", "caught up with the host's capital: 4 of 4
+    buildings, 2 of 2 turrets". Late's own game: local_seat=1, city 1 owner=1.
+  * Fourth (own creature): seat 2 capital at (494 100 -16), the same catch-up, within 30 s (no tutorial caption by
+    then).
+  * The MSI (no creature of its own on this save): "plays the host's species: no capital until they create a creature
+    of their own" (a notice to everybody), but its Co-op window showed only the Civ role row: no way to choose a
+    creature in Civ. Fixed the same day: civ::late_prompt (the guest has no founder nation in a game that gets late
+    capitals, 15 s after the world) shows the Tribe prompt in Civ words ("You have no city: you play the host's
+    species. Choose your own creature below.") and turns the row's arrows from the role to the creature. With the fix,
+    a real click on ">" on the MSI chose its creature; the host founded seat 3's capital about 40 s later with the
+    same catch-up; the MSI read local_seat=3, city 3 owner=3.
+  * After a rejoin under new network ids, every late seat kept its owner (by identity; Fourth's creature came back
+    under another species key, roadmap 1b).
+  * All four games: the same four capitals and owners, the same shared money (39,240), 0 faults.
+  * ? `word38` (the +0x38 "level" candidate) read 0 on the host capital and every late capital: no city level found
+    there.
+
+## Four founder nations from a native graduation, live (2026-11-12, feat/lineages-47)
+<a id="civ-four-founders-live"></a>
+
+BUG-9135 roadmap phase 5, the [civ-multi-founders](#civ-multi-founders) rules in a game.
+
+* The native Tribe -> Civ graduation with four founder villages (TITAN host
+  DuoQAJiffGrad, guests Late and Fourth on TITAN, the MSI). After the last win and the History check the ready vote, the
+  City Hall editor (99E92F05) and the Military Land vehicle editor (7D433FAD), the host entered Civ with one capital.
+  The partner capitals waited while the Civ tutorial's captions held the game time ("Native partner capital founding
+  requested."), then came one every 6 to 8 s: "seat 1 capital 000021F8 at (41 -393 -313); its former village is gone",
+  seat 2 000021F7, seat 3 000021F6. Each nation has its seat's founding species (7CDBAC6F, 7C0B35F6, 7C2DD6C0); owners
+  on the host: seat 1 player 2 (Fourth), seat 2 player 1 (Late), seat 3 player 3 (the MSI); Late and Fourth read the
+  same (local_seat 2 and 1) at once, the MSI after its world share a minute later (local_seat 3). 0 faults on all four.
+  The partner capitals sit where the game's next free sites are (not near the former villages: "its former village is
+  gone"; the site choice is still open above).
+
+## The party wipe in Civ: a founder's last city kept, the newest capture given back (2026-11-12, feat/lineages-47)
+<a id="civ-party-wipe"></a>
+
+BUG-9155, switch `civ.party_wipe`.
+* ✔ (live) Refusing cCity::ChangeOwner (not calling the original) for a founder's last city keeps the city with its
+  nation on host and guests; the capture's flags +0x2E0..+0x2E6 (set by Capture before ChangeOwner) are cleared.
+* ✔ (live) Giving a city back: ChangeOwner(city, pol, 0, 0) then City_SetPartsOwner(city, nation) outside the game's
+  ChangeOwner (the host's tick); the guest's game followed (city 1 000021CC on both).
+* ✔ (live) A nation that loses its only city is gone at once: CivByPol(000021CD) returned null right after its city was
+  captured (UpdateCaptureDecay drops dead civs). A capture can therefore not be given back to it; the city goes to the
+  would-be captor instead.
+* ? The native game over of the player civ (the host's last city) is still not known; the refusal happens before it.
+
+## A Civ late joiner's creature editor first (2026-11-13, feat/lineages-47)
+<a id="civ-late-editor-first"></a>
+
+BUG-9170. ✔ (runtime) The creature editor (EditorRequest CreatureEditorExtraLarge, no creation) opens from Civ as from
+Tribe and returns to Civ; the saved creature is adopted there. A host world that arrives while the guest is in that
+editor is loaded after it ("loaded when you leave the editor"), which reloads the guest's Civ world: the editor waits for
+the host's world now. ✔ A Civ save with four founder nations takes no late joiner: late_status NoPartySeat ("has no
+party seat yet") for a new identity; the four-seat test saves (Abber on TITAN and the MSI) cannot show the capital
+founded for a joiner. ✔ Right after joining, a guest still in its own copy of a world of the same name had
+civ::late_prompt 1 at once (its 15 s since the world had run).
 
 ## Cultural targets at the host's places (2026-11-06, fix/w45-world-objects)
 <a id="civ-host-cultural-targets"></a>

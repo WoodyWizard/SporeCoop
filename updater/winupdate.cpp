@@ -283,10 +283,15 @@ bool http_location(const std::string& url, std::string& location, std::string& e
 
 bool latest_release(const std::string& api_url, Release& out, std::string& err)
 {
+    if (api_url.empty()) {
+        err = "This Duo build uses a local pack. Extract the full Duo release and reopen its setup.";
+        return false;
+    }
     std::vector<uint8_t> body;
     std::string api_err;
     if (http_get(api_url, body, api_err, {}, 4u << 20)) {
-        if (parse_release(std::string(body.begin(), body.end()), out))
+        const std::string json(body.begin(), body.end());
+        if (api_url == kLineagesPreviewUrl ? parse_preview_releases(json, out) : parse_release(json, out))
             return true;
         api_err = "no release found";
     }
@@ -315,7 +320,7 @@ bool download_pack(const Release& r, Pack& out, std::string& err, const Progress
         return false;
     }
     std::vector<uint8_t> sums, pack;
-    if (!http_get(r.sums_url, sums, err, {}, 1u << 20) || !http_get(r.pack_url, pack, err, progress))
+    if (!http_get(r.sums_url, sums, err, {}, 1u << 20) || !http_get(r.pack_url, pack, err, progress, kMaxDownload))
         return false;
     std::string name = r.pack_url.substr(r.pack_url.find_last_of('/') + 1);
     std::string want = sums_lookup(std::string(sums.begin(), sums.end()), name);
@@ -327,7 +332,8 @@ bool download_pack(const Release& r, Pack& out, std::string& err, const Progress
         return false;
     // BUG-0392: a release found through the page has no asset list from the API; its pack must also
     // be the version of its tag
-    if (r.from_web && compare_versions(out.version, r.version) != 0) {
+    if (compare_versions(out.version, r.version) != 0 ||
+        (r.version.find("-lineages") != std::string::npos && out.version != r.version)) {
         err = "the release " + r.tag + " holds the pack of version " + out.version;
         return false;
     }
@@ -574,7 +580,9 @@ bool own_legacy_backup(const std::wstring& dir_rel, const std::wstring& name, bo
     if (dir_rel == L"\\SporebinEP1\\mods")
         return n == L"coop.dll.old" || n == L"sporecoop.version.old";
     if (dir_rel == L"\\SporebinEP1\\mods\\sporekit\\symbols")
-        return ends(L".sym.old");
+        for (const auto* symbol : kSymbolFiles)
+            if (n == std::wstring(symbol) + L".old")
+                return true;
     if (dir_rel == L"\\Data")
         return n == L"sporecoop.package.old";
     return false;

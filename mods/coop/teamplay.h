@@ -1,6 +1,7 @@
 // Co-op mechanics that reward playing together (docs/09-coop-design.md):
 //  - joint hunt: a hit on a target another player hit in the last seconds deals +25 %
-//  - the pack protects: a lethal hit leaves 40 % health when a partner is close (once a minute)
+//  - Duo: a lethal hit opens a timed revive and charges the pack on expiry
+//  - larger parties: a nearby partner prevents a lethal hit once a minute
 //  - pack regen: health regenerates while a partner is close
 #pragma once
 

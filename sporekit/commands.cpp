@@ -913,6 +913,36 @@ void register_builtin_commands()
                     return 0;
                 },
                 nullptr, M); // BUG-1016: apply_frame_limit runs on the main thread every frame (was any thread)
+    command_add(k, "frame.target", "frame.target <1-360>|auto - live FPS cap",
+                [](void*, int argc, const char* const* argv, SkOut* out) {
+                    if (argc != 2)
+                        return 1;
+                    if (strcmp(argv[1], "auto") == 0) {
+                        set_frame_target(0);
+                        return 0;
+                    }
+                    char* end = nullptr;
+                    const long fps = strtol(argv[1], &end, 10);
+                    if (!end || *end || fps < 1 || fps > 360) {
+                        outf(out, "Enter a whole FPS value from 1 to 360, or auto.");
+                        return 1;
+                    }
+                    set_frame_target((int)fps);
+                    outf(out, "FPS cap set to %ld", fps);
+                    return 0;
+                },
+                nullptr, A);
+    command_add(k, "window.borderless", "window.borderless <on|off> - windowed display mode",
+                [](void*, int argc, const char* const* argv, SkOut* out) {
+                    if (argc != 2 || (strcmp(argv[1], "on") != 0 && strcmp(argv[1], "off") != 0))
+                        return 1;
+                    if (!set_borderless(strcmp(argv[1], "on") == 0)) {
+                        outf(out, "Switch Spore to windowed mode to use borderless.");
+                        return 1;
+                    }
+                    return 0;
+                },
+                nullptr, SK_CMD_OUTSIDE_FRAME);
     command_add(k, "frame", "frame counter and fps", c_frame, nullptr, A);
     command_add(k, "frame.interval", "frame.interval [reset] - Present interval statistic since the last reset (BUG-0779)",
                 [](void*, int argc, const char* const* argv, SkOut* out) {

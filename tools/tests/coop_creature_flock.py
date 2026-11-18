@@ -22,7 +22,7 @@ from twoinst import Checks, start
 
 
 def friendly(con, nid):
-    m = re.search(r'friendly=(\d) pack=(\d) hearts=(\d)', con.call(f'coop.rules friendly {nid}')['out'])
+    m = re.search(r'friendly=(\d) pack=(\d) hearts=(\d)', con.call(f'coop.prules friendly {nid}')['out'])
     return tuple(int(x) for x in m.groups()) if m else None
 
 

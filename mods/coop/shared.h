@@ -14,6 +14,8 @@
 namespace shared {
 
 void init(const SkHost* host, SkMod* mod);
+bool tribe_food(void* tribe, double& total);
+void mirror_village_food(void* tribe, double total);
 void set_feed(std::function<void(const std::string&)> f); // BUG-0696: the notices of whose change it was
 // elsewhere: the guest plays another world of the host's stage (coop.cpp guest_elsewhere(),
 // BUG-0231): the totals are held (res.elsewhere), nothing is applied or sent

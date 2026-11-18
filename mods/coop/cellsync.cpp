@@ -1,4 +1,9 @@
 #include "cellsync.h"
+#include "lineage_cells.h"
+#include "creations.h"
+#include <random>
+#include "world.h"
+#include "slotfs.h"
 #include "call_guard.h"
 #include "lifecycle.h"
 #include "census.h"
@@ -20,6 +25,7 @@
 
 #include "cell_logic.h"
 #include "dna_pace.h"
+#include "progress_debt.h"
 #include "settings.h"
 #include "view_centres.h"
 #include "game.h"
@@ -28,8 +34,11 @@
 #include "net/utf8.h"
 #include "net/validate.h"
 #include "sporekit_game.hpp"
+#include "give_up.h"
 #include "fixes.h"
 #include "trace.h"
+#include "ring_timer.h"
+#include "down_time.h"
 #include "own_world.h"
 #include "find.h"
 #include "space_ext.h"
@@ -324,11 +333,16 @@ static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged, g_bi
 // (half health). Otherwise it respawns next to the partner as a small cell (half size), which
 // grows back by eating or at the next level up. Alone in the pool the vanilla death happens
 // (it rebuilds the whole level).
-constexpr double kDownTime = 10.0, kReviveHold = 1.5;
+// BUG-9118: 30 s for a partner (10 before; `coop.fix cell.down_30 off`), and the downed player can give up (hold G)
+static bool g_down_30 = true;
+COOP_FIX("cell.down_30", "BUG-9118", g_down_30, "cell: a knocked-out cell waits 30 s for a partner (10 before)");
+static double down_time() { return downed::seconds(g_down_30, 10.0); } // BUG-9149: a minute (core.down_60)
+constexpr double kReviveHold = 1.5;
 constexpr float kSmall = 0.5f;
 static double g_last_regen, g_invuln_until, g_last_tick;
 static uint32_t g_revives, g_respawns;
-static bool g_downed;
+static std::unordered_map<uint32_t,uint32_t> g_pending_bonus; // request -> local body index
+static bool g_downed, g_give_up_now; // g_give_up_now: coop.giveup (tests, BUG-9118)
 static double g_down_since, g_hold;
 static net::Vec3 g_down_pos;
 // BUG-0798: g_down_pos was kept in the metres of the knockout's moment, but a level change in the 10 s rescales
@@ -385,7 +399,7 @@ static uint32_t g_camera_snaps;
 static void camera_snap(const net::Vec3& p)
 {
     uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
-    if (!ui || !skg::readable(ui + 0x48, 0x24))
+    if (!ui || !skg::readable(ui + 0x48, 0x24) || !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
         return;
     for (int off : {0x48, 0x54, 0x60}) {
         auto* q = (float*)(ui + off);
@@ -455,7 +469,7 @@ static void set_body(uint8_t* a, float factor)
 }
 
 // ---- what everybody sees ----
-enum : uint8_t { KO_UP = 0, KO_OUT = 1, KO_REVIVED = 2, KO_RESPAWNED = 3 };
+enum : uint8_t { KO_UP = 0, KO_OUT = 1, KO_REVIVED = 2, KO_RESPAWNED = 3, KO_WIPE = 4 }; // KO_WIPE: BUG-9226
 struct Ko {
     uint8_t state = KO_UP;
     float left = 0, hold = 0;
@@ -463,7 +477,9 @@ struct Ko {
     double refreshed = 0; // the last MSG_CELL_KO of its owner (KO_OUT comes every 0.25 s)
     bool expired = false; // ended here by ko_expire, not by its owner (BUG-0238: no effect replay)
     uint32_t fx = 0;      // death effects played on its puppet (tests)
+    uint8_t watching = 0xFF; // BUG-9171: the partner this knocked-out player spectates (0xFF: none; older games send none)
 };
+static int g_spec_id = -1; // BUG-9171: the partner the own knocked-out cell watches (spectate_tick)
 static std::unordered_map<int, Ko> g_ko; // remote player -> knockout state
 
 // the nearest partner; `helper`: one who can help: rescue (a lethal hit becomes a knockout), revive,
@@ -548,6 +564,12 @@ constexpr float kKoOpacity = 0.35f;
 constexpr uintptr_t kOpacity = 0xA4;
 
 // a one-shot game effect on a cell (names from the game: cell_death_oneshot, cell_hatch_ice, ...)
+static bool g_fix_offscreen_arrow = true; // BUG-9121 (the switch is coop.cpp's ui.offscreen_arrow: this one cell.)
+COOP_FIX("cell.offscreen_arrow", "BUG-9121", g_fix_offscreen_arrow, "cell: the arrow to an off-screen knocked-out partner points at it");
+static bool g_fix_partner_hatch = true;
+COOP_FIX("cell.partner_hatch", "BUG-9122", g_fix_partner_hatch,
+         "cell: a partner's respawn shows a hatch burst on its cell, not the own respawn's fade to black");
+
 static void effect(uint8_t* c, const char* name)
 {
     if (!c || !a_Fnv || !a_Effect || !F<uint32_t>(c, 0x248))
@@ -566,6 +588,7 @@ static void send_ko(uint8_t state, float left, float hold)
     w.u8(state);
     w.u8((uint8_t)std::max(0.f, std::min(left * 10.f, 255.f)));
     w.u8((uint8_t)std::max(0.f, std::min(hold * 255.f, 255.f)));
+    w.u8(state == KO_OUT && g_spec_id >= 0 ? (uint8_t)g_spec_id : 0xFF); // BUG-9171: whom it watches (older games ignore it)
     if (C.sess->role() == net::Role::Host)
         C.sess->broadcast_reliable(net::MSG_CELL_KO, w);
     else
@@ -603,6 +626,8 @@ static uint8_t* puppet_cell(int id)
     return nullptr;
 }
 
+static std::string cell_debt(); // BUG-9119 (below)
+
 static void on_ko(int id, uint8_t state, float left, float hold)
 {
     Ko& k = g_ko[id];
@@ -629,8 +654,14 @@ static void on_ko(int id, uint8_t state, float left, float hold)
     }
     else if (state == KO_REVIVED)
         effect(c, "cell_hatch_ice");
-    else if (state == KO_RESPAWNED)
+    else if (state == KO_RESPAWNED) {
         k.fx_at = k.since + 0.4; // after the puppet has moved next to its partner
+        if (is_host()) { // BUG-9119: a guest's cell respawned: the party's debt
+            std::string debt = cell_debt();
+            if (!debt.empty() && C.notice)
+                C.notice(debt.substr(2) + ".");
+        }
+    }
     if (state != KO_OUT && c)
         F<float>(c, kOpacity) = 1.f;
 }
@@ -655,6 +686,13 @@ static bool g_ko_dying = false; // cell.respawn_small off: the timed-out knock-o
 CALL_GUARD("cellsync.ko_dying", g_ko_dying); // BUG-1047
 static uint32_t g_ko_deaths = 0; // ... how often (coop.cell status: ko_deaths)
 
+// BUG-9226 (owner play test 2026-11-15: "When all party members die, it doesn't force the respawn"): the last standing
+// cell dies the game's way (alone in the pool), but the knocked-out partners kept waiting out their timer for a revive
+// nobody could give. On: the last one tells them (MSG_CELL_KO state KO_WIPE) and they respawn at once. Off: they wait.
+static bool g_wipe_fix = true;
+COOP_FIX("cell.party_wipe", "BUG-9226", g_wipe_fix, "cell: when the last standing cell falls, the knocked-out ones respawn at once");
+static bool g_wipe_respawn;
+static uint32_t g_wipes_sent, g_wipes_got;
 static bool go_down(uint8_t* c)
 {
     if (!c || c != avatar() || !C.sess || !C.sess->connected() || g_ko_dying)
@@ -663,17 +701,27 @@ static bool go_down(uint8_t* c)
     if (!g_downed && !settings::on(settings::kCellKnockout))
         return false;
     if (!g_downed) {
-        if (nearest_partner(1e9f, nullptr, nullptr, true).empty())
+        if (nearest_partner(1e9f, nullptr, nullptr, true).empty()) {
+            bool others_down = false;
+            for (auto& [id, k] : g_ko)
+                others_down |= k.state == KO_OUT;
+            if (g_wipe_fix && others_down) { // BUG-9226: the whole party is down: the others respawn now
+                send_ko(KO_WIPE, 0, 0);
+                ++g_wipes_sent;
+                if (C.notice)
+                    C.notice("The whole party is down: everyone respawns");
+            }
             return false; // alone in the pool: the vanilla death
+        }
         g_downed = true;
         g_down_since = H->time_seconds();
         g_hold = 0;
         g_down_pos = pos_of(c);
         g_down_scale = world_scale();
         effect(c, "cell_death_oneshot");
-        send_ko(KO_OUT, (float)kDownTime, 0);
+        send_ko(KO_OUT, (float)down_time(), 0);
         if (C.notice)
-            C.notice(C.my_name() + " is knocked out: swim right next to them within 10 s");
+            C.notice(C.my_name() + " is knocked out: swim right next to them within " + std::to_string((int)down_time()) + " s (hold G to give up)");
     }
     F<int>(c, kHp) = 1;
     F<uint8_t>(c, kDead) = 0;
@@ -682,6 +730,110 @@ static bool go_down(uint8_t* c)
     g_invuln_until = 0;
     stop_at(c, down_pos());
     return true;
+}
+
+// BUG-9119: a cell that respawned (nobody came, or it gave up) leaves the party a progress debt of
+// 10% of the editor's DNA, in food points; the host keeps it and new food repays it first. Returns
+// the notice's tail ("" without a debt).
+static std::string cell_debt()
+{
+    uint8_t* s = is_host() && in_cell() ? S() : nullptr;
+    if (!s || !progress_debt::enabled())
+        return {};
+    const float debt = progress_debt::add_death(); // 10% of the food bar so far; the editor's DNA untouched
+    if (debt <= 0)
+        return {};
+    return ". Progress debt: " + std::to_string((int)debt) + " (new food refills it first)";
+}
+
+// BUG-9171 (owner decision 1W in Cell: a downed player watches a partner, "Tab works"): while the own cell is knocked
+// out the game's camera follows a partner's cell through its own follow field (cCellUI +0xE0, the pool index of a cell
+// followed instead of the avatar: the cinematics use it, docs/re/cell.md#cell-camera); the nearest standing partner
+// first, Tab for the next one; "SPECTATING <name>" over the knockout ring. Up again (revived, respawned, gave up): the
+// field back to 0 and the camera on the own cell. Not while the game's own cinematic holds the field.
+static bool g_spectate = true;
+COOP_FIX("cell.spectate", "BUG-9171", g_spectate,
+         "cell: a knocked-out cell's camera follows a partner (SPECTATING <name>, Tab for the next one)");
+static uint32_t g_spec_idx, g_spec_switches, g_spec_sets;
+static bool g_spec_tab, g_box_shown;
+static int g_spec_step; // a < > press of the downed box (coop.cpp), used by spectate_tick
+static std::string g_spec_name;
+static bool g_spec_snap_fix = true;
+COOP_FIX("cell.spectate_snap", "BUG-9225", g_spec_snap_fix, "cell: the spectator camera jumps to the watched partner instead of crawling");
+constexpr float kSpecTrail = 8.f; // the camera may trail the watched partner by this much before it jumps
+static void spectate_off(uint8_t* a)
+{
+    uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+    if (g_spec_idx && ui && skg::readable(ui + 0xE0, 4) && F<uint32_t>(ui, 0xE0) == g_spec_idx) {
+        F<uint32_t>(ui, 0xE0) = 0;
+        if (a)
+            camera_snap(pos_of(a));
+    }
+    g_spec_idx = 0;
+    g_spec_id = -1;
+    g_spec_name.clear();
+}
+static void spectate_tick(uint8_t* a)
+{
+    uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+    if (!g_spectate || !g_downed || !ui || !skg::readable(ui + 0xE0, 4) || !C.puppets) {
+        spectate_off(a);
+        return;
+    }
+    const uint32_t held = F<uint32_t>(ui, 0xE0);
+    if (held && held != g_spec_idx) // the game's own follow (a cinematic): leave it alone
+        return;
+    struct Cand { int id; std::string name; uint32_t idx; float dist; };
+    std::vector<Cand> c;
+    const net::Vec3 me = pos_of(a);
+    for (auto& p : C.puppets()) {
+        auto ko = g_ko.find(p.id);
+        if (!p.cell || (ko != g_ko.end() && ko->second.state == KO_OUT))
+            continue;
+        const uint32_t idx = *(uint32_t*)p.cell; // a cell's first field is its pool index
+        if (modes::cell_at(idx) != (uint8_t*)p.cell)
+            continue;
+        c.push_back({p.id, p.name, idx, net::dist(me, pos_of((uint8_t*)p.cell))});
+    }
+    if (c.empty()) {
+        spectate_off(a);
+        return;
+    }
+    std::sort(c.begin(), c.end(), [](const Cand& x, const Cand& y) { return x.id < y.id; });
+    auto at = std::find_if(c.begin(), c.end(), [](const Cand& x) { return x.id == g_spec_id; });
+    if (at == c.end()) // the nearest standing partner first
+        at = std::min_element(c.begin(), c.end(), [](const Cand& x, const Cand& y) { return x.dist < y.dist; });
+    HWND gw = H->game_window ? (HWND)H->game_window() : nullptr;
+    const bool tab = gw && GetForegroundWindow() == gw && (GetAsyncKeyState(VK_TAB) & 0x8000) != 0;
+    int step = g_spec_step;
+    g_spec_step = 0;
+    if (tab && !g_spec_tab)
+        step = 1;
+    if (step && c.size() > 1) {
+        const int n = (int)c.size(), i = (int)(at - c.begin());
+        at = c.begin() + (((i + step) % n + n) % n);
+        ++g_spec_switches;
+    }
+    g_spec_tab = tab;
+    if (at->idx != g_spec_idx)
+        ++g_spec_sets;
+    const bool changed = at->idx != g_spec_idx;
+    g_spec_id = at->id;
+    g_spec_name = at->name;
+    g_spec_idx = at->idx;
+    F<uint32_t>(ui, 0xE0) = at->idx;
+    // BUG-9225 (owner play test 2026-11-15: "Spectator cam on Cell is slow to reach the other player"): the camera eases
+    // its point (+0x48) by factors from the avatar's speed, and the knocked-out cell stands: it crawled to the partner.
+    // On: the point jumps to the partner when the watch starts or switches, and whenever it trails by more than
+    // kSpecTrail. Off: the game's easing only (58-dev).
+    if (g_spec_snap_fix && skg::readable(ui + 0x48, 0xC))
+        if (uint8_t* tc = modes::cell_at(at->idx)) {
+            const net::Vec3 tp = pos_of(tc);
+            const float* cam = (const float*)(ui + 0x48);
+            const float dx = cam[0] - tp.x, dy = cam[1] - tp.y, dz = cam[2] - tp.z;
+            if (changed || dx * dx + dy * dy + dz * dz > kSpecTrail * kSpecTrail)
+                camera_snap(tp);
+        }
 }
 
 static void downed_tick(uint8_t* a, double now, double dt)
@@ -698,7 +850,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
     std::string helper = nearest_partner(revive_dist(a), nullptr, &d, true);
     g_hold = helper.empty() ? 0 : g_hold + dt;
     if (now - g_ko_sent > 0.25)
-        send_ko(KO_OUT, (float)std::max(0.0, kDownTime - (now - g_down_since)), (float)(g_hold / kReviveHold));
+        send_ko(KO_OUT, (float)std::max(0.0, down_time() - (now - g_down_since)), (float)(g_hold / kReviveHold));
     if (!helper.empty() && g_hold >= kReviveHold) { // revived by the partner
         g_downed = false;
         F<int>(a, kHp) = 3;
@@ -711,7 +863,11 @@ static void downed_tick(uint8_t* a, double now, double dt)
             C.notice(helper + " revived " + C.my_name());
         return;
     }
-    if (now - g_down_since < kDownTime)
+    if (give_up::held(H, now) || g_give_up_now || g_wipe_respawn) // BUG-9118: as if the timer ran out (BUG-9226: a wipe)
+        g_down_since = now - down_time();
+    g_give_up_now = false;
+    g_wipe_respawn = false;
+    if (now - g_down_since < down_time())
         return;
     g_downed = false;
     if (!settings::on(settings::kCellRespawn)) { // F3 (BUG-0768): nobody came: the game's own death and respawn
@@ -744,7 +900,7 @@ static void downed_tick(uint8_t* a, double now, double dt)
     effect(a, "cell_egg_L0_autohatch");
     send_ko(KO_RESPAWNED, 0, 0);
     if (C.notice)
-        C.notice(C.my_name() + " respawned small" + (partner.empty() ? "" : " next to " + partner));
+        C.notice(C.my_name() + " respawned small" + (partner.empty() ? "" : " next to " + partner) + cell_debt());
 }
 
 // the resource's cell type (+0xB4: 2 solid, 3 plant, 5 poison, ...) and ai.type (docs/re/cell.md 1:
@@ -777,6 +933,37 @@ static int ai_type(uint8_t* c)
 {
     int ct, ai;
     return res_types(c, &ct, &ai) ? ai : -1;
+}
+
+static std::string g_credit_key;
+static founders::CellCredit g_cell_credit;
+void clear_cell_credit() { g_pending_bonus.clear(); g_credit_key.clear(); g_cell_credit = {}; }
+
+uint64_t cell_save_stamp()
+{
+    if (g_credit_key.empty() || game::mode_id() != modes::kCell || g_credit_key != world::current_game_key())
+        return UINT64_MAX;
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    if (!GetFileAttributesExW(slotfs::widen(g_credit_key).c_str(),GetFileExInfoStandard,&data)) return 0;
+    return (uint64_t(data.ftLastWriteTime.dwHighDateTime) << 32) | data.ftLastWriteTime.dwLowDateTime;
+}
+void note_saved_cell_credit(uint64_t before)
+{
+    if (before == UINT64_MAX) return;
+    auto after = cell_save_stamp();
+    if (!after || after == UINT64_MAX || before == after) return;
+    if (!founders::save_cell_credit(g_credit_key,world::rules_for_current(),g_cell_credit))
+        H->log(M,SK_WARN,"cell: could not retain Cell progression and combat fractions for this save");
+}
+
+static void load_cell_credit(const founders::CampaignRules& rules)
+{
+    auto key = world::current_game_key();
+    if (key != g_credit_key) {
+        clear_cell_credit();
+        g_credit_key = key;
+        founders::read_cell_credit(key,rules,g_cell_credit);
+    }
 }
 
 // ---------------- guest -> host: what our avatar did to a cell of the host's pool ----------------
@@ -827,6 +1014,102 @@ static uint32_t mirror_key(uint8_t* c)
 // ---------------- hooks ----------------
 using NoAttack_t = bool(SK_CDECL*)(uint8_t*, uint8_t*);
 static NoAttack_t& o_NoAttack_ptr();
+static bool wild_combatant(uint8_t* c)
+{
+    if (!c || c == avatar() || F<uint32_t>(c,0) == mate_idx() || modes::cell_is_puppet(c) ||
+        F<void*>(c,kQuery) != fg_query()) return false;
+    int type, ai;
+    return res_types(c,&type,&ai) && type == 2 && ai > 0;
+}
+
+// Only a native population marker creates these cells. Reloaded live actors,
+// partner puppets, player offspring and loot do not advance the HP remainder.
+static unsigned g_marker_depth, g_hp_assignments, g_hp_base, g_hp_extra;
+static uint32_t g_marker_predator;
+static modes::CellSpawnSize g_marker_size;
+static unsigned g_enemy_groups, g_group_added, g_group_limited, g_native_predators;
+// BUG-9109 (tests): the speed of extra and native predators, sampled every frame on the host
+struct SpeedWatch {
+    std::vector<uint32_t> ids;
+    float max = 0;
+    unsigned samples = 0, fast = 0; // fast: samples over 3x the native predators' typical top speed
+    void add(uint32_t id) { if (ids.size() < 256) ids.push_back(id); }
+};
+static SpeedWatch g_speed_extra, g_speed_native;
+static std::array<uint32_t,3> g_last_group{};
+static void expand_marker(uint32_t seed);
+using CreateCell = uint32_t(SK_CDECL*)(void*,const void*,float,void*,int,float,float,int,const void*,int);
+static CreateCell o_CreateCell;
+static void add_cell_health(uint8_t* c, const founders::CampaignRules& rules)
+{
+    const int hp = F<int>(c,kHp);
+    if (rules.enemy_health_percent() == 100 || hp <= 0 || hp > 255) return;
+    load_cell_credit(rules);
+    const auto bonus = founders::CellCredit::bonus(unsigned(hp),rules.enemy_health_percent(),g_cell_credit.health_carry);
+    // Cell state uses an unsigned byte. Publish exactly the HP the native game uses.
+    const auto awarded = std::min<unsigned>(bonus,255-hp);
+    F<int>(c,kHp) = hp + int(awarded);
+    ++g_hp_assignments;
+    g_hp_base += unsigned(hp);
+    g_hp_extra += awarded;
+}
+
+static uint32_t SK_CDECL h_CreateCell(void* query,const void* pos,float elevation,void* res,int level,
+                                      float size_factor,float size,int apply,const void* rotation,int group)
+{
+    const uint32_t id = o_CreateCell(query,pos,elevation,res,level,size_factor,size,apply,rotation,group);
+    if (!g_marker_depth || !id || !is_host() || !in_cell() || query != fg_query()) return id;
+    uint8_t* c = modes::cell_at(id);
+    uint8_t* player = avatar();
+    if (!player || !wild_combatant(c) || !o_NoAttack_ptr() || o_NoAttack_ptr()(c,player)) return id;
+    g_marker_predator = id;
+    ++g_native_predators; // BUG-9109 (tests): native predators made by population markers
+    g_speed_native.add(id);
+    g_marker_size = {elevation,size_factor,size,apply};
+    add_cell_health(c,world::rules_for_current());
+    return id;
+}
+
+using CellDamageAmount = int(SK_CDECL*)(uint8_t*,uint8_t*);
+static CellDamageAmount o_CellDamageAmount;
+static std::array<uintptr_t,4> g_damage_returns{};
+static uint32_t g_hit_sequence;
+struct BonusReceipt { uint32_t seq, bonus; };
+static std::map<uint8_t,BonusReceipt> g_last_bonus;
+static unsigned g_base_damage, g_extra_damage, g_guest_bonus_loss;
+static unsigned hit_bonus(unsigned raw,const founders::CampaignRules& rules)
+{
+    load_cell_credit(rules);
+    const auto bonus = founders::CellCredit::bonus(raw,rules.enemy_damage_percent(),g_cell_credit.damage_carry);
+    g_base_damage += raw;
+    g_extra_damage += bonus;
+    return bonus;
+}
+
+static bool forced_damage(uint8_t* att, uint8_t* vic, int& dmg); // BUG-0714 (below guest_attack's state)
+static int SK_CDECL h_CellDamageAmount(uint8_t* attacker,uint8_t* victim)
+{
+    int forced;
+    if (forced_damage(attacker, victim, forced)) // BUG-0714: the guest's damage for its replayed attack
+        return forced;
+    const int raw = o_CellDamageAmount(attacker,victim);
+    const auto caller = (uintptr_t)__builtin_return_address(0);
+    if (!C.sess || !C.sess->connected() || raw <= 0 || raw > 255 || std::find(g_damage_returns.begin(),g_damage_returns.end(),caller) == g_damage_returns.end() ||
+        !in_cell() || victim != avatar() || !wild_combatant(attacker) || g_downed) return raw;
+    const auto rules = world::rules_for_current();
+    if (rules.enemy_damage_percent() == 100) return raw;
+    if (is_host()) return int(raw + hit_bonus(unsigned(raw),rules));
+    if (is_guest() && !g_solo && g_pending_bonus.size() < 256) {
+        auto mirror = g_host_of.find(F<uint32_t>(attacker,0));
+        if (mirror == g_host_of.end()) return raw;
+        const auto seq = ++g_hit_sequence;
+        net::Writer w;
+        w.u32(modes::current_world()); w.u32(seq); w.u32(mirror->second); w.u8(uint8_t(raw));
+        if (C.sess->send_reliable_to(0,net::MSG_CELL_COMBAT,w)) g_pending_bonus[seq] = avatar_idx();
+    }
+    return raw;
+}
+
 using DamageCell_t = bool(SK_CDECL*)(uint8_t*, uint8_t*, const float*, int, int, float);
 static DamageCell_t o_DamageCell;
 static void hurt_avatar(int dmg, int type);
@@ -1266,6 +1549,7 @@ static bool SK_CDECL h_KillCell(uint8_t* c, uint32_t killer, void* res, bool by_
         }
         return false;
     }
+    if (is_guest() && in_cell() && c == avatar()) g_pending_bonus.clear();
     if (in_cell() && go_down(c))
         return false;
     if (g_in_guest_attack) // BUG-0714: a guest's attack replayed through the game is a player's kill
@@ -1559,6 +1843,44 @@ static void SK_CDECL h_Swallow(uint8_t* eater, uint8_t* food, int type)
 
 using AddFood_t = void(SK_CDECL*)(int, bool);
 static AddFood_t o_AddFood;
+// BUG-9109: a predator group got one extra member per extra reserved seat (three at four seats),
+// placed by the cell's scale (+0x58) as if it were its radius: the real collision sphere is the
+// model's radius times that scale (cell_sphere), so extras could spawn inside each other or inside
+// the group and the contact launched them across the pool ("flying cells", player report). Now one
+// extra from three seats on (player decision), placed clear of every collision sphere.
+// Old (`coop.fix cell.extra_one off` / `cell.extra_spacing off`): seats - 1 extras / spacing by scale.
+static bool g_fix_extra_one = true, g_fix_extra_spacing = true;
+COOP_FIX("cell.extra_one", "BUG-9109", g_fix_extra_one,
+         "cell: a predator group gets one extra member from three reserved seats on (before: one per extra seat)");
+COOP_FIX("cell.extra_spacing", "BUG-9109", g_fix_extra_spacing,
+         "cell: extra predators are placed clear of every cell's collision sphere (before: by its scale, they could overlap and fly off)");
+static unsigned g_extra_overlap; // tests: extras whose sphere touched another cell's when made (should stay 0)
+
+// BUG-9110: plant food is worth more while extra predators spawn (their bodies add meat)
+static bool g_fix_plant_bonus = true;
+COOP_FIX("cell.plant_bonus", "BUG-9110", g_fix_plant_bonus,
+         "cell: plant food is worth 25% more while predator groups get an extra member (3+ seats), so an omnivore stays reachable");
+static unsigned g_plant_raw, g_plant_paid, g_meat_raw, g_meat_paid; // tests: food in and out of the credit
+static int earned_food(int raw, bool plant)
+{
+    if (raw <= 0 || (!is_host() && !is_guest()) || !in_cell()) return raw;
+    auto rules = world::rules_for_current();
+    const uint32_t plant_percent = g_fix_plant_bonus && g_fix_extra_one ? rules.cell_plant_percent() : 100u;
+    // BUG-9119: while the party owes progress, every meal goes to the host, which repays the debt first
+    const bool owing = progress_debt::owing(modes::kCell);
+    const bool scaled = rules.workload_percent() != 100 || plant_percent != 100;
+    if (!scaled && !owing) return raw;
+    if (is_guest()) return 0; // report the raw meal; only the host awards it
+    int paid = raw;
+    if (scaled) {
+        load_cell_credit(rules);
+        paid = g_cell_credit.award(raw,plant,rules,plant_percent);
+        (plant ? g_plant_raw : g_meat_raw) += unsigned(raw);
+        (plant ? g_plant_paid : g_meat_paid) += unsigned(std::max(0,paid));
+    }
+    return paid > 0 ? progress_debt::absorb_food(paid) : paid;
+}
+
 // BUG-0633 / BUG-0316: AddFoodPoints called outside the cell step (a partner's meal or the host's total from the
 // network, a console command; all on the main thread between steps) that crosses a world scale line (food 200, ...)
 // leaves the avatar's lock bytes +0x16C / +0x178 / +0x17B / +0x17C set for good with the animation +0x18C back at
@@ -1610,7 +1932,8 @@ static void SK_CDECL h_AddFood(int amount, bool plant)
     }
     uint8_t* a0 = in_cell() ? avatar() : nullptr;
     float before = a0 ? F<float>(a0, kTargetSize) : 0.f;
-    o_AddFood(amount, plant);
+    const int awarded = g_food_guard ? amount : earned_food(amount,plant);
+    if (awarded || amount == 0) o_AddFood(awarded,plant);
     if (!g_food_guard && amount > 0 && in_cell()) { // our own avatar ate (AvatarEat 0xE7D070), not the network
         g_own_eats++;
         g_own_food += amount;
@@ -1832,19 +2155,19 @@ static struct {
     int dmg = 0;
 } g_forced;                         // the damage GetDamageAmount answers for the guest's attack being replayed
 static uint32_t g_guest_attacks, g_guest_attacks_spared, g_guest_attack_kills, g_guest_attack_types[8]; // tests
-using GetDamage_t = int(SK_CDECL*)(uint8_t*, uint8_t*);
-static GetDamage_t o_GetDamage;
-static int SK_CDECL h_GetDamage(uint8_t* att, uint8_t* vic)
+// GetDamageAmount's hook (h_CellDamageAmount, the one hook on it) answers the replayed attack's damage
+static bool forced_damage(uint8_t* att, uint8_t* vic, int& dmg)
 {
-    if (g_forced.att && att == g_forced.att && vic == g_forced.vic)
-        return g_forced.dmg;
-    return o_GetDamage(att, vic);
+    if (!g_forced.att || att != g_forced.att || vic != g_forced.vic)
+        return false;
+    dmg = g_forced.dmg;
+    return true;
 }
 // host: the guest's cell pc attacked our cell c with dmg of damage type t (lethal: the guest's game broke
 // it). False when the game's functions are missing (the caller then takes the old path).
 static bool guest_attack(uint32_t from, uint8_t* c, uint8_t* pc, int dmg, int t, bool lethal)
 {
-    if (!g_fix_guest_hit_game || !c || !pc || !o_DamageCell || !o_Bite || !o_GetDamage)
+    if (!g_fix_guest_hit_game || !c || !pc || !o_DamageCell || !o_Bite || !o_CellDamageAmount)
         return false;
     net::Vec3 cp = pos_of(c), pp = pos_of(pc);
     float dx = cp.x - pp.x, dy = cp.y - pp.y, l = std::max(0.001f, std::sqrt(dx * dx + dy * dy));
@@ -2077,7 +2400,15 @@ static int SK_CDECL h_Populate(float prob, int layer, int level, void* query, vo
             return 0;
         g_solo_spawns++; // BUG-0205: the host is away, our game fills its own pool
     }
-    return o_Populate(prob, layer, level, query, bbox, marker, x);
+    if (!g_marker_depth) g_marker_predator = 0;
+    ++g_marker_depth;
+    const int result = o_Populate(prob,layer,level,query,bbox,marker,x);
+    if (!--g_marker_depth && g_marker_predator) {
+        auto seed = g_marker_predator;
+        g_marker_predator = 0;
+        expand_marker(seed);
+    }
+    return result;
 }
 
 // ---- BUG-0174: the host keeps the world populated around every player, not only around itself ----
@@ -2143,6 +2474,232 @@ static int g_tile_level = -1; // the level base of the last PopulateTiles call (
 static uint32_t g_tiles_core, g_tiles_starved, g_tiles_fed, g_send_capped, g_mirror_capped, g_cells_peak;
 static std::unordered_map<uint32_t, uint8_t> g_starved; // tile objects of ours not populated for the budget -> the partner (0xFF: unknown)
 static uint32_t cells_live() { return G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0; }
+// One native population marker may recursively create several actors. Expand
+// the completed encounter once, while reserving room for native population.
+static float cell_sphere(uint8_t* c, float* ctr);
+// BUG-9109: the collision sphere of a cell (centre, radius); a cell without model data: its scale
+static float sphere_of(uint8_t* c, net::Vec3& centre)
+{
+    float ctr[3];
+    float r = cell_sphere(c, ctr);
+    centre = pos_of(c);
+    if (r > 0 && std::isfinite(r) && std::isfinite(ctr[0]) && std::isfinite(ctr[1])) {
+        centre.x = ctr[0];
+        centre.y = ctr[1];
+        return r;
+    }
+    return std::max(.5f, F<float>(c, kSize));
+}
+static void expand_marker(uint32_t seed)
+{
+    const auto rules = world::rules_for_current();
+    auto* model = modes::cell_at(seed);
+    const unsigned want = g_fix_extra_one ? rules.cell_extra_predators() : (rules.seats > 1 ? rules.seats - 1u : 0u);
+    if (!want || !model || !avatar() || !is_host() || !in_cell()) return;
+    if (cells_live() >= kPopCap) {
+        ++g_enemy_groups;
+        g_group_limited += want;
+        return;
+    }
+    const float size = F<float>(model,kSize);
+    if (!(size > 0) || !std::isfinite(size) || !F<void*>(model,kRes)) return;
+    auto centre = pos_of(model);
+    // the extras are copies of the seed: the seed's collision radius is theirs
+    net::Vec3 seed_sphere;
+    const float r = g_fix_extra_spacing ? sphere_of(model, seed_sphere) : size;
+    const float pad = std::max(.5f, r * .5f);
+    constexpr size_t kSites = 16;
+    std::array<net::Vec3,kSites> sites{};
+    std::array<bool,kSites> free;
+    free.fill(true);
+    for (size_t i = 0; i < sites.size(); ++i) {
+        if (!g_fix_extra_spacing) { // the old ring: 8 sites at 3 x the scale
+            const float angle = float(i % 8) * .785398163f;
+            const float gap = std::max(2.f,size*3.f);
+            sites[i] = {centre.x+gap*std::cos(angle),centre.y+gap*std::sin(angle),centre.z};
+            if (i >= 8) free[i] = false;
+            continue;
+        }
+        // two rings around the seed: touching distance plus a gap, then twice that (offset by half a step)
+        const bool outer = i >= 8;
+        const float angle = float(i % 8) * .785398163f + (outer ? .392699f : 0.f);
+        const float gap = (2.f * r + pad) * (outer ? 2.f : 1.f);
+        sites[i] = {centre.x+gap*std::cos(angle),centre.y+gap*std::sin(angle),centre.z};
+    }
+    const float reach = (2.f * r + pad) * 2.f + r + 40.f; // no cell farther than this can touch a site
+    auto exclude = [&](uint8_t* c) {
+        if (!g_fix_extra_spacing) {
+            const float margin = size + std::max(.5f,F<float>(c,kSize));
+            auto p = pos_of(c);
+            for (size_t i = 0; i < sites.size(); ++i) {
+                float x = p.x-sites[i].x, y = p.y-sites[i].y;
+                if (x*x+y*y < margin*margin) free[i] = false;
+            }
+            return;
+        }
+        auto p = pos_of(c);
+        if (std::fabs(p.x - centre.x) > reach || std::fabs(p.y - centre.y) > reach) return;
+        net::Vec3 o;
+        const float margin = r + sphere_of(c, o) + pad;
+        for (size_t i = 0; i < sites.size(); ++i) {
+            float x = o.x-sites[i].x, y = o.y-sites[i].y;
+            if (x*x+y*y < margin*margin) free[i] = false;
+        }
+    };
+    exclude(avatar());
+    for_each_cell([&](uint8_t* other,uint32_t) { exclude(other); });
+    uint32_t key[3];
+    memcpy(key,model+kModelKey,sizeof key);
+    const auto level = F<int>(model,kLevel);
+    unsigned made = 0;
+    std::array<uint32_t,3> ids{};
+    for (size_t i = 0; i < sites.size() && made < want && made < ids.size(); ++i) {
+        if (!free[i]) continue;
+        model = modes::cell_at(seed);
+        if (!model || cells_live() >= kPopCap) break;
+        auto id = modes::cell_create(sites[i],F<void*>(model,kRes),level,key,nullptr,g_marker_size);
+        auto* cell = id ? modes::cell_at(id) : nullptr;
+        if (!cell) break;
+        add_cell_health(cell,rules);
+        { // tests (both switches): did it land clear of every collision sphere?
+            net::Vec3 mine;
+            const float mr = sphere_of(cell, mine);
+            bool touch = false;
+            for_each_cell([&](uint8_t* other, uint32_t) {
+                if (other == cell || touch) return;
+                auto p = pos_of(other);
+                if (std::fabs(p.x - mine.x) > reach || std::fabs(p.y - mine.y) > reach) return;
+                net::Vec3 o;
+                const float d = mr + sphere_of(other, o);
+                const float x = o.x - mine.x, y = o.y - mine.y;
+                touch = x * x + y * y < d * d;
+            });
+            g_extra_overlap += touch;
+        }
+        exclude(cell);
+        g_speed_extra.add(id);
+        ids[made++] = id;
+    }
+    ++g_enemy_groups;
+    g_group_added += made;
+    g_group_limited += want-made;
+    if (made) g_last_group = ids;
+}
+
+// ---- BUG-9111: Lineages cells. About one in four spawns of a native creature species takes a player
+// cell's model (lineage_cells.h); the native .cell keeps its behaviour, so a cell goes only onto a species
+// whose diet its mouth shares. Not touched: the player's own species (the native spread, model kind 5 =
+// S+0x10) and species seen dropping a part token (part carriers stay Maxis: their look teaches the part).
+// BUG-9111: a player cell's model must be loaded for the cell graphics before a cell of it is drawn: the
+// editor does PreloadModel (the model data set G+0x70); cCellGFX::PreloadCreature (0xE64980, cdecl
+// void(u32 instance), plain ret: loads {instance, cll, 0x40616200} and keeps it in cCellGFX+0x28)
+// loads what the graphics draw. Done for every Lumio model before its first use, as the editor does for
+// the avatar (not proven necessary: a pale NPC seen first was an unpainted cell, the game's own look).
+static uintptr_t a_PreloadModel, a_PreloadCreature;
+static std::unordered_set<uint32_t> g_preloaded;
+static unsigned g_preloads;
+static void preload_cell_model(const uint32_t key[3])
+{
+    if (!key[0] || !in_cell() || g_preloaded.count(key[0]) || g_preloaded.size() >= 512)
+        return;
+    g_preloaded.insert(key[0]);
+    if (a_PreloadModel)
+        skg::cdecl_call<void>(a_PreloadModel, key[0], key[1], key[2]);
+    if (a_PreloadCreature && key[2] == 0x40616200u && key[1] == 0x3D97A8E4u)
+        skg::cdecl_call<void>(a_PreloadCreature, key[0]);
+    g_preloads++;
+}
+static bool g_fix_mirror_model = true;
+COOP_FIX("cell.mirror_model", "BUG-9111", g_fix_mirror_model,
+         "cell: a guest builds a host cell from its own key of that model, and never from a model it does not have (Lineages cells)");
+static bool g_lin_registered;
+static unsigned g_lin_outside, g_lin_considered, g_lin_swapped, g_lin_own, g_lin_carrier, g_lin_nofit, g_lin_unknown_mirror;
+static std::unordered_set<uint32_t> g_part_carriers; // .cell instances whose death dropped a part token
+static std::unordered_map<uint32_t, uint8_t> g_native_diet; // model instance -> bit 0 carnivore, bit 1 herbivore
+static std::mt19937 g_lin_rng{std::random_device{}()};
+static std::wstring carriers_path() { return slotfs::widen(H->mods_dir()) + L"\\coop-cell-part-carriers.txt"; }
+static void load_carriers()
+{
+    FILE* f = _wfopen(carriers_path().c_str(), L"r");
+    if (!f)
+        return;
+    unsigned v;
+    while (fscanf(f, "%x", &v) == 1 && g_part_carriers.size() < 4096)
+        g_part_carriers.insert(v);
+    fclose(f);
+}
+static void note_carrier(uint32_t inst)
+{
+    if (!inst || !g_part_carriers.insert(inst).second)
+        return;
+    if (FILE* f = _wfopen(carriers_path().c_str(), L"a")) {
+        fprintf(f, "%08X\n", inst);
+        fclose(f);
+    }
+    H->log(M, SK_INFO, "coop: cell: species %08X dropped a part token: it keeps its native look (BUG-9111)", inst);
+}
+// the AI type of a .cell's creature (0: not a creature with AI)
+static int res_creature(void* ref)
+{
+    if (!ref || !a_GetData)
+        return 0;
+    void* holder = nullptr;
+    uint8_t* res = skg::cdecl_call<uint8_t*>(a_GetData, ref, &holder);
+    if (holder)
+        --F<int>(holder, 0xC);
+    if (!res || F<int>(res, 0xB4) != 2)
+        return 0;
+    int d = S() ? F<int>(S(), 0x7C) : 1;
+    uint8_t* ai = res + 0xE0;
+    if (d == 0 && F<int>(res, 0x248) != -1)
+        ai = res + 0x248;
+    else if (d == 2 && F<int>(res, 0x194) != -1)
+        ai = res + 0x194;
+    return F<int>(ai, 0);
+}
+static bool choose_model(void* ref, const uint32_t native[3], uint32_t out[3])
+{
+    if (!g_marker_depth) {
+        g_lin_outside++;
+        return false;
+    }
+    if (!native[0] || is_guest() || !in_cell() || !lineage_cells::enabled())
+        return false;
+    uint8_t* s = S();
+    if (s && F<uint32_t>(s, 0x10) == native[0]) { // the native spread of the player's own species
+        g_lin_own++;
+        return false;
+    }
+    const int ai = res_creature(ref);
+    if (!ai)
+        return false;
+    if (g_part_carriers.count(F<uint32_t>(ref, 0))) {
+        g_lin_carrier++;
+        return false;
+    }
+    g_lin_considered++;
+    if (std::uniform_int_distribution<unsigned>(0, 99)(g_lin_rng) >= lineage_cells::kSharePercent)
+        return false;
+    // The prey-and-threat AI (0x1006, the common one) picks its prey with the model's own diet (IsPrey ->
+    // CanEat reads the model, docs/re/cell.md 9): any cell's mouth leads it, a carnivore hunts and a
+    // herbivore grazes. Other behaviours keep the native model's diet.
+    uint8_t diet = 3;
+    if (ai != 0x1006) {
+        auto it = g_native_diet.find(native[0]);
+        if (it == g_native_diet.end()) {
+            uint8_t* md = a_ModelData ? skg::cdecl_call<uint8_t*>(a_ModelData, native[0], native[1], native[2]) : nullptr;
+            it = g_native_diet.emplace(native[0], md ? uint8_t((md[0x1250] ? 1 : 0) | (md[0x1251] ? 2 : 0)) : 0).first;
+        }
+        diet = it->second;
+    }
+    if (!diet || !lineage_cells::pick(diet & 1, diet & 2, out)) {
+        g_lin_nofit++;
+        return false;
+    }
+    g_lin_swapped++;
+    return true;
+}
+
 static bool over_budget() { return g_fix_budget && cells_live() >= kPopCap; }
 static uintptr_t a_PopTiles, a_PopTile, a_TileActive, a_ViewBoxes;
 constexpr size_t kTileCap = 2048; // entries of our own lists' fixed buffers (the active set is < 512 tiles)
@@ -2796,6 +3353,17 @@ static void build_views(const float* vb, double now, std::array<float, 12>& host
         size_t n = views::partners(modes::kCell, now, pc, views::kMaxCentres - 1);
         for (size_t i = 0; i < n; i++)
             g_views.add(pc[i].player, {pc[i].pos.x, pc[i].pos.y, 0.f});
+        // BUG-9171: a knocked-out guest watches a partner: its cells come from around that partner
+        if (g_spectate)
+            for (size_t i = 0; i < n; i++) {
+                auto ko = g_ko.find(pc[i].player);
+                if (ko == g_ko.end() || ko->second.state != KO_OUT || ko->second.watching == 0xFF) continue;
+                const uint8_t w = ko->second.watching;
+                const views::Centre* wc = w == (C.sess ? C.sess->my_id() : 0) ? nullptr : g_views.find(w);
+                const net::Vec3 at = wc ? wc->pos : net::Vec3{hb.cx(), hb.cy(), 0.f};
+                if (wc || w == (C.sess ? C.sess->my_id() : 0))
+                    g_views.add(pc[i].player, at);
+            }
     }
     for (auto& v : g_views.list()) // tests (BUG-1064): how far each partner's noted centre is from where its cell is drawn
         if (v.player)
@@ -3160,8 +3728,12 @@ static void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, f
         if (after > before)
             g_loot_cells += after - before;
         double now = H->time_seconds();
-        for (int i = 0; i < n && i < cap; i++)
+        for (int i = 0; i < n && i < cap; i++) {
             g_loot_recent.push_back({buf[i], now});
+            int ct, ai;
+            if (res && !is_guest() && res_types(modes::cell_at(buf[i]), &ct, &ai) && ct == 6)
+                note_carrier(F<uint32_t>(res, 0)); // BUG-9111: this species carries a part
+        }
         while (g_loot_recent.size() > 64)
             g_loot_recent.pop_front();
     }
@@ -3638,9 +4210,24 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_CellUI = H->sym("Simulator::Cell::cCellUI::_ptr"); // rollover_of (tests), camera_snap (BUG-0343)
     a_DnaFor = H->sym("Simulator::Cell::DNAForFood"); // BUG-0351 diagnostics (dna_note)
     a_GetDamage = H->sym("Simulator::Cell::GetDamageAmount");
+    // Calls that consume HP. The same getter also forecasts lethal bites;
+    // those callers must see base damage and must never spend a remainder.
+    g_damage_returns = {H->sym("SporeCoop::CellDamageCommit"),H->sym("SporeCoop::CellAreaDamageCommit"),
+                        H->sym("SporeCoop::CellChunkACommit"),H->sym("SporeCoop::CellChunkBCommit")};
+    // one hook on GetDamageAmount (MinHook takes one per function): the enemy damage scaling (h_CellDamageAmount,
+    // only for the commit callers above) and BUG-0714's forced damage of a guest's replayed attack (forced_damage)
+    if (a_GetDamage)
+        H->hook_create(M,(void*)a_GetDamage,(void*)h_CellDamageAmount,(void**)&o_CellDamageAmount);
+    if (a_GetDamage && std::all_of(g_damage_returns.begin(),g_damage_returns.end(),[](auto a){ return a != 0; })) {
+        if (auto create = H->sym("Simulator::Cell::CreateCellObject"))
+            H->hook_create(M,(void*)create,(void*)h_CreateCell,(void**)&o_CreateCell);
+    }
+
     a_TargetParams = H->sym("Simulator::Cell::GetTargetSearchParams");
     a_IsPrey = H->sym("Simulator::Cell::IsPrey");
     a_ModelData = H->sym("Simulator::Cell::GetCellModelData");
+    a_PreloadModel = H->sym("Simulator::Cell::PreloadModel");         // BUG-9111
+    a_PreloadCreature = H->sym("Simulator::Cell::cCellGFX::PreloadCreature");
     a_IsThreat = H->sym("Simulator::Cell::IsThreat");
     a_ScaleDiff = H->sym("Simulator::Cell::GetScaleDifference");
     a_NoAttack = H->sym("Simulator::Cell::ShouldNotAttack");
@@ -3680,8 +4267,6 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_Zap = H->sym("SporeCoop::Cell_ElectricAttack"); // BUG-0715
     if (a_Zap)
         H->hook_create(M, (void*)a_Zap, (void*)h_Zap, (void**)&o_Zap);
-    if (a_GetDamage) // BUG-0714: the guest's damage for its replayed attack
-        H->hook_create(M, (void*)a_GetDamage, (void*)h_GetDamage, (void**)&o_GetDamage);
     H->hook_create(M, (void*)a_KillCell, (void*)h_KillCell, (void**)&o_KillCell);
     H->hook_create(M, (void*)a_Break, (void*)h_Break, (void**)&o_Break);
     if (uintptr_t sw = H->sym("Simulator::Cell::SwallowWhole")) // BUG-0827
@@ -3799,6 +4384,14 @@ static void host_tick(double now)
     if (!av)
         return;
     net::Vec3 me = pos_of(av);
+    // A guest still downloading at the Galaxy menu cannot use these snapshots.
+    // Sending them anyway competes with the reliable transfer on a constrained link.
+    std::vector<uint8_t> recipients;
+    for (auto& pl : C.sess->players())
+        if (pl.id != 0 && (!C.peer_in_pool || C.peer_in_pool(pl.id)))
+            recipients.push_back(pl.id);
+    if (recipients.empty())
+        return;
     using E = SendCell;
     // BUG-0174: each guest gets the cells within 120 m of its own cell (the host populates around it
     // too, h_PopTiles); a guest without a centre yet, or `fix cell.partner_tiles off`: around the host.
@@ -3836,14 +4429,12 @@ static void host_tick(double now)
         all.push_back({c, idx});
     });
     g_cycle++;
-    for (auto& pl : C.sess->players()) {
-        if (pl.id == 0)
-            continue;
-        if (g_fix_send_here && !own_world::peer_here((uint8_t)pl.id)) {
+    for (uint8_t id : recipients) {
+        if (g_fix_send_here && !own_world::peer_here(id)) {
             g_send_held++; // BUG-0809
             continue;
         }
-        const views::Centre* vc = per_guest ? vs.find((uint8_t)pl.id) : nullptr;
+        const views::Centre* vc = per_guest ? vs.find(id) : nullptr;
         std::vector<E> mine;
         const std::vector<E>* list = &all;
         if (vc) {
@@ -3870,10 +4461,10 @@ static void host_tick(double now)
             for (size_t i = 0; i < kSendCap; i++)
                 closest.push_back((*list)[d[i].second]);
             g_send_capped++;
-            send_state(pl.id, closest);
+            send_state(id, closest);
             continue;
         }
-        send_state(pl.id, *list);
+        send_state(id, *list);
     }
 }
 
@@ -3941,6 +4532,26 @@ static void send_state(int dest, const std::vector<SendCell>& cells)
 static void* ref_for(uint32_t inst)
 {
     return inst ? skg::cdecl_call<void*>(a_RefCreate, inst, (void*)a_Serializer) : nullptr;
+}
+
+// BUG-9111: the cellType of a .cell by its instance id (-1: not a .cell), cached: a ref made here is kept
+static int cell_type_of(uint32_t inst)
+{
+    static std::unordered_map<uint32_t, int> known;
+    auto it = known.find(inst);
+    if (it != known.end())
+        return it->second;
+    int t = -1;
+    void* ref = a_RefCreate && a_GetData ? ref_for(inst) : nullptr;
+    void* holder = nullptr;
+    uint8_t* res = ref ? skg::cdecl_call<uint8_t*>(a_GetData, ref, &holder) : nullptr;
+    if (holder)
+        --F<int>(holder, 0xC);
+    if (res)
+        t = F<int>(res, 0xB4) * 0x100 + (F<uint32_t>(res, 0xB8) ? 1 : 0); // type, and whether it unlocks a part
+    if (known.size() < 4096)
+        known[inst] = t;
+    return t;
 }
 
 static void destroy_local(uint32_t idx)
@@ -4012,8 +4623,21 @@ static void guest_state(net::Reader& r)
             g_mirror_capped++; // BUG-0295: the pool is full enough (an older host sends more)
             continue;
         }
+        uint32_t use[3] = {key[0], key[1], key[2]};
+        if (!c && key[0] && g_fix_mirror_model) {
+            // BUG-9111: the host's Lineages cells reach us under a key of our own (creations::host_cell_out);
+            // a model this game does not have is never built (it faulted at 0xE83EC8, BUG-0004): wait for it
+            creations::Key l = creations::local_species({key[0], key[1], key[2]});
+            if (!creations::key_known(l)) {
+                g_lin_unknown_mirror++;
+                continue;
+            }
+            use[0] = l.instance, use[1] = l.type, use[2] = l.group;
+            if (l.instance != key[0])
+                preload_cell_model(use); // a host's Lumio cell: drawn from our own key
+        }
         if (!c) { // dead ones too: the host shows a creature it killed until it is gone
-            uint32_t idx = modes::cell_create({p.x * k, p.y * k, p.z * k}, ref_for(inst), level, key, &q);
+            uint32_t idx = modes::cell_create({p.x * k, p.y * k, p.z * k}, ref_for(inst), level, use, &q);
             c = modes::cell_at(idx);
             if (c) {
                 if (m.local && g_fix_hostof) // the old local cell is gone (BUG-0088)
@@ -4332,6 +4956,39 @@ static void guest_tick(double now)
     own_probe("mirror moves");
 }
 
+// BUG-9125 (owner: "when meat is eaten by the connected player, the host sees it still but massive size"; not
+// reproduced on two PCs): every 5 s a meat cell three times the usual size of meat of its level is logged once, with
+// what this machine knows of it (mirror of the host's cell or our own, its level, how long it has been seen).
+static void meat_size_watch(double now)
+{
+    static double next;
+    static std::unordered_map<uint32_t, double> logged;
+    if (now < next || !in_cell())
+        return;
+    next = now + 5;
+    std::map<int, std::vector<float>> sizes;
+    std::vector<std::pair<uint32_t, uint8_t*>> meat;
+    for_each_cell([&](uint8_t* c, uint32_t idx) {
+        if (modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || strcmp(kind_of(c), "meat") != 0)
+            return;
+        sizes[F<int>(c, kLevel)].push_back(F<float>(c, kSize));
+        meat.push_back({idx, c});
+    });
+    for (auto& [lv, v] : sizes)
+        std::sort(v.begin(), v.end());
+    for (auto& [idx, c] : meat) {
+        auto& v = sizes[F<int>(c, kLevel)];
+        const float median = v[v.size() / 2], size = F<float>(c, kSize);
+        if (v.size() < 3 || !(size > median * 3.f) || logged.count(idx) || logged.size() > 40)
+            continue;
+        logged[idx] = now;
+        auto it = g_host_of.find(idx);
+        H->log(M, SK_WARN, "cell: oversized meat c%u size %.2f (median %.2f of %u at level %d) pos=(%.1f %.1f) %s (BUG-9125)", idx,
+               size, median, (unsigned)v.size(), F<int>(c, kLevel), pos_of(c).x, pos_of(c).y,
+               is_guest() ? (it != g_host_of.end() ? "mirror of the host's cell" : "our own (not the host's)") : "host's own");
+    }
+}
+
 // ---------------- both ----------------
 // BUG-0762 (F3 of 0.7.12): the regeneration near a partner is the host's live session setting cell.regen. Off
 // (`coop.fix settings.cell_regen off`): the setting is not read, the regeneration always runs (0.7.11).
@@ -4339,6 +4996,7 @@ static bool g_regen_setting = true;
 COOP_FIX("settings.cell_regen", "BUG-0762", g_regen_setting, "cell: the regeneration near a partner follows the host's setting cell.regen");
 static void symbiosis_tick(double now)
 {
+    meat_size_watch(now); // BUG-9125 diagnostics
     uint8_t* a = avatar();
     double dt = g_last_tick > 0 ? std::min(now - g_last_tick, 0.5) : 0;
     g_last_tick = now;
@@ -4360,13 +5018,20 @@ static void symbiosis_tick(double now)
             F<float>(c, kOpacity) = kKoOpacity;
         if (k.fx_at > 0 && now >= k.fx_at) {
             k.fx_at = 0;
-            effect(c, "cell_egg_L0_autohatch");
+            // BUG-9122: the respawn's egg-hatch effect fades the whole screen to black (it is the own
+            // cell's hatch, camera included): on a partner's puppet it blacked out this player's screen
+            // (the ice-hatch burst still dimmed it). The partner's cell just appears. Off: the egg hatch.
+            if (!g_fix_partner_hatch)
+                effect(c, "cell_egg_L0_autohatch");
         }
     }
     if (g_downed) {
         downed_tick(a, now, dt);
+        spectate_tick(a); // BUG-9171 (after: a revive or a respawn ends it at once)
         return;
     }
+    if (g_spec_idx)
+        spectate_off(a); // BUG-9171: up again
     if (g_invuln_until > 0 && now > g_invuln_until) {
         F<uint8_t>(a, kInvuln) = 0;
         g_invuln_until = 0;
@@ -4408,6 +5073,7 @@ static void hurt_avatar(int dmg, int type)
 // mirrors the Cell stage had left behind.
 static void forget_mirrors()
 {
+    g_pending_bonus.clear();
     g_mirrors.clear();
     g_host_of.clear();
     g_touched.clear();
@@ -4449,6 +5115,7 @@ static void reset_knockout()
 
 void on_player_leave(int id)
 {
+    g_last_bonus.erase(uint8_t(id));
     g_food_ack.erase(id);
     g_food_tx.erase(id);
     if (!g_fix_kostale)
@@ -4618,6 +5285,27 @@ static float cell_sphere(uint8_t* c, float* ctr)
     return F<float>(md, 0x1244) * sc;
 }
 
+static void sample_speeds()
+{
+    auto run = [](SpeedWatch& w) {
+        std::erase_if(w.ids, [&](uint32_t id) {
+            uint8_t* c = modes::cell_at(id);
+            if (!c || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying))
+                return true;
+            auto* v = (float*)(c + kVel);
+            const float s = std::hypot(v[0], v[1]);
+            if (!std::isfinite(s))
+                return false;
+            w.max = std::max(w.max, s);
+            w.samples++;
+            w.fast += s > 30.f;
+            return false;
+        });
+    };
+    run(g_speed_extra);
+    run(g_speed_native);
+}
+
 void tick(double now)
 {
     static bool was_in_cell;
@@ -4633,6 +5321,7 @@ void tick(double now)
         partner_tiles_reset(false); // the tile pool went with the stage
         g_loot_recent.clear();
         modes::cell_forget(); // the partners' puppets were in the same pool
+        g_preloaded.clear(); // BUG-9111: the cell graphics went with the stage
     }
     if (!cell && (g_solo || g_solo_owed))
         solo_reset(); // BUG-0205: the stage was left
@@ -4649,11 +5338,18 @@ void tick(double now)
         g_leave_writes++;
     }
     solo_tick();
+    if (cell && !g_lin_registered) { // BUG-9111
+        g_lin_registered = true;
+        load_carriers();
+        modes::set_cell_model_chooser(choose_model);
+    }
     if (cell)
         camera_heal(avatar()); // BUG-0604: solo too (a session that ended keeps the lost view)
     if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())
         return;
     bg_cull(now);
+    if (is_host())
+        sample_speeds(); // BUG-9109 (tests)
     spare_tick(); // BUG-0355
     if (is_host())
         host_tick(now);
@@ -4729,6 +5425,35 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (!cell && !(type == net::MSG_CELL_KO && g_fix_kostale))
         return;
+    if (type == net::MSG_CELL_COMBAT) {
+        const auto world = r.u32(), seq = r.u32();
+        if (!r.ok() || world != modes::current_world()) return;
+        if (is_host() && from) {
+            auto* source = modes::cell_at(r.u32());
+            const auto raw = r.u8();
+            if (!r.ok() || r.left()) return;
+            auto prior = g_last_bonus.find(from);
+            if (prior == g_last_bonus.end() || int32_t(seq-prior->second.seq) > 0) {
+                const auto bonus = raw && wild_combatant(source) ? hit_bonus(raw,world::rules_for_current()) : 0;
+                prior = g_last_bonus.insert_or_assign(from,BonusReceipt{seq,bonus}).first;
+            } else if (seq != prior->second.seq) return;
+            net::Writer reply;
+            reply.u32(world); reply.u32(seq); reply.u32(prior->second.bonus);
+            C.sess->send_reliable_to(from,net::MSG_CELL_COMBAT,reply);
+        } else if (is_guest() && !from) {
+            const auto bonus = r.u32();
+            auto pending = g_pending_bonus.find(seq);
+            if (!r.ok() || r.left() || pending == g_pending_bonus.end()) return;
+            const auto body = pending->second;
+            g_pending_bonus.erase(pending);
+            if (bonus && bonus <= INT_MAX && avatar_idx() == body && !g_downed) {
+                int old = F<int>(avatar(),kHp);
+                hurt_avatar(int(bonus),4);
+                if (avatar_idx() == body && avatar()) g_guest_bonus_loss += std::max(0,old-F<int>(avatar(),kHp));
+            }
+        }
+        return;
+    }
     if (type == net::MSG_CELL_HIT && is_guest()) {
         uint32_t idx = r.u32();
         int dmg = r.u8(), t = r.u8();
@@ -4742,15 +5467,24 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (g_kodrop_until > 0 && H->time_seconds() < g_kodrop_until)
             return; // tests: a refresh that comes late (coop.pool kodrop)
         uint8_t id = r.u8(), state = r.u8(), left = r.u8(), hold = r.u8();
+        const uint8_t watching = r.ok() && r.left() ? r.u8() : 0xFF; // BUG-9171 (newer games)
         if (!r.ok() || (is_host() && id != from))
             return; // a guest tells only about its own cell
         if (is_host() && from != 0) { // relay to the other guests
             net::Writer w;
-            w.u8(id); w.u8(state); w.u8(left); w.u8(hold);
+            w.u8(id); w.u8(state); w.u8(left); w.u8(hold); w.u8(watching);
             C.sess->broadcast_reliable(net::MSG_CELL_KO, w, from);
         }
-        if (id != C.sess->my_id())
+        if (state == KO_WIPE && id != C.sess->my_id()) { // BUG-9226: the last standing cell fell
+            ++g_wipes_got;
+            if (g_wipe_fix && g_downed)
+                g_wipe_respawn = true;
+            state = KO_UP;
+        }
+        if (id != C.sess->my_id()) {
             on_ko(id, state, left / 10.f, hold / 255.f);
+            g_ko[id].watching = state == KO_OUT ? watching : 0xFF;
+        }
         return;
     }
     if (!cell)
@@ -4880,9 +5614,35 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (kind == ACT_GONE) {
             if (c) {
                 g_eats_in++;
+                // BUG-9125 (not reproduced): what a partner's meal with loot leaves on this screen
+                const size_t loot_before = g_loot_recent.size();
+                const float eaten_size = F<float>(c, kSize);
+                const int eaten_level = F<int>(c, kLevel);
                 o_Destroy(idx, arg & 1, 0.f, 0); // with the loot the game asked for on the guest
+                static unsigned loot_logged;
+                if ((arg & 1) && loot_logged < 40) {
+                    loot_logged++;
+                    std::string made;
+                    char lb[64];
+                    for (size_t i = loot_before; i < g_loot_recent.size(); i++)
+                        if (uint8_t* lc = modes::cell_at(g_loot_recent[i].first)) {
+                            snprintf(lb, sizeof lb, " c%u %s size=%.2f level=%d", g_loot_recent[i].first, kind_of(lc), F<float>(lc, kSize),
+                                     F<int>(lc, kLevel));
+                            made += lb;
+                        }
+                    H->log(M, SK_INFO, "cell: player %u ate c%u (%s size %.2f level %d) with loot: here%s", from, idx, what,
+                           eaten_size, eaten_level, made.empty() ? " nothing" : made.c_str());
+                }
+                // BUG-0633: in the cell step, as a meal; BUG-9119 / BUG-9110: the host's award (workload, plant bonus,
+                // progress debt) is taken when it is applied
+                const bool meal_ack = e.has_meal;
                 if (food)
-                    food_in_step([food, plant] { o_AddFood(food, plant); });
+                    food_in_step([food, plant, meal_ack] {
+                        if (int awarded = earned_food(food, plant))
+                            o_AddFood(awarded, plant);
+                        if (meal_ack)
+                            g_food_sent = -1; // acknowledge even a fractional meal
+                    });
             } else if (food) {
                 // somebody ate it first: no points for it. The guest already counted them: our total
                 // goes out again and takes them back (MSG_CELL_FOOD -> its AddFoodPoints(diff))
@@ -4919,9 +5679,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 food_in_step([from, f] {
                     uint8_t* s0 = S();
                     int before = s0 ? F<int32_t>(s0, 0x1C) : 0;
-                    o_AddFood(f.amount, f.plant);
-                    if (C.food_cause && s0 && f.amount != 0)
-                        C.food_cause(from, before, f.amount);
+                    int awarded = earned_food(f.amount, f.plant); // BUG-9119 / BUG-9110: the host's award
+                    if (awarded)
+                        o_AddFood(awarded, f.plant);
+                    if (C.food_cause && s0 && awarded != 0)
+                        C.food_cause(from, before, awarded);
                 });
             trace::ev("eat", "from food", "from %u food +%d %s meal=%u: %s", from, f.amount, f.plant ? "plant" : "meat", f.meal,
                       f.valid && f.amount > -1000 && f.amount < 1000 ? "applied" : "refused (bad message)");
@@ -4942,6 +5704,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 if (!s)
                     return;
                 int diff = g_meals.diff(food, has_ack, ack, g_pend_food, F<int32_t>(s, 0x1C), g_fix_foodseq);
+                if (world::rules_for_current().workload_percent() > 100) // the host's total is the scaled award
+                    diff = food - F<int32_t>(s, 0x1C);
                 if (diff != 0) {
                     trace::ev("eat", "total", "host total food=%d (ack meal %u) -> %+d here (pending %d)", food, ack, diff,
                               g_pend_food);
@@ -4961,6 +5725,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 
 void on_session_end()
 {
+    g_last_bonus.clear();
+    g_pending_bonus.clear();
     g_kodrop_until = 0;
     g_statehold_until = 0;
     g_test_away = false;
@@ -5028,6 +5794,12 @@ static void draw_ko(uint8_t* c, const std::string& name, float left, float hold,
     snprintf(t, sizeof t, "KO %d", (int)std::ceil(std::max(0.f, left)));
     uint32_t red = blink ? 0xFFFF4040 : 0xFFB02020;
     bool on = H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh;
+    if (on && ring_timer::enabled()) { // BUG-9141: the draining ring above the cell, the revive as its green fill
+        const float r = ring_timer::radius_for(sh);
+        ring_timer::draw(H, sc[0], std::max(r + 4.f, sc[1] - 30.f - r * 0.5f), r, ring_timer::fraction(left, down_time()),
+                         hold, now);
+        return;
+    }
     if (on) {
         H->overlay_text((int)sc[0] - text_w(t) / 2, (int)sc[1] - 34, red, t);
         if (hold > 0.01f) {
@@ -5040,7 +5812,11 @@ static void draw_ko(uint8_t* c, const std::string& name, float left, float hold,
         return;
     // off screen: an arrow on the screen edge towards it
     float cx = sw / 2.f, cy = sh / 2.f;
-    if (!H->world_to_screen(w, sc)) // behind: never happens in the flat cell world, keep a fallback
+    sc[0] = sc[1] = NAN;
+    bool front = H->world_to_screen(w, sc) != 0;
+    if (g_fix_offscreen_arrow) // BUG-9121: off screen the point is still written (only behind is not)
+        front = std::isfinite(sc[0]) && std::isfinite(sc[1]);
+    if (!front) // behind: never happens in the flat cell world, keep a fallback
         sc[0] = cx, sc[1] = sh + 100.f;
     float dx = sc[0] - cx, dy = sc[1] - cy;
     float fx, fy;
@@ -5048,8 +5824,27 @@ static void draw_ko(uint8_t* c, const std::string& name, float left, float hold,
         return;
     int x = (int)fx, y = (int)fy;
     const char* arrow = std::fabs(dx) > std::fabs(dy) ? (dx > 0 ? "\u25BA" : "\u25C4") : (dy > 0 ? "\u25BC" : "\u25B2");
-    std::string s = std::string(arrow) + " " + name + " " + t;
+    std::string s = std::string(arrow) + " " + name + (ring_timer::enabled() ? std::string() : " " + std::string(t));
     H->overlay_text(x - text_w(s) / 2, y - 10, red, s.c_str());
+    if (ring_timer::enabled()) { // BUG-9141: a small ring over the edge arrow
+        const float r = ring_timer::radius_for(sh) * 0.7f;
+        ring_timer::draw(H, std::clamp((float)x, r + 4.f, sw - r - 4.f), std::clamp((float)y - 18.f - r, r + 4.f, sh - r - 4.f),
+                         r, ring_timer::fraction(left, down_time()), hold, now);
+    }
+}
+
+bool partner_down(int id)
+{
+    const auto it = g_ko.find(id);
+    return it != g_ko.end() && it->second.state == KO_OUT;
+}
+
+bool rescue_pending()
+{
+    if (g_downed) return true;
+    for (const auto& entry : g_ko)
+        if (entry.second.state == KO_OUT) return true;
+    return false;
 }
 
 void draw_overlay()
@@ -5059,9 +5854,17 @@ void draw_overlay()
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
     double now = H->time_seconds();
-    if (g_downed)
-        draw_ko(avatar(), "", (float)std::max(0.0, kDownTime - (now - g_down_since)), (float)(g_hold / kReviveHold), now,
+    if (g_downed && !g_box_shown) // BUG-9171: with the downed box its ring is at the bottom
+        draw_ko(avatar(), "", (float)std::max(0.0, down_time() - (now - g_down_since)), (float)(g_hold / kReviveHold), now,
                 sw, sh);
+    if (g_downed && g_spec_idx && !g_spec_name.empty() && sw > 0 && !g_box_shown) { // BUG-9171
+        const std::string t = "SPECTATING " + g_spec_name;
+        const std::string h = "Tab: next partner";
+        const int y = (int)(sh * 0.70f);
+        H->overlay_text(sw / 2 - (int)t.size() * 4 + 1, y + 1, 0xFF000000, t.c_str());
+        H->overlay_text(sw / 2 - (int)t.size() * 4, y, 0xFFFFFFFFu, t.c_str());
+        H->overlay_text(sw / 2 - (int)h.size() * 4, y + 20, 0xFFC8C8C8u, h.c_str());
+    }
     if (!C.puppets)
         return;
     for (auto& p : C.puppets()) {
@@ -5389,6 +6192,14 @@ std::string debug(const std::vector<std::string>& a)
             }
         return "zapped " + std::to_string(done);
     }
+    if (!a.empty() && a[0] == "spectate") { // BUG-9171 (tests): what a knocked-out cell watches
+        uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+        char b[200];
+        snprintf(b, sizeof b, "spectate fix=%d downed=%d partner=%d '%s' idx=%08X camera_follow=%08X sets=%u switches=%u\n",
+                 (int)g_spectate, (int)g_downed, g_spec_id, g_spec_name.c_str(), g_spec_idx,
+                 ui && skg::readable(ui + 0xE0, 4) ? F<uint32_t>(ui, 0xE0) : 0u, g_spec_sets, g_spec_switches);
+        return b;
+    }
     if (!a.empty() && a[0] == "mirrormap") { // guest: host index -> local pool index of every live mirror
         std::string o;
         for (auto& [h, m] : g_mirrors)
@@ -5642,6 +6453,125 @@ std::string debug(const std::vector<std::string>& a)
                 line("partner", c);
         });
         return out.empty() ? std::string("diet: no avatar\n") : out;
+    }
+    if (a.size() >= 2 && a[0] == "lineage" && a[1] == "find") { // BUG-9111 (tests): cells built from a model, nearest first
+        const uint32_t want = a.size() >= 3 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 16) : 0;
+        net::Vec3 me = pos_of(av);
+        std::vector<std::pair<float, std::string>> rows;
+        for_each_cell([&](uint8_t* c, uint32_t idx) {
+            if (F<uint32_t>(c, kModelKey) != want || modes::cell_is_puppet(c))
+                return;
+            auto p = pos_of(c);
+            auto* v = (float*)(c + kVel);
+            int ct, ai;
+            res_types(c, &ct, &ai);
+            char b[200];
+            snprintf(b, sizeof b, "c%u op=%.2f/%.2f ref=%p species=%08X ai=%X pos=(%.1f %.1f) d=%.1f vel=%.2f hp=%d chase=%u flee=%u dead=%d\n", idx, F<float>(c, 0xA0), F<float>(c, 0xA4), F<void*>(c, kRes),
+                     F<uint32_t>(F<void*>(c, kRes), 0), ai, p.x, p.y, net::dist(p, me), std::hypot(v[0], v[1]), F<int>(c, kHp),
+                     F<uint32_t>(c, kChase), F<uint32_t>(c, kFlee), (int)F<uint8_t>(c, kDead));
+            rows.emplace_back(net::dist(p, me), b);
+        });
+        std::sort(rows.begin(), rows.end(), [](auto& x, auto& y) { return x.first < y.first; });
+        std::string out = std::to_string(rows.size()) + " cells\n";
+        for (size_t i = 0; i < rows.size() && i < 12; i++)
+            out += rows[i].second;
+        return out;
+    }
+    if (!a.empty() && a[0] == "lineage") { // BUG-9111
+        char b[260];
+        snprintf(b, sizeof b, "lineage outside=%u considered=%u swapped=%u own=%u carrier=%u nofit=%u unknown_mirror=%u carriers=%u preloads=%u\n",
+                 g_lin_outside, g_lin_considered, g_lin_swapped, g_lin_own, g_lin_carrier, g_lin_nofit, g_lin_unknown_mirror,
+                 (unsigned)g_part_carriers.size(), g_preloads);
+        std::string diets = "native diets:";
+        for (auto& [k, v] : g_native_diet)
+            diets += " " + trace::hex(k) + "=" + std::to_string(v);
+        return b + diets + "\n" + lineage_cells::debug({});
+    }
+    if (!a.empty() && a[0] == "species") { // BUG-9111 (research): each .cell in the pool, its kind, AI, model entries, loot
+        struct Row { unsigned n = 0; void* ref = nullptr; };
+        std::map<uint32_t, Row> rows;
+        for_each_cell([&](uint8_t* c, uint32_t) {
+            void* ref = F<void*>(c, kRes);
+            if (!ref || F<void*>(c, kQuery) != fg_query()) return;
+            auto& r = rows[F<uint32_t>(ref, 0)];
+            r.n++;
+            r.ref = ref;
+        });
+        std::string out;
+        for (auto& [inst, r] : rows) {
+            void* holder = nullptr;
+            uint8_t* res = a_GetData ? skg::cdecl_call<uint8_t*>(a_GetData, r.ref, &holder) : nullptr;
+            if (holder) --F<int>(holder, 0xC);
+            if (!res) continue;
+            int ct, ai;
+            uint8_t* c0 = nullptr;
+            for_each_cell([&](uint8_t* c, uint32_t) { if (!c0 && F<void*>(c, kRes) == r.ref) c0 = c; });
+            res_types(c0, &ct, &ai);
+            char b[1100];
+            int n = snprintf(b, sizeof b, "cell %08X n=%u type=%d ai=%X unlock=%X noatk=%d models=", inst, r.n, ct, ai,
+                             F<uint32_t>(res, 0xB8), F<uint8_t>(res, 0x300));
+            uint8_t* me = F<uint8_t*>(res, 0x14);
+            int mc = F<int>(res, 0x18);
+            for (int i = 0; i < mc && i < 6 && me && skg::readable(me + i * 0x28, 0x28); i++)
+                n += snprintf(b + n, sizeof b - n, "%d:%08X ", F<int>(me + i * 0x28, 4), F<uint32_t>(me + i * 0x28, 0x10));
+            if (c0) n += snprintf(b + n, sizeof b - n, "key=%08X.%08X.%08X known=%d ", F<uint32_t>(c0, kModelKey), F<uint32_t>(c0, kModelKey + 4),
+                                  F<uint32_t>(c0, kModelKey + 8),
+                                  F<uint32_t>(c0, kModelKey) ? (int)creations::key_known({F<uint32_t>(c0, kModelKey), F<uint32_t>(c0, kModelKey + 4), F<uint32_t>(c0, kModelKey + 8)}) : -1);
+            void* loot = F<void*>(res, 0xD4);
+            n += snprintf(b + n, sizeof b - n, "loot=%08X", loot ? F<uint32_t>(loot, 0) : 0u);
+            void* lh = nullptr;
+            uint8_t* ld = loot && a_GetData ? skg::cdecl_call<uint8_t*>(a_GetData, loot, &lh) : nullptr;
+            if (lh) --F<int>(lh, 0xC);
+            if (ld && skg::readable(ld, 0x80)) {
+                n += snprintf(b + n, sizeof b - n, " data[");
+                for (int i = 0; i < 32; i++) n += snprintf(b + n, sizeof b - n, "%08X ", F<uint32_t>(ld, 4 * i));
+                n += snprintf(b + n, sizeof b - n, "] drops:");
+                // every dword that names a .cell: its cellType and part id (6 = a part token)
+                for (int i = 0; i < 32 && n < (int)sizeof b - 40; i++) {
+                    const uint32_t v = F<uint32_t>(ld, 4 * i);
+                    if (v < 0x01000000u || (v & 0xFF000000u) == 0x3F000000u || (v & 0xFF000000u) == 0x40000000u) continue;
+                    const int t = cell_type_of(v);
+                    if (t >= 0) n += snprintf(b + n, sizeof b - n, " %08X@%d=%d", v, i, t);
+                }
+            }
+            out += std::string(b) + "\n";
+        }
+        return out.empty() ? std::string("no cells\n") : out;
+    }
+    if (!a.empty() && a[0] == "enemy_groups") {
+        char line[480];
+        const auto rules = world::rules_for_current();
+        snprintf(line,sizeof line,"groups=%u added=%u limited=%u latest=%u,%u,%u overlap=%u want=%u natives=%u "
+                 "plant=%u->%u meat=%u->%u plant_percent=%u speed_extra=%.1f/%u/%u speed_native=%.1f/%u/%u",
+                 g_enemy_groups,g_group_added,g_group_limited,g_last_group[0],g_last_group[1],g_last_group[2],
+                 g_extra_overlap,g_fix_extra_one ? rules.cell_extra_predators() : (rules.seats > 1 ? rules.seats - 1u : 0u),
+                 g_native_predators,g_plant_raw,g_plant_paid,g_meat_raw,g_meat_paid,
+                 g_fix_plant_bonus && g_fix_extra_one ? rules.cell_plant_percent() : 100u,
+                 g_speed_extra.max,g_speed_extra.fast,g_speed_extra.samples,g_speed_native.max,g_speed_native.fast,g_speed_native.samples);
+        return line;
+    }
+    if (!a.empty() && a[0] == "combat_credit") {
+        if (is_host()) load_cell_credit(world::rules_for_current());
+        char b[210];
+        snprintf(b,sizeof b,"assigned=%u baseHP=%u extraHP=%u hpCarry=%u baseHit=%u extraHit=%u damageCarry=%u pending=%u guestLoss=%u",
+                 g_hp_assignments,g_hp_base,g_hp_extra,g_cell_credit.health_carry,g_base_damage,g_extra_damage,
+                 g_cell_credit.damage_carry,unsigned(g_pending_bonus.size()),g_guest_bonus_loss);
+        return b;
+    }
+    if (!a.empty() && a[0] == "enemyhit") {
+        // A real incoming DamageCell call; leave native immunity and targeting intact.
+        int before = F<int>(av,kHp);
+        unsigned raw = 0;
+        for_each_cell([&](uint8_t* c,uint32_t idx) {
+            if (raw || !wild_combatant(c) || F<uint8_t>(c,kDead) || F<uint8_t>(c,kDying) ||
+                (is_guest() && !g_host_of.count(idx)) || !o_CellDamageAmount) return;
+            int amount = o_CellDamageAmount(c,av);
+            if (amount < 1 || amount > 6) return;
+            float dir[3] = {1,0,0};
+            h_DamageCell(av,c,dir,4,0,0.f);
+            if (F<int>(av,kHp) < before) raw = unsigned(amount);
+        });
+        return "raw=" + std::to_string(raw) + " loss=" + std::to_string(before-F<int>(av,kHp));
     }
     if (!a.empty() && a[0] == "see")
         return see(a.size() > 1 ? atoi(a[1].c_str()) : 60);
@@ -6229,7 +7159,7 @@ std::string debug(const std::vector<std::string>& a)
         camera_snap(pos_of(av));
         return "camera on our cell\n";
     }
-    if (!a.empty() && a[0] == "cam") { // tests (BUG-0343): the cell camera (cCellUI +0x48 drawn, +0x54 target, +0x60 lag)
+    if (!a.empty() && (a[0] == "cam" || a[0] == "camera")) { // tests (BUG-0343): the cell camera (cCellUI +0x48 drawn, +0x54 target, +0x60 lag)
         uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
         if (!ui || !skg::readable(ui + 0x48, 0xB0))
             return "no camera";
@@ -6260,6 +7190,16 @@ std::string debug(const std::vector<std::string>& a)
         char b[120];
         snprintf(b, sizeof b, "placed c%u onto c%u at (%.2f %.2f)", k, t, p.x, p.y);
         return b;
+    }
+    if (!a.empty() && a[0] == "dna") {
+        uint8_t* state = S();
+        if (!state || !a_DnaFor) return "no Cell DNA state";
+        if (a.size() >= 3 && a[1] == "spend") // tests (BUG-9123): as the editor's result writes it
+            F<int32_t>(state, 0x2C) += atoi(a[2].c_str());
+        int food = F<int32_t>(state,0x1C), spent = F<int32_t>(state,0x2C);
+        int earned = ((int(__fastcall*)(int))a_DnaFor)(food);
+        return "food="+std::to_string(food)+" earned="+std::to_string(earned)+" spent="+std::to_string(spent)+
+            " budget="+std::to_string(earned-spent);
     }
     if (a.size() >= 3 && a[0] == "tp") { // move our cell to <dx dy> from the nearest partner [or player <id>]
         net::Vec3 at;
@@ -7271,6 +8211,30 @@ void census_rows(std::vector<census::Row>& out)
     }
 }
 
+bool give_up()
+{
+    if (!g_downed) return false;
+    g_give_up_now = true;
+    return true;
+}
+
+bool own_down() { return g_downed && in_cell(); }
+std::string spectated() { return g_downed && g_spec_idx ? g_spec_name : std::string(); }
+void spectate_step(int dir) { g_spec_step = dir; }
+// BUG-9224 (owner play test 2026-11-15: "The timer was not going down on Cell"): the downed ring takes the fraction of
+// the time left (as Creature's), this gave the seconds (60): the ring stayed full to the last second. On: the fraction.
+// Off: the seconds (58-dev).
+static bool g_ring_fraction_fix = true;
+COOP_FIX("cell.ring_fraction", "BUG-9224", g_ring_fraction_fix, "cell: the knocked-out ring empties over the time left");
+float own_left()
+{
+    if (!g_downed) return 0.f;
+    const double left = std::max(0.0, down_time() - (H->time_seconds() - g_down_since));
+    return g_ring_fraction_fix ? ring_timer::fraction(left, down_time()) : (float)left;
+}
+float own_revive() { return g_downed ? (float)std::min(1.0, g_hold / kReviveHold) : 0.f; }
+void set_box_shown(bool shown) { g_box_shown = shown; }
+
 float scale_now() { return in_cell() ? world_scale() : 0.f; }
 bool food_total(int& food)
 {
@@ -7304,10 +8268,32 @@ bool spent_dna(int& v)
     return true;
 }
 
+static bool g_fix_shared_dna_note = true;
+COOP_FIX("cell.shared_dna_note", "BUG-9123", g_fix_shared_dna_note,
+         "cell: a guest is told when a partner's editor spends the shared DNA");
+
 void set_spent_dna(int v)
 {
-    if (uint8_t* s = in_cell() ? S() : nullptr)
-        *(int32_t*)(s + 0x2C) = v; // the game's own writer is the editor's result (0xE809A0): no setter
+    uint8_t* s = in_cell() ? S() : nullptr;
+    if (!s)
+        return;
+    const int before = F<int32_t>(s, 0x2C);
+    *(int32_t*)(s + 0x2C) = v; // the game's own writer is the editor's result (0xE809A0): no setter
+    // BUG-9123: the Cell DNA is the party's (one pool, as the Creature pack's): a partner's editor spends
+    // it for everybody. Say so, or the guest's own number seems to drop for nothing.
+    if (g_fix_shared_dna_note && v > before && before >= 0 && C.feed) {
+        const int left = editor_budget();
+        C.feed("A partner spent " + std::to_string(v - before) + " of the shared DNA in the editor" +
+               (left >= 0 ? " (" + std::to_string(left) + " left)." : "."));
+    }
+}
+
+int dna_for_food(int food)
+{
+    if (!in_cell() || !a_DnaFor || food < 0 || food > 1000)
+        return -1;
+    using DnaFor_t = int(__fastcall*)(int);
+    return ((DnaFor_t)a_DnaFor)(food);
 }
 
 int editor_budget()
@@ -7327,5 +8313,28 @@ void join_partner()
     if (a && spawn_spot(&at, nullptr, false, 2.5f, 1.f)) // BUG-0792
         stop_at(a, at);
 }
+
+bool own_cell_model(uint32_t key[3])
+{
+    uint8_t* s = S();
+    if (!s)
+        return false;
+    key[0] = F<uint32_t>(s, 0x10), key[1] = F<uint32_t>(s, 0x14), key[2] = F<uint32_t>(s, 0x18);
+    return key[0] != 0;
+}
+
+bool model_diet(const uint32_t key[3], bool& carnivore, bool& herbivore)
+{
+    if (!in_cell() || !a_ModelData || !key[0] || !creations::key_known({key[0], key[1], key[2]}))
+        return false; // an unknown key faults in GetCellModelData (0xE83EC8)
+    uint8_t* md = skg::cdecl_call<uint8_t*>(a_ModelData, key[0], key[1], key[2]);
+    if (!md)
+        return false;
+    carnivore = md[0x1250] != 0;
+    herbivore = md[0x1251] != 0;
+    return true;
+}
+
+void preload_model(const uint32_t key[3]) { preload_cell_model(key); }
 
 } // namespace cellsync

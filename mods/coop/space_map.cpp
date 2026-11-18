@@ -1,5 +1,6 @@
 // Space feature "map" (MSG_SPACE kinds 10..19): the roster of every player's empire (space_map.h)
 // and the partners and their colonies on the galaxy map. docs/re/space.md 13.
+#define _USE_MATH_DEFINES // (before any header that may include <cmath>: net/protocol.h does, BUG-9235)
 #include "space_map.h"
 #include "player_life.h"
 
@@ -8,7 +9,6 @@
 #include <windows.h>
 
 #include <algorithm>
-#define _USE_MATH_DEFINES
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -24,6 +24,8 @@
 #include "cell_logic.h"
 #include "find.h"
 #include "fixes.h"
+#include "founders.h"
+#include "identity.h"
 
 using skg::cdecl_call;
 using skg::thiscall;
@@ -521,8 +523,74 @@ struct Kept {
     bool restoring = false; // sent, no answer yet
     double sent = 0;
 };
-static std::map<std::string, Kept> g_kept; // host: player name -> its own colonies
+static std::map<std::string, Kept> g_kept; // host: player key (kept_key) -> its own colonies
 static uint32_t g_kept_epoch;
+// BUG-9189 (roadmap phase 6, decision 2A): the list was memory only and by player name (a host that restarts its game
+// lost every guest's colonies; a renamed player lost its own). Now keyed by the persistent player identity (identity.h;
+// the name only for a player without one) and kept in a side file next to the host's save (.duospace, never inside
+// the game's save), read when the host's Space world loads. Off: memory only, by name.
+static bool g_kept_file = true;
+COOP_FIX("space.kept_side_file", "BUG-9189", g_kept_file,
+         "space: the guests' own colonies are kept per player identity in a side file next to the host's save");
+static bool g_kept_dirty;
+static double g_kept_saved_at;
+static std::string g_kept_planet; // the save the list belongs to
+static uint32_t g_kept_loads, g_kept_saves;
+static std::string kept_key(uint8_t id)
+{
+    const uint64_t who = g_kept_file ? identity::of(id) : 0;
+    if (!who) return spaceext::name_of(id);
+    char b[24];
+    snprintf(b, sizeof b, "id:%016llX", (unsigned long long)who);
+    return b;
+}
+// KPT1: u8 players, per player str8 key, u8 colonies, u32 planet id each
+static void kept_load()
+{
+    g_kept_planet = g_kept_file ? spaceext::game_key() : std::string();
+    std::vector<uint8_t> bytes;
+    if (g_kept_planet.empty() || !founders::read_side(g_kept_planet, L".duospace", bytes, 64 * 1024)) return;
+    net::Reader r(bytes.data(), bytes.size());
+    if (r.u32() != 0x3154504Bu) return; // KPT1
+    std::map<std::string, Kept> loaded;
+    const unsigned n = r.u8();
+    for (unsigned i = 0; i < n && r.ok(); ++i) {
+        std::string key = r.str8();
+        Kept k;
+        const unsigned c = r.u8();
+        for (unsigned j = 0; j < c && r.ok(); ++j) k.planets.push_back(r.u32());
+        if (!key.empty()) loaded[key] = std::move(k);
+    }
+    if (!r.ok() || r.left()) {
+        H->log(M, SK_WARN, "space map: the kept colonies file of this save is unreadable; not used (BUG-9189)");
+        return;
+    }
+    g_kept = std::move(loaded);
+    g_kept_loads++;
+    H->log(M, SK_INFO, "space map: kept colonies of %zu player(s) read from this save's side file (BUG-9189)", g_kept.size());
+}
+static void kept_save(void*)
+{
+    if (!g_kept_dirty || g_kept_planet.empty() || g_kept_planet != spaceext::game_key()) return;
+    net::Writer w;
+    w.u32(0x3154504Bu);
+    std::vector<const std::pair<const std::string, Kept>*> rows;
+    for (auto& e : g_kept)
+        if (!e.second.planets.empty() && rows.size() < 255) rows.push_back(&e);
+    w.u8((uint8_t)rows.size());
+    for (auto* e : rows) {
+        w.str8(e->first);
+        const size_t c = std::min<size_t>(e->second.planets.size(), 255);
+        w.u8((uint8_t)c);
+        for (size_t j = 0; j < c; ++j) w.u32(e->second.planets[j]);
+    }
+    if (founders::write_side(g_kept_planet, L".duospace", w.data)) {
+        g_kept_dirty = false;
+        g_kept_saves++;
+    } else {
+        H->log(M, SK_WARN, "space map: the kept colonies could not be saved next to the save (BUG-9189)");
+    }
+}
 static uint32_t g_kept_sent, g_kept_done, g_restored, g_restore_failed;
 // BUG-0810: a crash rejoin (the token of BUG-0235) drops the old entry and accepts the new one in the same message,
 // and the newcomer gets the lowest free id: the same one. kept_tick never saw the player missing, k.id stayed, and
@@ -570,7 +638,7 @@ static void kept_roster(uint8_t id)
 {
     if (!g_keep_fix || !spaceext::is_host() || id == spaceext::my_id() || !roster_of(spaceext::my_id()))
         return;
-    std::string name = spaceext::name_of(id);
+    std::string name = kept_key(id);
     if (name.empty())
         return;
     Kept& k = g_kept[name];
@@ -591,6 +659,7 @@ static void kept_roster(uint8_t id)
     for (auto& c : g_rosters[id].colonies)
         if (!c.home && own_colony(id, c))
             own.push_back(c.planet);
+    if (own != k.planets) g_kept_dirty = true;
     k.planets = std::move(own);
 }
 
@@ -601,6 +670,12 @@ static void kept_tick(double now)
         if (e && e != g_kept_epoch) { // another Space world: its players' colonies are not this one's
             g_kept.clear();
             g_kept_epoch = e;
+            g_kept_dirty = false;
+            kept_load(); // BUG-9189: this save's list
+        }
+        if (g_kept_file && g_kept_dirty && now - g_kept_saved_at > 5.0) {
+            g_kept_saved_at = now;
+            H->run_outside_frame(kept_save, nullptr);
         }
         std::set<uint8_t> here;
         for (auto& p : spaceext::ctx().sess->players())
@@ -661,6 +736,7 @@ static void on_kept(uint8_t origin, net::Reader& r, bool done)
                                                [&](uint32_t p) { return failed.count(p) != 0; }),
                                 k.planets.end());
                 g_kept_done++;
+                if (!failed.empty()) g_kept_dirty = true;
             }
         return;
     }
@@ -681,9 +757,9 @@ static std::string kept_status()
 {
     std::string s;
     char b[200];
-    snprintf(b, sizeof b, "kept: fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u left=%u\n", (int)g_keep_fix,
-             (unsigned)g_kept.size(), g_kept_sent, g_kept_done, g_restored, g_restore_failed, (unsigned)g_restore.size(),
-             g_kept_left);
+    snprintf(b, sizeof b, "kept: fix=%d players=%u sent=%u done=%u restored=%u failed=%u pending=%u file=%d loads=%u saves=%u left=%u\n",
+             (int)g_keep_fix, (unsigned)g_kept.size(), g_kept_sent, g_kept_done, g_restored, g_restore_failed,
+             (unsigned)g_restore.size(), (int)g_kept_file, g_kept_loads, g_kept_saves, g_kept_left);
     s += b;
     for (auto& [n, k] : g_kept) {
         snprintf(b, sizeof b, "  kept '%s' id=%d restoring=%d colonies=%u:", n.c_str(), k.id == 0xFF ? -1 : k.id,
@@ -1367,6 +1443,16 @@ static std::string debug(const std::vector<std::string>& a)
                   game = H->sym("Simulator::cSimulatorSpaceGame::ptr");
         if (!onhit || !gettool || !game || context() != 0)
             return "not on a planet\n";
+        // BUG-9190: fired on a planet that already is an empire's colony (the own homeworld, tech 5) the game faulted
+        // 3 s later (GetSpeciesProfile+0x12, read of 0x268; TITAN guest 2026-11-13): no colony tool there
+        {
+            const uint32_t place = spaceext::ctx().my_place ? spaceext::ctx().my_place() : 0;
+            if (void* sr = star_record(star_of(place)))
+                for (void* pl : ptr_vec((uint8_t*)sr + 0x84, 64))
+                    if (readable(pl, 0x1A4) && (F<uint32_t>(pl, 0x184) & 0x0FFFFFFFu) == (place & 0x0FFFFFFFu) &&
+                        F<int>(pl, 0x194) >= 5)
+                        return "this planet already is a colony (tech 5): no colony tool here\n";
+        }
         void* sg = *(void**)game;
         void* inv = readable(sg, 0x44) ? F<void*>(sg, 0x40) : nullptr;
         uint32_t key[3] = {0x733B280Cu, 0, 0}; // placecolony

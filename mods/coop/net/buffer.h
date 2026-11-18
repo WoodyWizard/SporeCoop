@@ -17,6 +17,7 @@ public:
     void u8(uint8_t v) { data.push_back(v); }
     void u16(uint16_t v) { raw(&v, 2); }
     void u32(uint32_t v) { raw(&v, 4); }
+    void u64(uint64_t v) { raw(&v, 8); }
     void f32(float v) { raw(&v, 4); }
     void f64(double v) { raw(&v, 8); }
     void raw(const void* p, size_t n)
@@ -63,6 +64,12 @@ public:
     {
         uint32_t v = 0;
         raw(&v, 4);
+        return v;
+    }
+    uint64_t u64()
+    {
+        uint64_t v = 0;
+        raw(&v, 8);
         return v;
     }
     float f32()

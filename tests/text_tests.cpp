@@ -51,6 +51,12 @@ static void test_names()
     CHECK(utf8::player_name(rep("\xD0\x96", 130)) == rep("\xD0\x96", 24));
     CHECK(utf8::player_name("Bob\n\x01") == "Bob");
     CHECK(utf8::player_name("\xE5\xA4\xAA\xE9\x83\x8E") == "\xE5\xA4\xAA\xE9\x83\x8E");
+    // BUG-9222: the -NoShare- tag (any case, anywhere) marks a QA player and is not shown
+    CHECK(utf8::no_share_name("MSI-NoShare-") && utf8::no_share_name("late-noshare-x") && !utf8::no_share_name("MSI"));
+    CHECK(!utf8::no_share_name("NoShare") && !utf8::no_share_name("-NoShar-"));
+    CHECK(utf8::shown_name("MSI-NoShare-") == "MSI" && utf8::shown_name("Late-NOSHARE-") == "Late");
+    CHECK(utf8::shown_name("-NoShare-") == "Player" && utf8::shown_name("Bob") == "Bob");
+    CHECK(utf8::player_name("WilhelminaLongname-NoShare-") == "WilhelminaLongn-NoShare-"); // the tag survives the cut
 }
 
 // BUG-0159: the overlay centres by letter cells, not bytes

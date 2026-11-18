@@ -1,3 +1,5 @@
+#include "down_time.h"
+#include "ring_timer.h"
 #include "spacecoop.h"
 #include "call_guard.h"
 #include "player_life.h"
@@ -16,7 +18,9 @@
 #include "space_ext.h"
 #include "space_logic.h"
 #include "sporekit_game.hpp"
+#include "give_up.h"
 #include "fixes.h"
+#include "world.h"
 #include "settings.h"
 
 using skg::cdecl_call;
@@ -37,7 +41,12 @@ static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 // invincible +0x588, death cinematic handle +0x7F0
 constexpr uintptr_t kCombat = 0x508, kMaxHp = 0x534, kState = 0x53C, kHp = 0x540, kInvincible = 0x588,
                     kCinematic = 0x7F0, kPos = 0x38;
-constexpr double kDownTime = 20.0, kRepairHold = 2.0;
+// BUG-9118: 30 s for a partner's repair (20 before; `coop.fix space.down_30 off`), and the pilot can give up (hold G)
+static bool g_down_30 = true;
+COOP_FIX("space.down_30", "BUG-9118", g_down_30, "space: a disabled ship waits 30 s for a partner's repair (20 before)");
+static double down_time() { return downed::seconds(g_down_30, 20.0); } // BUG-9149: a minute (core.down_60)
+static bool g_give_up_now; // coop.giveup (tests)
+constexpr double kRepairHold = 2.0;
 static float g_repair_dist = 60.f; // coop.space repairdist <m> (tests: 0 = nobody can repair)
 
 enum Kind : uint8_t { K_DOWN = 1, K_RAID = 2, K_MISSION = 3, K_TERRA = 4, K_GIFT = 5, K_GIFT_BACK = 6, K_SCULPT = 7, K_COLOUR = 8, K_TERRA_REC = 9 };
@@ -97,6 +106,7 @@ COOP_FIX("space.down_ship_only", "BUG-0836", g_down_ship_only_fix,
          "space: the disabled state's invincibility is set and cleared on the ship it was set on, not on a new ship");
 static uint32_t g_down_other_ship, g_down_other_cleared;
 static std::unordered_map<uint8_t, double> g_partner_down; // partner -> until
+static std::unordered_map<uint8_t, double> g_partner_down_total; // partner -> its whole downed time (BUG-9141)
 static uint32_t g_rescues, g_lost, g_raids_seen, g_raids_told, g_raid_bonus, g_missions_sent, g_tools_got,
     g_terra_sent, g_terra_got, g_gifts_sent, g_gifts_got, g_jumps, g_respawns_forced;
 static uint32_t g_bad_origin; // MSG_SPACE dropped: a header that does not fit its sender
@@ -246,7 +256,7 @@ float filter_own_damage(void* ufo, float dmg, int type)
     }
     // disabled instead of destroyed: HP stays at 1, no more damage, no shooting
     g_down = true;
-    g_down_until = now + kDownTime;
+    g_down_until = now + down_time();
     g_last_down = now;
     g_last_down_epoch = spaceext::world_epoch();
     note_down_ship(ufo);
@@ -254,10 +264,10 @@ float filter_own_damage(void* ufo, float dmg, int type)
     g_down_fresh = g_repair_fix;
     net::Writer w;
     w.u8(1);
-    w.u8((uint8_t)kDownTime);
+    w.u8((uint8_t)down_time());
     send(K_DOWN, w);
     if (C.notice)
-        C.notice("your ship is disabled: a partner can repair it by flying close (20 s)");
+        C.notice("your ship is disabled: a partner can repair it by flying close (" + std::to_string((int)down_time()) + " s, hold G to give up)");
     return std::max(0.f, hp - 1.f);
 }
 
@@ -383,7 +393,10 @@ static void down_tick(double now)
     double dt = std::min(0.5, now - last);
     last = now;
     g_repair_t = close_by ? g_repair_t + dt : std::max(0.0, g_repair_t - dt);
-    if (g_repair_t >= kRepairHold)
+    if (give_up::held(H, now) || g_give_up_now) // BUG-9118: as if the timer ran out
+        g_down_until = std::min(g_down_until, now - 0.01);
+    g_give_up_now = false;
+    if (g_repair_t >= kRepairHold && now <= g_down_until)
         end_down(true);
     else if (now > g_down_until) {
         if (g_down_world_fix && g_down_ship.u && !down_ship_here()) {
@@ -1040,6 +1053,7 @@ static void SK_THISCALL h_SetState(void* m, int s)
         return;
     }
     if (s == 5 && !(F<uint32_t>(m, 0x130) & 1)) { // a mission (not an event) is completed
+        if (C.sess->role() == net::Role::Host) world::request_autosave();
         net::Writer w;
         std::vector<Key> keys;
         Key k;
@@ -1657,6 +1671,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             break;
         if (st == 1) {
             g_partner_down[origin] = now + secs;
+            g_partner_down_total[origin] = secs; // BUG-9141: the ring's whole time
             if (C.notice)
                 C.notice(name(origin) + "'s ship is disabled: fly close to repair it");
         } else {
@@ -1885,18 +1900,42 @@ void tick(double now)
         for (auto& p : partners_here())
             if (g_partner_down.count(p.id)) {
                 int left = (int)std::max(0.0, g_partner_down[p.id] - now);
-                C.beacon(p.pos, "REPAIR " + p.name + " (" + std::to_string(left) + " s)", 0.25, 0xFFFF6040);
+                C.beacon(p.pos, ring_timer::enabled() ? "REPAIR " + p.name // BUG-9141: the ring shows the time
+                                                      : "REPAIR " + p.name + " (" + std::to_string(left) + " s)",
+                         0.25, 0xFFFF6040);
             }
 }
 
 void draw_overlay()
 {
     spaceext::overlay_all();
-    if (!g_down || !in_space())
+    if (!in_space())
         return;
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
     double now = H->time_seconds();
+    // BUG-9141: a disabled partner's ship here: the draining ring over it (its own time, from its message)
+    if (ring_timer::enabled() && sw > 0)
+        for (auto& p : partners_here()) {
+            auto it = g_partner_down.find(p.id);
+            if (it == g_partner_down.end()) continue;
+            float w[3] = {p.pos.x, p.pos.y, p.pos.z}, sc[2] = {NAN, NAN};
+            const float r = ring_timer::radius_for(sh);
+            if (H->world_to_screen(w, sc) && sc[0] >= 0 && sc[1] >= 0 && sc[0] < sw && sc[1] < sh)
+                ring_timer::draw(H, sc[0], std::max(r + 4.f, sc[1] - 40.f - r), r,
+                                 ring_timer::fraction(it->second - now, g_partner_down_total.count(p.id) ? g_partner_down_total[p.id] : down_time()),
+                                 0.f, now);
+        }
+    if (!g_down)
+        return;
+    if (ring_timer::enabled()) { // BUG-9141: the own disabled ship: a large ring under the top bar, the hint under it
+        const float r = ring_timer::radius_for(sh) * 1.4f;
+        ring_timer::draw(H, sw / 2.f, sh / 4.f + r, r, ring_timer::fraction(g_down_until - now, down_time()),
+                         (float)std::clamp(g_repair_t / kRepairHold, 0.0, 1.0), now);
+        const char* hint = "Ship disabled: a partner repairs it by flying close (hold G to give up)";
+        H->overlay_text(sw / 2 - utf8::overlay_width(hint) / 2, (int)(sh / 4.f + 2.f * r + 10.f), 0xFFFFD040, hint);
+        return;
+    }
     int left = (int)std::max(0.0, g_down_until - now);
     char b[160];
     snprintf(b, sizeof b, "SHIP DISABLED  %d s  -  a partner repairs it by flying close", left);
@@ -2443,7 +2482,7 @@ std::string debug(const std::vector<std::string>& a)
     if (a[0] == "disable" && a.size() > 1) { // tests (BUG-0063): the disabled flag alone, no rescue messages
         g_down = a[1] != "0";
         if (g_down) {
-            g_down_until = H->time_seconds() + kDownTime;
+            g_down_until = H->time_seconds() + down_time();
             note_down_ship(in_space() ? u : nullptr);
         } else
             clear_down_invincible();
@@ -2800,4 +2839,5 @@ static std::vector<spaceext::Row> squad_rows()
     return v;
 }
 static bool squad_reg = spaceext::add({.name = "squad", .rows = squad_rows});
+void give_up_now() { g_give_up_now = true; }
 } // namespace spacecoop

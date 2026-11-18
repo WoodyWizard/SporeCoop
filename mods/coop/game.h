@@ -147,6 +147,9 @@ bool air_held(void* c, net::Vec3* pos = nullptr);
 using AnimListener = void (*)(void* creature, uint32_t anim_id, int block, bool disable_blend, bool to_target);
 void set_anim_listener(AnimListener fn);
 void play_animation(void* c, uint32_t anim_id, int block, bool disable_blend);
+// BUG-9156: creature c keeps its current animation's pose: its idle refresh (0xC148B0) is skipped while held
+void hold_pose(void* c, bool on);
+bool pose_held(void* c);
 // BUG-0464: animations started on a creature outside its idle refresh 0xC148B0 (the idle / walk choice every
 // game makes by itself): how 0 SporeCoop::CreaturePlayAnim (thiscall(creature, anim, int a, int b) ret 0xC, the
 // behaviour tree's), 1 cCreatureBase::PlayAnimation (a = disable blend, b = block), 2 PlayAnimationTo (b = block).
@@ -246,6 +249,8 @@ void* species_by_key(const Key& k);
 void** species_slot(const Key& k);
 void* create_herd(const net::Vec3& pos, void* species);
 void* own_herd_for(void* species); // an existing herd like create_herd's of this species, or null
+// a nest herd of `species` the game fills and keeps (CreateHerd with createNest), enabled; roadmap phase 2
+void* create_nest_herd(const net::Vec3& pos, void* species, int size, bool owned_by_avatar);
 // BUG-1067: a herd create_herd made (or own_herd_for handed out) in this process, the same object (its serial);
 // the game's own herds look the same in Civ (no archetype, no nest)
 bool our_herd(void* h);
@@ -288,6 +293,7 @@ constexpr uint32_t kHatchlingTree = 0x9413EDEBu;
 bool hatchling_waiting(void* c);
 // what the greeting does at its end: the creature grows up (0xC04F30(1)), the pack too (0xD52DF0(1))
 bool grow_up(void* c);
+float hatchling_scale(void* c); // BUG-9206: the hatchling's size after its family's greeting (0: unknown)
 // impressed by a social game (+0xB58 bit 0x80, set by the social success 0xD9BC40; docs/re/creature.md 8)
 inline bool impressed(void* c) { return (*(uint32_t*)((uint8_t*)c + kFlagsOff) & 0x80) != 0; }
 // a member of the player's pack (+0xB58 bit 0x100, set by AddPosseMember 0xB23430; docs/re/creature.md 11)
@@ -296,6 +302,14 @@ inline void set_impressed(void* c, bool on)
 {
     uint32_t& f = *(uint32_t*)((uint8_t*)c + kFlagsOff);
     f = on ? (f | 0x80) : (f & ~0x80u);
+}
+// the nest's alpha (+0xB58 bit 0x1: its card reads "Alpha <name>", SocialPropose 0xDA43D0 adds a round;
+// docs/re/creature.md 8.3)
+inline bool alpha(void* c) { return (*(uint32_t*)((uint8_t*)c + kFlagsOff) & 0x1) != 0; }
+inline void set_alpha(void* c, bool on)
+{
+    uint32_t& f = *(uint32_t*)((uint8_t*)c + kFlagsOff);
+    f = on ? (f | 0x1) : (f & ~0x1u);
 }
 
 // ---- time of day: orientation of the sky object (see docs/05-re-notes.md) ----
@@ -306,9 +320,13 @@ void set_time_of_day(const net::Quat& q);
 float dna();
 void dna_add_raw(float delta);              // a shared change, not reported: a gain through the original
                                             // AddEvolutionPoints (DNA + the evolution bar), a spend the DNA only (BUG-0630)
-void dna_set_raw(float total);              // SetEvolutionPoints: the DNA only, as the game's editor spends it
+void dna_set_raw(float total);              // SetEvolutionPoints: the DNA only, as the game's editor spends it (upstream)
 float evolution_bar();                      // cPlayer +0x10F0, the stage's total earned (NAN without a player)
-using DnaListener = bool (*)(float& delta); // return false to swallow a gain; may change it (BUG-0510 pace)
+float goal_total(); // cPlayer +0x10F4 mGoalProgressTotal: the progress bar's full value (Creature 1000), NAN outside Creature
+void dna_sync_raw(float total, float earned); // host-authoritative budget and earned progress
+// scale an earned award or return false to swallow it (BUG-0510 pace, Lineages campaign workload);
+// activity_reward: a hunt / ally / extinction / social reward of the Creature stage
+using DnaListener = bool (*)(float& delta, bool activity_reward);
 void set_dna_listener(DnaListener fn);
 
 // ---- any game object (cGameData) ----
@@ -347,7 +365,24 @@ void* find_object(uint32_t noun, const net::Vec3& pos, float max_dist);
 // During the swap avatar() still returns the real avatar.
 using AiTargetPicker = void* (*)(void* npc);
 void set_ai_target_picker(AiTargetPicker fn);
+// true: this creature's AI does not tick here (another game simulates it; BUG-9114 Adventure enemies)
+using AiSkip = bool (*)(void* npc);
+void set_ai_skip(AiSkip fn);
+void set_ai_skip_pack(AiSkip fn); // decision 5EA: guest_pack's members run by their partner's own game
+void set_ai_freeze(uint32_t species); // tests (BUG-9212): one species' NPCs run no AI, stopped every frame (0: off)
+uint32_t ai_frozen_ticks();
 uint32_t ai_swaps(); // NPC ticks run with a puppet as the player (diagnostics)
+void ai_timing(double& mod_ms, double& game_ms, uint64_t& ticks, bool reset); // 4Q: the NPC AI tick's cost (mod / game)
+// BUG-9156: fn(ctx) runs with creature t as mpAvatar (the follow camera of a spectating player), as an NPC tick does
+// (the avatar's tuning lent, swap_guard_tick undoes a swap a fault left open); t null or the avatar: fn runs as it is
+void run_as_avatar(void* t, void (*fn)(void*), void* ctx);
+// decision 5CD ("everyone is a host of their parties"): a creature of a partner's party runs its AI tick inside that
+// party's context; enter returns 0 for a creature of nobody's party, else a token for leave (guest_pack.cpp)
+using PartyEnter = size_t (*)(void* creature);
+using PartyLeave = void (*)(size_t token);
+void set_party_context(PartyEnter enter, PartyLeave leave);
+// called by destroy_creature for a creature before the mod removes it (a pack member leaves its pack list first)
+void set_before_destroy(void (*fn)(void*));
 void swap_guard_tick();          // once per frame: undo an NPC tick's avatar swap a fault left open (BUG-0110)
 bool lend_ledger_on();           // BUG-0882 (game.lend_ledger): lent state in the ledger, call guards reset per frame
 uint32_t call_guards_reset();

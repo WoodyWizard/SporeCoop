@@ -16,6 +16,8 @@
 #include "stage_epoch.h"
 #include "swap_ledger.h"
 #include "fixes.h"
+#include "dna_sync.h"
+#include "modes.h"
 #include "gamefixes.h"
 #include <unordered_map>
 
@@ -33,10 +35,13 @@ static uintptr_t a_SpeciesMgrGet, a_GetSpecies, a_CreateHerd, a_CinematicGet;
 typedef void(SK_CDECL* AddEvo_t)(float);
 static AddEvo_t o_AddEvo;
 static DnaListener g_dna_listener;
+static uintptr_t a_HuntReward, a_AllyGoalReward, a_ExtinctionGoalReward, a_SocialReward;
 
 static void SK_CDECL h_AddEvo(float delta)
-{ // (the listener may scale the gain: BUG-0510, dna_pace.h)
-    if (g_dna_listener && !g_dna_listener(delta))
+{ // (the listener may scale the gain: BUG-0510, dna_pace.h, and the Lineages campaign workload)
+    const auto caller = (uintptr_t)__builtin_return_address(0);
+    bool reward = caller == a_HuntReward || caller == a_AllyGoalReward || caller == a_ExtinctionGoalReward || caller == a_SocialReward;
+    if (g_dna_listener && !g_dna_listener(delta,reward))
         return;
     o_AddEvo(delta);
 }
@@ -237,6 +242,8 @@ static void test_push_apply(void* c, int dt_ms)
         }
 }
 
+static size_t (*g_party_enter_upd)(void*);
+static void (*g_party_leave_upd)(size_t);
 static void SK_THISCALL h_Update(void* self, int dt)
 {
     g_seen.push_back(self);
@@ -244,6 +251,17 @@ static void SK_THISCALL h_Update(void* self, int dt)
         return;
     if (!g_test_push.empty())
         test_push_apply(self, dt);
+    // decision 5CD: a member of a partner's pack updates inside that party (its leader, its pack)
+    if (g_party_enter_upd)
+        if (size_t tok = g_party_enter_upd(self)) {
+            o_Update(self, dt);
+            g_party_leave_upd(tok);
+            if (!g_air.empty())
+                air_reassert(self, 0);
+            if (!g_place_hold.empty())
+                place_reassert(self);
+            return;
+        }
     o_Update(self, dt);
     if (!g_air.empty())
         air_reassert(self, 0);
@@ -374,6 +392,15 @@ bool hatchling_waiting(void* c)
         return false;
     uint8_t* bt = field<uint8_t*>(c, 0xB4C); // behaviour tree data
     return bt && skg::readable(bt + 0x1D8, 4) && field<uint32_t>(bt, 0x1D8) == kHatchlingTree;
+}
+
+// the size the game gives a hatchling when its family greets it (the greeting node 0xD64A30, state 2 at 0xD64C6A: the
+// creature's vt 0x80(0), then SetScale with it; runtime disassembly 2026-11-14), not the egg's 0.1
+float hatchling_scale(void* c)
+{
+    if (!c || !skg::readable(c, 4)) return 0;
+    const float s = vcall<float>(c, 0x80 / 4, 0);
+    return std::isfinite(s) && s > 0.05f && s < 10.f ? s : 0.f;
 }
 
 bool grow_up(void* c)
@@ -598,8 +625,18 @@ static int SK_THISCALL h_CreaturePlayAnim(void* self, uint32_t id, int a, int b)
     return r;
 }
 
+static std::vector<void*> g_held_poses; // BUG-9156
+void hold_pose(void* c, bool on)
+{
+    auto it = std::find(g_held_poses.begin(), g_held_poses.end(), c);
+    if (on && c && it == g_held_poses.end()) g_held_poses.push_back(c);
+    if (!on && it != g_held_poses.end()) g_held_poses.erase(it);
+}
+bool pose_held(void* c) { return c && std::find(g_held_poses.begin(), g_held_poses.end(), c) != g_held_poses.end(); }
+
 static void SK_THISCALL h_IdleRefresh(void* self, int force)
 {
+    if (!g_held_poses.empty() && pose_held(self)) return; // BUG-9156: a downed creature stays down
     {
         callguard::Depth idle(g_idle_depth);
         o_IdleRefresh(self, force);
@@ -1190,17 +1227,85 @@ static bool g_swap_guard = true;      // coop.npc swapguard off: no restore afte
 COOP_FIX("npc.swapguard", "BUG-0110", g_swap_guard, "creature: a fault in the NPC AI tick does not leave the puppet as the avatar");
 static bool g_swap_fault_test = false; // tests: the next swapped tick leaves like a fault would
 void set_ai_target_picker(AiTargetPicker fn) { g_ai_picker = fn; }
+static AiSkip g_ai_skip;
+void set_ai_skip(AiSkip fn) { g_ai_skip = fn; }
+static AiSkip g_ai_skip_pack; // decision 5EA: a partner's pack member that the partner's own game runs
+void set_ai_skip_pack(AiSkip fn) { g_ai_skip_pack = fn; }
+// tests (BUG-9212, `coop.npc aifreeze <hex species | off>`, host): the NPCs of one species run no AI and are stopped every
+// frame: whatever still moves them is not their behaviour (the physics, the mod)
+static uint32_t g_ai_freeze_species, g_ai_frozen_ticks;
+void set_ai_freeze(uint32_t species) { g_ai_freeze_species = species; g_ai_frozen_ticks = 0; }
+uint32_t ai_frozen_ticks() { return g_ai_frozen_ticks; }
 uint32_t ai_swaps() { return g_ai_swaps; }
 
+// 4Q step 1 (2026-11-15): what the NPCs' AI costs per minute: the mod's part (the skip test and the target picker) and
+// the game's own AI tick, in QueryPerformanceCounter ticks (effects.cpp logs them with the minute's perf line)
+static uint64_t g_ai_mod_qpc, g_ai_game_qpc, g_ai_ticks;
+static inline uint64_t qpc() { LARGE_INTEGER v; QueryPerformanceCounter(&v); return (uint64_t)v.QuadPart; }
+void ai_timing(double& mod_ms, double& game_ms, uint64_t& ticks, bool reset)
+{
+    LARGE_INTEGER f;
+    QueryPerformanceFrequency(&f);
+    mod_ms = g_ai_mod_qpc * 1000.0 / (double)f.QuadPart;
+    game_ms = g_ai_game_qpc * 1000.0 / (double)f.QuadPart;
+    ticks = g_ai_ticks;
+    if (reset) g_ai_mod_qpc = g_ai_game_qpc = g_ai_ticks = 0;
+}
+static PartyEnter g_party_enter;
+static PartyLeave g_party_leave;
+void set_party_context(PartyEnter enter, PartyLeave leave)
+{
+    g_party_enter = enter;
+    g_party_leave = leave;
+    g_party_enter_upd = enter;
+    g_party_leave_upd = leave;
+}
+static void SK_THISCALL h_NPCTickAI_inner(void* self, float dt, uint64_t t0);
 static void SK_THISCALL h_NPCTickAI(void* self, float dt)
 {
-    if (is_puppet(self))
+    const uint64_t t0 = qpc();
+    g_ai_ticks++;
+    h_NPCTickAI_inner(self, dt, t0);
+}
+static void call_ai(void* self, float dt, uint64_t t0)
+{
+    const uint64_t t1 = qpc();
+    g_ai_mod_qpc += t1 - t0;
+    o_NPCTickAI(self, dt);
+    g_ai_game_qpc += qpc() - t1;
+}
+static void SK_THISCALL h_NPCTickAI_inner(void* self, float dt, uint64_t t0)
+{
+    if (is_puppet(self)) {
+        g_ai_mod_qpc += qpc() - t0;
         return; // remote players drive their puppets, no local AI
+    }
+    if (g_ai_skip && g_ai_skip(self)) {
+        g_ai_mod_qpc += qpc() - t0;
+        return; // the host's game simulates it, its states drive it here (BUG-9114)
+    }
+    if (g_ai_skip_pack && g_ai_skip_pack(self)) {
+        g_ai_mod_qpc += qpc() - t0;
+        return; // decision 5EA: its partner's game runs it, its states drive it here
+    }
+    if (g_ai_freeze_species && species_key(self).instance == g_ai_freeze_species) { // tests (BUG-9212)
+        g_ai_frozen_ticks++;
+        stop(self);
+        g_ai_mod_qpc += qpc() - t0;
+        return;
+    }
+    // decision 5CD: a creature of a partner's party thinks inside that party's context (its pack, its leader)
+    if (g_party_enter && !g_swap_real)
+        if (size_t tok = g_party_enter(self)) {
+            call_ai(self, dt, t0);
+            g_party_leave(tok);
+            return;
+        }
     void* t = g_ai_picker && !g_swap_real ? g_ai_picker(self) : nullptr;
     void* nm = t ? cdecl_call<void*>(a_NounGet) : nullptr;
     void* real = nm ? field<void*>(nm, kNounAvatarOff) : nullptr;
     if (!real || t == real || t == self) {
-        o_NPCTickAI(self, dt);
+        call_ai(self, dt, t0);
         return;
     }
     // the NPC's AI sees the partner as the player for this tick (its stimuli name the puppet as
@@ -1217,11 +1322,34 @@ static void SK_THISCALL h_NPCTickAI(void* self, float dt)
         tun = lent;
     g_swap_lent = lent;
     g_ai_swaps++;
-    o_NPCTickAI(self, dt);
+    call_ai(self, dt, t0);
     if (g_swap_fault_test) { // tests: as if the game faulted in the tick and its handler unwound past us
         g_swap_fault_test = false;
         return;
     }
+    if (lent && tun == lent)
+        tun = nullptr;
+    field<void*>(nm, kNounAvatarOff) = real;
+    g_swap_real = g_swap_puppet = g_swap_lent = nullptr;
+}
+
+void run_as_avatar(void* t, void (*fn)(void*), void* ctx)
+{
+    void* nm = t && !g_swap_real ? cdecl_call<void*>(a_NounGet) : nullptr;
+    void* real = nm ? field<void*>(nm, kNounAvatarOff) : nullptr;
+    if (!real || t == real || !creature_listed(t)) {
+        fn(ctx);
+        return;
+    }
+    g_swap_real = real;
+    g_swap_puppet = t;
+    field<void*>(nm, kNounAvatarOff) = t;
+    void*& tun = field<void*>(t, 0xE84);
+    void* lent = !tun ? field<void*>(real, 0xE84) : nullptr;
+    if (lent)
+        tun = lent;
+    g_swap_lent = lent;
+    fn(ctx);
     if (lent && tun == lent)
         tun = nullptr;
     field<void*>(nm, kNounAvatarOff) = real;
@@ -1353,6 +1481,10 @@ bool init(const SkHost* host, SkMod* mod)
         H->hook_create(M, (void*)a, (void*)h_Update, (void**)&o_Update);
     if (uintptr_t a = H->sym("Simulator::cCreatureAnimal::TakeDamage"))
         H->hook_create(M, (void*)a, (void*)h_TakeDamage, (void**)&o_TakeDamage);
+    a_SocialReward = H->sym("SporeCoop::CreatureSocialAwardReturn");
+    a_HuntReward = H->sym("SporeCoop::CreatureHuntAwardReturn");
+    a_AllyGoalReward = H->sym("SporeCoop::CreatureAllyGoalAwardReturn");
+    a_ExtinctionGoalReward = H->sym("SporeCoop::CreatureExtinctionGoalAwardReturn");
     if (uintptr_t a = H->sym("Simulator::cCreatureGameData::AddEvolutionPoints"))
         H->hook_create(M, (void*)a, (void*)h_AddEvo, (void**)&o_AddEvo);
     if (uintptr_t a = H->sym("SporeCoop::Herd_Update"))
@@ -1755,10 +1887,14 @@ static bool cinematic_running()
 
 bool cinematic_playing() { return g_ready && cinematic_running(); }
 
+static void (*g_before_destroy)(void*);
+void set_before_destroy(void (*fn)(void*)) { g_before_destroy = fn; }
 void destroy_creature(void* c)
 {
     if (!g_ready || !c)
         return;
+    if (g_before_destroy && noun_id(c) == 0x18EB45Eu) // decision 5CD: out of a pack list before it leaves the world
+        g_before_destroy(c);
     bool defer = g_destroy_defer && noun_id(c) == 0x18EB45Eu && cinematic_running();
     // a puppet or proxy that waits stays one (BUG-0066): no AI of its own (h_NPCTickAI), not an
     // NPC for host_tick to send to the guests. It leaves the puppet list when it is destroyed.
@@ -2315,6 +2451,22 @@ void* create_herd(const net::Vec3& pos, void* species)
     return h;
 }
 
+// Roadmap phase 2 (own nests): a herd WITH its nest, as the game places the nests of a species (CreateHerd's
+// createNest), `size` members the game spawns and respawns itself, enabled (CreateHerd leaves a herd disabled in the
+// creature stage). Not one of "ours": it has a nest, so the save keeps it (savestrip own_kind_herd) like any nest.
+void* create_nest_herd(const net::Vec3& pos, void* species, int size, bool owned_by_avatar)
+{
+    if (!a_CreateHerd || !species)
+        return nullptr;
+    void* nm = cdecl_call<void*>(a_NounGet);
+    Vector3 p{pos.x, pos.y, pos.z};
+    void* h = nm ? thiscall<void*>(a_CreateHerd, nm, &p, species, size, owned_by_avatar ? 1 : 0, 0, 1) : nullptr;
+    static uintptr_t enable = H->sym("Simulator::cHerd::SetEnabled");
+    if (h && enable && skg::readable(h, 0x21C) && !field<uint8_t>(h, 0x218))
+        thiscall<void>(enable, h, true);
+    return h;
+}
+
 // A herd like the ones create_herd makes (no archetype, no nest, not the avatar's) of this species, or
 // null. Each puppet used to get a new herd and the herd stayed after the puppet was gone: a session
 // with rejoins and editors left one per spawn in the world, and every save kept them all.
@@ -2420,11 +2572,29 @@ void dna_set_raw(float total)
         cdecl_call<void>(set, std::max(0.f, total));
 }
 
+// (BUG-9092, Lineages: earned progress synced apart from shared spends; under creature.bar_spend above)
 float evolution_bar()
 {
+    if (mode_id() != modes::kCreature) return NAN;
     void* nm = noun_manager();
     void* p = nm && skg::readable((uint8_t*)nm + 0x74, 4) ? *(void**)((uint8_t*)nm + 0x74) : nullptr; // cPlayer
     return p && skg::readable((uint8_t*)p + 0x10F0, 8) ? *(float*)((uint8_t*)p + 0x10F0) : NAN;
+}
+
+float goal_total()
+{
+    if (mode_id() != modes::kCreature) return NAN;
+    void* nm = noun_manager();
+    void* p = nm && skg::readable((uint8_t*)nm + 0x74, 4) ? *(void**)((uint8_t*)nm + 0x74) : nullptr;
+    return p && skg::readable((uint8_t*)p + 0x10F4, 4) ? *(float*)((uint8_t*)p + 0x10F4) : NAN;
+}
+
+void dna_sync_raw(float total, float earned)
+{
+    uintptr_t set = H->sym("Simulator::cCreatureGameData::SetEvolutionPoints");
+    dna_sync::apply(total, earned, dna(), evolution_bar(), g_bar_spend_fix && set && o_AddEvo,
+                   [](float delta) { dna_add_raw(delta); },
+                   [set](float value) { cdecl_call<void>(set, value); });
 }
 
 void set_dna_listener(DnaListener fn) { g_dna_listener = fn; }

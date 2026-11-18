@@ -9,6 +9,7 @@
 #include "modes.h"
 #include "net/shared_ledger.h"
 #include "space_ext.h"
+#include "tribe.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
 
@@ -55,12 +56,14 @@ static bool food_bundles(void* tribe, float**& b, float**& e)
     return b && e >= b && e - b < 64 && skg::readable(b, (e - b) * 4 + 1);
 }
 
-static bool g_food(double& v)
+bool tribe_food(void* t, double& v)
 {
-    void* t = player_tribe();
     float **b, **e;
-    if (!t || !food_bundles(t, b, e))
+    if (!t) return false;
+    if (!food_bundles(t, b, e)) {
+        if (!b && !e) { v = 0; return true; }
         return false;
+    }
     v = 0;
     for (float** it = b; it < e; it++)
         if (*it && skg::readable(*it, 0x138))
@@ -68,14 +71,15 @@ static bool g_food(double& v)
     return true;
 }
 
+static bool g_food(double& v) { return tribe_food(player_tribe(), v); }
+
 static uint32_t g_food_created; // tests: totals the game's AddFood made bundles for (BUG-0572)
 
-static void s_food(double v)
+static void set_food(void* t, double v)
 {
-    void* t = player_tribe();
     float **b, **e;
     double cur;
-    if (!t || !food_bundles(t, b, e) || (b == e && !g_food_add_fix) || !g_food(cur))
+    if (!t || !food_bundles(t, b, e) || (b == e && !g_food_add_fix) || !tribe_food(t, cur))
         return;
     double d = v - cur;
     const float shown = (float)d; // UpdateFoodVisuals shows "+N/-N": it takes the change, not the total
@@ -106,6 +110,21 @@ static void s_food(double v)
     }
     if (std::fabs(shown) >= 1.f)
         game::tribe_food_visuals(t, shown); // BUG-0585: not without the tribe's food mat
+}
+
+static void s_food(double v) { set_food(player_tribe(), v); }
+
+void mirror_village_food(void* t, double total)
+{
+    float **b, **e;
+    double cur;
+    if (!t || !std::isfinite(total) || total < 0 || total > 1000000 || !tribe_food(t, cur) || std::fabs(cur - total) < 0.001)
+        return;
+    // A newly mirrored village starts with zero bundles. Let Spore create its first one.
+    if ((!food_bundles(t, b, e) || b == e) && total > 0) {
+        if (uintptr_t add = S("SporeCoop::cTribe_AddFood")) skg::thiscall<void>(add, t, 1);
+    }
+    set_food(t, total);
 }
 
 // civilization: GetPlayerCivilization() -> cCivilization::mWealth (+0x98)
@@ -198,15 +217,44 @@ static std::function<void(const std::string&)> g_feed;
 static uint32_t g_causes_shown;
 static constexpr double kCauseMin = 25; // a change below it is not said (the cities' income, a single food)
 static const char* label(const Res& r) { return r.id == 1 ? "food" : "money"; }
+static void show_cause(const std::string& name, const char* what, double v)
+{
+    char b[160];
+    snprintf(b, sizeof b, "%s %s %.0f %s (shared)", name.c_str(), v > 0 ? "earned" : "spent", std::fabs(v), what);
+    g_feed(b);
+    g_causes_shown++;
+}
+// BUG-9217: a Civ host's city income arrives every few seconds, each one a notice ("Host earned 40 money (shared)"),
+// and the feed filled with them. On: one player's earnings (and, apart, spendings) of one resource are summed and said
+// at most once per kCauseGap seconds; a change after a quiet gap is said at the next tick. Off: every change at once.
+static bool g_cause_merge_fix = true;
+COOP_FIX("shared.cause_merge", "BUG-9217", g_cause_merge_fix,
+         "shared: a player's money / food changes are summed into one notice every few seconds");
+static constexpr double kCauseGap = 10;
+struct CauseSum { std::string name; const char* what = ""; double v = 0; double last = -1e9; };
+static std::map<uint32_t, CauseSum> g_cause_sums; // key: player << 16 | resource id << 1 | (spent)
 static void say_cause(net::Session& s, const Res& r, uint8_t player, double v)
 {
     if (!g_feed || std::fabs(v) < kCauseMin || player == s.my_id())
         return;
-    char b[160];
-    snprintf(b, sizeof b, "%s %s %.0f %s (shared)", s.name_of(player).c_str(), v > 0 ? "earned" : "spent", std::fabs(v),
-             label(r));
-    g_feed(b);
-    g_causes_shown++;
+    if (!g_cause_merge_fix) {
+        show_cause(s.name_of(player), label(r), v);
+        return;
+    }
+    auto& c = g_cause_sums[(uint32_t)player << 16 | (uint32_t)r.id << 1 | (v < 0 ? 1u : 0u)];
+    c.name = s.name_of(player);
+    c.what = label(r);
+    c.v += v;
+}
+static void flush_causes(double now)
+{
+    for (auto& [key, c] : g_cause_sums)
+        if (c.v != 0 && now - c.last >= kCauseGap) {
+            if (g_feed)
+                show_cause(c.name, c.what, c.v);
+            c.v = 0;
+            c.last = now;
+        }
 }
 // BUG-1009: a guest's change the floor (0) or the money cap cut was counted in full in `applied` and in the guest's
 // cause: the next total's own part (v - synced - applied) then named the difference as the host's earning or spending
@@ -250,7 +298,10 @@ static Res g_res[] = {
 static uint32_t g_mode; // the game mode of the last tick: status / debug_add use its resources
 
 // rivals mode (space_rivalry.cpp): every player has its own Space budget, nothing is shared
-static bool own_budget(const Res& r) { return r.mode == modes::kSpace && spaceext::rivals(); }
+static bool own_budget(const Res& r)
+{
+    return (r.mode == modes::kSpace && spaceext::rivals()) || (r.mode == modes::kTribe && tribe::village_orders());
+}
 
 void init(const SkHost* host, SkMod* mod)
 {
@@ -298,7 +349,9 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
         mode = modes::kEditor; // tests: an editor visit as the tick sees it
     g_mode = mode;
     g_hold = g_elsewhere_fix && elsewhere && s.role() == net::Role::Client;
+    flush_causes(now);
     if (s.role() == net::Role::None) {
+        g_cause_sums.clear();
         on_session_end(); // nothing changed offline is ever reported to a host (BUG-0049)
         return;
     }
@@ -578,7 +631,10 @@ bool debug_add(const std::string& name, double v, std::string& err)
     for (auto& r : g_res) {
         double cur;
         if (name == r.name && r.mode == g_mode && r.get(cur)) {
-            r.set(cur + v);
+            if (r.mode == modes::kTribe && tribe::village_orders())
+                mirror_village_food(player_tribe(), cur + v);
+            else
+                r.set(cur + v);
             return true;
         }
     }

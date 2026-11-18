@@ -187,15 +187,29 @@ def index_text():
     return INDEX_HEAD + '\n'.join(rows) + '\n'
 
 
+def lock_exclusive(f):
+    """block until this process holds the lock file `f` (fcntl on Linux; msvcrt on Windows, BUG-9140)"""
+    try:
+        import fcntl
+    except ImportError:
+        import msvcrt
+        while True:
+            try:
+                msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)  # retries for 10 s itself, then raises
+                return
+            except OSError:
+                continue
+    fcntl.flock(f, fcntl.LOCK_EX)
+
+
 def cmd_new(a):
-    import fcntl
     d = PRIVATE if a.private else PUBLIC
     os.makedirs(d, exist_ok=True)
     # one lock for all worktrees: the common git dir is shared by them
     common = subprocess.run(['git', '-C', ROOT, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
                             capture_output=True, text=True).stdout.strip()
     lock = open(os.path.join(common, 'tickets.lock') if common else os.path.join(d, '.lock'), 'w')
-    fcntl.flock(lock, fcntl.LOCK_EX)
+    lock_exclusive(lock)
     tid = next_id()
     path = os.path.join(d, f'{tid}-{slug(a.title)}.md')
     with open(path, 'w', encoding='utf-8') as f:

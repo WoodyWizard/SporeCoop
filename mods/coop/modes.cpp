@@ -1,4 +1,5 @@
 #include "modes.h"
+#include "creature_rescue.h"
 #include "mouse.h"
 
 #include <windows.h>
@@ -16,6 +17,7 @@
 #include "sporekit.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "adventure.h"
 #include "world_name.h"
 #include "net/interp.h"
 
@@ -56,6 +58,12 @@ static bool own_airborne(void* av)
            drive::over_ground(game::position(av)) > kAirOver;
 }
 
+// BUG-9206 (owner play test 2026-11-14): a partner's body was always an adult made 15 % bigger, whatever the partner's
+// own size: after evolving, a hatchling (size 0.1, growing) looked bigger than the host. Each player now sends its own
+// size in Creature too (the Adventure captain's field, BUG-9113) and the partner's body copies it (coop.cpp
+// drive_puppet). `coop.fix creature.size_sync off`: as before.
+bool g_size_sync = true;
+COOP_FIX("creature.size_sync", "BUG-9206", g_size_sync, "creature: a partner's body has the partner's own size (a hatchling too)");
 static void creature_fill(void* av, net::PlayerState& st)
 {
     st.flags |= net::PF_IN_WORLD;
@@ -77,7 +85,11 @@ static void creature_fill(void* av, net::PlayerState& st)
     }
     st.health = game::health(av);
     st.max_health = game::max_health(av);
+    // 3G: the hunger meter (+0xBBC, 0..100, CreatureSetHunger) for the Party card's second bar, in Creature only
+    if (game::mode_id() == kCreature) st.energy = std::clamp(skg::field<float>(av, 0xBBC) / 100.f, 0.f, 1.f);
     st.species = game::species_instance(av);
+    if (game::mode_id() == kScenario || (g_size_sync && game::mode_id() == kCreature)) // BUG-9113, BUG-9206
+        st.captain_scale = game::scale(av); // the own size: partners' bodies copy it (Creature: a hatchling, a new body)
     if (game::in_creature_stage())
         st.body = game::scale(av); // BUG-0733
 }
@@ -147,7 +159,8 @@ static void* creature_spawn(const net::PlayerState& s, void* av)
         return nullptr;
     game::puppet_register(p);
     game::teleport(p, s.pos, s.rot);
-    game::set_scale(p, game::scale(p) * 1.15f);
+    // BUG-9206: the partner's own size when it came with its state (else, as before, an adult 15 % bigger)
+    game::set_scale(p, g_size_sync && s.captain_scale > 0 ? s.captain_scale : game::scale(p) * 1.15f);
     puppet_alive_note(p);
     return p;
 }
@@ -241,6 +254,23 @@ static bool g_puppet_mound_fix = true;
 COOP_FIX("creature.puppet_mound", "BUG-0435", g_puppet_mound_fix, "creature: the partner's creature on a nest mound stands on the mound, not in it");
 constexpr float kMoundMin = 0.1f; // m over GetHeightAt
 
+// BUG-9156: a downed partner's puppet holds the game's death pose while PF_DOWNED is set (its own game plays it with
+// play_animation, which is not relayed)
+static void puppet_downed(void* p, const net::PlayerState& s)
+{
+    const bool down = creature_rescue::downed_pose_on() && (s.flags & net::PF_DOWNED) && !(s.flags & net::PF_DEAD) &&
+                      (game::in_creature_stage() || game::mode_id() == kScenario);
+    if (down) {
+        uint32_t anim = 0;
+        const bool held = game::pose_held(p);
+        game::hold_pose(p, true);
+        if (!held || (game::drawn_state(p, nullptr, &anim) && anim != creature_rescue::kDownedAnim))
+            game::play_animation(p, creature_rescue::kDownedAnim, -1, true);
+    } else if (game::pose_held(p)) {
+        game::hold_pose(p, false);
+    }
+}
+
 // BUG-0408: when the partner stopped, walk_end gave the puppet a MoveTo to where the partner stands and drive::step
 // took over without placing it: the game's walk slowed down over ~0.4 s and slid 0.4-0.9 m past the stop (both games'
 // own positions, coop.bodyrec: 2 of 14 stops of puppet_stops, lab 20261106-053105; on a slope it rose 0.1 m over the
@@ -308,7 +338,8 @@ static void puppet_unground(void* p, const net::PlayerState& s_in, const net::Ve
 // level, docs/re/creature.md#creature-player-species-callers), on the other screen it stayed the size it had. Now the
 // puppet follows the size the partner's own game gives its creature (PlayerState body), with the spawn's 1.15 kept.
 // `coop.fix creature.puppet_scale off`: the spawn's size (0.7.10).
-static bool g_puppet_body_fix = true;
+// Lineages: off by default; BUG-9113 / BUG-9206 (captain_scale) already give partners' creatures their real size
+static bool g_puppet_body_fix = false;
 COOP_FIX("creature.puppet_scale", "BUG-0733", g_puppet_body_fix, "creature: a partner's creature on this screen has the size its own game gives it (it grows with the partner's brain upgrades)");
 constexpr float kPuppetBodyK = 1.15f; // (the spawn's factor since 0.6, 7834f08d)
 static void puppet_body(void* p, const net::PlayerState& s)
@@ -324,6 +355,7 @@ static void puppet_body(void* p, const net::PlayerState& s)
 static void creature_drive(void* p, const net::PlayerState& s_in, drive::State& ds, double now)
 {
     puppet_sneak(p, s_in);
+    puppet_downed(p, s_in); // BUG-9156
     puppet_body(p, s_in);
     ds.drawn = game::position(p);
     net::PlayerState s = s_in;
@@ -530,8 +562,95 @@ static float creature_tag(void* p)
 }
 std::string tag_info() { return g_tag_info; }
 
+// On from 44 (BUG-9113): the body has the partner's captain scale, comes once the mission plays and
+// survived act changes, a finished mission and leaving it (docs/re/space.md#space-adventure-partner-bodies).
+// Off: the partner is drawn as a name tag at its network position (43).
+static bool g_adventure_bodies = true;
+COOP_FIX("adventure.captain_bodies", "BUG-9113", g_adventure_bodies, "adventure: a partner is a captain body in this game (off: a name tag)");
+struct AdventureBody { void* avatar; uint32_t serial; };
+static std::unordered_map<void*,AdventureBody> g_adventure_body_ids;
+
+static void* adventure_spawn(const net::PlayerState& s, void* av)
+{
+    auto play=adventure_play();
+    if (!g_adventure_bodies || !play || *(int*)(play+0x90)!=3 ||
+        !av || !skg::readable(av,0x20) || *(int*)((uint8_t*)av+0x1C)!=-2) return nullptr;
+    auto marker=*(void**)((uint8_t*)av+0x18);
+    auto herd=game::avatar_herd();
+    auto species=g_species_for_player ? g_species_for_player(s.id) : nullptr;
+    if (!marker || !skg::readable(marker,0x28) || !herd || !species) return nullptr;
+    // SetCurrentAct excludes the native avatar herd from NPC act resets.
+    // The captain class/marker are resource-owned and live for this scenario.
+    void* p=game::spawn_creature(s.pos,species,herd);
+    if (!p) return nullptr;
+    *(void**)((uint8_t*)p+0x18)=marker;
+    *(int*)((uint8_t*)p+0x1C)=-2;
+    game::puppet_register(p);
+    game::teleport(p,s.pos,s.rot);
+    // BUG-9113: a spawned creature has its species' scale (1.58 for a captain the scenario drew at 2.09):
+    // the partner's own captain scale, else this game's captain's (the scenario scales captains alike)
+    game::set_scale(p,s.captain_scale>0 ? s.captain_scale : game::scale(av));
+    g_adventure_body_ids[p]={av,game::object_serial(p)};
+    return p;
+}
+
+bool adventure_body_ready()
+{
+    auto play=adventure_play();
+    return g_adventure_bodies && play && *(int*)(play+0x90)==3;
+}
+
+// BUG-9200: a scenario creature attacks by side: its cGameData political id (+0x30) is 1 for the captain and its
+// army, 2 for the enemy army; a spawned body has -1 (no side), so the host's creatures chose it as their target
+// (npc ai_target) and never struck. While the host runs the creatures for everyone, a body takes its game's captain's
+// side. Off (`coop.fix adventure.body_side off`): -1, as in 44.
+static bool g_body_side = true;
+COOP_FIX("adventure.body_side", "BUG-9200", g_body_side,
+         "adventure: a partner's body is on the captain's side, so the host's creatures attack it");
+static uint32_t g_body_sides_set;
+static void adventure_side(void* p)
+{
+    void* av = game::avatar();
+    if (!av || !skg::readable((uint8_t*)av + 0x30, 4) || !skg::readable((uint8_t*)p + 0x30, 4))
+        return;
+    const int32_t want = g_body_side && adventure::partners_targetable() ? *(int32_t*)((uint8_t*)av + 0x30) : -1;
+    int32_t& pol = *(int32_t*)((uint8_t*)p + 0x30);
+    if (pol != want) {
+        pol = want;
+        g_body_sides_set++;
+    }
+}
+
+static void adventure_drive(void* p, const net::PlayerState& s, drive::State& ds, double now)
+{
+    adventure_side(p); // BUG-9200
+    // the partner's scale arrives with its states (BUG-9113); a body spawned before it came is corrected
+    if (s.captain_scale>0 && std::fabs(game::scale(p)-s.captain_scale)>0.01f*s.captain_scale)
+        game::set_scale(p,s.captain_scale);
+    creature_drive(p,s,ds,now);
+}
+
+static bool adventure_alive(void* p)
+{
+    auto it=g_adventure_body_ids.find(p);
+    return it!=g_adventure_body_ids.end() && it->second.avatar==game::avatar() &&
+           game::creature_listed(p) && game::object_serial(p)==it->second.serial;
+}
+static void adventure_despawn(void* p)
+{
+    if (adventure_alive(p)) creature_despawn(p);
+    g_adventure_body_ids.erase(p);
+}
+
 // adventure identity: cScenarioMode (*ptr) -> mpData (+0x74) -> mpResource (+0x10) -> resource key (+8)
 static uint32_t S2(const char* n);
+static uint8_t* scenario_mode()
+{
+    uintptr_t p = S2("App::cScenarioMode::ptr");
+    uint8_t* sm = p ? *(uint8_t**)p : nullptr;
+    return sm && skg::readable(sm, 0xD0) ? sm : nullptr;
+}
+
 static uint32_t g_adventure_forced = 0;
 void adventure_force_place(uint32_t id) { g_adventure_forced = id; }
 bool adventure_key(uint32_t& inst, uint32_t& group)
@@ -555,6 +674,26 @@ static uint32_t adventure_place()
     if (g_adventure_forced)
         return g_adventure_forced;
     return (inst ^ (group * 0x9E3779B1u)) | 1u;
+}
+
+uint8_t* adventure_play()
+{
+    uint8_t* sm = game::mode_id() == kScenario ? scenario_mode() : nullptr;
+    uint8_t* play = sm ? *(uint8_t**)(sm + 0x78) : nullptr;
+    return play && skg::readable(play, 0xBC) ? play : nullptr;
+}
+
+bool adventure_progress(int& act, int& state, int& completed)
+{
+    uint8_t* play = adventure_play();
+    if (!play)
+        return false;
+    state = *(int*)(play + 0x90);
+    if (state != 3 && state != 5 && state != 6) // the act and summary are initialized in play
+        return false;
+    act = *(int*)(play + 0xB8);
+    completed = *(int*)(play + 0x0C + 0x1C);
+    return true;
 }
 
 // ---------------------------------------------------------------- space: UFOs
@@ -610,6 +749,8 @@ static void space_fill(void* u, net::PlayerState& st)
         st.flags |= net::PF_MOVING;
     st.health = skg::field<float>(u, kUfoCombat + 0x38);
     st.max_health = skg::field<float>(u, kUfoCombat + 0x2C);
+    const float max_energy = skg::field<float>(u, 0x7F8); // 3G: the ship's energy (mEnergy +0x7F4, docs/re/space.md)
+    if (max_energy > 0) st.energy = std::clamp(skg::field<float>(u, 0x7F4) / max_energy, 0.f, 1.f);
 }
 
 bool ufo_ident_fix = true;
@@ -1194,13 +1335,22 @@ static GetModelKey_t o_GetModelKey;
 static bool g_force_key;
 static skg::ResourceKey g_key;
 
+bool (*g_cell_model_chooser)(void* res, const uint32_t native[3], uint32_t out[3]);
 static skg::ResourceKey* __cdecl h_GetModelKey(skg::ResourceKey* ret, void* res)
 {
     if (g_force_key) {
         *ret = g_key;
         return ret;
     }
-    return o_GetModelKey(ret, res);
+    skg::ResourceKey* r = o_GetModelKey(ret, res);
+    // BUG-9111: a native spawn may take a Lineages cell's model (cellsync decides)
+    if (g_cell_model_chooser && r) {
+        const uint32_t native[3] = {r->instance, r->type, r->group};
+        uint32_t out[3];
+        if (g_cell_model_chooser(res, native, out))
+            *r = {out[0], out[1], out[2]};
+    }
+    return r;
 }
 
 // BUG-0342: a puppet is the cell at its address AND its pool index. Our own cell's level rebuild
@@ -1241,6 +1391,12 @@ static uint8_t* cell_at_checked(void* cp)
     return it != g_cell_ids.end() && cell_at(it->second) == cp ? (uint8_t*)cp : nullptr;
 }
 
+static void ensure_model_hook();
+void set_cell_model_chooser(bool (*f)(void*, const uint32_t[3], uint32_t[3]))
+{
+    g_cell_model_chooser = f;
+    ensure_model_hook();
+}
 static void ensure_model_hook()
 {
     if (!o_SimUpdate) {
@@ -1310,7 +1466,8 @@ static bool model_known(const uint32_t key[3])
 
 uint32_t cell_unknown_models() { return g_unknown_models; }
 
-uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot)
+uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint32_t key[3], const net::Quat* rot,
+                     CellSpawnSize scale)
 {
     if (!model_known(key))
         return 0;
@@ -1326,7 +1483,8 @@ uint32_t cell_create(const net::Vec3& pos, void* res_ref, int level, const uint3
     g_key = {key[0], key[1], key[2]};
     g_force_key = o_GetModelKey && key[0] != 0;
     // (query, pos, elevation, ref, level, sizeFactor, cellSize 0 = auto, applySize, orientation, collision group -1)
-    uint32_t idx = skg::cdecl_call<uint32_t>(create, *(void**)(g + 0x40FC), &p, 0.f, res_ref, level, 1.f, 0.f, 1,
+    uint32_t idx = skg::cdecl_call<uint32_t>(create, *(void**)(g + 0x40FC), &p, scale.elevation, res_ref, level,
+                                             scale.factor, scale.size, scale.apply,
                                              (void*)&q, -1);
     g_force_key = false;
     return cell_at(idx) ? idx : 0;
@@ -1549,36 +1707,29 @@ static void* rts_local()
     return rts_anchor(a) ? &g_local_marker : nullptr;
 }
 
-// planet point under the mouse (ray from the game camera against the planet sphere)
-static bool mouse_on_planet(net::Vec3& out)
+bool camera_ray_at_pixel(int x, int y, net::Vec3& origin, net::Vec3& direction)
 {
-    net::Vec3 anchor;
-    if (!rts_anchor(anchor))
-        return false;
-    HWND w = (HWND)g_host_for_modes->game_window();
-    POINT pt;
-    // BUG-0713 (class BUG-0429): where the pointer last moved over the game window (mouse.h), not the screen cursor
-    // in another program (input.window off: GetCursorPos)
-    int mx = 0, my = 0;
-    if (mouse::g_window_input) {
-        mouse::install(w);
-        if (!w || !mouse::last_move(mx, my))
-            return false;
-        pt = {mx, my};
-    } else if (!w || !GetCursorPos(&pt) || !ScreenToClient(w, &pt))
-        return false;
     uintptr_t mmget = S("App::IGameModeManager::Get"), ray = S("App::cViewer::GetCameraToPoint");
     void* mm = mmget ? skg::cdecl_call<void*>(mmget) : nullptr;
     void* viewer = mm ? skg::vcall<void*>(mm, 0x58 / 4) : nullptr;
     if (!viewer || !ray)
         return false;
     skg::Vector3 o{}, d{};
-    if (!skg::thiscall<bool>(ray, viewer, (float)pt.x, (float)pt.y, &o, &d))
+    if (!skg::thiscall<bool>(ray, viewer, (float)x, (float)y, &o, &d))
         return false;
     float dl = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
     if (dl < 1e-6f)
         return false;
     d.x /= dl; d.y /= dl; d.z /= dl;
+    origin = {o.x, o.y, o.z}; direction = {d.x, d.y, d.z};
+    return true;
+}
+
+// planet point under the mouse (ray from the game camera against the planet sphere)
+bool planet_at_pixel(int x, int y, net::Vec3& out)
+{
+    net::Vec3 anchor, o, d;
+    if (!rts_anchor(anchor) || !camera_ray_at_pixel(x, y, o, d)) return false;
     float R = drive::speed(anchor);
     float b = o.x * d.x + o.y * d.y + o.z * d.z;
     float c = o.x * o.x + o.y * o.y + o.z * o.z - R * R;
@@ -1598,7 +1749,19 @@ static void rts_fill(void* m, net::PlayerState& st)
 {
     Marker* mk = (Marker*)m;
     net::Vec3 p;
-    if (mk == &g_local_marker && !g_marker_pinned && mouse_on_planet(p))
+    HWND w = (HWND)g_host_for_modes->game_window();
+    POINT pt;
+    // BUG-0713 (class BUG-0429): where the pointer last moved over the game window (mouse.h), not the screen cursor
+    // in another program (input.window off: GetCursorPos)
+    bool have = false;
+    if (mouse::g_window_input) {
+        int mx = 0, my = 0;
+        mouse::install(w);
+        have = w && mouse::last_move(mx, my);
+        pt = {mx, my};
+    } else
+        have = w && GetCursorPos(&pt) && ScreenToClient(w, &pt);
+    if (mk == &g_local_marker && !g_marker_pinned && have && planet_at_pixel(pt.x, pt.y, p))
         mk->pos = p;
     marker_moved(mk);
     st.flags |= net::PF_IN_WORLD;
@@ -1639,8 +1802,10 @@ static const Adapter kAdapters[] = {
     {"Civilization", kCiv, nullptr, false, rts_local, rts_fill, rts_spawn, rts_drive, rts_despawn, rts_tag},
     {"Cell", kCell, nullptr, false, cell_local, cell_fill, cell_spawn, cell_drive, cell_despawn, cell_tag, cell_alive, true},
     {"Creature", kCreature, nullptr, false, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag, creature_alive},
-    // adventures are not saves: every player starts the same adventure, puppets meet inside it
-    {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill, creature_spawn, creature_drive, creature_despawn, creature_tag, creature_alive},
+    // BUG-9003: the scenario initializes its cast on act changes. A regular Creature-stage
+    // animal crashed SetCurrentAct. The scenario-bound body prototype is opt-in.
+    {"Adventure", kScenario, adventure_place, true, creature_local, creature_fill,
+     adventure_spawn, adventure_drive, adventure_despawn, creature_tag, adventure_alive},
     {"Space", kSpace, space_place, false, space_local, space_fill, space_spawn, space_drive, space_despawn, space_tag, space_alive},
 };
 
@@ -1654,6 +1819,9 @@ net::Vec3 entity_pos(const Adapter* a, void* e)
 
 const Adapter* for_mode(uint32_t mode)
 {
+    static const Adapter marker{"Adventure",kScenario,adventure_place,true,
+                                creature_local,creature_fill,nullptr,nullptr,nullptr,nullptr};
+    if (mode==kScenario && !g_adventure_bodies) return &marker;
     for (auto& a : kAdapters)
         if (a.mode == mode)
             return &a;

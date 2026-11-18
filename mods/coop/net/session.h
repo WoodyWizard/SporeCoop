@@ -24,10 +24,12 @@ struct Peer {
     std::string name;
     bool accepted = false;
     bool bye = false; // said goodbye: dropped in update()
+    uint32_t kick_at = 0; // host (BUG-9251): removed by the host, dropped at this time (ms) once the refusal is out
     uint32_t caps = 0;      // its HELLO / WELCOME caps (BUG-0219); 0 = an older SporeCoop
     std::string version;    // CAP_VERSION text ("" = unknown: an older SporeCoop)
     bool has_token = false; // host: its HELLO carried a rejoin token (BUG-0235)
     uint64_t token = 0;
+    uint64_t resume_world = 0;
     std::string hello_name; // host: the name of its HELLO, cleaned, before " 2" / "guest<id>" (BUG-1001)
     Connection conn;
 };
@@ -49,6 +51,9 @@ public:
     } cb;
 
     uint32_t build = 0;      // exe build id; mismatch = reject
+    uint8_t seat_limit = kMaxPlayers; // host admission and discovery; includes the solo host
+    bool personal_launch = false; // the game handles retained Civilization checkpoints
+    std::string campaign_profile; // empty for stock-protocol clients and test peers
     std::string version;     // ours for HELLO / WELCOME (CAP_VERSION): "coop X, SporeKit Y, <game build> <exe hash>"
     // BUG-0141: names are unique in a session (the host appends " 2", " 3" to a taken name; the
     // guest takes its name from the roster). Space tables keyed by name mixed up two players with
@@ -57,10 +62,12 @@ public:
     // a new player with the name of an entry silent for 2 s replaces it (a rejoin after a crash)
     // instead of getting "name 2". false = rename (tests: coop.fix core.rejoin_name off, BUG-0209)
     bool rejoin_by_name = true;
+    bool paced_world_transfer = false; // host: opt-in for constrained UDP links
     // BUG-0235: the rejoin token this game sends in its HELLO (0 = none). The same game after a crash
     // sends the same token (coop.dll keeps it in a file until a clean leave); the host replaces a
     // silent entry only on an equal token (net::g_fix.rejoin_token), never by the name alone
     uint64_t rejoin_token = 0;
+    uint64_t resume_world = 0;
     bool send_caps = true; // not a lab switch: test seam, false = HELLO / WELCOME without the extension (0.7.2 shape)
     // host: its world id (save CRC in Cell / Creature / Tribe / Civ, else 0), sent in WELCOME; coop.cpp
     // sets it every frame (host_world.h). Guest: welcome_world() is what the host sent (0 = unknown
@@ -69,6 +76,7 @@ public:
     uint32_t welcome_world() const { return welcome_world_; }
     uint32_t timeout_ms = 30000; // the game can block for a long time while saving/loading
     std::string lobby_info;  // host: shown to players looking for games on the network
+    int lobby_scaling = -1;
     // F3 (BUG-0768), host: the players the session takes, the host counted (all.max_players, 2..kMaxPlayers), and
     // whether a new player is refused now (all.late_join off while the host plays its world). A player who was in
     // this session already (its name, or its rejoin token) may always come back. coop.cpp sets both every frame
@@ -86,8 +94,8 @@ public:
     // BUG-1007: what Transport::recv_from returns for one datagram it had to drop (too big for the buffer): more may follow
     static constexpr int kRecvSkipped = -2;
 
-    bool host(uint16_t port, const std::string& name, std::string& err);
-    bool join(const std::string& addr, const std::string& name, std::string& err);
+    bool host(uint16_t port, const std::string& name, std::string& err, std::string password = {});
+    bool join(const std::string& addr, const std::string& name, std::string& err, std::string password = {});
     void leave(const char* why = "left");
     void update(); // call every frame: receive, timeouts, send
 
@@ -95,6 +103,8 @@ public:
     void send_chat(const std::string& text);
     void broadcast_reliable(uint8_t type, const Writer& w, int except_id = -1);
     bool send_reliable_to(uint8_t id, uint8_t type, const Writer& w); // host: guest id, client: 0
+    // host (BUG-9251, decision 5I): the guest is told `text` (MSG_REJECT: its game leaves with it) and dropped 1 s later
+    bool kick(uint8_t id, const std::string& text);
     // player event (reliable): client -> host, host relays to the other guests
     void send_event(uint8_t type, const Writer& w);
     size_t pending_to(uint8_t id) const;
@@ -106,12 +116,18 @@ public:
     Role role() const { return role_; }
     uint8_t my_id() const { return my_id_; }
     bool connected() const { return role_ == Role::Host || (role_ == Role::Client && welcomed_); }
+    // BUG-9222: the names as players read them ("MSI-NoShare-" is "MSI"); name_raw_of / players_raw: as typed (the
+    // tag marks a test player for the Lineages Cache; the wire always carries the raw name)
     std::string name_of(uint8_t id) const;
+    std::string name_raw_of(uint8_t id) const;
     std::vector<PlayerInfo> players() const; // including self
+    std::vector<PlayerInfo> players_raw() const;
     std::string status() const;
     uint16_t port() const { return tr_->local_port(); }
     // round trip time to a player in ms (host: any guest, guest: the host), -1 if unknown
     int rtt_of(uint8_t id) const;
+    uint32_t peer_caps(uint8_t id) const;
+    uint64_t peer_resume_world(uint8_t id) const;
     // BUG-0651: the q-quantile of the last round-trip samples to that peer (ms), -1 = none (yet)
     float rtt_quantile_of(uint8_t id, float q) const;
     // the link to a player (host: any guest, guest: the host) for the support trace: no address
@@ -121,6 +137,7 @@ public:
     };
     bool link_of(uint8_t id, Link& out) const;
     std::string host_address() const; // guest: "ip:port" of the host
+    const std::string& password() const { return password_; } // the session's password (BUG-9239: a restart rejoins)
     bool resolving() const { return lookup_ != nullptr; } // guest: the host name is being looked up
     struct Lookup; // a name lookup on a worker thread (BUG-0204)
     static constexpr uint32_t kLookupTimeoutMs = 20000;
@@ -131,6 +148,7 @@ public:
     uint32_t (*clock)() = nullptr;
 
 private:
+    std::string password_;
     void handle_packet(Peer& p, const uint8_t* data, size_t n, uint32_t now);
     void handle_msg(Peer& p, uint8_t type, Reader& r);
     void flush(uint32_t now);

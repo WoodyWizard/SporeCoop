@@ -9,12 +9,12 @@ the guest's puppet, which has no AI (docs/re/creature.md#creature-player-rules).
 
 1. Two games on the creature fixture; the guest stands 4 m from a wild NPC that has a charge (ability type 0x1F,
    effect kind 1) in the host's game.
-2. The host's NPC aims at the guest's puppet and plays its charge (`coop.rules charge <id> 1`: SetTarget + the
+2. The host's NPC aims at the guest's puppet and plays its charge (`coop.prules charge <id> 1`: SetTarget + the
    game's PlayAbility; the hit and the stun are the game's own). Up to 4 tries until the host's damage log shows
    the charge's hit on the puppet (ret 0xC20A78).
 3. The guest's own game: its avatar's behaviour tree holds the stun stimulus 0x1000 (read from its 8 stimulus
    slots) within 2 s of that hit.
-4. The other way: the guest's game stuns a proxy (`coop.rules stun 2 <id>`, the game's CreatureStun through the
+4. The other way: the guest's game stuns a proxy (`coop.prules stun 2 <id>`, the game's CreatureStun through the
    hook, as its own charge's effect calls it): the host's NPC holds the stimulus 0x1000 within 2 s.
 
   coop_creature_stun.py   (SPORE_FIX_OFF=creature.stun_relay: the stun stays on the puppet / proxy, FAILS)"""
@@ -76,7 +76,7 @@ def main():
         guest.call(f'coop.npc gopos {x + 4:.2f} {y:.2f} {z:.2f}')
         time.sleep(2)
         host.call('coop.hp dmglog clear')
-        print('  ' + host.call(f'coop.rules charge {nid} 1')['out'].strip(), flush=True)
+        print('  ' + host.call(f'coop.prules charge {nid} 1')['out'].strip(), flush=True)
         t0 = time.time()
         while time.time() - t0 < 4 and not got:
             got = stunned(guest, gav)
@@ -97,7 +97,7 @@ def main():
     # 4. the guest's stun of a proxy reaches the host's NPC
     time.sleep(4)  # the earlier charge's stimuli decay
     before = stunned(host, nptr)
-    print('  ' + guest.call(f'coop.rules stun 2 {nid}')['out'].strip(), flush=True)
+    print('  ' + guest.call(f'coop.prules stun 2 {nid}')['out'].strip(), flush=True)
     npc_got = False
     t0 = time.time()
     while time.time() - t0 < 2 and not npc_got:

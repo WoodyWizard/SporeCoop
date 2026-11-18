@@ -114,6 +114,7 @@ void send(uint8_t kind, const net::Writer& body);
 // a political id of a mirror empire of this copy (a partner's colonies): local to each copy, never
 // shared by pol (BUG-0071)
 bool allies_mirror_pol(uint32_t pol);
+bool enemy_empire(uint32_t political_id);
 // a partner's colony this copy shows as a colony of my own empire (allies.own_star, BUG-0197): not mine
 bool allies_own_mirror(uint32_t planet);
 // BUG-0195: make `planet` a colony of my own empire at record level (a guest's colony the host kept for

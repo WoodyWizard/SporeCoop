@@ -10,7 +10,7 @@ ApplyEvent runs in its game (docs/re/creature.md#creature-player-rules).
 1. Two games on the creature fixture. The host's relation to a wild species with nest herds becomes "allied"
    (`coop.social record <species> 6 3`: the record the host's game has after "Impress 3 ... to ally").
 2. Within 15 s the guest's own table has relation 6 for it (`coop.social species`) and every herd of that species in
-   the guest's game has +0x191 set (`coop.rules nests`: the field the minimap's icon reads).
+   the guest's game has +0x191 set (`coop.prules nests`: the field the minimap's icon reads).
 3. The relation back to 0: the guest's herds lose the flag again (warm runs reuse these games).
 Not checked: the drawn icon itself (the minimap's icon cache 0xE0DF10 is not read by the test).
 
@@ -24,7 +24,7 @@ T, G = '2B978C46', '40626200'
 
 
 def flags(con, sp):
-    return [int(x) for x in re.findall(r'best_friends=(\d)', con.call(f'coop.rules nests {sp} {T} {G}')['out'])]
+    return [int(x) for x in re.findall(r'best_friends=(\d)', con.call(f'coop.prules nests {sp} {T} {G}')['out'])]
 
 
 def relation(con, sp):

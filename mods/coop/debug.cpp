@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <algorithm>
 #include <atomic>
@@ -16,6 +17,7 @@
 #include "settings.h"
 #include "fixes.h"
 #include "game.h"
+#include "npc.h"
 #include "gamefixes.h"
 #include "modes.h"
 #include "world.h"
@@ -364,6 +366,19 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
         SAY("no avatar");
         return 1;
     }
+    if (argc > 2 && !strcmp(argv[1], "target")) { // target <npc id>: the avatar aims at that NPC (guest: its proxy), tests (BUG-9132)
+        uint16_t id = (uint16_t)atoi(argv[2]);
+        void* t = npc::proxy(id);
+        if (!t)
+            t = npc::host_npc(id);
+        if (!t) {
+            SAY("no such npc\n");
+            return 1;
+        }
+        skg::vcall<void>(av, 0x84 / 4, (uint8_t*)t + game::kCombatOff, 1, 0); // SetTarget
+        SAY("target %p\n", t);
+        return 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "play")) {
         uintptr_t pa = H->sym("Simulator::cCreatureBase::PlayAbility");
         int r = pa ? skg::thiscall<int>(pa, av, atoi(argv[2]), (void*)nullptr) : -2;
@@ -394,6 +409,12 @@ int c_abilities(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 4 && !strcmp(argv[1], "ground")) { // BUG-0377: the ground radius in the direction of x y z, no move
         net::Vec3 p{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
         SAY("ground %.2f\n", game::ground_radius(p));
+        return 0;
+    }
+    if (argc > 4 && !strcmp(argv[1], "walk")) { // tests (BUG-9212): walk there as a click on the ground does
+        net::Vec3 p{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        game::move_to(av, p, 0.3f);
+        SAY("walking to (%.2f %.2f %.2f)\n", p.x, p.y, p.z);
         return 0;
     }
     if (argc > 4 && !strcmp(argv[1], "goto")) { // onto the ground in the direction of x y z
@@ -818,6 +839,7 @@ int c_sample(void*, int argc, const char* const* argv, SkOut* out)
     self.reserve(4096);
     stack.reserve(16384);
     uint32_t n = 0, outside = 0;
+    std::map<std::string, uint32_t> mods;
     DWORD t0 = GetTickCount();
     std::vector<uintptr_t> seen;
     seen.reserve(512);
@@ -841,8 +863,18 @@ int c_sample(void*, int argc, const char* const* argv, SkOut* out)
             uintptr_t eip = ctx.Eip;
             if (eip >= lo && eip < hi)
                 self[eip & ~(uintptr_t)0xF]++;
-            else
+            else {
                 outside++;
+                HMODULE mod = nullptr; // 4Q (2026-11-15): whose code the main thread runs outside the game's
+                if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                       (LPCSTR)eip, &mod) && mod) {
+                    char name[MAX_PATH] = {};
+                    GetModuleFileNameA(mod, name, sizeof name);
+                    const char* base = strrchr(name, '\\');
+                    mods[base ? base + 1 : name]++;
+                } else
+                    mods["(no module)"]++;
+            }
             seen.clear();
             for (size_t i = 0; i < got / 4; i++)
                 if (words[i] >= lo && words[i] < hi && std::find(seen.begin(), seen.end(), words[i]) == seen.end()) {
@@ -864,6 +896,14 @@ int c_sample(void*, int argc, const char* const* argv, SkOut* out)
         SAY("\n");
     };
     SAY("samples=%u outside_exe=%u ms=%d\n", n, outside, ms);
+    {
+        std::vector<std::pair<uint32_t, std::string>> v;
+        for (auto& [k, c] : mods) v.push_back({c, k});
+        std::sort(v.rbegin(), v.rend());
+        SAY("outside by module:");
+        for (size_t i = 0; i < v.size() && i < 10; i++) SAY(" %s=%u", v[i].second.c_str(), v[i].first);
+        SAY("\n");
+    }
     print("self", self);
     print("stack", stack);
     return 0;
@@ -1055,21 +1095,37 @@ int c_loadhook(void*, int, const char* const*, SkOut* out)
     SAY("LoadGame logging hook installed");
     return 0;
 }
-// memfind <hex dword> [max]: every aligned dword in committed read-write memory equal to the value
-// (who points at an object: RE of containers at runtime)
+// memfind <hex dword> [max] [code]: every aligned dword in committed read-write memory equal to the value
+// (who points at an object: RE of containers at runtime); "code": any dword (unaligned) in executable read-only
+// or read-only memory instead (which code pushes an address, the text of a string: BUG-9184)
 int c_memfind(void*, int argc, const char* const* argv, SkOut* out)
 {
     if (argc < 2) {
-        SAY("usage: coop.memfind <hex dword> [max]");
+        SAY("usage: coop.memfind <hex dword> [max] [code]");
         return 1;
     }
     uint32_t v = (uint32_t)strtoul(argv[1], nullptr, 16);
     int max = argc > 2 ? atoi(argv[2]) : 20, n = 0;
+    const bool code = argc > 3 && !strcmp(argv[3], "code");
     MEMORY_BASIC_INFORMATION mi;
     for (uint8_t* a = (uint8_t*)0x10000; a < (uint8_t*)0x7FFF0000 && VirtualQuery(a, &mi, sizeof mi) == sizeof mi;
          a = (uint8_t*)mi.BaseAddress + mi.RegionSize) {
-        if (mi.State != MEM_COMMIT || (mi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) ||
-            !(mi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)))
+        if (mi.State != MEM_COMMIT || (mi.Protect & (PAGE_GUARD | PAGE_NOACCESS)))
+            continue;
+        if (code) {
+            if (!(mi.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE | PAGE_READONLY)))
+                continue;
+            const uint8_t* b = (const uint8_t*)mi.BaseAddress;
+            for (size_t i = 0; i + 4 <= mi.RegionSize && n < max; i++)
+                if (*(const uint32_t*)(b + i) == v) {
+                    SAY("%p\n", (void*)(b + i));
+                    n++;
+                }
+            if (n >= max)
+                break;
+            continue;
+        }
+        if (!(mi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE)))
             continue;
         uint32_t* p = (uint32_t*)mi.BaseAddress;
         uint32_t* e = (uint32_t*)((uint8_t*)mi.BaseAddress + mi.RegionSize);

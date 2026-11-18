@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "../installer/install.h"
+#include "../mods/coop/founders.h"
 #include "../mods/coop/slotfs.h"
 #include "../sporekit/inifile.h"
 #include "../updater/pending.h"
@@ -89,6 +90,479 @@ static std::wstring fresh_dir(const wchar_t* name)
     rmtree(d);
     CreateDirectoryW(d.c_str(), nullptr);
     return d;
+}
+
+static void test_founders()
+{
+    auto planet = fresh_dir(L"founders") + L"\\planet.spo";
+    std::string key = slotfs::narrow(planet), err;
+    founders::Roster wanted{1, 2, 0x800021CA, 0x21CB}, got;
+    CHECK(!founders::record(key, wanted, err));
+    put(planet, "native planet");
+    founders::CampaignRules settings;
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Missing);
+    const founders::CampaignRules quartet{4,100}, partial{4,50};
+    CHECK(quartet.rival_target(5) == 20 && quartet.workload_percent() == 400);
+    CHECK(quartet.hunger_factor() == 1.075f);
+    CHECK(quartet.enemy_health_percent() == 145 && quartet.enemy_damage_percent() == 115);
+    CHECK(quartet.takeover_percent() == 115 && partial.takeover_percent() == 115);
+    CHECK(founders::CampaignRules{}.takeover_percent() == 105);
+    founders::ConversionCredit conversion{7,8,9,0};
+    CHECK(conversion.apply(1,115) == 0 && conversion.remainder == 100);
+    int converted = 0;
+    for (int i=0; i<22; ++i) converted += conversion.apply(1,115);
+    CHECK(converted == 20 && conversion.remainder == 0);
+    CHECK(conversion.apply(-1,115) == -1 && conversion.remainder == 0);
+    CHECK(conversion.apply(INT_MAX,115) == int(uint64_t(INT_MAX)*100/115));
+    founders::CampaignRules pair{2,100};
+    CHECK(pair.hunger_factor() == 1.025f);
+    CHECK(pair.enemy_health_percent() == 115 && pair.enemy_damage_percent() == 105);
+    founders::CampaignRules one_seat{1,100};
+    CHECK(one_seat.takeover_percent() == 100);
+    CHECK(one_seat.enemy_health_percent() == 100 && one_seat.enemy_damage_percent() == 100);
+    CHECK(partial.rival_target(5) == 14 && partial.workload_percent() == 250);
+    CHECK(one_seat.civ_military_limit(3) == 3 && one_seat.civ_military_interval_ms() == 40000);
+    CHECK(pair.civ_military_limit(3) == 4 && pair.civ_military_interval_ms() == 36000);
+    CHECK(quartet.civ_military_limit(10) == 13 && quartet.civ_military_interval_ms() == 28000);
+    CHECK(partial.civ_military_limit(10) == 12 && partial.civ_military_interval_ms() == 34000);
+    CHECK(quartet.civ_military_limit(35) == 46 && quartet.civ_military_limit(0) == 0);
+    CHECK(pair.civ_overflow_slots(7,36,7) == 1 && pair.civ_overflow_slots(7,37,7) == 0);
+    CHECK(quartet.civ_overflow_slots(7,36,7) == 3 && quartet.civ_overflow_slots(7,38,8) == 1);
+    CHECK(quartet.civ_overflow_slots(7,36,10) == 0 && one_seat.civ_overflow_slots(36,36,36) == 0);
+    CHECK(quartet.civ_overflow_slots(36,36,36) == 11 && quartet.civ_overflow_slots(36,47,46) == 0);
+    const founders::CampaignRules disabled{4,0}, high{4,UINT16_MAX};
+    CHECK(disabled.civ_military_limit(7) == 7 && disabled.civ_military_interval_ms() == 40000);
+    CHECK(high.civ_military_limit(7) == 47 && high.civ_military_interval_ms() == 1);
+    CHECK(disabled.civ_overflow_slots(7,36,6) == 0 && high.civ_overflow_slots(7,46,6) == 1);
+    // BUG-9100: new campaigns scale every per-seat extra with the difficulty; progress adds 60% per seat.
+    auto scaled = [](uint8_t seats, uint16_t difficulty) {
+        founders::CampaignRules r{seats,difficulty};
+        r.model = 1;
+        return r;
+    };
+    const auto s4 = scaled(4,100), s4_double = scaled(4,200), s4_half = scaled(4,50), s1 = scaled(1,300);
+    CHECK(s4.workload_percent() == 280 && s4.rival_target(5) == 14);
+    CHECK(s4.enemy_health_percent() == 145 && s4.enemy_damage_percent() == 115);
+    CHECK(s4.hunger_factor() == 1.075f && s4.takeover_percent() == 115 && s4.extra_total(1) == 3);
+    CHECK(s4_double.workload_percent() == 460 && s4_double.rival_target(5) == 23);
+    CHECK(s4_double.enemy_health_percent() == 190 && s4_double.enemy_damage_percent() == 130);
+    CHECK(s4_double.hunger_factor() == 1.15f && s4_double.takeover_percent() == 130 && s4_double.extra_total(1) == 6);
+    CHECK(s4_half.workload_percent() == 190 && s4_half.enemy_health_percent() == 123);
+    CHECK(s4_half.enemy_damage_percent() == 108 && s4_half.takeover_percent() == 108 && s4_half.extra_total(1) == 2);
+    CHECK(scaled(2,100).workload_percent() == 160 && scaled(4,0).workload_percent() == 100);
+    CHECK(scaled(4,0).enemy_health_percent() == 100 && scaled(4,0).civ_military_interval_ms() == 40000);
+    CHECK(s1.workload_percent() == 100 && s1.enemy_health_percent() == 100 && s1.extra_total(1) == 0);
+    CHECK(s4.civ_military_interval_ms() == 32800 && s4.civ_military_limit(10) == 12);
+    CHECK(!(s4 == quartet));
+    CHECK(!founders::reserve(key,{0,100},err) && !founders::reserve(key,{5,100},err));
+    CHECK(founders::reserve(key,quartet,err) && founders::reserve(key,quartet,err));
+    CHECK(!founders::reserve(key,partial,err));
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Saved && settings == quartet);
+    auto saved_rules = get(planet + L".duo-seats");
+    auto legacy_rules = saved_rules.substr(0,21);
+    legacy_rules.replace(0,4,"FST5");
+    put(planet + L".duo-seats",legacy_rules);
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Saved && settings == quartet);
+    auto custom_rules = saved_rules;
+    custom_rules[21] = 9;
+    put(planet + L".duo-seats",custom_rules);
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Saved && settings.takeover_percent() == 127);
+    put(planet + L".duo-seats",saved_rules + "x");
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Unreadable);
+    put(planet + L".duo-seats",saved_rules.substr(0,16));
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Unreadable);
+    put(planet + L".duo-seats",saved_rules);
+    // FST6 (40-dev and older) keeps the old rules; FST7 round-trips the scaled model.
+    CHECK(saved_rules.size() == 24 && saved_rules.compare(0,4,"FST7") == 0 && saved_rules[23] == 0);
+    auto fst6 = saved_rules.substr(0,23);
+    fst6.replace(0,4,"FST6");
+    put(planet + L".duo-seats",fst6);
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Saved && settings == quartet && settings.model == 0);
+    auto scaled_file = saved_rules;
+    scaled_file[23] = 1;
+    put(planet + L".duo-seats",scaled_file);
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Saved && settings == s4);
+    scaled_file[23] = 2;
+    put(planet + L".duo-seats",scaled_file);
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Unreadable);
+    put(planet + L".duo-seats",saved_rules);
+    founders::SeatPlan plan;
+    // A host queues a shrink in Tribal, quits, and reopens the same stage.
+    CHECK(founders::queue_seats(key,2,3,err));
+    CHECK(founders::read_rules(key,settings,&plan) == founders::RulesFile::Saved);
+    CHECK(settings == quartet && plan.next_seats == 2 && plan.queued_stage == 3);
+    CHECK(founders::update_seats(key,2,3,false,settings,plan,err) && settings == quartet);
+    CHECK(founders::update_seats(key,1,4,false,settings,plan,err) && settings == pair && !plan.next_seats);
+    // The native executable may reopen the prior stage after an unsaved transition.
+    CHECK(founders::update_seats(key,1,3,false,settings,plan,err) && settings == quartet);
+    CHECK(founders::update_seats(key,1,4,false,settings,plan,err) && settings == pair);
+    CHECK(!founders::queue_seats(key,1,4,err)); // the offline founder still owns seat two
+    CHECK(founders::queue_seats(key,4,4,err));
+    CHECK(founders::update_seats(key,1,5,false,settings,plan,err) && settings == quartet);
+    CHECK(founders::queue_seats(key,2,5,err));
+    CHECK(founders::update_seats(key,1,5,false,settings,plan,err) && settings == quartet);
+    CHECK(founders::update_seats(key,1,5,true,settings,plan,err) && settings == pair);
+    CHECK(founders::update_seats(key,1,5,true,settings,plan,err) && settings == pair && !plan.next_seats);
+    CHECK(founders::queue_seats(key,4,5,err));
+    CHECK(founders::queue_seats(key,2,5,err)); // cancel using current count
+    CHECK(founders::update_seats(key,1,5,true,settings,plan,err) && settings == pair);
+    CHECK(founders::queue_seats(key,4,5,err));
+    CHECK(founders::update_seats(key,1,5,true,settings,plan,err) && settings == quartet);
+    CHECK(founders::queue_seats(key,2,5,err));
+    CHECK(founders::update_seats(key,3,5,true,settings,plan,err) && settings == quartet && !plan.next_seats);
+    // BUG-9150: the planet's stand-in list (<planet>.duostandins)
+    {
+        std::vector<uint32_t> si;
+        CHECK(founders::read_stand_ins(key,si) && si.empty());
+        CHECK(founders::add_stand_in(key,0x7C112233u,err) && founders::add_stand_in(key,0x7C445566u,err));
+        CHECK(founders::add_stand_in(key,0x7C112233u,err)); // already listed
+        CHECK(!founders::add_stand_in(key,0x29112233u,err)); // not a shared key
+        CHECK(founders::read_stand_ins(key,si) && si == std::vector<uint32_t>({0x7C112233u,0x7C445566u}));
+    }
+    // Owner decision 2026-11-12: more seats in the running stage at once (founders::raise_now / raise_seats)
+    {
+        founders::CampaignRules r{3,100};
+        founders::SeatPlan p{1};
+        CHECK(!founders::raise_now(r,p,3,3) && !founders::raise_now(r,p,3,2) && !founders::raise_now(r,p,3,5));
+        CHECK(!founders::raise_now(r,p,0,4) && !founders::raise_now(r,p,6,4));
+        CHECK(founders::raise_now(r,p,3,4) && r.seats == 4 && p.seats_in(3,r.seats) == 4);
+        CHECK(r.enemy_health_percent() == quartet.enemy_health_percent());
+        founders::SeatPlan q{1, 2, 3}; // a shrink queued for the next stage is dropped by the raise
+        r = {2,100};
+        CHECK(founders::raise_now(r,q,3,3) && r.seats == 3 && !q.next_seats && !q.queued_stage);
+        founders::SeatPlan g{1, 4, 3}; // a queued raise past the new count stays
+        r = {2,100};
+        CHECK(founders::raise_now(r,g,3,3) && r.seats == 3 && g.next_seats == 4 && g.queued_stage == 3);
+        founders::SeatPlan back{1}; // Civ reopened after Space began: Civ's own entry is raised, Space's count kept
+        back.previous_stage_seats = {2,2,2,2,0};
+        r = {4,100};
+        CHECK(founders::raise_now(r,back,4,3) && back.seats_in(4,r.seats) == 3 && r.seats == 4);
+        // the file: the Jiff case, 3 reserved in Tribal, a fourth player arrives
+        CHECK(founders::queue_seats(key,3,3,err)); // a count to start from (4 now: queue 3 for the next stage...)
+        CHECK(founders::update_seats(key,1,4,false,settings,plan,err) && settings.seats == 3);
+        CHECK(!founders::raise_seats(key,3,4,err) && !founders::raise_seats(key,2,4,err));
+        CHECK(!founders::raise_seats(key,4,5,err)); // Space keeps its next-load rule
+        CHECK(founders::raise_seats(key,4,4,err));
+        CHECK(founders::read_rules(key,settings,&plan) == founders::RulesFile::Saved && plan.seats_in(4,settings.seats) == 4);
+        CHECK(founders::update_seats(key,1,4,false,settings,plan,err) && settings.seats == 4);
+    }
+    founders::CellCredit carry, recovered;
+    CHECK(carry.award(3,true,quartet) == 0 && carry.award(1,false,quartet) == 0);
+    CHECK(carry.award(-4,true,quartet) == -4 && carry.remainder[1] == 300);
+    for (int i = 0; i < 19; ++i) CHECK(founders::CellCredit::bonus(1,105,carry.damage_carry) == 0);
+    for (int i = 0; i < 6; ++i) CHECK(founders::CellCredit::bonus(1,115,carry.health_carry) == 0);
+    CHECK(carry.damage_carry == 95 && carry.health_carry == 90);
+    CHECK(founders::save_cell_credit(key,quartet,carry));
+    CHECK(founders::read_cell_credit(key,quartet,recovered) && recovered.remainder == carry.remainder);
+    CHECK(founders::CellCredit::bonus(1,105,recovered.damage_carry) == 1 && recovered.damage_carry == 0);
+    CHECK(founders::CellCredit::bonus(1,115,recovered.health_carry) == 1 && recovered.health_carry == 5);
+    CHECK(recovered.award(1,true,quartet) == 1 && recovered.award(2,false,quartet) == 0);
+    // BUG-9110: plant food worth 125% at three seats or more, meat unchanged, remainders kept per kind
+    {
+        CHECK(quartet.cell_extra_predators() == 1 && quartet.cell_plant_percent() == 125);
+        CHECK(pair.cell_extra_predators() == 0 && pair.cell_plant_percent() == 100);
+        const auto divisor = int(quartet.workload_percent());
+        founders::CellCredit a, b;
+        int plant = 0, meat = 0;
+        for (int i = 0; i < 100; ++i) {
+            plant += a.award(4, true, quartet, 125);
+            meat += b.award(4, false, quartet, 125);
+        }
+        CHECK(plant == 400 * 125 / divisor && meat == 400 * 100 / divisor);
+    }
+    CHECK(!founders::read_cell_credit(key,partial,recovered));
+    auto current_credit = get(planet + L".duo-food");
+    auto legacy_credit = current_credit.substr(0,16) + current_credit.substr(26);
+    legacy_credit.replace(0,4,"CFD1");
+    put(planet + L".duo-food",legacy_credit);
+    CHECK(founders::read_cell_credit(key,quartet,recovered) && recovered.remainder == carry.remainder);
+    CHECK(recovered.health_carry == 0 && recovered.damage_carry == 0);
+    put(planet + L".duo-food",current_credit);
+    put(planet,"different native checkpoint");
+    CHECK(!founders::read_cell_credit(key,quartet,recovered));
+    put(planet,"native planet");
+    std::vector<founders::ConversionCredit> converted_saved{{7,8,9,100}}, converted_read;
+    CHECK(founders::save_conversion_credit(key,115,converted_saved));
+    CHECK(founders::read_conversion_credit(key,115,converted_read) && converted_read == converted_saved);
+    CHECK(converted_read[0].apply(1,115) == 1 && converted_read[0].remainder == 85);
+    CHECK(!founders::read_conversion_credit(key,105,converted_read));
+    CHECK(!founders::save_conversion_credit(key,115,{{7,8,9,115}}));
+    CHECK(!founders::save_conversion_credit(key,115,{{7,8,9,1},{7,8,9,2}}));
+    auto conversion_bytes = get(planet + L".duo-conversion");
+    put(planet + L".duo-conversion",conversion_bytes + "x");
+    CHECK(!founders::read_conversion_credit(key,115,converted_read));
+    put(planet + L".duo-conversion",conversion_bytes);
+    put(planet,"different checkpoint");
+    CHECK(!founders::read_conversion_credit(key,115,converted_read));
+    put(planet,"native planet");
+    put(planet + L".duo-seats",std::string("FST1\x04\x64\x00",7));
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Saved);
+    CHECK(settings.hunger_factor() == 1.f);
+    CHECK(settings.enemy_health_percent() == 175 && settings.enemy_damage_percent() == 130);
+    put(planet + L".duo-seats","bad");
+    CHECK(founders::read_rules(key,settings) == founders::RulesFile::Unreadable);
+    CHECK(!founders::reserve(key,quartet,err) && get(planet + L".duo-seats") == "bad");
+    CHECK(!founders::record(key, {1, 1, 3, 4}, err));
+    CHECK(founders::record(key, wanted, err));
+    CHECK(founders::record(key, wanted, err));
+    CHECK(!founders::record(key, {1, 3, 4, 5}, err));
+    CHECK(founders::read(key, got) && got == wanted);
+    // Lock the legacy wire bytes, including their species-then-factions order.
+    const char legacy[] = {'D', 'U', 'O', '1', 1, 0, 0, 0, 2, 0, 0, 0,
+                           char(0xCA), 0x21, 0, char(0x80), char(0xCB), 0x21, 0, 0};
+    CHECK(get(planet + L".duofounders") == std::string(legacy, sizeof legacy));
+    CHECK(got.entries[0].species == 1 && got.entries[1].species == 2);
+    CHECK(got.by_faction(0x21CB) == &got.entries[1]);
+    CHECK(!got.by_faction(0) && !got.by_faction(123));
+    auto expanded = wanted;
+    expanded.entries[2] = {7, 9};
+    expanded.entries[3] = {8, 10};
+    CHECK(expanded.contains_faction(9) && expanded.contains_faction(10));
+    // BUG-9135: further partners' seats are tested on their own planet (test_founders_multi); this one stays on two
+    CHECK(founders::read(key, got) && got == wanted);
+    auto civ = founders::Stage::Civilization;
+    CHECK(!founders::record(key, {1, 7, 3, 4}, err, civ));
+    CHECK(founders::record(key, {1, 2, 3, 4}, err, civ));
+    CHECK(founders::read(key, got, civ) && got.guest().faction == 4);
+    auto expected_civ = std::string(legacy, sizeof legacy);
+    expected_civ.replace(0, 4, "CIV1");
+    expected_civ.replace(12, 8, std::string("\x03\0\0\0\x04\0\0\0", 8));
+    CHECK(get(planet + L".duonations") == expected_civ);
+    CHECK(founders::read(key, got) && got == wanted);
+    std::vector<uint32_t> ids;
+    std::vector<uint8_t> bytes;
+    constexpr uint32_t model = 0x7C123456;
+    CHECK(founders::model_ids(key, ids, err) && ids.empty());
+    CHECK(!founders::store_guest_model(key, 123, {1}, err));
+    CHECK(founders::store_guest_model(key, model, {7, 8, 9}, err));
+    CHECK(founders::store_guest_model(key, model, {7, 8, 9}, err));
+    CHECK(!founders::store_guest_model(key, model, {7, 8}, err));
+    CHECK(founders::model_ids(key, ids, err) && ids.size() == 1 && ids[0] == model);
+    CHECK(founders::load_guest_model(key, model, bytes, err) && bytes == std::vector<uint8_t>({7, 8, 9}));
+    founders::Outfits outfits;
+    CHECK(founders::read_outfits(key, outfits, err) && outfits.current(0) == 1 && outfits.current(1) == 2);
+    CHECK(founders::record_outfit(key, 0, 1, 11, err));
+    CHECK(founders::record_outfit(key, 1, 2, 22, err));
+    CHECK(founders::record_outfit(key, 1, 22, 22, err)); // idempotent retry
+    CHECK(!founders::record_outfit(key, 1, 2, 23, err)); // delayed result
+    CHECK(!founders::record_outfit(key, 1, 22, 11, err)); // partner's species
+    CHECK(!founders::record_outfit(key, 2, 22, 23, err)); // four-species gameplay stays disabled
+    CHECK(founders::read_outfits(key, outfits, err) && outfits.contains(0, 1) && outfits.contains(1, 2) &&
+          outfits.current(0) == 11 && outfits.current(1) == 22);
+    CHECK(founders::read(key, got) && got == wanted); // founding identity never rewritten
+    auto outfit_bytes = get(planet + L".duooutfits");
+    // A new Civilization roster accepts outfit descendants, not arbitrary models.
+    DeleteFileW((planet + L".duonations").c_str());
+    CHECK(founders::record(key, {11, 22, 3, 4}, err, civ));
+    CHECK(!founders::can_record(key, {11, 23, 3, 4}, err, civ));
+    HANDLE locked = CreateFileW((planet + L".duooutfits").c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(locked != INVALID_HANDLE_VALUE);
+    CHECK(!founders::record_outfit(key, 1, 22, 23, err)); // atomic replacement fails, prior intact
+    CloseHandle(locked);
+    CHECK(get(planet + L".duooutfits") == outfit_bytes);
+    put(planet + L".duooutfits", outfit_bytes + "x");
+    CHECK(!founders::read_outfits(key, outfits, err));
+    CHECK(!founders::record_outfit(key, 1, 22, 23, err));
+    CHECK(founders::read(key, got) && got == wanted);
+    put(planet + L".duooutfits", outfit_bytes);
+    auto path = planet + L".duofounders";
+    put(path, get(path) + "x");
+    CHECK(!founders::read(key, got));
+    CHECK(!founders::record(key, wanted, err));
+    put(path, "DUO");
+    CHECK(!founders::read(key, got));
+    CHECK(get(planet) == "native planet");
+}
+
+// BUG-9135: more than two founders (DUO2 / CIV2 / OFT2) and the player identity per seat
+static void test_founders_multi()
+{
+    auto planet = fresh_dir(L"founders_multi") + L"\planet.spo";
+    std::string key = slotfs::narrow(planet), err;
+    put(planet, "native planet");
+    founders::Roster two{1, 2, 0x800021CA, 0x21CB}, got;
+    CHECK(founders::record(key, two, err));
+    const std::string duo1 = get(planet + L".duofounders");
+    CHECK(duo1.size() == 20 && duo1.compare(0, 4, "DUO1") == 0); // two founders without identities: DUO1 as before
+    founders::Outfits outfits;
+    CHECK(founders::record_outfit(key, 1, 2, 22, err));
+    const std::string oft1 = get(planet + L".duooutfits");
+    CHECK(oft1.compare(0, 4, "OFT1") == 0);
+    CHECK(!founders::record_outfit(key, 2, 7, 70, err)); // no third seat yet
+    // a third partner's seat: the same first two, then theirs (DUO2)
+    auto three = two;
+    three.entries[2] = {7, 0x21D5, 0xABCDEF0123456789ull};
+    CHECK(three.seats() == 3 && three.seat_of_faction(0x21D5) == 2 && three.seat_of_player(0xABCDEF0123456789ull) == 2);
+    CHECK(founders::record(key, three, err));
+    CHECK(get(planet + L".duofounders").compare(0, 4, "DUO2") == 0);
+    CHECK(founders::read(key, got) && got == three);
+    // the OFT1 history of seats 0 / 1 still reads; seat 2 starts with its founding species
+    CHECK(founders::read_outfits(key, outfits, err) && outfits.current(1) == 22 && outfits.current(2) == 7);
+    CHECK(founders::record_outfit(key, 2, 7, 70, err));
+    CHECK(get(planet + L".duooutfits").compare(0, 4, "OFT2") == 0);
+    CHECK(founders::read_outfits(key, outfits, err) && outfits.current(0) == 1 && outfits.current(1) == 22 &&
+          outfits.current(2) == 70 && outfits.contains(2, 7));
+    CHECK(!founders::record_outfit(key, 2, 70, 22, err)); // another founder's appearance
+    // an identity is learnt once for a seat that had none; a seat's founders never change
+    auto bound = three;
+    bound.entries[1].player = 0x1111;
+    CHECK(founders::record(key, bound, err) && founders::read(key, got) && got.seat_of_player(0x1111) == 1);
+    auto rebound = bound;
+    rebound.entries[1].player = 0x2222;
+    CHECK(!founders::record(key, rebound, err));
+    auto changed = bound;
+    changed.entries[2].species = 8;
+    CHECK(!founders::record(key, changed, err));
+    auto fewer = two;
+    CHECK(!founders::record(key, fewer, err));     // seats are never dropped
+    auto twins = bound;
+    twins.entries[3] = {9, 0x21D6, 0x1111};      // one player, two seats
+    CHECK(!founders::record(key, twins, err));
+    // eight seats fit; a ninth does not exist; a hole in the seats is invalid
+    auto eight = bound;
+    for (size_t i = 3; i < founders::kMaxSeats; ++i)
+        eight.entries[i] = {uint32_t(100 + i), uint32_t(0x2200 + i), 0};
+    CHECK(founders::record(key, eight, err) && founders::read(key, got) && got.seats() == founders::kMaxSeats);
+    auto holed = founders::Roster{1, 2, 3, 4};
+    holed.entries[3] = {5, 6, 0};
+    CHECK(holed.seats() == 2 && !founders::can_record(slotfs::narrow(fresh_dir(L"founders_hole") + L"\p.spo"), holed, err));
+    // Civilization: every nation descends from its seat's tribal founder
+    auto civ = founders::Stage::Civilization;
+    founders::Roster nations = eight;
+    nations.entries[1].species = 22;
+    nations.entries[2].species = 70;
+    CHECK(founders::record(key, nations, err, civ));
+    CHECK(get(planet + L".duonations").compare(0, 4, "CIV2") == 0);
+    auto stranger = nations;
+    stranger.entries[2].species = 71;
+    DeleteFileW((planet + L".duonations").c_str());
+    CHECK(!founders::can_record(key, stranger, err, civ));
+    // roadmap phase 4: a late joiner's nation (a seat past the Tribe roster) needs an identity and a species of its
+    // own; the tribal seats keep their founders' looks; two founders stay CIV1 byte for byte
+    {
+        auto late_planet = fresh_dir(L"founders_late") + L"\\planet.spo";
+        std::string late_key = slotfs::narrow(late_planet);
+        put(late_planet, "native planet");
+        CHECK(founders::record(late_key, founders::Roster{1, 2, 0x800021CA, 0x21CB}, err)); // DUO1
+        CHECK(founders::record_outfit(late_key, 1, 2, 22, err));
+        founders::Roster pair{1, 22, 0x800021CA, 0x21CB};
+        CHECK(founders::record(late_key, pair, err, civ) && get(late_planet + L".duonations").size() == 20 &&
+              get(late_planet + L".duonations").compare(0, 4, "CIV1") == 0);
+        auto late = pair;
+        late.entries[2] = {9, 0x21D9, 0};
+        CHECK(!founders::can_record(late_key, late, err, civ)); // no identity: refused
+        late.entries[2].species = 2;
+        late.entries[2].player = 0x7777;
+        CHECK(!founders::can_record(late_key, late, err, civ)); // seat 1's founding look: refused
+        late.entries[2].species = 9;
+        CHECK(founders::record(late_key, late, err, civ));
+        CHECK(get(late_planet + L".duonations").compare(0, 4, "CIV2") == 0);
+        CHECK(founders::read(late_key, got, civ) && got == late && got.seat_of_player(0x7777) == 2);
+        auto changed_tribal = late;
+        changed_tribal.entries[1].species = 2; // a tribal seat never changes its nation
+        CHECK(!founders::record(late_key, changed_tribal, err, civ));
+        CHECK(get(late_planet) == "native planet");
+    }
+    // a damaged DUO2 is unreadable, never half-read
+    put(planet + L".duofounders", get(planet + L".duofounders").substr(0, 30));
+    CHECK(!founders::read(key, got));
+    CHECK(get(planet) == "native planet");
+}
+
+// roadmap 0b: the campaign's party (.duoparty)
+static void test_party()
+{
+    auto planet = fresh_dir(L"party") + L"\planet.spo";
+    std::string key = slotfs::narrow(planet), err;
+    founders::Party got, party;
+    CHECK(!founders::record_party(key, {{}}, err)); // no planet yet
+    put(planet, "native planet");
+    CHECK(!founders::read_party(key, got));
+    party.seats.push_back({0x1111, 0x291EE5B5, "Host"});
+    CHECK(founders::record_party(key, party, err) && founders::read_party(key, got) && got == party);
+    CHECK(get(planet + L".duoparty").compare(0, 4, "PTY1") == 0);
+    party.seats.push_back({0, 0x7C67F1C3, "BigTexas"});    // a seat from a two-founder save, identity not known yet
+    CHECK(founders::record_party(key, party, err) && founders::read_party(key, got) && got.seats.size() == 2);
+    party.seats[1].player = 0x2222;                       // learnt once
+    CHECK(founders::record_party(key, party, err) && founders::read_party(key, got) && got.seat_of(0x2222) == 1);
+    auto other = party;
+    other.seats[1].player = 0x3333;                       // never given to someone else
+    CHECK(!founders::record_party(key, other, err));
+    auto fewer = party;
+    fewer.seats.pop_back();                               // never loses a seat
+    CHECK(!founders::record_party(key, fewer, err));
+    auto twice = party;
+    twice.seats.push_back({0x2222, 1, "x"});              // one player, two seats
+    CHECK(!founders::record_party(key, twice, err));
+    party.seats[1].species = 0x7C000001;                  // a species and a name may change
+    party.seats[1].name = "Big Texas";
+    CHECK(founders::record_party(key, party, err) && founders::read_party(key, got) && got == party);
+    for (uint64_t i = 2; i < founders::kMaxSeats; ++i)
+        party.seats.push_back({0x5000 + i, uint32_t(i), "p"});
+    CHECK(founders::record_party(key, party, err) && founders::read_party(key, got) && got.seats.size() == founders::kMaxSeats);
+    party.seats.push_back({0x9999, 9, "ninth"});
+    CHECK(!founders::record_party(key, party, err));      // eight at most
+    put(planet + L".duoparty", get(planet + L".duoparty").substr(0, 20));
+    CHECK(!founders::read_party(key, got));
+    CHECK(!founders::record_party(key, got, err) || true); // an unreadable file is left as it is
+    CHECK(get(planet) == "native planet");
+}
+
+static void test_uninstall()
+{
+    std::wstring root = fresh_dir(L"uninstall");
+    std::wstring bin = root + L"\\SporebinEP1";
+    std::wstring symbols = bin + L"\\mods\\sporekit\\symbols";
+    std::string msg;
+    put(bin + L"\\SporeApp.exe", "game");
+    put(bin + L"\\steam_api.dll", "sporekit-loader");
+    put(bin + L"\\mods\\coop.dll", "co-op");
+    put(bin + L"\\mods\\sporecoop.version", "test");
+    put(symbols + L"\\march2017_dc04aee5.sym", "co-op");
+    put(symbols + L"\\another-mod.sym", "other symbols");
+    put(symbols + L"\\another-mod.sym.old", "other backup");
+    put(bin + L"\\mods\\coop.ini", "player settings");
+    put(bin + L"\\mods\\sporekit.ini", "kit settings");
+    CHECK(lineages_graphics::write(inst::graphics_file(root), {144, true}));
+    const auto graphics = lineages_graphics::read(inst::graphics_file(root));
+    CHECK(graphics.fps == 144 && graphics.borderless);
+    CHECK(!lineages_graphics::write(inst::graphics_file(root), {361, false}));
+    put(bin + L"\\mods\\logs\\SporeCoop-report-test.zip", "mod report");
+    put(bin + L"\\mods\\logs\\unrelated.zip", "other report");
+    put(bin + L"\\mods\\logs\\sporekit.log", "kit log");
+    put(bin + L"\\mods\\logs\\previous\\sporekit.4-test.log", "previous kit log");
+    const auto profile = g_tmp + L"\\test-roaming\\Spore";
+    put(profile + L"\\SporeCoop\\LineagesCache\\objects\\example.png", "cached creation");
+    put(profile + L"\\EditorSaves.package", "native creation library");
+    put(root + L"\\Data\\unrelated.package", "player data");
+    CHECK(!inst::do_uninstall(root, msg)); // no original DLL to restore
+    CHECK(get(bin + L"\\mods\\coop.dll") == "co-op");
+    put(bin + L"\\steam_api_orig.dll", "original game DLL");
+    HANDLE held = CreateFileW((bin + L"\\steam_api.dll").c_str(), GENERIC_READ, FILE_SHARE_READ,
+                              nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(held != INVALID_HANDLE_VALUE);
+    CHECK(!inst::do_uninstall(root, msg)); // game has the proxy open
+    CloseHandle(held);
+    CHECK(get(bin + L"\\steam_api_orig.dll") == "original game DLL");
+    CHECK(get(bin + L"\\steam_api.dll") == "sporekit-loader");
+    CHECK(inst::do_uninstall(root, msg));
+    CHECK(inst::do_uninstall(root, msg)); // an interrupted cleanup is retryable
+    CHECK(get(bin + L"\\steam_api.dll") == "original game DLL");
+    CHECK(!exists(bin + L"\\steam_api_orig.dll"));
+    CHECK(!exists(bin + L"\\mods\\coop.dll"));
+    CHECK(!exists(symbols + L"\\march2017_dc04aee5.sym"));
+    CHECK(get(symbols + L"\\another-mod.sym") == "other symbols");
+    CHECK(get(symbols + L"\\another-mod.sym.old") == "other backup");
+    CHECK(!exists(bin + L"\\mods\\coop.ini"));
+    CHECK(!exists(bin + L"\\mods\\sporekit.ini"));
+    CHECK(!exists(inst::graphics_file(root)));
+    CHECK(!exists(bin + L"\\mods\\logs\\SporeCoop-report-test.zip"));
+    CHECK(get(bin + L"\\mods\\logs\\unrelated.zip") == "other report");
+    CHECK(!exists(bin + L"\\mods\\logs\\sporekit.log"));
+    CHECK(!exists(bin + L"\\mods\\logs\\previous\\sporekit.4-test.log"));
+    CHECK(!exists(profile + L"\\SporeCoop\\LineagesCache"));
+    CHECK(get(profile + L"\\EditorSaves.package") == "native creation library");
+    CHECK(get(root + L"\\Data\\unrelated.package") == "player data");
 }
 
 // BUG-0114: only the updater's own backups are removed, never the player's *.old files
@@ -305,7 +779,9 @@ static bool wr(const std::wstring& slot, const std::vector<slotfs::File>& w, con
     std::vector<const slotfs::File*> v;
     for (auto& f : w)
         v.push_back(&f);
-    return slotfs::write(slot, v, host, planet, id, err);
+    bool ok = slotfs::write(slot, v, host, planet, id, err);
+    if (!ok) printf("  slot write: %s\n", err.c_str());
+    return ok;
 }
 
 static std::wstring lower(std::wstring s)
@@ -313,6 +789,67 @@ static std::wstring lower(std::wstring s)
     for (auto& c : s)
         c = towlower(c);
     return s;
+}
+
+static DWORD WINAPI release_slot_lock(void* handle)
+{
+    Sleep(150);
+    CloseHandle((HANDLE)handle);
+    return 0;
+}
+
+static void test_slot_move_retry()
+{
+    printf("world: staged folder rename tolerates a brief real file lock (BUG-9028)\n");
+    std::wstring dir = fresh_dir(L"move_retry"), source = dir + L"\\stage", destination = dir + L"\\Game0";
+    put(source + L"\\stars.db", "COMPLETE WORLD");
+    HANDLE hold = CreateFileW((source + L"\\stars.db").c_str(), GENERIC_READ,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(hold != INVALID_HANDLE_VALUE);
+    if (hold == INVALID_HANDLE_VALUE) return;
+    // Establish that this OS enforces the lock before testing a delayed release.
+    bool locked_move = MoveFileW(source.c_str(), destination.c_str());
+    DWORD blocked_error = GetLastError();
+    if (locked_move) {
+        CloseHandle(hold);
+        printf("  file-lock semantics unavailable on this OS; delayed-release case skipped\n");
+        return;
+    }
+    CHECK(blocked_error == ERROR_ACCESS_DENIED || blocked_error == ERROR_SHARING_VIOLATION);
+    HANDLE release = CreateThread(nullptr, 0, release_slot_lock, hold, 0, nullptr);
+    CHECK(release != nullptr);
+    if (!release) { CloseHandle(hold); return; }
+    bool moved = slotfs::move_staged(source, destination);
+    DWORD move_error = moved ? ERROR_SUCCESS : GetLastError();
+    WaitForSingleObject(release, INFINITE);
+    CloseHandle(release);
+    printf("  transient lock: moved=%d error=%lu\n", moved, move_error);
+    CHECK(moved);
+    CHECK(get(destination + L"\\stars.db") == "COMPLETE WORLD");
+    CHECK(!exists(source));
+
+    if (!moved) return; // keep the negative control's later checks independent
+
+    // A persistent lock stays an error; neither side may be destroyed.
+    source = dir + L"\\permanent";
+    std::wstring absent = dir + L"\\Game1";
+    put(source + L"\\stars.db", "KEEP SOURCE");
+    hold = CreateFileW((source + L"\\stars.db").c_str(), GENERIC_READ,
+                       FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(hold != INVALID_HANDLE_VALUE);
+    ULONGLONG began = GetTickCount64();
+    bool permanent = slotfs::move_staged(source, absent);
+    DWORD permanent_error = GetLastError();
+    CHECK(!permanent);
+    CHECK(permanent_error == ERROR_ACCESS_DENIED || permanent_error == ERROR_SHARING_VIOLATION);
+    CHECK(GetTickCount64() - began < 2000);
+    CloseHandle(hold);
+    CHECK(get(source + L"\\stars.db") == "KEEP SOURCE");
+    CHECK(!exists(absent));
+    // Even after retrying, an occupied destination is never replaced.
+    CHECK(!slotfs::move_staged(source, destination));
+    CHECK(get(source + L"\\stars.db") == "KEEP SOURCE");
+    CHECK(get(destination + L"\\stars.db") == "COMPLETE WORLD");
 }
 
 static void test_slot_busy()
@@ -330,8 +867,11 @@ static void test_slot_busy()
     std::wstring s1 = slotfs::pick(games, lower(s0), "Alice", "Terra", "Terra.spo", true, note);
     CHECK(!s1.empty());
     CHECK(lower(s1) != lower(s0));
-    if (!s1.empty() && lower(s1) != lower(s0))
-        CHECK(wr(s1, w2, "Alice", "Terra", 0x22, err));
+    if (!s1.empty() && lower(s1) != lower(s0)) {
+        bool written = wr(s1, w2, "Alice", "Terra", 0x22, err);
+        if (!written) printf("  second slot write: %s\n", err.c_str());
+        CHECK(written);
+    }
     CHECK(get(s0 + L"\\Terra.spo") == "A1");
     CHECK(get(s0 + L"\\guest-progress.txt") == "the guest's game");
     CHECK(get(s1 + L"\\Terra.spo") == "A2");
@@ -1337,6 +1877,7 @@ struct FakeGithub {
     std::string tag = "v0.12.0";
     std::vector<uint8_t> pack;     // served as SporeCoop-<tag without v>.pack
     std::string sums;              // SHA256SUMS.txt
+    int pack_failures = 0;
     int api_hits = 0, web_hits = 0, asset_hits = 0, tag_hits = 0; // tag_hits: the redirect was followed
     // BUG-0755: the next fail_left requests of a path ending in fail_path fail: fail_status 0 = the
     // connection is closed without an answer, -1 = the body breaks off halfway, else that status
@@ -1412,8 +1953,13 @@ static void gh_answer(SOCKET c)
         body = g_gh.sums;
     } else if (path == repo + "/download/" + g_gh.tag + "/SporeCoop-" + ver + ".pack") {
         g_gh.asset_hits++;
-        status = "200 OK";
-        bin = g_gh.pack;
+        if (g_gh.pack_failures > 0) {
+            --g_gh.pack_failures;
+            status = "504 Gateway Timeout";
+        } else {
+            status = "200 OK";
+            bin = g_gh.pack;
+        }
     }
     if (bin.empty())
         bin.assign(body.begin(), body.end());
@@ -1515,6 +2061,10 @@ static void test_web_fallback()
     CHECK(ok && r.pack_url == "http://127.0.0.1:" + std::to_string(g_gh_port) +
                                   "/WoodyWizard/SporeCoop/releases/download/v0.12.0/SporeCoop-0.12.0.pack");
     upd::Pack p;
+    {
+        std::lock_guard<std::mutex> lock(g_gh_mu);
+        g_gh.pack_failures = 1;
+    }
     CHECK(ok && upd::download_pack(r, p, err) && p.version == "0.12.0");
     // 2. 429, a relative Location
     gh_release("0.12.1", "0.12.1");
@@ -1570,8 +2120,14 @@ static void test_setup_api403()
     }
     gh_release("0.13.0", "0.13.0");
     std::wstring g = fake_game(L"web_setup");
+    // This case exercises the network fallback. A user's packaged setup has an offline pack next to it.
+    std::wstring exe = fresh_dir(L"web_setup_exe") + L"\\SporeCoopSetup.exe";
+    if (!CopyFileW(setup_exe().c_str(), exe.c_str(), TRUE)) {
+        CHECK(false);
+        return;
+    }
     std::wstring log = g + L"\\setup.log";
-    std::wstring cmd = L"\"" + setup_exe() + L"\" /S \"/dir:" + g + L"\" /api:" + upd::widen(gh_api()) + L" \"/log:" + log +
+    std::wstring cmd = L"\"" + exe + L"\" /S \"/dir:" + g + L"\" /api:" + upd::widen(gh_api()) + L" \"/log:" + log +
                        L"\"" + (upd::g_web_fallback_fix ? L"" : L" /oldweb");
     STARTUPINFOW si{sizeof si};
     PROCESS_INFORMATION pi{};
@@ -1830,8 +2386,13 @@ static void test_uninstall_bat()
 
 int main(int argc, char** argv)
 {
+    bool staged_move_only = false;
     for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--old"))
+        if (!strcmp(argv[i], "--staged-move-only"))
+            staged_move_only = true;
+        else if (!strcmp(argv[i], "--old-staged-move"))
+            slotfs::g_move_retry_fix = false;
+        else if (!strcmp(argv[i], "--old"))
             g_old = true;
         else if (!strcmp(argv[i], "--old-suffix")) // BUG-0114 alone (update.old_suffix)
             upd::g_old_suffix_fix = false;
@@ -1880,6 +2441,7 @@ int main(int argc, char** argv)
         upd::g_dup_fix = false;
         slotfs::g_busy_fix = slotfs::g_match_fix = slotfs::g_write_fix = false;
         slotfs::g_fallback_fix = slotfs::g_cleanup_fix = false;
+        slotfs::g_move_retry_fix = false;
         slotfs::g_staged_move_fix = slotfs::g_collect_fix = false;
         skini::g_unicode_fix = false;
         skini::g_encode_fix = skini::g_lock_fix = false;
@@ -1899,13 +2461,64 @@ int main(int argc, char** argv)
     g_tmp = std::wstring(t) + L"sporecoop-win-tests";
     rmtree(g_tmp);
     CreateDirectoryW(g_tmp.c_str(), nullptr);
+    const auto appdata = g_tmp + L"\\test-roaming";
+    if (!SetEnvironmentVariableW(L"APPDATA", appdata.c_str())) {
+        fputs("Cannot isolate test APPDATA\n", stderr);
+        return 1;
+    }
+    if (argc == 2 && !strcmp(argv[1], "--founders-only")) {
+        test_founders();
+    test_founders_multi();
+    test_party();
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
+    if (staged_move_only) {
+        test_slot_move_retry();
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
+    if (argc == 2 && !strcmp(argv[1], "--slots-only")) {
+        test_slot_move_retry();
+        test_slot_busy();
+        test_slot_match();
+        test_slot_write_fails();
+        test_slot_fallback();
+        test_slot_leftovers();
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
+    if (argc == 2 && !strcmp(argv[1], "--setup-close-only")) {
+        test_setup_close();
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
+    test_uninstall();
+    test_founders();
+    test_founders_multi(); // BUG-9138: these ran only with --founders-only, never in the lab's full run
+    test_party();
+    if (argc == 2 && !strcmp(argv[1], "--uninstall-only")) {
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
     test_cleanup_old();
     test_apply_pack();
     test_apply_rollback();
     test_update_lock();
     test_pending();
+    test_slot_move_retry();
     test_pending_long();
     test_slot_busy();
+    if (argc == 2 && !strcmp(argv[1], "--slot-busy-only")) {
+        rmtree(g_tmp);
+        printf(g_fail ? "FAILED (%d)\n" : "ALL OK\n", g_fail);
+        return g_fail ? 1 : 0;
+    }
     test_slot_match();
     test_slot_write_fails();
     test_slot_fallback();

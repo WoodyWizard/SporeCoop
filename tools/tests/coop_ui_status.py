@@ -6,8 +6,8 @@
     leading space, as pasted from a chat: the join works (it used to fail as "cannot resolve").
  2. BUG-0104: once the guest is in, the window's status no longer says "Connecting to ..." (the
     lobby showed it under the player list for the whole session).
- 3. BUG-0183: six games on the network (`coop.lanfake`): the connect page lists three and "More >"
-    shows the others (only the first three were ever listed).
+ 3. BUG-0183: eight games on the network (`coop.lanfake`): the connect page lists six and the wheel
+    reveals the rest (only the first three were ever listed).
  4. BUG-0085: the host goes to the main menu, the guest earns DNA alone, the host leaves the
     session: the guest is told the session ended, never "player0 (host) is back: your N DNA go to
     the pack", and the window shows the reason (BUG-0104).
@@ -27,12 +27,6 @@ SWITCHES = ('addr_check', 'ui_status', 'lan_pages', 'host_away_reset')
 
 def connected(con):
     return 'client id=' in con.call('coop.status')['out'] and ' connected' in con.call('coop.status')['out']
-
-
-def lan_page(st):
-    """(first row number, number of games) from the header "Games on your network: 4-6 of 18" """
-    m = re.search(r'(\d+)-\d+ of (\d+)', (st or {}).get('lan', ''))
-    return (int(m.group(1)), int(m.group(2))) if m else None
 
 
 def wait(pred, timeout):
@@ -86,11 +80,11 @@ def main():
     ck(not status.startswith('Connecting'), f'the status no longer says "Connecting" once in ({status!r})')
     ck(not world_line.startswith('Connecting'), f'the lobby world line is not "Connecting" ({world_line!r})')
 
-    # ---- 3. more than three games on the network (BUG-0183) ----
+    # ---- 3. scroll through games outside the visible rows (BUG-0183) ----
     guest.call('coop.leave')
     time.sleep(1)
     guest.call('coop.uistate 1')
-    print(' ', guest.call('coop.lanfake 6 120')['out'].strip())
+    print(' ', guest.call('coop.lanfake 8 120')['out'].strip())
     seen = set()
     # (three rows and "More >": with six made-up games there are more than three; other lanes' hosts alone fill three
     # rows before the made-up ones are listed, and the loop below stopped at once, lab 20261108-155445)
@@ -110,20 +104,16 @@ def main():
         page = lan_page(st)
         if seen >= {str(i) for i in range(1, 7)} or not page or not st.get('lanmore', {}).get('vis'):
             break
-        if turned >= (page[1] + 2) // 3 + 1:  # every page shown (and one more for a list that changed)
+        rows = visible(st)
+        for row in rows:
+            seen.update(re.findall(r'\bfake(\d)\b', row['text']))
+        if seen == {str(i) for i in range(1, 9)} or not rows:
             break
-        for _ in range(6):
-            ui.click('lanmore')
-            nxt = ui.wait(lambda s: lan_page(s) and lan_page(s)[0] != page[0], 3, 'the next LAN page')
-            if nxt:
-                break
-            missed += 1
-        st = nxt
-        turned += 1
-    if missed:
-        print(f'  {missed} click(s) on "More >" did not turn the page (clicked again)')
-    print(f'  fake games listed: {sorted(seen)}; header {st and st.get("lan")!r}')
-    ck(seen == {str(i) for i in range(1, 7)}, f'all six made-up games can be listed ({len(seen)} of 6)')
+        x, y, x2, y2 = rows[0]['rect']
+        guest.call(f'wheel {int((x+x2)/2)} {int((y+y2)/2)} -1')
+        time.sleep(.6)
+        st = ui.state()
+    ck(seen == {str(i) for i in range(1, 9)}, f'all eight made-up games can be listed ({len(seen)} of 8)')
     guest.call('coop.lanfake 0')
     guest.call('coop.uistate 0')
 

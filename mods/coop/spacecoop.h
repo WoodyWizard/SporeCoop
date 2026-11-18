@@ -75,4 +75,5 @@ std::string debug(const std::vector<std::string>& args);
 // mission tells the raids on one planet apart (BUG-0046)
 void set_raid_listener(std::function<void(void* mission, uint32_t place, int state)> fn);
 
+void give_up_now(); // BUG-9118: the own downed founder / disabled ship gives up (tests: coop.giveup)
 } // namespace spacecoop

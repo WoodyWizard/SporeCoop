@@ -11,6 +11,7 @@ namespace slotfs {
 
 bool g_busy_fix = true, g_match_fix = true, g_write_fix = true;
 bool g_fallback_fix = true, g_cleanup_fix = true;
+bool g_move_retry_fix = true;
 bool g_staged_move_fix = true, g_collect_fix = true;
 std::function<void(const std::wstring&)> g_test_before_move;
 uint64_t g_test_move_denied_until;
@@ -152,6 +153,8 @@ static bool collect_dir(const std::wstring& root, const std::wstring& rel, std::
         }
         if (r == skip)
             continue;
+        if (n.find(L".spo.duo") != std::wstring::npos && n.find(L".duo-tmp-") != std::wstring::npos)
+            continue; // Lineages: a side file being written (its temp copy) is not part of the save
         std::string s = narrow(r);
         for (auto& c : s)
             if (c == '\\')
@@ -468,7 +471,7 @@ bool write(const std::wstring& slot, const std::vector<const File*>& files, cons
 // (or 32); the world was then not stored. Tried again for up to 1.5 s on those two errors only; the
 // destination is never touched (any other error, like an existing slot, fails at once). The last
 // error stays set for the caller's message.
-static bool move_staged(const std::wstring& src, const std::wstring& dst)
+bool move_staged(const std::wstring& src, const std::wstring& dst) // (Lineages BUG-9028 and upstream BUG-0848: one retry)
 {
     uint64_t deadline = GetTickCount64() + 1500;
     for (int tries = 1;; tries++) {
@@ -486,7 +489,7 @@ static bool move_staged(const std::wstring& src, const std::wstring& dst)
         }
         DWORD e = GetLastError();
         uint64_t now = GetTickCount64();
-        if (!g_staged_move_fix || (e != ERROR_ACCESS_DENIED && e != ERROR_SHARING_VIOLATION) || now >= deadline) {
+        if (!g_staged_move_fix || !g_move_retry_fix || (e != ERROR_ACCESS_DENIED && e != ERROR_SHARING_VIOLATION) || now >= deadline) {
             SetLastError(e);
             return false;
         }

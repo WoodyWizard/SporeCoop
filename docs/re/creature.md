@@ -1559,6 +1559,223 @@ BUG-0443 (the host's screenshot of the "eggs flying mid air" report). GOG 2024, 
   over the surface is put onto it with cEgg_SnapToGround (what the game does to the avatar's eggs and to
   every egg at its hatch).
 
+## Timed duo rescue and shared DNA (2026-11-03, duo-species)
+<a id="creature-duo-respawn"></a>
+
+In the two-player Steam test on Brois, `coop.team hit 1000` entered the same damage
+filter as a game hit. A local victim stayed at 1 HP and advertised the downed flag.
+A healthy partner within 6 units for 1.5 seconds restored at least 40% of maximum
+HP. Pack regeneration can add health on its next tick. Each victim's timer belongs
+to the host. When it expires, the host removes 10% (rounded up, capped at the
+current balance) through the native DNA routine and broadcasts the normal total.
+The victim enters Spore's native death and nest hatch sequence. The native species
+keys stayed 29142C2C and 5D00C0C1 on respawn. A guest timeout cost 12 of 115 DNA
+on both processes. A host timeout then cost 11 of 103. Each successful revive
+preserved the prior balance. See `tools/tests/duo_creature_rescue.py`.
+
+## Cached herd lifetime in diagnostics (2026-11-03, duo-species)
+<a id="creature-cached-herd-diagnostic"></a>
+
+BUG-9008 occurred during the Tribal recovery test. After native host population
+loss, a guest sync result requested the wildlife description through npc::list.
+Its cached nest herd had a null vtable. Calling game::noun_id on it crashed at
+coop.i5.1.dll+CE6DA with read address 20. The frame chain includes the support
+describe callback and sync_on_message. Evidence is in the isolated lab's
+crash-20261103-194255-i5.txt and matching minidump.
+
+The allocation's destroyed byte can remain readable after the object is freed.
+The fixed diagnostic builds a set from the current native herd noun list and
+reads cached entries only through membership in that set. Proxy creation now
+resolves the preferred cached herd through the existing native object search,
+checking its species and nest before reuse. This preserves the cached choice
+when it is still valid. A missing match removes the stale cache entry.
+
+## Duo recovery after a guest leaves (2026-11-03, duo-species)
+<a id="creature-duo-recovery-departure"></a>
+
+BUG-9010 was reproduced on a native Vantiegan pair copied from the saved
+two-species landfall. The host was knocked down at 65 shared DNA. Leaving from
+the guest cancelled the host's timer within one second. Both the player-leave
+callback and the frame loop's exactly-two-player condition cleared the whole
+rescue module.
+
+The fix preserves an existing recovery while the host remains in that world.
+A departing guest's pending episode is detached from its reusable network seat.
+The original deadline and name remain until one host-side expiry debit. No
+result is sent to a new occupant of the departed seat. The leave callback only
+updates mod records. Native damage, DNA and notices still run from the frame.
+World and session teardown continue to clear the records. This is not durable
+recovery across a host crash or a host ending its session.
+
+The initial native checks retained the host timer and charged 65 to 58 once,
+then retained a departing guest's debt and charged 58 to 52 once. Saving through
+the mod remained blocked while those debits were pending. The switch
+creature.recovery_leave restores the prior reset behavior for regression tests.
+
+The stronger respawn test also observes the death caption, native age 0 then
+age 1, the same species and movement through normal W input. A health value or
+mbDead alone is insufficient at the nest, as documented above. Caption text can
+appear before its confirmation button is enabled. The native 0445C99D button
+must be located after it becomes ready. The fresh landfall fixture can also
+show migration and Minimap help after death. The Minimap green button sits in
+native container 05943B78 with an enabled child. Tests acknowledge these known
+screens through their current rectangles, then wait for normal gameplay.
+
+## Guest migration after a host respawn (2026-11-03, duo-species)
+<a id="creature-duo-guest-migration"></a>
+
+BUG-9011. Fresh copies of the distinct-species Vantiegan landfall reproduce an
+order-dependent stall. If the host completes its death, migration caption,
+Minimap tutorial and hatch first, the guest's later death enters age 0 and
+CRG_SpeciesMigrate (FBB3661D), with input locked and no visible caption. It
+remains there beyond the full recovery test's 65-second hatch limit. Native
+migration property 0514A219 is 2 on the host and 1 on the guest. Both new-nest
+positions agree. No native faults were reported. Evidence:
+build/local/m1-host-first-host.log (PASS), m1-host-first-guest.log (FAIL), and
+m1-host-first-stalled-state.log.
+
+The opposite order passes: guest first, then host, on separate fresh copies
+(m1-migration-guest-first.log and m1-full-rescue-host-after-guest.log). Reloading
+the host's completed migration world also allows the guest's next recovery to
+finish (m1-guest-after-migration-rejoin.log). These are controls, not proof of
+the precise native actor dependency that stalls the scene.
+
+Temporarily disabling NPC synchronization for 25 seconds did not end the
+stalled scene (m1-migration-npc-control.log). Calling the already verified
+SporeCoop::cCinematicManager_EndCinematic on that exact scene did release it:
+the native hatch completed, migration became 2, and the guest walked with
+species 291447DD and unchanged shared DNA 52 (m1-migration-end-control.log).
+That probe followed the NPC control, so it alone does not prove the production
+recovery without the NPC toggle. No forced growth or migration-property writes
+were used. The precise underlying native scene dependency remains unknown.
+
+The rejected experimental recovery was limited to a connected guest's expired rescue in the
+same native world and avatar. It watches that death through its native hatch,
+with no deadline on reading the death caption. Only FBB3661D at age 0, unpaused
+for 30 seconds and without a visible native caption, can be ended. The UI scan
+and native completion run outside the frame and recheck all conditions. Adult
+growth, scene completion or world/session teardown ends the watch. Host scenes,
+other cinematic IDs, editor hatches and visible captions are excluded. The
+experimental switch creature.respawn_migration restored the prior behavior.
+The experiment was removed from production source after the checks below.
+
+CORRECTION (2026-11-03, duo-species): native scene completion alone is
+insufficient. The first production run without the earlier NPC-toggle probe
+ended FBB3661D after 30 seconds and released input,
+but the guest remained age 0 with hatchling_waiting=0. BUG-0014's existing
+helper requires the waiting behavior tree, so it did not grow this avatar.
+The earlier manual completion success therefore depended on additional native
+state reached during the NPC control. Evidence: m1-guard-long-guest.log (FAIL
+at native growth), m1-guard-after-scene-state.log; no native faults in this run.
+
+The native migration property remained 1 in that failing run, not 2. Calling
+GrowTo(1) alone did not complete growth within 65 seconds. A single diagnostic
+Update(33) advanced the growth state from 1 to 2, but automatic growth still
+did not finish. Restarting CreatureGame_AfterEditor also exceeded 65 seconds;
+the dirty diagnostic pair eventually reached age 1 later. That late completion
+cannot establish a fix or a permanent stall on the original clean fixture.
+The next control observes a fresh native sequence for 180 seconds with no
+cinematic completion, forced growth, manual Update or NPC toggle.
+
+The behavior-manager Get return and its Read interface differ by 4 bytes:
+the live Read vtable 145CB68 is at Get()+4, so Read's documented vector
++20/+24 is Get()+24/+28. Both diagnostic avatars remained registered there
+through their +58 behavior interfaces. This membership alone does not prove
+that cCreatureAnimal::Update is being called.
+
+## Creature proxy validation before movement (2026-11-03, duo-species)
+<a id="creature-proxy-before-drive"></a>
+
+BUG-9012: holding the guest's native death caption for 125 seconds, then
+confirming it after the host migrated, crashed in the proxy driver. The
+matching DLL resolves D1A80 to the teleport vcall at spatial offset 44,
+DCE95 to drive::step and EC56B to npc::guest_tick. The spatial vtable was null.
+The native scene was F0428C29, before the experimental migration recovery.
+Evidence: m1-death-caption-crash.txt and m1-death-caption-guest-native.log.
+
+BUG-0300's noun-list validation previously ran once per second. The new
+npc.proxy_listed_frame guard runs one shared scan before each Creature proxy
+movement pass, including stale removals. It does not read a cached object
+until the live noun list confirms it. An empty live list also retires cached
+proxies. Tribe behavior is unchanged. The old one-second schedule is retained
+behind the new switch for regression checks.
+
+In the matching long-caption run, the guard retired and rebuilt proxies 9 and
+35 together when the death screen closed, with zero native faults. The run
+still failed the independent BUG-9011 growth check. This is evidence for the
+proxy lifetime guard, not for complete Creature recovery. A subsequent fresh
+run removes the rejected cinematic experiment entirely.
+
+## Final Creature recovery and persistence control (2026-11-03, duo-species)
+<a id="creature-duo-final-recovery-control"></a>
+
+CORRECTION to the pending controls above: the fresh pair with only BUG-9012's
+proxy guard passed host-first recovery and the guest's 125-second death screen
+(m1-long-baseline-host.log and m1-long-baseline-guest.log). Native migration
+finished, both species reached age 1 and normal W movement worked, without
+forced cinematic completion, manual Update/GrowTo or an NPC toggle. Although
+that run allowed 180 seconds, it finished inside the original 65-second hatch
+limit. A second fresh pair using the original DuoCellHost campaign identity
+also passed both recoveries at the default limit (m1-confirm-host.log and
+m1-confirm-guest.log). Both pairs exited cleanly with zero native faults.
+
+The guest native log retires unlisted proxies when the death screen closes.
+This supports BUG-9012's lifetime guard. It does not prove the earlier
+BUG-9011 cinematic symptom had the same cause; retain that regression.
+The cinematic workaround was removed from production code.
+
+The successful long-caption pair saved natively at shared DNA 52, passed a
+guest rejoin and passed a full process restart. Both walking native species
+remained 291447DA and 291447DD. Logs: m1-checkpoint-before-save.log,
+m1-checkpoint-rejoin.log and m1-checkpoint-cold.log, under build/local.
+The cold restart used DuoCellHost, the name in the original fixture's guest
+sporecoop.txt. Its FNV-1 campaign hash is 50D20839, matching choices.ini's
+landfall entry 50D20839-CFF4E336=291447DD. Earlier DuoLineHost runs used another
+campaign identity and cannot alone prove lookup of that original entry.
+
+## Earned DNA and hostile combat (2026-11-06, duo-species)
+<a id="creature-reserved-combat"></a>
+
+The native kill award returns to C07BF1. On QuartetHunt a seven-point kill
+was divided across four reserved seats. The social award returns to D9BD1B,
+and completed ally and extinction goals return to C2EFCE and C2F0D7. These
+three call sites still need individual gameplay qualification. A six-HP enemy
+had 10.5 HP on both peers, and a two-point attack dealt 2.6 (BUG-9072).
+
+## Reserved founder hunger drain (2026-11-06, duo-species)
+<a id="creature-reserved-hunger"></a>
+
+On Steam 3010a413, the creature vtable at 146A080 + 88 points to C02E10.
+It calls C0D5A0. That routine checks the native meal timer, multiplies the
+rate at +BB8 by the simulation delta, adds the result to +BBC and calls the
+clamping setter C0BB30 at C0D66C. Multiplying the whole tick would also change
+starvation damage at C0D692. The mod scales only the negative meter change in
+the local avatar's setter. The original handles clamping and all meal refills.
+
+With four seats, host and guest both measured 1.07491 times their requested
+native drop. An enemy's native 7.5 HP became 10.875 on both screens; the
+guest lost 2.3 HP to a two-point attack. See hunger-seats-a-reload.log.
+
+## Shared DNA budget versus earned progress (2026-11-07)
+<a id="creature-lineages-dna-progress"></a>
+
+CORRECTION: earlier co-op notes describe AddEvolutionPoints as synchronizing DNA
+and the evolution bar together. That is correct for rewards and our death debit,
+but incorrect for editor spending (upstream BUG-0630, Lineages BUG-9092).
+The native editor uses SetEvolutionPoints (cdecl void(float), plain ret) to write
+only the budget at 0x169E398. Upstream v0.7.9 disassembly verifies its symbol at
+0xD2E480 for dc04aee5. The native two-peer test confirms the setter leaves the
+host's earned cPlayer+0x10F0 unchanged, while legacy AddEvolutionPoints-based
+reconciliation reduces the guest's earned field by the spend.
+
+Lineages retains dna_add_raw's original semantics for creature_rescue::charge.
+MSG_DNA appends DNA1/u32-world/f32-earned after the existing cause list, only
+when the host has finite Creature progress. The guest applies the earned delta
+through the native reward function, then sets the authoritative budget. The
+pending-world path retains both fields; resends converge after editor/loading.
+Missing tails retain the legacy path, so use the same patched build on all peers.
+No new message ID or save sidecar is required. Native evidence:
+docs/06-testing.md#testing-lineages-upstream-079.
 ## The size of NPCs and their proxies (2026-11-03, fix/w40-scale)
 <a id="creature-npc-scale"></a>
 
@@ -2691,7 +2908,7 @@ The checks found, what they read, and how the mod answers them now:
   dmglog`, a ring of the last 48 hits through the hook: victim, attacker, type, caller, filtered / applied /
   direct). Damage type 3 in TakeDamage is the **charm** (mCharmDamage +0x1694 / mCharmTime +0x169C / mpCharmer
   +0x1698, reflection 0x1334790: 20 to charm, 50 for an epic, 60 s), not a charge's stun.
-* ✔ (runtime) The charge stun: `coop.rules charge <npc> 1` (SetTarget + PlayAbility of type 0x1F) on the host hit the
+* ✔ (runtime) The charge stun: `coop.prules charge <npc> 1` (SetTarget + PlayAbility of type 0x1F) on the host hit the
   puppet (type 2 0.5 hp) and sent kind 0; the guest's avatar then held stimulus 0x1000 for 3.0 s, counting down,
   and showed the stars (screenshot). CreatureStun called on the guest's avatar by hand does the same.
 * ✔ (runtime) Summon Flock: `coop.drama start 8` (the event kind 8 the ability's handler starts) put 4 creatures of
@@ -2794,7 +3011,7 @@ BUG-0584. GOG 2024, asm and Ghidra. Extends #creature-fruit-pool.
 
 P2 of docs/plan-0.7.8.md, BUG-0418 (umbrella), BUG-0501 / 0558 / 0496 / 0557. GOG 2024, Ghidra (tools/ghidra/q.sh)
 and lane 6. Follows #creature-player-rules; the code is in `mods/coop/player_rules.cpp` (MSG_PLAYER_RULE kind 2,
-`coop.rules roar | ufo | heal | meat`).
+`coop.prules roar | ufo | heal | meat`).
 
 ### The roar (BUG-0501, fixed)
 <a id="creature-roar-relay"></a>
@@ -2954,6 +3171,279 @@ BUG-0465 (not fixed). GOG 2024, lab lane 5, creature fixture; follows #creature-
   ~ inferred, the monster is a cinematic actor (a model of CRG_AvatarDied_SeaMonster's data), not an effect.
 * Not done: showing it on the partner's game needs that actor (the cinematic's model and animation) at the puppet
   without the cinematic's camera; the cinematic's data (its actors) was not read.
+
+## The HUD progress bar (2026-11-11, feat/lineages-47)
+<a id="creature-progress-bar"></a>
+
+* ✔ The bottom bar is HUD window 0x051B5478 in Creature and Cell; its fill window is 0x0652A628 (in
+  Creature five children of the same width, one per brain level). At 1440x1080 the green fill spans
+  x 237..1354, y 1051..1077 (Creature) and 231..1345 (Cell).
+* ✔ The fill's end is the zero-width window 0x051B5168 (the green arrow): x 596 at 317 DNA earned,
+  601 at 321 (Creature, Samuth.spo). cPlayer +0x10F0 / +0x10F4 = 317 / 1000.
+* ✔ The Creature bar is **not** linear in the earned DNA: at 317 a straight 317/1000 of the fill
+  would end at 591, and 4 DNA moved the arrow 5 px (1.25 px per DNA; 1.12 on average). Each brain
+  level has the same width and its own DNA. Read the arrow instead of computing the end.
+* ✔ Cell: linear, food S+0x1C / 1000 (204 food: the arrow at 458 = 231 + 0.204 x 1114).
+* The progress debt (BUG-9119) draws its red stretch back from the arrow.
+
+## The guest's home nest after a migration (2026-11-11, feat/lineages-47)
+<a id="creature-nest-migration-follow"></a>
+
+* ✔ CreatureGame_JoinNestHerd 0xD40C70 called from the mod (cdecl(cNest*)) on a guest moves its avatar into that
+  nest's herd at once: `game::nest_position(avatar)` reports the new nest, and the native respawn after a death
+  puts the creature there (QA Samuth.spo: (453.47 52.17 -221.05) next to the nest at (453.12 46.02 -223.02)).
+  No cinematic is needed; 0 faults. Used by BUG-9128 (nest.follow_home). The same call on the host simulates a
+  claim for tests (`coop.nest home x y z`).
+
+## Every player's own nest (2026-11-12, feat/lineages-47)
+<a id="creature-own-nests"></a>
+
+Roadmap phase 2 (BUG-9135, owner decisions 2, 3, 6, 7, 8 of docs/ROADMAP.md), home_nests.cpp, switch `creature.own_nests`.
+Two PCs: TITAN hosts a copy of the owner's Vandh.spo (QA), the MSI joins with its own creature (Duckulon 7C0B35F6).
+
+* ✔ `cGameNounManager::CreateHerd(pos, species, herdSize, isOwnedByAvatar, personality, createNest)` with createNest 1
+  makes a real nest herd of any species at any point (game::create_nest_herd: size 4, not the avatar's, then
+  cHerd::SetEnabled). The game spawns its members over time (1 at once, the rest within ~2 minutes) and keeps it in
+  the save (a herd with a nest is not one of savestrip's own-kind herds). Given the host nest's brain range
+  (+0x120 / +0x124), cHerd_SetBestFriends and relation 6 in the species table (social::set_party_ally).
+* ✘ `CreatureGame_JoinNestHerd` on a nest herd with no members faults in Creature_GetHerd (data 0x1674): an empty
+  nest herd made on the MSI (CreateHerd size 0, owned by the avatar) crashed its game (crash-20261112-012300). A
+  partner's game never makes the nest itself now; nest.cpp follow_home waits until its copy of the nest herd has
+  members (the host's family, mirrored into the herd) before it joins.
+* ✔ The partner's world must contain the nest: the world sent at the join is saved before the nest exists, so a nest
+  made for an online player sends that player the world again (world::share_with, save first; 4.9 MB, ~27 s over the
+  relayed link). The MSI then found the nest at (265 -423 -92), waited ~90 s for members, and joined its herd.
+* ✔ Respawn: with the co-op rescue off (`coop.team off`), a lethal hit (`coop.giveup down`) and the death screen, the
+  MSI hatched as a baby (age 0) at (262 -425 -89), 4 m from its own nest and ~60 m from the host's.
+* ✔ Hunting: a partner's hit reaches the host's NPC through npc.cpp MSG_DAMAGE_REQ -> game::apply_damage (not through
+  the TakeDamage hook's damage_filter); the party-species rule sits in both. MSI hit on its own family: dropped
+  (party_hits_kept=1); on an outside species: applied; with the switch off: applied (hp 15 -> 12).
+* ✔ Migration together: the host's home moved 243 m (`coop.nest home x y z`): the partner's nest, now ~195 m from it
+  (> 160 m), was made again 60 m from the new home and the world sent again.
+* ✔ Offline: the MSI left, its nest died out (`coop.homes extinct 1`, cHerd_SetExtinct): no new nest while it was
+  away; on its return a new one at (438 -239 -99) and the world sent again.
+* Open: the species key of a partner's custom creature contains its network id (creations shared_instance): after a
+  rejoin under another id the seat's species is a new key and gets a new nest (the old one stays as an AI nest).
+  Stable keys per identity are a separate roadmap step. Three or more players: the code loops over the seats; tested
+  with two.
+
+## The downed pose and spectating a partner (2026-11-12, feat/lineages-47)
+<a id="creature-downed-pose-spectate"></a>
+
+BUG-9156, switches `creature.downed_pose`, `creature.spectate`.
+* ✔ (live) The game's default death animation 0xF14FAA46 played with cCreatureBase::PlayAnimation (no Die, mbDead
+  stays 0) lays a creature down at 1 hp; skipping its idle refresh (0xC148B0) keeps it lying (coop.track: F14FAA46 for
+  the whole window). The game's own death later plays the same animation (the caption "You were killed in battle!"
+  waits for its check button).
+* ✔ (live) The follow camera computes each update from the viewer's last pose: a camera moved after the update without
+  putting it back drifted (into a hill) and a turned one spun (upside down) within seconds. Put back before the update
+  (fov.cpp restore_offset) it stays put.
+* ✔ (live) Turning the viewer's rows (right, forward, up) by the planet rotation split the picture: objects drew at the
+  new angle, the planet's surface and sky at the old one. Sliding the position row of the viewer (+0x30) and of the
+  render camera's frame (viewer +0x170, +0x30) keeps it whole; the partner stood at the screen centre 99 m away.
+* ~ superseded (2026-11-12): see the CORRECTION below. Far from the own creature the ground under the partner drew
+  faintly (pink sky colour where the terrain is): the terrain's detail follows the real camera.
+* CORRECTION (2026-11-12, feat/lineages-47): the camera is no longer moved after its update. The follow camera's update
+  (cCameraManager::Update) runs with the partner's puppet as mpAvatar (noun manager +0x54, game::run_as_avatar, the NPC
+  tick's swap with its guard and the tuning loan), so the camera, the terrain's detail and the sky come from one pose.
+  ✔ (live, two games on the MSI) the host's creature 95 m away at the screen centre on solid ground; when the window
+  ended the camera was back on the own creature (the death caption); 0 faults on both games.
+* ? No native red / low-health vignette is known; a red screen edge is drawn by the mod (ring_timer::vignette).
+
+## A creature without a species in the base max health (2026-11-12, feat/lineages-47)
+<a id="creature-max-hp-null-species"></a>
+
+BUG-9157. cCreatureAnimal_BaseMaxHitPoints 0xC04170 (vt 0x7C): Adventure: LevelHealth + species +0x56C; the player
+species: LevelHealth(mpAvatar) + species +0x56C; others: herd +0x1674 -> +0x154 when > 0, else tuning +0xE84 -> +0x340,
+else LevelHealth(0) + species (+0xB20) +0x56C with **no null check** (0xC04252). ✔ (live) A guest that joined dead and
+confirmed the death caption faulted there twice (edi = 0, a herd update in the stack). Guarded in creature_hp.cpp.
+
+## The game's cocoon and the egg scene after a mating (2026-11-13, feat/lineages-47)
+<a id="creature-cocoon"></a>
+<a id="creature-egg-scene"></a>
+
+BUG-9160, BUG-9161. Steam / GOG 2024 (3010a413), runtime on TITAN and the MSI.
+
+* ✔ The cocoon is data (ids FNV-1 of the lower-case names): animations (type EE17C6AD) gen_evolve_cocoon 9C26F705 (curl
+  in), gen_evolve_cocoon_hold 4E0D3CBF, gen_evolve_emerge D4F48A35 (event crg_cocoon_hatch); effects crg_cocoon_create
+  59A93586 (a woven grey shell around the creature: full 0.2 s after it is made, gone at 2.0 s), crg_cocoon_hold 6F02369D (a
+  teal glow), crg_cocoon_hatch D033D3AC (a burst). The world object cr_cocoon_collision (group 02E9C426 of the planet
+  objects, inst 69793182, model key 0E3BD617) exists; the effects need no object. No code constant references these ids.
+  A world effect's transform: +4 position, +0x10 scale, +0x14 3x3 (rows = local axes); its up must be the planet's up at
+  the position (with the world's z the effects lay on their side).
+* ✔ The egg scene after a mating is cinematic CRG_LaidEgg B6A1DBE1. It ends only through the creature game's key handler
+  0xE45760 (thiscall(this+4, msg, event*) ret 8): event type 1 with key 0x1B (Escape) or 0x54 (T) and [event+0x14] == 0 ->
+  0xE37920 (the only writer of this+0x371 = 1, starts a 500 ms timer at this+0x350); when the timer ran out the handler
+  (0xE45DCE) clears the flag, calls 0xE44200(0) and posts 0x4471C60 (0xE45E0F) and 0x445F729. 0x4471C60 builds the
+  evolution request (0xD42E50). Event type 6 with [event+0x18] == 1000 is a separate branch (+0x270, +0x268).
+* ✔ In co-op the scene never ended by itself (minutes; the MSI alone in a session and with a guest, TITAN). The own creature
+  wore the player's own species while the nest family and the herd (+0xA4) kept an older one; only the nestmate of the own
+  species was offered as mate (SporeCoop::CreatureClickAction 0xD30830 returns 9 for it, 7 for the others). Setting the
+  herd's +0xA4 to the own species made no member a mate (all 7); the members' species (SetSpecies) can change.
+* Tests and RE tools: `coop.evolve mates` (the own herd: class, hearts, species, screen spot; the native mating step's
+  state), `coop.evolve partners` (each partner's puppet, cocoon, screen spot), `coop.evolve fx <name>`, `coop.evolve find
+  <hex>` and `coop.evolve calls <address>` (the game's code searched in memory: the exe on disk is encrypted).
+* Test pitfalls: a QA click on TITAN reaches the game only with its window in front (SetForegroundWindow first); an idle
+  creature starves; a creature that died respawns as a hatchling that stayed age 0 for minutes (a save made then keeps it).
+
+## Personal DNA, the party's bar (2026-11-13, feat/lineages-47)
+<a id="creature-personal-dna"></a>
+
+BUG-9162. ✔ (runtime) `game::dna_sync_raw(budget, earned)`: AddEvolutionPoints for the bar's difference (it adds to both),
+then SetEvolutionPoints for the budget: `dna_sync_raw(dna(), bar + d)` moves only the bar, `dna_sync_raw(dna() + d, bar)`
+only the budget. `call Simulator::cCreatureGameData::AddEvolutionPoints cdecl f:N` goes through the mod's hook (on_dna)
+like a game reward. The cocoon's shell is sized by the creature's bounding radius / 0.9 (a radius 1.24 creature fitted at
+scale 1, a 1.40 one with a long neck did not; 1.67 fitted at 1.86).
+
+## The party migrates together (2026-11-13, feat/lineages-47)
+<a id="creature-migrate-together"></a>
+
+BUG-9163. A game's own migration start is its player's property 0x514A219 going 0 -> 1 after its editor (coop.cpp
+host_migration, readable on any game). Test pitfall: AddEvolutionPoints +250 from 351 crossed a brain level (CRG_BrainUpgrade3
+F6A4B1E3 started while the editor opened and stayed over it without its buttons, BUG-0404; ended with
+`call SporeCoop::cCinematicManager_EndCinematic thiscall <Simulator::cCinematicManager::Get()>`) but did not start a
+migration (0 -> 0 at 601 / 1000).
+
+## A joiner's own creature and own DNA across reloads (2026-11-13, feat/lineages-47)
+<a id="creature-join-editor-first"></a>
+
+BUG-9164, BUG-9165. ✔ (runtime) `Editors::EditorRequest::Submit` returned false for the creature stage's own
+evolution request although the evolution editor opened (a guest 12 s after joining); in an earlier run from
+`coop.evolve migrate` it returned true. Treat only "no request built" as a failure. ✔ (runtime) a new home nest for a
+guest's own species (home_nests) makes the host send its world again; the guest loads it (Creature -> Galaxy menu ->
+Loading -> Creature, about 6 s on TITAN) and its avatar is the host save's species until the creations code puts its
+own back (3 s later). The load also sets the guest's spendable DNA from the host's save (the host's budget):
+game::stage_epoch(kCreature) changes with that load and not with an editor visit, which tells a reload from an own
+editor's spend. A fresh profile shows the game's online account box over the stage (Close, then OK; "Don't prompt me
+again" keeps it away).
+✔ (runtime, BUG-9151) A partner's nest on the host follows its evolution: the herd's +0xA4 profile pointer set to the new
+species and the members' SetSpecies(profile, age, true) kept the nest at its place; the next host_tick found it by the new
+species (no second nest). On the player's own game the same +0xA4 change stopped the mate offer (BUG-9161), so it is done
+for partners' nests on the host only. The editor's complexity meter (the dotted bar top right) full: a dragged part
+snaps back (no cost); remove or move a part instead (QA).
+
+## A migration with a nest per player (2026-11-13, feat/lineages-47)
+<a id="creature-migration-own-nests"></a>
+
+BUG-9163, BUG-9166..9168. ✔ (runtime) Migration thresholds: player property 0x54FB6BF held 150 (the last one passed)
+at a bar of 601; an editor at 701 started a migration (0x514A219 0 -> 1) and set it to 701, so the next threshold is
+between 601 and 701 (the first at 150 or below). Each game decides on the return from its own editor, with the bar it
+has (the party's bar, BUG-9162). ✔ After the party's migration every game (the host and three guests with species of
+their own) pointed CreatureGame_NestHerdFor(1) at the same new nest, the host species' new nest; the guests' avatars
+joined that herd when the host's world came. ✔ A nest herd made by CreateHerd starts with no members: +0x11C
+(mRespawnRate ms) was 120000 on these herds; +0xF4 the target size (4); +0x114 / +0x118 floats 10.0 / 15.0; +0x120 /
++0x124 the brain range (0, 5). With +0x11C set to 2000 the first member came 4-6 s after the nest was made.
+✔ On a guest the copies of the host's nest members join a nest herd of their species (npc.cpp proxy_herd); a species can
+have several nest herds after rebuilt nests (old ones extinct, +0x190): choose by distance. Test tools: `coop.evolve
+migration` (state, last threshold, bar, round), `coop.homes extinct <seat>` (decision 8: a nest dies out and is made
+again), `coop.nest home` on a guest (its home nest, the host's home for it, joins and fails).
+✔ (runtime) Herd +0x128 is 1 on a nest herd whose first member the game made at once and 0 on one that got none in 90 s
+(on a small island in the water); a write of 1 is undone the next frame. ✔ Proxies on a guest are made adult
+(spawn_creature passes age 1) whatever the host's member is (a new nest's first member is a baby, hp 16 of 46, on the
+host). ✔ `coop.nest look x y z` moves the own creature next to the point (tests; it moved the host).
+
+## The mate keeper and a guest's mate (2026-11-13, feat/lineages-47)
+<a id="creature-mate-keeper"></a>
+
+BUG-9174, BUG-9175, BUG-9173. Disassembly read from a running game (Steam 3010a413, tools/qa_win/dis.py).
+* ✔ CreatureClickAction 0xD30830 calls 0xD2FFD0 for a creature; it returns 9 (mate) when the creature's +0xB58 has
+  bit 0x10, else 7 for a friendly one (0xD3035C / 0xD3036E).
+* ✔ 0xD52270 (thiscall(this, u32, u32) ret 8, every frame in Creature: "SporeCoop::CreatureMateKeeper") keeps the nestmate
+  offered as mate in this+0x38 (an intrusive pointer, IntrusivePtr_Assign) and marks it: +0xB58 |= 0x10 and its
+  controller (+0xB4C) +0x5FC |= 0x4000. Before it: the avatar grown (+0xB34 == 1), +0xB5E clear, its herd with a nest
+  (+0x160); none offered while the avatar's +0x1678 > 0 (0xD526F7). A mate that fails 0xD4B2A0 is cleared by 0xD4B180
+  (thiscall(this, mate) ret 4: both bits off without a null check of the controller, Release, slot 0, timer this+0x3C).
+  0xD4B2A0 (thiscall(this, c) ret 4): vt+0x2C false, +0x135 set, +0xB5E clear, grown, the avatar's species (+0xB20, read by
+  0xC0BD30), +0xC0 vt+0x58 false, not this+0x14, 0xBCA230(+0xB48, 3, 1, 0, 0) == -1. Candidates come from the avatar's list
+  +0x1124 (object ids); with none eligible it spawns one of the avatar's species near the nest (0xD52B86) and marks it.
+* ✔ The nestmate's own answer 0xD6D360 also sets bit 0x10 and starts the hearts (0x9005E011).
+* ✔ (runtime, the MSI) A guest's own-family copies are never offered (slot 0, all class 7); one put in the slot with both
+  bits is class 9 and stays there (the game's own check accepts it); a click on it starts the mating approach (action
+  02D852F0) that then stalls (BUG-9175).
+* ✔ 0xC0B8D0 = "grown" (+0xB34 == 1), 0xC02DD0 = avatar +0x1678. `call <addr> thiscall ...` from the console faulted the
+  game (a misuse of the console's call, not the function): read fields with mem.read instead.
+* ✔ (BUG-9173) Nest herds made by home_nests have target 4 and respawn 120000 ms (2000 right after they are made); a
+  partner's species key changes with its network id (roadmap 1b), so a nest found only by species is lost between
+  sessions: each seat's nest is noted per planet (worlds.ini nest<seat>).
+* ✔ (BUG-9175, runtime 2026-11-13) The mating action of the avatar: its controller (+0xB4C) +0x1D8 = 02D852F0 (D23FE7CA at
+  the nest) from the click on the mate until the egg scene; on the host the pairing took 12 s (the native step's state
+  2 1, then 2 2). A creature's +0x1678 is its eggs to lay (`coop.nest herd`: to_lay). A nest herd with bodies or eggs is
+  refilled with eggs (a new egg: 129 s to hatch, +0x1F0), a nest with nothing gets a grown member; an egg set to 2 s
+  hatches and its member lives 10 s after the family died. `game::hit` of a party species by the host's avatar is
+  dropped by the damage filter (decision 7): `coop.nest kill <h> <n> raw` for tests.
+* ✔ A guest's copy of the world keeps a nest herd's species as saved: after the host changed the herd's species at run
+  time (follow_species) the copies of its members find no nest herd of their key there (they got a herd of their own).
+* Design note (decision 2S): one creature has two species on a guest (its own key and the host's key of it). BUG-9169,
+  BUG-9173, BUG-9175's herd and BUG-9176 all come from that; roadmap 1b (one stable key per identity, the same on every
+  game) would remove these patches.
+* ✔ (BUG-9177, real mouse 2026-11-13) The mate's card: the pink mate face when the mate is of the player species (vt 0xD0 at
+  0xB6C9D1: +0xB20 == PlayerSpecies, the key at cSpeciesManager +0xA4, [0x1CF0C24] +0xA4: instance, type, group), the
+  green ally face when the game takes it for another, friendly species. A creation put on the avatar only (BUG-0517) left
+  that key at the world's species: the own family was "another species". The key written to the avatar's species: the
+  pink face at once, also with the mod unloaded. The cursor (hearts) comes from CreatureClickAction 9 either way.
+* ✔ `H->world_to_screen` gives a creature's feet with the stock lens: with the wider FoV the drawn creature is elsewhere
+  (the MSI: 200 px off at 11 m); hover the body seen in a picture, not that point.
+
+## Party nests on the minimap and the hatchling's size (2026-11-14, feat/lineages-47)
+<a id="creature-party-nests-hatchling-size"></a>
+
+* ✔ (runtime, TITAN) The minimap update 0xD425A0 gives a nest icon the flags 0x80020, or 0x20 when nest +0x124 bit 0 is
+  set (0xD4294D): 0x80000 is the "?" of a nest not discovered. Writing +0x124 = 1 on a party seat's nest turned its "?"
+  into the friendly face at the next update; 0 brought the "?" back. The bit is saved with the world (a share carries
+  it). Further flags there: 0x200000 the ally face (herd +0x191 or the player species), 0x100000 herd +0x190 (extinct),
+  0x8 the own herd (or the nest's vt 0x58).
+* ✔ (disassembly) The family's greeting of a hatchling (BT node 0xD64A30), state 2 at 0xD64C6A: `x = creature->vt[0x80](0)`
+  (a float in ST0), then the spatial (creature +0xC0) vt 0x40 SetScale(x). On a guest's hatchling: 0.587 for a creature
+  whose adult size is 0.98 (the egg's is 0.1). game::hatchling_scale calls it.
+* ✔ A partner's body made by `game::spawn_creature` gets its own game's random adult size; modes.cpp made it 15 % bigger
+  (a guest's body on the host: radius 2.14 against its own 2.04). Each player's own size now travels in
+  PlayerState.captain_scale in Creature too.
+* Test note: `mod.reload coop` ends the session on both games (host and join again); `coop.abilities put` moves the own
+  avatar but the camera keeps its heading, and a downed host's spectator camera leaves a partner who opens an editor.
+
+## A guest's creature editor from the galaxy menu (2026-11-14, feat/lineages-47)
+<a id="creature-pregame-guest-editor"></a>
+
+* ✔ (runtime, TITAN) An EditorRequest for CreatureEditorExtraLarge (0x465C50BA) with no creation key, submitted in the
+  galaxy menu (GalaxyGameEntry 0x02CCD1D2), opens the full Creature Creator ("$2,000" budget, every part, the "Test
+  Drive" tip on a fresh profile) with a base body of a random colour; leaving it returns to the galaxy menu. The host's
+  game in it reports mode Editor 0x00DBDBA1 with the galaxy menu's world id (`Galaxy menu BDBE3B52 -> Editor BDBE3B52`).
+* ✔ The editor's finish button (the check) is control 0x058A3350, 40 x 40 at the bottom right (1239,922 on 1280 x 960;
+  983,730 on 1024 x 768). Window flag kFlagEnabled off draws it grey like the disabled undo / redo and it takes no
+  clicks. The check of a body with no mouth ("Mouthless") opens the name panel and does not save; the red X asks
+  "Exiting will cause your changes to be lost" (Cancel / Quit at 736,449 on 1024 x 768).
+* ✔ (runtime, TITAN, BUG-9208) Opened while a received world was being written into the guest's save slot, the same
+  request gave an editor whose 3D view stayed black (no background, platform or body; the UI fine) for minutes;
+  opened after the transfer (the world held) it rendered normally.
+
+## The Creature stage start editor of a new world (2026-11-15, feat/lineages-47)
+<a id="creature-stage-start-editor"></a>
+
+* ✔ (runtime, TITAN, fresh profile with `cheat levels -unlock`) A new Creature world from the galaxy wizard: an empty
+  planet slot, "Choose A Stage" (the paw), "Choose Your Diet" (a card goes on by itself), the Sporepedia "Create or
+  Choose a Creature", "Create Your Own" opens **editor 0xE46C381E** (not the Creature Creator 0x465C50BA): the
+  underwater stage, two part tabs (legs, hands), three legs, a 145 budget, a random-colour body. The request from the
+  galaxy menu (logged by h_Submit): +0x1C 0x02CCD1D2 (back to the galaxy menu), +0x20 / +0x24 two words that differ
+  by diet, bytes +0x34..+0x3F 00 00 01 01 01 01 00 01 00 01 00 00, +0x6C 0x00010100, +0x90 tag 0x13C5A95E, +0x94 a
+  parts list (cCollectableItems) made by the wizard.
+* ✔ The same request built by the mod with no parts list (`coop.newcreature E46C381E`) opens the same editor with the
+  same palette and budget on any profile (a guest's too).
+* ~ superseded (2026-11-15): see the CORRECTION below. In every profile tried (fresh, DuoQAJiffStand, DuoQAStageGuest)
+  the start editor offers no mouth, and its check says "Your creation needs a mouth": no creature can be finished there.
+* CORRECTION (2026-11-15, feat/lineages-47, the owner asked whether the mouth tab was opened): the second tab (the
+  hand icon) holds the mouths and eyes; only the first (legs) had been looked at. The start editor does offer mouths. The owner's own run (2026-11-14, 308 s in
+  the editor, a new creation 'Griscale' after it) finished one: how it got a mouth is not known (a Sporepedia creature
+  picked and edited? the owner's profile's parts?).
+* A test profile's first start shows the Spore account dialog; closing it asks "Quit registration?" (OK).
+* ✔ (runtime) The diet card's effect: the wizard's parts list (+0x94) has field +0xC = 1 (unknown items offered), no
+  unlockable items, no unlocked list, and two part states: the other diets' mouths (for herbivore 32AC9620 and
+  FE534766, type 0x40626000) state 4 (seen, locked). The second tab then shows the chosen diet's mouth and the other two
+  as locked diet silhouettes (a state without bit 2 shows a plain shield).
+* ✔ A parts list made the game's way (0x5BF2E0: GeneralAllocator::new_ 0x6DAC, the constructor 0x597E00
+  SporeCoop::CollectableItems_ctor, then UnlockPart / LockPart and the state bytes) on a request for 0xE46C381E gives
+  the same palette on another game (MSG_START_PARTS, 24b86cb6).
+* Test copies: a new .sym entry needs the QA copy's mods/sporekit/symbols/overrides_dc04aee5.sym too (copied by hand;
+  the DLL alone did not find the new symbol).
 
 ## Remote bodies shown where the host has them now (2026-11-06, fix/w45-remote-bodies)
 <a id="creature-remote-lead"></a>
@@ -4720,3 +5210,177 @@ Guest on the creature fixture, `coop.npc reusehunt p<id> ...` with `coop.npc chu
   their own fresh blocks back, which the next try takes again.
 * The object's +8 before the destroy (13-21) says nothing about whether the block comes back; the distance to the
   guest's avatar neither (hits at 76-101 m and misses at 7-110 m).
+
+## A scared species keeps away from every player (2026-11-16, feat/lineages-47)
+<a id="creature-scared-relation"></a>
+
+* ✔ (runtime, TITAN, Vandh.spo, host + guest) One adult killed (`coop.npc hosthit <id> 500`) turned species 0680580B
+  from relation 3 to 1 with killed=1 (`coop.social species`), and the guest's game showed relation 1 within 3 s (the mod
+  carries relations). So the ApplyEvent 0 threshold (tuning +0x3FC) is 1 in this save: one kill is enough.
+* ✔ A relation 1 (scared) herd runs from both players: the guest walking up to 067B0F9E (saved relation 1) got no nearer
+  than about 8 m, the others went out to 25-28 m; the host the same (nearest 14.6 m). It is the host's NPC AI (the
+  guest's proxies only follow), so it is not a proxy or puppet fault (BUG-9212, "they move away at the same speed").
+* ✔ Being downed and revived (creature_rescue, six times by herd 291E6C6A) does not change that herd's relation.
+
+## The social meter's bars and what is drawn (2026-11-16, feat/lineages-47)
+<a id="creature-meter-bars"></a>
+
+BUG-9230. Steam = GOG 2024 code, but SporeKit maps the .sym addresses: `sym SporeCoop::SocialMeter_SetBar` answers 0x00D21990 on Steam (the file's 0x00E31990 minus 0x110000); raw reads of the Steam exe must use the resolved address (the exe is encrypted on disk: read the code from a running game, `mem.read`). Read at runtime (TITAN, a native meter while the owner impressed, and the code around Steam 0xD21990-0xD237F0):
+
+* ✔ Two bars grow towards each other from the arc's ends: meter +0x3C (bar 0's start, 0.626) and +0x40 (bar 1's start, 2.516); each bar's full length is half the gap (0.945); full when pos0 + pos1 reaches +0x40 - +0x3C (Steam 0xD23705). After round 1 of 3 both bars stood at 0.315, full at 0.945.
+* ✔ Bar i (i = 0, 1, stride 0xA4): lo / pos / hi at +0x134 / +0x138 / +0x13C; SetBar(i, f) is pos = lo + (hi - lo) * f and sets +0x24 ("redraw", Steam 0xD21990). Its list of finished steps: vector begin / end / capacity at +0xA4 / +0xA8 / +0xAC, own storage for 6 entries at +0xBC; an entry is 0x14 bytes {the step's end on the arc (bar 0: +0x3C + length so far; bar 1: +0x40 - it; the last pi / 2), 1.0, -FLT_MAX, 0.0, 0.01}. One entry per finished round (the native meter: 1 entry after round 1, 2 when full of 2).
+* ✔ What is drawn is that list (the draw at Steam 0xD232FF walks it); a pos without entries draws nothing. The guest's meter had lo = hi = 0 and empty lists: the BUG-9230 empty arc.
+* ✔ The meter tick (Steam ~0xD237CB): when +0x24 is set it takes the bars' window 0x562BD40 from the meter's layout (meter +0xC, UTFWin::UILayout::FindWindowByID(id, 1)) and calls its vt 0x90 (the redraw). A guest has no session to run it; social.meter_fill does that call.
+* ~ Steam 0xD224B0(i) ends a step (hi = pos, trims the list with 0xD22120(i)) and 0xD22EC0 is the win (both bars to the end, +0x26 full); not called by the mod.
+* CORRECTION (2026-11-16, feat/lineages-47): the .sym note on SocialMeter_SetBar ("the session tick 0xD9B9C0 sets it", BUG-0179) is right about SetBar, but SetBar is not what draws the fill; see above.
+
+## When a Summon Flock event ends (2026-11-16, feat/lineages-47)
+<a id="creature-summon-done"></a>
+
+BUG-9245. Steam build, the code read from a running QA game (`mem.read`, Steam = .sym - 0x110000).
+
+* ✔ The Drama Manager tick (Steam 0xC3E450, GOG 2024 0xD4E450) for an active event: duration +0x2C -= dt every tick, nothing else done with it; the event ends (+0xC = 0, then vt+0x34 end) only when +0x30 and the avatar's +0xB5E say so, when a time-of-day condition (+0x1C == 3, hours +0x20 / +0x24) is over, or when vt+0x3C "done?" returns true; else vt+0x40 update(dt).
+* ✔ cSummonCreatureEvent vtable (Steam 0x0136B398): +0x30 start 0xC40EA0, +0x34 end 0xC414F0, +0x3C done? 0xC3D2F0, +0x40 update 0xC412A0 (GOG 2024 0xD512A0).
+* ✔ done? (0xC3D2F0): the herd from the event's prop list +0x5C..+0x60 ({key, object} pairs, key 0x609F2F8, object vt+0xC(0x52AA6117)); true when there is no herd, its list +0x40..+0x44 is empty, or every creature in the list has +0x135 == 0.
+* ✔ update (0xC412A0): at its end (flag 0x614A7EA of prop list +0x44 set, or the duration <= 0) it posts "follow" to each member and lets go (+0x135 = 0, +0xF90 = 0) only a member over 100 m from the avatar (or 50 m, spatial vt 0x48 false). So the duration alone does not end a summon: a flock kept near its leader keeps it active.
+  CORRECTION (2026-11-16, feat/lineages-47): "lets go" is not harmless: a creature with +0x135 == 0 is no longer updated by the game (see #creature-summon-pool).
+* ✔ end (0xC414F0): for each member in the list, a call with the member and cPosseSimulator 0xC43440(member, 0, 0); then the herd goes through cGameNounManager::DestroyInstance. Runtime: after it the members had herd 0 and stood still (their move_to did nothing).
+* ✔ The list is not maintained by Creature_SetHerd: members moved to another herd stay listed, and a member that dies stays listed; runtime: an entry at a freed address later held a newborn of another species with +0x135 = 1.
+
+## A summon's end pools its flock; +0x135 is "updated" (2026-11-16, feat/lineages-47)
+<a id="creature-summon-pool"></a>
+
+BUG-9245, BUG-9247, BUG-9248. Steam build, TITAN QA (Samuth.spo), runtime only.
+
+* ✔ The summon event's end (vt+0x34, 0xC414F0) returns every creature still in its herd's list to the game's pool: right after it the flock was at (0 0 0) with herd 0; the pool later gave the same objects (same serial +0x24) out to other herds' spawns (a 0654E5F0 at 62.5 hp in a former flock member's object).
+* ✔ +0x135 decides whether the game updates a creature: summoned members with +0x135 = 0 (set by hand) never appeared in the cCreatureAnimal::Update list (`coop.npc list`) for 60 s and stood still; members with +0x135 = 1 in the same herd walked (1-5 m/s) and were listed. Wild NPCs read +0x135 = 1. Not linked to the herd: enabling the partner's puppet herd (cHerd::SetEnabled 1) changed nothing.
+* ✔ A summoned creature's species key (species_instance, the key at +0x...) read 0 about 7 s after its summon; its species profile stayed.
+* ✔ A save keeps an active summon event and its list: after a reload it was active 540-600 s past its duration, its 3 listed creatures in another herd; StartKind(8) (0xC3D740 Steam) starts only idle events (+0xC == 0), so every summon was refused.
+* ✔ Emptying the list (end = begin) makes "done?" true; the manager's next tick runs the game's own end, which then pools nobody (`coop.drama endsummon`, and the automatic tidy past the event's time).
+* ✔ A member's SetTarget (vt 0x84, the victim's combatant) is kept (+0xE7C) but a summoned member does not go to the target (BUG-9248, open).
+* ✔ The drama manager starts no event of another kind while one runs: a night_predator event (time-of-day window +0x20 21.0 h to +0x24 3.0 h) left every summon "none idle" (host and partner); setting its window to 12-13 h ended it at the next tick (tests only).
+* ✔ (22:00-22:09) The pack's attack order is the posse relay's CreatureCommandStimulus (Steam 0xC42E40 case 0x10 / 0x400, read live: the not-allied check 0xAFEA30(member, target, 6) and PosseMemberCanDefend first). Only a creature in the game's pack obeys it: the host's summoned flock killed a test creature after one host bite; the partner's flock and a recruit out of the pack stood by with the same order; one of them added with cPosseSimulator_AddMember (flag 0x100 and the pack list) went and fought. The flag alone did nothing (BUG-9248).
+* ✔ The posse simulator's +0x18 is the pack size (3) and +0x1C the summoned count; members + count at the size: AddMember and recruits refused. A count of 3 with no summon running came with a save (BUG-9249).
+* ✔ The relay's case 0x10 runs a different path in mode 0x1654C10 (not read).
+
+## What one pack is, and every user of it (2026-11-16, feat/lineages-47)
+<a id="creature-pack-map"></a>
+
+Decision 5CD (a pack per player, BUG-9248). Steam build: the decrypted code dumped from a running QA game (Steam = GOG
+2024 - 0x110000 in code) and read offline (scratchpad tools dumptext.py / xrefs.py / dis2.sh; the Steam exe on disk is
+encrypted, no GOG 2024 exe on TITAN).
+
+* ✔ A pack is three things: the pack manager cPosseSimulator, one object of 0x58 bytes in the global [0x158E5B8]
+  (Steam; getter 0xC43980 makes it on first use: allocate 0x58, ctor 0xC438A0, vt+0x1C); the member list in the noun
+  manager (+0x5C begin / +0x60 end / +0x64 capacity, getter 0xA0F900 `lea eax,[ecx+0x5C]`); and its leader, the
+  avatar (noun manager +0x54).
+* ✔ ctor 0xC438A0: vtable 0x136B760, +0x8 a second vtable 0x136B73C, +0x10 = 60000, +0x14 a float, +0x18 = 0 (the
+  pack size), +0x1C = 0 (the summoned count), +0x20/+0x24/+0x28 a small vector with inline storage at +0x38 (0x20
+  bytes), +0x34 = 0; it writes itself into the global (a second object made by the ctor must give the global back).
+* ✔ 0xC42DA0: real members = list size - summoned count (+0x1C). 0xC42DC0: the size limit = +0x18 when an avatar
+  exists, capped by [0x134C44C] above 3.
+* ✔ vtable 0x136B760: 0xC43680, 0x6F4A00, 0x7242E0, 0x343A80, 0xC43740, 0xC42C30, 0xF72A20, 0xC43A30 (+0x1C, called
+  once after the ctor), 0xC436E0. Which slot is the per-frame update: not read yet.
+* ✔ Callers (call rel32 scan): the pack manager getter 48 sites in 30 functions; the member list getter 41 sites in
+  33 functions; AddMember 0xC442E0 5 (the social recruit 0xC8F650, the summon start 0xC40EA0, 0xB10390, 0xE0D4B0,
+  0xE2B430); the relay 0xC42E40 3 (TakeDamage 0xAF75E0 and two more in 0xAF32F0 / 0xAF3CD0); GrowMembers 7;
+  PosseMemberCanDefend 5; AddPosseMember 0xA13430 only from AddMember. Most callers are in the Creature range
+  0xC2xxxx-0xC8xxxx; the 0xDExxxx-0xE3xxxx ones are not identified (UI or later stages).
+
+## A pack per player: what the game's pack needs (2026-11-17, feat/lineages-47)
+<a id="creature-pack-per-player"></a>
+
+Decision 5CD, BUG-9248. Steam code dumped live (Steam = GOG 2024 - 0x110000), runtime on TITAN and the MSI.
+
+* ✔ The pack manager has no per-frame update: only the Pack panel (0xC1B950) and the drama manager (0xC42270) ask for it
+  every frame (`coop.gpack callers`); nothing else reads its global directly. Its +8 interface is the save (attribute
+  tables 0x1473D30).
+* ✔ AddMember (Steam 0xC442E0): a summoned creature (its herd +0x192, or +0xE68) counts +0x1C up and has no limit; any
+  other is refused when list size - +0x1C >= 3 (a fixed 3, not +0x18) or when it is listed; it adds the portrait to the
+  Pack panel through App::cCreatureModeStrategy::Get() +0x68 (skipped when null), a name, the first-pack hint
+  0x533535DA. RemoveMember (0xC43440) counts down for a summoned one and removes the portrait the same way.
+* ✔ Creature_PlayerCommand (GOG 0xC032F0) is how the player's click becomes a pack order: the command stimulus on the
+  avatar, then cPosseSimulator_Relay; the relay's attack case reads the avatar's own target (SetTarget, +0xE7C), not
+  the command's.
+* ✔ Following: a creature's update (Steam 0xAF9570 from cCreatureAnimal::Update) posts stimulus 0x4000000 (value 5.0)
+  on its own brain from the sensed creature with the avatar mark (+0xB58 & 0x200); the host's recruit carried it from
+  the host's creature (brain +0x184 = the sender of slot 6). Not reproduced for a partner: the mark lent inside its
+  party, or the stimulus posted by hand at 4 Hz, did not make the member follow the puppet (posted by hand it walked
+  off). The mod walks members back instead.
+* ✔ The pack's bite: with the same recruits (06539202) and the same order the host's pack landed every hit
+  (`coop.gpack watch`: 6 hits by the two members), a partner's pack none (the members walked to 1.7 m and stood),
+  with its leader beside the target and with the members' own update inside or outside the party. Not found: which
+  check outside the swapped state (pack manager, list, leader, family herd, panel) stops the bite.
+* ✔ A summon's "done?" waits until its flock is 100 m from the leader; a pack kept at its leader's side keeps it active,
+  and the world has one summon event: while it runs nobody summons (the host's own summon in single player as well).
+* ✔ Wild creatures from `coop.npc spawn` live in herds of the mod's kind and are never saved (savestrip): a save test
+  needs creatures of the world's own nests.
+
+## A partner's own game runs its pack (2026-11-17, feat/lineages-47)
+<a id="creature-pack-own-game"></a>
+
+Decision 5EA, BUG-9248, `coop.fix creature.pack_own_game` (both games). Runtime on TITAN (host 9 + guest 8) and with
+the MSI as player 2 over Tailscale (Samuth.spo).
+
+* ✔ The pack's attack order, follow and defend work in the partner's own game with no change to the game's code: there
+  the partner's creature is the game's avatar and its pack members (proxies of the host's creatures, put into that
+  game's pack list by 5CD phase 2) are its own pack. Lent to that game's AI (npc::lend_local_ai, refreshed every 0.5 s),
+  they follow the player, defend it when something hits it, and attack what the player orders (Creature_PlayerCommand,
+  0x10), exactly as in single player.
+* ✔ Their bites on the host's creatures arrive in the partner's damage filter as hits on proxies with the member as the
+  attacker (type 2, 1.5 or 6.75 for 06539202); sent as MSG_DAMAGE_REQ they land on the host as the partner's own hits
+  (kill credit, assist). Hits with no attacker on dead proxies are the pack eating a body (not sent; the meat sync owns it).
+* ✔ The host runs no AI for a member with a fresh state (game::set_ai_skip_pack, 1.5 s) and moves it with the proxies'
+  driving (drive::walk_place while it runs, drive::step while it stands). A first version (MoveTo at the state, a
+  teleport past 6 m) jumped the members 31 times in a 40 s follow; with the proxies' driving 0 (`jumps=` in coop.gpack).
+* ✔ Their behaviour animations (the game's listener on the partner's side) go to the host and play there
+  (play_behaviour_anim): 29 of 29 played in one attack. The host's relay of them back to that partner is ignored for
+  lent proxies.
+* ✔ The host keeps their health and deaths: a lent proxy takes the host's health each frame and goes back to the sync
+  (which plays the death) when the host's state says dead.
+* ~ Not changed: the Summon Flock still runs on the host (one event per world, 5CD); the partner's own game does not
+  summon. Impress help not tested.
+
+## The party's Summon Flock lock (2026-11-17, feat/lineages-47)
+<a id="creature-summon-lock"></a>
+
+Decision 5FA, BUG-9250, `coop.fix creature.summon_lock`.
+
+* ✔ AbilityBar_Use (0xD49560 GOG 2024) is the place to refuse an ability before the game spends it: the keys and the
+  bar's buttons both end there, and returning without calling it leaves no trace (no cooldown, no hint).
+* ✔ AbilityBar_Status of Summon Flock (0x33) in the QA world (Samuth.spo) is 10 on every player: the ability exists
+  (row 4) but is not on the bar yet, so a press does nothing; a test of the press itself needs a world where it is
+  unlocked. `coop.abilities reach` lists each ability's status and the bar's slots.
+* ✔ The host knows whose flock is out: drama::summon_running (an active summon updated within 2 s) and
+  drama::summon_puppet (the partner's puppet when the running event is the one started for it).
+
+## The pause menu's save, step by step (2026-11-17, feat/lineages-alpha)
+<a id="creature-save-steps"></a>
+
+GOG 2024 / Steam (3010a413), Ghidra on the TITAN dump (docs/05-re-notes.md#re-notes-ghidra-windows). Decision 6A A (the
+galaxy's saves must not freeze the game).
+
+* ✔ `SporeCoop::SaveGame_MessageHandler` 0xB29960: the Save message 0x1CD20F0 clears `SporeCoop::SaveGame_Allowed`
+  (0x15689AC), starts `SporeCoop::SaveGame_Clock` (0x167DF70), shows the busy cursor, pauses the game time (reason
+  0x4BF38A7) and posts 0x685DBFA; 0x685DBFA posts itself again until the clock shows 1000 ms, then the clock pauses,
+  the game time and the cursor come back, the star record's tech level and flags are set and
+  cGamePersistenceManager_SaveGame(CurrentGameName, 1) writes the save (the 0.7-0.9 s frame measured in the alpha
+  test), then the "game saved" box shows.
+* ✔ The box's OK (listener 0x1568A7C, 0xB269F0) starts a second clock (0x167DF88) and posts 0x685DBFA, which 1500 ms
+  later sets SaveGame_Allowed again: a box that is never confirmed (or a save whose box is skipped) blocks every later
+  save. So the box is not skipped; the mod confirms it as soon as it shows (world.cpp).
+* ✔ The Clock: +0 start ticks, +8 accumulated ticks, +0x10 mode (1 rdtsc), +0x14 float ms per tick
+  (Clock::GetElapsedTicks 0x93A310). Adding 1000 ms worth of ticks to +8 once the Save message was handled lets the
+  next 0x685DBFA write the save at once: the game time is paused for a frame or two instead of a second.
+* ✔ The silent save, message 0x689C9B9 (same handler; its one other use: the leave-the-planet path 0xB638CD,
+  MessageSend with data 0): the same save steps at once, with no clock, no game-time pause, no busy cursor and
+  SaveGame_Allowed untouched; the "game saved" box afterwards only when the message's data is 0 (a failed save always
+  shows its box). Only the persistence manager listens to it (the scan finds the handler, that sender and its
+  registration in .rdata). So a save sent as 0x689C9B9 with non-zero data costs the write alone (0.7-0.9 s).
+* ✔ (runtime, TITAN 2026-11-17) The message system keeps a message's data as a counted object (vt 0 AddRef, vt 4
+  Release): a plain non-null pointer crashed in MessagePost (`exception at App::cMessageManager::MessagePost+0x20`,
+  data 5). Posted (vt 0x18) from the mod's frame hook with a token object, the message hung the main thread in
+  MessageSend's lock (a hang report: Mutex_Unlock < MessageSend). Sent with MessageSend (vt 0x14) outside the frame
+  (SkHost::run_outside_frame), as the game's own leave-the-planet path sends it, with a static token object: the save
+  is written at once (one 0.7 s frame), no box, no pause, and the next host loaded it.
+

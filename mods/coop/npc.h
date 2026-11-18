@@ -14,6 +14,7 @@
 #include "sporekit.h"
 
 namespace npc {
+float reported_enemy_max(void* creature); // zero unless this is a replicated scaled enemy
 
 struct Ctx {
     net::Session* sess = nullptr;
@@ -26,6 +27,8 @@ struct Ctx {
     std::function<bool(uint8_t id, net::Vec3& pos)> player_pos;
     // the latest state of player `id` says it is dead (death caption, respawn)
     std::function<bool(uint8_t id)> player_dead;
+    // the latest state of player `id` says it is down (waiting for a revive, PF_DOWNED; BUG-9192)
+    std::function<bool(uint8_t id)> player_downed;
     std::function<void(const std::string&)> feed;
     // guest: the host left the stage (main menu): the guest's own game simulates its NPCs meanwhile
     std::function<bool()> host_away;
@@ -48,6 +51,10 @@ void set_death_fix(bool on);                  // tests: off = a killed proxy doe
 void set_stall_fix(bool on);                  // tests: off = no teleport of a proxy far off while the NPC reports a speed (BUG-0169)
 void set_known_fix(bool on);                  // tests: off = only host_tick forgets them (BUG-0125)
 bool is_proxy(void* creature);
+// guest (BUG-9181): proxy `creature` runs its own AI on this game for `seconds` more (the sync leaves it alone): the
+// game's mating needs the mate's own AI (its answer, the walk to the player, the dance). Again to extend, 0 to end.
+bool lend_local_ai(void* creature, double seconds);
+double lent_for(void* creature); // tests: seconds the proxy is still lent (<= 0: not)
 // TakeDamage filter shared with coop.cpp; returns true to let the game apply damage
 bool debug_host_hit(uint16_t id, float damage, float push = 0); // host avatar hits host NPC #id (push: thrown, tests)
 bool debug_recruit(uint16_t id);
@@ -90,6 +97,9 @@ bool debug_hurt(uint8_t player, uint16_t id, float damage); // host: NPC `id` hi
 bool proxy_in_host_pack(void* c); // guest: proxy c mirrors a member of the host's pack (BUG-0556)
 uint16_t id_of(void* c);         // host: the net id of NPC c, guest: of proxy c (0xFFFF: none)
 void* host_npc(uint16_t id);     // host: NPC #id if it is alive this frame
+extern void* g_damage_watch;     // tests (decision 5CD): hits on it are logged with their attacker
+uint32_t hits_sent_count();      // guest: hits on proxies sent to the host so far (BUG-9132)
+bool forward_hit(void* proxy, float damage, int type); // guest: send a hit of the own avatar on proxy to the host
 std::string debug_pool(uint16_t id); // host (tests, BUG-0339): NPC #id to the game's creature pool
 std::string debug_nanvel(float secs, int id, bool air); // tests (BUG-0894)
 std::string debug_rxkeep(int n, float secs); // guest (tests, BUG-0611): only the first n NPCs of each state batch for secs

@@ -29,6 +29,7 @@ struct Msg {
     int type;
     uint32_t a, b, c, d;
 };
+constexpr int kMsgTransformed = 0x15; // d: the Matrix4* the window manager is building (InflateEffect scales it)
 constexpr int kMsgKeyDown = 1, kMsgKeyUp = 2, kMsgMouseDown = 6, kMsgMouseUp = 7, kMsgButtonClick = 0x17,
               kMsgButtonSelect = 0x18, kMsgMouseEnter = 0x1B, kMsgMouseLeave = 0x1C,
               kMsgTextChanged = (int)0x9B1552DA, kMsgComponentActivated = 0x287259F6;
@@ -37,12 +38,17 @@ constexpr int kMsgKeyDown = 1, kMsgKeyUp = 2, kMsgMouseDown = 6, kMsgMouseUp = 7
 inline bool is_click(const Msg& m) { return m.type == kMsgComponentActivated; }
 constexpr int kAlignLeft = 1, kAlignRight = 2, kAlignCenter = 3;
 constexpr uint32_t kFlagVisible = 1, kFlagEnabled = 2, kFlagIgnoreMouse = 0x10, kFlagAlwaysInFront = 0x40;
+// not in ModAPI: hit tests (the mouse) go through the window's transform (seen live 2026-11-13: without it a scaled
+// window drew larger and took clicks at its old size)
+constexpr uint32_t kFlagTransformHits = 0x20;
 
 bool init(const SkHost* host, SkMod* mod);
 void register_commands();
 
 // ---- reading ----
 Win main_window();
+// the window the game's own hit test finds at a screen point (IWindowManager vt 0x44, GetWindowAtPosition(Point&))
+Win window_at(float x, float y);
 std::vector<Win> children(Win w);
 Win parent(Win w);
 const char* type_name(Win w); // GetComponentName
@@ -66,11 +72,19 @@ int refs(void* object);   // the game's reference count of a live window / image
 extern bool g_release_fix; // core.ui_release (BUG-1025): what the mod drops is given back
 void set_caption(Win w, const std::string& utf8);
 void set_area(Win w, const Rect& r);
+// the area the window has after its layout procs (anchors): they are reverted first (IWindow vt 0x6C, SetLayoutArea)
+void set_layout_area(Win w, const Rect& r);
 void set_visible(Win w, bool on);
 void set_enabled(Win w, bool on);
 void set_flag(Win w, uint32_t flag, bool on);
 void set_ids(Win w, uint32_t control_id, uint32_t command_id);
 void set_font(Win w, uint32_t font_id);
+// a copied button's caption in the middle of the button: no caption offset, even borders (button_like keeps the
+// model's, made for a text beside an edge: a one-glyph caption sat right of the middle)
+void center_caption(Win w);
+void set_shade_color(Win w, uint32_t argb);
+void set_fill_color(Win w, uint32_t argb); // the window's own background (Window vt 0xAC; 0 alpha: none)
+uint32_t fill_color(Win w);                 // (vt 0xA4)
 uint32_t font(Win w);
 void add_child(Win parent, Win child);
 void remove_child(Win parent, Win child);
@@ -88,7 +102,45 @@ Win button_like(Win parent, Win like, const Rect& r, const std::string& caption)
 Win label(Win parent, const Rect& r, const std::string& text, uint32_t font_id, uint32_t argb, int align);
 void set_label_color(Win label, uint32_t argb);
 // a one-line text field
-Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_id, int max_len);
+Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_id, int max_len,
+              bool draw_background = true);
+void set_edit_masked(Win edit, bool masked);
+// a native slider (UTFWin WinSlider, as the Audio page's): `drawable` an ISliderDrawable (e.g. slider_drawable_of(another
+// slider)), horizontal or vertical; values min..max
+void* as_slider(Win w); // ISlider* or nullptr
+Win slider(Win parent, const Rect& r, int min, int max, int value, bool horizontal, void* drawable);
+void* slider_drawable_of(Win slider);
+// a new SliderDrawable of `like`'s class (a SliderDrawable) with our images (background groove, thumb, thumb container;
+// a null keeps `like`'s)
+void* slider_drawable_with(void* like, void* background, void* thumb, void* container);
+int slider_value(Win w);
+// a toggle button's (check box's) ticked state (IButton state flag 4, kBtnStateSelected)
+bool button_selected(Win w);
+void set_button_selected(Win w, bool on);
+// a window that only draws `drawable` (a box's background), ignoring the mouse
+Win box(Win parent, const Rect& r, void* drawable);
+void set_slider_value(Win w, int value);
+// the window manager builds the window's transform again (IWindow vt 0x98, InvalidateTransform)
+void invalidate_transform(Win w);
+// the window's real area again from its area and layout procs (anchors; IWindow vt 0x94, Revalidate)
+void revalidate(Win w);
+// the window's transform as drawn (screen = local * scale + offset; Window +0x148, its type at +0x188: 0 identity,
+// 1 translation and scale, read live 2026-11-13); false for other types
+bool render_xform(Win w, float& sx, float& sy, float& tx, float& ty);
+// BUG-9238: the window's rectangle in screen pixels as drawn: at an Interface Size other than 100 % Spore's UI is laid
+// out for a smaller screen and drawn scaled (coop_ui 3X A), so screen_rect() is its layout place, not where it shows.
+// The drawn transform (render_xform, translation and scale) when the window has one; else screen_rect().
+// Off (`coop.fix ui.drawn_rect off`): screen_rect().
+Rect drawn_rect(Win w);
+// the window has a transform of its own (its local transform, Window +0xC0, type at +0x100, is not the identity: the
+// game's InflateEffect buttons while they grow); the game hit-tests such a window through its full transform
+bool has_own_transform(Win w);
+// a native combo box (UTFWin IComboBox, cast 0x2F5528D9; ModAPI's order): its values, the selected one, changes
+void* as_combo(Win w);
+std::vector<std::string> combo_values(Win w); // UTF-8
+int combo_selected(Win w);
+void combo_select(Win w, int index);
+void combo_set_values(Win w, const std::vector<std::string>& values);
 std::string edit_text(Win edit);
 void set_edit_text(Win edit, const std::string& text);
 
@@ -97,13 +149,21 @@ void set_edit_text(Win edit, const std::string& text);
 void* image(uint32_t instance, uint32_t type, uint32_t group);
 // a window showing a png from a package at its own size (IImageDrawable::AddImageWindow)
 Win image_window(Win parent, uint32_t instance, uint32_t group, float x, float y);
+bool has_image(uint32_t instance, uint32_t group);
 // a new SporeStdDrawable copying `src` (a SporeStdDrawable) with another icon image
 void* std_drawable_with_icon(void* src, void* icon);
+// a new StdDrawable drawing `image` stretched like Spore's tooltip background (the native
+// tooltip drawable's class and layout values, read at runtime 2026-11-10)
+void* std_drawable_tooltip(void* image);
+void* std_drawable_image(void* image, uint32_t mode); // the tooltip drawable with another layout mode
+// a new StdDrawable with the layout of `src` (a StdDrawable: the game's button) and `n` images of ours for its states
+// (images[0..3]: normal, disabled, highlighted, active); null if `src` is no StdDrawable or an image is missing
+void* std_drawable_states(void* src, void* const* images, int n);
 void set_drawable(Win w, void* drawable);
 
 // ---- events ----
 // fn(window, message) -> handled. The handler object lives in sporekit (safe on hot reload).
-void* add_handler(Win w, std::function<bool(Win, const Msg&)> fn);
+void* add_handler(Win w, std::function<bool(Win, const Msg&)> fn, int event_flags = 0); // 0: input + advanced (0x81)
 void remove_handler(Win w, void* handler);
 
 uint32_t fnv(const char* s); // Spore id()

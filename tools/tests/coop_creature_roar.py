@@ -10,7 +10,7 @@ ability's +0xA0 seconds: the creature runs away) and the stimulus (0, 0x4000000)
 
 1. Two games on the creature fixture; the guest's avatar has the roar (type 0x31).
 2. The guest stands 6 m from a group of the host's wild NPCs (another species than the guest's, mirrored by the
-   guest) and roars (`coop.rules roar 31`: the node's first tick, as the ability button starts it).
+   guest) and roars (`coop.prules roar 31`: the node's first tick, as the ability button starts it).
 3. The host's game: every one of its NPCs of another species within 20 m of the guest's puppet (the roar's range is
    30 m) holds the roar's goal slot within 2 s (the game's own state: the slot's template and group), and none did
    before the roar.
@@ -112,7 +112,7 @@ def main():
     n0 = {n['id']: node(host, n['ptr']) for n in near}
     print('  host NPC nodes before: ' + ', '.join(f"#{i} {v}" for i, v in n0.items()), flush=True)
     d0 = {n['id']: math.dist(n['pos'], pp) for n in near}
-    print('  ' + guest.call('coop.rules roar 31')['out'].strip(), flush=True)
+    print('  ' + guest.call('coop.prules roar 31')['out'].strip(), flush=True)
     got = {}
     t0 = time.time()
     while time.time() - t0 < 2.5 and len(got) < len(near):

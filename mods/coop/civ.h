@@ -37,10 +37,14 @@ int own_selected(bool* city = nullptr);
 // give them to another player (the host applies it); returns how many
 int give_selected(uint8_t to);
 
+bool planner_open(); // BUG-9153: the community editor (Civ or Tribe planner) is up
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);
 void tick(double now);
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
+void before_native_save();
+void after_native_save();
+void clear_enemy_health();
 void on_world_change(); // a load: the tables of game pointers are cleared (BUG-0059)
 // BUG-0223: once per frame at the top of on_frame (after game::stage_epoch_tick, before messages):
 // calls on_world_change when the Civ world changed; with civ.world_epoch off it does nothing and
@@ -56,6 +60,12 @@ void for_each_diag(void (*fn)(const char* key, const net::Vec3& p, void* user), 
 std::string list();
 std::string debug(const std::vector<std::string>& args);
 bool active();
+// BUG-9135 roadmap phase 4 (decision 4, guest): this player has no founder nation in the host's Civ world; 1 they play
+// no creature of their own (the Co-op window asks them to choose one), 2 their own creature (the capital comes); 0 none
+int late_prompt();
+bool offline_control_available();
+bool founder_space_ready();
+bool offline_control_enabled();
 // owners for overlay tags
 void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, bool city, void* user), void* user);
 // test bots (coop.targets): every city ("city", host index, owner: player id, 253 shared, -1 other nation)

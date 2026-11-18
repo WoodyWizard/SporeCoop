@@ -1,4 +1,5 @@
 #include "teamplay.h"
+#include "creature_rescue.h"
 
 #include <cmath>
 #include <cstdio>
@@ -44,15 +45,12 @@ void forget_target(void* target)
 // BUG-0330: the rescue cooldown (kRescueCooldown) outlived the session and the world: a player that
 // left and joined again (or loaded another world) within a minute of a rescue had none in the new
 // session (the warm `team` runs failed "rescue counted (1 -> 1)", the guest died of the lethal hit).
-// `coop.fix team.rescue_reset off`: the cooldown runs on (0.7.3.x).
-static bool g_rescue_reset = true;
-COOP_FIX("team.rescue_reset", "BUG-0330", g_rescue_reset, "creature: a new session or world starts with the pack's rescue ready");
+// (Its switch team.rescue_reset was retired 2026-11-12, roadmap 0e: stable since 0.7.3.2.)
 void reset()
 {
     if (g_hits.fix)
         g_hits.clear();
-    if (g_rescue_reset)
-        g_last_rescue = -1000;
+    g_last_rescue = -1000;
 }
 
 size_t hit_targets() { return g_hits.size(); }
@@ -96,6 +94,8 @@ float on_own_damage(void* avatar, float damage)
 {
     if (!g_on || !avatar || damage <= 0 || !settings::on(settings::kPackRescue))
         return damage;
+    if (creature_rescue::protect(avatar, damage))
+        return damage;
     float hp = game::health(avatar);
     if (hp <= 0 || hp - damage > 0)
         return damage;
@@ -116,14 +116,55 @@ float on_own_damage(void* avatar, float damage)
     return before - keep;
 }
 
+// BUG-9126: hunger drains a few hundredths of a point all the time, and the regen topped every one of
+// them up each second: the game's heal effect played forever on both players ("stuck healing",
+// noticed after fights at a nest). The regen now starts below 95% and heals to full, then waits.
+// Off (`coop.fix creature.regen_hysteresis off`): any missing health, every second.
+static bool g_regen_fix = true;
+COOP_FIX("creature.regen_hysteresis", "BUG-9126", g_regen_fix,
+         "creature: the pack regen starts below 95% health and stops at full (no endless heal effect)");
+static bool g_regen_active;
+
+// BUG-9133 (not reproduced on two PCs): the game's own nest heal (avatar +0xFB8, docs/re/creature.md BUG-0496) keeps
+// its sound going while it heals. A heal that stays on for 15 s without the health rising is logged once per episode
+// (what keeps it from finishing: health, max, the regen, the rescue), for the next report of a looping heal sound.
+static void nest_heal_watch(void* avatar, double now)
+{
+    static double on_since = -1, logged_at = -1;
+    static float hp_at_start;
+    const uint8_t* av = (const uint8_t*)avatar;
+    const bool on = av && av[0xFB8];
+    if (!on) {
+        on_since = -1;
+        return;
+    }
+    const float hp = game::health(avatar);
+    if (on_since < 0) {
+        on_since = now;
+        hp_at_start = hp;
+        return;
+    }
+    if (now - on_since < 15 || logged_at >= on_since)
+        return;
+    logged_at = now;
+    H->log(M, SK_WARN, "creature: the nest heal is on for %.0f s: hp %.2f -> %.2f of %.2f, regen %d, down %d (BUG-9133)",
+           now - on_since, hp_at_start, hp, game::max_health(avatar), (int)g_regen_active, (int)creature_rescue::down());
+}
+
 void tick(void* avatar, double now)
 {
-    if (!g_on || !avatar || now - g_last_regen < 1.0 || !settings::on(settings::kPackHeal))
+    nest_heal_watch(avatar, now);
+    if (!g_on || !avatar || creature_rescue::down() || now - g_last_regen < 1.0 || !settings::on(settings::kPackHeal))
         return;
     g_last_regen = now;
     float hp = game::health(avatar), mx = game::max_health(avatar);
-    if (hp <= 0 || hp >= mx || nearest_partner(avatar, kRegenDist).empty())
+    if (hp <= 0 || hp >= mx || nearest_partner(avatar, kRegenDist).empty()) {
+        g_regen_active = false;
         return;
+    }
+    if (g_regen_fix && !g_regen_active && hp >= 0.95f * mx)
+        return; // a scratch (hunger's drip): not worth a heal effect every second
+    g_regen_active = true;
     game::set_health(avatar, std::fmin(mx, hp + kRegenPerSec * mx));
 }
 
@@ -131,6 +172,8 @@ std::string status()
 {
     if (!g_on)
         return "";
+    auto rescue = creature_rescue::ui_line(); // BUG-9141: the ring shows the time
+    if (!rescue.empty()) return rescue;
     void* av = game::avatar();
     float d = 0;
     std::string p = av ? nearest_partner(av, kRescueDist, &d) : std::string();

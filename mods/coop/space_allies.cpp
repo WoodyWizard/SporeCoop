@@ -1,3 +1,5 @@
+#include "cellsync.h"
+#include "creature_hp.h"
 // Space feature "allies" (MSG_SPACE kinds 60..69): a partner's colonies as an allied empire in my
 // copy of the galaxy (docs/re/space.md 15, docs/09-coop-design.md feature 4).
 //
@@ -29,7 +31,11 @@
 #include "game.h"
 #include "modes.h"
 #include "space_ext.h"
+#include "identity.h"
 #include "space_logic.h"
+#include "world.h"
+#include "squadron.h"
+#include "civ.h"
 #include "space_map.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
@@ -58,6 +64,41 @@ static uintptr_t a_StarMgr, a_NextPol, a_GetEmpire, a_CreateEmpire, a_EmpireInit
     a_RelMgr, a_RelMap, a_RelData, a_RelReset, a_AllyAdd, a_AllyRemove, a_EnemyAdd, a_EnemyRemove, a_StrAssign,
     a_Save, a_Expand, a_PlayerEmpire, a_Color, a_NounMgr, a_GetData, a_MissionCb[4], a_SetState, a_StartRaid,
     a_Context, a_ActivePlanet, a_RequirePlanets, a_AllCities, a_GetPlanets, a_AddCivData, a_GetPlayer, a_FlagsAt, a_AllUFOs, a_TakeDamage, a_PlayerUFO, a_SpacePlayerData;
+
+// Initial pirate raid construction, before any ships spawn or the native
+// offscreen simulation runs. One bomber can bring several escorts of its own.
+using BuildRaidFleet = void(SK_CDECL*)(void*,int*,int*,int*,int,int);
+static BuildRaidFleet o_BuildRaidFleet;
+static uintptr_t a_RaidFleetReturn, a_AppendRaidEntry;
+static unsigned g_scaled_raids, g_base_ships, g_extra_ships;
+static void SK_CDECL h_BuildRaidFleet(void* fleet, int* bombers, int* raiders, int* abductors, int low, int high)
+{
+    const bool fresh = (uintptr_t)__builtin_return_address(0) == a_RaidFleetReturn &&
+        spaceext::is_host() && spaceext::in_space() &&
+        F<uint8_t*>(fleet,0) == F<uint8_t*>(fleet,4);
+    o_BuildRaidFleet(fleet,bombers,raiders,abductors,low,high);
+    if (!fresh || *bombers < 1) return;
+    auto* mission = static_cast<uint8_t*>(fleet) - 0x238;
+    if (F<uint32_t>(mission,0x78) != 0xA4B0A2DF || !F<uint8_t>(mission,0x215)) return;
+    // One raider per extra seat at 100% difficulty; new campaigns scale it (BUG-9100).
+    // BUG-9199: the raided colony's party (the players online), not the reserved seats
+    const unsigned extra = std::min(squadron::party_rules(false).extra_total(1), 12u);
+    auto end = F<uint8_t*>(fleet,4);
+    if (!extra || !end || !F<uint8_t*>(fleet,0)) return;
+    g_base_ships = unsigned(end - F<uint8_t*>(fleet,0)) / 0x20;
+    g_extra_ships = 0;
+    for (unsigned i = 0; i < extra; ++i) {
+        thiscall<void>(a_AppendRaidEntry,fleet);
+        // Growth may reallocate the native vector; reacquire its final record.
+        auto* entry = F<uint8_t*>(fleet,4) - 0x20;
+        F<int>(entry,4) = 2; // ordinary raider, no bomber or subordinate escort group
+        // The native constructor sets the formation parent to -1. The spawn
+        // routine accepts that value for independent raiders.
+        ++*raiders;
+        ++g_extra_ships;
+    }
+    ++g_scaled_raids;
+}
 
 // ---- what each mirror changed (to undo it exactly) ----
 struct StarSnap {
@@ -94,7 +135,8 @@ struct Mirror {
     std::map<uint32_t, std::string> skipped; // PlanetID -> why not mirrored
     std::map<uint32_t, uint8_t> raids;       // the owner's raids now: PlanetID -> bombers
 };
-static std::map<std::string, Mirror> g_m;
+static std::map<std::string, Mirror> g_m; // identity::key -> mirror (BUG-9198; the name before)
+static uint32_t g_rekeyed;
 static bool g_ok, g_hold;            // g_hold: no apply (unmirrored for a save, until g_reapply_at)
 static double g_reapply_at, g_next_sync, g_next_raid_scan, g_last_raids_sent;
 static uint32_t g_roster_seen = ~0u;
@@ -767,11 +809,20 @@ static void SK_THISCALL h_Save(void* mgr, const char16_t* name, int flag)
     }
     g_saves++;
     spaceext::note_save();
+    const auto cell_stamp = cellsync::cell_save_stamp();
+    creature_hp::before_native_save();
+    civ::before_native_save();
+    squadron::before_native_save();
     o_Save(mgr, name, flag);
+    squadron::after_native_save();
+    civ::after_native_save();
+    creature_hp::after_native_save();
     // BUG-0225: the game wrote the file synchronously (<name>.tmp, then its own rename; the function
     // returns nothing, docs/re/space.md#space-owed-refund-identity). An empty name writes nothing.
-    if (name && *name)
+    if (name && *name) {
         spaceext::note_saved();
+        cellsync::note_saved_cell_credit(cell_stamp);
+    }
 }
 
 // NPC empires grow (colonise more stars) on their own: not the mirror (it would leave stars behind)
@@ -843,6 +894,18 @@ static bool own_mirror(uint32_t planet)
 }
 
 } // namespace spaceallies
+bool spaceext::enemy_empire(uint32_t political_id)
+{
+    using namespace spaceallies;
+    void* empire = player_empire();
+    if (!empire || political_id == 0xFFFFFFFFu || !(political_id & 0x80000000u) ||
+        political_id == F<uint32_t>(empire,0x84) || mirror_pol(political_id)) return false;
+    // The native cEmpire enemies vector holds empire pointers (AddEnemy).
+    const auto enemies = ptr_vec(static_cast<uint8_t*>(empire) + 0x5C);
+    for (auto enemy : enemies)
+        if (readable(enemy,0x88) && F<uint32_t>(enemy,0x84) == political_id) return true;
+    return false;
+}
 bool spaceext::allies_mirror_pol(uint32_t pol) { return spaceallies::mirror_pol(pol); }
 bool spaceext::allies_own_mirror(uint32_t planet) { return spaceallies::own_mirror(planet); }
 std::vector<void*> spaceext::game_missions() { return spaceallies::missions(); }
@@ -1009,7 +1072,19 @@ static void sync_from_rosters()
         std::string name = spaceext::name_of(id);
         if (name.empty() || name == "?")
             continue;
-        Mirror& m = g_m[name];
+        // BUG-9198: one mirror per player identity (a rejoin under another name or network id is the same empire);
+        // the entry made under the name before the identity arrived moves to the identity key
+        const std::string k = identity::key(id);
+        if (!g_m.count(k))
+            for (auto it = g_m.begin(); it != g_m.end(); ++it)
+                if (it->first != k && it->first.rfind("name:", 0) == 0 && it->second.online && it->second.id == id) {
+                    auto node = g_m.extract(it);
+                    node.key() = k;
+                    g_m.insert(std::move(node));
+                    g_rekeyed++;
+                    break;
+                }
+        Mirror& m = g_m[k];
         m.name = name;
         m.id = id;
         m.online = true;
@@ -1018,7 +1093,7 @@ static void sync_from_rosters()
         m.wanted.clear();
         for (auto& c : r->colonies)
             m.wanted.push_back(c.planet);
-        seen.insert(name);
+        seen.insert(k);
     }
     for (auto& [n, m] : g_m)
         if (!seen.count(n) && m.online && m.id != 0xFF) {
@@ -1225,9 +1300,9 @@ static std::string status()
         ap += m.applied, pl += (int)m.planets.size(), st += (int)m.stars.size();
     snprintf(b, sizeof b,
              "allies: mirrors=%d applied=%d stars=%d planets=%d hold=%d saves=%u unmirrors=%u applies=%u growth_blocked=%u "
-             "raids_started=%u raids_won=%u raids_completed=%u end_pending=%d end_pending_done=%u",
+             "raids_started=%u raids_won=%u raids_completed=%u rekeyed=%u end_pending=%d end_pending_done=%u",
              (int)g_m.size(), ap, st, pl, (int)g_hold, g_saves, g_unmirrors, g_applies, g_growth_blocked,
-             g_raids_started, g_raids_won, g_raids_completed, (int)g_end_pending, g_end_pending_done);
+             g_raids_started, g_raids_won, g_raids_completed, g_rekeyed, (int)g_end_pending, g_end_pending_done);
     return std::string(b) + (g_last.empty() ? "" : " last='" + g_last + "'");
 }
 
@@ -1371,6 +1446,9 @@ static std::string debug(const std::vector<std::string>& a)
     if (a[0] == "detach" && a.size() > 1) { // tests (BUG-0071): mirror <name> becomes a plain empire of this
         // galaxy: no contact, no alliance, its star and colony stay, the mod forgets it
         auto it = g_m.find(a[1]);
+        for (auto j = g_m.begin(); it == g_m.end() && j != g_m.end(); ++j) // by the player's name (BUG-9198 keys)
+            if (j->second.name == a[1])
+                it = j;
         if (it == g_m.end() || !it->second.applied)
             return "no such applied mirror\n";
         set_relation(it->second, false);
@@ -1387,6 +1465,16 @@ static std::string debug(const std::vector<std::string>& a)
             forget(m);
         g_m.clear();
         return status();
+    }
+    if (a[0] == "enemies") { // tests (BUG-9199): the political ids of the own empire's enemies
+        void* e = player_empire();
+        if (!e)
+            return "no empire\n";
+        std::string o = "enemies";
+        for (void* x : ptr_vec((uint8_t*)e + 0x5C))
+            if (readable(x, 0x88))
+                o += " " + hex(F<uint32_t>(x, 0x84));
+        return o + "\n";
     }
     if (a[0] == "empire" && a.size() > 1) {
         void* e = empire_of((uint32_t)strtoul(a[1].c_str(), nullptr, 16));
@@ -1464,6 +1552,9 @@ static std::string debug(const std::vector<std::string>& a)
             }
         return "hit " + std::to_string(n) + " raid ships\n";
     }
+    if (a[0] == "raid_scaling")
+        return "scaled raids " + std::to_string(g_scaled_raids) + ", base ships " +
+               std::to_string(g_base_ships) + ", extra ships " + std::to_string(g_extra_ships);
     if (a[0] == "missions") { // tests (BUG-0199): every mission noun of this game; "missions done <ptr>": SetState(5)
         if (a.size() > 2 && a[1] == "done" && a_SetState) {
             void* want = (void*)(uintptr_t)strtoul(a[2].c_str(), nullptr, 16);
@@ -1602,6 +1693,11 @@ static bool init(const SkHost* h, SkMod* m)
     a_MissionCb[2] = S("SporeCoop::MissionNouns_Cb3");
     a_MissionCb[3] = S("SporeCoop::MissionNouns_Cb4");
     a_SetState = S("Simulator::cMission::SetState");
+    a_RaidFleetReturn = S("SporeCoop::PirateFleetBuildReturn");
+    a_AppendRaidEntry = S("SporeCoop::RaidAppendEntry");
+    auto fleet_builder = S("SporeCoop::RaidBuildFleet");
+    if (fleet_builder && a_AppendRaidEntry && a_RaidFleetReturn)
+        H->hook_create(M,(void*)fleet_builder,(void*)h_BuildRaidFleet,(void**)&o_BuildRaidFleet);
     a_StartRaid = S("SporeCoop::StartRaidCheat");
     a_Context = S("SporeCoop::Space_GetCurrentContext");
     a_ActivePlanet = S("SporeCoop::Space_GetActivePlanet");

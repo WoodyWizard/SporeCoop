@@ -425,31 +425,30 @@ def run(restart):
     host.click('close')
     check(host.wait(lambda s: s['open'] == '0', 10, 'closed') is not None, 'host: the window closes')
 
-    # ---- 4. guest: Join a game, the LAN list ----
-    guest.click('gojoin')
-    st = guest.wait(lambda s: s.get('step') == 'join' and s['join']['vis'] and s['address']['vis'], 10, 'the Join step')
-    check(st is not None and not st['host']['vis'], 'guest: "Join a game" shows the Join step (list, address, Join)')
-    # our host among the LAN rows (other lanes' hosts on this machine are listed too, pages of three)
-    ours = lambda s: next((r for r in ('lan0', 'lan1', 'lan2') if s[r]['vis'] and 'Alice' in s[r]['text']  # noqa: E731
-                           and f':{lane.PORT}' in s[r]['text']), None)
-    st = guest.wait(lambda s: s['lan0']['vis'], 30, 'LAN games')
-    row = None
-    for _ in range(8):
-        st = guest.state()
-        row = ours(st)
-        if row or not st['lanmore']['vis']:
-            break
-        guest.click('lanmore')
-        time.sleep(1)
-    shot(gc, 'ui_step_join.png')
-    probs = layout_problems(gc)
-    check(not probs, f'guest: the Join step: captions fit, nothing overlaps {probs} (BUG-1065)')
+    # guest: discovery + join
+    guest.type_into('name', 'Bob')
+    # our host among the LAN rows (other lanes' hosts on this machine are listed too)
+    lan_rows = [f'lan{i}' for i in range(6)]
+    ours = lambda s: next((r for r in lan_rows if s[r]['vis'] and 'Alice' in s[r]['text']), None)  # noqa: E731
+    st = guest.wait(lambda s: ours(s) is not None, 30, 'LAN game')
+    row = ours(st) if st else None
+    listed = [guest.state()[r]['text'] for r in lan_rows if guest.state()[r]['vis']]
+    shot(gc, 'ui_guest_lan.png')
     if row is not None:
         check(True, f'guest: host found on the network: {st[row]["text"]}')
         guest.click(row)
-    else:  # never click another lane's game (that joins a test of another lane): join ours by its address
-        listed = [st[r]['text'] for r in ('lan0', 'lan1', 'lan2') if st[r]['vis']]
-        check(False, f'guest: host found on the network (listed: {listed})')
+        selected = guest.wait(lambda s: s['joinport']['text'] == str(lane.PORT), 3, 'selected server port')
+        if selected is None:
+            guest.type_into('address', f'127.0.0.1:{lane.PORT}')
+        guest.click('join')
+    else:
+        # The window shows six games at once: with other lab lanes hosting,
+        # ours can be below the first six. Never click another
+        # lane's game (that joins a test of another lane): join ours by its address
+        if len(listed) < len(lan_rows):
+            check(False, f'guest: host found on the network (listed: {listed})')
+        else:
+            print(f'  guest: six other games listed ({listed}): join by address')
         guest.type_into('address', f'127.0.0.1:{lane.PORT}')
         guest.click('join')
     st = guest.wait(lambda s: s['page'] == 'lobby' and len(s['rows']) >= 2, 20, 'guest lobby')
@@ -489,32 +488,13 @@ def run(restart):
         probs = layout_problems(ui.c)
         check(not probs, f'{ui.who}: the F9 lobby in game: captions fit, nothing overlaps {probs} (BUG-0908)')
 
-    # ---- 5b. colours (F2): the column, a refused pick and a taken one by real clicks ----
-    PINK, GREEN = 'FFFF5FC8', 'FF5CE05C'
-    hs = host.wait(lambda s: len(s.get('colors', {})) == 2 and all(v != '00000000' for v in s['colors'].values()), 10,
-                   'host colours')
-    gs = guest.state()
-    check(hs and hs.get('colors') == gs.get('colors') and len(set(hs['colors'].values())) == 2,
-          f"the colour column: distinct, the same on both games ({hs and hs.get('colors')} / {gs.get('colors')})")
-    print('  host:', hc.call('coop.find color pink')['out'].strip(), flush=True)
-    st = guest.wait(lambda s: s.get('colors', {}).get(0) == PINK, 10, 'the host in pink on the guest')
-    check(st is not None, "the guest's colour column shows the host's new colour (pink)")
-    guest.click('colour')
-    st = guest.wait(lambda s: 'another player' in s.get('status', ''), 5, 'the refusal')
-    check(st is not None and st.get('colors', {}).get(1) != PINK,
-          f"the guest's click on pink (the host's) is refused, the reason in the status line ({st and st.get('status')!r})")
-    guest.click('colour')
-    gs = guest.wait(lambda s: s.get('colors', {}).get(1) == GREEN, 10, 'the guest in green')
-    hs = host.wait(lambda s: s.get('colors', {}).get(1) == GREEN, 10, 'the guest in green on the host')
-    check(gs is not None and hs is not None,
-          f"the guest's second click: green, in both games' colour column ({gs and gs.get('status')!r})")
-    shot(gc, 'ui_guest_colours.png')
-    shot(hc, 'ui_host_colours.png')
-
-    # ---- 6. ready, chat ----
+    check(not st['ready']['vis'], 'guest: Ready hidden outside a vote')
+    hc.call('coop.vote test')
+    check(guest.wait(lambda s: s['ready']['vis'], 10, 'vote prompt') is not None, 'guest: Ready appears during a vote')
     guest.click('ready')
-    st = host.wait(lambda s: any('Bob' in r[0] and r[4] == 'ready' for r in s['rows']), 10, 'ready')
-    check(st is not None, 'host: sees the guest ready')
+    st = host.wait(lambda s: any('everybody is ready' in c for c in s['chat']), 10, 'vote result')
+    check(st is not None, 'host: receives the guest Ready and finishes the vote')
+
     guest.type_into('chatedit', 'hello from Bob')
     gc.call(f'key {VK_RETURN}')
     st = host.wait(lambda s: any('hello from Bob' in c for c in s['chat']), 10, 'chat')

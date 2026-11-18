@@ -15,7 +15,7 @@ tests: coop_away_editor.py (suite away_editor; --nofix fails), coop_cell_away.py
 signature:
 docs: docs/06-testing.md#testing-census, docs/re/cell.md#cell-host-away, docs/06-testing.md#testing-cell-away
 related: BUG-0151, #130
-switch: core.away_editor, core.away_goal, pool.away
+switch: core.away_editor, pool.away
 ---
 
 ## Report
@@ -95,3 +95,4 @@ Cell (fix/w9-cell-away), `coop_cell_away.py`, lane 3, GOG 2024:
 - 2026-10-28: switch: core.away_editor, core.away_goal (the coop.fix registry names; CORRECTION: a switch name in the text above that is not one of these, such as `session_end`, is from before the registry and `coop.fix` answers "unknown fix" to it) (BUG-0214).
 - 2026-10-30 (fix/w9-cell-away): Cell part fixed: the guest plays its own pool while the host is away (menu, and now a host editor or load in Cell too) and takes the host's pool again when it is back, its food kept and sent (`pool.away`, cell_away FAIL/PASS).
 - 2026-11-01: released in 0.7.3.2.
+- 2026-11-12: switch core.away_goal retired (roadmap 0e batch 1, stable since 0.7.3): the fix is always on.

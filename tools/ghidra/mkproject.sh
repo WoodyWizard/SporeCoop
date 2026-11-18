@@ -42,7 +42,7 @@ echo "log: $LOG"
 if [[ $NAMES == 1 ]]; then
     [[ -f "$GH_PROJ/spore.gpr" ]] || { echo "no project $GH_PROJ" >&2; exit 1; }
     exec 9>"$GH_PROJ.lock"; flock -x 9
-    "$GH_AH" "$GH_PROJ" spore -process SporeApp.exe -noanalysis -scriptPath "$GH_HERE" \
+    gh_ah "$GH_PROJ" spore -process SporeApp.exe -noanalysis -scriptPath "$GH_HERE" \
         -postScript SporeSetup.java nodisc "${SYMS[@]}" > "$LOG" 2>&1
     grep -E 'SporeSetup.java> ' "$LOG" | sed 's/.*SporeSetup.java> //'
     exit 0
@@ -50,15 +50,20 @@ fi
 
 [[ -f "$EXE" ]] || { echo "no exe $EXE (pass --exe)" >&2; exit 1; }
 sha="$(sha256sum "$EXE" | cut -c1-8)"
-[[ "$sha" == "$GH_SHA" ]] || { echo "$EXE has sha256 $sha..., build $BUILD needs $GH_SHA..." >&2; exit 1; }
+# SPORE_GHIDRA_ANY_EXE=1: an exe of the same code with another hash (Windows: the Steam exe's image dumped from a
+# running game, its relocations undone, docs/05-re-notes.md)
+if [[ "$sha" != "$GH_SHA" && "${SPORE_GHIDRA_ANY_EXE:-0}" != 1 ]]; then
+    echo "$EXE has sha256 $sha..., build $BUILD needs $GH_SHA... (SPORE_GHIDRA_ANY_EXE=1 for a dump of the same code)" >&2
+    exit 1
+fi
 
 NEW="$GH_PROJ.new"
 rm -rf "$NEW"; mkdir -p "$NEW"
 t0=$(date +%s)
 # -import reads the exe only; the copy in the project is Ghidra's own database.
-"$GH_AH" "$NEW" spore -import "$EXE" > "$LOG" 2>&1
+gh_ah "$NEW" spore -import "$EXE" > "$LOG" 2>&1
 t1=$(date +%s)
-"$GH_AH" "$NEW" spore -process SporeApp.exe -noanalysis -scriptPath "$GH_HERE" \
+gh_ah "$NEW" spore -process SporeApp.exe -noanalysis -scriptPath "$GH_HERE" \
     -postScript SporeSetup.java "${SYMS[@]}" >> "$LOG" 2>&1
 t2=$(date +%s)
 grep -E 'SporeSetup.java> ' "$LOG" | sed 's/.*SporeSetup.java> //'

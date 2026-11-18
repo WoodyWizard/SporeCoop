@@ -14,7 +14,7 @@ namespace creature_hp {
 
 struct Ctx {
     std::function<void*(uint8_t id)> puppet_of;
-    std::function<bool()> is_host;
+    std::function<bool()> is_host, in_session;
 };
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx);
@@ -22,6 +22,12 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx);
 // modes.cpp (creature puppets, every frame): the partner's health and max health as its own game
 // has them. Returns false when the fix is off (the caller pins the puppet to full health as before).
 bool drive_puppet(void* puppet, float health, float max_health);
+void set_enemy_health(void* creature, unsigned percent); // validated live host creature
+bool enemy_scaled(void* creature);
+float native_citizen_max(void* citizen);
+void before_native_save();
+void after_native_save();
+void clear_enemy_health();
 void forget_puppet(void* puppet); // the puppet goes
 
 // host (npc.cpp): a pack member or a member of the avatar's herd (the family)

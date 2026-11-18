@@ -16,13 +16,23 @@
 #include "sporekit.h"
 
 namespace tribe {
+extern bool g_cycle_order_fix; // shared by Tribal and Civilization snapshot receivers
+float reported_enemy_max(void* citizen);
 
 struct Ctx {
     net::Session* sess = nullptr;
     std::function<void(const std::string&)> feed;
     std::function<void(const std::string&)> notice; // shown to every player
     std::function<bool()> host_away; // guest: the host left the world (main menu): we play on locally
+    // host: the player's last state says they play in this world now (not loading it, not in the menu); BUG-9135
+    std::function<bool(uint8_t player)> here;
+    // guest, BUG-9159: open the creature editor for a new creature (outside the frame; late_editor_opened on success)
+    std::function<void()> open_creature_editor;
 };
+// BUG-9159 (owner decision 2M): guest: in Tribe without a village and without a creature of their own
+bool late_needs_creature();
+void late_editor_opened();          // guest: the new-creature editor opened (the host holds the stand-in)
+void late_editor_done(bool saved);  // guest: back from it: a creature was saved (its key follows) or none
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx); // false: symbols missing
 // own members selected now (the "give" button of the co-op window)
@@ -46,6 +56,30 @@ std::string debug(const std::vector<std::string>& args);
 // owner of a player tribe member (player id), 0xFF if unknown
 uint8_t owner_of(void* citizen);
 bool active(); // tribe sync running (tribe stage, connected)
+bool village_orders(); // the host owns both native food stores in two-village mode
+void begin_outfit_vote(); // host: bind the native outfit vote to this founder and world
+void cancel_outfit_vote();
+void finish_own_outfit(bool saved); // guest: called after own editor adoption/cancel
+bool outfits_pending(); // defer campaign saves until a voted guest result is applied
+bool rescue_pending();
+float revive_seconds(void* citizen); // zero unless this last villager is waiting for its partner
+// BUG-9152 (guest, Tribe): the terrain cursor's candidate list for this game: the own village's selectable members
+// (null: leave the cursor as it is); native_cursor_candidates: the player tribe's own list (to restore)
+void* guest_cursor_candidates();
+void* native_cursor_candidates();
+float revive_total();                 // BUG-9141: a downed last villager's whole wait (30 s; 10 with tribe.down_30 off)
+float revive_progress(void* citizen); // BUG-9141: host: a partner villager's revive so far (0..1); guests: 0
+std::string village_food_line(); // cached for the HUD, no game pointers needed
+std::string village_birth_line(); // native configured food cost
+std::string village_tool_line(int kind); // native price and host campaign unlocks
+std::string performance_line(); // recent host performance state for guest controls/HUD
+// BUG-9135 roadmap phase 4 (decision 4, tribe.late_prompt; docs/re/tribe.md#tribe-late-joiners):
+// guest: this player is in the host's Tribe world with no village of their own (tribe_late::Prompt): 0 no prompt, 1 they
+// play no creature of their own (one of the host's creatures): the Co-op window asks them to choose their own, 2 their
+// own creature is chosen and the host founds their village (the selector stays for a change)
+int late_prompt();
+// host: why a connected partner has no village yet, for the Co-op window's status line ("" = nobody waits)
+std::string founding_wait_line();
 // BUG-0588, BUG-0594: this game is in the end of Tribe (docs/re/tribe.md#tribe-civ-transition): back from the City Hall editor
 // (the player tribe has no food mat any more, +0x260 = 0). From the City Hall on the game takes the player village and
 // the animals out of the world (totem pole and food mat destroyed, every animal at (0, 0, 0)) for the Civ stage; a
@@ -133,4 +167,5 @@ bool remove_tool(void* tool);
 // tool of that type elsewhere goes, as the palette's placement of a type the tribe has); false: nothing done
 bool buy_player_tool(int type, const net::Vec3& pos);
 
+void give_up_now(); // BUG-9118: the own downed founder / disabled ship gives up (tests: coop.giveup)
 } // namespace tribe

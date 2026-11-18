@@ -2,6 +2,8 @@
 // See docs/04-netcode.md.
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -94,6 +96,36 @@ enum MsgType : uint8_t {
                           // 1 guest -> host request {u8 obj kind, u32 id, vec3 pos, u32 state now}). Older SporeCoop ignores it.
     MSG_CELL_KO = 44,     // any -> host -> all: u8 player, u8 state (0 up,1 out,2 revived,3 respawned),
                           // u8 tenths of a second left, u8 revive progress 0..255
+    MSG_CREATURE_RESCUE = 73, // u32 world, u32 knockout number, u8 event; only the host sends results
+    MSG_TRIBE_BUILDINGS = 55, // host -> guest: u32 world/sequence, u8 count, {id/noun/faction, pos, hp/maxhp}
+    MSG_TRIBE_EQUIPMENT = 74, // host -> guest: u32 world/sequence, u8 count, {u16 citizen, u8 tool/item}
+    MSG_TRIBE_TOOLS = 75, // host -> guest: complete per-village rack inventory, transforms and health
+    MSG_TRIBE_RELATIONSHIPS = 58, // host -> guest: world/sequence, ordered faction pair, flags, native event values
+    MSG_TRIBE_FOOD = 76, // host -> guest: NPC stores, bounded by world/faction/species/position
+    MSG_TRIBE_PERFORMANCE = 77, // host -> guest: world/sequence, up to64 {member, native token, phase/request/ready, progress, round/total}
+    MSG_TRIBE_OUTFIT = 78, // reliable: u8 begin/result/accepted, u32 world/token/previous/model; voted founders only
+    MSG_CIV_TURRETS = 90,  // host -> guest: one city wall layout, occupied slots and turret HP
+    MSG_CELL_COMBAT = 89, // guest contact hit; host replies with any whole bonus for the same body
+    MSG_CAMPAIGN_RULES = 88, // reliable host snapshot scoped to campaign name hash and stage
+    MSG_IDENTITY = 83, // reliable guest -> host (BUG-9135): u64 the player's persistent identity (identity.h)
+    MSG_TRIBE_LATE = 84, // reliable host -> guest (BUG-9159): u8 kind (1: make your creature in the editor now), u32 world
+    MSG_DNA_OWN = 85, // reliable host -> guest (BUG-9162): f32 DNA of that guest's own (its kill paid on the host's game)
+    MSG_START_PARTS = 87, // reliable host -> guests (3Z B): u16 n, n x {u32 key lo, u32 key hi, u8 state}: the part states of
+                          // the parts list of the host's new-world start editor (its diet's mouth unlocked)
+    MSG_MIGRATE = 86, // reliable (BUG-9163): u8 kind 1 (a migration started), u8 the player whose evolution started it, u32 world
+    MSG_DRAMA = 82, // reliable host -> guests (BUG-9131): u8 Drama Manager event kind the host started (meteor, rain)
+    MSG_PROGRESS_DEBT = 81, // reliable host -> guests (BUG-9119): u32 stage mode, u32 world, f32 the party's progress debt
+    MSG_TRIBE_COMBAT = 80, // reliable host snapshot: world, count, {member id, scaled native max HP}
+    MSG_SPACE_LAUNCH = 79, // reliable host offer and founder reply for a missed Civilization launch
+    MSG_CIV_ECONOMY = 91, // host city routes and economic meter; civ_economy.h (BUG-9085: 64 belongs to Tribe)
+    MSG_CIV_INFLUENCE = 92, // host native religious followers and meter; civ_influence.h
+    MSG_HOST_RESTART = 94, // reliable host -> guests (BUG-9239, decision 4S): u16 seconds; the host restarts Spore for
+                           // its memory and hosts the same world again: the guests rejoin by themselves meanwhile
+    MSG_NPC_STATE_C = 93, // unreliable host -> guest (BUG-9235): MSG_NPC_STATE's batch in the compact form: u32 time_ms,
+                          // u8 n, vec3 anchor, n x write_npc_c (23 B), then n x i16 height trailer
+    MSG_ADVENTURE = 70, // reliable mission/run-scoped objective proposals and ordered host credits
+    MSG_LIBRARY = 71, // optional CAP_LIBRARY persistent creation PNG exchange
+    MSG_ADVENTURE_ACTORS = 72, // unreliable host -> guest: scenario creatures' states (adventure_sync.h ActorBatch, BUG-9114)
     MSG_DIAG = 60,        // support diagnostics (net/diagmsg.h): u8 kind, payload; session clock, bug
                           // marks, sync self-check. Older SporeCoop ignores it (an unknown type).
     MSG_EFFECT = 61,      // a player's own creature started / stopped a visual effect (BUG-0451,
@@ -147,10 +179,13 @@ struct DiscoverReply {
     // (read() does not ask for the end); an older host sends none (has_id false).
     bool has_id = false;
     uint32_t host_id = 0;
+    int scaling = -1; // older replies do not advertise rules
+    uint8_t settings = 0; // bit 0: paced transfer, bit 1: password required
     void write(Writer& w) const
     {
         w.u32(kDiscoverReply); w.u16(proto); w.u16(port); w.str8(name); w.u8(players); w.u8(max_players); w.str8(info);
         if (has_id) w.u32(host_id);
+        if (has_id && scaling >= 0) { w.u16((uint16_t)scaling); w.u8(settings); }
     }
     bool read(Reader& r)
     {
@@ -158,6 +193,9 @@ struct DiscoverReply {
         proto = r.u16(); port = r.u16(); name = r.str8(); players = r.u8(); max_players = r.u8(); info = r.str8();
         has_id = r.ok() && r.left() >= 4;
         host_id = has_id ? r.u32() : 0;
+        scaling = -1;
+        settings = 0;
+        if (has_id && r.left() >= 3) { scaling = r.u16(); settings = r.u8(); }
         return r.ok();
     }
 };
@@ -169,7 +207,7 @@ enum RejectReason : uint8_t {
     REJ_STARTED = 4, // F3 all.late_join off: the host plays its world already (an older guest shows the text)
 };
 
-enum PlayerFlags : uint8_t {
+enum PlayerFlags : uint16_t { // Lineages + upstream 0.7.14: 9 flags (u16 on the wire)
     PF_IN_WORLD = 1,  // player has an avatar in the creature stage
     PF_MOVING = 2,
     PF_RUNNING = 4,
@@ -177,7 +215,9 @@ enum PlayerFlags : uint8_t {
     PF_DEAD = 16,
     PF_SWIMMING = 32,
     PF_SNEAKING = 64, // BUG-0463: the creature sneaks (+0xBB1); older SporeCoop ignores the bit
-    PF_RESYNC = 128,  // BUG-0332: the host loads the shared world once for everybody (tribe.host_reload); older SporeCoop ignores it
+    PF_DOWNED = 128,  // Lineages: knocked down (creature_rescue), 64 before the 0.7.8 merge
+    PF_RESYNC = 256,  // BUG-0332 (upstream 128): the host loads the shared world once for everybody (tribe.host_reload)
+    PF_PAUSED = 512,  // BUG-9227 (Lineages): the host's game time stands (its pause, a caption) for a second or more
 };
 
 // BUG-0425: a height over the sender's terrain (m) that is not known (an older sender, no terrain)
@@ -202,8 +242,13 @@ enum Caps : uint32_t {
     // the versions of the game and the mod (support logs, 0.7.4): HELLO: str8 "coop X, SporeKit Y, <build>";
     // WELCOME: str8 of the host, u8 n, n x (u8 player id, str8 version) of the players the host knows
     CAP_VERSION = 4,
+    CAP_PERSONAL_LAUNCH = 16, // HELLO: this guest understands the optional Civilization launch offer
+    CAP_CAMPAIGN_PROFILE = 8, // str8: fork rules and required content
+    CAP_RESUME_WORLD = 64, // HELLO only: u64 receipt for a still-loaded world
+    CAP_JOIN_PROOF = 128, // HELLO only: connection-bound password proof
+    CAP_LIBRARY = 32, // persistent, paced creation-library exchange (MSG_LIBRARY)
 };
-constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION; // what this build supports (the token bit is per HELLO)
+constexpr uint32_t kMyCaps = CAP_SPLIT | CAP_VERSION | CAP_LIBRARY; // token bit is per HELLO
 
 struct Hello {
     uint16_t proto = kProtoVersion;
@@ -213,18 +258,30 @@ struct Hello {
     uint32_t caps = kMyCaps;   // read: 0 = an older peer
     bool has_token = false;
     uint64_t token = 0;
+    uint64_t resume_world = 0;
     std::string version; // CAP_VERSION ("" read: an older peer)
+    std::string campaign_profile;
+    std::string join_proof;
     void write(Writer& w) const
     {
         w.u16(proto); w.u32(build); w.str8(name);
         if (!ext)
             return;
         uint32_t c = (caps & ~(uint32_t)CAP_TOKEN) | (has_token ? CAP_TOKEN : 0);
+        if (!campaign_profile.empty())
+            c |= CAP_CAMPAIGN_PROFILE;
+        c &= ~(uint32_t)CAP_RESUME_WORLD;
+        if (resume_world) c |= CAP_RESUME_WORLD;
+        if (!join_proof.empty()) c |= CAP_JOIN_PROOF;
         w.u32(c);
         if (has_token)
             w.raw(&token, 8);
         if (c & CAP_VERSION)
             w.str8(version);
+        if (c & CAP_CAMPAIGN_PROFILE)
+            w.str8(campaign_profile);
+        if (resume_world) w.raw(&resume_world, sizeof resume_world);
+        if (!join_proof.empty()) w.str8(join_proof);
     }
     bool read(Reader& r)
     {
@@ -234,6 +291,7 @@ struct Hello {
         caps = 0;
         has_token = false;
         token = 0;
+        resume_world = 0;
         ext = r.left() >= 4;
         if (ext)
             caps = r.u32();
@@ -242,6 +300,7 @@ struct Hello {
             has_token = true;
         }
         version.clear();
+        campaign_profile.clear();
         if ((caps & CAP_VERSION) && r.left() >= 1) {
             Reader v = r; // a bad payload leaves the HELLO readable
             std::string s = v.str8();
@@ -249,6 +308,17 @@ struct Hello {
                 version = s;
                 r = v;
             }
+        }
+        if (caps & CAP_CAMPAIGN_PROFILE) {
+            campaign_profile = r.str8();
+            if (!r.ok() || campaign_profile.empty()) return false;
+        }
+        if ((caps & CAP_RESUME_WORLD) && r.left() >= sizeof resume_world)
+            r.raw(&resume_world, sizeof resume_world);
+        join_proof.clear();
+        if (caps & CAP_JOIN_PROOF) {
+            join_proof = r.str8();
+            if (!r.ok() || join_proof.size() != 64) return false;
         }
         return true;
     }
@@ -267,6 +337,7 @@ struct Welcome {
     bool ext = true;         // write the extension (false: a 0.7.2-shaped WELCOME, tests)
     uint32_t caps = kMyCaps; // the host's (read: 0 = an older host)
     std::string host_version; // CAP_VERSION (read: "" = an older host); the players' in `players`
+    std::string campaign_profile;
     void write(Writer& w) const
     {
         w.u8(your_id);
@@ -275,7 +346,10 @@ struct Welcome {
         for (auto& p : players) { w.u8(p.id); w.str8(p.name); }
         if (!ext)
             return;
-        w.u32(caps & ~(uint32_t)CAP_TOKEN);
+        uint32_t c = caps & ~(uint32_t)CAP_TOKEN;
+        if (!campaign_profile.empty())
+            c |= CAP_CAMPAIGN_PROFILE;
+        w.u32(c);
         if (caps & CAP_VERSION) {
             w.str8(host_version);
             uint8_t n = 0;
@@ -288,6 +362,8 @@ struct Welcome {
                     w.str8(p.version);
                 }
         }
+        if (c & CAP_CAMPAIGN_PROFILE)
+            w.str8(campaign_profile);
     }
     bool read(Reader& r)
     {
@@ -306,6 +382,7 @@ struct Welcome {
         ext = r.left() >= 4;
         caps = ext ? r.u32() & ~(uint32_t)CAP_TOKEN : 0;
         host_version.clear();
+        campaign_profile.clear();
         if ((caps & CAP_VERSION) && r.left() >= 1) {
             Reader v = r; // a bad payload leaves the WELCOME readable
             std::string hv = v.str8();
@@ -327,6 +404,10 @@ struct Welcome {
                             p.version = s;
                 }
             }
+        }
+        if (caps & CAP_CAMPAIGN_PROFILE) {
+            campaign_profile = r.str8();
+            return r.ok() && !campaign_profile.empty();
         }
         return true;
     }
@@ -367,18 +448,28 @@ struct PlayerLeave {
     bool read(Reader& r) { id = r.u8(); reason = r.u8(); return r.ok(); }
 };
 
+struct AdventureGate {
+    uint32_t visit = 0, act = 0, target = 0, credit = 0;
+};
+
 struct PlayerState {
     uint8_t id = 0;
     uint32_t time_ms = 0; // sender clock
     Vec3 pos;
     Quat rot;
     Vec3 vel;
-    uint8_t flags = 0;
+    uint16_t flags = 0;
     uint8_t anim = 0;
     float health = 0, max_health = 0;
     uint32_t species = 0; // instance id of species key (appearance hint)
     uint32_t mode = 0;    // game mode id (Creature 0x1654C01, Space 0x1654C05, ...)
     uint32_t world = 0;   // crc32 of the current save name (same world <=> same value)
+    AdventureGate gate;   // optional Duo extension for a single move-to objective (Lineages)
+    float captain_scale = 0; // Lineages (Adventure, BUG-9113): the captain's own scale; 0 = not sent
+    uint32_t editor = 0;     // Lineages (the Party panel, 2026-11-13): the editor open now (EditorRequest+0xC); 0 = none
+    // Lineages (decision 3G, the Party cards' second bar): Creature the hunger meter, Space the ship's energy, as 0..1;
+    // below 0 = none. Written after captain_scale (every Lineages peer has the same build)
+    float energy = -1;
     // BUG-0519: the sender's Cell world scale (G+0x514C) the pos / vel / size are in; 0 = not in Cell
     // or an older sender (the field is appended: older readers stop before it)
     float scale = 0;
@@ -396,13 +487,19 @@ struct PlayerState {
         w.f32(pos.x); w.f32(pos.y); w.f32(pos.z);
         w.f32(rot.x); w.f32(rot.y); w.f32(rot.z); w.f32(rot.w);
         w.f32(vel.x); w.f32(vel.y); w.f32(vel.z);
-        w.u8(flags); w.u8(anim);
+        w.u16(flags); w.u8(anim);
         w.f32(health); w.f32(max_health);
         w.u32(species);
         w.u32(mode); w.u32(world);
         w.f32(scale);
         w.f32(agl);
-        w.f32(body);
+        w.f32(body);          // upstream 0.7.14
+        w.f32(captain_scale); // Lineages: after the 0.7.8 fields (every Lineages peer has the same build)
+        w.f32(energy);        // Lineages (3G)
+        if (editor) w.u32(editor); // Lineages (BUG-9191): only while in an editor (no gate then): 4 bytes after energy
+        if (gate.visit || gate.credit) {
+            w.u32(gate.visit); w.u32(gate.act); w.u32(gate.target); w.u32(gate.credit);
+        }
     }
     bool read(Reader& r)
     {
@@ -410,13 +507,27 @@ struct PlayerState {
         pos.x = r.f32(); pos.y = r.f32(); pos.z = r.f32();
         rot.x = r.f32(); rot.y = r.f32(); rot.z = r.f32(); rot.w = r.f32();
         vel.x = r.f32(); vel.y = r.f32(); vel.z = r.f32();
-        flags = r.u8(); anim = r.u8();
+        flags = r.u16(); anim = r.u8();
         health = r.f32(); max_health = r.f32();
         species = r.u32();
         mode = r.u32(); world = r.u32();
         scale = r.ok() && r.left() >= 4 ? r.f32() : 0.f;
         agl = r.ok() && r.left() >= 4 ? r.f32() : kNoAgl;
         body = r.ok() && r.left() >= 4 ? r.f32() : 0.f;
+        captain_scale = 0;
+        if (r.ok() && r.left() >= 4) {
+            float s = r.f32();
+            captain_scale = s > 0.01f && s < 100.f ? s : 0.f; // a creature's scale; anything else is not one
+        }
+        energy = -1;
+        if (r.ok() && r.left() >= 4) {
+            const float e = r.f32();
+            energy = e >= 0 && e <= 1 ? e : -1.f;
+        }
+        editor = r.ok() && (r.left() == 4 || r.left() == 20) ? r.u32() : 0;
+        gate = {};
+        if (r.ok() && r.left() == 16)
+            gate = {r.u32(), r.u32(), r.u32(), r.u32()};
         return r.ok();
     }
 };
@@ -429,13 +540,16 @@ struct Chat {
 };
 
 enum NpcFlags : uint8_t {
+    NF_SCALED_HP = 64, // Lineages: host campaign combat multiplier applies to this NPC (8 before the 0.7.8 merge)
     NF_DEAD = 1,
     NF_FAMILY = 2, // member of the host avatar's herd
     NF_IMPRESSED = 4, // impressed by a player (cCreatureAnimal +0xB58 bit 0x80, set by a social success)
+
     NF_PACK = 8,      // in the host's pack (+0xB58 bit 0x100: recruited, a Summon Flock member; BUG-0556). Older guests ignore it
     NF_SUMMONED = 16, // its herd is a summoned flock (herd +0x192, cSummonCreatureEvent: the hearts effect 0x6A17B05A; BUG-0556)
     NF_AIR = 32,      // BUG-0550 / BUG-0425: off its ground in the host's game (+0x137 = 0 and off GetHeightAt: a jump, a fall,
                       // thrown, flying); its height over the host's terrain is in the batch's agl trailer. Older guests ignore it
+    NF_ALPHA = 128,   // Lineages: the nest's alpha (cCreatureAnimal +0xB58 bit 0x1: the "Alpha" card, one more social round; BUG-9115)
 };
 
 struct NpcSpawn {
@@ -484,6 +598,85 @@ struct NpcState {
         return r.ok();
     }
 };
+
+// BUG-9235: the compact NPC state. Positions are offsets from the batch's anchor in 1/64 m (i16: +-500 m), the rotation
+// is the smallest-three quaternion in 32 bits (2 bits: the largest component's index, 3 x 10 bits of the others in
+// [-1/sqrt2, 1/sqrt2], its sign made positive), the velocity in cm/s (i16), health f32, flags u8: 23 bytes for 47.
+constexpr size_t kNpcStateCSize = 2 + 6 + 4 + 6 + 4 + 1;
+constexpr float kNpcPosQ = 64.f;
+inline bool npc_pos_fits(const Vec3& p, const Vec3& anchor)
+{
+    const float lim = 32000.f / kNpcPosQ;
+    return std::fabs(p.x - anchor.x) < lim && std::fabs(p.y - anchor.y) < lim && std::fabs(p.z - anchor.z) < lim;
+}
+inline uint32_t pack_quat(Quat q)
+{
+    float c[4] = {q.x, q.y, q.z, q.w};
+    int big = 0;
+    for (int i = 1; i < 4; i++)
+        if (std::fabs(c[i]) > std::fabs(c[big])) big = i;
+    const float sign = c[big] < 0 ? -1.f : 1.f;
+    uint32_t out = (uint32_t)big << 30;
+    int k = 0;
+    for (int i = 0; i < 4; i++) {
+        if (i == big) continue;
+        float v = std::max(-0.70710678f, std::min(0.70710678f, c[i] * sign));
+        uint32_t qv = (uint32_t)std::lround((v + 0.70710678f) / 1.41421356f * 1023.f);
+        out |= (qv & 1023u) << (20 - 10 * k);
+        k++;
+    }
+    return out;
+}
+inline Quat unpack_quat(uint32_t v)
+{
+    const int big = (int)(v >> 30);
+    float c[4] = {};
+    float sum = 0;
+    int k = 0;
+    for (int i = 0; i < 4; i++) {
+        if (i == big) continue;
+        uint32_t qv = (v >> (20 - 10 * k)) & 1023u;
+        c[i] = qv / 1023.f * 1.41421356f - 0.70710678f;
+        sum += c[i] * c[i];
+        k++;
+    }
+    c[big] = std::sqrt(std::max(0.f, 1.f - sum));
+    Quat q;
+    q.x = c[0]; q.y = c[1]; q.z = c[2]; q.w = c[3];
+    return q;
+}
+inline int16_t q16(float v, float scale)
+{
+    float s = std::round(v * scale);
+    return (int16_t)std::max(-32767.f, std::min(32767.f, std::isfinite(s) ? s : 0.f));
+}
+inline void write_npc_c(Writer& w, const NpcState& st, const Vec3& anchor)
+{
+    w.u16(st.net_id);
+    w.u16((uint16_t)q16(st.pos.x - anchor.x, kNpcPosQ));
+    w.u16((uint16_t)q16(st.pos.y - anchor.y, kNpcPosQ));
+    w.u16((uint16_t)q16(st.pos.z - anchor.z, kNpcPosQ));
+    w.u32(pack_quat(st.rot));
+    w.u16((uint16_t)q16(st.vel.x, 100.f));
+    w.u16((uint16_t)q16(st.vel.y, 100.f));
+    w.u16((uint16_t)q16(st.vel.z, 100.f));
+    w.f32(st.health);
+    w.u8(st.flags);
+}
+inline bool read_npc_c(Reader& r, NpcState& st, const Vec3& anchor)
+{
+    st.net_id = r.u16();
+    st.pos.x = anchor.x + (int16_t)r.u16() / kNpcPosQ;
+    st.pos.y = anchor.y + (int16_t)r.u16() / kNpcPosQ;
+    st.pos.z = anchor.z + (int16_t)r.u16() / kNpcPosQ;
+    st.rot = unpack_quat(r.u32());
+    st.vel.x = (int16_t)r.u16() / 100.f;
+    st.vel.y = (int16_t)r.u16() / 100.f;
+    st.vel.z = (int16_t)r.u16() / 100.f;
+    st.health = r.f32();
+    st.flags = r.u8();
+    return r.ok();
+}
 
 struct DamageReq { // guest -> host
     uint16_t net_id = 0;

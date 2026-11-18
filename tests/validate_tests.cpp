@@ -33,6 +33,7 @@
 using namespace net;
 
 static int g_fail = 0;
+static bool g_nofix = false;
 #define CHECK(c)                                                         \
     do {                                                                 \
         if (!(c)) {                                                      \

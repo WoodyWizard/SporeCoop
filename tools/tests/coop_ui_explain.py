@@ -7,11 +7,12 @@ The window's own label texts and the button's enabled flag are checked, through 
  1. BUG-0598, the guest's lobby: the creation row says whose creature it is ("the host's species") and how to
     get a choice ("make one in an editor"), with no arrows. It used to say "My creature: the world's own" and
     nothing else. (The Russian texts once, for the layout: screenshot ui_explain_creation_ru.png.)
- 2. BUG-0597, the host in its world with the guest in: "Send my world" is enabled.
- 3. the guest leaves: the host is alone in its world: "Send my world" is greyed out and the lobby line says that
-    nobody has joined yet; a click on it never says "Sending the world to everyone".
- 4. the host goes to the main menu (no world loaded): greyed out, the lobby line says that a host can start or
-    load a game now and friends join any time; a click never says "Sending".
+ 2. BUG-0597, the host in its world with the guest in: no "Send World" button (owner 2026-11-12: the world goes
+    out by itself; the button is only the vote's "Start Now").
+ 3. the guest leaves: the host is alone in its world: still no button, and the lobby line says that nobody has
+    joined yet; nothing says "Sending the world to everyone".
+ 4. the host goes to the main menu (no world loaded): no button, the lobby line says that a host can start or
+    load a game now and friends join any time; nothing says "Sending".
 Screenshots: out/shots/ui_explain_*.png (the layout of the new texts).
 
   SPORE_FIX_OFF=core.ui_share_explain,core.ui_creation_hint: the old texts and the always enabled button: FAILS
@@ -51,9 +52,8 @@ def main():
 
     # ---- 2. the host in its world with the guest in ----
     st = opened(hui)
-    st = hui.wait(lambda s: len(s['rows']) == 2 and s['share']['vis'], 15, 'two players and Send my world')
-    ck(st and st.get('share_enabled') == '1', f'host: Send my world is enabled with a guest in '
-                                               f'({st.get("share_enabled") if st else None})')
+    st = hui.wait(lambda s: len(s['rows']) == 2, 15, 'two players')
+    ck(st and not st['share']['vis'], 'host: no Send World button with a guest in (the world goes out by itself)')
 
     # ---- 3. the guest leaves: the host alone in its world ----
     guest.call('coop.leave')
@@ -62,7 +62,7 @@ def main():
     world = st.get('world', '') if st else ''
     print(f'  host alone in its world: world line {world!r}, share_enabled={st.get("share_enabled") if st else None}',
           flush=True)
-    ck(st and st.get('share_enabled') == '0', 'host alone in its world: Send my world is greyed out')
+    ck(st and not st['share']['vis'], 'host alone in its world: no Send World button')
     ck('Nobody has joined yet' in world, f'host alone in its world: the lobby says nobody has joined ({world!r})')
     shot(host, 'ui_explain_alone_world.png')
     hui.click('share')
@@ -82,7 +82,7 @@ def main():
     world = st.get('world', '') if st else ''
     print(f'  host alone in the menu: world line {world!r}, share_enabled={st.get("share_enabled") if st else None}',
           flush=True)
-    ck(st and st.get('share_enabled') == '0', 'host in the menu: Send my world is greyed out')
+    ck(st and not st['share']['vis'], 'host in the menu: no Send World button')
     ck('Start or load a game now' in world and 'join any time' in world,
        f'host in the menu: the lobby says a game can start now, friends join later ({world!r})')
     shot(host, 'ui_explain_menu.png')

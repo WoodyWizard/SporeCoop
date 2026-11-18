@@ -119,6 +119,10 @@ extern Counters g_c;
 void sync_tick(double now);
 void sync_on_session_end();
 void stats_tick(double now);
+// BUG-9239 (decision 4S): the address space as last walked (MB; -1 not yet); kept: our reserve still held (BUG-0631,
+// given back near the end: counted as free). walk_soon: a new walk now (its result is read at the next call)
+bool mem_now(int& free_mb, int& block_mb, int& total_mb, int& kept_mb);
+void mem_walk_soon();
 void stats_session_start();
 std::string stats_status();
 std::string sync_status();

@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 """Draw the co-op UI images: data/ui/*.png
 - coop_icon: main menu item icon (white shape, the game tints it)
-- toast_<kind>: notification panels (Spore-like dark blue glass, a coloured edge and icon)"""
+- toast_<kind>: notification panels (Spore-like dark blue glass, a coloured edge and icon)
+- lineages_downed_panel: the downed screen's SPECTATING box (the Co-op window's panel colour, see-through, its inner
+  boxes' edge, rounded; drawn cut in thirds by sui::std_drawable_tooltip, so the corners keep their size)
+- lineages_button_<gold|red|grey|blue>_<normal|disabled|hover|pressed>: every button of the mod (the owner 2026-11-13: the game's
+  gold and its shaded red "look a bit dim and grimy", brighter but not max brightness or saturation); the game's pill
+  shape (a dark rim, a light top edge), drawn cut 40% from each side like the game's button (sui::std_drawable_states)
+Names as arguments write only those images."""
 import os
+import sys
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -129,11 +136,91 @@ def toast(kind):
     return img.resize((W, H), Image.LANCZOS)
 
 
+def downed_panel(third=12, radius=10, fill=(0x20, 0x3A, 0x4A, 0x66), edge=(0x78, 0x91, 0xA0, 0xFF)):
+    """the owner (2026-11-12): like the menus, "Transparency at like 60%", rounded; the Co-op window's panel is
+    #203A4A (its frame's content window), its inner boxes' edge #7891A0"""
+    size, s = third * 3, SS
+    img = Image.new('RGBA', (size * s, size * s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([0, 0, size * s - 1, size * s - 1], radius=radius * s, fill=edge)
+    d.rounded_rectangle([s, s, (size - 1) * s - 1, (size - 1) * s - 1], radius=(radius - 1) * s, fill=(0, 0, 0, 0))
+    inner = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(inner).rounded_rectangle([s, s, (size - 1) * s - 1, (size - 1) * s - 1], radius=(radius - 1) * s,
+                                            fill=fill)
+    img.alpha_composite(inner)
+    return img.resize((size, size), Image.LANCZOS)
+
+
+# the body's top / middle / bottom colours of each look (normal); the other states derive from them
+BUTTON_LOOKS = {
+    'gold': ((246, 214, 98), (224, 184, 58), (184, 146, 34)),
+    'red': ((226, 92, 74), (198, 60, 46), (150, 38, 30)),
+    # BUG-9220 (the owner 2026-11-15): grey around #2B2F36 (the helpers), a Spore-like blue (the page buttons)
+    'grey': ((70, 76, 86), (43, 47, 54), (30, 33, 38)),
+    'blue': ((92, 160, 232), (52, 118, 204), (32, 82, 156)),
+}
+BUTTON_STATES = ('normal', 'disabled', 'hover', 'pressed')  # StdDrawable images[0..3]
+
+
+def _shade(c, k):
+    return tuple(max(0, min(255, round(v * k))) for v in c)
+
+
+def _grey(c, amount):
+    g = sum(c) / 3
+    return tuple(round(v + (g - v) * amount) for v in c)
+
+
+def button(look, state, w=50, h=30):
+    """a pill: a 1 px dark rim, a vertical gradient body, a light line under the top rim (as the game's buttons)"""
+    top, mid, bot = BUTTON_LOOKS[look]
+    k = {'normal': 1.0, 'hover': 1.12, 'pressed': 0.82, 'disabled': 0.72}[state]
+    if look == 'grey' and state == 'hover':
+        k = 1.35  # a dark body needs a bigger step to show the hover
+    top, mid, bot = (_shade(c, k) for c in (top, mid, bot))
+    if state == 'disabled':
+        top, mid, bot = (_grey(c, 0.65) for c in (top, mid, bot))
+    s = SS
+    W, H = w * s, h * s
+    r = H // 2
+    rim = Image.new('L', (W, H), 0)
+    ImageDraw.Draw(rim).rounded_rectangle([0, 0, W - 1, H - 1], radius=r, fill=255)
+    body = Image.new('L', (W, H), 0)
+    ImageDraw.Draw(body).rounded_rectangle([s, s, W - 1 - s, H - 1 - s], radius=r - s, fill=255)
+    grad = Image.new('RGBA', (W, H))
+    gd = ImageDraw.Draw(grad)
+    for y in range(H):
+        t = y / (H - 1)
+        a, b, u = (top, mid, t / 0.5) if t < 0.5 else (mid, bot, (t - 0.5) / 0.5)
+        gd.line([(0, y), (W, y)], fill=tuple(round(a[i] + (b[i] - a[i]) * u) for i in range(3)) + (255,))
+    img = Image.new('RGBA', (W, H), (17, 17, 17, 0))
+    img.paste((17, 17, 17, 255), (0, 0), rim)
+    img.paste(grad, (0, 0), body)
+    shine = Image.new('L', (W, H), 0)  # the light edge under the top rim
+    ImageDraw.Draw(shine).rounded_rectangle([s, s, W - 1 - s, H - 1 - s], radius=r - s, outline=255, width=s)
+    cut = Image.new('L', (W, H), 0)
+    ImageDraw.Draw(cut).rectangle([0, 0, W, int(H * 0.45)], fill=255)
+    shine = Image.composite(shine, Image.new('L', (W, H), 0), cut)
+    light = tuple(min(255, round(v + (255 - v) * 0.7)) for v in top) + (255,)
+    img.paste(light, (0, 0), shine)
+    return img.resize((w, h), Image.LANCZOS)
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
-    coop_icon().save(os.path.join(OUT, 'coop_icon.png'))
-    print('wrote', os.path.join(OUT, 'coop_icon.png'))
-    for k in TOASTS:
-        p = os.path.join(OUT, 'toast_%s.png' % k)
-        toast(k).save(p, optimize=True)
+    want = set(sys.argv[1:])
+
+    def write(name, img, **kw):
+        if want and name not in want:
+            return
+        p = os.path.join(OUT, name + '.png')
+        img.save(p, **kw)
         print('wrote', p)
+
+    write('coop_icon', coop_icon())
+    for k in TOASTS:
+        write('toast_%s' % k, toast(k), optimize=True)
+    write('lineages_downed_panel', downed_panel(), optimize=True)
+    for look in BUTTON_LOOKS:
+        for state in BUTTON_STATES:
+            write('lineages_button_%s_%s' % (look, state), button(look, state), optimize=True)

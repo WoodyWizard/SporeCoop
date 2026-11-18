@@ -11,12 +11,20 @@
 
 namespace drama {
 
-void init(const SkHost* host, SkMod* mod, const net::Session* sess);
+void init(const SkHost* host, SkMod* mod, net::Session* sess);
+void on_message(uint8_t from, net::Reader& r); // MSG_DRAMA (BUG-9131)
+bool host_ufo_here(); // guest: a UFO here is the host's, shown only (it takes no creature)
 // coop.drama [start <kind> | mask <hex>]: the events seen, started and refused
 std::string debug(const std::vector<std::string>& args);
 // BUG-0736: a guest's own Summon Flock (event kind 8) is the host's to make
 extern bool g_flock_relay;
 // host: the game's summon event started with a partner's puppet as the avatar (the flock comes to it); false: none
 bool summon_for(void* puppet);
+// BUG-9233: the summon event started by summon_for ends at its next update (its time left, +0x2C, to 0): the game takes
+// its flock out of the host's pack then; false when there is none
+bool end_flock_event();
+// a summon event (anyone's) ran its update within the last 2 s (the game updates an active one every tick)
+bool summon_running();
+void* summon_puppet(); // decision 5FA: the partner's puppet whose summon runs (null: none or the host's own)
 
 } // namespace drama

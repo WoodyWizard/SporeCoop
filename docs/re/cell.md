@@ -510,6 +510,9 @@ addresses of the **GOG 2024 build dc04aee5**, not the GOG 2016 ones above):
    player's cell model), `+0x90 = 0x1100000`, `+0x60` a float from 0xE51700, then
    `Editors::EditorRequest::Submit` 0x5A92C0 and message 0x90A03FDF. With `G+0x410C` set and
    debug = 0 nothing is submitted.
+   The live Steam growth table uses personal editor IDs `0x1D2EC0A0` and
+   `0x1D2EC0A4` through `0x1D2EC0A7`. Lineages opens these without a vote.
+   The Creature landfall request uses `0xFD4902BD` and still votes.
 5. **Asked twice**: while the mate is still within reach the game asks again: with the co-op vote
    holding the first request, a second Submit came 13 ms after the vote ended (before the held
    request reached the game) and started a second vote that ran on in the editor. The mod drops
@@ -1381,6 +1384,133 @@ BUG-0355. GOG 2024, Ghidra and `tools/tests/coop_cell_spare.py` (suite `cell_spa
   stage settled); the guest leaves the Cell stage about 4-5 s after it got the host's new cell
   record and is back in Cell another ~5 s later. A mate the guest called before that load is gone.
 
+## Cell recovery and the first landfall on Steam (2026-11-03, duo-species)
+<a id="cell-duo-landfall"></a>
+
+Two actual Steam 2024 instances started in the same tide pool on Brois. The lab
+filled the host food bar with `coop.pool food 1000`, acknowledged the normal stage
+and History screens, and let Spore and the fork perform the handoff. Both games
+entered Creature on Brois (place F0075A78). The native host avatar reported species
+29142C2C and the guest avatar 5D00C0C1, its preselected custom Creepy & Cute
+creature. The host received the guest model as 7C93828D. Both players had cell
+model 4DA56CA5. This run establishes the preselected Creature path. Independent
+cell designs evolving from their own editor histories still need a separate test.
+
+On Vantiegan the guest received a lethal hit. Bringing the host back while the
+10-second window was open revived the guest at body factor 1.00. Leaving the host
+away for a second knockout respawned the guest at HP 6 and body factor 0.50.
+Both games reported zero faults.
+
+## Reserved-seat food progression (2026-11-06, duo-species)
+<a id="cell-reserved-food"></a>
+
+On QuartetSolo native EatFood sent 12 raw plant points through the guest pickup
+path and both peers received three. Loading the native planet after saving three
+quarters preserved the outstanding fraction for that food type (BUG-9072).
+
+## Whole-point enemy combat (2026-11-06, duo-species)
+<a id="cell-fractional-enemy-combat"></a>
+
+On Steam 3010a413, CreateCellObject initializes native HP at E74EFD. Only
+eligible foreground actors created by a native population marker enter the
+health carry. The game returned to E7A817, E71915, E7DE73 and E7DCCB when
+it actually debited GetDamageAmount. Two other callers only compare estimated
+damage against the victim's HP. Counting those queries would charge twice.
+
+The guest's native cell handles its base contact hit. It reports the hit to
+the host for the shared damage carry. The guest applies any extra points only
+while the original body and request still match. Host and guest contact tests
+in cell-round-b-reload.log totaled 40 base damage and two extras. The host
+assigned 35 extra HP to 234 base HP across 39 native enemy spawns.
+
+In cell-round-c-reload.log the guest rejoined and the host saved nonzero HP
+and damage remainders. A second process loaded both from the native-save-bound
+credit file. Four ordinary encounter groups each added one actual predator at
+two reserved seats (cell-round-d-verify.log). At four seats the four groups
+added twelve, and the last group had three distinct native pool IDs
+(cell-group-e-verify.log). Neither test exhausted the placement budget.
+
+## Lineages slow-link player report (2026-11-07, fix/lineages-player-session)
+<a id="cell-lineages-player-report"></a>
+
+* Observed: Lineages 27 reported a 2,782,805-byte automatic world transfer taking
+  539.8 seconds to queue. A later Cell editor return started another full share.
+  This is a Cell report, not Creature. The host log alone cannot establish the
+  guest's complete simulation state or physical packet loss.
+* Upstream v0.7.9's BUG-0405 fix acknowledges receive bursts before they leave the
+  128-packet acknowledgement window, and retries only after a newer packet was
+  acknowledged or a longer silence. Selectively ported without changing packets.
+  See tests/world_transfer_tests.cpp and net/session.cpp. A clean slow receiver
+  changes from 641/3400 chunks after 120 seconds to all chunks in 12.7 seconds,
+  with zero retransmits. The native delayed-link join completed in 13.75 seconds
+  with 60 ms each way and deterministic 2% loss; not a WAN throughput promise.
+* Verified native camera fields: cCellUI +0x48, +0x54, +0x60 hold the drawn,
+  target and lag positions. Upstream's teleport reset fixes actual co-op respawn:
+  old offset 7.0 units, fixed 0.06 and 0.07. Only finite positions and a readable
+  native UI are written, when the own avatar moves more than two units.
+* Same-stage Cell editing can keep an already joined, fresh peer in the same
+  world. The existing creation stream updates the host's saved species and its
+  puppet on the guest. Negative control started another share; saved-species and
+  cancel returns with the fix did not. New joins, stage/world changes and stale
+  peers retain the full world-share path. Creature migration is not changed.
+* A first guest hit on a drawn enemy was accepted without a setup hit: host HP
+  7 -> 4 and guest HP matched in 0.406 seconds under the delayed link. This does
+  not prove every reported first-hit visual symptom is fixed. The native ring
+  uses hp/6 (cell-guest-bite-ring), so scaled HP above six is a separate display
+  concern. No guessed maximum-HP patch is applied here.
+* Shared food test: at two seats/100% scaling, a native 200-point guest meal
+  awards 100 shared food and ten earned DNA; repeated authoritative totals
+  while gameplay is paused grant no additional food. Four reserved seats at
+  100% scaling mean four times the base workload by the approved rules.
+* CORRECTION to any blanket explanation of BUG-0351 as proven vanilla sell-back:
+  that explanation was inferred, not tested solo. The present fixture's first
+  saved editor visit changed spent DNA from 0 to -88 while food stayed 125 and
+  earned DNA stayed 12. Earlier and later cancel returns kept spent unchanged.
+  A starter-model valuation/refund remains a candidate; do not clamp negative
+  spent DNA or subtract it from an existing player's save without qualification.
+* Large filled partner arrows use the existing D3D9 overlay event and restore
+  device state after drawing. Labels include name/distance, clamp to the screen
+  edge and exclude stale/other-world peers. Cell knockout labels keep their own
+  rescue indicator. Behind-camera direction in 3D uses the existing bottom-edge
+  fallback; a full 3D bearing compass has not been implemented.
+
+## Lineages cells, extra predators and plant food (2026-11-10, feat/lineages-43)
+<a id="cell-lineage-cells"></a>
+
+BUG-9109, BUG-9110, BUG-9111. GOG 2024 code (Steam copy), Windows QA, `coop.pool species|lineage|enemy_groups`.
+
+* ✔ The model a native spawn gets is decided once, inside CreateCellObject, by
+  GetModelKeyForCellResource (hooked in modes.cpp). No call of it happens outside a population
+  marker while a game runs (`coop.pool lineage` outside=0 on the host): the graphics are built from
+  the cell's `+0xFC`, so a key answered at creation stays the cell's look and diet.
+* ✔ The cell resource reference passed to it (`+0x108`, `*(u32*)ref` = the .cell instance) is shared
+  by every cell of a species (same pointer).
+* ~ superseded (2026-11-10): "the .cell resource's model entries (`res+0x14`, count `+0x18`)" in
+  creations.md 2.2 does not hold for GetData's result: `+0x18` read 0 or garbage for creature species.
+  CORRECTION (2026-11-10, feat/lineages-43): the mod tells the player's own species by its model key
+  (native key = S+0x10), not by the model entry kind.
+* ✔ A native predator species (.cell 0BC1FF72, AI 0x1006, wild combatant) has a herbivore model
+  (B0B9BAFF: +0x1250 = 0, +0x1251 = 1). AI 0x1006 picks prey with the model's diet (IsPrey -> CanEat),
+  so a carnivore model on it hunts creatures and a herbivore model grazes: the model's mouth leads.
+* ✔ A cell creation's model is its bem record (type 0x1A99B06B) plus metadata (0x030BDEE3) in
+  EditorSaves.package; there is no record of type cll (0x3D97A8E4) although the key says cll.
+* ✔ cCellGFX::PreloadCreature 0xE64980: cdecl `void(u32 instance)`, plain ret (sym file).
+* ✔ Level 1 creature species of a new carnivore game had no loot table (`res+0xD4` = 0); bubbles
+  (cellType 4) had one. The loot table's data (GetData on `res+0xD4`) starts with a .cell-like id but
+  its entries did not resolve to cell types by `ref_for` + GetData (all read cellType 0): the layout is
+  not known. The mod learns part carriers at run time instead: a SpawnLoot whose new cells include a
+  cellType 6 (part token) marks the dead cell's .cell (one learned in the first 5 minutes of play).
+* ✔ The extra predators: `+0x58` is a scale, the collision radius is model radius (+0x1244) times it
+  (`cell_sphere`). Measured overlap at creation: 2 of 48 extras with the old spacing, 0 of 40 with the
+  sphere spacing. Top speeds sampled every frame: extras 2.6 m/s, natives 2.6 m/s (no flight seen).
+* An unpainted cell creation is drawn as a pale, see-through membrane in the pool (an NPC of it and the
+  player's own cell alike); a painted one is drawn with its paint.
+* Test recipe (Windows): `coop.host <port> <name> 4 100` in the galaxy menu, then
+  `tools/tests/new_stage_game.py cell -i N --slot K` (1440x1080 window), `coop.save` at once (a hot
+  reload keeps the rules only once the planet is saved); `coop.pool mate button`, a click on the heart
+  (721, 1018), `coop.pool mate tp` opens the cell editor; paint mode (776, 36), a pattern and a colour,
+  the green check (1416, 1058) saves a new creation.
+
 ## The Cell parts a player collects, and the party's shared set (2026-11-03, fix/w40-editor)
 <a id="cell-parts-shared"></a>
 
@@ -1548,6 +1678,16 @@ BUG-0519, the players' half of docs/re/cell.md#cell-world-scale.
   after the held request's Submit, queued behind its posts as the game does (lab 20261104-210201: spent stays 0).
 * ? the Creature request posts the same message after Submit (0xD455FD, +8 = GetEvolutionPoints): a held Creature
   evolution may lose its budget the same way (not checked, BUG-0581).
+
+## Spectating while knocked out (2026-11-13, feat/lineages-47)
+<a id="cell-spectate"></a>
+
+BUG-9171. ✔ (runtime) Writing a partner puppet's pool index (its first field) to cCellUI +0xE0 makes the game's own
+camera follow that cell (`coop.pool cam` follow=, the drawn point at the partner 28 m away); 0 there gives the avatar
+back (snapped with +0x48/+0x54/+0x60). ✔ Right after a rejoin +0xE0 held 0x88010000 for a moment (the game's own
+follow, a hatch). ✔ The cells near the camera came only once the host used the partner's position as the knocked-out
+guest's view centre; farther than about 20 m from the own avatar the game draws every cell blurred (a render rule
+around the avatar, not found).
 
 ## BUG-0308 was the paused guest's broadphase overflow (2026-11-05, fix/w45-crashes)
 <a id="cell-rejoin-paused-heap"></a>

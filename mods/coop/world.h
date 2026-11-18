@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "net/session.h"
+#include "founders.h"
 #include "sporekit.h"
 
 namespace world {
@@ -19,11 +20,34 @@ bool share_with(uint8_t peer, std::string& err, bool save_first = false, uint32_
 // planet had no file after 3 saves. Called from tick(); not for shares dropped with their player
 void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing));
 bool share_now(uint8_t peer, std::string& err);
+uint64_t resume_world(); // guest: receipt only while the verified Cell snapshot stays loaded
+bool can_resume_world(uint64_t receipt); // host: same Cell world, save and progress
+// On the galaxy menu the requested size applies to a new planet. An existing
+// named save keeps its own rules. Legacy saves keep the original defaults.
+founders::CampaignRules rules_for_current();
+// guest: the host sent its campaign rules for this world and stage (a co-op campaign, not a stage-chooser game)
+bool host_campaign();
+void receive_campaign_rules(const net::Session& session, uint8_t from, net::Reader& packet);
+void native_campaign_loaded(const std::string& key);
+void campaign_guest_joined(net::Session& session);
+bool change_seats(net::Session& session, unsigned seats, std::string& message); // from the next stage (Space: load)
+// more seats in the running stage at once (Cell to Civ; owner decision 2026-11-12, founders::raise_now)
+bool raise_seats_now(net::Session& session, unsigned seats, std::string& message);
+// the Co-op window's Set Seats: more seats now (Cell to Civ), fewer (or any in Space) from the next stage
+bool set_seats(net::Session& session, unsigned seats, std::string& message);
+void invalidate_campaign_rules(); // native load, including reloading the same slot
+bool setup_campaign(net::Session& session, const founders::CampaignRules& requested, std::string& error);
+// the game's own save (pause menu "Save"); also works on planets in space
+bool save_game(std::string& err);
+// Host milestone, saved once the native save path is ready.
+void request_autosave();
+// Tribal reconstruction: confirm a new native save, transfer it to connected
+// peers, then reload the host through the existing menu/load path.
+bool checkpoint_reload(std::string& err);
+bool post_quit_to_menu(std::string& err);
 // host (BUG-0754): seconds since a world share to this guest was asked for (the save, the transfer and the guest's load
 // follow), a large number when none
 double since_share(uint8_t peer);
-// the game's own save (pause menu "Save"); also works on planets in space
-bool save_game(std::string& err);
 // the game's quit message 0x4715068 (save and leave the stage for the galaxy menu); refused in an adventure (BUG-0854)
 bool post_quit_to_menu(std::string& err);
 extern bool g_box_hold; // tests (BUG-0482): our save's "game saved" box is not confirmed while set
@@ -44,10 +68,25 @@ void reset_shares();
 void on_session_end();
 // guest: a world load waits (for the galaxy menu or for an editor to close): no own editor now
 bool load_queued();
+// BUG-9240: a load from the galaxy menu was just started and the game is not in it yet (15 s at most)
+bool load_starting();
+// guest (BUG-9208): hold a received world while the first-creature editor is requested or open
+void hold_for_editor(bool on);
+// host (BUG-9210): a player's share waits while this says its own nest is about to be made (2 min at most)
+void set_share_hold(std::function<bool(uint8_t, uint64_t)> hold); // (player, ms since the share was asked for)
+uint32_t shared_loads(); // BUG-9223: how many received copies of the host's world this game loaded
+// guest: it plays its own planet-side Space intro (the personal launch, BUG-9071): the host's world waits for its
+// launch, so a queued load is not coming now (BUG-9202: the loading screen stayed over the playable Civ stage)
+bool local_intro_running();
+// guest: a world from the host is arriving now; `fraction` its share received (0..1) (BUG-9195: the loading screen)
+bool incoming(float& fraction);
 extern bool g_share_reset_fix; // tests: `coop.corefix share_reset 0` = the old behaviour
 // host: stream queued transfers (call every frame)
 void tick(net::Session& s);
-void guest_tick(); // guests: load a world that arrived while in an editor
+bool offer_launch(net::Session& session, uint8_t peer, uint32_t join);
+void on_launch_message(net::Session& session, uint8_t from, net::Reader& reader);
+void guest_tick(net::Session& session); // guests: load a world that arrived while in an editor
+void begin_local_space_intro(); // reserve the guest's first planet-side tutorial through orbital departure
 // guest: handle MSG_WORLD_* messages
 void on_message(uint8_t type, net::Reader& r, const std::string& host_name);
 std::string status();
@@ -62,12 +101,15 @@ void set_auto_load(bool on);
 void set_playing_probe(bool (*probe)());
 // where the local player is (the adapter's place, coop.cpp): a share save waits 2 s after a change
 void set_place_probe(uint32_t (*probe)());
+void set_host_stage_probe(uint32_t (*probe)());
 // share_host: a received world of that host (dropped when the session ends, BUG-0074); "" for the
 // player's own load (coop.load)
 bool load_slot(const std::wstring& slot, const std::string& planet_file, std::string& err,
                const std::string& share_host = "");
 // load Games\<slot_name>\<planet>.spo of the local profile (works from the galaxy menu)
 bool load_local(const std::string& slot_name, const std::string& planet, std::string& err);
+// BUG-9239 (4S): the save folder the game writes this game to and the planet played ("" in a menu)
+bool restart_point(std::wstring& slot, std::string& planet);
 // BUG-0332: after a live Creature -> Tribe change the host loads its own share save once it has gone out
 void host_reload_after_share();
 uint32_t host_reloads();
@@ -105,6 +147,7 @@ bool cinematic_pause_resume();
 // planet, BUG-0035, and the guest's own copy can be beside them). "" = unknown (a menu: "SaveGame",
 // snapshot.spo, no save database). Not for every frame (it asks the resource database).
 std::string current_game_key();
+std::string game_key_for_planet(const std::string& name); // selected save DB, including immediately before LoadGameByName
 // BUG-0225: called after a received world was written into a slot (lower-case dir, UTF-8, no
 // trailing '\'): the game that was in that slot no longer exists as it was
 void set_slot_replaced_hook(void (*fn)(const std::string& dir));

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -93,6 +94,12 @@ static bool g_cam_guard_fix = true;
 COOP_FIX_UNSAFE("tribe.camera_guard", "BUG-0167", g_cam_guard_fix,
                 "gamefixes: the tribe setup's LookAt / camera update are skipped while the simulator camera is null");
 
+// BUG-9153: the last set-up's camera, target and orientation (4 floats at `a`), for tribe_camera_to
+static void* g_cam_obj;
+static float g_cam_target[3], g_cam_orient[4];
+static bool g_cam_seen;
+static uint32_t g_cam_moves;
+
 static void __fastcall lookat_guard(void* obj, void*, void* target, int a, int instant)
 {
     if (!obj && g_cam_guard_fix) {
@@ -103,16 +110,89 @@ static void __fastcall lookat_guard(void* obj, void*, void* target, int a, int i
                    game::mode_id(), world::cinematic_id());
         return;
     }
+    if (target && a && !IsBadReadPtr(target, 12) && !IsBadReadPtr((void*)(uintptr_t)a, 16)) {
+        g_cam_obj = obj;
+        memcpy(g_cam_target, target, 12);
+        memcpy(g_cam_orient, (void*)(uintptr_t)a, 16);
+        g_cam_seen = true;
+    }
     if (!obj)
         H->log(M, SK_WARN, "game fixes: tribe camera guard off: the tribe setup points a null simulator camera (mode %08X)",
                game::mode_id());
     g_lookat_orig(obj, target, a, instant);
 }
 
+// the Tribe camera looks at `pos` as the stage set-up looks at the player tribe: its orientation turned by the
+// rotation that takes the set-up target's up (from the planet's centre) to pos's up (quaternion x, y, z, w)
+bool tribe_camera_to(const float pos[3])
+{
+    if (!g_cam_seen || !g_cam_obj || !g_lookat_orig || !g_camupd_orig || IsBadReadPtr(g_cam_obj, 0x300)) return false;
+    auto unit = [](const float* v, float* o) {
+        const float n = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (!(n > 1)) return false;
+        o[0] = v[0] / n; o[1] = v[1] / n; o[2] = v[2] / n;
+        return true;
+    };
+    float a[3], b[3];
+    if (!unit(g_cam_target, a) || !unit(pos, b)) return false;
+    // r = rotation from a to b: (a x b, 1 + a.b), normalised
+    float r[4] = {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0],
+                  1 + a[0] * b[0] + a[1] * b[1] + a[2] * b[2]};
+    const float rn = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2] + r[3] * r[3]);
+    if (!(rn > 1e-4f)) return false;
+    for (float& c : r) c /= rn;
+    const float* q = g_cam_orient; // out = r * q
+    float out[4] = {r[3] * q[0] + r[0] * q[3] + r[1] * q[2] - r[2] * q[1],
+                    r[3] * q[1] - r[0] * q[2] + r[1] * q[3] + r[2] * q[0],
+                    r[3] * q[2] + r[0] * q[1] - r[1] * q[0] + r[2] * q[3],
+                    r[3] * q[3] - r[0] * q[0] - r[1] * q[1] - r[2] * q[2]};
+    float target[3] = {pos[0], pos[1], pos[2]};
+    g_lookat_orig(g_cam_obj, target, (int)(uintptr_t)out, 1);
+    g_camupd_orig(g_cam_obj);
+    ++g_cam_moves;
+    return true;
+}
+
+std::string camera_status()
+{
+    char b[200];
+    snprintf(b, sizeof b, "tribe camera: seen=%d obj=%p target=(%.1f %.1f %.1f) orient=(%.3f %.3f %.3f %.3f) moves=%u",
+             (int)g_cam_seen, g_cam_obj, g_cam_target[0], g_cam_target[1], g_cam_target[2], g_cam_orient[0],
+             g_cam_orient[1], g_cam_orient[2], g_cam_orient[3], g_cam_moves);
+    return b;
+}
+
 static void __fastcall camupd_guard(void* obj, void*)
 {
     if (obj || !g_cam_guard_fix)
         g_camupd_orig(obj);
+}
+
+// BUG-9049: graduation hides the domesticated animal pen even when the
+// native tribe has no pen. Keep the existing virtual call for present pens;
+// skip just that call for null. This is an instruction-site hook, not a
+// C++ function entry: preserve every register, flags and the existing stack.
+extern "C" {
+bool sporecoop_tribe_pen_guard_on = true;
+void* sporecoop_tribe_pen_original;
+void* sporecoop_tribe_pen_resume;
+unsigned sporecoop_tribe_pen_skipped;
+}
+COOP_FIX("tribe.graduation_pen", "BUG-9049", sporecoop_tribe_pen_guard_on,
+         "tribe: graduation skips hiding an absent animal pen");
+__attribute__((naked)) static void graduation_pen_guard()
+{
+    __asm__ volatile(
+        "pushfl\n\t"
+        "cmpb $0, _sporecoop_tribe_pen_guard_on\n\t"
+        "je 1f\n\t"
+        "testl %eax, %eax\n\t"
+        "jnz 1f\n\t"
+        "incl _sporecoop_tribe_pen_skipped\n\t"
+        "popfl\n\t"
+        "jmp *_sporecoop_tribe_pen_resume\n\t"
+        "1: popfl\n\t"
+        "jmp *_sporecoop_tribe_pen_original\n\t");
 }
 
 // The end of the respawn caption CVG2SPG(_short) (message 0x44F1189 in the cSimulatorSpaceGame
@@ -1895,10 +1975,32 @@ static void __fastcall settings_build_guard(void* self, void*, void* a, void* b,
     g_settings_orig(self, a, b, c);
 }
 
+// BUG-9196 (the owner's crash 2026-11-13 20:55, crash-20261113-205550): in the galaxy menu the Sporepedia drew a card of
+// the player's own species with in-game "discovery" data (vtable 0x147CA48, its GetConsequenceTraits 0xDD1000), kept from
+// the game; it reads the traits from cGameNounManager's player (+0x74), which is null outside a game, and
+// cPlayer::GetConsequenceTrait read 0 + 0x10FC. With no player the trait is "none" (0, as before the stage was done).
+// `coop.fix gamefixes.trait_without_player off`: the game's own code (the crash).
+static bool g_trait_guard = true;
+COOP_FIX("gamefixes.trait_without_player", "BUG-9196", g_trait_guard,
+         "gamefixes: a Sporepedia card read outside a game gets no consequence trait instead of a crash");
+using TraitFn = uint32_t(SK_THISCALL*)(void*, uint32_t);
+static TraitFn g_trait_orig;
+static uint32_t g_trait_guarded;
+static uint32_t SK_THISCALL trait_guard(void* player, uint32_t stage)
+{
+    if (!player && g_trait_guard) {
+        if (g_trait_guarded++ < 5) H->log(M, SK_INFO, "game fixes: a consequence trait asked without a player: none (BUG-9196)");
+        return 0;
+    }
+    return g_trait_orig(player, stage);
+}
+
 void init(const SkHost* host, SkMod* mod)
 {
     H = host;
     M = mod;
+    if (uintptr_t tr = H->sym("SporeCoop::cPlayer_GetConsequenceTrait"))
+        H->hook_create(M, (void*)tr, (void*)&trait_guard, (void**)&g_trait_orig);
     uintptr_t vt = H->sym("Terrain::cTerrainSphereTextureJob::vftable");
     uintptr_t fn = H->sym("Terrain::cTerrainSphereTextureJob::DrawLayer");
     uintptr_t* slot = vt ? (uintptr_t*)(vt + 3 * 4) : nullptr;
@@ -1912,6 +2014,16 @@ void init(const SkHost* host, SkMod* mod)
     bool cam = la && cu && H->hook_create(M, (void*)la, (void*)&lookat_guard, (void**)&g_lookat_orig) == 0 &&
                H->hook_create(M, (void*)cu, (void*)&camupd_guard, (void**)&g_camupd_orig) == 0;
     H->log(M, SK_INFO, "game fixes: tribe camera guard %s", cam ? "on" : "off");
+    uintptr_t pen = H->sym("SporeCoop::TribeGraduation_HidePen");
+    // mov edx,[eax]; mov ecx,eax; mov eax,[edx+54]; push 0; call eax.
+    // Neither branch after this sequence consumes its flags or return value.
+    const uint8_t pen_code[] = {0x8B,0x10,0x8B,0xC8,0x8B,0x42,0x54,0x6A,0x00,0xFF,0xD0};
+    bool pen_known = pen && readable((void*)pen, sizeof pen_code) &&
+        memcmp((void*)pen, pen_code, sizeof pen_code) == 0;
+    sporecoop_tribe_pen_resume = pen_known ? (void*)(pen + sizeof pen_code) : nullptr;
+    bool pen_hook = pen_known && H->hook_create(M, (void*)pen, (void*)&graduation_pen_guard,
+                                               &sporecoop_tribe_pen_original) == 0;
+    H->log(M, SK_INFO, "game fixes: Tribal graduation pen guard %s", pen_hook ? "on" : "off (unknown code)");
     uintptr_t pc = H->sym("SporeCoop::cSimPlanetHighLOD_EndRespawnCaption");
     bool planet = pc && H->hook_create(M, (void*)pc, (void*)&planet_clear_guard, (void**)&g_planet_clear_orig) == 0;
     H->log(M, SK_INFO, "game fixes: respawn caption guard %s", planet ? "on" : "off");
@@ -2051,7 +2163,8 @@ std::string status()
 {
     return std::string("game fixes: planet texture job guard ") + (g_draw_slot ? "on" : "off") + ", skipped " +
            std::to_string(g_skipped.load()) + (g_last.empty() ? "" : " (last: " + g_last + ")") +
-           ", tribe camera skipped " + std::to_string(g_cam_skipped.load()) + ", respawn caption without a planet " +
+           ", tribe camera skipped " + std::to_string(g_cam_skipped.load()) +
+           ", absent graduation pens " + std::to_string(sporecoop_tribe_pen_skipped) + ", respawn caption without a planet " +
            std::to_string(g_planet_clear_skipped.load()) + ", Alt+Shift+Enter turned into Alt+Enter " +
            std::to_string(g_adapter_keys.load()) + ", dead modal windows dropped " + std::to_string(g_dead_modal.load()) + ", dead listed modal windows dropped " + std::to_string(g_dead_modal_listed.load()) +
            ", off-stage checks " + std::to_string(g_offstage_calls.load()) + " (citizens while the stage is left " +

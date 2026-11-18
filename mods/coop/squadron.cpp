@@ -1,6 +1,7 @@
 #include "squadron.h"
 #include "call_guard.h"
 #include "civ.h"
+#include "vehicle_health.h"
 
 #include <algorithm>
 #include <array>
@@ -19,6 +20,8 @@
 #include "net/validate.h"
 #include "space_rivalry.h"
 #include "spacecoop.h"
+#include "space_ext.h"
+#include "world.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "creations.h"
@@ -44,6 +47,7 @@ template <typename T>
 static T& F(void* p, uintptr_t off) { return *(T*)((uint8_t*)p + off); }
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
+static uint8_t g_mirror_leader = 0xFF; // BUG-9197: whose ships the mirrors are
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
 static bool in_space() { return g_ok && game::mode_id() == modes::kSpace; }
 
@@ -84,12 +88,83 @@ static uint8_t g_drop_chunk = 0xFF; // tests (coop.fleet drop <chunk> <n>): skip
 static int g_drop_left;
 static uint32_t g_hits_in, g_damage_out, g_puppet_shots;
 
+// ---------------- the leader per place (BUG-9197, decision 3D A, the owner 2026-11-14) ----------------
+// The NPC ships of a star system or planet are run by one game: the host's where the host is, else the lowest seat of
+// the party there. Before, only the host's were shared: two guests in a system without the host each saw their own
+// natives. The leader's snapshot (MSG_UFO_STATE: its id and place in front) goes to the players of its place; a guest
+// leader's goes through the host, which forwards it (guests only talk to the host). A shot on a mirror (MSG_UFO_HIT)
+// goes to the leader of the shooter's place, through the host; an NPC hit on a partner's ship there (MSG_UFO_DAMAGE)
+// from the leader to that partner, through the host. When the leader leaves, the next one keeps the ships it shows
+// (its mirrors become its own). Old (`coop.fix fleet.leader off`): the host's ships only, where the host is.
+static bool g_leader_fix = true;
+COOP_FIX("fleet.leader", "BUG-9197", g_leader_fix,
+         "space: the enemy ships of a system are run by one player there (the host, else the lowest seat), not only "
+         "where the host is");
+static uint32_t g_relayed, g_led_ticks, g_handovers, g_kept_on_handover;
+
+static uint32_t place_of(uint8_t id) { return C.place_of ? C.place_of(id) : 0; }
+static uint32_t my_place() { return C.sess ? place_of(C.sess->my_id()) : 0; }
+// the leader of a place: the host when it is there, else the lowest seat there; 0xFF: nobody there
+static uint8_t leader_of(uint32_t place)
+{
+    if (!C.sess || !place) return 0xFF;
+    uint8_t best = 0xFF;
+    for (auto& pl : C.sess->players())
+        if (place_of(pl.id) == place && pl.id < best) best = pl.id;
+    return best;
+}
+static bool is_host();
+
+// BUG-9199, decision 2B A (the owner 2026-11-12): Space difficulty is per party, the party in that system (or the raided
+// colony's party), not the reserved seats. With one party per session (today), that is the players in this place for
+// ship health and damage, the players online for raids. A player alone in a system meets the game's own ships.
+static bool g_party_diff_fix = true;
+static int g_test_difficulty = -1; // tests (coop.fleet difficulty <percent>): memory only, never saved; -1 = the save's
+COOP_FIX("space.party_difficulty", "BUG-9199", g_party_diff_fix,
+         "space: enemy health, damage and raid size scale with the players in that system (online for raids), not "
+         "the reserved seats");
+founders::CampaignRules party_rules(bool here)
+{
+    auto r = world::rules_for_current();
+    if (g_test_difficulty >= 0) {
+        r.difficulty_percent = (uint16_t)g_test_difficulty;
+        r.model = 1;
+    }
+    if (!g_party_diff_fix)
+        return r;
+    unsigned n = 1;
+    if (C.sess && C.sess->connected()) {
+        const uint32_t at = here ? my_place() : 0;
+        n = 0;
+        for (auto& pl : C.sess->players())
+            if (!at || place_of(pl.id) == at)
+                n++;
+    }
+    r.seats = (uint8_t)std::clamp(n, 1u, (unsigned)founders::kMaxSeats);
+    return r;
+}
+
+// this game runs the NPC ships of its place and sends them
+static bool i_lead()
+{
+    if (is_host()) return true; // (the host always runs its own place's ships)
+    return g_leader_fix && C.sess && my_place() && leader_of(my_place()) == C.sess->my_id();
+}
+// this game shows another game's ships (the leader of its place, not itself)
+static bool mirroring()
+{
+    if (!g_leader_fix) return C.with_host && C.with_host();
+    if (i_lead() || !my_place()) return false;
+    const uint8_t l = leader_of(my_place());
+    return l != 0xFF && C.sess && l != C.sess->my_id();
+}
+
 // ---------------- guest ----------------
 struct Mirror {
     void* u = nullptr;
     net::Vec3 pos;
     net::Quat rot;
-    float hp = 0;
+    float hp = 0, max_hp = 0;
     double seen = 0;
     net::VelocityEstimate est; // ship snapshots carry no velocity
     uint32_t pol = 0xFFFFFFFFu; // the political id the host's game gives the ship
@@ -145,6 +220,70 @@ static uint32_t g_stale_chunks, g_partial_cycles, g_posse_kept, g_content_checke
 static bool g_applying;
 CALL_GUARD("squadron.applying", g_applying); // BUG-1047
 static uint32_t g_created, g_removed, g_hits_sent, g_damage_in, g_local_removed, g_mirror_hits;
+
+static std::unordered_map<void*,VehicleHealthScale> g_ship_scales;
+static unsigned g_save_depth;
+
+static bool enemy_ship(void* u, uint32_t own_pol)
+{
+    const auto type = F<int>(u,kType);
+    const auto pol = F<uint32_t>(u,kPol);
+    if (type == 0 || type == 3 || pol == own_pol || g_mirror_of.count(u) ||
+        (C.puppet_owner && C.puppet_owner(u) >= 0) || modes::space_retired(u) ||
+        spaceext::allies_mirror_pol(pol)) return false;
+    void* mission = F<void*>(u,0x800);
+    if ((type == 2 || type == 4 || type == 5) && mission && skg::readable(mission,0x7C) &&
+        F<uint32_t>(mission,0x78) == 0xA4B0A2DF) return true;
+    return spaceext::enemy_empire(pol);
+}
+
+static void scale_local_ships(const std::vector<void*>& live)
+{
+    if (g_save_depth) return;
+    const auto rules = party_rules(true); // BUG-9199
+    if (rules.enemy_health_percent() == 100 && g_ship_scales.empty()) return;
+    const auto own_pol = skg::cdecl_call<uint32_t>(a_PlayerEmpireID);
+    for (auto& item : g_ship_scales) item.second.seen = false;
+    for (auto* u : live) {
+        auto serial = game::object_serial(u);
+        if (!serial || !std::isfinite(F<float>(u,kMaxHp)) || !std::isfinite(F<float>(u,kHp))) continue;
+        auto previous = g_ship_scales.find(u);
+        float old = previous != g_ship_scales.end() && previous->second.serial == serial ? previous->second.factor : 1.f;
+        float factor = enemy_ship(u,own_pol) ? rules.enemy_health_percent() / 100.f : 1.f;
+        if (old == factor) {
+            if (factor != 1.f) previous->second.seen = true;
+            continue;
+        }
+        if (old != 1.f) previous->second.normalize(F<float>(u,kHp),F<float>(u,kMaxHp));
+        if (factor != 1.f) {
+            float native_max = F<float>(u,kMaxHp);
+            F<float>(u,kMaxHp) *= factor;
+            F<float>(u,kHp) *= factor;
+            g_ship_scales[u] = {serial,factor,native_max,F<float>(u,kMaxHp)};
+        }
+    }
+    std::erase_if(g_ship_scales,[](const auto& item) { return !item.second.seen; });
+}
+
+static void convert_live_ships(bool to_native)
+{
+    if (g_ship_scales.empty() || !g_ok) return;
+    for (auto* u : all_ufos()) {
+        auto i = g_ship_scales.find(u);
+        if (i == g_ship_scales.end() || i->second.serial != game::object_serial(u)) continue;
+        auto& scale = i->second;
+        if (to_native) scale.before_save(F<float>(u,kHp),F<float>(u,kMaxHp));
+        else scale.after_save(F<float>(u,kHp),F<float>(u,kMaxHp));
+    }
+}
+
+void before_native_save() { if (++g_save_depth == 1) convert_live_ships(true); }
+void after_native_save() { if (g_save_depth && --g_save_depth == 0) convert_live_ships(false); }
+void clear_enemy_stats()
+{
+    if (!g_save_depth) convert_live_ships(true);
+    g_ship_scales.clear();
+}
 
 // BUG-0420 (class: hits without a relation filter): a hit between the players' empire and a ship of that same empire
 // (an escort of the host's, a Defender of its system) was relayed like an enemy's: the host's escort's stray shot on a
@@ -258,6 +397,14 @@ using TakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const float*
 static TakeDamage_t o_TakeDamage;
 static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int type, const float* dir, void* attacker)
 {
+    if (in_space() && !g_applying && dmg > 0 && attacker && C.sess && C.sess->connected()) {
+        auto* source = static_cast<uint8_t*>(attacker) - kCombat;
+        // Hitting allied ships, buildings or the planet can pass a different combatant type.
+        // Verify membership before reading offsets specific to a UFO.
+        if ((is_host() || !mirroring()) && game::ufo_listed(source) &&
+            enemy_ship(source,skg::cdecl_call<uint32_t>(a_PlayerEmpireID)))
+            dmg *= party_rules(true).enemy_damage_percent() / 100.f; // BUG-9199
+    }
     if (in_space() && (uint8_t*)combat - kCombat == player_ufo()) // rescue: a lethal hit may only disable us
         dmg = spacecoop::filter_own_damage((uint8_t*)combat - kCombat, dmg, type);
     if (!in_space() || g_applying || !C.sess || !C.sess->connected())
@@ -277,6 +424,7 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
             g_mirror_hits++;
             if (me && att == me && type != 10) {
                 net::Writer w;
+                if (g_leader_fix) w.u8(g_mirror_leader); // BUG-9197: whose ship it is (the host forwards)
                 w.u16(it->second);
                 w.f32(dmg);
                 w.u32((uint32_t)type);
@@ -297,22 +445,24 @@ static int SK_THISCALL h_TakeDamage(void* combat, float dmg, uint32_t pol, int t
             return 0;
         }
     }
-    if (is_host() && C.puppet_owner) {
+    if (i_lead() && C.puppet_owner) {
         int owner = C.puppet_owner(u);
-        bool own = owner > 0 && att && C.puppet_owner(att) < 0 && att != me && friendly(att) && !war_with((uint8_t)owner);
+        const bool partner = owner >= 0 && owner != C.sess->my_id() && att && C.puppet_owner(att) < 0 && att != me;
+        bool own = partner && friendly(att) && !war_with((uint8_t)owner);
         if (own)
             g_friendly_dropped++;
-        else if (owner > 0 && att && C.puppet_owner(att) < 0 && att != me && friendly(att))
+        else if (partner && friendly(att))
             g_war_hits_out++; // BUG-1032: an escort's hit on a War player's puppet
-        if (owner > 0 && att && C.puppet_owner(att) < 0 && att != me && !own) {
-            // an NPC ship hit a guest's ship: the guest takes it on its own ship
+        if (partner && !own) {
+            // an NPC ship hit a partner's ship: the partner takes it on its own ship
             net::Writer w;
+            if (g_leader_fix) w.u8((uint8_t)owner); // BUG-9197: the victim (a guest leader's goes through the host)
             w.f32(dmg);
             w.u32((uint32_t)type);
             w.f32(dir ? dir[0] : 0); w.f32(dir ? dir[1] : 0); w.f32(dir ? dir[2] : 0);
             auto it = g_hid.find(att);
             w.u16(it == g_hid.end() ? 0xFFFF : it->second);
-            C.sess->send_reliable_to((uint8_t)owner, net::MSG_UFO_DAMAGE, w);
+            C.sess->send_reliable_to(is_host() ? (uint8_t)owner : (uint8_t)0, net::MSG_UFO_DAMAGE, w);
             g_damage_out++;
         }
     }
@@ -549,7 +699,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     return true;
 }
 
-// ---------------- host ----------------
+// ---------------- the leader (the host, or a guest leading its place: BUG-9197) ----------------
 static void host_tick(double now)
 {
     if (now - g_last_send < 0.1)
@@ -557,7 +707,9 @@ static void host_tick(double now)
     g_last_send = now;
     void* me = player_ufo();
     std::vector<void*> ships;
-    for (void* u : all_ufos())
+    auto live_ships = all_ufos();
+    scale_local_ships(live_ships);
+    for (void* u : live_ships)
         if (u != me && F<int>(u, kType) != 0 && (!C.puppet_owner || C.puppet_owner(u) < 0) &&
             !modes::space_retired(u)) // BUG-0218: a retired puppet is not one of our NPC ships
             ships.push_back(u);
@@ -579,9 +731,14 @@ static void host_tick(double now)
             g_hid_rev[id] = u;
         }
     g_cycle++;
+    g_led_ticks++;
     size_t per = 18, chunks = std::max<size_t>(1, (ships.size() + per - 1) / per);
     for (size_t k = 0; k < chunks; k++) {
         net::Writer w;
+        if (g_leader_fix) { // BUG-9197: whose ships, and where
+            w.u8(C.sess->my_id());
+            w.u32(my_place());
+        }
         w.u16(g_cycle);
         w.u8((uint8_t)k);
         w.u8((uint8_t)chunks);
@@ -612,9 +769,16 @@ static void host_tick(double now)
             g_drop_left--;
             continue;
         }
-        for (auto& pl : C.sess->players())
-            if (pl.id != 0)
-                C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+        if (!g_leader_fix) {
+            for (auto& pl : C.sess->players())
+                if (pl.id != 0)
+                    C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+        } else if (is_host()) { // the players of this place
+            for (auto& pl : C.sess->players())
+                if (pl.id != 0 && place_of(pl.id) == my_place())
+                    C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+        } else // a guest leader: the host forwards it to the players here
+            C.sess->send_unreliable_to(0, net::MSG_UFO_STATE, w);
     }
 }
 
@@ -898,10 +1062,26 @@ static void guest_fire(double now)
 
 static void guest_state(net::Reader& r)
 {
+    if (g_leader_fix) { // BUG-9197: only the ships of my place's leader
+        const uint8_t leader = r.u8();
+        const uint32_t place = r.u32();
+        if (!r.ok() || !mirroring() || place != my_place() || leader != leader_of(my_place()))
+            return;
+        if (leader != g_mirror_leader) { // another leader's ships: the old mirrors go
+            for (auto& [id, m] : g_mirrors)
+                if (m.u) {
+                    g_mirror_of.erase(m.u);
+                    destroy_mirror(m.u, false);
+                }
+            g_mirrors.clear();
+            g_rx_any = false;
+            g_mirror_leader = leader;
+        }
+    }
     uint16_t cycle = r.u16();
     uint8_t chunk = r.u8(), chunks = r.u8(), n = r.u8();
-    if (!r.ok() || !C.with_host || !C.with_host())
-        return; // the host's ships are mirrored only where the host is
+    if (!r.ok() || !mirroring())
+        return; // the leader's ships are mirrored only where the leader is
     if (chunk == kShotChunk && chunks == 0) { // BUG-0677: a shot list
         guest_shots(r, n);
         return;
@@ -939,12 +1119,11 @@ static void guest_state(net::Reader& r)
         net::Quat q;
         q.x = r.f32(); q.y = r.f32(); q.z = r.f32(); q.w = r.f32();
         float hp = r.f32(), mx = r.f32();
-        (void)mx;
-        if (!r.ok())
+        if (!r.ok() || !std::isfinite(hp) || !std::isfinite(mx))
             return;
         g_cycle_ids.insert(id);
         auto& m = g_mirrors[id];
-        m.pos = p; m.rot = q; m.hp = hp; m.seen = now; m.pol = pol;
+        m.pos = p; m.rot = q; m.hp = hp; m.max_hp = mx; m.seen = now; m.pol = pol;
         m.est.update(p, now, sent);
         if (id == g_hold_mirror)
             continue; // tests: keep the freed pointer until the next MSG_UFO_DAMAGE
@@ -1060,7 +1239,14 @@ static void guest_state(net::Reader& r)
 
 static void guest_tick(double now)
 {
-    bool here = C.with_host && C.with_host();
+    bool here = mirroring();
+    static double next_scale;
+    if (here) {
+        if (!g_ship_scales.empty()) clear_enemy_stats();
+    } else if (now >= next_scale) {
+        next_scale = now + .1;
+        scale_local_ships(all_ufos());
+    }
     for (auto& [id, m] : g_mirrors) {
         if (id == g_hold_mirror)
             continue; // tests: the one frame between the free and this tick, held open
@@ -1091,9 +1277,10 @@ static void guest_tick(double now)
         for (int i = 0; i < 4; i++)
             nr[i] = q[i];
         F<uint8_t>(m.u, kAtDest) = 1;
+        if (m.max_hp > 0) F<float>(m.u, kMaxHp) = m.max_hp;
         F<float>(m.u, kHp) = m.hp > 0 ? m.hp : 1;
     }
-    if (!here && !g_mirrors.empty()) { // we left the host's place: drop the mirrors
+    if (!here && !g_mirrors.empty()) { // we left the leader's place: drop the mirrors
         for (auto& [id, m] : g_mirrors)
             if (m.u) {
                 g_mirror_of.erase(m.u);
@@ -1101,6 +1288,7 @@ static void guest_tick(double now)
             }
         g_mirrors.clear();
     }
+    if (!here) g_mirror_leader = 0xFF;
 }
 
 void tick(double now)
@@ -1109,7 +1297,20 @@ void tick(double now)
     if (!in_space() || !C.sess || !C.sess->connected() || !player_ufo())
         return;
     g_loco_vt = *(void**)((uint8_t*)player_ufo() + kLoco); // BUG-0479 (h_SetScale)
-    if (is_host()) {
+    if (i_lead()) {
+        if (!g_mirrors.empty()) { // BUG-9197: we lead now (the leader left): the ships we show become our own
+            for (auto& [id, m] : g_mirrors)
+                if (m.u && live(m.u)) {
+                    g_mirror_of.erase(m.u);
+                    g_kept_on_handover++;
+                }
+            g_mirror_of.clear();
+            g_mirrors.clear();
+            g_mirror_leader = 0xFF;
+            g_handovers++;
+            H->log(M, SK_INFO, "space: this game leads the enemy ships of its place now (%u kept)", g_kept_on_handover);
+        }
+        g_mirror_leader = 0xFF;
         host_tick(now);
         host_send_shots(now); // BUG-0677
     } else if (is_guest()) {
@@ -1121,13 +1322,62 @@ void tick(double now)
     }
 }
 
+// BUG-9197: the host forwards a guest leader's messages (guests only talk to the host); true = handled here
+static bool host_forward(uint8_t type, uint8_t from, net::Reader& r)
+{
+    if (!g_leader_fix || !is_host() || from == 0) return false;
+    if (type == net::MSG_UFO_STATE) { // a guest leader's ships: to the other players of its place
+        net::Reader peek(r.cur(), r.left());
+        const uint8_t leader = peek.u8();
+        const uint32_t place = peek.u32();
+        if (!peek.ok() || leader != from || !place) return true;
+        net::Writer w;
+        w.raw(r.cur(), r.left());
+        for (auto& pl : C.sess->players())
+            if (pl.id != 0 && pl.id != from && place_of(pl.id) == place) {
+                C.sess->send_unreliable_to(pl.id, net::MSG_UFO_STATE, w);
+                g_relayed++;
+            }
+        return true;
+    }
+    if (type == net::MSG_UFO_HIT) { // a shot on a guest leader's ship: to that leader, the shooter in front
+        net::Reader peek(r.cur(), r.left());
+        const uint8_t leader = peek.u8();
+        if (!peek.ok() || leader == 0) return false; // the host's own ship: applied below
+        net::Writer w;
+        w.u8(from);
+        w.raw(peek.cur(), peek.left());
+        C.sess->send_reliable_to(leader, net::MSG_UFO_HIT, w);
+        g_relayed++;
+        return true;
+    }
+    if (type == net::MSG_UFO_DAMAGE) { // a guest leader's ship hit a partner: to that partner
+        net::Reader peek(r.cur(), r.left());
+        const uint8_t victim = peek.u8();
+        if (!peek.ok() || victim == 0) return true; // (the host is never another leader's victim: it leads its place)
+        net::Writer w;
+        w.raw(r.cur(), r.left());
+        C.sess->send_reliable_to(victim, net::MSG_UFO_DAMAGE, w);
+        g_relayed++;
+        return true;
+    }
+    return false;
+}
+
 void on_message(uint8_t type, uint8_t from, net::Reader& r)
 {
+    if (host_forward(type, from, r))
+        return;
     if (!in_space() || !player_ufo())
         return;
     if (type == net::MSG_UFO_STATE && is_guest()) {
         guest_state(r);
-    } else if (type == net::MSG_UFO_HIT && is_host()) {
+    } else if (type == net::MSG_UFO_HIT && i_lead()) {
+        uint8_t shooter = from;
+        if (g_leader_fix) { // the leader byte (the host's own) or the shooter (forwarded by the host to a guest leader)
+            const uint8_t first = r.u8();
+            if (!is_host()) shooter = first;
+        }
         uint16_t id = r.u16();
         float dmg = r.f32();
         int t = (int)r.u32();
@@ -1135,7 +1385,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         auto it = g_hid_rev.find(id);
         if (!r.ok() || it == g_hid_rev.end() || !live(it->second) || F<int>(it->second, kState) == 2)
             return;
-        bool war = war_with(from); // BUG-1032: a guest at War with the host (its shots at the escorts count)
+        bool war = war_with(shooter); // BUG-1032: a player at War with the host (its shots at the escorts count)
         if (friendly(it->second) && !war) { // BUG-0420: a guest's shot at a ship of the players' own empire (an escort)
             g_friendly_dropped++;
             return;
@@ -1145,7 +1395,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         dmg = net::sane_damage(dmg, 100000.f); // a guest's report: finite and not negative
         if (!net::finite3(dir))
             dir[0] = dir[1] = dir[2] = 0;
-        void* puppet = hit_puppet(from);
+        void* puppet = hit_puppet(shooter);
         uint32_t mine = skg::cdecl_call<uint32_t>(a_PlayerEmpireID);
         // BUG-1032: the game applies no hit whose attacker political id (the argument) is the victim's (BUG-0705):
         // a War guest's hit on our empire's ship goes in with no empire (-1); any other with ours, as before (with
@@ -1157,6 +1407,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         g_hits_in++;
     } else if (type == net::MSG_UFO_DAMAGE && is_guest()) {
+        if (g_leader_fix) r.u8(); // the victim (us)
         float dmg = r.f32();
         int t = (int)r.u32();
         float dir[3] = {r.f32(), r.f32(), r.f32()};
@@ -1186,6 +1437,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 static std::string status_ships();
 void on_session_end()
 {
+    clear_enemy_stats();
     for (auto& [id, m] : g_mirrors)
         if (m.u)
             destroy_mirror(m.u, false);
@@ -1212,6 +1464,16 @@ std::string status()
     snprintf(sc, sizeof sc, "space puppet scale: fix=%d sized=%u replaced=%u game=%.3f own=%.3f from=%08X\n",
              g_puppet_scale_fix ? 1 : 0, g_scale_puppet_calls, g_scale_replaced, g_scale_game, g_scale_own,
              (unsigned)g_scale_caller);
+    char ld[200]; // BUG-9197
+    snprintf(ld, sizeof ld, "fleet leader: fix=%d place=%08X leader=%d me_lead=%d mirroring=%d of=%d relayed=%u led=%u "
+             "handovers=%u kept=%u\n", g_leader_fix ? 1 : 0, my_place(), (int)(int8_t)leader_of(my_place()),
+             i_lead() ? 1 : 0, mirroring() ? 1 : 0, (int)(int8_t)g_mirror_leader, g_relayed, g_led_ticks, g_handovers,
+             g_kept_on_handover);
+    const auto pr = party_rules(true), all = world::rules_for_current(); // BUG-9199 (reserved: the save's seats)
+    char df[160];
+    snprintf(df, sizeof df, "space difficulty: fix=%d seats_here=%u reserved=%u enemy_hp=%u%% enemy_dmg=%u%% raid_extra=%u\n",
+             g_party_diff_fix ? 1 : 0, pr.seats, all.seats, pr.enemy_health_percent(), pr.enemy_damage_percent(),
+             party_rules(false).extra_total(1));
     char sh[260];
     snprintf(sh, sizeof sh,
              "space shots: fix=%d seen=%u tx=%u untracked=%u rx=%u fired=%u refused=%u nomirror=%u notool=%u notarget=%u "
@@ -1219,7 +1481,7 @@ std::string status()
              g_shots_fix ? 1 : 0, g_shots_seen, g_shots_tx, g_shots_untracked, g_shots_rx, g_shots_fired, g_shots_refused,
              g_shots_nomirror, g_shots_notool, g_shots_notarget, g_shots_released, g_shot_hits_dropped,
              g_shot_nullhits_dropped);
-    return status_ships() + sc + sh;
+    return status_ships() + sc + ld + df + sh;
 }
 
 static std::string status_ships()
@@ -1406,7 +1668,14 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "spawn") { // spawn <type> [own]: a ship without an empire (pirate) next to
         // us, or with our own empire's political id (`own`: type 3 = an escort ship of ours, BUG-0084)
         uint32_t pol = a.size() >= 3 && a[2] == "own" ? skg::cdecl_call<uint32_t>(a_PlayerEmpireID) : 0xFFFFFFFFu;
-        void* u = skg::cdecl_call<void*>(a_SpawnUFO, atoi(a[1].c_str()), &pol, (void*)&F<uint32_t>(me, kModel));
+        if (a.size() >= 4 && a[2] == "pol") // tests (BUG-9199): `spawn <type> pol <hex>`: a ship of that empire
+            pol = (uint32_t)strtoul(a[3].c_str(), nullptr, 16);
+        // tests (BUG-9197): `spawn <type> like <ship pointer>`: that ship's model (one the partners have too)
+        void* like = a.size() >= 4 && a[2] == "like" ? (void*)(uintptr_t)strtoul(a[3].c_str(), nullptr, 16) : nullptr;
+        if (like && !game::ufo_listed(like))
+            return "no such ship";
+        void* u = skg::cdecl_call<void*>(a_SpawnUFO, atoi(a[1].c_str()), &pol,
+                                         (void*)&F<uint32_t>(like ? like : me, kModel));
         if (!u)
             return "spawn failed";
         net::Vec3 p = pos_of(me);
@@ -1419,13 +1688,18 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a.size() >= 3 && a[0] == "hurt") { // host: ship #id hits player <p>'s puppet [with dmg]
         auto it = g_hid_rev.find((uint16_t)atoi(a[1].c_str()));
-        void* pup = C.puppet_of ? C.puppet_of((uint8_t)atoi(a[2].c_str())) : nullptr;
+        const auto target = uint8_t(atoi(a[2].c_str()));
+        void* pup = !target ? me : C.puppet_of ? C.puppet_of(target) : nullptr;
         if (it == g_hid_rev.end() || !pup || !live(it->second) || !live(pup))
             return "no such ship or puppet";
         float dir[3] = {0, 0, 1};
         h_TakeDamage((uint8_t*)pup + kCombat, a.size() > 3 ? (float)atof(a[3].c_str()) : 5.f,
                      F<uint32_t>(it->second, kPol), 0, dir, (uint8_t*)it->second + kCombat);
         return "hit sent";
+    }
+    if (a.size() >= 2 && a[0] == "difficulty") { // tests (BUG-9199): the difficulty percent, memory only (-1: the save's)
+        g_test_difficulty = std::clamp(atoi(a[1].c_str()), -1, (int)founders::kMaxDifficultyPercent);
+        return "difficulty " + std::to_string(g_test_difficulty);
     }
     if (a.size() >= 2 && a[0] == "fakemodel") { // tests (BUG-0323): 1 = send made-up model instances
         g_fake_zero = a[1] == "zero";              // zero (BUG-0723): send keys of zeros

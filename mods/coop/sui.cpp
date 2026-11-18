@@ -1,6 +1,7 @@
 #include "sui.h"
 
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -15,6 +16,7 @@ namespace sui {
 
 static const SkHost* H;
 static SkMod* M;
+static uintptr_t a_slider_create;
 static uintptr_t a_wm_get, a_btn_create, a_te_create, a_layout_ctor, a_layout_load, a_layout_container,
     a_image_get, a_obj_new, a_get_alloc, a_std_ctor, a_info_ctor;
 
@@ -42,6 +44,7 @@ bool init(const SkHost* host, SkMod* mod)
     a_wm_get = H->sym("UTFWin::IWindowManager::Get");
     a_btn_create = H->sym("UTFWin::IButton::Create");
     a_te_create = H->sym("UTFWin::ITextEdit::Create");
+    a_slider_create = H->sym("UTFWin::ISlider::Create");
     a_layout_ctor = H->sym("UTFWin::UILayout::UILayout");
     a_layout_load = H->sym("UTFWin::UILayout::Load");
     a_layout_container = H->sym("UTFWin::UILayout::GetContainerWindow");
@@ -104,6 +107,13 @@ Win main_window()
 {
     void* wm = a_wm_get ? skg::cdecl_call<void*>(a_wm_get) : nullptr;
     return wm ? vcall<Win>(wm, 0x04 / 4) : nullptr;
+}
+
+Win window_at(float x, float y)
+{
+    void* wm = a_wm_get ? skg::cdecl_call<void*>(a_wm_get) : nullptr;
+    float pt[2] = {x, y};
+    return wm ? vcall<Win>(wm, 0x44 / 4, (void*)pt) : nullptr;
 }
 
 // Window::mChildrenWindows: intrusive list anchor at IWindow+0x38 in this build (ModAPI: +0x3C);
@@ -228,6 +238,7 @@ void set_caption(Win w, const std::string& t)
     vcall<void>(w, 0x80 / 4, u.c_str());
 }
 void set_area(Win w, const Rect& r) { vcall<void>(w, 0x60 / 4, &r); }
+void set_layout_area(Win w, const Rect& r) { vcall<void>(w, 0x6C / 4, &r); }
 void set_flag(Win w, uint32_t f, bool on) { vcall<void>(w, 0x7C / 4, f, on); }
 void set_visible(Win w, bool on) { set_flag(w, kFlagVisible, on); }
 void set_enabled(Win w, bool on) { set_flag(w, kFlagEnabled, on); }
@@ -237,6 +248,9 @@ void set_ids(Win w, uint32_t cid, uint32_t cmd)
     vcall<void>(w, 0x54 / 4, cmd);
 }
 void set_font(Win w, uint32_t f) { vcall<void>(w, 0x84 / 4, f); }
+void set_shade_color(Win w, uint32_t argb) { vcall<void>(w, 0x5C / 4, argb); }
+void set_fill_color(Win w, uint32_t argb) { vcall<void>(w, 0xAC / 4, argb); }
+uint32_t fill_color(Win w) { return vcall<uint32_t>(w, 0xA4 / 4); }
 void add_child(Win p, Win c) { vcall<void>(p, 0xD8 / 4, c); }
 void remove_child(Win p, Win c) { vcall<void>(p, 0xDC / 4, c); }
 void bring_to_front(Win p, Win c) { vcall<void>(p, 0xE8 / 4, c); }
@@ -318,7 +332,7 @@ Win button_like(Win parent, Win like, const Rect& r, const std::string& text)
     if (void* d = drawable(like))
         set_drawable(w, d); // the same drawable object (images per state), ref counted
     set_font(w, font(like));
-    vcall<void>(w, 0x5C / 4, vcall<uint32_t>(like, 0x30 / 4)); // shade color
+    set_shade_color(w, vcall<uint32_t>(like, 0x30 / 4));
     vcall<void>(w, 0xAC / 4, vcall<uint32_t>(like, 0xA4 / 4)); // fill color
     vcall<void>(w, 0x78 / 4, vcall<uint32_t>(like, 0x24 / 4)); // cursor
     set_area(w, r);
@@ -335,6 +349,15 @@ void set_label_color(Win w, uint32_t argb)
     if (void* b = as_button(w))
         for (uint32_t i = 0; i < 8; i++)
             vcall<void>(b, 0x4C / 4, i, argb);
+}
+
+void center_caption(Win w)
+{
+    void* b = as_button(w);
+    if (!b)
+        return;
+    vcall<void>(b, 0x54 / 4, 1.f, 1.f, 1.f, 1.f); // borders
+    vcall<void>(b, 0x5C / 4, 0.f, 0.f);           // caption offset
 }
 
 Win label(Win parent, const Rect& r, const std::string& text, uint32_t font_id, uint32_t argb, int align)
@@ -361,7 +384,7 @@ Win label(Win parent, const Rect& r, const std::string& text, uint32_t font_id, 
     return w;
 }
 
-Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_id, int max_len)
+Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_id, int max_len, bool draw_background)
 {
     Win w = ((CreateFn)a_te_create)(0, nullptr);
     void* e = as_edit(w);
@@ -370,7 +393,8 @@ Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_
     add_ref(w);
     if (font_id)
         vcall<void>(e, 0x18 / 4, font_id); // SetTextStyleID
-    static const uint32_t colors[8] = {0xFFFFFFFF, 0xD0081828, 0xFF808080, 0x80081828,
+    const uint32_t colors[8] = {0xFFFFFFFF, draw_background ? 0xD0081828u : 0u,
+                                       0xFF808080, draw_background ? 0x80081828u : 0u,
                                        0xFF000000, 0xFF9BD8FF, 0xFFFFFFFF, 0xFFFFFFFF};
     for (uint32_t i = 0; i < 8; i++)
         vcall<void>(e, 0x20 / 4, i, colors[i]);
@@ -384,6 +408,197 @@ Win text_edit(Win parent, const Rect& r, const std::string& text, uint32_t font_
         add_child(parent, w);
     set_edit_text(w, text);
     return w;
+}
+
+// ---------------- sliders ----------------
+static void* utf_new(size_t n);
+static void obj_addref(void* o);
+// ISlider (ModAPI order; checked live 2026-11-13 on the Audio page's sliders): 0x14 SetOrientation(1 horizontal, 2
+// vertical), 0x18 GetOrientation, 0x1C SetValue(v, notify), 0x20 GetValue, 0x24 SetMinValue, 0x28 GetMinValue, 0x2C
+// SetMaxValue, 0x30 GetMaxValue, 0x34 SetSliderDrawable, 0x38 GetSliderDrawable
+void* as_slider(Win w) { return w ? vcall<void*>(w, 0x0C / 4, 0x0F00A8A0u) : nullptr; }
+
+Win slider(Win parent, const Rect& r, int min, int max, int value, bool horizontal, void* drawable)
+{
+    if (!a_slider_create)
+        return nullptr;
+    Win w = ((CreateFn)a_slider_create)(0, nullptr);
+    void* s = as_slider(w);
+    if (!s)
+        return nullptr;
+    add_ref(w);
+    vcall<void>(s, 0x14 / 4, horizontal ? 1 : 2);
+    if (drawable)
+        vcall<void>(s, 0x34 / 4, drawable);
+    vcall<void>(s, 0x24 / 4, min, 0);
+    vcall<void>(s, 0x2C / 4, max, 0);
+    vcall<void>(s, 0x1C / 4, value, 0);
+    set_area(w, r);
+    set_visible(w, true);
+    set_enabled(w, true);
+    if (parent)
+        add_child(parent, w);
+    return w;
+}
+
+void* slider_drawable_of(Win w)
+{
+    void* s = as_slider(w);
+    return s ? vcall<void*>(s, 0x38 / 4) : nullptr;
+}
+
+void* slider_drawable_with(void* like, void* background, void* thumb, void* container)
+{
+    // the ISliderDrawable interface sits at +0xC of a SliderDrawable (read live 2026-11-13: +0 IDrawable vtable, +4
+    // DefaultLayoutElement vtable, +8 the reference count, +0xC ISliderDrawable vtable, +0x10 images[3], +0x1C a float
+    // 1.4, +0x20 / +0x24 zero); ModAPI's 0x1C bytes are too few in this build: 0x28 copied into a 0x40 block
+    if (!like || IsBadReadPtr((uint8_t*)like - 0xC, 0x28))
+        return nullptr;
+    uint8_t* src = (uint8_t*)like - 0xC;
+    uint8_t* d = (uint8_t*)utf_new(0x40);
+    if (!d)
+        return nullptr;
+    memset(d, 0, 0x40);
+    memcpy(d, src, 0x28);
+    *(int*)(d + 8) = 0; // nobody holds it yet (set_slider_drawable takes a reference)
+    void* const images[3] = {background, thumb, container};
+    for (int i = 0; i < 3; i++) {
+        void* img = images[i] ? images[i] : *(void**)(src + 0x10 + i * 4);
+        if (!images[i])
+            obj_addref(img); // `like`'s, now held twice; ours come with the caller's reference
+        *(void**)(d + 0x10 + i * 4) = img;
+    }
+    return d + 0xC;
+}
+
+void invalidate_transform(Win w)
+{
+    if (w) vcall<int>(w, 0x98 / 4);
+}
+
+void revalidate(Win w)
+{
+    if (w) vcall<void>(w, 0x94 / 4);
+}
+
+void* as_combo(Win w) { return w ? vcall<void*>(w, 0x0C / 4, 0x2F5528D9u) : nullptr; }
+
+std::vector<std::string> combo_values(Win w)
+{
+    std::vector<std::string> out;
+    void* c = as_combo(w);
+    if (!c) return out;
+    const int n = vcall<int>(c, 0x3C / 4);
+    for (int i = 0; i < n && i < 512; i++) {
+        // GetValue returns an eastl::string16 by value (a hidden result pointer first); its buffer is the game's
+        // allocator's and stays (a few bytes per call, only while the Settings dialog is built)
+        uint32_t buf[8] = {};
+        vcall<void*>(c, 0x34 / 4, (void*)buf, i);
+        const char16_t* b = (const char16_t*)(uintptr_t)buf[0];
+        const char16_t* e = (const char16_t*)(uintptr_t)buf[1];
+        if (b && e >= b && e - b < 256 && !IsBadReadPtr(b, (e - b) * 2))
+            out.push_back(utf8(std::u16string(b, e).c_str()));
+        else
+            out.emplace_back();
+    }
+    return out;
+}
+
+int combo_selected(Win w)
+{
+    void* c = as_combo(w);
+    return c ? vcall<int>(c, 0x40 / 4) : -1;
+}
+
+void combo_select(Win w, int index)
+{
+    if (void* c = as_combo(w)) vcall<void>(c, 0x44 / 4, index, true);
+}
+
+void combo_set_values(Win w, const std::vector<std::string>& values)
+{
+    void* c = as_combo(w);
+    if (!c) return;
+    vcall<void>(c, 0x2C / 4); // ClearValues
+    for (auto& v : values) {
+        const std::u16string u = utf16(v);
+        vcall<void>(c, 0x20 / 4, u.c_str()); // AddValue
+    }
+}
+
+bool has_own_transform(Win w)
+{
+    const uint8_t* p = (const uint8_t*)w;
+    if (!w || IsBadReadPtr(p + 0xC0, 0x44)) return false;
+    return *(const int*)(p + 0x100) != 0;
+}
+
+bool render_xform(Win w, float& sx, float& sy, float& tx, float& ty)
+{
+    const uint8_t* p = (const uint8_t*)w;
+    if (!w || IsBadReadPtr(p + 0x148, 0x44)) return false;
+    const float* m = (const float*)(p + 0x148);
+    const int type = *(const int*)(p + 0x188);
+    if (type != 0 && type != 1) return false;
+    sx = m[0];
+    sy = m[5];
+    tx = m[12];
+    ty = m[13];
+    return sx > 0.01f && sy > 0.01f;
+}
+
+static bool g_drawn_rect_fix = true;
+COOP_FIX("ui.drawn_rect", "BUG-9238", g_drawn_rect_fix,
+         "ui: the mod places its marks and clicks by where Spore's windows are drawn (Interface Size), not by their layout");
+Rect drawn_rect(Win w)
+{
+    const Rect r = screen_rect(w);
+    if (!g_drawn_rect_fix || !w) return r;
+    const uint8_t* p = (const uint8_t*)w;
+    if (IsBadReadPtr(p + 0x148, 0x44) || *(const int*)(p + 0x188) != 1) return r; // (identity: drawn at its layout)
+    float sx, sy, tx, ty;
+    if (!render_xform(w, sx, sy, tx, ty) || !std::isfinite(tx) || !std::isfinite(ty)) return r;
+    const Rect a = real_area(w);
+    return Rect{tx, ty, tx + a.w() * sx, ty + a.h() * sy};
+}
+
+bool button_selected(Win w)
+{
+    void* b = as_button(w);
+    return b && (vcall<int>(b, 0x20 / 4) & 4);
+}
+
+void set_button_selected(Win w, bool on)
+{
+    if (void* b = as_button(w))
+        vcall<void>(b, 0x28 / 4, 4, on);
+}
+
+Win box(Win parent, const Rect& r, void* drawable)
+{
+    Win w = label(parent, r, "", 0, 0, kAlignLeft);
+    if (w && drawable)
+        set_drawable(w, drawable);
+    return w;
+}
+
+int slider_value(Win w)
+{
+    void* s = as_slider(w);
+    return s ? vcall<int>(s, 0x20 / 4) : 0;
+}
+
+void set_slider_value(Win w, int v)
+{
+    if (void* s = as_slider(w))
+        vcall<void>(s, 0x1C / 4, v, 0);
+}
+
+void set_edit_masked(Win w, bool masked)
+{
+    constexpr int kPasswordMode = 0x80;
+    if (void* e = as_edit(w))
+        vcall<void>(e, 0x44 / 4, kPasswordMode, masked); // SetTextEditFlag
 }
 
 std::string edit_text(Win w)
@@ -427,6 +642,13 @@ static void* utf_new(size_t n)
 
 static void obj_addref(void* o) { if (o) vcall<int>(o, 0); }
 static void obj_release(void* o) { if (o) vcall<int>(o, 1); }
+
+bool has_image(uint32_t instance, uint32_t group)
+{
+    void* resource = image(instance, 0x2F7D0004, group);
+    obj_release(resource);
+    return resource != nullptr;
+}
 
 // SporeStdDrawableImageInfo (0x98): vtables +0/+4, ref count +8, background image +0xC,
 // icon image +0x10, the rest plain values
@@ -496,6 +718,65 @@ void* std_drawable_with_icon(void* src, void* icon)
     return d;
 }
 
+// the same drawable with another layout mode in every state: `mode` 2 is the tooltip's (cut in thirds, the corners
+// keep their size); the Party panel's portrait takes the whole image into the window (tried live, see coop_ui.cpp)
+void* std_drawable_image(void* image, uint32_t mode)
+{
+    uint8_t* d = (uint8_t*)std_drawable_tooltip(image);
+    if (d) *(uint32_t*)(d + 0x30) = mode;
+    return d;
+}
+
+void* std_drawable_tooltip(void* image)
+{
+    // UTFWin::StdDrawable (0x7C bytes, vtable 0x1A85238 at runtime), the class of Spore's own
+    // tooltip background: images[8] at +0x10, layout values +0x30..+0x78, hit mask +0x4C
+    static uintptr_t ctor = H->sym("UTFWin::StdDrawable::StdDrawable");
+    if (!ctor || !image)
+        return nullptr;
+    uint8_t* d = (uint8_t*)utf_new(0x7C);
+    if (!d)
+        return nullptr;
+    thiscall<void*>(ctor, d);
+    for (int i = 0; i < 8; i++) { // the pill in every state slot
+        *(void**)(d + 0x10 + i * 4) = image;
+        obj_addref(image);
+    }
+    // the native tooltip's values (window 03754E6C, read at runtime 2026-11-10): mode 2, the image
+    // cut in thirds (0.333 x4), scale 1 / 1; +0x4C (hit mask) stays the constructor's
+    static const uint32_t kHead[7] = {2, 0x3EAAAAAB, 0x3EAAAAAB, 0x3EAAAAAB, 0x3EAAAAAB, 0x3F800000, 0x3F800000};
+    static const uint32_t kTail[11] = {0, 0x40C00000, 0, 2, 2, 0, 0, 0, 0x399D4952, 0x3F000000, 0};
+    memcpy(d + 0x30, kHead, sizeof kHead);
+    memcpy(d + 0x50, kTail, sizeof kTail);
+    return d;
+}
+
+void* std_drawable_states(void* src, void* const* images, int n)
+{
+    static uintptr_t ctor = H->sym("UTFWin::StdDrawable::StdDrawable");
+    if (!ctor || !src || n < 1 || n > 8 || IsBadReadPtr(src, 0x7C))
+        return nullptr;
+    for (int i = 0; i < n; i++)
+        if (!images[i])
+            return nullptr;
+    uint8_t* d = (uint8_t*)utf_new(0x7C);
+    if (!d)
+        return nullptr;
+    thiscall<void*>(ctor, d);
+    if (*(uintptr_t*)d != *(uintptr_t*)src) { // not the class of the game's button: leave its look alone
+        obj_release(d);
+        return nullptr;
+    }
+    for (int i = 0; i < n; i++) {
+        *(void**)(d + 0x10 + i * 4) = images[i];
+        obj_addref(images[i]);
+    }
+    const uint8_t* s = (const uint8_t*)src; // the layout (mode, cuts, scale) and the values after the hit mask
+    memcpy(d + 0x30, s + 0x30, 0x4C - 0x30);
+    memcpy(d + 0x50, s + 0x50, 0x7C - 0x50);
+    return d;
+}
+
 // ---------------- events ----------------
 struct HandlerBox {
     std::function<bool(Win, const Msg&)> fn;
@@ -506,11 +787,11 @@ static int tramp(void* user, void* window, const void* msg)
     return b->fn && msg ? b->fn(window, *(const Msg*)msg) : 0;
 }
 
-void* add_handler(Win w, std::function<bool(Win, const Msg&)> fn)
+void* add_handler(Win w, std::function<bool(Win, const Msg&)> fn, int event_flags)
 {
     // the box is never freed: after a hot reload the old handler is disabled, not deleted
     auto* box = new HandlerBox{std::move(fn)};
-    void* p = H->ui_winproc(M, tramp, box, 0);
+    void* p = H->ui_winproc(M, tramp, box, event_flags);
     vcall<void>(w, 0x104 / 4, p);
     if (g_release_fix && refs(p) >= 2) { // the window holds its own (AddWinProc): ours is not needed (BUG-1025)
         vcall<int>(p, 1);
@@ -576,6 +857,12 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
         for (Win p = w; p; p = parent(p))
             H->out_printf(out, "%s", dump(p, 0, false).c_str());
         return 0;
+    }
+    if (sub == "path" && argc > 2) { // path <hex address | control id>: the window and its parents (BUG-9238 tests)
+        Win w = arg_win(argv[2], out);
+        for (Win p = w; p; p = parent(p))
+            H->out_printf(out, "%s", dump(p, 0, false).c_str());
+        return w ? 0 : 1;
     }
     if (sub == "at" && argc > 3) { // at <x> <y>: every visible window under a screen point (game bots)
         float x = (float)atof(argv[2]), y = (float)atof(argv[3]);
@@ -677,6 +964,66 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
             H->out_printf(out, " %08X", vcall<uint32_t>(b, 0x48 / 4, i));
         return 0;
     }
+    if (sub == "combo" && argc > 2) { // combo <win> [sel <i>]: a combo box's values (tests)
+        Win w = arg_win(argv[2], out);
+        if (!as_combo(w)) {
+            H->out_printf(out, "not a combo box");
+            return 1;
+        }
+        if (argc > 4 && !strcmp(argv[3], "sel")) combo_select(w, atoi(argv[4]));
+        const auto v = combo_values(w);
+        H->out_printf(out, "%zu values, selected %d\n", v.size(), combo_selected(w));
+        for (size_t i = 0; i < v.size(); i++) H->out_printf(out, "%zu '%s'\n", i, v[i].c_str());
+        return 0;
+    }
+    if (sub == "slider" && argc > 2) { // slider <win>: its values and drawable (tests)
+        Win w = arg_win(argv[2], out);
+        void* s = as_slider(w);
+        if (!s) {
+            H->out_printf(out, "not a slider");
+            return 1;
+        }
+        void* d = vcall<void*>(s, 0x38 / 4);
+        H->out_printf(out, "slider %p orient=%d value=%d min=%d max=%d drawable=%p", s, vcall<int>(s, 0x18 / 4),
+                      vcall<int>(s, 0x20 / 4), vcall<int>(s, 0x28 / 4), vcall<int>(s, 0x30 / 4), d);
+        if (d && !IsBadReadPtr(d, 0x1C))
+            for (int i = 0; i < 7; i++)
+                H->out_printf(out, " %08X", ((uint32_t*)d)[i]);
+        return 0;
+    }
+    if (sub == "mkslider" && argc > 7) { // mkslider <parent> x1 y1 x2 y2 <like slider> [h|v]: a test slider
+        Win p = arg_win(argv[2], out), like = arg_win(argv[7], out);
+        if (!p || !like)
+            return 1;
+        Rect r{(float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5]), (float)atof(argv[6])};
+        Win w = slider(p, r, 50, 200, 100, argc < 9 || argv[8][0] != 'v', slider_drawable_of(like));
+        H->out_printf(out, "%s", w ? dump(w, 0, false).c_str() : "failed");
+        return w ? 0 : 1;
+    }
+    if (sub == "scale" && argc > 3) { // scale <win> <factor> [event flags hex]: tests of a native window's size
+        Win w = arg_win(argv[2], out);
+        if (!w)
+            return 1;
+        static float s_factor = 1.f;
+        static int s_seen = 0;
+        s_factor = (float)atof(argv[3]);
+        const int flags = argc > 4 ? (int)strtoul(argv[4], nullptr, 16) : 0xFFFF;
+        add_handler(w, [](Win win, const Msg& m) {
+            if (s_seen < 40) {
+                s_seen++;
+                H->log(M, SK_INFO, "sui: scale test: %p message %X a=%X b=%X c=%X d=%X", win, m.type, m.a, m.b, m.c, m.d);
+            }
+            if (m.type == kMsgTransformed && m.d && !IsBadReadPtr((void*)(uintptr_t)m.d, 64)) {
+                float* x = (float*)(uintptr_t)m.d;
+                x[0] *= s_factor;
+                x[5] *= s_factor;
+            }
+            return false;
+        }, flags);
+        invalidate_transform(w);
+        H->out_printf(out, "scale %.2f on %p (flags %X)", s_factor, w, flags);
+        return 0;
+    }
     if (sub == "align" && argc > 3) { // experiments: a button's caption alignment (+0x3C) and type (+0x1C)
         Win w = arg_win(argv[2], out);
         void* b = w ? as_button(w) : nullptr;
@@ -732,7 +1079,7 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
 void register_commands()
 {
     H->command_add(M, "coop.ui",
-                   "coop.ui tree [depth] [all] [root] | find <caption> | where <hex id>... | at <x> <y> | layouts | load <inst> [group] | "
+                   "coop.ui tree [depth] [all] [root] | find <caption> | path <win> | where <hex id>... | at <x> <y> | layouts | load <inst> [group] | "
                    "show <win> [0|1] - Spore UI windows",
                    c_ui, nullptr, SK_CMD_OUTSIDE_FRAME);
 }

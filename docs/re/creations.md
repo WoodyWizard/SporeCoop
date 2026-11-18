@@ -822,6 +822,402 @@ the game files' index and Ghidra. The rest of BUG-0424 after BUG-0452.
   (no pack in this install has ship or vehicle paints: the Creepy & Cute pack has creature parts and
   paints only); a key whose records are not in a package the mod can read (a baked resource): the model is
   built as it is and a warning is logged once.
+## Distinct native landfall for the guest cell (2026-11-03, duo-species)
+<a id="creations-duo-cell-conversion"></a>
+
+On Steam 2024, a guest without a land creature played BAF1AD40 while the host
+played 2DDF0D92 on Vantiegan. Duo 6 put the host's Gaal into both FD4902BD early
+editors. In a control copy of the checkpoint Spore evolved BAF1AD40 locally and
+created Stabbella. Its BEM was 1541 bytes, with SHA256
+`51379fecd40e49ac96c3eef91c6ba355f0d46b5ce3977d69e0c20e8a0dd64816`.
+Rekeying the original cell BEM would be wrong. It was 1565 bytes and contained
+different part IDs and dimensions.
+
+The native stage start E83910 calls a narrower method at 4BA690. Thiscall on the
+cell model with an output reference returns AL and pops four bytes. It checks
+the source editor DFAD9F51 at +18, copies the model and sets the destination
+editor 9EA3031A. Calling this method alone, assigning a fresh CRT key from the
+ID generator and writing the BEM produced the same 1541 bytes as Spore's full
+transition. Publishing the disk index has to wait for the queued resource write.
+
+The editor also needs the creation catalog. A BEM-only version selected the
+expected key and produced the native avatar but opened a mouthless blank body
+in the early editor. The working path copies the source thumbnail, constructs
+new metadata with the guest cell as parent and uses the game's model registry.
+The metadata constructor takes D8 bytes from GeneralAllocator::new_ at F47240.
+A development build using the different named allocator at 9262B0 faulted in
+the metadata destructor. The corrected build opened the visibly spiked orange
+Stabbella with its mouth, name and ancestry, while the host opened yellow Gaal.
+
+The Vantiegan test on two processes matched the guest's model, thumbnail and parent
+to the control. Adding legs and choosing Save New produced guest key 29144608.
+The host's equivalent edit gave 29144605. Both returned to one planet, agreed
+on both network creations and reported zero native faults. The test never sets
+the guest's land species key. `tools/tests/duo_landfall.py` reads the two real
+editor requests and the respective local catalogs.
+
+## Archiving native landfall bodies (2026-11-05, duo-species)
+<a id="creations-landfall-archive"></a>
+
+BUG-9041: Stabbella29148A01 saved with legs has a1934-byte BEM. Its paint
+header includes FE07, repeating zero across coat/detail. model_effects was
+designed for in-place replacement and correctly refuses such runs, but using
+that restriction for archive validation rejected a valid native creation.
+Archive validation now uses decode_run to read exactly38 decoded header bytes,
+checks magic D37E6548, then reads base/coat/detail. The substitution parser is
+unchanged. m2-auto-found-a.log is the negative native archive case.
+
+BUG-9042: the decoded paints are2F363540/0/0. Native Cell-to-Creature conversion
+retains this Cell base paint; it is absent from the Creature paint props and
+effect-source records. tools/cell_paints.py over stock Spore_Content.package
+derives19 nonzero base IDs from44 Cell BEMs, including2F363540. The archive
+accepts only that finite set as base paints with zero coat/detail; other
+paint and part availability checks remain. m2-auto-found-b.log reproduces
+the former missing-paint refusal. PASS m2-auto-found-d.log and cold-a: both
+games build and walk the original archived guest species7CF26CCB after native
+founding, saved-world refresh and cold restart, with zero native faults.
+
+## Lineages Cache feasibility (2026-11-07, fix/lineages-upstream-079)
+<a id="creations-lineages-cache-feasibility"></a>
+
+Implementation follow-up (2026-11-07, feat/lineages-cache): user approved the
+entire locally authored library, profile-wide availability, and a dedicated
+native Sporepedia category. Earlier recommended selected-only defaults below
+are superseded by this approval.
+
+`tools/sporepedia_cache_probe.py` extracted 361 native feed/config resources
+from the installed game into ignored `out/cache-probe`. The native registry
+and resources identify AssetBrowserFeedLists (6EDC12D4), FeedCategories
+(06B38241) and FeedItems (4E5892EB). GlobalTemplate points to `default`
+(2EA8FB98); the GA editor roots are ScenarioDefault (1B327962) and
+ScenarioGameplaySkinning (FDECEF02). Fields include feedListCategories,
+feedListItems, feedListCategoryName, feedListItemName and feedListItemKeyList.
+Native text array payloads contain a locale reference and UTF-16 fallback.
+
+`tools/build_lineages_cache_category.py` builds an experimental five-resource
+package, appending a dedicated category and explicit-key feed. It refuses
+unrecognized root fields and retains existing category order. Three unit
+checks in `tools/tests/test_cache_category.py` pass (preservation, idempotence,
+unknown-field/wrong-stride rejection). This is a UI prototype, not a shipped
+cache implementation. Stock fixture creature: instance 8933CC09, type
+2B978C46, group 40626200; confirm against stock-key.json before reuse.
+
+~ superseded (2026-11-07): see [native cache correction](#creations-cache-native-feed).
+Runtime result: FAIL for category visibility. One isolated Windows instance
+(LineagesCacheQA, 800x600, 10 FPS; final startup at 30 FPS) opened native
+Sporepedia offline, but `coop.ui find Lineages` found nothing with both empty
+and one-stock-creature feeds. Screenshots: out/cache-probe/sidebar.png and
+stock-sidebar.png. No imports or personal campaign changes were made.
+The test copy runs lineages25-dev, not the packaged lineages26 preview.
+The prototype was tried in the disposable D: DataEP1 folder and temporarily
+in registered Steam GA DataEP1; the latter was held open by the QA process.
+Opening the package does not prove its root property wins native resolution.
+Remaining investigation: inspect resolved feed properties/precedence and
+category construction, including template inheritance and explicit-key item
+semantics. Do not infer impossibility or native spawn eligibility from this
+failed visibility probe. No full-library synchronization has been implemented.
+
+Research only, no gameplay changes or runtime import tests performed. User wants
+bidirectional creation sharing, persistent local Sporepedia entries, and native
+world selection without EA login or a replacement server. Buddies placement is
+optional. Investigation of the current fork and public ModAPI SDK found:
+
+- Source-confirmed: `creations::on_message` relays active player bundles through
+  the host; `on_player_join` sends stored bundles to newcomers. This is active
+  design synchronization, not arbitrary library exchange. `Kind` covers
+  creatures, cells and UFOs; vehicle/building validation and campaign design
+  archives exist separately. Do not change existing wire enum meanings.
+- Source-confirmed: `on_player_leave` discards slot-owned state to prevent the
+  next occupant inheriting another player's species. Some registered packages
+  remain until shutdown and campaign archives restore selected models; neither
+  constitutes a general, persistent Sporepedia library. Keep this lifecycle
+  separate from a stable creator/content manifest.
+- Source-confirmed: `records_from_game` selects model/BEM and metadata records,
+  not PNG thumbnails or OTDB summaries. Reusing this payload unchanged would
+  not demonstrate native browsing or pollination support.
+- SDK-documented candidate: `App::Thumbnail_cImportExport::ImportPNG(path,key)`
+  adds a Model-in-Picture PNG to Sporepedia; `SaveFilePaths` persists import
+  tracking in Pollination.package. `SavePNG` exports embedded creation data
+  and metadata; it also writes to My Spore Creations, so exporting missing PNGs
+  requires checking its side effects. Imported PNGs are preferable to directly
+  editing a live Pollination.package. Generated symbol maps contain these
+  functions, but target-build call validation is still required.
+- CORRECTION to the older import note above: the import function is now named
+  and documented in the upstream SDK. It is not yet runtime-verified here.
+- SDK-documented: `cAssetMetadata::SetAll` accepts author name/ID, tags and
+  authors. Native author display is plausible, but local co-op IDs must not be
+  represented as real EA accounts. Preserve existing author ancestry and store
+  the sharing player's stable ID/display name separately. Native author-card
+  interactions remain untested.
+- SDK-documented: `ShopperRequest` uses AssetBrowserConfig, and
+  `ProcessAssetFilter` uses AssetBrowserFilter. Recommend a Lineages menu entry
+  opening a filtered native browser before attempting a permanent sidebar tab.
+  No ready-made custom Buddies-folder API was found in the inspected headers;
+  this is not proof that such an entry is impossible. Exact cache membership
+  filtering still needs a prototype.
+- SDK evidence: OTDB summaries contain type, diet, attack/social and other
+  selection parameters; several APIs remain placeholders. Import success or
+  visible cards alone do not prove natural world-selection eligibility, exact
+  similarity matching, or equal treatment to My Creations.
+
+Recommended architecture: host-relayed, bounded manifest/delta exchange; strong
+content digest plus collision-checked local asset mapping; original bytes and
+attribution preserved; separate optional library transfers from mandatory
+campaign dependencies. Validate PNG format, payload sizes and installed parts
+before import. Queue imports outside rendering and avoid stalling gameplay.
+Persist save-referenced revisions even when hiding an item from the library.
+Host alone selects shared-world assets; clients do not reroll the world's NPCs.
+
+Product decisions before implementation:
+
+1. Share campaign-used designs automatically, campaign plus explicitly selected
+   extras (recommended, medium effort), or all locally authored creations
+   (higher effort: inventory, pagination, bandwidth and provenance).
+2. Let imports participate across the profile's solo/co-op saves (recommended,
+   medium effort), or require campaign-only selection (higher effort: isolation
+   and selection filtering). Exact vanilla import scope must be measured first.
+
+Smallest useful qualification: native import of one valid creature on two
+isolated profiles; names/author/thumbnail checked; cold restart; duplicate
+reimport; missing-part rejection; native OTDB query and an actual native
+selection without forcing that creature's key. Then test one building, vehicle
+and UFO, reconnect catch-up, and save/reload. No full stage replay required.
+
+Sources inspected on 2026-11-07:
+
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/App/Thumbnail_cImportExport.h
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Pollinator/cAssetMetadata.h
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Sporepedia/ShopperRequest.h
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Sporepedia/AssetBrowserQuery.h
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/Sporepedia/OTDBParameters.h
+
+## Native Lineages Cache and library exchange (2026-11-07, feat/lineages-cache)
+<a id="creations-cache-native-feed"></a>
+
+CORRECTION (2026-11-07, feat/lineages-cache): the earlier missing-category probe
+actually displayed `***`. Resolved native feed roots contained our category.
+The browser ignores text fallback and requires an installed locale resource.
+Verified locale group 02FABF01/type 02FAC0B6, UTF-8 BOM, with real text IDs.
+FeedItemMessage (Rare Statues) was also the wrong template. FeedItemKeyList
+enumerates a resource group, ignoring the explicit key array used by the probe.
+Live code and the negative/positive native UI tests establish both corrections.
+
+The shipping resource builder emits only our category, item and locale alongside
+the existing icons. It never replaces vanilla root packages. The DLL appends
+category C2FEF27B to the resolved default/scenario roots using Property::Set
+(type 20, flags 14, 12-byte keys copied by the native property). This preserves
+other categories. The FeedItem_GetAssetKeys hook matches only our cached item
+property list at object+180 and returns native 16-byte asset entries using the
+game's vector allocator. Other feeds use the original function. The `library.feed`
+fix switch supplies a regression negative control. Native cards, thumbnails,
+names, authors and resource provenance passed on isolated Steam profiles.
+
+Native ImportPNG is now runtime-verified. A duplicate may return false with a
+valid existing key; that is not rejection. The Pollination database (011AC19D)
+must Flush (vtable+24) before the cache records success. The developer console's
+quit command calls TerminateProcess and does not save normally. Explicit flush
+preserved all eleven received native resources across this abrupt cold restart.
+
+DecodePNG's stack FileStream must receive an explicit AddRef before decoding,
+matching the native importer. Without the pin, the decoder's temporary smart
+reference deletes a stack stream (BUG-9094). Verified stream storage 230 bytes,
+metadata 90 bytes, native strings at 28/40/50/60, metadata group at 8. Release
+the decoded stream, destroy native metadata, then destroy the pinned FileStream.
+Native services run outside Present; authored decoding and imports also wait
+until editors/loading/cinematics are inactive. A completed network transfer can
+be persisted while import waits. Wire captions never replace embedded authorship.
+
+Cell-to-Creature provisional catalog records copy the Cell PNG picture, including
+its old embedded model. Comparing PNG metadata against the record's group catches
+this mismatch (BUG-9095). The cache encoder loads the current model and metadata
+explicitly from EditorSaves, reuses the picture, and writes a cache-only PNG via
+Thumbnail_EncodeCreation and PngEncoder_WriteImage. It does not invoke SavePNG,
+write My Spore Creations, or change original editor/campaign records. Repeated
+exports use a digest of source metadata, PNG and BEM. Native tests decoded the
+repaired output as a Creature and imported the correct current model group.
+
+Library policy: inventory only EditorSaves PNG records with matching metadata;
+never treat received Pollination assets as locally authored. The profile-wide
+SporeCoop/LineagesCache folder holds immutable SHA-256 PNG objects, a persistent
+source identity, repaired exports and an atomically replaced index. A co-op name
+is separate transport attribution, not a fabricated EA account. Received keys
+remain in native Pollination after disconnect and can be browsed offline. Removing
+the mod does not remove imported creations or personal saves.
+
+MSG_LIBRARY 71/CAP_LIBRARY 32 is an optional extension. Offer/Need/Chunk/Ack/Cancel
+messages implement incremental exchange with one inbound and outbound file per
+peer. The host relays only creations offered in the current session; clients
+offer their active locally authored inventory. Reconnect resets partial transfers
+and compares digests. Limits: 8 MiB per PNG, 1024-square RGB/RGBA pixels, 50,000
+index entries, 800-byte chunks, one chunk per peer per 50 ms, gameplay queue
+backpressure. CRCs, offsets, lengths, UTF-8 and whole-file digests are checked.
+Imports are queued individually; inventory scans read one creation per work tick
+and rerun only after EditorSaves changes. Large libraries synchronize gradually.
+
+Qualification: native two-peer creature/outfitted creature, building, vehicle
+and spaceship imports, reconnect, offline cards and cold restart; portable
+four-seat host relay, malformed packets and integrity checks. This does not prove
+four simultaneous native clients, arbitrary missing-part compatibility, all
+Adventure/flora payloads, revision collisions, or natural world selection. Native
+pollination remains responsible for deciding which eligible creation to spawn;
+visible cards alone do not establish its similarity or spawn-selection policy.
+
+Primary references, checked against live supported-build call sites:
+
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/App/Thumbnail_cImportExport.h
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/App/Property.h
+- https://github.com/Spore-Community/Spore-ModAPI/blob/master/Spore%20ModAPI/Spore/App/PropertyList.h
+
+See [targeted validation](../06-testing.md#test-lineages-cache-native).
+
+## Lineages Cache scope and My Creations separation (roadmap, 2026-11-09, fix/fov-stuck-wide-lens)
+<a id="creations-cache-scope-roadmap"></a>
+
+Roadmap item from the player, design notes only, nothing tested. Current
+behaviour (library.cpp): received PNGs are imported natively
+(`creations::import_library_png`) and listed in a Lineages Cache feed, but they
+also show in My Creations. A host keeps every library it received and passes it
+on, so a new partner gets the creations of everyone the host ever played with.
+
+Questions to answer first (each needs a runtime probe):
+- ? Does Spore pick world NPCs only from My Creations, or also from creations
+  it treats as downloaded (Sporepedia content with another author)? If
+  downloaded content still populates worlds, importing with the original
+  author's metadata (never a fake EA account, see the feasibility notes
+  above) may move the items out of My Creations without losing them in worlds.
+- ? Does the My Creations filter key on the author ID, the database it lives in
+  (EditorSaves vs Pollination), or the import path?
+- ? Can a creation that a save references be hidden from every browser tab
+  and still load in that save (save dependency vs library entry)?
+
+Options for whose creations a player receives (a per-player setting):
+1. Only the people in this campaign (recommended default). The host relays
+   only creations authored by the current seat holders, never its own cache of
+   earlier partners.
+2. Everyone my partners have played with (today's behaviour, opt-in).
+3. Nothing beyond what the save needs (partners' species stay mandatory).
+Plus: senders choose whether their creations may be passed on beyond the
+people they played with, a size cap, and a "remove cached creations no save
+uses" cleanup.
+
+## Lineages Cache decisions for 42 (2026-11-09, fix/fov-stuck-wide-lens)
+<a id="creations-cache-decisions-42"></a>
+
+Player decisions on the options in [cache scope](#creations-cache-scope-roadmap):
+1. Send: the whole locally authored library (unchanged, 1A).
+2. Receive: everything partners send (unchanged, 2A).
+3. Where: received creations only in the Lineages Cache tab, out of My Creations
+   (3B), provided a runtime probe shows Spore still places them in worlds.
+4. Keep: forever, no cap or cleanup (unchanged, 4A).
+5. Passing on: a player may opt in to let their creations be relayed beyond the
+   people they played with (5B). Today a host relays only items seen in the
+   current session (`g_relay`, cleared in `on_session_end`), and received
+   items live in the Pollination database (011AC19D) and are never inventoried
+   as local, so nothing is passed on. 5B needs a per-item "may relay" flag in
+   `library_sync::Item` set by the author's choice and honoured by
+   `g_exchange.eligible`.
+Open probe for 3B: which My Creations filter shows Pollination items, and
+whether moving them out changes NPC selection.
+
+## Editor depth (nudge) handle for creature parts (2026-11-09, feat/lineages-42)
+<a id="creations-editor-depth-handle"></a>
+
+Roadmap 42: the vehicle/outfitter depth square in the Creature editor, for non-limb parts.
+- ✔ Editor setups are props in group 0x40600100 (key list: `editorEnabledManipulators`
+  0x10119203, array of 12-byte keys; `parent` inherits at runtime: CreatureEditorExtraLarge
+  0x465C50BA resolves to Creature Editor Setup CF2DC8D0's list). Tools per setup:
+  - Creature CF2DC8D0: 8665F54D E931544D A9910288 5FDE642E BB46D99A 889CDBFF 9ED74A02 9F48C094 855DE44D 7AD67439
+  - Vehicle Template 99F87089: F48AB41C A9910288 9F48C094 855DE44D
+  - Building D817CD63 and Cake E0B69B49: 6125EE88 A9910288 67B68E4D 9F48C094 855DE44D
+  - Tribal/Civ/Space/Adventure Accessories (156276D1 and children): A9910288 9F48C094 855DE44D F818C5BA
+  - Cell 3615A30B: 1B73114C 2D35AF62 9F48C094 855DE44D 7AD67439; Flora 1C7ECA95 has 6125EE88 too.
+- ✔ Only Adventure Accessories Editor Setup A56567F7 (GA captain outfitter) sets
+  `editorNudgeHandleTuningFile` (fnv 0xB8E88BEC) = {3C3BA77F, 0, 10CB4B28}, beside
+  `editorPowerHandleTuningFile` 0x3042E156.
+- ✔ 0x5DBEA5..0x5DBF23 loads handle tuning keys into a block: +0x60 spine (0x50FC283),
+  +0x6C deform (0x50FC287), +0x78 nudge (0xB8E88BEC), +0x84 power (0x3042E156), via 0x6A1250
+  (read key property).
+- ✔ The tool ids are checked in cEditor's mouse-down path through 0x5740E0 (thiscall(id) bool,
+  "editor has tool"): F48AB41C at 0x58905A (creates a 0x48-byte object, ctor 0x5B4C40),
+  6125EE88 at 0x588FD6, 67B68E4D at 0x5895C3. They are mouse behaviours, not handle models.
+- ✔ negative: adding F48AB41C 6125EE88 67B68E4D F818C5BA to CF2DC8D0 in memory and copying the
+  nudge tuning key (`coop.editorcfg`) before opening the stage editor (`coop.vote editor`) showed
+  no new handle on a mouth or a detail part (only the usual deform cones, rotation ring, scale ball).
+- ? Which code creates the nudge handle (EditorBaseHandle subclass reading tuning +0x78) and its
+  condition (outfitter-only flag, rigblock prop, or editor mode). ModAPI EditorRigblock has
+  `mAxisHandles[3]` at +0x154; the ModAPI sub_ addresses are a different build (none matched here).
+- Tools: `coop.editorcfg show|manips|copy` (mods/coop/editor_cfg.cpp).
+- ✔ (later the same day) The handle-tuning block is `Editors::cTuningSpine` (Get 0x401070,
+  global 0x1C10C1C at runtime). Loader 0x5DBD60 (called once from cEditor::OnEnter 0x58EB4B):
+  +0x60 spine 0x50FC283, +0x90 ball connector 0x50FC284, +0x9C rotation ball 0x50FC285,
+  +0xA8 rotation ring 0x50FC286, +0x6C deform 0x50FC287, +0x78 nudge 0xB8E88BEC, +0x84 power 0x3042E156.
+- ✔ Handle vtables (runtime): ball connector 0x1A2F1A0, deform-style 0x1A2F250, rotation ball
+  0x1A2F308, rotation ring 0x1A2F3A8, spine 0x1A36EA0. Deform-style GetTuningFile 0x480780
+  switches on handle+0x8C: 0x503283AA = fnv("nudge") -> nudge tuning, 0xE20E2032 -> power,
+  else deform. That switch is the only use of the nudge constant in the code.
+- ✔ Deform-style handles are built per rigblock in 0x441910 (around 0x446B9D, ctor 0x47FF30,
+  object 0x1D8 bytes) from up to 32 handle definitions (0x5C bytes each) returned by
+  IModelWorld vt 0xE8 for the part's model; init 0x480530 copies the definition to handle+0x50,
+  so the kind is definition+0x3C. **The nudge handle is a model-defined deformation of outfitter
+  accessory models**, not a part translation: creature part models have none, and no code
+  moves a part for a nudge handle. Turning tools or tuning on (above) cannot add it.
+- ✔ cEditor singleton: runtime 0x1C24EF0 (ModAPI March2017 `cEditor::ptr` 0x15E4EF0);
+  editor+0xD4 selected rigblock, rigblock+0x1C/+0x20 part instance/group, +0x48 position.
+  Writing +0x48 alone does not move the part (the model transform is applied elsewhere).
+- Plan for 42: a mod-made depth control (for example a key or modifier that moves the selected
+  non-limb part along its attach normal) needs the rigblock transform/pin update function and
+  the edit-history commit (cEditor::CommitEditHistory 0x586410); then a save/reload test,
+  partners loading the creation, and vanilla Spore loading it.
+- ✔ (2026-11-10, feat/lineages-42) The nudge tuning file the outfitter names, 0x10CB4B28!0x3C3BA77F,
+  is in no game package (Data, DataEP1): the native depth handle is effectively unused. Appending a
+  nudge MorphHandleInfo in GetDeformationHandles (0x745000) crashed the handle build (vector fill
+  0x42F0A0 / def copy 0x4802A0; per-handle arrays at rigblock +0x704 and +0x73C come from the model).
+  Native handle colours (prop 10CB4FA8!DB33584A): default (0.67, 0.75, 1.2), rollover (0.54, 0.81,
+  0.54), active (1.0, 1.2, 0.42); 10CB4FA8!900A4DB5 (power) default orange (0.93, 0.48, 0.16).
+- ✔ Moving a part works: EditorRigblock +0x48 and model +0x0C, EditorModel +0x51 = 1,
+  cEditor::CommitEditHistory(true, 0). Save keeps it in the bem, reopening keeps it, Undo restores it.
+  Implemented as the mod's own depth square: mods/coop/editor_depth.cpp (BUG-9103).
+
+## My Creations and the offline author (2026-11-10, feat/lineages-42)
+<a id="creations-cache-my-creations-split"></a>
+
+- ✔ cAssetMetadata::GetAuthorID (0x5508A0, thiscall, int64 in edx:eax) reads metadata +0x68.
+  Metadata +0x20 is the asset key (instance, type, group; cAssetMetadata::Set 551258).
+- ✔ Spore treats the signed-in user's ID or -2 as "mine" (Sporepedia 66DE73..66DE90). Every
+  creation made without an EA account carries -2, the player's and every partner's alike
+  (EditorSaves metadata record 030BDEE3, big-endian, version 0x0D: author ID FFFFFFFF FFFFFFFE
+  after the two timestamps).
+- ✔ The Sporepedia index stores a hash of the author ID (parameter 0518AF1D, fnv-1a of the 8
+  bytes; 56C5D9 and 56C6F0 via 571790) when an asset is imported, and keeps it on disk: a game
+  start calls GetAuthorID only a couple of times.
+- ✔ My Creations is FeedItems 4E5892EB!146C1D8C: queryType C84E51B6, rootFilter 37216F9C =
+  fnv("userCreated"); Recent Downloads 742F7490: queryType BAD9C836, rootFilter 89CA8A12; Maxis
+  8F71F965: queryType E04C2D57. The filter props (00B1B104/CC489C6F) only list sub-filters. The
+  query ids are not immediates in the code dump or resources found so far (? where they resolve).
+- ✔ Negative result: answering author -3 during an import (so the index got another author's
+  hash) still listed the asset in My Creations. The list does not go by the author hash.
+- ✔ The list is filled through FeedItem_GetAssetKeys (0x668D60) like the keyList feeds; removing
+  keys from its output after the original call removes the cards and, on the next Sporepedia
+  open, the sidebar count. Everything keeps them. See BUG-9104.
+
+## Passing creations on, opt-in (2026-11-10, feat/lineages-42)
+<a id="creations-cache-pass-on"></a>
+
+Decision 5B implemented (BUG-9105): `[library] share_onward`, MSG_LIBRARY kind 5 (u8 5, str8
+source identity, u8 allow; ignored by older builds), applied by the host only when the same peer
+offers a creation under that identity, kept in LineagesCache\relay.bin, offered by that host in
+later sessions after its own creations.
+
+## Foreign Creations replaces Share Onward (2026-11-10, feat/lineages-43)
+<a id="creations-foreign-creations"></a>
+
+BUG-9112. ~ superseded (2026-11-10): the author opt-in of
+[creations-pass-on](#creations-cache-pass-on). CORRECTION (2026-11-10, feat/lineages-43, player
+decision): the receiver decides. A player always gets the connected players' own creations; with
+Foreign Creations on also the rest of their Caches. The host filters per peer
+(`Exchange::eligible_to`), guests send their received creations to the host only when the host wants
+them, and a host that does not drops them on arrival. MSG_LIBRARY kind 5 keeps its layout; its flag
+now means "wants foreign creations". Verified with a host and a local guest (BUG-9112).
 
 ## The own editor's price, the evolution request, the result message (2026-11-03, fix/w40-editor)
 <a id="creations-own-editor-dna"></a>
@@ -1159,6 +1555,20 @@ a config start budget, whatever the held post did. GetEvolutionPoints reads the 
 while the part is bought: the editor keeps its own count until done, the result's +0x34 then sets it).
 ? Not looked at: where the Creature editor takes its start budget (OnEnter or the stage's DNA); no re-post needed.
 
+## The depth handle's line: the skin normal (2026-11-11, feat/lineages-47)
+<a id="creations-depth-skin-normal"></a>
+
+BUG-9116. Steam QA copy (GOG 2024 code), Creature editor.
+* ✔ EditorRigblock +0x60: the part's rotation, 3x3 by rows (includes the player's own turning of the
+  part). +0xA8: the attach (pin) frame, 3x3 by rows. Its second row, negated, points out of the skin at
+  the part: a side detail out sideways and up, the front detail forward, tail details backward, a back
+  detail up and back. Two details pinned at one spot share +0xA8 while their +0x60 differ.
+* ✔ Mirrored twins: the frames mirror in x (columns 1 and 2 mirror, column 0 flips: handedness).
+* ✔ Writing +0x48 and the model's +0x0C along that normal moves the part straight out (0.0200 along,
+  0 sideways on all 9 depth parts of the fixture creature).
+* Pitfall: the creature editor opened with `coop.depth open` from inside a running stage, or in the
+  background QA window, did not render its 3D view and `world_to_screen` returned one point (ppu 0.1):
+  no screen checks of handles there.
 ## A guest's choice holds only in its world (2026-11-06, fix/w46-creature-p0)
 <a id="creations-choice-world"></a>
 

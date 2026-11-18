@@ -53,3 +53,13 @@ host's spent 0 -> -100 after a free edit), PASS out/lab/20261104-210201 (spent s
 - 2026-11-04 (fix/w43-world-state, W1): fixed; see Fix and Verification.
 - 2026-11-04 (fix/w43-detector2, D0 detector): the detector compares the Cell food / spent DNA (`Cell:state:dna`, `dna_spent`); not run on Cell in D0.
 - 2026-11-05: released in 0.7.7.
+
+## Lineages verification
+
+On Steam, TITAN and MSI joined a disposable four-seat Cell fixture via
+Tailscale. At the first growth checkpoint, 50 shared food earned 5 DNA. With
+`cell.editor_budget` off, the editor displayed 100 and a free name change
+left spent DNA at -95. With the fix on and the fixture reset to 5 DNA, the
+editor displayed 5 and the same kind of save left spent DNA at 0. MSI readied
+both votes and remained on its existing save slot. Lineages ports the editor
+allowance replay and keeps spent DNA per player.

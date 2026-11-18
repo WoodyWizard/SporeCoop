@@ -276,6 +276,11 @@ void vcursor_release();         // BUG-0804: back to the real mouse now (unless 
 bool vcursor_state(int& x, int& y, bool& virt); // the point GetCursorPos gives the game (client coords)
 void place_test_window();
 void apply_frame_limit();
+void set_frame_target(int fps);
+void pace_frame_target();
+bool set_borderless(bool enabled);
+void borderless_video_mode(bool windowed);
+void maintain_borderless();
 std::string present_intervals(bool reset); // BUG-0779: Present interval statistic since the last reset (console)
 void d3d9_note_function(const char* what, const void* p); // log the module of a hooked d3d9 function
 int frame_limit_now();          // kFrameLimitMS in the game now (-1: not readable yet)

@@ -82,6 +82,10 @@ Test runs don't get in the way of whoever is at the computer:
 * **muted**: `prepare_profile` sets `AudioMuteAll true` and `AudioMasterVolume 0` in test
   profiles (the player's sound settings and PipeWire are left alone: PipeWire would remember
   the mute by application name and apply it to normal play too);
+  Windows lab profiles likewise use `AudioMasterVolume 0` (with `AudioMuteAll false`).
+  **Do not launch Tribal performance tests with `-nosound`:** native round/request
+  events come from the audio engine. BUG-9036 reproduced a permanently stalled
+  state4 without it and native progress with silent audio processing enabled.
 * **invisible**: `spore.sh run` starts the test games on a headless GNOME Shell
   (`tools/headless.sh up`: its own D-Bus session and runtime, config and state folders, a 5760x3240
   virtual monitor; its Xwayland display is passed to Bottles). Nothing appears on the user's
@@ -3579,6 +3583,745 @@ Three monitor findings of the w33 runs were the rule or the test, not the mod (e
   0xB4C5B4 in every frame and FAILS. The physics update runs only while the guest's game time runs (the test
   waits up to 60 s for the stand-in to be made).
 
+## Duo 9 Windows checkpoint (2026-11-03, duo-species)
+<a id="testing-duo9-checkpoint"></a>
+
+One isolated Steam Galactic Adventures installation, instances 4 and 5,
+console ports 47803/47804 and UDP 47810. The tests use copied profiles, never
+the user's profile. This is local two-process coverage, not two-PC VPN proof.
+
+- BUG-9010: duo_creature_disconnect.py passed a host victim and a departed
+  guest whose seat was reused. The disabled fix failed. Evidence:
+  build/local/m1-final-disconnect-host.log, m1-final-disconnect-rejoin.log and
+  m1-final-disconnect-nofix.log.
+- BUG-9012: duo_creature_rescue.py --hold-death 125 failed before the guard
+  with a native freed-proxy crash (m1-migration-fix-guest.log). It passed with
+  only the proxy guard (m1-long-baseline-guest.log). The host-first sequence
+  passed again on fresh profiles (m1-confirm-host.log, m1-confirm-guest.log).
+  Every pass requires the actual death caption, native hatch, adult species,
+  normal W movement, exact shared DNA debit and zero native faults.
+- duo_creature_checkpoint.py passed native save, rejoin and cold restart at
+  52 DNA, species 291447DA/291447DD (m1-checkpoint-*.log). Use the original
+  fixture's host name DuoCellHost to exercise its campaign-choice key.
+- A final-build Cell transition used fresh DuoQAM1FinalLand4/5 profiles.
+  Fixture preparation selected cell BAF1AD40 and supplied 1000 test food.
+  History, stage change, readiness, separate first editors, dragging legs,
+  Save New and native introductory captions used UI input. The guest model,
+  thumbnail and parent matched the solo native control through duo_landfall.py.
+  Native walking adults 291489FF/29148A01 retained 65 shared DNA
+  (m1-final-land-walk.log). m1-final-land-playable.log timed out before the
+  operator dismissed the host's introductory tutorial; it is not a game stall.
+- The installed stripped package cold-loaded that same campaign and passed
+  duo_creature_checkpoint.py (m1-duo9-packaged-cold.log). Both games quit with
+  zero faults. Setup /S /uninstall removed coop.dll and restored steam_api.dll
+  SHA256 7AC1090D725DCBD3580909D05258944AA98A6C13BA4FD3A17BD0E67E54252D06.
+  The native save and choices.ini remained. A subsequent clean install passed.
+
+The packaged setup SHA256 is
+E9672E72487F24151775F3E829FDF8C1AD70D80E4080FC9553BF64AA09957560;
+the Duo 9 .pack SHA256 is
+DE4AD78B812E63E02FF7C5F31FE7C34E6F295FE4ABE3D019076A4278F996C4B9.
+Later documentation-only repackaging must preserve these payload hashes.
+BUG-9011 remains not-reproduced after the guard, with no claimed causal proof.
+C&C native model/paint tests from the earlier checkpoint remain prior evidence;
+arbitrary gameplay mods and full campaign progression are not qualified.
+
+## Duo Tribal replacement checkpoint (2026-11-04, duo-species)
+<a id="testing-duo-tribal-replacement"></a>
+
+The disposable native prototype is retained in DuoQAM2Retired4/5, Clyth.spo.
+It transfers the old guest site to 21E0, retires 21CB and creates 21F2 with
+three 0680BF38 citizens. This is not a playable rebuilding action.
+
+- `duo_tribe_rebuild_checkpoint.py --host 4 --guest 5 --planet Clyth.spo
+  --record build/local/m2-retired-tribe.json --species 0680BF38
+  --retired-faction 21CB` checks actual native building owners, primary
+  references, species, life state, population, chief and absence of the old
+  tribe. Before the chief fix the host passed and the guest failed with a null
+  leader (m2-retired-native-checkpoint-detail.log). With the fix, both passed
+  (m2-retired-native-checkpoint-fixed.log and m2-chief-cold-checkpoint.log).
+- `duo_tribe_native_chiefs.py --host 4 --guest 5 --planet Clyth.spo
+  --species 0680BF38 --exercise` checks the host's actual chief identity and
+  guest's native leader/staff, then clears, changes and restores the host
+  chief. Disable `tribe.native_chiefs` on the guest before joining for the
+  negative control. FAIL m2-chief-nofix.log; PASS m2-chief-positive.log and
+  fresh-process m2-chief-cold-positive.log. The latter includes clearing.
+- `--species 06785BC2 --knockout` uses a disposable NPC chief to check that
+  replication preserves native zero health and the dead flag after a lethal
+  hit. PASS m2-chief-ko.log. It does not claim a completed native respawn.
+- Both lab processes exited after the checks with zero recorded native
+  faults and no new crash report. The unchanged Windows regression binary
+  reports ALL OK. Current-build source/symbol lint and normal ticket checks
+  pass. The optional historical `tickets.py check --all` reports 82 existing
+  metadata/evidence issues; it is not the current-change gate. The ticket
+  script still skips Git-history validation on this Windows environment.
+
+The unreleased chief fix uses a development DLL and updated modern symbol
+map in the isolated lab. The packaged Duo 9 ZIP is unchanged. Native capture
+and replacement findings and remaining integration are documented at
+docs/re/tribe.md#tribe-refounding-retirement.
+
+Original-faction follow-up: DuoQAM2Identity4/5 contains fresh native tribe
+3EF4 with the original 21CB political identity. The former native object A0C
+is retired. Use the same checkpoint test with --record
+build/local/m2-identity-tribe.json and omit --retired-faction, because the
+replacement deliberately retains that faction. The record instead asserts
+the retired and replacement native object IDs. PASS m2-identity-checkpoint.log
+and m2-identity-cold.log. The existing duo_orders.py passes on the replacement
+before and after restarting both games (m2-identity-orders.log and
+m2-identity-cold-orders.log). The guest's original founding roster is unchanged.
+The controlled refound_guest command requires prior native retirement; it
+does not automate capture or provide the surviving partner's final action.
+
+Host replacement follow-up: DuoQAM2HostDetach4/5 uses original host faction
+800021CA and species 067B3E4A, replacing native object 6F3 with 3CE0. Run the
+checkpoint with --record build/local/m2-host-detach-tribe.json and that species.
+PASS m2-host-detach-cold.log. Run duo_tribe_host_orders.py --host 4 --guest 5
+--planet Clyth.spo --species 067B3E4A to verify native selection and movement
+on both peers; PASS m2-host-detach-cold-orders.log. Both positives followed a
+native save and full restart. The earlier host sequence lost its captured
+buildings and failed walking (m2-host-identity-checkpoint.log,
+m2-host-identity-orders.log); BUG-9017 records the difference. The native
+probe's initial "playable" output described only stable population and has
+been corrected to "stable"; walking has its own independent assertion.
+Final development-build repeats also pass: m2-host-detach-final-checkpoint.log
+and m2-host-detach-final-orders.log. The queued probe rejects a living host;
+both games exit with zero native faults. This DLL remains unreleased.
+
+## Duo Tribal gameplay checkpoint (2026-11-05, duo-species)
+<a id="test-duo-tribal-gameplay-checkpoint"></a>
+
+Two isolated Steam/GA/Creepy & Cute Windows instances, consoles4/5 at1176x664.
+Disposable profiles only, audio volume0, normal native audio enabled, first-use
+tutorials disabled in the copied profiles. No user game/profile was modified.
+
+| Check | Retained evidence under build/local |
+|---|---|
+| First native rival fails before BUG-9059 | tribal-final-campaign-a.log |
+| Fresh auto-founded campaign earns all five NPC objectives | tribal-final-campaign-g.log and tribal-final-campaign-h.log |
+| Both founder huts/populations, matching native totem types/colors and unlocks | tribal-final-five-readback.log |
+| Actual host mouse selection/raid earns shared fifth victory | tribal-host-final-b.log |
+| Partner rebuild after real NPC capture; old site retained by conqueror | tribal-final-rebuild-c.log |
+| Native economic graduation,90-second editor hold, retired guest-local member | tribal-graduation-lifetime-final.log and tribal-graduation-capitals-final.log |
+| Military editor FAIL with BUG-9060 off, opens in0.62s when enabled | tribal-roles-offline-final.log |
+| Guest leaves during vehicle editing, rejoins host's Civilization | tribal-roles-offline-final.log |
+| Guest leaves before native History advancement, then catches up | tribal-absent-final-resume.log |
+| Actual stripped packaged DLL, cold host restores both capitals before guest joins | tribal-package-cold-final.log |
+| Actual ZIP install, uninstall, original DLL restoration, saved settings and clean reinstall | tribal-final-installer.log |
+
+The campaign raid fixture adds food, shortens travel and nonlethally damages
+huts. Native ordered citizens deliver every final blow; native controller
+appearance supplies all five rivals. The graduation lifetime fixture retires
+one guest-local member via native RemoveMember. Neither fixture is an
+unassisted soak. Native original founders291489FF/7CF26CCB and their current
+outfits2916C9C5/7CFFC56B remain distinct after military graduation/restart.
+Final processes exit with zero recorded faults; no new crash report follows.
+
+Run `tools/tests/duo_tribe_campaign.py --host 4 --guest 5 --founders 291489FF 7CF26CCB`.
+Use --resume only on an explicitly identified checkpoint. The --host-only
+and --guest-only options isolate command paths.
+duo_tribe_graduation_editor.py accepts --planet and --guest-offline.
+duo_tribe_graduation_cityhall.py accepts --vehicle-role, --species, and either
+--retire-guest-member, --guest-offline or --guest-already-offline. Its military
+--vehicle-control must fail the12-second native editor-entry gate; enabling
+the fix then permits --resume-vehicle without replaying City Hall.
+
+Harness corrections are retained: Game0.old alone lacks co-op sidecars and
+is not a complete campaign backup; tribal-host-final-a is not persistence
+evidence. The first offline driver omitted the native Continue caption;
+tribal-absent-final is a harness failure, and the resumed run dismisses that
+caption normally. Do not bypass native cinematics to make these tests pass.
+
+The installer smoke uses a new disposable folder with an identification-only
+SporeApp fixture, the actual ZIP/pack, an original loader copy, and save/settings
+sentinels. It does not launch that fixture or prove a second PC installation.
+The subsequent native cold run deploys its installed, stripped coop.dll into
+the isolated real game lab. Windows unit tests report ALL OK; the DLL build,
+RE/docs/ticket checks and Python syntax checks pass. A pre-existing unused
+g_submits_after_swap compiler warning remains. Two-PC/VPN play, a complete
+religious-editor replay, broad mod compatibility and inherited movement/rendering
+issues remain outside this checkpoint's verified claims; see docs/DUO.md.
+
+## Background resource budget (2026-11-05, duo-species)
+<a id="testing-duo-background-resources"></a>
+
+The user also plays another game during development. The isolated Windows lab
+now sets [sporekit] frame_ms=100 in its own sporekit.ini, verified at9.5-9.6 FPS
+on both processes. This is a lab setting, not a shipped player default. Close
+the lab during code-only work; use one process for single-instance probes.
+Normal-frame-rate movement qualification is bounded to its recording window.
+duo_tribe_walk_connected.py restores its --idle-fps value (default10) in finally,
+including on a recording failure. Do not leave two normal-rate games idle while
+analysing logs. Lower frame rate reduces frame work, but does not free their
+resident memory; closing the processes does.
+
+## Lineages city transfer regressions (2026-11-06)
+<a id="testing-lineages-city-transfers"></a>
+
+On disposable joined Clyth profiles, duo_civ_capture_owners.py checks
+--method military, religious or economic. Religious conversion repeats
+native preaching across game ticks. The economic fixture calls BuyByCiv
+with a 2,500 price and checks the shared debit as well as native ownership.
+These direct native calls qualify transfer and replication. UI commands
+and economic negotiation need separate gameplay checks.
+
+duo_civ_capture_planner.py opens the guest capital's planner with real
+mouse input, captures the city on the host and verifies native city and
+building ownership remain stable until the green check closes the editor.
+Then both copies must converge. It creates a native rival if the fixture
+has already captured all existing ones. Use a fresh disposable campaign,
+because the test deliberately loses the guest's capital.
+
+## Lineages building combat regression (2026-11-06)
+<a id="testing-lineages-building-combat"></a>
+
+duo_civ_building_combat.py --host 4 --guest 5 expects joined, disposable
+Clyth profiles with four reserved seats, native military vehicles and an
+uncaptured rival city. It builds a founder house and invokes the buildings'
+native damage entries with real military vehicle attackers. It checks
+11.5 incoming damage from a ten-point hit, 1.45 times the rival building's
+native maximum, and native current/max HP on both peers. These are damage
+path checks; they do not prove vehicle targeting through mouse input.
+
+--save-receipt PATH saves a deterministic wound in the disposable campaign
+and records the serial, faction, native maximum and normalized wound.
+After quitting and reopening a copy of that profile at the galaxy menu,
+--cold-receipt PATH loads Game0/Clyth and checks the native persisted state.
+Never point this test at a player's profile. City Halls are excluded because
+their native siege path uses capture progress rather than ordinary HP loss.
+
+## Lineages takeover resistance (2026-11-06)
+<a id="testing-lineages-takeover"></a>
+
+duo_civ_takeover.py --host 4 --guest 5 expects joined disposable Clyth
+profiles with four reserved founders and an uncaptured rival. The test
+compares native capture and buying progress with civ.takeover_resistance
+off/on, inspects native religious follower-map entries, and checks the
+military meter on the guest. --finish military completes the native capture
+meter; --finish economic fills native buying progress, spends 2,500 and
+checks shared debit/ownership. These calls qualify the native contribution
+and ownership paths, not the entire mouse-driven combat/trade UI.
+
+--save-receipt PATH records the first withheld preaching fraction and makes
+a native save. Restart a fresh copy of that host profile, host it and join
+the guest, then run --cold-receipt PATH. The next one-citizen contribution
+must convert a citizen. This catches a join-time save replacing the native
+checkpoint before its old conversion attachment is read. The cold test
+also completes native religious conversion and checks both city owners.
+
+## Lineages religious bonus attribution (2026-11-06)
+<a id="testing-lineages-religious-bonus"></a>
+
+duo_civ_religious_bonus.py --host 4 --guest 5 uses joined disposable Clyth
+profiles with an uncaptured rival. It selects the guest's religious governor
+role, creates native purpose-2 and purpose-1 vehicles using an available
+fixture model, arranges proximity with native Teleport, and reads actual
+follower-map changes after ConvertCitizens. A trader must leave a one-citizen
+contribution at one, the converting nation's preacher must boost it to two,
+and another nation's contribution must undo exactly one existing conversion.
+Both vehicle purposes must
+appear on the guest. Takeover resistance is temporarily disabled to isolate
+the bonus; the successful test restores it and clears the test governor role.
+--baseline runs against the old DLL; --control disables the attribution fix.
+Neither mode should pass the trader check. This is native bonus qualification,
+not a complete mouse-driven religious campaign.
+
+## Personal Space training playability checks (2026-11-06, feat/lineages-civ-combat)
+<a id="testing-space-personal-training"></a>
+
+duo_space_flight_complete.py --host 4 --guest 5 visits native cities with
+WASD, sweeps altitude when an orb was missed, and requires Mission Control
+to acknowledge all seven orbs. --resume accepts an unfinished route. It
+does not claim to finish scanner, cargo or weapons training. The updated
+uninterrupted seven-orb script still needs a full rerun; the supervised
+playability-flight-a run completed those objectives through normal input.
+
+duo_space_training_departure.py --host 4 --guest 5 --identities FILE starts
+at the final "Bye." response after completed homeworld training, drive
+purchase and acceptance of the first offworld mission. FILE contains the
+two identity() readbacks taken before departure. It zooms out, waits for
+the queued shared world and verifies both personal creations. Its local
+precursor passed in playability-training-depart-a.log; the subsequent
+duo_space_founder_rejoin.py check passed in playability-training-rejoin-a.log.
+Both profiles were isolated DuoQA profiles at 1176x664 and 10 FPS.
+
+duo_space_finale.py uses an already running disposable pair with that same
+resolution. It explicitly grants interstellar drives and moves the host
+near the core as fixture setup. Native entry, the guest's Fly to button,
+the cinematics, Staff of Life and reconnect are assertions. This cannot
+qualify earning the drive, normal long-distance travel or Grox combat.
+playability-finale-a.log passed native entry, both cinematics, return to
+Space, both 42-charge rewards, personal creations and guest reconnect with
+zero faults. Preserve the distinction between those checks and its travel
+shortcuts when reporting end-to-end coverage.
+## Targeted playability checks (2026-11-07, feat/lineages-civ-combat)
+<a id="testing-targeted-playability"></a>
+
+The user requests focused checks of potentially blocking missions, not full
+stage replays. Load preserved isolated checkpoints near the relevant action.
+Do not repeat already-qualified missions without a changed dependency or
+new failure. Fixture setup may shorten travel/preparation, but must not
+replace the behavior asserted by the check.
+
+The supervised Duo 22 Nicus wreck check passed normal flight, actual scan,
+both native interstellar drive inventories, normal galaxy departure and
+guest reconnect with unchanged personal creations and zero faults.
+See docs/re/space.md#space-native-wreck-unlock for evidence and the read-only
+target locator. No replay of the remaining ordinary Space missions is needed
+for this result. The core ending was already checked separately.
+
+duo_civ_economic_state.py --host 4 --guest 5 compares native routes, purchase
+meter/buyer and per-buyer pricing maps on the preserved three-city trade
+checkpoint. --cycle removes/restores native routes, changes one native
+meter contribution and one pricing value, then checks stale guest entry
+cleanup. --rejoin-port 47810 first requires a new guest save slot and the
+same founder identities. These are Windows isolated-pair tests, not an
+entry that the Linux lab can launch against its unrelated baseline fixture.
+The portable packet tests run in the existing suite.py unit/make-test entry;
+net_tests --civ-economy selects only the new codec checks.
+
+BUG-9081 evidence: bug9081-before.log and bug9081-price-before.log fail;
+bug9081-pass-c.log, bug9081-pass-d.log and bug9081-pass-e.log pass the complete
+state checks. Both processes exited with zero faults. Setup/negative-control
+and final native purchase-button qualification are separate from these tests.
+## Targeted native Civilization purchase (2026-11-07, Lineages)
+<a id="testing-civ-native-purchase"></a>
+
+Use tools/tests/duo_civ_city_purchase.py --host 4 --guest 5 on the disposable
+Clyth economic checkpoint. It grants eligibility and funds as fixture setup,
+selects an existing trader, and clicks native Buy City, offer and acceptance.
+It checks native ownership on both peers, one shared payment and one team
+economic-history credit. --transaction-off disables forwarding after the
+dialogue opens to reproduce the charge-without-capture bug. Never use this
+fixture-mutating test on a personal profile. This is a manual Windows lab test,
+not an entry in the incompatible Linux baseline fixture suite.
+
+--cancel-first checks native Nevermind cancellation without payment or loss
+of eligibility. --refuse-first checks that a rejected 4,000 offer and Oops.
+clear the host and guest meters without payment. --rejoin-port 47810 checks
+ownership, city parts and single team capture credit in a new guest save slot.
+Caption search includes hidden controls; inspect ancestor visibility before
+clicking. The conversation text pane and reply pane share ID 04AB5E50, so
+that ID alone does not locate a reply. The native offer rows are 31 pixels
+apart at the required test resolution of 1176x664.
+
+For packed Steam 3010a413, the documented sym.reload development loop loses
+the selected database (BUG-9083). A subsequent mod.reload cannot initialize.
+Core quit still works. Cold-launch the same saved checkpoint when symbols
+change; do not replay the stage or bypass executable verification.
+
+## Lineages religious checkpoints (2026-11-07)
+<a id="testing-lineages-religious-checkpoints"></a>
+
+`tools/tests/lineages_civ_religious_state.py --host 4 --guest 5 --cycle`
+compares the game's follower maps, converter and meter on isolated Clyth
+profiles. It adds bounded native conversion as explicit setup, checks live
+updates and removes an intentionally stale guest entry. `--rejoin-port 47810`
+also verifies a new guest save slot and preserved founders. This is state
+replication evidence, not native preaching or a full stage playthrough.
+
+`tools/tests/lineages_civ_religious_controls.py --host 4 --guest 5` prepares
+a partial conversion and a native religious design, removes fixture defenses,
+then uses the guest's actual city command. Only native AI may finish the
+conversion. It fails if the vehicle dies and never reads its stale pointer.
+Add `--cold-city` for BUG-9086: all four native capacities must initially
+be zero, the host camera must stay stationary during preaching, and the
+active slot must acquire the native visible-city baseline of 10/2. Toggle
+`coop.fix civ.remote_preaching off` on the host for the failing control.
+This fixture removes defenders and seeds near-majority followers; it proves
+remote native conversion/capture, not unattended siege balance.
+These Windows checkpoint scripts require the isolated profiles and are not
+silently added to the Linux baseline fixture suite.
+
+`tools/tests/protocol_ids_selftest.py` is platform independent and registered
+in smoke. It catches duplicate IDs such as BUG-9085. The native network test's
+`--civ-economy` subset covers both economy and religious packet validation:
+truncation, duplicate factions, invalid counts/coordinates and packet budget.
+
+The saved DuoQAFourWarriorsB Tribal fixture retains its historical 25% HP /
+10% damage settings. Run `duo_tribal_reserved_combat.py --host 4 --guest 5
+--health-per-founder 25 --damage-per-founder 10` against its isolated clone.
+New fixtures default to the approved 15% / 5%. The test checks the guest's
+native rival maximum HP and the founder victim's current HP after a native
+hit. Saved rules must not be silently changed just to match current defaults.
+## Targeted multi-stage returner (2026-11-07, Lineages)
+<a id="testing-lineages-multistage-returner"></a>
+
+tools/tests/lineages_multistage_launch.py --host 4 --guest 5 --port 47810
+requires fresh isolated profiles, an already loaded orbital Vantiegan host
+(EarlyLaunchB/Game0), and a disconnected Tribal guest (FourWarriorsB/Game4).
+It joins normally and reuses duo_civ_late_launch.py to check the retained
+Civilization victory, native personal editors, Mission Control choices and
+reconnect. No victories or lesson completion are injected. Game2 in the
+guest fixture lacks the founder sidecar and is not a valid substitute.
+lineages-catchup-c.log passed the complete run on the packaged lineages25
+DLL. See docs/re/space.md#space-tribal-returner-launch for bounds and the
+earlier test-driver failures preserved under BUG-9087.
+
+## First-use Civilization camera check (2026-11-07, Lineages)
+<a id="testing-lineages-civ-camera"></a>
+
+tools/tests/lineages_civ_camera_tutorial.py --host 4 starts at the visible
+arrow-key lesson in a disposable 1176x664 profile. It uses normal console
+input and checks visible native pan-to-zoom-to-selection transitions. The
+--control variant sends a single held arrow message. It does not certify
+the remaining vehicle/Goals lessons or partner capital creation.
+
+After the full native tutorial releases its pause, run duo_civ_auto_founders.py,
+duo_civ_graduation_designs.py with the actual vehicle role, and
+duo_civ_founder_control.py. LineagesTutorialA passed those three checks with
+the religious role. Preserve earlier capital timeouts as premature test
+attempts during native paused lessons. See docs/re/civ.md#civ-first-use-camera.
+
+Cold fixture setup must wait for 600 menu frames before coop.load, as in the
+qualified Space-returner setup. The older build/local/tribal-final-start.py
+waits only ten seconds and reproduced the black startup in TutorialB; that
+run did not qualify camera input. Do not reuse it for fresh first-use profiles.
+
+TutorialC's centered-cursor --control fails; the repeated-input variant passes
+pan and zoom (lineages-tutorial-c-pan-control.log / -pan-repeat.log). TutorialA
+also passed those native lessons with the same repeat sequence. Slow menu
+rendering can exceed Console's 90-second timeout before 600 frames: its socket
+timeout must exceed the wait command's deadline. A timed-out wait is not proof
+of menu readiness. TutorialC resumed only after the native intro finished.
+
+The post-tutorial duo_civ_team_progress.py regression also acknowledges the
+specifically identified Communications Panel lesson. TutorialC failed at that
+previously unanswered prompt; TutorialD passed both fixture captures without
+manual input after the driver change. Both clients retained two separate
+species/nations, matching technology/unlocks and native campaign state.
+BUG-9088 records the failed run, assisted continuation and uninterrupted pass.
+No combat victories were earned in this fixture and no full stage was replayed.
+
+## Targeted Adventure conversation checks (2026-11-07, feat/lineages-adventures)
+<a id="testing-adventure-dialogue"></a>
+
+lineages_adventure_state.py reads the native mission key, act, summary and each
+goal descriptor/count/completion flag. --expect-shared compares native peers.
+lineages_adventure_dialogue.py finishes an already-open conversation using the
+observed native next button 062EF353 and finish button 0445C99D. Both are at
+1148,634 in the 1176x664 Windows fixture. It bounds page count, asserts one
+shared native credit and checks idle-player position and fault counters.
+--reconnect leaves guest 5 offline until host 4 completes the conversation,
+then joins port 47810 and checks native catch-up. Use disposable DuoQA profiles.
+
+The setup can shorten travel with coop.npc gopos, then click the projected
+scenario NPC. No credit or goal memory writes occur in the regression itself.
+Native input clicks are deferred: wait for focus before sending text, and wait
+for visible conversation controls instead of clicking during camera fades.
+The initial driver stopped at the final page because it recognized only the
+next-arrow ID; recognizing the separately observed finish ID fixed the driver.
+
+Evidence in build/local: adventure-baseline-gate.log,
+adventure-talk-baseline-fail.log, adventure-talk-patch-a.log,
+adventure-talk-patch-b.log and adventure-talk-reconnect.log. The first new
+passes qualify required-once Talk goals, parallel completion and warm reconnect.
+They do not qualify full combat, simultaneous conversations, four native peers,
+restarting a mission, final rewards or return from a campaign Adventure.
+
+Additional targeted evidence: adventure-captain-act-probe.log records two native
+same-act resets per peer with stable prototype body identities and zero faults.
+The prototype remains off by default because its displayed scale is wrong.
+A backward act-reset shortcut failed because its goal object was already gone;
+native Replay, not SetCurrentAct, is required to restore an earlier mission.
+adventure-new-journal-gate.log then passed the existing first-gate test on the
+new journal. Native shutdown logs show ExitProcess 0/faults 0 for both games.
+lineages_adventure_captain_probe.py is explicitly a disposable fixture and must
+not be counted as an earned act transition or full Adventure qualification.
+
+## Selective upstream 0.7.9 ports (2026-11-07)
+<a id="testing-lineages-upstream-079"></a>
+
+BUG-9090/9091/9092 retain off switches for negative controls. Portable tests:
+validate_tests (old snapshot cycle rejection and wrap/reset), chief_arrival_tests
+(moving, stopped and returned-to-origin chiefs), dna_sync_tests (separate budget
+and progress, coalesced gain/spend, shared death debit, duplicate/catch-up totals,
+invalid/truncated optional tails). They are in make test. Windows binaries and
+FAIL/PASS output live under build/local/079-{cycle,chief,dna}-{fail,pass}.log.
+The validation binary's --nofix also exercises its older unrelated regressions.
+
+Two isolated, muted 10 FPS Windows instances used fresh DuoQA079A4/A5 profiles.
+079-tribe-native.log passed native chief/staff identity, absent chief and chief
+replacement on both peers, with zero faults. The Creature fixture was loaded
+directly from a retained save into unused Game7; no stage replay was needed.
+
+lineages_dna_progress.py --host 4 --guest 5 [--nofix] requires an already joined
+Creature pair and rejects personal profiles. 079-dna-native-fail.log reproduces
+host budget/progress 60/0 versus guest 60/-40. 079-dna-native-pass.log records
+60/0 on both after spending, 70/10 after a reward, and 63/3 after the same native
+debit used for an unrevived death. A periodic resend leaves them equal. Native
+fault counters remain zero. The test uses the actual editor setter and penalty
+debit, not the editor UI or full death timer. Reordered live Civilization packets,
+a live chief-teleport negative control and four-player sessions are not qualified
+by this batch. BUG-9062 remains open.
+
+The initial copied-executable launch exited before game code (no mods loaded,
+TerminateProcess 53). Setting SteamAppId and SteamGameId to 24720 for the isolated
+launch resolved it. This failure is separate from the tested DLL. Git Bash builds
+need an unsandboxed process on this Windows setup; use -j2 for the background
+resource budget. The DLL, fix registry, RE/docs checks and focused units are the
+local gates; the Linux/Wine lab smoke and sanitizer suite were not run.
+
+Both test games returned to the galaxy menu with zero recorded native faults.
+Native exit-menu automation was blocked by registration/menu handling; the
+QA console quit command deliberately ended both processes with exit code 0.
+This qualifies return-to-menu and pre-exit fault checks, not graceful native
+shutdown. No test game remains running.
+
+## Lineages Cache targeted native checks (2026-11-07, feat/lineages-cache)
+<a id="test-lineages-cache-native"></a>
+
+Two isolated Windows profiles, LineagesCacheReleaseA/B, use native Steam
+instances 4/5 at 800x600 and 20 FPS. Seed only EditorSaves and Preferences from
+disposable QA fixtures. Never copy credentials, personal worlds or a running
+profile's package. The test requires seven host creations (including Gaal,
+DuoHostVoyager, DuoCapital and DuoRover) and four guest creations (Stabbella
+and DuoGuestVoyager). These old fixture names are not product branding.
+
+Build the DLL and standalone SporeCoop.package; install them only in the QA
+runtime. The copied executable resolves DataEP1 through the registered Steam
+installation, so the temporary LineagesCachePrototype.package there must be
+removed once both QA processes exit. No vanilla root overrides are included.
+After boot, set frame.limit 50 and request coop.library scan on each instance.
+The startup cinematic delays safe scanning; GalaxyGameEntry alone does not
+mean Share is clickable. The test waits for scanning and retries menu opening.
+
+Run with the configured Windows Python:
+
+```
+python -X utf8 tools/tests/lineages_library.py --output out/cache-probe/release
+python -X utf8 tools/tests/lineages_library.py --feed-control --output out/cache-probe/release
+# Close both QA games, cold-launch the SAME profiles, retain their native data:
+python -X utf8 tools/tests/lineages_library.py --verify-only --output out/cache-probe/release
+```
+
+PASS release-native.log: host receives four, guest seven. The test checks native
+ResourceManager provenance in Pollination.package, real Sporepedia captions,
+reconnect without new keys and cards after leaving co-op. final-restart.log and
+release-restart.log cover cold restart; received.json preserves expected digests,
+native keys and attribution. Native fault counters are checked after the UI checks.
+No campaign or complete stage was replayed.
+
+The `library.feed` negative control removes Stabbella's native card while the
+category remains, and restoring the fix restores the card. Evidence:
+release-feed-control.log and release-feed-off.png. The earlier inspector lifetime
+crash is retained under inspect-crash; do not deliberately crash again. Subsequent
+automatic inspections, repairs and imports have zero native faults. See BUG-9093,
+BUG-9094 and BUG-9095 and [native findings](re/creations.md#creations-cache-native-feed).
+
+Portable checks: tests/library_sync_tests.cpp covers PNG CRC/digest validation,
+truncated metadata, multi-packet transfers, mid-transfer disconnect/reconnect,
+deduplication and a four-seat host relay without echo imports. Compile it with
+mods/coop/net/library_sync.cpp and updater/sha256.cpp; it is part of make test.
+tools/tests/test_cache_category.py has five checks, including standalone resources
+without vanilla root replacements. RE symbol lint and documentation lint are
+additional gates. The Linux/Wine lab and sanitizer suite were not run on this
+Windows host. Four native peers, natural pollination selection and arbitrary
+missing-part combinations remain unqualified; portable relay is not their proof.
+
+Final preview: 0.7.3.6-lineages27-dev, feature commit 8bd7ca16. The version-labeled
+DLL passed the native resource/card checks after hot reload (release-final-dll.log).
+The installer ZIP passed CRC checks, all eleven pack payload SHA-256 hashes,
+installer version, exact resource-package contents and native symbol inclusion
+(release-package.log). ZIP SHA-256:
+2eae48a2196632a9bc4eff8b5bdea861a197cd6c8b91362f49396b0825d2151d.
+The installer itself was not rerun against the personal installation. The full
+Linux lab and broad campaign regression remain outside this targeted qualification.
+
+## Lineages 28 player-report checks (2026-11-07)
+<a id="testing-lineages-player-report"></a>
+
+Artifacts: out/player-report-20261107-223741 (private, untracked). No player save
+was loaded or modified. Disposable DuoQAReportSessionH/G profiles used native
+Steam 3010a413, instances 4/5, 800x600 at 20 FPS. No full-stage replay.
+
+- tests/world_transfer_tests.cpp is part of make test; compile with
+  -DLINEAGES_BULK_ACKS and mods/coop/net/connection.cpp. The original baseline
+  fails (transfer-before.log), fixed and repeated runs pass (transfer-after.log,
+  transfer-repeat.log). Five clean/lossy/slow-receiver cases include ordering.
+- Full Windows net_tests passes (net-regression.log), including existing founder
+  scaling tests. Native Cell logic and the fix registry also pass.
+- tools/tests/lineages_cell_report.py --output <scratch> tests actual knockout,
+  respawn, scaled food, paused repeated totals and the partner arrow. Camera
+  negative control and two fixed respawns: native-camera.log. Native meal:
+  native-cell.log. The first attempt hit the native three-second invulnerability
+  period; the test now clears it before the next intentional knockout.
+- tools/tests/lineages_cell_editor_report.py requires those joined disposable
+  profiles, with the native HUD ready. It tests real mating, readiness and
+  editor return. --fixed-only skips the already qualified negative control.
+  Native tutorial captions must be acknowledged before starting. Input must
+  wait frames between opening the name panel and typing. Spore's native widget
+  did not select all through synthetic Ctrl+A; the test inserts a unique marker.
+- tools/tests/lineages_cell_first_hit.py checks the first native DamageCell hit
+  and host/guest HP agreement, without a preliminary bite. first-hit.log records
+  7 -> 4 HP, synchronized in 0.406 seconds with latency/loss.
+- The disposable UDP relay binds loopback only: 60 ms each way, deterministic
+  2% loss, bounded queue. Windows ICMP after a disconnected guest raises
+  ConnectionResetError; ignore it in this test relay and continue serving.
+  Delayed transfer results are not measurements of the player's physical link.
+
+Linux/Wine lab, sanitizer builds, four native peers and a full campaign were
+not run for this patch. Remaining player-report uncertainty is recorded in
+BUG-9096 and BUG-0351, not hidden by a passing unit suite.
+
+Final Lineages 28 native editor regression: editor-regression-final.log passes
+both saved design and cancel without another share. The saved design is checked
+against the guest puppet's species key, not only receipt of metadata. Synthetic
+input clears the bounded name field with Home/Delete; immediate modifier release
+previously raced the posted Ctrl+A event. The earlier failed harness runs remain
+in the scratch archive; they are not gameplay regressions.
+
+Package: out/dist/SporeCoop-0.7.3.6-lineages28-dev-Windows.zip. ZIP CRCs, installer
+version and all eleven payload SHA-256 hashes passed (package-check.log).
+SHA-256: 2f7e19a1e8dafffa52c3943baf2a169c5f7cf1d904adc7f734eee83ce1b83f7f.
+The personal installation was not updated or restarted.
+Final marker test (final-markers.log): healthy arrow on/off, no green-label
+collision during knockout, arrow restored after respawn, camera centered and
+zero native faults. first-hit-final.log: 6 -> 3 HP synchronized in 0.953 seconds
+on the delayed/lossy link. Differences in timing are expected with dropped
+unreliable state packets; no instant-hit guarantee is claimed.
+
+The ticket gate reports three pre-existing verification-format failures in
+BUG-9093/9094/9095; this patch's tickets pass its field/evidence checks. RE,
+documentation and glyph linters report zero problems. The Linux sanitizer suite
+was not run. QA instances 4/5 and the loopback relay were closed after collecting
+native logs; the personal game was not controlled.
+
+## Lineages 29 targeted checks
+
+- TITAN and MSI joined over a direct Tailscale link. The initial 3.50 MB
+  Cell archive took 4.6 seconds and was playable 7.69 seconds after Join.
+  Two warm reconnects reused the active slot without a world offer. Changing
+  shared food from 1 to 7 while the guest was away required a fresh transfer
+  and converged on 7. A separate prepared Creature save loaded automatically
+  after reconnect from Cell in 12.72 seconds, with both avatars and 20 NPC
+  mirrors. This exercises stage fallback without replaying the transition.
+- The two-PC Cell test confirmed a centered camera after an actual respawn,
+  the off-screen partner arrow and a single shared food gain. MSI received
+  the Ready prompt on both votes and stayed in its world after the host edit.
+- The host registered one MSI bite as 9 to 6 HP. MSI displayed 6 HP about
+  0.56 seconds after the bite and rendered the same target for the rest of the
+  4.4-second observation. A later Cell digest matched 411 objects. This short
+  sample does not cover intermittent disappearances across a full session.
+- At the first growth checkpoint with four reserved seats, the host HUD showed
+  5 DNA. The disabled allowance fix opened the editor with 100 and left 100
+  after a free save. The enabled fix opened with 5 and left 5 after the save.
+  The two editor checks restored the native 1176×664 QA layout briefly because
+  forcing the renderer to 800×600 cropped that existing layout. Audio stayed
+  muted and the QA cap remained 20 FPS.
+- Native Creature and Adventure Town third-person cameras both widened from
+  44.56 to 62.56 degrees and returned to vanilla. Unmodified scroll did not
+  change the FOV offset. Sampled clipping planes and material LOD fields were
+  unchanged. This does not measure the cost of drawing the wider view.
+- Windows net and world-transfer suites passed. Private QA logs and images
+  are under `out/`; no continuous campaign run was required.
+- Lineages 29 ZIP CRCs, setup version and all eleven payload SHA-256 hashes
+  passed. Silent install and uninstall on a disposable file tree restored
+  the original loader, removed the DLL and resource package, and kept settings.
+
+### Personal Cell editor follow-up
+
+The host's native mating opened its editor without MSI sending Ready. MSI
+received a passive notice, stayed on the same slot and rendered the host's
+new model after the save. The host editor used the native 1176×664 layout
+briefly at the same muted 20 FPS cap to access its save button.
+
+A guest rename exposed BUG-0455 when only metadata reached the host. On the
+final matching Tailscale build, MSI saved two fresh renames with 5 DNA before
+and after each. TITAN swam during both editor visits and received both bundles
+with a model and metadata. No Ready vote, world reload, or native fault was
+recorded on either editor return. A separate native History advance from a
+prepared full Cell bar still opened the Creature landfall vote.
+
+### Lineages lobby layout
+
+Native Steam QA loaded the new header and split panels from packaged PNG
+resources. At 800×600 the host lobby showed its reserved seats and kept
+Ready hidden outside a vote. A two-client check at the native 1176×664 QA
+window size opened the Ready button for a test vote, clicked it as the guest,
+and verified that the host completed the vote and the button hid again.
+Both consoles recorded zero native faults. Audio stayed muted at 20 FPS.
+
+## Windows QA instances from a copied Steam game (2026-11-09, fix/fov-stuck-wide-lens)
+<a id="test-windows-qa-copied-steam"></a>
+
+- A copied Steam `SporeApp.exe` (for example `out/release36/native`) exits at
+  once with TerminateProcess 53 (SteamStub restarts through Steam) unless the
+  environment has `SteamAppId=24720` and `SteamGameId=24720`. Steam must run.
+- Launch: `SporeApp.exe -w -r:640x480 -sporekit-profile:<QA profile>
+  -sporekit-instance:<N>`; console on 127.0.0.1:47800+N-1. SporeKit moves the
+  test window to the secondary monitor and turns background mode on.
+- Then `frame.limit 200` (5 FPS) and `coop.load Game0 <save>`.
+- Mute: the game has no mute command. Set `AudioMuteAll true` in the QA
+  profile's `Spore/Preferences/Preferences.prop` before launch, and for a
+  running instance mute that PID's audio sessions through the Windows audio
+  session API (ISimpleAudioVolume::SetMute), which leaves other Spore processes alone.
+- A posted WM_MOUSEWHEEL with MK_CONTROL simulates a stale Ctrl key state
+  without pressing a real key in the player's foreground window.
+- `tools/tickets.py new` needs fcntl (Linux only); on Windows write the ticket
+  file by hand with the next free number.
+
+## QA copy and new UI images (2026-11-10, feat/lineages-42)
+<a id="test-qa-mount-package"></a>
+
+The QA game copy (out/release36/native) reads SporeCoop.package from the registered Steam
+installation's Data folder, not from its own. To try new data/ui images without touching that
+install: rebuild the package (`tools/build_lineages_resources.py build/SporeCoop.package`), copy it
+to out/release36/native/Data, start the QA game and run `coop.creations mount <that path>` before
+the image is first used: Spore remembers an image it did not find. A mounted package is locked
+until the game exits.
+
+## Windows Cell QA: a new 4-seat Cell game, hot reload, a local guest (2026-11-10, feat/lineages-43)
+<a id="test-windows-cell-qa"></a>
+
+- A fresh QA profile (copy `Preferences` with `AudioMuteAll true` into `SporeKit-<name>\Spore`) shows
+  Spore's EA registration box on the galaxy menu: close it (its X, then OK on "Quit registration?";
+  tick "don't ask again"). Never type anything into it.
+- `tools/tests/new_stage_game.py` imports `lane`: run it with `py` (not `py -I`). Window 1440x1080.
+- Campaign rules are recorded with the planet: `coop.host <port> <name> 4 100` in the galaxy menu
+  first, then the new planet, then `coop.save` at once. A `mod.reload coop` drops the session and a
+  planet never saved comes back with seats=1.
+- `sym.reload` on the Steam QA copy left `game.mode` at "none" (symbol lookups broken until restart):
+  hot reload with `mod.reload coop` alone.
+- A second instance as guest: `-sporekit-instance:8 -sporekit-profile:<other>`, `coop.join
+  127.0.0.1:<port>`. Both instances load `mods\coop.dll` of the same copy: reload both after a copy.
+- Python's `print`/scripts that write C++ through heredocs: `\n` inside generated C string literals
+  became real newlines more than once (a compile error, not a test failure).
+- Counters: `coop.pool enemy_groups` (extras, overlap, speeds, plant / meat credit),
+  `coop.pool lineage [find <model hex>]`, `coop.pool species`, `coop.lineagecells`.
+
+## Windows two-instance Adventure playthrough (2026-11-10, test/lineages-adventures)
+<a id="test-windows-adventure-playthrough"></a>
+
+BUG-9089. Fresh DuoQA profiles (the state reader asserts "duoqa" in the save path), 1440x1080.
+- Start: `coop.host` / `coop.join` at the galaxy menu, then `tools/tests/adventure_start.py -i N` on
+  each (tutorial). Another adventure: Play (566,542), the card (828,546), the adventure in the list,
+  the green check (1400,1056), next (1068,626) twice.
+- Two fresh profiles give their random captains the same instance id: `duo_adventure.py` then stops
+  with "Pick different captains" although the captains differ; drive the gate by hand (play+0xE0 is
+  the move-to target, `coop.npc gopos x y z`).
+- Tutorial tips: their check button is window 05943B78; conversation next / finish: 062EF353 /
+  0445C99D; find them with `coop.ui where <id>` (positions depend on the window size).
+- A scenario creature's class (the goal target) is at object +0x1C (noun 18EB45E); buildings are noun
+  70703B3. `coop.tribe objs <noun>` lists only the 40 nearest: `coop.tribe objs <noun> 2000` for all.
+- Clicking a character the own captain hides does nothing: stand aside (6-9 m, 45 degrees) and click
+  its projected point from `coop.targets objs`.
+- Results screen: Done is window 07C79948.
+
+## Windows QA at 10 fps from launch (2026-11-10, feat/adventure-bodies)
+<a id="test-windows-qa-fps-cap"></a>
+
+- Two uncapped 1440x1080 QA games lag the owner's PC (they were closed by the owner). The QA copy's
+  `mods/sporekit.ini` has `frame_ms=100`: every QA game runs at 10 fps from launch, menus included.
+  `frame.limit` overrides it until restart; do not raise it.
+- At 10 fps a `wait.frames N` waits 3x longer than at 30: wait in seconds in scripts that click.
+- `adventure_start.py` and the "another adventure" steps above start from the Galactic Adventures panel;
+  from the plain galaxy screen click Galactic Adventures (92,246) first.
+- `coop.adventure actors [radius] [player]` lists scenario creatures (id, class, position, health, key,
+  posse flag) around the captain or a partner's body; on a guest the key is the host creature it
+  follows. Pair the two games' lists by key for an exact position compare (BUG-9114).
+- `coop.adventure hit <class> [damage]`: this captain's hit on the nearest creature of that class
+  through the damage filter.
 ## Divergence detector (2026-11-02, feat/w39-detector)
 <a id="testing-detector"></a>
 
@@ -4183,10 +4926,10 @@ P1 of 0.7.7 (docs/re/creature.md#creature-player-rules). Each test checks the gu
 
 | Test (suite) | What | Twin switch |
 |---|---|---|
-| coop_creature_stun.py (creature_stun) | the host's NPC plays its charge on the guest's puppet (`coop.rules charge <npc> <player>`: SetTarget + PlayAbility, the hit and the stun are the game's); the guest's avatar holds stimulus 0x1000; the guest's stun of a proxy stuns the host's NPC (`coop.rules stun <s> <id>`, as its own hit) | creature.stun_relay |
+| coop_creature_stun.py (creature_stun) | the host's NPC plays its charge on the guest's puppet (`coop.prules charge <npc> <player>`: SetTarget + PlayAbility, the hit and the stun are the game's); the guest's avatar holds stimulus 0x1000; the guest's stun of a proxy stuns the host's NPC (`coop.prules stun <s> <id>`, as its own hit) | creature.stun_relay |
 | coop_creature_air.py (creature_air) | a wild NPC bites the guest on the ground, then the guest's creature is kept 1.5 m up for 20 s (`coop.abilities lift`): no host melee hit lands while the guest's own game has it off the ground (`coop.hp dmglog`: `air=1`) | creature.air_immune |
-| coop_creature_flock.py (creature_flock) | the host's game starts its Summon Flock event (`coop.drama start 8`); on the guest every flock proxy answers vt 0xD4 friendly and wears the hearts (`coop.rules friendly <id>`) | creature.party_allies, npc.flock_hearts |
-| coop_creature_nest_ally.py (creature_nest_ally) | the host's record of a species becomes allied; the guest's herds of it get +0x191 (`coop.rules nests <inst> <type> <group>`), and lose it again | social.nest_ally |
+| coop_creature_flock.py (creature_flock) | the host's game starts its Summon Flock event (`coop.drama start 8`); on the guest every flock proxy answers vt 0xD4 friendly and wears the hearts (`coop.prules friendly <id>`) | creature.party_allies, npc.flock_hearts |
+| coop_creature_nest_ally.py (creature_nest_ally) | the host's record of a species becomes allied; the guest's herds of it get +0x191 (`coop.prules nests <inst> <type> <group>`), and lose it again | social.nest_ally |
 | coop_tribe_target_ring.py (tribe_target_ring) | the guest selects its members and orders an attack (`coop.tribe act 7`); its HUD's ring map holds a live ring under the enemy (`coop.tribe ring <id>`, the HUD's own lookup) | tribe.target_ring |
 
 * `coop.hp dmglog [clear]`: the last 48 hits through the creature TakeDamage hook (victim, attacker, amount, type,
@@ -4449,6 +5192,238 @@ G2 of 0.7.8 (BUG-0430 class). For each: which kind of fault it was and the evide
   (lab 20261105-135000 play_tribe#2) had none (0.6-1.5 m per 0.25 s at 2.5-5.5 m/s): proxies falling behind a moving
   host NPC, a real desync. The gate and its window stay.
 
+## The co-op window's look (2026-11-11, feat/lineages-47)
+<a id="test-coop-window-polish"></a>
+
+- `coop.uistate 1` opens the window; `shot <png>` then a crop of 360,300..1080,840 (1440x1080) shows it
+  1:1 (window coordinates + 336,239 on screen).
+- New UI images: copy build/SporeCoop.package to the QA copy's Data and `coop.creations mount <path>`
+  right after launch, before the window is first opened (a mounted package is locked until exit).
+- `coop.update fake <version>`: the update line and button as if that version were out (BUG-9117).
+- Labels centre their text whatever alignment is set; coop_ui.cpp sizes them with measured character
+  widths (text_px). A new label that wraps or drifts: check its box against text_px plus 16 px a side.
+- The 10 fps QA games ping each other at about 100 ms: good for checking the 3-digit ping column.
+
+## Downed players: 30 s and giving up (2026-11-11, feat/lineages-47)
+<a id="test-downed-give-up"></a>
+
+- `coop.giveup down`: a lethal hit on the own creature through the game's damage path (Creature,
+  Adventure): with a partner in the world the player is downed. Stand the two creatures more than 6 m
+  apart first (`coop.npc gopos x y z`), or the partner revives at once.
+- `coop.giveup`: the downed player gives up (as holding G for 1 s does), in every stage.
+- `coop.adventure` prints the rescue line ("Downed: N s ..."); `coop.dna` the pack's DNA (10% is lost
+  on a timeout or a give-up in Creature).
+
+## Progress debt (2026-11-11, feat/lineages-47)
+<a id="test-progress-debt"></a>
+
+- `coop.debt` on either game: the debt owed (host: its ledger; guest: the host's word), the stage's
+  progress, where the bar is (`bar=1 [...] edge=N`: the strip is drawn; 0: no HUD) and how often.
+- `coop.debt add <n>` (host): a debt as a timeout makes it, capped by the bar; `coop.debt clear`.
+- Creature: `coop.giveup down` + `coop.giveup` on the guest (30 m from the host) gives a debt of 10% of
+  the DNA, the DNA stays. `coop.dna gain <n>` (host or guest) is a reward through the game's hook: it
+  repays the debt first. `coop.dna local <n>` bypasses the hook (and the debt).
+- Cell: the respawn after `coop.giveup` adds 10% of the editor's DNA in food; meals repay it.
+- `coop.fix core.progress_debt off`: the old loss, for a failing run.
+- `coop.debt` shows `tinted=N shader=1` when the strip is the bar's own pixels recoloured (0: the flat
+  fallback strip, no shader compiler).
+- On a PC with Steam running, a QA copy without `SporebinEP1\steam_appid.txt` (24720) is restarted by
+  Steam from the Steam install (with the same -sporekit-instance/-profile switches): the console port
+  then belongs to a game in the player's own install. Keep the file in every QA copy and check the
+  owner of the console port before sending commands.
+- The game's death screen ("You were killed in battle") hides the HUD; a QA save left in it needs
+  `click 1411 1049` (the check mark) on each game before a test.
+
+## Spore's Settings tabs (2026-11-11, feat/lineages-47)
+<a id="test-settings-tabs"></a>
+
+- Galaxy menu: `click 22 1057` (the Spore button), `click 647 560` (Settings), then the tabs at x 471:
+  Graphic y 383, Audio 426, Game & Capture 469, Online 555, Credits 598; Cancel `click 1008 780`.
+- `coop.ui where 0437A960` (Audio page): a rect when shown, `none` when the dialog vanished (BUG-9120).
+- A control we add to a Spore dialog that switches pages by command id must not keep command 0: the
+  dialog's own frame has id 0.
+
+## Windows QA: real input and the owner's save copies (2026-11-11, feat/lineages-47)
+<a id="testing-windows-real-input"></a>
+
+* The console `click`, `drag`, `wheel` and `key` commands move the real mouse and keyboard of the Windows PC that runs
+  the QA games. Do not run them while somebody uses that PC; console-only checks (`coop.prules play`, `coop.social goto`,
+  the logs, `shot <png>`) do not.
+* A broken campaign of a player can be reproduced on a copy: a new profile `SporeKit-<name>` with the player's
+  `Games\Game0`, `EditorSaves.package`, `Pollination.package` and `Planets.package` copied in (read-only on the player's
+  files). A save name with a space loads with `coop.load Game0 \"Jiff Peanutbutter.spo\"` from PowerShell.
+
+## Two PCs over Tailscale: TITAN hosts, the MSI joins (2026-11-11, feat/lineages-47)
+<a id="testing-two-pc-msi"></a>
+
+* The MSI runs its Steam Spore with the build under test (stripped coop.dll / sporekit.dll copied over SSH) in a
+  profile of its own (`-sporekit-profile:MSIGuest`); a scheduled task starts it in the logged-on desktop session
+  (a game started from the SSH shell itself has no desktop). Its console is reached through an SSH tunnel
+  (local 47850 -> MSI 127.0.0.1:47800).
+* TITAN hosts with QA instances (`coop.host 47839 Host 4` for more than two players: the default is two seats) and
+  the MSI joins TITAN's Tailscale address. With a QA guest on TITAN too, that is a 3-player session.
+* What ran this way: Cell respawn fade (BUG-9122, screenshots' mean brightness on the watching games), Creature FoV
+  (BUG-9130, screenshot differences on the MSI), Tribe founder repair on a copy of an owner's save (BUG-9137),
+  befriending by real input on the MSI (BUG-9136), world-transfer timing with `net.pacing` (BUG-9098), the player
+  identity across a rejoin under a new network id (BUG-9135).
+* Pitfall (fixed 2026-11-12): a header change built without FORCE=1 crashed both guests at the next hot reload;
+  tools/build_windows.sh now rebuilds every object whose included headers changed.
+* The tools: tools/qa_win/ (qa.py console with the QA-copy and tunnel guards, launch.ps1, msi.ps1, respawn_fade.py,
+  social_hits.py); see tools/qa_win/README.md. Test games run at 5 FPS in 800x600 windows unless a test needs a size.
+* Getting to Civilization on the Windows QA copy (2026-11-12, feat/lineages-47):
+  * No native stage-advance cheat: `cheat evoAdvance` and `cheat refillMotive` return false (also after
+    `App::cCheatManager::func4Ch 1`, docs/re/creature.md#creature-cheat-console-flag); `cheat help` and the kit's own
+    `sk` / `coop` cheats work. The Tribe -> Civ graduation needs five real tribe objectives.
+  * No QA profile on this PC has a Tribe save with any objective done: DuoQAJiffHost (Jiff Peanutbutter, 4 founder
+    villages) and DuoQAClythHost (Clyth, 2 founders) both read 0 victories (host totem +0x11C..+0x120). The Linux
+    lab's five-victory Clyth is not this file. tools/tests/duo_tribe_campaign.py earns them with native raids (real
+    drags and right-clicks in the host window).
+  * A Civ game without graduation: DuoQACivHost / Abber.spo (a co-op campaign with .duo-seats, one host capital,
+    no founder roster). Good for late capitals (docs/re/civ.md#civ-late-capital); its first minutes show the Civ
+    tutorial's captions on the host (the game time stands still until they are clicked away).
+  * A changed profile is restored from the copies kept before the test (scratchpad backups of 2026-11-12).
+* Tribe -> Civ shortcuts that do NOT work (2026-11-12, feat/lineages-47): Totem_AddSegment x5 and cPlayer +0x10F0 set to
+  +0x10F4 (5 / 5): History shows no next stage; an NPC village from `coop.tribe npc_tribe` destroyed by
+  cTribeHut_TakeDamage with the host's faction: no win counted. A bad address passed to a `call` (0x8 from a parsing
+  slip) crashed the test host (crash-20261112-091232-i9: read of 0x00000008): check every pointer a script passes.
+* A fresh copy of the owner's Jiff save (profile DuoQAJiffGrad, difficulty set to 0% in the copy's .duo-seats for five
+  rivals) gets four founder villages in about a minute: `coop.seats 4 now`, the three guests join, `coop.tribe
+  bind_founder 1 <player>` for the old partner seat. The older DuoQAJiffHost copy is worn out (4 idle hours of co-op
+  epics: one villager per village, then the host's hut destroyed). DuoQAClythHost's Clyth is a prototype whose host hut
+  does not belong to the host's village (partners are never founded there).
+* Tribe -> Civ with four founders, the recipe that works (2026-11-12, feat/lineages-47; about 40 minutes): a fresh copy
+  of a Tribe save (difficulty set to 0% in the copy's .duo-seats: five rivals), four players, `coop.seats 4 now`,
+  `coop.tribe bind_founder 1 <player>` for an old seat. Wins 1-4 by fixture (Totem_AddSegment x4 and cPlayer +0x10F0 =
+  4: not a native win, only the count). The fifth is native: `coop.tribe npc_tribe 3 160`, then the scratchpad driver
+  raid.py: TribeGoalUI_SelectTarget(ui, village), the hut lowered to 1 by cTribeHut_TakeDamage, the host's villagers
+  placed beside it (spatial vt +0xEC, +0x44) and ordered DoAction 15 (RaidHuts): the game said "You have destroyed the
+  Orange Village! Your totem is complete! You can advance to the Civilization stage now." Then the captions (0445C99D,
+  062EF353), the Advance button (1136,648), the History tooltip (FFFFFFF1) and check (1152,641), `coop.vote go`, the
+  lab's City Hall drags and name (tools/tests/duo_tribe_graduation_cityhall.py coordinates at 1176x664), the vehicle
+  (the weapon drag needed slower moves: 20 steps of 0.25 s at 5 FPS), "You are about to enter Civilization", and the
+  Civ tutorial (BUG-9052's recipe: both buttons held and moved, `key up down` repeated, `wheel`, a click on the vehicle's
+  panel icon, then the tutorial checks FFFFFFF1): the partner capitals came only after the tutorial released the time.
+
+## Game code without Ghidra on the Windows PC (2026-11-12, feat/lineages-47)
+<a id="testing-dis-without-ghidra"></a>
+
+* The Steam exe on disk is encrypted and Ghidra is not set up on the Windows PC: `tools/qa_win/dis.py <instance|msi> dis
+  <sym address> [bytes]` reads the code from a running QA game (`mem.read`) and disassembles it with llvm-objdump
+  (LLVM_MINGW). Addresses are .sym addresses (base 0x400000).
+* The Steam / GOG 2024 exe is relocated (ASLR): TITAN's QA copy loaded at 0x630000, the MSI's at 0x490000 (each run can
+  differ; `info` shows `base=`). `sym <name>` prints the relocated address; subtract `base - 0x400000` for the .sym one.
+* A crash report's "stack scan" lists every code-looking value on the stack, most of them stale, named by the nearest
+  known symbol (often far away: "Tribe_SetChieftain+0x861" was C90741). `dis.py <game> calls <crash base> <addr>...`
+  keeps the entries with a call right before them and prints the call targets: crash-20261112-140751 became
+  TribalGame_HandleMessage -> CD5190 -> CCC580 -> CC95E0 -> C90730 -> 8E8230 (docs/re/tribe.md#tribe-guest-own-player-village).
+
+## Two test games on the MSI; TITAN games that will not start (2026-11-12, feat/lineages-47)
+<a id="testing-msi-two-games"></a>
+
+* `tools/qa_win/msi.ps1 start -Instance 2 -Profile MSIHost -Resolution 800x600` starts a second game on the MSI (its
+  scheduled task and command file carry the instance number); `msi.ps1 tunnel -Instance 2` forwards local 47851 to its
+  console 47801; `qa.py msi2 <command>` talks to it. The MSI host and guest join on 127.0.0.1. Used for BUG-9156
+  (spectating) with a copy of the DuoQACreatureHost test profile on the MSI as SporeKit-MSIHost.
+* Seen 2026-11-12 19:12-19:23 on TITAN: every QA game ended at once with "App::cSporeApp::Init returned 0" (every
+  profile), after the PC woke from sleep (Kernel-Power 17:55), a Windows Update install (18:11), a Steam restart (19:08,
+  logged on) and a network change to a phone hotspot; the Intel UHD adapter showed Error in Device Manager. Not a mod
+  problem (the mod's start is complete before it); a restart of the PC is the likely fix (not done: the owner's PC).
+
+## A third test game on the MSI; a new joiner (2026-11-12, feat/lineages-47)
+<a id="testing-msi-third-game"></a>
+
+* `tools/qa_win/msi.ps1 start -Instance 3 -Profile <name>` and a tunnel 47852 -> 47802 (`msi.ps1 tunnel -Instance 3`);
+  `qa.py msi3 <command>`. Three games (1280x960, 800x600, 1024x768) ran together on the MSI.
+* A joiner without creations: a new profile name (an empty `SporeKit-<name>`). Its first editor shows Spore's account
+  window: `click` its X, then OK on "Quit registration?". To save a creature: a mouth by a stepwise drag from the
+  palette (`move`, `button down`, several `move`, `button up`), the name field (`click`, `text <name>`), then done.
+* Tribe copies of the Jiff save made after BUG-9147 hold an empty host village: after some minutes the native game over
+  comes (`coop.status` busy: cinematic,paused) and stops every founding; its check mark goes on.
+* Founder seats are capped at 4: a copy with 4 seats (two of offline players) founds no village for a fifth person.
+
+## Windows QA pitfalls seen 2026-11-13 (feat/lineages-47)
+<a id="testing-qa-pitfalls-1113"></a>
+
+* `mod.reload coop` ends the network session on that game: host again (`coop.host`) and join every guest again; a
+  host reload drops every guest. A world-load test after a reload starts from the host's world, not the guest's state.
+* Editor drags at 30 FPS: the first `drag` after bringing a window to the front often does nothing; `move`, `button x y
+  down`, two `move`s and `button x y up` with half-second pauses works; on the MSI (slower) only that way. A full
+  complexity meter (the dotted bar top right) makes a dragged part snap back without cost: remove or move a part.
+* `coop.nest look x y z` moves the own creature next to the point (it moved the host once).
+* `key tab` from the console posts window messages: code that reads the key's real state (GetAsyncKeyState, the
+  spectate's Tab) does not see it.
+* A save's checkpoint (the Tribe party wipe's world refresh) writes into the loaded slot: copy a test save before a run
+  that may wipe; the MSI's Jiff copy Game0 was changed that way on 2026-11-13.
+* A Civ save with four founder nations takes no late joiner (no party seat): the Civ late-capital tests need a save with
+  a free founder seat.
+* ~ superseded (2026-11-13): see the next point. Console `move` moves the cursor but the game's hover card does not follow it (`cursor`: virtual=0); clicks work.
+* CORRECTION (2026-11-13, feat/lineages-47): console `move`, `click`, `drag` use a virtual cursor (sporekit/focus.cpp: the
+  game's cursor reads return it for 5 s after the last move; the real pointer does not move), so a hover checked later
+  than that shows where the real pointer is. A hover test with the real pointer: `tools/qa_win/hover.ps1 -Instance N
+  -Pattern '<regex of the creature's line in coop.evolve mates>' -Out <png>` (brings the window to the front, clicks its
+  title bar, moves the real pointer, saves the window with the cursor drawn in: the game's `shot` has no cursor). With
+  the pointer over the title bar or the HUD the game rates every creature class 0. The game's own mate: an arrow with
+  hearts as the cursor and the pink mate face on its card (BUG-9177). `-At 'x,y'` hovers a client point (a game with
+  the mod unloaded, or a creature whose drawn spot differs from `screen x y`: the wide FoV).
+* The key names are few: `key 0x1B` for Escape (`key escape` fails). `call <addr> thiscall ...` faulted the MSI's game
+  (2026-11-13): read fields with `mem.read` instead. A Creature save's profile can hold a Cell planet too (DuoQACreatureHost
+  Game0: Diplomavil is Cell, Samuth is Creature): `coop.load Game0 Samuth`.
+* New UI images on TITAN without touching the installed game (2026-11-14): `coop.creations mount "<repo>/build/SporeCoop.package"`
+  in each QA game while it sits in the galaxy menu; the Party cards look for their images again every 5 s, so they
+  appear once it is mounted. A hot reload (`mod.reload coop`) ends the session: host and join again.
+* The QA games on TITAN read the game's data packages from the installed game (the registry's DataDir: the Steam
+  install's Data\SporeCoop.package), not from the QA copy's Data folder: a new image in build/SporeCoop.package is not
+  there until the installed package is updated (the downed box drew its square fallback, 2026-11-13; the log line "ui:
+  downed box background" says so). The MSI gets the package with `msi.ps1 deploy`. Updating the installed
+  package needs the owner's OK and every QA game closed (they hold the file open); the old one goes to
+  out/owner-install-backup/ (never a second .package in the game's Data folder: the game loads it).
+* The MSI's real mouse: `tools/qa_win/msi_input.ps1 -X x -Y y [-Click]` (a one-shot task in its desktop session;
+  the console's click is a virtual cursor that never reaches the game's hover in a background window: every
+  creature class 0, 2026-11-13). A host whose creature starved stops the guests' NPCs: feed it
+  (`mem.write <avatar>+0xBBC 0000C842`, hunger 100) in long test sessions.
+* Samuth (DuoQACreatureHost) holds about 12 old player nests round the host's nest (BUG-9173): new seat nests go 90 m
+  out there.
+* Tribe right-clicks from the MSI guest (2026-11-13): select the own villager with a real left-click
+  (`msi_input.ps1 -Click`) about 12 px above the point `coop.targets objs` gives (the model, not its ground origin);
+  a rejoin drops the native selection even when `coop.tribe` still shows sel=1. Animals at the screen edge under trees
+  at night were never hit (each right-click became a walk); the host's hut under its name tag and arrow took no order.
+  `coop.tribe` on the guest ("tribe last order") and on the host ("cmds_done", "rejected", "last order: from=")
+  show what each click became. A fresh copy of the owner's Jiff save: profile DuoQAJiffFresh (seat 1 bound to the MSI
+  with `coop.tribe bind_founder 1 2`).
+* Rival villages for guest order tests (2026-11-13): `coop.tribe npc_tribe 4 -150` on the host puts one on the far side
+  of the host's village; after a raid or attack it is at war and the guest's villager keeps fighting it (down, party
+  wipe, world reload). Move a villager or an animal with tools/tests/duo_tribe_rescue.py `move` on the host (the
+  guests follow); aim a guest's camera with duo_native_ui.view_tribal_point on `Console(51)` (the MSI tunnel 47850). The
+  native NPC tribes that form after ~25 minutes of play are the better targets; a hill can hide a hut the projection
+  calls on screen.
+* Space-ready four-founder fixture (2026-11-13): profile DuoQAJiffSpaceReady (a copy; work on a copy of it), host
+  instance with that profile, guests DuoQAStageGuest ("Late"), DuoQACreatureGuest ("Fourth") and the MSI's MSIGuest:
+  `coop.host 47839 JiffHost 4`, everyone joins, all four founder nations are bound by identity. The recipe and the
+  launch clicks: docs/re/space.md#space-four-founder-launch. A guest joining while the host is in Space should be a
+  fresh game at the menu (the MSI's long-running game ran out of address space and its load never finished).
+
+* Close every test game (TITAN's QA copies and the MSI's, `tools/qa_win/msi.ps1 stop`) as soon as a live test is done
+  (the owner 2026-11-13): running ones count as Steam playtime on the owner's account and keep the owner from starting
+  Spore. Start them again only for the next test.
+
+## Loading screens on two PCs (2026-11-14, feat/lineages-47)
+<a id="testing-loading-screens"></a>
+
+BUG-9202 (the owner's 3S A: "confirm all loading screens work and play when things are loading. Use both PCs").
+* The setup: a host on one PC (TITAN QA copy or the MSI), the other joins; one guest-side sampler
+  (scratchpad `ldsample.py <msi|N> <seconds> <tag> [every]`) asks `frame` every 0.4 s (it answers on any thread, also
+  while the main thread loads), `game.mode` every 2 s and takes a `shot` every 1-2 s; a forced mid-stage reload is
+  `coop.worldfix queue <guest id>` on the host. A guest's support log names how each screen ended:
+  `ui: the join|reload loading screen ended (playing|time limit|...) after N s, ... s ready but black, brightness B`.
+* Timings seen (MSI guest, 1024x768): the join's galaxy-menu wait 20-25 s (the host saves, then 5-9 MB at ~390 KB/s);
+  then the game is in the stage mode while it still shows black: Creature 2-10 s, Civ 7 s, Cell a 5.6 s cinematic,
+  Tribe 5-30 s (at ~21 fps; 60+ fps once the world shows). The player's own object exists during that black and no
+  cinematic runs, so the screen waits for the frame's brightness (ring_timer::scene_luma).
+* Frames never stopped in any load (longest gap 0.8 s): the ring keeps turning.
+* Pitfall: telling a covered screenshot from a plain one by the ring's yellow fails in Civ (the yellow city hall in
+  the middle); the support log line is the reliable record.
+* A Space join is the personal launch (BUG-9071): the guest plays its own Civ homeworld while the host's world waits
+  as a queued load; the screen must lift there (world::local_intro_running).
 ## The guest's copy against the host's body at the same moment (2026-11-06, fix/w45-remote-bodies)
 <a id="testing-body-trail"></a>
 
@@ -7912,3 +8887,108 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   game (0x5971D4 or 0xC02A14, handled) and stops before the portrait: the badge alone does not reproduce BUG-1111 in
   the lab (docs/re/space.md#space-captain-portrait-null). The test allows only these two faults.
 * Twin: `SPORE_LAB_FIXOFF="space_captain_none=game.captain_portrait"`.
+
+## TITAN's QA copy stops starting after a Steam client update (2026-11-15, feat/lineages-merge-0.7.14)
+<a id="testing-steam-update-qa-start"></a>
+
+* TITAN's Steam client updated itself at 11:51 (client 1794424036 -> 1794536281, `Steam\logs\connection_log.txt`).
+  From then on every start of the QA copy (out/release36/native) ended at once: sporekit logs
+  "App::cSporeApp::Init returned 0" about 0.5 s after the `Global\SporeEdi` mutex, with the 56-dev build, with the
+  55-dev / 54-dev files restored, with any profile and instance, and with no mods at all (steam_api_orig.dll as
+  steam_api.dll: exit code 0 within seconds). Not the free disk space modulo 4 GB (a pad file changing it did not help).
+  The MSI (Steam client 1792618285, not updated) started the same 56-dev files fine.
+* The owner's own Steam Spore starts after the update (the owner, 2026-11-15): the failure is the QA copy's (a copy
+  outside Steam's library), not Spore's. 
+* CAUSE (2026-11-15, found): after the self-update Steam's registry `HKCU\Software\Valve\Steam\ActiveProcess\pid`
+  still named the update's bootstrapper (2936, gone); the running steam.exe was 50284. Spore's 2008 steam_api
+  (steam_api_orig.dll) checks that process, finds no Steam, and SteamAPI_Init returns 0 (a probe that loads
+  steam_api_orig.dll and calls SteamAPI_Init: 0 before, non-zero after); cSporeApp::Init then fails. A game Steam
+  launches is not affected. Setting the pid to the running steam.exe fixed it at once (the 57-dev QA game reached the
+  galaxy menu). tools/qa_win/launch.ps1 now does this itself when the pid names no running process. The MSI's start
+  has no such check yet (its Steam had not updated).
+  Until it is understood, cross-PC tests use the MSI's two games (`msi.ps1 start -Instance 2`, qa target msi2).
+
+## Measuring traffic and frame time on Windows (2026-11-15, feat/lineages-47)
+<a id="testing-traffic-frame-time"></a>
+
+* Every minute the log has `net: traffic this minute by message type: out <KB>: <type>=<KB>/<messages> ... | in ...`
+  (net/traffic.h: every message as queued or parsed, with its message header; packet headers not split by type) and
+  `perf: npc ai <ms> of the game's own AI and <ms> of the mod's` (game.cpp h_NPCTickAI timed with QueryPerformanceCounter).
+* `coop.sample <ms> <top>` samples the main thread; it now also lists the samples outside the game's code by module
+  (`outside by module: ntdll.dll=... d3d9.dll=... nvd3dum.dll=... coop...dll=...`).
+* Findings (TITAN, RTX 4090 laptop, Dorger.spo, 1280x960, no frame cap, Wardogs running beside it): about 157 fps; of the
+  main thread's samples about 46 % in ntdll (mostly the game's own frame limiter waiting), about 17 % in the DirectX 9 path
+  (d3d9, win32u, the NVIDIA driver), about 2 % in coop.dll, the rest the game's own code; NPC AI about 1-2 % of the frame,
+  the mod's part of it under 0.3 %. A world share's save freezes the host 0.6-1.0 s.
+* Traffic to one guest (the MSI, two games, Vandh.spo, Creature): 1238 KB a minute before BUG-9235 / 9237, about 430 KB
+  after (NPC states 780 -> 80 KB, world objects 213 -> 120 KB; player states 105 KB and world state 49 KB stay). A world
+  share: about 6 MB of files plus 2.3 MB of creation bundles; deflate shrinks a save only about 15 % (already packed).
+* DXVK trial (2026-11-15, decision 4R): DXVK 3.1.1's x32 d3d9.dll next to SporeApp.exe works with SporeKit (sporekit
+  logs "other hooks: d3d9.dll from the game folder"; the Co-op window and the HUD draw). Same average fps, steadier frames
+  (fewer long frames), but about 260 MB less free address space in the 32-bit game (693 vs 952 MB free, largest block 352
+  vs 686 MB). DXVK writes SporeApp_d3d9.log next to the exe.
+
+## The memory box and the restart (2026-11-16, feat/lineages-47)
+<a id="testing-memory-box"></a>
+
+* `coop.memrefresh show <percent left>` puts the box up as at that much left (the bar and its colour follow; `off` the
+  real measure again); `coop.memrefresh continue` / `ignore` press its buttons without the mouse; `status` shows the
+  level, the restart's steps (out / resume) and a guest's rejoins.
+* A real low address space: `coop.diag reserve <MB>` (a planted leak, never freed) or `coop.diag fill <left MB>`.
+* The restart on TITAN's QA copy keeps the instance and profile (the same command line): a guest is back in the
+  session in about 10 s, a host loads its planet again and hosts 30 s after the click. The new game's log starts with
+  `mem: started again after a memory restart`.
+* The QA copy runs the unstripped coop.dll: its image takes about 96 MB of the address space (`coop.memcensus`:
+  image:coop); the release's stripped one about 7 MB. Memory numbers from the QA copy are that much lower.
+
+* Space play test on TITAN (2026-11-16, 61-dev + BUG-9240/9231/9241, scratchpad script, about 6 min): host instance 9
+  DuoQAJiffSpace `coop.load Game0 "Jiff Peanutbutter.spo"` (the save name has a space: quote it, `.spo` included),
+  `coop.host`, guest 8 DuoQAStageGuest joins (in Space after about 60 s). Then the coop_space.py steps by hand:
+  `coop.fleet spawn 2` on the host, the ship mirrored on the guest (`coop.fleet list`), `coop.fleet shoot <id> 5` from
+  the guest (50 -> 48 hp, host hits_in=1), `coop.fleet hurt <id> 1` (guest damage_in=1); `coop.leave` and join again:
+  back in 6 s, each side's puppet of the other back within 20 s. All PASS, no crash.
+* The QA copy's Dorger.spo (Game7, the owner's world copy) loads with the host at 0 food / low health: it starves or is
+  killed within a minute, and while the host is on its death screen every host NPC freezes (the guest's proxies stand
+  still). Click the check mark (1243, 920 at 1280 x 960) before testing NPC behaviour there.
+
+## A pack per player: test commands and tools (2026-11-17, feat/lineages-47)
+<a id="testing-pack-per-player"></a>
+
+* Host: `coop.gpack` (parties, members, the guest's own Pack panel counters on a guest), `coop.gpack summon|recruit
+  <player> ...`, `coop.gpack order <player> <npc id>` (the partner's forwarded attack order), `coop.gpack hostorder <npc
+  id>` (the host's own), `coop.gpack watch <npc id>` (every hit on it logged with its attacker), `coop.gpack ctx 0|1`
+  (members update outside / inside their party), `coop.gpack follow 0|1` (the follow stimulus by hand), `coop.gpack
+  callers start|stop` (who asks for the pack manager), `coop.drama summon|endsummon`.
+* Code without Ghidra: the decrypted Steam code dumped from a running QA game with ReadProcessMemory (0x401000 to
+  0x1340000) and searched offline for rel32 call sites and immediates, disassembled with llvm-objdump (2026-11-17,
+  scratchpad scripts dumptext.py, xrefs.py, imm.py, dis2.sh); much faster than `mem.read` per call.
+* Pitfalls: every `mod.reload coop` forgets the parties; their members keep the pack bit (cleared within 5 s since,
+  orphans) and a running summon is no longer tracked (ended 60 s past its time since). The join sends the world twice
+  (about 20 s apart): wait for the second before testing. `coop.npc spawn` creatures are never saved.
+
+## A partner's own game runs its pack: how it was tested (2026-11-17, feat/lineages-47)
+<a id="testing-pack-own-game"></a>
+
+* `py tools/qa_win/pack_own_game.py <partner: 8|msi> <player id> [victim species] [recruits]`: recruits herbivores into
+  the partner's pack (as its recruit), checks that the partner's game runs them (`own game (5EA)` line in `coop.gpack`:
+  lends, sent on the partner; got, driven on the host), gives the partner's own attack order (`coop.gpack hostorder
+  <id>` on the partner: its creature's SetTarget and Creature_PlayerCommand at the proxy) and follows the victim's
+  health on the host. The hits are in the host's log as `guest N hit npc <id>` (the watch line does not see them: they
+  land through apply_damage) and in the partner's as `proxy <id> hit here: attacker <member>`.
+* Results (TITAN host, TITAN partner and the MSI as a second partner): the target killed in 6-9 s (7-9 bites by the 2
+  recruits) for each partner; the same order with the switch off on both games: 0 bites in 30 s, then on again: dead in
+  6 s; a host creature hitting the partner (`coop.npc hurt <player> <id> 2`): killed by its pack in 6 s with no order;
+  follow after a 35 m walk: members at 6-7 m; a summoned flock of 4 runs on the partner's PC too (8 members driven
+  for 2 partners) and fights; the MSI left: its members let go, the other partner's untouched; 0 jumps on the host.
+* Pitfall: `coop.npc list` on the host gives each creature's id as `#N`; take the id of the creature just spawned by its
+  pointer, not the last line of its species (an old adult far away took the order once).
+* Pitfall: the MSI restore's version check proves nothing for a dev build (the same version string): compare the hashes.
+
+## The party's Summon Flock lock: how it was tested (2026-11-17, feat/lineages-47)
+<a id="testing-summon-lock"></a>
+
+* `coop.gpack` shows `summon lock (5FA): locked out limit owner blocked refused tx rx` on every game; `coop.gpack
+  baruse 33` presses the avatar's Summon Flock the way a key or a click does (the hook runs); `coop.gpack summonlimit
+  <n>` sets the party's limit on the host; `coop.gpack summon <player>` starts a partner's flock directly.
+* The feed lines are in each game's log (`Summon Flock: ...`).
+* Pitfall: Summon Flock is not unlocked in Samuth.spo (status 10): start the flock with `coop.gpack summon`, then press.

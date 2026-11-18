@@ -17,12 +17,19 @@
 
 namespace upd {
 
+inline constexpr const wchar_t* kSymbolFiles[] = {
+    L"gog2016_922af7c7.sym", L"march2017_dc04aee5.sym", L"overrides_922af7c7.sym",
+    L"overrides_dc04aee5.sym", L"gog2024_dc04aee5.sym" // also recognize the legacy filename
+};
+
 // the GitHub API answer for the newest release (override for tests: [update] url in coop.ini)
-constexpr const char* kLatestUrl = "https://api.github.com/repos/WoodyWizard/SporeCoop/releases/latest";
+constexpr const char* kLatestUrl = ""; // private Duo builds use the adjacent release pack
+constexpr const char* kLineagesPreviewUrl = "https://api.github.com/repos/PandizeLive/SporeCoop-Lineages/releases?per_page=20";
 
 using Progress = std::function<void(uint64_t got, uint64_t total)>;
+inline constexpr uint32_t kMaxDownload = 96u << 20;
 bool http_get(const std::string& url, std::vector<uint8_t>& out, std::string& err, const Progress& progress = {},
-              uint32_t max_bytes = 96u << 20);
+              uint32_t max_bytes = kMaxDownload);
 
 // http_get and http_location retry transient failures (BUG-0755: HTTP 5xx, 429, a dropped or timed
 // out connection, a broken-off body) up to 3 attempts, 1 s and 3 s apart; err then names the last
@@ -72,8 +79,7 @@ bool inspect_loader(const std::wstring& dll, bool& loader);
 
 // BUG-0851: the symbol files a release installs (data/symbols/*.sym; tools/tests/tools_selftest.py
 // `symlist` keeps the list complete): the uninstall deletes these and no other *.sym
-constexpr const char* kSymbolFiles[] = {"gog2016_922af7c7.sym", "march2017_dc04aee5.sym", "overrides_922af7c7.sym",
-                                        "overrides_dc04aee5.sym"};
+// (the list is kSymbolFiles above: wide names, with the legacy gog2024 file)
 
 // BUG-0851: the update lock of a game folder without waiting, for the uninstall. false = another
 // update holds it (nothing may change); true = go on, *held (may be null: no lock with update.lock

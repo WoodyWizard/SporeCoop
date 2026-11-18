@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdlib>
 #include <mutex>
 
@@ -17,7 +18,7 @@ static SkMod* M;
 static std::string g_version, g_url;
 static bool g_enabled;
 
-enum State { Idle, Checking, UpToDate, Available, Downloading, Ready, Failed };
+enum State { Idle, Checking, UpToDate, Available, Downloading, Ready, Failed, CheckFailed };
 static std::mutex g_mu;
 static State g_state = Idle;
 static upd::Release g_rel;
@@ -198,10 +199,10 @@ void init(const SkHost* host, SkMod* mod, const char* version)
     M = mod;
     upd::g_log = log_retry;
     g_version = version;
-    g_enabled = H->config_int(M, "update", "check", 1) != 0;
     char b[512];
-    H->config_str(M, "update", "url", upd::kLatestUrl, b, sizeof b);
+    H->config_str(M, "update", "url", upd::kLineagesPreviewUrl, b, sizeof b);
     g_url = b;
+    g_enabled = !g_url.empty() && H->config_int(M, "update", "check", g_url != upd::kLineagesPreviewUrl) != 0;
     upd::cleanup_old(game_root()); // the files an update replaced last time
     if (g_enabled && !g_busy.exchange(true))
         if (!start_thread(check_thread))
@@ -241,12 +242,26 @@ void tick()
     }
 }
 
+// A short name for a version on one line of the co-op window: "0.7.8-lineages48-dev" -> "Lineages 48"
+// (the full version made the update line wrap: "SporeCoop 0.7.8-lineages48-dev is available (you have
+// 0.7.8-lineages47-dev)"); other versions keep their number: "SporeCoop 0.7.9".
+static std::string short_name(const std::string& v)
+{
+    const auto at = v.find("lineages");
+    if (at != std::string::npos) {
+        size_t end = at + 8;
+        while (end < v.size() && isdigit((unsigned char)v[end])) ++end;
+        if (end > at + 8) return "Lineages " + v.substr(at + 8, end - at - 8);
+    }
+    return "SporeCoop " + v;
+}
+
 // the co-op window's line while downloading (g_mu held)
 static std::string download_line()
 {
     uint32_t got = g_got, total = g_total;
-    return "Downloading SporeCoop " + g_rel.version + "... " +
-           (total ? std::to_string(got * 100ull / total) + " %" : std::to_string(got / 1024) + " KB");
+    return "Downloading " + short_name(g_rel.version) + "... " +
+           (total ? std::to_string(got * 100ull / total) + "%" : std::to_string(got / 1024) + " KB");
 }
 
 bool ui(std::string& line, std::string& button)
@@ -254,18 +269,34 @@ bool ui(std::string& line, std::string& button)
     std::lock_guard<std::mutex> l(g_mu);
     switch (g_state) {
     case Available:
-        line = "SporeCoop " + g_rel.version + " is available (you have " + g_version + ")";
+        line = short_name(g_rel.version) + " is available";
         button = "Update";
         return true;
     case Downloading:
         line = download_line();
         return true;
     case Ready:
-        line = "SporeCoop " + g_rel.version + " is installed: restart Spore to use it";
+        line = short_name(g_rel.version) + " installed: restart Spore";
         return true;
-    case Failed:
-        line = "Update failed: " + g_err;
-        button = "Try again";
+    case Failed: {
+        std::string why = g_err.size() > 40 ? g_err.substr(0, 37) + "..." : g_err; // the log has it whole
+        line = "Update failed: " + why;
+        button = "Try Again";
+        return true;
+    }
+    case Checking:
+        line = "Checking for updates...";
+        return true;
+    case CheckFailed:
+        line = "Could not check for updates. Try again.";
+        button = "Check for Updates";
+        return true;
+    case Idle:
+    case UpToDate:
+        if (g_url.empty()) return false;
+        if (g_state == UpToDate)
+            line = "Lineages is up to date";
+        button = "Check for Updates";
         return true;
     default:
         return false;
@@ -274,14 +305,17 @@ bool ui(std::string& line, std::string& button)
 
 void start_update()
 {
+    bool check = false;
     {
         std::lock_guard<std::mutex> l(g_mu);
-        if (g_state != Available && g_state != Failed)
+        check = g_state == Idle || g_state == UpToDate || g_state == CheckFailed;
+        if (check ? g_url.empty() : g_state != Available && g_state != Failed) {
             return;
+        }
         g_told_failed = false;
     }
     if (!g_busy.exchange(true))
-        if (!start_thread(apply_thread))
+        if (!start_thread(check ? check_thread : apply_thread))
             g_busy = false;
 }
 
@@ -307,7 +341,13 @@ std::string command(const std::string& arg, const std::string& val)
         start_update();
         return "updating";
     }
-    static const char* names[] = {"idle", "checking", "up to date", "available", "downloading", "ready", "failed"};
+    if (arg == "fake" && !val.empty()) { // tests (the co-op window's look): pretend this version is out
+        std::lock_guard<std::mutex> l(g_mu);
+        g_rel.version = val;
+        g_state = Available;
+        return "pretending " + g_rel.version + " is available (nothing is downloaded until Update)";
+    }
+    static const char* names[] = {"idle", "checking", "up to date", "available", "downloading", "ready", "failed", "check failed"};
     std::lock_guard<std::mutex> l(g_mu);
     return std::string("update: ") + names[g_state] + " running=" + g_version + " latest=" + g_rel.version +
            (g_rel.from_web ? " via=page" : "") +

@@ -1,6 +1,8 @@
 // Support diagnostics: FPS and hitches, the address space, network quality, session settings and
 // the session summary (diag_coop.h, docs/REPORTING.md#reporting-support-answers).
 #include "diag_coop.h"
+#include "mem_refresh.h"
+#include "net/traffic.h"
 
 #include <windows.h>
 
@@ -150,6 +152,16 @@ static void mem_start()
     }
     g_mem_thread = CreateThread(nullptr, 0, mem_walk, nullptr, 0, nullptr);
 }
+
+bool mem_now(int& free_mb, int& block_mb, int& total_mb, int& kept_mb)
+{
+    free_mb = g_mem_free_mb;
+    block_mb = g_mem_block_mb;
+    total_mb = g_mem_total_mb;
+    kept_mb = g_reserve ? (int)kReserveMB : 0;
+    return free_mb >= 0 && total_mb > 0;
+}
+void mem_walk_soon() { mem_start(); }
 
 // ---------------- network quality per peer ----------------
 struct PeerNet {
@@ -380,6 +392,11 @@ COOP_FIX("core.rtss_note", "BUG-0782", g_fix_rtss_note, "core: when RivaTuner / 
 static bool g_fix_uncapped_note = true;
 COOP_FIX("core.uncapped_note", "BUG-0779", g_fix_uncapped_note, "core: when the game runs without Spore's frame cap for a minute, the player is told (once per start) that another program lifted it and how to stop the tearing");
 static bool g_rtss_told = false, g_uncapped_told = false;
+// BUG-9242 (owner 2026-11-16: "I have my FPS set to 120, why is it saying this?"): a frame cap the player set (Spore's
+// kFrameLimitMS 1-9 ms, e.g. 7 ms = about 143 fps by a framerate tool) is no lifted cap: only the log names it. The note
+// stays for no cap at all (0 ms). Off (`coop.fix core.set_cap_quiet off`): the note for any limit under 10 ms.
+static bool g_fix_set_cap_quiet = true;
+COOP_FIX("core.set_cap_quiet", "BUG-9242", g_fix_set_cap_quiet, "core: no frame-cap note when the player set a cap of their own (e.g. 7 ms, about 143 fps); only when there is no cap at all");
 static uint32_t g_env_notes = 0; // notes shown (tests)
 
 static const wchar_t* rtss_dll()
@@ -426,6 +443,10 @@ static void env_minute(int avg_fps)
     if (ms < 0 || ms >= 10 || avg_fps < 50)
         return; // capped (the game's own 16 ms, a limit another program set) or not fast anyway
     g_uncapped_told = true;
+    if (g_fix_set_cap_quiet && ms > 0) {
+        SLOG("env: a frame cap of %d ms (about %d fps) set by the player or a tool: no note (BUG-9242)", ms, 1000 / ms);
+        return;
+    }
     SWARN("env: the game runs without Spore's frame limit: %d fps, kFrameLimitMS %d ms (Spore's own 16); a mod or "
           "program lifted it; with vsync off the picture tears (docs/INSTALL.md#install-tearing) (BUG-0779)",
           avg_fps, ms);
@@ -486,11 +507,19 @@ void stats_tick(double now)
                      "free, largest free block %d MB | %s",
                      avg, fps, (int)(g_frame_max * 1000), g_hitches_min, fr, (int)g_mem_total_mb, bl,
                      g_P.activity ? g_P.activity().c_str() : "?");
+            // 4P step 1: the minute's traffic by message type (out to every partner, in from them)
+            if (g_detail >= 1) {
+                const std::string o = net::traffic_text(net::g_traffic_out, 8), i = net::traffic_text(net::g_traffic_in, 6);
+                if (o != "0.0 KB:" || i != "0.0 KB:")
+                    SLOG("net: traffic this minute by message type: out %s | in %s", o.c_str(), i.c_str());
+                net::g_traffic_out.clear();
+                net::g_traffic_in.clear();
+            }
             // a 32-bit game: the largest block is what a big allocation (a planet, an editor) needs
             if (fr >= 0 && (fr < 300 || bl < 48) && g_fix_mem_reserve) {
                 if (g_reserve)
                     reserve_give("the address space runs low");
-                if (now - g_reserve_told > 600 && g_P.feed) { // every 10 minutes while it stays low
+                if (now - g_reserve_told > 600 && g_P.feed && !mem_refresh::enabled()) { // (4S: the memory box instead)
                     g_reserve_told = now;
                     g_P.feed("Your game is running out of memory: save and restart it soon (Spore is a 32-bit game "
                              "and keeps what it loads until it is closed)");

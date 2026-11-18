@@ -212,3 +212,13 @@ that never applies) or when CHANGELOG.md has no `## [X.Y.Z]` section, and writes
 section as the release notes (not the X.Y.Z.N sections after it) (BUG-0097). Before a release
 also check README (Compatibility, footnotes) and INSTALL, which name no patch versions any more
 (BUG-0165).
+
+## Lineages releases on Windows: the ticket stamp (2026-11-17, feat/lineages-47)
+<a id="pipeline-lineages-ticket-stamp"></a>
+
+* `tools/tickets.py release <version>` refuses while any fixed ticket lists no commits (BUG-9115 and BUG-9116 do), and
+  `--force` then stamps every ticket whose `fixed_in` is "unreleased" (65 at 64-dev, most of them fixed long before in
+  other lines). For a Lineages build, stamp only that build's own tickets (`fixed_in: <version>` and a "released in"
+  history line by hand), as 63-dev and 64-dev did, then `tools/tickets.py index`.
+* `tools/release_check.sh` calls `python3`, which this PC does not have: run its last step as
+  `py tools/tickets.py notes-check <version> <notes.md>`.

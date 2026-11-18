@@ -14,14 +14,13 @@ commits: 43ef1445 9681b9d3
 tests: cell_parts (tools/tests/coop_cell_parts.py)
 signature:
 docs: docs/re/cell.md#cell-parts-shared
-related: BUG-0401, BUG-0316
+related: BUG-0401, BUG-0316, BUG-0446
 switch: parts.shared_cell
 ---
 
 ## Report
 Host's mark (s 433, 17:31): 'My guest just took a new piece in cell stage but i dont get it unlocked.' parts.shared (BUG-0401) covers Creature only; Cell part tokens are per game (BUG-0316). Class G4.
-Target: 0.7.4.
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Target: 0.7.4. Owner request (2026-11-10): parts either player unlocked, also before the session, are everyone's.
 
 ## Root cause
 Observed (objdump GOG 2024, lab 20261103-142941 with the fix off): the Cell stage's collected parts are 13
@@ -50,3 +49,6 @@ host part 1 -> guest state 2).
 - 2026-11-02: opened.
 - 2026-11-03: fix/w40-editor: the party shares its Cell parts (parts.shared_cell); fixed (unreleased).
 - 2026-11-03: released in 0.7.4.
+- 2026-11-10: fixed again on feat/lineages-45 (parts.cell_shared, Cell slots in the parts.shared union).
+- 2026-11-10: 0.7.8 merge into Lineages: the Lineages duplicate (parts.cell_shared, feat/lineages-45) was
+  dropped; upstream's parts.shared_cell (fixed in 0.7.4) is kept.

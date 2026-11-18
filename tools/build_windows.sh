@@ -14,18 +14,33 @@ LDDLL="-shared -static -Wl,--kill-at -Wl,--enable-stdcall-fixup"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 what="${1:-all}"
 
-# compile <c|cpp> <src...>: objects into build/obj, in parallel, only when the source is newer
+# stale <obj> <src>: the object must be built again. Since 2026-11-12 (roadmap 0a) the compiler writes the headers
+# each object includes (-MMD -MP: build/obj/<src>.d); a header newer than the object rebuilds it too. Before, only the
+# source's own date counted: a changed header (a struct layout) left other objects on the old layout and both test
+# guests faulted (BUG-9098 notes). No depfile, or one older than its object (written by another build): built again
+# once. The compiler writes CRLF line ends here; they are stripped before the header names are read.
+stale() {
+  local obj=$1 src=$2 dep="${1%.o}.d" w
+  [[ -n "${FORCE:-}" || ! -f "$obj" || ! -f "$dep" || "$src" -nt "$obj" || "$obj" -nt "$dep" ]] && return 0
+  for w in $(sed -e 's/\r$//' -e 's/\\$//' -e 's/^[^:]*://' "$dep"); do
+    [[ -e "$w" && "$w" -nt "$obj" ]] && return 0
+  done
+  return 1
+}
+
+# compile <c|cpp> <src...>: objects into build/obj, in parallel, only when the source or a header it includes is newer
 compile() {
   local lang=$1; shift
   local pids=() src obj
   for src in "$@"; do
     obj="$B/obj/${src%.*}.o"
     mkdir -p "$(dirname "$obj")"
-    if [[ -f "$obj" && "$obj" -nt "$src" && -z "${FORCE:-}" ]]; then continue; fi
+    if ! stale "$obj" "$src"; then continue; fi
+    # the depfile is touched after the object, so "object newer than its depfile" always means another build wrote it
     if [[ $lang == c ]]; then
-      "$CC" $COMMON -Ithird_party/minhook/include -c "$src" -o "$obj" &
+      ( "$CC" $COMMON -MMD -MP -Ithird_party/minhook/include -c "$src" -o "$obj" && touch "${obj%.o}.d" ) &
     else
-      "$CXX" $COMMON -std=c++20 -Ithird_party/minhook/include -Isdk/include -c "$src" -o "$obj" &
+      ( "$CXX" $COMMON -MMD -MP -std=c++20 -Ithird_party/minhook/include -Isdk/include -c "$src" -o "$obj" && touch "${obj%.o}.d" ) &
     fi
     pids+=($!)
     if (( ${#pids[@]} >= JOBS )); then wait "${pids[0]}"; pids=("${pids[@]:1}"); fi
