@@ -9072,3 +9072,11 @@ each on rel: 12 of 12 PASS (20261118-033459, lanes 2-5); on v0.7.14.1: 10 of 12,
   the key until its creature sings; about half of the runs get no song in 20 s); the guest put 4 m from the host by
   `coop.abilities goto` can stand against the nest rocks and not move on W; the cell fixture has no weapon part, so
   `coop.pool kill -` (the game's Bite from 9-14 m) plays no attack animation on the attacker (+0x1B0 stays 0).
+* (second round) `coop.pool borrow jaw|spike graft` writes a carnivore mouth (part type 2) / a weapon (part type 7) into
+  the own model data, as `electric|poison` did (with the world's species on both games the partner's puppet then has
+  it too); `cell_attack_jaw|_spike|_mouth` arm both games and let each player in turn ram creatures (`coop.pool swimto`
+  without `tp`). `social_sing --own|--walk|--flock|--reverse` and `SPORE_FPS=10`: the guest on its own creation (the
+  players' default), walking next to the singer, the host's Summon Flock by, the guest singing; a song that never
+  starts within 40 s is INCONCLUSIVE. An older release can run these tests from a scratch worktree of its tag
+  (`git worktree add --detach ../SporeCoop-wt/tag/<name> vX`, `make`, the current `tools/` copied over it, test-only
+  console commands patched in and never committed; its lab results land in that worktree's out/lab).
