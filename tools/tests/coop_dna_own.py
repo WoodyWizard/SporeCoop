@@ -32,7 +32,8 @@ SetEvolutionPoints, as the editor's result):
           guest's price, and the guest's fell by its price only (not the host's too); both bars unchanged; key frames.
           FAIL: SPORE_FIX_OFF=creature.own_dna (the guest's price comes off the host's DNA, the host's off the guest's)
 
-  --case host_editor  BUG-1311: the guest spends 30 (its DNA 30 under the host's); the host evolves alone (`coop.vote
+  --case host_editor  BUG-1311: 60 DNA (under the brain's next level); the guest spends 30 (its DNA 30 under the
+          host's); the host evolves alone (`coop.vote
           evolve`: its editor opens at once, the guest ignores its Evolve now offer and plays on) and leaves its editor
           with done, no change: the guest's game never takes the host's DNA (no shared total applied in its log while
           the host leaves), its DNA stays its own (the host's - 30) and its evolution bar the party's (the host's).
@@ -294,7 +295,9 @@ def host_editor_case(host, guest, ck):
     from coop_editor_sync import DONE, back, cinematic, confirm_captions, editor_ui, in_editor, mode
     from harness import log_since, log_size
     m0 = mode(host)
-    h0, g0 = prepare(host, guest, ck)
+    # 60 DNA, not 150: a gain of 150 grows the brain, whose caption held input into the editor (its done ignored for
+    # minutes, lab 20261119-112341); evo_bar and editor_sync stay under it the same way
+    h0, g0 = prepare(host, guest, ck, need=60)
 
     def no_cinematic(secs):  # the brain level's caption (150 DNA) holds input: the editor's done would be ignored
         t0 = time.time()
