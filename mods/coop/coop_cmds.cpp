@@ -2069,7 +2069,18 @@ void register_commands_stages()
                                sc[0], sc[1], game::avatar() ? net::dist(p, game::position(game::avatar())) : -1.f);
                            return 0;
                        }
+                       if (argc > 2 && !strcmp(argv[1], "play")) { // play <hex> [<how>] [<player id>]
+                           int how = argc > 3 ? atoi(argv[3]) : 0;
+                           int pid = argc > 4 ? atoi(argv[4]) : -1;
+                           SAY("%s", cocoon::probe_play((uint32_t)strtoul(argv[2], nullptr, 16), how, pid).c_str());
+                           return 0;
+                       }
+                       if (argc > 1 && !strcmp(argv[1], "anim")) {
+                           SAY("%s", cocoon::anim_of(argc > 2 ? atoi(argv[2]) : -1).c_str());
+                           return 0;
+                       }
                        SAY("%s", cocoon::status(argc > 1 ? (uint8_t)atoi(argv[1]) : 0xFF).c_str());
+                       SAY("%s", guest_mating_status().c_str());
                        return 0;
                    },
                    nullptr, MT);
