@@ -188,7 +188,7 @@ def run(host, guest, ck, off_twin):
         return ck.result()
     if not got['back']:
         return ck.result()
-    new, d, result = got['new'], got['designs'], got['result']
+    new, result = got['new'], got['result']
     gk1, gm1, _, _ = profile(guest)
     ck(gk1 == hk0 and gm1 == gm0, f'the guest\'s tribe slot is still the host\'s species ({gk1 or 0:08X} model {gm1}, '
        f'before {gk0 or 0:08X} model {gm0}, the host\'s {hk0 or 0:08X})')
