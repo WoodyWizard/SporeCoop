@@ -376,6 +376,9 @@ bool dna_own_wallet(uint8_t id, net::Family fam);
 float dna_own_budget(uint8_t id);
 void dna_own_spend(uint8_t id, float d);
 float dna_total_for(uint8_t id, float host_total, dna_own::Tail& tail);
+bool dna_own_expect(uint8_t id, float& v);                        // BUG-1310: the lab's gates
+bool dna_own_expect_cell(uint8_t id, int host_spent, int& v);     // BUG-1310
+std::string dna_own_field();                                      // BUG-1310: the host's trace line field
 void own_dna_tick();
 std::string own_dna_status();
 

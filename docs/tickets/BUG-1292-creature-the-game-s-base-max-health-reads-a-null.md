@@ -38,14 +38,16 @@ creature_hp.cpp h_BaseMaxHp (and the coop.hp diagnostic): a creature without a s
 without species, herd and tuning for one vt 0x7C call, then put back).
 
 ## Verification
-- Unit: npc_tests test_max_hp_null_species PASS (a model of the native's branches: every species read through a null
-  species is answered by the guard; herd health, a tuning and a creature with a species still take the native);
-  npc_tests --nofix FAIL (4 checks: the model faults at 0xC0419D / 0xC04252).
-- Lab test max_hp_species (tools/tests/coop_max_hp_species.py, suite.py) written, NOT run yet (the lab waits for the
-  orchestrator's "lab ok"); SPORE_FIX_OFF=creature.max_hp_species is its FAIL twin (the fault). The natural trigger
-  (a join while the host is dead, then the death caption's OK) is not reproducible on demand: the unit model is the
-  proof until then.
+- Unit: npc_tests test_max_hp_null_species PASS; npc_tests --nofix FAIL (4 checks: the model faults at 0xC0419D /
+  0xC04252).
+- Lab (first 0.7.16 night run, rel/0.7.16 c7699dca, run dirs in the rel/0.7.16 worktree's out/lab/):
+  PASS max_hp_species, out/lab/20261119-104136 (`coop.hp nullspecies` on the guest: the guard answered, max 10.0; the
+  avatar has its species again and lives with 10/10).
+  FAIL twin (SPORE_FIX_OFF=creature.max_hp_species), out/lab/20261119-105127, for the right reason: the guest's game
+  crashed at SporeCoop::cCreatureAnimal_BaseMaxHitPoints+0xE2 (0x00C04252, data 0x56C), the fault of the report.
+  The natural trigger (a join while the host is dead, then the death caption's OK) is still not reproduced on demand.
 
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w56-general (WP-F1); found by the Lineages fork (PR #196), its BUG-9157.
+- 2026-11-19: lab verified (fix/w57-sync): PASS and FAIL twin (run dirs above).

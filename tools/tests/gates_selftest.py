@@ -190,6 +190,20 @@ def monitor_cases(tmp):
     check(got == {'totals'}, f'monitor: totals: food 40 on the host, 12 on the guest for a minute ({got})')
     got = scenario(tmp, 'dna', *clean_pair(host_own=dict(dna=120), guest_own=dict(dna=95)))
     check(got == {'totals'}, f'monitor: totals: dna 120 / 95 ({got})')
+    # BUG-1310: own DNA per player (WP-D): the host's line lists each own wallet (dna_own=<id>:<v>), the guest's DNA is
+    # compared with it and the bars (bar=, the party's) with each other; a guest it does not list plays the shared pool
+    def own_pair(host_tail, guest_dna, guest_tail):
+        h, g = clean_pair(host_own=dict(dna=150), guest_own=dict(dna=guest_dna))
+        return ([x + host_tail if 'trace: host' in x else x for x in h],
+                [x + guest_tail if 'trace: guest' in x else x for x in g])
+    for name, args, want in (('own_dna_ok', (' bar=150 dna_own=1:120', 120, ' bar=150'), set()),
+                             ('own_dna_wallet', (' bar=150 dna_own=1:120', 150, ' bar=150'), {'totals'}),
+                             ('own_dna_bar', (' bar=150 dna_own=1:120', 120, ' bar=180'), {'totals'}),
+                             ('own_dna_other_guest', (' bar=150 dna_own=2:120', 120, ' bar=150'), {'totals'}),
+                             ('own_dna_shared', (' bar=150', 120, ' bar=150'), {'totals'}),
+                             ('own_dna_two', (' bar=150 dna_own=2:90,1:120', 120, ' bar=150'), set())):
+        got = scenario(tmp, name, *own_pair(*args))
+        check(got == want, f'monitor: totals: {name} ({got})')
     got = scenario(tmp, 'totals_ok', *clean_pair(host_own=dict(res='food=40'), guest_own=dict(res='food=40(unsynced)')))
     check(not got, f'monitor: totals: an unsynced value is not compared ({got})')
     got = scenario(tmp, 'hp', *clean_pair(guest_own=dict(hp=3), host_sees=dict(hp=10)))

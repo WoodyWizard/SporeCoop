@@ -785,3 +785,15 @@ else of it counts (the rejoin token too); guest: a fork host's WELCOME makes the
 is delivered (`leave_pending_`). Switch `coop.fix net.refuse_fork` (off: the fork joins as in 0.7.15). Test
 `net_tests --only test_fork_refused` (the fork's HELLO and WELCOME built field by field from its net/protocol.h; FAILS
 with `--off refuse_fork`). Our future caps bits should skip 16..128 or a fork peer would read them as its own.
+
+## The guest's view of the host's family revisions (2026-11-19, fix/w57-sync)
+<a id="netcode-host-families"></a>
+
+BUG-1282 / BUG-1283. `Session::peer_families(id, ...)` answers only on the host (an accepted guest's HELLO list); on a
+guest it is always false. The guest-side gates that ask "does my host's build do X" (net/compat.h
+`host_relays_world_events`, npc 1.2 = 0.7.16: the host relays its drama events, sends NF_ALPHA) used it with id 0, so a
+guest of a 0.7.16 host never took the host's meteors / rain or alpha bits (lab run 20261119-104136: drama_shared,
+npc_alpha "host_sends=0"). `Session::host_families(has, out)` is the guest's question: the host's WELCOME list (`has`
+false for a host before 0.7.15), false on the host and before the WELCOME. Test `net_tests --only test_host_families`
+(a 0.7.16 host passes the npc 1.2 gate, an npc 1.1 host and one without revisions do not; peer_families(0) on the guest
+stays false). New guest-side gates use host_families, never peer_families(0).

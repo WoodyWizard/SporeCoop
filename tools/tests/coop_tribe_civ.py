@@ -25,8 +25,9 @@ check, the caption of TRG2CVG_PreEditor, the guest's "I'm ready". Checked:
     SPORE_FIX_OFF=tribe.graduation_save fails: the join's share save faults in the game's serializer at 0xBCAB07
     (data 0x60C; the fork saw the same address) and writes part of the slot (lab 20261112-021437).
 
-  --aggressive (BUG-1280, found by the Lineages fork, its BUG-9060): before the advance the host's consequence archetype
-    (cPlayer +0x1104) is set to tribe_aggressive (0x0CAC124D, `coop.vote tribeend 0CAC124D`), so the game opens its
+  --aggressive (BUG-1280, found by the Lineages fork, its BUG-9060): before the advance and again back from the City
+    Hall editor (the stage card writes the trait in between) the host's consequence archetype (cPlayer +0x1104) is set
+    to tribe_aggressive (0x0CAC124D, `coop.vote tribeend 0CAC124D`), so the game opens its
     third vehicle editor 7D433FAD after the City Hall editor. Checked in that editor: the game's request is 7D433FAD
     and the mod's end-of-Tribe guard knows it (`coop.vote tribeend`: end_editor=1). SPORE_FIX_OFF=
     tribe.graduation_vehicle_id fails (end_editor=0: the list had a misread 7CB21BAD).
@@ -279,6 +280,13 @@ def main():
                 t_cityhall = max(time.time(), newest_write(pf) + 0.5)
                 print(f'  back from the City Hall editor; the host\'s slot last written {t_cityhall - newest_write(pf):.0f} s '
                       'ago', flush=True)
+                if aggressive:
+                    # the stage card (the History screen) writes the tribe's consequence trait into cPlayer +0x1104
+                    # after the advance (lab run 20261119-104136: 0CAC124D set before it, C2CA9495 in the vehicle
+                    # editor); set again here, before TRG2CVG_ShowCityHall's end submits the vehicle editor by it
+                    print('  host (back from the City Hall editor): ' + host.call('coop.vote tribeend')['out'].strip(),
+                          flush=True)
+                    print('  host: ' + host.call('coop.vote tribeend 0CAC124D')['out'].strip(), flush=True)
                 if rejoin:
                     rejoin_in_end(host, guest, ck)
                 end_of_tribe(host, guest, ck)

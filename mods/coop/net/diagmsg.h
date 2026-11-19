@@ -137,8 +137,15 @@ inline uint32_t parse_key(const std::string& s)
 }
 inline std::string key_text(uint32_t k) { return std::string(1, key_kind(k)) + std::to_string(key_num(k)); }
 
-enum Total : uint8_t { kTotalDna = 1, kTotalCellFood = 2 };
-inline const char* total_name(uint8_t id) { return id == kTotalDna ? "dna" : id == kTotalCellFood ? "cell food" : "total"; }
+// BUG-1310: kTotalBar (the evolution bar, cPlayer +0x10F0) is sent by every 0.7.16 game in Creature and compared by
+// the host only for a guest with its own DNA (WP-D: the bar stays the party's); kTotalDnaOwn never goes on the wire:
+// the host renames a guest's kTotalDna to it when it compares that guest with the host's record of its own wallet (an
+// older peer's compare only looks at the ids both digests have)
+enum Total : uint8_t { kTotalDna = 1, kTotalCellFood = 2, kTotalBar = 3, kTotalDnaOwn = 4 };
+inline const char* total_name(uint8_t id)
+{
+    return id == kTotalDna ? "dna" : id == kTotalCellFood ? "cell food" : id == kTotalBar ? "bar" : id == kTotalDnaOwn ? "own dna" : "total";
+}
 
 struct Digest {
     uint32_t seq = 0;
@@ -347,6 +354,27 @@ struct Late {
     const std::vector<std::pair<uint8_t, float>>* fresh = nullptr;
     const std::set<uint32_t>* steady = nullptr;
 };
+
+// BUG-1310 (host): a guest with its own wallet: the host's DNA in its digest becomes the wallet `own`, the guest's
+// kTotalDna is that wallet's to compare (kTotalDnaOwn on both); without one the bar is not compared (the shared pool
+// as before: an older guest's bar is not the party's)
+inline void own_dna_view(Digest& host, Digest& guest, bool has_own, float own)
+{
+    for (size_t i = 0; i < host.totals.size();) {
+        auto& t = host.totals[i];
+        if (has_own && t.first == kTotalDna)
+            t = {kTotalDnaOwn, own};
+        if (!has_own && t.first == kTotalBar) {
+            host.totals.erase(host.totals.begin() + (long)i);
+            continue;
+        }
+        i++;
+    }
+    if (has_own)
+        for (auto& t : guest.totals)
+            if (t.first == kTotalDna)
+                t.first = kTotalDnaOwn;
+}
 
 // host: its own digest against a guest's. `recent` (optional): totals the host had in the seconds
 // before it asked (BUG-0379): a guest shows a shared total a moment after the host counted it (the
