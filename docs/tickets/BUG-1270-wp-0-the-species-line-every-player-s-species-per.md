@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/w54-line, feat/w54-shims
-commits: c6a3ec33 48b7b4d3 a2daaa0e 696d51e2 48dd3e02
+commits: c6a3ec33 48b7b4d3 a2daaa0e 696d51e2 48dd3e02 fc2cc5e3
 tests: species_line, unit-cpp species_tests
 signature:
 docs: docs/01-architecture.md#arch-species-line, docs/06-testing.md#testing-species-line
@@ -39,8 +39,13 @@ Unit: tests/species_tests.cpp (make test, unit-cpp) passes. Lab: `species_line` 
 run (to be filled in with the PASS / FAIL run dirs).
 - no-fail-run: lab runs stopped by the owner (2026-11-18) until the night run; `species_line` (PASS expected) and
   `SPORE_FIX_OFF=species.line` (FAIL expected) are queued for it.
+* Lab (fix/w57-savestrip, lane 4): `species_line` PASS lab 20261119-112418 and 20261119-123654 (merged tree) (step 4 with `coop.settings force
+  creature.mode`: the night run's FAIL in 20261119-095414 was the test's `set`, refused since creature.mode is a session
+  setting); FAIL twin `SPORE_FIX_OFF=species.line` lab 20261119-120449 (no line on the host from step 1). BUG-1315 adds
+  to this package: `species::is_line_key` remembers every key a line had in this process, `set_world_species`.
 
 ## History
 - 2026-11-18: opened.
 - 2026-11-18: feat/w54-line: API, core, unit tests, message, store, console, lab test written (lab not run).
 - 2026-11-18: feat/w54-shims: Cell keys of the line also take a premade cell every game has (not the host's: creations::player_orig), unit tests in species_tests (creation_counts); line_pack reads the owner's own My Creations first; the four packages read the line (docs/01-architecture.md#arch-species-line-packages); creations 1.1 lock rebased (no wire change).
+- 2026-11-19: fix/w57-savestrip: test step 4 uses `coop.settings force`; the save filter's species side (BUG-1315).

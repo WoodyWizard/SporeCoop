@@ -2323,6 +2323,7 @@ void support_init()
         return std::isfinite(v);
     };
     p.cell_food = [](int& v) { return g_mode == modes::kCell && cellsync::food_total(v); };
+    p.cell_sent = [](uint8_t id) { return g_mode == modes::kCell ? cellsync::sent_cap(id) : (size_t)0; };
     p.cell_scale = [] { return g_mode == modes::kCell ? cellsync::scale_now() : 0.f; };
     p.over_ground = [](const net::Vec3& v) { // BUG-1216: the planet stages only
         if (g_mode != modes::kCreature && g_mode != modes::kTribe && g_mode != modes::kCiv)

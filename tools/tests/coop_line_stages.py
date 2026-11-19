@@ -270,8 +270,39 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
     hc = civ(host)[0]
     if not any(not c['player'] for c in hc.values()):
         camp.kick_civ({'n': 0})  # the campaign's shortcut: the cities still to come appear (SpawnNextCity)
-        time.sleep(5)
-        hc = civ(host)[0]
+        # (the campaign's SpawnNextCity(ex, 0, 0) only starts the game's own founding: lab 20261119-095414 and
+        # 20261119-114816 had no new city 5 s / 61 s after "9 cities appeared", line_stages_outfit found 9 later. After
+        # 30 s without one the test founds them at once, SpawnNextCity(ex, 1, 0) as civ_city_burst does: the guest's
+        # game gets them through the host's city catch-up, BUG-0380)
+        # (lab 20261119-123654: the host stayed in a cinematic for 2 min after the founding, `busy=cinematic,input_lock,
+        # paused`: the game paused, no city appeared; the test ends it as a player's Enter, else EndCinematic)
+        t0, instant, ended = time.time(), 0, 0
+        while True:
+            time.sleep(2)
+            if 'movie=1' in (host.call('coop.status')['out'] or ''):  # (a cinematic plays: the campaign's sign)
+                host.call('key enter')
+                ended += 1
+                if ended % 3 == 0:
+                    m = re.search(r'eax=(0x[0-9A-Fa-f]+)', host.call('call Simulator::cCinematicManager::Get cdecl')['out']
+                                  or '')
+                    if m:
+                        host.call(f'call SporeCoop::cCinematicManager_EndCinematic thiscall {m.group(1)}')
+            hc = civ(host)[0]
+            if any(not c['player'] for c in hc.values()) or time.time() - t0 > 90:
+                break
+            if time.time() - t0 > 30 and not instant:
+                m = re.search(r'eax=(0x[0-9A-Fa-f]+)', host.call('call Simulator::cCivExpansion::Get cdecl')['out'] or '')
+                for _ in range(4 if m else 0):
+                    r = re.search(r'eax=0x([0-9A-Fa-f]+)',
+                                  host.call(f'call Simulator::cCivExpansion::SpawnNextCity thiscall {m.group(1)} 1 0')['out']
+                                  or '')
+                    if not r or int(r.group(1), 16) & 0xFF == 0:
+                        break
+                    instant += 1
+                    host.call('wait.frames 30 10000')
+        print(f'  civ: cities after the shortcut ({time.time() - t0:.0f} s, {instant} founded at once, {ended} cinematic '
+              f'ends): {sorted(hc)}',
+              flush=True)
     cap = [k for k, c in hc.items() if c['player']]
     npc = [k for k, c in hc.items() if not c['player']]
     if not ck(cap and npc, f'civ: the players\' capital {cap} and NPC cities {npc}'):

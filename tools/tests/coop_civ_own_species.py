@@ -188,6 +188,9 @@ def main():
     time.sleep(2)
     found = keys_in_save(lane.HOST_DIR, g)
     print(f'  host save: records naming {g:08X}: {found}', flush=True)
+    for ln in (host.call('coop.civ citizens')['out'] or '').splitlines()[:1] + \
+            [x for x in (host.call('coop.savestrip')['out'] or '').splitlines() if 'keys=' in x]:
+        print(f'  host: {ln.strip()}', flush=True)  # (the citizens' strip and the save's key filter, BUG-1315)
     ck(found != ['no save'] and not found, f'the host\'s save names no key of the guest\'s species ({found or "none"}, '
                                            f'saved {time.time() - t_save:.0f} s ago)')
 

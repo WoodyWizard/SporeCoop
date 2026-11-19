@@ -23,7 +23,10 @@
 #include <vector>
 
 #include "fixes.h"
+#include "game.h"
 #include "lifecycle.h"
+#include "modes.h"
+#include "savestrip.h"
 #include "net/protocol.h"
 #include "net/validate.h"
 #include "player_life.h"
@@ -205,11 +208,17 @@ std::vector<uint8_t> players()
             v.push_back(pid);
     return v;
 }
+// every key that was a line's on this game in this process (BUG-1315: a herd or a member of a player who left, an outfit
+// changed: the save still must not name it); shared instances, never a key of the host's own
+static std::set<std::pair<uint32_t, uint32_t>> g_was; // {instance, group}
+
 bool is_line_key(const Key& k)
 {
     if (!k.instance)
         return false;
     if (is_shared(k.instance) && g_reg.count(k.instance))
+        return true;
+    if (g_was.count({k.instance, k.group}))
         return true;
     for (auto& [pid, r] : g_res) {
         for (auto& x : r.k)
@@ -220,6 +229,41 @@ bool is_line_key(const Key& k)
                 return true;
     }
     return false;
+}
+
+// ---- BUG-1315: the save's key filter ----
+static WorldFn g_world[(int)Stage::Count];
+bool set_world_species(Stage s, WorldFn fn)
+{
+    if ((int)s < (int)Stage::Count)
+        g_world[(int)s] = fn;
+    return true;
+}
+constexpr uint32_t kCreatureType = 0x2B978C46u;
+static uint32_t g_save_rekeyed, g_save_unmapped;
+// a creature key of a line in a save stream: the world's species of the mode (the tribe's slot in Tribe, the
+// civilization's in Civ, the host's creature elsewhere). A design key (a building, a vehicle) keeps its key here:
+// civ_own_designs strips the objects that show one (the culture set's key per design id)
+static bool save_key_filter(uint32_t k[3])
+{
+    if (!k[0] || k[1] != kCreatureType || !is_line_key({k[0], k[1], k[2]}))
+        return false;
+    uint32_t mode = game::mode_id();
+    WorldFn fn = mode == modes::kTribe ? g_world[(int)Stage::Tribe] : mode == modes::kCiv ? g_world[(int)Stage::Civ] : nullptr;
+    Key w = fn ? fn() : Key{};
+    if (!w.instance || is_line_key(w)) {
+        void* a = game::avatar();
+        game::Key gk = a ? game::species_key(a) : game::Key{0, 0, 0};
+        Key ak{gk.instance, gk.type, gk.group};
+        w = ak.instance && !is_line_key(ak) ? ak : creations::player_key(0, creations::kCreature);
+    }
+    if (!w.instance || is_line_key(w)) { // (nothing of the host's known: the key of none, the game's default on load)
+        g_save_unmapped++;
+        w = Key{};
+    }
+    g_save_rekeyed++;
+    k[0] = w.instance, k[1] = w.instance ? w.type : 0, k[2] = w.instance ? w.group : 0;
+    return true;
 }
 
 bool on_change(const char* name, ChangeFn fn)
@@ -739,6 +783,11 @@ static void resolve_tick(double now, bool force)
             g_res.erase(pid);
         else
             g_res[pid] = now_r;
+        for (auto& x : now_r.k)
+            if (x.instance)
+                g_was.insert({x.instance, x.group});
+        for (auto& [id, d] : now_r.designs)
+            g_was.insert({d.instance, d.group});
         g_serial[pid]++;
         g_changes++;
         trace::line("species", "player %u's line here: creature %08X tribe %08X civ %08X, %u designs", pid,
@@ -861,6 +910,9 @@ std::string status()
              g_rows_in, g_rows_out, g_rows_refused, g_bundles_in, g_bundles_out, g_bundles_dropped, g_stored_out,
              g_stored_taken, g_changes, g_store_puts, g_sets, g_sets_refused);
     s += b;
+    snprintf(b, sizeof b, "saves: line keys known=%u rekeyed=%u unmapped=%u (BUG-1315)\n", (unsigned)g_was.size(),
+             g_save_rekeyed, g_save_unmapped);
+    s += b;
     s += creations::line_status();
     return s;
 }
@@ -981,6 +1033,7 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
                    "coop.species [status | key <player> <stage> | own <stage> | test ...] - every player's own species "
                    "line per stage (WP-0, BUG-1270)",
                    command, nullptr, SK_CMD_MAIN_THREAD);
+    savestrip::add_key_filter(save_key_filter); // BUG-1315: no key of a line in a save
 }
 
 } // namespace species

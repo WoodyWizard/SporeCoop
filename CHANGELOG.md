@@ -14,6 +14,9 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   Civilization (no visible change by itself).
 - A lab test takes a guest's own creature through Creature -> Tribe -> Civilization with the real stage changes and
   checks its look in every stage on both games (BUG-1277).
+- Saves: no key of a guest's own species reaches the host's saved game through any object the game writes (tribe
+  members, citizens, herds and wild animals of that species, the game's event log): the save names the world's species
+  there instead (BUG-1315). `coop.tribe ai` shows the food a member carries again (BUG-1317).
 - Lab: a test that starts a game again now waits until the switches of its FAIL twin are really off in that game
   (BUG-1314).
 - The lab's sync checks know own DNA per player: each guest's DNA is compared with the host's record of its own DNA
@@ -70,6 +73,10 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   got them (BUG-1290).
 
 ### Fixed
+- Cell: a guest on a slow connection (or a host with a slow upload) now sees the host's cells all around its own cell.
+  Before, on a link of about 512 kbit/s the guest kept only about a quarter of them, spread over the pool, and the
+  others vanished a second after they came: mostly empty water around it. The host now sends each guest the cells
+  nearest to it first and no faster than that guest's link carries (BUG-1309).
 - Creature: a guest's own mating at the nest now leads to its evolution editor. Before, after the mating call and the
   click on the mate the guest's creature walked up to it and then waited there for good, because its mate is one of the
   host's creatures and never answered on the guest's game. Found by the Lineages fork by PandizeLive (BUG-1305).

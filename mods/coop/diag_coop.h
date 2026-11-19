@@ -56,7 +56,10 @@ struct Probe {
     // record of that wallet; false: the guest plays the shared pool and is compared with `dna`
     std::function<bool(uint8_t id, float&)> dna_own;
     std::function<bool(float&)> bar; // BUG-1310: the evolution bar (cPlayer +0x10F0) when there is one (Creature)
-    std::function<float()> cell_scale; // BUG-0606: the own Cell world scale, 0 outside Cell
+    std::function<float()> cell_scale;
+    // BUG-1309 (host): the most of its nearest cells the host's Cell state lists for guest `id` now (a slow link's
+    // paced rounds), 0: the usual 900
+    std::function<size_t(uint8_t)> cell_sent; // BUG-0606: the own Cell world scale, 0 outside Cell
     // BUG-1216: the height of a point over this game's terrain (m), below -1e6 (net::diag::kEntryNoAgl) where there is none
     std::function<float(const net::Vec3&)> over_ground;
     std::function<bool(uint32_t&)> vote; // an evolution vote is on (its editor id)

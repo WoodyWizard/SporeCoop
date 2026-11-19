@@ -4343,10 +4343,24 @@ WP-T1 of docs/plan-0.7.16.md (BUG-1271), built on #tribe-two-species. `mods/coop
   the host (the slot is its species), in creature.mode host, and for a guest that plays the world's own species (its
   key is the slot's, or maps to it through host_species / local_species). Not buildable yet (`key_known`, a profile
   from `game::species_by_key`): the member waits.
+* ~ superseded (2026-11-19): see docs/re/creations.md#creations-save-keys. CORRECTION (2026-11-19, fix/w57-savestrip,
+  BUG-1315): the hooks below ran (log "4 members carry the tribe's species", lab 20261119-095414 line_stages) and the
+  save's citizen records still named the guest's key: the key written is the member's +0xB28 at the record's write, and
+  something between the save's start and that write gives it the profile's key again (lab 20261119-113320, the Civ
+  citizens: stripped at 35.158 s, written with the line key from citizen +0xB28 at 35.188 s). The save is now kept
+  clean at the stream (the key writer), not by the member's field.
 * Saves: `savestrip::add_save_hooks`: at the save's first Write every member the mod changed gets the slot's key in
   +0xB28..+0xB30 (the three dwords the creature record writes, cCreatureBase_PostRead 0xC225D0 resolves them on load;
   no rebuild), its own key comes back on the next frame. So the host's save (and a guest's) holds the tribe's species
   for every member; after a load the mod gives the members their owner's species again.
+* ✔ (Ghidra 2026-11-19, fix/w57-savestrip, BUG-1320) cCreatureAnimal::SetSpecies is not citizen-safe for a young
+  member: for +0xB34 != 1, not the avatar, in Creature or Tribe it ends with LazyU64_Get 0xBC3260 on creature +0x1628
+  (a cCreatureAnimal cache, object 0x16A0 bytes); a cCreatureCitizen is 0x1038 bytes (alloc 0xB1ED5D), so that reads,
+  calls (+0x1C) and writes (+0x10..+0x18) another heap object. Seen: a call to 0xFFFFFFFF on the host after a reload
+  (lab 20261119-113954, the bought baby). The same bug as BUG-1313 (#tribe-kid-setspecies: a kid waits until it is
+  grown up, `tribe.kid_species`); BUG-1320 is its duplicate.
+* ✔ (lab 20261119-113320, BUG-1317) SetSpecies on a member carrying food (keepState 1): it went on carrying it home
+  (`carry=1.0`, moved 25 m, animations all along on both games).
 * ? Not verified at runtime yet (no lab run when this was written, owner's rule of 2026-11-18): SetSpecies on a member
   carrying food or holding a tool (keepState 1 with the outfitter's tool and animation steps after it), a baby right
   after its birth (0.5 s), the guest's mirrors (driven by the mod) after SetSpecies. Test `coop_tribe_own_species.py`.
