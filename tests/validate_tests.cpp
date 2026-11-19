@@ -128,8 +128,6 @@ static void test_chunks()
     }
 }
 
-static bool g_nofix = false;
-
 static void test_cycle()
 {
     printf("snapshot chunk numbers\n");

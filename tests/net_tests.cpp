@@ -2247,6 +2247,7 @@ static void test_updater()
         CHECK(!upd::release_from_redirect(web, bad, r));
 }
 
+static void test_npc_compact(); // (defined below; the file did not compile without this, found 2026-11-18)
 // A Session host for the fakepeer interoperability test (no game required).
 static int fakepeer_host()
 {
