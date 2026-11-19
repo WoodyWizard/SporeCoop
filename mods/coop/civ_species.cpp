@@ -188,10 +188,15 @@ struct Stripped {
 };
 static std::vector<Stripped> g_stripped;
 static uint32_t g_save_stripped;
+// `coop.fix civ.own_species_save off`: the citizens are saved with the guest's key (the save check of
+// coop_civ_own_species.py fails: lab 20261118-180539, before the strip existed)
+static bool g_fix_own_species_save = true;
+COOP_FIX("civ.own_species_save", "BUG-1273", g_fix_own_species_save,
+         "civ: a guest's species never reaches a save through the citizens of its city (the civilization's key while saving)");
 static void species_save_start()
 {
     g_stripped.clear();
-    void* pc = a_CitySpecies && game::mode_id() == modes::kCiv ? player_civ() : nullptr;
+    void* pc = g_fix_own_species_save && a_CitySpecies && game::mode_id() == modes::kCiv ? player_civ() : nullptr;
     if (!pc)
         return;
     struct U {

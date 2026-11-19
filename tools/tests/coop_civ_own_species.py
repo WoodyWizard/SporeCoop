@@ -21,14 +21,21 @@ species line of WP-0), on every game; the shared capital is its founder's (the h
    key frames of the capital.
 
 SPORE_FIX_OFF=civ.own_species: step 3 FAILs (the guest's city keeps the civilization's species).
+SPORE_FIX_OFF=civ.own_species_save: step 4 FAILs (the host's citizen records name the guest's key; also seen before the
+strip existed, lab 20261118-180539).
+--host-mode (suite civ_own_species_hostmode): the host sets creature.mode host after step 1 (F5: everybody plays the
+host's creature): no game has a line for the guest and every city, the guest's too, keeps the civilization's species
+(today's behaviour); the setting is put back to own at the end.
 
   SPORE_LANE=6 python3 tools/tests/coop_civ_own_species.py
 """
 import math
 import re
+import sys
 import time
 
 import lane
+import settings_lib
 import sameview as sv
 from coop_civ import civ, dist
 from coop_creature_e84 import close_boxes
@@ -37,6 +44,7 @@ from play_civ import frame_city
 from twoinst import Checks, keyframe, start
 
 CITIZEN = '18EB4B7'
+HOST_MODE = '--host-mode' in sys.argv
 
 
 def species(con):
@@ -120,6 +128,13 @@ def main():
     if not ok:
         return ck.result()
     civkey = ckey['host']
+    want = g  # the species of the guest's city
+    if HOST_MODE:
+        ck(settings_lib.force(host, [guest], 'creature.mode', 'host'), 'the guest got creature.mode host')
+        time.sleep(3)
+        left = {r: species(c)[0] for r, c in players.items()}
+        ck(not any(left.values()), f'creature.mode host: no game keeps a species line for the guest ({left})')
+        want = civkey
 
     # 2. the capital (shared, the founder's: the host's)
     frame_city(players, hc[cap]['pos'])
@@ -143,16 +158,18 @@ def main():
         time.sleep(1)
     ck(all(o == 1 for o in owners.values()), f'city {tgt} is the guest\'s on both games ({owners})')
     frame_city(players, hc[tgt]['pos'])  # (answers the specialty box; the capture's cinematic may have moved the camera)
-    seen, t = wait_city(players, tgt, g, 30)
+    seen, t = wait_city(players, tgt, want, 30)
     print(f'  city {tgt} after the capture: {fmt(seen)} after {t:.0f} s', flush=True)
     for r, c in players.items():
         print(f'  {r}: {species(c)[3]}', flush=True)
-    ck(all(set(v) == {g} for v in seen.values()) and all(seen.values()),
-       f'the guest\'s city\'s citizens are the guest\'s species on both games ({fmt(seen)})')
-    keyframe('guest_city', f'the city {tgt} the guest captured, both games: its citizens walking about are the guest\'s '
-                           'creature (not the civilization\'s species of the capital)')
+    ck(all(set(v) == {want} for v in seen.values()) and all(seen.values()),
+       f'the guest\'s city\'s citizens are the {"civilization" if HOST_MODE else "guest"}\'s species on both games '
+       f'({want:08X}: {fmt(seen)})')
+    look = ('the civilization\'s species, as at the capital (creature.mode host)' if HOST_MODE else
+            'the guest\'s creature (not the civilization\'s species of the capital)')
+    keyframe('guest_city', f'the city {tgt} the guest captured, both games: its citizens walking about are {look}')
     closeup(players, hc[tgt]['pos'], 'guest_citizen', 'one citizen of the guest\'s city up close, the same camera on both '
-                                                     'games: the guest\'s creature on both screens')
+                                                     f'games: {look} on both screens')
 
     # 4. the host's save
     t_save = time.time()
@@ -173,6 +190,8 @@ def main():
     keyframe('capital', 'the players\' capital on both games: its citizens are the civilization\'s (the host\'s) species')
     closeup(players, hc[cap]['pos'], 'capital_citizen', 'one citizen of the capital up close, the same camera on both '
                                                         'games: the host\'s species on both screens')
+    if HOST_MODE:
+        settings_lib.force(host, [guest], 'creature.mode', 'own')
     guest.call('coop.creations unchoose creature')  # (the lane's profile as before for the next test)
     ck.faults(host=host, guest=guest)
     return ck.result()

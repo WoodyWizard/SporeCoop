@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+- Civilization: the citizens walking in a city a guest owns (captured, given or dealt to it) are that guest's own
+  species on every player's screen; the shared capital keeps the species of the player who founded it. With "everybody
+  plays the host's creature" (F5) every city stays the host's species, as before (BUG-1273).
+
 ## [0.7.15.2] - 2026-11-18
 
 More fixes for problems seen in a video of two players, mostly in the Cell stage and the move to the Creature stage:

@@ -2184,7 +2184,7 @@ WP-C1 of docs/plan-0.7.16.md (BUG-1273), on top of [civ-own-species](#civ-own-sp
   -> back into the city's list; else it is handled as a foreign visitor (+0xACC list, relationship checks). A stable
   hook answer keeps a guest's city's own citizens "own".
 * The NPC cities of civ_npc (made by new_stage_game.py) have the player civilization's species (067C7743) too.
-* Design (civ_species.cpp, `coop.fix civ.own_species`): City_Species answers the owner's species when the city's
+* Design (civ_species.cpp, `coop.fix civ.own_species`, the save part `civ.own_species_save`): City_Species answers the owner's species when the city's
   owner (g_city_owner, known on every game) is a guest with an own line (until WP-0: its own creature,
   `creations::player_key(pid, kCreature)`, only when it differs from the host's); the host's cities, the shared capital
   (its founder's: the host's), NPC cities answer the game's own. `creature.mode` host: no answer. Every 0.5 s, outside
