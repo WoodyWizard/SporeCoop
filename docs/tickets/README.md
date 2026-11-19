@@ -1283,8 +1283,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1277](BUG-1277-wp-x2-every-player-s-species-line-through-creatu.md) | open | test | All | 2026-11-18 |  | WP-X2: every player's species line through Creature -> Tribe -> Civ (one test) |
 | [BUG-1280](BUG-1280-tribe-the-end-of-tribe-editor-check-names-a-vehi.md) | fixed | bug | Tribe | 2026-11-18 | unreleased | Tribe: the end-of-Tribe editor check names a vehicle editor 7CB21BAD that does not exist (it is 7D433FAD) |
 | [BUG-1281](BUG-1281-a-peer-running-the-lineages-fork-joins-a-session.md) | fixed | bug | All | 2026-11-19 | unreleased | A peer running the Lineages fork joins a session unrefused and its messages decode as ours |
-| [BUG-1280](BUG-1280-tribe-the-end-of-tribe-editor-check-names-a-vehi.md) | open | bug | Tribe | 2026-11-18 |  | Tribe: the end-of-Tribe editor check names a vehicle editor 7CB21BAD that does not exist (it is 7D433FAD) |
-| [BUG-1281](BUG-1281-a-peer-running-the-lineages-fork-joins-a-session.md) | open | bug | All | 2026-11-19 |  | A peer running the Lineages fork joins a session unrefused and its messages decode as ours |
 | [BUG-1282](BUG-1282-wp-f2-creature-meteors-rain-storms-and-the-night.md) | open | desync | Creature | 2026-11-19 |  | WP-F2: Creature meteors, rain storms and the night predator run separately in each game (fork BUG-9131) |
 | [BUG-1283](BUG-1283-wp-f2-a-guest-does-not-see-the-host-s-nest-alpha.md) | open | desync | Creature | 2026-11-19 |  | WP-F2: a guest does not see the host's nest alphas as alphas (fork BUG-9115) |
 | [BUG-1284](BUG-1284-wp-f2-the-religious-role-s-conversion-bonus-coun.md) | open | bug | Civ | 2026-11-19 |  | WP-F2: the religious role's conversion bonus counts economic vehicles of any nation (fork BUG-9078) |
