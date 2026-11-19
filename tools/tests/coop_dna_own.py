@@ -108,8 +108,18 @@ def prepare(host, guest, ck, need=150):
     if (h[0] or 0) < need:
         print('  host:', host.call(f'coop.dna add {need}')['out'].strip(), flush=True)
         time.sleep(3)
-        from coop_editor_sync import confirm_captions
-        confirm_captions((host, guest), 12)  # a brain level's cinematic waits for its caption
+        # a brain level's cinematic waits for its caption on each game; its Enter is taken only once the caption
+        # shows, about 16 s after the gain (BUG-1318: 12 s of Enters left the guest's caption up, its game in the
+        # cinematic, and the guest's own editor never opened: lab 20261119-104136, 20261119-111652)
+        from coop_editor_sync import cinematic
+        t0 = time.time()
+        while time.time() - t0 < 60 and any(cinematic(c) for c in (host, guest)):
+            for c in (host, guest):
+                if cinematic(c):
+                    c.call('key enter')
+            time.sleep(2)
+        print(f'  brain captions closed after {time.time() - t0:.0f} s: host {not cinematic(host)}, '
+              f'guest {not cinematic(guest)}', flush=True)
         h, g = calm(host, guest, 30)
     show('start', h, g)
     ck(h[0] is not None and near(h[0], g[0]), f'both games start with the same DNA ({h[0]} / {g[0]})')

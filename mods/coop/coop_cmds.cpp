@@ -1904,7 +1904,7 @@ void register_commands_editor()
                            finish_vote("the host started it");
                        else if (argc > 2 && !strcmp(argv[1], "hold")) // tests (BUG-0234): a due own editor waits
                            g_own_editor_hold_until = H->time_seconds() + atof(argv[2]);
-                       SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u, editor held for a save %u, "
+                       SAY("vote %s: %s (%d s)\nown editor %d, part list waived %u (own outfitters %u, BUG-1308), editor held for a save %u, "
                            "quit held for a save %u, repeated requests dropped %u, own editor due %d (waited %u frames)\n"
                            "actions run %u, votes dropped %u\neditor held for a cinematic %u, cinematics ended %u, "
                            "editor held now %d, actions waited %u, action due %d\n"
@@ -1923,7 +1923,7 @@ void register_commands_editor()
                            "guest mates forgotten in creature.mode host (Cell) %u (BUG-1265)\n"
                            "host History checks held before the end sequence %u (BUG-1269)",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
-                           g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
+                           g_part_list_waivers, g_outfit_part_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
                            g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,
                            g_submits_after_cine, g_submit_cines_ended, g_submit_later ? 1 : 0, g_vote_actions_waited,
                            g_vote_action_due ? 1 : 0, g_submits_own_pause, busy::names(g_req_own_busy).c_str(),

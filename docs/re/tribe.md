@@ -4406,7 +4406,11 @@ vote.cpp (the Submit hook's branch), switch `tribe.guest_outfitter`.
   for its creature, else its creature, by the keys of its own game; nothing when it plays the world's own species:
   the card's key stays) and it goes to the editor at once (a notice "<name> changes the outfit of its tribe members").
 * `TribeUI_EditorReturn` is hooked: for our request (third branch, +0x28 and +0x29 clear) with a result of tag
-  0x116DD1B and editor 0x156276D1, the result's key is kept, the result released and +0x2F8 cleared, then the game's
+  0x116DD1B and editor 0x156276D1, the result's key is kept,
+  CORRECTION (2026-11-19, fix/w57-own-editors, BUG-1316): the result's +0x14 is not the editor id but the editor
+  model's model type: **0x372E2C04** for the Tribal Outfitter (runtime, lab 20261119-113002: "result tag 0116DD1B type
+  372E2C04 key 2928FE3E"); the check on 0x156276D1 never matched, so the result was never taken and 0xCDCC90 reloaded
+  the shared slot with the guest's outfit. Our pending request, the tag and the branch name it now; the result released and +0x2F8 cleared, then the game's
   function runs (the planner steps of a cancelled outfitter): the slot is not reloaded, no member is rebuilt here, the
   slot stays the host's species and model. Every frame after it `species::set_tribe_outfit(key)` (every 2 s for 30 s
   until the creation's records are readable): the outfit goes out with WP-0's bundles, and every game dresses the

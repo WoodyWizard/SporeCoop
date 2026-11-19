@@ -34,6 +34,9 @@ bool take_editor(uint32_t id, const uint32_t key[3]);
 // BUG-1298 (civ_arrival.cpp): our own editor request was just submitted outside the planner's path (its return stays
 // ours if the session ends before it)
 void own_opened();
+// BUG-1308: our own Civ outfitter (its request starts from our creature) is on its way or open: the editor's part-list
+// error of our creation's Creature Creator parts is waived (vote.cpp)
+bool own_outfit_open();
 
 void init(const SkHost* host, SkMod* mod, net::Session* sess);
 void tick(double now); // every frame, main thread (after species::tick)

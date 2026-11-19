@@ -505,6 +505,14 @@ static unsigned g_oo_opened, g_oo_returns, g_oo_skipped, g_oo_cancelled, g_oo_se
     g_oo_acked, g_oo_resent;
 using EditorReturn_t = void(SK_THISCALL*)(void*);
 static EditorReturn_t o_EditorReturn;
+// BUG-1316 (lab 20261119-111652 tribe_own_outfitter: returns=1 skipped=0, the guest's slot reloaded with its outfit):
+// the result's +0x14 is the editor model's model type (docs/re/civ.md#civ-own-editors: +0x14 = editor model +0x58), not
+// the outfitter's editor id 0x156276D1, so the result of our own outfitter was never taken. Our pending request, the
+// Tribe tag and the outfitter's branch (+0x28 / +0x29 clear) name it. Off: +0x14 must be the editor id (as before).
+static bool g_oo_result_fix = true;
+COOP_FIX("tribe.own_outfit_result", "BUG-1316", g_oo_result_fix,
+         "tribe: the result of a guest's own Tribal Outfitter goes to its own members, not into the shared tribe's species");
+static uint32_t g_oo_rtype; // the last taken result's +0x14 (status)
 
 // (without the return hook the slot would be reloaded with our outfit: then the refusal, as in host mode)
 static bool own_outfitter_on() { return g_guest_outfitter_fix && species::own_mode() && o_EditorReturn; }
@@ -533,6 +541,8 @@ bool own_outfitter(void* req, uint32_t mode, uint32_t editor, bool own_world)
     return true;
 }
 
+bool own_outfitter_open() { return g_oo_pending; }
+
 // cTribeUI 0xCDCC90 (thiscall, no arguments, plain ret): on the guest the return of our request does not reload the
 // tribe's slot (the host's species: it would dress every member of the slot, the host's too, in our outfit here); the
 // result is released as the game does and becomes our tribe outfit (tick). Its other steps (the planner's state
@@ -543,11 +553,16 @@ static void SK_THISCALL h_EditorReturn(void* ui)
         g_oo_pending = false;
         g_oo_returns++;
         void* res = F<void*>(ui, kUiResult);
+        if (res && R(res, 0x48))
+            H->log(M, SK_INFO, "designs: our own Tribal Outfitter returns: result tag %08X type %08X key %08X (BUG-1316)",
+                   F<uint32_t>(res, 0xC), F<uint32_t>(res, 0x14), F<uint32_t>(res, 0x18));
         if (!res) {
             g_oo_cancelled++;
             H->log(M, SK_INFO, "designs: our own Tribal Outfitter was cancelled (BUG-1272)");
-        } else if (R(res, 0x48) && F<uint32_t>(res, 0xC) == kTribeTag && F<uint32_t>(res, 0x14) == kOutfitter &&
+        } else if (R(res, 0x48) && F<uint32_t>(res, 0xC) == kTribeTag &&
+                   (g_oo_result_fix || F<uint32_t>(res, 0x14) == kOutfitter) &&
                    (is_guest() || g_own_offline_fix) && g_guest_outfitter_fix) {
+            g_oo_rtype = F<uint32_t>(res, 0x14);
             if (!is_guest())
                 g_oo_offline++; // BUG-1298: the session ended while the editor was open
             g_oo_result = {F<uint32_t>(res, 0x18), F<uint32_t>(res, 0x1C), F<uint32_t>(res, 0x20)};
@@ -677,11 +692,11 @@ std::string status()
     // BUG-1272: the guest's own outfitter (the key it asked for, the card's: the slot's)
     snprintf(b, sizeof b,
              "own outfitter: fix=%d on=%d hooked=%d opened=%u asked=%08X/%08X/%08X card=%08X pending=%d returns=%u "
-             "skipped=%u cancelled=%u result=%08X set=%u set_failed=%u offline=%u held=%d sent=%08X acked=%u resent=%u\n",
+             "skipped=%u cancelled=%u result=%08X set=%u set_failed=%u offline=%u held=%d sent=%08X acked=%u resent=%u rtype=%08X\n",
              (int)g_guest_outfitter_fix, (int)own_outfitter_on(), (int)(o_EditorReturn != nullptr), g_oo_opened,
              g_oo_asked[0], g_oo_asked[1], g_oo_asked[2], g_oo_card[0], (int)g_oo_pending, g_oo_returns, g_oo_skipped,
              g_oo_cancelled, g_oo_result.instance, g_oo_set, g_oo_set_failed, g_oo_offline, (int)g_oo_held,
-             g_oo_sent.instance, g_oo_acked, g_oo_resent);
+             g_oo_sent.instance, g_oo_acked, g_oo_resent, g_oo_rtype);
     return o + b;
 }
 

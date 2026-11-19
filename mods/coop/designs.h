@@ -63,6 +63,9 @@ bool outfit_texts(uint32_t mode, uint32_t editor);
 // BUG-1272: a guest's own Tribal Outfitter request (the card's edit badge) in the host's world, creature.mode own: true
 // when it is taken as ours (its key is now our own species line's; submit it), false otherwise (the refusal decides)
 bool own_outfitter(void* req, uint32_t mode, uint32_t editor, bool own_world);
+// BUG-1308: our own Tribal Outfitter (own_outfitter took the request) is on its way or open: its creation is our own
+// (Creature Creator parts), the editor's part-list error is waived as in the own Creature editor (vote.cpp)
+bool own_outfitter_open();
 void tick(double now); // every frame: our outfitter's result becomes our tribe outfit
 
 // the player civilization (null: none here), its culture set (Val.key the design id, v[0..2] the key) and one entry

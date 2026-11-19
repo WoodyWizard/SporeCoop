@@ -2606,6 +2606,26 @@ BUG-1290 (WP-S1b, `core.own_civ_late`, mods/coop/civ_arrival.cpp; #civ-own-arriv
   next arrival. `coop.civarrival` prints `late: ... checked why='...'`; `coop.civarrival forget` removes the note.
 * Not checked: the world crc of a world reached by the live Tribe -> Civ change equals the one of the planet's save
   loaded later (both are the save's name; BUG-0258's "snapshot.spo" is the host's side).
+## The Civ return's own pause after an editor without the planner (2026-11-19, fix/w57-own-editors)
+<a id="civ-editor-return-pause"></a>
+
+BUG-1323. GOG 2024, Ghidra (0xCFE2C0, 0xCFBD70) and a runtime pause trace (`coop.pauses trace`, lane 2: `coop.civarrival
+due` on a guest in civ_npc, its own City Hall editor, done):
+* ✔ `GameCiv_Update` 0xCFE2C0: while cGameModeCiv +0xB4 (the state machine `CivGame_EditorReturn` 0xCFBD70) is not 10
+  it calls `cGameTimeManager::Pause(0x4BF38A7)` when the time does not stand yet (trace: "Pause(04BF38A7) -> 1 from
+  00CFE36E" the frame the guest came back) and steps the machine.
+* ✔ The machine resumes 0x4BF38A7 only in its state 7, and only when the mode before (+0xB8) was **not** the editor
+  0xDBDBA1 (and +0xBC is Civ). After an editor its state 1 re-opens the planner (0xCF20B0 with +0xF8) and that planner
+  carries the pause (its close lifts it): the planner's design editors come back to a running game.
+* ✔ An editor that came from no planner (+0xF8 = -1: the mod's own City Hall and vehicle editors at a guest's Civ
+  arrival, civ_arrival.cpp) leaves 0x4BF38A7 counted once: the game stands (busy=paused, no HUD) for good; the arrival
+  path then waited for its vehicle editor forever (lab 20261119-113002: civ_own_arrival, civ_late_arrival,
+  line_stages_editors; also why that guest bought no city and no vehicle afterwards).
+* Fix `core.own_civ_unpause`: when our editor came back to Civ and +0xB4 reached 10, 0x4BF38A7 counted more than when
+  the editor was requested is resumed once (probe: "resumed=1" after the City Hall editor, the vehicle editor opened
+  5 s later, "resumed=2" after it, `busy` empty).
+* ? Not looked at: whether the game's own Civ outfitter and spaceship editor paths (from the planner / the launch)
+  ever come back without a planner; the Civ outfitter's result is applied in state 1 too.
 
 ## The civ_npc fixture's vehicle slots and a full religious conversion (2026-11-19, fix/w57-sync)
 <a id="civ-npc-fixture-slots"></a>

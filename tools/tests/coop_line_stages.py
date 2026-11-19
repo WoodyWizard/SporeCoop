@@ -202,6 +202,17 @@ def run_tribe(ck, camp, a, host, guest, pid, off_line):
                                           f'creature ({lines})')
             if got:
                 want = got
+                # a caption of the Tribe stage holds a game in its cinematic (paused) and the member pass waits for it
+                # (lab 20261119-153243: the host's from 15:36:57 to 15:38:10, its members changed 72 s after the line
+                # was known, after the 40 s of check_mix): the players' OK on each game's caption first
+                from coop_editor_sync import cinematic
+                t0 = time.time()
+                while time.time() - t0 < 60 and any(cinematic(c) for c in (host, guest)):
+                    for c in (host, guest):
+                        if cinematic(c):
+                            c.call('key enter')
+                    time.sleep(2)
+                print(f'  tribe outfit: captions closed after {time.time() - t0:.0f} s', flush=True)
                 check_mix(ck, host, guest, want, slot, 'tribe outfit')
                 member_view(host, guest, 'tribe_guest_outfit', 'same view 12 m from a guest\'s member: the guest\'s own '
                             'creature with its new piece of clothing (a leaf on the chest) on both screens')
@@ -338,6 +349,35 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
     print('  host:', host.call('coop.res add money 30000')['out'].strip(), flush=True)
     m = re.search(r'did (\w+) purpose=(\d+)', host.call(f'coop.civ owndesign did {tgt} 0')['out'])
     buy_did = int(m.group(1), 16) if m else 0
+    buy_at = tgt
+    if a.civ_editors:
+        # BUG-1323 (lab 20261119-122505): the arrival's vehicle editor is the one of the archetype (F670AA43 /
+        # 9AD7D4AA / 7D433FAD, civ_arrival.cpp vehicle_editor), not always the land design of the city the guest
+        # captured: buy in the guest's city or the shared capital whose land design id is that editor's, as
+        # civ_own_arrival does
+        ve = re.search(r'editors=\w+/(\w+)', guest.call('coop.civarrival')['out'] or '')
+        vdid = int(ve.group(1), 16) if ve else 0
+        # (lab 20261119-150332: a city the guest takes by siege becomes military, 7D433FAD; a guest may buy only in a
+        # city of its own: when the captured one is not of the editor's design id, the guest buys an NPC city that is,
+        # `coop.civ buycity` as civ_own_arrival, which keeps the city's kind)
+        land = {}
+        for ci in [tgt] + [c for c in sorted(npc, key=lambda i: dist(hc[i]['pos'], hc[cap]['pos'])) if c != tgt]:
+            d = re.search(r'did (\w+) ', host.call(f'coop.civ owndesign did {ci} 0')['out'])
+            land[ci] = int(d.group(1), 16) if d else 0
+            if land[ci] == vdid:
+                break
+        print(f'  civ: land design ids {{{", ".join(f"{c}: {v:08X}" for c, v in land.items())}}} (the guest\'s vehicle '
+              f'editor {vdid:08X})', flush=True)
+        buy_at = next((c for c, v in land.items() if v == vdid), None)
+        if buy_at is not None and buy_at != tgt:
+            print(f'  guest buys city {buy_at}:', guest.call(f'coop.civ buycity {buy_at} 500')['out'].strip(), flush=True)
+            if not wait(lambda: all(civ(c)[0].get(buy_at, {}).get('owner') == pid for c in players.values()), 30):
+                buy_at = None
+        if ck(buy_at is not None, f'civ: a city of the guest whose land vehicles are of its vehicle editor\'s design id '
+                                  f'{vdid:08X} ({buy_at})'):
+            buy_did = vdid
+        else:
+            buy_at = tgt
     want_hash = None
     if not a.civ_editors:
         for p in (0, 1, 2):
@@ -354,7 +394,7 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
     if ours_v and want_hash is None:
         want_hash = cod.mhash(guest, ours_v, VTYPE, VGROUP)
     before = set(cod.own(host)[0])
-    print('  guest:', guest.call(f'coop.civ buy {tgt} 0')['out'].strip(), flush=True)
+    print('  guest:', guest.call(f'coop.civ buy {buy_at} 0')['out'].strip(), flush=True)
     vid = wait(lambda: next((i for i, x in cod.own(host)[0].items() if i not in before and x['owner'] == pid), None), 20)
     if ck(vid is not None, f'civ: the guest\'s purchase made a land vehicle on the host ({vid})'):
         for r, con in players.items():

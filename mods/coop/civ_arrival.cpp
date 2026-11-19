@@ -101,12 +101,18 @@ static void drop(const std::string& why, const char* tell)
         feed(tell);
 }
 
-// the host takes our species line (its build has creations 1.1 or newer: a 0.7.15.2 host keeps the old look)
+// the host takes our species line (its build has creations 1.1 or newer: a 0.7.15.2 host keeps the old look).
+// BUG-1306: the host's WELCOME families (host_families); peer_families answers only on the host, so allowed() was
+// false on every guest and no own City Hall editor ever opened (lab 20261119-095414 civ_own_arrival). Off
+// (core.own_civ_families): the host-only query (rel/0.7.16 before the fix)
+static bool g_families_fix = true;
+COOP_FIX("core.own_civ_families", "BUG-1306", g_families_fix,
+         "civ: a guest knows that the host keeps species lines, so its own City Hall and vehicle editors open at its Civ arrival");
 static bool host_has_line()
 {
     bool has = false;
     std::vector<net::FamilyRev> fam;
-    if (!g_sess.peer_families(0, has, fam) || !has)
+    if (!(g_families_fix ? g_sess.host_families(has, fam) : g_sess.peer_families(0, has, fam)) || !has)
         return false;
     for (auto& f : fam)
         if (f.family == 10 && f.rev == 1 && f.minor >= 1) // creations (net/messages.def)
@@ -117,6 +123,63 @@ static bool allowed()
 {
     return g_fix && g_sess.connected() && g_sess.role() == net::Role::Client && !host_creature_mode() &&
            species::own_mode() && civedit::allows(0) && host_has_line();
+}
+
+// BUG-1323 (lab 20261119-113002 civ_own_arrival, civ_late_arrival, line_stages_editors; probe on lane 2 with the
+// pause trace): back in Civ from our own editor, cGameModeCiv's update (0xCFE2C0) pauses 0x4BF38A7 while its return
+// state machine (CivGame_EditorReturn 0xCFBD70, +0xB4) runs, and that machine resumes it in its state 7 only when the
+// mode before was not the editor: after an editor the planner it re-opens (+0xF8, 0xCF20B0) carries the pause and its
+// close lifts it. Our editors come from no planner (+0xF8 = -1): the guest's game stayed paused (busy=paused, no HUD),
+// its vehicle editor never opened. On: when the machine has ended (+0xB4 = 10) and 0x4BF38A7 is counted more than
+// when our editor was requested, it is resumed once. Off: the game stays paused (rel/0.7.16's first run).
+static bool g_unpause_fix = true;
+COOP_FIX("core.own_civ_unpause", "BUG-1323", g_unpause_fix,
+         "civ: after a guest's own City Hall or vehicle editor at its Civ arrival its game goes on (it stayed paused, the vehicle editor never came)");
+constexpr uint32_t kModalPause = 0x4BF38A7u; // a UI modal / the Civ return's own pause (docs/re/civ.md#civ-own-arrival)
+static int g_modal_at_open = 0;              // its count when our editor was requested
+static double g_unpause_due_at = -1;         // our editor returned to Civ at
+static int g_civ_state = -1;                 // cGameModeCiv +0xB4 at the last look (status)
+static unsigned g_unpaused, g_unpause_skipped;
+
+static int modal_pauses()
+{
+    for (auto& [r, c] : world::pause_reasons())
+        if (r == kModalPause)
+            return c;
+    return 0;
+}
+
+static void unpause_tick(double now)
+{
+    if (g_unpause_due_at < 0)
+        return;
+    if (game::mode_id() != modes::kCiv || now - g_unpause_due_at > 20.0) {
+        g_unpause_skipped++;
+        LOG("civ arrival: the Civ return's pause was not looked at (mode %08X, %.0f s, state %d, BUG-1323)",
+            game::mode_id(), now - g_unpause_due_at, g_civ_state);
+        g_unpause_due_at = -1;
+        return;
+    }
+    static uintptr_t civ_get = H->sym("SporeCoop::GameCiv_Get");
+    void* gc = civ_get ? skg::cdecl_call<void*>(civ_get) : nullptr;
+    if (!gc || !skg::readable((char*)gc + 0xB4, 4))
+        return;
+    g_civ_state = skg::field<int>(gc, 0xB4);
+    if (g_civ_state != 10)
+        return; // (its return still runs)
+    g_unpause_due_at = -1;
+    int n = modal_pauses();
+    if (n <= g_modal_at_open)
+        return;
+    static uintptr_t tm_get = H->sym("Simulator::cGameTimeManager::Get"),
+                     resume = H->sym("Simulator::cGameTimeManager::Resume");
+    void* tm = tm_get ? skg::cdecl_call<void*>(tm_get) : nullptr;
+    if (!tm || !resume)
+        return;
+    skg::thiscall<int>(resume, tm, kModalPause);
+    g_unpaused++;
+    LOG("civ arrival: back from our own editor the Civ return left the game paused (0x4BF38A7 %d, %d before the editor): "
+        "resumed (BUG-1323)", n, g_modal_at_open);
 }
 
 // session_glue (the host's vote ended on this guest): `editor` the editor of that vote, `mode` this game's stage
@@ -201,6 +264,7 @@ static void open_task(void*)
         return;
     }
     uint32_t ed = g_editor[g_step];
+    g_modal_at_open = modal_pauses(); // BUG-1323
     bool ok = open_editor(ed);
     LOG("civ arrival: own %s editor %08X %s (%.0f s after the arrival, BUG-1276)", g_step ? "vehicle" : "City Hall", ed,
         ok ? "requested" : "refused by the game", now - g_arrived_at);
@@ -339,6 +403,7 @@ void civ_arrival_tick(double now)
     double dt = g_last_tick ? now - g_last_tick : 0;
     g_last_tick = now;
     late_check(now, game::mode_id());
+    unpause_tick(now); // BUG-1323 (also after the last editor: phase done)
     if (g_phase == kNone || g_phase == kDone || g_queued)
         return;
     // BUG-1298 (designs.own_editor_offline): an open editor of ours is followed to its end without a session (its
@@ -416,6 +481,8 @@ void civ_arrival_tick(double now)
         }
         if (m != modes::kCiv)
             return; // (the way back)
+        if (g_unpause_fix)
+            g_unpause_due_at = now; // BUG-1323
         back(g_step);
         g_back_at = now;
         Result& r = g_res[g_step];
@@ -447,6 +514,10 @@ std::string civ_arrival_status()
     snprintf(b, sizeof b, "  late: fix=%d this=%d checked=%d world=%08X noted=%u dues=%u skips=%u notes=%u why='%s' (BUG-1290)\n",
              (int)g_late_fix, (int)g_late, (int)g_late_checked, w, creations::world_note(kNote, w), g_late_dues,
              g_late_skips, g_late_notes, g_late_why.c_str());
+    s += b;
+    snprintf(b, sizeof b, "  unpause: fix=%d due=%d civ_state=%d modal_at_open=%d modal_now=%d resumed=%u skipped=%u (BUG-1323)\n",
+             (int)g_unpause_fix, (int)(g_unpause_due_at >= 0), g_civ_state, g_modal_at_open, modal_pauses(), g_unpaused,
+             g_unpause_skipped);
     s += b;
     for (int i = 0; i < 2; i++) {
         const Result& r = g_res[i];

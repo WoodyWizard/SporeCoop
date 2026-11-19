@@ -1,16 +1,16 @@
 ---
 id: BUG-1297
 title: WP-S2a: the guest's own Tribe and Civ outfitter open on the host's body when its creature's key is a key of the host's world
-status: open
+status: fixed
 kind: bug
 stage: Tribe, Civ
 reported: 2026-11-19
 source: plan
 role: guest
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/w56-editors
-commits: 8709f9fe
+commits: 8709f9fe 800a17e6 2cb5861c
 tests: own_editor_key (coop_own_editors_robust.py key), own_editor_key_off
 signature: species::own_key
 docs: docs/re/creations.md#creations-own-editors-robust, docs/06-testing.md#testing-own-editors-robust
@@ -48,8 +48,16 @@ night run (the own outfitter's return, fix/w57-own-editors' area); on the merged
 20261119-121054) its hut planner did not open either (coop_tribe_outfit.open_outfitter, 3 clicks; the guest had just
 joined from its galaxy menu: "the galaxy menu's splash window ... was up in the stage: hidden (BUG-0938)" in both).
 Open until the outfitter's return is fixed and the test passes whole.
+Fixed (fix/w57-own-editors, merged tree with fix/w57-tribe-keys): the return was BUG-1308 (Done blocked by the part-list
+error of the guest's own creation) and BUG-1316 (its result never taken); the planner after a join from the galaxy menu
+now waits for the game's time and clicks the hut once more after 5 s when no planner came (coop_own_editors_robust.py
+open_own_outfitter; in the run it opened at once: "game time runs after 0.03 s; hut on screen (699, 433)"). PASS whole:
+fix/w57-own-editors worktree out/lab/20261119-130049 own_editor_key (the outfitter asked for 7CF30A6D: the guest's own body 9B6134E2; back in Tribe; the
+slot the host's; both games dress the guest's members in its new outfit 7BF92563 / 954ADE35). Twin own_editor_key_off
+FAIL in the same run for the right reason (the outfitter opens on 290229B9 -> 6E1A058F, the host's body).
 
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: feat/w56-editors: fix and its test written (switch, FAIL twin entry); the lab run waits for the orchestrator.
 - 2026-11-19: fix/w57-tribe-keys: set-up fixed (host My Creations key), BUG-1297 check PASS / twin FAIL; the test waits for the own outfitter's return (Done).
+- 2026-11-19: fix/w57-own-editors: own_editor_key PASS whole / twin FAIL (20261119-130049): fixed.

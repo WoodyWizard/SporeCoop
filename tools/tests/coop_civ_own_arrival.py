@@ -187,8 +187,11 @@ def guest_editors(ck, host, guest, scr):
     return t_arr, all(done)
 
 
-def guest_city(ck, host, guest):
-    """4.: the NPC city nearest the capital bought for the guest (the cities still to come spawned first)"""
+def guest_city(ck, host, guest, land_did=0):
+    """4.: the NPC city nearest the capital bought for the guest (the cities still to come spawned first); land_did:
+    the nearest one whose land vehicles are of that design id when there is one (BUG-1323, lab 20261119-130049: the
+    nearest city was religious, 9AD7D4AA, the guest's vehicle editor F670AA43 only matched the capital, where a guest
+    may not buy: "this city belongs to player 0")"""
     hc, _ = civ(host)
     if not [k for k, v in hc.items() if not v['player']]:
         m = re.search(r'eax=(0x[0-9A-Fa-f]+)', host.call('call Simulator::cCivExpansion::Get cdecl')['out'])
@@ -204,6 +207,13 @@ def guest_city(ck, host, guest):
         return None, None, hc
     npc.sort(key=lambda i: dist(hc[i]['pos'], hc[cap[0]]['pos']))
     gci = npc[0]
+    if land_did:
+        for ci in npc:
+            m = re.search(r'did (\w+) ', host.call(f'coop.civ owndesign did {ci} 0')['out'])
+            if m and int(m.group(1), 16) == land_did:
+                gci = ci
+                break
+        print(f'  the guest\'s city: {gci} (land design {land_did:08X} wanted; nearest {npc[0]})', flush=True)
     print('  host:', host.call('coop.res add money 30000')['out'].strip(), flush=True)
     print(f'  guest buys city {gci}:', guest.call(f'coop.civ buycity {gci} 500')['out'].strip(), flush=True)
     got = wait(lambda: all((c := civ(x)[0].get(gci)) and c['player'] and c['owner'] == 1 for x in (host, guest)), 30)
@@ -276,7 +286,7 @@ def run(host, guest, ck, off_twin, scr):
     ck(not changed, f'the guest\'s copy of the culture set is the host\'s ({changed or "same"})')
 
     # 4. the guest's city: its City Hall, its citizens
-    gci, capi, hc = guest_city(ck, host, guest)
+    gci, capi, hc = guest_city(ck, host, guest, vdid)
     if gci is None:
         ck.faults(host=host, guest=guest)
         return ck.result()

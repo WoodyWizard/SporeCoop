@@ -395,3 +395,11 @@ anchor so other docs can link to it:
 * Next steps: send and register that resource under the host's key (BUG-1279 lists the pitfalls).
 * Ticket: BUG-1279.
 
+
+## Tribe: the host's save names a guest's own outfit creation (2026-11-19, fix/w57-own-editors)
+* What happens: after a guest's own Tribal Outfitter (creature.mode own) the host's next save holds the guest's raw
+  creation key in lastSave.pld and PlanetScripts.pld, and the outfit's line key (0x7B......) in the .spo.
+* Reproduce: `tools/lab.py run tribe_own_outfitter` (or own_editor_drop): the last check, "the host's save names no key
+  of the guest's", lists the files (lab 20261119-122505).
+* Known: the .spo hit is the save strip's class (BUG-1315); the .pld streams are not looked at yet.
+* Ticket: BUG-1326.

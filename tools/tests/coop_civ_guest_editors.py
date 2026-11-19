@@ -61,11 +61,14 @@ CIV, EDITOR = '0x01654C04', '0x00DBDBA1'
 wait = waiter(step=1.0, final=True)
 
 
-def mode(con):
+def mode(con, whole=False):
+    """the mode id of `game.mode` (its first word; whole: the answer with the mode's name). BUG-1307: the answer is
+    "0x00DBDBA1 Editor", compared whole with the bare id no editor (nor Civ) was ever seen"""
     try:
-        return con.call('game.mode')['out'].strip()
+        out = con.call('game.mode')['out'].strip()
     except OSError:
         return ''
+    return out if whole else (out.split() or [''])[0]
 
 
 def civedit(con):
@@ -167,12 +170,35 @@ def game_fields(host, guest):
     return {who: (culture(c), civedit(c)[1]) for who, c in (('host', host), ('guest', guest))}
 
 
+def guest_keys(guest):
+    """the guest's own design keys this test made (its creations and their 0x7B line keys)"""
+    keys = set()
+    for t in civedit(guest)[0].values():
+        keys |= {t['key'], t['line']}
+    return {k for k in keys if k}
+
+
+def host_culture_kept(c0, c1, gkeys, what=''):
+    """(ok, text): every culture entry the host had is unchanged, and an entry the game made meanwhile is the
+    culture's own design. BUG-1307: the house build (the game's own, on the host for the guest's city) makes the
+    missing house entry 4E3F7777 with the culture's design (lab 20261119-122505: 00000000 -> 0675F7B5); that is not a
+    guest design in the host's culture, which this check is about: a new entry fails only when it is one of the guest's
+    keys or a line key (0x7B......)"""
+    changed = {f'{k:08X}': (f'{v:08X}', f'{c1.get(k, 0):08X}') for k, v in c0.items() if v and c1.get(k) != v}
+    added = {k: v for k, v in c1.items() if not c0.get(k) and v}
+    bad = {f'{k:08X}': f'{v:08X}' for k, v in added.items() if v in gkeys or v >> 24 == 0x7B}
+    ok = not changed and not bad and len([k for k, v in c0.items() if v]) <= len(c1)
+    new = {f'{k:08X}': f'{v:08X}' for k, v in added.items()}
+    return ok, (f'{what}the host\'s culture set is unchanged on the host ({len(c0)} entries; changed {changed or "none"}, '
+                f'made by the game {new or "none"}, of the guest {bad or "none"})')
+
+
 def same_civilization(ck, before, host, guest, what):
     for who, con in (('host', host), ('guest', guest)):
         c0, g0 = before[who]
         c1, g1 = culture(con), civedit(con)[1]
         if who == 'host':
-            ck(c1 == c0, f'{what}: the host\'s culture set is unchanged on the host ({len(c0)} entries)')
+            ck(*host_culture_kept(c0, c1, guest_keys(guest), f'{what}: '))
         else:
             changed = {f'{k:08X}': (f'{v:08X}', f'{c1.get(k, 0):08X}') for k, v in c0.items() if v and c1.get(k) != v}
             ck(not changed, f'{what}: the guest\'s copy of the culture set keeps every design it had {changed or ""}')
@@ -261,6 +287,10 @@ def main():
         shared[who] = line_design(con, 1, HOUSE)
         ck(ok, f'{who}: the guest\'s line names its house design ({shared[who]:08X})')
     ck(shared['host'] == shared['guest'], 'the same key of the guest\'s house design on both games')
+    # BUG-1307: the bought NPC city has no building of the house design id (its houses are the NPC culture's: lab
+    # 20261119-111652 found none, on both games): the guest builds one, as civ_own_designs does (the game's own build)
+    print('  guest:', guest.call(f'coop.civ build {gci} house')['out'].strip(), flush=True)
+    time.sleep(3)
     for con, who in ((host, 'host'), (guest, 'guest')):
         def houses(owner):
             return sorted({mhash(con, b['model'], BTYPE, BGROUP) for b in own(con)[1] if b['owner'] == owner and b['did'] == HOUSE})
@@ -330,7 +360,7 @@ def main():
         slot = slot.group(1).capitalize()
         t_save = time.time() - 1
         print('  host menu:', host.call('coop.menu')['out'].strip(), flush=True)
-        ck(wait(lambda: 'GalaxyGameEntry' in mode(host), 90), 'the host is in the galaxy menu (its game saved)')
+        ck(wait(lambda: 'GalaxyGameEntry' in mode(host, True), 90), 'the host is in the galaxy menu (its game saved)')
         host.call('wait.frames 240 90000')
         files = save_files(os.path.join(lane.HOST_DIR, 'Games', slot), t_save)
         found = keys_in(files, keys)

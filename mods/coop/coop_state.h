@@ -434,6 +434,7 @@ extern unsigned g_own_editor_items_set;
 extern unsigned g_own_editor_waits;
 extern unsigned g_own_keep_ctor;
 extern unsigned g_part_list_waivers;
+extern unsigned g_outfit_part_waivers; // BUG-1308
 extern unsigned g_quits_delayed;
 extern unsigned g_req_own_busy;
 extern unsigned g_select_guards;

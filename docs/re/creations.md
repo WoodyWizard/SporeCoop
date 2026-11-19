@@ -1825,6 +1825,20 @@ BUG-1289 (WP-S1a, `creations.late_species`). Code reading (no new game RE), the 
   (`coop.creations`: `late: ... unbound=1/0 bound=N`); a choices.ini entry of an earlier run is still dropped.
 * The guest is told once per world (15 s after it arrived in Tribe or Civ): "you play the host's species here: pick
   your own creature with < > in the co-op window".
+## The part-list error in a guest's own outfitter (2026-11-19, fix/w57-own-editors)
+<a id="creations-own-outfit-parts"></a>
+
+BUG-1308. Lab 20261119-095414 / 20261119-104136 / 20261119-111652, lane 2, the guest's own creature 0x290225CD
+('Kirgle', made in the Creature Creator):
+* ✔ (runtime) The guest's own Tribal Outfitter (BUG-1272: request editor 0x156276D1, tag 0x116DD1B, key = the guest's
+  own creature) opens on the creature, but its Done does nothing (no mode change for 90 s and more): the same
+  part-list error (bit 5 of the blocking set, section 7 of this file) as the Creature editor on that creation
+  (#creations-own-mating-editor). Dropping bit 5 in `h_BlockingErrors` while our own outfitter is pending made Done
+  work: back in Tribe, a new creation 0x2928F397 in the guest's My Creations (lab 20261119-111652).
+* So the outfitter's part list (editor config prop 0xF5CBE065) does not hold the Creature Creator's parts either; the
+  world's species (made in the stage) has no such error (0.7.15's host outfitter test passes Done).
+* ~ The Civ outfitter (request tag 0x66787BB, started from the guest's creature by civ_editors.cpp) gets the same
+  waiver (the same editor family, same creature); not run in the lab yet (no test opens a guest's Civ outfitter).
 
 ## Keys of a species line in a save: where the game writes species keys (2026-11-19, fix/w57-savestrip)
 <a id="creations-save-keys"></a>

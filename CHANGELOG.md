@@ -5,6 +5,10 @@
 Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and reverse-engineering notes for this version.
 
 ### Development
+- The guest's own editors of this version, fixed after their first lab run before any release: the Tribal Outfitter
+  for a guest's own creature now closes with Done and its outfit reaches the guest's members (BUG-1308, BUG-1316), and
+  a guest's own City Hall and vehicle editors at its Civilization arrival open (the guest did not know the host's
+  build) and leave its game running (BUG-1306, BUG-1323).
 - The species line (BUG-1270): every player's own species per stage (tribe and Civ outfits, Civ designs) is kept by
   the mod, sent to every game and kept by the host between sessions; the base for every player's own look in Tribe and
   Civilization (no visible change by itself).
@@ -112,7 +116,7 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   guest's screen; a trade route the host's game removes disappears for the guest too (BUG-1287).
 - Tribe and Civilization: a guest whose own creature has the same id as one of the host's (it often has when its first
   creature was made from the host's in the landfall editor) now gets its own creature in its own Tribal Outfitter and
-  Civ outfitter; before, the outfitter opened on the host's creature (BUG-1297; still open until its lab run).
+  Civ outfitter; before, the outfitter opened on the host's creature (BUG-1297).
 - Tribe and Civilization: when the connection is lost while a guest is in its own outfitter or design editor, its game
   no longer dresses every tribe member in the new outfit or puts the new design into the shared civilization; what it
   made is kept and reaches every player when it joins again (BUG-1298; still open until its lab run).
