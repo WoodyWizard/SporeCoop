@@ -9277,6 +9277,9 @@ Key frames `line` and `next_session`: no look changes in WP-0 (the frames only d
   that save in the test's frames folder (`host_save_<planet>.spo`; the next save overwrites the slot), and prints
   `coop.savestrip` (`keys= line_keys= rewritten= raw= events=`). Save twin: `SPORE_LAB_FIXOFF="tribe_own_species=
   savestrip.keys"` (the save check FAILs, BUG-1315).
+* Kids (age != 1) keep their species while they grow up (BUG-1313, `tribe.kid_species`): the switch-off check and the
+  mix after the reload accept a guest's kid of the species it had (the bought baby of step 3 loads as a kid of the
+  tribe's species; with the switch off it stays the guest's).
 ## The Civ citizens of the owner's species (2026-11-18, feat/w54-citizens)
 <a id="testing-civ-own-species"></a>
 
