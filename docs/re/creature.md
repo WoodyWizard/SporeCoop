@@ -5189,3 +5189,22 @@ addresses are the .sym ones). Extends #creature-save-strip (SaveGame 0xB29000) a
   frame hook with a token object, the message hung the main thread in MessageSend's lock. Sent with MessageSend (vt 0x14)
   outside the frame, as the game's leave-the-planet path does, with a static token object: the save is written at once
   (one 0.7 s frame), no box, no pause, and the next host loaded it.
+
+## Nest alphas and the shared drama events (2026-11-19, fix/w56-sync)
+<a id="creature-nest-alpha"></a>
+
+BUG-1283, BUG-1282 (found by the Lineages fork (PR #196), its BUG-9115, 9131). Code read and the fork's findings; not
+yet seen at runtime on our lab (tests coop_npc_alpha.py, coop_drama_shared.py written).
+
+* ~ (fork, runtime) A nest's alpha is cCreatureAnimal +0xB58 bit 0x1: its card reads "Alpha <name>" and SocialPropose
+  0xDA43D0 adds a social round (as section 8 above). The host's NPC state carried dead / impressed / pack / summoned /
+  air only, so a guest's proxy kept the bit of its own game's herd (4 of 15 proxies differed in the fork's run). Now
+  the state and the spawn carry NF_ALPHA (64); a guest whose host has npc 1.1 sets the proxy's bit to the host's.
+* Decision (BUG-1282): the meteor strike (kind 3) and the rain storm (5) are events of the host's world in Creature:
+  the host's start goes to the guests (MSG_PLAYER_RULE kind K_DRAMA 11, reliable) and the guest's game starts the same
+  kind with StartKind; a guest's own start of a night predator (1), a meteor strike or a rain storm is refused while its
+  host relays (npc 1.1). Each game places the event at its own avatar (the start positions are the avatar's), so the
+  meteors fall near each player, at the same time. The UFO (2) was already the host's (#creature-drama-events, BUG-0558
+  shows its ship on the guest). ~ Not checked: whether the host's night predator is mirrored on the guest by the NPC
+  sync (a creature the event makes near the host's avatar); a guest that joins during a host's rain does not get it.
+
