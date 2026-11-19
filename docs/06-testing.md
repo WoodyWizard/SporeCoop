@@ -9626,3 +9626,10 @@ DNA as before):
   editor alone while the guest plays on; the guest's game log must have no shared total (`dna: a -> b cause=`, own
   totals say `dna: own a -> b`) and its bar must stay the party's. `coop.dna own` prints `edge=` (the switch) and
   `strays=` (totals of the host's DNA sent to an own-wallet guest at a mode edge: counted with the switch off).
+* BUG-1327 (open): in civ_late_arrival the guest's second exit (SIGKILL or its own WM_CLOSE exit alike) leaves the
+  host's game without its wineserver: the host's log stops, its console refuses, a new wineserver of the lane's bottle
+  starts with the guest's relaunch. The test dies in wait_guest_in at its last step (a third join); every check before
+  it is valid.
+* A guest may buy vehicles only in its own city: a test that buys the vehicle of the guest's arrival vehicle editor
+  picks (or captures) an NPC city whose land design id is that editor's (`coop.civ owndesign did <city> 0`), not the
+  shared capital (civ_own_arrival, line_stages --civ-editors).
