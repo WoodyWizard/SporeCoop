@@ -1156,6 +1156,7 @@ static void frame_stage_ticks(double now)
     own_dna_tick(); // WP-D (BUG-1291): before the away state (an owed payment of this frame is seen in the next)
     host_away_tick(now);
     host_busy_tick(now); // C3 (BUG-1142): the host tells its pause; a guest's game waits for it
+    guest_mating_tick(now); // BUG-1305: a guest's mating whose mate is a host copy ends in its editor
     dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
     tribe::tick(now);

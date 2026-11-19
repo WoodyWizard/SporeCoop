@@ -14,12 +14,17 @@ key during the egg scene:
   1. the guest's game names a mate near the nest (`coop.drama mate` on the guest: +0xB58 & 0x10);
   2. the guest walks up to it, presses Backspace (the mating call) and left-clicks it where its game draws it
      (`coop.cocoon matexy`): its creature goes to mate (its behaviour node 02D852F0);
-  3. within 90 s the pairing reaches the egg scene on the guest's game (cinematic B6A1DBE1, `coop.status`), the scene
-     ends by itself, and the guest's own evolution editor opens (game.mode Editor), all without a key press.
+  3. within 60 s the guest's own evolution editor opens (game.mode Editor) without a key press, and the guest leaves it
+     (done) and plays its creature again.
 Printed for the record: the mate's pointer and whether it is one of the host's copies (a proxy), the guest's
-avatar node over time, the egg scene's length.
+avatar node over time, an egg scene if one plays.
 
-  coop_guest_mating.py
+Lab lane 6, 20261119-111735 (before the fix): the mate is a host copy, the guest's creature stays in its mating action
+02D852F0 for 90 s, no egg scene, no editor (BUG-1305). The first version of this test also asserted the egg scene
+B6A1DBE1 on the guest: with the fix the pairing ends as the game's egg scene ends (its message 0x4D9686F) without the
+scene itself, so the scene is printed only (BUG-1304: the host's egg scene ends by itself).
+
+  coop_guest_mating.py          (SPORE_FIX_OFF=creature.guest_mating: no editor: FAIL, guest_mating_off)
 """
 import re
 import time
@@ -100,7 +105,7 @@ def main():
     nodes = []
     t0 = time.time()
     shot = False
-    while time.time() - t0 < 90 and not in_editor(guest):
+    while time.time() - t0 < 60 and not in_editor(guest):
         c = cine(guest)
         if c == LAID_EGG and egg_from is None:
             egg_from = time.time()
@@ -118,13 +123,16 @@ def main():
             nodes.append((round(time.time() - t0), n))
         time.sleep(1)
     print(f'  guest avatar nodes (s, node): {nodes[:12]}', flush=True)
-    ck(egg_from, f"the pairing reached the egg scene {LAID_EGG} on the guest's game")
+    print(f"  egg scene {LAID_EGG} on the guest: {'%.0f s' % ((egg_to or time.time()) - egg_from) if egg_from else 'none'}; "
+          f"{guest.call('coop.cocoon')['out'].strip().splitlines()[-1]}", flush=True)
     ck(in_editor(guest), f"the guest's own evolution editor opened without a key press ({mode(guest).strip()}, "
        f"egg scene {('%.0f s' % ((egg_to or time.time()) - egg_from)) if egg_from else 'none'})")
     if in_editor(guest):
         guest.call('wait.frames 200 60000')
         time.sleep(8)
-        guest.call('click 1383 1062')  # the red cross
+        guest.call('click 1416 1062')  # done (the game's evolution editor has no red cross, BUG-1222)
+        if wait(lambda: 'Editor' not in mode(guest), 20) is None:
+            guest.call('click 1383 1062')
         ck(wait(lambda: mode(guest) == m0 and guest.call('coop.avatar')['ok'], 90),
            f'the guest is back in the Creature stage ({mode(guest).strip()})')
     ck.faults(host=host, guest=guest)

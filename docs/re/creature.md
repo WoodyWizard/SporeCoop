@@ -4987,6 +4987,11 @@ is encrypted on disk). Fits #creature-mating-call and #creature-fork-mating-fov 
   0x6F02369D (a teal glow), crg_cocoon_hatch 0xD033D3AC (a burst). The world object cr_cocoon_collision (group 0x02E9C426
   of the planet objects, instance 0x69793182, model key 0x0E3BD617) exists; the effects need no object. No code constant
   references these ids. The shell is sized by the creature's bounding radius / 0.9.
+  CORRECTION (2026-11-19, feat/w56-cocoon): on GOG 2024 (lab lane 6, our probe `coop.cocoon play <hex>`)
+  cCreatureBase::PlayAnimation answers 0 for 9C26F705, 4E0D3CBF and D4F48A35 on the Creature stage's avatar and on a
+  puppet (the current animation stays the locomotion's 02481DE5 / 027844AD); a known one, 0265D18B, answers 259 and
+  plays; CreaturePlayAnim answers 0 too. The animations are not in those creatures' animation set there (the fork's
+  owner test "they stand still, the cocoon appears" fits). The three effects work: see #creature-cocoon.
 * ✔ (runtime) A world effect's transform: +4 position, +0x10 scale, +0x14 3x3 (rows = local axes); its up must be the
   planet's up at the position (with the world's z the effects lie on their side).
 * ✔ (disassembly) The egg scene after a mating is cinematic CRG_LaidEgg 0xB6A1DBE1. The fork: it ends only through
@@ -5261,6 +5266,12 @@ BUG-9160 / 9181 / 9194 (PR #196 by PandizeLive, MIT), see #creature-lineages-coc
   world); no message of its own, so a 0.7.15.2 partner is shown in the cocoon too and a 0.7.15.2 game hides the partner
   as before. Not told apart: the stage-end editor (Creature -> Tribe, after the vote) shows the cocoon for the host as
   well (the creature evolves there too); in Cell, Tribe, Civ and Space nothing changes.
+* ✔ (lab lane 6, 2026-11-19, runs 20261119-110736 and the probe) the shell 59A93586 and the glow 6F02369D are active
+  effects on the observer's game, the shell is drawn where the partner stood (key frame cocoon_hold); the three cocoon
+  animations are not played by the game (answer 0, CORRECTION under #creature-lineages-cocoon-mate): the mod asks once
+  and then only shrinks the body and holds its pose. ~ Calling Anim::AnimatedCreature::PlayAnimation 0xA0C5D0 directly
+  with its int argument 1 faulted inside the game (caught by its handler, a known animation 0265D18B); with 0 it
+  answered 263 without changing the current animation: not a way to play them.
 * The sequence on the other game: the curl in (gen_evolve_cocoon 9C26F705, 2.4 s, the body shrinks to 12 % with it,
   the woven shell crg_cocoon_create 59A93586 laid every 1.8 s at the spot it went in), then the hold (gen_evolve_cocoon
   _hold 4E0D3CBF, played again when the game left it, the idle refresh skipped for the body: game::hold_pose), the glow
@@ -5277,3 +5288,22 @@ BUG-9160 / 9181 / 9194 (PR #196 by PandizeLive, MIT), see #creature-lineages-coc
   is in a save (world effects, the puppet's scale and pose; the puppets are stripped from saves as before).
 * Test: `coop_cocoon.py` (cocoon, cocoon_guest, the twin cocoon_off): the observer's `coop.cocoon` reads the puppet's
   current animation from its AnimatedCreature (vt 0x58) and the glow's IsActive.
+
+## A guest's own mating at the nest (2026-11-19, feat/w56-cocoon)
+<a id="creature-guest-mating"></a>
+
+BUG-1305 (the Lineages fork's BUG-9175), BUG-1304 (its BUG-9161); `mods/coop/guest_mating.cpp`, switch
+`creature.guest_mating`, test `coop_guest_mating.py` (guest_mating, twin guest_mating_off).
+
+* ✔ (lab lane 6, 20261119-111735, before the fix) on a guest the drama manager picks a mate near the nest (+0xB58 &
+  0x10) that is one of the host's copies (a proxy, `coop.npc list`); the guest's mating call and a real click on it put
+  the guest's creature into its mating action 02D852F0 at once, but the mate's node stays FFFFFFFF (its AI does not run
+  in the guest's game) and the creature waited there for 90 s: no egg scene, no editor.
+* ✔ (lab, rel/0.7.15.2 20261118-144132 creature_mating / editor_now) on the host the egg scene ends by itself: the
+  mating editor request comes 25-27 s after the click with no key pressed. The fork's "never ends" (its BUG-9161) is not
+  in our host; on the guest the pairing never reached the scene (above).
+* The fix: on a guest in the mating action with a host copy as its mate, once its creature is within 4 m of it for
+  1 s (or 12 s after the action began) the mod sends the creature game its own "mating done" message 0x4D9686F
+  (CreatureGame_HandleMessage 0xD42E50 -> 0xD3C650(1), then CreatureGame_Update -> 0xD3C650(0): the mating editor's
+  own request, tag 0x12191CA), outside the frame; Submit's hook takes it as the guest's own evolution. Once more after
+  8 s when no editor came. No egg scene plays on the guest.
