@@ -38,6 +38,14 @@
   vehicle too: when it has arrived in the Civilization stage its own City Hall editor opens, then its vehicle editor
   (the red cross keeps the civilization's). Its cities' City Halls and the vehicles it buys show them on every
   player's screen; the host plays on meanwhile and the civilization's designs stay the host's (BUG-1276).
+- Tribe and Civilization: a guest that has no creature of its own in this world (it joined in Tribe or Civilization,
+  or the host loaded a planet it never played) now sees "My creature: < >" in the co-op window and can pick one of its
+  own creatures there; its tribe members or the citizens of its cities then wear it on every player's screen. Before,
+  it played the host's species with no way to change it. A creature picked in the galaxy menu before joining now holds
+  in the host's world too (BUG-1289).
+- Civilization: a guest that joins after the end of Tribe (or comes back after it) now also gets its own City Hall and
+  first vehicle editors once it has arrived, once per world; before, only a guest that was there at the end of Tribe
+  got them (BUG-1290).
 
 ### Fixed
 - Cell: when your partner's cell zaps with its electric part, your screen no longer fills with a trail of giant white
