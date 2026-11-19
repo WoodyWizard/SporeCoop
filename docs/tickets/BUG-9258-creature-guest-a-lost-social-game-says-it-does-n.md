@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.14.1-lineages65-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: 80be5f2f
 tests: tools/qa_win/qa.py (manual: two MSI games, coop.social act)
 signature:
 docs:
