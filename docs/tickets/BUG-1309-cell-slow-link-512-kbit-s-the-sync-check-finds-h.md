@@ -81,6 +81,8 @@ cell_slow_link (coop_cell_slow_link.py, SPORE_NET=lowband, lane 10):
   Regression guards on the same tree, 20261119-131719: cell_coop OK (clean link), cell_mirror_turn_net OK (250 ms,
   5 % random loss: no cut). Key frames slow_link_cells looked at: at level 1 the screen shows 2-16 cells, the twin's
   and the fix's frames differ little; the numbers are the proof.
+* After merging rel/0.7.16 6c8cc309: PASS out/lab/20261119-135303 (cell_slow_link), twin FAIL in the same run
+  (cell_slow_link_off: median 0.30, gate `c: 182 missing`).
 * FAIL out/lab/20261119-130733 (cell_slow_link_off, cell.slow_link off): 23-45 % (median 0.35) over 20 samples, and the
   lab's sync-check gate `c: 13 missing on the guest`; 20261119-130241 (twin, 40 units): 26-46 %, ~100 mirrors in all.
 
