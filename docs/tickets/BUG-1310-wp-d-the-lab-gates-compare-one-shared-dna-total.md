@@ -68,7 +68,8 @@ Switch `diag.own_dna`; twin `dna_own_gates_off` (SPORE_FIX_OFF=diag.own_dna coop
   dna_own_reload, dna_own_rejoin, dna_own_store, dna_own_shared, dna_spend, dna_pace, editor_sync_guest,
   evo_bar_editors, cocoon, cocoon_guest, guest_mating (cocoon failed on the gates in feat/w56-cocoon 20261119-113606:
   host 15 after its editor's price, guest 40, the own model). evo_screens_switch_lowfps of 20261119-120634: no DNA
-  gate finding (its FAIL was the guest's black screen 22 s at 10 fps under load 31, outside this ticket).
+  gate finding (its FAIL was the guest's black screen 22 s at 10 fps under load 31, outside this ticket). Rerun once: 20261119-124801
+  evo_screens_switch_lowfps PASS (no gate finding, no shared total on the guest).
 - The gate still bites in the own mode: the twins dna_own_reload_off (20261119-113728, -120634: "bar: host 150, guest
   125" on the monitor and the sync-check, new with this ticket) and dna_own_host_editor_off (20261119-120634: "bar:
   host 60, guest 90"). Shared mode unchanged: dna_own_shared and the twins dna_own_off / dna_own_rejoin_off compare
