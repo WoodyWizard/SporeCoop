@@ -9,26 +9,33 @@ source: plan
 role: guest
 versions: 
 fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
-related:
+branch: feat/w56-editors
+commits: f3373bd1
+tests: tribe_birth_species, tribe_birth_species_off (coop_own_editors_robust.py birth)
+signature: SporeCoop::cTribe_SpeciesSlot 0x00C8E9B0
+docs: docs/re/tribe.md#tribe-birth-species, docs/re/creations.md#creations-own-editors-robust
+related: BUG-1271, BUG-0671, BUG-0824
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Lineages comparison (item 6): a guest's new member (a baby it bought, a mirror) showed the tribe's species for
+0.5-3.5 s before the species pass changed it (one member per 0.15 s after 0.5 s of seeing it); the fork's members are
+born in their village's species.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+✔ (Ghidra entries of docs/re/tribe.md#tribe-two-species) Citizen_Init 0xC27330 takes the slot through
+cTribe_SpeciesSlot; the pass waits on purpose (a body is built over several frames, BUG-0318).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`tribe.birth_species`: the host's baby of a known buyer and a guest's mirror spawn of a known owner run with the
+(hooked) slot accessor answering the owner's line profile for the player tribe's slot 0; nothing is written into the
+tribe; the member is noted as changed by the mod (it goes back to the slot like the others).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Not run yet: the lab waits for the orchestrator's word (2026-11-19, the CPU was busy with a foreign task). Ready:
+`SPORE_DETECTOR=20 python3 tools/lab.py run tribe_birth_species tribe_birth_species_off --lane 6 --lane 7 --retry 0 --no-build`; the twin must
+FAIL, the test PASS (run ids go here).
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-19: feat/w56-editors: fix and its test written (switch, FAIL twin entry); the lab run waits for the orchestrator.

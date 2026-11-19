@@ -4655,3 +4655,15 @@ Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
   DoActionForObjects for it.
 * ~ (fork, runtime) 0xBCA430 (called at 0xDA61D0 +0xB) returns the citizen's current action: the first node of the list
   at ai +0x60C (null when it is the sentinel), record +0 the action, +0x28 the target.
+
+## New members born in their owner's species (2026-11-19, feat/w56-editors)
+<a id="tribe-birth-species"></a>
+
+BUG-1299 (`tribe.birth_species`). ✔ (code, Ghidra entries of #tribe-two-species) A new member takes the tribe's slot in
+Citizen_Init 0xC27330 through `cTribe_SpeciesSlot` 0xC8E9B0 (thiscall(tribe, 0) ret 4), so the mod's species pass
+(tribe_species.cpp) used to change a guest's baby only some 0.5-3.5 s after it appeared. The host's baby of a known
+buyer (h_BabyBorn's purchase pairing) and a guest's mirror spawned for a host member (tribe_mirrors.cpp, the owner
+from the host's state) now run inside `birth_begin` / `birth_end`: the hooked slot accessor answers the owner's line
+profile for the player tribe's slot 0 during that one spawn; nothing is written into +0x18CC. Members bound to an
+existing local member (a mirror that binds) and members whose owner is decided later (a baby nobody claimed, the
+turn split) still go through the pass. Not run on the lab yet (`coop_own_editors_robust.py birth`).

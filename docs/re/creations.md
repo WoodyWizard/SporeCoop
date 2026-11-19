@@ -1747,3 +1747,60 @@ Creature editor, Steam 3010a413 code; fork tickets BUG-9103, BUG-9116. Extends #
   sideways).
 * Pitfall (fork): the creature editor opened from inside a running stage by a console command, or in a background
   window, did not render its 3D view (world-to-screen returned one point): no screen checks of handles there.
+
+## The guest's own editors made robust: key shadows, a session's end, births, ships, paints (2026-11-19, feat/w56-editors)
+<a id="creations-own-editors-robust"></a>
+
+WP-S2 of 0.7.16, from the Lineages comparison (out/research/lineages-species.md items 2, 3, 6-9). Code read on
+rel/0.7.16; not run on the lab yet (owner's rule: night runs), tests ready in `tools/tests/coop_own_editors_robust.py`.
+
+* ✔ (code) **Key shadow of an own editor (BUG-1297, `species.own_key_here`).** `species::own_key(Stage::Creature)` gave
+  the raw My Creations key; creations itself remaps an own key that is also a key of the host's world
+  (`own_key_here`: the host's applied creature's original key, a world package `g_world_pkgs`, a remapped host
+  species), because the host's world package answers that key on the guest at priority 2000 above My Creations
+  (BUG-0278: "Save New" of an edited host creation keeps the host's key). The guest's own Tribal Outfitter (designs.cpp
+  own_outfitter) and Civ outfitter (civ_editors.cpp h_Submit) started from that key, so with a collision they opened on
+  the host's body. Fix: `creations::own_here` (own_key_here while connected) for the creature, the line's registered
+  copy (0x7B......) for an outfit whose own key `creations::host_shadows`. `Row.creature` stays the owner-side
+  instance (made_for compares owner-side instances). Packing was already safe: `line_pack` reads the own My
+  Creations file first. The collision needs a world package under the key: in a session started in Tribe the host
+  sends no creature bundle (mine(kCreature) of the host is the avatar's species, none in Tribe) unless it chose one;
+  a session that went through Creature keeps the Creature stage's world packages (dropped only at the session end,
+  BUG-0055). The test makes the host choose the tribe's creature to register it.
+* ✔ (code) **A session's end inside an own editor (BUG-1298, `designs.own_editor_offline`).** Before: the pending
+  request was a SESSION_STATE (designs.cpp oo_reset, civ_editors.cpp reset, civ_arrival.cpp reset) and every return
+  hook asked for a connected guest (`is_guest()`, `guest_own()`): after a drop the game's own returns ran: 0xCDCC90
+  reloaded the shared tribe slot with the guest's outfit on the guest's game (every member there in it), the planner's
+  apply 0xD095A0 wrote the guest's design into the guest's copy of the civilization (Civ_SetDesign re-models every
+  object of the design), the Civ outfitter's result became the player species / civilization key / tribe slots
+  (0xCFBD70), and the result never reached the line. Now: our request stays ours until the editor returns (Tribe: the
+  return to Tribe; Civ: 10 s back in Civ after the editor, `civedit::own_opened` also for civ_arrival's editors); the
+  returns are ours without a session; the result waits until the game is a guest again whose host sent its stored row
+  (`species::own_ready`: a set before kStored makes the line ignore the stored row, species_line.cpp take_row), then
+  goes to the line and is kept until the host's broadcast row names it (`species::host_took`, the owner-side instance
+  in the row; another drop before that: again at the next session). Kept in memory only: a restart of the guest's game
+  loses the result (the creation stays in My Creations). A journal on disk like the fork's BUG-9044 is not needed for
+  the slot: nothing native is applied that would have to be undone.
+* ✔ (code) **Births in the slot's species (BUG-1299, `tribe.birth_species`).** Citizen_Init 0xC27330 takes
+  `cTribe_SpeciesSlot(tribe, 0)` 0xC8E9B0 for a tribe member (docs/re/tribe.md#tribe-two-species); the species pass of
+  tribe_species.cpp changed a new member only after 0.5 s of seeing it (one per 0.15 s, 3 s after a world). Now the
+  host's baby of a known buyer (TribeStage_BabyBorn's purchase pairing, BUG-0824 / BUG-0671) and a guest's mirror
+  spawned for a host member of a known owner run with the slot accessor (hooked) answering the owner's line profile
+  for the player tribe, slot 0, only during that spawn: the member is born in its owner's species (no write into the
+  tribe; the pass finds it right and keeps it as changed by the mod, so it goes back like the others).
+* ~ (Ghidra-free byte scan, GOG 2024) **The effects manager is never null in a session (BUG-1302, not a bug).**
+  `Swarm::IEffectsManager::Get` 0x67DD90 is `mov eax,[0x15FD8E8]; ret`; the only writer of 0x15FD8E8 is the setter
+  0x67DFB0 (`mov eax,[esp+4]; mov [0x15FD8E8],eax; ret`), called twice: 0x7EADDB in 0x7EAAE0 (`push [esi+0x60]`: the
+  manager, at the graphics start) and 0x7E9585 in 0x7E9520 (`push 0`: at the shutdown). paint_known asks the effect
+  directories first (BUG-0559) and only answers from the fallback lists when Get is null, which is before the app's
+  start or after its end: never while bundles arrive. The 19 stock Cell base paints a native landfall creature keeps
+  (the fork's kBaseCellPaints) are not in kBasePaintEffects (checked: only A3163E4A is), but that list is never asked
+  for them in a session. No change.
+* ✔ (code) **The host's ship shadowed a guest's own ship (BUG-1301, `creations.own_ship_key`).** apply() registers
+  every kind of the host's creation under its original key on a guest at priority 2000 (the world's species), kUfo
+  too; a guest's own empire flies its own key (cEmpire +0xB8), so a guest ship of the same id (two profiles' sequential
+  ids, an edited ship saved under its key) was drawn from the host's records on the guest. Now a guest whose My
+  Creations hold a ship of that key does not register the host's ship under it (an existing one is dropped at the next
+  2 s check after My Creations are read again); the host's ship is drawn from the shared 0x7C...... copy everywhere.
+* Item 7 of the report (preloading a partner's cell model for its kin, the fork's PreloadModel +
+  cCellGFX::PreloadCreature 0xE64980) is not needed by our code: see docs/re/cell.md#cell-kin-preload (BUG-1300).

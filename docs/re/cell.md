@@ -2732,3 +2732,18 @@ fork tickets BUG-9072, BUG-9109..9111, BUG-9171. Extends the fork notes in #cell
 * ~ (fork, runtime) Spawned extra predators move like the natives (top speeds 2.6 m/s both, sampled every frame).
 * ~ (fork, runtime) An unpainted cell creation is drawn as a pale, see-through membrane in the pool (an NPC of it and
   the player's own cell alike); a painted one with its paint.
+
+## Partner kin need no model preload (2026-11-19, feat/w56-editors)
+<a id="cell-kin-preload"></a>
+
+BUG-1300 (from the Lineages comparison, item 7). ✔ (code) The fork preloads every player model it puts on a native
+cell (`Simulator::Cell::PreloadModel` 0xE624B0: inserts the key into the set at G+0x70, whose only caller is the
+editor-exit handler 0xE80980; `cCellGFX::PreloadCreature` 0xE64980) and calls it "not proven necessary". Ours swaps a
+kin's model key only to a key the game already draws (cellsync_kin.cpp kin_filter): `species::key(partner, Cell)`
+is the creation key the partner's puppet on that game is built from, and the swap happens only for a partner with a
+view centre (the host: its state, which also made its puppet) or a puppet in the guest's solo pool, and only when
+`creations::key_known`. The cell model data is built on first use by GetCellModelData 0xE679E0 (the map at
+`*(0x16B3C04)+0x70`), the same for a puppet and a kin, and puppets have never been preloaded (no call of either
+function in the mod besides the own cell's rebuild, creations.cpp apply_own_cell). So a kin of a partner's key is
+never the first cell drawn with that model on its game. Left to confirm: the key frames of cell_kin_species (a
+partner's kin next to its puppet, the same look) when the night lab runs it.

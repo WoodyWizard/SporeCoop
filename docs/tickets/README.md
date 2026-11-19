@@ -1286,6 +1286,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1297](BUG-1297-wp-s2a-the-guest-s-own-tribe-and-civ-outfitter-o.md) | open | bug | Tribe, Civ | 2026-11-19 |  | WP-S2a: the guest's own Tribe and Civ outfitter open on the host's body when its creature's key is a key of the host's world |
 | [BUG-1298](BUG-1298-wp-s2b-a-disconnect-inside-a-guest-s-own-editor.md) | open | bug | Tribe, Civ | 2026-11-19 |  | WP-S2b: a disconnect inside a guest's own editor dresses the shared tribe or civilization on the guest's game and loses the result |
 | [BUG-1299](BUG-1299-wp-s2c-a-guest-s-new-tribe-member-shows-the-host.md) | open | bug | Tribe | 2026-11-19 |  | WP-S2c: a guest's new tribe member shows the host's species for a moment before its own |
-| [BUG-1300](BUG-1300-wp-s2d-cell-kin-of-a-partner-s-species-drawn-wit.md) | open | bug | Cell | 2026-11-19 |  | WP-S2d: Cell kin of a partner's species drawn without the model preload |
+| [BUG-1300](BUG-1300-wp-s2d-cell-kin-of-a-partner-s-species-drawn-wit.md) | not-reproduced | bug | Cell | 2026-11-19 |  | WP-S2d: Cell kin of a partner's species drawn without the model preload |
 | [BUG-1301](BUG-1301-wp-s2e-space-the-host-s-ship-registered-under-it.md) | open | bug | Space | 2026-11-19 |  | WP-S2e: Space: the host's ship registered under its own key shadows a guest's own ship of the same id |
-| [BUG-1302](BUG-1302-wp-s2f-the-fallback-paint-lists-lack-the-stock-c.md) | open | bug | Creature | 2026-11-19 |  | WP-S2f: the fallback paint lists lack the stock Cell base paints |
+| [BUG-1302](BUG-1302-wp-s2f-the-fallback-paint-lists-lack-the-stock-c.md) | not-reproduced | bug | Creature | 2026-11-19 |  | WP-S2f: the fallback paint lists lack the stock Cell base paints |
