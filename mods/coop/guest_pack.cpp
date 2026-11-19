@@ -670,7 +670,7 @@ void pack_command(uint8_t guest, uint32_t lo, uint32_t hi, float value, uint32_t
         assist(guest, target);
 }
 
-static bool g_ctx_test = true; // tests: `coop.gpack ctx 0`: members update outside their party
+static bool g_ctx_test = true; // not a lab switch: tests: `coop.gpack ctx 0`: members update outside their party
 static size_t ai_enter(void* c)
 {
     if (!g_party || !g_ctx_test || (g_members.empty() && g_family_of.empty()))

@@ -293,7 +293,7 @@ static void fuzz_protocol(uint64_t seed, int iters)
     fuzz_struct<Hello>("Hello", R, iters, [](Rng& R) {
         Hello h; h.proto = R.u16(); h.build = R.u32(); h.name = R.str(255);
         h.ext = R.below(4) != 0; // without: a 0.7.2 HELLO
-        h.caps = R.below(2) ? kMyCaps : R.u32();
+        h.caps = R.below(2) ? kMyCaps : R.u32() & ~(uint32_t)(CAP_JOIN_PROOF | CAP_CAMPAIGN_PROFILE); // (those bits come with their payload only)
         h.has_token = R.below(2); h.token = ((uint64_t)R.u32() << 32) | R.u32();
         return h;
     }, [](const Hello& h) { return (size_t)(2 + 4 + 1 + std::min<size_t>(h.name.size(), 255)); });
@@ -301,7 +301,7 @@ static void fuzz_protocol(uint64_t seed, int iters)
         Welcome w; w.your_id = R.u8(); w.world = R.u32();
         for (int n = (int)R.below(R.below(8) ? 5 : 256), i = 0; i < n; i++) w.players.push_back({R.u8(), R.str(40)});
         w.ext = R.below(4) != 0;
-        w.caps = R.below(2) ? kMyCaps : R.u32();
+        w.caps = R.below(2) ? kMyCaps : R.u32() & ~(uint32_t)CAP_CAMPAIGN_PROFILE; // (that bit comes with its payload only)
         return w;
     }, [](const Welcome& w) {
         size_t n = 1 + 4 + 1;
@@ -319,9 +319,9 @@ static void fuzz_protocol(uint64_t seed, int iters)
     fuzz_struct<PlayerLeave>("PlayerLeave", R, iters, [](Rng& R) { PlayerLeave x; x.id = R.u8(); x.reason = R.u8(); return x; });
     fuzz_struct<PlayerState>("PlayerState", R, iters, [](Rng& R) {
         PlayerState s; s.id = R.u8(); s.time_ms = R.u32(); s.pos = v3(R); s.rot = q4(R); s.vel = v3(R);
-        s.flags = R.u8(); s.anim = R.u8(); s.health = R.f32(); s.max_health = R.f32(); s.species = R.u32();
+        s.flags = R.u16(); s.anim = R.u8(); s.health = R.f32(); s.max_health = R.f32(); s.species = R.u32();
         s.mode = R.u32(); s.world = R.u32(); s.scale = R.f32(); s.agl = R.f32(); s.body = R.f32(); return s;
-    }, [](const PlayerState&) { return (size_t)67; }); // BUG-0519: the scale is appended, BUG-0425: the agl after it, BUG-0733: the body after that (all optional)
+    }, [](const PlayerState&) { return (size_t)68; }); // BUG-0519: the scale is appended, BUG-0425: the agl after it, BUG-0733: the body after that (all optional)
     fuzz_struct<Chat>("Chat", R, iters, [](Rng& R) { Chat c; c.id = R.u8(); c.text = R.str(4000); return c; });
     fuzz_struct<NpcSpawn>("NpcSpawn", R, iters, [](Rng& R) {
         NpcSpawn s; s.net_id = R.u16(); s.key[0] = R.u32(); s.key[1] = R.u32(); s.key[2] = R.u32(); s.scale = R.f32();

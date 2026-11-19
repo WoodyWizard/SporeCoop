@@ -11,7 +11,7 @@ namespace slotfs {
 
 bool g_busy_fix = true, g_match_fix = true, g_write_fix = true;
 bool g_fallback_fix = true, g_cleanup_fix = true;
-bool g_move_retry_fix = true;
+bool g_move_retry_fix = true; // not a lab switch: tests of the staged move's retry (slotfs tests)
 bool g_staged_move_fix = true, g_collect_fix = true;
 std::function<void(const std::wstring&)> g_test_before_move;
 uint64_t g_test_move_denied_until;
