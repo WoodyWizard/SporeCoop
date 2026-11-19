@@ -1177,6 +1177,7 @@ and "Make this look more native."). Built and seen working on TITAN + MSI (QA 8 
 * Whispers reach any player of the galaxy through the galaxy server (control WHISPER = 24, by identity).
 * 6O, the Party panel smaller: the cards and tab are 72% of their old size (`[ui] party_scale`), the small font for
   the card name and title; the Social button follows the tab's height.
+  Ported to live Lineages (feat/lineages-47, decision 6Q A, 2026-11-18): the same `party_compact()`, nothing else.
 * Seen on the way (not fixed): the joiner loaded the MSI's stored world while the MSI's creature had just died, and got
   the "killed in battle" screen too; joining a planet still pushes the host and the other guests into the creature
   editor (they press the check), the known forced editor.
