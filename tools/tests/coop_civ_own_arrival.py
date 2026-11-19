@@ -50,7 +50,7 @@ from coop_evo_screens import BLACK_LIMIT, Screens
 from coop_tribe_civ import ADVANCE, CAPTION_OK, CARD_OK, busy, finish_editor, vote_active, where
 from coop_ui import Ui
 from harness import mode, waiter
-from play_civ import BTN_LAND, Player, frame_city
+from play_civ import BTN_LAND, Player, answer_specialty, frame_city
 from twoinst import Checks, Console, keyframe, shot, start
 
 SWITCH = 'core.own_civ_arrival'
@@ -142,8 +142,19 @@ def guest_editors(ck, host, guest, scr):
     done = []
     for step, what in ((0, 'City Hall'), (1, 'vehicle')):
         t0 = time.time()
+        n = 0
         while time.time() - t0 < 300 and 'Editor' not in mode(guest):
             sample()
+            n += 1
+            if n % 5 == 0:  # a player answers what the Civ start shows (a caption, a city's specialty question)
+                for con in (guest, host):
+                    if 'Editor' in mode(con):
+                        continue
+                    if answer_specialty(con):
+                        print(f'  {"guest" if con is guest else "host"}: a specialty question answered', flush=True)
+                    b = busy(con)
+                    if 'paused' in b and 'cinematic' in b:
+                        con.call('click %d %d' % CAPTION_OK)
             time.sleep(1)
         st, res, out = arrival(guest)
         opened = 'Editor' in mode(guest)

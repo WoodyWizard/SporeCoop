@@ -9400,6 +9400,6 @@ record (coop_civ_own_designs.keys_in) for the guest's keys of that stage.
   host's own My Creations hold another model under the same id, so the host must draw the guest's). `--civ-editors`
   (once WP-C3 and WP-X1 are in rel/0.7.16): no stand-in; the guest's own City Hall and vehicle editors after its arrival
   are answered by the campaign's driver and must give its line the designs (its vehicle and its city's City Hall of
-  them on both games). A suite entry `line_stages_editors` belongs with WP-X1's merge.
+  them on both games). Suite entry `line_stages_editors` (added with WP-X1, feat/w54-x1).
 * coop_campaign.py: the editor driver drags the City Hall palette's parts (TRIBE_EDITOR_PARTS) also in the Civ follow
   phase (a guest's own City Hall / vehicle editors at its arrival, WP-X1), not the spaceship palette's.

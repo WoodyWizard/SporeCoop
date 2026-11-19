@@ -2338,6 +2338,11 @@ run yet: the night lab runs `civ_own_arrival` and its twin). Code: mods/coop/civ
   copy is emptied (+0x4C = -1) so a later planner open never applies the guest's design to the civilization. A
   cancelled City Hall editor (the red cross) skips the vehicle one. Nothing is sent by this file and the host's game
   runs unchanged: it plays Civ while the guest designs.
+* ✔ (Ghidra) `SporeCoop::Planner_Instance` 0x169D580 is set by the planner's open 0xD0E170 and set to **0** by its
+  close 0xD100B0 (0xD106EE `mov [0x169D580], ebp` with ebp 0): it names a planner only while one is open. So the
+  planner's copy of a result is read only when the guest's planner is open at the editor's return (not after the
+  arrival editors); a copy left in a closed planner's +0x4C would be applied at its next open, which WP-C3's h_Apply
+  takes into the guest's line in own mode instead of the civilization (the third way the result reaches the line).
 * ? Not checked at runtime: that the building / vehicle editor opened by a request in the Civ mode (not the Tribe's)
   draws and saves as in Tribe; that cGameModeCiv's listener sees the result while the editor closes (else the
   planner's copy is used, if the planner's listener is registered then); that the result's +0x14 is the editor id
