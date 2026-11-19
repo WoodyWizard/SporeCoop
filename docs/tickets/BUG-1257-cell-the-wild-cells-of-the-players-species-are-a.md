@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video, second analysis
 role: guest
 versions: <0.7.15
-fixed_in:
+fixed_in: unreleased
 branch: feat/w54-cellkin, feat/w54-shims, fix/w57-cellkin
 commits: 1959f57a, eedaf53f, 28ef93c1 696d51e2 48dd3e02 dfba6556 0438065a 5c4a8b06
 tests: cell_kin_species (coop_cell_kin_species.py)
