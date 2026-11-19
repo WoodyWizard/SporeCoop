@@ -59,3 +59,4 @@ Then `tools/frames_review.py <run> --test dna_own_editors` (the two editors' DNA
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: feat/w56-dna: code, unit tests, lab tests written; lab runs wait for the orchestrator.
+- 2026-11-19: fix/w57-dna: the lab gates compared one shared DNA (BUG-1310, fixed) and a stray shared total after the host's editor (BUG-1311, fixed). PASS on the merged tree 20261119-120634: dna_own, dna_own_reload, dna_own_rejoin, dna_own_store, dna_own_shared, dna_spend, dna_pace, editor_sync_guest, evo_bar_editors; twins FAIL for their reasons: dna_own_off, dna_own_reload_off, dna_own_rejoin_off, dna_own_store_off (the guest starts again at the host's DNA, 150 / 150, as the night's 20261119-105127). dna_own_editors is another agent's.

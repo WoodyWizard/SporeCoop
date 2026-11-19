@@ -3508,6 +3508,59 @@ static void test_diag_compare()
 
 // MSG_DIAG between new and old games: an older SporeCoop gets an unknown message type (its handler
 // ignores it) and the session goes on; a mark of a guest is relayed by the host to the other guest
+// BUG-1310: own DNA per player (WP-D): the host compares a guest with its own wallet against the host's record of it and
+// the bars with each other; a guest without one against the host's DNA, bars not compared (the shared pool as before)
+static void test_diag_own_dna()
+{
+    printf("diag: own DNA: a guest's DNA against the host's record of its wallet, the bar the party's (BUG-1310)\n");
+    namespace dg = net::diag;
+    auto make = [](float hd, float hb, float gd, float gb, dg::Digest& h, dg::Digest& g) {
+        h = {};
+        g = {};
+        h.mode = g.mode = 0x1654C01;
+        h.world = g.world = 0x42;
+        g.self = 1;
+        h.totals = {{dg::kTotalDna, hd}, {dg::kTotalBar, hb}};
+        g.totals = {{dg::kTotalDna, gd}, {dg::kTotalBar, gb}};
+    };
+    auto ids = [](const dg::Compared& c) {
+        std::string o;
+        for (auto& i : c.issues)
+            o += i.id + " ";
+        return o;
+    };
+    dg::Digest h, g;
+    make(150, 150, 120, 150, h, g); // own: the guest spent 30, its wallet 120
+    dg::own_dna_view(h, g, true, 120);
+    CHECK(ids(dg::compare(h, g)).empty());
+    make(150, 150, 120, 150, h, g); // the same guest compared with the host's DNA (the switch off): a dna MISMATCH
+    dg::own_dna_view(h, g, false, 0);
+    CHECK(ids(dg::compare(h, g)) == "total:1 ");
+    make(150, 150, 150, 150, h, g); // own wallet 120, the guest shows the host's 150: an own dna MISMATCH
+    dg::own_dna_view(h, g, true, 120);
+    CHECK(ids(dg::compare(h, g)) == "total:4 " && dg::total_name(dg::kTotalDnaOwn) == std::string("own dna"));
+    make(150, 150, 120, 180, h, g); // own, the guest's bar ahead of the party's: a bar MISMATCH
+    dg::own_dna_view(h, g, true, 120);
+    CHECK(ids(dg::compare(h, g)) == "total:3 ");
+    make(150, 150, 150, 180, h, g); // shared pool: the bar is not compared (an older guest's bar)
+    dg::own_dna_view(h, g, false, 0);
+    CHECK(ids(dg::compare(h, g)).empty());
+    {   // the wallet's recent values are the late window of an own total (a guest a moment behind)
+        make(150, 150, 140, 150, h, g);
+        dg::own_dna_view(h, g, true, 120);
+        std::vector<std::pair<uint8_t, float>> recent = {{dg::kTotalDnaOwn, 140}};
+        CHECK(ids(dg::compare(h, g, {}, &recent)).empty());
+        recent = {{dg::kTotalDna, 140}}; // the host's own DNA of a moment ago is not that wallet
+        CHECK(ids(dg::compare(h, g, {}, &recent)) == "total:4 ");
+    }
+    {   // an older guest (no bar in its digest) with its own wallet: the DNA only
+        make(150, 150, 120, 0, h, g);
+        g.totals.pop_back();
+        dg::own_dna_view(h, g, true, 120);
+        CHECK(ids(dg::compare(h, g)).empty());
+    }
+}
+
 static void test_diag_session()
 {
     printf("diag: MSG_DIAG relayed by the host, ignored by an older guest\n");
@@ -5113,6 +5166,7 @@ int main(int argc, char** argv)
         {"test_diag_messages", test_diag_messages},
         {"test_diag_clock", test_diag_clock},
         {"test_diag_compare", test_diag_compare},
+        {"test_diag_own_dna", test_diag_own_dna},
         {"test_diag_npc_agl", test_diag_npc_agl},
         {"test_diag_session", test_diag_session},
         {"test_diag_conn_stats", test_diag_conn_stats},

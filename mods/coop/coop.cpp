@@ -2315,6 +2315,13 @@ void support_init()
         v = game::dna();
         return true;
     };
+    p.dna_own = [](uint8_t id, float& v) { return g_mode == modes::kCreature && dna_own_expect(id, v); }; // BUG-1310
+    p.bar = [](float& v) { // BUG-1310: the party's evolution bar (compared where a guest has its own DNA)
+        if (!game::avatar() || g_mode != modes::kCreature)
+            return false;
+        v = game::evolution_bar();
+        return std::isfinite(v);
+    };
     p.cell_food = [](int& v) { return g_mode == modes::kCell && cellsync::food_total(v); };
     p.cell_scale = [] { return g_mode == modes::kCell ? cellsync::scale_now() : 0.f; };
     p.over_ground = [](const net::Vec3& v) { // BUG-1216: the planet stages only
@@ -2849,6 +2856,21 @@ static void init_civ_and_space()
             if (r.puppet == c && !r.echo)
                 return id;
         return -1;
+    };
+    csc.wallets = [](uint32_t mode, int host_spent) { // BUG-1310
+        std::string o;
+        char b[96];
+        for (auto& p : g_sess.players()) {
+            float v = -1;
+            int sp = -1;
+            bool cr = mode == modes::kCreature && dna_own_expect(p.id, v);
+            bool ce = mode == modes::kCell && dna_own_expect_cell(p.id, host_spent, sp);
+            if (p.id == 0 || (!cr && !ce))
+                continue;
+            snprintf(b, sizeof b, "st wallet id=%u dna=%.1f spent=%d\n", p.id, cr ? v : -1.f, ce ? sp : -1);
+            o += b;
+        }
+        return o;
     };
     census::init(H, M, std::move(csc));
     squadron::Ctx sqc;

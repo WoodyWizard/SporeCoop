@@ -272,6 +272,7 @@ struct TotalAt {
     double t;
     uint8_t id;
     float v;
+    uint8_t guest = 0; // BUG-1310: kTotalDnaOwn: the guest whose wallet it is (0: the host's own totals)
 };
 static std::deque<TotalAt> g_host_totals;
 static double g_host_totals_next;
@@ -527,6 +528,9 @@ static dg::Digest build_digest(uint32_t seq)
     int food;
     if (g_P.cell_food && g_P.cell_food(food))
         d.totals.push_back({dg::kTotalCellFood, (float)food});
+    float bar;
+    if (g_P.bar && g_P.bar(bar)) // BUG-1310: compared by the host for a guest with its own DNA only
+        d.totals.push_back({dg::kTotalBar, bar});
     if (g_P.players_out)
         d.out = g_P.players_out();
     if (g_P.cell_scale)
@@ -608,9 +612,15 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
     dg::Digest hd = build_digest(gd.seq);
     dg::Limits lim = limits_for(hd.mode, hd.world);
     add_speed_slack(lim, hd.mode, from);
+    dg::Digest gconv = gd;
+    // BUG-1310: a guest with its own DNA (WP-D) is compared with the host's record of its wallet, and its bar with the
+    // host's (the party's); the others with the host's DNA as before
+    float own_v = 0;
+    bool own = g_P.dna_own && g_P.dna_own(from, own_v);
+    dg::own_dna_view(hd, gconv, own, own_v);
     std::vector<std::pair<uint8_t, float>> recent, fresh;
     for (auto& r : g_host_totals)
-        if (r.t >= g.asked - kTotalLag) {
+        if (r.t >= g.asked - kTotalLag && (r.guest == 0 || r.guest == from)) {
             recent.push_back({r.id, r.v});
             if (r.t >= g.asked - kLateAge)
                 fresh.push_back({r.id, r.v});
@@ -621,7 +631,6 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
         late.fresh = &fresh;
         late.steady = &steady;
     }
-    dg::Digest gconv = gd;
     to_host_scale(hd, gconv); // BUG-0606
     dg::Compared c = dg::compare(hd, gconv, lim, &recent, late);
     g.band = c.band;
@@ -787,6 +796,13 @@ void sync_tick(double now)
             g_host_totals.push_back({now, dg::kTotalDna, dna});
         if (g_P.cell_food && g_P.cell_food(food))
             g_host_totals.push_back({now, dg::kTotalCellFood, (float)food});
+        float bar, own;
+        if (g_P.bar && g_P.bar(bar)) // BUG-1310
+            g_host_totals.push_back({now, dg::kTotalBar, bar});
+        if (g_P.dna_own) // BUG-1310: each own wallet's last seconds (a guest shows its total a moment after the host)
+            for (auto& p : g_P.sess->players())
+                if (p.id != 0 && g_P.dna_own(p.id, own))
+                    g_host_totals.push_back({now, dg::kTotalDnaOwn, own, p.id});
         while (!g_host_totals.empty() && g_host_totals.front().t < now - kTotalLag - 25.0)
             g_host_totals.pop_front(); // a guest answers within 20 s (or is asked again)
     }

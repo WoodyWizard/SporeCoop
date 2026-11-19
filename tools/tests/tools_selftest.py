@@ -810,6 +810,30 @@ def test_worldstate():
     gs.after = worlddiff.State(cr.format('guest', k0))
     out = {f'{w}:{k}' for w, k, _, _ in worlddiff.diff_state(hs, gs, 'Creature')}
     check(out == {'Creature:state:species_killed'}, f'a kill the guest still lacks 1.5 s later: species_killed ({out})')
+    # BUG-1310: own DNA per player (WP-D): the host's wallet row of the guest is what the guest's game must show; a guest
+    # without one (the shared pool, an older mod) is compared with the host's DNA as before
+    dn = 'wstate v1 role={} mode={} modeid=01654C01 world=A3930F03 t=1.0 id={}\n{}end wstate rows=2'
+    def own_case(host_rows, guest_rows, stage='Creature'):
+        return {f'{w}:{k}' for w, k, _, _ in worlddiff.diff_state(worlddiff.State(dn.format('host', stage, 0, host_rows)),
+                                                                  worlddiff.State(dn.format('guest', stage, 1, guest_rows)),
+                                                                  stage)}
+    for name, hr, gr, want in (
+            ('own wallet matches', 'st dna v=150.0\nst wallet id=1 dna=120.0 spent=-1\n', 'st dna v=120.0\n', set()),
+            ('own wallet differs', 'st dna v=150.0\nst wallet id=1 dna=120.0 spent=-1\n', 'st dna v=150.0\n',
+             {'Creature:state:dna_own'}),
+            ('another guest\'s wallet', 'st dna v=150.0\nst wallet id=2 dna=120.0 spent=-1\n', 'st dna v=120.0\n',
+             {'Creature:state:dna'}),
+            ('shared pool', 'st dna v=150.0\n', 'st dna v=120.0\n', {'Creature:state:dna'})):
+        out = own_case(hr, gr)
+        check(out == want, f'detector: own DNA: {name} ({out})')
+    cl = 'st cell food=100 plant=0 spent={}\n'
+    for name, hr, gr, want in (
+            ('cell own count matches', cl.format(0) + 'st wallet id=1 dna=-1.0 spent=3\n', cl.format(3), set()),
+            ('cell own count differs', cl.format(0) + 'st wallet id=1 dna=-1.0 spent=3\n', cl.format(0),
+             {'Cell:state:dna_spent_own'}),
+            ('cell shared count', cl.format(0), cl.format(3), {'Cell:state:dna_spent'})):
+        out = own_case(hr, gr, 'Cell')
+        check(out == want, f'detector: own DNA: {name} ({out})')
     # BUG-0657: Space: a planet's city in the host's game only (its camera on the planet, the guest's in orbit) is level of
     # detail, not a desync; a ship type in one game only still is
     sh = 'census v1 role={} me={} mode=Space modeid=01654C05 world=80AE3044 t=1.0\nme pos=(1.0 2.0 3.0) ok=1'
