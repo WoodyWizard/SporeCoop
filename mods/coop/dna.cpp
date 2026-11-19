@@ -427,26 +427,81 @@ void own_dna_tick()
         trace::line("dna", "party +%.1f -> every own DNA of world %08X (%d wallets)", g, wallet_world(), (int)g_book.w.size());
 }
 
+// BUG-1311: MSG_DNA is sent from the frame's totals phase, before the frame reads the game's mode (g_mode): in the first
+// frame after the host's editor (or a load) the host has its avatar again while g_mode still names the editor, and every
+// guest with its own wallet got the host's own DNA as a shared total (the guest's game went to the host's DNA through
+// AddEvolutionPoints, whose bar step stays: a guest that had spent more than the host ran ahead of the party's bar).
+// Lab 20261119-102828 evo_screens_switch_lowfps (guest "115 -> 65 cause=unknown"), 20261119-110020 evo_bar_editors.
+// On: the game's mode now decides. Off: g_mode (0.7.16 before the fix).
+bool g_own_dna_edge_fix = true;
+COOP_FIX("creature.own_dna_edge", "BUG-1311", g_own_dna_edge_fix,
+         "creature: the host's first DNA total after its editor or a load is each guest's own (not the host's DNA for one frame)");
+uint32_t g_own_edge_strays = 0; // tests: totals of the host's DNA sent to a guest with its own wallet at a mode edge
+
 // host: the total and the tail for guest `id` (MSG_DNA is sent per guest)
 float dna_total_for(uint8_t id, float host_total, dna_own::Tail& tail)
 {
     tail = {};
     tail.bar = game::evolution_bar();
     tail.world = wallet_world();
-    if (g_mode != modes::kCreature || !dna_own_wallet(id, net::Family::creature))
+    bool creature = g_own_dna_edge_fix ? game::mode_id() == modes::kCreature : g_mode == modes::kCreature;
+    if (!creature && game::mode_id() == modes::kCreature && dna_own_wallet(id, net::Family::creature))
+        g_own_edge_strays++; // (the fix off: the stray total of BUG-1311)
+    if (!creature || !dna_own_wallet(id, net::Family::creature))
         return host_total;
     tail.flags = dna_own::kFlagOwn;
     return dna_own_budget(id);
 }
 
+// BUG-1310: the lab's gates (the sync-check, the trace line's dna_own=, coop.wstate's wallet rows) compared every guest's
+// DNA with the host's own; with own wallets the two differ on purpose. The host names what each guest's game must show:
+// its wallet (first sight not yet: the host's DNA now, what the wallet will start at). False: that guest plays the shared
+// pool (the setting, creature.mode host, an older mod) and is compared with the host's DNA as before. Off: never (every
+// guest compared with the host's DNA, 0.7.16 before the fix).
+bool g_own_dna_gates_fix = true;
+COOP_FIX("diag.own_dna", "BUG-1310", g_own_dna_gates_fix,
+         "sync-check, monitor, detector: a guest with its own DNA is compared with the host's record of its wallet (the bar stays the party's)");
+bool dna_own_expect(uint8_t id, float& v)
+{
+    if (!g_own_dna_gates_fix || g_sess.role() != net::Role::Host || !dna_own_wallet(id, net::Family::creature))
+        return false;
+    std::string k = dna_wallet_key(id);
+    v = g_book.has_budget(k, wallet_world()) ? g_book.w[k].creature.value : std::max(0.f, game::dna());
+    return true;
+}
+bool dna_own_expect_cell(uint8_t id, int host_spent, int& v)
+{
+    if (!g_own_dna_gates_fix || g_sess.role() != net::Role::Host || !dna_own_wallet(id, net::Family::npc))
+        return false;
+    auto it = g_book.w.find(dna_wallet_key(id));
+    v = it != g_book.w.end() && it->second.cell.world == wallet_world() ? (int)it->second.cell.value : std::max(0, host_spent);
+    return true;
+}
+// host, the trace line (BUG-1310): " dna_own=<id>:<v>,..." of every guest with its own wallet (Creature), "" for none
+std::string dna_own_field()
+{
+    if (g_mode != modes::kCreature)
+        return "";
+    std::string o;
+    char b[32];
+    for (auto& p : g_sess.players()) {
+        float v;
+        if (p.id == 0 || !dna_own_expect(p.id, v))
+            continue;
+        snprintf(b, sizeof b, "%s%u:%.0f", o.empty() ? " dna_own=" : ",", p.id, v);
+        o += b;
+    }
+    return o;
+}
+
 std::string own_dna_status()
 {
     std::string o;
-    char b[220];
-    snprintf(b, sizeof b, "own dna: on=%d fix=%d bar_set=%d store=%d heard=%d bar_heard=%.1f firsts=%u spends=%u loaded=%u totals=%u applied=%u steps=%u credited=%.1f\n",
+    char b[260];
+    snprintf(b, sizeof b, "own dna: on=%d fix=%d bar_set=%d store=%d heard=%d bar_heard=%.1f firsts=%u spends=%u loaded=%u totals=%u applied=%u steps=%u credited=%.1f edge=%d strays=%u gates=%d\n",
              (int)own_dna_on(), (int)g_own_dna_fix, (int)g_dna_bar_set_fix, (int)g_own_dna_store_fix, (int)g_own_heard,
              g_own_bar_heard, g_own_firsts, g_own_spends, g_own_loaded, g_own_totals, g_own_applied, g_book.steps,
-             g_book.credited);
+             g_book.credited, (int)g_own_dna_edge_fix, g_own_edge_strays, (int)g_own_dna_gates_fix);
     o += b;
     for (auto& p : g_sess.players()) {
         if (p.id == 0 || g_sess.role() != net::Role::Host)

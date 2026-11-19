@@ -79,6 +79,7 @@ KNOWN = {  # <stage>:<what>:<kind> (or <stage>:*:<kind>, <*>:*:<kind>) -> the ti
     'All:state:time_of_day': 'BUG-0579', 'All:state:day_length': 'BUG-0579',
     'All:state:stage_done': 'BUG-0577',
     'Cell:state:dna': 'BUG-0560', 'Cell:state:dna_spent': 'BUG-0560',
+    'Creature:state:dna_own': 'BUG-1291', 'Cell:state:dna_spent_own': 'BUG-1291',  # BUG-1310: own DNA per player
     'Tribe:state:food': 'BUG-0572', 'Tribe:state:relation': 'BUG-0565', 'Tribe:state:goal': 'BUG-0564',
     'Tribe:planet:village': 'BUG-0564', 'Tribe:planet:tribe_hut': 'BUG-0566',
     'Tribe:planet:tribe_tool': 'BUG-0574', 'Tribe:planet:totem_pole': 'BUG-0574',

@@ -22,7 +22,9 @@ a moment between two reads is no violation):
                 while the host sends its world to that partner and 15 s after: BUG-0405, BUG-0415)
   totals        the shared totals of the own trace lines (dna in Creature, food / money / ... of the
                 stage) the same on the host and every guest in its world, within 1 point or 2 %, on
-                3 comparisons in a row spanning 20 s
+                3 comparisons in a row spanning 20 s. Own DNA per player (WP-D, BUG-1310): a guest the
+                host's line lists in `dna_own=<id>:<v>,...` (its own wallet) is compared with that record
+                instead of the host's dna=, and its `bar=` (the evolution bar, the party's) with the host's
   hp            what a machine's partner line says of a player's hp / max hp (the state it received)
                 equals what that player's own trace line says at the same moment, on 2 comparisons
   objects       the game's cell pool (tiles: ... cell pool N/M) stays under 90 % of its size, the
@@ -97,6 +99,8 @@ PARTS = re.compile(r' parts=(\d+):([0-9A-Fa-f]{8})')
 PROXIES = re.compile(r' proxy_under=(\d+) proxy_stuck=(\d+)')
 PTR_STILL = re.compile(r' ptr_still=([\d.]+)')
 WSCALE = re.compile(r' wscale=([-\d.e+naif]+)')
+BAR = re.compile(r' bar=(-?[\d.]+)')  # BUG-1310
+DNA_OWN = re.compile(r' dna_own=(\d+:-?[\d.]+(?:,\d+:-?[\d.]+)*)')  # BUG-1310
 DAMAGE = re.compile(r'coop: damage: (\d+) hit by (\S+) owner=(\S+) posse=([01?]) amount=(-?[\d.]+)(.*)$')
 KV = re.compile(r'(\w+)=(-?[\d.]+)(\(unsynced\))?')
 STAGES = ('Cell', 'Creature', 'Tribe', 'Civilization', 'Space')
@@ -218,6 +222,12 @@ def monitor_fields(r):
         k = num(m.group(1))
         if k == k and k > 0:
             r['wscale'] = k
+    m = BAR.search(rest)
+    if m:
+        r['bar'] = float(m.group(1))
+    m = DNA_OWN.search(rest)
+    if m:
+        r['dna_own'] = {int(a): float(b) for a, b in (x.split(':') for x in m.group(1).split(','))}
     return r
 
 
@@ -478,7 +488,17 @@ class Totals(Invariant):
                     if hv and all(self.differ(x, v) for x in hv) and (v > max(hv) or v < min(hv)):
                         diffs.append(f'{k}: host {h["res"].get(k, hv[-1]):.0f}, {who} {v:.0f}')
                 hd = [x['dna'] for x in hs if x['dna'] >= 0]
-                if g['stage'] == 'Creature' and hd and g['dna'] >= 0 and all(self.differ(x, g['dna']) for x in hd):
+                # BUG-1310: a guest with its own DNA (WP-D: the host's line lists its wallet) has the host's record of
+                # it, the bar stays the party's; a guest the host does not list plays the shared pool (as before)
+                ow = [x['dna_own'][g['id']] for x in hs if g['id'] in x.get('dna_own', {})]
+                if g['stage'] == 'Creature' and ow and g['dna'] >= 0:
+                    if all(self.differ(x, g['dna']) for x in ow):
+                        diffs.append(f'own dna: the host\'s record of {who}\'s wallet '
+                                     f'{h.get("dna_own", {}).get(g["id"], ow[-1]):.0f}, {who} {g["dna"]:.0f}')
+                    hb = [x['bar'] for x in hs if 'bar' in x]
+                    if 'bar' in g and hb and all(self.differ(x, g['bar']) for x in hb):
+                        diffs.append(f'bar: host {h.get("bar", hb[-1]):.0f}, {who} {g["bar"]:.0f}')
+                elif g['stage'] == 'Creature' and hd and g['dna'] >= 0 and all(self.differ(x, g['dna']) for x in hd):
                     diffs.append(f'dna: host {h["dna"]:.0f}, {who} {g["dna"]:.0f}')
                 run = run + [(g['t'], diffs)] if diffs else []
                 if len(run) >= self.c['tot_n'] and run[-1][0] - run[0][0] >= self.c['tot_span']:

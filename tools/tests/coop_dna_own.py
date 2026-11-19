@@ -32,7 +32,18 @@ SetEvolutionPoints, as the editor's result):
           guest's price, and the guest's fell by its price only (not the host's too); both bars unchanged; key frames.
           FAIL: SPORE_FIX_OFF=creature.own_dna (the guest's price comes off the host's DNA, the host's off the guest's)
 
-  SPORE_LANE=2 python3 tools/tests/coop_dna_own.py [--case spend|shared|reload|rejoin|store|editors]
+  --case host_editor  BUG-1311: 60 DNA (under the brain's next level); the guest spends 30 (its DNA 30 under the
+          host's); the host evolves (`coop.vote evolve`: its editor opens at once), the guest takes its Evolve now
+          offer (its own editor); the guest presses done first (no change) and, the moment it is back in the stage,
+          the host presses done (no change): the guest plays its creature again before the host's game is back (and
+          before the 4 s after which a host's editor counts as away, when its totals are not applied). The guest's game
+          never takes the host's DNA (no shared total in its log), its DNA stays its own (the host's - 30) and its
+          evolution bar the party's. FAIL: SPORE_FIX_OFF=creature.own_dna_edge (the host's first total after its editor
+          is the host's own DNA: the guest's game goes 30 up through AddEvolutionPoints, its bar 30 ahead of the
+          party's). The host alone in its editor while the guest plays on does not show it (lab 20261119-113728: the
+          stray total came while the guest counted the host away and was dropped)
+
+  SPORE_LANE=2 python3 tools/tests/coop_dna_own.py [--case spend|shared|reload|rejoin|store|editors|host_editor]
 """
 import os
 import re
@@ -283,6 +294,63 @@ def editors_case(host, guest, ck):
     keyframe('after_editors', f"Creature after both editors: the host's HUD about {h1[0]:.0f} DNA, the guest's about {g1[0]:.0f}")
 
 
+def host_editor_case(host, guest, ck):
+    from coop_editor_sync import DONE, back, cinematic, confirm_captions, editor_ui, in_editor, mode
+    from coop_ui import Ui
+    from harness import log_since, log_size
+    gu = Ui(guest, 'guest')
+    m0 = mode(host)
+    # 60 DNA, not 150: a gain of 150 grows the brain, whose caption held input into the editor (its done ignored for
+    # minutes, lab 20261119-112341); evo_bar and editor_sync stay under it the same way
+    h0, g0 = prepare(host, guest, ck, need=60)
+
+    def no_cinematic(secs):  # a caption holds input: the editor's done would be ignored
+        t0 = time.time()
+        while time.time() - t0 < secs and (cinematic(host) or cinematic(guest)):
+            confirm_captions((host, guest), 4)
+        return not cinematic(host)
+    no_cinematic(60)
+    guest.call('coop.dna spend 30')
+    time.sleep(6)
+    h0, g0 = calm(host, guest)
+    show('the guest spent 30', h0, g0)
+    ck(near(g0[0], h0[0] - 30), f"the guest has 30 less than the host ({g0[0]} / {h0[0]})")
+    off = log_size(lane.GUEST)
+    print(' ', host.call('coop.vote evolve')['out'].strip(), flush=True)
+    time.sleep(2)
+    gu.wait(lambda s: s['ready']['vis'], 10, 'ready button')
+    gu.click('ready')
+    ok = ck(wait(lambda: in_editor(host), 60), "the host's editor opened")
+    ok = ck(wait(lambda: in_editor(guest), 120), "the guest's own editor opened") and ok
+    if not ok:
+        shot(host, 'dna_own_host_editor_none_host.png')
+        shot(guest, 'dna_own_host_editor_none_guest.png')
+        return
+    ck(wait(lambda: editor_ui(host) and editor_ui(guest), 90, 2), 'both editors show their interface')
+    host.call('wait.frames 200 60000')
+    guest.call('wait.frames 200 60000')
+    time.sleep(3)
+    no_cinematic(60)
+    guest.call('click %d %d' % DONE)  # the guest first, no change
+    ck(wait(lambda: mode(guest) == m0 and guest.call('coop.avatar')['ok'], 90, 0.25), 'the guest is back in the stage first')
+    host.call('click %d %d' % DONE)  # at once: the host leaves while the guest plays its creature
+    confirm_captions((host, guest), 30)
+    ck(back(host, m0, 90), 'the host is back in the stage')
+    confirm_captions((host, guest), 20)
+    time.sleep(6)
+    h1, g1 = calm(host, guest, 30)
+    show('after both editors (the guest back first)', h1, g1)
+    wallets(host, guest)
+    # the guest's game log: a shared total ("dna: a -> b cause=") is the host's DNA applied as the guest's (own ones
+    # say "dna: own a -> b")
+    stray = [ln.strip() for ln in log_since(lane.GUEST, off) if re.search(r'coop: dna: -?[\d.]+ -> -?[\d.]+ cause=', ln)]
+    ck(not stray, f"the guest's game never took the host's DNA when the host left its editor ({stray[:2]})")
+    ck(near(g1[0], h1[0] - 30), f"the guest's DNA is still its own, the host's - 30 ({g1[0]} / {h1[0]})")
+    ck(near(g1[1], h1[1]), f"the guest's evolution bar is the party's after the editors (guest {g1[1]}, host {h1[1]})")
+    keyframe('host_editor', f"Creature after both editors: the guest's HUD about {g1[0]:.0f} DNA, the host's about "
+             f"{h1[0]:.0f}; the evolution bars equally full")
+
+
 def main():
     host, guest = start('creature')
     ck = Checks()
@@ -292,7 +360,7 @@ def main():
         twoinst.forget_settings()
     try:
         r = {'spend': spend_case, 'shared': shared_case, 'reload': reload_case, 'rejoin': rejoin_case,
-             'store': store_case, 'editors': editors_case}[CASE](host, guest, ck)
+             'store': store_case, 'editors': editors_case, 'host_editor': host_editor_case}[CASE](host, guest, ck)
         if CASE == 'store' and r:
             host, guest = r
     finally:

@@ -52,6 +52,10 @@ struct Probe {
     std::function<double(uint8_t)> since_share; // BUG-0754: s since a world share to that guest was asked for
     std::function<bool(float&)> dna; // the DNA total when there is one
     std::function<bool(int&)> cell_food;
+    // BUG-1310 (host): what guest `id`'s DNA total must be when it plays its own wallet (WP-D, BUG-1291): the host's
+    // record of that wallet; false: the guest plays the shared pool and is compared with `dna`
+    std::function<bool(uint8_t id, float&)> dna_own;
+    std::function<bool(float&)> bar; // BUG-1310: the evolution bar (cPlayer +0x10F0) when there is one (Creature)
     std::function<float()> cell_scale; // BUG-0606: the own Cell world scale, 0 outside Cell
     // BUG-1216: the height of a point over this game's terrain (m), below -1e6 (net::diag::kEntryNoAgl) where there is none
     std::function<float(const net::Vec3&)> over_ground;

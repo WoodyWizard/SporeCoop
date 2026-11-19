@@ -9563,3 +9563,31 @@ BUG-0304 (GitHub #203), BUG-1278. Written without a lab run (owner rule 2026-11-
 * Pitfall: at level 1 the Cell screen shows only 2-15 cells, so the key frame `slow_link_cells` shows the difference
   only weakly; the numbers are the proof. A round at 512 kbit/s carries the nearest ~320 cells: a radius of 40 units
   (270-490 host cells at level 1) is more than the link carries in one round and was the wrong measure.
+## The lab gates and own DNA per player (2026-11-19, fix/w57-dna)
+<a id="testing-gates-own-dna"></a>
+
+With own DNA per player (WP-D, BUG-1291, docs/06-testing.md#testing-dna-own) a guest's DNA differs from the host's on
+purpose; the gates compared one shared total and failed every own-DNA test (lab 20261119-104136, -110020, -102828).
+BUG-1310 teaches them the model "party income, own wallet" (switch `diag.own_dna`, off: every guest against the host's
+DNA as before):
+
+* The host exposes its record of each guest's wallet: the own trace line's `dna_own=<id>:<v>,...` (Creature, host,
+  only guests that play their own wallet: an older mod, `all.shared_dna` on or creature.mode host list none), the
+  `st wallet id=<guest> dna=<f> spent=<n>` rows of `coop.wstate` (Creature: the budget; Cell: the spent count) and the
+  sync-check's digest (the host compares that guest's `dna` total with the wallet, written `own dna: host <record>,
+  guest <game>`). Every game's own line in Creature has `bar=` (cPlayer +0x10F0), the digest a `bar` total.
+* What is compared: a listed guest's game DNA against the host's record (monitor `totals`, detector
+  `Creature:state:dna_own`, Cell `Cell:state:dna_spent_own`, sync-check `own dna`) and its evolution bar against the
+  host's (monitor `bar:`, sync-check `bar`, detector `goal_progress` as before): the bar stays the party's. A guest the
+  host does not list is compared with the host's DNA, and its bar is not compared by the monitor / the sync-check
+  (an older guest's bar is not the party's).
+* The values are the game's on the guest's side; the host's side is the mod's record by necessity (the wallet lives
+  only there): a guest that shows the host's DNA while its wallet differs fails, and so does a wallet that drifts from
+  what the guest's game shows.
+* Proofs: tools/tests/gates_selftest.py (monitor), tools/tests/tools_selftest.py (detector), test_diag_own_dna in
+  tests/net_tests.cpp (sync-check); the twin `dna_own_gates_off` (`SPORE_FIX_OFF=diag.own_dna`) fails on the gates as
+  the night of 20261119 did.
+* BUG-1311 (`dna_own_host_editor`, twin `dna_own_host_editor_off` = `creature.own_dna_edge` off): the host leaves its
+  editor alone while the guest plays on; the guest's game log must have no shared total (`dna: a -> b cause=`, own
+  totals say `dna: own a -> b`) and its bar must stay the party's. `coop.dna own` prints `edge=` (the switch) and
+  `strays=` (totals of the host's DNA sent to an own-wallet guest at a mode edge: counted with the switch off).
