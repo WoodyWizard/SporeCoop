@@ -65,3 +65,4 @@ cell_kin_species (coop_cell_kin_species.py --editor, Cell fixture, food 924, lan
 - 2026-11-18: moved from 0.8 into 0.7.16 (WP-L1); work on feat/w54-cellkin.
 - 2026-11-18: feat/w54-shims: the WP-0 shim `own_cell_key` reads the species line (species::key(id, Stage::Cell); a premade cell counts, species_line_core.h creation_counts); `coop.pool kin` prints `line=`; the test also checks the guest's Cell line on both games. Still open: the night run (cell_kin_species lane 2, twin lane 3).
 - 2026-11-19 (fix/w57-cellkin): the first night run failed on the test (view width from the world scale, the premade BAF1AD40 whose editor does not close); test fixed, PASS 20261119-121933 and FAIL twin; fixed.
+- 2026-11-19 (fix/w57-cellkin): PASS again on the tree merged with rel/0.7.16 (e10cac3d): out/lab/20261119-123540.
