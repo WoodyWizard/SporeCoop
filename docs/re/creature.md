@@ -5189,3 +5189,19 @@ addresses are the .sym ones). Extends #creature-save-strip (SaveGame 0xB29000) a
   frame hook with a token object, the message hung the main thread in MessageSend's lock. Sent with MessageSend (vt 0x14)
   outside the frame, as the game's leave-the-planet path does, with a static token object: the save is written at once
   (one 0.7 s frame), no box, no pause, and the next host loaded it.
+
+## The base max health with a null species (2026-11-19, fix/w56-general)
+<a id="creature-max-hp-null-species"></a>
+
+BUG-1292 (found by the Lineages fork, PR #196, its BUG-9157; the fork's runtime fault is in the section above).
+✔ (disassembly of GOG 2024, objdump 0xC04170..0xC0429B) `cCreatureAnimal_BaseMaxHitPoints` 0xC04170 reads species
+(+0xB20) +0x56C with no null check on three paths:
+* an adventure (`call 0xB5B910` == 0x1654C10): LevelHealth(vt 0xD8()) + species +0x56C at 0xC0419D;
+* species == `cSpeciesManager_PlayerSpecies` 0x4DF490 (`sete bl` at 0xC041C7; a null species takes it when
+  PlayerSpecies is null too): LevelHealth of the avatar's level (or [0x150C8A0]) + species +0x56C at 0xC04252;
+* other species: herd (+0x1674) +0x154 when it is above [0x14852B4] = 0.0 (`ja` at 0xC0422E), else tuning (+0xE84)
+  +0x340 when there is a tuning (0xC04242); neither reads the species. Else [0x150C890] (100.0) + species +0x56C at
+  0xC04252 (the fork's fault). Then a value below [0x1469DD4] (1.526e-5) of a non-player species takes [0x150C890].
+The mod's hook (creature_hp.cpp h_BaseMaxHp, the rule in max_hp_rule.h) answers a null species on those paths with the
+creature's max health (+0x5D4, at least 1), `coop.fix creature.max_hp_species`. Test `max_hp_species`
+(`coop.hp nullspecies` clears species, herd and tuning of the own avatar for one vt 0x7C call).

@@ -13,6 +13,7 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "max_hp_rule.h"
 #include "view_centres.h"
 #include "net/interp.h"
 #include "sporekit_game.hpp"
@@ -91,9 +92,37 @@ static bool own_base(void* c, float& out)
     return true;
 }
 
+// ---------------------------------------------------------------- BUG-1292
+// Found by the Lineages fork (PR #196, its BUG-9157): the base (0xC04170) reads species (+0xB20) +0x56C with no null
+// check in three of its branches (max_hp_rule.h, docs/re/creature.md#creature-max-hp-null-species); the fork saw a
+// creature without a species fault at 0xC04252 twice, from a herd update after a guest that joined dead confirmed its
+// death caption. A creature without a species on such a branch now keeps the max health it has (at least 1).
+// `coop.fix creature.max_hp_species off`: the game's base as it is (the fault).
+static bool g_species_guard = true;
+COOP_FIX("creature.max_hp_species", "BUG-1292", g_species_guard,
+         "creature: a creature without a species keeps its max health instead of faulting in the game's base max health");
+static uint32_t g_species_guarded;
+
+static bool base_guarded(void* c, float& out)
+{
+    if (!g_species_guard || !c || !skg::readable((uint8_t*)c + game::kSpeciesOff, 4) ||
+        skg::field<void*>(c, game::kSpeciesOff))
+        return false;
+    void* herd = skg::field<void*>(c, game::kHerdOff);
+    float herd_hp = herd && skg::readable((uint8_t*)herd + 0x154, 4) ? skg::field<float>(herd, 0x154) : 0.f;
+    if (!max_hp_rule::guard(true, true, game::mode_id() == 0x1654C10, player_species() == nullptr, herd != nullptr,
+                            herd_hp, skg::field<void*>(c, 0xE84) != nullptr))
+        return false;
+    g_species_guarded++;
+    out = max_hp_rule::fallback(skg::field<float>(c, game::kMaxHpOff));
+    return true;
+}
+
 static float SK_THISCALL h_BaseMaxHp(void* c)
 {
     float v;
+    if (base_guarded(c, v))
+        return v;
     if (own_base(c, v))
         return v;
     return o_BaseMaxHp(c);
@@ -389,7 +418,9 @@ std::string status()
     if (av) {
         void* sp = skg::field<void*>(av, game::kSpeciesOff);
         void* ps = player_species();
-        float base = o_BaseMaxHp ? o_BaseMaxHp(av) : -1.f;
+        float base = -1.f;
+        if (o_BaseMaxHp && !base_guarded(av, base)) // BUG-1292: the diagnostic never calls the base on a null species
+            base = o_BaseMaxHp(av);
         snprintf(b, sizeof b, "own: hp=%.2f/%.2f level=%d species=%p player_species=%p %s base_game=%.2f scale=%.3f\n",
                  game::health(av), game::max_health(av), brain_level(av), sp, ps, sp == ps ? "same" : "other", base,
                  game::scale(av));
@@ -412,6 +443,8 @@ std::string status()
     snprintf(b, sizeof b, "fixes: partner_hp=%d party_peace=%d sets=%u partner_hits_dropped=%u party_hits_dropped=%u own_scale=%d own_scales=%u\n",
              (int)g_partner_hp, (int)g_party_peace, g_puppet_sets, g_partner_hits_dropped, g_party_hits_dropped,
              (int)g_own_scale, g_own_scales);
+    out += b;
+    snprintf(b, sizeof b, "max_hp_species=%d guarded=%u\n", (int)g_species_guard, g_species_guarded); // BUG-1292
     out += b;
     snprintf(b, sizeof b, "party rules: pack_defends=%d defends=%u posts=%u\n", (int)g_pack_defends, g_defends,
              g_defend_posts);
@@ -471,6 +504,30 @@ static int c_hp(void*, int argc, const char* const* argv, SkOut* out)
         void* own = av ? skg::field<void*>(av, game::kSpeciesOff) : nullptr;
         H->out_printf(out, "player_species=%p avatar_species=%p same=%d override=%p own_scales=%u (+%u) lend_fix=%d\n", ps, own,
                       (int)(ps && ps == own), g_ps_override, g_own_scales, g_own_scales - before, (int)views::lend_ledger_on());
+        return 0;
+    }
+    // tests (BUG-1292): the own avatar's base max health (vt 0x7C, through the game's vtable) asked once in the state the
+    // fork's fault had: no species (+0xB20), no herd (+0x1674), no tuning (+0xE84); the three are put back right after.
+    // With creature.max_hp_species off the game's base reads species +0x56C at 0xC04252 and faults
+    if (argc > 1 && !strcmp(argv[1], "nullspecies")) {
+        void* av = game::in_creature_stage() ? game::avatar() : nullptr;
+        if (!av) {
+            say("no avatar\n");
+            return 1;
+        }
+        void* sp = skg::field<void*>(av, game::kSpeciesOff);
+        void* herd = skg::field<void*>(av, game::kHerdOff);
+        void* tuning = skg::field<void*>(av, 0xE84);
+        const unsigned before = g_species_guarded;
+        skg::field<void*>(av, game::kSpeciesOff) = nullptr;
+        skg::field<void*>(av, game::kHerdOff) = nullptr;
+        skg::field<void*>(av, 0xE84) = nullptr;
+        float base = skg::vcall<float>(av, 0x7C / 4);
+        skg::field<void*>(av, game::kSpeciesOff) = sp;
+        skg::field<void*>(av, game::kHerdOff) = herd;
+        skg::field<void*>(av, 0xE84) = tuning;
+        H->out_printf(out, "nullspecies: base=%.2f max=%.2f guarded=%u (+%u) fix=%d\n", base, game::max_health(av),
+                      g_species_guarded, g_species_guarded - before, (int)g_species_guard);
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "pack")) {
@@ -709,7 +766,7 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx)
     }
     a_CmdStim = H->sym("SporeCoop::CreatureCommandStimulus"); // BUG-0735
     a_CanDefend = H->sym("SporeCoop::PosseMemberCanDefend");
-    H->command_add(M, "coop.hp", "coop.hp [pack|attack <player>|packhit <player> <hp>|packtarget <player> [combatant]] - creature health of the own avatar, partners' puppets, the pack (tests)",
+    H->command_add(M, "coop.hp", "coop.hp [pack|nullspecies|attack <player>|packhit <player> <hp>|packtarget <player> [combatant]] - creature health of the own avatar, partners' puppets, the pack (tests)",
                    c_hp, nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.sneak", "coop.sneak [on|off|force] - the sneak state of the own avatar and the partners' puppets (tests, BUG-0463)",
                    c_sneak, nullptr, SK_CMD_MAIN_THREAD);

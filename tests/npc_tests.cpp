@@ -22,6 +22,7 @@
 #include "call_guard.h"
 #include "off_main.h"
 #include "npc_proxy_rules.h"
+#include "max_hp_rule.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -740,6 +741,75 @@ static void test_proxy_rules()
     CHECK(!editor_hold(false, true, true, false));  // not away: nothing to hold
 }
 
+
+// BUG-1292 (found by the Lineages fork, its BUG-9157): a model of the game's base max health (0xC04170) with a null
+// species read: every branch that reads species +0x56C faults on a null species, the hook answers those without the
+// native. FAILS with --nofix (the switch off: the native runs and the model faults)
+static void test_max_hp_null_species()
+{
+    printf("base max health with a null species (BUG-1292)\n");
+    const bool fix = !g_nofix;
+    struct Creature {
+        bool species = true, adventure = false, has_herd = true, has_tuning = true;
+        bool of_player_species = false, ps_null = false; // its species is the world's PlayerSpecies / PlayerSpecies is null
+        float herd_hp = 0, tuning_hp = 0, species_hp = 0, kept = 0;
+    };
+    // the native as the disassembly reads (fault = a read through the null species at 0xC0419D / 0xC04252)
+    auto native = [](const Creature& c, bool& fault) {
+        fault = false;
+        bool is_ps = c.species ? c.of_player_species : c.ps_null; // a null species equals a null PlayerSpecies
+        if (c.adventure || is_ps) {
+            fault = !c.species;
+            return 100.f + (c.species ? c.species_hp : 0);
+        }
+        if (c.has_herd && c.herd_hp > 0.f)
+            return c.herd_hp;
+        if (c.has_tuning)
+            return c.tuning_hp;
+        fault = !c.species;
+        return 100.f + (c.species ? c.species_hp : 0);
+    };
+    auto hook = [&](const Creature& c, bool& fault) {
+        if (max_hp_rule::guard(fix, !c.species, c.adventure, c.ps_null, c.has_herd, c.herd_hp, c.has_tuning)) {
+            fault = false;
+            return max_hp_rule::fallback(c.kept);
+        }
+        return native(c, fault);
+    };
+    bool fault = false;
+    // the fork's case: no species, no herd health, no tuning
+    Creature a;
+    a.species = false; a.has_herd = false; a.has_tuning = false; a.kept = 44.f;
+    float v = hook(a, fault);
+    CHECK(!fault && v == 44.f);
+    // a herd without health (0.0) is the same
+    Creature b = a;
+    b.has_herd = true; b.herd_hp = 0.f; b.kept = 0.f;
+    v = hook(b, fault);
+    CHECK(!fault && v == 1.f);
+    // an adventure reads the species first
+    Creature c = a;
+    c.adventure = true; c.has_herd = true; c.herd_hp = 30.f;
+    v = hook(c, fault);
+    CHECK(!fault && v == 44.f);
+    // a null species while PlayerSpecies is null too counts as the player species
+    Creature d = a;
+    d.ps_null = true; d.has_herd = true; d.herd_hp = 30.f;
+    v = hook(d, fault);
+    CHECK(!fault && v == 44.f);
+    // the native stays the answer where it never reads the species: herd health, a tuning, any creature with a species
+    Creature e = a;
+    e.has_herd = true; e.herd_hp = 30.f;
+    CHECK(hook(e, fault) == 30.f && !fault);
+    Creature f = a;
+    f.has_tuning = true; f.tuning_hp = 12.f;
+    CHECK(hook(f, fault) == 12.f && !fault);
+    Creature g;
+    g.has_herd = false; g.has_tuning = false; g.species_hp = 5.f;
+    CHECK(hook(g, fault) == 105.f && !fault);
+    CHECK(max_hp_rule::fallback(NAN) == 1.f && max_hp_rule::fallback(-3.f) == 1.f);
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -761,6 +831,7 @@ int main(int argc, char** argv)
     test_call_guard();
     test_off_main();
     test_proxy_rules();
+    test_max_hp_null_species();
     printf(g_fail ? "npc tests: %d FAILED\n" : "npc tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }
