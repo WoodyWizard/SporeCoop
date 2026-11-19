@@ -146,8 +146,24 @@ static void anim_type()
         CHECK(any_mode((uint8_t)k) == (k == K_PARTY_STOP || k == K_GAMEOVER || k == K_HOST_PAUSE));
 }
 
+// BUG-1271: a member's species against its owner's own line
+static void own_species()
+{
+    const uint32_t slot = 0x067B3E4A, line = 0x7C123456, other = 0x290229B9;
+    CHECK(species_act(line, slot, slot, 0, true) == SpeciesAct::Apply);   // a guest's member of the slot's species
+    CHECK(species_act(line, slot, slot, 0, false) == SpeciesAct::Wait);   // its creation not buildable here yet
+    CHECK(species_act(line, line, slot, line, true) == SpeciesAct::Keep); // already
+    CHECK(species_act(line, other, slot, 0, true) == SpeciesAct::Apply);  // any other species: the owner's
+    CHECK(species_act(slot, slot, slot, 0, true) == SpeciesAct::Keep);    // a line equal to the slot is none
+    CHECK(species_act(0, line, slot, line, true) == SpeciesAct::Revert);  // given to the host / its owner left / off
+    CHECK(species_act(0, other, slot, 0, true) == SpeciesAct::Keep);      // never touched by the mod: as it is
+    CHECK(species_act(0, other, slot, line, true) == SpeciesAct::Keep);   // changed since by someone else
+    CHECK(species_act(0, slot, slot, line, true) == SpeciesAct::Keep);    // back already
+}
+
 int main()
 {
+    own_species();
     owners();
     balance_share();
     bodies();

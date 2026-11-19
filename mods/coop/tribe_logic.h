@@ -160,4 +160,22 @@ inline Ko ko(bool fix, float host_hp, bool mirror_dead)
     return mirror_dead ? Ko::Replace : Ko::None;
 }
 
+// ---------------- own species (every game) ----------------
+
+// BUG-1271 (WP-T1 of docs/plan-0.7.16.md): what a member of the player tribe needs on this game. `line` is its owner's
+// own species key (0: none: the host, a player without an own creature, creature.mode host, the switch off), `cur` the
+// member's species key (+0xB28), `slot` the tribe's (its species slot +0x504), `ours` the key the mod gave it last
+// (0: never touched by the mod), `ready` the line's species can be built here now. A member the mod never touched keeps
+// whatever species it has when it needs the slot's (a test's `coop.tribe setspecies`, the game's own).
+enum class SpeciesAct : uint8_t { Keep, Apply, Revert, Wait };
+inline SpeciesAct species_act(uint32_t line, uint32_t cur, uint32_t slot, uint32_t ours, bool ready)
+{
+    if (line && line != slot) {
+        if (cur == line)
+            return SpeciesAct::Keep;
+        return ready ? SpeciesAct::Apply : SpeciesAct::Wait;
+    }
+    return ours && cur == ours && cur != slot ? SpeciesAct::Revert : SpeciesAct::Keep;
+}
+
 } // namespace tribe_logic
