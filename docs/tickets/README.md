@@ -1277,7 +1277,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1271](BUG-1271-wp-t1-tribe-members-of-a-guest-are-of-the-guest.md) | fixed | feature | Tribe | 2026-11-18 | unreleased | WP-T1: Tribe members of a guest are of the guest's species on every game (saves keep the host's) |
 | [BUG-1272](BUG-1272-wp-t2-the-guest-s-own-tribe-outfitter-for-its-ow.md) | open | feature | Tribe | 2026-11-18 |  | WP-T2: the guest's own Tribe outfitter for its own species |
 | [BUG-1273](BUG-1273-wp-c1-civ-citizens-of-a-city-are-of-its-owner-s.md) | fixed | feature | Civ | 2026-11-18 | unreleased | WP-C1: Civ citizens of a city are of its owner's species |
-| [BUG-1274](BUG-1274-wp-c2-civ-vehicles-and-buildings-of-a-guest-are.md) | open | feature | Civ | 2026-11-18 |  | WP-C2: Civ vehicles and buildings of a guest are of the guest's designs (saves keep the host's) |
+| [BUG-1274](BUG-1274-wp-c2-civ-vehicles-and-buildings-of-a-guest-are.md) | fixed | feature | Civ | 2026-11-18 | unreleased | WP-C2: Civ vehicles and buildings of a guest are of the guest's designs (saves keep the host's) |
 | [BUG-1275](BUG-1275-wp-c3-the-guest-s-own-civ-editors-buildings-vehi.md) | open | feature | Civ | 2026-11-18 |  | WP-C3: the guest's own Civ editors (buildings, vehicles, Civ outfitter) for its own line |
 | [BUG-1276](BUG-1276-wp-x1-the-guest-s-own-city-hall-and-vehicle-edit.md) | open | feature | Civ | 2026-11-18 |  | WP-X1: the guest's own City Hall and vehicle editors at the Tribe -> Civ arrival |
 | [BUG-1277](BUG-1277-wp-x2-every-player-s-species-line-through-creatu.md) | open | test | All | 2026-11-18 |  | WP-X2: every player's species line through Creature -> Tribe -> Civ (one test) |
