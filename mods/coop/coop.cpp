@@ -849,6 +849,17 @@ static uint32_t open_editor_id()
 
 static bool g_paused_cover = true;
 COOP_FIX("ui.paused_cover", "BUG-9227", g_paused_cover, "ui: guests see a 'Paused by host' cover while the host's game is paused");
+// Decision 6T (alpha; owner 2026-11-18: "I think pausing should be disabled when we move to the MMO / Alpha build"): in a
+// session nothing pauses the world for everyone. A player's own pause (P 0x4BF38A8, the pause menu 0x4BF38A4 while the
+// menu is up) is released as soon as the game counts it, so the world runs on behind the menu; the game's own stops
+// (editors, captions, cinematics, its boxes) stay. The host sends no "paused" state, so a guest never stands for the
+// host and sees no "Paused by host" cover (BUG-9227 / BUG-9260 stay for live). Off: pausing as on live.
+static bool g_no_pause = true;
+COOP_FIX("core.no_pause", "BUG-9262", g_no_pause, "alpha: in a session P and the pause menu do not stop the game; a guest never stands for the host");
+static bool no_pause_session()
+{
+    return g_no_pause && g_sess.connected() && (g_sess.role() == net::Role::Client || g_sess.players().size() > 1);
+}
 bool stage_mode(uint32_t m);
 net::PlayerState local_state()
 {
@@ -865,8 +876,8 @@ net::PlayerState local_state()
     { // BUG-9227: the host's game time stands for a second or more in a stage (its pause menu, a caption)
         static double s_paused_since = -1;
         const double now = H->time_seconds();
-        const bool paused = g_paused_cover && g_sess.role() == net::Role::Host && stage_mode(st.mode) && world::time_paused() &&
-                            !world::cinematic_playing();
+        const bool paused = g_paused_cover && !no_pause_session() && g_sess.role() == net::Role::Host && stage_mode(st.mode) &&
+                            world::time_paused() && !world::cinematic_playing();
         s_paused_since = paused ? (s_paused_since < 0 ? now : s_paused_since) : -1;
         if (paused && now - s_paused_since >= 1.0)
             st.flags |= net::PF_PAUSED;
@@ -914,6 +925,48 @@ static void host_pause_release() // the session ended, the world changed: never 
     world::time_pause(kHostPauseReason, false);
     g_host_pause_held = false;
     LOG("pause: the host's pause released (the session or the place ended, BUG-9260)");
+}
+
+// decision 6T (above): every 0.2 s in a session's stage, the player's own pause reasons are resumed; a reason the game
+// resumes later (the menu closed) would count under 0 and swallow its next pause, so it is paused back to 0 (the
+// BUG-1101 net's way)
+extern std::atomic<bool> g_menu_up; // the pause menu or the co-op window is up (menu_check_task)
+constexpr uint32_t kPauseKey = 0x4BF38A8u, kPauseMenu = 0x4BF38A4u;
+static std::map<uint32_t, int> g_np_released;
+static uint32_t g_np_releases;
+static double g_np_checked;
+static void no_pause_tick(double now)
+{
+    if (now - g_np_checked < 0.2)
+        return;
+    g_np_checked = now;
+    const auto rs = world::pause_reasons();
+    auto count = [&](uint32_t r) {
+        for (auto& [k, c] : rs)
+            if (k == r)
+                return c;
+        return 0;
+    };
+    for (auto it = g_np_released.begin(); it != g_np_released.end();) { // the game's own Resume came: back to 0
+        const int c = count(it->first), k = c < 0 ? std::min(-c, it->second) : 0;
+        for (int i = 0; i < k; i++)
+            world::time_pause(it->first, true);
+        it->second -= k;
+        it = it->second > 0 ? std::next(it) : g_np_released.erase(it);
+    }
+    if (!no_pause_session() || !stage_mode(g_mode))
+        return;
+    const bool menu = g_menu_up && !coop_ui::is_open(); // the pause menu (not the stage card, the same reason)
+    for (uint32_t r : {kPauseKey, kPauseMenu}) {
+        const int c = count(r);
+        if (c <= 0 || (r == kPauseMenu && !menu))
+            continue;
+        for (int i = 0; i < c; i++)
+            world::time_pause(r, false);
+        g_np_released[r] += c;
+        if (g_np_releases++ < 20)
+            LOG("pause: %s in a session: the world runs on (decision 6T, BUG-9262)", r == kPauseKey ? "P" : "the pause menu");
+    }
 }
 
 // ---- coop.track (BUG-0360): what this player sees of its partners, frame by frame. Tests sample the
@@ -5524,6 +5577,7 @@ void on_frame(void*, int, void*)
     fprof::mark("spectate_tick()");
     lobby_tick(now);
     host_pause_tick(now); // BUG-9260
+    no_pause_tick(now);   // decision 6T (alpha)
     fprof::mark("lobby_tick(now)");
     if (g_sess.role() == net::Role::Client) { // BUG-0425 (drive.lead): the one-way latency to the host, half its round trip
         int rtt = g_sess.rtt_of(0);
