@@ -44,6 +44,11 @@ kid   BUG-1313 (tribe.kid_species). As birth; then the guest chooses another own
       (+0xB34 0) still has the old key on both games, no fault on either game; key frame. FAIL twin
       SPORE_FIX_OFF=tribe.kid_species: the pass changes the kid, SetSpecies starts the growth timer a citizen does not
       have: a fault on both games (lab 20261119-105127, tribe_birth_species_off).
+stray BUG-1319 (tribe.stray_line_key). Tribe fixture, the guest plays its own creature; on the guest's game a grown-up
+      member of the host gets the guest's line key by the game's SetSpecies (`coop.tribe setspecies <key> <id>`, as a
+      mirror born in that species at a world's opening and forgotten by the world reset, lab 20261119-112300). PASS:
+      within 15 s that member is of the tribe's species again on the guest's game, the mix right on both games; key
+      frame. FAIL twin SPORE_FIX_OFF=tribe.stray_line_key: it keeps the guest's creature.
 ship  BUG-1301 (creations.own_ship_key). Space fixture. When the guest's empire flies the host's ship key K (both
       games play the fixture's ship), the guest's game is started again with another UFO model of its own under K in
       its My Creations (a guest that edited its ship and saved it under the same id). PASS: after the join the guest's
@@ -51,7 +56,7 @@ ship  BUG-1301 (creations.own_ship_key). Space fixture. When the guest's empire 
       model too; key frame of the guest's ship on both screens.
       FAIL twin SPORE_FIX_OFF=creations.own_ship_key: the host's ship registered under K shadows the guest's own.
 
-  SPORE_LANE=6 python3 tools/tests/coop_own_editors_robust.py key|drop|civdrop|birth|kid|ship
+  SPORE_LANE=6 python3 tools/tests/coop_own_editors_robust.py key|drop|civdrop|birth|kid|stray|ship
 """
 import os
 import random
@@ -80,7 +85,7 @@ from coop_tribe_own_species import closeup, keys_in_slot, line_key, mix_ok, mode
 from twoinst import Checks, Console, keyframe, start, wait_guest_in, wait_up, watch  # noqa: E402
 
 SWITCH = {'key': 'species.own_key_here', 'drop': 'designs.own_editor_offline', 'civdrop': 'designs.own_editor_offline',
-          'birth': 'tribe.birth_species', 'kid': 'tribe.kid_species', 'ship': 'creations.own_ship_key'}[MODE]
+          'birth': 'tribe.birth_species', 'kid': 'tribe.kid_species', 'stray': 'tribe.stray_line_key', 'ship': 'creations.own_ship_key'}[MODE]
 OUTAGE = 45.0  # s without a packet: both games end the session (net::Session timeout_ms 30000)
 UBEM, UGROUP, UTYPE = 0x1A99B06B, 0x40656200, 0x476A98C7
 
@@ -541,6 +546,38 @@ def kid_line_change(host, guest, ck, gkey, first):
                          'screens, its kid still the old one (small), both games running')
 
 
+# ---------------------------------------------------------------------------------------------------------- stray
+def run_stray(ck):
+    host, guest = start('tribe')
+    time.sleep(4)
+    print(' ', host.call('coop.tribe spawn 2')['out'].strip(), flush=True)
+    time.sleep(4)
+    gkey = own_creature(host, guest, ck)
+    if not gkey:
+        return ck.result()
+    slot, _, ms = species(guest)
+    hm = sorted(i for i, m in ms.items() if m['owner'] == 0 and m['age'] == 1 and not m['dead'] and m['body'])
+    if not ck(hm, f'a grown-up member of the host on the guest\'s game ({hm})'):
+        return ck.result()
+    out = guest.call(f'coop.tribe setspecies {gkey:08X} {hm[0]}')['out'].strip()
+    print(f'  guest: host member #{hm[0]} given the guest\'s key {gkey:08X} by the game\'s SetSpecies: {out}', flush=True)
+    if not ck(out.startswith('species set on 1'), f'the planted stray key took ({out})'):
+        return ck.result()
+    back = wait_for(lambda: (m := species(guest)[2].get(hm[0])) and m['key'] == slot, 15, 0.5)
+    m = species(guest)[2].get(hm[0])
+    print(f'  guest: host member #{hm[0]} now {m and m["key"] or 0:08X} (the slot\'s {slot:08X})', flush=True)
+    ck(back, f'guest: the host\'s member wears the tribe\'s species again ({m and m["key"] or 0:08X}, the slot\'s '
+             f'{slot:08X}, the stray {gkey:08X})')
+    res = wait_for(lambda: all(mix_ok(c, gkey)[0] for c in (host, guest)), 10)
+    for r, c in (('host', host), ('guest', guest)):
+        print(f'  {r}: {mix_ok(c, gkey)[1]}', flush=True)
+    ck(res, 'the guest\'s members are of its creature on both games, the host\'s of the tribe\'s')
+    closeup(host, guest, hm[0], 'stray_back', 'same view 12 m from the host\'s member that wore the guest\'s creature: '
+                                              'the tribe\'s species on both screens')
+    ck.faults(host=host, guest=guest)
+    return ck.result()
+
+
 # ---------------------------------------------------------------------------------------------------------- ship
 def ufo_hash(con, inst):
     m = re.search(r'model \w+ (\w+)', con.call(f'coop.creations modelhash {inst:08X} {UTYPE:08X} {UGROUP:08X}')['out'])
@@ -596,10 +633,10 @@ def main():
     ck = Checks()
     print(f'  mode {MODE}, switch {SWITCH}{" (off: the FAIL twin)" if off_twin() else ""}', flush=True)
     try:
-        return {'key': run_key, 'drop': run_drop, 'civdrop': run_civdrop, 'birth': run_birth, 'kid': run_birth,
+        return {'key': run_key, 'drop': run_drop, 'civdrop': run_civdrop, 'birth': run_birth, 'kid': run_birth, 'stray': run_stray,
                 'ship': run_ship}[MODE](ck)
     finally:
-        if MODE in ('key', 'drop', 'birth', 'kid'):
+        if MODE in ('key', 'drop', 'birth', 'kid', 'stray'):
             put_back()
         # (the guest's My Creations of `key` / `ship`: the next cold start restores the fixture's, restart_guest's knob)
 
