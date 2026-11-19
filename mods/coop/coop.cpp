@@ -3490,6 +3490,17 @@ constexpr double kMigrateRound = 300;
 static double g_mig_round_until = -1;
 static bool g_mig_told_editor;
 static uint32_t g_mig_ignored;
+// 6R A (BUG-9254, 2026-11-18): on a galaxy planet strangers share the world, so "everyone" is the party: a player's
+// migration opens the editors of its own party only (each game knows its own party: the host passes every warning on
+// and each game checks it). A direct session is one group, as before. Off (`coop.fix creature.migrate_party off`):
+// every player of the planet migrates together.
+static bool g_migrate_party = true;
+COOP_FIX("creature.migrate_party", "BUG-9254", g_migrate_party,
+         "creature: on a galaxy planet a migration takes only the migrating player's party into the editor, not strangers");
+static bool migrates_with(uint8_t by)
+{
+    return !g_migrate_party || !parties::galaxy() || parties::same_party(by, g_sess.my_id());
+}
 static void migration_warned(uint8_t by, double now)
 {
     g_mig_by = g_sess.name_of(by);
@@ -3497,8 +3508,9 @@ static void migration_warned(uint8_t by, double now)
     g_mig_editor_at = now + kMigrateWarn;
     g_mig_editor_until = now + kMigrateWarn + kMigrateWait;
     ++g_mig_heard;
-    feed(g_mig_by + "'s species is migrating to a new nest. Everyone migrates together: your editor opens in 10 s for "
-                    "final touches.");
+    feed(g_mig_by + "'s species is migrating to a new nest. " +
+         std::string(g_migrate_party && parties::galaxy() ? "Your party migrates together" : "Everyone migrates together") +
+         ": your editor opens in 10 s for final touches.");
 }
 static void send_migrate(uint8_t by, int to /* -1: every guest */, uint8_t skip)
 {
@@ -3868,12 +3880,17 @@ static void migration_tick(double now)
         g_mig_editor_at = -1; // its own editor is done
         g_mig_round_until = now + kMigrateRound;
         g_mig_by = g_name;
-        if (g_sess.role() == net::Role::Host) {
-            send_migrate(g_sess.my_id(), -1, 0xFF);
-            notice(g_name + "'s species is migrating to a new nest: everyone migrates together.", -1);
-        } else
-            send_migrate(g_sess.my_id(), 0, 0xFF);
-        LOG("migration: started by this game's evolution: the others are told (BUG-9163)");
+        const bool party_only = g_migrate_party && parties::galaxy(); // BUG-9254: the party, not the planet
+        if (party_only && parties::my_party().size() <= 1)
+            LOG("migration: started by this game's evolution, no party here: nobody else migrates (BUG-9254)");
+        else {
+            if (g_sess.role() == net::Role::Host) {
+                send_migrate(g_sess.my_id(), -1, 0xFF);
+                if (!party_only) notice(g_name + "'s species is migrating to a new nest: everyone migrates together.", -1);
+            } else
+                send_migrate(g_sess.my_id(), 0, 0xFF);
+            LOG("migration: started by this game's evolution: the others are told (BUG-9163)");
+        }
     }
     if (mig >= 0) g_mig_seen = mig;
     if (g_mig_editor_at < 0 || now < g_mig_editor_at) return;
@@ -7578,10 +7595,14 @@ void setup_callbacks()
                     g_mig_by.c_str());
                 return;
             }
+            const bool mine = migrates_with(by); // (BUG-9254: on a galaxy planet, this game's party only)
+            if (!mine)
+                LOG("migration: %s's migration is not this game's party's: no editor here (BUG-9254)",
+                    g_sess.name_of(by).c_str());
             if (g_sess.role() == net::Role::Host && from != 0 && by == from) { // a guest's: everyone, the host too
-                send_migrate(by, -1, by);
-                migration_warned(by, now);
-            } else if (g_sess.role() == net::Role::Client && from == 0 && by != g_sess.my_id())
+                send_migrate(by, -1, by); // (each guest checks its own party)
+                if (mine) migration_warned(by, now);
+            } else if (g_sess.role() == net::Role::Client && from == 0 && by != g_sess.my_id() && mine)
                 migration_warned(by, now);
             return;
         }
@@ -11674,6 +11695,16 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, SK_CMD_OUTSIDE_FRAME); // find shows the game's goal card
+    H->command_add(M, "coop.migratetest", "coop.migratetest - tests (BUG-9254): tell the others this game's species migrates (MSG_MIGRATE, as its evolution does), whatever its party",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       if (!g_sess.connected()) { SAY("not in a session\n"); return 1; }
+                       g_mig_by = g_name;
+                       g_mig_round_until = H->time_seconds() + kMigrateRound; // (this game's own round)
+                       send_migrate(g_sess.my_id(), g_sess.role() == net::Role::Host ? -1 : 0, 0xFF);
+                       SAY("MSG_MIGRATE sent as %s (galaxy parties %d, my party %zu)\n", g_name.c_str(),
+                           (int)parties::galaxy(), parties::my_party().size());
+                       return 0;
+                   }, nullptr, MT);
     H->command_add(M, "coop.editreq", "coop.editreq diff - tests (BUG-0720): the creature stage's own evolution request (its handler run once, nothing submitted) against the ones the mod builds",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        void* av = game::avatar();

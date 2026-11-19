@@ -1367,3 +1367,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9251](BUG-9251-host-no-way-to-remove-a-player-kick-or-keep-one.md) | fixed | bug | all | 2026-11-17 | unreleased | Host: no way to remove a player (kick) or keep one out (ban) |
 | [BUG-9252](BUG-9252-guest-joining-from-a-stage-stays-on-the-joining.md) | fixed | freeze | Creature | 2026-11-17 | unreleased | Guest joining from a stage stays on the joining screen: the first-creature editor waits for galaxy intro bars that never go |
 | [BUG-9253](BUG-9253-social-menu-a-second-account-dialog-layout-crash.md) | fixed | crash | Menu | 2026-11-18 | unreleased | Social Menu: a second account dialog layout crashes in cWindowManager::PopModal |
+| [BUG-9254](BUG-9254-galaxy-planet-one-player-s-migration-opens-the-c.md) | fixed | bug | Creature | 2026-11-18 | unreleased | Galaxy planet: one player's migration opens the creature editor of every player on the planet, and the host's editor holds joins |

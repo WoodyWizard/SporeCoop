@@ -8992,3 +8992,12 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   <n>` sets the party's limit on the host; `coop.gpack summon <player>` starts a partner's flock directly.
 * The feed lines are in each game's log (`Summon Flock: ...`).
 * Pitfall: Summon Flock is not unlocked in Samuth.spo (status 10): start the flock with `coop.gpack summon`, then press.
+
+## A migration message by hand (2026-11-18, feat/lineages-alpha)
+<a id="testing-migratetest"></a>
+
+* `coop.migratetest` (BUG-9254) sends MSG_MIGRATE as this game's own evolution would, whatever its party: the other
+  games then warn and open their editors 10 s later, or log "not this game's party's". A game that was warned ignores
+  further migrations for 300 s (BUG-9163's round), the host included (it does not pass them on then): wait that long
+  between two runs. A save at the top brain level has no natural migration left (AddEvolutionPoints only gives the
+  "top of the food chain" box).
