@@ -533,6 +533,8 @@ bool own_outfitter(void* req, uint32_t mode, uint32_t editor, bool own_world)
     return true;
 }
 
+bool own_outfitter_open() { return g_oo_pending; }
+
 // cTribeUI 0xCDCC90 (thiscall, no arguments, plain ret): on the guest the return of our request does not reload the
 // tribe's slot (the host's species: it would dress every member of the slot, the host's too, in our outfit here); the
 // result is released as the game does and becomes our tribe outfit (tick). Its other steps (the planner's state

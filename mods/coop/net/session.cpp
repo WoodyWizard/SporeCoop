@@ -287,7 +287,9 @@ uint8_t Session::alloc_id() const
 
 bool Session::peer_families(uint8_t id, bool& has, std::vector<FamilyRev>& out) const
 {
-    if (role_ != Role::Host)
+    // BUG-1306: a guest's one peer is the host (id 0, its WELCOME's families); every guest-side caller asks for id 0
+    // (civ_arrival, npc, player_rules). Off: the host only (rel/0.7.16 before the fix: a guest never knew them)
+    if (role_ != Role::Host && !(g_fix.host_families && role_ == Role::Client && id == 0))
         return false;
     for (auto& p : peers_)
         if (p->accepted && p->id == id) {

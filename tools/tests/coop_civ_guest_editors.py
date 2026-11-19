@@ -61,11 +61,14 @@ CIV, EDITOR = '0x01654C04', '0x00DBDBA1'
 wait = waiter(step=1.0, final=True)
 
 
-def mode(con):
+def mode(con, whole=False):
+    """the mode id of `game.mode` (its first word; whole: the answer with the mode's name). BUG-1307: the answer is
+    "0x00DBDBA1 Editor", compared whole with the bare id no editor (nor Civ) was ever seen"""
     try:
-        return con.call('game.mode')['out'].strip()
+        out = con.call('game.mode')['out'].strip()
     except OSError:
         return ''
+    return out if whole else (out.split() or [''])[0]
 
 
 def civedit(con):
@@ -330,7 +333,7 @@ def main():
         slot = slot.group(1).capitalize()
         t_save = time.time() - 1
         print('  host menu:', host.call('coop.menu')['out'].strip(), flush=True)
-        ck(wait(lambda: 'GalaxyGameEntry' in mode(host), 90), 'the host is in the galaxy menu (its game saved)')
+        ck(wait(lambda: 'GalaxyGameEntry' in mode(host, True), 90), 'the host is in the galaxy menu (its game saved)')
         host.call('wait.frames 240 90000')
         files = save_files(os.path.join(lane.HOST_DIR, 'Games', slot), t_save)
         found = keys_in(files, keys)

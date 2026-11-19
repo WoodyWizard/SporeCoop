@@ -7,6 +7,7 @@
 #include "tribe_editors.h"
 #include "coop_state.h"
 #include "designs.h"
+#include "civ_editors.h"
 
 namespace coop_core {
 
@@ -289,14 +290,25 @@ bool g_own_editor_charge_due = false; // BUG-0466: the own editor opened; its re
 // so this is hardening. `coop.fix creations.own_editor_flags off`: as 0.7.11.
 bool g_own_editor_flags_fix = true;
 COOP_FIX("creations.own_editor_flags", "BUG-0811", g_own_editor_flags_fix, "creature: a refused own editor request or the session end leaves no own-editor price or part waiver for a later editor");
+// BUG-1308 (lab 20261119-095414 tribe_own_outfitter, 20261119-104136 own_editor_drop): a guest's own Tribal Outfitter
+// (BUG-1272) and Civ outfitter (BUG-1275) open for its own creature, whose Creature Creator parts are not in the
+// outfitter's part list either: "done" stayed in the editor. They are own editors too: the part-list error is waived
+// while one of ours is on its way or open. Off: only the own Creature editor (0.7.15).
+static bool g_own_outfit_parts_fix = true;
+COOP_FIX("editors.own_outfit_parts", "BUG-1308", g_own_outfit_parts_fix,
+         "tribe, civ: a guest's own outfitter for its own creation closes with Done (its Creature Creator parts are allowed, as in its own Creature editor)");
 BlockingErrors_t o_BlockingErrors;
 unsigned g_part_list_waivers; // tests: how often the part-list error was waived
+unsigned g_outfit_part_waivers; // BUG-1308: of them, in a guest's own outfitter
 uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void* model, int flag)
 {
     uint32_t* r = o_BlockingErrors(ed, out, res, model, flag);
-    if (g_own_editor && out && (out[0] & 0x20u)) {
+    bool outfit = !g_own_editor && g_own_outfit_parts_fix && (designs::own_outfitter_open() || civedit::own_outfit_open());
+    if ((g_own_editor || outfit) && out && (out[0] & 0x20u)) {
         out[0] &= ~0x20u;
         g_part_list_waivers++;
+        if (outfit && !g_outfit_part_waivers++)
+            LOG("editors: our own outfitter's creation has parts outside its part list: allowed (BUG-1308)");
     }
     return r;
 }

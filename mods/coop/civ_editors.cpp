@@ -295,6 +295,8 @@ static void SK_THISCALL h_Submit(void* mgr, void* req)
     o_Submit(mgr, req);
 }
 
+bool own_outfit_open() { return g_own_open && g_req.tag == kTagOutfitter; }
+
 void tick(double now)
 {
     uint32_t m = game::mode_id();
