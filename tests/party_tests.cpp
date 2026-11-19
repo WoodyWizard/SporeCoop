@@ -1,6 +1,7 @@
 // Decision 6J: parties of 4 (mods/coop/parties.h).
 #include <cstdio>
 
+#include "founders.h"
 #include "parties.h"
 
 static int g_fail = 0;
@@ -30,8 +31,24 @@ static void test_invites_follow_sender()
     CHECK(b.answer(4, 1, true, 10 + parties::kInviteSeconds + 1) == Result::NoInvite && b.pending_from(4) == -1);
 }
 
+// BUG-9266: the party size a player's difficulty counts (the host counts what its guests report)
+static void test_party_count()
+{
+    using parties::party_count;
+    CHECK(party_count(0, {}) == 1 && party_count(0, {0, 0, 7}) == 1); // in no party: alone, whatever the others
+    CHECK(party_count(7, {}) == 1);                                   // a party with nobody else here
+    CHECK(party_count(7, {7, 0, 9, 7}) == 3 && party_count(9, {7, 0, 9, 7}) == 2);
+    // the seats of the rules are that count: a party of 1 plays the game's own difficulty, 4 and more a 4-seat party's
+    founders::CampaignRules r{1, 100};
+    r.model = 1;
+    CHECK(r.enemy_health_percent() == 100 && r.workload_percent() == 100);
+    r.seats = (uint8_t)party_count(7, {7, 7, 7, 7, 7});
+    CHECK(r.seats == 6 && r.enemy_health_percent() == 145 && r.workload_percent() == 280);
+}
+
 int main()
 {
+    test_party_count();
     test_invites_follow_sender();
     const uint32_t kCreature = 0x1654C01, kTribe = 0x1654C02;
     // a plain co-op session: the joiners are in the host's party ("the person you joined"), 4 at most

@@ -25,6 +25,12 @@ bool can_resume_world(uint64_t receipt); // host: same Cell world, save and prog
 // On the galaxy menu the requested size applies to a new planet. An existing
 // named save keeps its own rules. Legacy saves keep the original defaults.
 founders::CampaignRules rules_for_current();
+// BUG-9266 (decision 6K A, step 1): on a galaxy planet the difficulty of a hit, of hunger and of the DNA pace is that of
+// the party involved: its players on the planet are the seats (a player alone: the game's own). Elsewhere, and with
+// `coop.fix creature.party_difficulty off`, these are rules_for_current()
+bool party_difficulty();
+founders::CampaignRules rules_for_player(int session_id);
+founders::CampaignRules rules_for_me();
 // guest: the host sent its campaign rules for this world and stage (a co-op campaign, not a stage-chooser game)
 bool host_campaign();
 void receive_campaign_rules(const net::Session& session, uint8_t from, net::Reader& packet);

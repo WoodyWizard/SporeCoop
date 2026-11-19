@@ -42,7 +42,7 @@ static void SK_THISCALL h_SetHunger(void* creature, float value)
         game::in_creature_stage() && creature == game::avatar()) {
         const float previous = skg::field<float>(creature,0xBBC);
         if (value < previous && previous > 0) {
-            const float factor = world::rules_for_current().hunger_factor();
+            const float factor = world::rules_for_me().hunger_factor(); // (BUG-9266: this player's party)
             o_SetHunger(creature,previous + (value - previous) * factor);
             g_hunger_probe = {g_hunger_probe.samples + 1,previous,value,skg::field<float>(creature,0xBBC)};
             return;

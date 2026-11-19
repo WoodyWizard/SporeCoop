@@ -1225,3 +1225,17 @@ Owner 2026-11-18: "Let's also investigate the idea of connecting with Steam to a
   has from the galaxy menu.
 * ✔ The Creator (0x465C50BA) with no creation key and no parts list (+0x94) is what unlocks every part; with the
   evolution tag and the collected parts it is the game's own limited evolution editor.
+
+## Difficulty per party, step 1: Creature (BUG-9266, 2026-11-19, feat/lineages-alpha)
+<a id="server-party-difficulty"></a>
+
+* Step 1 of #server-party-progression, Creature on a galaxy planet: a hit, an NPC's bite, hunger and the Creature award
+  use the rules of the party involved, its players on the planet as the seats (alone: the game's own difficulty; 4 and
+  more: a 4-seat party's). `coop.fix creature.party_difficulty`; direct co-op is unchanged.
+* The host learns each guest's galaxy party from the guest (MSG_PARTY kGxParty, parties_net.h): the galaxy server
+  sends each game its own party only. A guest could claim no party (easier fights for itself): part of 6S.
+* ✔ An NPC keeps the game's own health; a player's hit is divided by its party's health factor (one NPC, several
+  parties). Measured: alone 1.00, a party of 2 0.87 (1/1.15); fix off: the planet's x1.45 health for any party.
+* `coop.party status` prints "party sizes here: <id>=<size>" (on the host with each guest's reported party).
+* Next: Cell, Tribe and Civ on galaxy planets (their extras still read the planet's rules), the progress debt and the
+  goal rewards per party, then step 2 (relations per party).

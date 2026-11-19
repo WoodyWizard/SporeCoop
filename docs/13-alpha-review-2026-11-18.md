@@ -105,4 +105,5 @@ every field; a stored-copy join that does not match ends in the safe direction (
   address (S3) and who may host and store a planet (S6).
 * open, no decision needed: W4 (the Tribe village table), P8 (a chat line in the galaxy menu), W5's missing-parts
   check, S10 (paging), W8 (more colours), W9 (the era visitors spike).
-* 6R A's second half, per-party difficulty (the 6K plan's step 1), is not started.
+* 6R A's second half, per-party difficulty (the 6K plan's step 1): Creature built 2026-11-19 (BUG-9266,
+  docs/12-server-and-players.md#server-party-difficulty); Cell, Tribe and Civ not yet.

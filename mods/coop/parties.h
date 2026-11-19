@@ -252,6 +252,19 @@ private:
     }
 };
 
+// BUG-9266: how many of the players present are in the party with this key; keys: every other player's (0: in no
+// party, alone)
+inline unsigned party_count(uint16_t key, const std::vector<uint16_t>& keys)
+{
+    if (!key)
+        return 1;
+    unsigned n = 1; // (the player itself)
+    for (uint16_t k : keys)
+        if (k == key)
+            n++;
+    return n;
+}
+
 using Party = BasicParty<uint8_t>;
 using Book = BasicBook<uint8_t>;
 

@@ -31,6 +31,9 @@ static struct {
 static std::vector<Online> g_online;
 static uint32_t g_stage_sent = 0xFFFFFFFF;
 static uint32_t g_views_got, g_notes_got;
+// BUG-9266: host: each guest's galaxy party (kGxParty); guest: the party id last told the host (-1: not yet)
+static std::map<uint8_t, uint16_t> g_gx_of;
+static int g_gx_sent = -1;
 
 bool galaxy() { return g_gx.on && C.galaxy_welcomed && C.galaxy_welcomed(); }
 static uint64_t ident(uint8_t id) { return C.identity_of ? C.identity_of(id) : 0; }
@@ -211,6 +214,8 @@ void on_session_start()
 {
     g_book.clear();
     g_offer_from = -1;
+    g_gx_of.clear();
+    g_gx_sent = -1;
     if (is_host())
         g_book.add(me());
 }
@@ -219,6 +224,8 @@ void on_session_end()
 {
     g_book.clear();
     g_offer_from = -1;
+    g_gx_of.clear();
+    g_gx_sent = -1;
     if (C.changed)
         C.changed();
 }
@@ -238,6 +245,7 @@ void on_player_leave(uint8_t id)
 {
     if (g_offer_from == id)
         g_offer_from = -1;
+    g_gx_of.erase(id);
     if (!is_host() || galaxy())
         return;
     g_book.remove(id);
@@ -249,6 +257,12 @@ void on_message(uint8_t from, net::Reader& r)
     const uint8_t kind = r.u8();
     if (!r.ok())
         return;
+    if (is_host() && kind == kGxParty) { // BUG-9266
+        const uint16_t party = r.u16();
+        if (r.ok() && from != me())
+            g_gx_of[from] = party;
+        return;
+    }
     if (is_host()) {
         if (kind != kInvite && kind != kAnswer && kind != kLeave && kind != kLead && kind != kKick)
             return;
@@ -301,6 +315,17 @@ void tick(double now)
 {
     if (is_host())
         g_book.lapse(now);
+    // BUG-9266: a guest on a galaxy planet tells the host its party (the host scales difficulty by each party's size)
+    if (galaxy() && C.sess && C.sess->connected() && !is_host()) {
+        if (g_gx_sent != (int)g_gx.party) {
+            net::Writer w;
+            w.u8(kGxParty);
+            w.u16(g_gx.party);
+            C.sess->send_reliable_to(0, net::MSG_PARTY, w);
+            g_gx_sent = g_gx.party;
+        }
+    } else
+        g_gx_sent = -1;
     if (C.galaxy_welcomed && C.galaxy_welcomed()) { // 6K: the server learns the stage this game plays (cross-stage rule)
         const uint32_t st = C.stage_of ? C.stage_of(me()) : 0;
         if (st != g_stage_sent && C.galaxy_send && C.galaxy_send(net::galaxy::kPartyStage, 0, 0, st))
@@ -497,6 +522,31 @@ std::vector<uint8_t> my_party()
     const Party* q = g_book.find(me());
     return q ? q->members : std::vector<uint8_t>{me()};
 }
+// a guest's reported party, 0 when unknown or when it names the host's party without being in it (the host's own
+// view, from the server, decides who is in its party)
+static uint16_t reported_party(uint8_t p)
+{
+    auto it = g_gx_of.find(p);
+    return it == g_gx_of.end() || it->second == g_gx.party ? 0 : it->second;
+}
+unsigned party_size(uint8_t p)
+{
+    if (!C.sess || !C.sess->connected())
+        return 1;
+    if (!galaxy()) {
+        const Party* q = g_book.find(p);
+        return q ? (unsigned)q->members.size() : 1u;
+    }
+    if (p == me() || (is_host() && in_gx_party(ident(p))))
+        return (unsigned)my_party().size();
+    if (!is_host()) // (a guest knows its own party only)
+        return same_party(p, me()) ? (unsigned)my_party().size() : 1u;
+    std::vector<uint16_t> keys;
+    for (auto& q : C.sess->players())
+        if (q.id != me() && q.id != p)
+            keys.push_back(reported_party(q.id));
+    return party_count(reported_party(p), keys);
+}
 int leader_of(uint8_t p)
 {
     if (galaxy()) {
@@ -532,6 +582,13 @@ std::string status()
             s += " " + std::to_string(m.slot) + " '" + m.name + "'" + (m.leader ? " (leader)" : "") + (m.me ? " (me)" : "") +
                  (m.planet.empty() ? " [menu]" : " [" + m.planet + "]");
         s += "\n";
+        if (C.sess && C.sess->connected()) { // BUG-9266: the party size each player's difficulty counts
+            s += "party sizes here:";
+            for (auto& q : C.sess->players())
+                s += " " + std::to_string(q.id) + "=" + std::to_string(party_size(q.id)) +
+                     (q.id != me() && is_host() ? "(p" + std::to_string(g_gx_of.count(q.id) ? g_gx_of[q.id] : 0) + ")" : "");
+            s += "\n";
+        }
         return s;
     }
     for (auto& q : g_book.all()) {

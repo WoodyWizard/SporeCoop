@@ -740,6 +740,32 @@ float reported_enemy_max(void* creature)
     return proxy->second.max_health * proxy->second.combat_factor;
 }
 
+// BUG-9266: on a galaxy planet an NPC keeps the game's own health (several parties fight it): a player's hit is
+// divided by its party's health factor instead (the same number of hits as the scaled health takes)
+static unsigned npc_health_percent()
+{
+    return world::party_difficulty() ? 100u : world::rules_for_current().enemy_health_percent();
+}
+static float party_hit(void* npc, int player, float damage)
+{
+    if (!world::party_difficulty() || !(damage > 0) || !game::in_creature_stage() || creature_hp::host_party(npc))
+        return damage;
+    const auto relation = social::creature_relationship(npc);
+    if (relation == 6 || relation == 5) // (allies and the pack never had scaled health)
+        return damage;
+    const auto percent = world::rules_for_player(player).enemy_health_percent();
+    return percent > 100 ? float(double(damage) * 100.0 / percent) : damage;
+}
+static int player_of(void* c) // the session player whose creature (or puppet, or the host's pack) this is; -1 none
+{
+    if (!c) return -1;
+    if (c == game::avatar() || creature_hp::host_party(c)) return 0;
+    if (game::is_puppet(c) && C.sess)
+        for (auto& p : C.sess->players())
+            if (p.id != 0 && C.puppet_of(p.id) == c) return p.id;
+    return -1;
+}
+
 // A neutral wild species remains unchanged until it enters combat with the
 // founders. Pack, family and allied species are never hostile combat targets.
 static bool encounter_enemy(void* animal)
@@ -748,8 +774,7 @@ static bool encounter_enemy(void* animal)
         game::is_puppet(animal) || creature_hp::host_party(animal)) return false;
     const auto relation = social::creature_relationship(animal);
     if (relation == 6 || relation == 5) return false;
-    auto rules = world::rules_for_current();
-    creature_hp::set_enemy_health(animal,rules.enemy_health_percent());
+    creature_hp::set_enemy_health(animal,npc_health_percent());
     return true;
 }
 
@@ -1912,15 +1937,15 @@ static void host_tick(double now, const std::vector<void*>& creatures)
     static double next_hostility_check;
     if (game::in_creature_stage() && now >= next_hostility_check) {
         next_hostility_check = now + 0.5;
-        const auto percent = world::rules_for_current().enemy_health_percent();
-        if (percent != 100) {
+        const auto percent = npc_health_percent();
+        if (percent != 100 || world::party_difficulty()) { // (BUG-9266: back to the game's own health)
             std::map<uint32_t,int> relations;
             for (void* c : g_seen_now) {
                 if (game::is_dead(c) || game::is_puppet(c)) continue;
                 const uint32_t species = game::species_instance(c);
                 auto [it,first] = relations.try_emplace(species,0);
                 if (first) it->second = social::creature_relationship(c);
-                if (creature_hp::host_party(c) || it->second == 6)
+                if (creature_hp::host_party(c) || it->second == 6 || world::party_difficulty())
                     creature_hp::set_enemy_health(c,100);
                 else if (it->second == 1 || it->second == 2)
                     creature_hp::set_enemy_health(c,percent);
@@ -3404,7 +3429,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         if (game::in_creature_stage()) encounter_enemy(npc);
         // BUG-0805: the guest's puppet as the attacker only while it is a live creature here (TakeDamage relays it)
         void* attacker = g_handler_live_fix && C.puppet_live ? C.puppet_live(from) : C.puppet_of(from);
-        float dmg = teamplay::on_player_hit(npc, from, net::sane_damage(q.damage, kMaxHit));
+        float dmg = party_hit(npc, from, teamplay::on_player_hit(npc, from, net::sane_damage(q.damage, kMaxHit))); // (BUG-9266)
         // kill credit: the game pays DNA, goal progress and the kill popup only for a kill by the
         // player's own avatar (TakeDamage 0xC07A78: attacker spatial vt 0x58, docs/re/creature.md 2).
         // A guest's puppet is not it, so a guest's kill paid nothing. The pack shares its progress:
@@ -3563,8 +3588,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             tribe::note_animal_hit(c, attacker);
         if (game::in_creature_stage() && damage > 0) {
             const bool protected_target = c == av || game::is_puppet(c) || creature_hp::host_party(c);
-            if (protected_target && encounter_enemy(attacker))
-                damage = float(double(damage) * world::rules_for_current().enemy_damage_percent() / 100.0);
+            if (protected_target && encounter_enemy(attacker)) // (BUG-9266: the hit player's party)
+                damage = float(double(damage) * world::rules_for_player(player_of(c)).enemy_damage_percent() / 100.0);
             else if (attacker == av || (attacker && game::is_puppet(attacker))) encounter_enemy(c);
         }
         // decision 5CD: a partner's own pack thinks with that partner as its leader, so the host's creature is a stranger to
@@ -3588,6 +3613,8 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             }
             if (attacker == av)
                 damage = teamplay::on_player_hit(c, 0, damage);
+            if (attacker == av || (attacker && creature_hp::host_party(attacker)))
+                damage = party_hit(c, 0, damage); // BUG-9266: the host's party
             return true;
         }
         // a guest's puppet was hit: forward real NPC hits to that guest

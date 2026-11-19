@@ -316,7 +316,8 @@ static int pace_div()
     // Lineages (0.7.8 merge): a campaign's own workload (seats x difficulty, world::rules) already scales
     // its gains (Creature activity awards, Cell meals through CellCredit). Upstream's 1/N on top made a
     // two-seat campaign earn a quarter of its tuned pace. Inside such a campaign its rules decide.
-    if (world::rules_for_current().workload_percent() != 100)
+    // BUG-9266: on a galaxy planet each party's own size scales its gains (on_dna): never divided by all the players
+    if (world::party_difficulty() || world::rules_for_current().workload_percent() != 100)
         return 1;
     if (g_sess.role() == net::Role::Host)
         return dna_pace_announce();
@@ -357,7 +358,7 @@ bool on_dna(float& delta, bool activity_reward)
     // is not paced again by BUG-0510 below (that would scale it twice).
     bool campaign_scaled = false;
     if (activity_reward && delta > 0 && g_sess.connected() && game::in_creature_stage()) {
-        const auto work = world::rules_for_current().workload_percent();
+        const auto work = world::rules_for_me().workload_percent(); // (BUG-9266: this player's party)
         if (work != 100) {
             float raw = delta;
             delta = float(double(delta) * 100.0 / work);

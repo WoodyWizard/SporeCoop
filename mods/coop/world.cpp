@@ -33,6 +33,7 @@
 #include "fixes.h"
 #include "savestrip.h"
 #include "spacecoop.h"
+#include "parties_net.h"
 
 namespace world {
 
@@ -1838,6 +1839,27 @@ static std::wstring lowercase(std::wstring name)
 {
     for (auto& ch : name) ch = towlower(ch);
     return name;
+}
+
+static bool g_party_difficulty = true;
+COOP_FIX("creature.party_difficulty", "BUG-9266", g_party_difficulty,
+         "creature: on a galaxy planet enemy health and damage, hunger and the DNA pace scale with the party involved "
+         "(its players on the planet), not the planet's seats");
+bool party_difficulty() { return g_party_difficulty && parties::galaxy(); }
+founders::CampaignRules rules_for_player(int session_id)
+{
+    auto r = rules_for_current();
+    if (session_id < 0 || session_id > 255 || !party_difficulty())
+        return r;
+    r.seats = (uint8_t)std::clamp(parties::party_size((uint8_t)session_id), 1u, 255u);
+    return r;
+}
+founders::CampaignRules rules_for_me()
+{
+    auto r = rules_for_current();
+    if (party_difficulty())
+        r.seats = (uint8_t)std::clamp((unsigned)parties::my_party().size(), 1u, 255u);
+    return r;
 }
 
 founders::CampaignRules rules_for_current()

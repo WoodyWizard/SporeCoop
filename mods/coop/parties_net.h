@@ -3,6 +3,8 @@
 //   kInvite / kAnswer / kLeave / kLead  guest -> host: u8 the other player, u8 flag (kAnswer: 1 yes)
 //   kOffer  host -> the invited player: u8 who invites
 //   kResult host -> the asking player: u8 the request's kind, u8 the other player, u8 parties::Result
+//   kGxParty guest -> host (BUG-9266, a galaxy planet): u16 the galaxy server's id of the guest's party (0 none), sent
+//            at the session's start and on every change: the host scales difficulty by each party's size
 #pragma once
 #include <cstdint>
 #include <functional>
@@ -15,7 +17,7 @@
 
 namespace parties {
 
-enum Kind : uint8_t { kTable = 0, kInvite = 1, kAnswer = 2, kLeave = 3, kLead = 4, kOffer = 5, kResult = 6, kKick = 7 };
+enum Kind : uint8_t { kTable = 0, kInvite = 1, kAnswer = 2, kLeave = 3, kLead = 4, kOffer = 5, kResult = 6, kKick = 7, kGxParty = 8 };
 
 struct Ctx {
     net::Session* sess = nullptr;
@@ -75,6 +77,9 @@ void on_galaxy(uint8_t type, net::Reader& r); // PARTYVIEW / PARTYNOTE / PLAYERS
 const Book& book();
 bool same_party(uint8_t a, uint8_t b);
 std::vector<uint8_t> my_party(); // this game's party (the longest standing first)
+// BUG-9266: the players of this session in player p's party, p included (1: alone). A guest knows its own party only
+// (any other player: 1); on a galaxy planet the host counts the parties its guests report (kGxParty)
+unsigned party_size(uint8_t p);
 int leader_of(uint8_t p);
 bool i_lead();
 std::string status();
