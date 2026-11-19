@@ -2640,7 +2640,8 @@ even after all four vehicles were removed (`coop.civ remove`). `coop.civ spawnve
 past the allowance (the game's SpawnVehicle does not check it; hpref of #civ-own-designs did the same; the 36 cap
 stays). Of three forced preachers at a far city the host often had only one left later (the city's retaliation
 0xBEB6F8, or a disband: not told apart), without a fault in the other runs; in one run with them 30 m in the air the host
-faulted (BUG-1322). ✔ (runtime, lab 20261119-114030) a vehicle `vput` 30 m over the ground stays there on the host; the
+faulted (BUG-1322; CORRECTION (2026-11-19, fix/w57-crashes): not the height: the mod's shot observer called through a
+preacher's cCulturalTarget spatial, see [civ-shot-observer-targets](#civ-shot-observer-targets)). ✔ (runtime, lab 20261119-114030) a vehicle `vput` 30 m over the ground stays there on the host; the
 guest's game puts its copy on the ground (sync-check "v6 34.0"): tests put vehicles on the city's sphere.
 ✔ (runtime, lab 20261119-104136 civ_religion_state) ConvertCitizens until every citizen of an NPC city follows the
 player (15 of 15, the meter 200 * 15 / 15 clamped to 100) captures the city at once: "Alice captured a city", its
@@ -2648,3 +2649,50 @@ cinematic, a share save; the host's meter +0x750 reads 0 right after while the g
 100. A test of the meter converts part of a city (2 of 15: 26.7 on both games, lab 20261119-111559).
 * (fix/w57-sync) The BUG-1286 hook (civ_influence.cpp h_PreachTick) sets a slot's places only when the slot has its live
   spatial object (+0x78 non-null), the fork's verified condition; before, any 0 / 0 slot ticked got 10 / 2.
+
+## A vehicle of a kind the culture has no design for (2026-11-19, fix/w57-civlook)
+<a id="civ-vehicle-no-design"></a>
+
+BUG-1274. GOG 2024, runtime (line_stages).
+* ✔ (runtime, lab 20261119-133307 line_stages, both games) A Civ game started from Tribe has a land vehicle design only
+  for the capital's specialty; a vehicle bought in a captured city of another specialty (military 7D433FAD here, the
+  capital economic) through `coop.civ buy` is made with the model key **{0, 0, 0}** at +0xC4: no model (only the
+  spawn and heal effects are drawn), base max hit points 10 on the host (249 in the guest's mirror). The game's own
+  purchase UI asks for a design first; the lab's buy and a guest's own editor path do not.
+* civ_own_designs.cpp skipped every object with +0xC4 0 ("no model yet"), so the guest's own design never applied.
+  Fix `civ.own_designs_nodesign`: a vehicle with the zero key whose owner has an own design for its id gets it; its
+  culture key is the zero key (written back raw for a save, SetModelKey with it at the end, as cVehicle::Load did).
+* ✔ (runtime, lab 20261119-140235 / 20261119-141949 civ_own_designs, 20261119-140215 line_stages) With every vehicle
+  and building stripped (+0xC4 the culture key while saving), the host's save still named the guest's design keys:
+  the vehicle design in an event of the main stream 0x01897C18 (`{0x24682294, key, 0x40646200}`, little-endian) and in
+  the cPlayer record 0x02C21781, the house design in the house record 0x018EB106 at the object's **+0x224** (a second
+  key field of a building, written by the attribute writer 0xAE33DF). So a design key can not be kept out of a save
+  per object field: civ_own_designs.cpp adds a savestrip key filter (docs/re/creations.md#creations-save-keys: every key of
+  Stream_WriteResourceKey, dword blocks and event lists, now also of the vehicle and building model types) that writes
+  the culture set's key of the design id the line names it for (zero for a kind without a culture design). Lab
+  20261119-142443 civ_own_designs: no key of ours in the save.
+## The host's shot observer and targets that are no listed object (2026-11-19, fix/w57-crashes)
+<a id="civ-shot-observer-targets"></a>
+
+BUG-1322. Follows "How Civ weapons fire (BUG-0477)" above and BUG-0535.
+
+* ✔ (runtime, lab 20261119-114030 civ_preach_far, host) The fault with EIP inside a preaching vehicle (+9) and the next at
+  0xCCCCCCCC came from the mod, not from the game's FUN_00bfd750 (that address was a stale stack entry): the module
+  return addresses on the stack, mapped on a build of the run's commit (dee4405f), are `civ::fire_observed`
+  (civ_shots.cpp, the target branch) and `game::object_position` (the Cast vcall, slot 0xC), called from squadron's
+  `cToolManager::FireTool` hook; esi held the Cast id 0x1186577. fire_observed took the object at target spatial - 0x34
+  and, when its first dword lay in SporeApp.exe's image (BUG-0535's check), called its vtable: for a spatial that is not
+  +0x34 of a game object the "vtable" is whatever memory precedes it.
+* `cCombatSimulator::Update` 0xAE7360 passes as the target the target combatant's (+0x44) vt+8 result. ✔ (runtime, lab
+  20261119-141549 civ_shot_objects, host, preachers on the ground at an NPC city; Ghidra) a preacher's target spatial has
+  vtable 0x1468478, which sits at **+0x100** of `Simulator/cCulturalTarget` (noun factory 0xB1EB40, 0x218 bytes, ctor
+  0xBDACB0: cGameData, combatant 0xBFD620, cModelObject; vtables 0x14685B8 at +0, 0x14685A8 +4, 0x1468540 +0x38,
+  0x1468478 +0x100; dtor 0xBDAE30). Target - 0x34 is then cCulturalTarget +0xCC, a field (0x00000018 in that run): when
+  it happens to hold a value in the image's range the old check took it for a vtable. So every religious preaching in a
+  co-op host's game went through this; the crash needed that field's value, which explains 1 fault in 4 runs.
+  Vehicles and buildings keep their spatial at +0x34 (BUG-0477).
+* The mod (BUG-1322): `civ.shot_target_listed`: a shooter or target that is not one of the host's listed vehicles is
+  used only when the object at spatial - 0x34 is in the game's object list (`game::listed`, pointers compared, once
+  per object and frame); else nothing is called and the shot has no target the guests could find (kind 2).
+  `coop.civ shotobjs` prints the unlisted ones seen, `coop.civ shotprobe` (tests) one observed shot at a target that is
+  no object. Test `coop_civ_influence.py --case shotobjs` (docs/06-testing.md#testing-civ-shot-objects).

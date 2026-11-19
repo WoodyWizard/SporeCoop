@@ -40,16 +40,17 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   them were copies of the host's cell (BUG-1257).
 - Civilization: in the normal co-op mode (own creatures) a guest's vehicles and the buildings of its cities are drawn
   from the guest's own vehicle and building designs on every player's screen, with the stats of those designs; a
-  vehicle given to another player takes that player's design. The host's saved game keeps the host's designs only
-  (BUG-1274).
+  vehicle given to another player takes that player's design, also a kind of vehicle the host has not designed yet.
+  The host's saved game keeps the host's designs only (BUG-1274).
 - Tribe: the members of your tribe that are yours now look like your own creature (the one you play in the Creature
   stage), on your screen and on your partners'; the host's members keep the tribe's species. A member given to
   another player takes that player's creature, and a member whose player left goes back to the tribe's species. The
   host's saved game keeps the tribe's species for every member; your look comes back when you play together again
   (BUG-1271).
 - Civilization: the citizens walking in a city a guest owns (captured, given or dealt to it) are that guest's own
-  species on every player's screen; the shared capital keeps the species of the player who founded it. With "everybody
-  plays the host's creature" (F5) every city stays the host's species, as before (BUG-1273).
+  species, in its own colours (not plain white), on every player's screen; the shared capital keeps the species of the
+  player who founded it. With "everybody plays the host's creature" (F5) every city stays the host's species, as before
+  (BUG-1273, BUG-1321).
 - Tribe: a guest can now dress its own tribe members: the edit badge on the tribe's card in the hut's planner opens
   the Tribal Outfitter for the guest's own creature, and after Done the guest's members wear the new outfit on every
   player's screen while the host's members keep the host's look. Before, a guest's outfitter was refused. With
@@ -123,6 +124,12 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   appears; before, it was the tribe's species for a moment first (BUG-1299).
 - Space: a guest whose own ship has the same id as the host's ship now flies its own ship on its screen; before, its
   game could show the host's ship instead (BUG-1301; still open until its lab run).
+- Tribe -> Civilization: when another cinematic played just as the City Hall was built at the end of Tribe, the game
+  skipped the City Hall cinematic and never opened the vehicle editor, and the next click on the evolve button crashed
+  the host's game. The City Hall cinematic now always plays and the vehicle editor follows; a second City Hall no longer
+  crashes the game (BUG-1325).
+- Civilization: the host's game could crash while its vehicles fought or preached at a city in a co-op game: the mod's
+  relay of the host's shots read a target that was not a game object as one (BUG-1322).
 ## [0.7.15.3] - 2026-11-19
 
 A fix for a crash in the Space stage reported on GitHub (#203): a player who joined the host's Space game crashed

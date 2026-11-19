@@ -165,6 +165,8 @@ std::string debug(const std::vector<std::string>& a)
                  g_last_cmd.c_str());
         return std::string(b) + (mc && game::listed(mc, 0x18EB4B7u) ? ai_line(mc) : std::string("gone"));
     }
+    if (!a.empty() && (a[0] == "graduation" || a[0] == "gradcine")) // BUG-1325 (tribe_graduation.cpp)
+        return graduation_cmd(a);
     if (a.size() >= 4 && a[0] == "caption_race") { // see caption_race (BUG-1101)
         g_race_msg = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
         g_race_post = a[2] == "post";

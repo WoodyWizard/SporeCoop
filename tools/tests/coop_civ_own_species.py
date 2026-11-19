@@ -22,6 +22,12 @@ its species line, docs/01-architecture.md#arch-species-line: its Civ outfit, els
 5. Both cameras back at the capital: its citizens are still the civilization's species (the founder's) on both games;
    key frames of the capital.
 
+   BUG-1321: and each game has baked the model of that species when its citizens take it (the game's own bake state,
+   Editors::IBakeManager, `coop.civ citizens` rows `baked=`): a citizen made of an unbaked species is drawn white, no
+   paint (lab 20261119-114816 frames 02 / 03 on the guest, 20261119-095414 frame 02 on the host).
+
+SPORE_FIX_OFF=civ.own_species_bake: step 3's bake check FAILs on a game that had not baked the line's model yet (the
+citizens white on its key frames).
 SPORE_FIX_OFF=civ.own_species: step 3 FAILs (the guest's city keeps the civilization's species).
 (SPORE_FIX_OFF=species.line: step 1 FAILs, the guest has no line.)
 SPORE_FIX_OFF=civ.own_species_save: step 4 FAILs (the host's citizen records name the guest's key; also seen before the
@@ -33,6 +39,7 @@ host's creature): no game has a line for the guest and every city, the guest's t
   SPORE_LANE=6 python3 tools/tests/coop_civ_own_species.py
 """
 import math
+import os
 import re
 import sys
 import time
@@ -40,14 +47,46 @@ import time
 import lane
 import settings_lib
 import sameview as sv
+import twoinst
 from coop_civ import civ, dist
 from coop_creature_e84 import close_boxes
+from coop_nest_species import read_pkg, write_pkg
 from coop_tribe_outfit import keys_in_save
 from play_civ import frame_city
 from twoinst import Checks, keyframe, start
 
 CITIZEN = '18EB4B7'
 HOST_MODE = '--host-mode' in sys.argv
+# BUG-1321: the Civ outfit is a fresh copy of one of the guest's creatures (its metadata's time changed per run), so its
+# line key (from the content) is new on every run and no game has baked it yet: a lane's graphics cache keeps the bake
+# of a key once made (lab 20261119-140235: the twin passed after the fixed run on the same games had baked 7B635F66).
+# Only on a cold start (the guest's My Creations are written before the games start); warm: `test civ next`.
+FRESH = 0x29F00000 | (int(time.time()) & 0xFFFF)
+BEM, META, CRT_GROUP = 0x1A99B06B, 0x030BDEE3, 0x40626200
+_orig_restore = twoinst.restore_creations
+
+
+def restore_with_fresh(guest=True):
+    _orig_restore(guest)
+    p = os.path.join(lane.GUEST_DIR, 'EditorSaves.package')
+    if not guest or not os.path.exists(p):
+        return
+    recs = [r for r in read_pkg(p) if r[2] >> 20 != 0x29F]
+    src = min(i for t, g, i, _ in recs if t == BEM and g == CRT_GROUP)
+    add = []
+    for t, g, i, d in recs:
+        if i != src:
+            continue
+        d = bytearray(d)
+        if t == META and len(d) >= 0x44:
+            if int.from_bytes(d[0x14:0x18], 'big') == src:
+                d[0x14:0x18] = FRESH.to_bytes(4, 'big')  # (its own key)
+            for o in (0x34, 0x3C):  # (the creation and modification times: another content)
+                d[o:o + 8] = (int.from_bytes(d[o:o + 8], 'big') + (FRESH & 0xFFFF) + 1).to_bytes(8, 'big')
+        add.append((t, g, FRESH, bytes(d)))
+    write_pkg(p, recs + add)
+    print(f'  (the guest\'s My Creations: {FRESH:08X}, a fresh copy of {src:08X} for the Civ outfit, '
+          f'{len(add)} records)', flush=True)
 
 
 def species(con):
@@ -59,6 +98,23 @@ def species(con):
     for c, k, n in re.findall(r'^citizens city=(-?\d+) key=(\w+) n=(\d+)', out, re.M):
         per.setdefault(int(c), {})[int(k, 16)] = int(n)
     return lines, int(m.group(1), 16) if m else 0, per, out.splitlines()[0] if out else ''
+
+
+def paint(con, city):
+    """BUG-1321: {species key: the game's bake state of its model (1 baked, 0 not: drawn white, -1 unknown)} of the
+    citizens of `city` on this game"""
+    out = con.call('coop.civ citizens')['out'] or ''
+    return {int(k, 16): int(b) for c, k, _, b in
+            re.findall(r'^citizens city=(-?\d+) key=(\w+) n=(\d+) baked=(-?\d+)', out, re.M) if int(c) == city}
+
+
+def check_paint(ck, players, city, what):
+    """BUG-1321: every game's citizens of `city` are of a species whose model the game has baked (painted, not white)"""
+    got = {r: paint(c, city) for r, c in players.items()}
+    shown = {r: {f'{k:08X}': b for k, b in v.items()} for r, v in got.items()}
+    return ck(all(v and all(b == 1 for b in v.values()) for v in got.values()),
+              f'{what}: the citizens are drawn from a baked model, painted, on both games (the game\'s bake state per '
+              f'species: {shown})')
 
 
 def fmt(d):
@@ -95,6 +151,7 @@ def closeup(players, centre, tag, note):
 
 
 def main():
+    twoinst.restore_creations = restore_with_fresh
     host, guest = start('civ_npc')
     players = {'host': host, 'guest': guest}
     ck = Checks()
@@ -109,11 +166,16 @@ def main():
     # 1. the guest plays its own creature (a player's pick in the co-op window; a guest that played it in Creature has
     # it recorded for this world, BUG-0345; the fixture's guest never did): the newest of its My Creations
     mine = re.findall(r'^creature (\w{8}) ', guest.call('coop.creations list')['out'], re.M)
+    fresh = f'{FRESH:08X}' in [m.upper() for m in mine]
+    mine = [m for m in mine if int(m, 16) >> 20 != 0x29F]
     if not ck(mine, f'the guest has creatures of its own ({len(mine)})'):
         return ck.result()
     print('  guest:', guest.call(f'coop.creations choose creature {mine[0]}')['out'].strip(), mine[0], flush=True)
     time.sleep(3)
-    out = guest.call('coop.species test civ next')['out'].strip()  # the guest's Civ outfit (WP-C3's stand-in)
+    # the guest's Civ outfit (WP-C3's stand-in): the fresh copy (a key never baked, BUG-1321), warm: another creature
+    out = guest.call(f'coop.species test civ {FRESH:08X}' if fresh else 'coop.species test civ next')['out'].strip()
+    print(f'  (Civ outfit: {"the fresh copy, a key no game has baked" if fresh else "next (warm start: no fresh copy)"})',
+          flush=True)
     print('  guest:', out, flush=True)
     ck(out.startswith('set'), f'the guest\'s species line takes a Civ outfit ({out})')
     gkey, ckey, skey = {}, {}, {}
@@ -175,11 +237,15 @@ def main():
     ck(all(set(v) == {want} for v in seen.values()) and all(seen.values()),
        f'the guest\'s city\'s citizens are the {"civilization" if HOST_MODE else "guest"}\'s species on both games '
        f'({want:08X}: {fmt(seen)})')
+    check_paint(ck, players, tgt, f'city {tgt}')  # (at once: a citizen made white stays white)
     look = ('the civilization\'s species, as at the capital (creature.mode host)' if HOST_MODE else
             'the guest\'s creature (not the civilization\'s species of the capital)')
     keyframe('guest_city', f'the city {tgt} the guest captured, both games: its citizens walking about are {look}')
     closeup(players, hc[tgt]['pos'], 'guest_citizen', 'one citizen of the guest\'s city up close, the same camera on both '
-                                                     f'games: {look} on both screens')
+                                                     f'games: {look} on both screens, painted (its colours, not '
+                                                     f'plain white)')
+    later = {r: {f'{k:08X}': b for k, b in paint(c, tgt).items()} for r, c in players.items()}
+    print(f'  city {tgt} bake state after the key frames: {later}', flush=True)
 
     # 4. the host's save
     t_save = time.time()

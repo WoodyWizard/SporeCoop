@@ -2423,6 +2423,28 @@ void* species_by_key(const Key& k)
     return mgr ? thiscall<void*>(a_GetSpecies, mgr, &rk) : nullptr;
 }
 
+int model_baked(const Key& k, bool request)
+{
+    // IBakeManager (Ghidra GOG 2024, vtable 0x13EB308): vt 0x1C IsBaked(const ResourceKey*, bool) 0x406EF0 (the bool
+    // 0x3704E55 of the key's property lists in its group & 0xE0FFFFFF and | 0x1000000), vt 0x3C IsQueued(const
+    // ResourceKey*) 0x4163E0 (the key being baked +0x228 or in the queue), vt 0x4C RequestBake(const ResourceKey*,
+    // const {id, flags}*) 0x40A590; FormTribe 0xCC6440 asks with {0x609B763, 0x40000}
+    static uintptr_t a_Bake = H->sym("Editors::IBakeManager::Get");
+    void* bm = a_Bake ? cdecl_call<void*>(a_Bake) : nullptr;
+    if (!bm || !readable(bm, 4) || !k.instance)
+        return -1;
+    ResourceKey rk{k.instance, k.type, k.group};
+    if (vcall<char>(bm, 0x1C / 4, &rk, 0))
+        return 1;
+    if (request && !vcall<char>(bm, 0x3C / 4, &rk)) {
+        struct {
+            uint32_t id, flags;
+        } req{0x609B763u, 0x40000u};
+        vcall<int>(bm, 0x4C / 4, &rk, &req);
+    }
+    return 0;
+}
+
 // BUG-0200: cSpeciesManager +4 is a hash map ResourceKey -> cSpeciesProfile* (Ghidra GOG 2024: GetSpeciesProfile
 // 0x4DF5C0 -> find 0x4DF740 -> 0x4E0FF0): buckets at mgr +8, bucket count at mgr +0xC, bucket (instance ^ group) %
 // count; a node is {instance, type, group, value, next}
