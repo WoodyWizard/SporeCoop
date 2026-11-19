@@ -1,16 +1,16 @@
 ---
 id: BUG-1275
 title: WP-C3: the guest's own Civ editors (buildings, vehicles, Civ outfitter) for its own line
-status: open
+status: fixed
 kind: feature
 stage: Civ
 reported: 2026-11-18
 source: plan-0.7.16
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/w54-civedit
-commits: 78a585e5 48c171a0 1b7d5b83
+commits: 78a585e5 48c171a0 1b7d5b83 6b93ebd6 2cb5861c
 tests: civ_guest_editors, civ_guest_editors_off (twin), civ_designs
 signature:
 docs: docs/re/civ.md#civ-own-editors, docs/06-testing.md#testing-civ-guest-editors, docs/01-architecture.md#arch-civ-guest-editors
@@ -46,8 +46,15 @@ Owner rule of 2026-11-18: no lab runs until the night run. Test `civ_guest_edito
 `civ_guest_editors_off` (SPORE_FIX_OFF=civ.guest_editors, FAIL expected at "the guest's own editor opened"), lanes 6
 and 7, on a tree with feat/w54-shims (species::design in civ_own_designs.cpp). Run dirs: pending (night run).
 `make -j8`, `make test` pass.
+Lab (fix/w57-own-editors, merged trees): before, rel/0.7.16 out/lab/20261119-095414 civ_guest_editors FAIL (its test
+compared game.mode wrongly, BUG-1307). PASS whole on the merged tree with fix/w57-civlook's save strip:
+fix/w57-own-editors worktree out/lab/20261119-153243 civ_guest_editors (the house and vehicle editors open by real clicks, both designs in the guest's
+line under one key on both games, its houses and its bought vehicle drawn from them on both games, the host's culture
+set and fields unchanged, no guest key in the host's save). Twin civ_guest_editors_off FAIL fix/w57-own-editors worktree out/lab/20261119-130049 at the
+refusal (BUG-1158, 0.7.15). Key frames 01_guest_designs (both screens the guest's new house and vehicle) checked.
 
 ## History
 - 2026-11-18: opened.
 - 2026-11-18: static RE, code, tests on feat/w54-civedit (BUG-1275); lab pending (night run).
 - 2026-11-19: fix/w57-own-editors: civ_guest_editors: every editor and look check PASS on the merged tree (fix/w57-own-editors worktree out/lab/20261119-130049, -142554; BUG-1307's test fixes); the only FAIL left is the host save holding the guest's design line keys (Zorispe/Tavael.spo 018EB106 ...), which fix/w57-civlook's BUG-1274 work (not merged yet) is about. Twin civ_guest_editors_off FAIL in -130049 (the refusal). Open until that save strip is in.
+- 2026-11-19: fix/w57-own-editors: PASS whole on the merged tree (20261119-153243), twin FAIL (20261119-130049): fixed.
