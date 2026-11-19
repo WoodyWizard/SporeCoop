@@ -50,8 +50,10 @@ stray BUG-1319 (tribe.stray_line_key). Tribe fixture, the guest plays its own cr
       within 15 s that member is of the tribe's species again on the guest's game, the mix right on both games; key
       frame. FAIL twin SPORE_FIX_OFF=tribe.stray_line_key: it keeps the guest's creature.
 ship  BUG-1301 (creations.own_ship_key). Space fixture. When the guest's empire flies the host's ship key K (both
-      games play the fixture's ship), the guest's game is started again with another UFO model of its own under K in
-      its My Creations (a guest that edited its ship and saved it under the same id). PASS: after the join the guest's
+      games play the fixture's ship 0675F7B2, which the cold start puts into the host's My Creations as a base game
+      model A: the host's bundle carries its records and registers A under K on the guest, checked), the guest's game
+      is started again with another UFO model B of its own under K in its My Creations (a guest that edited its ship
+      and saved it under the same id). PASS: after the join the guest's
       game answers its own model for K (what its own ship is drawn from), the host draws the guest's ship from that
       model too; key frame of the guest's ship on both screens.
       FAIL twin SPORE_FIX_OFF=creations.own_ship_key: the host's ship registered under K shadows the guest's own.
@@ -88,6 +90,7 @@ SWITCH = {'key': 'species.own_key_here', 'drop': 'designs.own_editor_offline', '
           'birth': 'tribe.birth_species', 'kid': 'tribe.kid_species', 'stray': 'tribe.stray_line_key', 'ship': 'creations.own_ship_key'}[MODE]
 OUTAGE = 45.0  # s without a packet: both games end the session (net::Session timeout_ms 30000)
 UBEM, UGROUP, UTYPE = 0x1A99B06B, 0x40656200, 0x476A98C7
+SHIP = 0x0675F7B2  # the space fixture's ship (both players' empires fly it)
 
 
 def off_twin():
@@ -591,21 +594,40 @@ def mine_ufo(con):
 
 def run_ship(ck):
     from coop_space_host_ship_design import two_ufo_models
+    # BUG-1301: the host's ship is a creation of its own My Creations (as a player's is: the ship editor saves it there),
+    # so its bundle carries its records and registers on the guest under its key. The space fixture's ship is not in
+    # the host's fixture My Creations: its bundle had no records, nothing was registered, nothing shadowed, and the twin
+    # passed (lab 20261119-113824). The host's My Creations get a base game UFO model A under the fixture's ship key
+    # at the cold start; the guest's game is started later with another model B under that key.
+    ma, mb = two_ufo_models()
+    ha, want = f'{fnv(ma):08X}', f'{fnv(mb):08X}'
+    orig_restore = twoinst.restore_creations
+
+    def restore_with_host_ship(guest=True):
+        orig_restore(guest)
+        p = os.path.join(lane.HOST_DIR, 'EditorSaves.package')
+        base = os.path.join(fixtures_dir(), 'creations-host.package')
+        recs = [r for r in read_pkg(p if os.path.exists(p) else base) if r[2] != SHIP]
+        recs.append((UBEM, UGROUP, SHIP, ma))
+        write_pkg(p, recs)
+    twoinst.restore_creations = restore_with_host_ship
     host, guest = start('space')
+    twoinst.restore_creations = orig_restore
+    st = twoinst.lane_state()  # (the next test starts cold: these My Creations are not the fixture's)
+    twoinst.lane_state(**{**st, 'knobs': st.get('knobs', []) + ['(own_editors_robust: the host\'s ship in My Creations)']})
     time.sleep(4)
     kh, kg = mine_ufo(host), mine_ufo(guest)
-    print(f'  ships: host {kh:08X}, guest {kg:08X}', flush=True)
-    if not kh or kh != kg:
-        return ck.inconclusive(f'the guest does not fly the host\'s ship key ({kg:08X}, the host\'s {kh:08X})')
-    host_hash = ufo_hash(host, kh)
-    models = [m for m in two_ufo_models() if f'{fnv(m):08X}' != host_hash]
-    mine = models[0]
-    want = f'{fnv(mine):08X}'
+    print(f'  ships: host {kh:08X}, guest {kg:08X} (the host\'s My Creations: {SHIP:08X} -> {ha})', flush=True)
+    if kh != SHIP or kh != kg:
+        return ck.inconclusive(f'the players do not fly the fixture\'s ship {SHIP:08X} ({kh:08X}, {kg:08X})')
+    reg = wait_for(lambda: ufo_hash(guest, kh) == ha, 30)
+    ck(reg, f'the host\'s own ship (its records) answers for {kh:08X} on the guest\'s game ({ufo_hash(guest, kh)}, the '
+            f'host\'s {ha})')
 
     def saves(p):
         src = p if os.path.exists(p) else os.path.join(fixtures_dir(), 'creations-guest.package')
         recs = [r for r in read_pkg(src) if r[2] != kh]
-        recs.append((UBEM, UGROUP, kh, mine))
+        recs.append((UBEM, UGROUP, kh, mb))
         write_pkg(p, recs)
     guest, ok = restart_guest(host, saves)
     if not ck(ok, 'the guest with its own ship under the host\'s ship key joined'):
@@ -614,10 +636,11 @@ def run_ship(ck):
         return ck.inconclusive('the guest is not in Space after the join')
     time.sleep(10)  # (the host's bundles and the 2 s check)
     got = ufo_hash(guest, kh)
-    print(f'  {kh:08X}: the host\'s ship {host_hash}, the guest\'s own {want}; the guest\'s game answers {got}; '
-          f'{re.search(r"own ship key: .*", guest.call("coop.creations")["out"])}', flush=True)
+    st = re.search(r'own ship key: .*', guest.call('coop.creations')['out'])
+    print(f'  {kh:08X}: the host\'s ship {ha}, the guest\'s own {want}; the guest\'s game answers {got}; '
+          f'{st.group(0) if st else "-"}', flush=True)
     ck(got == want, f'the guest\'s own ship is drawn from its own model on its game ({got}, its own {want}, the '
-                    f'host\'s {host_hash})')
+                    f'host\'s {ha})')
     gk = wait_for(lambda: (m := re.search(r'player 1 ufo: (\w+)/', host.call('coop.creations')['out'])) and
                   int(m.group(1), 16), 30)
     hg = ufo_hash(host, gk) if gk else '?'
