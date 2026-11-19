@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: player report (SporeCoop-report-20261118-215146.zip), owner
 role: guest
 versions: 0.7.14.1-lineages65-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages66-dev
 branch: feat/lineages-47
 commits: c3ba2fbe
 tests: tests/win_tests.cpp test_party (a handed-over seat); manual MSI pair

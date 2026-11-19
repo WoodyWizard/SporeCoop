@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: player report (SporeCoop-report-20261118-215146.zip)
 role: guest
 versions: 0.7.14.1-lineages65-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages66-dev
 branch: feat/lineages-47
 commits: 80be5f2f, c3ba2fbe
 tests: tools/qa_win/qa.py (manual: two MSI games, coop.social act)
