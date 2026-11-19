@@ -612,6 +612,12 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
     dg::Digest hd = build_digest(gd.seq);
     dg::Limits lim = limits_for(hd.mode, hd.world);
     add_speed_slack(lim, hd.mode, from);
+    // BUG-1309: on a slow link the host's paced Cell state lists only this guest's nearest N cells (all that the link
+    // carries in a round, ~320 at 512 kbit/s): the same rule as the 900 of BUG-0295 with this guest's N (only the
+    // nearest cell_sure part of it must be there)
+    if (hd.mode == modes::kCell && g_P.cell_sent)
+        if (size_t n = g_P.cell_sent(from))
+            lim.cell_sent = std::min(lim.cell_sent, n);
     dg::Digest gconv = gd;
     // BUG-1310: a guest with its own DNA (WP-D) is compared with the host's record of its wallet, and its bar with the
     // host's (the party's); the others with the host's DNA as before

@@ -9562,6 +9562,22 @@ BUG-0304 (GitHub #203), BUG-1278. Written without a lab run (owner rule 2026-11-
   profile in the guest's game: `stats: skipped` +3 per opening). Captain 0 reaches neither guarded fault, and
   space_captain_none allows no handled fault at all now (the old allowance for a guard that is off let its twin pass).
 
+## Cell over a slow link: cell_slow_link and `coop.pool near` (2026-11-19, fix/w57-cellslow)
+<a id="testing-cell-slow-link"></a>
+
+* `cell_slow_link` (coop_cell_slow_link.py, SPORE_NET=lowband, BUG-1309): every 2 s for 40 s the host's live cells
+  within 20 units of the guest's cell (`coop.pool near 20 <x> <y>` on the host) against the guest's own game's cells
+  near it that mirror a host cell (`coop.pool near 22` on the guest, keyed by the host's index). Only the host cells
+  near the guest in the samples before and after too count (a cell the population pass made a moment ago may still be
+  on its way, one the cull took may leave the guest a moment before the host's list is read). PASS: from 8 s on at least 80 % in every sample but one, median 90 %. Twin `cell_slow_link_off`
+  (cell.slow_link off): the guest keeps ~100 of the host's ~400 cells (25-45 % near it), must FAIL.
+* `coop.pool near <r> [x y]`: a game's own live cells (no players' cells, no dying / dead ones) within r of a point
+  (default its own cell) as `near n=<count> ...` and a `keys` line; a guest lists only the cells that mirror a host
+  cell, by the host's index. `coop.pool pace` (host): each guest's paced Cell state (rate, cuts, raises, last loss,
+  the round on its way).
+* Pitfall: at level 1 the Cell screen shows only 2-15 cells, so the key frame `slow_link_cells` shows the difference
+  only weakly; the numbers are the proof. A round at 512 kbit/s carries the nearest ~320 cells: a radius of 40 units
+  (270-490 host cells at level 1) is more than the link carries in one round and was the wrong measure.
 ## The lab gates and own DNA per player (2026-11-19, fix/w57-dna)
 <a id="testing-gates-own-dna"></a>
 

@@ -591,6 +591,38 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "see")
         return see(a.size() > 1 ? atoi(a[1].c_str()) : 60);
+    if (!a.empty() && a[0] == "pace") // BUG-1309 (host): each guest's paced Cell state
+        return pace_status();
+    if (!a.empty() && a[0] == "near") { // tests (BUG-1309): near <r> [x y]: this game's own live cells within r
+        // of (x y) (default: our own cell), keyed by the host's index (a guest: its mirrors; cells of its own game
+        // that mirror none are not listed), dying / dead ones and players' cells left out
+        float r = a.size() > 1 ? (float)atof(a[1].c_str()) : 30.f;
+        net::Vec3 at = av ? pos_of(av) : net::Vec3{};
+        if (a.size() > 3) {
+            at.x = (float)atof(a[2].c_str());
+            at.y = (float)atof(a[3].c_str());
+        }
+        std::string keys;
+        int n = 0;
+        for_each_cell([&](uint8_t* c, uint32_t idx) {
+            if (modes::cell_is_puppet(c) || F<uint8_t>(c, kDead) || F<uint8_t>(c, kDying) || !F<void*>(c, kRes))
+                return;
+            uint32_t key = idx;
+            if (is_guest()) {
+                auto it = g_host_of.find(idx);
+                if (it == g_host_of.end())
+                    return;
+                key = it->second;
+            }
+            net::Vec3 p = pos_of(c);
+            if (std::hypot(p.x - at.x, p.y - at.y) > r)
+                return;
+            keys += (n++ ? " " : "") + std::to_string(key);
+        });
+        char b[120];
+        snprintf(b, sizeof b, "near n=%d at=(%.1f %.1f) r=%.1f\n", n, at.x, at.y, r);
+        return std::string(b) + "keys " + keys + "\n";
+    }
     if (!a.empty() && a[0] == "prey")
         return prey_report(a.size() > 1 ? (float)atof(a[1].c_str()) : 40.f,
                            a.size() < 3 ? 1 : a[2] == "sum" ? 0 : a[2] == "hunters" ? 2 : 1);
