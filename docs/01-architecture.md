@@ -904,6 +904,8 @@ of 2026-11-18: the host's save holds the host's species and designs only).
 * The host keeps the table (every guest's row), registers the bundles, relays them to the other guests and sends
   every row to everybody, a Ref only with a shared key its own game has (species_line_core.h `resolved`): a key goes
   out only when it can be resolved; a newcomer gets the bundles first, then the rows (reliable, in order).
+  A row the guest emptied (it plays the world's own species again) is sent as an empty row once (BUG-1312,
+  `species.row_cleared`): before, the host erased it and every other game, the owner's own too, kept the old one.
 * The host keeps every row in its per-player store (docs/01-architecture.md#arch-player-store; record `species.line`
   v1, the row's bytes; put at every change, written after the game's next save) and answers every guest once per
   session with `kStored` (its stored row, or nothing) as soon as its world's store is open. A guest that set nothing
