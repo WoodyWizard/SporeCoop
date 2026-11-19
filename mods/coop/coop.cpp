@@ -64,6 +64,7 @@
 #include "savestrip.h"
 #include "cell_logic.h"
 #include "busy.h"
+#include "cocoon.h"
 #include "social.h"
 #include "world.h"
 #include "find.h"
@@ -1224,6 +1225,7 @@ static void frame_drive(double now)
         }
         drive_puppet(r, now);
     }
+    cocoon::tick(now); // WP-K (BUG-1303): the cocoon's shells and bursts that ended are released
     track_tick(now);
     trace_tick(now);
 }
@@ -2753,6 +2755,7 @@ static void init_tribe_and_creations()
     trc.host_away = [] { return host_absent_for(Absent::Tribe); }; // BUG-0151, BUG-0231
     tribe::init(H, M, std::move(trc));
     drama::init(H, M, &g_sess); // BUG-0486
+    cocoon::init(H, M);           // WP-K (BUG-1303)
     notify::init(H, M, [] { return coop_ui::text_font(); });
     creations::Ctx crc;
     crc.sess = &g_sess;

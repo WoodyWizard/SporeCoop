@@ -5,6 +5,7 @@
 // (trace_tick). The Remote table itself (g_remotes) and the session stay in coop.cpp.
 #include "lifecycle.h"
 #include "coop_state.h"
+#include "cocoon.h"
 
 namespace coop_core {
 
@@ -23,6 +24,7 @@ bool creature_puppet(const modes::Adapter* a)
 
 void despawn(Remote& r)
 {
+    cocoon::puppet_gone(r.id, r.puppet, r.relook); // WP-K: its cocoon ends with it (a new look: the new body goes in)
     if (r.puppet && r.puppet_adapter) {
         if (creature_puppet(r.puppet_adapter) && !game::creature_listed(r.puppet)) {
             (g_frame_fix ? g_despawns_dropped : g_despawns_unlisted)++;
@@ -58,6 +60,7 @@ void forget_puppets() // world changed or the local player left it (editor, load
 {
     const modes::Adapter* creature = modes::for_mode(modes::kCreature);
     for (auto& [id, r] : g_remotes) {
+        cocoon::puppet_gone(id, r.puppet, false); // WP-K
         if (r.puppet) {
             game::puppet_unregister(r.puppet);
             if (g_lifecycle_fix)
@@ -648,6 +651,27 @@ static net::Vec3 view_pos(const net::PlayerState& s)
     return {s.pos.x * k, s.pos.y * k, s.pos.z * k};
 }
 
+// WP-K (BUG-1303): partner r is in an editor of its own while its creature puppet stands in this Creature world: the
+// puppet is held in the game's cocoon (cocoon.h), true then (not driven, not hidden). An editor state of the partner in
+// this world, or, once in the cocoon, a state of this world without its avatar yet (its game coming back from the
+// editor). Not for the echo test remote, a dead partner or a state older than 5 s.
+static bool cocoon_held(Remote& r, const net::PlayerState& s, double now)
+{
+    const bool editor = s.mode == modes::kEdit || s.mode == modes::kEditor;
+    const bool returning = cocoon::active(r.id) && s.mode == modes::kCreature && !(s.flags & net::PF_IN_WORLD);
+    if (!(editor || returning) || r.echo || !r.puppet || g_mode != modes::kCreature || !g_adapter || !g_local ||
+        r.puppet_adapter != g_adapter || !creature_puppet(r.puppet_adapter) || r.puppet_world != g_world || !g_world ||
+        s.world != g_world || (s.flags & net::PF_DEAD) || r.buf.age(now) >= 5.0)
+        return false;
+    if (!game::creature_listed(r.puppet))
+        return false; // (freed behind our back: the usual path below shows it again)
+    if (!cocoon::editing(r.id, r.puppet, now))
+        return false;
+    if (g_sess.role() == net::Role::Host) // BUG-0280: the world round the cocoon stays simulated
+        views::note(r.id, game::position(r.puppet), g_mode, now);
+    return true;
+}
+
 void drive_puppet(Remote& r, double now)
 {
     net::PlayerState s;
@@ -656,6 +680,10 @@ void drive_puppet(Remote& r, double now)
     if (!r.buf.sample(now, s))
         return;
     silent_tick(r, now);
+    // WP-K (BUG-1303): a partner in an editor of its own (its state: the editor, in this world) stays where it stood, in
+    // the game's cocoon; once in it, also while its game is not back in the world yet (no avatar after the editor)
+    if (cocoon_held(r, s, now))
+        return;
     // dead players are hidden until they respawn
     bool visible = g_adapter && g_local && (s.flags & net::PF_IN_WORLD) && !(s.flags & net::PF_DEAD) &&
                    r.buf.age(now) < 5.0 && (r.echo || same_place(s)) && now >= g_puppet_hide_until;
@@ -677,6 +705,7 @@ void drive_puppet(Remote& r, double now)
         despawn(r);
         if (!visible) {
             r.relook = false; // gone from our place: its next puppet is a real appearance
+            cocoon::puppet_gone(r.id, nullptr, false); // WP-K: no cocoon for a partner not shown
             return;
         }
     }
@@ -708,6 +737,10 @@ void drive_puppet(Remote& r, double now)
                         trace::hex(creations::player_key(r.id, creations::kCell).instance).c_str());
     }
     track_lift(s);
+    // WP-K: back from its editor: in the cocoon until the puppet wears its new design, then it comes out
+    if (cocoon::active(r.id) && creature_puppet(r.puppet_adapter) && g_mode == modes::kCreature &&
+        cocoon::back(r.id, r.puppet, s.species, now))
+        return;
     modes::g_drive_extrap = r.buf.last_extrap; // BUG-0388 diagnostics (coop.fleet track)
     if (!g_puppet_hold)
         g_adapter->drive(r.puppet, s, r.drv, now);
