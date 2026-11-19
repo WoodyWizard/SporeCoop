@@ -5,10 +5,12 @@ docs/re/creations.md#creations-own-editors-robust).
 Modes (one per ticket; each asserts the game's own fields on both games and takes key frames):
 
 key   BUG-1297 (species.own_key_here). Tribe fixture. The guest's My Creations get one of its own creatures (another
-      body) under the key of the tribe's species (the host's creature, as BUG-0278's "Save New" of an edited host
-      creation leaves it, common after BUG-1255's landfall editor); the guest's game is started again with them and
-      joins. The host plays that creature as its own (`coop.creations choose creature`): its bundle registers the
-      host's body under that key on the guest above My Creations (the shadow). The guest plays its own creature of
+      body) under the key of a creature of the host's My Creations (the host's "TigerHorse" 290229B9, as BUG-0278's
+      "Save New" of an edited host creation leaves it, common after BUG-1255's landfall editor); the guest's game is
+      started again with them and joins. The host plays that creature as its own (`coop.creations choose creature`):
+      its bundle (with its records) registers the host's body under that key on the guest above My Creations (the
+      shadow). (Not the tribe's species 067B3E4A: it is not in the host's My Creations, its bundle has no records and
+      registers nothing, so no game shadows it: lab 20261119-104136, BUG-1297.) The guest plays its own creature of
       that key (the line's shared 0x7C...... copy on both games, its members of it). Then the players' route of its
       own Tribal Outfitter (hut, card badge). PASS: the outfitter was asked for a key whose model on the guest's game
       is the guest's own body (`coop.creations modelhash`), not the host's; key frame in the editor. Then a piece of
@@ -37,6 +39,11 @@ birth BUG-1299 (tribe.birth_species). Tribe fixture, the guest plays its own cre
       The guest buys a baby at its hut (real click). PASS: on both games the first time the new member is seen
       (`coop.tribe species`, polled as fast as the console answers) it is already of the guest's species (+0xB28);
       key frame right after. FAIL twin SPORE_FIX_OFF=tribe.birth_species: first seen in the tribe's species.
+kid   BUG-1313 (tribe.kid_species). As birth; then the guest chooses another own creature while its kid lives: within
+      40 s both games answer the new key, the guest's grown-up members are of it on both games, and 8 s later the kid
+      (+0xB34 0) still has the old key on both games, no fault on either game; key frame. FAIL twin
+      SPORE_FIX_OFF=tribe.kid_species: the pass changes the kid, SetSpecies starts the growth timer a citizen does not
+      have: a fault on both games (lab 20261119-105127, tribe_birth_species_off).
 ship  BUG-1301 (creations.own_ship_key). Space fixture. When the guest's empire flies the host's ship key K (both
       games play the fixture's ship), the guest's game is started again with another UFO model of its own under K in
       its My Creations (a guest that edited its ship and saved it under the same id). PASS: after the join the guest's
@@ -44,7 +51,7 @@ ship  BUG-1301 (creations.own_ship_key). Space fixture. When the guest's empire 
       model too; key frame of the guest's ship on both screens.
       FAIL twin SPORE_FIX_OFF=creations.own_ship_key: the host's ship registered under K shadows the guest's own.
 
-  SPORE_LANE=6 python3 tools/tests/coop_own_editors_robust.py key|drop|civdrop|birth|ship
+  SPORE_LANE=6 python3 tools/tests/coop_own_editors_robust.py key|drop|civdrop|birth|kid|ship
 """
 import os
 import random
@@ -65,7 +72,7 @@ from harness import fnv  # noqa: E402
 import lane  # noqa: E402
 import twoinst  # noqa: E402
 from coop_creature_desync import kill_game  # noqa: E402
-from coop_nest_species import colliding_creations, fixtures_dir, read_pkg, write_pkg  # noqa: E402
+from coop_nest_species import HOST_ONLY, colliding_creations, fixtures_dir, read_pkg, write_pkg  # noqa: E402
 from coop_tribe_outfit import (DONE, EDITOR, ITEM, ONTO, TAB3, TRIBE, busy, close_planner, drag, mode,  # noqa: E402
                                my_creations, open_outfitter, profile)
 from coop_tribe_own_outfitter import designs, own_tribe, tribe_line  # noqa: E402
@@ -73,7 +80,7 @@ from coop_tribe_own_species import closeup, keys_in_slot, line_key, mix_ok, mode
 from twoinst import Checks, Console, keyframe, start, wait_guest_in, wait_up, watch  # noqa: E402
 
 SWITCH = {'key': 'species.own_key_here', 'drop': 'designs.own_editor_offline', 'civdrop': 'designs.own_editor_offline',
-          'birth': 'tribe.birth_species', 'ship': 'creations.own_ship_key'}[MODE]
+          'birth': 'tribe.birth_species', 'kid': 'tribe.kid_species', 'ship': 'creations.own_ship_key'}[MODE]
 OUTAGE = 45.0  # s without a packet: both games end the session (net::Session timeout_ms 30000)
 UBEM, UGROUP, UTYPE = 0x1A99B06B, 0x40656200, 0x476A98C7
 
@@ -215,24 +222,30 @@ def run_key(ck):
     if not ck(slot and own, f'the tribe\'s species {slot or 0:08X} and a creature of the guest\'s own ({own[:3]})'):
         return ck.result()
     src = own[0]
-    host_hash = model_hash(host, slot)
-    guest, ok = restart_guest(host, lambda p: colliding_creations(p, slot, src))
-    if not ck(ok, 'the guest with its own creature under the tribe\'s key joined'):
+    # BUG-1297: a creature of the host's own My Creations (its bundle carries records: a world package on the guest);
+    # the tribe's species of the fixture is not one (its bundle had no records and shadowed nothing)
+    hosts = [int(k, 16) for k in re.findall(r'^creature ([0-9A-F]{8}) ', host.call('coop.creations list')['out'], re.M)]
+    kk = HOST_ONLY if HOST_ONLY in hosts else next((k for k in hosts if k not in own and k != slot), 0)
+    if not ck(kk, f'a creature of the host\'s own My Creations to collide with ({kk:08X}; {len(hosts)} of the host\'s)'):
         return ck.result()
-    # the host plays the tribe's creature as its own: its bundle registers the host's body under that key on the guest
-    print('  host:', host.call(f'coop.creations choose creature {slot:08X}')['out'].strip(), flush=True)
-    shadow = wait_for(lambda: model_hash(guest, slot) == host_hash, 40)
-    print(f'  key {slot:08X}: the host\'s body {host_hash}, on the guest {model_hash(guest, slot)}', flush=True)
-    if not ck(shadow, f'the guest\'s game answers the host\'s body for {slot:08X} (the host\'s world package)'):
+    host_hash = model_hash(host, kk)
+    guest, ok = restart_guest(host, lambda p: colliding_creations(p, kk, src))
+    if not ck(ok, f'the guest with its own creature under the host\'s key {kk:08X} joined'):
         return ck.result()
-    gkey = own_creature(host, guest, ck, choose=slot)
+    # the host plays that creature as its own: its bundle registers the host's body under that key on the guest
+    print('  host:', host.call(f'coop.creations choose creature {kk:08X}')['out'].strip(), flush=True)
+    shadow = wait_for(lambda: model_hash(guest, kk) == host_hash, 40)
+    print(f'  key {kk:08X}: the host\'s body {host_hash}, on the guest {model_hash(guest, kk)}', flush=True)
+    if not ck(shadow, f'the guest\'s game answers the host\'s body for {kk:08X} (the host\'s world package)'):
+        return ck.result()
+    gkey = own_creature(host, guest, ck, choose=kk)
     if not gkey:
         return ck.result()
     own_hash = model_hash(guest, gkey)
     ck(own_hash not in ('?', host_hash), f'the guest\'s line copy {gkey:08X} is its own body ({own_hash}, the host\'s '
                                          f'{host_hash})')
     own0 = own_tribe(guest)
-    print(f'  the guest\'s own tribe line here: {own0:08X} (the raw key {slot:08X})', flush=True)
+    print(f'  the guest\'s own tribe line here: {own0:08X} (the raw key {kk:08X})', flush=True)
     gk0, gm0, _, _ = profile(guest)
     mine0 = my_creations(lane.GUEST_DIR)
     if not open_own_outfitter(guest, ck):
@@ -484,8 +497,48 @@ def run_birth(ck):
     if 'host' in first:
         closeup(host, guest, first['host'][0], 'baby', 'same view 12 m from the new baby: the guest\'s own creature '
                                                        '(small) on both screens')
+    if MODE == 'kid' and len(first) == 2:
+        kid_line_change(host, guest, ck, gkey, first)
     ck.faults(host=host, guest=guest)
     return ck.result()
+
+
+def kid_line_change(host, guest, ck, gkey, first):
+    """BUG-1313: the guest's line changes while its kid lives: the pass changes the guest's adults on both games, the
+    kid keeps its species until it is grown up (SetSpecies of a kid faulted on both games: the growth timer)"""
+    slot, _, _ = species(host)
+    own = [int(k, 16) for k in re.findall(r'^creature ([0-9A-F]{8}) ', guest.call('coop.creations list')['out'], re.M)
+           if int(k, 16) != slot]
+    cur = re.search(r'mine creature: ([0-9A-F]{8})', guest.call('coop.creations')['out'] or '')
+    other = next((k for k in own if not cur or k != int(cur.group(1), 16)), 0)
+    if not ck(other, f'the guest has another creature of its own ({other:08X})'):
+        return
+    print('  guest:', guest.call(f'coop.creations choose creature {other:08X}')['out'].strip(), f'{other:08X}', flush=True)
+    k2 = wait_for(lambda: (k := line_key(guest, 1)) and k != gkey and line_key(host, 1) == k and k, 40)
+    if not ck(k2, f'both games have the guest\'s new creature under one key ({k2 or 0:08X}, the old {gkey:08X})'):
+        return
+    kid = {r: first[r][0] for r in ('host', 'guest')}
+
+    def adults_done():
+        for c in (host, guest):
+            _, _, ms = species(c)
+            if any(m['owner'] == 1 and m['age'] == 1 and not m['dead'] and m['body'] and m['key'] != k2
+                   for m in ms.values()):
+                return False
+        return True
+    done = wait_for(adults_done, 30)
+    time.sleep(8)  # (the pass runs every 0.15 s: a kid it would change is changed by now)
+    for r, c in (('host', host), ('guest', guest)):
+        _, _, ms = species(c)
+        txt = ', '.join(f'#{i}:{m["owner"]}:{m["age"]}:{m["key"]:08X}' for i, m in sorted(ms.items()))
+        print(f'  {r} after the line change: {txt}', flush=True)
+        k = ms.get(kid[r])
+        ck(k is not None and not k['dead'] and k['age'] == 0 and k['key'] == gkey,
+           f'{r}: the kid keeps its species while it grows up ({k and k["key"] or 0:08X}, the old {gkey:08X}, '
+           f'the new {k2:08X})')
+    ck(done, f'the guest\'s grown-up members are of its new creature {k2:08X} on both games')
+    keyframe('kid_kept', 'after the guest changed its creature: its grown-up members are the new creature on both '
+                         'screens, its kid still the old one (small), both games running')
 
 
 # ---------------------------------------------------------------------------------------------------------- ship
@@ -543,9 +596,10 @@ def main():
     ck = Checks()
     print(f'  mode {MODE}, switch {SWITCH}{" (off: the FAIL twin)" if off_twin() else ""}', flush=True)
     try:
-        return {'key': run_key, 'drop': run_drop, 'civdrop': run_civdrop, 'birth': run_birth, 'ship': run_ship}[MODE](ck)
+        return {'key': run_key, 'drop': run_drop, 'civdrop': run_civdrop, 'birth': run_birth, 'kid': run_birth,
+                'ship': run_ship}[MODE](ck)
     finally:
-        if MODE in ('key', 'drop', 'birth'):
+        if MODE in ('key', 'drop', 'birth', 'kid'):
             put_back()
         # (the guest's My Creations of `key` / `ship`: the next cold start restores the fixture's, restart_guest's knob)
 

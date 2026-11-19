@@ -35,6 +35,15 @@ def player(con):
     return (-1, 0)
 
 
+def ptribe(con):
+    """the game's player tribe line of `coop.tribe` (members, level, cap)"""
+    for ln in con.call('coop.tribe')['out'].splitlines():
+        if '(player)' in ln:
+            m = re.search(r'(\d+ members).*(level=-?\d+ cap=-?\d+ hud_cap=-?\d+)', ln)
+            return ' '.join(m.groups()) if m else ln.strip()[:120]
+    return '-'
+
+
 def owners(con):
     """{member id: owner} of the host's player tribe"""
     out, inside = {}, False
@@ -89,8 +98,13 @@ def main():
     ck(h is not None, f'the guest\'s own hut is on its screen ({h})')
     if not h:
         return ck.result()
+    # (diagnostics: lab 20261119-102828 saw a click that bought nothing on the guest's game: no hut effect, no food
+    # paid on either game; the level / cap of each game's player tribe and what the guest's cursor is over)
+    print('  tribes before the click: host', ptribe(host), '| guest', ptribe(guest), flush=True)
     guest.call(f'move {h[0]} {h[1]}')
     time.sleep(0.6)
+    print('  guest windows under the cursor:', (guest.call(f'coop.ui at {h[0]} {h[1]}').get('out') or '').strip()[:160],
+          flush=True)
     guest.call(f'click {h[0]} {h[1]}')
     t0, hn, gn = time.time(), n0, -1
     while time.time() - t0 < 20:
@@ -104,6 +118,8 @@ def main():
     print(f'  after {time.time() - t0:.0f} s: host {hn} members food {f1} | guest {gn} members food {food(guest)}', flush=True)
     print('  host', host.call('coop.tribe anims')['out'].splitlines()[-1], '| guest',
           guest.call('coop.tribe anims')['out'].splitlines()[-1], flush=True)
+    if hn == n0:
+        print('  tribes after: host', ptribe(host), '| guest', ptribe(guest), flush=True)
     new = {i: o for i, o in owners(host).items() if i not in o0}
     print(f'  new members on the host: {new}', flush=True)
     ck(hn == n0 + 1, f'the host\'s game has the member the guest bought ({n0} -> {hn})')
