@@ -10,8 +10,11 @@ removed the other mirrors a second after they came: ~100 of the ~400 cells, spre
 Cell fixture (level 1, both players next to each other). For --secs s, every 2 s: the guest's own cell's position,
 the host's live cells within --r cell units of it (`coop.pool near <r> x y` on the host: its pool) and the guest's own
 game's cells within --r + 2 of it that mirror a host cell (`coop.pool near` on the guest: its pool, by the host's
-index). Coverage = the share of the host's cells near the guest that the guest's game has. One view box is 20 units
-wide at every level (docs/re/cell.md#cell-kin-test-units): --r 40: two view boxes around it (8 host cells within 15 at level 1 in the first run, too few to tell).
+index). Coverage = the share of the host's cells near the guest that the guest's game has, of the host's cells that
+were near it in the sample before too (2 s: a cell the host's population pass made a moment ago may still be on its
+way; the link carries a round every ~0.4 s). One view box is 20 units wide at every level
+(docs/re/cell.md#cell-kin-test-units): --r 20 is a box around the guest's screen (its screen showed 2-7 cells),
+~150 of the host's cells at level 1. (A round at 512 kbit/s carries the nearest ~320 cells: --r 40 held 270-490.)
 
   1. from --after s after start() returned (the guest arrived and settled) on, the coverage of every sample is at
      least --min (one sample below is allowed: a cell that swims over the border between the two reads), and the
@@ -20,7 +23,7 @@ wide at every level (docs/re/cell.md#cell-kin-test-units): --r 40: two view boxe
      carries everything needs no pace;
   3. key frame `slow_link_cells`: the guest's screen shows the host's cells around it (not empty water).
 
-  SPORE_NET=lowband coop_cell_slow_link.py [--secs 40] [--r 40] [--after 8] [--min 0.8] [--median 0.9]
+  SPORE_NET=lowband coop_cell_slow_link.py [--secs 40] [--r 20] [--after 8] [--min 0.8] [--median 0.9]
 FAIL twin: SPORE_FIX_OFF=cell.slow_link (coverage ~0.25: the guest keeps the cells of the first chunks only).
 """
 import argparse
@@ -49,7 +52,7 @@ def on_screen(con):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--secs', type=float, default=40)
-    ap.add_argument('--r', type=float, default=40)
+    ap.add_argument('--r', type=float, default=20)
     ap.add_argument('--after', type=float, default=8)
     ap.add_argument('--min', type=float, default=0.8)
     ap.add_argument('--median', type=float, default=0.9)
@@ -60,6 +63,7 @@ def main():
     t0 = time.time()
     rows = []
     shot_done = False
+    prev = None
     while time.time() - t0 < a.after + a.secs:
         t = time.time() - t0
         gp = cell_pos(guest)
@@ -73,10 +77,13 @@ def main():
             print(f'  {t:5.1f} s: no answer (host {hs is not None}, guest {gs is not None})', flush=True)
             time.sleep(2)
             continue
-        cov = len(hs & gs) / len(hs) if hs else 1.0
-        rows.append((t, len(hs), len(gs), cov))
-        print(f'  {t:5.1f} s: guest at ({gp[0]:.1f} {gp[1]:.1f}): host {len(hs)} cells within {a.r:g}, the guest\'s game '
-              f'{len(hs & gs)} of them ({cov:.2f}), {len(gs)} mirrors near it, {on_screen(guest)} on its screen', flush=True)
+        ref = hs & prev if prev is not None else hs  # near in the sample before too
+        prev = hs
+        cov = len(ref & gs) / len(ref) if ref else 1.0
+        rows.append((t, len(ref), len(gs), cov))
+        print(f'  {t:5.1f} s: guest at ({gp[0]:.1f} {gp[1]:.1f}): host {len(hs)} cells within {a.r:g} ({len(ref)} also 2 s '
+              f'before), the guest\'s game {len(ref & gs)} of those ({cov:.2f}; {len(hs & gs)} of all), {len(gs)} mirrors '
+              f'near it, {on_screen(guest)} on its screen', flush=True)
         if not shot_done and t >= a.after + a.secs / 2:
             shot_done = True
             keyframe('slow_link_cells', "Cell over a 512 kbit/s link: the guest's screen shows the host's cells all "

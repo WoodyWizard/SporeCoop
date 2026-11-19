@@ -2775,3 +2775,32 @@ time to 924 (`coop.pool kin` prints `box=` since this branch: the width and heig
   (black, then the pool). ? Why BAF1AD40 is refused was not traced (inferred: a premade the stage's editor cannot save,
   e.g. parts or complexity beyond its limits). Players choose only their own My Creations (coop_ui), so this is a test
   path; the kin test uses E219E5D2.
+
+## The host's Cell state on a slow link: a quarter of the cells, the rest dropped every round (2026-11-19, fix/w57-cellslow)
+<a id="cell-slow-link"></a>
+
+* ✔ A round of `MSG_CELL_STATE` (#cell-sync-robustness) is 63 bytes a cell in chunks of 14 (~900 bytes a packet):
+  ~400 cells at level 1 within 120 units of the players are ~29 chunks, ten rounds a second, ~260 KB/s per guest.
+  A 512 kbit/s link (64 KB/s, `SPORE_NET=lowband`: a queue of 400 ms that drops what does not fit, the way a home
+  router's buffer does) carries a quarter of it. The host's own counters show it: `net: spike with player 1: loss
+  70.7% of 1605 packets in 5 s` right after the guest arrived (lab 20261119-102828, evo_screens_switch_slow).
+* ✔ The chunks of every round went out in the same order (pool slot order, `for_each_cell`), all in one frame, so the
+  queue kept the same first ~7 chunks of each round and dropped the rest every time: the cells of the later chunks
+  never reached the guest. Its first round after the world load came through whole (the queue was empty after the
+  transfer: guest `pool=364 mirrors=364` 1 s after its arrival), then the guest removed every mirror not listed for a
+  second (BUG-0032's rule for a round with a lost chunk): ~100 of the host's ~400 cells stayed, spread over the whole
+  pool, not the nearest. The sync-check's "c: 247 missing on the guest" 7.5 s after the arrival was that, not a
+  moment of the check: the guest's own game lacked them for as long as the link was full (BUG-1309).
+* ✔ Measured with `coop.pool near <r> [x y]` (the game's own live cells within r of a point, keyed by the host's index;
+  a guest lists its mirrors): the twin of coop_cell_slow_link.py (cell.slow_link off) had 25-62 % of the host's cells
+  within 15 units of the guest in its own game over 40 s.
+* The fix (`cell.slow_link`, cellsync_host.cpp, `cell_logic::LinkPace`): each guest's round is sorted nearest first
+  (kSendCap cells at most), and the host sends a guest no faster than the guest's link carries. The rate follows the
+  connection's own loss counters (`Connection::stats.lost` / `packets_sent`, a packet counts lost when an ack 32
+  packets later lacks it): a 0.5 s window with over 15 % lost cuts the rate to 85 % of the cell state that got through,
+  a window under 3 % with the rate used raises it by 15 %, above 2 MB/s it is unlimited (the old whole round every
+  tick). A round lists at most the nearest cells the rate sends in 0.4 s and goes out over several ticks within its
+  tokens (at most 0.25 s of the rate at once); each cell is read again when its chunk goes. Random loss of a few %
+  (mobile, the `players` presets) never cuts. Wire format unchanged: a 0.7.15 guest reads the paced rounds as before
+  (a round over several ticks is one cycle, its purge waits for its last chunk). `coop.pool pace` (host): each guest's
+  rate, cuts, raises, last loss and rounds. On lowband it settles at ~54-64 KB/s with a cut every few seconds.
