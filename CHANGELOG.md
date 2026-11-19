@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and reverse-engineering notes for this version.
+
 ### Development
 - The species line (BUG-1270): every player's own species per stage (tribe and Civ outfits, Civ designs) is kept by
   the mod, sent to every game and kept by the host between sessions; the base for every player's own look in Tribe and
