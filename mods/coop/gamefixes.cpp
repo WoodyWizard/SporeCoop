@@ -899,8 +899,32 @@ static int c_staleref(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-1325: cGameNounManager::DestroyInstance (thiscall(mgr, obj) ret 4) writes obj +0x20 first, with no null check: a
+// null object faults at DestroyInstance+0x6 (data 0x20) and the caller never gets past it (TribeStage_Graduate destroys
+// the player tribe's food mat without a check; when the end of Tribe ran a second time the mat was already gone: a
+// fault storm, lab 20261119-120449). Destroying nothing is skipped (the caller goes on as after a destroy). Off: the
+// game's own call (it faults).
+static bool g_destroy_null_fix = true;
+COOP_FIX("game.destroy_null", "BUG-1325", g_destroy_null_fix,
+         "game: a destroy of nothing (a null object) is skipped instead of faulting in the game's DestroyInstance");
+static std::atomic<unsigned> g_destroy_nulls{0};
+static uintptr_t g_destroy_null_from;
+unsigned destroy_nulls(uintptr_t* from)
+{
+    if (from)
+        *from = g_destroy_null_from;
+    return g_destroy_nulls;
+}
+
 static void __fastcall destroy_guard(void* nm, void*, void* obj)
 {
+    if (!obj && g_destroy_null_fix) {
+        g_destroy_null_from = (uintptr_t)__builtin_return_address(0);
+        if (g_destroy_nulls++ < 10)
+            H->log(M, SK_WARN, "game fixes: DestroyInstance of nothing (a null object) from 0x%08X: skipped (BUG-1325)",
+                   (unsigned)g_destroy_null_from);
+        return;
+    }
     if (g_staleref_on && obj && readable(obj, 0x30) && game::noun_id(obj) == kAnimalNoun)
         g_destroyed[g_destroyed_n++ % 8] = {(uint8_t*)obj, H->time_seconds(), game::is_puppet(obj), game::object_serial(obj)};
     if (obj && obj == g_count_obj)
