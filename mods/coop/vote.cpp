@@ -923,8 +923,9 @@ static unsigned g_switch_end_held; // tests (coop.vote): History's checks held b
 unsigned switch_end_held_count() { return g_switch_end_held; }
 
 // The Cell -> Creature switch in a session (BUG-0315): true when this call is held (the host's: a vote starts; a
-// guest's in the host's world: its I'm ready). `at_end`: called for the end sequence (BUG-1269), else for the switch.
-static bool switch_hold(bool at_end)
+// guest's in the host's world: its I'm ready). `at_end`: called for the end sequence (BUG-1269), else for the switch;
+// `from`: the game's return address (the log).
+static bool switch_hold(bool at_end, void* from)
 {
     bool multi = g_sess.connected() && g_sess.players().size() > 1;
     if (!g_switch_vote_fix || !settings::on(settings::kSwitchVote) || game::mode_id() != modes::kCell || !multi)
@@ -946,7 +947,7 @@ static bool switch_hold(bool at_end)
     if (at_end)
         g_switch_end_held++;
     LOG("the host's %s to the Creature stage (from %p, cinematic %d)", at_end ? "History's check" : "switch",
-        __builtin_return_address(0), (int)world::cinematic_playing());
+        from, (int)world::cinematic_playing());
     if (g_vote.active) {
         LOG("the Creature stage waits: a vote runs ('%s')", g_vote.text.c_str());
         feed("the Creature stage: wait until the vote is over, then click History's check again");
@@ -983,7 +984,7 @@ static bool switch_hold(bool at_end)
 
 void SK_CDECL h_CellToCreature()
 {
-    if (g_switch_go || !switch_hold(false)) {
+    if (g_switch_go || !switch_hold(false, __builtin_return_address(0))) {
         g_switch_go = false;
         o_CellToCreature();
     }
@@ -992,7 +993,7 @@ void SK_CDECL h_CellToCreature()
 // BUG-1269: History's check (the end sequence); see above
 void SK_CDECL h_CellStageEnd()
 {
-    if (!g_switch_world_fix || g_end_go || g_switch_go || !switch_hold(true)) {
+    if (!g_switch_world_fix || g_end_go || g_switch_go || !switch_hold(true, __builtin_return_address(0))) {
         g_end_go = false;
         o_CellStageEnd();
     }
