@@ -160,7 +160,7 @@ bool air_held(void* c, net::Vec3* pos = nullptr);
 // Animation events: called for every PlayAnimation/PlayAnimationTo on any creature.
 using AnimListener = void (*)(void* creature, uint32_t anim_id, int block, bool disable_blend, bool to_target);
 void set_anim_listener(AnimListener fn);
-void play_animation(void* c, uint32_t anim_id, int block, bool disable_blend);
+int play_animation(void* c, uint32_t anim_id, int block, bool disable_blend); // the game's answer (0: not played)
 // BUG-0464: animations started on a creature outside its idle refresh 0xC148B0 (the idle / walk choice every
 // game makes by itself): how 0 SporeCoop::CreaturePlayAnim (thiscall(creature, anim, int a, int b) ret 0xC, the
 // behaviour tree's), 1 cCreatureBase::PlayAnimation (a = disable blend, b = block), 2 PlayAnimationTo (b = block).

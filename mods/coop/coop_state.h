@@ -307,6 +307,9 @@ void notice(const std::string& text, int from = -1);
 
 // ---- defined in host_busy.cpp (C3, BUG-1142) ----
 void host_busy_tick(double now);
+// BUG-1305 (guest_mating.cpp): a guest's mating with a host copy as the mate ends in its editor
+void guest_mating_tick(double now);
+std::string guest_mating_status();
 void host_busy_pause_menu(bool shown);
 void host_busy_join(uint8_t id);
 void host_busy_message(uint8_t from, net::Reader& r);
