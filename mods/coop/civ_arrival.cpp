@@ -19,6 +19,15 @@
 // civ_editors.cpp; else the planner's copy of it, planner +0x4C / +0x50) and hands it to civedit::take_editor ->
 // species::set_design. Every game then shows the guest's cities and vehicles in those designs (civ_own_designs.cpp).
 // Off, host mode, the host's game, an older host: as 0.7.15 (no own editor at the arrival).
+//
+// BUG-1290 (WP-S1b, `core.own_civ_late`): a guest that missed the end of Tribe (it joined the host's Civ world, came
+// back after the change, restarted its game) never saw that vote, so the editors were never due. On: at its first
+// arrival in the host's Civ world of a session, a guest in own mode that plays an own creature there and has no own
+// City Hall in its species line gets the same two editors after the same settle, once per world: the City Hall
+// editor's opening is noted in its SporeCoop\worlds.ini ([civ_arrival] <world crc>), a later join of that world does
+// not offer them again (the red cross counts as offered). A guest that plays the host's species here gets none (it
+// picks its creature in the co-op window first, BUG-1289; the editors come at its next arrival). Off: only the vote
+// path above.
 #include "coop_state.h"
 #include "civ_editors.h"
 #include "designs.h"
@@ -65,6 +74,18 @@ static Result g_res[2];
 static unsigned g_dues, g_arrivals, g_opened[2], g_open_failed, g_results, g_taken, g_cancels, g_dropped, g_waits;
 static std::string g_why = "";     // the last reason it ended / was dropped
 
+// BUG-1290: the late path (a guest that missed the end of Tribe)
+static bool g_late_fix = true;
+COOP_FIX("core.own_civ_late", "BUG-1290", g_late_fix,
+         "core: a guest that missed the end of Tribe (joined in Civ, came back after the change) gets its own City Hall and vehicle editors once per world after it arrived in the host's Civ world");
+constexpr const char* kNote = "civ_arrival"; // worlds.ini section: the world's own Civ editors were offered
+static bool g_late = false;                  // this round came from the late path
+static bool g_late_checked = false;          // this session's first arrival in the host's Civ world was looked at
+static bool g_was_here = false;
+static uint32_t g_late_world = 0;
+static std::string g_late_why = "";
+static unsigned g_late_dues, g_late_skips, g_late_notes;
+
 static void set_phase(int p, double now)
 {
     g_phase = p;
@@ -107,6 +128,7 @@ void civ_arrival_vote(uint32_t editor, uint32_t mode)
         return; // (the vehicle editor's vote after the City Hall's: one due is enough)
     double now = H->time_seconds();
     g_phase = kDue;
+    g_late = false;
     g_due_at = g_since = now;
     g_step = 0;
     g_res[0] = g_res[1] = Result{};
@@ -190,6 +212,12 @@ static void open_task(void*)
     }
     g_opened[g_step]++;
     g_opened_at = now;
+    if (g_late_fix && !g_step) { // BUG-1290: offered in this world (the red cross too): not again at a later join
+        uint32_t w = g_late ? g_late_world : modes::current_world();
+        creations::world_note_set(kNote, w, 1);
+        g_late_notes++;
+        LOG("civ arrival: own Civ editors offered in world %08X: noted (BUG-1290)", w);
+    }
     g_editor_seen = false;
     set_phase(kOpen, now);
     if (!g_step) {
@@ -259,10 +287,57 @@ static void back(int step)
     }
 }
 
+// BUG-1290: this session's first arrival in the host's Civ world: due when the guest missed the end of Tribe
+static void late_check(double now, uint32_t m)
+{
+    bool here = m == modes::kCiv && g_sess.connected() && g_sess.role() == net::Role::Client && designs::civ_player() &&
+                !guest_elsewhere() && !world::load_queued() && !mode_switch_pending();
+    static double here_since = 0;
+    if (here && !g_was_here)
+        here_since = now;
+    g_was_here = here;
+    if (!here || g_late_checked)
+        return;
+    if (g_late_fix && !allowed() && now - here_since < 30.0)
+        return; // (the host's families or the session setting may come a moment after the world)
+    g_late_checked = true;
+    uint32_t w = modes::current_world();
+    const char* why = !g_late_fix                                ? "core.own_civ_late is off"
+                      : !allowed()                               ? "not in own mode (or the host keeps no species line)"
+                      : g_phase != kNone                         ? "the end of Tribe made them due already"
+                      : !w                                       ? "no world name"
+                      : creations::world_note(kNote, w)          ? "offered in this world already"
+                      : !creations::plays_own(creations::kCreature) ? "this guest plays the host's species here"
+                      : species::own_design(kCityHall).instance  ? "its species line has its own City Hall"
+                      : !species::design_ids(g_sess.my_id()).empty() ? "it made own Civ designs already (its planner)"
+                                                                 : nullptr;
+    if (why) {
+        g_late_why = why;
+        g_late_skips++;
+        LOG("civ arrival: no own Civ editors at this arrival in world %08X: %s (BUG-1290)", w, why);
+        return;
+    }
+    g_late = true;
+    g_late_world = w;
+    g_late_why = "due";
+    g_late_dues++;
+    g_dues++;
+    g_arrivals++;
+    g_step = 0;
+    g_res[0] = g_res[1] = Result{};
+    g_why = "";
+    g_due_at = g_arrived_at = now;
+    set_phase(kSettling, now);
+    LOG("civ arrival: this guest missed the end of Tribe of world %08X: its own City Hall and vehicle editors open when "
+        "the stage has settled (BUG-1290)", w);
+    feed("Civilization: your own City Hall and vehicle editors open in a moment (you came after the end of Tribe)");
+}
+
 void civ_arrival_tick(double now)
 {
     double dt = g_last_tick ? now - g_last_tick : 0;
     g_last_tick = now;
+    late_check(now, game::mode_id());
     if (g_phase == kNone || g_phase == kDone || g_queued)
         return;
     if (!allowed()) {
@@ -309,6 +384,11 @@ void civ_arrival_tick(double now)
         }
         if (now - g_since < settle) {
             g_waits++;
+            return;
+        }
+        if (!next && g_late && species::own_design(kCityHall).instance) {
+            g_late_why = "its species line has its own City Hall (the host's store)";
+            drop(g_late_why, nullptr); // (a stored row came after the arrival: nothing to offer)
             return;
         }
         if (next)
@@ -359,6 +439,11 @@ std::string civ_arrival_status()
              g_arrived_at ? now - g_arrived_at : -1.0, g_editor[0], g_editor[1], g_dues, g_arrivals, g_opened[0],
              g_opened[1], g_open_failed, g_results, g_taken, g_cancels, g_dropped, g_waits, g_why.c_str());
     std::string s = b;
+    uint32_t w = modes::current_world();
+    snprintf(b, sizeof b, "  late: fix=%d this=%d checked=%d world=%08X noted=%u dues=%u skips=%u notes=%u why='%s' (BUG-1290)\n",
+             (int)g_late_fix, (int)g_late, (int)g_late_checked, w, creations::world_note(kNote, w), g_late_dues,
+             g_late_skips, g_late_notes, g_late_why.c_str());
+    s += b;
     for (int i = 0; i < 2; i++) {
         const Result& r = g_res[i];
         snprintf(b, sizeof b, "  result %s editor=%08X seen=%d type=%08X key=%08X/%08X/%08X cancelled=%d taken=%d from='%s'\n",
@@ -374,6 +459,10 @@ std::string civ_arrival_status()
 static int c_civarrival(void*, int argc, const char* const* argv, SkOut* out)
 {
     std::string a = argc > 1 ? argv[1] : "status";
+    if (a == "forget") { // tests (BUG-1290): this world's note gone (the next session's arrival offers them again)
+        creations::world_note_set(kNote, modes::current_world(), 0);
+        H->out_printf(out, "forgotten\n");
+    }
     if (a == "due") {
         uint32_t m = game::mode_id();
         civ_arrival_vote(kCityHall, modes::kTribe);
@@ -389,6 +478,8 @@ static void reset()
     g_phase = kNone;
     g_step = 0;
     g_queued = false;
+    g_late = g_late_checked = g_was_here = false; // BUG-1290: the next session's first arrival is looked at
+    g_late_world = 0;
 }
 static size_t held() { return g_phase != kNone && g_phase != kDone ? 1 : 0; }
 SESSION_STATE("core.own_civ_arrival", &g_fix, reset, held);
@@ -396,8 +487,8 @@ SESSION_STATE("core.own_civ_arrival", &g_fix, reset, held);
 void civ_arrival_init()
 {
     H->command_add(M, "coop.civarrival",
-                   "coop.civarrival [status | due] - a guest's own City Hall and vehicle editors at its arrival in Civ "
-                   "(WP-X1, BUG-1276)",
+                   "coop.civarrival [status | due | forget] - a guest's own City Hall and vehicle editors at its arrival in "
+                   "Civ (WP-X1, BUG-1276; a guest that missed the end of Tribe: BUG-1290)",
                    c_civarrival, nullptr, SK_CMD_OUTSIDE_FRAME);
 }
 

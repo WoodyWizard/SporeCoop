@@ -2588,3 +2588,21 @@ and [civ-lineages-religion](#civ-lineages-religion) on our build: the addresses 
 * Decision (BUG-1284): the religious governor's bonus in ConvertCitizens counts a religious vehicle (purpose 1) of the
   converting nation within 200 m; it counted economic vehicles (2) of any nation.
 
+## A guest that missed the end of Tribe: its own Civ editors at its first arrival (2026-11-19, feat/w56-late)
+<a id="civ-late-arrival"></a>
+
+BUG-1290 (WP-S1b, `core.own_civ_late`, mods/coop/civ_arrival.cpp; #civ-own-arrival for the editors themselves).
+* ✔ (code) BUG-1276 made the own City Hall and vehicle editors due only on the host's end-of-Tribe vote seen by a
+  guest in the host's Tribe; that state is a session state. A guest that joins in Civ, reconnects or restarts its game
+  after the change never had them due.
+* The rule now: the first arrival of a session in the host's Civ world (mode Civ, the player civilization there, not
+  elsewhere, no load queued) is looked at once: due when the arrival path allows it (own mode, a host with the line,
+  WP-C3's editors), the vote path is not due, the guest plays an own creature here (`creations::plays_own`), it has no
+  own City Hall (nor any own Civ design) in its line, and its SporeCoop\worlds.ini has no `[civ_arrival] <world crc>` note. Then the same
+  settle and editors as #civ-own-arrival; a stored row that brings an own City Hall before the settle ends drops it.
+  The note is written when the City Hall editor opens (the red cross counts as offered), on the vote path too.
+* A guest that plays the host's species at its arrival gets none (the civ fixtures' guests: no editor pops up in the
+  lab's Civ tests); it picks its creature with the co-op window's row (#creations-late-species) and gets them at its
+  next arrival. `coop.civarrival` prints `late: ... checked why='...'`; `coop.civarrival forget` removes the note.
+* Not checked: the world crc of a world reached by the live Tribe -> Civ change equals the one of the planet's save
+  loaded later (both are the save's name; BUG-0258's "snapshot.spo" is the host's side).

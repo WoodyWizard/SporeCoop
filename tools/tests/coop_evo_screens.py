@@ -28,8 +28,11 @@ mate, the vote's I'm ready, History's check, the editors' parts and done), and t
                   draws the guest's mate where the guest's game has it (no second copy on the guest); when the
                   guest meets it (its own editor) the host's copy goes
   --part cell-dna  Cell fixture (BUG-1249): the guest buys a part in its own cell editor: back in the pool its DNA
-                  keeps the price off (the host's count put the old DNA back), the host's DNA has it off too, also
-                  after the host's own editor
+                  keeps the price off (the host's count put the old DNA back). Own DNA (WP-D, BUG-1291, the default):
+                  the host's spent count and DNA do not take the guest's price, and after the host's own editor the
+                  guest's spent count is still its own (the host's price not in it); SPORE_FIX_OFF=creature.own_dna
+                  FAILs. --shared (all.shared_dna on, the old pool): the host's DNA has the guest's price off too, also
+                  after the host's own editor, the same DNA and spent count on both
 
   --ready click|none   the guest's I'm ready in the votes (none: it never presses; the vote's 60 s run out)
   --vote    the session setting core.editor_now off: the host's Cell evolution goes through the vote (0.7.15; the
@@ -490,6 +493,7 @@ def part_cell_dna(host, guest, ck, ready, scr):
     taken off and keeps it (the host's spent count put the old DNA back), and the party's DNA (the host's) has it off
     too; also after the host's own editor"""
     sh, sg = scr
+    shared = '--shared' in sys.argv
     host.call('coop.pool food 400')
     time.sleep(8)
     h0, g0 = cell_dna(host), cell_dna(guest)
@@ -516,8 +520,13 @@ def part_cell_dna(host, guest, ck, ready, scr):
     ck(paid > 0, f"the guest's own editor took the part's price ({g0[0]} -> {seen[0][1] if seen else None})")
     ck(paid > 0 and all(g == g0[0] - paid for _, g, _ in seen),
        f"the guest's DNA keeps the price off while the host plays on ({[g for _, g, _ in seen]}, expected {g0[0] - paid})")
-    ck(paid > 0 and seen[-1][2] == g0[0] - paid, f"the party's DNA (the host's) has the guest's price off too ({seen[-1][2] if seen else None})")
-    keyframe('guest_back_dna', "Cell: the guest back in the pool: its DNA counter shows the part's price taken off", calm=3)
+    hs = cell_dna(host)[1]
+    if shared:
+        ck(paid > 0 and seen[-1][2] == g0[0] - paid, f"the party's DNA (the host's) has the guest's price off too ({seen[-1][2] if seen else None})")
+    else:  # WP-D: own DNA; the host's DNA is judged by its spent count (either player may eat meanwhile)
+        ck(paid > 0 and hs == h0[1], f"own DNA: the host's spent count does not take the guest's price ({h0[1]} -> {hs})")
+    keyframe('guest_back_dna', "Cell: the guest back in the pool: its DNA counter shows the part's price taken off" +
+             ("" if shared else "; the host's counter does not (own DNA)"), calm=3)
     # the host's own editor afterwards (the players' video: the guest's DNA changed only when the host left its editor)
     sp1 = cell_dna(host)[1]  # the game's spent count with the guest's price in it
     host_vote = lambda: 'vote active' in host.call('coop.vote')['out'] or 'Editor' in mode(host)
@@ -533,11 +542,18 @@ def part_cell_dna(host, guest, ck, ready, scr):
             print(f'  after the host\'s editor: host {h2} guest {g2}', flush=True)
             # the price is judged by the game's spent count (S+0x2C), not by the DNA: either player may eat after the
             # editor (food 400 -> 409 gave DNA 13 -> 14 with the spend kept, lab 20261118-135513)
-            ck(h2[0] == g2[0] and g2[0] is not None and h2[1] is not None and g2[1] == h2[1] and sp1 is not None and
-               h2[1] >= sp1 >= paid,
-               f"after the host's editor both games show the same DNA and keep the guest's price in the spent count "
-               f"(DNA {h2[0]} / {g2[0]}, spent {h2[1]} / {g2[1]}, before the host's editor {sp1}, the price {paid})")
-    keyframe('host_back_dna', 'Cell: both back in the pool, the same DNA on both')
+            if shared:
+                ck(h2[0] == g2[0] and g2[0] is not None and h2[1] is not None and g2[1] == h2[1] and sp1 is not None and
+                   h2[1] >= sp1 >= paid,
+                   f"after the host's editor both games show the same DNA and keep the guest's price in the spent count "
+                   f"(DNA {h2[0]} / {g2[0]}, spent {h2[1]} / {g2[1]}, before the host's editor {sp1}, the price {paid})")
+            else:
+                gs = cell_dna(guest)[1]
+                ck(g2[1] is not None and gs == g0[1] + paid and h2[1] is not None and h2[1] >= (sp1 or 0),
+                   f"own DNA: after the host's editor the guest's spent count is still its own ({g0[1]} + {paid} = {gs}; "
+                   f"the host's {sp1} -> {h2[1]})")
+    keyframe('host_back_dna', 'Cell: both back in the pool' + (', the same DNA on both' if shared else
+             ': each DNA counter its own (the guest\'s without the host\'s price, the host\'s without the guest\'s)'))
 
 
 def mate_seen(con, x, y, model, rad=5.0):
@@ -765,6 +781,12 @@ def main():
         import twoinst
         twoinst.forget_settings()
         ck(settings_lib.force(host, [guest], 'core.editor_now', 'off'), 'the guest got core.editor_now off (the Cell vote)')
+    shared = '--shared' in sys.argv  # WP-D (BUG-1291): the old shared pool (all.shared_dna on)
+    if shared:
+        import settings_lib
+        import twoinst
+        twoinst.forget_settings()
+        ck(settings_lib.force(host, [guest], 'all.shared_dna', 'on'), 'the guest got all.shared_dna on (one DNA pool)')
     if '--own-keep' in sys.argv:  # exploration (BUG-1255): the own editor's request bytes kept at the constructor's
         guest.call('coop.fix creations.own_editor_cancel off')
         guest.call('coop.editreq keep ' + ARG('--own-keep', '7'))
@@ -792,6 +814,9 @@ def main():
             twoinst.forget_settings()
         if VOTE:
             settings_lib.reset([host], ('core.editor_now',))
+            twoinst.forget_settings()
+        if shared:
+            settings_lib.reset([host], ('all.shared_dna',))
             twoinst.forget_settings()
     ck.faults(host=host, guest=guest)
     return ck.result()

@@ -14,7 +14,9 @@ config's start budget (100); on the way out the game books spent = budget - rema
    core.editor_now off: the held request, BUG-0560's case).
 2. The host moves an eye (free) and saves (the editors' check). PASS: the host's game's spent DNA
    (cCellSerializableData +0x2C) is what it was before (the editor got the stage's budget and nothing was bought),
-   and within 10 s the guest's game has the host's spent DNA (wsync row cell_spent).
+   and within 10 s the guest's game has the host's spent DNA (wsync row cell_spent). With own DNA per player (WP-D,
+   BUG-1291, the default) the guest's count is its own (row cell_spent_own: the host's count when the host first saw
+   it), which a free edit of the host leaves equal to the host's.
 
   SPORE_LANE=4 python3 tools/tests/coop_cell_editor_budget.py
 """

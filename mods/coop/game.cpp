@@ -2552,6 +2552,16 @@ void dna_set_raw(float total)
         cdecl_call<void>(set, std::max(0.f, total));
 }
 
+// WP-D (BUG-1291): a guest's own DNA from the host: the bar up to the party's first (the original AddEvolutionPoints adds
+// to the DNA and the bar), then the budget with SetEvolutionPoints (the DNA only). The order is the Lineages fork's
+// runtime note (docs/re/creature.md#creature-own-dna)
+void dna_set_and_bar(float total, float raise)
+{
+    if (raise > 0 && o_AddEvo)
+        o_AddEvo(raise);
+    dna_set_raw(total);
+}
+
 float evolution_bar()
 {
     void* nm = noun_manager();

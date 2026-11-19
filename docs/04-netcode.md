@@ -82,7 +82,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 20 | `NPC_DESPAWN` | R | host | Module | Npc | npc | stop mirroring an NPC: u16 id |
 | 21 | `DAMAGE_REQ` | R | guest | Module | Npc | npc | my hit on an NPC: u16 id, f32 damage, i32 type |
 | 22 | `WORLD_TIME` | U | host | HostWorld | WorldTime (guest) | creature | the time of day: the sky's quaternion |
-| 23 | `DNA` | R | host | HostWorld | Dna (guest) | creature | the shared DNA total (f32), u8 n x {cause, player, f32} (dna_ledger.h), u8 pace |
+| 23 | `DNA` | R | host | HostWorld | Dna (guest) | creature | the DNA total (f32: the shared pool, or this guest's own DNA), u8 n x {cause, player, f32} (dna_ledger.h), u8 pace, u8 flags + f32 party bar + u32 world (dna_own.h) |
 | 24 | `DNA_ADD` | R | guest | Session | DnaAdd (host) | creature | DNA a guest earned or spent (f32 delta) |
 | 25 | `RES` | R | host | Session | Shared | shared | a shared resource total (u8 id, f64) |
 | 26 | `RES_ADD` | R | guest | Session | Shared | shared | a guest's change of a shared resource (u8 id, f64 delta) |
@@ -136,8 +136,8 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 |---|---|---|---|---|
 | session (session) | 1 | 1.1 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY` |
 | world (world transfer) | 2 | 1.0 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
-| creature (Creature) | 3 | 1.1 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT` |
-| npc (mirrored creature and world state) | 4 | 1.1 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
+| creature (Creature) | 3 | 1.2 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT` |
+| npc (mirrored creature and world state) | 4 | 1.2 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
 | cell (Cell) | 5 | 1.1 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
 | tribe (Tribe) | 6 | 1.1 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
 | civ (Civilization) | 7 | 1.1 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |

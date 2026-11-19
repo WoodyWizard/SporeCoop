@@ -612,6 +612,8 @@ static void core_state_end()
     }
     g_dna_out.clear();
     g_dna_notices.clear();
+    g_dna_sent_to.clear(); // WP-D (the wallets stay: the host's world keeps them)
+    g_own_heard = false;
     g_state_mode_override = 0; // tests
     if (g_own_editor_end_fix) {
         g_own_editor_due = 0; // BUG-0234 (a task already queued reads it first and returns)
@@ -730,6 +732,7 @@ void setup_callbacks()
         if (g_player_forget_fix && p.id != g_sess.my_id())
             player_life::forget_all(p.id); // BUG-0422: nothing of an earlier player of this id
         g_dna_sent = -1; // resend the DNA total to the newcomer
+        g_dna_sent_to.erase(p.id); // WP-D: its own total too
         auto old = g_remotes.find(p.id);
         if (g_id_reuse_fix && old != g_remotes.end() && !old->second.echo) {
             // BUG-0109 / BUG-0076: an entry of an earlier player under this id (a ghost made by a
@@ -847,6 +850,7 @@ void setup_callbacks()
         case net::Route::Dna: {
             float total = r.f32(); // (row 6, elsewhere, is the gate above: kept as g_dna_pending)
             std::vector<dna_ledger::Part> parts; // the host's causes (an older host sends none)
+            dna_own::Tail tail;                  // WP-D: after the pace byte (an older host sends none)
             if (r.ok() && r.left() >= 1) {
                 unsigned n = r.u8();
                 for (unsigned i = 0; i < n && r.left() >= 6; i++) {
@@ -857,6 +861,7 @@ void setup_callbacks()
                 }
                 // BUG-0510: the host's pace divisor (an older host sends none: the full sum)
                 dna_pace_heard(r.ok() && r.left() >= 1 ? r.u8() : 1);
+                tail = dna_own::Tail::read(r);
             } else
                 dna_pace_heard(1);
             if (r.ok() && g_solo_await > 0) { // BUG-0829
@@ -879,7 +884,25 @@ void setup_callbacks()
                 dna_spend_sample(); // BUG-0466: a spend since the last tick is ours, not undone by this total
                 total = std::max(0.f, total + g_dna_spend); // a spend not sent yet stays off
                 float before = game::dna(), d = total - before;
-                if (d != 0) {
+                bool own = tail.own() && (!tail.world || !g_world || tail.world == g_world);
+                g_own_heard = own;
+                g_own_bar_heard = tail.has ? tail.bar : NAN;
+                if (own && g_dna_bar_set_fix) {
+                    // WP-D (BUG-1291): our own wallet: the budget with the game's setter (the DNA only, as its editor
+                    // spends), the bar up to the party's (AddEvolutionPoints first; never down). After a reload our
+                    // game has the host's save value and bar: a plain AddEvolutionPoints of the difference would move
+                    // the bar by it (the fork's "set the budget, move the bar" order, credited to Lineages)
+                    float bar = game::evolution_bar();
+                    auto a = dna_own::apply_own(total, tail.bar, before, bar);
+                    if (a.set) {
+                        LOG("dna: own %.0f -> %.0f, bar %.1f -> party %.1f%s cause=%s", before, total, bar, tail.bar,
+                            a.raise > 0 ? "" : " (kept)", dna_ledger::causes_text(parts).c_str());
+                        game::dna_set_and_bar(total, a.raise);
+                        g_own_applied++;
+                        for (auto& p : parts)
+                            dna_note(p, g_sess.my_id());
+                    }
+                } else if (d != 0) {
                     LOG("dna: %.0f -> %.0f cause=%s", before, total, dna_ledger::causes_text(parts).c_str());
                     game::dna_add_raw(d); // through the game so the UI/progress updates
                     for (auto& p : parts)
@@ -899,7 +922,9 @@ void setup_callbacks()
                 feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA");
             } else if (r.ok() && d < 0 && d > -100000) { // BUG-0466: a guest's own spend
                 g_dna_spends_got++;
-                if (add == dna_route::Add::Pay) {
+                if (dna_own_wallet(from, net::Family::creature)) // WP-D (BUG-1291): its own DNA only, the host's game untouched
+                    dna_own_spend(from, d);
+                else if (add == dna_route::Add::Pay) {
                     float dd = std::max(d, -game::dna()); // the total never goes below 0
                     dna_host_gain({dna_ledger::Cause::Earned, from, dd}, game::dna());
                     game::dna_add_raw(dd);

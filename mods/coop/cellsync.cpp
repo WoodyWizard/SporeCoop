@@ -1,5 +1,12 @@
 #include "cellsync_internal.h"
 #include "effects.h"
+#include "net/manifest.h"
+
+namespace coop_core { // dna.cpp (WP-D, BUG-1291)
+bool dna_own_wallet(uint8_t id, net::Family fam);
+int dna_own_cell_spent(uint8_t id, int host_spent);
+int dna_own_cell_spend(uint8_t id, int spent, int host_spent);
+}
 
 namespace cellsync {
 
@@ -1068,11 +1075,26 @@ static std::unordered_map<int, uint32_t> g_spend_acked;   // host: the last spen
 static double g_cell_entered_at = -100;
 static unsigned g_spends_sent, g_spends_got, g_spends_owed_paid, g_spends_acked; // tests (coop.pool spend)
 
+// WP-D (BUG-1291, dna_own.h): own DNA per player. The host keeps every guest's own spent count (dna.cpp's wallets,
+// first sight: the host's count) and sends it in the wsync row cell_spent_own (key the player, v0 its count); its own
+// S+0x2C stays its own editors' spends. A guest that reads the row shows DNAForFood(food) - its own count; an older guest
+// ignores the row and plays the host's count (the shared pool, and its spends come off the host's count as in 0.7.15).
+static int g_host_spent_last = 0;      // host: S+0x2C in the last tick in Cell (first sight of a guest in an editor)
+static int g_own_spent_heard = -1;     // guest: our own count from the host's last row cell_spent_own (-1: none)
+static double g_own_spent_at = -100;
+static unsigned g_own_spent_rows = 0;  // tests
+
 static void spend_in(int from, int spent, uint32_t meal, bool cell)
 {
     if (!is_host() || !g_fix_guest_spend || spent == 0)
         return;
     g_spends_got++;
+    if (coop_core::dna_own_wallet((uint8_t)from, net::Family::npc)) { // WP-D: its own count, the host's untouched
+        uint8_t* hs = cell ? S() : nullptr;
+        coop_core::dna_own_cell_spend((uint8_t)from, spent, hs ? F<int32_t>(hs, 0x2C) : g_host_spent_last);
+        g_spend_acked[from] = meal; // (the next row cell_spent_own holds it)
+        return;
+    }
     uint8_t* s = cell && H->time_seconds() - g_cell_entered_at > 1.0 ? S() : nullptr;
     if (!s || !g_spend_owed.empty()) { // (in order: an older spend still owed goes first)
         Owed& o = g_spend_owed[from];
@@ -1095,6 +1117,8 @@ static void spend_tick(bool cell, bool was_in_cell)
     if (!C.sess || !C.sess->connected())
         return;
     if (is_host()) {
+        if (uint8_t* hs = cell ? S() : nullptr)
+            g_host_spent_last = F<int32_t>(hs, 0x2C);
         uint8_t* s = cell && avatar() && now - g_cell_entered_at > 1.0 ? S() : nullptr;
         if (s && !g_spend_owed.empty()) {
             for (auto& [id, o] : g_spend_owed) {
@@ -1157,7 +1181,29 @@ void spend_measure()
 int spent_guest_want(int host_spent)
 {
     spend_measure();
+    if (is_guest() && g_own_spent_heard >= 0 && H->time_seconds() - g_own_spent_at < 5.0) // WP-D: our own count
+        host_spent = g_own_spent_heard;
     return g_fix_guest_spend && is_guest() ? host_spent + g_spend_pending : host_spent;
+}
+
+// guest: the host's row cell_spent_own (from the message, before cell_spent of the same message is applied)
+void own_spent_heard(int v)
+{
+    g_own_spent_heard = v;
+    g_own_spent_at = H->time_seconds();
+    g_own_spent_rows++;
+}
+// host: the row cell_spent_own (false: not in Cell or nobody has an own count)
+bool own_spent_rows(std::vector<std::pair<int, int>>& out)
+{
+    uint8_t* s = in_cell() ? S() : nullptr;
+    if (!s || !C.sess)
+        return false;
+    int host_spent = F<int32_t>(s, 0x2C);
+    for (auto& p : C.sess->players())
+        if (p.id != 0 && coop_core::dna_own_wallet(p.id, net::Family::npc))
+            out.push_back({p.id, coop_core::dna_own_cell_spent(p.id, host_spent)});
+    return !out.empty();
 }
 
 // guest: the host's row cell_spend_ack: the last spend of ours in the count of the same message
@@ -1192,13 +1238,14 @@ static void spend_reset()
     g_spend_acked.clear();
     g_own_ed_due = g_spent_seen_ok = false;
     g_spend_pending = 0;
+    g_own_spent_heard = -1;
 }
 std::string spend_status()
 {
     char b[200];
-    snprintf(b, sizeof b, "spend: sent=%u got=%u owed_paid=%u acked=%u pending=%d owed=%d due=%d",
+    snprintf(b, sizeof b, "spend: sent=%u got=%u owed_paid=%u acked=%u pending=%d owed=%d due=%d own_heard=%d own_rows=%u",
              g_spends_sent, g_spends_got, g_spends_owed_paid, g_spends_acked, g_spend_pending, (int)g_spend_owed.size(),
-             g_own_ed_due ? 1 : 0);
+             g_own_ed_due ? 1 : 0, g_own_spent_heard, g_own_spent_rows);
     return b;
 }
 

@@ -569,6 +569,8 @@ static void test_settings()
     CHECK(kDefs[kCellRegen].scope == Scope::Live && kDefs[kCellRegen].def == 1);
     CHECK(kDefs[kPartnerArrows].scope == Scope::Live && kDefs[kPartnerArrows].off_in_rivals);
     CHECK(std::string(kDefs[kDnaPace].ini) == "dna_pace" && std::string(kDefs[kNpcTargets].ini) == "npcs_target_partners");
+    // WP-D (BUG-1291): own DNA by default; Rivals reads it as off (own); a session setting
+    CHECK(kDefs[kSharedDna].def == 0 && kDefs[kSharedDna].off_in_rivals && kDefs[kSharedDna].scope == Scope::Session);
     // who sets: a guest never; a session setting only before the start; a live one any time
     CHECK(can_set(kCellRegen, false, false) == Refusal::Guest && can_set(kDnaPace, false, true) == Refusal::Guest);
     CHECK(can_set(kDnaPace, true, true) == Refusal::SessionStarted && can_set(kDnaPace, true, false) == Refusal::None);
