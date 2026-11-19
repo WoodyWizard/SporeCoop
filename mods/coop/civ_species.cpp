@@ -53,6 +53,14 @@ static uint32_t g_hook_calls, g_answered, g_resyncs, g_checks, g_line_misses, g_
 static creations::Key line_key(uint8_t pid) { return species::key(pid, species::Stage::Civ); }
 
 static bool own_mode() { return g_fix_own_species && species::own_mode(); }
+// BUG-1315: the world's species of Civ for the save's key filter: the player civilization's
+static bool g_world_reg = species::set_world_species(species::Stage::Civ, []() -> creations::Key {
+    void* pc = game::mode_id() == modes::kCiv ? player_civ() : nullptr;
+    if (!pc || IsBadReadPtr((uint8_t*)pc + kCivSpeciesKey, 12))
+        return {};
+    auto& k = F<skg::ResourceKey>(pc, kCivSpeciesKey);
+    return {k.instance, k.type, k.group};
+});
 // a change of a player's line: its profile is looked up again at the next check
 static bool g_line_reg = species::on_change("civ.own_species", [](uint8_t) { g_line_at = -100; });
 
@@ -178,6 +186,9 @@ void species_tick(double now)
 // citizen records, noun 0x18EB4B7): while a save is written every citizen of a guest's line gets the player
 // civilization's key in +0xB28..+0xB30 (the three dwords only, no rebuild) and its own back at the end (the
 // civ.host_buildings pattern).
+// CORRECTION (2026-11-19, BUG-1315): lab 20261119-113320 stripped 19 citizens and 30 ms later the save's key writer read
+// the guest's key from those citizens' +0xB28 again (docs/re/creations.md#creations-save-keys): the save is kept clean
+// by savestrip's key filter (savestrip.keys, the civilization's species for a line key); this strip stays a guard.
 struct Stripped {
     void* c;
     skg::ResourceKey k;
@@ -189,12 +200,16 @@ static uint32_t g_save_stripped;
 static bool g_fix_own_species_save = true;
 COOP_FIX("civ.own_species_save", "BUG-1273", g_fix_own_species_save,
          "civ: a guest's species never reaches a save through the citizens of its city (the civilization's key while saving)");
+static uint32_t g_save_starts, g_save_seen, g_save_nociv;
 static void species_save_start()
 {
     g_stripped.clear();
+    g_save_starts++;
     void* pc = g_fix_own_species_save && a_CitySpecies && game::mode_id() == modes::kCiv ? player_civ() : nullptr;
-    if (!pc)
+    if (!pc) {
+        g_save_nociv++;
         return;
+    }
     struct U {
         skg::ResourceKey world;
     } u{F<skg::ResourceKey>(pc, kCivSpeciesKey)};
@@ -203,6 +218,7 @@ static void species_save_start()
             if (noun != kCitizenNoun || game::is_destroyed(o) || IsBadReadPtr(o, game::kSpeciesKeyOff + 12))
                 return true;
             auto& own = F<skg::ResourceKey>(o, game::kSpeciesKeyOff);
+            g_save_seen++;
             bool ours = species::is_line_key({own.instance, own.type, own.group}); // (any line here, a left player's too)
             for (int i = 1; i < net::kMaxPlayers; i++)
                 ours = ours || (g_line[i].key.instance && own.instance == g_line[i].key.instance &&
@@ -215,6 +231,8 @@ static void species_save_start()
         },
         &u);
     g_save_stripped += (uint32_t)g_stripped.size();
+    H->log(M, SK_INFO, "civ: %u citizens carry the civilization's species %08X in this save (BUG-1273)",
+           (unsigned)g_stripped.size(), u.world.instance);
 }
 static void species_save_end()
 {
@@ -244,10 +262,10 @@ bool species_init()
 std::string species_debug()
 {
     std::string s;
-    char b[256];
-    snprintf(b, sizeof b, "own_species fix=%d mode_own=%d hooked=%d calls=%u answered=%u checks=%u resyncs=%u special_set=%u misses=%u save_stripped=%u\n",
+    char b[400];
+    snprintf(b, sizeof b, "own_species fix=%d mode_own=%d hooked=%d calls=%u answered=%u checks=%u resyncs=%u special_set=%u misses=%u save_stripped=%u save_starts=%u save_seen=%u save_nociv=%u\n",
              (int)g_fix_own_species, (int)species::own_mode(), (int)(a_CitySpecies != 0), g_hook_calls, g_answered,
-             g_checks, g_resyncs, g_extra_set, g_line_misses, g_save_stripped);
+             g_checks, g_resyncs, g_extra_set, g_line_misses, g_save_stripped, g_save_starts, g_save_seen, g_save_nociv);
     s += b;
     for (int i = 0; i < net::kMaxPlayers; i++)
         if (g_line[i].key.instance) {

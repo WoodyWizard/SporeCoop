@@ -9248,7 +9248,8 @@ WP-0's agent):
    for its own creation (`coop.species own tribe`): the host's resource manager builds the guest's creation; the Civ
    line is the tribe outfit (no Civ outfit); the City Hall design is the same 0x7B key on both;
 3. the guest leaves and joins again: the same key on both games (the host's store row, `kStored`, taken by the guest);
-4. `coop.settings set creature.mode host`: every key of the guest is 0 on both games; `own` again: back;
+4. `coop.settings force creature.mode host` (creature.mode is a session setting: `set` is refused while a world is
+   open, lab 20261119-095414): every key of the guest is 0 on both games; `own` again: back;
 5. twoinst.session_restart (#testing-session-restart): the same key and model on the host, the design back.
 Key frames `line` and `next_session`: no look changes in WP-0 (the frames only document the state). FAIL twin:
 `SPORE_FIX_OFF=species.line` (the setter is refused, the host shows no line). The unit part: `tests/species_tests.cpp`
@@ -9271,6 +9272,14 @@ Key frames `line` and `next_session`: no look changes in WP-0 (the frames only d
 * The guest's creature choice is put back at the end (`unchoose creature`, `worlds set creature <before>`): the next
   tribe-fixture test plays the world's species as before.
 * FAIL twin: `SPORE_FIX_OFF=tribe.own_species` (every member the slot's species; the test stops after step 2).
+* (2026-11-19, fix/w57-savestrip) `carry=` of `coop.tribe ai` read the wrong dwords before BUG-1317 (always 0.0): the
+  carry check failed although the member gathered. The save check names the record types of a hit in a .spo and keeps
+  that save in the test's frames folder (`host_save_<planet>.spo`; the next save overwrites the slot), and prints
+  `coop.savestrip` (`keys= line_keys= rewritten= raw= events=`). Save twin: `SPORE_LAB_FIXOFF="tribe_own_species=
+  savestrip.keys"` (the save check FAILs, BUG-1315).
+* Kids (age != 1) keep their species while they grow up (BUG-1313, `tribe.kid_species`): the switch-off check and the
+  mix after the reload accept a guest's kid of the species it had (the bought baby of step 3 loads as a kid of the
+  tribe's species; with the switch off it stays the guest's).
 ## The Civ citizens of the owner's species (2026-11-18, feat/w54-citizens)
 <a id="testing-civ-own-species"></a>
 
@@ -9284,7 +9293,10 @@ Key frames `line` and `next_session`: no look changes in WP-0 (the frames only d
   host saves (`coop.save`, the boxes closed) with the guest's citizens in its world and no record of its newest save
   may name the guest's key (`keys_in_save` of coop_tribe_outfit). Key frames: the guest's city, two close-ups of one
   citizen (the same camera on both games, `coop.view set`), the capital and its close-ups.
-  Twins: `SPORE_FIX_OFF=civ.own_species` (step 3 fails), `SPORE_FIX_OFF=civ.own_species_save` (the save check fails).
+  Twins: `SPORE_FIX_OFF=civ.own_species` (step 3 fails), `SPORE_FIX_OFF=savestrip.keys` (the save check fails:
+  BUG-1315; `civ.own_species_save` off alone no longer fails it, the citizens' strip never kept the key out, see
+  docs/re/creations.md#creations-save-keys). After the save the test prints `coop.civ citizens`' first line
+  (`save_stripped= save_starts= save_seen=`) and `coop.savestrip`.
 * `civ_own_species_hostmode` (`--host-mode`): the host forces `creature.mode host` after the pick; no game keeps a line
   for the guest and the guest's city's citizens stay the civilization's species (today's behaviour); the setting goes
   back to own at the end.
@@ -9397,6 +9409,9 @@ record (coop_civ_own_designs.keys_in) for the guest's keys of that stage.
   Outfitter in Tribe, coop_tribe_own_outfitter.outfitter_route; its Civ citizens are then of the outfit, ~34 min),
   twin `line_stages_off` (`SPORE_FIX_OFF=species.line`: the Creature line check and the Tribe members FAIL, the test
   stops after Tribe, ~12 min).
+* (2026-11-19, fix/w57-savestrip) After the SpawnNextCity shortcut the test waits up to 60 s for an NPC city in the
+  host's city table (it read the table 5 s after 9 cities were spawned and found none, lab 20261119-095414). The save
+  checks pass since BUG-1315 (savestrip.keys).
 * Shortcuts: Creature's end `coop.dna add 3000` (the campaign's), Tribe's members `coop.tribe spawn 6` and its goal bar
   `coop.tribe advance` (tribe_civ's; `--raids`: the campaign's raids instead, 15-20 min more), Civ's NPC cities the
   campaign's SpawnNextCity when none stands, the guest's city `coop.civ siege <city> 1 150 pc`, money `coop.res add`.

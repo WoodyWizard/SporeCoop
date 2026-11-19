@@ -18,6 +18,9 @@
 // +0xB28..+0xB30 (the three dwords the save writes, no rebuild), its own
 // key comes back on the next frame (the civ.host_buildings pattern): the host's save holds the host's species only,
 // a guest's save the same; the guest's look comes back from the mod after the load.
+// CORRECTION (2026-11-19, BUG-1315): this strip alone did not keep the key out (the record is written from +0xB28 after
+// something set it from the profile again: docs/re/creations.md#creations-save-keys); savestrip's key filter
+// (savestrip.keys) writes the slot's key at the stream for every object. The strip stays as a second guard.
 //
 // `coop.fix tribe.own_species off`: every member is the slot's species (0.7.15; members the mod changed go back).
 //
@@ -118,6 +121,14 @@ static creations::Key line_key(uint8_t pid, const creations::Key& slot)
         return {};
     return k;
 }
+// BUG-1315: the world's species of Tribe for the save's key filter: the player tribe's slot (the last pass's while the
+// game leaves Tribe)
+static bool g_world_reg = species::set_world_species(species::Stage::Tribe, []() -> creations::Key {
+    uint8_t* slot = game::mode_id() == modes::kTribe ? slot_profile(player_tribe()) : nullptr;
+    if (slot)
+        return {F<uint32_t>(slot, kProfKey), F<uint32_t>(slot, kProfKey + 4), F<uint32_t>(slot, kProfKey + 8)};
+    return {g_sp_slot_key[0], g_sp_slot_key[1], g_sp_slot_key[2]};
+});
 // a change of a player's line: the next pass now (not in 0.15 s)
 static bool g_line_reg = species::on_change("tribe.own_species", [](uint8_t) { g_sp_scan_at = -100; });
 

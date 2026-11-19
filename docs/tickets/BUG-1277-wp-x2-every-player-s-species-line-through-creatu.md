@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: feat/w54-x2
-commits: a65aa814 b7d8fe0f
+commits: a65aa814 b7d8fe0f 0db36ea8 79ee9769 08bce529
 tests: line_stages, line_stages_outfit, line_stages_off
 signature:
 docs: docs/06-testing.md#testing-line-stages
@@ -45,7 +45,18 @@ then `SPORE_DETECTOR=20 python3 tools/lab.py run line_stages_off --lane 2 --retr
 Tribe members). Once WP-X1 is in: `SPORE_DETECTOR=20 python3 tools/lab.py run line_stages --lane 3 --retry 0
 --no-build` with the entry's command plus `--civ-editors` (a `line_stages_editors` entry with WP-X1's merge).
 
+* fix/w57-savestrip (lane 4): the night run's own failures of the test fixed: the save checks (BUG-1315: Tribe and Civ
+  saves clean in lab 20261119-114816, 20261119-123654 all three variants, 20261119-133307), the NPC cities after the
+  founding shortcut (the host was held in a cinematic: the test ends it, then the cities came in 6 s, lab
+  20261119-123654 line_stages_editors). FAIL twin `line_stages_off`: lab 20261119-120449 (Creature line, Tribe members).
+* Still FAIL, outside this branch's area: line_stages lab 20261119-133307 only "the guest's vehicle is of the guest's
+  design" (+0xC4 0 on both games, WP-C2 / BUG-1274); line_stages_editors lab 20261119-123654 the guest's own editors
+  gave no designs (WP-X1 / WP-C3, BUG-1276 / BUG-1275); line_stages_outfit lab 20261119-123654 the guest stays in its
+  own Tribal Outfitter (WP-T2, BUG-1272), then stuck in civ/follow; lab 20261119-120449 line_stages a host fault in
+  TribeStage_Graduate (BUG-1325, once).
+
 ## History
 - 2026-11-18: opened.
 - 2026-11-18: test, suite entries and docs on feat/w54-x2; stays open until the night run gives the PASS and FAIL run
   dirs (as BUG-1271..1274).
+- 2026-11-19: fix/w57-savestrip: save checks pass (BUG-1315), the Civ cities' wait and the cinematic end; open for the WP-C2 / WP-X1 / WP-T2 steps (other packages).

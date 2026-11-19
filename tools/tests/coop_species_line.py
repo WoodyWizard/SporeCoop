@@ -14,6 +14,8 @@ resource manager of each game answers the line's key, and the model it answers o
    the guest's own model; the Civ line is the tribe outfit (no Civ outfit); the design is there on both games.
 3. The guest leaves and joins again: the host's store gives the line back (kStored), the same key on both games.
 4. The host switches creature.mode to host: every key of the guest is 0 on both games; back to own: the line is back.
+   (`coop.settings force`: creature.mode is a session setting, refused while a world is open since 0.7.16; the
+   lab's force stands in for the host's choice before the start, lab 20261119-095414)
 5. A new evening (twoinst.session_restart): the host saves, both quit and start again, the guest joins: the same key on
    both games.
 SPORE_FIX_OFF=species.line: no line (the guest's setter is refused, the host shows nothing): FAIL.
@@ -110,11 +112,11 @@ def main():
            f'taken from the host\'s store {taken})')
 
     # 4. host mode empties it
-    print('  host:', host.call('coop.settings set creature.mode host')['out'].strip()[:120], flush=True)
+    print('  host:', host.call('coop.settings force creature.mode host')['out'].strip()[:120], flush=True)
     empty = wait(lambda: all(key(c, pid, s)[0] == '00000000' for c in (host, guest) for s in ('creature', 'tribe', 'civ'))
                  and not design(host, pid) and not design(guest, pid), 30)
     ck(empty, 'creature.mode host: every key of the guest\'s line is 0 on both games')
-    print('  host:', host.call('coop.settings set creature.mode own')['out'].strip()[:120], flush=True)
+    print('  host:', host.call('coop.settings force creature.mode own')['out'].strip()[:120], flush=True)
     ok, hk, gk = same_line(host, guest, pid, tribe, 'own again')
     ck(ok, f'creature.mode own again: the line is back on both games ({hk[0]}, {gk[0]})')
 
