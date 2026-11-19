@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages64-dev
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits: COMMIT
+commits: 9b0c3823
 tests: manual on TITAN QA 8 + 9 (three sessions: save, rejoin, the other party hosting)
 signature: "party relations file: saves N, loads N, host swaps N" in coop.social species (host)
 docs: docs/12-server-and-players.md#server-party-relations-saved
