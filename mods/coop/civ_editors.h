@@ -31,6 +31,9 @@ bool take_pick(uint32_t id, const uint32_t key[3]);
 // (design id `id`, the creation `key`) goes to its line like a planner editor's. false: not taken (not own mode, no
 // creation, not a building or vehicle)
 bool take_editor(uint32_t id, const uint32_t key[3]);
+// BUG-1298 (civ_arrival.cpp): our own editor request was just submitted outside the planner's path (its return stays
+// ours if the session ends before it)
+void own_opened();
 
 void init(const SkHost* host, SkMod* mod, net::Session* sess);
 void tick(double now); // every frame, main thread (after species::tick)

@@ -2515,6 +2515,17 @@ static Key own_key_here(Kind kind)
     return k;
 }
 
+// BUG-1297 (WP-S2a): the key this game builds for its own creation of a kind (own_key_here's BUG-0278 remap while in
+// a session; mine() otherwise): the guest's own editors start from it (species_line.cpp own_key)
+Key own_here(Kind kind)
+{
+    return C.sess && C.sess->connected() ? own_key_here(kind) : mine(kind).key;
+}
+bool host_shadows(Kind kind, const Key& k)
+{
+    return k.instance && C.sess && C.sess->connected() && C.sess->my_id() != 0 && host_world_key(kind, k.instance);
+}
+
 // the own cell: the player's cell model, then the level is rebuilt (the cell hatches again)
 static Key g_cell_set;
 static bool g_cell_rebuilding;

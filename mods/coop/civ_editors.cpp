@@ -24,6 +24,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
 #include <deque>
 
 #include "designs.h"
@@ -86,6 +87,13 @@ struct Take {
     double since = -1;
 };
 static std::deque<Take> g_takes;
+// BUG-1298 (WP-S2b, designs.own_editor_offline): our own editor request (a planner's design editor or the Civ
+// outfitter, civ_arrival's editors) is outstanding: its return is ours also when the session ended meanwhile; the
+// takes the line took wait for the host's row (a session's end before it: taken again at the next session)
+static bool g_own_open, g_own_saw_editor;
+static double g_own_open_at = -100, g_own_back_at = -1;
+static std::vector<Take> g_unacked;
+static unsigned g_offline_returns, g_acked, g_held_told;
 struct Done {
     bool outfit;
     uint32_t id;
@@ -109,10 +117,21 @@ static bool guest_own()
            !own_world::elsewhere();
 }
 bool active() { return guest_own() && game::mode_id() == modes::kCiv; }
+// BUG-1298: our own editor was open when the session ended (its return and result are still ours)
+static bool offline_own() { return designs::g_own_offline_fix && g_fix && g_own_open && !(S && S->connected()); }
+void own_opened()
+{
+    if (!guest_own())
+        return;
+    g_own_open = true;
+    g_own_saw_editor = false;
+    g_own_open_at = H->time_seconds();
+    g_own_back_at = -1;
+}
 // the return paths: in Civ, or in an editor started from Civ (the result message comes while the editor closes)
 static bool active_return()
 {
-    if (!guest_own())
+    if (!guest_own() && !offline_own())
         return false;
     uint32_t m = game::mode_id();
     return m == modes::kCiv || ((m == modes::kEditor || m == modes::kEdit) && g_last_stage_civ);
@@ -146,7 +165,7 @@ bool take_pick(uint32_t id, const uint32_t key[3])
 
 bool take_editor(uint32_t id, const uint32_t key[3])
 {
-    if (!guest_own() || !id || id == kUfoDesign || !key || !key[0] || (key[1] != kBuildingType && key[1] != kVehicleType))
+    if (!(guest_own() || offline_own()) || !id || id == kUfoDesign || !key || !key[0] || (key[1] != kBuildingType && key[1] != kVehicleType))
         return false;
     queue(false, id, key);
     return true;
@@ -160,6 +179,8 @@ static void SK_THISCALL h_Apply(void* planner, uint32_t id, const uint32_t* key)
         return;
     }
     g_applies_skipped++;
+    if (!guest_own())
+        g_offline_returns++; // BUG-1298
     const uint32_t* cur = designs::civ_design(id);
     bool culture = cur && cur[0] == key[0] && cur[1] == key[1];
     species::Key mine = species::own_design(id);
@@ -228,6 +249,8 @@ static int SK_THISCALL h_CivMsg(void* listener, uint32_t msg, void* data)
     const uint32_t* k = &F<uint32_t>(data, 0x18);
     if (!cancelled && k[0] && k[1] == kCreatureType)
         queue(true, 0, k);
+    if (!guest_own())
+        g_offline_returns++; // BUG-1298
     uint8_t was = cancelled;
     cancelled = 1; // the game keeps no result: no player species, civilization key or tribe slot of ours
     g_outfits_dropped++;
@@ -264,6 +287,7 @@ static void SK_THISCALL h_Submit(void* mgr, void* req)
             }
             q.key = k[0];
             g_req = q;
+            own_opened(); // BUG-1298
             H->log(M, SK_INFO, "civedit: our %s request (editor %08X, design %08X) starts from %08X (was %08X, BUG-1275)",
                    q.tag == kTagOutfitter ? "Civ outfitter" : "design editor", q.editor, q.did, q.key, q.was);
         }
@@ -278,14 +302,48 @@ void tick(double now)
         g_last_stage_civ = true;
     else if (m != modes::kEditor && m != modes::kEdit)
         g_last_stage_civ = false;
+    if (g_own_open) { // BUG-1298: our own editor's return ends a few seconds back in Civ (the planner's re-open)
+        if (m == modes::kEditor || m == modes::kEdit)
+            g_own_saw_editor = true, g_own_back_at = -1;
+        else if (m == modes::kCiv && g_own_saw_editor) {
+            if (g_own_back_at < 0)
+                g_own_back_at = now;
+            else if (now - g_own_back_at > 10.0)
+                g_own_open = false;
+        } else if (m != modes::kCiv || now - g_own_open_at > 30.0)
+            g_own_open = false; // (another stage, a load; or the editor never opened)
+    }
+    bool keep = designs::g_own_offline_fix && g_fix && !(S && S->connected());
+    if (designs::g_own_offline_fix && !g_unacked.empty()) { // until the host's row names them
+        if (guest_own())
+            g_unacked.erase(std::remove_if(g_unacked.begin(), g_unacked.end(), [&](const Take& t) {
+                                bool took = species::host_took(t.key);
+                                g_acked += took;
+                                return took;
+                            }),
+                            g_unacked.end());
+        else if (keep) {
+            for (auto& t : g_unacked)
+                g_takes.push_back({t.outfit, t.id, t.key, -1});
+            g_unacked.clear();
+        }
+    }
     if (g_takes.empty())
         return;
     if (!guest_own()) {
+        if (keep) { // BUG-1298: no session: kept for the next one
+            if (!g_held_told++)
+                coop_core::feed("your new design is kept: it reaches the others when you join again");
+            return;
+        }
         g_takes.clear();
         return;
     }
     if (m != modes::kCiv)
         return; // (after the editor: the creation is in My Creations by then)
+    if (designs::g_own_offline_fix && !species::own_ready())
+        return; // BUG-1298: the host's stored row first (a set before it would make the line ignore it)
+    g_held_told = 0;
     Take& t = g_takes.front();
     if (t.since < 0)
         t.since = now;
@@ -304,6 +362,8 @@ void tick(double now)
                                    "(the civilization's designs stay the host's)");
     else
         coop_core::feed("your design could not be shared with the other players");
+    if (ok && designs::g_own_offline_fix)
+        g_unacked.push_back(t);
     g_done.push_back({t.outfit, t.id, t.key, ok});
     if (g_done.size() > 16)
         g_done.erase(g_done.begin());
@@ -312,10 +372,18 @@ void tick(double now)
 
 static void reset()
 {
-    g_takes.clear();
     g_req = Req{};
+    if (designs::g_own_offline_fix) { // BUG-1298: an open editor stays ours, results wait for the next session
+        for (auto& t : g_unacked)
+            g_takes.push_back({t.outfit, t.id, t.key, -1});
+        g_unacked.clear();
+        return;
+    }
+    g_takes.clear();
+    g_unacked.clear();
+    g_own_open = false;
 }
-static size_t held() { return g_takes.size(); }
+static size_t held() { return g_takes.size() + g_unacked.size() + (g_own_open ? 1 : 0); }
 SESSION_STATE("civ.guest_editors", &g_fix, reset, held);
 
 // ---- status (tests): what the game's own fields say on this game
@@ -351,17 +419,19 @@ static uint32_t culture_digest(size_t* n)
 
 std::string status()
 {
-    char b[512];
+    char b[640];
     size_t n = 0;
     uint32_t dg = culture_digest(&n);
     const uint32_t *cs = civ_species_key(), *ws = world_species_key(), *ch = city_hall_key();
     snprintf(b, sizeof b,
              "civedit: fix=%d active=%d guest_own=%d applies_skipped=%u picks_back=%u outfits_dropped=%u requests=%u "
-             "keys_started=%u tiles=%u taken=%u failed=%u civ_sync_takes=%u pending=%zu\n"
+             "keys_started=%u tiles=%u taken=%u failed=%u civ_sync_takes=%u pending=%zu own_open=%d offline_returns=%u "
+             "unacked=%zu acked=%u\n"
              "game: culture=%zu digest=%08X civ_species=%08X/%08X world_species=%08X/%08X city_hall=%08X/%08X\n"
              "last request: tag=%08X editor=%08X design=%08X key=%08X was=%08X\n",
              (int)g_fix, (int)active(), (int)guest_own(), g_applies_skipped, g_picks_back, g_outfits_dropped, g_requests,
-             g_keys_started, g_tiles, g_taken, g_take_failed, g_civ_sync_takes, g_takes.size(), n, dg, cs ? cs[0] : 0,
+             g_keys_started, g_tiles, g_taken, g_take_failed, g_civ_sync_takes, g_takes.size(), (int)g_own_open,
+             g_offline_returns, g_unacked.size(), g_acked, n, dg, cs ? cs[0] : 0,
              cs ? cs[1] : 0, ws ? ws[0] : 0, ws ? ws[1] : 0, ch ? ch[0] : 0, ch ? ch[1] : 0, g_req.tag, g_req.editor,
              g_req.did, g_req.key, g_req.was);
     std::string s = b;
