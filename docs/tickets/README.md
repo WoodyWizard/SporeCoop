@@ -1283,3 +1283,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1277](BUG-1277-wp-x2-every-player-s-species-line-through-creatu.md) | open | test | All | 2026-11-18 |  | WP-X2: every player's species line through Creature -> Tribe -> Civ (one test) |
 | [BUG-1280](BUG-1280-tribe-the-end-of-tribe-editor-check-names-a-vehi.md) | open | bug | Tribe | 2026-11-18 |  | Tribe: the end-of-Tribe editor check names a vehicle editor 7CB21BAD that does not exist (it is 7D433FAD) |
 | [BUG-1281](BUG-1281-a-peer-running-the-lineages-fork-joins-a-session.md) | open | bug | All | 2026-11-19 |  | A peer running the Lineages fork joins a session unrefused and its messages decode as ours |
+| [BUG-1291](BUG-1291-wp-d-own-dna-per-player-creature-and-cell-shared.md) | open | feature | Cell, Creature | 2026-11-19 |  | WP-D: own DNA per player (Creature and Cell), shared pool as a session setting |
