@@ -57,5 +57,8 @@ void puppet_gone(uint8_t id, void* puppet, bool keep);
 void tick(double now);
 // coop.cocoon: the switch, the counters, every partner's cocoon as the game shows it (its animation, the glow's state)
 std::string status(uint8_t only = 0xFF);
+// tests: play / read an animation on the own creature (pid -1) or partner pid's body in the cocoon
+std::string probe_play(uint32_t anim, int how, int pid); // how 0 PlayAnimation, 1 CreaturePlayAnim
+std::string anim_of(int pid);
 
 } // namespace cocoon
