@@ -1635,3 +1635,115 @@ herd evolution key), 0xF41A50 (adventures), cDropCargoToolStrategy::WhileFiring 
 * Consequence: a city citizen's own species can not be kept by a SetSpeciesProfile (the next sync puts the city's back);
   the per-city lever is `City_Species`. A tribe member's can (docs/re/tribe.md#tribe-two-species, runtime 40 s and a
   save).
+
+## Fork notes: the Cell-to-Creature model conversion, step by step (2026-11-19, docs/lineages-re)
+<a id="creations-lineages-landfall-conversion"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+Steam 3010a413 code (the GOG 2024 code, 05-re-notes 5.1.2) and two Windows processes; fork tickets BUG-9006,
+BUG-9041, BUG-9042, BUG-9095. Extends #creations-fork-editor-depth and the live start 0xE83910 above.
+
+* ✔ (fork, decoded code and a byte-identical result) The native stage start 0xE83910 makes the creature model of the
+  player's cell through a narrower method, **0x4BA690** (called at 0xE83A80): thiscall(source editor model, out ref),
+  returns bool in AL, ret 4. It expects the source editor id DFAD9F51 at source +0x18, copies the model and sets the
+  copy's editor to 9EA3031A. Calling it alone, giving the copy a fresh key from the ID generator and writing the BEM
+  gave the same bytes (1541) as Spore's full transition; rekeying the cell's own BEM is wrong (1565 bytes, other part
+  ids and dimensions).
+* ✔ (fork, call sites in 0xE83910) The rest of the native landfall: RegisterConvertedModel 0x6AD030 cdecl(model) at
+  0xE83AA5 (the model and its own key +8 into the model registry, before CacheResource and the database write);
+  WriteCreationResource 0x6B4AF0 cdecl(resource, destination database, null, out key) returns bool in AL, at 0xE83AFB
+  (the new BEM shows in the disk index only after the destination is flushed: publishing must wait for the queued
+  write); WriteRawCreationRecord 0x8DDEA0 cdecl(db, key, byte buffer, size, 1) bool, at 0xE83C00 (copies the cell's
+  thumbnail unchanged under the new Creature instance); the new metadata: AssetMetadataCtor 0x550450 thiscall on a
+  0xD8-byte block (at 0xE83D61; the result kept by vt +0, released by vt +4), the source's name 0x414E00 (0xE83DAA) and
+  description 0x5508C0 (0xE83DA2), then Pollinator::cAssetMetadata::Set 0x551240 (at 0xE83DB7) thiscall(created, new
+  key, UTF-16 name, description, tags, parent resource key, false) with the cell as parent.
+* ✔ (fork, runtime) The metadata block must come from GeneralAllocator::new_ 0xF47240; a build that used
+  operator_new_named 0x9262B0 faulted in the metadata destructor.
+* ✔ (fork, runtime) The early editor needs the creation catalog too: a BEM alone selected the right key and built the
+  avatar but opened a mouthless blank body in the editor; with the copied thumbnail, the new metadata and the model
+  registry it opened the evolved creature with its mouth, name and ancestry.
+* ✔ (fork, package scan) The native conversion keeps the cell's base paint: an evolved model's paint ids were
+  2F363540 / 0 / 0, and 2F363540 is in no Creature paint property or effect-source record; the 44 Cell BEMs of
+  Spore_Content.package use 19 non-zero base ids (2F363540 among them). A paint check that only knows Creature paints
+  refuses such a model.
+* ✔ (fork, BUG-9095) Cell-to-Creature provisional catalog records reuse the Cell PNG with its old embedded model:
+  the PNG's metadata does not match the record's group.
+
+## Fork notes: Sporepedia feeds, the importer's objects, My Creations (2026-11-19, docs/lineages-re)
+<a id="creations-lineages-sporepedia-feeds"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+Steam 3010a413 code and isolated Windows profiles; fork tickets BUG-9093, BUG-9094, BUG-9104. Numbers the fork wrote
+without 0x are kept as written (most are hex). Extends #creations-fork-editor-depth (ImportPNG, DecodePNG,
+FeedItem_GetAssetKeys, GetAuthorID).
+
+* ✔ (fork, the game's resources) Feed resources: AssetBrowserFeedLists 6EDC12D4, FeedCategories 06B38241, FeedItems
+  4E5892EB; GlobalTemplate points to `default` (2EA8FB98); the GA editor roots are ScenarioDefault (1B327962) and
+  ScenarioGameplaySkinning (FDECEF02). Fields: feedListCategories, feedListItems, feedListCategoryName,
+  feedListItemName, feedListItemKeyList. Text array payloads hold a locale reference and a UTF-16 fallback.
+* ✔ (fork, runtime, a negative and a positive test) The browser ignores the text fallback: a category without an
+  installed locale resource (group 02FABF01, type 02FAC0B6, UTF-8 with BOM, real text ids) shows `***`. FeedItemKeyList
+  enumerates a resource group and ignores an explicit key array: FeedItem_GetAssetKeys 0x668D60 (ret 4 at 0x669325)
+  reads the feed type at +0x178 and the properties at +0x180, and its key-list path queries the resource manager by the
+  group at +0x148. App::Property::GetArrayKey 0x6A0AE0 cdecl(PropertyList*, uint32, size_t*, ResourceKey**), plain
+  ret, checks type 20 and flags 10. A category can be appended to the resolved default / scenario roots with
+  App::Property::Set (type 20, flags 14, 12-byte keys copied by the property), keeping the other categories.
+* ✔ (fork, runtime) ImportPNG 0x5FC3C0 (ret 8 at 0x5FCA70) puts the asset into Pollination; the Pollination database
+  (011AC19D) must be flushed (vt +0x24) for the import to survive an abrupt exit. The developer console's quit calls
+  TerminateProcess: no normal save.
+* ✔ (fork, the native ImportPNG caller 0x5FC4B9) DecodePNG's metadata block is 90 bytes; ThumbnailMetadata_Dtor 0x5F8ED0
+  thiscall(metadata), plain ret, releases the vector +70 and the strings +28 / +40 / +50 / +60; the metadata's group
+  at +8; the FileStream object 230 bytes. Order after decoding: release the decoded stream, destroy the metadata, then
+  the pinned FileStream (fork BUG-9094: an unpinned stack stream is deleted by the decoder's temporary reference).
+* ✔ (fork, the native SavePNG callers) Thumbnail_EncodeCreation 0x5F99B0 thiscall(importer, metadata interface, model
+  ResourceObject*, bool disableSteganography) ret 0xC (at 0x5FA12B; called at 0x5FAA97) fills the importer's image
+  encoder from the current model and metadata; PngEncoder_WriteImage 0x68E190 thiscall(importer +0x88, FileStream*,
+  int mode = 0) ret 8 (at 0x68E39A; called at 0x5FAB99) writes the PNG. Neither writes My Spore Creations (SavePNG
+  does).
+* ✔ (fork) cAssetMetadata::Set 0x551240: metadata +0x20 is the asset key (instance, type, group; written at
+  0x551258). In the EditorSaves metadata record (030BDEE3, big-endian, version 0x0D) the author id follows the two
+  timestamps: FFFFFFFF FFFFFFFE (-2) for every creation made without an EA account. cSPAssetDataOTDB::GetAuthorID
+  0x641827 jumps to GetAuthorID 0x5508A0.
+* ✔ (fork) The Sporepedia index stores a hash of the author id (parameter 0518AF1D, fnv-1a of the 8 bytes; 0x56C5D9 and
+  0x56C6F0 through 0x571790) at import and keeps it on disk: a game start calls GetAuthorID only a couple of times.
+* ✔ (fork) Feeds: Recent Downloads 742F7490 (queryType BAD9C836, rootFilter 89CA8A12); Maxis 8F71F965 (queryType
+  E04C2D57); the filter properties (00B1B104 / CC489C6F) only list sub-filters; ? where the query ids resolve (not
+  immediates in the code or resources found). My Creations is filled through FeedItem_GetAssetKeys like the key-list
+  feeds: removing keys from its output after the original call removes the cards and, on the next Sporepedia open,
+  the sidebar count; Everything keeps them (fork BUG-9104).
+* ? (fork, open) Whether Spore picks world NPCs from Pollination (downloaded) creations as well as from My
+  Creations, and whether a creation a save uses can be hidden from every browser tab and still load.
+
+## Fork notes: editor tools per setup, the part's pin frame (2026-11-19, docs/lineages-re)
+<a id="creations-lineages-editor-tools"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+Creature editor, Steam 3010a413 code; fork tickets BUG-9103, BUG-9116. Extends #creations-fork-editor-depth.
+
+* ✔ (fork, resources) editorEnabledManipulators 0x10119203 per setup (group 0x40600100; `parent` inherits at run
+  time, CreatureEditorExtraLarge 0x465C50BA resolves to the Creature setup's list):
+  Creature CF2DC8D0: 8665F54D E931544D A9910288 5FDE642E BB46D99A 889CDBFF 9ED74A02 9F48C094 855DE44D 7AD67439;
+  Vehicle Template 99F87089: F48AB41C A9910288 9F48C094 855DE44D; Building D817CD63 and Cake E0B69B49: 6125EE88
+  A9910288 67B68E4D 9F48C094 855DE44D; Tribal / Civ / Space / Adventure Accessories (156276D1 and children):
+  A9910288 9F48C094 855DE44D F818C5BA; Cell 3615A30B: 1B73114C 2D35AF62 9F48C094 855DE44D 7AD67439; Flora 1C7ECA95
+  also has 6125EE88. Only A56567F7 sets editorNudgeHandleTuningFile (0xB8E88BEC), beside
+  editorPowerHandleTuningFile 0x3042E156.
+* ✔ (fork) 0x5DBEA5..0x5DBF23 load the handle tuning keys through 0x6A1250 (read a key property). cEditor's
+  mouse-down path checks the tool ids through 0x5740E0 thiscall(id) bool ("the editor has the tool"): F48AB41C at
+  0x58905A (makes a 0x48-byte object, ctor 0x5B4C40), 6125EE88 at 0x588FD6, 67B68E4D at 0x5895C3: mouse
+  behaviours, not handle models.
+* ✔ (fork, runtime) Handle vtables: ball connector 0x1A2F1A0, deform-style 0x1A2F250, rotation ball 0x1A2F308,
+  rotation ring 0x1A2F3A8, spine 0x1A36EA0. Deform-style handles: ctor 0x47FF30 (0x1D8 bytes, built around
+  0x446B9D), init 0x480530 copies the definition to handle +0x50 (the kind = definition +0x3C); the crash of an
+  appended definition was in the vector fill 0x42F0A0 / definition copy 0x4802A0. The nudge handle is a model-defined
+  deformation of outfitter accessory models, not a part move. ModAPI EditorRigblock has mAxisHandles[3] at +0x154.
+  cEditor +0x98 the EditorModel.
+* ✔ (fork, runtime on the 9 depth parts of one creature) EditorRigblock +0x60: the part's rotation, 3x3 by rows
+  (with the player's own turning of it); +0xA8: the attach (pin) frame, 3x3 by rows. Its second row, negated, points
+  out of the skin at the part (a side detail out sideways and up, a front detail forward, tail details backward). Two
+  details pinned at one spot share +0xA8 while their +0x60 differ. Mirrored twins: column 0 flips, columns 1 and 2
+  mirror. Writing +0x48 and the model's +0x0C along that normal moves the part straight out (0.0200 along, 0
+  sideways).
+* Pitfall (fork): the creature editor opened from inside a running stage by a console command, or in a background
+  window, did not render its 3D view (world-to-screen returned one point): no screen checks of handles there.
