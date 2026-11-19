@@ -173,6 +173,9 @@ using BlockingErrors_t = uint32_t*(SK_THISCALL*)(void*, uint32_t*, void*, void*,
 // switch to 0x1654C01, the fade effect), reached from cCellModeStrategy::HandleMessage 0x47C1D19 (History's check)
 // and the cell event 0x1F (0xE7E130). cdecl void(void), globals only: safe to run later from outside the frame.
 typedef void(SK_CDECL* CellToCreature_t)();
+// BUG-1269: the Cell stage's end sequence after History's check (SporeCoop::CellStage_End 0xE72C80: G+0x5158 = 3, the
+// letterbox, the avatar's animation 0x2E, then the event 0x1F that calls CellToCreature). cdecl void(void), globals only.
+typedef void(SK_CDECL* CellStageEnd_t)();
 // Selecting a creature in the creature stage: CreatureSelectionUI reads (+0xE84)->+0x32C only for
 // an adult with +0xB58 mask 0x1 set and mask 0x2 clear (GOG 2024 0xB6C9C3..0xB6CA11: `test al,2`
 // skips the read, `test al,1` gates it; then vt 0xD0 / 0xD4 false). Our puppets and proxies have no
@@ -360,6 +363,7 @@ void dna_spend_tick(double now);
 alignas(16) extern uint8_t g_blank_e84[0x1000];
 extern BlockingErrors_t o_BlockingErrors;
 extern CellToCreature_t o_CellToCreature;
+extern CellStageEnd_t o_CellStageEnd;
 extern CreatureGameMsg_t o_CreatureGameMsg;
 extern ReqImage g_editreq_game;
 extern SelectUI_t o_SelectUI;
@@ -396,6 +400,7 @@ unsigned vote_mates_held();      // BUG-1245 (tests)
 unsigned arrival_not_waited();   // BUG-1245 (tests)
 unsigned cell_editor_now_count(); // BUG-1263 (tests)
 unsigned refused_mates_count();   // BUG-1265 (tests)
+unsigned switch_end_held_count(); // BUG-1269 (tests)
 unsigned own_no_replace_count(); // BUG-1255 (tests)
 extern unsigned g_evo_flags_cleared;
 extern unsigned g_offers_expired;
@@ -445,6 +450,7 @@ uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void*
 unsigned game_busy();
 bool editor_coming(double now); // C3 (BUG-1142)
 void SK_CDECL h_CellToCreature();
+void SK_CDECL h_CellStageEnd();
 void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5);
 void drop_vote(const char* why);
 void evo_flag_tick(double now);

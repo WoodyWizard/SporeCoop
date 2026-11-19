@@ -904,21 +904,34 @@ bool SK_CDECL h_Submit(void* req)
 }
 
 CellToCreature_t o_CellToCreature;
+CellStageEnd_t o_CellStageEnd;
 bool g_switch_go = false; // the vote passed: the next call is the game's own switch
-void SK_CDECL h_CellToCreature()
+// BUG-1269 (key-frame review: during the switch vote the host's screen was plain white behind the co-op window while
+// the guest still saw the Cell-end cinematic): History's check runs the Cell stage's end sequence
+// (SporeCoop::CellStage_End 0xE72C80: the HUD hidden, the letterbox, the avatar's animation 0x2E, G+0x5158 = 3) and only
+// after the animation the event 0x1F calls the switch (CellStage_ToCreature), where core.switch_vote held it: the host
+// was left at the end of that sequence, a white picture, for the whole vote (up to 60 s). On: the vote holds History's
+// check before the end sequence, the host plays on in its pool while the others vote; when the vote passes the game's
+// own end sequence runs and its switch goes through. A guest's check in the host's world is its I'm ready there, its
+// game starts no end sequence either (it stayed white until the host's world took it). Off: held at the switch
+// (0.7.15).
+static bool g_switch_world_fix = true;
+COOP_FIX("core.switch_vote_world", "BUG-1269", g_switch_world_fix,
+         "core: while the Cell -> Creature vote runs the host sees its world instead of a white screen (the vote holds History's check before the game's end sequence)");
+static bool g_end_go = false;      // the vote passed: the next CellStage_End is the game's own
+static unsigned g_switch_end_held; // tests (coop.vote): History's checks held before the end sequence
+unsigned switch_end_held_count() { return g_switch_end_held; }
+
+// The Cell -> Creature switch in a session (BUG-0315): true when this call is held (the host's: a vote starts; a
+// guest's in the host's world: its I'm ready). `at_end`: called for the end sequence (BUG-1269), else for the switch.
+static bool switch_hold(bool at_end)
 {
     bool multi = g_sess.connected() && g_sess.players().size() > 1;
-    if (!g_switch_vote_fix || !settings::on(settings::kSwitchVote) || g_switch_go || game::mode_id() != modes::kCell ||
-        !multi) {
-        g_switch_go = false;
-        o_CellToCreature();
-        return;
-    }
+    if (!g_switch_vote_fix || !settings::on(settings::kSwitchVote) || game::mode_id() != modes::kCell || !multi)
+        return false;
     if (g_sess.role() == net::Role::Client) {
-        if (host_world_now() != host_world::HostWorld::Same) { // the guest's own world: its own switch
-            o_CellToCreature();
-            return;
-        }
+        if (host_world_now() != host_world::HostWorld::Same) // the guest's own world: its own switch
+            return false;
         g_switch_guest_held++;
         if (g_vote.active) {
             LOG("the Creature stage: this guest's click on History's check is its I'm ready (BUG-0315)");
@@ -927,28 +940,62 @@ void SK_CDECL h_CellToCreature()
             LOG("the Creature stage: a guest's own switch is not taken, the host starts it for everybody (BUG-0315)");
             feed("the host moves everybody on to the Creature stage (after a vote)");
         }
-        return;
+        return true;
     }
     g_switch_held++;
-    LOG("the host's switch to the Creature stage (from %p, cinematic %d)", __builtin_return_address(0),
-        (int)world::cinematic_playing());
+    if (at_end)
+        g_switch_end_held++;
+    LOG("the host's %s to the Creature stage (from %p, cinematic %d)", at_end ? "History's check" : "switch",
+        __builtin_return_address(0), (int)world::cinematic_playing());
     if (g_vote.active) {
         LOG("the Creature stage waits: a vote runs ('%s')", g_vote.text.c_str());
         feed("the Creature stage: wait until the vote is over, then click History's check again");
-        return;
+        return true;
     }
-    LOG("the Creature stage waits for a vote (BUG-0315, core.switch_vote)");
+    LOG("the Creature stage waits for a vote (BUG-0315, core.switch_vote%s)", at_end ? "; before the end sequence, BUG-1269" : "");
     g_switch_votes++;
-    start_action_vote(g_name + " wants to move on to the Creature stage", "the Creature stage starts", [] {
+    start_action_vote(g_name + " wants to move on to the Creature stage", "the Creature stage starts", [at_end] {
         if (game::mode_id() != modes::kCell) {
             LOG("the Creature stage: the vote passed out of the Cell stage, nothing to start");
             return;
         }
         g_switch_passed_at = H->time_seconds();
         g_switch_go = true;
-        LOG("the Creature stage starts after the vote (BUG-0315)");
-        h_CellToCreature();
+        if (!at_end) {
+            LOG("the Creature stage starts after the vote (BUG-0315)");
+            h_CellToCreature();
+            return;
+        }
+        LOG("the Creature stage starts after the vote: the game's end sequence first (BUG-1269)");
+        g_end_go = true;
+        h_CellStageEnd();
+        // the end sequence posts the event 0x1F that calls the switch (it passes: g_switch_go). It does nothing for a
+        // dead or locked avatar or a stage already ending (G+0x5158 == 3 already): then the switch at once, as before
+        uint8_t* g = modes::cell_game();
+        int state = g && skg::readable(g + 0x5158, 4) ? *(int*)(g + 0x5158) : -1;
+        if (state != 3) {
+            LOG("the Creature stage: the end sequence did not start (state %d): the switch at once", state);
+            h_CellToCreature();
+        }
     });
+    return true;
+}
+
+void SK_CDECL h_CellToCreature()
+{
+    if (g_switch_go || !switch_hold(false)) {
+        g_switch_go = false;
+        o_CellToCreature();
+    }
+}
+
+// BUG-1269: History's check (the end sequence); see above
+void SK_CDECL h_CellStageEnd()
+{
+    if (!g_switch_world_fix || g_end_go || g_switch_go || !switch_hold(true)) {
+        g_end_go = false;
+        o_CellStageEnd();
+    }
 }
 
 // BUG-0404 (the busy gate): an action vote's result (a superweapon ...) ran the moment the vote
