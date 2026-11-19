@@ -8,7 +8,8 @@ Lineages fork (PR #196), its BUG-9078, 9084, 9086, 9081). Two games on civ_npc; 
   --case attribution  BUG-1284: the host governs religious (`coop.role 3`); an economic vehicle of the player next to an
                       NPC city gives no conversion bonus (ConvertCitizens count 1 converts 1), a religious one does (2).
                       SPORE_FIX_OFF=civ.religious_attribution: the trader gives the bonus: FAIL.
-  --case religion     BUG-1285: the host converts followers of an NPC city (the game's ConvertCitizens, 4 x 5): the
+  --case religion     BUG-1285: the host converts followers of an NPC city (the game's ConvertCitizens, 2 at a time until
+                      the player has some; not all: at a meter of 100 the game captures the city, then it is 0): the
                       guest's game has the same followers of the player civilization and the same meter within 5 s.
                       SPORE_FIX_OFF=civ.religious_state: the guest's stay 0: FAIL.
   --case preach       BUG-1286: three religious vehicles put 80 m from the NPC city farthest from the host's camera and
@@ -58,8 +59,10 @@ def wait_for(fn, secs, step=0.5):
 
 
 def new_vehicle(host, home, purpose):
+    # `force`: the civ_npc fixture's one city has no vehicle slot left of any purpose (VehicleSlotsLeft 0; lab run
+    # 20261119-104136: "no vehicle slot left", no vehicle); the conversion bonus and the preaching do not depend on it
     _, before, _ = civ_state(host)
-    print('  host spawnveh:', host.call(f'coop.civ spawnveh {home} {purpose} 0')['out'].strip(), flush=True)
+    print('  host spawnveh:', host.call(f'coop.civ spawnveh {home} {purpose} 0 force')['out'].strip(), flush=True)
     time.sleep(2)
     _, after, _ = civ_state(host)
     new = [i for i, v in after.items() if i not in before and v['purpose'] == purpose and v['owner'] >= 0]
@@ -106,9 +109,17 @@ def case_attribution(host, guest, ck, cities, home, tgt):
 
 
 def case_religion(host, guest, ck, cities, home, tgt):
+    # a part of the city only: the meter is 200 * converted / (converted + the owner's), and at 100 the game captures
+    # the city (CheckReligiousConversion; lab run 20261119-104136: 4 x 5 converted all 15 citizens, "Alice captured a
+    # city", the host's meter 0 again). Converts of 2 until the player has followers (2 of 15: the meter ~27;
+    # the first convert of a city may only switch its converter: docs/re/civ.md section B)
+    _, pol = influence(host, tgt)
     for _ in range(4):
-        print('  host:', host.call(f'coop.civ convert {tgt} 5')['out'].strip().splitlines()[0], flush=True)
+        print('  host:', host.call(f'coop.civ convert {tgt} 2')['out'].strip().splitlines()[0], flush=True)
         time.sleep(0.5)
+        hd, _ = influence(host, tgt)
+        if followers_of(hd, pol):
+            break
     time.sleep(1)
     hd, pol = influence(host, tgt)
     print(f'  host city {tgt}: {hd}', flush=True)
