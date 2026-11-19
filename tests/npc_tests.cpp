@@ -810,6 +810,24 @@ static void test_max_hp_null_species()
     CHECK(max_hp_rule::fallback(NAN) == 1.f && max_hp_rule::fallback(-3.f) == 1.f);
 }
 
+
+// BUG-1294 (found by the Lineages fork, its BUG-9166): a waiting share joins only a save posted when or after it was
+// asked for. FAILS with --nofix (any save in flight: the share goes out with an older save)
+static void test_share_fresh()
+{
+    printf("a share joins only a save made after it was asked for (BUG-1294)\n");
+    using share_wait::Merge;
+    const bool fresh = !g_nofix;
+    // two shares asked in one frame (BUG-0112): one save for both
+    CHECK(share_wait::merge(fresh, 1000, true, 1000) == Merge::Join);
+    // a share asked 1 s after another share's save was posted: it waits for its own save
+    CHECK(share_wait::merge(fresh, 2000, true, 1000) == Merge::Wait);
+    // a share asked before a save that is in flight now: joins it
+    CHECK(share_wait::merge(fresh, 500, true, 1000) == Merge::Join);
+    // nothing in flight: its own save
+    CHECK(share_wait::merge(fresh, 2000, false, 1000) == Merge::None);
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && std::string(argv[1]) == "--nofix";
@@ -832,6 +850,7 @@ int main(int argc, char** argv)
     test_off_main();
     test_proxy_rules();
     test_max_hp_null_species();
+    test_share_fresh();
     printf(g_fail ? "npc tests: %d FAILED\n" : "npc tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }
