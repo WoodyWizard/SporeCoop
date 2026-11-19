@@ -3398,6 +3398,8 @@ analysis (Ghidra, GOG 2024), no lab run yet:
   helper whose captain has no profile. `coop.captain` prints both counts (`items: none N fix=1 stats: skipped N fix=1`).
   Tests: `space_captain` (the Accept route and the badge, no caught fault; `SPORE_FIX_OFF=game.captain_items` fails),
   `space_captain_none` (captain 0; `SPORE_FIX_OFF=game.captain_stats` fails).
+  ~ superseded (2026-11-19): captain 0 reaches neither guarded fault in the lab (its item list and species profile are
+  found); BUG-1278's twin is `space_captain` (lab FAIL 20261119-112459, PASS 20261119-111406).
 * ✔ Runtime (lane 3, 2026-11-19, the `space` fixture's guest, captain 2905CC0C): every opening of the full panel
   (the badge, Accept) reached the guard with a null list (`items: none` +1) and, with `game.captain_items` on, the
   three stats helpers with a null species profile (`stats: skipped` +3): the fixture's captain has no species profile

@@ -23,8 +23,9 @@ Since 0.7.15.3 the equipment panel goes on past the item list (`game.captain_ite
 which read the captain's species profile (null for captain 0: 0xC02A14, BUG-1278). Step 3 leaves the mission screen
 by its Accept (the full panel, as the reporter's Accept did) and the panel's OK; Decline of the mission screen of no
 offer leaves the Space UI hidden behind the drive's message, and the badge does nothing after it (lane 3,
-2026-11-19). No handled fault is allowed: `SPORE_FIX_OFF=game.captain_stats` must FAIL with the caught fault at
-0xC02A14 (steps 3 and 4).
+2026-11-19). No handled fault is allowed. Captain 0 reaches neither guarded fault in the lab (2026-11-19: no guard
+warning, `SPORE_FIX_OFF=game.captain_stats` passed, lab 20261119-112022): the item list and the species profile of key
+0 are found. BUG-1278's twin is space_captain (the fixture captain has no species profile in the guest's game).
 
   SPORE_LANE=2 python3 tools/tests/coop_space_captain_none.py
 """
@@ -42,7 +43,7 @@ DICE, CHECK = (916, 555), (937, 631)  # "Name Your Captain": a random name, the 
 UNKNOWN_SPECIES = '1BADBEEF'   # an instance no database of the game has
 # the game's own handled faults of the captain screen without a captain (BUG-0304 family): none is allowed. Until
 # 2026-11-19 a fault was allowed while its own guard was off, which let the twin SPORE_FIX_OFF=game.captain_stats pass
-# with its 0xC02A14 caught (lab 20261119-094613); each guard's fault now fails the test, the twins with it.
+# with its 0xC02A14 caught (lab 20261119-094613, where the badge did not even open the panel); each fault fails now.
 HANDLED = ('0x005971D4', '0x00C02A14')
 
 

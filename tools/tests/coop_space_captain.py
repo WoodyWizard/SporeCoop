@@ -27,7 +27,8 @@ The mission screen's Accept is found by its control id (`uifind.where`): `coop.u
 panel's hidden copy first (lab 20261119-094350 failed there with the screen up, and the screen left open then kept
 the badge from opening the captain screen). The fixture's captain has no species profile in the guest's game
 either (lane 3, 2026-11-19: `stats: skipped 3` per opening), so the panel's stats need `game.captain_stats` here
-too (BUG-1278; with it off the guest faults at 0xC02A14).
+too (BUG-1278): `SPORE_FIX_OFF=game.captain_stats` must FAIL as well (the guest's caught fault at 0xC02A14 after
+each route; lab 20261119-112459). This is BUG-1278's twin: captain 0 (space_captain_none) reaches neither fault.
 
   SPORE_LANE=2 python3 tools/tests/coop_space_captain.py
 """
@@ -83,7 +84,7 @@ def accept_route(guest, ck):
     ck(play_space.captain_open(guest), 'guest: Accept opened the captain screen (its Equipment panel)')
     n = faults(guest) - n0
     print('  guest faults after Accept:', n, '|', guest.call('coop.captain')['out'].strip())
-    ck(n == 0, f'guest: no caught fault after Accept (0x5971D4: BUG-0304): {fault_lines(guest)[:3]}')
+    ck(n == 0, f'guest: no caught fault after Accept (0x5971D4: BUG-0304, 0xC02A14: BUG-1278): {fault_lines(guest)[:3]}')
     # close the captain panel like a player (its OK). Not Decline: on the mission screen of no offer it leaves the Space
     # UI hidden behind the drive's message and the rank badge does nothing after it (lane 3, 2026-11-19)
     play_space.close_captain(guest)
@@ -120,7 +121,7 @@ def main():
     ck(ok, 'guest: the rank badge opened the captain screen')
     n = faults(guest) - n0
     print('  guest faults after opening it:', n, '|', guest.call('coop.captain')['out'].strip())
-    ck(n == 0, f'guest: no caught fault after the rank badge (0x5971D4: BUG-0304): {fault_lines(guest)[:3]}')
+    ck(n == 0, f'guest: no caught fault after the rank badge (0x5971D4: BUG-0304, 0xC02A14: BUG-1278): {fault_lines(guest)[:3]}')
     shot(guest, 'captain_open.png')
 
     fz.to_galaxy(guest, 'guest', ck)

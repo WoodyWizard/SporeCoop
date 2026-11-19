@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.3.1, 0.7.15.1
 fixed_in: unreleased
 branch: fix/w11-finale, fix/w55-captain
-commits: 045af236
+commits: 045af236, e8cb2c3c, 98ba8407
 tests: space_captain, space_captain_none
 signature: dc04aee5:SporeApp.exe SporeCoop::CollectableItems_5970D0+0x104 (0xC0000005 at 0x005971D4, read of 0x4D04, ecx 0; was named Simulator::cCollectableItems::LockPart+0x3C4), calls 005BF210 00F17A11 00F17A1E
 docs: docs/re/space.md#space-captain-screen-fault, docs/re/space.md#space-captain-items-null
@@ -76,11 +76,14 @@ the screen by accident (BUG-0303). `space_captain` opens it on purpose and check
 only caught fault (suite.py reports=True).
 
 ## Verification
-* no-fail-run: pending, not a lasting reason: lab runs are forbidden until the owner's night run (owner rule
-  2026-11-18); the night run's FAIL and PASS run ids replace this line (the orchestrator).
-* Static only so far (owner rule 2026-11-18: no lab runs until the night run). Night: FAIL
-  `SPORE_FIX_OFF=game.captain_items` space_captain (the guest's caught fault at 0x5971D4 after Accept and after the
-  badge), PASS space_captain (2x) and space_captain_none; run ids go here.
+* Lab 2026-11-19 (lane 3, fix/w55-captain): FAIL `SPORE_LAB_FIXOFF="space_captain=game.captain_items"`
+  20261119-112022 (the guest's caught fault `0x005971D4 SporeCoop::CollectableItems_5970D0+0x104` after Accept and
+  after the rank badge); PASS space_captain 2x and space_captain_none 2x 20261119-111406 (`items: none` +1 per
+  opening: the guard ran, no caught fault on either game).
+* The first lab run 20261119-094350 failed in the test, not the mod: `coop.ui find "Accept"` returns the captain
+  panel's hidden copy, so the shown mission screen was missed and, left open, kept the badge from opening the
+  captain screen (fix-off 20261119-094613 failed the same way, not for the bug). The tests find the mission screen's
+  Accept by control id 0x075DD108 now (`uifind.where`).
 * Before (2026-10-30) no-fail-run: a game bug, nothing fixed. Reproduced: lab 20261030-095947-fix-w11-finale, 20261030-100128-fix-w11-finale,
 20261030-100242-fix-w11-finale (space_captain: "guest faults after opening it: 1"); by hand on lane 2 with coop unloaded.
 
@@ -89,3 +92,5 @@ only caught fault (suite.py reports=True).
 - 2026-11-18: reopened (game-bug -> open): GitHub #203 (0.7.15.1, Windows): the same fault is fatal there, on the
   rank badge and on Accept of an adventure mission; null list root cause (the host captain's property list is not
   on the guest), guard game.captain_items, test space_captain requires no fault (fix/w55-captain).
+- 2026-11-19: lab: the tests found the mission screen by a hidden caption (fixed: control id); PASS 20261119-111406,
+  FAIL with the guard off 20261119-112022; known-issues entry archived (fix/w55-captain).

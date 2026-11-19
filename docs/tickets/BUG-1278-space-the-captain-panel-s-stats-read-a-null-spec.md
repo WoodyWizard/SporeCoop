@@ -10,8 +10,8 @@ role: guest
 versions: 0.7.15.2
 fixed_in: unreleased
 branch: fix/w55-captain
-commits: 045af236
-tests: space_captain_none, space_captain
+commits: 045af236, e8cb2c3c, 98ba8407
+tests: space_captain, space_captain_none
 signature: 0xC0000005 at 0x00C02A14 (read of 0x57C), 0xC02A10 <- 0xFE718F (SporeCoop::CaptainPanel_Stats1) <- 0xFE7980 (SporeCoop::CaptainPanel_Show)
 docs: docs/re/space.md#space-captain-items-null
 related: BUG-0304, BUG-1111
@@ -37,12 +37,17 @@ fix/w55-captain (0.7.15.3): gamefixes.cpp `game.captain_stats` hooks SporeCoop::
 windows keep their text), a warning names the captain. `coop.fix game.captain_stats off`: the game's code (0.7.15.2).
 
 ## Verification
-* no-fail-run: pending, not a lasting reason: lab runs are forbidden until the owner's night run (owner rule
-  2026-11-18); the night run's FAIL and PASS run ids replace this line (the orchestrator).
-Static only so far (owner rule 2026-11-18: no lab runs until the night run). Night: FAIL
-`SPORE_FIX_OFF=game.captain_stats` space_captain_none (step 4, the rank badge of captain 0: the caught fault at
-0xC02A14), PASS space_captain_none (2x); run ids go here.
+* Lab 2026-11-19 (lane 3, fix/w55-captain): FAIL `SPORE_LAB_FIXOFF="space_captain=game.captain_stats"`
+  20261119-112459 (the guest's caught fault `0x00C02A14`, data 0x57C, after Accept and after the rank badge); PASS
+  space_captain 2x 20261119-111406 (`stats: skipped` +3 per opening).
+* CORRECTION (2026-11-19): the twin is space_captain, not space_captain_none. The `space` fixture's captain 2905CC0C
+  has no species profile in the guest's game, so every opening of the full panel reaches the stats helpers with a
+  null profile. Captain 0 (space_captain_none) reaches neither guarded fault now (no guard warning; with
+  `game.captain_stats` off it passed, 20261119-112022): the profile of key 0 is found. The old test also allowed the
+  fault while its guard was off, so that twin could never fail; it allows no handled fault now.
 
 ## History
 - 2026-11-18: opened while fixing BUG-0304 (GitHub #203); guard game.captain_stats, space_captain_none allows the
   fault only with the guard off (fix/w55-captain).
+- 2026-11-19: lab verified (PASS 20261119-111406, FAIL 20261119-112459 on space_captain); the twin moved from
+  space_captain_none to space_captain (fix/w55-captain).

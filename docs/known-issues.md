@@ -196,22 +196,6 @@ anchor so other docs can link to it:
   GOG 2016 only.
 * Ticket: BUG-0198.
 
-## Space: opening the captain screen logs a caught fault in the game (2026-10-30, fix/w11-finale)
-<a id="issue-captain-screen-fault"></a>
-
-* What happens: every opening of the captain screen (the rank badge over the ship's picture) logs
-  `0xC0000005 at 0x005971D4` (named Simulator::cCollectableItems::LockPart+0x3C4). The game handles
-  it and plays on; the screen's left panel shows a missing string.
-* Reproduce: `tools/lab.py run space_captain`, or click the badge (1390 890) in any lab Space save;
-  also with `mod.unload coop`.
-* Known: the game's own null object in the captain screen's update (docs/re/space.md#space-captain-screen-fault).
-  A campaign [fault] finding with this address is this, not a coop bug.
-* Not checked: a save with a Galactic Adventures captain, the GOG 2016 build.
-* Ticket: BUG-0304 (game-bug).
-* CORRECTION (2026-11-18, fix/w55-captain): on Windows the same fault ends the game (GitHub #203, a guest: the rank
-  badge and Accept of an adventure mission). BUG-0304 is reopened and guarded in 0.7.15.3 (`game.captain_items`,
-  docs/re/space.md#space-captain-items-null); this entry moves to the archive when the night run confirms the fix.
-
 ## GOG 2024 guest: the game time stays paused for seconds after its world load (2026-10-30, fix/w13-net)
 <a id="issue-2024-load-pause"></a>
 
@@ -409,7 +393,8 @@ anchor so other docs can link to it:
   captain was made in Galactic Adventures and a guest joining its Space world.
 * Known: coop sends the host's own creation without the captain's property list {captain, 0x00B1B104, group | 0xE500}
   (docs/re/space.md#space-captain-items-null).
-* Not checked: at runtime (static analysis only).
+* Seen at runtime (lane 3, 2026-11-19): the `space` fixture's guest gets a null list on every opening (`coop.captain`:
+  `items: none` +1); not checked with a host captain made in Galactic Adventures.
 * Next steps: send and register that resource under the host's key (BUG-1279 lists the pitfalls).
 * Ticket: BUG-1279.
 

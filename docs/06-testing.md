@@ -9247,3 +9247,15 @@ BUG-0304 (GitHub #203), BUG-1278. Written without a lab run (owner rule 2026-11-
   captain panel or something else after the palette; what the screens show is in captain_mission.png /
   captain_accepted.png.
 
+* Lab 2026-11-19 (lane 3): PASS 20261119-111406 (both tests 2x); FAIL twins 20261119-112022
+  (`space_captain=game.captain_items`: 0x5971D4) and 20261119-112459 (`space_captain=game.captain_stats`: 0xC02A14;
+  `space_captain_none=game.captain_portrait`: the crash at 0xA055B5).
+* CORRECTION (2026-11-19): the first run 20261119-094350 failed in the tests: `coop.ui find "Accept"` / `"Decline"`
+  return the captain panel's hidden copies first (and an always shown "Decline" at 68 9), so the shown mission screen
+  was missed and, left open, kept the badge from opening the captain screen. `uifind.where(con, ctl)` finds a shown
+  window by control id (the mission screen: Decline 0x075DD100, Accept 0x075DD108). Decline on this screen of no offer
+  hides the Space UI behind the drive's message and the badge does nothing after it: both tests leave it by Accept and
+  the panel's OK.
+* CORRECTION (2026-11-19): BUG-1278's twin is `space_captain=game.captain_stats` (the fixture captain has no species
+  profile in the guest's game: `stats: skipped` +3 per opening). Captain 0 reaches neither guarded fault, and
+  space_captain_none allows no handled fault at all now (the old allowance for a guard that is off let its twin pass).

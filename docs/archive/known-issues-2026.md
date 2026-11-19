@@ -3662,3 +3662,21 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   needed; being worked on with the mating call's black screen.
 * Ticket: BUG-1245
 * Fixed 2026-11-18 (fix/w53-cellvote): core.arrival_nowait, the landfall editor no longer waits for a guest that opens its own editor on arrival.
+
+## Space: opening the captain screen logs a caught fault in the game (2026-10-30, fix/w11-finale)
+<a id="issue-captain-screen-fault"></a>
+
+* What happens: every opening of the captain screen (the rank badge over the ship's picture) logs
+  `0xC0000005 at 0x005971D4` (named Simulator::cCollectableItems::LockPart+0x3C4). The game handles
+  it and plays on; the screen's left panel shows a missing string.
+* Reproduce: `tools/lab.py run space_captain`, or click the badge (1390 890) in any lab Space save;
+  also with `mod.unload coop`.
+* Known: the game's own null object in the captain screen's update (../re/space.md#space-captain-screen-fault).
+  A campaign [fault] finding with this address is this, not a coop bug.
+* Not checked: a save with a Galactic Adventures captain, the GOG 2016 build.
+* Ticket: BUG-0304 (game-bug).
+* CORRECTION (2026-11-18, fix/w55-captain): on Windows the same fault ends the game (GitHub #203, a guest: the rank
+  badge and Accept of an adventure mission). BUG-0304 is reopened and guarded in 0.7.15.3 (`game.captain_items`,
+  ../re/space.md#space-captain-items-null); this entry moves to the archive when the night run confirms the fix.
+* Fixed 2026-11-19 (fix/w55-captain, 0.7.15.3): `game.captain_items` (BUG-0304) and `game.captain_stats` (BUG-1278);
+  lab PASS 20261119-111406, FAIL with the guards off 20261119-112022 / 20261119-112459.
