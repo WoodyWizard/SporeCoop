@@ -3294,6 +3294,9 @@ std::vector<Option> options(Kind k)
 
 void choose(Kind k, const Key& key)
 {
+    // BUG-1289: the profile's paths first: their first read loads choices.ini into g_choice, which overwrote a choice
+    // made before anything else read them (a fresh game's galaxy menu: the old choice won after the join)
+    find_paths();
     g_chosen[k] = true;
     g_choice[k] = key;
     g_choice_epoch[k] = choice_epoch_now(k);

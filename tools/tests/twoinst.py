@@ -763,10 +763,24 @@ def fix_off_names():
 
 
 def apply_fix_off(con, who):
-    """SPORE_FIX_OFF in a game started again by the test (start() did it for the first games)"""
+    """SPORE_FIX_OFF in a game started again by the test (start() did it for the first games).
+    BUG-1314: right after a start (wait_up: SporeKit's console answers) the mod's commands may not be there yet
+    ("unknown command: coop.fix"): the twins of space_own_ship_key, own_editor_key and late_species ran their restarted
+    guest with the fix on. Now it asks again until the answer says the switch is off (at most 90 s) and fails the test
+    as start() does when it never does."""
     for name in fix_off_names():
         cmd = f'kit.fix {name[4:]} 0' if name.startswith('kit.') else f'coop.fix {name} off'
-        print(f'  SPORE_FIX_OFF ({who}, restarted): ' + (con.call(cmd).get('out') or '').strip(), flush=True)
+        t0, out = time.time(), ''
+        while True:
+            out = (con.call(cmd).get('out') or '').strip()
+            if fix_off_ok(name, out) or time.time() - t0 > 90:
+                break
+            time.sleep(1)
+        print(f'  SPORE_FIX_OFF ({who}, restarted): ' + out, flush=True)
+        if not fix_off_ok(name, out):
+            print(f'RESULT: FAIL (SPORE_FIX_OFF ({who}, restarted): {name} not off: '
+                  f'{out.splitlines()[0] if out else "no answer"})', flush=True)
+            raise SystemExit(1)
 
 
 def session_restart(host, guest, save=True, store_wait=20.0, slot=None, planet=None, before_join=None,

@@ -65,6 +65,27 @@ static uintptr_t a_SpSetSpecies, a_SpToolAttach, a_SpUiGet, a_SpAnimFind, a_SpAn
 static bool g_birth_fix = true;
 COOP_FIX("tribe.birth_species", "BUG-1299", g_birth_fix,
          "tribe: a new member of a player with an own species is born in that species (no moment in the tribe's)");
+// BUG-1313: cCreatureAnimal::SetSpecies 0xC03920 on a creature that is not grown up (+0xB34 != 1, no flag 0x200 in
+// +0xB58) in the Creature or Tribe mode starts the growth timer at +0x1628 (0xBC3260: call [this+0x1C]); a tribe
+// member (a citizen) has no such timer there: the call goes to a float (lab 20261119-105127, tribe_birth_species_off:
+// 0x40A00000 on the guest, 0 on the host, both games right after the pass changed the baby). On: the pass never
+// changes a kid (it waits until it is grown up; a kid of a known owner is born in its species, tribe.birth_species).
+// Off: a kid is changed like an adult (0.7.16 before the fix: a fault on every game).
+static bool g_kid_fix = true;
+COOP_FIX("tribe.kid_species", "BUG-1313", g_kid_fix,
+         "tribe: a tribe kid's species is never changed while it grows up (the game faulted on every game)");
+static uint32_t g_sp_wait_kid;
+// BUG-1319: a guest's mirror spawned while its world opened was born in a line's species (tribe.birth_species) and the
+// world's reset (WORLD_STATE below) then forgot that the mod gave it that key; a member the mod never touched keeps
+// its species, so when the mirror was bound to another player's member (lab 20261119-112300: the host's chief #1 on
+// the guest's game wore the guest's creature for good) nothing put it back. On: a member that shows a line's key (a
+// shared 0x7B / creations' 0x7C copy, or a key of a current line) and is not in the table is taken as the mod's (the
+// game never gives a member such a key), so the pass makes it its owner's or the slot's again. Off: kept (0.7.16
+// before the fix).
+static bool g_stray_fix = true;
+COOP_FIX("tribe.stray_line_key", "BUG-1319", g_stray_fix,
+         "tribe: a member that wears a player's own species by mistake (another player's member) gets its owner's again");
+static uint32_t g_sp_adopted;
 using SpeciesSlot_t = void*(SK_THISCALL*)(void*, int);
 static SpeciesSlot_t o_SpeciesSlot;
 static void* g_birth_tribe;
@@ -225,12 +246,25 @@ void species_tick(double now)
         }
         auto oi = g_sp.find(c);
         uint32_t ours = oi != g_sp.end() ? oi->second.key : 0;
+        if (!ours && g_stray_fix) { // BUG-1319: a line's key the mod gave it before a world reset forgot that
+            uint32_t* ck = &F<uint32_t>(c, kSpKey);
+            if (ck[0] && ck[0] != sk.instance &&
+                (species::is_shared(ck[0]) || species::is_copy(ck[0]) || species::is_line_key({ck[0], ck[1], ck[2]}))) {
+                ours = ck[0];
+                g_sp[c] = {serial, ours};
+                g_sp_adopted++;
+            }
+        }
         uint32_t want = lp ? F<uint32_t>(lp, kProfKey) : lk.instance; // (what SetSpecies writes: the profile's key)
         auto act = tribe_logic::species_act(want, F<uint32_t>(c, kSpKey), sk.instance, ours, lp != nullptr);
         if (act == tribe_logic::SpeciesAct::Keep)
             continue;
         if (act == tribe_logic::SpeciesAct::Wait) { // (a line's key is registered here: its profile is being made)
             g_sp_wait_key++;
+            continue;
+        }
+        if (g_kid_fix && F<int>(c, kAgeOff) != 1) { // BUG-1313: a kid waits until it is grown up
+            g_sp_wait_kid++;
             continue;
         }
         pending++;
@@ -317,12 +351,12 @@ void species_init()
 
 std::string species_status()
 {
-    char b[300];
+    char b[340];
     snprintf(b, sizeof b,
              "own species: fix=%d changed=%zu applied=%u reverted=%u pending=%u waits_cinematic=%u waits_key=%u "
-             "saves=%u stripped=%u back=%u births=%u birth_answers=%u\n",
+             "saves=%u stripped=%u back=%u births=%u birth_answers=%u waits_kid=%u adopted=%u\n",
              (int)g_own_species_fix, g_sp.size(), g_sp_applied, g_sp_reverted, g_sp_pending, g_sp_wait_cine, g_sp_wait_key,
-             g_sp_saves, g_sp_stripped, g_sp_back, g_births, g_birth_answers);
+             g_sp_saves, g_sp_stripped, g_sp_back, g_births, g_birth_answers, g_sp_wait_kid, g_sp_adopted);
     return b;
 }
 
