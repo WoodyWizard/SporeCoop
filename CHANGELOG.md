@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- Tribe: the members of your tribe that are yours now look like your own creature (the one you play in the Creature
+  stage), on your screen and on your partners'; the host's members keep the tribe's species. A member given to
+  another player takes that player's creature, and a member whose player left goes back to the tribe's species. The
+  host's saved game keeps the tribe's species for every member; your look comes back when you play together again
+  (BUG-1271).
+
 ## [0.7.15.2] - 2026-11-18
 
 More fixes for problems seen in a video of two players, mostly in the Cell stage and the move to the Creature stage:

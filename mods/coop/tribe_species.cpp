@@ -45,6 +45,7 @@ struct Kept {
 };
 static std::vector<Kept> g_sp_kept; // a save is being written: the members' own keys
 static uint32_t g_sp_epoch;
+static uint32_t g_sp_slot_key[3]; // the slot's key of the last pass (a save while the game leaves Tribe: no tribe then)
 static double g_sp_epoch_at = -100, g_sp_scan_at = -100;
 static uint32_t g_sp_applied, g_sp_reverted, g_sp_wait_cine, g_sp_wait_key, g_sp_saves, g_sp_stripped, g_sp_back;
 static uint32_t g_sp_pending; // members that need a change now (last pass)
@@ -141,6 +142,7 @@ void species_tick(double now)
         it = sp_alive(it->first, it->second.first) ? std::next(it) : g_sp_seen.erase(it);
     bool connected = C.sess && C.sess->connected();
     creations::Key sk{F<uint32_t>(slot, kProfKey), F<uint32_t>(slot, kProfKey + 4), F<uint32_t>(slot, kProfKey + 8)};
+    g_sp_slot_key[0] = sk.instance, g_sp_slot_key[1] = sk.type, g_sp_slot_key[2] = sk.group;
     bool settled = now - g_sp_epoch_at >= kWorldSettle && !stage_end();
     void* todo = nullptr;
     void* todo_prof = nullptr;
@@ -194,12 +196,14 @@ void species_tick(double now)
 static void sp_save_start()
 {
     g_sp_kept.clear();
-    if (g_sp.empty() || game::mode_id() != modes::kTribe)
+    if (g_sp.empty())
         return;
-    uint8_t* slot = slot_profile(player_tribe());
-    if (!slot)
+    // (the quit's save may run while the game already left Tribe: the members are still listed, the tribe's key is
+    // the last pass's then)
+    uint8_t* slot = game::mode_id() == modes::kTribe ? slot_profile(player_tribe()) : nullptr;
+    const uint32_t* sk = slot ? &F<uint32_t>(slot, kProfKey) : g_sp_slot_key;
+    if (!sk[0])
         return;
-    const uint32_t* sk = &F<uint32_t>(slot, kProfKey);
     for (auto& [c, o] : g_sp) {
         if (!sp_alive(c, o.serial))
             continue;

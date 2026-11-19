@@ -4312,3 +4312,34 @@ profile) and the tribe's key +0x1920 was written back, so only the guest's chief
 * ? Not tried: a load of a save with a member key the game does not know (Ghidra: the default profile, the world's
   species); orders, combat and the hut tools on a member of another species over minutes; the outfitter with a
   mixed tribe; a baby born to a mixed tribe (the slot's species, by the code above).
+
+## The members of their owner's own species (2026-11-18, feat/w54-tribe)
+<a id="tribe-own-species"></a>
+
+WP-T1 of docs/plan-0.7.16.md (BUG-1271), built on #tribe-two-species. `mods/coop/tribe_species.cpp`, switch
+`tribe.own_species`.
+
+* What each game does (host and guests alike, nothing is sent): every 0.15 s a key compare over the player tribe's
+  members (`tribe_logic::species_act`): a member whose owner (`owner_of`: the host's split, the guest's mirror table)
+  has an own species line and whose +0xB28 is not that line's profile key +0x504 gets
+  `cCreatureAnimal::SetSpecies(member, profile, age +0xB34, keepState 1)`, then the steps the Tribal Outfitter's
+  return 0xCDCC90 does for every member after its rebuild: `TribeToolUI_AttachTool(ui +0x240, member, +0x102C)` and
+  the hand's animation slot again (`Creature_FindAnimSlot(+0xFC4)` / `Creature_RestartAnimSlot`); the share of health
+  is kept (BUG-0928's rule). A member the mod changed goes back to the slot's profile when its owner has no line any
+  more (given to the host, its owner left and the host holds it, creature.mode host, the switch off, the session
+  ended); a member the mod never touched keeps whatever species it has (`coop.tribe setspecies` tests, the game's own).
+* Pace and guards: one member per pass (a body is built over several frames, BUG-0318); a member first seen less than
+  0.5 s ago, without a body (+0xB54) or dead waits; nothing in the first 3 s of a world (`game::world_epoch`), at the
+  end of Tribe (`stage_end`) or while a cinematic plays (BUG-1173).
+* The line (WP-0 shim until species_line, BUG-1270): `creations::player_key(pid, kCreature)`, the creations' shared
+  key (0x7C000000 | fnv(owner, bundle id): the same instance on every game, the guest's own game included); none for
+  the host (the slot is its species), in creature.mode host, and for a guest that plays the world's own species (its
+  key is the slot's, or maps to it through host_species / local_species). Not buildable yet (`key_known`, a profile
+  from `game::species_by_key`): the member waits.
+* Saves: `savestrip::add_save_hooks`: at the save's first Write every member the mod changed gets the slot's key in
+  +0xB28..+0xB30 (the three dwords the creature record writes, cCreatureBase_PostRead 0xC225D0 resolves them on load;
+  no rebuild), its own key comes back on the next frame. So the host's save (and a guest's) holds the tribe's species
+  for every member; after a load the mod gives the members their owner's species again.
+* ? Not verified at runtime yet (no lab run when this was written, owner's rule of 2026-11-18): SetSpecies on a member
+  carrying food or holding a tool (keepState 1 with the outfitter's tool and animation steps after it), a baby right
+  after its birth (0.5 s), the guest's mirrors (driven by the mod) after SetSpecies. Test `coop_tribe_own_species.py`.
