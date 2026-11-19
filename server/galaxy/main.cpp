@@ -270,6 +270,8 @@ static void party_player_in(Client& c); // 6K (below)
 static void party_player_out(const Client& c);
 static void on_party(Client& c, Reader& r);
 static void send_players(const Client& c);
+static Client* by_identity(uint64_t id);
+static void party_note(const Client& to, uint8_t kind, parties::Result r, const std::string& other);
 
 static void on_control(const Endpoint& from, Reader& r)
 {
@@ -326,6 +328,21 @@ static void on_control(const Endpoint& from, Reader& r)
     }
     if (type == WHO) {
         send_players(*c);
+        return;
+    }
+    if (type == WHISPER) { // 6L A: passed on to the player of that identity
+        const uint64_t to = r.u64();
+        const std::string text = r.str16();
+        Client* o = r.ok() && !text.empty() && text.size() <= 600 ? by_identity(to) : nullptr;
+        if (!o) {
+            party_note(*c, 0, parties::Result::Unknown, "");
+            return;
+        }
+        Writer w = control(WHISPER);
+        w.u64(c->identity);
+        w.str8(c->name);
+        w.str16(text);
+        send(*o, w);
         return;
     }
     if (type == PING) {

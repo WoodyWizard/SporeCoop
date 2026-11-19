@@ -1156,3 +1156,45 @@ assume."
 
 Asked in docs/ROADMAP.md as 5H (what goes first) and 5I (how strict the checks are). Who runs the parts of a planet
 nobody is near waits for phase 0's answer.
+
+
+## The Social Menu built (2026-11-18, feat/lineages-alpha)
+<a id="server-social-menu"></a>
+
+6L A (owner 2026-11-18: "I like A, can we also add a button next to the Party panel for this menu? We'll name it the
+Social Menu and it'll have the two person silhouette icon. Don't make the gold buttons have black text. Keep it white."
+and "Make this look more native."). Built and seen working on TITAN + MSI (QA 8 joining the MSI's Samuth):
+
+* The Social Menu: F8 anywhere, the Social button (two person silhouette, `data/ui/lineages_social_icon.png`) left of
+  the Party tab in a stage, and a Social item under Co-op in the galaxy menu. Sections: the party (n / 4), friends
+  online and offline (friends.txt in the coop folder), the galaxy's other players online (up to 5). Rows: the lobby's
+  row box, a green / grey swatch, the name (gold: you, light blue: a friend) and where they play; Invite and Whisper
+  buttons (white text on our gold / blue art), Leave on your own row in a party. A text that does not fit ends in
+  "..." ("Samuth" alone when "Samuth  -  Creature" is too long).
+* The look is the Co-op window's own frame (glow, hex top band, panel colour, close button) drawn at the panel's size
+  (docs/08-ui.md#ui-native-frame-copy). The partner name tags and locator arrows are not drawn under the panel or the
+  player menu (`coop_ui::ui_covers`).
+* Whispers reach any player of the galaxy through the galaxy server (control WHISPER = 24, by identity).
+* 6O, the Party panel smaller: the cards and tab are 72% of their old size (`[ui] party_scale`), the small font for
+  the card name and title; the Social button follows the tab's height.
+* Seen on the way (not fixed): the joiner loaded the MSI's stored world while the MSI's creature had just died, and got
+  the "killed in battle" screen too; joining a planet still pushes the host and the other guests into the creature
+  editor (they press the check), the known forced editor.
+
+## Steam to avoid port forwarding (research, 2026-11-18, feat/lineages-alpha)
+<a id="server-steam-research"></a>
+
+Owner 2026-11-18: "Let's also investigate the idea of connecting with Steam to avoid port-forwarding."
+
+* What the game has: Spore's `steam_api_orig.dll` is an old Steamworks (SteamNetworking001 only: no
+  ISteamNetworkingSockets / Messages, the relay network Steam games use now). The old P2P interface works through
+  Steam's relays too, but it needs the game launched by Steam under AppID 24720 (not ours) and a logged-in Steam on both
+  PCs; GOG players cannot use it at all.
+* A newer steam_api.dll loaded beside the game's: a crash risk (two Steam clients in one process), a licence grey area
+  (Valve's SDK terms for a mod of a game we do not own), still AppID 24720 and Steam only.
+* Without Steam: most home routers let two PCs talk directly once both have sent a packet to each other at the same
+  time (UDP hole punching; RFC 5128 measured 80-90% of pairs; Tailscale reports the same). The galaxy server already
+  sees both players' public addresses: it can hand them to each other, the two games punch through, and the pairs that
+  fail keep the galaxy server's relay (it already relays today). No port forwarding for anyone; works for Steam and GOG.
+* Recommendation: hole punching through the galaxy server with the relay as the fallback (ROADMAP 6P A); a one-day
+  Steam spike only if many pairs still fail.

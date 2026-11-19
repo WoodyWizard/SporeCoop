@@ -57,6 +57,7 @@
 #include "galaxy_menu.h"
 #include "party.h"
 #include "parties_net.h"
+#include "net/galaxy.h"
 #include "home_nests.h"
 #include "cellsync.h"
 #include "audio.h"
@@ -133,6 +134,7 @@ void coop_register_debug_commands(const SkHost* host, SkMod* self); // debug.cpp
 
 namespace {
 static void invite_prompt_tick(); // 6J (with the right-click menu, below)
+static void social_tick(double now); // 6L A (below)
 
 struct Remote {
     uint8_t id = 0;
@@ -5448,6 +5450,7 @@ void on_frame(void*, int, void*)
     pfind::tick(H->time_seconds()); // F2: the partners on the minimap (outside the frame)
     parties::tick(H->time_seconds()); // 6J
     invite_prompt_tick();
+    social_tick(H->time_seconds()); // 6L A
     portrait::tick(H->time_seconds()); // BUG-0937: the HUD portrait follows the avatar's species (outside the frame)
     pfind::hud_tick(H->time_seconds()); // BUG-0949: the UI windows the labels keep off (outside the frame)
     sreport::tick();  // F4: the session report's round (host) and the guest's question / transfer
@@ -6816,9 +6819,8 @@ void on_overlay(void*, int, void*)
             // decision 3E C (BUG-9191): the HUD-blue chevron and a name plate (the name, the distance under it)
             std::string name_line, dist_line;
             float px1 = 0, py1 = 0, px2 = 0, py2 = 0;
+            const float cs = std::clamp(sh / 19.f, 30.f, 60.f) * ui_scale();
             if (g_partner_chevron) {
-                const float cs = std::clamp(sh / 19.f, 30.f, 60.f) * ui_scale();
-                partner_marker::chevron(H, x, y, dx, dy, cs, partner_down ? 0xFFE85050 : 0xFF46AAE6);
                 name_line = r.name.substr(0, utf8::cut_bytes(r.name, 32));
                 dist_line = std::to_string(int(std::min(distance, 999999.f))) + " m";
                 // (centred by the letters' real widths: the flat estimate put the name left of the middle, owner 2026-11-17)
@@ -6855,7 +6857,14 @@ void on_overlay(void*, int, void*)
                 ring_timer::draw(H, std::clamp(x, rr + 4.f, sw - rr - 4.f), ry, rr,
                                  ring_timer::fraction(win - (label_now - r.down_since), win), revive, label_now);
             }
-            if (g_partner_chevron) {
+            // owner 2026-11-18 (the Social Menu "looking very wonky ... when the locator arrows and names are above the
+            // menu"): the overlay draws over every window, so a marker that would cross the open panel or menu is not
+            // drawn this frame
+            const bool covered = coop_ui::ui_covers(std::min(px1, x - 30), std::min(py1, y - 30), std::max(px2, x + 30),
+                                                    std::max(py2, y + 30));
+            if (covered) {
+            } else if (g_partner_chevron) {
+                partner_marker::chevron(H, x, y, dx, dy, cs, partner_down ? 0xFFE85050 : 0xFF46AAE6);
                 partner_marker::plate(H, px1, py1, px2, py2, 17, 0xA5282828, 0xC8EBF0F5);
                 const int nx = (int)((px1 + px2) * .5f) - utf8::overlay_text_px(name_line) / 2;
                 const int dxl = (int)((px1 + px2) * .5f) - utf8::overlay_text_px(dist_line) / 2;
@@ -9254,24 +9263,60 @@ static void set_friend(uint8_t id, bool on)
 
 enum MenuCode { kMenuView = 1, kMenuInvite, kMenuLead, kMenuWhisper, kMenuFriend, kMenuUnfriend, kMenuLeave, kMenuAccept,
                 kMenuDecline, kMenuKick };
-static int g_menu_player = -1;
+static int g_menu_player = -1; // the menu's player in this session (-1: not here; -2: the invite prompt)
+// 6L A: the menu's player as the Social Menu knows it too (a galaxy player who is not in this session)
+static uint64_t g_menu_identity;
+static std::string g_menu_name;
 static int g_prompted_from = -1; // the invite the prompt shows (-1 none)
 static bool g_swallow_rup;
 static uint32_t g_menus_opened;
 static void open_sporepedia_of(uint8_t player);
+static std::string friend_key(int sid, uint64_t ident)
+{
+    if (ident) {
+        char b[24];
+        snprintf(b, sizeof b, "id:%016llX", (unsigned long long)ident);
+        return b;
+    }
+    return sid >= 0 ? identity::key((uint8_t)sid) : "";
+}
+static void set_friend_key(const std::string& k, const std::string& name, bool on)
+{
+    if (k.empty())
+        return;
+    friends_load();
+    if (on)
+        g_friends[k] = name;
+    else
+        g_friends.erase(k);
+    friends_save();
+    feed(on ? name + " is on your friends list." : name + " is off your friends list.");
+    g_lobby_dirty = true;
+}
+static bool in_my_galaxy_party(uint64_t ident)
+{
+    if (!ident)
+        return false;
+    for (auto& m : parties::members())
+        if (m.identity == ident)
+            return true;
+    return false;
+}
 static void on_menu_pick(int code)
 {
     const int id = g_menu_player;
+    const uint64_t ident = g_menu_identity;
+    const bool gx = parties::galaxy() && ident;
     std::string r;
     switch (code) {
     case kMenuView: if (id >= 0) open_sporepedia_of((uint8_t)id); break;
-    case kMenuInvite: if (id >= 0) r = parties::invite((uint8_t)id); break;
-    case kMenuLead: if (id >= 0) r = parties::make_leader((uint8_t)id); break;
-    case kMenuWhisper: if (id >= 0) coop_ui::chat_prefill("/w " + utf8::shown_name(player_name_of((uint8_t)id)) + " "); break;
-    case kMenuFriend: if (id >= 0) set_friend((uint8_t)id, true); break;
-    case kMenuUnfriend: if (id >= 0) set_friend((uint8_t)id, false); break;
+    case kMenuInvite: r = gx ? parties::invite_identity(ident) : id >= 0 ? parties::invite((uint8_t)id) : ""; break;
+    case kMenuLead: r = gx ? parties::lead_identity(ident) : id >= 0 ? parties::make_leader((uint8_t)id) : ""; break;
+    case kMenuWhisper: coop_ui::chat_prefill("/w " + g_menu_name + " "); break;
+    case kMenuFriend: set_friend_key(friend_key(id, ident), g_menu_name, true); break;
+    case kMenuUnfriend: set_friend_key(friend_key(id, ident), g_menu_name, false); break;
     case kMenuLeave: r = parties::leave(); break;
-    case kMenuKick: if (id >= 0) r = parties::kick((uint8_t)id); break;
+    case kMenuKick: r = gx ? parties::kick_identity(ident) : id >= 0 ? parties::kick((uint8_t)id) : ""; break;
     case kMenuAccept: r = parties::answer(true); g_prompted_from = -1; break;
     case kMenuDecline: r = parties::answer(false); g_prompted_from = -1; break;
     default: break;
@@ -9279,19 +9324,23 @@ static void on_menu_pick(int code)
     if (!r.empty())
         feed(r);
 }
-// the menu of player `id` at the client pixel (x, y)
-static void open_player_menu(uint8_t id, float x, float y)
+// the menu of a player (sid: in this session, -1 not; ident: its identity, 0 unknown) at the client pixel (x, y)
+static void open_menu_for(int sid, uint64_t ident, const std::string& name, float x, float y)
 {
     std::vector<coop_ui::MenuItem> items;
     const uint8_t me = g_sess.my_id();
-    const auto mine = parties::my_party();
-    // our button colours (owner 2026-11-18): gold joins, red leaves or removes, blue the rest
-    items.push_back({"View Creature", kMenuView, coop_ui::kMenuBlue});
-    if (id == me) {
-        if (mine.size() > 1)
+    const bool gx = parties::galaxy();
+    const bool self = (sid >= 0 && sid == me && g_sess.connected()) || (ident && ident == identity::own());
+    const size_t party_n = gx ? parties::members().size() : parties::my_party().size();
+    const bool same = self || (gx ? in_my_galaxy_party(ident) : sid >= 0 && parties::same_party(me, (uint8_t)sid));
+    // our button colours (owner 2026-11-18): gold joins, red leaves or removes, blue the rest (all with white text)
+    if (sid >= 0)
+        items.push_back({"View Creature", kMenuView, coop_ui::kMenuBlue});
+    if (self) {
+        if (party_n > 1)
             items.push_back({"Leave Party", kMenuLeave, coop_ui::kMenuRed});
     } else {
-        if (parties::same_party(me, id)) {
+        if (same) {
             if (parties::i_lead()) {
                 items.push_back({"Make Leader", kMenuLead, coop_ui::kMenuBlue});
                 items.push_back({"Remove from Party", kMenuKick, coop_ui::kMenuRed});
@@ -9299,16 +9348,199 @@ static void open_player_menu(uint8_t id, float x, float y)
         } else
             items.push_back({"Invite to Party", kMenuInvite, coop_ui::kMenuGold});
         items.push_back({"Whisper", kMenuWhisper, coop_ui::kMenuBlue});
-        items.push_back(is_friend(id) ? coop_ui::MenuItem{"Remove Friend", kMenuUnfriend, coop_ui::kMenuGrey}
-                                      : coop_ui::MenuItem{"Add Friend", kMenuFriend, coop_ui::kMenuBlue});
+        friends_load();
+        items.push_back(g_friends.count(friend_key(sid, ident))
+                            ? coop_ui::MenuItem{"Remove Friend", kMenuUnfriend, coop_ui::kMenuGrey}
+                            : coop_ui::MenuItem{"Add Friend", kMenuFriend, coop_ui::kMenuBlue});
     }
-    std::string title = utf8::shown_name(player_name_of(id));
-    if (parties::leader_of(id) == id && parties::same_party(me, id) && mine.size() > 1)
+    if (items.empty())
+        return;
+    bool leads = false;
+    if (gx) {
+        for (auto& m : parties::members())
+            leads = leads || (m.leader && m.identity == ident);
+    } else if (sid >= 0)
+        leads = parties::leader_of((uint8_t)sid) == sid;
+    std::string title = name;
+    if (leads && same && party_n > 1)
         title += " (leader)";
-    g_menu_player = id;
+    g_menu_player = sid;
+    g_menu_identity = ident;
+    g_menu_name = name;
     g_menus_opened++;
     coop_ui::show_player_menu(x, y, title, items, on_menu_pick);
 }
+static void open_player_menu(uint8_t id, float x, float y)
+{
+    const uint64_t ident = id == g_sess.my_id() ? identity::own() : identity::known(id);
+    open_menu_for(id, ident, utf8::shown_name(player_name_of(id)), x, y);
+}
+
+// ---------------- 6L A: the Social Menu's rows (coop_ui.cpp draws them) ----------------
+static const char* stage_label(uint32_t m)
+{
+    switch (m) {
+    case modes::kCell: return "Cell";
+    case modes::kCreature: return "Creature";
+    case modes::kTribe: return "Tribe";
+    case modes::kCiv: return "Civilization";
+    case modes::kSpace: return "Space";
+    default: return "";
+    }
+}
+static int session_id_of(uint64_t ident)
+{
+    if (!ident || !g_sess.connected())
+        return -1;
+    for (auto& p : g_sess.players())
+        if ((p.id == g_sess.my_id() ? identity::own() : identity::known(p.id)) == ident)
+            return p.id;
+    return -1;
+}
+static uint32_t session_stage_of(int sid)
+{
+    if (sid < 0)
+        return 0;
+    if (sid == g_sess.my_id())
+        return g_mode;
+    auto it = g_remotes.find((uint8_t)sid);
+    return it == g_remotes.end() || it->second.buf.empty() ? 0 : it->second.buf.latest().mode;
+}
+static std::string where_text(const std::string& planet, uint32_t stage, bool online)
+{
+    if (!online)
+        return "Offline";
+    const std::string st = stage_label(stage);
+    if (planet.empty())
+        return st.empty() ? "Galaxy menu" : st;
+    return st.empty() ? planet : planet + "  -  " + st;
+}
+static void on_social_action(int action, const coop_ui::SocialRow& row, float x, float y)
+{
+    std::string r;
+    switch (action) {
+    case coop_ui::kSocLeave: r = parties::leave(); break;
+    case coop_ui::kSocWhisper: coop_ui::chat_prefill("/w " + row.name + " "); break;
+    case coop_ui::kSocInvite:
+        r = parties::galaxy() && row.identity ? parties::invite_identity(row.identity)
+            : row.session_id >= 0              ? parties::invite((uint8_t)row.session_id)
+                                               : "That player is not reachable from here.";
+        break;
+    case coop_ui::kSocMenu: open_menu_for(row.session_id, row.identity, row.name, x, y); break;
+    default: break;
+    }
+    if (!r.empty())
+        feed(r);
+}
+static void social_tick(double now)
+{
+    static double s_next = 0, s_ask = 0;
+    if (now < s_next)
+        return;
+    s_next = now + 0.5;
+    coop_ui::SocialState st;
+    const bool gx = parties::galaxy();
+    st.galaxy = gx;
+    st.stage = g_mode;
+    const bool in_stage = g_mode >= modes::kCell && g_mode <= modes::kSpace;
+    st.button = in_stage && (g_sess.connected() || galaxy::welcomed()) && !(game_busy() & (busy::kPaused | busy::kInputLock));
+    if (coop_ui::social_open() && gx && now >= s_ask) {
+        s_ask = now + 3;
+        parties::ask_online();
+    }
+    std::set<uint64_t> listed;
+    const uint64_t own = identity::own();
+    // the party
+    if (gx) {
+        for (auto& m : parties::members()) {
+            coop_ui::SocialRow r;
+            r.name = utf8::shown_name(m.name);
+            r.identity = m.identity;
+            r.session_id = session_id_of(m.identity);
+            r.me = m.me || (own && m.identity == own);
+            r.leader = m.leader;
+            const uint32_t stg = r.session_id >= 0 ? session_stage_of(r.session_id) : m.stage;
+            r.where = where_text(m.planet, stg, true);
+            r.section = 0;
+            listed.insert(m.identity);
+            st.rows.push_back(r);
+        }
+    } else {
+        for (uint8_t id : parties::my_party()) {
+            coop_ui::SocialRow r;
+            r.session_id = id;
+            r.identity = id == g_sess.my_id() ? own : identity::known(id);
+            r.name = utf8::shown_name(id == g_sess.my_id() || !g_sess.connected() ? g_name : player_name_of(id));
+            r.me = id == g_sess.my_id();
+            r.leader = parties::leader_of(id) == id;
+            r.where = where_text(id == g_sess.my_id() ? modes::current_world_name() : "", session_stage_of(id), true);
+            r.section = 0;
+            if (r.identity) listed.insert(r.identity);
+            st.rows.push_back(r);
+        }
+    }
+    st.party_n = (int)st.rows.size();
+    for (auto& r : st.rows)
+        r.buddy = !r.me && g_friends.count(friend_key(r.session_id, r.identity));
+    // friends: online (the galaxy's players, this session's) first, then offline
+    friends_load();
+    std::vector<coop_ui::SocialRow> on, off;
+    const auto online = parties::online();
+    for (auto& [key, fname] : g_friends) {
+        coop_ui::SocialRow r;
+        r.name = fname;
+        r.section = 1;
+        r.buddy = true;
+        uint64_t ident = 0;
+        if (key.rfind("id:", 0) == 0)
+            ident = strtoull(key.c_str() + 3, nullptr, 16);
+        if (ident && listed.count(ident))
+            continue; // (in the party: listed there)
+        r.identity = ident;
+        bool found = false;
+        for (auto& o : online)
+            if (ident && o.identity == ident) {
+                r.name = utf8::shown_name(o.name);
+                r.where = where_text(o.planet, 0, true);
+                found = true;
+            }
+        r.session_id = session_id_of(ident);
+        if (r.session_id >= 0) {
+            r.where = where_text(modes::current_world_name(), session_stage_of(r.session_id), true);
+            found = true;
+        }
+        r.online = found;
+        if (!found)
+            r.where = "Offline";
+        if (ident)
+            listed.insert(ident);
+        (found ? on : off).push_back(r);
+    }
+    st.friends_online = (int)on.size();
+    for (auto& r : on) st.rows.push_back(r);
+    for (auto& r : off) st.rows.push_back(r);
+    // the galaxy's other players
+    if (gx) {
+        int shown = 0;
+        for (auto& o : online) {
+            if (!o.identity || listed.count(o.identity) || o.identity == own)
+                continue;
+            st.online_n++;
+            if (shown >= 5)
+                continue;
+            coop_ui::SocialRow r;
+            r.name = utf8::shown_name(o.name);
+            r.identity = o.identity;
+            r.session_id = session_id_of(o.identity);
+            r.where = where_text(o.planet, r.session_id >= 0 ? session_stage_of(r.session_id) : 0, true);
+            r.section = 2;
+            st.rows.push_back(r);
+            shown++;
+        }
+    }
+    coop_ui::set_social(st, on_social_action);
+}
+
 // the invite prompt: the same panel in the upper middle of the screen, Accept / Decline
 static void invite_prompt_tick()
 {
@@ -9339,20 +9571,22 @@ static bool player_menu_input(unsigned msg, int x, int y)
             return true;
         if (coop_ui::player_menu_open() && g_menu_player != -2)
             coop_ui::hide_player_menu();
-        return false;
+        return coop_ui::social_press((float)x, (float)y, false); // 6L A: the Social button and panel
     }
     if (msg == WM_RBUTTONUP) {
         const bool swallow = g_swallow_rup;
         g_swallow_rup = false;
         return swallow;
     }
-    if (!g_sess.connected())
-        return false;
     if (coop_ui::player_menu_open() && g_menu_player != -2) {
         coop_ui::hide_player_menu();
         if (coop_ui::point_in_player_menu((float)x, (float)y))
             return g_swallow_rup = true;
     }
+    if (coop_ui::social_press((float)x, (float)y, true)) // 6L A: a right-click on a Social Menu row
+        return g_swallow_rup = true;
+    if (!g_sess.connected())
+        return false;
     int id = coop_ui::player_at((float)x, (float)y); // a lobby row, a Party card
     if (id < 0) { // a name plate or tag, then a partner's creature on the screen
         const double now = H->time_seconds();
@@ -9876,8 +10110,24 @@ void init_ui()
                     best = n.size();
                 }
             }
-            const std::string text = to < 0 ? "" : rest.substr(std::min(rest.size(), best + 1));
-            const std::string r = to < 0 ? "Whisper to whom? /w <name> <text>" : whisper((uint8_t)to, text);
+            uint64_t gto = 0; // 6L A: a player of the galaxy (any planet, the galaxy menu)
+            if (parties::galaxy())
+                for (auto& o : parties::online()) {
+                    const std::string n = utf8::shown_name(o.name);
+                    if (!n.empty() && n.size() > best && rest.rfind(n, 0) == 0 && (rest.size() == n.size() || rest[n.size()] == ' ')) {
+                        gto = o.identity;
+                        to = -1;
+                        best = n.size();
+                    }
+                }
+            const std::string text = to < 0 && !gto ? "" : rest.substr(std::min(rest.size(), best + 1));
+            std::string r;
+            if (gto) {
+                if (text.empty()) r = "Nothing to whisper.";
+                else if (!galaxy::whisper(gto, text)) r = "Not connected to the galaxy server.";
+                else chat_log("To " + rest.substr(0, best) + ": " + text);
+            } else
+                r = to < 0 ? "Whisper to whom? /w <name> <text>" : whisper((uint8_t)to, text);
             if (!r.empty())
                 feed(r);
             return;
@@ -11628,7 +11878,20 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gx.join = [](const std::string& addr, std::string& err) { return do_join(addr, err); };
         gx.ready = [] { return g_local != nullptr && !world::load_queued() && !world::load_starting(); };
         gx.promote = [] { npc::promote_now(); };
-        gx.party_in = [](uint8_t type, net::Reader& r) { parties::on_galaxy(type, r); }; // 6K
+        gx.party_in = [](uint8_t type, net::Reader& r) { // 6K, 6L A
+            if (type == net::galaxy::WHISPER) {
+                r.u64();
+                const std::string from = utf8::shown_name(r.str8()), text = utf8::clean_text(r.str16(), 240);
+                if (r.ok() && !text.empty()) {
+                    const std::string line = from + " whispers: " + text;
+                    g_whispers_in.push_back(line);
+                    chat_log(line);
+                    feed(line);
+                }
+                return;
+            }
+            parties::on_galaxy(type, r);
+        };
         gx.fan_in = [](uint8_t type, net::Reader& r) { // 6F B / 6H A: the host's messages copied by the galaxy server
             if (type == net::MSG_PLAYER_STATE)
                 g_sess.host_fan_in(type, r);

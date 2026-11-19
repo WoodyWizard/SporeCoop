@@ -221,7 +221,7 @@ static void on_control(net::Reader& r)
         g_planet_players = cap < 2 ? 2 : cap > net::kMaxPlayers ? (uint8_t)net::kMaxPlayers : cap;
         g_welcomed = true;
         say("Connected to the galaxy '" + g_galaxy + "'.");
-    } else if (type == PARTYVIEW || type == PARTYNOTE || type == PLAYERS) { // 6K
+    } else if (type == PARTYVIEW || type == PARTYNOTE || type == PLAYERS || type == WHISPER) { // 6K, 6L A
         if (C.party_in)
             C.party_in(type, r);
     } else if (type == PLANETS) {
@@ -852,6 +852,16 @@ bool party_send(uint8_t kind, uint64_t other, uint8_t flag, uint32_t stage)
     w.u64(other);
     w.u8(flag);
     w.u32(stage);
+    send_control(w);
+    return true;
+}
+bool whisper(uint64_t to, const std::string& text)
+{
+    if (!welcomed() || !to || text.empty())
+        return false;
+    net::Writer w = control(WHISPER);
+    w.u64(to);
+    w.str16(text);
     send_control(w);
     return true;
 }

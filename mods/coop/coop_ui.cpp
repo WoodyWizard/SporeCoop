@@ -408,6 +408,8 @@ static void place_window(Win root)
 static bool in_menu() { return A.mode && A.mode() == modes::kMenu; }
 static void* g_menu_drawable;
 static Win g_menu_drawable_for; // the menu window the drawable was made for
+static void* g_social_drawable;  // 6L A: the Social item's (the same rule as the Co-op item's)
+static Win g_social_drawable_for;
 
 static void on_menu_click() { open(true); }
 
@@ -467,13 +469,39 @@ static void ensure_menu_button()
     });
     g_menu_btn = b;
     g_menu_parent = menu;
+    // decision 6L A: the Social item under Co-op (the two person icon), the Social Menu on a click
+    if (Win old = sui::find(menu, kIdMenuButton + 2))
+        sui::remove_child(menu, old);
+    const float step = (r.y2 - r.y1) + 6;
+    const Rect r2{r.x1, r.y1 + step, r.x2, r.y2 + step};
+    if (Win b2 = sui::button_like(nullptr, share, r2, T("Social", "Друзья"))) {
+        sui::set_ids(b2, kIdMenuButton + 2, kIdMenuButton + 2);
+        if (g_social_drawable_for != menu) {
+            g_social_drawable = nullptr;
+            g_social_drawable_for = menu;
+        }
+        if (!g_social_drawable) {
+            void* icon = sui::image(sui::fnv("lineages_social_icon_menu"), 0x2F7D0004, sui::fnv("sporecoop"));
+            g_social_drawable = sui::std_drawable_with_icon(sui::drawable(share), icon);
+            if (icon && sui::g_release_fix) sui::release(icon);
+        }
+        if (g_social_drawable) sui::set_drawable(b2, g_social_drawable);
+        sui::add_child(menu, b2);
+        sui::add_handler(b2, [](Win, const sui::Msg& m) {
+            if (!sui::is_click(m)) return false;
+            toggle_social();
+            return true;
+        });
+        if (sui::g_release_fix) sui::release(b2); // (the menu holds it; found by its id next time)
+    }
+    const Rect rv = r2; // the version line under the last item
     // the version under the item: a player's screenshot of the menu tells which SporeCoop runs
     if (Win old = sui::find(menu, kIdMenuButton + 1))
         sui::remove_child(menu, old);
     if (A.version_line) {
         std::string v = A.version_line();
         v = v.substr(0, v.find("  -  "));
-        if (Win l = sui::label(menu, {r.x1 + 6, r.y2 - 4, r.x2 + 90, r.y2 + 14}, v, sui::font(share), kDim,
+        if (Win l = sui::label(menu, {rv.x1 + 6, rv.y2 - 4, rv.x2 + 90, rv.y2 + 14}, v, sui::font(share), kDim,
                                sui::kAlignLeft)) {
             sui::set_ids(l, kIdMenuButton + 1, 0);
             if (sui::g_release_fix)
@@ -3501,9 +3529,11 @@ int input_lock_now() { return input_lock(); }
 bool game_modal_up() { return game_modal() != nullptr; }
 
 static void pm_hover_tick(); // 6J (the players' menu, below)
+static void so_hover_tick(); // 6L A (the Social Menu, below)
 void tick()
 {
     pm_hover_tick(); // 6J: the menu item under the pointer
+    so_hover_tick(); // 6L A: the Social Menu's button under the pointer
     if (!g_ok)
         return;
     // F9: show/hide the co-op window anywhere in the game. BUG-0713: a press the game window took (mouse.h), not
@@ -3515,6 +3545,9 @@ void tick()
     if (f9 && (mouse::g_window_input || !g_f9_down))
         open(!g_want_open);
     g_f9_down = f9;
+    static uint32_t s_f8_seen = mouse::key_presses(VK_F8);
+    if (mouse::key_pressed(VK_F8, s_f8_seen)) // 6L A: the Social Menu
+        toggle_social();
     // The galaxy menu's intro cinematic (~10 s, starting ~16 s after the menu came up unless the
     // start-up video was skipped with Escape) holds the game's input lock: the game drops every click
     // on the menu, so a click on our "Co-op" item did nothing (seen in coop_ui.py on GOG 2024, where
@@ -3956,7 +3989,6 @@ constexpr int kPmItems = 6;
 static void* card_look(const std::string& stem);
 static const char* const kPmStyle[4] = {"blue", "gold", "red", "grey"};
 static int g_pm_hover = -1, g_pm_shown_hover = -2;
-static int g_pm_shown_style[kPmItems] = {-1, -1, -1, -1, -1, -1};
 constexpr float kPmW = 224, kPmTitle = 30, kPmRow = 31, kPmPad = 8;
 static struct {
     Win root = nullptr, box = nullptr, edge[4] = {}, title = nullptr, item[kPmItems] = {};
@@ -3974,7 +4006,7 @@ static void pm_set_look(int i, bool hover)
     const int style = std::clamp(g_pm_items[i].style, 0, 3);
     if (void* look = card_look(std::string("lineages_button_") + kPmStyle[style] + (hover ? "_hover" : "_normal")))
         sui::set_drawable(g_pm.item[i], look);
-    sui::set_label_color(g_pm.item[i], style == kMenuGold ? 0xFF2A1E05u : kWhite);
+    sui::set_label_color(g_pm.item[i], kWhite); // (white on every colour: owner 2026-11-18, "Keep it white")
 }
 
 static void pm_pick(int i)
@@ -4222,6 +4254,7 @@ static bool g_ph_images_missing; // the cards' images not (yet) in the game: the
 static int g_ph_hover = -1;       // the card the pointer is over (its frame lit and grown), -1 none
 static bool g_ph_dirty;           // laid out again at the next set_party_hud (a hover change)
 static std::vector<PartyRow> g_ph_cards; // the partners shown, top card first (a frame's click)
+static Rect g_ph_tab_rect;               // the Party tab on the screen (empty: not shown)
 static float ns_factor_now(); // the UI scale of Spore's own UI (below, 3H)
 // the card's layout (1x pixels; tests: `coop.cardlayout <name>=<value>...` changes them live, looked at by screenshot)
 // (the owner 2026-11-14: "some text that looked badly spaced", the name against the plate's top and "Party" low in its
@@ -4288,6 +4321,16 @@ static void set_look(Win w, std::string& shown, const std::string& stem)
     }
 }
 
+// owner 2026-11-18: "reduce the total size of the Party Panel ... The scaling is very large compared to the native
+// "pack" area. It's fine to have it larger, but at the moment, its WAY larger." The cards (and the Social button with
+// them) at this share of their drawn size, the text in the small UI font; [ui] party_scale (percent, 50..100)
+static float party_compact()
+{
+    static float s = -1;
+    if (s < 0) s = std::clamp(H->config_int(M, "ui", "party_scale", 72), 50, 100) / 100.f;
+    return s;
+}
+
 static bool ph_build()
 {
     if (g_ph.root) return true;
@@ -4316,13 +4359,14 @@ static bool ph_build()
     std::vector<Win> order;
     g_ph.tab = party_image_window(root, "lineages_card_tab_space");
     g_ph.tab_style = "lineages_card_tab_space";
-    g_ph.title = sui::label(root, {0, 0, 10, 10}, T("Party", "Группа"), D.font_body, kWhite, sui::kAlignCenter);
+    const uint32_t card_font = party_compact() < 0.9f && D.font_button ? D.font_button : D.font_body;
+    g_ph.title = sui::label(root, {0, 0, 10, 10}, T("Party", "Группа"), card_font, kWhite, sui::kAlignCenter);
     order.push_back(g_ph.tab);
     order.push_back(g_ph.title);
     for (int i = 0; i < kPartyRows; ++i) {
         auto& r = g_ph.rows[i];
         r.plate = party_image_window(root, "lineages_card_plate_space");
-        r.name = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignLeft);
+        r.name = sui::label(root, {0, 0, 10, 10}, "", card_font, kWhite, sui::kAlignLeft);
         r.place = sui::label(root, {0, 0, 10, 10}, "", D.font_button ? D.font_button : D.font_body, kWhite,
                              sui::kAlignLeft);
         order.insert(order.end(), {r.plate, r.name, r.place});
@@ -4446,6 +4490,7 @@ static void ph_apply(void*)
     const std::string own_style = own ? own : "space";
     set_look(g_ph.tab, g_ph.tab_style, "lineages_card_tab_" + own_style);
     place(g_ph.tab, show, {right - px(L.tab_w), top, right, top + px(L.tab_h)});
+    g_ph_tab_rect = show ? Rect{right - px(L.tab_w), top, right, top + px(L.tab_h)} : Rect{}; // (6L A: the Social button)
     place(g_ph.title, show, {right - px(L.tab_w), top + px(L.title_dy), right, top + px(L.tab_h + L.title_dy)});
     sui::set_label_color(g_ph.title, 0xFFFFFFFF);
     for (int i = 0; i < kPartyRows; ++i) {
@@ -4548,6 +4593,7 @@ static void ph_apply(void*)
 bool set_party_hud(bool show, const std::vector<PartyRow>& rows, float scale, void (*on_portrait)(uint8_t))
 {
     if (!g_ok || g_ph.failed) return false;
+    scale *= party_compact(); // owner 2026-11-18: closer to the native Pack list's size
     g_ph_click = on_portrait;
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
@@ -5361,6 +5407,514 @@ int player_at(float x, float y)
         if (in(g_ph.rows[i].frame) || in(g_ph.rows[i].portrait) || in(g_ph.rows[i].name))
             return g_ph_cards[i].player;
     return -1;
+}
+
+
+// ---------------- the Social Menu (decision 6L A, owner 2026-11-18) ----------------
+// "I like A, can we also add a button next to the Party panel for this menu? We'll name it the Social Menu and it'll
+// have the two person silhouette icon." The button: the Party tab's art of this player's stage with the icon
+// (data/ui/lineages_social_icon.png, tools/social_ui_assets.py), left of the Party tab, or at the right edge above
+// Spore's own UI when there are no partner cards. The panel at the top right: a gold title, sections (the party,
+// friends, the galaxy's players) with a row per player (a dot green online / grey offline, the name in gold for this
+// player and light blue for a friend, where it plays under it) and buttons in our own art on the row. Presses are the
+// mouse hook's (social_press), so it works under the game's input lock too.
+constexpr int kSoRows = 12, kSoChips = 2;
+// owner 2026-11-18 ("The panel is looking very wonky ... that background used for the co-op menu would be useful. Make
+// this look more native."): the panel is the Co-op window's own native frame (the game's account dialog layout: its
+// frame, glow and close button; the content hidden) with a centred gold title as the Co-op window's page titles, and
+// each player in the lobby's row box (lineages_field_box) with the lobby's colour swatch
+constexpr float kSoW = 318, kSoHead = 66, kSoSect = 28, kSoRow = 42, kSoPad = 24, kSoBottom = 22, kSoChipW = 68, kSoChipH = 24;
+constexpr uint32_t kIdSocialFrame = 0xC00F0200;
+constexpr uint32_t kSoOnline = 0xFF5ADC6Eu, kSoOffline = 0xFF6E7882u,
+                   kSoFriend = 0xFF8FD3FFu;
+struct SoChip {
+    Win img = nullptr, cap = nullptr;
+    int action = 0, style = 0;
+    bool hover = false;
+    Rect at{}; // on the screen while shown
+};
+struct SoRowWin {
+    Win bg = nullptr, dot = nullptr, name = nullptr, where = nullptr;
+    SoChip chip[kSoChips];
+    Rect at{};
+    int row = -1; // its entry in g_so_rows (-1: unused)
+};
+static struct {
+    Win button = nullptr, btn_tab = nullptr, btn_icon = nullptr;
+    Win root = nullptr, box = nullptr, edge[4] = {}, title = nullptr, hint = nullptr, sect[3] = {}, empty = nullptr;
+    SoRowWin rows[kSoRows];
+    std::string btn_style;
+    bool failed = false;
+} g_so;
+static SocialState g_so_want;
+static std::vector<SocialRow> g_so_rows; // what the rows show (their order)
+static bool g_so_open, g_so_queued, g_so_dirty = true;
+static Rect g_so_rect, g_so_btn_rect;
+static bool g_so_native; // the panel is the native frame (else the plain fallback)
+static Win g_so_close;   // the frame's close button
+struct SoPiece {
+    Win w;
+    Win src; // the Co-op window's piece: its place there (read when laid out) is laid out again at the panel's size
+    Win in;  // the window it is in (sui::parent of a layout's window is not always it)
+};
+static std::vector<SoPiece> g_so_frame; // the native frame's pieces on the panel
+static int g_so_hover_row = -1, g_so_hover_chip = -1;
+static void (*g_so_action)(int, const SocialRow&, float, float);
+
+static Win so_label(Win root, uint32_t font, uint32_t color, int align)
+{
+    Win w = sui::label(root, {0, 0, 10, 10}, "", font, color, align);
+    if (w) {
+        sui::add_ref(w);
+        sui::set_flag(w, sui::kFlagIgnoreMouse, true);
+        sui::set_visible(w, false);
+    }
+    return w;
+}
+
+static bool so_build()
+{
+    if (g_so.root) return true;
+    if (g_so.failed) return false;
+    if (!D.root) {
+        build_dialog();
+        if (D.root) sui::set_visible(D.root, g_want_open);
+    }
+    Win main = sui::main_window();
+    if (!main) return false;
+    if (!sui::has_image(sui::fnv("lineages_social_icon"), sui::fnv("sporecoop"))) {
+        static bool s_said = false;
+        if (!s_said) H->log(M, SK_WARN, "ui: the Social Menu's icon is not in this game's SporeCoop.package (an older one)");
+        s_said = true;
+    }
+    const uint32_t small = D.font_button ? D.font_button : D.font_body;
+    // the button
+    g_so.button = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    if (g_so.button) {
+        sui::add_ref(g_so.button);
+        sui::set_flag(g_so.button, sui::kFlagIgnoreMouse, true);
+        sui::set_visible(g_so.button, false);
+        g_so.btn_tab = party_image_window(g_so.button, "lineages_card_tab_space");
+        g_so.btn_style = "lineages_card_tab_space";
+        // the icon as a whole image scaled into its box, as the Party cards' portraits (Spore's image window; the
+        // tooltip drawable cuts an image in thirds and a small icon came out in pieces)
+        g_so.btn_icon = sui::image_window(g_so.button, sui::fnv("lineages_social_icon"), sui::fnv("sporecoop"), 0, 0);
+        for (Win w : {g_so.btn_tab, g_so.btn_icon})
+            if (w) {
+                sui::add_ref(w);
+                sui::set_flag(w, sui::kFlagIgnoreMouse, true);
+            }
+        if (g_so.btn_icon) sui::bring_to_front(g_so.button, g_so.btn_icon);
+    }
+    // the panel: a plain root (a stale one from before a hot reload goes first) wearing the Co-op window's native frame:
+    // the frame's own pieces (their drawables, shared) laid out again at the panel's size. A second instance of the
+    // account dialog layout crashed the game on open (2026-11-18, crash in cWindowManager::PopModal: the layout is a
+    // modal window of the window manager), so only its art is reused
+    if (Win old = sui::find(main, kIdSocialFrame))
+        if (Win p = sui::parent(old)) sui::remove_child(p, old);
+    g_so.root = sui::label(main, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignCenter);
+    if (!g_so.root) { g_so.failed = true; return false; }
+    sui::add_ref(g_so.root);
+    sui::set_ids(g_so.root, kIdSocialFrame, 0);
+    Win root = g_so.root;
+    g_so_frame.clear();
+    g_so_close = nullptr;
+    if (D.root) {
+        auto piece = [&](Win src, Win in, uint32_t fill) {
+            void* drw = sui::drawable(src);
+            Win w = sui::button_like(root, D.like_button, {0, 0, 10, 10}, "");
+            if (!w) return (Win) nullptr;
+            sui::set_drawable(w, drw);
+            sui::set_label_color(w, 0);
+            if (fill) sui::set_fill_color(w, fill);
+            sui::add_ref(w);
+            sui::set_flag(w, sui::kFlagIgnoreMouse, true);
+            g_so_frame.push_back({w, src, in});
+            return w;
+        };
+        // the window manager lists a window's children newest first (drawn on top): the oldest is made first here
+        auto oldest_first = [](Win w) {
+            std::vector<Win> v = sui::children(w);
+            std::reverse(v.begin(), v.end());
+            return v;
+        };
+        // (found by their shape: a new window's areas are its layout's until it is laid out, the frame's own size 0)
+        for (Win c : oldest_first(D.root)) {
+            const Rect a = sui::area(c);
+            if (a.x1 < 0 && a.y1 < 0 && a.x2 > 400 && sui::drawable(c)) // the glow around the frame (not a corner's)
+                piece(c, D.root, 0);
+            else if (!sui::drawable(c) && !sui::control_id(c)) { // the frame: a dozen image pieces and the panel
+                const std::vector<Win> kids = oldest_first(c);
+                const size_t drawn = std::count_if(kids.begin(), kids.end(), [](Win k) { return sui::drawable(k) != nullptr; });
+                const bool plain = std::none_of(kids.begin(), kids.end(), [](Win k) { return sui::as_button(k) != nullptr; });
+                if (drawn < 10 || drawn + 1 != kids.size() || !plain) continue; // (our pages hold buttons and labels)
+                for (Win p : kids) piece(p, c, sui::drawable(p) ? 0 : sui::fill_color(p)); // (the one without: the panel colour)
+            }
+        }
+        if (g_so_frame.size() >= 10) { // the close button over the frame (pressed through the mouse hook)
+            if (Win x = sui::find(D.root, 0xFFFFFFF2u))
+                if (sui::drawable(x)) g_so_close = piece(x, D.root, 0);
+            g_so_native = true;
+        } else { // (another layout than the one known: the plain panel)
+            for (auto& p : g_so_frame) sui::remove_child(root, p.w);
+            g_so_frame.clear();
+        }
+        H->log(M, SK_DEBUG, "ui: the Social Menu wears %zu pieces of the Co-op window's frame", g_so_frame.size());
+    }
+    if (!g_so_native) { // (no layout: the plain panel)
+        sui::set_flag(root, sui::kFlagIgnoreMouse, true);
+        g_so.box = so_label(root, D.font_body, kWhite, sui::kAlignCenter);
+        if (g_so.box) sui::set_fill_color(g_so.box, (menu_panel_fill() & 0x00FFFFFFu) | 0xF0000000u);
+        for (Win& e : g_so.edge) {
+            e = so_label(root, D.font_body, kWhite, sui::kAlignCenter);
+            if (e) sui::set_fill_color(e, kMenuBoxEdge);
+        }
+    }
+    g_so.title = so_label(root, D.font_body, kGold, sui::kAlignCenter);
+    g_so.hint = so_label(root, small, kDim, sui::kAlignRight);
+    for (Win& w : g_so.sect) w = so_label(root, small, kGold, sui::kAlignLeft);
+    g_so.empty = so_label(root, small, kDim, sui::kAlignLeft);
+    for (auto& r : g_so.rows) {
+        r.bg = party_image_window(root, "lineages_field_box"); // (the lobby's row box)
+        if (r.bg) {
+            sui::add_ref(r.bg);
+            sui::set_flag(r.bg, sui::kFlagIgnoreMouse, true);
+            sui::set_visible(r.bg, false);
+        }
+        r.dot = so_label(root, D.font_body, kWhite, sui::kAlignCenter);
+        r.name = so_label(root, D.font_body, kWhite, sui::kAlignLeft);
+        r.where = so_label(root, small, kDim, sui::kAlignLeft);
+        for (auto& c : r.chip) {
+            c.img = party_image_window(root, "lineages_button_blue_normal");
+            if (c.img) {
+                sui::add_ref(c.img);
+                sui::set_flag(c.img, sui::kFlagIgnoreMouse, true);
+                sui::set_visible(c.img, false);
+            }
+            c.cap = so_label(root, small, kWhite, sui::kAlignCenter);
+        }
+    }
+    sui::set_visible(root, false);
+    return true;
+}
+
+static const char* const kSoStyle[4] = {"blue", "gold", "red", "grey"};
+static void so_chip_look(SoChip& c)
+{
+    if (!c.img) return;
+    if (void* look = card_look(std::string("lineages_button_") + kSoStyle[std::clamp(c.style, 0, 3)] +
+                               (c.hover ? "_hover" : "_normal")))
+        sui::set_drawable(c.img, look);
+}
+
+static void so_apply(void*)
+{
+    g_so_queued = false;
+    if (!g_so.root && !g_so_want.button && !g_so_open) return; // (made when first needed: its images then)
+    if (!so_build()) return;
+    g_so_dirty = false;
+    Win main = sui::main_window();
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    const SocialState& st = g_so_want;
+    // the button: left of the Party tab, else at the right edge above Spore's own UI
+    if (g_so.button) {
+        const bool on = st.button && main;
+        if (on) {
+            const float bh = g_ph_tab_rect.y2 > g_ph_tab_rect.y1 ? g_ph_tab_rect.y2 - g_ph_tab_rect.y1
+                                                                : std::round(30 * party_compact()),
+                        bw = std::round(bh * 1.55f); // (as tall as the Party tab, its compact size: 6O)
+            Rect r;
+            if (g_ph_tab_rect.x2 > g_ph_tab_rect.x1)
+                r = {g_ph_tab_rect.x1 - 6 - bw, g_ph_tab_rect.y1, g_ph_tab_rect.x1 - 6, g_ph_tab_rect.y2};
+            else {
+                const float floor = measure_right_floor(sw, sh);
+                r = {sw - 4 - bw, floor - 6 - bh, (float)sw - 4, floor - 6};
+            }
+            g_so_btn_rect = r;
+            sui::set_area(g_so.button, r);
+            if (sui::parent(g_so.button) != main) sui::add_child(main, g_so.button);
+            sui::bring_to_front(main, g_so.button);
+            const char* own = card_style(st.stage);
+            set_look(g_so.btn_tab, g_so.btn_style, std::string("lineages_card_tab_") + (own ? own : "space"));
+            if (g_so.btn_tab) sui::set_area(g_so.btn_tab, {0, 0, r.w(), r.h()});
+            const float ic = std::round(r.h() * 0.82f);
+            if (g_so.btn_icon) sui::set_area(g_so.btn_icon, {(r.w() - ic) / 2, (r.h() - ic) / 2, (r.w() + ic) / 2, (r.h() + ic) / 2});
+        } else
+            g_so_btn_rect = {};
+        sui::set_visible(g_so.button, on);
+    }
+    // the panel
+    if (!g_so_open || !main) {
+        sui::set_visible(g_so.root, false);
+        g_so_rect = {};
+        for (auto& r : g_so.rows) r.at = {}, r.row = -1;
+        return;
+    }
+    g_so_rows = st.rows;
+    auto place = [&](Win w, bool on, const Rect& r) {
+        if (!w) return;
+        if (on) sui::set_area(w, r);
+        sui::set_visible(w, on);
+    };
+    // Spore's labels centre their text whatever alignment they get (see fit): a left or right text gets a box as
+    // wide as the text (plus the label's inner margin), at the left or right edge of `r`
+    auto text_at = [&](Win w, const Rect& r, const std::string& t, bool small, bool right) {
+        if (!w) return;
+        sui::set_caption(w, t);
+        const float m = kLabelMargin, tw = std::min(r.w(), text_px(t, small)) + 2 * m;
+        sui::set_area(w, right ? Rect{r.x2 + m - tw, r.y1, r.x2 + m, r.y2} : Rect{r.x1 - m, r.y1, r.x1 - m + tw, r.y2});
+        sui::set_visible(w, true);
+    };
+    // the height: the head, a header per section with rows, the rows
+    int sections = 0;
+    for (int sec = 0; sec < 3; sec++) {
+        bool any = sec == 0 || sec == 1; // (the party and friends always show their header)
+        for (auto& r : st.rows) any = any || r.section == sec;
+        if (sec == 2 && !st.galaxy) any = false;
+        sections += any;
+    }
+    const int nrows = std::min<int>((int)st.rows.size(), kSoRows);
+    const bool friends_empty = std::none_of(st.rows.begin(), st.rows.end(), [](const SocialRow& r) { return r.section == 1; });
+    const float h = kSoHead + sections * kSoSect + nrows * kSoRow + kSoBottom + (friends_empty ? 24 : 0);
+    // at the top, left of the Party cards and the Social button when they show (they stay in reach: the button closes
+    // it again), else at the right edge
+    float x2 = sw - 10.f;
+    if (g_ph.area.x2 > g_ph.area.x1) x2 = std::min(x2, g_ph.area.x1 - 10);
+    if (g_so_btn_rect.x2 > g_so_btn_rect.x1 && g_so_btn_rect.y1 < 44 + h) x2 = std::min(x2, g_so_btn_rect.x1 - 10);
+    const float x = std::max(8.f, x2 - kSoW), y = 44;
+    g_so_rect = {x, y, x + kSoW, y + h};
+    sui::set_area(g_so.root, g_so_rect);
+    if (sui::parent(g_so.root) != main) sui::add_child(main, g_so.root);
+    // the frame's pieces: an edge in the left (top) half of the Co-op window keeps its place, one in the right (bottom)
+    // half keeps its distance to the right (bottom) edge: corners keep their size, the sides and the panel stretch
+    for (const SoPiece& p : g_so_frame) {
+        const Rect at = sui::real_area(p.src), in = sui::real_area(p.in); // (laid out: area is the layout's input)
+        if (in.w() < 100 || in.h() < 100) { // (the Co-op window is not laid out yet: the next tick)
+            place(p.w, false, {});
+            g_so_dirty = true;
+            continue;
+        }
+        auto mx = [&](float v) { return v <= in.w() / 2 ? v : v - in.w() + kSoW; };
+        auto my = [&](float v) { return v <= in.h() / 2 ? v : v - in.h() + h; };
+        place(p.w, true, {mx(at.x1), my(at.y1), mx(at.x2), my(at.y2)});
+    }
+    sui::bring_to_front(main, g_so.root);
+    sui::set_flag(g_so.root, sui::kFlagAlwaysInFront, true);
+    sui::set_visible(g_so.root, true);
+    if (!g_so_native) {
+        place(g_so.box, true, {0, 0, kSoW, h});
+        place(g_so.edge[0], true, {0, 0, kSoW, 1});
+        place(g_so.edge[1], true, {0, h - 1, kSoW, h});
+        place(g_so.edge[2], true, {0, 0, 1, h});
+        place(g_so.edge[3], true, {kSoW - 1, 0, kSoW, h});
+    }
+    place(g_so.title, true, {0, 20, kSoW, 46}); // (centred, as the Co-op window's "LOBBY")
+    sui::set_caption(g_so.title, "SOCIAL");
+    text_at(g_so.hint, {kSoW - 120, 24, kSoW - 44, 44}, "F8", true, true);
+    float cy = kSoHead;
+    int ri = 0;
+    for (int sec = 0; sec < 3; sec++) {
+        bool any = sec == 0 || sec == 1;
+        for (auto& r : st.rows) any = any || r.section == sec;
+        if (sec == 2 && !st.galaxy) any = false;
+        if (!any) {
+            place(g_so.sect[sec], false, {});
+            continue;
+        }
+        char head[64];
+        if (sec == 0) snprintf(head, sizeof head, "Party  %d / 4", std::max(1, st.party_n));
+        else if (sec == 1) snprintf(head, sizeof head, "Friends  %d online", st.friends_online);
+        else snprintf(head, sizeof head, "Online now  %d", st.online_n);
+        text_at(g_so.sect[sec], {kSoPad + 4, cy + 3, kSoW - kSoPad, cy + kSoSect - 3}, head, true, false); // (its small font)
+        cy += kSoSect;
+        for (size_t k = 0; k < st.rows.size() && ri < kSoRows; k++) {
+            const SocialRow& row = st.rows[k];
+            if (row.section != sec) continue;
+            SoRowWin& w = g_so.rows[ri++];
+            w.row = (int)k;
+            const float top = cy, bot = cy + kSoRow - 4;
+            w.at = {x + kSoPad, y + top, x + kSoW - kSoPad, y + bot};
+            place(w.bg, true, {kSoPad, top, kSoW - kSoPad, bot});
+            place(w.dot, true, {kSoPad + 4, top + 7, kSoPad + 22, top + 29}); // (the lobby's colour swatch)
+            if (w.dot) {
+                sui::set_caption(w.dot, "\xE2\x96\xA0");
+                sui::set_label_color(w.dot, row.online ? kSoOnline : kSoOffline);
+            }
+            // the buttons on the row (right to left)
+            std::vector<std::pair<int, int>> chips; // action, style
+            if (row.me) {
+                if (row.section == 0 && st.party_n > 1) chips.push_back({kSocLeave, kMenuRed});
+            } else if (row.online) { // (placed right to left: Invite, then Whisper at the edge)
+                chips.push_back({kSocWhisper, kMenuBlue});
+                if (row.section != 0) chips.push_back({kSocInvite, kMenuGold});
+            }
+            float cx = kSoW - kSoPad - 8;
+            for (int c = 0; c < kSoChips; c++) {
+                SoChip& ch = w.chip[c];
+                const bool on = c < (int)chips.size();
+                if (on) {
+                    ch.action = chips[c].first;
+                    ch.style = chips[c].second;
+                    const Rect r{cx - kSoChipW, top + (kSoRow - 4 - kSoChipH) / 2, cx, top + (kSoRow - 4 + kSoChipH) / 2};
+                    // (the buttons on the row box, a little inside its right edge)
+                    ch.at = {x + r.x1, y + r.y1, x + r.x2, y + r.y2};
+                    place(ch.img, true, r);
+                    place(ch.cap, true, {r.x1, r.y1 + 1, r.x2, r.y2});
+                    so_chip_look(ch);
+                    sui::set_caption(ch.cap, ch.action == kSocLeave ? "Leave" : ch.action == kSocInvite ? "Invite" : "Whisper");
+                    if (ch.img) sui::bring_to_front(g_so.root, ch.img);
+                    if (ch.cap) sui::bring_to_front(g_so.root, ch.cap);
+                    cx -= kSoChipW + 6;
+                } else {
+                    ch.at = {};
+                    place(ch.img, false, {});
+                    place(ch.cap, false, {});
+                }
+            }
+            const float text_r = cx - 4;
+            // one line each: a text wider than the room left of the buttons ends in "..." (a wider one wrapped
+            // under the buttons, 2026-11-18)
+            auto fitted = [&](std::string t, bool small) {
+                const float room = text_r - (kSoPad + 26);
+                if (text_px(t, small) <= room) return t;
+                while (!t.empty() && text_px(t + "...", small) > room) {
+                    t.pop_back();
+                    while (!t.empty() && ((unsigned char)t.back() & 0xC0) == 0x80) t.pop_back(); // (a whole UTF-8 letter)
+                    if (!t.empty() && (unsigned char)t.back() >= 0xC0) t.pop_back();
+                }
+                while (!t.empty() && t.back() == ' ') t.pop_back();
+                return t + "...";
+            };
+            const bool lead_mark = row.leader && row.section == 0 && st.party_n > 1; // (alone: no "leader")
+            text_at(w.name, {kSoPad + 26, top + 2, text_r, top + 21}, fitted(row.name + (lead_mark ? "  (leader)" : ""), false), false, false);
+            sui::set_label_color(w.name, row.me ? kGold : !row.online ? kSoOffline : row.buddy ? kSoFriend : kWhite);
+            std::string where = row.where; // ("Samuth  -  Creature": the planet alone when both do not fit)
+            if (text_px(where, true) > text_r - (kSoPad + 26))
+                if (const size_t cut = where.find(" - "); cut != std::string::npos) where = where.substr(0, cut);
+            while (!where.empty() && where.back() == ' ') where.pop_back();
+            text_at(w.where, {kSoPad + 26, top + 19, text_r, top + kSoRow - 5}, fitted(where, true), true, false);
+            cy += kSoRow;
+        }
+        if (sec == 1 && friends_empty) { // a line under an empty friends list: how to add one
+            text_at(g_so.empty, {kSoPad + 4, cy, kSoW - kSoPad, cy + 20}, "Right-click a player to add a friend", true, false);
+            cy += 24;
+        }
+    }
+    for (; ri < kSoRows; ri++) {
+        SoRowWin& w = g_so.rows[ri];
+        w.row = -1, w.at = {};
+        for (Win v : {w.bg, w.dot, w.name, w.where}) place(v, false, {});
+        for (auto& c : w.chip) c.at = {}, place(c.img, false, {}), place(c.cap, false, {});
+    }
+    if (!friends_empty) place(g_so.empty, false, {});
+}
+
+static void so_queue()
+{
+    if (!g_so_queued) {
+        g_so_queued = true;
+        H->run_outside_frame(so_apply, nullptr);
+    }
+}
+
+void set_social(const SocialState& s, void (*on_action)(int, const SocialRow&, float, float))
+{
+    if (!g_ok) return;
+    g_so_action = on_action;
+    auto same = [](const SocialState& a, const SocialState& b) {
+        if (a.button != b.button || a.galaxy != b.galaxy || a.rows.size() != b.rows.size() || a.party_n != b.party_n ||
+            a.friends_online != b.friends_online || a.online_n != b.online_n || a.stage != b.stage)
+            return false;
+        for (size_t i = 0; i < a.rows.size(); i++) {
+            const auto &x = a.rows[i], &y = b.rows[i];
+            if (x.name != y.name || x.where != y.where || x.identity != y.identity || x.section != y.section ||
+                x.online != y.online || x.leader != y.leader || x.me != y.me || x.buddy != y.buddy || x.session_id != y.session_id)
+                return false;
+        }
+        return true;
+    };
+    // (the Party tab moves when partners come or go: the button follows it)
+    static Rect s_tab;
+    const bool tab_moved = s_tab.x1 != g_ph_tab_rect.x1 || s_tab.y1 != g_ph_tab_rect.y1 || s_tab.x2 != g_ph_tab_rect.x2;
+    s_tab = g_ph_tab_rect;
+    if (same(s, g_so_want) && !g_so_dirty && !tab_moved) return;
+    g_so_want = s;
+    so_queue();
+}
+
+void toggle_social()
+{
+    g_so_open = !g_so_open;
+    g_so_dirty = true;
+    so_queue();
+}
+bool social_open() { return g_so_open; }
+
+static bool so_in(const Rect& r, float x, float y) { return r.x2 > r.x1 && x >= r.x1 && x < r.x2 && y >= r.y1 && y < r.y2; }
+
+bool ui_covers(float x1, float y1, float x2, float y2)
+{
+    auto hit = [&](const Rect& r) { return r.x2 > r.x1 && x1 < r.x2 && x2 > r.x1 && y1 < r.y2 && y2 > r.y1; };
+    return (g_so_open && hit(g_so_rect)) || (g_pm_open && hit(g_pm_rect));
+}
+
+bool social_press(float x, float y, bool right)
+{
+    if (!right && g_so_open && g_so_close && sui::visible(g_so_close)) { // the frame's X (also under an input lock)
+        const Rect c = sui::drawn_rect(g_so_close);
+        if (c.x2 > c.x1 && x >= c.x1 && x < c.x2 && y >= c.y1 && y < c.y2) {
+            toggle_social();
+            return true;
+        }
+    }
+    if (!right && so_in(g_so_btn_rect, x, y) && g_so_want.button) {
+        toggle_social();
+        return true;
+    }
+    if (!g_so_open || !so_in(g_so_rect, x, y)) return false;
+    for (auto& w : g_so.rows) {
+        if (w.row < 0 || w.row >= (int)g_so_rows.size() || !so_in(w.at, x, y)) continue;
+        const SocialRow row = g_so_rows[w.row];
+        if (right) {
+            if (g_so_action) g_so_action(kSocMenu, row, x, y);
+            return true;
+        }
+        for (auto& c : w.chip)
+            if (so_in(c.at, x, y)) {
+                if (g_so_action) g_so_action(c.action, row, x, y);
+                return true;
+            }
+        return true;
+    }
+    return true; // (the panel itself)
+}
+
+// the button under the pointer gets the hover art (as the menu's items)
+static void so_hover_tick()
+{
+    int px = 0, py = 0;
+    if (!g_so_open || !mouse::last_move(px, py)) return;
+    int hr = -1, hc = -1;
+    for (int i = 0; i < kSoRows && hr < 0; i++)
+        for (int c = 0; c < kSoChips; c++)
+            if (so_in(g_so.rows[i].chip[c].at, (float)px, (float)py)) {
+                hr = i, hc = c;
+                break;
+            }
+    if (hr == g_so_hover_row && hc == g_so_hover_chip) return;
+    g_so_hover_row = hr, g_so_hover_chip = hc;
+    H->run_outside_frame([](void*) {
+        for (int i = 0; i < kSoRows; i++)
+            for (int c = 0; c < kSoChips; c++) {
+                SoChip& ch = g_so.rows[i].chip[c];
+                const bool want = i == g_so_hover_row && c == g_so_hover_chip;
+                if (ch.hover != want && ch.at.x2 > ch.at.x1) {
+                    ch.hover = want;
+                    so_chip_look(ch);
+                }
+            }
+    }, nullptr);
 }
 
 } // namespace coop_ui

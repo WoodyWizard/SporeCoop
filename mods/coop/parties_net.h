@@ -67,6 +67,7 @@ bool galaxy();         // the galaxy server keeps them (6K)
 std::string kick(uint8_t id);            // the leader takes a member out (6K)
 std::string invite_identity(uint64_t id); // a player of the galaxy (the galaxy menu: maybe not in this session)
 std::string kick_identity(uint64_t id);
+std::string lead_identity(uint64_t id);
 std::vector<Member> members();           // this game's party, the longest standing first (on a galaxy: anywhere)
 std::vector<Online> online();            // the galaxy's players (after ask_online)
 void ask_online();

@@ -334,6 +334,7 @@ std::string invite(uint8_t to) { return galaxy() ? gx_by_id(net::galaxy::kPartyI
 std::string kick(uint8_t id) { return galaxy() ? gx_by_id(net::galaxy::kPartyKick, id) : request(kKick, id, 0); }
 std::string invite_identity(uint64_t id) { return gx_request(net::galaxy::kPartyInvite, id, 0); }
 std::string kick_identity(uint64_t id) { return gx_request(net::galaxy::kPartyKick, id, 0); }
+std::string lead_identity(uint64_t id) { return gx_request(net::galaxy::kPartyLead, id, 0); }
 std::string answer(bool yes)
 {
     if (galaxy()) {

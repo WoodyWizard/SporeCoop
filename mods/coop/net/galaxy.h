@@ -76,6 +76,9 @@ enum Type : uint8_t {
     PARTYNOTE = 21, // server -> player: u8 the request's kind, u8 parties::Result, str8 the other player's name
     WHO = 22,       // player -> server: the players online
     PLAYERS = 23,   // server -> player: u16 n, n x {u16 slot, u64 identity, str8 name, str8 planet, u16 party id}
+    // 6L A (the Social Menu): a whisper to any player of the galaxy. player -> server: u64 the receiver's identity,
+    // str16 text; server -> receiver: u64 the sender's identity, str8 its name, str16 text
+    WHISPER = 24,
 };
 enum PartyKind : uint8_t { kPartyInvite = 1, kPartyAnswer, kPartyLeave, kPartyLead, kPartyKick, kPartyStage };
 constexpr uint8_t kHostRole = 1, kGuestRole = 2;
