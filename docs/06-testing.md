@@ -9012,3 +9012,12 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
 * Pitfalls: QA games run at 10 FPS (`frame_ms=100`), so "frames with an interval over 80 ms" counts every frame
   there; the call times are still right. Another game on the same PC (the owner playing) slows every section: a run
   then shows everything slow, not one culprit.
+
+## The QA copy's SporeKit after a merge (2026-11-19, feat/lineages-alpha)
+<a id="testing-qa-sporekit"></a>
+
+* Deploying only coop.dll to out/release36/native after a merge that changed SporeKit (the 66-dev merge: SkHost grew)
+  leaves the old sporekit.dll there: coop.dll then logs "sui: Spore UI symbols missing, native UI disabled" and no
+  Co-op window, menu or prompt is drawn (`coop.uistate` says open=1, the screen shows nothing). Gameplay still runs, so
+  tests that read the game's state pass. After a merge copy build/sporekit.dll, build/steam_api.dll and
+  data/symbols/*.sym (to mods/sporekit/symbols) too, and check the log for that line.

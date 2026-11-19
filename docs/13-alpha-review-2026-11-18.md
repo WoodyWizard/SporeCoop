@@ -97,6 +97,12 @@ every field; a stored-copy join that does not match ends in the safe direction (
 * NOT run (the owner ended the session to play live): the server restart with players connected, "enter another planet
   while hosting", a Tribe and a Cell planet with the fixed builds, the invite prompt and the menu over the Co-op
   window, a whisper's arrival (the session whisper was sent; its arrival was not read back).
+* Run 2026-11-19 (TITAN QA 8 and 9): ✔ a whisper arrives (the guest's chat: "Pandize whispers: ..."); ✔ the invite
+  prompt shows in the world, stays over the open Co-op window and after it closes (P5, P7); ✔ entering another
+  planet while hosting saves and hands the first one over ("enter Clyth again in a moment", S8); ✔ Tribe (Clyth,
+  BUG-9271) and Cell (Cellfour, BUG-9266) planets with the fixed builds. Found and fixed: the server restart left
+  every game on no planet, and a 24 s freeze while leaving a stage did the same (BUG-9272); a host's own reload of
+  its planet handed it over (BUG-9268).
 
 ## What is left
 <a id="review-left"></a>

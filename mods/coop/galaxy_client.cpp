@@ -83,6 +83,19 @@ static uint32_t g_planet_world;
 static std::string g_planet_file; // its save file ("Name.spo") while this game plays the planet (galaxy_pack in a menu)
 // BUG-9268: the game's own reload of the hosted planet (through the galaxy menu) is not leaving it
 static bool g_reload_stays = true, g_reload_said = false;
+// BUG-9272: the server forgot this game (a server restart, a 20 s freeze while the game saved or loaded): once welcomed
+// again it enters the planet it was on; a host still playing (or loading) that planet hosts it again with no reload
+static bool g_resume_fix = true;
+COOP_FIX("galaxy.resume", "BUG-9272", g_resume_fix,
+         "galaxy: a game the server forgot (its restart, a long freeze) goes back on its planet once connected again");
+static struct {
+    std::string planet;
+    uint32_t world = 0;
+    double at = 0, enter_at = 0; // (a former guest enters 4 s after its welcome: its old host takes the planet first)
+    bool host = false;
+} g_resume;
+static uint32_t g_resumes = 0, g_resumed_hosts = 0;
+static bool g_resume_hold = false; // the old planet session's end (it was left when the server forgot this game) is no leave
 static uint32_t g_reloads_kept = 0;
 COOP_FIX("galaxy.reload_stays", "BUG-9268", g_reload_stays,
          "galaxy: a host whose game reloads the planet it hosts (through the galaxy menu) stays its host, not handing it over");
@@ -233,6 +246,10 @@ static void on_control(net::Reader& r)
         g_planet_players = cap < 2 ? 2 : cap > net::kMaxPlayers ? (uint8_t)net::kMaxPlayers : cap;
         g_welcomed = true;
         say("Connected to the galaxy '" + g_galaxy + "'.");
+        if (!g_resume.planet.empty() && H->time_seconds() - g_resume.at < 120) // BUG-9272: tick enters it
+            g_resume.enter_at = H->time_seconds() + (g_resume.host ? 0.0 : 4.0);
+        else
+            g_resume = {};
     } else if (type == PARTYVIEW || type == PARTYNOTE || type == PLAYERS || type == WHISPER) { // 6K, 6L A
         if (C.party_in)
             C.party_in(type, r);
@@ -278,6 +295,10 @@ static void on_control(net::Reader& r)
         const uint32_t stored_crc = r.left() >= 4 ? r.u32() : 0; // (6I A; an older server: none)
         const uint32_t stored_age = r.left() >= 4 ? r.u32() : 0xFFFFFFFFu;
         const bool handover = g_planet == planet && (g_waiting_host || g_role == kGuestRole);
+        const bool resume = !g_resume.planet.empty() && g_resume.planet == planet; // BUG-9272
+        const uint32_t resume_world = resume ? g_resume.world : 0;
+        if (resume)
+            g_resume = {};
         g_planet = planet;
         g_role = role;
         g_host_slot = host;
@@ -309,6 +330,27 @@ static void on_control(net::Reader& r)
                 g_hstep_at = H->time_seconds();
                 g_left_stage = true;
                 g_ready_since = 0;
+                return;
+            }
+        }
+        if (resume) {
+            // BUG-9272: still in the planet's world, or loading it (the freeze happened in its load): host that one
+            std::string lf = world::menu_load_planet(), want = planet + ".spo";
+            for (auto& ch : lf) ch = (char)tolower((unsigned char)ch);
+            for (auto& ch : want) ch = (char)tolower((unsigned char)ch);
+            const bool playing = resume_world && modes::current_world() == resume_world && C.ready && C.ready();
+            if (role == kHostRole && (playing || (!lf.empty() && lf == want) || !stored)) {
+                g_resumed_hosts++;
+                g_hstep = kLoading;
+                g_hstep_at = H->time_seconds();
+                g_left_stage = true;
+                g_ready_since = 0;
+                say("You host " + planet + " again.");
+                return;
+            }
+            if (role == kGuestRole && playing) { // (its world: the host's share or its stored copy as any join)
+                g_pending_join = slot_endpoint(host).str();
+                say("Joining " + planet + " again...");
                 return;
             }
         }
@@ -403,6 +445,10 @@ static void on_control(net::Reader& r)
             g_reconnect_at = now;
             g_reconnects++;
             say("The galaxy server lost this game: connecting again.");
+            if (g_resume_fix && !g_planet.empty()) {
+                g_resume = {g_planet, g_planet_world, now, 0, g_role == kHostRole};
+                g_resume_hold = C.sess && C.sess->role() != net::Role::None;
+            }
             if (!g_planet.empty()) {
                 if (g_relay_on && C.sess && C.sess->role() != net::Role::None)
                     C.sess->leave("the galaxy server lost this game");
@@ -908,11 +954,22 @@ void tick(double now)
         g_planet_world = 0;
         g_planet_file.clear();
     }
+    if (!g_resume.planet.empty() && g_resume.enter_at > 0 && now >= g_resume.enter_at && g_welcomed) { // BUG-9272
+        g_resume.enter_at = 0;
+        net::Writer w = control(ENTER);
+        w.str8(g_resume.planet);
+        send_control(w);
+        g_resumes++;
+        say("Going back on " + g_resume.planet + "...");
+    }
     // the planet's session ended (left, removed, its host gone): off the planet, back to the plain network
     if (g_relay_on && C.sess) {
         if (C.sess->role() != net::Role::None)
             g_session_seen = true;
-        else if (g_session_seen && g_hstep != kLoading && g_hstep != kFetching && !g_waiting_host &&
+        else if (g_resume_hold) { // BUG-9272: the session left when the server forgot this game ended: not a leave
+            g_resume_hold = false;
+            g_session_seen = false;
+        } else if (g_session_seen && g_hstep != kLoading && g_hstep != kFetching && !g_waiting_host &&
                  g_pending_join.empty()) {
             send_control(control(LEAVE));
             g_planet.clear();
@@ -1062,11 +1119,11 @@ std::string status()
     static const char* steps[] = {"-", "downloading", "loading", "hosting"};
     snprintf(b, sizeof b,
              "\nworld: %s%s stored=%u KB down=%u/%u chunks upload=%s (%u/%u chunks) next upload in %.0f s, uploads %u, "
-             "downloads %u, hand-overs %u (warm: hosted %u, rejoined %u, accepted %u), silent saves %u (idle %u), quiet waits %u, menu hand-overs %u (own reloads kept %u), close holds %u, last upload: %s",
+             "downloads %u, hand-overs %u (warm: hosted %u, rejoined %u, accepted %u), silent saves %u (idle %u), quiet waits %u, menu hand-overs %u (own reloads kept %u), resumes %u (hosts %u), close holds %u, last upload: %s",
              steps[g_hstep], g_waiting_host ? " (waiting for the new host)" : "", g_world_bytes >> 10, g_down.got, (unsigned)g_down.have.size(),
              g_upstep == kUpIdle ? "idle" : g_upstep == kUpSaving ? "saving" : "sending", g_up.acked,
              g_up.on ? g_up.chunks() : 0u, g_hstep == kHosting ? g_next_upload - H->time_seconds() : 0.0,
-             g_uploads_done, g_downloads_done, g_handovers, g_warm_hosts, g_warm_joins, g_warm_accepted, g_silent_saves, g_idle_saves, g_quiet_waits, g_menu_handovers, g_reloads_kept, g_close_holds,
+             g_uploads_done, g_downloads_done, g_handovers, g_warm_hosts, g_warm_joins, g_warm_accepted, g_silent_saves, g_idle_saves, g_quiet_waits, g_menu_handovers, g_reloads_kept, g_resumes, g_resumed_hosts, g_close_holds,
              g_last_upload.empty() ? "-" : g_last_upload.c_str());
     return s + b;
 }
