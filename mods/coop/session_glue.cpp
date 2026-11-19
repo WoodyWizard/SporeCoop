@@ -13,6 +13,7 @@
 #include "lifecycle.h"
 #include "coop_state.h"
 #include "store.h"
+#include "species_line.h"
 #include "designs.h"
 #include "net/compat.h"
 #include "net/manifest.h"
@@ -724,6 +725,7 @@ void setup_callbacks()
         host_busy_join(p.id); // C3 (BUG-1142): the host's busy state as last told
         wsync::on_player_join();
         creations::on_player_join(p.id);
+        species::on_player_join(p.id); // WP-0 (BUG-1270): after the creations (the rows name their creatures)
         npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
         if (g_player_forget_fix && p.id != g_sess.my_id())
             player_life::forget_all(p.id); // BUG-0422: nothing of an earlier player of this id
@@ -1085,6 +1087,10 @@ void setup_callbacks()
         }
         case net::Route::Creation: {
             creations::on_message(type, from, r);
+            return;
+        }
+        case net::Route::SpeciesLine: { // WP-0 (BUG-1270): the species line
+            species::on_message(type, from, r);
             return;
         }
         case net::Route::Tribe: {

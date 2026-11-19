@@ -3207,4 +3207,114 @@ std::string trace_line(Kind k)
     return b;
 }
 
+// ---- WP-0 (BUG-1270): the creations of the species line (species_line.cpp, docs/01-architecture.md#arch-species-line) ----
+// An outfit or a Civ design of a player goes to every game as a bundle (the format above) and is registered there
+// under one shared instance from its content (0x7B......, species_line_core.h), the owner's game too: every game then
+// names it by the same key, and no game's own creation of the same id answers for it (ids are per profile).
+static unsigned g_line_packed, g_line_registered, g_line_refused;
+static std::map<uint32_t, void*> g_line_pkgs; // shared instance -> our package
+
+// the hash of a bundle's creation: its own records (model, metadata, pictures, the species data), not the part
+// descriptions pack() adds; the sender and every receiver compute it from the same bytes
+static uint32_t line_hash(const Bundle& b)
+{
+    uint32_t h = 0x811C9DC5;
+    for (auto& r : b.recs)
+        if (r.key.instance == b.key.instance && r.key.group != kPartDescGroup)
+            h = fnv(r.data.data(), r.data.size(), fnv(&r.key.group, 4, fnv(&r.key.type, 4, h)));
+    return h;
+}
+static const ModelInfo* line_model(const Key& k)
+{
+    for (auto& mi : kModelInfo)
+        if (mi.type == k.type && mi.group == k.group)
+            return &mi;
+    return nullptr;
+}
+
+bool line_pack(const Key& own, std::vector<uint8_t>& out, uint32_t& content)
+{
+    out.clear();
+    content = 0;
+    if (!own.instance || !line_model(own))
+        return false;
+    Bundle b;
+    b.key = own;
+    if (!records_from_game(own, b.recs))
+        return false;
+    bool model = false;
+    for (auto& r : b.recs)
+        model |= r.key.type == kBem && r.key.instance == own.instance && !r.data.empty();
+    if (!model) // (never a creation without its model, BUG-0802)
+        return false;
+    out = pack(b);
+    content = line_hash(b);
+    g_line_packed++;
+    return content != 0;
+}
+
+uint32_t line_content(const std::vector<uint8_t>& bundle)
+{
+    Bundle b;
+    return unpack(bundle, b) && !b.recs.empty() ? line_hash(b) : 0;
+}
+
+Key line_register(const std::vector<uint8_t>& bundle, uint32_t shared, const std::string& whose)
+{
+    Bundle b;
+    if (!unpack(bundle, b) || b.recs.empty() || !find_paths()) {
+        g_line_refused++;
+        return {};
+    }
+    const ModelInfo* mi = line_model(b.key);
+    if (!mi || (0x7B000000u | (line_hash(b) & 0x00FFFFFFu)) != shared) {
+        g_line_refused++;
+        H->log(M, SK_WARN, "creations: %s: a line creation %08X that is not what its key %08X says: refused",
+               whose.c_str(), b.key.instance, shared);
+        return {};
+    }
+    Key sk{shared, b.key.type, b.key.group};
+    if (g_line_pkgs.count(shared) && key_exists(sk))
+        return sk;
+    if (unsigned miss = ensure_content(b.recs, (ModelKind)mi->kind, whose)) { // BUG-0452: not built here
+        g_line_refused++;
+        g_parts_refused += miss;
+        return {};
+    }
+    std::vector<dbpf::Record> recs;
+    for (auto& r : b.recs) {
+        if (r.key.instance != b.key.instance || r.key.group == kPartDescGroup)
+            continue;
+        recs.push_back(r);
+        dbpf::Record& n = recs.back();
+        n.key.instance = shared;
+        // the metadata names its own key (big-endian type, group, instance at +0x0C): ours too
+        uint8_t* d = n.data.data();
+        if (n.key.type == kMeta && n.data.size() >= 0x18 &&
+            ((uint32_t)d[0x14] << 24 | d[0x15] << 16 | d[0x16] << 8 | d[0x17]) == b.key.instance)
+            for (int i = 0; i < 4; i++)
+                d[0x14 + i] = (uint8_t)(shared >> (24 - 8 * i));
+    }
+    std::wstring path = g_dir + L"\\line_" + std::to_wstring(shared) + L".package";
+    void* db = package_for(path, recs, kPrioPlayer);
+    if (!db) {
+        g_line_refused++;
+        g_last_error = "cannot write a line package";
+        return {};
+    }
+    g_line_pkgs[shared] = db;
+    g_line_registered++;
+    H->log(M, SK_INFO, "creations: %s: the %s %08X is %08X here (%u records)", whose.c_str(), mi->name, b.key.instance,
+           shared, (unsigned)recs.size());
+    return sk;
+}
+
+std::string line_status()
+{
+    char b[160];
+    snprintf(b, sizeof b, "line creations: packed=%u registered=%u refused=%u packages=%u\n", g_line_packed,
+             g_line_registered, g_line_refused, (unsigned)g_line_pkgs.size());
+    return b;
+}
+
 } // namespace creations

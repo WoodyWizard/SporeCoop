@@ -118,4 +118,15 @@ std::string status();
 std::string trace_line(Kind k);
 std::string debug(const std::vector<std::string>& args);
 
+// WP-0 (BUG-1270, species_line.cpp): a creation of the species line (an outfit, a Civ design) between the games.
+// line_pack: the owner's bundle of `own` (model, metadata, pictures as this game reads them) and its content hash
+// (the same on every game; species::shared_instance of it is its key everywhere); false: no model here.
+// line_content: the content hash of a received bundle (0: not a bundle). line_register: registers a bundle under the
+// shared instance `shared` (checked against its content) on this game and returns that key; {} = refused (a bad
+// bundle, another content, parts this game lacks, BUG-0452). The owner registers its own bundle too.
+bool line_pack(const Key& own, std::vector<uint8_t>& out, uint32_t& content);
+uint32_t line_content(const std::vector<uint8_t>& bundle);
+Key line_register(const std::vector<uint8_t>& bundle, uint32_t shared, const std::string& whose);
+std::string line_status();
+
 } // namespace creations
