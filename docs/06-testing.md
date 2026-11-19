@@ -9266,6 +9266,11 @@ Key frames `line` and `next_session`: no look changes in WP-0 (the frames only d
 * The guest's creature choice is put back at the end (`unchoose creature`, `worlds set creature <before>`): the next
   tribe-fixture test plays the world's species as before.
 * FAIL twin: `SPORE_FIX_OFF=tribe.own_species` (every member the slot's species; the test stops after step 2).
+* (2026-11-19, fix/w57-savestrip) `carry=` of `coop.tribe ai` read the wrong dwords before BUG-1317 (always 0.0): the
+  carry check failed although the member gathered. The save check names the record types of a hit in a .spo and keeps
+  that save in the test's frames folder (`host_save_<planet>.spo`; the next save overwrites the slot), and prints
+  `coop.savestrip` (`keys= line_keys= rewritten= raw= events=`). Save twin: `SPORE_LAB_FIXOFF="tribe_own_species=
+  savestrip.keys"` (the save check FAILs, BUG-1315).
 ## The Civ citizens of the owner's species (2026-11-18, feat/w54-citizens)
 <a id="testing-civ-own-species"></a>
 
@@ -9279,7 +9284,10 @@ Key frames `line` and `next_session`: no look changes in WP-0 (the frames only d
   host saves (`coop.save`, the boxes closed) with the guest's citizens in its world and no record of its newest save
   may name the guest's key (`keys_in_save` of coop_tribe_outfit). Key frames: the guest's city, two close-ups of one
   citizen (the same camera on both games, `coop.view set`), the capital and its close-ups.
-  Twins: `SPORE_FIX_OFF=civ.own_species` (step 3 fails), `SPORE_FIX_OFF=civ.own_species_save` (the save check fails).
+  Twins: `SPORE_FIX_OFF=civ.own_species` (step 3 fails), `SPORE_FIX_OFF=savestrip.keys` (the save check fails:
+  BUG-1315; `civ.own_species_save` off alone no longer fails it, the citizens' strip never kept the key out, see
+  docs/re/creations.md#creations-save-keys). After the save the test prints `coop.civ citizens`' first line
+  (`save_stripped= save_starts= save_seen=`) and `coop.savestrip`.
 * `civ_own_species_hostmode` (`--host-mode`): the host forces `creature.mode host` after the pick; no game keeps a line
   for the guest and the guest's city's citizens stay the civilization's species (today's behaviour); the setting goes
   back to own at the end.

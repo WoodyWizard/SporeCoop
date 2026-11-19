@@ -4343,6 +4343,12 @@ WP-T1 of docs/plan-0.7.16.md (BUG-1271), built on #tribe-two-species. `mods/coop
   the host (the slot is its species), in creature.mode host, and for a guest that plays the world's own species (its
   key is the slot's, or maps to it through host_species / local_species). Not buildable yet (`key_known`, a profile
   from `game::species_by_key`): the member waits.
+* ~ superseded (2026-11-19): see docs/re/creations.md#creations-save-keys. CORRECTION (2026-11-19, fix/w57-savestrip,
+  BUG-1315): the hooks below ran (log "4 members carry the tribe's species", lab 20261119-095414 line_stages) and the
+  save's citizen records still named the guest's key: the key written is the member's +0xB28 at the record's write, and
+  something between the save's start and that write gives it the profile's key again (lab 20261119-113320, the Civ
+  citizens: stripped at 35.158 s, written with the line key from citizen +0xB28 at 35.188 s). The save is now kept
+  clean at the stream (the key writer), not by the member's field.
 * Saves: `savestrip::add_save_hooks`: at the save's first Write every member the mod changed gets the slot's key in
   +0xB28..+0xB30 (the three dwords the creature record writes, cCreatureBase_PostRead 0xC225D0 resolves them on load;
   no rebuild), its own key comes back on the next frame. So the host's save (and a guest's) holds the tribe's species

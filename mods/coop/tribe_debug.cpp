@@ -1191,7 +1191,7 @@ std::string debug(const std::vector<std::string>& a)
             return "no species / tribe";
         int n = 0;
         for (void* c : members(pt)) {
-            thiscall<bool>(set, c, prof, F<int>(c, kAgeOff), true);
+            set_species_member(c, prof); // (BUG-1320)
             n++;
         }
         // the tribe's own species key (mSpeciesKeys +0x1904: a vector whose first key sits at +0x1920 here, runtime

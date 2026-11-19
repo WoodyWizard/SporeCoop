@@ -186,6 +186,9 @@ void species_tick(double now)
 // citizen records, noun 0x18EB4B7): while a save is written every citizen of a guest's line gets the player
 // civilization's key in +0xB28..+0xB30 (the three dwords only, no rebuild) and its own back at the end (the
 // civ.host_buildings pattern).
+// CORRECTION (2026-11-19, BUG-1315): lab 20261119-113320 stripped 19 citizens and 30 ms later the save's key writer read
+// the guest's key from those citizens' +0xB28 again (docs/re/creations.md#creations-save-keys): the save is kept clean
+// by savestrip's key filter (savestrip.keys, the civilization's species for a line key); this strip stays a guard.
 struct Stripped {
     void* c;
     skg::ResourceKey k;
