@@ -15,6 +15,7 @@
 #include "lifecycle.h"
 #include "modes.h"
 #include "savestrip.h"
+#include "species_line.h"
 #include "sporekit_game.hpp"
 
 namespace coop_core {
@@ -58,6 +59,13 @@ COOP_FIX("civ.design_sync", "BUG-1157", g_civ_fix,
 static bool g_own_fix = true;
 COOP_FIX("editors.guest_designs", "BUG-1158", g_own_fix,
          "tribe, civ: a guest's own outfitter and design editors are refused with a line (their result was the guest's alone and got lost)");
+// BUG-1272 (WP-T2 of docs/plan-0.7.16.md, docs/re/tribe.md#tribe-own-outfitter): in creature.mode own a guest's Tribal
+// Outfitter (the tribe card's edit badge) opens for its own species line (species::own_key(Tribe)), its return does
+// not reload the tribe's species slot on the guest, and the result is the guest's tribe outfit (species_line: every
+// game dresses the guest's members in it, tribe_species.cpp). Off: BUG-1158's refusal in every mode (0.7.15).
+static bool g_guest_outfitter_fix = true;
+COOP_FIX("tribe.guest_outfitter", "BUG-1272", g_guest_outfitter_fix,
+         "tribe: a guest's own Tribal Outfitter dresses its own members on every game (creature.mode own; host mode: refused)");
 
 // ---- counters (tests)
 static unsigned g_out_applied, g_out_failed, g_out_waits, g_out_restored, g_out_saves;
@@ -433,10 +441,122 @@ WORLD_STATE("designs.civ", &g_civ_fix, civ_reset, civ_held);
 // =====================================================================================================
 // A guest's own editors (BUG-1158)
 // =====================================================================================================
+// ---- BUG-1272 (WP-T2): the guest's own Tribal Outfitter (docs/re/tribe.md#tribe-own-outfitter)
+// The tribe card's edit badge: the planner (0xD130D0, message 0x53850BAE) builds the request from the card (editor
+// +0xC 0x156276D1, key +0x10 = the species slot's +0x504, the Tribe tag 0x116DD1B at +0x90) and submits it. The result
+// message 0x30C11C7 of that tag puts the result in cTribeUI +0x2F8 (0xCD81F0, null when cancelled); back in Tribe the
+// return 0xCDCC90 (its third branch) reloads the slot with the result and rebuilds every member. Both are local to the
+// game that opened the editor: on the guest the result of our request never reaches another game.
+constexpr uint32_t kTribeTag = 0x116DD1Bu;    // EditorRequest +0x90 of the Tribe planner's requests (result +0xC)
+constexpr uintptr_t kUiCityHall = 0x28, kUiVehicle = 0x29, kUiResult = 0x2F8; // cTribeUI (0xCDCC90's branches)
+static bool g_oo_pending, g_oo_in_editor;     // our request went to the editor; its return is ours
+static double g_oo_opened_at = -100;
+static uint32_t g_oo_asked[3], g_oo_card[3];  // the key we asked for, the card's (the slot's) key
+static creations::Key g_oo_result;            // the editor's result, to be taken as our tribe outfit
+static double g_oo_result_at = -100, g_oo_try_at = -100;
+static unsigned g_oo_opened, g_oo_returns, g_oo_skipped, g_oo_cancelled, g_oo_set, g_oo_set_failed;
+using EditorReturn_t = void(SK_THISCALL*)(void*);
+static EditorReturn_t o_EditorReturn;
+
+// (without the return hook the slot would be reloaded with our outfit: then the refusal, as in host mode)
+static bool own_outfitter_on() { return g_guest_outfitter_fix && species::own_mode() && o_EditorReturn; }
+
+bool own_outfitter(void* req, uint32_t mode, uint32_t editor, bool own_world)
+{
+    if (!own_outfitter_on() || !is_guest() || own_world || mode != modes::kTribe || editor != kOutfitter ||
+        !R(req, 0x9C) || F<uint32_t>(req, 0x90) != kTribeTag)
+        return false;
+    for (int i = 0; i < 3; i++)
+        g_oo_card[i] = F<uint32_t>(req, 0x10 + 4 * i);
+    // our line's species on our own game: the last outfit we made for our creature, else the creature (My
+    // Creations); none (we play the world's own species): the card's key, the tribe's species, stays
+    creations::Key k = species::own_key(species::Stage::Tribe);
+    if (k.instance && k.type) {
+        F<uint32_t>(req, 0x10) = k.instance, F<uint32_t>(req, 0x14) = k.type, F<uint32_t>(req, 0x18) = k.group;
+    }
+    for (int i = 0; i < 3; i++)
+        g_oo_asked[i] = F<uint32_t>(req, 0x10 + 4 * i);
+    g_oo_pending = true;
+    g_oo_in_editor = false;
+    g_oo_opened_at = H->time_seconds();
+    g_oo_opened++;
+    H->log(M, SK_INFO, "designs: our own Tribal Outfitter opens for %08X (the card's %08X) (BUG-1272)", g_oo_asked[0],
+           g_oo_card[0]);
+    return true;
+}
+
+// cTribeUI 0xCDCC90 (thiscall, no arguments, plain ret): on the guest the return of our request does not reload the
+// tribe's slot (the host's species: it would dress every member of the slot, the host's too, in our outfit here); the
+// result is released as the game does and becomes our tribe outfit (tick). Its other steps (the planner's state
+// 0xCCF090, +0x38C) run as after a cancelled outfitter.
+static void SK_THISCALL h_EditorReturn(void* ui)
+{
+    if (g_oo_pending && R(ui, kUiResult + 4) && !F<uint8_t>(ui, kUiCityHall) && !F<uint8_t>(ui, kUiVehicle)) {
+        g_oo_pending = false;
+        g_oo_returns++;
+        void* res = F<void*>(ui, kUiResult);
+        if (!res) {
+            g_oo_cancelled++;
+            H->log(M, SK_INFO, "designs: our own Tribal Outfitter was cancelled (BUG-1272)");
+        } else if (R(res, 0x48) && F<uint32_t>(res, 0xC) == kTribeTag && F<uint32_t>(res, 0x14) == kOutfitter &&
+                   is_guest() && g_guest_outfitter_fix) {
+            g_oo_result = {F<uint32_t>(res, 0x18), F<uint32_t>(res, 0x1C), F<uint32_t>(res, 0x20)};
+            F<void*>(ui, kUiResult) = nullptr;
+            vcall<void>(res, 0x8 / 4); // (its reference: released, as 0xCDCC90 does at its end)
+            g_oo_skipped++;
+            g_oo_result_at = H->time_seconds();
+            g_oo_try_at = -100;
+            H->log(M, SK_INFO, "designs: our own outfit %08X/%08X/%08X: the tribe's species slot stays (BUG-1272)",
+                   g_oo_result.instance, g_oo_result.type, g_oo_result.group);
+        }
+    }
+    o_EditorReturn(ui);
+}
+
+void tick(double now)
+{
+    if (g_oo_pending) { // our request ends with its return to Tribe; anything else (a load, the menu) drops it
+        uint32_t m = game::mode_id();
+        bool editor = m == modes::kEditor || m == modes::kEdit;
+        if (editor)
+            g_oo_in_editor = true;
+        else if (m != modes::kTribe || (!g_oo_in_editor && now - g_oo_opened_at > 20.0)) {
+            g_oo_pending = false; // (the editor never opened: the game refused the request)
+            H->log(M, SK_INFO, "designs: our own Tribal Outfitter request is dropped (mode %08X) (BUG-1272)", m);
+        }
+    }
+    if (!g_oo_result.instance || now - g_oo_try_at < 2.0)
+        return;
+    g_oo_try_at = now;
+    if (species::set_tribe_outfit(g_oo_result)) {
+        g_oo_set++;
+        H->log(M, SK_INFO, "designs: our tribe outfit is %08X: every game dresses our members in it (BUG-1272)",
+               g_oo_result.instance);
+        coop_core::feed("your tribe members wear your new outfit (on every game)");
+        g_oo_result = {};
+    } else if (now - g_oo_result_at > 30.0 || !is_guest()) { // (its records not readable here: the editor's file)
+        g_oo_set_failed++;
+        H->log(M, SK_WARN, "designs: our outfit %08X could not be shared (BUG-1272)", g_oo_result.instance);
+        coop_core::feed("your new outfit could not be shared: your members keep their look");
+        g_oo_result = {};
+    }
+}
+
+static void oo_reset()
+{
+    g_oo_pending = false;
+    g_oo_result = {};
+}
+static size_t oo_held() { return (g_oo_pending ? 1 : 0) + (g_oo_result.instance ? 1 : 0); }
+// (a session state, not a world state: the visit to the editor and back must not drop the pending request)
+SESSION_STATE("designs.own_outfitter", &g_guest_outfitter_fix, oo_reset, oo_held);
+
 std::string refuse_own_editor(uint32_t mode, uint32_t editor, bool own_world, const std::string& host)
 {
     if (!g_own_fix || !is_guest() || own_world)
         return "";
+    // (creature.mode own: own_outfitter took the card's request before, BUG-1272; one it did not take is refused:
+    // its return would reload the shared slot)
     if (mode == modes::kTribe && editor == kOutfitter) {
         g_refused++;
         return "the tribe's outfit is shared: only " + host + " changes it";
@@ -465,7 +585,15 @@ std::string status()
              civ ? culture(civ).size() : (size_t)0, (int)g_own_fix, g_refused, (void*)p, p ? F<uint32_t>(p, kProfKey) : 0,
              p ? F<uint32_t>(p, kProfKey + 4) : 0, p ? F<uint32_t>(p, kProfKey + 8) : 0, p ? F<uint32_t>(p, kProfModel) : 0,
              p ? F<uint32_t>(p, kProfModel + 4) : 0, p ? F<uint32_t>(p, kProfModel + 8) : 0, p ? F<uint32_t>(p, kProfGen) : 0);
-    return b;
+    std::string o = b;
+    // BUG-1272: the guest's own outfitter (the key it asked for, the card's: the slot's)
+    snprintf(b, sizeof b,
+             "own outfitter: fix=%d on=%d hooked=%d opened=%u asked=%08X/%08X/%08X card=%08X pending=%d returns=%u "
+             "skipped=%u cancelled=%u result=%08X set=%u set_failed=%u\n",
+             (int)g_guest_outfitter_fix, (int)own_outfitter_on(), (int)(o_EditorReturn != nullptr), g_oo_opened,
+             g_oo_asked[0], g_oo_asked[1], g_oo_asked[2], g_oo_card[0], (int)g_oo_pending, g_oo_returns, g_oo_skipped,
+             g_oo_cancelled, g_oo_result.instance, g_oo_set, g_oo_set_failed);
+    return o + b;
 }
 
 // `coop.designs` status; `culture` this game's player civilization's culture set; `set <hex id> <hex inst> [<hex
@@ -553,6 +681,8 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
     M = mod;
     S = sess;
     savestrip::add_save_hooks(save_start, save_end); // BUG-1156: no key of ours in a guest's save
+    if (uintptr_t a = H->sym("SporeCoop::TribeUI_EditorReturn")) // BUG-1272: our own outfitter's return
+        H->hook_create(M, (void*)a, (void*)h_EditorReturn, (void**)&o_EditorReturn);
     H->command_add(M, "coop.designs",
                    "coop.designs [culture | set <hex id> <hex inst> | members] - the shared tribe outfit and civilization designs (E4)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {

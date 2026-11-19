@@ -75,6 +75,7 @@
 #include "net/utf8.h"
 #include "creations.h"
 #include "species_line.h"
+#include "designs.h"
 #include "notify.h"
 #include "hud_portrait.h"
 #include "notify_text.h"
@@ -975,6 +976,7 @@ static void frame_observe(double now)
     world_id_tick();          // BUG-1141 (BUG-0217, BUG-0223, BUG-1055): the world changed: its hooks and WORLD_STATE resets
     creations::tick(now);
     species::tick(now); // WP-0 (BUG-1270): the species line (after the creations: it reads their keys)
+    designs::tick(now); // BUG-1272: a guest's own outfit to its species line
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
     monitor_frame_start(now); // the puppets as drawn, before any driving (docs/06-testing.md#testing-monitor)

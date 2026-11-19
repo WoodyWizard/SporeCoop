@@ -14,6 +14,9 @@
 //  - A guest's own Tribe outfitter and Civ design editors in the host's world (its result changed only its own game
 //    and the next world from the host dropped it, BUG-1158) are refused with a line that says why; a guest's own
 //    pick in its planner goes back to the host's design with such a line.
+//  - BUG-1272 (WP-T2, 0.7.16): in creature.mode own a guest's Tribal Outfitter is its own: the request is for its own
+//    species line, its return does not reload the tribe's species slot on the guest, and the result is its tribe outfit
+//    (species::set_tribe_outfit; every game dresses the guest's members in it). The refusal stays for host mode.
 // The host's world is the truth: one tribe and one civilization are shared by all players, so a design is the
 // shared one (there is no per-player outfit or design in the game: one species profile per tribe, one culture set
 // per civilization).
@@ -54,6 +57,10 @@ constexpr uint32_t kShipEditor = 0x96B24187u;  // the spaceship editor at the en
 std::string refuse_own_editor(uint32_t mode, uint32_t editor, bool own_world, const std::string& host);
 // the texts of the host's outfitter (vote, return): true when the outfit reaches everybody (the switch)
 bool outfit_texts(uint32_t mode, uint32_t editor);
+// BUG-1272: a guest's own Tribal Outfitter request (the card's edit badge) in the host's world, creature.mode own: true
+// when it is taken as ours (its key is now our own species line's; submit it), false otherwise (the refusal decides)
+bool own_outfitter(void* req, uint32_t mode, uint32_t editor, bool own_world);
+void tick(double now); // every frame: our outfitter's result becomes our tribe outfit
 
 std::string status();
 std::string debug(const std::vector<std::string>& args);
