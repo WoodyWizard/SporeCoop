@@ -9243,7 +9243,8 @@ WP-0's agent):
    for its own creation (`coop.species own tribe`): the host's resource manager builds the guest's creation; the Civ
    line is the tribe outfit (no Civ outfit); the City Hall design is the same 0x7B key on both;
 3. the guest leaves and joins again: the same key on both games (the host's store row, `kStored`, taken by the guest);
-4. `coop.settings set creature.mode host`: every key of the guest is 0 on both games; `own` again: back;
+4. `coop.settings force creature.mode host` (creature.mode is a session setting: `set` is refused while a world is
+   open, lab 20261119-095414): every key of the guest is 0 on both games; `own` again: back;
 5. twoinst.session_restart (#testing-session-restart): the same key and model on the host, the design back.
 Key frames `line` and `next_session`: no look changes in WP-0 (the frames only document the state). FAIL twin:
 `SPORE_FIX_OFF=species.line` (the setter is refused, the host shows no line). The unit part: `tests/species_tests.cpp`
@@ -9400,6 +9401,9 @@ record (coop_civ_own_designs.keys_in) for the guest's keys of that stage.
   Outfitter in Tribe, coop_tribe_own_outfitter.outfitter_route; its Civ citizens are then of the outfit, ~34 min),
   twin `line_stages_off` (`SPORE_FIX_OFF=species.line`: the Creature line check and the Tribe members FAIL, the test
   stops after Tribe, ~12 min).
+* (2026-11-19, fix/w57-savestrip) After the SpawnNextCity shortcut the test waits up to 60 s for an NPC city in the
+  host's city table (it read the table 5 s after 9 cities were spawned and found none, lab 20261119-095414). The save
+  checks pass since BUG-1315 (savestrip.keys).
 * Shortcuts: Creature's end `coop.dna add 3000` (the campaign's), Tribe's members `coop.tribe spawn 6` and its goal bar
   `coop.tribe advance` (tribe_civ's; `--raids`: the campaign's raids instead, 15-20 min more), Civ's NPC cities the
   campaign's SpawnNextCity when none stands, the guest's city `coop.civ siege <city> 1 150 pc`, money `coop.res add`.
