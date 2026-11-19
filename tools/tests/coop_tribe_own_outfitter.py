@@ -23,11 +23,14 @@ bundle goes to the host and from there to every game, and every game dresses the
    slot's model. Key frames: both games' cameras, the same view 12 m from a guest's member (the guest's village part)
    and from a host's member (the host's), on both screens.
 5. The host saves (`coop.save`): no file of its save slot names the outfit's key, the guest's new creation or its
-   creature.
+   creature (keys_in_slot of coop_tribe_own_species: every record unpacked; an instance that is only an id of the
+   host's own resources, given out by the host's id counter, is not the guest's key: BUG-1326).
 The guest's creature choice is put back at the end.
 
 SPORE_FIX_OFF=tribe.guest_outfitter: step 2 FAILs (BUG-1158's refusal, 0.7.15: the guest stays in Tribe); the test
 leaves the planner and ends there.
+SPORE_FIX_OFF=savestrip.keys (tribe_own_outfitter_keys_off): step 5 FAILs (the guest's members write the outfit's
+line key into the host's .spo, BUG-1315).
 
   SPORE_LANE=4 python3 tools/tests/coop_tribe_own_outfitter.py
 """
@@ -249,8 +252,10 @@ def run(host, guest, ck, off_twin):
     print('  host:', host.call('coop.save')['out'].strip()[:80], f'(slot {slotname})', flush=True)
     saved = wait_saved(folder, since - 1, 90)
     time.sleep(3)
-    hits = keys_in_slot(folder, [okey, result, gkey, orig] + sorted(new)) if saved else ['not saved']
-    print(f'  host save slot {folder}: {hits or "no key of the guest"}', flush=True)
+    own = set()  # (BUG-1326: instances that are also ids of the host's own resources of the slot, not counted)
+    hits = keys_in_slot(folder, [okey, result, gkey, orig] + sorted(new), own) if saved else ['not saved']
+    print(f'  host save slot {folder}: {hits or "no key of the guest"}; the host\'s own ids among them: '
+          f'{[f"{i:08X}" for i in sorted(own)]}', flush=True)
     ck(saved and not hits, f'the host\'s save names no key of the guest\'s (outfit {okey:08X}, creation '
        f'{result:08X}, creature {gkey:08X} / {orig:08X}: {hits})')
     ok, txt = mix_ok(host, okey)

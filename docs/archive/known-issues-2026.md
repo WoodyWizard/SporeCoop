@@ -3719,3 +3719,12 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   window; then a sender that fits the link, or a gate rule with its reason.
 * Ticket: BUG-1309
 * Fixed 2026-11-19 (fix/w57-cellslow): real, not the check's window (the guest's own game kept ~100 of ~400 cells for as long as the link was full); cell.slow_link paces each guest's Cell state nearest first (../re/cell.md#cell-slow-link). The four BUG-1269 lines that followed this entry were a union-merge leftover of the archived entry #issue-cell-end-white: removed.
+
+## Tribe: the host's save names a guest's own outfit creation (2026-11-19, fix/w57-own-editors)
+* What happens: after a guest's own Tribal Outfitter (creature.mode own) the host's next save holds the guest's raw
+  creation key in lastSave.pld and PlanetScripts.pld, and the outfit's line key (0x7B......) in the .spo.
+* Reproduce: `tools/lab.py run tribe_own_outfitter` (or own_editor_drop): the last check, "the host's save names no key
+  of the guest's", lists the files (lab 20261119-122505).
+* Known: the .spo hit is the save strip's class (BUG-1315); the .pld streams are not looked at yet.
+* Ticket: BUG-1326.
+* Fixed 2026-11-19 (fix/w58-savestrip2): no key of the guest's in the save; the test's raw-byte scan matched the index id of the host's own planet script, which the game's clock-seeded id counter gave the same value as the guest's new creation (../re/creations.md#creations-id-counter, ../06-testing.md#testing-save-key-scan).

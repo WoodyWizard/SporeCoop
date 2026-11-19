@@ -19,6 +19,9 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   there instead (BUG-1315). `coop.tribe ai` shows the food a member carries again (BUG-1317).
 - Lab: a test that starts a game again now waits until the switches of its FAIL twin are really off in that game
   (BUG-1314).
+- Lab: the save checks of the own-species tests read the saved game's records instead of its raw bytes: a guest's
+  new creation can share its number with one of the host's own saved resources when both games start in the same
+  second, which looked like a guest key in the host's save (BUG-1326).
 - The lab's sync checks know own DNA per player: each guest's DNA is compared with the host's record of its own DNA
   and the evolution bar with the party's (BUG-1310); a guest no longer gets the host's DNA for a moment when the host
   leaves its editor (BUG-1311).
@@ -121,7 +124,7 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   Civ outfitter; before, the outfitter opened on the host's creature (BUG-1297).
 - Tribe and Civilization: when the connection is lost while a guest is in its own outfitter or design editor, its game
   no longer dresses every tribe member in the new outfit or puts the new design into the shared civilization; what it
-  made is kept and reaches every player when it joins again (BUG-1298; still open until its lab run).
+  made is kept and reaches every player when it joins again (BUG-1298).
 - Tribe: a baby or a new member that belongs to a guest now looks like the guest's own creature from the moment it
   appears; before, it was the tribe's species for a moment first (BUG-1299).
 - Space: a guest whose own ship has the same id as the host's ship now flies its own ship on its screen; before, its
