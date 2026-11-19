@@ -6522,6 +6522,13 @@ COOP_FIX("ui.editor_cover", "BUG-9205", g_editor_cover, "ui: the loading screen 
 static bool g_join_cover = true;
 COOP_FIX("ui.join_cover", "BUG-9202", g_join_cover,
          "ui: the loading screen covers a guest's join (the galaxy menu while the host's world comes, and its load)");
+// BUG-9274 (Live audit 2026-11-19, MSI pair): a guest with no creature of its own joined a Creature host from inside
+// its own Cell game: the reload cover (BUG-9195) started in the stage and stayed over the first-creature editor
+// (BUG-9263) until its 120 s limit ("Getting the latest world" over the editor). A cover ends when an editor is open;
+// the join cover takes over by itself once the editor is left for the load. Off: the cover stays (its time limit).
+static bool g_cover_editor_end = true;
+COOP_FIX("ui.cover_ends_in_editor", "BUG-9274", g_cover_editor_end,
+         "ui: a loading screen never stays over an open editor (a joiner's first-creature editor)");
 // ---- the Party panel (the owner's mockup 2026-11-13, coop_ui::set_party_hud) ----
 // decision 3E C: a partner's arrow is a slim chevron in the HUD's blue with a white edge and a name plate
 // (images/partner_arrow_mockup_C.png); off: the green arrow and the name line
@@ -6835,6 +6842,7 @@ void on_overlay(void*, int, void*)
                               : now - s_since > (s_join ? 180 : s_editor ? 60 : 120)    ? "time limit"
                               : !g_sess.connected()                                     ? "disconnected"
                               : s_join && coop_ui::is_open()                            ? "co-op window"
+                              : g_cover_editor_end && (g_mode == modes::kEdit || g_mode == modes::kEditor) ? "an editor" // BUG-9274
                               : s_join && !in_menu && !in_stage                         ? "other mode"
                               : s_editor && g_mode != modes::kCreature                  ? "other mode"
                                                                                         : nullptr;
