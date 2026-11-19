@@ -695,8 +695,24 @@ static int SK_THISCALL h_CreaturePlayAnim(void* self, uint32_t id, int a, int b)
     return r;
 }
 
+// WP-K (BUG-1303): creatures whose pose the mod holds (a partner's puppet in the game's cocoon): their idle refresh
+// does not run, so the cocoon animation the mod played stays instead of the idle / walk choice
+static std::vector<void*> g_held_poses;
+void hold_pose(void* c, bool on)
+{
+    auto it = std::find(g_held_poses.begin(), g_held_poses.end(), c);
+    if (on && c && it == g_held_poses.end())
+        g_held_poses.push_back(c);
+    if (!on && it != g_held_poses.end())
+        g_held_poses.erase(it);
+}
+bool pose_held(void* c) { return c && std::find(g_held_poses.begin(), g_held_poses.end(), c) != g_held_poses.end(); }
+size_t poses_held() { return g_held_poses.size(); }
+
 static void SK_THISCALL h_IdleRefresh(void* self, int force)
 {
+    if (!g_held_poses.empty() && pose_held(self))
+        return; // WP-K: the cocoon's pose stays
     {
         callguard::Depth idle(g_idle_depth);
         o_IdleRefresh(self, force);
@@ -2621,6 +2637,7 @@ void puppet_register(void* c)
 void puppet_unregister(void* c)
 {
     air_hold(c, false); // BUG-0550: a proxy or puppet held in the air is released with it (no hold on a freed creature)
+    hold_pose(c, false); // WP-K: no held pose on a freed creature (its address may be reused)
     g_puppets.erase(std::remove(g_puppets.begin(), g_puppets.end(), c), g_puppets.end());
 }
 

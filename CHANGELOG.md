@@ -12,6 +12,10 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   checks its look in every stage on both games (BUG-1277).
 
 ### Added
+- Creature: when a partner goes into an editor of its own (its mating evolution, Evolve now, or later at the nest),
+  you no longer see its creature vanish: it curls up into the game's own cocoon where it stood and waits there while
+  the partner edits, then comes out of the cocoon wearing its new look. The cocoon comes from the Lineages fork by
+  PandizeLive (BUG-1303).
 - Cell and Creature: every player now has its own DNA. Everything the party earns (anybody's kill, friend, meal or
   goal card) still raises everybody's DNA by the same amount and the evolution bar stays the party's, but what you
   spend in your editor comes off your own DNA only, so partners no longer spend each other's DNA. A guest's DNA is kept

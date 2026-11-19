@@ -3,6 +3,7 @@
 // places the registrations had (the same order: SporeKit keeps the commands by name, the module inits between them stay
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
 #include "coop_state.h"
+#include "cocoon.h"
 #include "net/compat.h"
 #include "net/kick.h"
 #include "net/manifest.h"
@@ -2047,6 +2048,28 @@ void register_commands_stages()
                            return 0;
                        }
                        SAY("%s%s", civ::status().c_str(), civ::list().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    // WP-K (BUG-1303): every partner's cocoon as this game shows it; `matexy`: the mate the game picked, on the screen
+    H->command_add(M, "coop.cocoon",
+                   "coop.cocoon [<player id> | matexy] - a partner in its own editor in the game's cocoon (BUG-1303): its "
+                   "puppet's animation, the glow, the counters; matexy: the drama manager's mate where the screen draws it (tests)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "matexy")) {
+                           void* mate = game::mode_id() == modes::kCreature ? drama::mate() : nullptr;
+                           if (!mate) {
+                               SAY("mate none\n");
+                               return 1;
+                           }
+                           net::Vec3 p = game::position(mate);
+                           float w[3] = {p.x, p.y, p.z}, sc[2] = {0, 0};
+                           bool vis = H->world_to_screen(w, sc) != 0;
+                           SAY("mate %p at %.2f %.2f %.2f screen %s%.0f %.0f dist %.1f\n", mate, p.x, p.y, p.z, vis ? "" : "off ",
+                               sc[0], sc[1], game::avatar() ? net::dist(p, game::position(game::avatar())) : -1.f);
+                           return 0;
+                       }
+                       SAY("%s", cocoon::status(argc > 1 ? (uint8_t)atoi(argv[1]) : 0xFF).c_str());
                        return 0;
                    },
                    nullptr, MT);

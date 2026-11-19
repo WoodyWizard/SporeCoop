@@ -306,6 +306,16 @@ bool summon_for(void* puppet)
     return ok;
 }
 
+// WP-K (BUG-1305 tests): the mate the drama manager picked (mgr +0x38, a creature in the object list), else null
+void* mate()
+{
+    void* mgr = a_Get ? skg::cdecl_call<void*>(a_Get) : nullptr;
+    if (!mgr || !skg::readable(mgr, 0x40))
+        return nullptr;
+    void* m = *(void**)((uint8_t*)mgr + 0x38);
+    return m && game::creature_listed(m) ? m : nullptr;
+}
+
 std::string debug(const std::vector<std::string>& a)
 {
     char b[256];

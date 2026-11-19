@@ -9481,3 +9481,18 @@ cell editor with real input; own DNA by default, `--shared` the old checks as `e
   their session plays (`coop.settings get all.shared_dna`) and take `--shared` to force the old pool (a lane knob:
   the next test starts cold, so the suites run them in the default own mode).
 
+
+## The partner's cocoon and the guest's mating (2026-11-19, feat/w56-cocoon)
+<a id="testing-cocoon"></a>
+
+* `coop.cocoon [<player id>]` (BUG-1303): the switch, the counters (wraps, new bodies, emerges, shells, glows), then one
+  line per partner in a cocoon on this game: its phase (enter, hold, wait, emerge), the puppet's current animation as
+  the game reports it, the held pose, whether the glow is an active effect, its scale against its size, the species it
+  wears and went in with, the spot and where the screen draws it; `last <id>` lines keep the last finished cocoon
+  (the animations read back right after the mod's plays, the body it came out with).
+* `coop.cocoon matexy`: the mate the game's drama manager picked (mgr +0x38) and where the screen draws it (the guest's
+  mating click in `coop_guest_mating.py`).
+* Tests: `cocoon` (the host's mating editor, the guest observes; a new species), `cocoon_guest` (the guest's own
+  editor, left with the red cross, the host observes), twin `cocoon_off`; `guest_mating` (BUG-1304, BUG-1305: the
+  guest's own mating at the nest the players' way, no key during the egg scene). Key frames are shot on the observer
+  only, with settle 0 (the partner sits in its editor, which the settle would wait out).

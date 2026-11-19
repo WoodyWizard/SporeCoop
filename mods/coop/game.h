@@ -125,6 +125,11 @@ void set_scale(void* c, float s);
 // model is drawn (+0x04) and the id of its current animation (vt 0x58 GetCurrentAnimation, 0 when
 // none). False when the creature has none.
 bool drawn_state(void* c, net::Vec3* drawn, uint32_t* anim);
+// WP-K (BUG-1303): the creature's idle refresh (the game's idle / walk choice) is skipped while its pose is held, so an
+// animation the mod played on it stays (a partner's puppet in the game's cocoon); released with puppet_unregister too
+void hold_pose(void* c, bool on);
+bool pose_held(void* c);
+size_t poses_held();
 // BUG-0360: the walk state the creature's idle animation is chosen by (0xC0C790): the animation's
 // gait state (AnimatedCreature +0x17C -> +0x15B8, two ints: 0 = no gait), the creature's +0x137 and
 // its speed state +0xF98. False when it has no animation.
