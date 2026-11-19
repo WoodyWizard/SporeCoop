@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.15.4] - 2026-11-19
+
+Two crash fixes found while testing the next version: the host's game could crash in Civilization while its
+vehicles fought or preached at a city, and at the end of Tribe when another cinematic played as the City Hall was
+built. The fixes are in the host's game; both players should update.
+
 ### Fixed
 - Tribe -> Civilization: when another cinematic played just as the City Hall was built at the end of Tribe, the game
   skipped the City Hall cinematic and never opened the vehicle editor, and the next click on the evolve button crashed

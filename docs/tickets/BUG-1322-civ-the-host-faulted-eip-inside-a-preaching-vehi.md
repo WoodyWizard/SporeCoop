@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: host
 versions: 0.7.5 .. 0.7.15.3 (code read: the observer since BUG-0477 / BUG-0535), 0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.15.4
 branch: fix/w57-sync, fix/w57-crashes, fix/w58-hotfix (backport to 0.7.15)
 commits: 80efe56e 0c247140
 tests: civ_shot_objects, civ_shot_objects_off
@@ -78,3 +78,4 @@ without 0.7.16 code; test coop_civ_shot_objects.py = rel/0.7.16's coop_civ_influ
 - 2026-11-19: opened.
 - 2026-11-19: cause found and fixed on fix/w57-crashes (the shot observer, cCulturalTarget targets).
 - 2026-11-19: backported to the 0.7.15 line (fix/w58-hotfix): the released observer has the same fault since 0.7.5.
+- 2026-11-19: released in 0.7.15.4.

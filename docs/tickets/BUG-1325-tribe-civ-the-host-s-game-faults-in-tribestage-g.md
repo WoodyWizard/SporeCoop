@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 0.7.15.3 and older (the game's own race; code read), 0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.15.4
 branch: fix/w57-crashes, fix/w58-hotfix (backport to 0.7.15)
 commits: 80efe56e 0c247140
 tests: tribe_city_hall_race, tribe_city_hall_race_off, tribe_city_hall_race_crash
@@ -86,3 +86,4 @@ advance in their order (the first the City Hall's, a later one a vehicle editor'
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w57-crashes (cause found: a dropped ShowCityHall, a second graduation; two switches, test with two twins).
 - 2026-11-19: backported to the 0.7.15 line (fix/w58-hotfix): the race and the crash are the same on v0.7.15.3.
+- 2026-11-19: released in 0.7.15.4.
