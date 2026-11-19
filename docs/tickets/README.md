@@ -1376,3 +1376,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9260](BUG-9260-guest-keeps-moving-while-the-host-is-paused-only.md) | fixed | bug | Creature | 2026-11-19 | unreleased | Guest keeps moving while the host is paused (only the Paused by host cover) |
 | [BUG-9261](BUG-9261-loading-cover-looks-low-resolution-at-1440p-bloc.md) | fixed | bug | All | 2026-11-19 | unreleased | Loading cover looks low resolution at 1440p: blocky blur, small text |
 | [BUG-9262](BUG-9262-alpha-pausing-is-off-in-a-session-p-and-the-paus.md) | fixed | feature | All | 2026-11-19 | unreleased | Alpha: pausing is off in a session (P and the pause menu do not stop the world) |
+| [BUG-9263](BUG-9263-joining-guest-s-first-creature-is-made-in-the-2.md) | fixed | bug | Creature | 2026-11-19 | unreleased | Joining guest's first creature is made in the 2,000 DNA Creature Creator with every part unlocked |
+| [BUG-9264](BUG-9264-guest-s-hud-portrait-keeps-the-old-picture-after.md) | open | bug | Creature | 2026-11-19 |  | Guest's HUD portrait keeps the old picture after its first creature is made (no png found for the new species) |
