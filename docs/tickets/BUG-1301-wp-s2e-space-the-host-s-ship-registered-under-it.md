@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in:
 branch: feat/w56-editors
-commits: 86c18d41
+commits: 86c18d41 0d159edb
 tests: space_own_ship_key, space_own_ship_key_off (coop_own_editors_robust.py ship)
 signature: creations.cpp apply (world package kUfo)
 docs: docs/re/creations.md#creations-own-editors-robust, docs/06-testing.md#testing-own-editors-robust
