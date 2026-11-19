@@ -1,14 +1,14 @@
 ---
 id: BUG-1287
 title: WP-F2: a guest gets no buy meter, buyer or trade price map of the host's cities, removed routes stay (fork BUG-9081)
-status: open
+status: fixed
 kind: desync
 stage: Civ
 reported: 2026-11-19
 source: found by the Lineages fork (PR #196), its BUG-9081
 role: guest
 versions: 0.7.15.2
-fixed_in:
+fixed_in: unreleased
 branch: fix/w56-sync
 commits: bc78d7e3
 tests: civ_economy_state, civ_economy_state_off
@@ -37,9 +37,13 @@ condition, the game's own CanBuyCity on the guest, is checked).
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
-Pending: written and registered, not run yet (the lab waits for the orchestrator's "lab ok" in this batch: the CPU is
-busy with another task). Runs to do: `civ_economy_state` (must PASS) and `civ_economy_state_off` (twin, must FAIL).
+- Lab (first 0.7.16 night run, rel/0.7.16 c7699dca, run dirs in the rel/0.7.16 worktree's out/lab/):
+  PASS civ_economy_state, out/lab/20261119-104136 (the guest's city 1 has the host's buy meter 100 / buyer 800021CA and
+  price entry, its CanBuyCity says yes at 2000; the host's removed route (0, 1) is gone on the guest too).
+  FAIL twin civ_economy_state_off (SPORE_FIX_OFF=civ.economic_state), out/lab/20261119-105127, for the right reason:
+  the guest's city 1 has buy 0.0 / FFFFFFFF and no price entries, its CanBuyCity says no (price -1), the route stays.
 
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fix and tests on fix/w56-sync (switch on); status stays open until the lab runs (FAIL twin, PASS).
+- 2026-11-19: fixed (fix/w57-sync): the first lab run passed, its twin failed for the right reason (run dirs above).

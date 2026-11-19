@@ -298,6 +298,19 @@ bool Session::peer_families(uint8_t id, bool& has, std::vector<FamilyRev>& out) 
     return false;
 }
 
+bool Session::host_families(bool& has, std::vector<FamilyRev>& out) const
+{
+    if (role_ != Role::Client || !welcomed_)
+        return false;
+    for (auto& p : peers_)
+        if (p->accepted && p->id == 0) {
+            has = p->has_families;
+            out = p->families;
+            return true;
+        }
+    return false;
+}
+
 std::string Session::name_of(uint8_t id) const
 {
     if (id == my_id_ && role_ != Role::None)
