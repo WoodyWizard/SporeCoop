@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.7.15.3] - 2026-11-19
+
+A fix for a crash in the Space stage reported on GitHub (#203): a player who joined the host's Space game crashed
+when opening the captain screen or accepting an adventure mission. Both players should update.
+
 ### Fixed
 - Space: a player who joined the host's Space world no longer crashes on Windows when opening the captain screen
   (the captain button over the ship's picture) or when accepting an adventure mission (BUG-0304, BUG-1278).

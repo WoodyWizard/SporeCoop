@@ -8,7 +8,7 @@ reported: 2026-10-30
 source: lab 20261030-075052 campaign#3; GitHub issue #203
 role: guest
 versions: 0.7.3.1, 0.7.15.1
-fixed_in: unreleased
+fixed_in: 0.7.15.3
 branch: fix/w11-finale, fix/w55-captain
 commits: 045af236, e8cb2c3c, 98ba8407
 tests: space_captain, space_captain_none
@@ -94,3 +94,4 @@ only caught fault (suite.py reports=True).
   on the guest), guard game.captain_items, test space_captain requires no fault (fix/w55-captain).
 - 2026-11-19: lab: the tests found the mission screen by a hidden caption (fixed: control id); PASS 20261119-111406,
   FAIL with the guard off 20261119-112022; known-issues entry archived (fix/w55-captain).
+- 2026-11-19: released in 0.7.15.3.

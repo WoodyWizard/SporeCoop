@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: static RE for GitHub issue #203
 role: guest
 versions: 0.7.15.2
-fixed_in: unreleased
+fixed_in: 0.7.15.3
 branch: fix/w55-captain
 commits: 045af236, e8cb2c3c, 98ba8407
 tests: space_captain, space_captain_none
@@ -51,3 +51,4 @@ windows keep their text), a warning names the captain. `coop.fix game.captain_st
   fault only with the guard off (fix/w55-captain).
 - 2026-11-19: lab verified (PASS 20261119-111406, FAIL 20261119-112459 on space_captain); the twin moved from
   space_captain_none to space_captain (fix/w55-captain).
+- 2026-11-19: released in 0.7.15.3.
