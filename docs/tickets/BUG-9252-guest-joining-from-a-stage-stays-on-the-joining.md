@@ -8,7 +8,7 @@ reported: 2026-11-17
 source: QA (galaxy hand-over test, 2026-11-17)
 role: guest
 versions: 0.7.14.1-lineages64-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages65-dev
 branch: feat/lineages-47
 commits: 584c59ea
 tests: manual Windows QA with tools/qa_win/qa.py (TITAN, local galaxy server, QA games 9 and 8; Samuth.spo)

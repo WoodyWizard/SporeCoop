@@ -8,7 +8,7 @@ reported: 2026-11-10
 source: owner two-PC session on 0.7.3.6-lineages45-dev ("Creatures aren't marked as Alpha for player B")
 role: guest
 versions: 0.7.3.6-lineages45-dev
-fixed_in:
+fixed_in: 0.7.8-lineages46-dev
 branch: feat/lineages-45
 commits:
 tests: QA host 9 + guest 8, Samuth.spo (Creature), alpha bit compare per NPC id, see Verification

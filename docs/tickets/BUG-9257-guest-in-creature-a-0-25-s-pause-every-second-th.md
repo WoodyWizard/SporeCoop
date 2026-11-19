@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: player report (SporeCoop-report-20261118-211933.zip)
 role: guest
 versions: 0.7.14.1-lineages64-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages65-dev
 branch: feat/lineages-47
 commits: ab032cd3
 tests: tools/qa_win/qa.py (manual: TITAN host + guest in Creature, the frame profiler's prof lines)
