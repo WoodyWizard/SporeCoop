@@ -9373,3 +9373,33 @@ after its arrival in Civ"). Never run yet (written without a lab, the night run 
 * For WP-X2 (coop_line_stages.py --civ-editors): nothing to switch on; in own mode the editors open by themselves at
   the guest's arrival (`coop.civarrival` shows the phase).
 
+## The species line through the stages: line_stages (2026-11-18, feat/w54-x2)
+<a id="testing-line-stages"></a>
+
+WP-X2 of docs/plan-0.7.16.md, BUG-1277 (docs/01-architecture.md#arch-species-line). `coop_line_stages.py` takes the
+guest's own creature from the creature fixture through Creature -> Tribe -> Civ with the campaign's own stage changes
+(coop_campaign.py `Campaign` with two players, as coop_transition_net.py: `advance` + `follow`, the votes by the guest's
+real "I'm ready", the editors left with "done", `phase_frame` after each change, `segment_save` for the host's save of
+every stage). Every check reads the game's fields on both games: Creature the avatar / puppet species key (+0xB28,
+`coop.census creatures`) and its model hash; Tribe every member's +0xB28 (`coop.tribe species`, the helpers of
+coop_tribe_own_species.py); Civ the citizens' +0xB28 per city (`coop.civ citizens`, coop_civ_own_species.py) and the
+vehicle's model key +0xC4 (`coop.civ owndesign`, coop_civ_own_designs.py). The line's keys (`coop.species key`) must
+agree. Same views per stage: the guest's creature, a guest's member, a citizen of the guest's city, its vehicle.
+Each host save (the campaign's segment save, kept in `out/lane<N>/line_stages/<run>/segments/`) is parsed record by
+record (coop_civ_own_designs.keys_in) for the guest's keys of that stage.
+
+* Suites: `line_stages` (extended, ~30 min, timeout 1 h), `line_stages_outfit` (`--outfit`: the guest's own Tribal
+  Outfitter in Tribe, coop_tribe_own_outfitter.outfitter_route; its Civ citizens are then of the outfit, ~34 min),
+  twin `line_stages_off` (`SPORE_FIX_OFF=species.line`: the Creature line check and the Tribe members FAIL, the test
+  stops after Tribe, ~12 min).
+* Shortcuts: Creature's end `coop.dna add 3000` (the campaign's), Tribe's members `coop.tribe spawn 6` and its goal bar
+  `coop.tribe advance` (tribe_civ's; `--raids`: the campaign's raids instead, 15-20 min more), Civ's NPC cities the
+  campaign's SpawnNextCity when none stands, the guest's city `coop.civ siege <city> 1 150 pc`, money `coop.res add`.
+* The Civ designs: without a flag the guest names a vehicle of its My Creations as its land vehicles' design
+  (`coop.civ owndesign set`, WP-C2's setter; the vehicle models of coop_civ_own_designs `restore_with_designs`: the
+  host's own My Creations hold another model under the same id, so the host must draw the guest's). `--civ-editors`
+  (once WP-C3 and WP-X1 are in rel/0.7.16): no stand-in; the guest's own City Hall and vehicle editors after its arrival
+  are answered by the campaign's driver and must give its line the designs (its vehicle and its city's City Hall of
+  them on both games). A suite entry `line_stages_editors` belongs with WP-X1's merge.
+* coop_campaign.py: the editor driver drags the City Hall palette's parts (TRIBE_EDITOR_PARTS) also in the Civ follow
+  phase (a guest's own City Hall / vehicle editors at its arrival, WP-X1), not the spaceship palette's.

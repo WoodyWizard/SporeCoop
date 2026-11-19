@@ -68,6 +68,59 @@ def own_tribe(con):
     return int(m.group(1), 16) if m else 0
 
 
+def outfitter_route(guest, ck, gk0, own0, mine0):
+    """steps 2-3: the guest's own Tribal Outfitter the players' way (a click on its hut, the planner's second tab, the
+    card's edit badge), the third tab, a body piece dragged onto the chest, Done, with the checks of the route. gk0: the
+    guest's slot key before, own0: its own Tribe line (`coop.species own tribe`), mine0: its My Creations before.
+    None when the outfitter did not open (the planner closed again); else {'back': back in Tribe, 'new': the new
+    creations of its My Creations, 'result': the outfitter's result instance, 'designs': the `coop.designs` line}.
+    Also coop_line_stages.py (BUG-1277: the outfit made in the Tribe part of the stage line)"""
+    ck(open_outfitter(guest), 'the guest\'s hut planner opened')
+    t0 = time.time()
+    while time.time() - t0 < 20 and mode(guest) != EDITOR:
+        if time.time() - t0 > 8 and mode(guest) == TRIBE and 'input_lock' in busy(guest):
+            guest.call('click %d %d' % BADGE)  # (once more: the tab took the click)
+            time.sleep(4)
+        time.sleep(1)
+    d, out = designs(guest)
+    print(f'  guest after the badge: mode {mode(guest)}; {d}', flush=True)
+    if not ck(mode(guest) == EDITOR, f'the guest\'s own Tribal Outfitter opens ({mode(guest)}, refused '
+              f'{re.search(r"refused=(\d+)", out).group(1) if "refused=" in out else "?"})'):
+        close_planner(guest)
+        time.sleep(3)
+        print(f'  guest busy after: {busy(guest) or "-"}', flush=True)
+        return None
+    asked = int(d.get('asked', '0/').split('/')[0], 16)
+    card = int(d.get('card', '0'), 16)
+    ck(asked == (own0 or gk0), f'the outfitter was asked for the guest\'s own species ({asked:08X}, its own tribe line '
+       f'{own0:08X})')
+    ck(card == gk0, f'the card\'s key was the tribe\'s slot ({card:08X}, slot {gk0 or 0:08X})')
+
+    # 3. a piece of clothing, Done
+    guest.call('wait.frames 120 30000')
+    guest.call('click %d %d' % TAB3)
+    time.sleep(1.5)
+    drag(guest, ITEM, ONTO)
+    time.sleep(1)
+    guest.call('move %d %d' % DONE)
+    time.sleep(0.5)
+    guest.call('click %d %d' % DONE)
+    t0 = time.time()
+    while time.time() - t0 < 60 and mode(guest) != TRIBE:
+        time.sleep(1)
+    if not ck(mode(guest) == TRIBE, f'the guest is back in Tribe ({mode(guest)})'):
+        return dict(back=False, new=set(), result=0, designs=d)
+    time.sleep(3)
+    close_planner(guest)
+    new = my_creations(lane.GUEST_DIR) - mine0
+    d, _ = designs(guest)
+    result = int(d.get('result', '0'), 16) or next(iter(new), 0)
+    print(f'  guest: new in its My Creations {sorted("%08X" % n for n in new)}; {d}', flush=True)
+    ck(new, 'the outfitter saved a new creation in the guest\'s My Creations')
+    ck(int(d.get('skipped', '0')) >= 1, f'the guest\'s return skipped the slot reload (skipped={d.get("skipped")})')
+    return dict(back=True, new=new, result=result, designs=d)
+
+
 def main():
     host, guest = start('tribe')
     ck = Checks()
@@ -128,51 +181,14 @@ def run(host, guest, ck, off_twin):
           f'{own0:08X}; player 1\'s tribe line on the host {hline0[0]:08X} ({hline0[1]})', flush=True)
     mine0 = my_creations(lane.GUEST_DIR)
 
-    # 2. the guest's own outfitter, the players' way
-    ck(open_outfitter(guest), 'the guest\'s hut planner opened')
-    t0 = time.time()
-    while time.time() - t0 < 20 and mode(guest) != EDITOR:
-        if time.time() - t0 > 8 and mode(guest) == TRIBE and 'input_lock' in busy(guest):
-            guest.call('click %d %d' % BADGE)  # (once more: the tab took the click)
-            time.sleep(4)
-        time.sleep(1)
-    d, out = designs(guest)
-    print(f'  guest after the badge: mode {mode(guest)}; {d}', flush=True)
-    if not ck(mode(guest) == EDITOR, f'the guest\'s own Tribal Outfitter opens ({mode(guest)}, refused '
-              f'{re.search(r"refused=(\d+)", out).group(1) if "refused=" in out else "?"})'):
-        close_planner(guest)
-        time.sleep(3)
-        print(f'  guest busy after: {busy(guest) or "-"}', flush=True)
+    # 2-3. the guest's own outfitter, the players' way, and a piece of clothing
+    got = outfitter_route(guest, ck, gk0, own0, mine0)
+    if got is None:
         ck.faults(host=host, guest=guest)
         return ck.result()
-    asked = int(d.get('asked', '0/').split('/')[0], 16)
-    card = int(d.get('card', '0'), 16)
-    ck(asked == (own0 or gk0), f'the outfitter was asked for the guest\'s own species ({asked:08X}, its own tribe line '
-       f'{own0:08X})')
-    ck(card == gk0, f'the card\'s key was the tribe\'s slot ({card:08X}, slot {gk0 or 0:08X})')
-
-    # 3. a piece of clothing, Done
-    guest.call('wait.frames 120 30000')
-    guest.call('click %d %d' % TAB3)
-    time.sleep(1.5)
-    drag(guest, ITEM, ONTO)
-    time.sleep(1)
-    guest.call('move %d %d' % DONE)
-    time.sleep(0.5)
-    guest.call('click %d %d' % DONE)
-    t0 = time.time()
-    while time.time() - t0 < 60 and mode(guest) != TRIBE:
-        time.sleep(1)
-    if not ck(mode(guest) == TRIBE, f'the guest is back in Tribe ({mode(guest)})'):
+    if not got['back']:
         return ck.result()
-    time.sleep(3)
-    close_planner(guest)
-    new = my_creations(lane.GUEST_DIR) - mine0
-    d, _ = designs(guest)
-    result = int(d.get('result', '0'), 16) or next(iter(new), 0)
-    print(f'  guest: new in its My Creations {sorted("%08X" % n for n in new)}; {d}', flush=True)
-    ck(new, 'the outfitter saved a new creation in the guest\'s My Creations')
-    ck(int(d.get('skipped', '0')) >= 1, f'the guest\'s return skipped the slot reload (skipped={d.get("skipped")})')
+    new, result = got['new'], got['result']
     gk1, gm1, _, _ = profile(guest)
     ck(gk1 == hk0 and gm1 == gm0, f'the guest\'s tribe slot is still the host\'s species ({gk1 or 0:08X} model {gm1}, '
        f'before {gk0 or 0:08X} model {gm0}, the host\'s {hk0 or 0:08X})')

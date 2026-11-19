@@ -1282,3 +1282,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1276](BUG-1276-wp-x1-the-guest-s-own-city-hall-and-vehicle-edit.md) | open | feature | Civ | 2026-11-18 |  | WP-X1: the guest's own City Hall and vehicle editors at the Tribe -> Civ arrival |
 | [BUG-1277](BUG-1277-wp-x2-every-player-s-species-line-through-creatu.md) | open | feature | All | 2026-11-18 |  | WP-X2: every player's species line through Creature -> Tribe -> Civ (one test) |
 | [BUG-1280](BUG-1280-tribe-the-end-of-tribe-editor-check-names-a-vehi.md) | open | bug | Tribe | 2026-11-18 |  | Tribe: the end-of-Tribe editor check names a vehicle editor 7CB21BAD that does not exist (it is 7D433FAD) |
+| [BUG-1277](BUG-1277-wp-x2-every-player-s-species-line-through-creatu.md) | open | test | All | 2026-11-18 |  | WP-X2: every player's species line through Creature -> Tribe -> Civ (one test) |

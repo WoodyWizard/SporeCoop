@@ -6,6 +6,8 @@
 - The species line (BUG-1270): every player's own species per stage (tribe and Civ outfits, Civ designs) is kept by
   the mod, sent to every game and kept by the host between sessions; the base for every player's own look in Tribe and
   Civilization (no visible change by itself).
+- A lab test takes a guest's own creature through Creature -> Tribe -> Civilization with the real stage changes and
+  checks its look in every stage on both games (BUG-1277).
 
 ### Added
 - Cell: the wild cells of the players' own kind now swim near each player in that player's own design: near the
@@ -41,6 +43,12 @@
   its cities, its vehicles and its citizens on every player's screen, while the shared civilization and the host's
   designs stay as they were; before, the guest's editors were refused. With "everybody plays the host's creature" (F5)
   they are refused as before (BUG-1275).
+
+### Fixed
+- Cell: when your partner's cell zaps with its electric part, your screen no longer fills with a trail of giant white
+  rings around its cell (BUG-1266).
+- Cell -> Creature: while the players vote to move on to the Creature stage, the host now sees its Cell world behind
+  the co-op window instead of a plain white screen; the move starts when the vote passes (BUG-1269).
 
 ## [0.7.15.2] - 2026-11-18
 

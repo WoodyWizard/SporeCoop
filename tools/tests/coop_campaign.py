@@ -714,8 +714,10 @@ class Campaign:
         pace = editor_parts_due(n)
         if pace:
             # the end of Tribe opens the City Hall and the vehicle editor empty: their palette and plot
-            # (coop_tribe_civ.PARTS); the spaceship editor's at the end of Civ
-            moves = TRIBE_EDITOR_PARTS if self.stage == 'tribe' else list(zip(EDITOR_PARTS, EDITOR_PLACES))
+            # (coop_tribe_civ.PARTS); the spaceship editor's at the end of Civ. WP-X1 of 0.7.16 (BUG-1277): a guest's own
+            # City Hall and vehicle editors after its arrival in Civ (the follow phase) are the same editors
+            civ_arrival = self.stage == 'civ' and self.phase == 'follow'
+            moves = TRIBE_EDITOR_PARTS if self.stage == 'tribe' or civ_arrival else list(zip(EDITOR_PARTS, EDITOR_PLACES))
             for (sx, sy), (tx, ty) in moves:
                 drag_slow(con, sx, sy, tx, ty, pace)
             if n == 2:
