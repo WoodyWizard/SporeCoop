@@ -2390,6 +2390,15 @@ struct StartPart {
     uint8_t state;
 };
 static std::vector<StartPart> g_start_parts; // guest: the host's, received
+// BUG-9263 (owner 2026-11-19: "We can't let them make a level 5 endgame creature upon joining any player"): a guest's
+// first creature for a world it has no creature in (BUG-9208), and a guest's editor while the host makes a new world
+// without the host's start list, opened the Creature Creator: 2,000 DNA and every part, kept as the guest's creature
+// (BUG-9259). Now it is always the Creature stage's start editor: its 145 budget and its palette (legs, the three diet
+// mouths, eyes, the cell-era parts), with the host's start list (3Z B, the host's diet) when there is one. A host in
+// the Creator gives its guests no editor (the late path follows in its world). Off: the Creator as before.
+static bool g_join_start_editor = true;
+COOP_FIX("creature.join_start_editor", "BUG-9263", g_join_start_editor,
+         "creature: a joining guest's first creature is made in the stage's start editor (145 DNA, its palette), never the 2,000 DNA Creator");
 static std::vector<StartPart> g_host_start_parts; // host: ours, while in the start editor
 static std::set<uint8_t> g_host_start_sent;      // host: the players that have them
 static bool g_test_unlock_start = false;
@@ -3785,6 +3794,7 @@ static void pregame_editor_tick(double now)
         if (s_done || !host_editing || !host_from_menu || world::load_queued() || world::load_starting() || receiving) return;
         const uint32_t he = g_remotes[0].buf.latest().editor; // creatures only: the Creator, or the stage start editor (a new
         if (he != 0x465C50BAu && he != kCreatureStartEditor) return; // world from the galaxy wizard, 2026-11-14)
+        if (g_join_start_editor && he != kCreatureStartEditor) return; // BUG-9263: not with the Creator (the late path)
         // 3Z B: the host's start editor: the same, with the host's parts list (sent at its request; a host without it,
         // an older one: the Creator after 4 s)
         static double s_waited = -1;
@@ -3801,8 +3811,9 @@ static void pregame_editor_tick(double now)
             return;
         }
         creations::begin_first_creature();
-        const bool r = g_pregame_start ? submit_new_creature_request(kCreatureStartEditor, &g_start_parts)
-                                                : submit_new_creature_request();
+        const bool r = g_pregame_start       ? submit_new_creature_request(kCreatureStartEditor, &g_start_parts)
+                       : g_join_start_editor ? submit_new_creature_request(kCreatureStartEditor) // BUG-9263
+                                             : submit_new_creature_request();
         LOG("pregame editor: the creature editor with the base creature %s -> %d (BUG-%s)",
             late ? "before the host's world (no own creature there)" : "while the host makes a new world", (int)r,
             late ? "9208" : "9207");
