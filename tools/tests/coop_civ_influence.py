@@ -59,8 +59,9 @@ def wait_for(fn, secs, step=0.5):
 
 
 def new_vehicle(host, home, purpose):
-    # `force`: the civ_npc fixture's one city has no vehicle slot left of any purpose (VehicleSlotsLeft 0; lab run
-    # 20261119-104136: "no vehicle slot left", no vehicle); the conversion bonus and the preaching do not depend on it
+    # `force`: the civ_npc fixture's civilization (one military city) has no religious or economic vehicle allowance
+    # (VehicleSlotsLeft 0 even with all its vehicles removed: the allowance 0xBF2110 counts cities of that purpose;
+    # lab runs 20261119-104136, 20261119-114425), so these are spawned past it
     _, before, _ = civ_state(host)
     print('  host spawnveh:', host.call(f'coop.civ spawnveh {home} {purpose} 0 force')['out'].strip(), flush=True)
     time.sleep(2)
@@ -70,7 +71,12 @@ def new_vehicle(host, home, purpose):
 
 
 def put_near(host, vid, pos, d):
-    return host.call(f'coop.civ vput {vid} {pos[0] + d:.1f} {pos[1]:.1f} {pos[2]:.1f}')['out'].strip()
+    # d m along x from the city, then back onto the sphere of the city's distance from the centre: a point d m off along x
+    # alone is up in the air (lab run 20261119-114030: 90 m off, 34 m over the ground; the host's preacher stayed there,
+    # the guest's game put its copy on the ground, a sync-check MISMATCH v6 34.0)
+    p = (pos[0] + d, pos[1], pos[2])
+    k = math.hypot(*pos) / math.hypot(*p)
+    return host.call(f'coop.civ vput {vid} {p[0] * k:.1f} {p[1] * k:.1f} {p[2] * k:.1f}')['out'].strip()
 
 
 def followers_of(d, pol):
@@ -164,6 +170,12 @@ def case_preach(host, guest, ck, cities, home, far):
           flush=True)
     print(f'  guest city {far}: followers {gd and gd["followers"]} convert {gd and gd["convert"]}', flush=True)
     print('  host', host.call('coop.civ influence 0')['out'].splitlines()[0], flush=True)
+    _, hv, _ = civ_state(host)
+    _, gv, _ = civ_state(guest)
+    for v in vids:  # (support: where each preacher stands on both games, the sync-check compares them)
+        a, b = hv.get(v), gv.get(v)
+        print(f'  #{v}: host {a and a["pos"]} order {a and a["order"]} | guest {b and b["pos"]} '
+              f'({math.dist(a["pos"], b["pos"]) if a and b else -1:.1f} m apart)', flush=True)
     ck(hd and any(s[0] or s[1] for s in hd['slots']), f'the far city\'s preaching slots have places ({hd and hd["slots"]})')
     ck(hd and followers_of(hd, pol) > f0, f'the preachers converted citizens of the far city on the host ({f0} -> {followers_of(hd, pol)})')
     ck(gd and followers_of(gd, pol) > f0, f'the guest\'s game shows them ({gd and followers_of(gd, pol)})')

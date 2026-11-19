@@ -83,9 +83,9 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   (BUG-1293).
 - Creature: meteor showers and rain storms are the host's: when they start for the host they start for every player
   at the same time, and a guest's game no longer has its own meteors, rain or night predator that the host never had
-  (BUG-1282; still open: its lab check is pending).
+  (BUG-1282).
 - Creature: a guest sees the host's nest alphas as alphas ("Alpha" on the card, the extra social round); before, a
-  guest's copy of a nest member could be an alpha only on one screen (BUG-1283; still open: its lab check is pending).
+  guest's copy of a nest member could be an alpha only on one screen (BUG-1283).
 - Civilization: the religious governor's faster conversion now comes from its own religious vehicles near the city;
   before, a nearby trade vehicle gave it and the preachers did not (BUG-1284; still open: its lab check is pending).
 - Civilization: a guest now sees the religious conversion meter and followers of every city as the host's game has

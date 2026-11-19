@@ -382,17 +382,6 @@ anchor so other docs can link to it:
 * Next steps: send the captain's creation like the Creature stage's creations (co-op adventures, BUG-0793).
 * Ticket: BUG-1262
 
-
-## Tribe: the end-of-Tribe guard does not know one of the three vehicle editors (2026-11-18, feat/w54-x1)
-<a id="issue-tribe-vehicle-editor-id"></a>
-
-* What happens: vote.cpp `tribe_civ_editor()` (the BUG-0849 guard: no world share or share save between the City Hall
-  editor and Civ) lists 7CB21BAD as a vehicle editor; the game's third vehicle editor is 7D433FAD. Not seen at runtime;
-  the guard's other half (`tribe::stage_end()`) probably covers that editor.
-* Reproduce: the end of Tribe (tribe_civ_rejoin) with cPlayer +0x1104 neither C2CA9495 nor 60A78928.
-* Next steps: the id fixed and that run made.
-* Ticket: BUG-1280
-
 ## Space: with three or more players, two guests in a system without the host see their own enemy ships (2026-11-19, fix/w56-sync)
 <a id="issue-space-fleet-leader"></a>
 
