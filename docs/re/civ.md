@@ -2620,7 +2620,8 @@ even after all four vehicles were removed (`coop.civ remove`). `coop.civ spawnve
 past the allowance (the game's SpawnVehicle does not check it; hpref of #civ-own-designs did the same; the 36 cap
 stays). Of three forced preachers at a far city the host often had only one left later (the city's retaliation
 0xBEB6F8, or a disband: not told apart), without a fault in the other runs; in one run with them 30 m in the air the host
-faulted (BUG-1322). ✔ (runtime, lab 20261119-114030) a vehicle `vput` 30 m over the ground stays there on the host; the
+faulted (BUG-1322; CORRECTION (2026-11-19, fix/w57-crashes): not the height: the mod's shot observer called through a
+preacher's cCulturalTarget spatial, see [civ-shot-observer-targets](#civ-shot-observer-targets)). ✔ (runtime, lab 20261119-114030) a vehicle `vput` 30 m over the ground stays there on the host; the
 guest's game puts its copy on the ground (sync-check "v6 34.0"): tests put vehicles on the city's sphere.
 ✔ (runtime, lab 20261119-104136 civ_religion_state) ConvertCitizens until every citizen of an NPC city follows the
 player (15 of 15, the meter 200 * 15 / 15 clamped to 100) captures the city at once: "Alice captured a city", its
@@ -2641,8 +2642,14 @@ BUG-1322. Follows "How Civ weapons fire (BUG-0477)" above and BUG-0535.
   `cToolManager::FireTool` hook; esi held the Cast id 0x1186577. fire_observed took the object at target spatial - 0x34
   and, when its first dword lay in SporeApp.exe's image (BUG-0535's check), called its vtable: for a spatial that is not
   +0x34 of a game object the "vtable" is whatever memory precedes it.
-* `cCombatSimulator::Update` 0xAE7360 passes as the target the target combatant's (+0x44) vt+8 result; what that is for
-  a preacher: see the shotobjs lines of the BUG-1322 runs (ticket).
+* `cCombatSimulator::Update` 0xAE7360 passes as the target the target combatant's (+0x44) vt+8 result. ✔ (runtime, lab
+  20261119-141549 civ_shot_objects, host, preachers on the ground at an NPC city; Ghidra) a preacher's target spatial has
+  vtable 0x1468478, which sits at **+0x100** of `Simulator/cCulturalTarget` (noun factory 0xB1EB40, 0x218 bytes, ctor
+  0xBDACB0: cGameData, combatant 0xBFD620, cModelObject; vtables 0x14685B8 at +0, 0x14685A8 +4, 0x1468540 +0x38,
+  0x1468478 +0x100; dtor 0xBDAE30). Target - 0x34 is then cCulturalTarget +0xCC, a field (0x00000018 in that run): when
+  it happens to hold a value in the image's range the old check took it for a vtable. So every religious preaching in a
+  co-op host's game went through this; the crash needed that field's value, which explains 1 fault in 4 runs.
+  Vehicles and buildings keep their spatial at +0x34 (BUG-0477).
 * The mod (BUG-1322): `civ.shot_target_listed`: a shooter or target that is not one of the host's listed vehicles is
   used only when the object at spatial - 0x34 is in the game's object list (`game::listed`, pointers compared, once
   per object and frame); else nothing is called and the shot has no target the guests could find (kind 2).
