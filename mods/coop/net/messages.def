@@ -45,6 +45,8 @@
 // type at dispatch).
 // feat/w54-shims: creations stays 1.1 (unreleased): WP-C2's MSG_CREATION kind 9 (a player's own design) is gone, the
 // designs go as line creations of MSG_SPECIES_LINE (species::set_design); a kind 9 is dropped as any unknown kind.
+// fix/w56-sync: npc stays 1.1 (unreleased): MSG_NPC_STATE / SPAWN flag NF_ALPHA 64 (BUG-1283) and MSG_PLAYER_RULE kind
+// K_DRAMA 11 (BUG-1282), both ignored by older peers; a guest uses them only from a host with npc 1.1 or newer.
 FAMILY(session,   1, 1, 1, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 1, STAGE_CREATURE, "Creature", "")

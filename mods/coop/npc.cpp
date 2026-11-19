@@ -580,6 +580,28 @@ static bool update_filter(void* c)
 // damage filter (MSG_DAMAGE), like any NPC hit on a puppet.
 static bool g_partner_targets = true;
 COOP_FIX("npc.partners", "BUG-0016", g_partner_targets, "creature: the host's NPCs notice, chase and attack a partner's puppet");
+// BUG-1283 (found by the Lineages fork, its BUG-9115): the alpha mark of the host's nest alphas on the guest (below, in
+// the state's apply). `coop.fix npc.alpha off`: a proxy keeps the bit its own game gave it (0.7.15).
+static bool g_alpha_fix = true;
+COOP_FIX("npc.alpha", "BUG-1283", g_alpha_fix, "creature: a guest sees the host's nest alphas as alphas (the card, the extra social round)");
+// the host's build sends NF_ALPHA (npc 1.1 or newer, net/messages.def: 0.7.16); asked once a second
+static bool host_sends_alpha()
+{
+    static double at = -1e9;
+    static bool yes = false;
+    double now = H->time_seconds();
+    if (now - at < 1.0)
+        return yes;
+    at = now;
+    bool has = false;
+    std::vector<net::FamilyRev> fam;
+    yes = false;
+    if (C.sess && C.sess->peer_families(0, has, fam) && has)
+        for (auto& f : fam)
+            if (f.family == 4 && f.rev == 1 && f.minor >= 1)
+                yes = true;
+    return yes;
+}
 static constexpr float kPartnerAiRange = 80.f; // m: NPCs farther from a partner than this ignore it
 static std::unordered_map<void*, void*> g_ai_target; // host: NPC -> the puppet it treats as the player
 static uint32_t g_ai_partner_picks = 0;
@@ -1053,6 +1075,7 @@ static net::NpcState host_state(uint16_t id, void* c)
     s.flags = (!game::is_dead(c) && drive::body_airborne(c) ? net::NF_AIR : 0) | // BUG-0550
               (game::is_dead(c) ? net::NF_DEAD : 0) | (game::impressed(c) ? net::NF_IMPRESSED : 0) |
               (game::pack_member(c) ? net::NF_PACK : 0) | // BUG-0556: the host's pack (a Summon Flock) is the party's
+              (game::alpha(c) ? net::NF_ALPHA : 0) |      // BUG-1283: the nest's alpha
               (game::herd_of(c) && skg::readable(game::herd_of(c), 0x194) && skg::field<uint8_t>(game::herd_of(c), 0x192)
                    ? net::NF_SUMMONED
                    : 0);
@@ -1072,7 +1095,8 @@ static void send_spawn(uint8_t guest, uint16_t id, void* c)
     sp.scale = game::scale(c);
     void* av = game::avatar();
     sp.flags = (game::is_dead(c) ? net::NF_DEAD : 0) |
-               (av && game::herd_of(c) && game::herd_of(c) == game::herd_of(av) ? net::NF_FAMILY : 0);
+               (av && game::herd_of(c) && game::herd_of(c) == game::herd_of(av) ? net::NF_FAMILY : 0) |
+               (game::alpha(c) ? net::NF_ALPHA : 0); // BUG-1283
     sp.pos = game::position(c);
     sp.rot = game::orientation(c);
     sp.health = game::health(c);
@@ -2698,6 +2722,11 @@ static void guest_tick(double now)
         }
         if (!px.killed) // the host's NPC was impressed (by anybody): the proxy shows it too
             game::set_impressed(pe.ref.p, (s.flags & net::NF_IMPRESSED) != 0);
+        // BUG-1283 (fork BUG-9115): the nest's alpha is the host's (+0xB58 bit 0x1): a proxy kept the bit of this game's
+        // own herd (4 of 15 proxies differed in the fork's run), so the guest's card read the plain name and its social
+        // game had one round less (or one more). A host before 0.7.16 sends no NF_ALPHA: the proxy keeps its own bit.
+        if (!px.killed && g_alpha_fix && host_sends_alpha())
+            game::set_alpha(pe.ref.p, (s.flags & net::NF_ALPHA) != 0);
         px.host_pack = (s.flags & net::NF_PACK) != 0;
         // BUG-0556: a summoned flock's member wears the event's hearts (cSummonCreatureEvent update 0xD512A0)
         bool summoned = !px.killed && (s.flags & net::NF_SUMMONED);
@@ -3620,14 +3649,15 @@ std::string list()
             }
             net::Vec3 p = game::position(c);
             // " DEAD" right after dist: tests match "dist=N( DEAD)?"
-            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.2f dist=%.1f%s pos=(%.1f %.1f %.1f) spd=%.1f vel=(%.1f %.1f %.1f) upd=%d/64 velfr=%d/64 moved64=%.1f%s%s%s body=%08X impressed=%d agl=%.2f\n", hn.id,
+            snprintf(b, sizeof b, "  #%u %p species=%08X hp=%.2f dist=%.1f%s pos=(%.1f %.1f %.1f) spd=%.1f vel=(%.1f %.1f %.1f) upd=%d/64 velfr=%d/64 moved64=%.1f%s%s%s body=%08X impressed=%d agl=%.2f alpha=%d\n", hn.id,
                      c, game::species_key(c).instance, game::health(c), net::dist(p, ap), game::is_dead(c) ? " DEAD" : "",
                      p.x, p.y, p.z, drive::speed(game::velocity(c)), game::velocity(c).x, game::velocity(c).y, game::velocity(c).z,
                      __builtin_popcountll(hn.seen_bits), __builtin_popcountll(hn.vel_bits),
                      net::dist(hn.pos_hist[hn.hist_at], hn.pos_hist[(hn.hist_at + 1) & 63]), game::pack_member(c) ? " pack" : "",
                      // BUG-0390: the avatar's herd (family): a partner's hit on it is dropped (npc.party_peace)
                      game::herd_of(c) && game::herd_of(c) == game::avatar_herd() ? " family" : "",
-                     g_ai_target.count(c) ? " on_partner" : "", body_print(c), (int)game::impressed(c), drive::over_ground(p));
+                     g_ai_target.count(c) ? " on_partner" : "", body_print(c), (int)game::impressed(c), drive::over_ground(p),
+                     (int)game::alpha(c)); // BUG-1283 (tests): the game's own alpha bit
             out += b;
         }
     } else {
@@ -3647,7 +3677,7 @@ std::string list()
             net::Vec3 at = pc ? game::position(pc) : net::Vec3{};
             snprintf(b, sizeof b, "  #%u species=%08X %s hp=%.2f dist=%.1f err=%.2f age=%.2f%s want=(%.1f %.1f %.1f) at=(%.1f %.1f %.1f) "
                      "agl=%.2f want_agl=%.2f made_agl=%.2f grounded=%u rx=%d/s spd=%.1f vel=(%.1f %.1f %.1f) own=%.1f tp=%u stall=%u trail=%u nudge=%u/%u puppet=%d ptr=%p herd=%p body=%08X"
-                     " game_dead=%d impressed=%d herd_sp=%d fam=%d\n", // (the game's own flags of the proxy, tests: BUG-0383, w33)
+                     " game_dead=%d impressed=%d herd_sp=%d fam=%d alpha=%d\n", // (the game's own flags of the proxy, tests: BUG-0383, w33)
                      id, px.key.instance, pc ? "spawned" : "pending", pc ? game::health(pc) : 0.f,
                      pc ? net::dist(at, ap) : -1.f, err, px.buf.age(now),
                      px.killed ? " DEAD" : "", st.pos.x, st.pos.y, st.pos.z, at.x, at.y, at.z, pc ? drive::over_ground(at) : 0.f,
@@ -3659,7 +3689,8 @@ std::string list()
                      pc && game::herd_of(pc) && live.count(game::herd_of(pc))
                          ? (int)(game::herd_species(game::herd_of(pc)) == game::species_profile(pc))
                          : -1,
-                     pc && game::herd_of(pc) && game::herd_of(pc) == game::avatar_herd() ? 1 : 0);
+                     pc && game::herd_of(pc) && game::herd_of(pc) == game::avatar_herd() ? 1 : 0,
+                     pc ? (int)game::alpha(pc) : -1); // BUG-1283 (tests)
             out += b;
         }
     }

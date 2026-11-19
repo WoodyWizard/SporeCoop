@@ -3,6 +3,7 @@
 // (BUG-0486, BUG-0465; docs/re/creature.md#creature-drama-events).
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -18,5 +19,7 @@ std::string debug(const std::vector<std::string>& args);
 extern bool g_flock_relay;
 // host: the game's summon event started with a partner's puppet as the avatar (the flock comes to it); false: none
 bool summon_for(void* puppet);
+// BUG-1282: guest: the host started a meteor strike or a rain storm (player_rules K_DRAMA): the same kind starts here
+void from_host(uint8_t kind);
 
 } // namespace drama
