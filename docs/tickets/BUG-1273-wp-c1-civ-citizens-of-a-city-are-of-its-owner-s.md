@@ -63,3 +63,4 @@ checks, the capital and the hook's effect as expected.
 - 2026-11-18: opened.
 - 2026-11-18: feat/w54-citizens: runtime check of the hook (lab 20261118-180539), the design, the test; the PASS / FAIL
   twin runs wait for the night run.
+- 2026-11-18: feat/w54-shims: the WP-0 shim `line_key` is species::key(owner, Stage::Civ), species::own_mode, on_change; civ.own_species_save also strips citizens that show any line key (species::is_line_key); the test sets a Civ outfit with `coop.species test civ next` and checks the 0x7B key on both games. Still open: the night run.

@@ -43,3 +43,4 @@ run (to be filled in with the PASS / FAIL run dirs).
 ## History
 - 2026-11-18: opened.
 - 2026-11-18: feat/w54-line: API, core, unit tests, message, store, console, lab test written (lab not run).
+- 2026-11-18: feat/w54-shims: Cell keys of the line also take a premade cell every game has (not the host's: creations::player_orig), unit tests in species_tests (creation_counts); line_pack reads the owner's own My Creations first; the four packages read the line (docs/01-architecture.md#arch-species-line-packages); creations 1.1 lock rebased (no wire change).

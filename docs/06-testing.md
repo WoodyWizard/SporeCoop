@@ -9284,3 +9284,25 @@ Key frames `line` and `next_session`: no look changes in WP-0 (the frames only d
   for the guest and the guest's city's citizens stay the civilization's species (today's behaviour); the setting goes
   back to own at the end.
 * The NPC cities of civ_npc have the player civilization's species (067C7743): "before the capture" shows that key.
+
+## The per-stage tests on the species line (2026-11-18, feat/w54-shims)
+<a id="testing-species-line-packages"></a>
+
+The WP-0 shims of the four packages went to the species line (docs/01-architecture.md#arch-species-line-packages); their
+tests now set and read the guest's line:
+* `tribe_own_species`: after the guest's creature pick, `coop.species test tribe next` (another own creature as the
+  tribe outfit, WP-T2's stand-in); the guest's key is `coop.species key 1 tribe` (a 0x7B...... key, known on both
+  games), not creations' 0x7C copy; the save check also looks for the outfit's own instance; after the new evening the
+  same key must come back from the host's store before the mix is checked; `coop.species test tribe none` at the end.
+* `civ_own_species` (and `_hostmode`): `coop.species test civ next` after the pick (before host mode is set: the
+  setter is refused in host mode); `coop.civ citizens`' `line 1 key=` and `coop.species key 1 civ` must agree on a
+  0x7B key; `coop.species test civ none` at the end (warm games).
+* `civ_own_designs`: `coop.civ owndesign set <did> <creation>` is the lab's setter of a vehicle or building of My
+  Creations through `species::set_design` (`coop.species test design` takes creatures only); the `pdesign` rows of
+  `coop.civ owndesign` are the line's answers; the keys must be 0x7B and `coop.species` must name the house design on
+  both games.
+* `cell_kin_species`: the guest's cell (a premade one counts, species_line_core.h `creation_counts`) must be
+  `coop.species key <guest> cell` on both games and the host must have none; `coop.pool kin` prints `line=` per player;
+  after `--editor` the host's line names the new cell.
+The FAIL twins stay as they were (`SPORE_FIX_OFF=tribe.own_species`, `civ.own_species`, `civ.own_species_save`,
+`civ_own_designs_off`, `cell.kin_species`); `SPORE_FIX_OFF=species.line` now fails each of them early (no line).

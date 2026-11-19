@@ -44,3 +44,4 @@ tribe_guest_baby, tribe_portraits, tribe_owners_session, tribe_mirror_hunger, tr
 ## History
 - 2026-11-18: opened.
 - 2026-11-18: implemented on feat/w54-tribe (code, test, docs); lab runs pending.
+- 2026-11-18: feat/w54-shims: the WP-0 shim `line_key` is species::key(owner, Stage::Tribe), on_change starts the next pass, the save strip also takes members showing a line key (species::is_line_key); the test sets a tribe outfit with `coop.species test tribe next` and checks the 0x7B key, its return from the store after a new evening, and the outfit's instance in the save. Still open: the night run.

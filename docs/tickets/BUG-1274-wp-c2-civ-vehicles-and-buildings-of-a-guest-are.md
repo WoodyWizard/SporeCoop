@@ -13,7 +13,7 @@ branch: feat/w54-designs
 commits:
 tests: civ_own_designs, civ_own_designs_off
 signature:
-docs: docs/re/civ.md#civ-own-designs
+docs: docs/re/civ.md#civ-own-designs, docs/01-architecture.md#arch-species-line-packages
 related: BUG-1270, BUG-0647, BUG-0670, BUG-1157, BUG-1158
 ---
 
@@ -32,9 +32,9 @@ its own (+0x34 +0x90 = +0xC4), SetModelKey changes it with the design's stats, C
 and buildings owned by a player with an own design for their design id (four times a second, after a purchase, at the
 end of a hooked Civ_SetDesign), keeps their culture key and writes it into +0xC4 while a save is written (savestrip
 hooks), puts it back for a gift to a player without a design, creature.mode host, the switch off and the session end.
-The design records travel once per design (creations::share_design, MSG_CREATION kind 9, host-relayed, creations
-family 1.1) and live under one key of ours on every game. The guest's designs come from a WP-0 shim
-(`line_design`, the console setter `coop.civ owndesign set <id> <creation>`) until species::design (BUG-1270) is in.
+The guest's designs are its species line's (species::design, BUG-1270: one line creation per design, host-relayed on
+MSG_SPECIES_LINE, the same 0x7B...... key on every game; the lab's setter `coop.civ owndesign set <id> <creation>`
+calls species::set_design). (Before feat/w54-shims: creations::share_design, MSG_CREATION kind 9, never released.)
 `coop.fix civ.own_designs off`: everything the culture's design (0.7.15).
 
 ## Verification
@@ -44,3 +44,4 @@ must FAIL). Lab runs pending: the owner stopped every lab run on 2026-11-18 unti
 ## History
 - 2026-11-18: opened.
 - 2026-11-18: code, test and twin on feat/w54-designs (built, make test); lab runs wait for the night run.
+- 2026-11-18: feat/w54-shims: one path for designs: species::design / species::set_design (MSG_SPECIES_LINE line creations, 0x7B keys); MSG_CREATION kind 9 (share_design, player_design) removed before any release; `coop.civ owndesign set` goes through species::set_design; the save strip also gives an object showing a line key without a record the culture set's key (designs::culture_key); on_change sweeps at once. Still open: the night run (civ_own_designs, twin civ_own_designs_off).

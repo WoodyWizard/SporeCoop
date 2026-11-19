@@ -47,3 +47,4 @@ run at food 0 (lab 20261118-180414, before the test raised the food) showed that
 - 2026-11-18: opened.
 - 2026-11-18: researched on plan/0.7.16 (docs/re/cell.md#cell-kin-species); planned as WP-L1 of docs/plan-0.7.16.md.
 - 2026-11-18: moved from 0.8 into 0.7.16 (WP-L1); work on feat/w54-cellkin.
+- 2026-11-18: feat/w54-shims: the WP-0 shim `own_cell_key` reads the species line (species::key(id, Stage::Cell); a premade cell counts, species_line_core.h creation_counts); `coop.pool kin` prints `line=`; the test also checks the guest's Cell line on both games. Still open: the night run (cell_kin_species lane 2, twin lane 3).
