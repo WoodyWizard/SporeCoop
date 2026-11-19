@@ -328,6 +328,10 @@ keeps −1 = pirates? U) → `SetTargetPlanet(rec)` 0xC472C0 → `SetNumBombers(
 (+0x1F8) → Accept. Variants: 0x100E620 (`ret 0xC`, `(0, rec, numBombers)`, used by the `raid`
 cheat parser 0x1025200: `raid -start N | -stop | -plunder | -repair`: handy for tests);
 plunder starter 0x10143E0 (class 0xC4956AA7, factory 0xFEBF90).
+* CONFLICT (2026-11-19, docs/lineages-re): ours above: `SetNumBombers` 0xC5B540 writes +0x1F8 vs the Lineages fork:
+  the bomber count +0x1F8 is set by 0xC5B530 on this build (+0x1FC the raider count). objdump of the GOG 2024 exe
+  (2026-11-19) agrees with the fork: 0xC5B530 `mov eax,[esp+4]; mov [ecx+0x1F8],eax; ret 4`, while 0xC5B540 writes
+  +0x224 / +0x228 / +0x22C (the spawn location, `ret 0xC`); not settled at runtime. See #space-lineages-raids.
 
 Update 0xC5E3E0 ("player present" = target planet is active and context 0):
 * while `mWaitingForRaid` (+0x215): when arrival time passed or player present, ship list via
@@ -3348,3 +3352,156 @@ the old herd spawn (an epic).
   for 1 s gets the skip 0x66F6B6F outside the frame (log "back in the galaxy menu with its intro never ended";
   `coop.status` "menu intro ended at the return N"). Lab 20261118-135316: the host's panel shown at once (16 s into the
   session), 01_menu_host.jpg shows Play / Create / Share / Galactic Adventures / Co-op.
+
+## Lineages fork: adventure goals, objects, play states, sides (2026-11-19, docs/lineages-re)
+<a id="space-lineages-adventure-goals"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+Steam 3010a413 / GOG 2024 code, two games on one PC (fork BUG-9003, 9089, 9113, 9114, 9200, 9201). Adds to
+docs/re/adventure.md#adventure-two-captains, #adventure-puppet-herd and #space-fork-adventure-notes.
+
+* ~ Goal kinds (goal entry type): 1 move-to (Adventure Town's first goal, class 1210, required count 1), 2 talk
+  (class 1147), 3 defeat (counts up to its required), 11 defend (done at the mission's end).
+* ~ Writing a goal's count alone does not advance the act; the credit call does:
+  `SporeCoop::ScenarioCreditGoal` 0xF1ACF0 (CountGoal, thiscall(play, goal, spatial, spatial2) ret 0xC). A talk goal
+  is credited by the game with the speaker NPC's spatial (object +0xC0) and a null second spatial; the null-spatial
+  fallback (the captain) also credits a talk goal and enters the next act without faults. For a defeat goal the
+  spatial is the defeated object's cSpatialObject (building +0x34, the cast 0x1186577).
+* ✔ The game checks a defeat goal against the targets still alive: a credit held back until after its target died
+  failed the mission at once ("You can no longer complete this goal: Destroy Big Evil Keep (0 of 5 destroyed)"). So
+  defeat credits must stay native in every game; what is shared is the death.
+* ~ `cScenarioPlayMode::SetState` 0xF1A9C0 thiscall(play, int state): play +0x90 = state; 3 playing, 5 success,
+  6 failure; a new state 4 after 5 / 6 is ignored. objdump (2026-11-19, docs/lineages-re): the function starts
+  `mov eax,[esp+4]; ... mov edi,[esi+0x90]; cmp edi,eax`, then `cmp eax,4`.
+* ~ An adventure object's marker (object +0x18) holds the spawn type +0x00, position +0x04..+0x0C, orientation
+  +0x10..+0x1C, byte-identical in every game of the same adventure; FNV(marker[0..0x24) + class (+0x1C)) works as a
+  shared object id. Markers are separate allocations (no array to index). Soldiers spawned from one marker share that
+  id, so an id names a group; the object serial +0x24 is the per-creature key.
+* ~ Adventure buildings (noun 0x70703B3) are cBuilding: combatant at +0x120 (vtable 0x1AA7A70 in a relocated
+  runtime image, slot 6 = cBuilding::TakeDamage), hit points at combatant +0x38. Creatures (noun 0x18EB45E): combatant
+  +0x5A8.
+* ~ An object that leaves the object list unhurt was removed by the adventure (a load, an act), not killed: a run
+  where one game loaded while the other played counted 134 false deaths before that rule.
+* ~ A creature puppet needs scenario data: GetScenarioClass 0xB18470 returns null for class index -1 (the crash of
+  #adventure-puppet-herd); the captain has class index -2 and a non-null scenario marker. The fork's prototype binds
+  each remote body to the avatar's herd, class -2 and a resource-owned captain marker; two native
+  SetCurrentAct(currentAct, false) calls per game kept each body, 0 faults. A backward SetCurrentAct(0, false) is
+  invalid: the earlier move target is gone, both missions fail with an unavailable-goal message; the game's own
+  Replay restores the mission.
+* ✔ The scenario scales each captain: GetScale 2.093 in "Bahaha 500 Desert Time Trials", 2.000 in "City Assault"
+  (bounding radius 3.16 / 2.88); a body made from the partner's species keeps the species' scale (1.585 / 1.576 for
+  the 2.093 captain), about 75 %. (Ours: 3.0 in the tutorial adventure, #adventure-puppet-herd: the scale is per
+  adventure.)
+* ~ City Assault has about 85 scenario creatures (noun 0x18EB45E with a marker): classes 1026 / 1027 (two armies,
+  94 / 102 hp), 1083 / 1141 / 1152 (city defenders, 22-208 hp), 1069 / 1096 / 1145 (50000 hp, characters near the
+  start). The allied army wins it by itself in about 3 minutes (about 8 minutes after the intro at 10 FPS).
+* ✔ A scenario creature's side is its cGameData political id (object +0x30): 1 for the captain, its army (class
+  1027) and characters (1069), 2 for the enemy defenders (1083); class 1152 had 0x580 (not analysed). The host's
+  creatures attack bodies of the other side: a partner body with -1 was picked as the AI target but never struck,
+  with 1 it was struck at once. Marker +0x18 and class +0x1C do not decide it.
+* ~ Object +0xE88 is a small per-creature value (0x201 for the captain, 0x10D..0x2103 for others, 0 for a spawned
+  body), not a side. (Ours, docs/re/tribe.md: CreaturePlayAnim 0xC122F0 writes +0xE88 = the new animation track;
+  the fork's values may be that.)
+* ✔ Skipping `NPCTickAI` for a guest's scenario creatures and driving them from the host's states keeps them within
+  1.3 m (p90) of the host's, health equal, at 10 FPS on both games.
+* ✔ A guest's scenario spawns its own waves from markers (about one creature every 2 s): with the host driving, the
+  guest had 80 living creatures with no host partner after about 3 minutes, 56 of them at 0 hp.
+* ✔ A guest's creature given 0 hp by TakeDamage stays alive (`is_dead` 0) when its AI is skipped: the death runs in
+  the behaviour tree (docs/re/creature.md 14.1); Die plus the death animation makes it a corpse within a tick.
+
+## Lineages fork: Civ to Space launch, captain and ship keys, flight training (2026-11-19, docs/lineages-re)
+<a id="space-lineages-launch-captain"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+Steam 3010a413 (fork BUG-9071, 9087, 9187). Adds to #space-fork-adventure-notes and our captain notes (cEmpire +0xC4,
+`SporeCoop::cEmpire_GetCaptainKey` 0xC310F0 / `cEmpire_SetCaptainKey` 0xC31100, NameCaptainDialog 0xE1DC60).
+
+* ~ The player empire's spacecraft setter `SporeCoop::Empire_SetSpacecraftKey` 0xC358A0 thiscall(cEmpire*, const
+  ResourceKey*) ret 4: compares and writes the 12-byte key at cEmpire +0xB8 / +0xBC / +0xC0, then iterates the
+  empire's ships. objdump (2026-11-19): `push ebx; mov ebx,ecx; mov eax,[ebx+0xB8]`. The captain key is at +0xC4..+0xCC
+  (setter 0xC31100, one key pointer, ret 4). 0xE1DD8C sets the generated first captain, 0xFE2C7B the editor's saved one.
+* ~ A guest at Mission Control had an empty captain resource at cEmpire +0xC4. Two games can generate identical
+  instance ids for different designs, so the host's world package could shadow a guest's own UFO in EditorSaves.
+* ~ The accepted ship result: 0xCFD7AB compares the editor context with 0x0116D51D (objdump: `cmp eax,0x116D51D`),
+  writes the ship key to the player's +0x1168 (mSelectedUFOKey) via 0xCF6F20, and asks for the Space transition at
+  0xCFD809 (`call 0xE3E350`). Replaying only those calls on a cold Civ checkpoint showed the Space loading screen while
+  the simulator stayed in Civ: the normal History request keeps the editor and its result processing together. The
+  EditorRequest takes an existing named creation by its model key +0x10 and a first-time flag +0x20.
+* ~ On the first flight the game checks the empire's captain: 0xFE11FE calls 0xC310F0 (returns empire +0xC4),
+  0xFE1203 tests the instance, 0xFE1208 calls 0xE1DC50 (the naming prompt) when it is 0 (objdump 2026-11-19 shows
+  exactly this sequence). A founder's saved captain can be supplied at that check.
+* ~ The start-up layout 0x06776FE1 can overlap Mission Control and block clicks in an early load; the fork waited 600
+  start-up frames and checked that layout was gone.
+* ~ Civ History's root window 0x8C509D6C stays enabled after the real editor opened: a root's existence is not its
+  visibility (check the caption's ancestors and the current mode). A city's readiness can come before the arrival
+  cinematic and its History confirmation.
+* ~ The homeworld flight training: seven orbs, the last one needs a descent from the cruising height; the tooltip
+  changes from "more cities" to "more city" at one remaining; Mission Control then awards Captain and offers the
+  interplanetary drive. cMission +0x16C the target animal's profile, +0x170 its resource key (ModAPI cMission.h);
+  read through the mission noun vector (GetData) in the scan and weapon lessons it named the species shown in the HUD.
+  Killing ordinary members did not advance the diseased-animal counter, killing the designated ones did. A completed
+  objective can keep mission state 3 until its dialogue turn-in.
+* ~ Scanning the crashed ship's wreck (the gear scanner) adds the interstellar drive 0x2569FAE8 to the tool inventory
+  by itself (no grant). The wreck's GetNounID returns 0x18C88E4, the noun of the city ornaments (#space-city-ornaments);
+  the fork's vtable 0x01192100 / getter 0x0098F980 are relocated runtime addresses: in the GOG 2024 exe the getter's
+  bytes `B8 E4 88 8C 01 C3` occur only at 0x86ED80 (search 2026-11-19, docs/lineages-re). The mission's +0x1E8 target
+  planet pointed at another planet than the HUD's current objective: do not take it as the HUD destination.
+
+## Lineages fork: pirate raid fleets and enemy ships (2026-11-19, docs/lineages-re)
+<a id="space-lineages-raids"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+Steam 3010a413. Adds to section 6 (Raids) above; see the CONFLICT line there about 0xC5B530 / 0xC5B540.
+
+* ~ The fleet builder `SporeCoop::RaidBuildFleet` 0xC5C4C0 (plain ret per objdump 2026-11-19) returns to 0xC5E5B5 in
+  the raid's first waiting-for-raid branch; it appends 32-byte ship records to the mission's +0x238 vector. The bomber
+  count is +0x1F8 (set by 0xC5B530), the raider count +0x1FC; adding a bomber also rolls escorts.
+* ~ `SporeCoop::RaidAppendEntry` 0xC5C3F0 (thiscall on the vector, plain ret) appends an empty ship record with
+  parent index -1; the spawn loop accepts -1 as an independent ship at 0xC5D3F6 (objdump: `mov eax,[edi+0x1C];
+  cmp eax,-1`). Appending type-2 raiders this way gave 4 native enemies plus 3 added ships on a four-seat planet,
+  6 plus 1 on a two-seat one; the native bomber stayed one.
+* ~ Enemy empires are the cEmpire enemies vector +0x5C; 0xC34750 (`cEmpire_AddEnemy`) compares and AddRefs the empire
+  pointers. Pirates have political id 0xFFFFFFFF.
+* ~ A 250-HP native bomber had a maximum of 362.5 HP on both games after the fork's scaling (fork design, not the
+  game's); a 20-point native hit took 23 HP.
+
+## Lineages fork: the galaxy menu's planet entries, the homeworld card, ornament models (2026-11-19, docs/lineages-re)
+<a id="space-lineages-menu-card"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+Steam 3010a413 read from a running game's memory, then Ghidra on that dump (fork BUG-9188). Adds to the
+`SporeCoop::GGE_PlanetSet_ptr` / `GGE_RebuildPlanets` / `GGE_PlayStep` entries of overrides_dc04aee5.sym.
+
+* ✔ (runtime) The planet entries (0xBC bytes) of a slot with two saved planets: 8 entries, +0xAC 1 for the two with a
+  save, 0 for six empty stars; +0xAD 1 for all; +0x30 a different id per entry with +0x34 0x2F7D0004 and +0x38
+  0x02E9A2CA on all (? a key of the entry).
+* ~ (Ghidra) `SporeCoop::GGE_FillSaved` 0xDF7F30 fills one entry per star id in the star manager's list +0xF0..+0xF4
+  (the slot's saved games), `GGE_FillEmpty` 0xDF7CB0 the empty stars, `GGE_MakePanels` 0xDF9200 their panels. Entry:
+  +0x00 the planet's name (eastl::wstring; the save is "<name>.spo" in the slot), +0x10 an empty star's name, +0x3C the
+  planet's species key, +0x48 its cSpeciesProfile (the creature on the panel), +0x80 the position, +0x8C the save's
+  state (0 ok, 3 missing), +0xA8 the tech level (0 none / Cell, 1 Creature, 2 Tribe, 4 Civ, 5 Space; 5 also for empty
+  stars), +0xAC has a save, +0xAD shown.
+* ✔ (runtime) The slot's GGEUserData.dat is a DBPF (version 3) with one compressed record (418 bytes on disk) naming
+  the saved games. A .spo of another galaxy copied into the slot is not listed (the same 8 entries).
+* ~ Play on a saved planet: the menu's Play step 0xDEC130 checks "<name>.spo" in the slot (0xB27580) and shows "Bad or
+  Missing Saved Game" when it is missing, else calls `GGE_PlayByName` 0xDEBE70 (thiscall, the name, ret 4; objdump
+  2026-11-19: `ret 4` at 0xDEBFBF), the only caller of LoadGameByName. A mod that plays a planet without a local file
+  hooks the step, not PlayByName.
+* ~ The homeworld card left of the palette is window 0x05D646C8; its picture is window 0x036C0957 with an
+  ImageDrawable (vtable 0x01B63248 in that relocated run, which is our 0x01443248 + 0x720000): drawable +0x28 the
+  image, image +0x04 its texture, image +0x1C / +0x20 its size (128 x 128 loaded, 1 x 1 and no texture when not). It
+  shows the species' png 0x2F7D0004 in the creature group 0x40626200 (the Sporepedia card); group + 1 (the plain
+  thumbnail) alone did not fill it. A guest lacks that png for the host's own creature. Not checked: NPC empires'
+  cards on a guest.
+  Note: our docs/re/creature.md#creature-posed-top-portrait has the ImageDrawable's Image at +0x24 and the size at
+  that object's +0x20 / +0x24 for the Creature HUD portrait: another window, or a disagreement (not settled).
+* ✔ (runtime, Creature stage) An ornament of noun 0x18C88E4 made by a mod carries any creation's model: 0xC6F910 alone
+  drew nothing for a vehicle or building key, SetModelKey (spatial vt 0x94) after it drew the model; vt 0x38 / vt 0x3C
+  move it every frame, vt 0x44 only once.
+* ~ A memory dump of a running game holds SporeKit's hooks: a hooked function starts with a jump out of the image and
+  does not decompile; read it past the first instruction, or dump the game before the mod hooks it.
+
+Not imported (the fork's own mod design or test runs, not game facts): the launch vote and retained Civ victory, the
+reserved seats, the fleet leader per place, the per-player Space lists keyed by identity, the Space difficulty per
+party, the adventure objective journal, the four-founder launch and the training, wreck and core-ending
+qualification runs.
