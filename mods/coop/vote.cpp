@@ -858,6 +858,10 @@ bool SK_CDECL h_Submit(void* req)
                 feed("the host moves everybody on to the Tribe stage (after a vote)");
             }
             return false;
+        } else if (designs::own_outfitter(req, mode, editor, host_world_now() != host_world::HostWorld::Same)) {
+            // BUG-1272 (WP-T2): creature.mode own: the guest's own outfitter is for its own species line (designs.cpp)
+            LOG("evolution: this guest's own Tribal Outfitter opens for its own species (BUG-1272)");
+            notice(g_name + " changes the outfit of its tribe members", -1);
         } else if (std::string why = designs::refuse_own_editor(mode, editor, host_world_now() != host_world::HostWorld::Same,
                                                                  g_sess.name_of(0));
                    !why.empty()) {

@@ -13,8 +13,10 @@ host's editor, and nothing sent the new outfit: the guest's tribe kept the old o
    tribe profile is the host's creation too (the host's key, or a key of ours holding the host's records), the model
    its members are built from has the host's model record (the bem hash of the profile's model key equals the
    host's), and every member of the guest's player tribe was rebuilt from it (its +0xB24 is the profile's generation).
-3. The guest opens its own outfitter the same way. PASS: it is refused (the guest stays in Tribe, a line says why)
-   and the guest's game goes on (no pause or input lock left behind).
+3. creature.mode host (F5; since 0.7.16 the refusal is host mode's: in creature.mode own the guest's outfitter is its
+   own, BUG-1272, tribe_own_outfitter): the guest opens its own outfitter the same way. PASS: it is refused (the guest
+   stays in Tribe, a line says why) and the guest's game goes on (no pause or input lock left behind). The mode goes
+   back to its default at the end.
 
 SPORE_FIX_OFF=tribe.outfit_sync: step 2 FAILs (the guest's tribe keeps the old outfit);
 SPORE_FIX_OFF=editors.guest_designs: step 3 FAILs (the guest's own editor opens; the test leaves it with the red X).
@@ -31,6 +33,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 from harness import mode_word as mode
 import lane  # noqa: E402
 import part_substitutes  # noqa: E402,F401
+import settings_lib  # noqa: E402
 import twoinst  # noqa: E402
 from coop_nest_species import read_pkg  # noqa: E402
 from coop_ui import Ui  # noqa: E402
@@ -227,7 +230,18 @@ def main():
                                'piece of clothing (a leaf on the chest), both in Tribe play')
     outfit_closeup(host, guest)
 
-    # 3. the guest's own outfitter
+    # 3. the guest's own outfitter in creature.mode host (BUG-1158's refusal; own mode: BUG-1272)
+    try:
+        ck(settings_lib.force(host, [guest], 'creature.mode', 'host'), 'the guest plays with creature.mode host')
+        time.sleep(2)
+        own_outfitter(host, guest, gu, ck)
+    finally:
+        settings_lib.reset([host, guest], ['creature.mode'])
+    ck.faults(host=host, guest=guest)
+    return ck.result()
+
+
+def own_outfitter(host, guest, gu, ck):
     ck(open_outfitter(guest), 'the guest\'s hut planner opened')
     t0 = time.time()
     while time.time() - t0 < 10 and mode(guest) != EDITOR:
@@ -251,8 +265,6 @@ def main():
     b = busy(guest)
     print(f'  guest busy after: {b or "-"}', flush=True)
     ck(not refused or 'input_lock' not in b, f'the refused outfitter left no input lock on the guest ({b or "-"})')
-    ck.faults(host=host, guest=guest)
-    return ck.result()
 
 
 if __name__ == '__main__':

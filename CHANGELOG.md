@@ -28,6 +28,10 @@
   rings around its cell (BUG-1266).
 - Cell -> Creature: while the players vote to move on to the Creature stage, the host now sees its Cell world behind
   the co-op window instead of a plain white screen; the move starts when the vote passes (BUG-1269).
+- Tribe: a guest can now dress its own tribe members: the edit badge on the tribe's card in the hut's planner opens
+  the Tribal Outfitter for the guest's own creature, and after Done the guest's members wear the new outfit on every
+  player's screen while the host's members keep the host's look. Before, a guest's outfitter was refused. With
+  "everybody plays the host's creature" (F5) only the host changes the tribe's outfit, as before (BUG-1272).
 
 ## [0.7.15.2] - 2026-11-18
 

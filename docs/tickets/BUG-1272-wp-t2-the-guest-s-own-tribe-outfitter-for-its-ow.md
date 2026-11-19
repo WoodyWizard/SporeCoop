@@ -9,26 +9,43 @@ source: plan-0.7.16
 role: 
 versions: 
 fixed_in:
-branch:
-commits:
-tests:
-signature:
-docs:
-related:
+branch: feat/w54-outfit
+commits: 88dd9fee b1783381
+tests: tribe_own_outfitter, tribe_outfit
+signature: TribeUI_EditorReturn 0x00CDCC90
+docs: docs/re/tribe.md#tribe-own-outfitter, docs/06-testing.md#testing-tribe-own-outfitter
+related: BUG-1158, BUG-1156, BUG-1270, BUG-1271
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Plan 0.7.16 item 1, WP-T2: in the normal co-op mode (creature.mode own) a guest's tribe card edit badge must open the
+Tribal Outfitter for the guest's own species; its result dresses the guest's members on every game, not the host's.
+In 0.7.15 the guest's outfitter was refused (BUG-1158), and before that (0.7.14) it reloaded the guest's tribe slot
+(every member on the guest's screen, the host's too, in the guest's outfit; lost at the next world).
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Ghidra (docs/re/tribe.md#tribe-own-outfitter): the planner 0xD130D0 (message 0x53850BAE, the card's badge) builds the
+request from the card: key = the species slot's +0x504 (on a guest the host's species), tag 0x116DD1B. The result
+message 0x30C11C7 of that tag puts the result in cTribeUI +0x2F8 (0xCD81F0), and the return from the editor 0xCDCC90
+(third branch) reloads slot 0 with it and rebuilds every member. Both are local to the game that opened the editor.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+designs.cpp / vote.cpp: in creature.mode own a guest's outfitter request (editor 0x156276D1, tag 0x116DD1B, host's
+world) is taken (`designs::own_outfitter`): its key becomes `species::own_key(Stage::Tribe)`; the hook on
+`SporeCoop::TribeUI_EditorReturn` 0xCDCC90 takes the result of our request (key +0x18), releases it and clears +0x2F8
+so the slot is not reloaded (the slot stays the host's species); `designs::tick` then calls
+`species::set_tribe_outfit(key)` (retried 30 s): WP-0 sends the bundle, every game dresses the guest's members (WP-T1).
+BUG-1158's refusal stays for creature.mode host, without the hook and for a request not taken.
+Switch: `coop.fix tribe.guest_outfitter off` (the 0.7.15 refusal in every mode).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test `tribe_own_outfitter` (coop_tribe_own_outfitter.py, real clicks: the hut, the card's badge, a body piece, Done),
+FAIL twin `SPORE_FIX_OFF=tribe.guest_outfitter`; `tribe_outfit` step 3 (the refusal) now in creature.mode host.
+Not run yet: the owner's rule of 2026-11-18 (no lab runs until the night run). Night commands (lanes 4 and 5):
+`SPORE_DETECTOR=20 python3 tools/lab.py run tribe_own_outfitter tribe_outfit --lane 4 --lane 5 --retry 0 --no-build`,
+`SPORE_FIX_OFF=tribe.guest_outfitter SPORE_DETECTOR=20 python3 tools/lab.py run tribe_own_outfitter --lane 4 --retry 0 --no-build`.
+Step 4 needs WP-T1 on `species::key(pid, Stage::Tribe)` (feat/w54-shims).
 
 ## History
 - 2026-11-18: opened.
+- 2026-11-18: code, Ghidra RE and the test with its FAIL twin on feat/w54-outfit; stays open until the night run gives the PASS and FAIL run dirs (as BUG-1271, BUG-1274).
