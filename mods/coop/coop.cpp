@@ -618,7 +618,9 @@ void host_away_tick(double now)
     }
     if (g_dna_pending >= 0 && g_sess.role() == net::Role::Client && host_here() && game::avatar() && !g_host_away) {
         float d = g_dna_pending - game::dna(); // the host's total, once we play its world
-        if (d != 0)
+        if (d != 0 && g_own_heard && g_dna_bar_set_fix)
+            game::dna_set_raw(g_dna_pending); // WP-D: our own DNA (the bar follows the host's next total)
+        else if (d != 0)
             game::dna_add_raw(d);
         g_dna_pending = -1;
         g_dna_rx++;

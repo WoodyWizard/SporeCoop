@@ -10,6 +10,13 @@
   checks its look in every stage on both games (BUG-1277).
 
 ### Added
+- Cell and Creature: every player now has its own DNA. Everything the party earns (anybody's kill, friend, meal or
+  goal card) still raises everybody's DNA by the same amount and the evolution bar stays the party's, but what you
+  spend in your editor comes off your own DNA only, so partners no longer spend each other's DNA. A guest's DNA is kept
+  by the host and comes back after a reload, a reconnect and the next session; the host's saved game holds only the
+  host's own DNA. The host can switch back to one shared pool with the new session setting "Shared DNA" (All stages).
+  A partner on SporeCoop 0.7.15 keeps playing the shared pool with the host (BUG-1291). The model and the "set the
+  budget, then move the bar" order come from the Lineages fork by PandizeLive.
 - Cell: the wild cells of the players' own kind now swim near each player in that player's own design: near the
   second player you meet its cell's kin, near the host the host's, and a mix where you swim together; before, all of
   them were copies of the host's cell (BUG-1257).

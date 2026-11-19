@@ -9403,3 +9403,22 @@ record (coop_civ_own_designs.keys_in) for the guest's keys of that stage.
   them on both games). Suite entry `line_stages_editors` (added with WP-X1, feat/w54-x1).
 * coop_campaign.py: the editor driver drags the City Hall palette's parts (TRIBE_EDITOR_PARTS) also in the Civ follow
   phase (a guest's own City Hall / vehicle editors at its arrival, WP-X1), not the spaceship palette's.
+
+## Own DNA per player: dna_own (2026-11-19, feat/w56-dna)
+<a id="testing-dna-own"></a>
+
+WP-D of 0.7.16, BUG-1291 (docs/03-gameplay.md#gameplay-own-dna). `coop_dna_own.py` (creature fixture) reads the game's
+own DNA and bar on both games (`coop.dna bar`), never the wallets (`coop.dna own` prints them for the log). Pace off
+(`coop.dna pace 0`) so `coop.dna add N` gives N; spends the game's way (`coop.dna spend N`, SetEvolutionPoints).
+Cases and twins (suite `full` / `twin`): `dna_own` (spend; twin `dna_own_off`, creature.own_dna), `dna_own_shared`
+(all.shared_dna forced on; twin `dna_own_shared_off`, DNA_SHARED_TWIN=1 leaves it off), `dna_own_reload` (coop.share;
+twin creature.dna_bar_set), `dna_own_rejoin` (twin creature.own_dna), `dna_own_store` (twoinst.session_restart, ~9 min;
+twin creature.own_dna_store), `dna_own_editors` (the vote, both editors with real clicks, key frames of the two DNA
+readouts; twin creature.own_dna). Cell: `evo_screens_cell_dna` (coop_evo_screens.py --part cell-dna: the guest's own
+cell editor with real input; own DNA by default, `--shared` the old checks as `evo_screens_cell_dna_shared`; twin
+`evo_screens_cell_dna_off`).
+
+* `tools/tests/dna_mode.py`: the tests that spend DNA (coop_evo_bar, coop_dna_pace, coop_editor_sync) check the DNA
+  their session plays (`coop.settings get all.shared_dna`) and take `--shared` to force the old pool (a lane knob:
+  the next test starts cold, so the suites run them in the default own mode).
+
