@@ -160,7 +160,7 @@ def place_check(ck, host, guest, gid, hkey, gkey, r, what, secs=45, old=frozense
     every 3 s for up to `secs` s (the host swims a little meanwhile); each player's own kin must be seen in some sample, the other player's kin in none.
     `old`: the kin alive when the players parted (host keys). Owner decision 2026-11-18: where the players are together
     the kin are a mix, and a wild cell does not follow a player, so a kin made while they were together may still swim
-    near either one afterwards; "none of the other's" is asserted for the kin made since they parted (lab
+    near the host afterwards; there "none of the guest's" is asserted for the kin made since they parted (lab
     20261119-115019: two kin of the guest's cell made at the host's place, where the guest called its mate, were still
     there after it left)"""
     seen = {k: {} for k in ('h_host', 'h_guest', 'g_host', 'g_guest')}
@@ -171,8 +171,9 @@ def place_check(ck, host, guest, gid, hkey, gkey, r, what, secs=45, old=frozense
         gp, gc, gh = kin(guest, r)
         now = {'h_host': counts(hc, 0, r), 'h_guest': counts(hc, gid, r), 'g_host': counts(gc, 0, r),
                'g_guest': counts(gc, gid, r)}
-        new = {'h_host': counts(hc, 0, r, old), 'h_guest': counts(hc, gid, r, old), 'g_host': counts(gc, 0, r, old),
-               'g_guest': counts(gc, gid, r, old)}
+        # (only near the host: the guest's place is a fresh area, every kin there was made with the guest there)
+        new = {'h_host': counts(hc, 0, r, old), 'h_guest': counts(hc, gid, r), 'g_host': counts(gc, 0, r, old),
+               'g_guest': counts(gc, gid, r)}
         for k, v in now.items():
             for m, n in v.items():
                 seen[k][m] = max(seen[k].get(m, 0), n)
