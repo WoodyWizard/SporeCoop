@@ -291,10 +291,17 @@ def editors_case(host, guest, ck):
 
 
 def host_editor_case(host, guest, ck):
-    from coop_editor_sync import DONE, back, confirm_captions, editor_ui, in_editor, mode
+    from coop_editor_sync import DONE, back, cinematic, confirm_captions, editor_ui, in_editor, mode
     from harness import log_since, log_size
     m0 = mode(host)
     h0, g0 = prepare(host, guest, ck)
+
+    def no_cinematic(secs):  # the brain level's caption (150 DNA) holds input: the editor's done would be ignored
+        t0 = time.time()
+        while time.time() - t0 < secs and (cinematic(host) or cinematic(guest)):
+            confirm_captions((host, guest), 4)
+        return not cinematic(host)
+    no_cinematic(60)
     guest.call('coop.dna spend 30')
     time.sleep(6)
     h0, g0 = calm(host, guest)
@@ -307,8 +314,9 @@ def host_editor_case(host, guest, ck):
         shot(host, 'dna_own_host_editor_none.png')
         return
     ck(wait(lambda: editor_ui(host), 90, 2), "the host's editor shows its interface")
-    host.call('wait.frames 100 60000')
-    time.sleep(2)
+    host.call('wait.frames 200 60000')
+    time.sleep(3)
+    no_cinematic(60)
     ck(not in_editor(guest), 'the guest is still in the stage (it did not take the Evolve now offer)')
     host.call('click %d %d' % DONE)
     confirm_captions((host, guest), 30)
