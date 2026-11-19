@@ -163,7 +163,8 @@ void kin_before_pass()
 
 // tests (`coop.pool kin [r]`): the counters, each player's cell as this game knows it and where it is, then every
 // live foreground creature within r m of a player whose model is one of the players' cells: its model, whether it is
-// a mirror, the nearest player, its resource (the AI's data) and the AI's targets (flee +0x220, chase +0x22C)
+// a mirror, the nearest player, its resource (the AI's data), the AI's targets (flee +0x220, chase +0x22C), its speed,
+// level and swim target, and `key=` the host's pool index (the same cell on every game)
 std::string kin_report(float r)
 {
     char b[300];
@@ -217,12 +218,14 @@ std::string kin_report(float r)
         }
         if (nd > r)
             return;
+        auto hk = g_host_of.find(idx); // key: the host's pool index of the cell (a mirror's), the same cell on every game
+        uint32_t host_key = hk != g_host_of.end() ? hk->second : idx;
         snprintf(b, sizeof b, "kin cell %08X model=%08X mirror=%d near=%d d=%.3f res=%08X flee=%08X chase=%08X pos=(%.3f %.3f) "
-                 "v=%.3f level=%d target=(%.3f %.3f)\n",
+                 "v=%.3f level=%d target=(%.3f %.3f) key=%08X\n",
                  idx, F<uint32_t>(c, kModelKey), g_host_of.count(idx) ? 1 : 0, who, nd,
                  (uint32_t)(uintptr_t)F<void*>(c, kRes), F<uint32_t>(c, kFlee), F<uint32_t>(c, kChase), q.x, q.y,
                  std::hypot(F<float>(c, kVel), F<float>(c, kVel + 4)), F<int>(c, kLevel), F<float>(c, kTarget),
-                 F<float>(c, kTarget + 4));
+                 F<float>(c, kTarget + 4), host_key);
         out += b;
     });
     return out;
