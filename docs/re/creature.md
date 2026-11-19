@@ -2511,6 +2511,11 @@ and #creature-sea-monster.
   vt+0x40 update(dt). `SporeCoop::DramaManager_StartKind` 0xD4D740 (thiscall(mgr, kind, 0) ret 8) starts every
   idle event of a kind (a multimap by kind at mgr +0x50): the stage start 0xD40FA0 calls it with 4 (baby game), a
   message handler 0xD8E840 with 8.
+* CONFLICT (2026-11-19, docs/lineages-re): ours (Ghidra): an active event ends when vt+0x3C "done?" says so or its
+  duration / condition is over; vs the Lineages fork (code read from a running Steam game): the tick only counts the
+  duration +0x2C down by dt and does nothing else with it; the event ends (+0xC = 0, vt+0x34) only for +0x30 with the
+  avatar's +0xB5E, a time-of-day condition (+0x1C == 3) that is over, or "done?" true (Summon Flock: its own update
+  0xD512A0 acts on the duration). See #creature-lineages-summon-pack; not settled.
 * ✔ Runtime (lane 6, coop_drama_guest.py, out/lab/20261104-033630 / -033725): `coop.drama start 2` (StartKind 2) makes a UFO in the game's object
   list within 4 s where the event may start; the UFO starts at the own avatar (#creature-ufo-abduction-event).
 * Decision (what the partner should see): every event is made by each game for its own avatar (start positions
@@ -3817,6 +3822,10 @@ section 5's open question (how a player answers the call).
   (cCreatureAnimal::Create at the nest, that herd). Marked: **mgr +0x38 mpMate**, **mate +0xB58 |= 0x10**,
   brain +0x5FC |= 0x4000; +0x3C mCheckForMateTimer. 0xD4B180 drops it (both bits, timer = 5 s). `coop.drama mate`
   prints it (and the avatar's behaviour tree node, brain +0xB4C, +0x1D8).
+* CONFLICT (2026-11-19, docs/lineages-re): ours (Ghidra): the candidates are the members (+0x40) of the herd of
+  `NestHerdFor(1)` within 15 m of the nest; vs the Lineages fork (disassembly of a running Steam game): candidates come
+  from the avatar's list +0x1124 (object ids), and with none eligible 0xD52B86 spawns one of the avatar's species near
+  the nest. See #creature-lineages-cocoon-mate; not settled.
 * ✔ The mating call (Backspace) is BT node 0x02D852ED (row 0x158B238: enter 0xD8F8A0, tick 0xD8ECB0, exit 0xD8FA90):
   animations 0x265D18B / 0x265D18C, hearts 0xE1B24DDB on the caller, stimulus 0x800 to creatures it sees, at the nest
   effect 0x2F5E1DB4 (0xD39F70, the bubble over the nest) and `vsoc_matecall_2_loop`. Answerers run node 0x02E16F49
@@ -3842,6 +3851,12 @@ section 5's open question (how a player answers the call).
 * CORRECTION (2026-11-08, fix/w46-g4-tests): docs/re/creations.md (own editor items) called 0x6455B55 "the mating-call
   command" and 0xE45E0F "the end of the mating scene": the Timeline UI and ~ the stage-end evolve button (details
   there). The mating editor is 0xD3C650 (tag 0x12191CA).
+* CONFLICT (2026-11-19, docs/lineages-re): ours (CORRECTION above, Ghidra static): 0xE45760 is the Timeline UI's handler
+  and the mating editor comes from 0xD3C650 after message 0x4D9686F; vs the Lineages fork (disassembly of a running
+  Steam 3010a413 game, runtime on two PCs): the egg scene CRG_LaidEgg B6A1DBE1 ends only through 0xE45760 as "the
+  creature game's key handler" (Escape 0x1B or T 0x54 -> 0xE37920 sets this+0x371, 500 ms timer at this+0x350, then
+  0xE45DCE posts 0x4471C60 at 0xE45E0F, which builds the evolution request in 0xD42E50); in its co-op runs the scene
+  never ended by itself. See #creature-lineages-cocoon-mate; not settled.
 * Recipe (bot, host): near the nest, wait 6 s; `coop.drama mate` -> the mate (+0xB58 & 0x10); its NPC id from
   `coop.npc list`, `coop.npc gonpc <id> 5`, its point from `coop.targets all` (`obj n<id>`); no armed ability; Backspace
   (optional, hearts); left click; avatar node 02D852F0; then the vote / the editor.
@@ -4413,6 +4428,10 @@ BUG-0929, BUG-0937. GOG 2024, lane 4.
 * ✔ (runtime) The window's drawable is a UTFWin::ImageDrawable (vtable 0x01443248) with its UTFWin::Image at +0x24
   (that object has the portrait's size 67 x 68 at +0x20 / +0x24); `UTFWin::Image::GetImage` of a key gives the game's
   one Image of that png, so comparing the two pointers says which picture the window draws (`coop.portrait`).
+* CONFLICT (2026-11-19, docs/lineages-re): ours above: ImageDrawable 0x01443248 holds its Image at +0x24, size at
+  +0x20 / +0x24 (runtime, the Creature HUD portrait) vs the Lineages fork (runtime, the galaxy menu's homeworld card
+  window 0x036C0957): drawable +0x28 the Image, image +0x04 its texture, image +0x1C / +0x20 its size
+  (space.md#space-lineages-menu-card); another window type or a disagreement, not settled.
 * Fixes: `creature.tag_height` (the tag at the highest posed bone x scale + 0.4 m: 1.55 m for that creature instead of
   2.08 m), `creature.hud_portrait` (twice a second outside the frame: the portrait set to the avatar's species png
   when the window draws another one).
@@ -4862,3 +4881,311 @@ lab lane 9 (`coop.wobj orns`, `coop.wobj ornmem`, `tools/tests/coop_ornament_mod
   mod's buffer: the test ends its games with a kill).
 * ? Not explained: "the guest sees bones the host does not have" (the same 12 ornaments are in both games of the
   fixture, from the save); the bone pile an eaten body may leave is still not looked at.
+
+## Fork notes: rescue runs, award call sites, hunger, growth after a death (2026-11-19, docs/lineages-re)
+<a id="creature-lineages-duo-notes"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+The fork's sections "Timed duo rescue", "Cached herd lifetime", "Duo recovery after a guest leaves", "Guest migration
+after a host respawn", "Creature proxy validation", "Earned DNA and hostile combat", "Reserved founder hunger drain"
+(2026-11-03..07, its two-player Steam 3010a413 runs). Only the game facts; the mod's own rescue / seat logic is left out.
+
+* ~ Award call sites (return addresses into the DNA award): the kill award returns to 0xC07BF1, the social award to
+  0xD9BD1B, completed ally and extinction goals to 0xC2EFCE and 0xC2F0D7. The fork: "these three still need individual
+  gameplay qualification".
+* ~ Hunger: creature vtable 0x146A080 + 0x88 is 0xC02E10, which calls `Creature_HungerUpdate` 0xC0D5A0; the clamping
+  setter `Creature_SetHunger` 0xC0BB30 is called at 0xC0D66C, the starvation damage is at 0xC0D692 (scaling the whole
+  tick also scales that damage; the fork scales only the negative meter change in the setter). Fits ours
+  (docs/re/tribe.md, BUG-0935 / BUG-1187; 0xC02E10 also heals, #creature-player-rules).
+* ~ The native DNA path: a death debit through the native DNA routine keeps the species keys across the respawn; the
+  death and nest hatch sequence is the game's own (death caption, age 0, then age 1).
+* ~ A cached nest herd can be freed while a pointer to it is kept: its vtable read null (a fault at read address 0x20);
+  the allocation's destroyed byte can stay readable after the free, so that byte is no liveness test. Check a cached
+  herd against the live herd noun list.
+* ~ A proxy's spatial vtable read null right after a guest's death caption (held 125 s) closed after the host had
+  migrated (fork BUG-9012): a cached creature pointer must be confirmed in the live noun list before every movement
+  pass, not once a second.
+* ~ UI ids: the death caption's confirm button 0x0445C99D (located only once it is enabled: the text shows first); the
+  Minimap help's green button in container 0x05943B78 (an enabled child). A fresh landfall also shows migration and
+  Minimap help after a death.
+* ~ Growth after a death (fork BUG-9011, CORRECTION of its own): a guest that died after the host had finished death,
+  migration caption, Minimap tutorial and hatch sat at age 0 in CRG_SpeciesMigrate FBB3661D, input locked, no caption,
+  over 65 s; migration property 0x514A219 was 2 on the host and 1 on the guest. Ending the cinematic
+  (`cCinematicManager_EndCinematic`) released input but left the avatar at age 0 with hatchling_waiting = 0: BUG-0014's
+  helper needs the waiting behaviour tree. GrowTo(1) alone did not finish growth in 65 s; one manual Update(33) moved the
+  growth state 1 -> 2, growth still did not finish. Fork's final control: with only the proxy lifetime guard both orders
+  passed within the stock 65 s hatch (no forced cinematic end); the stall's native cause stays unknown.
+* ~ The behaviour manager: the Get return and its Read interface differ by 4 bytes. The live Read vtable 0x145CB68 is at
+  Get()+4, so Read's vector +0x20 / +0x24 is Get()+0x24 / +0x28 (our #creature-save-strip note counts from the Read
+  interface). Membership there does not prove that cCreatureAnimal::Update runs for a creature.
+* ~ Numbers seen: an enemy of 6 hp had 10.5 on both peers with four seats and a 2-point attack dealt 2.6; a native 7.5 hp
+  became 10.875 (the fork's own seat scaling, fork BUG-9072).
+
+## Fork notes: HUD bar, nest herds, downed pose, max hp, minimap, hatchling size (2026-11-19, docs/lineages-re)
+<a id="creature-lineages-hud-nests"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+The fork's sections of 2026-11-11..14 (feat/lineages-47; runtime on two Windows PCs, Steam 3010a413).
+
+* ✔ (runtime) The bottom progress bar is HUD window 0x051B5478 in Creature and Cell; its fill is window 0x0652A628 (in
+  Creature five children of the same width, one per brain level). At 1440x1080 the fill spans x 237..1354, y 1051..1077
+  (Creature) and 231..1345 (Cell). The fill's end is the zero-width window 0x051B5168 (the green arrow): x 596 at 317
+  DNA earned, 601 at 321 (cPlayer +0x10F0 / +0x10F4 = 317 / 1000).
+* ✔ (runtime) The Creature bar is not linear in the earned DNA (317/1000 would end at 591; 4 DNA moved the arrow 5 px):
+  each brain level has the same width and its own DNA. Read the arrow instead of computing the end. Cell is linear:
+  food S+0x1C / 1000 (204 food: the arrow at 458 = 231 + 0.204 x 1114).
+* ✔ (runtime) `CreatureGame_JoinNestHerd` 0xD40C70 (cdecl(cNest*)) called by a mod on a guest moves its avatar into that
+  nest's herd at once; the native respawn after a death then hatches it there; no cinematic needed, 0 faults.
+* ✘ (runtime, crash dump) JoinNestHerd on a nest herd with no members faults in Creature_GetHerd (data 0x1674): wait
+  until the herd has members.
+* ✔ (runtime) `cGameNounManager::CreateHerd(pos, species, herdSize, isOwnedByAvatar, personality, createNest = 1)` makes
+  a real nest herd of any species at any point (then cHerd::SetEnabled). It starts with no members; the game spawns them
+  over time (1 at once, the rest within ~2 min) and keeps the herd in the save. Fields of such a herd: +0x11C mRespawnRate
+  120000 ms (2000 gave the first member 4-6 s after the nest was made), +0xF4 the target size (4), +0x114 / +0x118 floats
+  10.0 / 15.0, +0x120 / +0x124 the brain range (0, 5). Herd +0x128 is 1 on a nest herd whose first member the game made at
+  once and 0 on one that got none in 90 s (a small island); a write of 1 is undone the next frame.
+* ✔ (runtime) A world shared at the join is saved before such a nest exists: the partner's game has the nest only after
+  the world is sent again. A guest's copy keeps a nest herd's species as saved (a species changed at run time on the host
+  is not in it). A species can have several nest herds after rebuilt nests (the old ones extinct, +0x190).
+* ✔ (runtime) A nest herd's species: herd +0xA4 (the profile pointer) set to a new species and the members'
+  SetSpecies(profile, age, true) kept the nest in place; on the player's own game the same +0xA4 change stopped the mate
+  offer (no member became class 9).
+* ✔ (runtime) Migration thresholds: player property 0x54FB6BF held 150 at a bar of 601; an editor at 701 started a
+  migration (0x514A219 0 -> 1) and set it to 701. Each game decides on the return from its own editor with its own bar
+  (fits section 16 above). +250 from 351 crossed a brain level (CRG_BrainUpgrade3 F6A4B1E3 over the opened editor,
+  BUG-0404) without a migration.
+* ✔ (runtime) Downed pose: the default death animation 0xF14FAA46 played with cCreatureBase::PlayAnimation (no Die,
+  mbDead stays 0) lays a creature down at 1 hp; skipping its idle refresh (`Creature_IdleRefresh` 0xC148B0) keeps it lying.
+* ✔ (runtime) The follow camera computes each update from the viewer's last pose: a camera moved after the update and not
+  put back drifts and spins within seconds. Turning the viewer's rows by the planet rotation splits the picture (objects
+  at the new angle, surface and sky at the old one); sliding the position rows (viewer +0x30 and the render camera's
+  frame at viewer +0x170, +0x30) keeps it whole. The fork's final way: run `cCameraManager::Update` with another
+  creature as mpAvatar (noun manager +0x54): camera, terrain detail and sky then come from one pose.
+* ? No native red / low-health vignette is known.
+* ✔ (runtime, two faults, edi = 0, a herd update on the stack) `cCreatureAnimal_BaseMaxHitPoints` 0xC04170 (vt 0x7C): in
+  the last branch (no herd +0x1674 -> +0x154, no tuning +0xE84 -> +0x340) it reads species (+0xB20) +0x56C with no null
+  check at 0xC04252: a creature without a species faults there (a guest that joined dead and confirmed the death caption).
+* ✔ (runtime) The minimap update 0xD425A0 gives a nest icon the flags 0x80020, or 0x20 when nest +0x124 bit 0 is set
+  (0xD4294D): 0x80000 is the "?" of a nest not discovered. Writing +0x124 = 1 turned the "?" into the friendly face at the
+  next update; the bit is saved with the world. Further flags: 0x200000 the ally face (herd +0x191 or the player
+  species), 0x100000 herd +0x190 (extinct), 0x8 the own herd (or the nest's vt 0x58).
+* ✔ (disassembly) The family's greeting of a hatchling (BT node 0xD64A30), state 2 at 0xD64C6A: x = creature vt 0x80(0)
+  (float in ST0), then the spatial (creature +0xC0) vt 0x40 SetScale(x). A guest's hatchling: 0.587 for an adult size of
+  0.98 (the egg's 0.1).
+* ✔ (runtime) A body made by spawn_creature gets its own game's random adult size (radius 2.14 against the owner's 2.04).
+
+## Fork notes: cocoon, egg scene, mate keeper, mate card (2026-11-19, docs/lineages-re)
+<a id="creature-lineages-cocoon-mate"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+The fork's sections of 2026-11-13 (fork BUG-9160..9177; disassembly read from a running Steam 3010a413 game, whose exe
+is encrypted on disk). Fits #creature-mating-call and #creature-fork-mating-fov except where a CONFLICT line says so.
+
+* ✔ (runtime) The cocoon is data (ids FNV-1 of the lower-case names): animations (type 0xEE17C6AD) gen_evolve_cocoon
+  0x9C26F705 (curl in), gen_evolve_cocoon_hold 0x4E0D3CBF, gen_evolve_emerge 0xD4F48A35 (event crg_cocoon_hatch); effects
+  crg_cocoon_create 0x59A93586 (a woven grey shell: full 0.2 s after it is made, gone at 2.0 s), crg_cocoon_hold
+  0x6F02369D (a teal glow), crg_cocoon_hatch 0xD033D3AC (a burst). The world object cr_cocoon_collision (group 0x02E9C426
+  of the planet objects, instance 0x69793182, model key 0x0E3BD617) exists; the effects need no object. No code constant
+  references these ids. The shell is sized by the creature's bounding radius / 0.9.
+* ✔ (runtime) A world effect's transform: +4 position, +0x10 scale, +0x14 3x3 (rows = local axes); its up must be the
+  planet's up at the position (with the world's z the effects lie on their side).
+* ✔ (disassembly) The egg scene after a mating is cinematic CRG_LaidEgg 0xB6A1DBE1. The fork: it ends only through
+  0xE45760 (thiscall(this+4, msg, event*) ret 8): event type 1 with key 0x1B (Escape) or 0x54 (T) and [event+0x14] == 0
+  -> 0xE37920 (the only writer of this+0x371 = 1, starts a 500 ms timer at this+0x350); when the timer ran out the
+  handler (0xE45DCE) clears the flag, calls 0xE44200(0) and posts 0x4471C60 (0xE45E0F) and 0x445F729; 0x4471C60 builds
+  the evolution request (0xD42E50). Event type 6 with [event+0x18] == 1000 is a separate branch (+0x270, +0x268).
+  See the CONFLICT line under #creature-mating-call (ours: 0xE45760 is the Timeline UI's handler).
+* ✔ (runtime) In the fork's co-op runs the egg scene never ended by itself (minutes, alone in a session and with a guest).
+  The own creature wore the player's own species while the nest family and the herd (+0xA4) kept an older one; only the
+  nestmate of the own species was offered as mate.
+* ✔ (disassembly) `CreatureCursorKind` 0xD30830 (the fork's CreatureClickAction) calls 0xD2FFD0 for a creature: 9 (mate)
+  when its +0xB58 has bit 0x10, else 7 for a friendly one (0xD3035C / 0xD3036E).
+* ✔ (disassembly) `DramaManager_Update` 0xD52270 (thiscall(this, u32, u32) ret 8; the fork's "CreatureMateKeeper") keeps
+  the mate in this+0x38 (an intrusive pointer, IntrusivePtr_Assign) and marks it (+0xB58 |= 0x10, its controller
+  (+0xB4C) +0x5FC |= 0x4000). Before it: the avatar grown (+0xB34 == 1), +0xB5E clear, its herd with a nest (+0x160);
+  none while the avatar's +0x1678 > 0 (0xD526F7). With no eligible candidate it spawns one of the avatar's species near
+  the nest (0xD52B86) and marks it. Candidates: see the CONFLICT line under #creature-mating-call (the fork: the avatar's
+  list +0x1124 of object ids).
+* ✔ (disassembly) `DramaManager_DropMate` 0xD4B180 (thiscall(this, mate) ret 4) clears both bits **without a null check of
+  the controller**, Release, slot 0, timer this+0x3C. `DramaManager_IsMateCandidate` 0xD4B2A0 (ret 4): vt+0x2C false,
+  +0x135 set, +0xB5E clear, grown, the avatar's species (+0xB20, read by 0xC0BD30), +0xC0 vt+0x58 false, not this+0x14,
+  0xBCA230(+0xB48, 3, 1, 0, 0) == -1 (our "no goal slot (3,1)").
+* ✔ (disassembly) The nestmate's own answer 0xD6D360 also sets bit 0x10 and starts the hearts 0x9005E011.
+  0xC0B8D0 = "grown" (+0xB34 == 1); 0xC02DD0 returns avatar +0x1678 (eggs to lay).
+* ✔ (runtime) A guest's own-family copies are never offered (slot 0, all class 7); one put in the slot with both bits is
+  class 9 and stays (the game's check accepts it); a click on it starts the mating approach (action 0x02D852F0) that
+  then stalls. The avatar's controller (+0xB4C) +0x1D8 = 0x02D852F0 (0xD23FE7CA at the nest) from the click on the mate
+  until the egg scene; on the host the pairing took 12 s.
+* ✔ (runtime) A nest herd with bodies or eggs is refilled with eggs (a new egg: 129 s to hatch, egg +0x1F0); a nest with
+  nothing gets a grown member; an egg set to 2 s hatches.
+* ✔ (runtime, real mouse) The mate's card: the pink mate face when the creature is of the player species (vt 0xD0 at
+  0xB6C9D1, in `CreatureSelectionUI` 0xB6C970: +0xB20 == PlayerSpecies, the key at cSpeciesManager +0xA4, [0x1CF0C24]
+  +0xA4: instance, type, group), the green ally face when the game takes it for another, friendly species. A creation
+  put on the avatar only (BUG-0517) left that key at the world's species, so the own family was "another species";
+  writing the key to the avatar's species gave the pink face at once (also with the mod unloaded). The hearts cursor
+  comes from cursor kind 9 either way.
+* ✔ (runtime) `EditorRequest::Submit` returned false for the stage's own evolution request although the editor opened;
+  fits ours (#creature-c2-audit-0713: the game's Submit always returns 1, only the mod's h_Submit refuses).
+* Pitfalls (runtime): the console's `call <addr> thiscall ...` on 0xC0B8D0 / 0xC02DD0 faulted the game (a misuse of the
+  console call): read fields with mem.read. World-to-screen of a creature's feet uses the stock lens: with a wider FoV
+  the drawn creature is elsewhere (200 px off at 11 m).
+
+## Fork notes: editors from the galaxy menu, the stage start editor (2026-11-19, docs/lineages-re)
+<a id="creature-lineages-start-editor"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+The fork's sections of 2026-11-14..15 (runtime, Steam 3010a413, fresh profiles with `cheat levels -unlock`).
+
+* ✔ (runtime) An EditorRequest for CreatureEditorExtraLarge (0x465C50BA) with no creation key, submitted in the galaxy
+  menu (GalaxyGameEntry 0x02CCD1D2), opens the full Creature Creator ("$2,000" budget, every part) with a base body of a
+  random colour; leaving it returns to the galaxy menu. The game reports mode Editor 0x00DBDBA1 with the galaxy menu's
+  world id.
+* ✔ (runtime) The editor's finish button (the check) is control 0x058A3350, 40 x 40 at the bottom right (1239,922 on
+  1280 x 960; 983,730 on 1024 x 768). Window flag kFlagEnabled off draws it grey and it takes no clicks. The check of a
+  body with no mouth opens the name panel and does not save; the red X asks "Exiting will cause your changes to be
+  lost" (Cancel / Quit at 736,449 on 1024 x 768).
+* ✔ (runtime) Opened while a received world was being written into the save slot, the same request gave an editor whose
+  3D view stayed black (no background, platform or body; the UI fine) for minutes; opened after the transfer it rendered.
+* ✔ (runtime) A new Creature world from the galaxy wizard (empty planet slot, "Choose A Stage", "Choose Your Diet", the
+  Sporepedia "Create or Choose a Creature", "Create Your Own") opens **editor 0xE46C381E**, not the Creature Creator: the
+  underwater stage, two part tabs (legs; hands with the mouths and eyes), three legs, a 145 budget, a random-colour body.
+  The request (logged by h_Submit): +0x1C 0x02CCD1D2 (back to the galaxy menu), +0x20 / +0x24 two words that differ by
+  diet, bytes +0x34..+0x3F 00 00 01 01 01 01 00 01 00 01 00 00, +0x6C 0x00010100, +0x90 tag 0x13C5A95E, +0x94 a parts
+  list (cCollectableItems) made by the wizard. The fork's first "no mouth offered" was its own CORRECTION: the second tab
+  holds the mouths.
+* ✔ (runtime) The same request built with no parts list opens the same editor with the same palette and budget on any
+  profile.
+* ✔ (runtime) The diet card's effect: the wizard's parts list (+0x94) has field +0xC = 1 (unknown items offered), no
+  unlockable items, no unlocked list, and two part states: the other diets' mouths (for herbivore 0x32AC9620 and
+  0xFE534766, type 0x40626000) state 4 (seen, locked). The second tab then shows the chosen diet's mouth and the other
+  two as locked diet silhouettes (a state without bit 2 shows a plain shield).
+* ✔ (runtime) A parts list made the game's way (0x5BF2E0: GeneralAllocator::new_ 0x6DAC bytes, the constructor
+  `SporeCoop::CollectableItems_ctor` 0x597E00, then UnlockPart / LockPart and the state bytes) on a request for
+  0xE46C381E gives the same palette on another game.
+* A test profile's first start shows the Spore account dialog; closing it asks "Quit registration?" (OK).
+
+## Fork notes: scared species, the social meter's bars (2026-11-19, docs/lineages-re)
+<a id="creature-lineages-social-meter"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+The fork's sections of 2026-11-16 (fork BUG-9212, BUG-9230). Its "Steam" addresses are those of the relocated running
+Steam process: **.sym (GOG 2024) address = Steam + 0x110000** (`sym SporeCoop::SocialMeter_SetBar` answered 0x00D21990
+there for the file's 0x00E31990); below the GOG 2024 address first, Steam in brackets.
+
+* ✔ (runtime) One adult killed turned its species from relation 3 to 1 (killed = 1): the ApplyEvent 0 threshold (tuning
+  +0x3FC) was 1 in that save, one kill is enough. A relation 1 (scared) herd runs from both players (the guest got no
+  nearer than ~8 m, others 25-28 m; the host 14.6 m): it is the host's NPC AI, not a proxy fault. Being downed and
+  revived does not change a herd's relation.
+* ✔ (runtime) Two bars grow towards each other from the arc's ends: meter +0x3C (bar 0's start, 0.626) and +0x40 (bar 1's
+  start, 2.516); each bar's full length is half the gap (0.945); full when pos0 + pos1 reaches +0x40 - +0x3C (0xE33705
+  [0xD23705]). After round 1 of 3 both bars stood at 0.315.
+* ✔ Bar i (i = 0, 1, stride 0xA4): lo / pos / hi at +0x134 / +0x138 / +0x13C (fits our `SocialMeter_SetBar` entry);
+  SetBar sets +0x24 ("redraw"). Its list of finished steps: vector begin / end / capacity at +0xA4 / +0xA8 / +0xAC, own
+  storage for 6 entries at +0xBC; an entry is 0x14 bytes {the step's end on the arc (bar 0: +0x3C + length so far; bar 1:
+  +0x40 - it; the last pi / 2), 1.0, -FLT_MAX, 0.0, 0.01}; one entry per finished round.
+* ✔ What is drawn is that list (the draw at 0xE332FF [0xD232FF] walks it); a pos without entries draws nothing. A guest's
+  meter had lo = hi = 0 and empty lists: an empty arc (fits our runtime note that the bar fields stayed 0 on a guest).
+* ✔ The meter tick (~0xE337CB [~0xD237CB]): when +0x24 is set it takes the bars' window 0x562BD40 from the meter's layout
+  (meter +0xC, UTFWin::UILayout::FindWindowByID(id, 1)) and calls its vt 0x90 (the redraw). A guest has no session to
+  run it.
+* ~ 0xE324B0 [0xD224B0](i) ends a step (hi = pos, trims the list with 0xE32120 [0xD22120](i)); 0xE32EC0 [0xD22EC0] is
+  the win (both bars to the end, +0x26 full).
+* ~ The fork's CORRECTION: our .sym note on SocialMeter_SetBar ("the session tick 0xD9B9C0 sets it") is right about
+  SetBar, but SetBar alone is not what draws the fill.
+
+## Fork notes: Summon Flock's end, the pack manager, AbilityBar status 10 (2026-11-19, docs/lineages-re)
+<a id="creature-lineages-summon-pack"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+The fork's sections of 2026-11-16..17 (fork BUG-9245..9250; Steam code dumped from a running game and read offline,
+runtime on two PCs). GOG 2024 addresses (Steam + 0x110000, see #creature-lineages-social-meter), Steam in brackets.
+Extends #creature-drama-events and #creature-c2-audit-0713; see the CONFLICT line under #creature-drama-events.
+
+* ✔ cSummonCreatureEvent vtable 0x147B398 [0x136B398]: +0x30 start 0xD50EA0 (`SummonEvent_Start`), +0x34 end 0xD514F0,
+  +0x3C done? 0xD4D2F0 [0xC3D2F0], +0x40 update 0xD512A0 (`SummonEvent_Update`; fits our .rdata 0x147B3D8).
+* ✔ done? 0xD4D2F0: the herd from the event's prop list +0x5C..+0x60 ({key, object} pairs, key 0x609F2F8, object
+  vt+0xC(0x52AA6117)); true when there is no herd, its list +0x40..+0x44 is empty, or every creature in it has +0x135 == 0.
+  Emptying the list (end = begin) makes it true; the manager's next tick then runs the game's own end, which pools nobody.
+* ✔ (runtime) update: a flock kept near its leader keeps the event active (it lets go only members over 100 m / 50 m,
+  as ours); the duration alone does not end a summon.
+* ✔ end 0xD514F0: for each listed member `cPosseSimulator_RemoveMember` 0xD53440 [0xC43440](member, 0, 0); then the
+  herd goes through cGameNounManager::DestroyInstance. (runtime) Right after it the flock stood at (0 0 0) with herd 0:
+  the members go back to the game's pool, which later handed the same objects (same serial +0x24) to other herds' spawns.
+* ✔ (runtime) The list is not maintained by Creature_SetHerd: members moved to another herd and dead members stay
+  listed; an entry at a freed address later held a newborn of another species.
+* ✔ (runtime) **+0x135 decides whether the game updates a creature**: members with +0x135 = 0 (set by hand) were not in
+  the cCreatureAnimal::Update list for 60 s and stood still; with 1 in the same herd they walked. Wild NPCs read 1.
+  cHerd::SetEnabled does not change it. So SummonEvent_Update's "lets go" (+0x135 = 0) freezes a creature.
+* ✔ (runtime) A summoned creature's species key read 0 about 7 s after its summon; its species profile stayed.
+* ✔ (runtime) A save keeps an active summon event and its list (after a reload it ran 540-600 s past its duration);
+  StartKind(8) starts only idle events (+0xC == 0), so every later summon was refused. The world has one summon event:
+  while it runs nobody summons.
+* ✔ (runtime) The drama manager starts no event of another kind while one runs: a night_predator event (time-of-day window
+  +0x20 21.0 h to +0x24 3.0 h) left every summon refused; moving its window ended it at the next tick.
+* ✔ (runtime) A member's SetTarget (vt 0x84, the victim's combatant) is kept (+0xE7C) but a summoned member does not go
+  to the target. The attack order is `cPosseSimulator_Relay` 0xD52E40 [0xC42E40] case 0x10 / 0x400 (the not-allied
+  check 0xBFEA30 [0xAFEA30](member, target, 6) and PosseMemberCanDefend first); only a creature in the game's pack
+  obeys it (the flag 0x100 alone did nothing; one added with `cPosseSimulator_AddMember` went and fought). Case 0x10
+  runs another path in mode 0x1654C10 (not read).
+* ✔ The pack is three things: the pack manager cPosseSimulator, one object of 0x58 bytes in the global 0x169E5B8
+  [0x158E5B8] (getter 0xD53980 makes it on first use: allocate 0x58, ctor 0xD538A0, vt+0x1C); the member list in the
+  noun manager (+0x5C / +0x60 / +0x64, getter 0xB1F900 `lea eax,[ecx+0x5C]`); its leader, the avatar (noun manager +0x54).
+* ✔ ctor 0xD538A0: vtable 0x147B760, +0x8 a second vtable 0x147B73C, +0x10 = 60000, +0x14 a float, +0x18 = 0 (the pack
+  size, 3 at runtime), +0x1C = 0 (the summoned count), +0x20 / +0x24 / +0x28 a small vector with inline storage at
+  +0x38 (0x20 bytes), +0x34 = 0; it writes itself into the global (a second object made by the ctor must give the global
+  back). 0xD52DA0: real members = list size - +0x1C. 0xD52DC0: the size limit = +0x18 when an avatar exists, capped by
+  [0x145C44C] above 3. A count of 3 with no summon running came with a save (fork BUG-9249).
+* ✔ vtable 0x147B760: 0xD53680, 0x804A00, 0x8342E0, 0x453A80, 0xD53740, 0xD52C30, 0x1082A20, 0xD53A30 (+0x1C, called once
+  after the ctor), 0xD536E0 (all converted from Steam by + 0x110000). The pack manager has no per-frame update: only the
+  Pack panel (0xD2B950 [0xC1B950]) and the drama manager (0xD52270) ask for it every frame; its +8 interface is the save
+  (attribute tables 0x1583D30 [0x1473D30]).
+* ✔ AddMember 0xD542E0: a summoned creature (its herd +0x192, or +0xE68) counts +0x1C up and has no limit; any other is
+  refused when list size - +0x1C >= 3 (a fixed 3, not +0x18) or when it is listed; it adds the portrait to the Pack panel
+  through App::cCreatureModeStrategy::Get() +0x68 (skipped when null), a name, the first-pack hint 0x533535DA.
+  RemoveMember 0xD53440 counts down for a summoned one and removes the portrait the same way.
+* ✔ Callers (call rel32 scan): the pack manager getter 48 sites in 30 functions; the member list getter 41 sites in 33
+  functions; AddMember 5 (0xD9F650 the social recruit, 0xD50EA0 the summon start, 0xC20390, 0xF1D4B0, 0xF3B430); the
+  relay 3 (TakeDamage 0xC075E0, 0xC032F0, 0xC03CD0); AddPosseMember 0xB23430 only from AddMember.
+* ✔ `Creature_PlayerCommand` 0xC032F0 is how a click becomes a pack order: the command stimulus on the avatar, then the
+  relay; the relay's attack case reads the avatar's own target (SetTarget, +0xE7C), not the command's.
+* ✔ (runtime) Following: a creature's update 0xC09570 [0xAF9570] (our NPCTickAI) posts stimulus 0x4000000 (value 5.0) on
+  its own brain from a sensed creature with the avatar mark (+0xB58 & 0x200); brain +0x184 = the sender of slot 6. The
+  mark lent to a partner's puppet, or the stimulus posted by hand, did not make a member follow the puppet.
+* ✔ (runtime) The host's pack landed every bite; a partner's pack (same recruits, same order, leader beside the target)
+  none: the check that stops it was not found. The fork's way out: the partner's own game runs its pack (its creature is
+  that game's avatar), where follow, defend and attack work with no change to the game's code.
+* ✔ (runtime) `AbilityBar_Status` 0xD49220 of Summon Flock (0x33) is **10** when the ability exists (row 4) but is not on
+  the bar yet: a press does nothing. `AbilityBar_Use` 0xD49560 is where a mod can refuse an ability before the game
+  spends it (no cooldown, no hint).
+* ✔ (runtime) Wild creatures spawned by the mod live in herds of the mod's kind and are never saved (savestrip): a save
+  test needs creatures of the world's own nests.
+
+## Fork notes: the pause menu's save, step by step (2026-11-19, docs/lineages-re)
+<a id="creature-lineages-save-steps"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+The fork's section of 2026-11-17 (Ghidra on a GOG 2024-equivalent image dumped from a running Steam game, so the
+addresses are the .sym ones). Extends #creature-save-strip (SaveGame 0xB29000) and docs/re/space.md 15.4 (the GOG
+2016 handler 0xB29930 is this 0xB29960).
+
+* ✔ (Ghidra) The fork's `SporeCoop::SaveGame_MessageHandler` 0xB29960: the Save message 0x1CD20F0 clears
+  `SporeCoop::SaveGame_Allowed` (byte 0x15689AC), starts `SporeCoop::SaveGame_Clock` (0x167DF70), shows the busy cursor,
+  pauses the game time (reason 0x4BF38A7) and posts 0x685DBFA; 0x685DBFA posts itself again until the clock shows
+  1000 ms, then the clock pauses, the game time and the cursor come back, the star record's tech level and flags are set
+  and cGamePersistenceManager_SaveGame(CurrentGameName, 1) writes the save (a 0.7-0.9 s frame), then the "game saved"
+  box shows.
+* ✔ (Ghidra) The box's OK (listener 0x1568A7C, 0xB269F0) starts a second clock (0x167DF88) and posts 0x685DBFA, which
+  1500 ms later sets SaveGame_Allowed again: a box that is never confirmed (or a save whose box is skipped) blocks every
+  later save.
+* ✔ (Ghidra) The Clock: +0 start ticks, +8 accumulated ticks, +0x10 mode (1 rdtsc), +0x14 float ms per tick
+  (Clock::GetElapsedTicks 0x93A310). Adding 1000 ms worth of ticks to +8 once the Save message was handled lets the next
+  0x685DBFA write the save at once (the game time paused a frame or two instead of a second).
+* ✔ (Ghidra) The silent save, message 0x689C9B9 (same handler; its one other use is the leave-the-planet path 0xB638CD,
+  MessageSend with data 0, see docs/re/space.md 8.2): the same save steps at once, with no clock, no game-time pause, no
+  busy cursor and SaveGame_Allowed untouched; the "game saved" box afterwards only when the message's data is 0 (a
+  failed save always shows its box). Only the persistence manager listens to it.
+* ✔ (runtime) The message system keeps a message's data as a counted object (vt 0 AddRef, vt 4 Release): a plain
+  non-null pointer crashed in MessagePost (App::cMessageManager::MessagePost+0x20, data 5). Posted (vt 0x18) from the
+  frame hook with a token object, the message hung the main thread in MessageSend's lock. Sent with MessageSend (vt 0x14)
+  outside the frame, as the game's leave-the-planet path does, with a static token object: the save is written at once
+  (one 0.7 s frame), no box, no pause, and the next host loaded it.

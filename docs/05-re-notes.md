@@ -293,3 +293,21 @@ capacity and the world's objects). A "bound" is what keeps co-op counts below th
   stress runs show the world's object counts (`objects: all= creatures=`) for a later comparison.
 * The "same caught EIP every frame" signal BUG-0432 asks for exists in SporeKit (exceptions.cpp `storm_check`,
   BUG-0676); every caught fault fails a lab test (`p.faults`, the lab's log check).
+
+## Reading the Steam code from a running game, Ghidra on Windows (2026-11-19, docs/lineages-re)
+<a id="re-notes-lineages-ghidra-windows"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab. The fork's method when only the
+Steam exe (3010a413, the same code as GOG 2024, 5.1.2) is at hand, whose `.text` is encrypted on disk:
+
+* ~ The code is read from a running game: a fork script (`tools/qa_win/dumpexe.py`, not in our repo) reads the whole
+  image with SporeKit `mem.read` (64 KB a call, about 400 calls, under a minute), undoes the ASLR relocation with the
+  image's own `.reloc` table (379 089 fixups) and writes a PE with image base 0x400000 whose file offsets equal its
+  RVAs. Addresses then match the `.sym` files. Its `.data` is the game's state at the dump, not the initial values.
+* ~ Ghidra 12.1.4 with Temurin JDK 21 runs on Windows; the fork's tools/ghidra/common.sh calls `analyzeHeadless.bat`
+  with Windows paths under Git Bash and does without flock. Its env `SPORE_GHIDRA_ANY_EXE=1` lets mkproject.sh take
+  an exe of the same code with another hash, and `SPORE_GHIDRA_PROJ` sets the project path (our tools/ghidra has
+  neither yet).
+* ~ Ghidra refuses a project path with a folder whose name starts with "." (such as `.local`).
+* Many fork notes imported on 2026-11-19 (docs/re/*.md sections `*-lineages-*`, the "Lineages:" lines of
+  overrides_dc04aee5.sym) were read from such a dump ("Steam 3010a413", "live body", "decoded code").

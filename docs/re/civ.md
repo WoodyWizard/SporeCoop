@@ -391,6 +391,13 @@ the religious cVehicle).
   +0x754, notifies (0xB3D550→0xAC8BD0) and calls `CheckReligiousConversion` 0xBEAB60 ✔.
   Called only from the per-slot preach tick 0xBEB2F0 (thiscall(city, int slot)), which first
   calls `OnAttacked(1, pol)` and computes `count` from tuning 0x169D235 (0xCEEA30…0xCEEB70) ~.
+* CONFLICT (2026-11-19, docs/lineages-re): ours (✔ above) says ConvertCitizens moves followers from the owner or
+  from a rival converter to `converterPol`; the Lineages fork (GOG 2024 disassembly, fork BUG-9078) says that when the
+  caller differs from the current converter +0x754 (compare at 0xBEB216) the code at 0xBEB244..0xBEB268 first takes
+  followers from the current converter and gives them back to the city's owner, and only a contribution left over
+  after that reversal switches +0x754 to the new converter; a nation preaching in a city another nation converts
+  gains nothing at first (its runtime fixture saw 0 followers gained). See
+  [civ-lineages-religion](#civ-lineages-religion); not settled.
 * **Hook point (religious role bonus): 0xBEB1C0**, scale `count` ([esp+8]) when the slot's
   vehicle (find via +0x62C/+0x618, or simply the religious vehicle of the bonus player nearest
   the city) belongs to a "religious" player. ~ (the slot→vehicle mapping is not fully traced)
@@ -2347,3 +2354,193 @@ run yet: the night lab runs `civ_own_arrival` and its twin). Code: mods/coop/civ
   draws and saves as in Tribe; that cGameModeCiv's listener sees the result while the editor closes (else the
   planner's copy is used, if the planner's listener is registered then); that the result's +0x14 is the editor id
   (the log prints it; the code uses the editor id).
+
+## Fork notes: founder nations, species keys and control entry points (2026-11-19, docs/lineages-re)
+<a id="civ-lineages-founders-control"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+GOG 2024 / Steam 3010a413 code (the fork read the Steam code from a running game, ASLR undone; the Steam exe is
+packed on disk, so on-disk disassembly is no evidence). Fork tickets: fork BUG-9046, 9053, 9054, 9135, 9155, 9170.
+
+* ~ (runtime, fork) Spore forms a second nation with its own treasury and **empty** country and city species keys
+  (cCivilization +0x268, cCity +0x658 mSpeciesKey). Writing both keys reads back at once; after a save the nation
+  keeps its key and the **city clears its own** (+0x658). Citizens are made with the **nation's** species even while
+  the city key is empty (19 citizens of each city with the expected species on host and guest after a cold start;
+  our [civ-own-species](#civ-own-species) section reads `City_Species` -> civ +0x268, which agrees).
+  The citizen noun 0x018EB4B7 has its owning city at **+0x1010**; many registered citizens of a save have no live
+  owning city and say nothing about either city.
+* ~ (runtime, fork) Once NPC nations exist, "the only blank nation" does not identify a new capital (every new nation
+  starts blank); the fork snapshots the live cities before `SpawnNextCity(ex, 0, 0)` and takes the one new city.
+  The tutorial captions of Civ stop the game time: a founding requested then completes only after the captions
+  are answered (3 minutes in one run). `cCity +0x38` (a "city level" candidate, as cCommunity +0x38 in Tribe) read 0
+  on a fresh and on a grown capital: **no city level found there** (negative result).
+* ~ (runtime, fork) `GetDesignKey(city+0x590, design)` with 0x99E92F05 (City Hall) or 0xF670AA43 can return a stock
+  fallback (0x068044ED hall, vehicle 0) when the custom model is not in the resource manager: entering Civ does not
+  prove a guest has the host's designs. A custom building and a custom vehicle can share one instance id
+  (0x29160CE8 in the fork's save), so group and type are part of a design's identity.
+* ✔ (Steam 3010a413, fork: vtable dispatch, ret checked) Control entry points:
+  * City spatial (city+0x120) vt 0x58 -> **0xBD8300**, bool thiscall(spatial), plain ret: reads byte spatial+0x21C =
+    city+0x33C (mbIsPlayerCity). **0xBD8310** = SetIsPlayerCity(bool), ret 4. (Our section 1 table's 0xBD8300, the
+    specialty getter, is a GOG 2016 address.)
+  * Vehicle spatial (vehicle+0x34) vt 0x58 -> **0xC9E820**, bool thiscall(spatial), plain ret: compares the native
+    player political id with the vehicle's.
+  * **0xBFBD30** the nation AI update: ECX = nation, no stack arguments, plain ret at 0xBFC4B7; the city simulator
+    calls it at 0xAE62E6 and ignores the result. 0xBFBD68 calls GetPlayerCivilization, 0xBFBD6D compares ESI with
+    EAX: the player branch is chosen by **pointer**, not by the nation's +0x89 mIsPlayerOwned flag; the common economy
+    updates run before the branch.
+  * Terrain cursor (GOG 2024): `GetTerrainCursor` 0xB30EB0 cdecl, ret at +0x107; vt 0x58 SetObjects 0xB2FC70 only
+    stores the borrowed vector pointer at cursor+0x164, ret 4; vt 0x5C GetSelected 0xB310F0, vt 0x7C box selection
+    0xB31170, vt 0x80 ApplySelection 0xB30920 all read that list (a nation's +0xD4 vector). An empty ground click or
+    box need not deselect. A guest mouse drag selects its own nation's vehicles only when the cursor holds that
+    nation's +0xD4 vector.
+* ✔ (fork, ret checked) **MoveSelectedToGround 0xCF2680 is not argument-free**: it ends with `ret 0xC` at 0xCF2A48;
+  live input passes the target, mouse flags and a position pointer (our `.sym` names it only as a caller of
+  OrderStamp).
+* ✔ (live, fork BUG-9155) Refusing cCity::ChangeOwner (not calling the original) for a city keeps it with its nation on
+  host and guests; the capture flags +0x2E0..+0x2E6 (set by Capture before ChangeOwner) must be cleared then. A city
+  given back with ChangeOwner(city, pol, 0, 0) and then City_SetPartsOwner(city, nation) outside the game's
+  ChangeOwner (the host's tick) followed on the guest.
+* ✔ (live, fork) A nation that loses its only city is gone at once: CivByPol of its political id returned null right
+  after the capture (UpdateCaptureDecay drops dead nations), so a capture cannot be given back to it.
+* ? (fork) The native game over of the player nation (the host's last city) is not known.
+* ✔ (runtime, fork BUG-9170) The creature editor (EditorRequest CreatureEditorExtraLarge, no creation) opens from Civ
+  as from Tribe and returns to Civ; the saved creature is then usable. The native Tribe -> Civ graduation runs the
+  City Hall editor (0x99E92F05) and then the Military Land vehicle editor (0x7D433FAD).
+* ~ (runtime, fork) An incoming ChangeOwner while that city's planner (CommunityEditor) is open leaves buildings of
+  both factions in the city; the fork holds a city whose editor updated within the last three frames.
+* ? (fork) The position field of a cCivExpansion site record (+0x14, stride 0x64; [civ-spawn-next-city-args](#civ-spawn-next-city-args))
+  is still not known; SpawnNextCity's non-zero `who` argument is not understood.
+
+## Fork notes: campaign credit, Space readiness and the telemetry manager (2026-11-19, docs/lineages-re)
+<a id="civ-lineages-campaign-credit"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+GOG 2024 / Steam code, fork BUG-9056 / 9058; adds to [civ-stage-end](#civ-stage-end).
+
+* ✔ (fork, ret sites) **GetCityCount 0xBF0320** thiscall(nation), plain ret at +0xF: (nation+0xA0 - nation+0x9C) / 4.
+  Only the unlock tooltip (return 0xE05ECF) and the tech tooltip (return 0xE06345) use it as a pure count without
+  indexing the city vector.
+* ✔ (fork) AddCity 0xBF44B0 calls SetVehicleTech **0xBEF8C0** at 0xBF4611: one int, `ret 4` at +0x66, raises
+  nation+0x298 only upward and refreshes the player feedback (it can start the air-vehicle caption). **0xBEFE80** the
+  final-count getter: cdecl, no arguments, returns at +0x35 / +0x43, reads Civ tuning +0xAC. **Highest owned city
+  count: nation+0x4D0.**
+* ✔ (fork) **RefreshUnlocks 0xBF2510** thiscall(nation), plain ret at +0x229: clears the twelve unlock bytes at +0x484,
+  maps the player history traits, compares city counts with the native thresholds, reads the first city's specialty
+  for the fallback global weapons and disables them at the final count. It reads only the city vector's length and
+  first city and never changes the vector.
+* ✔ (fork) ChangeOwner 0xBE8A20 calls GetPlayerCivilization at 0xBE8A85 (return 0xBE8A8A) to pick the campaign
+  history and goals; ChangeOwner resizes the event payload to ten words at 0xBE8D97 and appends the specialty
+  (+0x24). Capture counters +0x4C0 / +0x4C4 / +0x4C8 as in section 1.
+* ✔ (fork) **0xCF7730** (Space readiness) ignores ECX, takes no stack arguments, returns AL, plain ret at +0x1E / +0x21:
+  player nation +0x298 >= 4; ChangeOwner calls it at 0xBE8E5D. At ten team cities it returned true on both games.
+* ✔ (fork) **0xCF8F80** the campaign fraction: no stack arguments, float in x87 ST0, ret at +0x8F / +0x95; home city
+  vector length / tuning +0xAC, 0 without a nation or denominator. Do not call it with an integer-only console call
+  (ST0 is left live). The Civ HUD calls it at 0xCEAB7F (return 0xCEAB84), stores ST0 at 0xCEAB87 and passes it to the
+  widget setter 0xE04510.
+* ~ (fork, superseded inside the fork) **0xAE3740** thiscall(tuning, int kind, Vector3 position by value), `ret 0x10`
+  at +0x12D, ECX unused, builds a 9-word (36-byte) event (kinds 3 / 4 / 5 = military / religious / economic, stage 3;
+  payload +4 = the home nation's own city count). The manager behind it, **0x67DE50** (cdecl, plain ret +5, loads the
+  global 0x165D910), is **telemetry** (telemetry.dat, App/Telemetry, writer 0x7EB6D0), not the player-visible history:
+  its records prove nothing about the timeline. AddEvent 0x7EC230 (stage, kind) `ret 8` at +0xB2; the stage-map lookup
+  0x7EC0A0 (key pointer, ret 4) **inserts on a miss**. Manager result +0x10 bucket array, +0x14 bucket count; a stage
+  node: key +0, list sentinel +4, hash-chain link **+0x10** (the serializer 0x7EBC70; +0xC was wrong); a list node:
+  next +0, prev +4, event +8, kind node+0x10, payload vector node+0x14 / +0x18. B26910 before it returns the Civ
+  tuning, not a history manager.
+* ✔ (runtime, fork BUG-9088) A nation's second city opens the native Communications Panel lesson (title 0x01510D07,
+  box 0x06318E78, checkmark 0xFFFFFFF1); a captured religious city's specialty question uses the same window 0x06318E78
+  with choices 0x05107B19 / 0x05107B1A ([civ-shared-message-box](#civ-shared-message-box)).
+* ~ (runtime, fork BUG-9052) The camera lesson of the Civ tutorial advances with repeated key-down messages followed by
+  key-up, not with one held message (centered cursor in both variants); GetKeyboardState was called 0 times during the
+  lesson. The vehicle-selection lesson, the geyser caption and the Goals tooltip follow it.
+
+## Fork notes: military production, vehicle, turret and building combat (2026-11-19, docs/lineages-re)
+<a id="civ-lineages-combat"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+GOG 2024 / Steam code, fork BUG-9072, 9076; adds to [civ-ai-vehicle-spawns](#civ-ai-vehicle-spawns).
+
+* ~ (fork) `VehicleSlotsLeft` 0xBF2240 is 0 at 36 vehicles; else the **purpose allowance 0xBF2110** minus the count of
+  vehicles of that purpose. Runtime: a rival with two cities held 32 economic and 7 military vehicles and the military
+  query returned 0.
+* ~ (fork) The military branch of 0xBFA7A0 calls GetElapsed on nation+0x148 at 0xBFA974 and needs more than 40,000 ms;
+  the religious branch reads nation+0x168 and needs 50,000. The game can skip the timer when it changes targets. The
+  purchase loop checks the expansion budget against the price at 0xBFB058, the slots at 0xBFB067, spawns at 0xBFB0B1
+  and subtracts the price at 0xBFB0CB. Runtime: eight vehicles for 24,000 after 28,000 ms.
+* ✔ (fork, vtable and runtime) The vehicle combatant (vehicle+0x508) vtable 0x01474CE8 +0x18 -> 0xCAB6F0; its +0x58
+  getter **0xBFCC50** reads combatant+0x2C in Civ (the max HP, = vehicle+0x534); current HP combatant+0x38 (=
+  vehicle+0x540, as in section 1).
+* ✔ (fork, prologue) The turret combatant vtable 0x01466C28 +0x18 -> **0xBD0660**: the prologue subtracts 0x588 from
+  the receiver and checks incoming attackers for the turret type 0x0436F315. The turret's city pointer is at
+  turret+0x688. 0xBE3AE0 (placement at a given slot) rejects occupied or missing slots, then calls the constructor
+  0xBE2100. Runtime: the native weapon of a turret loaded cold targeted a nearby vehicle after an attack order.
+* ~ (runtime, fork) Houses, factories and entertainment buildings: combatant at +0x120, current HP +0x158, **max HP
+  +0x14C** (800 for a rival building). City Hall's native damage path adds capture progress only when the other
+  buildings are destroyed (or for special damage types): hitting City Hall first lost 0 HP.
+
+## Fork notes: buying a city and trade (2026-11-19, docs/lineages-re)
+<a id="civ-lineages-trade"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+GOG 2024 / Steam code, fork BUG-9079, 9080, 9081, 9082; adds to section C and the city purchase notes of BUG-0877.
+
+* ✔ (fork, disassembly) `cCity_Buy` 0xBE99A0: GetMoney at 0xBE9A04, SpendMoney at 0xBE9A1E, Capture type 2.
+  FinishBuyCity 0xBF0600 reads the pending city at nation+0x440, converts the signed int price at **+0x444** to float
+  and calls cCity_Buy at 0xBF063B. BuyCity 0xBF0520: pending target +0x440, selected int offer +0x444, float quote
+  +0x448; five offers 32,000 / 24,000 / 16,000 / 8,000 / 4,000. The offer handler 0xCFFC7F reads the player nation's
+  scratch fields and wealth; 0xCFFCC9 subtracts the fair-offer tolerance 120 (float at 0x013F1EF4) from the quote: a
+  fair or higher offer is accepted, a lower one refused (not random). FinishBuyCity(false) zeroes the meter +0x758 and
+  sets the buyer +0x75C to 0xFFFFFFFF; "Nevermind..." closes the talk through its cancel path and keeps the meter.
+* ✔ (fork) The command handler 0xCF3350's Buy City branch calls **CanBuyCity 0xBD8110** at 0xCF35F1 and GetBuyPrice
+  0xBE93A0 at 0xCF361F, both with the native player political id. CanBuyCity needs city+0x75C == buyer and city+0x758
+  >= 100; an enabled menu item alone does not prove it.
+* ✔ (fork, ret site) AddBuyProgress (GOG 2024) **0xBDD270** thiscall(city, float amount, uint32 buyerPol), `ret 8` at
+  0xBDD31E (same body as section C). The economic vehicle calls it at 0xDCCBFB after computing its influence at
+  0xBD9590. TradeDelivery and GetBuyPrice are separate functions.
+* ✔ (fork, prologue, callers, live reads) **0xD00BD0** thiscall(relationship manager, polA, polB, bool) `ret 0xC`
+  returns the relationship category 0..4 (the "level query" of ChangeOwner).
+* ✔ (fork, live entry probe) Route acceptance **0xCEEF90** (cCity*, requesting cCivilization*) on the stack, `ret 8`,
+  returns a float; the route behaviour calls it at 0xDCA391. For a requesting nation whose +0x89 mIsPlayerOwned is
+  false it returns 0 at category <= 1, then needs category >= 3 from the target; later branches tell player, AI and
+  neutral cities apart. No route in a hostile fixture is no evidence of broken routes. Test setup only: one scalar
+  diplomacy event per direction set to the cheat event 0x0526E5DC with value 100 gave category 4.
+* ✔ (fork, ret sites) AddTradeRoute 0xBE1490 thiscall(city, partner, type) `ret 8` at 0xBE196A appends to **both**
+  cities' +0x55C vectors but creates the +0x570 price-map entry **only on the first city**: replaying routes in an
+  arbitrary endpoint order does not reproduce both cities' pricing maps. GetBuyPrice 0xBE93A0 reads +0x570 before its
+  price tuning.
+* ~ (fork) RemoveTradeRoute 0xBDFA70 thiscall(city, partner) `ret 4` removes only the selected city's entry: remove
+  both ends before rebuilding a route. (Our section C note keeps "?" on the shared route object, which calling it for
+  both ends might free twice; the fork does not say how it handled the object.)
+* ✔ (fork, callers 0xBE14E9, 0xBE93E0) **CityTradeMap_Index 0xBE08E0** thiscall(map, key pointer) `ret 4` -> node+0x14
+  float*, keys compared as **signed** ints, a missing value inserted as 0 (city+0x570).
+* ✔ (fork, call site 0xD05F27) **FloatMap_EraseIterator 0x8DB190** thiscall(map, output iterator*, node iterator by
+  value) `ret 8`: decrements map+0x14, rebalances, frees the node without a value destructor, returns the next node
+  (also used for the integer follower map: map+4 anchor).
+* ~ (fork) DeclareAlliance / DeclarePeace with Civ political ids instead of cEmpire pointers crashed at IsAtWar+0x22
+  reading 0x2232+0x84 (fork BUG-9080); the signatures are in docs/re/space.md.
+
+## Fork notes: religious conversion and preaching slots (2026-11-19, docs/lineages-re)
+<a id="civ-lineages-religion"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+GOG 2024 / Steam code, fork BUG-9078, 9084, 9086. Competing converters: see the CONFLICT line in section B.
+
+* ✔ (fork, runtime reads) Follower map city+0x5A0: root +0xC, count +0x14, node right +0, left +4, key +0x10, int
+  followers +0x14. **CityFollowersMap_Index 0x643A00** thiscall(map, const uint32* key) `ret 4` compares **unsigned**
+  (jb / jae, checked at the ConvertCitizens calls 0xBEB235 and 0xBEB2A1) and returns node+0x14 int* (our `.sym`
+  `MapU32Int_StageMap_At`, same address); do not use the signed trade map index 0xBE08E0 for it.
+* ~ (fork) Purpose 1 is religious, 2 economic (as in section 1); one ConvertCitizens call moved followers without a
+  capture; repeated preaching across frames with city updates between completed it.
+* ✔ (runtime, fork BUG-9086) The four 128-byte preaching slots of a rival city never seen by the host's camera
+  (city+0x618 / +0x61C) have **capacities 0 at slot +0 / +4**: the preacher attaches and takes retaliation (from
+  0xBEB6F8) but cannot convert. Moving the host's camera there sets them to 10 / 2 and the same AI captures the city.
+  * 0xD57B00 updates the city crowd controller's formations (controller+0xAF0 = the city), called from 0xD616DF (bind)
+    and 0xD61A55 (refresh); the manager 0xAC8C80 has one controller at +0xA4 (it owns the visible crowd: do not bind it
+    to remote cities).
+  * The formations: cCommunityLayout::SetParameters 0xAF9C70 `ret 0x10` and 0xAFDF60 `ret 4`, spacing 1.5 (0x13EED94),
+    inner radius 7 (0x1486054), outer radius 3 (0x13EB950); 0xAFDF60 makes trunc(r^2 / spacing^2 * 0.5) 24-byte slots.
+    0xD57D16 passes both counts to **0xBD9FF0** thiscall(city, slot, innerCount, outerCount) `ret 0xC`, which writes only
+    slot+0 / +4.
+  * **0xBEB310** thiscall(city, int slot, int activePreachers) `ret 8` at 0xBEB708; its only caller 0xBEB7EA passes the
+    slot and the number of active preaching slot objects (not a time step). A slot's spatial object is at slot+0x78.
+    (Our section B note of the per-slot preach tick 0xBEB2F0 has one argument; that is a GOG 2016 address.)
+* ~ (fork) The +0x5BC / +0x5D8 per-pol maps are transient deltas.

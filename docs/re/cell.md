@@ -2702,3 +2702,33 @@ BUG-1269. GOG 2024, Ghidra; the logs of lab 20261118-144132 (evo_screens_switch:
   `coop.vote` prints "host History checks held before the end sequence N".
 * Note on #cell-switch-to-creature's "Held (not called) the game stays in Cell with History closed and plays on": that
   was the game's logic (state, mode); its picture was the end sequence's white with the letterbox (this section).
+
+## Fork notes: the native HP debit sites, the spectator camera, part carriers (2026-11-19, docs/lineages-re)
+<a id="cell-lineages-hp-camera"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+Steam 3010a413 code (the GOG 2024 code under SteamStub, 05-re-notes 5.1.2) and the fork's Windows runtime tests;
+fork tickets BUG-9072, BUG-9109..9111, BUG-9171. Extends the fork notes in #cell-fork-lineages-43.
+
+* ✔ (fork, decoded code) CreateCellObject 0xE74A20 sets the new cell's native HP at 0xE74EFD.
+* ✔ (fork, decoded code) GetDamageAmount 0xE589A0 is followed by the HP debit at four return sites: 0xE7A817
+  (DamageCell 0xE7A7C0), 0xE71915 (in the electric/poison area damage 0xE71520), 0xE7DE73 (EatChunkA 0xE7DD90) and
+  0xE7DCCB (EatChunkB 0xE7DBD0). Two other callers only compare the estimated damage with the victim's HP (a
+  preview): a hook on GetDamageAmount that counts every call charges those twice. The fork's .sym names the four
+  return addresses CellDamageCommit, CellAreaDamageCommit, CellChunkACommit, CellChunkBCommit.
+* ~ (fork, runtime) The health ring uses hp/6 (#cell-guest-bite-ring), so a cell HP scaled above 6 is a display
+  question of its own; the fork applies no maximum-HP patch.
+* ✔ (fork, runtime) cCellUI +0xE0 is the cell the camera follows: writing a partner puppet's pool index (its first
+  field) there makes the game's own camera follow that cell (the drawn point at the partner 28 m away); 0 gives the
+  avatar back (snap with +0x48 / +0x54 / +0x60, the drawn / target / lag positions). Right after a rejoin +0xE0 held
+  0x88010000 for a moment (the game's own follow, a hatch). The Goldie event writes the same field
+  (#cell-goldie-cutscene).
+* ~ (fork, runtime) The cells near the camera were only made once the host used the followed partner's position as
+  the knocked-out guest's view centre; farther than about 20 m from the own avatar the game draws every cell blurred
+  (a render rule around the avatar, its code not found).
+* ~ (fork, runtime) The loot table's entry layout stays unknown (#cell-fork-lineages-43); the fork learns which
+  species carry parts at run time instead: a SpawnLoot 0xE771D0 whose new cells include a cellType 6 (part token)
+  marks the dead cell's .cell (one such species learned in the first 5 minutes of play).
+* ~ (fork, runtime) Spawned extra predators move like the natives (top speeds 2.6 m/s both, sampled every frame).
+* ~ (fork, runtime) An unpainted cell creation is drawn as a pale, see-through membrane in the pool (an NPC of it and
+  the player's own cell alike); a painted one with its paint.

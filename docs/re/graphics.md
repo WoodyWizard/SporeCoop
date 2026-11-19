@@ -219,3 +219,104 @@ BUG-0948. GOG 2024, lane 4, Creature (the guest's follow camera turned by SporeK
 * Fix BUG-1218 (`world.menu_movie`): in a stage, a video still playing after 0.5 s is stopped outside the frame with
   StopMovie, as its own end stops it; the posted GGE_intro start is refused outside the menu (BUG-0626): the log shows
   "would start outside the menu" in the same millisecond as "the start-up video was still playing in the stage".
+
+## Fork notes: native HUD layouts, sliders, Settings, UI layers and scale (2026-11-19, docs/lineages-re)
+<a id="graphics-lineages-native-ui"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+GOG 2024 / Steam 3010a413 code, the fork's Windows runtime tests (Creature at 1024 x 768 and 1280 x 960, the UI at
+125 %); fork tickets BUG-9191, BUG-9196, BUG-9238, BUG-9241. Its tools named here (sui::*, coop_ui ns_remap,
+`coop.ui at|path`, ui.tooltip_place) are the fork's, not ours.
+
+The Pack panel and the health bar (2026-11-13):
+* ✔ (fork, package scan) Layouts (SPUI 0x250FE9A2, group 40464200, Spore_Graphics.package and PatchData.package;
+  Spore_EP1_Data.package has its own): the Pack panel B40BABD4 (window 03D98298, the "Pack" pill 03DAE412 / caption
+  064A90A0, slots 03D98299 / 03D98304 with the portrait window 0614A0C4 30x30, frames 056BD170 / 056CEC38, hidden
+  member parts 04F656E8 / 03D99151); slot layouts EFAD77A3, 1A1A60BF, 2D192B78, 7EF4FF02, 7DC28C78, 0EB96844 (per
+  stage, the same ids); the Creature HUD with the health bar 5ED10964 (also 26B068D2).
+* ✔ (fork) The health bar (window 0685A85E, 86x13 at 1024x768): the "+" icon (ImageDrawable), the number (font
+  727EE727), a clipping window 018AC46E (flags 0x413: 0x400 clips its children) as wide as the health, holding the
+  full green pill 0665FE90 (StdDrawable), and over it an unnamed window with the edge (StdDrawable). Pixels 1:1: a pill
+  of 58x11, a 1-pixel edge (0,35,0), the fill a green gradient (0,252,0) at the top to (0,59,0) at the bottom; the
+  energy bar the same in orange.
+* ✔ (fork) A StdDrawable's images are pieces of a texture sheet: the image object (vtable 01B60814) holds two
+  pointers (+4, +8) and the piece's corners as floats (+0xC..+0x18), its size at +0x1C / +0x20 (32 x 32 here); no
+  resource key seen in it.
+* ~ (fork) A slot layout (EFAD77A3) loaded by hand into the main window with every child made visible overflowed the
+  stack twice.
+* ✔ (fork) A label draws no drawable; a window of the game's image kind (UTFWin::IImageDrawable::AddImageWindow) draws
+  a 128x128 creation picture scaled into its area. A StdDrawable (mode 2: cut in thirds) shows nothing of a 128-pixel
+  picture in a 45-pixel window; modes 0, 1, 3, 4 neither.
+* ✔ (fork, runtime 2026-11-13) Sporepedia::ShopperRequest::Show 0x64A900 (= SP::cSPUIAssetBrowser::AdvancedLaunch,
+  spore-decomp) opens a creation's large card when the request has +0x24 set, a key at +0x18 (currentSelection) and
+  **+0x13 clear**; the request constructor 0x644AC0 sets +0x13 = 1 (the grid: with it the browser opened on
+  Everything, also with +0x2A = 1, which only shows a "Close" button). A partner's shared key (0x7C......, a mod
+  package) opens its card too, and the host's world species on a guest.
+* ✔ (fork, code bytes in a crash dump, BUG-9196) cPlayer::GetConsequenceTrait 0xC75880 thiscall(cPlayer*, uint32
+  stage id) ret 4: returns cPlayer +0x10FC (Cell A426730B), +0x1100 (Creature AD56080C), +0x1104 (Tribe F71FA311),
+  +0x1108 (Civ BEB528CB), +0x110C (Space 2DB6DAD3). A Simulator card data class (vtable 0x147CA48, slot 0x8C =
+  0xDD1000) calls it without a null check on cGameNounManager +0x74 (the player): a card kept from a game and drawn in
+  the galaxy menu read 0 + 0x10FC.
+
+Native sliders, the Settings dialog, window transforms (2026-11-14):
+* ✔ (fork, the only push of "UTFWin/EA::UTFWinControls::WinSlider", found in the running Steam game at image
+  +0x90000) UTFWin::ISlider::Create 0x985AC0 stdcall IWindow*(int, ICoreAllocator*) ret 8, as IButton::Create
+  (allocates 0x258 bytes, returns obj+4); ISlider = Cast 0x0F00A8A0; vt 0x14 SetOrientation (1 horizontal, 2
+  vertical), 0x1C SetValue(v, notify), 0x20 GetValue, 0x24 / 0x2C min / max, 0x34 / 0x38 the slider drawable. The
+  Audio page's Music slider is 0x8BDD39EC (values 0..1000).
+* ✔ (fork) A SliderDrawable here is 0x28 bytes (ModAPI says 0x1C): +0 IDrawable vt, +4 DefaultLayoutElement vt, +8
+  the reference count, +0xC the ISliderDrawable vt (what GetSliderDrawable returns), +0x10 images[3] (background,
+  thumb, thumb container), +0x1C a float 1.4. The native slider draws no background; the container (38x130) is the
+  groove with its ticks, stretched to the window. The thumb image is a strip of 4 states side by side (the thumb is a
+  quarter of the image wide; the idle knob draws the second frame).
+* ✔ (fork) The Settings pages' text labels ("Shadows", "Screen Size", "Full Screen Mode") are not buttons. The Graphic
+  cache field's spinner drawable (0x046170A4) and frame draw nothing in a window of another layout.
+* ✔ (fork) The Settings dialog: a root (44x38, its pieces placed around it) holding the frame (19 pieces), two
+  backgrounds, Accept 0x043B7A18, Cancel 0x043C8FD8 and the settings window 0x043DE590 (tabs, title, the pages
+  0x046967C0); the Graphic page 0x0437A968: the quality table, the cache box, Defaults, Screen Size 0x046170A1, Full
+  Screen (0x061C90B8, check box 0x05B591C0, a toggle button: state flag 4). Moving and growing these with SetArea holds
+  while the dialog lives (it is kept between openings).
+* ✔ (fork) The Screen Size control 0x046170A1 is a button (caption "1366 x  768 @  60Hz"), not a combo box (the
+  IComboBox cast fails). Its list is a popup of one hidden button per display mode (children of the control), laid out
+  20 px apart around the selected one over a plain background window with scroll arrows: Spore shows only as many as
+  fit (27 of 32 at 1280x960) and never lays out the others. A pick is the button under the pointer. Spore saves the
+  chosen mode as its place in the mode list (Preferences.prop text line "OptionScreenSize 21"), so the Direct3D mode
+  list must stay whole (a filtered GetAdapterModeCount / EnumAdapterModes made an Accept with no current entry save
+  another mode).
+* ✔ (fork) The renderer's device settings at runtime 0x17A2444 (0x1712444 plus the image shift): +8 width, +0xC
+  height, +0x10 refresh, +0x14 format, +0x24 fullscreen; in a window they hold the window's size, not the Settings
+  list's mode.
+* ✔ (fork) Window transforms: Window +0xC0 local, +0x104 its inverse, +0x148 as drawn, +0x18C the inverse global
+  (each 0x40 bytes of floats then the type: 0 identity, 1 translation and scale). An earlier fork note (spore-decomp)
+  gave +0xC4 / +0x108 / +0x14C / +0x190; the fork's later runtime list is the one above. Writing the local matrix does
+  nothing: the window manager rebuilds it and sends it to the window's procs as kMsgTransformed (0x15, Message +0x18
+  the matrix), the way InflateEffect grows a button; a proc with event flags 0xFFFF gets it (0x80 alone does not).
+  Scaling x[0] / x[5] there scales the window about its own middle; InvalidateTransform (vt 0x98) asks for it again.
+* ✔ (fork) Hit tests: a scaled window is drawn scaled but plain windows are hit-tested at their unscaled places.
+  Window flag 0x20 makes that window's hit test go through its transform, but not the controls' own mouse use. Windows
+  with a transform of their own (InflateEffect menu buttons) are hit-tested through the full transform.
+  IWindowManager vt 0x44 GetWindowAtPosition(const Point&) (x, y floats) returns the window the game's hit test finds.
+* ~ (fork, research) No UI scale setting in Properties.txt / ConfigManager.txt, no command-line option, no known mod.
+
+The whole UI as one picture, the world layers (2026-11-14 .. 2026-11-16):
+* ✔ (fork, runtime) Spore's UI tree: the main window (0xFFFFFFF0) holds ~20 full-screen layers (0x05B598F6 ...
+  0x3F608B3E, flags 0x13); the HUD pieces sit in full-screen holders (id 0xFFFFFFFF) inside them, placed by
+  SimpleLayout anchors (top 1, bottom 2, left 4, right 8). Setting a holder's area (vt 0x60) to a smaller screen and
+  calling Revalidate (vt 0x94) on the windows in it lays the HUD out for that screen.
+* ✔ (fork) The main window's area clips the whole UI (shrunk, everything past it was cut off in screen pixels). The
+  main window gets no kMsgTransformed; each layer (its child) does: its matrix scaled by f with the pivot at the
+  screen's top left draws everything in it scaled, children included.
+* ✔ (fork) Not anchored: the Creature HUD's Pack button (0x03D98298 under layer 0x08D0F4FB, at x = screen - 44) is
+  placed in code; the hints over creatures ("to learn to charm", 0x05246048 in a holder of layer 0xCBDF6E1D) are
+  placed by the world's projection each time.
+* ✔ (fork, Creature) The health bar over a creature (the player's own when hurt or starving, a selected one's) is a
+  holder 0x93310E4A placed at the creature's screen point (real screen pixels) with the bar 0x026E0DF0 ('health'),
+  0x026E0DF2 ('hurt'), 0x026E0DF3 ('none') and the number 0x04D039A8 (its caption the health) under it, and a hidden
+  0x933103EB, in a layer of its own, 0xE9F70DF9 (the main window's child), made when the first bar shows. Cell and Civ
+  have the same two world layers (0xCBDF6E1D hints, 0xE9F70DF9 bars). These world layers must not be scaled with the
+  HUD (fork BUG-9238).
+* ✔ (fork, BUG-9241) Spore's tooltip is one window, 0x03754E6C (StdDrawable, kept hidden between uses with its last
+  text), a child of the HUD layer 0x05B598F6 (the cheat console 0x014A4606 is there too). The game puts it at the
+  pointer's real screen place (centred, about 20 px under it), not at a remapped mouse place.
+* ~ (fork) The creature editor at 125 %: the part category tabs (top left) came out smaller than at 100 % (not looked
+  into). ? Not looked at: the bars over Tribe members, Civ units and vehicles, Cell's health ring.
