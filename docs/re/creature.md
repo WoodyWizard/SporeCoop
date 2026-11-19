@@ -4428,6 +4428,10 @@ BUG-0929, BUG-0937. GOG 2024, lane 4.
 * ✔ (runtime) The window's drawable is a UTFWin::ImageDrawable (vtable 0x01443248) with its UTFWin::Image at +0x24
   (that object has the portrait's size 67 x 68 at +0x20 / +0x24); `UTFWin::Image::GetImage` of a key gives the game's
   one Image of that png, so comparing the two pointers says which picture the window draws (`coop.portrait`).
+* CONFLICT (2026-11-19, docs/lineages-re): ours above: ImageDrawable 0x01443248 holds its Image at +0x24, size at
+  +0x20 / +0x24 (runtime, the Creature HUD portrait) vs the Lineages fork (runtime, the galaxy menu's homeworld card
+  window 0x036C0957): drawable +0x28 the Image, image +0x04 its texture, image +0x1C / +0x20 its size
+  (space.md#space-lineages-menu-card); another window type or a disagreement, not settled.
 * Fixes: `creature.tag_height` (the tag at the highest posed bone x scale + 0.4 m: 1.55 m for that creature instead of
   2.08 m), `creature.hud_portrait` (twice a second outside the frame: the portrait set to the avatar's species png
   when the window draws another one).
