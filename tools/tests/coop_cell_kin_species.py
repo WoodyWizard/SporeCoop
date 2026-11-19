@@ -22,9 +22,10 @@ players' cells, with the nearest player, its resource and the AI's targets), on 
   4. the host's save (a new slot, `coop.save`) holds no key of the guest's new cell (a 0x7C...... key of the mod's
      own, after --editor; the premade cell's key is printed only: a premade's id may be in any save).
 
-Distances are in view-box widths (--dist, --r): the world scale G+0x514C grows with the level and positions shrink
-with it (pos * scale is invariant, docs/re/cell.md#cell-world-scale); a box is ~10 m wide at scale 0.5 (level 1,
-coop_cell_levelup_area.py), so one width is taken as 5 / scale world metres.
+Distances are in view-box widths (--dist, --r): one width is the width of the game's own visible box
+(Simulator::Cell::ViewBoxes, `box=` of `coop.pool kin`), 20 cell units at every level (docs/re/cell.md#cell-kin-test-units).
+The first lab run (20261119-095414) took one width as 5 / world scale (G+0x514C): 15000 at level 10 made it 0.0003,
+so the players were "apart" at 0.7 units and no kin was within the radius (a wrong test, not the mod).
 
   coop_cell_kin_species.py [--food 924] [--dist 6] [--r 1.75] [--editor]
 FAIL twin: SPORE_FIX_OFF=cell.kin_species (every kin is the host's cell: none of the guest's near the guest).
@@ -39,11 +40,14 @@ import time
 from twoinst import Checks, keyframe, start  # (first: it puts tools/ on the path)
 import lane
 
-PREMADE_CELL = 'BAF1AD40'  # a premade player cell in Spore_Content (coop_creations_cell.py)
+# the Cell wizard's herbivore premade (docs/re/cell.md#cell-kin-test-units): its own cell editor saves. The first
+# choice, BAF1AD40 (coop_creations_cell.py), never left the editor: Done did nothing (lab 20261119-095414, lane 10 probes)
+PREMADE_CELL = 'E219E5D2'
 PLAYER_RE = re.compile(r'^kin player (\d+)( \(me\))? cell=([0-9A-F]{8}) drawn=([0-9A-F]{8}) made=(\d+) pos=\(([-\d.]+) ([-\d.]+)\)', re.M)
 CELL_RE = re.compile(r'^kin cell ([0-9A-F]{8}) model=([0-9A-F]{8}) mirror=(\d) near=(-?\d+) d=([\d.]+) res=([0-9A-F]{8}) '
                      r'flee=([0-9A-F]{8}) chase=([0-9A-F]{8}) pos=\(([-\d.]+) ([-\d.]+)\)', re.M)
 HEAD_RE = re.compile(r'^kin fix=(\d) own=(\d+) partner=(\d+) no_key=(\d+) unknown=(\d+)', re.M)
+BOX_RE = re.compile(r'^kin fix=.* box=([\d.]+) ([\d.]+)', re.M)
 
 
 def arg(name, default):
@@ -171,6 +175,12 @@ def world_scale(con):
     return float(m.group(1)) if m else 0.0
 
 
+def box_width(con):
+    """the width of this game's visible box (Simulator::Cell::ViewBoxes), 0 when unknown"""
+    m = BOX_RE.search(con.call('coop.pool kin 0')['out'])
+    return float(m.group(1)) if m else 0.0
+
+
 def main():
     dist_w, r_w, food = float(arg('--dist', '6')), float(arg('--r', '1.75')), int(arg('--food', '924'))
     host, guest = start('cell')
@@ -186,7 +196,9 @@ def main():
     hk0 = next((p['drawn'] for p in kin(host, 0)[0].values() if p['me']), None)
     gk0 = kin(host, 0)[0].get(gid, {}).get('cell')
     sc = world_scale(host)
-    unit = 5.0 / sc if sc > 0 else 20.0
+    unit = box_width(host)
+    ck(unit > 0, f"the host's game has its view box ({unit:.2f} wide)")
+    unit = unit or 20.0
     dist, r = dist_w * unit, r_w * unit
     print(f"  food {food}: world scale {sc:.4g}, a box width {unit:.2f} m: apart {dist:.1f} m, near {r:.1f} m; the host's "
           f"pool {kin(host)[2]}; host's cell {hk0}, the guest's {gk0}", flush=True)
@@ -255,12 +267,18 @@ def main():
         reached = mating_call(guest, 'guest', lambda: 'Editor' in mode(guest))
         ck(reached, "the guest reaches its mate: its own cell editor opens")
         time.sleep(15)
+        from twoinst import shot
+        shot(guest, 'kin_editor_before.png')
         edit_cell(guest, 'Bobkin')
+        time.sleep(3)
+        shot(guest, 'kin_editor_done.png')
         back = False
         t0 = time.time()
         while time.time() - t0 < 40 and not back:
             back = 'Cell' in mode(guest)
             time.sleep(2)
+        if not back:
+            print('  guest ui after done: ' + guest.call('coop.uistate')['out'][:1500], flush=True)
         ck(back, 'the guest is back in its pool after its editor')
         nkey, t0 = None, time.time()
         while time.time() - t0 < 60:
