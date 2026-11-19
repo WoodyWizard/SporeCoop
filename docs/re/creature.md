@@ -4987,6 +4987,11 @@ is encrypted on disk). Fits #creature-mating-call and #creature-fork-mating-fov 
   0x6F02369D (a teal glow), crg_cocoon_hatch 0xD033D3AC (a burst). The world object cr_cocoon_collision (group 0x02E9C426
   of the planet objects, instance 0x69793182, model key 0x0E3BD617) exists; the effects need no object. No code constant
   references these ids. The shell is sized by the creature's bounding radius / 0.9.
+  CORRECTION (2026-11-19, feat/w56-cocoon): on GOG 2024 (lab lane 6, our probe `coop.cocoon play <hex>`)
+  cCreatureBase::PlayAnimation answers 0 for 9C26F705, 4E0D3CBF and D4F48A35 on the Creature stage's avatar and on a
+  puppet (the current animation stays the locomotion's 02481DE5 / 027844AD); a known one, 0265D18B, answers 259 and
+  plays; CreaturePlayAnim answers 0 too. The animations are not in those creatures' animation set there (the fork's
+  owner test "they stand still, the cocoon appears" fits). The three effects work: see #creature-cocoon.
 * ✔ (runtime) A world effect's transform: +4 position, +0x10 scale, +0x14 3x3 (rows = local axes); its up must be the
   planet's up at the position (with the world's z the effects lie on their side).
 * ✔ (disassembly) The egg scene after a mating is cinematic CRG_LaidEgg 0xB6A1DBE1. The fork: it ends only through
@@ -5261,6 +5266,12 @@ BUG-9160 / 9181 / 9194 (PR #196 by PandizeLive, MIT), see #creature-lineages-coc
   world); no message of its own, so a 0.7.15.2 partner is shown in the cocoon too and a 0.7.15.2 game hides the partner
   as before. Not told apart: the stage-end editor (Creature -> Tribe, after the vote) shows the cocoon for the host as
   well (the creature evolves there too); in Cell, Tribe, Civ and Space nothing changes.
+* ✔ (lab lane 6, 2026-11-19, runs 20261119-110736 and the probe) the shell 59A93586 and the glow 6F02369D are active
+  effects on the observer's game, the shell is drawn where the partner stood (key frame cocoon_hold); the three cocoon
+  animations are not played by the game (answer 0, CORRECTION under #creature-lineages-cocoon-mate): the mod asks once
+  and then only shrinks the body and holds its pose. ~ Calling Anim::AnimatedCreature::PlayAnimation 0xA0C5D0 directly
+  with its int argument 1 faulted inside the game (caught by its handler, a known animation 0265D18B); with 0 it
+  answered 263 without changing the current animation: not a way to play them.
 * The sequence on the other game: the curl in (gen_evolve_cocoon 9C26F705, 2.4 s, the body shrinks to 12 % with it,
   the woven shell crg_cocoon_create 59A93586 laid every 1.8 s at the spot it went in), then the hold (gen_evolve_cocoon
   _hold 4E0D3CBF, played again when the game left it, the idle refresh skipped for the body: game::hold_pose), the glow

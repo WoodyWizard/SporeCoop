@@ -46,6 +46,7 @@ const char* phase_name(int p)
 struct Fx {
     void* fx = nullptr;
     uint32_t mode = 0, world = 0;
+    uint32_t id = 0;
 };
 bool fx_here(const Fx& f) { return f.fx && f.mode == game::mode_id() && f.world == modes::current_world(); }
 void fx_end(Fx& f, bool stop)
@@ -72,12 +73,33 @@ struct Cocoon {
     net::Quat rot;
     // tests (coop.cocoon): the game's own state read back right after the mod's plays
     uint32_t seen_hold = 0, seen_emerge = 0, emerged_body = 0;
+    int hatch = -1;      // the burst an active effect right after it was made (1), not made (0)
+    float scale_out = 0; // the body's scale as the game has it when the cocoon ended
 };
 std::map<uint8_t, Cocoon> g_c;
 std::map<uint8_t, Cocoon> g_last; // tests (coop.cocoon): each partner's last finished cocoon (no pointers used)
 std::vector<Fx> g_once; // shells and bursts: released once they ended
 uint32_t g_wraps, g_new_bodies, g_emerges, g_emerges_new, g_waited_out, g_shells, g_glows, g_dropped;
-
+// CORRECTION of the fork's note (lab lane 6, 2026-11-19, GOG 2024): cCreatureBase::PlayAnimation answers 0 for the three
+// cocoon animations on the Creature stage's avatar and puppets (a known one, 0265D18B, answers 259 and plays), so does
+// AnimatedCreature::PlayAnimation 0xA0C5D0: they are not in the creature's animation set there. The body is shrunk
+// inside the shell instead (its pose is held: no walk or idle shows through); the plays are asked once per game and
+// dropped after the game's first 0 (no call every second for nothing). docs/re/creature.md#creature-cocoon.
+int g_anims = -1; // -1 not asked yet, 0 the game has none, 1 played
+uint32_t g_anim_plays;
+bool play(void* p, uint32_t anim)
+{
+    if (g_anims == 0)
+        return false;
+    g_anim_plays++;
+    int r = game::play_animation(p, anim, -1, true);
+    if (g_anims < 0) {
+        g_anims = r ? 1 : 0;
+        H->log(M, SK_INFO, "cocoon: the game %s the cocoon animation %08X (answer %d) (BUG-1303)", r ? "plays" : "does not play",
+               anim, r);
+    }
+    return r != 0;
+}
 // one of the game's cocoon effects at `at`, its up (local z) along the planet's up there (with the world's z the effects
 // lay on their side, fork 2026-11-12); the 3x3 holds the local axes as rows (the fork's runtime check)
 void* effect_at(const net::Vec3& at, uint32_t id, float scale)
@@ -120,11 +142,12 @@ Fx make(const Cocoon& c, uint32_t id)
     if (f.fx) {
         f.mode = game::mode_id();
         f.world = modes::current_world();
+        f.id = id;
     }
     return f;
 }
 
-void once(const Cocoon& c, uint32_t id)
+bool once(const Cocoon& c, uint32_t id)
 {
     Fx f = make(c, id);
     if (f.fx) {
@@ -132,6 +155,7 @@ void once(const Cocoon& c, uint32_t id)
         if (id == kFxShell)
             g_shells++;
     }
+    return f.fx && game::effect_active(f.fx);
 }
 
 void shell(Cocoon& c, double now)
@@ -155,10 +179,11 @@ uint32_t anim_now(void* p)
     return p && game::drawn_state(p, nullptr, &a) ? a : 0;
 }
 
+// (game::place: no teleport mark, which restarts the creature's animation with the locomotion's idle, BUG-0360)
 void hold_at_spot(void* p, const Cocoon& c)
 {
     if (net::dist(game::position(p), c.spot) > kDrift)
-        game::teleport(p, c.spot, c.rot);
+        game::place(p, c.spot, c.rot);
 }
 
 void shrink(void* p, Cocoon& c, float k)
@@ -192,7 +217,7 @@ void wrap(uint8_t id, void* p, Cocoon& c, double now, bool fresh)
     c.puppet = p;
     c.size = 0;
     game::hold_pose(p, true);
-    game::play_animation(p, fresh ? kAnimEnter : kAnimHold, -1, true);
+    play(p, fresh ? kAnimEnter : kAnimHold);
     c.played = now;
     if (!fresh) {
         shrink(p, c, kShrunk);
@@ -219,8 +244,8 @@ void keep(void* p, Cocoon& c, double now)
     // the hold played again when the game has left it (its idle refresh is held, a sync or a received animation may
     // still play another one), at most once a second; a running hold is not restarted
     uint32_t a = anim_now(p);
-    if (a != kAnimHold && now - c.played >= 1.0) {
-        game::play_animation(p, kAnimHold, -1, true);
+    if (g_anims != 0 && a != kAnimHold && now - c.played >= 1.0) {
+        play(p, kAnimHold);
         c.played = now;
         a = anim_now(p);
     }
@@ -239,6 +264,7 @@ void release(uint8_t id, bool grow)
         game::hold_pose(c.puppet, false);
         if (grow && c.size > 0)
             game::set_scale(c.puppet, c.size);
+        c.scale_out = game::scale(c.puppet);
     } else if (c.puppet)
         game::hold_pose(c.puppet, false); // (only the list entry: never a call on a freed body)
     c.glow = {};
@@ -359,9 +385,9 @@ bool back(uint8_t id, void* p, uint32_t reported, double now)
         c.phase = kEmerge;
         c.at = now;
         fx_end(c.glow, true);
-        once(c, kFxHatch);
+        c.hatch = once(c, kFxHatch) ? 1 : 0;
         game::hold_pose(p, true);
-        game::play_animation(p, kAnimEmerge, -1, true);
+        play(p, kAnimEmerge);
         c.seen_emerge = anim_now(p);
         c.emerged_body = wears;
         g_emerges++;
@@ -419,14 +445,52 @@ void tick(double)
             c.glow = {};
 }
 
+// tests (coop.cocoon play <hex> [bhv] [<player id>]): an animation on the own creature or a partner's puppet, the
+// game's answer and the current animation right after it
+std::string probe_play(uint32_t anim, int how, int pid)
+{
+    void* p = pid < 0 ? game::avatar() : nullptr;
+    auto it = pid >= 0 ? g_c.find((uint8_t)pid) : g_c.end();
+    if (it != g_c.end())
+        p = it->second.puppet;
+    if (!p || !game::creature_listed(p))
+        return "no creature\n";
+    uint32_t before = anim_now(p);
+    int r = how == 1 ? (int)game::play_behaviour_anim(p, anim, 0, 1, -1) : game::play_animation(p, anim, -1, true);
+    char b[160];
+    snprintf(b, sizeof b, "played %08X on %p (%s): answer %d, animation %08X -> %08X\n", anim, p, how == 1 ? "CreaturePlayAnim" : "PlayAnimation", r,
+             before, anim_now(p));
+    return b;
+}
+std::string anim_of(int pid)
+{
+    void* p = pid < 0 ? game::avatar() : nullptr;
+    auto it = pid >= 0 ? g_c.find((uint8_t)pid) : g_c.end();
+    if (it != g_c.end())
+        p = it->second.puppet;
+    char b[96];
+    snprintf(b, sizeof b, "animation %08X on %p\n", p && game::creature_listed(p) ? anim_now(p) : 0u, p);
+    return b;
+}
+
+// the woven shells of every cocoon that are active effects in the game now
+int shells_active()
+{
+    int n = 0;
+    for (const Fx& f : g_once)
+        if (f.id == kFxShell && fx_here(f) && game::effect_active(f.fx))
+            n++;
+    return n;
+}
+
 std::string status(uint8_t only)
 {
     char b[400];
     snprintf(b, sizeof b,
              "cocoon: fix=%d wraps=%u new_bodies=%u emerges=%u emerges_new=%u waited_out=%u shells=%u glows=%u dropped=%u "
-             "effects=%zu held_poses=%zu\n",
+             "effects=%zu held_poses=%zu anims=%s plays=%u\n",
              (int)g_on, g_wraps, g_new_bodies, g_emerges, g_emerges_new, g_waited_out, g_shells, g_glows, g_dropped,
-             g_once.size(), game::poses_held());
+             g_once.size(), game::poses_held(), g_anims < 0 ? "unasked" : g_anims ? "played" : "none", g_anim_plays);
     std::string out = b;
     for (auto& [id, c] : g_c) {
         if (only != 0xFF && id != only)
@@ -436,18 +500,19 @@ std::string status(uint8_t only)
         bool vis = H->world_to_screen(w, sc) != 0;
         snprintf(b, sizeof b,
                  "partner %u phase=%s for=%.1f puppet=%p anim=%08X held=%d glow=%d scale=%.3f size=%.3f species=%08X body0=%08X "
-                 "seen_hold=%08X seen_emerge=%08X emerged_body=%08X spot=(%.2f %.2f %.2f) screen=%s%.0f %.0f\n",
+                 "seen_hold=%08X seen_emerge=%08X emerged_body=%08X spot=(%.2f %.2f %.2f) screen=%s%.0f %.0f off=%.2f "
+                 "shells_active=%d\n",
                  id, phase_name(c.phase), H->time_seconds() - c.at, p, anim_now(p), (int)(p && game::pose_held(p)),
                  (int)(fx_here(c.glow) && game::effect_active(c.glow.fx)), p ? game::scale(p) : 0.f, c.size,
                  p ? game::species_instance(p) : 0u, c.body0, c.seen_hold, c.seen_emerge, c.emerged_body, c.spot.x, c.spot.y,
-                 c.spot.z, vis ? "" : "off ", sc[0], sc[1]);
+                 c.spot.z, vis ? "" : "off ", sc[0], sc[1], p ? net::dist(game::position(p), c.spot) : -1.f, shells_active());
         out += b;
     }
     for (auto& [id, c] : g_last) {
         if (only != 0xFF && id != only)
             continue;
-        snprintf(b, sizeof b, "last %u body0=%08X seen_hold=%08X seen_emerge=%08X emerged_body=%08X\n", id, c.body0,
-                 c.seen_hold, c.seen_emerge, c.emerged_body);
+        snprintf(b, sizeof b, "last %u body0=%08X seen_hold=%08X seen_emerge=%08X emerged_body=%08X hatch=%d size=%.3f scale_out=%.3f\n",
+                 id, c.body0, c.seen_hold, c.seen_emerge, c.emerged_body, c.hatch, c.size, c.scale_out);
         out += b;
     }
     return out;
