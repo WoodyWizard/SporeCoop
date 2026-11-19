@@ -67,6 +67,8 @@ Test tribe_city_hall_race (coop_tribe_city_hall_race.py, lane 9, fix/w57-crashes
   68578 faults 0xC0000005 at DestroyInstance+0x6 (data 0x20), calls 00CDD43D ... 00CDECAC 00CDF11C: the signature of the
   report; the graduation called again every frame (49150 times), the host never left Tribe.
 
+* PASS on the tree merged with rel/0.7.16 (80c722d4): out/lab/20261119-144809:tribe_city_hall_race.
+
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w57-crashes (cause found: a dropped ShowCityHall, a second graduation; two switches, test with two twins).

@@ -65,6 +65,8 @@ Test civ_shot_objects (coop_civ_influence.py --case shotobjs, lane 9, fix/w57-cr
 * FAIL (twin): out/lab/20261119-141549:civ_shot_objects_off (civ.shot_target_listed off): the observer called into the
   probe's fake vtable: host fault 0xC0000005 at 0x0000FFFF, as the run of the report jumped into a vehicle.
 
+* PASS on the tree merged with rel/0.7.16 (80c722d4): out/lab/20261119-144809:civ_shot_objects.
+
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: cause found and fixed on fix/w57-crashes (the shot observer, cCulturalTarget targets).
