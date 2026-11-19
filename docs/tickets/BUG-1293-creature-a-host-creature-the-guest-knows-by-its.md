@@ -1,14 +1,14 @@
 ---
 id: BUG-1293
 title: Creature: a host creature the guest knows by its own remapped key stays invisible: the guest asks the host for a key the host never has (fork BUG-9231)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-19
 source: found by the Lineages fork (PR #196), its BUG-9231
 role: guest
 versions: 0.7.15.2
-fixed_in:
+fixed_in: unreleased
 branch: fix/w56-general
 commits: 989c2748
 tests: npc_host_key
@@ -35,11 +35,13 @@ creations.cpp want_species asks by the host's key when given our own key for a h
 Test command `coop.creations breakremap <host hex>` (our key for that species points at a key nothing registered).
 
 ## Verification
-- Lab test npc_host_key (tools/tests/coop_npc_host_key.py: breakremap of the host avatar's species, the host spawns
-  one; the guest's census must show the new proxy within 35 s and the host's log no "asks for species 7DFFFF..";
-  a key frame of both games) written, NOT run yet: the lab waits for the orchestrator's "lab ok". Its FAIL twin is
-  SPORE_FIX_OFF=npc.species_fallback,creations.ask_host_key. The ticket stays open until both runs are in.
+- Lab (first 0.7.16 night run, rel/0.7.16 c7699dca, run dirs in the rel/0.7.16 worktree's out/lab/):
+  PASS npc_host_key, out/lab/20261119-104136 (the host's new creature of its remapped species 065CBE70 is a proxy on
+  the guest, built from the host's key; the host was never asked for the guest's own key).
+  FAIL twin (SPORE_FIX_OFF=npc.species_fallback,creations.ask_host_key), out/lab/20261119-105127, for the right reason:
+  no proxy on the guest (the detector: "creature 22 key=065CBE70 ... the guest has no proxy"), host_key_builds=0.
 
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fix committed on fix/w56-general (WP-F1), lab runs pending; found by the Lineages fork (PR #196), its BUG-9231.
+- 2026-11-19: fixed (fix/w57-sync): the first lab run passed, its twin failed for the right reason (run dirs above).
