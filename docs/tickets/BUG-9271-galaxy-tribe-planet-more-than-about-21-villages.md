@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.14.1-lineages64-dev
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits: COMMIT
+commits: 8cb56580
 tests: manual on TITAN QA 8 + 9 (coop.tribe villages_apart on: the table always on its own)
 signature: "tribe state: N villages do not fit one packet ... NOT SENT"
 docs: docs/13-alpha-review-2026-11-18.md#review-scaling
