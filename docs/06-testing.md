@@ -9675,3 +9675,23 @@ the shooters and targets of the host's observed shots that were no listed object
 `coop.civ shotprobe` hands the shot observer one shot of a listed host vehicle at a fake target whose preceding dword is
 the exe's base (its +0xC is 0x0000FFFF): checked that it is taken as a target the guests cannot find (kind 2) and the host
 has no fault. Twin `civ_shot_objects_off` (civ.shot_target_listed off): the observer calls into it, the host faults.
+## The save-slot key scan of the own-species tests (2026-11-19, fix/w58-savestrip2)
+<a id="testing-save-key-scan"></a>
+
+BUG-1326. `keys_in_slot(folder, instances, own_ids=None)` (coop_tribe_own_species.py; tribe_own_species,
+tribe_own_outfitter, own_editor_drop) answers which files of a save slot name a key of the guest's:
+* Every DBPF file is read record by record (index + unpacked data, `part_substitutes.entries / read`); other files
+  are searched as raw bytes. The first version searched each file's raw bytes: it matched the instance ids of the
+  host's own new planet scripts in the index of lastSave.pld / PlanetScripts.pld (and planet records in
+  planetRecords.pkp / .pkt), which the game gives out from a clock-seeded counter, the same ids on two games started
+  in the same second as a guest's new creation (docs/re/creations.md#creations-id-counter), and it could miss a key
+  inside a compressed record.
+* A shared key (0x7B line, 0x7C copy) counts wherever it is. A raw instance counts in a record's data, and in an index
+  entry of a creation type (the creation itself as a resource of the slot), except where it is the id of one of the
+  host's own resources of this slot (its index, a type that is no creation) and no creation type stands within 8 bytes
+  of it (a key has its type beside the instance in every layout seen: {instance, type, group}, {type, instance,
+  group}, the stream's big-endian group, type, instance). `own_ids` collects those instances; the tests print them.
+* `savekeys_selftest.py` (make test, unit-lab) checks the rule on synthetic slots (the host's id is not counted; the
+  line key in a compressed record, the raw key beside its type, a raw instance no host id explains and the creation as
+  a resource are found). Twin `tribe_own_outfitter_keys_off` (SPORE_FIX_OFF=savestrip.keys) must FAIL at the save check
+  (the members' line key in the .spo): the scan still catches a real key.

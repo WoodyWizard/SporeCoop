@@ -109,36 +109,88 @@ def wait_mix(cons, gkey, secs):
     return res, time.time() - t0
 
 
-def keys_in_slot(folder, insts):
-    """files of the save slot that name one of the instances (little or big endian)"""
-    hits = []
-    for root, _, files in os.walk(folder):
-        for name in files:
-            try:
-                data = open(os.path.join(root, name), 'rb').read()
-            except OSError:
-                continue
-            for inst in insts:
-                if inst and (inst.to_bytes(4, 'little') in data or inst.to_bytes(4, 'big') in data):
-                    hits.append(f'{name}:{inst:08X}' + records(os.path.join(root, name), inst))
-    return hits
+# BUG-1326: the files of a save slot are DBPF packages (an index of keys, records mostly RefPack-compressed). The scan
+# before read the raw file bytes for each instance: it matched the instance ids of the host's OWN new resources in the
+# index (planet scripts 00B1B104 / 4084AF00 in lastSave.pld and PlanetScripts.pld, planet records in
+# planetRecords.pkp / .pkt) and could miss a key inside a compressed record. A game's new resource ids come from one
+# counter per process that starts at the seconds since 2005-01-01 at the game's start (lab 20261119-164409: the host's
+# planet scripts 29293F5F..29293F61 written at the load, the guest's new outfit 29293F61: both games started in the
+# same second), so the guest's raw creation instance (0x29......) is also an id of the host's own. Now every record is
+# unpacked and scanned; a shared key (0x7B line, 0x7C copy) counts wherever it is, a raw instance counts in a record's
+# data and as a resource of a creation type in an index, except where it is the id of one of the host's own
+# resources of this slot (its index) and no creation type stands next to it (a key always has its type beside the
+# instance: {instance, type, group}, {type, instance, group} or the stream's big-endian group, type, instance).
+CREATION_TYPES = (0x2B978C46, 0x24682294, 0x2399BE55, 0x476A98C7, 0x372E2C04, 0x3D97A8E4, 0x438F6347)
 
 
-def records(path, inst):
-    """(a .spo: the record types that name the instance, for the report)"""
-    if not path.endswith('.spo'):
-        return ''
+def _dbpf(path, data):
+    """[(entry, unpacked data)] of a DBPF file, None for another file or an unreadable one"""
+    if data[:4] != b'DBPF':
+        return None
     try:
         import sys
         tools = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         if tools not in sys.path:
             sys.path.insert(0, tools)
         import part_substitutes as ps
-        types = sorted({'%08X' % e['type'] for e in ps.entries(path)
-                        if any(inst.to_bytes(4, o) in ps.read(path, e) for o in ('little', 'big'))})
-        return f' (records {",".join(types)})'
-    except Exception as e:  # (a report detail only)
-        return f' (records: {e})'
+        return [(e, ps.read(path, e)) for e in ps.entries(path)]
+    except Exception:  # (a broken package: scanned as raw bytes, the old way)
+        return None
+
+
+def _typed(data, i, order):
+    """a creation type within 8 bytes of the instance at i (the same byte order)"""
+    for t in CREATION_TYPES:
+        tb = t.to_bytes(4, order)
+        j = data.find(tb, max(0, i - 8), i + 12)
+        if j >= 0:
+            return True
+    return False
+
+
+def keys_in_slot(folder, insts, own_ids=None):
+    """files of the save slot that name one of the instances (little or big endian), BUG-1326's rule above"""
+    files = []
+    for root, _, names in os.walk(folder):
+        for name in names:
+            path = os.path.join(root, name)
+            try:
+                data = open(path, 'rb').read()
+            except OSError:
+                continue
+            files.append((name, path, data, _dbpf(path, data)))
+    host_ids = set()  # instances of the host's own resources of this slot (not of a creation type)
+    for _, _, _, recs in files:
+        for e, _ in recs or ():
+            if e['type'] not in CREATION_TYPES:
+                host_ids.add(e['inst'])
+    if own_ids is not None:
+        own_ids.update(i for i in insts if i in host_ids)
+    hits = []
+    for name, path, data, recs in files:
+        for inst in insts:
+            if not inst:
+                continue
+            shared = inst >> 24 in (0x7B, 0x7C)
+            if recs is None:
+                if inst.to_bytes(4, 'little') in data or inst.to_bytes(4, 'big') in data:
+                    hits.append(f'{name}:{inst:08X}')
+                continue
+            types = set()
+            for e, d in recs:
+                if e['inst'] == inst and (shared or e['type'] in CREATION_TYPES):
+                    types.add('%08X' % e['type'])
+                for order in ('little', 'big'):
+                    b = inst.to_bytes(4, order)
+                    i = d.find(b)
+                    while i >= 0:
+                        if shared or inst not in host_ids or _typed(d, i, order):
+                            types.add('%08X' % e['type'])
+                            break
+                        i = d.find(b, i + 1)
+            if types:
+                hits.append(f'{name}:{inst:08X} (records {",".join(sorted(types))})')
+    return hits
 
 
 def ai(con, mid):

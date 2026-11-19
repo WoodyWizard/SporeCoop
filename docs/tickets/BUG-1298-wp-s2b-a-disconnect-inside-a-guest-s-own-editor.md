@@ -1,14 +1,14 @@
 ---
 id: BUG-1298
 title: WP-S2b: a disconnect inside a guest's own editor dresses the shared tribe or civilization on the guest's game and loses the result
-status: open
+status: fixed
 kind: bug
 stage: Tribe, Civ
 reported: 2026-11-19
 source: plan
 role: guest
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/w56-editors
 commits: 8709f9fe
 tests: own_editor_drop, own_editor_drop_off, own_editor_civdrop, own_editor_civdrop_off (coop_own_editors_robust.py drop|civdrop)
@@ -42,8 +42,13 @@ Not run yet: the lab waits for the orchestrator's word (2026-11-19, the CPU was 
 `SPORE_DETECTOR=20 python3 tools/lab.py run own_editor_drop own_editor_drop_off --lane 6 --lane 7 --retry 0 --no-build`; the twin must
 FAIL, the test PASS (run ids go here).
 And `own_editor_civdrop own_editor_civdrop_off` (civ_npc).
-
+* PASS: lab 20261119-164857 (fix/w58-savestrip2) own_editor_drop: every check, the host's save names no key of the
+  guest's (BUG-1326's scan); own_editor_civdrop PASS in fix/w57-own-editors 20261119-130049 and -142554.
+* FAIL twins: own_editor_drop_off FAIL in fix/w57-own-editors 20261119-130049 (the pending outfitter dropped at the
+  session's end, with it the part waiver: Done stays, "the guest is back in Tribe" FAILs); own_editor_civdrop_off FAIL
+  in 20261119-130049.
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: feat/w56-editors: fix and its test written (switch, FAIL twin entry); the lab run waits for the orchestrator.
 - 2026-11-19: fix/w57-own-editors: own_editor_civdrop PASS / own_editor_civdrop_off FAIL (fix/w57-own-editors worktree out/lab/20261119-130049, PASS again -142554); own_editor_drop: every BUG-1298 check PASS (offline=1 held=1, the slot kept, the outfit reaches the line after the join, acked=1), the only FAIL left is the host save's raw creation key (BUG-1326); own_editor_drop_off FAIL in -130049 (earlier than planned: without the offline switch the pending outfitter is dropped at the session's end and with it BUG-1308's part waiver, so Done stays). Open until BUG-1326.
+- 2026-11-19: fix/w58-savestrip2: BUG-1326 was the test's save scan; own_editor_drop PASS in 20261119-164857: fixed.

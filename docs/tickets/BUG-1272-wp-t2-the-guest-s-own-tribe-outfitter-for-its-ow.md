@@ -1,14 +1,14 @@
 ---
 id: BUG-1272
 title: WP-T2: the guest's own Tribe outfitter for its own species
-status: open
+status: fixed
 kind: feature
 stage: Tribe
 reported: 2026-11-18
 source: plan-0.7.16
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/w54-outfit
 commits: 88dd9fee b1783381
 tests: tribe_own_outfitter, tribe_outfit
@@ -45,8 +45,14 @@ Not run yet: the owner's rule of 2026-11-18 (no lab runs until the night run). N
 `SPORE_DETECTOR=20 python3 tools/lab.py run tribe_own_outfitter tribe_outfit --lane 4 --lane 5 --retry 0 --no-build`,
 `SPORE_FIX_OFF=tribe.guest_outfitter SPORE_DETECTOR=20 python3 tools/lab.py run tribe_own_outfitter --lane 4 --retry 0 --no-build`.
 Step 4 needs WP-T1 on `species::key(pid, Stage::Tribe)` (feat/w54-shims).
-
+* PASS: lab 20261119-164857 (fix/w58-savestrip2, the tree of rel/0.7.16 7ac94251 + BUG-1326's save scan)
+  tribe_own_outfitter: every check, the host's save names no key of the guest's; key frames 01-03 show the guest's
+  members in the leaf outfit and the host's in the tribe's species on both screens.
+* FAIL twin: lab 20261119-101851 (rel/0.7.16 worktree) tribe_own_outfitter with SPORE_FIX_OFF=tribe.guest_outfitter:
+  "the guest's own Tribal Outfitter opens (0x01654C02, refused 4)" (BUG-1158's refusal); twins _parts_off and
+  _result_off FAIL in fix/w57-own-editors 20261119-130049; _keys_off (the save) FAILs in 20261119-164857.
 ## History
 - 2026-11-18: opened.
 - 2026-11-18: code, Ghidra RE and the test with its FAIL twin on feat/w54-outfit; stays open until the night run gives the PASS and FAIL run dirs (as BUG-1271, BUG-1274).
 - 2026-11-19: fix/w57-own-editors: tribe_own_outfitter: every outfit check PASS on the merged tree (fix/w57-own-editors worktree out/lab/20261119-130049, -142554: back in Tribe, skipped=1, the slot the host's, both games dress the guest's members in its outfit, key frames same look); the only FAIL left is the host save's raw creation key in lastSave.pld / PlanetScripts.pld (BUG-1326; the .spo line key is gone since BUG-1315's merge). Twins tribe_own_outfitter_parts_off (BUG-1308) and _result_off (BUG-1316) FAIL in -130049. Open until BUG-1326.
+- 2026-11-19: fix/w58-savestrip2: BUG-1326 was the test's save scan (the host's own planet script id); tribe_own_outfitter PASS in 20261119-164857: fixed.
