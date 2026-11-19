@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.14.1-lineages64-dev
 fixed_in: unreleased
 branch: feat/lineages-47
-commits:
+commits: ab032cd3
 tests: tools/qa_win/qa.py (manual: TITAN host + guest in Creature, the frame profiler's prof lines)
 signature: "a pause of about 0.25 s after every second, only while connected; microstutter about 34 %"
 docs: docs/06-testing.md#testing-frame-profiler
