@@ -55,8 +55,17 @@ Tribe members). Once WP-X1 is in: `SPORE_DETECTOR=20 python3 tools/lab.py run li
   own Tribal Outfitter (WP-T2, BUG-1272), then stuck in civ/follow; lab 20261119-120449 line_stages a host fault in
   TribeStage_Graduate (BUG-1325, once).
 
+* fix/w57-civlook (lanes 4 and 5): line_stages PASSES end to end: lab 20261119-142443-2 and on the tree merged with
+  rel/0.7.16 (741c292b) lab 20261119-143657 (the guest's vehicle of its design on both games, BUG-1274; its city's
+  citizens painted, the game's bake state checked, BUG-1321; the host's Civ save clean). Twin of the vehicle step:
+  line_stages_nodesign_off FAIL lab 20261119-143657. Again after the next merge (a42100f2): PASS lab 20261119-151431-2.
+  line_stages_outfit on the same tree (lab 20261119-144822): still FAIL outside this branch's area: the guest stays in
+  its own Tribal Outfitter ("the guest is back in Tribe" fails, WP-T2 / BUG-1272), then never reaches the host's Civ
+  world (stuck civ/follow), so every guest-side Civ check is empty; the host-side Civ checks and the Civ save pass.
+
 ## History
 - 2026-11-18: opened.
 - 2026-11-18: test, suite entries and docs on feat/w54-x2; stays open until the night run gives the PASS and FAIL run
   dirs (as BUG-1271..1274).
 - 2026-11-19: fix/w57-savestrip: save checks pass (BUG-1315), the Civ cities' wait and the cinematic end; open for the WP-C2 / WP-X1 / WP-T2 steps (other packages).
+- 2026-11-19: fix/w57-civlook: the Civ vehicle (BUG-1274) and citizen paint (BUG-1321) steps fixed, line_stages passes; line_stages_outfit / line_stages_editors wait for the guest's own editors (fix/w57-own-editors).

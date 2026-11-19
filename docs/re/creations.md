@@ -1862,3 +1862,34 @@ BUG-1315 (owner decision 2026-11-18: the host's save holds the host's species an
   one (the culture set's key per design id).
 * ? Not covered: keys a class writes with its own WriteInt32 calls one dword at a time, and the planet record
   (planetRecords.pkp 0x05220CB8, a list of species instances, Civ). Seen only in line_stages_outfit's Civ save.
+
+## The model bake of a line creation: citizens drawn white (2026-11-19, fix/w57-civlook)
+<a id="creations-model-bake"></a>
+
+BUG-1321. GOG 2024, Ghidra + runtime (lab lane 5, civ_own_species).
+* ✔ (Ghidra) `Editors::IBakeManager::Get` 0x401010 answers [0x15D0C04], set once by 0x4010C0 from the editor setup
+  0x5D75B0 (an object of 0x1248 bytes made by 0x403240, vtable **0x13EB308**). Slots used:
+  vt 0x1C `IsBaked(const ResourceKey*, bool)` 0x406EF0 ret 8: for a group whose byte 2 is 0x62 (creations,
+  0x40626200) the bool property 0x3704E55 of the key's property lists in group & 0xE0FFFFFF **and** group | 0x1000000
+  (both must be true), else the bool 0x3704E55 (and 0x3704E56 with the 2nd argument) of the key's own list.
+  vt 0x3C `IsQueued(const ResourceKey*)` 0x4163E0 ret 4: the key is being baked (+0x228..+0x230 while +0x259 or +0x2C4)
+  or waits in the queue (the type 0x2B978C46 / 0x438F6347 / 0x3D97A8E4 compared with the group & 0xE0FFFFFF).
+  vt 0x4C `RequestBake(const ResourceKey*, const {uint32 id, uint32 flags}*)` 0x40A590 ret 8: creature-like types go to
+  the queue 0x4157C0, others post message 0x695E243. NpcTribeController_FormTribe 0xCC6440 asks with
+  {0x609B763, 0x40000} after vt 0x3C said no.
+* ✔ (runtime, lab 20261119-141341 civ_own_species_bake_off) A species line creation (0x7B...... keys,
+  species_line.cpp) is a key no game has baked; nothing in the citizen path (City_Species -> CityCitizens_Sync ->
+  SetSpeciesProfile) asks for a bake at once: both games had IsBaked 0 when the guest's city took the fresh outfit's
+  key, and the game's own (lazy) bake ended 30.5 s after the line was known. Citizens drawn meanwhile are plain white
+  (no paint; key frames 02 / 03 of civ_own_species in the night runs, the guest's game in 3 of 5 runs, the host's in
+  one). ~ The twin's frame taken at the bake's end showed them painted: inferred that a white citizen gets its paint
+  when the bake ends (not checked frame by frame).
+* ✔ A lane's graphics cache keeps a bake: a line key baked once is baked at once in the next run on those games (lab
+  20261119-140235: 0.0 s), so a test of this needs a key no game has seen (civ_own_species writes a fresh copy of a
+  creature with its metadata times moved). The Creature / Tribe line keys were baked by the creature's own use before.
+* What SporeCoop does: `game::model_baked(key, request)` (game.cpp) reads vt 0x1C and asks the bake as FormTribe does;
+  civ_species.cpp asks it as soon as a player's Civ line is known on that game and answers a city's species with the
+  line only once it is baked (switch `civ.own_species_bake`): measured 2-4 s after the line is known. `coop.civ citizens` prints `baked=` per line and per
+  (city, species) of the citizen objects: the game's own bake state, read live.
+* ? Not checked: other places that make creatures of a line key the game never used (a Tribe outfit's
+  members) may need the same request.

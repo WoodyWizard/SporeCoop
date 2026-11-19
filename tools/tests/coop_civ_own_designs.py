@@ -39,6 +39,7 @@ SPORE_FIX_OFF=civ.own_designs: steps 3, 4, 5, 7 and 9 FAIL (every object the cul
 """
 import os
 import re
+import struct
 import sys
 import time
 
@@ -157,7 +158,8 @@ def keys_in(files, insts):
         try:
             for e in ps.entries(p):
                 blobs.append((f'{os.path.basename(p)}:{e["type"]:08X}', ps.read(p, e)))
-        except (AssertionError, OSError, ValueError, KeyError, IndexError):
+        except (AssertionError, OSError, ValueError, KeyError, IndexError, struct.error):  # (struct: an empty index,
+            # BUG-1307: lab 20261119-111652; the whole file is searched then)
             try:
                 blobs.append((os.path.basename(p), open(p, 'rb').read()))
             except OSError:
@@ -167,6 +169,24 @@ def keys_in(files, insts):
                 if le in data or be in data:
                     found[i].append(name)
     return found
+
+
+def key_context(files, inst):
+    """['<file>:<record type> +<offset> <le|be>: <bytes around it>'] of the records holding `inst`"""
+    out = []
+    for p in files:
+        try:
+            for e in ps.entries(p):
+                d = ps.read(p, e)
+                for pat, nm in ((inst.to_bytes(4, 'little'), 'le'), (inst.to_bytes(4, 'big'), 'be')):
+                    o = d.find(pat)
+                    while o >= 0 and len(out) < 8:
+                        out.append(f'{os.path.basename(p)}:{e["type"]:08X} +0x{o:X} {nm}: '
+                                   f'{d[max(0, o - 32):o].hex()} [{d[o:o + 4].hex()}] {d[o + 4:o + 28].hex()}')
+                        o = d.find(pat, o + 1)
+        except (AssertionError, OSError, ValueError, KeyError, IndexError, struct.error):
+            continue
+    return out
 
 
 def main():
@@ -337,6 +357,9 @@ def main():
     found = keys_in(files, [ours_v, ours_b, G])
     print(f'  save: {len(files)} files written; ours {ours_v:08X}: {found[ours_v][:6]}, {ours_b:08X}: '
           f'{found[ours_b][:6]}; culture {G:08X}: {found[G][:4]}', flush=True)
+    for i in (ours_v, ours_b):  # (where a key of ours is: the bytes around it, for the next analysis)
+        for ln in key_context(files, i)[:4]:
+            print(f'    {i:08X} {ln}', flush=True)
     ck(files and not found[ours_v] and not found[ours_b], 'the host\'s save holds no key of the guest\'s designs')
     ck(found[G], 'the host\'s save holds the culture\'s key (the parse sees the design keys)')
 

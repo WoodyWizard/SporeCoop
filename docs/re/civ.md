@@ -2630,6 +2630,27 @@ cinematic, a share save; the host's meter +0x750 reads 0 right after while the g
 * (fix/w57-sync) The BUG-1286 hook (civ_influence.cpp h_PreachTick) sets a slot's places only when the slot has its live
   spatial object (+0x78 non-null), the fork's verified condition; before, any 0 / 0 slot ticked got 10 / 2.
 
+## A vehicle of a kind the culture has no design for (2026-11-19, fix/w57-civlook)
+<a id="civ-vehicle-no-design"></a>
+
+BUG-1274. GOG 2024, runtime (line_stages).
+* ✔ (runtime, lab 20261119-133307 line_stages, both games) A Civ game started from Tribe has a land vehicle design only
+  for the capital's specialty; a vehicle bought in a captured city of another specialty (military 7D433FAD here, the
+  capital economic) through `coop.civ buy` is made with the model key **{0, 0, 0}** at +0xC4: no model (only the
+  spawn and heal effects are drawn), base max hit points 10 on the host (249 in the guest's mirror). The game's own
+  purchase UI asks for a design first; the lab's buy and a guest's own editor path do not.
+* civ_own_designs.cpp skipped every object with +0xC4 0 ("no model yet"), so the guest's own design never applied.
+  Fix `civ.own_designs_nodesign`: a vehicle with the zero key whose owner has an own design for its id gets it; its
+  culture key is the zero key (written back raw for a save, SetModelKey with it at the end, as cVehicle::Load did).
+* ✔ (runtime, lab 20261119-140235 / 20261119-141949 civ_own_designs, 20261119-140215 line_stages) With every vehicle
+  and building stripped (+0xC4 the culture key while saving), the host's save still named the guest's design keys:
+  the vehicle design in an event of the main stream 0x01897C18 (`{0x24682294, key, 0x40646200}`, little-endian) and in
+  the cPlayer record 0x02C21781, the house design in the house record 0x018EB106 at the object's **+0x224** (a second
+  key field of a building, written by the attribute writer 0xAE33DF). So a design key can not be kept out of a save
+  per object field: civ_own_designs.cpp adds a savestrip key filter (docs/re/creations.md#creations-save-keys: every key of
+  Stream_WriteResourceKey, dword blocks and event lists, now also of the vehicle and building model types) that writes
+  the culture set's key of the design id the line names it for (zero for a kind without a culture design). Lab
+  20261119-142443 civ_own_designs: no key of ours in the save.
 ## The host's shot observer and targets that are no listed object (2026-11-19, fix/w57-crashes)
 <a id="civ-shot-observer-targets"></a>
 

@@ -12,6 +12,10 @@
 // cities dealt anew) or a species that arrives later is seen by a check of the citizen manager's city every 0.5 s:
 // when one of its citizens is not of the species the city answers now, the city's sync runs once (outside the frame);
 // a change of a line (species::on_change) looks the players' profiles up again at the next check.
+// BUG-1321: a line creation is a new key on every game, and nothing of the game bakes it before the citizens are made
+// of it: citizens of an unbaked species are drawn white (no paint) and stay so. A line's species is asked to be baked
+// as soon as it is known here and the city answers it only once the game has baked it (until then the civilization's;
+// the check then resyncs the city with the baked model). `coop.fix civ.own_species_bake off`: answered at once.
 // `creature.mode` host (F5) keeps today's behaviour (every city the civilization's species).
 // `coop.fix civ.own_species off`: every city the civilization's species (0.7.15).
 #include "civ_internal.h"
@@ -37,16 +41,23 @@ using CitySpecies_t = void*(SK_THISCALL*)(void*);
 static CitySpecies_t o_CitySpecies;
 static uintptr_t a_CitySpecies, a_CitizensSync, a_HerdSpawner, a_SetSpeciesProfile;
 
+// BUG-1321: the line's species is answered only once the game has baked its model (white citizens otherwise)
+static bool g_fix_own_species_bake = true;
+COOP_FIX("civ.own_species_bake", "BUG-1321", g_fix_own_species_bake,
+         "civ: a guest's city takes the guest's species once the game has baked its model (else the citizens are white)");
+
 struct Line {
     creations::Key key; // the player's Civ species ({} none: the city answers the civilization's)
     void* prof = nullptr;
+    bool baked = false;   // the game's bake of its model is done (BUG-1321)
+    double asked = -1;    // when the bake was first asked for
 };
 static Line g_line[net::kMaxPlayers];
 static double g_line_at = -100, g_check_at = -100;
 static bool g_check_queued;
 static void* g_resync_city;
 static double g_resync_at = -100;
-static uint32_t g_hook_calls, g_answered, g_resyncs, g_checks, g_line_misses, g_extra_set;
+static uint32_t g_hook_calls, g_answered, g_resyncs, g_checks, g_line_misses, g_extra_set, g_bake_asked, g_bake_waits;
 
 // the player's Civ species on this game (species::key: the same key on every game, registered here). The host (and a
 // guest playing the host's creature, creature.mode host) has none: its cities keep the civilization's species.
@@ -70,7 +81,13 @@ static void* owner_species(void* city)
     if (!own_mode() || game::mode_id() != modes::kCiv)
         return nullptr;
     int o = civlogic::citizen_line_owner(owner_of_city(city), true, net::kMaxPlayers);
-    return o >= 0 ? g_line[o].prof : nullptr; // (the shared capital is its founder's: the civilization's)
+    if (o < 0)
+        return nullptr; // (the shared capital is its founder's: the civilization's)
+    if (g_line[o].prof && !g_line[o].baked && g_fix_own_species_bake) {
+        g_bake_waits++;
+        return nullptr; // (not baked yet: the civilization's species until it is, BUG-1321)
+    }
+    return g_line[o].prof;
 }
 
 static void* SK_THISCALL h_CitySpecies(void* city)
@@ -108,12 +125,29 @@ static void refresh_lines()
             l = Line{};
             continue;
         }
-        if (l.prof && l.key == k)
+        if (l.prof && l.key == k && l.baked)
             continue;
-        l.key = k;
-        l.prof = creations::key_known(k) ? game::species_by_key({k.instance, k.type, k.group}) : nullptr;
-        if (!l.prof)
-            g_line_misses++; // (not registered here yet: asked again in a second)
+        if (!(l.prof && l.key == k)) {
+            l = Line{};
+            l.key = k;
+            l.prof = creations::key_known(k) ? game::species_by_key({k.instance, k.type, k.group}) : nullptr;
+            if (!l.prof) {
+                g_line_misses++; // (not registered here yet: asked again in a second)
+                continue;
+            }
+        }
+        // BUG-1321: the game's bake of the species' model, asked for at once (the bake takes seconds; a capture later
+        // finds it done; the switch off: not asked, as before)
+        int st = game::model_baked({k.instance, k.type, k.group}, g_fix_own_species_bake);
+        if (l.asked < 0) {
+            l.asked = H->time_seconds();
+            if (st == 0)
+                g_bake_asked++;
+        }
+        l.baked = st != 0; // (-1: no bake manager to ask: as before)
+        if (l.baked && st == 1)
+            H->log(M, SK_INFO, "civ: player %d's Civ species %08X is baked here (%.1f s after it was known, BUG-1321)", i,
+                   k.instance, H->time_seconds() - l.asked);
     }
 }
 
@@ -263,13 +297,15 @@ std::string species_debug()
 {
     std::string s;
     char b[400];
-    snprintf(b, sizeof b, "own_species fix=%d mode_own=%d hooked=%d calls=%u answered=%u checks=%u resyncs=%u special_set=%u misses=%u save_stripped=%u save_starts=%u save_seen=%u save_nociv=%u\n",
+    snprintf(b, sizeof b, "own_species fix=%d mode_own=%d hooked=%d calls=%u answered=%u checks=%u resyncs=%u special_set=%u misses=%u save_stripped=%u save_starts=%u save_seen=%u save_nociv=%u bake_fix=%d bake_asked=%u bake_waits=%u\n",
              (int)g_fix_own_species, (int)species::own_mode(), (int)(a_CitySpecies != 0), g_hook_calls, g_answered,
-             g_checks, g_resyncs, g_extra_set, g_line_misses, g_save_stripped, g_save_starts, g_save_seen, g_save_nociv);
+             g_checks, g_resyncs, g_extra_set, g_line_misses, g_save_stripped, g_save_starts, g_save_seen, g_save_nociv,
+             (int)g_fix_own_species_bake, g_bake_asked, g_bake_waits);
     s += b;
     for (int i = 0; i < net::kMaxPlayers; i++)
         if (g_line[i].key.instance) {
-            snprintf(b, sizeof b, "line %d key=%08X prof=%p\n", i, g_line[i].key.instance, g_line[i].prof);
+            snprintf(b, sizeof b, "line %d key=%08X prof=%p baked=%d\n", i, g_line[i].key.instance, g_line[i].prof,
+                     (int)g_line[i].baked);
             s += b;
         }
     if (!active())
@@ -290,6 +326,7 @@ std::string species_debug()
     // every citizen object: (its city's host index, species key) -> count
     struct U {
         std::map<std::pair<int, uint32_t>, int> n;
+        std::map<std::pair<int, uint32_t>, game::Key> key;
     } u;
     game::for_each_object(
         [](void* o, uint32_t noun, void* p) {
@@ -297,12 +334,16 @@ std::string species_debug()
                 return true;
             void* c = F<void*>(o, kCitizenCity);
             int ci = c ? host_index_of_city(c) : -2;
-            ((U*)p)->n[{ci, game::species_key(o).instance}]++;
+            game::Key k = game::species_key(o);
+            ((U*)p)->n[{ci, k.instance}]++;
+            ((U*)p)->key[{ci, k.instance}] = k;
             return true;
         },
         &u);
     for (auto& [k, n] : u.n) {
-        snprintf(b, sizeof b, "citizens city=%d key=%08X n=%d\n", k.first, k.second, n);
+        // baked: the game's own bake state of that species' model now (BUG-1321: 0 = drawn white, no paint)
+        snprintf(b, sizeof b, "citizens city=%d key=%08X n=%d baked=%d\n", k.first, k.second, n,
+                 game::model_baked(u.key[k], false));
         s += b;
     }
     return s;

@@ -67,7 +67,7 @@ import twoinst
 from coop_campaign import Campaign, Player, Service, phase_frame
 from coop_civ import civ, dist
 from coop_civ_designs import two_models
-from coop_civ_own_species import closeup as citizen_closeup, fmt, species as citizens, wait_city
+from coop_civ_own_species import check_paint, closeup as citizen_closeup, fmt, species as citizens, wait_city
 from coop_creature_e84 import close_boxes
 from coop_species_line import key as line_of
 from coop_tribe_outfit import my_creations, profile
@@ -327,6 +327,7 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
     print(f'  civ: the guest\'s city {tgt}: {fmt(seen)} after {t:.0f} s', flush=True)
     ck(all(set(s) == {want} for s in seen.values()) and all(seen.values()),
        f'civ: the guest\'s city\'s citizens are of the guest\'s line {hx(want)} (+0xB28) on both games ({fmt(seen)})')
+    check_paint(ck, players, tgt, f'civ: the guest\'s city {tgt}')  # (BUG-1321: not drawn white)
     keyframe('civ_guest_city', f'Civ after the live Tribe -> Civ change: the city {tgt} the guest captured, both games: '
              'its citizens walking about are the guest\'s own creature (the same as in Creature and Tribe), not the '
              'civilization\'s species')

@@ -9607,6 +9607,21 @@ DNA as before):
   totals say `dna: own a -> b`) and its bar must stay the party's. `coop.dna own` prints `edge=` (the switch) and
   `strays=` (totals of the host's DNA sent to an own-wallet guest at a mode edge: counted with the switch off).
 
+## The Civ look checks: baked citizens, vehicles without a culture design, design keys in saves (2026-11-19, fix/w57-civlook)
+<a id="testing-civ-look"></a>
+
+* BUG-1321: `coop.civ citizens` rows end with `baked=` (the game's own bake state of that species' model,
+  Editors::IBakeManager, docs/re/creations.md#creations-model-bake; 0 = the citizens are drawn white) and the line rows
+  too. `coop_civ_own_species.check_paint` asserts it on both games right after the guest's city took the guest's
+  species (civ_own_species and line_stages). civ_own_species (now cold) writes a fresh copy of one guest creature (id
+  0x29F0xxxx, its metadata times moved) into the guest's My Creations before the games start and uses it as the Civ
+  outfit: its line key is new in every run, so no lane's graphics cache has baked it (a cache keeps a bake: the twin
+  passed on games that had baked 7B635F66 before, lab 20261119-140235). Twin `civ_own_species_bake_off`
+  (`civ.own_species_bake` off: no bake asked, the city answers at once) must FAIL at the bake check.
+* BUG-1274: line_stages buys the guest's vehicle in a captured city whose specialty the culture has no vehicle design
+  for (+0xC4 {0,0,0}); twin `line_stages_nodesign_off` (`civ.own_designs_nodesign` off) must FAIL at "the guest's
+  vehicle is of the guest's design". civ_own_designs prints the bytes around every key of ours its save parse finds
+  (`key_context`): an event of the main stream 0x01897C18 held `{0x24682294, key, 0x40646200}` (lab 20261119-141949).
 ## The end of Tribe with another cinematic at the graduation (2026-11-19, fix/w57-crashes)
 <a id="testing-tribe-city-hall-race"></a>
 
