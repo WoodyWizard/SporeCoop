@@ -1779,7 +1779,12 @@ COOP_FIX("creations.own_ship_key", "BUG-1301", g_ufo_own_fix,
 static unsigned g_ufo_unshadowed;
 static bool ufo_own_shadowed(Kind k, const Key& key)
 {
-    return g_ufo_own_fix && k == kUfo && key.instance && own_option(kUfo, key);
+    if (!g_ufo_own_fix || k != kUfo || !key.instance)
+        return false;
+    for (auto& o : g_opts[kUfo]) // (by instance: the empire's key and My Creations' may differ in type or group)
+        if (o.key.instance == key.instance)
+            return true;
+    return false;
 }
 static void ufo_unshadow(uint32_t inst)
 {
