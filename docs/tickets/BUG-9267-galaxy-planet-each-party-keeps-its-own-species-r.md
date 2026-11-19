@@ -32,7 +32,9 @@ cSpeciesRelationshipManager keeps one table per game; ApplyEvent names the victi
   social win (apply_success). social::set_event_actor marks it; h_RelEvent swaps that party's record into the game's
   table, runs the game's own ApplyEvent (its rules: impressed to ally, a death breaks the alliance, kills to
   extinction) and swaps the host's back; the herds' ally flag is set back to the host's.
-* Extinction stays one per planet (6M B): a party's record that turns extinct makes the species extinct for all.
+* Extinction stays one per planet (6M B): the game's own extinction stops the shared herds. (CORRECTION
+  2026-11-19, BUG-9269: relation 5 was copied to every party as "extinct"; 5 is "aggressive" (an eaten egg): one
+  party's hostility reached everyone. Removed.)
 * Each guest gets its party's table (MSG_SPECIES per party, on change and every 10 s); a goal card of another party
   pays by its table, once per party.
 * Switch `coop.fix social.party_relations` (needs creature.party_difficulty: galaxy planets only). In memory on the

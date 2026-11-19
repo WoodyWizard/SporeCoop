@@ -381,6 +381,10 @@ void run_as_avatar(void* t, void (*fn)(void*), void* ctx);
 using PartyEnter = size_t (*)(void* creature);
 using PartyLeave = void (*)(size_t token);
 void set_party_context(PartyEnter enter, PartyLeave leave);
+// 6W B: an NPC that ticks with a partner's puppet as the player meets that partner's party's relations (social.cpp)
+using RelEnter = size_t (*)(void* npc, void* as_player);
+using RelLeave = void (*)(size_t token);
+void set_relation_context(RelEnter enter, RelLeave leave);
 // called by destroy_creature for a creature before the mod removes it (a pack member leaves its pack list first)
 void set_before_destroy(void (*fn)(void*));
 void swap_guard_tick();          // once per frame: undo an NPC tick's avatar swap a fault left open (BUG-0110)

@@ -1254,3 +1254,16 @@ Owner 2026-11-18: "Let's also investigate the idea of connecting with Steam to a
   table. ✔ Kills: a stranger's kill counted only in its party's record and its own game. Not yet: the records are not
   saved (a hand-over keeps the new host's party's only), and NPCs still pick targets by distance (step 3).
 * Still one per world: the shared DNA pool, the Cell food total, the progress debt and the stage end (step 4, 6N A).
+
+## NPCs treat each party by its own relations (6W B, 2026-11-19, feat/lineages-alpha)
+<a id="server-party-ai"></a>
+
+* BUG-9269, the 6K plan's step 3: an NPC near a partner ticks with that partner as the player (BUG-0016); for a partner
+  of another party the NPC's species record and its herd's ally flag are that party's for the tick. ✔ A species the
+  guest's party made aggressive (an eaten egg) attacked the guest (19 hits in 30 s) while the host's party's record
+  stayed neutral; with `coop.fix social.party_ai off` the same NPC left the guest alone.
+* Relation 5 is "aggressive", not "extinct" (CORRECTION in docs/re/creature.md 8.1): a party's 5 stays its own.
+* BUG-9268 (same day): a galaxy host whose game reloads its planet (the Tribe seat rebuild: every newcomer on a stored
+  Tribe or Civ planet) handed the planet over; it stays the host now (`coop.fix galaxy.reload_stays`).
+* Cell difficulty per party seen in game on a new Cell test planet (Cellfour): predators keep the game's health, the
+  host's bites scaled only in a party (BUG-9266).

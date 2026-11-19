@@ -9501,7 +9501,7 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
     }
     if (argc > 4 && !strcmp(argv[1], "pevent")) { // tests (6V A): pevent <npc id> <event 0..5> <player>, as that player's
         bool ok = social::debug_event_by((uint16_t)atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
-        SAY(ok ? "event applied" : "no such living NPC here (the host) or event out of 0..5");
+        SAY(ok ? "event applied" : "no such living NPC here (the host) or event out of 0..7");
         return ok ? 0 : 1;
     }
     if (argc > 3 && !strcmp(argv[1], "event")) { // tests (BUG-0168): event <hex crt> <n>, the game's ApplyEvent

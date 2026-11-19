@@ -1253,6 +1253,13 @@ void ai_timing(double& mod_ms, double& game_ms, uint64_t& ticks, bool reset)
 }
 static PartyEnter g_party_enter;
 static PartyLeave g_party_leave;
+static RelEnter g_rel_enter;
+static RelLeave g_rel_leave;
+void set_relation_context(RelEnter enter, RelLeave leave)
+{
+    g_rel_enter = enter;
+    g_rel_leave = leave;
+}
 void set_party_context(PartyEnter enter, PartyLeave leave)
 {
     g_party_enter = enter;
@@ -1322,7 +1329,10 @@ static void SK_THISCALL h_NPCTickAI_inner(void* self, float dt, uint64_t t0)
         tun = lent;
     g_swap_lent = lent;
     g_ai_swaps++;
+    const size_t rel = g_rel_enter ? g_rel_enter(self, t) : 0; // 6W B: the partner's party's relations for this tick
     call_ai(self, dt, t0);
+    if (rel) // (an unwind past here: social.cpp restores the record on its next tick)
+        g_rel_leave(rel);
     if (g_swap_fault_test) { // tests: as if the game faulted in the tick and its handler unwound past us
         g_swap_fault_test = false;
         return;

@@ -135,6 +135,10 @@ then queries by a small script in seconds); runtime: `probe`, memory diffs, `cal
 * ✔ `GetRelationship` 0xBA40C0 `thiscall(mgr, key*, a, b) ret 0xC`: the record's relation, 0 = not
   set (then the archetype tuning +0x390 decides). Creature stage values: 6 allied (and the own
   species), 5 extinct, 4 / 3 impressed some (~), 1-2 hostile (~).
+  ~ superseded (2026-11-19): see #creature-npc-aggression. CORRECTION (2026-11-19, feat/lineages-alpha): 5 is not
+  extinction: ApplyEvent sets 5 for an eaten egg (event 7) or a killed young, and the behaviour tree attacks on 2 / 5
+  (BUG-0168, static; runtime 2026-11-19: after event 7 an NPC of 06539202 bit a partner whose party had relation 5).
+  The extinction writes 6 (social.cpp BUG-9244) and stops the herds (+0x190).
 * ✔ `ApplyEvent` 0xBA49E0 `thiscall(mgr, int event, key*, creature) ret 0xC`: event 3 = one
   creature impressed (record +8 += 1; ally at tuning +0x40C, 4 at +0x408), 0 / 5 = killed (+0xC;
   extinct at tuning +0x400 via 0xBA4730), 2 = attacked, 6 / 7 nest events. A change refreshes the
