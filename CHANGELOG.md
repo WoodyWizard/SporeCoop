@@ -12,7 +12,8 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   checks its look in every stage on both games (BUG-1277).
 - Saves: no key of a guest's own species reaches the host's saved game through any object the game writes (tribe
   members, citizens, herds and wild animals of that species, the game's event log): the save names the world's species
-  there instead (BUG-1315). `coop.tribe ai` shows the food a member carries again (BUG-1317).
+  there instead (BUG-1315). A young tribe member given its player's own species no longer reads
+  memory past itself (a possible crash, BUG-1320). `coop.tribe ai` shows the food a member carries again (BUG-1317).
 
 ### Added
 - Creature: when a partner goes into an editor of its own (its mating evolution, Evolve now, or later at the nest),

@@ -1,16 +1,16 @@
 ---
 id: BUG-1315
 title: Saves: a guest's species line key reaches the host's save (citizens, herds, wild creatures, main stream) despite the save strip
-status: open
+status: fixed
 kind: bug
 stage: All
 reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w57-savestrip
-commits:
+commits: fc2cc5e3 0db36ea8 04f44839 99f52667
 tests: tribe_own_species, civ_own_species, line_stages, line_stages_outfit, line_stages_editors
 signature:
 docs: docs/re/creations.md#creations-save-keys, docs/06-testing.md#testing-tribe-own-species, docs/06-testing.md#testing-civ-own-species
@@ -53,8 +53,14 @@ At the stream, for every object (savestrip.cpp, switch `coop.fix savestrip.keys`
   and rekeyed; the first 8 rewrites of a save are logged with the caller and the holder (noun, offset).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL (before the fix): lab 20261119-095414 (tribe_own_species, civ_own_species, line_stages / _outfit / _editors),
+  20261119-102655 (civ_own_species with civ.own_species_save off); FAIL twins with `savestrip.keys` off and the
+  per-object strips on: lab 20261119-120449 tribe_own_species (records 01897C18, 018EB4B7; `stripped=6` by the
+  members' strip) and civ_own_species (018EB4B7; `save_stripped=38` by the citizens' strip).
+* PASS: lab 20261119-114816 tribe_own_species (`rewritten=5 events=2`, no key in the slot) and civ_own_species
+  (`rewritten=19`); 20261119-113320 civ_own_species; line_stages' Tribe save clean in 20261119-114816 (its Civ step
+  stopped before the save, see BUG-1277).
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-19: fix/w57-savestrip: diagnosis with a logging key filter, the stream-level fix, the twin runs.

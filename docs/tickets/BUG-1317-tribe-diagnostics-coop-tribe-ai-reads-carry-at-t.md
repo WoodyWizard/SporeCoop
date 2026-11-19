@@ -1,17 +1,17 @@
 ---
 id: BUG-1317
 title: Tribe diagnostics: coop.tribe ai reads carry= at the wrong container offset (0.0 while a member carries food)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w57-savestrip
+commits: 0db36ea8
+tests: tribe_own_species
 signature:
 docs:
 related:
@@ -34,8 +34,9 @@ tribe.cpp carried(): the vector at member +0x38..+0x3C (CORRECTION note in the c
 for tests (`coop.tribe ai`), no behaviour.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* FAIL: lab 20261119-112418 tribe_own_species (old read-out: `carry=0.0` for 60 s at the tree, the member in the
+  gather node). PASS: lab 20261119-113320 and 20261119-114816 (`carry=1.0` after 6 s / 9 s, the food went home).
 
 ## History
 - 2026-11-19: opened (fix/w57-savestrip, found while fixing tribe_own_species for BUG-1271).
+- 2026-11-19: fixed on fix/w57-savestrip.

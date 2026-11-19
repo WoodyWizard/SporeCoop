@@ -1,16 +1,16 @@
 ---
 id: BUG-1320
 title: Tribe: SetSpecies on a young member reads past the citizen object (cCreatureAnimal cache at +0x1628, fault at 0xFFFFFFFF)
-status: open
+status: fixed
 kind: crash
 stage: Tribe
 reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w57-savestrip
-commits:
+commits: 9a1a1d00
 tests: tribe_own_species
 signature: exception 0xC0000005 at 0xFFFFFFFF, calls 00BC326E 00C03A94 (cCreatureAnimal::SetSpecies+0x174)
 docs: docs/re/tribe.md#tribe-own-species
@@ -42,8 +42,11 @@ setspecies`), which marks the member; a hook on LazyU64_Get 0xBC3260 skips the c
 `coop.status`. Switch `coop.fix tribe.species_young` (off: the game's call).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+* no-fail-run: the fault depends on the heap bytes after a 0x1038-byte citizen (a call only when the byte at +0x1640
+  is 0); seen once in lab 20261119-113954 (tribe_own_species, host fault at 0xFFFFFFFF, calls 00BC326E 00C03A94).
+  With the fix: lab 20261119-114816 and 20261119-120449 tribe_own_species, `young_skipped=2` (the bought baby given its
+  species twice), 0 faults on both games.
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-19: fixed on fix/w57-savestrip.
