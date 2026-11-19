@@ -175,7 +175,8 @@ def same_civilization(ck, before, host, guest, what):
         c0, g0 = before[who]
         c1, g1 = culture(con), civedit(con)[1]
         if who == 'host':
-            ck(c1 == c0, f'{what}: the host\'s culture set is unchanged on the host ({len(c0)} entries)')
+            diff = {f'{k:08X}': (f'{c0.get(k, 0):08X}', f'{c1.get(k, 0):08X}') for k in set(c0) | set(c1) if c0.get(k) != c1.get(k)}
+            ck(c1 == c0, f'{what}: the host\'s culture set is unchanged on the host ({len(c0)} entries) {diff or ""}')
         else:
             changed = {f'{k:08X}': (f'{v:08X}', f'{c1.get(k, 0):08X}') for k, v in c0.items() if v and c1.get(k) != v}
             ck(not changed, f'{what}: the guest\'s copy of the culture set keeps every design it had {changed or ""}')

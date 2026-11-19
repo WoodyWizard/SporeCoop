@@ -9496,3 +9496,24 @@ cell editor with real input; own DNA by default, `--shared` the old checks as `e
   editor, left with the red cross, the host observes), twin `cocoon_off`; `guest_mating` (BUG-1304, BUG-1305: the
   guest's own mating at the nest the players' way, no key during the egg scene). Key frames are shot on the observer
   only, with settle 0 (the partner sits in its editor, which the settle would wait out).
+
+## The guest's own editors in the first 0.7.16 lab run: test pitfalls (2026-11-19, fix/w57-own-editors)
+<a id="testing-own-editors-night1"></a>
+
+What made the own-editor tests of 0.7.16 fail in their first run although the mod was right (BUG-1307, BUG-1318), and
+what the mod got wrong (BUG-1306, BUG-1308, BUG-1316):
+* `game.mode` answers "0x00DBDBA1 Editor" (the id and the name). Compare its first word (`harness.mode_word`), never
+  the whole answer with a bare id: coop_civ_guest_editors.py's `mode()` did, so `in_editor` never saw the guest's open
+  editor and `drive_editor` (civ_own_arrival, civ_late_arrival use it too) returned at once.
+* A bought NPC city has no building of the house design id 4E3F7777 (its houses are of the NPC culture): a test that
+  checks "every house of the guest's city" builds one first (`coop.civ build <city> house`, the game's own build), as
+  civ_own_designs does; else the list is empty on both games.
+* The brain-up caption (coop_dna_own.py `prepare`, any `coop.dna add` past a brain level) takes Enter only once it
+  shows, about 16 s after the gain (the game pauses then). Press Enter until no game has a cinematic (`cinematic()` of
+  coop_editor_sync), not for a fixed 12 s: the guest's caption stayed up and its own editor never opened.
+* `keys_in` (coop_civ_own_designs.py) reads every save file as DBPF; a package with an empty index raised
+  `struct.error` after the checks: it is searched whole then.
+* The guest's own outfitters edit its own creation (Creature Creator parts): without the part-list waiver Done does
+  nothing and the test waits in the editor (BUG-1308). `coop.vote` prints "part list waived N (own outfitters M)".
+* A guest-side gate on the host's build reads `Session::host_families` (the host's WELCOME); `peer_families` answers
+  only on the host (BUG-1306, BUG-1282).
