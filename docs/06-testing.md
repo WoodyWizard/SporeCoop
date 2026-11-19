@@ -9622,3 +9622,24 @@ DNA as before):
   for (+0xC4 {0,0,0}); twin `line_stages_nodesign_off` (`civ.own_designs_nodesign` off) must FAIL at "the guest's
   vehicle is of the guest's design". civ_own_designs prints the bytes around every key of ours its save parse finds
   (`key_context`): an event of the main stream 0x01897C18 held `{0x24682294, key, 0x40646200}` (lab 20261119-141949).
+## The end of Tribe with another cinematic at the graduation (2026-11-19, fix/w57-crashes)
+<a id="testing-tribe-city-hall-race"></a>
+
+BUG-1325, `tribe_city_hall_race` (coop_tribe_city_hall_race.py, tribe fixture, ~14 min): `coop.tribe gradcine
+TRG_TotemPole_Conquer` makes the host's game start that cinematic right before its next TribeStage_Graduate (the race of
+lab 20261119-120449, where the first NPC tribe's TRG_PRE_FirstTribeAppears played then), then the end of Tribe the
+players' way with tribe_civ's steps. A host that stands in Tribe 75 s after the City Hall editor with the advance button
+up clicks it again, as a stuck player would. Checked: the game's request after the City Hall editor is a vehicle editor
+(`coop.vote tribeend`: last editor), both games reach Civ, no fault. Twins: `tribe_city_hall_race_off`
+(tribe.city_hall_cinematic off: no vehicle editor; the second graduation survives through game.destroy_null) and
+`tribe_city_hall_race_crash` (both off: the fault of the run above). `coop.tribe graduation` prints the hook's counts.
+
+## Shots whose shooter or target is no listed object (2026-11-19, fix/w57-crashes)
+<a id="testing-civ-shot-objects"></a>
+
+BUG-1322, `civ_shot_objects` (coop_civ_influence.py --case shotobjs, civ_npc fixture, warm, ~5 min): two religious
+vehicles (spawned with `force`, put on the ground at the nearest NPC city) preach for 45 s; `coop.civ shotobjs` prints
+the shooters and targets of the host's observed shots that were no listed object (evidence, not a check). Then
+`coop.civ shotprobe` hands the shot observer one shot of a listed host vehicle at a fake target whose preceding dword is
+the exe's base (its +0xC is 0x0000FFFF): checked that it is taken as a target the guests cannot find (kind 2) and the host
+has no fault. Twin `civ_shot_objects_off` (civ.shot_target_listed off): the observer calls into it, the host faults.

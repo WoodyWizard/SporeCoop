@@ -115,6 +115,10 @@ static void for_each_tree(Fn fn)
 
 void* find_tree(const net::Vec3& pos, float max_dist);
 
+// tribe_graduation.cpp (BUG-1325): the end of Tribe's TribeStage_Graduate hook and its test command
+void graduation_init();
+std::string graduation_cmd(const std::vector<std::string>& a);
+
 // ---------------- host ----------------
 // C1 (BUG-1140): one entry of the host's member table (tribe.hm); its id, object and serial are the registry entry's
 struct HMember {
