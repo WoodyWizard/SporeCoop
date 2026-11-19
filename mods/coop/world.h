@@ -84,6 +84,9 @@ void on_session_end();
 bool load_queued();
 // BUG-9240: a load from the galaxy menu was just started and the game is not in it yet (15 s at most)
 bool load_starting();
+// BUG-9268: the save file this game is loading through the galaxy menu right now (queued, or posted less than 15 s
+// ago while the game is still in the menu or the load), "" none
+std::string menu_load_planet();
 // guest (BUG-9208): hold a received world while the first-creature editor is requested or open
 void hold_for_editor(bool on);
 // host (BUG-9210): a player's share waits while this says its own nest is about to be made (2 min at most)

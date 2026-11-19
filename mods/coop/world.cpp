@@ -729,6 +729,7 @@ static bool g_load_start_fix = true;
 COOP_FIX("world.load_starting", "BUG-9240", g_load_start_fix,
          "world: a load started from the galaxy menu counts as coming until the game is in it (nothing else starts meanwhile)");
 static double g_menu_load_posted = -1e9; // BUG-9240: when a menu load was posted
+static std::string g_menu_load_file; // BUG-9268: the save file of that load
 COOP_FIX("core.share_reset", "BUG-0140", g_share_reset_fix, "world: the session end drops the shares and transfers of its players");
 COOP_FIX("world.world_reset", "BUG-0074", g_world_reset_fix, "world: the session end drops the guest's queued world loads");
 COOP_FIX("world.share_drop_peer", "BUG-0166", g_drop_peer_fix, "world: shares for a player who left are dropped");
@@ -1409,6 +1410,7 @@ static void via_menu_tick()
         g_via_menu = ViaMenu{};
         g_menu_since = 0; // a newer request settles again (the mode switches to the load later)
         g_menu_load_posted = now; // BUG-9240
+        g_menu_load_file = v.planet; // (BUG-9268)
         H->log(M, SK_INFO, "world: loading from %s %.1f s after the request", other ? modes::mode_name(mode) : "the galaxy menu",
                now - v.since);
         H->run_outside_frame(
@@ -1511,6 +1513,16 @@ bool load_starting()
     if (!g_load_start_fix) return false;
     const uint32_t m = game::mode_id();
     return H->time_seconds() - g_menu_load_posted < 15 && (m == modes::kMenu || m == modes::kLoad || m == 0);
+}
+
+std::string menu_load_planet()
+{
+    if (g_via_menu.on)
+        return g_via_menu.planet;
+    const uint32_t m = game::mode_id();
+    if (H->time_seconds() - g_menu_load_posted < 15 && (m == modes::kMenu || m == modes::kLoad || m == 0))
+        return g_menu_load_file;
+    return "";
 }
 
 bool local_intro_running()

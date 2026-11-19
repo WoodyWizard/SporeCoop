@@ -10,6 +10,7 @@
 #include "net/protocol.h"
 #include "net/transport.h"
 #include "world.h"
+#include "fixes.h"
 #include "mouse.h"
 #include "sporekit_game.hpp"
 #include <windows.h>
@@ -80,6 +81,11 @@ static uint32_t g_handovers;
 // g_token: the last hand-over's token; g_token_world: the world it is valid for (this game kept it loaded)
 static uint32_t g_planet_world;
 static std::string g_planet_file; // its save file ("Name.spo") while this game plays the planet (galaxy_pack in a menu)
+// BUG-9268: the game's own reload of the hosted planet (through the galaxy menu) is not leaving it
+static bool g_reload_stays = true, g_reload_said = false;
+static uint32_t g_reloads_kept = 0;
+COOP_FIX("galaxy.reload_stays", "BUG-9268", g_reload_stays,
+         "galaxy: a host whose game reloads the planet it hosts (through the galaxy menu) stays its host, not handing it over");
 static uint64_t g_token;
 static uint32_t g_token_world;
 static uint32_t g_warm_hosts, g_warm_joins, g_warm_accepted;
@@ -582,7 +588,16 @@ static void upload_tick(double now)
         return;
     // owner 2026-11-17: leaving to the main menu while hosting leaves the planet: Spore saved on the way, that save goes
     // to the galaxy and the planet is handed over
-    if (game::mode_id() == modes::kMenu && !g_leave_after && C.sess && C.sess->role() == net::Role::Host) {
+    // BUG-9268: not the game's own reload of this planet (a Tribe rescue, a new founder seat: world::load_slot goes
+    // through the menu): the host comes back to the same planet and keeps it
+    const bool own_reload = g_reload_stays && !g_planet_file.empty() && world::menu_load_planet() == g_planet_file;
+    if (own_reload && game::mode_id() == modes::kMenu && !g_reload_said) {
+        g_reload_said = true;
+        g_reloads_kept++;
+        H->log(M, SK_INFO, "galaxy: the game reloads %s through the menu: still its host (BUG-9268)", g_planet_file.c_str());
+    } else if (!own_reload)
+        g_reload_said = false;
+    if (game::mode_id() == modes::kMenu && !own_reload && !g_leave_after && C.sess && C.sess->role() == net::Role::Host) {
         g_leave_after = true;
         g_up_nosave = true;
         g_menu_handovers++;
@@ -1047,11 +1062,11 @@ std::string status()
     static const char* steps[] = {"-", "downloading", "loading", "hosting"};
     snprintf(b, sizeof b,
              "\nworld: %s%s stored=%u KB down=%u/%u chunks upload=%s (%u/%u chunks) next upload in %.0f s, uploads %u, "
-             "downloads %u, hand-overs %u (warm: hosted %u, rejoined %u, accepted %u), silent saves %u (idle %u), quiet waits %u, menu hand-overs %u, close holds %u, last upload: %s",
+             "downloads %u, hand-overs %u (warm: hosted %u, rejoined %u, accepted %u), silent saves %u (idle %u), quiet waits %u, menu hand-overs %u (own reloads kept %u), close holds %u, last upload: %s",
              steps[g_hstep], g_waiting_host ? " (waiting for the new host)" : "", g_world_bytes >> 10, g_down.got, (unsigned)g_down.have.size(),
              g_upstep == kUpIdle ? "idle" : g_upstep == kUpSaving ? "saving" : "sending", g_up.acked,
              g_up.on ? g_up.chunks() : 0u, g_hstep == kHosting ? g_next_upload - H->time_seconds() : 0.0,
-             g_uploads_done, g_downloads_done, g_handovers, g_warm_hosts, g_warm_joins, g_warm_accepted, g_silent_saves, g_idle_saves, g_quiet_waits, g_menu_handovers, g_close_holds,
+             g_uploads_done, g_downloads_done, g_handovers, g_warm_hosts, g_warm_joins, g_warm_accepted, g_silent_saves, g_idle_saves, g_quiet_waits, g_menu_handovers, g_reloads_kept, g_close_holds,
              g_last_upload.empty() ? "-" : g_last_upload.c_str());
     return s + b;
 }
