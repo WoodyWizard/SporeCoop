@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages64-dev
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits: 688c51bf
+commits: 557f6e29
 tests: tools/qa_win/qa.py (manual: F8 open, the close button, galaxy menu and a joined world; no lab test yet)
 signature: access violation executing SporeApp+0x1040868, stack UTFWin::cWindowManager::GetModal / PopModal / ProcessMessage
 docs: docs/08-ui.md#ui-native-frame-copy
