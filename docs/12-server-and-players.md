@@ -646,6 +646,371 @@ progression, etc. compared to other parties."
 * The host's cost grows with each partner (20-30 KB/s upload each): 16 players on one host's home connection is the
   risk to measure first (decision 6E).
 
+### Any player count: one ceiling, the planet's count a setting (2026-11-18, feat/lineages-alpha, decision 6E B)
+<a id="server-scalable-players"></a>
+
+Owner: "It needs to be scalable too. Setting it to 17 shouldn't cause any issues."
+
+* One ceiling in the code, net::kMaxPlayers 64 (protocol.h; ids 0..63, 0xFC and up stay markers), and
+  founders::kSeatCeiling 64 (founders.h): every table, mask and loop sizes itself from these (the Civ seat masks are
+  bitsets, the Tribe village count, the Cell loops over the players present, the view centres, the creature tables, the
+  pass-through list, the guest packs). How many a session takes is a setting: all.max_players (2..64) for co-op, the
+  galaxy server's `--planet-players <n>` (2..64, 16 by default) for its planets, sent in WELCOME (an older server: 4).
+* A galaxy planet's host hosts with that count: a stored planet saved with fewer Lineages slots is raised to it ("This
+  planet takes 16 players now (it had 5 slots)"); a full planet refuses the next player at the server ("Samuth is
+  full (5 players): pick another planet or try again later").
+* Difficulty stays one party's: the per-seat extras count 4 seats at most (CampaignRules::kScaledSeats), so 16 players
+  on a planet play at a 4-seat party's difficulty until each party has its own (#server-seats-16).
+* The Co-op window: Player Slots is a field with - and + (1..64, the four buttons before), the lobby's four player rows
+  scroll (arrows at the Players heading), Apply takes up to 64; `coop.seats` and `coop.host` take any count.
+* Fixed on the way: a galaxy guest that left sent its goodbye after LEAVE, the server had already ended its relay and
+  the host kept the place for the 30 s timeout (a full planet refused the next player). The goodbye goes first now.
+* Tests (TITAN, QA copy, a local test galaxy server, test worlds folder): with `--planet-players 5`: 5 players in the
+  host's session (5/5, "Player slots: 5", takeover 115% as at 4), the sixth refused as full; a guest left and the sixth
+  joined 4 s later in its place (before the fix: refused "session is full" for 30 s). With the default 16: 10 games on
+  one planet (players=10/16, ids 1..9, past the old internal limits of 4 and 8), the sync check OK with all nine,
+  every player's cell shown to every other, no crash. Unit tests: cell, civ seats, tribe seats, tribe late, party food,
+  npc, space, the founders part of win_tests (a 17-seat raise keeps a 4-seat difficulty).
+* Found, not fixed:
+  * The host's upload. In the Cell stage the host sent 163 MB in the minute the 10 players settled: 128 MB of it the
+    Cell snapshot (MSG_CELL_STATE, about 240 KB/s a guest), 28 MB world chunks. A home connection does not carry that
+    for 15 partners: the snapshot has to go to each player for its own area only (or the galaxy server fans it out)
+    before 16-player planets are practical. Measure Creature next (20-30 KB/s a partner before).
+  * The party cards on the right of the screen stack past the top with 9 partners (8 cards at most, at 800x600 they
+    go off the screen). On a galaxy planet they should show the own party only (#server-three-roles).
+    Owner 2026-11-18: "The party cards are going to be limited to 4 because we'll limit parties to 4 members only.
+    They wont overfill." A party is 4 players at most; the cards show the own party.
+  * Player colours repeat after 8 (find_core.h: 8 colours, player 9 shares one).
+  * Founder seats are still given once per identity and kept (party.cpp): 64 different players over a planet's life
+    fill them; reusing an absent player's seat is still open (#server-seats-16).
+
+### The host's upload with many players: what costs and what would cut it (2026-11-18, decision 6F)
+<a id="server-host-upload"></a>
+
+Measured in the 6E B test (#server-scalable-players), Cell stage, all players near each other, the QA games at 10 FPS:
+the host's Cell snapshot (MSG_CELL_STATE) cost 100-240 KB/s a guest (4 guests: 25-53 MB a minute; 9 guests: 128 MB).
+It is already per guest: each guest gets the cells within 120 m of its own centre, at most kSendCap 900, 10 times a
+second (cellsync.cpp send_cycle, BUG-0295, BUG-0809). Each cell is a full 63-byte record every time: index, resource
+instance, three model keys, level, size, position (3 floats), velocity (2), rotation (a quaternion, 4), hp, flags;
+about 33 of those bytes never change while the cell lives. So "only what is near" is done; the cost is the record and
+the rate. Theory for a 16-player planet (15 guests), not measured:
+
+| | Each guest | Host upload, 15 guests | Galaxy server |
+|---|---|---|---|
+| Today | 100-240 KB/s | 1.5-3.6 MB/s (12-29 Mbit/s) | relays it |
+| A: a compact snapshot (the fixed part of a cell once, then about 12 bytes: position and velocity as 16-bit offsets from the guest's centre, one angle, hp, flags; far cells less often) | about 20-40 KB/s (5-8x less) | 0.3-0.6 MB/s (2.4-4.8 Mbit/s) | relays it |
+| B: the galaxy server copies one stream to the players of one area | today's size | one stream per group of players near each other: 100-240 KB/s when all are together, today's 3.6 MB/s when all are apart | sends 1.5-3.6 MB/s a busy planet |
+| C: A, then B | about 20-40 KB/s | 20-40 KB/s per group | 0.3-0.6 MB/s a busy planet |
+
+A helps co-op too (live, 4 players: 0.3-0.7 MB/s today to about 0.1 MB/s) and costs no server bandwidth; B only helps
+players who stand together and moves the cost to the server; C is the MMO shape (the server carries the fan-out) on
+top of A. Creature, Tribe and Civ are not measured at this size yet (Creature: 20-30 KB/s a partner at 4 players).
+
+### The compact Cell state (2026-11-18, feat/lineages-alpha, decision 6F A)
+<a id="server-compact-cell"></a>
+
+Owner: "6FC" (A first, then the galaxy server copies the stream). Part A: MSG_CELL_STATE_C (mods/coop/cell_compact.h
+has the format), sent by the host to every guest that announces net::CAP_COMPACT_CELL; an older guest gets the classic
+MSG_CELL_STATE. Switch: `coop.fix cell.compact_state off` (the classic state to everyone); counters: `coop.pool compact`.
+
+* A cell's fixed part (resource instance, model key, level) goes in a full record when the guest has not had it for
+  2 s or it changed; otherwise position and velocity as 16-bit steps from the guest's centre, the rotation in 4 bytes,
+  the size in 2 (log2), hp and flags: 22 bytes, 39 with the fixed part, 4 for "still there".
+* Cells outside a 40 x 32 box about the guest (its view is about 15 x 11) are sent 2 times a second instead of 10, a
+  "still there" in the other cycles (the guest goes on along the cell's velocity, as between any two states). A dying
+  or dead cell is always sent.
+* A chunk holds about 60 cells instead of 14 (fewer packets too).
+
+Measured (TITAN, QA copy, a local test galaxy server, 6 games on Samuth in Cell, all players near each other, two
+minutes each way in the same session):
+
+| | Bytes a cell | Cells a guest a cycle | Each guest | Host, 5 guests |
+|---|---|---|---|---|
+| Classic | 63.6 | 281 | 179 KB/s | 894 KB/s |
+| Compact | 15.5 | 393 | 61 KB/s | 305 KB/s |
+
+Per cell 4.1 times smaller; at the compact window's 393 cells the classic would have cost about 250 KB/s a guest. The
+players stood together, so 73 % of the cells were near (sent 10 times a second); spread out, more of them are far and it
+costs less. A 16-player planet with everyone together: about 0.9 MB/s (7 Mbit/s) from the host instead of 3.7 MB/s.
+Guests skipped 0 to 4 of about 550 000 records each (a lost full record, back within 2 s). The sync check: 112 checks,
+0 mismatches (36 momentary differences, gone on the 3 s recheck). Unit tests: cell_tests (packing round trips, the far
+cells' turns). Not tested: an older guest against a new host on alpha (the capability decides; live has no compact
+state yet), Creature / Tribe / Civ (their own messages, not changed).
+
+Next (6F part B): the galaxy server copies one stream to the players of one area.
+
+### The galaxy server copies the Cell state to players together (2026-11-18, feat/lineages-alpha, decision 6F B)
+<a id="server-fan-out"></a>
+
+Owner: "Start part B" (6F C: A, then B). The host groups the guests whose centres are within 40 m of each other (a
+chain: cell_compact::kGroupDist) and sends each group one compact Cell stream (the cells within 120 m of any member, at
+most 900, the near box of any member at 10 a second); the galaxy server copies it to the group's players.
+
+* net/galaxy.h kFan 'F': host -> server: u8 n, n x u16 slot, then u8 message type and body; server -> each player:
+  u16 the host's slot, the type and body. The server takes it only from the planet's host and sends it only to the
+  planet's players; the game takes it only from its planet's host, as a guest through the relay, and only
+  MSG_CELL_STATE_C (coop.cpp gx.fan_in): it is then dispatched as the session's own message from the host.
+* A guest gets the group stream only when it announces net::CAP_FAN_IN and CAP_COMPACT_CELL; alone, or an older game,
+  or not through a galaxy: its own stream as before. A full record goes out when any member needs it (each member's
+  "had it" time is kept). Copies refused by the galaxy client fall back to one stream each.
+* Switch: `coop.fix cell.fan off` (one stream per guest); counters: `coop.pool compact` (groups), `coop.galaxy status`
+  (copies sent / got / refused), the server's status line (copies in / out KB/s).
+
+Measured (TITAN, 6 games together on Samuth in Cell, 2 minutes each way in the same session):
+
+| | Host's Cell upload, 5 guests | Each guest gets | Galaxy server sends |
+|---|---|---|---|
+| One stream each (cell.fan off) | 192 KB/s | about 38 KB/s (its own area) | relays it |
+| Group streams (cell.fan on) | 75 KB/s | about 76 KB/s (the group's area) | about 380 KB/s |
+
+2.6 times less from the host; a guest downloads the group's area (about twice its own here). 4.8 guests a stream on
+average (1218 guest updates in 252 streams). Sync check 72 checks, 0 mismatches; copies 0 dropped; the guests' "full
+record not had yet" count did not grow during the run (0 to 3 new per guest); no crash. With A, against the classic
+state at the same cells: about 7 times less host upload in all.
+
+For a 16-player planet with everyone together: one stream from the host (about 75-110 KB/s, the same for 5 or 15
+guests), the galaxy server sends it 15 times (about 1.1-1.7 MB/s a busy planet). Players apart: one stream per group.
+Not done: Creature, Tribe and Civ (their own messages: measure next), a group's stream for the session's other
+unreliable messages.
+
+### Creature with many players: measured (2026-11-18, feat/lineages-alpha, decision 6G A)
+<a id="server-creature-many"></a>
+
+Owner: "6GA". TITAN, QA copy, a local test galaxy server (worlds folder out/galaxy/worlds_6ga), DuoQACreatureHost's
+Samuth (Creature, `coop.load Game0 Samuth`) hosted on the galaxy, guests entering it.
+
+* 10 Creature games on one PC do not run: the host fell to 3 FPS, guests to 1 FPS (the QA cap is 10), three guests
+  timed out of the session (10 -> 7) and one out of the galaxy server. The numbers of that run are frame-bound and not
+  used. Cell ran 10 games at 10 FPS (#server-scalable-players); Creature needs the MSI or fewer games per PC.
+* Measured with 5 (host + 4 guests at 7-9 FPS, one steady minute, no world transfer):
+
+| Message (host out) | KB a minute | Note |
+|---|---|---|
+| MSG_PLAYER_STATE (6) | 697 | every player's state to every other through the host: 4 x 4 streams, about 8 a second each |
+| MSG_WOBJ (54) | 425 | world objects |
+| MSG_LIBRARY (71) | 279 | creation pictures (once per new creation) |
+| MSG_WSTATE (62) | 184 | world state rows |
+| MSG_NEST (52) and the rest | 203 | |
+| all | 1788 (30 KB/s, 7.5 KB/s a guest) | |
+
+* Projection to 16 players (15 guests), same frame rate: everything but the player states grows with the guests
+  (about 4.5 KB/s each: 68 KB/s); the player states grow with the square (each guest gets every other player's state
+  through the host: 15 x 15 streams, about 160 KB/s at 8 states a second, more at a real frame rate). The player states
+  are the Creature stage's wall, as the Cell snapshot was Cell's. Fix (6F B's mechanism): the host sends each player's
+  state once and the galaxy server copies it to the others (linear: about 11 KB/s for 15 at 8 a second).
+* A join costs the host the whole world again (MSG_WORLD_CHUNK, 3.2-4.2 MB a guest): 9 joins about 38 MB. The galaxy
+  server already stores the planet (every 2 minutes and on leave): a joiner could load that copy from the server.
+* Found on the way (not fixed):
+  * A guest new to a Creature planet gets the first-creature editor (as designed, BUG-9208): a fresh profile first gets
+    Spore's "Register your game" screen over it; the creature needs a mouth and a name before it saves (owner
+    2026-11-18: "A creature needs a name / mouth to be saved"). The QA run skipped registration on the test profiles
+    ("Don't prompt me again") and saved a mouth on the starting body with a dice name.
+  * A guest with no saved game at all first starts a new Spore game (its world 'SaveGame', the new game's creature
+    editor) instead of the host's world; quitting that editor drops it to the galaxy menu while it stays in the
+    session.
+  * Saving a new creature sends the host's world to that guest again and reloads it; with several new players the
+    guests went in and out of editors for about 15 minutes.
+  * A game the galaxy server timed out (1 FPS) kept "connected" and never said HELLO again: every ping answered "Not
+    connected to the galaxy server: connect first". The client should connect again on that answer.
+  * Sync check: 5 mismatches, all during that churn (guests loading: "missing on the guest", 2 NPCs apart); none in
+    the steady 5-player minutes. No crash.
+* Not measured: Tribe (TITAN cannot carry it at this size either: the MSI or 4-5 games).
+
+### Player states copied by the galaxy server, and reconnecting (2026-11-18, feat/lineages-alpha, decision 6H A)
+<a id="server-fan-states"></a>
+
+Owner: "6HA. Also utilize MSI to ensure an even spread of computing power. In a real scenario, only one instance would
+be running on someone's computer."
+
+* The host sends each player's state (its own and each guest's it forwards) once for every guest with
+  net::CAP_FAN_IN; the galaxy server copies it to them (6F B's kFan frame). Session::send_unreliable_fanned: two or
+  more such guests and a galaxy host (Callbacks::fan_out, coop.cpp galaxy_fan_out), else one to each as before. A guest
+  takes a copied state through Session::host_fan_in (the same checks as a state from the host: the roster, never its
+  own id). Switch: `coop.fix net.fan_states off`.
+* Reconnecting: a game the galaxy server does not know (timed out, the server restarted) gets REFUSED
+  net::galaxy::kNotConnected on its next ping; it now leaves the planet and says HELLO again (at most every 5 s;
+  `coop.galaxy status`: reconnects).
+* Test spread over both PCs: TITAN the host and 3 guests, the MSI 3 guests (its own test games at 800 x 600, over
+  Tailscale to the galaxy server on TITAN), Samuth in Creature, every game at its normal 9-10 FPS. Host out, a minute
+  each way in the same session:
+
+| | Player states from the host | Host upload in all |
+|---|---|---|
+| One to each (net.fan_states off) | 38-42 KB/s | 58-63 KB/s |
+| Copied by the galaxy server | 9 KB/s (to the server) | 30-33 KB/s |
+
+  4.3 times less for the states with 6 guests, and it now grows with the players instead of their square: about
+  21 KB/s for 16 players at this rate instead of about 250. Each MSI game got about 28 000 copied states (2-5 refused
+  while it joined). Sync check 107 checks, 0 differences, 0 mismatches; no crash on either PC. The galaxy server
+  restarted under the 7 games: all 7 connected again by themselves within 25 s (each then off the planet, to enter
+  again).
+* Still open from #server-creature-many: a joiner's world from the galaxy server's copy (6H B), Tribe measured.
+
+### Joining from the galaxy's copy; Tribe measured and shared (2026-11-18, feat/lineages-alpha, decision 6I A)
+<a id="server-stored-join"></a>
+
+Owner: "6IA. I want you to get as far as you can until you reach a decision that absolutely needs my attention."
+
+**A joiner loads the planet from the galaxy server.** A guest's ROLE carries the stored world's size, crc and age
+(net/galaxy.h; the server lets any player of the planet FETCH it now). When the stored copy is under 2 minutes old, the
+guest downloads it from the server, loads it, then joins the host with the receipt stored_receipt(crc, world). The host
+takes it (no world sent) only when that copy is its own last upload, nothing was saved since (world::
+current_save_write, the same rule as BUG-0235's resume: the guest has the host's newest save) and it was packed under
+150 s ago; else it sends its world as before and stores the planet again within 15 s. After any normal share the host
+stores the planet within 20 s, so the next joiners find a fresh copy. Switch: g_fix_stored_join (galaxy_client.cpp).
+
+* Test (TITAN host + 3, the MSI 3, Samuth in Creature): the first guest joined the usual way, the host stored the planet
+  20 s later; the next 5 (2 on TITAN, 3 on the MSI) loaded the galaxy's copy: "accepted 5, refused 0", the host sent no
+  world to any of them (about 20 MB of its upload saved); sync check OK with all 5 (0 mismatches). The MSI's downloads
+  through Tailscale resent about 700 of 3800 chunks (a relayed link) and still took 20 s.
+
+**Tribe measured** (7 players spread over TITAN and the MSI, every game at 9-10 FPS):
+
+* DuoQAJiffHost's Jiff Peanutbutter is worn out: its tribe's hut gets destroyed while the test idles (the game-over
+  caption "Your tribal hut has been destroyed!"); two guests then mismatched (15 extra members, 31 about 400 m apart).
+  Not used. DuoQAClythHost's Clyth: sync check 51 checks, 0 mismatches.
+* The host sent 163 KB/s for 6 guests (27 KB/s a guest): MSG_TRIBE_STATE 80 KB/s, MSG_NPC_ANIM 18, MSG_TRIBE_BUILDINGS
+  16, MSG_TRIBE_TOOLS 10, the rest less. MSG_TRIBE_STATE, the Tribe NPC_ANIM batches, BUILDINGS, TOOLS, RELATIONSHIPS
+  and EQUIPMENT are the same bytes for every guest: they now go through Session::send_unreliable_to_guests, which uses
+  the galaxy's copies (6H A's path; the switch `coop.fix net.fan_states off` covers them too).
+* With the copies, same session, a minute each way: host 168-200 KB/s (off) against about 67 KB/s (on: 39 KB/s in the
+  session, 28 KB/s up to the galaxy server, which sent out 154 KB/s). Sync check 78 checks, 0 mismatches; no crash on
+  either PC. At 16 players: about 125 KB/s from the host instead of about 450.
+* Still per guest (by its area): the creature NPC states (MSG_NPC_STATE_C), npc.cpp's NPC_ANIM, MSG_WOBJ (about 31 KB/s
+  of the 39 for 6 guests). Grouping players who stand together (as the Cell state, 6F B) would cut them.
+* Seen: a join's MSG_CREATION burst (each player's creations sent on to everyone, 3.4 MB in the minute 5 players
+  joined).
+
+### Parties of 4: the owner's rules (2026-11-18, decision 6J)
+<a id="server-parties"></a>
+
+Owner, answering 6J:
+
+1. "A party is formed by opening the connection menu and right clicking a name to 'view creature, invite to party,
+   whisper, add friend'." The menu "should be similar to all native menus"; "allow a player to rightclick another
+   player's creature / nametag directly".
+2. The leader: "The person who invited or the person you joined. The leader can then right click in the connection
+   menu (F9) or the party panel to set another player as a leader."
+3. "When the party leader leaves, the longest standing member receives the Leader status. Our normal continuation plan
+   proceeds (You continue from the progress you gained, the original leader will catch up to the new progress.)"
+4. Across stages: "We can deny cross stage invites for now, and we can think about a non-linked party where everyone
+   can help eachother, but they each have unique progression like single player."
+
+Earlier (2026-11-18): a party is 4 players at most; its cards show the own party only; difficulty, creature relations,
+damage modifiers and goals are each party's own (#server-seats-16).
+
+### Parties of 4: built (2026-11-18, feat/lineages-alpha, decision 6J)
+<a id="server-parties-built"></a>
+
+The owner's rules (#server-parties), on alpha:
+
+* **The book** (mods/coop/parties.h, tests/party_tests.cpp): every player in one party, 4 at most; an invite (any
+  member may invite; the inviter's party keeps its leader, an inviter alone leads); the invited player accepts or
+  declines within 60 s; a yes leaves the old party; the leader hands the lead to a member; a leader who leaves: the
+  longest standing member leads; no invite across stages (a menu, an editor or a load counts as no stage). A plain
+  co-op join puts the player in the host's party ("the person you joined"); on a galaxy planet a player starts alone.
+* **The messages** (parties.cpp, parties_net.h): the host keeps the book and sends it (MSG_PARTY kTable, reliable) on
+  every change; guests ask (invite, answer, leave, lead), the host offers the invite to the invited player and answers
+  the asking one. MSG_WHISPER: a line only the other player sees, through the host. Console: `coop.party [status |
+  invite | yes | no | leave | lead]`, `coop.whisper <id> <text>`, "/w <name> <text>" in the chat line.
+* **The right-click menu** (coop_ui.cpp show_player_menu, coop.cpp player_menu_input): on a lobby row of the Co-op
+  window (F9), a Party card, a partner's name tag or plate, or near its creature on the screen. Items: View Creature
+  (the game's Sporepedia card), Invite to Party / Make Leader (your party, when you lead), Whisper (the chat line gets
+  "/w <name> "), Add / Remove Friend; on your own row: Leave Party. An invite shows the same panel with Join Party /
+  Decline. The panel is in the Co-op window's look (its panel colour, a 1 px edge, the name in gold, blue item rows).
+  The presses are the mouse hook's (mouse::set_player_menu_input, before the UI scale remap): the menu works under
+  the game's input lock (a caption, the death screen) too.
+* **Friends**: this profile's list in <coop dir>\friends.txt (identity key and name); a friend's name is light blue in
+  the lobby.
+* **Party cards**: the own party's only (a galaxy planet's other players have none).
+* Found while building it: Spore hit-tests the Co-op window before a sibling window drawn over it (the menu sits
+  inside the Co-op window while it is open); buttons made outside the Co-op window drew in the disabled look (the menu
+  items are filled rows instead); a hot reload (`mod.reload coop`) leaves the old build's windows on the screen (tests
+  restart the game).
+* Tested (TITAN, 3 games on a galaxy planet, Creature): a right-click on a lobby row opened QA7's menu; Invite reached
+  QA7 as the Join Party / Decline panel (QA7 on the death screen); Join Party made QA8 + QA7 a party led by QA8 (the
+  host's book the same); a right-click on QA7's name plate in the world opened its menu; Add Friend wrote the list and
+  the lobby showed QA7 in light blue; Whisper filled the chat line, the line reached QA7 only; the host handed the lead
+  to QA8, QA8 left the session, the host led again (the longest standing); Decline told the inviter. Not checked by
+  eye: the Party cards with two in a party (the deaths hid them); View Creature from the menu (the same call as the
+  card's portrait click).
+* Not yet: per-party difficulty, creature relations and goals (#server-seats-16); the parties survive a hand-over
+  (a new host starts everyone alone); the Co-op window's "Players who can join" setting still reads 4 on a galaxy
+  planet (the planet takes the galaxy's count).
+
+### Parties kept by the galaxy server, kick, the friends list's place (2026-11-18, feat/lineages-alpha, decision 6K)
+<a id="server-parties-galaxy"></a>
+
+Owner (with "6KA"): "Let's also allow kicking from party. We need a location for a friends list to allow faster
+partying and whispering. (Make a mockup of where it'd be) We need to allow partying in the galaxy menu. Parties
+shouldn't be reset/disbanded if the host changes. Ensure it's clean, well spaced, and polished."
+
+* **The galaxy server keeps the parties** (server/galaxy/main.cpp, parties::BasicBook<uint16_t> by player slot;
+  net/galaxy.h PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS). A player is in a party from the moment it connects, in the
+  galaxy menu too, and stays in it across planets and hand-overs. Requests name the other player by its identity
+  (identity::known on any machine); each member gets its party's view (slot, identity, name, planet, stage) and an
+  invite in it. A game that drops and comes back (a new slot, the same identity) goes back into its party for 5
+  minutes. The stage each plays comes with its requests (the cross-stage rule). Without a galaxy (plain co-op) the
+  session's host keeps them as in 6J.
+* **Kick**: the leader's "Remove from Party" (menu, `coop.party kick`, `gkick <name>` in the galaxy menu): the player
+  plays alone, and hears "<leader> removed you from the party".
+* **The galaxy menu** (until its panel is built, decision 6L): `coop.party online`, `ginvite <name>`, `gkick <name>`;
+  the invite panel (Join Party / Decline) shows over the galaxy menu too.
+* Tested over TITAN (the host, QA8) and the MSI (one game): QA8 invited the MSI game in the galaxy menu, the MSI's
+  Join Party made them a party there; both entered Samuth (the view showed both on it; QA8's menu on the MSI player
+  offered Make Leader and Remove from Party); the host left, QA8 took the planet over and the party stayed whole;
+  QA8 removed the MSI player (alone, leading its own party). The server logged each step.
+* **The friends list's place**: mockups images/mockup_friends_A_galaxy.png, mockup_friends_A_world.png (a "Friends &
+  Party" panel at the right edge, F8 anywhere, a Friends button under Co-op in the galaxy menu: the party, friends
+  online with where they play, Invite and Whisper on each row, the galaxy's players) and mockup_friends_B_coop.png (a
+  Friends tab in the Co-op window's lobby). Decision 6L.
+
+### Each party its own progression: the plan (2026-11-18, decision 6K A)
+<a id="server-party-progression"></a>
+
+Research (read of the code and docs/re, 6K A). Today one game simulates the planet and every player shares its
+relations, difficulty and goals:
+
+* **Relations**: one table per game (cSpeciesRelationshipManager, the map at mgr+0x20: relation, impressed, killed per
+  species, docs/re/creature.md); GetRelationship 0xBA40E0 is always called with a creature pair (the player's creature
+  and the NPC), so the host can answer per player; BUG-0462 gives every player the host's answer today. Events
+  (ApplyEvent 0xBA49E0: impress, kill, attacked) name the victim, not the actor. The host sends its table to the guests
+  (MSG_SPECIES, social.cpp) and already can send one to a single player.
+* **Difficulty**: CampaignRules by the campaign's seats (4 at most since 6E B); enemy health is one factor per NPC,
+  damage is scaled per hit in the host's damage filter where the hit player is known (npc.cpp, tribe.cpp, civ.cpp,
+  cellsync.cpp). Space already counts the players in one system (squadron::party_rules): the same idea per party.
+* **Goals**: the progress bar, the DNA pace (gains divided by all players in the world), the progress debt, the goal
+  rewards (once per session), extinction, nests, collected parts and the stage end are one per world on the host;
+  spendable DNA, the own creature and editor, health and rescue are already per player.
+
+Plan, in steps (each one a build and a test on TITAN and the MSI):
+
+1. **Difficulty per party**: the seats that scale a hit are the hit (or hitting) player's party size; health factors
+   become damage factors per party (one NPC, many parties: the attacker's damage is divided by its party's health
+   factor instead of the NPC's health changing). DNA pace and progress debt counted per party.
+2. **Relations per party**: the host keeps one table per party (the game's own table stands for the host's party);
+   GetRelationship answers for the party of the player creature in the pair; impress / kill / attack events are
+   credited to the acting player's party (the social win and the hit already know the player); each party's guests
+   get their party's table (MSG_SPECIES per party). Goal rewards paid once per party.
+3. **Extinction and nests per party** and **NPCs that pick targets by relation** (the target picker is distance only
+   today): needs decision 6M.
+4. **Stage progress per party** (the bar, the stage end, leaving for the next stage) with the three roles (party
+   leader, planet host, simulation host): needs decision 6N.
+
+Owner's answers (2026-11-18): **6M B** extinction stays one per planet (step 3 keeps the game's own extinction; only
+NPC targeting by relation is left in it); **6N A** a party that ends a stage moves on to its own next-stage world while
+the others stay (step 4: the stage end becomes the party's, the planet's host party included).
+
+**The menu's buttons** (owner 2026-11-18: "The buttons look so bland. Is that what Spore looks like? Why aren't we using
+our own button layout and appropriate colors?"): the items are our own button art now (data/ui/lineages_button_<colour>
+_normal / _hover, the Co-op window's buttons), drawn as images (a real button outside the Co-op window showed its
+disabled image): gold joins (Invite to Party, Join Party), red leaves or removes (Remove from Party, Leave Party,
+Decline), blue the rest, grey Remove Friend; the hover image under the pointer; the panel 224 px wide, 31 px rows.
+
+Hardest parts: crediting events to the right party (the game reports the victim), one NPC seen by several parties
+(its AI keeps targets between ticks), extinction being a world object, and the host's single progress bar.
+Feasible soon: steps 1 and 2.
+
 ### Hand-over without a reload: research (2026-11-17, decision 6B C)
 <a id="server-warm-handover"></a>
 
@@ -791,3 +1156,46 @@ assume."
 
 Asked in docs/ROADMAP.md as 5H (what goes first) and 5I (how strict the checks are). Who runs the parts of a planet
 nobody is near waits for phase 0's answer.
+
+
+## The Social Menu built (2026-11-18, feat/lineages-alpha)
+<a id="server-social-menu"></a>
+
+6L A (owner 2026-11-18: "I like A, can we also add a button next to the Party panel for this menu? We'll name it the
+Social Menu and it'll have the two person silhouette icon. Don't make the gold buttons have black text. Keep it white."
+and "Make this look more native."). Built and seen working on TITAN + MSI (QA 8 joining the MSI's Samuth):
+
+* The Social Menu: F8 anywhere, the Social button (two person silhouette: the Co-op item's own `data/ui/coop_icon.png`, owner 2026-11-18: one look for both) left of
+  the Party tab in a stage, and a Social item under Co-op in the galaxy menu. Sections: the party (n / 4), friends
+  online and offline (friends.txt in the coop folder), the galaxy's other players online (up to 5). Rows: the lobby's
+  row box, a green / grey swatch, the name (gold: you, light blue: a friend) and where they play; Invite and Whisper
+  buttons (white text on our gold / blue art), Leave on your own row in a party. A text that does not fit ends in
+  "..." ("Samuth" alone when "Samuth  -  Creature" is too long).
+* The look is the Co-op window's own frame (glow, hex top band, panel colour, close button) drawn at the panel's size
+  (docs/08-ui.md#ui-native-frame-copy). The partner name tags and locator arrows are not drawn under the panel or the
+  player menu (`coop_ui::ui_covers`).
+* Whispers reach any player of the galaxy through the galaxy server (control WHISPER = 24, by identity).
+* 6O, the Party panel smaller: the cards and tab are 72% of their old size (`[ui] party_scale`), the small font for
+  the card name and title; the Social button follows the tab's height.
+  Ported to live Lineages (feat/lineages-47, decision 6Q A, 2026-11-18): the same `party_compact()`, nothing else.
+* Seen on the way (not fixed): the joiner loaded the MSI's stored world while the MSI's creature had just died, and got
+  the "killed in battle" screen too; joining a planet still pushes the host and the other guests into the creature
+  editor (they press the check), the known forced editor.
+
+## Steam to avoid port forwarding (research, 2026-11-18, feat/lineages-alpha)
+<a id="server-steam-research"></a>
+
+Owner 2026-11-18: "Let's also investigate the idea of connecting with Steam to avoid port-forwarding."
+
+* What the game has: Spore's `steam_api_orig.dll` is an old Steamworks (SteamNetworking001 only: no
+  ISteamNetworkingSockets / Messages, the relay network Steam games use now). The old P2P interface works through
+  Steam's relays too, but it needs the game launched by Steam under AppID 24720 (not ours) and a logged-in Steam on both
+  PCs; GOG players cannot use it at all.
+* A newer steam_api.dll loaded beside the game's: a crash risk (two Steam clients in one process), a licence grey area
+  (Valve's SDK terms for a mod of a game we do not own), still AppID 24720 and Steam only.
+* Without Steam: most home routers let two PCs talk directly once both have sent a packet to each other at the same
+  time (UDP hole punching; RFC 5128 measured 80-90% of pairs; Tailscale reports the same). The galaxy server already
+  sees both players' public addresses: it can hand them to each other, the two games punch through, and the pairs that
+  fail keep the galaxy server's relay (it already relays today). No port forwarding for anyone; works for Steam and GOG.
+* Recommendation: hole punching through the galaxy server with the relay as the fallback (ROADMAP 6P A); a one-day
+  Steam spike only if many pairs still fail.

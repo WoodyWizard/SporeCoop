@@ -3946,6 +3946,16 @@ static void set_look(Win w, std::string& shown, const std::string& stem)
     }
 }
 
+// owner 2026-11-18: "reduce the total size of the Party Panel ... The scaling is very large compared to the native
+// "pack" area. It's fine to have it larger, but at the moment, its WAY larger." The cards at this share of their drawn
+// size, the text in the small UI font; [ui] party_scale (percent, 50..100). (Decision 6Q A: from the alpha.)
+static float party_compact()
+{
+    static float s = -1;
+    if (s < 0) s = std::clamp(H->config_int(M, "ui", "party_scale", 72), 50, 100) / 100.f;
+    return s;
+}
+
 static bool ph_build()
 {
     if (g_ph.root) return true;
@@ -3974,13 +3984,14 @@ static bool ph_build()
     std::vector<Win> order;
     g_ph.tab = party_image_window(root, "lineages_card_tab_space");
     g_ph.tab_style = "lineages_card_tab_space";
-    g_ph.title = sui::label(root, {0, 0, 10, 10}, T("Party", "Группа"), D.font_body, kWhite, sui::kAlignCenter);
+    const uint32_t card_font = party_compact() < 0.9f && D.font_button ? D.font_button : D.font_body;
+    g_ph.title = sui::label(root, {0, 0, 10, 10}, T("Party", "Группа"), card_font, kWhite, sui::kAlignCenter);
     order.push_back(g_ph.tab);
     order.push_back(g_ph.title);
     for (int i = 0; i < kPartyRows; ++i) {
         auto& r = g_ph.rows[i];
         r.plate = party_image_window(root, "lineages_card_plate_space");
-        r.name = sui::label(root, {0, 0, 10, 10}, "", D.font_body, kWhite, sui::kAlignLeft);
+        r.name = sui::label(root, {0, 0, 10, 10}, "", card_font, kWhite, sui::kAlignLeft);
         r.place = sui::label(root, {0, 0, 10, 10}, "", D.font_button ? D.font_button : D.font_body, kWhite,
                              sui::kAlignLeft);
         order.insert(order.end(), {r.plate, r.name, r.place});
@@ -4206,6 +4217,7 @@ static void ph_apply(void*)
 bool set_party_hud(bool show, const std::vector<PartyRow>& rows, float scale, void (*on_portrait)(uint8_t))
 {
     if (!g_ok || g_ph.failed) return false;
+    scale *= party_compact(); // owner 2026-11-18: closer to the native Pack list's size
     g_ph_click = on_portrait;
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
