@@ -14,29 +14,14 @@ SPORE_FIX_OFF=npc.species_fallback,creations.ask_host_key must FAIL (the proxy n
 "not found here").
 
   SPORE_LANE=9 python3 tools/tests/coop_npc_host_key.py"""
-import os
 import re
 import time
 
 import census
-import lane
+from harness import log_since, log_size
 from twoinst import Checks, keyframe, start
 
 
-def log_size(inst):
-    try:
-        return os.path.getsize(lane.game_log(inst))
-    except OSError:
-        return 0
-
-
-def log_since(inst, pos):
-    try:
-        with open(lane.game_log(inst), 'rb') as f:
-            f.seek(pos)
-            return f.read().decode('utf-8', 'replace')
-    except OSError:
-        return ''
 
 
 def proxies(guest, keys):
@@ -75,7 +60,7 @@ def main():
     fb = re.search(r'npc species fallback: on=(\d) host_key_builds=(\d+)', st)
     print('  guest: ' + (fb.group(0) if fb else '(no fallback line)'), flush=True)
     ck(row is not None, 'the guest\'s game has the host\'s new creature in its world (built from the host\'s key)')
-    hlog = log_since(host.port - 47799, hpos)
+    hlog = '\n'.join(log_since(host.port - 47799, hpos))
     asked = re.findall(r'asks for species (7DFFFF[0-9A-F]{2}): not found here', hlog)
     ck(not asked, 'the host is never asked for the guest\'s own key (no "not found here")')
     host.call('coop.fix npc.strays on')

@@ -10,11 +10,10 @@ with the save for player 1"), the game posts a second save for it, and the guest
 SPORE_FIX_OFF=world.share_fresh_save must FAIL (one save for both: the second share gets the older world).
 
   SPORE_LANE=9 python3 tools/tests/coop_share_fresh.py"""
-import os
 import re
 import time
 
-import lane
+from harness import log_since, log_size
 from twoinst import Checks, start, wait_guest_in
 
 
@@ -23,20 +22,6 @@ def counters(con):
     return (int(m.group(1)), int(m.group(2))) if m else None
 
 
-def log_size(inst):
-    try:
-        return os.path.getsize(lane.game_log(inst))
-    except OSError:
-        return 0
-
-
-def log_since(inst, pos):
-    try:
-        with open(lane.game_log(inst), 'rb') as f:
-            f.seek(pos)
-            return f.read().decode('utf-8', 'replace')
-    except OSError:
-        return ''
 
 
 def main():
@@ -57,7 +42,7 @@ def main():
     while time.time() - t0 < 60 and 'share for 1' in host.call('coop.status')['out']:
         time.sleep(1)
     c1 = counters(host)
-    log = log_since(inst, pos)
+    log = '\n'.join(log_since(inst, pos))
     joined = 'the share for player 1 goes out with the save for player 1' in log
     waited = 'the share for player 1 waits for its own save' in log
     print(f'  host share saves {c0} -> {c1}; joined the older save: {joined}; waited: {waited}', flush=True)

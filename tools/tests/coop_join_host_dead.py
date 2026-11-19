@@ -11,11 +11,11 @@ screen for 10 s). A key frame shows both games after the join.
 SPORE_FIX_OFF=world.join_after_respawn must FAIL (the save goes out while the host is dead; the guest arrives dead).
 
   SPORE_LANE=9 python3 tools/tests/coop_join_host_dead.py"""
-import os
 import re
 import time
 
 import lane
+from harness import log_since, log_size
 import uifind
 from twoinst import Checks, keyframe, start, wait_guest_in
 
@@ -32,14 +32,6 @@ def saves(con):
     m = re.search(r'world saves posted (\d+), for shares (\d+)', con.call('coop.status')['out'])
     return int(m.group(2)) if m else -1
 
-
-def log_since(inst, pos):
-    try:
-        with open(lane.game_log(inst), 'rb') as f:
-            f.seek(pos)
-            return f.read().decode('utf-8', 'replace')
-    except OSError:
-        return ''
 
 
 def main():
@@ -58,10 +50,7 @@ def main():
     if not caption:
         ck.faults(host=host, guest=guest)
         return ck.result()
-    try:
-        pos = os.path.getsize(lane.game_log(inst))
-    except OSError:
-        pos = 0
+    pos = log_size(inst)
     s0 = saves(host)
     print('  guest: ' + guest.call('coop.leave')['out'].strip(), flush=True)
     time.sleep(5)
@@ -71,7 +60,7 @@ def main():
         time.sleep(1)
     time.sleep(15)  # the host stays dead: its caption is up
     s1 = saves(host)
-    log = log_since(inst, pos)
+    log = '\n'.join(log_since(inst, pos))
     held = 'waits until the host\'s creature lives again' in log
     print(f'  host share saves while dead {s0} -> {s1}, share held: {held}, caption still up: {uifind.shown(host, DEAD)}',
           flush=True)
