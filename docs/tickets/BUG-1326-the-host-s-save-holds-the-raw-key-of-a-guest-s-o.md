@@ -39,3 +39,8 @@ bundle registered on the host. To reproduce: `lab.py run tribe_own_outfitter`.
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-19: after BUG-1315 (savestrip) was merged the .spo hit is gone (fix/w57-own-editors 20261119-142554,
+  -153243); the raw creation key stays in lastSave.pld and PlanetScripts.pld, in some runs also in planetRecords.pkp /
+  .pkt (20261119-130049, -153243 own_editor_drop). Not analysed further; a guess to check first: the line's records are
+  registered on the host under the 0x7B key, but the creation's own metadata still names its raw key (cAssetMetadata
+  +0x20, docs/re/creations.md, fork note), and the game's planet records / scripts store that asset key.
