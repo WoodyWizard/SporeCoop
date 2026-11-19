@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages64-dev
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits: COMMIT
+commits: d9c4da12
 tests: manual on TITAN QA 8 + 9 (the host reloads Samuth with coop.load: the same world::load_slot path)
 signature: "world: leaving the stage to the galaxy menu before loading" then "galaxy: You left <planet> for the menu"
 docs: docs/known-issues.md
