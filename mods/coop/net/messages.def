@@ -41,14 +41,17 @@
 // Minor bumps of fix/w53-cellvote: cell 1.1 (MSG_CELL_FOOD's own-editor spend, MSG_CELL_MATE: BUG-1249, BUG-1246),
 // npc 1.1 (wsync row cell_spend_ack, BUG-1249), creature 1.1 (no wire change: the guest opens its own landfall editor
 // after a late arrival, BUG-1240; a host does not wait for such a guest's arrival, vote.cpp core.arrival_nowait).
+// Minor bumps of feat/w56-dna (WP-D, BUG-1291, own DNA per player): creature 1.2 (MSG_DNA's tail: flags, the party bar,
+// the world; the total is the guest's own DNA), npc 1.2 (wsync row cell_spent_own). A peer below these plays the shared
+// pool with the host (dna_own.h peer_reads).
 // Minor bump of feat/w54-line: creations 1.1 (MSG_SPECIES_LINE, the species line of WP-0, BUG-1270; older peers drop the
 // type at dispatch).
 // feat/w54-shims: creations stays 1.1 (unreleased): WP-C2's MSG_CREATION kind 9 (a player's own design) is gone, the
 // designs go as line creations of MSG_SPECIES_LINE (species::set_design); a kind 9 is dropped as any unknown kind.
 FAMILY(session,   1, 1, 1, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
-FAMILY(creature,  3, 1, 1, STAGE_CREATURE, "Creature", "")
-FAMILY(npc,       4, 1, 1, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
+FAMILY(creature,  3, 1, 2, STAGE_CREATURE, "Creature", "")
+FAMILY(npc,       4, 1, 2, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
 FAMILY(cell,      5, 1, 1, STAGE_CELL, "Cell", "")
 FAMILY(tribe,     6, 1, 1, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
 FAMILY(civ,       7, 1, 0, STAGE_CIV | STAGE_SPACE, "Civilization", "")
@@ -83,7 +86,7 @@ MSG(19, NPC_SPAWN,    R,  Host,  Module,    Npc,         Both,   npc,       "sta
 MSG(20, NPC_DESPAWN,  R,  Host,  Module,    Npc,         Both,   npc,       "stop mirroring an NPC: u16 id")
 MSG(21, DAMAGE_REQ,   R,  Guest, Module,    Npc,         Both,   npc,       "my hit on an NPC: u16 id, f32 damage, i32 type")
 MSG(22, WORLD_TIME,   U,  Host,  HostWorld, WorldTime,   Client, creature,  "the time of day: the sky's quaternion")
-MSG(23, DNA,          R,  Host,  HostWorld, Dna,         Client, creature,  "the shared DNA total (f32), u8 n x {cause, player, f32} (dna_ledger.h), u8 pace")
+MSG(23, DNA,          R,  Host,  HostWorld, Dna,         Client, creature,  "the DNA total (f32: the shared pool, or this guest's own DNA), u8 n x {cause, player, f32} (dna_ledger.h), u8 pace, u8 flags + f32 party bar + u32 world (dna_own.h)")
 MSG(24, DNA_ADD,      R,  Guest, Session,   DnaAdd,      Host,   creature,  "DNA a guest earned or spent (f32 delta)")
 MSG(25, RES,          R,  Host,  Session,   Shared,      Both,   shared,    "a shared resource total (u8 id, f64)")
 MSG(26, RES_ADD,      R,  Guest, Session,   Shared,      Both,   shared,    "a guest's change of a shared resource (u8 id, f64 delta)")

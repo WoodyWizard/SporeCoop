@@ -1059,24 +1059,43 @@ static void frame_send_totals(double now)
 {
     if (g_sess.role() == net::Role::Host && game::avatar()) {
         float total = game::dna();
+        // WP-D (BUG-1291): sent per guest: a guest with an own wallet gets its own budget (dna_own.h), the others the
+        // host's (the shared pool); the tail (after the pace byte: older guests stop before it) names which
+        std::vector<std::pair<uint8_t, float>> to;
+        std::vector<dna_own::Tail> tails;
+        bool due = total != g_dna_sent || (cellsync::totals_resend_enabled() && now - g_dna_at > 2.0);
+        for (auto& p : g_sess.players()) {
+            if (p.id == 0)
+                continue;
+            dna_own::Tail t;
+            float mine = dna_total_for(p.id, total, t);
+            auto it = g_dna_sent_to.find(p.id);
+            due = due || it == g_dna_sent_to.end() || it->second != mine;
+            to.push_back({p.id, mine});
+            tails.push_back(t);
+        }
         // also every 2 s: a guest drops it while it has no avatar (loading, editor), BUG-0128
-        if (total != g_dna_sent || (cellsync::totals_resend_enabled() && now - g_dna_at > 2.0)) {
+        if (due) {
             g_dna_sent = total;
             g_dna_at = now;
-            net::Writer w;
-            w.f32(total);
-            // (optional tail, older guests read the total only) why it changed since the last one
-            w.u8((uint8_t)g_dna_out.size());
-            for (auto& c : g_dna_out) {
-                w.u8((uint8_t)c.cause);
-                w.u8(c.player);
-                w.f32(c.amount);
+            for (size_t i = 0; i < to.size(); i++) {
+                net::Writer w;
+                w.f32(to[i].second);
+                // (optional tail, older guests read the total only) why it changed since the last one
+                w.u8((uint8_t)g_dna_out.size());
+                for (auto& c : g_dna_out) {
+                    w.u8((uint8_t)c.cause);
+                    w.u8(c.player);
+                    w.f32(c.amount);
+                }
+                w.u8((uint8_t)dna_pace_announce()); // BUG-0510 (after the causes: older guests stop there)
+                tails[i].write(w);                  // WP-D (after the pace byte: 0.7.15 guests stop there)
+                g_sess.send_reliable_to(to[i].first, net::MSG_DNA, w);
+                g_dna_sent_to[to[i].first] = to[i].second;
+                if (tails[i].own())
+                    g_own_totals++;
             }
-            w.u8((uint8_t)dna_pace_announce()); // BUG-0510 (after the causes: older guests stop there)
             g_dna_out.clear();
-            for (auto& p : g_sess.players())
-                if (p.id != 0)
-                    g_sess.send_reliable_to(p.id, net::MSG_DNA, w);
         }
     }
     if (g_sess.role() == net::Role::Host && now - g_last_time_sync > 1.0) {
@@ -1131,6 +1150,7 @@ static void frame_stage_ticks(double now)
     remove_strays(now);
     follow_phase(now);
     share_wait_tick();
+    own_dna_tick(); // WP-D (BUG-1291): before the away state (an owed payment of this frame is seen in the next)
     host_away_tick(now);
     host_busy_tick(now); // C3 (BUG-1142): the host tells its pause; a guest's game waits for it
     dna_spend_tick(now); // BUG-0466
