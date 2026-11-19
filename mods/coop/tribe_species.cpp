@@ -20,6 +20,13 @@
 // a guest's save the same; the guest's look comes back from the mod after the load.
 //
 // `coop.fix tribe.own_species off`: every member is the slot's species (0.7.15; members the mod changed go back).
+//
+// BUG-1299 (`tribe.birth_species`): a member whose owner is known when the game makes it (the host's baby of a known
+// buyer, a guest's mirror of the host's member) is born in its owner's line species: the citizen's init 0xC27330 reads
+// the tribe's slot through cTribe_SpeciesSlot 0xC8E9B0, which answers the line's profile while that spawn runs (only
+// for the player tribe, slot 0, inside birth_begin / birth_end). The pass above then finds it already right; before,
+// it showed the slot's species until the pass reached it (0.5 s of seeing it, one member per 0.15 s, 3 s after a world).
+// Off: born in the slot's species, changed by the pass (0.7.16 before WP-S2).
 #include "tribe.h"
 #include "tribe_internal.h"
 #include "tribe_logic.h"
@@ -54,6 +61,15 @@ static double g_sp_epoch_at = -100, g_sp_scan_at = -100;
 static uint32_t g_sp_applied, g_sp_reverted, g_sp_wait_cine, g_sp_wait_key, g_sp_saves, g_sp_stripped, g_sp_back;
 static uint32_t g_sp_pending; // members that need a change now (last pass)
 static uintptr_t a_SpSetSpecies, a_SpToolAttach, a_SpUiGet, a_SpAnimFind, a_SpAnimSet;
+
+static bool g_birth_fix = true;
+COOP_FIX("tribe.birth_species", "BUG-1299", g_birth_fix,
+         "tribe: a new member of a player with an own species is born in that species (no moment in the tribe's)");
+using SpeciesSlot_t = void*(SK_THISCALL*)(void*, int);
+static SpeciesSlot_t o_SpeciesSlot;
+static void* g_birth_tribe;
+static void* g_birth_prof;
+static uint32_t g_birth_key, g_births, g_birth_answers;
 
 WORLD_STATE("tribe.own_species", &g_own_species_fix, [] {
     g_sp.clear();
@@ -124,6 +140,44 @@ static void set_species(void* c, void* prof, bool revert)
     }
     H->log(M, SK_INFO, "tribe: member #%u (owner %d) is now of species %08X%s (BUG-1271)", member_id(c),
            (int)owner_of(c), key, revert ? ": the tribe's again" : "");
+}
+
+// cTribe_SpeciesSlot (thiscall cSpeciesProfile*(cTribe*, int i) ret 4): the line's profile while a birth of ours runs
+static void* SK_THISCALL h_SpeciesSlot(void* t, int i)
+{
+    if (g_birth_prof && t == g_birth_tribe && i == 0) {
+        g_birth_answers++;
+        return g_birth_prof;
+    }
+    return o_SpeciesSlot(t, i);
+}
+
+void birth_begin(void* t, uint8_t owner)
+{
+    g_birth_tribe = nullptr, g_birth_prof = nullptr, g_birth_key = 0;
+    if (!g_birth_fix || !g_own_species_fix || !o_SpeciesSlot || !t || t != player_tribe() || !C.sess ||
+        !C.sess->connected() || game::mode_id() != modes::kTribe || owner >= 0xFE || world::cinematic_playing())
+        return;
+    uint8_t* slot = slot_profile(t);
+    if (!slot)
+        return;
+    creations::Key sk{F<uint32_t>(slot, kProfKey), F<uint32_t>(slot, kProfKey + 4), F<uint32_t>(slot, kProfKey + 8)};
+    void* lp = line_profile(line_key(owner, sk));
+    if (!lp)
+        return;
+    g_birth_tribe = t, g_birth_prof = lp, g_birth_key = F<uint32_t>(lp, kProfKey);
+}
+void birth_end(const std::vector<void*>& made)
+{
+    if (g_birth_prof)
+        for (void* c : made)
+            if (c && skg::readable((uint8_t*)c + kSpKey, 12) && F<uint32_t>(c, kSpKey) == g_birth_key) {
+                g_sp[c] = {game::object_serial(c), g_birth_key};
+                g_births++;
+                H->log(M, SK_INFO, "tribe: member #%u (owner %d) is born of species %08X (BUG-1299)", member_id(c),
+                       (int)owner_of(c), g_birth_key);
+            }
+    g_birth_tribe = nullptr, g_birth_prof = nullptr, g_birth_key = 0;
 }
 
 void species_tick(double now)
@@ -256,6 +310,8 @@ void species_init()
     a_SpAnimSet = H->sym("SporeCoop::Creature_RestartAnimSlot");
     if (!a_SpSetSpecies)
         H->log(M, SK_WARN, "tribe: no SetSpecies: every member stays the tribe's species (BUG-1271)");
+    if (uintptr_t a = H->sym("SporeCoop::cTribe_SpeciesSlot")) // BUG-1299
+        H->hook_create(M, (void*)a, (void*)h_SpeciesSlot, (void**)&o_SpeciesSlot);
     savestrip::add_save_hooks(sp_save_start, sp_save_end);
 }
 
@@ -264,9 +320,9 @@ std::string species_status()
     char b[300];
     snprintf(b, sizeof b,
              "own species: fix=%d changed=%zu applied=%u reverted=%u pending=%u waits_cinematic=%u waits_key=%u "
-             "saves=%u stripped=%u back=%u\n",
+             "saves=%u stripped=%u back=%u births=%u birth_answers=%u\n",
              (int)g_own_species_fix, g_sp.size(), g_sp_applied, g_sp_reverted, g_sp_pending, g_sp_wait_cine, g_sp_wait_key,
-             g_sp_saves, g_sp_stripped, g_sp_back);
+             g_sp_saves, g_sp_stripped, g_sp_back, g_births, g_birth_answers);
     return b;
 }
 

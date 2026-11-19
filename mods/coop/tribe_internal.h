@@ -370,6 +370,12 @@ bool has_body(void* c);
 void species_init();
 void species_tick(double now);
 std::string species_status();
+// BUG-1299 (tribe.birth_species): a member the game makes now (a baby, a guest's mirror) whose owner is known is born
+// in that owner's line species: between birth_begin(tribe, owner) and birth_end(the new members) the tribe's species
+// slot answers the line's profile to the citizen's init (0xC27330 reads cTribe_SpeciesSlot); nothing is written into
+// the tribe. birth_end notes the new members as changed by the mod (they go back to the slot like the others)
+void birth_begin(void* t, uint8_t owner);
+void birth_end(const std::vector<void*>& made);
 std::string species_list();
 extern uint32_t g_item_holds_ended;
 uint32_t hold_modifier(void* c, bool end);
@@ -563,7 +569,7 @@ extern bool g_fix_gameover;
 extern uint32_t g_spawns_blocked;
 extern uint32_t g_mirror_out_passed;
 extern uint32_t g_mirrors_grown;
-void* spawn_member(void* t, uint8_t age);
+void* spawn_member(void* t, uint8_t age, uint8_t owner = 0xFF); // owner: BUG-1299 (born in its line species)
 void restore_body_tribe(void* c, void* t);
 void* tribe_holding(void* c);
 void remove_member(void* c);

@@ -2250,16 +2250,19 @@ static void baby_give(void* c, uint8_t from)
     member_claim(c, from, 1); // E1 (BUG-1154): the buyer's
 }
 // host: the new members of the player tribe that one call of the game's function made
-static std::vector<void*> baby_call(void* stage, const net::Vec3& p)
+// (owner: the buyer when known before the call: BUG-1299, the baby is born in its line species)
+static std::vector<void*> baby_call(void* stage, const net::Vec3& p, uint8_t owner = 0xFF)
 {
     std::vector<void*> out;
     void* pt = player_tribe();
     auto before = pt ? members(pt) : std::vector<void*>{};
+    birth_begin(pt, owner);
     o_BabyBorn(stage, p.x, p.y, p.z);
     if (pt)
         for (void* c : members(pt))
             if (std::find(before.begin(), before.end(), c) == before.end())
                 out.push_back(c);
+    birth_end(out);
     return out;
 }
 // BUG-0824: "a member the host buys is given to the guest". Every game makes a baby for every purchase: the hut
@@ -2346,14 +2349,14 @@ static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
     net::Vec3 p{x, y, z};
     double now = H->time_seconds();
     if (bought && buyer == C.sess->my_id()) { // BUG-0824: the host's own purchase is the host's
-        for (void* c : baby_call(stage, p))
+        for (void* c : baby_call(stage, p, buyer))
             baby_give(c, buyer);
         g_buys_own++;
         return;
     }
     if (bought) { // BUG-0824: the relayed effect of guest `buyer`: its member; its ask (before or after) pairs with it
         g_buys_other++;
-        for (void* c : baby_call(stage, p)) {
+        for (void* c : baby_call(stage, p, buyer)) {
             baby_give(c, buyer);
             auto a = std::find_if(g_baby_asks.begin(), g_baby_asks.end(), [&](const BabyAsk& k) { return k.from == buyer; });
             if (a != g_baby_asks.end()) {
@@ -2364,7 +2367,8 @@ static void SK_THISCALL h_BabyBorn(void* stage, float x, float y, float z)
         }
         return;
     }
-    for (void* c : baby_call(stage, p)) {
+    auto asked = std::find_if(g_baby_asks.begin(), g_baby_asks.end(), [&](const BabyAsk& k) { return baby_near(k.pos, p); });
+    for (void* c : baby_call(stage, p, asked != g_baby_asks.end() ? asked->from : (uint8_t)0xFF)) {
         auto a = std::find_if(g_baby_asks.begin(), g_baby_asks.end(), [&](const BabyAsk& k) { return baby_near(k.pos, p); });
         if (a != g_baby_asks.end()) { // the guest's baby, made here by its relayed effect
             baby_give(c, a->from);
