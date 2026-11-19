@@ -3053,6 +3053,27 @@ COOP_FIX("tribe.npc_tribes", "BUG-0381", g_npc_tribes_fix,
          "tribe: a guest makes the host's NPC tribes its own game did not form (their members were missing)");
 constexpr uint32_t kTribeInfoTag = 0x49425254u; // "TRBI": the tribe table's species / archetype after the trailer
 constexpr size_t kTribeInfo = 12 + 1;           // species key (instance, type, group) + archetype (0xFF: none)
+// W4 (BUG-9271, 2026-11-19): the village table went into every chunk of MSG_TRIBE_STATE: about 21 villages filled a
+// packet (16 players and 5 native tribes, the galaxy's default planet). Above what leaves room for 4 members it goes on
+// its own (MSG_TRIBE_VILLAGES, in parts) and the chunks carry kVillagesApart where its count was.
+constexpr uint8_t kVillagesApart = 0xFF;
+static bool g_villages_apart = true, g_villages_apart_test = false;
+COOP_FIX("tribe.villages_apart", "BUG-9271", g_villages_apart,
+         "tribe: a village table too big for the state packets goes in its own message (more than about 21 villages)");
+struct VFood { uint8_t index; uint32_t species; float amount; };
+struct VillageTable {
+    uint16_t cycle = 0;
+    uint8_t total = 0, parts = 0, flags = 0;
+    std::vector<bool> got;
+    std::vector<std::pair<net::Vec3, bool>> htribes;
+    std::vector<VFood> food;
+    bool separate_food = false;
+    std::vector<std::array<uint8_t, kTribeInfo>> info;
+    std::vector<uint16_t> chiefs;
+    bool complete = false;
+};
+static VillageTable g_vt, g_vt_ready; // guest: the table being received, the last complete one
+static uint32_t g_vt_sent = 0, g_vt_got = 0, g_vt_used = 0;
 constexpr uintptr_t kTribeArchetypeOff = 0x550; // cTribe: the archetype SpawnNpcTribe stores (< 0x20)
 static uint32_t g_npc_tribes_made, g_npc_tribes_failed;
 static TribeInfo tribe_info(void* t)
@@ -4804,6 +4825,49 @@ static void host_tick(double now)
     size_t head = 2 + 1 + 1 + 1 + nt * 13 + food_bytes + 1 + kTrailerSize + (infos.empty() ? 0 : 4 + 1 + nt * kTribeInfo);
     if (village_orders) head += tribe_seats::rescue_bytes(rescue_seats);
     if (g_native_chiefs_fix) head += 5 + nt * 2;
+    // W4 (BUG-9271): the table on its own when the chunks would carry fewer than 4 members beside it
+    const bool apart = g_villages_apart && nt && (g_villages_apart_test || head + 4 * kEntry > net::kMaxPacket - 64);
+    if (apart) {
+        const size_t per_v = 13 + 8 + (infos.empty() ? 0 : kTribeInfo) + (g_native_chiefs_fix ? 2 : 0);
+        const size_t per_part = std::max<size_t>(1, (net::kMaxPacket - 64 - 10) / per_v);
+        const size_t parts = (nt + per_part - 1) / per_part;
+        for (size_t part = 0; part < parts; part++) {
+            const size_t first = part * per_part, count = std::min(nt - first, per_part);
+            net::Writer w;
+            w.u16(g_cycle);
+            w.u8((uint8_t)part);
+            w.u8((uint8_t)parts);
+            w.u8((uint8_t)nt);
+            w.u8((uint8_t)first);
+            w.u8((uint8_t)count);
+            w.u8((uint8_t)((infos.empty() ? 0 : 1) | (g_native_chiefs_fix ? 2 : 0)));
+            for (size_t ti = first; ti < first + count; ti++) {
+                net::Vec3 p = tribe_pos(tribes[ti]);
+                w.f32(p.x); w.f32(p.y); w.f32(p.z);
+                const bool home = tribes[ti] == pt;
+                w.u8((home ? 1 : 0) | (food[ti].species ? 2 : 0) | (home && village_orders ? 4 : 0));
+                if (food[ti].species) {
+                    w.u32(food[ti].species);
+                    w.f32((float)food[ti].amount);
+                }
+            }
+            if (!infos.empty())
+                for (size_t ti = first; ti < first + count; ti++) {
+                    w.u32(infos[ti].key.instance); w.u32(infos[ti].key.type); w.u32(infos[ti].key.group);
+                    w.u8(infos[ti].arch);
+                }
+            if (g_native_chiefs_fix)
+                for (size_t ti = first; ti < first + count; ti++) {
+                    void* chief = F<void*>(tribes[ti], kNativeLeaderOff);
+                    auto found = g_hm.find(chief);
+                    w.u16(found != g_hm.end() && F<void*>(chief, kOwnerTribeOff) == tribes[ti] ? found->second.id : 0);
+                }
+            C.sess->send_unreliable_to_guests(net::MSG_TRIBE_VILLAGES, w);
+            g_vt_sent++;
+        }
+        head = 2 + 1 + 1 + 1 + 1 + kTrailerSize;
+        if (village_orders) head += tribe_seats::rescue_bytes(rescue_seats);
+    }
     // 2026-11-18 review: every chunk carries the whole village table, so about 21 villages (16 players and 5 native
     // tribes) are what one packet takes. Above that the subtraction wrapped (one oversized chunk, dropped by the
     // connection: no Tribe state at all) and the u8 chunk count wrapped past 255. Said once; the table needs its own
@@ -4831,8 +4895,8 @@ static void host_tick(double now)
         w.u16(g_cycle);
         w.u8((uint8_t)k);
         w.u8((uint8_t)chunks);
-        w.u8((uint8_t)std::min<size_t>(tribes.size(), 32));
-        for (size_t ti = 0; ti < tribes.size() && ti < 32; ti++) {
+        w.u8(apart ? kVillagesApart : (uint8_t)std::min<size_t>(tribes.size(), 32));
+        for (size_t ti = 0; !apart && ti < tribes.size() && ti < 32; ti++) {
             net::Vec3 p = tribe_pos(tribes[ti]);
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
             bool home = tribes[ti] == pt;
@@ -4856,7 +4920,7 @@ static void host_tick(double now)
         }
         w.u32(kStateTrailer); // BUG-0365: the host's clock (guests before 0.7.3.4 stop reading before it)
         w.u32((uint32_t)(now * 1000.0));
-        if (!infos.empty()) { // BUG-0381: after the trailer (guests before it stop reading at the trailer)
+        if (!infos.empty() && !apart) { // BUG-0381: after the trailer (guests before it stop reading at the trailer)
             w.u32(kTribeInfoTag);
             w.u8((uint8_t)infos.size());
             for (auto& i : infos) {
@@ -4864,7 +4928,7 @@ static void host_tick(double now)
                 w.u8(i.arch);
             }
         }
-        if (g_native_chiefs_fix) {
+        if (g_native_chiefs_fix && !apart) {
             w.u32(kNativeChiefsTag);
             w.u8((uint8_t)nt);
             for (size_t ti = 0; ti < nt; ++ti) {
@@ -6302,10 +6366,76 @@ static void conquer_on_host(uint8_t from, const net::Vec3& p)
     }
 }
 
+// W4 (BUG-9271): a part of the host's village table (MSG_TRIBE_VILLAGES); complete, it stands for the table the
+// state's chunks no longer carry
+static void guest_villages(net::Reader& r)
+{
+    const uint16_t cycle = r.u16();
+    const uint8_t part = r.u8(), parts = r.u8(), total = r.u8(), first = r.u8(), count = r.u8(), flags = r.u8();
+    if (!r.ok() || !parts || part >= parts || !total || total > 32 || first + count > total || (flags & ~3))
+        return;
+    if (g_vt.got.empty() || g_vt.cycle != cycle || g_vt.total != total || g_vt.parts != parts || g_vt.flags != flags) {
+        g_vt = {};
+        g_vt.cycle = cycle;
+        g_vt.total = total;
+        g_vt.parts = parts;
+        g_vt.flags = flags;
+        g_vt.got.assign(parts, false);
+        g_vt.htribes.assign(total, {});
+        g_vt.info.assign(total, {});
+        g_vt.chiefs.assign(total, 0);
+    }
+    if (g_vt.got[part])
+        return;
+    std::vector<VFood> food;
+    bool sep = false;
+    for (int i = 0; i < count && r.ok(); i++) {
+        net::Vec3 p;
+        p.x = r.f32(); p.y = r.f32(); p.z = r.f32();
+        const uint8_t f = r.u8();
+        if (f & ~7 || ((f & 4) && !(f & 1)))
+            return;
+        g_vt.htribes[first + i] = {p, (f & 1) != 0};
+        sep |= (f & 4) != 0;
+        if (f & 2) {
+            VFood v{(uint8_t)(first + i), r.u32(), r.f32()};
+            if (!v.species || !std::isfinite(v.amount) || v.amount < 0 || v.amount > 1000000)
+                return;
+            food.push_back(v);
+        }
+    }
+    if (flags & 1)
+        for (int i = 0; i < count && r.ok(); i++) {
+            const uint32_t k[3] = {r.u32(), r.u32(), r.u32()};
+            auto& e = g_vt.info[first + i];
+            memcpy(e.data(), k, 12);
+            e[12] = r.u8();
+        }
+    if (flags & 2)
+        for (int i = 0; i < count && r.ok(); i++)
+            g_vt.chiefs[first + i] = r.u16();
+    if (!r.ok())
+        return;
+    g_vt.separate_food |= sep;
+    g_vt.food.insert(g_vt.food.end(), food.begin(), food.end());
+    g_vt.got[part] = true;
+    g_vt_got++;
+    if (std::all_of(g_vt.got.begin(), g_vt.got.end(), [](bool b) { return b; }) &&
+        g_vt.food.size() <= tribe_seats::max_food_entries(g_multi_founders) && (g_vt.separate_food || g_vt.food.empty())) {
+        g_vt.complete = true;
+        g_vt_ready = g_vt;
+    }
+}
+
 static void guest_state(net::Reader& r)
 {
     uint16_t cycle = r.u16();
     uint8_t chunk = r.u8(), chunks = r.u8(), nt = r.u8();
+    const bool apart = nt == kVillagesApart; // W4: the table came in MSG_TRIBE_VILLAGES (its last complete one)
+    if (apart && (!g_vt_ready.complete || (uint16_t)(cycle - g_vt_ready.cycle) > 20))
+        return;
+    if (apart)
+        nt = 0;
     if (!r.ok() || nt > 32 || !net::cycle_chunk_ok(chunk, chunks))
         return;
     bool started = false;
@@ -6314,8 +6444,7 @@ static void guest_state(net::Reader& r)
     if (started)
         g_cycle_ids.clear();
     std::vector<std::pair<net::Vec3, bool>> htribes;
-    struct Food { uint8_t index; uint32_t species; float amount; };
-    std::vector<Food> food;
+    std::vector<VFood> food;
     bool separate_food = false;
     for (int i = 0; i < nt && r.ok(); i++) {
         net::Vec3 p;
@@ -6325,11 +6454,17 @@ static void guest_state(net::Reader& r)
         htribes.push_back({p, (flags & 1) != 0});
         separate_food |= (flags & 4) != 0;
         if (flags & 2) {
-            Food f{(uint8_t)i, r.u32(), r.f32()};
+            VFood f{(uint8_t)i, r.u32(), r.f32()};
             if (!f.species || !std::isfinite(f.amount) || f.amount < 0 || f.amount > 1000000 ||
                 food.size() >= tribe_seats::max_food_entries(g_multi_founders)) return; // every founder village's (BUG-9135)
             food.push_back(f);
         }
+    }
+    if (apart) {
+        htribes = g_vt_ready.htribes;
+        food = g_vt_ready.food;
+        separate_food = g_vt_ready.separate_food;
+        g_vt_used++;
     }
     if (!r.ok() || (!separate_food && !food.empty()))
         return;
@@ -6389,6 +6524,17 @@ static void guest_state(net::Reader& r)
     }
     if (info && timed)
         make_npc_tribes(r.cur() + n * kEntry + kTrailerSize, extra, htribes, locals);
+    if (apart && (g_vt_ready.flags & 2) && g_vt_ready.chiefs.size() == htribes.size())
+        native_chiefs = g_vt_ready.chiefs;
+    if (apart && timed && (g_vt_ready.flags & 1)) { // the species info as the chunk's own block would carry it
+        std::vector<uint8_t> blk(5 + htribes.size() * kTribeInfo);
+        const uint32_t tag = kTribeInfoTag;
+        memcpy(blk.data(), &tag, 4);
+        blk[4] = (uint8_t)htribes.size();
+        for (size_t i = 0; i < htribes.size() && i < g_vt_ready.info.size(); i++)
+            memcpy(blk.data() + 5 + i * kTribeInfo, g_vt_ready.info[i].data(), kTribeInfo);
+        make_npc_tribes(blk.data(), blk.size(), htribes, locals);
+    }
     g_mirror_timed += timed;
     for (int i = 0; i < n && r.ok(); i++) {
         uint16_t id = r.u16();
@@ -10701,6 +10847,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (type == net::MSG_TRIBE_STATE && from == 0 && is_guest() && game::mode_id() == modes::kTribe && !g_state_hold)
         guest_state(r);
+    else if (type == net::MSG_TRIBE_VILLAGES && from == 0 && is_guest() && game::mode_id() == modes::kTribe && !g_state_hold)
+        guest_villages(r); // W4 (BUG-9271)
     else if (type == net::MSG_TRIBE_BUILDINGS && from == 0 && is_guest() && game::mode_id() == modes::kTribe && !local_play())
         guest_buildings(r);
     else if (type == net::MSG_TRIBE_EQUIPMENT && from == 0 && is_guest() && game::mode_id() == modes::kTribe && !local_play())
@@ -11218,6 +11366,13 @@ std::string debug(const std::vector<std::string>& a)
             H->log(M, SK_INFO, "tribe: test hut level %d on the host's village", level);
         }, (void*)(intptr_t)level);
         return "Hut level " + std::to_string(level) + " queued for the host's village.";
+    }
+    if (!a.empty() && a[0] == "villages_apart") { // tests (W4, BUG-9271): villages_apart [on|off]: always on its own
+        if (a.size() > 1)
+            g_villages_apart_test = a[1] == "on";
+        return "village table apart: test " + std::string(g_villages_apart_test ? "on" : "off") + ", parts sent " +
+               std::to_string(g_vt_sent) + ", got " + std::to_string(g_vt_got) + ", used " + std::to_string(g_vt_used) +
+               ", complete table " + std::to_string(g_vt_ready.complete ? g_vt_ready.total : 0) + " villages";
     }
     if (a.size() == 1 && a[0] == "planned_sites") {
         if (!active() || !is_host()) return "Open a hosted Tribal campaign.";

@@ -8174,7 +8174,7 @@ void setup_callbacks()
         }
         if (type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_CMD || type == net::MSG_TRIBE_BUILDINGS ||
             type == net::MSG_TRIBE_EQUIPMENT || type == net::MSG_TRIBE_TOOLS || type == net::MSG_TRIBE_RELATIONSHIPS || type == net::MSG_TRIBE_FOOD || type == net::MSG_TRIBE_PERFORMANCE || type == net::MSG_TRIBE_OUTFIT || type == net::MSG_TRIBE_COMBAT ||
-            type == net::MSG_TRIBE_LATE) {
+            type == net::MSG_TRIBE_LATE || type == net::MSG_TRIBE_VILLAGES) {
             tribe::on_message(type, from, r);
             return;
         }
@@ -12317,7 +12317,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gx.fan_in = [](uint8_t type, net::Reader& r) { // 6F B / 6H A: the host's messages copied by the galaxy server
             if (type == net::MSG_PLAYER_STATE)
                 g_sess.host_fan_in(type, r);
-            else if ((type == net::MSG_CELL_STATE_C || type == net::MSG_TRIBE_STATE || type == net::MSG_NPC_ANIM ||
+            else if ((type == net::MSG_CELL_STATE_C || type == net::MSG_TRIBE_STATE || type == net::MSG_TRIBE_VILLAGES ||
+                      type == net::MSG_NPC_ANIM ||
                       type == net::MSG_TRIBE_BUILDINGS || type == net::MSG_TRIBE_TOOLS ||
                       type == net::MSG_TRIBE_RELATIONSHIPS || type == net::MSG_TRIBE_EQUIPMENT) &&
                      g_sess.cb.custom) // (6I A: the host's unreliable messages the same for every guest)

@@ -62,6 +62,10 @@ enum MsgType : uint8_t {
     MSG_CELL_STATE_C = 95,
     MSG_PARTY = 96,   // reliable (decision 6J): parties of 4 (parties_net.h)
     MSG_WHISPER = 97, // reliable (decision 6J): guest -> host u8 to, str16 text; host -> guest u8 from, str16 text
+    MSG_TRIBE_VILLAGES = 98, // unreliable host -> guests (W4, BUG-9271): MSG_TRIBE_STATE's village table on its own when it
+                             // does not fit beside the members: u16 cycle, u8 part, u8 parts, u8 total, u8 first, u8 count,
+                             // u8 flags (1 species info, 2 native chiefs), count x {f32 x3, u8 flags, [u32 species, f32 food]},
+                             // [count x {u32 x3 key, u8 archetype}], [count x u16 chief]; the state's chunks then say 0xFF
     MSG_CELL_HIT = 34,    // guest -> host: u32 host cell index, u8 damage, u8 type
     MSG_CELL_EAT = 35,    // guest -> host: u32 host cell index (eaten / destroyed by the guest)
     MSG_CELL_FOOD = 36,   // host -> guests: i32 food, i32 plant | guest -> host: i32 delta, u8 plant

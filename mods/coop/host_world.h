@@ -149,7 +149,7 @@ inline MsgClass msg_class(uint8_t type)
         return MsgClass::Session;
     case net::MSG_DNA: case net::MSG_WORLD_TIME: case net::MSG_CELL_STATE: case net::MSG_CELL_STATE_C: case net::MSG_CELL_HIT:
     case net::MSG_CELL_EAT: case net::MSG_CELL_FOOD: case net::MSG_CELL_KO: case net::MSG_CELL_BITTEN:
-    case net::MSG_TRIBE_STATE: case net::MSG_TRIBE_CMD: case net::MSG_SPECIES: case net::MSG_SOCIAL: case net::MSG_NEST:
+    case net::MSG_TRIBE_STATE: case net::MSG_TRIBE_VILLAGES: case net::MSG_TRIBE_CMD: case net::MSG_SPECIES: case net::MSG_SOCIAL: case net::MSG_NEST:
     case net::MSG_PARTS: case net::MSG_FIELDS: case net::MSG_WSTATE: case net::MSG_PLAYER_RULE: case net::MSG_MIRROR_FX:
     case net::MSG_CIV_STATE: case net::MSG_CIV_BUILD: case net::MSG_CIV_ALARM:
         return MsgClass::HostWorld;
