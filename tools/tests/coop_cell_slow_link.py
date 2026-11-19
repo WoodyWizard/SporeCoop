@@ -11,8 +11,9 @@ Cell fixture (level 1, both players next to each other). For --secs s, every 2 s
 the host's live cells within --r cell units of it (`coop.pool near <r> x y` on the host: its pool) and the guest's own
 game's cells within --r + 2 of it that mirror a host cell (`coop.pool near` on the guest: its pool, by the host's
 index). Coverage = the share of the host's cells near the guest that the guest's game has, of the host's cells that
-were near it in the sample before too (2 s: a cell the host's population pass made a moment ago may still be on its
-way; the link carries a round every ~0.4 s). One view box is 20 units wide at every level
+were near it in the samples before and after too (2 s each way: a cell the host's population pass made a moment ago
+may still be on its way, the link carries a round every ~0.4 s; one the host's cull takes may leave the guest a
+moment before the host's list is read). One view box is 20 units wide at every level
 (docs/re/cell.md#cell-kin-test-units): --r 20 is a box around the guest's screen (its screen showed 2-7 cells),
 ~150 of the host's cells at level 1. (A round at 512 kbit/s carries the nearest ~320 cells: --r 40 held 270-490.)
 
@@ -63,7 +64,7 @@ def main():
     t0 = time.time()
     rows = []
     shot_done = False
-    prev = None
+    samples = []  # (t, host set, guest set)
     while time.time() - t0 < a.after + a.secs:
         t = time.time() - t0
         gp = cell_pos(guest)
@@ -77,13 +78,9 @@ def main():
             print(f'  {t:5.1f} s: no answer (host {hs is not None}, guest {gs is not None})', flush=True)
             time.sleep(2)
             continue
-        ref = hs & prev if prev is not None else hs  # near in the sample before too
-        prev = hs
-        cov = len(ref & gs) / len(ref) if ref else 1.0
-        rows.append((t, len(ref), len(gs), cov))
-        print(f'  {t:5.1f} s: guest at ({gp[0]:.1f} {gp[1]:.1f}): host {len(hs)} cells within {a.r:g} ({len(ref)} also 2 s '
-              f'before), the guest\'s game {len(ref & gs)} of those ({cov:.2f}; {len(hs & gs)} of all), {len(gs)} mirrors '
-              f'near it, {on_screen(guest)} on its screen', flush=True)
+        samples.append((t, hs, gs))
+        print(f'  {t:5.1f} s: guest at ({gp[0]:.1f} {gp[1]:.1f}): host {len(hs)} cells within {a.r:g}, the guest\'s game '
+              f'{len(hs & gs)} of them, {len(gs)} mirrors near it, {on_screen(guest)} on its screen', flush=True)
         if not shot_done and t >= a.after + a.secs / 2:
             shot_done = True
             keyframe('slow_link_cells', "Cell over a 512 kbit/s link: the guest's screen shows the host's cells all "
@@ -92,6 +89,16 @@ def main():
         time.sleep(2)
     pace = host.call('coop.pool pace')['out'].strip()
     print('  host:', pace.replace('\n', ' | '), flush=True)
+    # a sample counts the host's cells near the guest in the samples before and after it too (2 s each way): a cell
+    # the host's population pass made a moment ago may still be on its way, one its cull took may be gone on the
+    # guest a moment before the host's list was read (20261119-133159: 111 of 137, the host 21 fewer 2 s later)
+    for i in range(1, len(samples) - 1):
+        t, hs, gs = samples[i]
+        ref = hs & samples[i - 1][1] & samples[i + 1][1]
+        cov = len(ref & gs) / len(ref) if ref else 1.0
+        rows.append((t, len(ref), len(gs), cov))
+        print(f'  {t:5.1f} s: {len(ref)} host cells near the guest from 2 s before to 2 s after, the guest\'s game has '
+              f'{len(ref & gs)} of them ({cov:.2f})', flush=True)
     steady = [r for r in rows if r[0] >= a.after]
     counted = [r for r in steady if r[1] >= 5]
     ck(len(counted) >= max(5, len(steady) // 2), f'enough samples with the host\'s cells near the guest '

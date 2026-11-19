@@ -9553,8 +9553,8 @@ BUG-0304 (GitHub #203), BUG-1278. Written without a lab run (owner rule 2026-11-
 * `cell_slow_link` (coop_cell_slow_link.py, SPORE_NET=lowband, BUG-1309): every 2 s for 40 s the host's live cells
   within 20 units of the guest's cell (`coop.pool near 20 <x> <y>` on the host) against the guest's own game's cells
   near it that mirror a host cell (`coop.pool near 22` on the guest, keyed by the host's index). Only the host cells
-  that were near the guest in the sample before too count (a cell the population pass made a moment ago may still be
-  on its way). PASS: from 8 s on at least 80 % in every sample but one, median 90 %. Twin `cell_slow_link_off`
+  near the guest in the samples before and after too count (a cell the population pass made a moment ago may still be
+  on its way, one the cull took may leave the guest a moment before the host's list is read). PASS: from 8 s on at least 80 % in every sample but one, median 90 %. Twin `cell_slow_link_off`
   (cell.slow_link off): the guest keeps ~100 of the host's ~400 cells (25-45 % near it), must FAIL.
 * `coop.pool near <r> [x y]`: a game's own live cells (no players' cells, no dying / dead ones) within r of a point
   (default its own cell) as `near n=<count> ...` and a `keys` line; a guest lists only the cells that mirror a host

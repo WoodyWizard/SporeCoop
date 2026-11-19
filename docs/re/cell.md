@@ -2804,3 +2804,9 @@ time to 924 (`coop.pool kin` prints `box=` since this branch: the width and heig
   (mobile, the `players` presets) never cuts. Wire format unchanged: a 0.7.15 guest reads the paced rounds as before
   (a round over several ticks is one cycle, its purge waits for its last chunk). `coop.pool pace` (host): each guest's
   rate, cuts, raises, last loss and rounds. On lowband it settles at ~54-64 KB/s with a cut every few seconds.
+* ✔ What a 512 kbit/s link carries: a round of the nearest ~250-380 cells every 0.4 s, i.e. ~20 units around the
+  guest at level 1 (its screen is one view box, 20 units wide: #cell-kin-test-units). Within 60 units (the
+  sync-check's cell_near) the host has ~440 cells at level 1: more than the link carries, so the sync-check takes the
+  paced guest's count as the host's "nearest N" (`cellsync::sent_cap`, the smallest round cap of the last 3 s), the
+  rule BUG-0295 / BUG-0379 apply with 900 (the nearest 80 % of N must be there). The first merged-tree run without it
+  (20261119-131719) had the test's own checks at 100 % within 20 units and still `c: 105 missing` within 60.

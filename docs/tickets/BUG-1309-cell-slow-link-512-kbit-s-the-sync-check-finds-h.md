@@ -61,7 +61,11 @@ every tick (0.7.16 before this fix). Unit test: cell_tests link_pace (the 512 kb
 Test: cell_slow_link (coop_cell_slow_link.py, SPORE_NET=lowband): every 2 s for 40 s the host's cells within 20 units
 of the guest that were there 2 s before, against the guest's own game's cells there; PASS: at least 80 % in every
 sample but one from 8 s on, median 90 %; key frame slow_link_cells. Twin cell_slow_link_off must FAIL.
-Not a gate change: the sync-check stays as it was.
+The sync-check (diag_sync.cpp) takes a paced guest's round cap as the host's "nearest N" cells, the rule it already
+applies with 900 (BUG-0295, BUG-0379: the nearest 80 % of N must be on the guest): within its 60 units the host has
+~440 cells at level 1, more than a 512 kbit/s link carries in a round (~250-380), and a merged-tree run with the
+test's own checks at 100 % within 20 units still had `c: 105 missing` there (20261119-131719). Not paced (a link
+without loss, or cell.slow_link off): 900 as before.
 
 ## Verification
 cell_slow_link (coop_cell_slow_link.py, SPORE_NET=lowband, lane 10):
