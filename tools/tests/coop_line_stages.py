@@ -269,8 +269,17 @@ def arrival_editors(ck, camp, guest_p, host, guest, pid, secs=360, required=True
     # test: no city of the host's on its game ("no such city"), no vehicle design. Both editors end first: the
     # arrival's phase done, the guest back in Civ, the City Hall and the vehicle editor's design id in its line on
     # both games)
+    t_ed, shots = time.time(), []
+
     def both_done():
         if 'Editor' in mode(guest):
+            # (lab 20261119-165858 / 20261119-171852 line_stages_outfit: the guest's City Hall editor never ended: what
+            # its screen shows)
+            due = [t for t in (120, 240) if time.time() - t_ed > t and t not in shots]
+            for t in due:
+                shots.append(t)
+                print(f'  civ: the guest still in its editor after {t} s: {twoinst.shot(guest, f"arrival_editor_{t}.png")}; '
+                      f'{(guest.call("coop.vote")["out"] or "").splitlines()[:3]}', flush=True)
             return False
         st = re.search(r'phase=(\w+) .*editors=(\w+)/(\w+)', guest.call('coop.civarrival')['out'] or '')
         if not st or st.group(1) != 'done':
