@@ -1877,15 +1877,19 @@ BUG-1321. GOG 2024, Ghidra + runtime (lab lane 5, civ_own_species).
   vt 0x4C `RequestBake(const ResourceKey*, const {uint32 id, uint32 flags}*)` 0x40A590 ret 8: creature-like types go to
   the queue 0x4157C0, others post message 0x695E243. NpcTribeController_FormTribe 0xCC6440 asks with
   {0x609B763, 0x40000} after vt 0x3C said no.
-* ✔ (runtime, lab: see BUG-1321's Verification) A species line creation (0x7B...... keys, species_line.cpp) is a key
-  no game has baked; nothing in the citizen path (City_Species -> CityCitizens_Sync -> SetSpeciesProfile) asks for a
-  bake. Citizens made of it while it is not baked are drawn plain white (no paint) and stay so (key frames 02 / 03 of
-  civ_own_species, the guest's game in 3 of 5 runs, the host's in one). The Creature / Tribe line keys were baked by
-  the creature's own use earlier, the Civ outfit's shared copy was not.
+* ✔ (runtime, lab 20261119-141341 civ_own_species_bake_off) A species line creation (0x7B...... keys,
+  species_line.cpp) is a key no game has baked; nothing in the citizen path (City_Species -> CityCitizens_Sync ->
+  SetSpeciesProfile) asks for a bake at once: both games had IsBaked 0 when the guest's city took the fresh outfit's
+  key, and the game's own (lazy) bake ended 30.5 s after the line was known. Citizens drawn meanwhile are plain white
+  (no paint; key frames 02 / 03 of civ_own_species in the night runs, the guest's game in 3 of 5 runs, the host's in
+  one). ~ The twin's frame taken at the bake's end showed them painted: inferred that a white citizen gets its paint
+  when the bake ends (not checked frame by frame).
+* ✔ A lane's graphics cache keeps a bake: a line key baked once is baked at once in the next run on those games (lab
+  20261119-140235: 0.0 s), so a test of this needs a key no game has seen (civ_own_species writes a fresh copy of a
+  creature with its metadata times moved). The Creature / Tribe line keys were baked by the creature's own use before.
 * What SporeCoop does: `game::model_baked(key, request)` (game.cpp) reads vt 0x1C and asks the bake as FormTribe does;
   civ_species.cpp asks it as soon as a player's Civ line is known on that game and answers a city's species with the
-  line only once it is baked (switch `civ.own_species_bake`). `coop.civ citizens` prints `baked=` per line and per
+  line only once it is baked (switch `civ.own_species_bake`): measured 2-4 s after the line is known. `coop.civ citizens` prints `baked=` per line and per
   (city, species) of the citizen objects: the game's own bake state, read live.
-* ? Not checked: whether a creature already made white gets its paint when the bake ends later (the test prints the
-  state after its key frames); other places that make creatures of a line key the game never used (a Tribe outfit's
+* ? Not checked: other places that make creatures of a line key the game never used (a Tribe outfit's
   members) may need the same request.
