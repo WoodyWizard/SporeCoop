@@ -2822,7 +2822,7 @@ static uintptr_t a_TribeGroundStamp; // BUG-0947 (village_stamps_tick)
 COOP_FIX("tribe.own_player_village", "BUG-9153", g_own_player,
          "tribe: a guest's game shows its own village as the player's (food counter, villager cards, hut menu)");
 static bool g_persp_saving;
-static bool g_persp_cam_pending = true; // BUG-9153: the first swap after a world load points the camera at the own village
+static bool g_persp_cam_pending = true; // not a lab switch: state. BUG-9153: the first swap after a world load points the camera at the own village
 static uint32_t g_persp_swaps, g_persp_restores, g_native_babies;
 static uintptr_t a_SetPlayerTribe;
 static bool persp_set(void* t)
