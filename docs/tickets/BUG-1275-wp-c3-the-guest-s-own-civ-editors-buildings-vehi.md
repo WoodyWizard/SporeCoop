@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: feat/w54-civedit
-commits:
+commits: 78a585e5 48c171a0 1b7d5b83
 tests: civ_guest_editors, civ_guest_editors_off (twin), civ_designs
 signature:
 docs: docs/re/civ.md#civ-own-editors, docs/06-testing.md#testing-civ-guest-editors, docs/01-architecture.md#arch-civ-guest-editors
