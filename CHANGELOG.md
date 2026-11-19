@@ -23,6 +23,10 @@
 - Civilization: the citizens walking in a city a guest owns (captured, given or dealt to it) are that guest's own
   species on every player's screen; the shared capital keeps the species of the player who founded it. With "everybody
   plays the host's creature" (F5) every city stays the host's species, as before (BUG-1273).
+- Tribe: a guest can now dress its own tribe members: the edit badge on the tribe's card in the hut's planner opens
+  the Tribal Outfitter for the guest's own creature, and after Done the guest's members wear the new outfit on every
+  player's screen while the host's members keep the host's look. Before, a guest's outfitter was refused. With
+  "everybody plays the host's creature" (F5) only the host changes the tribe's outfit, as before (BUG-1272).
 
 ## [0.7.15.2] - 2026-11-18
 

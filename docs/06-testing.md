@@ -9284,3 +9284,22 @@ Key frames `line` and `next_session`: no look changes in WP-0 (the frames only d
   for the guest and the guest's city's citizens stay the civilization's species (today's behaviour); the setting goes
   back to own at the end.
 * The NPC cities of civ_npc have the player civilization's species (067C7743): "before the capture" shows that key.
+## The guest's own Tribal Outfitter (2026-11-18, feat/w54-outfit)
+<a id="testing-tribe-own-outfitter"></a>
+
+`tribe_own_outfitter` (`coop_tribe_own_outfitter.py`, tribe fixture, about 8 min, BUG-1272, docs/re/tribe.md#tribe-own-outfitter):
+* The guest plays its own creature (`coop.creations choose creature <inst>`, put back at the end); WP-T1's mix first
+  (the guest's members of its creature, the host's of the slot). Then the players' route on the guest (the helpers of
+  coop_tribe_outfit: `open_outfitter`, the third tab, `drag` of a body piece onto the chest, Done).
+* `coop.designs` has a line `own outfitter: fix on hooked opened asked=<the request's key> card=<the card's key>
+  pending returns skipped cancelled result set set_failed`; `coop.species key 1 tribe` gives player 1's Tribe line
+  (key, model hash) on each game, `coop.species own tribe` the guest's own side.
+* Checks: the editor opens, it was asked for the guest's own line, the card's key was the slot's; after Done a new
+  creation in the guest's My Creations, the return skipped (`skipped=1`), the guest's slot key and model as before
+  (the host's); on both games one Tribe line for player 1 that is not its creature and has the model hash of the new
+  creation, every guest member of it and drawn from it, every host member of the slot and drawn from the slot's
+  model; the host's `coop.save`: no file of its save slot names the outfit, the creation or the creature. Key frames:
+  the game cameras, same views 12 m from a guest's member and from a host's member.
+* FAIL twin: `SPORE_FIX_OFF=tribe.guest_outfitter` (the 0.7.15 refusal: the guest stays in Tribe; the test closes the
+  planner and stops). Needs WP-T1 reading `species::key(pid, Stage::Tribe)` (feat/w54-shims) for step 4.
+* `tribe_outfit` step 3 (the refusal, BUG-1158) now runs in creature.mode host (`settings_lib.force`, reset at the end).

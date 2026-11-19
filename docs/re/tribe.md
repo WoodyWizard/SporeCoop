@@ -4343,3 +4343,55 @@ WP-T1 of docs/plan-0.7.16.md (BUG-1271), built on #tribe-two-species. `mods/coop
 * ? Not verified at runtime yet (no lab run when this was written, owner's rule of 2026-11-18): SetSpecies on a member
   carrying food or holding a tool (keepState 1 with the outfitter's tool and animation steps after it), a baby right
   after its birth (0.5 s), the guest's mirrors (driven by the mod) after SetSpecies. Test `coop_tribe_own_species.py`.
+
+## The guest's own Tribal Outfitter (2026-11-18, feat/w54-outfit)
+<a id="tribe-own-outfitter"></a>
+
+WP-T2 of docs/plan-0.7.16.md (BUG-1272), built on #tribe-own-species and docs/re/creations.md#creations-stage-designs.
+GOG 2024, Ghidra (`tools/ghidra/q.sh`), no lab run (owner's rule of 2026-11-18). Code: designs.cpp (own outfitter),
+vote.cpp (the Submit hook's branch), switch `tribe.guest_outfitter`.
+
+**How the card builds its request (Ghidra).**
+* ~ The planner's outfit tab (palette 0x372E2C04, `GetEditorForAssetType(0x372E2C04)` = 0x156276D1) lists one card per
+  tool kind i = 0..13 that the tribe has (0xD0E170 / 0xD10F90: message 0x53850BAF with the card's key =
+  `cTribe_SpeciesSlot(i)` +0x504..+0x50C, or slot 0 when slot i is empty, and +0x1C = i). The tribe has one species for
+  all of them in practice (only slot 0 is set by the game's code we know).
+* ✔ The card's edit badge: the planner's listener `TribePlanner_Messages` 0xD130D0 on message 0x53850BAE builds an
+  EditorRequest from the card: +0xC the editor (0x156276D1), +0x10..+0x18 the card's key (the slot's +0x504), the card's
+  +0x1C into cTribeUI +0x24C, in Tribe the tag +0x90 = 0x116DD1B, and submits it through
+  `cGameModeManager::SubmitEditorRequest` 0xB1DE20 -> `EditorRequest::Submit` 0x5A92C0 (the mod's Submit hook sees it).
+  So a guest's card asks for the host's species key (its slot +0x504 is the host's by BUG-1156).
+* ✔ Negative: 0xCD4F90 reads the slot's +0x4EC..+0x4F4 (the species' colour, into the tribe's colour +0x254..+0x25C via
+  0xB6E5B0, +0x234 = 0x53DBCF1) and 0xCD1D60 (`TribeGame_Messages`) reads the slot's +0x628..+0x638 (five ability
+  counts, for a hint 0x5312DA01 on message 0xB2699147): neither builds the outfitter's request.
+
+**Where the result goes (Ghidra).**
+* ✔ The editor's result message 0x30C11C7 reaches the Tribe stage's listener 0xCD81F0 (`TribeGame_GoalListener`, this =
+  the stage + 8): for a result whose +0xC (the request's tag) is 0x116DD1B it stores the result in the stage's +0x2F8
+  (`LEA ECX,[EBX+0x2F0]` + the intrusive assign 0x572620; null when cancelled, +0x44). The City Hall (+0x14 =
+  0x99E92F05) and vehicle results of the end of Tribe take the same tag.
+* ✔ Back in Tribe the stage's enter states (`TribeStage_EnterUpdate` 0xCDE7E0, state 2, +0x230 = the editor mode
+  0xDBDBA1) call `TribeUI_EditorReturn` 0xCDCC90 once: +0x28 set: City Hall, +0x29 set: a vehicle, else (the outfitter):
+  0xCCF090(+0x23C, +0x38C), +0x38C = -1, and with +0x2F8 the reload of slot 0 by the result's key +0x18
+  (cSpeciesManager 0x4DFBC0), `cTribe_SpeciesSize`, cPlayer map[0x55D6335] = result +0x34 and every member rebuilt
+  (#creations-stage-designs); the result is released (vt 8) and +0x2F8 = 0.
+* ✔ (Ghidra) Both the result message and 0xCDCC90 are local to the game that opened the editor: nothing of the game
+  sends them, and the mod sends no editor result; so the result of a guest's request reaches 0xCDCC90 on that guest
+  only. The host's own outfitter's result reaches the host's 0xCDCC90 only (BUG-1156's row brings it to the guests).
+
+**The mod (BUG-1272).**
+* On a guest in creature.mode own, in the host's world, a Submit of editor 0x156276D1 with tag 0x116DD1B is taken as
+  ours (`designs::own_outfitter`): its key becomes `species::own_key(Stage::Tribe)` (the guest's last tribe outfit made
+  for its creature, else its creature, by the keys of its own game; nothing when it plays the world's own species:
+  the card's key stays) and it goes to the editor at once (a notice "<name> changes the outfit of its tribe members").
+* `TribeUI_EditorReturn` is hooked: for our request (third branch, +0x28 and +0x29 clear) with a result of tag
+  0x116DD1B and editor 0x156276D1, the result's key is kept, the result released and +0x2F8 cleared, then the game's
+  function runs (the planner steps of a cancelled outfitter): the slot is not reloaded, no member is rebuilt here, the
+  slot stays the host's species and model. Every frame after it `species::set_tribe_outfit(key)` (every 2 s for 30 s
+  until the creation's records are readable): the outfit goes out with WP-0's bundles, and every game dresses the
+  guest's members in it (#tribe-own-species, through `species::key(pid, Stage::Tribe)`).
+* Host mode (creature.mode host), the switch off, or without the hook: BUG-1158's refusal as in 0.7.15. A guest's
+  request the mod did not take (another tag) is refused too (its return would reload the shared slot).
+* ? Not verified at runtime: that the outfitter opens and saves with the guest's own creature's key (the 0.7.14
+  behaviour with the card's key is the runtime evidence, lab 20261115-131200), and the result's key layout +0x18 on a
+  guest (the same as the host's). Test `coop_tribe_own_outfitter.py` (docs/06-testing.md#testing-tribe-own-outfitter).
