@@ -1305,8 +1305,10 @@ Plan (built in this order once the decisions below are answered):
 1. The bar per party: the host keeps each party's earned total (as it keeps their relations, BUG-9270, saved next to
    the planet); a guest's gain goes to its party's total; MSG_DNA gives each guest its party's; brain levels follow.
    NPC herds: decision 7A.
-2. The stage end per party: when a party's bar is full its leader is offered the next stage; accepting copies the
-   planet as the party left it into a new galaxy planet (decision 6Y), the party's games load it in the next stage and
+2. The stage end per party: when a party's bar is full its leader is offered the next stage; (CORRECTION 2026-11-19,
+   owner on 6Y: no new planet per party: the party joins the next stage's shared world, decision 7C; private planets
+   only on request in the galaxy menu. Superseded:) accepting copies the planet as the party left it into a new galaxy
+   planet (decision 6Y), the party's games load it in the next stage and
    the party hosts it; the old planet goes on for the others, with that party's traces as decision 6Z says.
 3. The planet's owner (S6, decision 7B): who may store over a planet's world on the galaxy server.
 
