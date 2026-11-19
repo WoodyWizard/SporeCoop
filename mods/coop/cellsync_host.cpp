@@ -243,7 +243,7 @@ static void send_paced(int dest, GuestPace& gp, const std::vector<SendCell>& lis
     if (net::Connection* conn = C.sess->conn_to((uint8_t)dest)) {
         if (gp.pace.observe(now, conn->stats.packets_sent, conn->stats.lost, gp.cell_bytes) && now - gp.told_at > 30) {
             gp.told_at = now;
-            H->log(M, SK_INFO, "coop: cell: the link to player %d carries less than the Cell state (%.0f %% lost): "
+            H->log(M, SK_INFO, "cell: the link to player %d carries less than the Cell state (%.0f %% lost): "
                                "state paced to %.0f KB/s, nearest cells first (BUG-1309)",
                    dest, gp.pace.last_loss * 100.0, gp.pace.rate / 1000.0);
         }

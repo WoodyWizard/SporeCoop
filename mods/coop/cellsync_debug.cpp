@@ -620,8 +620,8 @@ std::string debug(const std::vector<std::string>& a)
             keys += (n++ ? " " : "") + std::to_string(key);
         });
         char b[120];
-        snprintf(b, sizeof b, "near n=%d at=(%.1f %.1f) r=%.1f\nkeys %s\n", n, at.x, at.y, r, keys.c_str());
-        return b;
+        snprintf(b, sizeof b, "near n=%d at=(%.1f %.1f) r=%.1f\n", n, at.x, at.y, r);
+        return std::string(b) + "keys " + keys + "\n";
     }
     if (!a.empty() && a[0] == "prey")
         return prey_report(a.size() > 1 ? (float)atof(a[1].c_str()) : 40.f,
