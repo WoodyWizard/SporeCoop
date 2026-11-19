@@ -266,6 +266,11 @@ void* species_by_key(const Key& k);
 // the cSpeciesManager's map slot that holds the profile of this key (its node value), or null: no node yet
 // (docs/re/creations.md#creations-species-map, BUG-0200)
 void** species_slot(const Key& k);
+// The game's bake state of a creation's model (Editors::IBakeManager, docs/re/creations.md#creations-model-bake,
+// BUG-1321): 1 baked (its paint is drawn), 0 not baked yet (with `request` the game's own bake request is made when
+// none is queued, as NpcTribeController_FormTribe does), -1 no bake manager. A creature made from an unbaked key is
+// drawn white (no paint) and stays so.
+int model_baked(const Key& k, bool request);
 void* create_herd(const net::Vec3& pos, void* species);
 void* own_herd_for(void* species); // an existing herd like create_herd's of this species, or null
 // BUG-1067: a herd create_herd made (or own_herd_for handed out) in this process, the same object (its serial);

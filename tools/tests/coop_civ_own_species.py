@@ -22,6 +22,12 @@ its species line, docs/01-architecture.md#arch-species-line: its Civ outfit, els
 5. Both cameras back at the capital: its citizens are still the civilization's species (the founder's) on both games;
    key frames of the capital.
 
+   BUG-1321: and each game has baked the model of that species when its citizens take it (the game's own bake state,
+   Editors::IBakeManager, `coop.civ citizens` rows `baked=`): a citizen made of an unbaked species is drawn white, no
+   paint (lab 20261119-114816 frames 02 / 03 on the guest, 20261119-095414 frame 02 on the host).
+
+SPORE_FIX_OFF=civ.own_species_bake: step 3's bake check FAILs on a game that had not baked the line's model yet (the
+citizens white on its key frames).
 SPORE_FIX_OFF=civ.own_species: step 3 FAILs (the guest's city keeps the civilization's species).
 (SPORE_FIX_OFF=species.line: step 1 FAILs, the guest has no line.)
 SPORE_FIX_OFF=civ.own_species_save: step 4 FAILs (the host's citizen records name the guest's key; also seen before the
@@ -59,6 +65,23 @@ def species(con):
     for c, k, n in re.findall(r'^citizens city=(-?\d+) key=(\w+) n=(\d+)', out, re.M):
         per.setdefault(int(c), {})[int(k, 16)] = int(n)
     return lines, int(m.group(1), 16) if m else 0, per, out.splitlines()[0] if out else ''
+
+
+def paint(con, city):
+    """BUG-1321: {species key: the game's bake state of its model (1 baked, 0 not: drawn white, -1 unknown)} of the
+    citizens of `city` on this game"""
+    out = con.call('coop.civ citizens')['out'] or ''
+    return {int(k, 16): int(b) for c, k, _, b in
+            re.findall(r'^citizens city=(-?\d+) key=(\w+) n=(\d+) baked=(-?\d+)', out, re.M) if int(c) == city}
+
+
+def check_paint(ck, players, city, what):
+    """BUG-1321: every game's citizens of `city` are of a species whose model the game has baked (painted, not white)"""
+    got = {r: paint(c, city) for r, c in players.items()}
+    shown = {r: {f'{k:08X}': b for k, b in v.items()} for r, v in got.items()}
+    return ck(all(v and all(b == 1 for b in v.values()) for v in got.values()),
+              f'{what}: the citizens are drawn from a baked model, painted, on both games (the game\'s bake state per '
+              f'species: {shown})')
 
 
 def fmt(d):
@@ -175,11 +198,15 @@ def main():
     ck(all(set(v) == {want} for v in seen.values()) and all(seen.values()),
        f'the guest\'s city\'s citizens are the {"civilization" if HOST_MODE else "guest"}\'s species on both games '
        f'({want:08X}: {fmt(seen)})')
+    check_paint(ck, players, tgt, f'city {tgt}')  # (at once: a citizen made white stays white)
     look = ('the civilization\'s species, as at the capital (creature.mode host)' if HOST_MODE else
             'the guest\'s creature (not the civilization\'s species of the capital)')
     keyframe('guest_city', f'the city {tgt} the guest captured, both games: its citizens walking about are {look}')
     closeup(players, hc[tgt]['pos'], 'guest_citizen', 'one citizen of the guest\'s city up close, the same camera on both '
-                                                     f'games: {look} on both screens')
+                                                     f'games: {look} on both screens, painted (its colours, not '
+                                                     f'plain white)')
+    later = {r: {f'{k:08X}': b for k, b in paint(c, tgt).items()} for r, c in players.items()}
+    print(f'  city {tgt} bake state after the key frames: {later}', flush=True)
 
     # 4. the host's save
     t_save = time.time()

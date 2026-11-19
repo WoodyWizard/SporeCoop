@@ -34,6 +34,7 @@ struct OwnRec {
     uint32_t serial = 0;    // the object's cGameData::mID when it was re-keyed (a reused address is another object)
     uint32_t orig[3] = {};  // the culture's key (what the game gave it), written back for saves and at the end
     uint32_t ours = 0;      // the instance of the player's design it shows
+    uint32_t ours_key[3] = {}; // its whole key (a culture key of zeros has no type and group to reuse)
     bool building = false;
 };
 static std::unordered_map<void*, OwnRec> g_own;
@@ -91,11 +92,21 @@ bool own_designs_holds(void* o)
     return it != g_own.end() && model_key(o)[0] == it->second.ours;
 }
 
+// BUG-1274 (lab 20261119-133307 line_stages): a vehicle of a design id the culture has no design for (a Civ game started
+// from Tribe: only the capital's specialty has a vehicle design; a captured city of another specialty) is made with the
+// key {0, 0, 0} (cVehicle::Load's SetModelKey with it: no model, a placeholder's 10 hit points). Its owner's own design
+// applies too, its culture key is that zero key. `coop.fix civ.own_designs_nodesign off`: such a vehicle is left alone.
+static bool g_fix_nodesign = true;
+COOP_FIX("civ.own_designs_nodesign", "BUG-1274", g_fix_nodesign,
+         "civ: a player's vehicle of a kind its culture has no design for yet shows that player's own design");
+static bool zero_key(const uint32_t* k) { return !k[0] && !k[1] && !k[2]; }
+
 // one object: its owner's design, or back to the culture's
 static void reconcile(void* o, uint8_t owner, uint32_t did, bool building)
 {
     uint32_t* mk = model_key(o);
-    if (!mk[0] || mk[0] == 0xFFFFFFFFu || mk[1] != (building ? kBuildingModelType : 0x24682294u))
+    bool none = !building && g_fix_nodesign && zero_key(mk); // (no culture design of that id, see above)
+    if (!none && (!mk[0] || mk[0] == 0xFFFFFFFFu || mk[1] != (building ? kBuildingModelType : 0x24682294u)))
         return; // no model yet, or the game's generated design of an unknown kind
     creations::Key w = g_fix && did ? line_design(owner, did) : creations::Key{};
     uint32_t serial = game::object_serial(o);
@@ -132,6 +143,7 @@ static void reconcile(void* o, uint8_t owner, uint32_t did, bool building)
     uint32_t k[3] = {w.instance, w.type, w.group};
     set_key(o, k);
     r.ours = w.instance;
+    memcpy(r.ours_key, k, 12);
     g_own[o] = r;
     g_rekeys++;
     H->log(M, SK_INFO, "civ: player %u's %s %p (design %08X) shows its own design %08X (culture %08X, BUG-1274)", owner,
@@ -224,7 +236,7 @@ void own_designs_save(bool start)
             memcpy(mk, it->second.orig, 12);
             g_saves++;
         } else if (!start && mk[0] == it->second.orig[0] && mk[1] == it->second.orig[1]) {
-            mk[0] = it->second.ours; // (type and group are the design kind's, the same)
+            memcpy(mk, it->second.ours_key, 12); // (a zero culture key: the type and group too)
         }
     };
     for (void* v : player_vehicles())
