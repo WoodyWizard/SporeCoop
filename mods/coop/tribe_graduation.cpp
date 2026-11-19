@@ -36,8 +36,7 @@ static void __fastcall h_Graduate(void* stage)
     g_graduations++;
     void* pt = player_tribe();
     bool mat = pt && skg::readable((uint8_t*)pt + kFoodMatOff, 4) && F<void*>(pt, kFoodMatOff);
-    if (!mat) {
-        g_graduations_no_mat++;
+    if (!mat && g_graduations_no_mat++ < 5) {
         H->log(M, SK_WARN, "tribe: the end of Tribe runs again (graduation %u) and the player tribe has no food mat any "
                            "more: the City Hall editor came twice (BUG-1325)", g_graduations);
     }
@@ -60,10 +59,11 @@ static void __fastcall h_Graduate(void* stage)
         g_city_hall_played++;
     else
         g_city_hall_missed++;
-    H->log(M, g_after_id == kShowCityHallId ? SK_INFO : SK_WARN,
-           "tribe: the end of Tribe (graduation %u): the City Hall's cinematic %s (playing %08X)%s", g_graduations,
-           g_after_id == kShowCityHallId ? "plays" : "did not start: no vehicle editor will follow", g_after_id,
-           g_after_id == kShowCityHallId ? "" : " (BUG-1325)");
+    if (g_graduations <= 10) // (a graduation that faults is called again every frame: a storm of lines otherwise)
+        H->log(M, g_after_id == kShowCityHallId ? SK_INFO : SK_WARN,
+               "tribe: the end of Tribe (graduation %u): the City Hall's cinematic %s (playing %08X)%s", g_graduations,
+               g_after_id == kShowCityHallId ? "plays" : "did not start: no vehicle editor will follow", g_after_id,
+               g_after_id == kShowCityHallId ? "" : " (BUG-1325)");
 }
 
 void graduation_init()
