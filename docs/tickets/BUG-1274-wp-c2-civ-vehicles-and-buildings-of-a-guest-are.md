@@ -9,8 +9,8 @@ source: plan-0.7.16
 role: 
 versions: 
 fixed_in:
-branch: feat/w54-designs
-commits:
+branch: feat/w54-designs, feat/w54-shims
+commits: 696d51e2 48dd3e02
 tests: civ_own_designs, civ_own_designs_off
 signature:
 docs: docs/re/civ.md#civ-own-designs, docs/01-architecture.md#arch-species-line-packages

@@ -9,8 +9,8 @@ source: owner: players' video, second analysis
 role: guest
 versions: <0.7.15
 fixed_in:
-branch: feat/w54-cellkin
-commits: 1959f57a, eedaf53f, 28ef93c1
+branch: feat/w54-cellkin, feat/w54-shims
+commits: 1959f57a, eedaf53f, 28ef93c1 696d51e2 48dd3e02
 tests: cell_kin_species (coop_cell_kin_species.py)
 signature:
 docs: docs/re/cell.md#cell-kin-species, docs/re/cell.md#cell-kin-per-player

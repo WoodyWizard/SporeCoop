@@ -9,8 +9,8 @@ source: plan-0.7.16
 role: 
 versions: 
 fixed_in:
-branch: feat/w54-tribe
-commits: d6ffc32d e7dcf746
+branch: feat/w54-tribe, feat/w54-shims
+commits: d6ffc32d e7dcf746 696d51e2 48dd3e02
 tests: tribe_own_species
 signature:
 docs: docs/re/tribe.md#tribe-own-species, docs/06-testing.md#testing-tribe-own-species

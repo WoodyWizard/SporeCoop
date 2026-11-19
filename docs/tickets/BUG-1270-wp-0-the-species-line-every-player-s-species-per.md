@@ -9,8 +9,8 @@ source: plan-0.7.16
 role: 
 versions: 
 fixed_in: unreleased
-branch: feat/w54-line
-commits: c6a3ec33 48b7b4d3 a2daaa0e
+branch: feat/w54-line, feat/w54-shims
+commits: c6a3ec33 48b7b4d3 a2daaa0e 696d51e2 48dd3e02
 tests: species_line, unit-cpp species_tests
 signature:
 docs: docs/01-architecture.md#arch-species-line, docs/06-testing.md#testing-species-line

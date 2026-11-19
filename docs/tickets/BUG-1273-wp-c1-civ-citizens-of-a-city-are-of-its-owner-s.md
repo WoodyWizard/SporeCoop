@@ -9,8 +9,8 @@ source: plan-0.7.16
 role: both
 versions: rel/0.7.16
 fixed_in:
-branch: feat/w54-citizens
-commits: 86059027
+branch: feat/w54-citizens, feat/w54-shims
+commits: 86059027 696d51e2 48dd3e02
 tests: civ_own_species (coop_civ_own_species.py), civ_own_species_hostmode (--host-mode)
 signature: the guest's city's citizens are of the host's (the civilization's) species on both games
 docs: docs/re/civ.md#civ-own-citizens, docs/re/civ.md#civ-own-species, docs/06-testing.md#testing-civ-own-species
