@@ -366,6 +366,11 @@ extern uintptr_t a_SetHandheldItem;
 extern uintptr_t a_ClearPending;
 extern uint32_t g_item_sets;
 bool has_body(void* c);
+// BUG-1271 (tribe_species.cpp): the members of their owner's own species
+void species_init();
+void species_tick(double now);
+std::string species_status();
+std::string species_list();
 extern uint32_t g_item_holds_ended;
 uint32_t hold_modifier(void* c, bool end);
 void set_hand(void* c, int item);

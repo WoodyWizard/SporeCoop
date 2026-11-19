@@ -1589,6 +1589,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     coop_init();
     savestrip::add_filter(save_filter); // BUG-0495
     savestrip::add_save_hooks(save_start, save_end);
+    species_init(); // BUG-1271
     return true;
 }
 
@@ -4194,6 +4195,7 @@ void tick(double now)
     if (g_frame_tool.armed && is_guest())
         frame_tool_run();
     village_stamps_tick(now); // BUG-0947
+    species_tick(now);        // BUG-1271 (also after the session: the members the mod changed go back)
     if (!active())
         return;
     g_cmd_world = modes::current_world();
@@ -4500,6 +4502,7 @@ std::string status()
     snprintf(b, sizeof b, "tribe pause net: releases=%u rebalanced=%u standing=%.0f s (BUG-1101)\n", g_net_releases,
              g_net_rebalanced, g_net_since ? H->time_seconds() - g_net_since : 0.0);
     out += b;
+    out += "tribe " + species_status(); // BUG-1271
     std::string chiefs;
     for (auto& [o, c] : g_chief)
         chiefs += " " + std::to_string(o) + ":#" + std::to_string(member_id(c));

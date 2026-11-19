@@ -1180,6 +1180,8 @@ std::string debug(const std::vector<std::string>& a)
         memset((uint8_t*)tribes[i] + 0x254, 0, 12);                                 // mCachedColor
         return "color set";
     }
+    if (!a.empty() && a[0] == "species") // BUG-1271: every member's species against its owner's own line
+        return species_list();
     if (a.size() >= 2 && a[0] == "setspecies") { // setspecies <hex crt inst>: tests (BUG-0643), this game's player tribe
         // members get that species (cCreatureAnimal::SetSpecies, as the game does after an editor: 0xD5BFA0)
         uintptr_t set = H->sym("Simulator::cCreatureAnimal::SetSpecies");

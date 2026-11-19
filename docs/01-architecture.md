@@ -654,6 +654,7 @@ state of those seams was grouped into structs (`HostTable g_host`, `GuestMirrors
 | tribe_mirrors.cpp | the guest's mirrors: spawn and remove members, guest_state (the snapshot receiver, bind or spawn, the sweep and the orphans), the knock-out, the mirror driving, guest_tick |
 | tribe_anims.cpp | the member animation relay (kinds 2-16), the air height, the holds, the theme and party music |
 | tribe_debug.cpp | `coop.tribe` (debug) and the member list (list) |
+| tribe_species.cpp | (0.7.16, BUG-1271) the members of their owner's own species on every game and the slot's key in saves (docs/re/tribe.md#tribe-own-species) |
 | tribe_internal.h | what the files share: the types, constants and the one macro more than one of them uses, and the declarations of the variables and functions one file defines and another uses (not an interface for other modules: that is tribe.h) |
 | tribe_logic.h | the rules (D3), portable, unit tested |
 | wire/tribe_anim.h | the member kinds' wire structs and the per-peer message type (C7) |

@@ -9248,3 +9248,21 @@ WP-0's agent):
 Key frames `line` and `next_session`: no look changes in WP-0 (the frames only document the state). FAIL twin:
 `SPORE_FIX_OFF=species.line` (the setter is refused, the host shows no line). The unit part: `tests/species_tests.cpp`
 (rules, the host's resolved row, the format, the store record) in `make test` (unit-cpp).
+## Tribe members of their owner's own species (2026-11-18, feat/w54-tribe)
+<a id="testing-tribe-own-species"></a>
+
+`tribe_own_species` (`coop_tribe_own_species.py`, tribe fixture, about 10 min, BUG-1271, docs/re/tribe.md#tribe-own-species):
+* The guest plays a creature of its own (`coop.creations choose creature`); `coop.tribe species` lists every member of
+  the player tribe on that game: `S #<id> <ptr> owner= key=` (the game's +0xB28) `model=` (its profile's +0x510)
+  `line=` (its owner's line key here) `ours=` (the key the mod gave it), the slot's key and model, and the counters
+  (`own species: ... applied reverted pending waits_cinematic waits_key saves stripped back`, also in `coop.status`).
+* Checks on both games: the guest's members of the guest's key, the host's of the slot's, one model record for the
+  guest's members on both (`coop.creations modelhash`); a baby the guest buys (its real hut click) of the guest's
+  species within 2 s of its first appearance; the switch off at runtime (the revert path), a gather order, the switch
+  on while the member carries food: changed within 4 s, then it moves on and plays animations (never 0); the host's
+  `coop.save`: no file of its save slot holds the guest's key or its creation's instance; a new evening
+  (`twoinst.session_restart`) and a guest-only rejoin bring the mix back. Key frames: the village, two same views (a
+  guest's member, the carrying member), after the reload and after the rejoin.
+* The guest's creature choice is put back at the end (`unchoose creature`, `worlds set creature <before>`): the next
+  tribe-fixture test plays the world's species as before.
+* FAIL twin: `SPORE_FIX_OFF=tribe.own_species` (every member the slot's species; the test stops after step 2).
