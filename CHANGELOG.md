@@ -6,6 +6,7 @@
 - The species line (BUG-1270): every player's own species per stage (tribe and Civ outfits, Civ designs) is kept by
   the mod, sent to every game and kept by the host between sessions; the base for every player's own look in Tribe and
   Civilization (no visible change by itself).
+
 ### Added
 - Cell: the wild cells of the players' own kind now swim near each player in that player's own design: near the
   second player you meet its cell's kin, near the host the host's, and a mix where you swim together; before, all of
