@@ -1592,6 +1592,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     savestrip::add_filter(save_filter); // BUG-0495
     savestrip::add_save_hooks(save_start, save_end);
     species_init(); // BUG-1271
+    graduation_init(); // BUG-1325 (optional)
     return true;
 }
 

@@ -1,19 +1,19 @@
 ---
 id: BUG-1322
-title: Civ: the host faulted (EIP inside a preaching vehicle, from 0xBFD8DB) with test preachers put 30 m over the ground
-status: open
+title: Civ: the host faulted (EIP inside a preaching vehicle) in the mod's shot observer: a preacher's target spatial is not +0x34 of an object
+status: fixed
 kind: crash
 stage: Civ
 reported: 2026-11-19
 source: lab
 role: host
 versions: 0.7.16 (unreleased)
-fixed_in:
-branch: fix/w57-sync
-commits:
-tests: civ_preach_far
+fixed_in: unreleased
+branch: fix/w57-sync, fix/w57-crashes
+commits: f2b44601 1defae3e 0ffc91f2
+tests: civ_preach_far, civ_shot_objects, civ_shot_objects_off
 signature: exception 0xC0000005 at a heap address inside a vehicle object, stack scan 00BFD8DB 00AE75E0
-docs: docs/re/civ.md#civ-npc-fixture-slots
+docs: docs/re/civ.md#civ-npc-fixture-slots, docs/re/civ.md#civ-shot-observer-targets, docs/06-testing.md#testing-civ-shot-objects
 related: BUG-1286
 ---
 
@@ -35,14 +35,38 @@ combatant / owner pointer after a preacher was taken away (the city's retaliatio
 allowance). The fault came 90 ms before the BUG-1286 hook set the slot's places for the first time, so that hook is not
 in it by timing. Whether a player can get there (vehicles only from the game's buy path, on the ground) is open.
 
+Analysis (2026-11-19, fix/w57-crashes; docs/re/civ.md#civ-shot-observer-targets). The fault is in the mod, and a player
+reaches it: neither the vehicles in the air nor the forced spawn are part of it.
+* Observed (the run's module addresses, symbolized on a build of its commit dee4405f): the first fault's return address
+  on the stack is coop+0x9B6AA = civ::fire_observed (civ_shots.cpp, the target branch), the second fault's coop+0x17AC18 =
+  game::object_position (the Cast vcall, slot 0xC) under it, both from squadron::h_FireTool (coop+0x2CAD3D); esi held the
+  Cast id 0x1186577. 0xBFD8DB / 0xAE75E0 were stale stack entries of cCombatSimulator::Update's own work before FireTool.
+* Observed (code): fire_observed took the object at target spatial - 0x34 and, when its first dword lay in SporeApp.exe's
+  image (BUG-0535's check), called its vtable.
+* Observed (runtime, lab 20261119-141549 civ_shot_objects; Ghidra): a preacher's FireTool target is the spatial at
+  +0x100 of Simulator/cCulturalTarget (vtable 0x1468478; noun factory 0xB1EB40, ctor 0xBDACB0), not +0x34: target - 0x34
+  is its field +0xCC (0x00000018 in that run). When that field holds a value in the image's range, the observer calls
+  through it: the jump into a vehicle's memory, then 0xCCCCCCCC. Every religious preaching in a co-op host's game passes
+  there; the field's value decides (1 run in 4).
+
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
-None in the mod. The test puts its preachers on the ground now (put_near on the city's sphere). Next: if it comes again,
-a crash dump of FUN_00bfd750's receiver (which combatant, which owner).
+(fix/w57-sync: the test puts its preachers on the ground; not the cause.)
+`civ.shot_target_listed` (civ_shots.cpp, fire_observed): a shooter or target that is not one of the host's listed
+vehicles is used only when the object at spatial - 0x34 is in the game's object list (game::listed: pointers compared,
+nothing called; once per object and frame); else nothing is called and the shot has no target the guests could find
+(kind 2, as before for unknown targets). Off: the image check only (0.7.15). `coop.civ shotobjs` prints the unlisted ones,
+`coop.civ shotprobe` (tests) hands the observer a shot at a target that is no object, the memory before it starting with
+the exe's base (its +0xC is 0x0000FFFF).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Test civ_shot_objects (coop_civ_influence.py --case shotobjs, lane 9, fix/w57-crashes worktree):
+* PASS: out/lab/20261119-141549:civ_shot_objects (preachers on the ground: 6 frames with the cCulturalTarget spatial as
+  an unlisted target, nothing called; the probe: kind 2; 0 faults).
+* FAIL (twin): out/lab/20261119-141549:civ_shot_objects_off (civ.shot_target_listed off): the observer called into the
+  probe's fake vtable: host fault 0xC0000005 at 0x0000FFFF, as the run of the report jumped into a vehicle.
+
+* PASS on the tree merged with rel/0.7.16 (80c722d4): out/lab/20261119-144809:civ_shot_objects.
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-19: cause found and fixed on fix/w57-crashes (the shot observer, cCulturalTarget targets).
