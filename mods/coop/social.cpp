@@ -514,6 +514,13 @@ static int g_meter_npc = -1;   // proxy id the meter is open for
 static int g_meter_rounds = 1; // rounds shown on it
 static uint32_t g_meter_opened = 0, g_meter_bars = 0, g_meter_closed = 0, g_win_msgs = 0;
 static float g_meter_frac = 0;
+// BUG-9258 (BigTexas: "the animation for the pink bar isn't smooth"): the bar jumped to each new value when the host's
+// count arrived (one answer, one round trip later). It glides there now: the meter tick moves it a step a frame (about
+// 0.4 s for a round). Off (`coop.fix social.meter_glide off`): it jumps.
+static bool g_meter_glide = true;
+COOP_FIX("social.meter_glide", "BUG-9258", g_meter_glide, "creature: a guest's social meter glides to each new fill instead of jumping");
+static float g_meter_goal = 0;   // where the bar goes (the host's count)
+static double g_meter_step_at = 0;
 static int g_meter_vis_at_win = -1; // the meter layout's own visible byte when the win arrived (tests)
 
 // the layout's visible byte: SetVisible 0xE319D0 is UILayout::SetVisible(meter + 0xC), which writes
@@ -657,6 +664,7 @@ static void meter_run(void*) // outside the frame: the meter is UI
             g_meter_npc = t.npc;
             g_meter_rounds = t.rounds;
             g_meter_frac = 0;
+            g_meter_goal = 0;
             g_meter_opened++;
         } else if (t.op == 1 && t.npc == g_meter_npc && a_MeterBar) {
             if (g_meter_fill_fix) meter_fill(m, t.frac); // BUG-9230
@@ -711,6 +719,15 @@ static void meter_tick()
 {
     if (!g_meter_fix)
         return;
+    // BUG-9258: the bar glides towards the host's count, a step every ~30 ms
+    if (g_meter_glide && g_meter_npc >= 0 && g_meter_goal > g_meter_frac + 0.002f && g_meter_tasks.empty()) {
+        const double now = H->time_seconds();
+        if (now - g_meter_step_at >= 0.03) {
+            g_meter_step_at = now;
+            const float step = std::max(0.02f, (g_meter_goal - g_meter_frac) * 0.2f);
+            meter_task(1, g_meter_npc, std::min(g_meter_goal, g_meter_frac + step));
+        }
+    }
     if (g_engaged >= 0 && g_engaged != g_meter_npc && g_meter_tasks.empty()) {
         void* px = npc::proxy((uint16_t)g_engaged);
         if (g_meter_retry_fix && H->time_seconds() - g_meter_missed_at < kMeterRetry)
@@ -932,6 +949,20 @@ static void send_progress(uint8_t to, uint16_t id, int done, int needed)
     C.sess->send_reliable_to(to, net::MSG_SOCIAL, w);
 }
 
+// BUG-9258 (BigTexas, 2026-11-18: "It does not want to socialize" while impressing): every "no" the host sends a guest,
+// with its reason, in the host's log (40 lines a session at most)
+static uint32_t g_no_logged = 0;
+static void log_no(const char* why, uint8_t player, uint16_t id, void* c, void* pup)
+{
+    if (g_no_logged >= 40)
+        return;
+    g_no_logged++;
+    const float d = c && pup ? net::dist(game::position(c), game::position(pup)) : -1.f;
+    H->log(M, SK_INFO, "social: player %u's social game with npc %u ends: %s (social mode %d, dead %d, impressed %d, "
+           "its creature %.1f m from the npc here)", player, id, why, c ? social_mode(c) : -1, c ? (int)game::is_dead(c) : -1,
+           c ? (int)game::impressed(c) : -1, d);
+}
+
 static void send_result(uint16_t id, uint8_t player, bool ok, uint32_t anim, float dna)
 {
     net::Writer w;
@@ -975,6 +1006,7 @@ static void apply_success(uint8_t player, uint16_t id)
     void* mgr = rel_mgr();
     if (!c || !mgr || !a_RelEvent || game::is_dead(c) || game::impressed(c)) {
         g_refused++; // gone, died or impressed by somebody else meanwhile
+        log_no("won, but the npc is gone, dead or impressed already", player, id, c, C.puppet_of ? C.puppet_of(player) : nullptr);
         send_result(id, player, false, 0, 0);
         return;
     }
@@ -1059,6 +1091,8 @@ static void send_prompt(uint8_t to, uint16_t id, int i, int n, const Prompt& p)
 
 static void fail_game(uint8_t player, uint16_t id)
 {
+    log_no("the prompt list is through and the meter not full", player, id, npc::host_npc(id),
+           C.puppet_of ? C.puppet_of(player) : nullptr);
     if (void* c = npc::host_npc(id); c && a_PlayReaction && !game::is_dead(c))
         thiscall<int>(a_PlayReaction, c, kFailAnim, 1, -1);
     g_prompt_fails++;
@@ -1069,8 +1103,11 @@ static void fail_game(uint8_t player, uint16_t id)
 static void host_engage(uint8_t from, uint16_t id)
 {
     void* c = npc::host_npc(id);
-    if (!g_prompt_fix || !c || game::is_dead(c) || game::impressed(c) || social_mode(c) == 0)
+    if (!g_prompt_fix || !c || game::is_dead(c) || game::impressed(c) || social_mode(c) == 0) {
+        if (g_prompt_fix)
+            log_no("an engagement the host does not start", from, id, c, C.puppet_of ? C.puppet_of(from) : nullptr);
         return;
+    }
     double now = H->time_seconds();
     Game& g = g_games[{from, id}];
     if (!g.prompts.empty() && now - g.last < kEngageTime && g.idx < (int)g.prompts.size())
@@ -1133,6 +1170,9 @@ static void host_act(uint8_t from, uint16_t id, uint32_t type)
     if (!c || game::is_dead(c) || game::impressed(c) || social_mode(c) == 0 ||
         (pup && net::dist(game::position(pup), game::position(c)) > kActRange + 4)) {
         g_refused++;
+        log_no(!c ? "an act on an npc this game does not have" : game::is_dead(c) ? "an act on a dead npc"
+               : game::impressed(c) ? "an act on an npc impressed already" : social_mode(c) == 0 ? "an act while the npc does not socialize"
+               : "an act from too far", from, id, c, pup);
         send_result(id, from, false, 0, 0);
         return;
     }
@@ -1410,8 +1450,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (kind == K_PROGRESS && is_guest()) {
         int done = r.u8(), needed = r.u8();
-        if (r.ok() && needed > 0 && id == g_engaged)
-            meter_task(1, id, std::min(1.f, (float)done / needed));
+        if (r.ok() && needed > 0 && id == g_engaged) {
+            const float f = std::min(1.f, (float)done / needed);
+            if (g_meter_glide && id == g_meter_npc)
+                g_meter_goal = std::max(g_meter_goal, f);
+            else
+                meter_task(1, id, f);
+        }
         if (r.ok() && done < needed && C.feed && !meter_shows(id))
             C.feed("Impressing: " + std::to_string(100 * done / needed) + "%");
         return;
@@ -1432,9 +1477,15 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 thiscall<int>(a_PlayReaction, px, anim, 1, -1);
         } else if (px && anim && a_PlayReaction && !game::is_dead(px)) // BUG-0525: a failed game's animation
             thiscall<int>(a_PlayReaction, px, anim, 1, -1);
+        if (mine && !ok)
+            H->log(M, SK_INFO, "social: the host ended our social game with npc %u (%s)", id,
+                   anim == kFailAnim ? "the meter was not full at the end of the prompts" : "refused: see the host's log");
+        // BUG-9258: a lost social game said "It does not want to socialize now" too, the same line as a refusal: the
+        // player could not tell "this species won't" from "you missed its moves"
         if (mine && C.feed)
             C.feed(ok ? "Impressed! +" + std::to_string((int)(dna + 0.5f)) + " DNA for the pack"
-                      : "It does not want to socialize now");
+                 : anim == kFailAnim ? "It lost interest: copy the move it shows with the same ability to fill the bar"
+                                     : "It does not want to socialize now");
         if (mine && ok && id == g_meter_npc)
             meter_task(2, id);
         if (mine && g_engaged == id)

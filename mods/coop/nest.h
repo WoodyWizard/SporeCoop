@@ -9,6 +9,8 @@
 #include "sporekit.h"
 
 namespace nest {
+// guest (BUG-9259): the home nest the host told this game in the last 5 s (its own seat's nest, or the host's)
+bool told_home(net::Vec3& out);
 
 struct Ctx {
     net::Session* sess = nullptr;

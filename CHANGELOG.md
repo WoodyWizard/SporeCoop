@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages65-dev] - 2026-11-18
+
+- Creature: no more pause of about a quarter second every second for a connected player. The check that shares the
+  creature parts asked Windows about every part in the game twice a second (BUG-9257).
+- The host can remove players: chat commands /kick, /ban, /unban and /bans. A banned player is removed again whenever
+  they join (BUG-9251).
+- Party cards are smaller (80% of their old size, closer to Spore's own Pack list) with the name in the card's font.
+- Name plates over partners: the name and distance are centred (a hidden -NoShare- tag no longer leaves its space).
+- Co-op window: the join address and both ports are hidden by default (the eye buttons show them).
+- Creature: the green Pack line at the top right is off by default ([coop] pack_line=1 shows it).
+- A guest that leaves a stage to load the host's world is no longer stuck behind Spore's cinematic bars (BUG-9252).
+- Diagnostics: a frame profiler writes the slowest parts of each minute to the log ("prof:" lines; [diag]
+  frame_prof=0 turns it off), so a stutter report says what caused it.
+
 ## [0.7.14.1-lineages64-dev] - 2026-11-17
 
 - Creature: every player has their own pack. A partner's Summon Flock and recruits join that partner's pack (not the

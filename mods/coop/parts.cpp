@@ -84,6 +84,35 @@ static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client &&
 static bool g_states_fix = true;
 COOP_FIX("parts.census_states", "BUG-0441", g_states_fix, "creature: the parts census counts the item states too (a loaded game agrees with the one that came from Cell)");
 
+// BUG-9257 (BigTexas, 2026-11-18: a ~0.25 s pause every second on a guest in Creature): the census walks every
+// collectable item (thousands with the booster pack) and asked readable() for each bucket and node, one VirtualQuery
+// system call each, twice a second on a guest (54-106 ms a second on TITAN, measured with the frame profiler). The
+// nodes lie in a few heap regions: a region found readable once is not asked again within one walk. Off
+// (`coop.fix parts.census_cache off`): readable() for every node as before.
+static bool g_census_cache = true;
+COOP_FIX("parts.census_cache", "BUG-9257", g_census_cache,
+         "creature: the parts census asks Windows about each memory region once per walk, not about every item (a pause every second on guests)");
+struct Readable {
+    const uint8_t *lo = nullptr, *hi = nullptr; // a region found committed and readable in this walk
+    uint32_t asked = 0;
+    bool operator()(const void* p, size_t n)
+    {
+        const uint8_t* a = (const uint8_t*)p;
+        if (g_census_cache && a >= lo && a + n <= hi)
+            return true;
+        asked++;
+        if (!readable(p, n))
+            return false;
+        MEMORY_BASIC_INFORMATION mbi;
+        if (g_census_cache && VirtualQuery(p, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT) {
+            lo = (const uint8_t*)mbi.BaseAddress;
+            hi = lo + mbi.RegionSize; // (readable() just checked this region's protection)
+        }
+        return true;
+    }
+};
+static uint32_t g_census_walks, g_census_asked, g_census_items;
+
 // the state map (+0x4D04 buckets, +0x4D08 count; node {u32 lo, u32 hi, u8 state (bit 0 unlocked, 4 seen),
 // ..., next at +0x10}): every item the game has a state for, also items that are not in the map +0x1490
 static bool states(void* items, std::vector<std::pair<Key, uint8_t>>& out)
@@ -92,9 +121,10 @@ static bool states(void* items, std::vector<std::pair<Key, uint8_t>>& out)
         return false;
     void** b = field<void**>(items, 0x4D04);
     uint32_t n = field<uint32_t>(items, 0x4D08);
-    for (uint32_t i = 0; b && n < 100000 && i < n && readable(b + i, 4); i++)
+    Readable ok;
+    for (uint32_t i = 0; b && n < 100000 && i < n && ok(b + i, 4); i++)
         for (uint32_t* nd = (uint32_t*)b[i]; nd && out.size() < 100000; nd = (uint32_t*)nd[4]) {
-            if (!readable(nd, 0x14))
+            if (!ok(nd, 0x14))
                 break;
             out.push_back({{nd[0], nd[1]}, (uint8_t)nd[2]});
         }
@@ -124,9 +154,10 @@ bool census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<Key>* lo
     };
     void** b = field<void**>(items, 0x1490);
     uint32_t n = field<uint32_t>(items, 0x1494);
-    for (uint32_t i = 0; b && n < 100000 && i < n && readable(b + i, 4); i++)
+    Readable ok;
+    for (uint32_t i = 0; b && n < 100000 && i < n && ok(b + i, 4); i++)
         for (uint32_t* nd = (uint32_t*)b[i]; nd && unlockable < 100000; nd = (uint32_t*)nd[10]) {
-            if (!readable(nd, 0x2C))
+            if (!ok(nd, 0x2C))
                 break;
             if (g_states_fix)
                 seen.insert({nd[0], nd[1]});
@@ -139,17 +170,25 @@ bool census(int& unlocked, uint32_t& hash, int& unlockable, std::vector<Key>* lo
                 if (!seen.count(k) && unlockable < 100000)
                     count(k.first, k.second);
     }
+    g_census_walks++;
+    g_census_asked += ok.asked;
+    g_census_items = (uint32_t)unlockable;
     return true;
 }
 
-// the keys of `want` that are unlockable here and still locked get unlocked (cost 0); returns them
-static std::vector<Key> unlock_missing(const std::set<Key>& want)
+// the keys of `want` that are unlockable here and still locked get unlocked (cost 0); returns them. `known_locked`:
+// the locked keys of a census the caller just made (none: one is made here)
+static std::vector<Key> unlock_missing(const std::set<Key>& want, const std::vector<Key>* known_locked = nullptr)
 {
     std::vector<Key> locked, done;
     int n, all;
     uint32_t h;
     void* items = C.items ? C.items() : nullptr;
-    if (!items || !a_UnlockPart || !census(n, h, all, &locked))
+    if (!items || !a_UnlockPart)
+        return done;
+    if (known_locked)
+        locked = *known_locked;
+    else if (!census(n, h, all, &locked))
         return done;
     for (auto& k : locked)
         if (want.count(k) && thiscall<bool>(a_UnlockPart, items, k.first, k.second, 0)) {
@@ -240,14 +279,18 @@ static void guest_tick(double now)
     uint32_t world = C.world ? C.world() : 0;
     if (!g_have_set || !world || world != g_host_world || !C.guest_in_host_world || !C.guest_in_host_world())
         return;
-    auto done = unlock_missing(g_host_set); // what the host's world has (also after our own reload)
-    if (!done.empty())
-        H->log(M, SK_INFO, "parts: %zu part(s) of the party's set unlocked here", done.size());
-    std::vector<Key> mine;
+    // one census a poll (BUG-9257: unlock_missing made a second one)
+    std::vector<Key> mine, locked;
     int n, all;
     uint32_t h;
-    if (!census(n, h, all, nullptr, &mine))
+    if (!census(n, h, all, &locked, &mine))
         return;
+    auto done = unlock_missing(g_host_set, &locked); // what the host's world has (also after our own reload)
+    if (!done.empty()) {
+        H->log(M, SK_INFO, "parts: %zu part(s) of the party's set unlocked here", done.size());
+        for (auto& k : done)
+            mine.push_back(k);
+    }
     std::vector<Key> extra; // found here, not in the host's set yet: sent until the host's set has them
     if (now - g_last_found_tx < kResend)
         return;

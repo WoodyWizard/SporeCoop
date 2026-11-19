@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.14.1-lineages64-dev"
+#define COOP_VERSION "0.7.14.1-lineages65-dev"
 #endif
 
 #include <set>
@@ -878,6 +878,43 @@ net::PlayerState local_state()
 
 // remote `s` is visible here only when both play the same mode in the same world
 bool same_place(const net::PlayerState& s) { return s.mode == g_mode && s.world == g_world && g_world != 0; }
+
+// BUG-9260 (owner 2026-11-18: "when Host was paused in Live, the connected player was able to move still, even though
+// 'host paused' screen was up"): BUG-9227 only drew the cover; the guest's own game ran on under it. While the host's
+// state says paused (PF_PAUSED, the same place, fresh) the guest's game time stands too, with one pause of its own
+// (the UI-modal reason the game's own boxes use, 0x4BF38A7: counted, so the guest's own pauses stay as they are), and
+// is resumed when the host resumes, leaves the place, goes quiet or the session ends. Off: the cover only.
+static bool g_follow_pause = true;
+COOP_FIX("core.follow_host_pause", "BUG-9260", g_follow_pause, "ui: a guest's game pauses while the host's game is paused (not only the cover)");
+constexpr uint32_t kHostPauseReason = 0x4BF38A7u;
+static bool g_host_pause_held;
+static uint32_t g_host_pauses;
+static void host_pause_tick(double now)
+{
+    bool want = false;
+    if (g_follow_pause && g_paused_cover && g_sess.role() == net::Role::Client && g_sess.connected()) {
+        auto it = g_remotes.find(0);
+        if (it != g_remotes.end() && !it->second.buf.empty()) {
+            const auto& hs = it->second.buf.latest();
+            want = (hs.flags & net::PF_PAUSED) && same_place(hs) && it->second.buf.age(now) < 3.0 && stage_mode(g_mode);
+        }
+    }
+    if (want == g_host_pause_held)
+        return;
+    world::time_pause(kHostPauseReason, want);
+    g_host_pause_held = want;
+    if (want)
+        g_host_pauses++;
+    LOG("pause: the host's game is %s: this game %s (BUG-9260)", want ? "paused" : "running again", want ? "pauses" : "resumes");
+}
+static void host_pause_release() // the session ended, the world changed: never left paused by the host
+{
+    if (!g_host_pause_held)
+        return;
+    world::time_pause(kHostPauseReason, false);
+    g_host_pause_held = false;
+    LOG("pause: the host's pause released (the session or the place ended, BUG-9260)");
+}
 
 // ---- coop.track (BUG-0360): what this player sees of its partners, frame by frame. Tests sample the
 // partner's puppet (its game position, where its model is drawn, its game speed, its animation, the
@@ -5300,50 +5337,170 @@ static void apply_startup_off()
 
 static void spectate_tick(); // BUG-9156 (below)
 static void join_apart_tick(double now);
+// ---------------- the frame profiler (BUG-9257, 2026-11-18: a guest's ~0.25 s pause every second) ----------------
+// What of the mod's frame took long: on_frame is cut into its calls (a mark after each one), the session's messages
+// by type. Once a minute the slowest ones go to the log ("prof: ..."), and a single call over 50 ms at once (12 lines
+// a minute at most). A frame interval over 80 ms that our work did not fill counts as the game's own. Off:
+// [diag] frame_prof=0. Costs two QueryPerformanceCounter calls a mark (about 110 a frame).
+namespace fprof {
+static bool g_on = true;
+struct Sect {
+    double sum = 0, max = 0;
+    uint32_t over = 0; // calls over 10 ms
+};
+static std::map<const char*, Sect> g_sect;
+static Sect g_msg[256];
+static double g_t, g_frame_t0, g_last_begin, g_frame_work, g_next_report, g_freq;
+static uint32_t g_long_frames, g_long_ours, g_spikes;
+static double qpc()
+{
+    LARGE_INTEGER c;
+    if (!g_freq) {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        g_freq = (double)f.QuadPart;
+    }
+    QueryPerformanceCounter(&c);
+    return c.QuadPart / g_freq;
+}
+static void add(Sect& s, double dt, const char* what, int type)
+{
+    s.sum += dt;
+    if (dt > s.max) s.max = dt;
+    if (dt > 0.010) s.over++;
+    if (dt > 0.050 && g_spikes++ < 12) {
+        if (what) LOG("prof: %s took %.0f ms (one frame, %s)", what, dt * 1000, modes::mode_name(game::mode_id()));
+        else LOG("prof: message type %d took %.0f ms (one message, %s)", type, dt * 1000, modes::mode_name(game::mode_id()));
+    }
+}
+static void begin()
+{
+    if (!g_on) return;
+    const double t = qpc();
+    if (g_last_begin > 0 && t - g_last_begin > 0.080) { // the last frame interval was long: ours, or the game's
+        g_long_frames++;
+        if (g_frame_work > 0.040) g_long_ours++;
+    }
+    g_last_begin = g_t = g_frame_t0 = t;
+}
+static void mark(const char* label)
+{
+    if (!g_on) return;
+    const double t = qpc();
+    add(g_sect[label], t - g_t, label, -1);
+    g_t = t;
+}
+static void message(uint8_t type, double dt)
+{
+    if (g_on) add(g_msg[type], dt, nullptr, type);
+}
+static void end_frame()
+{
+    if (!g_on) return;
+    const double t = qpc();
+    g_frame_work = t - g_frame_t0;
+    if (t < g_next_report) return;
+    if (g_next_report > 0) {
+        std::vector<std::pair<const char*, Sect>> v(g_sect.begin(), g_sect.end());
+        std::sort(v.begin(), v.end(), [](auto& a, auto& b) { return a.second.max > b.second.max; });
+        std::string line;
+        for (size_t i = 0; i < v.size() && i < 8 && v[i].second.max > 0.004; i++) {
+            char b[160];
+            snprintf(b, sizeof b, "%s%s %.1f/%.0f/%u", line.empty() ? "" : ", ", v[i].first, v[i].second.max * 1000,
+                     v[i].second.sum * 1000, v[i].second.over);
+            line += b;
+        }
+        std::string msgs;
+        for (int k = 0; k < 256; k++)
+            if (g_msg[k].max > 0.004) {
+                char b[64];
+                snprintf(b, sizeof b, "%s%d %.1f/%.0f/%u", msgs.empty() ? "" : ", ", k, g_msg[k].max * 1000, g_msg[k].sum * 1000,
+                         g_msg[k].over);
+                msgs += b;
+            }
+        LOG("prof: this minute (%s): frames with an interval over 80 ms %u, of them filled by the mod's own work %u | "
+            "slowest calls (max ms in one frame / ms in all / frames over 10 ms): %s | messages by type: %s",
+            modes::mode_name(game::mode_id()), g_long_frames, g_long_ours, line.empty() ? "none over 4 ms" : line.c_str(),
+            msgs.empty() ? "none over 4 ms" : msgs.c_str());
+    }
+    g_sect.clear();
+    for (auto& m : g_msg) m = Sect{};
+    g_long_frames = g_long_ours = g_spikes = 0;
+    g_next_report = t + 60;
+}
+} // namespace fprof
+
 void on_frame(void*, int, void*)
 {
+    fprof::begin(); // (the frame profiler: what of this frame took long, prof lines in the log)
     modes::CellScope cell_scope; // BUG-0271: no game code runs in here, the pool check holds for it
+    fprof::mark("modes::CellScope cell_scope");
     game::LiveScope live_scope;  // BUG-0426: the object list of this frame (game::listed) holds in here
+    fprof::mark("game::LiveScope live_scope");
     double now = H->time_seconds();
     g_last_frame = now;
+    fprof::mark("g_last_frame = now");
     support::tick(now); // first: its frame timing (FPS, hitches) and the session clock
+    fprof::mark("support::tick(now)");
     mem_refresh::tick(now); // decision 4S (BUG-9239): the memory box, a restart's steps
+    fprof::mark("mem_refresh::tick(now)");
     {
         bool clock_ok = false;
         double st = support::session_time(&clock_ok);
         squadron::frame_start(st, clock_ok); // BUG-0378 tests: the ships as drawn, before any write of ours
     }
     diag_tick(now);
+    fprof::mark("diag_tick(now)");
     notify::tick(now);
+    fprof::mark("notify::tick(now)");
     gamefixes::frame(); // BUG-0506: once
+    fprof::mark("gamefixes::frame()");
     game::world_epoch(); // BUG-0119: sees every frame outside the creature stage
+    fprof::mark("game::world_epoch()");
     game::stage_epoch_tick(); // BUG-0217: before any message or module tick of this frame
+    fprof::mark("game::stage_epoch_tick()");
     modes::world_name_tick(); // BUG-0258: the planet stays known through snapshot.spo
+    fprof::mark("modes::world_name_tick()");
     modes::test_tick();       // BUG-0223 tests: a forced frame without the local entity
+    fprof::mark("modes::test_tick()");
     tribe::world_check();     // BUG-0217: the Tribe world changed (not an editor visit)
+    fprof::mark("tribe::world_check()");
     civ::world_check();       // BUG-0223: the Civ world changed (not a frame without the city anchor)
+    fprof::mark("civ::world_check()");
     lifecycle_world_tick();   // BUG-1055: a new world resets every WORLD_STATE (lifecycle.h)
+    fprof::mark("lifecycle_world_tick()");
     creations::tick(now);
+    fprof::mark("creations::tick(now)");
     library::tick(now, !(game_busy() & (busy::kEditor | busy::kLoading | busy::kCinematic)));
+    fprof::mark("library::tick(now, !(game_busy() & (busy::kEditor | busy");
     lineage_cells::tick(now, game::mode_id() == modes::kCell && !(game_busy() & (busy::kEditor | busy::kLoading))); // BUG-9111
+    fprof::mark("lineage_cells::tick(now, game::mode_id() == modes::kCell");
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
     monitor_frame_start(now); // the puppets as drawn, before any driving (docs/06-testing.md#testing-monitor)
+    fprof::mark("monitor_frame_start(now)");
     npc::monitor_tick(now);   // the proxies as drawn
+    fprof::mark("npc::monitor_tick(now)");
     bodyrec_tick(now);        // coop.bodyrec (tests, BUG-0425): every body as drawn
+    fprof::mark("bodyrec_tick(now)");
     modes::own_ground_tick(now); // BUG-0592: the own creature not left in the ground
+    fprof::mark("modes::own_ground_tick(now)");
     // BUG-0231: the world a joining guest hears in WELCOME (before the host's first state); the
     // values of the last frame, as every message of this update sees them. Not switched: 0.7.3.0
     // guests never read it
     if (g_sess.role() == net::Role::Host)
         g_sess.world = host_world::welcome_world(g_mode, g_world, g_mode == modes::kSpace ? modes::current_world() : 0);
     host_save_tick(); // BUG-0933: the host says its save again when it changed; a guest follows it
+    fprof::mark("host_save_tick()");
     g_sess.update();
+    fprof::mark("g_sess.update()");
     partner_pass_tick(); // BUG-0913: what the collision and hover hooks may skip this frame
+    fprof::mark("partner_pass_tick()");
     // BUG-9146: the knockout and revive with every partner here (before: only a duo had them; with three or four
     // players a lethal hit was a native death). Off (`coop.fix creature.rescue_party off`): a duo only.
     static std::vector<net::PlayerState> rescue_peers;
     rescue_peers.clear();
+    fprof::mark("rescue_peers.clear()");
     const size_t players = g_sess.players().size();
     bool duo = g_local && g_sess.connected() && (g_rescue_party_fix ? players >= 2 : players == 2);
     if (duo && (g_mode == modes::kScenario || g_mode == modes::kCreature)) {
@@ -5364,7 +5521,10 @@ void on_frame(void*, int, void*)
     else
         creature_rescue::reset();
     spectate_tick(); // BUG-9156
+    fprof::mark("spectate_tick()");
     lobby_tick(now);
+    host_pause_tick(now); // BUG-9260
+    fprof::mark("lobby_tick(now)");
     if (g_sess.role() == net::Role::Client) { // BUG-0425 (drive.lead): the one-way latency to the host, half its round trip
         int rtt = g_sess.rtt_of(0);
         if (rtt >= 0)
@@ -5381,34 +5541,59 @@ void on_frame(void*, int, void*)
     } else
         net::g_one_way_low = -1;
     vote_tick(now);
+    fprof::mark("vote_tick(now)");
     submit_tick(now);
+    fprof::mark("submit_tick(now)");
     tribal_graduation_tick(now);
+    fprof::mark("tribal_graduation_tick(now)");
     own_editor_tick(now);
+    fprof::mark("own_editor_tick(now)");
     evo_flag_tick(now); // BUG-0920
+    fprof::mark("evo_flag_tick(now)");
     offer_tick(now); // BUG-0516
+    fprof::mark("offer_tick(now)");
     vote_action_tick(now);
+    fprof::mark("vote_action_tick(now)");
     coop_ui::tick();
+    fprof::mark("coop_ui::tick()");
     if (build_id() == 0xDC04AEE5u) editor_depth::tick();
+    fprof::mark("if (build_id() == 0xDC04AEE5u) editor_depth::tick()");
     menu_tick(now);
+    fprof::mark("menu_tick(now)");
     mate_hearts_tick(now);
+    fprof::mark("mate_hearts_tick(now)");
     if (g_sess.role() == net::Role::Host)
         world::tick(g_sess);
     else
         world::guest_tick(g_sess); // a received world waiting for the player to leave its editor
     savestrip::tick();
+    fprof::mark("savestrip::tick()");
     npc::tick(now);
+    fprof::mark("npc::tick(now)");
     player_rules::tick(now); // BUG-0558: the host's UFO on the guests
+    fprof::mark("player_rules::tick(now)");
     nest::tick(now); // BUG-0384
+    fprof::mark("nest::tick(now)");
     fields::tick(now); // BUG-0419 G2 (after the modules that make the mirrors)
+    fprof::mark("fields::tick(now)");
     wsync::tick(now);  // W1: host-owned world state (time of day, relations, stages done, the Tribe goal)
+    fprof::mark("wsync::tick(now)");
     wobj::tick(now); // BUG-0472, BUG-0459
+    fprof::mark("wobj::tick(now)");
     realign::tick(now); // W2: the whole planet after transitions (BUG-0564)
+    fprof::mark("realign::tick(now)");
     parts::tick(now); // BUG-0401
+    fprof::mark("parts::tick(now)");
     effects::tick(now); // BUG-0451: sends the queued effects on the main thread
+    fprof::mark("effects::tick(now)");
     social::tick(now);
+    fprof::mark("social::tick(now)");
     evo_key_tick(now);
+    fprof::mark("evo_key_tick(now)");
     creature_hp::tick();
+    fprof::mark("creature_hp::tick()");
     shared::tick(g_sess, game::mode_id(), now, guest_elsewhere() || guest_space_other()); // BUG-0231, BUG-0709: held while elsewhere
+    fprof::mark("shared::tick(g_sess, game::mode_id(), now, guest_elsewhe");
     if (g_sess.role() == net::Role::Host && game::avatar()) {
         float total = game::dna();
         float earned = game::evolution_bar();
@@ -5451,6 +5636,7 @@ void on_frame(void*, int, void*)
 
     uint32_t prev_mode = g_mode;
     g_mode = game::mode_id();
+    fprof::mark("g_mode = game::mode_id()");
     // the effect hooks are installed once (game::init); this only gates their work to the played
     // stages (a hook removed at a stage change faulted the UI skinner's render thread, BUG-0451 review)
     game::set_world_relay(g_mode == modes::kCell || g_mode == modes::kCreature || g_mode == modes::kTribe
@@ -5458,51 +5644,92 @@ void on_frame(void*, int, void*)
     if (g_mode != prev_mode)
         on_mode_change(prev_mode, g_mode);
     g_adapter = modes::for_mode(g_mode);
+    fprof::mark("g_adapter = modes::for_mode(g_mode)");
     g_world = modes::current_place(g_adapter);
+    fprof::mark("g_world = modes::current_place(g_adapter)");
     g_local = g_adapter ? g_adapter->local() : nullptr;
+    fprof::mark("g_local = g_adapter ? g_adapter->local() : nullptr");
     settings::tick(); // F3: the host's world opened or closed (its stored settings)
+    fprof::mark("settings::tick()");
     g_sess.max_players = settings::get(settings::kPlayerLimit); // F3 (BUG-0768): the host's join rules
+    fprof::mark("g_sess.max_players = settings::get(settings::kPlayerLimi");
     if (galaxy::hosting()) // 6E B (alpha): a galaxy planet takes the galaxy's count, not the co-op setting
         g_sess.max_players = (decltype(g_sess.max_players))galaxy::planet_players();
     pfind::tick(H->time_seconds()); // F2: the partners on the minimap (outside the frame)
+    fprof::mark("pfind::tick(H->time_seconds())");
     parties::tick(H->time_seconds()); // 6J
+    fprof::mark("parties::tick");
     invite_prompt_tick();
+    fprof::mark("invite_prompt_tick()");
     social_tick(H->time_seconds()); // 6L A
+    fprof::mark("social_tick");
     portrait::tick(H->time_seconds()); // BUG-0937: the HUD portrait follows the avatar's species (outside the frame)
+    fprof::mark("portrait::tick(H->time_seconds())");
     pfind::hud_tick(H->time_seconds()); // BUG-0949: the UI windows the labels keep off (outside the frame)
+    fprof::mark("pfind::hud_tick(H->time_seconds())");
     sreport::tick();  // F4: the session report's round (host) and the guest's question / transfer
+    fprof::mark("sreport::tick()");
     game::leave_probe_tick(g_local); // BUG-0264 tests: an avatar used while the stage is torn down
+    fprof::mark("game::leave_probe_tick(g_local)");
     modes::cell_probe_tick();        // BUG-0271: the cell pool freed while the mode reads Cell
+    fprof::mark("modes::cell_probe_tick()");
     void* av = game::avatar();
+    fprof::mark("void* av = game::avatar()");
     avatar_change_check();
+    fprof::mark("avatar_change_check()");
     join_apart_tick(now); // BUG-0989
+    fprof::mark("join_apart_tick(now)");
 
     remove_strays(now);
+    fprof::mark("remove_strays(now)");
     follow_phase(now);
+    fprof::mark("follow_phase(now)");
     share_wait_tick();
+    fprof::mark("share_wait_tick()");
     host_away_tick(now);
+    fprof::mark("host_away_tick(now)");
     dna_spend_tick(now); // BUG-0466
+    fprof::mark("dna_spend_tick(now)");
     own_dna_tick(now);   // BUG-9165
+    fprof::mark("own_dna_tick(now)");
     dna_notices_tick(now);
+    fprof::mark("dna_notices_tick(now)");
     progress_debt::tick(g_mode, g_world, now); // BUG-9119
+    fprof::mark("progress_debt::tick(g_mode, g_world, now)");
     evolve::own_tick(game::mode_id(), g_local, game_busy() != 0, now); // BUG-9160: out of the own cocoon
+    fprof::mark("evolve::own_tick(game::mode_id(), g_local, game_busy() !");
     evolve::egg_tick(game::mode_id(), now);                             // BUG-9161: an egg scene that never ends
+    fprof::mark("evolve::egg_tick(game::mode_id(), now)");
     evolve::mating_tick(game::mode_id(), g_local == game::avatar() ? g_local : nullptr, // BUG-9175
                         g_sess.connected() && g_sess.role() != net::Role::Host, game_busy() != 0, now, submit_evolution_request);
     evolve::family_tick(game::mode_id(), g_local, game_busy() != 0, now); // BUG-9161: the family wears the own species
+    fprof::mark("evolve::family_tick(game::mode_id(), g_local, game_busy(");
     migration_tick(now); // BUG-9163: the party migrates together
+    fprof::mark("migration_tick(now)");
     join_editor_tick(now); // BUG-9164: a creature of one's own
+    fprof::mark("join_editor_tick(now)");
     pregame_editor_tick(now); // BUG-9207: the first creature while the host makes a new world
+    fprof::mark("pregame_editor_tick(now)");
     civ_editor_first_tick(now); // BUG-9170
+    fprof::mark("civ_editor_first_tick(now)");
     guest_pack::tick(now);                      // BUG-9129
+    fprof::mark("guest_pack::tick(now)");
     identity::tick(now);                        // BUG-9135
+    fprof::mark("identity::tick(now)");
     bans::tick(now);                            // BUG-9251: a banned player whose identity arrived is removed
+    fprof::mark("bans::tick(now)");
     galaxy::tick(now);                          // decision 5O A: the galaxy server (alpha)
+    fprof::mark("galaxy::tick(now)");
     era_visitors::tick(now);                    // decision 5S A spike (alpha)
+    fprof::mark("era_visitors::tick(now)");
     galaxy_menu::tick(now);                     // decision 5X B (alpha)
+    fprof::mark("galaxy_menu::tick(now)");
     party::tick(now);                           // roadmap 0b
+    fprof::mark("party::tick(now)");
     home_nests::host_tick(now);                 // roadmap phase 2
+    fprof::mark("home_nests::host_tick(now)");
     tribe::tick(now);
+    fprof::mark("tribe::tick(now)");
     bool walk_done = !gamefixes::leave_walk_armed();
     if (!walk_done)
         tribe::for_each_owned([](void* c, uint8_t, void* done) { // BUG-0310 tests (coop.leavewalk)
@@ -5510,16 +5737,23 @@ void on_frame(void*, int, void*)
                 *(bool*)done = gamefixes::leave_walk_tick(c);
         }, &walk_done);
     cellsync::tick(now);
+    fprof::mark("cellsync::tick(now)");
     civ::tick(now);
+    fprof::mark("civ::tick(now)");
     civ::planner_probe_tick(); // BUG-0682 tests (off unless `coop.civ planner_probe on`)
+    fprof::mark("civ::planner_probe_tick()");
     squadron::tick(now);
+    fprof::mark("squadron::tick(now)");
     autoupdate::tick();
+    fprof::mark("autoupdate::tick()");
     spacecoop::tick(now);
+    fprof::mark("spacecoop::tick(now)");
     if (g_sess.connected() && g_mode == modes::kCreature)
         teamplay::tick(game::avatar(), now);
 
     // BUG-1093 (net.send_phase): every 0.05 s with the schedule's phase kept, a stop at once (net::state_due)
     float sp_now = 0;
+    fprof::mark("float sp_now = 0");
     if (g_sent_speed > 1.f && g_mode == modes::kCreature)
         if (void* l = local_now())
             sp_now = drive::speed(game::velocity(l));
@@ -5574,7 +5808,10 @@ void on_frame(void*, int, void*)
         if (g_mode!=modes::kScenario) drive_puppet(r, now);
     }
     track_tick(now);
+    fprof::mark("track_tick(now)");
     trace_tick(now);
+    fprof::mark("trace_tick(now)");
+    fprof::end_frame();
 }
 
 // Arial 18 bold, approx.: letter cells, not bytes (BUG-0159: a Cyrillic name was centred as twice
@@ -6233,6 +6470,30 @@ static void bold(int x, int y, uint32_t color, const char* text)
     H->overlay_text(x, y, color, text);
     H->overlay_text(x + 1, y, color, text);
 }
+// BUG-9261 (owner 2026-11-18: the loading screens "aren't centered and seem to be low resolution"): the covers' title and
+// step line grow with the screen (SporeKit 0.3.18's sized text: 22 and 18 px at 1080p, 29 and 24 at 1440p) and are
+// centred by their measured width. Off, or an older SporeKit: the fixed 18 px font centred by the 9 px per letter guess.
+static bool g_cover_text = true;
+COOP_FIX("ui.cover_text_scale", "BUG-9261", g_cover_text,
+         "ui: the loading and pause covers' text grows with the screen and is centred by its measured width");
+static bool kit_sized_text()
+{
+    return H->size >= offsetof(SkHost, overlay_text_px) + sizeof(void*) && H->overlay_text_px;
+}
+// title (white) at y, step (gold) under it, both centred on cx; returns nothing, draws in SK_EV_OVERLAY only
+static void cover_lines(float cx, float y, int sh, const char* title, const std::string& step)
+{
+    if (!g_cover_text || !kit_sized_text()) {
+        bold((int)(cx - text_width(title) / 2.f), (int)y, 0xFFFFFFFFu, title);
+        H->overlay_text((int)(cx - text_width(step) / 2.f), (int)y + 22, 0xFFF0C040u, step.c_str());
+        return;
+    }
+    const float k = std::max(1.f, sh / 1080.f);
+    const int tp = std::min(64, (int)std::lround(22.f * k)), sp = std::min(54, (int)std::lround(18.f * k));
+    const int tw = H->overlay_text_px(0, 0, 0, title, tp, 1), stw = H->overlay_text_px(0, 0, 0, step.c_str(), sp, 1);
+    H->overlay_text_px((int)std::lround(cx - tw / 2.f), (int)y, 0xFFFFFFFFu, title, tp, 0);
+    H->overlay_text_px((int)std::lround(cx - stw / 2.f), (int)std::lround(y + tp + 4.f * k), 0xFFF0C040u, step.c_str(), sp, 0);
+}
 static void draw_downed_hud(int sw, int sh)
 {
     std::memset(g_spec_btn, 0, sizeof g_spec_btn);
@@ -6652,8 +6913,7 @@ void on_overlay(void*, int, void*)
                                      : in_stage ? "Final touches..."
                                      : saving ? host + " is saving the world..."
                                      : "Loading...";
-            bold((int)(cx - text_width(title.c_str()) / 2.f), (int)(cy + r + 18), 0xFFFFFFFFu, title.c_str());
-            H->overlay_text((int)(cx - text_width(step) / 2.f), (int)(cy + r + 40), 0xFFF0C040u, step.c_str());
+            cover_lines(cx, cy + r + 18.f * std::max(1.f, sh / 1080.f), sh, title.c_str(), step);
             return; // nothing else over the loading screen
         }
     }
@@ -6667,10 +6927,8 @@ void on_overlay(void*, int, void*)
             if ((hs.flags & net::PF_PAUSED) && same_place(hs) && it->second.buf.age(H->time_seconds()) < 3.0) {
                 const float cx = sw / 2.f, cy = sh * 0.45f;
                 ring_timer::loading(H, sw, sh, cx, cy, 0.f, 0.f, H->time_seconds());
-                const char* title = "Paused by host";
-                bold((int)(cx - text_width(title) / 2.f), (int)(cy - 10), 0xFFFFFFFFu, title);
                 const std::string step = g_sess.name_of(0) + " paused the game";
-                H->overlay_text((int)(cx - text_width(step) / 2.f), (int)(cy + 14), 0xFFF0C040u, step.c_str());
+                cover_lines(cx, cy - 10.f * std::max(1.f, sh / 1080.f), sh, "Paused by host", step);
                 return; // nothing else over the cover
             }
         }
@@ -6694,9 +6952,7 @@ void on_overlay(void*, int, void*)
             const std::string steps[4] = {"Catching up to " + host + "...", "Matching tools...", "Buildings are rising...",
                                           "Final touches..."};
             const char* title = civ_wait ? "Founding your capital" : "Founding your village";
-            bold((int)(cx - text_width(title) / 2.f), (int)(cy + r + 18), 0xFFFFFFFFu, title);
-            const std::string& step = steps[tribe_late::loading_step(p)];
-            H->overlay_text((int)(cx - text_width(step) / 2.f), (int)(cy + r + 40), 0xFFF0C040u, step.c_str());
+            cover_lines(cx, cy + r + 18.f * std::max(1.f, sh / 1080.f), sh, title, steps[tribe_late::loading_step(p)]);
             return; // nothing else over the loading screen
         }
     }
@@ -7325,6 +7581,7 @@ void setup_callbacks()
         coop_ui::remember_server(g_sess.host_address(), g_sess.name_of(0));
     };
     g_sess.cb.disconnected = [](const std::string& why) {
+        host_pause_release(); // BUG-9260
         support::on_disconnected(why);
         rejoin::clear(net::g_fix.join_seen); // the session ended (BUG-0235); kept for this host and name (BUG-1001)
         settings::on_disconnect();
@@ -7881,6 +8138,14 @@ void setup_callbacks()
         if (g_sess.role() == net::Role::Client && from == 0)
             world::on_message(type, r, g_sess.name_of(0));
     };
+    { // BUG-9257: each message's time (the frame profiler)
+        auto inner = g_sess.cb.custom;
+        g_sess.cb.custom = [inner](uint8_t type, uint8_t from, net::Reader& r) {
+            const double t0 = fprof::qpc();
+            inner(type, from, r);
+            fprof::message(type, fprof::qpc() - t0);
+        };
+    }
     g_sess.cb.old_peer = [](uint8_t, const std::string& name) { // BUG-0219: once per player and join
         // the log line (net: ... older SporeCoop) says what is lost: long chat cut, no species table
         feed_kind(name + " has an older SporeCoop: update both games to the latest", "info");
@@ -10326,6 +10591,7 @@ int g_ini_auto_load = 1, g_ini_share_npcs = 1, g_ini_update = 1, g_ini_sync = 30
 void support_init()
 {
     g_ini_auto_load = H->config_int(M, "coop", "auto_load_world", 1);
+    fprof::g_on = H->config_int(M, "diag", "frame_prof", 1) != 0; // BUG-9257: the frame profiler's prof lines
     g_ini_share_npcs = H->config_int(M, "coop", "share_npcs", 1);
     g_ini_update = H->config_int(M, "update", "check", 1);
     g_ini_sync = H->config_int(M, "coop", "sync_check", 30);

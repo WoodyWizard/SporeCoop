@@ -186,6 +186,7 @@ SkHost g_host = {
     h_report_shot,
     h_report_shot_pending,
     overlay_tris,
+    overlay_text_px,
 };
 
 } // namespace sk

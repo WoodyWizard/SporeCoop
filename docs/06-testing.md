@@ -9001,3 +9001,14 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   further migrations for 300 s (BUG-9163's round), the host included (it does not pass them on then): wait that long
   between two runs. A save at the top brain level has no natural migration left (AddEvolutionPoints only gives the
   "top of the food chain" box).
+## The frame profiler (2026-11-18, feat/lineages-47)
+<a id="testing-frame-profiler"></a>
+
+* `fprof` in coop.cpp (BUG-9257): `on_frame` is cut into its calls (a mark after each top-level statement, about 100)
+  and the session's custom messages are timed by type. A call over 50 ms is logged at once (`prof: <call> took N ms`,
+  12 lines a minute at most); once a minute `prof: this minute (...)` lists the 8 slowest calls (max ms in one frame /
+  ms in all / frames over 10 ms) and the messages by type. `[diag] frame_prof=0` turns it off.
+* It found BigTexas' 1 Hz pause in one run: `parts::tick` 54-106 ms every second on a guest in Creature.
+* Pitfalls: QA games run at 10 FPS (`frame_ms=100`), so "frames with an interval over 80 ms" counts every frame
+  there; the call times are still right. Another game on the same PC (the owner playing) slows every section: a run
+  then shows everything slow, not one culprit.

@@ -455,6 +455,14 @@ static void* home_nest()
     return f.nest;
 }
 
+bool told_home(net::Vec3& out)
+{
+    if (!g_home_fix || g_host_home_at < 0 || H->time_seconds() - g_host_home_at > 5)
+        return false;
+    out = g_host_home;
+    return true;
+}
+
 void* home_herd()
 {
     if (!g_home_fix || g_host_home_at < 0 || H->time_seconds() - g_host_home_at > 5 || !game::in_creature_stage())

@@ -8,7 +8,7 @@ reported: 2026-11-11
 source: owner report on 0.7.8-lineages46-dev
 role: all
 versions: 0.7.8-lineages46-dev
-fixed_in:
+fixed_in: 0.7.8-lineages47-dev
 branch: feat/lineages-47
 commits:
 tests: QA single instance, Creature editor (Samuth's creature), coop.depth nudge on every depth part, see Verification

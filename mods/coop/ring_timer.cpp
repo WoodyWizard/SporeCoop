@@ -45,13 +45,22 @@ void loading(const SkHost* host, int sw, int sh, float x, float y, float radius,
     IDirect3DSurface9* back = nullptr;
     D3DSURFACE_DESC bd{};
     if (SUCCEEDED(device->GetRenderTarget(0, &back)) && SUCCEEDED(back->GetDesc(&bd))) {
-        IDirect3DSurface9 *quarter = nullptr, *tiny = nullptr;
-        const UINT qw = std::max<UINT>(1, bd.Width / 4), qh = std::max<UINT>(1, bd.Height / 4);
-        const UINT tw = std::max<UINT>(1, bd.Width / 16), th = std::max<UINT>(1, bd.Height / 16);
-        if (SUCCEEDED(device->CreateRenderTarget(qw, qh, bd.Format, D3DMULTISAMPLE_NONE, 0, FALSE, &quarter, nullptr)) &&
-            SUCCEEDED(device->CreateRenderTarget(tw, th, bd.Format, D3DMULTISAMPLE_NONE, 0, FALSE, &tiny, nullptr)) &&
-            SUCCEEDED(device->StretchRect(back, nullptr, quarter, nullptr, D3DTEXF_LINEAR)) &&
-            SUCCEEDED(device->StretchRect(quarter, nullptr, tiny, nullptr, D3DTEXF_LINEAR))) {
+        // BUG-9261 (owner 2026-11-18: the loading screens "seem to be low resolution"): the frame went to 1/4 and 1/16
+        // and back in two steps: at 2560x1440 the 1/16 copy (160x90) came back as blocks. Now it halves step by step to
+        // 1/16 and comes back the same way (each step filtered: a smooth blur at any size)
+        constexpr int kLevels = 4; // 1/2, 1/4, 1/8, 1/16
+        IDirect3DSurface9* lv[kLevels] = {};
+        bool ok = true;
+        for (int i = 0; i < kLevels && ok; i++) {
+            const UINT w = std::max<UINT>(1, bd.Width >> (i + 1)), h = std::max<UINT>(1, bd.Height >> (i + 1));
+            ok = SUCCEEDED(device->CreateRenderTarget(w, h, bd.Format, D3DMULTISAMPLE_NONE, 0, FALSE, &lv[i], nullptr)) &&
+                 SUCCEEDED(device->StretchRect(i ? lv[i - 1] : back, nullptr, lv[i], nullptr, D3DTEXF_LINEAR));
+        }
+        if (ok) {
+            IDirect3DSurface9* tiny = lv[kLevels - 1];
+            D3DSURFACE_DESC td{};
+            tiny->GetDesc(&td);
+            const UINT tw = td.Width, th = td.Height;
             // BUG-9202: how bright the game's own frame is under the screen (the 1/16 copy read back, 32-bit formats):
             // the game is in the stage mode while it still shows black for up to ~10 s
             IDirect3DSurface9* sys = nullptr;
@@ -71,11 +80,14 @@ void loading(const SkHost* host, int sw, int sh, float x, float y, float radius,
                 }
             }
             if (sys) sys->Release();
-            if (SUCCEEDED(device->StretchRect(tiny, nullptr, quarter, nullptr, D3DTEXF_LINEAR)))
-                device->StretchRect(quarter, nullptr, back, nullptr, D3DTEXF_LINEAR);
+            bool up = true;
+            for (int i = kLevels - 1; i > 0 && up; i--)
+                up = SUCCEEDED(device->StretchRect(lv[i], nullptr, lv[i - 1], nullptr, D3DTEXF_LINEAR));
+            if (up)
+                device->StretchRect(lv[0], nullptr, back, nullptr, D3DTEXF_LINEAR);
         }
-        if (tiny) tiny->Release();
-        if (quarter) quarter->Release();
+        for (auto* l : lv)
+            if (l) l->Release();
     }
     if (back) back->Release();
     IDirect3DStateBlock9* saved = nullptr;

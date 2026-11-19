@@ -16,6 +16,7 @@
 #include "own_world.h"
 #include "game.h"
 #include "modes.h"
+#include "nest.h"
 #include "net/protocol.h"
 #include "sporekit_game.hpp"
 
@@ -828,6 +829,9 @@ static bool g_nest_fix = true;
 COOP_FIX("wsync.creature_nest", "BUG-0640", g_nest_fix,
          "wsync: a guest's game migrates to the host's new nest (goal, claim, respawn, heal) without a world load");
 constexpr uint32_t kMigrationProp = 0x514A219;
+static bool g_told_home_fix = true;
+COOP_FIX("wsync.nest_told_home", "BUG-9259", g_told_home_fix,
+         "wsync: a guest follows a migration only to the home nest the host names for it (its own nest, not the host's)");
 static unsigned g_mig_started;
 static bool creature_mode(uint32_t m) { return m == modes::kCreature; }
 static int migration_state(void* p)
@@ -911,6 +915,11 @@ static int s_nest(const Table& want, bool apply)
         return 0;
     if (hst == 0 && nest_dist(target, host) >= kSameNest)
         return 0; // this game's next nest is not the host's: nothing to follow
+    // BUG-9259: the host tells each player its home (its own seat's nest since the per-player nests). A player of its own
+    // species followed the host species' migration to the host's new nest, while the host kept naming its own nest:
+    // the two rules pulled the home both ways for good (no family, no mate). Followed only to the nest the host names.
+    if (net::Vec3 told; g_told_home_fix && nest::told_home(told) && nest_dist(target, told) >= kSameNest)
+        return 0;
     if (!apply)
         return 1;
     uintptr_t set = S("SporeCoop::Player_SetProperty");

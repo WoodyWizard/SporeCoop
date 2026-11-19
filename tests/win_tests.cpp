@@ -498,6 +498,14 @@ static void test_party()
     auto other = party;
     other.seats[1].player = 0x3333;                       // never given to someone else
     CHECK(!founders::record_party(key, other, err));
+    // BUG-9259: a seat the host handed over on purpose (its player is not here) may change player; no other seat
+    {
+        founders::Party handed = party;
+        handed.seats[1].player = 0x7777;
+        CHECK(!founders::record_party(key, handed, err, 1u << 0) && founders::record_party(key, handed, err, 1u << 1));
+        CHECK(founders::read_party(key, got) && got.seat_of(0x7777) == 1);
+        CHECK(founders::record_party(key, party, err, 1u << 1)); // (back for the checks below)
+    }
     auto fewer = party;
     fewer.seats.pop_back();                               // never loses a seat
     CHECK(!founders::record_party(key, fewer, err));
@@ -2298,7 +2306,7 @@ static DWORD WINAPI lock_holder(void* a)
     return 0;
 }
 
-static void test_uninstall()
+static void test_uninstall_loader()
 {
     printf("setup: uninstall (BUG-0851)\n");
     std::string msg;
@@ -2540,7 +2548,7 @@ int main(int argc, char** argv)
     test_setup_packs();
     test_setup_close();
     test_install_bat();
-    test_uninstall();
+    test_uninstall_loader(); // (renamed: the upstream merge gave two tests one name and the file did not compile)
     test_uninstall_bat();
     test_ga_folder();
     test_setup_ga_window();
