@@ -3925,5 +3925,6 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 
 * BUG-9264. A fresh guest that made its first creature (the start editor, BUG-9263) and plays it in the host's world
   sees another creature in the Creature HUD's portrait (bottom right). Cosmetic.
+* Fixed 2026-11-19 (unreleased, ec783b75): the portrait check knew only the GOG 2016 drawable; it is set by key now.
 * Reproduce: host a Creature world, join from a new profile, make and save the first creature; on the guest
   `coop.portrait` says `image=00000000 ... same=-1 sets=0` (no png for the new species' key).
