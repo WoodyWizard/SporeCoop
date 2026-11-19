@@ -56,7 +56,7 @@ Why not the other stages (initially):
 | Guest attack/ability on an NPC | guest sends "ability X on target Y", host computes damage | animation for everyone, target health from the host |
 | Damage to a guest from an NPC | host | guest receives a damage event |
 | Guest death | - | respawns at the host's nest after 10 s |
-| DNA | host's shared pool: a kill/befriend by any player gives DNA to everyone within 50 m; each gain counts 1/N with N players in the world, so the party evolves at the single-player pace (`dna_pace=1` in `mods\coop.ini` [coop] on the host; 0 = every gain whole, BUG-0510) | single progress bar |
+| DNA | own DNA per player (0.7.16, BUG-1291, [own DNA](#gameplay-own-dna)): a kill/befriend by any player gives DNA to everyone (every player's DNA rises alike), each player's editor spends only its own; the session setting `all.shared_dna` brings back the host's one shared pool. Each gain counts 1/N with N players in the world, so the party evolves at the single-player pace (`dna_pace=1` in `mods\coop.ini` [coop] on the host; 0 = every gain whole, BUG-0510) | the party's progress bar |
 | Body parts (bones, finds) | shared unlocks | - |
 | Mating call → editor | host decides when; guests wait in an "editor lobby" | M4: everyone edits their own creature |
 | Transition to the Tribe stage | session ends cleanly with a message | - |
@@ -107,3 +107,29 @@ Players trust each other (co-op with friends): there is no anti-cheat, the guest
 All players share the same star map, so a guest in Space can
 "fly into" the host's system: the host's UFO is visible, joint fights with pirates/epics,
 shared events in the system. Requires separate RE of the space simulator.
+
+## Own DNA per player (2026-11-19, feat/w56-dna)
+<a id="gameplay-own-dna"></a>
+
+WP-D of docs/plan-0.7.16.md, BUG-1291, owner decision 2026-11-19 ("each player has its own DNA by default; a session
+setting turns on the old shared pool; Rivals always separate"). Model "party income, own wallet" (design: the Lineages
+fork's idea, ported per out/research/lineages-systems.md section D; their MSG_DNA_OWN and guest-side worlds.ini are not
+ported). Code: `mods/coop/dna_own.h` (portable, tests/dna_tests.cpp), `dna.cpp` (the host's wallets), `session_glue.cpp`
+(MSG_DNA / MSG_DNA_ADD), `cellsync.cpp` + `wsync.cpp` (Cell).
+
+| Question | Answer |
+|---|---|
+| What a guest's editor spends from | its own game's DNA (GetEvolutionPoints in Creature, DNAForFood(food) - S+0x2C in Cell), which the host's MSG_DNA sets to the guest's own wallet; the spend goes to the host (MSG_DNA_ADD < 0, BUG-0466's path; Cell: MSG_CELL_FOOD's spend, BUG-1249's path) and comes off that guest's wallet only, never off the host's game |
+| Income | every gain of the party (anybody's, the game's own rewards, a guest's forwarded gain, owed and solo DNA, goal cards) raises the host's evolution bar; each frame in Creature the host adds its bar step to every wallet of the world. Cell: the food is the party's (MSG_CELL_FOOD), so DNAForFood(food) is everybody's income |
+| The progress bar | the party's: the host's cPlayer +0x10F0 goes in MSG_DNA's tail, a guest raises its bar to it (never lowers it) and then sets its budget with SetEvolutionPoints |
+| The host's save | only the host's own DNA and the party's bar (the game's own fields); nothing of a guest's wallet is written into the host's game, so no save strip is needed |
+| A guest's DNA kept | in the host's memory and the host's per-player store (record `dna.own` v1: the Creature budget and the Cell spent count with their worlds), written after every save of the host; read when the host's world opens; a reconnect finds it by the guest's stable key; a reload of the host's world rolls it back with the host's own DNA |
+| First sight | a guest without a wallet in this world starts with the host's DNA (Cell: the host's spent count): an old shared-pool save gives every guest what it saw before |
+| Shared setting | `all.shared_dna` (All stages, Session, default off = own; read as off in Rivals mode). Also shared: `creature.mode` host (one creature, only the host evolves) |
+| A 0.7.15.2 peer | a guest whose mod is older (creature / npc family minor < 2) plays the shared pool with the host as in 0.7.15 (it gets the host's total, its spends come off the host's DNA); a new guest of an older host gets no tail and plays the shared pool. Nothing new reaches an old peer but the trailing bytes after MSG_DNA's pace byte (read by nobody there) and the wsync row id 19 (skipped as unknown) |
+| Switches | `creature.own_dna` (off: one pool, 0.7.15), `creature.dna_bar_set` (off: the guest moves its DNA with AddEvolutionPoints: its bar runs ahead after a reload), `creature.own_dna_store` (off: a guest starts again at the host's DNA after the host's world opens again) |
+| Pace | `all.dna_pace` paces the party's income: with it on every player has a solo game's DNA; with it off every player gets every gain whole (N times a solo game's DNA) |
+
+Not covered: a guest's own editor opened in the first 2 s after its game loaded the host's world shows the host's
+saved DNA until the next total (the host resends every 2 s); Rivals' own income ("keep what I hunt", model O) is 0.8.
+

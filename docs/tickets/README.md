@@ -1285,3 +1285,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1281](BUG-1281-a-peer-running-the-lineages-fork-joins-a-session.md) | open | bug | All | 2026-11-19 |  | A peer running the Lineages fork joins a session unrefused and its messages decode as ours |
 | [BUG-1289](BUG-1289-wp-s1a-a-guest-without-an-own-creature-in-this-w.md) | open | bug | Tribe, Civ | 2026-11-19 |  | WP-S1a: a guest without an own creature in this world plays the host's species in Tribe and Civ and cannot pick its own |
 | [BUG-1290](BUG-1290-wp-s1b-a-guest-that-missed-the-end-of-tribe-neve.md) | open | bug | Civ | 2026-11-19 |  | WP-S1b: a guest that missed the end of Tribe never gets its own City Hall and vehicle editors in Civ |
+| [BUG-1291](BUG-1291-wp-d-own-dna-per-player-creature-and-cell-shared.md) | open | feature | Cell, Creature | 2026-11-19 |  | WP-D: own DNA per player (Creature and Cell), shared pool as a session setting |

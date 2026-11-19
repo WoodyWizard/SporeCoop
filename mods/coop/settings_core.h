@@ -27,6 +27,7 @@ enum Id : int {
     kPartnerArrows,  // all stages: an arrow to every partner off screen (F2 draws it); off in Rivals mode
     kPartnerMap,     // Creature, Tribe: the partners on the game's minimap as triangles in their colour (F2)
     kDnaPace,        // all stages: DNA / food at the single-player pace (BUG-0510, dna_pace.h)
+    kSharedDna,      // Cell, Creature: one DNA pool for the party (1) or every player's own DNA (0, WP-D, dna_own.h)
     kNpcTargets,     // Creature: the host's NPC animals treat partners like the host's creature (npc.cpp)
     kPackRescue,     // Creature: a deadly hit near a partner leaves 40 % health (teamplay.cpp)
     kPackHeal,       // Creature: partners heal each other nearby (teamplay.cpp tick)
@@ -83,8 +84,11 @@ inline const Def kDefs[kCount] = {
      "on: every partner shows on the minimap (Creature, Tribe) as a triangle in its colour; off: not shown",
      1, 0, 1, Scope::Live, nullptr, false},
     {"all.dna_pace", "All stages", "Progress at the single-player pace",
-     "on: every gain of DNA / food counts 1/N for N players (a solo game's pace); off: every player's gain counts whole",
+     "on: every gain of DNA / food counts 1/N for N players (a solo game's pace; with own DNA every player then gets a solo game's DNA); off: every gain counts whole (with own DNA every player gets every gain whole)",
      1, 0, 1, Scope::Session, "dna_pace", false},
+    {"all.shared_dna", "All stages", "Shared DNA",
+     "on: one DNA pool for the party (Cell, Creature): every player's editor spends from it; off: every player has its own DNA, every gain counts for everybody, a player's editor spends only its own (always off in Rivals mode)",
+     0, 0, 1, Scope::Session, nullptr, true},
     {"creature.npcs_target_partners", "Creature", "NPC animals treat partners like the host",
      "on: the host's animals notice, chase and attack every player's creature; off: only the host's own",
      1, 0, 1, Scope::Session, "npcs_target_partners", false},

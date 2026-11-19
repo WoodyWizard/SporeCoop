@@ -545,6 +545,36 @@ static std::string f_spend_ack(const Entry& e)
     snprintf(g_fmt, sizeof g_fmt, "player %u spend meal %u", e.key, e.v[0]);
     return g_fmt;
 }
+// ---- row: Cell, every guest's own spent count (WP-D, BUG-1291, dna_own.h: own DNA per player; key the player, v0 its
+// count). Sent with cell_spent; the guest takes its entry when the message arrives (on_message), before cell_spent of
+// the same message is applied, and shows DNAForFood(food) minus its own count. An older guest ignores the row.
+static bool r_spent_own(Table& out)
+{
+    std::vector<std::pair<int, int>> rows;
+    if (!cellsync::own_spent_rows(rows))
+        return false;
+    for (auto& [id, v] : rows) {
+        Entry e;
+        e.key = (uint32_t)id;
+        e.v[0] = (uint32_t)v;
+        out.push_back(e);
+    }
+    return true;
+}
+static int s_spent_own(const Table& want, bool apply)
+{
+    if (!apply || !C.sess)
+        return 0;
+    for (auto& e : want)
+        if (e.key == C.sess->my_id())
+            cellsync::own_spent_heard((int)e.v[0]);
+    return 0;
+}
+static std::string f_spent_own(const Entry& e)
+{
+    snprintf(g_fmt, sizeof g_fmt, "player %u own spent=%d", e.key, (int)e.v[0]);
+    return g_fmt;
+}
 static std::string f_spent(const Entry& e)
 {
     snprintf(g_fmt, sizeof g_fmt, "spent=%d budget=%d", (int)e.v[0], (int)e.v[1]);
@@ -1507,6 +1537,7 @@ static const Row kRows[] = {
     {16, "tribe_outfit", 6, &designs::g_outfit_fix, tribe_mode, r_outfit, s_outfit, false, f_outfit}, // BUG-1156
     {17, "civ_design", 3, &designs::g_civ_fix, civ_mode, r_design, s_design, false, f_design},       // BUG-1157
     {18, "cell_spend_ack", 1, &kRowOn, cell_mode, r_spend_ack, s_spend_ack, false, f_spend_ack},     // BUG-1249
+    {19, "cell_spent_own", 1, &kRowOn, cell_mode, r_spent_own, s_spent_own, false, f_spent_own},     // WP-D, BUG-1291
 };
 constexpr int kNRows = sizeof kRows / sizeof kRows[0];
 
@@ -1704,6 +1735,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& rd)
                 g_guest[i].received++;
                 if (kRows[i].sync == s_spend_ack) // BUG-1249: before cell_spent of the same message is applied
                     s_spend_ack(g_guest[i].want, true);
+                if (kRows[i].sync == s_spent_own) // WP-D: likewise
+                    s_spent_own(g_guest[i].want, true);
                 break;
             }
     }

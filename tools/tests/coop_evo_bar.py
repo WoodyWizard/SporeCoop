@@ -19,7 +19,10 @@ Creature fixture. Checked on both games, the game's own values (GetEvolutionPoin
       editor open at once, each adds a part (real input) and presses done: both bars unchanged, the same DNA
       on both, the pool lower and not below 0 (two mouths of 25 on a pool of 45: the players' overspend).
 
-  coop_evo_bar.py [--case script|editors]    (creature.bar_spend off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-174018:evo_bar))
+WP-D of 0.7.16 (BUG-1291): own DNA per player is the default: a spend lowers only the spender's DNA (the other's stays,
+and both bars stay); --shared forces the old shared pool (all.shared_dna on) and checks the steps above as written.
+
+  coop_evo_bar.py [--case script|editors] [--shared]    (creature.bar_spend off failed (retired in 0.7.15, BUG-1138: FAIL run 20261106-174018:evo_bar))
 """
 import re
 import sys
@@ -29,8 +32,10 @@ from harness import waiter
 from coop_editor_sync import CANCEL, DONE, SAVE_NEW, add_part, back, confirm_captions, editor_ui, in_editor, mode
 from coop_ui import Ui
 from twoinst import Checks, shot, start
+import dna_mode
 
 CASE = sys.argv[sys.argv.index('--case') + 1] if '--case' in sys.argv else 'script'
+SHARED = [True]  # the session plays one shared DNA pool (set in main, dna_mode)
 
 
 def read(con):
@@ -43,12 +48,12 @@ def read(con):
 
 
 def settle(host, guest, secs=20):
-    """both games show the same DNA, and nothing moves for 3 s: ((dna, bar) host, (dna, bar) guest)"""
+    """both games show the same DNA (with own DNA: any), and nothing moves for 3 s: ((dna, bar) host, (dna, bar) guest)"""
     t0, since, last = time.time(), None, None
     while time.time() - t0 < secs:
         h, g = read(host), read(guest)
         now = (h, g)
-        if h[0] is not None and g[0] is not None and abs(h[0] - g[0]) < 1 and now == last:
+        if h[0] is not None and g[0] is not None and (abs(h[0] - g[0]) < 1 or not SHARED[0]) and now == last:
             since = since or time.time()
             if time.time() - since >= 3:
                 return h, g
@@ -95,21 +100,32 @@ def script_case(host, guest, ck):
         for con, n in spends:
             con.call(f'coop.dna spend {n}')
         total = sum(n for _, n in spends)
+        time.sleep(0 if SHARED[0] else 4)  # own DNA: two resends of the host's totals must not change it
         h1, g1 = settle(host, guest)
         show(what, h1, g1)
-        ck(near(h1[0], h0[0] - total) and near(g1[0], g0[0] - total),
-           f'{what}: the shared DNA fell by {total} on both games ({h0[0]} -> {h1[0]} / {g0[0]} -> {g1[0]})')
+        if SHARED[0]:
+            ck(near(h1[0], h0[0] - total) and near(g1[0], g0[0] - total),
+               f'{what}: the shared DNA fell by {total} on both games ({h0[0]} -> {h1[0]} / {g0[0]} -> {g1[0]})')
+        else:  # WP-D: each game only by its own spend
+            th, tg = sum(n for c, n in spends if c is host), sum(n for c, n in spends if c is guest)
+            ck(near(h1[0], h0[0] - th) and near(g1[0], g0[0] - tg),
+               f'{what}: own DNA: the host fell by {th}, the guest by {tg} ({h0[0]} -> {h1[0]} / {g0[0]} -> {g1[0]})')
         ck(near(h1[1], h0[1]), f"{what}: the host's evolution bar unchanged ({h0[1]} -> {h1[1]})")
         ck(near(g1[1], g0[1]), f"{what}: the guest's evolution bar unchanged ({g0[1]} -> {g1[1]})")
         h0, g0 = h1, g1
     # 5. more than the pool at once: never below 0
-    n = int(h0[0] * 0.75) + 1
+    n = int(min(h0[0], g0[0]) * 0.75) + 1
     host.call(f'coop.dna spend {n}')
     guest.call(f'coop.dna spend {n}')
+    time.sleep(0 if SHARED[0] else 4)
     h1, g1 = settle(host, guest)
-    show(f'both spend {n} of {h0[0]} at once', h1, g1)
-    ck(h1[0] is not None and g1[0] is not None and h1[0] >= 0 and g1[0] >= 0 and near(h1[0], g1[0]),
-       f'an overspend: the DNA is not below 0 and the same on both ({h1[0]} / {g1[0]})')
+    show(f'both spend {n} of {h0[0]} / {g0[0]} at once', h1, g1)
+    if SHARED[0]:
+        ck(h1[0] is not None and g1[0] is not None and h1[0] >= 0 and g1[0] >= 0 and near(h1[0], g1[0]),
+           f'an overspend: the DNA is not below 0 and the same on both ({h1[0]} / {g1[0]})')
+    else:
+        ck(near(h1[0], h0[0] - n) and near(g1[0], g0[0] - n),
+           f'own DNA: each paid its {n} from its own DNA ({h0[0]} -> {h1[0]} / {g0[0]} -> {g1[0]})')
     ck(near(h1[1], h0[1]) and near(g1[1], g0[1]),
        f'an overspend: both bars unchanged (host {h0[1]} -> {h1[1]}, guest {g0[1]} -> {g1[1]})')
 
@@ -166,9 +182,13 @@ def editors_case(host, guest, ck):
     show('after both editors', h1, g1)
     shot(host, 'evo_bar_host_after.png')
     shot(guest, 'evo_bar_guest_after.png')
-    ck(near(h1[0], g1[0]), f'both games show the same DNA ({h1[0]} / {g1[0]})')
-    ck(h1[0] is not None and h0[0] is not None and 0 <= h1[0] < h0[0] - 0.5,
-       f'the two editors took their prices from the shared pool, not below 0 ({h0[0]} -> {h1[0]})')
+    if SHARED[0]:
+        ck(near(h1[0], g1[0]), f'both games show the same DNA ({h1[0]} / {g1[0]})')
+        ck(h1[0] is not None and h0[0] is not None and 0 <= h1[0] < h0[0] - 0.5,
+           f'the two editors took their prices from the shared pool, not below 0 ({h0[0]} -> {h1[0]})')
+    else:  # WP-D: each editor from its own DNA (coop_dna_own.py --case editors checks the prices apart)
+        ck(h1[0] is not None and g1[0] is not None and 0 <= h1[0] < h0[0] - 0.5 and 0 <= g1[0] < g0[0] - 0.5,
+           f'own DNA: each editor took its price from its own DNA, not below 0 ({h0[0]} -> {h1[0]} / {g0[0]} -> {g1[0]})')
     ck(near(h1[1], h0[1]), f"the host's evolution bar unchanged by the two editors ({h0[1]} -> {h1[1]})")
     ck(near(g1[1], g0[1]), f"the guest's evolution bar unchanged by the two editors ({g0[1]} -> {g1[1]})")
 
@@ -180,7 +200,11 @@ def main():
     host, guest = start('creature')
     ck = Checks()
     time.sleep(4)
-    (editors_case if CASE == 'editors' else script_case)(host, guest, ck)
+    SHARED[0] = dna_mode.setup(host, guest, ck)
+    try:
+        (editors_case if CASE == 'editors' else script_case)(host, guest, ck)
+    finally:
+        dna_mode.teardown(host, guest)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

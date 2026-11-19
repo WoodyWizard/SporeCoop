@@ -17,6 +17,9 @@ done without a change.
   --case spend  BUG-0466's class (G6): the guest's own game spends DNA (AddEvolutionPoints -25, no
                 editor): the host's total loses it and the guest's game keeps it.
 
+  WP-D of 0.7.16 (BUG-1291): own DNA per player is the default: in --case guest and spend the guest's game keeps its
+  spend and the host's DNA does NOT lose it; --shared (all.shared_dna on) checks the shared pool as written above.
+
   coop_editor_sync.py --case host|guest|spend   (host: SPORE_FIX_OFF=creations.editor_species fails; guest:
   creations.own_editor_dna and spend: core.dna_spend off failed, both retired in 0.7.15, BUG-1138: FAIL runs
   20261103-143445:editor_sync_guest and 20261103-143105:dna_spend)
@@ -28,6 +31,7 @@ import time
 from harness import field_dotall as field, mode, waiter
 from coop_ui import Ui
 from twoinst import Checks, shot, start
+import dna_mode
 
 DONE = (1416, 1062)    # the creature editors' green check (1440x1080 test window)
 CANCEL = (1383, 1062)  # the red cross
@@ -103,6 +107,7 @@ def main():
     ck = Checks()
     gu = Ui(guest, 'guest')
     time.sleep(3)
+    shared = dna_mode.setup(host, guest, ck)  # WP-D (BUG-1291): own DNA by default; --shared: the old pool
     m0 = mode(host)
     hk0 = avatar_key(host)
     d_h0, d_g0 = dna(host), dna(guest)
@@ -124,8 +129,12 @@ def main():
             samples.append((dna(host), dna(guest)))
         d_h1, d_g1 = samples[-1]
         print(f'  DNA after: host {d_h0} -> {d_h1}, guest {d_g0} -> {d_g1} (samples {samples})', flush=True)
-        ck(d_h1 is not None and abs(d_h1 - (d_h0 - 25)) < 1, "the guest's spend left the party's total on the host's game")
+        if shared:
+            ck(d_h1 is not None and abs(d_h1 - (d_h0 - 25)) < 1, "the guest's spend left the party's total on the host's game")
+        else:
+            ck(d_h1 is not None and abs(d_h1 - d_h0) < 1, "own DNA: the guest's spend left the host's DNA alone")
         ck(d_g1 is not None and abs(d_g1 - (d_g0 - 25)) < 1, "the guest's game kept its spend (not given back by the host's next total)")
+        dna_mode.teardown(host, guest)
         ck.faults(host=host, guest=guest)
         return ck.result()
     rounds = 2 if case == 'host2' else 1  # host2: a second evolution of the species the first one made
@@ -266,9 +275,13 @@ def main():
             time.sleep(2)
         d_h1, d_g1 = samples[-1]
         print(f'  DNA after: host {d_h0} -> {d_h1}, guest {d_g0} -> {d_g1} (samples {samples})', flush=True)
-        ck(d_h1 is not None and d_h1 <= d_h0 - spent + 1, "the guest's spend left the party's total on the host's game")
+        if shared:
+            ck(d_h1 is not None and d_h1 <= d_h0 - spent + 1, "the guest's spend left the party's total on the host's game")
+            ck(d_h1 is not None and d_g1 is not None and abs(d_h1 - d_g1) < 1, 'both games show the same DNA')
+        else:
+            ck(d_h1 is not None and abs(d_h1 - d_h0) < 1, "own DNA: the guest's editor price left the host's DNA alone")
         ck(d_g1 is not None and d_g1 <= d_g0 - spent + 1, "the guest's game kept its spend (not back to the DNA before the editor)")
-        ck(d_h1 is not None and d_g1 is not None and abs(d_h1 - d_g1) < 1, 'both games show the same DNA')
+    dna_mode.teardown(host, guest)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

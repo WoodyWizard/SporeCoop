@@ -584,6 +584,7 @@ world on its own disk, next to its save:
 | Space Rivals (space_rivalry.cpp) | world `space.rivals` v1 {u8 rivals, u16 n, n x (key, key, u8 relation)}; `space.budget` v1 i32 per player | store.space_rivals | BUG-1152 |
 | Civ owners of cities and vehicles (civ.cpp) | world `civ.owners` v1 (see civ.cpp) | store.civ_owners | BUG-1153 |
 | Tribe owners of members (tribe.cpp) | world `tribe.owners` v1 (see tribe.cpp) | store.tribe_owners | BUG-1154 |
+| Own DNA per player (dna.cpp, dna_own.h) | `dna.own` v1 per player: u32 Creature world, f32 budget, u32 Cell world, i32 spent count | creature.own_dna_store | BUG-1291 |
 
   The Space kept stores (space_kept.h) are keyed by the same stable key (`spaceext::kept_key` = `store::key_of`), so
   `KeptStore::restore()` at world open puts the disk's values where the next join's first report finds them: the
