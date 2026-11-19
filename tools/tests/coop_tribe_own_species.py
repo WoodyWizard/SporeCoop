@@ -287,7 +287,9 @@ def run(host, guest, ck, off_twin):
     switch((host, guest), False)
     res, t = wait_mix({'host': host, 'guest': guest}, slot, 15)  # (off: every member the slot's species)
     for r, c in (('host', host), ('guest', guest)):
-        left = [i for i, x in species(c)[2].items() if x['key'] == gkey]
+        # (BUG-1313: a kid, age != 1, keeps its species while it grows up, also when the switch goes off: the bought
+        # baby of step 3, lab 20261119-123654)
+        left = [i for i, x in species(c)[2].items() if x['key'] == gkey and x['age'] == 1]
         print(f'  {r} with the switch off: members still of the guest\'s species {left}', flush=True)
         ck(not left, f'{r}: with the switch off the guest\'s members are the tribe\'s species again ({left})')
     _, _, ms = species(host)
