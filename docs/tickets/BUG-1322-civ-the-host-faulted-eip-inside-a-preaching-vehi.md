@@ -7,10 +7,10 @@ stage: Civ
 reported: 2026-11-19
 source: lab
 role: host
-versions: 0.7.16 (unreleased)
-fixed_in: unreleased
-branch: fix/w57-sync, fix/w57-crashes
-commits: f2b44601 1defae3e 0ffc91f2
+versions: 0.7.5 .. 0.7.15.3 (code read: the observer since BUG-0477 / BUG-0535), 0.7.16 (unreleased)
+fixed_in: 0.7.15.4
+branch: fix/w57-sync, fix/w57-crashes, fix/w58-hotfix (backport to 0.7.15)
+commits: f2b44601 1defae3e 0ffc91f2 80efe56e 0c247140
 tests: civ_preach_far, civ_shot_objects, civ_shot_objects_off
 signature: exception 0xC0000005 at a heap address inside a vehicle object, stack scan 00BFD8DB 00AE75E0
 docs: docs/re/civ.md#civ-npc-fixture-slots, docs/re/civ.md#civ-shot-observer-targets, docs/06-testing.md#testing-civ-shot-objects
@@ -70,3 +70,5 @@ Test civ_shot_objects (coop_civ_influence.py --case shotobjs, lane 9, fix/w57-cr
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: cause found and fixed on fix/w57-crashes (the shot observer, cCulturalTarget targets).
+- 2026-11-19: backported to the 0.7.15 line (fix/w58-hotfix): the released observer has the same fault since 0.7.5.
+- 2026-11-19: released in 0.7.15.4.

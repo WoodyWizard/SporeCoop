@@ -9631,6 +9631,9 @@ lab 20261119-120449, where the first NPC tribe's TRG_PRE_FirstTribeAppears playe
 players' way with tribe_civ's steps. A host that stands in Tribe 75 s after the City Hall editor with the advance button
 up clicks it again, as a stuck player would. Checked: the game's request after the City Hall editor is a vehicle editor
 (`coop.vote tribeend`: last editor), both games reach Civ, no fault. Twins: `tribe_city_hall_race_off`
+(`coop.vote tribeend`: last editor; on the 0.7.15 line, which has no `coop.vote tribeend` (BUG-1280), the votes
+after an advance in their order: the first is the City Hall's, a later one a vehicle editor's), both games reach Civ,
+no fault. Twins: `tribe_city_hall_race_off`
 (tribe.city_hall_cinematic off: no vehicle editor; the second graduation survives through game.destroy_null) and
 `tribe_city_hall_race_crash` (both off: the fault of the run above). `coop.tribe graduation` prints the hook's counts.
 
@@ -9638,6 +9641,8 @@ up clicks it again, as a stuck player would. Checked: the game's request after t
 <a id="testing-civ-shot-objects"></a>
 
 BUG-1322, `civ_shot_objects` (coop_civ_influence.py --case shotobjs, civ_npc fixture, warm, ~5 min): two religious
+BUG-1322, `civ_shot_objects` (coop_civ_influence.py --case shotobjs; on the 0.7.15 line coop_civ_shot_objects.py,
+fix/w58-hotfix; civ_npc fixture, warm, ~5 min): two religious
 vehicles (spawned with `force`, put on the ground at the nearest NPC city) preach for 45 s; `coop.civ shotobjs` prints
 the shooters and targets of the host's observed shots that were no listed object (evidence, not a check). Then
 `coop.civ shotprobe` hands the shot observer one shot of a listed host vehicle at a fake target whose preceding dword is

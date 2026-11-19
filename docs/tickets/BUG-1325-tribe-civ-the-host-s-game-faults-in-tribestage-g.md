@@ -7,10 +7,10 @@ stage: Tribe
 reported: 2026-11-19
 source: lab
 role: 
-versions: 
-fixed_in: unreleased
-branch: fix/w57-crashes
-commits: f2b44601 1defae3e 0ffc91f2 3ca4a068
+versions: 0.7.15.3 and older (the game's own race; code read), 0.7.16 (unreleased)
+fixed_in: 0.7.15.4
+branch: fix/w57-crashes, fix/w58-hotfix (backport to 0.7.15)
+commits: f2b44601 1defae3e 0ffc91f2 3ca4a068 80efe56e 0c247140
 tests: line_stages, tribe_city_hall_race, tribe_city_hall_race_off, tribe_city_hall_race_crash
 signature: exception 0xC0000005 at 0x00B22566 cGameNounManager::DestroyInstance+0x6 (data 0x20), calls 00CDD43D 00CDECAC 00CDF11C (TribeStage_Graduate+0x34D < TribeStage_EnterUpdate+0x4CC)
 docs: docs/re/tribe.md#tribe-graduation-cinematic, docs/06-testing.md#testing-tribe-city-hall-race
@@ -72,3 +72,5 @@ Test tribe_city_hall_race (coop_tribe_city_hall_race.py, lane 9, fix/w57-crashes
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w57-crashes (cause found: a dropped ShowCityHall, a second graduation; two switches, test with two twins).
+- 2026-11-19: backported to the 0.7.15 line (fix/w58-hotfix): the race and the crash are the same on v0.7.15.3.
+- 2026-11-19: released in 0.7.15.4.
