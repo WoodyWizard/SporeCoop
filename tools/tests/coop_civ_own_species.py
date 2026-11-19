@@ -39,6 +39,7 @@ host's creature): no game has a line for the guest and every city, the guest's t
   SPORE_LANE=6 python3 tools/tests/coop_civ_own_species.py
 """
 import math
+import os
 import re
 import sys
 import time
@@ -46,14 +47,46 @@ import time
 import lane
 import settings_lib
 import sameview as sv
+import twoinst
 from coop_civ import civ, dist
 from coop_creature_e84 import close_boxes
+from coop_nest_species import read_pkg, write_pkg
 from coop_tribe_outfit import keys_in_save
 from play_civ import frame_city
 from twoinst import Checks, keyframe, start
 
 CITIZEN = '18EB4B7'
 HOST_MODE = '--host-mode' in sys.argv
+# BUG-1321: the Civ outfit is a fresh copy of one of the guest's creatures (its metadata's time changed per run), so its
+# line key (from the content) is new on every run and no game has baked it yet: a lane's graphics cache keeps the bake
+# of a key once made (lab 20261119-140235: the twin passed after the fixed run on the same games had baked 7B635F66).
+# Only on a cold start (the guest's My Creations are written before the games start); warm: `test civ next`.
+FRESH = 0x29F00000 | (int(time.time()) & 0xFFFF)
+BEM, META, CRT_GROUP = 0x1A99B06B, 0x030BDEE3, 0x40626200
+_orig_restore = twoinst.restore_creations
+
+
+def restore_with_fresh(guest=True):
+    _orig_restore(guest)
+    p = os.path.join(lane.GUEST_DIR, 'EditorSaves.package')
+    if not guest or not os.path.exists(p):
+        return
+    recs = [r for r in read_pkg(p) if r[2] >> 20 != 0x29F]
+    src = min(i for t, g, i, _ in recs if t == BEM and g == CRT_GROUP)
+    add = []
+    for t, g, i, d in recs:
+        if i != src:
+            continue
+        d = bytearray(d)
+        if t == META and len(d) >= 0x44:
+            if int.from_bytes(d[0x14:0x18], 'big') == src:
+                d[0x14:0x18] = FRESH.to_bytes(4, 'big')  # (its own key)
+            for o in (0x34, 0x3C):  # (the creation and modification times: another content)
+                d[o:o + 8] = (int.from_bytes(d[o:o + 8], 'big') + (FRESH & 0xFFFF) + 1).to_bytes(8, 'big')
+        add.append((t, g, FRESH, bytes(d)))
+    write_pkg(p, recs + add)
+    print(f'  (the guest\'s My Creations: {FRESH:08X}, a fresh copy of {src:08X} for the Civ outfit, '
+          f'{len(add)} records)', flush=True)
 
 
 def species(con):
@@ -118,6 +151,7 @@ def closeup(players, centre, tag, note):
 
 
 def main():
+    twoinst.restore_creations = restore_with_fresh
     host, guest = start('civ_npc')
     players = {'host': host, 'guest': guest}
     ck = Checks()
@@ -132,11 +166,16 @@ def main():
     # 1. the guest plays its own creature (a player's pick in the co-op window; a guest that played it in Creature has
     # it recorded for this world, BUG-0345; the fixture's guest never did): the newest of its My Creations
     mine = re.findall(r'^creature (\w{8}) ', guest.call('coop.creations list')['out'], re.M)
+    fresh = f'{FRESH:08X}' in [m.upper() for m in mine]
+    mine = [m for m in mine if int(m, 16) >> 20 != 0x29F]
     if not ck(mine, f'the guest has creatures of its own ({len(mine)})'):
         return ck.result()
     print('  guest:', guest.call(f'coop.creations choose creature {mine[0]}')['out'].strip(), mine[0], flush=True)
     time.sleep(3)
-    out = guest.call('coop.species test civ next')['out'].strip()  # the guest's Civ outfit (WP-C3's stand-in)
+    # the guest's Civ outfit (WP-C3's stand-in): the fresh copy (a key never baked, BUG-1321), warm: another creature
+    out = guest.call(f'coop.species test civ {FRESH:08X}' if fresh else 'coop.species test civ next')['out'].strip()
+    print(f'  (Civ outfit: {"the fresh copy, a key no game has baked" if fresh else "next (warm start: no fresh copy)"})',
+          flush=True)
     print('  guest:', out, flush=True)
     ck(out.startswith('set'), f'the guest\'s species line takes a Civ outfit ({out})')
     gkey, ckey, skey = {}, {}, {}

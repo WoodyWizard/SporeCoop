@@ -137,8 +137,8 @@ static void refresh_lines()
             }
         }
         // BUG-1321: the game's bake of the species' model, asked for at once (the bake takes seconds; a capture later
-        // finds it done)
-        int st = game::model_baked({k.instance, k.type, k.group}, true);
+        // finds it done; the switch off: not asked, as before)
+        int st = game::model_baked({k.instance, k.type, k.group}, g_fix_own_species_bake);
         if (l.asked < 0) {
             l.asked = H->time_seconds();
             if (st == 0)

@@ -2628,3 +2628,16 @@ cinematic, a share save; the host's meter +0x750 reads 0 right after while the g
 100. A test of the meter converts part of a city (2 of 15: 26.7 on both games, lab 20261119-111559).
 * (fix/w57-sync) The BUG-1286 hook (civ_influence.cpp h_PreachTick) sets a slot's places only when the slot has its live
   spatial object (+0x78 non-null), the fork's verified condition; before, any 0 / 0 slot ticked got 10 / 2.
+
+## A vehicle of a kind the culture has no design for (2026-11-19, fix/w57-civlook)
+<a id="civ-vehicle-no-design"></a>
+
+BUG-1274. GOG 2024, runtime (line_stages).
+* ✔ (runtime, lab 20261119-133307 line_stages, both games) A Civ game started from Tribe has a land vehicle design only
+  for the capital's specialty; a vehicle bought in a captured city of another specialty (military 7D433FAD here, the
+  capital economic) through `coop.civ buy` is made with the model key **{0, 0, 0}** at +0xC4: no model (only the
+  spawn and heal effects are drawn), base max hit points 10 on the host (249 in the guest's mirror). The game's own
+  purchase UI asks for a design first; the lab's buy and a guest's own editor path do not.
+* civ_own_designs.cpp skipped every object with +0xC4 0 ("no model yet"), so the guest's own design never applied.
+  Fix `civ.own_designs_nodesign`: a vehicle with the zero key whose owner has an own design for its id gets it; its
+  culture key is the zero key (written back raw for a save, SetModelKey with it at the end, as cVehicle::Load did).

@@ -13,6 +13,7 @@
 // `coop.fix civ.own_designs off`: every object the culture's design (0.7.15).
 #include "civ_internal.h"
 #include "designs.h"
+#include "savestrip.h"
 #include "species_line.h"
 
 namespace civ {
@@ -50,7 +51,7 @@ struct SaveKept {
     uint32_t key[3];
 };
 static std::vector<SaveKept> g_save_kept;
-static unsigned g_save_unknown;
+static unsigned g_save_unknown, g_save_filtered;
 
 using SetDesign_t = void(SK_THISCALL*)(void*, uint32_t, const uint32_t*);
 static SetDesign_t o_SetDesign;
@@ -245,6 +246,9 @@ void own_designs_save(bool start)
         for (void* b : vec_of((uint8_t*)city + kCityBuildings))
             if (b)
                 each(b, building_did(b));
+    if (start)
+        H->log(M, SK_INFO, "civ: own designs: %u objects carry the culture's key in saves so far, %u without a record, "
+               "%u keys filtered (%zu records, BUG-1274)", g_saves, g_save_unknown, g_save_filtered, g_own.size());
     if (!start)
         g_save_kept.clear();
 }
@@ -279,8 +283,43 @@ static void own_reset()
 static size_t own_held() { return g_own.size(); }
 WORLD_STATE("civ.own_designs", &g_fix, own_reset, own_held);
 
+// BUG-1274 (lab 20261119-140235 civ_own_designs): with every object stripped, the host's save still named the guest's
+// vehicle design key in its main stream (0x01897C18) and the cPlayer record (0x02C21781), and its house design key in a
+// house record (0x018EB106): the game keeps those keys elsewhere too. Every key written into a save goes through the
+// savestrip key filters (BUG-1315, Stream_WriteResourceKey and dword blocks): a design key of a line becomes the culture
+// set's key of that design id (the first id the line names it for; none: the key of none, as a kind without a design).
+static bool save_key_filter(uint32_t k[3])
+{
+    if (!g_fix || !k[0] || (k[1] != 0x24682294u && k[1] != kBuildingModelType))
+        return false;
+    for (uint8_t pid : species::players())
+        for (uint32_t did : species::design_ids(pid)) {
+            creations::Key w = species::design(pid, did);
+            if (w.instance != k[0] || w.type != k[1] || w.group != k[2])
+                continue;
+            uint32_t ck[3] = {};
+            if (!designs::culture_key(did, ck))
+                memset(ck, 0, sizeof ck);
+            memcpy(k, ck, sizeof ck);
+            g_save_filtered++;
+            return true;
+        }
+    if (!species::is_line_key({k[0], k[1], k[2]}))
+        return false;
+    for (auto& [o, r] : g_own) // (a line key no player names now: an object's record of it)
+        if (r.ours == k[0]) {
+            memcpy(k, r.orig, 12);
+            g_save_filtered++;
+            return true;
+        }
+    k[0] = k[1] = k[2] = 0;
+    g_save_filtered++;
+    return true;
+}
+
 void own_designs_init()
 {
+    savestrip::add_key_filter(save_key_filter);
     if (uintptr_t a = H->sym("SporeCoop::Civ_SetDesign"))
         H->hook_create(M, (void*)a, (void*)h_SetDesign, (void**)&o_SetDesign);
 }
@@ -374,8 +413,9 @@ std::string own_designs_debug(const std::vector<std::string>& a)
     }
     snprintf(b, sizeof b,
              "own designs: fix=%d rekeys=%u back=%u overwritten=%u after_setdesign=%u setdesign_calls=%u saves=%u "
-             "save_unknown=%u now=%zu\n",
-             (int)g_fix, g_rekeys, g_back, g_overwritten, g_after_set, g_set_calls, g_saves, g_save_unknown, g_own.size());
+             "save_unknown=%u save_filtered=%u now=%zu\n",
+             (int)g_fix, g_rekeys, g_back, g_overwritten, g_after_set, g_set_calls, g_saves, g_save_unknown,
+             g_save_filtered, g_own.size());
     out += b;
     // the players' designs as the species line answers them here (the key every game builds them from)
     for (uint8_t pid : species::players())
