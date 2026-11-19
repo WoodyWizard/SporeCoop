@@ -63,7 +63,9 @@ Test tribe_city_hall_race (coop_tribe_city_hall_race.py, lane 9, fix/w57-crashes
 * FAIL (twin): out/lab/20261119-141549:tribe_city_hall_race_off (tribe.city_hall_cinematic off): ShowCityHall missed, the
   host stood in Tribe 78 s, the second advance gave a second City Hall 99E92F05 and a graduation without the mat;
   game.destroy_null skipped the null destroy from 0x00CDD43D (the crash's own call site) and the game went on to Civ.
-* FAIL (twin): out/lab/20261119-141549:tribe_city_hall_race_crash (both off): CRASHTWIN
+* FAIL (twin): out/lab/20261119-141549:tribe_city_hall_race_crash (both off): the stall, the second City Hall, then
+  68578 faults 0xC0000005 at DestroyInstance+0x6 (data 0x20), calls 00CDD43D ... 00CDECAC 00CDF11C: the signature of the
+  report; the graduation called again every frame (49150 times), the host never left Tribe.
 
 ## History
 - 2026-11-19: opened.
