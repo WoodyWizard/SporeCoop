@@ -1915,7 +1915,8 @@ void register_commands_editor()
                            "arrival votes that did not wait for a guest on its way %u (BUG-1245)\n"
                            "own editors from the world's species without the replace dialog %u (BUG-1255)\n"
                            "host Cell editors opened without a vote %u (BUG-1263)\n"
-                           "guest mates forgotten in creature.mode host (Cell) %u (BUG-1265)",
+                           "guest mates forgotten in creature.mode host (Cell) %u (BUG-1265)\n"
+                           "host History checks held before the end sequence %u (BUG-1269)",
                            g_vote.active ? "active" : "none", g_vote.text.c_str(), g_vote.left, (int)g_own_editor,
                            g_part_list_waivers, g_submits_held, g_quits_delayed, g_submits_repeated,
                            g_own_editor_due ? 1 : 0, g_own_editor_waits, g_vote_actions_run, g_votes_dropped,
@@ -1926,7 +1927,7 @@ void register_commands_editor()
                            g_offer_editor ? 1 : 0, evo_flag_now(), g_evo_flags_cleared, g_stage_end_votes,
                            g_stage_end_guest_refused, g_own_editor_arrivals, g_own_editor_arriving ? 1 : 0,
                            vote_in_editor_count(), vote_mates_held(), arrival_not_waited(), own_no_replace_count(),
-                           cell_editor_now_count(), refused_mates_count());
+                           cell_editor_now_count(), refused_mates_count(), switch_end_held_count());
                        return 0;
                    },
                    // outside the frame: `editor` submits an editor request, which the game does

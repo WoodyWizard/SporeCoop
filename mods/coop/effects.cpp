@@ -184,18 +184,22 @@ struct Recent {
     uint8_t player = 0;
     uint32_t id = 0;
     float x = 0, y = 0, z = 0, d = -1; // d: distance to the local player's object (-1: none)
+    float scale = -1;                  // BUG-1266: the effect's uniform scale (its transform +0x10), -1: not read
+    bool held = false;                 // BUG-1266: made by the Cell graphics update for a cell it drives
     double at = 0;
 };
 static constexpr size_t kRecent = 160;
 static Recent g_recent[kRecent];
 static size_t g_recent_at, g_recent_n;
-static void note_recent(char dir, uint8_t player, uint32_t id, const net::Vec3& p)
+static void note_recent(char dir, uint8_t player, uint32_t id, const net::Vec3& p, float scale = -1, bool held = false)
 {
     Recent& r = g_recent[g_recent_at];
     r.dir = dir;
     r.player = player;
     r.id = id;
     r.x = p.x, r.y = p.y, r.z = p.z;
+    r.scale = scale;
+    r.held = held;
     r.d = -1;
     if (C.local_pos) {
         net::Vec3 l = C.local_pos();
@@ -478,6 +482,30 @@ static bool own_only(uint32_t id)
     return false;
 }
 static uint32_t g_own_only_made, g_own_only_held_tx, g_own_only_held_rx; // tests: made in this game, not sent, not played
+
+// BUG-1266 (key-frame review: the host's electric zap drawn on the guest's screen as a trail of giant white rings
+// centred on the host's cell): the Cell graphics update (SporeCoop::CellGfx_Update) creates the effects a cell's
+// graphics object keeps and drives them every frame: the electric part's charge field (0x17AAB61F / 0x5CA636DC,
+// SporeCoop::CellGfx_ElectricField: at the part, the scale 2 x the zap range, stopped when the charge ends), the zap's
+// lightning (0x7D84966F / 0xA1FB7133, SporeCoop::CellGfx_ZapBolt: a path from the attacker set every frame), the
+// propulsion and glows. The relay sent each as a one-shot world effect: the copy stayed where it was made with the
+// first frame's transform, never stopped by the game, for the relay's 8 s (kLiveSec), one more per zap. The partner's
+// game runs the same update for its own copy of the cell. On: effects made in that update are neither sent nor, for
+// an older partner's, the charge field and the lightning played. Off (`coop.fix effects.cell_held off`): sent and
+// played (0.7.15).
+static bool g_held_fix = true;
+COOP_FIX("effects.cell_held", "BUG-1266", g_held_fix,
+         "cell: a partner's electric zap no longer leaves a trail of giant white rings on your screen (a cell's own glows and charge are drawn by your game)");
+static uint32_t g_held_tx, g_held_rx; // tests: not sent (made by the cell graphics update), not played (an older sender's)
+static bool held_id(uint32_t id) // the electric part's effects (an older partner still sends them)
+{
+    return id == 0x17AAB61Fu || id == 0x5CA636DCu || id == 0x7D84966Fu || id == 0xA1FB7133u;
+}
+static float fx_scale(void* fx) // the effect's uniform scale: its transform (effect +0x9C) +0x10
+{
+    const float* f = fx && skg::readable((uint8_t*)fx + 0xAC, 4) ? (const float*)((uint8_t*)fx + 0xAC) : nullptr;
+    return f && std::isfinite(*f) ? *f : -1.f;
+}
 static void on_world_effect(void* fx, uint32_t id)
 {
     if (!fx || !id)
@@ -642,7 +670,12 @@ static void process_world(void* fx, uint32_t id)
             H->log(M, SK_INFO, "effect: world id %08X dropped, no position at %p", id, fx);
         return;
     }
-    note_recent('m', C.sess->my_id(), id, p); // tests (BUG-1243): every world effect this game made, with its place
+    bool held = game::effect_cell_held(fx);
+    note_recent('m', C.sess->my_id(), id, p, fx_scale(fx), held); // tests (BUG-1243): every world effect this game made
+    if (g_held_fix && held) { // BUG-1266: the partner's game draws the cell's own effects itself
+        g_held_tx++;
+        return;
+    }
     if (g_own_only_fix && own_only(id)) { // BUG-1243: the own cell's hatch is no picture for a partner
         g_own_only_held_tx++;
         return;
@@ -685,7 +718,7 @@ static void process_world(void* fx, uint32_t id)
     g_sent++;
     if (g_log)
         H->log(M, SK_INFO, "effect: sent world id %08X at %.2f %.2f %.2f", id, p.x, p.y, p.z);
-    note_recent('s', C.sess->my_id(), id, p);
+    note_recent('s', C.sess->my_id(), id, p, fx_scale(fx), held);
     uint8_t xf[0x44];
     if (copy_transform(xf, fx, p))
         g_xform_sent++;
@@ -1033,6 +1066,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_own_only_held_rx++;
         return;
     }
+    if (!stop && pool == 5 && g_held_fix && held_id(id) && game::mode_id() == modes::kCell) { // BUG-1266: an older partner's
+        g_held_rx++;
+        return;
+    }
     if (!stop && pool == 5 && foreign_id(id)) {
         g_rx_foreign++;
         if (g_log)
@@ -1090,7 +1127,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 last.z = p[2];
                 if (g_world_start)
                     g_world_start(player, id, fx, net::Vec3{p[0], p[1], p[2]});
-                note_recent('p', player, id, net::Vec3{p[0], p[1], p[2]});
+                note_recent('p', player, id, net::Vec3{p[0], p[1], p[2]}, fx_scale(fx));
             } else if (pool == 3) { // a one-shot effect has no pool entry: the game created it on the puppet
                 net::Vec3 p = game::position(puppet);
                 last.has_pos = true;
@@ -1327,12 +1364,12 @@ std::string watch(uint32_t id)
 std::string recent()
 {
     std::string s;
-    char b[160];
+    char b[200];
     double t = now();
     for (size_t i = 0; i < g_recent_n; i++) {
         const Recent& r = g_recent[(g_recent_at + kRecent - g_recent_n + i) % kRecent];
-        snprintf(b, sizeof b, "recent %c from=%u id=%08X at=(%.2f %.2f %.2f) local_d=%.2f age=%.1f\n", r.dir, r.player, r.id, r.x, r.y,
-                 r.z, r.d, t - r.at);
+        snprintf(b, sizeof b, "recent %c from=%u id=%08X at=(%.2f %.2f %.2f) local_d=%.2f age=%.1f scale=%.3f held=%d\n", r.dir,
+                 r.player, r.id, r.x, r.y, r.z, r.d, t - r.at, r.scale, r.held ? 1 : 0);
         s += b;
     }
     return s.empty() ? std::string("recent: none\n") : s;
@@ -1381,6 +1418,9 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "effects cell own only: fix=%d made=%u held_tx=%u held_rx=%u\n", (int)g_own_only_fix, g_own_only_made,
              g_own_only_held_tx, g_own_only_held_rx); // BUG-1243
+    s += b;
+    snprintf(b, sizeof b, "effects cell held: fix=%d made=%u not_sent=%u not_played=%u\n", (int)g_held_fix, game::cell_held_effects(),
+             g_held_tx, g_held_rx); // BUG-1266
     s += b;
     snprintf(b, sizeof b, "effects elsewhere: not sent=%u not played=%u other_stages=%d space=%d stage_skipped=%u\n",
              g_elsewhere_tx, g_elsewhere_rx, (int)g_other_stages, (int)g_space, g_stage_skipped);

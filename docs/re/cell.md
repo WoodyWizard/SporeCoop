@@ -2639,3 +2639,66 @@ BUG-1257, WP-L1 of docs/plan-0.7.16.md; builds on #cell-kin-species.
   avatar's +0xFC is its My Creations key (292800B6): the same model under two keys.
 * ? The runtime check at level 10 (coop_cell_kin_species.py) and the Cell save holding no kin cell (the test parses
   the host's new save for the guest's 0x7C key) wait for the lab.
+## A cell's own effects: made and driven by the Cell graphics update (2026-11-18, fix/w54-visual)
+<a id="cell-gfx-held-effects"></a>
+
+BUG-1266 (the host's electric zap drawn on the guest's screen as a trail of giant white rings). GOG 2024, Ghidra
+(out/ghidra-2024); no lab run yet (owner rule of 2026-11-18: no lab runs before the night run).
+* ✔ (Ghidra) `SporeCoop::CellGfx_Update` 0xE73F60, cdecl void(void), plain ret, once a frame (only caller 0xE806B0):
+  for every cell of the pool it keeps the effects of the cell's graphics object (cell +0x248) alive: created on demand
+  in the cCellGFX effect world (`cCellGFX::_ptr` +0x161C8 when the cell's +0x35C equals cCellGame +0x40FC, else
+  +0x161BC; `cCellGFX::CreateEffect` 0x628480 = world vt 8, the fallback id 0xE18D6423), their transform or path set
+  every frame, stopped (vt 0xC) and released when the state is gone. Among them: the propulsion 0xE639D0
+  (cell_propulsionJet 0x2C34420C, cell_propulsionCilia 0xA6D4590B, cell_propulsionFlagella 0x44894CD7), 0xE6BF30
+  (0x54C94A74, 0x9CFD5E8A, 0xF8EB2D4D, 0x71877630, 0xA3572F53), the eye goo (cell_eyegoo_flow, 0xE67510), 0xB71008DB
+  (the avatar only), and the electric part's two:
+  * `SporeCoop::CellGfx_ElectricField` 0xE6BC10: while the cell charges (+0x18A, set by the electric step 0xE71980)
+    one effect per part of type 6: **0x17AAB61F** (model data +0x121C < 3) or **0x5CA636DC**, Start(1), every frame at
+    the part's place (0xE84150) with the uniform scale **2 x the zap range** (cell +0x160); Stop(1) when the charge ends.
+  * `SporeCoop::CellGfx_ZapBolt` 0xE6B9B0: on a zapped cell while its attacker (+0x190, written by 0xE58890 from the
+    chain attack 0xE71520) lives: **0x7D84966F** (the attacker has a type-6 part) or 0xA1FB7133, every frame
+    SetTransform(target +0x48) and a 21-point path from the attacker (effect vt 0x44(0xD, points, 0x3F)).
+* ✔ (Ghidra) Effects of a single moment (death 0xE7A4A0 via `InstanceEffectOnCell` 0xE66840, BreakOrSwallow, the
+  hatch, the end flash 0xA1B0293D of 0xE62440 / 0xE72AC0) are made outside the update, from the event dispatcher.
+* ✔ (lab 20261118-131202, cell_far_fight, read now) The relay sent such held effects as world effects: the guest with
+  the electric part sent 0x17AAB61F, the propulsion trio and 0xF8EB2D4D among its 12 ids.
+* Inferred (the picture, frames of lab 20261118-144132 / -110806, cell_attack_electric): the relay's copy of a held
+  effect is one-shot: it keeps the first frame's transform (the charge field at 2 x range), never follows the cell,
+  gets no lightning path and no Stop from the game, and the relay stops it after its 8 s (effects.cpp kLiveSec). With a
+  zap every ~3 s the guest saw three or more white rings of the host's charge field left along the host's way. The
+  host's own game shows its field only for the charge's moment, following the cell.
+* Fix `effects.cell_held` (game.cpp h_CellGfxUpdate marks every effect created inside the update; effects.cpp does not
+  send them; a receiver also drops 0x17AAB61F / 0x5CA636DC / 0x7D84966F / 0xA1FB7133 in Cell from an older sender).
+  The partner's game runs the same update for its own copy of the cell (puppet, mirror), so the propulsion and glows
+  stay; a partner's zap now shows no charge or lightning on the other screen (its copy of the attacker does not charge,
+  docs/re/cell.md#cell-partner-attack-anim): the creature's hp loss shows the hit. `coop.effects recent` prints each
+  row's scale and `held=`; `coop.effects` prints `effects cell held: made= not_sent= not_played=`.
+* ? Not read: the charge field's own timeline (why the copy is bright white and the host's barely visible); whether
+  the zap range +0x160 differs per level with the world scale (the transform is copied as the host's game set it).
+
+## The Cell-end white picture during the switch vote (2026-11-18, fix/w54-visual)
+<a id="cell-end-white"></a>
+
+BUG-1269. GOG 2024, Ghidra; the logs of lab 20261118-144132 (evo_screens_switch: the host's switch held "from
+00E7E36E, cinematic 0" 16 s after its cinematic ended); no lab run yet (owner rule of 2026-11-18).
+* ✔ (Ghidra) History's check (the UI handler 0xE75B80: hides window 0x44827B8, the timeline, then calls the next one
+  when G+0x5158 == 5) runs **`SporeCoop::CellStage_End` 0xE72C80**, cdecl void(void), plain ret (also from the debug
+  key handler 0xE81120 +0x393): avatar alive and not locked, G+0x5169 = 1, **G+0x5158 = 3**, 0xE53560 (hides the HUD
+  window 0xD305CA84, calls vt 0xC(0) of the cCellGFX effect worlds +0x161BC / +0x161B4 / +0x161C8), 0xE53110 (the
+  stage's achievements), 0xE6D600, 0xE82C10 (three properties of the player's cell), **0xE4F640(1)** (the cinematic
+  manager's 0xAD7DC0(1) and cell UI +0x936 = 1: the letterbox bars), the avatar's animation **0x2E** and an event
+  **0x1F** after its length (G+0x5194), then 0xE59A30 (+0x18C = 0x2E, locks). The dispatcher 0xE7E130 case 0x1F calls
+  `CellStage_ToCreature` 0xE62440 (#cell-switch-to-creature: the return address 0x00E7E36E).
+* So `core.switch_vote` (h_CellToCreature) held the switch at the END of that sequence: the host's game sat in state 3
+  with the letterbox and its end picture for the whole vote (the key frames: plain white between the bars, the share
+  of white 0.46 of the whole frame in all four switch variants of 0.7.15.1). Inferred: the white is the sequence's
+  last picture (the animation 0x2E's camera / light); the game's own flow goes straight on to the mode switch there.
+* Fix `core.switch_vote_world` (vote.cpp h_CellStageEnd, switch_hold): the vote holds History's check before
+  CellStage_End; the host's game stays in state 5 and plays on in its pool (History closed) while the others vote.
+  When the vote passes the action runs CellStage_End (g_end_go), its event 0x1F reaches h_CellToCreature with
+  g_switch_go set and the switch runs as the game's own; when the sequence did not start (G+0x5158 not 3 after it:
+  a dead or locked avatar) the switch runs at once as before. A guest's check in the host's world is its I'm ready
+  before the sequence too (its game had stayed white until the host's world took it). Off: held at the switch (0.7.15).
+  `coop.vote` prints "host History checks held before the end sequence N".
+* Note on #cell-switch-to-creature's "Held (not called) the game stays in Cell with History closed and plays on": that
+  was the game's logic (state, mode); its picture was the end sequence's white with the letterbox (this section).

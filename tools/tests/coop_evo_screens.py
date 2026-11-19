@@ -15,6 +15,10 @@ mate, the vote's I'm ready, History's check, the editors' parts and done), and t
                   editor, adds legs and a second leg pair and saves it as new: afterwards each plays its own creature
                   (the avatar keys differ) and each game draws the partner with the partner's creature. While either
                   is in its editor the other's screen is never black for long (an editor or the world is drawn).
+                  BUG-1269: while the switch vote runs the host's picture is not mostly white (the share of near-white
+                  pixels beside the co-op window, in the key frame and in the shots of the vote; the guest's printed
+                  beside it). `SPORE_FIX_OFF=core.switch_vote_world` (held at the switch, after the game's white end
+                  sequence) must FAIL that check.
 
   --part cell-eggs  Cell fixture (BUG-1245): the host's mating call, the guest answers the vote late (--ready click:
                   after 45 s) or never: the host's game plays the mating scene and the egg laying once, not again
@@ -120,6 +124,28 @@ def margins(path):
         return -1
 
 
+WHITE_PIXEL = 240  # BUG-1269: a near-white pixel (grey level)
+WHITE_LIMIT = 0.5  # the share of near-white pixels beside the co-op window over which a picture is "a white screen"
+
+
+def white_share(path):
+    """BUG-1269: the share of near-white pixels in the left and right thirds below the notices (margins' regions: the
+    co-op window covers the middle and the letterbox bars the top and bottom); -1 without Pillow or a picture"""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            g = im.convert('L')
+            w, h = g.size
+            hi = n = 0
+            for a, b, c, d in ((0.0, 0.10, 0.20, 0.85), (0.80, 0.35, 1.0, 0.85)):
+                hist = g.crop((int(a * w), int(b * h), int(c * w), int(d * h))).histogram()
+                hi += sum(hist[WHITE_PIXEL:])
+                n += sum(hist)
+            return hi / n if n else -1
+    except (OSError, ImportError, SyntaxError, ValueError):
+        return -1
+
+
 class Screens(threading.Thread):
     """a game's screen measured every `step` s in the background (its own console connection, so the test's clicks
     and drags do not stop it): (t, mode, world brightness); black runs are judged on these rows"""
@@ -128,6 +154,7 @@ class Screens(threading.Thread):
         super().__init__(daemon=True)
         self.port, self.label, self.step = con.port - 47799, label, step
         self.rows = []
+        self.whites = []  # (t, white_share) per shot (BUG-1269)
         self.stop_ev = threading.Event()
         self.n = 0
 
@@ -141,6 +168,7 @@ class Screens(threading.Thread):
                 self.n += 1
                 ok = c.call('shot ' + path).get('ok')
                 self.rows.append((t, m, margins(path) if ok else -1))
+                self.whites.append((t, white_share(path) if ok else -1))
                 self.stop_ev.wait(max(0.2, self.step - (time.time() - t)))
         finally:
             c.sock and c.sock.close()
@@ -148,6 +176,11 @@ class Screens(threading.Thread):
     def stop(self):
         self.stop_ev.set()
         self.join(30)
+
+    def white_median(self, t0, t1):
+        """the median near-white share of the shots between t0 and t1 (None: no shot measured)"""
+        v = sorted(w for t, w in self.whites if t0 <= t <= t1 and w >= 0)
+        return v[len(v) // 2] if v else None
 
     def since(self, t0):
         return [r for r in self.rows if r[0] >= t0]
@@ -576,6 +609,25 @@ def editor_drawn(con, name):
     return bool(s) and s['world'] > 25
 
 
+def check_white(ck, host, guest, e, scr, t_vote):
+    """BUG-1269: the host's picture during the switch vote is not mostly white (the game's Cell-end sequence held at its
+    white end): the key frame's and the vote's shots' share of near-white pixels beside the co-op window"""
+    import frames
+    d = frames.frames_dir(lane.out_dir())
+    kf = {r: white_share(os.path.join(d, g['file'])) if g.get('file') else -1
+          for r, g in ((e or {}).get('games') or {}).items()}
+    sh, sg = scr
+    t1 = time.time()
+    hm, gm = sh.white_median(t_vote, t1), sg.white_median(t_vote, t1)
+    print(f"  white share during the vote (near-white pixels beside the window): key frame host {kf.get('host', -1):.2f} "
+          f"guest {kf.get('guest', -1):.2f}; shots' median host {hm} guest {gm}; "
+          f"{host.call('coop.vote')['out'].splitlines()[-1]}", flush=True)
+    vals = [v for v in (kf.get('host', -1), hm) if v is not None and v >= 0]
+    ck(vals and max(vals) < WHITE_LIMIT,
+       f"the host's picture is not a white screen during the switch vote (near-white share {vals}, limit {WHITE_LIMIT}; "
+       f"the guest's {kf.get('guest', -1):.2f})")
+
+
 def part_switch(host, guest, ck, ready, scr):
     host.call('coop.pool food 1000')
     t0 = time.time()
@@ -590,7 +642,11 @@ def part_switch(host, guest, ck, ready, scr):
             host.call('click %d %d' % HISTORY_OK)
         time.sleep(4)
     ck('vote active' in host.call('coop.vote')['out'], 'the switch to Creature waits for the vote')
-    keyframe('switch_vote', 'Cell end: the switch vote runs on both games')
+    t_vote = time.time()
+    e = keyframe('switch_vote', "Cell end: the switch vote runs on both games; the host's game shows its Cell world (or "
+                 "the cinematic's last picture) behind the co-op window, not a plain white screen; the guest its "
+                 "world or its own Cell-end cinematic")
+    check_white(ck, host, guest, e, scr, t_vote)
     if ready == 'click':
         ck(press_ready(guest), "the guest clicks I'm ready")
     sh, sg = scr

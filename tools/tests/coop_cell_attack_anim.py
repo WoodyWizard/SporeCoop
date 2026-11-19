@@ -12,7 +12,15 @@ anims`: the own avatar and each partner's puppet) sampled on both games while it
   * the attacker's game shows the other player's puppet without an animation (cell puppets get none relayed).
 The weapon variants (--contact jaw|spike, --electric) do play attacker animations and check them.
 
+--electric also checks what the guest's game draws of the host's zap (BUG-1266, key-frame review: a trail of giant
+white rings centred on the host's cell): the world effects the guest's game created from the host's relay
+(`coop.effects recent`, its 'p' rows: id, place, the effect's scale) hold none of the effects the host's Cell graphics
+update made for its own cell (its 'm' rows marked held=1: the electric part's charge field 0x17AAB61F / 0x5CA636DC, the
+zap's lightning, the propulsion), and every one it did play has the scale the host's game gave it.
+
   coop_cell_attack_anim.py
+  coop_cell_attack_anim.py --electric                                (PASS)
+  SPORE_FIX_OFF=effects.cell_held coop_cell_attack_anim.py --electric (FAIL: the guest plays the host's charge fields)
 """
 import re
 import sys
@@ -54,6 +62,33 @@ class Sampler(threading.Thread):
     def stop(self):
         self.stop_ev.set()
         self.join(10)
+
+
+RECENT_RE = re.compile(r'^recent (\w) from=(\d+) id=([0-9A-F]{8}) at=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\) local_d=([-\d.]+) '
+                       r'age=([\d.]+)(?: scale=([-\d.]+) held=(\d))?', re.M)
+CHARGE = {'17AAB61F', '5CA636DC'}  # the electric part's charge field (SporeCoop::CellGfx_ElectricField)
+
+
+class Recent:
+    """the world effects a game made ('m'), sent ('s') and played from a partner ('p'), polled from `coop.effects recent`
+    (a ring of 160) and kept by (kind, player, id, place) with the wall time they happened"""
+
+    def __init__(self):
+        self.rows = {}
+
+    def poll(self, con):
+        now = time.time()
+        for m in RECENT_RE.finditer(con.call('coop.effects recent')['out']):
+            d, frm, fid = m.group(1), int(m.group(2)), m.group(3)
+            pos = tuple(round(float(m.group(i)), 1) for i in (4, 5, 6))
+            at = now - float(m.group(8))
+            key = (d, frm, fid, pos, round(at))
+            if not any(k[:4] == key[:4] and abs(k[4] - key[4]) <= 1 for k in self.rows):
+                self.rows[key] = dict(dir=d, frm=frm, id=fid, pos=pos, at=at,
+                                      scale=float(m.group(9)) if m.group(9) else None, held=m.group(10) == '1')
+
+    def of(self, d, frm, t0, t1):
+        return [r for r in self.rows.values() if r['dir'] == d and r['frm'] == frm and t0 - 1 <= r['at'] <= t1 + 1]
 
 
 def window(rows, t0, t1):
@@ -121,14 +156,21 @@ def electric(host, guest, ck):
     sh.start()
     sg.start()
     z0h, z0g = host.call('coop.pool anims')['out'], guest.call('coop.pool anims')['out']
+    rh, rg = Recent(), Recent()
     try:
         t0 = time.time()
         while time.time() - t0 < 25:
             host.call(f'coop.pool swimto {key} tp')
             guest.call(f'coop.pool swimto {key} tp')  # (the guest's mirror of the same creature: its key is the host's)
+            rh.poll(host)
+            rg.poll(guest)
             time.sleep(1.5)
         t1 = time.time()
-        keyframe('host_zaps', "Cell: the host's electric part zaps; the guest's cell, next to the same creature, does not zap on either game", settle=0)
+        keyframe('host_zaps', "Cell: the host's electric part zaps (its own game: the yellow lightning at its cell); the guest's "
+                 "screen shows the host's cell without a trail of giant white rings around it; the guest's cell, next to "
+                 "the same creature, does not zap on either game", settle=0)
+        rh.poll(host)
+        rg.poll(guest)
     finally:
         sh.stop()
         sg.stop()
@@ -143,6 +185,29 @@ def electric(host, guest, ck):
     ck('1E' not in g_av, f"the guest's own cell does not zap in its own game ({sorted(g_av)})")
     ck('1E' not in h_pup or '1E' in g_av,
        f"the host's game shows the guest's cell attacking only when the guest's own game does ({sorted(h_pup)})")
+    # BUG-1266: what the guest's game created of the host's zap
+    made = rh.of('m', 0, t0, t1)
+    held = {r['id'] for r in made if r['held']}
+    sent = rh.of('s', 0, t0, t1)
+    played = rg.of('p', 0, t0, t1)
+    print(f'  host made {len(made)} world effects, its cell graphics held {sorted(held)}; sent {len(sent)} '
+          f'({sorted({r["id"] for r in sent})})', flush=True)
+    print(f'  guest played {len(played)} of the host\'s: ' + ', '.join(
+        f'{r["id"]} scale {r["scale"]}' for r in sorted(played, key=lambda r: r['at'])[:24]), flush=True)
+    for con, n in ((host, 'host'), (guest, 'guest')):
+        line = [l for l in con.call('coop.effects')['out'].splitlines() if l.startswith('effects cell held')]
+        print(f'  {n}: {line[0] if line else "no cell held line"}', flush=True)
+    ck(held & CHARGE or {r['id'] for r in made} & CHARGE,
+       f"the host's zap makes the electric charge field in its own game ({sorted({r['id'] for r in made} & CHARGE)})")
+    shown = sorted({r['id'] for r in played} & (held | CHARGE))
+    ck(not shown, f"the guest's game draws none of the effects the host's game keeps at its own cell (charge field, "
+                  f"lightning, propulsion): played {shown}")
+    off = []
+    for r in played:
+        twin = [x for x in sent if x['id'] == r['id'] and x['scale'] is not None and abs(x['at'] - r['at']) < 3]
+        if twin and r['scale'] is not None and min(abs(x['scale'] - r['scale']) for x in twin) > 0.02 * max(1.0, r['scale']):
+            off.append((r['id'], r['scale'], [x['scale'] for x in twin]))
+    ck(not off, f"every host effect the guest's game plays has the host's scale ({off[:4]})")
 
 
 def contact(host, guest, ck, part, attacker_name):

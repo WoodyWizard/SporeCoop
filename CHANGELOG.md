@@ -23,6 +23,11 @@
 - Civilization: the citizens walking in a city a guest owns (captured, given or dealt to it) are that guest's own
   species on every player's screen; the shared capital keeps the species of the player who founded it. With "everybody
   plays the host's creature" (F5) every city stays the host's species, as before (BUG-1273).
+### Fixed
+- Cell: when your partner's cell zaps with its electric part, your screen no longer fills with a trail of giant white
+  rings around its cell (BUG-1266).
+- Cell -> Creature: while the players vote to move on to the Creature stage, the host now sees its Cell world behind
+  the co-op window instead of a plain white screen; the move starts when the vote passes (BUG-1269).
 
 ## [0.7.15.2] - 2026-11-18
 

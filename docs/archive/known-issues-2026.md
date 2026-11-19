@@ -3662,3 +3662,21 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   needed; being worked on with the mating call's black screen.
 * Ticket: BUG-1245
 * Fixed 2026-11-18 (fix/w53-cellvote): core.arrival_nowait, the landfall editor no longer waits for a guest that opens its own editor on arrival.
+
+## Cell: the host's electric zap looks like giant white rings on the guest's screen (2026-11-18, key-frame review)
+<a id="issue-cell-zap-rings"></a>
+
+* What happens: the host's cell zaps with an electric part; the host sees a small spark, the guest sees a trail of
+  giant white rings around the host's cell covering half the screen. Visual only.
+* Reproduce: `tools/lab.py run cell_attack_electric`, then `tools/frames_review.py <run> --test cell_attack_electric`.
+* Ticket: BUG-1266
+* Fixed 2026-11-18 (fix/w54-visual): effects.cell_held, a cell's own effects (the electric charge field, the zap's lightning) are no longer relayed as fixed copies.
+
+## Cell -> Creature vote: the host's screen is white behind the lobby (2026-11-18, key-frame review)
+<a id="issue-cell-end-white"></a>
+
+* What happens: during the vote at the end of the Cell stage the host's screen stays plain white (the end of the Cell
+  cinematic) until the vote ends; the guest still sees the cinematic.
+* Reproduce: `tools/lab.py run evo_screens_switch`, key frame `01_switch_vote`.
+* Ticket: BUG-1269
+* Fixed 2026-11-18 (fix/w54-visual): core.switch_vote_world, the vote holds History's check before the game's white end sequence.
