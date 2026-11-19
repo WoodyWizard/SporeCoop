@@ -83,8 +83,13 @@ inline Refused can_take(const Colors& t, uint8_t id, int idx)
 {
     if (idx < 0 || idx >= kColors)
         return Refused::Range;
-    if (t.taken(idx, id))
-        return Refused::Taken;
+    if (t.taken(idx, id)) {
+        // (2026-11-18 review, the alpha's planets of more than kColors players: once every colour is in use colours
+        // are shared, so a change is not refused for it; while one is free, that one is the answer)
+        for (int i = 0; i < kColors; i++)
+            if (!t.taken(i, id))
+                return Refused::Taken;
+    }
     return Refused::None;
 }
 

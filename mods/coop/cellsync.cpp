@@ -4950,8 +4950,10 @@ static void guest_state_compact(net::Reader& r)
         if (!r.ok())
             return;
         if (raw & cc::kKeep) { // still there: its mirror goes on along its velocity
-            if (g_mirrors.count(hidx)) {
+            if (auto km = g_mirrors.find(hidx); km != g_mirrors.end()) {
                 g_cycle_seen.insert(hidx);
+                km->second.seen = now; // (2026-11-18 review: a keep is "seen"; without it one lost chunk of a round
+                                       //  removed every far cell whose last full record was over a second old)
                 g_compact_kept++;
             }
             continue;

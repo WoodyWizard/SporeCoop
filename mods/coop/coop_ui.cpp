@@ -4159,6 +4159,17 @@ static int pm_item_at(float x, float y)
 }
 static void pm_hover_tick()
 {
+    // (2026-11-18 review: a menu or invite prompt inside the Co-op window stayed live but hidden when the window
+    // closed: laid out again when its place no longer matches the window's state)
+    if (g_pm_open && g_pm.root && !g_pm_queued) {
+        Win main = sui::main_window();
+        const bool in_dialog = D.root && sui::parent(g_pm.root) == D.root;
+        if (main && in_dialog != (D.root && g_want_open && sui::visible(D.root))) {
+            g_pm_queued = true;
+            H->run_outside_frame(pm_apply, nullptr);
+            return;
+        }
+    }
     int x = 0, y = 0;
     const int h = g_pm_open && mouse::last_move(x, y) ? pm_item_at((float)x, (float)y) : -1;
     if (h == g_pm_hover || g_pm_queued) return;
@@ -4211,6 +4222,8 @@ std::string player_at_debug()
 
 void chat_prefill(const std::string& text)
 {
+    g_settings_page = g_space_page = false; // (the chat line is on the lobby page)
+    g_dirty = true;
     open(true);
     if (D.chat_edit) sui::set_edit_text(D.chat_edit, text);
 }

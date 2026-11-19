@@ -14,8 +14,25 @@ static int g_fail = 0;
 
 using namespace parties;
 
+// 2026-11-18 review: an invite is for the party its sender is in, and a lapsed one is gone once answered
+static void test_invites_follow_sender()
+{
+    Book b;
+    for (uint8_t p = 1; p <= 4; p++)
+        b.add(p);
+    CHECK(b.invite(1, 2, 0, 0, 0) == Result::Ok && b.answer(2, 1, true, 1) == Result::Ok); // {1, 2}, 1 leads
+    CHECK(b.invite(2, 3, 0, 0, 2) == Result::Ok && b.pending_from(3) == 2);
+    CHECK(b.kick(1, 2) == Result::Ok);
+    CHECK(b.pending_from(3) == -1 && b.answer(3, 2, true, 3) == Result::NoInvite); // (not into a party with the kicked one)
+    CHECK(b.invite(1, 3, 0, 0, 4) == Result::Ok && b.answer(3, 1, true, 5) == Result::Ok); // {1, 3}
+    CHECK(b.invite(3, 4, 0, 0, 6) == Result::Ok && b.leave(3) == Result::Ok && b.pending_from(4) == -1);
+    CHECK(b.invite(1, 4, 0, 0, 10) == Result::Ok);
+    CHECK(b.answer(4, 1, true, 10 + parties::kInviteSeconds + 1) == Result::NoInvite && b.pending_from(4) == -1);
+}
+
 int main()
 {
+    test_invites_follow_sender();
     const uint32_t kCreature = 0x1654C01, kTribe = 0x1654C02;
     // a plain co-op session: the joiners are in the host's party ("the person you joined"), 4 at most
     {

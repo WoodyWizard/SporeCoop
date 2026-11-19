@@ -28,6 +28,7 @@ using PanelsFn = void(__fastcall*)(void*, void*);
 using StepFn = void(__fastcall*)(void*, void*, void*);
 static PanelsFn o_Panels;
 static StepFn o_Step;
+static bool g_hooks; // both hooks are in (else the menu is the game's own)
 static uintptr_t a_Gge;
 static std::string g_play_name;
 static double g_play_at = -100;
@@ -38,7 +39,7 @@ static double g_rebuild_at;
 static unsigned g_rewrites, g_plays, g_rebuilds;
 static std::string g_last;
 
-static bool active() { return g_on && galaxy::online() && game::mode_id() == modes::kMenu; }
+static bool active() { return g_hooks && g_on && galaxy::online() && game::mode_id() == modes::kMenu; }
 
 static std::u16string u16(const std::string& s)
 {
@@ -150,7 +151,7 @@ static void rebuild(void*)
 
 void tick(double now)
 {
-    if (!o_Panels || game::mode_id() != modes::kMenu)
+    if (!g_hooks || game::mode_id() != modes::kMenu)
         return;
     const bool online = g_on && galaxy::online();
     const uint32_t ver = galaxy::planets_version();
@@ -172,7 +173,7 @@ std::string command(int argc, const char* const* argv)
         H->run_outside_frame(rebuild, nullptr);
     char b[300];
     snprintf(b, sizeof b, "galaxy menu (5X B): %s, hooks %s, active %d, rewrites %u, plays %u, rebuilds %u, last: %s",
-             g_on ? "on" : "off", o_Panels && o_Step ? "on" : "missing", (int)active(), g_rewrites, g_plays, g_rebuilds,
+             g_on ? "on" : "off", g_hooks ? "on" : "missing", (int)active(), g_rewrites, g_plays, g_rebuilds,
              g_last.empty() ? "-" : g_last.c_str());
     return b;
 }
@@ -189,8 +190,9 @@ void init(const SkHost* host, SkMod* mod)
     const bool ok = a_WCopy && a_Gge && panels && step &&
                     H->hook_create(M, (void*)panels, (void*)&h_Panels, (void**)&o_Panels) == 0 &&
                     H->hook_create(M, (void*)step, (void*)&h_Step, (void**)&o_Step) == 0;
-    if (!ok)
-        o_Panels = nullptr, o_Step = nullptr;
+    // (2026-11-18 review: the originals stay as hook_create left them. Nulling both when only the second hook failed
+    // left the first hook installed and calling a null original; the feature is off through g_hooks instead)
+    g_hooks = ok;
     H->log(M, SK_INFO, "galaxy menu: hooks %s (5X B)", ok ? "on" : "off");
 }
 

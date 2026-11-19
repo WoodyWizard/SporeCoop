@@ -7587,7 +7587,13 @@ void setup_callbacks()
         if (type == net::MSG_MIGRATE) { // BUG-9163: a player's evolution started the migration
             const uint8_t kind = r.u8(), by = r.u8();
             const uint32_t world = r.u32();
-            if (!r.ok() || kind != 1 || !g_migrate_together || g_mode != modes::kCreature || world != g_world) return;
+            if (!r.ok() || kind != 1 || !g_migrate_together) return;
+            // (2026-11-18 review: on a galaxy planet the host passes a guest's warning on first, whatever it does itself:
+            // in its editor or within its own round it returned below and that guest's party never heard)
+            const bool pass = g_sess.role() == net::Role::Host && from != 0 && by == from;
+            const bool pass_first = pass && g_migrate_party && parties::galaxy();
+            if (pass_first) send_migrate(by, -1, by);
+            if (g_mode != modes::kCreature || world != g_world) return;
             const double now = H->time_seconds();
             if (now < g_mig_round_until) { // this round is under way already (warned, or started here)
                 ++g_mig_ignored;
@@ -7599,8 +7605,8 @@ void setup_callbacks()
             if (!mine)
                 LOG("migration: %s's migration is not this game's party's: no editor here (BUG-9254)",
                     g_sess.name_of(by).c_str());
-            if (g_sess.role() == net::Role::Host && from != 0 && by == from) { // a guest's: everyone, the host too
-                send_migrate(by, -1, by); // (each guest checks its own party)
+            if (pass) { // a guest's: everyone, the host too
+                if (!pass_first) send_migrate(by, -1, by); // (each guest checks its own party)
                 if (mine) migration_warned(by, now);
             } else if (g_sess.role() == net::Role::Client && from == 0 && by != g_sess.my_id() && mine)
                 migration_warned(by, now);
@@ -9288,6 +9294,23 @@ static int g_menu_player = -1; // the menu's player in this session (-1: not her
 // 6L A: the menu's player as the Social Menu knows it too (a galaxy player who is not in this session)
 static uint64_t g_menu_identity;
 static std::string g_menu_name;
+// 2026-11-18 review: a whisper started from a menu or the Social Menu goes to the player picked there. The chat line
+// only carries "/w <name> ", and the first player of that name got it (two "Player", "Bob" and "Bob-NoShare-")
+static struct {
+    std::string name;
+    int sid = -1;
+    uint64_t ident = 0;
+    double until = 0;
+} g_whisper_pick;
+static void whisper_to(const std::string& name, int sid, uint64_t ident)
+{
+    if (!g_sess.connected()) { // (the chat line is the lobby's: no session, no line to type in)
+        feed("Whispers are typed in the Co-op window's chat: it is there once you play with others.");
+        return;
+    }
+    g_whisper_pick = {name, sid, ident, H->time_seconds() + 300};
+    coop_ui::chat_prefill("/w " + name + " ");
+}
 static int g_prompted_from = -1; // the invite the prompt shows (-1 none)
 static bool g_swallow_rup;
 static uint32_t g_menus_opened;
@@ -9331,9 +9354,11 @@ static void on_menu_pick(int code)
     std::string r;
     switch (code) {
     case kMenuView: if (id >= 0) open_sporepedia_of((uint8_t)id); break;
-    case kMenuInvite: r = gx ? parties::invite_identity(ident) : id >= 0 ? parties::invite((uint8_t)id) : ""; break;
+    case kMenuInvite:
+        r = gx ? parties::invite_identity(ident) : id >= 0 ? parties::invite((uint8_t)id) : "That player is not reachable from here.";
+        break;
     case kMenuLead: r = gx ? parties::lead_identity(ident) : id >= 0 ? parties::make_leader((uint8_t)id) : ""; break;
-    case kMenuWhisper: coop_ui::chat_prefill("/w " + g_menu_name + " "); break;
+    case kMenuWhisper: whisper_to(g_menu_name, id, ident); break;
     case kMenuFriend: set_friend_key(friend_key(id, ident), g_menu_name, true); break;
     case kMenuUnfriend: set_friend_key(friend_key(id, ident), g_menu_name, false); break;
     case kMenuLeave: r = parties::leave(); break;
@@ -9441,7 +9466,7 @@ static void on_social_action(int action, const coop_ui::SocialRow& row, float x,
     std::string r;
     switch (action) {
     case coop_ui::kSocLeave: r = parties::leave(); break;
-    case coop_ui::kSocWhisper: coop_ui::chat_prefill("/w " + row.name + " "); break;
+    case coop_ui::kSocWhisper: whisper_to(row.name, row.session_id, row.identity); break;
     case coop_ui::kSocInvite:
         r = parties::galaxy() && row.identity ? parties::invite_identity(row.identity)
             : row.session_id >= 0              ? parties::invite((uint8_t)row.session_id)
@@ -9566,14 +9591,20 @@ static void social_tick(double now)
 static void invite_prompt_tick()
 {
     const int from = parties::pending_invite();
-    if (from == g_prompted_from)
-        return;
-    g_prompted_from = from;
+    const bool shown = coop_ui::player_menu_open() && g_menu_player == -2;
     if (from < 0) {
-        if (coop_ui::player_menu_open() && g_menu_player == -2)
+        if (shown)
             coop_ui::hide_player_menu();
+        g_prompted_from = -1;
         return;
     }
+    // (2026-11-18 review: another player menu replaced the prompt and it never came back: shown again once that menu
+    // is closed, as long as the invite is pending)
+    if (from == g_prompted_from && shown)
+        return;
+    if (coop_ui::player_menu_open() && !shown)
+        return;
+    g_prompted_from = from;
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
     g_menu_player = -2; // (the prompt)
@@ -10132,7 +10163,22 @@ void init_ui()
                 }
             }
             uint64_t gto = 0; // 6L A: a player of the galaxy (any planet, the galaxy menu)
-            if (parties::galaxy())
+            bool picked = false; // (the player picked in a menu, when the line still names it)
+            if (const auto& w = g_whisper_pick; !w.name.empty() && H->time_seconds() < w.until &&
+                                                 rest.rfind(w.name, 0) == 0 && (rest.size() == w.name.size() || rest[w.name.size()] == ' ')) {
+                const bool here = w.sid >= 0 && [&] {
+                    for (auto& p : g_sess.players())
+                        if (p.id == w.sid) return utf8::shown_name(p.name) == w.name;
+                    return false;
+                }();
+                if (here || w.ident) {
+                    to = here ? w.sid : -1;
+                    gto = here ? 0 : w.ident;
+                    best = w.name.size();
+                    picked = true;
+                }
+            }
+            if (parties::galaxy() && !picked)
                 for (auto& o : parties::online()) {
                     const std::string n = utf8::shown_name(o.name);
                     if (!n.empty() && n.size() > best && rest.rfind(n, 0) == 0 && (rest.size() == n.size() || rest[n.size()] == ' ')) {
@@ -11971,7 +12017,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         pc.name_of = [](uint8_t id) { return utf8::shown_name(player_name_of(id)); };
         pc.feed = [](const std::string& t) { feed(t); };
         pc.changed = [] { g_lobby_dirty = true; };
-        pc.galaxy_welcomed = [] { return galaxy::welcomed(); }; // 6K: the galaxy server keeps the parties
+        // 6K: the galaxy server keeps the parties, but not of a direct session played while connected to one (2026-11-18
+        // review: that session got no Party cards, "not here" invites and migrations alone)
+        pc.galaxy_welcomed = [] { return galaxy::welcomed() && (g_sess.role() == net::Role::None || galaxy::relayed()); };
         pc.galaxy_slot = [] { return galaxy::my_slot(); };
         pc.galaxy_send = [](uint8_t kind, uint64_t other, uint8_t flag, uint32_t stage) {
             return galaxy::party_send(kind, other, flag, stage);

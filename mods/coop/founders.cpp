@@ -682,7 +682,7 @@ bool model_ids(const std::string& key, std::vector<uint32_t>& ids, std::string& 
         err = "Could not list this planet's archived creatures.";
         return false;
     }
-    bool ok = true;
+    bool ok = true, capped = false;
     do {
         std::wstring name = entry.cFileName;
         auto suffix = name.substr(name.size() >= 8 ? name.size() - 8 : 0);
@@ -690,10 +690,10 @@ bool model_ids(const std::string& key, std::vector<uint32_t>& ids, std::string& 
         uint32_t id = wcstoul(suffix.c_str(), nullptr, 16);
         if ((id >> 24) != 0x7C || (entry.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) ||
             entry.nFileSizeHigh || !entry.nFileSizeLow || entry.nFileSizeLow > kMaxModel) { ok = false; break; }
-        if (ids.size() >= kMaxModels) break; // (the rest stay on disk unread: a load never fails on their number)
+        if (ids.size() >= kMaxModels) { capped = true; break; } // (the rest stay on disk unread: a load never fails on their number)
         ids.push_back(id);
     } while (FindNextFileW(h, &entry));
-    if (ok && GetLastError() != ERROR_NO_MORE_FILES) ok = false;
+    if (ok && !capped && GetLastError() != ERROR_NO_MORE_FILES) ok = false; // (capped: the loop left early, no error)
     FindClose(h);
     if (!ok) err = "Invalid or excessive guest creature archives in this save.";
     return ok;

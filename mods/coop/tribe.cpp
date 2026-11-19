@@ -4804,8 +4804,28 @@ static void host_tick(double now)
     size_t head = 2 + 1 + 1 + 1 + nt * 13 + food_bytes + 1 + kTrailerSize + (infos.empty() ? 0 : 4 + 1 + nt * kTribeInfo);
     if (village_orders) head += tribe_seats::rescue_bytes(rescue_seats);
     if (g_native_chiefs_fix) head += 5 + nt * 2;
-    size_t per = std::max<size_t>(1, (net::kMaxPacket - 64 - head) / kEntry);
+    // 2026-11-18 review: every chunk carries the whole village table, so about 21 villages (16 players and 5 native
+    // tribes) are what one packet takes. Above that the subtraction wrapped (one oversized chunk, dropped by the
+    // connection: no Tribe state at all) and the u8 chunk count wrapped past 255. Said once; the table needs its own
+    // message before a Tribe planet takes more players (docs/13-alpha-review-2026-11-18.md W4).
+    const size_t budget = net::kMaxPacket - 64;
+    static bool s_said_villages = false;
+    if (head + kEntry > budget) {
+        if (!s_said_villages)
+            H->log(M, SK_ERROR, "tribe state: %zu villages do not fit one packet (%zu of %zu bytes before any member): "
+                   "NOT SENT; a Tribe planet takes about 21 villages today", nt, head, budget);
+        s_said_villages = true;
+        return;
+    }
+    size_t per = std::max<size_t>(1, (budget - head) / kEntry);
     size_t chunks = std::max<size_t>(1, (entries.size() + per - 1) / per);
+    if (chunks > 255) { // (the count is a byte)
+        if (!s_said_villages)
+            H->log(M, SK_ERROR, "tribe state: %zu members in %zu chunks of %zu: only the first 255 chunks are sent",
+                   entries.size(), chunks, per);
+        s_said_villages = true;
+        chunks = 255;
+    }
     for (size_t k = 0; k < chunks; k++) {
         net::Writer w;
         w.u16(g_cycle);

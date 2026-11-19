@@ -6,6 +6,7 @@
 #include "parties.h"
 #include "parties_net.h"
 #include "net/galaxy.h"
+#include "net/utf8.h"
 
 #include <cstdio>
 
@@ -126,7 +127,8 @@ static void host_request(uint8_t from, uint8_t kind, uint8_t other, uint8_t flag
         break;
     case kAnswer: {
         r = g_book.answer(from, other, flag != 0, now);
-        result_to(other, kind, from, r); // (the inviter hears how it went)
+        if (r != Result::NoInvite && r != Result::Unknown) // (2026-11-18 review: not for an answer to no invite)
+            result_to(other, kind, from, r); // (the inviter hears how it went)
         if (r == Result::Ok) {
             feed(name(from) + " joined " + name(other) + "'s party.");
             send_table();
@@ -136,14 +138,21 @@ static void host_request(uint8_t from, uint8_t kind, uint8_t other, uint8_t flag
             feed(name(from) + " declined " + name(other) + "'s invite.");
         break;
     }
-    case kLeave:
+    case kLeave: {
+        const Party* was = g_book.find(from);
+        const bool alone = !was || was->members.size() <= 1; // (nothing to leave: nothing announced)
         r = g_book.leave(from);
+        if (r == Result::Ok && alone) {
+            result_to(from, kind, from, r);
+            break;
+        }
         if (r == Result::Ok) {
             feed(name(from) + " left their party.");
             send_table();
         }
         result_to(from, kind, from, r);
         break;
+    }
     case kKick: {
         r = g_book.kick(from, other);
         if (r == Result::Ok) {
@@ -407,8 +416,8 @@ void on_galaxy(uint8_t type, net::Reader& r)
             Member m;
             m.slot = r.u16();
             m.identity = r.u64();
-            m.name = r.str8();
-            m.planet = r.str8();
+            m.name = utf8::player_name(r.str8()); // (2026-11-18 review: cleaned as the session's names are)
+            m.planet = utf8::clean_text(r.str8(), 64);
             m.stage = r.u32();
             m.leader = m.slot == v.leader;
             m.me = m.slot == mine;
@@ -416,7 +425,7 @@ void on_galaxy(uint8_t type, net::Reader& r)
         }
         v.inviter = r.u16();
         v.inviter_id = r.u64();
-        v.inviter_name = r.str8();
+        v.inviter_name = utf8::player_name(r.str8());
         if (!r.ok() || n > kMaxMembers)
             return;
         const bool new_invite = v.inviter && v.inviter != g_gx.inviter;
@@ -432,7 +441,7 @@ void on_galaxy(uint8_t type, net::Reader& r)
             C.changed();
     } else if (type == PARTYNOTE) {
         const uint8_t kind = r.u8(), code = r.u8();
-        const std::string other = r.str8();
+        const std::string other = utf8::player_name(r.str8());
         if (!r.ok())
             return;
         g_notes_got++;
@@ -456,8 +465,8 @@ void on_galaxy(uint8_t type, net::Reader& r)
             Online o;
             o.slot = r.u16();
             o.identity = r.u64();
-            o.name = r.str8();
-            o.planet = r.str8();
+            o.name = utf8::player_name(r.str8());
+            o.planet = utf8::clean_text(r.str8(), 64);
             o.party = r.u16();
             v.push_back(std::move(o));
         }

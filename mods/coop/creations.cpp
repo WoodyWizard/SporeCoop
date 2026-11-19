@@ -4094,6 +4094,14 @@ static bool adopt_after_editor(double now)
     g_adopt_until = 0;
     if (g_host_world_fix && is_host()) { // BUG-0344: the editor's result (the avatar's species) is the own one
         g_choice_epoch[g_adopt_kind] = kNoEpoch;
+        // 2026-11-18 review (5U A): the host's recorded creature of this world follows what it just made. The record
+        // still named the body before the evolution, the new creation is listed only at the next read (10 s), and
+        // apply_own_avatar could put the old body back on the new avatar 3 s after the editor
+        if (g_host_own_record && g_adopt_kind == kCreature && a.instance) {
+            if (world_record(kCreature, modes::current_world()) != a.instance)
+                world_record_set(kCreature, modes::current_world(), a.instance);
+            g_opts_read = -100; // (the creations read again now)
+        }
         return false;
     }
     if (!(a == mine(g_adopt_kind).key)) {

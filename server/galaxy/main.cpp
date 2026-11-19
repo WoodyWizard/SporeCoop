@@ -2,7 +2,8 @@
 // connects to. Runs no Spore: it keeps the players (a slot each), the planets (who hosts each one now, who is on it)
 // and relays the planet sessions' packets between a planet's host and its players (net/galaxy.h).
 //
-// usage: galaxy_server [--local] [--worlds <dir>] [--warm-handover] [--planet-players <n>] [port] [galaxy name]
+// usage: galaxy_server [--local] [--worlds <dir>] [--warm-handover] [--planet-players <n>] [--max-players <n>]
+//                      [--max-per-address <n>] [--max-worlds <n>] [--max-world-mb <n>] [port] [galaxy name]
 //        (port 47900 by default; --local: 127.0.0.1 only; worlds: the folder of stored worlds, "worlds" by default)
 //
 // Planets are made when a player enters one; the host is the first player on a planet. Decision 5Q A: the server keeps
@@ -11,6 +12,7 @@
 // downloads it, loads it and hosts it. Players entering while the host is not hosting yet are asked to wait.
 // Decision 5V A: when the host leaves (or times out) and players stay, the next one hosts the stored world (the host
 // uploads it before it leaves) and the others join it once it is READY. Not yet: identities and bans across planets.
+#include <algorithm>
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
@@ -37,7 +39,14 @@ struct Client {
     uint64_t identity = 0;
     uint32_t last_ms = 0;
     uint32_t stage = 0; // 6K: the game mode it plays (its PARTY kPartyStage; 0 a menu or a load)
+    uint32_t fetch_ms = 0;   // its last FETCH (one every kFetchEveryMs: each reads and checks a whole world)
+    uint8_t ping_off = 0;    // pings in a row whose planet state disagrees with this server's (net/galaxy.h PING)
 };
+// limits (2026-11-18 review: nothing bounded the players, the worlds or a world's size); each has a switch
+static size_t g_max_players = 1024, g_max_per_address = 64, g_max_worlds = 500;
+static uint32_t g_max_world_bytes = 32u << 20;
+constexpr uint32_t kFetchEveryMs = 3000, kDownloadGiveUpMs = 30000;
+constexpr size_t kMaxPlanetName = 64, kMaxPlayerName = 32;
 
 struct Planet {
     uint16_t host = 0;
@@ -184,7 +193,7 @@ static void load_stored()
         FILE* f = fopen(e.path().string().c_str(), "rb");
         if (!f)
             continue;
-        uint8_t head[4 + 1 + 255 + 8];
+        uint8_t head[4 + 1 + 255 + 8 + 1 + 12]; // (GWS2: + the tech level and the species key; a 243+ byte name did not load)
         const size_t n = fread(head, 1, sizeof head, f);
         fclose(f);
         Reader r(head, n);
@@ -208,6 +217,10 @@ static void load_stored()
 
 static bool store_world(const std::string& planet, const XferIn& in, const Meta& meta, std::string& why)
 {
+    if (!g_stored.count(planet) && g_stored.size() >= g_max_worlds) {
+        why = "the galaxy keeps no more planets (its limit is reached)";
+        return false;
+    }
     const std::string file = world_file(planet), tmp = file + ".tmp";
     FILE* f = fopen(tmp.c_str(), "wb");
     if (!f) {
@@ -273,6 +286,53 @@ static void send_players(const Client& c);
 static Client* by_identity(uint64_t id);
 static void party_note(const Client& to, uint8_t kind, parties::Result r, const std::string& other);
 
+// the planet's host hosts it now (its READY, or its pings say so: a READY is sent once and can be lost)
+static void planet_ready(Client& c)
+{
+    auto it = g_planets.find(c.planet);
+    if (it == g_planets.end() || it->second.host != c.slot || it->second.ready)
+        return;
+    it->second.ready = true;
+    say("planet '%s': hosted by %u '%s'", c.planet.c_str(), c.slot, c.name.c_str());
+    for (uint16_t m : it->second.members) // 5V A: the players who waited for the hand-over join it
+        if (m != c.slot) {
+            Writer w = control(ROLE);
+            w.str8(c.planet);
+            w.u8(kGuestRole);
+            w.u16(c.slot);
+            w.u32(0);
+            w.u64(it->second.token);
+            send(g_clients[m], w);
+            say("planet '%s': %u '%s' joins its new host", c.planet.c_str(), m, g_clients[m].name.c_str());
+        }
+}
+
+static size_t players_from(const Endpoint& e)
+{
+    size_t n = 0;
+    for (auto& [s, c] : g_clients)
+        n += c.ep.ip == e.ip;
+    return n;
+}
+
+// a name as the players' games show it: one line, no control characters (2026-11-18 review: a name with a line break
+// forged feed lines and friends.txt entries on other players' games)
+static std::string clean_name(std::string s, size_t max)
+{
+    std::string out;
+    for (unsigned char ch : s)
+        if (ch >= 0x20 && ch != 0x7F)
+            out += (char)ch;
+    if (out.size() > max) {
+        out.resize(max);
+        while (!out.empty() && ((unsigned char)out.back() & 0xC0) == 0x80) // (not half a UTF-8 letter)
+            out.pop_back();
+        if (!out.empty() && (unsigned char)out.back() >= 0xC0)
+            out.pop_back();
+    }
+    return out;
+}
+
 static void on_control(const Endpoint& from, Reader& r)
 {
     const uint8_t type = r.u8();
@@ -291,7 +351,17 @@ static void on_control(const Endpoint& from, Reader& r)
             send(tmp, w);
             return;
         }
+        name = clean_name(name, kMaxPlayerName);
+        version = clean_name(version, 48);
         if (!c) {
+            if (g_clients.size() >= g_max_players || players_from(from) >= g_max_per_address) {
+                Client tmp;
+                tmp.ep = from;
+                Writer w = control(REFUSED);
+                w.str8("This galaxy is full: try again later.");
+                send(tmp, w);
+                return;
+            }
             const uint16_t s = new_slot();
             if (!s)
                 return;
@@ -347,6 +417,25 @@ static void on_control(const Endpoint& from, Reader& r)
     }
     if (type == PING) {
         send(*c, control(PONG));
+        if (r.left() >= 2) { // its planet state (a LEAVE or a READY that was lost: followed after kPingMismatches pings)
+            const std::string on = r.str8();
+            const uint8_t state = r.u8();
+            if (!r.ok())
+                return;
+            auto pl = g_planets.find(c->planet);
+            const bool gone = on.empty() && state == kPingNone && !c->planet.empty();
+            const bool hosts = state == kPingHosting && !c->planet.empty() && on == c->planet && pl != g_planets.end() &&
+                               pl->second.host == c->slot && !pl->second.ready;
+            if (!gone && !hosts)
+                c->ping_off = 0;
+            else if (++c->ping_off >= kPingMismatches) {
+                c->ping_off = 0;
+                if (gone)
+                    leave_planet(*c, "its game says it left");
+                else
+                    planet_ready(*c);
+            }
+        }
     } else if (type == LIST) { // the planets with players, then the stored ones nobody is on
         std::vector<std::string> names;
         for (auto& [name, p] : g_planets)
@@ -373,6 +462,13 @@ static void on_control(const Endpoint& from, Reader& r)
         std::string name = r.str8();
         if (!r.ok() || name.empty())
             return;
+        if (name.size() > kMaxPlanetName || clean_name(name, kMaxPlanetName) != name) {
+            Writer w = control(REFUSED);
+            w.str8("That planet name cannot be used (too long, or odd characters).");
+            send(*c, w);
+            return;
+        }
+        c->ping_off = 0;
         auto ex = g_planets.find(name);
         if (ex != g_planets.end() && ex->second.host && !ex->second.ready && ex->second.host != c->slot) {
             Writer w = control(REFUSED);
@@ -420,26 +516,17 @@ static void on_control(const Endpoint& from, Reader& r)
     } else if (type == LEAVE) {
         leave_planet(*c, "left");
     } else if (type == READY) {
-        auto it = g_planets.find(c->planet);
-        if (it != g_planets.end() && it->second.host == c->slot && !it->second.ready) {
-            it->second.ready = true;
-            say("planet '%s': hosted by %u '%s'", c->planet.c_str(), c->slot, c->name.c_str());
-            for (uint16_t m : it->second.members) // 5V A: the players who waited for the hand-over join it
-                if (m != c->slot) {
-                    Writer w = control(ROLE);
-                    w.str8(c->planet);
-                    w.u8(kGuestRole);
-                    w.u16(c->slot);
-                    w.u32(0);
-                    w.u64(it->second.token);
-                    send(g_clients[m], w);
-                    say("planet '%s': %u '%s' joins its new host", c->planet.c_str(), m, g_clients[m].name.c_str());
-                }
-        }
+        planet_ready(*c);
     } else if (type == FETCH) { // a player of the planet wants its stored world (its host; 6I A: a guest too)
         auto it = g_planets.find(c->planet);
         auto st = g_stored.find(c->planet);
         std::vector<uint8_t> data;
+        const uint32_t now = now_ms();
+        if (auto cur = g_downloads.find(c->slot); cur != g_downloads.end() && cur->second.planet == c->planet)
+            return; // (its world is on its way already: a FETCH again)
+        if (c->fetch_ms && now - c->fetch_ms < kFetchEveryMs)
+            return; // (each FETCH reads and checks a whole world)
+        c->fetch_ms = now ? now : 1;
         if (it == g_planets.end() || !it->second.members.count(c->slot) || st == g_stored.end() ||
             !read_world(st->second, data)) {
             Writer w = control(REFUSED);
@@ -449,15 +536,17 @@ static void on_control(const Endpoint& from, Reader& r)
         }
         XferOut& x = g_downloads[c->slot];
         x.start(g_next_xfer++, c->planet, std::move(data));
-        x.begin_ms = now_ms();
+        x.begin_ms = x.ack_ms = now_ms();
         send(*c, x.begin());
         say("planet '%s': sending its world to %u '%s' (%u KB)", c->planet.c_str(), c->slot, c->name.c_str(),
             st->second.size >> 10);
     } else if (type == XACK) {
         const uint32_t id = r.u32(), idx = r.u32();
         auto it = g_downloads.find(c->slot);
-        if (r.ok() && it != g_downloads.end() && it->second.id == id)
+        if (r.ok() && it != g_downloads.end() && it->second.id == id) {
             it->second.on_ack(idx);
+            it->second.ack_ms = now_ms();
+        }
     } else if (type == XDONE) {
         const uint32_t id = r.u32();
         const uint8_t ok = r.u8();
@@ -470,8 +559,22 @@ static void on_control(const Endpoint& from, Reader& r)
         }
     } else if (type == XBEGIN) { // an upload: only the planet's host, for its planet
         XferIn in;
-        if (!in.begin(r))
+        const bool fits = in.header(r, g_max_world_bytes); // (nothing allocated before the sender is checked)
+        if (!r.ok())
             return;
+        auto cur = g_uploads.find(c->slot);
+        if (cur != g_uploads.end() && cur->second.id == in.id)
+            return; // (its begin again)
+        auto it = g_planets.find(c->planet);
+        const bool host = !c->planet.empty() && in.planet == c->planet && it != g_planets.end() && it->second.host == c->slot;
+        if (!host || !fits) {
+            Writer w = control(XDONE);
+            w.u32(in.id);
+            w.u8(0);
+            w.str8(!host ? "only the planet's host stores its world" : "this world is larger than the galaxy takes");
+            send(*c, w);
+            return;
+        }
         if (r.left() >= 13) { // the menu's facts of the planet (5X B)
             Meta m;
             m.tech = r.u8();
@@ -479,18 +582,7 @@ static void on_control(const Endpoint& from, Reader& r)
                 v = r.u32();
             g_upload_meta[c->slot] = m;
         }
-        auto cur = g_uploads.find(c->slot);
-        if (cur != g_uploads.end() && cur->second.id == in.id)
-            return; // (its begin again)
-        auto it = g_planets.find(c->planet);
-        if (in.planet != c->planet || it == g_planets.end() || it->second.host != c->slot) {
-            Writer w = control(XDONE);
-            w.u32(in.id);
-            w.u8(0);
-            w.str8("only the planet's host stores its world");
-            send(*c, w);
-            return;
-        }
+        in.alloc();
         g_uploads[c->slot] = std::move(in);
     } else if (type == XCHUNK) {
         const uint32_t id = r.u32(), idx = r.u32();
@@ -670,7 +762,8 @@ static void on_party(Client& c, Reader& r)
         if (const auto* q = g_parties.find(c.slot))
             old_members = q->members;
         res = g_parties.answer(c.slot, o->slot, flag != 0, now / 1000.0);
-        party_note(*o, kPartyAnswer, res, c.name); // (the inviter hears how it went)
+        if (res != parties::Result::NoInvite && res != parties::Result::Unknown) // (not for an answer to no invite:
+            party_note(*o, kPartyAnswer, res, c.name); //  anyone could send "X declined" lines to anyone)
         if (res == parties::Result::Ok) {
             say("party: %u '%s' joined %u '%s''s party", c.slot, c.name.c_str(), o->slot, o->name.c_str());
             for (uint16_t m : old_members)
@@ -799,11 +892,17 @@ static void on_fan(const Endpoint& from, const uint8_t* data, size_t n)
     std::memcpy(out.data() + 1, &c->slot, 2);
     std::memcpy(out.data() + 3, data + body_at, body);
     g_fan_in_bytes += n;
+    uint16_t sent[kMaxFanSlots];
+    size_t nsent = 0;
     for (size_t i = 0; i < count; i++) {
         uint16_t to;
         std::memcpy(&to, data + 2 + 2 * i, 2);
         auto it = g_clients.find(to);
-        if (to == c->slot || it == g_clients.end() || !pl->second.members.count(to)) {
+        // (each player once: a slot listed 64 times got 64 copies, 2026-11-18 review)
+        const bool twice = std::find(sent, sent + nsent, to) != sent + nsent;
+        if (!twice)
+            sent[nsent++] = to;
+        if (twice || to == c->slot || it == g_clients.end() || !pl->second.members.count(to)) {
             g_fan_dropped++;
             continue;
         }
@@ -824,6 +923,20 @@ int main(int argc, char** argv)
             g_worlds_dir = argv[++i];
         else if (!strcmp(argv[i], "--warm-handover"))
             g_warm_handover = true;
+        else if (!strcmp(argv[i], "--max-players") && i + 1 < argc)
+            g_max_players = (size_t)std::max(1, atoi(argv[++i]));
+        else if (!strcmp(argv[i], "--max-per-address") && i + 1 < argc)
+            g_max_per_address = (size_t)std::max(1, atoi(argv[++i]));
+        else if (!strcmp(argv[i], "--max-worlds") && i + 1 < argc)
+            g_max_worlds = (size_t)std::max(1, atoi(argv[++i]));
+        else if (!strcmp(argv[i], "--max-world-mb") && i + 1 < argc)
+            g_max_world_bytes = (uint32_t)std::min(128, std::max(1, atoi(argv[++i]))) << 20;
+        else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
+            printf("usage: galaxy_server [--local] [--worlds <dir>] [--warm-handover] [--planet-players <n>]\n"
+                   "                     [--max-players <n>] [--max-per-address <n>] [--max-worlds <n>] [--max-world-mb <n>]\n"
+                   "                     [port] [galaxy name]\n");
+            return 0;
+        }
         else if (!strcmp(argv[i], "--planet-players") && i + 1 < argc) { // 6E B: the players a planet takes
             const int n = atoi(argv[++i]);
             if (n < 2 || n > kMaxPlanetPlayers) {
@@ -850,8 +963,11 @@ int main(int argc, char** argv)
         return 1;
     }
     g_sock.set_buffers(4 << 20); // (bursts: a world sent to a joining player)
+    srand((unsigned)time(nullptr) ^ now_ms()); // (the hand-over tokens: not the same every run)
     say("galaxy server '%s' on UDP port %u (protocol %u), worlds in '%s', %u players a planet", g_name.c_str(),
         g_sock.local_port(), kProto, g_worlds_dir.c_str(), (unsigned)g_planet_players);
+    say("limits: %zu players (%zu an address), %zu stored worlds of %u MB at most", g_max_players, g_max_per_address,
+        g_max_worlds, g_max_world_bytes >> 20);
     load_stored();
     std::vector<uint8_t> buf(65536);
     uint32_t last_status = now_ms(), last_sweep = now_ms();
@@ -860,20 +976,27 @@ int main(int argc, char** argv)
         Endpoint from;
         int n;
         bool any = false;
-        while ((n = g_sock.recv_from(from, buf.data(), buf.size())) != 0) {
+        int burst = 0; // (a flood must not starve the downloads and the sweep below)
+        while (burst++ < 2048 && (n = g_sock.recv_from(from, buf.data(), buf.size())) != 0) {
             if (n < 0)
                 continue; // (an error or a dropped datagram: go on)
             any = true;
-            if (buf[0] == kRelay)
-                on_relay(from, buf.data(), (size_t)n);
-            else if (buf[0] == kFan)
-                on_fan(from, buf.data(), (size_t)n);
-            else if (buf[0] == kControl && n >= 2) {
-                Reader r(buf.data() + 1, (size_t)n - 1);
-                on_control(from, r);
+            try { // (a datagram never ends the server: out of memory on a world, anything thrown below)
+                if (buf[0] == kRelay)
+                    on_relay(from, buf.data(), (size_t)n);
+                else if (buf[0] == kFan)
+                    on_fan(from, buf.data(), (size_t)n);
+                else if (buf[0] == kControl && n >= 2) {
+                    Reader r(buf.data() + 1, (size_t)n - 1);
+                    on_control(from, r);
+                }
+            } catch (const std::exception& e) {
+                say("a datagram from %s was dropped: %s", from.masked().c_str(), e.what());
             }
         }
         const uint32_t now = now_ms();
+        for (auto it = g_downloads.begin(); it != g_downloads.end();) // (given up: its player gone, or no ack for 30 s)
+            it = !g_clients.count(it->first) || now - it->second.ack_ms > kDownloadGiveUpMs ? g_downloads.erase(it) : std::next(it);
         for (auto& [slot, x] : g_downloads) { // the worlds on their way to players
             auto c = g_clients.find(slot);
             if (c == g_clients.end())
@@ -894,8 +1017,12 @@ int main(int argc, char** argv)
                 say("player %u '%s' timed out", s, g_clients[s].name.c_str());
                 leave_planet(g_clients[s], "timed out");
                 party_player_out(g_clients[s]); // 6K
+                g_upload_meta.erase(s); // (not for the next player of this slot)
                 g_clients.erase(s);
             }
+            g_parties.lapse(now / 1000.0); // (invites nobody answered: no longer shown as pending)
+            for (auto it = g_party_ghosts.begin(); it != g_party_ghosts.end();)
+                it = now - it->second.at > kPartyGhostMs ? g_party_ghosts.erase(it) : std::next(it);
         }
         if (now - last_status > 30000) {
             const double kbs = (g_relay_bytes - status_bytes) / 1024.0 / ((now - last_status) / 1000.0);

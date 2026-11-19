@@ -79,6 +79,7 @@ static uint32_t g_handovers;
 // decision 6B C: the warm hand-over. g_planet_world: the world this game plays on the planet (a session up, in a stage);
 // g_token: the last hand-over's token; g_token_world: the world it is valid for (this game kept it loaded)
 static uint32_t g_planet_world;
+static std::string g_planet_file; // its save file ("Name.spo") while this game plays the planet (galaxy_pack in a menu)
 static uint64_t g_token;
 static uint32_t g_token_world;
 static uint32_t g_warm_hosts, g_warm_joins, g_warm_accepted;
@@ -95,6 +96,11 @@ static uint64_t g_rx, g_tx, g_rx_bytes, g_tx_bytes, g_queue_dropped;
 
 static void on_control(net::Reader& r);
 static void host_now();
+static bool fetch_fallback(const std::string& why);
+static double g_fetch_sent;   // the FETCH last went out (again every 4 s until its XBEGIN: it is one UDP datagram)
+static uint32_t g_fetch_got;  // the chunks at the last look, and when they last grew
+static double g_fetch_progress;
+static uint32_t g_fetch_again, g_fetch_fallbacks;
 static void downloaded();
 static void upload_done(bool ok, const std::string& why);
 static std::string leave_now();
@@ -303,7 +309,8 @@ static void on_control(net::Reader& r)
         if (role == kHostRole) {
             if (stored) { // its world first: download, load, then host
                 g_hstep = kFetching;
-                g_hstep_at = H->time_seconds();
+                g_hstep_at = g_fetch_sent = g_fetch_progress = H->time_seconds();
+                g_fetch_got = 0;
                 g_down = {};
                 send_control(control(FETCH));
                 say("Downloading " + planet + " from the galaxy (" + std::to_string(stored >> 10) + " KB)...");
@@ -314,17 +321,21 @@ static void on_control(net::Reader& r)
             // since; else it sends its world as before)
             g_join_crc = stored_crc;
             g_hstep = kFetching;
-            g_hstep_at = H->time_seconds();
+            g_hstep_at = g_fetch_sent = g_fetch_progress = H->time_seconds();
+            g_fetch_got = 0;
             g_down = {};
             g_stored_joins++;
             send_control(control(FETCH));
             say("Downloading " + planet + " from the galaxy (" + std::to_string(stored >> 10) + " KB)...");
         } else {
-            if (C.join && C.join(slot_endpoint(host).str(), err))
-                say("Joining " + planet + "...");
-            else
-                say("Could not join " + planet + ": " + err);
+            // joined from tick (2026-11-18 review: this runs inside Session::update while a planet session is up, and
+            // a join from there read as a join timeout at once)
+            g_pending_join = slot_endpoint(host).str();
         }
+    } else if (type == PONG) {
+        // the server answers again after "stopped answering" and still knows this game (no REFUSED then): welcomed again
+        if (!g_welcomed && H->time_seconds() - g_hello_at > 5)
+            send_hello();
     } else if (type == HOSTMOVE) { // 5V A: the host left; the new one loads the world, then the server sends ROLE
         std::string planet = r.str8();
         const uint16_t next = r.u16();
@@ -343,8 +354,13 @@ static void on_control(net::Reader& r)
         say("The host of " + planet + " left: another player takes it over, wait a moment...");
     } else if (type == XBEGIN) { // the planet's stored world (FETCH)
         net::galaxy::XferIn in;
-        if (!in.begin(r) || g_hstep != kFetching || (g_down.on && g_down.id == in.id))
+        if (!in.header(r) || g_hstep != kFetching || (g_down.on && g_down.id == in.id))
+            return; // (nothing allocated for a world nobody asked for)
+        if (!in.size) { // (no chunk would ever come: 2026-11-18 review)
+            fetch_fallback("the galaxy's copy is empty");
             return;
+        }
+        in.alloc();
         g_down = std::move(in);
     } else if (type == XCHUNK) {
         const uint32_t id = r.u32(), idx = r.u32();
@@ -394,10 +410,8 @@ static void on_control(net::Reader& r)
         }
         if (r.ok())
             say("Galaxy server: " + g_last_refusal);
-        if (r.ok() && g_hstep == kFetching) { // (no stored world after all)
-            g_hstep = kNoHost;
-            leave_now();
-        }
+        if (r.ok() && g_hstep == kFetching) // (no stored world after all: a guest joins its host the old way)
+            fetch_fallback("the galaxy has no copy for this game");
     } else if (type == HOSTGONE) {
         std::string planet = r.str8();
         if (!r.ok())
@@ -451,8 +465,7 @@ static void downloaded()
     g_down.data.shrink_to_fit();
     if (!ok) {
         say("Could not load " + g_planet + " from the galaxy: " + err);
-        g_hstep = kNoHost;
-        leave_now();
+        fetch_fallback(err);
         return;
     }
     g_downloads_done++;
@@ -608,7 +621,7 @@ static void upload_tick(double now)
     if (g_upstep == kUpSaving && now - g_up_at > 4 && !world::save_busy()) {
         std::vector<uint8_t> blob;
         std::string planet, err;
-        if (!world::galaxy_pack(blob, planet, err)) {
+        if (!world::galaxy_pack(blob, planet, err, g_planet_file)) {
             g_upstep = kUpIdle;
             upload_done(false, err);
             return;
@@ -635,6 +648,43 @@ static void upload_tick(double now)
 }
 
 // kLoading: the downloaded world loads; once the player plays in it, host it
+// The stored world does not come (2026-11-18 review: a lost FETCH left the player on "Downloading..." for good): a
+// guest joins the planet's host as before 6I A (the host sends its world); a host-to-be has no other world: it leaves.
+static bool fetch_fallback(const std::string& why)
+{
+    if (g_hstep != kFetching)
+        return false;
+    g_hstep = kNoHost;
+    g_down = {};
+    g_fetch_fallbacks++;
+    if (g_role == kGuestRole && g_host_slot) {
+        g_join_crc = 0;
+        g_pending_join = slot_endpoint(g_host_slot).str(); // (joined from tick)
+        say("The galaxy's copy of " + g_planet + " did not come (" + why + "): joining its host instead...");
+        return true;
+    }
+    say("Could not get " + g_planet + " from the galaxy (" + why + "): left it.");
+    leave_now();
+    return true;
+}
+
+static void fetch_tick(double now)
+{
+    if (g_hstep != kFetching)
+        return;
+    if (g_down.on && g_down.got != g_fetch_got) {
+        g_fetch_got = g_down.got;
+        g_fetch_progress = now;
+    }
+    if (!g_down.on && now - g_fetch_sent > 4) { // (the server takes one FETCH per 3 s)
+        g_fetch_sent = now;
+        g_fetch_again++;
+        send_control(control(FETCH));
+    }
+    if (now - g_fetch_progress > 30)
+        fetch_fallback(g_down.on ? "the download stopped" : "no answer");
+}
+
 static void loading_tick(double now)
 {
     if (g_hstep != kLoading)
@@ -730,6 +780,16 @@ std::string enter(const std::string& planet)
         return "Which planet?";
     if (C.sess && C.sess->role() != net::Role::None && !g_relay_on)
         return "Leave the current session first.";
+    // 2026-11-18 review: entering another planet while this game hosts one dropped that planet's last save, and the
+    // "leave after the save" then threw the player off the new planet: the hosted planet is saved and left first
+    if (!g_planet.empty() && planet != g_planet) {
+        if (g_hstep == kHosting && g_role == kHostRole && C.sess && C.sess->role() == net::Role::Host) {
+            const std::string old = g_planet;
+            leave();
+            return "Saving " + old + " to the galaxy first: enter " + planet + " again in a moment.";
+        }
+        leave_now(); // (a guest: off the old planet, its session closed, before the new one's ROLE)
+    }
     net::Writer w = control(ENTER);
     w.str8(planet);
     send_control(w);
@@ -786,6 +846,7 @@ void tick(double now)
         return;
     if (!g_relay_on || !C.sess || C.sess->role() == net::Role::None)
         pump(); // (while a planet session runs, its transport reads)
+    fetch_tick(now);
     loading_tick(now);
     upload_tick(now);
     hosted_stored_tick(now);
@@ -799,7 +860,7 @@ void tick(double now)
         if (C.join && C.join(addr, err))
             say("Joining " + g_planet + "...");
         else {
-            say("Could not join " + g_planet + "'s new host: " + err);
+            say("Could not join " + g_planet + ": " + err);
             leave_now();
         }
     }
@@ -809,7 +870,10 @@ void tick(double now)
     }
     if (now >= g_next_ping) {
         g_next_ping = now + 2;
-        send_control(control(PING));
+        net::Writer ping = control(PING); // with this game's planet state (a lost LEAVE or READY: net/galaxy.h)
+        ping.str8(g_planet);
+        ping.u8(g_planet.empty() ? kPingNone : g_hstep == kHosting && g_role == kHostRole ? kPingHosting : kPingOnPlanet);
+        send_control(ping);
     }
     if (g_welcomed && now - g_last_rx > 20) {
         say("The galaxy server stopped answering.");
@@ -820,8 +884,15 @@ void tick(double now)
     }
     if (!g_planet.empty() && C.sess && C.sess->connected() && C.ready && C.ready())
         g_planet_world = modes::current_world(); // (6B C: the world this game plays on the planet)
-    if (g_planet.empty())
+    if (!g_planet.empty() && g_planet_world && modes::current_world() == g_planet_world) {
+        const std::string f = modes::current_world_name();
+        if (f.size() > 4 && f.compare(f.size() - 4, 4, ".spo") == 0)
+            g_planet_file = f;
+    }
+    if (g_planet.empty()) {
         g_planet_world = 0;
+        g_planet_file.clear();
+    }
     // the planet's session ended (left, removed, its host gone): off the planet, back to the plain network
     if (g_relay_on && C.sess) {
         if (C.sess->role() != net::Role::None)
@@ -901,6 +972,7 @@ bool fan_out(const std::vector<uint16_t>& slots, uint8_t type, const net::Writer
     return true;
 }
 bool hosting() { return g_hstep == kHosting && g_role == kHostRole && C.sess && C.sess->role() == net::Role::Host; }
+bool relayed() { return g_relay_on; }
 
 uint64_t warm_join_token()
 {

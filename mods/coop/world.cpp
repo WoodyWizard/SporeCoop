@@ -279,10 +279,12 @@ static bool is_planet_file(const std::string& n)
 // guest then loaded an old game of the host (bug report 2026-10-24: a planet named in Cyrillic was
 // not found, the slot's other planet went out). Only from a menu (no game played, CurrentGameName
 // "SaveGame") the newest slot and a planet in it are sent, as before.
-static std::wstring current_slot(std::string& planet, bool& missing)
+static std::wstring current_slot(std::string& planet, bool& missing, const std::string& hint = "")
 {
     planet = modes::current_world_name(); // "Name.spo", UTF-8
     missing = false;
+    if (!is_planet_file(planet) && is_planet_file(hint))
+        planet = hint; // (in a menu: the planet its caller played, not the save folder's first one)
     if (!is_planet_file(planet)) {
         planet.clear();
         return newest_slot();
@@ -2956,11 +2958,13 @@ uint64_t current_save_write()
     return slot.empty() ? 0 : newest_write(slot);
 }
 
-bool galaxy_pack(std::vector<uint8_t>& blob, std::string& planet, std::string& err)
+bool galaxy_pack(std::vector<uint8_t>& blob, std::string& planet, std::string& err, const std::string& planet_file)
 {
     std::string cur;
     bool missing = false;
-    const std::wstring slot = current_slot(cur, missing);
+    // 2026-11-18 review: packed from the main menu (a hand-over there) the game's world name is no planet, and the
+    // save folder's first .spo was named: another planet of that folder could be stored as this one
+    const std::wstring slot = current_slot(cur, missing, planet_file);
     if (missing) {
         err = "the planet is not saved yet";
         return false;
@@ -3008,6 +3012,14 @@ bool galaxy_install(const std::vector<uint8_t>& blob, const std::string& owner, 
     }
     const std::string named = r.str8();
     const uint16_t n = r.u16();
+    if (!r.ok() || n == 0 || n > kMaxWorldFiles) { // (before anything is sized from it: 2026-11-18 review)
+        err = "the stored world is damaged";
+        return false;
+    }
+    if (game::mode_id() == modes::kEditor || game::mode_id() == modes::kEdit) { // (a load under an open editor: never)
+        err = "an editor is open: enter the planet again after it";
+        return false;
+    }
     std::vector<File> files(n);
     uint32_t crc = 0;
     std::vector<std::string> rels;

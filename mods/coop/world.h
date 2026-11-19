@@ -116,7 +116,7 @@ bool load_slot(const std::wstring& slot, const std::string& planet_file, std::st
 // of the world played now (saved before by the caller) as one blob (the files and the designs, as a share), `planet`
 // the planet played; galaxy_install: such a blob written into a co-op save slot of `owner` and loaded (as a received
 // world, but the player's own load: it hosts it)
-bool galaxy_pack(std::vector<uint8_t>& blob, std::string& planet, std::string& err);
+bool galaxy_pack(std::vector<uint8_t>& blob, std::string& planet, std::string& err, const std::string& planet_file = "");
 uint64_t current_save_write(); // 6I A: the newest file write in the played game's save folder (0 none)
 bool galaxy_install(const std::vector<uint8_t>& blob, const std::string& owner, std::string& err);
 // load Games\<slot_name>\<planet>.spo of the local profile (works from the galaxy menu)

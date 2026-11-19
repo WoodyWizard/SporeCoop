@@ -51,7 +51,10 @@ enum Type : uint8_t {
                   //   FETCH and load it, then join with the receipt stored_receipt(crc, world)), u32 its age in
                   //   seconds (a guest's ROLE; all ones: unknown)
     LEAVE = 7,    // player -> server: leaves its planet
-    PING = 8,     // player -> server (every 2 s); the server answers PONG
+    PING = 8,     // player -> server (every 2 s); the server answers PONG. Since the 2026-11-18 review it carries
+                  //   str8 the planet the game is on ("" none), u8 kPingOnPlanet / kPingHosting: READY and LEAVE go
+                  //   once over UDP, so the server takes a planet's state from the pings when one was lost (an older
+                  //   game sends no body: nothing is taken from it)
     PONG = 9,
     REFUSED = 10, // server -> player: str8 why
     HOSTGONE = 11, // server -> the planet's players: str8 planet (its host left; the hand-over is a later step)
@@ -82,6 +85,8 @@ enum Type : uint8_t {
 };
 enum PartyKind : uint8_t { kPartyInvite = 1, kPartyAnswer, kPartyLeave, kPartyLead, kPartyKick, kPartyStage };
 constexpr uint8_t kHostRole = 1, kGuestRole = 2;
+constexpr uint8_t kPingNone = 0, kPingOnPlanet = 1, kPingHosting = 2;
+constexpr int kPingMismatches = 3; // pings in a row that disagree with the server before it follows them (6 s)
 // decision 6E B (owner 2026-11-18): "Seats just mean how many players are allowed on a planet. We can set it to 16 per
 // planet." The server's --planet-players sets it (2 .. kMaxPlanetPlayers); "Setting it to 17 shouldn't cause any issues"
 constexpr uint8_t kPlanetPlayers = 16;
@@ -127,6 +132,8 @@ struct XferOut {
     std::vector<uint8_t> data;
     std::vector<uint32_t> sent_ms; // 0 never sent, 1 acked
     uint32_t acked = 0, next_unacked = 0, resent = 0, begin_ms = 0; // begin_ms: its XBEGIN last sent (again until an ack)
+    uint32_t crc = 0;     // of the data, once (begin() goes out again until the first ack: 128 MB twice a second before)
+    uint32_t ack_ms = 0;  // the last ack's time, set by the owner (a download nobody acks is given up)
     bool on = false;
     uint32_t chunks() const { return (uint32_t)((data.size() + kChunk - 1) / kChunk); }
     void start(uint32_t xid, const std::string& p, std::vector<uint8_t> d)
@@ -134,8 +141,9 @@ struct XferOut {
         id = xid;
         planet = p;
         data = std::move(d);
+        crc = crc32(0, data.data(), data.size());
         sent_ms.assign(chunks(), 0);
-        acked = next_unacked = resent = begin_ms = 0;
+        acked = next_unacked = resent = begin_ms = ack_ms = 0;
         on = true;
     }
     Writer begin() const
@@ -144,7 +152,7 @@ struct XferOut {
         w.u32(id);
         w.str8(planet);
         w.u32((uint32_t)data.size());
-        w.u32(crc32(0, data.data(), data.size()));
+        w.u32(crc);
         return w;
     }
     void on_ack(uint32_t idx)
@@ -195,18 +203,30 @@ struct XferIn {
     std::vector<uint8_t> data;
     std::vector<uint8_t> have;
     bool on = false;
-    bool begin(Reader& r)
+    // the XBEGIN's fields only: nothing is allocated before the receiver checked who sends it (2026-11-18 review: any
+    // connected player could make the server allocate 128 MB a datagram)
+    bool header(Reader& r, uint32_t max_bytes = kMaxWorld)
     {
         id = r.u32();
         planet = r.str8();
         size = r.u32();
         crc = r.u32();
-        if (!r.ok() || size > kMaxWorld)
-            return on = false;
+        on = false;
+        return r.ok() && size <= max_bytes;
+    }
+    void alloc()
+    {
         data.assign(size, 0);
         have.assign((size + kChunk - 1) / kChunk, 0);
         got = 0;
-        return on = true;
+        on = true;
+    }
+    bool begin(Reader& r)
+    {
+        if (!header(r))
+            return false;
+        alloc();
+        return true;
     }
     // a chunk (after its u32 id): true when it belongs here (the ack is due either way then)
     bool chunk(uint32_t idx, Reader& r)

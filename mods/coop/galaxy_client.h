@@ -50,6 +50,7 @@ uint32_t planets_version();                 // changes with the list
 std::string current_planet();               // the planet this player is on ("" none)
 std::string galaxy_name();                  // the connected galaxy's name ("" when not connected)
 bool hosting();                             // this game hosts a planet of the galaxy now
+bool relayed();                             // the session (if any) runs through the galaxy server: a planet's session
 // decision 6F B: the planet's host sends one unreliable message the galaxy server copies to these players' slots
 // (net/galaxy.h kFan); false: not hosting through the galaxy, or too big (the caller sends it to each instead)
 bool fan_out(const std::vector<uint16_t>& slots, uint8_t type, const net::Writer& body);

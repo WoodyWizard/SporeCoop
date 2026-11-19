@@ -96,7 +96,15 @@ public:
             return Result::Ok;
         drop_member(p);
         alone(p);
+        drop_invites_from(p); // (sent for the party it left: 2026-11-18 review)
         return Result::Ok;
+    }
+    // the invites a player sent are for the party it was in: gone when it leaves or is removed (else the invited
+    // player left its own party for a party of two with someone just kicked)
+    void drop_invites_from(Id p)
+    {
+        for (auto it = invites_.begin(); it != invites_.end();)
+            it = it->second.from == p ? invites_.erase(it) : std::next(it);
     }
     // stage: the game mode each one plays (0: unknown, never refused for it)
     Result invite(Id from, Id to, uint32_t from_stage, uint32_t to_stage, double now)
@@ -120,7 +128,11 @@ public:
     Result answer(Id to, Id from, bool yes, double now)
     {
         auto it = invites_.find(to);
-        if (it == invites_.end() || it->second.from != from || now - it->second.at > kInviteSeconds)
+        if (it != invites_.end() && now - it->second.at > kInviteSeconds) { // (lapsed: gone, not shown as pending again)
+            invites_.erase(it);
+            return Result::NoInvite;
+        }
+        if (it == invites_.end() || it->second.from != from)
             return Result::NoInvite;
         invites_.erase(it);
         if (!yes)
@@ -173,6 +185,7 @@ public:
             return Result::NotMember;
         drop_member(who);
         alone(who);
+        drop_invites_from(who); // (sent for the party it was removed from)
         return Result::Ok;
     }
     // a player back after a drop (a galaxy reconnect): into party `party_id` again when it still exists and has room

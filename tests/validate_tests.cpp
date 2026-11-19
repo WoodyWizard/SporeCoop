@@ -128,8 +128,6 @@ static void test_chunks()
     }
 }
 
-static bool g_nofix = false;
-
 static void test_cycle()
 {
     printf("snapshot chunk numbers\n");
@@ -559,8 +557,10 @@ static void test_settings()
     CHECK(!parse_value(kCellRegen, "2", v) && !parse_value(kCellRegen, "x", v) && !parse_value(kCellRegen, "", v));
     // F3 step 3 (BUG-0768): defaults are 0.7.11's behaviour; friendly fire off; 2..4 players; F5's named values
     CHECK(kDefs[kFriendlyFire].def == 0 && kDefs[kFriendlyFire].scope == Scope::Session);
-    CHECK(kDefs[kPlayerLimit].def == 4 && kDefs[kPlayerLimit].min == 2 && kDefs[kPlayerLimit].max == 4);
-    CHECK(parse_value(kPlayerLimit, "3", v) && v == 3 && !parse_value(kPlayerLimit, "1", v) && !parse_value(kPlayerLimit, "5", v));
+    // (the alpha, 6E B: one ceiling of 64; "Setting it to 17 shouldn't cause any issues")
+    CHECK(kDefs[kPlayerLimit].def == 4 && kDefs[kPlayerLimit].min == 2 && kDefs[kPlayerLimit].max == 64);
+    CHECK(parse_value(kPlayerLimit, "3", v) && v == 3 && !parse_value(kPlayerLimit, "1", v) && !parse_value(kPlayerLimit, "65", v));
+    CHECK(parse_value(kPlayerLimit, "17", v) && v == 17 && parse_value(kPlayerLimit, "64", v) && v == 64);
     CHECK(!parse_value(kPlayerLimit, "on", v) && value_text(kPlayerLimit, 3) == "3");
     CHECK(kDefs[kCreatureMode].def == 0 && value_text(kCreatureMode, 0) == "own" && value_text(kCreatureMode, 1) == "host");
     CHECK(parse_value(kCreatureMode, "host", v) && v == 1 && parse_value(kCreatureMode, "own", v) && v == 0);
