@@ -3707,3 +3707,15 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   ../re/space.md#space-captain-items-null); this entry moves to the archive when the night run confirms the fix.
 * Fixed 2026-11-19 (fix/w55-captain, 0.7.15.3): `game.captain_items` (BUG-0304) and `game.captain_stats` (BUG-1278);
   lab PASS 20261119-111406, FAIL with the guards off 20261119-112022 / 20261119-112459.
+
+## Cell: on a 512 kbit/s link the guest lacks hundreds of the host's cells for a while (2026-11-19, fix/w57-cellkin)
+<a id="issue-cell-slow-link-missing"></a>
+
+* What happens: with the guest's link capped at 512 kbit/s the sync-check finds 165-304 of the host's cells missing on
+  the guest seconds after it arrives in the Cell world, and a dozen at the start of the Creature switch vote.
+* Reproduce: `lab.py run evo_screens_switch_slow` (SPORE_NET=lowband): the lab's sync-check gate fails every run since
+  2026-11-18, on 0.7.15.1 and 0.7.15.2 too (not a 0.7.16 regression); the test's own checks pass.
+* Next steps: find out whether the guest's screen lacks them for long (a slow link's real gap) or only in the checked
+  window; then a sender that fits the link, or a gate rule with its reason.
+* Ticket: BUG-1309
+* Fixed 2026-11-19 (fix/w57-cellslow): real, not the check's window (the guest's own game kept ~100 of ~400 cells for as long as the link was full); cell.slow_link paces each guest's Cell state nearest first (../re/cell.md#cell-slow-link). The four BUG-1269 lines that followed this entry were a union-merge leftover of the archived entry #issue-cell-end-white: removed.

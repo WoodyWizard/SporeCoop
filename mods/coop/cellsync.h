@@ -79,6 +79,9 @@ bool spend_owed();                                           // host: a guest's 
 std::string spend_status();
 void own_spent_heard(int v);                                   // guest: WP-D, the host's row cell_spent_own for us
 bool own_spent_rows(std::vector<std::pair<int, int>>& out);   // host: that row (false: not in Cell / no own counts)
+// BUG-1309 (host): the most cells the host's paced Cell state lists for guest `id` in the last 3 s (its nearest);
+// 0: not paced (whole rounds, kSendCap) or cell.slow_link off (the sync-check then assumes 900)
+size_t sent_cap(int id);
 float scale_now(); // BUG-0606: the own game's world scale G+0x514C in Cell (sync-check), 0 outside Cell or when not sane
 
 } // namespace cellsync
