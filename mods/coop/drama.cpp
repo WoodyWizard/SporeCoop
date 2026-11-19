@@ -15,6 +15,7 @@
 #include "fixes.h"
 #include "game.h"
 #include "modes.h"
+#include "player_rules.h"
 #include "sporekit_game.hpp"
 
 namespace drama {
@@ -28,6 +29,21 @@ static const net::Session* S;
 static const char* kKind[9] = {"kind0", "night_predator", "ufo", "meteor", "baby_game", "rain",
                                "sea_monster", "creature_attack", "summon"};
 static unsigned g_mask = 1u << 2;
+// BUG-1282 (found by the Lineages fork (PR #196), its BUG-9131): the meteor strike (3), the rain storm (5) and the night
+// predator (1) ran in each game by itself, at other times: a guest saw meteors and rain the host never had, and its
+// own night predator, a creature the host's world never had. The host's world owns them: the host's start of a meteor
+// strike or a rain storm goes to the guests (MSG_PLAYER_RULE kind K_DRAMA), whose game starts the same kind at once;
+// a guest's own game starts none of the three in Creature. The UFO (2) already is the host's (BUG-0486, its ship is
+// shown on the guest: BUG-0558). A host before 0.7.16 (npc below 1.2) sends nothing: its guests keep their own events (as 0.7.15).
+// `coop.fix creature.shared_events off`: each game its own (0.7.15).
+static bool g_shared_fix = true;
+COOP_FIX("creature.shared_events", "BUG-1282", g_shared_fix,
+         "creature: meteors and rain storms follow the host's (a guest's game starts none of its own, nor its own night predator)");
+static constexpr unsigned kRelay = (1u << 3) | (1u << 5); // meteor strike, rain storm: started on the guests too
+static constexpr unsigned kHostOnly = 1u << 1;            // night predator: not on a guest (the host's world has its own)
+static bool g_from_host = false;                          // starting a kind the host sent
+CALL_GUARD("drama.from_host", g_from_host);
+static unsigned g_relayed_tx[9], g_relayed_rx[9];
 static unsigned g_started[9], g_refused[9];
 // tests (BUG-1188, `coop.drama hold <hex mask>`): this game's Drama Manager starts no event of these kinds (any role)
 // until the world changes; tribe_duet holds the creature attack, whose attacked village is the test's NPC village
@@ -124,6 +140,7 @@ static void drop_stale_attack_tribe(void* ev, const char* why)
            t, alive ? "listed alive" : "destroyed", why);
 }
 
+static uintptr_t a_Get, a_StartKind;
 static void* g_flock_event;  // the summon event started for a puppet (host)
 static void* g_flock_puppet; // that puppet
 static void forget_flock(const char* why)
@@ -153,6 +170,13 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
         g_flock_refused++; // BUG-0736: the host makes it (player_rules sent the ability)
         return;
     }
+    if (g_shared_fix && kind < 9 && ((kRelay | kHostOnly) >> kind & 1) && is_guest() && !g_from_host &&
+        game::mode_id() == modes::kCreature && player_rules::host_sends_drama()) { // BUG-1282
+        if (g_refused[kind]++ < 5)
+            H->log(M, SK_INFO, "drama: %s is an event of the host's world: not started on its own here (creature.shared_events)",
+                   kKind[kind]);
+        return; // stays inactive: the manager tries again after the event's next wait
+    }
     if (((kind < 9 && (g_mask >> kind & 1)) || tribe_attack) && is_guest()) { // BUG-0486
         if (g_refused[kind]++ < 5)
             H->log(M, SK_INFO, "drama: this game would start its own %s event: not on a guest, the host's world has "
@@ -166,12 +190,34 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
         drop_stale_attack_tribe(ev, "its start"); // BUG-1078
     if (kind < 9) {
         g_started[kind]++;
-        H->log(M, SK_INFO, "drama: %s event starts (%s)", kKind[kind], is_guest() ? "guest" : "host or alone");
+        H->log(M, SK_INFO, "drama: %s event starts (%s%s)", kKind[kind], is_guest() ? "guest" : "host or alone",
+               g_from_host ? ", the host's" : "");
     }
     o_Start(mgr, ev, arg);
+    if (g_shared_fix && kind < 9 && (kRelay >> kind & 1) && S && S->role() == net::Role::Host && S->connected() &&
+        game::mode_id() == modes::kCreature) { // BUG-1282: the guests start it too
+        player_rules::drama_out((uint8_t)kind);
+        g_relayed_tx[kind]++;
+    }
 }
 
-static uintptr_t a_Get, a_StartKind;
+void from_host(uint8_t kind) // BUG-1282 (player_rules K_DRAMA, from the host)
+{
+    if (!g_shared_fix || kind > 8 || !(kRelay >> kind & 1) || !is_guest() || game::mode_id() != modes::kCreature)
+        return;
+    void* mgr = a_Get ? skg::cdecl_call<void*>(a_Get) : nullptr;
+    if (!mgr || !a_StartKind)
+        return;
+    g_relayed_rx[kind]++;
+    unsigned before = g_started[kind];
+    {
+        callguard::Hold host(g_from_host);
+        skg::thiscall<void>(a_StartKind, mgr, (int)kind, 0); // the game's own start of every idle event of the kind
+    }
+    H->log(M, SK_INFO, "drama: the host's %s: %s here too", kKind[kind],
+           g_started[kind] != before ? "started" : "none idle (one runs already)");
+}
+
 // BUG-0736: the summon event's update (SporeCoop::SummonEvent_Update 0xD512A0, thiscall(event, u32) ret 4, slot of the
 // event vtable at .rdata 0x147B3D8) posts "follow" (BT_PostStimulus(0, 4, FLT_MAX, avatar)) to each member every frame
 // and releases members 50 / 100 m from the avatar (cGameNounManager +0x54). An event started for a partner's puppet
@@ -330,16 +376,18 @@ std::string debug(const std::vector<std::string>& a)
         out += "\n";
     }
     snprintf(b, sizeof b, "drama: mask=%X guest=%d mode=%08X flock_relay=%d relayed=%u refused=%u updates=%u "
-             "flock_event=%p forgotten=%u\n",
+             "flock_event=%p forgotten=%u shared=%d host_sends=%d\n",
              g_mask, (int)is_guest(), game::mode_id(), (int)g_flock_relay, g_flock_relayed, g_flock_refused,
-             g_flock_updates, g_flock_event, g_flock_forgotten);
+             g_flock_updates, g_flock_event, g_flock_forgotten, (int)g_shared_fix,
+             (int)(is_guest() && player_rules::host_sends_drama())); // BUG-1282
     out += b;
     for (int k = 0; k < 9; k++) {
         const uint8_t* ev = (const uint8_t*)g_last_event[k];
         if (!ev && !g_started[k] && !g_refused[k])
             continue;
-        snprintf(b, sizeof b, "  %-16s started=%u refused=%u event=%p active=%d\n", kKind[k], g_started[k], g_refused[k],
-                 (const void*)ev, ev && skg::readable(ev + 0xC, 1) ? (int)ev[0xC] : -1); // BUG-1059
+        snprintf(b, sizeof b, "  %-16s started=%u refused=%u event=%p active=%d relayed_tx=%u relayed_rx=%u\n", kKind[k],
+                 g_started[k], g_refused[k], (const void*)ev, ev && skg::readable(ev + 0xC, 1) ? (int)ev[0xC] : -1,
+                 g_relayed_tx[k], g_relayed_rx[k]); // BUG-1059, BUG-1282
         out += b;
     }
     return out;

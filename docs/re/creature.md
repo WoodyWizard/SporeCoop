@@ -5205,6 +5205,24 @@ BUG-1292 (found by the Lineages fork, PR #196, its BUG-9157; the fork's runtime 
 The mod's hook (creature_hp.cpp h_BaseMaxHp, the rule in max_hp_rule.h) answers a null species on those paths with the
 creature's max health (+0x5D4, at least 1), `coop.fix creature.max_hp_species`. Test `max_hp_species`
 (`coop.hp nullspecies` clears species, herd and tuning of the own avatar for one vt 0x7C call).
+## Nest alphas and the shared drama events (2026-11-19, fix/w56-sync)
+<a id="creature-nest-alpha"></a>
+
+BUG-1283, BUG-1282 (found by the Lineages fork (PR #196), its BUG-9115, 9131). Code read and the fork's findings; not
+yet seen at runtime on our lab (tests coop_npc_alpha.py, coop_drama_shared.py written).
+
+* ~ (fork, runtime) A nest's alpha is cCreatureAnimal +0xB58 bit 0x1: its card reads "Alpha <name>" and SocialPropose
+  0xDA43D0 adds a social round (as section 8 above). The host's NPC state carried dead / impressed / pack / summoned /
+  air only, so a guest's proxy kept the bit of its own game's herd (4 of 15 proxies differed in the fork's run). Now
+  the state and the spawn carry NF_ALPHA (64); a guest whose host has npc 1.2 (0.7.16) sets the proxy's bit to the host's.
+* Decision (BUG-1282): the meteor strike (kind 3) and the rain storm (5) are events of the host's world in Creature:
+  the host's start goes to the guests (MSG_PLAYER_RULE kind K_DRAMA 11, reliable) and the guest's game starts the same
+  kind with StartKind; a guest's own start of a night predator (1), a meteor strike or a rain storm is refused while its
+  host relays (npc 1.2, 0.7.16; 0.7.15.2 ships npc 1.1). Each game places the event at its own avatar (the start positions are the avatar's), so the
+  meteors fall near each player, at the same time. The UFO (2) was already the host's (#creature-drama-events, BUG-0558
+  shows its ship on the guest). ~ Not checked: whether the host's night predator is mirrored on the guest by the NPC
+  sync (a creature the event makes near the host's avatar); a guest that joins during a host's rain does not get it.
+
 ## Own DNA per player: set the budget, move the bar (2026-11-19, feat/w56-dna)
 <a id="creature-own-dna"></a>
 

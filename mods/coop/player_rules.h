@@ -44,5 +44,9 @@ bool air_hit_now(); // host: inside a melee hit on an airborne partner's puppet:
 uint32_t hit_ability_type(); // the ability type (+8) of the creature ability hit running now, 0 none (BUG-0555)
 // guest, MSG_DAMAGE: the hit of a melee ability from an NPC 1 m or more away while the own creature is in the air (BUG-0555)
 bool guest_drops_air_hit(void* avatar, void* attacker, uint32_t ability);
+// BUG-1282: host: its game started a meteor strike or a rain storm (drama.cpp): K_DRAMA to every guest
+void drama_out(uint8_t kind);
+// guest: the host's build relays its drama events (npc 1.2 or newer: 0.7.16, net/compat.h kNpcMinorWorldEvents); asked once a second
+bool host_sends_drama();
 
 } // namespace player_rules

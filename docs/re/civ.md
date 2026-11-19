@@ -391,6 +391,12 @@ the religious cVehicle).
   +0x754, notifies (0xB3D550→0xAC8BD0) and calls `CheckReligiousConversion` 0xBEAB60 ✔.
   Called only from the per-slot preach tick 0xBEB2F0 (thiscall(city, int slot)), which first
   calls `OnAttacked(1, pol)` and computes `count` from tuning 0x169D235 (0xCEEA30…0xCEEB70) ~.
+  ~ superseded (2026-11-19): see the CORRECTION below and [civ-influence-relay](#civ-influence-relay).
+* CORRECTION (2026-11-19, fix/w56-sync): on GOG 2024 the preach tick is **0xBEB310** thiscall(city, int slot, int
+  activePreachers) with stack purge 8 (ret 8 at 0xBEB708; 0xBEB2F0 / one argument was the GOG 2016 reading): its only
+  caller 0xBEB710 (call at 0xBEB7EA) passes the slot index and the count of the city's preaching objects (+0x62C) whose
+  +0x1D8 == 2. Ghidra (tools/ghidra/q.sh, info / dec / callers). ConvertCitizens on GOG 2024 is 0xBEB1E0 (.sym). The
+  Lineages fork had it right (fork BUG-9086).
 * CONFLICT (2026-11-19, docs/lineages-re): ours (✔ above) says ConvertCitizens moves followers from the owner or
   from a rival converter to `converterPol`; the Lineages fork (GOG 2024 disassembly, fork BUG-9078) says that when the
   caller differs from the current converter +0x754 (compare at 0xBEB216) the code at 0xBEB244..0xBEB268 first takes
@@ -2544,6 +2550,43 @@ GOG 2024 / Steam code, fork BUG-9078, 9084, 9086. Competing converters: see the 
     slot and the number of active preaching slot objects (not a time step). A slot's spatial object is at slot+0x78.
     (Our section B note of the per-slot preach tick 0xBEB2F0 has one argument; that is a GOG 2016 address.)
 * ~ (fork) The +0x5BC / +0x5D8 per-pol maps are transient deltas.
+
+## The cities' religious and economic standing on the guests, preaching places (2026-11-19, fix/w56-sync)
+<a id="civ-influence-relay"></a>
+
+BUG-1284..1287 (found by the Lineages fork (PR #196), its BUG-9078, 9084, 9086, 9081). GOG 2024, Ghidra
+(tools/ghidra/q.sh); mods/coop/civ_influence.cpp. Checks the fork notes of [civ-lineages-trade](#civ-lineages-trade)
+and [civ-lineages-religion](#civ-lineages-religion) on our build: the addresses and signatures below are ours now.
+
+* ✔ The city update **0xBE2260** (fastcall(city); GOG 2016 0xBE2240) recomputes the conversion meter +0x750 from the
+  follower map +0x5A0 indexed with 0x643A00 (unsigned keys): 200 * f[+0x754] / (f[+0x754] + f[owner]), clamped 0..100;
+  0 or less sets +0x754 = -1. It also lets the capture meter +0x748 fall by 0.1 per call when the city is not attacked
+  (0xC00600(0) false; +0x74C = -1 at 0), and clears a converter / capturer / buyer (+0x75C, with +0x758 = 0) whose
+  civilization is gone or is the owner. So on a guest the map and +0x754 are the state; +0x750 follows.
+* ✔ **0x643A00** (`SporeCoop::MapU32Int_StageMap_At`) is operator[] of eastl::map<uint32, int>: unsigned compare, a
+  missing key inserted with 0 (0x643290). **0xBE08E0** (`SporeCoop::CityTradeMap_Index`) is the same for the price map
+  +0x570 with a signed compare (insert 0xDE6A10). Node: right +0, left +4, key +0x10, value +0x14; map: anchor +4,
+  root +0xC, size +0x14.
+* ✔ **CanBuyCity 0xBD8110** thiscall(city, buyer) ret 4: buyer != owner (vt+0x4C), +0x75C == buyer, +0x758 >= 100
+  (COMISS on a float: +0x758 is a float). **GetBuyPrice 0xBE93A0** thiscall(city, buyer) ret 4, float in ST0: -1.0
+  when the price map has no entry for the buyer (find 0xE39F60), else the tuned price of that entry.
+* ✔ **RemoveTradeRoute 0xBDFA70** thiscall(city, partner) ret 4: the +0x55C entry of that partner: its partner ref
+  released, the planet model told (0xB868E0, 0xB7E4B0), the route object destroyed (DestroyInstance) unless its vt+0x2C
+  says it already is, its ref released, the entry erased (0xBDF580). The game's own removal **0xBDFB30** thiscall(city,
+  pol) ret 4 (callers: ChangeOwner at 0xBE8F08, 0xBE5144, 0xBFBF4B, 0xCFF392 / 0xCFF4EC) removes every route of the city
+  to a city of that pol the same way inline and calls 0xBDFA70 on the partner: a route is removed at both ends.
+* ✔ **The preaching places**: City_SetPreachingCapacity **0xBD9FF0** thiscall(city, uint slot, a, b) ret 12 writes
+  (+0x618)[slot * 0x80] +0 = a, +4 = b for slot < 4; its only caller is the crowd controller 0xD57B00 (0xD57D16), which
+  the camera's city has. The preach tick reads capacity slot+0 minus used slot+8 to bound the converts (decompiled).
+  ~ Not seen at runtime by us: a city the host's camera never looked at keeps 0 / 0 (the fork's runtime finding);
+  civ.remote_preaching gives such a slot 10 / 2 in the host's preach tick (coop_civ_influence.py --case preach checks it).
+* Decision (BUG-1285 / BUG-1287): the host sends every city's follower map, converter, buy meter, buyer and price map
+  once a second in MSG_CIV_STATE chunk 0xF9 (chunks 0; an older guest drops it as a bad header); the guest writes them
+  with the game's own index functions (no node erased: a value the host has not is set to 0) and its own ConvertCitizens
+  returns while the host's maps come. A host route the guest has and the host's list has not is removed on the guest at
+  both ends (guest_roads).
+* Decision (BUG-1284): the religious governor's bonus in ConvertCitizens counts a religious vehicle (purpose 1) of the
+  converting nation within 200 m; it counted economic vehicles (2) of any nation.
 
 ## A guest that missed the end of Tribe: its own Civ editors at its first arrival (2026-11-19, feat/w56-late)
 <a id="civ-late-arrival"></a>

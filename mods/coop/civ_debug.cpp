@@ -8,6 +8,8 @@ std::string debug(const std::vector<std::string>& a)
 {
     if (!a.empty() && a[0] == "owndesign") // BUG-1274: owndesign [set <hex id> <hex inst> | did <city> <loco> | hpref ...]
         return own_designs_debug(std::vector<std::string>(a.begin() + 1, a.end()));
+    if (!a.empty() && (a[0] == "influence" || a[0] == "canbuy" || ((a[0] == "convert" || a[0] == "unroad") && is_host()))) // BUG-1284..1287 (tests)
+        return influence_debug(a);
     if (!a.empty() && a[0] == "citizens") // citizens: the owners' species lines and the citizens per city and species (BUG-1273)
         return species_debug();
     if (a.size() >= 2 && a[0] == "vehhold" && is_guest()) { // vehhold 1|0: tests (BUG-0951), the host's vehicle states

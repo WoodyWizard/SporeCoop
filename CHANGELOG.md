@@ -70,6 +70,20 @@
 - Joining: a player who gets the host's world while the host's game is still writing a save for another player now
   gets a save of its own, with everything that changed since; before, it could get the older world (for example
   without a nest made a moment before) (found by the PandizeLive Lineages fork) (BUG-1294).
+- Creature: meteor showers and rain storms are the host's: when they start for the host they start for every player
+  at the same time, and a guest's game no longer has its own meteors, rain or night predator that the host never had
+  (BUG-1282; still open: its lab check is pending).
+- Creature: a guest sees the host's nest alphas as alphas ("Alpha" on the card, the extra social round); before, a
+  guest's copy of a nest member could be an alpha only on one screen (BUG-1283; still open: its lab check is pending).
+- Civilization: the religious governor's faster conversion now comes from its own religious vehicles near the city;
+  before, a nearby trade vehicle gave it and the preachers did not (BUG-1284; still open: its lab check is pending).
+- Civilization: a guest now sees the religious conversion meter and followers of every city as the host's game has
+  them; before, it stayed at zero on the guest's screen (BUG-1285; still open: its lab check is pending).
+- Civilization: religious vehicles now convert a city that the host has never looked at; before, they preached there
+  without converting anybody while the city fought them (BUG-1286; still open: its lab check is pending).
+- Civilization: a guest gets the host's progress for buying a city and its trade prices, so Buy City can come up on the
+  guest's screen; a trade route the host's game removes disappears for the guest too (BUG-1287; still open: its lab
+  check is pending).
 
 ## [0.7.15.2] - 2026-11-18
 

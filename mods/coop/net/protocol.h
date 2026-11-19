@@ -485,6 +485,7 @@ enum NpcFlags : uint8_t {
     NF_SUMMONED = 16, // its herd is a summoned flock (herd +0x192, cSummonCreatureEvent: the hearts effect 0x6A17B05A; BUG-0556)
     NF_AIR = 32,      // BUG-0550 / BUG-0425: off its ground in the host's game (+0x137 = 0 and off GetHeightAt: a jump, a fall,
                       // thrown, flying); its height over the host's terrain is in the batch's agl trailer. Older guests ignore it
+    NF_ALPHA = 64,    // BUG-1283 (fork BUG-9115): the nest's alpha in the host's game (+0xB58 bit 0x1). Older guests ignore it
 };
 
 struct NpcSpawn {

@@ -68,6 +68,7 @@ FLAGS = {
     'NF_PACK': (A, 'npc.cpp', r'NF_PACK'),
     'NF_SUMMONED': (A, 'npc.cpp', r'NF_SUMMONED'),
     'NF_AIR': (A, 'npc.cpp', r'NF_AIR'),
+    'NF_ALPHA': (A, 'npc.cpp', r'set_alpha\(pe\.ref\.p, \(s\.flags & net::NF_ALPHA\)'),  # BUG-1283: the nest alpha bit
 }
 
 

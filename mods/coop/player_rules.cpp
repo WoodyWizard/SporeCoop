@@ -14,6 +14,7 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "net/compat.h"
 #include "drama.h"
 #include "npc.h"
 #include "sporekit_game.hpp"
@@ -36,6 +37,7 @@ enum Kind : uint8_t {
     K_SPIT_NPC = 8,    // guest -> host {u16 npc id, f32 seconds}: the guest's spit hit a host NPC's mirror (BUG-0641)
     K_STUN_PROXY = 9,  // host -> guests {u16 npc id, f32 seconds}: the host's game stunned its NPC (BUG-0700)
     K_FLOCK = 10,      // guest -> host {}: the guest's Summon Flock, made by the host's game for its puppet (BUG-0736)
+    K_DRAMA = 11,      // host -> guests {u8 kind}: the host's game started a Drama Manager event of that kind (BUG-1282), reliable
 };
 static unsigned g_flock_sent, g_flock_got;
 
@@ -1121,6 +1123,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         if (r.ok() && from == 0 && is_guest())
             ufo_mirror_rx(v);
+    } else if (kind == K_DRAMA) { // BUG-1282
+        uint8_t k = r.u8();
+        if (r.ok() && from == 0 && is_guest() && game::in_creature_stage())
+            drama::from_host(k);
     } else if (kind == K_FLOCK) { // BUG-0736
         if (from == 0 || !is_host() || !drama::g_flock_relay || !game::in_creature_stage())
             return;
@@ -1141,6 +1147,30 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         roar_on_host(from, range, secs);
     }
+}
+
+void drama_out(uint8_t kind)
+{
+    if (!is_host())
+        return;
+    net::Writer w;
+    w.u8(K_DRAMA);
+    w.u8(kind);
+    C.sess->broadcast_reliable(net::MSG_PLAYER_RULE, w);
+}
+
+bool host_sends_drama()
+{
+    static double at = -1e9;
+    static bool yes = false;
+    double now = H->time_seconds();
+    if (now - at < 1.0)
+        return yes;
+    at = now;
+    bool has = false;
+    std::vector<net::FamilyRev> fam;
+    yes = C.sess && C.sess->peer_families(0, has, fam) && net::compat::host_relays_world_events(fam, has);
+    return yes;
 }
 
 std::string status()
