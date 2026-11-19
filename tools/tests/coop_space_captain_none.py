@@ -20,6 +20,10 @@ all-zero captain key and does not ask again (lab 2026-11-14). Here:
   4. the rank badge with a real click, then the screen is closed.
 Both games must keep running. `SPORE_FIX_OFF=game.captain_portrait` (the game's code) must FAIL: the guest crashes
 at 0xA055B5 in step 3.
+Since 0.7.15.3 the badge's equipment panel goes on past the item list (`game.captain_items`, BUG-0304) to the panel's
+stats, which read the captain's species profile (null for captain 0: 0xC02A14, BUG-1278). With both guards on no
+handled fault is allowed; a fault of a guard that is off is (its own FAIL twin is elsewhere). `SPORE_FIX_OFF=
+game.captain_stats` must FAIL: the guest logs the caught fault at 0xC02A14 in step 4.
 
   SPORE_LANE=2 python3 tools/tests/coop_space_captain_none.py
 """
@@ -34,8 +38,14 @@ from twoinst import Checks, shot, start
 BADGE = (1390, 890)            # the rank badge over the ship's picture, 1440x1080
 DICE, CHECK = (916, 555), (937, 631)  # "Name Your Captain": a random name, the check button
 UNKNOWN_SPECIES = '1BADBEEF'   # an instance no database of the game has
-# the game's own handled faults of the captain screen without a captain (BUG-0304 family)
-HANDLED = ('0x005971D4', '0x00C02A14')
+# the game's own handled faults of the captain screen without a captain (BUG-0304 family), allowed only while the
+# guard of that fault is off: game.captain_items (BUG-0304), game.captain_stats (BUG-1278)
+HANDLED = {'0x005971D4': 'items', '0x00C02A14': 'stats'}
+
+
+def guards_off(con):
+    out = con.call('coop.captain')['out']
+    return {g for g in ('items', 'stats') if re.search(g + r': \S+ \d+ fix=0', out)}
 
 
 def captain(con):
@@ -58,10 +68,12 @@ def alive(con):
 
 def other_faults(con):
     try:
+        off = guards_off(con)
         out = con.call('exc')['out']
     except (OSError, ValueError):
         return ['(no answer)']
-    return [ln for ln in out.splitlines() if ln.startswith('0x') and not any(h in ln for h in HANDLED)]
+    allowed = [a for a, g in HANDLED.items() if g in off]
+    return [ln for ln in out.splitlines() if ln.startswith('0x') and not any(a in ln for a in allowed)]
 
 
 def main():
@@ -138,7 +150,7 @@ def main():
     for who, c in (('host', host), ('guest', guest)):
         ck(alive(c), f'{who}: still answers')
         bad = other_faults(c)
-        ck(not bad, f'{who}: no fault other than the captain screen\'s handled ones {HANDLED}: {bad[:3]}')
+        ck(not bad, f'{who}: no caught fault (the captain screen\'s {list(HANDLED)} only with their guard off): {bad[:3]}')
     return ck.result()
 
 

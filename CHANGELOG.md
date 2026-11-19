@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- Space: a player who joined the host's Space world no longer crashes on Windows when opening the captain screen
+  (the captain button over the ship's picture) or when accepting an adventure mission (BUG-0304, BUG-1278).
+
 ## [0.7.15.2] - 2026-11-18
 
 More fixes for problems seen in a video of two players, mostly in the Cell stage and the move to the Creature stage:

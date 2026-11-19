@@ -208,6 +208,9 @@ anchor so other docs can link to it:
   A campaign [fault] finding with this address is this, not a coop bug.
 * Not checked: a save with a Galactic Adventures captain, the GOG 2016 build.
 * Ticket: BUG-0304 (game-bug).
+* CORRECTION (2026-11-18, fix/w55-captain): on Windows the same fault ends the game (GitHub #203, a guest: the rank
+  badge and Accept of an adventure mission). BUG-0304 is reopened and guarded in 0.7.15.3 (`game.captain_items`,
+  docs/re/space.md#space-captain-items-null); this entry moves to the archive when the night run confirms the fix.
 
 ## GOG 2024 guest: the game time stays paused for seconds after its world load (2026-10-30, fix/w13-net)
 <a id="issue-2024-load-pause"></a>
@@ -395,3 +398,18 @@ anchor so other docs can link to it:
   cinematic) until the vote ends; the guest still sees the cinematic.
 * Reproduce: `tools/lab.py run evo_screens_switch`, key frame `01_switch_vote`.
 * Ticket: BUG-1269
+
+## Space: a guest's captain screen shows no item limits for the host's captain (2026-11-18, fix/w55-captain)
+<a id="issue-captain-items-guest"></a>
+
+* What happens: a guest in the host's Space world opens the captain screen (the rank badge, or Accept of an
+  adventure mission): since 0.7.15.3 it no longer crashes (BUG-0304), but the equipment palette shows every item as
+  available, not the host captain's real item state.
+* Reproduce: `tools/lab.py run space_captain` (the fixture's captain has no item list in either game); a host whose
+  captain was made in Galactic Adventures and a guest joining its Space world.
+* Known: coop sends the host's own creation without the captain's property list {captain, 0x00B1B104, group | 0xE500}
+  (docs/re/space.md#space-captain-items-null).
+* Not checked: at runtime (static analysis only).
+* Next steps: send and register that resource under the host's key (BUG-1279 lists the pitfalls).
+* Ticket: BUG-1279.
+

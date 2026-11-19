@@ -7921,6 +7921,8 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
 * The rank badge of a captain-less empire runs the captain screen's equipment panel first, which faults inside the
   game (0x5971D4 or 0xC02A14, handled) and stops before the portrait: the badge alone does not reproduce BUG-1111 in
   the lab (docs/re/space.md#space-captain-portrait-null). The test allows only these two faults.
+  ~ superseded (2026-11-18): see [the captain screen without faults](#testing-captain-items); each fault is allowed
+  only while its guard is off.
 * Twin: `SPORE_LAB_FIXOFF="space_captain_none=game.captain_portrait"`.
 
 ## Start-up waits on a signal instead of fixed sleeps (2026-11-15, feat/w51-labstart)
@@ -9228,3 +9230,20 @@ BUG-1241, BUG-1250, BUG-1252, BUG-1253 (creature fixture, warm; docs/re/creature
   started" 0). SPORE_FIX_OFF=world.menu_intro_return fails (the host's panel never comes).
 * The lanes' galaxy menu shows the game's "Network play disabled" box (the DBCheck at intro state 6) over the galaxy:
   normal offline, not a bug of the test.
+
+## The captain screen without faults (space_captain, space_captain_none, 2026-11-18, fix/w55-captain)
+<a id="testing-captain-items"></a>
+
+BUG-0304 (GitHub #203), BUG-1278. Written without a lab run (owner rule 2026-11-18); the night run gives the run ids.
+* `coop_space_captain.py` (suite `space_captain`, `space` fixture): first the adventure mission screen (`coop.captain
+  open`, a Space UI whose badge was never clicked) and a real click on its Accept (control 0x075DD108 -> the captain
+  panel mode 2 -> the items palette; probe `SporeCoop::CaptainItems_Palette` hits > 0), then the rank badge with a real
+  click, then the BUG-0303 zoom-out. Both games must log no caught fault at all (before: one fault 0x5971D4 per
+  opening was expected). Twin: `SPORE_FIX_OFF=game.captain_items` (the guest faults at 0x5971D4 after each route).
+* `coop_space_captain_none.py`: the handled faults 0x5971D4 / 0xC02A14 are allowed only while `game.captain_items` /
+  `game.captain_stats` is off (read from `coop.captain`: `items: none N fix=0|1 stats: skipped N fix=0|1`). Twin for
+  BUG-1278: `SPORE_FIX_OFF=game.captain_stats` (0xC02A14 at the rank badge of captain 0).
+* Not known before the night run: whether Accept on a mission screen opened without an adventure offer shows the
+  captain panel or something else after the palette; what the screens show is in captain_mission.png /
+  captain_accepted.png.
+
