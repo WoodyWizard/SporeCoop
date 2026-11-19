@@ -136,6 +136,11 @@ std::string debug(const std::vector<std::string>& args);
 // line_content: the content hash of a received bundle (0: not a bundle). line_register: registers a bundle under the
 // shared instance `shared` (checked against its content) on this game and returns that key; {} = refused (a bad
 // bundle, another content, parts this game lacks, BUG-0452). The owner registers its own bundle too.
+// BUG-1297 (WP-S2a): own_here: the key this game builds its own creation of a kind from (an own creation under a key
+// of the host's world is used under its shared remapped key, BUG-0278: the host's world package answers the own key
+// here); host_shadows: a guest, and k is a key of the host's world on this game (its package answers for k here)
+Key own_here(Kind k);
+bool host_shadows(Kind k, const Key& key);
 bool line_pack(const Key& own, std::vector<uint8_t>& out, uint32_t& content);
 uint32_t line_content(const std::vector<uint8_t>& bundle);
 Key line_register(const std::vector<uint8_t>& bundle, uint32_t shared, const std::string& whose);

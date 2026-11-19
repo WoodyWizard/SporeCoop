@@ -241,13 +241,33 @@ static uint32_t own_creature()
     return 0;
 }
 
+// BUG-1297 (WP-S2a): the own key as this game builds it. A guest's own creature under a key of the host's world
+// (BUG-0278: "Save New" of an edited host creation keeps the host's key, common after BUG-1255's landfall editor made
+// from the host's creature): the host's world package answers that key here at priority 2000, so an own editor
+// started from the raw My Creations key opened on the host's body. On: creations' remapped key (own_key_here, the
+// shared copy of our own records); an outfit under such a key: the line's registered copy (0x7B......).
+// `coop.fix species.own_key_here off`: the raw keys (0.7.16 before WP-S2).
+static bool g_own_here_fix = true;
+COOP_FIX("species.own_key_here", "BUG-1297", g_own_here_fix,
+         "species: a guest's own Tribe and Civ outfitters open on its own creature also when its key is one of the host's world");
+static Key own_ref_here(const Ref& f)
+{
+    Key k = key_of_ref(f);
+    if (g_own_here_fix && creations::host_shadows(creations::kCreature, k))
+        if (Key r = registered(f.shared); r.instance)
+            return r;
+    return k;
+}
 Key own_key(Stage s)
 {
     switch (s) {
     case Stage::Cell: return creations::mine(creations::kCell).key;
-    case Stage::Creature: return g_own.creature ? creations::mine(creations::kCreature).key : Key{};
-    case Stage::Tribe: return tribe_counts(g_own) ? key_of_ref(g_own.tribe) : own_key(Stage::Creature);
-    case Stage::Civ: return civ_counts(g_own) ? key_of_ref(g_own.civ) : own_key(Stage::Tribe);
+    case Stage::Creature:
+        return !g_own.creature  ? Key{}
+               : g_own_here_fix ? creations::own_here(creations::kCreature)
+                                : creations::mine(creations::kCreature).key;
+    case Stage::Tribe: return tribe_counts(g_own) ? own_ref_here(g_own.tribe) : own_key(Stage::Creature);
+    case Stage::Civ: return civ_counts(g_own) ? own_ref_here(g_own.civ) : own_key(Stage::Tribe);
     default: return {};
     }
 }
@@ -255,6 +275,24 @@ Key own_design(uint32_t design_id)
 {
     auto it = g_own.designs.find(design_id);
     return it == g_own.designs.end() ? Key{} : key_of_ref(it->second);
+}
+
+bool own_ready() { return g_line_fix && is_guest() && own_mode() && g_stored_seen; }
+bool own_waiting() { return g_line_fix && is_guest() && !g_stored_seen; }
+bool host_took(const Key& own)
+{
+    if (!own.instance || !S || !is_guest())
+        return false;
+    auto it = g_rows.find(S->my_id());
+    if (it == g_rows.end())
+        return false;
+    auto has = [&](const Ref& f) { return f.set() && f.own == own.instance && f.shared; };
+    if (has(it->second.tribe) || has(it->second.civ))
+        return true;
+    for (auto& [id, f] : it->second.designs)
+        if (has(f))
+            return true;
+    return false;
 }
 
 // the bundle of an own creation, registered here under its shared key; 0: no records here

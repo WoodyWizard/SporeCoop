@@ -1805,6 +1805,49 @@ std::string content_status()
     return b;
 }
 
+// BUG-1301 (WP-S2e): the host's ship registered under its own key above every game's My Creations (as the host's
+// creature and cell are: the world's species) shadowed a guest's own ship of the same id (ids are per profile; the
+// own editor's "Save New" of an edited ship keeps its key): the guest's own empire, which flies its own key, was drawn
+// as the host's ship on the guest's game (the class of BUG-0278; the fork's BUG-9071). On: a guest whose My Creations
+// hold a ship of that key does not register the host's ship under it (the host's ship is drawn from the shared
+// 0x7C...... copy everywhere: its puppet, the fleet's mirrors); one registered before the guest saved such a ship goes
+// at the next check. Off: registered (0.7.16 before WP-S2).
+static bool g_ufo_own_fix = true;
+COOP_FIX("creations.own_ship_key", "BUG-1301", g_ufo_own_fix,
+         "space: the host's ship never shadows a guest's own ship of the same id on the guest's game");
+static unsigned g_ufo_unshadowed;
+static bool ufo_own_shadowed(Kind k, const Key& key)
+{
+    if (!g_ufo_own_fix || k != kUfo || !key.instance)
+        return false;
+    for (auto& o : g_opts[kUfo]) // (by instance: the empire's key and My Creations' may differ in type or group)
+        if (o.key.instance == key.instance)
+            return true;
+    return false;
+}
+static void ufo_unshadow(uint32_t inst)
+{
+    auto it = g_world_pkgs.find({(uint8_t)kUfo, inst});
+    if (it != g_world_pkgs.end()) {
+        if (it->second.db)
+            drop_package(it->second.db);
+        g_world_pkgs.erase(it);
+    }
+    g_ufo_unshadowed++;
+    H->log(M, SK_INFO, "creations: the host's ship %08X is not registered under its own key here: our own ship of that "
+           "id stays ours (BUG-1301)", inst);
+}
+static void ufo_shadow_check()
+{
+    for (auto it = g_world_pkgs.begin(); it != g_world_pkgs.end();) {
+        uint32_t inst = it->first.second;
+        bool own = it->first.first == kUfo && ufo_own_shadowed(kUfo, {inst, kInfo[kUfo].type, kInfo[kUfo].group});
+        ++it;
+        if (own)
+            ufo_unshadow(inst);
+    }
+}
+
 // a bundle arrived (or is our own): store it here under a collision-free instance and register it
 static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>& data)
 {
@@ -1871,7 +1914,9 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
         // key too, above everybody's own My Creations (a guest may own another creation there).
         // A newer version under the same key replaces the older package (both at the same
         // priority, the older one could keep answering for the key).
-        if (owner == 0 && C.sess && C.sess->role() == net::Role::Client) {
+        if (owner == 0 && C.sess && C.sess->role() == net::Role::Client && ufo_own_shadowed(k, b.key)) {
+            ufo_unshadow(b.key.instance); // BUG-1301: our own ship of that id stays ours here
+        } else if (owner == 0 && C.sess && C.sess->role() == net::Role::Client) {
             WorldPkg& wp = g_world_pkgs[{(uint8_t)k, b.key.instance}];
             if (wp.id != id) {
                 std::wstring path = g_dir + L"\\world_" + std::to_wstring(k) + L"_" + std::to_wstring(id) + L".package";
@@ -2587,6 +2632,17 @@ static Key own_key_here(Kind kind)
     return k;
 }
 
+// BUG-1297 (WP-S2a): the key this game builds for its own creation of a kind (own_key_here's BUG-0278 remap while in
+// a session; mine() otherwise): the guest's own editors start from it (species_line.cpp own_key)
+Key own_here(Kind kind)
+{
+    return C.sess && C.sess->connected() ? own_key_here(kind) : mine(kind).key;
+}
+bool host_shadows(Kind kind, const Key& k)
+{
+    return k.instance && C.sess && C.sess->connected() && C.sess->my_id() != 0 && host_world_key(kind, k.instance);
+}
+
 // the own cell: the player's cell model, then the level is rebuilt (the cell hatches again)
 static Key g_cell_set;
 static bool g_cell_rebuilding;
@@ -3055,6 +3111,8 @@ void tick(double now)
     if (now - g_last_check > 2.0) {
         g_last_check = now;
         share_own(now);
+        if (C.sess->role() == net::Role::Client)
+            ufo_shadow_check(); // BUG-1301 (My Creations are read again every 10 s)
     }
     alias_tick(); // BUG-0200 (first: a key the avatar is about to play loses its alias before SetSpecies)
     apply_own_avatar();
@@ -3303,6 +3361,8 @@ std::string status()
              g_species_asked, g_species_got, g_species_sent, g_species_missing, g_old_served, g_own_out, g_own_in, g_rx_dropped, g_adopt_skipped, g_parts_refused, (unsigned)g_world_missing.size(), g_paints_fallback, g_unknown_logged, g_have_cc, g_last_error.empty() ? "" : " error=", g_last_error.c_str());
     s += b;
     snprintf(b, sizeof b, "  swap waits for a cinematic: %u ticks (BUG-1173)\n", g_swap_cine_waits);
+    s += b;
+    snprintf(b, sizeof b, "  own ship key: fix=%d unshadowed=%u (BUG-1301)\n", (int)g_ufo_own_fix, g_ufo_unshadowed);
     s += b;
     snprintf(b, sizeof b, "  packages: open=%zu closing=%zu closed=%u kept=%u renamed=%u close_fix=%d\n", g_pkgs.size(),
              g_closing.size(), g_pkgs_closed, g_pkgs_close_kept, g_pkg_renames, (int)g_pkg_close_fix); // BUG-0996

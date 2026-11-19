@@ -9418,6 +9418,26 @@ switch (net_tests). Lab (creature fixture unless named): `max_hp_species` (`coop
 `join_host_dead` (`coop.team die`, the caption left up, the guest rejoins), `tribe_civ_aggressive` (tribe fixture,
 `coop.vote tribeend 0CAC124D`: the tribe_aggressive archetype); each FAILS with SPORE_FIX_OFF= its switch (named in
 suite.py).
+## The guest's own editors made robust: coop_own_editors_robust.py (2026-11-19, feat/w56-editors)
+<a id="testing-own-editors-robust"></a>
+
+* One script, one mode per ticket of WP-S2 (docs/re/creations.md#creations-own-editors-robust), each with its FAIL twin
+  entry (`('twin',)` suite): `own_editor_key` (BUG-1297, tribe), `own_editor_drop` (BUG-1298, tribe),
+  `own_editor_civdrop` (BUG-1298, civ_npc), `tribe_birth_species` (BUG-1299, tribe), `space_own_ship_key` (BUG-1301,
+  space); twins `<name>_off`.
+* Cutting the link inside an editor: the `drop` modes set `SPORE_NET=delay=1` when it is unset (before `import lane`,
+  which builds the JOIN command through the guest's own proxy) and call `netem.proxy().outage(45)`: no packet for
+  45 s, so both games end the session (net::Session timeout 30 s). The guest's own `coop.species` then says
+  `role=none`; the host's `coop.status` has no remote of its name. `outage(0)` ends the outage before the join.
+* `key` and `ship` start the guest's game again with My Creations written by the test (a creation of the guest's own
+  under a key of the host's world, coop_nest_species.colliding_creations; a UFO bem as space_host_ship_design writes)
+  and add a lane-state knob, so the next test of the lane starts cold (twoinst.warm_refusal) and restores the fixture's
+  My Creations.
+* `key` needs a world package under the tribe's key on the guest: the host chooses the tribe's creature
+  (`coop.creations choose creature <slot>`); the test checks the shadow (the guest's game answers the host's body for
+  that key) before it checks the outfitter.
+* `ship` is INCONCLUSIVE when the guest does not fly the host's ship key in the space fixture.
+* Not run yet (2026-11-19: the lab waits for the orchestrator's word, the CPU was busy).
 ## Late joiners keep their own species: late_species, civ_late_arrival (2026-11-19, feat/w56-late)
 <a id="testing-late-joiners"></a>
 

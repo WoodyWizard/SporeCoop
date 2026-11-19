@@ -51,6 +51,14 @@ bool set_tribe_outfit(const Key& k);
 bool set_civ_outfit(const Key& k);
 bool set_design(uint32_t design_id, const Key& k);
 
+// BUG-1298 (WP-S2b, an own editor's result kept over a disconnect): own_ready: a guest in own mode whose host has
+// answered with its stored row in this session (a set before that answer would make the stored row be ignored);
+// host_took: the host's row of this guest (as the host broadcast it) names the own creation `own` (the owner-side
+// instance): the host has it, the result is safe; own_waiting: a guest (line on) still without that answer
+bool own_ready();
+bool own_waiting();
+bool host_took(const Key& own);
+
 // A change of player pid's line on this game (any key() / design() answer of it: a new row, records registered, the
 // creature changed, own / host mode, the player left): fn(pid), on the main thread from tick(), outside the frame's
 // drawing (game calls allowed, as in the module ticks). Register from a static initializer:

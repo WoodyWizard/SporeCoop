@@ -43,6 +43,7 @@ void on_session_end(); // the guest's tribe profile gets the host's raw keys bac
 // wsync rows (wsync.h: read on the host, sync on a guest; sync returns the differences seen)
 extern bool g_outfit_fix; // tribe.outfit_sync (BUG-1156)
 extern bool g_civ_fix;    // civ.design_sync (BUG-1157)
+extern bool g_own_offline_fix; // designs.own_editor_offline (BUG-1298): own editors over a session's end
 bool outfit_read(std::vector<Val>& out);
 int outfit_sync(const std::vector<Val>& want, bool apply);
 std::string outfit_fmt(const Val& e);

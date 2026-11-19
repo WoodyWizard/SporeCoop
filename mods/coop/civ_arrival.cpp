@@ -211,6 +211,7 @@ static void open_task(void*)
         return;
     }
     g_opened[g_step]++;
+    civedit::own_opened(); // BUG-1298: its return stays ours if the session ends while it is open
     g_opened_at = now;
     if (g_late_fix && !g_step) { // BUG-1290: offered in this world (the red cross too): not again at a later join
         uint32_t w = g_late ? g_late_world : modes::current_world();
@@ -340,7 +341,10 @@ void civ_arrival_tick(double now)
     late_check(now, game::mode_id());
     if (g_phase == kNone || g_phase == kDone || g_queued)
         return;
-    if (!allowed()) {
+    // BUG-1298 (designs.own_editor_offline): an open editor of ours is followed to its end without a session (its
+    // result goes to our line at the next session; the next editor does not open then)
+    bool offline_open = g_phase == kOpen && !g_sess.connected() && designs::g_own_offline_fix && g_fix;
+    if (!allowed() && !offline_open) {
         drop(!g_sess.connected() ? "the session ended" : "not in own mode any more", nullptr);
         return;
     }
@@ -415,7 +419,7 @@ void civ_arrival_tick(double now)
         back(g_step);
         g_back_at = now;
         Result& r = g_res[g_step];
-        if (g_step == 0 && !r.cancelled) {
+        if (g_step == 0 && !r.cancelled && !offline_open) {
             set_phase(kNext, now);
             return;
         }
@@ -475,11 +479,13 @@ static int c_civarrival(void*, int argc, const char* const* argv, SkOut* out)
 
 static void reset()
 {
+    g_late = g_late_checked = g_was_here = false; // BUG-1290: the next session's first arrival is looked at
+    g_late_world = 0;
+    if (g_phase == kOpen && designs::g_own_offline_fix && g_fix)
+        return; // BUG-1298: our open editor is followed to its end (civ_arrival_tick)
     g_phase = kNone;
     g_step = 0;
     g_queued = false;
-    g_late = g_late_checked = g_was_here = false; // BUG-1290: the next session's first arrival is looked at
-    g_late_world = 0;
 }
 static size_t held() { return g_phase != kNone && g_phase != kDone ? 1 : 0; }
 SESSION_STATE("core.own_civ_arrival", &g_fix, reset, held);

@@ -67,6 +67,18 @@ COOP_FIX("editors.guest_designs", "BUG-1158", g_own_fix,
 static bool g_guest_outfitter_fix = true;
 COOP_FIX("tribe.guest_outfitter", "BUG-1272", g_guest_outfitter_fix,
          "tribe: a guest's own Tribal Outfitter dresses its own members on every game (creature.mode own; host mode: refused)");
+// BUG-1298 (WP-S2b): a guest's own editor (this Tribal Outfitter, the Civ design editors and outfitter of
+// civ_editors.cpp, the arrival editors of civ_arrival.cpp) open when the session ends (the host left, the link died,
+// the player left): the request stays ours until the editor returns, its return is taken as ours also without a
+// session (the shared tribe slot, the shared civilization and the world's player species stay as they were on this
+// game), and the result is kept until this game is a guest again whose host answered with its stored row; then it goes
+// to the species line and is kept until the host's row names it (a drop before that: again at the next session).
+// Kept in this game's memory (a restart loses it; the creation stays in My Creations). Off: the session's end drops the
+// request (0.7.16 before WP-S2: the native return reloads the slot with the guest's outfit, Civ_SetDesign or the
+// Civ outfitter's player species run on the guest's game, and the result is lost).
+bool g_own_offline_fix = true;
+COOP_FIX("designs.own_editor_offline", "BUG-1298", g_own_offline_fix,
+         "tribe, civ: a guest's own editor open when the session ends keeps the shared tribe and civilization as they were and its result reaches the line at the next join");
 
 // ---- counters (tests)
 static unsigned g_out_applied, g_out_failed, g_out_waits, g_out_restored, g_out_saves;
@@ -486,8 +498,11 @@ static bool g_oo_pending, g_oo_in_editor;     // our request went to the editor;
 static double g_oo_opened_at = -100;
 static uint32_t g_oo_asked[3], g_oo_card[3];  // the key we asked for, the card's (the slot's) key
 static creations::Key g_oo_result;            // the editor's result, to be taken as our tribe outfit
+static creations::Key g_oo_sent;              // BUG-1298: taken by our line, until the host's row names it
 static double g_oo_result_at = -100, g_oo_try_at = -100;
-static unsigned g_oo_opened, g_oo_returns, g_oo_skipped, g_oo_cancelled, g_oo_set, g_oo_set_failed;
+static bool g_oo_held;                        // BUG-1298: the result waits for the next session
+static unsigned g_oo_opened, g_oo_returns, g_oo_skipped, g_oo_cancelled, g_oo_set, g_oo_set_failed, g_oo_offline,
+    g_oo_acked, g_oo_resent;
 using EditorReturn_t = void(SK_THISCALL*)(void*);
 static EditorReturn_t o_EditorReturn;
 
@@ -532,7 +547,9 @@ static void SK_THISCALL h_EditorReturn(void* ui)
             g_oo_cancelled++;
             H->log(M, SK_INFO, "designs: our own Tribal Outfitter was cancelled (BUG-1272)");
         } else if (R(res, 0x48) && F<uint32_t>(res, 0xC) == kTribeTag && F<uint32_t>(res, 0x14) == kOutfitter &&
-                   is_guest() && g_guest_outfitter_fix) {
+                   (is_guest() || g_own_offline_fix) && g_guest_outfitter_fix) {
+            if (!is_guest())
+                g_oo_offline++; // BUG-1298: the session ended while the editor was open
             g_oo_result = {F<uint32_t>(res, 0x18), F<uint32_t>(res, 0x1C), F<uint32_t>(res, 0x20)};
             F<void*>(ui, kUiResult) = nullptr;
             vcall<void>(res, 0x8 / 4); // (its reference: released, as 0xCDCC90 does at its end)
@@ -558,14 +575,42 @@ void tick(double now)
             H->log(M, SK_INFO, "designs: our own Tribal Outfitter request is dropped (mode %08X) (BUG-1272)", m);
         }
     }
+    if (g_oo_sent.instance && g_own_offline_fix) { // BUG-1298: until the host's row names it
+        if (species::host_took(g_oo_sent)) {
+            g_oo_acked++;
+            H->log(M, SK_INFO, "designs: the host has our tribe outfit %08X (BUG-1298)", g_oo_sent.instance);
+            g_oo_sent = {};
+        } else if (!is_guest()) {
+            g_oo_result = g_oo_sent, g_oo_sent = {}; // (the session ended first: again at the next one)
+            g_oo_resent++;
+        }
+    }
     if (!g_oo_result.instance || now - g_oo_try_at < 2.0)
         return;
     g_oo_try_at = now;
+    if (g_own_offline_fix && S && S->connected() && S->role() == net::Role::Host) {
+        H->log(M, SK_INFO, "designs: our outfit %08X of another host's world is dropped (this game hosts now, BUG-1298)",
+               g_oo_result.instance);
+        g_oo_result = {}, g_oo_held = false;
+        return;
+    }
+    if (g_own_offline_fix && (!is_guest() || species::own_waiting())) { // BUG-1298: no session (or no answer yet)
+        if (!g_oo_held && !is_guest()) {
+            H->log(M, SK_INFO, "designs: our outfit %08X is kept for the next session (BUG-1298)", g_oo_result.instance);
+            coop_core::feed("your new outfit is kept: your members wear it when you join again");
+        }
+        g_oo_held = true;
+        g_oo_result_at = now; // (its 30 s count from the session's answer)
+        return;
+    }
+    g_oo_held = false;
     if (species::set_tribe_outfit(g_oo_result)) {
         g_oo_set++;
         H->log(M, SK_INFO, "designs: our tribe outfit is %08X: every game dresses our members in it (BUG-1272)",
                g_oo_result.instance);
         coop_core::feed("your tribe members wear your new outfit (on every game)");
+        if (g_own_offline_fix)
+            g_oo_sent = g_oo_result;
         g_oo_result = {};
     } else if (now - g_oo_result_at > 30.0 || !is_guest()) { // (its records not readable here: the editor's file)
         g_oo_set_failed++;
@@ -577,10 +622,20 @@ void tick(double now)
 
 static void oo_reset()
 {
+    if (g_own_offline_fix) { // BUG-1298: an open editor stays ours, a result waits for the next session
+        if (g_oo_sent.instance && !g_oo_result.instance)
+            g_oo_result = g_oo_sent;
+        g_oo_sent = {};
+        return;
+    }
     g_oo_pending = false;
     g_oo_result = {};
+    g_oo_sent = {};
 }
-static size_t oo_held() { return (g_oo_pending ? 1 : 0) + (g_oo_result.instance ? 1 : 0); }
+static size_t oo_held()
+{
+    return (g_oo_pending ? 1 : 0) + (g_oo_result.instance ? 1 : 0) + (g_oo_sent.instance ? 1 : 0);
+}
 // (a session state, not a world state: the visit to the editor and back must not drop the pending request)
 SESSION_STATE("designs.own_outfitter", &g_guest_outfitter_fix, oo_reset, oo_held);
 
@@ -622,10 +677,11 @@ std::string status()
     // BUG-1272: the guest's own outfitter (the key it asked for, the card's: the slot's)
     snprintf(b, sizeof b,
              "own outfitter: fix=%d on=%d hooked=%d opened=%u asked=%08X/%08X/%08X card=%08X pending=%d returns=%u "
-             "skipped=%u cancelled=%u result=%08X set=%u set_failed=%u\n",
+             "skipped=%u cancelled=%u result=%08X set=%u set_failed=%u offline=%u held=%d sent=%08X acked=%u resent=%u\n",
              (int)g_guest_outfitter_fix, (int)own_outfitter_on(), (int)(o_EditorReturn != nullptr), g_oo_opened,
              g_oo_asked[0], g_oo_asked[1], g_oo_asked[2], g_oo_card[0], (int)g_oo_pending, g_oo_returns, g_oo_skipped,
-             g_oo_cancelled, g_oo_result.instance, g_oo_set, g_oo_set_failed);
+             g_oo_cancelled, g_oo_result.instance, g_oo_set, g_oo_set_failed, g_oo_offline, (int)g_oo_held,
+             g_oo_sent.instance, g_oo_acked, g_oo_resent);
     return o + b;
 }
 

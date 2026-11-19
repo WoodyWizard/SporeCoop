@@ -84,6 +84,16 @@
 - Civilization: a guest gets the host's progress for buying a city and its trade prices, so Buy City can come up on the
   guest's screen; a trade route the host's game removes disappears for the guest too (BUG-1287; still open: its lab
   check is pending).
+- Tribe and Civilization: a guest whose own creature has the same id as one of the host's (it often has when its first
+  creature was made from the host's in the landfall editor) now gets its own creature in its own Tribal Outfitter and
+  Civ outfitter; before, the outfitter opened on the host's creature (BUG-1297; still open until its lab run).
+- Tribe and Civilization: when the connection is lost while a guest is in its own outfitter or design editor, its game
+  no longer dresses every tribe member in the new outfit or puts the new design into the shared civilization; what it
+  made is kept and reaches every player when it joins again (BUG-1298; still open until its lab run).
+- Tribe: a baby or a new member that belongs to a guest now looks like the guest's own creature from the moment it
+  appears; before, it was the tribe's species for a moment first (BUG-1299; still open until its lab run).
+- Space: a guest whose own ship has the same id as the host's ship now flies its own ship on its screen; before, its
+  game could show the host's ship instead (BUG-1301; still open until its lab run).
 
 ## [0.7.15.2] - 2026-11-18
 

@@ -92,13 +92,14 @@ static bool g_mirror_grow_fix = true;
 COOP_FIX("tribe.mirror_grow", "BUG-0857", g_mirror_grow_fix, "tribe: a guest's mirror of a baby member grows up when the host's member does, also when it was made later than the host's baby");
 uint32_t g_mirrors_grown;
 
-void* spawn_member(void* t, uint8_t age)
+void* spawn_member(void* t, uint8_t age, uint8_t owner)
 {
     if (player_tribe_out(t)) {
         g_spawns_blocked++;
         g_spawn_fail = "the player tribe is out (tribe.gameover guard: no member with health, input lock up)";
         return nullptr;
     }
+    birth_begin(t, owner); // BUG-1299: born in its owner's line species
     // SpawnMember (vt 0x98) returns null at the population cap: then create + add directly
     void* c = vcall<void*>(t, 0x98 / 4, (int)age);
     if (!c) {
@@ -108,6 +109,7 @@ void* spawn_member(void* t, uint8_t age)
         else
             g_spawn_fail = "the game made no citizen (SpawnMember and CreateCitizen null)";
     }
+    birth_end({c});
     return c;
 }
 
@@ -294,7 +296,7 @@ void guest_state(net::Reader& r)
         bool made = false;
         if (!c) {
             g_spawn_fail = "";
-            c = spawn_member(t, m.age);
+            c = spawn_member(t, m.age, m.owner);
             if (!c) {
                 not_made(g_spawn_fail);
                 continue;
