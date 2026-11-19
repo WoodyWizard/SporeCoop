@@ -132,6 +132,10 @@ static void* SK_CDECL h_WriteKey(void* stream, const uint32_t* key)
 using WriteInt32_t = bool(SK_CDECL*)(void*, const uint32_t*, int, int);
 static WriteInt32_t o_WriteInt32;
 constexpr uint32_t kCreatureType = 0x2B978C46u;
+// BUG-1274 (lab 20261119-141949 civ_own_designs): an event of the host's main stream named the guest's vehicle design
+// {0x24682294, 7BE222FB, 0x40646200}: the dword blocks and the event lists are looked at for the design kinds of a line
+// too (vehicle and building models), the filters decide
+static bool line_key_type(uint32_t t) { return t == kCreatureType || t == 0x24682294u || t == 0x2399BE55u; }
 static bool SK_CDECL h_WriteInt32(void* s, const uint32_t* p, int count, int endian)
 {
     if (count < 3 || count > 0x10000 || !p || g_key_filters.empty() || !saving_now() || !game::on_main() ||
@@ -139,7 +143,7 @@ static bool SK_CDECL h_WriteInt32(void* s, const uint32_t* p, int count, int end
         return o_WriteInt32(s, p, count, endian);
     std::vector<uint32_t> copy;
     for (int i = 0; i < count; i++) {
-        if (p[i] != kCreatureType)
+        if (!line_key_type(p[i]))
             continue;
         // the type at i: {instance, type, group} = i-1, i, i+1; {type, instance, group} = i, i+1, i+2
         int at[2][3] = {{i - 1, i, i + 1}, {i + 1, i, i + 2}}; // instance, type, group
@@ -209,7 +213,7 @@ static bool SK_THISCALL h_EventLogWrite(void* log, void* stream)
                     continue;
                 int cnt = (int)(end - b);
                 for (int i = 0; i + 2 < cnt; i++) {
-                    if (b[i] != kCreatureType || !b[i + 1])
+                    if (!line_key_type(b[i]) || !b[i + 1])
                         continue;
                     uint32_t k[3] = {b[i + 1], b[i], b[i + 2]}; // {instance, type, group}
                     bool hit = false;
