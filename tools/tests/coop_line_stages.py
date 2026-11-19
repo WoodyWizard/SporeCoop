@@ -270,15 +270,28 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
     hc = civ(host)[0]
     if not any(not c['player'] for c in hc.values()):
         camp.kick_civ({'n': 0})  # the campaign's shortcut: the cities still to come appear (SpawnNextCity)
-        # (the new cities reach the host's city table within seconds, not at once: lab 20261119-095414 read it 5 s
-        # after 9 cities were spawned and found none; line_stages_outfit, the same step, found 9)
-        t0 = time.time()
+        # (the campaign's SpawnNextCity(ex, 0, 0) only starts the game's own founding: lab 20261119-095414 and
+        # 20261119-114816 had no new city 5 s / 61 s after "9 cities appeared", line_stages_outfit found 9 later. After
+        # 30 s without one the test founds them at once, SpawnNextCity(ex, 1, 0) as civ_city_burst does: the guest's
+        # game gets them through the host's city catch-up, BUG-0380)
+        t0, instant = time.time(), 0
         while True:
             time.sleep(2)
             hc = civ(host)[0]
-            if any(not c['player'] for c in hc.values()) or time.time() - t0 > 60:
+            if any(not c['player'] for c in hc.values()) or time.time() - t0 > 90:
                 break
-        print(f'  civ: cities after the shortcut ({time.time() - t0:.0f} s): {sorted(hc)}', flush=True)
+            if time.time() - t0 > 30 and not instant:
+                m = re.search(r'eax=(0x[0-9A-Fa-f]+)', host.call('call Simulator::cCivExpansion::Get cdecl')['out'] or '')
+                for _ in range(4 if m else 0):
+                    r = re.search(r'eax=0x([0-9A-Fa-f]+)',
+                                  host.call(f'call Simulator::cCivExpansion::SpawnNextCity thiscall {m.group(1)} 1 0')['out']
+                                  or '')
+                    if not r or int(r.group(1), 16) & 0xFF == 0:
+                        break
+                    instant += 1
+                    host.call('wait.frames 30 10000')
+        print(f'  civ: cities after the shortcut ({time.time() - t0:.0f} s, {instant} founded at once): {sorted(hc)}',
+              flush=True)
     cap = [k for k, c in hc.items() if c['player']]
     npc = [k for k, c in hc.items() if not c['player']]
     if not ck(cap and npc, f'civ: the players\' capital {cap} and NPC cities {npc}'):
