@@ -3,7 +3,8 @@
 // evolution vote and the own editor), puppets.cpp (the partners' puppets, the recorders) and session_glue.cpp (the
 // session callbacks and the session end) were one file. Its anonymous namespace is the named namespace coop_core
 // now, with a using-directive like the one an anonymous namespace has, so the code reads as before; what more than
-// one of these files uses is declared here, everything else stays file-static. Only these files include this header.
+// one of these files uses is declared here, everything else stays file-static. Only these files include this header (and civ_arrival.cpp, WP-X1 of
+// 0.7.16: the Tribe -> Civ arrival's own editors, next to vote.cpp's own editor).
 // The moves are proved by tools/refactor_dump.py (docs/10-dev-pipeline.md#pipeline-refactor-proof).
 #pragma once
 
@@ -458,6 +459,12 @@ void finish_vote(const char* why);
 void offer_take();
 void offer_tick(double now);
 void own_editor_tick(double now);
+// ---- defined in civ_arrival.cpp (WP-X1, BUG-1276): a guest's own City Hall and vehicle editors at its Civ arrival ----
+void civ_arrival_vote(uint32_t editor, uint32_t mode); // the host's vote ended on this guest (its editor, our stage)
+void civ_arrival_tick(double now);
+void civ_arrival_result(const void* data); // civ_editors.cpp: an editor's result message 0x30C11C7
+void civ_arrival_init();
+std::string civ_arrival_status();
 void start_vote(void* req, const std::string& text);
 void submit_tick(double now);
 void vote_action_tick(double now);

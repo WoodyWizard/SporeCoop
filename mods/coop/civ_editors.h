@@ -27,6 +27,10 @@ bool allows(uint32_t editor);
 // designs::civ_sync: the guest's own culture set entry `id` changed to `key` by a path none of the hooks saw (it goes
 // back to the host's there): take it as the guest's own design. false: not taken (not active, no creation)
 bool take_pick(uint32_t id, const uint32_t key[3]);
+// WP-X1 (BUG-1276, civ_arrival.cpp): the result of the guest's own City Hall / vehicle editor at its arrival in Civ
+// (design id `id`, the creation `key`) goes to its line like a planner editor's. false: not taken (not own mode, no
+// creation, not a building or vehicle)
+bool take_editor(uint32_t id, const uint32_t key[3]);
 
 void init(const SkHost* host, SkMod* mod, net::Session* sess);
 void tick(double now); // every frame, main thread (after species::tick)

@@ -37,6 +37,7 @@
 
 namespace coop_core {
 void feed(const std::string& s);
+void civ_arrival_result(const void* data); // WP-X1 (BUG-1276)
 }
 
 namespace civedit {
@@ -143,6 +144,14 @@ bool take_pick(uint32_t id, const uint32_t key[3])
     return true;
 }
 
+bool take_editor(uint32_t id, const uint32_t key[3])
+{
+    if (!guest_own() || !id || id == kUfoDesign || !key || !key[0] || (key[1] != kBuildingType && key[1] != kVehicleType))
+        return false;
+    queue(false, id, key);
+    return true;
+}
+
 // ---- the planner's apply: the shared civilization's design entry (skipped for our own work)
 static void SK_THISCALL h_Apply(void* planner, uint32_t id, const uint32_t* key)
 {
@@ -211,6 +220,8 @@ static int SK_THISCALL h_PlannerMsg(void* planner, uint32_t msg, void* data)
 // ---- cGameModeCiv's listener: the Civ outfitter's result is not the civilization's
 static int SK_THISCALL h_CivMsg(void* listener, uint32_t msg, void* data)
 {
+    if (msg == kMsgEditorResult)
+        coop_core::civ_arrival_result(data); // WP-X1 (BUG-1276): our own arrival editors' results (tag 0x116DD1B)
     if (msg != kMsgEditorResult || !R(data, 0x48) || F<uint32_t>(data, 0xC) != kTagOutfitter || !active_return())
         return o_CivMsg(listener, msg, data);
     uint8_t& cancelled = F<uint8_t>(data, 0x44);

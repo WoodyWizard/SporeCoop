@@ -1023,6 +1023,7 @@ static void frame_votes_and_ui(double now)
     vote_tick(now);
     submit_tick(now);
     own_editor_tick(now);
+    civ_arrival_tick(now); // WP-X1 (BUG-1276)
     evo_flag_tick(now); // BUG-0920
     offer_tick(now); // BUG-0516
     vote_action_tick(now);
@@ -2746,6 +2747,7 @@ static void init_tribe_and_creations()
     creations::init(H, M, std::move(crc));
     species::init(H, M, &g_sess); // WP-0 (BUG-1270)
     civedit::init(H, M, &g_sess); // WP-C3 (BUG-1275)
+    civ_arrival_init();           // WP-X1 (BUG-1276)
     modes::g_species_for_player = [](uint8_t id) { return creations::player_species(id); };
     modes::g_model_for_player = [](uint8_t id, int kind, uint32_t key[3]) {
         creations::Key k = creations::player_key(id, (creations::Kind)kind);

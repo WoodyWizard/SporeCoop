@@ -980,6 +980,8 @@ void setup_callbacks()
                     modes::mode_name(g_mode));
                 feed("evolution: your own editor opens when you have arrived in the Creature stage");
             }
+            if (ended && g_vote.editor) // WP-X1 (BUG-1276): the host's end-of-Tribe editors: our own ones after the arrival
+                civ_arrival_vote(g_vote.editor, g_mode);
             g_vote.active = on;
             g_vote.left = left;
             g_vote.text = text;
