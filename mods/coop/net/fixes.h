@@ -42,6 +42,8 @@ struct Fixes {
     // 0.7.15 (B3, B6)
     bool dir_gate = true;     // BUG-1136: host: a message of a type only the host sends (net/messages.def) from a guest is dropped
     bool family_check = true; // BUG-1137: a peer whose message family revision differs in a family the stage uses is refused
+    // 0.7.16 (WP-F1)
+    bool refuse_fork = true; // BUG-1281: a peer running the Lineages fork is refused at HELLO / WELCOME, in both roles
 };
 inline Fixes g_fix;
 

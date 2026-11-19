@@ -85,6 +85,11 @@ public:
     uint64_t rejoin_token = 0;
     bool send_caps = true; // not a lab switch: test seam, false = HELLO / WELCOME without the extension (0.7.2 shape)
     bool send_families = true; // not a lab switch: test seam, false = HELLO / WELCOME without CAP_FAMILIES (0.7.14 shape)
+    // not lab switches: test seams (BUG-1281), the HELLO payload sent instead of ours / the WELCOME payload for a guest
+    // id (a recorded HELLO / WELCOME of another program, the Lineages fork)
+    std::vector<uint8_t> test_hello;
+    std::function<std::vector<uint8_t>(uint8_t your_id)> test_welcome;
+    uint32_t fork_refused() const { return fork_refused_; } // BUG-1281: Lineages fork peers refused (either role)
     // host: its world id (save CRC in Cell / Creature / Tribe / Civ, else 0), sent in WELCOME; coop.cpp
     // sets it every frame (host_world.h). Guest: welcome_world() is what the host sent (0 = unknown
     // or an older host), until leave(). The field stays where it is in Welcome (BUG-0231)
@@ -239,6 +244,7 @@ private:
     bool host_state_seen_ = false;
     std::vector<uint32_t> compat_warned_; // host: (id << 8 | family) warned about; guest: families
     uint32_t compat_refused_ = 0;
+    uint32_t fork_refused_ = 0;
     bool host_compat(Peer& p, uint32_t host_mode);
     void stage_compat();
     uint32_t halfopen_refused_ = 0, halfopen_evicted_ = 0;                                      // BUG-0778

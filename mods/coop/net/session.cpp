@@ -155,6 +155,8 @@ void Session::start_hello(const Endpoint& ep, uint32_t now)
         h.caps &= ~(uint32_t)CAP_FAMILIES;
     Writer w;
     h.write(w);
+    if (!test_hello.empty()) // test seam (BUG-1281): another program's HELLO bytes
+        w.data = test_hello;
     p->conn.send_reliable(MSG_HELLO, w);
     // BUG-1005: the host splits a WELCOME longer than one packet for a guest that announced CAP_SPLIT (in this HELLO):
     // join its pieces (an older host never splits). WELCOME then sets what the host announced
@@ -754,6 +756,21 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                 h.version = utf8::clean_text(h.version, kVersionMax);
             }
             Reject rej;
+            // BUG-1281: a Lineages fork guest is refused first, before its token can replace an entry or anything
+            // else of its HELLO counts (its caps bit 8 is not our family list, its later messages mean other things)
+            if (g_fix.refuse_fork && compat::is_fork(h.version, h.caps, h.has_families)) {
+                rej.reason = REJ_VERSION; // every 0.7.x (the fork too) shows the text
+                rej.text = compat::fork_refuse_text(my_name_, version, h.version, false);
+                compat_refused_++;
+                fork_refused_++;
+                if (cb.compat)
+                    cb.compat(0xFF, compat::fork_not_let_in_text(h.name.empty() ? "a player" : h.name, h.version), true);
+                Writer w;
+                rej.write(w);
+                p.conn.send_reliable(MSG_REJECT, w);
+                logf(cb, "rejected %s: %s", p.conn.remote.masked().c_str(), rej.text.c_str());
+                return;
+            }
             // BUG-0235: the same game after a crash (its HELLO carries the token of the old entry,
             // which has been silent for 2 s) replaces that entry now, before the full check (a crash
             // rejoin into 4/4 was refused) and before WELCOME (its roster held its own old entry).
@@ -888,6 +905,8 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
                 wl.caps &= ~(uint32_t)CAP_FAMILIES;
             Writer w;
             wl.write(w);
+            if (test_welcome) // test seam (BUG-1281): another program's WELCOME bytes
+                w.data = test_welcome(p.id);
             p.conn.send_reliable(MSG_WELCOME, w);
             PlayerJoin pj;
             pj.p = {p.id, p.name, p.version};
@@ -980,6 +999,22 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             return;
         if (g_fix.name_clean) // BUG-0774 (again below: the conflict text names the host's version)
             wl.host_version = utf8::clean_text(wl.host_version, kVersionMax);
+        // BUG-1281: a host running the Lineages fork: leave before anything of it is used (nothing after its WELCOME is
+        // delivered once the leave is pending)
+        if (g_fix.refuse_fork && compat::is_fork(wl.host_version, wl.caps, wl.has_families)) {
+            std::string host_name = "the host";
+            for (auto& pl : wl.players)
+                if (pl.id == 0 && !pl.name.empty())
+                    host_name = utf8::net_name(pl.name);
+            std::string why = "rejected: " + compat::fork_refuse_text(host_name, wl.host_version, version, true);
+            logf(cb, "%s", why.c_str());
+            compat_refused_++;
+            fork_refused_++;
+            if (!leave_pending_)
+                pending_disc_ = why;
+            leave("rejected");
+            return;
+        }
         // B6 (BUG-1137): the families every stage uses now (the host's stage is known with its first state, below)
         if (compat::Conflict c = compat::conflict(families, wl.families, wl.has_families, 0); g_fix.family_check && c.any) {
             std::string host_name = "the host";
