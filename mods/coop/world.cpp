@@ -557,6 +557,7 @@ struct PendingShare {
     uint64_t asked = 0;  // BUG-1294: when the share was asked for (tick count)
     uint64_t posted = 0; // BUG-1294: when the save it goes out with was posted (0: none yet)
     bool wait_said = false;
+    bool dead_said = false; // BUG-1295: logged once
 };
 // BUG-0231: the final failure of a queued share ("cannot share the world"), for the caller's retry
 static void (*g_share_failed)(uint8_t peer, uint32_t tag, bool planet_missing);
@@ -619,10 +620,25 @@ static bool g_one_save_fix = true;     // BUG-0112: one save for every share tha
 // was asked for. `coop.fix world.share_fresh_save off`: any save in flight (0.7.15)
 static bool g_share_fresh_fix = true;
 static unsigned g_fresh_waits; // shares that waited for their own save
+// BUG-1295 (found by the Lineages fork, PR #196, its BUG-9215): a player who joined while the host was on its death
+// screen got the world saved with the host's dead avatar and arrived dead at the host's spot ("You were killed in
+// battle"). A share that saves first now waits while the host's own creature is dead (2 minutes at most), and the host
+// is told every 30 s to respawn. `coop.fix world.join_after_respawn off`: the save at once (0.7.15)
+static bool g_respawn_fix = true;
+static unsigned g_dead_waits;     // shares that waited for the host's respawn
+static uint64_t g_dead_told;
+static bool host_dead_now()
+{
+    if (!game::in_creature_stage())
+        return false;
+    void* av = game::avatar();
+    return av && (game::is_dead(av) || game::health(av) <= 0.f); // (the caption may wait with the flag already off)
+}
 static bool g_editor_load_fix = true;  // BUG-0157: a queued load never starts inside an editor
 COOP_FIX("core.share_reset", "BUG-0140", g_share_reset_fix, "world: the session end drops the shares and transfers of its players");
 COOP_FIX("world.share_drop_peer", "BUG-0166", g_drop_peer_fix, "world: shares for a player who left are dropped");
 COOP_FIX("world.share_one_save", "BUG-0112", g_one_save_fix, "world: one save for every share that waits at the same time");
+COOP_FIX("world.join_after_respawn", "BUG-1295", g_respawn_fix, "world: a world share waits while the host's creature is dead (2 minutes at most), so a joining player does not arrive dead");
 COOP_FIX("world.share_fresh_save", "BUG-1294", g_share_fresh_fix, "world: a share goes out with another share's save only when that save was made after the share was asked for");
 // BUG-0276: the host's share save posted 70 ms after the game entered the Tribe stage was never
 // written (no "game saved" box, no file); after 10 s the share went out anyway with the slot's
@@ -1475,6 +1491,20 @@ void tick(net::Session& s)
                 continue;
             }
         }
+        if (p.need_save && g_respawn_fix && now < p.asked + 120000 && host_dead_now()) { // BUG-1295
+            if (!p.dead_said) {
+                p.dead_said = true;
+                g_dead_waits++;
+                H->log(M, SK_INFO, "world: the share for player %u waits until the host's creature lives again (BUG-1295)",
+                       p.peer);
+            }
+            if (g_feed && now >= g_dead_told + 30000) {
+                g_dead_told = now;
+                g_feed("a player is joining: respawn so they can enter your world");
+            }
+            i++;
+            continue;
+        }
         if (p.need_save) {
             // a stage that just began (loading screen, setup) is saved once the player controls
             // something, like a share at join (coop.cpp player_join)
@@ -2030,6 +2060,9 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "shares that waited for their own save %u (fresh_save=%d)\n", g_fresh_waits,
              (int)g_share_fresh_fix); // tests (BUG-1294)
+    s += b;
+    snprintf(b, sizeof b, "shares that waited for the host's respawn %u (join_after_respawn=%d, host dead %d)\n", g_dead_waits,
+             (int)g_respawn_fix, (int)host_dead_now()); // tests (BUG-1295)
     s += b;
     snprintf(b, sizeof b, "saved box: questions left alone %u, Enters for an OK outside the window %u\n", g_box_questions,
              g_box_enters); // tests (BUG-0846, BUG-0806)
