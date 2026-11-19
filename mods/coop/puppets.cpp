@@ -1024,6 +1024,16 @@ static std::string monitor_own_fields(bool have)
             snprintf(b, sizeof b, " parts=%d:%08X", n, h);
             out += b;
         }
+        // BUG-1310 (own DNA, WP-D): the evolution bar (the party's on every game) and, on the host, the record of each
+        // guest's own wallet (what that guest's dna= must be): the monitor's totals compare with them
+        float bar = game::evolution_bar();
+        if (std::isfinite(bar)) {
+            char b[32];
+            snprintf(b, sizeof b, " bar=%.0f", bar);
+            out += b;
+        }
+        if (g_sess.role() == net::Role::Host)
+            out += dna_own_field();
     }
     if (g_mode == modes::kTribe || g_mode == modes::kCiv) {
         // BUG-0416: how long the own pointer has stood still (its partner's copy is ~0.1 s + half a round
