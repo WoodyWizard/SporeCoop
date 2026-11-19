@@ -58,7 +58,7 @@ To run (owner's no-lab rule from 2026-11-18 evening; lane 6):
 * Regressions: civ_citizens, civ_citizens_reload, civ_designs.
 Seen so far: lab 20261118-180539 (the hook without the special citizens and the strip): FAIL on exactly those two
 checks, the capital and the hook's effect as expected.
-* Lab (fix/w57-savestrip, lane 4): PASS lab 20261119-114816 civ_own_species (also 20261119-113320, 20261119-112418);
+* Lab (fix/w57-savestrip, lane 4): PASS lab 20261119-114816 and 20261119-123654 (merged tree) civ_own_species (also 20261119-113320, 20261119-112418);
   FAIL twins: `civ.own_species` off lab 20261119-101851 (step 3), `savestrip.keys` off lab 20261119-120449 (the save
   check: the citizens' strip `save_stripped=38` did not keep the key out, BUG-1315); the night run's save failures
   (20261119-095414, 20261119-102655 with civ.own_species_save off) were BUG-1315. civ_own_species_hostmode PASS in

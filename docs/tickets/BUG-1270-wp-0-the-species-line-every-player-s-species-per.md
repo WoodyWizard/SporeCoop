@@ -39,7 +39,7 @@ Unit: tests/species_tests.cpp (make test, unit-cpp) passes. Lab: `species_line` 
 run (to be filled in with the PASS / FAIL run dirs).
 - no-fail-run: lab runs stopped by the owner (2026-11-18) until the night run; `species_line` (PASS expected) and
   `SPORE_FIX_OFF=species.line` (FAIL expected) are queued for it.
-* Lab (fix/w57-savestrip, lane 4): `species_line` PASS lab 20261119-112418 (step 4 with `coop.settings force
+* Lab (fix/w57-savestrip, lane 4): `species_line` PASS lab 20261119-112418 and 20261119-123654 (merged tree) (step 4 with `coop.settings force
   creature.mode`: the night run's FAIL in 20261119-095414 was the test's `set`, refused since creature.mode is a session
   setting); FAIL twin `SPORE_FIX_OFF=species.line` lab 20261119-120449 (no line on the host from step 1). BUG-1315 adds
   to this package: `species::is_line_key` remembers every key a line had in this process, `set_world_species`.

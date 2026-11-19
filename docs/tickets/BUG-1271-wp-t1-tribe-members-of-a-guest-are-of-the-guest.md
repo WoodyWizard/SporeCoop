@@ -40,7 +40,8 @@ creations::player_key(pid, kCreature)) until species_line (BUG-1270) is merged. 
 `make test` passes (tribe_tests species_act). Lab runs pending (owner's rule 2026-11-18: no lab runs until the night
 run): `tribe_own_species` PASS with the fix, FAIL with `SPORE_FIX_OFF=tribe.own_species`; regressions tribe_outfit,
 tribe_guest_baby, tribe_portraits, tribe_owners_session, tribe_mirror_hunger, tribe_species_probe.
-* Lab (fix/w57-savestrip, lane 4): PASS lab 20261119-114816 tribe_own_species (every check, 0 faults; the save check
+* Lab (fix/w57-savestrip, lane 4): PASS lab 20261119-114816 and, on rel/0.7.16 with BUG-1313's kid rule (the test's
+  kid checks follow it), lab 20261119-133307 tribe_own_species (every check, 0 faults; the save check
   needed BUG-1315, the carry check BUG-1317, a fault after the reload BUG-1320 = BUG-1313). FAIL twin
   `SPORE_FIX_OFF=tribe.own_species`: lab 20261119-101851 (step 2: every member the slot's species on both games).
 
