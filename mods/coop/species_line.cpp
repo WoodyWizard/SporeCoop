@@ -537,6 +537,15 @@ static bool g_store_reg = store::add({kStoreFeature, store_save, [](const std::s
 
 static bool host_known(uint32_t shared) { return registered(shared).instance != 0; }
 
+// BUG-1312: a guest that plays the world's own species again (its world record forgotten, "the world's own" chosen)
+// sends an empty row; the host erased it and sent nothing, so the guest's own game and the other guests kept the old
+// row and drew its members in its old creature while the host drew the tribe's species. On: the host sends the empty
+// row to everybody once. `coop.fix species.row_cleared off`: not sent (0.7.16 before the fix).
+static bool g_row_cleared_fix = true;
+COOP_FIX("species.row_cleared", "BUG-1312", g_row_cleared_fix,
+         "species: a guest that plays the world's own species again is drawn so on every game, its own included");
+static unsigned g_rows_cleared_out;
+
 static void host_tick()
 {
     if (!is_host())
@@ -578,6 +587,17 @@ static void host_tick()
         g_row_sent[pid] = bytes;
         g_rows_out++;
     }
+    // BUG-1312: a row the guest emptied (it plays the world's own species again) was erased here and never sent, so
+    // every other game (the owner's own included) kept the old row and drew its members in the old line
+    if (g_row_cleared_fix)
+        for (auto& [pid, sent] : g_row_sent) {
+            if (sent.empty() || g_rows.count(pid) || !here.count(pid))
+                continue;
+            send_row(-1, kRow, pid, {});
+            sent.clear();
+            g_rows_out++;
+            g_rows_cleared_out++;
+        }
 }
 
 // lifecycle-exempt: sends messages (the rows and their creations to a newcomer), called by session_glue's player_join
@@ -845,9 +865,11 @@ std::string status()
 {
     std::string s;
     char b[400];
-    snprintf(b, sizeof b, "species line: fix=%d mode=%s role=%s rows=%u registered=%u failed=%u\n", (int)g_line_fix,
+    snprintf(b, sizeof b, "species line: fix=%d mode=%s role=%s rows=%u registered=%u failed=%u cleared_out=%u "
+             "row_cleared=%d\n", (int)g_line_fix,
              own_mode() ? "own" : "host", !S ? "none" : is_host() ? "host" : is_guest() ? "guest" : "none",
-             (unsigned)g_rows.size(), (unsigned)g_reg.size(), (unsigned)g_reg_failed.size());
+             (unsigned)g_rows.size(), (unsigned)g_reg.size(), (unsigned)g_reg_failed.size(), g_rows_cleared_out,
+             (int)g_row_cleared_fix);
     s += b;
     std::set<uint8_t> pids;
     for (auto& [pid, r] : g_rows)

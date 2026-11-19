@@ -370,9 +370,6 @@ bool has_body(void* c);
 void species_init();
 void species_tick(double now);
 std::string species_status();
-// BUG-1320: cCreatureAnimal::SetSpecies(member, prof, its age, keepState 1) without the creature-only step past a
-// citizen's memory (tribe_species.cpp); every SetSpecies of ours on a tribe member goes through it
-bool set_species_member(void* c, void* prof);
 // BUG-1299 (tribe.birth_species): a member the game makes now (a baby, a guest's mirror) whose owner is known is born
 // in that owner's line species: between birth_begin(tribe, owner) and birth_end(the new members) the tribe's species
 // slot answers the line's profile to the citizen's init (0xC27330 reads cTribe_SpeciesSlot); nothing is written into

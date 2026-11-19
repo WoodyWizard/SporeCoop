@@ -1,21 +1,20 @@
 ---
 id: BUG-1320
 title: Tribe: SetSpecies on a young member reads past the citizen object (cCreatureAnimal cache at +0x1628, fault at 0xFFFFFFFF)
-status: fixed
+status: duplicate
 kind: crash
 stage: Tribe
 reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in:
 branch: fix/w57-savestrip
 commits: 9a1a1d00
 tests: tribe_own_species
 signature: exception 0xC0000005 at 0xFFFFFFFF, calls 00BC326E 00C03A94 (cCreatureAnimal::SetSpecies+0x174)
 docs: docs/re/tribe.md#tribe-own-species
-related: BUG-1271, BUG-1299
-switch: tribe.species_young
+related: BUG-1313, BUG-1271, BUG-1299
 ---
 
 ## Report
@@ -36,7 +35,11 @@ take the species at the spawn and never run it. Inferred: earlier runs passed be
 have the valid byte set (no call, no write).
 
 ## Fix
-tribe_species.cpp: every SetSpecies of ours on a tribe member goes through `set_species_member` (also `coop.tribe
+Duplicate of BUG-1313 (fix/w57-tribe-keys, merged into rel/0.7.16 while this branch worked: `tribe.kid_species`, a
+kid waits until it is grown up, no SetSpecies on it). The hook described below (LazyU64_Get skipped for our own
+SetSpecies, `tribe.species_young`, commit 9a1a1d00) was taken out again in the merge of rel/0.7.16 (one fix for one
+bug); its Ghidra notes stay here and in docs/re/tribe.md#tribe-own-species.
+What this branch had: tribe_species.cpp: every SetSpecies of ours on a tribe member goes through `set_species_member` (also `coop.tribe
 setspecies`), which marks the member; a hook on LazyU64_Get 0xBC3260 skips the call whose cache is that member's
 +0x1628 (nothing read, called or written past the citizen). Counter `young_skipped=` in `coop.tribe species` /
 `coop.status`. Switch `coop.fix tribe.species_young` (off: the game's call).
@@ -50,3 +53,4 @@ setspecies`), which marks the member; a hook on LazyU64_Get 0xBC3260 skips the c
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w57-savestrip.
+- 2026-11-19: duplicate of BUG-1313 (merged first); this branch's hook removed in the merge of rel/0.7.16.

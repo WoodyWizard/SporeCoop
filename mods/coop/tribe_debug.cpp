@@ -1190,8 +1190,17 @@ std::string debug(const std::vector<std::string>& a)
         if (!set || !prof || !pt)
             return "no species / tribe";
         int n = 0;
+        if (a.size() >= 3) { // setspecies <hex> <member id>: that member only (BUG-1319 tests: a stray line key)
+            unsigned id = (unsigned)atoi(a[2].c_str());
+            for (void* c : members(pt))
+                if (member_id(c) == id && F<int>(c, kAgeOff) == 1) { // (never a kid: BUG-1313)
+                    thiscall<bool>(set, c, prof, 1, true);
+                    n++;
+                }
+            return "species set on " + std::to_string(n) + " (member " + std::to_string(id) + ")";
+        }
         for (void* c : members(pt)) {
-            set_species_member(c, prof); // (BUG-1320)
+            thiscall<bool>(set, c, prof, F<int>(c, kAgeOff), true);
             n++;
         }
         // the tribe's own species key (mSpeciesKeys +0x1904: a vector whose first key sits at +0x1920 here, runtime
