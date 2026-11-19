@@ -620,6 +620,26 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
         }
         return 0;
     }
+    if (sub == "cmd" && argc > 2) { // cmd <hex command id>...: every visible window with that command id (game bots:
+        for (int i = 2; i < argc; i++) { // a palette tile's buttons share their command, BUG-1275)
+            uint32_t id = (uint32_t)strtoul(argv[i], nullptr, 16);
+            std::vector<Win> stack{main_window()};
+            for (int n = 0; !stack.empty() && n < 50000; n++) {
+                Win w = stack.back();
+                stack.pop_back();
+                if (!visible(w))
+                    continue;
+                if (command_id(w) == id) {
+                    Rect r = screen_rect(w);
+                    H->out_printf(out, "%08X %.0f %.0f %.0f %.0f enabled=%d ctl=%08X\n", id, r.x1, r.y1, r.x2, r.y2,
+                                  (flags(w) & kFlagEnabled) ? 1 : 0, control_id(w));
+                }
+                for (Win c : children(w))
+                    stack.push_back(c);
+            }
+        }
+        return 0;
+    }
     if (sub == "layouts") {
         for (auto& l : g_layouts)
             H->out_printf(out, "%08X.%08X group %08X\n", l.instance, l.type, l.group);
@@ -732,7 +752,7 @@ int c_ui(void*, int argc, const char* const* argv, SkOut* out)
 void register_commands()
 {
     H->command_add(M, "coop.ui",
-                   "coop.ui tree [depth] [all] [root] | find <caption> | where <hex id>... | at <x> <y> | layouts | load <inst> [group] | "
+                   "coop.ui tree [depth] [all] [root] | find <caption> | where <hex id>... | cmd <hex cmd>... | at <x> <y> | layouts | load <inst> [group] | "
                    "show <win> [0|1] - Spore UI windows",
                    c_ui, nullptr, SK_CMD_OUTSIDE_FRAME);
 }

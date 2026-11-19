@@ -44,6 +44,7 @@
 #include "audio.h"
 #include "census.h"
 #include "civ.h"
+#include "civ_editors.h"
 #include "autoupdate.h"
 #include "gamefixes.h"
 #include "spacecoop.h"
@@ -975,6 +976,7 @@ static void frame_observe(double now)
     world_id_tick();          // BUG-1141 (BUG-0217, BUG-0223, BUG-1055): the world changed: its hooks and WORLD_STATE resets
     creations::tick(now);
     species::tick(now); // WP-0 (BUG-1270): the species line (after the creations: it reads their keys)
+    civedit::tick(now); // WP-C3 (BUG-1275): a guest's own Civ editors' results into its line
     if (g_frame_fix) // BUG-0091: forget the puppets of a world the game tore down before any message uses them
         avatar_change_check();
     monitor_frame_start(now); // the puppets as drawn, before any driving (docs/06-testing.md#testing-monitor)
@@ -2739,6 +2741,7 @@ static void init_tribe_and_creations()
     };
     creations::init(H, M, std::move(crc));
     species::init(H, M, &g_sess); // WP-0 (BUG-1270)
+    civedit::init(H, M, &g_sess); // WP-C3 (BUG-1275)
     modes::g_species_for_player = [](uint8_t id) { return creations::player_species(id); };
     modes::g_model_for_player = [](uint8_t id, int kind, uint32_t key[3]) {
         creations::Key k = creations::player_key(id, (creations::Kind)kind);

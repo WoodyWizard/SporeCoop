@@ -55,6 +55,12 @@ std::string refuse_own_editor(uint32_t mode, uint32_t editor, bool own_world, co
 // the texts of the host's outfitter (vote, return): true when the outfit reaches everybody (the switch)
 bool outfit_texts(uint32_t mode, uint32_t editor);
 
+// the player civilization (null: none here), its culture set (Val.key the design id, v[0..2] the key) and one entry
+// without generating a missing one (null: none); civ_editors.cpp (BUG-1275)
+void* civ_player();
+std::vector<Val> civ_culture();
+const uint32_t* civ_design(uint32_t id);
+
 std::string status();
 std::string debug(const std::vector<std::string>& args);
 
