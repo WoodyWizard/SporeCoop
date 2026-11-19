@@ -116,8 +116,25 @@ def keys_in_slot(folder, insts):
                 continue
             for inst in insts:
                 if inst and (inst.to_bytes(4, 'little') in data or inst.to_bytes(4, 'big') in data):
-                    hits.append(f'{name}:{inst:08X}')
+                    hits.append(f'{name}:{inst:08X}' + records(os.path.join(root, name), inst))
     return hits
+
+
+def records(path, inst):
+    """(a .spo: the record types that name the instance, for the report)"""
+    if not path.endswith('.spo'):
+        return ''
+    try:
+        import sys
+        tools = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if tools not in sys.path:
+            sys.path.insert(0, tools)
+        import part_substitutes as ps
+        types = sorted({'%08X' % e['type'] for e in ps.entries(path)
+                        if any(inst.to_bytes(4, o) in ps.read(path, e) for o in ('little', 'big'))})
+        return f' (records {",".join(types)})'
+    except Exception as e:  # (a report detail only)
+        return f' (records: {e})'
 
 
 def ai(con, mid):
@@ -126,7 +143,9 @@ def ai(con, mid):
     a = re.search(r'anim=([0-9A-F]+)', out)
     n = re.search(r'node=([0-9A-F]+)', out)
     p = re.search(r' pos=\((-?[\d.]+) (-?[\d.]+) (-?[\d.]+)\)', out)
+    st = re.search(r' mem=(-?\d+) ', out)
     return dict(carry=float(c.group(1)) if c else 0.0, anim=a.group(1) if a else None, node=n.group(1) if n else None,
+                state=int(st.group(1)) if st else None,
                 pos=tuple(float(p.group(i)) for i in (1, 2, 3)) if p else None)
 
 

@@ -1419,12 +1419,14 @@ bool buy_player_tool(int type, const net::Vec3& pos)
 // the leaf node's memory (ai+0x1D0 + 4 * (0xF + 0x2B * (depth - 1)), the 6th argument of a node's enter /
 // tick), the walk (spatial c+0xC0: goal mode +0x250, flags +0x270, goal = last of the list +0x1F4..+0x1F8
 // minus 0x3C, or +0x208)
-// BUG-0531: the food a member carries (its cGameBundleContainer at c+0x38: bundle vector +4..+8, amount at
-// bundle +0x134), what the gather node's 0xCEE4E0 sums
+// BUG-0531: the food a member carries (its cGameBundleContainer at c+0x34: bundle vector +4..+8, amount at
+// bundle +0x134), what the gather node's 0xCEE4E0 sums. CORRECTION (2026-11-19, BUG-1317): read at c+0x3C..+0x40
+// before (the container taken at +0x38): `carry=` was 0.0 while a member carried food home (gather state 19,
+// docs/re/tribe.md#tribe-gather-block); the container is at +0x34 (0xCEE490(c+0x34), #tribe-carried-bundles)
 static float carried(void* c)
 {
-    void** b = F<void**>(c, 0x3C);
-    void** e = F<void**>(c, 0x40);
+    void** b = F<void**>(c, 0x38);
+    void** e = F<void**>(c, 0x3C);
     float sum = 0;
     if (!b || e < b || e - b > 32 || !skg::readable(b, (e - b) * 4))
         return 0;

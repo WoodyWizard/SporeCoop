@@ -54,6 +54,7 @@ COOP_FIX("savestrip.keys", "BUG-1315", g_key_fix,
 static std::vector<KeyFilter> g_key_filters;
 static bool g_world_saving;     // inside SaveGame (main thread)
 static bool g_save_any_write;   // the save of this frame has written its first object reference
+static uint32_t g_key_raw;
 static uint32_t g_key_seen, g_key_rewritten, g_key_early, g_key_off, g_key_save_n, g_key_save_early, g_key_save_off;
 void add_key_filter(KeyFilter fn) { g_key_filters.push_back(fn); }
 static bool saving_now() { return g_world_saving || !g_hooks_ended; }
@@ -124,6 +125,58 @@ static void* SK_CDECL h_WriteKey(void* stream, const uint32_t* key)
     }
     return o_WriteKey(stream, g_key_fix && g_on ? k : key);
 }
+// IO::WriteInt32 0x93A9E0: cdecl bool(IStream*, const uint32_t* p, int count, int endian). A save's arrays of dwords
+// (endian 1: as they are in memory) can hold keys as a block: {instance, type, group} (a ResourceKey) or {type,
+// instance, group} (the event records of 0xE39890: a baby's 0x782E0768 named the guest's species twice in the host's
+// Tribe save, lab 20261119-112418). Only blocks of 3 dwords or more while a save is written are looked at.
+using WriteInt32_t = bool(SK_CDECL*)(void*, const uint32_t*, int, int);
+static WriteInt32_t o_WriteInt32;
+constexpr uint32_t kCreatureType = 0x2B978C46u;
+static bool SK_CDECL h_WriteInt32(void* s, const uint32_t* p, int count, int endian)
+{
+    if (count < 3 || count > 0x10000 || !p || g_key_filters.empty() || !saving_now() || !game::on_main() ||
+        IsBadReadPtr(p, (size_t)count * 4))
+        return o_WriteInt32(s, p, count, endian);
+    std::vector<uint32_t> copy;
+    for (int i = 0; i < count; i++) {
+        if (p[i] != kCreatureType)
+            continue;
+        // the type at i: {instance, type, group} = i-1, i, i+1; {type, instance, group} = i, i+1, i+2
+        int at[2][3] = {{i - 1, i, i + 1}, {i + 1, i, i + 2}}; // instance, type, group
+        for (auto& a : at) {
+            if (a[0] < 0 || a[2] >= count || !p[a[0]])
+                continue;
+            uint32_t k[3] = {p[a[0]], p[a[1]], p[a[2]]};
+            bool hit = false;
+            for (KeyFilter f : g_key_filters)
+                if (f(k)) {
+                    hit = true;
+                    break;
+                }
+            if (!hit)
+                continue;
+            g_key_seen++;
+            if (!g_key_fix || !g_on) {
+                g_key_off++;
+                g_key_save_off++;
+                break;
+            }
+            if (copy.empty())
+                copy.assign(p, p + count);
+            copy[a[0]] = k[0], copy[a[1]] = k[1], copy[a[2]] = k[2];
+            g_key_rewritten++;
+            g_key_save_n++;
+            g_key_raw++;
+            if (g_key_save_n <= 8)
+                H->log(M, SK_INFO, "save: key %08X of a species line in a block of %d dwords written as the world's %08X "
+                                   "(by %08X) (BUG-1315)",
+                       p[a[0]], count, k[0], (uint32_t)((uintptr_t)__builtin_return_address(0) - H->rebase(0)));
+            break;
+        }
+    }
+    return o_WriteInt32(s, copy.empty() ? p : copy.data(), count, endian);
+}
+
 static void key_save_done()
 {
     if (g_key_save_n || g_key_save_off)
@@ -366,9 +419,9 @@ std::string status()
     char b[420];
     snprintf(b, sizeof b,
              "savestrip=%d saves=%u last_ours=%u nulled=%u offthread=%u behavior_nulls_dropped=%u empty_herds_stripped=%u "
-             "empty_game_herds_kept=%u max_save_frames=%u keys=%d line_keys=%u rewritten=%u early=%u kept_off=%u\n",
+             "empty_game_herds_kept=%u max_save_frames=%u keys=%d line_keys=%u rewritten=%u early=%u raw=%u kept_off=%u\n",
              (int)g_on, g_saves, g_last_count, g_nulled, g_offthread, g_bhv_nulls, g_empty_stripped, g_empty_kept_game,
-             g_max_span, (int)g_key_fix, g_key_seen, g_key_rewritten, g_key_early, g_key_off);
+             g_max_span, (int)g_key_fix, g_key_seen, g_key_rewritten, g_key_early, g_key_raw, g_key_off);
     return b;
 }
 
@@ -397,6 +450,9 @@ bool init(const SkHost* host, SkMod* mod)
     if (uintptr_t wk = H->sym("SporeCoop::Stream_WriteResourceKey")) // BUG-1315
         if (H->hook_create(M, (void*)wk, (void*)&h_WriteKey, (void**)&o_WriteKey) != 0)
             H->log(M, SK_WARN, "savestrip: no hook on the save stream's key writer: keys of a species line may reach saves");
+    if (uintptr_t wi = H->sym("IO::WriteInt32")) // BUG-1315: keys in raw arrays
+        if (H->hook_create(M, (void*)wi, (void*)&h_WriteInt32, (void**)&o_WriteInt32) != 0)
+            H->log(M, SK_WARN, "savestrip: no hook on IO::WriteInt32: keys of a species line in raw arrays may reach saves");
     uintptr_t a = H->sym("Simulator::COMSerializer::Write");
     if (!a || H->hook_create(M, (void*)a, (void*)&h_Write, (void**)&o_Write) != 0) {
         H->log(M, SK_WARN, "savestrip: no hook on COMSerializer::Write: our objects go into saves");

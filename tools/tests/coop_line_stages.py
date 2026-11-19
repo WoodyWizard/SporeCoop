@@ -270,8 +270,15 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
     hc = civ(host)[0]
     if not any(not c['player'] for c in hc.values()):
         camp.kick_civ({'n': 0})  # the campaign's shortcut: the cities still to come appear (SpawnNextCity)
-        time.sleep(5)
-        hc = civ(host)[0]
+        # (the new cities reach the host's city table within seconds, not at once: lab 20261119-095414 read it 5 s
+        # after 9 cities were spawned and found none; line_stages_outfit, the same step, found 9)
+        t0 = time.time()
+        while True:
+            time.sleep(2)
+            hc = civ(host)[0]
+            if any(not c['player'] for c in hc.values()) or time.time() - t0 > 60:
+                break
+        print(f'  civ: cities after the shortcut ({time.time() - t0:.0f} s): {sorted(hc)}', flush=True)
     cap = [k for k, c in hc.items() if c['player']]
     npc = [k for k, c in hc.items() if not c['player']]
     if not ck(cap and npc, f'civ: the players\' capital {cap} and NPC cities {npc}'):
