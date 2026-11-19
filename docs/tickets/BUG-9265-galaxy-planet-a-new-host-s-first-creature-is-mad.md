@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages64-dev
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: 5cf76575
 tests: tools/qa_win/qa.py (manual: TITAN QA 8 hosting the galaxy planet Samuth without a creature record; no lab test yet)
 signature: "galaxy: the new host's first-creature editor" opening editor 465C50BA with no parts list
 docs: docs/12-server-and-players.md#server-host-start-editor
