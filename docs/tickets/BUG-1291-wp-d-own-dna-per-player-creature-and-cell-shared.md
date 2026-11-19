@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: feat/w56-dna
-commits: db0796ed 59a4a1fd 48979cc9
+commits: db0796ed 59a4a1fd 48979cc9 006c2aab
 tests: tests/dna_tests.cpp, tools/tests/coop_dna_own.py (spend, shared, reload, rejoin, store, editors), tools/tests/coop_evo_screens.py --part cell-dna [--shared]
 signature:
 docs: docs/03-gameplay.md#gameplay-own-dna, docs/re/creature.md#creature-own-dna, docs/06-testing.md#testing-dna-own
