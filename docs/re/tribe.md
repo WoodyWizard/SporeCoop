@@ -4655,3 +4655,20 @@ Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
   DoActionForObjects for it.
 * ~ (fork, runtime) 0xBCA430 (called at 0xDA61D0 +0xB) returns the citizen's current action: the first node of the list
   at ai +0x60C (null when it is the sentinel), record +0 the action, +0x28 the target.
+
+## The end of Tribe's three vehicle editors (2026-11-19, fix/w56-general)
+<a id="tribe-end-editors"></a>
+
+BUG-1280 (found by the Lineages fork, PR #196, its BUG-9060). ✔ (disassembly 0xCD2308..0xCD233B, GOG 2024) after the
+City Hall editor (99E92F05) the game picks the vehicle editor by the consequence archetype cPlayer +0x1104:
+`cmp C2CA9495; je` -> F670AA43; else `sub 60A78928; neg; sbb; and E26B6B03; add 9AD7D4AA`: 60A78928 -> 9AD7D4AA, any
+other -> 7D433FAD. ✔ (exe data) the archetype names, a table of (name pointer, hash) pairs at 0x156ACD0: cell_carnivore
+CFB01B93, cell_herbivore A8EC6F99, cell_omnivore 5ECE4770, creature_aggressive 17E5EF84, creature_social FD159D91,
+creature_mixed B9DE15F2, **tribe_aggressive 0CAC124D**, **tribe_social 60A78928**, **tribe_mixed C2CA9495**,
+civ_military 0A35D0F5, civ_economic 3360727F, civ_religious 6AEB96A1, space_bard 50FEE6BF, space_ecologist B40D2187,
+space_zealot 2B35F523, space_diplomat B436C0BC, space_scientist 9CE4639C, space_trader B7CB9F7A. So tribe_mixed ->
+F670AA43, tribe_social -> 9AD7D4AA, tribe_aggressive -> 7D433FAD. ✔ (game data, DBPF index) the three editor setups
+are type 0x00B1B104, group 0x40600100, instances F670AA43, 9AD7D4AA, 7D433FAD in Spore_Game.package and
+PatchData.package; 7CB21BAD is in no package and no exe dword. The mod's list is tribe_editors.h (vote.cpp
+tribe_civ_editor, `coop.fix tribe.graduation_vehicle_id`); test `tribe_civ_aggressive` (`coop.vote tribeend 0CAC124D`
+sets the archetype before the advance).
