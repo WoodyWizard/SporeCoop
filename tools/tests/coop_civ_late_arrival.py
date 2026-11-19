@@ -189,8 +189,8 @@ def run(host, guest, ck, off_twin):
         frame_city(players, hc[capi]['pos'])
         keyframe('capital', 'Civ: the capital on both screens: the culture\'s (the host\'s) City Hall, not the guest\'s')
 
-    # 5. once per world: a second rejoin offers nothing
-    guest, joined = restart_guest(host)
+    # 5. once per world: a second rejoin offers nothing (the guest closes its game this time: BUG-1327)
+    guest, joined = restart_guest(host, close=True)
     twoinst.PLAYERS['guest'] = guest
     if ck(joined, 'the guest is in the host\'s Civ world a third time'):
         wait(lambda: 'Civ' in mode(guest), 120)
