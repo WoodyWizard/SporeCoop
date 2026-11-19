@@ -45,6 +45,21 @@ constexpr uint32_t kSharedPrefix = 0x7B000000u;
 inline uint32_t shared_instance(uint32_t content_hash) { return kSharedPrefix | (content_hash & 0x00FFFFFFu); }
 inline bool is_shared(uint32_t inst) { return (inst & 0xFF000000u) == kSharedPrefix && (inst & 0x00FFFFFFu) != 0; }
 
+// Cell and Creature come from creations (creations::player_key), not from the Row. What creations has of a player here
+// is that player's own (the stage's key) when this game knows the key and it is not the world's own:
+//   * Creature: only creations' shared copy (0x7C......, built from the player's records); a key sent without records
+//     is the world's own species (a guest that plays the host's creature, BUG-0278) or one of the host's creations
+//   * Cell: the shared copy too, and a key every game has without records (a premade cell, a Sporepedia download the
+//     player chose), unless it is the host's cell (`hosts`: the world's own; the host's kin are the game's own answer)
+constexpr uint32_t kCopyPrefix = 0x7C000000u;
+inline bool is_copy(uint32_t inst) { return (inst & 0xFF000000u) == kCopyPrefix && (inst & 0x00FFFFFFu) != 0; }
+inline bool creation_counts(Stage s, uint32_t inst, bool known, bool hosts)
+{
+    if (!inst || !known || hosts)
+        return false;
+    return is_copy(inst) || s == Stage::Cell;
+}
+
 constexpr uint8_t kRowVersion = 1;
 constexpr size_t kMaxDesigns = 32;     // design ids per player (the game has 5 building ids and 12 vehicle ids)
 constexpr uint32_t kMaxBundle = 4u << 20; // one line creation's bundle on the wire

@@ -25,9 +25,8 @@ constexpr uint8_t kWorldSpecies = 3, kAskSpecies = 4, kOwnSpecies = 5;
 // total = the model kind), the host sends the records (kOwnDesign) or says it is not one of its own
 // (kDesignNotOwn: a premade, the same everywhere)
 constexpr uint8_t kAskDesign = 6, kOwnDesign = 7, kDesignNotOwn = 8;
-// WP-C2 (BUG-1274): a player's own vehicle or building design (owner = the player, id = the civilization's design id,
-// the data a bundle of its creation, empty = none): guest -> host, host -> every guest (the sender included)
-constexpr uint8_t kPlayerDesign = 9;
+// (kind 9 was WP-C2's player design of an unreleased 0.7.16 build: the species line carries the designs now,
+// MSG_SPECIES_LINE, species_line.h; a kind 9 is dropped as any unknown kind)
 // BUG-0017: a guest registers the host's own creations of its world (nest species)
 // BUG-0010: a guest asks the host for a species of its world it does not have
 
@@ -2372,139 +2371,6 @@ std::string design_status()
     return b;
 }
 
-// ---- WP-C2 (BUG-1274): a player's own vehicle and building designs on every game (creations.h share_design) ----
-struct PlayerDesign {
-    Key orig;  // the creation in its owner's My Creations
-    Key ours;  // the key every game builds it from (0x7D......, from the content)
-};
-static std::map<std::pair<uint8_t, uint32_t>, PlayerDesign> g_pdesigns; // (player, design id) -> its design here
-static std::map<std::pair<uint8_t, uint32_t>, std::vector<uint8_t>> g_pd_store; // host: the bundles, for joiners
-static unsigned g_pd_shared, g_pd_in, g_pd_refused, g_pd_cleared;
-static bool is_building_design(uint32_t id) { return id == 0x99E92F05u || id == 0x4E3F7777u || id == 0x47C10953u || id == 0x72C49181u; }
-
-bool share_design(uint32_t design_id, const Key& k, std::string& err)
-{
-    if (!C.sess || !C.sess->connected() || C.sess->role() != net::Role::Client) {
-        err = "only a guest has designs of its own (the host's are the civilization's)";
-        return false;
-    }
-    const ModelInfo& mi = kModelInfo[is_building_design(design_id) ? kMkBuilding : kMkVehicle];
-    std::vector<uint8_t> data;
-    if (k.instance) {
-        g_opts_read = -100; // My Creations as they are on disk now
-        refresh_options(H->time_seconds());
-        if (!g_es_ok) {
-            err = "My Creations cannot be read";
-            return false;
-        }
-        Bundle b;
-        b.key = {k.instance, mi.type, mi.group};
-        // from the player's own My Creations file (not the game's lookup: the host's world packages may answer the
-        // same id with the host's creation, priority 2000)
-        for (auto& e : g_es.entries()) {
-            bool png = e.key.type == kPng && e.size <= (1u << 20) && (e.key.group == mi.group || e.key.group == mi.group + 1);
-            bool model_rec = (e.key.type == kBem || e.key.type == kMeta) && e.key.group == mi.group;
-            if (e.key.instance != k.instance || (!model_rec && !png))
-                continue;
-            dbpf::Record r;
-            r.key = e.key;
-            if (g_es.read(e, r.data))
-                b.recs.push_back(std::move(r));
-        }
-        bool model = false;
-        for (auto& r : b.recs)
-            model |= r.key.type == kBem;
-        if (!model) {
-            err = "no " + std::string(mi.name) + " model " + hex(k.instance) + " in My Creations";
-            return false;
-        }
-        data = pack(b);
-    }
-    send_bundle(0, C.sess->my_id(), (Kind)kPlayerDesign, design_id, data);
-    g_pd_shared++;
-    H->log(M, SK_INFO, "creations: own %s design %08X for the civilization's design %08X sent to the host (%u bytes, BUG-1274)",
-           mi.name, k.instance, design_id, (unsigned)data.size());
-    return true;
-}
-
-// every game: a player's design as the host sent it (the sender's own too), registered under a key of ours
-static void apply_player_design(uint8_t owner, uint32_t did, const std::vector<uint8_t>& data)
-{
-    if (data.empty()) {
-        g_pdesigns.erase({owner, did});
-        g_pd_cleared++;
-        H->log(M, SK_INFO, "creations: player %u has no own design %08X any more (BUG-1274)", owner, did);
-        return;
-    }
-    Bundle b;
-    if (!unpack(data, b) || b.recs.empty() || !find_paths())
-        return;
-    ModelKind kind = is_building_design(did) ? kMkBuilding : kMkVehicle;
-    uint32_t h = 0x811C9DC5;
-    for (auto& r : b.recs)
-        if (r.key.instance == b.key.instance)
-            h = fnv(r.data.data(), r.data.size(), fnv(&r.key.type, 4, h));
-    uint32_t ours = 0x7D000000u | (h & 0x00FFFFFFu);
-    std::vector<dbpf::Record> recs;
-    for (auto& r : b.recs) {
-        if (r.key.instance != b.key.instance || r.key.group == kPartDescGroup)
-            continue;
-        recs.push_back(r);
-        recs.back().key.instance = ours;
-    }
-    std::wstring path = g_dir + L"\\own_design_" + std::to_wstring(ours) + L".package";
-    if (!package_for(path, recs, kPrioWorld)) {
-        g_last_error = "cannot write a design package";
-        g_pd_refused++;
-        return;
-    }
-    Model m = ensure_model({ours, kModelInfo[kind].type, kModelInfo[kind].group}, kind);
-    if (!m.key.instance) { // a part or paint this game cannot show: the owner's objects keep the culture's design here
-        g_pd_refused++;
-        H->log(M, SK_WARN, "creations: player %u's own %s design %08X cannot be built here (BUG-1274)", owner,
-               kModelInfo[kind].name, b.key.instance);
-        g_pdesigns.erase({owner, did});
-        return;
-    }
-    g_pdesigns[{owner, did}] = {b.key, m.key};
-    g_pd_in++;
-    H->log(M, SK_INFO, "creations: player %u's own %s design %08X for %08X is %08X here (BUG-1274)", owner,
-           kModelInfo[kind].name, b.key.instance, did, m.key.instance);
-}
-
-Key player_design(uint8_t player, uint32_t design_id)
-{
-    auto it = g_pdesigns.find({player, design_id});
-    return it == g_pdesigns.end() ? Key{} : it->second.ours;
-}
-
-std::string player_designs_status()
-{
-    char b[200];
-    snprintf(b, sizeof b, "player designs: shared=%u in=%u refused=%u cleared=%u now=%zu stored=%zu\n", g_pd_shared,
-             g_pd_in, g_pd_refused, g_pd_cleared, g_pdesigns.size(), g_pd_store.size());
-    std::string out = b;
-    for (auto& [k, d] : g_pdesigns) {
-        snprintf(b, sizeof b, "  pdesign player=%u id=%08X orig=%08X ours=%08X/%08X/%08X\n", k.first, k.second,
-                 d.orig.instance, d.ours.instance, d.ours.type, d.ours.group);
-        out += b;
-    }
-    return out;
-}
-PLAYER_STATE("creations.player_designs",
-             [](uint8_t id) {
-                 for (auto it = g_pdesigns.begin(); it != g_pdesigns.end();)
-                     it = it->first.first == id ? g_pdesigns.erase(it) : std::next(it);
-                 for (auto it = g_pd_store.begin(); it != g_pd_store.end();)
-                     it = it->first.first == id ? g_pd_store.erase(it) : std::next(it);
-             },
-             [](uint8_t id) -> size_t {
-                 size_t n = 0;
-                 for (auto& [k, d] : g_pdesigns)
-                     n += k.first == id;
-                 return n;
-             });
-
 // the hash of the model record (bem) the game answers for a key (tests, BUG-0647: which model a mirror shows)
 std::string model_hash(const Key& k)
 {
@@ -3084,7 +2950,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     if ((kind == kWorldSpecies || kind == kOwnSpecies || kind == kOwnDesign) && (is_host() || from != 0))
         return;
     if (!r.ok() ||
-        (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign && kind != kPlayerDesign) ||
+        (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign) ||
         total > (8u << 20) ||
         (uint64_t)off + n > total)
         return;
@@ -3116,19 +2982,6 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         apply_own_design(owner, data);
         return;
     }
-    if (kind == kPlayerDesign) { // BUG-1274 (owner = the player, id = the design id)
-        if (is_host()) { // kept for later joiners, sent to every guest (the sender: its acknowledgement)
-            if (data.empty())
-                g_pd_store.erase({owner, id});
-            else
-                g_pd_store[{owner, id}] = data;
-            for (auto& p : C.sess->players())
-                if (p.id != 0)
-                    send_bundle(p.id, owner, (Kind)kPlayerDesign, id, data);
-        }
-        apply_player_design(owner, id, data);
-        return;
-    }
     if (is_host()) { // keep it for players joining later and pass it on
         g_store[{owner, kind}] = data;
         for (auto& p : C.sess->players())
@@ -3144,9 +2997,6 @@ void on_player_join(uint8_t id)
         return;
     g_own_sent.erase(id); // a new guest under this id: it has none of our creations yet
     g_design_sent.erase(id);
-    for (auto& [k, data] : g_pd_store) // BUG-1274: the players' own designs
-        if (k.first != id)
-            send_bundle(id, k.first, (Kind)kPlayerDesign, k.second, data);
     for (auto& [ok, data] : g_store)
         if (ok.first != id)
             send_bundle(id, ok.first, (Kind)ok.second, fnv(data.data(), data.size()), data);
@@ -3193,8 +3043,6 @@ void on_session_end()
     alias_restore(); // BUG-0200 (before the remap goes)
     g_remap.clear(); // (their packages stay registered: the same world may come back)
     g_designs.clear(); // BUG-0647 (the next host's designs are other creations under the same ids)
-    g_pdesigns.clear(); // BUG-1274 (their packages stay registered)
-    g_pd_store.clear();
     g_design_sent.clear();
     g_unmap.clear();
     g_store.clear();
@@ -3216,6 +3064,12 @@ Key player_key(uint8_t player, Kind k)
 {
     auto it = g_applied.find({player, (uint8_t)k});
     return it == g_applied.end() ? Key{} : it->second.key;
+}
+
+Key player_orig(uint8_t player, Kind k)
+{
+    auto it = g_applied.find({player, (uint8_t)k});
+    return it == g_applied.end() ? Key{} : it->second.orig;
 }
 
 void* player_species(uint8_t player)
@@ -3395,11 +3249,34 @@ bool line_pack(const Key& own, std::vector<uint8_t>& out, uint32_t& content)
         return false;
     Bundle b;
     b.key = own;
-    if (!records_from_game(own, b.recs))
+    // the owner's own My Creations first (the game's lookup may answer the id with the host's creation: the host's
+    // creations of its world are registered under their own keys at priority 2000, apply()), as WP-C2's designs did
+    g_opts_read = -100;
+    refresh_options(H->time_seconds());
+    if (g_es_ok)
+        for (auto& e : g_es.entries()) {
+            bool png = g_png_fix && e.key.type == kPng && e.size <= (1u << 20) &&
+                       (e.key.group == own.group || e.key.group == own.group + 1);
+            bool rec = (e.key.type == kBem || e.key.type == kMeta || e.key.type == own.type) && e.key.group == own.group;
+            if (e.key.instance != own.instance || (!rec && !png) || e.size > (4u << 20))
+                continue;
+            dbpf::Record r;
+            r.key = e.key;
+            if (g_es.read(e, r.data))
+                b.recs.push_back(std::move(r));
+        }
+    auto has_model = [&] {
+        for (auto& r : b.recs)
+            if (r.key.type == kBem && r.key.instance == own.instance && !r.data.empty())
+                return true;
         return false;
-    bool model = false;
-    for (auto& r : b.recs)
-        model |= r.key.type == kBem && r.key.instance == own.instance && !r.data.empty();
+    };
+    if (!has_model()) { // (not in My Creations: a creation of the game's packages)
+        b.recs.clear();
+        if (!records_from_game(own, b.recs))
+            return false;
+    }
+    bool model = has_model();
     if (!model) // (never a creation without its model, BUG-0802)
         return false;
     out = pack(b);

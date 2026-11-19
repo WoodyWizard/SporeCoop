@@ -53,6 +53,9 @@ extern bool g_leave_fix;
 
 // the creation of a player, usable on this machine ({} = none / not received yet)
 Key player_key(uint8_t player, Kind k);
+// the key that player's game sent for it (its own creation's id there, a premade's, the world's own species): the
+// species line tells the host's from a guest's by it ({} = none)
+Key player_orig(uint8_t player, Kind k);
 // cSpeciesProfile* of a player's creature, nullptr if none
 void* player_species(uint8_t player);
 
@@ -95,15 +98,6 @@ std::string content_status();
 // the host's own My Creations, else k); *pending: asked the host, no answer yet (do not build it yet)
 Key host_design(const Key& k, ModelKind kind, bool* pending);
 std::string design_status();
-// WP-C2 (BUG-1274, docs/plan-0.7.16.md item 2): a player's own vehicle or building design (a creation of its My
-// Creations) known to every game. share_design (this player, a guest): its records go to the host (MSG_CREATION kind
-// kPlayerDesign, id = the civilization's design id); the host keeps them for players joining later and sends them to
-// every guest, the sender included (its acknowledgement: nothing applies before the host has it); every game
-// registers them under one key of ours (0x7D......, from the content: the same key on every game) and
-// player_design(player, design id) answers it ({} = none here). Empty records (k = {}) clear the entry.
-bool share_design(uint32_t design_id, const Key& k, std::string& err);
-Key player_design(uint8_t player, uint32_t design_id);
-std::string player_designs_status();
 std::string model_hash(const Key& k); // tests: the hash of the bem record this game answers for k // the counters of ensure_model, for the tests and the support trace
 bool content_all_kinds(); // the switch content.all_kinds (off: 0.7.3.5 for the new call sites)
 
@@ -128,8 +122,10 @@ std::string trace_line(Kind k);
 std::string debug(const std::vector<std::string>& args);
 
 // WP-0 (BUG-1270, species_line.cpp): a creation of the species line (an outfit, a Civ design) between the games.
-// line_pack: the owner's bundle of `own` (model, metadata, pictures as this game reads them) and its content hash
-// (the same on every game; species::shared_instance of it is its key everywhere); false: no model here.
+// line_pack: the owner's bundle of `own` (model, metadata, pictures; from its own My Creations file when the creation is
+// there: the host's world packages may answer the same id with the host's creation at priority 2000, else as this game
+// reads it) and its content hash (the same on every game; species::shared_instance of it is its key everywhere); false:
+// no model here. Civ designs (WP-C2) use it too: vehicles and buildings of My Creations.
 // line_content: the content hash of a received bundle (0: not a bundle). line_register: registers a bundle under the
 // shared instance `shared` (checked against its content) on this game and returns that key; {} = refused (a bad
 // bundle, another content, parts this game lacks, BUG-0452). The owner registers its own bundle too.

@@ -363,6 +363,16 @@ bool civ_read(std::vector<Val>& out)
     return true;
 }
 
+bool culture_key(uint32_t design_id, uint32_t out[3])
+{
+    void* civ = player_civ();
+    const uint32_t* k = civ ? find_design(civ, design_id) : nullptr;
+    if (!k || !k[0])
+        return false;
+    out[0] = k[0], out[1] = k[1], out[2] = k[2];
+    return true;
+}
+
 std::string civ_fmt(const Val& e)
 {
     char b[96];

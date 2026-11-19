@@ -7,15 +7,17 @@
 // while the population runs (a depth counter in the PopulateMarker hook) and makes a gameplay cell (CreateCellObject,
 // whose position we keep for the call), the game's own answer of GetModelKeyForCellResource that equals S+0x10 is
 // replaced by the cell of the player whose view centre is nearest the new cell, when that is a partner, it has a cell
-// of its own and the key is known here (creations::key_known; a guest still lacking it does not make the mirror
+// of its own (species::key(player, Stage::Cell) of the species line, docs/01-architecture.md#arch-species-line: its
+// creation as this game has it, not the host's) and the key is known here (a guest still lacking it does not make the mirror
 // until the creation arrives: BUG-0455's check in modes.cpp). The guests draw those cells from the key the host's
 // state carries (no protocol change). The same runs in a guest's own pool while the host is away (BUG-0205, g_solo):
 // the partners there are the puppets in that game.
-// "One creature for all" (creature.mode host) changes nothing. Off (`coop.fix cell.kin_species off`): every kin is
-// the host's cell (0.7.15).
+// "One creature for all" (creature.mode host, species::own_mode) changes nothing, nor does `coop.fix species.line off`.
+// Off (`coop.fix cell.kin_species off`): every kin is the host's cell (0.7.15).
 #include "cellsync_internal.h"
 
 #include "creations.h"
+#include "species_line.h"
 
 namespace cellsync {
 
@@ -33,12 +35,13 @@ static struct {
 void kin_pop_enter() { g_pop_depth++; }
 void kin_pop_leave() { g_pop_depth--; }
 
-// WP-0 shim: the creation key of player `id`'s own cell as this game knows it (the same key every game uses, the
-// one its puppet is built from), {0} when it has none. Goes to species_line once WP-0 (BUG-1270) is merged.
+// the creation key of player `id`'s own cell as this game knows it (species::key(id, Stage::Cell): the same key every
+// game uses, the one its puppet is built from, known here), {0} when it has none. The host has no line (its cell is
+// the world's own): in a guest's own pool its cell is what its puppet is drawn with here.
 static creations::Key own_cell_key(uint8_t id)
 {
-    creations::Key k = creations::player_key(id, creations::kCell);
-    if (!k.instance && is_guest()) // a guest's own pool: the host's cell as its puppet is drawn here
+    creations::Key k = species::key(id, species::Stage::Cell);
+    if (!k.instance && id == 0 && is_guest())
         if (uint8_t* pc = puppet_cell(id))
             k = {F<uint32_t>(pc, kModelKey), F<uint32_t>(pc, kModelKey + 4), F<uint32_t>(pc, kModelKey + 8)};
     return k;
@@ -84,7 +87,7 @@ static void kin_filter(uint32_t key[3], void*)
         return; // not a kind-5 answer (the player's cell): the level's own species
     if (!g_fix_kin || !C.sess)
         return;
-    if (creations::one_creature()) {
+    if (!species::own_mode()) {
         g_kin.one_mode++;
         return;
     }
@@ -105,7 +108,11 @@ static void kin_filter(uint32_t key[3], void*)
     }
     creations::Key k = own_cell_key(best);
     if (!k.instance) {
-        g_kin.no_key++;
+        creations::Key c = creations::player_key(best, creations::kCell);
+        if (c.instance && !creations::key_known(c))
+            g_kin.unknown++; // BUG-0455: a model this game cannot build yet (the line answers it once it can)
+        else
+            g_kin.no_key++;
         return;
     }
     if (k.instance == key[0] && k.type == key[1] && k.group == key[2]) {
@@ -182,8 +189,9 @@ std::string kin_report(float r)
     std::set<uint32_t> models;
     for (auto& p : ps) {
         creations::Key k = creations::player_key(p.id, creations::kCell);
-        snprintf(b, sizeof b, "kin player %u%s cell=%08X drawn=%08X made=%u pos=(%.1f %.1f)\n", p.id, p.id == me ? " (me)" : "",
-                 k.instance, p.model, p.id < 8 ? g_kin.per_player[p.id] : 0u, p.pos.x, p.pos.y);
+        snprintf(b, sizeof b, "kin player %u%s cell=%08X drawn=%08X made=%u pos=(%.1f %.1f) line=%08X\n", p.id,
+                 p.id == me ? " (me)" : "", k.instance, p.model, p.id < 8 ? g_kin.per_player[p.id] : 0u, p.pos.x, p.pos.y,
+                 species::key(p.id, species::Stage::Cell).instance);
         out += b;
         models.insert(p.model);
         if (k.instance)

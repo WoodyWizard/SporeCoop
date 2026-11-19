@@ -3,13 +3,17 @@
 // game draws each vehicle and building from a model key of its own (+0x34 +0x90 = +0xC4) and SetModelKey (vt 0x94 of
 // +0x34) changes it with the design's stats (Civ_SetDesign does nothing else per object). So on every game, a
 // vehicle or building whose owner (a vehicle's: civ.cpp's tables; a building's: its city's) has an own design for its
-// design id gets that design's key (creations::player_design: the same key of ours on every game), checked four times
-// a second, at once after a purchase and at the end of every Civ_SetDesign (which re-models a whole kind); one whose
+// design id gets that design's key (species::design of the species line, docs/01-architecture.md#arch-species-line:
+// the same shared key 0x7B...... on every game), checked four times a second, at once after a purchase, at a change
+// of the owner's line (species::on_change) and at the end of every Civ_SetDesign (which re-models a whole kind); one whose
 // owner has none (the host, a guest without a design for it, a gift to such a player, creature.mode host) keeps or
 // gets back the key it had (the culture's). While a save is written the culture key is in +0xC4 (the savestrip hooks:
-// the host's save keeps the host's designs only, owner decision of 2026-11-18); the session's end puts it back.
+// the host's save keeps the host's designs only, owner decision of 2026-11-18; an object that shows a line key without
+// a record of ours gets the culture set's key for its design id, species::is_line_key); the session's end puts it back.
 // `coop.fix civ.own_designs off`: every object the culture's design (0.7.15).
 #include "civ_internal.h"
+#include "designs.h"
+#include "species_line.h"
 
 namespace civ {
 
@@ -17,13 +21,13 @@ static bool g_fix = true;
 COOP_FIX("civ.own_designs", "BUG-1274", g_fix,
          "civ: a player's vehicles and buildings show that player's own designs (the host's save keeps the culture's)");
 
-// ---- WP-0 shim: species::design(pid, kind) of species_line.h (BUG-1270) replaces this once it is merged. The
-// design key a player's objects of a design id take here, {} = the culture's (the host, no own design, host mode).
+// The design key a player's objects of a design id take here, {} = the culture's (the host, no own design, creature.mode
+// host: species::design answers {} for all of them)
 static creations::Key line_design(uint8_t pid, uint32_t did)
 {
-    if (pid == 0 || pid >= kShared || creations::one_creature()) // (F5: creature.mode host: the host's everything)
+    if (pid >= kShared)
         return {};
-    return creations::player_design(pid, did);
+    return species::design(pid, did);
 }
 
 struct OwnRec {
@@ -36,6 +40,16 @@ static std::unordered_map<void*, OwnRec> g_own;
 static unsigned g_rekeys, g_back, g_overwritten, g_saves, g_after_set, g_set_calls;
 static double g_sweep_at = -100;
 static bool g_in_save;
+// a change of a player's line (a design set or cleared, its records registered here, own / host mode): sweep now
+static bool g_line_reg = species::on_change("civ.own_designs", [](uint8_t) { g_sweep_at = -100; });
+// a save: objects showing a line key without a record of ours (stripped to the culture set's key, put back after)
+struct SaveKept {
+    void* o;
+    uint32_t serial;
+    uint32_t key[3];
+};
+static std::vector<SaveKept> g_save_kept;
+static unsigned g_save_unknown;
 
 using SetDesign_t = void(SK_THISCALL*)(void*, uint32_t, const uint32_t*);
 static SetDesign_t o_SetDesign;
@@ -181,13 +195,31 @@ static void SK_THISCALL h_SetDesign(void* civ, uint32_t id, const uint32_t* key)
 void own_designs_save(bool start)
 {
     g_in_save = start; // (no sweep while the game writes)
-    if (g_own.empty() || !nm())
+    bool any = !g_own.empty() || !g_save_kept.empty() ||
+               (start && game::mode_id() == modes::kCiv && !species::players().empty());
+    if (!any || !nm()) {
+        g_save_kept.clear();
         return;
-    auto each = [&](void* o) {
-        auto it = g_own.find(o);
-        if (it == g_own.end() || game::object_serial(o) != it->second.serial)
-            return;
+    }
+    auto each = [&](void* o, uint32_t did) {
         uint32_t* mk = model_key(o);
+        if (!start) // (one stripped without a record: its line key back, the live objects only)
+            for (auto& k : g_save_kept)
+                if (k.o == o && game::object_serial(o) == k.serial)
+                    memcpy(mk, k.key, 12);
+        auto it = g_own.find(o);
+        if (it == g_own.end() || game::object_serial(o) != it->second.serial) {
+            // a line key without a record of ours (none should exist: a guard that the host's save holds no key of a
+            // line): the culture set's key of its design id
+            uint32_t ck[3];
+            if (start && mk[0] && species::is_line_key({mk[0], mk[1], mk[2]}) && did && designs::culture_key(did, ck)) {
+                g_save_kept.push_back({o, game::object_serial(o), {mk[0], mk[1], mk[2]}});
+                memcpy(mk, ck, 12);
+                g_save_unknown++;
+                g_saves++;
+            }
+            return;
+        }
         if (start && mk[0] == it->second.ours) {
             memcpy(mk, it->second.orig, 12);
             g_saves++;
@@ -196,11 +228,13 @@ void own_designs_save(bool start)
         }
     };
     for (void* v : player_vehicles())
-        each(v);
+        each(v, vehicle_did(v));
     for (void* city : all_cities())
         for (void* b : vec_of((uint8_t*)city + kCityBuildings))
             if (b)
-                each(b);
+                each(b, building_did(b));
+    if (!start)
+        g_save_kept.clear();
 }
 
 // the session ends: every object of ours the culture's design again (this game plays on alone)
@@ -227,6 +261,7 @@ void own_designs_session_end()
 static void own_reset()
 {
     g_own.clear();
+    g_save_kept.clear();
     g_in_save = false;
 }
 static size_t own_held() { return g_own.size(); }
@@ -246,13 +281,15 @@ static uint32_t g_ref_serial;
 std::string own_designs_debug(const std::vector<std::string>& a)
 {
     char b[260];
-    if (a.size() >= 3 && a[0] == "set") { // set <hex design id> <hex creation instance | 0>: WP-0 shim (a guest)
+    if (a.size() >= 3 && a[0] == "set") { // set <hex design id> <hex creation instance | 0>: the lab's setter (a guest):
+        // a vehicle or building of its My Creations as its own design, through the species line (species::set_design)
         uint32_t did = (uint32_t)strtoul(a[1].c_str(), nullptr, 16), inst = (uint32_t)strtoul(a[2].c_str(), nullptr, 16);
-        std::string err;
-        creations::Key k{inst, 0, 0};
-        if (!creations::share_design(did, inst ? k : creations::Key{}, err))
-            return "not shared: " + err + "\n";
-        snprintf(b, sizeof b, "own design %08X for %08X sent to the host\n", inst, did);
+        bool bld = did == 0x99E92F05u || did == 0x4E3F7777u || did == 0x47C10953u || did == 0x72C49181u;
+        creations::Key k = inst ? creations::Key{inst, bld ? kBuildingModelType : 0x24682294u, bld ? 0x40636200u : 0x40646200u}
+                                : creations::Key{};
+        if (!species::set_design(did, k))
+            return "not set: refused (a guest in own mode only, a creation with its model on this game; coop.species)\n";
+        snprintf(b, sizeof b, "own design %08X for %08X set (the species line sends it to the host)\n", inst, did);
         return b;
     }
     if (a.size() >= 3 && a[0] == "did") { // did <host city index> <loco> [purpose]: the design id a purchase there
@@ -324,9 +361,19 @@ std::string own_designs_debug(const std::vector<std::string>& a)
         ci++;
     }
     snprintf(b, sizeof b,
-             "own designs: fix=%d rekeys=%u back=%u overwritten=%u after_setdesign=%u setdesign_calls=%u saves=%u now=%zu\n",
-             (int)g_fix, g_rekeys, g_back, g_overwritten, g_after_set, g_set_calls, g_saves, g_own.size());
-    return out + b + creations::player_designs_status();
+             "own designs: fix=%d rekeys=%u back=%u overwritten=%u after_setdesign=%u setdesign_calls=%u saves=%u "
+             "save_unknown=%u now=%zu\n",
+             (int)g_fix, g_rekeys, g_back, g_overwritten, g_after_set, g_set_calls, g_saves, g_save_unknown, g_own.size());
+    out += b;
+    // the players' designs as the species line answers them here (the key every game builds them from)
+    for (uint8_t pid : species::players())
+        for (uint32_t did : species::design_ids(pid)) {
+            creations::Key k = species::design(pid, did);
+            snprintf(b, sizeof b, "  pdesign player=%u id=%08X orig=%08X ours=%08X/%08X/%08X\n", pid, did,
+                     species::own_design(did).instance, k.instance, k.type, k.group);
+            out += b;
+        }
+    return out;
 }
 
 } // namespace civ

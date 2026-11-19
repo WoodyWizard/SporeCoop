@@ -43,6 +43,8 @@
 // after a late arrival, BUG-1240; a host does not wait for such a guest's arrival, vote.cpp core.arrival_nowait).
 // Minor bump of feat/w54-line: creations 1.1 (MSG_SPECIES_LINE, the species line of WP-0, BUG-1270; older peers drop the
 // type at dispatch).
+// feat/w54-shims: creations stays 1.1 (unreleased): WP-C2's MSG_CREATION kind 9 (a player's own design) is gone, the
+// designs go as line creations of MSG_SPECIES_LINE (species::set_design); a kind 9 is dropped as any unknown kind.
 FAMILY(session,   1, 1, 1, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 1, STAGE_CREATURE, "Creature", "")

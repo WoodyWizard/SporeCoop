@@ -4,15 +4,18 @@
 // City_Species 0xBD9F90 answers (the civilization's key +0x268) and puts it back whenever it runs, so a citizen's
 // species can not be set one by one (docs/re/civ.md#civ-own-species). City_Species has five callers, all citizen
 // code: the hook answers per city. A city owned by a player with an own species line (not the host, whose cities keep
-// the civilization's species: the world's line) answers that player's Civ species; every game knows the city owners
+// the civilization's species: the world's line) answers that player's Civ species (species::key(owner, Stage::Civ),
+// docs/01-architecture.md#arch-species-line: its Civ outfit, else its tribe line); every game knows the city owners
 // (g_city_owner), so each game makes its own pool of the right species, nothing is sent per citizen, nothing is
 // written into the civilization. The shared capital (owner kShared) is the founder's: the host's (the Civ stage
 // starts from the host's tribe); a captured or given city is its new owner's. An owner change (a capture, a gift, the
 // cities dealt anew) or a species that arrives later is seen by a check of the citizen manager's city every 0.5 s:
-// when one of its citizens is not of the species the city answers now, the city's sync runs once (outside the frame).
+// when one of its citizens is not of the species the city answers now, the city's sync runs once (outside the frame);
+// a change of a line (species::on_change) looks the players' profiles up again at the next check.
 // `creature.mode` host (F5) keeps today's behaviour (every city the civilization's species).
 // `coop.fix civ.own_species off`: every city the civilization's species (0.7.15).
 #include "civ_internal.h"
+#include "species_line.h"
 
 namespace civ {
 
@@ -45,20 +48,13 @@ static void* g_resync_city;
 static double g_resync_at = -100;
 static uint32_t g_hook_calls, g_answered, g_resyncs, g_checks, g_line_misses, g_extra_set;
 
-// WP-0 shim: the player's Civ species is its own creature (the key every game already knows for it, as the Creature
-// stage's puppets use) until species_line (BUG-1270, species::key(pid, Stage::Civ)) is merged. The host (and a
-// guest playing the host's creature) has none: its cities keep the civilization's species.
-static creations::Key line_key(uint8_t pid)
-{
-    if (pid == 0 || creations::one_creature())
-        return {};
-    creations::Key k = creations::player_key(pid, creations::kCreature);
-    if (!k.instance || k == creations::player_key(0, creations::kCreature))
-        return {};
-    return k;
-}
+// the player's Civ species on this game (species::key: the same key on every game, registered here). The host (and a
+// guest playing the host's creature, creature.mode host) has none: its cities keep the civilization's species.
+static creations::Key line_key(uint8_t pid) { return species::key(pid, species::Stage::Civ); }
 
-static bool own_mode() { return g_fix_own_species && !creations::one_creature(); }
+static bool own_mode() { return g_fix_own_species && species::own_mode(); }
+// a change of a player's line: its profile is looked up again at the next check
+static bool g_line_reg = species::on_change("civ.own_species", [](uint8_t) { g_line_at = -100; });
 
 // the species the owner's line gives a city (null: the game's own answer)
 static void* owner_species(void* city)
@@ -207,7 +203,7 @@ static void species_save_start()
             if (noun != kCitizenNoun || game::is_destroyed(o) || IsBadReadPtr(o, game::kSpeciesKeyOff + 12))
                 return true;
             auto& own = F<skg::ResourceKey>(o, game::kSpeciesKeyOff);
-            bool ours = false;
+            bool ours = species::is_line_key({own.instance, own.type, own.group}); // (any line here, a left player's too)
             for (int i = 1; i < net::kMaxPlayers; i++)
                 ours = ours || (g_line[i].key.instance && own.instance == g_line[i].key.instance &&
                                 own.group == g_line[i].key.group);
@@ -250,7 +246,7 @@ std::string species_debug()
     std::string s;
     char b[256];
     snprintf(b, sizeof b, "own_species fix=%d mode_own=%d hooked=%d calls=%u answered=%u checks=%u resyncs=%u special_set=%u misses=%u save_stripped=%u\n",
-             (int)g_fix_own_species, (int)!creations::one_creature(), (int)(a_CitySpecies != 0), g_hook_calls, g_answered,
+             (int)g_fix_own_species, (int)species::own_mode(), (int)(a_CitySpecies != 0), g_hook_calls, g_answered,
              g_checks, g_resyncs, g_extra_set, g_line_misses, g_save_stripped);
     s += b;
     for (int i = 0; i < net::kMaxPlayers; i++)

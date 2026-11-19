@@ -82,6 +82,24 @@ static void test_rules()
     CHECK(pick(r, Stage::Civ, [](Source) { return false; }) == Source::None);
 }
 
+static void test_creations()
+{
+    printf("cell and creature from creations\n");
+    CHECK(is_copy(0x7C123456) && !is_copy(0x7C000000) && !is_copy(0x7B123456) && !is_copy(0xBAF1AD40));
+    // the shared copy of a player's own creation counts in both stages
+    CHECK(creation_counts(Stage::Creature, 0x7C123456, true, false));
+    CHECK(creation_counts(Stage::Cell, 0x7C123456, true, false));
+    // a key without records (a premade, the world's own): the cell counts unless it is the host's, the creature never
+    CHECK(creation_counts(Stage::Cell, 0xBAF1AD40, true, false));
+    CHECK(!creation_counts(Stage::Cell, 0xBAF1AD40, true, true));
+    CHECK(!creation_counts(Stage::Creature, 0x0612AB34, true, false));
+    // unknown here (its records are on their way, BUG-0455), none, or the host's: never
+    CHECK(!creation_counts(Stage::Cell, 0x7C123456, false, false));
+    CHECK(!creation_counts(Stage::Creature, 0x7C123456, false, false));
+    CHECK(!creation_counts(Stage::Cell, 0, true, false));
+    CHECK(!creation_counts(Stage::Creature, 0x7C123456, true, true));
+}
+
 static void test_shared()
 {
     printf("shared keys\n");
@@ -183,6 +201,7 @@ static void test_store()
 int main()
 {
     test_rules();
+    test_creations();
     test_shared();
     test_format();
     test_store();
