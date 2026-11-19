@@ -2122,7 +2122,8 @@ void init_ui()
     a.civ_role = [] { return (int)g_roles[g_sess.my_id()]; };
     a.civ_role_cycle = [](int d) { set_role((uint8_t)(((int)g_roles[g_sess.my_id()] + d + 4) % 4)); };
     a.creation = [](int& kind, std::string& name, int& own) {
-        if (!g_sess.connected() || !(g_mode == modes::kCreature || g_mode == modes::kCell || g_mode == modes::kSpace))
+        if (!g_sess.connected() || !(g_mode == modes::kCreature || g_mode == modes::kCell || g_mode == modes::kSpace ||
+                                     creations::late_row(H->time_seconds()))) // BUG-1289: Tribe, Civ, the galaxy menu
             return false;
         creations::Kind k = g_mode == modes::kCell ? creations::kCell
                             : g_mode == modes::kSpace ? creations::kUfo : creations::kCreature;
