@@ -248,22 +248,36 @@ def member_view(host, guest, tag, note):
         print(f'  ({tag}: no adult member of the guest)', flush=True)
 
 
-def arrival_editors(ck, camp, guest_p, host, guest, pid, secs=240):
+def arrival_editors(ck, camp, guest_p, host, guest, pid, secs=360):
     """--civ-editors (WP-C3 / WP-X1): the guest's own City Hall and vehicle editors after its arrival in Civ, answered by
     the campaign's driver (the follow phase: the City Hall palette's parts, a name, done) until the guest's line has
     designs on both games"""
     camp.phase = 'follow'
     svc = Service(camp, guest_p)
     svc.start()
+
+    # (lab 20261119-151550 / 20261119-153243: "any design of the guest's" was true in the 6 s between its City Hall
+    # editor and its vehicle editor; the driver stopped and the guest stayed in its vehicle editor for the rest of the
+    # test: no city of the host's on its game ("no such city"), no vehicle design. Both editors end first: the
+    # arrival's phase done, the guest back in Civ, the City Hall and the vehicle editor's design id in its line on
+    # both games)
+    def both_done():
+        if 'Editor' in mode(guest):
+            return False
+        st = re.search(r'phase=(\w+) .*editors=(\w+)/(\w+)', guest.call('coop.civarrival')['out'] or '')
+        if not st or st.group(1) != 'done':
+            return False
+        want = {CITY_HALL, int(st.group(3), 16)} - {0}
+        return all(want <= {d for p, d in cod.own(c)[2] if p == pid} for c in (host, guest))
     try:
-        got = wait(lambda: 'Editor' not in mode(guest) and all(any(p == pid for p, _ in cod.own(c)[2]) for c in
-                                                                (host, guest)), secs)
+        got = wait(both_done, secs)
     finally:
         svc.stop = True
         svc.join(30)
-    print(f'  civ: the guest\'s editors: {svc.done}; designs host {cod.own(host)[2]}, guest {cod.own(guest)[2]}',
-          flush=True)
-    ck(got, f'civ: the guest\'s own editors at its arrival gave it designs on both games ({svc.done})')
+    print(f'  civ: the guest\'s editors: {svc.done}; designs host {cod.own(host)[2]}, guest {cod.own(guest)[2]}; '
+          f'{(guest.call("coop.civarrival")["out"] or "").splitlines()[:1]}', flush=True)
+    ck(got, f'civ: the guest\'s own City Hall and vehicle editors at its arrival gave it both designs on both games '
+            f'({svc.done})')
 
 
 def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
@@ -404,6 +418,9 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
             h = cod.mhash(con, x.get('model', 0), VTYPE, VGROUP)
             hcul = cod.mhash(con, x.get('culture', 0), VTYPE, VGROUP)
             print(f'  civ: {r}: the guest\'s vehicle #{vid} {x} -> {h} (the culture\'s {hcul})', flush=True)
+            if not okv:  # (the whole model key: a key of another type or group is "built from none")
+                print('   ', [ln.strip() for ln in (con.call('coop.civ owndesign')['out'] or '').splitlines()
+                              if f'ownveh #{vid} ' in ln or 'pdesign' in ln], flush=True)
             ck(okv and h != hcul, f'civ: {r}: the guest\'s vehicle is of the guest\'s design (+0xC4 {hx(x.get("model"))}, '
                                   f'built from {h}, the guest\'s model {want_hash}; the culture\'s {hcul})')
         vpos = (civ(host)[1].get(vid) or {}).get('pos')
