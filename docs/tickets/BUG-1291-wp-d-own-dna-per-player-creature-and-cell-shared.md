@@ -1,16 +1,16 @@
 ---
 id: BUG-1291
 title: WP-D: own DNA per player (Creature and Cell), shared pool as a session setting
-status: open
+status: fixed
 kind: feature
 stage: Cell, Creature
 reported: 2026-11-19
 source: plan
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/w56-dna
-commits: db0796ed 59a4a1fd 48979cc9 006c2aab
+commits: db0796ed 59a4a1fd 48979cc9 006c2aab 6b93ebd6
 tests: tests/dna_tests.cpp, tools/tests/coop_dna_own.py (spend, shared, reload, rejoin, store, editors), tools/tests/coop_evo_screens.py --part cell-dna [--shared]
 signature:
 docs: docs/03-gameplay.md#gameplay-own-dna, docs/re/creature.md#creature-own-dna, docs/06-testing.md#testing-dna-own
@@ -55,8 +55,16 @@ the hand-over; the CPU was busy). The runs to do, lanes 2 and 3, after `make -j8
   SPORE_DETECTOR=20 python3 tools/lab.py run dna_own_store_off dna_own_editors_off evo_screens_cell_dna_off --lane 2 --lane 3 --retry 0 --no-build
   SPORE_DETECTOR=20 python3 tools/lab.py run evo_bar evo_bar_editors dna_pace editor_sync_guest dna_spend evo_screens_cell_dna_shared --lane 2 --lane 3 --retry 0 --no-build
 Then `tools/frames_review.py <run> --test dna_own_editors` (the two editors' DNA readouts must differ by 30).
+Lab (2026-11-19): the other dna_own tests PASS / twins FAIL on the merged tree in fix/w57-dna worktree
+out/lab/20261119-120634 (History). dna_own_editors: FAIL 20261119-104136 (rel/0.7.16) and fix/w57-own-editors worktree out/lab/20261119-111652 in
+its set-up (the guest's brain caption never closed, BUG-1318); after BUG-1318 PASS fix/w57-own-editors worktree out/lab/20261119-113002, -122505 and
+on the merged tree -130049 (each editor took its price, 25 / 25; the guest's price did not reach the host's DNA, 85 ->
+85; the guest paid only its own, 80 -> 55; bars unchanged); key frame 01_editors: the host's editor shows 110 DNA, the
+guest's 80. Twin dna_own_editors_off FAIL in -130049 for the right reason (one pool: "the budgets differ by the
+guest's 30 (80.0 / 80.0)", the guest's price reached the host's DNA).
 
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: feat/w56-dna: code, unit tests, lab tests written; lab runs wait for the orchestrator.
 - 2026-11-19: fix/w57-dna: the lab gates compared one shared DNA (BUG-1310, fixed) and a stray shared total after the host's editor (BUG-1311, fixed). PASS on the merged tree 20261119-120634: dna_own, dna_own_reload, dna_own_rejoin, dna_own_store, dna_own_shared, dna_spend, dna_pace, editor_sync_guest, evo_bar_editors; twins FAIL for their reasons: dna_own_off, dna_own_reload_off, dna_own_rejoin_off, dna_own_store_off (the guest starts again at the host's DNA, 150 / 150, as the night's 20261119-105127). dna_own_editors is another agent's.
+- 2026-11-19: fix/w57-own-editors: dna_own_editors PASS / twin FAIL on the merged tree (20261119-130049): fixed.

@@ -1,20 +1,21 @@
 ---
 id: BUG-1316
 title: The guest's own Tribal Outfitter result was not taken: its return hook compared the result's +0x14 (the model type) with the outfitter's editor id, so the game reloaded the shared slot with the guest's outfit
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-19
 source: lab
 role: guest
 versions: rel/0.7.16
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w57-own-editors
+commits: 6b93ebd6 5e4f14e1
 tests: tribe_own_outfitter, own_editor_drop
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-own-outfitter
 related: BUG-1272, BUG-1298, BUG-1308
+switch: tribe.own_outfit_result
 ---
 
 ## Report
@@ -35,8 +36,12 @@ of 0xCDCC90 (+0x28 / +0x29 clear) name the result; +0x14 is logged ("our own Tri
 ... type ...") and shown as `rtype=` in `coop.designs`. Off: +0x14 must equal the editor id (as before: never taken).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: fix/w57-own-editors worktree out/lab/20261119-111652 tribe_own_outfitter ("the guest's return skipped the slot reload (skipped=0)", the slot
+reloaded with 2928F397); twin fix/w57-own-editors worktree out/lab/20261119-130049 tribe_own_outfitter_result_off FAIL the same (skipped=0, the guest's
+slot 29291B69). PASS of every outfit check: fix/w57-own-editors worktree out/lab/20261119-113002 and -130049 tribe_own_outfitter (skipped=1, the slot
+the host's, both games dress the guest's members in 954ADE35, log "result tag 0116DD1B type 372E2C04"),
+own_editor_key PASS 20261119-130049. tribe_own_outfitter's last check (the host's save) is BUG-1326.
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-19: fixed on fix/w57-own-editors, lab runs above.

@@ -1,19 +1,19 @@
 ---
 id: BUG-1318
 title: dna_own tests confirmed the brain-up caption for 12 s only: its Enter is taken about 16 s after the gain, the guest stayed in the cinematic and its own editor never opened (dna_own_editors)
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w57-own-editors
+commits: 6b93ebd6
 tests: dna_own_editors, dna_own_editors_off
 signature:
-docs:
+docs: docs/06-testing.md#testing-own-editors-night1
 related: BUG-1291
 ---
 
@@ -36,8 +36,11 @@ coop_dna_own.py prepare: Enter on every game whose cinematic still plays, every 
 most 60 s), and the log says when they closed. The checks are unchanged.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: a bug of the test's set-up. Before: rel/0.7.16 out/lab/20261119-104136 and fix/w57-own-editors worktree out/lab/20261119-111652
+dna_own_editors "the guest's own editor opened" FAIL with the guest's brain caption up (screenshot); probe on lane 2.
+After: fix/w57-own-editors worktree out/lab/20261119-113002, -122505, -130049 dna_own_editors RESULT OK ("brain captions closed after 17 s"); the twin
+dna_own_editors_off FAILs at the price (20261119-130049).
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-19: fixed on fix/w57-own-editors, lab runs above.

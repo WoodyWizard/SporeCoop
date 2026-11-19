@@ -1,20 +1,21 @@
 ---
 id: BUG-1308
 title: The guest's own Tribal Outfitter for its own creation: Done does nothing (the part-list error of the creation's Creature Creator parts is waived only in the own Creature editor)
-status: open
+status: fixed
 kind: bug
 stage: Tribe, Civ
 reported: 2026-11-19
 source: lab
 role: guest
 versions: rel/0.7.16
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w57-own-editors
+commits: 800a17e6
 tests: tribe_own_outfitter, own_editor_drop
 signature:
-docs:
+docs: docs/re/creations.md#creations-own-outfit-parts
 related: BUG-1272, BUG-1275, BUG-1222, BUG-1298
+switch: editors.own_outfit_parts
 ---
 
 ## Report
@@ -38,8 +39,13 @@ of tag 0x66787BB started from our creature) is on its way or open. Other blockin
 counts them ("part list waived N (own outfitters M, BUG-1308)"). Off: only the own Creature editor (0.7.15).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: rel/0.7.16 out/lab/20261119-095414 tribe_own_outfitter and 20261119-104136 own_editor_drop ("the guest is back
+in Tribe (0x00DBDBA1)"); twin on the merged tree fix/w57-own-editors worktree out/lab/20261119-130049 tribe_own_outfitter_parts_off FAIL the same.
+PASS of that step: fix/w57-own-editors worktree out/lab/20261119-111652, -113002, -122505, -130049 tribe_own_outfitter, own_editor_drop and
+own_editor_key ("the guest is back in Tribe (0x01654C02)", log "parts outside its part list: allowed (BUG-1308)");
+own_editor_key PASS whole in 20261119-130049. (tribe_own_outfitter and own_editor_drop then fail only the host save's
+check: BUG-1326.)
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-19: fixed on fix/w57-own-editors, lab runs above.

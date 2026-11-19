@@ -13,7 +13,7 @@ branch:
 commits:
 tests: tribe_own_outfitter, own_editor_drop
 signature:
-docs:
+docs: docs/known-issues.md
 related: BUG-1272, BUG-1315, BUG-1298, BUG-1316
 ---
 

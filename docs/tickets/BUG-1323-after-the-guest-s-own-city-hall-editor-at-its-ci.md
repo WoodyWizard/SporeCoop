@@ -1,20 +1,21 @@
 ---
 id: BUG-1323
 title: After the guest's own City Hall editor at its Civ arrival its game stayed paused (Civ's editor return pauses 0x4BF38A7 and resumes it only through the planner): the vehicle editor never opened
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-19
 source: lab
 role: guest
 versions: rel/0.7.16
-fixed_in:
-branch:
-commits:
+fixed_in: unreleased
+branch: fix/w57-own-editors
+commits: 39aebbea 5e4f14e1
 tests: civ_own_arrival, civ_late_arrival, line_stages_editors
 signature: GameCiv_Update 0x00CFE2C0 Pause(0x4BF38A7)
 docs: docs/re/civ.md#civ-editor-return-pause
 related: BUG-1276, BUG-1290, BUG-1306, BUG-1277
+switch: core.own_civ_unpause
 ---
 
 ## Report
@@ -36,8 +37,13 @@ return left the game paused ... resumed (BUG-1323)", `coop.civarrival`: `unpause
 paused (the first lab run).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+FAIL: fix/w57-own-editors worktree out/lab/20261119-113002 civ_own_arrival, civ_late_arrival ("the guest's OWN vehicle editor opened ... phase
+next"), line_stages_editors; twin on the merged tree fix/w57-own-editors worktree out/lab/20261119-130049 civ_late_arrival_unpause_off FAIL the same
+("phase next ... late due"). PASS: probe on lane 2 (`unpause: ... resumed=2`, both editors, busy empty); lab
+fix/w57-own-editors worktree out/lab/20261119-122505 and -130049: civ_own_arrival and civ_late_arrival open the vehicle editor 5 s after the City Hall
+one ("the guest's OWN vehicle editor opened after it came back ... (51 s after the join)"), line_stages_editors gets
+both designs.
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-19: fixed on fix/w57-own-editors, lab runs above.
