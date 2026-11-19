@@ -113,6 +113,10 @@ CAPTAIN_NAME = [(915, 555), (936, 630)]  # "Name Your Captain" (the first Space 
 EDITOR_DICE = (614, 826)     # the dice of the name panel (a random name), open after a "done" without a name
 EDITOR_PARTS = [(85, 130), (350, 405), (480, 405)]       # spaceship editor palette: a hull, two discs
 TRIBE_EDITOR_PARTS = (((88, 130), (900, 850)), ((220, 130), (900, 700)), ((350, 130), (1150, 850)))  # City Hall / vehicle
+# a guest's own City Hall / vehicle editors after its arrival in Civ (WP-X1): the same palette parts on other places of
+# the plot, so its designs are not the host's model byte for byte (lab 20261119-164538 line_stages_editors: the host's
+# end-of-Tribe vehicle and the guest's own were the same model 3A5843B7, the same three drags)
+CIV_ARRIVAL_PARTS = (((350, 130), (1000, 760)), ((88, 130), (1100, 820)), ((220, 130), (950, 680)))
 EDITOR_PLACES = [(1000, 560), (1000, 470), (1000, 650)]  # onto the stage
 VK_F9 = '0x78'
 # a badge's "Reward" panel (BUG-0268): its green check on the 1440x1080 screen (the panel is centred;
@@ -717,7 +721,8 @@ class Campaign:
             # (coop_tribe_civ.PARTS); the spaceship editor's at the end of Civ. WP-X1 of 0.7.16 (BUG-1277): a guest's own
             # City Hall and vehicle editors after its arrival in Civ (the follow phase) are the same editors
             civ_arrival = self.stage == 'civ' and self.phase == 'follow'
-            moves = TRIBE_EDITOR_PARTS if self.stage == 'tribe' or civ_arrival else list(zip(EDITOR_PARTS, EDITOR_PLACES))
+            moves = (CIV_ARRIVAL_PARTS if civ_arrival else TRIBE_EDITOR_PARTS if self.stage == 'tribe'
+                     else list(zip(EDITOR_PARTS, EDITOR_PLACES)))
             for (sx, sy), (tx, ty) in moves:
                 drag_slow(con, sx, sy, tx, ty, pace)
             if n == 2:

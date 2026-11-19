@@ -248,10 +248,18 @@ def member_view(host, guest, tag, note):
         print(f'  ({tag}: no adult member of the guest)', flush=True)
 
 
-def arrival_editors(ck, camp, guest_p, host, guest, pid, secs=360):
+def arrival_editors(ck, camp, guest_p, host, guest, pid, secs=360, required=True):
     """--civ-editors (WP-C3 / WP-X1): the guest's own City Hall and vehicle editors after its arrival in Civ, answered by
     the campaign's driver (the follow phase: the City Hall palette's parts, a name, done) until the guest's line has
-    designs on both games"""
+    designs on both games. required=False (without --civ-editors): the same editors come on the merged tree
+    (core.own_civ_arrival is on in own mode) and are answered the same way, unchecked (lab 20261119-164538
+    line_stages_outfit: the guest arrived fast, its editors opened in the play phase with no driver and the guest stayed
+    in its City Hall editor: no city of the host's on its game); nothing due: nothing to wait for"""
+    if not required:
+        st = re.search(r'phase=(\w+)', guest.call('coop.civarrival')['out'] or '')
+        if not st or st.group(1) == 'none':
+            print(f'  civ: no own editors due at the guest\'s arrival ({st.group(0) if st else "?"})', flush=True)
+            return
     camp.phase = 'follow'
     svc = Service(camp, guest_p)
     svc.start()
@@ -276,14 +284,16 @@ def arrival_editors(ck, camp, guest_p, host, guest, pid, secs=360):
         svc.join(30)
     print(f'  civ: the guest\'s editors: {svc.done}; designs host {cod.own(host)[2]}, guest {cod.own(guest)[2]}; '
           f'{(guest.call("coop.civarrival")["out"] or "").splitlines()[:1]}', flush=True)
-    ck(got, f'civ: the guest\'s own City Hall and vehicle editors at its arrival gave it both designs on both games '
-            f'({svc.done})')
+    if required:
+        ck(got, f'civ: the guest\'s own City Hall and vehicle editors at its arrival gave it both designs on both games '
+                f'({svc.done})')
+    else:
+        ck('Editor' not in mode(guest), f'civ: the guest is back in Civ after its own arrival editors ({svc.done})')
 
 
 def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
     players = {'host': host, 'guest': guest}
-    if a.civ_editors:
-        arrival_editors(ck, camp, guest_p, host, guest, pid)
+    arrival_editors(ck, camp, guest_p, host, guest, pid, required=a.civ_editors)
     camp.phase = 'play'
     time.sleep(5)
     got = wait(lambda: all(line_of(c, pid, 'civ')[0] == hx(want) and line_of(c, pid, 'civ')[1] for c in (host, guest)), 60)
