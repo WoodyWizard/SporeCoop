@@ -13,6 +13,9 @@
 #include "cell_logic.h"
 #include "cellsync.h"
 #include "dna_pace.h"
+namespace coop_core {
+std::string own_dna_status(); // dna.cpp (WP-D)
+}
 #include "settings.h"
 #include "fixes.h"
 #include "game.h"
@@ -1002,6 +1005,10 @@ int c_dna(void*, int argc, const char* const* argv, SkOut* out)
         game::dna_add_raw((float)atof(argv[2]));
     if (argc > 2 && !strcmp(argv[1], "spend")) // tests (BUG-0630): a spend the game's way (its editor's result:
         game::dna_set_raw(game::dna() - (float)atof(argv[2])); // SetEvolutionPoints, the DNA only)
+    if (argc > 1 && !strcmp(argv[1], "own")) { // tests (WP-D, BUG-1291): the own wallets (the host: every guest's)
+        SAY("dna=%.1f bar=%.1f\n%s", game::dna(), game::evolution_bar(), coop_core::own_dna_status().c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "bar")) { // tests (BUG-0630): also the evolution bar, cPlayer +0x10F0
         SAY("dna=%.1f bar=%.1f", game::dna(), game::evolution_bar());
         return 0;
@@ -1180,7 +1187,7 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_ufoforget, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
-    host->command_add(self, "coop.dna", "coop.dna [add|gain|local|spend <n> | pace 0|1 | bar] - shared DNA debug (bar: also the evolution bar, cPlayer +0x10F0)", c_dna, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.dna", "coop.dna [add|gain|local|spend <n> | pace 0|1 | bar | own] - DNA debug (bar: also the evolution bar, cPlayer +0x10F0; own: the own DNA wallets, WP-D)", c_dna, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.memfind", "coop.memfind <hex dword> [max] - addresses holding the value (RE)",
                       c_memfind, nullptr, 0);
     host->command_add(self, "coop.w2s", "check world_to_screen against the game's screen ray", c_w2s, nullptr,

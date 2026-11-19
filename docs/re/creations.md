@@ -1747,3 +1747,25 @@ Creature editor, Steam 3010a413 code; fork tickets BUG-9103, BUG-9116. Extends #
   sideways).
 * Pitfall (fork): the creature editor opened from inside a running stage by a console command, or in a background
   window, did not render its 3D view (world-to-screen returned one point): no screen checks of handles there.
+
+## A guest without an own creature in this world: the late pick (2026-11-19, feat/w56-late)
+<a id="creations-late-species"></a>
+
+BUG-1289 (WP-S1a, `creations.late_species`). Code reading (no new game RE), the mod's own rules:
+* ✔ (code) A guest's creature is its explicit choice (choices.ini) only in a world it is recorded for (worlds.ini
+  [creature] <world crc>, BUG-0638), else this world's record (BUG-0345), else the world's species. A guest that joins
+  at Tribe or Civ, or whose host loads a planet it never played, has neither: it plays the host's species and its
+  species line has `creature = 0` (species_line.cpp own_creature), so its members and citizens are the host's.
+* ✔ (code) Before 0.7.16 the co-op window's creation row (coop.cpp `a.creation`) showed only in Cell, Creature and
+  Space: no way to pick in Tribe or Civ. In Civ the row's arrows cycle the Civ role while nothing is selected
+  (coop_ui.cpp): the creature row needs its own flag there (`g_row_creation`).
+* ✔ (code) A choice made outside a world (world crc 0, or the galaxy menu: its CurrentGameName may still be the planet
+  played before) was recorded for no world (or for that old one) and BUG-0638 dropped it in the host's world (the
+  fork saw the same: `mine creature: 00000000` after the join).
+* The rule now: in Tribe and Civ (and the galaxy menu, a connected guest) the row shows for a guest that has own
+  creatures and plays none of them here (not after it chose "the world's own" itself), and for 30 s after a click on
+  it; selected units take the row back for the give button. Its choice is recorded for this world as every in-world
+  choice. A choice made outside a world holds for the first Cell .. Civ world of the session and is recorded for it
+  (`coop.creations`: `late: ... unbound=1/0 bound=N`); a choices.ini entry of an earlier run is still dropped.
+* The guest is told once per world (15 s after it arrived in Tribe or Civ): "you play the host's species here: pick
+  your own creature with < > in the co-op window".

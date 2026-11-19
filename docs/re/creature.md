@@ -5205,3 +5205,26 @@ BUG-1292 (found by the Lineages fork, PR #196, its BUG-9157; the fork's runtime 
 The mod's hook (creature_hp.cpp h_BaseMaxHp, the rule in max_hp_rule.h) answers a null species on those paths with the
 creature's max health (+0x5D4, at least 1), `coop.fix creature.max_hp_species`. Test `max_hp_species`
 (`coop.hp nullspecies` clears species, herd and tuning of the own avatar for one vt 0x7C call).
+## Own DNA per player: set the budget, move the bar (2026-11-19, feat/w56-dna)
+<a id="creature-own-dna"></a>
+
+WP-D of 0.7.16 (BUG-1291, docs/03-gameplay.md#gameplay-own-dna). Builds on #creature-evolution-bar (the two
+functions above, both verified): AddEvolutionPoints 0xD2E8A0 adds to the DNA [0x169E398] (clamped at 9999) and to
+cPlayer +0x10F0 (the bar) with no sign check; SetEvolutionPoints 0xD2E480 writes the DNA only.
+
+* Recipe "the guest's DNA = B, its bar = the party's P" (the Lineages fork's runtime order, credited to PandizeLive;
+  ours is not run yet): `AddEvolutionPoints(P - bar)` when P > bar (the bar up, the DNA up by the same, which the next
+  call replaces), then `SetEvolutionPoints(B)`. game.cpp `dna_set_and_bar` calls the original (o_AddEvo: not our hook,
+  so nothing is forwarded). The bar is never lowered here (a negative AddEvolutionPoints would lower the DNA and the bar
+  of a brain level already reached: not tried).
+* Why it is needed: after a guest's game loads the host's world (a share), its DNA and bar are the host's save's. A
+  guest with an own budget above the host's DNA got the difference through AddEvolutionPoints (0.7.15's path): the bar
+  moved by it a second time (ahead of the party's). The twin `creature.dna_bar_set off` keeps that path
+  (coop_dna_own.py --case reload must FAIL with it).
+* ? Not verified: whether a Creature death lowers the DNA or the bar (if through AddEvolutionPoints, on a guest it is
+  sampled as its own spend and the bar is raised back to the party's by the next total; on the host a negative bar step
+  is not passed on to the wallets).
+* Lab sequence to verify (lanes 2, after `make -j8`):
+  `SPORE_DETECTOR=20 python3 tools/lab.py run dna_own_reload --lane 2 --retry 0 --no-build` (PASS) and
+  `SPORE_DETECTOR=20 python3 tools/lab.py run dna_own_reload_off --lane 2 --retry 0 --no-build` (FAIL: the guest's bar
+  ahead); the log line `dna: own A -> B, bar X -> party Y` on the guest shows the two calls.

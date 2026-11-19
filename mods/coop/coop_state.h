@@ -88,6 +88,7 @@
 #include "dna_route.h"
 #include "dna_ledger.h"
 #include "dna_pace.h"
+#include "dna_own.h"
 #include "settings.h"
 #include "sreport.h"
 #include "space_ext.h"
@@ -359,6 +360,21 @@ void dna_spend_note(float d);
 void dna_spend_resync();
 void dna_spend_sample();
 void dna_spend_tick(double now);
+// WP-D (BUG-1291): own DNA per player (dna_own.h)
+extern bool g_own_dna_fix, g_dna_bar_set_fix, g_own_dna_store_fix;
+extern dna_own::Book g_book;
+extern std::map<uint8_t, float> g_dna_sent_to;
+extern uint32_t g_own_totals, g_own_applied;
+extern bool g_own_heard;
+extern float g_own_bar_heard;
+bool own_dna_on();
+bool dna_peer_reads(uint8_t id, net::Family fam);
+bool dna_own_wallet(uint8_t id, net::Family fam);
+float dna_own_budget(uint8_t id);
+void dna_own_spend(uint8_t id, float d);
+float dna_total_for(uint8_t id, float host_total, dna_own::Tail& tail);
+void own_dna_tick();
+std::string own_dna_status();
 
 // ---- defined in vote.cpp ----
 alignas(16) extern uint8_t g_blank_e84[0x1000];
