@@ -10,7 +10,7 @@ role: host, guest
 versions: 0.7.14.1-lineages64-dev
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits: COMMIT
+commits: 33161d36
 tests: manual on TITAN QA 8 + 9 (tools/qa_win/galaxy.ps1 stop / start with both on Samuth)
 signature: "The galaxy server lost this game: connecting again." then no planet
 docs: docs/13-alpha-review-2026-11-18.md#review-live
