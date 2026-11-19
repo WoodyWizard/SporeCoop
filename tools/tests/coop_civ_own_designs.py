@@ -39,6 +39,7 @@ SPORE_FIX_OFF=civ.own_designs: steps 3, 4, 5, 7 and 9 FAIL (every object the cul
 """
 import os
 import re
+import struct
 import sys
 import time
 
@@ -157,7 +158,8 @@ def keys_in(files, insts):
         try:
             for e in ps.entries(p):
                 blobs.append((f'{os.path.basename(p)}:{e["type"]:08X}', ps.read(p, e)))
-        except (AssertionError, OSError, ValueError, KeyError, IndexError):
+        except (AssertionError, OSError, ValueError, KeyError, IndexError, struct.error):  # (struct: an empty index,
+            # BUG-1307: lab 20261119-111652; the whole file is searched then)
             try:
                 blobs.append((os.path.basename(p), open(p, 'rb').read()))
             except OSError:

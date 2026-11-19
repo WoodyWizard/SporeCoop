@@ -101,12 +101,18 @@ static void drop(const std::string& why, const char* tell)
         feed(tell);
 }
 
-// the host takes our species line (its build has creations 1.1 or newer: a 0.7.15.2 host keeps the old look)
+// the host takes our species line (its build has creations 1.1 or newer: a 0.7.15.2 host keeps the old look).
+// BUG-1306: the host's WELCOME families (host_families); peer_families answers only on the host, so allowed() was
+// false on every guest and no own City Hall editor ever opened (lab 20261119-095414 civ_own_arrival). Off
+// (core.own_civ_families): the host-only query (rel/0.7.16 before the fix)
+static bool g_families_fix = true;
+COOP_FIX("core.own_civ_families", "BUG-1306", g_families_fix,
+         "civ: a guest knows that the host keeps species lines, so its own City Hall and vehicle editors open at its Civ arrival");
 static bool host_has_line()
 {
     bool has = false;
     std::vector<net::FamilyRev> fam;
-    if (!g_sess.peer_families(0, has, fam) || !has)
+    if (!(g_families_fix ? g_sess.host_families(has, fam) : g_sess.peer_families(0, has, fam)) || !has)
         return false;
     for (auto& f : fam)
         if (f.family == 10 && f.rev == 1 && f.minor >= 1) // creations (net/messages.def)

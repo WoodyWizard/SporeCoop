@@ -264,6 +264,10 @@ def main():
         shared[who] = line_design(con, 1, HOUSE)
         ck(ok, f'{who}: the guest\'s line names its house design ({shared[who]:08X})')
     ck(shared['host'] == shared['guest'], 'the same key of the guest\'s house design on both games')
+    # BUG-1307: the bought NPC city has no building of the house design id (its houses are the NPC culture's: lab
+    # 20261119-111652 found none, on both games): the guest builds one, as civ_own_designs does (the game's own build)
+    print('  guest:', guest.call(f'coop.civ build {gci} house')['out'].strip(), flush=True)
+    time.sleep(3)
     for con, who in ((host, 'host'), (guest, 'guest')):
         def houses(owner):
             return sorted({mhash(con, b['model'], BTYPE, BGROUP) for b in own(con)[1] if b['owner'] == owner and b['did'] == HOUSE})

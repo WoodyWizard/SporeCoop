@@ -4687,55 +4687,6 @@ static void test_family_check()
 }
 
 
-// BUG-1306: a guest asks peer_families(0) for the host's families (civ_arrival's City Hall editors, npc alphas, drama):
-// the host's WELCOME's list; nothing for any other id; `net.host_families off`: nothing at all (rel/0.7.16 before)
-static void test_guest_host_families()
-{
-    printf("a guest knows the host's message families (BUG-1306)\n");
-    std::string err;
-    for (int fix = 1; fix >= 0; fix--) {
-        g_fix.host_families = fix != 0;
-        Session h, a;
-        h.families = compat::my_families();
-        for (auto& f : h.families)
-            if (f.family == (uint8_t)Family::creations)
-                f.minor = 7; // (a planted minor: the guest must see the host's list, not its own)
-        CHECK(h.host(0, "Alice", err));
-        std::string addr = "127.0.0.1:" + std::to_string(h.port());
-        CHECK(a.join(addr, "Bob", err));
-        tick({&h, &a}, 400);
-        CHECK(a.connected());
-        bool has = false;
-        std::vector<FamilyRev> fam;
-        bool got = a.peer_families(0, has, fam);
-        int minor = -1;
-        for (auto& f : fam)
-            if (f.family == (uint8_t)Family::creations)
-                minor = f.minor;
-        printf("  fix %d: guest asks for the host: %d has %d creations minor %d\n", fix, (int)got, (int)has, minor);
-        CHECK(fix ? got && has && minor == 7 : !got);
-        CHECK(!a.peer_families(1, has, fam) && !a.peer_families(2, has, fam)); // (only the host)
-        CHECK(h.peer_families(1, has, fam) && has); // (the host's side as before)
-        h.leave();
-        a.leave();
-        { // a host before 0.7.15 (no families): known, but none
-            Session h2, b;
-            h2.send_families = false;
-            CHECK(h2.host(0, "Alice", err));
-            CHECK(b.join("127.0.0.1:" + std::to_string(h2.port()), "Bob", err));
-            tick({&h2, &b}, 400);
-            bool has2 = true;
-            std::vector<FamilyRev> f2;
-            bool got2 = b.peer_families(0, has2, f2);
-            CHECK(fix ? got2 && !has2 : !got2);
-            h2.leave();
-            b.leave();
-        }
-    }
-    g_fix.host_families = true;
-}
-
-
 // BUG-1296 (found by the Lineages fork, PR #196, its BUG-9098): does a world-sized reliable transfer stall on a
 // constrained lossy path? A model of such a path (ours, not the fork's): 200 packets/s through a 16-packet queue (a
 // full queue drops), 60 ms each way, 1 % random loss both ways; the sender flushes once a 33 ms frame as Session::flush
@@ -5132,7 +5083,6 @@ int main(int argc, char** argv)
         {"test_replace_checked", test_replace_checked},
         {"test_dir_gate", test_dir_gate},
         {"test_families_wire", test_families_wire},
-        {"test_guest_host_families", test_guest_host_families},
         {"test_family_check", test_family_check},
         {"test_welcome_split", test_welcome_split},
         {"test_recv_skip_big", test_recv_skip_big},
