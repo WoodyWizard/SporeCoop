@@ -3919,3 +3919,11 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: host + partner, `coop.gpack recruit <player> <id>` with two creatures of an attacking species, a test
   creature beside the partner, `coop.gpack watch <id>`, the partner's `coop.npc hit <id> 1`: no "watched ... hit"
   line from the members; with `coop.npc recruit <id>` (the host's pack) and `coop.gpack hostorder <id>` they hit.
+
+## Creature: a guest's HUD portrait keeps an old picture after its first creature (2026-11-19, feat/lineages-47)
+<a id="known-guest-portrait-first-creature"></a>
+
+* BUG-9264. A fresh guest that made its first creature (the start editor, BUG-9263) and plays it in the host's world
+  sees another creature in the Creature HUD's portrait (bottom right). Cosmetic.
+* Reproduce: host a Creature world, join from a new profile, make and save the first creature; on the guest
+  `coop.portrait` says `image=00000000 ... same=-1 sets=0` (no png for the new species' key).
