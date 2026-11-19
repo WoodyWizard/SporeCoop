@@ -86,8 +86,12 @@ def model_hash(con, inst):
 def mix_ok(con, gkey):
     """(ok, text): every living guest-owned member of the guest's key, every host-owned one of the slot's"""
     slot, _, ms = species(con)
+    # (BUG-1313: the pass never changes a kid, age != 1, while it grows up: a guest's kid of the tribe's species is
+    # right, e.g. the baby bought before the host's save, which loads as a kid of the slot's species; a kid born in
+    # the session is born in its owner's species, tribe.birth_species, and checked in step 3)
     bad = [i for i, m in ms.items() if not m['dead'] and m['body'] and
-           ((m['owner'] == 1 and m['key'] != gkey) or (m['owner'] == 0 and m['key'] != slot))]
+           ((m['owner'] == 1 and m['key'] != gkey and not (m['age'] != 1 and m['key'] == slot)) or
+            (m['owner'] == 0 and m['key'] != slot))]
     guests = [i for i, m in ms.items() if m['owner'] == 1 and not m['dead']]
     hosts = [i for i, m in ms.items() if m['owner'] == 0 and not m['dead']]
     txt = (f'slot {slot or 0:08X}; ' + ', '.join(f'#{i}:{m["owner"]}:{m["key"]:08X}' for i, m in sorted(ms.items())))
