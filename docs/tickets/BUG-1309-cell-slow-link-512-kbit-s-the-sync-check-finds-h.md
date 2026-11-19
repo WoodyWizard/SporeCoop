@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.15.1, 0.7.15.2, 0.7.16
 fixed_in: unreleased
 branch: fix/w57-cellslow
-commits:
+commits: eb50b7d9, 7c4e2d49, 88973cd7, 4103ec7e
 tests: cell_slow_link, cell_slow_link_off, evo_screens_switch_slow
 signature: sync-check "c: N missing on the guest" under SPORE_NET=lowband
 docs: docs/re/cell.md#cell-slow-link
@@ -64,7 +64,14 @@ sample but one from 8 s on, median 90 %; key frame slow_link_cells. Twin cell_sl
 Not a gate change: the sync-check stays as it was.
 
 ## Verification
-VERIFY_PLACEHOLDER
+cell_slow_link (coop_cell_slow_link.py, SPORE_NET=lowband, lane 10):
+* PASS out/lab/20261119-130733 (cell_slow_link): 100 % of the host's cells within 20 units of the guest (55-108 of
+  them) in the guest's own game in every one of 25 samples over 48 s; the sync-check OK; the host paced to ~54 KB/s.
+  An earlier run with 40 units (20261119-130241) had median 1.00 but 0.71-0.79 at four moments: 270-490 cells, more
+  than one round at 512 kbit/s carries (~320 nearest), the wrong measure (the test's docstring says why).
+* FAIL out/lab/20261119-130733 (cell_slow_link_off, cell.slow_link off): 23-45 % (median 0.35) over 20 samples, and the
+  lab's sync-check gate `c: 13 missing on the guest`; 20261119-130241 (twin, 40 units): 26-46 %, ~100 mirrors in all.
+
 
 ## History
 - 2026-11-19: opened.
