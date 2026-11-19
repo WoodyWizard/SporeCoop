@@ -7,28 +7,33 @@ stage: Tools
 reported: 2026-11-19
 source: lab
 role: 
-versions: 
+versions: 0.7.16 (unreleased)
 fixed_in:
-branch:
+branch: fix/w57-tribe-keys
 commits:
-tests:
-signature:
-docs:
-related:
+tests: space_own_ship_key_off, own_editor_key_off, late_species_off (twins that restart the guest)
+signature: SPORE_FIX_OFF (guest, restarted): unknown command: coop.fix (try 'help')
+docs: docs/06-testing.md
+related: BUG-1301, BUG-1297, BUG-1289, BUG-0214
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Lab 20261119-105127: space_own_ship_key_off PASSED although it must FAIL. Its log: `SPORE_FIX_OFF (guest, restarted):
+unknown command: coop.fix (try 'help')` and the guest's `coop.creations` said `own ship key: fix=1`.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+✔ twoinst.apply_fix_off sent `coop.fix <name> off` once, right after wait_up (SporeKit's console answers `ping`
+before the mod has registered its commands) and only printed the answer: the restarted guest kept the fix on and the
+twin tested the fixed code. Every test that restarts a game and calls apply_fix_off had this (own_editors_robust's
+key / ship modes, late_species, tribe_own_species).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+apply_fix_off asks again every second until the answer says the switch is off (at most 90 s) and fails the test
+(RESULT: FAIL, as start() does for an unknown switch) when it never does.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: test harness; shown by the twins: RUNIDS
 
 ## History
-- 2026-11-19: opened.
+- 2026-11-19: opened (fix/w57-tribe-keys).
+- 2026-11-19: fixed on fix/w57-tribe-keys.

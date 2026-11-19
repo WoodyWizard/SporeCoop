@@ -7,28 +7,36 @@ stage: Tribe
 reported: 2026-11-19
 source: lab
 role: 
-versions: 
+versions: 0.7.16 (unreleased)
 fixed_in:
-branch:
+branch: fix/w57-tribe-keys
 commits:
-tests:
-signature:
-docs:
-related:
+tests: tribe_kid_species, tribe_kid_species_off (coop_own_editors_robust.py kid)
+signature: 0xC0000005 EIP 0x40A00000 / 0x00000000, calls 00BC326E 00C03A94 (Timer_Start < cCreatureAnimal::SetSpecies+0x174)
+docs: docs/re/tribe.md#tribe-kid-setspecies
+related: BUG-1271, BUG-1299
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Lab 20261119-105127, tribe_birth_species_off (the BUG-1299 twin): both games faulted in the same frame when the
+species pass changed the guest's new baby 0.5 s after it was seen (guest EIP 0x40A00000, host EIP 0; the game's
+handler caught it, frames went on).
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+✔ (Ghidra GOG 2024, docs/re/tribe.md#tribe-kid-setspecies) cCreatureAnimal::SetSpecies 0xC03920 starts the growth
+timer at creature +0x1628 (Timer_Start 0xBC3260, `call [this+0x1C]`) for a creature that is not grown up (+0xB34 != 1)
+in the Creature or Tribe mode. A tribe member is a citizen with no timer there. Any kid the pass changed faulted: a kid
+whose owner became known after its birth (the host's baby paired later, an unclaimed baby), a kid whose owner's line
+changed or went away (revert), and every baby with tribe.birth_species off.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`tribe.kid_species`: the pass (tribe_species.cpp) leaves a kid as it is until it is grown up (counter waits_kid in
+`coop.tribe species`); a kid of a known owner is born in its species anyway (tribe.birth_species). `coop.tribe
+setspecies <key> <id>` never touches a kid. Off: a kid is changed like an adult (the fault).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+RUNIDS
 
 ## History
-- 2026-11-19: opened.
+- 2026-11-19: opened (fix/w57-tribe-keys, from the night run's twin).
+- 2026-11-19: fixed on fix/w57-tribe-keys.

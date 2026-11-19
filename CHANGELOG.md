@@ -10,6 +10,8 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   Civilization (no visible change by itself).
 - A lab test takes a guest's own creature through Creature -> Tribe -> Civilization with the real stage changes and
   checks its look in every stage on both games (BUG-1277).
+- Lab: a test that starts a game again now waits until the switches of its FAIL twin are really off in that game
+  (BUG-1314).
 
 ### Added
 - Creature: when a partner goes into an editor of its own (its mating evolution, Evolve now, or later at the nest),
@@ -100,6 +102,12 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   appears; before, it was the tribe's species for a moment first (BUG-1299; still open until its lab run).
 - Space: a guest whose own ship has the same id as the host's ship now flies its own ship on its screen; before, its
   game could show the host's ship instead (BUG-1301; still open until its lab run).
+- Tribe: a guest that goes back to playing the tribe's species is drawn so on its own screen too; before, its own game
+  kept showing its members as its old creature (BUG-1312).
+- Tribe: a tribe baby of a guest no longer makes both games fault when the guest's creature changes while the baby
+  grows up; the baby keeps its look until it is grown up (BUG-1313).
+- Tribe: a host's tribe member that showed the guest's creature on the guest's screen after a rejoin gets the tribe's
+  look back (BUG-1319).
 
 ## [0.7.15.2] - 2026-11-18
 

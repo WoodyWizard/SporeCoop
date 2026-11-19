@@ -4701,3 +4701,10 @@ host: EIP 0; calls 00BC326E < 00C03A94 SetSpecies+0x174 < coop's set_species).
   up keeps the old species until then (test `coop_own_editors_robust.py kid`).
 * ? Not tried: setting +0xB58 bit 9 around the call (skips the timer; other readers of the bit unknown), or
   SetSpeciesProfile 0xC22450 + RebuildModel for a kid.
+* ✔ (lab 20261119-112300, BUG-1319) A guest's mirror spawned while its world opens can be born in a line's species
+  (tribe.birth_species) before the pass's WORLD_STATE reset clears its table; that member then counted as one the mod
+  never touched and kept the line's key also when it ended bound to another player's member (the host's chief on the
+  guest's game in the guest's creature). `tribe.stray_line_key`: a member that shows a line's key (0x7B shared, 0x7C
+  creations copy, a current line's key) without a record is taken as the mod's; the game never gives a member such a
+  key. ~ Why that mirror was bound to the host's member (the bind by the nearest local member at the opening) is not
+  checked.

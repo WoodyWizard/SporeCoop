@@ -1275,6 +1275,9 @@ registry (`mods/coop/fixes.h`, BUG-0116):
   off on both games right after `twoinst.start()` (after the join: a fix that acts while the guest
   joins is still on then). Example: `SPORE_LANE=6 SPORE_FIX_OFF=npc.play_death python3
   tools/tests/coop_creature_kills.py` must FAIL.
+  A game the test starts again gets them through `twoinst.apply_fix_off(con, who)`, which asks until the answer
+  says the switch is off (the mod's commands come some seconds after SporeKit's console answers) and fails the test
+  when it never does (BUG-1314: before, one ask got "unknown command" and the twin ran with the fix on).
 * Switches added for 0.7.2.x fixes that had none: `game.adapter_key` (BUG-0012, Alt+Shift+Enter;
   `coop_alt_enter.py --without-fix` faults at 0x7777BE), `pool.forget` (BUG-0006),
   `npc.stale_proxy` and `npc.world_despawn` (BUG-0009), `npc.play_death` (BUG-0015),
