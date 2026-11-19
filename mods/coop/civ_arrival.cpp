@@ -292,10 +292,14 @@ static void late_check(double now, uint32_t m)
 {
     bool here = m == modes::kCiv && g_sess.connected() && g_sess.role() == net::Role::Client && designs::civ_player() &&
                 !guest_elsewhere() && !world::load_queued() && !mode_switch_pending();
-    bool arrived = here && !g_was_here;
+    static double here_since = 0;
+    if (here && !g_was_here)
+        here_since = now;
     g_was_here = here;
-    if (!arrived || g_late_checked)
+    if (!here || g_late_checked)
         return;
+    if (g_late_fix && !allowed() && now - here_since < 30.0)
+        return; // (the host's families or the session setting may come a moment after the world)
     g_late_checked = true;
     uint32_t w = modes::current_world();
     const char* why = !g_late_fix                                ? "core.own_civ_late is off"
@@ -305,6 +309,7 @@ static void late_check(double now, uint32_t m)
                       : creations::world_note(kNote, w)          ? "offered in this world already"
                       : !creations::plays_own(creations::kCreature) ? "this guest plays the host's species here"
                       : species::own_design(kCityHall).instance  ? "its species line has its own City Hall"
+                      : !species::design_ids(g_sess.my_id()).empty() ? "it made own Civ designs already (its planner)"
                                                                  : nullptr;
     if (why) {
         g_late_why = why;
@@ -454,9 +459,8 @@ std::string civ_arrival_status()
 static int c_civarrival(void*, int argc, const char* const* argv, SkOut* out)
 {
     std::string a = argc > 1 ? argv[1] : "status";
-    if (a == "forget") { // tests (BUG-1290): this world's note gone, the next arrival of the session is looked at again
+    if (a == "forget") { // tests (BUG-1290): this world's note gone (the next session's arrival offers them again)
         creations::world_note_set(kNote, modes::current_world(), 0);
-        g_late_checked = g_was_here = false;
         H->out_printf(out, "forgotten\n");
     }
     if (a == "due") {

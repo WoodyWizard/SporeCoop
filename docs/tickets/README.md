@@ -1283,3 +1283,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1277](BUG-1277-wp-x2-every-player-s-species-line-through-creatu.md) | open | test | All | 2026-11-18 |  | WP-X2: every player's species line through Creature -> Tribe -> Civ (one test) |
 | [BUG-1280](BUG-1280-tribe-the-end-of-tribe-editor-check-names-a-vehi.md) | open | bug | Tribe | 2026-11-18 |  | Tribe: the end-of-Tribe editor check names a vehicle editor 7CB21BAD that does not exist (it is 7D433FAD) |
 | [BUG-1281](BUG-1281-a-peer-running-the-lineages-fork-joins-a-session.md) | open | bug | All | 2026-11-19 |  | A peer running the Lineages fork joins a session unrefused and its messages decode as ours |
+| [BUG-1289](BUG-1289-wp-s1a-a-guest-without-an-own-creature-in-this-w.md) | open | bug | Tribe, Civ | 2026-11-19 |  | WP-S1a: a guest without an own creature in this world plays the host's species in Tribe and Civ and cannot pick its own |
+| [BUG-1290](BUG-1290-wp-s1b-a-guest-that-missed-the-end-of-tribe-neve.md) | open | bug | Civ | 2026-11-19 |  | WP-S1b: a guest that missed the end of Tribe never gets its own City Hall and vehicle editors in Civ |
