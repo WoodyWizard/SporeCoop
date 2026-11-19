@@ -1165,7 +1165,7 @@ nobody is near waits for phase 0's answer.
 Social Menu and it'll have the two person silhouette icon. Don't make the gold buttons have black text. Keep it white."
 and "Make this look more native."). Built and seen working on TITAN + MSI (QA 8 joining the MSI's Samuth):
 
-* The Social Menu: F8 anywhere, the Social button (two person silhouette, `data/ui/lineages_social_icon.png`) left of
+* The Social Menu: F8 anywhere, the Social button (two person silhouette: the Co-op item's own `data/ui/coop_icon.png`, owner 2026-11-18: one look for both) left of
   the Party tab in a stage, and a Social item under Co-op in the galaxy menu. Sections: the party (n / 4), friends
   online and offline (friends.txt in the coop folder), the galaxy's other players online (up to 5). Rows: the lobby's
   row box, a green / grey swatch, the name (gold: you, light blue: a friend) and where they play; Invite and Whisper

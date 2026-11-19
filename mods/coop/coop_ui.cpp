@@ -481,7 +481,9 @@ static void ensure_menu_button()
             g_social_drawable_for = menu;
         }
         if (!g_social_drawable) {
-            void* icon = sui::image(sui::fnv("lineages_social_icon_menu"), 0x2F7D0004, sui::fnv("sporecoop"));
+            // the Co-op item's own icon (owner 2026-11-18: Co-op and Social "look very similar ... so they look the
+            // same"): the white shape the game tints as its own items' icons
+            void* icon = sui::image(sui::fnv("coop_icon"), 0x2F7D0004, sui::fnv("sporecoop"));
             g_social_drawable = sui::std_drawable_with_icon(sui::drawable(share), icon);
             if (icon && sui::g_release_fix) sui::release(icon);
         }
@@ -5413,7 +5415,7 @@ int player_at(float x, float y)
 // ---------------- the Social Menu (decision 6L A, owner 2026-11-18) ----------------
 // "I like A, can we also add a button next to the Party panel for this menu? We'll name it the Social Menu and it'll
 // have the two person silhouette icon." The button: the Party tab's art of this player's stage with the icon
-// (data/ui/lineages_social_icon.png, tools/social_ui_assets.py), left of the Party tab, or at the right edge above
+// (data/ui/coop_icon.png, the Co-op item's icon), left of the Party tab, or at the right edge above
 // Spore's own UI when there are no partner cards. The panel at the top right: a gold title, sections (the party,
 // friends, the galaxy's players) with a row per player (a dot green online / grey offline, the name in gold for this
 // player and light blue for a friend, where it plays under it) and buttons in our own art on the row. Presses are the
@@ -5482,7 +5484,7 @@ static bool so_build()
     }
     Win main = sui::main_window();
     if (!main) return false;
-    if (!sui::has_image(sui::fnv("lineages_social_icon"), sui::fnv("sporecoop"))) {
+    if (!sui::has_image(sui::fnv("coop_icon"), sui::fnv("sporecoop"))) {
         static bool s_said = false;
         if (!s_said) H->log(M, SK_WARN, "ui: the Social Menu's icon is not in this game's SporeCoop.package (an older one)");
         s_said = true;
@@ -5498,7 +5500,7 @@ static bool so_build()
         g_so.btn_style = "lineages_card_tab_space";
         // the icon as a whole image scaled into its box, as the Party cards' portraits (Spore's image window; the
         // tooltip drawable cuts an image in thirds and a small icon came out in pieces)
-        g_so.btn_icon = sui::image_window(g_so.button, sui::fnv("lineages_social_icon"), sui::fnv("sporecoop"), 0, 0);
+        g_so.btn_icon = sui::image_window(g_so.button, sui::fnv("coop_icon"), sui::fnv("sporecoop"), 0, 0);
         for (Win w : {g_so.btn_tab, g_so.btn_icon})
             if (w) {
                 sui::add_ref(w);
