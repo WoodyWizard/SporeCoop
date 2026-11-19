@@ -316,16 +316,6 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
 
     # the guest's city
     tgt = min(npc, key=lambda i: dist(hc[i]['pos'], hc[cap]['pos']))
-    if a.civ_editors:  # BUG-1323 (lab 20261119-142554): a guest may buy only in its own city: take the nearest NPC city
-        # whose land vehicles are of the arrival vehicle editor's design id (the shared capital's often is)
-        ve = re.search(r'editors=\w+/(\w+)', guest.call('coop.civarrival')['out'] or '')
-        vdid = int(ve.group(1), 16) if ve else 0
-        for ci in sorted(npc, key=lambda i: dist(hc[i]['pos'], hc[cap]['pos'])):
-            d = re.search(r'did (\w+) ', host.call(f'coop.civ owndesign did {ci} 0')['out'])
-            if d and int(d.group(1), 16) == vdid:
-                tgt = ci
-                break
-        print(f'  civ: the guest\'s city {tgt} (land design {vdid:08X} wanted)', flush=True)
     gpos = hc[tgt]['pos']
     frame_city(players, gpos)
     time.sleep(4)
@@ -355,15 +345,27 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
         # civ_own_arrival does
         ve = re.search(r'editors=\w+/(\w+)', guest.call('coop.civarrival')['out'] or '')
         vdid = int(ve.group(1), 16) if ve else 0
-        for ci in (tgt, cap):
+        # (lab 20261119-150332: a city the guest takes by siege becomes military, 7D433FAD; a guest may buy only in a
+        # city of its own: when the captured one is not of the editor's design id, the guest buys an NPC city that is,
+        # `coop.civ buycity` as civ_own_arrival, which keeps the city's kind)
+        land = {}
+        for ci in [tgt] + [c for c in sorted(npc, key=lambda i: dist(hc[i]['pos'], hc[cap]['pos'])) if c != tgt]:
             d = re.search(r'did (\w+) ', host.call(f'coop.civ owndesign did {ci} 0')['out'])
-            print(f'  civ: city {ci}: land design id {d.group(1) if d else "-"} (the guest\'s vehicle editor {vdid:08X})',
-                  flush=True)
-            if d and int(d.group(1), 16) == vdid:
-                buy_did, buy_at = vdid, ci
+            land[ci] = int(d.group(1), 16) if d else 0
+            if land[ci] == vdid:
                 break
+        print(f'  civ: land design ids {{{", ".join(f"{c}: {v:08X}" for c, v in land.items())}}} (the guest\'s vehicle '
+              f'editor {vdid:08X})', flush=True)
+        buy_at = next((c for c, v in land.items() if v == vdid), None)
+        if buy_at is not None and buy_at != tgt:
+            print(f'  guest buys city {buy_at}:', guest.call(f'coop.civ buycity {buy_at} 500')['out'].strip(), flush=True)
+            if not wait(lambda: all(civ(c)[0].get(buy_at, {}).get('owner') == pid for c in players.values()), 30):
+                buy_at = None
+        if ck(buy_at is not None, f'civ: a city of the guest whose land vehicles are of its vehicle editor\'s design id '
+                                  f'{vdid:08X} ({buy_at})'):
+            buy_did = vdid
         else:
-            ck(False, f'civ: a city whose land vehicles are of the guest\'s vehicle editor\'s design id {vdid:08X}')
+            buy_at = tgt
     want_hash = None
     if not a.civ_editors:
         for p in (0, 1, 2):
