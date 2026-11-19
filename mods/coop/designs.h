@@ -46,6 +46,8 @@ std::string outfit_fmt(const Val& e);
 bool civ_read(std::vector<Val>& out);
 int civ_sync(const std::vector<Val>& want, bool apply);
 std::string civ_fmt(const Val& e);
+// the player civilization's culture set entry for a design id (its key, 3 dwords); false: none (not generated)
+bool culture_key(uint32_t design_id, uint32_t out[3]);
 
 constexpr uint32_t kOutfitter = 0x156276D1u;   // the Tribal Outfitter (EditorRequest +0xC, Submit 0x5A947C)
 constexpr uint32_t kShipEditor = 0x96B24187u;  // the spaceship editor at the end of Civ (0xCF56A0)

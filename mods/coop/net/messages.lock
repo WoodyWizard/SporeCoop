@@ -10,6 +10,7 @@ tribe 1 1 97d372dc1ab7a351
 civ 1 0 48e0f86eae490081
 space 1 2 33ee7e052e3b21e3
 shared 1 0 c29c6202f6ae9b35
-creations 1 1 bfce8ce7b674b886
+creations 1 1 9712a7469bf10e2d
 # rebased space: C6 (BUG-1133): the Space wire structs join the lock; golden bytes identical (tests/wire_tests.cpp)
 # rebased shared: C6 (BUG-1133): the shared resource wire struct joins the lock; golden bytes identical (tests/wire_tests.cpp)
+# rebased creations: feat/w54-shims: species_line_core.h gets the Cell / Creature rule creation_counts (no wire change, golden bytes of tests/species_tests.cpp identical); MSG_CREATION kind 9 of WP-C2 (never released) removed: the designs ride MSG_SPECIES_LINE; still 1.1, unreleased

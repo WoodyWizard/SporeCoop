@@ -9,8 +9,8 @@ source: plan-0.7.16
 role: 
 versions: 
 fixed_in: unreleased
-branch: feat/w54-line
-commits: c6a3ec33 48b7b4d3 a2daaa0e
+branch: feat/w54-line, feat/w54-shims
+commits: c6a3ec33 48b7b4d3 a2daaa0e 696d51e2 48dd3e02
 tests: species_line, unit-cpp species_tests
 signature:
 docs: docs/01-architecture.md#arch-species-line, docs/06-testing.md#testing-species-line
@@ -43,3 +43,4 @@ run (to be filled in with the PASS / FAIL run dirs).
 ## History
 - 2026-11-18: opened.
 - 2026-11-18: feat/w54-line: API, core, unit tests, message, store, console, lab test written (lab not run).
+- 2026-11-18: feat/w54-shims: Cell keys of the line also take a premade cell every game has (not the host's: creations::player_orig), unit tests in species_tests (creation_counts); line_pack reads the owner's own My Creations first; the four packages read the line (docs/01-architecture.md#arch-species-line-packages); creations 1.1 lock rebased (no wire change).

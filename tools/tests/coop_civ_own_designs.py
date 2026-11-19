@@ -5,15 +5,19 @@ culture's (WP-C2 of docs/plan-0.7.16.md, BUG-1274).
 The civilization is one, its culture set the host's (BUG-1157 / BUG-1158), but the game draws each vehicle and building
 from a model key of its own (+0xC4) and SetModelKey changes it with the design's stats (docs/re/civ.md#civ-own-species,
 #civ-own-designs). With civ.own_designs every game gives the objects of a guest's city and the guest's vehicles the
-guest's own design (sent once as a creation bundle: one key of ours on every game); the save gets the culture key.
+guest's own design (its species line, species::design: the design goes once as a line creation, MSG_SPECIES_LINE, and
+is the same shared key 0x7B...... on every game; docs/01-architecture.md#arch-species-line); the save gets the culture
+key.
 
 Set-up (cold start, civ_npc): the host's My Creations hold a base game vehicle model VA under a test id G and a building
 model BA under B; the guest's My Creations other models VB / BB under the same ids (the BUG-0647 / BUG-0670 collision:
 only the bundle gives the host's game the guest's model).
 
 1. The guest buys the NPC city nearest the capital (`coop.civ buycity`), the host adds money.
-2. The guest names its own designs (the WP-0 shim, `coop.civ owndesign set`): G for the three land vehicle designs,
-   B for the house; both games list them (`owndesign`: the key of ours).
+2. The guest names its own designs through its species line (`coop.civ owndesign set`, the lab's setter for a vehicle
+   or building of its My Creations: species::set_design; `coop.species test design` takes creatures only): G for the
+   three land vehicle designs, B for the house; both games list them under the same shared key 0x7B...... (`owndesign`
+   and `coop.species` agree).
 3. The guest's city's houses (the bought ones and one the guest builds) show BB on both games
    (`coop.creations modelhash` of the building's own model key); the host capital's houses not.
 4. The guest buys a land vehicle in its city: on the host and in the guest's mirror it shows VB; the host's own
@@ -192,7 +196,7 @@ def main():
     frame_city({'host': host, 'guest': guest}, gpos)  # (answers the specialty box of the purchase)
     time.sleep(2)
 
-    # 2. the guest's own designs (WP-0 shim)
+    # 2. the guest's own designs (the species line)
     vdids = []
     for p in (0, 1, 2):
         m = re.search(r'did (\w+)', host.call(f'coop.civ owndesign did {gci} 0 {p}')['out'])
@@ -212,6 +216,12 @@ def main():
     print(f'  designs: host {hpd}, guest {gpd}', flush=True)
     ck(ok and ours_v and ours_b and gpd.get((1, buy_did)) == ours_v and gpd.get((1, HOUSE)) == ours_b,
        'both games know the guest\'s own designs under the same keys')
+    ck(ours_v and ours_b and ours_v >> 24 == 0x7B and ours_b >> 24 == 0x7B,
+       f'the designs are the species line\'s shared keys ({ours_v or 0:08X}, {ours_b or 0:08X})')
+    for con, who in ((host, 'host'), (guest, 'guest')):
+        line = con.call('coop.species')['out'] or ''
+        ck(ours_b and f'design {HOUSE:08X}={ours_b:08X}' in line,
+           f'{who}: coop.species names the guest\'s house design {ours_b or 0:08X}')
     if not (ours_v and ours_b):
         ck.faults(host=host, guest=guest)
         return ck.result()

@@ -3,12 +3,14 @@
 
 A city's citizens are the game's pool of the city near the camera; CityCitizens_Sync gives each the species
 City_Species answers (the civilization's key), so before 0.7.16 every city of the players was the host's species.
-civ.own_species hooks City_Species: a city a guest owns answers the guest's species (its own creature until the
-species line of WP-0), on every game; the shared capital is its founder's (the host's), a captured city its captor's
+civ.own_species hooks City_Species: a city a guest owns answers the guest's Civ species (species::key(guest, civ) of
+its species line, docs/01-architecture.md#arch-species-line: its Civ outfit, else its tribe line), on every game; the shared capital is its founder's (the host's), a captured city its captor's
 (docs/re/civ.md#civ-own-citizens).
 
 1. Two games on civ_npc (the players' capital only, shared; NPC cities). The guest picks its own creature (its newest,
-   `coop.creations choose`, as in the co-op window); both games know the guest's line (that creature's key) and it is not
+   `coop.creations choose`, as in the co-op window) and sets a Civ outfit through its species line (`coop.species test
+   civ next`: another own creature as the stand-in for the Civ outfitter's result, WP-C3); both games know the guest's
+   Civ line (the outfit's shared key 0x7B......, `coop.civ citizens` and `coop.species key 1 civ` agree) and it is not
    the civilization's species.
 2. Both cameras at the capital: its citizens (the game's own objects, their species key +0xB28) are the civilization's
    species on both games.
@@ -21,6 +23,7 @@ species line of WP-0), on every game; the shared capital is its founder's (the h
    key frames of the capital.
 
 SPORE_FIX_OFF=civ.own_species: step 3 FAILs (the guest's city keeps the civilization's species).
+(SPORE_FIX_OFF=species.line: step 1 FAILs, the guest has no line.)
 SPORE_FIX_OFF=civ.own_species_save: step 4 FAILs (the host's citizen records name the guest's key; also seen before the
 strip existed, lab 20261118-180539).
 --host-mode (suite civ_own_species_hostmode): the host sets creature.mode host after step 1 (F5: everybody plays the
@@ -109,20 +112,27 @@ def main():
     if not ck(mine, f'the guest has creatures of its own ({len(mine)})'):
         return ck.result()
     print('  guest:', guest.call(f'coop.creations choose creature {mine[0]}')['out'].strip(), mine[0], flush=True)
-    gkey, ckey = {}, {}
+    time.sleep(3)
+    out = guest.call('coop.species test civ next')['out'].strip()  # the guest's Civ outfit (WP-C3's stand-in)
+    print('  guest:', out, flush=True)
+    ck(out.startswith('set'), f'the guest\'s species line takes a Civ outfit ({out})')
+    gkey, ckey, skey = {}, {}, {}
     t0 = time.time()
-    while time.time() - t0 < 30:
+    while time.time() - t0 < 60:  # (the guest's row goes out after the host's store answer: up to 10 s)
         for r, c in players.items():
             lines, ckey[r], _, st = species(c)
             gkey[r] = lines.get(1, 0)
-        if all(gkey.values()):
+            m = re.search(r'key=([0-9A-F]{8})/', c.call('coop.species key 1 civ')['out'] or '')
+            skey[r] = int(m.group(1), 16) if m else 0
+        if all(k >> 24 == 0x7B for k in gkey.values()) and gkey == skey:
             break
         time.sleep(1)
     print(f'  {st}', flush=True)
     print(f'  guest line: {({r: f"{k:08X}" for r, k in gkey.items()})}, civilization: '
           f'{({r: f"{k:08X}" for r, k in ckey.items()})}', flush=True)
     g = gkey['host']
-    ok = ck(g and gkey['guest'] == g, f'both games know the guest\'s species line ({g:08X})')
+    ok = ck(g >> 24 == 0x7B and gkey['guest'] == g and skey == gkey,
+            f'both games know the guest\'s Civ line, its outfit ({g:08X}; the species line {skey})')
     ok = ck(ckey['host'] and ckey['guest'] == ckey['host'] and ckey['host'] != g,
             f'the civilization\'s species ({ckey["host"]:08X}) is another species') and ok
     if not ok:
@@ -192,6 +202,7 @@ def main():
                                                         'games: the host\'s species on both screens')
     if HOST_MODE:
         settings_lib.force(host, [guest], 'creature.mode', 'own')
+    guest.call('coop.species test civ none')  # (no outfit for the next test of the warm games)
     guest.call('coop.creations unchoose creature')  # (the lane's profile as before for the next test)
     ck.faults(host=host, guest=guest)
     return ck.result()

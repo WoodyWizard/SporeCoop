@@ -2225,3 +2225,7 @@ WP-C1 of docs/plan-0.7.16.md (BUG-1273), on top of [civ-own-species](#civ-own-sp
   answer -> `CityCitizens_Sync(mgr, 0)` once (at most every 3 s per city) and SetSpeciesProfile for the special ones.
   Nothing is sent and nothing is written into the civilization. While a save is written every citizen with a guest
   line's key gets the player civilization's key in +0xB28..+0xB30 (no rebuild) and its own back at the end.
+* CORRECTION (2026-11-18, feat/w54-shims): #civ-own-designs' "MSG_CREATION kind 9, registered under 0x7D......" is
+  ~ superseded: the designs go as line creations of the species line (species::set_design, MSG_SPECIES_LINE kBundle,
+  registered under 0x7B...... on every game, docs/01-architecture.md#arch-species-line-packages); kind 9 was removed
+  before any release. The re-keying, the save strip and the hooks are unchanged.

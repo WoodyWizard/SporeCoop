@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Tribe: the members of a guest are of the guest's own creature on every game; the host's save keeps the tribe's
-species (BUG-1271, WP-T1 of docs/plan-0.7.16.md, docs/re/tribe.md#tribe-own-species).
+"""Tribe: the members of a guest are of the guest's own Tribe species (its species line) on every game; the host's
+save keeps the tribe's species (BUG-1271, WP-T1 of docs/plan-0.7.16.md, docs/re/tribe.md#tribe-own-species).
 
 A member's species is its own field (cCreatureBase +0xB20 profile, +0xB28 key): its model, size and abilities follow
 it and nothing of the game puts it back (docs/re/tribe.md#tribe-two-species). Each game gives every member of the
-player tribe owned by a player with an own creature that creature's species (SetSpecies), the host's members keep the
-tribe's (the species slot); while a save is written the changed members carry the slot's key.
+player tribe owned by a player with an own Tribe line (species::key(player, tribe), docs/01-architecture.md
+#arch-species-line: its tribe outfit, else its creature) that species (SetSpecies), the host's members keep the tribe's
+(the species slot); while a save is written the changed members carry the slot's key.
 
 1. Two games on the tribe fixture; the host's tribe gets 2 more adults (the guest owns at least two members). The
-   guest plays a creature of its own My Creations (`coop.creations choose creature`, as the co-op window's arrows):
-   its bundle goes to the host, both games know it under the same key (0x7C......).
+   guest plays a creature of its own My Creations (`coop.creations choose creature`, as the co-op window's arrows) and
+   sets a tribe outfit through its species line (`coop.species test tribe next`: another own creature as the stand-in
+   for the outfitter's result, WP-T2): both games answer the same Tribe key for the guest (`coop.species key 1 tribe`,
+   the line's shared key 0x7B......, known on both).
 2. Within 25 s, on both games (`coop.tribe species`: the game's own +0xB28 of every member): every guest-owned member
    is of the guest's key, every host-owned member of the slot's key; the model the guest's members are built from (the
    profile's +0x510) has the same model record on both games (`coop.creations modelhash`) and is not the slot's.
@@ -21,14 +24,17 @@ tribe's (the species slot); while a save is written the changed members carry th
    host's DoAction); while it carries the food the switch on again: within 4 s it is of the guest's species on both
    games, and in the next 30 s it goes on (it moves 3 m or more or its food goes home, its animation is never 0 and
    changes: no stuck action, no T-pose on either game). A key frame of it.
-5. The host saves (`coop.save`): no file of its save slot names the guest's key or the guest's own creation's
-   instance (the save strip); the guest's members are of the guest's species right after the save too (put back).
-6. A new evening (twoinst.session_restart: both quit, the host loads that save, the guest joins): the mix comes back
-   on both games (the host's members the slot's, the guest's the guest's). Then the guest's game alone is killed and
-   joins again (a rejoin): the mix is back on both again.
+5. The host saves (`coop.save`): no file of its save slot names the guest's key or the guest's own creations'
+   instances (its creature, its outfit; the save strip); the guest's members are of the guest's species right after
+   the save too (put back).
+6. A new evening (twoinst.session_restart: both quit, the host loads that save, the guest joins): the guest's line
+   comes back from the host's per-player store (the same key) and the mix comes back on both games (the host's members
+   the slot's, the guest's the guest's). Then the guest's game alone is killed and joins again (a rejoin): the mix is
+   back on both again.
 The guest's creature choice is put back at the end (its lane profile as before).
 
 SPORE_FIX_OFF=tribe.own_species: step 2 FAILs (every member is the slot's species on both games); the test ends there.
+(SPORE_FIX_OFF=species.line: step 1 FAILs, the guest has no line.)
 
   SPORE_LANE=4 python3 tools/tests/coop_tribe_own_species.py
 """
@@ -67,9 +73,9 @@ def species(con):
 
 
 def line_key(con, pid):
-    """the creation key this game has for player pid's creature (0: none)"""
-    m = re.search(rf'^\s+player {pid} creature: (\w+)/', con.call('coop.creations').get('out') or '', re.M)
-    return int(m.group(1), 16) if m else 0
+    """the Tribe key of player pid's species line on this game, when this game knows it (0: none)"""
+    m = re.search(r'key=([0-9A-F]{8})/\S+ known=(\d)', con.call(f'coop.species key {pid} tribe').get('out') or '')
+    return int(m.group(1), 16) if m and m.group(2) == '1' else 0
 
 
 def model_hash(con, inst):
@@ -156,7 +162,8 @@ def main():
     finally:
         try:  # the guest's lane profile as it was (the next test of the tribe fixture plays the world's species)
             g = Console(lane.GUEST)
-            print('  guest:', g.call('coop.creations unchoose creature')['out'].strip(), '|',
+            print('  guest:', g.call('coop.species test tribe none')['out'].strip(), '|',
+                  g.call('coop.creations unchoose creature')['out'].strip(), '|',
                   g.call(f'coop.creations worlds set creature {rec_creature}')['out'].strip(), flush=True)
         except OSError:
             pass
@@ -173,15 +180,23 @@ def run(host, guest, ck, off_twin):
         return ck.result()
     orig = int(own[0], 16)
     print('  guest:', guest.call(f'coop.creations choose creature {own[0]}')['out'].strip(), flush=True)
+    time.sleep(3)
+    out = guest.call('coop.species test tribe next')['out'].strip()  # the guest's tribe outfit (WP-T2's stand-in)
+    print('  guest:', out, flush=True)
+    m = re.search(r'outfit ([0-9A-F]{8})', out)
+    outfit = int(m.group(1), 16) if m and out.startswith('set') else 0
+    ck(outfit, f'the guest\'s species line takes a tribe outfit ({out})')
     t0 = time.time()
     gkey = 0
-    while time.time() - t0 < 30:
+    while time.time() - t0 < 60:  # (the guest's row goes out after the host's store answer: up to 10 s)
         gkey = line_key(guest, 1)
-        if gkey and line_key(host, 1) == gkey:
+        if gkey >> 24 == 0x7B and line_key(host, 1) == gkey:
             break
         time.sleep(1)
-    if not ck(gkey and line_key(host, 1) == gkey, f'both games have the guest\'s creature under one key '
-              f'(guest {gkey:08X}, host {line_key(host, 1):08X}, its own {orig:08X})'):
+    if not ck(gkey >> 24 == 0x7B and line_key(host, 1) == gkey, f'both games answer one Tribe key for the guest\'s '
+              f'line (guest {gkey:08X}, host {line_key(host, 1):08X}, its creature {orig:08X}, outfit {outfit:08X})'):
+        print('  guest:', (guest.call('coop.species')['out'] or '')[:600], flush=True)
+        print('  host:', (host.call('coop.species')['out'] or '')[:600], flush=True)
         return ck.result()
 
     # 2. the mix on both games
@@ -311,17 +326,23 @@ def run(host, guest, ck, off_twin):
     print('  host:', host.call('coop.save')['out'].strip()[:80], f'(slot {slotname})', flush=True)
     saved = wait_saved(folder, since - 1, 90)
     time.sleep(3)
-    hits = keys_in_slot(folder, [gkey, orig]) if saved else ['not saved']
+    hits = keys_in_slot(folder, [gkey, orig, outfit]) if saved else ['not saved']
     print(f'  host save slot {folder}: {hits or "no key of the guest"}', flush=True)
     st = next((l for l in (host.call('coop.status').get('out') or '').splitlines() if 'own species' in l), '')
     print(f'  host {st.strip()}', flush=True)
-    ck(saved and not hits, f'the host\'s save names neither the guest\'s key {gkey:08X} nor its creation {orig:08X} ({hits})')
+    ck(saved and not hits, f'the host\'s save names neither the guest\'s key {gkey:08X} nor its creations {orig:08X} / '
+                           f'{outfit:08X} ({hits})')
     ok, txt = mix_ok(host, gkey)
     ck(ok, f'host: the guest\'s members are of the guest\'s species again after the save ({txt})')
 
     # 6. a new evening (the host's save loaded), then a rejoin of the guest alone
     host, guest, info = twoinst.session_restart(host, guest)
     print(f'  session restart: {info}', flush=True)
+    t0 = time.time()
+    while time.time() - t0 < 60 and not (line_key(host, 1) == gkey and line_key(guest, 1) == gkey):
+        time.sleep(1)
+    ck(line_key(host, 1) == gkey and line_key(guest, 1) == gkey, f'after the new evening the guest\'s line is back from '
+       f'the host\'s store on both games ({line_key(host, 1):08X}, {line_key(guest, 1):08X}, want {gkey:08X})')
     res, t = wait_mix({'host': host, 'guest': guest}, gkey, 40)
     for r, (ok, txt) in res.items():
         print(f'  {r} after the new evening ({t:.0f} s): {txt}', flush=True)

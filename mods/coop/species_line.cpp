@@ -124,11 +124,18 @@ static Key registered(uint32_t shared)
     auto it = g_reg.find(shared);
     return it != g_reg.end() && creations::key_known(it->second) ? it->second : Key{};
 }
-// a player's creature (cell) as creations has it here: its shared copy (0x7C......), not the world's own key
+// a player's creature (cell) as creations has it here, when it is its own (species_line_core.h creation_counts: the
+// shared copy 0x7C......; for the cell also a premade every game has), not the world's own key
 static Key creation_here(uint8_t pid, creations::Kind k)
 {
     Key c = creations::player_key(pid, k);
-    return (c.instance >> 24) == 0x7C && creations::key_known(c) ? c : Key{};
+    if (!c.instance)
+        return {};
+    Key host = creations::player_key(0, k);
+    bool hosts = c == host || c == creations::player_orig(0, k);
+    return creation_counts(k == creations::kCell ? Stage::Cell : Stage::Creature, c.instance, creations::key_known(c), hosts)
+               ? c
+               : Key{};
 }
 
 static Resolved resolve(uint8_t pid)

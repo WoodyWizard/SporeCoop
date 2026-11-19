@@ -4,15 +4,18 @@
 // The game gives a new member the tribe's species slot (cTribe +0x18CC, Citizen_Init 0xC27330); a member's species is
 // its own field (+0xB20 the profile, +0xB28 the key), its model, size and abilities follow it, and nothing of the game
 // puts it back. Each game here (host and guests alike) gives every member whose owner (owner_of: the host's split, the
-// guest's mirror table) has an own species line that line's species with cCreatureAnimal::SetSpecies(keepState 1),
+// guest's mirror table) has an own species line (species::key(owner, Stage::Tribe), docs/01-architecture.md
+// #arch-species-line: its tribe outfit, else its creature) that line's species with cCreatureAnimal::SetSpecies(keepState 1),
 // and a member the mod gave a line's species goes back to the slot's when its owner has none any more (a gift to the
 // host, its owner left, creature.mode host, the switch off, the session ended). A key compare every 0.15 s finds
-// what needs a change (a new member, a baby, an owner change, a world load, a rejoin, the outfitter); one member per
+// what needs a change (a new member, a baby, an owner change, a world load, a rejoin, the outfitter; a change of a line
+// starts the next pass at once, species::on_change); one member per
 // pass (a body is built over several frames, BUG-0318), never while a cinematic plays (BUG-1173), never in the first
 // 3 s of a world, never at the end of Tribe. Nothing is sent: every game knows the owners and the lines.
 //
 // Saves (owner decision 2026-11-18, docs/plan-0.7.16.md#plan-0716-decisions): while a save is written every member
-// the mod changed carries the slot's key in +0xB28..+0xB30 (the three dwords the save writes, no rebuild), its own
+// the mod changed (and any member that shows a key of a line, species::is_line_key) carries the slot's key in
+// +0xB28..+0xB30 (the three dwords the save writes, no rebuild), its own
 // key comes back on the next frame (the civ.host_buildings pattern): the host's save holds the host's species only,
 // a guest's save the same; the guest's look comes back from the mod after the load.
 //
@@ -20,6 +23,7 @@
 #include "tribe.h"
 #include "tribe_internal.h"
 #include "tribe_logic.h"
+#include "species_line.h"
 
 namespace tribe {
 
@@ -65,18 +69,20 @@ static uint8_t* slot_profile(void* t)
     return p && skg::readable(p, kProfGen + 4) ? p : nullptr;
 }
 
-// WP-0 shim: the player's own creature (creations' shared key 0x7C......, the same on every game, as the Creature
-// stage's puppets use) until species_line (BUG-1270, species::key(pid, Stage::Tribe)) is merged. {} = no own line:
-// the host (the slot is its species), creature.mode host, a guest that plays the world's own species.
+// the player's Tribe species on this game (species::key: its tribe outfit, else its own creature; the same key on every
+// game, registered here). {} = no own line: the host (the slot is its species), creature.mode host, a guest that plays
+// the world's own species, an owner code (0xFE shared, 0xFF none), or the slot's own species
 static creations::Key line_key(uint8_t pid, const creations::Key& slot)
 {
-    if (pid == 0 || pid >= 0xFE || creations::one_creature())
+    if (pid >= 0xFE)
         return {};
-    creations::Key k = creations::player_key(pid, creations::kCreature);
+    creations::Key k = species::key(pid, species::Stage::Tribe);
     if (!k.instance || k == slot || creations::host_species(k) == slot || creations::local_species(slot) == k)
         return {};
     return k;
 }
+// a change of a player's line: the next pass now (not in 0.15 s)
+static bool g_line_reg = species::on_change("tribe.own_species", [](uint8_t) { g_sp_scan_at = -100; });
 
 // the profile of a line's key here (null: not buildable yet: its bundle is on its way)
 static void* line_profile(const creations::Key& k)
@@ -169,9 +175,7 @@ void species_tick(double now)
         auto act = tribe_logic::species_act(want, F<uint32_t>(c, kSpKey), sk.instance, ours, lp != nullptr);
         if (act == tribe_logic::SpeciesAct::Keep)
             continue;
-        if (act == tribe_logic::SpeciesAct::Wait) {
-            if (lk.instance && !creations::key_known(lk) && is_guest())
-                creations::want_species(lk); // (a guest's partner's creation comes with its bundle; asked anyway)
+        if (act == tribe_logic::SpeciesAct::Wait) { // (a line's key is registered here: its profile is being made)
             g_sp_wait_key++;
             continue;
         }
@@ -196,7 +200,7 @@ void species_tick(double now)
 static void sp_save_start()
 {
     g_sp_kept.clear();
-    if (g_sp.empty())
+    if (g_sp.empty() && (game::mode_id() != modes::kTribe || species::players().empty()))
         return;
     // (the quit's save may run while the game already left Tribe: the members are still listed, the tribe's key is
     // the last pass's then)
@@ -204,16 +208,28 @@ static void sp_save_start()
     const uint32_t* sk = slot ? &F<uint32_t>(slot, kProfKey) : g_sp_slot_key;
     if (!sk[0])
         return;
-    for (auto& [c, o] : g_sp) {
-        if (!sp_alive(c, o.serial))
-            continue;
+    auto strip = [&](void* c, uint32_t serial) {
         uint32_t* k = &F<uint32_t>(c, kSpKey);
         if (k[0] == sk[0] && k[1] == sk[1] && k[2] == sk[2])
-            continue;
-        g_sp_kept.push_back({c, o.serial, {k[0], k[1], k[2]}});
+            return;
+        for (auto& x : g_sp_kept)
+            if (x.c == c)
+                return;
+        g_sp_kept.push_back({c, serial, {k[0], k[1], k[2]}});
         k[0] = sk[0], k[1] = sk[1], k[2] = sk[2];
         g_sp_stripped++;
-    }
+    };
+    for (auto& [c, o] : g_sp)
+        if (sp_alive(c, o.serial))
+            strip(c, o.serial);
+    // and any member of the player tribe that shows a key of a line without a record of ours (a guard: a guest's key
+    // never reaches a save)
+    if (slot)
+        for (void* c : members(player_tribe())) {
+            uint32_t* k = &F<uint32_t>(c, kSpKey);
+            if (!g_sp.count(c) && species::is_line_key({k[0], k[1], k[2]}))
+                strip(c, game::object_serial(c));
+        }
     if (!g_sp_kept.empty()) {
         g_sp_saves++;
         H->log(M, SK_INFO, "tribe: %u members carry the tribe's species %08X in this save (BUG-1271)",

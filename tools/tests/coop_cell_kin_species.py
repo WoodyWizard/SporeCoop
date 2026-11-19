@@ -4,7 +4,8 @@
 Cell fixture, the host's food raised to --food (924: level 10, a level with kin: 6-8 cells of the player's species
 next to the level's own, docs/re/cell.md#cell-own-species; level 0 has none, lab 20261118-180414) while both play the
 host's cell, then the guest plays a cell of its own (a premade one chosen with `coop.creations choose cell` when its
-game plays the host's). The kin are the cells of the players' species the population makes
+game plays the host's; its species line's Cell key, `coop.species key <id> cell`, is that cell on both games). The kin
+are the cells of the players' species the population makes
 (docs/re/cell.md#cell-kin-species); the owner's decision of 2026-11-18: each player's kin swim near that player.
 Read from the game's own cell objects (`coop.pool kin <r>`: every live creature whose model +0xFC is one of the
 players' cells, with the nearest player, its resource and the AI's targets), on the host (its pool) and on the guest
@@ -27,6 +28,7 @@ coop_cell_levelup_area.py), so one width is taken as 5 / scale world metres.
 
   coop_cell_kin_species.py [--food 924] [--dist 6] [--r 1.75] [--editor]
 FAIL twin: SPORE_FIX_OFF=cell.kin_species (every kin is the host's cell: none of the guest's near the guest).
+(SPORE_FIX_OFF=species.line fails too: no game has a Cell line for the guest, step 0.)
 """
 import math
 import os
@@ -58,6 +60,12 @@ def kin(con, r=1e9):
     h = HEAD_RE.search(out)
     head = h.group(0) if h else out.splitlines()[0] if out else ''
     return players, cells, head
+
+
+def line_cell(con, pid):
+    """the Cell key of player pid's species line on this game when it is known there ('00000000': none)"""
+    m = re.search(r'key=([0-9A-F]{8})/\S+ known=(\d)', con.call(f'coop.species key {pid} cell')['out'] or '')
+    return m.group(1) if m and m.group(2) == '1' else '00000000'
 
 
 def guest_id(guest):
@@ -191,11 +199,16 @@ def main():
         hp = kin(host, 0)[0]
         hkey = next((p['drawn'] for p in hp.values() if p['me']), None)
         gkey = hp.get(gid, {}).get('cell')
-        if gkey and gkey != '00000000' and kin(guest, 0)[0].get(gid, {}).get('cell') == gkey and hkey != gkey:
+        if gkey and gkey != '00000000' and kin(guest, 0)[0].get(gid, {}).get('cell') == gkey and hkey != gkey and \
+                line_cell(host, gid) == gkey == line_cell(guest, gid):
             break
         time.sleep(2)
     print(f"  host's cell {hkey}, guest's cell {gkey} (host's game), guest's game {kin(guest, 0)[0].get(gid)}", flush=True)
     ck(gkey and gkey != '00000000' and hkey != gkey, f'the guest plays its own cell {gkey} (the host {hkey})')
+    ck(line_cell(host, gid) == gkey and line_cell(guest, gid) == gkey,
+       f"the guest's species line names that cell on both games (host {line_cell(host, gid)}, guest "
+       f"{line_cell(guest, gid)}) and the host has none ({line_cell(host, 0)})")
+    ck(line_cell(host, 0) == '00000000', "the host has no line (its kin are the game's own)")
 
     # 1. apart: a fresh area around the guest
     d = apart(host, guest, dist, 0, dist * 0.7)
@@ -257,6 +270,10 @@ def main():
             time.sleep(2)
         print(f"  the guest's new cell {nkey} (was {gkey})", flush=True)
         ck(nkey and nkey != gkey, f"the guest's new cell reached the host's game ({nkey})")
+        t0 = time.time()
+        while time.time() - t0 < 20 and line_cell(host, gid) != nkey:
+            time.sleep(1)
+        ck(line_cell(host, gid) == nkey, f"the host's line of the guest names its new cell ({line_cell(host, gid)})")
         guest.call('coop.pool invulnfor 900')
         d = apart(host, guest, -dist, dist * 0.5, dist * 0.7)
         ck(d > dist * 0.7, f'the guest is far from the host again, in another fresh area ({d:.1f} m)')

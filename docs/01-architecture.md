@@ -923,3 +923,27 @@ package's player shows the world's own species (usable as a FAIL twin by the pac
 <stage>`, `coop.species test tribe|civ next|none|<instance>` and `coop.species test design <id> next|none|<instance>`
 (the lab's setter: an own creature of My Creations as the stand-in for an editor's result). Lab test: `species_line`
 (docs/06-testing.md#testing-species-line).
+
+## The packages on the species line (2026-11-18, feat/w54-shims)
+<a id="arch-species-line-packages"></a>
+
+The first packages of 0.7.16 read the species line (#arch-species-line) instead of their own shims:
+* Cell kin (cellsync_kin.cpp, BUG-1257): `species::key(partner, Stage::Cell)`; in a guest's own pool the host (no
+  line) is the model its puppet is drawn with. Cell's rule (species_line_core.h `creation_counts`, unit tests): the
+  player's creation as creations has it here when it is known and not the host's (creations::player_key /
+  player_orig of player 0): the shared copy 0x7C......, and for Cell also a key without records every game has (a
+  premade cell the player chose); Creature stays the 0x7C copy only.
+* Tribe members (tribe_species.cpp, BUG-1271): `species::key(owner, Stage::Tribe)`; `on_change` starts the next pass.
+* Civ citizens (civ_species.cpp, BUG-1273): `species::key(owner, Stage::Civ)`, `species::own_mode()`; `on_change` looks
+  the profiles up again.
+* Civ designs (civ_own_designs.cpp, BUG-1274): `species::design(owner, design id)`; `on_change` sweeps at once. One
+  path for designs: WP-C2's MSG_CREATION kind 9 (`creations::share_design`, `player_design`, never released) is gone;
+  `coop.civ owndesign set` calls `species::set_design` with the vehicle's or building's key. `creations::line_pack`
+  reads the owner's own My Creations file first (as kind 9 did: the host's creations of its world answer their ids at
+  priority 2000 on a guest), else the game's lookup.
+* The save strips also recognise line keys (`species::is_line_key`): Tribe members and Civ citizens that show one
+  without a record of ours get the slot's / civilization's key while a save is written, a vehicle or building the
+  culture set's key for its design id (`designs::culture_key`).
+* Wire: unchanged; creations stays 1.1 (unreleased; messages.lock rebased for the new rule in species_line_core.h).
+  A 0.7.15.2 guest sends no row: in a 0.7.16 host's session its members and citizens are the world's species, its
+  kin still its cell (Cell needs no row).
