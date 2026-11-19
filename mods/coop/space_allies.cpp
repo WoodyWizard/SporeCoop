@@ -28,6 +28,7 @@
 
 #include "game.h"
 #include "modes.h"
+#include "savestrip.h"
 #include "space_ext.h"
 #include "store.h"
 #include "space_logic.h"
@@ -807,7 +808,9 @@ static void SK_THISCALL h_Save(void* mgr, const char16_t* name, int flag)
     }
     g_saves++;
     spaceext::note_save();
+    savestrip::world_save(true); // BUG-1315: the save hooks and the key filter from the save's first byte on
     o_Save(mgr, name, flag);
+    savestrip::world_save(false);
     // BUG-0225: the game wrote the file synchronously (<name>.tmp, then its own rename; the function
     // returns nothing, docs/re/space.md#space-owed-refund-identity). An empty name writes nothing.
     if (name && *name) {

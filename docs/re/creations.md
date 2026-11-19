@@ -1825,3 +1825,40 @@ BUG-1289 (WP-S1a, `creations.late_species`). Code reading (no new game RE), the 
   (`coop.creations`: `late: ... unbound=1/0 bound=N`); a choices.ini entry of an earlier run is still dropped.
 * The guest is told once per world (15 s after it arrived in Tribe or Civ): "you play the host's species here: pick
   your own creature with < > in the co-op window".
+
+## Keys of a species line in a save: where the game writes species keys (2026-11-19, fix/w57-savestrip)
+<a id="creations-save-keys"></a>
+
+BUG-1315 (owner decision 2026-11-18: the host's save holds the host's species and designs only). GOG 2024, Ghidra
+(`tools/ghidra/q.sh`) and lab lane 4 (tribe_own_species, civ_own_species, line_stages saves parsed record by record).
+* ✔ (lab 20261119-095414, the segment saves of line_stages) A guest's line key reached the host's planet save in Tribe
+  through: the citizen records 0x018EB4B7 (4 guest members, the key right after the member's name), a herd 0x01BE418E,
+  a creature 0x018EB45E, and the main stream 0x01897C18 (big-endian in two object records, little-endian in event
+  records); in Civ (line_stages_outfit) also 11 herds, 7 wild creatures and 11 records 0x03572E72 of the guest's species
+  and the planet record (planetRecords.pkp 0x05220CB8). The per-object strips (tribe_species.cpp, civ_species.cpp:
+  +0xB28 set to the world's key while saving) did not keep any of it out.
+* ✔ (Ghidra) Every class's ResourceKey attribute goes through one writer: the attribute table entry of
+  `mSpeciesKey` (cCreatureBase +0xB28, filled by the static initializer 0x13352F8) has the read slot 0xAE33B0
+  (-> 0xAE2E50) and the write slot 0xAE33D0 -> `Stream_WriteResourceKey` 0xAE2DC0 (group, type, instance with
+  IO::WriteInt32, big-endian). 0xAE2DC0 has 11 direct callers besides (0xB70106, 0xBA2E62, 0xB74BB0, ...).
+* ✔ (Ghidra) `0xC0BD60` (fastcall(creature) -> const ResourceKey*) answers the species profile's +0x504 when +0xB20 is
+  set, else +0xB28: the readers of a creature's species (events, relations) use the profile, not +0xB28.
+* ✔ (runtime, lab 20261119-113320, Civ) The citizen strip ran ("19 citizens carry the civilization's species", twice:
+  at SaveGame and at the first object reference) and 30 ms later the key writer still got the guest's key from the
+  same citizens' +0xB28 (caller 0xAE33DF = the attribute writer). ~ So something between the save's start and the
+  record's write sets +0xB28 from the profile again (not found; inferred from the timing). A strip of +0xB28 cannot
+  keep a creature's species out of a save.
+* ✔ (Ghidra) The game's event lists (`GameEventLog_Write` 0x7EB210, a vtable slot, magic 0x045A9B42, kinds 7..12)
+  write each event's dwords raw (stream vt+0x34, little-endian). The events of 0xE39890 hold keys as {type, instance,
+  group} (from 0xC0BD60): TribeStage_BabyBorn 0xCD74A0 logs 0x782E0768 with the parent's species twice, so a baby the
+  guest bought wrote the guest's line key into the host's main stream (lab 20261119-112418, run of the restart save).
+* What SporeCoop does (savestrip.cpp, switch `savestrip.keys`): while a save is written (from `SaveGame` 0xB29000, the
+  hook in space_allies.cpp, or from the save's first object reference, to the end of that frame) the key filters
+  (species_line.cpp: a creature key that is or was a line's key on this game) rewrite: every key 0xAE2DC0 writes, every
+  {instance, type, group} or {type, instance, group} triple in a block of IO::WriteInt32 0x93A9E0, and the event lists'
+  triples (memory changed for the call of 0x7EB210 and put back). The replacement is the world's species of the mode:
+  the player tribe's slot (Tribe), the player civilization's species (Civ), else the avatar's species or the host's
+  creature. Design keys (buildings, vehicles) are not rewritten here: civ_own_designs.cpp strips the objects that show
+  one (the culture set's key per design id).
+* ? Not covered: keys a class writes with its own WriteInt32 calls one dword at a time, and the planet record
+  (planetRecords.pkp 0x05220CB8, a list of species instances, Civ). Seen only in line_stages_outfit's Civ save.

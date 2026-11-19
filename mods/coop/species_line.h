@@ -68,8 +68,15 @@ bool on_change(const char* name, ChangeFn fn);
 uint32_t serial(uint8_t pid); // +1 for every change of pid's line here (a poll instead of the callback)
 std::vector<uint8_t> players(); // the players with a line here (a key() or design() that is not {})
 
-// a key of a line on this game (any player's outfit or design, a guest's creature): a save strip asks this
+// a key of a line on this game (any player's outfit or design, a guest's creature), or one that was a line's key
+// earlier in this process (a player who left, a key changed by an outfit): a save strip asks this
 bool is_line_key(const Key& k);
+
+// BUG-1315: the world's species of a stage (Tribe: the player tribe's slot, Civ: the player civilization's species),
+// the key a save writes instead of a line's creature key (savestrip.h add_key_filter). A package registers its stage's
+// from a static initializer: `static bool g = species::set_world_species(Stage::Tribe, fn);` ({} = not known now)
+using WorldFn = Key (*)();
+bool set_world_species(Stage s, WorldFn fn);
 
 // ---- the game glue (coop.cpp, session_glue.cpp) ----
 void init(const SkHost* host, SkMod* mod, net::Session* sess);

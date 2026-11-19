@@ -10,6 +10,9 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   Civilization (no visible change by itself).
 - A lab test takes a guest's own creature through Creature -> Tribe -> Civilization with the real stage changes and
   checks its look in every stage on both games (BUG-1277).
+- Saves: no key of a guest's own species reaches the host's saved game through any object the game writes (tribe
+  members, citizens, herds and wild animals of that species, the game's event log): the save names the world's species
+  there instead (BUG-1315). `coop.tribe ai` shows the food a member carries again (BUG-1317).
 - Lab: a test that starts a game again now waits until the switches of its FAIL twin are really off in that game
   (BUG-1314).
 - The lab's sync checks know own DNA per player: each guest's DNA is compared with the host's record of its own DNA

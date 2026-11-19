@@ -86,8 +86,12 @@ def model_hash(con, inst):
 def mix_ok(con, gkey):
     """(ok, text): every living guest-owned member of the guest's key, every host-owned one of the slot's"""
     slot, _, ms = species(con)
+    # (BUG-1313: the pass never changes a kid, age != 1, while it grows up: a guest's kid of the tribe's species is
+    # right, e.g. the baby bought before the host's save, which loads as a kid of the slot's species; a kid born in
+    # the session is born in its owner's species, tribe.birth_species, and checked in step 3)
     bad = [i for i, m in ms.items() if not m['dead'] and m['body'] and
-           ((m['owner'] == 1 and m['key'] != gkey) or (m['owner'] == 0 and m['key'] != slot))]
+           ((m['owner'] == 1 and m['key'] != gkey and not (m['age'] != 1 and m['key'] == slot)) or
+            (m['owner'] == 0 and m['key'] != slot))]
     guests = [i for i, m in ms.items() if m['owner'] == 1 and not m['dead']]
     hosts = [i for i, m in ms.items() if m['owner'] == 0 and not m['dead']]
     txt = (f'slot {slot or 0:08X}; ' + ', '.join(f'#{i}:{m["owner"]}:{m["key"]:08X}' for i, m in sorted(ms.items())))
@@ -116,8 +120,25 @@ def keys_in_slot(folder, insts):
                 continue
             for inst in insts:
                 if inst and (inst.to_bytes(4, 'little') in data or inst.to_bytes(4, 'big') in data):
-                    hits.append(f'{name}:{inst:08X}')
+                    hits.append(f'{name}:{inst:08X}' + records(os.path.join(root, name), inst))
     return hits
+
+
+def records(path, inst):
+    """(a .spo: the record types that name the instance, for the report)"""
+    if not path.endswith('.spo'):
+        return ''
+    try:
+        import sys
+        tools = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if tools not in sys.path:
+            sys.path.insert(0, tools)
+        import part_substitutes as ps
+        types = sorted({'%08X' % e['type'] for e in ps.entries(path)
+                        if any(inst.to_bytes(4, o) in ps.read(path, e) for o in ('little', 'big'))})
+        return f' (records {",".join(types)})'
+    except Exception as e:  # (a report detail only)
+        return f' (records: {e})'
 
 
 def ai(con, mid):
@@ -126,7 +147,9 @@ def ai(con, mid):
     a = re.search(r'anim=([0-9A-F]+)', out)
     n = re.search(r'node=([0-9A-F]+)', out)
     p = re.search(r' pos=\((-?[\d.]+) (-?[\d.]+) (-?[\d.]+)\)', out)
+    st = re.search(r' mem=(-?\d+) ', out)
     return dict(carry=float(c.group(1)) if c else 0.0, anim=a.group(1) if a else None, node=n.group(1) if n else None,
+                state=int(st.group(1)) if st else None,
                 pos=tuple(float(p.group(i)) for i in (1, 2, 3)) if p else None)
 
 
@@ -264,7 +287,9 @@ def run(host, guest, ck, off_twin):
     switch((host, guest), False)
     res, t = wait_mix({'host': host, 'guest': guest}, slot, 15)  # (off: every member the slot's species)
     for r, c in (('host', host), ('guest', guest)):
-        left = [i for i, x in species(c)[2].items() if x['key'] == gkey]
+        # (BUG-1313: a kid, age != 1, keeps its species while it grows up, also when the switch goes off: the bought
+        # baby of step 3, lab 20261119-123654)
+        left = [i for i, x in species(c)[2].items() if x['key'] == gkey and x['age'] == 1]
         print(f'  {r} with the switch off: members still of the guest\'s species {left}', flush=True)
         ck(not left, f'{r}: with the switch off the guest\'s members are the tribe\'s species again ({left})')
     _, _, ms = species(host)
@@ -278,11 +303,15 @@ def run(host, guest, ck, off_twin):
         tree = ts[0][1]
         print('  host:', host.call(f'coop.tribe order {mid} 2 {tree[0]} {tree[1]} {tree[2]}')['out'].strip(), flush=True)
         t0 = time.time()
+        n = 0
         while time.time() - t0 < 60:
             a = ai(host, mid)
             if a['carry'] > 0:
                 carried = True
                 break
+            if n % 10 == 0:
+                print(f'  member #{mid} after {time.time() - t0:.0f} s: {a} (tree {tree})', flush=True)
+            n += 1
             time.sleep(1)
         print(f'  member #{mid} carries {ai(host, mid)["carry"]} after {time.time() - t0:.0f} s', flush=True)
     switch((host, guest), True)
@@ -328,6 +357,20 @@ def run(host, guest, ck, off_twin):
     time.sleep(3)
     hits = keys_in_slot(folder, [gkey, orig, outfit]) if saved else ['not saved']
     print(f'  host save slot {folder}: {hits or "no key of the guest"}', flush=True)
+    if hits:  # (the save itself for the report: the next save of the test overwrites it)
+        try:
+            import frames
+            import shutil
+            d = frames.frames_dir(lane.out_dir())
+            os.makedirs(d, exist_ok=True)
+            for f in os.listdir(folder):
+                if f.endswith('.spo'):
+                    shutil.copy(os.path.join(folder, f), os.path.join(d, 'host_save_' + f))
+            print(f'  (the host\'s save kept in {d})', flush=True)
+        except Exception as e:
+            print(f'  (the save could not be kept: {e})', flush=True)
+    print('  host:', next((x for x in (host.call('coop.savestrip')['out'] or '').splitlines() if 'keys=' in x), ''),
+          flush=True)  # (the save's key filter, BUG-1315)
     st = next((l for l in (host.call('coop.status').get('out') or '').splitlines() if 'own species' in l), '')
     print(f'  host {st.strip()}', flush=True)
     ck(saved and not hits, f'the host\'s save names neither the guest\'s key {gkey:08X} nor its creations {orig:08X} / '
