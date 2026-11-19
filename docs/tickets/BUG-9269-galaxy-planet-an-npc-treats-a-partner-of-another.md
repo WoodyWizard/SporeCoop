@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages64-dev
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits: COMMIT
+commits: c76950ca
 tests: manual on TITAN QA 8 + 9 (coop.social pevent <npc> 7 <player>, coop.social goto, the host log's hits)
 signature: "party relations: ... AI ticks N" in coop.social species (host)
 docs: docs/12-server-and-players.md#server-party-ai

@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages64-dev
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits: a1d5059e
+commits: a1d5059e, c76950ca
 tests: manual on TITAN QA 8 + 9 (coop.social pevent, coop.social species)
 signature: "social: relationship event N species X by player P: party K's record"
 docs: docs/12-server-and-players.md#server-party-relations
