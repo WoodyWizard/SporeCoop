@@ -140,6 +140,10 @@ bool cell_leaving();
 void set_cell_hold(bool on);
 // BUG-1247: called right after each Cell step (SimUpdate), before the frame is drawn (cellsync: the guest's mirrors)
 void set_cell_after_step(void (*fn)());
+// BUG-1257: called with the game's own answer of GetModelKeyForCellResource (not a forced key of ours), which the
+// filter may replace (cellsync_kin.cpp: a partner's kin); ensure_cell_model_hook puts the hook in (once)
+void set_cell_model_filter(void (*fn)(uint32_t key[3], void* res));
+void ensure_cell_model_hook();
 uint32_t cell_held_steps();
 // move a cell exactly (soft-body cells take their position from their particles, docs/re/cell.md §6)
 void cell_move(uint8_t* c, const net::Vec3& p, bool still = false);

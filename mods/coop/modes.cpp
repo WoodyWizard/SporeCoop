@@ -1222,14 +1222,24 @@ static GetModelKey_t o_GetModelKey;
 static bool g_force_key;
 static skg::ResourceKey g_key;
 
+static void (*g_cell_model_filter)(uint32_t key[3], void* res); // BUG-1257 (cellsync_kin.cpp)
+
 static skg::ResourceKey* __cdecl h_GetModelKey(skg::ResourceKey* ret, void* res)
 {
     if (g_force_key) {
         *ret = g_key;
         return ret;
     }
-    return o_GetModelKey(ret, res);
+    skg::ResourceKey* r = o_GetModelKey(ret, res);
+    if (g_cell_model_filter && r) { // BUG-1257: the game's own answer, a partner's kin may get the partner's cell
+        uint32_t k[3] = {r->instance, r->type, r->group};
+        g_cell_model_filter(k, res);
+        *r = {k[0], k[1], k[2]};
+    }
+    return r;
 }
+
+void set_cell_model_filter(void (*fn)(uint32_t key[3], void* res)) { g_cell_model_filter = fn; }
 
 // BUG-0342: a puppet is the cell at its address AND its pool index. Our own cell's level rebuild
 // (RebuildLevel 0xE7FD00, the own cell applied at a load) frees every cell and makes the avatar
@@ -1279,6 +1289,9 @@ static uint8_t* cell_at_checked(void* cp)
     auto it = g_cell_ids.find(cp);
     return it != g_cell_ids.end() && cell_at(it->second) == cp ? (uint8_t*)cp : nullptr;
 }
+
+static void ensure_model_hook();
+void ensure_cell_model_hook() { ensure_model_hook(); }
 
 static void ensure_model_hook()
 {

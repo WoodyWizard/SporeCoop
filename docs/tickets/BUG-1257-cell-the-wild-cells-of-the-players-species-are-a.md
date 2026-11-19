@@ -9,7 +9,7 @@ source: owner: players' video, second analysis
 role: guest
 versions: <0.7.15
 fixed_in:
-branch:
+branch: feat/w54-cellkin
 commits:
 tests:
 signature:
@@ -20,7 +20,9 @@ related: BUG-1240
 ## Report
 A players' video: dozens of wild copies of the host's cell swim about, none of the guest's design. The host's game
 fills the world (Simulator::Cell::PopulateTiles) from the world's one player species and the guest shows the host's
-pool. A feature for the own species per player (0.8 Rivals), docs/known-issues.md#issue-cell-kin-host-species.
+pool. Filed as a feature for the own species per player (0.8 Rivals), docs/known-issues.md#issue-cell-kin-host-species; moved
+into 0.7.16 (WP-L1 of docs/plan-0.7.16.md, owner decision of 2026-11-18: each player's kin swim near that player, a mix
+where the players are together).
 
 ## Root cause
 <!-- observed (runtime, logs, disassembly) vs inferred -->
@@ -35,3 +37,4 @@ pool. A feature for the own species per player (0.8 Rivals), docs/known-issues.m
 ## History
 - 2026-11-18: opened.
 - 2026-11-18: researched on plan/0.7.16 (docs/re/cell.md#cell-kin-species); planned as WP-L1 of docs/plan-0.7.16.md.
+- 2026-11-18: moved from 0.8 into 0.7.16 (WP-L1); work on feat/w54-cellkin.

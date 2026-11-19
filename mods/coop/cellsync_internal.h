@@ -570,6 +570,13 @@ void solo_reset();
 void solo_send();
 void solo_tick();
 
+// cellsync_kin.cpp (BUG-1257): the wild kin of every player's species
+void kin_init();
+void kin_pop_enter();
+void kin_pop_leave();
+void kin_before_pass();
+std::string kin_report(float r);
+
 // cellsync_debug.cpp
 const char* kind_of(uint8_t* c);
 std::string see(int max);
