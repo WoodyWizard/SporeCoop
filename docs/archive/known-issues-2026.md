@@ -3680,3 +3680,13 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: `tools/lab.py run evo_screens_switch`, key frame `01_switch_vote`.
 * Ticket: BUG-1269
 * Fixed 2026-11-18 (fix/w54-visual): core.switch_vote_world, the vote holds History's check before the game's white end sequence.
+
+## Tribe: the end-of-Tribe guard does not know one of the three vehicle editors (2026-11-18, feat/w54-x1)
+<a id="issue-tribe-vehicle-editor-id"></a>
+
+* What happens: vote.cpp `tribe_civ_editor()` (the BUG-0849 guard: no world share or share save between the City Hall
+  editor and Civ) lists 7CB21BAD as a vehicle editor; the game's third vehicle editor is 7D433FAD. Not seen at runtime;
+  the guard's other half (`tribe::stage_end()`) probably covers that editor.
+* Reproduce: the end of Tribe (tribe_civ_rejoin) with cPlayer +0x1104 neither C2CA9495 nor 60A78928.
+* Ticket: BUG-1280
+* Fixed 2026-11-19 (fix/w56-general): tribe.graduation_vehicle_id, the guard lists 7D433FAD (tribe_aggressive's vehicle editor, docs/re/tribe.md#tribe-end-editors).

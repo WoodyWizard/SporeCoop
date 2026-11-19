@@ -9403,3 +9403,18 @@ record (coop_civ_own_designs.keys_in) for the guest's keys of that stage.
   them on both games). Suite entry `line_stages_editors` (added with WP-X1, feat/w54-x1).
 * coop_campaign.py: the editor driver drags the City Hall palette's parts (TRIBE_EDITOR_PARTS) also in the Civ follow
   phase (a guest's own City Hall / vehicle editors at its arrival, WP-X1), not the spaceship palette's.
+
+## Tests of the Lineages fork's general bugs (2026-11-19, fix/w56-general)
+<a id="testing-fork-general"></a>
+
+WP-F1 of 0.7.16: the general bugs the Lineages fork (PR #196) found that are in ours. Unit (make test): net_tests
+`test_fork_refused` (BUG-1281: the fork's HELLO and WELCOME built field by field from its protocol layout through the
+seams `Session::test_hello` / `test_welcome`; `--off refuse_fork` fails), `test_bulk_bottleneck` (BUG-1296: a
+world-sized transfer through a drop-tail bottleneck model finishes at the path's rate; a regression check); npc_tests
+`test_max_hp_null_species` (BUG-1292: a model of the native base max health's species reads) and `test_share_fresh`
+(BUG-1294); tribe_tests `end_editors` (BUG-1280); each FAILS with `--nofix` (npc_tests, tribe_tests) or its `--off`
+switch (net_tests). Lab (creature fixture unless named): `max_hp_species` (`coop.hp nullspecies`), `npc_host_key`
+(`coop.creations breakremap <host key>`), `share_fresh` (`coop.worldfix queue 1` twice, 1 s apart),
+`join_host_dead` (`coop.team die`, the caption left up, the guest rejoins), `tribe_civ_aggressive` (tribe fixture,
+`coop.vote tribeend 0CAC124D`: the tribe_aggressive archetype); each FAILS with SPORE_FIX_OFF= its switch (named in
+suite.py).

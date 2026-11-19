@@ -1,20 +1,21 @@
 ---
 id: BUG-1280
 title: Tribe: the end-of-Tribe editor check names a vehicle editor 7CB21BAD that does not exist (it is 7D433FAD)
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-18
-source: feat/w54-x1
+source: feat/w54-x1; also found by the Lineages fork (PR #196), its BUG-9060
 role: host
 versions: 0.7.15.2
-fixed_in:
-branch:
-commits:
-tests:
+fixed_in: unreleased
+branch: fix/w56-general
+commits: 5488e40d
+tests: unit (tribe_tests end_editors)
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-end-editors
 related:
+switch: tribe.graduation_vehicle_id
 ---
 
 ## Report
@@ -32,13 +33,21 @@ Observed (asm 0xCD2308..0xCD233B): `ADD EAX,0x9AD7D4AA` after `AND EAX,0xE26B6B0
 (mod 2^32). The id 7CB21BAD was a misreading. Inferred: harmless while tribe::stage_end() is true there.
 
 ## Fix
-Not done (not part of WP-X1): replace 0x7CB21BADu by 0x7D433FADu in vote.cpp tribe_civ_editor(); a test would play
-the end of Tribe with an archetype other than C2CA9495 / 60A78928 (tribe_civ_rejoin with that archetype set by
-mem.write on cPlayer +0x1104 before the advance) and check that no share save is written in the vehicle editor.
+tribe_editors.h: the archetype rule of 0xCD2308 and the end-of-Tribe editor list (99E92F05, F670AA43, 9AD7D4AA,
+7D433FAD); vote.cpp tribe_civ_editor() uses it. Evidence for the id: the asm (9AD7D4AA + E26B6B03 = 7D433FAD), the
+exe's archetype table at 0x156ACD0 (tribe_mixed C2CA9495, tribe_social 60A78928, tribe_aggressive 0CAC124D), and the
+game data: editor setups type 0x00B1B104 group 0x40600100 instances F670AA43, 9AD7D4AA, 7D433FAD in Spore_Game.package
+and PatchData.package, no 7CB21BAD anywhere (docs/re/tribe.md#tribe-end-editors). Switch
+`coop.fix tribe.graduation_vehicle_id` (off: the old list with 7CB21BAD). Test command
+`coop.vote tribeend [<archetype hex>]` (the guard's inputs; sets cPlayer +0x1104).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- Unit: tribe_tests end_editors PASS (every archetype's vehicle editor is an end-of-Tribe editor); tribe_tests --nofix
+  FAIL (2 checks: tribe_aggressive's 7D433FAD and any other archetype's).
+- Lab test tribe_civ_aggressive (coop_tribe_civ.py --aggressive: the host's archetype set to tribe_aggressive before the
+  advance, the game's second editor must be 7D433FAD and the guard must know it) written, NOT run yet (the lab waits
+  for "lab ok"); SPORE_FIX_OFF=tribe.graduation_vehicle_id is its FAIL twin.
 
 ## History
 - 2026-11-18: opened.
+- 2026-11-19: fixed on fix/w56-general (WP-F1); the Lineages fork found the same (its BUG-9060).
