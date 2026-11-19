@@ -25,15 +25,6 @@
 - Civilization: the citizens walking in a city a guest owns (captured, given or dealt to it) are that guest's own
   species on every player's screen; the shared capital keeps the species of the player who founded it. With "everybody
   plays the host's creature" (F5) every city stays the host's species, as before (BUG-1273).
-- Tribe -> Civilization: in the normal co-op mode (own creatures) a guest now makes its own City Hall and its own first
-  vehicle too: when it has arrived in the Civilization stage its own City Hall editor opens, then its vehicle editor
-  (the red cross keeps the civilization's). Its cities' City Halls and the vehicles it buys show them on every
-  player's screen; the host plays on meanwhile and the civilization's designs stay the host's (BUG-1276).
-### Fixed
-- Cell: when your partner's cell zaps with its electric part, your screen no longer fills with a trail of giant white
-  rings around its cell (BUG-1266).
-- Cell -> Creature: while the players vote to move on to the Creature stage, the host now sees its Cell world behind
-  the co-op window instead of a plain white screen; the move starts when the vote passes (BUG-1269).
 - Tribe: a guest can now dress its own tribe members: the edit badge on the tribe's card in the hut's planner opens
   the Tribal Outfitter for the guest's own creature, and after Done the guest's members wear the new outfit on every
   player's screen while the host's members keep the host's look. Before, a guest's outfitter was refused. With
@@ -43,6 +34,10 @@
   its cities, its vehicles and its citizens on every player's screen, while the shared civilization and the host's
   designs stay as they were; before, the guest's editors were refused. With "everybody plays the host's creature" (F5)
   they are refused as before (BUG-1275).
+- Tribe -> Civilization: in the normal co-op mode (own creatures) a guest now makes its own City Hall and its own first
+  vehicle too: when it has arrived in the Civilization stage its own City Hall editor opens, then its vehicle editor
+  (the red cross keeps the civilization's). Its cities' City Halls and the vehicles it buys show them on every
+  player's screen; the host plays on meanwhile and the civilization's designs stay the host's (BUG-1276).
 
 ### Fixed
 - Cell: when your partner's cell zaps with its electric part, your screen no longer fills with a trail of giant white
