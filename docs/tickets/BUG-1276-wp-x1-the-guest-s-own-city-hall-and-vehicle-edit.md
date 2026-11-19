@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: feat/w54-x1
-commits: 176cc77e
+commits: 176cc77e a083aaee f00246eb
 tests: civ_own_arrival, civ_own_arrival_off (twin)
 signature:
 docs: docs/re/civ.md#civ-own-arrival, docs/06-testing.md#testing-civ-own-arrival, docs/01-architecture.md#arch-civ-own-arrival
