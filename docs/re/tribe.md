@@ -3819,6 +3819,11 @@ BUG-1083. GOG 2024, Ghidra and lab lanes 6 / 7 (tools/tests/coop_tribe_gameover_
   chief's knockout node (`SporeCoop::BT_CitizenKnockoutEnter` 0xDB1A30, which also starts the knockout timer) and in RemoveMember 0xC96070
   (0xC95280); it gains one in AddMember, 0xC248C0 and the knockout's end (`SporeCoop::BT_CitizenKnockoutEnd` 0xDACCD0), which also sets full health: that is
   the chief standing up 91-97 s after its fall (hp 168, dead 0; runtime: 91, 94, 95, 97 s).
+* CONFLICT (2026-11-19, docs/lineages-re): ours: RemoveMember 0xC96070 takes the member off the up list +0x354 (it
+  calls 0xC95280; Ghidra) vs the Lineages fork (runtime trace on its Steam 3010a413 lab, a dead member removed during
+  its village's defeat, fork BUG-9013): the member's +0xC0 entry was still in +0x354 right after RemoveMember(c, true),
+  with +0x340 empty and the leader null; an extra 0xC95280(tribe, citizen) after RemoveMember removed it, one before
+  RemoveMember did not. Not settled (see #tribe-lineages-ownership-refounding).
 * ✔ (lab, the test printing the list) The host's chief knocked out and its own members dead: the list held the two
   guest members only (`list=2`). One blow killing one member at a time: 2 -> 1 at the first fall's next behaviour
   tick, then the last fall saw 1 and the input lock came at once, the caption about 10 s later (20261113-144931 and the
@@ -4397,3 +4402,256 @@ vote.cpp (the Submit hook's branch), switch `tribe.guest_outfitter`.
 * ? Not verified at runtime: that the outfitter opens and saves with the guest's own creature's key (the 0.7.14
   behaviour with the card's key is the runtime evidence, lab 20261115-131200), and the result's key layout +0x18 on a
   guest (the same as the host's). Test `coop_tribe_own_outfitter.py` (docs/06-testing.md#testing-tribe-own-outfitter).
+
+## Lineages: village ownership, refounding and the player tribe (2026-11-19, docs/lineages-re)
+<a id="tribe-lineages-ownership-refounding"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+
+The fork read these on the Steam 3010a413 code (decoded from a running game; the same code as GOG 2024, 05-re-notes
+5.1.2) while building a second founder village per player and its capture / rebuild. Its ticket ids are the fork's.
+
+* ✔ (fork, disassembly) `cGameNounManager::SetPlayerTribe` 0xB1FD50 thiscall(manager, cTribe*) ret 4: retains the new
+  tribe, writes the field `GetPlayerTribe` reads (manager +0x70) and releases the former one. Changing that pointer
+  alone does not hand over input, UI, AI or the economy (each keeps its own state).
+* ✔ (fork, disassembly) hut SetTribe 0xC9C3E0 (vt 0x54, ret 4): retains the new tribe, releases the old, sets the
+  political id. Food mat SetTribe 0xC9BD10 (vt 0x54, ret 4): also calls SetGameDataOwner2 and writes its tribe at +0x10C.
+  `cGameData::SetGameDataOwner2` 0xB18490 retains / releases the owner at +0x2C and copies its political id.
+* ✔ (fork, disassembly) SetPoliticalID (vt 0x48 of tribe, citizen, hut and mat) resolves to 0x804910, whose whole body
+  is `mov eax,[esp+4]; mov [ecx+0x30],eax; ret 4` (ModAPI cGameData.h: SetPoliticalID vt 0x48). SpawnTribe 0xC9A290
+  (vt 0x8C, thiscall(tribe, const Vector3*, int count, int food, bool), ret 0x10) starts with SetGameDataOwner2(null),
+  which does not reset the political id; a political id set before SpawnTribe is inherited by the hut, mat and
+  citizens it creates. The factory 0xC93430 also sets a tribe's political id before its SpawnTribe call.
+* ~ SpawnTribe computes the members to add from the up list +0x354, so a stale entry there makes it add fewer (count
+  3 gave 2 citizens after a defeat; see the CONFLICT line on RemoveMember and +0x354 in #tribe-gameover-list,
+  fork BUG-9013).
+* ✔ (fork, disassembly) 0xC95280 (`cTribe_UpListRemove` here) thiscall(tribe, citizen) void ret 4: finds citizen
+  +0xC0 in +0x354..+0x358, compacts the vector and releases it. The fork's working cleanup for a dead member it keeps
+  a reference to: RemoveMember(c, true), then 0xC95280(tribe, c), then its own Release.
+* ~ (fork, runtime) The behaviour tree's death routine calls RemoveMember(c, false) at 0xDA7A2F (inside our death node
+  0xDA78C0). Reusing a defeated tribe for new citizens lost them after 20-37 s (cause not found, fork BUG-9014);
+  SpawnNpcTribe makes a fresh tribe with a chief and planner setup whose three citizens lived over 90 s.
+* ✔ (fork, crash) A defeated tribe left in the world after its tools were removed crashed a cold load at 0xC99B00:
+  it dereferences +0x34 of GetToolByType(10)'s result, which was null (fork BUG-9015). Retiring the old tribe with the
+  noun manager's DestroyInstance avoided it. The cTribe destructor is 0xC97F70, reached by the deleting destructor
+  0xC98840 (the constructor is 0xC98430, #tribe-fork-graduation-notes); neither is to be called on a live object.
+* ~ (fork, runtime) The fork's working retire-and-replace order: move the old hut and mat to the conqueror (SetTribe),
+  create the new tribe with SpawnNpcTribe, move the old hut's cGameData owner if it still points at the old tribe,
+  detach the old tribe's primary hut (+0x368) and mat (+0x260) through IntrusivePtr_Assign, DestroyInstance the old
+  tribe (queued cleanup, removed from the world at once; strong references keep it valid until released). For the
+  player's own village the player tribe is pointed at a living village during the swap and SetPlayerTribe installs
+  the new one before the extra references are released. The guest's game got the new buildings only after a save and
+  reload (or a world share).
+* ✔ (fork, disassembly) `SetChieftain` 0xC8FEE0 ret 4 (ours, #tribe-leader-sync) with 0 elects a member: it
+  never clears the chief. `Community_SetLeader` 0xC007A0 thiscall ret 4 retains / releases +0x11C and does clear it
+  when given null.
+* ~ (fork, runtime) The native save / load resets cTribe +0x556 (mbDefeated) to false: after a load a captured
+  village is recognised only by its buildings' owner. 0xC8E8C0 (`cTribe_SetConquered`) with true also empties the
+  tribe's resource bundles (matches our "the village's bundles go", #tribe-conquest-sync).
+* ~ (fork, disassembly) The hut combatant's TakeDamage 0xC9CA30 reads the health at combatant +0x38 and the owner
+  tribe at +0x110; exits at +0x318, +0x400, +0x61A (ret 0x14). Our .sym entry names the tribe check +0x44; the two
+  offsets are not reconciled.
+* ✔ (fork, runtime) Population loss and hut destruction are separate native events: the Tribal listener 0xCD81F0
+  (returns bool in AL, ret 8) branches for 0x5C80207 at 0xCD8212 to 0xCD8A2A, changes camera / loss state and calls
+  PlayCinematic at 0xCD8B0C with "TRG_PRE_PopDestroyed" (then the game-over cinematic 0xFBCD6489 with the population
+  rewind); 0x58BADDD takes the hut branch with "TRG_PRE_HutDestroyed". Skipping only PlayCinematic would keep the
+  side effects before it. An unguarded lethal hit on a hut opened the hut-destruction caption.
+* ✔ (fork, memory scan) "TRG_PRE_PopDestroyed" is at 0x1477678, the only "PopDestroyed" string, with one code
+  reference (the push at 0xCD8B01). 0x5C80207 appears in code at 0xC26B80 (the poster inside citizen TakeDamage
+  0xC26940: `push 0; push data; push 0x5C80207; call [msgmgr vt 0x14]`, the manager from 0x67DC80) and 0xCD8208 (the
+  listener), and as data at 0x147746C (~ a listener table). 0xFBCD6489 is no constant in the code (a hashed name).
+  ? Another listener of 0x5C80207 is not ruled out.
+* ~ (fork, runtime) The population event's data: [+0] 0x147B844, [+4] 0, [+8] changes with each death (~ the citizen),
+  [+0xC] = data + 0x28 (our 0x5C80207 row in the TakeDamage section names {victim, attackerTribe, attackerHerd}: the
+  two descriptions are not mapped onto each other). It came about 3 min after loading a save whose player village had
+  no member, then every 10-20 s while raiders killed the new villagers. A member made with SpawnMember (vt 0x98, age 1)
+  for a non-player village did not count as living at the next event (cause not found).
+* ~ (fork, runtime) Fresh NPC villages get different political ids on the host and the guest (the guest's factory
+  allocates its own); matching faction numbers on one saved fixture do not prove identity.
+
+## Lineages: player ownership flags, growth and births (2026-11-19, docs/lineages-re)
+<a id="tribe-lineages-ownership-growth"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+
+* ✔ (fork, disassembly) cTribe spatial IsPlayerOwned 0xC8E660 (this = tribe +0x120, plain ret) compares this - 0x120
+  with GetPlayerTribe. The citizen's IsPlayerOwned 0xC24590 asks its owner (city +0x1010 or tribe +0x1014). Citizen
+  Init 0xC27330 calls 0xC26E70, which caches "player-owned" in the citizen AI (+0xB4C) +0x5FC bit 0 (bit 1 adult,
+  bit 5 = 0x20 chief, as our SetChieftain row); host adults read 3 / 0x23, guest 2 / 0x22. Both the owner answer and
+  the cached bit were needed for raids to work; political id bits alone are not ownership.
+* ✔ (fork, disassembly) GrowUp 0xC248C0 (ours, #tribe-mirror-grow) returns at +0x161. SetAge 0xC22370 alone does
+  not do GrowUp's selectable-list work (0xC95E50); use GrowUp only for a 0 -> 1 change.
+* ✔ (fork, disassembly) The birth price is the float global 0x158133C (10.0 in a stock game; `Tribe_BabyFoodCost`),
+  read at 0xB6B024 (tooltip), 0xCD58F2 (eligibility), 0xCDC7C9 (purchase), 0xCE3A1A (NPC birth). TribalGame_Get
+  0xCD4230 (`cTribeUI_Get` here) returns [0x169B2C8]. CanAddBaby 0xCD58D0 checks the stage's +0x3A3 and BirthBlocked
+  0xCD4620 (no arguments, plain ret; true without the player-data property 0x56D1871), then food and population. The
+  purchase spends through the bundle manager, not cTribe_AddFood. The Add Baby button is 0x0625CD52 ("Add Baby (10
+  Food)").
+* ✔ (fork, disassembly) The hut window proc 0xCDBEA0 (our `TribeGame_AdvanceProc`; the fork's TribeHutUI_HandleMessage,
+  bool thiscall(this, IWindow*, Message*) ret 8): message +8 type 0x287259F6 (button), +0xC the id; 0x0625CD52 is
+  dispatched at 0xCDC3DC -> 0xCDC7C5 (the cost, GetPlayerTribe, food vt 0xA4, the population 0xC8F530 / 0xC8EC70, the
+  spend on tribe +0x20C).
+* ✔ (fork, disassembly) MaxPopulation 0xC8EC70 returns at +0x3B / +0x62 / +0x6E; SpawnMember 0xC983C0 calls it at
+  0xC983F2. Archetype 0 uses the community level only for a player-owned tribe, else level 2's value (12 on the
+  guest's game for a village that is the player's on the host: 9 / 6 / 12 seen for one village pair).
+* ✔ (fork, disassembly) The citizen combatant vtable 0x146AAB0 slot 0x58 is 0xC24F50 (`Citizen_MaxHitPoints`); a
+  162-HP rival read 283.5 HP on both games.
+
+## Lineages: tools, racks, layout slots and unlocks (2026-11-19, docs/lineages-re)
+<a id="tribe-lineages-racks-unlocks"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+
+* ✔ (fork, disassembly) SetSpecializedTool 0xC27B00 returns at +0xD1. 0xC250A0 (our `Citizen_SetHandheldItem`, ret 8
+  at +0x4D4): pass -1 for the citizen's own hand (+0xFC4), never a limb index of a remote species. The refresh 0xC26470
+  passes the mapped tool item, then the grasper, at +0x58. Model lookup 0xC0E130 thiscall(citizen, attachment id)
+  ret 4 returns attachment +0x8C; the preferred hand id is 0x02735300 + grasper.
+* ✔ (fork, disassembly) CreateTool (tribe vt 0xB4) 0xC96170 thiscall(tribe, kind) ret 4 (at +0x167) makes and
+  registers the rack but leaves its owner unset; tool SetTribe is tool vt 0x64, 0xC9D5D0 (ret 4 at +0x82). Both must
+  run in the same callback: a frame between them crashed the host at 0xE93A8C reading owner +0x556. The planner
+  0xD13B20 (+0xFC / +0x11C) uses these. Placement: tool spatial (+0x34) vt 0x44 SetTransform, then 0xC98940
+  (`cTribe_LayoutToolSpots`, called at 0xC992B6 / 0xC992CA). RemoveTool (tribe vt 0xB8) 0xC97020 returns at +0x18A.
+  A rack the planner is dragging has tool +0x84 bit 8.
+* ✔ (fork, disassembly) A rack placed by transform only kept its place live but moved after a cold load: the load's
+  layout rebuild 0xC99A50 snaps every rack to its nearest slot (0xC99D89, SetPosition via 0xC9DB80). NearestSlot
+  0xAFACF0 (layout, const Vector3*) ret 4 returns the slot (slot +0xC its position); SetObject 0xAF9FB0 (slot,
+  cGameData*) ret 4 sets the occupied byte +0 and retains / releases +4 (called at 0xC99D30 / 0xC99D3E on load and
+  at 0xD113B6 by the planner). A village's layout is tribe +0x3B4. Purchase order that survives a load: nearest free
+  slot, SetObject, SetPosition, SetTribe, the layout refresh, then SetToolPurchased 0xC8ED70.
+* ✔ (fork, disassembly) The planner palette (editor +0x68, vt 0x10) is 0xD082E0: at +0xBE it gets TribalGame
+  (0xCD4230), at +0xC5 calls 0xCD7070(kind) (`TribalGame_IsToolUnlocked`, thiscall(TribalGame*, int) ret 4 at
+  +0x61 / +0x6A: game configuration and the tool set at +0xA8); false gives status 7 and the "ally / conquer other
+  tribes" tooltip. A fresh game answered true only for 1 (Flaming Torches) and 5 (Maracas).
+* ~ (fork, negative) Neither cPlayer +0x10E8 nor the planner's collection editor +0x78 holds this rule (IsUnlocked was
+  true for all nine kinds); tribe +0x19D8 is the purchase history, not a permission; the tribe vectors +0x294 /
+  +0x2A8 are not an unlock list.
+* ✔ (fork, disassembly) Prices are GetTribeToolData(kind) +0x38 (read by the planner's price code 0xD0AD40 +0x45 /
+  +0x4A): 25 for kinds 1..6, 20 for 7..9 in a stock game; the localized names at data +0x68 are Flaming Torches, Stone
+  Axes, Throwing Spears, Wooden Horns, Maracas, Didgeridoos, Gathering Canes, Fishing Spears, Healing Rods.
+* ~ (fork, runtime) The food mat is noun 0x0629BAFE (owner +0x10C, referenced by tribe +0x260); CitizenAction 0 on it
+  runs the eating node 0x0461300F. CitizenAction 5 with tool 9 runs the healing node 0x0562C0FB.
+
+## Lineages: goals, rewards and the totem (2026-11-19, docs/lineages-re)
+<a id="tribe-lineages-goals-totem"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+
+* ✔ (fork, disassembly) A goal (cTribeToTribeMission) exists only after the native input picked its target: the
+  click handler at 0xCD0DA4 gets the goal UI with 0xCD35C0, 0xCD0DAB calls SetTargetTribe 0xCD3D70 (ret 4 at +0x208),
+  then the action 15. A village conquered without that registration gives no reward; calling 0xCD3D70 afterwards gave
+  the missing segment and tools. Negative: 0xCD3930 is the goal map's deserialization, 0xCD3840 its serialization
+  callback, 0xCD4F10 makes NPC planners, not goals. The goal factory 0xB1F760 allocates and tail-jumps to the
+  constructor 0xC2F5D0 (a direct-call xref search misses it).
+* ✔ (fork, disassembly) 0xC2F7F0 calls AddGoalProgress 0xCDB520 at 0xC2F8C4 (ret 8 at +0x7E; it compares cPlayer
+  +0x10F4 max with +0x10F0 current, ModAPI mGoalProgressTotal / mCurrentGoalProgress). The queue is run by 0xCDAC90:
+  it marks the record processed, then gets the player tribe's totem through 0xC905F0 and skips the rest when there is
+  none; it grants the target's tools through 0xCD97E0 (cdecl(tribe), plain ret at +0xF9, updates TribalGame +0xA8).
+  ✔ (fork, disassembly 0xCDF162) TribeGame_ModeChanged runs 0xCDAC90 when the game comes back to Tribe, so a queued
+  win gets its totem piece then.
+* ✔ (fork, disassembly) The totem factory 0xC992D0 bool thiscall(tribe), no stack arguments, ret at +0x2A5 / +0x2AC:
+  checks config +0x2D4 and an empty +0x19D0, then creates, retains, owns and places the totem; village setup calls it
+  at 0xC9A06E. Totem_AddSegment 0xC8DDA0 returns at +0x22B / +0x23A (ret 8). It takes the model from the totem's
+  factory (+0xD4, vt 0xC, two keys per kind) and assigns it to slot <piece count> of the model vector +0x108 / +0x10C /
+  +0x110 (5 slots on every totem seen) with the intrusive assign 0x4792B0, **without a bounds check**; then +0x80 (the
+  height) grows by the model's box, +0x90 the radius, +0xA8 = 1, and the kind / colour vectors +0x11C / +0x130 grow.
+  A 6th piece crashed in Graphics::Model::Release (fork BUG-9158).
+* ✔ (fork, disassembly) Community level setter 0xFF0260 ret 4 at +7 (ours: the only +0x38 setter) is called by the
+  Tribal upgrade at 0xCDA594 and by SpawnTribe at 0xC9A7E2 / 0xC9A824. The hut refresh 0xC99DC0 (`Tribe_UpdateHutModel`,
+  thiscall(tribe), plain ret at +0x18E) calls the level getter 0xA1AC90 at +0xEF, picks the hut model by the
+  player / NPC species and the level, sets the maximum health and refreshes the layout (12); SpawnTribe calls it at
+  0xC9A7E9. Its health setter refills to the new maximum (400 became 750). It needs a primary hut.
+* ✔ (fork, runtime) Undoing the newest win: pop the last 16-byte record {vt 0x1477434, kind, cTribe*, 0} of TribeUI
+  +0x40 / +0x44, lower cPlayer +0x10F0 by one, save and reload: one win less (progress 1.0 -> 0.0). An alliance is
+  undone by ApplyRelationship(manager, npc, founder, 0x530CF07, -5 - current) (read back -5.0). ~ The totem's kind
+  and colour vectors (+0x11C / +0x120, +0x130 / +0x134) shortened by one before the save are rebuilt on reload.
+* ✔ (fork, runtime, 1280x960) The Tribe progress bar is Creature's window 0x051B5478 (231-1202 x 931-959) with sections
+  0x051B54C0 / 0x051B54C1 / 0x051B54C2 for the 5 wins (1, 2 and 2 steps) and the step icons 0x05594A01..04; the fill
+  window 0x0652A628 and the marker 0x051B5168 are absent in Tribe.
+
+## Lineages: gifts, relationships and performances (2026-11-19, docs/lineages-re)
+<a id="tribe-lineages-social"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+
+* ✔ (fork, disassembly) DoActionGeneric 0xCD0C20 turns a clicked hut into its cTribe, registers it with 0xCD3D70 and
+  orders CitizenAction 9 with the **tribe** as target (+0x395..+0x3A9). Its price check reads property 0xFD444753
+  through 0x4E1CE0 from the list at 0x158128C (`TribeTuning_ptr`) with the default float 0x1473BF0 and compares the
+  player tribe's food. The gift node 0x0462855E's table is at 0x1593B00 (enter 0xDB00C0, tick 0xDBB7D0, exit
+  0xDB0950); 0x04623E0C (table 0x1593B40, tick 0xDBC730) is another food interaction.
+* ✔ (fork, disassembly) In the tick, 0xDBB7D0 +0x9C4 credits the recipient through AddFood, +0x9E9 gets the actor's
+  tribe, +0xA21 computes the recipient's feeling toward it; only a level below 2 applies 0x530CF06 with minus the
+  current value (+0xA87): a gift neutralizes a grudge, it gives no friendship. The thresholds at manager +0x10..+0x1C
+  were -7, -3, 3, 7 (so -0.5 stays neutral). 0xD00B60 only swaps a player-first pair in Tribe; it does not sort other
+  pairs.
+* ✔ (fork, disassembly) The performance is CitizenAction 26 (0x1A), sent by 0xCD0C20 +0x617..+0x61E for input 0x27;
+  node 0xB46E8803's table is at 0x15933FC (enter 0xD9F120, tick 0xDA2F30, exit 0xC2E640). The session keeps the
+  guest tribe at +8, the NPC tribe at +0xC, reaches state 4 with the mini-game object at +0xE8.
+* ✔ (fork, disassembly) Instrument input is not DoAction: 0xD48AB0 sends a Tribal extra ability to 0xD1FE00(index
+  0..5), which gathers the selection; slots 3 / 4 / 5 of the six-pointer table 0x169DE64 (`TribeAbilities`) need tools
+  4 / 5 / 6 (ability types 5 / 6 / 7 at ability +8; the request enums 2 / 0 / 1). It checks node 0xB46E8803, finds the
+  actor's ability index with 0xD1E5C0 cdecl(actor, ability), needs actor +0xC28[index*16+4] >= 1, posts a BT stimulus
+  (mask lo 0x10000000, hi 0, lifetime 10.0, sender null) to ai +8 and writes the index to the returned slot +0xC, all in
+  one call (separate calls left the session in state 4). 0xD1FB30 also checks session +0x51 and returns a status enum.
+* ✔ (fork, disassembly + runtime) Round timing comes from audio: 0xDA2F30 +0x431 / +0x444 / +0x457 call 0x5CA970,
+  which calls AudioSystem::Get 0xA20670; the session listener 0xDA1F20 takes message 0x041638CA with events
+  0x79836BA6 / 0xF69FF317 (round length / count), 0xFF77507F (a request) and 0xACEB7EA7 (next round). Extends the
+  -nosound note in #tribe-fork-graduation-notes.
+* ✔ (fork, disassembly) Done performers stay on node 9 of 0xB46E8803 with session state 6; a second action 26 keeps
+  the old session. CancelAction 0xDA61D0 bool cdecl(citizen, action), plain ret at +0x56 (called at 0xDA2F30 +0xAA
+  with 26, caller cleans 8): cancel and reissue in the same frame failed, 150 ms later worked.
+* ✔ (fork, disassembly) Goal update 0xC2F750 calls 0xD00BD0 with the target's id and the player's faction and
+  completes only at level 4 (or defeated); completion 0xC2F7F0 repeats the check to tell 2 (alliance) from 1
+  (conquest). 0xE310D0 (`TribePerformance_Succeeded`) bool thiscall(UI), plain ret at +0x13 / +0x16, compares
+  progress +0x68 with the threshold.
+
+## Lineages: NPC village count, graduation and the outfitter (2026-11-19, docs/lineages-re)
+<a id="tribe-lineages-formation-graduation"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+
+* ✔ (fork, disassembly) FormVillage 0xCC6440 (our `NpcTribeController_FormTribe`) calls the noun manager's GetData
+  0xB212D0 at 0xCC6478 (five stack arguments, ret 0x14); the code after it at 0xCC647D uses only the vector's size:
+  twice the size for the tuning quota, size - 1 for the next species. Its EAX is no Boolean result. SpawnNpcTribe is
+  called from the return address 0xCC66FD. An extra village (a co-op one) therefore counts toward the NPC quota.
+* ✔ (fork, disassembly) The controller update 0xCC6A90 (vt 0x10) calls GetData at 0xCC6B5D; at 0xCC6B62 it takes
+  (end +8 - begin +4) >> 2, minus 1, and switches on it (the next rival's condition), never reading an element.
+* ~ (fork) SpawnNpcTribe's arguments for a founded village: (position, archetype 0, members 3, food 15, flag 0,
+  profile). A factory call with archetype 2 gave one tool and no instrument.
+* ✔ (fork, runtime) Graduation visits the City Hall editor (0x99E92F05, request +0x10 = 0, +0x1C = 0x01654C02 Tribe,
+  +0x90 = 0x0116DD1B), Tribe for the construction cinematic, then the vehicle editor, before Civ; the game is in
+  input lock and pause without a cinematic while it waits. The vehicle is the economic 0xF670AA43, military 0x7D433FAD
+  or religious 0x9AD7D4AA with the same fields. The null-pen guard (#tribe-fork-graduation-notes) skips from 0xCDD466
+  to 0xCDD471.
+* ✔ (fork, disassembly) The graduation caller 0xCDC746 stores the consequence from 0xCDBBD0 (no arguments, compares
+  its float helper with +/-1/3) at cPlayer +0x1104 (read at 0xCD2308, the vehicle choice in civ.md). 0xCDBA30 uses
+  the filtered tribe relationships and a UITimeline value from 0xE3F7A0(0xAD56080C); both return floats on x87. At
+  0xCDBA30 +0xBE it calls 0xC74680 (`Planet_FactionFlag`) with the NPC's political id; false at 0xCDBAF3 skips that
+  NPC's opinion (all five allied NPCs read false in the fork's run).
+* ✔ (fork, disassembly) The outfitter (editor 0x156276D1): 0xD13280..0xD13442 copies the portrait's model to
+  EditorRequest +0x10, takes the collected clothing from **TribalGame +0x19C** (not cPlayer +0x10E8) into request +0x94
+  (IntrusivePtr_Assign 0xB5FAB0), appends the five consequences of cPlayer +0x10FC..+0x110C to request +0x70 with
+  0x454D30 (ret 4), sets flags +0x35 / +0x3C / +0x6D, clears +0x34 / +0x36..+0x39 / +0x3D / +0x64, and sets +0x90 =
+  0x0116DD1B. The species slot setter 0xC8E9C0 is called at 0xCFCB6F with index 0. +0x1904 is a vector header (0xC8FBF0
+  dereferences it); Save 0xC8FA50 copies the profiles' +0x504 keys into it. An outfit changes the host species key
+  after the planner closes, with deferred callbacks after the return to Tribe.
+
+## Lineages: a guest's own village as its player tribe (2026-11-19, docs/lineages-re)
+<a id="tribe-lineages-guest-player-village"></a>
+
+Source: the Lineages fork by PandizeLive (PR #196); not yet verified on our lab.
+
+* ✔ (fork, runtime) With SetPlayerTribe 0xB1FD50 pointing at the guest's own village on the guest's game, the HUD's
+  food, the member cards, the hut panel (Add Baby, the tools) and the Tribal Planner work for that village.
+* ✔ (fork, crash) About 15 s after the first swap: a read of 0x154 from the UI's ring code: listener 0xCD81F0 message
+  type 3 at 0xCD8268 -> 0xCD5190 (TribeUI +0x240) -> 0xCCC580 -> 0xCC95E0 -> 0xC90730 (our `cTribe::HutIsDead`, no null
+  check of +0x368) with the owner of a citizen whose hut was null. Guarded by "no hut is not state 2".
+* ✔ (fork, runtime) The terrain cursor's candidate list (GetTerrainCursor 0xB30EB0, cursor +0x164) is a borrowed
+  vector pointer: pointing it at the guest village's +0x354 makes native selection and right-click work for it.
+* ~ (fork) SimCamera_LookAt 0xB12D10 thiscall(camera, const Vector3* target, const float orientation[4] (a quaternion
+  from TribeGame setup 0xCD7C40), bool instant) ret 0xC. The camera stays at the host's village after a swap.
+* ✔ (fork, runtime) Food deliveries are rises of the tribe's bundles at +0x20C; the game's "+N" over the mat shows
+  for 1 or more. The gift price was 10 food.
+* ✔ (fork, runtime) The former player tribe has no NPC controller: on the guest's game no Gift reaches
+  DoActionForObjects for it.
+* ~ (fork, runtime) 0xBCA430 (called at 0xDA61D0 +0xB) returns the citizen's current action: the first node of the list
+  at ai +0x60C (null when it is the sentinel), record +0 the action, +0x28 the target.
