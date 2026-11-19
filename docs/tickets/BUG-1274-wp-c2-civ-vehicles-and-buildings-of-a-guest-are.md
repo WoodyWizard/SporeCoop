@@ -9,26 +9,38 @@ source: plan-0.7.16
 role: 
 versions: 
 fixed_in:
-branch:
+branch: feat/w54-designs
 commits:
-tests:
+tests: civ_own_designs, civ_own_designs_off
 signature:
-docs:
-related:
+docs: docs/re/civ.md#civ-own-designs
+related: BUG-1270, BUG-0647, BUG-0670, BUG-1157, BUG-1158
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Plan item 2 (docs/plan-0.7.16.md, WP-C2): in Civ every vehicle and building was the culture set's design (the host's),
+also those of a guest's cities and a guest's vehicles. Owner decisions 2026-11-18: a gifted vehicle takes the
+receiver's design; the host's save keeps only the host's designs.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+One culture set per civilization (cCivilization +0x6C); the game draws every vehicle and building from a model key of
+its own (+0x34 +0x90 = +0xC4), SetModelKey changes it with the design's stats, Civ_SetDesign re-models a whole kind
+(Ghidra, docs/re/civ.md#civ-own-species; per-object SetModelKey seen working in BUG-0647 / BUG-0670 / BUG-1157).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`civ.own_designs` (mods/coop/civ_own_designs.cpp, docs/re/civ.md#civ-own-designs): every game re-keys the vehicles
+and buildings owned by a player with an own design for their design id (four times a second, after a purchase, at the
+end of a hooked Civ_SetDesign), keeps their culture key and writes it into +0xC4 while a save is written (savestrip
+hooks), puts it back for a gift to a player without a design, creature.mode host, the switch off and the session end.
+The design records travel once per design (creations::share_design, MSG_CREATION kind 9, host-relayed, creations
+family 1.1) and live under one key of ours on every game. The guest's designs come from a WP-0 shim
+(`line_design`, the console setter `coop.civ owndesign set <id> <creation>`) until species::design (BUG-1270) is in.
+`coop.fix civ.own_designs off`: everything the culture's design (0.7.15).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+tools/tests/coop_civ_own_designs.py (`civ_own_designs`; twin `civ_own_designs_off` = SPORE_FIX_OFF=civ.own_designs,
+must FAIL). Lab runs pending: the owner stopped every lab run on 2026-11-18 until the night run (no run dirs yet).
 
 ## History
 - 2026-11-18: opened.
+- 2026-11-18: code, test and twin on feat/w54-designs (built, make test); lab runs wait for the night run.

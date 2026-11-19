@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+- Civilization: in the normal co-op mode (own creatures) a guest's vehicles and the buildings of its cities are drawn
+  from the guest's own vehicle and building designs on every player's screen, with the stats of those designs; a
+  vehicle given to another player takes that player's design. The host's saved game keeps the host's designs only
+  (BUG-1274).
+
 ## [0.7.15.2] - 2026-11-18
 
 More fixes for problems seen in a video of two players, mostly in the Cell stage and the move to the Creature stage:

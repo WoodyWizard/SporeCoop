@@ -1910,6 +1910,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_ToolMgrGet = H->sym("Simulator::cToolManager::Get");
     savestrip::add_filter(save_filter); // BUG-0470
     savestrip::add_save_hooks(save_start, save_end);
+    own_designs_init(); // BUG-1274
     // the city planner (BUG-0491, BUG-0493; GOG 2024 symbols, optional)
     a_DestroyInstance = H->sym("Simulator::cGameNounManager::DestroyInstance");
     a_VehicleRemove = H->sym("SporeCoop::Vehicle_Remove");
@@ -1944,6 +1945,7 @@ void tick(double now)
         host_tick(now);
     else if (is_guest())
         guest_tick(now);
+    own_designs_tick(now); // BUG-1274
 }
 
 // BUG-0751: guest, Space: a building bought in a colony's planner goes to the host with the planet it is on
@@ -2273,6 +2275,7 @@ void on_session_end()
     g_held.clear(); // BUG-0693
     g_space_held.clear(); // BUG-0766 / BUG-0884
     g_space_out.clear();
+    own_designs_session_end(); // BUG-1274 (before BUG-0670's: the culture keys first)
     host_buildings_session_end(); // BUG-0670
     caption_disarm(); // BUG-0224
     clear_coop_tables(true);

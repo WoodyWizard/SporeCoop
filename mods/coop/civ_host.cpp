@@ -1080,6 +1080,8 @@ void host_command(uint8_t from, net::Reader& r)
         if (v && !hv_find(v))
             hv_add(v, from); // BUG-0154 (this one could hand out 0)
         g_pending_owner = -1;
+        if (v)
+            own_designs_now(); // BUG-1274: the buyer's own design at once
         if (!v) {
             // the guest's button was enabled (its own count of vehicles may differ for a moment):
             // tell that player why nothing comes
