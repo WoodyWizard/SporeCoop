@@ -1375,4 +1375,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9259](BUG-9259-creature-guest-after-the-party-s-migration-the-g.md) | fixed | bug | Creature | 2026-11-18 | unreleased | Creature guest: after the party's migration the guest's home nest flips back to the old nest (no nest, no mating, repeated 'Bringing your nest') |
 | [BUG-9260](BUG-9260-guest-keeps-moving-while-the-host-is-paused-only.md) | fixed | bug | Creature | 2026-11-19 | unreleased | Guest keeps moving while the host is paused (only the Paused by host cover) |
 | [BUG-9261](BUG-9261-loading-cover-looks-low-resolution-at-1440p-bloc.md) | fixed | bug | All | 2026-11-19 | unreleased | Loading cover looks low resolution at 1440p: blocky blur, small text |
-| [BUG-9262](BUG-9262-alpha-pausing-is-off-in-a-session-p-and-the-paus.md) | open | feature | All | 2026-11-19 |  | Alpha: pausing is off in a session (P and the pause menu do not stop the world) |
+| [BUG-9262](BUG-9262-alpha-pausing-is-off-in-a-session-p-and-the-paus.md) | fixed | feature | All | 2026-11-19 | unreleased | Alpha: pausing is off in a session (P and the pause menu do not stop the world) |
