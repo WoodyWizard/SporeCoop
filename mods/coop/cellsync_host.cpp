@@ -34,6 +34,7 @@ struct GuestPace {
     uint64_t cell_bytes = 0;     // cell state bytes sent to this guest so far
     double told_at = -1e9;
     uint32_t rounds = 0, ticks_spread = 0;
+    std::deque<std::pair<double, size_t>> caps; // the cap of each round of the last 3 s (0: not capped)
 };
 static std::map<int, GuestPace> g_pace;
 static void send_paced(int dest, GuestPace& gp, const std::vector<SendCell>& list, float cx, float cy, double now);
@@ -278,6 +279,9 @@ static void send_paced(int dest, GuestPace& gp, const std::vector<SendCell>& lis
         gp.cycle = g_cycle;
         gp.round_at = now;
         gp.rounds++;
+        gp.caps.push_back({now, gp.pace.limited() ? gp.pace.round_cells(kSendCap) : 0});
+        while (gp.caps.size() > 1 && gp.caps.front().first < now - 3.0)
+            gp.caps.pop_front();
     } else
         gp.ticks_spread++; // a round over more than one tick
     while (gp.next < gp.chunks && gp.pace.may_send()) {
@@ -315,6 +319,17 @@ static void send_paced(int dest, GuestPace& gp, const std::vector<SendCell>& lis
 }
 
 void pace_forget(int id) { g_pace.erase(id); }
+size_t sent_cap(int id)
+{
+    auto it = g_fix_slow_link ? g_pace.find(id) : g_pace.end();
+    if (it == g_pace.end())
+        return 0;
+    size_t cap = 0;
+    for (auto& [t, c] : it->second.caps)
+        if (c && (!cap || c < cap))
+            cap = c;
+    return cap;
+}
 void pace_reset() { g_pace.clear(); }
 std::string pace_status()
 {
