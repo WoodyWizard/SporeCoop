@@ -1,16 +1,16 @@
 ---
 id: BUG-1310
 title: WP-D: the lab gates compare one shared DNA total while every player has its own DNA
-status: open
+status: fixed
 kind: tooling
 stage: Cell, Creature
 reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w57-dna
-commits:
+commits: bbf4a90c b8821455 93f3a585
 tests: tools/tests/gates_selftest.py, tools/tests/tools_selftest.py, tests/net_tests.cpp (test_diag_own_dna), tools/tests/coop_dna_own.py (dna_own_gates_off)
 signature:
 docs: docs/06-testing.md#testing-gates-own-dna
@@ -58,8 +58,24 @@ The host exposes its record of each guest's own wallet and the gates compare aga
   bar is compared too).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Switch `diag.own_dna`; twin `dna_own_gates_off` (SPORE_FIX_OFF=diag.own_dna coop_dna_own.py).
+- FAIL (gates off, as the night): 20261119-112341 dna_own_gates_off (monitor "dna: host 170, guest 160", sync-check
+  "dna: host 150.0, guest 120.0"); again on the merged tree 20261119-120634 dna_own_gates_off. The night's runs
+  20261119-104136 (dna_own, dna_own_reload, dna_own_rejoin), 20261119-110020 (dna_spend, dna_pace, editor_sync_guest),
+  20261119-102828 (evo_screens_switch_lowfps) are the same failure before the fix.
+- PASS (no gate finding, every check ok): 20261119-112341 dna_own; 20261119-113728 dna_own_reload, dna_own_rejoin,
+  dna_own_store, dna_own_shared, dna_spend, dna_pace, editor_sync_guest; merged tree 20261119-120634: dna_own,
+  dna_own_reload, dna_own_rejoin, dna_own_store, dna_own_shared, dna_spend, dna_pace, editor_sync_guest,
+  evo_bar_editors, cocoon, cocoon_guest, guest_mating (cocoon failed on the gates in feat/w56-cocoon 20261119-113606:
+  host 15 after its editor's price, guest 40, the own model). evo_screens_switch_lowfps of 20261119-120634: no DNA
+  gate finding (its FAIL was the guest's black screen 22 s at 10 fps under load 31, outside this ticket).
+- The gate still bites in the own mode: the twins dna_own_reload_off (20261119-113728, -120634: "bar: host 150, guest
+  125" on the monitor and the sync-check, new with this ticket) and dna_own_host_editor_off (20261119-120634: "bar:
+  host 60, guest 90"). Shared mode unchanged: dna_own_shared and the twins dna_own_off / dna_own_rejoin_off compare
+  the host's DNA as before.
+- Unit: gates_selftest (monitor own_dna_*), tools_selftest (detector own DNA rows), net_tests test_diag_own_dna:
+  `make test` PASS.
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-19: fix/w57-dna: gates teach the own-wallet model; lab runs above; fixed.
