@@ -2462,6 +2462,13 @@ static std::vector<StartPart> g_start_parts; // guest: the host's, received
 static bool g_join_start_editor = true;
 COOP_FIX("creature.join_start_editor", "BUG-9263", g_join_start_editor,
          "creature: a joining guest's first creature is made in the stage's start editor (145 DNA, its palette), never the 2,000 DNA Creator");
+// BUG-9265 (the alpha's half of BUG-9263): a galaxy planet's new host without a creature of its own there
+// (gx.hosted_stored) got the Creator too. It is the start editor as well, opened inside the running world: there it
+// shows the world's DNA and the start palette, and its request must not name the galaxy menu as the mode to go back to
+// (the wizard's value, right from the menu). Off: the Creator as before.
+static bool g_host_start_editor = true;
+COOP_FIX("creature.host_start_editor", "BUG-9265", g_host_start_editor,
+         "creature: a galaxy planet's new host makes its first creature in the stage's start editor (its small palette), never the 2,000 DNA Creator");
 static std::vector<StartPart> g_host_start_parts; // host: ours, while in the start editor
 static std::set<uint8_t> g_host_start_sent;      // host: the players that have them
 static bool g_test_unlock_start = false;
@@ -2525,7 +2532,8 @@ static bool submit_new_creature_request(uint32_t editor = 0x465C50BAu, const std
         }
         LOG("start editor request: the constructor's +0x1C..: %s", hex.c_str());
         skg::field<uint32_t>(req, 0xC) = kCreatureStartEditor;
-        skg::field<uint32_t>(req, 0x1C) = modes::kMenu;
+        if (game::mode_id() == modes::kMenu) // (BUG-9265: opened in a running world it goes back to that world)
+            skg::field<uint32_t>(req, 0x1C) = modes::kMenu;
         skg::field<uint32_t>(req, 0x20) = 0x02140700u;
         skg::field<uint32_t>(req, 0x24) = 0x0C3645FFu;
         const uint8_t flags[12] = {0, 0, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0}; // +0x34..+0x3F as the game's
@@ -12320,8 +12328,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                 if (!creations::host_needs_first_creature())
                     return;
                 creations::host_first_creature_begin();
-                const bool r = submit_new_creature_request();
-                LOG("galaxy: the new host's first-creature editor -> %d", (int)r);
+                const bool r = g_host_start_editor ? submit_new_creature_request(kCreatureStartEditor) // BUG-9265
+                                                   : submit_new_creature_request();
+                LOG("galaxy: the new host's first-creature editor (%s) -> %d", g_host_start_editor ? "the start editor" : "the Creator", (int)r);
                 if (r)
                     feed("Make your creature for this planet: you play it when you save it.");
             }, nullptr);

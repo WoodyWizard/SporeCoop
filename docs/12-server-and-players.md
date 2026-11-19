@@ -1212,3 +1212,16 @@ Owner 2026-11-18: "Let's also investigate the idea of connecting with Steam to a
 * Name plates: a hidden -NoShare- tag left its space ("Pandize " drew off centre, "Pandize  2"); the spaces go with
   the tag now (live too). The Party card is 80% of its old size (72% read cramped) and its name is measured in the
   card's own font (it sat off to the right).
+
+## A planet's new host makes its first creature in the start editor (BUG-9265, 2026-11-19, feat/lineages-alpha)
+<a id="server-host-start-editor"></a>
+
+* Owner 2026-11-19: "We can't let them make a level 5 endgame creature upon joining any player." BUG-9263 (live) gave
+  joining guests the Creature stage's start editor; a galaxy planet's new host without a creature there still got the
+  Creator with every part. It gets the start editor too now (`coop.fix creature.host_start_editor`).
+* ✔ The start editor (0xE46C381E) works inside a running Creature world when its request does not name the galaxy
+  menu at +0x1C: the start palette, the red cross and the check both go back to the world, and the saved creation is
+  adopted (creations::host_first_tick). Its budget there is the running game's DNA (570 on Samuth), not the 145 it
+  has from the galaxy menu.
+* ✔ The Creator (0x465C50BA) with no creation key and no parts list (+0x94) is what unlocks every part; with the
+  evolution tag and the collected parts it is the game's own limited evolution editor.
