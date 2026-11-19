@@ -35,6 +35,32 @@ def player(con):
     return (-1, 0)
 
 
+def hut_fx(con):
+    """the hut purchases (hut effects) the game saw so far (`coop.tribe anims`: baby_pair seen=)"""
+    m = re.search(r'baby_pair fix=\d+ seen=(\d+)', (con.call('coop.tribe anims').get('out') or ''))
+    return int(m.group(1)) if m else -1
+
+
+def buy_click(con, h, tries=3):
+    """a left click on the own hut as a player does (hover, then click), again when the game took none (no food paid,
+    no hut effect after 2 s: under lab load the hover can come late, or a member walking in front of the hut takes the
+    click: lab 20261119-102828 and 20261119-115724 saw single clicks that bought nothing). Each purchase starts the hut
+    effect at once and pays at once, so a second click goes only when the first bought nothing. The clicks it took"""
+    for n in range(1, tries + 1):
+        f0, s0 = food(con), hut_fx(con)
+        con.call(f'move {h[0]} {h[1]}')
+        con.call('wait.frames 20 5000')
+        time.sleep(0.4)
+        con.call(f'click {h[0]} {h[1]}')
+        t0 = time.time()
+        while time.time() - t0 < 2.5:
+            time.sleep(0.25)
+            f1, s1 = food(con), hut_fx(con)
+            if (f0 is not None and f1 is not None and f1 < f0 - 0.5) or (s0 >= 0 and s1 > s0):
+                return n
+    return 0
+
+
 def ptribe(con):
     """the game's player tribe line of `coop.tribe` (members, level, cap)"""
     for ln in con.call('coop.tribe')['out'].splitlines():
@@ -101,11 +127,9 @@ def main():
     # (diagnostics: lab 20261119-102828 saw a click that bought nothing on the guest's game: no hut effect, no food
     # paid on either game; the level / cap of each game's player tribe and what the guest's cursor is over)
     print('  tribes before the click: host', ptribe(host), '| guest', ptribe(guest), flush=True)
-    guest.call(f'move {h[0]} {h[1]}')
-    time.sleep(0.6)
     print('  guest windows under the cursor:', (guest.call(f'coop.ui at {h[0]} {h[1]}').get('out') or '').strip()[:160],
           flush=True)
-    guest.call(f'click {h[0]} {h[1]}')
+    print(f'  the guest\'s clicks on its hut until its game took one: {buy_click(guest, h)}', flush=True)
     t0, hn, gn = time.time(), n0, -1
     while time.time() - t0 < 20:
         time.sleep(1)

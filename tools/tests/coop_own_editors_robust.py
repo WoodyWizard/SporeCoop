@@ -457,7 +457,7 @@ def run_civdrop(ck):
 
 # ---------------------------------------------------------------------------------------------------------- birth
 def run_birth(ck):
-    from coop_tribe_guest_baby import food, hut, player
+    from coop_tribe_guest_baby import buy_click, food, hut, player
     host, guest = start('tribe')
     time.sleep(4)
     print(' ', host.call('coop.tribe spawn 2')['out'].strip(), flush=True)
@@ -475,9 +475,7 @@ def run_birth(ck):
     h = hut(guest)
     if not ck(h is not None, f'the guest\'s own hut is on its screen ({h})'):
         return ck.result()
-    guest.call(f'move {h[0]} {h[1]}')
-    time.sleep(0.6)
-    guest.call(f'click {h[0]} {h[1]}')
+    print(f'  the guest\'s clicks on its hut until its game took one: {buy_click(guest, h)}', flush=True)
     first = {}
     t0 = time.time()
     framed = False
