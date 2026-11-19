@@ -179,7 +179,19 @@ def outfit_piece(guest, ck):
 
 
 def open_own_outfitter(guest, ck):
-    ck(open_outfitter(guest), 'the guest\'s hut planner opened')
+    # BUG-1297 (lab fix/w57-tribe-keys 20261119-115724, -121054): right after a join from the galaxy menu the clicks on
+    # the hut opened no planner: wait for the game's time (the stage entry's pause takes real input, BUG-0944) and,
+    # when the planner still did not come, click the hut once more after 5 s (as a player does); both said in the log
+    waited = twoinst.game_runs(guest)
+    from coop_tribe_outfit import hut
+    print(f'  guest: game time runs after {waited} s; hut on screen {hut(guest)}; busy {busy(guest) or "-"}', flush=True)
+    opened = open_outfitter(guest)
+    if not opened:
+        print(f'  guest: no planner after the clicks (busy {busy(guest) or "-"}, hut {hut(guest)}): once more in 5 s',
+              flush=True)
+        time.sleep(5)
+        opened = open_outfitter(guest)
+    ck(opened, 'the guest\'s hut planner opened')
     t0 = time.time()
     while time.time() - t0 < 20 and mode(guest) != EDITOR:
         if time.time() - t0 > 8 and mode(guest) == TRIBE and 'input_lock' in busy(guest):
@@ -450,10 +462,8 @@ def run_civdrop(ck):
         ok = wait_for(lambda: houses(pid) == [hb], 30)
         print(f'  {who}: the guest\'s houses -> {houses(pid)}, the host\'s -> {houses(0)} (the new house {hb})', flush=True)
         ck(ok, f'{who}: the guest\'s houses show the house made while it was away ({houses(pid)}, {hb})')
-    c1 = culture(host)
-    diff = {f'{k:08X}': (f'{before["host"][0].get(k, 0):08X}', f'{c1.get(k, 0):08X}') for k in set(c1) | set(before['host'][0])
-            if c1.get(k) != before['host'][0].get(k)}
-    ck(c1 == before['host'][0], f'the host\'s culture set is unchanged {diff or ""}')
+    from coop_civ_guest_editors import guest_keys, host_culture_kept
+    ck(*host_culture_kept(before['host'][0], culture(host), guest_keys(guest) | {got[1]}))  # BUG-1307 (the house build)
     frame_city({'host': host, 'guest': guest}, gpos)
     keyframe('civdrop_rejoined', 'after the guest joined again: the guest\'s city shows its own new house (made while it '
                                  'was away) on both screens; the capital keeps the culture\'s houses')

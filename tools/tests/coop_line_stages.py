@@ -306,6 +306,23 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
     print('  host:', host.call('coop.res add money 30000')['out'].strip(), flush=True)
     m = re.search(r'did (\w+) purpose=(\d+)', host.call(f'coop.civ owndesign did {tgt} 0')['out'])
     buy_did = int(m.group(1), 16) if m else 0
+    buy_at = tgt
+    if a.civ_editors:
+        # BUG-1323 (lab 20261119-122505): the arrival's vehicle editor is the one of the archetype (F670AA43 /
+        # 9AD7D4AA / 7D433FAD, civ_arrival.cpp vehicle_editor), not always the land design of the city the guest
+        # captured: buy in the guest's city or the shared capital whose land design id is that editor's, as
+        # civ_own_arrival does
+        ve = re.search(r'editors=\w+/(\w+)', guest.call('coop.civarrival')['out'] or '')
+        vdid = int(ve.group(1), 16) if ve else 0
+        for ci in (tgt, cap):
+            d = re.search(r'did (\w+) ', host.call(f'coop.civ owndesign did {ci} 0')['out'])
+            print(f'  civ: city {ci}: land design id {d.group(1) if d else "-"} (the guest\'s vehicle editor {vdid:08X})',
+                  flush=True)
+            if d and int(d.group(1), 16) == vdid:
+                buy_did, buy_at = vdid, ci
+                break
+        else:
+            ck(False, f'civ: a city whose land vehicles are of the guest\'s vehicle editor\'s design id {vdid:08X}')
     want_hash = None
     if not a.civ_editors:
         for p in (0, 1, 2):
@@ -322,7 +339,7 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
     if ours_v and want_hash is None:
         want_hash = cod.mhash(guest, ours_v, VTYPE, VGROUP)
     before = set(cod.own(host)[0])
-    print('  guest:', guest.call(f'coop.civ buy {tgt} 0')['out'].strip(), flush=True)
+    print('  guest:', guest.call(f'coop.civ buy {buy_at} 0')['out'].strip(), flush=True)
     vid = wait(lambda: next((i for i, x in cod.own(host)[0].items() if i not in before and x['owner'] == pid), None), 20)
     if ck(vid is not None, f'civ: the guest\'s purchase made a land vehicle on the host ({vid})'):
         for r, con in players.items():
