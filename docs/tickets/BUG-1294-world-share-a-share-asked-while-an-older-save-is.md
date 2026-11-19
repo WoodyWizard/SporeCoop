@@ -48,6 +48,7 @@ save (world_queue part 1). Status line "shares that waited for their own save N"
   out/lab/20261119-111559 (the second share waits for its own save, 2 saves for 2 shares, the guest plays on). FAIL twin
   (SPORE_FIX_OFF=world.share_fresh_save) out/lab/20261119-112631 for the right reason: the second share goes out with
   the older save, 1 save for 2 shares.
+- Rerun on the tree merged with rel/0.7.16 (fix/w57-sync 3801b9f5): PASS share_fresh out/lab/20261119-121505.
 
 ## History
 - 2026-11-19: opened.

@@ -53,6 +53,7 @@ night predator creature is mirrored by the NPC sync is not checked.
   out/lab/20261119-111559 (the guest refuses its own night predator, meteor and rain; the host's meteor and rain run in
   the guest's game). FAIL twin drama_shared_off (SPORE_FIX_OFF=creature.shared_events) out/lab/20261119-112631 for the
   right reason: the guest's own meteor and rain are active.
+- Rerun on the tree merged with rel/0.7.16 (fix/w57-sync 3801b9f5): PASS drama_shared out/lab/20261119-121505.
 
 ## History
 - 2026-11-19: opened.

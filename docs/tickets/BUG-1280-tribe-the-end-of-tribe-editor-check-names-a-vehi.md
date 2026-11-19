@@ -55,6 +55,7 @@ and PatchData.package, no 7CB21BAD anywhere (docs/re/tribe.md#tribe-end-editors)
   out/lab/20261119-111559 (the game opened 7D433FAD, end_editor=1, both games reached Civ). FAIL twin
   (SPORE_FIX_OFF=tribe.graduation_vehicle_id) out/lab/20261119-112631 for the right reason: the game opened 7D433FAD and
   the guard did not know it (end_editor=0).
+- Rerun on the tree merged with rel/0.7.16 (fix/w57-sync 3801b9f5): PASS tribe_civ_aggressive out/lab/20261119-121505.
 
 ## History
 - 2026-11-18: opened.

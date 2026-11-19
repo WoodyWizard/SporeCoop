@@ -90,11 +90,11 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
 - Creature: a guest sees the host's nest alphas as alphas ("Alpha" on the card, the extra social round); before, a
   guest's copy of a nest member could be an alpha only on one screen (BUG-1283).
 - Civilization: the religious governor's faster conversion now comes from its own religious vehicles near the city;
-  before, a nearby trade vehicle gave it and the preachers did not (BUG-1284; still open: its lab check is pending).
+  before, a nearby trade vehicle gave it and the preachers did not (BUG-1284).
 - Civilization: a guest now sees the religious conversion meter and followers of every city as the host's game has
-  them; before, it stayed at zero on the guest's screen (BUG-1285; still open: its lab check is pending).
+  them; before, it stayed at zero on the guest's screen (BUG-1285).
 - Civilization: religious vehicles now convert a city that the host has never looked at; before, they preached there
-  without converting anybody while the city fought them (BUG-1286; still open: its lab check is pending).
+  without converting anybody while the city fought them (BUG-1286).
 - Civilization: a guest gets the host's progress for buying a city and its trade prices, so Buy City can come up on the
   guest's screen; a trade route the host's game removes disappears for the guest too (BUG-1287).
 - Tribe and Civilization: a guest whose own creature has the same id as one of the host's (it often has when its first

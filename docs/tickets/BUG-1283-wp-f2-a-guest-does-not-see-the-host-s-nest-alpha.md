@@ -43,6 +43,7 @@ announces npc 1.2 or newer (0.7.16; 0.7.15.2 ships npc 1.1) sets the proxy's bit
   out/lab/20261119-111559 (0 of 20 proxies differ; a planted mark goes back; the host's new alpha is one on the guest
   and goes again). FAIL twin npc_alpha_off (SPORE_FIX_OFF=npc.alpha) out/lab/20261119-112631 for the right reason: the
   planted mark stays, the host's new alpha is not one on the guest.
+- Rerun on the tree merged with rel/0.7.16 (fix/w57-sync 3801b9f5): PASS npc_alpha out/lab/20261119-121505.
 
 ## History
 - 2026-11-19: opened.
