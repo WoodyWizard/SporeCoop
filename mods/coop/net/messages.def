@@ -48,7 +48,7 @@
 // type at dispatch).
 // feat/w54-shims: creations stays 1.1 (unreleased): WP-C2's MSG_CREATION kind 9 (a player's own design) is gone, the
 // designs go as line creations of MSG_SPECIES_LINE (species::set_design); a kind 9 is dropped as any unknown kind.
-// fix/w56-sync: npc stays 1.1 (unreleased): MSG_NPC_STATE / SPAWN flag NF_ALPHA 64 (BUG-1283) and MSG_PLAYER_RULE kind
+// fix/w56-sync: no npc bump of its own (npc 1.1+ is 0.7.16, unreleased; 1.2 with feat/w56-dna): MSG_NPC_STATE / SPAWN flag NF_ALPHA 64 (BUG-1283) and MSG_PLAYER_RULE kind
 // K_DRAMA 11 (BUG-1282), both ignored by older peers; a guest uses them only from a host with npc 1.1 or newer.
 // Minor bump of fix/w56-sync: civ 1.1 (MSG_CIV_STATE chunk 0xF9 kInfluenceChunk, chunks 0: the cities' follower maps,
 // converters, buy meters and price maps, BUG-1285 / BUG-1287; an older guest drops it as a bad snapshot header).
