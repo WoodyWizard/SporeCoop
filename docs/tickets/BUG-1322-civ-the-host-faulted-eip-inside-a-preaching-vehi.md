@@ -10,7 +10,7 @@ role: host
 versions: 0.7.16 (unreleased)
 fixed_in: unreleased
 branch: fix/w57-sync, fix/w57-crashes
-commits:
+commits: f2b44601 1defae3e 0ffc91f2
 tests: civ_preach_far, civ_shot_objects, civ_shot_objects_off
 signature: exception 0xC0000005 at a heap address inside a vehicle object, stack scan 00BFD8DB 00AE75E0
 docs: docs/re/civ.md#civ-npc-fixture-slots, docs/re/civ.md#civ-shot-observer-targets, docs/06-testing.md#testing-civ-shot-objects

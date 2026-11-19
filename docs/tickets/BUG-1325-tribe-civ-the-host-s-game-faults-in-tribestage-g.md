@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w57-crashes
-commits:
+commits: f2b44601 1defae3e 0ffc91f2 3ca4a068
 tests: line_stages, tribe_city_hall_race, tribe_city_hall_race_off, tribe_city_hall_race_crash
 signature: exception 0xC0000005 at 0x00B22566 cGameNounManager::DestroyInstance+0x6 (data 0x20), calls 00CDD43D 00CDECAC 00CDF11C (TribeStage_Graduate+0x34D < TribeStage_EnterUpdate+0x4CC)
 docs: docs/re/tribe.md#tribe-graduation-cinematic, docs/06-testing.md#testing-tribe-city-hall-race
