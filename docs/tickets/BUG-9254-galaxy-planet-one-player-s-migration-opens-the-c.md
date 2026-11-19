@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages64-dev
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: 92cc35fe
 tests: coop.migratetest (manual: TITAN QA 8 + 9 and the MSI on one galaxy planet; no lab test yet)
 signature: "'s species is migrating to a new nest. Everyone migrates together" on players of other parties
 docs: docs/12-server-and-players.md#server-migrate-party
