@@ -351,6 +351,20 @@ def run(host, guest, ck, off_twin):
     time.sleep(3)
     hits = keys_in_slot(folder, [gkey, orig, outfit]) if saved else ['not saved']
     print(f'  host save slot {folder}: {hits or "no key of the guest"}', flush=True)
+    if hits:  # (the save itself for the report: the next save of the test overwrites it)
+        try:
+            import frames
+            import shutil
+            d = frames.frames_dir(lane.out_dir())
+            os.makedirs(d, exist_ok=True)
+            for f in os.listdir(folder):
+                if f.endswith('.spo'):
+                    shutil.copy(os.path.join(folder, f), os.path.join(d, 'host_save_' + f))
+            print(f'  (the host\'s save kept in {d})', flush=True)
+        except Exception as e:
+            print(f'  (the save could not be kept: {e})', flush=True)
+    print('  host:', next((x for x in (host.call('coop.savestrip')['out'] or '').splitlines() if 'keys=' in x), ''),
+          flush=True)  # (the save's key filter, BUG-1315)
     st = next((l for l in (host.call('coop.status').get('out') or '').splitlines() if 'own species' in l), '')
     print(f'  host {st.strip()}', flush=True)
     ck(saved and not hits, f'the host\'s save names neither the guest\'s key {gkey:08X} nor its creations {orig:08X} / '

@@ -54,7 +54,7 @@ COOP_FIX("savestrip.keys", "BUG-1315", g_key_fix,
 static std::vector<KeyFilter> g_key_filters;
 static bool g_world_saving;     // inside SaveGame (main thread)
 static bool g_save_any_write;   // the save of this frame has written its first object reference
-static uint32_t g_key_raw;
+static uint32_t g_key_raw, g_key_events;
 static uint32_t g_key_seen, g_key_rewritten, g_key_early, g_key_off, g_key_save_n, g_key_save_early, g_key_save_off;
 void add_key_filter(KeyFilter fn) { g_key_filters.push_back(fn); }
 static bool saving_now() { return g_world_saving || !g_hooks_ended; }
@@ -175,6 +175,75 @@ static bool SK_CDECL h_WriteInt32(void* s, const uint32_t* p, int count, int end
         }
     }
     return o_WriteInt32(s, copy.empty() ? p : copy.data(), count, endian);
+}
+
+// GameEventLog_Write 0x7EB210 (thiscall(log, stream) ret 4): the game's event lists (kinds 7..12, each event a vector of
+// dwords written raw, little-endian); events of 0xE39890 name species {type, instance, group} (a tribe baby's 0x782E0768
+// the guest's line key twice: the main stream of the host's Tribe save, lab 20261119-113320). While a save is written
+// every line key in them is the world's for the call (memory put back after it).
+using EventLogWrite_t = bool(SK_THISCALL*)(void*, void*);
+static EventLogWrite_t o_EventLogWrite;
+static bool SK_THISCALL h_EventLogWrite(void* log, void* stream)
+{
+    struct Kept {
+        uint32_t* p;
+        uint32_t v[3];
+    };
+    std::vector<Kept> kept;
+    if (!g_key_filters.empty() && saving_now() && game::on_main() && !IsBadReadPtr(log, 0x30)) {
+        uint32_t** buckets = *(uint32_t***)((uint8_t*)log + 8);
+        uint32_t n = *(uint32_t*)((uint8_t*)log + 0xC);
+        for (uint32_t kind = 7; kind <= 12 && buckets && n && n < 0x10000 && !IsBadReadPtr(buckets, n * 4); kind++) {
+            uint32_t* node = buckets[kind % n];
+            for (int guard = 0; node && guard < 64 && !IsBadReadPtr(node, 0x14) && node[0] != kind; guard++)
+                node = (uint32_t*)node[4];
+            if (!node || IsBadReadPtr(node, 0x14) || node[0] != kind)
+                continue;
+            uint32_t* sent = node + 1;
+            int guard = 0;
+            for (uint32_t* e = (uint32_t*)*sent; e && e != sent && guard < 0x4000 && !IsBadReadPtr(e, 0x1C);
+                 e = (uint32_t*)*e, guard++) {
+                uint32_t* b = (uint32_t*)e[5];
+                uint32_t* end = (uint32_t*)e[6];
+                if (!b || end < b + 3 || end - b > 0x400 || IsBadWritePtr(b, (end - b) * 4))
+                    continue;
+                int cnt = (int)(end - b);
+                for (int i = 0; i + 2 < cnt; i++) {
+                    if (b[i] != kCreatureType || !b[i + 1])
+                        continue;
+                    uint32_t k[3] = {b[i + 1], b[i], b[i + 2]}; // {instance, type, group}
+                    bool hit = false;
+                    for (KeyFilter f : g_key_filters)
+                        if (f(k)) {
+                            hit = true;
+                            break;
+                        }
+                    if (!hit)
+                        continue;
+                    g_key_seen++;
+                    if (!g_key_fix || !g_on) {
+                        g_key_off++;
+                        g_key_save_off++;
+                        continue;
+                    }
+                    kept.push_back({b + i, {b[i], b[i + 1], b[i + 2]}});
+                    if (g_key_save_n < 8)
+                        H->log(M, SK_INFO, "save: key %08X of a species line in the event log (kind %u, event %08X) "
+                                           "written as the world's %08X (BUG-1315)",
+                               b[i + 1], kind, b[0], k[0]);
+                    b[i] = k[1], b[i + 1] = k[0], b[i + 2] = k[2];
+                    g_key_rewritten++;
+                    g_key_save_n++;
+                    g_key_events++;
+                    i += 2;
+                }
+            }
+        }
+    }
+    bool r = o_EventLogWrite(log, stream);
+    for (auto it = kept.rbegin(); it != kept.rend(); ++it)
+        memcpy(it->p, it->v, 12);
+    return r;
 }
 
 static void key_save_done()
@@ -419,9 +488,9 @@ std::string status()
     char b[420];
     snprintf(b, sizeof b,
              "savestrip=%d saves=%u last_ours=%u nulled=%u offthread=%u behavior_nulls_dropped=%u empty_herds_stripped=%u "
-             "empty_game_herds_kept=%u max_save_frames=%u keys=%d line_keys=%u rewritten=%u early=%u raw=%u kept_off=%u\n",
+             "empty_game_herds_kept=%u max_save_frames=%u keys=%d line_keys=%u rewritten=%u early=%u raw=%u events=%u kept_off=%u\n",
              (int)g_on, g_saves, g_last_count, g_nulled, g_offthread, g_bhv_nulls, g_empty_stripped, g_empty_kept_game,
-             g_max_span, (int)g_key_fix, g_key_seen, g_key_rewritten, g_key_early, g_key_raw, g_key_off);
+             g_max_span, (int)g_key_fix, g_key_seen, g_key_rewritten, g_key_early, g_key_raw, g_key_events, g_key_off);
     return b;
 }
 
@@ -450,6 +519,9 @@ bool init(const SkHost* host, SkMod* mod)
     if (uintptr_t wk = H->sym("SporeCoop::Stream_WriteResourceKey")) // BUG-1315
         if (H->hook_create(M, (void*)wk, (void*)&h_WriteKey, (void**)&o_WriteKey) != 0)
             H->log(M, SK_WARN, "savestrip: no hook on the save stream's key writer: keys of a species line may reach saves");
+    if (uintptr_t ev = H->sym("SporeCoop::GameEventLog_Write")) // BUG-1315: keys in the game's event lists
+        if (H->hook_create(M, (void*)ev, (void*)&h_EventLogWrite, (void**)&o_EventLogWrite) != 0)
+            H->log(M, SK_WARN, "savestrip: no hook on the event log's Write: keys of a species line in events may reach saves");
     if (uintptr_t wi = H->sym("IO::WriteInt32")) // BUG-1315: keys in raw arrays
         if (H->hook_create(M, (void*)wi, (void*)&h_WriteInt32, (void**)&o_WriteInt32) != 0)
             H->log(M, SK_WARN, "savestrip: no hook on IO::WriteInt32: keys of a species line in raw arrays may reach saves");
