@@ -15,11 +15,17 @@ all-zero captain key and does not ask again (lab 2026-11-14). Here:
      with real clicks (the dice, the check): the game sets no captain;
   3. the screen is opened as the game's Space update opens it (`coop.captain open`: a Space UI whose rank badge was
      never clicked builds the Galactic Adventures mission screen, Decline / Accept, and goes on to the captain's
-     portrait, the reporter's crash site; the badge itself first runs the captain screen's equipment panel, which
-     faults and stops for a captain-less empire in the lab, BUG-0304 family);
-  4. the rank badge with a real click, then the screen is closed.
+     portrait, the reporter's crash site), then its Accept;
+  4. the rank badge with a real click opens the captain screen (its Equipment panel), then the screen is closed.
 Both games must keep running. `SPORE_FIX_OFF=game.captain_portrait` (the game's code) must FAIL: the guest crashes
 at 0xA055B5 in step 3.
+Since 0.7.15.3 the equipment panel goes on past the item list (`game.captain_items`, BUG-0304) to the panel's stats,
+which read the captain's species profile (null for captain 0: 0xC02A14, BUG-1278). Step 3 leaves the mission screen
+by its Accept (the full panel, as the reporter's Accept did) and the panel's OK; Decline of the mission screen of no
+offer leaves the Space UI hidden behind the drive's message, and the badge does nothing after it (lane 3,
+2026-11-19). No handled fault is allowed. Captain 0 reaches neither guarded fault in the lab (2026-11-19: no guard
+warning, `SPORE_FIX_OFF=game.captain_stats` passed, lab 20261119-112022): the item list and the species profile of key
+0 are found. BUG-1278's twin is space_captain (the fixture captain has no species profile in the guest's game).
 
   SPORE_LANE=2 python3 tools/tests/coop_space_captain_none.py
 """
@@ -32,9 +38,12 @@ import uifind
 from twoinst import Checks, shot, start
 
 BADGE = (1390, 890)            # the rank badge over the ship's picture, 1440x1080
+ACCEPT = 0x075DD108            # the adventure mission screen's Accept (SporeCoop::CaptainPanel_OnMessage)
 DICE, CHECK = (916, 555), (937, 631)  # "Name Your Captain": a random name, the check button
 UNKNOWN_SPECIES = '1BADBEEF'   # an instance no database of the game has
-# the game's own handled faults of the captain screen without a captain (BUG-0304 family)
+# the game's own handled faults of the captain screen without a captain (BUG-0304 family): none is allowed. Until
+# 2026-11-19 a fault was allowed while its own guard was off, which let the twin SPORE_FIX_OFF=game.captain_stats pass
+# with its 0xC02A14 caught (lab 20261119-094613, where the badge did not even open the panel); each fault fails now.
 HANDLED = ('0x005971D4', '0x00C02A14')
 
 
@@ -61,7 +70,7 @@ def other_faults(con):
         out = con.call('exc')['out']
     except (OSError, ValueError):
         return ['(no answer)']
-    return [ln for ln in out.splitlines() if ln.startswith('0x') and not any(h in ln for h in HANDLED)]
+    return [ln for ln in out.splitlines() if ln.startswith('0x')]
 
 
 def main():
@@ -109,36 +118,41 @@ def main():
     time.sleep(3)
     if not ck(alive(guest), 'guest: still runs after the captain screen opened (no crash at 0xA055B5)'):
         return ck.result()
-    # this path of the screen is the Galactic Adventures mission screen with the captain's portrait (Decline, Accept)
-    up = fz.wait(lambda: uifind.shown(guest, 'Decline') is not None, 10)
+    # this path of the screen is the Galactic Adventures mission screen with the captain's portrait (Decline, Accept),
+    # found by control id: `coop.ui find "Decline"` matched another, always shown window (lab 20261119-094613)
+    up = fz.wait(lambda: uifind.where(guest, ACCEPT) is not None, 10)
     ck(up, 'guest: the screen with the captain\'s portrait is up (Decline, Accept)')
     print('  guest:', captain(guest)[2])
     shot(guest, 'captain_none_open.png')
-    p = uifind.shown(guest, 'Decline')
+    # leave it by Accept (the full captain panel, mode 2: the items palette and the stats) and the panel's OK. Not
+    # Decline: on the mission screen of no offer it leaves the Space UI hidden behind the drive's message and the rank
+    # badge does nothing after it (lane 3, 2026-11-19)
+    p = uifind.where(guest, ACCEPT)
     if p:
         guest.call(f'move {p[0]} {p[1]}')
         time.sleep(0.3)
         guest.call(f'click {p[0]} {p[1]}')
+        fz.wait(lambda: play_space.captain_open(guest), 10)
         time.sleep(2)
-    if uifind.shown(guest, 'Decline') is not None:  # opened without an adventure offer, Decline may do nothing
-        guest.call('key escape')
-        time.sleep(2)
-    print('  guest: the mission screen', 'closed' if uifind.shown(guest, 'Decline') is None else 'still up (no offer behind it)')
+    ck(alive(guest), 'guest: still runs after Accept')
+    play_space.close_captain(guest)
+    print('  guest: the mission screen', 'closed' if uifind.where(guest, ACCEPT) is None else 'still up')
 
     # 4. the rank badge with a real click
     guest.call(f'move {BADGE[0]} {BADGE[1]}')
     time.sleep(0.5)
     guest.call(f'click {BADGE[0]} {BADGE[1]}')
-    fz.wait(lambda: play_space.captain_open(guest), 10)
+    opened = fz.wait(lambda: play_space.captain_open(guest), 10)
     time.sleep(2)
     ck(alive(guest), 'guest: still runs after the rank badge')
+    ck(opened, 'guest: the rank badge opened the captain screen (its Equipment panel, the stats of no captain)')
     shot(guest, 'captain_none_badge.png')
     play_space.close_captain(guest)
 
     for who, c in (('host', host), ('guest', guest)):
         ck(alive(c), f'{who}: still answers')
         bad = other_faults(c)
-        ck(not bad, f'{who}: no fault other than the captain screen\'s handled ones {HANDLED}: {bad[:3]}')
+        ck(not bad, f'{who}: no caught fault (the captain screen\'s {list(HANDLED)} are guarded): {bad[:3]}')
     return ck.result()
 
 

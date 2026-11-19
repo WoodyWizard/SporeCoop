@@ -103,6 +103,14 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   appears; before, it was the tribe's species for a moment first (BUG-1299; still open until its lab run).
 - Space: a guest whose own ship has the same id as the host's ship now flies its own ship on its screen; before, its
   game could show the host's ship instead (BUG-1301; still open until its lab run).
+## [0.7.15.3] - 2026-11-19
+
+A fix for a crash in the Space stage reported on GitHub (#203): a player who joined the host's Space game crashed
+when opening the captain screen or accepting an adventure mission. Both players should update.
+
+### Fixed
+- Space: a player who joined the host's Space world no longer crashes on Windows when opening the captain screen
+  (the captain button over the ship's picture) or when accepting an adventure mission (BUG-0304, BUG-1278).
 
 ## [0.7.15.2] - 2026-11-18
 
