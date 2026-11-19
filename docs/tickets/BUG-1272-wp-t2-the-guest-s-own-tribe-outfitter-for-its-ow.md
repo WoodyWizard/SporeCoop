@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: feat/w54-outfit
-commits: 88dd9fee
+commits: 88dd9fee b1783381
 tests: tribe_own_outfitter, tribe_outfit
 signature: TribeUI_EditorReturn 0x00CDCC90
 docs: docs/re/tribe.md#tribe-own-outfitter, docs/06-testing.md#testing-tribe-own-outfitter
