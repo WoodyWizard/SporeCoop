@@ -5288,3 +5288,22 @@ BUG-9160 / 9181 / 9194 (PR #196 by PandizeLive, MIT), see #creature-lineages-coc
   is in a save (world effects, the puppet's scale and pose; the puppets are stripped from saves as before).
 * Test: `coop_cocoon.py` (cocoon, cocoon_guest, the twin cocoon_off): the observer's `coop.cocoon` reads the puppet's
   current animation from its AnimatedCreature (vt 0x58) and the glow's IsActive.
+
+## A guest's own mating at the nest (2026-11-19, feat/w56-cocoon)
+<a id="creature-guest-mating"></a>
+
+BUG-1305 (the Lineages fork's BUG-9175), BUG-1304 (its BUG-9161); `mods/coop/guest_mating.cpp`, switch
+`creature.guest_mating`, test `coop_guest_mating.py` (guest_mating, twin guest_mating_off).
+
+* ✔ (lab lane 6, 20261119-111735, before the fix) on a guest the drama manager picks a mate near the nest (+0xB58 &
+  0x10) that is one of the host's copies (a proxy, `coop.npc list`); the guest's mating call and a real click on it put
+  the guest's creature into its mating action 02D852F0 at once, but the mate's node stays FFFFFFFF (its AI does not run
+  in the guest's game) and the creature waited there for 90 s: no egg scene, no editor.
+* ✔ (lab, rel/0.7.15.2 20261118-144132 creature_mating / editor_now) on the host the egg scene ends by itself: the
+  mating editor request comes 25-27 s after the click with no key pressed. The fork's "never ends" (its BUG-9161) is not
+  in our host; on the guest the pairing never reached the scene (above).
+* The fix: on a guest in the mating action with a host copy as its mate, once its creature is within 4 m of it for
+  1 s (or 12 s after the action began) the mod sends the creature game its own "mating done" message 0x4D9686F
+  (CreatureGame_HandleMessage 0xD42E50 -> 0xD3C650(1), then CreatureGame_Update -> 0xD3C650(0): the mating editor's
+  own request, tag 0x12191CA), outside the frame; Submit's hook takes it as the guest's own evolution. Once more after
+  8 s when no editor came. No egg scene plays on the guest.
