@@ -4903,6 +4903,11 @@ BUG-0929, BUG-0937. GOG 2024, lane 4.
 * ✔ (runtime) The window's drawable is a UTFWin::ImageDrawable (vtable 0x01443248) with its UTFWin::Image at +0x24
   (that object has the portrait's size 67 x 68 at +0x20 / +0x24); `UTFWin::Image::GetImage` of a key gives the game's
   one Image of that png, so comparing the two pointers says which picture the window draws (`coop.portrait`).
+  ~ superseded (2026-11-19): see the CORRECTION below.
+* CORRECTION (2026-11-19, feat/lineages-47, BUG-9264): 0x01443248 is the GOG 2016 build's vtable. On Steam (the
+  GOG 2024 code) `coop.portrait` read the portrait's drawable vtable 0x01C33248 (class not identified), so the check
+  never matched and `creature.hud_portrait` never set the portrait on the supported build. `creature.hud_portrait_unread`
+  now sets the avatar's species png once per species when the picture cannot be read (seen working on the MSI).
 * Fixes: `creature.tag_height` (the tag at the highest posed bone x scale + 0.4 m: 1.55 m for that creature instead of
   2.08 m), `creature.hud_portrait` (twice a second outside the frame: the portrait set to the avatar's species png
   when the window draws another one).
