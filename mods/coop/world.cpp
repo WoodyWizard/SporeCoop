@@ -619,6 +619,7 @@ static bool g_one_save_fix = true;     // BUG-0112: one save for every share tha
 // BUG-1294 (found by the Lineages fork, PR #196, its BUG-9166): a waiting share joins only a save posted when or after it
 // was asked for. `coop.fix world.share_fresh_save off`: any save in flight (0.7.15)
 static bool g_share_fresh_fix = true;
+static constexpr uint64_t kFreshGapMs = 2000; // BUG-1294: a waiting share's own save, this long after the other share left
 static unsigned g_fresh_waits; // shares that waited for their own save
 // BUG-1295 (found by the Lineages fork, PR #196, its BUG-9215): a player who joined while the host was on its death
 // screen got the world saved with the host's dead avatar and arrived dead at the host's spot ("You were killed in
@@ -1481,6 +1482,10 @@ void tick(net::Session& s)
                 }
             }
             if (wait && p.need_save) {
+                // BUG-1294 (lab run 20261119-104136): its own save posted in the frame the other share went out (80 ms
+                // after that save's box was confirmed) was dropped by the game (no box, nothing written, try 2 after
+                // 10 s); it is posted kFreshGapMs after the other share left
+                p.next_try = std::max(p.next_try, now + kFreshGapMs);
                 if (!p.wait_said) {
                     p.wait_said = true;
                     g_fresh_waits++;

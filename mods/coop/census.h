@@ -61,6 +61,9 @@ struct Ctx {
     std::function<void(uint32_t& mode, uint32_t& world)> place; // g_mode, g_world
     std::function<bool(net::Vec3& pos)> self_pos;               // the own player (false: none)
     std::function<int(void* c)> puppet_owner;                   // BUG-0450: the player whose puppet c is (-1 none)
+    // BUG-1310 (host, own DNA): `st wallet id=<guest> dna=<f> spent=<n>` lines of every guest with its own wallet in this
+    // mode (the host's cell spent count S+0x2C given), "" for none
+    std::function<std::string(uint32_t mode, int host_spent)> wallets;
 };
 
 void init(const SkHost* host, SkMod* mod, Ctx ctx); // registers coop.census and coop.wstate

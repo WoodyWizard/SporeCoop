@@ -4698,6 +4698,15 @@ profile for the player tribe's slot 0 during that one spawn; nothing is written 
 existing local member (a mirror that binds) and members whose owner is decided later (a baby nobody claimed, the
 turn split) still go through the pass. Not run on the lab yet (`coop_own_editors_robust.py birth`).
 
+## The stage card writes the consequence archetype (2026-11-19, fix/w57-sync)
+<a id="tribe-card-archetype"></a>
+
+BUG-1280 (tribe_civ_aggressive). ✔ (runtime, lab runs 20261119-104136 lane 3 and 20261119-111559 lane 9) cPlayer
++0x1104 set to 0CAC124D (tribe_aggressive) before the advance is C2CA9495 (tribe_mixed, the fixture tribe's play) when
+the host is back from the City Hall editor: the advance's stage card (the History screen with the consequence trait)
+or the steps up to the City Hall editor write the trait from the tribe's own play. Set again back in Tribe after the City
+Hall editor (before TRG2CVG_ShowCityHall's end), the game opens 7D433FAD: the vehicle editor is picked from +0x1104 at
+that submit ([tribe-end-editors](#tribe-end-editors)), not earlier.
 ## SetSpecies faults on a tribe kid (2026-11-19, fix/w57-tribe-keys)
 <a id="tribe-kid-setspecies"></a>
 

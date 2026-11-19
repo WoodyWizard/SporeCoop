@@ -604,7 +604,7 @@ static bool host_sends_alpha()
     at = now;
     bool has = false;
     std::vector<net::FamilyRev> fam;
-    yes = C.sess && C.sess->peer_families(0, has, fam) && net::compat::host_relays_world_events(fam, has);
+    yes = C.sess && C.sess->host_families(has, fam) && net::compat::host_relays_world_events(fam, has); // guest: the host's WELCOME
     return yes;
 }
 static constexpr float kPartnerAiRange = 80.f; // m: NPCs farther from a partner than this ignore it

@@ -9516,6 +9516,23 @@ cell editor with real input; own DNA by default, `--shared` the old checks as `e
   editor, left with the red cross, the host observes), twin `cocoon_off`; `guest_mating` (BUG-1304, BUG-1305: the
   guest's own mating at the nest the players' way, no key during the egg scene). Key frames are shot on the observer
   only, with settle 0 (the partner sits in its editor, which the settle would wait out).
+
+## The Cell kin test after its first lab run (2026-11-19, fix/w57-cellkin)
+<a id="testing-cell-kin-units"></a>
+
+`cell_kin_species` (`coop_cell_kin_species.py --editor`, BUG-1257, docs/re/cell.md#cell-kin-test-units), about 5 min:
+* Distances are in widths of the game's visible box (`coop.pool kin` prints `box=`; 20 x 15 cell units at every
+  level): apart 6 widths (120 units), "near" 1.75 widths (35 units). The first version took `5 / world scale` (0.0003
+  at level 10) and found no kin near anybody.
+* The guest's cell is the wizard premade `E219E5D2`; with `BAF1AD40` the guest's own cell editor never closes on Done.
+* `coop.pool invulnfor 900` again after the guest's rebuild for its chosen cell (a knocked-out guest respawned next to
+  the host in the middle of the checks).
+* The kin are few and the game makes them only as tiles enter the populated range: each check samples every 3 s for
+  up to 45 s (the host swims half a view width now and then); `coop.pool kin` prints each cell's host pool index
+  (`key=`), so the test tells the kin made since the players parted from the ones made while they were together (the
+  owner's mix: those may swim near the host afterwards and are exempt there; the guest's fresh area is checked strictly).
+* Key frames `apart_kin_close` and `after_editor_kin_close` put each player next to its nearest own kin (the kin swim
+  mostly off screen); every note ends with the kin on each screen at the shot.
 ## The captain screen without faults (space_captain, space_captain_none, 2026-11-18, fix/w55-captain)
 <a id="testing-captain-items"></a>
 
@@ -9544,3 +9561,32 @@ BUG-0304 (GitHub #203), BUG-1278. Written without a lab run (owner rule 2026-11-
 * CORRECTION (2026-11-19): BUG-1278's twin is `space_captain=game.captain_stats` (the fixture captain has no species
   profile in the guest's game: `stats: skipped` +3 per opening). Captain 0 reaches neither guarded fault, and
   space_captain_none allows no handled fault at all now (the old allowance for a guard that is off let its twin pass).
+
+## The lab gates and own DNA per player (2026-11-19, fix/w57-dna)
+<a id="testing-gates-own-dna"></a>
+
+With own DNA per player (WP-D, BUG-1291, docs/06-testing.md#testing-dna-own) a guest's DNA differs from the host's on
+purpose; the gates compared one shared total and failed every own-DNA test (lab 20261119-104136, -110020, -102828).
+BUG-1310 teaches them the model "party income, own wallet" (switch `diag.own_dna`, off: every guest against the host's
+DNA as before):
+
+* The host exposes its record of each guest's wallet: the own trace line's `dna_own=<id>:<v>,...` (Creature, host,
+  only guests that play their own wallet: an older mod, `all.shared_dna` on or creature.mode host list none), the
+  `st wallet id=<guest> dna=<f> spent=<n>` rows of `coop.wstate` (Creature: the budget; Cell: the spent count) and the
+  sync-check's digest (the host compares that guest's `dna` total with the wallet, written `own dna: host <record>,
+  guest <game>`). Every game's own line in Creature has `bar=` (cPlayer +0x10F0), the digest a `bar` total.
+* What is compared: a listed guest's game DNA against the host's record (monitor `totals`, detector
+  `Creature:state:dna_own`, Cell `Cell:state:dna_spent_own`, sync-check `own dna`) and its evolution bar against the
+  host's (monitor `bar:`, sync-check `bar`, detector `goal_progress` as before): the bar stays the party's. A guest the
+  host does not list is compared with the host's DNA, and its bar is not compared by the monitor / the sync-check
+  (an older guest's bar is not the party's).
+* The values are the game's on the guest's side; the host's side is the mod's record by necessity (the wallet lives
+  only there): a guest that shows the host's DNA while its wallet differs fails, and so does a wallet that drifts from
+  what the guest's game shows.
+* Proofs: tools/tests/gates_selftest.py (monitor), tools/tests/tools_selftest.py (detector), test_diag_own_dna in
+  tests/net_tests.cpp (sync-check); the twin `dna_own_gates_off` (`SPORE_FIX_OFF=diag.own_dna`) fails on the gates as
+  the night of 20261119 did.
+* BUG-1311 (`dna_own_host_editor`, twin `dna_own_host_editor_off` = `creature.own_dna_edge` off): the host leaves its
+  editor alone while the guest plays on; the guest's game log must have no shared total (`dna: a -> b cause=`, own
+  totals say `dna: own a -> b`) and its bar must stay the party's. `coop.dna own` prints `edge=` (the switch) and
+  `strays=` (totals of the host's DNA sent to an own-wallet guest at a mode edge: counted with the switch off).

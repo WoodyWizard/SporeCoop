@@ -3508,6 +3508,59 @@ static void test_diag_compare()
 
 // MSG_DIAG between new and old games: an older SporeCoop gets an unknown message type (its handler
 // ignores it) and the session goes on; a mark of a guest is relayed by the host to the other guest
+// BUG-1310: own DNA per player (WP-D): the host compares a guest with its own wallet against the host's record of it and
+// the bars with each other; a guest without one against the host's DNA, bars not compared (the shared pool as before)
+static void test_diag_own_dna()
+{
+    printf("diag: own DNA: a guest's DNA against the host's record of its wallet, the bar the party's (BUG-1310)\n");
+    namespace dg = net::diag;
+    auto make = [](float hd, float hb, float gd, float gb, dg::Digest& h, dg::Digest& g) {
+        h = {};
+        g = {};
+        h.mode = g.mode = 0x1654C01;
+        h.world = g.world = 0x42;
+        g.self = 1;
+        h.totals = {{dg::kTotalDna, hd}, {dg::kTotalBar, hb}};
+        g.totals = {{dg::kTotalDna, gd}, {dg::kTotalBar, gb}};
+    };
+    auto ids = [](const dg::Compared& c) {
+        std::string o;
+        for (auto& i : c.issues)
+            o += i.id + " ";
+        return o;
+    };
+    dg::Digest h, g;
+    make(150, 150, 120, 150, h, g); // own: the guest spent 30, its wallet 120
+    dg::own_dna_view(h, g, true, 120);
+    CHECK(ids(dg::compare(h, g)).empty());
+    make(150, 150, 120, 150, h, g); // the same guest compared with the host's DNA (the switch off): a dna MISMATCH
+    dg::own_dna_view(h, g, false, 0);
+    CHECK(ids(dg::compare(h, g)) == "total:1 ");
+    make(150, 150, 150, 150, h, g); // own wallet 120, the guest shows the host's 150: an own dna MISMATCH
+    dg::own_dna_view(h, g, true, 120);
+    CHECK(ids(dg::compare(h, g)) == "total:4 " && dg::total_name(dg::kTotalDnaOwn) == std::string("own dna"));
+    make(150, 150, 120, 180, h, g); // own, the guest's bar ahead of the party's: a bar MISMATCH
+    dg::own_dna_view(h, g, true, 120);
+    CHECK(ids(dg::compare(h, g)) == "total:3 ");
+    make(150, 150, 150, 180, h, g); // shared pool: the bar is not compared (an older guest's bar)
+    dg::own_dna_view(h, g, false, 0);
+    CHECK(ids(dg::compare(h, g)).empty());
+    {   // the wallet's recent values are the late window of an own total (a guest a moment behind)
+        make(150, 150, 140, 150, h, g);
+        dg::own_dna_view(h, g, true, 120);
+        std::vector<std::pair<uint8_t, float>> recent = {{dg::kTotalDnaOwn, 140}};
+        CHECK(ids(dg::compare(h, g, {}, &recent)).empty());
+        recent = {{dg::kTotalDna, 140}}; // the host's own DNA of a moment ago is not that wallet
+        CHECK(ids(dg::compare(h, g, {}, &recent)) == "total:4 ");
+    }
+    {   // an older guest (no bar in its digest) with its own wallet: the DNA only
+        make(150, 150, 120, 0, h, g);
+        g.totals.pop_back();
+        dg::own_dna_view(h, g, true, 120);
+        CHECK(ids(dg::compare(h, g)).empty());
+    }
+}
+
 static void test_diag_session()
 {
     printf("diag: MSG_DIAG relayed by the host, ignored by an older guest\n");
@@ -4686,6 +4739,47 @@ static void test_family_check()
     }
 }
 
+// BUG-1282 / BUG-1283 (lab run 20261119-104136): the guest's gate "does the host relay its drama events and send the
+// nest alpha bit" (net/compat.h host_relays_world_events) asked peer_families(0), which answers only on the host, so a
+// guest of a 0.7.16 host never took the host's events or alpha bits. host_families() is the guest's view of the host's
+// WELCOME: a 0.7.16 host passes the gate, a host that sent no revisions (before 0.7.15) and one at npc 1.1
+// (0.7.15.2) do not; the host itself has no host_families
+static void test_host_families()
+{
+    printf("guest: the host's family revisions from its WELCOME, the npc 1.2 gate (BUG-1282, BUG-1283)\n");
+    std::string err;
+    auto npc_minor = [](Session& s, uint16_t minor) {
+        for (auto& f : s.families)
+            if (f.family == (uint8_t)Family::npc)
+                f.minor = minor;
+    };
+    for (int c = 0; c < 3; c++) { // 0: this build, 1: npc 1.1 (0.7.15.2), 2: no revisions (before 0.7.15)
+        Session h, a;
+        if (c == 1)
+            npc_minor(h, 1);
+        if (c == 2)
+            h.send_families = false;
+        bool has = true;
+        std::vector<FamilyRev> fam;
+        CHECK(!a.host_families(has, fam)); // not joined yet
+        CHECK(h.host(0, "Alice", err));
+        CHECK(a.join("127.0.0.1:" + std::to_string(h.port()), "Bob", err));
+        tick({&h, &a}, 400);
+        CHECK(a.connected());
+        CHECK(!h.host_families(has, fam));              // the host has no host
+        CHECK(!a.peer_families(0, has, fam));           // the host-only question (the cause of the bug)
+        CHECK(a.host_families(has, fam));
+        bool gate = compat::host_relays_world_events(fam, has);
+        printf("  case %d: has=%d families=%zu gate=%d\n", c, (int)has, fam.size(), (int)gate);
+        CHECK(has == (c != 2));
+        CHECK(gate == (c == 0));
+        if (c == 0)
+            CHECK(fam == compat::my_families());
+        h.leave();
+        a.leave();
+    }
+}
+
 
 // BUG-1296 (found by the Lineages fork, PR #196, its BUG-9098): does a world-sized reliable transfer stall on a
 // constrained lossy path? A model of such a path (ours, not the fork's): 200 packets/s through a 16-packet queue (a
@@ -5072,6 +5166,7 @@ int main(int argc, char** argv)
         {"test_diag_messages", test_diag_messages},
         {"test_diag_clock", test_diag_clock},
         {"test_diag_compare", test_diag_compare},
+        {"test_diag_own_dna", test_diag_own_dna},
         {"test_diag_npc_agl", test_diag_npc_agl},
         {"test_diag_session", test_diag_session},
         {"test_diag_conn_stats", test_diag_conn_stats},
@@ -5084,6 +5179,7 @@ int main(int argc, char** argv)
         {"test_dir_gate", test_dir_gate},
         {"test_families_wire", test_families_wire},
         {"test_family_check", test_family_check},
+        {"test_host_families", test_host_families},
         {"test_welcome_split", test_welcome_split},
         {"test_recv_skip_big", test_recv_skip_big},
         {"test_dbpf_flag4", test_dbpf_flag4},

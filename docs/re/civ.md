@@ -2606,3 +2606,25 @@ BUG-1290 (WP-S1b, `core.own_civ_late`, mods/coop/civ_arrival.cpp; #civ-own-arriv
   next arrival. `coop.civarrival` prints `late: ... checked why='...'`; `coop.civarrival forget` removes the note.
 * Not checked: the world crc of a world reached by the live Tribe -> Civ change equals the one of the planet's save
   loaded later (both are the save's name; BUG-0258's "snapshot.spo" is the host's side).
+
+## The civ_npc fixture's vehicle slots and a full religious conversion (2026-11-19, fix/w57-sync)
+<a id="civ-npc-fixture-slots"></a>
+
+BUG-1284..1286 tests (coop_civ_influence.py). ✔ (Ghidra) `VehicleSlotsLeft` 0xBF2240: 0 at 36 entries of +0xB0, else
+the purpose allowance **0xBF2110** minus the civ's vehicles of that purpose (vehicle +0xB20). 0xBF2110(purpose): 1 for
+purpose 4; 3 when the purpose is the nation's own type (0xBF1080: 0 military, 1 economic, 2 religious; +0x8A clear),
+plus a tech term (0xBF0330 x 0x169CB64), plus per city of that specialization (0xBD8320) its size term (0xBD8AB0 / 0x169C088,
+at most 6, or 3 for a city with +0x519), capped at 36. ✔ (runtime, lab 20261119-104136, 20261119-114425) the civ_npc
+fixture's civilization (one city, military by its vehicles: inferred; four vehicles) has no religious or economic allowance: "no vehicle slot left"
+even after all four vehicles were removed (`coop.civ remove`). `coop.civ spawnveh <ci> <purpose> <loco> force` spawns
+past the allowance (the game's SpawnVehicle does not check it; hpref of #civ-own-designs did the same; the 36 cap
+stays). Of three forced preachers at a far city the host often had only one left later (the city's retaliation
+0xBEB6F8, or a disband: not told apart), without a fault in the other runs; in one run with them 30 m in the air the host
+faulted (BUG-1322). ✔ (runtime, lab 20261119-114030) a vehicle `vput` 30 m over the ground stays there on the host; the
+guest's game puts its copy on the ground (sync-check "v6 34.0"): tests put vehicles on the city's sphere.
+✔ (runtime, lab 20261119-104136 civ_religion_state) ConvertCitizens until every citizen of an NPC city follows the
+player (15 of 15, the meter 200 * 15 / 15 clamped to 100) captures the city at once: "Alice captured a city", its
+cinematic, a share save; the host's meter +0x750 reads 0 right after while the guest's game (the capture not taken yet) showed
+100. A test of the meter converts part of a city (2 of 15: 26.7 on both games, lab 20261119-111559).
+* (fix/w57-sync) The BUG-1286 hook (civ_influence.cpp h_PreachTick) sets a slot's places only when the slot has its live
+  spatial object (+0x78 non-null), the fork's verified condition; before, any 0 / 0 slot ticked got 10 / 2.

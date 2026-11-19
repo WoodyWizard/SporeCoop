@@ -488,14 +488,20 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 4 && a[0] == "spawnveh" && is_host()) {
         // spawnveh <host city index> <purpose 0 military | 1 religious | 2 economic> <loco>: a vehicle of the
         // player's civilization at that city, free (tests, BUG-0530: religious shots); the civ's own design for
-        // that purpose and locomotion, else the game's generated one (key 0, as cVehicle::Load makes it)
+        // that purpose and locomotion, else the game's generated one (key 0, as cVehicle::Load makes it).
+        // `force` (5th word): past the civ's purpose allowance (VehicleSlotsLeft 0), as hpref spawns its reference; the
+        // civ_npc fixture's one city has no slot left of any purpose (BUG-1284, BUG-1286 tests). 36 vehicles stay the cap
         int ci = atoi(a[1].c_str()), purpose = atoi(a[2].c_str()), loco = atoi(a[3].c_str());
+        bool force = a.size() >= 5 && a[4] == "force";
         void* city = ci >= 0 && ci < (int)g_host_cities.size() ? g_host_cities[ci] : nullptr;
         void* civ = player_civ();
         if (!city || !civ)
             return "no such city";
-        if (thiscall<int>(a_SlotsLeft, civ, purpose) <= 0)
+        int left = thiscall<int>(a_SlotsLeft, civ, purpose);
+        if (left <= 0 && !force)
             return "no vehicle slot left";
+        if (left <= 0 && vec_of((uint8_t*)civ + 0xB0).size() >= 36)
+            return "no vehicle slot left (36 vehicles)";
         uint32_t* key = thiscall<uint32_t*>(a_DesignKey, civ, skg::cdecl_call<int>(a_DesignId, purpose, loco));
         uint32_t k[3] = {0, 0, 0};
         if (key)

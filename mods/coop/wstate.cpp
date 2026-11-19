@@ -3,7 +3,7 @@
 // mod's own bookkeeping, so a host's and a guest's dumps compare what each player's game shows.
 //
 // `coop.wstate` prints (one line each; parsers ignore what they do not know):
-//   wstate v1 role=<host|guest|none> mode=<name> modeid=<hex> world=<hex> t=<s>
+//   wstate v1 role=<host|guest|none> mode=<name> modeid=<hex> world=<hex> t=<s> id=<this player's id>
 //   st tod q=(x y z w) day=<s>             the planet context's orientation (the sky, what MSG_WORLD_TIME sends)
 //                                          and cTimeOfDay +0x24 (the day's length, s); every planet stage
 //   st player traits=<cell>,<creature>,<tribe>,<civ>,<space> progress=<f> total=<f> social=<f> combat=<f>
@@ -14,6 +14,11 @@
 //   st cell food=<n> plant=<n> spent=<n>   Cell: cCellSerializableData +0x1C / +0x20 / +0x2C (the DNA shown is
 //                                          DNAForFood(food) - spent, docs/re/cell.md#cell-editor-dna)
 //   st dna v=<f>                           Creature: cCreatureGameData::GetEvolutionPoints
+//   st wallet id=<n> dna=<f> spent=<n>     host, own DNA per player (WP-D, BUG-1310): what guest n's game must show,
+//                                          the host's record of its wallet (Creature: its DNA, -1 elsewhere; Cell: its
+//                                          spent count, -1 elsewhere). The detector compares that guest's game with it
+//                                          instead of the host's own DNA (the one row of the mod's bookkeeping here:
+//                                          the expected value; the compared value is still the guest's game)
 //   species <key>/<key>/<key> relation= x= impressed= killed=   Creature: the species relationship table
 //   st phase stage_end=<0|1>              Tribe: the end of the stage (after the City Hall, tribe::stage_end)
 //   st rel lv=<f>,<f>,<f>,<f>              cRelationshipManager +0x10..+0x1C (the level thresholds, ~)
@@ -141,8 +146,8 @@ static int c_wstate(void*, int, const char* const*, SkOut* out)
             o.clear();
         }
     };
-    snprintf(b, sizeof b, "wstate v1 role=%s mode=%s modeid=%08X world=%08X t=%.1f\n", role, modes::mode_name(mode), mode,
-             world, H->time_seconds());
+    snprintf(b, sizeof b, "wstate v1 role=%s mode=%s modeid=%08X world=%08X t=%.1f id=%d\n", role, modes::mode_name(mode), mode,
+             world, H->time_seconds(), conn ? (int)WC->sess->my_id() : -1);
     o += b;
     bool planet = mode == modes::kCell || mode == modes::kCreature || mode == modes::kTribe || mode == modes::kCiv ||
                   mode == modes::kSpace;
@@ -186,6 +191,17 @@ static int c_wstate(void*, int, const char* const*, SkOut* out)
             snprintf(b, sizeof b, "st cell food=%d plant=%d spent=%d\n", F<int32_t>(s, 0x1C), F<int32_t>(s, 0x20),
                      F<int32_t>(s, 0x2C));
             add(b);
+        }
+    }
+    if (conn && WC->sess->role() == net::Role::Host && WC->wallets && (mode == modes::kCell || mode == modes::kCreature)) {
+        uintptr_t sp = S("Simulator::Cell::cCellSerializableData::_ptr");
+        void* s = mode == modes::kCell && sp ? *(void**)sp : nullptr;
+        std::string w = WC->wallets(mode, R(s, 0x30) ? F<int32_t>(s, 0x2C) : 0);
+        for (size_t p = 0; p < w.size();) { // one row per line
+            size_t e = w.find('\n', p);
+            std::string ln = w.substr(p, e == std::string::npos ? std::string::npos : e - p + 1);
+            add(ln.c_str());
+            p = e == std::string::npos ? w.size() : e + 1;
         }
     }
     if (mode == modes::kCreature) {

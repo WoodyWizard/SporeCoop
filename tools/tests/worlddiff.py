@@ -300,6 +300,8 @@ class State:
         self.tod = self.day = self.player = self.cell = self.dna = self.rel_lv = self.goal = None
         self.res, self.species, self.tribes, self.civs, self.emps, self.planet = {}, {}, [], [], {}, []
         self.res_unsynced = set()
+        self.id = None      # BUG-1310: this player's session id (the head's id=, 0.7.16)
+        self.wallets = {}   # BUG-1310 (host, own DNA): guest id -> {'dna': f, 'spent': n} (-1: not in this mode)
         self.after = None  # BUG-0596: the guest's state read again CELL_GAP s after the host's (pair_dump)
         self.stage_end = False  # BUG-0588 / BUG-0594: the host's game is in the end of its stage
         self.complete = False
@@ -308,6 +310,8 @@ class State:
             m = WS_HEAD.match(line)
             if m:
                 self.role, self.mode, self.modeid, self.world = m.group(1), m.group(2), m.group(3), m.group(4)
+                mi = re.search(r' id=(-?\d+)', line[m.end():])
+                self.id = int(mi.group(1)) if mi else None
                 continue
             if line.startswith('end wstate'):
                 self.complete = True
@@ -330,6 +334,8 @@ class State:
                     self.cell = {k: _num(d, k) for k in ('food', 'plant', 'spent')}
                 elif what == 'dna':
                     self.dna = _num(d, 'v')
+                elif what == 'wallet':  # BUG-1310: `st wallet id=<guest> dna=<f> spent=<n>` (host, own DNA)
+                    self.wallets[int(_num(d, 'id', -1))] = dict(dna=_num(d, 'dna', -1), spent=_num(d, 'spent', -1))
                 elif what == 'phase':
                     self.stage_end = d.get('stage_end') == '1'
                 elif what == 'rel':
@@ -419,13 +425,25 @@ def diff_state(hs, gs, stage):
         tol = (20.0, 0.05) if k == 'money' else (3.0, 0.1)
         if _differs(hs.res[k], gs.res[k], *tol):
             add(f'{stage}:state', k, 1, f'{k} {hs.res[k]:.0f} on the host, {gs.res[k]:.0f} on the guest')
+    # BUG-1310: own DNA per player (WP-D): the host's wallet row of this guest is what its game must show (its DNA in
+    # Creature, its spent count in Cell); a guest without a row plays the shared pool and is compared with the host's
+    wal = hs.wallets.get(gs.id) if gs.id is not None else None
     if stage == 'Cell' and hs.cell and gs.cell:
         for k, tol in (('food', (3.0, 0.1)), ('spent', (1.0, 0.0))):
+            if k == 'spent' and wal and wal['spent'] >= 0:
+                if _differs(wal['spent'], gs.cell[k], *tol):
+                    add('Cell:state', 'dna_spent_own', 1, f'cell spent {gs.cell[k]:.0f} on the guest, the host\'s record '
+                        f'of its own wallet {wal["spent"]:.0f} (its own DNA comes from them)')
+                continue
             if _differs(hs.cell[k], gs.cell[k], *tol):
                 add('Cell:state', 'dna' if k == 'food' else 'dna_spent', 1,
                     f'cell {k} {hs.cell[k]:.0f} on the host, {gs.cell[k]:.0f} on the guest (the DNA shown comes from them)')
     if stage == 'Creature':
-        if hs.dna is not None and gs.dna is not None and _differs(hs.dna, gs.dna, 5.0, 0.1):
+        if wal and wal['dna'] >= 0:
+            if gs.dna is not None and _differs(wal['dna'], gs.dna, 5.0, 0.1):
+                add('Creature:state', 'dna_own', 1, f'DNA {gs.dna:.0f} on the guest, the host\'s record of its own wallet '
+                    f'{wal["dna"]:.0f} (the host\'s own {hs.dna:.0f})')
+        elif hs.dna is not None and gs.dna is not None and _differs(hs.dna, gs.dna, 5.0, 0.1):
             add('Creature:state', 'dna', 1, f'DNA {hs.dna:.0f} on the host, {gs.dna:.0f} on the guest')
         common = set(hs.species) & set(gs.species)
         ga = getattr(gs, 'after', None)

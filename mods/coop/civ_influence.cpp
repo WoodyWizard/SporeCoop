@@ -142,9 +142,10 @@ static void SK_THISCALL h_PreachTick(void* city, int slot, int preachers)
     if (g_preach_fix && a_SetPreachCap && slot >= 0 && slot < 4 && city && skg::readable(city, 0x620)) {
         uint8_t* slots = F<uint8_t*>(city, kCityPreachSlots);
         uint8_t* end = F<uint8_t*>(city, kCityPreachSlots + 4);
-        if (slots && end >= slots + (slot + 1) * 0x80 && skg::readable(slots + slot * 0x80, 8)) {
+        if (slots && end >= slots + (slot + 1) * 0x80 && skg::readable(slots + slot * 0x80, 0x7C)) {
             int* s = (int*)(slots + slot * 0x80);
-            if (s[0] == 0 && s[1] == 0) {
+            // only a slot with its live spatial object (+0x78, the fork's verified condition: the slot is in use)
+            if (s[0] == 0 && s[1] == 0 && s[0x78 / 4] != 0) {
                 thiscall<void>(a_SetPreachCap, city, slot, 10, 2); // the controller's counts (0xD57D16)
                 if (g_in.preach_slots_set++ < 8)
                     H->log(M, SK_INFO, "civ: preaching slot %d of city %p had no places (no camera there): 10 / 2 set (BUG-1286)",

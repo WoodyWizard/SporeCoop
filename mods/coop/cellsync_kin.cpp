@@ -163,13 +163,18 @@ void kin_before_pass()
 
 // tests (`coop.pool kin [r]`): the counters, each player's cell as this game knows it and where it is, then every
 // live foreground creature within r m of a player whose model is one of the players' cells: its model, whether it is
-// a mirror, the nearest player, its resource (the AI's data) and the AI's targets (flee +0x220, chase +0x22C)
+// a mirror, the nearest player, its resource (the AI's data), the AI's targets (flee +0x220, chase +0x22C), its speed,
+// level and swim target, and `key=` the host's pool index (the same cell on every game)
 std::string kin_report(float r)
 {
-    char b[200];
+    char b[300];
     std::string out;
-    snprintf(b, sizeof b, "kin fix=%d own=%u partner=%u no_key=%u unknown=%u one_mode=%u depth=%d\n", (int)g_fix_kin,
-             g_kin.own, g_kin.partner, g_kin.no_key, g_kin.unknown, g_kin.one_mode, g_pop_depth);
+    // box: this game's visible box of the gameplay layer (Simulator::Cell::ViewBoxes, x0 y0 z0 x1 y1 z1): the tests
+    // measure distances in it, since positions do not scale with G+0x514C over many levels (BUG-1257)
+    float* vb = view_boxes();
+    snprintf(b, sizeof b, "kin fix=%d own=%u partner=%u no_key=%u unknown=%u one_mode=%u depth=%d box=%.3f %.3f\n", (int)g_fix_kin,
+             g_kin.own, g_kin.partner, g_kin.no_key, g_kin.unknown, g_kin.one_mode, g_pop_depth, vb ? vb[3] - vb[0] : 0.f,
+             vb ? vb[4] - vb[1] : 0.f);
     out = b;
     if (!in_cell() || !C.sess)
         return out + "not in Cell\n";
@@ -189,7 +194,7 @@ std::string kin_report(float r)
     std::set<uint32_t> models;
     for (auto& p : ps) {
         creations::Key k = creations::player_key(p.id, creations::kCell);
-        snprintf(b, sizeof b, "kin player %u%s cell=%08X drawn=%08X made=%u pos=(%.1f %.1f) line=%08X\n", p.id,
+        snprintf(b, sizeof b, "kin player %u%s cell=%08X drawn=%08X made=%u pos=(%.3f %.3f) line=%08X\n", p.id,
                  p.id == me ? " (me)" : "", k.instance, p.model, p.id < 8 ? g_kin.per_player[p.id] : 0u, p.pos.x, p.pos.y,
                  species::key(p.id, species::Stage::Cell).instance);
         out += b;
@@ -213,9 +218,14 @@ std::string kin_report(float r)
         }
         if (nd > r)
             return;
-        snprintf(b, sizeof b, "kin cell %08X model=%08X mirror=%d near=%d d=%.1f res=%08X flee=%08X chase=%08X pos=(%.1f %.1f)\n",
+        auto hk = g_host_of.find(idx); // key: the host's pool index of the cell (a mirror's), the same cell on every game
+        uint32_t host_key = hk != g_host_of.end() ? hk->second : idx;
+        snprintf(b, sizeof b, "kin cell %08X model=%08X mirror=%d near=%d d=%.3f res=%08X flee=%08X chase=%08X pos=(%.3f %.3f) "
+                 "v=%.3f level=%d target=(%.3f %.3f) key=%08X\n",
                  idx, F<uint32_t>(c, kModelKey), g_host_of.count(idx) ? 1 : 0, who, nd,
-                 (uint32_t)(uintptr_t)F<void*>(c, kRes), F<uint32_t>(c, kFlee), F<uint32_t>(c, kChase), q.x, q.y);
+                 (uint32_t)(uintptr_t)F<void*>(c, kRes), F<uint32_t>(c, kFlee), F<uint32_t>(c, kChase), q.x, q.y,
+                 std::hypot(F<float>(c, kVel), F<float>(c, kVel + 4)), F<int>(c, kLevel), F<float>(c, kTarget),
+                 F<float>(c, kTarget + 4), host_key);
         out += b;
     });
     return out;

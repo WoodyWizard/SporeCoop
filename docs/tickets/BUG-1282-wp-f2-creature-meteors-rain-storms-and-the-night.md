@@ -1,16 +1,16 @@
 ---
 id: BUG-1282
 title: WP-F2: Creature meteors, rain storms and the night predator run separately in each game (fork BUG-9131)
-status: open
+status: fixed
 kind: desync
 stage: Creature
 reported: 2026-11-19
 source: found by the Lineages fork (PR #196), its BUG-9131
 role: guest
 versions: 0.7.15.2
-fixed_in:
+fixed_in: unreleased
 branch: fix/w56-sync
-commits: cdfe214d
+commits: cdfe214d, 618fbd6e
 tests: drama_shared, drama_shared_off
 signature:
 docs: docs/re/creature.md#creature-nest-alpha, docs/re/creature.md#creature-drama-events
@@ -27,6 +27,12 @@ guest" does not hold for us: BUG-0558 shows the host's ship on the guest.
 ## Root cause
 Observed (code): `g_mask = 1u << 2` and h_Start refusing only masked kinds on a guest; nothing relayed from the host.
 
+CORRECTION (2026-11-19, fix/w57-sync, lab run 20261119-104136): the gate never opened on a guest. `host_sends_drama`
+(player_rules.cpp) and npc.cpp `host_sends_alpha` asked `Session::peer_families(0, ...)`, which answers only on the
+host (a guest's HELLO list), so on a guest it was always false ("host_sends=0" against a 0.7.16 host): the guest kept
+its own meteor / rain and refused nothing. Fix: `Session::host_families` (the host's WELCOME list on a guest) feeds both
+gates (docs/04-netcode.md#netcode-host-families); net_tests `test_host_families`.
+
 ## Fix
 `coop.fix creature.shared_events` (drama.cpp): the host's start of kinds 3 and 5 in Creature goes to the guests as
 MSG_PLAYER_RULE kind K_DRAMA (11, reliable, player_rules.cpp drama_out); the guest's game starts the same kind with the
@@ -38,9 +44,18 @@ night predator creature is mirrored by the NPC sync is not checked.
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
-Pending: written and registered, not run yet (the lab waits for the orchestrator's "lab ok" in this batch: the CPU is
-busy with another task). Runs to do: `drama_shared` (must PASS) and `drama_shared_off` (twin, must FAIL).
+- Unit: net_tests `test_host_families` PASS (a 0.7.16 host passes the npc 1.2 gate on the guest, an npc 1.1 host and one
+  without revisions do not; `peer_families(0)` stays false on a guest).
+- Lab, first night run (rel/0.7.16 c7699dca, run dirs in the rel/0.7.16 worktree): drama_shared FAIL
+  out/lab/20261119-104136 ("the host relays its drama events": host_sends=0; the guest's own meteor and rain active):
+  the gate bug above.
+- Lab after the fix (fix/w57-sync 6fdea267, run dirs in the fix/w57-sync worktree): PASS drama_shared
+  out/lab/20261119-111559 (the guest refuses its own night predator, meteor and rain; the host's meteor and rain run in
+  the guest's game). FAIL twin drama_shared_off (SPORE_FIX_OFF=creature.shared_events) out/lab/20261119-112631 for the
+  right reason: the guest's own meteor and rain are active.
+- Rerun on the tree merged with rel/0.7.16 (fix/w57-sync 3801b9f5): PASS drama_shared out/lab/20261119-121505.
 
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fix and tests on fix/w56-sync (switch on); status stays open until the lab runs (FAIL twin, PASS).
+- 2026-11-19: fixed (fix/w57-sync): see the CORRECTION under Root cause; PASS and FAIL twin run dirs above.

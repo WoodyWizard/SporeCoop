@@ -15,6 +15,9 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   there instead (BUG-1315). `coop.tribe ai` shows the food a member carries again (BUG-1317).
 - Lab: a test that starts a game again now waits until the switches of its FAIL twin are really off in that game
   (BUG-1314).
+- The lab's sync checks know own DNA per player: each guest's DNA is compared with the host's record of its own DNA
+  and the evolution bar with the party's (BUG-1310); a guest no longer gets the host's DNA for a moment when the host
+  leaves its editor (BUG-1311).
 
 ### Added
 - Creature: when a partner goes into an editor of its own (its mating evolution, Evolve now, or later at the nest),
@@ -84,20 +87,24 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
 - Joining: a player who gets the host's world while the host's game is still writing a save for another player now
   gets a save of its own, with everything that changed since; before, it could get the older world (for example
   without a nest made a moment before) (found by the PandizeLive Lineages fork) (BUG-1294).
+- Joining: a player who joins while the host's creature is dead now waits until the host lives again and arrives
+  alive; before, it arrived dead under "You were killed in battle" (found by the PandizeLive Lineages fork) (BUG-1295).
+- Creature: a creature of one of the host's own creations now shows up for a guest that knows that creation under
+  another id; before, it could stay invisible on the guest's screen for good (found by the PandizeLive Lineages fork)
+  (BUG-1293).
 - Creature: meteor showers and rain storms are the host's: when they start for the host they start for every player
   at the same time, and a guest's game no longer has its own meteors, rain or night predator that the host never had
-  (BUG-1282; still open: its lab check is pending).
+  (BUG-1282).
 - Creature: a guest sees the host's nest alphas as alphas ("Alpha" on the card, the extra social round); before, a
-  guest's copy of a nest member could be an alpha only on one screen (BUG-1283; still open: its lab check is pending).
+  guest's copy of a nest member could be an alpha only on one screen (BUG-1283).
 - Civilization: the religious governor's faster conversion now comes from its own religious vehicles near the city;
-  before, a nearby trade vehicle gave it and the preachers did not (BUG-1284; still open: its lab check is pending).
+  before, a nearby trade vehicle gave it and the preachers did not (BUG-1284).
 - Civilization: a guest now sees the religious conversion meter and followers of every city as the host's game has
-  them; before, it stayed at zero on the guest's screen (BUG-1285; still open: its lab check is pending).
+  them; before, it stayed at zero on the guest's screen (BUG-1285).
 - Civilization: religious vehicles now convert a city that the host has never looked at; before, they preached there
-  without converting anybody while the city fought them (BUG-1286; still open: its lab check is pending).
+  without converting anybody while the city fought them (BUG-1286).
 - Civilization: a guest gets the host's progress for buying a city and its trade prices, so Buy City can come up on the
-  guest's screen; a trade route the host's game removes disappears for the guest too (BUG-1287; still open: its lab
-  check is pending).
+  guest's screen; a trade route the host's game removes disappears for the guest too (BUG-1287).
 - Tribe and Civilization: a guest whose own creature has the same id as one of the host's (it often has when its first
   creature was made from the host's in the landfall editor) now gets its own creature in its own Tribal Outfitter and
   Civ outfitter; before, the outfitter opened on the host's creature (BUG-1297; still open until its lab run).

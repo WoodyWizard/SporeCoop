@@ -10,7 +10,7 @@ role: host
 versions: 0.7.15.2
 fixed_in: unreleased
 branch: fix/w56-general
-commits: 5488e40d
+commits: 5488e40d, 6fdea267
 tests: unit (tribe_tests end_editors)
 signature:
 docs: docs/re/tribe.md#tribe-end-editors
@@ -32,6 +32,11 @@ inferred to be true in that editor too, so the graduation guard probably still h
 Observed (asm 0xCD2308..0xCD233B): `ADD EAX,0x9AD7D4AA` after `AND EAX,0xE26B6B03`: 9AD7D4AA + E26B6B03 = 7D433FAD
 (mod 2^32). The id 7CB21BAD was a misreading. Inferred: harmless while tribe::stage_end() is true there.
 
+CORRECTION (2026-11-19, fix/w57-sync, lab run 20261119-104136): the test set the archetype before the advance; the stage
+card writes the tribe's own trait into cPlayer +0x1104 afterwards (C2CA9495 back from the City Hall editor), so the game
+opened F670AA43 in both the PASS run and its twin. The test sets it again back from the City Hall editor
+(docs/re/tribe.md#tribe-card-archetype); no mod change.
+
 ## Fix
 tribe_editors.h: the archetype rule of 0xCD2308 and the end-of-Tribe editor list (99E92F05, F670AA43, 9AD7D4AA,
 7D433FAD); vote.cpp tribe_civ_editor() uses it. Evidence for the id: the asm (9AD7D4AA + E26B6B03 = 7D433FAD), the
@@ -44,10 +49,15 @@ and PatchData.package, no 7CB21BAD anywhere (docs/re/tribe.md#tribe-end-editors)
 ## Verification
 - Unit: tribe_tests end_editors PASS (every archetype's vehicle editor is an end-of-Tribe editor); tribe_tests --nofix
   FAIL (2 checks: tribe_aggressive's 7D433FAD and any other archetype's).
-- Lab test tribe_civ_aggressive (coop_tribe_civ.py --aggressive: the host's archetype set to tribe_aggressive before the
-  advance, the game's second editor must be 7D433FAD and the guard must know it) written, NOT run yet (the lab waits
-  for "lab ok"); SPORE_FIX_OFF=tribe.graduation_vehicle_id is its FAIL twin.
+- Lab, first night run (rel/0.7.16 c7699dca): tribe_civ_aggressive FAIL out/lab/20261119-104136 and its twin
+  out/lab/20261119-105127 (rel/0.7.16 worktree) for the same test reason (the game opened F670AA43, see above).
+- Lab after the test fix (fix/w57-sync 6fdea267, run dirs in the fix/w57-sync worktree): PASS tribe_civ_aggressive
+  out/lab/20261119-111559 (the game opened 7D433FAD, end_editor=1, both games reached Civ). FAIL twin
+  (SPORE_FIX_OFF=tribe.graduation_vehicle_id) out/lab/20261119-112631 for the right reason: the game opened 7D433FAD and
+  the guard did not know it (end_editor=0).
+- Rerun on the tree merged with rel/0.7.16 (fix/w57-sync 3801b9f5): PASS tribe_civ_aggressive out/lab/20261119-121505.
 
 ## History
 - 2026-11-18: opened.
 - 2026-11-19: fixed on fix/w56-general (WP-F1); the Lineages fork found the same (its BUG-9060).
+- 2026-11-19: lab verified (fix/w57-sync): the test sets the archetype after the stage card; PASS and FAIL twin run dirs above.
