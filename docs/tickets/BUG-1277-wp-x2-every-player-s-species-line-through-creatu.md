@@ -58,7 +58,7 @@ Tribe members). Once WP-X1 is in: `SPORE_DETECTOR=20 python3 tools/lab.py run li
 * fix/w57-civlook (lanes 4 and 5): line_stages PASSES end to end: lab 20261119-142443-2 and on the tree merged with
   rel/0.7.16 (741c292b) lab 20261119-143657 (the guest's vehicle of its design on both games, BUG-1274; its city's
   citizens painted, the game's bake state checked, BUG-1321; the host's Civ save clean). Twin of the vehicle step:
-  line_stages_nodesign_off FAIL lab 20261119-143657.
+  line_stages_nodesign_off FAIL lab 20261119-143657. Again after the next merge (a42100f2): PASS lab 20261119-151431-2.
   line_stages_outfit on the same tree (lab 20261119-144822): still FAIL outside this branch's area: the guest stays in
   its own Tribal Outfitter ("the guest is back in Tribe" fails, WP-T2 / BUG-1272), then never reaches the host's Civ
   world (stuck civ/follow), so every guest-side Civ check is empty; the host-side Civ checks and the Civ save pass.

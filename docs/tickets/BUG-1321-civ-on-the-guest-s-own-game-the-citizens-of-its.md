@@ -51,7 +51,8 @@ a key never baked on any lane) asserts the game's bake state of the citizens' sp
 capture (`check_paint`) and keeps its key frames (02 / 03: one citizen up close, painted); line_stages does the same.
 - FAIL (twin `civ_own_species_bake_off`, SPORE_FIX_OFF=civ.own_species_bake): lab 20261119-141341
   (`{'host': {'7BE27A2C': 0}, 'guest': {'7BE27A2C': 0}}`).
-- PASS: lab 20261119-141341 civ_own_species (baked 4.1 s / 2.1 s after the line was known; frames 02 / 03 painted).
+- PASS: lab 20261119-141341 civ_own_species (baked 4.1 s / 2.1 s after the line was known; frames 02 / 03 painted); on the merged tree: twin FAIL and PASS lab 20261119-143657-2, PASS again lab
+  20261119-151431 (a42100f2).
 
 ## History
 - 2026-11-19: opened (fix/w57-savestrip, seen in the key frames while fixing BUG-1273's save check); not fixed there.

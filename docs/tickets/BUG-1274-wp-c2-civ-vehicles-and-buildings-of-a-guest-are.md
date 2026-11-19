@@ -54,7 +54,7 @@ fix/w57-civlook (the night run's failures, 2026-11-19):
 ## Verification
 * civ_own_designs (SPORE_FIX_OFF=civ.own_designs twin `civ_own_designs_off`): FAIL lab 20261119-142443
   civ_own_designs_off (the guest's vehicle and houses the culture's designs); PASS lab 20261119-142443 and, on the tree
-  merged with rel/0.7.16 (741c292b), lab 20261119-143657-2. Before the save filter: FAIL 20261119-140235 /
+  merged with rel/0.7.16 (741c292b), lab 20261119-143657-2 and after the rel/0.7.16 merge of 15:14 (a42100f2) lab 20261119-151431. Before the save filter: FAIL 20261119-140235 /
   20261119-141949 (the save named 7BE222FB in the main stream).
 * line_stages (vehicle step, twin `line_stages_nodesign_off` = SPORE_FIX_OFF=civ.own_designs_nodesign): FAIL lab
   20261119-143657 (+0xC4 00000000 on both games, as the night's 20261119-133307 of fix/w57-savestrip); PASS lab
