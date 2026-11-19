@@ -20,6 +20,9 @@
 #include "sporekit_game.hpp"
 #include "world.h"
 #include "parties_net.h"
+#include "slotfs.h"
+
+#include <windows.h>
 
 #include <array>
 #include <set>
@@ -114,7 +117,9 @@ static std::vector<SpeciesRec> read_table()
 // docs/re/creature.md#creature-npc-aggression), a party's own. In memory on the host only.
 using SpeciesKey = std::array<uint32_t, 3>;
 using RelRecord = std::array<uint32_t, 4>;
-static std::map<uint32_t, std::map<SpeciesKey, RelRecord>> g_party_rel; // table key (parties::table_key) -> records
+using RelTable = std::map<SpeciesKey, RelRecord>;
+static std::map<uint32_t, RelTable> g_party_rel; // table key (parties::table_key) -> records
+static RelTable& party_table(uint32_t pk); // (6W C: a party back on the planet gets its saved records)
 static std::map<uint32_t, std::vector<SpeciesRec>> g_party_sent;      // the table last sent to each party
 static int g_event_actor = -1;
 static std::set<std::tuple<uint32_t, uint64_t, int>> g_party_goal_paid; // (party, species, outcome) paid
@@ -175,7 +180,7 @@ static size_t rel_enter(void* npc, void* as_player)
         return 0;
     const SpeciesKey sk{key[0], key[1], key[2]};
     RelRecord own{rec[0], rec[1], rec[2], rec[3]};
-    auto& theirs = g_party_rel[pk][sk];
+    auto& theirs = party_table(pk)[sk];
     g_tick_swap.on = true;
     g_tick_swap.sk = sk;
     g_tick_swap.pk = pk;
@@ -350,6 +355,195 @@ static void enforce_table()
         H->run_outside_frame(refresh_cards, nullptr);
 }
 
+// 6W C (BUG-9270): the parties' relations are kept with the planet: <save>.spo.duo-relations next to the save (the
+// save folder travels to the galaxy server and to joiners whole). Each player identity keeps its party's records, so a
+// party gets them back on its next visit and a party that splits keeps them in each member. The file names the
+// identities whose party's records are the game's own table (the host's party when it was saved): a planet hosted by
+// a player of another party later gets that party's records written into the game's table, and the old host's party
+// keeps the game's ones as its own.
+static std::map<uint64_t, RelTable> g_saved_by_ident;
+static std::vector<uint64_t> g_game_owners;
+static std::string g_rel_key;                 // the planet (game key) the store belongs to
+static uint32_t g_rel_saves = 0, g_rel_loads = 0, g_rel_swaps = 0;
+static constexpr uint32_t kRelMagic = 0x4C455244; // "DREL"
+static std::vector<uint64_t> idents_of_key(uint32_t pk)
+{
+    std::vector<uint64_t> v;
+    if (C.sess)
+        for (auto& p : C.sess->players())
+            if (parties::table_key(p.id) == pk)
+                if (uint64_t id = parties::identity(p.id))
+                    v.push_back(id);
+    return v;
+}
+static RelTable& party_table(uint32_t pk)
+{
+    auto it = g_party_rel.find(pk);
+    if (it != g_party_rel.end())
+        return it->second;
+    RelTable& t = g_party_rel[pk];
+    for (uint64_t id : idents_of_key(pk)) // (a party back on the planet: a member's saved records)
+        if (auto s = g_saved_by_ident.find(id); s != g_saved_by_ident.end()) {
+            t = s->second;
+            break;
+        }
+    return t;
+}
+static RelTable game_table()
+{
+    RelTable t;
+    for (auto& r : read_table())
+        t[{r.key[0], r.key[1], r.key[2]}] = {(uint32_t)r.relation, r.x, r.impressed, r.killed};
+    return t;
+}
+static std::wstring rel_path()
+{
+    const std::string key = world::current_game_key();
+    return key.empty() ? std::wstring() : slotfs::widen(key + ".duo-relations");
+}
+// host, after a native save of the planet
+void save_party_relations()
+{
+    if (!party_relations() || !game::in_creature_stage())
+        return;
+    tick_swap_restore();
+    const std::wstring path = rel_path();
+    if (path.empty())
+        return;
+    for (auto& [pk, t] : g_party_rel)
+        for (uint64_t id : idents_of_key(pk))
+            g_saved_by_ident[id] = t;
+    g_game_owners = idents_of_key(0);
+    const RelTable gt = game_table();
+    for (uint64_t id : g_game_owners)
+        g_saved_by_ident[id] = gt;
+    net::Writer w;
+    w.u32(kRelMagic);
+    w.u32(1);
+    w.u16((uint16_t)std::min<size_t>(g_game_owners.size(), 64));
+    for (size_t i = 0; i < g_game_owners.size() && i < 64; i++)
+        w.u64(g_game_owners[i]);
+    const uint16_t n = (uint16_t)std::min<size_t>(g_saved_by_ident.size(), 1024);
+    w.u16(n);
+    uint16_t k = 0;
+    for (auto& [id, t] : g_saved_by_ident) {
+        if (k++ >= n)
+            break;
+        w.u64(id);
+        const uint16_t m = (uint16_t)std::min<size_t>(t.size(), 512);
+        w.u16(m);
+        uint16_t j = 0;
+        for (auto& [sk, rr] : t) {
+            if (j++ >= m)
+                break;
+            for (uint32_t v : sk) w.u32(v);
+            for (uint32_t v : rr) w.u32(v);
+        }
+    }
+    const std::wstring tmp = path + L".tmp";
+    HANDLE f = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return;
+    DWORD put = 0;
+    const bool ok = WriteFile(f, w.data.data(), (DWORD)w.data.size(), &put, nullptr) && put == w.data.size();
+    CloseHandle(f);
+    if (!ok || !MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        DeleteFileW(tmp.c_str());
+        return;
+    }
+    g_rel_saves++;
+}
+// host: the planet's file read once per planet (the first Creature tick of a world with another key)
+static void load_party_relations()
+{
+    const std::string key = world::current_game_key();
+    if (key == g_rel_key)
+        return;
+    g_rel_key = key;
+    g_saved_by_ident.clear();
+    g_game_owners.clear();
+    g_party_rel.clear();
+    g_party_sent.clear();
+    if (key.empty())
+        return;
+    HANDLE f = CreateFileW(rel_path().c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return;
+    std::vector<uint8_t> data(GetFileSize(f, nullptr) <= (8u << 20) ? GetFileSize(f, nullptr) : 0);
+    DWORD got = 0;
+    const bool ok = !data.empty() && ReadFile(f, data.data(), (DWORD)data.size(), &got, nullptr) && got == data.size();
+    CloseHandle(f);
+    if (!ok)
+        return;
+    net::Reader r(data.data(), data.size());
+    if (r.u32() != kRelMagic || r.u32() != 1)
+        return;
+    const uint16_t no = r.u16();
+    std::vector<uint64_t> owners;
+    for (uint16_t i = 0; i < no && r.ok(); i++)
+        owners.push_back(r.u64());
+    std::map<uint64_t, RelTable> store;
+    const uint16_t n = r.u16();
+    for (uint16_t i = 0; i < n && r.ok(); i++) {
+        const uint64_t id = r.u64();
+        const uint16_t m = r.u16();
+        RelTable t;
+        for (uint16_t j = 0; j < m && r.ok(); j++) {
+            SpeciesKey sk{r.u32(), r.u32(), r.u32()};
+            RelRecord rr{r.u32(), r.u32(), r.u32(), r.u32()};
+            t[sk] = rr;
+        }
+        store[id] = std::move(t);
+    }
+    if (!r.ok())
+        return;
+    g_saved_by_ident = std::move(store);
+    g_game_owners = owners;
+    g_rel_loads++;
+    // the game's table is the old host's party's: a host of another party plays by its own records
+    const auto mine = idents_of_key(0);
+    const bool same = owners.empty() || std::any_of(mine.begin(), mine.end(), [&](uint64_t id) {
+        return std::find(owners.begin(), owners.end(), id) != owners.end();
+    });
+    if (same)
+        return;
+    const RelTable gt = game_table();
+    for (uint64_t id : owners)
+        g_saved_by_ident[id] = gt;
+    RelTable want;
+    for (uint64_t id : mine)
+        if (auto s = g_saved_by_ident.find(id); s != g_saved_by_ident.end()) {
+            want = s->second;
+            break;
+        }
+    void* mgr = rel_mgr();
+    if (!mgr || !a_RelRecord)
+        return;
+    for (auto& [sk, rr] : gt) { // (6 stays: the players' own species, extinctions: BUG-9244)
+        ResourceKey k{sk[0], sk[1], sk[2]};
+        uint32_t* rec = thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, &k);
+        if (!rec)
+            continue;
+        auto w = want.find(sk);
+        if (w != want.end())
+            for (int i = 0; i < 4; i++)
+                rec[i] = w->second[i];
+        else if (rec[0] != 6)
+            rec[0] = rec[1] = rec[2] = rec[3] = 0;
+    }
+    for (auto& [sk, rr] : want)
+        if (!gt.count(sk)) {
+            ResourceKey k{sk[0], sk[1], sk[2]};
+            if (uint32_t* rec = thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, &k))
+                for (int i = 0; i < 4; i++)
+                    rec[i] = rr[i];
+        }
+    g_rel_swaps++;
+    H->log(M, SK_INFO, "social: this planet's relations were another party's (%zu owners): this game's party plays by its "
+           "own (%zu records); the old host's party keeps the game's (BUG-9270)", owners.size(), want.size());
+    H->run_outside_frame(refresh_cards, nullptr);
+}
+
 // ------------------------------------------------------------------ guest: actions on mirrors
 static int g_engaged = -1;            // proxy id the avatar engaged socially
 static double g_engaged_at = 0;
@@ -419,7 +613,7 @@ static void SK_THISCALL h_RelEvent(void* mgr, int event, void* key, void* creatu
         if (rec) {
             const SpeciesKey sk{((uint32_t*)key)[0], ((uint32_t*)key)[1], ((uint32_t*)key)[2]};
             RelRecord own{rec[0], rec[1], rec[2], rec[3]};
-            auto& theirs = g_party_rel[pk][sk];
+            auto& theirs = party_table(pk)[sk];
             const RelRecord before = theirs;
             for (int i = 0; i < 4; i++)
                 rec[i] = theirs[i];
@@ -1457,6 +1651,8 @@ void tick(double now)
     }
     if (is_host())
         host_prompt_tick(now);
+    if (is_host() && party_relations())
+        load_party_relations(); // 6W C
     if (is_host()) {
         static double last = 0;
         if (now - last < (g_table_fast_fix ? 0.25 : 1.0))
@@ -1485,7 +1681,7 @@ void tick(double now)
                 if (!pk)
                     v = t;
                 else {
-                    auto& mine = g_party_rel[pk];
+                    auto& mine = party_table(pk);
                     for (auto& [k, rr] : mine)
                         v.push_back({{k[0], k[1], k[2]}, (int32_t)rr[0], rr[1], rr[2], rr[3]});
                 }
@@ -1738,6 +1934,11 @@ std::string species_dump()
                      rr[2], rr[3]);
             out += b;
         }
+    if (is_host() && (g_rel_saves || g_rel_loads)) {
+        snprintf(b, sizeof b, "party relations file: saves %u, loads %u, host swaps %u, identities %zu, game owners %zu\n",
+                 g_rel_saves, g_rel_loads, g_rel_swaps, g_saved_by_ident.size(), g_game_owners.size());
+        out += b;
+    }
     if (is_host() && (g_party_events || g_party_tables_tx)) {
         snprintf(b, sizeof b, "party relations: events %u, herd flags %u, tables sent %u, AI ticks %u\n", g_party_events,
                  g_party_herds, g_party_tables_tx, g_ai_rel_ticks);

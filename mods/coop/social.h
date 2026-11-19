@@ -40,6 +40,8 @@ bool goal_dna(float delta);
 // 6V A (host, a galaxy planet): the player whose action the game's relationship events of this moment are (a social
 // win, a guest's hit): they go to that player's party's table. Returns the one before (-1 none: this game's own)
 int set_event_actor(int player);
+// 6W C (BUG-9270, host): the parties' relations written next to the planet's save (after a native save)
+void save_party_relations();
 std::string status();
 // guest (BUG-0021): true when a hit of the own avatar on an NPC proxy must not be sent because the avatar is in the
 // social stance (it plays a social game: a hit then killed the Kook it was impressing)

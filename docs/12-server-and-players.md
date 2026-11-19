@@ -1267,3 +1267,13 @@ Owner 2026-11-18: "Let's also investigate the idea of connecting with Steam to a
   Tribe or Civ planet) handed the planet over; it stays the host now (`coop.fix galaxy.reload_stays`).
 * Cell difficulty per party seen in game on a new Cell test planet (Cellfour): predators keep the game's health, the
   host's bites scaled only in a party (BUG-9266).
+
+## Each party's relations saved with the planet (6W C, 2026-11-19, feat/lineages-alpha)
+<a id="server-party-relations-saved"></a>
+
+* BUG-9270: `<save>.spo.duo-relations` next to the planet's save keeps each player identity's party's records and who
+  owned the game's own table. ✔ A stranger's party got its records back in a new session, and when a player of that
+  party hosted the planet later its game played by that party's records while the old host's party got its own.
+* A party that splits keeps the records in each member; a new party takes the first member's it finds (no merge).
+* Left for the 6K plan's step 4 (decision 6N A): the shared DNA pool, the progress bar, the Cell food total and the
+  stage end are still one per world.

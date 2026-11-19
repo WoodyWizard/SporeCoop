@@ -1,3 +1,4 @@
+#include "social.h"
 #include "cellsync.h"
 #include "creature_hp.h"
 // Space feature "allies" (MSG_SPACE kinds 60..69): a partner's colonies as an allied empire in my
@@ -822,6 +823,7 @@ static void SK_THISCALL h_Save(void* mgr, const char16_t* name, int flag)
     if (name && *name) {
         spaceext::note_saved();
         cellsync::note_saved_cell_credit(cell_stamp);
+        social::save_party_relations(); // 6W C
     }
 }
 

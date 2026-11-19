@@ -84,6 +84,7 @@ unsigned largest_party(); // the biggest party among this session's players (a g
 // 6V A (host, a galaxy planet): which relations table player p's party keeps: 0 this game's own party (the game's
 // table), else the party's galaxy id, 0x10000 | p for a player in no party
 uint32_t table_key(uint8_t p);
+uint64_t identity(uint8_t p); // a session player's identity (0 unknown)
 int leader_of(uint8_t p);
 bool i_lead();
 std::string status();

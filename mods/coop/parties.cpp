@@ -547,6 +547,7 @@ unsigned party_size(uint8_t p)
             keys.push_back(reported_party(q.id));
     return party_count(reported_party(p), keys);
 }
+uint64_t identity(uint8_t p) { return ident(p); }
 uint32_t table_key(uint8_t p)
 {
     if (!galaxy() || !C.sess || !C.sess->connected() || p == me() || in_gx_party(ident(p)))
