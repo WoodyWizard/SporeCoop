@@ -13,8 +13,8 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
 
 ### Added
 - Creature: when a partner goes into an editor of its own (its mating evolution, Evolve now, or later at the nest),
-  you no longer see its creature vanish: it curls up into the game's own cocoon where it stood and waits there while
-  the partner edits, then comes out of the cocoon wearing its new look. The cocoon comes from the Lineages fork by
+  you no longer see its creature vanish: it is wrapped in the game's own cocoon where it stood and waits there while
+  the partner edits, then bursts out of the cocoon wearing its new look. The cocoon comes from the Lineages fork by
   PandizeLive (BUG-1303).
 - Cell and Creature: every player now has its own DNA. Everything the party earns (anybody's kill, friend, meal or
   goal card) still raises everybody's DNA by the same amount and the evolution bar stays the party's, but what you
@@ -61,6 +61,9 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   got them (BUG-1290).
 
 ### Fixed
+- Creature: a guest's own mating at the nest now leads to its evolution editor. Before, after the mating call and the
+  click on the mate the guest's creature walked up to it and then waited there for good, because its mate is one of the
+  host's creatures and never answered on the guest's game. Found by the Lineages fork by PandizeLive (BUG-1305).
 - Cell: when your partner's cell zaps with its electric part, your screen no longer fills with a trail of giant white
   rings around its cell (BUG-1266).
 - Cell -> Creature: while the players vote to move on to the Creature stage, the host now sees its Cell world behind
