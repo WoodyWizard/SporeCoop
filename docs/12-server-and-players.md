@@ -1286,3 +1286,29 @@ Owner 2026-11-18: "Let's also investigate the idea of connecting with Steam to a
   it gets a slot. tools/tests/galaxy_server_check.py covers both.
 * Left for the owner (gameplay): who may host an empty planet and store over its world (S6; today anyone who enters
   first). Also open, not gameplay: encryption (the key travels in clear UDP: someone on the path could read it).
+
+## Step 4, each party its own progress: the design (2026-11-19, feat/lineages-alpha)
+<a id="server-party-progress-design"></a>
+
+Decision 6N A (owner 2026-11-18): a party that ends a stage moves on to its own next-stage world while the others stay.
+What exists (research, 2026-11-19):
+
+* Spendable DNA is each player's already (2F B, BUG-9162, docs/re/creature.md#creature-personal-dna). What is shared on
+  a planet is the earned progress: cPlayer +0x10F0, the bar, its brain levels and the stage end. The host's game owns
+  it; a guest's gain moves the host's bar (dna_sync_raw) and MSG_DNA gives every guest the host's earned total.
+* The brain level also sets the NPC herds' level: the host's level for every herd (docs/re/creature.md, the brain
+  level notes): the world has one level, as it had one health factor before BUG-9266.
+* The stage end is one game's: the bar full, the game offers the next stage and loads the next-stage save of the same
+  planet. On a galaxy planet that takes the host (and its world) away from everybody.
+
+Plan (built in this order once the decisions below are answered):
+1. The bar per party: the host keeps each party's earned total (as it keeps their relations, BUG-9270, saved next to
+   the planet); a guest's gain goes to its party's total; MSG_DNA gives each guest its party's; brain levels follow.
+   NPC herds: decision 7A.
+2. The stage end per party: when a party's bar is full its leader is offered the next stage; accepting copies the
+   planet as the party left it into a new galaxy planet (decision 6Y), the party's games load it in the next stage and
+   the party hosts it; the old planet goes on for the others, with that party's traces as decision 6Z says.
+3. The planet's owner (S6, decision 7B): who may store over a planet's world on the galaxy server.
+
+Why not before the decisions: the bar per party alone lets a party that is not the host's fill its bar with no way to
+move on (step 2 is what happens then), and both steps write the galaxy's planet list.
