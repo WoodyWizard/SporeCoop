@@ -1922,6 +1922,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a_EditorPickUp, (void*)h_EditorPickUp, (void**)&o_EditorPickUp);
     fields::add_kind({fields::K_CIV_VEHICLE, "civ_vehicle", nullptr, kVehFields, 1, veh_each, veh_mirror,
                       [] { return g_ok && game::mode_id() == modes::kCiv; }}); // BUG-0549
+    species_init(); // WP-C1 (BUG-1273, optional)
     return true;
 }
 
@@ -1933,6 +1934,7 @@ void tick(double now)
     if (!active())
         return;
     prune_gone();
+    species_tick(now); // WP-C1 (BUG-1273)
     g_cmd_world = modes::current_world();
     // BUG-0693: the commands that came while this game was away run once the stage settled again (a load, an editor)
     g_held.tick(held_row(), true, modes::current_world(), now, [](const net::HeldCommands::Cmd& c) {

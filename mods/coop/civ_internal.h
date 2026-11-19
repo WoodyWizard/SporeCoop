@@ -439,6 +439,10 @@ void* planner_city();
 void planner_moved(std::vector<void*>& out);
 bool planner_pick_ok(void* ed, void* sp);
 void* player_civ();
+// civ_species.cpp (WP-C1, BUG-1273): the citizens of a city of its owner's species
+bool species_init();
+void species_tick(double now);
+std::string species_debug();
 uint32_t pol_of(void* o);
 std::string push_probe();
 void request_buy(void* city, int loco);

@@ -94,11 +94,23 @@ static void test_holds()
     CHECK(!local_play(false, true, true) && !local_play(true, false, true) && !local_play(true, true, false));
 }
 
+static void test_citizens()
+{
+    // WP-C1 (BUG-1273): a guest's city takes the guest's line; the host's, the shared capital, NPC and nobody's do not
+    CHECK(citizen_line_owner(1, true, 4) == 1 && citizen_line_owner(3, true, 4) == 3);
+    CHECK(citizen_line_owner(0, true, 4) == -1);
+    CHECK(citizen_line_owner(0xFD, true, 4) == -1 && citizen_line_owner(kNpc, true, 4) == -1 &&
+          citizen_line_owner(kNoOwner, true, 4) == -1);
+    CHECK(citizen_line_owner(4, true, 4) == -1);
+    CHECK(citizen_line_owner(1, false, 4) == -1); // creature.mode host: every city the civilization's
+}
+
 int main()
 {
     test_money();
     test_owners();
     test_holds();
+    test_citizens();
     printf(g_fail ? "civ_tests: %d FAILED\n" : "civ_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

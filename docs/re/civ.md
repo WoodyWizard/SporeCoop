@@ -2153,3 +2153,42 @@ Ghidra (`tools/ghidra/q.sh`), no runtime probe of these paths yet.
   * ? Not checked: whether a vehicle's or building's SetModelKey with a key the game does not know on load faults or
     leaves an empty model (the reason a save must never keep a key of ours); whether captured cities (cCity::ChangeOwner
     0xBE8A20 reads Civ_Species) need more.
+
+## The citizens of a city of its owner's species: runtime (2026-11-18, feat/w54-citizens)
+<a id="civ-own-citizens"></a>
+
+WP-C1 of docs/plan-0.7.16.md (BUG-1273), on top of [civ-own-species](#civ-own-species). GOG 2024.
+
+* ✔ (runtime, lab 20261118-180539 lane 6, civ_npc) **a hook of `City_Species` 0xBD9F90 changes the citizens' species
+  on both games**: after the guest's capture of the nearest NPC city, the host's and the guest's game each held 19
+  citizens of that city, 15 of them of the guest's creature key (+0xB28 = 7CBC3253, the creation's shared key) and 4
+  of the civilization's (067C7743); the capital kept 19 of the civilization's. The hook was called ~2600 times in 90 s
+  per game (every citizen update asks it), the answers per game cost one map lookup. No fault on either game.
+* ✔ (runtime) cCreatureCitizen **+0x1010 is the cCity pointer** of a city citizen (the census of `coop.civ citizens`
+  matched every one of 19 citizens to its city by it).
+* ✔ (runtime + Ghidra) **the citizen manager's four special citizens** are not re-synced: `0xD5C6D0` (from the city
+  switch 0xD60EB0, once per visit: flag mgr +0xAF5) makes one citizen into each of four vectors at mgr +0xA78 + i*0x14
+  (begin, end, capacity, ...) through `0xD577B0` (Citizen_Init vt 0xE8 with the city: City_Species at that moment).
+  `CityCitizens_Sync` walks only +0xA64, so after an owner change these 4 kept the old species (the 4 of 15 + 4 above).
+  The mod sets them with `CreatureBase_SetSpeciesProfile` 0xC22450 (thiscall(creature, profile) ret 4: +0xB20, +0xB24
+  = profile +0x53C, +0xB28..+0xB30 = profile +0x504).
+* ✔ (runtime) the manager: `PlanetEco_HerdSpawner()` (= [0x167EB3C]) +0xA4 is the city citizen manager; its +0xAF0 the
+  city near the camera. 0xAC8C10 thiscall(spawner, city, bool) ret 8 runs `CityCitizens_Sync(mgr, bool)` only when
+  that city is the manager's; ChangeOwner calls it with 1, ConvertCitizens with 0. The bool (Ghidra): 1 also re-sets
+  every pool citizen's political id (vt 0x48) and its behaviour (vt 0xE4, 0xC0DAB0); the species loop runs either way.
+  The mod calls the sync with 0.
+* ✔ (runtime) **a Civ save writes the city citizens near the camera with their species key**: the host's save
+  (`coop.save` with the camera at the guest's city, hook on, no strip) had the guest's key 7CBC3253 in its citizen
+  records (record type 0x018EB4B7). So the key is put back while a save is written (savestrip save hooks, below).
+* ~ (Ghidra) `0xD5CCA0` (from Citizen_OffStageCheck 0xACA2A0) compares a citizen's species with City_Species: equal
+  -> back into the city's list; else it is handled as a foreign visitor (+0xACC list, relationship checks). A stable
+  hook answer keeps a guest's city's own citizens "own".
+* The NPC cities of civ_npc (made by new_stage_game.py) have the player civilization's species (067C7743) too.
+* Design (civ_species.cpp, `coop.fix civ.own_species`): City_Species answers the owner's species when the city's
+  owner (g_city_owner, known on every game) is a guest with an own line (until WP-0: its own creature,
+  `creations::player_key(pid, kCreature)`, only when it differs from the host's); the host's cities, the shared capital
+  (its founder's: the host's), NPC cities answer the game's own. `creature.mode` host: no answer. Every 0.5 s, outside
+  the frame, the manager's city is checked: a pool citizen or a special citizen of another species than the city's
+  answer -> `CityCitizens_Sync(mgr, 0)` once (at most every 3 s per city) and SetSpeciesProfile for the special ones.
+  Nothing is sent and nothing is written into the civilization. While a save is written every citizen with a guest
+  line's key gets the player civilization's key in +0xB28..+0xB30 (no rebuild) and its own back at the end.
