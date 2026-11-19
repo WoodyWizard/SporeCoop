@@ -2606,3 +2606,16 @@ BUG-1290 (WP-S1b, `core.own_civ_late`, mods/coop/civ_arrival.cpp; #civ-own-arriv
   next arrival. `coop.civarrival` prints `late: ... checked why='...'`; `coop.civarrival forget` removes the note.
 * Not checked: the world crc of a world reached by the live Tribe -> Civ change equals the one of the planet's save
   loaded later (both are the save's name; BUG-0258's "snapshot.spo" is the host's side).
+
+## The civ_npc fixture's vehicle slots and a full religious conversion (2026-11-19, fix/w57-sync)
+<a id="civ-npc-fixture-slots"></a>
+
+BUG-1284..1286 tests (coop_civ_influence.py). ✔ (runtime, lab 20261119-104136 and 0.7.15's civ_religious runs)
+`VehicleSlotsLeft` of the civ_npc fixture's player civilization (one city, four vehicles) is 0 for purposes 1 and 2: the
+game's own buy path and `coop.civ spawnveh` gave "no vehicle slot left". `coop.civ spawnveh <ci> <purpose> <loco> force`
+spawns past the allowance (the game's SpawnVehicle does not check it; hpref of #civ-own-designs did the same; the 36
+vehicle cap of +0xB0 stays); 3 extra religious vehicles preached and converted (lab 20261119-111559).
+✔ (runtime, lab 20261119-104136 civ_religion_state) ConvertCitizens until every citizen of an NPC city follows the
+player (15 of 15, the meter 200 * 15 / 15 clamped to 100) captures the city at once: "Alice captured a city", its
+cinematic, a share save; the host's meter +0x750 reads 0 right after while the guest's game (the capture not taken yet) showed
+100. A test of the meter converts part of a city (2 of 15: 26.7 on both games, lab 20261119-111559).
