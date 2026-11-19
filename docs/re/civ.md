@@ -2628,3 +2628,23 @@ cinematic, a share save; the host's meter +0x750 reads 0 right after while the g
 100. A test of the meter converts part of a city (2 of 15: 26.7 on both games, lab 20261119-111559).
 * (fix/w57-sync) The BUG-1286 hook (civ_influence.cpp h_PreachTick) sets a slot's places only when the slot has its live
   spatial object (+0x78 non-null), the fork's verified condition; before, any 0 / 0 slot ticked got 10 / 2.
+
+## The host's shot observer and targets that are no listed object (2026-11-19, fix/w57-crashes)
+<a id="civ-shot-observer-targets"></a>
+
+BUG-1322. Follows "How Civ weapons fire (BUG-0477)" above and BUG-0535.
+
+* ✔ (runtime, lab 20261119-114030 civ_preach_far, host) The fault with EIP inside a preaching vehicle (+9) and the next at
+  0xCCCCCCCC came from the mod, not from the game's FUN_00bfd750 (that address was a stale stack entry): the module
+  return addresses on the stack, mapped on a build of the run's commit (dee4405f), are `civ::fire_observed`
+  (civ_shots.cpp, the target branch) and `game::object_position` (the Cast vcall, slot 0xC), called from squadron's
+  `cToolManager::FireTool` hook; esi held the Cast id 0x1186577. fire_observed took the object at target spatial - 0x34
+  and, when its first dword lay in SporeApp.exe's image (BUG-0535's check), called its vtable: for a spatial that is not
+  +0x34 of a game object the "vtable" is whatever memory precedes it.
+* `cCombatSimulator::Update` 0xAE7360 passes as the target the target combatant's (+0x44) vt+8 result; what that is for
+  a preacher: see the shotobjs lines of the BUG-1322 runs (ticket).
+* The mod (BUG-1322): `civ.shot_target_listed`: a shooter or target that is not one of the host's listed vehicles is
+  used only when the object at spatial - 0x34 is in the game's object list (`game::listed`, pointers compared, once
+  per object and frame); else nothing is called and the shot has no target the guests could find (kind 2).
+  `coop.civ shotobjs` prints the unlisted ones seen, `coop.civ shotprobe` (tests) one observed shot at a target that is
+  no object. Test `coop_civ_influence.py --case shotobjs` (docs/06-testing.md#testing-civ-shot-objects).

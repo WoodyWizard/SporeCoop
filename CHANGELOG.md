@@ -115,6 +115,12 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   appears; before, it was the tribe's species for a moment first (BUG-1299).
 - Space: a guest whose own ship has the same id as the host's ship now flies its own ship on its screen; before, its
   game could show the host's ship instead (BUG-1301; still open until its lab run).
+- Tribe -> Civilization: when another cinematic played just as the City Hall was built at the end of Tribe, the game
+  skipped the City Hall cinematic and never opened the vehicle editor, and the next click on the evolve button crashed
+  the host's game. The City Hall cinematic now always plays and the vehicle editor follows; a second City Hall no longer
+  crashes the game (BUG-1325).
+- Civilization: the host's game could crash while its vehicles fought or preached at a city in a co-op game: the mod's
+  relay of the host's shots read a target that was not a game object as one (BUG-1322).
 ## [0.7.15.3] - 2026-11-19
 
 A fix for a crash in the Space stage reported on GitHub (#203): a player who joined the host's Space game crashed
