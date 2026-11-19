@@ -923,3 +923,16 @@ package's player shows the world's own species (usable as a FAIL twin by the pac
 <stage>`, `coop.species test tribe|civ next|none|<instance>` and `coop.species test design <id> next|none|<instance>`
 (the lab's setter: an own creature of My Creations as the stand-in for an editor's result). Lab test: `species_line`
 (docs/06-testing.md#testing-species-line).
+
+## A guest's own Civ editors feed its species line (2026-11-18, feat/w54-civedit)
+<a id="arch-civ-guest-editors"></a>
+
+WP-C3 (BUG-1275), `mods/coop/civ_editors.cpp` (namespace `civedit`): the first writer of the species line's Civ part
+from the game's own UI. A guest in own mode in the host's Civ world (switch `civ.guest_editors`) gets its design editors,
+Civ outfitter and planner picks back (designs::refuse_own_editor asks `civedit::allows`); five hooks keep their results
+out of the shared civilization (the planner's apply 0xD095A0, its message handler 0xD130D0 for picks, cGameModeCiv's
+listener 0xCFD500 for the outfitter's result, SubmitEditorRequest 0xB1DE20 for the request's starting key, the palette
+tile 0xD0C860 for the guest's own picture) and queue them; `civedit::tick` (after `species::tick`) hands them to
+`species::set_design` / `species::set_civ_outfit`. Everything visible on the other games comes from the line's readers
+(civ_own_designs.cpp, civ_species.cpp). The host's game and host mode run the game's code unchanged. Details:
+docs/re/civ.md#civ-own-editors.

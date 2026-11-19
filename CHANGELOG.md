@@ -23,6 +23,11 @@
 - Civilization: the citizens walking in a city a guest owns (captured, given or dealt to it) are that guest's own
   species on every player's screen; the shared capital keeps the species of the player who founded it. With "everybody
   plays the host's creature" (F5) every city stays the host's species, as before (BUG-1273).
+- Civilization: a guest's own building and vehicle editors, its Civ outfitter and its Sporepedia picks in the city
+  planner work again in the normal co-op mode (own creatures): what the guest makes becomes its own design, shown on
+  its cities, its vehicles and its citizens on every player's screen, while the shared civilization and the host's
+  designs stay as they were; before, the guest's editors were refused. With "everybody plays the host's creature" (F5)
+  they are refused as before (BUG-1275).
 
 ## [0.7.15.2] - 2026-11-18
 

@@ -2225,3 +2225,64 @@ WP-C1 of docs/plan-0.7.16.md (BUG-1273), on top of [civ-own-species](#civ-own-sp
   answer -> `CityCitizens_Sync(mgr, 0)` once (at most every 3 s per city) and SetSpeciesProfile for the special ones.
   Nothing is sent and nothing is written into the civilization. While a save is written every citizen with a guest
   line's key gets the player civilization's key in +0xB28..+0xB30 (no rebuild) and its own back at the end.
+## A guest's own Civ editors: where the game writes the civilization (2026-11-18, feat/w54-civedit)
+<a id="civ-own-editors"></a>
+
+WP-C3 of docs/plan-0.7.16.md (BUG-1275), on top of [civ-own-designs](#civ-own-designs) and the species line
+(docs/01-architecture.md#arch-species-line). GOG 2024, Ghidra only (no lab run yet: the night lab runs
+`civ_guest_editors` and its twin). Code: mods/coop/civ_editors.cpp, designs.cpp (refusal, own pick).
+
+* ✔ (Ghidra) **The design editors' result does not pass CivGame_EditorReturn 0xCFBD70**: the editor's exit
+  (`Editors::cEditor::OnExit`, 0x587C51) posts 0x30C11C7 with a 0x48-byte result: +0xC the request's tag (+0x90),
+  +0x10 the request's +0x94, **+0x14 the editor model's +0x58 (the model type = the culture's design id: house
+  4E3F7777, a vehicle's VehicleDesignId ...)**, +0x18..+0x20 the key (the request's +0x10 after the save), +0x44
+  cancelled (1 from OnExit, 0 after a save). The planner's listener `CommunityEditor_HandleMessage` 0xD130D0 copies them
+  into planner +0x4C (design id), +0x50..+0x58 (key), +0x5C (cancelled); the Civ re-entry re-opens the planner
+  (0xCFBD70 state 1 -> 0xCF20B0 -> message 0xB2699148 -> 0xCF56A0 -> `CommunityEditor_Open` 0xD0E170), which calls
+  **`Planner_ApplyDesign` 0xD095A0(+0x4C, &+0x50)** when +0x4C is set, +0x204 set and +0x50 non-zero (not for the
+  creature model types 0x372E2C04, 0xCCC35C46, 0x65672ADE, 0x4178B8E8). 0xD095A0 is the one writer: `Civ_SetDesign`
+  on the planner city's civilization (city +0x590) and, for the City Hall, cPlayer +0x1150..+0x1158 (the City Hall the
+  Civ start reads, 0xCFBD70 state 0). Then (not cancelled) a stage-history record per kind (0x7B27DBD1 vehicles,
+  0xEF6D08A3 buildings, with the civilization's species +0x504) and the palette's tiles refreshed from the culture
+  set (0xD0C860 for 16 design ids; it generates no entry itself, GetDesignKey 0xBF98B0 may).
+* ✔ (Ghidra) **The Sporepedia pick** has two paths: the shopper's accept 0xD0CC00 (the IShopperListener at planner
+  +4, vtable 0x1479568: design id planner +0x60, set by `Planner_ShowShopper`) -> 0xD0C860 + 0xD095A0; and planner
+  message 0x5132389 (a vector of keys, each `cEditorResource` +0x18 its design id) -> `Civ_SetDesign` directly +
+  0xD0C860.
+* ✔ (Ghidra) **The palette's buttons** (`Palettes` item window proc 0x5F1750, command 0x287259F6 with the control's
+  command id): 0x4A1CB6D the tile -> message 0x133B269E (the shopper); 0x4A1CB6B / 0x4A1CB71 "new design" ->
+  0x4A314E6 {+0 the item's design id (+0x30), +8 0}; 0x4A1CB6C "edit" -> 0x4A314E6 {.., +8 1}; 0x6443438 the drag
+  -> 0xB2E18705. 0xD130D0 on 0x4A314E6 (only with a city planner open: +0x40, cast to a city): +0x4C = id, a new
+  EditorRequest: +0xC `GetEditorForAssetType(id)`, +0x10 the current design's key when +8 == 1 (0xD09640), +0x1C the
+  game mode, +0x90 tag **0x91D4AF08**, flags +0x36..+0x3D, +0x64, +0x6D, +0x70 the cPlayer's five stage traits, then
+  `cGameModeManager::SubmitEditorRequest` 0xB1DE20 (keeps it at +0x2C, pauses 0x4BF38A6 and submits from 0xB1DF60, or
+  `EditorRequest::Submit` at once). The data object is only read (the handler's later `intrusive_ptr` is a new one).
+* ✔ (Ghidra) **The Civ planner's tabs**: the Civ UI's commands post 0xB2699148 {+8 kind}: CommunityEditorActivate
+  (0x37EA1BD) kind 0, CityBuyVehicle (0x37E8514) kind 1, AccessoryEditorActivate (0x4D2B5FD) kind 4; 0xCF56A0 opens the
+  planner on the city (0xD0E170) and `0xD096D0(kind)` (the tab; -1: the planner's +0x2F4). So vehicle designs are a
+  planner tab (the planner's 0xD0C860 list has 12 vehicle ids: 7D433FAD, 441CD3E6, 8F963DCB, 9AD7D4AA, 449C040F,
+  1F2A25B6, BC1041E6, 2090A11B, C15695DA, F670AA43, 1A4E0708, 2A5147A9) and the Civ outfitter is tab 4. ? The tabs'
+  screen layout is not known (the test opens the vehicle editor through the planner's own message).
+* ✔ (Ghidra) **The Civ outfitter**: a species card's edit (`Palettes::OutfitterItemUI`, 0x5EFD30) posts 0x53850BAE;
+  0xD130D0 builds the request (editor data +0xC, key data +0x10..+0x18, in Civ tag **0x66787BB**, Tribe 0x116DD1B,
+  Space 0x66787BC). Its result reaches `GameCiv_HandleMessage` 0xCFD500: tag 0x66787BB -> 0x572620 keeps the result
+  (null when cancelled) in the game mode (+0x100); `CivGame_EditorReturn` 0xCFBD70 is the Civ mode's state machine
+  (+0xB4; +0xB8 the mode it came from): state 1 from the editor mode with +0x28 == 0 re-opens the planner and, for a
+  creature result (+0x1C type 0x2B978C46), calls `cSpeciesManager_SetPlayerSpecies`, `Civ_SetSpeciesKey` on every
+  civilization (no condition: the loop calls it for each) with 0xAC8C10 for each of their cities, and
+  `cTribe_SetSpeciesSlot(profile, 0)` on every tribe (cGameNounManager data 0x18C6D19). State 2 with +0x28 == 1 is the
+  spaceship editor (0xCF4620: to Space).
+* Design (`coop.fix civ.guest_editors`, own mode: creature.mode own, `species.line` on, a guest in the host's world):
+  BUG-1158's Civ refusal (designs::refuse_own_editor) only when it is off or in host mode; 0xD095A0 is skipped for the
+  guest (no culture entry, no cPlayer City Hall) and a changed key goes to `species::set_design(design id, key)`; a
+  0x5132389 pick's changed entries go back (Civ_SetDesign with the old key, a design-less entry emptied again) and to
+  the line; the outfitter's result goes to `species::set_civ_outfit` and is handed to cGameModeCiv as cancelled (+0x44
+  = 1 for the call: nothing kept, so none of the outfitter writes of 0xCFBD70 runs); the guest's requests start from
+  its line (SubmitEditorRequest: the outfitter from `species::own_key(Civ)`, an edit from `own_design(id)`), and its
+  palette tiles show its own designs (0xD0C860 with our key). A guest's own culture entry that changed by another
+  path is taken into the line by the wsync row's undo (designs::civ_sync) instead of the "went back" line. The line
+  applies from `civedit::tick` (the creation packed from the game's records, retried for 15 s). The host and host mode
+  run the game's own code.
+* ? Not checked at runtime: the result layout above (+0x14 the design id) on a real editor's exit; that the tiles'
+  "new design" buttons are visible windows `coop.ui cmd 4A1CB6B` finds; the Civ outfitter's route on the screen and
+  its editor id; whether the guest's palette shows its own design's picture from our key with no png key.

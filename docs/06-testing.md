@@ -9284,3 +9284,23 @@ Key frames `line` and `next_session`: no look changes in WP-0 (the frames only d
   for the guest and the guest's city's citizens stay the civilization's species (today's behaviour); the setting goes
   back to own at the end.
 * The NPC cities of civ_npc have the player civilization's species (067C7743): "before the capture" shows that key.
+## A guest's own Civ editors: civ_guest_editors (2026-11-18, feat/w54-civedit)
+<a id="testing-civ-guest-editors"></a>
+
+BUG-1275 (WP-C3). `coop_civ_guest_editors.py` (suite `civ_guest_editors`, cold, `civ_npc`, ~8 min; twin
+`civ_guest_editors_off` = `SPORE_FIX_OFF=civ.guest_editors`, must FAIL at "the guest's own editor opened"). Needs the
+species line's designs in civ_own_designs.cpp (species::design, feat/w54-shims).
+* Route: the guest buys the NPC city nearest the capital, opens its planner with real clicks (play_civ `Player`), hovers
+  the house tile (123, 385) and clicks the tile's "new design" button found by `coop.ui cmd 04A1CB6B 04A1CB71` (new:
+  every visible window with that command id, its rect, enabled, control id); when none is shown near the tile it posts
+  the button's own message (`coop.civedit new <hex design id> [edit]`: the planner's 0x4A314E6) and prints `ROUTE`.
+  The vehicle editor (the purchase's land design of that city, `coop.civ owndesign did <city> 0`) is opened the second
+  way (the planner's vehicle tab is not mapped yet). In the editor: three parts (coop_campaign TRIBE_EDITOR_PARTS),
+  done, the dice, done, repeated slower; then the planner's green check.
+* Checks: `coop.civedit` (took ... ok=1 and the game's fields: culture digest, the civilization's species +0x268, the
+  world's player species cSpeciesManager +0xA4, cPlayer +0x1150), `coop.species` (the guest's design key 0x7B...... on
+  both), the model hash of every house of the guest's city and of its bought land vehicle on both games against the
+  new creation's (`coop.civ owndesign`, `coop.creations modelhash`), the host's objects not; the host's culture set
+  unchanged and the guest's entries that had a design unchanged; the host's save (galaxy menu) parsed for the keys.
+* `coop_civ_designs.py` (civ_designs) now sets creature.mode host before its BUG-1158 steps (the refusal and the
+  "went back" line are host mode only since BUG-1275) and back to own at its end.

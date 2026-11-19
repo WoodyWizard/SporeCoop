@@ -1490,6 +1490,9 @@ shared: only <host> changes it" / "the civilization's designs are shared: only <
 stays open, no input lock is left. A guest's own Sporepedia pick in its planner goes back to the host's design within
 a second with "the civilization's designs are shared: yours went back to <host>'s". `editors.guest_designs` off: the
 editor opens (0.7.14). Lab: the refusals in tribe_outfit / civ_designs; FAIL runs above.
+* (2026-11-18, feat/w54-civedit, BUG-1275) Since 0.7.16 the Civ part holds in creature.mode host only (or with
+  `civ.guest_editors` off): in own mode a guest's design editors, Civ outfitter and picks open and go to its species
+  line, never into the culture set (docs/re/civ.md#civ-own-editors); civ_designs checks the refusal in host mode.
 * Notices: the host's outfitter vote reads "<host> wants to change the tribe's outfit", its return "<host> made a new
   outfit for the tribe: everybody's tribe wears it" (with `tribe.outfit_sync`; off: the old evolution texts). The
   Civ return's "changed a design: everybody gets the new designs" is true with `civ.design_sync`.
