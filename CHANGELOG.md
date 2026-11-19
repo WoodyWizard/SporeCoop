@@ -23,6 +23,10 @@
 - Civilization: the citizens walking in a city a guest owns (captured, given or dealt to it) are that guest's own
   species on every player's screen; the shared capital keeps the species of the player who founded it. With "everybody
   plays the host's creature" (F5) every city stays the host's species, as before (BUG-1273).
+- Tribe -> Civilization: in the normal co-op mode (own creatures) a guest now makes its own City Hall and its own first
+  vehicle too: when it has arrived in the Civilization stage its own City Hall editor opens, then its vehicle editor
+  (the red cross keeps the civilization's). Its cities' City Halls and the vehicles it buys show them on every
+  player's screen; the host plays on meanwhile and the civilization's designs stay the host's (BUG-1276).
 ### Fixed
 - Cell: when your partner's cell zaps with its electric part, your screen no longer fills with a trail of giant white
   rings around its cell (BUG-1266).

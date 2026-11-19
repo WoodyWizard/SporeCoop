@@ -2290,3 +2290,55 @@ WP-C3 of docs/plan-0.7.16.md (BUG-1275), on top of [civ-own-designs](#civ-own-de
 * ? Not checked at runtime: the result layout above (+0x14 the design id) on a real editor's exit; that the tiles'
   "new design" buttons are visible windows `coop.ui cmd 4A1CB6B` finds; the Civ outfitter's route on the screen and
   its editor id; whether the guest's palette shows its own design's picture from our key with no png key.
+## A guest's own City Hall and vehicle editors at its Civ arrival (2026-11-18, feat/w54-x1)
+<a id="civ-own-arrival"></a>
+
+WP-X1 of docs/plan-0.7.16.md (BUG-1276), on top of [civ-own-editors](#civ-own-editors). GOG 2024, Ghidra only (no lab
+run yet: the night lab runs `civ_own_arrival` and its twin). Code: mods/coop/civ_arrival.cpp, civ_editors.cpp
+(`take_editor`, the result's call in h_CivMsg), session_glue.cpp (the vote's end).
+
+* ✔ (Ghidra, asm 0xCD2308..0xCD233B) **The end of Tribe's vehicle editor** (the Tribe listener 0xCD1D60 on the end of
+  TRG2CVG_ShowCityHall) is chosen by cPlayer +0x1104 (the consequence archetype): 0xC2CA9495 -> **F670AA43**,
+  0x60A78928 -> **9AD7D4AA**, anything else -> 9AD7D4AA + E26B6B03 = **7D433FAD**.
+  CORRECTION (2026-11-18, feat/w54-x1): docs/re/tribe.md#tribe-civ-transition's "7CB21BAD" is wrong (no dword 7CB21BAD
+  exists in the exe, `scan`); it is 7D433FAD. `Editors::cEditor::GetEditorForAssetType` maps each of these ids and
+  the City Hall 0x99E92F05 to itself: the editor id is the asset type (the culture's design id).
+* ✔ (Ghidra) Both Tribe requests: EditorRequest (new 0x9C + `EditorRequest_ctor`) +0xC the editor, +0x10 empty (a new
+  design), +0x90 tag **0x116DD1B**, +0x34 0, +0x36 1, +0x37 1, +0x38 1, +0x39 0, +0x3B 0 (no red cross), +0x3C 1, +0x3D 1,
+  +0x64 1; then `Editors::EditorRequest::Submit` directly (the listener paused 0x4BF38A6 and raised the input lock first,
+  its own return lifts them) and the byte 0x1686AF0 = 1.
+* ✔ (Ghidra) `EditorRequest_ctor` 0x5A9140 leaves the reference count (+8) at **0**, +0xC -1, +0x1C the current game
+  mode (IGameModeManager vt 0x38), +0x39 1, +0x3B 1, +0x3D 1, +0x6D 1, +0x6E 1, the rest 0. The game holds a request
+  with an intrusive pointer (0x61DF80: store, AddRef vt+4), submits, then Releases (vt+8). (vote.cpp's
+  build_editor_request says "one reference held": it is 0; open_own_editor never Releases, so nothing is freed early.)
+* ✔ (Ghidra) The Civ planner's own design request (0xD130D0 on 0x4A314E6): +0xC GetEditorForAssetType(id), +0x10 the
+  current design's key for an edit, +0x1C the game mode, +0x90 0x91D4AF08, +0x36 / +0x37 / +0x38 / +0x3C / +0x3D 1,
+  +0x39 0, +0x3B the constructor's 1 (the cross), +0x24..+0x30 four dwords of 0x15DA7C4, +0x64 1, +0x6D 1, +0x70 the
+  five traits cPlayer +0x10FC..+0x110C; `cGameModeManager::SubmitEditorRequest`.
+* ✔ (Ghidra) **The way back into Civ from any editor** (`CivGame_EditorReturn` 0xCFBD70, the mode it came from
+  0xDBDBA1): state 0 skips the stage-start parts for the editor mode; state 1 with cGameModeCiv +0x28 == 0 calls
+  0xCF20B0(+0xF8) and sets +0xF8 = -1; 0xCF20B0 posts 0xB2699148 (the planner opens on the picked city +0xD4, tab
+  +0xF8) only when +0x80 != 0 and +0xF8 != -1. **+0xF8 is -1 from the constructor** (GameCiv_ctor +0xCE) and after
+  each return, so an editor that did not come from the planner re-opens nothing. Then only an outfitter result
+  (+0x100, type 0x2B978C46) is applied. ? Where +0xF8 is set to a tab was not found (no `mov [reg+0xF8]` in the
+  cGameModeCiv code but the ctor's, 0xCF7F20's and 0xCFBD70's -1).
+* ✔ (Ghidra) `GameCiv_HandleMessage` 0xCFD500 on 0x30C11C7 acts on the tags **0x66787BB** (the Civ outfitter) and
+  **0x116D51D** (the spaceship editor, model type 0x98E03C0D) only: a result with the Tribe tag 0x116DD1B in Civ is
+  ignored by the game. The planner's listener 0xD130D0 copies **every** 0x30C11C7 into planner +0x4C (model type),
+  +0x50..+0x58 (key), +0x5C (cancelled) whatever the tag; its next open (0xD0E170) applies it through 0xD095A0 when +0x4C
+  != -1, +0x204 != 0 and +0x50 != 0, then sets +0x4C = -1.
+* Design (`coop.fix core.own_civ_arrival`; own mode, the species line, `civ.guest_editors`, a host with creations 1.1):
+  a guest whose game sees the host's vote for one of the end-of-Tribe editors end while it plays the host's Tribe keeps
+  its own Civ editors due; in the host's Civ world (`designs::civ_player`, not elsewhere) after 20 s without a
+  cinematic, pause, load, vote or pause menu (240 s at most, pauses not counted; 900 s from the vote to the arrival)
+  the City Hall editor opens on its game (outside the frame, the request built as the Tribe's with +0x3B = 1, Submit
+  under vote.cpp's bypass: no vote, no BUG-1158 refusal), then 5 s after its return the vehicle editor of the
+  archetype. The result: from 0x30C11C7 with tag 0x116DD1B in cGameModeCiv's listener (civ_editors.cpp's hook), else
+  the planner's copy; it goes to `civedit::take_editor(the editor id, key)` -> `species::set_design`; the planner's
+  copy is emptied (+0x4C = -1) so a later planner open never applies the guest's design to the civilization. A
+  cancelled City Hall editor (the red cross) skips the vehicle one. Nothing is sent by this file and the host's game
+  runs unchanged: it plays Civ while the guest designs.
+* ? Not checked at runtime: that the building / vehicle editor opened by a request in the Civ mode (not the Tribe's)
+  draws and saves as in Tribe; that cGameModeCiv's listener sees the result while the editor closes (else the
+  planner's copy is used, if the planner's listener is registered then); that the result's +0x14 is the editor id
+  (the log prints it; the code uses the editor id).

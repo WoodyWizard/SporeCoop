@@ -9,26 +9,45 @@ source: plan-0.7.16
 role: 
 versions: 
 fixed_in:
-branch:
-commits:
-tests:
+branch: feat/w54-x1
+commits: 176cc77e
+tests: civ_own_arrival, civ_own_arrival_off (twin)
 signature:
-docs:
-related:
+docs: docs/re/civ.md#civ-own-arrival, docs/06-testing.md#testing-civ-own-arrival, docs/01-architecture.md#arch-civ-own-arrival
+related: BUG-1240, BUG-1158, BUG-1263, BUG-1275, BUG-1274, BUG-1273, BUG-1277, BUG-1280
+switch: core.own_civ_arrival
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Plan item (docs/plan-0.7.16.md item 4, WP-X1): at the Tribe -> Civ change only the host goes through the game's City
+Hall and vehicle editors (TRG2CVG_PreEditor, each after the host's vote); a guest's game follows into the host's Civ
+world with the host's designs, and BUG-1158 refused its own design editors there. The owner's goal: every player its
+own look in every stage, as BUG-1240 gave each player its own Creature editor at Cell -> Creature.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+By design of the game (Ghidra, docs/re/civ.md#civ-own-arrival): the two editors are requested by the Tribe stage's
+listener 0xCD1D60 at the end of two cinematics that only the host's game plays (TribeGame_AdvanceProc on the host);
+the guest's game never runs the end of Tribe, it loads the host's Civ world. An editor's result becomes a culture entry
+only through the planner's apply 0xD095A0 (WP-C3 skips it for a guest); a result of a request that does not come from
+the planner is ignored by cGameModeCiv (tags 0x66787BB / 0x116D51D only) and re-opens no planner (+0xF8 = -1).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`core.own_civ_arrival` (mods/coop/civ_arrival.cpp; session_glue.cpp's vote end, civ_editors.cpp's take_editor and the
+result hook): in own mode (creature.mode own, species.line, civ.guest_editors, a host with creations 1.1) a guest that
+sees the host's end-of-Tribe editor vote end while it plays the host's Tribe keeps its own Civ editors due; once it
+plays the host's Civ world and has settled (20 s without a cinematic, pause, load, vote, pause menu; at most 240 s
+after the arrival, 900 s after the vote) the game's City Hall editor 99E92F05 opens on its game (the Tribe listener's
+request with the red cross, submitted outside the frame under the vote bypass), then the archetype's vehicle editor
+(F670AA43 / 9AD7D4AA / 7D433FAD). Their results go to its species line (civedit::take_editor -> species::set_design),
+never into the culture set; the planner's copy of the result is emptied. The host is told ("<guest> makes its own
+City Hall and vehicle") and never waits: no vote, no hold. Opened by itself rather than offered: the request is the
+game's own, in a mode whose return path was read (no planner re-open, no outfitter branch). Off: as 0.7.15.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Owner rule of 2026-11-18: no lab runs until the night run. Test `civ_own_arrival` (PASS expected) and its twin
+`civ_own_arrival_off` (SPORE_FIX_OFF=core.own_civ_arrival, FAIL expected at "the guest's OWN City Hall editor opened
+after its arrival in Civ"), lanes 9 and 10. Run dirs: pending (night run). `make -j8`, `make test` pass.
 
 ## History
 - 2026-11-18: opened.
+- 2026-11-18: static RE, code, test and twin on feat/w54-x1; lab pending (night run).

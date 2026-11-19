@@ -9345,3 +9345,31 @@ species line's designs in civ_own_designs.cpp (species::design, feat/w54-shims).
   unchanged and the guest's entries that had a design unchanged; the host's save (galaxy menu) parsed for the keys.
 * `coop_civ_designs.py` (civ_designs) now sets creature.mode host before its BUG-1158 steps (the refusal and the
   "went back" line are host mode only since BUG-1275) and back to own at its end.
+
+## A guest's own editors at the Tribe -> Civ arrival: civ_own_arrival (2026-11-18, feat/w54-x1)
+<a id="testing-civ-own-arrival"></a>
+
+BUG-1276 (WP-X1). `coop_civ_own_arrival.py` (suite `civ_own_arrival`, cold, `tribe`, ~20 min; twin
+`civ_own_arrival_off` = `SPORE_FIX_OFF=core.own_civ_arrival`, must FAIL at "the guest's OWN City Hall editor opened
+after its arrival in Civ"). Never run yet (written without a lab, the night run of 2026-11-18).
+* Route: the guest plays a creature of its own My Creations; the live Tribe -> Civ change as tribe_civ (coop.tribe
+  advance, the advance button, the stage card and captions, the guest's I'm ready in both votes by its co-op window,
+  the host's two editors: three parts, the dice, done); both screens shot every 2 s (coop_evo_screens.Screens). The
+  guest's own editors are driven by coop_civ_guest_editors.drive_editor (TRIBE_EDITOR_PARTS). Then the guest buys the
+  NPC city nearest the capital (`coop.civ buycity`; the cities still to come are spawned first with
+  cCivExpansion::SpawnNextCity when none stands), and a land vehicle (its city menu's land button, else `coop.civ
+  buy`) in the city whose land design id (`coop.civ owndesign did <city> 0`) is the guest's vehicle editor's.
+* Checks: `coop.civarrival` (phase, the editors 99E92F05 / the archetype's vehicle editor, each result: seen, key,
+  cancelled, taken) and the game: the guest's mode Civ before Editor; the host's mode Civ and no vote while the guest
+  designs, its longest black under 20 s; the guest's line names both designs with one 0x7B...... key on both games
+  (`coop.species`); the host's culture set (`coop.designs culture`) and `coop.civedit`'s game fields as when the host
+  reached Civ; the guest's city's City Hall drawn from the guest's creation on both games (`coop.civ owndesign` rows,
+  `coop.creations modelhash`), the capital's not; its citizens of the guest's Civ line (`coop.civ citizens`); the
+  bought vehicle's model; the host's `coop.save` parsed for the keys. Key frames: tribe_vote, guest_arrived,
+  guest_cityhall_editor and guest_vehicle_editor (the guest's editor and the host's Civ world at the same moment),
+  guest_city, capital.
+* `coop.civarrival due` (tests): makes the own editors due as if the host's end-of-Tribe vote had ended (in the host's
+  Civ world they open after the settle): a quick check of the editors without the Tribe -> Civ change.
+* For WP-X2 (coop_line_stages.py --civ-editors): nothing to switch on; in own mode the editors open by themselves at
+  the guest's arrival (`coop.civarrival` shows the phase).
+

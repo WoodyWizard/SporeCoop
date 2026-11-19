@@ -959,3 +959,16 @@ tile 0xD0C860 for the guest's own picture) and queue them; `civedit::tick` (afte
 `species::set_design` / `species::set_civ_outfit`. Everything visible on the other games comes from the line's readers
 (civ_own_designs.cpp, civ_species.cpp). The host's game and host mode run the game's code unchanged. Details:
 docs/re/civ.md#civ-own-editors.
+
+## A guest's own editors at the Tribe -> Civ arrival (2026-11-18, feat/w54-x1)
+<a id="arch-civ-own-arrival"></a>
+
+WP-X1 (BUG-1276), `mods/coop/civ_arrival.cpp` (namespace coop_core, next to vote.cpp's own editor; the Cell ->
+Creature arrival of BUG-1240 is vote.cpp's `own_editor_tick`). A guest in own mode (switch `core.own_civ_arrival`, also
+needing `civ.guest_editors` and a host with creations 1.1) that sees the host's vote for an end-of-Tribe editor end
+(session_glue.cpp, the Vote route) keeps its own Civ editors due; `civ_arrival_tick` (after own_editor_tick) opens the
+City Hall and then the vehicle editor on its own game once it plays the host's Civ world and has settled. The results
+reach the species line by WP-C3's queue (`civedit::take_editor`, the result seen in civ_editors.cpp's cGameModeCiv
+hook through `civ_arrival_result`); everything the other games show comes from the line's readers. No message, no
+host side: the host never waits. Details: docs/re/civ.md#civ-own-arrival. Console: `coop.civarrival [status | due]`.
+

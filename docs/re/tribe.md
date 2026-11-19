@@ -1596,6 +1596,8 @@ BUG-0576, BUG-0585. GOG 2024, Ghidra (tools/ghidra/q.sh) and lab runs on lane 4 
   After the City Hall (back in Tribe) TRG2CVG_ShowCityHall (id 10792A72) plays, its caption waits, and its end
   submits the same way the **vehicle editor F670AA43** (or 9AD7D4AA / 7CB21BAD by cPlayer +0x1104: the consequence
   archetype), +0x29 = 1. After the vehicle editor the game goes to Civ (0x1654C04) by itself.
+  CORRECTION (2026-11-18, feat/w54-x1): the third vehicle editor is 7D433FAD, not 7CB21BAD (asm 0xCD2319..0xCD2327;
+  docs/re/civ.md#civ-own-arrival).
 * ✔ `cGameModeManager::SubmitEditorRequest` 0xB1DE20 (thiscall(mgr, req) ret 4) keeps the request at +0x2C; when
   the mode object +0x30 vt+8(0x4CF52822) says so it pauses with the same reason 0x4BF38A6, listens for 0x462C656
   and its handler 0xB1DF60 submits the request and only then resumes 0x4BF38A6. The pause reason 0x4BF38A6 is "an
