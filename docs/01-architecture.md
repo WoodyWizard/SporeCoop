@@ -858,3 +858,67 @@ The creations module's `debug()` (`coop.creations`, 410 lines) went the same way
 the four `debug()` functions of the plan. The proofs: refactor_dump identical after each step, `tools/refactor_dump.py
 moves` lists only dropped `static`s, header declarations, default arguments kept on the prototype, and the new files'
 heads (docs/10-dev-pipeline.md#pipeline-refactor-proof); the Cell lab tests on the split build (BUG-1183).
+
+## The species line: every player's own species per stage (2026-11-18, feat/w54-line)
+<a id="arch-species-line"></a>
+
+WP-0 of docs/plan-0.7.16.md (BUG-1270). `mods/coop/species_line.h` is the one place the 0.7.16 packages (Tribe
+members, Civ citizens, vehicles, buildings, the guest's own editors, the stage transitions) ask "which species / design
+is player N's here". It changes no look by itself. Files: `species_line_core.h` (portable: the rules, the wire and store
+format; `tests/species_tests.cpp` in unit-cpp), `species_line.cpp` (the table, the messages, the store, `coop.species`),
+the line creations' registration at the end of `creations.cpp` (`creations::line_pack`, `line_register`).
+
+**The API** (namespace `species`, main thread):
+
+| Call | Answers |
+|---|---|
+| `Key key(uint8_t pid, Stage s)` | `Stage::Cell / Creature / Tribe / Civ`: the creation key of player pid's species in that stage, a key THIS game can build now (registered here) and the same key on every game of the session; `{}` (instance 0) = none: use the world's own (the host's species, the tribe's slot, the civilization's species) |
+| `Key design(uint8_t pid, uint32_t design_id)` | pid's own Civ design for the game's design id (the culture set's id, cCivilization +0x6C: City Hall 0x99E92F05, house 0x4E3F7777, ..., a vehicle's `VehicleDesignId(purpose, locomotion)` 0xC9E850); `{}` = the culture set's key |
+| `std::vector<uint32_t> design_ids(pid)` | the design ids pid has a design for here |
+| `bool own_mode()` | creature.mode own (F5). In host mode every key() / design() is `{}` (the rows stay: back to own, the lines come back) |
+| `Key own_key(Stage)`, `Key own_design(id)` | the owner's side: this game's own line by the keys of its own game (My Creations), for its own editors' requests |
+| `set_tribe_outfit(Key)`, `set_civ_outfit(Key)`, `set_design(id, Key)` | the owner's setters (a guest in own mode): `k` a creation this game has (the editor's result); `{}` clears. false: refused (the host, host mode, no session, no model here) |
+| `on_change(name, fn(pid))`, `serial(pid)` | a change of pid's line on this game (a new row, records registered, its creature changed, own / host mode, the player left): fn(pid) from `species::tick` (every frame, after `creations::tick`; game calls allowed); register from a static initializer |
+| `players()`, `is_line_key(Key)` | the players with a line here; a key of any line here (for a save strip) |
+
+Rules (species_line_core.h `pick`): Creature = the player's own creature (creations' shared copy, `creations::player_key`,
+0x7C......; `{}` when it plays the world's own); Tribe = its tribe outfit if it was made for its current creature, else
+the creature; Civ = its Civ outfit if it was made for its current tribe line, else the tribe line; designs start empty.
+A source this game cannot build (its records refused here, BUG-0452) falls back to the one before it, so no game ever
+answers a key it cannot build. Cell = the player's own cell (creations), no row needed. The host (player 0) has no line:
+its species is the world's own, every call for player 0 answers `{}`.
+
+**Keys.** An outfit or design goes to every game as a creations bundle (model, metadata, pictures) and is registered
+on every game, the owner's too, under one shared instance from its content: `0x7B` + 24 bits of its hash
+(species_line_core.h `shared_instance`; creations' own copies are 0x7C player creations and 0x7D the host's species and
+designs). The same key everywhere; no game's own creation of the same id answers for it (ids are per profile). Keys of
+ours never go into a game save: a package that writes one into a game object strips it while saving (owner decision
+of 2026-11-18: the host's save holds the host's species and designs only).
+
+**Who keeps what.**
+* The owner (a guest) keeps its own row: its creature (its own key), outfits and designs by the keys of its own game,
+  each with its shared instance and for an outfit the owner-side instance it was made for. It sends its bundles and
+  then its row to the host, but only after the host's `kStored` answer of the session.
+* The host keeps the table (every guest's row), registers the bundles, relays them to the other guests and sends
+  every row to everybody, a Ref only with a shared key its own game has (species_line_core.h `resolved`): a key goes
+  out only when it can be resolved; a newcomer gets the bundles first, then the rows (reliable, in order).
+* The host keeps every row in its per-player store (docs/01-architecture.md#arch-player-store; record `species.line`
+  v1, the row's bytes; put at every change, written after the game's next save) and answers every guest once per
+  session with `kStored` (its stored row, or nothing) as soon as its world's store is open. A guest that set nothing
+  in this session takes it as its own and packs its creations again from its own game (one it does not have any more
+  is dropped): a rejoin and a new evening bring the line back, nothing is in the game's save.
+* Every game resolves each row against what it has registered and tells the packages of a change.
+
+**Wire.** `MSG_SPECIES_LINE` (73, family creations 1.1, Session class, the host relays): u8 kind `kRow` (u8 player, u16
+n, the row's bytes), `kStored` (the same, host -> that guest), `kBundle` (u8 owner, u32 shared, u32 total, u32 offset,
+u16 n, bytes; 900-byte pieces). A 0.7.15.2 peer does not know the type: its dispatch drops it; it sees the old look and
+its own line is empty everywhere (it sends no row).
+
+**Switch.** `coop.fix species.line off`: no line (every key `{}`, nothing sent or stored): the 0.7.15 behaviour, every
+package's player shows the world's own species (usable as a FAIL twin by the packages).
+
+**Console.** `coop.species` (per player and stage: the key, known here, the row; the own row on a guest; counters),
+`coop.species key <player> <stage>` (the key, known, the model hash the game answers for it), `coop.species own
+<stage>`, `coop.species test tribe|civ next|none|<instance>` and `coop.species test design <id> next|none|<instance>`
+(the lab's setter: an own creature of My Creations as the stand-in for an editor's result). Lab test: `species_line`
+(docs/06-testing.md#testing-species-line).

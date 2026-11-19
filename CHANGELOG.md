@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Development
+- The species line (BUG-1270): every player's own species per stage (tribe and Civ outfits, Civ designs) is kept by
+  the mod, sent to every game and kept by the host between sessions; the base for every player's own look in Tribe and
+  Civilization (no visible change by itself).
+
 ## [0.7.15.2] - 2026-11-18
 
 More fixes for problems seen in a video of two players, mostly in the Cell stage and the move to the Creature stage:

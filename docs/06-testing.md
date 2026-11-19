@@ -9228,3 +9228,23 @@ BUG-1241, BUG-1250, BUG-1252, BUG-1253 (creature fixture, warm; docs/re/creature
   started" 0). SPORE_FIX_OFF=world.menu_intro_return fails (the host's panel never comes).
 * The lanes' galaxy menu shows the game's "Network play disabled" box (the DBCheck at intro state 6) over the galaxy:
   normal offline, not a bug of the test.
+
+## The species line test (2026-11-18, feat/w54-line)
+<a id="testing-species-line"></a>
+
+WP-0 of docs/plan-0.7.16.md, BUG-1270 (docs/01-architecture.md#arch-species-line). `species_line`
+(`tools/tests/coop_species_line.py`, creature fixture, cold, ~12 min with its rejoin and session restart; lane 9 for
+WP-0's agent):
+1. the guest plays its own creature (creations_state.choose_own); the host's `coop.species key <guest> creature` is its
+   0x7C...... copy, known on the host;
+2. the guest's `coop.species test tribe next` (another own creature of its My Creations, or its creature itself when it
+   has one only) and `coop.species test design 99E92F05 next`: on both games `key <guest> tribe` is the same
+   0x7B...... key, known there, and the model hash the host's game answers for it is the one the guest's game answers
+   for its own creation (`coop.species own tribe`): the host's resource manager builds the guest's creation; the Civ
+   line is the tribe outfit (no Civ outfit); the City Hall design is the same 0x7B key on both;
+3. the guest leaves and joins again: the same key on both games (the host's store row, `kStored`, taken by the guest);
+4. `coop.settings set creature.mode host`: every key of the guest is 0 on both games; `own` again: back;
+5. twoinst.session_restart (#testing-session-restart): the same key and model on the host, the design back.
+Key frames `line` and `next_session`: no look changes in WP-0 (the frames only document the state). FAIL twin:
+`SPORE_FIX_OFF=species.line` (the setter is refused, the host shows no line). The unit part: `tests/species_tests.cpp`
+(rules, the host's resolved row, the format, the store record) in `make test` (unit-cpp).
