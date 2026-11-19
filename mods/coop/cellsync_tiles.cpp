@@ -28,7 +28,10 @@ int SK_CDECL h_Populate(float prob, int layer, int level, void* query, void* bbo
             return 0;
         g_n.solo_spawns++; // BUG-0205: the host is away, our game fills its own pool
     }
-    return o_Populate(prob, layer, level, query, bbox, marker, x);
+    kin_pop_enter(); // BUG-1257: the population makes these cells (cellsync_kin.cpp)
+    int r = o_Populate(prob, layer, level, query, bbox, marker, x);
+    kin_pop_leave();
+    return r;
 }
 
 // ---- BUG-0174: the host keeps the world populated around every player, not only around itself ----
@@ -823,6 +826,7 @@ static void pop_tiles(int level, TileList* list, int all)
     double now = H->time_seconds();
     std::array<float, 12> host_box;
     build_views(vb, now, host_box);
+    kin_before_pass(); // BUG-1257
     // our deletes first (h_TileActive: any player's box), before the host's pass. On a level change
     // (the level base differs) or a rebuild (all), or when the tile pool is short of room, every tile
     // of ours goes back first: the host's own pass must never find the pool full (CreateObject then

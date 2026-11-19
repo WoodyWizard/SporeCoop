@@ -373,6 +373,8 @@ std::string debug(const std::vector<std::string>& a)
         uint8_t* s0 = S();
         return "deaths=" + std::to_string(s0 ? F<int32_t>(s0, 0x70) : -1);
     }
+    if (!a.empty() && a[0] == "kin") // tests (BUG-1257): the kin of every player's species [within r m of a player]
+        return kin_report(a.size() > 1 ? (float)atof(a[1].c_str()) : 1e9f);
     if (!a.empty() && a[0] == "species") { // tests (BUG-0637): the creature models of the pool (foreground, alive): model count levels
         std::map<uint32_t, std::pair<int, std::set<int>>> m;
         for_each_cell([&](uint8_t* c, uint32_t) {

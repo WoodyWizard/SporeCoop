@@ -341,6 +341,8 @@ anchor so other docs can link to it:
 * Why: the host's game fills the world (Simulator::Cell::PopulateTiles) from the world's one player species, and the
   guest's game shows the host's pool (cellsync.cpp). The world has no second player species.
 * Planned: an own species per player in the shared world (the 0.8 Rivals work).
+* Fixed on feat/w54-cellkin for 0.7.16 (`cell.kin_species`): the kin near each player are of that player's cell; the
+  entry moves to the archive when the release is out.
 * Ticket: BUG-1257
 
 ## Creature: the second player cannot take a creature into a pack (2026-11-18, owner: players' video)
