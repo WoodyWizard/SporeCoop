@@ -777,7 +777,7 @@ void set_effect_relay_enabled(bool on)
 // addressing keyed by the effect pointer: one probe for nearly every effect, fixed size, no
 // allocation, no linear scan (the old scan over 4096 entries ran for every transform set of every
 // effect in every stage). Cleared once per frame after effects::tick read what it needed.
-struct FxCreated { void* fx; uint32_t id; bool relayed; bool foreign; };
+struct FxCreated { void* fx; uint32_t id; bool relayed; bool foreign; bool held; };
 static constexpr size_t kFxSlots = 1024; // power of two; far more than a frame creates
 static FxCreated g_fx_ids[kFxSlots];
 static uint32_t g_fx_creates, g_fx_probes, g_fx_evicted;
@@ -806,20 +806,25 @@ static FxCreated* fx_find(void* fx)
     }
     return nullptr;
 }
+static bool g_in_cell_gfx; // inside the Cell graphics update (main thread only; BUG-1266)
+CALL_GUARD("game.cell_gfx", g_in_cell_gfx);
+static uint32_t g_fx_cell_held; // effects created there (tests, coop.effects)
 static void fx_add(void* fx, uint32_t id, bool foreign = false)
 {
     g_fx_creates++;
+    bool held = g_in_cell_gfx;
     size_t i = fx_slot(fx);
     for (unsigned n = 0; n < 6; n++, i = (i + 1) & (kFxSlots - 1)) {
         if (!g_fx_ids[i].fx || g_fx_ids[i].fx == fx) {
             // the manager's hook runs after the world's for the same object: keep a foreign mark
             bool was = g_fx_ids[i].fx == fx && g_fx_ids[i].foreign;
-            g_fx_ids[i] = FxCreated{fx, id, false, foreign || was};
+            bool was_held = g_fx_ids[i].fx == fx && g_fx_ids[i].held;
+            g_fx_ids[i] = FxCreated{fx, id, false, foreign || was, held || was_held};
             return;
         }
     }
     g_fx_evicted++; // 6 probes over: take the home slot (does not happen with 1024 slots)
-    g_fx_ids[fx_slot(fx)] = FxCreated{fx, id, false, foreign};
+    g_fx_ids[fx_slot(fx)] = FxCreated{fx, id, false, foreign, held};
 }
 void clear_effect_table()
 {
@@ -884,6 +889,12 @@ bool effect_foreign(void* fx)
     FxCreated* e = fx_find(fx);
     return e && e->foreign;
 }
+bool effect_cell_held(void* fx)
+{
+    FxCreated* e = fx_find(fx);
+    return e && e->held;
+}
+uint32_t cell_held_effects() { return g_fx_cell_held; }
 uint32_t last_effect_id(bool main_world_only) { return main_world_only ? g_fx_last_main_id : g_fx_last_id; }
 uint32_t last_foreign_effect_id() { return g_fx_last_foreign_id; }
 uint32_t foreign_effects() { return g_fx_foreign; }
@@ -973,6 +984,8 @@ static int SK_THISCALL h_WorldCreateFx(void* world, uint32_t id, uint32_t a3, vo
         }
         g_fx_last_id = id;
         fx_add(*out, id, foreign);
+        if (g_in_cell_gfx)
+            g_fx_cell_held++;
         if (g_world_listener)
             g_world_listener(*out, id);
         double dt = H->time_seconds() - t0;
@@ -981,6 +994,23 @@ static int SK_THISCALL h_WorldCreateFx(void* world, uint32_t id, uint32_t a3, vo
         g_fx_hook_calls++;
     }
     return r;
+}
+// BUG-1266: the Cell graphics update (SporeCoop::CellGfx_Update, once a frame) creates the effects a cell's graphics
+// object keeps (propulsion, the electric part's charge field, the zap's lightning, glows) and drives them every frame
+// (the place, the scale 2 x the zap range, the lightning's path) until it stops them. A copy made by the relay on the
+// partner's game is none of that: it stays where it was made, unscaled by later frames, without its path, until the
+// relay's 8 s run out (the host's zap: a trail of giant white rings on the guest's screen). The partner's game runs the
+// same update for its own copy of the cell. Effects created inside it are marked; effects.cpp does not send them.
+typedef void(SK_CDECL* CellGfxUpdate_t)();
+static CellGfxUpdate_t o_CellGfxUpdate;
+static void SK_CDECL h_CellGfxUpdate()
+{
+    if (!on_main()) {
+        o_CellGfxUpdate();
+        return;
+    }
+    callguard::Hold in_gfx(g_in_cell_gfx);
+    o_CellGfxUpdate();
 }
 // The hooks are installed once, in init(); a hook removed while the UI skinner's render thread was
 // inside it faulted (Skinner::cSkinnerTexturePainter::StartRender+0x28, thousands of caught faults
@@ -1523,6 +1553,12 @@ bool init(const SkHost* host, SkMod* mod)
     if (uintptr_t a = H->sym("Simulator::cCreatureBase::CreateEffect")) {
         int r = H->hook_create(M, (void*)a, (void*)h_CreateCreatureFx, (void**)&o_CreateCreatureFx);
         H->log(M, r ? SK_WARN : SK_INFO, "fxcr hook at %p: %d", (void*)a, r);
+    }
+    if (uintptr_t a = H->sym("SporeCoop::CellGfx_Update")) { // BUG-1266
+        int r = H->hook_create(M, (void*)a, (void*)h_CellGfxUpdate, (void**)&o_CellGfxUpdate);
+        H->log(M, r ? SK_WARN : SK_INFO, "fxcellgfx hook at %p: %d", (void*)a, r);
+    } else {
+        H->log(M, SK_WARN, "fxcellgfx hook: no symbol (a cell's own effects are relayed as fixed copies)");
     }
     o_StartStopFx1 = (StartStopFx_t)H->sym("Simulator::cCreatureBase::StartOrStopEffectFromPool1");
     o_StartStopFx2 = (StartStopFx_t)H->sym("Simulator::cCreatureBase::StartOrStopEffectFromPool2");

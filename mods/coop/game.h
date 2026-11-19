@@ -213,6 +213,10 @@ bool effect_position(void* effect, net::Vec3& out);
 bool effect_relayed(void* effect); // a creature hook already sent it
 // created in another effect world than the game's own (cEffectsManager +0x244): the skin painter's
 bool effect_foreign(void* effect);
+// BUG-1266: created by the Cell graphics update (SporeCoop::CellGfx_Update) for a cell it keeps and drives every
+// frame (propulsion, the electric charge field, the zap's lightning): the partner's game draws its own
+bool effect_cell_held(void* effect);
+uint32_t cell_held_effects(); // how many the hook saw (tests)
 // the last effect id the game created (a valid id in this stage); main_world_only: in the game's own
 // effect world (not the skin painter's, whose effects fault anywhere else)
 uint32_t last_effect_id(bool main_world_only);
