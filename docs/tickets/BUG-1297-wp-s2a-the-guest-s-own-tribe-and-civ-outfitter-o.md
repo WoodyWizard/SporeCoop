@@ -36,10 +36,20 @@ the creature; for an outfit whose own key `creations::host_shadows`, the line's 
 `species.own_key_here` (off: the raw key, 0.7.16 before WP-S2).
 
 ## Verification
-Not run yet: the lab waits for the orchestrator's word (2026-11-19, the CPU was busy with a foreign task). Ready:
-`SPORE_DETECTOR=20 python3 tools/lab.py run own_editor_key own_editor_key_off --lane 6 --lane 7 --retry 0 --no-build`; the twin must
-FAIL, the test PASS (run ids go here).
+Night run 20261119-104136: own_editor_key FAILED in its set-up: the tribe's species 067B3E4A of the fixture is not in
+the host's My Creations, so the host's bundle had no records and registered nothing on the guest (no shadow, the guest
+answered its own body). The test now collides with a creature of the host's own My Creations (TigerHorse 290229B9),
+whose bundle registers the host's body on the guest (checked). Its twin had also run with the switch on (BUG-1314).
+The BUG-1297 check: PASS 20261119-112300 (the outfitter asked for 7CF30A6D: the guest's own body 9B6134E2, not the
+host's 6E1A058F); twin own_editor_key_off FAIL 20261119-112300 for the right reason (asked for the raw 290229B9: the
+host's body 6E1A058F). The test as a whole still FAILS after that check: the guest's own outfitter does not come back
+to Tribe after Done (`the guest is back in Tribe (0x00DBDBA1)`), as in tribe_own_outfitter and own_editor_drop of the
+night run (the own outfitter's return, fix/w57-own-editors' area); on the merged tree (20261119-115724,
+20261119-121054) its hut planner did not open either (coop_tribe_outfit.open_outfitter, 3 clicks; the guest had just
+joined from its galaxy menu: "the galaxy menu's splash window ... was up in the stage: hidden (BUG-0938)" in both).
+Open until the outfitter's return is fixed and the test passes whole.
 
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: feat/w56-editors: fix and its test written (switch, FAIL twin entry); the lab run waits for the orchestrator.
+- 2026-11-19: fix/w57-tribe-keys: set-up fixed (host My Creations key), BUG-1297 check PASS / twin FAIL; the test waits for the own outfitter's return (Done).

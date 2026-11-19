@@ -1275,6 +1275,9 @@ registry (`mods/coop/fixes.h`, BUG-0116):
   off on both games right after `twoinst.start()` (after the join: a fix that acts while the guest
   joins is still on then). Example: `SPORE_LANE=6 SPORE_FIX_OFF=npc.play_death python3
   tools/tests/coop_creature_kills.py` must FAIL.
+  A game the test starts again gets them through `twoinst.apply_fix_off(con, who)`, which asks until the answer
+  says the switch is off (the mod's commands come some seconds after SporeKit's console answers) and fails the test
+  when it never does (BUG-1314: before, one ask got "unknown command" and the twin ran with the fix on).
 * Switches added for 0.7.2.x fixes that had none: `game.adapter_key` (BUG-0012, Alt+Shift+Enter;
   `coop_alt_enter.py --without-fix` faults at 0x7777BE), `pool.forget` (BUG-0006),
   `npc.stale_proxy` and `npc.world_despawn` (BUG-0009), `npc.play_death` (BUG-0015),
@@ -7921,6 +7924,8 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
 * The rank badge of a captain-less empire runs the captain screen's equipment panel first, which faults inside the
   game (0x5971D4 or 0xC02A14, handled) and stops before the portrait: the badge alone does not reproduce BUG-1111 in
   the lab (docs/re/space.md#space-captain-portrait-null). The test allows only these two faults.
+  ~ superseded (2026-11-18): see [the captain screen without faults](#testing-captain-items); each fault is allowed
+  only while its guard is off.
 * Twin: `SPORE_LAB_FIXOFF="space_captain_none=game.captain_portrait"`.
 
 ## Start-up waits on a signal instead of fixed sleeps (2026-11-15, feat/w51-labstart)
@@ -9517,3 +9522,31 @@ what the mod got wrong (BUG-1306, BUG-1308, BUG-1316):
   nothing and the test waits in the editor (BUG-1308). `coop.vote` prints "part list waived N (own outfitters M)".
 * A guest-side gate on the host's build reads `Session::host_families` (the host's WELCOME); `peer_families` answers
   only on the host (BUG-1306, BUG-1282).
+## The captain screen without faults (space_captain, space_captain_none, 2026-11-18, fix/w55-captain)
+<a id="testing-captain-items"></a>
+
+BUG-0304 (GitHub #203), BUG-1278. Written without a lab run (owner rule 2026-11-18); the night run gives the run ids.
+* `coop_space_captain.py` (suite `space_captain`, `space` fixture): first the adventure mission screen (`coop.captain
+  open`, a Space UI whose badge was never clicked) and a real click on its Accept (control 0x075DD108 -> the captain
+  panel mode 2 -> the items palette; probe `SporeCoop::CaptainItems_Palette` hits > 0), then the rank badge with a real
+  click, then the BUG-0303 zoom-out. Both games must log no caught fault at all (before: one fault 0x5971D4 per
+  opening was expected). Twin: `SPORE_FIX_OFF=game.captain_items` (the guest faults at 0x5971D4 after each route).
+* `coop_space_captain_none.py`: the handled faults 0x5971D4 / 0xC02A14 are allowed only while `game.captain_items` /
+  `game.captain_stats` is off (read from `coop.captain`: `items: none N fix=0|1 stats: skipped N fix=0|1`). Twin for
+  BUG-1278: `SPORE_FIX_OFF=game.captain_stats` (0xC02A14 at the rank badge of captain 0).
+* Not known before the night run: whether Accept on a mission screen opened without an adventure offer shows the
+  captain panel or something else after the palette; what the screens show is in captain_mission.png /
+  captain_accepted.png.
+
+* Lab 2026-11-19 (lane 3): PASS 20261119-111406 (both tests 2x); FAIL twins 20261119-112022
+  (`space_captain=game.captain_items`: 0x5971D4) and 20261119-112459 (`space_captain=game.captain_stats`: 0xC02A14;
+  `space_captain_none=game.captain_portrait`: the crash at 0xA055B5).
+* CORRECTION (2026-11-19): the first run 20261119-094350 failed in the tests: `coop.ui find "Accept"` / `"Decline"`
+  return the captain panel's hidden copies first (and an always shown "Decline" at 68 9), so the shown mission screen
+  was missed and, left open, kept the badge from opening the captain screen. `uifind.where(con, ctl)` finds a shown
+  window by control id (the mission screen: Decline 0x075DD100, Accept 0x075DD108). Decline on this screen of no offer
+  hides the Space UI behind the drive's message and the badge does nothing after it: both tests leave it by Accept and
+  the panel's OK.
+* CORRECTION (2026-11-19): BUG-1278's twin is `space_captain=game.captain_stats` (the fixture captain has no species
+  profile in the guest's game: `stats: skipped` +3 per opening). Captain 0 reaches neither guarded fault, and
+  space_captain_none allows no handled fault at all now (the old allowance for a guard that is off let its twin pass).

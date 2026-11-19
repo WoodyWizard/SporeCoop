@@ -1,16 +1,16 @@
 ---
 id: BUG-1289
 title: WP-S1a: a guest without an own creature in this world plays the host's species in Tribe and Civ and cannot pick its own
-status: open
+status: fixed
 kind: bug
 stage: Tribe, Civ
 reported: 2026-11-19
 source: plan
 role: guest
 versions: 0.7.15.2, rel/0.7.16
-fixed_in:
+fixed_in: unreleased
 branch: feat/w56-late
-commits: c29e3ba4 4b9fe0de
+commits: c29e3ba4 4b9fe0de 4ce6f9de
 tests: late_species, late_species_civ, late_species_off and late_species_civ_off (twins)
 signature:
 docs: docs/re/creations.md#creations-late-species, docs/06-testing.md#testing-late-joiners
@@ -42,11 +42,15 @@ The species line follows by itself (own_creature), so its members and citizens b
 Off: as 0.7.15.
 
 ## Verification
-Not run yet: the orchestrator holds the lab (the CPU is busy). Tests ready: `late_species` (tribe fixture: the row's
-real click, members on both games, BUG-0638 kept, the galaxy-menu choice after a restart and join) and
-`late_species_civ` (civ_npc: the guest's city's citizens), their twins `late_species_off` / `late_species_civ_off`
-must FAIL at the row. `make -j8` and `make test` pass. Run dirs: pending.
+Night run 20261119-104136: late_species FAILED at step 3 (BUG-1312: the host never sent the guest's emptied row) and
+step 4 (the galaxy menu's choice 290217AC lost: `choose` ran before anything had read the profile's paths, and
+find_paths' first read loaded choices.ini's old 290225CD over it; a player's own clicks go through refresh_options,
+which reads the paths first, so this was the test's direct command; choose() now reads the paths first, 4ce6f9de).
+PASS: late_species 20261119-112300, merged tree 20261119-115724; late_species_civ PASS 20261119-104136.
+FAIL (twin, SPORE_FIX_OFF=creations.late_species): late_species_off 20261119-112300 (no row in Tribe, the menu's choice
+dropped: the right reason); late_species_civ_off FAIL 20261119-105127.
 
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: code, tests and twins on feat/w56-late; lab pending.
+- 2026-11-19: fix/w57-tribe-keys: night run causes found (BUG-1312, choose() order), lab PASS and twin FAIL; fixed.
