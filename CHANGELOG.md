@@ -25,6 +25,8 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
 - The lab's sync checks know own DNA per player: each guest's DNA is compared with the host's record of its own DNA
   and the evolution bar with the party's (BUG-1310); a guest no longer gets the host's DNA for a moment when the host
   leaves its editor (BUG-1311).
+- Lab: a test that restarts the guest's game more than once no longer takes the host's game of the same lane along:
+  every game of a lane now runs in the process namespace of the lane's Wine server (BUG-1327).
 
 ### Added
 - Creature: when a partner goes into an editor of its own (its mating evolution, Evolve now, or later at the nest),

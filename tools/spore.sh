@@ -121,6 +121,18 @@ sk_ini_set() {
     if grep -q "^$1=" "$f"; then sed -i "s/^$1=.*/$1=$2/" "$f"; else sed -i "/^\[sporekit\]/a $1=$2" "$f"; fi
 }
 
+# BUG-1327: the pid (host namespace) of the wineserver of this lane's bottle, empty when none runs (its WINEPREFIX names
+# the bottle)
+lane_wineserver() {
+    local p want="$BOTTLES_DIR/$BOTTLE"
+    for p in $(pgrep -x wineserver); do
+        if tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null | grep -qxF "WINEPREFIX=$want"; then
+            echo "$p"
+            return 0
+        fi
+    done
+}
+
 cmd_run() {
     local inst=1 profile="" extra=()
     while [[ $# -gt 0 ]]; do
@@ -168,7 +180,17 @@ cmd_run() {
         display=(env -u WAYLAND_DISPLAY $hl)
         sk_ini_set test_monitor grid
     fi
-    nohup "${display[@]}" flatpak run --command=bottles-cli com.usebottles.bottles run -b "$BOTTLE" \
+    # BUG-1327: every launch is a flatpak sandbox with its own PID namespace, and the lane's wineserver lives in the
+    # namespace of the launch that started it (the first game). It knows the games of other sandboxes by their pids in
+    # their own namespaces; the second exit of a guest restarted in a sandbox of its own ended the wineserver, and the
+    # host's game with it. A launch while the lane's wineserver runs joins that wineserver's PID namespace (flatpak
+    # --parent-pid --parent-share-pids), so every game of the lane shares it. SPORE_SHARE_PIDS=0: a sandbox of its own.
+    local share=() ws
+    if [[ "${SPORE_SHARE_PIDS:-1}" == 1 ]]; then
+        ws=$(lane_wineserver)
+        [[ -n "$ws" ]] && share=(--parent-pid="$ws" --parent-share-pids)
+    fi
+    nohup "${display[@]}" flatpak run "${share[@]}" --command=bottles-cli com.usebottles.bottles run -b "$BOTTLE" \
         -e "$BIN/SporeApp.exe" -- "${args[@]}" > "$ROOT/out/run.$inst.log" 2>&1 &
     # opt-in: a window on a hidden workspace gets no frame callbacks from GNOME, DXVK then waits
     # forever and the game stops at frame 1 (seen 2026-10-23); use the headless shell instead
@@ -414,8 +436,9 @@ case "${1:-}" in
     kill) cmd_kill ;;
     pids) shift; cmd_pids "${1:-}" ;;
     procs) cmd_procs ;;
+    wineserver) lane_wineserver ;;
     status) cmd_status ;;
     logs) shift; cmd_logs "${1:-1}" ;;
     fixture) shift; cmd_fixture "$@" ;;
-    *) echo "usage: [SPORE_LANE=N] spore.sh lane create|remove N|install|uninstall|deploy|run [-i inst] [-p profile] [-x game-arg]|kill|pids [inst]|procs|status|logs [inst]|fixture save|restore [name]"; exit 1 ;;
+    *) echo "usage: [SPORE_LANE=N] spore.sh lane create|remove N|install|uninstall|deploy|run [-i inst] [-p profile] [-x game-arg]|kill|pids [inst]|procs|wineserver|status|logs [inst]|fixture save|restore [name]"; exit 1 ;;
 esac
