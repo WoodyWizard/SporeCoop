@@ -8,18 +8,21 @@ other screen while the partner edited and came back later with its new body. Now
   --who host (default): the host's evolution (the mating editor's request, `coop.vote evolve`: its editor at once,
       core.editor_now; the guest takes no offer and watches). The host drags a mouth onto its creature (a new species)
       and leaves with done. The guest is the observer.
-  --who guest: the guest's own evolution (its mating editor's request, `coop.vote evolve` on the guest: its own editor
-      at once). The guest leaves it with the red cross (no new design). The host is the observer.
+  --who guest: the guest's own evolution (its mating editor's request, `coop.vote evolve` on the guest: the game's
+      evolution editor at once). The guest leaves it with done, unchanged (no new design). The host is the observer.
 
-Asserted on the observer's game (its own state, `coop.cocoon`: the puppet's current animation as the game's
-AnimatedCreature reports it, the glow effect's IsActive):
-  1. while the partner edits, the partner's creature stays shown (a puppet) and goes into the cocoon: its animation is
-     gen_evolve_cocoon_hold 4E0D3CBF and the cocoon's glow crg_cocoon_hold is an active effect in most samples, the
-     body shrunk inside (scale < 0.3 of its size); a key frame of the observer's screen;
-  2. the partner is back: the creature comes out where the cocoon stood: the game's animation gen_evolve_emerge
-     D4F48A35 (read back from the game) and a key frame of it;
-  3. after it: the puppet is driven again at its size, and (--who host) it wears the host's new species (the body it
-     came out with differs from the one it went in with and is the host's new creature).
+Asserted on the observer's game (its own state, `coop.cocoon`: the effects' IsActive, the puppet's scale and
+position as the game has them):
+  1. while the partner edits, the partner's creature stays shown (a puppet) and goes into the cocoon: in most samples
+     the woven shell crg_cocoon_create and the glow crg_cocoon_hold are active effects, the body is shrunk inside
+     (scale < 0.3 of its size) and held at the spot it went in (within 0.5 m); a key frame of the observer's screen;
+  2. the partner is back: the creature stays in the cocoon, then comes out where it stood: the burst crg_cocoon_hatch
+     is an active effect right after it was made, a key frame of it;
+  3. after it: the puppet is driven again at its size (the game's scale = the size it had), and (--who host) it wears
+     the host's new species (the body it came out with differs from the one it went in with).
+  Not asserted (BUG-1303, lab 20261119-110736 and the probe on lane 6): the cocoon animations gen_evolve_cocoon_hold
+  4E0D3CBF / gen_evolve_emerge D4F48A35: on GOG 2024 the game answers 0 to them for the Creature stage's creatures
+  (not in their animation set), so the first version's check of the animation could never pass; printed only.
   SPORE_FIX_OFF=creature.cocoon: the partner's creature is hidden while it edits (0.7.15): step 1 FAILS.
 
   coop_cocoon.py [--who host|guest]
@@ -40,9 +43,10 @@ wait = waiter(step=1.0)
 
 ROW = re.compile(r'partner (\d+) phase=(\S+) for=\S+ puppet=(\S+) anim=([0-9A-F]{8}) held=(\d) glow=(\d) scale=([\d.]+) '
                  r'size=([\d.]+) species=([0-9A-F]{8}) body0=([0-9A-F]{8}) seen_hold=([0-9A-F]{8}) '
-                 r'seen_emerge=([0-9A-F]{8}) emerged_body=([0-9A-F]{8}) spot=\(([^)]*)\) screen=(off )?(-?\d+) (-?\d+)')
+                 r'seen_emerge=([0-9A-F]{8}) emerged_body=([0-9A-F]{8}) spot=\(([^)]*)\) screen=(off )?(-?\d+) (-?\d+) '
+                 r'off=(-?[\d.]+) shells_active=(\d+)')
 LAST = re.compile(r'last (\d+) body0=([0-9A-F]{8}) seen_hold=([0-9A-F]{8}) seen_emerge=([0-9A-F]{8}) '
-                  r'emerged_body=([0-9A-F]{8})')
+                  r'emerged_body=([0-9A-F]{8}) hatch=(-?\d) size=([\d.]+) scale_out=([\d.]+)')
 
 
 def cocoon(con, pid):
@@ -53,9 +57,10 @@ def cocoon(con, pid):
         row = dict(phase=m.group(2), puppet=m.group(3), anim=m.group(4), held=m.group(5) == '1', glow=m.group(6) == '1',
                    scale=float(m.group(7)), size=float(m.group(8)), species=m.group(9), body0=m.group(10),
                    seen_hold=m.group(11), seen_emerge=m.group(12), emerged_body=m.group(13), on_screen=not m.group(15),
-                   sx=int(m.group(16)), sy=int(m.group(17)))
+                   sx=int(m.group(16)), sy=int(m.group(17)), off=float(m.group(18)), shells=int(m.group(19)))
     lm = LAST.search(out)
-    last = dict(body0=lm.group(2), seen_hold=lm.group(3), seen_emerge=lm.group(4), emerged_body=lm.group(5)) if lm else None
+    last = dict(body0=lm.group(2), seen_hold=lm.group(3), seen_emerge=lm.group(4), emerged_body=lm.group(5),
+                hatch=int(lm.group(6)), size=float(lm.group(7)), scale_out=float(lm.group(8))) if lm else None
     return row, last, out
 
 
@@ -91,6 +96,19 @@ def add_part(con, y):
 
 def dna(con):
     return float(field(con.call('coop.dna')['out'], r'dna=(-?[\d.]+)') or 0)
+
+
+def close_coop_window(con):
+    """the co-op window (opened by the Evolve now offer) off the observer's screen before a key frame (F9)"""
+    from coop_ui import Ui
+    try:
+        if Ui(con, 'observer').state().get('open') == '1':
+            con.call('key 120 down')
+            time.sleep(0.3)
+            con.call('key 120 up')
+            time.sleep(0.5)
+    except Exception as e:  # (a key frame without it is still a frame)
+        print(f'  (co-op window: {e!r})', flush=True)
 
 
 def face_spot(obs, pid):
@@ -135,21 +153,26 @@ def main():
     ck(got and row and row['puppet'] not in ('00000000', '(nil)', '0'),
        f"the observer's game still shows the {who}'s creature while it edits and put it into the cocoon ({row and row['phase']})")
     time.sleep(3.5)  # (the curl in: 2.4 s)
+    close_coop_window(obs)
     face_spot(obs, pid)
-    samples, held, glowing, small = 0, 0, 0, 0
+    samples, held, glowing, small, shelled, at_spot = 0, 0, 0, 0, 0, 0
     for _ in range(16):
         r = cocoon(obs, pid)[0]
         if r and r['phase'] == 'hold':
             samples += 1
             held += r['anim'] == HOLD
             glowing += r['glow']
+            shelled += r['shells'] >= 1
             small += r['size'] > 0 and r['scale'] < 0.3 * r['size']
+            at_spot += 0 <= r['off'] < 0.5
         time.sleep(0.5)
-    print(f'  hold samples {samples}: animation {HOLD} in {held}, glow active in {glowing}, shrunk in {small}', flush=True)
-    ck(samples >= 12 and held >= 0.8 * samples,
-       f"the observer's game plays the cocoon's hold animation {HOLD} on the creature ({held}/{samples})")
+    print(f'  hold samples {samples}: shell active in {shelled}, glow active in {glowing}, shrunk in {small}, at its spot in '
+          f'{at_spot}; (animation {HOLD} in {held}: {obs.call("coop.cocoon")["out"].splitlines()[0].split("anims=")[-1]})',
+          flush=True)
+    ck(samples >= 12 and shelled >= 0.8 * samples, f"the cocoon's woven shell is an active effect there ({shelled}/{samples})")
     ck(samples >= 12 and glowing >= 0.7 * samples, f"the cocoon's glow is an active effect there ({glowing}/{samples})")
     ck(samples >= 12 and small >= 0.8 * samples, f'the creature is shrunk inside the shell ({small}/{samples})')
+    ck(samples >= 12 and at_spot >= 0.8 * samples, f'the creature is held where it went in ({at_spot}/{samples})')
     keyframe('cocoon_hold', f"{obs_role}'s screen: where the {who}'s creature stood, a grey woven cocoon with a teal glow "
              f"(the creature curled up inside it, nothing of it showing through), while the {who} is in its editor",
              players={obs_role: obs}, settle=0)
@@ -166,9 +189,15 @@ def main():
         print(f'  the host added a part: DNA in its editor {d_in} -> {dna(host)}', flush=True)
         host.call('click %d %d' % DONE)
     else:
+        # the guest's game evolution editor (its request in the host's world while it plays the world's species): it has
+        # no red cross (BUG-1222); done without a change leaves it with the same creature (lab 20261119-111735: the
+        # first version's red cross click did nothing)
         wait(lambda: editor_ui(guest), 60, 2)
+        guest.call('wait.frames 200 60000')
         time.sleep(5)
-        guest.call('click %d %d' % CANCEL)
+        guest.call('click %d %d' % DONE)
+        if wait(lambda: not in_editor(guest), 20) is None:
+            guest.call('click %d %d' % CANCEL)
     t_back = None
     emerge_live = False
     phases = []
@@ -185,6 +214,7 @@ def main():
             emerge_live = emerge_live or r['anim'] == EMERGE
             if not shot_emerge:
                 shot_emerge = True
+                close_coop_window(obs)
                 keyframe('cocoon_emerge', f"{obs_role}'s screen: the {who}'s creature comes out of the cocoon where it "
                          "stood (the shell bursts, the creature grows back to its size)", players={obs_role: obs}, settle=0)
         if t_back and not r and last:
@@ -197,8 +227,11 @@ def main():
     print('  observer:', out.strip().replace('\n', ' | '), flush=True)
     ck(t_back, f'the {who} is back from its editor')
     ck('wait' in phases or 'emerge' in phases, f'the creature stayed in the cocoon after the {who} was back ({phases})')
-    ck(last and (emerge_live or last['seen_emerge'] == EMERGE),
-       f"the observer's game plays the emerge animation {EMERGE} on it ({'seen live' if emerge_live else last and last['seen_emerge']})")
+    ck(last and last['hatch'] == 1, f"the cocoon's burst crg_cocoon_hatch is an active effect when it comes out ({last and last['hatch']})")
+    ck(last and last['size'] > 0 and abs(last['scale_out'] - last['size']) <= 0.02 * last['size'],
+       f"it has its size back (the game's scale {last and last['scale_out']}, its size {last and last['size']})")
+    print(f"  (emerge animation {EMERGE}: {'seen' if emerge_live or (last and last['seen_emerge'] == EMERGE) else 'not played by the game'})",
+          flush=True)
     time.sleep(3)
     st = obs.call('coop.status')['out']
     pk = field(st, rf"remote {pid} '[^']*' puppet=\S+ state=\S+ [^\n]*\n\s+puppet pos=[^\n]*species=([0-9A-F]{{8}})")

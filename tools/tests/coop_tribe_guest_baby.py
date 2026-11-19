@@ -35,6 +35,41 @@ def player(con):
     return (-1, 0)
 
 
+def hut_fx(con):
+    """the hut purchases (hut effects) the game saw so far (`coop.tribe anims`: baby_pair seen=)"""
+    m = re.search(r'baby_pair fix=\d+ seen=(\d+)', (con.call('coop.tribe anims').get('out') or ''))
+    return int(m.group(1)) if m else -1
+
+
+def buy_click(con, h, tries=3):
+    """a left click on the own hut as a player does (hover, then click), again when the game took none (no food paid,
+    no hut effect after 2 s: under lab load the hover can come late, or a member walking in front of the hut takes the
+    click: lab 20261119-102828 and 20261119-115724 saw single clicks that bought nothing). Each purchase starts the hut
+    effect at once and pays at once, so a second click goes only when the first bought nothing. The clicks it took"""
+    for n in range(1, tries + 1):
+        f0, s0 = food(con), hut_fx(con)
+        con.call(f'move {h[0]} {h[1]}')
+        con.call('wait.frames 20 5000')
+        time.sleep(0.4)
+        con.call(f'click {h[0]} {h[1]}')
+        t0 = time.time()
+        while time.time() - t0 < 2.5:
+            time.sleep(0.25)
+            f1, s1 = food(con), hut_fx(con)
+            if (f0 is not None and f1 is not None and f1 < f0 - 0.5) or (s0 >= 0 and s1 > s0):
+                return n
+    return 0
+
+
+def ptribe(con):
+    """the game's player tribe line of `coop.tribe` (members, level, cap)"""
+    for ln in con.call('coop.tribe')['out'].splitlines():
+        if '(player)' in ln:
+            m = re.search(r'(\d+ members).*(level=-?\d+ cap=-?\d+ hud_cap=-?\d+)', ln)
+            return ' '.join(m.groups()) if m else ln.strip()[:120]
+    return '-'
+
+
 def owners(con):
     """{member id: owner} of the host's player tribe"""
     out, inside = {}, False
@@ -89,9 +124,12 @@ def main():
     ck(h is not None, f'the guest\'s own hut is on its screen ({h})')
     if not h:
         return ck.result()
-    guest.call(f'move {h[0]} {h[1]}')
-    time.sleep(0.6)
-    guest.call(f'click {h[0]} {h[1]}')
+    # (diagnostics: lab 20261119-102828 saw a click that bought nothing on the guest's game: no hut effect, no food
+    # paid on either game; the level / cap of each game's player tribe and what the guest's cursor is over)
+    print('  tribes before the click: host', ptribe(host), '| guest', ptribe(guest), flush=True)
+    print('  guest windows under the cursor:', (guest.call(f'coop.ui at {h[0]} {h[1]}').get('out') or '').strip()[:160],
+          flush=True)
+    print(f'  the guest\'s clicks on its hut until its game took one: {buy_click(guest, h)}', flush=True)
     t0, hn, gn = time.time(), n0, -1
     while time.time() - t0 < 20:
         time.sleep(1)
@@ -104,6 +142,8 @@ def main():
     print(f'  after {time.time() - t0:.0f} s: host {hn} members food {f1} | guest {gn} members food {food(guest)}', flush=True)
     print('  host', host.call('coop.tribe anims')['out'].splitlines()[-1], '| guest',
           guest.call('coop.tribe anims')['out'].splitlines()[-1], flush=True)
+    if hn == n0:
+        print('  tribes after: host', ptribe(host), '| guest', ptribe(guest), flush=True)
     new = {i: o for i, o in owners(host).items() if i not in o0}
     print(f'  new members on the host: {new}', flush=True)
     ck(hn == n0 + 1, f'the host\'s game has the member the guest bought ({n0} -> {hn})')

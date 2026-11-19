@@ -10,11 +10,13 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   Civilization (no visible change by itself).
 - A lab test takes a guest's own creature through Creature -> Tribe -> Civilization with the real stage changes and
   checks its look in every stage on both games (BUG-1277).
+- Lab: a test that starts a game again now waits until the switches of its FAIL twin are really off in that game
+  (BUG-1314).
 
 ### Added
 - Creature: when a partner goes into an editor of its own (its mating evolution, Evolve now, or later at the nest),
-  you no longer see its creature vanish: it curls up into the game's own cocoon where it stood and waits there while
-  the partner edits, then comes out of the cocoon wearing its new look. The cocoon comes from the Lineages fork by
+  you no longer see its creature vanish: it is wrapped in the game's own cocoon where it stood and waits there while
+  the partner edits, then bursts out of the cocoon wearing its new look. The cocoon comes from the Lineages fork by
   PandizeLive (BUG-1303).
 - Cell and Creature: every player now has its own DNA. Everything the party earns (anybody's kill, friend, meal or
   goal card) still raises everybody's DNA by the same amount and the evolution bar stays the party's, but what you
@@ -61,6 +63,9 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   got them (BUG-1290).
 
 ### Fixed
+- Creature: a guest's own mating at the nest now leads to its evolution editor. Before, after the mating call and the
+  click on the mate the guest's creature walked up to it and then waited there for good, because its mate is one of the
+  host's creatures and never answered on the guest's game. Found by the Lineages fork by PandizeLive (BUG-1305).
 - Cell: when your partner's cell zaps with its electric part, your screen no longer fills with a trail of giant white
   rings around its cell (BUG-1266).
 - Cell -> Creature: while the players vote to move on to the Creature stage, the host now sees its Cell world behind
@@ -97,9 +102,24 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   no longer dresses every tribe member in the new outfit or puts the new design into the shared civilization; what it
   made is kept and reaches every player when it joins again (BUG-1298; still open until its lab run).
 - Tribe: a baby or a new member that belongs to a guest now looks like the guest's own creature from the moment it
-  appears; before, it was the tribe's species for a moment first (BUG-1299; still open until its lab run).
+  appears; before, it was the tribe's species for a moment first (BUG-1299).
 - Space: a guest whose own ship has the same id as the host's ship now flies its own ship on its screen; before, its
   game could show the host's ship instead (BUG-1301; still open until its lab run).
+## [0.7.15.3] - 2026-11-19
+
+A fix for a crash in the Space stage reported on GitHub (#203): a player who joined the host's Space game crashed
+when opening the captain screen or accepting an adventure mission. Both players should update.
+
+### Fixed
+- Space: a player who joined the host's Space world no longer crashes on Windows when opening the captain screen
+  (the captain button over the ship's picture) or when accepting an adventure mission (BUG-0304, BUG-1278).
+  game could show the host's ship instead (BUG-1301).
+- Tribe: a guest that goes back to playing the tribe's species is drawn so on its own screen too; before, its own game
+  kept showing its members as its old creature (BUG-1312).
+- Tribe: a tribe baby of a guest no longer makes both games fault when the guest's creature changes while the baby
+  grows up; the baby keeps its look until it is grown up (BUG-1313).
+- Tribe: a host's tribe member that showed the guest's creature on the guest's screen after a rejoin gets the tribe's
+  look back (BUG-1319).
 
 ## [0.7.15.2] - 2026-11-18
 

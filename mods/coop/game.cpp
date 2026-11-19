@@ -643,10 +643,10 @@ static int SK_THISCALL h_PlayAnimTo(void* self, uint32_t id, void* other, int a,
 
 void set_anim_listener(AnimListener fn) { g_anim_listener = fn; }
 
-void play_animation(void* c, uint32_t anim_id, int block, bool disable_blend)
+int play_animation(void* c, uint32_t anim_id, int block, bool disable_blend)
 {
     callguard::Hold puppet(g_in_puppet_anim);
-    o_PlayAnim(c, anim_id, block, disable_blend ? 1 : 0);
+    return o_PlayAnim(c, anim_id, block, disable_blend ? 1 : 0);
 }
 
 // ---- behaviour animations (BUG-0464) ----

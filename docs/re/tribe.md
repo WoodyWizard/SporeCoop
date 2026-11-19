@@ -4683,3 +4683,28 @@ from the host's state) now run inside `birth_begin` / `birth_end`: the hooked sl
 profile for the player tribe's slot 0 during that one spawn; nothing is written into +0x18CC. Members bound to an
 existing local member (a mirror that binds) and members whose owner is decided later (a baby nobody claimed, the
 turn split) still go through the pass. Not run on the lab yet (`coop_own_editors_robust.py birth`).
+
+## SetSpecies faults on a tribe kid (2026-11-19, fix/w57-tribe-keys)
+<a id="tribe-kid-setspecies"></a>
+
+BUG-1313, found by the twin `tribe_birth_species_off` (lab 20261119-105127): the species pass (#tribe-own-species)
+changed the guest's new baby 0.5 s after it was seen and both games faulted in the same frame (guest: EIP 0x40A00000,
+host: EIP 0; calls 00BC326E < 00C03A94 SetSpecies+0x174 < coop's set_species).
+* ✔ (Ghidra, GOG 2024) `cCreatureAnimal::SetSpecies` 0xC03920 ends with: if not grown up (`Creature_IsAdult`
+  0xC0B8D0: +0xB34 == 1) and +0xB58 bit 9 (0x200) clear and the mode is 0x01654C01 / 0x01654C02 (Creature, Tribe):
+  `Timer_Start` 0xBC3260 with ECX = creature + 0x1628 (`call [ecx+0x1C]`, the growth timer of a cCreatureAnimal
+  kid). A tribe member is a citizen: at +0x1628 there is no timer ([+0x1644] held 5.0f on the guest), so the call goes
+  to a float. An adult skips the branch (the passes of #tribe-own-species on adults never faulted).
+* ✔ So a kid's species is never changed with SetSpecies (`tribe.kid_species`, tribe_species.cpp): the pass leaves a
+  kid as it is until it is grown up (+0xB34 1), then changes it like any member. A kid of a known owner is born in its
+  owner's species anyway (`tribe.birth_species`, #tribe-birth-species); a kid whose owner's line changes while it grows
+  up keeps the old species until then (test `coop_own_editors_robust.py kid`).
+* ? Not tried: setting +0xB58 bit 9 around the call (skips the timer; other readers of the bit unknown), or
+  SetSpeciesProfile 0xC22450 + RebuildModel for a kid.
+* ✔ (lab 20261119-112300, BUG-1319) A guest's mirror spawned while its world opens can be born in a line's species
+  (tribe.birth_species) before the pass's WORLD_STATE reset clears its table; that member then counted as one the mod
+  never touched and kept the line's key also when it ended bound to another player's member (the host's chief on the
+  guest's game in the guest's creature). `tribe.stray_line_key`: a member that shows a line's key (0x7B shared, 0x7C
+  creations copy, a current line's key) without a record is taken as the mod's; the game never gives a member such a
+  key. ~ Why that mirror was bound to the host's member (the bind by the nearest local member at the opening) is not
+  checked.

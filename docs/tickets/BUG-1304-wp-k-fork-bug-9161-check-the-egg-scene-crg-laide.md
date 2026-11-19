@@ -1,7 +1,7 @@
 ---
 id: BUG-1304
 title: WP-K: fork BUG-9161 check: the egg scene (CRG_LaidEgg) after a mating never ends by itself in co-op
-status: open
+status: not-reproduced
 kind: bug
 stage: Creature
 reported: 2026-11-19
@@ -32,10 +32,14 @@ world's older one, which our host does not do (the host plays the world's specie
 by `guest_mating` (with BUG-1305).
 
 ## Fix
-None needed on the host; no switch (nothing changed).
+None needed on the host; no switch (nothing changed). On the guest the pairing never reached the egg scene at all
+(lab 20261119-111735 guest_mating: 90 s in the mating action, mate node FFFFFFFF): that is BUG-1305, fixed there by
+ending the pairing with the game's own "mating done" message (no egg scene on the guest).
 
 ## Verification
-no-fail-run: not reproduced on the host (runs above); the guest's case waits for guest_mating (lab pending).
+no-fail-run: not reproduced: the host's egg scene ends by itself (rel/0.7.15.2 20261118-144132 creature_mating /
+editor_now); the guest's case is BUG-1305 (guest_mating PASS 20261119-112614, twin FAIL 20261119-112934).
 
 ## History
 - 2026-11-19: opened; host checked from the 0.7.15.2 runs.
+- 2026-11-19: guest checked on lane 6 (it is BUG-1305): not reproduced.
