@@ -7,28 +7,43 @@ stage: Civ
 reported: 2026-11-19
 source: plan
 role: guest
-versions: 
+versions: 0.7.15.2, rel/0.7.16
 fixed_in:
-branch:
-commits:
-tests:
+branch: feat/w56-late
+commits: c29e3ba4 4b9fe0de
+tests: civ_late_arrival, civ_late_arrival_off (twin)
 signature:
-docs:
-related:
+docs: docs/re/civ.md#civ-late-arrival, docs/06-testing.md#testing-late-joiners
+related: BUG-1276, BUG-1275, BUG-1274, BUG-1289
+switch: core.own_civ_late
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Plan item WP-S1b (out/research/lineages-species.md, ranked item 4): a guest that missed the end of Tribe (it joins
+the host's Civ world, reconnects or restarts after the Tribe -> Civ change) never gets its own City Hall and vehicle
+editors: BUG-1276 opens them only after the guest saw the host's end-of-Tribe vote end in the host's Tribe.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed in code: civ_arrival.cpp makes the editors due only in civ_arrival_vote (session_glue's vote end in Tribe);
+the phase is a session state, so a later join or a new session never has them due.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+`core.own_civ_late` (civ_arrival.cpp, creations.cpp world_note): the first arrival of a session in the host's Civ
+world is looked at once (30 s grace for the host's families): due when the arrival path is allowed (own mode, a host
+with the line, WP-C3's editors), the vote path is not due, the guest plays an own creature here, its line has no own
+City Hall nor any own Civ design, and its SporeCoop\worlds.ini has no `[civ_arrival] <world crc>` note. Then the same
+settle and editors as BUG-1276; a stored row that brings an own City Hall before the settle ends drops it. The note is
+written when the City Hall editor opens (on the vote path too; the red cross counts), so a later join of that world
+offers nothing. A guest that plays the host's species at its arrival gets none (BUG-1289's row first; the editors at
+its next arrival). Off: only the vote path (0.7.15 .. BUG-1276).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Not run yet: the orchestrator holds the lab. Test `civ_late_arrival` (civ_npc: the start's arrival offers nothing, the
+guest chooses its creature, restarts and joins: its own editors by real clicks, both designs in its line on both
+games, its bought city's City Hall drawn from its design and its citizens its species on both games, the host's
+culture set unchanged, a third join offers nothing) and the twin `civ_late_arrival_off` (must FAIL at "the guest's OWN
+City Hall editor opened"). `make -j8` and `make test` pass. Run dirs: pending.
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-19: code, test and twin on feat/w56-late; lab pending.
