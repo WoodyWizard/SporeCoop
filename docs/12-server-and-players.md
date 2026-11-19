@@ -1239,3 +1239,18 @@ Owner 2026-11-18: "Let's also investigate the idea of connecting with Steam to a
 * `coop.party status` prints "party sizes here: <id>=<size>" (on the host with each guest's reported party).
 * Next: Cell, Tribe and Civ on galaxy planets (their extras still read the planet's rules), the progress debt and the
   goal rewards per party, then step 2 (relations per party).
+
+## Difficulty per party in every stage, relations per party (6V A and B, 2026-11-19, feat/lineages-alpha)
+<a id="server-party-relations"></a>
+
+* Owner 2026-11-19: "Cell, Tribe, and Civ being planet wide difficulty makes no sense for a party based system";
+  6V A and B.
+* B (BUG-9266): Cell bites and meals, Tribe village fights and Civ rival fights and takeovers use the party of the
+  player involved; what belongs to nobody (Cell predator groups, the rival tribes, the NPC nations' armies) follows
+  the largest party on the planet. Built; seen at runtime in Creature only (the test galaxy has no Cell or Civ planet).
+* A (BUG-9267): each party keeps its own species relations. The host's game table is its own party's; another
+  party's records are kept by the host, and an event of that party's player (a hit, a kill, a social win) runs the
+  game's own ApplyEvent on that party's record. Extinction stays one per planet (6M B). Each guest gets its party's
+  table. ✔ Kills: a stranger's kill counted only in its party's record and its own game. Not yet: the records are not
+  saved (a hand-over keeps the new host's party's only), and NPCs still pick targets by distance (step 3).
+* Still one per world: the shared DNA pool, the Cell food total, the progress debt and the stage end (step 4, 6N A).

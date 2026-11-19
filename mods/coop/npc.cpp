@@ -3442,7 +3442,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         }
         {
             float hp0 = game::health(npc);
+            const int actor_was = social::set_event_actor(from); // 6V A: the attack and the kill are that guest's party's
             game::apply_damage(npc, dmg, q.type, attacker);
+            social::set_event_actor(actor_was);
             static unsigned logged;
             if (logged++ < 40) // BUG-9132: what a guest's hit carries and does
                 H->log(M, SK_INFO, "npc: guest %u hit npc %u: reported %.2f type %d applied %.2f, hp %.2f -> %.2f", from, q.net_id,

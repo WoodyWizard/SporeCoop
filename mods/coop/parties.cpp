@@ -547,6 +547,21 @@ unsigned party_size(uint8_t p)
             keys.push_back(reported_party(q.id));
     return party_count(reported_party(p), keys);
 }
+uint32_t table_key(uint8_t p)
+{
+    if (!galaxy() || !C.sess || !C.sess->connected() || p == me() || in_gx_party(ident(p)))
+        return 0;
+    const uint16_t k = reported_party(p);
+    return k ? k : 0x10000u | p;
+}
+unsigned largest_party()
+{
+    unsigned n = 1;
+    if (C.sess && C.sess->connected())
+        for (auto& q : C.sess->players())
+            n = std::max(n, party_size(q.id));
+    return n;
+}
 int leader_of(uint8_t p)
 {
     if (galaxy()) {

@@ -1843,8 +1843,8 @@ static std::wstring lowercase(std::wstring name)
 
 static bool g_party_difficulty = true;
 COOP_FIX("creature.party_difficulty", "BUG-9266", g_party_difficulty,
-         "creature: on a galaxy planet enemy health and damage, hunger and the DNA pace scale with the party involved "
-         "(its players on the planet), not the planet's seats");
+         "galaxy planet: difficulty scales with the party involved (its players on the planet), not the planet's seats: "
+         "Creature hits, bites, hunger and awards; Cell bites and meals; Tribe and Civ fights and takeovers");
 bool party_difficulty() { return g_party_difficulty && parties::galaxy(); }
 founders::CampaignRules rules_for_player(int session_id)
 {
@@ -1852,6 +1852,13 @@ founders::CampaignRules rules_for_player(int session_id)
     if (session_id < 0 || session_id > 255 || !party_difficulty())
         return r;
     r.seats = (uint8_t)std::clamp(parties::party_size((uint8_t)session_id), 1u, 255u);
+    return r;
+}
+founders::CampaignRules rules_for_largest_party()
+{
+    auto r = rules_for_current();
+    if (party_difficulty())
+        r.seats = (uint8_t)std::clamp(parties::largest_party(), 1u, 255u);
     return r;
 }
 founders::CampaignRules rules_for_me()

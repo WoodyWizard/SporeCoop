@@ -37,6 +37,9 @@ void on_session_end();
 // a DNA gain paid by a species goal card (allied / extinct): the host pays it once per species and
 // outcome, whichever machine's card saw it; true = swallow it here
 bool goal_dna(float delta);
+// 6V A (host, a galaxy planet): the player whose action the game's relationship events of this moment are (a social
+// win, a guest's hit): they go to that player's party's table. Returns the one before (-1 none: this game's own)
+int set_event_actor(int player);
 std::string status();
 // guest (BUG-0021): true when a hit of the own avatar on an NPC proxy must not be sent because the avatar is in the
 // social stance (it plays a social game: a hit then killed the Kook it was impressing)
@@ -54,7 +57,8 @@ bool debug_send_goal(uint32_t crt_instance, int outcome, float dna); // guest, t
 bool debug_set_record(uint32_t crt_instance, int relation, uint32_t impressed); // host, tests: a record of the table
 // host (roadmap phase 2, decision 7): a party species is allied (relation 6) in the host's table
 bool set_party_ally(uint32_t crt_instance);
-bool debug_event(uint32_t crt_instance, int event); // host, tests (BUG-0168): the game's ApplyEvent(event, species, null)
+bool debug_event(uint32_t crt_instance, int event);
+bool debug_event_by(uint16_t npc_id, int event, int player); // 6V A tests: the event on host NPC #id as that player's action // host, tests (BUG-0168): the game's ApplyEvent(event, species, null)
 // guest: a social action (ability slot 0-3) on proxy #id as if done in game; slot -1 toggles the
 // stimulus log
 bool debug_social(uint16_t npc_id, int slot);

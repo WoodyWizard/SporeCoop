@@ -31,6 +31,8 @@ founders::CampaignRules rules_for_current();
 bool party_difficulty();
 founders::CampaignRules rules_for_player(int session_id);
 founders::CampaignRules rules_for_me();
+// what no single party owns (Cell predator groups, the NPC nations' armies, the rival tribes): the largest party's
+founders::CampaignRules rules_for_largest_party();
 // guest: the host sent its campaign rules for this world and stage (a co-op campaign, not a stage-chooser game)
 bool host_campaign();
 void receive_campaign_rules(const net::Session& session, uint8_t from, net::Reader& packet);

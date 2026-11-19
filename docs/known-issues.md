@@ -3928,3 +3928,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Fixed 2026-11-19 (unreleased, ec783b75): the portrait check knew only the GOG 2016 drawable; it is set by key now.
 * Reproduce: host a Creature world, join from a new profile, make and save the first creature; on the guest
   `coop.portrait` says `image=00000000 ... same=-1 sets=0` (no png for the new species' key).
+
+* BUG-9268 (alpha, galaxy Tribe planet): the host's own reload of the planet (after the empty-village rescue, BUG-9147)
+  goes through the galaxy menu and the galaxy client hands the planet over as if the host had left. Repro: host a
+  galaxy Tribe planet whose host village has no living member, let a second player join.

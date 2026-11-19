@@ -2825,6 +2825,18 @@ static bool team_faction(uint32_t faction)
     return (home && faction == pol_of(home)) || g_founder_nations.contains_faction(faction);
 }
 
+// BUG-9266: the rules a founder nation's fight uses: its player's party on a galaxy planet (an offline founder's nation:
+// alone); elsewhere the planet's
+static founders::CampaignRules rules_of_faction(uint32_t faction)
+{
+    if (!world::party_difficulty())
+        return world::rules_for_current();
+    void* home = player_civ();
+    int seat = home && faction == pol_of(home) ? 0 : g_founder_nations.seat_of_faction(faction);
+    const uint8_t player = seat == 0 ? 0 : seat > 0 && seat < (int)g_seat_player.size() ? g_seat_player[seat] : civ_seats::kNobody;
+    return world::rules_for_player(player == civ_seats::kNobody ? -1 : player);
+}
+
 static bool rival_production(void* country)
 {
     if (!active() || !is_host() || !g_combat_roster_ready || !country ||
@@ -2844,7 +2856,7 @@ static int SK_THISCALL h_VehicleLimit(void* country, int purpose)
 {
     int base = o_VehicleLimit(country,purpose);
     if (purpose != 0 || base <= 0 || base > 36 || !rival_production(country)) return base;
-    return world::rules_for_current().civ_military_limit(base);
+    return world::rules_for_largest_party().civ_military_limit(base); // (BUG-9266: the NPC nations meet every party)
 }
 
 static VehicleLimit o_SlotsLeft;
@@ -2866,7 +2878,7 @@ static int SK_THISCALL h_SlotsLeft(void* country, int purpose)
         if (!*it) return native;
         if (F<int>(*it,kVPurpose) == 0) ++military;
     }
-    return world::rules_for_current().civ_overflow_slots(base,total,military);
+    return world::rules_for_largest_party().civ_overflow_slots(base,total,military);
 }
 
 using TimerElapsed = uint64_t(SK_THISCALL*)(void*);
@@ -2879,7 +2891,7 @@ static uint64_t SK_THISCALL h_TimerElapsed(void* timer)
     // Only this purchase decision sees the earlier deadline. The military
     // timer itself stays on the game's clock through saves and restarts.
     if (!rival_production(static_cast<uint8_t*>(timer)-0x148)) return elapsed;
-    return elapsed + 40000u - world::rules_for_current().civ_military_interval_ms();
+    return elapsed + 40000u - world::rules_for_largest_party().civ_military_interval_ms();
 }
 
 // A military vehicle can enter combat before its nation declares war.
@@ -2911,7 +2923,7 @@ static uint32_t takeover_percent(void* city, uint32_t attacker)
 {
     if (!g_takeover_resistance || !active() || !is_host() || !g_combat_roster_ready || !city ||
         !attacker || !team_faction(attacker) || team_faction(pol_of(city))) return 100;
-    return world::rules_for_current().takeover_percent();
+    return rules_of_faction(attacker).takeover_percent(); // (BUG-9266: the attacking founder's party)
 }
 
 static void prune_conversion_credit()
@@ -2997,7 +3009,11 @@ static void refresh_vehicle_health(const std::vector<void*>& live, const std::un
                                    uint32_t home)
 {
     std::erase_if(g_vehicle_health,[&](const auto& item) { return !alive.count(item.first); });
-    float factor = world::rules_for_current().enemy_health_percent() / 100.f;
+    // BUG-9266: on a galaxy planet each rival's health follows the party of the founder nation it fights
+    float factor = world::rules_for_largest_party().enemy_health_percent() / 100.f;
+    auto factor_against = [&](uint32_t opponent) {
+        return world::party_difficulty() ? rules_of_faction(opponent).enemy_health_percent() / 100.f : factor;
+    };
     if (factor == 1.f && g_vehicle_health.empty() && g_turret_health.empty() && g_building_health.empty()) return;
     // Several vehicles commonly share one faction. Query diplomacy once per pair per tick.
     std::map<std::pair<uint32_t,uint32_t>,unsigned> relations;
@@ -3023,7 +3039,7 @@ static void refresh_vehicle_health(const std::vector<void*>& live, const std::un
                 if (!opponent && founder.faction && (flags(pol,founder.faction) & 3) == 1)
                     opponent = founder.faction;
         }
-        scale_combatant(entries,v,combat,pol,opponent ? factor : 1.f,opponent);
+        scale_combatant(entries,v,combat,pol,opponent ? factor_against(opponent) : 1.f,opponent);
     };
     for (auto* v : live) refresh(g_vehicle_health,v,0x508,pol_of(v),F<int>(v,kVPurpose) == 0);
     for (auto& [object,entry] : g_turret_health) entry.scale.seen = false;
@@ -3140,7 +3156,7 @@ static float combat_damage(void* target_combat, uintptr_t target_offset, float d
     if (!rival.armed()) return damage;
     const auto relation = relationship_flags(rival.faction,opponent);
     if (relation & 2) return damage;
-    const auto rules = world::rules_for_current();
+    const auto rules = rules_of_faction(founder_shot ? faction : target.faction); // (BUG-9266: the founder's party)
     auto& entries = rival.combat == kBuildingCombat ? g_building_health :
                     rival.combat == kTurretCombat ? g_turret_health : g_vehicle_health;
     scale_combatant(entries,rival.object,rival.combat,

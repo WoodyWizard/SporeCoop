@@ -80,6 +80,10 @@ std::vector<uint8_t> my_party(); // this game's party (the longest standing firs
 // BUG-9266: the players of this session in player p's party, p included (1: alone). A guest knows its own party only
 // (any other player: 1); on a galaxy planet the host counts the parties its guests report (kGxParty)
 unsigned party_size(uint8_t p);
+unsigned largest_party(); // the biggest party among this session's players (a guest: its own)
+// 6V A (host, a galaxy planet): which relations table player p's party keeps: 0 this game's own party (the game's
+// table), else the party's galaxy id, 0x10000 | p for a player in no party
+uint32_t table_key(uint8_t p);
 int leader_of(uint8_t p);
 bool i_lead();
 std::string status();

@@ -7349,6 +7349,15 @@ static float hostile_hit(void* target, void* attacker, float damage)
     auto village = defending ? attack_village : target_village;
     auto enemy = defending ? attacker : target;
     if (F<unsigned>(enemy,kAgeOff) != 1 || village_allied_with_founder(village)) return damage;
+    if (world::party_difficulty()) {
+        // BUG-9266: a galaxy planet: the enemy keeps the game's own health; the founder village's player's party
+        // scales the fight (its hits divided by the health factor, the enemy's hits on it multiplied)
+        void* founder = defending ? target_village : attack_village;
+        const auto r = world::rules_for_player(player_of_seat(seat_of_village(founder, player_tribe())));
+        creature_hp::set_enemy_health(enemy,100);
+        return defending ? float(double(damage) * r.enemy_damage_percent() / 100.0)
+                         : float(double(damage) * 100.0 / r.enemy_health_percent());
+    }
     auto rules = world::rules_for_current();
     if (rules.enemy_health_percent() != 100) {
         g_combat_factions.insert(F<uint32_t>(village,0x30));
@@ -7386,7 +7395,7 @@ static void combat_tick(double now)
         if (!hostile) g_combat_factions.erase(faction);
         for (auto c : members(village)) {
             if (!is_citizen(c) || !game::object_alive(c) || F<unsigned>(c,kAgeOff) != 1) continue;
-            creature_hp::set_enemy_health(c,hostile ? rules.enemy_health_percent() : 100);
+            creature_hp::set_enemy_health(c,hostile && !world::party_difficulty() ? rules.enemy_health_percent() : 100);
             if (hostile && member_id(c)) scaled[member_id(c)] = game::max_health(c);
         }
     }
@@ -11212,8 +11221,8 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a.size() == 1 && a[0] == "planned_sites") {
         if (!active() || !is_host()) return "Open a hosted Tribal campaign.";
-        const auto rules = world::rules_for_current();
-        const size_t target = rules.seats + rules.rival_target(5);
+        const auto rules = world::rules_for_largest_party(); // (BUG-9266)
+        const size_t target = world::rules_for_current().seats + rules.rival_target(5);
         if (target > 128) return "The requested site count exceeds the placement probe limit.";
         std::vector<net::Vec3> sites;
         for (auto village : all_tribes()) sites.push_back(tribe_pos(village));

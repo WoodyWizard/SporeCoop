@@ -19,6 +19,11 @@
 #include "progress_debt.h"
 #include "sporekit_game.hpp"
 #include "world.h"
+#include "parties_net.h"
+
+#include <array>
+#include <set>
+#include <tuple>
 
 using namespace skg;
 
@@ -98,6 +103,30 @@ static std::vector<SpeciesRec> read_table()
         return memcmp(a.key, b.key, sizeof a.key) < 0;
     });
     return v;
+}
+
+// 6V A (decision 2026-11-19, BUG-9267): on a galaxy planet each party has its own relations. The host's game table is
+// its own party's; another party's records live here (species -> relation, x, impressed, killed). An event of that
+// party's player runs the game's own ApplyEvent on its record (swapped into the game's table and back), so the
+// game's rules (3 impressed: allied; a death breaks the alliance) apply per party. Extinction stays one per planet
+// (6M B): a party's record that turns extinct makes the species extinct for everybody. In memory on the host only.
+using SpeciesKey = std::array<uint32_t, 3>;
+using RelRecord = std::array<uint32_t, 4>;
+static std::map<uint32_t, std::map<SpeciesKey, RelRecord>> g_party_rel; // table key (parties::table_key) -> records
+static std::map<uint32_t, std::vector<SpeciesRec>> g_party_sent;      // the table last sent to each party
+static int g_event_actor = -1;
+static std::set<std::tuple<uint32_t, uint64_t, int>> g_party_goal_paid; // (party, species, outcome) paid
+static uint32_t g_party_events = 0, g_party_extinct = 0, g_party_herds = 0, g_party_tables_tx = 0;
+static bool g_party_rel_fix = true;
+COOP_FIX("social.party_relations", "BUG-9267", g_party_rel_fix,
+         "creature: on a galaxy planet each party has its own species relations (impressing, attacking, killing, "
+         "alliances); extinction stays one per planet");
+static bool party_relations() { return g_party_rel_fix && is_host() && world::party_difficulty(); }
+int set_event_actor(int player)
+{
+    const int was = g_event_actor;
+    g_event_actor = player;
+    return was;
 }
 
 static std::vector<SpeciesRec> g_sent;   // host: the table last sent
@@ -312,6 +341,55 @@ static void SK_THISCALL h_RelEvent(void* mgr, int event, void* key, void* creatu
         (npc::proxy_id(creature) >= 0 || game::is_puppet(creature))) {
         g_events_dropped++;
         return;
+    }
+    if (party_relations() && g_event_actor >= 0 && key && mgr && a_RelRecord) {
+        const uint32_t pk = parties::table_key((uint8_t)g_event_actor);
+        uint32_t* rec = pk ? thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, key) : nullptr;
+        if (rec) {
+            const SpeciesKey sk{((uint32_t*)key)[0], ((uint32_t*)key)[1], ((uint32_t*)key)[2]};
+            RelRecord own{rec[0], rec[1], rec[2], rec[3]};
+            auto& theirs = g_party_rel[pk][sk];
+            if (own[0] == 5)
+                theirs[0] = 5; // (extinct for everybody)
+            const RelRecord before = theirs;
+            for (int i = 0; i < 4; i++)
+                rec[i] = theirs[i];
+            o_RelEvent(mgr, event, key, creature);
+            rec = thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, key);
+            if (!rec)
+                return;
+            theirs = {rec[0], rec[1], rec[2], rec[3]};
+            if (theirs[0] == 5 && own[0] != 5) { // a party made it extinct: everybody's (6M B)
+                own[0] = 5;
+                for (auto& [k, t] : g_party_rel)
+                    if (auto it = t.find(sk); it != t.end())
+                        it->second[0] = 5;
+                g_party_extinct++;
+            }
+            for (int i = 0; i < 4; i++)
+                rec[i] = own[i];
+            g_party_events++;
+            if (theirs[0] != before[0] && (theirs[0] == 6 || before[0] == 6)) // its herds' ally flag: this game's again
+                if (void* sp = game::species_by_key({sk[0], sk[1], sk[2]}))
+                    if (uintptr_t set = H->sym("SporeCoop::cHerd_SetBestFriends")) {
+                        struct Q { void* sp; uintptr_t set; bool allied; } q{sp, set, own[0] == 6};
+                        game::for_each_object(
+                            [](void* o, uint32_t noun, void* u) {
+                                auto* q = (Q*)u;
+                                if (noun == game::kHerdNoun && skg::readable(o, 0x194) && game::herd_species(o) == q->sp &&
+                                    (field<uint8_t>(o, 0x191) != 0) != q->allied) {
+                                    thiscall<void>(q->set, o, (int)q->allied);
+                                    g_party_herds++;
+                                }
+                                return true;
+                            },
+                            &q);
+                    }
+            H->log(M, SK_INFO, "social: relationship event %d species %08X by player %d: party %X's record relation %d -> %d, "
+                   "impressed %u -> %u, killed %u -> %u (this game's stays %d)", event, sk[0], g_event_actor, pk,
+                   (int32_t)before[0], (int32_t)theirs[0], before[2], theirs[2], before[3], theirs[3], (int32_t)own[0]);
+            return;
+        }
     }
     // BUG-0021 diagnostics: every species relationship event of the host's game (the Kooks' impressed count
     // went from 2 back to 1 between two impressions with no Kook killed: coop_creature_social_ally.py)
@@ -1015,7 +1093,9 @@ static void apply_success(uint8_t player, uint16_t id)
     int rel = a_RelGet ? thiscall<int>(a_RelGet, mgr, key, c, av) : 0;
     int mode = social_mode(c);
     uint32_t anim = reaction_anim(rel);
+    const int actor_was = set_event_actor(player); // 6V A: the winner's party's relations
     thiscall<void>(a_RelEvent, mgr, 3, key, c);
+    set_event_actor(actor_was);
     float dna = 0;
     if (mode != 4 && a_DnaWorth) {
         dna = thiscall<float>(a_DnaWorth, c, 1);
@@ -1330,9 +1410,39 @@ void tick(double now)
                 still |= (((uint64_t)r.key[2] << 32) | r.key[0]) == it->first.first && r.relation == it->first.second;
             it = still ? std::next(it) : g_goal_paid.erase(it);
         }
-        if (!(t == g_sent) || now - g_table_sent > 10.0) { // changes at once, the whole table every 10 s
+        const bool resend = now - g_table_sent > 10.0;
+        if (party_relations()) { // 6V A: each party its own table (this game's party: the game's)
+            std::map<uint32_t, std::vector<uint8_t>> who;
+            for (auto& p : C.sess->players())
+                if (p.id != C.sess->my_id())
+                    who[parties::table_key(p.id)].push_back(p.id);
+            for (auto& [pk, ids] : who) {
+                std::vector<SpeciesRec> v;
+                if (!pk)
+                    v = t;
+                else {
+                    auto& mine = g_party_rel[pk];
+                    for (auto& r : t) // extinction is everybody's (6M B)
+                        if (r.relation == 5)
+                            mine[{r.key[0], r.key[1], r.key[2]}][0] = 5;
+                    for (auto& [k, rr] : mine)
+                        v.push_back({{k[0], k[1], k[2]}, (int32_t)rr[0], rr[1], rr[2], rr[3]});
+                }
+                auto& last = g_party_sent[pk];
+                if (!(v == last) || resend) {
+                    last = v;
+                    for (uint8_t id : ids)
+                        send_table(v, id);
+                    g_party_tables_tx++;
+                }
+            }
+            if (resend)
+                g_table_sent = now;
+            g_sent = t;
+        } else if (!(t == g_sent) || resend) { // changes at once, the whole table every 10 s
             g_sent = t;
             g_table_sent = now;
+            g_party_sent.clear();
             send_table(t, -1);
         }
     } else if (is_guest()) {
@@ -1439,6 +1549,24 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 g_goal_owed.push_back({k, outcome, dna});
             return;
         }
+        // 6V A: another party's card pays by its own table, once per party
+        const uint32_t pk = party_relations() ? parties::table_key(from) : 0;
+        if (sane && pk) {
+            auto t = g_party_rel.find(pk);
+            const RelRecord* rr = nullptr;
+            if (t != g_party_rel.end())
+                if (auto it = t->second.find({k.instance, k.type, k.group}); it != t->second.end())
+                    rr = &it->second;
+            if (rr && (int)(*rr)[0] == outcome && g_party_goal_paid.insert({pk, key64(k), outcome}).second) {
+                if (float left = progress_debt::absorb(dna); left > 0)
+                    game::dna_add_raw(left);
+                if (C.feed)
+                    C.feed(C.sess->name_of(from) + "'s party: " +
+                           (outcome == 6 ? "a species became their ally" : "a goal was reached") + " (+" +
+                           std::to_string((int)(dna + 0.5f)) + " DNA)");
+            }
+            return;
+        }
         if (sane && goal_outcome(k) == outcome && game::avatar() && host_goal_pay(k, outcome)) {
             if (float left = progress_debt::absorb(dna); left > 0) // BUG-9119: the debt first
                 game::dna_add_raw(left);
@@ -1495,6 +1623,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
 
 void on_session_end()
 {
+    g_party_rel.clear(); // (6V A: in memory for the session only)
+    g_party_sent.clear();
+    g_event_actor = -1;
+    g_party_goal_paid.clear();
     // BUG-0808: the meter of a social game still open is hidden (meter_tick, which closes it, stops with the session)
     if (g_meter_end_fix && g_meter_npc >= 0)
         meter_task(3, g_meter_npc);
@@ -1537,6 +1669,17 @@ std::string species_dump()
     for (auto& r : read_table()) {
         snprintf(b, sizeof b, "species %08X/%08X/%08X relation=%d x=%u impressed=%u killed=%u\n", r.key[0], r.key[1],
                  r.key[2], r.relation, r.x, r.impressed, r.killed);
+        out += b;
+    }
+    for (auto& [pk, t] : g_party_rel) // 6V A (host): the other parties' records
+        for (auto& [k, rr] : t) {
+            snprintf(b, sizeof b, "party %X species %08X relation=%d impressed=%u killed=%u\n", pk, k[0], (int32_t)rr[0],
+                     rr[2], rr[3]);
+            out += b;
+        }
+    if (is_host() && (g_party_events || g_party_tables_tx)) {
+        snprintf(b, sizeof b, "party relations: events %u, extinct %u, herd flags %u, tables sent %u\n", g_party_events,
+                 g_party_extinct, g_party_herds, g_party_tables_tx);
         out += b;
     }
     return out.empty() ? "no species records\n" : out;
@@ -1629,10 +1772,24 @@ bool debug_event(uint32_t inst, int event)
     // to an egg, 7 when it eats it; creature null, docs/re/creature.md#creature-npc-aggression). Event 7 makes the
     // species hostile (relation 5) through the game's own transition, as eating its egg does.
     void* mgr = rel_mgr();
-    if (!mgr || !a_RelEvent || event < 0 || event > 7)
+    // (events 0 to 5 read the creature's tuning: with no creature the game crashed in ApplyEvent+0x12B, 2026-11-19;
+    // those go through pevent on a living NPC)
+    if (!mgr || !a_RelEvent || event < 6 || event > 7)
         return false;
     ResourceKey k{inst, 0x2B978C46u, 0x40626200u};
     thiscall<void>(a_RelEvent, mgr, event, &k, (void*)nullptr);
+    return true;
+}
+bool debug_event_by(uint16_t npc_id, int event, int player) // 6V A tests: the game's event on NPC #id as player's action
+{
+    // (events 0..5 read the creature's tuning: a real NPC, never null; the crash of 2026-11-19 in ApplyEvent+0x12B)
+    void* c = npc::host_npc(npc_id);
+    void* mgr = rel_mgr();
+    if (!c || !mgr || !a_RelEvent || event < 0 || event > 5 || game::is_dead(c))
+        return false;
+    const int was = set_event_actor(player);
+    thiscall<void>(a_RelEvent, mgr, event, (uint8_t*)c + game::kSpeciesKeyOff, c);
+    set_event_actor(was);
     return true;
 }
 

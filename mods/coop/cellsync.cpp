@@ -1083,7 +1083,8 @@ static uint32_t SK_CDECL h_CreateCell(void* query,const void* pos,float elevatio
     ++g_native_predators; // BUG-9109 (tests): native predators made by population markers
     g_speed_native.add(id);
     g_marker_size = {elevation,size_factor,size,apply};
-    add_cell_health(c,world::rules_for_current());
+    if (!world::party_difficulty()) // (BUG-9266: the game's own health; each player's bite is scaled instead)
+        add_cell_health(c,world::rules_for_current());
     return id;
 }
 
@@ -1094,9 +1095,10 @@ static uint32_t g_hit_sequence;
 struct BonusReceipt { uint32_t seq, bonus; };
 static std::map<uint8_t,BonusReceipt> g_last_bonus;
 static unsigned g_base_damage, g_extra_damage, g_guest_bonus_loss;
+static unsigned g_party_bites; // BUG-9266: own bites on wild cells scaled by the own party
 static unsigned hit_bonus(unsigned raw,const founders::CampaignRules& rules)
 {
-    load_cell_credit(rules);
+    load_cell_credit(world::rules_for_current()); // (the save's carries; rules: the hit player's party, BUG-9266)
     const auto bonus = founders::CellCredit::bonus(raw,rules.enemy_damage_percent(),g_cell_credit.damage_carry);
     g_base_damage += raw;
     g_extra_damage += bonus;
@@ -1111,9 +1113,22 @@ static int SK_CDECL h_CellDamageAmount(uint8_t* attacker,uint8_t* victim)
         return forced;
     const int raw = o_CellDamageAmount(attacker,victim);
     const auto caller = (uintptr_t)__builtin_return_address(0);
+    // BUG-9266: on a galaxy planet a wild cell keeps the game's own health: this game's own bite is divided by its
+    // party's health factor (the fractions carried to the next bite)
+    if (world::party_difficulty() && C.sess && C.sess->connected() && raw > 0 && raw <= 255 && in_cell() &&
+        attacker == avatar() && victim != avatar() && wild_combatant(victim) &&
+        std::find(g_damage_returns.begin(),g_damage_returns.end(),caller) != g_damage_returns.end()) {
+        const auto percent = world::rules_for_me().enemy_health_percent();
+        if (percent <= 100) return raw;
+        static uint32_t carry;
+        const uint64_t total = uint64_t(raw) * 100u + carry;
+        carry = uint32_t(total % percent);
+        ++g_party_bites;
+        return int(total / percent);
+    }
     if (!C.sess || !C.sess->connected() || raw <= 0 || raw > 255 || std::find(g_damage_returns.begin(),g_damage_returns.end(),caller) == g_damage_returns.end() ||
         !in_cell() || victim != avatar() || !wild_combatant(attacker) || g_downed) return raw;
-    const auto rules = world::rules_for_current();
+    const auto rules = world::rules_for_me(); // (BUG-9266: this player's party)
     if (rules.enemy_damage_percent() == 100) return raw;
     if (is_host()) return int(raw + hit_bonus(unsigned(raw),rules));
     if (is_guest() && !g_solo && g_pending_bonus.size() < 256) {
@@ -1878,19 +1893,22 @@ static bool g_fix_plant_bonus = true;
 COOP_FIX("cell.plant_bonus", "BUG-9110", g_fix_plant_bonus,
          "cell: plant food is worth 25% more while predator groups get an extra member (3+ seats), so an omnivore stays reachable");
 static unsigned g_plant_raw, g_plant_paid, g_meat_raw, g_meat_paid; // tests: food in and out of the credit
-static int earned_food(int raw, bool plant)
+static int earned_food(int raw, bool plant, int eater)
 {
     if (raw <= 0 || (!is_host() && !is_guest()) || !in_cell()) return raw;
-    auto rules = world::rules_for_current();
-    const uint32_t plant_percent = g_fix_plant_bonus && g_fix_extra_one ? rules.cell_plant_percent() : 100u;
+    // BUG-9266: a galaxy planet: the eater's party scales the meal; the host awards every meal there
+    const bool party = world::party_difficulty();
+    auto rules = party ? world::rules_for_player(eater) : world::rules_for_current();
+    const auto spawn = party ? world::rules_for_largest_party() : rules;
+    const uint32_t plant_percent = g_fix_plant_bonus && g_fix_extra_one ? spawn.cell_plant_percent() : 100u;
     // BUG-9119: while the party owes progress, every meal goes to the host, which repays the debt first
     const bool owing = progress_debt::owing(modes::kCell);
-    const bool scaled = rules.workload_percent() != 100 || plant_percent != 100;
+    const bool scaled = party || rules.workload_percent() != 100 || plant_percent != 100;
     if (!scaled && !owing) return raw;
     if (is_guest()) return 0; // report the raw meal; only the host awards it
     int paid = raw;
     if (scaled) {
-        load_cell_credit(rules);
+        load_cell_credit(world::rules_for_current());
         paid = g_cell_credit.award(raw,plant,rules,plant_percent);
         (plant ? g_plant_raw : g_meat_raw) += unsigned(raw);
         (plant ? g_plant_paid : g_meat_paid) += unsigned(std::max(0,paid));
@@ -1949,7 +1967,7 @@ static void SK_CDECL h_AddFood(int amount, bool plant)
     }
     uint8_t* a0 = in_cell() ? avatar() : nullptr;
     float before = a0 ? F<float>(a0, kTargetSize) : 0.f;
-    const int awarded = g_food_guard ? amount : earned_food(amount,plant);
+    const int awarded = g_food_guard ? amount : earned_food(amount,plant,C.sess ? C.sess->my_id() : 0);
     if (awarded || amount == 0) o_AddFood(awarded,plant);
     if (!g_food_guard && amount > 0 && in_cell()) { // our own avatar ate (AvatarEat 0xE7D070), not the network
         g_own_eats++;
@@ -2509,7 +2527,7 @@ static float sphere_of(uint8_t* c, net::Vec3& centre)
 }
 static void expand_marker(uint32_t seed)
 {
-    const auto rules = world::rules_for_current();
+    const auto rules = world::rules_for_largest_party(); // (BUG-9266: one area for every party: the largest one's)
     auto* model = modes::cell_at(seed);
     const unsigned want = g_fix_extra_one ? rules.cell_extra_predators() : (rules.seats > 1 ? rules.seats - 1u : 0u);
     if (!want || !model || !avatar() || !is_host() || !in_cell()) return;
@@ -5777,7 +5795,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (!r.ok() || r.left()) return;
             auto prior = g_last_bonus.find(from);
             if (prior == g_last_bonus.end() || int32_t(seq-prior->second.seq) > 0) {
-                const auto bonus = raw && wild_combatant(source) ? hit_bonus(raw,world::rules_for_current()) : 0;
+                const auto bonus = raw && wild_combatant(source) ? hit_bonus(raw,world::rules_for_player(from)) : 0;
                 prior = g_last_bonus.insert_or_assign(from,BonusReceipt{seq,bonus}).first;
             } else if (seq != prior->second.seq) return;
             net::Writer reply;
@@ -5983,8 +6001,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 // progress debt) is taken when it is applied
                 const bool meal_ack = e.has_meal;
                 if (food)
-                    food_in_step([food, plant, meal_ack] {
-                        if (int awarded = earned_food(food, plant))
+                    food_in_step([food, plant, meal_ack, from] {
+                        if (int awarded = earned_food(food, plant, from))
                             o_AddFood(awarded, plant);
                         if (meal_ack)
                             g_food_sent = -1; // acknowledge even a fractional meal
@@ -6025,7 +6043,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 food_in_step([from, f] {
                     uint8_t* s0 = S();
                     int before = s0 ? F<int32_t>(s0, 0x1C) : 0;
-                    int awarded = earned_food(f.amount, f.plant); // BUG-9119 / BUG-9110: the host's award
+                    int awarded = earned_food(f.amount, f.plant, from); // BUG-9119 / BUG-9110: the host's award
                     if (awarded)
                         o_AddFood(awarded, f.plant);
                     if (C.food_cause && s0 && awarded != 0)
@@ -6050,7 +6068,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
                 if (!s)
                     return;
                 int diff = g_meals.diff(food, has_ack, ack, g_pend_food, F<int32_t>(s, 0x1C), g_fix_foodseq);
-                if (world::rules_for_current().workload_percent() > 100) // the host's total is the scaled award
+                if (world::party_difficulty() || world::rules_for_current().workload_percent() > 100) // the host's total is the scaled award
                     diff = food - F<int32_t>(s, 0x1C);
                 if (diff != 0) {
                     trace::ev("eat", "total", "host total food=%d (ack meal %u) -> %+d here (pending %d)", food, ack, diff,
@@ -6886,13 +6904,13 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "enemy_groups") {
         char line[480];
-        const auto rules = world::rules_for_current();
+        const auto rules = world::rules_for_largest_party(); // (BUG-9266: what the predator groups use)
         snprintf(line,sizeof line,"groups=%u added=%u limited=%u latest=%u,%u,%u overlap=%u want=%u natives=%u "
-                 "plant=%u->%u meat=%u->%u plant_percent=%u speed_extra=%.1f/%u/%u speed_native=%.1f/%u/%u",
+                 "plant=%u->%u meat=%u->%u plant_percent=%u party_bites=%u speed_extra=%.1f/%u/%u speed_native=%.1f/%u/%u",
                  g_enemy_groups,g_group_added,g_group_limited,g_last_group[0],g_last_group[1],g_last_group[2],
                  g_extra_overlap,g_fix_extra_one ? rules.cell_extra_predators() : (rules.seats > 1 ? rules.seats - 1u : 0u),
                  g_native_predators,g_plant_raw,g_plant_paid,g_meat_raw,g_meat_paid,
-                 g_fix_plant_bonus && g_fix_extra_one ? rules.cell_plant_percent() : 100u,
+                 g_fix_plant_bonus && g_fix_extra_one ? rules.cell_plant_percent() : 100u, g_party_bites,
                  g_speed_extra.max,g_speed_extra.fast,g_speed_extra.samples,g_speed_native.max,g_speed_native.fast,g_speed_native.samples);
         return line;
     }
