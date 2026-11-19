@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.15.1, 0.7.15.2, 0.7.16
 fixed_in: unreleased
 branch: fix/w57-cellslow
-commits: eb50b7d9, 7c4e2d49, 88973cd7, 4103ec7e
+commits: eb50b7d9, 7c4e2d49, 88973cd7, 4103ec7e, 0429715f, cafb0ef1
 tests: cell_slow_link, cell_slow_link_off, evo_screens_switch_slow
 signature: sync-check "c: N missing on the guest" under SPORE_NET=lowband
 docs: docs/re/cell.md#cell-slow-link
@@ -73,6 +73,14 @@ cell_slow_link (coop_cell_slow_link.py, SPORE_NET=lowband, lane 10):
   them) in the guest's own game in every one of 25 samples over 48 s; the sync-check OK; the host paced to ~54 KB/s.
   An earlier run with 40 units (20261119-130241) had median 1.00 but 0.71-0.79 at four moments: 270-490 cells, more
   than one round at 512 kbit/s carries (~320 nearest), the wrong measure (the test's docstring says why).
+* Merged tree (rel/0.7.16 b0fe4ada in, the sync-check rule for paced guests): PASS out/lab/20261119-134335
+  (cell_slow_link: min 0.92, median 1.00 over 19 samples, sync-check OK with 505 objects compared) and
+  out/lab/20261119-133159 (cell_slow_link OK; evo_screens_switch_slow OK with the lab gates clean: its sync-check
+  `OK ... 454 objects compared` where every run since 2026-11-18 had `c: 165-304 missing`); twin FAIL
+  out/lab/20261119-134335 and 20261119-133159 (cell_slow_link_off: median 0.26 / 0.29, gate `c: 290 missing`).
+  Regression guards on the same tree, 20261119-131719: cell_coop OK (clean link), cell_mirror_turn_net OK (250 ms,
+  5 % random loss: no cut). Key frames slow_link_cells looked at: at level 1 the screen shows 2-16 cells, the twin's
+  and the fix's frames differ little; the numbers are the proof.
 * FAIL out/lab/20261119-130733 (cell_slow_link_off, cell.slow_link off): 23-45 % (median 0.35) over 20 samples, and the
   lab's sync-check gate `c: 13 missing on the guest`; 20261119-130241 (twin, 40 units): 26-46 %, ~100 mirrors in all.
 
