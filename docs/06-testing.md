@@ -9496,3 +9496,20 @@ cell editor with real input; own DNA by default, `--shared` the old checks as `e
   editor, left with the red cross, the host observes), twin `cocoon_off`; `guest_mating` (BUG-1304, BUG-1305: the
   guest's own mating at the nest the players' way, no key during the egg scene). Key frames are shot on the observer
   only, with settle 0 (the partner sits in its editor, which the settle would wait out).
+
+## The Cell kin test after its first lab run (2026-11-19, fix/w57-cellkin)
+<a id="testing-cell-kin-units"></a>
+
+`cell_kin_species` (`coop_cell_kin_species.py --editor`, BUG-1257, docs/re/cell.md#cell-kin-test-units), about 5 min:
+* Distances are in widths of the game's visible box (`coop.pool kin` prints `box=`; 20 x 15 cell units at every
+  level): apart 6 widths (120 units), "near" 1.75 widths (35 units). The first version took `5 / world scale` (0.0003
+  at level 10) and found no kin near anybody.
+* The guest's cell is the wizard premade `E219E5D2`; with `BAF1AD40` the guest's own cell editor never closes on Done.
+* `coop.pool invulnfor 900` again after the guest's rebuild for its chosen cell (a knocked-out guest respawned next to
+  the host in the middle of the checks).
+* The kin are few and the game makes them only as tiles enter the populated range: each check samples every 3 s for
+  up to 45 s (the host swims half a view width now and then); `coop.pool kin` prints each cell's host pool index
+  (`key=`), so the test tells the kin made since the players parted from the ones made while they were together (the
+  owner's mix: those may swim near the host afterwards and are exempt there; the guest's fresh area is checked strictly).
+* Key frames `apart_kin_close` and `after_editor_kin_close` put each player next to its nearest own kin (the kin swim
+  mostly off screen); every note ends with the kin on each screen at the shot.

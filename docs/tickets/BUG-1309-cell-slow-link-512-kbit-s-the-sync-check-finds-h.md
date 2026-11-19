@@ -13,7 +13,7 @@ branch:
 commits:
 tests: evo_screens_switch_slow
 signature: sync-check "c: N missing on the guest" under SPORE_NET=lowband
-docs:
+docs: docs/known-issues.md#issue-cell-slow-link-missing
 related: BUG-1240, BUG-1245, BUG-1255
 ---
 
@@ -40,11 +40,10 @@ those cells for long (a player on a slow link), or only for the seconds the chec
 reason is the answer, not a code change).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Not fixed: outside the 0.7.16 fix lane of fix/w57-cellkin ("fix if ours": it is not, the same in 0.7.15.1 / 0.7.15.2).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Open. Every run of evo_screens_switch_slow shows it (run ids in the Report).
 
 ## History
 - 2026-11-19: opened.
