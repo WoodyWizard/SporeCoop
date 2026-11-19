@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+- Cell: the wild cells of the players' own kind now swim near each player in that player's own design: near the
+  second player you meet its cell's kin, near the host the host's, and a mix where you swim together; before, all of
+  them were copies of the host's cell (BUG-1257).
+
 ## [0.7.15.2] - 2026-11-18
 
 More fixes for problems seen in a video of two players, mostly in the Cell stage and the move to the Creature stage:

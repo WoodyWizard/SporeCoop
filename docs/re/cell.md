@@ -2609,3 +2609,33 @@ Research for docs/plan-0.7.16.md item 3 (BUG-1257). GOG 2024, Ghidra, the earlie
   host's game would treat a partner's kin like its own: inferred harmless); whether the cell's model data of a
   partner's creation is built on first use on the host (BUG-0455 says a forced key builds it, `creations::key_known`
   first); the Cell save holds no pool cells (~ inferred: the pool is rebuilt on load from S).
+
+## The kin of every player's species: the mod's hook (2026-11-18, feat/w54-cellkin)
+<a id="cell-kin-per-player"></a>
+
+BUG-1257, WP-L1 of docs/plan-0.7.16.md; builds on #cell-kin-species.
+
+* Where the decision is made (mods/coop/cellsync_kin.cpp): a depth counter around `PopulateMarker` (the cellsync
+  hook h_Populate), not around PopulateTiles: PopulateTile is also called by RemoveCellsOfOldScale 0xE7CD10 after a
+  level change (it repopulates every tile object of the pool), outside PopulateTiles, so a counter in PopulateTiles
+  would leave the kin of a level change the host's. Inside it, `CreateCellObject` 0xE74A20 (now hooked, the arguments
+  passed on as 10 raw dwords) keeps the position of a gameplay-layer cell (query `G+0x40FC`) for its call, and the
+  modes.cpp GetModelKeyForCellResource hook hands the game's own answer to a filter: an answer equal to `S+0x10`
+  (kind 5) becomes the cell of the player whose view centre is nearest that position (the host's centre set of the
+  tile passes, `cellsync::view_centres()`; on a guest playing its own pool, BUG-0205, its own cell and the partners'
+  puppets), when that player is a partner with a cell of its own (`creations::player_key(id, kCell)`, the key every
+  game uses) and `creations::key_known` says this game can build it. Forced keys of ours (puppets, mirrors) never
+  reach the filter.
+* ~ (design) A guest that lacks the partner's creation does not make the mirror (BUG-0455's model_known in
+  modes::cell_create) until the bundle arrives; nothing new on the wire: the host's state carries +0xFC per cell.
+* ~ (design) A kin cell keeps the resource of the level's kind-5 entry (the AI's data); only its model differs, so
+  its behaviour data is the host's kin's. Its abilities (mouth, weapons) follow the model's parts, if the game reads
+  them from the model data (not traced).
+* ✔ (runtime, lab 20261118-180414, lane 2, Cell fixture at food 0) at level 0 the pool holds no creature of the
+  player's cell model at all (`coop.pool kin`: none in the whole pool for 20 s; the filter saw no kind-5 answer), so
+  the kin exist only at the higher levels (#cell-own-species saw 6-8 at level 10): the test raises the food to 924
+  first. Also seen there: a guest whose profile has no own cell plays the host's cell (its player key in both games
+  is the host's 4DA56CA5); after its own cell editor its player key is the mod's 0x7C...... key (7C47E26D) while its
+  avatar's +0xFC is its My Creations key (292800B6): the same model under two keys.
+* ? The runtime check at level 10 (coop_cell_kin_species.py) and the Cell save holding no kin cell (the test parses
+  the host's new save for the guest's 0x7C key) wait for the lab.

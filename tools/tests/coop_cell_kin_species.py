@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """BUG-1257 (WP-L1 of docs/plan-0.7.16.md): Cell: the wild kin near each player are of that player's own cell.
 
-Cell fixture; the guest plays a cell of its own (its newest own cell, else a premade one chosen with
-`coop.creations choose cell`). The kin are the cells of the players' species the population makes (6-8 per level,
-docs/re/cell.md#cell-kin-species); the owner's decision of 2026-11-18: each player's kin swim near that player.
+Cell fixture, the host's food raised to --food (924: level 10, a level with kin: 6-8 cells of the player's species
+next to the level's own, docs/re/cell.md#cell-own-species; level 0 has none, lab 20261118-180414) while both play the
+host's cell, then the guest plays a cell of its own (a premade one chosen with `coop.creations choose cell` when its
+game plays the host's). The kin are the cells of the players' species the population makes
+(docs/re/cell.md#cell-kin-species); the owner's decision of 2026-11-18: each player's kin swim near that player.
 Read from the game's own cell objects (`coop.pool kin <r>`: every live creature whose model +0xFC is one of the
 players' cells, with the nearest player, its resource and the AI's targets), on the host (its pool) and on the guest
 (its mirrors of the host's pool):
@@ -14,11 +16,16 @@ players' cells, with the nearest player, its resource and the AI's targets), on 
      places on the two screens, then both players at the guest's place, then both at the host's place.
   2. the AI of the guest's kin in the host's game: the same resource as the host's kin (the AI's data), and they
      move and pick targets as the host's kin do (sampled for 20 s, no command forces them).
-  3. the host's save (a new slot, `coop.save`) holds no key of the guest's cell.
-  4. --editor: the guest's own cell editor (its mating call, a part dragged onto the cell, Done): after it, the guest
+  3. --editor: the guest's own cell editor (its mating call, a part dragged onto the cell, Done): after it, the guest
      goes to another fresh area: the kin near it there are of its new cell, on both games.
+  4. the host's save (a new slot, `coop.save`) holds no key of the guest's new cell (a 0x7C...... key of the mod's
+     own, after --editor; the premade cell's key is printed only: a premade's id may be in any save).
 
-  coop_cell_kin_species.py [--dist 120] [--r 35] [--editor]
+Distances are in view-box widths (--dist, --r): the world scale G+0x514C grows with the level and positions shrink
+with it (pos * scale is invariant, docs/re/cell.md#cell-world-scale); a box is ~10 m wide at scale 0.5 (level 1,
+coop_cell_levelup_area.py), so one width is taken as 5 / scale world metres.
+
+  coop_cell_kin_species.py [--food 924] [--dist 6] [--r 1.75] [--editor]
 FAIL twin: SPORE_FIX_OFF=cell.kin_species (every kin is the host's cell: none of the guest's near the guest).
 """
 import math
@@ -42,7 +49,7 @@ def arg(name, default):
 
 
 def kin(con, r=1e9):
-    out = con.call(f'coop.pool kin {r:.0f}')['out']
+    out = con.call(f'coop.pool kin {r:.3f}')['out']
     players = {int(m.group(1)): {'me': bool(m.group(2)), 'cell': m.group(3), 'drawn': m.group(4), 'made': int(m.group(5)),
                                  'pos': (float(m.group(6)), float(m.group(7)))} for m in PLAYER_RE.finditer(out)}
     cells = [{'idx': m.group(1), 'model': m.group(2), 'mirror': m.group(3) == '1', 'near': int(m.group(4)),
@@ -71,7 +78,7 @@ def apart(host, guest, dx, dy, want):
     """the guest `dx dy` m from the host (`coop.pool tp`, again while a join's placement puts it back, BUG-0352)"""
     d, t0 = -1, time.time()
     while time.time() - t0 < 50:
-        guest.call(f'coop.pool tp {dx:.0f} {dy:.0f}')
+        guest.call(f'coop.pool tp {dx:.2f} {dy:.2f}')
         time.sleep(4)
         hp, gp = kin(host, 0)[0], kin(guest, 0)[0]
         h = next((p['pos'] for p in hp.values() if p['me']), None)
@@ -151,22 +158,32 @@ def keys_in_save(d, inst):
     return out
 
 
-def own_cell(guest):
-    out = guest.call('coop.creations')['out']
-    m = re.search(r'mine cell: ([0-9A-F]{8})', out)
-    return m.group(1) if m else '00000000'
+def world_scale(con):
+    m = re.search(r'scale=([-\d.e+]+)', con.call('coop.pool scalepos')['out'])
+    return float(m.group(1)) if m else 0.0
 
 
 def main():
-    dist, r = float(arg('--dist', '120')), float(arg('--r', '35'))
+    dist_w, r_w, food = float(arg('--dist', '6')), float(arg('--r', '1.75')), int(arg('--food', '924'))
     host, guest = start('cell')
     ck = Checks()
     time.sleep(3)
     for con in (host, guest):
         con.call('coop.pool invulnfor 900')
     gid = guest_id(guest)
-    if own_cell(guest) == '00000000':
-        print('  guest: no own cell, ' + guest.call(f'coop.creations choose cell {PREMADE_CELL}')['out'].strip(), flush=True)
+    for step in range(0, food, 100):  # level by level, as play does (coop_cell_own_level10.py)
+        host.call(f'coop.pool food {min(100, food - step)}')
+        time.sleep(3)
+    time.sleep(8)
+    hk0 = next((p['drawn'] for p in kin(host, 0)[0].values() if p['me']), None)
+    gk0 = kin(host, 0)[0].get(gid, {}).get('cell')
+    sc = world_scale(host)
+    unit = 5.0 / sc if sc > 0 else 20.0
+    dist, r = dist_w * unit, r_w * unit
+    print(f"  food {food}: world scale {sc:.4g}, a box width {unit:.2f} m: apart {dist:.1f} m, near {r:.1f} m; the host's "
+          f"pool {kin(host)[2]}; host's cell {hk0}, the guest's {gk0}", flush=True)
+    if not gk0 or gk0 in ('00000000', hk0):  # the guest plays the host's cell (no own cell in its profile)
+        print('  guest: ' + guest.call(f'coop.creations choose cell {PREMADE_CELL}')['out'].strip(), flush=True)
         time.sleep(15)  # the guest's level rebuild hatches the cell again
     hkey = gkey = None
     t0 = time.time()
@@ -186,7 +203,7 @@ def main():
     ck(d > dist * 0.7, f'the guest is far from the host ({d:.1f} m)')
     time.sleep(20)  # the host's partner pass populates the guest's area, the guest mirrors it
     place_check(ck, host, guest, gid, hkey, gkey, r, 'apart')
-    keyframe('apart', f"Cell, the players {dist:.0f} m apart: the host's screen shows the host's cell with wild kin of the "
+    keyframe('apart', f"Cell, the players {dist:.1f} m ({dist_w:g} view widths) apart: the host's screen shows the host's cell with wild kin of the "
              f"host's cell {hkey} around it; the guest's screen shows the guest's cell {gkey} with wild kin of the guest's "
              "own cell (its look) around it")
 
@@ -197,7 +214,7 @@ def main():
     hp0, gp0 = kin(host, 0)[0], kin(host, 0)[0][gid]
     h_at = next(p['pos'] for p in hp0.values() if p['me'])
     off = (h_at[0] - gp0['pos'][0], h_at[1] - gp0['pos'][1])
-    host.call('coop.pool tp 6 0')
+    host.call(f'coop.pool tp {unit * 0.3:.2f} 0')
     time.sleep(6)
     hp, hc, _ = kin(host, r)
     near = counts(hc, (0, gid), r)
@@ -205,9 +222,9 @@ def main():
     ck(near.get(gkey, 0) >= 1, f"both players at the guest's place: the guest's kin are still there ({near})")
     keyframe('at_guest_place', f"Cell, both players at the guest's place: both screens show wild kin of the guest's cell {gkey} "
              "(the guest's look) around the two players")
-    host.call(f'coop.pool tp {off[0]:.0f} {off[1]:.0f}')
+    host.call(f'coop.pool tp {off[0]:.2f} {off[1]:.2f}')
     time.sleep(3)
-    guest.call('coop.pool tp 6 0')
+    guest.call(f'coop.pool tp {unit * 0.3:.2f} 0')
     time.sleep(8)
     gp, gc, _ = kin(guest, r)
     gnear = counts(gc, (0, gid), r)
@@ -217,14 +234,8 @@ def main():
     keyframe('at_host_place', f"Cell, both players at the host's place: both screens show wild kin of the host's cell {hkey} "
              "around the two players (none of the guest's look)")
 
-    # 3. the host's save holds no key of the guest's cell
-    out = host.call('coop.save')['out']
-    print('  host:', out.strip(), flush=True)
-    time.sleep(3)
-    found = keys_in_save(lane.HOST_DIR, int(gkey, 16))
-    ck('saved' in out and not found, f"the host's new save holds no key of the guest's cell {gkey} ({found})")
-
-    # 4. the guest's own cell editor: the next kin near it are of its new cell
+    # 3. the guest's own cell editor: the next kin near it are of its new cell
+    nkey = None
     if '--editor' in sys.argv:
         from coop_evo_screens import edit_cell, mating_call
         from harness import mode
@@ -253,6 +264,15 @@ def main():
         place_check(ck, host, guest, gid, hkey, nkey, r, "after the guest's editor")
         keyframe('after_editor', f"Cell, after the guest's own cell editor, the players apart: the guest's screen shows wild "
                  f"kin of its NEW cell {nkey} around it; the host's screen its own kin of {hkey}")
+    # 4. the host's save holds no key of the guest's cell (the kin of the guest's cell are in the host's pool now)
+    out = host.call('coop.save')['out']
+    print('  host:', out.strip(), flush=True)
+    time.sleep(3)
+    ck('saved' in out, f'the host saved ({out.strip()})')
+    print(f"  the premade / first cell {gkey} of the guest in the host's save: {keys_in_save(lane.HOST_DIR, int(gkey, 16))}", flush=True)
+    if nkey and nkey.startswith('7C'):
+        found = keys_in_save(lane.HOST_DIR, int(nkey, 16))
+        ck(not found, f"the host's new save holds no key of the guest's own cell {nkey} ({found})")
     ck.faults(host=host, guest=guest)
     return ck.result()
 
