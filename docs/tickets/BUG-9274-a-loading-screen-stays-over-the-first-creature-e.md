@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: Live audit 2026-11-19 (MSI pair)
 role: guest
 versions: 0.7.14.1-lineages65-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages66-dev
 branch: feat/lineages-47
 commits: fc3c27a9
 tests: tools/qa_win/qa.py (manual: MSI pair, a guest without a creature joins from inside its own game)

@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: Live audit 2026-11-19 (MSI pair)
 role: host
 versions: 0.7.14.1-lineages65-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages66-dev
 branch: feat/lineages-47
 commits: e2ed6de4
 tests: tools/qa_win/qa.py (manual: MSI pair, Space fixture, a guest without a creature of its own)

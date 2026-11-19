@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: owner play test 2026-11-18
 role: guest
 versions: 0.7.14.1-lineages65-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages66-dev
 branch: feat/lineages-47
 commits: c3ba2fbe
 tests: tools/qa_win/qa.py (manual: MSI guest at 2560x1440 joining, shot)

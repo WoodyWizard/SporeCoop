@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages66-dev] - 2026-11-19
+
+- Creature: a player joining a game makes their first creature in the stage's start editor (145 DNA, the starter
+  parts), never the Creature Creator with 2,000 DNA and every part (BUG-9263).
+- Creature: after the party migrates, every player has a nest and a creature of their own in the new place; a player
+  without them gets them on loading in (BUG-9259).
+- When the host pauses, connected players stop too, not only see "Paused by host" (BUG-9260).
+- Loading screens are centred and sharp at high resolutions such as 1440p (BUG-9261).
+- A loading screen no longer stays over the creature editor for two minutes when a new player joins from inside a
+  game of their own (BUG-9274).
+- Creature: the portrait at the bottom right shows the creature you play now (BUG-9264).
+- Party card: a player with no creature of their own shows the host's creature, which they play (BUG-9275).
+- Creature: a lost social game says it lost interest and how to fill the bar, not "does not want to socialize"
+  (BUG-9258).
+
 ## [0.7.14.1-lineages65-dev] - 2026-11-18
 
 - Creature: no more pause of about a quarter second every second for a connected player. The check that shares the
