@@ -10,6 +10,9 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   Civilization (no visible change by itself).
 - A lab test takes a guest's own creature through Creature -> Tribe -> Civilization with the real stage changes and
   checks its look in every stage on both games (BUG-1277).
+- The lab's sync checks know own DNA per player: each guest's DNA is compared with the host's record of its own DNA
+  and the evolution bar with the party's (BUG-1310); a guest no longer gets the host's DNA for a moment when the host
+  leaves its editor (BUG-1311).
 
 ### Added
 - Creature: when a partner goes into an editor of its own (its mating evolution, Evolve now, or later at the nest),
