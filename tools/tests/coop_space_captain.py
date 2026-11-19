@@ -23,6 +23,11 @@ either game, on both routes of the report:
   2. the rank badge with a real click.
 `SPORE_FIX_OFF=game.captain_items` (the game's code, 0.7.15.2) must FAIL: the guest logs the caught fault at
 0x5971D4 (handled on Wine, a crash on the reporter's Windows).
+The mission screen's Accept is found by its control id (`uifind.where`): `coop.ui find "Accept"` returns the captain
+panel's hidden copy first (lab 20261119-094350 failed there with the screen up, and the screen left open then kept
+the badge from opening the captain screen). The fixture's captain has no species profile in the guest's game
+either (lane 3, 2026-11-19: `stats: skipped 3` per opening), so the panel's stats need `game.captain_stats` here
+too (BUG-1278; with it off the guest faults at 0xC02A14).
 
   SPORE_LANE=2 python3 tools/tests/coop_space_captain.py
 """
@@ -35,6 +40,7 @@ import uifind
 from twoinst import Checks, shot, start
 
 BADGE = (1390, 890)  # the rank badge over the ship's picture, 1440x1080
+ACCEPT = 0x075DD108  # the adventure mission screen's Accept (SporeCoop::CaptainPanel_OnMessage)
 
 
 def faults(con):
@@ -60,11 +66,13 @@ def accept_route(guest, ck):
     guest.call('probe SporeCoop::CaptainItems_Palette')
     n0 = faults(guest)
     print('  guest:', guest.call('coop.captain open')['out'].strip())
-    up = fz.wait(lambda: uifind.shown(guest, 'Accept') is not None, 10)
+    # the mission screen's own buttons by control id: `coop.ui find "Accept"` returns the captain panel's hidden copy
+    # first (lab 20261119-094350: "the adventure mission screen is up" failed with the screen on the picture)
+    up = fz.wait(lambda: uifind.where(guest, ACCEPT) is not None, 10)
     if not ck(up, 'guest: the adventure mission screen is up (Decline, Accept)'):
         return
     shot(guest, 'captain_mission.png')
-    p = uifind.shown(guest, 'Accept')
+    p = uifind.where(guest, ACCEPT)
     guest.call(f'move {p[0]} {p[1]}')
     time.sleep(0.3)
     guest.call(f'click {p[0]} {p[1]}')
@@ -72,22 +80,15 @@ def accept_route(guest, ck):
     time.sleep(2)
     shot(guest, 'captain_accepted.png')
     ck(ran, 'guest: Accept ran the captain\'s items palette (the route of the report\'s accept crash)')
+    ck(play_space.captain_open(guest), 'guest: Accept opened the captain screen (its Equipment panel)')
     n = faults(guest) - n0
     print('  guest faults after Accept:', n, '|', guest.call('coop.captain')['out'].strip())
     ck(n == 0, f'guest: no caught fault after Accept (0x5971D4: BUG-0304): {fault_lines(guest)[:3]}')
-    # close whatever the accept left up: the captain panel (its OK), the mission screen (Decline, Esc)
+    # close the captain panel like a player (its OK). Not Decline: on the mission screen of no offer it leaves the Space
+    # UI hidden behind the drive's message and the rank badge does nothing after it (lane 3, 2026-11-19)
     play_space.close_captain(guest)
-    for _ in range(2):
-        q = uifind.shown(guest, 'Decline')
-        if q is None:
-            break
-        guest.call(f'click {q[0]} {q[1]}')
-        time.sleep(1.5)
-    if uifind.shown(guest, 'Decline') is not None or uifind.shown(guest, 'Accept') is not None:
-        guest.call('key escape')
-        time.sleep(2)
-    print('  guest: after Accept the screens are', 'closed' if not play_space.captain_open(guest) and
-          uifind.shown(guest, 'Accept') is None else 'still up')
+    closed = not play_space.captain_open(guest) and uifind.where(guest, ACCEPT) is None
+    ck(closed, 'guest: after Accept the captain screen and the mission screen are closed (OK)')
 
 
 def main():

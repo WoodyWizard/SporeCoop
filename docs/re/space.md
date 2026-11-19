@@ -3398,6 +3398,22 @@ analysis (Ghidra, GOG 2024), no lab run yet:
   helper whose captain has no profile. `coop.captain` prints both counts (`items: none N fix=1 stats: skipped N fix=1`).
   Tests: `space_captain` (the Accept route and the badge, no caught fault; `SPORE_FIX_OFF=game.captain_items` fails),
   `space_captain_none` (captain 0; `SPORE_FIX_OFF=game.captain_stats` fails).
+* ✔ Runtime (lane 3, 2026-11-19, the `space` fixture's guest, captain 2905CC0C): every opening of the full panel
+  (the badge, Accept) reached the guard with a null list (`items: none` +1) and, with `game.captain_items` on, the
+  three stats helpers with a null species profile (`stats: skipped` +3): the fixture's captain has no species profile
+  in the guest's game either. With `game.captain_stats` off the badge logs the handled fault 0xC02A14 (call list
+  00FE718F ... 00F17D45 00FE7973). The probe on `SporeCoop::CaptainItems_Palette` after a click on Accept returns to
+  0xFE7973 (CaptainPanel_Show+0x413).
+* ✔ The mission screen of `coop.captain open` ("Mission Name", the placeholder description) has Decline 0x075DD100 and
+  Accept 0x075DD108 (`coop.ui where`); the captain panel holds hidden copies captioned "Decline" / "Accept", which
+  `coop.ui find` returns first (and an always shown "Decline" at the top left, 68 9). Accept opens the full panel
+  (Equipment, OK). Decline on this screen of no offer leaves the Space UI hidden behind the drive's message (a caption
+  with a check button), and after it neither the badge nor `coop.captain open` shows anything.
+* ✔ Handled or not on Wine depends on the route (lane 3, 2026-11-19): the badge click (the window manager's message
+  path) survived the 0xC02A14 fault; the next `coop.captain open` (SpaceGameUI_ShowCaptainScreen called from the
+  console, outside the message path) faulted at 0xC02A14 again inside CaptainPanel_Show and the guest ended with an
+  unhandled exception (crash report written). Inferred: a fault on the route through SpaceGameUI_ShowCaptainScreen
+  (one of the reporter's chains) is fatal on Wine as well. Why the first fault is caught on Wine: still not known (?).
 * Not done (BUG-1279): sending the host's captain property list with the host's own creation, so the guest's captain
   screen shows the host captain's real item state; it changes the creations bundle and registers a resource under the
   host's key, not a hotfix.
