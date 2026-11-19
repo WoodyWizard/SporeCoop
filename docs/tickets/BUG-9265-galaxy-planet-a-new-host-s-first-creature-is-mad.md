@@ -36,7 +36,7 @@ planet's DNA (570 on Samuth, not the menu's 145: the editor takes it from the ru
 to the world, saving goes back to the world, creations::host_first_tick records the new creature for the world and
 the host plays it ("own avatar is now 2928DC1E").
 
-Left as they are (decision 6U asks): the Tribe and Civ late joiner's editor (open_new_creature_editor) is the Creator;
+Left as they are (decision 6U, answered A by the owner 2026-11-19: leave it): the Tribe and Civ late joiner's editor (open_new_creature_editor) is the Creator;
 a creature's parts do not change Tribe or Civ play. The test command coop.newcreature and editor_depth's test open the
 Creator on purpose; the game's own evolution request (0x465C50BA with the evolution tag and the collected parts) is
 the limited in-world editor.
