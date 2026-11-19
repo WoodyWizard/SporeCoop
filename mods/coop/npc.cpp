@@ -311,6 +311,13 @@ void set_id_fix(bool on) { g_id_fix = on; }
 void debug_next_id(uint16_t id) { g_next_id = id; }
 
 // ------------------------------------------------------------------ guest side
+// BUG-1293 (found by the Lineages fork, PR #196, its BUG-9231): a proxy whose species key (our own key for a host's
+// creation) builds nothing here is built from the host's key. `coop.fix npc.species_fallback off`: it waits (0.7.15)
+static bool g_species_fallback = true;
+COOP_FIX("npc.species_fallback", "BUG-1293", g_species_fallback,
+         "npc: a host creature whose species the guest knows under its own key but cannot build there is built from the host's key");
+static unsigned g_species_fallbacks;
+
 struct Proxy {
     // (its creature is the registry entry's ref: pointer, the serial when the proxy made it (BUG-0842), noun; C1)
     game::Key key{};
@@ -321,6 +328,7 @@ struct Proxy {
     bool flock_fx = false;  // BUG-0556: the summoned flock's hearts effect started on the proxy
     int fail = 0; // 1 species, 2 herd, 3 create
     bool nospecies_said = false; // BUG-0300 diagnostics: logged once
+    bool fallback_logged = false; // BUG-1293: built from the host's key (logged once)
     bool kinematic = false;      // BUG-0281: placed on the host's path this frame
     double manual_until = 0;     // tests (BUG-0281): `coop.npc pwalk` drives it, the sync does not
     int manual_mode = 0;         // bits: 1 MoveTo again every 0.1 s, 2 set_position to itself, 4 set_orientation
@@ -2422,6 +2430,21 @@ static void guest_tick(double now)
             continue;
         if (!pe.ref.p) {
             void* species = game::species_by_key(px.key);
+            // BUG-1293 (found by the Lineages fork, its BUG-9231): our own key for a host's creation builds nothing
+            // here: the host's key (registered here too when this game had nothing under it, creations.cpp)
+            if (!species && g_species_fallback) {
+                creations::Key hk = creations::host_species({px.key.instance, px.key.type, px.key.group});
+                if (hk.instance != px.key.instance)
+                    if (void* hs = game::species_by_key({hk.instance, hk.type, hk.group})) {
+                        species = hs;
+                        if (!px.fallback_logged) {
+                            px.fallback_logged = true;
+                            g_species_fallbacks++;
+                            H->log(M, SK_INFO, "npc %u: species %08X builds nothing here: the host's key %08X (BUG-1293)",
+                                   id, px.key.instance, hk.instance);
+                        }
+                    }
+            }
             void* herd = species ? proxy_herd(px.key, px.flags, s.pos, species) : nullptr;
             int fail = !species ? 1 : !herd ? 2 : 0;
             void* made = nullptr;
@@ -3562,7 +3585,9 @@ std::string status()
     char b3[128]; // F3 (BUG-0768)
     snprintf(b3, sizeof b3, "npc friendly fire: on=%d pvp_out=%u pvp_in=%u pvp_relayed=%u\n", (int)friendly_fire(), g_pvp_out,
              g_pvp_in, g_pvp_relayed);
-    return b + std::string(b3) + meat_status() + registry_status() + game::destroy_deferred_status() + "\n";
+    char b5[96]; // BUG-1293
+    snprintf(b5, sizeof b5, "npc species fallback: on=%d host_key_builds=%u\n", (int)g_species_fallback, g_species_fallbacks);
+    return b + std::string(b3) + b5 + meat_status() + registry_status() + game::destroy_deferred_status() + "\n";
 }
 
 } // namespace npc

@@ -1,5 +1,6 @@
 // World sharing: the host streams its current save folder (AppData\Spore\Games\GameN)
 // to a joining guest, who stores it as a new save slot. See docs/03-gameplay.md 3.2.
+#include "share_wait.h"
 #include "world.h"
 #include "lifecycle.h"
 
@@ -553,6 +554,10 @@ struct PendingShare {
     int saves = 0;     // saves made for this share (the planet's file did not appear: save again)
     uint32_t tag = 0;  // the caller's tag, given back on a failure (coop.cpp: the guest's join serial)
     bool on_planet = false; // the last save was refused: the ship is on a planet (BUG-0382: share_wait)
+    uint64_t asked = 0;  // BUG-1294: when the share was asked for (tick count)
+    uint64_t posted = 0; // BUG-1294: when the save it goes out with was posted (0: none yet)
+    bool wait_said = false;
+    bool dead_said = false; // BUG-1295: logged once
 };
 // BUG-0231: the final failure of a queued share ("cannot share the world"), for the caller's retry
 static void (*g_share_failed)(uint8_t peer, uint32_t tag, bool planet_missing);
@@ -579,6 +584,7 @@ bool share_with(uint8_t peer, std::string& err, bool save_first, uint32_t tag)
             }
         PendingShare ps{peer, 0, true};
         ps.tag = tag;
+        ps.asked = GetTickCount64(); // BUG-1294
         g_pending.push_back(ps);
         return true;
     }
@@ -610,10 +616,30 @@ bool g_share_reset_fix = true;
 // wave 2 fixes (tests: `coop.worldfix <name> 0` = the old behaviour)
 static bool g_drop_peer_fix = true;    // BUG-0166: shares for a player who left are dropped
 static bool g_one_save_fix = true;     // BUG-0112: one save for every share that waits at the same time
+// BUG-1294 (found by the Lineages fork, PR #196, its BUG-9166): a waiting share joins only a save posted when or after it
+// was asked for. `coop.fix world.share_fresh_save off`: any save in flight (0.7.15)
+static bool g_share_fresh_fix = true;
+static unsigned g_fresh_waits; // shares that waited for their own save
+// BUG-1295 (found by the Lineages fork, PR #196, its BUG-9215): a player who joined while the host was on its death
+// screen got the world saved with the host's dead avatar and arrived dead at the host's spot ("You were killed in
+// battle"). A share that saves first now waits while the host's own creature is dead (2 minutes at most), and the host
+// is told every 30 s to respawn. `coop.fix world.join_after_respawn off`: the save at once (0.7.15)
+static bool g_respawn_fix = true;
+static unsigned g_dead_waits;     // shares that waited for the host's respawn
+static uint64_t g_dead_told;
+static bool host_dead_now()
+{
+    if (!game::in_creature_stage())
+        return false;
+    void* av = game::avatar();
+    return av && (game::is_dead(av) || game::health(av) <= 0.f); // (the caption may wait with the flag already off)
+}
 static bool g_editor_load_fix = true;  // BUG-0157: a queued load never starts inside an editor
 COOP_FIX("core.share_reset", "BUG-0140", g_share_reset_fix, "world: the session end drops the shares and transfers of its players");
 COOP_FIX("world.share_drop_peer", "BUG-0166", g_drop_peer_fix, "world: shares for a player who left are dropped");
 COOP_FIX("world.share_one_save", "BUG-0112", g_one_save_fix, "world: one save for every share that waits at the same time");
+COOP_FIX("world.join_after_respawn", "BUG-1295", g_respawn_fix, "world: a world share waits while the host's creature is dead (2 minutes at most), so a joining player does not arrive dead");
+COOP_FIX("world.share_fresh_save", "BUG-1294", g_share_fresh_fix, "world: a share goes out with another share's save only when that save was made after the share was asked for");
 // BUG-0276: the host's share save posted 70 ms after the game entered the Tribe stage was never
 // written (no "game saved" box, no file); after 10 s the share went out anyway with the slot's
 // previous files, a Creature save, and every guest loaded Creature while the host played Tribe.
@@ -1431,16 +1457,53 @@ void tick(net::Session& s)
             // waiting at a stage change, or a guest that joins during another one's save): this
             // share goes out with it. N saves in one frame (or a second one during the first) may
             // break the slot and left a "game saved" box open on the host.
-            for (auto& q : g_pending)
-                if (&q != &p && !q.need_save && q.latest && now < q.latest) {
+            // BUG-1294 (found by the Lineages fork, its BUG-9166): only with a save posted when or after this share was
+            // asked for; an older one in flight lacks the change the share is for: this share waits and saves itself
+            bool wait = false;
+            for (auto& q : g_pending) {
+                if (&q == &p)
+                    continue;
+                auto m = share_wait::merge(g_share_fresh_fix, p.asked, !q.need_save && q.latest && now < q.latest, q.posted);
+                if (m == share_wait::Merge::Wait) {
+                    wait = true;
+                    continue;
+                }
+                if (m == share_wait::Merge::Join) {
                     p.need_save = false;
                     p.at = q.at;
                     p.latest = q.latest;
                     p.mode = q.mode;
+                    p.posted = q.posted;
                     H->log(M, SK_INFO, "world: the share for player %u goes out with the save for player %u",
                            p.peer, q.peer);
+                    wait = false;
                     break;
                 }
+            }
+            if (wait && p.need_save) {
+                if (!p.wait_said) {
+                    p.wait_said = true;
+                    g_fresh_waits++;
+                    H->log(M, SK_INFO, "world: the share for player %u waits for its own save (the save being written was "
+                           "posted before it was asked for, BUG-1294)", p.peer);
+                }
+                i++;
+                continue;
+            }
+        }
+        if (p.need_save && g_respawn_fix && now < p.asked + 120000 && host_dead_now()) { // BUG-1295
+            if (!p.dead_said) {
+                p.dead_said = true;
+                g_dead_waits++;
+                H->log(M, SK_INFO, "world: the share for player %u waits until the host's creature lives again (BUG-1295)",
+                       p.peer);
+            }
+            if (g_feed && now >= g_dead_told + 30000) {
+                g_dead_told = now;
+                g_feed("a player is joining: respawn so they can enter your world");
+            }
+            i++;
+            continue;
         }
         if (p.need_save) {
             // a stage that just began (loading screen, setup) is saved once the player controls
@@ -1464,6 +1527,7 @@ void tick(net::Session& s)
                     p.need_save = false;
                     p.at = now + 2500;
                     p.latest = now + 10000;
+                    p.posted = now; // BUG-1294
                     p.mode = game::mode_id();
                     if (g_land_after_ms >= 0 && p.mode == modes::kSpace) { // tests: the ship lands before the save is written
                         g_land_at = now + (uint64_t)g_land_after_ms;
@@ -1993,6 +2057,12 @@ std::string status()
              g_settle_waits, g_stale_saves); // tests (BUG-0276)
     s += b;
     snprintf(b, sizeof b, "shares saved again (written on a planet) %u\n", g_planet_saves); // tests (BUG-0357)
+    s += b;
+    snprintf(b, sizeof b, "shares that waited for their own save %u (fresh_save=%d)\n", g_fresh_waits,
+             (int)g_share_fresh_fix); // tests (BUG-1294)
+    s += b;
+    snprintf(b, sizeof b, "shares that waited for the host's respawn %u (join_after_respawn=%d, host dead %d)\n", g_dead_waits,
+             (int)g_respawn_fix, (int)host_dead_now()); // tests (BUG-1295)
     s += b;
     snprintf(b, sizeof b, "saved box: questions left alone %u, Enters for an OK outside the window %u\n", g_box_questions,
              g_box_enters); // tests (BUG-0846, BUG-0806)

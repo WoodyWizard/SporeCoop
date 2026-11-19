@@ -4686,6 +4686,244 @@ static void test_family_check()
     }
 }
 
+
+// BUG-1296 (found by the Lineages fork, PR #196, its BUG-9098): does a world-sized reliable transfer stall on a
+// constrained lossy path? A model of such a path (ours, not the fork's): 200 packets/s through a 16-packet queue (a
+// full queue drops), 60 ms each way, 1 % random loss both ways; the sender flushes once a 33 ms frame as Session::flush
+// does (an unreliable player state first, then up to kAckWindow / 3 packets on an internet round trip), the receiver
+// acks each frame and when ack_urgent. 1.5 MB in 1100-byte reliable messages must arrive in order, all of it, at no
+// less than half the path's rate, and the player state keeps arriving (it rides every flush). A regression check: the
+// transfer does not stall in ours (the fork's rate control there did not make it faster either).
+struct BottleneckResult {
+    int got = 0;
+    double secs = 0;
+    uint32_t sent = 0, resends = 0, dropped = 0, states_sent = 0, states_got = 0;
+};
+static BottleneckResult bottleneck_case(uint32_t seed, uint32_t serve_ms = 5, size_t cap = 16, uint32_t loss_pm = 10,
+                                       int msgs = 1500)
+{
+    BottleneckResult res;
+    Connection a, b;
+    a.peer_split = b.peer_split = true;
+    const int kMsgs = msgs;
+    for (int i = 0; i < kMsgs; i++) {
+        Writer w;
+        w.u32(i);
+        std::vector<uint8_t> pad(1096, (uint8_t)i);
+        w.raw(pad.data(), pad.size());
+        a.send_reliable(MSG_WORLD_CHUNK, w);
+    }
+    uint32_t rng = seed * 2654435761u;
+    auto lost = [&] {
+        rng = rng * 1103515245u + 12345u;
+        return (rng >> 16) % 1000 < loss_pm;
+    };
+    struct InFlight {
+        uint32_t at;
+        std::vector<uint8_t> pkt;
+    };
+    std::deque<std::vector<uint8_t>> queue; // the bottleneck's queue (A -> B)
+    std::vector<InFlight> to_b, to_a;
+    uint32_t next_serve = 0;
+    int expect = 0;
+    bool order_ok = true;
+    auto deliver_b = [&](uint8_t type, Reader& r) {
+        if (type == MSG_WORLD_CHUNK) {
+            int i = (int)r.u32();
+            order_ok &= i == expect;
+            expect++;
+            res.got++;
+        } else if (type == MSG_PLAYER_STATE)
+            res.states_got++;
+    };
+    auto none = [](uint8_t, Reader&) {};
+    std::vector<uint8_t> pkt;
+    const uint32_t t0 = 1000;
+    uint32_t now = t0;
+    for (; now < t0 + 300000 && res.got < kMsgs; now++) {
+        if ((now - t0) % 33 == 0) { // the sender's frame
+            Writer st;
+            st.u32(now);
+            a.send_unreliable(MSG_PLAYER_STATE, st, true);
+            res.states_sent++;
+            int burst = a.rtt_ms < 40.f ? (int)kAckWindow : (int)kAckWindow / 3;
+            for (int i = 0; (i < burst || (i < burst + 64 && a.unreliable_queued() > 0)) && a.build_packet(now, pkt); i++) {
+                res.sent++;
+                if (queue.size() >= cap)
+                    res.dropped++;
+                else
+                    queue.push_back(pkt);
+            }
+            a.drop_unreliable();
+        }
+        if ((now - t0) % 33 == 16 && b.build_packet(now, pkt)) // the receiver's frame
+            to_a.push_back({now + 60, pkt});
+        if (!queue.empty() && now >= next_serve) { // the bottleneck serves one packet each 5 ms
+            if (!lost())
+                to_b.push_back({now + 60, queue.front()});
+            queue.pop_front();
+            next_serve = now + serve_ms;
+        }
+        for (size_t i = 0; i < to_b.size();)
+            if (to_b[i].at <= now) {
+                b.on_packet(to_b[i].pkt.data(), to_b[i].pkt.size(), now, deliver_b);
+                to_b.erase(to_b.begin() + i);
+                if (b.ack_urgent() && b.build_packet(now, pkt))
+                    to_a.push_back({now + 60, pkt});
+            } else
+                i++;
+        for (size_t i = 0; i < to_a.size();)
+            if (to_a[i].at <= now) {
+                if (!lost())
+                    a.on_packet(to_a[i].pkt.data(), to_a[i].pkt.size(), now, none);
+                to_a.erase(to_a.begin() + i);
+            } else
+                i++;
+    }
+    res.secs = (now - t0) / 1000.0;
+    res.resends = a.stats.resends;
+    if (!order_ok)
+        res.got = -1;
+    return res;
+}
+static void test_bulk_bottleneck()
+{
+    printf("a world-sized transfer through a 200 packet/s bottleneck with a 16-packet queue does not stall (BUG-1296)\n");
+    for (uint32_t seed = 1; seed <= 3; seed++) {
+        BottleneckResult r = bottleneck_case(seed);
+        printf("  seed %u: %d of 1500 in %.1f s (sent %u, resends %u, dropped at the queue %u, player states %u of %u)\n", seed,
+               r.got, r.secs, r.sent, r.resends, r.dropped, r.states_got, r.states_sent);
+        CHECK(r.got == 1500);
+        // the path: 200 packets/s x ~1.1 KB, 1.5 MB in about 7.5 s at best; no stall means at least half that rate
+        CHECK(r.secs < 15.0);
+        CHECK(r.states_got * 10 >= r.states_sent * 8); // the player state keeps arriving during the transfer
+    }
+    // a worse path: 50 packets/s, an 8-packet queue, 3 % loss both ways, 600 messages (~660 KB): 12 s at best
+    for (uint32_t seed = 1; seed <= 2; seed++) {
+        BottleneckResult r = bottleneck_case(seed, 20, 8, 30, 600);
+        printf("  slow path, seed %u: %d of 600 in %.1f s (sent %u, resends %u, dropped at the queue %u, player states %u of %u)\n",
+               seed, r.got, r.secs, r.sent, r.resends, r.dropped, r.states_got, r.states_sent);
+        CHECK(r.got == 600);
+        CHECK(r.secs < 30.0);
+        CHECK(r.states_got * 10 >= r.states_sent * 7);
+    }
+}
+
+// BUG-1281: a peer running the Lineages fork (PR #196, based on 0.7.14.1) is refused in both roles before any of its
+// messages is used. The HELLO / WELCOME bytes are built here field by field the way the fork's net/protocol.h
+// Hello::write / Welcome::write lays them out (fork commit 93690d6a; no fork code is run): caps CAP_SPLIT | CAP_VERSION
+// | CAP_LIBRARY (32) | CAP_CAMPAIGN_PROFILE (8, a str8 "<version> / base parts" where ours has the family list).
+// FAILS with `--off refuse_fork` (the fork joins as an older 0.7.x, rev 1 of every family)
+static const char* kForkVersion = "coop 0.7.14.1-lineages64-dev, SporeKit 0.3.17, GOG 2024 dc04aee5";
+static std::vector<uint8_t> fork_hello(const std::string& name, const std::string& version, bool token)
+{
+    Writer w;
+    w.u16(7);           // kProtoVersion (unchanged in the fork)
+    w.u32(0);           // build (0: no build check in the tests)
+    w.str8(name);
+    w.u32(1u | 4u | 32u | 8u | (token ? 2u : 0u));
+    if (token) {
+        uint64_t t = 0x1122334455667788ull;
+        w.raw(&t, 8);
+    }
+    w.str8(version);                                    // CAP_VERSION
+    w.str8("0.7.14.1-lineages64-dev / base parts");     // CAP_CAMPAIGN_PROFILE (bit 8)
+    return w.data;
+}
+static std::vector<uint8_t> fork_welcome(uint8_t your_id)
+{
+    Writer w;
+    w.u8(your_id);
+    w.u32(0x12345678); // world
+    w.u8(2);
+    w.u8(0); w.str8("Fork");
+    w.u8(your_id); w.str8("Bob");
+    w.u32(1u | 4u | 32u | 8u);
+    w.str8(kForkVersion); // CAP_VERSION: the host's, then n x (id, version) of the players
+    w.u8(0);
+    w.str8("0.7.14.1-lineages64-dev / Creepy & Cute"); // CAP_CAMPAIGN_PROFILE
+    return w.data;
+}
+static void test_fork_refused()
+{
+    printf("a Lineages fork peer is refused in both roles (BUG-1281)\n");
+    { // the wire: the fork's HELLO reads with bit 8 set and no family list; ours and an older one do not look like it
+        auto b = fork_hello("Bob", kForkVersion, true);
+        Reader r(b.data(), b.size());
+        Hello h;
+        CHECK(h.read(r) && h.version == kForkVersion && (h.caps & CAP_FAMILIES) && !h.has_families && h.has_token);
+        CHECK(compat::is_fork(h.version, h.caps, h.has_families));
+        auto b2 = fork_hello("Bob", "coop 0.7.14.1, SporeKit 0.3.17, GOG 2024 dc04aee5", false); // a renamed fork build
+        Reader r2(b2.data(), b2.size());
+        Hello h2;
+        CHECK(h2.read(r2) && compat::is_fork(h2.version, h2.caps, h2.has_families));
+        CHECK(compat::is_fork("coop 0.7.14.1-Lineages, SporeKit 0.3.17", CAP_SPLIT | CAP_VERSION, false));
+        Hello ours;
+        ours.version = "coop 0.7.16, SporeKit 0.7.16, GOG 2024 dc04aee5";
+        ours.families = compat::my_families();
+        Writer wo;
+        ours.write(wo);
+        Reader ro(wo.data.data(), wo.size());
+        Hello got;
+        CHECK(got.read(ro) && got.has_families && !compat::is_fork(got.version, got.caps, got.has_families));
+        CHECK(!compat::is_fork("coop 0.7.14.1, SporeKit 0.7.14.1, GOG 2024 dc04aee5", CAP_SPLIT | CAP_VERSION, false));
+        CHECK(!compat::is_fork("", 0, false)); // 0.7.2 shape
+        auto bw = fork_welcome(1);
+        Reader rw(bw.data(), bw.size());
+        Welcome wl;
+        CHECK(wl.read(rw) && wl.host_version == kForkVersion && !wl.has_families &&
+              compat::is_fork(wl.host_version, wl.caps, wl.has_families));
+    }
+    std::string err;
+    { // our host, a fork guest: REJECT with the text, never in the roster
+        Session h, f;
+        h.version = "coop 0.7.16, SporeKit 0.7.16, GOG 2024 dc04aee5";
+        f.test_hello = fork_hello("Bob", kForkVersion, true);
+        std::string why, host_line;
+        bool joined = false;
+        f.cb.disconnected = [&](const std::string& w) { why = w; };
+        h.cb.compat = [&](uint8_t, const std::string& t, bool refused) { host_line = refused ? t : ""; };
+        h.cb.player_join = [&](const PlayerInfo&) { joined = true; };
+        CHECK(h.host(0, "Alice", err));
+        CHECK(f.join("127.0.0.1:" + std::to_string(h.port()), "Bob", err));
+        tick({&h, &f}, 400);
+        printf("  fork guest: '%s'\n  host: '%s'\n", why.c_str(), host_line.c_str());
+        CHECK(!f.connected() && !joined && h.players().size() == 1 && h.fork_refused() == 1);
+        CHECK(why.find("Alice plays SporeCoop 0.7.16; you have the Lineages fork of SporeCoop (SporeCoop 0.7.14.1-lineages64-dev)") !=
+              std::string::npos);
+        CHECK(host_line.find("Bob (the Lineages fork of SporeCoop, SporeCoop 0.7.14.1-lineages64-dev) was not let in") !=
+              std::string::npos);
+        // an ordinary guest still joins the same host
+        Session a;
+        CHECK(a.join("127.0.0.1:" + std::to_string(h.port()), "Carol", err));
+        tick({&h, &a}, 400);
+        CHECK(a.connected() && h.players().size() == 2);
+        h.leave();
+        f.leave();
+        a.leave();
+    }
+    { // a fork host, our guest: the guest leaves at the WELCOME, nothing after it is delivered
+        Session h, a;
+        h.test_welcome = fork_welcome;
+        std::string why;
+        bool connected = false, chat = false;
+        a.cb.disconnected = [&](const std::string& w) { why = w; };
+        a.cb.connected = [&] { connected = true; };
+        a.cb.chat = [&](uint8_t, const std::string&) { chat = true; };
+        a.version = "coop 0.7.16, SporeKit 0.7.16, GOG 2024 dc04aee5";
+        h.cb.player_join = [&](const PlayerInfo&) { h.send_chat("hello"); }; // goes out right behind the WELCOME
+        CHECK(h.host(0, "Fork", err));
+        CHECK(a.join("127.0.0.1:" + std::to_string(h.port()), "Bob", err));
+        tick({&h, &a}, 400);
+        printf("  our guest: '%s'\n", why.c_str());
+        CHECK(!a.connected() && !connected && !chat && a.fork_refused() == 1);
+        CHECK(why.find("Fork plays the Lineages fork of SporeCoop (SporeCoop 0.7.14.1-lineages64-dev); you have SporeCoop 0.7.16") !=
+              std::string::npos);
+        h.leave();
+        a.leave();
+    }
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::string(argv[1]) == "--fakepeer-host")
@@ -4710,6 +4948,7 @@ int main(int argc, char** argv)
                                                {"relay_budget", &g_fix.relay_budget},
                                                {"dir_gate", &g_fix.dir_gate},
                                                {"family_check", &g_fix.family_check},
+                                               {"refuse_fork", &g_fix.refuse_fork},
                                                {"update_paths", &upd::g_path_fix}};
             for (size_t a = 0; a <= list.size();) {
                 size_t b = list.find(',', a);
@@ -4852,6 +5091,8 @@ int main(int argc, char** argv)
         {"test_queue_cap", test_queue_cap},
         {"test_relay_budget", test_relay_budget},
         {"test_kick", test_kick},
+        {"test_fork_refused", test_fork_refused},
+        {"test_bulk_bottleneck", test_bulk_bottleneck},
     };
     for (size_t i = 0; i < sizeof tests / sizeof tests[0]; i++) {
         if (!run_this(tests[i].first, i))

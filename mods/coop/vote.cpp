@@ -4,6 +4,7 @@
 // (SelectUI, StageMsg, Submit, BlockingErrors, CreatureGame / Simulator messages, CellToCreature), what makes the game
 // busy for a share (game_busy, save_blocker) and the editor-pending flag (BUG-0920). The MSG_VOTE handler is in the
 // session callbacks.
+#include "tribe_editors.h"
 #include "coop_state.h"
 #include "designs.h"
 
@@ -736,9 +737,32 @@ bool SK_THISCALL h_CreatureGameMsg(void* self, uint32_t id, void* data)
 }
 
 // BUG-0588: the editor of the last request (EditorRequest +0xC): the end of Tribe's City Hall and vehicle editors
+// (tribe_editors.h). BUG-1280 (found by the Lineages fork, PR #196, its BUG-9060): the third vehicle editor is 7D433FAD
+// (a consequence archetype other than C2CA9495 / 60A78928); the list had a misread 7CB21BAD, so the BUG-0849 share-save
+// guard did not know that editor. `coop.fix tribe.graduation_vehicle_id off`: the old list
+static bool g_vehicle_id_fix = true;
+COOP_FIX("tribe.graduation_vehicle_id", "BUG-1280", g_vehicle_id_fix, "tribe: the end of Tribe's third vehicle editor (7D433FAD) counts as an end-of-Tribe editor (no world share or share save in it)");
 bool tribe_civ_editor(uint32_t id)
 {
-    return id == 0x99E92F05u || id == 0xF670AA43u || id == 0x9AD7D4AAu || id == 0x7CB21BADu;
+    return tribe_editors::end_editor(id, g_vehicle_id_fix);
+}
+// tests (BUG-1280, `coop.vote tribeend [<archetype hex>]`): the end-of-Tribe guard's inputs; with an archetype the
+// player's consequence archetype (cPlayer +0x1104) is set first, so the game opens that archetype's vehicle editor
+std::string tribe_end_line(bool set, uint32_t archetype)
+{
+    void* nm = game::noun_manager();
+    void* pl = nm && skg::readable((char*)nm + 0x74, 4) ? skg::field<void*>(nm, 0x74) : nullptr;
+    bool ok = pl && skg::readable((char*)pl + 0x1104, 4);
+    if (set && ok)
+        skg::field<uint32_t>(pl, 0x1104) = archetype;
+    uint32_t a = ok ? skg::field<uint32_t>(pl, 0x1104) : 0;
+    char b[256];
+    snprintf(b, sizeof b,
+             "tribe end: archetype %08X (vehicle editor %08X), last editor %08X end_editor=%d stage_end=%d graduating=%d "
+             "fix=%d\n",
+             a, tribe_editors::vehicle_editor(a), g_last_editor_req, (int)tribe_civ_editor(g_last_editor_req),
+             game::mode_id() == modes::kTribe && tribe::stage_end() ? 1 : 0, (int)tribe_graduating(), (int)g_vehicle_id_fix);
+    return b;
 }
 bool g_editreq_capture;
 ReqImage g_editreq_game;

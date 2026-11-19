@@ -458,6 +458,7 @@ bool host_creature_mode();
 bool evolve_own_text(uint32_t to); // BUG-1258: the host's evolution notice names its own creature (Creature, not one creature)
 bool start_action_vote(const std::string& text, const std::string& done, std::function<void()> action);
 bool tribe_civ_editor(uint32_t id);
+std::string tribe_end_line(bool set, uint32_t archetype); // tests (BUG-1280): coop.vote tribeend
 bool tribe_graduating();
 const char* save_blocker();
 int SK_THISCALL h_SimMsg(void* self, uint32_t id, void* data);

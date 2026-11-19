@@ -139,6 +139,8 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "designs") // BUG-0647: the host's own designs on this guest
         return design_status();
+    if (a.size() >= 2 && a[0] == "breakremap") // tests (BUG-1293)
+        return test_break_remap((uint32_t)strtoul(a[1].c_str(), nullptr, 16));
     if (a.size() >= 2 && a[0] == "lack") { // lack <hex part id> | clear: tests (BUG-0725): treat a part as one this game lacks
         if (a[1] == "clear")
             g_lacked.clear();

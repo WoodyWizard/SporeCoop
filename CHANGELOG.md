@@ -59,6 +59,17 @@
   rings around its cell (BUG-1266).
 - Cell -> Creature: while the players vote to move on to the Creature stage, the host now sees its Cell world behind
   the co-op window instead of a plain white screen; the move starts when the vote passes (BUG-1269).
+- Joining: a player running the SporeCoop Lineages fork can no longer join a SporeCoop game, and a SporeCoop player
+  no longer joins a Lineages host: the two use different messages, so a mixed game showed wrong states and could break.
+  Both sides now see a text that says why (BUG-1281).
+- Creature: the game no longer crashes when it asks for the maximum health of a creature that has no species for a
+  moment (found by the PandizeLive Lineages fork after a guest joined while the host was dead) (BUG-1292).
+- Tribe -> Civilization: with the aggressive Tribe stage result the game's third vehicle editor now counts as part of
+  the end of Tribe too, so no world is saved or sent while it is open (also found by the PandizeLive Lineages fork)
+  (BUG-1280).
+- Joining: a player who gets the host's world while the host's game is still writing a save for another player now
+  gets a save of its own, with everything that changed since; before, it could get the older world (for example
+  without a nest made a moment before) (found by the PandizeLive Lineages fork) (BUG-1294).
 
 ## [0.7.15.2] - 2026-11-18
 

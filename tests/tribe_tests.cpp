@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "tribe_logic.h"
+#include "tribe_editors.h"
 #include "wire/tribe_anim.h"
 
 using namespace tribe_logic;
@@ -161,14 +162,32 @@ static void own_species()
     CHECK(species_act(0, slot, slot, line, true) == SpeciesAct::Keep);    // back already
 }
 
-int main()
+
+// BUG-1280 (found by the Lineages fork, its BUG-9060): every vehicle editor the game opens at the end of Tribe (the
+// archetype rule of 0xCD2308) is an end-of-Tribe editor for the BUG-0849 guard. FAILS with `--nofix` (the old list)
+static bool g_nofix = false;
+static void end_editors()
 {
+    using namespace tribe_editors;
+    CHECK(vehicle_editor(kArchetypeA) == 0xF670AA43u);
+    CHECK(vehicle_editor(kArchetypeB) == 0x9AD7D4AAu);
+    CHECK(vehicle_editor(kArchetypeAggressive) == 0x7D433FADu && vehicle_editor(0) == 0x7D433FADu);
+    for (uint32_t a : {kArchetypeA, kArchetypeB, kArchetypeAggressive, 0u, 0xFFFFFFFFu})
+        CHECK(end_editor(vehicle_editor(a), !g_nofix));
+    CHECK(end_editor(kCityHall, !g_nofix));
+    CHECK(!end_editor(0x7CB21BADu) && !end_editor(0x465C50BAu)); // no such editor / another editor
+}
+
+int main(int argc, char** argv)
+{
+    g_nofix = argc > 1 && !strcmp(argv[1], "--nofix");
     own_species();
     owners();
     balance_share();
     bodies();
     apply();
     anim_type();
+    end_editors();
     if (g_fail) {
         printf("tribe_tests: %d FAILED\n", g_fail);
         return 1;

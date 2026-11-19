@@ -135,6 +135,41 @@ inline std::string stage_warn_text(const std::string& player, const std::string&
            std::to_string(c.mine) + " here): playing " + family_title(c.family) + " together may not work";
 }
 
+// BUG-1281: a peer running the SporeCoop Lineages fork (PR #196, based on 0.7.14.1). It keeps protocol 7 and sends no
+// family revisions, so the gate above let it in as an older 0.7.x, and its messages (ids 55, 58, 70-94, a u16
+// PlayerState flags field) decode as ours. Two signs, either is enough: its HELLO / WELCOME sets caps bit 8, which it
+// uses for a campaign profile (a str8) and ours for the family list, so bit 8 without a readable family list (ours
+// always writes one with the bit); or its version text names the fork ("coop 0.7.14.1-lineages64-dev, ...")
+inline bool is_fork(const std::string& version, uint32_t caps, bool has_families)
+{
+    if ((caps & CAP_FAMILIES) && !has_families)
+        return true;
+    std::string v = version;
+    for (auto& ch : v)
+        ch = (ch >= 'A' && ch <= 'Z') ? (char)(ch - 'A' + 'a') : ch;
+    return v.find("lineages") != std::string::npos;
+}
+// the refusal, for the player who reads it (`other`: the other player's name and version, `mine`: the reader's).
+// `fork_is_other`: the other player runs the fork (our guest refusing a fork host); false: the reader does (the REJECT
+// our host sends to a fork guest, which shows it as every 0.7.x does)
+inline std::string fork_refuse_text(const std::string& other, const std::string& other_version, const std::string& my_version,
+                                    bool fork_is_other)
+{
+    if (fork_is_other)
+        return other + " plays the Lineages fork of SporeCoop (" + version_words(other_version) + "); you have " +
+               version_words(my_version) +
+               ": the two use different messages and cannot play together. Play with the same SporeCoop as the host";
+    return other + " plays " + version_words(other_version) + "; you have the Lineages fork of SporeCoop (" +
+           version_words(my_version) +
+           "): the two use different messages and cannot play together. Play with the same SporeCoop as the host";
+}
+// the host's line about a fork guest it refused
+inline std::string fork_not_let_in_text(const std::string& player, const std::string& their_version)
+{
+    return player + " (the Lineages fork of SporeCoop, " + version_words(their_version) +
+           ") was not let in: the fork's messages do not fit this SporeCoop";
+}
+
 // "session 1.0, world 1.0, ..." (status lines, reports); has false: "none sent (before 0.7.15: rev 1 of each)"
 inline std::string families_text(const std::vector<FamilyRev>& v, bool has = true)
 {

@@ -1829,7 +1829,7 @@ void register_commands_editor()
                        return 0;
                    },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",
+    H->command_add(M, "coop.vote", "coop.vote [test|go|tribeend [<archetype hex>]] - evolution vote (test: a vote without an editor; tribeend: the end-of-Tribe editor guard, tests)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {
                            start_vote(nullptr, g_name + " wants to evolve (test)");
@@ -1896,6 +1896,9 @@ void register_commands_editor()
                            // an action vote like the superweapon's (tests, BUG-0043)
                            start_action_vote(g_name + " wants to test an action", "the test action runs",
                                              [] { LOG("the test vote action ran"); });
+                       } else if (argc > 1 && !strcmp(argv[1], "tribeend")) { // tests (BUG-1280)
+                           SAY("%s", tribe_end_line(argc > 2, argc > 2 ? (uint32_t)strtoul(argv[2], nullptr, 16) : 0).c_str());
+                           return 0;
                        } else if (argc > 1 && !strcmp(argv[1], "go"))
                            finish_vote("the host started it");
                        else if (argc > 2 && !strcmp(argv[1], "hold")) // tests (BUG-0234): a due own editor waits

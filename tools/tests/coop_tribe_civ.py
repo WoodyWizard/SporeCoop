@@ -25,6 +25,12 @@ check, the caption of TRG2CVG_PreEditor, the guest's "I'm ready". Checked:
     SPORE_FIX_OFF=tribe.graduation_save fails: the join's share save faults in the game's serializer at 0xBCAB07
     (data 0x60C; the fork saw the same address) and writes part of the slot (lab 20261112-021437).
 
+  --aggressive (BUG-1280, found by the Lineages fork, its BUG-9060): before the advance the host's consequence archetype
+    (cPlayer +0x1104) is set to tribe_aggressive (0x0CAC124D, `coop.vote tribeend 0CAC124D`), so the game opens its
+    third vehicle editor 7D433FAD after the City Hall editor. Checked in that editor: the game's request is 7D433FAD
+    and the mod's end-of-Tribe guard knows it (`coop.vote tribeend`: end_editor=1). SPORE_FIX_OFF=
+    tribe.graduation_vehicle_id fails (end_editor=0: the list had a misread 7CB21BAD).
+
   --player-editor (BUG-1096): the editors are left the campaign driver's way (coop_campaign.editor_parts_due,
     drag_slow, editor_click: the waits also in the game's frames); with SPORE_FPS=host:3 the host's game at a
     campaign's loaded-machine fps. CAMPAIGN_OLD_EDITOR_DRAG=1 (the old driver: one drag, waits in seconds) fails: a
@@ -191,9 +197,12 @@ def main():
     host, guest = start(fixture='tribe')
     rejoin = '--rejoin' in sys.argv
     player_editor = '--player-editor' in sys.argv
+    aggressive = '--aggressive' in sys.argv
     pf = host_slot()
     t_cityhall = None
     ck('Tribe' in mode(host) and 'Tribe' in mode(guest), 'both games in Tribe')
+    if aggressive:  # BUG-1280: the archetype whose vehicle editor is 7D433FAD
+        print('  host: ' + host.call('coop.vote tribeend 0CAC124D')['out'].strip(), flush=True)
     print(' ', host.call('coop.tribe advance')['out'].strip(), flush=True)
     r = wait(lambda: where(host, ADVANCE), 15)
     if not ck(r, 'the HUD shows the advance button (the goal bar is full)'):
@@ -241,6 +250,11 @@ def main():
         if 'Editor' in m:
             editors += 1
             print(f'  host editor {editors}: {host.call("coop.vote")["out"].strip().splitlines()[-1]}', flush=True)
+            if editors >= 2 and aggressive:
+                te = host.call('coop.vote tribeend')['out'].strip()
+                print('  host: ' + te, flush=True)
+                ck('last editor 7D433FAD' in te, 'the game opened the third vehicle editor 7D433FAD (tribe_aggressive)')
+                ck('end_editor=1' in te, 'the end-of-Tribe guard knows the 7D433FAD vehicle editor (BUG-1280)')
             if editors >= 2:
                 # BUG-0585: the City Hall stands, the tribe's food mat is gone; the guest's tribe still eats and
                 # gathers: its food changes reach the host (the shared food) while the host is in this editor

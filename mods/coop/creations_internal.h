@@ -127,6 +127,7 @@ uint32_t part_group(ModelKind k);
 std::vector<PartRef> model_part_refs(const std::vector<uint8_t>& m, uint32_t group);
 bool is_cc_part(uint32_t id);
 extern std::set<uint32_t> g_lacked;
+std::string test_break_remap(uint32_t host_inst); // tests (BUG-1293)
 extern bool g_objmodels_scan;
 bool part_known(uint32_t id, uint32_t group);
 extern std::map<uint32_t, std::vector<uint8_t>> g_rx_descs;

@@ -769,3 +769,19 @@ HELLO listed the tribe family at rev 1 minor >= 1, MSG_NPC_ANIM otherwise. So wi
 Lab: `mixed_version_tribe` (and `--old host --fixture tribe`) checks `[tribe anims]`: the host's `tribe anim msg:`
 line counts both types sent, this build's guest counts MSG_TRIBE_ANIM taken, every guest plays the relayed
 animations. Switch `coop.fix tribe.anim_msg off`: MSG_NPC_ANIM to everyone (0.7.14).
+
+## The Lineages fork is refused at the handshake (2026-11-19, fix/w56-general)
+<a id="netcode-fork-refused"></a>
+
+BUG-1281. The third-party fork "SporeCoop Lineages" (PR #196, based on 0.7.14.1) keeps protocol 7 and sends no family
+revisions, so the [compatibility gate](#netcode-compat) took it for an older 0.7.x (rev 1 of every family) and let it
+in. Its wire differs: HELLO / WELCOME caps bit 8 is its CAP_CAMPAIGN_PROFILE (a str8 "<version> / base parts") where
+ours is CAP_FAMILIES (our reader fails on it and counts the peer as rev 1), it adds bits 16 (personal launch), 32
+(creation library, always set), 64 (resume world) and 128 (join proof), its PlayerState flags are u16 (its PF_DOWNED
+128 is our PF_RESYNC), and its message ids 55, 58 and 70-94 mean other things or nothing here. `net::compat::is_fork`
+(net/compat.h) knows it by either sign: caps bit 8 without a readable family list (ours always writes one with the
+bit), or a version text with "lineages" in it. Host: the HELLO is answered with REJ_VERSION and a text before anything
+else of it counts (the rejoin token too); guest: a fork host's WELCOME makes the guest leave at once, nothing after it
+is delivered (`leave_pending_`). Switch `coop.fix net.refuse_fork` (off: the fork joins as in 0.7.15). Test
+`net_tests --only test_fork_refused` (the fork's HELLO and WELCOME built field by field from its net/protocol.h; FAILS
+with `--off refuse_fork`). Our future caps bits should skip 16..128 or a fork peer would read them as its own.
