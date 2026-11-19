@@ -69,6 +69,10 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   got them (BUG-1290).
 
 ### Fixed
+- Cell: a guest on a slow connection (or a host with a slow upload) now sees the host's cells all around its own cell.
+  Before, on a link of about 512 kbit/s the guest kept only about a quarter of them, spread over the pool, and the
+  others vanished a second after they came: mostly empty water around it. The host now sends each guest the cells
+  nearest to it first and no faster than that guest's link carries (BUG-1309).
 - Creature: a guest's own mating at the nest now leads to its evolution editor. Before, after the mating call and the
   click on the mate the guest's creature walked up to it and then waited there for good, because its mate is one of the
   host's creatures and never answered on the guest's game. Found by the Lineages fork by PandizeLive (BUG-1305).

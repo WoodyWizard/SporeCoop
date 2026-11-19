@@ -21,6 +21,24 @@ struct SendCell {
 };
 static void send_state(int dest, const std::vector<SendCell>& cells);
 
+// BUG-1309: each guest's round nearest first and paced to what its link carries (cell_logic::LinkPace). Off
+// (`coop.fix cell.slow_link off`): every round whole, in pool order, every tick (0.7.16).
+bool g_fix_slow_link = true;
+COOP_FIX("cell.slow_link", "BUG-1309", g_fix_slow_link, "cell: the host sends each guest its Cell state nearest first and no faster than the guest's link carries (on a slow link the guest kept a quarter of the cells around it, the rest vanished a second after they came)");
+struct GuestPace {
+    cell_logic::LinkPace pace;
+    std::vector<uint32_t> round; // the host indices of the round on its way, nearest first
+    size_t next = 0, chunks = 0; // its next chunk, its chunks
+    uint16_t cycle = 0;
+    double round_at = -1, tick_at = -1;
+    uint64_t cell_bytes = 0;     // cell state bytes sent to this guest so far
+    double told_at = -1e9;
+    uint32_t rounds = 0, ticks_spread = 0;
+    std::deque<std::pair<double, size_t>> caps; // the cap of each round of the last 3 s (0: not capped)
+};
+static std::map<int, GuestPace> g_pace;
+static void send_paced(int dest, GuestPace& gp, const std::vector<SendCell>& list, float cx, float cy, double now);
+
 void heal_own(uint8_t* a, const net::Vec3& me, bool bad);
 void host_tick(double now)
 {
@@ -104,6 +122,7 @@ void host_tick(double now)
             continue;
         if (g_fix_send_here && !own_world::peer_here((uint8_t)pl.id)) {
             g_n.send_held++; // BUG-0809
+            g_pace.erase(pl.id); // BUG-1309: a round of before is stale when it comes back
             continue;
         }
         const views::Centre* vc = per_guest ? vs.find((uint8_t)pl.id) : nullptr;
@@ -123,6 +142,10 @@ void host_tick(double now)
                     mine.push_back(e);
             }
             list = &mine;
+        }
+        if (g_fix_slow_link) { // BUG-1309: nearest first (kSendCap of them at most), paced to the guest's link
+            send_paced(pl.id, g_pace[pl.id], *list, vc ? vc->pos.x : me.x, vc ? vc->pos.y : me.y, now);
+            continue;
         }
         // BUG-0295: at most kSendCap cells per guest, the nearest to it (its pool and the game's
         // broadphase behind it hold ~2048 cells; 4 players together had ~2300 within 120 m)
@@ -155,6 +178,29 @@ void set_fake_model(uint32_t idx, uint32_t inst)
 }
 
 
+// one cell of a MSG_CELL_STATE chunk (63 bytes)
+static void write_cell(net::Writer& w, uint8_t* c, uint32_t idx)
+{
+    void* ref = F<void*>(c, kRes);
+    uint32_t inst = ref ? *(uint32_t*)ref : 0;
+    auto* key = (uint32_t*)(c + kModelKey);
+    net::Vec3 p = pos_of(c);
+    auto* v = (float*)(c + kVel);
+    net::Quat q;
+    modes::mat_to_quat((float*)(c + kRot), q);
+    w.u32(idx);
+    w.u32(inst);
+    w.u32(g_fake_inst && idx == g_fake_idx ? g_fake_inst : key[0]); w.u32(key[1]); w.u32(key[2]);
+    w.u8((uint8_t)F<int>(c, kLevel));
+    w.f32(F<float>(c, kSize));
+    w.f32(p.x); w.f32(p.y); w.f32(p.z);
+    w.f32(v[0]); w.f32(v[1]);
+    w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
+    w.u8(cell_logic::hp_byte(F<int>(c, kHp))); // a negative hp is 0, not 255 (BUG-0160)
+    // flag 4 (BUG-0958): a player's product (+0x110, the clouds of a player's poison part; older guests ignore it)
+    w.u8((uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0) | (F<uint8_t>(c, 0x110) ? 4 : 0)));
+}
+
 static void send_state(int dest, const std::vector<SendCell>& cells)
 {
     double now_s = H->time_seconds();
@@ -181,30 +227,122 @@ static void send_state(int dest, const std::vector<SendCell>& cells)
         w.u8((uint8_t)chunks);
         size_t from = k * per, to = std::min(cells.size(), from + per);
         w.u8((uint8_t)(to - from));
-        for (size_t i = from; i < to; i++) {
-            uint8_t* c = cells[i].c;
-            void* ref = F<void*>(c, kRes);
-            uint32_t inst = ref ? *(uint32_t*)ref : 0;
-            auto* key = (uint32_t*)(c + kModelKey);
-            net::Vec3 p = pos_of(c);
-            auto* v = (float*)(c + kVel);
-            net::Quat q;
-            modes::mat_to_quat((float*)(c + kRot), q);
-            w.u32(cells[i].idx);
-            w.u32(inst);
-            w.u32(g_fake_inst && cells[i].idx == g_fake_idx ? g_fake_inst : key[0]); w.u32(key[1]); w.u32(key[2]);
-            w.u8((uint8_t)F<int>(c, kLevel));
-            w.f32(F<float>(c, kSize));
-            w.f32(p.x); w.f32(p.y); w.f32(p.z);
-            w.f32(v[0]); w.f32(v[1]);
-            w.f32(q.x); w.f32(q.y); w.f32(q.z); w.f32(q.w);
-            w.u8(cell_logic::hp_byte(F<int>(c, kHp))); // a negative hp is 0, not 255 (BUG-0160)
-            // flag 4 (BUG-0958): a player's product (+0x110, the clouds of a player's poison part; older guests ignore it)
-            w.u8((uint8_t)((F<uint8_t>(c, kDying) ? 1 : 0) | (F<uint8_t>(c, kDead) ? 2 : 0) | (F<uint8_t>(c, 0x110) ? 4 : 0)));
-        }
+        for (size_t i = from; i < to; i++)
+            write_cell(w, cells[i].c, cells[i].idx);
         w.f32(world_scale()); // BUG-0511: the scale these poses are in (a guest without the field stops before it)
         C.sess->send_unreliable_to(dest, net::MSG_CELL_STATE, w);
     }
+}
+
+// BUG-1309: a guest's round, nearest first, sent within its link's rate. A new round starts when the last one is
+// out (at most one a tick, 10 per second as before): the nearest cells of `list` (kSendCap, and what the rate sends
+// in a round span); its chunks go out as the tokens allow, each cell read again when its chunk goes (a cell freed
+// meanwhile is not listed, its mirror goes with the round's purge). Unlimited (a link without loss): the whole
+// round in this tick, as before but nearest first.
+static void send_paced(int dest, GuestPace& gp, const std::vector<SendCell>& list, float cx, float cy, double now)
+{
+    if (net::Connection* conn = C.sess->conn_to((uint8_t)dest)) {
+        if (gp.pace.observe(now, conn->stats.packets_sent, conn->stats.lost, gp.cell_bytes) && now - gp.told_at > 30) {
+            gp.told_at = now;
+            H->log(M, SK_INFO, "cell: the link to player %d carries less than the Cell state (%.0f %% lost): "
+                               "state paced to %.0f KB/s, nearest cells first (BUG-1309)",
+                   dest, gp.pace.last_loss * 100.0, gp.pace.rate / 1000.0);
+        }
+    }
+    if (now - g_sent_pruned > 5.0) { // as send_state does
+        g_sent_pruned = now;
+        for (auto it = g_sent_at.begin(); it != g_sent_at.end();)
+            it = now - it->second.at > 20.0 ? g_sent_at.erase(it) : std::next(it);
+    }
+    gp.pace.refill(gp.tick_at < 0 ? 0.1 : std::min(0.5, now - gp.tick_at));
+    gp.tick_at = now;
+    constexpr size_t per = 14;
+    if (gp.next >= gp.chunks) {
+        std::vector<std::pair<float, uint32_t>> d;
+        d.reserve(list.size());
+        for (auto& e : list) {
+            net::Vec3 p = pos_of(e.c);
+            d.push_back({(p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy), e.idx});
+        }
+        size_t n = gp.pace.round_cells(std::min<size_t>(d.size(), kSendCap));
+        if (n < d.size())
+            std::nth_element(d.begin(), d.begin() + n, d.end());
+        d.resize(n);
+        std::sort(d.begin(), d.end());
+        if (n < list.size())
+            g_n.send_capped++;
+        gp.round.clear();
+        for (auto& [dd, idx] : d)
+            gp.round.push_back(idx);
+        gp.next = 0;
+        gp.chunks = std::max<size_t>(1, (gp.round.size() + per - 1) / per); // an empty round: one empty chunk (all go)
+        gp.cycle = g_cycle;
+        gp.round_at = now;
+        gp.rounds++;
+        gp.caps.push_back({now, gp.pace.limited() ? gp.pace.round_cells(kSendCap) : 0});
+        while (gp.caps.size() > 1 && gp.caps.front().first < now - 3.0)
+            gp.caps.pop_front();
+    } else
+        gp.ticks_spread++; // a round over more than one tick
+    while (gp.next < gp.chunks && gp.pace.may_send()) {
+        size_t k = gp.next++;
+        net::Writer w;
+        w.u16(gp.cycle);
+        w.u8((uint8_t)k);
+        w.u8((uint8_t)gp.chunks);
+        size_t at_n = w.size();
+        w.u8(0);
+        uint8_t n = 0;
+        for (size_t i = k * per; i < std::min(gp.round.size(), k * per + per); i++) {
+            uint32_t idx = gp.round[i];
+            uint8_t* c = modes::cell_at(idx);
+            if (!c || modes::cell_is_puppet(c) || !F<void*>(c, kRes) ||
+                (g_fix_finite && !pose_finite(pos_of(c), F<float>(c, kVel), F<float>(c, kVel + 4), F<float>(c, kSize))))
+                continue; // gone (or no longer sendable) since the round began
+            auto f = g_sent_at.find(idx);
+            if (f == g_sent_at.end())
+                g_sent_at[idx] = {now, now, pos_of(c), F<int>(c, kLevel), 1};
+            else {
+                f->second.at = now;
+                f->second.pos = pos_of(c);
+                f->second.sends++;
+            }
+            write_cell(w, c, idx);
+            n++;
+        }
+        w.data[at_n] = n;
+        w.f32(world_scale()); // BUG-0511
+        C.sess->send_unreliable_to(dest, net::MSG_CELL_STATE, w);
+        gp.cell_bytes += w.size() + 4; // + the message header
+        gp.pace.spent(w.size() + 4);
+    }
+}
+
+void pace_forget(int id) { g_pace.erase(id); }
+size_t sent_cap(int id)
+{
+    auto it = g_fix_slow_link ? g_pace.find(id) : g_pace.end();
+    if (it == g_pace.end())
+        return 0;
+    size_t cap = 0;
+    for (auto& [t, c] : it->second.caps)
+        if (c && (!cap || c < cap))
+            cap = c;
+    return cap;
+}
+void pace_reset() { g_pace.clear(); }
+std::string pace_status()
+{
+    std::string out;
+    char b[200];
+    for (auto& [id, gp] : g_pace) {
+        snprintf(b, sizeof b, "pace %d rate=%s%.0f cuts=%u raises=%u loss=%.2f round=%u next=%u rounds=%u spread=%u kb=%.0f\n", id,
+                 gp.pace.limited() ? "" : "unlimited:", gp.pace.limited() ? gp.pace.rate : 0.0, gp.pace.cuts, gp.pace.raises,
+                 gp.pace.last_loss, (unsigned)gp.round.size(), (unsigned)gp.next, gp.rounds, gp.ticks_spread,
+                 gp.cell_bytes / 1000.0);
+        out += b;
+    }
+    return out.empty() ? "pace none\n" : out;
 }
 
 } // namespace cellsync
