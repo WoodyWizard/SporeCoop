@@ -32,6 +32,11 @@
   the Tribal Outfitter for the guest's own creature, and after Done the guest's members wear the new outfit on every
   player's screen while the host's members keep the host's look. Before, a guest's outfitter was refused. With
   "everybody plays the host's creature" (F5) only the host changes the tribe's outfit, as before (BUG-1272).
+- Civilization: a guest's own building and vehicle editors, its Civ outfitter and its Sporepedia picks in the city
+  planner work again in the normal co-op mode (own creatures): what the guest makes becomes its own design, shown on
+  its cities, its vehicles and its citizens on every player's screen, while the shared civilization and the host's
+  designs stay as they were; before, the guest's editors were refused. With "everybody plays the host's creature" (F5)
+  they are refused as before (BUG-1275).
 
 ## [0.7.15.2] - 2026-11-18
 

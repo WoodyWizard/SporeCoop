@@ -9,6 +9,7 @@
 #include <map>
 
 #include "civ.h"
+#include "civ_editors.h"
 #include "creations.h"
 #include "fixes.h"
 #include "game.h"
@@ -69,7 +70,7 @@ COOP_FIX("tribe.guest_outfitter", "BUG-1272", g_guest_outfitter_fix,
 
 // ---- counters (tests)
 static unsigned g_out_applied, g_out_failed, g_out_waits, g_out_restored, g_out_saves;
-static unsigned g_civ_set, g_civ_own_back, g_veh_pending;
+static unsigned g_civ_set, g_civ_own_back, g_civ_own_line, g_veh_pending;
 static unsigned g_refused;
 static double g_told_at = -100;
 
@@ -360,6 +361,18 @@ static const uint32_t* find_design(void* civ, uint32_t id)
     return best && F<uint32_t>(best, 0x10) == id ? &F<uint32_t>(best, 0x14) : nullptr;
 }
 
+void* civ_player() { return player_civ(); }
+std::vector<Val> civ_culture()
+{
+    void* civ = player_civ();
+    return civ ? culture(civ) : std::vector<Val>{};
+}
+const uint32_t* civ_design(uint32_t id)
+{
+    void* civ = player_civ();
+    return civ ? find_design(civ, id) : nullptr;
+}
+
 bool civ_read(std::vector<Val>& out)
 {
     void* civ = player_civ();
@@ -400,7 +413,7 @@ int civ_sync(const std::vector<Val>& want, bool apply)
     if (!civ || !set)
         return 0;
     int n = 0;
-    bool own = false, veh = false;
+    bool own = false, veh = false, line = false;
     for (auto& w : want) {
         const uint32_t* cur = find_design(civ, w.key);
         if (cur && cur[0] == w.v[0] && cur[1] == w.v[1] && cur[2] == w.v[2]) {
@@ -411,15 +424,25 @@ int civ_sync(const std::vector<Val>& want, bool apply)
         if (!apply)
             continue;
         auto it = g_civ_seen.find(w.key);
-        if (it != g_civ_seen.end() && it->second == w.v[0] && cur && cur[0] != w.v[0])
-            own = true; // this game had the host's design and its own pick changed it (the host's did not change)
+        bool own_pick = it != g_civ_seen.end() && it->second == w.v[0] && cur && cur[0] != w.v[0];
+        // BUG-1275: in own mode (civ.guest_editors) a guest's own pick that no hook of civ_editors.cpp saw is its own
+        // design (its species line); the shared entry goes back to the host's without the BUG-1158 line
+        if (own_pick && civedit::active()) {
+            uint32_t mine[3] = {cur[0], cur[1], cur[2]};
+            if (civedit::take_pick(w.key, mine)) {
+                line = true;
+                g_civ_own_line++;
+                own_pick = false;
+            }
+        }
+        own |= own_pick; // this game had the host's design and its own pick changed it (the host's did not change)
         uint32_t k[3] = {w.v[0], w.v[1], w.v[2]}, was = cur ? cur[0] : 0;
         thiscall<void>(set, civ, w.key, (const uint32_t*)k); // the culture set entry, then its buildings / vehicles
         g_civ_seen[w.key] = w.v[0];
         g_civ_set++;
         veh |= vehicle_design(w.key);
         H->log(M, SK_INFO, "designs: the civilization's design %08X is the host's %08X (was %08X)%s (BUG-1157)", w.key,
-               w.v[0], was, own ? ", this game's own pick went back" : "");
+               w.v[0], was, own ? ", this game's own pick went back" : line ? ", this game's own pick went to its line" : "");
     }
     double now = H->time_seconds();
     if (veh)
@@ -437,7 +460,7 @@ int civ_sync(const std::vector<Val>& want, bool apply)
                 g_own_told_at = now;
                 coop_core::feed("the civilization's designs are shared: yours went back to " + host_name() + "'s");
             }
-        } else if (!own && now - g_told_at > 20.0) {
+        } else if (!own && !line && now - g_told_at > 20.0) {
             g_told_at = now;
             coop_core::feed("your civilization has " + host_name() + "'s new designs");
         }
@@ -571,7 +594,7 @@ std::string refuse_own_editor(uint32_t mode, uint32_t editor, bool own_world, co
         g_refused++;
         return "the tribe's outfit is shared: only " + host + " changes it";
     }
-    if (mode == modes::kCiv && editor != kShipEditor) {
+    if (mode == modes::kCiv && editor != kShipEditor && !civedit::allows(editor)) { // BUG-1275: own mode opens it
         g_refused++;
         return "the civilization's designs are shared: only " + host + " makes new ones";
     }
@@ -583,15 +606,15 @@ bool outfit_texts(uint32_t mode, uint32_t editor) { return g_outfit_fix && mode 
 // =====================================================================================================
 std::string status()
 {
-    char b[400];
+    char b[480];
     uint8_t* p = tribe_profile(player_tribe());
     void* civ = player_civ();
     snprintf(b, sizeof b,
              "designs: outfit fix=%d applied=%u failed=%u waits=%u saves=%u restored=%u here=%08X host=%08X | civ fix=%d "
-             "set=%u own_back=%u veh_pending=%u designs=%zu | own editors fix=%d refused=%u\n"
+             "set=%u own_back=%u own_line=%u veh_pending=%u designs=%zu | own editors fix=%d refused=%u\n"
              "tribe profile %p key=%08X/%08X/%08X model=%08X/%08X/%08X gen=%u\n",
              (int)g_outfit_fix, g_out_applied, g_out_failed, g_out_waits, g_out_saves, g_out_restored, g_out.here.instance,
-             g_out.host.instance, (int)g_civ_fix, g_civ_set, g_civ_own_back, g_veh_pending,
+             g_out.host.instance, (int)g_civ_fix, g_civ_set, g_civ_own_back, g_civ_own_line, g_veh_pending,
              civ ? culture(civ).size() : (size_t)0, (int)g_own_fix, g_refused, (void*)p, p ? F<uint32_t>(p, kProfKey) : 0,
              p ? F<uint32_t>(p, kProfKey + 4) : 0, p ? F<uint32_t>(p, kProfKey + 8) : 0, p ? F<uint32_t>(p, kProfModel) : 0,
              p ? F<uint32_t>(p, kProfModel + 4) : 0, p ? F<uint32_t>(p, kProfModel + 8) : 0, p ? F<uint32_t>(p, kProfGen) : 0);

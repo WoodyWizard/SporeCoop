@@ -16,8 +16,9 @@ the same ids (two profiles that both made a creation with that id: the hard case
    setter (`coop.designs set`, what a pick in the planner calls): its City Hall and its vehicle are re-modelled.
 2. PASS: within 40 s the guest's culture set names X and Y, the guest's City Hall of the host's city is drawn from A
    (the bem hash of the model its building has) and its mirror of the host's vehicle from VA.
-3. The guest's own pick (`coop.designs set` on the guest: its planner's Sporepedia pick) of another City Hall goes
-   back to the host's X within 10 s, with a line that says why.
+3. The host sets creature.mode host (BUG-1275: in own mode a guest's own picks and editors make its own designs, its
+   species line, coop_civ_guest_editors.py). The guest's own pick (`coop.designs set` on the guest: its planner's
+   Sporepedia pick) of another City Hall goes back to the host's X within 10 s, with a line that says why.
 4. The guest's own design editor (an editor request of the guest in Civ through the Submit hook, as its planner's
    "new" asks for one) is refused: the guest stays in Civ.
 
@@ -37,6 +38,7 @@ from harness import fnv, mode_word as mode
 import part_substitutes as ps  # noqa: E402
 
 import lane  # noqa: E402
+import settings_lib  # noqa: E402
 import twoinst  # noqa: E402
 from coop_nest_species import fixtures_dir, read_pkg, write_pkg  # noqa: E402
 from twoinst import Checks, start  # noqa: E402
@@ -157,7 +159,8 @@ def main():
     twoinst.keyframe('designs', 'after the host\'s new City Hall and vehicle designs: the player\'s City Hall and its '
                                 'vehicle look the same on both games, both in Civ play')
 
-    # 3. the guest's own pick goes back to the host's
+    # 3. the guest's own pick goes back to the host's (BUG-1158: creature.mode host; own mode: its line, BUG-1275)
+    ck(settings_lib.force(host, [guest], 'creature.mode', 'host'), 'the guest got creature.mode host')
     other = g0.get(HALL) if g0.get(HALL) not in (None, 0, X) else 0x067CEDE1
     print('  guest:', guest.call(f'coop.designs set {HALL:08X} {other:08X}')['out'].strip(), flush=True)
     back = None
@@ -189,6 +192,7 @@ def main():
         t0 = time.time()
         while time.time() - t0 < 60 and mode(guest) != CIV:
             time.sleep(1)
+    settings_lib.force(host, [guest], 'creature.mode', 'own')  # (the session's default again)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

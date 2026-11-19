@@ -947,3 +947,15 @@ The first packages of 0.7.16 read the species line (#arch-species-line) instead 
 * Wire: unchanged; creations stays 1.1 (unreleased; messages.lock rebased for the new rule in species_line_core.h).
   A 0.7.15.2 guest sends no row: in a 0.7.16 host's session its members and citizens are the world's species, its
   kin still its cell (Cell needs no row).
+## A guest's own Civ editors feed its species line (2026-11-18, feat/w54-civedit)
+<a id="arch-civ-guest-editors"></a>
+
+WP-C3 (BUG-1275), `mods/coop/civ_editors.cpp` (namespace `civedit`): the first writer of the species line's Civ part
+from the game's own UI. A guest in own mode in the host's Civ world (switch `civ.guest_editors`) gets its design editors,
+Civ outfitter and planner picks back (designs::refuse_own_editor asks `civedit::allows`); five hooks keep their results
+out of the shared civilization (the planner's apply 0xD095A0, its message handler 0xD130D0 for picks, cGameModeCiv's
+listener 0xCFD500 for the outfitter's result, SubmitEditorRequest 0xB1DE20 for the request's starting key, the palette
+tile 0xD0C860 for the guest's own picture) and queue them; `civedit::tick` (after `species::tick`) hands them to
+`species::set_design` / `species::set_civ_outfit`. Everything visible on the other games comes from the line's readers
+(civ_own_designs.cpp, civ_species.cpp). The host's game and host mode run the game's code unchanged. Details:
+docs/re/civ.md#civ-own-editors.

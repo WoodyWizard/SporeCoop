@@ -1492,6 +1492,9 @@ a second with "the civilization's designs are shared: yours went back to <host>'
 editor opens (0.7.14). Lab: the refusals in tribe_outfit / civ_designs; FAIL runs above.
 * Update (2026-11-18, feat/w54-outfit, BUG-1272): since 0.7.16 the outfitter's refusal is creature.mode host's only; in
   own mode a guest's outfitter is its own (docs/re/tribe.md#tribe-own-outfitter).
+* (2026-11-18, feat/w54-civedit, BUG-1275) Since 0.7.16 the Civ part holds in creature.mode host only (or with
+  `civ.guest_editors` off): in own mode a guest's design editors, Civ outfitter and picks open and go to its species
+  line, never into the culture set (docs/re/civ.md#civ-own-editors); civ_designs checks the refusal in host mode.
 * Notices: the host's outfitter vote reads "<host> wants to change the tribe's outfit", its return "<host> made a new
   outfit for the tribe: everybody's tribe wears it" (with `tribe.outfit_sync`; off: the old evolution texts). The
   Civ return's "changed a design: everybody gets the new designs" is true with `civ.design_sync`.
