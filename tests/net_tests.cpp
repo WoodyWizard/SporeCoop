@@ -4687,6 +4687,128 @@ static void test_family_check()
 }
 
 
+// BUG-1296 (found by the Lineages fork, PR #196, its BUG-9098): does a world-sized reliable transfer stall on a
+// constrained lossy path? A model of such a path (ours, not the fork's): 200 packets/s through a 16-packet queue (a
+// full queue drops), 60 ms each way, 1 % random loss both ways; the sender flushes once a 33 ms frame as Session::flush
+// does (an unreliable player state first, then up to kAckWindow / 3 packets on an internet round trip), the receiver
+// acks each frame and when ack_urgent. 1.5 MB in 1100-byte reliable messages must arrive in order, all of it, at no
+// less than half the path's rate, and the player state keeps arriving (it rides every flush). A regression check: the
+// transfer does not stall in ours (the fork's rate control there did not make it faster either).
+struct BottleneckResult {
+    int got = 0;
+    double secs = 0;
+    uint32_t sent = 0, resends = 0, dropped = 0, states_sent = 0, states_got = 0;
+};
+static BottleneckResult bottleneck_case(uint32_t seed, uint32_t serve_ms = 5, size_t cap = 16, uint32_t loss_pm = 10,
+                                       int msgs = 1500)
+{
+    BottleneckResult res;
+    Connection a, b;
+    a.peer_split = b.peer_split = true;
+    const int kMsgs = msgs;
+    for (int i = 0; i < kMsgs; i++) {
+        Writer w;
+        w.u32(i);
+        std::vector<uint8_t> pad(1096, (uint8_t)i);
+        w.raw(pad.data(), pad.size());
+        a.send_reliable(MSG_WORLD_CHUNK, w);
+    }
+    uint32_t rng = seed * 2654435761u;
+    auto lost = [&] {
+        rng = rng * 1103515245u + 12345u;
+        return (rng >> 16) % 1000 < loss_pm;
+    };
+    struct InFlight {
+        uint32_t at;
+        std::vector<uint8_t> pkt;
+    };
+    std::deque<std::vector<uint8_t>> queue; // the bottleneck's queue (A -> B)
+    std::vector<InFlight> to_b, to_a;
+    uint32_t next_serve = 0;
+    int expect = 0;
+    bool order_ok = true;
+    auto deliver_b = [&](uint8_t type, Reader& r) {
+        if (type == MSG_WORLD_CHUNK) {
+            int i = (int)r.u32();
+            order_ok &= i == expect;
+            expect++;
+            res.got++;
+        } else if (type == MSG_PLAYER_STATE)
+            res.states_got++;
+    };
+    auto none = [](uint8_t, Reader&) {};
+    std::vector<uint8_t> pkt;
+    const uint32_t t0 = 1000;
+    uint32_t now = t0;
+    for (; now < t0 + 300000 && res.got < kMsgs; now++) {
+        if ((now - t0) % 33 == 0) { // the sender's frame
+            Writer st;
+            st.u32(now);
+            a.send_unreliable(MSG_PLAYER_STATE, st, true);
+            res.states_sent++;
+            int burst = a.rtt_ms < 40.f ? (int)kAckWindow : (int)kAckWindow / 3;
+            for (int i = 0; (i < burst || (i < burst + 64 && a.unreliable_queued() > 0)) && a.build_packet(now, pkt); i++) {
+                res.sent++;
+                if (queue.size() >= cap)
+                    res.dropped++;
+                else
+                    queue.push_back(pkt);
+            }
+            a.drop_unreliable();
+        }
+        if ((now - t0) % 33 == 16 && b.build_packet(now, pkt)) // the receiver's frame
+            to_a.push_back({now + 60, pkt});
+        if (!queue.empty() && now >= next_serve) { // the bottleneck serves one packet each 5 ms
+            if (!lost())
+                to_b.push_back({now + 60, queue.front()});
+            queue.pop_front();
+            next_serve = now + serve_ms;
+        }
+        for (size_t i = 0; i < to_b.size();)
+            if (to_b[i].at <= now) {
+                b.on_packet(to_b[i].pkt.data(), to_b[i].pkt.size(), now, deliver_b);
+                to_b.erase(to_b.begin() + i);
+                if (b.ack_urgent() && b.build_packet(now, pkt))
+                    to_a.push_back({now + 60, pkt});
+            } else
+                i++;
+        for (size_t i = 0; i < to_a.size();)
+            if (to_a[i].at <= now) {
+                if (!lost())
+                    a.on_packet(to_a[i].pkt.data(), to_a[i].pkt.size(), now, none);
+                to_a.erase(to_a.begin() + i);
+            } else
+                i++;
+    }
+    res.secs = (now - t0) / 1000.0;
+    res.resends = a.stats.resends;
+    if (!order_ok)
+        res.got = -1;
+    return res;
+}
+static void test_bulk_bottleneck()
+{
+    printf("a world-sized transfer through a 200 packet/s bottleneck with a 16-packet queue does not stall (BUG-1296)\n");
+    for (uint32_t seed = 1; seed <= 3; seed++) {
+        BottleneckResult r = bottleneck_case(seed);
+        printf("  seed %u: %d of 1500 in %.1f s (sent %u, resends %u, dropped at the queue %u, player states %u of %u)\n", seed,
+               r.got, r.secs, r.sent, r.resends, r.dropped, r.states_got, r.states_sent);
+        CHECK(r.got == 1500);
+        // the path: 200 packets/s x ~1.1 KB, 1.5 MB in about 7.5 s at best; no stall means at least half that rate
+        CHECK(r.secs < 15.0);
+        CHECK(r.states_got * 10 >= r.states_sent * 8); // the player state keeps arriving during the transfer
+    }
+    // a worse path: 50 packets/s, an 8-packet queue, 3 % loss both ways, 600 messages (~660 KB): 12 s at best
+    for (uint32_t seed = 1; seed <= 2; seed++) {
+        BottleneckResult r = bottleneck_case(seed, 20, 8, 30, 600);
+        printf("  slow path, seed %u: %d of 600 in %.1f s (sent %u, resends %u, dropped at the queue %u, player states %u of %u)\n",
+               seed, r.got, r.secs, r.sent, r.resends, r.dropped, r.states_got, r.states_sent);
+        CHECK(r.got == 600);
+        CHECK(r.secs < 30.0);
+        CHECK(r.states_got * 10 >= r.states_sent * 7);
+    }
+}
+
 // BUG-1281: a peer running the Lineages fork (PR #196, based on 0.7.14.1) is refused in both roles before any of its
 // messages is used. The HELLO / WELCOME bytes are built here field by field the way the fork's net/protocol.h
 // Hello::write / Welcome::write lays them out (fork commit 93690d6a; no fork code is run): caps CAP_SPLIT | CAP_VERSION
@@ -4970,6 +5092,7 @@ int main(int argc, char** argv)
         {"test_relay_budget", test_relay_budget},
         {"test_kick", test_kick},
         {"test_fork_refused", test_fork_refused},
+        {"test_bulk_bottleneck", test_bulk_bottleneck},
     };
     for (size_t i = 0; i < sizeof tests / sizeof tests[0]; i++) {
         if (!run_this(tests[i].first, i))
