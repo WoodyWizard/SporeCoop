@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+- Cell: when your partner's cell zaps with its electric part, your screen no longer fills with a trail of giant white
+  rings around its cell (BUG-1266).
+- Cell -> Creature: while the players vote to move on to the Creature stage, the host now sees its Cell world behind
+  the co-op window instead of a plain white screen; the move starts when the vote passes (BUG-1269).
+
 ## [0.7.15.2] - 2026-11-18
 
 More fixes for problems seen in a video of two players, mostly in the Cell stage and the move to the Creature stage:

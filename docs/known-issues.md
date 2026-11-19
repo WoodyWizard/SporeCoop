@@ -379,19 +379,3 @@ anchor so other docs can link to it:
   captain as the stand-in (docs/re/adventure.md#adventure-puppet-herd).
 * Next steps: send the captain's creation like the Creature stage's creations (co-op adventures, BUG-0793).
 * Ticket: BUG-1262
-
-## Cell: the host's electric zap looks like giant white rings on the guest's screen (2026-11-18, key-frame review)
-<a id="issue-cell-zap-rings"></a>
-
-* What happens: the host's cell zaps with an electric part; the host sees a small spark, the guest sees a trail of
-  giant white rings around the host's cell covering half the screen. Visual only.
-* Reproduce: `tools/lab.py run cell_attack_electric`, then `tools/frames_review.py <run> --test cell_attack_electric`.
-* Ticket: BUG-1266
-
-## Cell -> Creature vote: the host's screen is white behind the lobby (2026-11-18, key-frame review)
-<a id="issue-cell-end-white"></a>
-
-* What happens: during the vote at the end of the Cell stage the host's screen stays plain white (the end of the Cell
-  cinematic) until the vote ends; the guest still sees the cinematic.
-* Reproduce: `tools/lab.py run evo_screens_switch`, key frame `01_switch_vote`.
-* Ticket: BUG-1269

@@ -2670,3 +2670,5 @@ BUG-1269. GOG 2024, Ghidra; the logs of lab 20261118-144132 (evo_screens_switch:
   a dead or locked avatar) the switch runs at once as before. A guest's check in the host's world is its I'm ready
   before the sequence too (its game had stayed white until the host's world took it). Off: held at the switch (0.7.15).
   `coop.vote` prints "host History checks held before the end sequence N".
+* Note on #cell-switch-to-creature's "Held (not called) the game stays in Cell with History closed and plays on": that
+  was the game's logic (state, mode); its picture was the end sequence's white with the letterbox (this section).
