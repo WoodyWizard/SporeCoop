@@ -4686,6 +4686,47 @@ static void test_family_check()
     }
 }
 
+// BUG-1282 / BUG-1283 (lab run 20261119-104136): the guest's gate "does the host relay its drama events and send the
+// nest alpha bit" (net/compat.h host_relays_world_events) asked peer_families(0), which answers only on the host, so a
+// guest of a 0.7.16 host never took the host's events or alpha bits. host_families() is the guest's view of the host's
+// WELCOME: a 0.7.16 host passes the gate, a host that sent no revisions (before 0.7.15) and one at npc 1.1
+// (0.7.15.2) do not; the host itself has no host_families
+static void test_host_families()
+{
+    printf("guest: the host's family revisions from its WELCOME, the npc 1.2 gate (BUG-1282, BUG-1283)\n");
+    std::string err;
+    auto npc_minor = [](Session& s, uint16_t minor) {
+        for (auto& f : s.families)
+            if (f.family == (uint8_t)Family::npc)
+                f.minor = minor;
+    };
+    for (int c = 0; c < 3; c++) { // 0: this build, 1: npc 1.1 (0.7.15.2), 2: no revisions (before 0.7.15)
+        Session h, a;
+        if (c == 1)
+            npc_minor(h, 1);
+        if (c == 2)
+            h.send_families = false;
+        bool has = true;
+        std::vector<FamilyRev> fam;
+        CHECK(!a.host_families(has, fam)); // not joined yet
+        CHECK(h.host(0, "Alice", err));
+        CHECK(a.join("127.0.0.1:" + std::to_string(h.port()), "Bob", err));
+        tick({&h, &a}, 400);
+        CHECK(a.connected());
+        CHECK(!h.host_families(has, fam));              // the host has no host
+        CHECK(!a.peer_families(0, has, fam));           // the host-only question (the cause of the bug)
+        CHECK(a.host_families(has, fam));
+        bool gate = compat::host_relays_world_events(fam, has);
+        printf("  case %d: has=%d families=%zu gate=%d\n", c, (int)has, fam.size(), (int)gate);
+        CHECK(has == (c != 2));
+        CHECK(gate == (c == 0));
+        if (c == 0)
+            CHECK(fam == compat::my_families());
+        h.leave();
+        a.leave();
+    }
+}
+
 
 // BUG-1296 (found by the Lineages fork, PR #196, its BUG-9098): does a world-sized reliable transfer stall on a
 // constrained lossy path? A model of such a path (ours, not the fork's): 200 packets/s through a 16-packet queue (a
@@ -5084,6 +5125,7 @@ int main(int argc, char** argv)
         {"test_dir_gate", test_dir_gate},
         {"test_families_wire", test_families_wire},
         {"test_family_check", test_family_check},
+        {"test_host_families", test_host_families},
         {"test_welcome_split", test_welcome_split},
         {"test_recv_skip_big", test_recv_skip_big},
         {"test_dbpf_flag4", test_dbpf_flag4},
