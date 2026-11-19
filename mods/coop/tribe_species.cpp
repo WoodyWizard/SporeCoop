@@ -97,6 +97,14 @@ static creations::Key line_key(uint8_t pid, const creations::Key& slot)
         return {};
     return k;
 }
+// BUG-1315: the world's species of Tribe for the save's key filter: the player tribe's slot (the last pass's while the
+// game leaves Tribe)
+static bool g_world_reg = species::set_world_species(species::Stage::Tribe, []() -> creations::Key {
+    uint8_t* slot = game::mode_id() == modes::kTribe ? slot_profile(player_tribe()) : nullptr;
+    if (slot)
+        return {F<uint32_t>(slot, kProfKey), F<uint32_t>(slot, kProfKey + 4), F<uint32_t>(slot, kProfKey + 8)};
+    return {g_sp_slot_key[0], g_sp_slot_key[1], g_sp_slot_key[2]};
+});
 // a change of a player's line: the next pass now (not in 0.15 s)
 static bool g_line_reg = species::on_change("tribe.own_species", [](uint8_t) { g_sp_scan_at = -100; });
 

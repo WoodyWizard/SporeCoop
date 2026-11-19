@@ -33,4 +33,16 @@ void set_write_watch(void (*f)());
 // frame): a mode takes its objects out of the lists that hold them and puts them back.
 void add_save_hooks(void (*start)(), void (*end)());
 
+// BUG-1315: every ResourceKey the game writes into a save stream goes through Stream_WriteResourceKey 0xAE2DC0 (the
+// attribute writer of every key field of every class, and the direct writers). While a save of the world is written
+// (main thread: from SaveGame's start, or from the save's first object reference, to the end of that frame) each key is
+// offered to the filters: `key` is {instance, type, group}; a filter that rewrites it returns true and the save gets
+// the new key (memory is not touched). The species line's filter writes the world's species for a guest's line key
+// (the owner decision of 2026-11-18: the host's save holds the host's species only), whatever object holds it.
+using KeyFilter = bool (*)(uint32_t key[3]);
+void add_key_filter(KeyFilter fn);
+// SaveGame 0xB29000 (the hook in space_allies.cpp): true before the game writes, false after (the save hooks run
+// from here on, before the first key of the save's main stream)
+void world_save(bool begin);
+
 } // namespace savestrip

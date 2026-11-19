@@ -53,6 +53,14 @@ static uint32_t g_hook_calls, g_answered, g_resyncs, g_checks, g_line_misses, g_
 static creations::Key line_key(uint8_t pid) { return species::key(pid, species::Stage::Civ); }
 
 static bool own_mode() { return g_fix_own_species && species::own_mode(); }
+// BUG-1315: the world's species of Civ for the save's key filter: the player civilization's
+static bool g_world_reg = species::set_world_species(species::Stage::Civ, []() -> creations::Key {
+    void* pc = game::mode_id() == modes::kCiv ? player_civ() : nullptr;
+    if (!pc || IsBadReadPtr((uint8_t*)pc + kCivSpeciesKey, 12))
+        return {};
+    auto& k = F<skg::ResourceKey>(pc, kCivSpeciesKey);
+    return {k.instance, k.type, k.group};
+});
 // a change of a player's line: its profile is looked up again at the next check
 static bool g_line_reg = species::on_change("civ.own_species", [](uint8_t) { g_line_at = -100; });
 

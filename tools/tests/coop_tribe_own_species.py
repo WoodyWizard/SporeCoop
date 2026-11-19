@@ -278,11 +278,15 @@ def run(host, guest, ck, off_twin):
         tree = ts[0][1]
         print('  host:', host.call(f'coop.tribe order {mid} 2 {tree[0]} {tree[1]} {tree[2]}')['out'].strip(), flush=True)
         t0 = time.time()
+        n = 0
         while time.time() - t0 < 60:
             a = ai(host, mid)
             if a['carry'] > 0:
                 carried = True
                 break
+            if n % 10 == 0:
+                print(f'  member #{mid} after {time.time() - t0:.0f} s: {a} (tree {tree})', flush=True)
+            n += 1
             time.sleep(1)
         print(f'  member #{mid} carries {ai(host, mid)["carry"]} after {time.time() - t0:.0f} s', flush=True)
     switch((host, guest), True)
