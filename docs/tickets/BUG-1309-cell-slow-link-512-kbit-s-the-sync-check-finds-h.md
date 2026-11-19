@@ -1,19 +1,19 @@
 ---
 id: BUG-1309
 title: Cell, slow link (512 kbit/s): the sync-check finds hundreds of the host's cells missing on a guest that just arrived
-status: open
+status: fixed
 kind: desync
 stage: Cell
 reported: 2026-11-19
 source: lab: evo_screens_switch_slow
 role: guest
 versions: 0.7.15.1, 0.7.15.2, 0.7.16
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: fix/w57-cellslow
 commits:
-tests: evo_screens_switch_slow
+tests: cell_slow_link, cell_slow_link_off, evo_screens_switch_slow
 signature: sync-check "c: N missing on the guest" under SPORE_NET=lowband
-docs: docs/known-issues.md#issue-cell-slow-link-missing
+docs: docs/re/cell.md#cell-slow-link
 related: BUG-1240, BUG-1245, BUG-1255
 ---
 
@@ -32,18 +32,40 @@ on 2026-11-18 as outside that fix. The clean-link twins (evo_screens_switch, _no
 mismatch.
 
 ## Root cause
-Not analysed (found by the 0.7.16 fix agent fix/w57-cellkin, whose task was to tell flaky / new / old).
-Inferred: the guest's first Cell state after its arrival (the host's pool of ~400 cells, mirrors=364 on the guest at
-60 s) does not fit the 512 kbit/s link in the sync-check's first window, and a level change or the vote start
-reshuffles the host's pool faster than the slow link carries it. Open question: does the guest's screen really lack
-those cells for long (a player on a slow link), or only for the seconds the check samples (then a gate rule with the
-reason is the answer, not a code change).
+Real, not the check's window (fix/w57-cellslow, 2026-11-19). The host sent each guest its whole Cell state
+(MSG_CELL_STATE: 63 bytes a cell, chunks of 14, ~29 chunks for the ~400 cells of level 1) ten times a second, every
+round in the same pool order and in one frame: ~260 KB/s per guest. A 512 kbit/s link carries 64 KB/s; its queue
+(400 ms in netem.py's lowband, a home router's buffer alike) kept the same first ~7 chunks of every round and dropped
+the rest every time (host log: `net: spike with player 1: loss 70.7% of 1605 packets in 5 s` after the arrival). The
+guest's first round after the world load came through whole (the queue was empty: `pool=364 mirrors=364` 1 s after
+the arrival), then the guest removed every mirror not listed for a second (BUG-0032's rule for a round with a lost
+chunk): its own game kept ~100 of the host's ~400 cells, the ones in the first chunks (pool order, spread over the
+whole pool, not the nearest), for as long as the link was full. A player on such a link (or a host with a slow
+upload: three guests are three times this) saw mostly empty water around its cell, and the reliable messages competed
+with the flood (72 % resends). Measured with the new `coop.pool near` on the guest's own game: 25-46 % of the host's
+cells within 40 units of the guest over 40 s with the old sender (twin run 20261119-130241), ~100 mirrors in all.
+The second, smaller mismatch at the switch vote (`c: 13 missing`, level 10, ~140 cells = 10 chunks) is the same
+overload with fewer cells.
 
 ## Fix
-Not fixed: outside the 0.7.16 fix lane of fix/w57-cellkin ("fix if ours": it is not, the same in 0.7.15.1 / 0.7.15.2).
+`cell.slow_link` (cellsync_host.cpp, `cell_logic::LinkPace` in cell_logic.h, docs/re/cell.md#cell-slow-link): each
+guest's round is sorted nearest first, and the host sends it no faster than the guest's link carries. The rate follows
+the connection's own loss counters: a 0.5 s window with over 15 % of the packets lost cuts it to 85 % of the cell state
+that got through, a window under 3 % with the rate used raises it by 15 %, above 2 MB/s it is unlimited (the old whole
+round every tick, nearest first). A round lists the nearest cells the rate sends in 0.4 s and goes out over several
+ticks within its tokens (at most 0.25 s of the rate at once). Random loss of a few % never cuts. Wire format unchanged
+(a 0.7.15 guest reads the paced rounds). `coop.pool pace` shows each guest's rate; the host logs the first cut per
+guest and 30 s (`cell: the link to player N carries less than the Cell state ...`). Off: whole rounds in pool order
+every tick (0.7.16 before this fix). Unit test: cell_tests link_pace (the 512 kbit/s queue in numbers: the nearest
+100 cells reach the guest every second with the pace, under 30 without).
+Test: cell_slow_link (coop_cell_slow_link.py, SPORE_NET=lowband): every 2 s for 40 s the host's cells within 20 units
+of the guest that were there 2 s before, against the guest's own game's cells there; PASS: at least 80 % in every
+sample but one from 8 s on, median 90 %; key frame slow_link_cells. Twin cell_slow_link_off must FAIL.
+Not a gate change: the sync-check stays as it was.
 
 ## Verification
-Open. Every run of evo_screens_switch_slow shows it (run ids in the Report).
+VERIFY_PLACEHOLDER
 
 ## History
 - 2026-11-19: opened.
+- 2026-11-19: fixed on fix/w57-cellslow (cell.slow_link).

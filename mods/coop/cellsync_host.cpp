@@ -248,6 +248,11 @@ static void send_paced(int dest, GuestPace& gp, const std::vector<SendCell>& lis
                    dest, gp.pace.last_loss * 100.0, gp.pace.rate / 1000.0);
         }
     }
+    if (now - g_sent_pruned > 5.0) { // as send_state does
+        g_sent_pruned = now;
+        for (auto it = g_sent_at.begin(); it != g_sent_at.end();)
+            it = now - it->second.at > 20.0 ? g_sent_at.erase(it) : std::next(it);
+    }
     gp.pace.refill(gp.tick_at < 0 ? 0.1 : std::min(0.5, now - gp.tick_at));
     gp.tick_at = now;
     constexpr size_t per = 14;
