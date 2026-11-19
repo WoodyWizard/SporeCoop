@@ -584,4 +584,12 @@ uint8_t role(uint8_t p);
 net::Quat veh_rot(void* v);
 
 void caption_arm();
+// WP-C2 (BUG-1274, civ_own_designs.cpp): the players' own vehicle and building designs
+void own_designs_init();
+void own_designs_tick(double now);
+void own_designs_now();
+void own_designs_save(bool start);
+void own_designs_session_end();
+bool own_designs_holds(void* o);
+std::string own_designs_debug(const std::vector<std::string>& a);
 } // namespace civ

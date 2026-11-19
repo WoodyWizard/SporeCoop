@@ -95,6 +95,15 @@ std::string content_status();
 // the host's own My Creations, else k); *pending: asked the host, no answer yet (do not build it yet)
 Key host_design(const Key& k, ModelKind kind, bool* pending);
 std::string design_status();
+// WP-C2 (BUG-1274, docs/plan-0.7.16.md item 2): a player's own vehicle or building design (a creation of its My
+// Creations) known to every game. share_design (this player, a guest): its records go to the host (MSG_CREATION kind
+// kPlayerDesign, id = the civilization's design id); the host keeps them for players joining later and sends them to
+// every guest, the sender included (its acknowledgement: nothing applies before the host has it); every game
+// registers them under one key of ours (0x7D......, from the content: the same key on every game) and
+// player_design(player, design id) answers it ({} = none here). Empty records (k = {}) clear the entry.
+bool share_design(uint32_t design_id, const Key& k, std::string& err);
+Key player_design(uint8_t player, uint32_t design_id);
+std::string player_designs_status();
 std::string model_hash(const Key& k); // tests: the hash of the bem record this game answers for k // the counters of ensure_model, for the tests and the support trace
 bool content_all_kinds(); // the switch content.all_kinds (off: 0.7.3.5 for the new call sites)
 

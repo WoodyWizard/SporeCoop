@@ -10,6 +10,11 @@
 - Cell: the wild cells of the players' own kind now swim near each player in that player's own design: near the
   second player you meet its cell's kin, near the host the host's, and a mix where you swim together; before, all of
   them were copies of the host's cell (BUG-1257).
+### Added
+- Civilization: in the normal co-op mode (own creatures) a guest's vehicles and the buildings of its cities are drawn
+  from the guest's own vehicle and building designs on every player's screen, with the stats of those designs; a
+  vehicle given to another player takes that player's design. The host's saved game keeps the host's designs only
+  (BUG-1274).
 
 ## [0.7.15.2] - 2026-11-18
 

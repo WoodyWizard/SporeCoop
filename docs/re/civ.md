@@ -2153,3 +2153,37 @@ Ghidra (`tools/ghidra/q.sh`), no runtime probe of these paths yet.
   * ? Not checked: whether a vehicle's or building's SetModelKey with a key the game does not know on load faults or
     leaves an empty model (the reason a save must never keep a key of ours); whether captured cities (cCity::ChangeOwner
     0xBE8A20 reads Civ_Species) need more.
+
+## A player's own vehicle and building designs (2026-11-18, feat/w54-designs)
+<a id="civ-own-designs"></a>
+
+WP-C2 of docs/plan-0.7.16.md (BUG-1274), built on #civ-own-species. GOG 2024. Code: mods/coop/civ_own_designs.cpp,
+creations.cpp (`share_design`, MSG_CREATION kind 9). Runtime not yet run (the night lab: civ_own_designs and its twin).
+* Design: every game re-keys its own objects, nothing per object is sent. A vehicle of the player civilization (its
+  list +0xB0) whose owner (host: the vehicle table; guest: the snapshot's owner of the mirror) has an own design for
+  its design id (`VehicleDesignId(purpose +0xB20, locomotion +0xB1C)`), and a building of a city whose owner has one for
+  the building's design id (noun -> id: house 0x18EB106 -> 0x4E3F7777, factory 0x18EA2CC -> 0x47C10953, entertainment
+  0x1A56ABA -> 0x72C49181, City Hall 0x18EA1EB -> 0x99E92F05, as cCity::SetBuildingModel), gets that design's key
+  by SetModelKey (vt 0x94 of +0x34; the key at +0xC4 for both). Checked four times a second, at once after a guest's
+  purchase (CMD_BUY) and at the end of every `Civ_SetDesign` 0xBF4C50 (hooked: the setter re-modelled the kind with
+  the culture's key; our keys go back on in the same call, so no frame shows the culture's model on the host).
+* The culture key of each re-keyed object is kept (what the game gave it; on a guest a building's BUG-0670 key of ours
+  is replaced by that entry's own culture key): written raw into +0xC4 while a save is written (savestrip hooks, as
+  #civ-host-buildings), SetModelKey with it when the owner has no design any more (a gift to the host, creature.mode
+  host, the switch off) and at the session's end. An object whose cGameData serial changed is another object (the
+  record goes).
+* The design's records: the guest reads its creation from its own My Creations file (not the game's lookup: the host's
+  world packages answer the same id with the host's creation at priority 2000) and sends them to the host (MSG_CREATION
+  kind 9, owner = the player, id = the design id); the host keeps them for later joiners and sends them to every
+  guest, the sender included, so a design applies only when the host has it. Every game registers them under
+  0x7D000000 | fnv(content) (the same key everywhere, the BUG-0647 package path) after `ensure_model`. Older versions
+  drop kind 9 (creations family minor 1.1): a 0.7.15.2 player sees the culture's design.
+* The guest's mirrors: `bound_design` (BUG-0647) and `host_buildings_tick` (BUG-0670) leave an object alone while it
+  shows its owner's design (`own_designs_holds`).
+* ? Not checked at runtime (night lab): that the vehicle's hit points follow SetModelKey exactly as a vehicle made with
+  that key (the test compares with a reference vehicle spawned with the key, `coop.civ owndesign hpref`); that the raw
+  culture key in +0xC4 is what the vehicle record of a save holds (the test parses the save); captured cities.
+* Tests: `coop.civ owndesign` (lists `ownveh` / `ownbld` rows with the model and culture keys, the player designs),
+  `owndesign set <hex design id> <hex creation>` (the WP-0 shim setter on a guest), `owndesign did <city> <loco>
+  [purpose]`, `owndesign hpref <purpose> <loco> <hex key>` / `owndesign hpref` (host: a reference vehicle and its hit
+  points, then removed). Test tools/tests/coop_civ_own_designs.py.

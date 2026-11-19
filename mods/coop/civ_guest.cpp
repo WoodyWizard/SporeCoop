@@ -209,6 +209,7 @@ static void host_buildings_keys(bool own);
 void save_start()
 {
     host_buildings_keys(true); // BUG-0670: no key of ours in the save
+    own_designs_save(true);    // BUG-1274: the culture's keys
     if (!is_guest() || game::mode_id() != modes::kCiv || !nm())
         return;
     for (void* civ : vec_of(thiscall<void*>(a_GetAllCivs, nm())))
@@ -233,6 +234,7 @@ void save_start()
 void save_end()
 {
     host_buildings_keys(false); // BUG-0670
+    own_designs_save(false);    // BUG-1274
     for (auto& t : g_took) { // back at the end of the list (the capacity is the one they left)
         void**& e = F<void**>(t.civ, t.off + 4);
         if (e < F<void**>(t.civ, t.off + 8))
@@ -513,7 +515,7 @@ static bool mirror_design(void* civ, int purpose, int loco, uint32_t key[3])
 static bool bound_design(void* v)
 {
     uint32_t* mk = &F<uint32_t>(v, kVModelKey);
-    if (!mk[0] || mk[0] == 0xFFFFFFFFu || mk[1] != 0x24682294)
+    if (!mk[0] || mk[0] == 0xFFFFFFFFu || mk[1] != 0x24682294 || own_designs_holds(v)) // (BUG-1274: its owner's own)
         return true;
     bool pending = false;
     creations::Key hk = creations::host_design({mk[0], mk[1], mk[2]}, creations::kMkVehicle, &pending);
@@ -590,6 +592,8 @@ static void host_buildings_tick(double now)
         auto it = g_bld_rekeyed.find(b);
         if (it != g_bld_rekeyed.end() && it->second.ours == mk[0])
             continue; // ours already
+        if (own_designs_holds(b))
+            continue; // BUG-1274: its owner's own design
         bool wait = false;
         creations::Key hk = creations::host_design({mk[0], mk[1], mk[2]}, creations::kMkBuilding, &wait);
         if (wait) {
