@@ -376,6 +376,7 @@ struct Dialog {
 };
 static Dialog D;
 static std::map<std::string, Win> g_named; // for tests (coop.uistate)
+static bool g_row_creation; // BUG-1289: the row shows the creature choice (in Civ too, where the arrows pick a role)
 
 static Win add_label(std::vector<Win>& page, const Rect& r, const std::string& t, uint32_t argb,
                      int align = sui::kAlignLeft)
@@ -988,7 +989,7 @@ static void build_dialog()
     // the own creation of this stage: "My creature: Kirgle  < >"
     D.creation = add_label(L, {40, 434, 560, 460}, "", kGold);
     D.creation_prev = add_button(L, "cprev", {570, 430, 640, 460}, "<", [] {
-        if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle)
+        if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle && !g_row_creation)
             A.civ_role_cycle(-1);
         else if (A.creation_cycle)
             A.creation_cycle(-1);
@@ -1011,7 +1012,7 @@ static void build_dialog()
         g_dirty = true;
     });
     D.creation_next = add_button(L, "cnext", {650, 430, 720, 460}, ">", [] {
-        if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle)
+        if (A.mode && A.mode() == 0x1654C04 && A.civ_role_cycle && !g_row_creation)
             A.civ_role_cycle(1);
         else if (A.creation_cycle)
             A.creation_cycle(1);
@@ -1349,6 +1350,11 @@ static void refresh_lobby()
     std::string gwhat, gto;
     int gn = A.give ? A.give(gwhat, gto) : 0;
     bool space = gwhat == "spice";
+    // BUG-1289: in Tribe and Civ the creature row of a guest without its own creature gives way to selected units
+    if (!cl.empty() && gn > 0 && A.mode && (A.mode() == 0x1654C02 || A.mode() == 0x1654C04)) {
+        cl.clear();
+        hint = false;
+    }
     // BUG-0909: give() names what is given only in Tribe, Civilization and Space; elsewhere (the galaxy menu, Cell,
     // Creature) the row showed the Tribe / Civ hint "Select your units to give them to a partner"
     bool giving = A.give && !gto.empty() && (cl.empty() || space) && (!gwhat.empty() || !g_give_hint_fix);
@@ -1412,6 +1418,7 @@ static void refresh_lobby()
     show(D.jump_btn, jump);
     text(D.jump_btn, jump_cap);
     bool can = (!cl.empty() && !giving && ck != 2 && cown > 0) || roles;
+    g_row_creation = !cl.empty() && !giving && !roles && ck != 2 && cown > 0; // BUG-1289: the arrows pick a creature
     show(D.creation_prev, can);
     show(D.creation_next, can);
     bool host = A.role() == 1;

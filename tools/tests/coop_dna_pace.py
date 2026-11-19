@@ -6,11 +6,12 @@ AddEvolutionPoints, `coop.dna gain 20` = a kill's / a friend's reward, hooked li
 Cell: AddFoodPoints as AvatarEat makes it, `coop.pool meal 20`). Checked on BOTH games, the game's own
 value (GetEvolutionPoints; the Cell food total S+0x1C that the cell editor's DNA comes from):
   1. with the pace (default): the shared total grows by ONE player's amount (20), not the sum;
-  2. a spend (-10, the guest's own) is not scaled: both lose 10;
+  2. a spend (-10, the guest's own) is not scaled: with own DNA (WP-D, BUG-1291, the default) the guest loses 10 and
+     the host nothing; with --shared (all.shared_dna on) both lose 10;
   3. coop.ini dna_pace=0 on the host (`coop.dna pace 0`, the player's choice): the full sum (40).
 core.dna_pace off failed (retired in 0.7.15, BUG-1138: FAIL run 20261103-180306:dna_pace) step 1 (the sum, 40).
 
-  coop_dna_pace.py [--cell]
+  coop_dna_pace.py [--cell] [--shared]
 """
 import re
 import sys
@@ -18,9 +19,11 @@ import time
 
 from harness import waiter
 from twoinst import Checks, start
+import dna_mode
 
 CELL = '--cell' in sys.argv
 GAIN = 20
+SHARED = [True]  # one shared DNA pool (dna_mode, set in main)
 
 
 def value(con):
@@ -48,13 +51,13 @@ def settle(host, guest, secs=12):
     t0, same_since, last = time.time(), None, None
     while time.time() - t0 < secs:
         h, g = value(host), value(guest)
-        if h is not None and g is not None and abs(h - g) < 1 and h == last:
+        if h is not None and g is not None and (abs(h - g) < 1 or (not SHARED[0] and not CELL)) and (h, g) == last:
             same_since = same_since or time.time()
             if time.time() - same_since >= 3:
                 return h, g
         else:
             same_since = None
-        last = h
+        last = (h, g)
         time.sleep(0.5)
     return value(host), value(guest)
 
@@ -73,6 +76,7 @@ def both_earn(host, guest, what):
 def main():
     host, guest = start('cell' if CELL else 'creature')
     ck = Checks()
+    SHARED[0] = dna_mode.setup(host, guest, ck)
     try:
         if CELL:
             wait(lambda: value(host) is not None and value(guest) is not None, 30)
@@ -85,12 +89,17 @@ def main():
         ck(ok_g, f"the guest's game: the shared total grew by one player's {GAIN} (got {None if g1 is None or g0 is None else g1 - g0})")
         # 2. a spend is whole (Creature: the guest's own spend, BUG-0466's path)
         if not CELL:
-            s0, _ = settle(host, guest)
+            s0, t0 = settle(host, guest)
             guest.call('coop.dna add -10')
+            time.sleep(0 if SHARED[0] else 5)
             s1, s2 = settle(host, guest, 20)
-            print(f'  spend: guest -10: host {s0} -> {s1}, guest -> {s2}', flush=True)
-            ck(s0 is not None and s1 is not None and abs((s0 - s1) - 10) < 1.01 and abs((s2 or 0) - s1) < 1,
-               'a spend is not scaled: both games lost 10')
+            print(f'  spend: guest -10: host {s0} -> {s1}, guest {t0} -> {s2}', flush=True)
+            if SHARED[0]:
+                ck(s0 is not None and s1 is not None and abs((s0 - s1) - 10) < 1.01 and abs((s2 or 0) - s1) < 1,
+                   'a spend is not scaled: both games lost 10')
+            else:  # WP-D: the guest's own DNA only
+                ck(s0 is not None and s1 is not None and t0 is not None and s2 is not None and abs(s0 - s1) < 1.01 and
+                   abs((t0 - s2) - 10) < 1.01, "own DNA: a spend is not scaled: the guest lost 10, the host's DNA kept")
         # 3. the player's choice: dna_pace=0 on the host is the full sum
         print('  host:', host.call('coop.dna pace 0')['out'].strip(), '(coop.ini [coop] dna_pace=0)', flush=True)
         h0, h1, g0, g1 = both_earn(host, guest, 'full sum')
@@ -101,7 +110,7 @@ def main():
         host.call('coop.dna pace 1')
         ck.faults(host=host, guest=guest)
     finally:
-        pass
+        dna_mode.teardown(host, guest)
     return ck.result()
 
 

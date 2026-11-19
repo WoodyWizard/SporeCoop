@@ -113,6 +113,7 @@ int c_status(void*, int, const char* const*, SkOut* out)
         g_dna_spend_owed, g_dna_seen, (int)g_dna_seen_ok); // BUG-0466
     SAY("dna pace: div=%d setting=%d heard=%d paced=%u in=%.1f out=%.1f\n", pace_div(), settings::get(settings::kDnaPace),
         g_pace_heard, g_paced, g_paced_in, g_paced_out); // BUG-0510
+    SAY("%s", own_dna_status().c_str()); // WP-D (BUG-1291)
     for (size_t i = g_chat.size() > 6 ? g_chat.size() - 6 : 0; i < g_chat.size(); i++)
         SAY("chat: %s\n", g_chat[i].c_str());
     void* av = g_local;

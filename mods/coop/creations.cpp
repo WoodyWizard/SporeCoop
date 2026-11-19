@@ -77,6 +77,24 @@ COOP_FIX("creations.guest_world_species", "BUG-0345", g_guest_world_fix,
 static bool g_choice_world_fix = true;
 COOP_FIX("creations.choice_world", "BUG-0638", g_choice_world_fix,
          "creations: a guest's chosen own creation holds only in a world it chose or played it in");
+// BUG-1289 (WP-S1a of the 0.7.16 late joiners): a guest without an own creature in this world (it joined at Tribe or
+// Civ, the host loaded a save of a planet it never played, or it chose in the galaxy menu) played the host's species
+// in Tribe and Civ with no way to its own: the co-op window showed the creation row only in Cell, Creature and Space,
+// and a choice made outside a world (world 0, the galaxy menu) had no record for the next world, so BUG-0638 dropped
+// it there. On: (1) in Tribe and Civ the row shows for such a guest (late_row: while it plays no own creature here
+// and for 30 s after a click), its choice is recorded for this world as every in-world choice is; (2) a choice made
+// outside a world in this session holds for the first stage world the guest plays in the session and is recorded
+// for it (BUG-0638 still drops a choice of another world and a choices.ini entry of an earlier run). Its species line
+// follows (species_line.cpp own_creature), so its tribe members and city citizens become its species on every game.
+// Off: the row in Cell, Creature and Space only, a galaxy-menu choice dropped by BUG-0638 (0.7.15).
+static bool g_late_fix = true;
+COOP_FIX("creations.late_species", "BUG-1289", g_late_fix,
+         "creations: a guest without an own creature in this world picks one in Tribe and Civ (the co-op window's row); a choice made outside a world holds for the next world it joins");
+static bool g_choice_unbound[kKinds]; // chosen outside a world in this session: recorded at the first stage world
+static double g_late_cycled = -1000;  // the guest's last click on the creature row
+static unsigned g_late_bound, g_late_told;
+static uint32_t g_late_told_world, g_late_seen_world;
+static double g_late_seen_at;
 static std::map<std::pair<int, uint32_t>, uint32_t> g_world_rec; // (kind, world) -> creation instance (cache)
 static std::set<std::pair<int, uint32_t>> g_world_read;           // read from the file already
 std::set<std::tuple<int, uint32_t, uint32_t>> g_own_told;  // notices given (kind, world, creation)
@@ -110,6 +128,25 @@ void world_record_set(int k, uint32_t world, uint32_t inst)
     WritePrivateProfileStringW(wide(kInfo[k].name).c_str(), key, inst ? val : nullptr, (g_dir + L"\\worlds.ini").c_str());
     g_world_records++;
     H->log(M, SK_INFO, "creations: own %s %08X recorded for world %08X (BUG-0345)", kInfo[k].name, inst, world);
+}
+// BUG-1290 (civ_arrival.cpp): a note of this player per world (worlds.ini [section] <world crc> = value; 0 = none)
+uint32_t world_note(const char* section, uint32_t world)
+{
+    if (!world || !find_paths())
+        return 0;
+    wchar_t key[16], buf[32] = {};
+    swprintf(key, 16, L"%08X", world);
+    GetPrivateProfileStringW(wide(section).c_str(), key, L"", buf, 32, (g_dir + L"\\worlds.ini").c_str());
+    return buf[0] ? (uint32_t)wcstoul(buf, nullptr, 16) : 0;
+}
+void world_note_set(const char* section, uint32_t world, uint32_t v)
+{
+    if (!world || !find_paths())
+        return;
+    wchar_t key[16], val[16];
+    swprintf(key, 16, L"%08X", world);
+    swprintf(val, 16, L"%08X", v);
+    WritePrivateProfileStringW(wide(section).c_str(), key, v ? val : nullptr, (g_dir + L"\\worlds.ini").c_str());
 }
 // BUG-0508: a guest that plays the host world's species (no creation of its
 // own, no choice) takes the host's new creature in place after the host's editor, as the reloaded
@@ -1211,6 +1248,8 @@ static Key avatar_species_key()
 // BUG-0638: the guest's explicit choice was made (or played) in this world; outside a world it holds
 static bool choice_here(int k)
 {
+    if (g_late_fix && g_choice_unbound[k])
+        return true; // BUG-1289: chosen outside a world in this session: it holds for the world it is played in next
     uint32_t w = modes::current_world();
     return !w || world_record(k, w) == g_choice[k].instance;
 }
@@ -2961,6 +3000,72 @@ static void own_world_tick()
     }
 }
 
+// BUG-1289: this guest has creatures of its own and plays none of them here (it did not choose "the world's own")
+static bool late_pick()
+{
+    if (!C.sess || C.sess->role() != net::Role::Client || one_creature() || g_opts[kCreature].empty())
+        return false;
+    if (g_chosen[kCreature] && !g_choice[kCreature].instance)
+        return false; // the player's own choice: the world's species
+    return !own_option(kCreature, mine(kCreature).key);
+}
+
+bool plays_own(Kind k) { return own_option(k, mine(k).key); }
+
+bool late_row(double now)
+{
+    if (!g_late_fix || !C.sess || C.sess->role() != net::Role::Client || !C.sess->connected() || one_creature())
+        return false;
+    uint32_t m = game::mode_id();
+    if (m == modes::kMenu)
+        return true; // the lobby: the creature it plays in the host's world (a choice outside a world, above)
+    if (m != modes::kTribe && m != modes::kCiv)
+        return false;
+    refresh_options(now);
+    return late_pick() || now - g_late_cycled < 30.0;
+}
+
+// BUG-1289: a choice made outside a world takes the first stage world of the session; a guest playing the host's
+// species in Tribe or Civ although it has own creatures is told once per world how to pick one
+static void late_tick(double now)
+{
+    if (!g_late_fix || C.sess->role() != net::Role::Client)
+        return;
+    uint32_t m = game::mode_id();
+    bool stage = m == modes::kCell || m == modes::kCreature || m == modes::kTribe || m == modes::kCiv;
+    uint32_t w = stage ? modes::current_world() : 0;
+    if (!w)
+        return;
+    for (int k : {(int)kCreature, (int)kCell})
+        if (g_choice_unbound[k]) {
+            g_choice_unbound[k] = false;
+            if (g_chosen[k] && g_choice[k].instance) {
+                world_record_set(k, w, g_choice[k].instance);
+                g_late_bound++;
+                H->log(M, SK_INFO, "creations: our %s %08X, chosen outside a world, holds for world %08X (BUG-1289)",
+                       kInfo[k].name, g_choice[k].instance, w);
+                g_last_check = 0;
+            }
+        }
+    if (m != modes::kTribe && m != modes::kCiv)
+        return;
+    if (w != g_late_seen_world) {
+        g_late_seen_world = w;
+        g_late_seen_at = now;
+    }
+    if (g_late_told_world == w || now - g_late_seen_at < 15.0)
+        return;
+    refresh_options(now);
+    if (!late_pick())
+        return;
+    g_late_told_world = w;
+    g_late_told++;
+    H->log(M, SK_INFO, "creations: we play the host's species here and have %u creature(s) of our own: the co-op "
+                       "window offers them (BUG-1289)", (unsigned)g_opts[kCreature].size());
+    if (C.feed)
+        C.feed("you play the host's species here: pick your own creature with < > in the co-op window");
+}
+
 void tick(double now)
 {
     close_tick(now); // BUG-0996 (also after the session: its end drops the world packages)
@@ -2968,6 +3073,7 @@ void tick(double now)
         return;
     if (adopt_after_editor(now))
         return;
+    late_tick(now); // BUG-1289
     own_world_tick();
     if (now - g_last_check > 2.0) {
         g_last_check = now;
@@ -3116,6 +3222,17 @@ void on_session_end()
     g_swapped_avatar = nullptr;
     g_cell_set = {};
 }
+// BUG-1289: a choice made outside a world waits for the world of this session only
+static void late_reset()
+{
+    for (bool& u : g_choice_unbound)
+        u = false;
+    g_late_told_world = g_late_seen_world = 0;
+    g_late_cycled = -1000;
+}
+static size_t late_held() { return (size_t)g_choice_unbound[0] + g_choice_unbound[1] + g_choice_unbound[2]; }
+SESSION_STATE("creations.late_species", &g_late_fix, late_reset, late_held);
+
 LIFECYCLE_HOOK("creations.session", lifecycle::kSessionEnd, -46, [](const lifecycle::Ctx&) { on_session_end(); }, true); // C2 (BUG-1141): end_session
 
 Key player_key(uint8_t player, Kind k)
@@ -3147,7 +3264,12 @@ void choose(Kind k, const Key& key)
     g_chosen[k] = true;
     g_choice[k] = key;
     g_choice_epoch[k] = choice_epoch_now(k);
-    if (g_choice_world_fix && k != kUfo && key.instance && C.sess && C.sess->role() == net::Role::Client)
+    // BUG-1289: outside a world (no world name, or the galaxy menu, whose name is still the planet played before) a
+    // choice records no world: it holds for the next stage world of this session and is recorded there (late_tick)
+    g_choice_unbound[k] = g_late_fix && k != kUfo && key.instance &&
+                          (!modes::current_world() || game::mode_id() == modes::kMenu);
+    if (g_choice_world_fix && k != kUfo && key.instance && C.sess && C.sess->role() == net::Role::Client &&
+        !g_choice_unbound[k])
         world_record_set(k, modes::current_world(), key.instance); // BUG-0638: the world it is chosen in
     if (find_paths()) {
         std::wstring v = key.instance ? std::wstring(L"0x") + std::to_wstring(0) : L"0";
@@ -3166,6 +3288,7 @@ void cycle(Kind k, int dir)
             C.feed("everybody plays the host's creature (session setting)");
         return;
     }
+    g_late_cycled = H->time_seconds(); // BUG-1289: the row stays a while after a click
     auto opts = options(k);
     // BUG-0278: "the world's own" (the host's creature) is one of the choices: a guest can go back
     // to it from a creature of its own
@@ -3215,6 +3338,10 @@ std::string status()
              g_meta_refused); // BUG-0802
     s += b;
     snprintf(b, sizeof b, "  creature mode: %s (host's creation answers=%u)\n", one_creature() ? "host" : "own", g_one_mine);
+    s += b;
+    snprintf(b, sizeof b, "  late: fix=%d row=%d pick=%d plays_own=%d unbound=%d/%d bound=%u told=%u (BUG-1289)\n",
+             (int)g_late_fix, (int)late_row(H->time_seconds()), (int)late_pick(), (int)plays_own(kCreature),
+             (int)g_choice_unbound[kCreature], (int)g_choice_unbound[kCell], g_late_bound, g_late_told);
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell) {
         uint8_t* av = modes::cell_at(*(uint32_t*)(g + 0x411C));

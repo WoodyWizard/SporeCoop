@@ -1289,3 +1289,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1300](BUG-1300-wp-s2d-cell-kin-of-a-partner-s-species-drawn-wit.md) | not-reproduced | bug | Cell | 2026-11-19 |  | WP-S2d: Cell kin of a partner's species drawn without the model preload |
 | [BUG-1301](BUG-1301-wp-s2e-space-the-host-s-ship-registered-under-it.md) | open | bug | Space | 2026-11-19 |  | WP-S2e: Space: the host's ship registered under its own key shadows a guest's own ship of the same id |
 | [BUG-1302](BUG-1302-wp-s2f-the-fallback-paint-lists-lack-the-stock-c.md) | not-reproduced | bug | Creature | 2026-11-19 |  | WP-S2f: the fallback paint lists lack the stock Cell base paints |
+| [BUG-1289](BUG-1289-wp-s1a-a-guest-without-an-own-creature-in-this-w.md) | open | bug | Tribe, Civ | 2026-11-19 |  | WP-S1a: a guest without an own creature in this world plays the host's species in Tribe and Civ and cannot pick its own |
+| [BUG-1290](BUG-1290-wp-s1b-a-guest-that-missed-the-end-of-tribe-neve.md) | open | bug | Civ | 2026-11-19 |  | WP-S1b: a guest that missed the end of Tribe never gets its own City Hall and vehicle editors in Civ |
+| [BUG-1291](BUG-1291-wp-d-own-dna-per-player-creature-and-cell-shared.md) | open | feature | Cell, Creature | 2026-11-19 |  | WP-D: own DNA per player (Creature and Cell), shared pool as a session setting |

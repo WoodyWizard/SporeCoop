@@ -10,6 +10,13 @@
   checks its look in every stage on both games (BUG-1277).
 
 ### Added
+- Cell and Creature: every player now has its own DNA. Everything the party earns (anybody's kill, friend, meal or
+  goal card) still raises everybody's DNA by the same amount and the evolution bar stays the party's, but what you
+  spend in your editor comes off your own DNA only, so partners no longer spend each other's DNA. A guest's DNA is kept
+  by the host and comes back after a reload, a reconnect and the next session; the host's saved game holds only the
+  host's own DNA. The host can switch back to one shared pool with the new session setting "Shared DNA" (All stages).
+  A partner on SporeCoop 0.7.15 keeps playing the shared pool with the host (BUG-1291). The model and the "set the
+  budget, then move the bar" order come from the Lineages fork by PandizeLive.
 - Cell: the wild cells of the players' own kind now swim near each player in that player's own design: near the
   second player you meet its cell's kin, near the host the host's, and a mix where you swim together; before, all of
   them were copies of the host's cell (BUG-1257).
@@ -38,6 +45,14 @@
   vehicle too: when it has arrived in the Civilization stage its own City Hall editor opens, then its vehicle editor
   (the red cross keeps the civilization's). Its cities' City Halls and the vehicles it buys show them on every
   player's screen; the host plays on meanwhile and the civilization's designs stay the host's (BUG-1276).
+- Tribe and Civilization: a guest that has no creature of its own in this world (it joined in Tribe or Civilization,
+  or the host loaded a planet it never played) now sees "My creature: < >" in the co-op window and can pick one of its
+  own creatures there; its tribe members or the citizens of its cities then wear it on every player's screen. Before,
+  it played the host's species with no way to change it. A creature picked in the galaxy menu before joining now holds
+  in the host's world too (BUG-1289).
+- Civilization: a guest that joins after the end of Tribe (or comes back after it) now also gets its own City Hall and
+  first vehicle editors once it has arrived, once per world; before, only a guest that was there at the end of Tribe
+  got them (BUG-1290).
 
 ### Fixed
 - Cell: when your partner's cell zaps with its electric part, your screen no longer fills with a trail of giant white

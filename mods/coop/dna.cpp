@@ -4,6 +4,8 @@
 // dna_route.h, dna_ledger.h and dna_pace.h; the messages are handled in the session callbacks, the totals are sent from
 // the frame, the away state is coop.cpp's host_away_tick.
 #include "coop_state.h"
+#include "dna_own.h"
+#include "store.h"
 
 namespace coop_core {
 
@@ -261,6 +263,205 @@ void dna_spend_tick(double now)
     g_dna_spends_sent++;
     last_send = now;
     g_dna_spend = 0;
+}
+
+
+// ---- WP-D of 0.7.16 (BUG-1291, dna_own.h): own DNA per player. The host keeps every guest's wallet (its Creature
+// budget, its Cell spent count) in g_book and in the per-player store; the party's income is the host's bar step
+// (own_dna_tick); a guest's spend comes off its wallet only; MSG_DNA carries each guest's own budget and the party bar.
+// A guest whose mod is older than this (creature / npc family minor below 2) plays the shared pool as in 0.7.15.
+bool g_own_dna_fix = true;
+COOP_FIX("creature.own_dna", "BUG-1291", g_own_dna_fix,
+         "creature, cell: every player has its own DNA (every gain counts for everybody, a player's editor spends only its own); off: one shared pool (0.7.15)");
+bool g_dna_bar_set_fix = true;
+COOP_FIX("creature.dna_bar_set", "BUG-1291", g_dna_bar_set_fix,
+         "creature: a guest's own DNA is set with the game's setter and its evolution bar follows the party's (off: through AddEvolutionPoints, the bar runs ahead after a reload)");
+bool g_own_dna_store_fix = true;
+COOP_FIX("creature.own_dna_store", "BUG-1291", g_own_dna_store_fix,
+         "creature, cell: every guest's own DNA is kept in the host's per-player store (a reload, a host restart, a rejoin); off: a guest starts again at the host's DNA");
+dna_own::Book g_book;
+static uint32_t g_book_serial = 0;
+std::map<uint8_t, float> g_dna_sent_to; // host: the last total sent to each guest
+uint32_t g_own_firsts = 0, g_own_spends = 0, g_own_loaded = 0, g_own_totals = 0, g_own_applied = 0; // tests
+bool g_own_heard = false; // guest: the host's last total was our own wallet
+float g_own_bar_heard = NAN;
+
+bool host_creature_mode();
+bool own_dna_on()
+{
+    return g_sess.role() == net::Role::Host &&
+           dna_own::active(g_own_dna_fix, settings::on(settings::kSharedDna), host_creature_mode());
+}
+// host: the mod of player `id` reads its own wallet (family `fam` minor 2 or newer)
+bool dna_peer_reads(uint8_t id, net::Family fam)
+{
+    bool has = false;
+    std::vector<net::FamilyRev> v;
+    if (!g_sess.peer_families(id, has, v))
+        return false;
+    const net::FamilyRev* t = nullptr;
+    for (auto& x : v)
+        if (x.family == (uint8_t)fam)
+            t = &x;
+    const net::FamilyInfo* mine = net::family_info((uint8_t)fam);
+    return dna_own::peer_reads(has, t != nullptr, t ? t->rev : 0, t ? t->minor : 0, mine ? mine->rev : 0);
+}
+// host: guest `id` has its own wallet now
+bool dna_own_wallet(uint8_t id, net::Family fam)
+{
+    return id != 0 && own_dna_on() && dna_peer_reads(id, fam);
+}
+std::string dna_wallet_key(uint8_t id)
+{
+    std::string k = store::key_of(id);
+    return k.empty() ? "id:" + std::to_string(id) : k; // (no stable key: kept in memory only)
+}
+// host: the world of the stage played (an editor keeps it)
+static uint32_t wallet_world() { return g_stage_world ? g_stage_world : g_world; }
+
+// host: guest `id`'s own Creature budget (first sight: the host's DNA now)
+float dna_own_budget(uint8_t id)
+{
+    bool made = false;
+    float b = g_book.budget(dna_wallet_key(id), wallet_world(), game::dna(), &made);
+    if (made) {
+        g_own_firsts++;
+        LOG("dna: %s's own DNA starts at %.0f (the host's now, world %08X)", g_sess.name_of(id).c_str(), b, wallet_world());
+    }
+    return b;
+}
+// host: a guest's own spend (d < 0): its wallet only
+void dna_own_spend(uint8_t id, float d)
+{
+    float before = dna_own_budget(id);
+    float after = g_book.add(dna_wallet_key(id), wallet_world(), d, game::dna());
+    g_own_spends++;
+    LOG("dna: %s spent %.0f of its own DNA: %.0f -> %.0f (the host's stays %.0f)", g_sess.name_of(id).c_str(), -d, before,
+        after, game::dna());
+}
+// host, Cell: guest `id`'s own spent count (first sight: the host's count)
+int dna_own_cell_spent(uint8_t id, int host_spent)
+{
+    bool made = false;
+    int v = g_book.spent(dna_wallet_key(id), wallet_world(), host_spent, &made);
+    if (made) {
+        g_own_firsts++;
+        LOG("dna: %s's own Cell DNA starts with the host's spent count %d (world %08X)", g_sess.name_of(id).c_str(), v,
+            wallet_world());
+    }
+    return v;
+}
+int dna_own_cell_spend(uint8_t id, int spent, int host_spent)
+{
+    int before = dna_own_cell_spent(id, host_spent);
+    int after = g_book.spend_cell(dna_wallet_key(id), wallet_world(), spent, host_spent);
+    g_own_spends++;
+    LOG("dna: %s's own cell editor spent %d: its spent count %d -> %d (the host's stays %d)", g_sess.name_of(id).c_str(),
+        spent, before, after, host_spent);
+    return after;
+}
+
+// the store: every guest's wallet beside the host's save ("dna.own" v1), read when the host's world opens
+static void book_load()
+{
+    pstore::Store* s = store::world();
+    uint32_t ser = store::serial();
+    if (!s || ser == g_book_serial)
+        return;
+    g_book_serial = ser;
+    std::map<std::string, dna_own::Wallet> keep;
+    for (auto& [k, x] : g_book.w) // a wallet the store has no record of (a guest seen since the last save) stays
+        if (!s->get(k, dna_own::kStoreFeature))
+            keep[k] = x;
+    g_book.clear();
+    if (!g_own_dna_store_fix) {
+        LOG("dna: the host's world opened: every guest's own DNA starts again (creature.own_dna_store off)");
+        return;
+    }
+    g_book.w = keep;
+    int n = 0;
+    for (auto& [k, p] : s->players) {
+        const pstore::Record* r = s->get(k, dna_own::kStoreFeature);
+        dna_own::Wallet x;
+        if (r && r->ver == dna_own::kStoreVersion && dna_own::decode(r->data, x)) {
+            g_book.w[k] = x;
+            n++;
+            g_own_loaded++;
+        }
+    }
+    if (n)
+        LOG("dna: the guests' own DNA of %d players read from the store of %s", n, store::world_name().c_str());
+}
+static void book_save(pstore::Store& s, int64_t now)
+{
+    if (!g_own_dna_store_fix || g_sess.role() != net::Role::Host)
+        return;
+    for (auto& [k, x] : g_book.w) {
+        if (k.rfind("s:", 0) != 0)
+            continue; // no stable key: memory only
+        std::string name;
+        for (auto& p : g_sess.players())
+            if (p.id != 0 && store::key_of(p.id) == k)
+                name = p.name;
+        s.put(k, name, dna_own::kStoreFeature, dna_own::kStoreVersion, dna_own::encode(x), now);
+    }
+}
+static bool g_book_reg = store::add({dna_own::kStoreFeature, book_save,
+                                     [](const std::string& from, const std::string& to) { g_book.adopt(from, to); }});
+
+// every frame (before the away state, so a payment of owed DNA in this frame is seen in the next): the host's
+// world store and the party's income
+void own_dna_tick()
+{
+    if (g_sess.role() != net::Role::Host)
+        return;
+    book_load();
+    if (!own_dna_on() || !g_sess.connected()) {
+        g_book.restart();
+        return;
+    }
+    if (g_mode != modes::kCreature || !game::avatar())
+        return; // an editor, a load: the baseline is kept (no gain there); a load opens a new store
+    float g = g_book.observe(game::evolution_bar(), wallet_world(), store::serial());
+    if (g > 0)
+        trace::line("dna", "party +%.1f -> every own DNA of world %08X (%d wallets)", g, wallet_world(), (int)g_book.w.size());
+}
+
+// host: the total and the tail for guest `id` (MSG_DNA is sent per guest)
+float dna_total_for(uint8_t id, float host_total, dna_own::Tail& tail)
+{
+    tail = {};
+    tail.bar = game::evolution_bar();
+    tail.world = wallet_world();
+    if (g_mode != modes::kCreature || !dna_own_wallet(id, net::Family::creature))
+        return host_total;
+    tail.flags = dna_own::kFlagOwn;
+    return dna_own_budget(id);
+}
+
+std::string own_dna_status()
+{
+    std::string o;
+    char b[220];
+    snprintf(b, sizeof b, "own dna: on=%d fix=%d bar_set=%d store=%d heard=%d bar_heard=%.1f firsts=%u spends=%u loaded=%u totals=%u applied=%u steps=%u credited=%.1f\n",
+             (int)own_dna_on(), (int)g_own_dna_fix, (int)g_dna_bar_set_fix, (int)g_own_dna_store_fix, (int)g_own_heard,
+             g_own_bar_heard, g_own_firsts, g_own_spends, g_own_loaded, g_own_totals, g_own_applied, g_book.steps,
+             g_book.credited);
+    o += b;
+    for (auto& p : g_sess.players()) {
+        if (p.id == 0 || g_sess.role() != net::Role::Host)
+            continue;
+        std::string k = dna_wallet_key(p.id);
+        auto it = g_book.w.find(k);
+        snprintf(b, sizeof b, "wallet %u '%s': reads_own=%d creature=%s%.1f cell=%s%d\n", p.id, p.name.c_str(),
+                 (int)dna_peer_reads(p.id, net::Family::creature),
+                 it != g_book.w.end() && it->second.creature.world == wallet_world() ? "" : "(other world) ",
+                 it != g_book.w.end() ? it->second.creature.value : -1.f,
+                 it != g_book.w.end() && it->second.cell.world == wallet_world() ? "" : "(other world) ",
+                 it != g_book.w.end() ? (int)it->second.cell.value : -1);
+        o += b;
+    }
+    return o;
 }
 
 } // namespace coop_core

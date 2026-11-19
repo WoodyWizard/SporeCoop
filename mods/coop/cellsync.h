@@ -77,6 +77,8 @@ void spend_acked(uint32_t meal);                             // guest: the host'
 bool spend_acks(std::vector<std::pair<int, uint32_t>>& out); // host: that row (false: not in Cell)
 bool spend_owed();                                           // host: a guest's spend waits for our Cell game
 std::string spend_status();
+void own_spent_heard(int v);                                   // guest: WP-D, the host's row cell_spent_own for us
+bool own_spent_rows(std::vector<std::pair<int, int>>& out);   // host: that row (false: not in Cell / no own counts)
 float scale_now(); // BUG-0606: the own game's world scale G+0x514C in Cell (sync-check), 0 outside Cell or when not sane
 
 } // namespace cellsync

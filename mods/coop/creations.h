@@ -115,6 +115,13 @@ bool one_creature(); // F5: creature.mode host (every guest plays the host's cel
 void choose(Kind k, const Key& key); // {} = keep the world's own
 // UI: the next / previous own creation
 void cycle(Kind k, int dir);
+// BUG-1289: the co-op window shows the creature row in Tribe, Civ and the galaxy menu (a guest without an own
+// creature in this world, or a click on the row in the last 30 s); plays_own: this game plays an own creation of k
+bool late_row(double now);
+bool plays_own(Kind k);
+// BUG-1290: a note of this player per world (SporeCoop\worlds.ini [section] <world crc>; 0 = none, world 0 ignored)
+uint32_t world_note(const char* section, uint32_t world);
+void world_note_set(const char* section, uint32_t world, uint32_t v);
 
 std::string status();
 // support trace (trace.h): the own creation of the stage, where the choice came from, what the avatar has

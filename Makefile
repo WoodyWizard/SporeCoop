@@ -184,6 +184,9 @@ unit-cpp: sanitizer-probe
 	@# wave C of 0.7.15: mirror registry, snapshot receiver, world id and lifecycle observers, host-busy model
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/core_tests tests/core_tests.cpp
 	$(B)/host/core_tests
+	@# WP-D of 0.7.16: own DNA per player (dna_own.h, BUG-1291)
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/dna_tests tests/dna_tests.cpp
+	$(B)/host/dna_tests
 	@# D3 of 0.7.15: the Tribe rules (tribe_logic.h, BUG-1161) and the member animations' message type (C7, BUG-1160)
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/tribe_tests tests/tribe_tests.cpp
 	$(B)/host/tribe_tests

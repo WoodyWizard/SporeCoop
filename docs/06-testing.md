@@ -9424,3 +9424,46 @@ record (coop_civ_own_designs.keys_in) for the guest's keys of that stage.
   that key) before it checks the outfitter.
 * `ship` is INCONCLUSIVE when the guest does not fly the host's ship key in the space fixture.
 * Not run yet (2026-11-19: the lab waits for the orchestrator's word, the CPU was busy).
+## Late joiners keep their own species: late_species, civ_late_arrival (2026-11-19, feat/w56-late)
+<a id="testing-late-joiners"></a>
+
+BUG-1289 (WP-S1a, docs/re/creations.md#creations-late-species) and BUG-1290 (WP-S1b, docs/re/civ.md#civ-late-arrival).
+Written without a lab run (the CPU was busy; the night run).
+* `coop_late_species.py` (suite `late_species`, cold, `tribe`, ~9 min; twin `late_species_off` =
+  `SPORE_FIX_OFF=creations.late_species`, must FAIL at the row in Tribe and at the galaxy menu's choice): the cold start
+  leaves the guest without choice and world record (BUG-1176), so it plays the host's species; the co-op window's
+  creature row in Tribe (`coop.uistate`, its `cnext` clicked), then `coop.tribe species` on both games (every member's
+  +0xB28) and the line's key (`coop.species key 1 tribe`, the creature's 0x7C copy); `coop.creations worlds forget` for
+  BUG-0638's case; the guest's game killed and started again, `coop.creations choose creature` in its galaxy menu, then
+  the join. Key frames: the guest's window with the row, the village, a member up close, the village after the join.
+* `coop_late_species.py --civ` (suite `late_species_civ`, `civ_npc`, ~5 min; twin `late_species_civ_off`): the guest
+  buys the nearest NPC city (`coop.civ buycity`), its citizens (`coop.civ citizens`) before and after the row's click;
+  the guest's role (`coop.role`) must not change (in Civ the same arrows pick a role when the row shows no creature).
+* `coop_civ_late_arrival.py` (suite `civ_late_arrival`, `civ_npc`, ~14 min; twin `civ_late_arrival_off` =
+  `SPORE_FIX_OFF=core.own_civ_late`, must FAIL at "the guest's OWN City Hall editor opened"): the start's arrival
+  offers nothing (the host's species), the guest chooses its creature, its game is killed and joins again: its own
+  City Hall and vehicle editors (coop_civ_guest_editors.drive_editor), the designs in its line on both games, the
+  City Hall of the city it buys (WP-C2's model hash) and its citizens; a third join offers nothing (`coop.civarrival`
+  `late: ... why='offered in this world already'`). Both tests kill the guest's game on purpose: the monitor's "hidden:
+  state older than 5 s" is allowed for them.
+* Lab pitfall kept in mind: the late path of BUG-1290 opens editors only for a guest that plays an own creature at its
+  first arrival of a session; the cold start removes worlds.ini, so no other Civ test sees an editor pop up. A test
+  that chooses an own creature in Civ and then makes the guest join again (a new session) would get them.
+## Own DNA per player: dna_own (2026-11-19, feat/w56-dna)
+<a id="testing-dna-own"></a>
+
+WP-D of 0.7.16, BUG-1291 (docs/03-gameplay.md#gameplay-own-dna). `coop_dna_own.py` (creature fixture) reads the game's
+own DNA and bar on both games (`coop.dna bar`), never the wallets (`coop.dna own` prints them for the log). Pace off
+(`coop.dna pace 0`) so `coop.dna add N` gives N; spends the game's way (`coop.dna spend N`, SetEvolutionPoints).
+Cases and twins (suite `full` / `twin`): `dna_own` (spend; twin `dna_own_off`, creature.own_dna), `dna_own_shared`
+(all.shared_dna forced on; twin `dna_own_shared_off`, DNA_SHARED_TWIN=1 leaves it off), `dna_own_reload` (coop.share;
+twin creature.dna_bar_set), `dna_own_rejoin` (twin creature.own_dna), `dna_own_store` (twoinst.session_restart, ~9 min;
+twin creature.own_dna_store), `dna_own_editors` (the vote, both editors with real clicks, key frames of the two DNA
+readouts; twin creature.own_dna). Cell: `evo_screens_cell_dna` (coop_evo_screens.py --part cell-dna: the guest's own
+cell editor with real input; own DNA by default, `--shared` the old checks as `evo_screens_cell_dna_shared`; twin
+`evo_screens_cell_dna_off`).
+
+* `tools/tests/dna_mode.py`: the tests that spend DNA (coop_evo_bar, coop_dna_pace, coop_editor_sync) check the DNA
+  their session plays (`coop.settings get all.shared_dna`) and take `--shared` to force the old pool (a lane knob:
+  the next test starts cold, so the suites run them in the default own mode).
+
