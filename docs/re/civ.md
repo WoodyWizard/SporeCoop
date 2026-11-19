@@ -2696,3 +2696,5 @@ BUG-1322. Follows "How Civ weapons fire (BUG-0477)" above and BUG-0535.
   per object and frame); else nothing is called and the shot has no target the guests could find (kind 2).
   `coop.civ shotobjs` prints the unlisted ones seen, `coop.civ shotprobe` (tests) one observed shot at a target that is
   no object. Test `coop_civ_influence.py --case shotobjs` (docs/06-testing.md#testing-civ-shot-objects).
+  no object. Test `coop_civ_influence.py --case shotobjs` (docs/06-testing.md#testing-civ-shot-objects; on the 0.7.15
+  line `coop_civ_shot_objects.py`, fix/w58-hotfix).
