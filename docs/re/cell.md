@@ -2747,3 +2747,31 @@ view centre (the host: its state, which also made its puppet) or a puppet in the
 function in the mod besides the own cell's rebuild, creations.cpp apply_own_cell). So a kin of a partner's key is
 never the first cell drawn with that model on its game. Left to confirm: the key frames of cell_kin_species (a
 partner's kin next to its puppet, the same look) when the night lab runs it.
+
+## The kin at level 10 in numbers, and the unit of the kin test (2026-11-19, fix/w57-cellkin)
+<a id="cell-kin-test-units"></a>
+
+BUG-1257 (cell_kin_species, first lab run 20261119-095414). Runtime, lane 10, Cell fixture, food raised by 100 at a
+time to 924 (`coop.pool kin` prints `box=` since this branch: the width and height of ViewBoxes[0..5]).
+* ✔ The visible box is **20 x 15 cell units at every level** (box=20.000 15.000 at food 0 .. 1000, world scale 0.5
+  .. 15000), as #cell-partner-tiles says. Positions shrink with the scale (the camera point 100 -> 34 -> 10 -> 3.4 -> 1.0
+  over levels 1-5: pos * scale invariant, #cell-world-scale), so one box covers more of the world each level, but the
+  box itself in cell units does not change. The world scale stops at **15000** (G+0x514C at food 900 and 1000).
+* CORRECTION (2026-11-19, fix/w57-cellkin): coop_cell_kin_species.py took one view width as `5 / world scale`
+  (#cell-kin-per-player's test): at level 10 that is 0.0003 units, so its "apart" was 0.7 units and its "near" radius
+  0.0006: every "kin near a player" was empty although the host's pool held kin of both cells (own=19 partner=90 in
+  that run). The test now reads the width from the game (`box=`).
+* ✔ Level 10 at food 924 (two players 4 units apart): about 7 kin in the host's pool, 18-47 units from the nearest
+  player (outside the visible box, inside the populate range: the box doubled), swimming at 0.2-0.7 units/s towards a
+  target `+0x08` ~10 units away; the counters own=22 partner=73 no_key=27 after the guest's own cell arrived: far more
+  kin are made than live (the cull 0xE5F8C0 drops the ones whose tile leaves the active range). The guest's mirrors
+  carry the same models at the same places (within 0.05 units).
+* ✔ The filter's own counter `no_key` grows while the guest still plays the host's cell (levels 4-9 before
+  `coop.creations choose cell`): a partner with no line of its own keeps the game's answer.
+* ✔ (lane 10 probes, the guest's own cell editor after `coop.creations choose cell <key>` and its mating call) With
+  the premade **BAF1AD40** the editor never closes: Done (plain, after a part drag, after naming the species in the
+  name dialog, after Enter) leaves the game in the editor with nothing in the mod's log, for minutes. With the
+  wizard's herbivore premade **E219E5D2** and with the host's fixture cell 4DA56CA5 the same clicks leave the editor
+  (black, then the pool). ? Why BAF1AD40 is refused was not traced (inferred: a premade the stage's editor cannot save,
+  e.g. parts or complexity beyond its limits). Players choose only their own My Creations (coop_ui), so this is a test
+  path; the kin test uses E219E5D2.
