@@ -47,13 +47,15 @@
 // designs go as line creations of MSG_SPECIES_LINE (species::set_design); a kind 9 is dropped as any unknown kind.
 // fix/w56-sync: npc stays 1.1 (unreleased): MSG_NPC_STATE / SPAWN flag NF_ALPHA 64 (BUG-1283) and MSG_PLAYER_RULE kind
 // K_DRAMA 11 (BUG-1282), both ignored by older peers; a guest uses them only from a host with npc 1.1 or newer.
+// Minor bump of fix/w56-sync: civ 1.1 (MSG_CIV_STATE chunk 0xF9 kInfluenceChunk, chunks 0: the cities' follower maps,
+// converters, buy meters and price maps, BUG-1285 / BUG-1287; an older guest drops it as a bad snapshot header).
 FAMILY(session,   1, 1, 1, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 1, STAGE_CREATURE, "Creature", "")
 FAMILY(npc,       4, 1, 1, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
 FAMILY(cell,      5, 1, 1, STAGE_CELL, "Cell", "")
 FAMILY(tribe,     6, 1, 1, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
-FAMILY(civ,       7, 1, 0, STAGE_CIV | STAGE_SPACE, "Civilization", "")
+FAMILY(civ,       7, 1, 1, STAGE_CIV | STAGE_SPACE, "Civilization", "")
 FAMILY(space,     8, 1, 2, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h")
 FAMILY(shared,    9, 1, 0, STAGE_TRIBE | STAGE_CIV | STAGE_SPACE, "shared resources", "wire/common.h wire/shared_res.h")
 FAMILY(creations, 10, 1, 1, STAGE_ALWAYS, "creations", "species_line_core.h")

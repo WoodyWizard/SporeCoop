@@ -596,4 +596,12 @@ void own_designs_save(bool start);
 void own_designs_session_end();
 bool own_designs_holds(void* o);
 std::string own_designs_debug(const std::vector<std::string>& a);
+// WP-F2 (civ_influence.cpp, BUG-1285 / BUG-1286 / BUG-1287): the cities' religious and economic standing on the guests
+constexpr uint8_t kInfluenceChunk = 0xF9; // MSG_CIV_STATE chunk index (chunks 0)
+void influence_init();
+void influence_host_tick(double now);
+void guest_influence(net::Reader& r);
+bool guest_converts_blocked(); // guest: the host's world decides the conversions (its follower maps come)
+bool remove_route(void* a, void* b); // guest: a route the host does not have any more, at both ends
+std::string influence_debug(const std::vector<std::string>& a);
 } // namespace civ

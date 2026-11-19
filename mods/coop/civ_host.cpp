@@ -642,6 +642,7 @@ void host_tick(double now)
     movie_tick();
     host_send_shots(now); // BUG-0477
     host_send_tribes(now); // BUG-0539
+    influence_host_tick(now); // BUG-1285, BUG-1287
     if (now - g_last_send < 0.1)
         return;
     g_last_send = now;

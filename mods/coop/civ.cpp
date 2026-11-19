@@ -948,6 +948,30 @@ void guest_roads(net::Reader& r)
     g_n.roads_in++;
     if (!a_AddTradeRoute || game::mode_id() != modes::kCiv)
         return;
+    // BUG-1287: a route between two of the host's cities that the host's list does not have any more goes here too
+    // (the game removes routes in its AI and diplomacy, which run on the host only); a full list (200) may be cut short
+    if (list.size() < 200) {
+        size_t n = std::min<size_t>(g_host_cities.size(), 250);
+        for (size_t i = 0; i < n; i++) {
+            void* a = g_host_cities[i];
+            if (!a || !city_listed(a) || planner_holds(a))
+                continue;
+            for (const Route& rt : routes_of(a)) {
+                auto it = std::find(g_host_cities.begin(), g_host_cities.begin() + n, rt.partner);
+                size_t j = (size_t)(it - g_host_cities.begin());
+                if (j >= n || j == i || planner_holds(rt.partner))
+                    continue;
+                uint8_t lo = (uint8_t)std::min(i, j), hi = (uint8_t)std::max(i, j);
+                bool host_has = std::any_of(list.begin(), list.end(), [&](const std::array<uint8_t, 3>& x) {
+                    return x[0] == lo && x[1] == hi;
+                });
+                if (!host_has && remove_route(a, rt.partner)) {
+                    H->log(M, SK_INFO, "civ: the trade route %u-%u the host's game removed goes here too (BUG-1287)", lo, hi);
+                    break; // (this city's route list changed: its next route at the next list)
+                }
+            }
+        }
+    }
     for (auto& x : list) {
         void* a = x[0] < g_host_cities.size() ? g_host_cities[x[0]] : nullptr;
         void* b = x[1] < g_host_cities.size() ? g_host_cities[x[1]] : nullptr;
@@ -1427,15 +1451,25 @@ void SK_CDECL h_AddCapture(void* ctx, void* city, void* meter, uint32_t owner, f
 // more while another player's army besieges it
 using Convert_t = void(SK_THISCALL*)(void*, uint32_t, int);
 static Convert_t o_Convert;
+// BUG-1284 (found by the Lineages fork (PR #196), its BUG-9078): the bonus looked for a governor's vehicle of purpose 2
+// (economic) of any nation: the game's purposes are 0 military, 1 religious (cultural), 2 economic (docs/re/civ.md 1),
+// so a trader gave the religious bonus and the preachers did not. Now a religious vehicle (1) of the converting nation.
+// `coop.fix civ.religious_attribution off`: purpose 2, any nation (0.7.15).
+static bool g_religious_attr_fix = true;
+COOP_FIX("civ.religious_attribution", "BUG-1284", g_religious_attr_fix,
+         "civ: the religious role's conversion bonus comes from its own preachers (religious vehicles), not from traders");
 static void SK_THISCALL h_Convert(void* city, uint32_t pol, int count)
 {
+    if (!g_applying && active() && guest_converts_blocked())
+        return; // BUG-1285: the host's game converts; its follower maps come (civ_influence.cpp)
     if (is_host() && active() && city && count > 0) {
         net::Vec3 cp = city_pos(city);
         uint8_t preacher = 0xFF;
         game::LiveScope live; // BUG-1053: one walk of the object list (no game code runs in the loop)
         hv_each([&](const HvRef& x) {
             if (preacher == 0xFF && role(x.h->owner) == 3 && (!g_cmd_listed_fix || hv_live(x)) &&
-                F<int>(x.v, kVPurpose) == 2 && net::dist(veh_pos(x.v), cp) < 200.f)
+                (g_religious_attr_fix ? F<int>(x.v, kVPurpose) == 1 && pol_of(x.v) == pol : F<int>(x.v, kVPurpose) == 2) &&
+                net::dist(veh_pos(x.v), cp) < 200.f)
                 preacher = x.h->owner; // (the first one)
         });
         if (preacher != 0xFF) {
@@ -1911,6 +1945,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     savestrip::add_filter(save_filter); // BUG-0470
     savestrip::add_save_hooks(save_start, save_end);
     own_designs_init(); // BUG-1274
+    influence_init(); // BUG-1285, BUG-1286, BUG-1287 (optional)
     // the city planner (BUG-0491, BUG-0493; GOG 2024 symbols, optional)
     a_DestroyInstance = H->sym("Simulator::cGameNounManager::DestroyInstance");
     a_VehicleRemove = H->sym("SporeCoop::Vehicle_Remove");
@@ -2223,6 +2258,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             guest_turrets(peek);
         else if (peek.ok() && chunk == kTribeChunk && chunks == 0) // BUG-0539: old tribe villages
             guest_tribes(peek);
+        else if (peek.ok() && chunk == kInfluenceChunk && chunks == 0) // BUG-1285, BUG-1287: religion, economy
+            guest_influence(peek);
         else if (!g_veh_hold) // (tests, BUG-0951: `coop.civ vehhold`)
             guest_state(r);
     }
