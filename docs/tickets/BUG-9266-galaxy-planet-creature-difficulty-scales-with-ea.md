@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages64-dev
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits: COMMIT
+commits: ac304d73
 tests: tests/party_tests.cpp (test_party_count); manual on TITAN QA 8 + 9 (coop.npc hit / hosthit, coop.party status)
 signature: "npc: guest N hit npc M: reported 1.00 ... applied 0.87" in a party of 2
 docs: docs/12-server-and-players.md#server-party-difficulty
