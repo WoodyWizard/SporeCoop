@@ -20,6 +20,7 @@ struct Ctx {
     std::function<void(const std::string&)> feed;
     std::function<std::string()> name;
     std::function<uint64_t()> identity;
+    std::function<uint64_t()> key; // 6S: the identity's secret key (identity::galaxy_key)
     std::string version;
     std::function<bool(std::string& err)> host;                     // host the loaded world (the relay is set)
     std::function<bool(const std::string& addr, std::string& err)> join; // join that address (the relay is set)
@@ -50,7 +51,8 @@ uint32_t planets_version();                 // changes with the list
 std::string current_planet();               // the planet this player is on ("" none)
 std::string galaxy_name();                  // the connected galaxy's name ("" when not connected)
 bool hosting();                             // this game hosts a planet of the galaxy now
-bool relayed();                             // the session (if any) runs through the galaxy server: a planet's session
+bool relayed();
+uint32_t key_refusals(); // tests (6S): HELLOs refused for the identity's key                             // the session (if any) runs through the galaxy server: a planet's session
 // decision 6F B: the planet's host sends one unreliable message the galaxy server copies to these players' slots
 // (net/galaxy.h kFan); false: not hosting through the galaxy, or too big (the caller sends it to each instead)
 bool fan_out(const std::vector<uint16_t>& slots, uint8_t type, const net::Writer& body);

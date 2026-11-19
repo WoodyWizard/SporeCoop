@@ -12294,6 +12294,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
         gx.feed = [](const std::string& t) { feed(t); };
         gx.name = [] { return g_name; };
         gx.identity = [] { return identity::own(); };
+        gx.key = [] { return identity::galaxy_key(); }; // 6S
         gx.version = COOP_VERSION;
         // 6E B: a planet takes the galaxy's player count (16 by default; difficulty stays one party's, founders.h)
         gx.host = [](std::string& err) { return do_host(default_port(), galaxy::planet_players(), 100, err, {}, galaxy::planet_players()); };

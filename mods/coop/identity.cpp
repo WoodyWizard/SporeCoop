@@ -46,6 +46,44 @@ static uint64_t make_id()
     return v ? v : 0x5C0DE5C0DEull;
 }
 
+uint64_t galaxy_key()
+{
+    static uint64_t key;
+    if (key)
+        return key;
+    std::wstring dir = creations::coop_dir();
+    if (dir.empty())
+        return 0;
+    const std::wstring path = dir + L"\\galaxy_key.bin";
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f != INVALID_HANDLE_VALUE) {
+        uint8_t b[12] = {};
+        DWORD got = 0;
+        const bool ok = ReadFile(f, b, sizeof b, &got, nullptr) && got == sizeof b && !memcmp(b, "SCGK", 4);
+        CloseHandle(f);
+        if (ok)
+            memcpy(&key, b + 4, 8);
+        if (key)
+            return key;
+    }
+    const uint64_t k = make_id() ^ ((uint64_t)make_id() << 1);
+    uint8_t b[12];
+    memcpy(b, "SCGK", 4);
+    memcpy(b + 4, &k, 8);
+    const std::wstring temp = path + L".tmp";
+    f = CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+    DWORD wrote = 0;
+    const bool ok = f != INVALID_HANDLE_VALUE && WriteFile(f, b, sizeof b, &wrote, nullptr) && wrote == sizeof b;
+    if (f != INVALID_HANDLE_VALUE)
+        CloseHandle(f);
+    if (ok && !MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_WRITE_THROUGH)) { // (another game of this profile won)
+        DeleteFileW(temp.c_str());
+        return galaxy_key();
+    }
+    key = ok ? k : 0;
+    return key;
+}
+
 uint64_t own()
 {
     if (g_own)

@@ -1277,3 +1277,12 @@ Owner 2026-11-18: "Let's also investigate the idea of connecting with Steam to a
 * A party that splits keeps the records in each member; a new party takes the first member's it finds (no merge).
 * Left for the 6K plan's step 4 (decision 6N A): the shared DNA pool, the progress bar, the Cell food total and the
   stage end are still one per world.
+
+## Security pass: identity and address (6S, 2026-11-19, feat/lineages-alpha)
+<a id="server-security-pass"></a>
+
+* BUG-9273, protocol 6: an identity is its first key's (the server keeps it in <worlds>/identities.txt: nobody else
+  can be you, a second copy of a profile is refused), and a new address proves itself with the server's cookie before
+  it gets a slot. tools/tests/galaxy_server_check.py covers both.
+* Left for the owner (gameplay): who may host an empty planet and store over its world (S6; today anyone who enters
+  first). Also open, not gameplay: encryption (the key travels in clear UDP: someone on the path could read it).

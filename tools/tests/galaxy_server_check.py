@@ -21,9 +21,9 @@ import zlib
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 EXE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'build', 'galaxy_server.exe' if os.name == 'nt' else 'galaxy_server')
-PROTO = 5
+PROTO = 6
 (HELLO, WELCOME, LIST, PLANETS, ENTER, ROLE, LEAVE, PING, PONG, REFUSED, HOSTGONE, READY, FETCH, XBEGIN, XCHUNK, XACK, XDONE,
- HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER) = range(1, 25)
+ HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE) = range(1, 26)
 CHUNK = 1100
 fails = []
 
@@ -90,8 +90,13 @@ class Player:
                 return None
             self.pump(0.1)
 
-    def hello(self):
-        self.send(HELLO, struct.pack('<IQ', PROTO, self.identity) + s8(self.name) + s8('check'))
+    def hello(self, key=None, cookie=0):
+        k = self.identity * 7 + 1 if key is None else key  # (protocol 6: the identity's key, then the address cookie)
+        self.send(HELLO, struct.pack('<IQ', PROTO, self.identity) + s8(self.name) + s8('check') + struct.pack('<QQ', k, cookie))
+        ch = self.take(CHALLENGE, 0.5)
+        if ch is not None:
+            self.send(HELLO, struct.pack('<IQ', PROTO, self.identity) + s8(self.name) + s8('check') +
+                      struct.pack('<QQ', k, struct.unpack_from('<Q', ch)[0]))
         w = self.take(WELCOME)
         if w is not None:
             self.slot = struct.unpack_from('<H', w)[0]
@@ -131,7 +136,20 @@ def main():
         stranger = Player(port, 'x', 1)
         stranger.send(LIST)
         check(stranger.take(REFUSED) is not None, 'a datagram from an unknown address is refused')
+        if not os.environ.get('GALAXY_CHECK_OLD'):
+            print('6S')
+            probe2 = Player(port, 'Probe', 0xD4)
+            probe2.send(HELLO, struct.pack('<IQ', PROTO, probe2.identity) + s8('Probe') + s8('check') + struct.pack('<QQ', 5, 0))
+            check(probe2.take(CHALLENGE) is not None and probe2.take(WELCOME, 0.3) is None,
+                  'a HELLO from a new address without its cookie gets a CHALLENGE, no slot')
+            probe2.send(HELLO, struct.pack('<IQ', PROTO, probe2.identity) + s8('Probe') + s8('check') + struct.pack('<QQ', 5, 12345))
+            check(probe2.take(WELCOME, 0.5) is None, 'a wrong cookie is no proof: no slot')
         check(a.hello() and b.hello() and c.hello(), 'three players are welcomed')
+        if not os.environ.get('GALAXY_CHECK_OLD'):
+            thief = Player(port, 'Thief', a.identity)
+            ok = thief.hello(key=999)
+            ref = thief.take(REFUSED, 0.5)
+            check(not ok and ref is not None and b'another key' in ref, "another game with Host's identity and another key is refused")
 
         print('names')
         b.send(WHO)

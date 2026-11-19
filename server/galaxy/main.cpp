@@ -21,6 +21,7 @@
 #include <ctime>
 #include <filesystem>
 #include <map>
+#include <random>
 #include <set>
 #include <string>
 #include <thread>
@@ -71,6 +72,42 @@ struct Meta {
 static std::map<uint16_t, Meta> g_upload_meta; // by player slot: the facts its upload carried
 static std::map<std::string, Stored> g_stored;
 static std::string g_worlds_dir = "worlds";
+// 6S (BUG-9273): the key each identity first came with (kept in <worlds>/identities.txt) and the address cookie
+static std::map<uint64_t, uint64_t> g_keys;
+static uint64_t g_cookie_secret[2];
+static uint32_t g_key_refused = 0, g_challenged = 0;
+static uint64_t mix64(uint64_t x)
+{
+    x ^= x >> 30;
+    x *= 0xBF58476D1CE4E5B9ull;
+    x ^= x >> 27;
+    x *= 0x94D049BB133111EBull;
+    return x ^ (x >> 31);
+}
+static uint64_t cookie_for(const net::Endpoint& ep, uint32_t bucket)
+{
+    return mix64(g_cookie_secret[0] ^ mix64(((uint64_t)ep.ip << 16) ^ ep.port) ^ mix64(bucket ^ g_cookie_secret[1]));
+}
+static std::string keys_path() { return g_worlds_dir + "/identities.txt"; }
+static void load_keys()
+{
+    FILE* f = fopen(keys_path().c_str(), "r");
+    if (!f)
+        return;
+    unsigned long long id = 0, key = 0;
+    while (fscanf(f, "%llx %llx", &id, &key) == 2)
+        if (id && key)
+            g_keys[id] = key;
+    fclose(f);
+}
+static void keep_key(uint64_t id, uint64_t key)
+{
+    g_keys[id] = key;
+    if (FILE* f = fopen(keys_path().c_str(), "a")) {
+        fprintf(f, "%016llx %016llx\n", (unsigned long long)id, (unsigned long long)key);
+        fclose(f);
+    }
+}
 static std::map<uint16_t, XferIn> g_uploads;    // by player slot
 static std::map<uint16_t, XferOut> g_downloads; // by player slot
 static uint32_t g_next_xfer = 1;
@@ -343,6 +380,7 @@ static void on_control(const Endpoint& from, Reader& r)
         std::string name = r.str8(), version = r.str8();
         if (!r.ok())
             return;
+        const uint64_t key = r.left() >= 8 ? r.u64() : 0, cookie = r.left() >= 8 ? r.u64() : 0;
         if (proto != kProto) {
             Client tmp;
             tmp.ep = from;
@@ -353,6 +391,33 @@ static void on_control(const Endpoint& from, Reader& r)
         }
         name = clean_name(name, kMaxPlayerName);
         version = clean_name(version, 48);
+        if (!c) { // 6S: a new address proves it is real first (its cookie back): no slot, no list for a spoofed one
+            const uint32_t bucket = now_ms() / 60000;
+            if (!cookie || (cookie != cookie_for(from, bucket) && cookie != cookie_for(from, bucket - 1))) {
+                Client tmp;
+                tmp.ep = from;
+                Writer w = control(CHALLENGE);
+                w.u64(cookie_for(from, bucket));
+                send(tmp, w);
+                g_challenged++;
+                return;
+            }
+        }
+        if (identity) { // 6S: an identity is its first key's: another key is refused (nobody else can be you)
+            auto k = g_keys.find(identity);
+            if (k == g_keys.end() && key)
+                keep_key(identity, key);
+            else if (k != g_keys.end() && k->second != key) {
+                Client tmp;
+                tmp.ep = from;
+                Writer w = control(REFUSED);
+                w.str8(kIdentityTaken);
+                send(tmp, w);
+                if (g_key_refused++ < 20)
+                    say("refused %s: identity %016llx with another key", from.masked().c_str(), (unsigned long long)identity);
+                return;
+            }
+        }
         if (!c) {
             if (g_clients.size() >= g_max_players || players_from(from) >= g_max_per_address) {
                 Client tmp;
@@ -964,6 +1029,12 @@ int main(int argc, char** argv)
     }
     g_sock.set_buffers(4 << 20); // (bursts: a world sent to a joining player)
     srand((unsigned)time(nullptr) ^ now_ms()); // (the hand-over tokens: not the same every run)
+    {
+        std::random_device rd; // 6S: the address cookies' secret (new each run: a cookie lives 1 to 2 minutes)
+        g_cookie_secret[0] = ((uint64_t)rd() << 32) ^ rd();
+        g_cookie_secret[1] = ((uint64_t)rd() << 32) ^ rd() ^ ((uint64_t)now_ms() << 20);
+    }
+    load_keys();
     say("galaxy server '%s' on UDP port %u (protocol %u), worlds in '%s', %u players a planet", g_name.c_str(),
         g_sock.local_port(), kProto, g_worlds_dir.c_str(), (unsigned)g_planet_players);
     say("limits: %zu players (%zu an address), %zu stored worlds of %u MB at most", g_max_players, g_max_per_address,

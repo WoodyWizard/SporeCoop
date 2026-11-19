@@ -19,6 +19,9 @@ namespace identity {
 void init(const SkHost* host, SkMod* mod, net::Session* sess);
 // this profile's identity (made and saved the first time); 0 while the profile's folder is not known yet
 uint64_t own();
+// 6S (BUG-9273): this profile's secret key for galaxy servers (made and saved the first time, galaxy_key.bin; never
+// shared with other players): a server keeps the first key it sees for an identity and refuses any other
+uint64_t galaxy_key();
 // host: the identity player `player` sent (own() for the host itself), 0 = not known
 uint64_t of(uint8_t player);
 // host: the player with this identity in the session now, 0xFF = none

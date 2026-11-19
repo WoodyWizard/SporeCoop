@@ -44,6 +44,9 @@ static uint32_t g_stored_joins, g_stored_accepted, g_stored_refused;
 constexpr double kStoredJoinMaxAge = 150; // s: an older stored world is not offered as the joiner's world
 static uint32_t g_reconnects;
 static void send_hello();
+static uint64_t g_cookie; // 6S: the server's cookie for this address (CHALLENGE)
+static uint32_t g_challenges = 0, g_key_refusals = 0;
+uint32_t key_refusals() { return g_key_refusals; }
 static void reset_planet_steps();
 static std::string g_galaxy, g_planet, g_last_refusal;
 static uint8_t g_role;      // kHostRole / kGuestRole on a planet, 0 none
@@ -237,6 +240,18 @@ static void use_relay(bool on)
 static void on_control(net::Reader& r)
 {
     const uint8_t type = r.u8();
+    if (type == CHALLENGE) { // 6S: the server asks this address to prove itself: HELLO again with its cookie
+        const uint64_t cookie = r.u64();
+        static double last;
+        const double now = H->time_seconds();
+        if (!r.ok() || g_welcomed || now - last < 0.5)
+            return;
+        last = now;
+        g_cookie = cookie;
+        g_challenges++;
+        send_hello();
+        return;
+    }
     if (type == WELCOME) {
         g_slot = r.u16();
         g_galaxy = r.str8();
@@ -438,6 +453,8 @@ static void on_control(net::Reader& r)
         g_last_refusal = r.str8();
         // 6H A: the server forgot this game (it timed it out: a game at 1 FPS, a server restart): connect again, at
         // most every 5 s; the planet is left (the server dropped it from the planet, the host times its session out)
+        if (r.ok() && g_last_refusal == kIdentityTaken) // 6S: say it once, no reconnect loop
+            g_key_refusals++;
         if (r.ok() && g_last_refusal == kNotConnected) {
             const double now = H->time_seconds();
             if (now - g_reconnect_at < 5.0)
@@ -788,6 +805,8 @@ static void send_hello()
     w.u64(C.identity ? C.identity() : 0);
     w.str8(C.name ? C.name() : "Player");
     w.str8(C.version);
+    w.u64(C.key ? C.key() : 0); // 6S (BUG-9273)
+    w.u64(g_cookie);
     send_control(w);
     g_hello_at = g_last_rx = H->time_seconds();
     g_next_ping = g_hello_at + 2;

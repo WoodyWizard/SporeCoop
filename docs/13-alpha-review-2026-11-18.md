@@ -28,8 +28,8 @@ sides. The findings are about a server that will face strangers:
 | # | Finding | Status |
 |---|---------|--------|
 | S1 | Any connected player could make the server allocate 128 MB per datagram (XBEGIN allocated before the sender was checked) and hold 128 MB per slot | fixed: checked first; a world is 32 MB at most (`--max-world-mb`); a thrown allocation no longer ends the server |
-| S2 | The identity in HELLO is self-declared and sent to everyone: a client that says another player's identity takes that player's party seat and removes them from it | decision 6S (a secret per identity, kept by the server on first use) |
-| S3 | No proof that a HELLO's address is real; amplifiers (fan-out listing one slot 64 times, a download nobody acks resent forever, LIST, REFUSED) | fixed: each slot once per fan-out; a download without acks is given up after 30 s. decision 6S: a cookie in HELLO |
+| S2 | The identity in HELLO is self-declared and sent to everyone: a client that says another player's identity takes that player's party seat and removes them from it | fixed 2026-11-19 (BUG-9273: a key per identity, kept by the server on first use) |
+| S3 | No proof that a HELLO's address is real; amplifiers (fan-out listing one slot 64 times, a download nobody acks resent forever, LIST, REFUSED) | fixed: each slot once per fan-out; a download without acks is given up after 30 s; 2026-11-19 a cookie in HELLO (BUG-9273) |
 | S4 | FETCH unthrottled; each one read the world and ran its CRC twice, and the CRC again twice a second until the first ack | fixed: one FETCH per 3 s and per download; the CRC once |
 | S5 | READY and LEAVE go once over UDP: a lost one left the planet "being loaded" or a player on a planet it left (it could even be made host) | fixed: the pings carry the game's planet state; the server follows it after 3 pings |
 | S6 | An empty planet belongs to whoever enters first: they can replace its stored world or lock it by never getting ready | decision 6S (who may host and store a planet) |

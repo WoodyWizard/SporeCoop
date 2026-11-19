@@ -27,8 +27,8 @@
 namespace net::galaxy {
 
 constexpr uint16_t kDefaultPort = 47900;
-constexpr uint32_t kProto = 5; // 2: stored worlds (5Q A); 3: the hand-over (5V A); 4: the menu facts (5X B);
-                                // 5: the warm hand-over token (6B C)
+constexpr uint32_t kProto = 6; // 2: stored worlds (5Q A); 3: the hand-over (5V A); 4: the menu facts (5X B);
+                                // 5: the warm hand-over token (6B C); 6: the identity key and the address cookie (6S)
 constexpr uint8_t kControl = 'G', kRelay = 'R', kFan = 'F';
 constexpr size_t kMaxFanSlots = 64; // (kMaxPlanetPlayers)
 // decision 6I A: a guest that loaded the planet's stored world joins with this receipt; the host takes it (no world sent)
@@ -38,7 +38,7 @@ inline uint64_t stored_receipt(uint32_t crc, uint32_t world) { return ((uint64_t
 constexpr const char* kNotConnected = "Not connected to the galaxy server: connect first.";
 
 enum Type : uint8_t {
-    HELLO = 1,    // player -> server: u32 proto, u64 identity, str8 name, str8 version
+    HELLO = 1,    // player -> server: u32 proto, u64 identity, str8 name, str8 version, u64 key, u64 cookie (6: 6S)
     WELCOME = 2,  // server -> player: u16 its slot, str8 galaxy name, u8 the players a planet takes (6E B; older: 4)
     LIST = 3,     // player -> server
     PLANETS = 4,  // server -> player: u8 n, n x {str8 planet, u16 players, u16 host slot (0 none), u32 stored world bytes,
@@ -82,7 +82,12 @@ enum Type : uint8_t {
     // 6L A (the Social Menu): a whisper to any player of the galaxy. player -> server: u64 the receiver's identity,
     // str16 text; server -> receiver: u64 the sender's identity, str8 its name, str16 text
     WHISPER = 24,
+    // 6S (BUG-9273): server -> a new address: u64 cookie; the HELLO from that address carries it back (the address is
+    // real: no slot, no answer bigger than the HELLO for a spoofed one)
+    CHALLENGE = 25,
 };
+// 6S: the identity's key does not match the one the server keeps for it
+constexpr const char* kIdentityTaken = "This player's identity is in use with another key on this galaxy: is another copy of your profile playing?";
 enum PartyKind : uint8_t { kPartyInvite = 1, kPartyAnswer, kPartyLeave, kPartyLead, kPartyKick, kPartyStage };
 constexpr uint8_t kHostRole = 1, kGuestRole = 2;
 constexpr uint8_t kPingNone = 0, kPingOnPlanet = 1, kPingHosting = 2;
