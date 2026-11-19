@@ -10,7 +10,7 @@ role: server
 versions: 0.7.14.1-lineages64-dev
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits: COMMIT
+commits: c3187171
 tests: tools/tests/galaxy_server_check.py (18 checks; 3 new); manual on TITAN QA 8 + 9
 signature: "refused <address>: identity <id> with another key"
 docs: docs/12-server-and-players.md#server-security-pass
