@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <vector>
+#include <algorithm>
 
 #include "cell_logic.h"
 #include "view_centres.h"
@@ -298,6 +300,112 @@ static void active_set()
     CHECK(active_tiles(1, 0, NAN, vb, sizes, 17) > 511);  // garbage: no pass
 }
 
+
+// BUG-1309: the host's Cell state over a 512 kbit/s link (a queue of 400 ms that drops what does not fit, as
+// tools/tests/netem.py's rate cap): 400 cells, the guest's nearest are the first indices of the "pool" order
+// reversed (the old order sends them last). Per second of the steady state: how many of the nearest 100 cells
+// reached the guest. Old: whole rounds in pool order every 0.1 s, the link keeps the first ~7 chunks of each.
+static void link_pace()
+{
+    struct Link { // bytes/s, the time its queue is free again
+        double rate = 64000, free_at = 0, queue = 0.4;
+        uint32_t sent = 0, lost = 0;
+        bool pass(double now, size_t bytes)
+        {
+            sent++;
+            double depart = std::max(now, free_at) + bytes / rate;
+            if (depart - now > queue) {
+                lost++;
+                return false;
+            }
+            free_at = depart;
+            return true;
+        }
+    };
+    for (bool fix : {true, false}) {
+        Link link;
+        LinkPace pace;
+        const int kCells = 400, per = 14;
+        std::vector<int> round; // cell ids; id < 100: the guest's nearest
+        size_t next = 0, chunks = 0;
+        uint64_t cell_bytes = 0;
+        int near_seen_min = kCells;
+        std::vector<double> seen(kCells, -1);
+        for (int tick = 0; tick < 300; tick++) { // 30 s
+            double now = tick * 0.1;
+            if (fix) {
+                pace.observe(now, link.sent, link.lost, cell_bytes);
+                pace.refill(0.1);
+                if (next >= chunks) {
+                    size_t n = pace.round_cells(kCells);
+                    round.clear();
+                    for (size_t i = 0; i < n; i++)
+                        round.push_back((int)i); // nearest first
+                    next = 0;
+                    chunks = (round.size() + per - 1) / per;
+                }
+                while (next < chunks && pace.may_send()) {
+                    size_t k = next++, bytes = 9 + 63 * std::min<size_t>(per, round.size() - k * per) + 35;
+                    cell_bytes += bytes;
+                    pace.spent(bytes);
+                    if (link.pass(now, bytes))
+                        for (size_t i = k * per; i < std::min(round.size(), k * per + per); i++)
+                            seen[round[i]] = now;
+                }
+            } else {
+                for (int k = 0; k * per < kCells; k++) { // pool order: the nearest are the last indices
+                    size_t bytes = 9 + 63 * per + 35;
+                    if (link.pass(now + k * 1e-4, bytes))
+                        for (int i = k * per; i < std::min(kCells, k * per + per); i++)
+                            seen[kCells - 1 - i] = now;
+                }
+            }
+            link.pass(now + 0.05, 120); // the player's own state and the reliable messages
+            if (tick % 10 == 9 && tick >= 100) { // a second of the steady state (from 10 s on)
+                int near = 0;
+                for (int i = 0; i < 100; i++)
+                    near += seen[i] > now - 1.0; // listed within the last second: the guest keeps its mirror
+                near_seen_min = std::min(near_seen_min, near);
+            }
+        }
+        printf("  link_pace %s: nearest 100 seen per second at least %d, rate %.0f B/s, cuts %u, raises %u, lost %u of %u\n", fix ? "paced" : "old",
+               near_seen_min, pace.limited() ? pace.rate : -1.0, pace.cuts, pace.raises, link.lost, link.sent);
+        if (fix) {
+            CHECK(near_seen_min == 100); // every one of the nearest 100, every second
+            CHECK(pace.limited() && pace.rate < 64000 && pace.rate > 20000);
+            CHECK(pace.cuts >= 1);
+        } else
+            CHECK(near_seen_min < 30); // the old order: the nearest came last and the link dropped them
+    }
+    // a lossy link that is not full (3 % random loss) keeps whole rounds: never cut
+    LinkPace p;
+    uint32_t sent = 0, lost = 0;
+    for (int t = 0; t < 100; t++) {
+        sent += 100;
+        lost += 3;
+        p.observe(t * 0.1, sent, lost, (uint64_t)t * 26000);
+    }
+    CHECK(!p.limited() && p.cuts == 0);
+    // after a cut the rate grows back when the loss is gone, and is unlimited above the ceiling
+    LinkPace q;
+    q.observe(0, 0, 0, 0);
+    q.observe(0.5, 300, 210, 130000); // 70 % lost of 260 KB/s
+    CHECK(q.limited() && q.rate > 60000 && q.rate < 70000);
+    double r0 = q.rate;
+    uint32_t s = 300;
+    uint64_t b = 130000;
+    for (int k = 2; k < 200 && q.limited(); k++) {
+        s += 100;
+        b += (uint64_t)(q.rate * 0.5); // the state used its rate
+        q.observe(k * 0.5, s, 210, b);
+    }
+    CHECK(!q.limited() && q.raises > 0 && r0 > 0);
+    CHECK(q.round_cells(900) == 900);
+    LinkPace f;
+    f.rate = 13200; // 13.2 KB/s: 80 cells in 0.4 s
+    CHECK(f.round_cells(400) == 80 && f.round_cells(30) == 30);
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -317,6 +425,7 @@ int main(int argc, char** argv)
     once();
     kill_word_ko();
     active_set();
+    link_pace();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;

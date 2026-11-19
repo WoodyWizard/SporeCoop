@@ -963,6 +963,7 @@ void on_player_leave(int id)
     spend_forget(id); // BUG-1249
     mate_player_left(id); // BUG-1246
     g_food_tx.erase(id);
+    pace_forget(id); // BUG-1309
     if (!g_fix_kostale)
         return;
     // its knockout ends with it: a newcomer gets the same id (BUG-0061)
@@ -1625,6 +1626,7 @@ void on_session_end()
     g_meals.reset();
     g_food_ack.clear();
     g_food_tx.clear();
+    pace_reset(); // BUG-1309
     spend_reset(); // BUG-1249
     mate_session_end(); // BUG-1246
     if (in_cell() || !g_fix_forget) // outside the Cell stage the indices point into a pool that is gone

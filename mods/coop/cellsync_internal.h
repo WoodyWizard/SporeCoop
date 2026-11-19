@@ -311,6 +311,11 @@ uint8_t* S();
 net::Vec3 pos_of(uint8_t* c);
 void set_pos(uint8_t* c, const net::Vec3& p);
 extern double g_last_send;
+// BUG-1309 (cellsync_host.cpp): each guest's paced Cell state; `coop.pool pace` prints it
+void pace_forget(int id);
+void pace_reset();
+std::string pace_status();
+extern bool g_fix_slow_link;
 extern double g_last_food;
 extern uint16_t g_cycle;
 extern int32_t g_food_sent;

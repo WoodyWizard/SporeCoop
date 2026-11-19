@@ -367,4 +367,113 @@ inline double active_tiles(int base, int food, float world_scale, const float* v
 }
 constexpr int kActiveTileCap = 480; // the game's buffer holds 511 (0x27F4 bytes of 20-byte entries)
 
+// BUG-1309: the host's Cell state to one guest, paced to what the guest's link carries. A round of the host's
+// state (MSG_CELL_STATE, unreliable chunks of 14 cells, 63 bytes each) went out whole ten times a second: ~400 cells
+// at level 1 are ~260 KB/s, and a 512 kbit/s link (64 KB/s) carries a quarter. A link's queue drops what does not
+// fit; the chunks of a round go out in pool order every time, so the same first ~7 chunks arrived in every round
+// and the rest never: the guest kept ~100 of the host's ~400 cells (spread over the whole pool, not the nearest)
+// and removed the others a second after they came (lab evo_screens_switch_slow: "c: 247 missing on the guest").
+// Now a guest's round is nearest first, and the host sends it no faster than its link carries:
+//  * the rate (bytes/s of cell state) follows the connection's own loss counters (Connection::stats): a window
+//    with over kCutLoss of the packets lost is congestion, the rate becomes what of the cell state got through
+//    (sent x (1 - loss)) x kCutKeep; a window under kRaiseLoss while the state used its rate raises it by kRaise;
+//    above kCeil it is unlimited again (whole rounds every tick, as before). A lossy link that is not full (random
+//    loss of a few %) never reaches kCutLoss and keeps whole rounds;
+//  * a round lists at most the nearest cells that its rate sends in kRoundSpan (the guest removes a mirror that no
+//    complete round listed, or that was not listed for 1 s), and goes out over several ticks within its tokens
+//    (a burst of at most kBurst seconds of the rate: a link's queue holds a few hundred ms).
+struct LinkPace {
+    static constexpr double kUnlimited = 1e12;
+    static constexpr double kWindow = 0.5;     // s between two looks at the loss counters
+    static constexpr double kCutLoss = 0.15;   // loss fraction of a window that is congestion
+    static constexpr double kRaiseLoss = 0.03; // loss fraction under which the rate may grow
+    static constexpr double kCutKeep = 0.85;   // the share of what got through that the new rate keeps
+    static constexpr double kRaise = 1.15;     // per window without loss
+    static constexpr double kHold = 1.5;       // s after a cut without another cut (the loss of before still counts in)
+    static constexpr double kFloor = 12e3;     // bytes/s: never slower (a round of the nearest ~70 cells every 0.4 s)
+    static constexpr double kCeil = 2e6;       // bytes/s: above this, unlimited
+    static constexpr double kRoundSpan = 0.4;  // s: a round is at most this much of the rate
+    static constexpr double kBurst = 0.25;     // s of the rate: the tokens a tick may hold
+    static constexpr size_t kPerCell = 66;     // bytes on the wire per cell (63 + its share of the chunk and packet headers)
+
+    double rate = kUnlimited;
+    double tokens = 0;
+    double win_at = -1, hold_until = -1;
+    uint32_t win_sent = 0, win_lost = 0;
+    uint64_t win_cell = 0;
+    uint32_t cuts = 0, raises = 0;
+    float last_loss = 0;
+
+    bool limited() const { return rate < kUnlimited; }
+    // the connection's packets sent / lost so far and the cell state bytes sent to this guest so far (all
+    // monotonic); true when the rate was cut in this call
+    bool observe(double now, uint32_t sent, uint32_t lost, uint64_t cell_bytes)
+    {
+        if (win_at < 0) {
+            win_at = now;
+            win_sent = sent;
+            win_lost = lost;
+            win_cell = cell_bytes;
+            return false;
+        }
+        double dt = now - win_at;
+        if (dt < kWindow)
+            return false;
+        uint32_t dp = sent - win_sent, dl = lost - win_lost;
+        uint64_t dc = cell_bytes - win_cell;
+        win_at = now;
+        win_sent = sent;
+        win_lost = lost;
+        win_cell = cell_bytes;
+        if (dp < 15)
+            return false; // too few packets to tell
+        double loss = std::min(1.0, (double)dl / dp);
+        last_loss = (float)loss;
+        double cell_rate = dc / dt;
+        if (loss > kCutLoss) {
+            if (now < hold_until)
+                return false;
+            double got = cell_rate * (1.0 - loss) * kCutKeep;
+            double next = std::max(kFloor, std::min(rate, got));
+            hold_until = now + kHold;
+            if (next < rate) {
+                rate = next;
+                tokens = std::min(tokens, rate * kBurst);
+                cuts++;
+                return true;
+            }
+            return false;
+        }
+        if (loss < kRaiseLoss && limited() && cell_rate >= 0.7 * rate) { // the state used its rate: room for more?
+            rate *= kRaise;
+            raises++;
+            if (rate > kCeil)
+                rate = kUnlimited;
+        }
+        return false;
+    }
+    // a tick of dt s: the bytes it may send
+    void refill(double dt)
+    {
+        if (!limited())
+            return;
+        tokens = std::min(tokens + rate * std::max(0.0, dt), rate * kBurst);
+    }
+    // the most cells a new round may list (of `want`)
+    size_t round_cells(size_t want) const
+    {
+        if (!limited())
+            return want;
+        size_t n = (size_t)(rate * kRoundSpan / kPerCell);
+        return std::min(want, std::max<size_t>(14, n));
+    }
+    // a chunk of `bytes` may go now (unlimited: always; else while the tokens last, one chunk over is fine)
+    bool may_send() const { return !limited() || tokens > 0; }
+    void spent(size_t bytes)
+    {
+        if (limited())
+            tokens -= (double)bytes;
+    }
+};
+
 } // namespace cell_logic
