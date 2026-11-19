@@ -479,13 +479,13 @@ static int c_civarrival(void*, int argc, const char* const* argv, SkOut* out)
 
 static void reset()
 {
+    g_late = g_late_checked = g_was_here = false; // BUG-1290: the next session's first arrival is looked at
+    g_late_world = 0;
     if (g_phase == kOpen && designs::g_own_offline_fix && g_fix)
         return; // BUG-1298: our open editor is followed to its end (civ_arrival_tick)
     g_phase = kNone;
     g_step = 0;
     g_queued = false;
-    g_late = g_late_checked = g_was_here = false; // BUG-1290: the next session's first arrival is looked at
-    g_late_world = 0;
 }
 static size_t held() { return g_phase != kNone && g_phase != kDone ? 1 : 0; }
 SESSION_STATE("core.own_civ_arrival", &g_fix, reset, held);
