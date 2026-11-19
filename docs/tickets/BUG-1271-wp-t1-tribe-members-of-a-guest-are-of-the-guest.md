@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: feat/w54-tribe
-commits: d6ffc32d
+commits: d6ffc32d e7dcf746
 tests: tribe_own_species
 signature:
 docs: docs/re/tribe.md#tribe-own-species, docs/06-testing.md#testing-tribe-own-species
