@@ -1992,8 +1992,25 @@ static void apply_species(const std::vector<uint8_t>& data)
            (unsigned)b.recs.size());
 }
 
-void want_species(const Key& k)
+// BUG-1293 (found by the Lineages fork, PR #196, its BUG-9231): a host NPC of a host's own creation is keyed here by our
+// own key for it (0x7D......, local_species); when that key builds nothing here the proxy asked the host for OUR key,
+// which the host never has ("player 1 asks for species 7D...: not found here" every 30 s) and the NPC stayed invisible.
+// Now the ask names the host's key. `coop.fix creations.ask_host_key off`: the key as given (0.7.15)
+static bool g_ask_host_key = true;
+COOP_FIX("creations.ask_host_key", "BUG-1293", g_ask_host_key,
+         "creations: a guest asks the host for a species by the host's key, not by its own key for the host's creation");
+static unsigned g_asks_unmapped;
+
+void want_species(const Key& kin)
 {
+    Key k = kin;
+    if (g_ask_host_key && C.sess && C.sess->role() == net::Role::Client) {
+        Key hk = host_species(kin);
+        if (hk.instance != kin.instance) {
+            k = hk;
+            g_asks_unmapped++;
+        }
+    }
     if (!C.sess || C.sess->role() != net::Role::Client || !C.sess->connected() || !k.instance ||
         k.type != kInfo[kCreature].type || k.group != kInfo[kCreature].group || g_species_db.count(k.instance))
         return;
@@ -2393,6 +2410,22 @@ Key host_species(const Key& k)
 {
     auto it = is_crt(k) ? g_unmap.find(k.instance) : g_unmap.end();
     return it == g_unmap.end() ? k : Key{it->second, k.type, k.group};
+}
+
+// tests (BUG-1293, `coop.creations breakremap <host hex>`): our key for a host's creature species points at a key
+// nothing registered here (as a remap whose package this game cannot build); the host's key stays as it is
+std::string test_break_remap(uint32_t host_inst)
+{
+    uint32_t fake = 0x7DFFFF00u | (host_inst & 0xFFu);
+    if (auto it = g_remap.find(host_inst); it != g_remap.end())
+        g_unmap.erase(it->second);
+    g_remap[host_inst] = fake;
+    g_unmap[fake] = host_inst;
+    g_asked.erase(host_inst);
+    g_asked.erase(fake);
+    return "species " + hex(host_inst) + " of the host is " + hex(fake) + " here now (nothing registered under it); asks "
+           "by the host's key " + std::to_string(g_asks_unmapped) + " so far, ask_host_key=" +
+           std::to_string((int)g_ask_host_key) + "\n";
 }
 
 bool species_pending(const Key& k) { return g_asked.count(k.instance) && !g_species_db.count(k.instance); }
