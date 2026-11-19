@@ -151,14 +151,24 @@ inline std::string shown_name(std::string name)
 {
     static const char kTag[] = "-noshare-";
     const size_t n = sizeof kTag - 1;
+    bool cut = false;
     for (size_t i = 0; i + n <= name.size();) {
         size_t k = 0;
         while (k < n && (name[i + k] >= 'A' && name[i + k] <= 'Z' ? name[i + k] + 32 : name[i + k]) == kTag[k])
             k++;
-        if (k == n)
+        if (k == n) {
             name.erase(i, n);
-        else
+            cut = true;
+        } else
             i++;
+    }
+    if (cut) { // the spaces around the tag go with it ("Pandize -NoShare- 2" is "Pandize 2", not "Pandize  2"; a plate
+               // sized for "Pandize " drew its text off centre, 2026-11-18)
+        std::string t;
+        for (char c : name)
+            if (c != ' ' || (!t.empty() && t.back() != ' ')) t += c;
+        while (!t.empty() && t.back() == ' ') t.pop_back();
+        name = t;
     }
     return name.empty() ? std::string("Player") : name;
 }

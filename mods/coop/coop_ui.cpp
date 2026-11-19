@@ -3948,11 +3948,11 @@ static void set_look(Win w, std::string& shown, const std::string& stem)
 
 // owner 2026-11-18: "reduce the total size of the Party Panel ... The scaling is very large compared to the native
 // "pack" area. It's fine to have it larger, but at the moment, its WAY larger." The cards at this share of their drawn
-// size, the text in the small UI font; [ui] party_scale (percent, 50..100). (Decision 6Q A: from the alpha.)
+// size (80%: 72% read cramped, owner 2026-11-18), the text in the small UI font; [ui] party_scale (percent, 50..100). (Decision 6Q A: from the alpha.)
 static float party_compact()
 {
     static float s = -1;
-    if (s < 0) s = std::clamp(H->config_int(M, "ui", "party_scale", 72), 50, 100) / 100.f;
+    if (s < 0) s = std::clamp(H->config_int(M, "ui", "party_scale", 80), 50, 100) / 100.f;
     return s;
 }
 
@@ -4145,7 +4145,7 @@ static void ph_apply(void*)
             return Rect{x - m, y1, x - m + text_px(t, small) + 2 * m, y2};
         };
         place(r.name, on, left(plate.x1 + px(L.text_x), plate.y1 + px(L.name_y), plate.y1 + px(L.name_y + L.name_h),
-                               row.name, false));
+                               row.name, party_compact() < 0.9f && D.font_button != 0)); // (the card's font, 6O)
         place(r.place, on, left(plate.x1 + px(L.text_x), plate.y1 + px(L.place_y),
                                 plate.y1 + px(L.place_y + L.place_h), row.place, D.font_button != 0));
         if (on) {

@@ -1199,3 +1199,16 @@ Owner 2026-11-18: "Let's also investigate the idea of connecting with Steam to a
   fail keep the galaxy server's relay (it already relays today). No port forwarding for anyone; works for Steam and GOG.
 * Recommendation: hole punching through the galaxy server with the relay as the fallback (ROADMAP 6P A); a one-day
   Steam spike only if many pairs still fail.
+
+## A migration takes the party, not the planet (6R A, 2026-11-18, feat/lineages-alpha)
+<a id="server-migrate-party"></a>
+
+* ✔ The "editor on join" seen in the alpha tests was BUG-9163's rule from the small co-op ("a migration started by any
+  player: everyone edits and migrates together"): on a galaxy planet one stranger's migration sent every player of the
+  planet into the creature editor, and the host's editor then held a joiner's world. Now (BUG-9254) only the migrating
+  player's party follows it; a direct session is still one group. Checked with fix on and off on TITAN + the MSI.
+* Still open: a host in its own editor (its own choice) holds a joiner's world until it is back in the stage; the
+  joiner could take the galaxy server's stored copy meanwhile (6I A's path).
+* Name plates: a hidden -NoShare- tag left its space ("Pandize " drew off centre, "Pandize  2"); the spaces go with
+  the tag now (live too). The Party card is 80% of its old size (72% read cramped) and its name is measured in the
+  card's own font (it sat off to the right).
