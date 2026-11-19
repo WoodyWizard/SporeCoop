@@ -63,7 +63,14 @@ joined, NPC 3 (12 HP), `coop.npc hit 3 1` on the guest, the host's log "applied"
 * Not seen at runtime: an NPC's bite on a player scaled by its party, hunger and the award (code reading; they use the
   same party size).
 * tests/party_tests.cpp test_party_count: the count and the rules it gives (alone 100%, a party of 6 counted as 4).
-* Cell, Tribe, Civ (2026-11-19): built, not seen at runtime. The test galaxy has no Cell or Civ planet (Clyth and Jiff
+* Cell (2026-11-19, a Cell planet added to the test galaxy: Cellfour from the DuoQACellPartsHost save, QA 8 host,
+  QA 9 guest; `coop.pool goto 100 30` and `coop.pool realbite 80` on the host, `coop.pool hp 100` + `enemyhit` on the
+  guest): 55 predators spawned, none with added health (`assigned=0`); the host's own bites: alone 0 of 5 scaled
+  (`party_bites=0`), in a party of 2 10 of 10 scaled. The guest's enemy hits mostly found no hittable moment (1 of 50
+  landed, alone: raw 2, loss 2, no bonus asked): the bonus in a party is code reading.
+* A save that is no Lineages campaign (rules {1, 0}: Cellfour) had no extras at all; on a galaxy planet its parties
+  play the standard 100% rules now (world.cpp party_base), so a party of 2 meets the same difficulty everywhere.
+* Tribe, Civ (2026-11-19): built, not seen at runtime. The test galaxy has no Cell or Civ planet (Clyth and Jiff
   are Tribe), and a Tribe fight between villages could not be started from the console in this pass. Code reading
   only; the Tribe run found BUG-9268 instead.
 

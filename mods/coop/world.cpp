@@ -1858,24 +1858,33 @@ COOP_FIX("creature.party_difficulty", "BUG-9266", g_party_difficulty,
          "galaxy planet: difficulty scales with the party involved (its players on the planet), not the planet's seats: "
          "Creature hits, bites, hunger and awards; Cell bites and meals; Tribe and Civ fights and takeovers");
 bool party_difficulty() { return g_party_difficulty && parties::galaxy(); }
-founders::CampaignRules rules_for_player(int session_id)
+// a galaxy planet's rules for a party: a save that is no Lineages campaign (the legacy {1, 0}: no extras at all) plays
+// at the standard 100% too, so a party of 2 meets the same difficulty on every planet (2026-11-19)
+static founders::CampaignRules party_base()
 {
     auto r = rules_for_current();
+    if (r.model == 0 && r.difficulty_percent == 0)
+        r = founders::CampaignRules{1, 100, 15, 5, 250, 5, 1};
+    return r;
+}
+founders::CampaignRules rules_for_player(int session_id)
+{
     if (session_id < 0 || session_id > 255 || !party_difficulty())
-        return r;
+        return rules_for_current();
+    auto r = party_base();
     r.seats = (uint8_t)std::clamp(parties::party_size((uint8_t)session_id), 1u, 255u);
     return r;
 }
 founders::CampaignRules rules_for_largest_party()
 {
-    auto r = rules_for_current();
+    auto r = party_difficulty() ? party_base() : rules_for_current();
     if (party_difficulty())
         r.seats = (uint8_t)std::clamp(parties::largest_party(), 1u, 255u);
     return r;
 }
 founders::CampaignRules rules_for_me()
 {
-    auto r = rules_for_current();
+    auto r = party_difficulty() ? party_base() : rules_for_current();
     if (party_difficulty())
         r.seats = (uint8_t)std::clamp((unsigned)parties::my_party().size(), 1u, 255u);
     return r;
