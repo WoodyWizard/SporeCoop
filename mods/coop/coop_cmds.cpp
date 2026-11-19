@@ -2,6 +2,7 @@
 // functions and the command registrations of sporekit_mod_main, which calls the register_commands_* functions at the
 // places the registrations had (the same order: SporeKit keeps the commands by name, the module inits between them stay
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
+#include "identity.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1192,6 +1193,12 @@ void register_commands_core()
                    settings::command, nullptr, MT);
     H->command_add(M, "coop.find", "coop.find [colors | color <name|0..7> | project x y z | labels] - F2: the arrows to the partners of the last frame, the player colours, pick a colour",
                    pfind::command, nullptr, MT);
+    H->command_add(M, "coop.identity", "coop.identity - the persistent player identities (BUG-9258): this profile's, and the players' the host knows",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s", identity::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.live", "coop.live - tests (BUG-0426): the object list of this frame (game::listed: walks, hits, destroys seen)",
                    [](void*, int, const char* const*, SkOut* out) {
                        SAY("%s\n", game::live_status().c_str());

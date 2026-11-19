@@ -285,6 +285,9 @@ bool find_paths()
     return true;
 }
 
+// BUG-9258 (Lineages): this profile's SporeCoop folder next to EditorSaves.package, "" while not known
+std::wstring coop_dir() { return find_paths() ? g_dir : std::wstring(); }
+
 static bool load_editor_saves(dbpf::Package& pk)
 {
     std::vector<uint8_t> f;

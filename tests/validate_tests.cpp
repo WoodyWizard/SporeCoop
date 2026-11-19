@@ -1107,8 +1107,8 @@ static void test_manifest()
     for (int t = 0; t < 256; t++)
         known += msg_info((uint8_t)t).known;
     // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
-    // BUG-1160), MSG_CELL_MATE 72 (BUG-1246)
-    const std::set<int> added_types = {70, 71, 72};
+    // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_IDENTITY 73 (BUG-9258, the Lineages port)
+    const std::set<int> added_types = {70, 71, 72, 73};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1119,6 +1119,9 @@ static void test_manifest()
     CHECK(MSG_CELL_MATE == 72 && std::string(msg_info(72).name) == "CELL_MATE" && msg_info(72).family == Family::cell &&
           msg_dir(72) == MsgDir::Guest && host_world::msg_class(72) == host_world::MsgClass::HostWorld &&
           dispatch_route(72, true) == Route::Cell && dispatch_route(72, false) == Route::None);
+    CHECK(MSG_IDENTITY == 73 && std::string(msg_info(73).name) == "IDENTITY" && msg_info(73).family == Family::session &&
+          msg_dir(73) == MsgDir::Any && host_world::msg_class(73) == host_world::MsgClass::Session &&
+          dispatch_route(73, true) == Route::Identity && dispatch_route(73, false) == Route::Identity);
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);

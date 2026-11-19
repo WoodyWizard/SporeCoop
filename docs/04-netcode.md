@@ -130,10 +130,11 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 70 | `HOST_BUSY` | R | host | Session | HostBusy (guest) | session | the host's game is paused, in an editor or away (busy_model.h, 14 bytes v1: u8 version, u8 state, u16 why, u32 mode, u32 world, u16 seq; BUG-1142) |
 | 71 | `TRIBE_ANIM` | RU | host | Module | Tribe (guest) | tribe | u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160) |
 | 72 | `CELL_MATE` | RU | guest | HostWorld | Cell (host) | cell | u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246) |
+| 73 | `IDENTITY` | R | any | Session | Identity | session | the persistent player identity (identity.h, BUG-9258): guest -> host u64 its own after each join; host -> guests u8 n, n x {u8 player, u64 identity} |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
-| session (session) | 1 | 1.1 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY` |
+| session (session) | 1 | 1.2 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY`, `IDENTITY` |
 | world (world transfer) | 2 | 1.0 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
 | creature (Creature) | 3 | 1.1 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT` |
 | npc (mirrored creature and world state) | 4 | 1.1 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
@@ -768,3 +769,25 @@ HELLO listed the tribe family at rev 1 minor >= 1, MSG_NPC_ANIM otherwise. So wi
 Lab: `mixed_version_tribe` (and `--old host --fixture tribe`) checks `[tribe anims]`: the host's `tribe anim msg:`
 line counts both types sent, this build's guest counts MSG_TRIBE_ANIM taken, every guest plays the relayed
 animations. Switch `coop.fix tribe.anim_msg off`: MSG_NPC_ANIM to everyone (0.7.14).
+
+## A persistent player identity per Spore profile (2026-11-19, feat/lineages-port)
+<a id="netcode-identity"></a>
+
+Phase 1 of the port of Lineages (PR #196, PandizeLive; there BUG-9135 / BUG-9198) onto 0.7.15.2, BUG-9258.
+
+* Every game keeps one random 64-bit identity per Spore profile in `SporeCoop\identity.bin` next to
+  `EditorSaves.package` (12 bytes: `SCID` + u64). It is made the first time it is asked for and never expires; a
+  second game of the same profile that made one at the same moment loses the race (MoveFileEx without replace) and
+  reads the winner's.
+* `MSG_IDENTITY` (73, session family 1.2, a type older versions ignore): a guest sends `u64` its identity to the host
+  after each join; the host sends `u8 n, n x {u8 player, u64 identity}` of the players here to every guest when the
+  table changes and every 15 s. `identity::key(player)` is `id:<16 hex>` (or `name:<name>` while not known, or
+  always with `coop.fix identity.keys off`): a key for per-player lists that survives a rejoin under another network
+  id or name.
+* `coop.identity` prints this profile's identity, the players' the host knows and the tables sent / received.
+* Overlap: the per-player store (player_store.h, BUG-1149) already keys a player by a digest of its rejoin token (per
+  host address and name, 30 days). The Lineages features that come next (founder seats, Space allies) key by the
+  identity; folding the two into one key is open in BUG-9258.
+* Test: tools/tests/coop_identity.py (suite `identity`): each game knows the other's identity, and the guest's is the
+  same after a rejoin. Not yet run in the lab (written on a Windows PC without the lab).
+

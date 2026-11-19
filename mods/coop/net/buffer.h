@@ -19,6 +19,7 @@ public:
     void u32(uint32_t v) { raw(&v, 4); }
     void f32(float v) { raw(&v, 4); }
     void f64(double v) { raw(&v, 8); }
+    void u64(uint64_t v) { raw(&v, 8); } // BUG-9258 (Lineages)
     void raw(const void* p, size_t n)
     {
         const uint8_t* b = static_cast<const uint8_t*>(p);
@@ -74,6 +75,12 @@ public:
     double f64()
     {
         double v = 0;
+        raw(&v, 8);
+        return v;
+    }
+    uint64_t u64() // BUG-9258 (Lineages)
+    {
+        uint64_t v = 0;
         raw(&v, 8);
         return v;
     }

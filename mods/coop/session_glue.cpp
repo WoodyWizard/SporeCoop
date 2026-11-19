@@ -11,6 +11,7 @@
 #define COOP_VERSION SC_VER_STR
 #endif
 #include "lifecycle.h"
+#include "identity.h"
 #include "coop_state.h"
 #include "store.h"
 #include "designs.h"
@@ -838,6 +839,10 @@ void setup_callbacks()
             host_busy_message(from, r);
             return;
         }
+        case net::Route::Identity: { // BUG-9258 (Lineages): the persistent player identities (Session class)
+            identity::on_message(from, r);
+            return;
+        }
         case net::Route::Effect: { // BUG-0451: a partner's creature made an effect
             effects::on_message(type, from, r);
             return;
@@ -1148,6 +1153,7 @@ void setup_callbacks()
         npc::on_player_leave(id);       // BUG-0125
         views::forget(id);              // BUG-0280
         pfind::on_player_leave(id);     // F2: its colour is free again
+        identity::on_player_left(id);   // BUG-9258: its identity goes (ids are reused)
         if (g_player_forget_fix)
             player_life::forget_all(id); // BUG-0422: every module's state of this id (player_life.h)
         g_give_pick = net::give_pick_after_leave(g_give_pick, id, g_give_pick_reset_fix); // BUG-0234
