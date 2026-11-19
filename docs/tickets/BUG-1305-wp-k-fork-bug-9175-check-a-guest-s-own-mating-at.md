@@ -6,29 +6,33 @@ kind: bug
 stage: Creature
 reported: 2026-11-19
 source: plan
-role: 
-versions: 
+role: guest
+versions: 0.7.15.2 (to check)
 fixed_in:
-branch:
+branch: feat/w56-cocoon
 commits:
-tests:
+tests: guest_mating
 signature:
-docs:
-related:
+docs: docs/re/creature.md#creature-lineages-cocoon-mate
+related: BUG-0177, BUG-1222, BUG-1246, BUG-1304
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+The Lineages fork (PR #196, its BUG-9175): a guest's own mating at the nest never finished: the guest's mate is a copy
+of the host's family member, run by the host, whose own AI must answer the pairing (0xD6D360), so the guest's creature
+stood in its mating action (node 02D852F0) for ever. Our tests never mated on a guest the players' way: editor
+tests ask for the guest's editor with `coop.vote evolve` (the request the mating builds), creature_mating mates on the
+host; BUG-1246's MSG_CELL_MATE is the Cell stage's.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+To check at runtime: `coop_guest_mating.py` (the guest's game names a mate, Backspace, a real click on it, then the
+pairing, the egg scene and the guest's own editor with no key pressed).
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Pending the lab result.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Lab not run yet (the orchestrator's "lab ok" is pending).
 
 ## History
-- 2026-11-19: opened.
+- 2026-11-19: opened; test written.

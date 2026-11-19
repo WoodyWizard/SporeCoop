@@ -25,7 +25,6 @@ COOP_FIX("creature.cocoon", "BUG-1303", g_on,
          "creature: a partner in an editor of its own stays in the game's cocoon where it stood and comes out with its new body (it disappeared before)");
 
 constexpr double kEnterSeconds = 2.4;  // gen_evolve_cocoon, then the hold (the fork's runtime, 2026-11-12)
-constexpr double kHoldReplay = 6.0;    // the hold animation does not loop by itself: played again this often
 constexpr double kShellEvery = 1.8;    // the woven shell lasts ~2 s: the next one before it fades
 constexpr double kGlowAgain = 0.5;     // the glow is made again this soon after it faded
 constexpr double kBodyWait = 15.0;     // back with a new design: until the puppet wears it, this long at most
@@ -217,13 +216,14 @@ void keep(void* p, Cocoon& c, double now)
         shell(c, now);
     if ((!c.glow.fx || !fx_here(c.glow) || !game::effect_active(c.glow.fx)) && now - c.glow_at >= kGlowAgain)
         glow(c, now);
-    if (now - c.played >= kHoldReplay || anim_now(p) != kAnimHold) {
-        if (now - c.played >= 0.5) { // (not every frame while the game has not taken it yet)
-            game::play_animation(p, kAnimHold, -1, true);
-            c.played = now;
-        }
-    }
+    // the hold played again when the game has left it (its idle refresh is held, a sync or a received animation may
+    // still play another one), at most once a second; a running hold is not restarted
     uint32_t a = anim_now(p);
+    if (a != kAnimHold && now - c.played >= 1.0) {
+        game::play_animation(p, kAnimHold, -1, true);
+        c.played = now;
+        a = anim_now(p);
+    }
     if (a)
         c.seen_hold = a;
 }

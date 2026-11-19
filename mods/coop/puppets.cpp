@@ -1281,6 +1281,7 @@ void on_own_behaviour_anim(void* creature, uint32_t anim, int a, int b)
 }
 
 uint32_t g_anims_rx = 0, g_anims_played = 0;
+uint32_t g_anims_cocooned = 0; // WP-K: a partner's animations not played while its puppet is in the cocoon
 
 static bool g_anim_creature_only_fix = true;
 COOP_FIX("core.anim_creature_only", "BUG-0796", g_anim_creature_only_fix, "creature: a partner's animation is never played on its cell or its Tribe marker around a stage switch (the game read a creature's animation data there)");
@@ -1307,6 +1308,10 @@ void on_remote_anim(const net::AnimEvent& ev)
             return;
         }
         g_anims_unlisted++;
+    }
+    if (cocoon::active(ev.id)) { // WP-K (BUG-1303): in the cocoon its pose is the cocoon's until it comes out
+        g_anims_cocooned++;
+        return;
     }
     if (ev.flags & 4) { // BUG-1253: the partner's behaviour play, the same call (CreaturePlayAnim(anim, a, b))
         game::play_behaviour_anim(it->second.puppet, ev.anim, 0, (ev.flags & 8) ? 1 : 0, ev.block);

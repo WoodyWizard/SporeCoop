@@ -5246,3 +5246,34 @@ cPlayer +0x10F0 (the bar) with no sign check; SetEvolutionPoints 0xD2E480 writes
   `SPORE_DETECTOR=20 python3 tools/lab.py run dna_own_reload --lane 2 --retry 0 --no-build` (PASS) and
   `SPORE_DETECTOR=20 python3 tools/lab.py run dna_own_reload_off --lane 2 --retry 0 --no-build` (FAIL: the guest's bar
   ahead); the log line `dna: own A -> B, bar X -> party Y` on the guest shows the two calls.
+
+## The partner's cocoon while it is in its own editor (2026-11-19, feat/w56-cocoon)
+<a id="creature-cocoon"></a>
+
+WP-K of 0.7.16, BUG-1303 (`mods/coop/cocoon.cpp`, switch `creature.cocoon`); the visual part of the Lineages fork's
+BUG-9160 / 9181 / 9194 (PR #196 by PandizeLive, MIT), see #creature-lineages-cocoon-mate for its findings.
+
+* ✔ (our lab, 0.7.15.2, rel/0.7.15.2 run 20261118-144132 editor_now): a partner in its editor sends its state with
+  mode Editor (0x00DBDBA1) and the world crc of the Creature world it left (68AC222A, the same as in the stage), flags
+  0 (no avatar). Before WP-K the other game hid the puppet at once ("Alice hidden: flags=0x0", "puppet=hidden: partner
+  not in a world") and made a new one when the partner was back ~18 s later ("Alice appeared in the world").
+* How a game learns that a partner edits: that state alone (mode Editor + the same world, its puppet made in this
+  world); no message of its own, so a 0.7.15.2 partner is shown in the cocoon too and a 0.7.15.2 game hides the partner
+  as before. Not told apart: the stage-end editor (Creature -> Tribe, after the vote) shows the cocoon for the host as
+  well (the creature evolves there too); in Cell, Tribe, Civ and Space nothing changes.
+* The sequence on the other game: the curl in (gen_evolve_cocoon 9C26F705, 2.4 s, the body shrinks to 12 % with it,
+  the woven shell crg_cocoon_create 59A93586 laid every 1.8 s at the spot it went in), then the hold (gen_evolve_cocoon
+  _hold 4E0D3CBF, played again when the game left it, the idle refresh skipped for the body: game::hold_pose), the glow
+  crg_cocoon_hold 6F02369D made again when it is no longer active. The partner back: held in the cocoon until the
+  puppet wears the partner's new creature here (creations::player_key; its new record rebuilds the puppet: the new body
+  is put into the same cocoon at the same spot), at most 15 s, or 6 s when no new design came (the red cross); then
+  gen_evolve_emerge D4F48A35 and the burst crg_cocoon_hatch D033D3AC, the body grows back over 1.5 s, the driving
+  takes over after 2.5 s. A partner's MSG_ANIM is not played on a body in the cocoon.
+* The shell's scale: the first body's bounding radius / 0.9, between 0.8 and 4 (the fork's runtime fit). The effects'
+  transform: position, scale, the 3x3 with the local axes as rows, the up axis along the planet's radius there.
+* Lifetime: the glow and the shells are ours (one reference each, cEffectsManager::CreateEffect): released when they
+  ended (IsActive false) or with the puppet, only while this game is in the mode and world they were made in; after a
+  change the pointers are dropped without a call (the game tore them down, as effects.cpp's live list). Nothing of it
+  is in a save (world effects, the puppet's scale and pose; the puppets are stripped from saves as before).
+* Test: `coop_cocoon.py` (cocoon, cocoon_guest, the twin cocoon_off): the observer's `coop.cocoon` reads the puppet's
+  current animation from its AnimatedCreature (vt 0x58) and the glow's IsActive.
