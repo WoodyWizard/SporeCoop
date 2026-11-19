@@ -378,7 +378,10 @@ def run_drop(ck):
     print('  host:', host.call('coop.save')['out'].strip()[:80], f'(slot {slotname})', flush=True)
     saved = wait_saved(folder, since - 1, 90)
     time.sleep(3)
-    hits = keys_in_slot(folder, [okey, result, gkey] + sorted(new)) if saved else ['not saved']
+    own = set()  # (BUG-1326: instances that are also ids of the host's own resources of the slot, not counted)
+    hits = keys_in_slot(folder, [okey, result, gkey] + sorted(new), own) if saved else ['not saved']
+    print(f'  host save slot {folder}: {hits or "no key of the guest"}; the host\'s own ids among them: '
+          f'{[f"{i:08X}" for i in sorted(own)]}', flush=True)
     ck(saved and not hits, f'the host\'s save names no key of the guest\'s ({hits})')
     ck.faults(host=host, guest=guest)
     return ck.result()

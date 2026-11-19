@@ -1907,3 +1907,28 @@ BUG-1321. GOG 2024, Ghidra + runtime (lab lane 5, civ_own_species).
   (city, species) of the citizen objects: the game's own bake state, read live.
 * ? Not checked: other places that make creatures of a line key the game never used (a Tribe outfit's
   members) may need the same request.
+
+## New resource ids: one counter per game, seeded by the clock (2026-11-19, fix/w58-savestrip2)
+<a id="creations-id-counter"></a>
+
+BUG-1326. GOG 2024, lab lane 4 (tribe_own_outfitter, lab 20261119-164409) and the host's save slot parsed record by
+record (`tools/part_substitutes.py` entries / read).
+* ✔ (runtime) The instance of a new resource of a game (a creation the editor saves, the planet scripts 00B1B104 /
+  4084A100, 4084AF00, 4084B100 the planet save writes) comes from one counter per game process that gives out
+  consecutive ids: the host wrote its planet scripts 29293F5F, 29293F60, 29293F61 at the load (lastSave.pld, 16:44:25),
+  the guest's Tribal Outfitter saved its outfit as 29293F61 forty seconds later. The fixture's own scripts are the
+  consecutive runs 2900C777..2900C785 and 29053D62..29053D66 (older sessions).
+* ~ (inferred from the values) The counter starts at the seconds since 2005-01-01 (local time) at the game's start:
+  0x29293F5F = 2026-11-19 16:44:15, the host's SporeKit booted at 16:44:14; 0x2900C777 = 2026-10-20 00:01:59 (the
+  fixture's session). Not found in the code (not needed).
+* So two games started in the same second give out the SAME ids: a guest's new creation can have the instance of one
+  of the host's own new resources. A search of a save for a raw creation instance (0x29......) finds the host's own
+  resource (the index of lastSave.pld / PlanetScripts.pld / planetRecords.pkp .pkt) and proves nothing; only the
+  line's shared keys (0x7B......, 0x7C......) are free of it. CORRECTION (2026-11-19, fix/w58-savestrip2) of BUG-1326's
+  guess "the creation's metadata names its raw key and the planet records store it": the host's line package of the
+  outfit (line_<shared>.package) holds no 29293F61 at all (its metadata names the shared key at +0x14 and the parent
+  creature 290225CD at +0x20), and the unpacked records of the host's save name neither key; the only 29293F61 is the
+  index entry 00B1B104 / 4084AF00 / 29293F61 of the host's own planet script.
+* What SporeCoop does: nothing in the mod (the host's save had no guest key). The save checks of the own-species tests
+  (`keys_in_slot`, coop_tribe_own_species.py) unpack each record and do not count an instance that is an id of the
+  host's own resources of the slot unless a creation type stands beside it (docs/06-testing.md#testing-save-key-scan).

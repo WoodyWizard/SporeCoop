@@ -149,6 +149,7 @@ unit-lab:
 	python3 tools/tests/lab_selftest.py
 	python3 tools/tests/gates_selftest.py
 	python3 tools/tests/walk_selftest.py
+	python3 tools/tests/savekeys_selftest.py
 	python3 tools/tests/dash_selftest.py
 	python3 tools/tests/labstart_selftest.py
 
