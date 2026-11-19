@@ -6569,6 +6569,12 @@ static float ui_scale()
 void open_sporepedia_of(uint8_t player); // below (the portrait's click)
 static bool g_party_editor_hide = true;
 COOP_FIX("ui.party_editor_hide", "BUG-9228", g_party_editor_hide, "ui: the Party cards are hidden while an editor is open");
+// BUG-9275 (Live audit 2026-11-19, Space on the MSI pair): a guest with no creature of its own plays the host's (its
+// captain in Space, its species elsewhere) and sends no picture: its Party card was empty on every screen. Its card
+// shows the host's creature's picture while it plays a stage (not in an editor: it may be making its own). Off: empty.
+static bool g_party_host_pic = true;
+COOP_FIX("ui.party_host_picture", "BUG-9275", g_party_host_pic,
+         "ui: the Party card of a player without a creature of their own shows the host's creature, which they play");
 static bool update_party_panel(bool labels)
 {
     std::vector<coop_ui::PartyRow> rows;
@@ -6594,6 +6600,8 @@ static bool update_party_panel(bool labels)
         }
         // the creature's picture, sent by its owner (creations.cpp kPortrait) under its shared key
         r.portrait = creations::portrait_of(p.id);
+        if (!r.portrait && g_party_host_pic && p.id != 0 && have && stage_mode(st.mode))
+            r.portrait = creations::portrait_of(0); // BUG-9275
         r.portrait_group = creations::portrait_group();
         rows.push_back(std::move(r));
     }
