@@ -1373,3 +1373,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9261](BUG-9261-loading-cover-looks-low-resolution-at-1440p-bloc.md) | fixed | bug | All | 2026-11-19 | unreleased | Loading cover looks low resolution at 1440p: blocky blur, small text |
 | [BUG-9263](BUG-9263-joining-guest-s-first-creature-is-made-in-the-2.md) | fixed | bug | Creature | 2026-11-19 | unreleased | Joining guest's first creature is made in the 2,000 DNA Creature Creator with every part unlocked |
 | [BUG-9264](BUG-9264-guest-s-hud-portrait-keeps-the-old-picture-after.md) | fixed | bug | Creature | 2026-11-19 | unreleased | Guest's HUD portrait keeps the old picture after its first creature is made (no png found for the new species) |
+| [BUG-9274](BUG-9274-a-loading-screen-stays-over-the-first-creature-e.md) | fixed | bug | Creature | 2026-11-19 | unreleased | A loading screen stays over the first-creature editor for 2 minutes when a new player joins from inside a game |
