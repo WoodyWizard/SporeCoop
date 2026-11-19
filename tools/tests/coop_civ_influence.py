@@ -184,6 +184,32 @@ def case_preach(host, guest, ck, cities, home, far):
              'meter shows the same progress on both screens')
 
 
+def case_shot_objects(host, guest, ck, cities, home, near):
+    """BUG-1322: the host's shot observer (squadron's FireTool hook -> civ::fire_observed) took the object at a target
+    spatial - 0x34 and called its vtable when its first dword lay in the game's image; lab 20261119-114030 (preachers at
+    a far city) faulted in it. Religious vehicles preach at the nearest NPC city (on its ground, the players' way: the
+    attack order) for 45 s: the shooters and targets of their shots that are no listed object are printed (the
+    evidence what a preacher's target is). Then `coop.civ shotprobe`: one observed shot of a listed host vehicle at a
+    target that is no object, the memory before it starting with an address in the image (SPORE_FIX_OFF=
+    civ.shot_target_listed: the observer calls into it and the host faults)."""
+    vids = [new_vehicle(host, home, 1) for _ in range(2)]
+    vids = [v for v in vids if v is not None]
+    ck(vids, f'the host has religious vehicles ({vids})')
+    for k, v in enumerate(vids):
+        print(f'  #{v}:', put_near(host, v, cities[near]['pos'], -40 - 10 * k), '|',
+              host.call(f'coop.civ attack {v} {near} 3')['out'].strip(), flush=True)
+    time.sleep(45)
+    print('  host', host.call('coop.civ shotobjs')['out'].strip(), flush=True)
+    print('  host', host.call('coop.civ influence 0')['out'].splitlines()[0], flush=True)
+    out = host.call('coop.civ shotprobe')['out'].strip()
+    print('  host', out, flush=True)
+    time.sleep(2)
+    m = re.search(r'target kind (-?\d+)', out)
+    ck(m and m.group(1) == '2', 'the shot observer takes a target that is no object as one the guests cannot find, calling '
+       f'nothing on it ({m and m.group(1)})')
+    ck('total faults: 0' in host.call('exc')['out'].splitlines()[0], "no fault in the host's game from the shot observer")
+
+
 def routes(con):
     return {tuple(sorted((int(m.group(1)), int(m.group(2)))))
             for m in re.finditer(r'^route (\d+) (-?\d+) ', con.call('coop.civ roads')['out'], re.M) if int(m.group(2)) >= 0}
@@ -224,7 +250,7 @@ def case_economy(host, guest, ck, cities, home, tgt):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('attribution', 'religion', 'preach', 'economy'), required=True)
+    ap.add_argument('--case', choices=('attribution', 'religion', 'preach', 'economy', 'shotobjs'), required=True)
     args = ap.parse_args()
     host, guest = start('civ_npc')
     ck = Checks()
@@ -242,7 +268,8 @@ def main():
     {'attribution': lambda: case_attribution(host, guest, ck, cities, home, near),
      'religion': lambda: case_religion(host, guest, ck, cities, home, near),
      'preach': lambda: case_preach(host, guest, ck, cities, home, far),
-     'economy': lambda: case_economy(host, guest, ck, cities, home, near)}[args.case]()
+     'economy': lambda: case_economy(host, guest, ck, cities, home, near),
+     'shotobjs': lambda: case_shot_objects(host, guest, ck, cities, home, near)}[args.case]()
     print('  host', host.call('coop.civ influence 0')['out'].splitlines()[0], flush=True)
     print('  guest', guest.call('coop.civ influence 0')['out'].splitlines()[0], flush=True)
     ck.faults(host=host, guest=guest)
