@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: feat/w54-x2
-commits:
+commits: a65aa814 b7d8fe0f
 tests: line_stages, line_stages_outfit, line_stages_off
 signature:
 docs: docs/06-testing.md#testing-line-stages
