@@ -14,6 +14,7 @@
 
 #include "fixes.h"
 #include "game.h"
+#include "net/compat.h"
 #include "drama.h"
 #include "npc.h"
 #include "sporekit_game.hpp"
@@ -1168,11 +1169,7 @@ bool host_sends_drama()
     at = now;
     bool has = false;
     std::vector<net::FamilyRev> fam;
-    yes = false;
-    if (C.sess && C.sess->peer_families(0, has, fam) && has)
-        for (auto& f : fam)
-            if (f.family == 4 && f.rev == 1 && f.minor >= 1) // npc (net/messages.def)
-                yes = true;
+    yes = C.sess && C.sess->peer_families(0, has, fam) && net::compat::host_relays_world_events(fam, has);
     return yes;
 }
 

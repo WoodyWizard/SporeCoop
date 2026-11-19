@@ -46,7 +46,7 @@ uint32_t hit_ability_type(); // the ability type (+8) of the creature ability hi
 bool guest_drops_air_hit(void* avatar, void* attacker, uint32_t ability);
 // BUG-1282: host: its game started a meteor strike or a rain storm (drama.cpp): K_DRAMA to every guest
 void drama_out(uint8_t kind);
-// guest: the host's build relays its drama events (npc 1.1 or newer, net/messages.def: 0.7.16); asked once a second
+// guest: the host's build relays its drama events (npc 1.2 or newer: 0.7.16, net/compat.h kNpcMinorWorldEvents); asked once a second
 bool host_sends_drama();
 
 } // namespace player_rules

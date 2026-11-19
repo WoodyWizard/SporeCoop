@@ -25,6 +25,7 @@
 #include "social.h"
 #include "driver.h"
 #include "game.h"
+#include "net/compat.h"
 #include "net/validate.h"
 #include "npc_ids.h"
 #include "npc_proxy_rules.h"
@@ -584,7 +585,7 @@ COOP_FIX("npc.partners", "BUG-0016", g_partner_targets, "creature: the host's NP
 // the state's apply). `coop.fix npc.alpha off`: a proxy keeps the bit its own game gave it (0.7.15).
 static bool g_alpha_fix = true;
 COOP_FIX("npc.alpha", "BUG-1283", g_alpha_fix, "creature: a guest sees the host's nest alphas as alphas (the card, the extra social round)");
-// the host's build sends NF_ALPHA (npc 1.1 or newer, net/messages.def: 0.7.16); asked once a second
+// the host's build sends NF_ALPHA (npc 1.2 or newer: 0.7.16, net/compat.h kNpcMinorWorldEvents); asked once a second
 static bool host_sends_alpha()
 {
     static double at = -1e9;
@@ -595,11 +596,7 @@ static bool host_sends_alpha()
     at = now;
     bool has = false;
     std::vector<net::FamilyRev> fam;
-    yes = false;
-    if (C.sess && C.sess->peer_families(0, has, fam) && has)
-        for (auto& f : fam)
-            if (f.family == 4 && f.rev == 1 && f.minor >= 1)
-                yes = true;
+    yes = C.sess && C.sess->peer_families(0, has, fam) && net::compat::host_relays_world_events(fam, has);
     return yes;
 }
 static constexpr float kPartnerAiRange = 80.f; // m: NPCs farther from a partner than this ignore it
@@ -2724,7 +2721,7 @@ static void guest_tick(double now)
             game::set_impressed(pe.ref.p, (s.flags & net::NF_IMPRESSED) != 0);
         // BUG-1283 (fork BUG-9115): the nest's alpha is the host's (+0xB58 bit 0x1): a proxy kept the bit of this game's
         // own herd (4 of 15 proxies differed in the fork's run), so the guest's card read the plain name and its social
-        // game had one round less (or one more). A host before 0.7.16 sends no NF_ALPHA: the proxy keeps its own bit.
+        // game had one round less (or one more). A host before 0.7.16 (npc below 1.2) sends no NF_ALPHA: the proxy keeps its own bit.
         if (!px.killed && g_alpha_fix && host_sends_alpha())
             game::set_alpha(pe.ref.p, (s.flags & net::NF_ALPHA) != 0);
         px.host_pack = (s.flags & net::NF_PACK) != 0;

@@ -1309,6 +1309,18 @@ static void test_compat()
     CHECK(r.find("Alice plays SporeCoop 0.7.16; you have SporeCoop 0.7.15: the Space messages") == 0 &&
           r.find("revision 2 there, 1 here") != std::string::npos);
     CHECK(families_text({{1, 1, 0}, {8, 2, 3}}) == "session 1.0, space 2.3" && families_text({}, false).find("none sent") == 0);
+    // BUG-1282 / BUG-1283: the gate of the host's drama relay and alpha bit. 0.7.15.2 ships npc 1.1 (its messages.def):
+    // that host relays nothing, a guest must keep its own events and its proxies' own alpha bits
+    const std::vector<FamilyRev> v07152 = {{1, 1, 1}, {2, 1, 0}, {3, 1, 1}, {4, 1, 1}, {5, 1, 1},
+                                           {6, 1, 1}, {7, 1, 0}, {8, 1, 2}, {9, 1, 0}, {10, 1, 0}};
+    CHECK(!host_relays_world_events(v07152, true));
+    CHECK(!host_relays_world_events({}, false) && !host_relays_world_events(mine, false)); // before 0.7.15: no revisions
+    CHECK(host_relays_world_events(mine, true)); // this build (0.7.16: npc 1.2)
+    auto npc2 = bump(Family::npc, 2); // another npc revision: not this wire
+    CHECK(!host_relays_world_events(npc2, true));
+    std::vector<FamilyRev> no_npc(v07152.begin(), v07152.begin() + 3);
+    CHECK(!host_relays_world_events(no_npc, true));
+    CHECK(has_minor(v07152, true, (uint8_t)Family::civ, 1, 0) && !has_minor(v07152, true, (uint8_t)Family::civ, 1, 1));
 }
 
 int main(int argc, char** argv)

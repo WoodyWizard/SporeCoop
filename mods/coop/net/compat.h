@@ -30,6 +30,25 @@ inline std::vector<FamilyRev> my_families()
         v.push_back({(uint8_t)f.id, f.rev, f.minor});
     return v;
 }
+// does a peer's build have family `id` at revision `rev` with minor `minor` or newer? `has`: it sent its revisions (an
+// older peer did not: false)
+inline bool has_minor(const std::vector<FamilyRev>& theirs, bool has, uint8_t id, uint16_t rev, uint16_t minor)
+{
+    if (!has)
+        return false;
+    for (auto& f : theirs)
+        if (f.family == id)
+            return f.rev == rev && f.minor >= minor;
+    return false;
+}
+// npc 1.2 is 0.7.16 (0.7.15.2 ships npc 1.1): a host from it relays its drama events (MSG_PLAYER_RULE K_DRAMA,
+// BUG-1282) and sends the nest alpha bit (NF_ALPHA, BUG-1283); a guest refuses its own events / takes the bit only then
+constexpr uint16_t kNpcMinorWorldEvents = 2;
+inline bool host_relays_world_events(const std::vector<FamilyRev>& theirs, bool has)
+{
+    return has_minor(theirs, has, (uint8_t)Family::npc, 1, kNpcMinorWorldEvents);
+}
+
 inline std::vector<FamilyRev> base_families()
 {
     std::vector<FamilyRev> v;

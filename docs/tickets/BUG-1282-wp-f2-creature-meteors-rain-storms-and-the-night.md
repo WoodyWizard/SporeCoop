@@ -31,7 +31,7 @@ Observed (code): `g_mask = 1u << 2` and h_Start refusing only masked kinds on a 
 `coop.fix creature.shared_events` (drama.cpp): the host's start of kinds 3 and 5 in Creature goes to the guests as
 MSG_PLAYER_RULE kind K_DRAMA (11, reliable, player_rules.cpp drama_out); the guest's game starts the same kind with the
 game's StartKind (drama::from_host). A guest's own start of kinds 1, 3, 5 in Creature is refused while its host relays
-(the host's npc family minor >= 1, i.e. 0.7.16; a 0.7.15.2 host: the guest keeps its own events, as before). A 0.7.15.2
+(the host's npc family minor >= 2, i.e. 0.7.16: net/compat.h kNpcMinorWorldEvents; a 0.7.15.2 host: the guest keeps its own events, as before). A 0.7.15.2
 guest ignores the kind. Not done: a guest that joins during a running host event does not get it; whether the host's
 night predator creature is mirrored by the NPC sync is not checked.
 

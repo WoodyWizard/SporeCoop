@@ -34,7 +34,7 @@ static unsigned g_mask = 1u << 2;
 // own night predator, a creature the host's world never had. The host's world owns them: the host's start of a meteor
 // strike or a rain storm goes to the guests (MSG_PLAYER_RULE kind K_DRAMA), whose game starts the same kind at once;
 // a guest's own game starts none of the three in Creature. The UFO (2) already is the host's (BUG-0486, its ship is
-// shown on the guest: BUG-0558). A host before 0.7.16 sends nothing: its guests keep their own events (as 0.7.15).
+// shown on the guest: BUG-0558). A host before 0.7.16 (npc below 1.2) sends nothing: its guests keep their own events (as 0.7.15).
 // `coop.fix creature.shared_events off`: each game its own (0.7.15).
 static bool g_shared_fix = true;
 COOP_FIX("creature.shared_events", "BUG-1282", g_shared_fix,

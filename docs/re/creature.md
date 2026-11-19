@@ -5199,11 +5199,11 @@ yet seen at runtime on our lab (tests coop_npc_alpha.py, coop_drama_shared.py wr
 * ~ (fork, runtime) A nest's alpha is cCreatureAnimal +0xB58 bit 0x1: its card reads "Alpha <name>" and SocialPropose
   0xDA43D0 adds a social round (as section 8 above). The host's NPC state carried dead / impressed / pack / summoned /
   air only, so a guest's proxy kept the bit of its own game's herd (4 of 15 proxies differed in the fork's run). Now
-  the state and the spawn carry NF_ALPHA (64); a guest whose host has npc 1.1 sets the proxy's bit to the host's.
+  the state and the spawn carry NF_ALPHA (64); a guest whose host has npc 1.2 (0.7.16) sets the proxy's bit to the host's.
 * Decision (BUG-1282): the meteor strike (kind 3) and the rain storm (5) are events of the host's world in Creature:
   the host's start goes to the guests (MSG_PLAYER_RULE kind K_DRAMA 11, reliable) and the guest's game starts the same
   kind with StartKind; a guest's own start of a night predator (1), a meteor strike or a rain storm is refused while its
-  host relays (npc 1.1). Each game places the event at its own avatar (the start positions are the avatar's), so the
+  host relays (npc 1.2, 0.7.16; 0.7.15.2 ships npc 1.1). Each game places the event at its own avatar (the start positions are the avatar's), so the
   meteors fall near each player, at the same time. The UFO (2) was already the host's (#creature-drama-events, BUG-0558
   shows its ship on the guest). ~ Not checked: whether the host's night predator is mirrored on the guest by the NPC
   sync (a creature the event makes near the host's avatar); a guest that joins during a host's rain does not get it.

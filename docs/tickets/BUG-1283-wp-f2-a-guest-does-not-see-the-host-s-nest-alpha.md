@@ -27,7 +27,7 @@ Observed (code): npc.cpp host_state / send_spawn never sent bit 0x1; the guest's
 
 ## Fix
 `coop.fix npc.alpha` (npc.cpp): NF_ALPHA = 64 (net/protocol.h) in the NPC state and spawn flags; a guest whose host
-announces npc 1.1 or newer sets the proxy's bit 0x1 to the host's every state (game::set_alpha). `coop.npc list` prints
+announces npc 1.2 or newer (0.7.16; 0.7.15.2 ships npc 1.1) sets the proxy's bit 0x1 to the host's every state (game::set_alpha). `coop.npc list` prints
 `alpha=` (the game's own bit) on both roles for the test. Older peers ignore the bit.
 
 ## Verification
