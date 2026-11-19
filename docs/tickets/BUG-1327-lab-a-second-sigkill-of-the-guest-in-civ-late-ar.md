@@ -1,6 +1,6 @@
 ---
 id: BUG-1327
-title: Lab: a second SIGKILL of the guest in civ_late_arrival (after its own Civ editors) loses the lane's wineserver: the host's game keeps running without its sockets
+title: Lab: a second exit of the guest in civ_late_arrival (after its own Civ editors) loses the lane's wineserver: the host's game keeps running without its sockets
 status: open
 kind: tooling
 stage: Tools
@@ -31,9 +31,14 @@ opened did not either. Not a bug of the mod (a SIGKILL'd Wine client taking its 
 guest's own Civ editors is not known.
 
 ## Fix
-coop_late_species.restart_guest(close=True): the guest's game ends by its own exit first (`coop.close`, WM_CLOSE, as a
-player closing the window), SIGKILL only when it is still there after 60 s; civ_late_arrival's third join uses it.
-
+Not fixed. Tried: the third join with the guest's own exit (`coop.close`, WM_CLOSE) instead of SIGKILL (lab
+fix/w57-own-editors 20261119-142554 and a manual run with a log watcher): the guest's game ended in 1 s and the host
+was lost all the same (log still, console refused at once, a new SporeLab2 wineserver started with the guest's
+relaunch at 15:02:28). So the trigger is the guest's process leaving the shared wineserver of the lane the second time,
+not the kind of kill; the change was taken back. Next: look at which sandbox (flatpak / bwrap process tree) starts the
+lane's wineserver after the first guest restart (if the restarted guest's sandbox owns it, its exit takes the host's
+server along), e.g. `ps -o pid,ppid,lstart` of the wineserver and the games before and after each restart; or run the
+test's restarts with `spore.sh` starting the guest outside a new sandbox.
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->

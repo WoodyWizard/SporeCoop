@@ -101,27 +101,10 @@ def pick_row(ck, guest, stage):
     return row
 
 
-def restart_guest(host, before_join=None, close=False):
-    """the guest's game killed and started again; `before_join(guest)` in its galaxy menu; then the join.
-    close: the guest's game ends by its own exit first (`coop.close`, WM_CLOSE: the player closes the window), killed
-    only when it is still there after 60 s. BUG-1327: a second SIGKILL of the guest in civ_late_arrival (after its own
-    Civ editors) took the lane's wineserver with it: the host's game lost its sockets (console refused, log ends) and
-    the test died in wait_guest_in (lab 20261119-122505, -130049, a manual run on lane 2)"""
+def restart_guest(host, before_join=None):
+    """the guest's game killed and started again; `before_join(guest)` in its galaxy menu; then the join"""
     for mon in twoinst._monitors:
         mon.stop = True
-    if close:
-        try:
-            print('  guest:', Console(lane.GUEST).call('coop.close')['out'].strip(), flush=True)
-        except OSError:
-            pass
-        import subprocess
-
-        def running():
-            return subprocess.run([lane.SPORE, 'pids', str(lane.GUEST)], capture_output=True, text=True).stdout.split()
-        t0 = time.time()
-        while time.time() - t0 < 60 and running():
-            time.sleep(1)
-        print(f'  guest: its game ended by itself: {not running()} ({time.time() - t0:.0f} s)', flush=True)
     kill_game(lane.GUEST)
     time.sleep(3)
     lane.run_guest()

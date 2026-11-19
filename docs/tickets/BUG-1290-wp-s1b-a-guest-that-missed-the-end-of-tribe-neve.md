@@ -47,3 +47,4 @@ City Hall editor opened"). `make -j8` and `make test` pass. Run dirs: pending.
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: code, test and twin on feat/w56-late; lab pending.
+- 2026-11-19: fix/w57-own-editors: civ_late_arrival: the late arrival's own editors PASS (fix/w57-own-editors worktree out/lab/20261119-130049, -142554: first arrival offers none, after the rejoin both editors opened, both designs in the line, City Hall and citizens on both games); twins civ_late_arrival_off, _families_off (BUG-1306), _unpause_off (BUG-1323) FAIL in -130049. The test's last step (a third join offers nothing) is not reached: the host's game stops answering when the guest leaves the second time (BUG-1327, analysed by fix/w57-own-editors). Open until that step runs.

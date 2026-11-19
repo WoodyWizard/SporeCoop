@@ -316,6 +316,16 @@ def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
 
     # the guest's city
     tgt = min(npc, key=lambda i: dist(hc[i]['pos'], hc[cap]['pos']))
+    if a.civ_editors:  # BUG-1323 (lab 20261119-142554): a guest may buy only in its own city: take the nearest NPC city
+        # whose land vehicles are of the arrival vehicle editor's design id (the shared capital's often is)
+        ve = re.search(r'editors=\w+/(\w+)', guest.call('coop.civarrival')['out'] or '')
+        vdid = int(ve.group(1), 16) if ve else 0
+        for ci in sorted(npc, key=lambda i: dist(hc[i]['pos'], hc[cap]['pos'])):
+            d = re.search(r'did (\w+) ', host.call(f'coop.civ owndesign did {ci} 0')['out'])
+            if d and int(d.group(1), 16) == vdid:
+                tgt = ci
+                break
+        print(f'  civ: the guest\'s city {tgt} (land design {vdid:08X} wanted)', flush=True)
     gpos = hc[tgt]['pos']
     frame_city(players, gpos)
     time.sleep(4)

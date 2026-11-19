@@ -50,3 +50,4 @@ and 7, on a tree with feat/w54-shims (species::design in civ_own_designs.cpp). R
 ## History
 - 2026-11-18: opened.
 - 2026-11-18: static RE, code, tests on feat/w54-civedit (BUG-1275); lab pending (night run).
+- 2026-11-19: fix/w57-own-editors: civ_guest_editors: every editor and look check PASS on the merged tree (fix/w57-own-editors worktree out/lab/20261119-130049, -142554; BUG-1307's test fixes); the only FAIL left is the host save holding the guest's design line keys (Zorispe/Tavael.spo 018EB106 ...), which fix/w57-civlook's BUG-1274 work (not merged yet) is about. Twin civ_guest_editors_off FAIL in -130049 (the refusal). Open until that save strip is in.

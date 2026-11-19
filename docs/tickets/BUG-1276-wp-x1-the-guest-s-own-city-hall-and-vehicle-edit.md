@@ -51,3 +51,4 @@ after its arrival in Civ"), lanes 9 and 10. Run dirs: pending (night run). `make
 ## History
 - 2026-11-18: opened.
 - 2026-11-18: static RE, code, test and twin on feat/w54-x1; lab pending (night run).
+- 2026-11-19: fix/w57-own-editors: civ_own_arrival: own City Hall and vehicle editors at the arrival PASS on the merged tree (fix/w57-own-editors worktree out/lab/20261119-142554: both opened, both designs one shared key on both games, the guest's city's City Hall and its bought vehicle show them on both games) after BUG-1306 and BUG-1323; the test buys in the nearest NPC city of the editor's land design now (a guest may not buy in the capital). The only FAIL left is the host save's design line keys (fix/w57-civlook, BUG-1274). Twin civ_own_arrival_off FAIL in -130049. Open until that save strip is in.
