@@ -9266,3 +9266,21 @@ Key frames `line` and `next_session`: no look changes in WP-0 (the frames only d
 * The guest's creature choice is put back at the end (`unchoose creature`, `worlds set creature <before>`): the next
   tribe-fixture test plays the world's species as before.
 * FAIL twin: `SPORE_FIX_OFF=tribe.own_species` (every member the slot's species; the test stops after step 2).
+## The Civ citizens of the owner's species (2026-11-18, feat/w54-citizens)
+<a id="testing-civ-own-species"></a>
+
+* `civ_own_species` (`coop_civ_own_species.py`, BUG-1273, warm, ~3 min, fixture civ_npc): the guest picks its newest
+  creature (`coop.creations choose creature <inst>`: the civ_npc guest never played one, so by BUG-0345 it plays the
+  world's species until it picks; `unchoose` at the end); both games must show its line (`coop.civ citizens`: `line 1
+  key=...`). The cameras go to the capital, then to the nearest NPC city, which the host's game captures for the guest
+  (`coop.civ siege <city> 1 150 pc`). The check is the game's own citizen objects per city and species key
+  (`coop.civ citizens`: `citizens city=<host index> key=<+0xB28> n=<count>`, the city from the citizen's +0x1010):
+  the capital all the civilization's species, the guest's city all the guest's within 30 s, on both games. Then the
+  host saves (`coop.save`, the boxes closed) with the guest's citizens in its world and no record of its newest save
+  may name the guest's key (`keys_in_save` of coop_tribe_outfit). Key frames: the guest's city, two close-ups of one
+  citizen (the same camera on both games, `coop.view set`), the capital and its close-ups.
+  Twins: `SPORE_FIX_OFF=civ.own_species` (step 3 fails), `SPORE_FIX_OFF=civ.own_species_save` (the save check fails).
+* `civ_own_species_hostmode` (`--host-mode`): the host forces `creature.mode host` after the pick; no game keeps a line
+  for the guest and the guest's city's citizens stay the civilization's species (today's behaviour); the setting goes
+  back to own at the end.
+* The NPC cities of civ_npc have the player civilization's species (067C7743): "before the capture" shows that key.

@@ -94,4 +94,13 @@ inline bool pump_waits(bool listed, bool dead, bool held) { return listed && !de
 inline bool pump_kills(bool listed, bool dead) { return listed && !dead; }
 // BUG-0151: while the host is away (its main menu) a guest's vehicles run their own AI and its orders go to its game
 inline bool local_play(bool fix, bool guest, bool host_away) { return fix && guest && host_away; }
+// WP-C1 (BUG-1273): whose species line a city's citizens take: the owner's when it is a guest (a player id, not the
+// host 0) and the session plays own creatures (creature.mode own); the host's cities, the shared capital (its founder's:
+// the host's), NPC cities and cities of nobody keep the civilization's species (-1)
+inline int citizen_line_owner(uint8_t owner, bool own_mode, int max_players)
+{
+    if (!own_mode || owner == 0 || owner >= max_players)
+        return -1;
+    return owner;
+}
 } // namespace civlogic

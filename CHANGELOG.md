@@ -10,17 +10,18 @@
 - Cell: the wild cells of the players' own kind now swim near each player in that player's own design: near the
   second player you meet its cell's kin, near the host the host's, and a mix where you swim together; before, all of
   them were copies of the host's cell (BUG-1257).
-### Added
 - Civilization: in the normal co-op mode (own creatures) a guest's vehicles and the buildings of its cities are drawn
   from the guest's own vehicle and building designs on every player's screen, with the stats of those designs; a
   vehicle given to another player takes that player's design. The host's saved game keeps the host's designs only
   (BUG-1274).
-### Added
 - Tribe: the members of your tribe that are yours now look like your own creature (the one you play in the Creature
   stage), on your screen and on your partners'; the host's members keep the tribe's species. A member given to
   another player takes that player's creature, and a member whose player left goes back to the tribe's species. The
   host's saved game keeps the tribe's species for every member; your look comes back when you play together again
   (BUG-1271).
+- Civilization: the citizens walking in a city a guest owns (captured, given or dealt to it) are that guest's own
+  species on every player's screen; the shared capital keeps the species of the player who founded it. With "everybody
+  plays the host's creature" (F5) every city stays the host's species, as before (BUG-1273).
 
 ## [0.7.15.2] - 2026-11-18
 
