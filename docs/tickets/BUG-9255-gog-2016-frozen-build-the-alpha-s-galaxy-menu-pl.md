@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: 88e1dc00
 tests: tools/re_lint.py (make test)
 signature:
 docs:

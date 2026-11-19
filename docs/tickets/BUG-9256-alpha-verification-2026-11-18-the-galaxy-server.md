@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: 88e1dc00
 tests: tools/tests/galaxy_server_check.py, tests/party_tests.cpp, tests/validate_tests.cpp, tests/net_tests.cpp
 signature:
 docs: docs/13-alpha-review-2026-11-18.md
