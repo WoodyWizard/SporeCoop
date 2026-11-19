@@ -1,16 +1,16 @@
 ---
 id: BUG-1319
 title: tribe: a guest's mirror born in a line species at a world's opening is forgotten by the world reset and keeps that species when its member is another player's
-status: open
+status: fixed
 kind: desync
 stage: Tribe
 reported: 2026-11-19
 source: lab
 role: guest
 versions: 0.7.16 (unreleased)
-fixed_in:
+fixed_in: unreleased
 branch: fix/w57-tribe-keys
-commits:
+commits: 2da18ac6
 tests: tribe_stray_line_key, tribe_stray_line_key_off (coop_own_editors_robust.py stray)
 signature: late_species_rowclear_off: guest: #1:0:<guest's 0x7C key> (a host member in the guest's creature)
 docs: docs/re/tribe.md#tribe-kid-setspecies
@@ -35,7 +35,10 @@ line) and has no record in the pass's table is taken as the mod's, so the pass g
 guest's line key by the game's SetSpecies (`coop.tribe setspecies <key> <id>`, new member argument).
 
 ## Verification
-RUNIDS
+FAIL (twin, SPORE_FIX_OFF=tribe.stray_line_key): tribe_stray_line_key_off 20261119-113824 (the host's member keeps the
+guest's 7CBC3253 on the guest's game). PASS: tribe_stray_line_key 20261119-113824, merged tree 20261119-115724.
+Seen in the wild: late_species_rowclear_off 20261119-112300 step 4 (before the fix); the same twin in
+20261119-113824 (with the fix) failed at step 3 only.
 
 ## History
 - 2026-11-19: opened (fix/w57-tribe-keys).

@@ -1,16 +1,16 @@
 ---
 id: BUG-1313
 title: tribe: SetSpecies on a tribe kid (a baby) faults in the game's growth timer (both games)
-status: open
+status: fixed
 kind: crash
 stage: Tribe
 reported: 2026-11-19
 source: lab
 role: 
 versions: 0.7.16 (unreleased)
-fixed_in:
+fixed_in: unreleased
 branch: fix/w57-tribe-keys
-commits:
+commits: 4ce6f9de
 tests: tribe_kid_species, tribe_kid_species_off (coop_own_editors_robust.py kid)
 signature: 0xC0000005 EIP 0x40A00000 / 0x00000000, calls 00BC326E 00C03A94 (Timer_Start < cCreatureAnimal::SetSpecies+0x174)
 docs: docs/re/tribe.md#tribe-kid-setspecies
@@ -35,7 +35,10 @@ changed or went away (revert), and every baby with tribe.birth_species off.
 setspecies <key> <id>` never touches a kid. Off: a kid is changed like an adult (the fault).
 
 ## Verification
-RUNIDS
+FAIL (twin, SPORE_FIX_OFF=tribe.kid_species): tribe_kid_species_off 20261119-113824 (the kid changed to the new key on
+both games, the host faulted: EIP 0xFFFFFFFF, calls 00BC326E 00C03A94); before the fix: tribe_birth_species_off
+20261119-105127 (both games). PASS: tribe_kid_species 20261119-113824, merged tree 20261119-121054 (the kid keeps
+7CBC3253, the adults 7C382858, no fault); tribe_birth_species_off 20261119-113824 no fault any more.
 
 ## History
 - 2026-11-19: opened (fix/w57-tribe-keys, from the night run's twin).

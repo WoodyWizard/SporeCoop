@@ -102,9 +102,9 @@ Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and r
   no longer dresses every tribe member in the new outfit or puts the new design into the shared civilization; what it
   made is kept and reaches every player when it joins again (BUG-1298; still open until its lab run).
 - Tribe: a baby or a new member that belongs to a guest now looks like the guest's own creature from the moment it
-  appears; before, it was the tribe's species for a moment first (BUG-1299; still open until its lab run).
+  appears; before, it was the tribe's species for a moment first (BUG-1299).
 - Space: a guest whose own ship has the same id as the host's ship now flies its own ship on its screen; before, its
-  game could show the host's ship instead (BUG-1301; still open until its lab run).
+  game could show the host's ship instead (BUG-1301).
 - Tribe: a guest that goes back to playing the tribe's species is drawn so on its own screen too; before, its own game
   kept showing its members as its old creature (BUG-1312).
 - Tribe: a tribe baby of a guest no longer makes both games fault when the guest's creature changes while the baby
