@@ -514,6 +514,13 @@ static int g_meter_npc = -1;   // proxy id the meter is open for
 static int g_meter_rounds = 1; // rounds shown on it
 static uint32_t g_meter_opened = 0, g_meter_bars = 0, g_meter_closed = 0, g_win_msgs = 0;
 static float g_meter_frac = 0;
+// BUG-9258 (BigTexas: "the animation for the pink bar isn't smooth"): the bar jumped to each new value when the host's
+// count arrived (one answer, one round trip later). It glides there now: the meter tick moves it a step a frame (about
+// 0.4 s for a round). Off (`coop.fix social.meter_glide off`): it jumps.
+static bool g_meter_glide = true;
+COOP_FIX("social.meter_glide", "BUG-9258", g_meter_glide, "creature: a guest's social meter glides to each new fill instead of jumping");
+static float g_meter_goal = 0;   // where the bar goes (the host's count)
+static double g_meter_step_at = 0;
 static int g_meter_vis_at_win = -1; // the meter layout's own visible byte when the win arrived (tests)
 
 // the layout's visible byte: SetVisible 0xE319D0 is UILayout::SetVisible(meter + 0xC), which writes
@@ -657,6 +664,7 @@ static void meter_run(void*) // outside the frame: the meter is UI
             g_meter_npc = t.npc;
             g_meter_rounds = t.rounds;
             g_meter_frac = 0;
+            g_meter_goal = 0;
             g_meter_opened++;
         } else if (t.op == 1 && t.npc == g_meter_npc && a_MeterBar) {
             if (g_meter_fill_fix) meter_fill(m, t.frac); // BUG-9230
@@ -711,6 +719,15 @@ static void meter_tick()
 {
     if (!g_meter_fix)
         return;
+    // BUG-9258: the bar glides towards the host's count, a step every ~30 ms
+    if (g_meter_glide && g_meter_npc >= 0 && g_meter_goal > g_meter_frac + 0.002f && g_meter_tasks.empty()) {
+        const double now = H->time_seconds();
+        if (now - g_meter_step_at >= 0.03) {
+            g_meter_step_at = now;
+            const float step = std::max(0.02f, (g_meter_goal - g_meter_frac) * 0.2f);
+            meter_task(1, g_meter_npc, std::min(g_meter_goal, g_meter_frac + step));
+        }
+    }
     if (g_engaged >= 0 && g_engaged != g_meter_npc && g_meter_tasks.empty()) {
         void* px = npc::proxy((uint16_t)g_engaged);
         if (g_meter_retry_fix && H->time_seconds() - g_meter_missed_at < kMeterRetry)
@@ -1433,8 +1450,13 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (kind == K_PROGRESS && is_guest()) {
         int done = r.u8(), needed = r.u8();
-        if (r.ok() && needed > 0 && id == g_engaged)
-            meter_task(1, id, std::min(1.f, (float)done / needed));
+        if (r.ok() && needed > 0 && id == g_engaged) {
+            const float f = std::min(1.f, (float)done / needed);
+            if (g_meter_glide && id == g_meter_npc)
+                g_meter_goal = std::max(g_meter_goal, f);
+            else
+                meter_task(1, id, f);
+        }
         if (r.ok() && done < needed && C.feed && !meter_shows(id))
             C.feed("Impressing: " + std::to_string(100 * done / needed) + "%");
         return;

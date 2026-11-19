@@ -184,8 +184,23 @@ typedef HRESULT(WINAPI* D3DXCreateFontW_t)(IDirect3DDevice9*, INT, UINT, UINT, U
                                            DWORD, DWORD, DWORD, LPCWSTR, void**);
 static void* g_font;   // ID3DXFont*
 static bool g_font_failed;
+// since 0.3.18: fonts of other heights for overlay_text_px (the loading cover at 1440p and 4K), made when first asked
+struct SizedFont {
+    int px;
+    void* font;
+};
+static SizedFont g_sized[6];
+static int g_sized_n;
 
 static void** vt(void* obj) { return *(void***)obj; }
+
+static void sized_release() // the sized fonts are made anew when next asked (a Reset, a new device)
+{
+    for (int i = 0; i < g_sized_n; ++i)
+        if (g_sized[i].font)
+            ((ULONG(WINAPI*)(void*))vt(g_sized[i].font)[2])(g_sized[i].font);
+    g_sized_n = 0;
+}
 
 static void font_release()
 {
@@ -193,16 +208,47 @@ static void font_release()
         ((ULONG(WINAPI*)(void*))vt(g_font)[2])(g_font);
         g_font = nullptr;
     }
+    sized_release();
+}
+
+static D3DXCreateFontW_t font_creator()
+{
+    HMODULE dx = GetModuleHandleW(L"d3dx9_27.dll");
+    if (!dx)
+        dx = LoadLibraryW(L"d3dx9_27.dll");
+    return dx ? (D3DXCreateFontW_t)(void*)GetProcAddress(dx, "D3DXCreateFontW") : nullptr;
+}
+
+// a font px high (nullptr when D3DX cannot make it: the caller draws nothing); 18 is overlay_text's own font
+static void* sized_font(int px)
+{
+    if (px == 18)
+        return g_font;
+    for (int i = 0; i < g_sized_n; ++i)
+        if (g_sized[i].px == px)
+            return g_sized[i].font;
+    if (!g_dev || !g_font)
+        return nullptr;
+    void* f = nullptr;
+    auto create = font_creator();
+    if (!create || FAILED(create(g_dev, px, 0, FW_BOLD, 1, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                 ANTIALIASED_QUALITY, DEFAULT_PITCH, L"Arial", &f)))
+        f = nullptr;
+    if (g_sized_n == (int)(sizeof g_sized / sizeof g_sized[0])) { // full: the oldest size goes
+        if (g_sized[0].font)
+            ((ULONG(WINAPI*)(void*))vt(g_sized[0].font)[2])(g_sized[0].font);
+        memmove(g_sized, g_sized + 1, sizeof(SizedFont) * (g_sized_n - 1));
+        --g_sized_n;
+    }
+    g_sized[g_sized_n++] = {px, f};
+    return f;
 }
 
 static void font_ensure()
 {
     if (g_font || g_font_failed || !g_dev)
         return;
-    HMODULE dx = GetModuleHandleW(L"d3dx9_27.dll");
-    if (!dx)
-        dx = LoadLibraryW(L"d3dx9_27.dll");
-    auto create = dx ? (D3DXCreateFontW_t)(void*)GetProcAddress(dx, "D3DXCreateFontW") : nullptr;
+    auto create = font_creator();
     if (!create || FAILED(create(g_dev, 18, 0, FW_BOLD, 1, FALSE, DEFAULT_CHARSET,
                                  OUT_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH,
                                  L"Arial", &g_font))) {
@@ -225,6 +271,31 @@ void overlay_text(int x, int y, uint32_t argb, const char* utf8)
     RECT rs = {x + 1, y + 1, x + 2001, y + 401};
     draw(g_font, nullptr, w.c_str(), -1, &rs, DT_NOCLIP, (argb & 0xFF000000u));
     draw(g_font, nullptr, w.c_str(), -1, &r, DT_NOCLIP, argb);
+}
+
+int overlay_text_px(int x, int y, uint32_t argb, const char* utf8, int px, int flags)
+{
+    const bool measure = (flags & 1) != 0;
+    if (!utf8 || (!measure && !g_overlay_active))
+        return 0;
+    px = px < 10 ? 10 : px > 96 ? 96 : px;
+    void* f = sized_font(px);
+    if (!f)
+        return 0;
+    std::wstring w = widen(utf8);
+    typedef INT(WINAPI * DrawTextW_t)(void*, void*, LPCWSTR, INT, RECT*, DWORD, D3DCOLOR);
+    auto draw = (DrawTextW_t)vt(f)[15];
+    RECT m = {0, 0, 0, 0};
+    draw(f, nullptr, w.c_str(), -1, &m, DT_CALCRECT | DT_SINGLELINE | DT_NOCLIP, 0);
+    const int width = (int)(m.right - m.left);
+    if (measure)
+        return width;
+    const int sh = px >= 30 ? 2 : 1; // the drop shadow grows with the text
+    RECT rs = {x + sh, y + sh, x + sh + 4000, y + sh + 400};
+    draw(f, nullptr, w.c_str(), -1, &rs, DT_NOCLIP, (argb & 0xFF000000u));
+    RECT r = {x, y, x + 4000, y + 400};
+    draw(f, nullptr, w.c_str(), -1, &r, DT_NOCLIP, argb);
+    return width;
 }
 
 // ---- overlay shapes (since 0.3.15): filled triangles in screen pixels, drawn in the overlay pass ----
@@ -728,6 +799,7 @@ static HRESULT WINAPI h_Reset(IDirect3DDevice9* dev, D3DPRESENT_PARAMETERS* pp)
     vsync_apply(pp);
     fire(SK_EV_DEVICE_LOST, dev);
     tri_release(); // a state block holds no D3DPOOL_DEFAULT resource, but is made anew after a Reset anyway
+    sized_release();
     if (g_font)
         ((HRESULT(WINAPI*)(void*))vt(g_font)[16])(g_font); // OnLostDevice
     HRESULT hr = o_Reset(dev, pp);

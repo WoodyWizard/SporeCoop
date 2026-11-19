@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "creations.h"
+#include "fixes.h"
 #include "game.h"
 #include "identity.h"
 #include "world.h"
@@ -66,14 +67,20 @@ static void load(const std::string& planet)
     }
 }
 
+static bool g_reuse_seat = true;
+COOP_FIX("party.reuse_offline_seat", "BUG-9259", g_reuse_seat,
+         "party: a player who finds all 4 seats taken gets the seat of a player who is not here (its own nest, a mate)");
+static uint32_t g_reused;
+static uint32_t g_handed_over; // the seats given to another player since the last save (founders::record_party)
 static void save_outside(void*)
 {
     g_save_queued = false;
     if (!g_dirty || g_planet.empty() || g_planet != world::current_game_key())
         return;
     std::string err;
-    if (founders::record_party(g_planet, g_party, err)) {
+    if (founders::record_party(g_planet, g_party, err, g_handed_over)) {
         g_dirty = false;
+        g_handed_over = 0;
         g_saves++;
     } else if (g_save_errors++ < 5) {
         H->log(M, SK_WARN, "party: not saved: %s", err.c_str());
@@ -99,12 +106,36 @@ void tick(double now)
             continue; // an older partner, or its identity has not arrived yet
         int seat = g_party.seat_of(id);
         if (seat < 0) {
-            if (g_party.seats.size() >= founders::kPlaySeats) {
+            // BUG-9259 (2026-11-18): a planet keeps every player who ever played it in its 4 seats; a 5th player got no
+            // seat for good, so no nest of its own (no mate, no family) and no village later. A player who is here now
+            // takes the seat of one who is not (never the host's seat 0): that seat's nest follows its creature
+            // (BUG-9151). Off (`coop.fix party.reuse_offline_seat off`): no seat.
+            if (g_party.seats.size() >= founders::kPlaySeats && g_reuse_seat) {
+                for (size_t i = g_party.seats.size(); i-- > 1;) {
+                    const uint64_t old = g_party.seats[i].player;
+                    bool here = false;
+                    for (const auto& q : S->players())
+                        here = here || (q.id == S->my_id() ? identity::own() : identity::of(q.id)) == old;
+                    if (here)
+                        continue;
+                    H->log(M, SK_INFO, "party: %s takes seat %zu of %s, who is not here (all %zu seats were taken, BUG-9259)",
+                           name_of(p.id).c_str(), i, g_party.seats[i].name.c_str(), founders::kPlaySeats);
+                    g_party.seats[i] = {id, 0, {}};
+                    g_handed_over |= 1u << i;
+                    seat = (int)i;
+                    g_dirty = true;
+                    g_reused++;
+                    break;
+                }
+            }
+            if (seat < 0 && g_party.seats.size() >= founders::kPlaySeats) {
                 if (g_full_logged++ < 3)
                     H->log(M, SK_INFO, "party: %s gets no seat, the campaign's %zu seats are taken", name_of(p.id).c_str(),
                            founders::kPlaySeats);
                 continue;
             }
+        }
+        if (seat < 0) {
             g_party.seats.push_back({id, 0, {}});
             seat = int(g_party.seats.size() - 1);
             H->log(M, SK_INFO, "party: %s takes seat %d", name_of(p.id).c_str(), seat);

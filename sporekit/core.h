@@ -12,7 +12,7 @@
 
 #include "../sdk/include/sporekit.h"
 
-#define SK_VERSION "0.3.17"
+#define SK_VERSION "0.3.18"
 
 // ---- SkMod (opaque for mods) ----
 struct SkMod {
@@ -149,6 +149,7 @@ std::vector<std::pair<std::wstring, std::string>> report_shot_files(); // full p
 std::string report_shots_text(bool crash);                             // the report's "== Screenshots"
 void overlay_text(int x, int y, uint32_t argb, const char* utf8);
 void overlay_tris(const float* xy, int n, uint32_t argb); // since 0.3.15: n filled triangles (6 floats each)
+int overlay_text_px(int x, int y, uint32_t argb, const char* utf8, int px, int flags); // since 0.3.18: sized text
 int world_to_screen(const float* w, float* out);
 // gamehooks.cpp, BUG-0948: the viewer as the game drew the frame (copied at its first SetTransform(VIEW) after a Present)
 void drawn_view_take();

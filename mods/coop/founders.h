@@ -290,6 +290,7 @@ bool read_party(const std::string& planet_file, Party& out);
 bool read_side(const std::string& planet_file, const wchar_t* suffix, std::vector<uint8_t>& out, size_t max_bytes);
 bool write_side(const std::string& planet_file, const wchar_t* suffix, const std::vector<uint8_t>& data);
 // a party may only grow, and a seat's identity is learnt once: the same rule as the founder rosters
-bool record_party(const std::string& planet_file, const Party& value, std::string& err);
+// handed_over: a bit per seat the host gave to another player on purpose (BUG-9259: the seat of a player who is not here)
+bool record_party(const std::string& planet_file, const Party& value, std::string& err, uint32_t handed_over = 0);
 
 } // namespace founders

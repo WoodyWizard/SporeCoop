@@ -846,7 +846,7 @@ bool read_party(const std::string& key, Party& out)
     return true;
 }
 
-bool record_party(const std::string& key, const Party& value, std::string& err)
+bool record_party(const std::string& key, const Party& value, std::string& err, uint32_t handed_over)
 {
     auto path = path_for(key, L".duoparty");
     if (path.empty() || !party_valid(value)) { err = "A saved planet and a valid party are required."; return false; }
@@ -859,7 +859,7 @@ bool record_party(const std::string& key, const Party& value, std::string& err)
         if (prior == value) return true;
         if (value.seats.size() < prior.seats.size()) { err = "A party never loses a seat."; return false; }
         for (size_t i = 0; i < prior.seats.size(); ++i)
-            if (prior.seats[i].player && prior.seats[i].player != value.seats[i].player) {
+            if (prior.seats[i].player && prior.seats[i].player != value.seats[i].player && !(i < 32 && (handed_over >> i) & 1)) {
                 err = "A party seat belongs to another player."; return false;
             }
     }

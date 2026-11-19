@@ -869,6 +869,43 @@ net::PlayerState local_state()
 // remote `s` is visible here only when both play the same mode in the same world
 bool same_place(const net::PlayerState& s) { return s.mode == g_mode && s.world == g_world && g_world != 0; }
 
+// BUG-9260 (owner 2026-11-18: "when Host was paused in Live, the connected player was able to move still, even though
+// 'host paused' screen was up"): BUG-9227 only drew the cover; the guest's own game ran on under it. While the host's
+// state says paused (PF_PAUSED, the same place, fresh) the guest's game time stands too, with one pause of its own
+// (the UI-modal reason the game's own boxes use, 0x4BF38A7: counted, so the guest's own pauses stay as they are), and
+// is resumed when the host resumes, leaves the place, goes quiet or the session ends. Off: the cover only.
+static bool g_follow_pause = true;
+COOP_FIX("core.follow_host_pause", "BUG-9260", g_follow_pause, "ui: a guest's game pauses while the host's game is paused (not only the cover)");
+constexpr uint32_t kHostPauseReason = 0x4BF38A7u;
+static bool g_host_pause_held;
+static uint32_t g_host_pauses;
+static void host_pause_tick(double now)
+{
+    bool want = false;
+    if (g_follow_pause && g_paused_cover && g_sess.role() == net::Role::Client && g_sess.connected()) {
+        auto it = g_remotes.find(0);
+        if (it != g_remotes.end() && !it->second.buf.empty()) {
+            const auto& hs = it->second.buf.latest();
+            want = (hs.flags & net::PF_PAUSED) && same_place(hs) && it->second.buf.age(now) < 3.0 && stage_mode(g_mode);
+        }
+    }
+    if (want == g_host_pause_held)
+        return;
+    world::time_pause(kHostPauseReason, want);
+    g_host_pause_held = want;
+    if (want)
+        g_host_pauses++;
+    LOG("pause: the host's game is %s: this game %s (BUG-9260)", want ? "paused" : "running again", want ? "pauses" : "resumes");
+}
+static void host_pause_release() // the session ended, the world changed: never left paused by the host
+{
+    if (!g_host_pause_held)
+        return;
+    world::time_pause(kHostPauseReason, false);
+    g_host_pause_held = false;
+    LOG("pause: the host's pause released (the session or the place ended, BUG-9260)");
+}
+
 // ---- coop.track (BUG-0360): what this player sees of its partners, frame by frame. Tests sample the
 // partner's puppet (its game position, where its model is drawn, its game speed, its animation, the
 // interpolated target) and the own avatar every frame into a ring and read it back with `dump`.
@@ -5459,6 +5496,7 @@ void on_frame(void*, int, void*)
     spectate_tick(); // BUG-9156
     fprof::mark("spectate_tick()");
     lobby_tick(now);
+    host_pause_tick(now); // BUG-9260
     fprof::mark("lobby_tick(now)");
     if (g_sess.role() == net::Role::Client) { // BUG-0425 (drive.lead): the one-way latency to the host, half its round trip
         int rtt = g_sess.rtt_of(0);
@@ -6391,6 +6429,30 @@ static void bold(int x, int y, uint32_t color, const char* text)
     H->overlay_text(x, y, color, text);
     H->overlay_text(x + 1, y, color, text);
 }
+// BUG-9261 (owner 2026-11-18: the loading screens "aren't centered and seem to be low resolution"): the covers' title and
+// step line grow with the screen (SporeKit 0.3.18's sized text: 22 and 18 px at 1080p, 29 and 24 at 1440p) and are
+// centred by their measured width. Off, or an older SporeKit: the fixed 18 px font centred by the 9 px per letter guess.
+static bool g_cover_text = true;
+COOP_FIX("ui.cover_text_scale", "BUG-9261", g_cover_text,
+         "ui: the loading and pause covers' text grows with the screen and is centred by its measured width");
+static bool kit_sized_text()
+{
+    return H->size >= offsetof(SkHost, overlay_text_px) + sizeof(void*) && H->overlay_text_px;
+}
+// title (white) at y, step (gold) under it, both centred on cx; returns nothing, draws in SK_EV_OVERLAY only
+static void cover_lines(float cx, float y, int sh, const char* title, const std::string& step)
+{
+    if (!g_cover_text || !kit_sized_text()) {
+        bold((int)(cx - text_width(title) / 2.f), (int)y, 0xFFFFFFFFu, title);
+        H->overlay_text((int)(cx - text_width(step) / 2.f), (int)y + 22, 0xFFF0C040u, step.c_str());
+        return;
+    }
+    const float k = std::max(1.f, sh / 1080.f);
+    const int tp = std::min(64, (int)std::lround(22.f * k)), sp = std::min(54, (int)std::lround(18.f * k));
+    const int tw = H->overlay_text_px(0, 0, 0, title, tp, 1), stw = H->overlay_text_px(0, 0, 0, step.c_str(), sp, 1);
+    H->overlay_text_px((int)std::lround(cx - tw / 2.f), (int)y, 0xFFFFFFFFu, title, tp, 0);
+    H->overlay_text_px((int)std::lround(cx - stw / 2.f), (int)std::lround(y + tp + 4.f * k), 0xFFF0C040u, step.c_str(), sp, 0);
+}
 static void draw_downed_hud(int sw, int sh)
 {
     std::memset(g_spec_btn, 0, sizeof g_spec_btn);
@@ -6799,8 +6861,7 @@ void on_overlay(void*, int, void*)
                                      : in_stage ? "Final touches..."
                                      : saving ? host + " is saving the world..."
                                      : "Loading...";
-            bold((int)(cx - text_width(title.c_str()) / 2.f), (int)(cy + r + 18), 0xFFFFFFFFu, title.c_str());
-            H->overlay_text((int)(cx - text_width(step) / 2.f), (int)(cy + r + 40), 0xFFF0C040u, step.c_str());
+            cover_lines(cx, cy + r + 18.f * std::max(1.f, sh / 1080.f), sh, title.c_str(), step);
             return; // nothing else over the loading screen
         }
     }
@@ -6814,10 +6875,8 @@ void on_overlay(void*, int, void*)
             if ((hs.flags & net::PF_PAUSED) && same_place(hs) && it->second.buf.age(H->time_seconds()) < 3.0) {
                 const float cx = sw / 2.f, cy = sh * 0.45f;
                 ring_timer::loading(H, sw, sh, cx, cy, 0.f, 0.f, H->time_seconds());
-                const char* title = "Paused by host";
-                bold((int)(cx - text_width(title) / 2.f), (int)(cy - 10), 0xFFFFFFFFu, title);
                 const std::string step = g_sess.name_of(0) + " paused the game";
-                H->overlay_text((int)(cx - text_width(step) / 2.f), (int)(cy + 14), 0xFFF0C040u, step.c_str());
+                cover_lines(cx, cy - 10.f * std::max(1.f, sh / 1080.f), sh, "Paused by host", step);
                 return; // nothing else over the cover
             }
         }
@@ -6841,9 +6900,7 @@ void on_overlay(void*, int, void*)
             const std::string steps[4] = {"Catching up to " + host + "...", "Matching tools...", "Buildings are rising...",
                                           "Final touches..."};
             const char* title = civ_wait ? "Founding your capital" : "Founding your village";
-            bold((int)(cx - text_width(title) / 2.f), (int)(cy + r + 18), 0xFFFFFFFFu, title);
-            const std::string& step = steps[tribe_late::loading_step(p)];
-            H->overlay_text((int)(cx - text_width(step) / 2.f), (int)(cy + r + 40), 0xFFF0C040u, step.c_str());
+            cover_lines(cx, cy + r + 18.f * std::max(1.f, sh / 1080.f), sh, title, steps[tribe_late::loading_step(p)]);
             return; // nothing else over the loading screen
         }
     }
@@ -7373,6 +7430,7 @@ void setup_callbacks()
         coop_ui::remember_server(g_sess.host_address(), g_sess.name_of(0));
     };
     g_sess.cb.disconnected = [](const std::string& why) {
+        host_pause_release(); // BUG-9260
         support::on_disconnected(why);
         rejoin::clear(net::g_fix.join_seen); // the session ended (BUG-0235); kept for this host and name (BUG-1001)
         settings::on_disconnect();

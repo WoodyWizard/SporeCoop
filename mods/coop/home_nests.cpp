@@ -47,6 +47,8 @@ struct SeatNest {
     net::Vec3 pos{};
     uint32_t species = 0;
     int32_t rate = 0; // the game's respawn time while family_back holds it short
+    double empty_since = -1; // BUG-9259: no living member since (the game's own respawn did not come)
+    double filled_at = -100;
 };
 static std::array<SeatNest, founders::kMaxSeats> g_nests;
 static double g_next;
@@ -69,6 +71,16 @@ constexpr double kShareWait = 90;
 // BUG-9167; a family that died, BUG-9175 and decision 2E "else one is spawned": the player needs a mate) gets kEmptyNestMs
 // until the next one, then the game's own time again (family_back, host_tick).
 constexpr int32_t kEmptyNestMs = 2000, kGameRespawnMs = 120000;
+// BUG-9259 (BigTexas 2026-11-18, "unable to see their own nest, and they cannot mate"): a player's nest stayed empty for
+// half an hour; the game's respawn (family_back's 2 s) never came for it. After kFillAfter s with no living member the
+// host puts kFillCount members in it itself (cCreatureAnimal::Create into the nest herd, as the game's respawn does), so
+// every player has a family at its nest: a mate, a nest the guest's copy shows. Off: the game's respawn only.
+static bool g_fill_fix = true;
+COOP_FIX("creature.nest_family_fill", "BUG-9259", g_fill_fix,
+         "creature: a player's nest with no living member for 15 s gets its family from the host (a mate, a nest to see)");
+constexpr double kFillAfter = 15, kFillEvery = 30;
+constexpr int kFillCount = 3;
+static uint32_t g_fills, g_fill_members, g_no_profile_said;
 static bool g_family_back = true;
 COOP_FIX("creature.nest_family_back", "BUG-9175", g_family_back,
          "creature: a player's nest with no living member gets its next member in 2 s (a new nest, a family that died)");
@@ -450,6 +462,46 @@ static void family_back(size_t seat, void* herd)
     }
 }
 
+// BUG-9259: the seat's nest has had no living member for kFillAfter s (the game's respawn did not come)
+static bool fill_due(size_t seat, double now)
+{
+    SeatNest& n = g_nests[seat];
+    if (!g_fill_fix || !live_herd(n.herd))
+        return false;
+    if (living_of(n.herd) > 0) {
+        n.empty_since = -1;
+        return false;
+    }
+    if (n.empty_since < 0)
+        n.empty_since = now;
+    return now - n.empty_since >= kFillAfter && now - n.filled_at >= kFillEvery && !game::cinematic_playing();
+}
+static void fill_family(void* ctx)
+{
+    const size_t seat = (size_t)(intptr_t)ctx;
+    g_queued = false;
+    if (!is_host() || !game::in_creature_stage() || seat >= g_nests.size())
+        return;
+    SeatNest& n = g_nests[seat];
+    void* profile = n.species ? game::species_by_key({n.species, kCrtType, kCrtGroup}) : nullptr;
+    net::Vec3 at;
+    if (!profile || !live_herd(n.herd) || !nest_pos_of(n.herd, at) || living_of(n.herd) > 0)
+        return;
+    n.filled_at = H->time_seconds();
+    int made = 0;
+    for (int i = 0; i < kFillCount; ++i) {
+        const float a = 2.1f * (float)i; // around the nest, 3 m out (the game's own family stands there)
+        net::Vec3 p{at.x + 3.f * std::cos(a), at.y, at.z + 3.f * std::sin(a)};
+        if (game::spawn_creature(p, profile, n.herd))
+            ++made;
+    }
+    g_fills++;
+    g_fill_members += made;
+    n.empty_since = -1;
+    H->log(M, made ? SK_INFO : SK_WARN, "home nests: seat %zu's nest (%.0f %.0f %.0f) had no living member for %.0f s: %d "
+           "member(s) of %08X put in it (BUG-9259)", seat, at.x, at.y, at.z, kFillAfter, made, n.species);
+}
+
 // BUG-9167: a new nest's world goes out once the nest has a member (or after kShareWait s)
 static void share_due_tick(double now)
 {
@@ -733,15 +785,28 @@ void host_tick(double now)
             continue;
         }
         void* profile = game::species_by_key({species, kCrtType, kCrtGroup});
-        if (!profile)
-            continue; // its creature is not here (yet)
+        if (!profile) {
+            // its creature is not here (yet). BUG-9259: this waited silently for good; said once a minute now
+            if (party::player_of_seat((int)seat) != party::kNobody && g_no_profile_said++ % 30 == 0)
+                H->log(M, SK_WARN, "home nests: seat %zu plays species %08X, which this game does not know (yet): no nest of "
+                       "its own until it does (BUG-9259)", seat, species);
+            continue;
+        }
         net::Vec3 at;
         if (void* herd = nest_herd_near(profile, home, kNear, &at)) {
-            g_nests[seat] = {herd, at, species, g_nests[seat].herd == herd ? g_nests[seat].rate : 0};
+            const SeatNest old = g_nests[seat];
+            const bool same = old.herd == herd;
+            g_nests[seat] = {herd, at, species, same ? old.rate : 0, same ? old.empty_since : -1, same ? old.filled_at : -100};
             note_nest(seat, at);
             mark_known(herd); // BUG-9204
-            if (party::player_of_seat((int)seat) != party::kNobody)
+            if (party::player_of_seat((int)seat) != party::kNobody) {
                 family_back(seat, herd); // (an offline player's nest is the AI's: it may die out, decision 8)
+                if (fill_due(seat, now)) {
+                    g_queued = true;
+                    H->run_outside_frame(fill_family, (void*)(intptr_t)seat);
+                    return;
+                }
+            }
             continue;
         }
         // BUG-9151: its nest of the species it played before is still here: that nest follows (one a tick)
@@ -802,9 +867,10 @@ void on_world_change()
 std::string status()
 {
     char b[360];
-    snprintf(b, sizeof b, "home nests: fix=%d made=%u rebuilt=%u followed=%u (%u members) failed=%u ally_set=%u world_resent=%u last: %s\n",
-             (int)g_fix, g_made, g_rebuilt, g_followed, g_follow_members, g_failed, g_ally_set, g_shares,
-             g_last.empty() ? "-" : g_last.c_str());
+    snprintf(b, sizeof b, "home nests: fix=%d made=%u rebuilt=%u followed=%u (%u members) failed=%u ally_set=%u world_resent=%u "
+             "filled=%u (%u members) last: %s\n",
+             (int)g_fix, g_made, g_rebuilt, g_followed, g_follow_members, g_failed, g_ally_set, g_shares, g_fills,
+             g_fill_members, g_last.empty() ? "-" : g_last.c_str());
     std::string out = b;
     net::Vec3 home;
     const bool have_home = host_home(home);

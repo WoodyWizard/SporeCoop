@@ -1478,9 +1478,19 @@ static Key avatar_species_key()
 }
 
 // BUG-0638: the guest's explicit choice was made (or played) in this world; outside a world it holds
+static uint32_t g_first_key; // BUG-9207 (below): the first creature, made for the coming world
+// BUG-9259 (owner 2026-11-18: "it let me create a new creature ... then when I loaded in, it gave me his creature and had
+// me change it"): the first creature is made in the editor before the host's world loads, so no world had it recorded;
+// the BUG-0638 rule below then took it for a choice of another world, the guest played the host's species and got a
+// second editor (and no nest of its own). The first creature counts in the first world with no record. Off: as before.
+static bool g_first_here_fix = true;
+COOP_FIX("creations.first_creature_here", "BUG-9259", g_first_here_fix,
+         "creations: the first creature a new player makes is theirs in the world they join (not dropped for the host's)");
 static bool choice_here(int k)
 {
     uint32_t w = modes::current_world();
+    if (g_first_here_fix && k == kCreature && w && g_first_key && g_choice[k].instance == g_first_key && !world_record(k, w))
+        return true; // (own_world_tick records it for this world and clears g_first_key)
     return !w || world_record(k, w) == g_choice[k].instance;
 }
 
@@ -3805,7 +3815,6 @@ void cancel_new_creature() { g_new_creature_world = 0; }
 // makes a new world. Back in the menu, its newest new creation becomes its creature (choose: the co-op window's pick);
 // g_first_key: that creation, which is not "new here" (BUG-9203) in the first world it plays in
 static bool g_first_pending;
-static uint32_t g_first_key;
 void begin_first_creature()
 {
     g_first_pending = true;
@@ -4576,6 +4585,9 @@ static bool g_founder_descs_fix = true;
 COOP_FIX("tribe.founder_parts", "BUG-9134", g_founder_descs_fix,
          "tribe / civ: a guest's custom creature (with its part descriptions) can be archived as a founder; it gets its own village");
 
+static bool g_founder_png_fix = true;
+COOP_FIX("creations.founder_png", "BUG-9259", g_founder_png_fix,
+         "creations: a player's creature archive takes the creature's pictures (a saved custom creature was refused: empty nests)");
 static bool decode_founder(const std::vector<uint8_t>& archive, Bundle& b, std::string& err)
 {
     net::Reader header(archive.data(), archive.size());
@@ -4592,7 +4604,7 @@ static bool decode_founder(const std::vector<uint8_t>& archive, Bundle& b, std::
     // BUG-9134: since the 0.7.8 merge a bundle also carries one description per part its model uses (BUG-0559,
     // group kPartDescGroup, pack()): a custom creature had 2 + N records and every founder archive was refused
     // ("Invalid or mismatched guest creature data"; only premade creatures, 0 records, passed). Off: 2 at most.
-    const unsigned max_records = g_founder_descs_fix ? 2u + 512u : 2u;
+    const unsigned max_records = g_founder_descs_fix ? 2u + 512u + (g_founder_png_fix ? 8u : 0u) : 2u;
     const uint32_t content = fnv(payload.data(), payload.size());
     if (!count || count > max_records || !unpack(payload, b) || !b.key.instance || !is_crt(b.key) ||
         (key != shared_instance(owner, content) && key != salted_instance(owner, content))) { // (BUG-9180: older archives)
@@ -4615,6 +4627,16 @@ static bool decode_founder(const std::vector<uint8_t>& archive, Bundle& b, std::
     size_t used = 14; // original key, record count
     std::vector<dbpf::Record> kept;
     for (auto& rec : b.recs) {
+        // BUG-9259: a bundle carries the creation's pictures too (BUG-0921, Sporepedia PNGs): every saved custom
+        // creature was refused here ("Unexpected record"), so a player's nest herd had no creature to keep
+        if (g_founder_png_fix && rec.key.type == kPng) {
+            if (rec.data.empty() || rec.data.size() > (1u << 20)) {
+                err = "Unexpected picture in guest creature archive.";
+                return false;
+            }
+            used += 16 + rec.data.size();
+            continue;
+        }
         if (g_founder_descs_fix && rec.key.group == kPartDescGroup) {
             // a part's description (BUG-0559): counted, not registered (the receiver's own parts answer)
             if (rec.data.empty() || rec.data.size() > (64u << 10)) {

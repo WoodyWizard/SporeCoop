@@ -189,6 +189,12 @@ typedef struct SkHost {
      * (alpha blended), drawn on top like overlay_text and in call order with it. The game's render states are
      * put back after each call. Valid only during SK_EV_OVERLAY; at most 256 triangles per call. */
     void (*overlay_tris)(const float* xy, int n, uint32_t argb);
+
+    /* ---- since 0.3.18 (check size) ---- */
+    /* text like overlay_text in a font px pixels high (Arial bold, 10..96; overlay_text's font is 18), so text
+     * can grow with the back buffer (a 1440p or 4K screen). flags bit 0: measure only, nothing drawn. Returns the
+     * text's width in pixels (0: no font, or outside SK_EV_OVERLAY when drawing). Main thread. */
+    int (*overlay_text_px)(int x, int y, uint32_t argb, const char* utf8, int px, int flags);
 } SkHost;
 
 typedef struct SkModInfo {
