@@ -202,6 +202,17 @@ def run_tribe(ck, camp, a, host, guest, pid, off_line):
                                           f'creature ({lines})')
             if got:
                 want = got
+                # a caption of the Tribe stage holds a game in its cinematic (paused) and the member pass waits for it
+                # (lab 20261119-153243: the host's from 15:36:57 to 15:38:10, its members changed 72 s after the line
+                # was known, after the 40 s of check_mix): the players' OK on each game's caption first
+                from coop_editor_sync import cinematic
+                t0 = time.time()
+                while time.time() - t0 < 60 and any(cinematic(c) for c in (host, guest)):
+                    for c in (host, guest):
+                        if cinematic(c):
+                            c.call('key enter')
+                    time.sleep(2)
+                print(f'  tribe outfit: captions closed after {time.time() - t0:.0f} s', flush=True)
                 check_mix(ck, host, guest, want, slot, 'tribe outfit')
                 member_view(host, guest, 'tribe_guest_outfit', 'same view 12 m from a guest\'s member: the guest\'s own '
                             'creature with its new piece of clothing (a leaf on the chest) on both screens')
