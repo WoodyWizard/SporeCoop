@@ -237,7 +237,9 @@ static int c_wstate(void*, int, const char* const*, SkOut* out)
         // village and the animals out of the world for the Civ stage
         snprintf(b, sizeof b, "st phase stage_end=%d\n", tribe::stage_end() ? 1 : 0);
         add(b);
-        void* pt = nm && R(nm, 0x74) ? F<void*>(nm, 0x70) : nullptr; // cGameNounManager::mpPlayerTribe
+        void* pt = tribe::swapped_host_tribe(); // BUG-9268
+        if (!pt)
+            pt = nm && R(nm, 0x74) ? F<void*>(nm, 0x70) : nullptr; // cGameNounManager::mpPlayerTribe
         uint32_t ppol = pt ? pol(pt) : 0xFFFFFFFFu;
         for (size_t i = 0; i < qq.tribes.size(); i++) {
             void* t = qq.tribes[i];
