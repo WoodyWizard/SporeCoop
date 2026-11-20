@@ -17,6 +17,7 @@
 #include "npc.h"
 #include "player_rules.h"
 #include "progress_debt.h"
+#include "party_bar.h"
 #include "sporekit_game.hpp"
 #include "world.h"
 #include "parties_net.h"
@@ -1357,9 +1358,11 @@ static void apply_success(uint8_t player, uint16_t id)
         dna = thiscall<float>(a_DnaWorth, c, 1);
         if (dna > 0 && dna < 10000 && C.pace)
             dna = C.pace(dna); // BUG-0510: the party's pace (a guest's friend, as the host's own are in on_dna)
-        if (dna > 0 && dna < 10000)
+        // BUG-9277: a player of another party fills its own party's bar (its debt is not the host's party's)
+        const bool own_party_bar = player != 0 && C.sess && party_bar::credit(*C.sess, (uint8_t)player, dna);
+        if (!own_party_bar && dna > 0 && dna < 10000)
             dna = progress_debt::absorb(dna); // BUG-9119: a progress debt is repaid first
-        if (dna > 0 && dna < 10000)
+        if (!own_party_bar && dna > 0 && dna < 10000)
             game::dna_add_raw(dna); // the host's pool, shared with everybody (MSG_DNA)
     }
     game::set_impressed(c, true);

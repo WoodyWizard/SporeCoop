@@ -47,6 +47,7 @@ struct PlanetInfo {
 void init(const SkHost* host, SkMod* mod, Ctx ctx);
 bool online();                              // connected to a galaxy server (welcomed)
 std::vector<PlanetInfo> planets_known();    // the last list: the planets with players first
+uint8_t era_of_mode(uint32_t mode);         // step 4: the era (net::galaxy::Era) of a game mode, 0 not a stage
 uint32_t planets_version();                 // changes with the list
 std::string current_planet();               // the planet this player is on ("" none)
 std::string galaxy_name();                  // the connected galaxy's name ("" when not connected)

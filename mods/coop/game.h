@@ -324,6 +324,7 @@ void dna_set_raw(float total);              // SetEvolutionPoints: the DNA only,
 float evolution_bar();                      // cPlayer +0x10F0, the stage's total earned (NAN without a player)
 float goal_total(); // cPlayer +0x10F4 mGoalProgressTotal: the progress bar's full value (Creature 1000), NAN outside Creature
 void dna_sync_raw(float total, float earned); // host-authoritative budget and earned progress
+void set_bar(float earned);                    // BUG-9277: the evolution bar to `earned` (also down), the DNA kept
 // scale an earned award or return false to swallow it (BUG-0510 pace, Lineages campaign workload);
 // activity_reward: a hunt / ally / extinction / social reward of the Creature stage
 using DnaListener = bool (*)(float& delta, bool activity_reward);

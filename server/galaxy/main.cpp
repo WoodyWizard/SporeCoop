@@ -64,11 +64,15 @@ struct Stored {
     uint8_t tech = 0;
     uint32_t species[3]{};
     int64_t at = 0; // 6I A: when it was stored (time(), 0: loaded from the folder at the start: its age unknown)
+    std::string save; // step 4 part 6: the save's own planet name inside the world (blob_planet): a later upload must match
 };
 struct Meta {
     uint8_t tech = 0;
     uint32_t species[3]{};
+    uint8_t era = 0; // (protocol 7: the stage the uploaded world is in)
 };
+constexpr int kKeepSaves = 3; // step 4 part 6: the older saves kept beside a planet's world (<file>.1 .. .3)
+static uint32_t g_era_refused = 0, g_save_refused = 0, g_migrated = 0;
 static std::map<uint16_t, Meta> g_upload_meta; // by player slot: the facts its upload carried
 static std::map<std::string, Stored> g_stored;
 static std::string g_worlds_dir = "worlds";
@@ -230,7 +234,8 @@ static void load_stored()
         FILE* f = fopen(e.path().string().c_str(), "rb");
         if (!f)
             continue;
-        uint8_t head[4 + 1 + 255 + 8 + 1 + 12]; // (GWS2: + the tech level and the species key; a 243+ byte name did not load)
+        uint8_t head[4 + 1 + 255 + 8 + 1 + 12 + 5 + 255]; // (GWS2: + the tech level and the species key; a 243+ byte name
+                                                         // did not load; then the world's own first bytes: its save's name)
         const size_t n = fread(head, 1, sizeof head, f);
         fclose(f);
         Reader r(head, n);
@@ -246,7 +251,24 @@ static void load_stored()
         }
         if (!r.ok() || (magic != 0x31535747u && magic != 0x32535747u) || planet.empty())
             continue;
+        st.save = blob_planet(std::vector<uint8_t>(head + (n - r.left()), head + n));
         st.file = e.path().string();
+        if (!era_of(planet)) { // step 4 part 1: a world stored before eras goes to its stage's era (its tech level; 0: Cell)
+            const uint8_t era = st.tech ? era_of_tech(st.tech) : kEraCell;
+            const std::string key = era_key(planet, era), to = world_file(key);
+            if (era && !g_stored.count(key)) {
+                std::filesystem::rename(st.file, to, ec);
+                if (!ec) {
+                    say("stored world: '%s' is the era '%s' now", planet.c_str(), key.c_str());
+                    planet = key;
+                    st.file = to;
+                    g_migrated++;
+                }
+                ec.clear();
+            }
+        }
+        if (g_stored.count(planet))
+            continue;
         g_stored[planet] = st;
         say("stored world: '%s' (%u KB)", planet.c_str(), st.size >> 10);
     }
@@ -276,6 +298,12 @@ static bool store_world(const std::string& planet, const XferIn& in, const Meta&
               (in.data.empty() || fwrite(in.data.data(), 1, in.data.size(), f) == in.data.size());
     ok = fclose(f) == 0 && ok;
     std::error_code ec;
+    if (ok && std::filesystem::exists(file, ec)) { // step 4 part 6: the older saves stay (a broken host's save can be undone)
+        for (int k = kKeepSaves; k > 1; k--)
+            std::filesystem::rename(file + "." + std::to_string(k - 1), file + "." + std::to_string(k), ec);
+        std::filesystem::copy_file(file, file + ".1", std::filesystem::copy_options::overwrite_existing, ec);
+    }
+    ec.clear();
     if (ok)
         std::filesystem::rename(tmp, file, ec);
     if (!ok || ec) {
@@ -290,6 +318,7 @@ static bool store_world(const std::string& planet, const XferIn& in, const Meta&
     st.at = (int64_t)time(nullptr);
     st.tech = meta.tech;
     memcpy(st.species, meta.species, sizeof st.species);
+    st.save = blob_planet(in.data);
     return true;
 }
 
@@ -640,13 +669,29 @@ static void on_control(const Endpoint& from, Reader& r)
             send(*c, w);
             return;
         }
+        Meta m;
         if (r.left() >= 13) { // the menu's facts of the planet (5X B)
-            Meta m;
             m.tech = r.u8();
             for (auto& v : m.species)
                 v = r.u32();
-            g_upload_meta[c->slot] = m;
+            m.era = r.left() >= 1 ? r.u8() : 0;
         }
+        // step 4 part 1: an era keeps worlds of its stage only (a host whose game went on to the next stage does not
+        // turn the planet's Creature era into a Tribe world: its party moves to the Tribe era instead)
+        const uint8_t key_era = era_of(in.planet);
+        if (key_era && m.era != key_era) {
+            Writer w = control(XDONE);
+            w.u32(in.id);
+            w.u8(0);
+            w.str8(std::string("this world is in the ") + (m.era ? era_name(m.era) : "unknown") + " stage, not " +
+                   era_name(key_era));
+            send(*c, w);
+            if (g_era_refused++ < 20)
+                say("planet '%s': refused a world of another stage (%s) from %u '%s'", in.planet.c_str(),
+                    m.era ? era_name(m.era) : "unknown", c->slot, c->name.c_str());
+            return;
+        }
+        g_upload_meta[c->slot] = m;
         in.alloc();
         g_uploads[c->slot] = std::move(in);
     } else if (type == XCHUNK) {
@@ -666,7 +711,16 @@ static void on_control(const Endpoint& from, Reader& r)
             return;
         std::string why;
         const bool valid = in.valid();
-        const bool ok = valid && store_world(in.planet, in, g_upload_meta[c->slot], why);
+        // step 4 part 6: a planet's stored world is only replaced by a save of the same planet (another save uploaded
+        // over it, by mistake or on purpose, is refused)
+        auto prev = g_stored.find(in.planet);
+        const std::string got = valid ? blob_planet(in.data) : "";
+        const bool same = prev == g_stored.end() || prev->second.save.empty() || got == prev->second.save;
+        if (valid && !same) {
+            why = "this is the save of another planet (" + got + "), not " + prev->second.save;
+            g_save_refused++;
+        }
+        const bool ok = valid && same && store_world(in.planet, in, g_upload_meta[c->slot], why);
         if (!valid)
             why = "the world arrived damaged";
         Writer w = control(XDONE);
@@ -1099,12 +1153,13 @@ int main(int argc, char** argv)
             const double kbs = (g_relay_bytes - status_bytes) / 1024.0 / ((now - last_status) / 1000.0);
             const double secs = (now - last_status) / 1000.0;
             say("status: %zu player(s), %zu planet(s), relay %.1f KB/s (%llu packets, %llu dropped in all), "
-                "copies: in %.1f KB/s out %.1f KB/s (%llu sent, %llu dropped in all), parties %zu (%llu requests, %llu views)",
+                "copies: in %.1f KB/s out %.1f KB/s (%llu sent, %llu dropped in all), parties %zu (%llu requests, %llu views), "
+                "eras: %u migrated, %u uploads of another stage and %u of another planet refused",
                 g_clients.size(), g_planets.size(), kbs, (unsigned long long)g_relay_packets,
                 (unsigned long long)g_relay_dropped, (g_fan_in_bytes - status_fan_in) / 1024.0 / secs,
                 (g_fan_out_bytes - status_fan_out) / 1024.0 / secs, (unsigned long long)g_fan_packets,
                 (unsigned long long)g_fan_dropped, g_parties.all().size(), (unsigned long long)g_party_requests,
-                (unsigned long long)g_party_views);
+                (unsigned long long)g_party_views, g_migrated, g_era_refused, g_save_refused);
             last_status = now;
             status_bytes = g_relay_bytes;
             status_fan_in = g_fan_in_bytes;

@@ -83,6 +83,7 @@
 #include "cell_logic.h"
 #include "busy.h"
 #include "social.h"
+#include "party_bar.h"
 #include "world.h"
 #include "net/validate.h"
 #include "find.h"
@@ -5662,6 +5663,8 @@ void on_frame(void*, int, void*)
     fprof::mark("effects::tick(now)");
     social::tick(now);
     fprof::mark("social::tick(now)");
+    if (g_sess.role() == net::Role::Host)
+        party_bar::tick(g_sess); // BUG-9277: the planet's saved party bars
     evo_key_tick(now);
     fprof::mark("evo_key_tick(now)");
     creature_hp::tick();
@@ -5672,7 +5675,10 @@ void on_frame(void*, int, void*)
         float total = game::dna();
         float earned = game::evolution_bar();
         // also every 2 s: a guest drops it while it has no avatar (loading, editor), BUG-0128
-        if (total != g_dna_sent || (std::isfinite(earned) && earned != g_dna_bar_sent) || (cellsync::totals_resend_enabled() && now - g_dna_at > 2.0)) {
+        static uint32_t bars_seen = 0; // BUG-9277: a party's own bar moved
+        if (total != g_dna_sent || (std::isfinite(earned) && earned != g_dna_bar_sent) ||
+            party_bar::changed_since(bars_seen) || (cellsync::totals_resend_enabled() && now - g_dna_at > 2.0)) {
+            bars_seen = party_bar::serial();
             g_dna_sent = total;
             g_dna_bar_sent = earned;
             g_dna_at = now;
@@ -5685,13 +5691,16 @@ void on_frame(void*, int, void*)
                 w.u8(c.player);
                 w.f32(c.amount);
             }
-            dna_sync::Progress{g_world, earned}.write(w); // Lineages: the earned progress (tagged, optional)
-            // BUG-0510: the pace divisor, after the progress tail (a guest without it reads the progress only)
-            w.u8((uint8_t)dna_pace_announce());
+            const uint8_t pace = (uint8_t)dna_pace_announce();
             g_dna_out.clear();
             for (auto& p : g_sess.players())
-                if (p.id != 0)
-                    g_sess.send_reliable_to(p.id, net::MSG_DNA, w);
+                if (p.id != 0) {
+                    net::Writer wp = w; // BUG-9277: each guest its own party's bar
+                    dna_sync::Progress{g_world, party_bar::bar_for(g_sess, p.id, earned)}.write(wp); // Lineages: the earned progress (tagged, optional)
+                    // BUG-0510: the pace divisor, after the progress tail (a guest without it reads the progress only)
+                    wp.u8(pace);
+                    g_sess.send_reliable_to(p.id, net::MSG_DNA, wp);
+                }
         }
     }
     if (g_sess.role() == net::Role::Host && now - g_last_time_sync > 1.0) {
@@ -7875,7 +7884,9 @@ void setup_callbacks()
                 return;
             }
             if (personal_dna() && game::avatar()) { // BUG-9162: the party's bar; the DNA here is this player's own
-                if (progress.valid(g_world))
+                if (progress.valid(g_world) && party_bar::on())
+                    game::set_bar(progress.earned); // BUG-9277: its party's own bar (lower than the host's too)
+                else if (progress.valid(g_world))
                     game::dna_sync_raw(game::dna(), progress.earned);
                 g_dna_seen = game::dna();
                 g_dna_seen_ok = true;
@@ -7974,7 +7985,10 @@ void setup_callbacks()
             auto add = dna_route::host_add(game::avatar() != nullptr, g_away_dna_fix);
             if (r.ok() && personal_dna() && d < 0)
                 return; // BUG-9162: a guest's own spend is its own
-            if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Pay) {
+            if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Pay && personal_dna() &&
+                party_bar::credit(g_sess, from, d)) { // BUG-9277: another party's gain fills its own bar
+                feed(g_sess.name_of(from) + " earned " + std::to_string((int)d) + " DNA");
+            } else if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Pay) {
                 float left = progress_debt::absorb(d); // BUG-9119: a progress debt is repaid first
                 if (left > 0) {
                     dna_host_gain({dna_ledger::Cause::Earned, from, left}, game::dna());
@@ -11259,6 +11273,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     sc.pace = dna_pace_gain; // BUG-0510
     sc.elsewhere = [] { return guest_elsewhere(); }; // BUG-0420
     social::init(H, M, sc);
+    party_bar::init(H, M); // BUG-9277
     home_nests::Ctx hc; // roadmap phase 2
     hc.sess = &g_sess;
     hc.notice = [](const std::string& t) { notice(t, -1); };

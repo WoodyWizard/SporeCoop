@@ -27,8 +27,67 @@
 namespace net::galaxy {
 
 constexpr uint16_t kDefaultPort = 47900;
-constexpr uint32_t kProto = 6; // 2: stored worlds (5Q A); 3: the hand-over (5V A); 4: the menu facts (5X B);
-                                // 5: the warm hand-over token (6B C); 6: the identity key and the address cookie (6S)
+
+// Step 4, part 1: eras (docs/12-server-and-players.md#server-eras, owner 2026-11-19 on 7C: "they should be in the same
+// stage with other players in their stages"). A planet has one shared world per stage; each is its own planet session
+// on the server, keyed "<planet>|<Era>" (Samuth|Creature, Samuth|Tribe): hosting, storage, hand-overs and joins work
+// per era unchanged. A key without "|" is an older plain planet (no era: kept as it is).
+enum Era : uint8_t { kEraNone = 0, kEraCell = 1, kEraCreature = 2, kEraTribe = 3, kEraCiv = 4, kEraSpace = 5 };
+constexpr uint8_t kEraLast = kEraSpace;
+constexpr char kEraSep = '|';
+inline const char* era_name(uint8_t e)
+{
+    switch (e) {
+    case kEraCell: return "Cell";
+    case kEraCreature: return "Creature";
+    case kEraTribe: return "Tribe";
+    case kEraCiv: return "Civ";
+    case kEraSpace: return "Space";
+    default: return "";
+    }
+}
+// the era of a key ("Samuth|Tribe": kEraTribe; no era or an unknown one: kEraNone)
+inline uint8_t era_of(const std::string& key)
+{
+    const size_t i = key.rfind(kEraSep);
+    if (i == std::string::npos)
+        return kEraNone;
+    for (uint8_t e = 1; e <= kEraLast; e++)
+        if (key.compare(i + 1, std::string::npos, era_name(e)) == 0)
+            return e;
+    return kEraNone;
+}
+// the planet of a key ("Samuth|Tribe": "Samuth"; a plain name: itself)
+inline std::string era_planet(const std::string& key)
+{
+    return era_of(key) ? key.substr(0, key.rfind(kEraSep)) : key;
+}
+inline std::string era_key(const std::string& planet, uint8_t era)
+{
+    return era ? era_planet(planet) + kEraSep + era_name(era) : era_planet(planet);
+}
+// for messages: "Samuth (Tribe)"
+inline std::string era_display(const std::string& key)
+{
+    const uint8_t e = era_of(key);
+    return e ? era_planet(key) + " (" + era_name(e) + ")" : key;
+}
+// the menu's tech level of an upload (5X B: 0 none or Cell, 1 Creature, 2 Tribe, 4 Civ, 5 Space) as an era
+inline uint8_t era_of_tech(uint8_t tech)
+{
+    return tech == 1 ? kEraCreature : tech == 2 ? kEraTribe : tech == 4 ? kEraCiv : tech == 5 ? kEraSpace : kEraNone;
+}
+// a world blob (world.cpp galaxy_pack: u32 "SCW1", str8 the planet's save name, ...): its planet's name, "" if not one
+inline std::string blob_planet(const std::vector<uint8_t>& blob)
+{
+    if (blob.size() < 5 || blob[0] != 'S' || blob[1] != 'C' || blob[2] != 'W' || blob[3] != '1')
+        return "";
+    const size_t n = blob[4];
+    return blob.size() < 5 + n ? "" : std::string((const char*)blob.data() + 5, n);
+}
+constexpr uint32_t kProto = 7; // 2: stored worlds (5Q A); 3: the hand-over (5V A); 4: the menu facts (5X B);
+                                // 5: the warm hand-over token (6B C); 6: the identity key and the address cookie (6S);
+                                // 7: eras (step 4 part 1: an upload names its era, the server keeps 3 older saves)
 constexpr uint8_t kControl = 'G', kRelay = 'R', kFan = 'F';
 constexpr size_t kMaxFanSlots = 64; // (kMaxPlanetPlayers)
 // decision 6I A: a guest that loaded the planet's stored world joins with this receipt; the host takes it (no world sent)
@@ -62,7 +121,8 @@ enum Type : uint8_t {
     FETCH = 13,    // player -> server: send me the planet's stored world (an XFER from the server follows; its host,
                    //   or 6I A a guest of the planet)
     XBEGIN = 14,   // sender -> receiver: u32 id, str8 planet, u32 bytes, u32 crc (a world: player uploads, server sends);
-                   //   an upload adds u8 tech level, u32 x3 species key (the menu's facts of the planet, 5X B)
+                   //   an upload adds u8 tech level, u32 x3 species key (the menu's facts of the planet, 5X B),
+                   //   u8 its era (7: the world's stage; the server refuses a world of another era than the key's)
     XCHUNK = 15,   // u32 id, u32 index, the chunk (kChunk bytes, the last one shorter)
     XACK = 16,     // receiver -> sender: u32 id, u32 index (each chunk that arrived)
     XDONE = 17,    // receiver -> sender: u32 id, u8 ok, str8 why (stored / loaded, or why not)

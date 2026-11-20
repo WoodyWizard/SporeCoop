@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "galaxy_client.h"
+#include "net/galaxy.h"
 #include "game.h"
 #include "modes.h"
 #include "sporekit_game.hpp"
@@ -80,7 +81,7 @@ static void rewrite(void* set)
         uint32_t* key = (uint32_t*)(e + 0x3C);
         if (i < ps.size()) {
             const galaxy::PlanetInfo& p = ps[i];
-            set_name(e, u16(p.name));
+            set_name(e, u16(net::galaxy::era_display(p.name))); // (step 4: "Samuth (Tribe)": the planet and its era)
             void* prof = p.species[0] ? game::species_by_key({p.species[0], p.species[1], p.species[2]}) : nullptr;
             key[0] = prof ? p.species[0] : 0;
             key[1] = prof ? p.species[1] : 0;
@@ -121,16 +122,16 @@ static void __fastcall h_Step(void* self, void* edx, void* arg)
         const char16_t* en = *(const char16_t* const*)(e + 4);
         const std::string planet = b && en > b ? utf8(b, en) : "";
         for (auto& p : galaxy::planets_known())
-            if (p.name == planet) {
+            if (net::galaxy::era_display(p.name) == planet) {
                 // the step comes again every frame until the menu is left: once, and never while on that planet (each
                 // ENTER of the planet it is on made the client leave and join again, 2026-11-17)
                 const double now = H->time_seconds();
-                if (galaxy::current_planet() != planet && (planet != g_play_name || now - g_play_at > 30)) {
+                if (galaxy::current_planet() != p.name && (planet != g_play_name || now - g_play_at > 30)) {
                     g_play_name = planet;
                     g_play_at = now;
                     g_plays++;
                     H->log(M, SK_INFO, "galaxy menu: Play on the server planet '%s': entering it (5X B)", planet.c_str());
-                    galaxy::enter(planet);
+                    galaxy::enter(p.name);
                 }
                 return; // (no local file: the galaxy client loads it)
             }

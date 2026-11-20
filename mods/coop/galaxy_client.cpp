@@ -334,10 +334,10 @@ static void on_control(net::Reader& r)
             g_handovers++;
             if (role == kGuestRole) { // joined from tick once the old session is closed
                 g_pending_join = slot_endpoint(host).str();
-                say("Joining " + planet + "'s new host...");
+                say("Joining " + era_display(planet) + "'s new host...");
                 return;
             }
-            say("You host " + planet + " now: its host left.");
+            say("You host " + era_display(planet) + " now: its host left.");
             if (role == kHostRole && (!stored || warm)) { // (host the world it plays once its old session closed)
                 if (warm)
                     g_warm_hosts++;
@@ -350,7 +350,7 @@ static void on_control(net::Reader& r)
         }
         if (resume) {
             // BUG-9272: still in the planet's world, or loading it (the freeze happened in its load): host that one
-            std::string lf = world::menu_load_planet(), want = planet + ".spo";
+            std::string lf = world::menu_load_planet(), want = era_planet(planet) + ".spo";
             for (auto& ch : lf) ch = (char)tolower((unsigned char)ch);
             for (auto& ch : want) ch = (char)tolower((unsigned char)ch);
             const bool playing = resume_world && modes::current_world() == resume_world && C.ready && C.ready();
@@ -360,12 +360,12 @@ static void on_control(net::Reader& r)
                 g_hstep_at = H->time_seconds();
                 g_left_stage = true;
                 g_ready_since = 0;
-                say("You host " + planet + " again.");
+                say("You host " + era_display(planet) + " again.");
                 return;
             }
             if (role == kGuestRole && playing) { // (its world: the host's share or its stored copy as any join)
                 g_pending_join = slot_endpoint(host).str();
-                say("Joining " + planet + " again...");
+                say("Joining " + era_display(planet) + " again...");
                 return;
             }
         }
@@ -376,7 +376,7 @@ static void on_control(net::Reader& r)
                 g_fetch_got = 0;
                 g_down = {};
                 send_control(control(FETCH));
-                say("Downloading " + planet + " from the galaxy (" + std::to_string(stored >> 10) + " KB)...");
+                say("Downloading " + era_display(planet) + " from the galaxy (" + std::to_string(stored >> 10) + " KB)...");
             } else
                 host_now();
         } else if (g_fix_stored_join && stored && stored_crc && stored_age < kStoredJoinMaxAge - 30) {
@@ -389,7 +389,7 @@ static void on_control(net::Reader& r)
             g_down = {};
             g_stored_joins++;
             send_control(control(FETCH));
-            say("Downloading " + planet + " from the galaxy (" + std::to_string(stored >> 10) + " KB)...");
+            say("Downloading " + era_display(planet) + " from the galaxy (" + std::to_string(stored >> 10) + " KB)...");
         } else {
             // joined from tick (2026-11-18 review: this runs inside Session::update while a planet session is up, and
             // a join from there read as a join timeout at once)
@@ -414,7 +414,7 @@ static void on_control(net::Reader& r)
         g_token_world = keep ? g_planet_world : 0;
         if (C.sess && C.sess->role() != net::Role::None)
             C.sess->leave("the planet's host changes");
-        say("The host of " + planet + " left: another player takes it over, wait a moment...");
+        say("The host of " + era_display(planet) + " left: another player takes it over, wait a moment...");
     } else if (type == XBEGIN) { // the planet's stored world (FETCH)
         net::galaxy::XferIn in;
         if (!in.header(r) || g_hstep != kFetching || (g_down.on && g_down.id == in.id))
@@ -485,7 +485,7 @@ static void on_control(net::Reader& r)
         std::string planet = r.str8();
         if (!r.ok())
             return;
-        say("The host of " + planet + " left the galaxy.");
+        say("The host of " + era_display(planet) + " left the galaxy.");
         if (g_role == kGuestRole && g_relay_on && C.sess && C.sess->role() != net::Role::None)
             C.sess->leave("the planet's host left"); // (tick takes it off the planet once the session is closed)
     }
@@ -509,11 +509,11 @@ static void host_now()
         g_hstep = kHosting;
         send_control(control(READY));
         g_next_upload = H->time_seconds() + (g_world_bytes ? g_upload_every : 60); // (a new planet: stored soon)
-        say("You host " + g_planet + " for the galaxy.");
+        say("You host " + era_display(g_planet) + " for the galaxy.");
         g_hosted_stored_at = g_world_bytes ? H->time_seconds() : -1; // (hosted_stored_tick asks)
     } else {
         g_hstep = kNoHost;
-        say("Could not host " + g_planet + ": " + err);
+        say("Could not host " + era_display(g_planet) + ": " + err);
     }
 }
 
@@ -533,7 +533,7 @@ static void downloaded()
     g_down.data.clear();
     g_down.data.shrink_to_fit();
     if (!ok) {
-        say("Could not load " + g_planet + " from the galaxy: " + err);
+        say("Could not load " + era_display(g_planet) + " from the galaxy: " + err);
         fetch_fallback(err);
         return;
     }
@@ -542,13 +542,13 @@ static void downloaded()
     g_hstep_at = H->time_seconds();
     g_left_stage = false;
     g_ready_since = 0;
-    say("Loading " + g_planet + "...");
+    say("Loading " + era_display(g_planet) + "...");
 }
 
 static uint32_t ms(double t) { return (uint32_t)(int64_t)(t * 1000); }
 
 // the upload's XBEGIN with the menu's facts of the planet (5X B): its tech level and the host's creature
-static uint8_t g_up_tech;
+static uint8_t g_up_tech, g_up_era;
 static uint32_t g_up_species[3];
 static net::Writer up_begin()
 {
@@ -556,12 +556,21 @@ static net::Writer up_begin()
     w.u8(g_up_tech);
     for (uint32_t v : g_up_species)
         w.u32(v);
+    w.u8(g_up_era); // (protocol 7: the server keeps an era's worlds of its stage only)
     return w;
 }
+// step 4 part 1: the era of a game mode (0: not a stage: a menu, an editor, a load)
+uint8_t era_of_mode(uint32_t m)
+{
+    return m == modes::kCell ? kEraCell : m == modes::kCreature ? kEraCreature : m == modes::kTribe ? kEraTribe
+         : m == modes::kCiv ? kEraCiv : m == modes::kSpace ? kEraSpace : kEraNone;
+}
+static uint8_t g_last_era; // the stage this game last played (an upload packed in the menu takes it)
 static void up_facts()
 {
     const uint32_t m = game::mode_id();
-    g_up_tech = m == modes::kCreature ? 1 : m == modes::kTribe ? 2 : m == modes::kCiv ? 4 : m == modes::kSpace ? 5 : 0;
+    g_up_era = era_of_mode(m) ? era_of_mode(m) : g_last_era;
+    g_up_tech = g_up_era == kEraCreature ? 1 : g_up_era == kEraTribe ? 2 : g_up_era == kEraCiv ? 4 : g_up_era == kEraSpace ? 5 : 0;
     g_up_species[0] = g_up_species[1] = g_up_species[2] = 0;
     if (void* av = game::avatar()) {
         const game::Key k = game::species_key(av);
@@ -583,7 +592,7 @@ static void start_upload()
         g_next_upload = H->time_seconds() + 15;
         H->log(M, SK_INFO, "galaxy: no save for the upload now: %s", err.c_str());
         if (g_leave_after)
-            say("Waiting to save " + g_planet + ": " + err);
+            say("Waiting to save " + era_display(g_planet) + ": " + err);
         return;
     }
     g_upstep = kUpSaving;
@@ -623,7 +632,7 @@ static void upload_done(bool ok, const std::string& why)
         g_last_crc = g_up_crc, g_last_world = g_up_world, g_last_write = g_up_write, g_last_packed = g_up_packed;
     }
     if (!ok || g_leave_after)
-        say(ok ? "Saved " + g_planet + " to the galaxy." : "Could not save " + g_planet + " to the galaxy: " + why);
+        say(ok ? "Saved " + era_display(g_planet) + " to the galaxy." : "Could not save " + era_display(g_planet) + " to the galaxy: " + why);
     g_up_nosave = false;
     if (g_leave_after) {
         g_leave_after = false;
@@ -664,7 +673,7 @@ static void upload_tick(double now)
         g_leave_after = true;
         g_up_nosave = true;
         g_menu_handovers++;
-        say("You left " + g_planet + " for the menu: saving it to the galaxy and handing it over.");
+        say("You left " + era_display(g_planet) + " for the menu: saving it to the galaxy and handing it over.");
     }
     // decision 6A A: every 2 minutes while others are on the planet (a crashed host loses less), else every 5
     const bool others = C.sess && C.sess->players().size() > 1;
@@ -738,10 +747,10 @@ static bool fetch_fallback(const std::string& why)
     if (g_role == kGuestRole && g_host_slot) {
         g_join_crc = 0;
         g_pending_join = slot_endpoint(g_host_slot).str(); // (joined from tick)
-        say("The galaxy's copy of " + g_planet + " did not come (" + why + "): joining its host instead...");
+        say("The galaxy's copy of " + era_display(g_planet) + " did not come (" + why + "): joining its host instead...");
         return true;
     }
-    say("Could not get " + g_planet + " from the galaxy (" + why + "): left it.");
+    say("Could not get " + era_display(g_planet) + " from the galaxy (" + why + "): left it.");
     leave_now();
     return true;
 }
@@ -779,13 +788,13 @@ static void loading_tick(double now)
         g_join_crc = 0;
         std::string err;
         if (C.join && C.join(slot_endpoint(g_host_slot).str(), err))
-            say("Joining " + g_planet + "...");
+            say("Joining " + era_display(g_planet) + "...");
         else
-            say("Could not join " + g_planet + ": " + err);
+            say("Could not join " + era_display(g_planet) + ": " + err);
     } else if (g_ready_since && now - g_ready_since > 3)
         host_now();
     else if (now - g_hstep_at > 240) {
-        say("Loading " + g_planet + " took too long: left it.");
+        say("Loading " + era_display(g_planet) + " took too long: left it.");
         g_hstep = kNoHost;
         leave_now();
     }
@@ -852,12 +861,38 @@ std::string list()
     return "Asking the galaxy server for its planets...";
 }
 
-std::string enter(const std::string& planet)
+// step 4 part 1: a plain planet name to its era's key: the era this game plays (in a stage); in the menu the planet's
+// only era on the server; "" and why when it cannot be told
+static std::string era_for(const std::string& planet, std::string& why)
+{
+    if (era_of(planet))
+        return planet;
+    if (const uint8_t e = era_of_mode(game::mode_id()))
+        return era_key(planet, e);
+    std::string found, all;
+    int n = 0;
+    for (const auto& p : g_planets)
+        if (era_of(p.name) && era_planet(p.name) == planet) {
+            found = p.name;
+            all += (n++ ? ", " : "") + std::string(era_name(era_of(p.name)));
+        }
+    if (n == 1)
+        return found;
+    why = n ? planet + " has " + all + ": enter " + planet + "|<stage> (for example " + era_key(planet, era_of(found)) + ")."
+            : "Load a world of " + planet + " first (its stage is the era it hosts), or enter " + planet + "|<stage>.";
+    return "";
+}
+
+std::string enter(const std::string& planet_in)
 {
     if (!g_welcomed)
         return "Not connected to a galaxy server.";
-    if (planet.empty())
+    if (planet_in.empty())
         return "Which planet?";
+    std::string why;
+    const std::string planet = era_for(planet_in, why);
+    if (planet.empty())
+        return why;
     if (C.sess && C.sess->role() != net::Role::None && !g_relay_on)
         return "Leave the current session first.";
     // 2026-11-18 review: entering another planet while this game hosts one dropped that planet's last save, and the
@@ -866,14 +901,14 @@ std::string enter(const std::string& planet)
         if (g_hstep == kHosting && g_role == kHostRole && C.sess && C.sess->role() == net::Role::Host) {
             const std::string old = g_planet;
             leave();
-            return "Saving " + old + " to the galaxy first: enter " + planet + " again in a moment.";
+            return "Saving " + era_display(old) + " to the galaxy first: enter " + era_display(planet) + " again in a moment.";
         }
         leave_now(); // (a guest: off the old planet, its session closed, before the new one's ROLE)
     }
     net::Writer w = control(ENTER);
     w.str8(planet);
     send_control(w);
-    return "Entering " + planet + "...";
+    return "Entering " + era_display(planet) + "...";
 }
 
 std::string leave()
@@ -882,9 +917,9 @@ std::string leave()
         return "Not on a planet of the galaxy.";
     if (g_hstep == kHosting && g_role == kHostRole && C.sess && C.sess->role() == net::Role::Host) {
         if (g_leave_after)
-            return "Saving " + g_planet + " to the galaxy before leaving...";
+            return "Saving " + era_display(g_planet) + " to the galaxy before leaving...";
         g_leave_after = true; // upload_tick saves and uploads it, upload_done leaves
-        return "Saving " + g_planet + " to the galaxy before leaving...";
+        return "Saving " + era_display(g_planet) + " to the galaxy before leaving...";
     }
     return leave_now();
 }
@@ -894,9 +929,9 @@ std::string save()
     if (g_hstep != kHosting || g_role != kHostRole)
         return "Only the planet's host saves it to the galaxy.";
     if (g_upstep != kUpIdle)
-        return "Saving " + g_planet + " to the galaxy already.";
+        return "Saving " + era_display(g_planet) + " to the galaxy already.";
     g_next_upload = 0;
-    return "Saving " + g_planet + " to the galaxy...";
+    return "Saving " + era_display(g_planet) + " to the galaxy...";
 }
 
 static std::string leave_now()
@@ -938,14 +973,14 @@ void tick(double now)
         std::string err, addr = g_pending_join;
         g_pending_join.clear();
         if (C.join && C.join(addr, err))
-            say("Joining " + g_planet + "...");
+            say("Joining " + era_display(g_planet) + "...");
         else {
-            say("Could not join " + g_planet + ": " + err);
+            say("Could not join " + era_display(g_planet) + ": " + err);
             leave_now();
         }
     }
     if (g_waiting_host && now - g_waiting_since > 360) {
-        say("The new host of " + g_planet + " did not come: left it.");
+        say("The new host of " + era_display(g_planet) + " did not come: left it.");
         leave_now();
     }
     if (now >= g_next_ping) {
@@ -964,6 +999,8 @@ void tick(double now)
     }
     if (!g_planet.empty() && C.sess && C.sess->connected() && C.ready && C.ready())
         g_planet_world = modes::current_world(); // (6B C: the world this game plays on the planet)
+    if (const uint8_t e = era_of_mode(game::mode_id()))
+        g_last_era = e; // (step 4: the era of an upload packed in the menu)
     if (!g_planet.empty() && g_planet_world && modes::current_world() == g_planet_world) {
         const std::string f = modes::current_world_name();
         if (f.size() > 4 && f.compare(f.size() - 4, 4, ".spo") == 0)
@@ -979,7 +1016,7 @@ void tick(double now)
         w.str8(g_resume.planet);
         send_control(w);
         g_resumes++;
-        say("Going back on " + g_resume.planet + "...");
+        say("Going back on " + era_display(g_resume.planet) + "...");
     }
     // the planet's session ended (left, removed, its host gone): off the planet, back to the plain network
     if (g_relay_on && C.sess) {
@@ -1106,7 +1143,7 @@ bool close_request()
     g_close_asked = H->time_seconds();
     g_close_holds++;
     g_leave_after = true;
-    say("Saving " + g_planet + " to the galaxy before closing...");
+    say("Saving " + era_display(g_planet) + " to the galaxy before closing...");
     return true;
 }
 std::string galaxy_name() { return g_welcomed ? g_galaxy : ""; }

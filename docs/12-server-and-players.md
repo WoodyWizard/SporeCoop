@@ -1377,3 +1377,27 @@ while. 7A and 7B were withdrawn (badly worded, not gameplay choices). The plan a
    wipe a planet.
 
 Order: 1, 2 and 3 together make the stage end work; 4 with 3; 5 and 6 after. No gameplay decision is open for it.
+
+## Step 4 built: eras on the server, each party's own bar, safe planet saves (2026-11-19, feat/lineages-alpha)
+<a id="server-eras-built"></a>
+
+Parts 1, 2 and 6 of #server-party-progress-design.
+
+* Eras (BUG-9276, protocol 7): a planet session is keyed "<planet>|<Era>" (Samuth|Creature, Samuth|Tribe; net/galaxy.h
+  era_key and friends). Everything that worked per planet (hosting, storage, hand-overs, joins, the relay) works per
+  era. An upload names its era and the server refuses a world of another stage, so a host whose game moved on cannot
+  turn the planet's Creature era into a Tribe world. `coop.galaxy enter Samuth` takes the era of the stage the game
+  plays, or in the menu the planet's only era (several: it names them); messages and the galaxy menu say
+  "Samuth (Creature)". Worlds stored before eras move to their stage's era when the server starts.
+* Safe saves (part 6): the server keeps the 3 saves before the current one beside a planet's world (<file>.1 .. .3; to
+  undo a bad save, copy one over the world while the server is stopped) and refuses a save of another planet over a
+  stored one.
+* Each party's bar (BUG-9277, switch `creature.party_bar`): the host keeps every other party's evolution bar; a
+  guest's gain and social win fill its own party's bar, each guest gets its party's bar; saved next to the planet
+  (<save>.spo.duo-progress). `coop.dna bar` shows the party bars.
+* ✔ Runtime (TITAN, QA 8 host, QA 9 another party, the test galaxy): the stored worlds became eras; "Samuth" from the
+  menu entered Samuth (Creature); the guest's bar went to its party's 0, its gain of 60 filled only its bar (the
+  host's stayed 1078); with the switch off the same gain moved the host's bar. Two uploads left .world.1 and .2.
+* Not yet: the herds near a player waking by that player's own brain level (part 2's last piece: the game's
+  Relevance_Update uses the host's level for every herd), the stage end per party (part 3), the nest refresh (part 4),
+  visitors across eras (part 5).

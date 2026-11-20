@@ -2607,6 +2607,18 @@ void dna_sync_raw(float total, float earned)
                    [set](float value) { cdecl_call<void>(set, value); });
 }
 
+// BUG-9277: a party's own bar (party_bar.cpp): AddEvolutionPoints moves the bar both ways (as the death setback does);
+// the DNA it moved too is set back with the editor's setter
+void set_bar(float earned)
+{
+    const float cur = evolution_bar();
+    if (!o_AddEvo || !std::isfinite(cur) || !std::isfinite(earned) || earned < 0 || earned == cur)
+        return;
+    const float keep = dna();
+    o_AddEvo(earned - cur);
+    dna_set_raw(keep);
+}
+
 void set_dna_listener(DnaListener fn) { g_dna_listener = fn; }
 
 // BUG-0433: TimeOfDay_Unavailable (= Simulator::GetCurrentContext, [[SpacePlayerData]+0x10]) reads the

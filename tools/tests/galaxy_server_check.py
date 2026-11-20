@@ -21,7 +21,7 @@ import zlib
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 EXE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'build', 'galaxy_server.exe' if os.name == 'nt' else 'galaxy_server')
-PROTO = 6
+PROTO = 7
 (HELLO, WELCOME, LIST, PLANETS, ENTER, ROLE, LEAVE, PING, PONG, REFUSED, HOSTGONE, READY, FETCH, XBEGIN, XCHUNK, XACK, XDONE,
  HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE) = range(1, 26)
 CHUNK = 1100
@@ -107,6 +107,22 @@ class Player:
 
     def enter(self, planet):
         self.send(ENTER, s8(planet))
+
+
+def upload(p, xid, planet, data, era=None):
+    """An upload of `data` as `planet`'s world; era: the protocol 7 facts (tech 0, no species, the era byte)."""
+    head = struct.pack('<I', xid) + s8(planet) + struct.pack('<II', len(data), zlib.crc32(data))
+    if era is not None:
+        head += bytes([0]) + struct.pack('<III', 0, 0, 0) + bytes([era])
+    p.send(XBEGIN, head)
+    for i in range(0, len(data), CHUNK):
+        p.send(XCHUNK, struct.pack('<II', xid, i // CHUNK) + data[i:i + CHUNK])
+    return p.take(XDONE, 2.0)
+
+
+def blob(planet, n=3000):
+    """A world as the game packs it (world.cpp galaxy_pack): "SCW1", str8 the save's planet, then anything."""
+    return b'SCW1' + s8(planet) + bytes((i * 5 + 1) & 0xFF for i in range(n))
 
 
 def role_of(body):
@@ -219,6 +235,28 @@ def main():
             check(data == world and crc == zlib.crc32(world), 'a guest gets the stored world back intact')
         else:
             check(False, 'a guest gets the stored world back intact')
+
+        print('eras (step 4)')
+        c.enter('Mars|Creature')
+        rc = c.take(ROLE)
+        check(rc is not None and role_of(rc)[1] == 1, "the first player in Mars's Creature era hosts it")
+        for _ in range(4):
+            c.ping('Mars|Creature', 2)
+            time.sleep(0.05)
+        c.pump(0.3)
+        d = upload(c, 50, 'Mars|Creature', blob('Mars'), era=3)
+        check(d is not None and d[4] == 0 and b'Tribe stage' in d, 'a Tribe world is refused by the Creature era')
+        d = upload(c, 51, 'Mars|Creature', blob('Mars'), era=2)
+        check(d is not None and d[4] == 1, 'a Creature world of Mars is stored in its Creature era')
+        d = upload(c, 52, 'Mars|Creature', blob('Venus'), era=2)
+        check(d is not None and d[4] == 0 and b'another planet' in d, "another planet's save is refused over Mars")
+        d = upload(c, 53, 'Mars|Creature', blob('Mars', 3100), era=2)
+        keep = [f for f in os.listdir(worlds) if f.endswith('.world.1')]
+        check(d is not None and d[4] == 1 and len(keep) == 1, 'a new save of Mars keeps the one before it (.world.1)')
+        c.enter('Mars|Tribe')
+        rt = c.take(ROLE)
+        check(rt is not None and role_of(rt)[0] == 'Mars|Tribe' and role_of(rt)[1] == 1 and role_of(rt)[3] == 0,
+              "Mars's Tribe era is its own planet session (hosted, nothing stored yet)")
 
         print('fan-out')
         b.inbox.clear()
