@@ -1,34 +1,42 @@
 ---
 id: BUG-1356
 title: Test space_puppet (play_space.land): the guest zooms in on the planet it is still at when its clicks miss the wanted one
-status: open
+status: fixed
 kind: test
 stage: Space
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
 versions: 
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: fix/w60-misc
 commits:
-tests:
+tests: space_puppet
 signature:
 docs:
-related:
+related: 
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Final check of 0.7.16 (lab 20261120-041304, lane 3): space_puppet FAIL "round 4: both on planet 40460035 and see each
+other" and, following from it, "round 4: the game freed the puppet, both still draw (freed by the game: host 4, guest
+3)" (no puppet to free: they were not together). Rounds 1-3 passed; the same tree passed in 20261119-214823.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (space_puppet.guest.game.log): round 3 ended with the guest taking off from P03 (`Space 43460035 -> Space
+80460035` at 05:04:45); in round 4 the host landed on the home planet 40460035 (05:04:54) and the guest's
+`land_retry('00460035')` landed on 43460035 again (05:05:32): its clicks on the home planet did not make it the
+active planet (`coop.space star` active), and `Player.land()` zoomed in after its 3 click attempts anyway, which lands
+on the planet that is still active (the one the ship just left). land_retry stops once the ship is on a planet, so the
+wrong landing ended the round. A test fault (tools/tests/play_space.py), not the mod.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+play_space.py `land(want)`: when a planet is wanted and the clicks did not make it the active one, it does not zoom in
+(not landed, counted as `planet_misses`); land_retry clicks again. land() without a wanted planet is unchanged.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: test-only change (the harness's landing). Lab tonight: space_puppet PASS (rounds 1-4). Open, waiting for
+the lab run.
 
 ## History
-- 2026-11-20: opened.
+- 2026-11-20: opened from the 0.7.16 final check; fixed in play_space.py on fix/w60-misc.

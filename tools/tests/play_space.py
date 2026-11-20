@@ -466,6 +466,12 @@ class Player(threading.Thread):
                 dx, dy = x - n[2], y - n[3]
                 ln = math.hypot(dx, dy) or 1
                 x, y = int(x + dx / ln * 6), int(y + dy / ln * 6)
+        if want is not None and self.active_planet() != k[1:]:
+            # BUG-1356: the clicks did not make the wanted planet the active one: zooming in now lands on the planet the
+            # ship is still at (space_puppet round 4 of the 0.7.16 final check: the guest landed on round 3's planet
+            # P03 instead of the home planet). Not landed; land_retry clicks again
+            self.count('planet_misses')
+            return False
         self.count('planet_flights')
         t0 = time.time()
         while time.time() - t0 < 25:
