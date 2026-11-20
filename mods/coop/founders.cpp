@@ -57,6 +57,8 @@ bool party_valid(const Party& v)
 
 } // namespace
 
+bool planet_saved(const std::string& planet_file) { return !path_for(planet_file, L"").empty(); }
+
 bool read_side(const std::string& key, const wchar_t* suffix, std::vector<uint8_t>& out, size_t max_bytes)
 {
     auto path = path_for(key, suffix);

@@ -39,6 +39,8 @@ struct Party {
 };
 
 // planet_file is world::current_game_key() (the full path of the planet's .spo)
+// BUG-9281: false while the planet has no file yet (a new game before the game's first save of it)
+bool planet_saved(const std::string& planet_file);
 bool read_party(const std::string& planet_file, Party& out);
 // a party may only grow, and a seat's identity is never replaced by another one
 bool record_party(const std::string& planet_file, const Party& value, std::string& err);
