@@ -9429,10 +9429,13 @@ record (coop_civ_own_designs.keys_in) for the guest's keys of that stage.
   the City Hall and the vehicle editor's design id on both games. Waiting for "any design" stopped the driver in the
   few seconds between the two editors and left the guest in its vehicle editor for the rest of the test (lab
   20261119-151550 / 20261119-153243: "no such city" on the guest, no capital citizens there; a test problem, not a
-  city sync one: the host's cities come to the guest when it is back in Civ, lab 20261119-164538). The driver gives a
-  guest's own arrival editors a fourth part (`CIV_ARRIVAL_PARTS`): with the host's three drags the guest's vehicle was
-  the host's model byte for byte (3A5843B7 both, lab 20261119-164538 line_stages_editors), so "not the culture's
-  model" could not hold.
+  city sync one: the host's cities come to the guest when it is back in Civ, lab 20261119-164538). With
+  `--civ-editors` the driver gives a guest's own arrival editors a fourth part (`CIV_ARRIVAL_PARTS`,
+  `Campaign.arrival_parts`): with the host's three drags the guest's vehicle was the host's model byte for byte
+  (3A5843B7 both, lab 20261119-164538 line_stages_editors), so "not the culture's model" could not hold. A guest's
+  own arrival editor still up after 14 "done" is left with the red cross (`Campaign.arrival_cancel_after`, None with
+  `--civ-editors`): after the guest's own Tribal Outfitter its City Hall editor's name panel has no dice (BUG-1328,
+  line_stages_outfit).
 
 ## Tests of the Lineages fork's general bugs (2026-11-19, fix/w56-general)
 <a id="testing-fork-general"></a>
