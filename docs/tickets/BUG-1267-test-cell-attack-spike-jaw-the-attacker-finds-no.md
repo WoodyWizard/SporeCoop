@@ -26,7 +26,7 @@ round) with "the <attacker>'s own cell played attack / eat animations ([])". The
 Test precondition: the fixture's spot sometimes has no creature within 40 m (or the first round ate them).
 
 ## Fix
-`contact()` in coop_cell_attack_anim.py looks for a creature within 40, then 120, then 300 m; when the attacker
+~ superseded (2026-11-20): see BUG-1355. `contact()` in coop_cell_attack_anim.py looks for a creature within 40, then 120, then 300 m; when the attacker
 still found none (0 swims) its checks are left out and the test ends INCONCLUSIVE instead of FAIL.
 
 ## Verification
@@ -35,3 +35,4 @@ no-fail-run: test-only change (the precondition of the test, not the mod)
 ## History
 - 2026-11-18: opened; fixed in the test. Lab 20261118-165138: spike and jaw twice each: 3 OK (all checks pass when the attack happens), 1 INCONCLUSIVE (no creature even within 300 m on that run).
 - 2026-11-18: released in 0.7.15.2.
+- 2026-11-20: CORRECTION (fix/w60-misc): `coop.pool see N` takes a row count of on-screen cells, not a radius: the 40 / 120 / 300 m tries were one on-screen search; the guest rounds of the 0.7.16 final check (20261120-041304) were INCONCLUSIVE with no creature on the guest's screen. BUG-1355 swims to the nearest creature of the pool.

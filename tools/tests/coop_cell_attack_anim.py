@@ -22,6 +22,7 @@ zap's lightning, the propulsion), and every one it did play has the scale the ho
   coop_cell_attack_anim.py --electric                                (PASS)
   SPORE_FIX_OFF=effects.cell_held coop_cell_attack_anim.py --electric (FAIL: the guest plays the host's charge fields)
 """
+import math
 import re
 import sys
 import threading
@@ -210,6 +211,20 @@ def electric(host, guest, ck):
     ck(not off, f"every host effect the guest's game plays has the host's scale ({off[:4]})")
 
 
+def swim_to_creature(con, r=300):
+    """BUG-1355: no creature on the screen: swim towards the nearest creature of this game's pool within r m (a guest:
+    its mirrors of the host's); its distance, None when there is none"""
+    me = re.search(r'pos=\((-?[\d.]+) (-?[\d.]+)\)', con.call('coop.pool')['out'])
+    near = [(float(m.group(1)), float(m.group(2))) for m in
+            re.finditer(r'^npc \S+ mirror=\d+ ailock=\d+ pos=\((-?[\d.]+) (-?[\d.]+)\)', con.call(f'coop.pool npcs {r}')['out'], re.M)]
+    if not me or not near:
+        return None
+    x, y = float(me.group(1)), float(me.group(2))
+    nx, ny = min(near, key=lambda p: math.hypot(p[0] - x, p[1] - y))
+    con.call(f'coop.pool goto {nx - x:.1f} {ny - y:.1f}')
+    return math.hypot(nx - x, ny - y)
+
+
 def contact(host, guest, ck, part, attacker_name):
     """BUG-1243 the players' way: both cells carry the same weapon (`coop.pool borrow <part> graft` on both games: the
     world's species of both players, so each game's model data has it for the avatar and the partner's puppet); the
@@ -230,19 +245,23 @@ def contact(host, guest, ck, part, attacker_name):
         t0 = time.time()
         idle_o = window(so.avatar, 0, t0)
         print(f'  idle: the {oname}\'s cell {sorted(idle_o)}', flush=True)
-        r, hits = '', 0
+        r, hits, looks = '', 0, []
         while time.time() - t0 < 30:
-            # BUG-1267: a creature within 40 m first, then farther ones (the fixture's spot can be empty, or eaten
-            # empty by the first round): 0 swims is a test without its case, not a pass or a fail
-            m = None
-            for rad in (40, 120, 300):
-                m = re.search(r'^see (c\d+) creature ', att.call(f'coop.pool see {rad}')['out'], re.M)
-                if m:
-                    break
+            # BUG-1267: the fixture's spot can be empty, or eaten empty by the first round: 0 swims is a test without
+            # its case, not a pass or a fail. BUG-1355: `see N` lists the N nearest cells ON THE SCREEN (N is a row
+            # count, not a radius): with none on the screen the attacker swims towards the nearest creature of its
+            # game's pool (`npcs <r>`: within r m, on the screen or not), as a player who goes looking for prey
+            m = re.search(r'^see (c\d+) creature ', att.call('coop.pool see 60')['out'], re.M)
             if m:
                 r = att.call(f'coop.pool swimto {m.group(1)}')['out'].strip()
                 hits += 1
+            else:
+                d = swim_to_creature(att)
+                if d is not None and (not looks or looks[-1] != round(d)):
+                    looks.append(round(d))
             time.sleep(0.7)
+        if looks:
+            print(f'  the {attacker_name} swam towards creatures off its screen ({looks[:8]} m away)', flush=True)
         t1 = time.time()
         keyframe(f'{attacker_name}_contact_{part}', f"Cell: the {attacker_name} rams creatures with its {part}; the {oname}'s cell next to it does not attack on either game", settle=0)
         time.sleep(2)
@@ -258,7 +277,8 @@ def contact(host, guest, ck, part, attacker_name):
           f'{sorted(a_pup)} | the {oname}\'s own cell {sorted(o_av)} | the {oname}\'s puppet of the {attacker_name} {sorted(o_pup)}', flush=True)
     att_anims = a_av - {'0'}
     if not hits:
-        print(f'  the {attacker_name} found no creature to ram within 300 m: no attack, its checks left out', flush=True)
+        print(f'  the {attacker_name} found no creature to ram on its screen nor within 300 m of its pool: no attack, its '
+              f'checks left out', flush=True)
         return False
     ck(att_anims, f"the {attacker_name}'s own cell played attack / eat animations ({sorted(att_anims)})")
     ck(not (att_anims & (o_av - idle_o)), f"the {oname}'s own cell plays none of the {attacker_name}'s animations ({sorted(att_anims & (o_av - idle_o))})")
