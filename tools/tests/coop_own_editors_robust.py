@@ -44,6 +44,12 @@ kid   BUG-1313 (tribe.kid_species). As birth; then the guest chooses another own
       (+0xB34 0) still has the old key on both games, no fault on either game; key frame. FAIL twin
       SPORE_FIX_OFF=tribe.kid_species: the pass changes the kid, SetSpecies starts the growth timer a citizen does not
       have: a fault on both games (lab 20261119-105127, tribe_birth_species_off).
+birthask BUG-1345 (tribe.ask_baby_species). As birth, with the world effects relay off on both games
+      (`coop.fix effects.other_stages off`): the host's game never sees the guest's hut effect, makes no baby of its own,
+      and makes the guest's from the guest's ask 4 s later (tribe.cpp baby_tick, the path of lab 20261120-041304
+      tribe_kid_species: first seen 9.1 s after the click). PASS: on both games the new member is the guest's species
+      when first seen. FAIL twin SPORE_FIX_OFF=tribe.ask_baby_species: the host's is the tribe's species (owner named
+      after the birth; tribe.kid_species then keeps it until grown up).
 stray BUG-1319 (tribe.stray_line_key). Tribe fixture, the guest plays its own creature; on the guest's game a grown-up
       member of the host gets the guest's line key by the game's SetSpecies (`coop.tribe setspecies <key> <id>`, as a
       mirror born in that species at a world's opening and forgotten by the world reset, lab 20261119-112300). PASS:
@@ -58,7 +64,7 @@ ship  BUG-1301 (creations.own_ship_key). Space fixture. When the guest's empire 
       model too; key frame of the guest's ship on both screens.
       FAIL twin SPORE_FIX_OFF=creations.own_ship_key: the host's ship registered under K shadows the guest's own.
 
-  SPORE_LANE=6 python3 tools/tests/coop_own_editors_robust.py key|drop|civdrop|birth|kid|stray|ship
+  SPORE_LANE=6 python3 tools/tests/coop_own_editors_robust.py key|drop|civdrop|birth|birthask|kid|stray|ship
 """
 import os
 import random
@@ -87,7 +93,7 @@ from coop_tribe_own_species import closeup, keys_in_slot, line_key, mix_ok, mode
 from twoinst import Checks, Console, keyframe, start, wait_guest_in, wait_up, watch  # noqa: E402
 
 SWITCH = {'key': 'species.own_key_here', 'drop': 'designs.own_editor_offline', 'civdrop': 'designs.own_editor_offline',
-          'birth': 'tribe.birth_species', 'kid': 'tribe.kid_species', 'stray': 'tribe.stray_line_key', 'ship': 'creations.own_ship_key'}[MODE]
+          'birth': 'tribe.birth_species', 'birthask': 'tribe.ask_baby_species', 'kid': 'tribe.kid_species', 'stray': 'tribe.stray_line_key', 'ship': 'creations.own_ship_key'}[MODE]
 OUTAGE = 45.0  # s without a packet: both games end the session (net::Session timeout_ms 30000)
 UBEM, UGROUP, UTYPE = 0x1A99B06B, 0x40656200, 0x476A98C7
 SHIP = 0x0675F7B2  # the space fixture's ship (both players' empires fly it)
@@ -487,6 +493,9 @@ def run_birth(ck):
         return ck.result()
     slot, _, _ = species(host)
     print(' ', host.call('coop.tribe level 2')['out'].strip(), flush=True)
+    if MODE == 'birthask':  # BUG-1345: no relayed hut effect: the host makes the guest's baby from its ask (baby_tick)
+        for c in (host, guest):
+            print(' ', c.call('coop.fix effects.other_stages off')['out'].strip(), flush=True)
     _, pt = player(host)
     f = food(host) or 0
     host.call(f'call SporeCoop::cTribe_AddFood thiscall 0x{pt:X} {int(60 - f)}')
@@ -513,6 +522,9 @@ def run_birth(ck):
                                   'own creature on both screens (not the tribe\'s species)')
     print(f'  the new member as first seen (id, key, owner, s): {first} (the guest\'s {gkey:08X}, the slot\'s '
           f'{slot or 0:08X})', flush=True)
+    # (which path made the host's baby: `baby ... made=` counts baby_tick's, BUG-1345)
+    print('  host:', ' '.join(l for l in host.call('coop.tribe anims')['out'].splitlines() if l.startswith('baby fix')),
+          flush=True)
     for r in ('host', 'guest'):
         ck(r in first, f'{r}: the member the guest bought is there')
         if r in first:
@@ -674,10 +686,16 @@ def main():
     ck = Checks()
     print(f'  mode {MODE}, switch {SWITCH}{" (off: the FAIL twin)" if off_twin() else ""}', flush=True)
     try:
-        return {'key': run_key, 'drop': run_drop, 'civdrop': run_civdrop, 'birth': run_birth, 'kid': run_birth, 'stray': run_stray,
+        return {'key': run_key, 'drop': run_drop, 'civdrop': run_civdrop, 'birth': run_birth, 'birthask': run_birth, 'kid': run_birth, 'stray': run_stray,
                 'ship': run_ship}[MODE](ck)
     finally:
-        if MODE in ('key', 'drop', 'birth', 'kid', 'stray'):
+        if MODE == 'birthask':  # (warm reuse: the relay on again)
+            for inst in (lane.HOST, lane.GUEST):
+                try:
+                    Console(inst).call('coop.fix effects.other_stages on')
+                except OSError:
+                    pass
+        if MODE in ('key', 'drop', 'birth', 'birthask', 'kid', 'stray'):
             put_back()
         # (the guest's My Creations of `key` / `ship`: the next cold start restores the fixture's, restart_guest's knob)
 

@@ -2283,6 +2283,15 @@ void test_vel_tick(double now)
 // food). `coop.fix tribe.guest_baby off`: the guest's game makes its own baby (0.7.9).
 bool g_guest_baby_fix = true;
 COOP_FIX("tribe.guest_baby", "BUG-0671", g_guest_baby_fix, "tribe: a tribe member the guest buys at its hut is born in the host's game and is the guest's");
+// BUG-1345: the host makes a guest's baby itself when its own game made none for the guest's ask within kBabyPair s (no
+// relayed hut effect, or its message never came: baby_tick). That call named no owner, so tribe.birth_species (BUG-1299)
+// gave it the tribe's species and baby_give named the guest only afterwards; tribe.kid_species (BUG-1313) never changes
+// a kid, so the guest's kid wore the tribe's species on the host until it grew up while the guest's mirror of it was
+// born in the guest's (lab 20261120-041304 tribe_kid_species: first seen 9.1 s after the click, 5.2 s + 4 s). On: the
+// asking guest is the owner at the birth. Off: as before.
+static bool g_ask_baby_species_fix = true;
+COOP_FIX("tribe.ask_baby_species", "BUG-1345", g_ask_baby_species_fix,
+         "tribe: a member a guest buys that the host's game makes for its ask is born in that guest's own species");
 static constexpr double kBabyPair = 4.0;
 static constexpr float kBabyNear = 6.0f;
 struct BabyAsk {
@@ -2479,7 +2488,9 @@ void baby_tick(double now)
         void* stage = a_Stage ? skg::cdecl_call<void*>(a_Stage) : nullptr;
         if (!stage || !player_tribe() || !net::is_player(*C.sess, k.from))
             continue;
-        for (void* c : baby_call(stage, k.pos)) { // none came: the host's game makes it (null at the cap: none)
+        // none came: the host's game makes it (null at the cap: none). BUG-1345: born for the guest that asked (its line
+        // species, tribe.birth_species), not named its owner only afterwards
+        for (void* c : baby_call(stage, k.pos, g_ask_baby_species_fix ? k.from : (uint8_t)0xFF)) {
             baby_give(c, k.from);
             g_babies_made++;
         }
