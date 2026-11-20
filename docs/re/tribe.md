@@ -4331,9 +4331,54 @@ own village with the game's own controls"). Code: tribe_villages.cpp; architectu
   mission of the host's goal (no mission is made for it) and the alliance does not count.
 * ~ The host's villager cards (the right-hand column) list a partner's member too while Tribe_IsPlayerOwned answers true
   for its village (seen: one purple card among the host's three). Clicking it selects nothing (the owner check).
-  BUG-9271.
+  BUG-9271. Fixed (2026-11-20): the card caller is 0xCCC6EA, see [tribe-own-village-player](#tribe-own-village-player).
 * ? A partner's member died between two checks (3 -> 2 members) while the first rival appeared next to it; whether the
   rival raided the partner's village (it is the player's for the rival's AI on the host) was not watched.
-* ~ The guest's HUD food counter and cards remain the host's village's (the player tribe of its game); its own food is in
-  the Co-op window ("Your village: N members, food F"). Lineages made the own village the guest's player tribe
-  (SetPlayerTribe, #tribe-guest-own-player-village there): not ported.
+* ~ superseded (2026-11-20): see [tribe-own-village-player](#tribe-own-village-player). The guest's HUD food counter and
+  cards remain the host's village's (the player tribe of its game); its own food is in the Co-op window ("Your village: N
+  members, food F"). Lineages made the own village the guest's player tribe (SetPlayerTribe, #tribe-guest-own-player-village
+  there): not ported.
+  CORRECTION (2026-11-20, feat/lineages-tribe): ported in the second round; with the swap the guest's HUD food, cards, hut
+  menu and goal card are its own village's (runtime, lane D).
+
+
+## A guest's own village as its player tribe; team alliances; the host's cards; a reset's scans (2026-11-20, feat/lineages-tribe)
+<a id="tribe-own-village-player"></a>
+
+BUG-9268 (second round), BUG-9271, BUG-9272; follows [tribe-own-villages](#tribe-own-villages). Lane D, two instances.
+
+* ✔ (memory of the running game) cGameNounManager::SetPlayerTribe 0xB1FD50 = thiscall(manager, tribe) ret 4: the new
+  tribe AddRef'd (vt 0), manager +0x70 set, the old one released (vt 4). Tribe_HutStateIs2 0xC90730 reads +0x368 without a
+  null check (guarded). TribeHutUI_HandleMessage 0xCDBEA0 = bool thiscall(this, IWindow*, Message*) ret 8; Add Baby is
+  button 0x0625CD52 (handled at 0xCDC3DC -> 0xCDC7C5, which reads the price at 0x158133C, Tribe_BabyFoodCost: 0 in the
+  galaxy menu, 10 in Tribe).
+* ✔ (runtime) With the guest's own village swapped in as its game's player tribe (tribe.own_player_village) after a
+  world load: the camera starts at the own village, the HUD food counter is the own village's (45 / 62 while the host's
+  was 12 / 8), the villager cards are its own species and a card press selects its own villager (#5 sel 1), the goal
+  card ("Conquer: Attack the Green Village") and the raid alert ("Raiders spotted! Another tribe is attacking.") are the
+  own village's, the own hut opens the Tribal Planner titled "Guleskate Village". A restore and a swap again in play
+  kept the cards.
+* ~ The first swap of a session on an already running world showed red cards (the host's species) once; after a world
+  load they were the own village's. Not followed further.
+* ✔ (runtime) A birth in a partner's village through the host (`coop.tribe villages baby 1`: the village's SpawnMember,
+  vt 0x98, then cTribe_AddFood(-10)): members 3 -> 4 and food 62 -> 52 on both games. The guest's Add Baby button sends
+  CMD_BABY (h_HutUI); the button press itself was not driven in this run (the hut's first tab is the planner).
+* ✔ (runtime) Partner villages draw the NPC rivals' raids: a rival's raiders fought at the guest's village (its alert on
+  the guest's game) while the host's stayed calm. The partner's villagers defend themselves (the AI's player-owned bit).
+* ✔ (memory + runtime, BUG-9271) The host's villager cards are made by the Tribe UI when a citizen joins a village: at
+  0xCCC6E8 it calls the citizen spatial's IsPlayerOwned (Citizen_IsPlayerOwned 0xC24590: the citizen's city +0x1010 or
+  tribe +0x1014 answers through its spatial vt 0x58) and makes a card when it is true (return 0xCCC6EA). Answering false
+  for that caller only (tribe.host_cards): a birth in the partner's village made no card (FAIL with the switch off: one
+  card per birth). Ruled out for the cards by a deny list (`coop.tribe villages deny`): the birth's other askers 0xC0D049
+  (x4), 0xC275C8, 0xC26EC7 (citizen Init's AI cache), 0xC8ECBD (a tribe's), and the UI-range askers 0xE8C584, 0xE93ED9,
+  0xEA540F, 0xE10649, 0xDBD2EF, 0xCDF4E7 (a loop over the tribes with the conquered flag +0x556). The card list follows the
+  members (a member dropped: its card goes).
+* ✔ (runtime, BUG-9272) A guest's teardown of its Tribe world for a received world (GalaxyMenu_SimReset) stood 12-17 s in
+  three of five rejoins and past the 30 s watchdog once: the main thread in gamefixes' forget_sender (BUG-0456) and
+  forget_last_attacker (BUG-0930), each walking every object of the world (VirtualQuery per creature) for every creature
+  or citizen the reset destroys. The walks are skipped while the reset runs (game.reset_sender_scan, the reset hooked).
+  The cursor guard (tribe.cursor_listed) was not the cause (the stall came with it on).
+* ✔ (runtime) The partner's Creature nest herd survives the graduation (60 m from the host's village, not extinct):
+  with the search on that side (the nest itself when 80 m out, else 80-125 m on the nest's side, up to 30 degrees either
+  way, within 70 m of the nest; level, dry, within 6 m of the host village's height) a site is found there
+  (`coop.tribe villages nests 1`: "site at the nest"); before, the ring search put it 99 m away on another side.

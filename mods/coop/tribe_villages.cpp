@@ -534,7 +534,7 @@ void villages_host_tick(double now)
 
 // host, every behaviour tree tick of a creature: a partner village's members take orders as player members (Lineages
 // BUG-9020: citizen Init C27330 caches IsPlayerOwned in the AI's flags, (+0xB4C)+0x5FC bit 0, at creation)
-static bool g_ai_bit = true; // tests (BUG-9271): `villages aibit 0` leaves the AI's cached bit to the game
+static bool g_ai_bit = true; // not a lab switch: tests only (BUG-9271): villages aibit 0 leaves the AI cached bit to the game
 void villages_ai(void* c)
 {
     if (!g_any_partner || !g_ai_owned || !g_ai_bit || !is_citizen(c) || village_seat(F<void*>(c, kOwnerTribeOff)) < 1)

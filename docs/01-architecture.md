@@ -965,3 +965,19 @@ Phase 5 of the Lineages port (PR #196), BUG-9268, on top of the party and the ar
   key from the start). Tests: tools/tests/coop_home_nests.py, coop_home_nests_join.py (suites home_nests,
   home_nests_join).
 >>>>>>> feat/lineages-nests
+* **Second round** (2026-11-20, [tribe-own-village-player](re/tribe.md#tribe-own-village-player)):
+  * The guest's game makes its own village its player tribe (`tribe.own_player_village`, SetPlayerTribe; the host's
+    village back for its saves, a load, the session's end, local play). `tribe::player_tribe()` and the new
+    `tribe::swapped_host_tribe()` (read by wsync, shared, designs, realign and wstate before cGameNounManager +0x70)
+    keep meaning the host's village. Its own village's relations follow the host village's (outside the frame, every
+    2 s). Tribe_HutStateIs2 guarded; Add Baby at its hut sends CMD_BABY, which the host runs in that village for its
+    food (`village_baby`).
+  * Team alliances (`tribe.team_allies`, host, every 5 s): an NPC village allied with one player's village is raised to
+    an ally of every player's village; a lower relation is never shared.
+  * The village at the partner's own Creature nest when the ground allows (`tribe.village_at_nest`), else the rings.
+  * BUG-9271 (`tribe.host_cards`): the Tribe UI's card caller (0xCCC6EA, `SporeCoop::TribeUI_CardOwnedReturn`) gets the
+    game's own IsPlayerOwned for a partner's villager (Citizen_IsPlayerOwned hooked); `coop.tribe villages deny <va>...`
+    tests other callers.
+  * BUG-9272 (`game.reset_sender_scan`, gamefixes.cpp): GalaxyMenu_SimReset hooked; the stimulus and last-attacker walks
+    of the destroy hook are skipped while it runs. `tribe.cursor_listed` keeps the cursor guard switchable.
+  * Commands: `coop.tribe villages baby <player> | earn <seat> <npc faction> | nests <player> | reswap | aibit 0|1`.
