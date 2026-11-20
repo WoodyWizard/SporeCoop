@@ -91,10 +91,10 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   to the vote's time) for a guest that is on its way to the Creature stage over a normal connection, as in 0.7.15:
   both editors open together. Before, the host's editor opened at once and the guest got its own editor later, alone,
   after its arrival. A guest on a slow connection is still not waited for (the host's screen stayed black meanwhile),
-  nor one in its own editor (BUG-1336).
+  nor one in its own editor (BUG-1336; still open until its lab run).
 - Cell: after the host changes its own cell, no wild cells of the cell it played before swim around any more. A guest
   without a cell of its own takes the host's new one, but the host's rebuilt level had already made wild copies of the
-  old one next to that guest (BUG-1333).
+  old one next to that guest (BUG-1333; still open until its lab run).
 - Cell: a guest on a slow connection (or a host with a slow upload) now sees the host's cells all around its own cell.
   Before, on a link of about 512 kbit/s the guest kept only about a quarter of them, spread over the pool, and the
   others vanished a second after they came: mostly empty water around it. The host now sends each guest the cells

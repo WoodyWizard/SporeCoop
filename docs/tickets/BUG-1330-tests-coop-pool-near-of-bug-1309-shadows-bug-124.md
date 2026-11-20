@@ -10,7 +10,7 @@ role:
 versions: 0.7.16
 fixed_in:
 branch: fix/w59-cell
-commits:
+commits: 3e485914
 tests: evo_screens_cell_mate, cell_slow_link, cell_slow_link_off
 signature: evo_screens_cell_mate "the host's game draws the guest's mate where the guest's game has it (0 of 6 looks)"
 docs: docs/06-testing.md#testing-cell-slow-link
@@ -37,8 +37,12 @@ BUG-1309's sub-command is now `coop.pool nearkeys <r> [x y]` (output `nearkeys n
 (06-testing.md#testing-cell-slow-link, re/cell.md). Test tooling only, no game behaviour, so no switch.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Lab not run yet (orchestrator: no lab until "lab ok", the final check runs on other lanes); commands below.
+* PASS expected: `SPORE_DETECTOR=20 python3 tools/lab.py run evo_screens_cell_mate --lane N --retry 0 --no-build`
+* FAIL run (before the rename): out/lab/20261119-214823 (rel/0.7.16 f6c16890, lane 2): evo_screens_cell_mate "0 of 6
+  looks" with the host's copy in place.
+* regression of the renamed command: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_slow_link cell_slow_link_off
+  --lane N --retry 0 --no-build` (cell_slow_link PASS, its twin FAIL as in 20261119-134335).
 
 ## History
 - 2026-11-20: opened.
