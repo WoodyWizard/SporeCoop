@@ -82,6 +82,10 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   got them (BUG-1290).
 
 ### Fixed
+- Editors that start empty (the City Hall and vehicle at the end of the Tribe stage, a guest's own City Hall and
+  vehicle when it arrives in the Civilization stage) could not be named in a game profile where a Space captain had
+  once been named while the game could not copy the species: the name panel had no name field and no dice, and the
+  editor said "You must give your creation a name" for ever. Now the name and the dice are always there (BUG-1328).
 - Cell: a guest on a slow connection (or a host with a slow upload) now sees the host's cells all around its own cell.
   Before, on a link of about 512 kbit/s the guest kept only about a quarter of them, spread over the pool, and the
   others vanished a second after they came: mostly empty water around it. The host now sends each guest the cells

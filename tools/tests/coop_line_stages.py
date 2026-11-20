@@ -490,7 +490,6 @@ def main():
     camp = Campaign(ca, players, run_dir, seed)
     if a.civ_editors:  # (the guest's own vehicle must not be the host's model byte for byte: its check against the culture's)
         camp.arrival_parts = CIV_ARRIVAL_PARTS
-        camp.arrival_cancel_after = None  # (its designs are what the test checks: no red cross)
     camp.ids()
     camp.health()
     pid = players[1].pid
