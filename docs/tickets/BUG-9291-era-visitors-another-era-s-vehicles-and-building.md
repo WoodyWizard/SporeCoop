@@ -10,7 +10,7 @@ role: any
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: 39901e3b
 tests: in game: TITAN QA runs (coop.visit at / move / status screen positions); tools/tests/galaxy_server_check.py (the stream)
 signature:
 docs: docs/12-server-and-players.md#server-era-visitors-more
