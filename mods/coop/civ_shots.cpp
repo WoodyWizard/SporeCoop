@@ -145,6 +145,85 @@ void fire_local(void* owner, uintptr_t ret, bool fired)
                (unsigned)ret, (unsigned)e.owner_vt, e.owner_vt && vtable_in_game(o) ? game::noun_id(o) : 0u);
 }
 
+// BUG-1322: FireTool's owner and target are spatials; fire_observed took the object at spatial - 0x34 (kVSpatial) and,
+// when its first dword lay in SporeApp.exe's image (vtable_in_game, BUG-0535), called its vtable (Cast, the noun). A
+// spatial that is not at +0x34 of a listed object (a target the combatant AI gives that is no game object of the list,
+// or whatever memory precedes it) passed that check by chance: the host jumped into a vehicle's memory and then to
+// 0xCCCCCCCC from this observer (lab 20261119-114030, civ_preach_far: the stack's module addresses are civ_shots.cpp
+// fire_observed and game::object_position, called from squadron's FireTool hook). Now an object that is not one of our
+// listed vehicles is used only when it is in the game's object list (game::listed: pointers compared, nothing called),
+// once per object and frame. Off: the image check only (0.7.15).
+static bool g_fix_shot_listed = true;
+COOP_FIX("civ.shot_target_listed", "BUG-1322", g_fix_shot_listed,
+         "civ: the host's shot observer calls nothing on a shooter or target that is not in the game's object list");
+static bool g_shot_probe;          // tests (coop.civ shotprobe, below)
+static int g_shot_probe_tkind = -1;
+static uint32_t g_unlisted_shot_objs;
+static std::string g_unlisted_last;
+static bool shot_obj_ok(void* o, void* spatial)
+{
+    if (!g_fix_shot_listed)
+        return vtable_in_game(o) && game::object_alive(o);
+    static uint64_t frame = ~0ull;
+    static std::unordered_map<void*, bool> seen;
+    uint64_t f = H->frame_index();
+    if (f != frame) {
+        frame = f;
+        seen.clear();
+    }
+    auto it = seen.find(o);
+    if (it != seen.end())
+        return it->second;
+    bool ok = game::listed(o);
+    seen[o] = ok;
+    if (!ok) {
+        char b[160];
+        snprintf(b, sizeof b, "spatial %p (vtable %08X), object at -0x34 %p (first dword %08X, %s)", spatial,
+                 *(const uint32_t*)spatial, o, *(const uint32_t*)o, vtable_in_game(o) ? "in the image" : "not in the image");
+        g_unlisted_last = b;
+        if (g_unlisted_shot_objs++ < 8)
+            H->log(M, SK_INFO, "civ: a shot's shooter or target is no listed object: %s: nothing called (BUG-1322)", b);
+    }
+    return ok;
+}
+std::string shot_listed_status()
+{
+    char b[400];
+    snprintf(b, sizeof b, "shot objects not listed %u (last: %s) fix=%d\n", g_unlisted_shot_objs,
+             g_unlisted_last.empty() ? "-" : g_unlisted_last.c_str(), (int)g_fix_shot_listed);
+    return b;
+}
+
+// tests (BUG-1322, `coop.civ shotprobe`): the observer gets a shot of a listed host vehicle at a target spatial that is no
+// object (the memory before it starts with an address in SporeApp.exe's image whose dword +0xC is no code: the DOS
+// header, 0x0000FFFF), as the preaching vehicles' target of lab 20261119-114030. With civ.shot_target_listed off the
+// observer calls into that "vtable" and the game faults; on: the target is one the guests cannot find (kind 2).
+std::string shot_probe()
+{
+    void* veh = nullptr;
+    hv_each([&](const HvRef& x) {
+        if (!veh && game::listed(x.v))
+            veh = x.v;
+    });
+    HMODULE exe = GetModuleHandleW(nullptr);
+    if (!veh || !exe || !is_host())
+        return "no listed host vehicle here (or not the host)\n";
+    static uint8_t fake[0x80], tool[0x180];
+    memset(fake, 0, sizeof fake);
+    *(uintptr_t*)fake = (uintptr_t)exe; // the "object" at target - 0x34: a dword in the image, its +0xC = 0x0000FFFF
+    float aim[3] = {0, 0, 0};
+    if (net::Vec3 p; game::object_position(veh, p))
+        aim[0] = p.x, aim[1] = p.y, aim[2] = p.z;
+    g_shot_probe = true;
+    g_shot_probe_tkind = -1;
+    fire_observed(tool, (uint8_t*)veh + kVSpatial, aim, fake + kVSpatial, true);
+    g_shot_probe = false;
+    char b[200];
+    snprintf(b, sizeof b, "shot probe: vehicle %p, target %p: target kind %d (2: none the guests can find) fix=%d\n", veh,
+             fake + kVSpatial, g_shot_probe_tkind, (int)g_fix_shot_listed);
+    return b + shot_listed_status();
+}
+
 void fire_observed(void* tool, void* owner, const float* aim, void* target, bool fired)
 {
     if (!owner || !aim || !tool || !is_host() || !active())
@@ -153,14 +232,15 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target, bool
         g_n.shots_tried++;
         return;
     }
-    if (fired)
+    if (fired && !g_shot_probe)
         note_tool(tool);
     void* o = (uint8_t*)owner - kVSpatial;
     Shot s;
     if (HvRef it = hv_find(o)) {
         s.kind = 1;
         s.id = it.id;
-    } else if (!IsBadReadPtr(o, 0x40) && vtable_in_game(o) && game::noun_id(o) == kTurretNoun && game::object_position(o, s.at)) {
+    } else if (!IsBadReadPtr(o, 0x40) && (g_fix_shot_listed ? shot_obj_ok(o, owner) : vtable_in_game(o)) &&
+               game::noun_id(o) == kTurretNoun && game::object_position(o, s.at)) {
         s.kind = 3;
         g_n.turret_shots_seen++;
     } else
@@ -173,11 +253,15 @@ void fire_observed(void* tool, void* owner, const float* aim, void* target, bool
         if (HvRef tv = hv_find(t)) {
             s.tkind = 1;
             s.tid = tv.id;
-        } else if (vtable_in_game(t) && game::object_alive(t) && game::object_position(t, s.tpos)) {
+        } else if (shot_obj_ok(t, target) && game::object_position(t, s.tpos)) {
             s.tkind = 3;
             s.tnoun = game::noun_id(t);
         } else
             s.tkind = 2; // a target the guest cannot find: it does not fire this one (BUG-0534)
+    }
+    if (g_shot_probe) { // tests (coop.civ shotprobe): the target's class only, no shot for the guests
+        g_shot_probe_tkind = s.tkind;
+        return;
     }
     s.seen = H->time_seconds();
     auto& e = g_shots[{s.id, s.kind == 3 ? pos_key(s.at) : 0u}];
