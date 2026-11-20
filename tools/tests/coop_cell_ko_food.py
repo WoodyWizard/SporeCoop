@@ -21,6 +21,10 @@ touched it was eaten (event 0x12, EatFood 0xE7DF40 -> AvatarEat -> AddFoodPoints
 cell.ko_no_eat off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-093513:cell_ko_food) (the knocked-out cell eats: +12 per plant).
 SPORE_FIX_OFF=cell.ko_no_swallow must FAIL (the knocked-out cell swallows meat: food grows).
 
+BUG-1354: the plants to touch are looked up BEFORE the knockout (the eater does not move while it is out). The final
+check 20261120-041304 looked for them after it: the host's screen had one plant, `plants()` tried for 8 s, and the
+meals ran after the 10 s knockout had ended (respawned, the swallow ran and the food grew by the meal of a living cell).
+
   SPORE_LANE=7 python3 tools/tests/coop_cell_ko_food.py
 """
 import re
@@ -66,12 +70,14 @@ def wait_downed(con, want, timeout=6.0):
 
 
 def knocked_out_meals(ck, name, eater, other, knock):
-    """`eater` is knocked out by `knock()`, then touches plants; the totals of both games are checked."""
-    knock()
+    """`eater` is knocked out by `knock()`, then touches plants; the totals of both games are checked.
+    knock() returns the plants on the eater's screen it found right before the hit (BUG-1354: looked up after the
+    knockout, the search took the knockout's 10 s)"""
+    keys = knock()
     print(f'  {name} at the knockout: pos, partner_dist, revive_dist = {where(eater)}', flush=True)
     ck(wait_downed(eater, 1), f'{name}: knocked out (its own game says downed=1, hp {pool(eater)["hp"]})')
+    t_out = time.time()
     e0, o0 = pool(eater), pool(other)
-    keys = plants(eater)
     ate = []
     for k in keys:
         r = eater.call(f'coop.pool eat {k}')['out'].strip()
@@ -80,22 +86,25 @@ def knocked_out_meals(ck, name, eater, other, knock):
     # BUG-0746: the swallow (interaction kind 10 on meat, else kind 9 on a plant)
     mt = sorted(((float(m.group(2)), m.group(1)) for m in
                  re.finditer(r'meat (c\d+) pos=\S+ \S+ level=\S+ size=\S+ dist=(\S+) dead=0', eater.call('coop.pool meat')['out'])))
-    sw = [(k, 10) for _, k in mt[:2]] or [(k, 9) for k in plants(eater)[:2]]
+    sw = [(k, 10) for _, k in mt[:2]] or [(k, 9) for k in keys[:2]]  # (BUG-1354: no new search while out)
     for k, kind in sw:
         r = eater.call(f'coop.pool swallow {k} {kind}')['out'].strip()
         ate.append(f'{k}: {r}')
         time.sleep(1.5)  # the swallow's animation, then the meal (event type 1 -> OnEat)
+    e_end = pool(eater)  # (BUG-1354: still out when the last meal ran, read before the wait for the guest's count)
+    t_meals = time.time() - t_out
     time.sleep(2.0)  # the host's count reaches the guest (MSG_CELL_FOOD)
     e1, o1 = pool(eater), pool(other)
+    print(f'  {name}: the meals took {t_meals:.1f} s of the knockout (downed {e_end["downed"]} after the last one)', flush=True)
     print(f'  {name} knocked out, touched {len(keys)} plants: ' + '; '.join(ate), flush=True)
     print(f'  {name}: food {e0["food"]} -> {e1["food"]}, other game {o0["food"]} -> {o1["food"]}, '
           f'other ate itself +{(o1["own_points"] or 0) - (o0["own_points"] or 0)}, '
           f'blocked {e0["ko_eats_blocked"]} -> {e1["ko_eats_blocked"]}, swallows blocked '
           f'{e0["ko_swallows_blocked"]} -> {e1["ko_swallows_blocked"]}', flush=True)
     ck(len(sw) >= 1, f'{name}: meat or plants to swallow ({len(sw)}: {[k for k, _ in sw]})')
-    still = e1['downed'] == 1
+    still = e_end['downed'] == 1
     ck(len(keys) >= 2, f'{name}: plants to touch ({len(keys)})')
-    ck(still, f'{name}: still knocked out after its meals (downed {e1["downed"]})')
+    ck(still, f'{name}: still knocked out after its meals (downed {e_end["downed"]})')
     other_ate = (o1['own_points'] or 0) - (o0['own_points'] or 0)
     for who, a, b in ((f'{name} (knocked out)', e0, e1), ('the other game', o0, o1)):
         grew = (b['food'] or 0) - (a['food'] or 0)
@@ -138,19 +147,24 @@ def main():
 
     def knock_guest():
         away(guest)
+        keys = plants(guest)
         print(' ', host.call(f'coop.pool hurt {gid} 50')['out'].strip(), flush=True)
+        return keys
 
     knocked_out_meals(ck, 'guest', guest, host, knock_guest)
 
     # 4: the host knocked out
     def knock_host():
         away(guest)
-        for i in range(4):  # plants on the host's screen to touch
-            if len(plants(host)) >= 2:
+        keys = []
+        for i in range(8):  # plants on the host's screen to touch (BUG-1354: found before the hit, four directions)
+            keys = plants(host)
+            if len(keys) >= 2:
                 break
-            host.call('coop.pool goto %d 0' % (20 if i % 2 == 0 else -20))
+            host.call('coop.pool goto %d %d' % ((20, 0), (-20, 0), (0, 20), (0, -20))[i % 4])
             time.sleep(4)
         print(' ', host.call('coop.pool selfhit 50')['out'].strip(), flush=True)
+        return keys
 
     knocked_out_meals(ck, 'host', host, guest, knock_host)
     return ck.result()
