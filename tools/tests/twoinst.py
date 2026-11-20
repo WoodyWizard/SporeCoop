@@ -871,14 +871,32 @@ def session_restart(host, guest, save=True, store_wait=20.0, slot=None, planet=N
     return host, guest, info
 
 
+def own_progress_set(host, guest, on, secs=10):
+    """BUG-9265: all.own_progress on / off on the host (`coop.settings force`; a forced value is kept with the world,
+    so a warm game may have either), waited for on the guest; a build without the setting does not know it"""
+    o = host.call('coop.settings force all.own_progress %s' % ('on' if on else 'off')).get('out', '')
+    if 'all.own_progress' not in o:
+        return
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        if re.search(r'all\.own_progress=%d' % (1 if on else 0), guest.call('coop.settings get all.own_progress').get('out', '')):
+            return
+        time.sleep(0.5)
+    print('  all.own_progress: the guest did not get %s' % ('on' if on else 'off'), flush=True)
+
+
 def start(*a, **kw):
     """_start(), then SPORE_FIX_OFF=<name>[,<name>...] switches those fixes off on both games
     (`coop.fix <name> off`, BUG-0116): any test can run once without a fix to show that it still
     catches the bug. Fixes that act while the guest joins are on until then.
     Strict (BUG-0214 R8): a name the game does not know fails the test at once, so a twin run
-    cannot pass silently with the fix still on; an unsafe switch only gets a warning line."""
+    cannot pass silently with the fix still on; an unsafe switch only gets a warning line.
+    BUG-9265: the session setting all.own_progress (every player's own DNA and bar, default on) is switched off for
+    the tests written for the party's shared total (DNA, food, the pace, the spends); own_progress=True sets it on."""
     KEEP_HOLDS[0] = kw.pop('keep_holds', False)
+    own_progress = kw.pop('own_progress', False)
     host, guest = _start(*a, **kw)
+    own_progress_set(host, guest, own_progress)
     names = [n for n in (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',')) if n]
     if names:  # BUG-0312: these games keep the switches off; the next warm test must not reuse them
         lane_state(**{**lane_state(), 'fix_off': ','.join(names)})

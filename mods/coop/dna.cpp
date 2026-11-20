@@ -4,8 +4,14 @@
 // dna_route.h, dna_ledger.h and dna_pace.h; the messages are handled in the session callbacks, the totals are sent from
 // the frame, the away state is coop.cpp's host_away_tick.
 #include "coop_state.h"
+#include "own_progress.h"
 
 namespace coop_core {
+
+// BUG-9265 (own progress, own_progress.h): with the session setting all.own_progress every player's DNA and bar are
+// their own: a guest keeps its gains (nothing forwarded), the host sends no total and pays a guest's hunt to that guest,
+// nothing is paced (each bar fills at a solo game's pace by itself), a spend stays where it was made
+uint32_t g_own_totals_ignored = 0, g_own_gains_kept = 0, g_own_hunts_given = 0; // tests (coop.progress)
 
 float g_dna_sent = -1;      // host: last broadcast total
 double g_dna_at = 0;        // host: when it was sent
@@ -110,7 +116,7 @@ int dna_pace_announce()
 // the divisor for a gain of this machine's game now (1: whole)
 int pace_div()
 {
-    if (dna_pace::g_bypass || !g_sess.connected())
+    if (dna_pace::g_bypass || !g_sess.connected() || own_progress::active()) // BUG-9265: own bars, a solo game's pace
         return 1;
     if (g_sess.role() == net::Role::Host)
         return dna_pace_announce();
@@ -148,6 +154,24 @@ void dna_pace_heard(int div) { g_pace_heard = std::clamp(div, 1, 255); }
 bool on_dna(float& delta)
 {
     bool guest = g_sess.role() == net::Role::Client && g_sess.connected();
+    if (own_progress::active()) { // BUG-9265: this game's own DNA and bar
+        if (g_sess.role() == net::Role::Host && delta > 0 && g_mode == modes::kCreature) {
+            const auto part = dna_ledger::g_credit.gain(delta, H->time_seconds());
+            if (part.cause == dna_ledger::Cause::Hunt && part.player != g_sess.my_id()) {
+                // a guest's kill of one of our animals: the game paid it to our avatar, it is that guest's
+                own_progress::give_gain(part.player, delta);
+                g_own_hunts_given++;
+                LOG("dna: +%.0f of %s's hunt goes to %s (own progress)", delta, g_sess.name_of(part.player).c_str(),
+                    g_sess.name_of(part.player).c_str());
+                return false;
+            }
+        }
+        if (delta > 0)
+            g_own_gains_kept++;
+        if (guest)
+            g_dna_seen += delta; // (BUG-0466's sampling: not a spend)
+        return true;
+    }
     auto g = dna_route::guest_gain(guest, delta > 0, guest_elsewhere(), g_away_dna_fix && g_host_away);
     if (g == dna_route::Gain::Own) {
         g_dna_own++;
@@ -245,6 +269,11 @@ void dna_spend_resync()
 void dna_spend_tick(double now)
 {
     static double last_send = -100;
+    if (own_progress::active()) { // BUG-9265: a spend is the spender's own
+        g_dna_spend = 0;
+        g_dna_seen_ok = false;
+        return;
+    }
     dna_spend_sample();
     if (g_dna_spend > -0.5f)
         return;

@@ -112,6 +112,9 @@ std::string game_key_for_planet(const std::string& planet_file);
 // BUG-9262 (Lineages): host: a world share that waits for a save asks `hold(player, ms since it was asked)` first; true
 // keeps it waiting (2 minutes at most): a partner's own nest is about to be made (home_nests.cpp)
 void set_share_hold(std::function<bool(uint8_t, uint64_t)> hold);
+// BUG-9265 (ported from Lineages' shared_loads, BUG-9223): the loads this game started (load_slot: a received world, a
+// rejoin, coop.load), counted when the game's LoadGameByName is called
+uint32_t loads_started();
 // BUG-0225: called after a received world was written into a slot (lower-case dir, UTF-8, no
 // trailing '\'): the game that was in that slot no longer exists as it was
 void set_slot_replaced_hook(void (*fn)(const std::string& dir));

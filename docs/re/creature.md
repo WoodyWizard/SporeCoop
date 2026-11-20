@@ -4904,3 +4904,20 @@ playing its own My Creations creature.
   (BUG-9270, not fixed).
 * ✔ (runtime) The Creature HUD portrait's drawable vtable is 0x01443248 at the preferred base; on a game loaded at
   0x00320000 it is 0x01363248 (every address -0xE0000): now a symbol, `UTFWin::ImageDrawable::vftable` (BUG-9269).
+## Own progress: the brain level, the stage end and a restored bar (2026-11-20, feat/own-progress)
+<a id="creature-own-progress"></a>
+
+BUG-9265. Steam build (the GOG 2024 code), lane B on Windows.
+* ✔ (runtime) `coop.dna gain 3000` (AddEvolutionPoints) on a fresh Creature stage: the brain level (creature vt 0xD8)
+  went 0 -> 4 in one pass of brain upgrades (CRG_BrainUpgrade1 F6A4B1E1 ... 4 F6A4B1E4 queued, captions waiting for
+  their check); level 4 is "fully grown": the History button then offers the stage end (tag 0x64AA168). The bar
+  (cPlayer +0x10F0) was 3100 at level 4.
+* ✔ (runtime) The host's stage-end request refused in h_Submit (not submitted, BUG-0920's flag cleared) leaves the host's
+  History screen open; Esc closes it and the game plays on with the full bar; a later request works (5 refusals, then
+  the vote, the editor and the Tribe stage).
+* ✔ (runtime) Writing `SporeCoop::g_BrainLevel` (0x169E370) lower (a guest's own level after a load of the host's save
+  with level 4): vt 0xD8 reads the new level at once; the avatar keeps its larger size and its health (100) until the
+  next brain upgrade (inferred: the size and the max health are set by the upgrade, not read every frame).
+* ✔ (runtime) A guest's kill of a host NPC (`coop.npc hit <id> 100000` on the guest) is paid by the host's
+  AddEvolutionPoints within the hunt credit's 2.5 s: with own progress the mod takes it off the host and sends it to the
+  guest (host DNA and bar unchanged, the guest's +1 DNA and bar for a small prey).

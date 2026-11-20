@@ -74,6 +74,8 @@ inline host_world::MsgClass msg_class(uint8_t type)
         return host_world::MsgClass::Unknown;
     case net::MSG_OWN_CARDS: // (added after 0.7.15.2, BUG-9263: the own stage history; a type 0.7.15.2 did not know)
         return host_world::MsgClass::Unknown;
+    case net::MSG_PROGRESS: // (added after 0.7.15.2, BUG-9265: own progress; a type 0.7.15.2 did not know)
+        return host_world::MsgClass::Unknown;
     }
     return host_world::MsgClass::Unknown;
 }

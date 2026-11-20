@@ -20,6 +20,7 @@
 #include "dna_route.h"
 #include "dna_ledger.h"
 #include "dna_pace.h"
+#include "own_progress_logic.h"
 #include "host_world.h"
 #include "settings_core.h"
 #include "find_core.h"
@@ -411,6 +412,77 @@ static void test_dna_ledger()
     m.add(Cause::Meal, 1, 4, 0.0);
     m.add(Cause::Meal, 1, 4, 5.0);
     CHECK(m.due(10.0).empty() && m.due(kGatherMeals).size() == 1);
+}
+
+static void test_own_progress()
+{
+    printf("own progress: every player's own bar, the stage end together, the side file (own_progress_logic.h, BUG-9265)\n");
+    using namespace own_progress;
+    Values c;
+    c.mode = kCell;
+    c.food = 999;
+    CHECK(!full(c) && percent(c) == 99);
+    c.food = 1000;
+    CHECK(full(c) && percent(c) == 100);
+    Values k;
+    k.mode = kCreature;
+    k.level = 3;
+    CHECK(!full(k) && percent(k) == 75);
+    k.level = 4;
+    CHECK(full(k));
+    // the stage end: every player of the stage played now, at least two
+    std::vector<Player> ps = {{0, "Host", true, kCell, true, 100}, {1, "Bob", true, kCell, false, 64}};
+    std::string w;
+    CHECK(!all_full(ps, kCell, &w) && w == "Bob 64%");
+    ps[1].full = true;
+    CHECK(all_full(ps, kCell, &w) && w.empty());
+    CHECK(!all_full(ps, kCreature, &w)); // a report of another stage does not count
+    ps[1] = {1, "Bob", false, 0, false, 0};
+    CHECK(!all_full(ps, kCell, &w) && w == "Bob (not known yet)");
+    CHECK(!all_full({{0, "Host", true, kCell, true, 100}}, kCell)); // alone: no "together"
+    // the wire
+    net::Writer wr;
+    Values v;
+    v.mode = kCreature;
+    v.dna = 42;
+    v.bar = 310;
+    v.level = 2;
+    write_values(wr, v);
+    net::Reader rd(wr.data.data(), wr.data.size());
+    Values back;
+    CHECK(read_values(rd, back) && back == v && rd.left() == 0);
+    Values bad = v;
+    bad.mode = 7;
+    net::Writer wb;
+    write_values(wb, bad);
+    net::Reader rb(wb.data.data(), wb.data.size());
+    CHECK(!read_values(rb, back) && back == v);
+    // the side file
+    std::vector<Record> recs;
+    record_of(recs, "id:1").v = v;
+    record_of(recs, "name:Ann").v = c;
+    record_of(recs, "id:1").v.dna = 50;
+    CHECK(recs.size() == 2 && recs[0].v.dna == 50);
+    std::vector<Record> got;
+    CHECK(decode_file(encode_file(recs), got) && got == recs);
+    auto bytes = encode_file(recs);
+    bytes.push_back(0);
+    CHECK(!decode_file(bytes, got) && got == recs); // trailing bytes: refused, nothing changed
+    CHECK(!decode_file({1, 2, 3}, got));
+    // the restore: the record of this stage only
+    CHECK(restore_for(recs, "id:1", kCreature) && restore_for(recs, "id:1", kCreature)->dna == 50);
+    CHECK(!restore_for(recs, "id:1", kCell) && !restore_for(recs, "id:2", kCreature));
+    // Creature: a higher bar through the game's gain, a lower one written; the DNA set last
+    Values want;
+    want.mode = kCreature;
+    want.dna = 20;
+    want.bar = 300;
+    CreatureApply a = creature_apply(250, want);
+    CHECK(a.up == 50 && std::isnan(a.bar_write) && a.dna == 20);
+    a = creature_apply(400, want);
+    CHECK(a.up == 0 && a.bar_write == 300);
+    a = creature_apply(NAN, want);
+    CHECK(a.up == 0 && std::isnan(a.bar_write));
 }
 
 static void test_dna_pace()
@@ -1108,8 +1180,8 @@ static void test_manifest()
         known += msg_info((uint8_t)t).known;
     // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
     // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_IDENTITY 73 (BUG-9258, the Lineages port), MSG_CIV_WALLET 74 (BUG-9259),
-    // MSG_OWN_CARDS 75 (BUG-9263)
-    const std::set<int> added_types = {70, 71, 72, 73, 74, 75};
+    // MSG_OWN_CARDS 75 (BUG-9263), MSG_PROGRESS 77 (BUG-9265)
+    const std::set<int> added_types = {70, 71, 72, 73, 74, 75, 77};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1129,6 +1201,9 @@ static void test_manifest()
     CHECK(MSG_OWN_CARDS == 75 && std::string(msg_info(75).name) == "OWN_CARDS" && msg_info(75).family == Family::session &&
           msg_dir(75) == MsgDir::Any && host_world::msg_class(75) == host_world::MsgClass::Session &&
           dispatch_route(75, true) == Route::OwnCards && dispatch_route(75, false) == Route::OwnCards);
+    CHECK(MSG_PROGRESS == 77 && std::string(msg_info(77).name) == "PROGRESS" && msg_info(77).family == Family::session &&
+          msg_dir(77) == MsgDir::Any && host_world::msg_class(77) == host_world::MsgClass::Session &&
+          dispatch_route(77, true) == Route::Progress && dispatch_route(77, false) == Route::Progress);
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);
@@ -1321,6 +1396,7 @@ int main(int argc, char** argv)
     test_give_pick_leave();
     test_dna_route();
     test_dna_pace();
+    test_own_progress();
     test_dna_ledger();
     test_host_world();
     test_settings();

@@ -944,3 +944,42 @@ Phases 3 and 4 of the Lineages port (PR #196), BUG-9261 and BUG-9262, on top of 
 * Left out of Lineages' home_nests: the ring cleanup of nests of old salted keys (BUG-9182 there: not needed with one
   key from the start). Tests: tools/tests/coop_home_nests.py, coop_home_nests_join.py (suites home_nests,
   home_nests_join).
+
+## Own progress: every player's own DNA and bar in Cell and Creature (2026-11-20, feat/own-progress)
+<a id="architecture-own-progress"></a>
+
+BUG-9265, the owner's rule of 2026-11-20 ("Together" of [docs/11-rivals.md](11-rivals.md): wait for everyone, no
+"first wins"). Builds on the identity ([netcode-identity](04-netcode.md#netcode-identity)) and the party side files
+([architecture-party](#architecture-party)).
+
+* The session setting **all.own_progress** (default on, coop.ini `own_progress`; `coop.fix core.own_progress off` reads
+  it off) makes the DNA and the evolution bar of the Cell and Creature stages each player's own. Off (or creature.mode
+  host): the party's one shared total of 0.7.15 (dna_route.h, dna_pace.h).
+* What steps aside when it is on: the host's DNA total (MSG_DNA, not sent / not applied), a guest's forwarded gains and
+  spends (MSG_DNA_ADD, BUG-0466), the pace 1/N (BUG-0510: each bar fills at a solo game's pace by itself), the Cell
+  food total (MSG_CELL_FOOD: the host still sends it, a guest only takes the meal acknowledgements from it), a guest's
+  meal on the host's food, the cell-editor spend sharing (BUG-1249, the wsync row cell_spent), the shared species goal
+  card. A deed a guest does on the host's game is paid to the guest: the hunt credit (dna_ledger g_credit) and a social
+  success (social K_RESULT) go as MSG_PROGRESS kGain / the result's DNA into the guest's own game.
+* The host keeps every guest's last values (Cell: food, spent; Creature: DNA, bar cPlayer +0x10F0, brain level) by the
+  player's identity key per planet, saved as `<planet>.spo.duoprogress` next to the save (OPG1, own_progress_logic.h;
+  `founders::write_side`, outside the frame). A copy of the host's world holds the host's values, so after every load
+  of a world (world::loads_started) a guest asks (kAsk) and gets its own back (kSet: Cell through AddFoodPoints by the
+  difference; Creature a higher bar through AddEvolutionPoints, a lower one written, the DNA set, a lower brain level
+  written); then it reports once a second (kReport). A player without a record keeps the world's values.
+* The stage end together: the host sends the table of every player's bar (kTable). Cell: the host's click on History's
+  check is held until every bar is full and then runs again by itself (the switch vote of BUG-0315 follows); a guest's
+  click is never its own switch. Creature: the host's stage-end request (tag 0x64AA168) is refused until every bar is
+  full (the game keeps its evolve button; Esc closes History), then the vote of BUG-1085. Notices: "your bar is full
+  ... waiting for Bob 64%" (again every 60 s) and "every player's bar is full ...".
+* Code: mods/coop/own_progress.{h,cpp}, own_progress_logic.h (unit tests in tests/validate_tests.cpp), the hooks in
+  dna.cpp, session_glue.cpp, coop.cpp, vote.cpp, social.cpp, cellsync.cpp, wsync.cpp; `coop.progress [resync]`.
+  MSG_PROGRESS 77 (session family 1.3). Test: tools/tests/coop_own_progress.py (suites own_progress_cell,
+  own_progress_creature, own_progress_off); twoinst.start() switches the setting off for the older tests of the shared
+  total (own_progress=True keeps it on).
+* BUG-9266 (`coop.fix cell.end_click`): History's check first runs the game's Cell end sequence (0xE72C80, the white
+  screen, the walk-out) and only then the switch; a click that must wait is taken before that sequence (History closes,
+  the player plays on) and the host's kept click runs the whole sequence once every bar is full; a guest's click in
+  the vote is its I'm ready without the sequence ([cell-end-sequence](re/cell.md#cell-end-sequence)).
+* Known: in Cell the players can be at other levels (their own food) in the host's one pool; a guest whose brain level
+  is set lower keeps the save's body size until its next brain upgrade.
