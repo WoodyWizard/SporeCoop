@@ -43,7 +43,7 @@ TITAN QA runs, 2026-11-20:
   `coop.visit at` then spawn): the truck drawn (800x600).
 - The Civ stream: QA 9 on Abber (Creature), QA 8 hosting Abber (Civ): the city's buildings drawn over the Creature
   landscape (images/stage4_civ_visitors.png), their props at screen positions 344..684; a vehicle the Civ game ordered
-  to drive was made again 5 times along its way (`galaxy.prop_remake` off: once, and left behind).
+  to drive was made again 5 times along its way (the run with `galaxy.prop_remake` off was not done; the FAIL above is the same cause with `coop.visit move`).
 
 ## History
 - 2026-11-20: opened.
