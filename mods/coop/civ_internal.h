@@ -345,6 +345,7 @@ static void gv_each(Fn&& fn)
 extern uintptr_t a_CivByPol;
 extern uintptr_t a_GetAllCivs;
 extern uintptr_t a_GetMoney;
+extern uintptr_t a_PlayerCiv; // BUG-9274
 extern uintptr_t a_EditorPickUp;
 extern uintptr_t a_VehicleRemove;
 extern uintptr_t a_DestroyInst;
@@ -431,6 +432,7 @@ void host_command(uint8_t from, net::Reader& r);
 int host_index_of_city(void* c);
 bool is_guest();
 bool is_host();
+bool found_next_site(bool instant = false); // BUG-9274
 void kill_local(void* v);
 bool local_play();
 void* local_vehicle(uint16_t id);

@@ -13,7 +13,9 @@
 #include "space_ext.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
+#include "settings.h"
 #include "wire/shared_res.h"
+#include "tribe.h"
 
 namespace shared {
 
@@ -34,6 +36,8 @@ static void* noun_manager()
 // bundle +0x134. cGameNounManager::mpPlayerTribe is at +0x70.
 static void* player_tribe()
 {
+    if (void* h = tribe::swapped_host_tribe()) // BUG-9268
+        return h;
     void* nm = noun_manager();
     void* t = nm ? skg::field<void*>(nm, 0x70) : nullptr;
     return t && skg::readable(t, 0x230) ? t : nullptr;
@@ -251,12 +255,20 @@ static Res g_res[] = {
 };
 
 static uint32_t g_mode; // the game mode of the last tick: status / debug_add use its resources
+static bool g_host_role; // the last tick's session role was the host's
+// BUG-9277: a partner nation (civ_nations.cpp) makes civ_wallet active on the host also with the setting off; the host
+// then still shares its own money with the guests who play its nation (a guest with its own nation ignores it: its
+// civ_wallet is active on its side). Off: the host stops sharing (as BUG-9274's first build).
+static bool g_nation_share_fix = true;
+COOP_FIX("civ.nation_share", "BUG-9277", g_nation_share_fix,
+         "civ: the host shares its money with the guests who play its nation also when another player has a nation of their own");
 
 // rivals mode (space_rivalry.cpp): every player has its own Space budget, nothing is shared
 static bool own_budget(const Res& r)
 {
     return (r.mode == modes::kSpace && spaceext::rivals()) ||
-           (r.mode == modes::kCiv && civ_wallet::active()); // BUG-9259: every player's own Civ money
+           (r.mode == modes::kCiv && civ_wallet::active() && // BUG-9259: every player's own Civ money
+            !(g_nation_share_fix && g_host_role && !settings::on(settings::kCivOwnMoney))); // BUG-9277
 }
 
 void init(const SkHost* host, SkMod* mod)
@@ -305,6 +317,7 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
     if (now < g_away_until)
         mode = modes::kEditor; // tests: an editor visit as the tick sees it
     g_mode = mode;
+    g_host_role = s.role() == net::Role::Host;
     g_hold = g_elsewhere_fix && elsewhere && s.role() == net::Role::Client;
     if (s.role() == net::Role::None) {
         on_session_end(); // nothing changed offline is ever reported to a host (BUG-0049)

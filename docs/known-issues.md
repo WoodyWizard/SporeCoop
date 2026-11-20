@@ -437,3 +437,15 @@ anchor so other docs can link to it:
 * The host's own start is the game's wizard: the host has no name or colour page of its own (its colour stays the
   lobby's).
 * Ticket: BUG-9273
+
+
+## Own nations: no nation for a partner on a planet without a free city site (2026-11-20, feat/lineages-civ)
+<a id="issue-own-nation-no-site"></a>
+
+* What happens: with every player's own nation (BUG-9274) a partner who joins a Civilization planet whose city sites
+  are all founded gets no capital: the host's `coop.civ nations` says "<name>'s capital waits: no free site" and the
+  partner plays the host's nation (the shared split of 0.7.15).
+* Reproduce: a Civ save with all ten cities founded (cCivExpansion +0xB0 = 0, `coop.civ nations` "sites 10 left 0"),
+  a guest with a creature of its own joins.
+* Known: the capital needs a free native site (SpawnNextCity); Lineages had the same limit.
+* Ticket: BUG-9276

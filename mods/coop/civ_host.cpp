@@ -3,6 +3,7 @@
 // civ.cpp (C8 of 0.7.15, BUG-1164).
 #include "civ_internal.h"
 #include "civ_wallet.h"
+#include "civ_nations.h"
 
 namespace civ {
 
@@ -302,7 +303,7 @@ static void trade_tick(double now)
     g_last_trade = now;
     std::vector<std::pair<void*, uint8_t>> owned;
     for (auto& [city, o] : g_city_owner)
-        if (o != kShared && o != 0xFF)
+        if (o != kShared && o != 0xFF && nations::seat_of_faction(pol_of(city)) < 0) // (BUG-9274: the host nation's)
             owned.push_back({city, o});
     int pairs = 0, gain = 0;
     auto economic = [](uint8_t p) { return role(p) == 2; };
@@ -605,7 +606,10 @@ static void refund_build(uint8_t from, float paid, const char* why)
         return;
     void* pc = player_civ();
     float back = civlogic::refund_amount(paid, kRefundMax);
-    if (back > 0 && civ_wallet::host_refund(from, back)) { // BUG-9259: back into its own money
+    if (back > 0 && nations::refund(from, back)) { // BUG-9274: back into its own nation's money
+        g_n.build_refunds++;
+        g_build_refunded += back;
+    } else if (back > 0 && civ_wallet::host_refund(from, back)) { // BUG-9259: back into its own money
         g_n.build_refunds++;
         g_build_refunded += back;
     } else if (pc && back > 0 && o_AddMoney) {
@@ -651,8 +655,10 @@ void host_tick(double now)
     g_last_send = now;
     drop_foreign_selection();
     std::vector<uint8_t> players;
+    const auto with_nation = nations::nation_players(); // BUG-9274: they get none of the host nation's cities
     for (auto& p : C.sess->players())
-        players.push_back(p.id);
+        if (std::find(with_nation.begin(), with_nation.end(), p.id) == with_nation.end())
+            players.push_back(p.id);
     std::sort(players.begin(), players.end());
     bool roster_changed = players != g_split_for;
     claims_tick(); // E1 (BUG-1153)
@@ -728,6 +734,10 @@ void host_tick(double now)
     for (void* v : vehicles) {
         if (hv_find(v))
             continue;
+        if (nations::seat_of_faction(pol_of(v)) >= 1) { // BUG-9274: a player's own nation's vehicle is that player's
+            hv_add(v, nations::owner_of_faction(pol_of(v)));
+            continue;
+        }
         bool mine = pol_of(v) == ppol;
         uint8_t nearest = civlogic::kNpc; // (no player city: kept)
         if (mine && g_pending_owner < 0)
@@ -735,6 +745,7 @@ void host_tick(double now)
         uint8_t owner = civlogic::new_vehicle_owner(mine, g_pending_owner, nearest);
         hv_add(v, owner); // BUG-0154: never a live id, never 0
     }
+    nations::host_tick(now); // BUG-9274: the owners of the players' nations, their capitals, alliance and campaign
     g_cycle++;
     host_send_roads(now); // BUG-0494
     // Chunks that fit one packet (kMaxPacket): a larger message is dropped by the connection for
@@ -816,7 +827,7 @@ void host_tick(double now)
             net::Vec3 p = city_pos(city);
             w.f32(p.x); w.f32(p.y); w.f32(p.z);
             w.u32(pol_of(city));
-            w.u8(owner_of_city(city));
+            w.u8(nations::wire_owner(city, owner_of_city(city))); // (BUG-9274: 0xFC an away player's nation)
             w.f32(F<float>(city, kCityCapture)); // military capture progress (the meter over the city)
             w.u32(F<uint32_t>(city, kCityCapture + 4));
         }
@@ -870,7 +881,7 @@ void host_tick(double now)
 static const char* g_buy_fail = "";
 void* host_buy(void* city, int loco)
 {
-    void* civ = player_civ();
+    void* civ = nations::paying_nation(city); // BUG-9274: a player's own nation buys with its own money
     g_buy_fail = "no such city";
     if (!civ || !city)
         return nullptr;
@@ -921,7 +932,7 @@ void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay)
         return nullptr;
     thiscall<void>(a_SetBuildingModel, city, b, type);
     if (pay && g_fix_build_money) { // BUG-0613
-        void* civ = player_civ();
+        void* civ = nations::paying_nation(city);
         if (civ && !civlogic::can_pay(thiscall<float>(a_GetMoney, civ), vcall<float>(b, 0x5C / 4))) {
             g_build_fail = "not enough money";
             if (a_DestroyInstance)
@@ -943,7 +954,7 @@ void* build_in_city(void* city, uint32_t noun, const net::Vec3& pos, bool pay)
     }
     thiscall<int>(a_AddBuilding, city, b, 0);
     if (pay)
-        if (void* civ = player_civ())
+        if (void* civ = nations::paying_nation(city))
             thiscall<void>(a_SpendMoney, civ, vcall<float>(b, 0x5C / 4));
     return b;
 }
@@ -1121,6 +1132,7 @@ void host_command(uint8_t from, net::Reader& r)
             refund_build(from, paid, g_build_fail);
             return reject();
         }
+        nations::charge_build(city, paid); // BUG-9274: its own nation's money pays its own planner
     } else if (kind == kCmdSpecialty) { // BUG-0982: a guest's answer to the specialty question of its city
         host_specialty_answer(from, r);
         return;
@@ -1130,6 +1142,8 @@ void host_command(uint8_t from, net::Reader& r)
         int type = kind == 7 ? r.u8() : 2;
         void* city = host_city(ci); // (BUG-1053)
         void* pc = player_civ();
+        if (void* own = nations::nation_of_player(from)) // BUG-9274: a player's own nation buys / captures for itself
+            pc = own;
         bool on = kind == 6 ? g_fix_buy_city && o_CityBuy : g_fix_away_capture;
         if (!r.ok() || !on || !city || !pc || pol_of(city) == pol_of(pc) || !std::isfinite(price) || price < 0 ||
             type < 0 || type > 2) {

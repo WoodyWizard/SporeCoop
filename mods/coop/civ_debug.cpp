@@ -1,11 +1,14 @@
 // coop.civ: the Civ module's console command (tests and diagnostics); moved out of civ.cpp (C8 of 0.7.15,
 // BUG-1164).
 #include "civ_internal.h"
+#include "civ_nations.h"
 
 namespace civ {
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if (!a.empty() && a[0] == "nations") // BUG-9274 (civ_nations.cpp): nations [found | ally | relation]
+        return nations::debug(a);
     if (!a.empty() && a[0] == "shotprobe") // BUG-1322 (tests): the shot observer with a target that is no object
         return shot_probe();
     if (!a.empty() && a[0] == "shotobjs") // BUG-1322: shooters / targets of the host's shots that are no listed object

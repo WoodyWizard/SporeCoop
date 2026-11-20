@@ -10,6 +10,7 @@
 #include "start_choice.h"
 #include "lineage_cells.h"
 #include "cellsync.h"
+#include "civ_wallet.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"

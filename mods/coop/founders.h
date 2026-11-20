@@ -5,6 +5,7 @@
 // Lineages come with the phases that use them; they index the same seats.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -63,5 +64,65 @@ bool write_side(const std::string& planet_file, const wchar_t* suffix, const std
 bool model_ids(const std::string& planet_file, std::vector<uint32_t>& ids, std::string& err);
 bool load_guest_model(const std::string& planet_file, uint32_t id, std::vector<uint8_t>& data, std::string& err);
 bool store_guest_model(const std::string& planet_file, uint32_t id, const std::vector<uint8_t>& data, std::string& err);
+
+// BUG-9268 (Lineages port phase 5, from PR #196's founders::Roster): the founders of a stage, kept next to the planet's
+// save. Tribe: `<planet>.spo.duofounders`, one village per party seat that plays a species of its own. One change from
+// Lineages: an entry's index is the player's PARTY seat (party.h; seat 0 the host's village, the native player tribe),
+// not the order the villages were founded in, so a seat playing the host's species (no village of its own) leaves its
+// entry empty. Format DUO3 (Lineages' DUO1 / DUO2 are founder-ordered and not read): u32 'DUO3', u8 n (1..kMaxSeats),
+// n x {u32 species (the creature key instance the village was founded with), u32 faction (the village's political id,
+// cTribe +0x30), u64 player identity (0: not known)}. docs/re/tribe.md#tribe-own-villages.
+struct Founder {
+    uint32_t species = 0, faction = 0;
+    uint64_t player = 0; // identity.h
+    bool founded() const { return species && faction; }
+    bool operator==(const Founder&) const = default;
+};
+struct Roster {
+    std::array<Founder, kMaxSeats> entries{};
+    // one past the last founded entry
+    size_t seats() const
+    {
+        size_t n = 0;
+        for (size_t i = 0; i < entries.size(); ++i)
+            if (entries[i].founded())
+                n = i + 1;
+        return n;
+    }
+    int seat_of_faction(uint32_t faction) const
+    {
+        if (faction)
+            for (size_t i = 0; i < entries.size(); ++i)
+                if (entries[i].founded() && entries[i].faction == faction)
+                    return int(i);
+        return -1;
+    }
+    bool contains_faction(uint32_t faction) const { return seat_of_faction(faction) >= 0; }
+    bool operator==(const Roster&) const = default;
+};
+// every founded entry has its own species and faction, an identity is in one entry only; the host's entry (0) is founded
+// whenever another one is
+inline bool roster_valid(const Roster& v)
+{
+    if (v.seats() > 1 && !v.entries[0].founded())
+        return false;
+    for (size_t i = 0; i < v.entries.size(); ++i) {
+        const Founder& a = v.entries[i];
+        if (!a.founded() && (a.species || a.faction))
+            return false;
+        for (size_t j = i + 1; a.founded() && j < v.entries.size(); ++j) {
+            const Founder& b = v.entries[j];
+            if (b.founded() && (a.species == b.species || a.faction == b.faction || (a.player && a.player == b.player)))
+                return false;
+        }
+    }
+    return true;
+}
+enum class Stage { Tribe, Civilization };
+// false: none, unreadable or invalid
+bool read(const std::string& planet_file, Roster& out, Stage stage = Stage::Tribe);
+// written whole (a seat's village may be founded again after it was lost: its faction changes)
+bool record(const std::string& planet_file, const Roster& value, std::string& err, Stage stage = Stage::Tribe);
+std::string describe(const Roster& value);
 
 } // namespace founders
