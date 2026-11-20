@@ -38,6 +38,7 @@ struct Ctx {
     std::function<std::string(uint8_t)> name_of;
     std::function<void(uint8_t player)> appearance_changed; // rebuild that player's puppet
     std::function<void()> cell_rebuilt; // the own cell hatched again: move it next to a partner
+    std::function<uint32_t()> host_world; // guest (BUG-9267): the world the host plays (its save name crc), 0 unknown
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);

@@ -205,6 +205,37 @@ static void player_species_tick()
     H->log(M, SK_INFO, "creations: the world's player species %08X -> %08X (BUG-0508)", g_ps_from.instance, to.instance);
 }
 
+// BUG-9262 (Lineages BUG-9177, roadmap 1b): in the game the creature the player plays IS the player species: the key
+// above (cSpeciesManager +0xA4, read by PlayerSpecies 0x4DF490), the avatar, its family and its nest agree. A guest's
+// own creature is put on its avatar (apply_own_avatar, BUG-0517) and this key stayed the world's (the host's species):
+// the guest's game took its own nest family for another species and CreatureGame_NestHerdFor(1) pointed at the host's
+// nest. In Creature the key now follows the creature the avatar wears, on every game (the host's is its world's: no
+// change there). `coop.fix creature.own_player_species off`: the world's key (0.7.15.2).
+static bool g_own_ps_fix = true;
+COOP_FIX("creature.own_player_species", "BUG-9262", g_own_ps_fix,
+         "creature: the game's player species is the creature the player plays (its own nest, family and goals)");
+static unsigned g_own_ps_set;
+static void own_player_species_tick()
+{
+    if (!g_own_ps_fix || game::mode_id() != modes::kCreature)
+        return;
+    void* av = game::avatar();
+    uint32_t* k = player_species_slot();
+    if (!av || !k)
+        return;
+    const game::Key own = game::species_key(av);
+    if (!own.instance || (k[0] == own.instance && k[1] == own.type && k[2] == own.group))
+        return;
+    if (game::species_by_key(own) != game::species_profile(av))
+        return; // the avatar's species is not (yet) the manager's profile of that key
+    const uint32_t was = k[0];
+    k[0] = own.instance;
+    k[1] = own.type;
+    k[2] = own.group;
+    if (g_own_ps_set++ < 20)
+        H->log(M, SK_INFO, "creations: the game's player species %08X -> %08X, the creature played (BUG-9262)", was, own.instance);
+}
+
 // ---- bundles: a creation with its records ----
 static std::map<std::pair<uint8_t, uint8_t>, std::vector<uint8_t>> g_store; // host: (owner, kind) -> bundle
 static uint32_t g_sent_id[kKinds];                                             // what we sent of our own
@@ -1233,10 +1264,27 @@ static Key avatar_species_key()
     return {k[0], k[1], k[2]};
 }
 
+// BUG-9267: a guest that joins from the galaxy menu is in no world yet: its own creation's record of the HOST's world
+// (worlds.ini, BUG-0345) and a choice made in it apply already, so the first creature it reports is the one it will play
+// there. Before, it reported the world's species until the host's world had loaded, the host's party took the seat for
+// the host's species, the share hold let the world go before the seat's own nest (home_nests.cpp) and the guest loaded
+// the world twice. `coop.fix creations.join_world_record off`: the record of the world the guest is in (0.7.15.2).
+static bool g_join_record_fix = true;
+COOP_FIX("creations.join_world_record", "BUG-9267", g_join_record_fix,
+         "creations: a joining guest outside a world plays its own creation's record of the host's world (one world load)");
+static uint32_t record_world()
+{
+    const bool guest = C.sess && C.sess->role() == net::Role::Client && C.sess->connected();
+    if (g_join_record_fix && guest && !game::avatar() && C.host_world)
+        if (uint32_t h = C.host_world())
+            return h;
+    return modes::current_world();
+}
+
 // BUG-0638: the guest's explicit choice was made (or played) in this world; outside a world it holds
 static bool choice_here(int k)
 {
-    uint32_t w = modes::current_world();
+    uint32_t w = record_world();
     return !w || world_record(k, w) == g_choice[k].instance;
 }
 
@@ -1304,7 +1352,7 @@ Option mine(Kind k)
     }
     // BUG-0345: a guest's default is its own creation only in a world it played it in
     if (guest && g_guest_world_fix && !g_opts[k].empty()) {
-        if (uint32_t rec = world_record(k, modes::current_world()))
+        if (uint32_t rec = world_record(k, record_world())) // (BUG-9267: the host's world while joining)
             for (auto& o : g_opts[k])
                 if (o.key.instance == rec)
                     return o;
@@ -2483,6 +2531,10 @@ static void share_own(double now)
         return;
     refresh_options(now);
     uint8_t me = C.sess->my_id();
+    // BUG-9267: a guest outside a world sends nothing until it knows the host's world (the host's first state, about a
+    // second after the join): its first creature was the world's species, the host seated it with that one
+    if (g_join_record_fix && !is_host() && !game::avatar() && C.host_world && !C.host_world())
+        return;
     for (int k = 0; k < kKinds; k++) {
         Option o = mine((Kind)k);
         if (!o.key.instance)
@@ -3186,6 +3238,7 @@ void tick(double now)
     alias_tick(); // BUG-0200 (first: a key the avatar is about to play loses its alias before SetSpecies)
     apply_own_avatar();
     player_species_tick(); // BUG-0508
+    own_player_species_tick(); // BUG-9262 (Lineages BUG-9177)
     bar_tick(); // BUG-0358
 }
 
