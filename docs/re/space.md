@@ -1849,6 +1849,11 @@ Runtime findings of the wave 3 Space fixes (lane 6, GOG 2024):
   symboliser; really the out-of-line block of the cCollectableItems method 0x5970D0, called with a
   null `this` from the captain screen's update 0xF179E0), also with coop unloaded: the game's own,
   handled (BUG-0304, `SporeCoop::CollectableItems_5970D0` in overrides_dc04aee5.sym).
+  ~ superseded (2026-11-18): "handled" holds on Wine only; see [the captain's item list](#space-captain-items-null).
+  CORRECTION (2026-11-18, fix/w55-captain): on Windows the same fault is unhandled and ends the game (GitHub #203,
+  0.7.15.1, 5 crash reports of a guest, the rank badge and the Accept of an adventure mission). The list is null when
+  this game has no property list of the captain (not "every Space game without a GA captain"): always for a guest in
+  the host's world. Guarded since 0.7.15.3 (`game.captain_items`).
 * Test bots: play_space.Player.targets skips points under the badge, `play_space.captain_open` /
   `close_captain` detect and close the screen, `coop_space_finale.to_galaxy` closes it before the
   wheel (BUG-0303). Test: `space_captain`.
@@ -3348,3 +3353,70 @@ the old herd spawn (an epic).
   for 1 s gets the skip 0x66F6B6F outside the frame (log "back in the galaxy menu with its intro never ended";
   `coop.status` "menu intro ended at the return N"). Lab 20261118-135316: the host's panel shown at once (16 s into the
   session), 01_menu_host.jpg shows Play / Create / Share / Galactic Adventures / Co-op.
+
+## The captain's item list and why it is null (2026-11-18, fix/w55-captain)
+<a id="space-captain-items-null"></a>
+
+GitHub #203 (0.7.15.1, GOG 2024, Windows, a guest in the host's Space world, `-locale:ru-ru`): five crashes, all
+`0xC0000005 at 0x5971D4` (read of 0x4D04, ecx 0), unhandled, the main thread, return 0xF17A1E; one through
+SpaceGameUI_ShowCaptainScreen (the rank badge), one through the window manager (Accept of an adventure mission). Static
+analysis (Ghidra, GOG 2024), no lab run yet:
+
+* ✔ The captain panel `SporeCoop::CaptainPanel_Show` 0xFE7560 (thiscall(handler, mode) ret 4): mode 1 is the Galactic
+  Adventures mission screen (returns early), modes 0 (the rank badge) and 2 (Accept: `SporeCoop::CaptainPanel_OnMessage`
+  0xFE7CF0, control 0x075DD108, call 0xFE7F6F) build the full panel: `SporeCoop::CaptainItems_Palette` 0xF179E0 with
+  the player empire's captain key (cEmpire +0xC4) at 0xFE796E, then the stats `SporeCoop::CaptainPanel_Stats1..3`.
+  Both routes of the report end in the same call; the crash stacks show 0xFE7973 (the badge) and 0xFE7F74 (Accept).
+* ✔ 0xF179E0: `SporeCoop::CaptainProps_Get` 0x5BF1E0 (PropManager vt 0x2C: the property list of the creation, key
+  {instance, 0x00B1B104, group & 0xFFFFE5FF | 0xE500}, for a creature of group 0x40626200 the group 0x4062E500), then
+  `SporeCoop::CaptainItems_Load` 0x5BF2E0 (property 0xC339D5C7 names the items config; a new cCollectableItems,
+  LoadConfig, the unlocked keys of the arrays 0xBEAC70B6 / 0xC285E3DB), then `SporeCoop::CollectableItems_5970D0`
+  (list, 0) without a null check. The reporter's stack at the fault still holds the looked-up key: 292845D0 /
+  00B1B104 / 4062E500, and 0xC339D5C7.
+* ✔ The list is null when either is missing (the property list or the 0xC339D5C7 property; App::Property::GetKey is
+  null-safe, 0x6A1250). The game's other users take a null list as "no items": the palette filter's checks 0x5C6820 /
+  0x5C66E0 (null: available), 0x5BF710 and 0xFDBF80 (checked); only 0x5970D0 (callers 0xF17A19, 0xF16CED, 0xF125BB)
+  dereferences it. The rest of 0xF179E0 stores the list (null allowed) into the palette filter +0x10.
+* ✔ Whose list: the captain's property list is a resource next to the creation (written by `SporeCoop::CaptainProps_Save`
+  0x5BF220 into the creation's database; cEmpire 0xC32AE0 follows its property 0x0D8A4BC9 to a newer captain version).
+  The reporter's captain 292845D0 is one of the host's own creations ("the host's own creation 292845D0 ... is
+  7DB7E46D here" in the guest's log, then the species alias of BUG-0200). coop sends a host's own creation with the
+  model, metadata, pictures and creaturedata of its group (creations.cpp `records_from_game` keeps the creation's own
+  group and type only), not the 0x00B1B104 resource of group | 0xE500: **a guest in the host's world never has the
+  captain's property list**, so its list is always null. A game without that list for its own captain (the lab
+  fixture's 2905CC0C, a captain from "Name Your Captain" of a save without one) is null as well (BUG-0304, also with
+  coop unloaded).
+* ✔ The locale does not matter: nothing in 0x5BF1E0 / 0x5BF2E0 / 0x5970D0 reads a string; the lookup is by key.
+* ? Why the fault is handled on Wine (the game played on, the lab saw one caught fault per opening) and unhandled on
+  Windows is not known.
+* ✔ Next in the panel (reached once the items fault is gone): 0xFE7140 / 0xFE7250 / 0xFE7330 read
+  `cSpeciesManager::GetSpeciesProfile(captain)` without a null check (0xC02A14 via 0xC02A10, +0x644, +0x648): a captain
+  this game has no species of (captain 0, BUG-1111) faults there (BUG-1278). The reporter's captain has a profile
+  (the host's records are registered on the guest).
+* Fix (gamefixes.cpp): `game.captain_items` (BUG-0304) hooks 0x5970D0: a null list returns at once (the method is void;
+  an empty list does nothing either), the palette shows no item limits; `game.captain_stats` (BUG-1278) skips a stats
+  helper whose captain has no profile. `coop.captain` prints both counts (`items: none N fix=1 stats: skipped N fix=1`).
+  Tests: `space_captain` (the Accept route and the badge, no caught fault; `SPORE_FIX_OFF=game.captain_items` fails),
+  `space_captain_none` (captain 0; `SPORE_FIX_OFF=game.captain_stats` fails).
+  ~ superseded (2026-11-19): captain 0 reaches neither guarded fault in the lab (its item list and species profile are
+  found); BUG-1278's twin is `space_captain` (lab FAIL 20261119-112459, PASS 20261119-111406).
+* ✔ Runtime (lane 3, 2026-11-19, the `space` fixture's guest, captain 2905CC0C): every opening of the full panel
+  (the badge, Accept) reached the guard with a null list (`items: none` +1) and, with `game.captain_items` on, the
+  three stats helpers with a null species profile (`stats: skipped` +3): the fixture's captain has no species profile
+  in the guest's game either. With `game.captain_stats` off the badge logs the handled fault 0xC02A14 (call list
+  00FE718F ... 00F17D45 00FE7973). The probe on `SporeCoop::CaptainItems_Palette` after a click on Accept returns to
+  0xFE7973 (CaptainPanel_Show+0x413).
+* ✔ The mission screen of `coop.captain open` ("Mission Name", the placeholder description) has Decline 0x075DD100 and
+  Accept 0x075DD108 (`coop.ui where`); the captain panel holds hidden copies captioned "Decline" / "Accept", which
+  `coop.ui find` returns first (and an always shown "Decline" at the top left, 68 9). Accept opens the full panel
+  (Equipment, OK). Decline on this screen of no offer leaves the Space UI hidden behind the drive's message (a caption
+  with a check button), and after it neither the badge nor `coop.captain open` shows anything.
+* ✔ Handled or not on Wine depends on the route (lane 3, 2026-11-19): the badge click (the window manager's message
+  path) survived the 0xC02A14 fault; the next `coop.captain open` (SpaceGameUI_ShowCaptainScreen called from the
+  console, outside the message path) faulted at 0xC02A14 again inside CaptainPanel_Show and the guest ended with an
+  unhandled exception (crash report written). Inferred: a fault on the route through SpaceGameUI_ShowCaptainScreen
+  (one of the reporter's chains) is fatal on Wine as well. Why the first fault is caught on Wine: still not known (?).
+* Not done (BUG-1279): sending the host's captain property list with the host's own creation, so the guest's captain
+  screen shows the host captain's real item state; it changes the creations bundle and registers a resource under the
+  host's key, not a hotfix.
+
