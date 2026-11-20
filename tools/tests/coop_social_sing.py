@@ -21,6 +21,23 @@ pictures (key frames):
   --flock       the host summons its flock first (its pack: the game's Summon Flock), the pack stands by
   --walk        the other player walks next to the singer while it sings
   --to-partner  the host clicks the guest's creature instead of a Kook
+
+BUG-1346 (2026-11-20, fix/w60-dna), why three variants never judged or failed:
+* --to-partner was INCONCLUSIVE in every run since 0.7.15.1: the game starts no social game with a puppet (it runs
+  no AI to answer the click's stimulus, BUG-1241) and since 0.7.15.2 the click in the social stance does not even
+  pick the partner (it goes to the creature behind it, BUG-1250). The host's song is no precondition there: the
+  variant judges what the guest's creature plays on both games after the host's click and sing keys (printed
+  whether a song happened, e.g. with a Kook behind the partner).
+* at 10 fps (social_sing_own_lowfps) the camera drags of `aim` take 17 of the game's frames (1.7 s) and the test
+  read the screen point 0.5 s after each drag, while the camera still turned: the click hit the ground and the host
+  walked off (lab 20261120-041304, -214823, 0.7.15.2 -144132 / -134852: the host 1.5 to 30 m away, no relation
+  event, no song). The aim now waits for the game's frames after each drag and for the point to stand still, and
+  the host clicks the Kook again when no song came after 8 presses (a player clicks again).
+* the walk start 04866D8E (the start clip of the idle walk 04866DAB the game's own Creature_ChooseIdleAnim plays,
+  docs/re/creature.md) on the puppet was taken for a foreign animation when the own game's samples caught only the
+  loop: the start lasts less than a sample round (4 console reads) and fell into the unsampled 2 s after W went
+  down. The run's first 2 s of the own avatar now count, and a start clip counts as the own game's when its loop is
+  among them. Social animations stay foreign in any case.
 """
 import re
 import sys
@@ -28,7 +45,7 @@ import time
 
 import creations_state
 from harness import avatar_pos, waiter
-from coop_creature_partner_pass import aim
+from coop_creature_partner_pass import W, H, aim, targets
 from coop_creature_social import engage
 from twoinst import Checks, keyframe, set_stance, shot, start
 
@@ -36,8 +53,58 @@ KOOK = '065CB8AB'  # the fixture's Kook nest: a species that takes part in a soc
 FLAG = lambda k: k in sys.argv
 TO_PARTNER, REVERSE, OWN, FLOCK, WALK = (FLAG(k) for k in ('--to-partner', '--reverse', '--own', '--flock', '--walk'))
 IDLE = {'02481DE5', '027844AD'}  # the fixture creature's stand / idle animations
+# BUG-1346: a clip's start -> its loop (idle_walk_lookat, docs/re/creature.md: Creature_ChooseIdleAnim): the own game
+# played the start when it played the loop; a sample round can miss the short start
+CLIP_START = {'04866D8E': '04866DAB'}
+OLD = '--old' in sys.argv  # BUG-1346: the test before its fix (aim without waiting, one click, the old judgement)
 
 wait = waiter(step=0.5)
+
+
+def foreign(shown, own, base):
+    """animations a puppet showed that the player's own game did not play (BUG-1346: a start clip whose loop the own
+    game played counts as played)"""
+    own = set(own) | set(base)
+    return {a for a in set(shown) - own if CLIP_START.get(a) not in own}
+
+
+def frames(con, n):
+    """wait n of the game's frames (a camera drag is 17 frames, a click 6: at 10 fps 1.7 s and 0.6 s)"""
+    con.call(f'wait.frames {int(n)} {max(5000, int(n) * 1000)}')
+
+
+def aim_settled(con, key):
+    """aim (coop_creature_partner_pass) that waits for the game: every camera drag done (its frames) before the
+    screen point is read, and the point standing still over 4 frames before it is used; (dist, x, y) or None"""
+    if OLD:
+        return aim(con, key)
+    o = None
+    for _ in range(20):
+        o = targets(con).get(key)
+        if o and abs(o[1] - W // 2) < 70 and 150 < o[2] < H - 220:
+            frames(con, 4)
+            o2 = targets(con).get(key)
+            if o2 and abs(o2[1] - o[1]) <= 12 and abs(o2[2] - o[2]) <= 12:
+                return o2
+            continue  # (the camera or the creature still moves)
+        dx = 380 if not o else max(-300, min(300, int((o[1] - W // 2) * 0.6)))
+        con.call(f'drag {W // 2} {H // 2} {W // 2 + dx} {H // 2} right')
+        frames(con, 20)
+        time.sleep(0.2)
+    return o if o and 20 < o[1] < W - 20 and 90 < o[2] < H - 170 else None
+
+
+def click_target(host, target):
+    """the host's click on target in the social stance (the camera turned onto it first); True when clicked"""
+    for _ in range(6):
+        o = aim_settled(host, target)
+        if o:
+            host.call(f'click {o[1]} {o[2]}')
+            if not OLD:
+                frames(host, 8)  # (the click is pressed and released over 6 frames)
+            time.sleep(1.0)
+            return True
+    return False
 
 
 def hold(con, vk, t=0.3):
@@ -136,20 +203,17 @@ def run(host, guest, ck, gid):
     if REVERSE:
         engaged = bool(kook) and engage(guest, f'n{kook}')
     else:
-        engaged = False
-        for _ in range(6):
-            o = aim(host, target) if kook or TO_PARTNER else None
-            if o:
-                host.call(f'click {o[1]} {o[2]}')
-                time.sleep(1.0)
-                engaged = True
-                break
+        engaged = bool(kook or TO_PARTNER) and click_target(host, target)
     ck(engaged, f'the {sname} engaged {target} in the social stance')
     if WALK:
         other.call('key w down')
     sung = {}
     t_sing = time.time()
-    for _ in range(24):  # the social game starts a moment after the click (the Kook's answer): a player presses again
+    for i in range(24):  # the social game starts a moment after the click (the Kook's answer): a player presses again
+        if i in (8, 16) and not REVERSE and not OLD and engaged:
+            # BUG-1346: no song after 8 presses: the click missed (or the Kook walked off): a player clicks again
+            print(f'  (no song after {i} presses: the host clicks {target} again)', flush=True)
+            click_target(host, target)
         hold(singer, 0x31)
         sample(1.5, probes, sung)
         if social & set(sung.get('singer_avatar', [])):
@@ -162,7 +226,11 @@ def run(host, guest, ck, gid):
     print(f'  (the {sname} sang: {sang}, after {time.time() - t_sing:.1f} s)')
     print('  while singing:', {k: sorted(set(v)) for k, v in sung.items()})
     print(f'  the {sname}\'s game: ' + singer.call('coop.npc cur')['out'].replace('\n', ' | ')[:300], flush=True)
-    if not sang:
+    if not sang and TO_PARTNER and not OLD:
+        # BUG-1346: no social game with a partner (BUG-1241: a puppet runs no AI to answer; BUG-1250: the click in the
+        # social stance goes to the creature behind the partner): the guest's side is judged without a song
+        print('  (no social game with the partner, as the game and BUG-1250 have it: the guest\'s side judged without a song)')
+    elif not sang:
         ck.faults(host=host, guest=guest)
         return ck.inconclusive(f'the {sname}\'s creature never sang in 40 s (the social game did not start)')
     print(f'  (the {oname}\'s game shows the {sname} singing: {bool(social & set(sung.get("other_puppet_of_singer", [])))}; BUG-1244)')
@@ -170,13 +238,16 @@ def run(host, guest, ck, gid):
        f"the {oname}'s own creature does not sing with the {sname} ({sorted(social & set(sung.get('other_avatar', [])))})")
     ck(not (social & set(sung.get('singer_puppet_of_other', []))),
        f"the {sname}'s game does not show the {oname} singing ({sorted(social & set(sung.get('singer_puppet_of_other', [])))})")
-    extra = set(sung.get('singer_puppet_of_other', [])) - set(sung.get('other_avatar', [])) - base
+    if OLD:
+        extra = set(sung.get('singer_puppet_of_other', [])) - set(sung.get('other_avatar', [])) - base
+    else:
+        extra = foreign(sung.get('singer_puppet_of_other', []), sung.get('other_avatar', []), base)
     ck(not extra, f"the {sname}'s game shows the {oname}'s creature only with animations its own game plays ({sorted(extra)})")
 
     # 2. the other player runs off
-    ran = {}
+    ran, ran0 = {}, {}
     other.call('key w down')
-    sample(2.0, probes, {})
+    sample(2.0, probes, ran0)  # (the walk's start: the puppets follow; only the own avatars' samples count, below)
     sample(4.0, probes, ran)
     keyframe('other_runs', f"the {oname} runs off: its creature runs on both games, no sing pose, no rings", settle=0)
     other.call('key w up')
@@ -185,7 +256,11 @@ def run(host, guest, ck, gid):
        f"the {sname}'s game shows the {oname} running, not singing ({sorted(set(ran.get('singer_puppet_of_other', [])))})")
     ck(not (social & set(ran.get('other_avatar', []))), f"the {oname}'s own creature runs, not sings")
     own_all = set(ran.get('other_avatar', [])) | set(sung.get('other_avatar', []))  # (a walk start variant may fall between samples)
-    extra = set(ran.get('singer_puppet_of_other', [])) - own_all - base
+    if not OLD:  # BUG-1346: the own avatar's first 2 s of the run count too (the puppet shows them later)
+        own_all |= set(ran0.get('other_avatar', []))
+        extra = foreign(ran.get('singer_puppet_of_other', []), own_all, base)
+    else:
+        extra = set(ran.get('singer_puppet_of_other', [])) - own_all - base
     ck(not extra, f"while the {oname} runs the {sname}'s game shows it with its own animations only ({sorted(extra)})")
 
     # 3. later

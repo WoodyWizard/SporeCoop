@@ -201,9 +201,19 @@ def run(host, guest):
         time.sleep(3)
 
     # ---- 1. a kill by the guest
-    prox = proxies(guest)
-    cand = sorted((n[3], i) for i, n in npcs(host).items()
-                  if i in prox and not n[4] and n[2] > 0 and n[1] != fam)
+    # The guest's mirrors of the host's NPCs come with the host's first NPC states after the guest's load: a warm
+    # reset's settle ends when both games' time runs, before them (run 20261120-041304: the guest in Creature at
+    # 09:25:38.567 with 0 mirrors, 21 at 09:25:39.122; the test read the list once in between: "host NPCs mirrored on
+    # the guest (0)"). Wait for the state (at most 30 s), as coop_team.py does, instead of reading once (BUG-1348).
+    t0 = time.time()
+    while True:
+        prox = proxies(guest)
+        cand = sorted((n[3], i) for i, n in npcs(host).items()
+                      if i in prox and not n[4] and n[2] > 0 and n[1] != fam)
+        if cand or time.time() - t0 > 30:
+            break
+        time.sleep(0.5)
+    print(f'  {len(prox)} mirrors on the guest after {time.time() - t0:.1f} s', flush=True)
     ck(bool(cand), f'host NPCs mirrored on the guest ({len(cand)})')
     nid = cand[0][1] if cand else None
     if nid:
@@ -228,9 +238,14 @@ def run(host, guest):
     # ---- 2. an NPC notices the partner like the player
     pup = re.search(r'puppet=([0-9A-F]{8})', host.call('coop.status')['out'])
     pup = int(pup.group(1), 16) if pup else 0
-    prox = proxies(guest)
-    far = sorted((-n[3], i) for i, n in npcs(host).items()
-                 if i in prox and not n[4] and n[1] != fam and n[3] > 45 and i != nid)
+    t0 = time.time()
+    while True:  # (the mirrors of the far NPCs may come a moment after the near ones: the same wait, at most 10 s)
+        prox = proxies(guest)
+        far = sorted((-n[3], i) for i, n in npcs(host).items()
+                     if i in prox and not n[4] and n[1] != fam and n[3] > 45 and i != nid)
+        if far or time.time() - t0 > 10:
+            break
+        time.sleep(0.5)
     ck(bool(far) and pup, f'an NPC far from the host to stand next to ({len(far)})')
     if far and pup:
         fid = far[-1][1]  # the nearest of those farther than 45 m

@@ -9860,3 +9860,15 @@ total; own DNA, the guest's own DNA grew by the host's gain (waited up to 4 s). 
 coop_dna_notice.py; coop_dna_resend.py compares with the guest's settled own total. Suite variants with `--shared`:
 dna_away_shared, dna_resend_shared, dna_notice_shared. A guest's own log line is `dna: own a -> b, bar x -> party y
 cause=c` (coop_dna_notice.py LEDGER reads both forms).
+
+## Final check 0.7.16: waits instead of single reads (2026-11-20, fix/w60-dna)
+<a id="testing-final-0716-waits"></a>
+
+* creature_kills (BUG-1348): after a warm reset the guest's NPC mirrors come a moment after the settle: wait for them.
+* creature_social_prompts (BUG-1350): a social game fails at the end of its prompt list, not at a wrong answer: answer
+  every prompt until the host counts the fail.
+* social_sing (BUG-1346): at 10 fps a camera drag is ~17 game frames: `wait.frames` after it and a still target
+  before a click; a walk's start clip 04866D8E belongs to its loop 04866DAB; the host cannot start a social game with a
+  puppet (BUG-1241, BUG-1250), so social_sing_partner judges the guest's side without a song.
+* tag_camera (BUG-1352): a close creature's shaded back is not `red` (r > 140): `body()` bridges it.
+* tag_cinematic (BUG-1353): a guest's CRG_ClaimNest often ignores Enter: EndCinematic ends it, else INCONCLUSIVE.

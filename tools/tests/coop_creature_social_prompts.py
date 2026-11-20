@@ -8,8 +8,8 @@ Real engagement on the guest (the social stance, a click on a Kook); the answers
 its key / bar path sends them (`coop.social act`, `coop.social answer` for an ability of another kind). Checked:
 1. an answer before the Kook's first prompt does not impress it (the host's Kook, the guest's mirror);
 2. the guest's game shows the prompt: the Kook's mirror plays the prompt ability's animation;
-3. an answer of another kind (a combat ability) does not impress it, the game fails (the host's count) and the
-   mirror stays not impressed;
+3. an answer of another kind (a combat ability) does not impress it, the game fails (the host's count) at the end
+   of its prompt list (every further prompt gets the same wrong kind) and the mirror stays not impressed;
 4. engaged again, the guest's social ability as the answer to the prompt impresses the Kook on both games.
 social.prompts off failed (retired in 0.7.15, BUG-1138: FAIL run 20261104-112706:creature_social_prompts) (checks 1-3)."""
 import re
@@ -29,6 +29,12 @@ def abilities(con):
 def cur_anim(guest, nid):
     m = re.search(r'^cur %d anim=([0-9A-F]{8})' % nid, guest.call('coop.npc cur')['out'], re.M)
     return m.group(1) if m else None
+
+
+def game_prompts(host, nid):
+    """the number of prompts of the host's social game with NPC #nid (`coop.social games`), 0: no game on"""
+    m = re.search(r'^game player=\d+ npc=%d idx=-?\d+ prompts=(\S*)' % nid, host.call('coop.social games')['out'], re.M)
+    return len([a for a in m.group(1).split(',') if a]) if m else 0
 
 
 def impressed_both(host, guest, nid):
@@ -110,11 +116,31 @@ def main():
     # 3. an answer of another kind
     if not any(impressed_both(host, guest, nid)):
         f0 = num(r'prompt_fails=(\d+)', social(host), 0)
+        n_prompts = game_prompts(host, nid)
         guest.call(f'coop.social answer {nid} {other[0][1]:X}')
-        time.sleep(4)
+        # The game fails at the end of its prompt list with the meter not full (as the native session,
+        # docs/re/creature.md#creature-social-prompts), not at the wrong answer: a Kook of 2 or more rounds (an alpha
+        # has one more) sends its next prompt 1.5 s after it (runs 20261118-103216 #58, 20261120-041304 #215:
+        # prompts_sent +1, games=1 4 s after the answer, the fail came later). The fixed 4 s wait saw only 1-round
+        # games end: every further prompt of the game gets the same wrong kind until the host's game is over (at most
+        # 15 s per prompt left: its 13 s open time + 1.5 s), then the checks as before (BUG-1350).
+        pin = num(r'prompts_in=(\d+)', social(guest), 0)
+        wrong, t0 = 1, time.time()
+        while time.time() - t0 < 4 + 15 * max(1, n_prompts):
+            time.sleep(0.3)
+            if num(r'prompt_fails=(\d+)', social(host), 0) > f0 or not game_prompts(host, nid):
+                time.sleep(1.0)  # (the result reaches the guest's mirror)
+                break
+            gs = social(guest)
+            if num(r'prompts_in=(\d+)', gs, 0) > pin and num(r'prompt_npc=(-?\d+)', gs, -1) == nid:
+                pin = num(r'prompts_in=(\d+)', gs, 0)
+                time.sleep(0.5)
+                guest.call(f'coop.social answer {nid} {other[0][1]:X}')
+                wrong += 1
         imp = impressed_both(host, guest, nid)
         hs = social(host)
-        print(f'  #{nid} after an answer of another kind: impressed {imp}; host {hs.strip()}', flush=True)
+        print(f'  #{nid} after {wrong} answer(s) of another kind to a game of {n_prompts} prompt(s) '
+              f'({time.time() - t0:.1f} s): impressed {imp}; host {hs.strip()}', flush=True)
         ck(not imp[0] and not imp[1], f'an answer of another kind does not impress the Kook (host, guest: {imp})')
         ck(num(r'prompt_fails=(\d+)', hs, 0) > f0, 'the host counts that social game as failed')
     # 4. engaged again (`coop.social act` engages it as the click does: the click's camera sweep is slow), the
