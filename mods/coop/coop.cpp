@@ -12304,11 +12304,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                SAY("not possible here");
                                return 1;
                            }
-                           uint8_t& da = skg::field<uint8_t>(g_creature_game, 0xDA);
-                           uint8_t da0 = da;
-                           da = 1;
+                           // +0xDA (the creature game's base +0xDE) stays set, as the stage-end command leaves it: back
+                           // from the editor the stage's return (CreatureGame_ReturnStateMachine, state 6) sees it and
+                           // calls 0xD3AEA0 (message 0x533535DD with the avatar: the stage's end), state 0xC. Cleared
+                           // again, the editor's return is a plain evolution (what `mate` does)
+                           skg::field<uint8_t>(g_creature_game, 0xDA) = 1;
                            o_CreatureGameMsg(g_creature_game, 0x4471C60u, nullptr);
-                           da = da0;
                            skg::vcall<void>(mm, 0x18 / 4, 0x445F729u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
                            SAY("the stage-end request and 0x445F729 sent (brain level %d, editor-pending flag %d)\n",
                                skg::vcall<int>(game::avatar(), 0xD8 / 4), evo_flag_now());

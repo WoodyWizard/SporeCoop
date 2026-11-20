@@ -5417,3 +5417,15 @@ and setter (vt 0xD8 / vt 0xDC).
   bar is the timeline's scroll bar, not the stage's progress. So the QA Samuth saves are not in the state where the
   stage-end editor leads to Tribe; a save that saw "Your brain is fully grown" (a Creature start at a low brain level
   and `coop.dna add 3000`, as the lab fixture did) is the next thing to try.
+* ✔ SOLVED (later the same day, Ghidra on TITAN): the stage's end is decided when the game comes back from the editor.
+  `CreatureGame_ReturnStateMachine` 0xD43DE0, state 6 (the return from the editor): if the creature game's byte
+  base+0xDE (g_creature_game +0xDA in coop.cpp) is set it calls **0xD3AEA0** (sends message **0x533535DD** with the
+  avatar to the listeners of [0x169E294]+0xBC: the stage's end) and goes to state 0xC; else the return is a plain
+  evolution (the baby game). The stage-end command (0x6455B55, enabled at brain level 4) sets that byte and leaves it
+  set; `coop.vote mate` cleared it right after its request, so its "done" was an evolution. `coop.vote tribe` now
+  leaves it set: after "done" the game played "Congratulations! You are about to enter the Tribal stage." and, after
+  its check, loaded the Tribe stage with the player's village at its old nest (images/stage4_crossing_tribal_offer.png,
+  images/stage4_crossing_tribe_intro.png). Also: the request's +0x1C (return mode) is the current mode (Creature); the
+  editor always comes back to Creature first. 0x445F729 is the cinematic manager's "cinematic done" message
+  (cCinematicManager_HandleMessage, cPlayer::HandleCoreMessage), not part of the stage end. The bottom bar of History
+  is the timeline's scroll bar.

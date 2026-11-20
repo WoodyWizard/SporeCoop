@@ -1,14 +1,14 @@
 ---
 id: BUG-9278
 title: Galaxy planet: a party that ends its stage moves on into the planet's next era (the others keep theirs)
-status: open
+status: fixed
 kind: feature
 stage: all
 reported: 2026-11-19
 source: owner 2026-11-19 (step 4)
 role: host
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-alpha
 commits:
 tests: tools/tests/galaxy_server_check.py
@@ -32,7 +32,9 @@ the era's host. Switch `galaxy.party_stage_end`. Only the Creature stage's end s
 ## Verification
 Server: tools/tests/galaxy_server_check.py (11 checks: split, the era handed to a player who stays, crossings never
 listed, entered or stored, ARRIVE renamed and joined). Live (TITAN 2026-11-19): the split and the warm crossing host
-seen; the native Tribe start in a crossing and ARRIVE not seen yet (needs a test save at the last brain level).
+seen; then the whole crossing (TITAN 2026-11-19 22:24): the host's party crossed, played the native Tribe start
+and arrived as Samuth (Tribe), stored by the server, while the other party kept Samuth (Creature). Not in game yet: a
+party of 2+, a guest's party crossing whole, arriving where the next era has a host.
 
 ## History
-- 2026-11-19: opened; server and game sides built on feat/lineages-alpha (open: the whole crossing in game).
+- 2026-11-19: opened; server and game sides built on feat/lineages-alpha; the whole crossing seen in game.

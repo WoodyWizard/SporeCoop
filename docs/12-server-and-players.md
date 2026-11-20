@@ -1449,3 +1449,11 @@ keeps its species and gets its village, decisions 4, 5 and 14).
   game's "ready to form a tribe" state is still to be reached in a test game (docs/re/creature.md#creature-tribe-ready-test).
 * ~ Seen once: the crossing's host logged "sending the world to Pandize 2" and "player 1 left" 40 s after the split
   (the old session's partner still in its list of remotes when the editor returned); the partner never joined it.
+* ✔ The whole crossing in game (TITAN 2026-11-19 22:15-22:24, QA 8 hosting Samuth (Creature), QA 9 another party):
+  QA 8's stage end (`coop.vote tribe`, the game's own stage-end request) split its party into its crossing, QA 9 took
+  Samuth (Creature) over in place; after the editor QA 8's game played the Tribal stage offer and loaded Tribe with its
+  village at its old nest; 10 s later ARRIVE made the crossing Samuth (Tribe) ("arrived from its crossing and hosts
+  it", no reload) and its first upload stored Samuth (Tribe) (5454 KB) beside Samuth (Creature), which QA 9 kept
+  hosting and saving. Pictures: images/stage4_crossing_tribal_offer.png, images/stage4_crossing_tribe_intro.png.
+  Not run in game yet: a party of two or more crossing together, a guest's party crossing, arriving where the next era
+  already has a host (each is covered by the server checks only).
