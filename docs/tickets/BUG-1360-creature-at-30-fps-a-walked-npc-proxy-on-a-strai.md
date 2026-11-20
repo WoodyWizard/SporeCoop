@@ -49,3 +49,4 @@ Waiting for the night diagnostic run (no game today, owner rule).
 ## History
 - 2026-11-20: opened from the 0.7.16 final check (fix/w60-misc): analysis of the two failing runs' tracks; frame-rate
   dependent, not a 0.7.16 regression by the history; open.
+- 2026-11-20 (orchestrator): not a 0.7.16 regression (83-84% with the same idle on older branches); the cause needs the extended walk track from a diagnostic run. Planned for 0.7.17, does not block 0.7.16.
