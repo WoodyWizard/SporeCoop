@@ -217,6 +217,8 @@ struct GMember {
     int hold_item = 0;              // BUG-0971: the item the host's member holds in that hold (kind 12), 0 unknown
     double hold_play_at = -1e9;     // BUG-0968: when hold_try last started the host's hold animation on the mirror
     double hold_end_at = -1e9;      // the host's last end (reliable): an older start overtaking it is no new hold
+    double hold_set_at = 0;         // BUG-1347: when hold_try (or its retry) attached the item for a bound hold, 0 none
+    uint8_t hold_retries = 0;       // BUG-1347: the attaches tried again for that bind
     uint32_t relayed_anim = 0;      // BUG-0936: the last animation the relay (kinds 2 / 3 / 10) played on it
 };
 
@@ -324,6 +326,7 @@ void* member_mirror(uint16_t id);
 // (10), the phase (14 / 15) and the tracks (16), the theme (4-6) and party music (7 / 8): diagnostics, `coop.tribe anims`
 struct AnimStats {
     uint32_t hold_sent = 0, hold_rx = 0, hold_bound = 0, hold_item_sets = 0, hold_anim_plays = 0, hold_queued = 0;
+    uint32_t hold_retried = 0; // BUG-1347
     uint32_t anim_relay_sent = 0, anim_relay_played = 0, anim_relay_failed = 0, anim_relay_rx = 0, anim_snap_played = 0;
     uint32_t air_sent = 0, air_rx = 0, air_placed = 0, air_landed = 0;
     uint32_t idle_sent = 0, idle_refreshed = 0, idle_played = 0, stale_cut = 0;
@@ -398,12 +401,14 @@ extern bool g_hold_item_fix;
 extern bool g_hold_anim_fix;
 extern bool g_hold_queued_fix;
 void hold_try(GEntry& e, double now);
+// BUG-0992: the pending tracks of animation `cur` ended with the game's own call (the attach binds the hold to them first)
+bool clear_pending_same(void* c, uint32_t cur);
 
 // tests (BUG-0968 / BUG-0970): the last hold events of the guest's mirrors (`coop.tribe holdtrace [id]`)
 struct HoldEv {
     double t;
     uint16_t id;
-    char what; // S host start rx, E host end rx, T bound by hold_try, t hold_try miss (cur), Q bound in the mirror's current animation, W pending tracks ended (BUG-0992), O own hold seen, C own cut, M 1.5 s end, R relay played, H hand set by `coop.tribe hand` (tests), B a hold of that mirror's hand begins this frame (tests, 3 s after H)
+    char what; // S host start rx, E host end rx, T bound by hold_try, t hold_try miss (cur), Q bound in the mirror's current animation, W pending tracks ended (BUG-0992), O own hold seen, C own cut, M 1.5 s end, R relay played, H hand set by `coop.tribe hand` (tests), B a hold of that mirror's hand begins this frame (tests, 3 s after H), A the attach of a bound hold tried again (BUG-1347)
     uint32_t a, b;
 };
 

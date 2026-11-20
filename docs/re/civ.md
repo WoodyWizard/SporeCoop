@@ -2728,3 +2728,16 @@ BUG-1329, on top of [civ-own-arrival](#civ-own-arrival). Code: mods/coop/civ_arr
   planner's copy stays the second way. Off: the Tribe tag as before (the twin civ_late_arrival_tag_off).
 * Negative: the result of a guest's own Tribal Outfitter (designs.cpp, in Tribe) must keep the Tribe tag: there the
   listener's +0x2F8 copy is the way its result comes back (0xCDCC90).
+
+## Citizens exist near the camera only; NPC city specialties (2026-11-20, fix/w60-tribe)
+<a id="civ-citizens-camera"></a>
+
+BUG-1343. GOG 2024, lab 20261120-041304 civ_own_arrival (logs, key frames), no new disassembly.
+* ✔ (runtime) A game has citizen objects of one city only, the citizen manager's (mgr +0xAF0, #civ-own-species): with
+  the guest's camera showing the bought city at the horizon (key frame screen point (768, 207)) the guest's game had
+  none of its citizens for 31 s while the host's (camera close) had 19. A test counting citizens must first bring each
+  game's camera onto the city until `coop.civ citizens` says `mgr city=<that city>`.
+* ✔ (runtime) The NPC cities' specialties (+0x540) are the planet's and differ from run to run (the same fixture planet:
+  the city nearest the capital military in some runs, religious in others). A vehicle bought in a city is of its
+  specialty's design id, and the guest's vehicle editor at its Civ arrival is the capital's specialty's: a test that
+  needs a city where that design applies sets one with the game's own `cCity_SetSpecialty` 0xBE7520 when none has it.

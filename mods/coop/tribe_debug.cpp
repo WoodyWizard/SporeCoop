@@ -1398,7 +1398,7 @@ std::string debug(const std::vector<std::string>& a)
                " sent=" + std::to_string(g_anim.phase_sent) + " rx=" + std::to_string(g_anim.phase_rx) + " set=" + std::to_string(g_anim.phase_set) + " unlooped=" + std::to_string(g_anim.phase_unlooped) +
                " last_off=" + std::to_string(g_phase_last_off) + "\ntracks fix=" + std::to_string((int)g_phase_tracks_fix) +
                " sent=" + std::to_string(g_anim.tracks_sent) + " rx=" + std::to_string(g_anim.tracks_rx) + " set=" + std::to_string(g_anim.tracks_set) + "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_anim.hold_sent) + " rx=" + std::to_string(g_anim.hold_rx) +
-               " bound=" + std::to_string(g_anim.hold_bound) + " item_sets=" + std::to_string(g_anim.hold_item_sets) + " anim_plays=" + std::to_string(g_anim.hold_anim_plays) + " queued=" + std::to_string(g_anim.hold_queued) +
+               " bound=" + std::to_string(g_anim.hold_bound) + " item_sets=" + std::to_string(g_anim.hold_item_sets) + " anim_plays=" + std::to_string(g_anim.hold_anim_plays) + " queued=" + std::to_string(g_anim.hold_queued) + " retried=" + std::to_string(g_anim.hold_retried) +
                "\ntheme sent=" + std::to_string(g_anim.theme_sent) + " rx=" + std::to_string(g_anim.theme_rx) + " played=" + std::to_string(g_anim.theme_played) +
                "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_anim.party_sent) + " rx=" +
                std::to_string(g_anim.party_rx) + " played=" + std::to_string(g_anim.party_played) + " stopped=" + std::to_string(g_anim.party_stopped) + " outside=" + std::to_string(g_party_stops_outside) +

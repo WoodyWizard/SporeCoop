@@ -4804,3 +4804,33 @@ BUG-1335. GOG 2024, Ghidra (private project) and the guest log of lab 20261119-2
   `coop.tribe handbone [id]`, `hand_race [owner]`, `hand_plant <id> [item]` (tests).
 * ~ Open: why the born mirror of BUG-1319 ends bound to the host's chief at a world's opening (the nearest-bind) is
   still not checked; this fault needs no such bind (any new member made chief soon enough).
+
+## A guest's hold attached right after its animation start does not start (2026-11-20, fix/w60-tribe)
+<a id="tribe-hold-retry"></a>
+
+BUG-1347. GOG 2024, the guest hold traces (`coop.tribe holdtrace`) of five tribe_chief_still FAILs, no new disassembly.
+* ✔ (traces) Each 1.0-1.4 s stretch with the chief's staff in the hand on the host only ended the same way: the guest's
+  `hold_try` attached the item (T with hold 0, SetHandheldItem) in the tick it started the host's animation on the copy
+  (P) or a relayed restart was played (R / D); the hold modifier never started until the host's once-a-second resend
+  bound it again (T, then O 0.02 s later). Lab 20261120-041304, 20261119-214823, 20261117-154911, 20261113-060910 (x2).
+* ~ (inferred from #tribe-anim-queued-start) the attach binds to a pending track of the current id first; a start of
+  the same frame is not the playing track yet and the modifier's tick ends it.
+* ~ Open: in three of them the copy's gesture had ended for its idle 0.6 s after a resend (M) while the host's chief
+  still held it; why the copy's track ended there is not known (kind 15 carries the host's loop / passes).
+* Fix `tribe.hold_retry` (tribe.cpp held_items_tick): an attach whose hold has not started 0.3 s later, while the copy
+  draws the bound animation and holds the item, is made again (pending starts of that id ended first), at most twice
+  per bind; hold event `A`, `coop.tribe anims` hold `retried=`.
+
+## The host's baby for a guest's unanswered ask (2026-11-20, fix/w60-tribe)
+<a id="tribe-baby-ask-owner"></a>
+
+BUG-1345. GOG 2024, code reading and the lab log of 20261120-041304 tribe_kid_species.
+* ✔ A guest's purchase at its hut gives the host's game a baby either from the relayed hut effect's own message (5.2 s
+  after the click, the buyer known: `baby_call(stage, p, buyer)`) or, when its game made none for the guest's CMD_BABY
+  ask within 4 s, from `baby_tick`. That second path named no owner at the birth, so tribe.birth_species gave the
+  tribe's species; with tribe.kid_species the kid kept it until grown up on the host while the guest's mirror wore the
+  guest's creature. The FAIL saw the baby 9.1 s after the click (5.2 + 4 s), every PASS 5.0-7.1 s.
+* Fix `tribe.ask_baby_species`: baby_tick passes the asking guest. A baby the host's game made from a relayed effect it
+  did not note (no `bought`) and paired with an ask later is still named afterwards (not seen in a lab run).
+* Test path: `coop.fix effects.other_stages off` on both games makes every guest baby come through baby_tick
+  (tribe_birth_ask, also tribe_guest_baby_noeffects).

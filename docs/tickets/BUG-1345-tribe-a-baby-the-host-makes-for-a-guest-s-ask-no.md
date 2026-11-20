@@ -15,6 +15,7 @@ tests: tribe_birth_ask, tribe_birth_ask_off (twin), tribe_kid_species
 signature:
 docs:
 related: BUG-1299, BUG-1313, BUG-0671, BUG-0824
+switch: tribe.ask_baby_species
 ---
 
 ## Report

@@ -272,7 +272,7 @@ static void send_member_holds()
 // behind the running one (a relayed restart of a gesture) got the hold, whose tick (0xC11240) ends it while that track
 // does not play. When a pending track has the current id, the pending tracks are cleared with the game's own call
 // (0xA02B00, as CreaturePlayAnim does for its `a`): the mirror goes on in the running instance, the hold binds to it.
-static bool clear_pending_same(void* c, uint32_t cur)
+bool clear_pending_same(void* c, uint32_t cur)
 {
     uint8_t* ac = has_body(c) ? F<uint8_t*>(c, 0xB54) : nullptr;
     uint8_t* st = ac && skg::readable(ac + 0x184, 4) ? *(uint8_t**)(ac + 0x184) : nullptr;
@@ -361,7 +361,10 @@ void hold_try(GEntry& e, double now)
         set_hand(c, item);
         if (g_item_scale_fix && sc != 1.f)
             apply_item_scale(c, sc);
-    }
+        g.hold_set_at = now; // BUG-1347: held_items_tick checks that this attach's hold started
+        g.hold_retries = 0;
+    } else
+        g.hold_set_at = 0;
     g.hold_bound = true;
     g.hold_at = now; // (bound: held_items_tick lets it end with the animation)
     g.hold_anim_bound = queued ? cur : g.hold_anim;
