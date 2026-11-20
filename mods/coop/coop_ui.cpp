@@ -1351,7 +1351,10 @@ static void refresh_lobby()
     bool space = gwhat == "spice";
     // BUG-0909: give() names what is given only in Tribe, Civilization and Space; elsewhere (the galaxy menu, Cell,
     // Creature) the row showed the Tribe / Civ hint "Select your units to give them to a partner"
-    bool giving = A.give && !gto.empty() && (cl.empty() || space) && (!gwhat.empty() || !g_give_hint_fix);
+    const bool village = gwhat == "village"; // BUG-9268: a player with a village of their own: its members and food
+    bool giving = !village && A.give && !gto.empty() && (cl.empty() || space) && (!gwhat.empty() || !g_give_hint_fix);
+    if (village && cl.empty())
+        cl = std::string(T("Your village: ", "Ваша деревня: ")) + std::to_string(gn) + T(" members, food ", " жителей, еда ") + gto;
     if (space) // the ship can't be changed in flight: the row is for the cargo
         cl = gn ? std::string(T("Spice in cargo: ", "Специи в трюме: ")) + std::to_string(gn)
                 : T("No spice in cargo to give", "В трюме нет специи");

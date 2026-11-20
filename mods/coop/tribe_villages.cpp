@@ -522,26 +522,28 @@ static bool SK_THISCALL h_Owned(void* spatial)
 using Cursor_t = void*(SK_CDECL*)();
 static Cursor_t o_Cursor;
 static void* g_bound_list;
+static void* g_native_list;
 static void* SK_CDECL h_Cursor()
 {
     void* cursor = o_Cursor();
     if (!cursor || !skg::readable((uint8_t*)cursor + 0x164, 4))
         return cursor;
     void*& list = F<void*>(cursor, 0x164);
-    if (g_villages && g_guest_native && g_own_village && is_guest() && active() && !local_play() &&
-        game::object_alive(g_own_village)) {
+    // (the village in the object list now, never a freed one: a world being torn down or loaded keeps the game's own)
+    if (g_villages && g_guest_native && g_own_village && is_guest() && active() && !local_play() && !world::load_queued() &&
+        game::listed(g_own_village, kTribeNoun)) {
         void* own = (uint8_t*)g_own_village + 0x354;
         if (list != own) {
+            if (!g_bound_list)
+                g_native_list = list; // the game's own (the player tribe's), put back below
             list = own;
             g_cursor_binds++;
         }
         g_bound_list = own;
     } else if (g_bound_list) {
-        if (list == g_bound_list) {
-            void* pt = game::mode_id() == modes::kTribe ? player_tribe() : nullptr;
-            list = pt ? (uint8_t*)pt + 0x354 : nullptr;
-        }
-        g_bound_list = nullptr;
+        if (list == g_bound_list)
+            list = g_native_list;
+        g_bound_list = g_native_list = nullptr;
     }
     return cursor;
 }
@@ -618,7 +620,7 @@ std::string villages_status()
                                   : NAN;
             snprintf(b, sizeof b, "  seat %zu: player=%d species=%08X faction=%08X village=%p members=%zu food=%.1f relation=%.1f wait=%s\n", s,
                      p >= 0xFE ? -1 : (int)p, e.species, e.faction, v, v ? members(v).size() : 0, v ? village_food(v) : -1.f, rel,
-                     s ? tribe_seats::wait_name(g_wait[s]) : "-");
+                     s && active() ? tribe_seats::wait_name(g_wait[s]) : "-");
             out += b;
             food.push_back(v ? village_food(v) : -1.f);
             names.push_back(s == 0 ? "Host" : p < 0xFE ? C.sess->name_of(p) : "seat " + std::to_string(s));
@@ -651,4 +653,19 @@ std::string villages_debug(const std::vector<std::string>& a)
     return villages_status();
 }
 
+} // namespace tribe
+
+namespace tribe {
+bool own_village_info(int& m, float& food)
+{
+    if (!g_villages || !active())
+        return false;
+    void* v = is_host() ? (g_any_partner ? player_tribe() : nullptr)
+                        : (g_own_village && game::listed(g_own_village, kTribeNoun) ? g_own_village : nullptr);
+    if (!v)
+        return false;
+    m = (int)members(v).size();
+    food = village_food(v);
+    return food >= 0;
+}
 } // namespace tribe

@@ -913,3 +913,46 @@ Phases 3 and 4 of the Lineages port (PR #196), BUG-9261 and BUG-9262, on top of 
 * Left out of Lineages' home_nests: the ring cleanup of nests of old salted keys (BUG-9182 there: not needed with one
   key from the start), the guest-side own-family tick (npc.cpp own_family_tick, BUG-9175 there) and the game's player
   species following the own creature (BUG-9177 there). Test: tools/tests/coop_home_nests.py (suite home_nests).
+
+## Every player's own tribe (2026-11-20, feat/lineages-tribe)
+<a id="architecture-own-villages"></a>
+
+Phase 5 of the Lineages port (PR #196), BUG-9268, on top of the party and the archive
+([architecture-party](#architecture-party), [architecture-own-nests](#architecture-own-nests)). The game side is in
+[tribe-own-villages](re/tribe.md#tribe-own-villages).
+
+* **Files**: mods/coop/tribe_villages.cpp (the module, one of the Tribe split files of
+  [arch-tribe-files](#arch-tribe-files)), mods/coop/tribe_seats.h (its pure rules, tests/tribe_seats_tests.cpp),
+  founders.{h,cpp} (`founders::Roster`, `read` / `record` / `describe`, Stage::Tribe).
+* **Founding** (host, `villages_host_tick` from tribe_host.cpp's host tick, once a second): a connected partner with a
+  party seat whose creature is not the host village's species gets a village of it once its creature settled (15 s
+  after the world, 10 s after its key last changed; `tribe_seats::founding_wait`). Outside the frame: the creature is
+  archived with the planet (`creations::archive_guest_model`), a level dry site is searched 100-180 m around the host's
+  village (and around the other players' villages), `Simulator::SpawnNpcTribe(pos, 0, 3, 15, 0, profile)`, the
+  village is recorded by party seat in `<planet>.spo.duofounders` (DUO3: u8 n, n x {u32 species, u32 faction, u64
+  identity}; seat 0 the host's village) and allied, then every guest gets the world again (the first share saves).
+* **Alliance**: every 5 s (outside the frame) each pair of the players' villages is raised to allies
+  (`ApplyRelationship(manager, a, b, 0x0530CF07, allied + 1 - now)`, both ways); the host refuses an attack (7) or a
+  raid (15) on a player's village from a guest's order.
+* **Ownership** (MSG_TRIBE_STATE, no wire change): the members of a partner's village are its seat's player's (nobody's,
+  0xFE, while offline); the host's village is split as before between the players without a village of their own
+  (`tribe_seats::shared_players` / `shared_owner`). `host_command` runs a guest's order on its own village's members
+  too (`village_orders_ok`).
+* **Native counts**: `cGameNounManager::GetData` hooked; its two count-only callers in the NPC tribe controller
+  (`SporeCoop::FormTribe_TribeCountReturn`, `NpcTribeUpdate_TribeCountReturn`) get a private copy of the tribe list's
+  header with the partners' villages left out, so the planet still gets its rivals and the first one comes as usual;
+  `form_species_state` (BUG-1233) counts the same way.
+* **Player-owned**: `SporeCoop::Tribe_IsPlayerOwned` hooked: on the host a partner's village is the player's (with the
+  AI's cached bit, (+0xB4C)+0x5FC bit 0, refreshed from `h_BTTick`: its members take orders as player members); on a
+  guest its own village is the player's, and `cGameTerrainCursor::GetTerrainCursor` points the cursor's candidate list
+  (+0x164) at its own village's selectable members (only while that village is in the object list), so the game's own
+  box, click and right-click order them through the existing hooks.
+* The guest's own village is found from its mirrors (`villages_guest_tick`: the tribe of a mirror it owns that is not
+  the player tribe). Its food is the NPC tribe's store, shown on every game by wsync's `tribe_food` row; the Co-op window
+  shows "Your village: N members, food F" (coop_ui.cpp, `tribe::own_village_info`).
+* Switches: `tribe.own_villages`, `tribe.founder_npc_budget`, `tribe.guest_ai`, `tribe.guest_native`. Commands:
+  `coop.tribe villages [found <player> | ally]`. Test: tools/tests/coop_tribe_seats.py (suite tribe_seats).
+* Left out of Lineages' Tribe founders: the village at the partner's own nest (the free-site search only), the rescue
+  of a downed founder and the party wipe, the outfit vote per seat (`.duooutfits`), the late joiner's stand-in and
+  catch-up, the guest's game showing its own village as the player tribe (SetPlayerTribe: its HUD, cards and hut menu),
+  the six-rival trial and the objective backfill.

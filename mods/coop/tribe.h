@@ -27,6 +27,9 @@ struct Ctx {
 bool init(const SkHost* host, SkMod* mod, Ctx ctx); // false: symbols missing
 // own members selected now (the "give" button of the co-op window)
 int own_selected();
+// BUG-9268: this player's own village (a partner's own, or the host's while a partner has one): its members and food
+// (the co-op window's row); false: none
+bool own_village_info(int& members, float& food);
 // give the selected own members to another player (the host applies it); returns how many
 int give_selected(uint8_t to);
 void tick(double now);                               // every frame

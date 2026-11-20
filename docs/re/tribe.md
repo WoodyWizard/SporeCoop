@@ -4294,3 +4294,46 @@ BUG-1325. GOG 2024, Ghidra (tools/ghidra/q.sh), lab lane 9; follows [tribe-civ-t
   the graduations, the ones without a mat, the cinematics ended, whether ShowCityHall (0x10792A72) played, the null
   destroys skipped; `coop.tribe gradcine <name>` (tests) starts <name> right before the next graduation. Test
   `coop_tribe_city_hall_race.py` (docs/06-testing.md#testing-tribe-city-hall-race).
+
+## Every player's own village: founding, counts, ownership, controls (2026-11-20, feat/lineages-tribe)
+<a id="tribe-own-villages"></a>
+
+BUG-9268 (the Lineages port, phase 5: Lineages' docs/re/tribe.md "Up to four founders", "Founders and the native NPC
+objective budget", "First rival appearance with two founders", "Guest native combat ownership", "A guest commands its
+own village with the game's own controls"). Code: tribe_villages.cpp; architecture:
+[architecture-own-villages](../01-architecture.md#architecture-own-villages). Runtime: lane D (Steam 3010a413 = the GOG
+2024 code), two instances, agent A's Boheus Creature fixture graduated to Tribe with the guest on its own creature.
+
+* ✔ (runtime) `Simulator::SpawnNpcTribe(&pos, 0, 3, 15, 0, profile)` with the guest's creature profile made a village of
+  3 members and 15 food 99 m from the host's at the first free level site (100 m ring); its political id (+0x30) was
+  00002294, the host's player tribe 80002274. The world share after it gave the guest's game the same ids.
+* ✔ (runtime) ApplyRelationship(manager, a, b, 0x0530CF07, allied + 1 - now) both ways: CalculateRelationship read 8.0
+  after it, and stayed there.
+* ✔ (runtime, memory of the running game) The NPC tribe controller reads only the count of `cGameNounManager::GetData`'s
+  tribe list at its two callers 0xCC6478 (FormTribe, return 0xCC647D: `mov ebp,[eax+8]; sub ebp,[eax+4]`) and 0xCC6B5D
+  (its update, return 0xCC6B62: `sar edx,2; lea eax,[edx-1]; cmp eax,4; ja; jmp [table]`). With the partner's village
+  left out of that count the first rival formed about 4 minutes into the stage ("A rival tribe of Chirpotaur has formed
+  on your planet!", the native caption) and three by the next reload, as without a partner village.
+* ✔ (runtime) Tribe_IsPlayerOwned (0xC8E660) is `push esi; mov esi,ecx; call cGameNounManager::Get; call
+  GetPlayerTribe; add esi,-0x120; cmp eax,esi; sete`: the hook answers true for a partner's village on the host and for
+  the own village on a guest. With it and the terrain cursor's candidate list (+0x164) pointed at the own village's
+  +0x354, a real box drag over the guest's villagers selected 2 of its 3 (the third outside the box) and a real right-click
+  on the ground walked them 23-24 m on the host's game (WalkSelectedTo -> MSG_TRIBE_CMD). A host member stays
+  unselectable on the guest (h_SetSelected, owner).
+* ✔ (runtime) The partner village's food is its own NPC store (15 -> 20 -> 23 by its AI's gathering) and wsync's
+  tribe_food row shows the same value on the guest's game (`Village food   Host 12   Bob 20` on the host,
+  `own village ... food=20.0` on the guest).
+* ✔ (runtime) A rejoin: the village stays (its members nobody's, 0xFE, while the guest is away) and is the guest's again
+  after the join (the same member ids). A save + galaxy menu + load, and a restart of both games with the host loading
+  alone: the village of the archived species (7CA81684) is in the world before the guest joins; none founded again.
+* ✔ (runtime) The end of Tribe is the native one (5 wins; `coop.tribe advance` in the test): the vote, the City Hall and
+  vehicle editors on the host, both games in Civ together. The partner's village is no goal target: it is never a
+  mission of the host's goal (no mission is made for it) and the alliance does not count.
+* ~ The host's villager cards (the right-hand column) list a partner's member too while Tribe_IsPlayerOwned answers true
+  for its village (seen: one purple card among the host's three). Clicking it selects nothing (the owner check).
+  BUG-9271.
+* ? A partner's member died between two checks (3 -> 2 members) while the first rival appeared next to it; whether the
+  rival raided the partner's village (it is the player's for the rival's AI on the host) was not watched.
+* ~ The guest's HUD food counter and cards remain the host's village's (the player tribe of its game); its own food is in
+  the Co-op window ("Your village: N members, food F"). Lineages made the own village the guest's player tribe
+  (SetPlayerTribe, #tribe-guest-own-player-village there): not ported.

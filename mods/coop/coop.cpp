@@ -2054,6 +2054,13 @@ void init_ui()
         to = g_sess.name_of(t);
         int n = 0;
         if (g_mode == modes::kTribe) {
+            int vm = 0;
+            float vf = 0;
+            if (tribe::own_village_info(vm, vf)) { // BUG-9268: a village of one's own: its members and food
+                what = "village";
+                to = std::to_string((int)vf);
+                return vm;
+            }
             n = tribe::own_selected();
             what = "member";
         } else if (g_mode == modes::kCiv) {
