@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.15.5] - 2026-11-19
+
+A fix for players who could not leave the Tribe stage: the City Hall editor at its end could not be named after a
+Space captain had once been named without a species (the problem behind GitHub #202). Only the player with that game
+profile needs to update, but every player should keep the same version.
+
 ### Fixed
 - Tribe -> Civilization: the City Hall and vehicle editors at the end of the Tribe stage could not be named in a game
   profile where a Space captain had once been named while the game could not copy the species: the name panel had no

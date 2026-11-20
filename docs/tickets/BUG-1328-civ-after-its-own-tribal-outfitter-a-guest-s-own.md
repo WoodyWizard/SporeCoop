@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 0.7.15.4 and older (the game's own end-of-Tribe editors in a profile with the list; code read), 0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.15.5
 branch: fix/w58-cityname, fix/w59-hotfix (backport to 0.7.15)
 commits: 1b7c74b2 0fb723ca
 tests: creation_props_key0, creation_props_key0_off, civ_own_arrival, line_stages_editors
@@ -101,3 +101,4 @@ Hall and vehicle editors of the host with the list planted in the host's game; l
   BUG-1329 (the late route's City Hall result faults in the Tribe goal listener).
 - 2026-11-19: backported to the 0.7.15 line (fix/w59-hotfix): a 0.7.15 player whose profile has the list cannot leave
   Tribe (the game's own City Hall editor); test creation_props_key0 on the end of Tribe.
+- 2026-11-19: released in 0.7.15.5.
