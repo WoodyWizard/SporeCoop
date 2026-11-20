@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w59-tests
-commits: d679a5e5
+commits: d679a5e5 7459b4da
 tests: creature, ui_golden
 signature:
 docs: docs/06-testing.md#testing-lab-mem-reserve
