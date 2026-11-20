@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "arrival_rule.h"
 #include "busy_model.h"
 #include "lifecycle.h"
 #include "mirror_registry.h"
@@ -719,8 +720,25 @@ static void busy_pump()
     CHECK(!g.say_due(tribe, 100.0));
 }
 
+// BUG-1336: the first Creature editor's vote after Cell waits for a guest whose arrival is quick (lab times: the host
+// saves for the share ~2 s after the vote's start, a normal link sends the world in ~1 s, the guest loads it in ~5 s)
+static void arrival_wait()
+{
+    using arrival_rule::waits_for;
+    CHECK(waits_for(false, true, 0.1, 1e9));   // the vote starts before the host has asked for the share
+    CHECK(waits_for(false, true, 4.0, 2.0));   // the share is being saved / sent
+    CHECK(waits_for(false, false, 6.0, 4.0));  // acknowledged: the guest loads the world
+    CHECK(waits_for(false, false, 30.0, 35.0));
+    CHECK(!waits_for(false, true, 8.5, 6.0));  // BUG-1245: a slow link still sending after 8 s: not waited for
+    CHECK(!waits_for(false, false, 45.0, 50.0)); // the world long out and no arrival: not waited for
+    CHECK(!waits_for(false, false, 1.0, 1e9)); // no share at all (another world): not waited for
+    CHECK(!waits_for(true, true, 0.1, 1e9));   // BUG-1239: in its own editor
+    printf("  arrival_wait ok\n");
+}
+
 int main()
 {
+    arrival_wait();
     registry_bind();
     registry_liveness();
     registry_adopt();

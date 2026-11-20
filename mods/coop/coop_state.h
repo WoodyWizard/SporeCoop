@@ -421,6 +421,7 @@ extern unsigned g_own_editor_arrivals;
 unsigned vote_in_editor_count(); // BUG-1239 (tests)
 unsigned vote_mates_held();      // BUG-1245 (tests)
 unsigned arrival_not_waited();   // BUG-1245 (tests)
+unsigned arrival_waited();       // BUG-1336 (tests)
 unsigned cell_editor_now_count(); // BUG-1263 (tests)
 unsigned refused_mates_count();   // BUG-1265 (tests)
 unsigned switch_end_held_count(); // BUG-1269 (tests)

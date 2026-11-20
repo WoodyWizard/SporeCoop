@@ -9775,3 +9775,24 @@ BUG-1328 (docs/re/creations.md#creations-props-key0), the 0.7.15 line's form of 
 * A lane whose profile already has such a list (space_captain_none names a captain whose species cannot be copied; see
   the RE section) passes the other end-of-Tribe tests only with the fix on; a profile can be checked by the .prop
   records of its Pollination.package (a clean profile has none).
+
+## Cell -> Creature arrival vote and the Cell kin tests after the 0.7.16 final check (2026-11-20, fix/w59-cell)
+<a id="testing-arrival-vote-kin"></a>
+
+* leave_avatar_cell, legless_guest, parts_transition expect the first Creature editor's vote to wait for the guest
+  ("its first editor waits for the vote", then "the guest follows" in Creature with an avatar within 120 s). Since
+  BUG-1245 (0.7.15.2) that vote ended at once in every switch (`1 player(s) on their way ... not waited for`) and the
+  guest's own arrival editor (BUG-1240) took the guest out of Creature before the check came. BUG-1336
+  (`core.arrival_wait`) waits again for a quick arrival; twin `leave_avatar_cell_wait_off` must FAIL. `coop.vote`
+  prints "arrival votes that waited for a guest arriving quickly N"; the host's log `N player(s) arriving in the
+  Creature stage: waited for (BUG-1336)`.
+* choice_world: the guest is in its own Cell editor while the host switches, so the vote never waits for it
+  (BUG-1239) and its own first Creature editor opens after its arrival (BUG-1240); the test now leaves that editor
+  with the red cross (no edit: no confirmation) before its 45 s of samples.
+* cell_own_level10 allows the cells the partners play now (`coop.pool kin 0`, `kin player <id> cell=`): BUG-1257 kin.
+  The cell a following guest leaves is not allowed (BUG-1333); twin `cell_own_level10_follow_off` fails only when the
+  host's rebuild populates near the guest's puppet (the first change of 20261119-214823 did, the second did not).
+* cell_kin_species: the guest alone at level 10 is often knocked out in its fresh area despite `coop.pool invulnfor`
+  (9 of 15 runs had a knockout) and respawns next to the host; a sampling of "apart" that finds the guest within half
+  the apart distance of the host stops, the players are parted again (at most twice), the last try is checked
+  (BUG-1334). Pitfall: `coop.pool invulnfor` is clamped to 120 s, and a respawn sets 3 s.

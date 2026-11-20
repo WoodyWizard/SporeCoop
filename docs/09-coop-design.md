@@ -150,6 +150,11 @@ Shared contracts between the features:
 * An editor within a phase (for example, the creature editor after the mating call) does not kick guests out.
 * Cell -> Creature (BUG-0315, `core.switch_vote`): the host's click on History's check starts the vote "wants to move on
   to the Creature stage"; the first Creature editor's vote that follows counts every player who has arrived as ready.
+  That vote waits for a guest still on its way (in Cell, the galaxy menu, the load) while its arrival is quick: its
+  world share not out yet or still being sent for at most 8 s of the vote, or acknowledged within 40 s (BUG-1336,
+  `core.arrival_wait`): on a normal connection the party evolves together. A guest on a slow link (its share still
+  being sent after 8 s, BUG-1245) or in its own editor (BUG-1239) is not waited for; it gets its own first Creature
+  editor when it arrives (BUG-1240).
 * An evolution inside the Creature stage (BUG-0516, `core.editor_now`) has no vote: the host's editor opens at once and
   every guest gets "Evolve now" (90 s) for its own editor; a guest who does not take it plays on and evolves at its
   nest later. Stage starts and design editors keep the vote.

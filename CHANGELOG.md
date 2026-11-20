@@ -32,6 +32,9 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   leaves its editor (BUG-1311).
 - Lab: a test that restarts the guest's game more than once no longer takes the host's game of the same lane along:
   every game of a lane now runs in the process namespace of the lane's Wine server (BUG-1327).
+- Lab: `coop.pool near <x> <y> <r>` (the cells drawn at a place) answers again; the slow-link test's cell list is now
+  `coop.pool nearkeys` (BUG-1330). The Cell kin test parts the players again when the guest was knocked out alone in
+  its new area and came back next to the host (BUG-1334).
 
 ### Added
 - Creature: when a partner goes into an editor of its own (its mating evolution, Evolve now, or later at the nest),
@@ -84,6 +87,14 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   got them (BUG-1290).
 
 ### Fixed
+- Cell -> Creature: the party evolves together again in the first Creature editor. The host's editor waits again (up
+  to the vote's time) for a guest that is on its way to the Creature stage over a normal connection, as in 0.7.15:
+  both editors open together. Before, the host's editor opened at once and the guest got its own editor later, alone,
+  after its arrival. A guest on a slow connection is still not waited for (the host's screen stayed black meanwhile),
+  nor one in its own editor (BUG-1336).
+- Cell: after the host changes its own cell, no wild cells of the cell it played before swim around any more. A guest
+  without a cell of its own takes the host's new one, but the host's rebuilt level had already made wild copies of the
+  old one next to that guest (BUG-1333).
 - Cell: a guest on a slow connection (or a host with a slow upload) now sees the host's cells all around its own cell.
   Before, on a link of about 512 kbit/s the guest kept only about a quarter of them, spread over the pool, and the
   others vanished a second after they came: mostly empty water around it. The host now sends each guest the cells

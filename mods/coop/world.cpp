@@ -573,6 +573,20 @@ double since_share(uint8_t peer)
     return it == g_share_asked.end() ? 1e9 : H->time_seconds() - it->second;
 }
 
+bool share_in_flight(uint8_t peer)
+{
+    for (auto& p : g_pending)
+        if (p.peer == peer)
+            return true;
+    for (auto& o : g_out)
+        if (o.peer == peer && !o.done)
+            return true;
+    for (auto& d : g_drain)
+        if (d.peer == peer)
+            return true;
+    return false;
+}
+
 bool share_with(uint8_t peer, std::string& err, bool save_first, uint32_t tag)
 {
     g_share_asked[peer] = H->time_seconds(); // BUG-0754
