@@ -1,34 +1,47 @@
 ---
 id: BUG-1358
 title: Test latency_step_ingame: the walker's random click on its own nest opens the evolution editor, the second walk has no partner
-status: open
+status: fixed
 kind: test
 stage: Creature
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
 versions: 
-fixed_in:
-branch:
+fixed_in: unreleased
+branch: fix/w60-misc
 commits:
-tests:
+tests: latency_step_ingame, puppet_walk, puppet_walk_novel, puppet_stops
 signature:
 docs:
-related:
+related: BUG-0333, BUG-0394
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Final check of 0.7.16 (lab 20261120-041304, lane 3): latency_step_ingame FAIL in its second half (host watches
+guest): "the walk was measured in 0 s of the 32 s at 300 ms"; the guest's walk log is "back 505m (no closer)" then
+"back 505m (not found)" for the whole walk. The first half (guest watches host) passed. History: 2 of 4 failed on
+rel/main, 5 of 11 on all branches since 2026-11-01.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed (latency_step_ingame.host.game.log): at s 77.86, at the end of the host's walk, "nest: an egg hatched or was
+eaten" and "editor request in Creature: editor 312E9D6A ... (an evolution in the stage)": the host's game opened its
+evolution editor (core.editor_now: the host's editor at once) and stayed in it; the guest's trace shows "partner 0
+'Alice' Editor ... puppet=hidden" and from s 150 "Alice is not responding". The host's walk (coop_puppet_walk.walk)
+clicks random ground points 45-75 % down the screen; the walker was at its own nest ("nest d=0 m" at s 70), so a click
+landed on the nest (the game's nest click is the editor) or an egg. With the host in its editor the guest's `coop.status`
+remote line had no state (pos=(0 0 0)): "505 m" is the planet's radius, the walk's "back to the partner" never found
+it. A test fault, not the mod.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+coop_puppet_walk.py walk(): before a random click it asks `coop.targets objs` for the screen points of nests (cNest
+0x52AA6122, 260 px) and eggs (cEgg 0x02A034CD, 90 px) and makes a 1.5 s W hold instead of a click that close to one
+(logged as "not the click ... the nest or an egg under it"). Used by every test on walk() (latency_step, puppet_walk
+and its variants).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: test-only change (the walker's input). Lab tonight: latency_step_ingame PASS (both directions measured);
+`SPORE_FIX_OFF=net.offset_window` latency_step_ingame FAIL (its twin, unchanged). Open, waiting for the lab run.
 
 ## History
-- 2026-11-20: opened.
+- 2026-11-20: opened from the 0.7.16 final check; fixed in coop_puppet_walk.py on fix/w60-misc.

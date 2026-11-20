@@ -147,6 +147,23 @@ def jump(con):
     con.call(f'coop.abilities lift {HOP}')
 
 
+# BUG-1358: the screen points of the Creature stage's nests (cNest 0x52AA6122) and eggs (cEgg 0x02A034CD) as
+# `coop.targets objs` prints them ("obj o<noun hex> distance x y"); a random click this close to one is not made
+NEST_KEYS = {'o52AA6122': 260, 'o2A034CD': 90}  # key -> px
+
+
+def near_nest(con, x, y):
+    for line in con.call('coop.targets objs')['out'].splitlines():
+        f = line.split()
+        if len(f) == 5 and f[0] == 'obj' and f[1] in NEST_KEYS:
+            try:
+                if math.hypot(int(f[3]) - x, int(f[4]) - y) < NEST_KEYS[f[1]]:
+                    return True
+            except ValueError:
+                continue
+    return False
+
+
 def walk(con, rng, secs, jumps=0.0):
     """a player walking: WASD holds with turns, stops, clicks on the ground ahead, staying near the
     partner"""
@@ -213,6 +230,15 @@ def walk(con, rng, secs, jumps=0.0):
             log.append(f'{"+".join(keys)} {hold:.1f}s')
         elif r < 0.85:
             x, y = rng.randint(int(W * 0.2), int(W * 0.8)), rng.randint(int(H * 0.45), int(H * 0.75))
+            if near_nest(con, x, y):
+                # BUG-1358: a click on the own nest opens the evolution editor (latency_step_ingame of the 0.7.16 final
+                # check: the host's walk ended in its editor, the guest's walk had no partner), one on an egg eats it:
+                # a W hold instead of that click
+                con.call('key 0x57 down')
+                time.sleep(1.5)
+                con.call('key 0x57 up')
+                log.append(f'W 1.5s (not the click {x},{y}: the nest or an egg under it)')
+                continue
             con.call(f'click {x} {y}')
             wait = rng.uniform(1.5, 3.0)
             time.sleep(wait)
