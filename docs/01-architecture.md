@@ -910,7 +910,12 @@ Phases 3 and 4 of the Lineages port (PR #196), BUG-9261 and BUG-9262, on top of 
   creature next to it. wsync's nest row (BUG-0640) no longer migrates such a guest to the host's nest
   (`wsync.own_nest_stays`). Older guests skip kind 2. `coop.nest home`.
 * Party species are not hunted by the players (`creature.party_species_peace`, npc.cpp).
+* Each player's own species is THE player species in its own game (`creature.own_player_species`, Lineages BUG-9177),
+  and the copies of its own family live in its own nest herd on its game (`creature.own_family_home`, BUG-9175 there).
+* A joining guest outside a world reports the creature it will play in the host's world (its record of that world)
+  before it loads it, so its first world waits for its nest (`creations.join_world_record`, BUG-9267).
 * Left out of Lineages' home_nests: the ring cleanup of nests of old salted keys (BUG-9182 there: not needed with one
+<<<<<<< HEAD
   key from the start), the guest-side own-family tick (npc.cpp own_family_tick, BUG-9175 there) and the game's player
   species following the own creature (BUG-9177 there). Test: tools/tests/coop_home_nests.py (suite home_nests).
 
@@ -956,3 +961,7 @@ Phase 5 of the Lineages port (PR #196), BUG-9268, on top of the party and the ar
   of a downed founder and the party wipe, the outfit vote per seat (`.duooutfits`), the late joiner's stand-in and
   catch-up, the guest's game showing its own village as the player tribe (SetPlayerTribe: its HUD, cards and hut menu),
   the six-rival trial and the objective backfill.
+=======
+  key from the start). Tests: tools/tests/coop_home_nests.py, coop_home_nests_join.py (suites home_nests,
+  home_nests_join).
+>>>>>>> feat/lineages-nests

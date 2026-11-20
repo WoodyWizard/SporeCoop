@@ -2756,6 +2756,10 @@ static void init_tribe_and_creations()
             despawn(it->second);
         }
     };
+    crc.host_world = [] { // BUG-9267: the world the host plays (its latest state), 0 unknown
+        const net::PlayerState* h = own_world::peer_state(0);
+        return h ? h->world : 0u;
+    };
     creations::init(H, M, std::move(crc));
     modes::g_species_for_player = [](uint8_t id) { return creations::player_species(id); };
     modes::g_model_for_player = [](uint8_t id, int kind, uint32_t key[3]) {
