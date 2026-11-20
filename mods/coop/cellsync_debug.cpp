@@ -593,7 +593,8 @@ std::string debug(const std::vector<std::string>& a)
         return see(a.size() > 1 ? atoi(a[1].c_str()) : 60);
     if (!a.empty() && a[0] == "pace") // BUG-1309 (host): each guest's paced Cell state
         return pace_status();
-    if (!a.empty() && a[0] == "near") { // tests (BUG-1309): near <r> [x y]: this game's own live cells within r
+    // BUG-1330: "nearkeys", not "near": BUG-1246's `near <x> <y> <r>` below must stay reachable (evo_screens_cell_mate)
+    if (!a.empty() && a[0] == "nearkeys") { // tests (BUG-1309): nearkeys <r> [x y]: this game's own live cells within r
         // of (x y) (default: our own cell), keyed by the host's index (a guest: its mirrors; cells of its own game
         // that mirror none are not listed), dying / dead ones and players' cells left out
         float r = a.size() > 1 ? (float)atof(a[1].c_str()) : 30.f;
@@ -620,7 +621,7 @@ std::string debug(const std::vector<std::string>& a)
             keys += (n++ ? " " : "") + std::to_string(key);
         });
         char b[120];
-        snprintf(b, sizeof b, "near n=%d at=(%.1f %.1f) r=%.1f\n", n, at.x, at.y, r);
+        snprintf(b, sizeof b, "nearkeys n=%d at=(%.1f %.1f) r=%.1f\n", n, at.x, at.y, r);
         return std::string(b) + "keys " + keys + "\n";
     }
     if (!a.empty() && a[0] == "prey")

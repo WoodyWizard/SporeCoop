@@ -2791,7 +2791,7 @@ time to 924 (`coop.pool kin` prints `box=` since this branch: the width and heig
   second (BUG-0032's rule for a round with a lost chunk): ~100 of the host's ~400 cells stayed, spread over the whole
   pool, not the nearest. The sync-check's "c: 247 missing on the guest" 7.5 s after the arrival was that, not a
   moment of the check: the guest's own game lacked them for as long as the link was full (BUG-1309).
-* ✔ Measured with `coop.pool near <r> [x y]` (the game's own live cells within r of a point, keyed by the host's index;
+* ✔ Measured with `coop.pool nearkeys <r> [x y]` (`near` until BUG-1330; the game's own live cells within r of a point, keyed by the host's index;
   a guest lists its mirrors): the twin of coop_cell_slow_link.py (cell.slow_link off) had 25-62 % of the host's cells
   within 15 units of the guest in its own game over 40 s.
 * The fix (`cell.slow_link`, cellsync_host.cpp, `cell_logic::LinkPace`): each guest's round is sorted nearest first
@@ -2810,3 +2810,25 @@ time to 924 (`coop.pool kin` prints `box=` since this branch: the width and heig
   paced guest's count as the host's "nearest N" (`cellsync::sent_cap`, the smallest round cap of the last 3 s), the
   rule BUG-0295 / BUG-0379 apply with 900 (the nearest 80 % of N must be there). The first merged-tree run without it
   (20261119-131719) had the test's own checks at 100 % within 20 units and still `c: 105 missing` within 60.
+
+## Kin after an own-cell change: the following guest's old cell (2026-11-20, fix/w59-cell)
+<a id="cell-kin-follow"></a>
+
+* ✔ (logs, final check 20261119-214823 cell_own_level10) A guest without a cell of its own plays the world's (the
+  host's) cell and follows the host's own-cell change in place (BUG-0508): host s 53.723 `own cell is now BAF1AD40
+  (level rebuilt)`, the guest's `own cell is now BAF1AD40` and its new key on the host at s 54.250, 0.5 s later. The
+  host's rebuild populated the level in between: the kin filter (#cell-kin-species) took the guest's key as it was,
+  the old 4DA56CA5, for the kin nearest the guest; 8 s later the host's pool still had `4DA56CA5 x5` of a cell nobody
+  played (BUG-1333). The second change of the same run (back to 4DA56CA5) left none: the population then had no view
+  centre of the guest near the new cells (the guest's puppet was "removed by the game itself" by the rebuild), so the
+  twin does not always show it.
+* The fix (`cell.kin_follow`, cellsync_kin.cpp, `cell_logic::OwnCellFollow`): the filter remembers this game's own cell
+  (S+0x10, the kind-5 answer) at each population and the one before; for 15 s after a change a partner whose cell is
+  the previous one counts as following (its kin are the world's: counter `follow=` of `coop.pool kin`). A guest that
+  chose that cell itself gets its own kin again after the 15 s.
+* ~ The cell_kin_species "apart" failures of the 0.7.16 final check and of 9 of 12 fix/w57-cellkin runs were not the
+  kin filter: the guest, alone at level 10 in a fresh area, was knocked out (6 -> 3 -> KO in ~15 s although
+  `coop.pool invulnfor` was set, no forwarded bite: its own game) and respawned next to the host, and the samples
+  measured the host's place (BUG-1334). The host's counter `partner=81` had made the guest's kin; they were culled
+  with the area the guest left. Inferred (not decompiled): the damage came through a path without the +0x111 check
+  (Bite's lethal or much-smaller branch, see the Bite entry above); not followed further.

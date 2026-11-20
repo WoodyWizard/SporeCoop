@@ -153,7 +153,7 @@ def kin_keys(con):
     return frozenset(c['key'] for c in kin(con)[1])
 
 
-def place_check(ck, host, guest, gid, hkey, gkey, r, what, secs=45, old=frozenset(), unit=0.0):
+def place_check(ck, host, guest, gid, hkey, gkey, r, what, secs=45, old=frozenset(), unit=0.0, apart_from=0.0):
     """the kin near each player are of that player's cell, on the host (pool) and on the guest (mirrors). The game makes
     6-8 kin a level over the whole populated range and culls them as tiles go (#cell-kin-test-units), so one sample can
     hold none near a player (lab 20261119-114512: none of the host's within 35 units after the guest's editor): sampled
@@ -162,13 +162,25 @@ def place_check(ck, host, guest, gid, hkey, gkey, r, what, secs=45, old=frozense
     the kin are a mix, and a wild cell does not follow a player, so a kin made while they were together may still swim
     near the host afterwards; there "none of the guest's" is asserted for the kin made since they parted (lab
     20261119-115019: two kin of the guest's cell made at the host's place, where the guest called its mate, were still
-    there after it left)"""
+    there after it left)
+    `apart_from` > 0: the players must stay that far apart while it samples; when the guest is closer to the host in a
+    sample (a knocked-out guest respawns next to the host, BUG-1334), nothing is checked and 'lost' is returned (the
+    caller parts them again)"""
     seen = {k: {} for k in ('h_host', 'h_guest', 'g_host', 'g_guest')}
     fresh = {k: {} for k in seen}  # the same without the `old` kin
     t0, n = time.time(), 0
     while True:
         hp, hc, hh = kin(host, r)
         gp, gc, gh = kin(guest, r)
+        if apart_from > 0:
+            me_at = next((p['pos'] for p in hp.values() if p['me']), None)
+            g_at = hp.get(gid, {}).get('pos')
+            gd = math.hypot(me_at[0] - g_at[0], me_at[1] - g_at[1]) if me_at and g_at else -1
+            if 0 <= gd < apart_from:
+                print(f"  {what}: the guest is {gd:.1f} m from the host after {time.time() - t0:.0f} s of sampling (knocked "
+                      "out and respawned next to the host, see the guest's log 'ko: own cell state'): not an apart "
+                      "sample, nothing checked", flush=True)
+                return 'lost'
         now = {'h_host': counts(hc, 0, r), 'h_guest': counts(hc, gid, r), 'g_host': counts(gc, 0, r),
                'g_guest': counts(gc, gid, r)}
         # (only near the host: the guest's place is a fresh area, every kin there was made with the guest there)
@@ -312,18 +324,28 @@ def main():
        f"{line_cell(guest, gid)}) and the host has none ({line_cell(host, 0)})")
     ck(line_cell(host, 0) == '00000000', "the host has no line (its kin are the game's own)")
 
-    # 1. apart: a fresh area around the guest
-    d = apart(host, guest, dist, 0, dist * 0.7)
-    # the kin alive now were made while the guest was still near the host: after its rebuild for the chosen cell the
-    # mod puts the guest back next to the host ("our new cell joined the host", tries 1 and 2, BUG-0352) while the test
-    # moves it away (lab 20261119-120210: three kin of the guest's cell made then, near the host)
-    time.sleep(4)
-    d = apart(host, guest, dist, 0, dist * 0.7)
-    old = kin_keys(host)
-    print(f'  the players are {d:.1f} m apart', flush=True)
+    # 1. apart: a fresh area around the guest. BUG-1334: the guest alone in a fresh level-10 area is often knocked out
+    # there (invulnfor does not stop a much bigger predator: Bite's lethal / swallow branch has no +0x111 check,
+    # docs/re/cell.md) and respawns next to the host; samples taken then measure the host's place, not the guest's
+    # (final check 20261119-214823: knocked out at s 84.6, just as the sampling began; every kin "near the guest" was
+    # the host's). So a sampling that loses the guest parts the players again, at most twice; the last try is checked.
+    for attempt in range(3):
+        for con in (host, guest):
+            con.call('coop.pool invulnfor 900')
+        d = apart(host, guest, dist, 0, dist * 0.7)
+        # the kin alive now were made while the guest was still near the host: after its rebuild for the chosen cell the
+        # mod puts the guest back next to the host ("our new cell joined the host", tries 1 and 2, BUG-0352) while the
+        # test moves it away (lab 20261119-120210: three kin of the guest's cell made then, near the host)
+        time.sleep(4)
+        d = apart(host, guest, dist, 0, dist * 0.7)
+        old = kin_keys(host)
+        print(f'  the players are {d:.1f} m apart (try {attempt + 1})', flush=True)
+        time.sleep(20)  # the host's partner pass populates the guest's area, the guest mirrors it
+        guard = dist * 0.5 if attempt < 2 and d > dist * 0.7 else 0.0
+        if place_check(ck, host, guest, gid, hkey, gkey, r, 'apart', old=old, unit=unit,
+                       apart_from=guard) != 'lost':
+            break
     ck(d > dist * 0.7, f'the guest is far from the host ({d:.1f} m)')
-    time.sleep(20)  # the host's partner pass populates the guest's area, the guest mirrors it
-    place_check(ck, host, guest, gid, hkey, gkey, r, 'apart', old=old, unit=unit)
     keyframe('apart', f"Cell, the players {dist:.1f} m ({dist_w:g} view widths) apart: the host's screen shows the host's cell with wild kin of the "
              f"host's cell {hkey} around it; the guest's screen shows the guest's cell {gkey} with wild kin of the guest's "
              "own cell (its look) around it" + ' ' + screens(host, guest, unit))

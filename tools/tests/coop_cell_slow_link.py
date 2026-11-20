@@ -8,8 +8,8 @@ removed the other mirrors a second after they came: ~100 of the ~400 cells, spre
 "c: 247 missing on the guest" in every evo_screens_switch_slow run since 2026-11-18).
 
 Cell fixture (level 1, both players next to each other). For --secs s, every 2 s: the guest's own cell's position,
-the host's live cells within --r cell units of it (`coop.pool near <r> x y` on the host: its pool) and the guest's own
-game's cells within --r + 2 of it that mirror a host cell (`coop.pool near` on the guest: its pool, by the host's
+the host's live cells within --r cell units of it (`coop.pool nearkeys <r> x y` on the host: its pool) and the guest's own
+game's cells within --r + 2 of it that mirror a host cell (`coop.pool nearkeys` on the guest: its pool, by the host's
 index). Coverage = the share of the host's cells near the guest that the guest's game has, of the host's cells that
 were near it in the samples before and after too (2 s each way: a cell the host's population pass made a moment ago
 may still be on its way, the link carries a round every ~0.4 s; one the host's cull takes may leave the guest a
@@ -38,7 +38,7 @@ from twoinst import Checks, keyframe, start
 
 
 def near(con, r, at=None):
-    cmd = f'coop.pool near {r}' + (f' {at[0]:.2f} {at[1]:.2f}' if at else '')
+    cmd = f'coop.pool nearkeys {r}' + (f' {at[0]:.2f} {at[1]:.2f}' if at else '')
     out = con.call(cmd)['out']
     m = re.search(r'^keys ?(.*)$', out, re.M)
     if not m:

@@ -11,6 +11,10 @@ The player's way, in the `cell` fixture:
      "I'm ready" from its editor (F9, the co-op window), the host leaves its creature editor with "done";
   4. the host's world reaches the guest while its editor is open; the guest leaves its editor (the red cross) and
      loads the host's Creature world.
+  5. BUG-1240 (0.7.15.1): a guest that missed the host's first Creature editor (its own editor was open, so the vote
+     did not wait for it: BUG-1239, BUG-1336) gets its OWN first Creature editor after the arrival: the test waits for
+     it and leaves it with the red cross (no new creature: the guest keeps the world's species), then samples. Before
+     (final check 20261119-214823) the samples ran into that editor: no avatar from 15 s on, a wrong FAIL.
 PASS: in the guest's game its avatar plays the world's species (the host's avatar species), not the other world's
 chosen creature, and the host's game shows the guest's puppet with that species.
 
@@ -148,6 +152,19 @@ def run(host, guest, ck):
         guest.call('click %d %d' % DONE)
     ok = wait(lambda: 'Creature' in mode(guest) and avatar(guest), 180, 2)
     ck(ok, f'the guest plays Creature in the host\'s world ({mode(guest).strip()})')
+    # 5. its own first Creature editor after the arrival (BUG-1240), left with the red cross
+    if log_has(lane.GUEST, 'it opens after the arrival (BUG-1240)', gpos):
+        opened = wait(lambda: 'Editor' in mode(guest), 60, 2)
+        print(f'  the guest\'s own arrival editor (BUG-1240) opened: {opened}', flush=True)
+        if opened:
+            time.sleep(8)
+            shot(guest, 'choice_world_arrival_editor.png')
+            guest.call('click %d %d' % CANCEL)
+            time.sleep(4)
+            if 'Editor' in mode(guest):
+                guest.call('click %d %d' % CANCEL)
+            ck(wait(lambda: 'Creature' in mode(guest) and avatar(guest), 90, 2),
+               f'the guest left its own arrival editor and plays Creature again ({mode(guest).strip()})')
     # the creation swap came 3 s after the load in the report, 25 s in the lab (20261106-230447): 45 s of samples
     t0, bad, seen = time.time(), [], []
     while time.time() - t0 < 45:

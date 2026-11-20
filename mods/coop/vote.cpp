@@ -6,6 +6,7 @@
 // session callbacks.
 #include "tribe_editors.h"
 #include "coop_state.h"
+#include "arrival_rule.h"
 #include "designs.h"
 #include "civ_editors.h"
 
@@ -143,6 +144,23 @@ COOP_FIX("core.arrival_nowait", "BUG-1245", g_arrival_nowait_fix,
 static unsigned g_arrival_not_waited = 0; // tests (coop.vote): arrival votes that did not wait for a guest on its way
 static int g_arrival_onway_last = 0;
 unsigned arrival_not_waited() { return g_arrival_not_waited; }
+// BUG-1336: BUG-1245 waited for no guest on its way at all, and every guest is on its way when the host's landfall
+// editor asks (the host's share of its Creature world starts only after the host's entry; since BUG-1269 the host also
+// enters ~4 s after the vote): the first Creature editor's vote ended at once in every switch, each guest got its own
+// arrival editor later and the party no longer evolved together (lab 20261119-214823: leave_avatar_cell,
+// legless_guest, parts_transition, `1 player(s) on their way ... not waited for` 0.0 s after the vote's start; 0.7.15:
+// `ready 2/2 after 9.5 s`). On: a guest on its way is waited for while its arrival is quick: its share not out yet
+// or still being sent for at most arrival_rule::kSendWait s of the vote (the host's save and a transfer over a normal
+// link take ~5 s), or out and acknowledged within arrival_rule::kLoadWait s (it loads the world, ~5 s); a guest in its
+// own editor is not (BUG-1239), nor one whose share is still on a slow link after kSendWait (BUG-1245: the host's
+// picture stays black behind the vote, evo_screens_switch_slow). Off: BUG-1245 as it was (no guest on its way waited for).
+static bool g_arrival_wait_fix = true;
+COOP_FIX("core.arrival_wait", "BUG-1336", g_arrival_wait_fix,
+         "core: the host's first Creature editor waits for a guest that arrives quickly (the party evolves together); not for a slow link");
+static unsigned g_arrival_waited = 0; // tests (coop.vote): arrival votes that waited for a guest on its way
+static int g_arrival_waiting_last = 0;
+unsigned arrival_waited() { return g_arrival_waited; }
+
 // the guest takes its own landfall editor after a late arrival (BUG-1240): its build announces creature 1.1 or newer
 static bool peer_takes_arrival_editor(uint8_t id)
 {
@@ -1263,7 +1281,7 @@ void vote_tick(double now)
             }
         }
     bool all = true;
-    int away = 0, editing = 0, onway = 0;
+    int away = 0, editing = 0, onway = 0, arriving = 0;
     for (auto& p : g_sess.players()) {
         if (p.id != 0 && g_vote_present_fix && own_world::peer_elsewhere((uint8_t)p.id)) {
             away++; // BUG-0801: plays another world, ignores the vote (BUG-0702): not waited for
@@ -1271,6 +1289,16 @@ void vote_tick(double now)
         }
         if (p.id != 0 && g_vote.arrival && g_arrival_nowait_fix && !(g_ready.count(p.id) && g_ready[p.id]) &&
             peer_takes_arrival_editor((uint8_t)p.id)) {
+            if (g_arrival_wait_fix) { // BUG-1336: a quick arrival is waited for
+                auto rit = g_remotes.find(p.id);
+                bool flight = (rit != g_remotes.end() && rit->second.needs_world) || world::share_in_flight((uint8_t)p.id);
+                if (arrival_rule::waits_for(peer_in_editor((uint8_t)p.id), flight, now - g_vote.t0,
+                                            world::since_share((uint8_t)p.id))) {
+                    arriving++;
+                    all = false;
+                    continue;
+                }
+            }
             onway++; // BUG-1245: on its way, it opens its own editor when it arrives (BUG-1240): not waited for
             continue;
         }
@@ -1294,6 +1322,12 @@ void vote_tick(double now)
             trace::line("vote", "%d player(s) on their way to the Creature stage: not waited for, their own editor opens "
                                 "when they arrive (BUG-1245)", onway);
         }
+    }
+    if (arriving != g_arrival_waiting_last) {
+        if (arriving > g_arrival_waiting_last)
+            g_arrival_waited++;
+        g_arrival_waiting_last = arriving;
+        trace::line("vote", "%d player(s) arriving in the Creature stage: waited for (BUG-1336)", arriving);
     }
     if (away != g_vote_away_last) {
         g_vote_away_last = away;

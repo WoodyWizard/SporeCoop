@@ -9606,13 +9606,14 @@ BUG-0304 (GitHub #203), BUG-1278. Written without a lab run (owner rule 2026-11-
 <a id="testing-cell-slow-link"></a>
 
 * `cell_slow_link` (coop_cell_slow_link.py, SPORE_NET=lowband, BUG-1309): every 2 s for 40 s the host's live cells
-  within 20 units of the guest's cell (`coop.pool near 20 <x> <y>` on the host) against the guest's own game's cells
-  near it that mirror a host cell (`coop.pool near 22` on the guest, keyed by the host's index). Only the host cells
+  within 20 units of the guest's cell (`coop.pool nearkeys 20 <x> <y>` on the host) against the guest's own game's cells
+  near it that mirror a host cell (`coop.pool nearkeys 22` on the guest, keyed by the host's index). Only the host cells
   near the guest in the samples before and after too count (a cell the population pass made a moment ago may still be
   on its way, one the cull took may leave the guest a moment before the host's list is read). PASS: from 8 s on at least 80 % in every sample but one, median 90 %. Twin `cell_slow_link_off`
   (cell.slow_link off): the guest keeps ~100 of the host's ~400 cells (25-45 % near it), must FAIL.
-* `coop.pool near <r> [x y]`: a game's own live cells (no players' cells, no dying / dead ones) within r of a point
-  (default its own cell) as `near n=<count> ...` and a `keys` line; a guest lists only the cells that mirror a host
+* `coop.pool nearkeys <r> [x y]` (named `near` until BUG-1330, 2026-11-20: that name shadowed BUG-1246's
+  `coop.pool near <x> <y> <r>`, which evo_screens_cell_mate reads): a game's own live cells (no players' cells, no
+  dying / dead ones) within r of a point (default its own cell) as `nearkeys n=<count> ...` and a `keys` line; a guest lists only the cells that mirror a host
   cell, by the host's index. `coop.pool pace` (host): each guest's paced Cell state (rate, cuts, raises, last loss,
   the round on its way).
 * Pitfall: at level 1 the Cell screen shows only 2-15 cells, so the key frame `slow_link_cells` shows the difference
@@ -9796,3 +9797,23 @@ BUG-1328 (docs/re/creations.md#creations-props-key0), the 0.7.15 line's form of 
   raises both alike. The test now starts without the per-player store and settings of an earlier test of the lane
   (`twoinst.forget_store`, `forget_settings`): the guest's wallet of 250 in the failed run came from that store.
   Twin: `SPORE_FIX_OFF=creature.own_dna` (one pool: the guest's spend comes off the host's DNA too).
+## Cell -> Creature arrival vote and the Cell kin tests after the 0.7.16 final check (2026-11-20, fix/w59-cell)
+<a id="testing-arrival-vote-kin"></a>
+
+* leave_avatar_cell, legless_guest, parts_transition expect the first Creature editor's vote to wait for the guest
+  ("its first editor waits for the vote", then "the guest follows" in Creature with an avatar within 120 s). Since
+  BUG-1245 (0.7.15.2) that vote ended at once in every switch (`1 player(s) on their way ... not waited for`) and the
+  guest's own arrival editor (BUG-1240) took the guest out of Creature before the check came. BUG-1336
+  (`core.arrival_wait`) waits again for a quick arrival; twin `leave_avatar_cell_wait_off` must FAIL. `coop.vote`
+  prints "arrival votes that waited for a guest arriving quickly N"; the host's log `N player(s) arriving in the
+  Creature stage: waited for (BUG-1336)`.
+* choice_world: the guest is in its own Cell editor while the host switches, so the vote never waits for it
+  (BUG-1239) and its own first Creature editor opens after its arrival (BUG-1240); the test now leaves that editor
+  with the red cross (no edit: no confirmation) before its 45 s of samples.
+* cell_own_level10 allows the cells the partners play now (`coop.pool kin 0`, `kin player <id> cell=`): BUG-1257 kin.
+  The cell a following guest leaves is not allowed (BUG-1333); twin `cell_own_level10_follow_off` fails only when the
+  host's rebuild populates near the guest's puppet (the first change of 20261119-214823 did, the second did not).
+* cell_kin_species: the guest alone at level 10 is often knocked out in its fresh area despite `coop.pool invulnfor`
+  (9 of 15 runs had a knockout) and respawns next to the host; a sampling of "apart" that finds the guest within half
+  the apart distance of the host stops, the players are parted again (at most twice), the last try is checked
+  (BUG-1334). Pitfall: `coop.pool invulnfor` is clamped to 120 s, and a respawn sets 3 s.

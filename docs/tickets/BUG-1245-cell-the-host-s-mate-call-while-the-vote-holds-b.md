@@ -72,3 +72,4 @@ Off: as 0.7.15.
 - 2026-11-18: opened.
 - 2026-11-18 (fix/w53-cellvote): the egg loop reproduced on a plain vote (cell.vote_mate) and the landfall arrival wait (core.arrival_nowait) fixed; the missing vote window not reproduced.
 - 2026-11-18: released in 0.7.15.2.
+- 2026-11-20: the no-wait applied to every switch (every guest is on its way when the landfall editor asks), not only slow links: BUG-1336 (`core.arrival_wait`) waits again for a quick arrival, fix/w59-cell.

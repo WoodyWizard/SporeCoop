@@ -406,6 +406,31 @@ static void link_pace()
     CHECK(f.round_cells(400) == 80 && f.round_cells(30) == 30);
 }
 
+// BUG-1333: the host's own cell changes 4DA56CA5 -> BAF1AD40 (a level rebuild); a guest without a cell of its own
+// still shows 4DA56CA5 for ~0.5 s (its follow is on its way): its kin get the world's cell for the window, a guest
+// that keeps 4DA56CA5 as its own choice gets its own kin again after it
+static void own_cell_follow()
+{
+    cell_logic::OwnCellFollow f;
+    const uint32_t a[3] = {0x4DA56CA5u, 0x3D97A8E4u, 0x40616200u}, b[3] = {0xBAF1AD40u, 0x3D97A8E4u, 0x40616200u},
+                   c[3] = {0xE219E5D2u, 0x3D97A8E4u, 0x40616200u};
+    f.seen(a, 10.0);
+    CHECK(!f.follows(a, 10.0, 15.0)); // the first cell seen: no change, nobody follows
+    f.seen(a, 20.0);
+    CHECK(!f.follows(a, 20.0, 15.0));
+    f.seen(b, 53.7); // the change
+    CHECK(f.follows(a, 53.8, 15.0));  // a partner still on the previous cell
+    CHECK(!f.follows(c, 53.8, 15.0)); // a partner with a cell of its own
+    CHECK(!f.follows(b, 53.8, 15.0)); // one that has followed already (the world's cell anyway)
+    CHECK(!f.follows(a, 69.0, 15.0)); // after the window: its own choice
+    f.seen(b, 60.0);                  // the same cell again: the change time stays
+    CHECK(f.follows(a, 60.0, 15.0));
+    f.seen(a, 61.8); // back
+    CHECK(f.follows(b, 61.9, 15.0));
+    CHECK(!f.follows(a, 61.9, 15.0));
+    printf("  own_cell_follow ok\n");
+}
+
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++)
@@ -426,6 +451,7 @@ int main(int argc, char** argv)
     kill_word_ko();
     active_set();
     link_pace();
+    own_cell_follow();
     if (g_fail) {
         printf("cell_tests: %d FAILED\n", g_fail);
         return 1;

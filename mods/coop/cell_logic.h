@@ -476,4 +476,28 @@ struct LinkPace {
     }
 };
 
+// BUG-1333 (cellsync_kin.cpp): this game's own cell (the kind-5 answer S+0x10) as the population last saw it, and the
+// one before. For `window` s after it changed, a partner whose cell is still the previous one is on its way to follow
+// the change (a guest without a cell of its own, BUG-0508): its kin get the world's cell, not the one it is leaving.
+struct OwnCellFollow {
+    uint32_t now_key[3] = {}, prev_key[3] = {};
+    double changed_at = -1e9;
+    // the population sees `key` as this game's own cell at time t
+    void seen(const uint32_t key[3], double t)
+    {
+        if (key[0] == now_key[0] && key[1] == now_key[1] && key[2] == now_key[2])
+            return;
+        if (now_key[0]) {
+            std::copy(now_key, now_key + 3, prev_key);
+            changed_at = t;
+        }
+        std::copy(key, key + 3, now_key);
+    }
+    // a partner with cell `k` at time t follows the change (gets the world's kin)
+    bool follows(const uint32_t k[3], double t, double window) const
+    {
+        return prev_key[0] && k[0] == prev_key[0] && k[1] == prev_key[1] && k[2] == prev_key[2] && t - changed_at < window;
+    }
+};
+
 } // namespace cell_logic
