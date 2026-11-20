@@ -1,5 +1,6 @@
 #include "civ.h"
 #include "civ_internal.h"
+#include "civ_wallet.h"
 
 namespace civ {
 
@@ -977,6 +978,8 @@ static void SK_THISCALL h_AddMoney(void* civ, float amount, int difficulty)
         g_n.income_blocked++;
         return;
     }
+    if (!guest && in_civ && civ_wallet::host_add_money(civ, amount, difficulty)) // BUG-9259: split into the wallets
+        return;
     o_AddMoney(civ, amount, difficulty);
 }
 

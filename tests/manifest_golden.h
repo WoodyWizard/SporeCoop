@@ -70,6 +70,7 @@ inline host_world::MsgClass msg_class(uint8_t type)
     case net::MSG_CELL_MATE: // (added after 0.7.15.1, BUG-1246: a type 0.7.15.1 did not know)
         return host_world::MsgClass::Unknown;
     case net::MSG_IDENTITY: // (added after 0.7.15.2, BUG-9258: the Lineages port; a type 0.7.15.2 did not know)
+    case net::MSG_CIV_WALLET: // (added after 0.7.15.2, BUG-9259: a type 0.7.15.2 did not know)
         return host_world::MsgClass::Unknown;
     }
     return host_world::MsgClass::Unknown;

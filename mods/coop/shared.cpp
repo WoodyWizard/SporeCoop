@@ -1,3 +1,4 @@
+#include "civ_wallet.h"
 #include "lifecycle.h"
 #include "shared.h"
 #include "game.h"
@@ -252,7 +253,11 @@ static Res g_res[] = {
 static uint32_t g_mode; // the game mode of the last tick: status / debug_add use its resources
 
 // rivals mode (space_rivalry.cpp): every player has its own Space budget, nothing is shared
-static bool own_budget(const Res& r) { return r.mode == modes::kSpace && spaceext::rivals(); }
+static bool own_budget(const Res& r)
+{
+    return (r.mode == modes::kSpace && spaceext::rivals()) ||
+           (r.mode == modes::kCiv && civ_wallet::active()); // BUG-9259: every player's own Civ money
+}
 
 void init(const SkHost* host, SkMod* mod)
 {
