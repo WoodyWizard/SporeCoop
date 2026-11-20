@@ -64,7 +64,7 @@ import keyviews
 import lane
 import sameview as sv
 import twoinst
-from coop_campaign import Campaign, Player, Service, phase_frame
+from coop_campaign import CIV_ARRIVAL_PARTS, Campaign, Player, Service, phase_frame
 from coop_civ import civ, dist
 from coop_civ_designs import two_models
 from coop_civ_own_species import check_paint, closeup as citizen_closeup, fmt, species as citizens, wait_city
@@ -486,6 +486,8 @@ def main():
                          rejoins=False, finale=False, finale_from_galaxy=False, jump=False, seed=seed)
     run_dir = lane.out_dir('line_stages', time.strftime('%Y%m%d-%H%M%S'))
     camp = Campaign(ca, players, run_dir, seed)
+    if a.civ_editors:  # (the guest's own vehicle must not be the host's model byte for byte: its check against the culture's)
+        camp.arrival_parts = CIV_ARRIVAL_PARTS
     camp.ids()
     camp.health()
     pid = players[1].pid

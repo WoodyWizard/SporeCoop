@@ -117,6 +117,7 @@ TRIBE_EDITOR_PARTS = (((88, 130), (900, 850)), ((220, 130), (900, 700)), ((350, 
 # inside them, so its designs are not the host's model byte for byte (lab 20261119-164538 line_stages_editors: the
 # host's end-of-Tribe vehicle and the guest's own were the same model 3A5843B7, the same three drags). (Lab
 # 20261119-165858 line_stages_outfit: three parts on other places, one at y 680, never let the City Hall editor end.)
+# Only line_stages --civ-editors takes it (Campaign.arrival_parts); every other run keeps the host's three drags.
 CIV_ARRIVAL_PARTS = TRIBE_EDITOR_PARTS + (((220, 130), (1025, 775)),)
 EDITOR_PLACES = [(1000, 560), (1000, 470), (1000, 650)]  # onto the stage
 VK_F9 = '0x78'
@@ -269,6 +270,8 @@ class Campaign:
         self.cap = {}  # player -> (caption seen since, last OK)
         self.talks = {}  # player -> answers to a Civ talk that is still up (BUG-0290)
         self.edits = {}  # player -> "done" clicks in the current editor
+        # a guest's own Civ arrival editors' drags (line_stages --civ-editors: CIV_ARRIVAL_PARTS, a model not the host's)
+        self.arrival_parts = TRIBE_EDITOR_PARTS
         self.segments = {}  # A6: stage -> the save it started from ({save, planet} or {fixture})
 
     # ---------------- findings and evidence ----------------
@@ -722,7 +725,7 @@ class Campaign:
             # (coop_tribe_civ.PARTS); the spaceship editor's at the end of Civ. WP-X1 of 0.7.16 (BUG-1277): a guest's own
             # City Hall and vehicle editors after its arrival in Civ (the follow phase) are the same editors
             civ_arrival = self.stage == 'civ' and self.phase == 'follow'
-            moves = (CIV_ARRIVAL_PARTS if civ_arrival else TRIBE_EDITOR_PARTS if self.stage == 'tribe'
+            moves = (self.arrival_parts if civ_arrival else TRIBE_EDITOR_PARTS if self.stage == 'tribe'
                      else list(zip(EDITOR_PARTS, EDITOR_PLACES)))
             for (sx, sy), (tx, ty) in moves:
                 drag_slow(con, sx, sy, tx, ty, pace)
