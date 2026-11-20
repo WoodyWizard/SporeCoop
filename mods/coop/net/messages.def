@@ -43,7 +43,10 @@
 // after a late arrival, BUG-1240; a host does not wait for such a guest's arrival, vote.cpp core.arrival_nowait).
 // Minor bump of feat/lineages-port: session 1.2 (MSG_IDENTITY, a new type older versions ignore: BUG-9258).
 // Minor bump of feat/own-progress: session 1.3 (MSG_PROGRESS, a new type older versions ignore: BUG-9265).
-FAMILY(session,   1, 1, 3, STAGE_ALWAYS, "session", "net/protocol.h")
+// Minor bump of feat/own-cards: session 1.3 (MSG_OWN_CARDS 75, a new type older versions ignore: BUG-9263; 74 is
+// MSG_CIV_WALLET of feat/civ-own-money, BUG-9259).
+// Merge of both in feat/lineage-cells: session 1.4 (MSG_PROGRESS 77 and MSG_OWN_CARDS 75).
+FAMILY(session,   1, 1, 4, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 1, STAGE_CREATURE, "Creature", "")
 FAMILY(npc,       4, 1, 1, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
@@ -130,6 +133,7 @@ MSG(70, HOST_BUSY,    R,  Host,  Session,   HostBusy,    Client, session,   "the
 MSG(71, TRIBE_ANIM,   RU, Host,  Module,    Tribe,       Client, tribe,     "u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160)")
 MSG(72, CELL_MATE,    RU, Guest, HostWorld, Cell,        Host,   cell,      "u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246)")
 MSG(73, IDENTITY,     R,  Any,   Session,   Identity,    Both,   session,   "the persistent player identity (identity.h, BUG-9258): guest -> host u64 its own after each join; host -> guests u8 n, n x {u8 player, u64 identity}")
+MSG(75, OWN_CARDS,    R,  Any,   Session,   OwnCards,    Both,   session,   "the own stage history (cards.h, BUG-9263): host -> a guest u8 0, u8 flags, 5 x u32 its seat's consequence cards, f32 social, f32 combat; guest -> host u8 1, u32 the Cell card its own play would give now")
 MSG(77, PROGRESS,     R,  Any,   Session,   Progress,    Both,   session,   "own progress in Cell / Creature (own_progress_logic.h, BUG-9265): u8 kind (1 ask, 2 set, 3 report, 4 table, 5 gain), payload")
 
 #undef MSG
