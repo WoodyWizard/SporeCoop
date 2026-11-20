@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+## [0.7.15.5] - 2026-11-19
+
+A fix for players who could not leave the Tribe stage: the City Hall editor at its end could not be named after a
+Space captain had once been named without a species (the problem behind GitHub #202). Only the player with that game
+profile needs to update, but every player should keep the same version.
+
+### Fixed
+- Tribe -> Civilization: the City Hall and vehicle editors at the end of the Tribe stage could not be named in a game
+  profile where a Space captain had once been named while the game could not copy the species: the name panel had no
+  name field and no dice, the editor said "You must give your creation a name" for ever and the player could not leave
+  the Tribe stage. Now the name and the dice are always there (BUG-1328).
+
+## [0.7.15.4] - 2026-11-19
+
+Two crash fixes found while testing the next version: the host's game could crash in Civilization while its
+vehicles fought or preached at a city, and at the end of Tribe when another cinematic played as the City Hall was
+built. The fixes are in the host's game; both players should update.
+
+### Fixed
+- Tribe -> Civilization: when another cinematic played just as the City Hall was built at the end of Tribe, the game
+  skipped the City Hall cinematic and never opened the vehicle editor, and the next click on the evolve button crashed
+  the host's game. The City Hall cinematic now always plays and the vehicle editor follows; a second City Hall no longer
+  crashes the game (BUG-1325).
+- Civilization: the host's game could crash while its vehicles fought or preached at a city in a co-op game: the mod's
+  relay of the host's shots read a target that was not a game object as one (BUG-1322).
+
+## [0.7.15.3] - 2026-11-19
+
+A fix for a crash in the Space stage reported on GitHub (#203): a player who joined the host's Space game crashed
+when opening the captain screen or accepting an adventure mission. Both players should update.
+
+### Fixed
+- Space: a player who joined the host's Space world no longer crashes on Windows when opening the captain screen
+  (the captain button over the ship's picture) or when accepting an adventure mission (BUG-0304, BUG-1278).
+
 ## [0.7.15.2] - 2026-11-18
 
 More fixes for problems seen in a video of two players, mostly in the Cell stage and the move to the Creature stage:

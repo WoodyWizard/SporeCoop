@@ -7921,6 +7921,8 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
 * The rank badge of a captain-less empire runs the captain screen's equipment panel first, which faults inside the
   game (0x5971D4 or 0xC02A14, handled) and stops before the portrait: the badge alone does not reproduce BUG-1111 in
   the lab (docs/re/space.md#space-captain-portrait-null). The test allows only these two faults.
+  ~ superseded (2026-11-18): see [the captain screen without faults](#testing-captain-items); each fault is allowed
+  only while its guard is off.
 * Twin: `SPORE_LAB_FIXOFF="space_captain_none=game.captain_portrait"`.
 
 ## Start-up waits on a signal instead of fixed sleeps (2026-11-15, feat/w51-labstart)
@@ -9228,3 +9230,75 @@ BUG-1241, BUG-1250, BUG-1252, BUG-1253 (creature fixture, warm; docs/re/creature
   started" 0). SPORE_FIX_OFF=world.menu_intro_return fails (the host's panel never comes).
 * The lanes' galaxy menu shows the game's "Network play disabled" box (the DBCheck at intro state 6) over the galaxy:
   normal offline, not a bug of the test.
+
+## The captain screen without faults (space_captain, space_captain_none, 2026-11-18, fix/w55-captain)
+<a id="testing-captain-items"></a>
+
+BUG-0304 (GitHub #203), BUG-1278. Written without a lab run (owner rule 2026-11-18); the night run gives the run ids.
+* `coop_space_captain.py` (suite `space_captain`, `space` fixture): first the adventure mission screen (`coop.captain
+  open`, a Space UI whose badge was never clicked) and a real click on its Accept (control 0x075DD108 -> the captain
+  panel mode 2 -> the items palette; probe `SporeCoop::CaptainItems_Palette` hits > 0), then the rank badge with a real
+  click, then the BUG-0303 zoom-out. Both games must log no caught fault at all (before: one fault 0x5971D4 per
+  opening was expected). Twin: `SPORE_FIX_OFF=game.captain_items` (the guest faults at 0x5971D4 after each route).
+* `coop_space_captain_none.py`: the handled faults 0x5971D4 / 0xC02A14 are allowed only while `game.captain_items` /
+  `game.captain_stats` is off (read from `coop.captain`: `items: none N fix=0|1 stats: skipped N fix=0|1`). Twin for
+  BUG-1278: `SPORE_FIX_OFF=game.captain_stats` (0xC02A14 at the rank badge of captain 0).
+* Not known before the night run: whether Accept on a mission screen opened without an adventure offer shows the
+  captain panel or something else after the palette; what the screens show is in captain_mission.png /
+  captain_accepted.png.
+
+* Lab 2026-11-19 (lane 3): PASS 20261119-111406 (both tests 2x); FAIL twins 20261119-112022
+  (`space_captain=game.captain_items`: 0x5971D4) and 20261119-112459 (`space_captain=game.captain_stats`: 0xC02A14;
+  `space_captain_none=game.captain_portrait`: the crash at 0xA055B5).
+* CORRECTION (2026-11-19): the first run 20261119-094350 failed in the tests: `coop.ui find "Accept"` / `"Decline"`
+  return the captain panel's hidden copies first (and an always shown "Decline" at 68 9), so the shown mission screen
+  was missed and, left open, kept the badge from opening the captain screen. `uifind.where(con, ctl)` finds a shown
+  window by control id (the mission screen: Decline 0x075DD100, Accept 0x075DD108). Decline on this screen of no offer
+  hides the Space UI behind the drive's message and the badge does nothing after it: both tests leave it by Accept and
+  the panel's OK.
+* CORRECTION (2026-11-19): BUG-1278's twin is `space_captain=game.captain_stats` (the fixture captain has no species
+  profile in the guest's game: `stats: skipped` +3 per opening). Captain 0 reaches neither guarded fault, and
+  space_captain_none allows no handled fault at all now (the old allowance for a guard that is off let its twin pass).
+
+## The end of Tribe with another cinematic at the graduation (2026-11-19, fix/w57-crashes)
+<a id="testing-tribe-city-hall-race"></a>
+
+BUG-1325, `tribe_city_hall_race` (coop_tribe_city_hall_race.py, tribe fixture, ~14 min): `coop.tribe gradcine
+TRG_TotemPole_Conquer` makes the host's game start that cinematic right before its next TribeStage_Graduate (the race of
+lab 20261119-120449, where the first NPC tribe's TRG_PRE_FirstTribeAppears played then), then the end of Tribe the
+players' way with tribe_civ's steps. A host that stands in Tribe 75 s after the City Hall editor with the advance button
+up clicks it again, as a stuck player would. Checked: the game's request after the City Hall editor is a vehicle editor
+(`coop.vote tribeend`: last editor; on the 0.7.15 line, which has no `coop.vote tribeend` (BUG-1280), the votes
+after an advance in their order: the first is the City Hall's, a later one a vehicle editor's), both games reach Civ,
+no fault. Twins: `tribe_city_hall_race_off`
+(tribe.city_hall_cinematic off: no vehicle editor; the second graduation survives through game.destroy_null) and
+`tribe_city_hall_race_crash` (both off: the fault of the run above). `coop.tribe graduation` prints the hook's counts.
+
+## Shots whose shooter or target is no listed object (2026-11-19, fix/w57-crashes)
+<a id="testing-civ-shot-objects"></a>
+
+BUG-1322, `civ_shot_objects` (coop_civ_influence.py --case shotobjs; on the 0.7.15 line coop_civ_shot_objects.py,
+fix/w58-hotfix; civ_npc fixture, warm, ~5 min): two religious
+vehicles (spawned with `force`, put on the ground at the nearest NPC city) preach for 45 s; `coop.civ shotobjs` prints
+the shooters and targets of the host's observed shots that were no listed object (evidence, not a check). Then
+`coop.civ shotprobe` hands the shot observer one shot of a listed host vehicle at a fake target whose preceding dword is
+the exe's base (its +0xC is 0x0000FFFF): checked that it is taken as a target the guests cannot find (kind 2) and the host
+has no fault. Twin `civ_shot_objects_off` (civ.shot_target_listed off): the observer calls into it, the host faults.
+
+## An editor without a creation key in a profile with a list under key 0 (0.7.15 line, 2026-11-19, fix/w59-hotfix)
+<a id="testing-creation-props-key0-0715"></a>
+
+BUG-1328 (docs/re/creations.md#creations-props-key0), the 0.7.15 line's form of rel/0.7.16's `creation_props_key0`.
+* `coop_creation_props_key0.py` (suite `creation_props_key0`, `tribe` fixture, about 12 min): the host's game gets a
+  creation property list under key 0 the way "Name Your Captain" writes it when the species copy fails
+  (`coop.creationprops plant Breer`: it reaches the lane profile's Pollination.package at once), then the end of Tribe
+  the players' way (coop_tribe_civ.py's advance button, card, caption, votes). In the game's own City Hall and vehicle
+  editors: three parts, "done" without a name, and the name panel must show its name field 0xC7CEB1BD and the dice
+  0x0552C901 (`uifind.where`: shown through visible parents); key frames `cityhall_name_panel` /
+  `vehicle_name_panel`; then the dice and "done" must leave each editor, and the host's game must reach Civ. The test
+  ends with `coop.creationprops remove` (deleted from Pollination.package, flushed): the lane profile as before.
+* Twin `creation_props_key0_off` (`SPORE_FIX_OFF=game.creation_props_key0`): no field, no dice in the City Hall editor,
+  which the end of Tribe cannot leave: FAIL there (the test stops; the lab kills the games).
+* A lane whose profile already has such a list (space_captain_none names a captain whose species cannot be copied; see
+  the RE section) passes the other end-of-Tribe tests only with the fix on; a profile can be checked by the .prop
+  records of its Pollination.package (a clean profile has none).
