@@ -117,13 +117,16 @@ static std::string plant(const char* name)
 
 // tests: the list under key 0 out of the profile's Pollination.package (the database CaptainProps_Save wrote it to:
 // Resource::GetDatabaseByID(0x11AC19C), vtable 0x140A178; DeleteRecord is slot 0x40 there and in DatabasePackedFile's
-// 0x1436938: thiscall bool(db, const ResourceKey*) ret 4) and out of the manager's cache (RemovePropertyList)
+// 0x1436938: thiscall bool(db, const ResourceKey*) ret 4; Flush is slot 0x24, thiscall bool(db)) and out of the manager's
+// cache (RemovePropertyList)
 static std::string remove_key0()
 {
     static uintptr_t rm = H->sym("App::cPropManager::RemovePropertyList"), db_get = H->sym("Resource::GetDatabaseByID");
     static const uint32_t key[3] = {0, 0x00B1B104, kPropsGroup};
     void* db = db_get ? skg::cdecl_call<void*>(db_get, kPollinationDb) : nullptr;
     bool deleted = db && readable(db, 4) && skg::vcall<bool>(db, 0x40 / 4, (const uint32_t*)key);
+    if (deleted)
+        skg::vcall<bool>(db, 0x24 / 4); // Flush (writes the index now: a killed game keeps the deletion)
     void* pm = prop_manager();
     void* list = key0_list();
     if (list && pm && rm)
