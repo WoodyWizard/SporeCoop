@@ -405,3 +405,25 @@ anchor so other docs can link to it:
   the host's family after they were moved to their own species' herd. No wrong behaviour seen yet.
 * Reproduce: tools/tests/coop_home_nests.py, then `coop.nest home` and `coop.nest herd <herd>` on the guest.
 * Ticket: BUG-9270
+
+
+## Own villages: the host's villager cards list a partner's member (2026-11-20, feat/lineages-tribe)
+<a id="issue-own-village-host-cards"></a>
+
+* What happens: with a partner's own village in Tribe (BUG-9268), the host's villager cards on the right of the HUD
+  show a card of the partner's species among the host's. Clicking it selects nothing.
+* Reproduce: tools/tests/coop_tribe_seats.py (or the graduation to Tribe with a guest on its own creature), then look
+  at the host's cards.
+* Known: Tribe_IsPlayerOwned answers true for a partner's village on the host (`tribe.guest_ai`); the card list's
+  caller is not traced (docs/re/tribe.md#tribe-own-villages).
+* Ticket: BUG-9271
+
+
+## Own villages: one 31 s hang of a guest's world teardown at a rejoin (2026-11-20, feat/lineages-tribe)
+<a id="issue-own-village-rejoin-hang"></a>
+
+* What happens: a guest with its own village left and joined again; leaving its Tribe world for the host's it stood
+  31 s (watchdog) and the host timed it out. Seen once; four later rejoins had no hang.
+* Reproduce: a guest with its own village (BUG-9268) leaves and joins again while the host plays on in Tribe.
+* Known: suspected the terrain cursor bound to the freed village (guarded since); not proven.
+* Ticket: BUG-9272
