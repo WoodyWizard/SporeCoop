@@ -906,3 +906,41 @@ mods/coop/cards.{h,cpp}; the game side in [creations-own-cards](re/creations.md#
   off` (a guest's kill counts for the host, its social win for nobody). Status and test seams: `coop.cards`
   (`credit`, `decide`, `cell`, `space`, `seat`), `coop.party` prints each seat's cards. Test:
   tools/tests/coop_own_cards.py (suite own_cards).
+
+## Partner creatures in the host's save and every player's own nest (2026-11-20, feat/lineages-nests)
+<a id="architecture-own-nests"></a>
+
+Phases 3 and 4 of the Lineages port (PR #196), BUG-9261 and BUG-9262, on top of the party
+([architecture-party](#architecture-party)). The game side is in
+[creature-own-nests](re/creature.md#creature-own-nests).
+
+* **One key per creation** (`creations.one_key`, BUG-9261; Lineages BUG-9180): a player's creation is registered on
+  every game, its owner's included, under `0x7C` + a hash of its bundle (`shared_instance`), no longer salted with the
+  owner's network id. The key is the same across rejoins and machines; a guest's avatar wears it too (`own_key_here`),
+  so the host's nest of that creature is a nest of the guest's own species on the guest's game.
+* **Archive** (BUG-9261): the host writes a partner's bundle next to the planet, `<planet>.spo.duoguest-<KEY>` (u32
+  'DGA1', u32 key, u8 owner id, the bundle as `pack()` writes it; 16 files, 8 MB each at most; never replaced by a
+  different one under the same key: `founders::store_guest_model`). A hook on `cGamePersistenceManager::LoadGameByName`
+  registers every archive of the planet (`founder_<key>_<hash>.package`, priority kPrioModel) before the game reads the
+  save (`creations::restore_guest_model`; a bad archive is logged and skipped, the planet still loads).
+  `world::game_key_for_planet` gives the planet's key before the load (`current_game_key` names the previous world then).
+  `coop.creations archive [<player>]`.
+* **Own nests** (BUG-9262, mods/coop/home_nests.{h,cpp}, host only, every 2 s from `frame_stage_ticks`): each seat
+  (party.h) playing its own species gets a nest herd of that species 45-100 m from the host's home nest (made outside
+  the frame, archived, best friends with the party: relation 6 and `cHerd_SetBestFriends`), filled with 4 members of its
+  species and refilled when its family is gone while its player is online. A partner online when its nest is made gets
+  the world again once the nest has members; a joining partner's first world waits for its nest (`world::set_share_hold`,
+  2 minutes at most). The nest's spot is noted per planet in the host's worlds.ini (`[nest<seat>]`). An offline
+  partner's nest is the AI's (it may die out) and is made again on return. `coop.homenests [make|extinct <seat>]`.
+* **Home** (nest.cpp MSG_NEST kind 2, host -> guest, f32 x y z, 1 Hz): the guest's game joins the herd of the nest the
+  host names (CreatureGame_JoinNestHerd, no cinematic), so it hatches and respawns there, and once per world puts the
+  creature next to it. wsync's nest row (BUG-0640) no longer migrates such a guest to the host's nest
+  (`wsync.own_nest_stays`). Older guests skip kind 2. `coop.nest home`.
+* Party species are not hunted by the players (`creature.party_species_peace`, npc.cpp).
+* Each player's own species is THE player species in its own game (`creature.own_player_species`, Lineages BUG-9177),
+  and the copies of its own family live in its own nest herd on its game (`creature.own_family_home`, BUG-9175 there).
+* A joining guest outside a world reports the creature it will play in the host's world (its record of that world)
+  before it loads it, so its first world waits for its nest (`creations.join_world_record`, BUG-9267).
+* Left out of Lineages' home_nests: the ring cleanup of nests of old salted keys (BUG-9182 there: not needed with one
+  key from the start). Tests: tools/tests/coop_home_nests.py, coop_home_nests_join.py (suites home_nests,
+  home_nests_join).

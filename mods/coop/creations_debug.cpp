@@ -6,6 +6,15 @@ namespace creations {
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if (!a.empty() && a[0] == "archive") { // archive [<player>]: tests (BUG-9261): the host archives that partner's creature
+        // with the planet now (home_nests does it with each partner's nest); no player: the counters
+        if (a.size() >= 2) {
+            std::string err;
+            const bool ok = archive_guest_model((uint8_t)atoi(a[1].c_str()), world::current_game_key(), err);
+            return std::string(ok ? "archived\n" : "not archived: " + err + "\n") + archive_status();
+        }
+        return archive_status();
+    }
     if (a.size() >= 2 && a[0] == "ps_null") { // ps_null <frames>: tests (BUG-1057), the host's evolved species is taken as
         // not known to this game for that many player-species frames (as a species registered a little later)
         g_ps_test_null = (unsigned)atoi(a[1].c_str());

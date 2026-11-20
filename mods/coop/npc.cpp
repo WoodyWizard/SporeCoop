@@ -7,6 +7,9 @@
 #include "wire/tribe_anim.h"
 #include "settings.h"
 #include "teamplay.h"
+#include "home_nests.h"
+#include "nest.h"
+#include "party.h"
 
 #include <algorithm>
 #include <cmath>
@@ -507,6 +510,24 @@ std::string debug_rxkeep(int n, float secs)
 static uint32_t g_stale_dropped = 0;   // guest: proxies the host stopped talking about (ghosts)
 static uint32_t g_deaths_played = 0; // guest: proxy deaths replayed (Die + animation)
 static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0, g_kills_credited = 0;
+
+// BUG-9262 (Lineages roadmap phase 2, owner decision 7): a player's (or a partner's) hit on a creature of a party species
+// (the host's own or a seat's own creature, home_nests.cpp) is dropped in the creature stage: the party's species are
+// best friends, also while their player is offline. `coop.fix creature.party_species_peace off`: hits land (0.7.15.2).
+static bool g_party_peace_fix = true;
+COOP_FIX("creature.party_species_peace", "BUG-9262", g_party_peace_fix,
+         "creature: no player hunts a party species (a partner's own nest family), also while its player is offline");
+static uint32_t g_party_hits_kept = 0;
+static bool party_peace(void* npc, bool by_player, uint8_t from)
+{
+    if (!g_party_peace_fix || !by_player || !home_nests::enabled() || !game::in_creature_stage() ||
+        !party::party_species(game::species_key(npc).instance))
+        return false;
+    if (g_party_hits_kept++ < 20)
+        H->log(M, SK_INFO, "npc: player %u's hit on a party species %08X dropped (BUG-9262)", from,
+               game::species_key(npc).instance);
+    return true;
+}
 
 static bool g_host_away = false; // guest: the host is in the main menu, our own game runs the NPCs
 // BUG-1174 (owner decision 2 of docs/plan-0.7.15.md, C2: an editor visit is the host away, not a world change): the
@@ -2121,10 +2142,17 @@ static bool herd_is(void* h, void* species)
            game::herd_species(h) == species;
 }
 
+// BUG-9262: see own_family_tick
+static bool g_own_family_fix = true;
+COOP_FIX("creature.own_family_home", "BUG-9262", g_own_family_fix,
+         "creature: on a guest's game the copies of its own nest's family live in its own nest herd (its family)");
 static void* proxy_herd(const game::Key& k, uint8_t flags, const net::Vec3& pos, void* species)
 {
     void* species_nest = species;
-    if (flags & net::NF_FAMILY)
+    // a member of the host's family is ours when we play the host's species; a guest playing its own species has its
+    // own family (BUG-9262: the host's family copies went into the guest's own nest herd, its family on its game)
+    void* av = game::avatar();
+    if ((flags & net::NF_FAMILY) && (!g_own_family_fix || !av || game::species_profile(av) == species))
         if (void* h = game::avatar_herd())
             return h;
     // the nest of the species in this world (from the save): by the host's key. A creation of the
@@ -2897,6 +2925,64 @@ static void away_locals(double now)
            skipped);
 }
 
+// BUG-9262 (Lineages BUG-9175): a guest's own family: the copies of the host's members of this player's own nest (the
+// host's key of its creation, which is this game's key of it too since one_key, BUG-9261) live in this player's own nest
+// herd, the home the host tells it (nest.cpp kind 2). A copy went into a herd of ours (puppets' and proxies' herds), so
+// this game never saw it as the player's family (no mate, no family greeting). Once a second, outside the frame's NPC
+// tick. `coop.fix creature.own_family_home off`: the copies stay in their own herds.
+static uint32_t g_own_family_homed;
+static void own_family_tick(double now)
+{
+    static double next = 0;
+    if (!g_own_family_fix || now < next || !is_guest() || !game::in_creature_stage())
+        return;
+    next = now + 1.0;
+    const creations::Key hk = creations::player_key(C.sess->my_id(), creations::kCreature);
+    static const uintptr_t set_herd = H->sym("SporeCoop::Creature_SetHerd");
+    void* home = nest::home_herd();
+    if (!hk.instance || !set_herd || !home || !game::listed(home))
+        return;
+    const uint32_t lk = creations::local_species(hk).instance;
+    for (auto [id, pe, px] : px_walk()) {
+        void* c = pe.ref.p;
+        if (!c || !ref_alive(pe.ref) || game::is_dead(c) || game::destroy_pending(c))
+            continue;
+        const bool ours = px.key.instance == hk.instance || px.key.instance == lk;
+        if (ours && game::herd_of(c) != home) {
+            skg::thiscall<void>(set_herd, c, home);
+            if (g_own_family_homed++ < 20)
+                H->log(M, SK_INFO, "npc: our own family's member #%u joins our own nest herd %p (BUG-9262)", (unsigned)id, home);
+        } else if (!ours && game::herd_of(c) == home) {
+            // a copy of another species in our nest herd: the host's family went along when the claim moved our avatar
+            // here (CreatureGame_JoinNestHerd takes the avatar's herd mates); it goes back to the nest herd of its own
+            // species nearest to it
+            struct F {
+                void* prof;
+                void* home;
+                net::Vec3 at;
+                void* best = nullptr;
+                float d = 1e9f;
+            } f{game::species_profile(c), home, game::position(c)};
+            game::for_each_object([](void* o, uint32_t noun, void* u) {
+                auto& f = *static_cast<F*>(u);
+                net::Vec3 q;
+                if (noun == game::kHerdNoun && o != f.home && skg::readable(o, 0x21C) && game::herd_species(o) == f.prof &&
+                    game::herd_nest(o) && game::object_position(game::herd_nest(o), q) && net::dist(q, f.at) < f.d) {
+                    f.d = net::dist(q, f.at);
+                    f.best = o;
+                }
+                return true;
+            }, &f);
+            if (f.best) {
+                skg::thiscall<void>(set_herd, c, f.best);
+                if (g_own_family_homed++ < 20)
+                    H->log(M, SK_INFO, "npc: #%u (another species) leaves our own nest herd for its species' nest herd %p (BUG-9262)",
+                           (unsigned)id, f.best);
+            }
+        }
+    }
+}
+
 static void tick_frame(double now)
 {
     const auto& creatures = game::creatures_updated(); // must run every frame
@@ -2905,6 +2991,7 @@ static void tick_frame(double now)
     if (game::in_creature_stage())
         remove_saved_strays(now);
     hatch_tick(now, !creatures.empty());
+    own_family_tick(now); // BUG-9262
     if (g_leave_locals_due && !is_guest()) { // BUG-0412: the guest left; its game plays the planet on alone
         g_leave_locals_due = false;
         if (game::in_creature_stage() && game::avatar() && game::world_epoch() == g_away_snap_epoch &&
@@ -3310,6 +3397,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         void* npc = it;
         if (creature_hp::drop_partner_hit(npc)) // BUG-0374: the host's pack / family (npc.party_peace)
             break;
+        // BUG-9262: a partner's hit lands here through apply_damage (no damage filter): the party's species are best
+        // friends here too (a player's own nest family, also while that player is offline)
+        if (party_peace(npc, true, from))
+            break;
         // BUG-0805: the guest's puppet as the attacker only while it is a live creature here (TakeDamage relays it)
         void* attacker = g_handler_live_fix && C.puppet_live ? C.puppet_live(from) : C.puppet_of(from);
         float dmg = teamplay::on_player_hit(npc, from, net::sane_damage(q.damage, kMaxHit));
@@ -3431,6 +3522,10 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             return true;
         }
         if (!game::is_puppet(c)) {
+            // BUG-9262 (Lineages decision 7): the party's species are best friends: no party member hunts them, also
+            // while their player is offline (their nest's family). Species outside the party keep the game's rules.
+            if (party_peace(c, attacker == av || (attacker && game::is_puppet(attacker)), 0))
+                return false;
             if (attacker == av)
                 damage = teamplay::on_player_hit(c, 0, damage);
             return true;

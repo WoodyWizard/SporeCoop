@@ -414,3 +414,11 @@ anchor so other docs can link to it:
 * Next steps: send and register that resource under the host's key (BUG-1279 lists the pitfalls).
 * Ticket: BUG-1279.
 
+
+## Own nests: the host's family copies stay in the guest's own nest herd list (2026-11-20, feat/lineages-nests)
+<a id="issue-own-nest-herd-list"></a>
+
+* What happens: on a guest's game that joined its own nest, `coop.nest herd <its home herd>` still lists the copies of
+  the host's family after they were moved to their own species' herd. No wrong behaviour seen yet.
+* Reproduce: tools/tests/coop_home_nests.py, then `coop.nest home` and `coop.nest herd <herd>` on the guest.
+* Ticket: BUG-9270
