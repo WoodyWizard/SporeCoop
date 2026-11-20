@@ -185,6 +185,10 @@ Each phase ships on its own and keeps today's co-op working.
 Phases 1 and 2 are needed whatever phase 0 says; phase 0 only decides whether phase 5 is possible and how phase 4
 looks. Phase 0 is small (one to two days) and goes first.
 
+Status (2026-11-19 review): phase 0 is done. The work since followed player-hosted planets (5N A) and the galaxy
+server rather than phases 1, 5 and 6 as listed (docs/ROADMAP.md#roadmap-alpha-now). Phases 3 (an own Summon Flock
+per player) and 4 (the wild creatures near each player run by that player's game) are still to do.
+
 ## Risks
 <a id="server-risks"></a>
 
@@ -226,6 +230,9 @@ worlds that you can select from or maybe a new menu to spawn the player somewher
   servers, players' identities, parties, bans, which planet a player was on; it can run anywhere, a cheap Linux VPS
   too), and **planet servers** (hidden Spore instances, one per planet that has players, on a Windows PC; started when
   a player goes there, stopped some minutes after the last one leaves, the planet saved).
+  ~ superseded (2026-11-19 review): planets are hosted by a player's game on the planet (5N A,
+  #server-load-and-player-hosts) and the galaxy server stores them (#server-world-storage); a server-run Spore
+  per planet stays a later option for busy planets.
 * The player's way in, recommended: Spore, F9, "Online" connects to the galaxy server; a returning player goes back to
   the planet they were on; a new player gets "Find me a planet" (the galaxy server picks one with room and players of
   a similar stage) and the list of live planets (name, stage, players) to pick from. The planet server then sends its
@@ -254,6 +261,8 @@ another planet, and see other players in the Creature stage."
   as the partners are shown today).
 * Open research for that journey: a Space visitor on a planet whose server runs the Creature stage (two stages on one
   planet: today every player in a session plays the same stage); what a visitor may do there (ROADMAP MMO questions).
+  Answered since: eras, one shared world per stage on each planet (#server-eras), seen from each other as visitors
+  (#server-era-spike).
 
 ## Load per planet, and planets hosted by players (2026-11-17)
 <a id="server-load-and-player-hosts"></a>
@@ -374,6 +383,7 @@ llvm-mingw, or Linux), net/galaxy.h (the protocol), mods/coop/galaxy_client.cpp 
   0.1 % loss, as a direct connection (105-125 ms, up to 0.6 %). Relay load in play: 11-12 KB/s for one partner.
 * Not yet: the server keeping each planet's world (the host's game hosts whatever it has loaded), the hand-over to the
   next player, a menu.
+  Done since: #server-world-storage, #server-handover, #server-galaxy-menu-built.
 
 ## The galaxy menu as the server's planets (owner's idea, 2026-11-17)
 <a id="server-galaxy-menu"></a>
@@ -416,6 +426,9 @@ while the host is in Cell, Creature or Civ.
   (leave one session, enter the next through the galaxy server).
 * Unlocks: tied to the world's creator, an away creator blocks everyone's later starts; Spore's own rule (a player starts
   any stage it has reached itself) does not. Moving on to the next stage by playing is always open.
+* Status (2026-11-19): this is how a party moves on to the next stage (owner on 6Y and 7C: "they should be in the
+  same stage with other players in their stages"). Not built yet: the galaxy server keeps one session per planet
+  name (step 4, part 1, #server-party-progress-design).
 
 ## Seeing other eras: visitors (2026-11-17)
 <a id="server-era-visitors"></a>
@@ -473,6 +486,8 @@ key of another era's creation, placed ahead of the avatar and moved every frame.
 * ✔ The bars under the city hall are its own columns: they stand on the ground under the prop as well.
 * ~ Our props are left out of saves by a save-strip filter (era_visitors.cpp); not tested with a real save yet.
 * ? Not checked: collision (creatures walked through the truck's spot in the screenshots, as expected of a prop),
+* Status (2026-11-19): drawing is proven (a Civ truck driving and a city hall standing in a Creature game). Not built:
+  the stream between the eras' hosts that would show the real players of the other eras (step 4, last part).
   how a prop looks at a distance (level of detail), and many props at once.
 
 ## The galaxy server keeps each planet's world (2026-11-17, feat/lineages-alpha)
@@ -507,10 +522,13 @@ world::galaxy_pack / galaxy_install (mods/coop/world.cpp).
   species becomes the new host's, BUG-0508), so the planet's creator, back as a guest, was treated as a new player there
   (no creature of its own: the first-creature editor). Each player keeping their own creature on a stored planet is
   open (decision 5U).
+  Done since: #server-own-creatures (5U A).
 * ~ Seen with BUG-9252, not fixed: the mod's "Bringing your nest" loading screen stayed over that first-creature editor
   until its 120 s limit, and the galaxy menu's splash text ("galactic adventures", the rating line) was drawn over it.
 * Not yet: the hand-over while players stay (today everybody leaves when the host leaves, and the next to enter hosts
   the stored world), the galaxy menu showing the server's planets, eras.
+  Done since: the hand-over (#server-handover, #server-warm-handover) and the menu (#server-galaxy-menu-built).
+  Eras: not built (#server-eras).
 
 ### Each player keeps their own creature on a stored planet (2026-11-17, feat/lineages-alpha)
 <a id="server-own-creatures"></a>
@@ -571,6 +589,7 @@ show it's a special server?" Code on alpha: mods/coop/coop_ui.cpp (the connect p
 * ~ Seen: a host whose creature is dead keeps uploading, and the next player loads the planet into the death caption
   ("You were killed in battle"). Uploads could wait while the host is dead.
 * Not yet: leaving the galaxy from the window (today: quitting the game, or `coop.galaxy disconnect`).
+  Done since: the Co-op window's Join button reads "Leave Galaxy" while connected (coop_ui.cpp).
 
 ### The owner's first alpha test and its fixes (2026-11-17, feat/lineages-alpha, decisions 6A A, 6C A)
 <a id="server-alpha-test-1"></a>
@@ -845,6 +864,7 @@ be running on someone's computer."
   restarted under the 7 games: all 7 connected again by themselves within 25 s (each then off the planet, to enter
   again).
 * Still open from #server-creature-many: a joiner's world from the galaxy server's copy (6H B), Tribe measured.
+  The joiner's world from the server's copy: done since (#server-stored-join).
 
 ### Joining from the galaxy's copy; Tribe measured and shared (2026-11-18, feat/lineages-alpha, decision 6I A)
 <a id="server-stored-join"></a>
@@ -937,6 +957,9 @@ The owner's rules (#server-parties), on alpha:
 * Not yet: per-party difficulty, creature relations and goals (#server-seats-16); the parties survive a hand-over
   (a new host starts everyone alone); the Co-op window's "Players who can join" setting still reads 4 on a galaxy
   planet (the planet takes the galaxy's count).
+  Done since: the galaxy server keeps the parties across hand-overs (#server-parties-galaxy); difficulty and relations
+  per party in every stage (#server-party-difficulty, #server-party-relations, 2026-11-19). The goals and progress per
+  party are step 4 (#server-party-progress-design).
 
 ### Parties kept by the galaxy server, kick, the friends list's place (2026-11-18, feat/lineages-alpha, decision 6K)
 <a id="server-parties-galaxy"></a>
@@ -1092,6 +1115,9 @@ We'll have like a 6 hour rotation or something. Maybe every 3 hours they refresh
 * Players' own nests (BUG-9210) are another rule: removed after their player has been away for days, not hours (the
   player may come back), or when the player deletes their creature there (#server-handover, the owner's delete idea).
 * Not built; a decision when the persistent planets get their rules.
+* Owner 2026-11-19 (6Z): when a party moves on to the next stage its nests stay on the planet as wild animals of its
+  species, and the refresh rotates them out after a while ("keep the old nests around as wild animals, then they
+  rotate after time has passed"). Still not built: part of step 4 (#server-party-progress-design).
 
 ### The galaxy menu: what decides its planets (2026-11-17, feat/lineages-alpha, decision 5W A)
 <a id="server-galaxy-menu-spike"></a>
@@ -1253,6 +1279,7 @@ Owner 2026-11-18: "Let's also investigate the idea of connecting with Steam to a
   game's own ApplyEvent on that party's record. Extinction stays one per planet (6M B). Each guest gets its party's
   table. ✔ Kills: a stranger's kill counted only in its party's record and its own game. Not yet: the records are not
   saved (a hand-over keeps the new host's party's only), and NPCs still pick targets by distance (step 3).
+  Done since: saved (BUG-9270, #server-party-relations-saved), NPCs by party (BUG-9269, #server-party-ai).
 * Still one per world: the shared DNA pool, the Cell food total, the progress debt and the stage end (step 4, 6N A).
 
 ## NPCs treat each party by its own relations (6W B, 2026-11-19, feat/lineages-alpha)
@@ -1286,6 +1313,9 @@ Owner 2026-11-18: "Let's also investigate the idea of connecting with Steam to a
   it gets a slot. tools/tests/galaxy_server_check.py covers both.
 * Left for the owner (gameplay): who may host an empty planet and store over its world (S6; today anyone who enters
   first). Also open, not gameplay: encryption (the key travels in clear UDP: someone on the path could read it).
+* ~ superseded (2026-11-19): S6 is not an owner's choice (owner: "No one is replacing the persistent planets"). A
+  planet's upload is its running save on the server, the same planet going on. What is left is protection against
+  a broken or cheating host's save: step 4, part 6.
 
 ## Step 4, each party its own progress: the design (2026-11-19, feat/lineages-alpha)
 <a id="server-party-progress-design"></a>
@@ -1298,6 +1328,9 @@ What exists (research, 2026-11-19):
   it; a guest's gain moves the host's bar (dna_sync_raw) and MSG_DNA gives every guest the host's earned total.
 * The brain level also sets the NPC herds' level: the host's level for every herd (docs/re/creature.md, the brain
   level notes): the world has one level, as it had one health factor before BUG-9266.
+  ~ superseded (2026-11-19): CORRECTION, badly put: the brain level changes no creature. It decides which herds are
+  awake: Relevance_Update disables a herd whose brain range (+0x120, +0x124) does not hold the player's level
+  (docs/re/creature.md, the relevance notes); today the host's level decides for everyone.
 * The stage end is one game's: the bar full, the game offers the next stage and loads the next-stage save of the same
   planet. On a galaxy planet that takes the host (and its world) away from everybody.
 
@@ -1314,3 +1347,33 @@ Plan (built in this order once the decisions below are answered):
 
 Why not before the decisions: the bar per party alone lets a party that is not the host's fill its bar with no way to
 move on (step 2 is what happens then), and both steps write the galaxy's planet list.
+
+CORRECTION (2026-11-19, feat/lineages-alpha): the plan above missed the eras design of 2026-11-17 (#server-eras) and
+the era spike that proved a Creature game can show a Civ truck and a city hall (#server-era-spike). The owner, on 6Y,
+7C and 6Z: no new planet per party; a party that ends a stage joins the other players of that stage on the same planet;
+a private planet only when a player asks for one in the galaxy menu; old nests stay as wild animals and rotate after a
+while. 7A and 7B were withdrawn (badly worded, not gameplay choices). The plan as it stands:
+
+1. **Eras on the galaxy server**: a planet holds one session per stage (Samuth Creature, Samuth Tribe, ...), each with
+   its own stored world and its own host (the first player in it). The galaxy menu shows the planet once, with the
+   stages that have players. Built on the existing planet sessions (one more key: the stage).
+2. **The bar per party**: the host keeps each party's earned total (saved next to the planet, as the relations are,
+   BUG-9270); a guest's gain goes to its party's total; MSG_DNA gives each guest its party's; brain levels follow. The
+   herds near each player follow that player's own brain level (the game's rule, run per player as the view centres
+   already are, npc.view_centres); no creature's level is changed.
+3. **The stage end per party**: a party's bar full, its leader gets the game's own next-stage offer; the party leaves
+   the Creature era together (1X A) and enters the planet's Tribe era. The first party there makes it from its own
+   save through the game's own stage change; a later party joins it, and each player's village is founded at its own
+   nest's spot through the existing founding (ROADMAP decision 6, tribe.multi_founders, the late-joiner village of
+   BUG-9150), as Spore turns a nest into a village. To check in game: that a later party's nest positions carry over
+   into a Tribe world made from another party's save.
+4. **What stays behind** (6Z): the party's nests and family stay in the Creature era as wild animals of its species;
+   the nest refresh (#server-nest-refresh, a server clock) brings extinct species back and rotates such nests out
+   after a set time (a server setting).
+5. **Visitors across eras** (5S, 5T): each era's host sends a light stream (players, vehicles, where buildings stand)
+   that the server passes to the planet's other eras; the props of the spike draw them. Look-only first.
+6. **Planet saves stay safe** (was S6 / 7B): the server keeps the last few uploads of each planet and refuses one
+   that is not that planet's world (another save's id, a much smaller file), so a broken or cheating host cannot
+   wipe a planet.
+
+Order: 1, 2 and 3 together make the stage end work; 4 with 3; 5 and 6 after. No gameplay decision is open for it.
