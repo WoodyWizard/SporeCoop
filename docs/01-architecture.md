@@ -981,3 +981,37 @@ Phases 3 and 4 of the Lineages port (PR #196), BUG-9261 and BUG-9262, on top of 
 * Left out of Lineages' home_nests: the ring cleanup of nests of old salted keys (BUG-9182 there: not needed with one
   key from the start). Tests: tools/tests/coop_home_nests.py, coop_home_nests_join.py (suites home_nests,
   home_nests_join).
+
+## Lineages cells: the players' own cells as NPC species of the Cell stage (2026-11-20, feat/lineage-cells)
+<a id="architecture-lineage-cells"></a>
+
+BUG-9275, ported from Lineages (PR #196, there BUG-9111, roadmap 43). The owner's words: "when you go up in the Cell
+stage, others like you start to appear".
+
+* The session setting **cell.lineage_cells** (Live, default on, coop.ini `lineage_cells`; `coop.fix cell.lineage_cells
+  off` reads it off). Off: only the game's own species.
+* Which cells (lineage_cells.cpp, host, rebuilt every 15 s outside the frame): the host's own My Creations cells and the
+  cells every guest sent from its My Creations (up to 16 each, newest first, one every 2 s while it plays Cell:
+  `creations::guest_cell_out`, MSG_CREATION kind 9; the host registers each under 0x7B + a hash of its bem record). A
+  cell is known by its model signature (FNV-1 of its bem record), so one cell under several keys counts once and a
+  player's **current** cell (the host's S+0x10, each guest's creation of the creations stream) is never a candidate.
+  Each candidate's diet is its model data's carnivore / herbivore flags (+0x1250 / +0x1251). Lineages' Cache and
+  Foreign Creations are not ported (no Lineages library here).
+* Where (cellsync_lineage.cpp): CreateCellObject asks GetModelKeyForCellResource for a new cell's model (hooked in
+  modes.cpp, `modes::set_cell_model_chooser`). Inside PopulateMarker (h_Populate: the native spawns, host only), a
+  creature .cell that is not the player's own species and not a part carrier (a species whose death dropped a part
+  token keeps its native look; mods\coop-cell-part-carriers.txt) takes a player cell in 17 % of its spawns (Lineages'
+  last player decision: one in six; `coop.lineage share <n>` for tests). The AI 0x1006 picks its prey with the model's
+  own diet, so any cell fits it and a carnivore model hunts, a herbivore model grazes; another AI takes only a cell
+  whose diet fits the native model's.
+* Every guest gets a candidate's records (`creations::host_cell_out`, MSG_CREATION kind 5 with a cll key) and registers
+  them under 0x7D + a hash (creations' remap, as for the host's own creature species, `cell.lineage_remap`); its mirrors
+  of such a cell are built from that key (cellsync_guest.cpp, `lineage_mirror_key`). The host uses a cell only 8 s
+  after every guest got it. A player cell's model is preloaded for the cell graphics (PreloadModel, cCellGFX::
+  PreloadCreature) before its first use on both games.
+* Nothing goes into a save: the Cell pool is not saved (a reload repopulates it with native species only, lane A
+  2026-11-20), and the 0x7B / 0x7D packages are registered at run time only.
+* Code: mods/coop/lineage_cells.{h,cpp}, cellsync_lineage.cpp, the hooks in modes.cpp, cellsync_tiles.cpp (h_Populate's
+  depth, a loot drop's part tokens), cellsync_guest.cpp, creations.cpp (host_cell_out, guest_cell_out, model_signature,
+  apply_guest_cell), coop.cpp, coop_cmds.cpp (`coop.lineage [share <n>]`). Test: tools/tests/coop_lineage_cells.py
+  (suite lineage_cells).

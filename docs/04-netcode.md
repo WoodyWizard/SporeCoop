@@ -145,7 +145,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | civ (Civilization) | 7 | 1.0 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |
 | space (Space) | 8 | 1.2 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |
 | shared (shared resources) | 9 | 1.0 | Tribe, Civilization, Space | `RES`, `RES_ADD` |
-| creations (creations) | 10 | 1.0 | every stage and the menus | `CREATION` |
+| creations (creations) | 10 | 1.1 | every stage and the menus | `CREATION` |
 
 | `MSG_SPACE` kind | Feature | Name | Sent by |
 |---|---|---|---|

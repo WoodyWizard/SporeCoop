@@ -140,6 +140,9 @@ bool cell_leaving();
 void set_cell_hold(bool on);
 // BUG-1247: called right after each Cell step (SimUpdate), before the frame is drawn (cellsync: the guest's mirrors)
 void set_cell_after_step(void (*fn)());
+// BUG-9275 (Lineages cells): CreateCellObject's model of a new cell goes through `f(res, native key, out)` first (true:
+// `out` is the model); hooks GetModelKeyForCellResource
+void set_cell_model_chooser(bool (*f)(void*, const uint32_t[3], uint32_t[3]));
 uint32_t cell_held_steps();
 // move a cell exactly (soft-body cells take their position from their particles, docs/re/cell.md §6)
 void cell_move(uint8_t* c, const net::Vec3& p, bool still = false);

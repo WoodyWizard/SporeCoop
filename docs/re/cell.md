@@ -2619,3 +2619,26 @@ BUG-9266. Steam build, objdump of the unpacked `.text` (docs/05-re-notes.md, the
   History closed, G+0x5158 at 5 (a later click works) and the game drawn; calling the original 0xE72C80 later from
   outside the frame plays the whole sequence and the switch as the game's own click does.
 * ~ Inferred: 0xE4F640(1) is the white fade (the sequence's only screen-wide call); not checked alone.
+
+## Lineages cells on our pipeline (2026-11-20, feat/lineage-cells)
+<a id="cell-lineage-cells"></a>
+
+BUG-9275 (Lineages BUG-9111, docs/re/cell.md#cell-fork-lineages-43 for the fork's own notes). Steam build (the GOG 2024
+code), Windows lane A, `coop.lineage`.
+
+* ✔ (runtime) GetModelKeyForCellResource (0xE65640) answered with a player cell's key inside PopulateMarker makes the
+  native spawn a cell of that model, drawn with its paint, on the host and (built from the guest's own key of the same
+  records) on the guest: 31 swaps in the first minute with `coop.lineage share 100`; outside a marker no call came on
+  the host (`outside=0`); on the guest the mirrors' creation calls it (outside=1334: the chooser ignores them).
+* ✔ (runtime) Behaviour by the model's diet: cells of a carnivore-only model (flags C-) chased meat only, cells of an
+  omnivore model (CH) chased meat and plants (`pcell ... chase_kind=`, +0x22C, sampled on the host). The native
+  predator species of a new herbivore game was B0B9BAFF (a herbivore model, AI 0x1006) as in Lineages' notes.
+* ✔ (runtime) The Cell pool is not saved: after `coop.save` with 22 player-model cells in the pool, a cold game that
+  loaded the planet had only the native species (B0B9BAFF) and no fault, although the 0x7B keys of the guest cells were
+  not registered in that game.
+* ✔ A cell's bem record is the same bytes in My Creations, in the creations stream (0x7C key) and in our remapped copies
+  (0x7B / 0x7D): the bem signature found the guest's current cell among the cells it sent (20219D41 = 7B08F5A9 = the
+  guest's 29284693) and left it out.
+* ~ Not handled: NPCs of a cell made before it became a player's current cell (a guest's mid-stage `coop.creations
+  choose cell`) live on until they die; only new spawns leave it out.
+* ? Not checked: whether a cell is drawn without PreloadCreature (both games preload it; Lineages did not test either).

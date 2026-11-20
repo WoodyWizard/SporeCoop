@@ -1289,3 +1289,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9267](BUG-9267-a-guest-s-first-join-of-a-planet-loads-the-world.md) | open | bug | Creature | 2026-11-20 |  | A guest's first join of a planet loads the world twice: the share hold sees the host's species before the guest's own creature |
 | [BUG-9269](BUG-9269-creature-hud-portrait-fix-bug-0937-never-works-o.md) | open | bug | Creature | 2026-11-20 |  | Creature HUD portrait fix (BUG-0937) never works on the Steam exe: the ImageDrawable vtable was a raw GOG 2024 address |
 | [BUG-9270](BUG-9270-a-guest-s-own-nest-herd-keeps-the-host-s-family.md) | open | bug | Creature | 2026-11-20 |  | A guest's own nest herd keeps the host's family copies in its member list after the guest joins it |
+| [BUG-9275](BUG-9275-lineages-cells-the-players-own-cells-appear-in-t.md) | open | feature | Cell | 2026-11-20 |  | Lineages cells: the players' own cells appear in the Cell stage as NPC species |

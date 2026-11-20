@@ -6,6 +6,8 @@
 #include "party.h"
 #include "own_progress.h"
 #include "home_nests.h"
+#include "lineage_cells.h"
+#include "cellsync.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1216,6 +1218,15 @@ void register_commands_core()
                        SAY("%s", own_progress::status().c_str());
                        SAY("  dna.cpp: totals_ignored=%u gains_kept=%u hunts_given=%u end_clicks_held=%u\n", g_own_totals_ignored,
                            g_own_gains_kept, g_own_hunts_given, g_end_clicks_held);
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.lineage",
+                   "coop.lineage [share <percent>] - Lineages cells (BUG-9275): the host's player cells for its Cell pool, the swaps, the live cells by model, a guest's remapped cells",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", lineage_cells::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       SAY("%s", cellsync::lineage_debug().c_str());
+                       SAY("%s", creations::lineage_status().c_str());
                        return 0;
                    },
                    nullptr, MT);
