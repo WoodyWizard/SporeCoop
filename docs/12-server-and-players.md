@@ -1464,3 +1464,26 @@ keeps its species and gets its village, decisions 4, 5 and 14).
   the way: the end of the crossing's session made the game send LEAVE right after its ENTER (it ended alone in a Tribe
   world of its own). Open: its village was placed next to the host's, not at its own nest (BUG-9280); the Tribe food
   share runs between the two parties (BUG-9281).
+
+## Owner's idea: other parties' players in their colour instead of name tags (2026-11-19, feat/lineages-alpha)
+<a id="server-party-outline-idea"></a>
+
+Owner, after the join test's pictures (name tags over every tribe member, "-NoShare-" names, no Party panel): "I think
+it's because we didn't develop a system for a group of a player. That's why we went with tags over every tribe member /
+marine piece. Would it be possible to outline other party member's in their chosen color? In Tribe stage, that would
+mean outlining all tribe members. For civ, it'd be all units, etc."
+
+* Today: `all.name_tags` (coop.cpp on_overlay) writes a player's name over its creature, its tribe members, its cities and
+  vehicles; the styled plate with the distance (decision 3E C) is only the partner's own creature's marker. "-NoShare-"
+  is the QA games' name rule (their creations never reach the owner's Cache), not what players see. No Party panel in the
+  test: QA 8 and QA 9 were two parties of one, and the Party panel shows the own party's members only (6J).
+* The idea fits the game: Spore itself marks units by drawing on the models (the hover highlight on creatures, the
+  selection on tribe members and vehicles). What is known: OutlineFormat_SetStrength (0x830230) is the UI's text
+  outline, not a model's. Not known yet: the model highlight path (the rollover glow of the Creature and Tribe stages,
+  UI::SimulatorRollover), whether it takes a colour, and its cost with many units. A spike decides it: one tribe member
+  drawn with a coloured outline or rim from the mod, then every member of a player's tribe, then Civ vehicles.
+* Each player's colour exists already (the F2 colour, pfind, BUG-0949); the party's members could share their leader's.
+* (23:17 rerun) BUG-9281 fixed and seen: the two parties in Samuth (Tribe) show no shared "Village food" line any more.
+  BUG-9280 corrected (its ticket): the village by the host's came from an old partner seat in the QA save, made at the
+  crossing's Tribe start; the real gaps are the Tribe start making villages for seats outside the crossing party, and a
+  stranger's Creature nest being placed by the host's like a partner's (decision 7E).

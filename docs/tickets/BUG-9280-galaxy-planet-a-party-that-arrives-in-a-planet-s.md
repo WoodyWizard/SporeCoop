@@ -30,10 +30,20 @@ crossing has its nest anywhere on the planet. Also to check: the Tribe world was
 the arriving party's nest may not be in it at all (then its nest position has to come from its own Creature world).
 
 ## Fix
-Not yet.
+Built, not proven: `tribe.nest_anywhere` (tribe.cpp nest_founding_site): another party's player founds at its own nest
+however far from the host's village, level with that nest's ground.
+
+CORRECTION (2026-11-19 23:17, TITAN rerun on the Tribe world saved before QA 9 joined): no founding ran for QA 9 at all.
+The village by the host's was there already: QA 8's Tribe start (in its crossing) made the villages of the founder seats
+its Creature save carried, and that save had a partner seat ("Pandize 2") whose nest was 40-80 m from QA 8's (decision
+1B, the co-op party rule), from earlier QA sessions. So the two real problems are: (1) a crossing party's Tribe start
+also makes villages for founder seats of players who are not in the crossing (other parties, still in Creature or long
+gone); (2) on a galaxy planet a stranger's nest is placed by the host's nest as if they were partners (1B). Decision 7E
+(where a new player's nest goes on a shared planet) comes first; then (1) is a filter on the founder seats at the
+Tribe start (the crossing's members only), and the arriving party founds at its nest with nest_anywhere.
 
 ## Verification
-Not yet.
+Not yet (see the CORRECTION).
 
 ## History
 - 2026-11-19: opened (seen in BUG-9278's join test).

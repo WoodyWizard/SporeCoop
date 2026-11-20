@@ -26,6 +26,7 @@
 #include "tribe_late.h"
 #include "tribe_seats.h"
 #include "world.h"
+#include "parties_net.h"
 #include "driver.h"
 #include "effects.h"
 #include "game.h"
@@ -398,10 +399,32 @@ static std::array<float, founders::kMaxSeats> unknown_food()
 static std::array<float, founders::kMaxSeats> g_seat_food = unknown_food(); // host: every founder village's food by seat
 static size_t founder_seats();
 bool village_orders() { return is_host() ? g_order_roster.guest().faction != 0 : g_guest_order_mode; }
+static uint8_t player_of_seat(int seat);
+// BUG-9281: on a galaxy planet the party food (its share, gifts, the HUD's line) is the own party's only
+static bool g_food_party = true;
+COOP_FIX("tribe.food_party", "BUG-9281", g_food_party,
+         "tribe: on a galaxy planet the food share, party gifts and the village food line stay within each party");
+static bool food_partners(int a_seat, int b_seat)
+{
+    if (!g_food_party || !parties::galaxy()) return true;
+    const uint8_t a = player_of_seat(a_seat), b = player_of_seat(b_seat);
+    return a < 0xFE && b < 0xFE && parties::table_key(a) == parties::table_key(b); // (the host knows every party here)
+}
 std::string village_food_line()
 {
     if (!village_orders()) return {};
-    if (is_host()) return tribe_seats::food_line_host(g_seat_food.data(), founder_seats());
+    if (is_host()) {
+        if (!g_food_party || !parties::galaxy())
+            return tribe_seats::food_line_host(g_seat_food.data(), founder_seats());
+        std::array<float, founders::kMaxSeats> mine = unknown_food(); // the host's party's villages only
+        size_t n = 0;
+        for (size_t seat = 0; seat < founder_seats() && seat < mine.size(); ++seat)
+            if (seat == 0 || food_partners(0, (int)seat))
+                mine[n++] = g_seat_food[seat];
+        return tribe_seats::food_line_host(mine.data(), n);
+    }
+    if (g_food_party && parties::galaxy() && C.sess && !parties::same_party(C.sess->my_id(), 0))
+        return {}; // (the host is another party's: its food is not this party's)
     return tribe_seats::food_line_guest(g_home_food, g_guest_food, g_multi_founders);
 }
 // BUG-0671 (below, h_BabyBorn)
@@ -5118,13 +5141,15 @@ static void food_share_tick(double now)
             if (gathered < 0) g_share_base[seat] = food[seat]; // eaten or spent
             continue;
         }
-        const int partners = (int)here.size() - 1;
+        int partners = 0; // BUG-9281: the gatherer's own party's villages only
+        for (int p : here)
+            if (p != seat && food_partners(seat, p)) ++partners;
         const auto s = party_food::split(gathered, partners);
         if (partners <= 0 || s.each <= 0) { g_share_base[seat] = food[seat]; continue; }
         food[seat] = g_share_base[seat] + s.keep;
         shared::mirror_village_food(g_share_village[seat], food[seat]);
         g_share_base[seat] = food[seat];
-        for (int p : here) if (p != seat) {
+        for (int p : here) if (p != seat && food_partners(seat, p)) {
             food[p] += s.each;
             shared::mirror_village_food(g_share_village[p], food[p]);
             g_share_base[p] += s.each;
@@ -5143,6 +5168,10 @@ static bool party_gift(uint8_t from, int from_seat, int to_seat)
     double gf = 0, tf = 0;
     if (!giver || !to || giver == to || !gift_cost(price) || !shared::tribe_food(giver, gf) || !shared::tribe_food(to, tf))
         return from ? tell_buyer(from, "That gift could not be given just now.") : false;
+    if (!food_partners(from_seat, to_seat)) { // BUG-9281: another party's village takes the game's own gift instead
+        if (from) return tell_buyer(from, "That village is not your party's.");
+        return false;
+    }
     if (!party_food::can_gift(gf, price)) {
         const std::string text = "Your village needs " + std::to_string(price) + " food for a gift.";
         if (from) return tell_buyer(from, text.c_str());
@@ -7855,17 +7884,26 @@ static void add_clear_sites(net::Vec3 c, std::vector<net::Vec3>& occupied, size_
 // BUG-9135 (owner: "the nest becomes the village"): the partner's own Creature-stage nest as their village's site: the
 // nearest live nest herd of their species (home_nests.cpp's) within 400 m of the host's village, on level ground within
 // 6 m of the host village's height (home_nests' rule for a seat's nest), 70 m from every village. The nest herd stays.
+// BUG-9280: on a galaxy planet a player of another party than the host's founds at its own nest wherever it is (its party
+// arrived in this era from its own part of the planet: "the nest becomes the village", owner 2026-11-19), level with that
+// nest's own ground
+static bool g_nest_anywhere = true;
+COOP_FIX("tribe.nest_anywhere", "BUG-9280", g_nest_anywhere,
+         "tribe: on a galaxy planet another party's player founds its village at its own nest, however far from the host's");
+static uint32_t g_nest_anywhere_used = 0;
 static bool nest_founding_site(uint8_t player, void* home, net::Vec3& result)
 {
     void* profile = creations::player_species(player);
     const net::Vec3 at = tribe_pos(home);
     const float height = game::ground_radius(at);
     if (!profile || !std::isfinite(height) || height < 1) return false;
+    const bool anywhere = g_nest_anywhere && parties::galaxy() && parties::table_key(player) != 0;
     struct NestScan {
         void* profile;
         net::Vec3 at;
         std::vector<std::pair<float, net::Vec3>> nests;
-    } scan{profile, at, {}};
+        float range;
+    } scan{profile, at, {}, anywhere ? 1e6f : 400.f};
     game::for_each_object(
         [](void* o, uint32_t noun, void* u) {
             auto& s = *(NestScan*)u;
@@ -7874,7 +7912,7 @@ static bool nest_founding_site(uint8_t player, void* home, net::Vec3& result)
                 F<uint8_t>(o, 0x190)) // extinct
                 return true;
             void* nest = game::herd_nest(o);
-            if (nest && game::object_alive(nest) && game::object_position(nest, q) && net::dist(q, s.at) <= 400.f && s.nests.size() < 64)
+            if (nest && game::object_alive(nest) && game::object_position(nest, q) && net::dist(q, s.at) <= s.range && s.nests.size() < 64)
                 s.nests.push_back({net::dist(q, s.at), q});
             return true;
         },
@@ -7884,11 +7922,20 @@ static bool nest_founding_site(uint8_t player, void* home, net::Vec3& result)
     for (void* t : all_tribes()) villages.push_back(tribe_pos(t));
     for (const auto& nest : scan.nests) {
         net::Vec3 q = nest.second, u, v;
-        if (surface_frame(q, u, v) && level_clear_site(q, height - 6, height + 6, villages, u, v)) {
+        const float h = anywhere ? game::ground_radius(q) : height; // (BUG-9280: level with its own nest's ground)
+        if (!std::isfinite(h) || h < 1) continue;
+        if (surface_frame(q, u, v) && level_clear_site(q, h - 6, h + 6, villages, u, v)) {
             result = q;
+            if (anywhere && nest.first > 400.f)
+                g_nest_anywhere_used++;
+            H->log(M, SK_INFO, "tribe: player %u's village at its own nest %.0f m from the host's%s (BUG-9135, BUG-9280)",
+                   player, nest.first, anywhere ? " (another party)" : "");
             return true;
         }
     }
+    if (anywhere)
+        H->log(M, SK_INFO, "tribe: player %u (another party): none of its %zu nest(s) here has a free level site (BUG-9280)",
+               player, scan.nests.size());
     return false;
 }
 
