@@ -9,7 +9,7 @@ host found no creature of that noun within 10 m of the guest's position and drop
 the vehicles ignore the click.
 
 1. Two games on civ; the host spawns two military land vehicles and gives them to the guest (`coop.give`).
-2. The host's game sets its wild creatures around the guest's chosen one 80 m aside (`coop.civ creatureshift`):
+2. The host's game sets its wild creatures within 60 m of the guest's chosen one 140 m aside (`coop.civ creatureshift`):
    the herds of the two games no longer match, as after a chase, a flight or a death on one game.
 3. The guest's game orders each vehicle to attack the creature nearest to it (`coop.civ attack <id> c`: the
    game's SetOrder of the guest, as a right-click on the creature).
@@ -82,8 +82,12 @@ def main():
         return ck.result()
     # the host's herd is elsewhere now (in play the herds of the two games drift apart, flee, or die on one game:
     # wild creatures are not synced in Civ): the host's game sets its creatures around that place 80 m aside
+    # BUG-1344: every host creature within 60 m goes 140 m aside: a moved one ends at least 80 m from the place, one left
+    # where it was is over 60 m away, so the check below (none within 45 m) holds by construction. Before, 40 m / 80 m left
+    # the host's creatures 40-45 m away (not moved) or put a moved one at 40 m (lab 20261120-041304: 40.4 m; 20261113-040703:
+    # 40.8 m) and the test failed before its subject
     x, y, z = near
-    print('  host:', host.call(f'coop.civ creatureshift {x:.1f} {y:.1f} {z:.1f} 40 80')['out'].strip(), flush=True)
+    print('  host:', host.call(f'coop.civ creatureshift {x:.1f} {y:.1f} {z:.1f} 60 140')['out'].strip(), flush=True)
     hc = creatures(host)
     off_host = min((dist(near, p) for p in hc), default=float('inf'))
     print(f'  wild creatures: guest {len(gc)}, host {len(hc)}; the guest\'s creature at {tuple(int(v) for v in near)}, '
