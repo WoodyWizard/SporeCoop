@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: feat/start-choice
-commits:
+commits: 59cc6a35
 tests: tools/tests/coop_start_choice.py (suites start_choice, start_choice_off)
 signature:
 docs: docs/01-architecture.md#architecture-start-choice, docs/re/cell.md#cell-start-choice
