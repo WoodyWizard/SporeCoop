@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in: unreleased
 branch:
-commits:
+commits: 33c6a036
 tests: tools/tests/galaxy_server_check.py (server side); in game: TITAN QA runs (docs, Verification)
 signature:
 docs:
