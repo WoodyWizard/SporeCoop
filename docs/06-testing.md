@@ -9774,3 +9774,25 @@ BUG-1328 (docs/re/creations.md#creations-props-key0), the 0.7.15 line's form of 
 * A lane whose profile already has such a list (space_captain_none names a captain whose species cannot be copied; see
   the RE section) passes the other end-of-Tribe tests only with the fix on; a profile can be checked by the .prop
   records of its Pollination.package (a clean profile has none).
+
+## The memory gate's reservation and the creature test's own DNA (2026-11-20, fix/w59-tests)
+<a id="testing-lab-mem-reserve"></a>
+
+* **Reservation** (BUG-1332, tools/lab.py `MemGate`, [lab memory](#testing-lab-memory)): a test that has waited for
+  memory `SPORE_LAB_MEM_RESERVE` seconds (300; 0 = off, the old gate) has the right of way: no other test of the run
+  starts on any lane until it fits; several such tests start in the order they began to wait. The log says
+  `(memory: <test> has waited N s: no other test starts until it fits, BUG-1332)` and, for each test held back that
+  would fit, `(memory: <test> would fit but waits: <test> waits since N s and starts first)`. A test held back only by
+  the reservation never fails as "not started"; the waiting test itself still fails after `SPORE_LAB_MEM_WAIT` with
+  nothing of the run running. Why: in the 0.7.16 final check (lab 20261119-214823) lanes 5 and 7 began with a 4-game
+  campaign (4 GB) and waited 5.4 h and 6.0 h while the four other lanes kept starting 2-game tests into the room the
+  campaign needed (16-18 GB available, a new test every few minutes kept `pending` up). Worst case now: the other
+  lanes stand still until the ramp of the tests started last runs out (`MEM_RAMP`, 15 min). Self-test:
+  `lab_selftest.py --case mem_cases` (`mem_reserve`, twin with the reservation 0: the 2-game test passes the campaign).
+* **creature (coop_two_instances.py), M3** (BUG-1331): own DNA per player is the default since 0.7.16 (BUG-1291), so
+  the old check "the guest's DNA equals the host's after a gain" asserted the shared pool. Now: the host gains 4, the
+  guest spends 4 of its own, the guest gains 5: each game's own DNA (`coop.dna bar`) rises by 5, the guest keeps its
+  difference, the bars are equal; then `all.shared_dna` forced on: the guest's DNA becomes the host's and a gain
+  raises both alike. The test now starts without the per-player store and settings of an earlier test of the lane
+  (`twoinst.forget_store`, `forget_settings`): the guest's wallet of 250 in the failed run came from that store.
+  Twin: `SPORE_FIX_OFF=creature.own_dna` (one pool: the guest's spend comes off the host's DNA too).

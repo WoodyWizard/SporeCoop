@@ -14,6 +14,8 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   build) and leave its game running (BUG-1306, BUG-1323); their end no longer faults in the game's leftover Tribe
   code when the guest came into the host's Civilization world later (BUG-1329).
 - Lab: the faults of a game a test kills and starts again now count for the test, and its log is kept (BUG-1329).
+- Lab: a 4-game test that waits for memory for 5 minutes now goes first: no other test starts until it fits, so the
+  campaigns no longer wait hours behind the 2-game tests of the other lanes (BUG-1332).
 - The species line (BUG-1270): every player's own species per stage (tribe and Civ outfits, Civ designs) is kept by
   the mod, sent to every game and kept by the host between sessions; the base for every player's own look in Tribe and
   Civilization (no visible change by itself).
