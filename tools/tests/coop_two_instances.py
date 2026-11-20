@@ -193,6 +193,9 @@ def main():
         for i in (lane.HOST, lane.GUEST):
             print(f'instance {i}:', res.get(i, '').splitlines()[:1])
     host, guest = Console(lane.HOST), Console(lane.GUEST)
+    # SPORE_FIX_OFF (the twin of M3: creature.own_dna): this test does not go through twoinst.start, which applies it
+    twoinst.apply_fix_off(host, 'host')
+    twoinst.apply_fix_off(guest, 'guest')
     print(host.call(lane.HOST_CMD)['out'])
     if guest_menu:
         for _ in range(120):
