@@ -2240,6 +2240,18 @@ return 0xBFBD6D, CivMode_Progress 0xCF8F80 and its HUD caller's return 0xCEAB84.
   the home planet (the existing 0.7.15 flow). GameCiv_ShowPlanetWon is therefore the end of Civ UI (✔ at runtime).
 * ✔ (runtime) Reload: the host loaded the saved world alone: the roster's nation (its species key kept in the save,
   money 1400) was there, nobody's; the guest joined and had its nation again; nothing founded twice.
+* ✔ (runtime) Mid-Civ (the Boheus Civ save without its rosters: NPC nations there, 7 free sites): the guest's capital
+  000022A7 was told apart from the cities before and bound 859 m from the host's. The game gave that new nation an NPC's
+  starting money (20000 while the host's had 4000): a player's new nation is now capped at the host nation's money at the
+  bind (4000 in the rerun). An NPC nation's trade talk ("we would like to establish a trade route") pauses the host's
+  game until answered: a founding requested meanwhile waits (the pause), the guest's orders too.
+* ✔ (runtime) Selection: the host's `coop.civ select` of the guest's vehicle gave selected=0, the guest's of the host's
+  vehicle selected=0, the guest's of its own selected=1.
+* ✔ (runtime, BUG-9277) With a partner nation and civ.own_money off the host keeps the shared money for the players on its
+  nation (shared.cpp own_budget) while the guest with its own nation keeps its nation's: an income of 500 on the host
+  (4000 -> 8322 with a trade route's) left the guest's HUD money at its nation's 3000.
+* ✔ (runtime, BUG-9276) On a planet without a free site (Kealeneon: 10 of 10 founded) no capital is founded: "<name>'s
+  capital waits: no free site"; the partner plays the host's nation.
 * Not ported: Lineages' offline control of an away partner's nation by the host, the catch-up of a late capital to the
   host capital's buildings, the party wipe, the takeover and combat scaling by founder count, the unlock-byte merge, the
   economic state messages, the history counters of a partner's captures. A nation that lost all its cities is not

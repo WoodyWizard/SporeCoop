@@ -9,26 +9,31 @@ source: found in the port of BUG-9274 (lane C, 2026-11-20)
 role: 
 versions: 0.7.15.5 (feat/lineages-civ)
 fixed_in:
-branch:
+branch: feat/lineages-civ
 commits:
 tests:
 signature:
-docs:
-related:
+docs: docs/re/civ.md#civ-own-nations
+related: BUG-9274
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+With every player's own nation (BUG-9274), the host founds a partner's capital at the game's next free city site. On a
+planet whose ten sites are all founded (the dev Kealeneon Civ save on lane C: 10 cities, cCivExpansion +0xB0 = 0) a
+partner who joins with a creature of their own gets no nation: the host logs "Bob's capital waits: no free site" and the
+partner plays the host's nation (the 0.7.15 split).
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+Observed: SpawnNextCity takes only a free site; none is left. Lineages had the same limit (its late capital: "No site
+left: a notice").
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+Not fixed. Candidates: give the partner an NPC city (a purchase-free capture of the weakest NPC city, its nation taking
+the partner's species), or found a city at a new place (the site record's position field is not known yet,
+docs/re/civ.md#civ-multi-founders in Lineages).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: not fixed
 
 ## History
-- 2026-11-20: opened.
+- 2026-11-20: opened (lane C, Kealeneon).

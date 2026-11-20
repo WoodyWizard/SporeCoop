@@ -828,7 +828,7 @@ std::string debug(const std::vector<std::string>& a)
         } census{all_cities(), {}};
         game::for_each_object([](void* obj, uint32_t noun, void* data) {
             auto& cs = *static_cast<Census*>(data);
-            if (noun != 0x018EB4B7 || !game::object_alive(obj)) // cCreatureCitizen
+            if (noun != 0x018EB4B7 || !game::listed(obj)) // cCreatureCitizen
                 return true;
             void* city = F<void*>(obj, 0x1010); // its owning city
             const bool known = std::find(cs.cities.begin(), cs.cities.end(), city) != cs.cities.end();

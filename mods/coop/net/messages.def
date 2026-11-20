@@ -132,7 +132,7 @@ MSG(71, TRIBE_ANIM,   RU, Host,  Module,    Tribe,       Client, tribe,     "u8 
 MSG(72, CELL_MATE,    RU, Guest, HostWorld, Cell,        Host,   cell,      "u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246)")
 MSG(73, IDENTITY,     R,  Any,   Session,   Identity,    Both,   session,   "the persistent player identity (identity.h, BUG-9258): guest -> host u64 its own after each join; host -> guests u8 n, n x {u8 player, u64 identity}")
 
-MSG(74, CIV_WALLET,   R,  Any,   HostWorld, CivWallet,   Both,   civ,       "every player's own Civ money (civ_wallet.h, BUG-9259): u8 kind; guest -> host an ask / u32 seq + f64 money (a report); host -> guest u32 seq + f64 the wallet / a change")
+MSG(74, CIV_WALLET,   R,  Any,   HostWorld, CivWallet,   Both,   civ,       "every player's own Civ money (civ_wallet.h, BUG-9259): u8 kind; guest -> host an ask / u32 seq + f64 money (a report); host -> guest u32 seq + f64 the wallet / a change / its own nation's money (K_NATION 5, BUG-9274)")
 
 #undef MSG
 #undef FAMILY
