@@ -9849,3 +9849,13 @@ reported `v: N missing on the guest` (campaign_tc2, 20261119-214823: Carol pause
 guest's digest carries a `stands` byte, the host does not compare it then (`stands_skipped=` in `coop.diag sync`).
 The campaign logs a guest that stood a minute (`<name> stands N s: busy ..., pause menu 0|1, pauses: ...`) and closes a
 pause menu still up after 90 s.
+
+## A killed game can keep its console port for seconds (2026-11-20, fix/w60-misc)
+<a id="testing-ports-after-kill"></a>
+
+BUG-1359. In the 0.7.16 final check (20261120-041304, lane 4) a cold start booted the host 5 s after the previous test's
+host was killed; the new game logged `console: cannot listen on 127.0.0.1:47806 (err 10013)` and the start's `ping`
+reached the old listener, which answered an empty line (JSONDecodeError in `wait_up`). `twoinst.lane_down()` now also
+waits until neither console port of the lane (47800 + instance - 1) has a listener, at most 20 s (a note in the log when
+it waited), and `wait_up()` takes a reply that is not JSON as "not up yet". A game log with `cannot listen` means the
+test talked to another process on that port: its result says nothing.

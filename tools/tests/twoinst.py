@@ -27,17 +27,45 @@ def wait_up(inst, t=120):
         try:
             if Console(inst).call('ping')['ok']:
                 return True
-        except OSError:
+        except (OSError, ValueError):
+            # BUG-1359: ValueError (a reply that is not JSON): the port's listener is not a console that answers, e.g. the
+            # lane's previous game still tearing down (evolve_world of the 0.7.16 final check died on it): not up yet
             pass
         time.sleep(1 if startwait.fixed() else startwait.STEP)  # A9: a 0.25 s poll (was 1 s)
     return False
 
 
+def port_free(port):
+    """nothing listens on 127.0.0.1:port (a connect is refused)"""
+    import socket
+    try:
+        socket.create_connection(('127.0.0.1', port), timeout=0.5).close()
+        return False
+    except OSError:
+        return True
+
+
+PORTS_FREE_S = 20.0  # BUG-1359
+
+
 def lane_down(timeout=2.0):
     """A9 (BUG-1112): after `spore.sh kill`, until no process of the lane is left (`spore.sh procs`), at most the
-    old fixed 2 s; seconds waited, None at the bound"""
-    return startwait.until(lambda: not subprocess.run([lane.SPORE, 'procs'], capture_output=True, text=True,
-                                                      timeout=10).stdout.strip(), timeout)
+    old fixed 2 s; seconds waited, None at the bound.
+    BUG-1359: and then until neither console port of the lane has a listener, at most PORTS_FREE_S s more: in the 0.7.16
+    final check (20261120-041304, evolve_world) the previous test's host still held 47806 when the next cold start's
+    host booted 5 s after it ended; the new game could not listen ("console: cannot listen ... (err 10013)") and the
+    old one's console answered the start's ping with an empty line"""
+    w = startwait.until(lambda: not subprocess.run([lane.SPORE, 'procs'], capture_output=True, text=True,
+                                                   timeout=10).stdout.strip(), timeout)
+    ports = [47800 + i - 1 for i in (lane.HOST, lane.GUEST)]
+    if startwait.fixed() or all(port_free(p) for p in ports):
+        return w
+    t0 = time.time()
+    f = startwait.until(lambda: all(port_free(p) for p in ports), PORTS_FREE_S)
+    print(f'  (the lane\'s console ports {ports} were still held after the kill: '
+          + (f'free after {time.time() - t0:.1f} s more)' if f is not None else f'still held after {PORTS_FREE_S:.0f} s)'),
+          flush=True)
+    return None if f is None else (w or timeout) + f
 
 
 def game_process_up(inst, timeout=2.0):
