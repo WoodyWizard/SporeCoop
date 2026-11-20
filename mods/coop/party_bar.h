@@ -26,5 +26,7 @@ uint32_t serial();
 void tick(const net::Session& s);                             // host: the planet's file, once per planet
 void save();                                                  // host: after a native save of the planet
 std::string status();
+// BUG-9279: a guest set its party's bar in this world (MSG_DNA): promoted in place, the game's bar is its own party's
+void note_guest(uint32_t world);
 
 } // namespace party_bar

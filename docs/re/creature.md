@@ -5411,3 +5411,9 @@ and setter (vt 0xD8 / vt 0xDC).
   grown" from `coop.dna add 3000` and then History's check opened editor 465C50BA with tag 0x64AA168). Candidates: the
   migration state of #creature-migration notes (0x514A219) after an editor with the total above the last threshold,
   or a save that saw the fully-grown caption.
+* ~ (later the same day) `coop.vote tribe` (new): 0x4471C60 with +0xDA set, then 0x445F729 posted, as History's check
+  does in its stage-end mode: the editor opened, and after "done" the game again ran the baby game and stayed in
+  Creature. A message 0x287259F6 with command 0x6455B55 at +0xC through MessageSend opened nothing. History's bottom
+  bar is the timeline's scroll bar, not the stage's progress. So the QA Samuth saves are not in the state where the
+  stage-end editor leads to Tribe; a save that saw "Your brain is fully grown" (a Creature start at a low brain level
+  and `coop.dna add 3000`, as the lab fixture did) is the next thing to try.

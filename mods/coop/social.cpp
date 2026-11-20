@@ -20,6 +20,7 @@
 #include "party_bar.h"
 #include "sporekit_game.hpp"
 #include "world.h"
+#include "modes.h"
 #include "parties_net.h"
 #include "slotfs.h"
 
@@ -366,6 +367,12 @@ static std::map<uint64_t, RelTable> g_saved_by_ident;
 static std::vector<uint64_t> g_game_owners;
 static std::string g_rel_key;                 // the planet (game key) the store belongs to
 static uint32_t g_rel_saves = 0, g_rel_loads = 0, g_rel_swaps = 0;
+// BUG-9279: a guest's game table holds its own party's records (MSG_SPECIES, enforce_table): promoted in place it is
+// that party's, not the old host's party's
+static uint32_t g_table_guest_world = 0, g_rel_warm_kept = 0;
+static bool g_rel_warm_fix = true;
+COOP_FIX("social.party_relations_warm", "BUG-9279", g_rel_warm_fix,
+         "creature: a guest that takes a galaxy planet over in place keeps its own party's relations (not the old host's party's)");
 static constexpr uint32_t kRelMagic = 0x4C455244; // "DREL"
 static std::vector<uint64_t> idents_of_key(uint32_t pk)
 {
@@ -508,6 +515,13 @@ static void load_party_relations()
     });
     if (same)
         return;
+    if (g_rel_warm_fix && g_table_guest_world && g_table_guest_world == modes::current_world()) { // BUG-9279
+        g_game_owners = mine;
+        g_rel_warm_kept++;
+        H->log(M, SK_INFO, "social: hosting in place a planet it was a guest of: the game's relations stay its own party's "
+                           "(BUG-9279)");
+        return;
+    }
     const RelTable gt = game_table();
     for (uint64_t id : owners)
         g_saved_by_ident[id] = gt;
@@ -1754,6 +1768,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         g_table_rx_at = H->time_seconds();
         if (game::in_creature_stage() && game::avatar()) {
             enforce_table();
+            g_table_guest_world = modes::current_world(); // BUG-9279
             herds_follow_table();
             if (news) // the cards read the table only when told (also when ours had it already)
                 H->run_outside_frame(refresh_cards, nullptr);

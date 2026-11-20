@@ -7936,8 +7936,10 @@ void setup_callbacks()
                 return;
             }
             if (personal_dna() && game::avatar()) { // BUG-9162: the party's bar; the DNA here is this player's own
-                if (progress.valid(g_world) && party_bar::on())
+                if (progress.valid(g_world) && party_bar::on()) {
                     game::set_bar(progress.earned); // BUG-9277: its party's own bar (lower than the host's too)
+                    party_bar::note_guest(modes::current_world()); // BUG-9279
+                }
                 else if (progress.valid(g_world))
                     game::dna_sync_raw(game::dna(), progress.earned);
                 g_dna_seen = game::dna();
@@ -12292,6 +12294,24 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            if (uintptr_t f = H->sym("SporeCoop::CreatureEvolutionPending_flag")) // as 0xD43069
                                *(uint8_t*)f = 1;
                            SAY("stage-end request submitted -> %d\n", (int)r);
+                       } else if (argc > 1 && !strcmp(argv[1], "tribe") && game::mode_id() == modes::kCreature) {
+                           // tests (BUG-9278): what History's check does in its stage-end mode (TimelineUI_HandleMessage,
+                           // +0x36D set): the creature game's message 0x4471C60 (the stage-end request: +0xDA set, as
+                           // `mate` does), then 0x445F729 posted (docs/re/creature.md#creature-tribe-ready-test)
+                           uintptr_t get = H->sym("App::IMessageManager::Get");
+                           void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+                           if (!mm || !game::avatar() || !g_creature_game || !o_CreatureGameMsg) {
+                               SAY("not possible here");
+                               return 1;
+                           }
+                           uint8_t& da = skg::field<uint8_t>(g_creature_game, 0xDA);
+                           uint8_t da0 = da;
+                           da = 1;
+                           o_CreatureGameMsg(g_creature_game, 0x4471C60u, nullptr);
+                           da = da0;
+                           skg::vcall<void>(mm, 0x18 / 4, 0x445F729u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
+                           SAY("the stage-end request and 0x445F729 sent (brain level %d, editor-pending flag %d)\n",
+                               skg::vcall<int>(game::avatar(), 0xD8 / 4), evo_flag_now());
                        } else if (argc > 1 && !strcmp(argv[1], "mate") && game::mode_id() == modes::kCreature) {
                            // tests (BUG-0920): the game's own evolution request, not one built by the mod: its message
                            // handler 0xD42E50 run with message 0x4471C60 and +0xDA set (the avatar met its mate, as

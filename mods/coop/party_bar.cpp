@@ -12,6 +12,7 @@
 #include "parties_net.h"
 #include "slotfs.h"
 #include "world.h"
+#include "modes.h"
 #include "sporekit.h"
 
 #include <windows.h>
@@ -31,6 +32,12 @@ static std::string g_key;                       // the planet (game key) the bar
 static uint32_t g_serial = 1, g_credits = 0, g_saves = 0, g_loads = 0, g_swaps = 0;
 static float g_credited = 0;
 static const net::Session* g_sess;
+static uint32_t g_guest_world = 0; // BUG-9279
+static bool g_warm_fix = true;
+COOP_FIX("creature.party_bar_warm", "BUG-9279", g_warm_fix,
+         "creature: a guest that takes a galaxy planet over in place keeps its own party's bar (not the old host's party's)");
+static uint32_t g_warm_kept = 0;
+void note_guest(uint32_t world) { g_guest_world = world; }
 static constexpr uint32_t kMagic = 0x52414244; // "DBAR"
 
 void init(const SkHost* host, SkMod* mod)
@@ -198,6 +205,15 @@ void tick(const net::Session& s)
     });
     if (same)
         return;
+    // BUG-9279: promoted in place (it was a guest of this world): its bar is its own party's already, and the old host's
+    // party's is the one in the file (the game's bar was never theirs here)
+    if (g_warm_fix && g_guest_world && g_guest_world == modes::current_world()) {
+        g_game_owners = mine;
+        g_warm_kept++;
+        H->log(M, SK_INFO, "party bar: hosting in place a planet it was a guest of: its own party's bar stays (%.0f) "
+                           "(BUG-9279)", game::evolution_bar());
+        return;
+    }
     const float own = game::evolution_bar();
     if (std::isfinite(own))
         for (uint64_t id : g_game_owners)
@@ -217,9 +233,9 @@ void tick(const net::Session& s)
 std::string status()
 {
     char b[200];
-    snprintf(b, sizeof b, "party bars: %s, %zu other part%s, %u credits (%.0f), saves %u, loads %u, swaps %u",
+    snprintf(b, sizeof b, "party bars: %s, %zu other part%s, %u credits (%.0f), saves %u, loads %u, swaps %u, kept in place %u",
              g_fix ? (on() ? "on" : "idle") : "off", g_bars.size(), g_bars.size() == 1 ? "y" : "ies", g_credits,
-             g_credited, g_saves, g_loads, g_swaps);
+             g_credited, g_saves, g_loads, g_swaps, g_warm_kept);
     std::string s = b;
     for (auto& [pk, v] : g_bars) {
         snprintf(b, sizeof b, "; %X=%.0f", pk, v);

@@ -994,7 +994,7 @@ int c_dna(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 2 && !strcmp(argv[1], "spend")) // tests (BUG-0630): a spend the game's way (its editor's result:
         game::dna_set_raw(game::dna() - (float)atof(argv[2])); // SetEvolutionPoints, the DNA only)
     if (argc > 1 && !strcmp(argv[1], "bar")) { // tests (BUG-0630): also the evolution bar, cPlayer +0x10F0
-        SAY("dna=%.1f bar=%.1f", game::dna(), game::evolution_bar());
+        SAY("dna=%.1f bar=%.1f goal=%.1f", game::dna(), game::evolution_bar(), game::goal_total());
         SAY("%s", party_bar::status().c_str()); // BUG-9277
         return 0;
     }
