@@ -274,8 +274,8 @@ class Campaign:
         self.edits = {}  # player -> "done" clicks in the current editor
         # a guest's own Civ arrival editors' drags (line_stages --civ-editors: CIV_ARRIVAL_PARTS, a model not the host's)
         self.arrival_parts = TRIBE_EDITOR_PARTS
-        # BUG-1328: a guest's own arrival editor still up after this many "done" (no name: the name panel had no dice
-        # after the guest's own Tribal Outfitter) is left with its red cross, as a player would (it keeps the
+        # BUG-1328: a guest's own arrival editor still up after this many "done" (no name: on lab lane 5 the name panel
+        # has no dice) is left with its red cross, as a player would (it keeps the
         # civilization's designs); None: never (line_stages --civ-editors needs the designs, a FAIL shows the bug)
         self.arrival_cancel_after = 14
         self.segments = {}  # A6: stage -> the save it started from ({save, planet} or {fixture})

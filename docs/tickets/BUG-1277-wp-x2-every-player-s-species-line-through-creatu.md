@@ -59,9 +59,10 @@ fix/w58-linestages (2026-11-19, the last three failures on the merged tree; test
 * line_stages_outfit "built from none" (lab 20261119-162318): not seen again; on the merged tree the guest's vehicle
   of the `owndesign set` path is re-keyed on both games (host culture key 0, guest 29271FD6 / generated; 7BE222FB built
   from 76023C9D): lab 20261119-165858 line_stages, 20261119-182732 line_stages_outfit. The test now prints the whole
-  model key (`ownveh ... mtype mgroup`) when the check fails. After the guest's own Tribal Outfitter its own City Hall
-  editor at the arrival could not be named (no dice in the name panel, 4 of 4 runs): BUG-1328 (open); the driver leaves
-  such an editor with the red cross after 14 "done" (`Campaign.arrival_cancel_after`; not with `--civ-editors`).
+  model key (`ownveh ... mtype mgroup`) when the check fails. On lab lane 5 the guest's own City Hall editor at the
+  arrival can not be named (no dice in the name panel, 6 of 6 runs there, with and without the outfit; lane 6 names it
+  every time): BUG-1328 (open); the driver leaves such an editor with the red cross after 14 "done"
+  (`Campaign.arrival_cancel_after`; not with `--civ-editors`, which therefore FAILs on lane 5: 20261119-184827).
 
 ## Verification
 Not run yet: the owner's rule of 2026-11-18 (no lab runs until the night run). Night commands (lanes 2 and 3):
@@ -88,15 +89,18 @@ Tribe members). Once WP-X1 is in: `SPORE_DETECTOR=20 python3 tools/lab.py run li
   its own Tribal Outfitter ("the guest is back in Tribe" fails, WP-T2 / BUG-1272), then never reaches the host's Civ
   world (stuck civ/follow), so every guest-side Civ check is empty; the host-side Civ checks and the Civ save pass.
 
-* fix/w58-linestages, all on rel/0.7.16 merged (lanes 5 and 6): **line_stages PASS** lab 20261119-165858 (and
-  20261119-1xxxxx-final, see below); **line_stages_editors PASS** lab 20261119-171852 and 20261119-180816 (the guest's
+* fix/w58-linestages, all on rel/0.7.16 merged (lanes 5 and 6): **line_stages PASS** lab 20261119-165858 and on the final
+  tree (c4132601) 20261119-184827 (lane 6); **line_stages_editors PASS** lab 20261119-171852, 20261119-180816 and on the final tree
+  20261119-190903 (lane 6; the guest's
   City Hall 7B... and vehicle of its own design on both games, the host's Civ save clean); **line_stages_outfit PASS**
   lab 20261119-182732 (the outfit's citizens, the vehicle 7BE222FB built from 76023C9D on both games; the arrival
-  editors left with the red cross, BUG-1328). Twins: **line_stages_off FAIL** lab 20261119-182732 (Creature line 0 on
+  editors left with the red cross on lane 5, BUG-1328) and on the final tree lab 20261119-190903 on lane 6 (the
+  arrival editors named and done, no red cross). Twins: **line_stages_off FAIL** lab 20261119-182732 (Creature line 0 on
   both games, the Tribe members the slot's); **line_stages_nodesign_off FAIL** lab 20261119-173854 (the guest's
   vehicle +0xC4 00000000, max hp 10, on both games). FAIL before: lab 20261119-151550 / 20261119-153243 (editors),
   20261119-164538 (editors: the same model; outfit: no driver), 20261119-165858 / 20261119-171852 /
-  20261119-173854 / 20261119-180816 (outfit: the unnamed City Hall, BUG-1328).
+  20261119-173854 / 20261119-180816 (outfit on lane 5: the unnamed City Hall, BUG-1328); line_stages_editors lab
+  20261119-184827 on lane 5 (BUG-1328, the lane).
 * BUG-1274 holds in all three: the guest's vehicle shows the guest's design on both games (line_stages and _outfit
   through `owndesign set` and the zero-key path, _editors through the guest's own vehicle editor).
 

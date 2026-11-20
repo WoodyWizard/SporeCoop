@@ -9434,8 +9434,8 @@ record (coop_civ_own_designs.keys_in) for the guest's keys of that stage.
   `Campaign.arrival_parts`): with the host's three drags the guest's vehicle was the host's model byte for byte
   (3A5843B7 both, lab 20261119-164538 line_stages_editors), so "not the culture's model" could not hold. A guest's
   own arrival editor still up after 14 "done" is left with the red cross (`Campaign.arrival_cancel_after`, None with
-  `--civ-editors`): after the guest's own Tribal Outfitter its City Hall editor's name panel has no dice (BUG-1328,
-  line_stages_outfit).
+  `--civ-editors`): on lab lane 5 that City Hall editor's name panel has no dice and the driver cannot name it
+  (BUG-1328, 6 of 6 runs there; lane 6 names it every time). line_stages_editors on lane 5 FAILs for that reason.
 
 ## Tests of the Lineages fork's general bugs (2026-11-19, fix/w56-general)
 <a id="testing-fork-general"></a>
