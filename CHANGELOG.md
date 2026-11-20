@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+- Tribe -> Civilization: the City Hall and vehicle editors at the end of the Tribe stage could not be named in a game
+  profile where a Space captain had once been named while the game could not copy the species: the name panel had no
+  name field and no dice, the editor said "You must give your creation a name" for ever and the player could not leave
+  the Tribe stage. Now the name and the dice are always there (BUG-1328).
+
 ## [0.7.15.4] - 2026-11-19
 
 Two crash fixes found while testing the next version: the host's game could crash in Civilization while its
