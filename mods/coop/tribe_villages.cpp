@@ -765,6 +765,21 @@ std::string villages_status()
             food.push_back(v ? village_food(v) : -1.f);
             names.push_back(s == 0 ? "Host" : p < 0xFE ? C.sess->name_of(p) : "seat " + std::to_string(s));
         }
+        // the NPC villages' relations with the host's village and with each partner's (the team's alliances)
+        if (mgr && calc && g_village[0] && g_any_partner)
+            for (void* t : all_tribes()) {
+                if (t == g_village[0] || village_seat(t) >= 1)
+                    continue;
+                snprintf(b, sizeof b, "  npc %08X%s: relation host=%.1f", faction_of(t), F<uint8_t>(t, 0x556) ? " (conquered)" : "",
+                         thiscall<float>(calc, mgr, faction_of(t), faction_of(g_village[0]), 0));
+                out += b;
+                for (size_t s2 = 1; s2 < g_village.size(); ++s2)
+                    if (g_village[s2]) {
+                        snprintf(b, sizeof b, " seat%zu=%.1f", s2, thiscall<float>(calc, mgr, faction_of(t), faction_of(g_village[s2]), 0));
+                        out += b;
+                    }
+                out += "\n";
+            }
         std::string line = tribe_seats::food_line(food, names);
         if (!line.empty())
             out += "  " + line + "\n";
