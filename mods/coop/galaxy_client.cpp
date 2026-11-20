@@ -16,6 +16,7 @@
 #include <windows.h>
 #include "game.h"
 #include "modes.h"
+#include "parties_net.h"
 
 namespace galaxy {
 
@@ -78,6 +79,15 @@ static std::string g_last_upload;
 // 5V A: the planet's host changes (HOSTMOVE): this guest's session ended, it waits on the planet for the new host
 static bool g_waiting_host;
 static double g_waiting_since;
+// BUG-9278 (step 4 part 3): a party's crossing to the next stage
+static bool g_cross_fix = true;
+COOP_FIX("galaxy.party_stage_end", "BUG-9278", g_cross_fix,
+         "galaxy: a party that ends its stage moves on into the planet's next era with its leader (the others keep theirs)");
+static double g_moveon_at = -100, g_moved_at = -100;
+static bool g_arrive_sent = false;
+static double g_arrive_ready_since = 0;
+static std::string g_pending_enter; // kMovedJoin: entered once the crossing's session is closed
+static uint32_t g_moveons_sent = 0, g_crossings = 0, g_arrivals = 0;
 static std::string g_pending_join; // join this address once the old session is closed
 static uint32_t g_handovers;
 // decision 6B C: the warm hand-over. g_planet_world: the world this game plays on the planet (a session up, in a stage);
@@ -395,6 +405,60 @@ static void on_control(net::Reader& r)
             // a join from there read as a join timeout at once)
             g_pending_join = slot_endpoint(host).str();
         }
+    } else if (type == MOVED) { // BUG-9278: the party moves on to the next stage
+        const std::string planet = r.str8();
+        const uint8_t kind = r.u8();
+        const uint16_t host = r.u16();
+        const uint64_t token = r.u64();
+        if (!r.ok() || planet.empty())
+            return;
+        const double now = H->time_seconds();
+        if (kind == kMovedSplit) { // as the warm hand-over: the world this game plays stays
+            const bool keep = token && g_planet_world && modes::current_world() == g_planet_world;
+            g_planet = planet;
+            g_host_slot = host;
+            g_token = keep ? token : 0;
+            g_token_world = keep ? g_planet_world : 0;
+            g_moved_at = now;
+            g_arrive_sent = false;
+            g_arrive_ready_since = 0;
+            g_crossings++;
+            reset_planet_steps();
+            if (host == g_slot) {
+                g_role = kHostRole;
+                if (C.sess && C.sess->role() == net::Role::Client && C.promote)
+                    C.promote(); // (a guest's copies of the planet's creatures go on as this game's)
+                if (C.sess && C.sess->role() != net::Role::None)
+                    C.sess->leave("the party moves on to the next stage");
+                g_hstep = kLoading;
+                g_hstep_at = now;
+                g_left_stage = true;
+                g_ready_since = 0;
+                say("Your party moves on to the next stage: you lead it there.");
+            } else {
+                g_role = kGuestRole;
+                g_waiting_host = true;
+                g_waiting_since = now;
+                if (C.sess && C.sess->role() != net::Role::None)
+                    C.sess->leave("the party moves on to the next stage");
+                say("Your party moves on to the next stage with its leader...");
+            }
+        } else if (kind == kMovedRenamed) { // the crossing is the planet's next era now: same session
+            g_planet = planet;
+            g_arrivals++;
+            if (g_role == kHostRole && g_hstep == kHosting)
+                g_next_upload = now + 30; // (its first save there soon)
+            say("Your party arrived: " + era_display(planet) + (g_role == kHostRole ? ", you host it." : "."));
+        } else if (kind == kMovedJoin) { // the next era has players: join them (one load)
+            reset_planet_steps();
+            g_planet.clear();
+            g_role = 0;
+            g_arrivals++;
+            g_pending_enter = planet;
+            if (C.sess && C.sess->role() != net::Role::None)
+                C.sess->leave("the party joins the players of the next stage");
+            say("Your party arrived: joining the players of " + era_display(planet) + "...");
+        }
     } else if (type == PONG) {
         // the server answers again after "stopped answering" and still knows this game (no REFUSED then): welcomed again
         if (!g_welcomed && H->time_seconds() - g_hello_at > 5)
@@ -580,7 +644,7 @@ static void up_facts()
 
 static void start_upload()
 {
-    if (g_upstep != kUpIdle || g_hstep != kHosting)
+    if (g_upstep != kUpIdle || g_hstep != kHosting || is_crossing(g_planet)) // (BUG-9278: a crossing is not stored)
         return;
     std::string err;
     if (g_up_nosave) { // (Spore saved when it left the stage for the menu)
@@ -915,6 +979,8 @@ std::string leave()
 {
     if (g_planet.empty())
         return "Not on a planet of the galaxy.";
+    if (is_crossing(g_planet)) // (BUG-9278: nothing to save)
+        return leave_now();
     if (g_hstep == kHosting && g_role == kHostRole && C.sess && C.sess->role() == net::Role::Host) {
         if (g_leave_after)
             return "Saving " + era_display(g_planet) + " to the galaxy before leaving...";
@@ -1010,6 +1076,27 @@ void tick(double now)
         g_planet_world = 0;
         g_planet_file.clear();
     }
+    // BUG-9278: the crossing's host plays the next stage (its party came along): it arrives
+    if (is_crossing(g_planet) && g_role == kHostRole && g_hstep == kHosting && !g_arrive_sent) {
+        const uint8_t e = era_of_mode(game::mode_id());
+        if (e && e != era_of(g_planet) && C.ready && C.ready()) {
+            if (!g_arrive_ready_since)
+                g_arrive_ready_since = now;
+            else if (now - g_arrive_ready_since > 10) { // (its party's games load the next stage too)
+                net::Writer w = control(ARRIVE);
+                w.u8(e);
+                send_control(w);
+                g_arrive_sent = true;
+                H->log(M, SK_INFO, "galaxy: the party's crossing arrives in %s (BUG-9278)", era_name(e));
+            }
+        } else
+            g_arrive_ready_since = 0;
+    }
+    if (!g_pending_enter.empty() && g_welcomed && (!C.sess || C.sess->role() == net::Role::None)) {
+        const std::string to = g_pending_enter;
+        g_pending_enter.clear();
+        say(enter(to));
+    }
     if (!g_resume.planet.empty() && g_resume.enter_at > 0 && now >= g_resume.enter_at && g_welcomed) { // BUG-9272
         g_resume.enter_at = 0;
         net::Writer w = control(ENTER);
@@ -1037,6 +1124,32 @@ void tick(double now)
 }
 
 bool online() { return g_sock.is_open() && g_welcomed; }
+
+StageEnd stage_end_request(std::string& why)
+{
+    if (!g_cross_fix || !online() || g_planet.empty() || !era_of(g_planet) || is_crossing(g_planet))
+        return kStageEndPlain;
+    if (!parties::i_lead()) {
+        why = "Only your party's leader moves your party on to the next stage.";
+        return kStageEndRefuse;
+    }
+    const double now = H->time_seconds();
+    if (now - g_moveon_at > 5) {
+        send_control(control(MOVEON));
+        g_moveon_at = now;
+        g_moveons_sent++;
+    }
+    why = "Your party moves on to the next stage: its own way there first...";
+    return kStageEndHold;
+}
+bool in_crossing() { return is_crossing(g_planet); }
+bool crossing_ready()
+{
+    if (!is_crossing(g_planet) || g_role != kHostRole || g_hstep != kHosting || !C.sess)
+        return false;
+    const size_t want = std::max<size_t>(1, parties::members().size());
+    return C.sess->players().size() >= want || H->time_seconds() - g_moved_at > 60;
+}
 uint32_t planets_version() { return g_planets_ver; }
 std::string current_planet() { return g_planet; }
 unsigned planet_players() { return g_planet_players; }

@@ -3059,6 +3059,33 @@ static ReqImage req_image(void* req)
         im.vec70.push_back(*q);
     return im;
 }
+// BUG-9278 (step 4 part 3): the stage-end request held while the party moves into its crossing (galaxy_client.cpp)
+static void* g_cross_req = nullptr;
+static double g_cross_at = 0;
+static unsigned g_cross_holds = 0, g_cross_sent = 0;
+bool SK_CDECL h_Submit(void* req);
+static void cross_tick(double now)
+{
+    if (!g_cross_req)
+        return;
+    if (galaxy::crossing_ready()) {
+        void* r = g_cross_req;
+        g_cross_req = nullptr;
+        g_cross_sent++;
+        LOG("evolution: the party is in its crossing: the stage's end goes on there (BUG-9278)");
+        H->run_outside_frame(
+            [](void* q) {
+                h_Submit(q); // (again through the vote: the session is the party's now)
+                skg::vcall<int>(q, 2);
+            },
+            r);
+    } else if (!galaxy::in_crossing() && now - g_cross_at > 30) {
+        skg::vcall<int>(g_cross_req, 2);
+        g_cross_req = nullptr;
+        feed("your party could not move on to the next stage: try again");
+    }
+}
+
 bool SK_CDECL h_Submit(void* req)
 {
     if (g_editreq_capture) { // tests: the game's own request, kept and not submitted
@@ -3067,6 +3094,30 @@ bool SK_CDECL h_Submit(void* req)
         return false;
     }
     uint32_t mode = game::mode_id();
+    // BUG-9278 (step 4 part 3): on a galaxy era the Creature stage's end moves the party (its leader asks) into its
+    // own crossing first; there the co-op stage end runs for the party alone
+    if (!g_vote_bypass && req && mode == modes::kCreature && !g_lineages_evo_req && skg::readable(req, 0x94) &&
+        skg::field<uint32_t>(req, 0x90) == kTagStageEnd) {
+        std::string why;
+        const auto step = galaxy::stage_end_request(why);
+        if (step == galaxy::kStageEndHold) {
+            if (g_cross_req != req) {
+                skg::vcall<int>(req, 1); // AddRef: sent again from cross_tick
+                if (g_cross_req)
+                    skg::vcall<int>(g_cross_req, 2);
+                g_cross_req = req;
+                g_cross_at = H->time_seconds();
+                g_cross_holds++;
+            }
+            feed(why);
+            return false;
+        }
+        if (step == galaxy::kStageEndRefuse) {
+            feed(why);
+            g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
+            return false;
+        }
+    }
     if (native_tribal_graduation(req)) {
         g_tribal_graduation_world = modes::current_world();
         g_tribal_graduation_settled = 0;
@@ -5619,6 +5670,7 @@ void on_frame(void*, int, void*)
     fprof::mark("vote_tick(now)");
     submit_tick(now);
     fprof::mark("submit_tick(now)");
+    cross_tick(now); // BUG-9278
     tribal_graduation_tick(now);
     fprof::mark("tribal_graduation_tick(now)");
     own_editor_tick(now);

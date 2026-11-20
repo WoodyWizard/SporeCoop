@@ -6,29 +6,33 @@ kind: feature
 stage: all
 reported: 2026-11-19
 source: owner 2026-11-19 (step 4)
-role: 
+role: host
 versions: 
 fixed_in:
-branch:
+branch: feat/lineages-alpha
 commits:
-tests:
+tests: tools/tests/galaxy_server_check.py
 signature:
-docs:
-related:
+docs: docs/12-server-and-players.md#server-party-stage-end
+related: BUG-9276, BUG-9277
 ---
 
 ## Report
-<!-- what the player (or the test) saw, in our words; no player names, no paths from their PC -->
+Step 4 part 3 (owner 2026-11-19 on 6Y and 7C): a party that ends its stage moves on into the planet's next era and
+joins the players there; the other players keep the era they are in.
 
 ## Root cause
-<!-- observed (runtime, logs, disassembly) vs inferred -->
+The stage end ran for the whole planet session: the host's game took every player of the planet into the next stage.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+docs/12-server-and-players.md#server-party-stage-end: the leader's MOVEON splits its party into a crossing session
+(warm, no reload), the co-op stage end runs there for the party alone, ARRIVE makes the crossing the next era or joins
+the era's host. Switch `galaxy.party_stage_end`. Only the Creature stage's end so far.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+Server: tools/tests/galaxy_server_check.py (11 checks: split, the era handed to a player who stays, crossings never
+listed, entered or stored, ARRIVE renamed and joined). Live (TITAN 2026-11-19): the split and the warm crossing host
+seen; the native Tribe start in a crossing and ARRIVE not seen yet (needs a test save at the last brain level).
 
 ## History
-- 2026-11-19: opened.
+- 2026-11-19: opened; server and game sides built on feat/lineages-alpha (open: the whole crossing in game).

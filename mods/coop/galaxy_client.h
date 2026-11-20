@@ -48,6 +48,13 @@ void init(const SkHost* host, SkMod* mod, Ctx ctx);
 bool online();                              // connected to a galaxy server (welcomed)
 std::vector<PlanetInfo> planets_known();    // the last list: the planets with players first
 uint8_t era_of_mode(uint32_t mode);         // step 4: the era (net::galaxy::Era) of a game mode, 0 not a stage
+// BUG-9278 (step 4 part 3): the game's own stage-end request on a galaxy era. Plain: as without a galaxy (not on an
+// era, or already in the party's crossing); Hold: the party's leader asked the server to move the party into its
+// crossing (the request goes again once crossing_ready()); Refuse: `why` says it (not the party's leader)
+enum StageEnd { kStageEndPlain, kStageEndHold, kStageEndRefuse };
+StageEnd stage_end_request(std::string& why);
+bool in_crossing();       // this game is in its party's crossing to the next stage
+bool crossing_ready();    // it hosts the crossing and its party is back with it (or 60 s passed)
 uint32_t planets_version();                 // changes with the list
 std::string current_planet();               // the planet this player is on ("" none)
 std::string galaxy_name();                  // the connected galaxy's name ("" when not connected)

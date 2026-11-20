@@ -1425,3 +1425,16 @@ keeps its species and gets its village, decisions 4, 5 and 14).
    (one load; each keeps its species and gets its home through the late-join path).
 4. **What stays behind** (part 4): the party's nests stay in the old era as wild animals; the nest refresh rotates
    them later.
+* Built (BUG-9278, protocol 8, switch `galaxy.party_stage_end`): the server's MOVEON / MOVED / ARRIVE
+  (tools/tests/galaxy_server_check.py: 11 checks), the game's side (galaxy_client.cpp: MOVED, no uploads from a
+  crossing, ARRIVE 10 s after the next stage is up; coop.cpp: the Creature stage-end request on a galaxy era goes
+  through the party's leader and is held until the crossing is ready, then runs again through the vote).
+* ✔ Runtime (TITAN, QA 8 hosting Samuth (Creature), QA 9 a stranger's party of one as its guest): QA 9's stage-end
+  request sent MOVEON; QA 9 went into "Samuth~2|Creature", closed its guest session and hosted the crossing 3 s
+  later with no reload; QA 8 kept hosting Samuth (Creature) alone; the held request went on in the crossing.
+* ? Not seen yet: the native Creature -> Tribe start inside a crossing and the ARRIVE that follows. The test request
+  (`coop.vote stageend`) only opened an evolution editor, and on the QA copy `coop.dna add 3000` filled the bar
+  without the brain upgrades that make the game offer the Tribe stage (no caption, History's check closed History).
+  Next: a Creature test save at the last brain level (the campaign fixture's way) to run the whole crossing.
+* Only the Creature stage's end is routed so far; Cell -> Creature and Tribe -> Civ ends keep today's session-wide
+  behaviour on a galaxy planet.
