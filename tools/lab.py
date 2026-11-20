@@ -380,6 +380,13 @@ MEM_FLOOR_GB = float(os.environ.get('SPORE_LAB_MEM_FLOOR_GB', '8') or 0)
 MEM_RAMP = 900.0
 MEM_WAIT = float(os.environ.get('SPORE_LAB_MEM_WAIT', '1800') or 0)
 MEM_POLL = 10.0
+# BUG-1332: the reservation. A test that waits for memory MEM_RESERVE seconds or more has the right of way: no other
+# test of the run starts (on any lane) until it fits; several such tests start in the order they began to wait. Without
+# it a 4-game campaign never fitted while the other lanes kept starting their 2-game tests (each admitted into the
+# room the campaign waited for): lanes 5 and 7 of the 0.7.16 final check (lab 20261119-214823) waited 5.4 h and 6.0 h
+# for their first test. A test held back only by the reservation (it would fit) never fails as "not started".
+# SPORE_LAB_MEM_RESERVE=0: no reservation (the old gate, the self-test's twin).
+MEM_RESERVE = float(os.environ.get('SPORE_LAB_MEM_RESERVE', '300') or 0)
 
 
 def mem_available_gb():
@@ -482,15 +489,23 @@ class MemSampler(threading.Thread):
 
 
 class MemGate:
-    """the run's memory gate (see MEM_GAME_GB above)"""
+    """the run's memory gate (see MEM_GAME_GB and MEM_RESERVE above)"""
     def __init__(self, out=print):
         self.lock = threading.Lock()
         self.held = []  # [start time, GB] of the run's running tests
+        self.waiting = []  # [since, test name, GB] of the tests waiting for memory, in the order they began to wait
         self.out = out
 
     def pending(self, now):
         """GB the games of the tests started lately will still take (their share falls to 0 over MEM_RAMP)"""
         return sum(gb * max(0.0, 1.0 - (now - t0) / MEM_RAMP) for t0, gb in self.held)
+
+    def reserved(self, now):
+        """BUG-1332: the waiting test that has the right of way (the first to wait, once it waited MEM_RESERVE s), or
+        None"""
+        if MEM_RESERVE and self.waiting and now - self.waiting[0][0] >= MEM_RESERVE:
+            return self.waiting[0]
+        return None
 
     def admit(self, t, stopping=None):
         """a token to give back with release() once the test may start; None after an interrupt; a string (why)
@@ -498,32 +513,57 @@ class MemGate:
         need = suite.games(t) * MEM_GAME_GB
         if not MEM_FLOOR_GB or not need:
             return []
-        t0, said = time.time(), False
+        t0, said, said_first, said_held = time.time(), False, False, None
         idle_since = None
-        while True:
-            with self.lock:
-                av = mem_available_gb()
-                now = time.time()
-                pend = self.pending(now)
-                if av is None or av - pend - need >= MEM_FLOOR_GB:
-                    tok = [now, need]
-                    self.held.append(tok)
-                    if said:
-                        self.out(f'  (memory: {t["name"]} starts after {now - t0:.0f} s: {av:.1f} GB available)')
-                    return tok
-                running = len(self.held)
-            why = (f'{av:.1f} GB available, {pend:.1f} GB for the games of tests just started, {need:.1f} GB for its own '
-                   f'{suite.games(t)} games, {MEM_FLOOR_GB:.0f} GB to stay free (docs/06-testing.md#testing-lab-memory)')
-            if not said:
-                said = True
-                self.out(f'  (memory: {t["name"]} waits: {why})')
-            idle_since = None if running else (idle_since or now)
-            if idle_since is not None and now - idle_since >= MEM_WAIT:
-                return f'FAIL lab: not started, too little memory after {now - t0:.0f} s: {why}'
-            if stopping is not None and stopping.wait(MEM_POLL):
-                return None
-            if stopping is None:
-                time.sleep(MEM_POLL)
+        me = None
+        try:
+            while True:
+                with self.lock:
+                    av = mem_available_gb()
+                    now = time.time()
+                    pend = self.pending(now)
+                    fits = av is None or av - pend - need >= MEM_FLOOR_GB
+                    head = self.reserved(now)
+                    behind = head is not None and head is not me
+                    if fits and not behind:
+                        tok = [now, need]
+                        self.held.append(tok)
+                        if me in self.waiting:
+                            self.waiting.remove(me)
+                        if said:
+                            self.out(f'  (memory: {t["name"]} starts after {now - t0:.0f} s: {av:.1f} GB available)')
+                        return tok
+                    if me is None:
+                        me = [now, t['name'], need]
+                        self.waiting.append(me)
+                    running = len(self.held)
+                    head_name, head_since = (head[1], now - head[0]) if behind else (None, 0)
+                why = (f'{av:.1f} GB available, {pend:.1f} GB for the games of tests just started, {need:.1f} GB for its '
+                       f'own {suite.games(t)} games, {MEM_FLOOR_GB:.0f} GB to stay free (docs/06-testing.md#testing-lab-memory)')
+                if not said and not fits:
+                    said = True
+                    self.out(f'  (memory: {t["name"]} waits: {why})')
+                if head is me and not said_first:
+                    said_first = True
+                    self.out(f'  (memory: {t["name"]} has waited {now - t0:.0f} s: no other test starts until it fits, '
+                             f'BUG-1332)')
+                if behind and fits and said_held != head_name:
+                    said, said_held = True, head_name
+                    self.out(f'  (memory: {t["name"]} would fit but waits: {head_name} waits since {head_since:.0f} s '
+                             f'and starts first, BUG-1332)')
+                # only a test that does not fit itself fails as not started (one held back by the reservation never)
+                idle_since = None if running or fits else (idle_since or now)
+                if idle_since is not None and now - idle_since >= MEM_WAIT:
+                    return f'FAIL lab: not started, too little memory after {now - t0:.0f} s: {why}'
+                if stopping is not None and stopping.wait(MEM_POLL):
+                    return None
+                if stopping is None:
+                    time.sleep(MEM_POLL)
+        finally:
+            if me is not None:
+                with self.lock:
+                    if me in self.waiting:
+                        self.waiting.remove(me)
 
     def release(self, tok):
         with self.lock:

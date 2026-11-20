@@ -927,9 +927,11 @@ def mem_cases(tree, tmp):
         lab.SCRIPT_RSS_MB, lab.MEM_STEP, lab.AFTER = old
 
     # the gate, on a fake MemAvailable
-    old = (lab.MEM_FLOOR_GB, lab.MEM_GAME_GB, lab.MEM_POLL, lab.MEM_WAIT, lab.mem_available_gb)
+    old = (lab.MEM_FLOOR_GB, lab.MEM_GAME_GB, lab.MEM_POLL, lab.MEM_WAIT, lab.mem_available_gb,
+           getattr(lab, 'MEM_RESERVE', None))  # (an older lab: none, the reserve cases then fail)
     avail = [30.0]
     lab.MEM_FLOOR_GB, lab.MEM_GAME_GB, lab.MEM_POLL, lab.MEM_WAIT = 8.0, 1.6, 0.1, 0.6
+    lab.MEM_RESERVE = 0  # the cases below are the gate without the reservation (BUG-1332: its own cases after them)
     lab.mem_available_gb = lambda: avail[0]
     try:
         four = dict(name='four', cmd='python3 tools/tests/coop_campaign.py --minutes 8')
@@ -966,8 +968,86 @@ def mem_cases(tree, tmp):
         check(g.admit(two, ev) is None, 'mem_gate: an interrupt ends the wait')
         lab.MEM_FLOOR_GB = 0
         check(g.admit(four) == [], 'mem_gate: SPORE_LAB_MEM_FLOOR_GB=0 switches it off')
+        lab.MEM_FLOOR_GB = 8.0
+        mem_reserve_cases(g, four, two, avail)
     finally:
-        lab.MEM_FLOOR_GB, lab.MEM_GAME_GB, lab.MEM_POLL, lab.MEM_WAIT, lab.mem_available_gb = old
+        lab.MEM_FLOOR_GB, lab.MEM_GAME_GB, lab.MEM_POLL, lab.MEM_WAIT, lab.mem_available_gb, lab.MEM_RESERVE = old
+
+
+def mem_reserve_cases(g, four, two, avail):
+    """BUG-1332: a 4-game test that waits MEM_RESERVE s has the right of way: no 2-game test of another lane starts
+    into the room it waits for (lab 20261119-214823: lanes 5 and 7 waited 5.4 h and 6.0 h); twin: MEM_RESERVE 0, the
+    2-game tests pass it as before. Games 1.6 GB, floor 8 GB, 20 GB available, no ramp-down during the case."""
+    import threading
+    import lab
+    old = (lab.MEM_RAMP, lab.MEM_WAIT, getattr(lab, 'MEM_RESERVE', None))
+    lab.MEM_RAMP, lab.MEM_WAIT = 1e6, 30.0
+    avail[0] = 20.0
+
+    def waiter(test, got, order):
+        def run():
+            r = g.admit(test)
+            got.append(r)
+            order.append(test['name'])
+        th = threading.Thread(target=run, daemon=True)
+        th.start()
+        return th
+
+    try:
+        for reserve in (0, 0.6):  # the twin first: no reservation
+            lab.MEM_RESERVE = reserve
+            said = []
+            g.out = said.append
+            a1, a2 = g.admit(two), g.admit(two)  # 20 - 6.4 = 13.6: a campaign (6.4) does not fit (7.2 < 8)
+            got4, order = [], []
+            th4 = waiter(four, got4, order)
+            time.sleep(1.0)  # past the reservation's 0.6 s
+            got2 = []
+            th2 = waiter(two, got2, order)  # a 2-game test of another lane: 20 - 6.4 - 3.2 = 10.4, it fits
+            time.sleep(0.5)
+            if not reserve:
+                check(got2 and isinstance(got2[0], list) and not got4,
+                      'mem_reserve twin (SPORE_LAB_MEM_RESERVE=0): a 2-game test starts while the campaign waits '
+                      '(the starvation of BUG-1332)')
+                for tok in (a1, a2, got2[0] if got2 else None):
+                    g.release(tok)
+                th4.join(5)
+                g.release(got4[0] if got4 else None)
+                continue
+            check(not got2 and not got4 and any('four has waited' in x for x in said)
+                  and any('two would fit but waits: four waits since' in x for x in said),
+                  f'mem_reserve: the campaign waited 0.6 s: a 2-game test that fits waits behind it ({said[-2:]})')
+            g.release(a1)  # 20 - 3.2 - 6.4 = 10.4: the campaign fits now, first; then the 2-game test does not (7.2)
+            th4.join(5)
+            time.sleep(0.4)
+            check(got4 and isinstance(got4[0], list) and order == ['four'] and not got2,
+                  f'mem_reserve: memory freed: the campaign starts first ({order})')
+            g.release(a2)  # 20 - 6.4 - 3.2 = 10.4: now the 2-game test
+            th2.join(5)
+            left = getattr(g, 'waiting', None)
+            check(got2 and isinstance(got2[0], list) and order == ['four', 'two'] and not left,
+                  f'mem_reserve: then the 2-game test ({order}, waiting {left})')
+            for tok in (got4[0] if got4 else None, got2[0] if got2 else None):
+                g.release(tok)
+        # a campaign that can never fit (13 GB, nothing running): it fails as not started after MEM_WAIT; the 2-game
+        # test held back by it (it fits) does not fail with it, it starts once the campaign gave up
+        lab.MEM_RESERVE, lab.MEM_WAIT = 0.3, 1.5
+        avail[0] = 13.0
+        got4, got2, order = [], [], []
+        th4 = waiter(four, got4, order)
+        time.sleep(0.6)
+        th2 = waiter(two, got2, order)
+        time.sleep(0.4)
+        held_back = not got2
+        th4.join(5)
+        th2.join(5)
+        check(held_back and got4 and isinstance(got4[0], str) and 'not started' in got4[0]
+              and got2 and isinstance(got2[0], list) and order == ['four', 'two'],
+              f'mem_reserve: a campaign that never fits fails as not started; the test behind it starts then '
+              f'({order}, {[str(x)[:40] for x in got4 + got2]})')
+        g.release(got2[0] if got2 else None)
+    finally:
+        lab.MEM_RAMP, lab.MEM_WAIT, lab.MEM_RESERVE = old
 
 
 CASES = ('lab_cases', 'quick_case', 'worktree_case', 'game_log_case', 'kill_case', 'mem_cases', 'same_second_case',
