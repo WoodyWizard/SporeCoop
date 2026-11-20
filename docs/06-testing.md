@@ -9757,3 +9757,20 @@ run folder as `<test>.<who>.killed<N>.game.log`; `Checks.faults()` prints `<who>
 judges it like a live game (the lab's "faults in the log" sees the line too). An instance that did not answer before
 its kill is only noted. Kills before `start()` (a test's own cleanup of the lane) and direct `spore.sh kill` calls are
 not covered. `SPORE_KILLED_FAULTS=0`: the old way. The log gates still read only the last instance's log.
+## An editor without a creation key in a profile with a list under key 0 (0.7.15 line, 2026-11-19, fix/w59-hotfix)
+<a id="testing-creation-props-key0-0715"></a>
+
+BUG-1328 (docs/re/creations.md#creations-props-key0), the 0.7.15 line's form of rel/0.7.16's `creation_props_key0`.
+* `coop_creation_props_key0.py` (suite `creation_props_key0`, `tribe` fixture, about 12 min): the host's game gets a
+  creation property list under key 0 the way "Name Your Captain" writes it when the species copy fails
+  (`coop.creationprops plant Breer`: it reaches the lane profile's Pollination.package at once), then the end of Tribe
+  the players' way (coop_tribe_civ.py's advance button, card, caption, votes). In the game's own City Hall and vehicle
+  editors: three parts, "done" without a name, and the name panel must show its name field 0xC7CEB1BD and the dice
+  0x0552C901 (`uifind.where`: shown through visible parents); key frames `cityhall_name_panel` /
+  `vehicle_name_panel`; then the dice and "done" must leave each editor, and the host's game must reach Civ. The test
+  ends with `coop.creationprops remove` (deleted from Pollination.package, flushed): the lane profile as before.
+* Twin `creation_props_key0_off` (`SPORE_FIX_OFF=game.creation_props_key0`): no field, no dice in the City Hall editor,
+  which the end of Tribe cannot leave: FAIL there (the test stops; the lab kills the games).
+* A lane whose profile already has such a list (space_captain_none names a captain whose species cannot be copied; see
+  the RE section) passes the other end-of-Tribe tests only with the fix on; a profile can be checked by the .prop
+  records of its Pollination.package (a clean profile has none).

@@ -7,10 +7,10 @@ stage: Civ
 reported: 2026-11-19
 source: lab
 role: 
-versions: 
-fixed_in: unreleased
-branch: fix/w58-cityname
-commits: 3dd923f5 37844d02 e6e418c3 3f698fd6 acdbda75
+versions: 0.7.15.4 and older (the game's own end-of-Tribe editors in a profile with the list; code read), 0.7.16 (unreleased)
+fixed_in: 0.7.15.5
+branch: fix/w58-cityname, fix/w59-hotfix (backport to 0.7.15)
+commits: 3dd923f5 37844d02 e6e418c3 3f698fd6 acdbda75 1b7c74b2 0fb723ca
 tests: creation_props_key0, creation_props_key0_off, civ_own_arrival, line_stages_editors
 signature: UI::EditorNamePanel +0x11 = 0, +0x20 = 0 (no name field 0xC7CEB1BD, no dice 0x0552C901); a .prop {0, 0x00B1B104, 0x0000E500} in the profile's Pollination.package
 docs: docs/re/creations.md#creations-props-key0
@@ -88,3 +88,9 @@ The difference reproduced on lane 6 and the fix (fix/w58-cityname):
   5's Pollination.package, the name panel's flags read at runtime and in Ghidra, reproduced on lane 6 by planting the
   list; fixed by `game.creation_props_key0`; the campaign's red-cross workaround removed; fixed. Found on the way:
   BUG-1329 (the late route's City Hall result faults in the Tribe goal listener).
+- PASS: out/lab/20261119-204948:creation_props_key0 and again out/lab/20261119-205401:creation_props_key0 (both editors:
+- FAIL (twin): out/lab/20261119-205401:creation_props_key0_off (no name field, no dice in the City Hall editor; its key
+- Smoke: out/lab/20261119-205832 lane 9 (13 OK, ui INCONCLUSIVE there as usual off lanes 1-5); ui PASS out/lab/20261119-205419 lane 5.
+- Lane 9's host profile cleaned at each test's end (`coop.creationprops remove`: deleted from Pollination.package).
+- 2026-11-19: backported to the 0.7.15 line (fix/w59-hotfix): a 0.7.15 player whose profile has the list cannot leave
+- 2026-11-19: released in 0.7.15.5.
