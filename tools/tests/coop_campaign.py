@@ -225,6 +225,22 @@ def stands(con):
     return bool(uifind.shown(con, 'Resume Game'))
 
 
+# BUG-1351: a guest's own City Hall and vehicle editors after its arrival in Civ (WP-X1 of 0.7.16, `coop.civarrival`):
+# they open 20 s after the guest's game has settled in the host's Civ world, the host plays on meanwhile
+ARRIVAL_EDITING = ('opening', 'open', 'next')        # its own editors are up (or between the two)
+ARRIVAL_BUSY = ('due', 'settling') + ARRIVAL_EDITING  # still to come
+ARRIVAL_LIMIT = 300.0  # s in its own arrival editors before the stage check counts it again (stuck)
+
+
+def arrival_phase(con):
+    """this guest's phase of its own Civ arrival editors (`coop.civarrival` phase=: none / due / settling / opening /
+    open / next / done; none when the game has no such command or no own line)"""
+    r = con.call('coop.civarrival')
+    out = (r.get('out') or '') if isinstance(r, dict) else (r or '')
+    m = re.search(r'phase=(\w+)', out)
+    return m.group(1) if m else 'none'
+
+
 def now():
     return time.strftime('%H:%M:%S')
 
@@ -273,6 +289,7 @@ class Campaign:
         self.cap = {}  # player -> (caption seen since, last OK)
         self.talks = {}  # player -> answers to a Civ talk that is still up (BUG-0290)
         self.edits = {}  # player -> "done" clicks in the current editor
+        self.arrival_since = {}  # BUG-1351: guest name -> since when it is in its own Civ arrival editors
         # a guest's own Civ arrival editors' drags (line_stages --civ-editors: CIV_ARRIVAL_PARTS, a model not the host's)
         self.arrival_parts = TRIBE_EDITOR_PARTS
         self.segments = {}  # A6: stage -> the save it started from ({save, planet} or {fixture})
@@ -410,6 +427,8 @@ class Campaign:
                 if g not in alive:
                     continue
                 gst = cl.stage_of(g.call('game.mode'))
+                if gst != hst and hst == 'civ' and self.own_arrival_editor(g):
+                    continue  # BUG-1351: in its own Civ arrival editors (0.7.16: the host plays on meanwhile)
                 if gst != hst:
                     bad_stage.append(f'{g.name}:{hst}:{gst}')
                 if g.pid not in tog and hst != 'space':  # in Space players fly to other stars: apart is play
@@ -632,6 +651,21 @@ class Campaign:
     def byname(self, name):
         return next(p for p in self.P if p.name == name)
 
+    def own_arrival_editor(self, g):
+        """BUG-1351: True while guest g is in its own City Hall / vehicle editor of its Civ arrival (WP-X1 of 0.7.16): it
+        is not in the host's world then on purpose, the stage and apart checks leave it out for up to ARRIVAL_LIMIT s;
+        longer is a finding of its own (stuck in them)"""
+        ph = arrival_phase(g.con)
+        if ph not in ARRIVAL_EDITING:
+            self.arrival_since.pop(g.name, None)
+            return False
+        t0 = self.arrival_since.setdefault(g.name, time.time())
+        if time.time() - t0 <= ARRIVAL_LIMIT:
+            return True
+        self.finding('stage', f'arrival:{g.name}', f'{g.name} is still in its own Civ arrival editors after '
+                     f'{time.time() - t0:.0f} s (phase {ph})', [self.host, g])
+        return False
+
     def sleep_checking(self, secs):
         end = time.time() + secs
         while time.time() < end and not self.dead:
@@ -729,7 +763,10 @@ class Campaign:
         # City Hall and vehicle editors after its arrival in Civ (the follow phase) are the same editors
         # (no red cross after N "done" any more: BUG-1328's unnameable editor was a profile's list under creation key 0,
         # fixed by game.creation_props_key0; a stuck editor fails the test again)
-        civ_arrival = self.stage == 'civ' and self.phase == 'follow'
+        # BUG-1351: they also come after the follow phase (its "together" can be reached in the 20 s before they open:
+        # lab 20261120-041304 campaign_tribe_noclick / _latecut, the play phase dragged the spaceship editor's parts into
+        # them and never left them): the guest's own state says
+        civ_arrival = self.stage == 'civ' and (self.phase == 'follow' or arrival_phase(con) in ARRIVAL_EDITING)
         if pace:
             moves = (self.arrival_parts if civ_arrival else TRIBE_EDITOR_PARTS if self.stage == 'tribe'
                      else list(zip(EDITOR_PARTS, EDITOR_PLACES)))
@@ -1103,7 +1140,12 @@ class Campaign:
                 st = {g.name: cl.stage_of(g.call('game.mode')) for g in self.guests}
                 tog = self.together()
                 self.ids()
-                if all(v == nxt for v in st.values()) and all(g.pid in tog for g in self.guests):
+                # BUG-1351: in Civ also each guest's own arrival editors done (they open 20 s after its arrival; the
+                # 20 s of "together" below could end before them, and the play phase then met them)
+                arr = {g.name: arrival_phase(g.con) for g in self.guests} if nxt == 'civ' else {}
+                if any(v in ARRIVAL_BUSY for v in arr.values()):
+                    good = None
+                elif all(v == nxt for v in st.values()) and all(g.pid in tog for g in self.guests):
                     # together for 20 s: right after a stage change the guests can still be in their
                     # old copy (the host's world arrives a few seconds later and they reload)
                     good = good or time.time()
