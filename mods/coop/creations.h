@@ -38,6 +38,7 @@ struct Ctx {
     std::function<std::string(uint8_t)> name_of;
     std::function<void(uint8_t player)> appearance_changed; // rebuild that player's puppet
     std::function<void()> cell_rebuilt; // the own cell hatched again: move it next to a partner
+    std::function<uint32_t()> host_world; // guest (BUG-9267): the world the host plays (its save name crc), 0 unknown
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);
@@ -119,5 +120,17 @@ std::string status();
 // support trace (trace.h): the own creation of the stage, where the choice came from, what the avatar has
 std::string trace_line(Kind k);
 std::string debug(const std::vector<std::string>& args);
+
+// BUG-9262 (Lineages): a free note of the mod per planet (worlds.ini [section] <world crc> = value, ASCII; "" = none)
+std::string world_note(const char* section, uint32_t world);
+void world_note_set(const char* section, uint32_t world, const std::string& value);
+
+// BUG-9261 (Lineages port phase 3, docs/re/creations.md#creations-guest-archive): host: `guest`'s own creature is
+// archived with the planet `planet` (world::current_game_key(); a premade needs none), so a nest of it loads while
+// that player is offline. restore_guest_model registers every archive of a planet (the LoadGameByName hook does it
+// before each load; false: some could not be, err says which).
+bool archive_guest_model(uint8_t guest, const std::string& planet, std::string& err);
+bool restore_guest_model(const std::string& planet, std::string& err);
+std::string archive_status();
 
 } // namespace creations
