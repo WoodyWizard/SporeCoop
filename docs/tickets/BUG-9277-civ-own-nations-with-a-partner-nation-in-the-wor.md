@@ -11,7 +11,7 @@ versions: 0.7.15.5 (feat/lineages-civ)
 fixed_in: unreleased
 branch: feat/lineages-civ
 commits: d7b9d1c3
-tests:
+tests: civ_own_money (suite, two players: the money of a guest on the host's nation); the three-player case itself has no test (two instances per lane), see Verification
 signature:
 docs: docs/re/civ.md#civ-own-nations
 related: BUG-9274 BUG-9259
