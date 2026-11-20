@@ -1,44 +1,48 @@
 ---
 id: BUG-9272
 title: A guest's game hung 31 s tearing down its Tribe world for the host's world at a rejoin (watchdog in DestroyInstance)
-status: open
+status: fixed
 kind: freeze
 stage: Tribe
 reported: 2026-11-20
 source: found in the port of BUG-9268 (lane D, 2026-11-20)
 role: guest
 versions: 0.7.15.5 (feat/lineages-tribe)
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-tribe
-commits:
-tests:
-signature: WATCHDOG no frames 30 s; main thread in coop.dll gamefixes::destroy_guard (skg::readable) under cGameNounManager::DestroyInstance from GalaxyMenu_SimReset
+commits: 43c9dbbd 8e2c9780 0d2dcfe1 10f6c106
+tests: tools/tests/coop_tribe_seats.py (the lab hitch gate on its rejoin)
+signature: WATCHDOG / hitch 12-31 s "Tribe, loading" on a guest; main thread in gamefixes forget_sender / forget_last_attacker (for_each_object, skg::readable) under DestroyInstance from GalaxyMenu_SimReset
 docs:
 related: BUG-9268
 ---
 
 ## Report
-The guest left the session in Tribe and joined again; the host shared its world; the guest's game left its Tribe world
-for the galaxy menu to load it and stood 31 s (sporekit WATCHDOG, hang report report-20261120-134212-i8.txt, hitch
-31251 ms "Tribe, loading"); the host timed the guest out. One sample: the main thread in
-coop.dll gamefixes::destroy_guard -> skg::readable (VirtualQuery) under DestroyInstance from GalaxyMenu_SimReset. The
-next rejoin of the same session and the later ones had no hang.
+A guest with its own village (BUG-9268) left and joined again; leaving its Tribe world for the host's world its game
+stood 31 s (sporekit WATCHDOG, hang report report-20261120-134212-i8.txt) and the host timed it out. In five more
+rejoins (lane D, 2026-11-20): stalls of 1.6, 17.4, 12.1, 17.5 s and one past the 30 s watchdog.
 
 ## Root cause
-Not known. Suspected: the guest's terrain cursor candidate list (+0x164) bound to its own village (BUG-9268,
-`tribe.guest_native`) while that village was being destroyed: the hook kept binding while the stale village pointer read
-as alive (game::object_alive), so the cursor could walk a freed vector during the teardown. The watchdog's one sample
-does not show it.
+Observed: the second watchdog's stack (coop.dll resolved with llvm-addr2line on the deployed DLL):
+gamefixes::forget_sender -> game::for_each_object -> skg::readable (VirtualQuery) under the destroy hook
+(gamefixes::destroy_guard) under cGameNounManager::DestroyInstance, from cCreatureCitizen_Teardown under
+GalaxyMenu_SimReset. For every creature or citizen destroyed, forget_sender (BUG-0456) and forget_last_attacker
+(BUG-0930) walk every object of the world with VirtualQuery per creature: a world reset destroys about 285-314 creatures
+on this planet (the players' villages, the rivals, the animals), each walk over hundreds more. The suspected cursor list
+was not the cause (the stalls came with `tribe.cursor_listed` on).
 
 ## Fix
-Guarded in BUG-9268 before its commit: the cursor list is bound only while the village is in the object list
-(game::listed, safe on a freed pointer) and no load is queued, and the game's own list is put back otherwise. Not shown
-to be the cause: the ticket stays open until a rejoin test runs without the hang several times (coop_tribe_seats.py
-check 5).
+GalaxyMenu_SimReset hooked (a flag around the call); while it runs the two walks are skipped (no NPC outlives a reset to
+keep a stale stimulus or last attacker). Switch `coop.fix game.reset_sender_scan off`: the walks as before. The reset's
+time is logged ("the world reset took N s"). The cursor guard stays behind `tribe.cursor_listed`.
 
 ## Verification
-Repro: lane D, a guest with its own village (BUG-9268) leaves and joins again while the host plays on in Tribe (a
-cinematic of the first rival was starting on the host at the time).
+no-fail-run: not run in the Linux lab (no lane for this batch). Twin on Windows lane D, 2026-11-20, the guest's own
+reset timed by the hook: `game.reset_sender_scan off`: 13.23 s and 16.47 s (two rejoins); on: 2.20, 1.53 and 1.51 s
+(312, 283, 284 creatures destroyed without the walks). Five rejoins with the fix: no watchdog (one 11 s gap while
+receiving the world, the BUG-0687 message-loop class, not the reset). The lab's hitch gate fails a stall on
+coop_tribe_seats.py's rejoin.
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20: the cause found and fixed on feat/lineages-tribe (43c9dbbd).
