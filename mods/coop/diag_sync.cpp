@@ -236,6 +236,7 @@ struct GuestCheck {
     double ok_window_since = 0;
     uint32_t ok_told_place = 0; // the stage of the last OK line written
     int late_run = 0;           // checks in a row that passed only through the BUG-0379 windows (BUG-0430)
+    bool stood = false;         // BUG-1339: its last digest said its game stands
     std::set<uint32_t> band;    // the band cells of the last check (dg::Late::steady)
 };
 // BUG-0379: the host's own shared totals (dna, cell food) of the last seconds. A guest shows a total
@@ -266,6 +267,10 @@ constexpr double kShareQuiet = 20.0;
 static bool g_fix_late_streak = true;
 COOP_FIX("diag.late_streak", "BUG-0379 BUG-0430", g_fix_late_streak, "sync-check: a guest that passes 3 checks in a row only through the late windows is reported late");
 static unsigned g_sync_late = 0;
+static bool g_guest_stands_fix = true;
+COOP_FIX("diag.guest_stands", "BUG-1339", g_guest_stands_fix,
+         "sync-check: a guest whose own game stands paused is not compared until it goes on (its world waits)");
+static unsigned g_sync_stands = 0;
 constexpr double kTotalLag = 3.0;
 constexpr double kLateAge = 1.0; // a guest value the host left more than this before asking is late (BUG-0430)
 struct TotalAt {
@@ -531,6 +536,7 @@ static dg::Digest build_digest(uint32_t seq)
     float bar;
     if (g_P.bar && g_P.bar(bar)) // BUG-1310: compared by the host for a guest with its own DNA only
         d.totals.push_back({dg::kTotalBar, bar});
+    d.stands = g_P.stands && g_P.stands() ? 1 : 0; // BUG-1339
     if (g_P.players_out)
         d.out = g_P.players_out();
     if (g_P.cell_scale)
@@ -650,6 +656,17 @@ static void on_digest(uint8_t from, const dg::Digest& gd, size_t bytes)
         c.other_place = true; // BUG-0588
     if (g_share_quiet_fix && g_P.since_share && g_P.since_share(from) < kShareQuiet)
         c.other_place = true; // BUG-0754
+    // BUG-1339 (diag.guest_stands): a guest whose own game time stands (its pause menu, a planner, a wait) runs no world:
+    // a city the host founded meanwhile and its vehicles come there when it goes on (BUG-0335; the campaign's own
+    // compare and census skip such a guest the same way). Lab 20261119-214823 campaign_tc2: Carol's game stood 4.5 min,
+    // `v: 1..3 missing on the guest` for the host's two new cities. Off: compared (0.7.16 before the fix).
+    if (g_guest_stands_fix && gd.stands) {
+        c.other_place = true;
+        if (!g.stood && g_detail >= 1)
+            SLOG("sync-check: player %u's own game stands (paused): not compared until it goes on (BUG-1339)", (unsigned)from);
+        g_sync_stands++;
+    }
+    g.stood = gd.stands != 0;
     if (!c.other_place && dg::late_streak(g.late_run, c) && g_fix_late_streak) {
         char lb[160];
         snprintf(lb, sizeof lb, "late: %d checks in a row matched only through the late windows (totals %d, cells %d of %d)",
@@ -947,12 +964,13 @@ std::string sync_status()
     snprintf(b, sizeof b,
              "clock: %s session time %.3f (%s, %d samples, best round trip %.1f ms)\n"
              "sync-check: every %.0f s%s, checks %d ok %d differs %d mismatch %d; host build+compare avg %.3f ms max %.3f ms (%d); "
-             "guest build avg %.3f ms max %.3f ms (%d); %llu bytes of digests; own_path_saved=%u guest_path_saved=%u sync_late=%u\n",
+             "guest build avg %.3f ms max %.3f ms (%d); %llu bytes of digests; own_path_saved=%u guest_path_saved=%u sync_late=%u stands_skipped=%u\n",
              ok ? "on," : "off,", t, g_P.sess && g_P.sess->role() == net::Role::Host ? "host" : "guest", (int)g_clock.samples(),
              g_clock.rtt() * 1000, g_sync_interval, g_force.empty() ? "" : (" (forced: " + g_force + ")").c_str(), g_c.sync_checks,
              g_c.sync_ok, g_c.sync_differs, g_c.sync_mismatch, g_c.sync_ms_n ? g_c.sync_ms_sum / g_c.sync_ms_n : 0.0, g_c.sync_ms_max,
              g_c.sync_ms_n, g_c.sync_guest_ms_n ? g_c.sync_guest_ms_sum / g_c.sync_guest_ms_n : 0.0, g_c.sync_guest_ms_max,
-             g_c.sync_guest_ms_n, (unsigned long long)g_c.sync_bytes, g_own_path_saved, g_guest_path_saved, g_sync_late);
+             g_c.sync_guest_ms_n, (unsigned long long)g_c.sync_bytes, g_own_path_saved, g_guest_path_saved, g_sync_late,
+             g_sync_stands);
     return b;
 }
 

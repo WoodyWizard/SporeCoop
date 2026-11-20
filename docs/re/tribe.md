@@ -4772,3 +4772,35 @@ BUG-1325. GOG 2024, Ghidra (tools/ghidra/q.sh), lab lane 9; follows [tribe-civ-t
   the graduations, the ones without a mat, the cinematics ended, whether ShowCityHall (0x10792A72) played, the null
   destroys skipped; `coop.tribe gradcine <name>` (tests) starts <name> right before the next graduation. Test
   `coop_tribe_city_hall_race.py` (docs/06-testing.md#testing-tribe-city-hall-race).
+
+## A new member's hand bone before its body has it (2026-11-20, fix/w59-tribe)
+<a id="tribe-hand-bone"></a>
+
+BUG-1335. GOG 2024, Ghidra (private project) and the guest log of lab 20261119-214823 (late_species).
+* ✔ (log) The fault: 0xC0000005 at `cCreatureBase::CreateEffect`+0x146 (0xC15216, `MOVSS XMM0,[EAX+0x140]` with
+  EAX 0x3E800000 = 0.25f), EBP 0xAF00 = bone 64 * 700. The chain (stack scan, coop.dll frames symbolized from the
+  run's build): `game::h_CreateCreatureFx` (our hook, the original call) < `Creature_StartBoneEffect` 0xC17EC0 (ret
+  0xC17F1E) < `Citizen_SetHandheldItem` 0xC250A0 (ret 0xC25419) < `Citizen_RefreshHandItem` 0xC26470 (ret 0xC264CD) <
+  `cTribe_SetChieftain` 0xC8FEE0 (ret 0xC8FFA5) < `tribe::apply_leader` (tribe.cpp, tribe.leader_sync's apply). 0.65 s
+  after the guest's world opened with 2 mirrors spawned and the guest's own chief removed ("a member of this game the
+  host has not goes (leader 1)"). The same flow without the fault on the first join of the same test and on
+  tribe_gameover_reload2 (`member #4 leads its tribe here too (the leader was none)` 0.6 s after the removal).
+* ✔ (Ghidra) CreateEffect indexes `[[creature +0xB54] +0x17C] +0x2E4` with `bone * 700` and checks only `bone != -1`.
+  A tribe member's hand bone (+0xFC4) is picked by `Citizen_PickHandBone` 0xC24270 from the species' limb table
+  +0xE40 (0x24 bytes an entry) when the citizen is made (Citizen_Init 0xC27330), at a species change (0xC27830) and
+  from the model's update 0xC21600. Nothing ties it to the model's bone array: right after a spawn the hand bone is the
+  species' and the array is the body's as far as it is built.
+* ~ Inferred: the mirror made chief was a member spawned at the world's opening whose body was not built yet (its bone
+  array shorter than 65); 0.27 s later the hand sync's attach on other members worked. Whether the line species of
+  tribe.birth_species (a model not cached in the freshly loaded world) makes that window longer is not measured:
+  `coop.tribe hand_race` (spawn + chief in one frame) prints the hand bone and the bone count at the spawn (lab test
+  tribe_hand_bone step 2).
+* ✔ (Ghidra) After a skipped CreateEffect, SetHandheldItem finds no attachment record (0xC0E110 of the hand's key
+  returns 0: the stop 0xC152B0 at its start removed the old one) and returns: no other read of the bone.
+* Fix `creature.fx_bone` (game.cpp h_CreateCreatureFx): a bone outside the body's array (`bone_rules::check`) returns
+  null without the game's call (counted, logged 10 times); a tribe member's own calls (the leader's SetChieftain, the
+  held item's attach, the hold's attach) wait until its body has its hand bone (`tribe::hand_ready`); an item whose
+  effect was skipped is attached again once the bone is there (`hand_repair_tick`, 30 s at most). Off: the game's call.
+  `coop.tribe handbone [id]`, `hand_race [owner]`, `hand_plant <id> [item]` (tests).
+* ~ Open: why the born mirror of BUG-1319 ends bound to the host's chief at a world's opening (the nearest-bind) is
+  still not checked; this fault needs no such bind (any new member made chief soon enough).

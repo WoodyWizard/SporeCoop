@@ -271,6 +271,9 @@ extern uint32_t g_own_editor_due;
 constexpr uint32_t kAwayStages[] = {modes::kCreature, modes::kTribe, modes::kCiv, modes::kCell};
 bool g_away_stages_fix = true;
 COOP_FIX("core.away_stages", "BUG-0233", g_away_stages_fix, "core: a host editor or load counts as away only in Creature, Tribe, Civ");
+static bool g_override_out_fix = true;
+COOP_FIX("diag.override_out", "BUG-1338", g_override_out_fix,
+         "sync-check: a player whose states report another mode on purpose (the tests' coop.hoststate) is not compared");
 // BUG-0233: DNA kept while the host was away stays in its stage and world: a guest's solo DNA goes
 // to the pack only when the host plays that stage again (no "is back" when the host did not come
 // back to the guest's world), the host's owed DNA is paid only into the Creature world it was owed
@@ -2262,10 +2265,17 @@ void support_init()
     p.chat_log = [](const std::string& t) { chat_log(t); };
     p.my_name = [] { return g_name; };
     p.entries = sync_all;
+    p.stands = [] { return (game_busy() & busy::kPaused) != 0; }; // BUG-1339
     p.players_out = [] { // dead, respawning or not in a world: hidden on purpose (drive_puppet's rules)
         std::vector<uint8_t> v;
         double now = H->time_seconds();
         net::PlayerState own = local_state();
+        // BUG-1338 (diag.override_out): while a test makes this game's player states report another mode
+        // (`coop.hoststate mode`), the partners hide its creature as the rule for that mode says (the menu: gone) while
+        // this game still draws and lists it: its own row is not compared then (lab 20261119-214823 away_stages: `p: 1
+        // missing on the guest (p0)` in the override's 10 s). Off: compared.
+        if (g_override_out_fix && g_state_mode_override && now < g_state_mode_until)
+            v.push_back(g_sess.my_id());
         // BUG-0380: a Tribe / Civ player is a pointer (the planet point under the mouse, moved by the
         // mouse and by the camera); a partner's copy is ~0.1 s + half a round trip behind it, so a
         // moving pointer was "apart" (median 23 m in campaigns, sync-check `p apart`). Left out while

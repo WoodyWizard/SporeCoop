@@ -870,6 +870,17 @@ static bool g_leader_tool_fix = true;
 COOP_FIX("tribe.leader_tool", "BUG-0583", g_leader_tool_fix, "tribe: a guest's tribe leader never holds a weapon or instrument from the host's member (the game faulted every frame)");
 uint32_t g_tool_sets, g_leader_tools_kept;
 bool is_leader(void* c) { return a_IsLeader && is_citizen(c) && thiscall<bool>(a_IsLeader, c); }
+// BUG-1335 (creature.fx_bone): a hand item (the chief's staff, a tool) is attached at the member's hand bone (+0xFC4):
+// CreateEffect reads that bone of its body's bone array without a check, and a member made a moment ago (a guest's
+// new mirror) has its hand bone from its species before its body has the bones (lab 20261119-214823 late_species:
+// the mirror made chief 0.65 s after its spawn faulted). Ready: the body has the bone (or the hand is -1, "none").
+uint32_t g_hand_waits, g_hand_repairs;
+bool hand_ready(void* c)
+{
+    if (!game::fx_bone_fix())
+        return true;
+    return has_body(c) && game::creature_bone(c, F<int>(c, kHandOff)) != bone_rules::Bone::Out;
+}
 static float read_held_tool(void* c) { return is_citizen(c) ? (float)F<int>(c, kHeldToolOff) : 0.f; }
 void apply_held_tool(void* c, float v)
 {
@@ -898,6 +909,10 @@ static void apply_leader(void* c, float v)
     void* tribe = F<void*>(c, 0x1014); // cCreatureCitizen: its tribe (+0x1010 its city: Civ, not here)
     if (F<void*>(c, 0x1010) || !tribe || !skg::readable(tribe, 0x120))
         return;
+    if (!hand_ready(c)) { // BUG-1335: its staff goes onto its hand: not before its body has that bone
+        g_hand_waits++;
+        return;
+    }
     void* old = F<void*>(tribe, 0x11C);
     thiscall<void>(a_SetChieftain, tribe, c);
     if (g_leaders_set++ < 5)
@@ -1042,6 +1057,50 @@ static void hand_probe_tick(double now)
         hold_ev(g_hand_probe_id, 'B', h, 0);
     g_hand_probe_handle = h;
 }
+// BUG-1335: a hand item whose effect creature.fx_bone did not make (the bone was not in the body yet): the game wrote
+// the item (+0xFFC) and attached nothing; once the body has the bone the item is attached again with the game's call
+// (the fields' sync sees the item as the host's and never sends it again). Every game, in Tribe; 30 s at most.
+struct HandRepair {
+    void* c;
+    uint32_t serial;
+    double since;
+};
+static std::vector<HandRepair> g_hand_repair;
+HandPlant g_hand_plant;
+static void hand_repair_tick(double now)
+{
+    if (g_hand_plant.c) { // (tests: the planted call faulted and unwound past the command)
+        if (kept_alive(g_hand_plant.c, g_hand_plant.serial, kMemberNoun))
+            F<int>(g_hand_plant.c, kHandOff) = g_hand_plant.hand;
+        g_hand_plant = {};
+    }
+    for (auto& [c, serial] : game::take_fx_bone_skipped()) {
+        bool known = false;
+        for (auto& r : g_hand_repair)
+            known |= r.c == c && r.serial == serial;
+        if (!known && g_hand_repair.size() < 64)
+            g_hand_repair.push_back({c, serial, now});
+    }
+    for (auto it = g_hand_repair.begin(); it != g_hand_repair.end();) {
+        void* c = it->c;
+        if (now - it->since > 30 || !a_SetHandheldItem || !kept_alive(c, it->serial, kMemberNoun) || !is_citizen(c)) {
+            it = g_hand_repair.erase(it);
+            continue;
+        }
+        if (!hand_ready(c)) {
+            ++it;
+            continue;
+        }
+        int item = F<int>(c, kHeldItemOff);
+        if (item > 0 && item <= 0x17 && hand_model(c) == 0) {
+            set_hand(c, item);
+            g_hand_repairs++;
+            H->log(M, SK_INFO, "tribe: member #%u's item %d is in its hand now that its body has the bone (%.1f s later, BUG-1335)",
+                   member_id(c), item, now - it->since);
+        }
+        it = g_hand_repair.erase(it);
+    }
+}
 static void held_items_tick(double now)
 {
     hand_probe_tick(now);
@@ -1096,6 +1155,10 @@ static void apply_held_item(void* c, float v)
     int item = (int)std::lround(v) - 1, cur = has_body(c) ? F<int>(c, kHeldItemOff) : -1;
     if (cur < 0 || !a_SetHandheldItem || item < 0 || item > 0x17 || cur == item)
         return;
+    if (!hand_ready(c)) { // BUG-1335 (the next round tries again)
+        g_hand_waits++;
+        return;
+    }
     set_hand(c, item);
     if (g_item_sets++ < 20)
         H->log(M, SK_INFO, "tribe: member #%u's hand: item %d -> %d as in the host's game (BUG-0906)", member_id(c), cur, item);
@@ -4203,6 +4266,8 @@ void tick(double now)
         frame_tool_run();
     village_stamps_tick(now); // BUG-0947
     species_tick(now);        // BUG-1271 (also after the session: the members the mod changed go back)
+    if (game::mode_id() == modes::kTribe)
+        hand_repair_tick(now); // BUG-1335
     if (!active())
         return;
     g_cmd_world = modes::current_world();
@@ -4537,6 +4602,9 @@ std::string status()
              "fix_gameover=%d knocked_out=%u ko_replaced=%u mirror_blows_kept=%u epic_herd_reused=%u epic_saved_out=%u chief_scale=%s\n",
              g_chief_restores, g_chief_gone, g_chief_bad_calls, g_spawns_blocked, g_mirror_out_passed, (int)g_fix_chiefs, (int)g_fix_gameover,
              g_ko_shown, g_ko_replaced, g_mirror_blows_kept, g_epic_herd_reused, g_epic_saved_out, scales.c_str());
+    out += b;
+    snprintf(b, sizeof b, "tribe hand bone: fix=%d waits=%u repairs=%u fx_skips=%u (BUG-1335)\n", (int)game::fx_bone_fix(),
+             g_hand_waits, g_hand_repairs, game::fx_bone_skips());
     return out + b;
 }
 

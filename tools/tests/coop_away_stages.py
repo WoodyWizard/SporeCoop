@@ -12,12 +12,25 @@ hook `coop.hoststate mode <hex> <seconds>`: exactly the input the guest's rule r
   2. control: the galaxy menu mode for 10 s: the guest does say "left for the main menu: you play
      on alone" (the hook reaches the guest and the menu case still counts in Space)
 
+     In this window the host's sync-check is asked once (`coop.diag sync now`, 2.5 s in: the guest has hidden the
+     host's creature, as for a host in the menu): it must find no difference (BUG-1338, diag.override_out: the
+     host's own row is not compared while its states report another mode on purpose; the 0.7.16 final check's gate
+     saw `p: 1 missing on the guest (p0)` there, lab 20261119-214823).
+
   coop_away_stages.py [--nofix]   (--nofix: coop.fix core.away_stages off: part 1 must FAIL)
+  SPORE_FIX_OFF=diag.override_out (suite away_stages_override_off, the twin): the sync-check of part 2 differs: FAIL
 """
+import re
 import sys
 import time
 
 from twoinst import Checks, start
+
+
+def sync_counts(con):
+    """the host's sync-check counters: checks, ok, differs, mismatch"""
+    m = re.search(r'checks (\d+) ok (\d+) differs (\d+) mismatch (\d+)', con.call('coop.diag sync').get('out') or '')
+    return tuple(int(x) for x in m.groups()) if m else None
 
 KEDIT, KMENU = '1654C06', '2CCD1D2'
 
@@ -49,10 +62,17 @@ def main():
     ck(not seen, 'no "you play on alone" in Space for a host editor')
     time.sleep(3)
 
+    s0 = sync_counts(host)
     print(' ', host.call(f'coop.hoststate mode {KMENU} 10')['out'].strip())
-    seen = watch(guest, 12, 'play on alone')
+    seen = watch(guest, 2.5, 'play on alone')
+    print('  host:', host.call('coop.diag sync now')['out'].strip())  # BUG-1338: a check inside the window
+    seen += [t for t in watch(guest, 9.5, 'play on alone') if t not in seen]
+    s1 = sync_counts(host)
     print('  guest toasts while the host is "in the menu":', seen or 'none')
     ck(any('main menu' in t for t in seen), 'the main menu still counts as away in Space (control)')
+    print(f'  host sync-check (checks, ok, differs, mismatch): {s0} -> {s1}', flush=True)
+    ck(s0 and s1 and s1[0] > s0[0] and s1[2:] == s0[2:], 'the sync-check inside the "menu" window finds no difference '
+       '(the host\'s own row is not compared while its states report the menu on purpose, BUG-1338)')
     time.sleep(4)
 
     guest.call('coop.fix core.away_stages on')

@@ -260,6 +260,7 @@ class Campaign:
         self.since = time.time()
         self.persist = {k: cl.Persist(2) for k in ('stage', 'apart', 'desync', 'shared', 'census')}
         self.quiet_until = 0.0     # a rejoin or a stage change is going on: no together / sync checks
+        self.stood = {}            # BUG-1339: guest name -> since when its game stands (paused) in the sync rounds
         self.lock = threading.Lock()
         self.stop = False
         self.dead = False
@@ -465,6 +466,7 @@ class Campaign:
                                         nums.append(f'{g.name} {key} ground on {w2}: ' + c2.call('coop.ground ' + ' '.join(m.groups())).strip())
             if paused:
                 self.note('sync: not compared (paused, an editor or a load): ' + ', '.join(paused))
+            self.long_stands(paused)
             if terrain:  # BUG-0329: the same place on each game's own ground, the grounds differ in height
                 self.note('sync: ground height differs (objects in place on their own ground): ' + ', '.join(terrain)
                           + ' | ' + '; '.join(n for n in nums if 'ground' in n or ' on ' in n))
@@ -808,6 +810,30 @@ class Campaign:
             time.sleep(2.5)
             con.call('key enter')
         return k
+
+    def long_stands(self, paused):
+        """BUG-1339: a guest whose game stood through the sync rounds of a whole minute (campaign_tc2 20261119-214823:
+        Carol 4.5 min, the reason not logged): its pause reasons (`coop.pauses`), its busy word and whether its pause
+        menu is up go into the campaign log once; a pause menu still up after 90 s is closed as a player who forgot
+        it would (Resume Game: the noise pause's Resume click lost, BUG-0289), named in the log. Any other reason is only
+        logged (the next run names it)."""
+        t = time.time()
+        for g in self.guests:
+            if g.name not in paused:
+                self.stood.pop(g.name, None)
+                continue
+            since, told, closed = self.stood.setdefault(g.name, [t, False, False])
+            if t - since >= 60 and not told:
+                self.stood[g.name][1] = True
+                st = re.search(r'^busy: (\S+)', g.call('coop.status') or '', re.M)
+                menu = bool(uifind.shown(g.con, 'Resume Game'))
+                self.note(f'{g.name} stands {t - since:.0f} s: busy {st.group(1) if st else "-"}, pause menu {int(menu)}, '
+                          + (g.con.call('coop.pauses').get('out') or '').strip()[:200] + ' (BUG-1339)')
+            if t - since >= 90 and not closed and uifind.shown(g.con, 'Resume Game'):
+                self.stood[g.name][2] = True
+                self.close_pause(g.con)
+                self.note(f'{g.name}: its pause menu was still up after {t - since:.0f} s: closed with Resume Game '
+                          f'(BUG-1339; still up: {int(bool(uifind.shown(g.con, "Resume Game")))})')
 
     def close_pause(self, con):
         """close the pause menu the way a player does (Resume Game); a second Esc could open its

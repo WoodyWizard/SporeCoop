@@ -147,6 +147,8 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   appears; before, it was the tribe's species for a moment first (BUG-1299).
 - Space: a guest whose own ship has the same id as the host's ship now flies its own ship on its screen; before, its
   game could show the host's ship instead (BUG-1301; still open until its lab run).
+- Tribe: a guest's game no longer faults when it joins a Tribe world and a tribe member it has just made becomes the
+  chief: the chief's staff now waits until the member's body is built (BUG-1335; still open until its lab run).
 ## [0.7.15.5] - 2026-11-19
 
 A fix for players who could not leave the Tribe stage: the City Hall editor at its end could not be named after a

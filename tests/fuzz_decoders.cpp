@@ -425,12 +425,13 @@ static void fuzz_diag(uint64_t seed, int iters)
                                    (float)R.below(5000) - 2500, R.below(2) ? ((float)R.below(60000) - 30000) / 100.f : dg::kEntryNoAgl}); // BUG-1216
         for (int n = (int)R.below(4), i = 0; i < n; i++) d.x.out.push_back(R.u8());
         d.x.scale = R.below(2) ? (float)R.below(20000) / 4 : 0.f;
+        d.x.stands = (uint8_t)R.below(2); // BUG-1339
         return d;
     }, [](const NoKind<dg::Digest>& d) { // BUG-0606: the appended world scale; BUG-1216: the agl trailer after it
         size_t ag = 0;
         for (auto& e : d.x.entries)
             ag += dg::key_kind(e.key) == 'n' && dg::entry_agl_known(e.agl) && std::fabs(e.agl) < 320.f;
-        return enc(d).size() - 4 - 2 - 4 * ag;
+        return enc(d).size() - 4 - 2 - 4 * ag - 1; // (BUG-1339: the stands byte last)
     });
 }
 

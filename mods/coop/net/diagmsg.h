@@ -161,6 +161,10 @@ struct Digest {
     // BUG-0606: the sender's Cell world scale (G+0x514C) when it built the digest, 0 elsewhere; appended
     // (an older reader stops before it, an older sender's digest reads 0 = not converted)
     float scale = 0;
+    // BUG-1339: appended after the agl trailer: 1 while the sender's own game time stands (busy.h kPaused: its pause
+    // menu, a planner, a wait for the host): its world does not go on, the host does not compare it then (an older
+    // reader stops before it, an older sender's digest reads 0)
+    uint8_t stands = 0;
     // BUG-1216: appended after scale: u16 count, then (u16 entry index, i16 cm) for the NPC entries whose height over
     // the sender's terrain is known (an older reader stops before it, an older sender's entries read unknown)
     void write(Writer& w) const
@@ -196,6 +200,7 @@ struct Digest {
             w.u16(i);
             w.u16((uint16_t)cm);
         }
+        w.u8(stands); // BUG-1339
     }
     bool read(Reader& r)
     {
@@ -239,6 +244,9 @@ struct Digest {
                         entries[i].agl = cm / 100.f;
                 }
         }
+        stands = 0;
+        if (r.ok() && r.left() >= 1) // BUG-1339
+            stands = r.u8() ? 1 : 0;
         return r.ok() && std::all_of(entries.begin(), entries.end(), [](const Entry& e) {
                    return std::isfinite(e.x) && std::isfinite(e.y) && std::isfinite(e.z);
                });

@@ -9817,3 +9817,35 @@ BUG-1328 (docs/re/creations.md#creations-props-key0), the 0.7.15 line's form of 
   (9 of 15 runs had a knockout) and respawns next to the host; a sampling of "apart" that finds the guest within half
   the apart distance of the host stops, the players are parted again (at most twice), the last try is checked
   (BUG-1334). Pitfall: `coop.pool invulnfor` is clamped to 120 s, and a respawn sets 3 s.
+## A hand bone past the member's body: tribe_hand_bone (2026-11-20, fix/w59-tribe)
+<a id="testing-tribe-hand-bone"></a>
+
+BUG-1335 (docs/re/tribe.md#tribe-hand-bone). `tools/tests/coop_tribe_hand_bone.py`, tribe fixture, ~4 min cold.
+* Step 2 (`coop.tribe hand_race` on the guest) is evidence, not a check: it prints the new member's hand bone and its
+  body's bone count in the frame it is made and made chief. Step 3 (`coop.tribe hand_plant <chief>`) makes the fault's
+  state on purpose: the hand bone set 0x4000 past the body's bones for one SetHandheldItem call, then put back (also
+  by the next tick when the call faulted and unwound past the command).
+* Twin `tribe_hand_bone_off` (`SPORE_FIX_OFF=creature.fx_bone`): the planted call faults the guest in CreateEffect
+  (+0x143 reading the far bone, or +0x146 like the lab's when that memory is mapped): FAIL by the faults check.
+* Unit: tests/tribe_tests.cpp `hand_bone` (bone_rules::check), FAILS with `--nofix` (the game's only check, bone != -1).
+
+## away_stages and the sync-check during a faked host state (2026-11-20, fix/w59-tribe)
+<a id="testing-away-stages-override"></a>
+
+BUG-1338. `coop.hoststate mode <hex> <s>` makes a game's player states report another mode while the game stays where it
+is. A partner hides that player as the reported mode says (the menu: hidden), so a sync-check in that window found the
+player's own creature on its game and none on the partner's (`p: 1 missing on the guest (p0)`, a gate FAIL of a test
+that passed). `diag.override_out`: the player's own row is left out of the compare while its override runs (the digest's
+`out` list). away_stages asks for one check inside its "menu" window (`coop.diag sync now`) and needs no difference;
+twin `away_stages_override_off`.
+
+## The sync-check and a guest whose game stands (2026-11-20, fix/w59-tribe)
+<a id="testing-sync-guest-stands"></a>
+
+BUG-1339. A guest in its pause menu (or a planner, or waiting for the host) runs no world: a city the host founds
+meanwhile and that city's vehicles come there only when it goes on (BUG-0335). The campaign's own compare and census
+skipped such a guest since BUG-0289 / BUG-0404; the mod's in-game sync-check (the lab's sync-check gate) did not and
+reported `v: N missing on the guest` (campaign_tc2, 20261119-214823: Carol paused 4.5 min). `diag.guest_stands`: the
+guest's digest carries a `stands` byte, the host does not compare it then (`stands_skipped=` in `coop.diag sync`).
+The campaign logs a guest that stood a minute (`<name> stands N s: busy ..., pause menu 0|1, pauses: ...`) and closes a
+pause menu still up after 90 s.

@@ -53,7 +53,9 @@
 // uses them only from a host with npc 1.2 or newer (net/compat.h kNpcMinorWorldEvents).
 // Minor bump of fix/w56-sync: civ 1.1 (MSG_CIV_STATE chunk 0xF9 kInfluenceChunk, chunks 0: the cities' follower maps,
 // converters, buy meters and price maps, BUG-1285 / BUG-1287; an older guest drops it as a bad snapshot header).
-FAMILY(session,   1, 1, 1, STAGE_ALWAYS, "session", "net/protocol.h")
+// Minor bump of fix/w59-tribe: session 1.2 (MSG_DIAG's digest: a trailing u8 `stands`, the sender's game time stands,
+// BUG-1339; an older reader stops before it, an older sender's digest reads 0: compared as before).
+FAMILY(session,   1, 1, 2, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 2, STAGE_CREATURE, "Creature", "")
 FAMILY(npc,       4, 1, 2, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
