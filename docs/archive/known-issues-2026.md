@@ -3680,3 +3680,27 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   ../re/space.md#space-captain-items-null); this entry moves to the archive when the night run confirms the fix.
 * Fixed 2026-11-19 (fix/w55-captain, 0.7.15.3): `game.captain_items` (BUG-0304) and `game.captain_stats` (BUG-1278);
   lab PASS 20261119-111406, FAIL with the guards off 20261119-112022 / 20261119-112459.
+
+
+## Own villages: the host's villager cards list a partner's member (2026-11-20, feat/lineages-tribe)
+<a id="issue-own-village-host-cards"></a>
+
+* What happens: with a partner's own village in Tribe (BUG-9268), the host's villager cards on the right of the HUD
+  show a card of the partner's species among the host's. Clicking it selects nothing.
+* Reproduce: tools/tests/coop_tribe_seats.py (or the graduation to Tribe with a guest on its own creature), then look
+  at the host's cards.
+* Known: Tribe_IsPlayerOwned answers true for a partner's village on the host (`tribe.guest_ai`); the card list's
+  caller is not traced (docs/re/tribe.md#tribe-own-villages).
+* Fixed (2026-11-20, feat/lineages-tribe): the Tribe UI's card caller 0xCCC6EA gets the game's answer (tribe.host_cards).
+* Ticket: BUG-9271
+
+
+## Own villages: one 31 s hang of a guest's world teardown at a rejoin (2026-11-20, feat/lineages-tribe)
+<a id="issue-own-village-rejoin-hang"></a>
+
+* What happens: a guest with its own village left and joined again; leaving its Tribe world for the host's it stood
+  31 s (watchdog) and the host timed it out. Seen once; four later rejoins had no hang.
+* Reproduce: a guest with its own village (BUG-9268) leaves and joins again while the host plays on in Tribe.
+* Known: suspected the terrain cursor bound to the freed village (guarded since); not proven.
+* Fixed (2026-11-20, feat/lineages-tribe): the cause was the destroy hook's object walks during the world reset (game.reset_sender_scan).
+* Ticket: BUG-9272

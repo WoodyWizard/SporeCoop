@@ -16,6 +16,7 @@
 #include "modes.h"
 #include "savestrip.h"
 #include "sporekit_game.hpp"
+#include "tribe.h"
 
 namespace coop_core {
 void feed(const std::string& s);
@@ -73,6 +74,8 @@ constexpr uintptr_t kProfKey = 0x504, kProfModel = 0x510, kProfGen = 0x53C;
 
 static void* player_tribe()
 {
+    if (void* h = tribe::swapped_host_tribe()) // BUG-9268
+        return h;
     uintptr_t g = sym("Simulator::cGameNounManager::GetPlayerTribe");
     void* nm = game::noun_manager();
     void* t = nm && g ? thiscall<void*>(g, nm) : nullptr;

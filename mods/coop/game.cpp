@@ -2414,6 +2414,22 @@ void* create_herd(const net::Vec3& pos, void* species)
     return h;
 }
 
+// BUG-9262 (Lineages roadmap phase 2, own nests): a herd WITH its nest, as the game places the nests of a species
+// (CreateHerd's createNest), `size` members the game spawns and respawns itself, enabled (CreateHerd leaves a herd
+// disabled in the creature stage). Not one of "ours": it has a nest, so the save keeps it (savestrip own_kind_herd).
+void* create_nest_herd(const net::Vec3& pos, void* species, int size, bool owned_by_avatar)
+{
+    if (!a_CreateHerd || !species)
+        return nullptr;
+    void* nm = cdecl_call<void*>(a_NounGet);
+    Vector3 p{pos.x, pos.y, pos.z};
+    void* h = nm ? thiscall<void*>(a_CreateHerd, nm, &p, species, size, owned_by_avatar ? 1 : 0, 0, 1) : nullptr;
+    static uintptr_t enable = H->sym("Simulator::cHerd::SetEnabled");
+    if (h && enable && skg::readable(h, 0x21C) && !field<uint8_t>(h, 0x218))
+        thiscall<void>(enable, h, true);
+    return h;
+}
+
 // A herd like the ones create_herd makes (no archetype, no nest, not the avatar's) of this species, or
 // null. Each puppet used to get a new herd and the herd stayed after the puppet was gone: a session
 // with rejoins and editors left one per spawn in the world, and every save kept them all.
