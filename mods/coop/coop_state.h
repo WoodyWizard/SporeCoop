@@ -446,6 +446,10 @@ uint32_t* SK_THISCALL h_BlockingErrors(void* ed, uint32_t* out, void* res, void*
 unsigned game_busy();
 bool editor_coming(double now); // C3 (BUG-1142)
 void SK_CDECL h_CellToCreature();
+void SK_CDECL h_CellEndSeq(); // BUG-9266
+typedef void(SK_CDECL* CellEndSeq_t)();
+extern CellEndSeq_t o_CellEndSeq;
+extern unsigned g_end_clicks_held;
 void SK_CDECL h_SelectUI(void* sel, void* a2, void* a3, uint32_t a4, float a5);
 void drop_vote(const char* why);
 void evo_flag_tick(double now);

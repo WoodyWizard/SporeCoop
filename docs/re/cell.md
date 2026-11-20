@@ -2599,4 +2599,23 @@ BUG-9265, BUG-9266. Steam build (the GOG 2024 code), lane B on Windows.
 * ✔ (runtime) History's check clicked at food 1000 and held (the host's, CellStage_ToCreature not called) or refused (a
   guest's) leaves that game's screen plain white with the consequence card ("Pacifist"), 26 s and longer, until the
   stage moves on; no cinematic plays at the hook (`cinematic 0`). Calling the held switch later (outside the frame) runs
-  the game's switch as before (the vote, both games in Creature). ? What starts the white before 0xE62440 (BUG-9266).
+  the game's switch as before (the vote, both games in Creature). What starts the white: #cell-end-sequence.
+
+## History's check runs the Cell end sequence before the stage switch (2026-11-20, feat/own-progress)
+<a id="cell-end-sequence"></a>
+
+BUG-9266. Steam build, objdump of the unpacked `.text` (docs/05-re-notes.md, the Steam text dump) and lane B.
+* ✔ (asm) `SporeCoop::Cell_HistoryCheck` 0xE75B80 (History's check in Cell): hides window 0x44827B8, 0xE53640(2, 0),
+  closes History (0xE44200), and only when G+0x5158 == 5 (the stage done) jumps to `SporeCoop::Cell_EndSequence`
+  0xE72C80. The other caller of 0xE72C80 is the debug key handler (0xE814B3).
+* ✔ (asm) `Cell_EndSequence` 0xE72C80, cdecl void(): returns at once without the avatar or with its +0x113 / +0x112
+  set; G+0x5169 = 1; unless G+0x5158 is 3 already: 0xE53560, G+0x5158 = 3, 0xE53110, 0xE6D600, 0xE82C10 (the avatar's
+  position, the cell game +0x5190 +0x6C..+0x74), **0xE4F640(1)**, the avatar's animation 0x2E (0xE6D200), a timed cell
+  event of type 0x1F after that animation's length (G+0x5194), 0xE59A30 (avatar +0x18C = 0x2E). The event dispatcher
+  0xE7E130 runs type 0x1F as `CellStage_ToCreature` 0xE62440 (#cell-switch-to-creature).
+* ✔ (runtime) So the white screen of a held or refused switch was already up when CellStage_ToCreature came: with the
+  switch held there (`coop.fix cell.end_click off`) the host's screen after its early click was 69 % white, the guest's
+  after its click in the vote 52 % (lane B shots). Refusing the click at 0xE72C80 instead (`cell.end_click`) leaves
+  History closed, G+0x5158 at 5 (a later click works) and the game drawn; calling the original 0xE72C80 later from
+  outside the frame plays the whole sequence and the switch as the game's own click does.
+* ~ Inferred: 0xE4F640(1) is the white fade (the sequence's only screen-wide call); not checked alone.

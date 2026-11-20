@@ -1213,8 +1213,8 @@ void register_commands_core()
                        if (argc > 1 && !strcmp(argv[1], "resync"))
                            own_progress::resync();
                        SAY("%s", own_progress::status().c_str());
-                       SAY("  dna.cpp: totals_ignored=%u gains_kept=%u hunts_given=%u\n", g_own_totals_ignored, g_own_gains_kept,
-                           g_own_hunts_given);
+                       SAY("  dna.cpp: totals_ignored=%u gains_kept=%u hunts_given=%u end_clicks_held=%u\n", g_own_totals_ignored,
+                           g_own_gains_kept, g_own_hunts_given, g_end_clicks_held);
                        return 0;
                    },
                    nullptr, MT);

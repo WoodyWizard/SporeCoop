@@ -11,9 +11,12 @@ Every check reads what the game itself shows: the food bar of the Cell stage (cC
 --part cell (fixture cell):
   1. the host's meal fills the host's bar only, the guest's meal the guest's only (each game's food);
   2. a rejoin keeps the guest's own food (the host's world it loads holds the host's);
-  3. the guest fills its bar first: its notice says it waits; its click on History's check keeps it in Cell, no vote;
-  4. the host fills its bar: every bar is full, the host's check starts the vote, the guest's I'm ready moves both
-     games into the Creature stage.
+  3. one player fills its bar first (--first guest|host): its notice says it waits; its click on History's check keeps
+     both in Cell, no vote, and its screen is the game, not the white of the Cell end (BUG-9266: the click is taken
+     before the game's end sequence; SPORE_FIX_OFF=cell.end_click: white, the check fails);
+  4. the other fills its bar: every bar is full; guest first: the host's check starts the vote; host first: the host's
+     kept click goes on by itself and the guest's click during the vote is its I'm ready (not white either); both
+     games enter the Creature stage.
 --part creature (fixture creature):
   1. a game reward on each game (AddEvolutionPoints: `coop.dna gain`) raises that game's DNA and bar only;
   2. the guest's kill of one of the host's animals pays the guest's DNA, not the host's;
@@ -35,7 +38,7 @@ import lane
 import settings_lib as sl
 from coop_campaign import CAPTION_OK, HISTORY_BTN, HISTORY_OK
 from coop_ui import Ui
-from twoinst import Checks, start, wait_guest_in
+from twoinst import Checks, shot, start, wait_guest_in
 
 CELL_STAGE_BTN = (1396, 1063)  # the cell HUD button under the portrait: History, then the next stage
 CELL_HISTORY_OK = (1415, 1055)
@@ -73,6 +76,17 @@ def prog(con):
 def count(con, name):
     m = re.search(name + r'=(\d+)', out(con, 'coop.progress'))
     return int(m.group(1)) if m else -1
+
+
+def white_share(path):
+    """the share of near-white pixels of a screenshot (-1 without Pillow or a picture)"""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            px = list(im.convert('RGB').resize((256, 192)).getdata())
+        return sum(1 for r, g, b in px if r > 235 and g > 235 and b > 235) / len(px)
+    except (OSError, ImportError, SyntaxError, ValueError):
+        return -1
 
 
 def mode(con):
@@ -134,7 +148,7 @@ def rejoin(host, guest, ck):
     time.sleep(6)
 
 
-def part_cell(host, guest, ck):
+def part_cell(host, guest, ck, first):
     ph, pg = prog(host), prog(guest)
     ck(ph and pg and ph['active'] == 1 and pg['active'] == 1, 'own progress is on in both games (coop.progress)')
     if not (ph and pg):
@@ -155,28 +169,41 @@ def part_cell(host, guest, ck):
     pg = prog(guest)
     ck(pg and pg['food'] == before, f"after the rejoin the guest's own food is back ({pg and pg['food']}, before {before}; "
                                      f"the host's world holds {ph2['food']})")
-    # 3. the guest fills first
-    guest.call(f'coop.pool meal {1000 - pg["food"]}')
-    ck(wait(lambda: prog(guest)['full'] == 1, 20), 'the guest\'s bar is full')
-    ck(wait(lambda: count(guest, 'full_notices') >= 1, 10), 'the guest is told that it waits for the partner')
-    ck(prog(host)['full'] == 0 and prog(host)['all'] == 0, 'the host\'s bar is not full: nobody moves on')
-    captions(guest)
-    cell_history_check(guest)
-    time.sleep(6)
-    ck('Cell' in mode(guest) and 'Cell' in mode(host), f'the guest\'s check keeps both games in Cell ({mode(guest).strip()})')
-    ck(not vote_open(host), 'no vote while the host\'s bar is not full')
-    # 4. the host fills its bar: every bar is full
-    host.call(f'coop.pool meal {1000 - prog(host)["food"]}')
+    # 3. one player fills first and clicks History's check at once (`first`)
+    early, late = (guest, host) if first == 'guest' else (host, guest)
+    who, other = ('guest', 'host') if first == 'guest' else ('host', 'guest')
+    early.call(f'coop.pool meal {1000 - prog(early)["food"]}')
+    ck(wait(lambda: prog(early)['full'] == 1, 20), f"the {who}'s bar is full")
+    ck(wait(lambda: count(early, 'full_notices') >= 1, 10), f'the {who} is told that it waits for the partner')
+    ck(prog(late)['full'] == 0 and prog(late)['all'] == 0, f"the {other}'s bar is not full: nobody moves on")
+    captions(early)
+    cell_history_check(early)
+    time.sleep(8)
+    ck('Cell' in mode(guest) and 'Cell' in mode(host), f"the {who}'s check keeps both games in Cell")
+    ck(not vote_open(host), f"no vote while the {other}'s bar is not full")
+    # BUG-9266: the early click is taken before the game's end sequence: no white screen (SPORE_FIX_OFF=cell.end_click:
+    # the sequence runs, the screen stays white)
+    w = white_share(shot(early, f'own_progress_{who}_early_click.png'))
+    ck(0 <= w < 0.5, f"the {who}'s screen after its early click is the game, not white ({w:.2f} of it white)")
+    # 4. the other fills its bar: every bar is full
+    late.call(f'coop.pool meal {1000 - prog(late)["food"]}')
     ck(wait(lambda: prog(host)['all'] == 1 and prog(guest)['all'] == 1, 20), 'every bar is full on both games')
-    captions(host)
-    t0 = time.time()
-    while time.time() - t0 < 90 and not vote_open(host) and 'Cell' in mode(host):
-        cell_history_check(host)
+    captions(late)
+    if first == 'host':
+        ck(wait(lambda: vote_open(host), 30), "the host's kept click goes on by itself: the vote starts")
+        cell_history_check(guest)  # the guest's click on History's check during the vote is its I'm ready
         time.sleep(6)
-    ck(vote_open(host), f'the host\'s check starts the vote ({out(host, "coop.vote").splitlines()[0]})')
-    ready(guest)
-    ck(wait(lambda: 'Creature' in mode(host), 120), f'the host\'s game enters the Creature stage ({mode(host).strip()})')
-    ck(wait(lambda: 'Creature' in mode(guest), 180), f'the guest\'s game follows ({mode(guest).strip()})')
+        w = white_share(shot(guest, 'own_progress_guest_click_in_vote.png'))
+        ck(0 <= w < 0.5, f"the guest's screen after its click in the vote is the game, not white ({w:.2f})")
+    else:
+        t0 = time.time()
+        while time.time() - t0 < 90 and not vote_open(host) and 'Cell' in mode(host):
+            cell_history_check(host)
+            time.sleep(6)
+        ck(vote_open(host), "the host's check starts the vote (%s)" % out(host, 'coop.vote').splitlines()[0])
+        ready(guest)
+    ck(wait(lambda: 'Creature' in mode(host), 120), "the host's game enters the Creature stage (%s)" % mode(host).strip())
+    ck(wait(lambda: 'Creature' in mode(guest), 180), "the guest's game follows (%s)" % mode(guest).strip())
 
 
 def part_creature(host, guest, ck):
@@ -280,10 +307,14 @@ def part_off(host, guest, ck):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--part', choices=('cell', 'creature', 'off'), default='creature')
+    ap.add_argument('--first', choices=('guest', 'host'), default='guest', help='cell: who fills its bar first')
     a = ap.parse_args()
     host, guest = start('cell' if a.part == 'cell' else 'creature', own_progress=True)
     ck = Checks()
-    {'cell': part_cell, 'creature': part_creature, 'off': part_off}[a.part](host, guest, ck)
+    if a.part == 'cell':
+        part_cell(host, guest, ck, a.first)
+    else:
+        {'creature': part_creature, 'off': part_off}[a.part](host, guest, ck)
     ck.faults(host=host, guest=guest)
     return ck.result()
 

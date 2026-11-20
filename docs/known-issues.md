@@ -382,28 +382,3 @@ anchor so other docs can link to it:
   cinematic) until the vote ends; the guest still sees the cinematic.
 * Reproduce: `tools/lab.py run evo_screens_switch`, key frame `01_switch_vote`.
 * Ticket: BUG-1269
-
-## Cell, own progress: a click on History's check that waits leaves the screen white (2026-11-20, feat/own-progress)
-<a id="issue-own-progress-cell-white"></a>
-
-* What happens: with all.own_progress on, a player whose Cell bar is full clicks History's check before every
-  partner's bar is full: the click waits (the host's runs by itself once every bar is full) and that player's screen
-  stays white until the stage moves on. The "bar is full" notice tells the players to click only when told.
-* Reproduce: two games in Cell, `coop.pool meal 1000` on one, its History check (the HUD button under the portrait,
-  then the check), screenshot.
-* Ticket: BUG-9266
-## Space: a guest's captain screen shows no item limits for the host's captain (2026-11-18, fix/w55-captain)
-<a id="issue-captain-items-guest"></a>
-
-* What happens: a guest in the host's Space world opens the captain screen (the rank badge, or Accept of an
-  adventure mission): since 0.7.15.3 it no longer crashes (BUG-0304), but the equipment palette shows every item as
-  available, not the host captain's real item state.
-* Reproduce: `tools/lab.py run space_captain` (the fixture's captain has no item list in either game); a host whose
-  captain was made in Galactic Adventures and a guest joining its Space world.
-* Known: coop sends the host's own creation without the captain's property list {captain, 0x00B1B104, group | 0xE500}
-  (docs/re/space.md#space-captain-items-null).
-* Seen at runtime (lane 3, 2026-11-19): the `space` fixture's guest gets a null list on every opening (`coop.captain`:
-  `items: none` +1); not checked with a host captain made in Galactic Adventures.
-* Next steps: send and register that resource under the host's key (BUG-1279 lists the pitfalls).
-* Ticket: BUG-1279.
-

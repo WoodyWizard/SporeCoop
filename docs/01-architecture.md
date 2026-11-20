@@ -912,6 +912,9 @@ BUG-9265, the owner's rule of 2026-11-20 ("Together" of [docs/11-rivals.md](11-r
   MSG_PROGRESS 77 (session family 1.3). Test: tools/tests/coop_own_progress.py (suites own_progress_cell,
   own_progress_creature, own_progress_off); twoinst.start() switches the setting off for the older tests of the shared
   total (own_progress=True keeps it on).
-* Known: in Cell the players can be at other levels (their own food) in the host's one pool; a held click on History's
-  check shows a white screen until the stage moves on (BUG-9266, as BUG-1269); a guest whose brain level is set lower
-  keeps the save's body size until its next brain upgrade.
+* BUG-9266 (`coop.fix cell.end_click`): History's check first runs the game's Cell end sequence (0xE72C80, the white
+  screen, the walk-out) and only then the switch; a click that must wait is taken before that sequence (History closes,
+  the player plays on) and the host's kept click runs the whole sequence once every bar is full; a guest's click in
+  the vote is its I'm ready without the sequence ([cell-end-sequence](re/cell.md#cell-end-sequence)).
+* Known: in Cell the players can be at other levels (their own food) in the host's one pool; a guest whose brain level
+  is set lower keeps the save's body size until its next brain upgrade.

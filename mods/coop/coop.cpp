@@ -2721,6 +2721,8 @@ static void init_creature_hooks()
         H->hook_create(M, (void*)a, (void*)h_Submit, (void**)&o_Submit);
     if (uintptr_t a = H->sym("SporeCoop::CellStage_ToCreature")) // BUG-0315
         H->hook_create(M, (void*)a, (void*)h_CellToCreature, (void**)&o_CellToCreature);
+    if (uintptr_t a = H->sym("SporeCoop::Cell_EndSequence")) // BUG-9266
+        H->hook_create(M, (void*)a, (void*)h_CellEndSeq, (void**)&o_CellEndSeq);
     if (uintptr_t a = H->sym("SporeCoop::CreatureGame_HandleMessage")) // BUG-0466
         H->hook_create(M, (void*)a, (void*)h_CreatureGameMsg, (void**)&o_CreatureGameMsg);
     if (uintptr_t a = H->sym("SporeCoop::Simulator_HandleMessage"))

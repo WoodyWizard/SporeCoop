@@ -914,6 +914,51 @@ bool SK_CDECL h_Submit(void* req)
 
 CellToCreature_t o_CellToCreature;
 bool g_switch_go = false; // the vote passed: the next call is the game's own switch
+
+// BUG-9266 (own progress play test 2026-11-20): History's check at the end of Cell runs the game's end sequence first
+// (SporeCoop::Cell_EndSequence 0xE72C80: the screen goes white 0xE4F640(1), the avatar's walk-out animation 0x2E) and
+// only after that animation the timed event 0x1F calls CellStage_ToCreature, where the mod held the host's switch or
+// refused a guest's: that player's screen stayed white until the stage moved on (also the guest's I'm ready click of
+// BUG-0315). On: a click that would be held or refused is taken before the sequence (History just closes, the player
+// plays on); a guest's click during the vote is its I'm ready at once; the host's held click runs the whole sequence
+// once every bar is full. Off: the sequence runs and the switch is held after it (0.7.15).
+static bool g_cell_end_click_fix = true;
+COOP_FIX("cell.end_click", "BUG-9266", g_cell_end_click_fix,
+         "cell: a click on History's check that must wait (own progress, a guest in the host's world) is taken before the game's end sequence, so the screen does not stay white");
+CellEndSeq_t o_CellEndSeq;
+unsigned g_end_clicks_held = 0; // tests (coop.vote): end-sequence clicks taken before the white screen
+void SK_CDECL h_CellEndSeq()
+{
+    bool multi = g_sess.connected() && g_sess.players().size() > 1;
+    if (g_cell_end_click_fix && multi && !g_switch_go && game::mode_id() == modes::kCell) {
+        if (g_sess.role() == net::Role::Host) {
+            if (own_progress::active() && own_progress::hold_stage_end(true)) {
+                g_end_clicks_held++;
+                LOG("the Creature stage waits until every player's own bar is full: History's check taken before the "
+                    "end sequence (BUG-9266)");
+                return;
+            }
+        } else if (host_world_now() == host_world::HostWorld::Same &&
+                   (own_progress::active() || (g_switch_vote_fix && settings::on(settings::kSwitchVote)))) {
+            g_end_clicks_held++;
+            g_switch_guest_held++;
+            if (g_vote.active) {
+                LOG("the Creature stage: this guest's click on History's check is its I'm ready (BUG-0315, before the end "
+                    "sequence: BUG-9266)");
+                set_ready(true);
+            } else if (own_progress::active()) {
+                LOG("the Creature stage: this guest's click waits for every bar and the host's vote (BUG-9265, BUG-9266)");
+                own_progress::hold_stage_end(false);
+            } else {
+                LOG("the Creature stage: a guest's own switch is not taken, the host starts it for everybody (BUG-0315)");
+                feed("the host moves everybody on to the Creature stage (after a vote)");
+            }
+            return;
+        }
+    }
+    o_CellEndSeq();
+}
+bool cell_end_click_fix() { return g_cell_end_click_fix && o_CellEndSeq; }
 void SK_CDECL h_CellToCreature()
 {
     bool multi = g_sess.connected() && g_sess.players().size() > 1;
@@ -1172,7 +1217,11 @@ unsigned vote_in_editor_count() { return g_vote_in_editor; }
 // the vote's action runs it)
 static void own_switch_task(void*)
 {
-    if (game::mode_id() == modes::kCell)
+    if (game::mode_id() != modes::kCell)
+        return;
+    if (cell_end_click_fix() && game::avatar()) // BUG-9266: the click was taken before the end sequence: run it now
+        o_CellEndSeq();
+    else
         h_CellToCreature();
 }
 static void own_switch_tick()
