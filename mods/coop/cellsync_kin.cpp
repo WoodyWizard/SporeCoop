@@ -25,10 +25,23 @@ static bool g_fix_kin = true;
 COOP_FIX("cell.kin_species", "BUG-1257", g_fix_kin,
          "cell: the wild kin near each player are of that player's own cell (a mix where the players are together)");
 
+// BUG-1333: a guest that plays the world's own cell (no cell of its own) follows the host's own-cell change
+// (BUG-0508), but its new key reaches the host ~0.5 s after the host's level rebuild has populated the level: the
+// rebuild made the kin near that guest of the cell it was leaving, and they stayed (cells of a species nobody plays,
+// final check 20261119-214823 cell_own_level10: 4DA56CA5 x5 after the host's change to BAF1AD40). So for
+// kFollowWindow s after this game's own cell changed, a partner whose cell is the previous one counts as following
+// (its kin are the world's). A guest that chose that cell itself gets its own kin again after the window.
+// Off (`coop.fix cell.kin_follow off`): the partner's key as this game has it at once (0.7.16 before this fix).
+static bool g_fix_follow = true;
+COOP_FIX("cell.kin_follow", "BUG-1333", g_fix_follow,
+         "cell: after a player's own cell changes, a partner still on the previous cell (on its way to follow) gets no kin of it");
+constexpr double kFollowWindow = 15.0;
+static cell_logic::OwnCellFollow g_follow; // this game's own cell (S+0x10) at the last population, the one before
+
 static int g_pop_depth;           // inside PopulateMarker (recursive)
 static const float* g_new_pos;    // the position of the gameplay cell the population is making now (CreateCellObject)
 static struct {
-    uint32_t own = 0, partner = 0, no_key = 0, unknown = 0, one_mode = 0;
+    uint32_t own = 0, partner = 0, no_key = 0, unknown = 0, one_mode = 0, follow = 0;
     uint32_t per_player[8] = {};
 } g_kin;
 
@@ -85,6 +98,7 @@ static void kin_filter(uint32_t key[3], void*)
     uint8_t* s = S();
     if (!s || key[0] != F<uint32_t>(s, 0x10) || key[1] != F<uint32_t>(s, 0x14) || key[2] != F<uint32_t>(s, 0x18) || !key[0])
         return; // not a kind-5 answer (the player's cell): the level's own species
+    g_follow.seen(key, H->time_seconds()); // BUG-1333
     if (!g_fix_kin || !C.sess)
         return;
     if (!species::own_mode()) {
@@ -117,6 +131,11 @@ static void kin_filter(uint32_t key[3], void*)
     }
     if (k.instance == key[0] && k.type == key[1] && k.group == key[2]) {
         g_kin.own++;
+        return;
+    }
+    const uint32_t kk[3] = {k.instance, k.type, k.group};
+    if (g_fix_follow && g_follow.follows(kk, H->time_seconds(), kFollowWindow)) {
+        g_kin.follow++; // BUG-1333: on its way to follow our change
         return;
     }
     if (!creations::key_known(k)) { // BUG-0455: a model this game cannot build yet
@@ -172,9 +191,9 @@ std::string kin_report(float r)
     // box: this game's visible box of the gameplay layer (Simulator::Cell::ViewBoxes, x0 y0 z0 x1 y1 z1): the tests
     // measure distances in it, since positions do not scale with G+0x514C over many levels (BUG-1257)
     float* vb = view_boxes();
-    snprintf(b, sizeof b, "kin fix=%d own=%u partner=%u no_key=%u unknown=%u one_mode=%u depth=%d box=%.3f %.3f\n", (int)g_fix_kin,
-             g_kin.own, g_kin.partner, g_kin.no_key, g_kin.unknown, g_kin.one_mode, g_pop_depth, vb ? vb[3] - vb[0] : 0.f,
-             vb ? vb[4] - vb[1] : 0.f);
+    snprintf(b, sizeof b, "kin fix=%d own=%u partner=%u no_key=%u unknown=%u one_mode=%u follow=%u depth=%d box=%.3f %.3f\n",
+             (int)g_fix_kin, g_kin.own, g_kin.partner, g_kin.no_key, g_kin.unknown, g_kin.one_mode, g_kin.follow, g_pop_depth,
+             vb ? vb[3] - vb[0] : 0.f, vb ? vb[4] - vb[1] : 0.f);
     out = b;
     if (!in_cell() || !C.sess)
         return out + "not in Cell\n";
