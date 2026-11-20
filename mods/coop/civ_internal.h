@@ -304,6 +304,8 @@ struct GvRef {
 };
 
 HvRef hv_find(void* v);
+std::string shot_probe();          // civ_shots.cpp: tests (BUG-1322)
+std::string shot_listed_status(); // civ_shots.cpp (BUG-1322)
 HvRef hv_by_id(uint16_t id);
 size_t hv_count();
 uint16_t hv_add(void* v, uint8_t owner);
