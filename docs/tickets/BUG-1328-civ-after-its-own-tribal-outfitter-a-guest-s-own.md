@@ -75,6 +75,9 @@ The difference reproduced on lane 6 and the fix (fix/w58-cityname):
   the guest's line, the guard answered 2 reads of key 0); civ_own_arrival 20261119-200005 on lane 5 with its list still
   in the file; line_stages_editors 20261119-200601 on lane 5 (all passed, 11.2 min: the City Hall editor ended at the
   4th "done", as on lane 6), without the campaign's red cross.
+- Final tree (acdbda75, rel/0.7.16 merged, nothing new there): creation_props_key0 PASS 20261119-202639 lane 6;
+  creation_props_key0_off FAIL 20261119-202705 lane 5 (no name field, no dice) and line_stages_outfit PASS in the same run
+  on lane 5 (no red cross any more: the guest's own City Hall editor ended at the 4th "done").
 - Lanes 5 and 6 cleaned afterwards (`coop.creationprops remove`: no .prop left in either guest profile's
   Pollination.package).
 
