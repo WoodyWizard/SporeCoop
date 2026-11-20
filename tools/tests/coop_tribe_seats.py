@@ -9,7 +9,10 @@ world. Checks, each on the game that shows it:
      guest); none of the host's village's members is the guest's
   3. guest: it selects its own members (not the host's) and walks them; the host's game moves them (what the other
      player sees); an attack order of the guest's members on the host's village is refused by the host
-  4. both games show the same food in the guest's village (its own store, not the host's)
+  4. both games show the same food in the guest's village (its own store, not the host's); the guest's game has its own
+     village as its player tribe (cGameNounManager +0x70: its HUD, cards, hut menu); a birth in its village (through the
+     host, for its food) shows on both games; an NPC village the guest's village made an ally is the host's ally too
+     (the team's alliance)
   5. a rejoin: the guest leaves (its village stays, nobody's members while it is away) and joins again: the same village
      and members are its own, no second village
   6. a new evening (twoinst.session_restart): the host starts cold and loads the planet before the guest joins: the

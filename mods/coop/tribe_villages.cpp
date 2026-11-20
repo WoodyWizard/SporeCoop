@@ -1202,3 +1202,21 @@ LIFECYCLE_HOOK("tribe.villages_persp", lifecycle::kSessionEnd, -48, [](const lif
 LIFECYCLE_HOOK("tribe.villages_persp_world", lifecycle::kWorldChange, -48, [](const lifecycle::Ctx&) { g_persp_host = nullptr; }, false);
 
 } // namespace tribe
+
+namespace tribe {
+// host: the partners' live villages; their food (the NPC stores) added to *food (BUG-0571's pace of the party)
+size_t partner_villages(int* food)
+{
+    size_t n = 0;
+    if (!g_villages || !is_host() || !g_any_partner)
+        return 0;
+    for (size_t s = 1; s < g_village.size(); ++s)
+        if (g_village[s] && game::listed(g_village[s], kTribeNoun)) {
+            n++;
+            const float f = village_food(g_village[s]);
+            if (food && f > 0)
+                *food += (int)f;
+        }
+    return n;
+}
+} // namespace tribe

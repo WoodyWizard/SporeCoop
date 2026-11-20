@@ -2735,13 +2735,17 @@ static bool pace_holds(double now)
             return true;
         },
         &tribes);
+    // BUG-9268: the players' own villages are no rivals (as the controller counts them, h_NounData) and their food is the
+    // party's too
+    int party_food = 0;
+    tribes -= partner_villages(&party_food);
     if (tribes != 2) // (1: the first neighbour after 25 s; 3 / 4 / 5: the game's rule, the threshold is passed)
         return false;
     int threshold = 100;
     void* props = a_Props ? *(void**)a_Props : nullptr;
     if (a_PropInt && props)
         threshold = skg::cdecl_call<int>(a_PropInt, props, 0x4C87E711u, 100);
-    int food = vcall<int>(pt, 0xA4 / 4);
+    int food = vcall<int>(pt, 0xA4 / 4) + party_food;
     g_pace_hold = food <= threshold * (int)players;
     char b[128];
     snprintf(b, sizeof b, "food %d, threshold %d x %u players: %s", food, threshold, (unsigned)players,
