@@ -10,7 +10,7 @@ role:
 versions: rel/0.7.16
 fixed_in:
 branch: fix/w60-tribe
-commits:
+commits: b9ce678f 063376e4
 tests: tribe_mirror_hold
 signature:
 docs:
@@ -53,3 +53,4 @@ and no fx_skips, this ticket gets a runtime probe of the chief's modifier table 
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.

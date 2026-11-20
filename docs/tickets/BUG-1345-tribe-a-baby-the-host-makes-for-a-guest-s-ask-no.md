@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.16
 fixed_in:
 branch: fix/w60-tribe
-commits:
+commits: cbd9f035
 tests: tribe_birth_ask, tribe_birth_ask_off (twin), tribe_kid_species
 signature:
 docs:
@@ -57,3 +57,4 @@ FAIL, tribe_kid_species and tribe_birth_species must PASS.
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.

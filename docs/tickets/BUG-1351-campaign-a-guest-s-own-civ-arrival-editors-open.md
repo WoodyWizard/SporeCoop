@@ -10,7 +10,7 @@ role:
 versions: rel/0.7.16
 fixed_in:
 branch: fix/w60-tribe
-commits:
+commits: 56e2f839
 tests: campaign_tribe_noclick, campaign_tribe_latecut (and every campaign through Tribe -> Civ)
 signature:
 docs:
@@ -55,3 +55,4 @@ done" lines inside [civ/follow] and no stage / apart finding in civ/play.
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.

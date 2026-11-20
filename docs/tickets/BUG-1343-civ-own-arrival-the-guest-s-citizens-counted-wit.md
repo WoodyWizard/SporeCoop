@@ -10,7 +10,7 @@ role:
 versions: rel/0.7.16
 fixed_in:
 branch: fix/w60-tribe
-commits:
+commits: a73bda43
 tests: civ_own_arrival
 signature:
 docs:
@@ -55,3 +55,4 @@ Open, waiting for the lab run: civ_own_arrival must PASS (print `the citizen man
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.

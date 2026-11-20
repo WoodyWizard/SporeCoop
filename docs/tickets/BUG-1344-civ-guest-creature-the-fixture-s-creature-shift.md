@@ -10,7 +10,7 @@ role:
 versions: rel/0.7.16
 fixed_in:
 branch: fix/w60-tribe
-commits:
+commits: 200633bf
 tests: civ_guest_creature
 signature:
 docs:
@@ -40,3 +40,4 @@ Open, waiting for the lab run: civ_guest_creature must PASS (the nearest host cr
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.

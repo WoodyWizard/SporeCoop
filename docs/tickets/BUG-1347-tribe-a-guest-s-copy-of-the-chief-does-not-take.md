@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.15, rel/0.7.16
 fixed_in:
 branch: fix/w60-tribe
-commits:
+commits: a431469c
 tests: tribe_chief_still, tribe_chief_still_retry_off (twin, probabilistic), tribe_mirror_hold
 signature:
 docs: docs/re/tribe.md#tribe-hold-retry
@@ -58,3 +58,4 @@ tribe_hold_only, tribe_hold_guest, same_view_tribe must still PASS.
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.
