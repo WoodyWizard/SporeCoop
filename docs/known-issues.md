@@ -397,7 +397,7 @@ anchor so other docs can link to it:
 
 
 
-### Civ: the end of a guest's own City Hall editor after it came back into the host's Civ world faults in the Tribe goal listener
+## Civ: the end of a guest's own City Hall editor after it came back into the host's Civ world faults in the Tribe goal listener (2026-11-19, fix/w58-cityname)
 * What happens: a guest that joins (or rejoins) the host's Civ world after the end of Tribe gets its own City Hall and
   vehicle editors (BUG-1290); when its City Hall editor ends (saved or left with the red cross) its game takes an access
   violation at 0x00645E4D (hash_map Find < cIdentityColorable::AssignNames < TribeStage_RemoveMemberCard <
