@@ -3397,8 +3397,11 @@ static bool landfall_tick(double now)
                 if (C.feed)
                     C.feed("Your cell could not become your land creature: choose a creature in F9.");
             } else {
+                // the game writes the BEM into My Creations' disk index only when the database is flushed (vt +0x24,
+                // as Lineages did: without it the record was never found, 30 s, "could not be saved")
+                void* db = a_GetDb ? cdecl_call<void*>(a_GetDb, kEditorSavesArea) : nullptr;
                 std::vector<dbpf::Record> records;
-                if (records_from_game({g_land_result.instance, kBem, g_land_result.group}, records) &&
+                if (db && vcall<bool>(db, 0x24 / 4) && records_from_game(g_land_result, records) &&
                     std::any_of(records.begin(), records.end(), [](const auto& r) { return r.key.type == kBem && !r.data.empty(); })) {
                     g_opts_read = -100;
                     refresh_options(t);
