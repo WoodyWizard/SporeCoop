@@ -3728,3 +3728,16 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: the .spo hit is the save strip's class (BUG-1315); the .pld streams are not looked at yet.
 * Ticket: BUG-1326.
 * Fixed 2026-11-19 (fix/w58-savestrip2): no key of the guest's in the save; the test's raw-byte scan matched the index id of the host's own planet script, which the game's clock-seeded id counter gave the same value as the guest's new creation (../re/creations.md#creations-id-counter, ../06-testing.md#testing-save-key-scan).
+
+## Civ: the end of a guest's own City Hall editor after it came back into the host's Civ world faults in the Tribe goal listener (2026-11-19, fix/w58-cityname)
+* What happens: a guest that joins (or rejoins) the host's Civ world after the end of Tribe gets its own City Hall and
+  vehicle editors (BUG-1290); when its City Hall editor ends (saved or left with the red cross) its game takes an access
+  violation at 0x00645E4D (hash_map Find < cIdentityColorable::AssignNames < TribeStage_RemoveMemberCard <
+  TribeGame_GoalListener) on the editor's result message. Wine's game goes on; on Windows it may end the game.
+* Reproduce: `tools/lab.py run civ_late_arrival` and read the guest's log of the second instance (the test restarts the
+  guest again afterwards and the lab keeps only the last one); every such run had it (lab 20261119-113002,
+  20261119-130049, 20261119-201729). The live end of Tribe (civ_own_arrival) has not shown it.
+* Known: inferred: the arrival editor carries the end of Tribe's tag 0x116DD1B and the Tribe game's goal listener, still
+  listening in that game, reads tribe data that is gone.
+* Ticket: BUG-1329.
+* Fixed 2026-11-19 (fix/w58-assignnames): our arrival editors carried the end of Tribe's tag, which the Tribe stage's leftover listener acts on (a Tribe hint on a hint list gone in Civ); they carry a tag of our own now (`core.own_civ_tag`); the lab counts the faults of a killed game (lab 20261119-205546 FAIL, 20261119-205648 PASS).

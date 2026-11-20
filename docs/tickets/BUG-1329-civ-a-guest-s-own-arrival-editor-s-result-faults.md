@@ -1,16 +1,16 @@
 ---
 id: BUG-1329
 title: Civ: a guest's own arrival editor's result faults at 0x645E4D in the Tribe goal listener
-status: open
+status: fixed
 kind: crash
 stage: Civ
 reported: 2026-11-19
 source: lab
 role: guest
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch: fix/w58-assignnames
-commits:
+commits: 3afe08a4, ad2b5683
 tests: civ_late_arrival, civ_late_arrival_tag_off, creation_props_key0, civ_own_arrival
 signature: 0x00645E4D hash_map__int_int__Find+0xD < cIdentityColorable::AssignNames+0x1443 < TribeStage_RemoveMemberCard+0x1D8F < TribeGame_GoalListener+0x163
 docs: docs/re/civ.md#civ-arrival-tribe-listener, docs/06-testing.md#testing-killed-faults
@@ -63,8 +63,16 @@ The lab missed it: civ_late_arrival restarts the guest twice and `Checks.faults(
   old way.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+(fix/w58-assignnames out/lab/)
+* FAIL (twin, `core.own_civ_tag` off): 20261119-205546 civ_late_arrival_tag_off, lane 6: "the guest's game took no fault
+  at the end of its own City Hall editor (0 -> 1 faults; 0x00645E4D ... stack ... 00B708C3 ... 00CD6F7F)", and the
+  harness's new line `guest (killed instance 2) faults: total faults: 1` (FAIL lab: faults in the log).
+* PASS: 20261119-205648 civ_late_arrival, lane 5: no fault at either editor's end, both results "from the editor's
+  message" with tag 0C0B1329, `guest (killed instance 1/2) faults: total faults: 0`; key frames looked at.
+* Same fault checked: 20261119-210144 civ_own_arrival and civ_guest_editors (lane 5), 20261119-210144-2
+  line_stages_editors and creation_props_key0 (lane 6): all PASS, no 0x645E4D in any guest log, the arrival results
+  taken from the editor's message (creation_props_key0 faulted in 2 of 2 runs before: 20261119-200557, -201729).
 
 ## History
 - 2026-11-19: opened (fix/w58-cityname, found while testing BUG-1328; outside that task).
+- 2026-11-19: fixed on fix/w58-assignnames (own request tag `core.own_civ_tag`; the harness counts killed games' faults).
