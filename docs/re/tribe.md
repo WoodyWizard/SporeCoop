@@ -4257,3 +4257,40 @@ BUG-1238 (after BUG-1233, [tribe-form-species](#tribe-form-species)). GOG 2024, 
   test command at 5), the list moved to new storage of 8, the three new villages with the list's last species, the
   guest's copies with the same species, no fault on either game.
 * The host logs once per list: `tribe: the NPC tribe controller has 4 species for 5 NPC villages (property list 10)`.
+
+## The graduation's City Hall cinematic and a second graduation (2026-11-19, fix/w57-crashes)
+<a id="tribe-graduation-cinematic"></a>
+
+BUG-1325. GOG 2024, Ghidra (tools/ghidra/q.sh), lab lane 9; follows [tribe-civ-transition](#tribe-civ-transition) and
+[tribe-graduation-pen](#tribe-graduation-pen).
+
+* ✔ (Ghidra) `TribeStage_Graduate` 0xCDD0F0 is the end of Tribe after the City Hall editor: called once from
+  `TribeStage_EnterUpdate` state 7 when the stage's +0x3A0 is set. It reads the player tribe's food mat +0x260, calls its
+  vt 0 only when set, and passes it to `cGameNounManager::DestroyInstance` **without a null check** (0xCDD430), then clears
+  +0x260 (this is why the mat is 0 after the City Hall, BUG-0585). It ends with `cCinematicManager_SetEnabled(1)`, three
+  actors and `PlayCinematic("TRG2CVG_ShowCityHall", 1, 0, variant, 0, 0)`; that cinematic's end (0x44F1189, listener
+  0xCD1D60) submits the vehicle editor.
+* ✔ (Ghidra) PlayCinematic's start 0xADFCE0 (`cCinematicManager_Start`): while another cinematic plays (+0x2C != 0) it
+  queues the new one only when PlayCinematic's third argument is set; ShowCityHall's is 0, so it is **dropped**. The
+  actors are set before the play and go to the cinematic playing at that moment (`cCinematicManager_SetActor` 0xAE0930
+  with id 0 takes +0x148), so a queued ShowCityHall would also lose them.
+* ✔ (Ghidra) `NpcTribeController_FormTribe` 0xCC6440 plays `TRG_PRE_FirstTribeAppears` when it forms the planet's first
+  NPC tribe (the tribe list holds only the player's); it waits while the species is not baked.
+* ✔ (runtime, lab 20261119-120449 line_stages, host) The goal bar filled by `coop.tribe advance` ~60 s into a new Tribe
+  stage (before the first NPC tribe); the first NPC tribe was formed right when the host came back from the City Hall
+  editor (the guest's copy at +0.3 s; its "village made during play" stamp on the host +1.3 s), a 20 s cinematic with a
+  caption played at the new village (the host's trace position 6 m from it), no vehicle editor came, and 25 s later the
+  advance button (still up: the bar is full) started TRG2CVG_PreEditor and the City Hall editor again. Back from it the
+  second graduation faulted at DestroyInstance+0x6 (data 0x20) from TribeStage_Graduate+0x34D, 306 times in 10 s. ~ The
+  cinematic's name is inferred (FormTribe's, first NPC tribe, timing and place); not logged.
+* A player's game reaches it only with a cinematic playing at the graduation: TRG_PRE_FirstTribeAppears needs a planet
+  without NPC tribes, which a full goal bar excludes (its goals are other tribes), so the natural case is the tests'
+  shortcut; any other cinematic at that moment (a raid's TRG_PRE_HutDestroyed, TRG_Upgrade) gives the same stall, and the
+  stalled player's next advance the crash.
+* The mod (BUG-1325): `tribe.city_hall_cinematic` (tribe_graduation.cpp, a hook of TribeStage_Graduate) ends a cinematic
+  that plays when the graduation starts (EndCinematic: its end message goes out as on its OK), so ShowCityHall plays with
+  its actors. `game.destroy_null` (gamefixes' DestroyInstance hook) skips a destroy of a null object (DestroyInstance
+  writes obj +0x20 first): a second graduation goes on (ShowCityHall, the vehicle editor). `coop.tribe graduation` prints
+  the graduations, the ones without a mat, the cinematics ended, whether ShowCityHall (0x10792A72) played, the null
+  destroys skipped; `coop.tribe gradcine <name>` (tests) starts <name> right before the next graduation. Test
+  `coop_tribe_city_hall_race.py` (docs/06-testing.md#testing-tribe-city-hall-race).

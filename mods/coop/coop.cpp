@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.15.2"
+#define COOP_VERSION "0.7.15.5"
 #endif
 
 #include <winsock2.h>
@@ -75,6 +75,7 @@
 #include "net/lobby.h"
 #include "net/session.h"
 #include "net/utf8.h"
+#include "creation_props.h"
 #include "creations.h"
 #include "notify.h"
 #include "hud_portrait.h"
@@ -2859,6 +2860,7 @@ static void init_civ_and_space()
     spacecoop::init(H, M, std::move(spc));
     apply_startup_off(); // tests: switches that must be off before the game starts (fixes_off.txt)
     gamefixes::init(H, M);
+    creationprops::init(H, M); // BUG-1328
     autoupdate::set_feed(feed);
     autoupdate::init(H, M, COOP_VERSION);
 }

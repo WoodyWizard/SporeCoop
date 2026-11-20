@@ -1613,3 +1613,47 @@ BUG-1255, BUG-1258. GOG 2024, lanes 2 / 3 (`coop_evo_screens.py --part switch`, 
 * The host's phase notice after its editor said "everybody gets the new body" in Creature, also while the guest made
   its own creature (BUG-1258): now "made its creature: every player makes its own" / "evolved its creature" unless
   creature.mode host.
+
+## A creation property list under key 0: editors that cannot be named (2026-11-19, fix/w58-cityname)
+<a id="creations-props-key0"></a>
+
+BUG-1328. Ghidra (GOG 2024) and runtime on lab lanes 5 and 6.
+
+* ✔ A creation's properties are a .prop `{instance, 0x00B1B104, group & ~0x1A00 | 0xE500}` (a creature of group
+  0x40626200: 0x4062E500; a key of group 0: 0x0000E500). Read by `SporeCoop::CaptainProps_Get` 0x5BF1E0 (20 callers),
+  written by `SporeCoop::CaptainProps_Save` 0x5BF220 into the creation's own database, else into the profile's
+  Pollination.package (database 0x11AC19C), where it stays across sessions. Pollination.package of a clean profile
+  holds no .prop at all.
+* ✔ "Name Your Captain" (`NameCaptainDialog_OnButton` 0xE1DC60) copies the template list 0x15A51D8
+  `{0x1C06DDE1, 0x00B1B104, 0x408A0100}` for the new captain (`SporeCoop::CaptainProps_Copy` 0x5BF4A0) and sets the
+  dialog's name in it (`SporeCoop::CaptainProps_SetName` 0xEEBE90, property 0x75ED3A1C). When the world's species
+  cannot be copied the captain key is 0/0/0 (BUG-1111) and the list is written all the same: under key 0, with the
+  captain's name. The list found on lab lane 5 (guest profile inst10, Pollination.package, 119 bytes): 0x2E0FCC74 = 1,
+  0x5888EF41 = 0, 0x75ED3A1C = "Breer", 0x99524FAF = 1, 0xAE773A29 = 1, 0xC339D5C7 (the captain items config), 0xC54C543B
+  = 1, 0xCF837237 = 0, 0xEC2942CD = 1: the template plus a dice name. ? Its source (inferred, not seen written): the
+  lane's guest ran space_captain_none (which points the species manager at 1BADBEEF and names the captain with the
+  dice) on 2026-11-16 and 2026-11-17. No other lane's profile (all bottles scanned) had a .prop in Pollination.package,
+  although lanes 2 and 3 ran that test too (? their games were killed before the database was written back).
+* ✔ The editors' name panel (`UI::EditorNamePanel`): `Editors::cEditor::OnEnter` reads the properties of the request's
+  creation (EditorRequest +0x10, `CaptainProps_Get` at 0x58F9CD): the bools 0x99524FAF / 0xAE773A29 / 0x2E0FCC74 into
+  cEditor +0x4B7 / +0x4B8 / +0x4B9 and the name (0x75ED3A1C, else 0x1CB70998) into cEditor +0x1DC. The name is
+  editable (`EditorNamePanel::Initialize` 0x5BFE40, +0x11) only when the editor's property 0x55ACE95 is not true,
+  EditorRequest +0x35 is 0 and that name is EMPTY; the dice (window 0x0552C901, random name of the generator in the
+  editor's property 0x552AB54) needs the editable name (+0x20 = editable ? generator : 0). `SetExtended` 0x5C0470 (the
+  panel opened by "done" without a name, or a click on it) shows the name field 0xC7CEB1BD only with +0x11 and the dice
+  only with +0x20. Runtime on lane 5 (the guest's own City Hall editor at its Civ arrival): panel +0x10 = 1, +0x11 = 0,
+  +0x20 = 0; `coop.ui` shows the field with flags 0xA and the dice 0x0 (hidden), only the caption "Name your City Hall"
+  and Description / Tags; typed keys go to the editor's hotkeys.
+* ✔ So every editor opened WITHOUT a creation key (+0x10 = 0/0/0: the end of Tribe's City Hall and vehicle editors
+  0xCD1D60, a guest's own arrival editors of WP-X1, the test's `coop.designs editor` of a design the culture lacks)
+  reads the list under key 0 of a polluted profile, has a read-only name and no dice, and never saves ("You must give
+  your creation a name before you can save"). The end of Tribe's City Hall editor has no red cross: such a profile
+  cannot leave Tribe. An editor of an existing creation (+0x10 set) is not affected.
+* ✔ Fix `game.creation_props_key0` (mods/coop/creation_props.cpp): a hook on `CaptainProps_Get` answers "none" for a key
+  whose instance is 0 (what a clean profile answers); the file is left as it is. `coop.creationprops [plant <name> |
+  remove]`: the guard's count, whether the game has a list under key 0; tests write one the captain dialog's way
+  (CaptainProps_Copy of the template, CaptainProps_SetName) and remove it (`App::cPropManager::RemovePropertyList`
+  0x6A5A20, vtable 0x1409210 slot 0x38).
+* ~ The editor's exit `0x5802F0` saves the new creation's list for the key from cIDGenerator (never 0 seen); with
+  `param_2` (saved) it first reads the edited creation's list (EditorRequest +0x10's key: 0 for a new one; on a polluted
+  profile the new creation inherited the list under key 0, now none).
