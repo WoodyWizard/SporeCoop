@@ -14,6 +14,7 @@
 #include "identity.h"
 #include "own_progress.h"
 #include "cards.h"
+#include "start_choice.h"
 #include "coop_state.h"
 #include "store.h"
 #include "designs.h"
@@ -851,6 +852,10 @@ void setup_callbacks()
         }
         case net::Route::OwnCards: { // BUG-9263: the own stage history (Session class)
             cards::on_message(from, r);
+            return;
+        }
+        case net::Route::StartChoice: { // BUG-9273: every player's own start in a new Cell game (Session class)
+            start_choice::on_message(from, r);
             return;
         }
         case net::Route::Effect: { // BUG-0451: a partner's creature made an effect

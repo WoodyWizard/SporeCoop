@@ -47,7 +47,9 @@
 // MSG_CIV_WALLET of feat/civ-own-money, BUG-9259).
 // Minor bump of feat/start-choice: session 1.4 (own-progress and own-cards each took 1.3 for their own new type;
 // both together are 1.4. No change on the wire of either).
-FAMILY(session,   1, 1, 4, STAGE_ALWAYS, "session", "net/protocol.h")
+// Minor bump of feat/start-choice: session 1.5 (MSG_START_CHOICE 79, a new type older versions ignore: BUG-9273; 78
+// is left to feat/lineages-tribe).
+FAMILY(session,   1, 1, 5, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 1, STAGE_CREATURE, "Creature", "")
 FAMILY(npc,       4, 1, 1, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
@@ -136,6 +138,7 @@ MSG(72, CELL_MATE,    RU, Guest, HostWorld, Cell,        Host,   cell,      "u8 
 MSG(73, IDENTITY,     R,  Any,   Session,   Identity,    Both,   session,   "the persistent player identity (identity.h, BUG-9258): guest -> host u64 its own after each join; host -> guests u8 n, n x {u8 player, u64 identity}")
 MSG(75, OWN_CARDS,    R,  Any,   Session,   OwnCards,    Both,   session,   "the own stage history (cards.h, BUG-9263): host -> a guest u8 0, u8 flags, 5 x u32 its seat's consequence cards, f32 social, f32 combat; guest -> host u8 1, u32 the Cell card its own play would give now")
 MSG(77, PROGRESS,     R,  Any,   Session,   Progress,    Both,   session,   "own progress in Cell / Creature (own_progress_logic.h, BUG-9265): u8 kind (1 ask, 2 set, 3 report, 4 table, 5 gain), payload")
+MSG(79, START_CHOICE, R,  Any,   Session,   StartChoice, Both,   session,   "every player's own start in a new Cell game (start_choice_logic.h, BUG-9273): u8 kind (1 ask: host -> a guest; 2 answer: guest -> host u8 diet, u8 colour, str8 name; 3 table: host -> guests u8 n, n x {u8 player, the answer})")
 
 #undef MSG
 #undef FAMILY

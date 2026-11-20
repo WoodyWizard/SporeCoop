@@ -57,6 +57,7 @@ enum Id : int {
     kSpaceRivals,    // Space: the host may switch to the rivals mode (space_rivalry.cpp)
     kAutosave,       // all stages: the host's game saves itself every N minutes and after milestones (E2, autosave.h)
     kOwnProgress,    // Cell, Creature: every player's own DNA and evolution bar; the stage changes when all are full (BUG-9265)
+    kStartChoice,    // Cell: a guest new to the planet chooses its own cell's diet, name and colour (BUG-9273, start_choice.h)
     kCount
 };
 
@@ -173,6 +174,9 @@ inline const Def kDefs[kCount] = {
     {"all.own_progress", "All stages", "Own progress",
      "on: in the Cell and Creature stages every player has their own DNA and evolution bar, earned by their own deeds; a full bar waits until every player's bar is full, then everybody moves on together after the vote; off: one shared DNA / food total for the party",
      1, 0, 1, Scope::Session, "own_progress", false},
+    {"cell.start_choice", "Cell", "Own start",
+     "on: a guest who starts on the planet in the Cell stage chooses its own cell (diet, name, colour), kept per player; off: a guest plays the host's cell or one of its own creations (F9)",
+     1, 0, 1, Scope::Session, "start_choice", false},
 };
 
 // all.autosave (E2): the minutes of a choice (0 = off)

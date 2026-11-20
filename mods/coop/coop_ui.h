@@ -99,6 +99,15 @@ struct Api {
     std::function<void(bool send)> report_answer;
     // the lobby's address line: the host's "ip:port, ..." to give to friends, a guest's the host it joined
     std::function<std::string()> host_address;
+    // BUG-9273: a guest's own start in a new Cell game (start_choice.h). start_prompt: the host asked and nothing was
+    // answered (the window shows the "Your own cell" page); start_submit(diet 0 herbivore / 1 carnivore / 2 omnivore,
+    // the creature's name, palette index or -1): false and why when refused; start_color_free(idx): no other player
+    // has it; start_color_now: our palette index now (-1 none); start_name: the name the page starts with
+    std::function<bool()> start_prompt;
+    std::function<bool(int diet, const std::string& name, int color, std::string& why)> start_submit;
+    std::function<bool(int color)> start_color_free;
+    std::function<int()> start_color_now;
+    std::function<std::string()> start_name;
     uint16_t default_port = 0;
 };
 

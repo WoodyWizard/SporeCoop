@@ -983,3 +983,42 @@ Phases 3 and 4 of the Lineages port (PR #196), BUG-9261 and BUG-9262, on top of 
 * Left out of Lineages' home_nests: the ring cleanup of nests of old salted keys (BUG-9182 there: not needed with one
   key from the start). Tests: tools/tests/coop_home_nests.py, coop_home_nests_join.py (suites home_nests,
   home_nests_join).
+
+## Every player's own start in a new Cell game (2026-11-20, feat/start-choice)
+<a id="architecture-start-choice"></a>
+
+BUG-9273, the owner's rule of 2026-11-20: every player starts together on the same planet with their own creature and
+chooses its diet, name and colour; the host alone names the planet (the game's own wizard). Builds on the party
+([architecture-party](#architecture-party)), own progress ([architecture-own-progress](#architecture-own-progress)) and
+own cards ([architecture-own-cards](#architecture-own-cards)). Code: mods/coop/start_choice.{h,cpp}, the portable
+start_choice_logic.h (unit tests in tests/validate_tests.cpp test_start_choice), the page in coop_ui.cpp.
+
+* **Who is asked.** The host asks (MSG_START_CHOICE 79 kAsk, session family 1.5) a guest that holds a party seat, has
+  played the host's Cell world for 3 s (own_world::peer_here) and has no choice recorded for this planet; once per join.
+  The host's own start is the game's Cell wizard, unchanged.
+* **The page.** The guest's co-op window opens on "Your own cell" (subtitle "CO-OP: YOUR START"): three diet buttons
+  (Herbivore, Carnivore, Omnivore), the creature's name (24 characters, starts as the player's name + "ite"), the colour
+  (">" steps through the F2 colours no other player has) and Start. Closing the window leaves the question open (F9
+  shows it again); the setting going off or the stage ending closes it.
+* **What the answer does** (guest side, at once, and again from the host's table after a rejoin or a reload):
+  * the own cell: `creations::choose(kCell, <the diet's game cell>)`: herbivore E219E5D2 and carnivore 252A132F (the
+    wizard's premade player cells), omnivore 0C176D89 (the game's own cell with both mouths; the wizard has no omnivore
+    card: [cell-start-choice](re/cell.md#cell-start-choice)). The creations pipeline shares it as the guest's cell (a
+    premade: no records, every game has it), the host builds the guest's puppet of it, the guest's own cell is rebuilt
+    with it (creations.cpp apply_own_cell, the hatch);
+  * the colour: pfind::request_color (the host's colour table: name tags, arrows, minimap, chat);
+  * own progress: the first answer starts the guest's food and spent DNA at 0 and, a second later, the meal counters
+    +0x20..+0x28 its Cell card is decided from (the copy of the host's world holds the host's).
+* **The record.** The host keeps every answer by the player's identity key next to the planet:
+  `<planet>.spo.duostart` (SCH1: u32 'SCH1', u8 n, n x {str8 key, u8 diet, u8 colour, str8 name}; founders::write_side,
+  outside the frame). The first answer of a player stays. The host sends the table of the players here (kTable) on a
+  change and every 10 s; every game shows the creature's name in that player's Cell name tag ("Bob (Glorbo)"), and a
+  guest that finds its own row plays it again without a question.
+* **The Cell card** (cards.cpp decide): the seat's Cell card is its own game's report (its own meals); with no report the
+  diet's card (carnivore CFB01B93, herbivore A8EC6F99, omnivore 5ECE4770) before the host's.
+* **Off.** The session setting `cell.start_choice` (default on, coop.ini `start_choice`), off or creature.mode host:
+  nobody is asked (0.7.15: a guest plays the host's cell or picks one of its own creations in F9). twoinst.start()
+  switches it off for the older tests (start_choice=True keeps it on).
+* Commands: `coop.start` (status; `pick <herb|carn|omni> <name> [colour]` a guest's answer without the window; host
+  tests `ask <player>`, `forget <player>`). Test: tools/tests/coop_start_choice.py (suites start_choice,
+  start_choice_off).
