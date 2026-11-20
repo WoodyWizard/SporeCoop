@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: e2e7c598
 tests: tools/tests/galaxy_server_check.py; in game: TITAN QA runs
 signature:
 docs: docs/12-server-and-players.md#server-era-visitors-more
