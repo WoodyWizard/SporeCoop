@@ -1630,3 +1630,6 @@ arrival the crossing becomes the next era (or joins its host).
   "Cellfour~1|Cell" (5 s), the switch ran there, the game played Creature, the crossing became "Cellfour|Creature"
   (15 s) and the first creature's editor opened. With the switch off: the game played Creature on "Cellfour|Cell".
 * ? Tribe -> Civ: built, not run (a Tribe save at its graduation takes ~40 minutes of scripted raids).
+* ✔ Cross-PC (2026-11-20, TITAN's galaxy server, the MSI over Tailscale with today's build): TITAN QA 9 on Samuth
+  (Creature), the MSI on Samuth (Tribe): each game showed the other's player (1.3 m and 1.7 m from where it was sent)
+  and got the other's creature from the creation store (one ask each).

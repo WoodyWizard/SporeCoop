@@ -500,4 +500,5 @@ Update 2026-11-20 (continued, the owner's continue rule): visitors only reach pl
 a name tag (BUG-9289); the creation store keys creations by owner and carries any type (BUG-9290); a Civ era's
 buildings and vehicles are drawn in the Creature and Tribe eras (BUG-9290, BUG-9291: seen); the Cell stage's end goes
 through the party's crossing (BUG-9292: seen), the Tribe stage's too (built, not run). Left: ships of the Space era
-over the planet, a run of Tribe -> Civ through a crossing, the MSI builds.
+over the planet, a run of Tribe -> Civ through a crossing. The MSI has today's build: visitors and the store seen
+across the two PCs.
