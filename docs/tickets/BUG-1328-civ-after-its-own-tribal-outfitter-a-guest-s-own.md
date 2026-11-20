@@ -10,7 +10,7 @@ role:
 versions: 0.7.15.4 and older (the game's own end-of-Tribe editors in a profile with the list; code read), 0.7.16 (unreleased)
 fixed_in: unreleased
 branch: fix/w58-cityname, fix/w59-hotfix (backport to 0.7.15)
-commits: 1b7c74b2
+commits: 1b7c74b2 0fb723ca
 tests: creation_props_key0, creation_props_key0_off, civ_own_arrival, line_stages_editors
 signature: UI::EditorNamePanel +0x11 = 0, +0x20 = 0 (no name field 0xC7CEB1BD, no dice 0x0552C901); a .prop {0, 0x00B1B104, 0x0000E500} in the profile's Pollination.package
 docs: docs/re/creations.md#creations-props-key0
