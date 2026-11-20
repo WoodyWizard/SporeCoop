@@ -383,6 +383,22 @@ anchor so other docs can link to it:
 * Reproduce: `tools/lab.py run evo_screens_switch`, key frame `01_switch_vote`.
 * Ticket: BUG-1269
 
+## Own stage history: what is still shared or untested (2026-11-20, feat/own-cards)
+<a id="issue-own-cards-limits"></a>
+
+* Tribe and Civ: a guest's Tribe and Civ cards are the host's (this build has one player tribe and one nation, the
+  same play for both players); own cards need own villages / nations (the next Lineages phases).
+* Cell: the guest's own Cell card is its own game's decision from its own Cell save data; that the guest's game
+  counts its own food there was not checked in a Cell game (no Cell save on the test PC): if it does not, the guest
+  gets the host's card (the fallback).
+* Creature: the Creature decision adds the History timeline's Cell value of the host's world, not the guest's.
+* Powers: the guest's cPlayer holds its own cards; which code builds the avatar's consequence abilities at a stage
+  start (before or after the mod writes the cards after a world load) was not traced; the guest's own editor requests
+  carry its own cards.
+* The stage ends were made by the host's command (`coop.wsync stage`), not through History and the editors (the
+  campaign's coordinates are for 1440x1080; this PC's test windows are 1024x768).
+* Reproduce / test: tools/tests/coop_own_cards.py.
+* Ticket: BUG-9263
 ## Space: a guest's captain screen shows no item limits for the host's captain (2026-11-18, fix/w55-captain)
 <a id="issue-captain-items-guest"></a>
 

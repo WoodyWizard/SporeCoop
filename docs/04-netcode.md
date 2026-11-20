@@ -132,10 +132,11 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 72 | `CELL_MATE` | RU | guest | HostWorld | Cell (host) | cell | u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246) |
 | 73 | `IDENTITY` | R | any | Session | Identity | session | the persistent player identity (identity.h, BUG-9258): guest -> host u64 its own after each join; host -> guests u8 n, n x {u8 player, u64 identity} |
 | 74 | `CIV_WALLET` | R | any | HostWorld | CivWallet | civ | every player's own Civ money (civ_wallet.h, BUG-9259): u8 kind; guest -> host an ask / u32 seq + f64 money (a report); host -> guest u32 seq + f64 the wallet / a change |
+| 75 | `OWN_CARDS` | R | any | Session | OwnCards | session | the own stage history (cards.h, BUG-9263): host -> a guest u8 0, u8 flags, 5 x u32 its seat's consequence cards, f32 social, f32 combat; guest -> host u8 1, u32 the Cell card its own play would give now |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
-| session (session) | 1 | 1.2 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY`, `IDENTITY` |
+| session (session) | 1 | 1.3 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY`, `IDENTITY`, `OWN_CARDS` |
 | world (world transfer) | 2 | 1.0 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
 | creature (Creature) | 3 | 1.1 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT` |
 | npc (mirrored creature and world state) | 4 | 1.1 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
@@ -793,3 +794,14 @@ Phase 1 of the port of Lineages (PR #196, PandizeLive; there BUG-9135 / BUG-9198
   same after a rejoin. Its steps were run by hand on two instances of the Steam build on Windows (BUG-9258); not yet
   in the lab.
 
+
+## The own stage history on the wire (2026-11-20, feat/own-cards)
+<a id="netcode-own-cards"></a>
+
+BUG-9263. `MSG_OWN_CARDS` (75, session family 1.3, a type older versions ignore):
+* host -> a guest: `u8 0, u8 flags (bit 0: own history), 5 x u32 the seat's consequence cards, f32 social, f32
+  combat`, reliable, when the seat's record changes and every 5 s;
+* guest -> host: `u8 1, u32 the Cell card its own game would give now` (Cell_GetConsequenceTrait), reliable, while it
+  plays the host's Cell world, when the value changes (checked every 2 s).
+A guest of an older version gets nothing it reads (its game shows the host's history, as before); an older host sends
+nothing (the guest's game keeps the "stages" row). Cards that are not a valid id of their stage are refused.

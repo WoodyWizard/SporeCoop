@@ -1280,3 +1280,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1328](BUG-1328-civ-after-its-own-tribal-outfitter-a-guest-s-own.md) | fixed | bug | Civ | 2026-11-19 | 0.7.15.5 | An editor without a creation key cannot be named (no name field, no dice) in a profile with a creation property list under key 0 (lab lane 5) |
 | [BUG-9258](BUG-9258-lineages-port-phase-1-a-persistent-player-identi.md) | open | feature | All | 2026-11-19 |  | Lineages port, phase 1: a persistent player identity per Spore profile (MSG_IDENTITY) |
 | [BUG-9259](BUG-9259-civ-every-player-has-their-own-money-setting-civ.md) | open | feature | Civ | 2026-11-19 |  | Civ: every player has their own money (setting civ.own_money) |
+| [BUG-9260](BUG-9260-lineages-port-phase-2-the-campaign-s-party-one-f.md) | open | feature | All | 2026-11-20 |  | Lineages port, phase 2: the campaign's party, one founder seat per player, kept next to the planet |
+| [BUG-9263](BUG-9263-own-stage-history-each-player-s-consequence-card.md) | open | feature | All | 2026-11-20 |  | Own stage history: each player's consequence cards and the powers they give |
+| [BUG-9264](BUG-9264-a-guest-s-kills-and-social-wins-add-to-the-host.md) | open | bug | Creature | 2026-11-20 |  | A guest's kills and social wins add to the host's trait progress (cPlayer +0x1278/+0x127C): the guest's own counts nothing |
