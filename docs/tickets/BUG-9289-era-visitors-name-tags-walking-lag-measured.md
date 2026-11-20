@@ -29,7 +29,7 @@ A grey name tag over each visitor within 120 m (its name, "<Era> era"), at its p
 mean gap was 5.2 m with it, 5.7 m without, over 4 walks each (no real change).
 
 ## Verification
-- FAIL (`galaxy.visitor_tags` off): no tag. PASS: the tag "Pandize -NoShare- / Tribe era" over the Tribe player's
+- no-fail-run: the switch-off run was not done (the tag is new drawing, nothing drew it before). PASS: the tag "Pandize -NoShare- / Tribe era" over the Tribe player's
   creature in the Creature game (TITAN, 2026-11-20).
 - no-fail-run: the walking lag is a measurement (no change kept).
 

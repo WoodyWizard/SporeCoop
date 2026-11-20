@@ -34,7 +34,7 @@ Before a prop the game is asked to bake every level of detail of the model (IBak
 vt 0x4C(key, &level)).
 
 ## Verification
-- tools/tests/galaxy_server_check.py: FAIL on the BUG-9287 server ("another player's creation with the same key
+- tools/tests/galaxy_server_check.py: FAIL not run on the BUG-9287 server (by its design "another player's creation with the same key
   is its own" cannot pass: one key, one file); PASS now, with the VISITOBJ checks.
 - In game (TITAN, QA 8 hosting Abber (Civ), QA 9 on Abber (Creature)): the Civ host sent 441 objects in 129
   messages near the Creature player; the Creature game got them, fetched the 6 designs from the store and made 9
