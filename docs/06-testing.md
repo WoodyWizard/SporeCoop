@@ -9849,3 +9849,14 @@ reported `v: N missing on the guest` (campaign_tc2, 20261119-214823: Carol pause
 guest's digest carries a `stands` byte, the host does not compare it then (`stands_skipped=` in `coop.diag sync`).
 The campaign logs a guest that stood a minute (`<name> stands N s: busy ..., pause menu 0|1, pauses: ...`) and closes a
 pause menu still up after 90 s.
+
+## DNA tests: the gain, not the total, with own DNA (2026-11-20, fix/w60-dna)
+<a id="testing-dna-gain"></a>
+
+BUG-1340. With own DNA per player (the 0.7.16 default) a guest's DNA may differ from the host's: its own spends, or a
+wallet kept over the lane's warm reset (docs/re/creature.md#creature-own-dna-frame). `dna_mode.party_gain(ck, shared,
+read_guest, h0, h1, g0, what)` is the one check for "the party's gain reached the guest": shared pool, the host's
+total; own DNA, the guest's own DNA grew by the host's gain (waited up to 4 s). Used by coop_dna_away.py, coop_team.py,
+coop_dna_notice.py; coop_dna_resend.py compares with the guest's settled own total. Suite variants with `--shared`:
+dna_away_shared, dna_resend_shared, dna_notice_shared. A guest's own log line is `dna: own a -> b, bar x -> party y
+cause=c` (coop_dna_notice.py LEDGER reads both forms).

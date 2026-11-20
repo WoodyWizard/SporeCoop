@@ -10,7 +10,11 @@ read back from the panel windows: `coop.status` "toast ..." lines):
     "+N DNA from your hunt";
   * the host kills one (`coop.npc hosthit`, the host avatar's attack): the GUEST shows
     "+N DNA shared by Alice's pack";
-  * both totals are the same afterwards, and each game's log has `dna: a -> b cause=...` lines.
+  * both totals are the same afterwards (own DNA, the 0.7.16 default: the guest's own DNA grew by the same as the
+    host's, BUG-1340; --shared: all.shared_dna on, the one pool), and each game's log has `dna: a -> b cause=...`
+    lines (a guest with its own DNA writes `dna: own a -> b, bar x -> party y cause=...`): on the guest the line that
+    names a cause must also move its DNA (BUG-1341: the cause came with a total that did not move the guest's own
+    DNA, the step followed with cause=unknown; SPORE_FIX_OFF=creature.own_dna_cause fails, suite dna_notice_cause_off).
 `--cell` (Cell, the shared food that is the cell stage's DNA): a guest's meal (`coop.pool food 10`,
 the meal message a real meal sends) shows "+10 food (DNA) from Bob's meals" on the host, a meal of the
 host "+N food (DNA) from your partners' meals" on the guest (gathered 15 s), `dna: food a -> b
@@ -21,6 +25,7 @@ import re
 import sys
 import time
 
+import dna_mode
 import lane
 from twoinst import Checks, shot, start
 
@@ -54,7 +59,12 @@ def prey(host, guest):
             if m.group(1) in mirrored and m.group(2) != fam and float(m.group(3)) > 0]
 
 
-def ledger(path, since, pat=r'dna: (-?\d+) -> (-?\d+) cause=(\S+)'):
+# `dna: a -> b cause=c` (the host, a guest of the shared pool) or `dna: own a -> b, bar x -> party y[ (kept)] cause=c`
+# (a guest with its own DNA, WP-D)
+LEDGER = r'dna: (?:own )?(-?\d+) -> (-?\d+)(?:, bar \S+ -> party \S+(?: \(kept\))?)? cause=(\S+)'
+
+
+def ledger(path, since, pat=LEDGER):
     try:
         with open(path, 'rb') as f:  # (bytes: `since` is a byte offset)
             f.seek(since)
@@ -127,6 +137,14 @@ def main():
         return main_cell()
     host, guest = start()
     ck = Checks()
+    try:
+        return run(host, guest, ck)
+    finally:
+        dna_mode.teardown(host, guest)
+
+
+def run(host, guest, ck):
+    shared = dna_mode.setup(host, guest, ck)
     hlog, glog = lane.game_log(lane.HOST), lane.game_log(lane.GUEST)
     h0, g0 = size(hlog), size(glog)
     ids = []
@@ -137,6 +155,7 @@ def main():
     print(f'  prey mirrored on the guest: {ids[:6]}', flush=True)
 
     # 1. the guest's kill: the host's screen
+    dh0, dg0 = dna(host), dna(guest)
     nid, a, b = kill(host, guest, ids[:3], 'guest')
     print(f'  the guest killed #{nid}: host DNA {a} -> {b}', flush=True)
     th = wait_toast(host, r"^\+\d+ DNA from Bob's hunt")
@@ -164,14 +183,14 @@ def main():
         ck(abs(n - (b2 - a2)) <= 1, f'the notice names the amount the host\'s game paid ({n} of {b2 - a2:.0f})')
 
     time.sleep(2)
-    dh, dg = dna(host), dna(guest)
-    ck(dh is not None and dg is not None and abs(dh - dg) < 0.5, f'the same DNA on both ({dh}, {dg})')
+    dna_mode.party_gain(ck, shared, lambda: dna(guest), dh0, dna(host), dg0, 'both kills')
     lh, lg = ledger(hlog, h0), ledger(glog, g0)
     print(f'  ledger host: {lh[-4:]}', flush=True)
     print(f'  ledger guest: {lg[-4:]}', flush=True)
     ck(any(c.startswith('hunt:1') for _, _, c in lh), 'the host\'s log names the guest\'s hunt (dna: ... cause=hunt:1)')
-    ck(any('hunt:1' in c for _, _, c in lg) and any('host:0' in c for _, _, c in lg),
-       'the guest\'s log names both causes')
+    moved = [(x, y, c) for x, y, c in lg if x != y]  # BUG-1341: the cause on the total that moved the DNA
+    ck(any('hunt:1' in c for _, _, c in moved) and any('host:0' in c for _, _, c in moved),
+       'the guest\'s log names both causes on the totals that moved its DNA')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
