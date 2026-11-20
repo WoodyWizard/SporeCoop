@@ -154,6 +154,7 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   chief: the chief's staff now waits until the member's body is built (BUG-1335; still open until its lab run).
 - Creature: a guest no longer sees some of the host's animals far away half sunk into the ground (BUG-1357; still open
   until its lab run).
+
 ## [0.7.15.5] - 2026-11-19
 
 A fix for players who could not leave the Tribe stage: the City Hall editor at its end could not be named after a
