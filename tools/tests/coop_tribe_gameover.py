@@ -13,6 +13,15 @@ the OK then faulted at 0xC0DAE3 and the host froze for good (2 of 2 tries, 2026-
 3. OK (`key enter`): the host bounces back and keeps drawing, no fault in either game.
 
 --nofix: the old way (`coop.tribe fix gameover 0`): must FAIL.
+--same-frame: the killing blows on the last two members in one call (one frame): the game shows no game over at all
+(BUG-1337, the game's own rule of BUG-1083): the twin of the one-at-a-time blows, must FAIL.
+
+Step 1's blows (BUG-1337): one member at a time, the tribe's leader last, one blow a second. The game posts its game
+over at a member's fall only when fewer than 2 members are left in its up list (cTribe +0x354, 0xC8F500); a fallen
+member leaves that list at its next behaviour tick, so two members falling in one tick both still count each other and
+no game over comes (docs/re/tribe.md#tribe-gameover-list). The old blows (every member with health, back to back, each
+second) did that now and then: lab 20261118-033459 (v0.7.14.1, tribe_gameover #3) and 20261119-214823 (0.7.16,
+tribe_gameover_reload2): no caption, the chief knocked out, the tribe left with it alone.
 --after-ok S (BUG-0172, 0.7.11 N1): the spawn comes S seconds after the OK instead, while the bounce back reloads
 the save (the member's creation then meets a tribe being torn down); --count N members.
 
@@ -43,6 +52,11 @@ def player_members(con):
     return own, enemy
 
 
+def leaders(con):
+    """the ids of the tribes' leaders (the game's own 0xC23430)"""
+    return {int(m.group(1)) for m in re.finditer(r'#(\d+) \S+ owner=.* leader=1 ', con.call('coop.tribe')['out'])}
+
+
 def frames_go_on(con, secs):
     f0 = twoinst.host_frame(con)
     time.sleep(secs)
@@ -54,6 +68,7 @@ def main():
     ap.add_argument('--nofix', action='store_true')
     ap.add_argument('--after-ok', type=float, default=None)
     ap.add_argument('--count', type=int, default=2)
+    ap.add_argument('--same-frame', action='store_true')
     a = ap.parse_args()
     host, guest = start('tribe')
     ck = Checks()
@@ -66,14 +81,16 @@ def main():
     ck(own and enemy, 'the player tribe and another tribe have members')
     if not (own and enemy):
         return ck.result()
-    t0 = time.time()
+    t0, lead = time.time(), leaders(host)
     while time.time() - t0 < 60:
         own, enemy = player_members(host)
-        alive = [i for i, hp in own.items() if hp > 0]
+        alive = sorted((i for i, hp in own.items() if hp > 0), key=lambda i: (i in lead, i))
         if not alive or not enemy:
             break
-        for i in alive:
-            host.call(f'coop.tribe pincer {i} {enemy[0]} 300')
+        if a.same_frame and len(alive) == 2 and all(own[i] <= 300 for i in alive):  # the twin: both fall in one frame
+            print('  the last two in one call:', host.call(f'coop.tribe pincer {alive[0]},{alive[1]} {enemy[0]} 300')['out'].strip()[:120])
+        else:  # BUG-1337: one member a second, the leader last (a leader with others up stops at 0.3)
+            host.call(f'coop.tribe pincer {alive[0]} {enemy[0]} 300')
         time.sleep(1)
     print('  player tribe now', own)
     ck(own and not [i for i, hp in own.items() if hp > 0], 'every member of the player tribe is out')

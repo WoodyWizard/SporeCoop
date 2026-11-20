@@ -686,6 +686,7 @@ add('tribe_gameover_partner', P + 'coop_tribe_gameover_partner.py', warm=True, m
 add('tribe_gameover_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_tribe_gameover.py --count 6', minutes=6)  # BUG-0172 at 20 fps over the player network, 6 members
 add('tribe_gameover_reload', P + 'coop_tribe_gameover.py --after-ok 0.5', warm=True, minutes=5, fixture='tribe')  # BUG-0172: the spawn during the bounce back's reload
 add('tribe_gameover_reload2', P + 'coop_tribe_gameover.py --after-ok 2.5 --count 4', warm=True, minutes=5, fixture='tribe')  # BUG-0172: later in the reload
+add('tribe_gameover_reload2_sameframe', P + 'coop_tribe_gameover.py --after-ok 2.5 --count 4 --same-frame', ('twin',), minutes=5, fixture='tribe')  # BUG-1337 twin: the last two members felled in one frame: no game over at all (the game's rule of BUG-1083): must FAIL; only by name or `lab.py run twin`
 add('tribe_ko', P + 'coop_tribe_ko.py', warm=True, minutes=3, fixture='tribe')  # a knocked-out NPC member lies down on the guest (BUG-0173; --nofix fails)
 add('tribe_bounce_mirrors', P + 'coop_tribe_bounce_mirrors.py', warm=True, minutes=4, fixture='tribe')  # the guests mirror the host's tribe after its game over and bounce back (BUG-0288; --nofix fails)
 add('tribe_act', P + 'coop_tribe_act.py', warm=True, minutes=4, fixture='tribe')  # the coop.tribe act test command does not fault the host (BUG-0260; --nofix fails)
