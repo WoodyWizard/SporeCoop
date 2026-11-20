@@ -439,7 +439,7 @@ static void* home_nest()
         [](void* o, uint32_t noun, void* p) {
             auto& f = *(Find*)p;
             net::Vec3 q;
-            if (noun == kNestNoun && game::object_alive(o) && game::object_position(o, q)) {
+            if (noun == kNestNoun && game::object_position(o, q)) { // (o is of the object list)
                 float d = net::dist(q, f.at);
                 if (d < f.best) {
                     f.best = d;

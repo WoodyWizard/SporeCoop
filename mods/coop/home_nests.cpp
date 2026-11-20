@@ -159,13 +159,13 @@ static bool is_host() { return C.sess && C.sess->role() == net::Role::Host; }
 
 static bool live_herd(void* h)
 {
-    return h && game::object_alive(h) && skg::readable(h, 0x21C) && game::noun_id(h) == game::kHerdNoun;
+    return h && game::listed(h) && skg::readable(h, 0x21C) && game::noun_id(h) == game::kHerdNoun;
 }
 
 static bool nest_pos_of(void* herd, net::Vec3& out)
 {
     void* nest = live_herd(herd) ? game::herd_nest(herd) : nullptr;
-    return nest && game::object_alive(nest) && game::object_position(nest, out);
+    return nest && game::listed(nest) && game::object_position(nest, out);
 }
 
 // the nest herd of `profile` nearest to `at` within `within` m that is not extinct (+0x190), or null
@@ -222,7 +222,7 @@ static bool site_near(const net::Vec3& home, net::Vec3& out)
     game::for_each_object(
         [](void* o, uint32_t noun, void* p) {
             net::Vec3 q;
-            if (noun == kNestNoun && game::object_alive(o) && game::object_position(o, q))
+            if (noun == kNestNoun && game::object_position(o, q)) // (o is of the object list)
                 ((std::vector<net::Vec3>*)p)->push_back(q);
             return true;
         },
@@ -422,7 +422,7 @@ static int living_of(void* herd)
     } f{herd};
     game::for_each_object([](void* c, uint32_t noun, void* u) {
         auto& f = *(F*)u;
-        if (noun == kCreatureNoun && game::herd_of(c) == f.herd && game::object_alive(c) && !game::is_dead(c))
+        if (noun == kCreatureNoun && game::herd_of(c) == f.herd && !game::is_dead(c)) // (c is of the object list)
             ++f.n;
         return true;
     }, &f);
@@ -542,7 +542,7 @@ static void follow_species(void* ctx)
     if (set_species)
         game::for_each_object([](void* creature, uint32_t noun, void* p) {
             auto& x = *static_cast<X*>(p);
-            if (noun != kCreatureNoun || game::is_puppet(creature) || !game::object_alive(creature) || game::is_dead(creature) ||
+            if (noun != kCreatureNoun || game::is_puppet(creature) || game::is_dead(creature) ||
                 game::herd_of(creature) != x.herd || game::species_profile(creature) == x.prof)
                 return true;
             const int age = *(int*)((uint8_t*)creature + 0xB34);
@@ -635,7 +635,7 @@ COOP_FIX("creature.party_nests_known", "BUG-9262", g_known_fix, "creature: every
 static void mark_known(void* herd)
 {
     uint8_t* nest = g_known_fix && live_herd(herd) ? (uint8_t*)game::herd_nest(herd) : nullptr;
-    if (nest && game::object_alive(nest) && skg::readable(nest + 0x124, 1) && !(nest[0x124] & 1)) {
+    if (nest && game::listed(nest) && skg::readable(nest + 0x124, 1) && !(nest[0x124] & 1)) {
         nest[0x124] |= 1;
         H->log(M, SK_INFO, "home nests: a party nest marked discovered on the minimap");
     }
