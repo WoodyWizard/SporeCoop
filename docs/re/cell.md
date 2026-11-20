@@ -2619,3 +2619,56 @@ BUG-9266. Steam build, objdump of the unpacked `.text` (docs/05-re-notes.md, the
   History closed, G+0x5158 at 5 (a later click works) and the game drawn; calling the original 0xE72C80 later from
   outside the frame plays the whole sequence and the switch as the game's own click does.
 * ~ Inferred: 0xE4F640(1) is the white fade (the sequence's only screen-wide call); not checked alone.
+
+## The diets' cells for an own start; the Cell card's meal counters (2026-11-20, feat/start-choice)
+<a id="cell-start-choice"></a>
+
+BUG-9273. Steam build (the GOG 2024 code), lane B, Windows; `coop.creations choose cell <key>` on a guest, then
+`coop.pool diet` (GetCellModelData +0x1250 carnivore, +0x1251 herbivore) on both games.
+* ✔ (runtime) Any cell model key the game has can be a guest's own cell: the guest's avatar is rebuilt with it and the
+  host's puppet of the guest has the same model and diet flags (no records travel for a model of the game's packages).
+* ✔ (runtime) The 44 cell models (bem, group 0x40616200) of Spore_Content.package by diet: **both mouths: 6ED040F4
+  (23 parts) and 0C176D89 (16 parts, with spikes)**; neither: 7DBAEA99, 0C7963FB; carnivore: 577327D0, 50F9BC5D,
+  DD6F6214, A0AE3D5C, CD23FEED, D9007204, 4939A587, 29EA9724, 0D64F036, 00D63AA9, 7A91F555, F5447AEB, 0705012B,
+  6E9FA321, C75EF2F7, 780A9EAF, 33E71830, E3B1B67B, 00F529D5, F7840E98, 252A132F; herbivore: the rest (A1C46DF2,
+  BAF1AD40, 2C8CA6B2, D79A2303, AC4ACE98, 4DA56CA5, FB6D9850, BEA71300, E219E5D0, E219E5D2, E219E5D3, B0B9BAFF,
+  70EDAFB0, 834359F4, 71D5C83E, 06444D55, 454573E6, D5766181, 2DDF0D92). The start choice's omnivore is 0C176D89.
+* ✔ (runtime) The wizard's herbivore card does not always give E219E5D2: a new game on lane B gave the host
+  **2DDF0D92**, the next one E219E5D2 (inferred: the wizard picks one of several premades per diet).
+* ✔ (objdump of the unpacked .text) `Cell_GetConsequenceTrait` 0xE5C9D0 calls 0xE511C0(a = +0x24 + +0x20, b = +0x28 -
+  +0x20 + +0x1C) of cCellSerializableData: (b - a) + k1 * (C - (a + b)), times k2, clamped; below tuning +0xCC
+  herbivore, above +0xC8 carnivore, else omnivore.
+* ✔ (runtime) `coop.pool meal 30 plant` raised +0x20 by 30 (and the food +0x1C); meat meals (24 food) left +0x20..+0x28
+  at 0. With every counter 0 and food 24 the card is omnivore (5ECE4770); food 330 of meat: carnivore (CFB01B93).
+* ✔ (runtime) A guest's copy of the host's world holds the host's counters; the start choice zeroes +0x20..+0x28 a
+  second after the answer (after the food step set the food to 0), so its card follows its own meals.
+* ✔ (runtime) A carnivore guest (252A132F) swimming into meat gained 12 points twice; swimming into plants: 0.
+
+## A cell model's body colour, and painting a copy (2026-11-20, feat/start-choice)
+<a id="cell-body-colour"></a>
+
+BUG-9273 (the owner: each player's creature colour on the cell's body). Steam build, lane B; the game's 44 cell model
+records (bem 0x1A99B06B, group 0x40616200) of Spore_Content.package.
+* ✔ (static, all 44) The unpacked model record starts `D3 7E 65 48 05 00 00 00 <part count> ...`; at byte 26 the cell
+  paint id (docs/re/creations.md#creations-content-all-kinds), and at **byte 50 three colours of three floats each
+  (r, g, b, 0..1): base, coat, detail**. E219E5D2: base (0.80, 0.49, 0.37), coat and detail white; 252A132F: base
+  (0.20, 0.80, 0.15) green, coat (0.67, 0.24, 0.38), detail (1.0, 0.94, 0.69).
+* ✔ (runtime) The base colour is the body: a copy of 252A132F (green) with base (0.15, 0.35, 0.90) is drawn blue, with
+  (0.86, 0.12, 0.12) red, on the game that made it and on the partner's game that built it from the shared bundle
+  (screenshots of both games); a copy of E219E5D2 green and of 0C176D89 yellow the same. The mouths stay (GetCellModelData
+  +0x1250 / +0x1251 of the copy as the original's).
+* ✔ The records are byte-run packed: `FE n` = n more of the byte before (`FE 00` a literal 0xFE). In the 44 models the
+  runs are only of 0x00 and 0xFF and n is 3 or more; runs of three zeros stay literal.
+* ✔ (runtime) **The game's reader faults on the same model packed again with runs of 3 bytes** (`FE 02`, any byte):
+  `GetCellModelData` -> the 0xE83EC8 path (`CreatureStart_FromCell+0x5B8` in the relocated Steam exe, data 0x9C), on the
+  guest that made it and on the host that built it, the moment the cell was rebuilt. A byte-for-byte copy under a new
+  key works. So a colour is written **in place**: only when the 12 bytes are literal in the record and the byte after
+  them is no run (a new 0xFE as FE 00); all three premades of the start choice have them literal.
+* ✔ (runtime) A cell copy under a key of ours (0x7B......, registered in a package of ours) works as a guest's own cell
+  through the creations pipeline exactly like a My Creations cell: the bundle carries the bem and the pictures, every
+  other game registers it under the one key 0x7C...... Without the premade's png (type 0x2F7D0004) the guest's HUD portrait
+  was a white square; with it the portrait shows the premade's picture (its own colour, not the painted one).
+* ~ The premade cells' metadata records (0x030BDEE3, 135 bytes, version 0x0A) hold the key and a tag
+  ("tag:spore.com,2006:AssembledContent") but no author / name strings (a My Creations metadata record has them after
+  an FF x7 FE mark, dbpf::metadata_names): a name would need the player creations' metadata layout, which is not
+  traced (other fields, the key inside).

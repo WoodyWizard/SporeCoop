@@ -116,6 +116,15 @@ void choose(Kind k, const Key& key); // {} = keep the world's own
 // UI: the next / previous own creation
 void cycle(Kind k, int dir);
 
+// BUG-9273: a creation the mod made (the start choice's coloured copy of a game cell): its records under `key`, kept
+// in a package of ours (made_<kind>_<key>.package next to EditorSaves) so this game builds it, and sent as this player's
+// own creation while it is chosen (the bundle carries the records: every game registers them under the one key).
+// false and *err: no model record in recs, or the package could not be written
+bool make_creation(Kind k, const Key& key, const std::vector<dbpf::Record>& recs, std::string* err);
+bool made_creation(const Key& key); // this game made `key` in this run
+// the records some registered database has for a key (My Creations, the game's packages, ours)
+bool records_from_game(const Key& k, std::vector<dbpf::Record>& out);
+
 std::string status();
 // support trace (trace.h): the own creation of the stage, where the choice came from, what the avatar has
 std::string trace_line(Kind k);

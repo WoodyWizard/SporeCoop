@@ -885,6 +885,20 @@ def own_progress_set(host, guest, on, secs=10):
     print('  all.own_progress: the guest did not get %s' % ('on' if on else 'off'), flush=True)
 
 
+def start_choice_set(host, guest, on, secs=10):
+    """BUG-9273: cell.start_choice (a guest new to a Cell planet chooses its own cell) on / off on the host, waited for on
+    the guest; a build without the setting does not know it"""
+    o = host.call('coop.settings force cell.start_choice %s' % ('on' if on else 'off')).get('out', '')
+    if 'cell.start_choice' not in o:
+        return
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        if re.search(r'cell\.start_choice=%d' % (1 if on else 0), guest.call('coop.settings get cell.start_choice').get('out', '')):
+            return
+        time.sleep(0.5)
+    print('  cell.start_choice: the guest did not get %s' % ('on' if on else 'off'), flush=True)
+
+
 def start(*a, **kw):
     """_start(), then SPORE_FIX_OFF=<name>[,<name>...] switches those fixes off on both games
     (`coop.fix <name> off`, BUG-0116): any test can run once without a fix to show that it still
@@ -892,11 +906,15 @@ def start(*a, **kw):
     Strict (BUG-0214 R8): a name the game does not know fails the test at once, so a twin run
     cannot pass silently with the fix still on; an unsafe switch only gets a warning line.
     BUG-9265: the session setting all.own_progress (every player's own DNA and bar, default on) is switched off for
-    the tests written for the party's shared total (DNA, food, the pace, the spends); own_progress=True sets it on."""
+    the tests written for the party's shared total (DNA, food, the pace, the spends); own_progress=True sets it on.
+    BUG-9273: cell.start_choice (a guest new to a Cell planet is asked for its own cell) is switched off for the older
+    tests the same way; start_choice=True sets it on."""
     KEEP_HOLDS[0] = kw.pop('keep_holds', False)
     own_progress = kw.pop('own_progress', False)
+    start_choice = kw.pop('start_choice', False)
     host, guest = _start(*a, **kw)
     own_progress_set(host, guest, own_progress)
+    start_choice_set(host, guest, start_choice)
     names = [n for n in (n.strip() for n in os.environ.get('SPORE_FIX_OFF', '').split(',')) if n]
     if names:  # BUG-0312: these games keep the switches off; the next warm test must not reuse them
         lane_state(**{**lane_state(), 'fix_off': ','.join(names)})

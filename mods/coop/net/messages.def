@@ -42,9 +42,10 @@
 // npc 1.1 (wsync row cell_spend_ack, BUG-1249), creature 1.1 (no wire change: the guest opens its own landfall editor
 // after a late arrival, BUG-1240; a host does not wait for such a guest's arrival, vote.cpp core.arrival_nowait).
 // Minor bump of feat/lineages-port: session 1.2 (MSG_IDENTITY, a new type older versions ignore: BUG-9258).
-// Minor bumps of feat/own-cards (MSG_OWN_CARDS 75, BUG-9263) and feat/own-progress (MSG_PROGRESS 77, BUG-9265), new
-// types older versions ignore; build/amigos has both: session 1.4 (74 is MSG_CIV_WALLET of feat/civ-own-money, BUG-9259).
-FAMILY(session,   1, 1, 4, STAGE_ALWAYS, "session", "net/protocol.h")
+// Minor bumps of feat/own-cards (MSG_OWN_CARDS 75, BUG-9263), feat/own-progress (MSG_PROGRESS 77, BUG-9265) and
+// feat/start-choice (MSG_START_CHOICE 79, BUG-9273), new types older versions ignore; each branch took its own
+// minor, build/amigos has all of them: session 1.6 (74 is MSG_CIV_WALLET of feat/civ-own-money, BUG-9259).
+FAMILY(session,   1, 1, 6, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 1, STAGE_CREATURE, "Creature", "")
 FAMILY(npc,       4, 1, 1, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
@@ -134,6 +135,7 @@ MSG(73, IDENTITY,     R,  Any,   Session,   Identity,    Both,   session,   "the
 MSG(74, CIV_WALLET,   R,  Any,   HostWorld, CivWallet,   Both,   civ,       "every player's own Civ money (civ_wallet.h, BUG-9259): u8 kind; guest -> host an ask / u32 seq + f64 money (a report); host -> guest u32 seq + f64 the wallet / a change")
 MSG(75, OWN_CARDS,    R,  Any,   Session,   OwnCards,    Both,   session,   "the own stage history (cards.h, BUG-9263): host -> a guest u8 0, u8 flags, 5 x u32 its seat's consequence cards, f32 social, f32 combat; guest -> host u8 1, u32 the Cell card its own play would give now")
 MSG(77, PROGRESS,     R,  Any,   Session,   Progress,    Both,   session,   "own progress in Cell / Creature (own_progress_logic.h, BUG-9265): u8 kind (1 ask, 2 set, 3 report, 4 table, 5 gain), payload")
+MSG(79, START_CHOICE, R,  Any,   Session,   StartChoice, Both,   session,   "every player's own start in a new Cell game (start_choice_logic.h, BUG-9273): u8 kind (1 ask: host -> a guest; 2 answer: guest -> host u8 diet, u8 colour, u8 body colour, str8 name; 3 table: host -> guests u8 n, n x {u8 player, the answer})")
 
 #undef MSG
 #undef FAMILY

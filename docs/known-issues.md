@@ -422,3 +422,18 @@ anchor so other docs can link to it:
   the host's family after they were moved to their own species' herd. No wrong behaviour seen yet.
 * Reproduce: tools/tests/coop_home_nests.py, then `coop.nest home` and `coop.nest herd <herd>` on the guest.
 * Ticket: BUG-9270
+
+## Own start: what the start choice does not give yet (2026-11-20, feat/start-choice)
+<a id="issue-start-choice-limits"></a>
+
+* Body colour: the guest's HUD portrait shows the game cell's picture in its own colour (the png of the premade; the
+  body in the world is painted). Only the base colour is set (coat and detail stay the premade's).
+* Name: the creature's name is not written into the cell creation's metadata: the premade cells' metadata has no name
+  strings and the player creations' layout is not traced (docs/re/cell.md#cell-body-colour); the next stage's species
+  name comes from the creature editor anyway.
+* Omnivore: the game has no omnivore premade player cell; the omnivore start is the game's cell 0C176D89 (both mouths,
+  with spikes: stronger in a fight than the two premades).
+* The creature's name is shown in the Cell name tags only; it does not become the species name of a later stage.
+* The host's own start is the game's wizard: the host has no name or colour page of its own (its colour stays the
+  lobby's).
+* Ticket: BUG-9273

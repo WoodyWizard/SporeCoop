@@ -1436,9 +1436,14 @@ static bool g_meta_only_fix = true;
 COOP_FIX("creations.meta_only", "BUG-0802", g_meta_only_fix, "creations: a renamed creation whose model came from elsewhere is sent with its model, and a creation without its model is not built (the host crashed at 0xE83EC8)");
 static unsigned g_meta_filled, g_meta_waits, g_meta_refused; // tests: models added from the game / kept, bundles held, refused
 static const std::vector<dbpf::Record>* old_records(uint32_t inst);
+static std::map<uint32_t, std::vector<dbpf::Record>> g_made; // BUG-9273: instance -> the records the mod made
 bool make_bundle(Kind k, const Key& key, Bundle& b)
 {
     b.key = key;
+    if (auto m = g_made.find(key.instance); m != g_made.end()) { // BUG-9273: a creation the mod made
+        b.recs = m->second;
+        return true;
+    }
     if (!key.instance || !g_es_ok)
         return key.instance != 0; // a premade: no records (everybody has it)
     const dbpf::Package& pk = g_es;
@@ -3394,6 +3399,34 @@ std::vector<Option> options(Kind k)
 {
     refresh_options(H->time_seconds());
     return g_opts[k];
+}
+
+bool made_creation(const Key& key) { return g_made.count(key.instance) != 0; }
+
+bool make_creation(Kind k, const Key& key, const std::vector<dbpf::Record>& recs, std::string* err)
+{
+    if (g_made.count(key.instance))
+        return true;
+    bool model = false;
+    for (auto& r : recs)
+        model |= r.key.type == kBem && r.key.instance == key.instance && r.key.group == kInfo[k].group && !r.data.empty();
+    if (!model || !find_paths()) {
+        if (err)
+            *err = model ? "no profile folder" : "no model record";
+        return false;
+    }
+    wchar_t hx[16];
+    swprintf(hx, 16, L"%08X", key.instance);
+    std::wstring path = g_dir + L"\\made_" + std::to_wstring(k) + L"_" + hx + L".package";
+    if (!package_for(path, recs, kPrioPlayer)) {
+        if (err)
+            *err = "cannot write the package";
+        return false;
+    }
+    g_made[key.instance] = recs;
+    g_last_check = 0; // share it now
+    H->log(M, SK_INFO, "creations: made our %s %08X (%u record(s), BUG-9273)", kInfo[k].name, key.instance, (unsigned)recs.size());
+    return true;
 }
 
 void choose(Kind k, const Key& key)

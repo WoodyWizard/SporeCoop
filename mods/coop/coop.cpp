@@ -70,6 +70,7 @@
 #include "cards.h"
 #include "home_nests.h"
 #include "own_progress.h"
+#include "start_choice.h"
 #include "world.h"
 #include "find.h"
 #include "net/discovery.h"
@@ -1135,9 +1136,10 @@ static void frame_stage_ticks(double now)
     host_busy_tick(now); // C3 (BUG-1142): the host tells its pause; a guest's game waits for it
     identity::tick(now); // BUG-9258 (Lineages): a guest sends its identity after each join, the host its table
     party::tick(now);    // BUG-9260 (Lineages): the host seats the players of this planet's campaign
-    cards::tick(now);    // BUG-9263: every player's own stage history (consequence cards)
-    home_nests::host_tick(now); // BUG-9262 (Lineages): every seat's own nest next to the host's
     own_progress::tick(now); // BUG-9265: every player's own DNA and bar (Cell, Creature), the stage end together
+    cards::tick(now);    // BUG-9263: every player's own stage history (consequence cards)
+    start_choice::tick(now); // BUG-9273: a guest new to a Cell planet chooses its own cell (diet, name, colour)
+    home_nests::host_tick(now); // BUG-9262 (Lineages): every seat's own nest next to the host's
     dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
     tribe::tick(now);
@@ -1609,6 +1611,9 @@ void on_overlay(void*, int, void*)
         }
         if (H->world_to_screen(w, sc)) {
             std::string tag = r.name;
+            if (ad->mode == modes::kCell) // BUG-9273: the name the player gave its own cell
+                if (std::string own = start_choice::name_of(id); !own.empty())
+                    tag += " (" + own + ")";
             float at[3] = {p.x, p.y, p.z};
             pfind::tag("player", id, tag, sc[0], sc[1], at, 0); // F2 colour, BUG-0949
             g_tags_drawn++;
@@ -2164,6 +2169,16 @@ void init_ui()
                                                   : std::string(ru ? "Ваш цвет: " : "Your colour: ") + (ru ? c.ru : c.en);
         return true;
     };
+    // BUG-9273: "Your own cell" (start_choice.h)
+    a.start_prompt = [] { return start_choice::prompt(); };
+    a.start_submit = [](int diet, const std::string& name, int color, int body, std::string& why) {
+        return start_choice::answer(diet, name, color, body, &why);
+    };
+    a.start_color_free = [](int idx) {
+        return findx::can_take(pfind::colors(), g_sess.my_id(), idx) == findx::Refused::None;
+    };
+    a.start_color_now = [] { return pfind::color_index(g_sess.my_id()); };
+    a.start_name = [] { return start_choice::default_name(); };
     a.world_line = ui_world_line;
     a.ready = [] { return g_ready.count(g_sess.my_id()) && g_ready[g_sess.my_id()]; };
     a.set_ready = set_ready;
@@ -2416,7 +2431,6 @@ static void init_world_share()
     shared::init(H, M);
     identity::init(H, M, &g_sess); // BUG-9258 (Lineages)
     party::init(H, M, &g_sess);    // BUG-9260 (Lineages)
-    cards::init(H, M, &g_sess);    // BUG-9263
     {
         own_progress::Ctx oc; // BUG-9265
         oc.sess = &g_sess;
@@ -2426,6 +2440,8 @@ static void init_world_share()
         oc.vote_active = [] { return g_vote.active; };
         own_progress::init(H, M, oc);
     }
+    cards::init(H, M, &g_sess);    // BUG-9263
+    start_choice::init(H, M, &g_sess); // BUG-9273
     shared::set_feed([](const std::string& t) { feed(t); }); // BUG-0696
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);

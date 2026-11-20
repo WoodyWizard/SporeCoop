@@ -17,6 +17,7 @@
 #include "own_world.h"
 #include "party.h"
 #include "sporekit_game.hpp"
+#include "start_choice.h"
 
 namespace cards {
 
@@ -212,6 +213,8 @@ static uint32_t decide(int stage, int seat, const Record& r, uint32_t host)
     case 0: {
         auto it = g_cell_of.find(party::roster().seats[seat].player);
         v = it != g_cell_of.end() ? it->second : 0;
+        if (!valid_card(stage, v)) // BUG-9273: no report of its own game: the diet it chose for its own cell
+            v = start_choice::cell_card(party::roster().seats[seat].player);
         break;
     }
     case 1: v = creature_card_for(r.social, r.combat); break;

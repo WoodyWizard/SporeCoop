@@ -15,6 +15,7 @@
 #include "civ_wallet.h"
 #include "cards.h"
 #include "own_progress.h"
+#include "start_choice.h"
 #include "coop_state.h"
 #include "store.h"
 #include "designs.h"
@@ -846,12 +847,16 @@ void setup_callbacks()
             identity::on_message(from, r);
             return;
         }
+        case net::Route::Progress: { // BUG-9265: own progress in Cell / Creature (Session class)
+            own_progress::on_message(from, r);
+            return;
+        }
         case net::Route::OwnCards: { // BUG-9263: the own stage history (Session class)
             cards::on_message(from, r);
             return;
         }
-        case net::Route::Progress: { // BUG-9265: own progress in Cell / Creature (Session class)
-            own_progress::on_message(from, r);
+        case net::Route::StartChoice: { // BUG-9273: every player's own start in a new Cell game (Session class)
+            start_choice::on_message(from, r);
             return;
         }
         case net::Route::Effect: { // BUG-0451: a partner's creature made an effect

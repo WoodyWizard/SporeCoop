@@ -263,6 +263,7 @@ to know them. A module reads a value with `settings::on(settings::kX)` / `settin
 | `civ.joint_siege` | Civilization | on | session | - | civ.cpp h_AddCapture |
 | `civ.superweapon_vote` | Civilization | on | session | - | civ.cpp h_FireSW, host_superweapon_request |
 | `space.disable` | Space | on | session | - | spacecoop.cpp filter_own_damage |
+| `cell.start_choice` | Cell | on | session | `start_choice` | start_choice.cpp enabled (a guest new to a Cell planet chooses its own cell, BUG-9273) |
 | `space.trade`, `space.contracts`, `space.diplomacy`, `space.allies`, `space.finale`, `space.rivals` | Space | on | session | - | space_ext.cpp (tick, messages, overlay, page rows of the feature), space_finale h_Enter, space_diplomacy sharing() |
 
 **Step 3 (BUG-0768, feat/w46-settings-all).** Every other mechanic of the plan's table is a row now; the default is

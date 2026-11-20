@@ -880,6 +880,45 @@ identity ([netcode-identity](04-netcode.md#netcode-identity), BUG-9258).
 * Nothing in the game uses the seats yet. The next phases index by them: every player's own nest (Creature), village
   (Tribe) and nation (Civilization). Test: tools/tests/coop_party.py (suite party).
 
+## Own progress: every player's own DNA and bar in Cell and Creature (2026-11-20, feat/own-progress)
+<a id="architecture-own-progress"></a>
+
+BUG-9265, the owner's rule of 2026-11-20 ("Together" of [docs/11-rivals.md](11-rivals.md): wait for everyone, no
+"first wins"). Builds on the identity ([netcode-identity](04-netcode.md#netcode-identity)) and the party side files
+([architecture-party](#architecture-party)).
+
+* The session setting **all.own_progress** (default on, coop.ini `own_progress`; `coop.fix core.own_progress off` reads
+  it off) makes the DNA and the evolution bar of the Cell and Creature stages each player's own. Off (or creature.mode
+  host): the party's one shared total of 0.7.15 (dna_route.h, dna_pace.h).
+* What steps aside when it is on: the host's DNA total (MSG_DNA, not sent / not applied), a guest's forwarded gains and
+  spends (MSG_DNA_ADD, BUG-0466), the pace 1/N (BUG-0510: each bar fills at a solo game's pace by itself), the Cell
+  food total (MSG_CELL_FOOD: the host still sends it, a guest only takes the meal acknowledgements from it), a guest's
+  meal on the host's food, the cell-editor spend sharing (BUG-1249, the wsync row cell_spent), the shared species goal
+  card. A deed a guest does on the host's game is paid to the guest: the hunt credit (dna_ledger g_credit) and a social
+  success (social K_RESULT) go as MSG_PROGRESS kGain / the result's DNA into the guest's own game.
+* The host keeps every guest's last values (Cell: food, spent; Creature: DNA, bar cPlayer +0x10F0, brain level) by the
+  player's identity key per planet, saved as `<planet>.spo.duoprogress` next to the save (OPG1, own_progress_logic.h;
+  `founders::write_side`, outside the frame). A copy of the host's world holds the host's values, so after every load
+  of a world (world::loads_started) a guest asks (kAsk) and gets its own back (kSet: Cell through AddFoodPoints by the
+  difference; Creature a higher bar through AddEvolutionPoints, a lower one written, the DNA set, a lower brain level
+  written); then it reports once a second (kReport). A player without a record keeps the world's values.
+* The stage end together: the host sends the table of every player's bar (kTable). Cell: the host's click on History's
+  check is held until every bar is full and then runs again by itself (the switch vote of BUG-0315 follows); a guest's
+  click is never its own switch. Creature: the host's stage-end request (tag 0x64AA168) is refused until every bar is
+  full (the game keeps its evolve button; Esc closes History), then the vote of BUG-1085. Notices: "your bar is full
+  ... waiting for Bob 64%" (again every 60 s) and "every player's bar is full ...".
+* Code: mods/coop/own_progress.{h,cpp}, own_progress_logic.h (unit tests in tests/validate_tests.cpp), the hooks in
+  dna.cpp, session_glue.cpp, coop.cpp, vote.cpp, social.cpp, cellsync.cpp, wsync.cpp; `coop.progress [resync]`.
+  MSG_PROGRESS 77 (session family 1.3). Test: tools/tests/coop_own_progress.py (suites own_progress_cell,
+  own_progress_creature, own_progress_off); twoinst.start() switches the setting off for the older tests of the shared
+  total (own_progress=True keeps it on).
+* BUG-9266 (`coop.fix cell.end_click`): History's check first runs the game's Cell end sequence (0xE72C80, the white
+  screen, the walk-out) and only then the switch; a click that must wait is taken before that sequence (History closes,
+  the player plays on) and the host's kept click runs the whole sequence once every bar is full; a guest's click in
+  the vote is its I'm ready without the sequence ([cell-end-sequence](re/cell.md#cell-end-sequence)).
+* Known: in Cell the players can be at other levels (their own food) in the host's one pool; a guest whose brain level
+  is set lower keeps the save's body size until its next brain upgrade.
+
 ## Every player's own stage history (2026-11-20, feat/own-cards)
 <a id="architecture-own-cards"></a>
 
@@ -945,41 +984,47 @@ Phases 3 and 4 of the Lineages port (PR #196), BUG-9261 and BUG-9262, on top of 
   key from the start). Tests: tools/tests/coop_home_nests.py, coop_home_nests_join.py (suites home_nests,
   home_nests_join).
 
-## Own progress: every player's own DNA and bar in Cell and Creature (2026-11-20, feat/own-progress)
-<a id="architecture-own-progress"></a>
+## Every player's own start in a new Cell game (2026-11-20, feat/start-choice)
+<a id="architecture-start-choice"></a>
 
-BUG-9265, the owner's rule of 2026-11-20 ("Together" of [docs/11-rivals.md](11-rivals.md): wait for everyone, no
-"first wins"). Builds on the identity ([netcode-identity](04-netcode.md#netcode-identity)) and the party side files
-([architecture-party](#architecture-party)).
+BUG-9273, the owner's rule of 2026-11-20: every player starts together on the same planet with their own creature and
+chooses its diet, name and colour; the host alone names the planet (the game's own wizard). Builds on the party
+([architecture-party](#architecture-party)), own progress ([architecture-own-progress](#architecture-own-progress)) and
+own cards ([architecture-own-cards](#architecture-own-cards)). Code: mods/coop/start_choice.{h,cpp}, the portable
+start_choice_logic.h (unit tests in tests/validate_tests.cpp test_start_choice), the page in coop_ui.cpp.
 
-* The session setting **all.own_progress** (default on, coop.ini `own_progress`; `coop.fix core.own_progress off` reads
-  it off) makes the DNA and the evolution bar of the Cell and Creature stages each player's own. Off (or creature.mode
-  host): the party's one shared total of 0.7.15 (dna_route.h, dna_pace.h).
-* What steps aside when it is on: the host's DNA total (MSG_DNA, not sent / not applied), a guest's forwarded gains and
-  spends (MSG_DNA_ADD, BUG-0466), the pace 1/N (BUG-0510: each bar fills at a solo game's pace by itself), the Cell
-  food total (MSG_CELL_FOOD: the host still sends it, a guest only takes the meal acknowledgements from it), a guest's
-  meal on the host's food, the cell-editor spend sharing (BUG-1249, the wsync row cell_spent), the shared species goal
-  card. A deed a guest does on the host's game is paid to the guest: the hunt credit (dna_ledger g_credit) and a social
-  success (social K_RESULT) go as MSG_PROGRESS kGain / the result's DNA into the guest's own game.
-* The host keeps every guest's last values (Cell: food, spent; Creature: DNA, bar cPlayer +0x10F0, brain level) by the
-  player's identity key per planet, saved as `<planet>.spo.duoprogress` next to the save (OPG1, own_progress_logic.h;
-  `founders::write_side`, outside the frame). A copy of the host's world holds the host's values, so after every load
-  of a world (world::loads_started) a guest asks (kAsk) and gets its own back (kSet: Cell through AddFoodPoints by the
-  difference; Creature a higher bar through AddEvolutionPoints, a lower one written, the DNA set, a lower brain level
-  written); then it reports once a second (kReport). A player without a record keeps the world's values.
-* The stage end together: the host sends the table of every player's bar (kTable). Cell: the host's click on History's
-  check is held until every bar is full and then runs again by itself (the switch vote of BUG-0315 follows); a guest's
-  click is never its own switch. Creature: the host's stage-end request (tag 0x64AA168) is refused until every bar is
-  full (the game keeps its evolve button; Esc closes History), then the vote of BUG-1085. Notices: "your bar is full
-  ... waiting for Bob 64%" (again every 60 s) and "every player's bar is full ...".
-* Code: mods/coop/own_progress.{h,cpp}, own_progress_logic.h (unit tests in tests/validate_tests.cpp), the hooks in
-  dna.cpp, session_glue.cpp, coop.cpp, vote.cpp, social.cpp, cellsync.cpp, wsync.cpp; `coop.progress [resync]`.
-  MSG_PROGRESS 77 (session family 1.3). Test: tools/tests/coop_own_progress.py (suites own_progress_cell,
-  own_progress_creature, own_progress_off); twoinst.start() switches the setting off for the older tests of the shared
-  total (own_progress=True keeps it on).
-* BUG-9266 (`coop.fix cell.end_click`): History's check first runs the game's Cell end sequence (0xE72C80, the white
-  screen, the walk-out) and only then the switch; a click that must wait is taken before that sequence (History closes,
-  the player plays on) and the host's kept click runs the whole sequence once every bar is full; a guest's click in
-  the vote is its I'm ready without the sequence ([cell-end-sequence](re/cell.md#cell-end-sequence)).
-* Known: in Cell the players can be at other levels (their own food) in the host's one pool; a guest whose brain level
-  is set lower keeps the save's body size until its next brain upgrade.
+* **Who is asked.** The host asks (MSG_START_CHOICE 79 kAsk, session family 1.5) a guest that holds a party seat, has
+  played the host's Cell world for 3 s (own_world::peer_here) and has no choice recorded for this planet; once per join.
+  The host's own start is the game's Cell wizard, unchanged.
+* **The page.** The guest's co-op window opens on "Your own cell" (subtitle "CO-OP: YOUR START"): three diet buttons
+  (Herbivore, Carnivore, Omnivore), the creature's name (24 characters, starts as the player's name + "ite"), the colour
+  (">" steps through the F2 colours no other player has), the body colour (">": Natural and 8 colours) and Start. Closing the window leaves the question open (F9
+  shows it again); the setting going off or the stage ending closes it.
+* **What the answer does** (guest side, at once, and again from the host's table after a rejoin or a reload):
+  * the own cell: `creations::choose(kCell, <the diet's game cell>)`: herbivore E219E5D2 and carnivore 252A132F (the
+    wizard's premade player cells), omnivore 0C176D89 (the game's own cell with both mouths; the wizard has no omnivore
+    card: [cell-start-choice](re/cell.md#cell-start-choice)). The creations pipeline shares it as the guest's cell (a
+    premade: no records, every game has it), the host builds the guest's puppet of it, the guest's own cell is rebuilt
+    with it (creations.cpp apply_own_cell, the hatch);
+  * the colour: pfind::request_color (the host's colour table: name tags, arrows, minimap, chat);
+  * the body colour (Natural or one of 8: red, orange, yellow, green, blue, purple, pink, white): the guest makes a copy
+    of the diet's game cell with that base colour (start_choice_logic.h paint_body, written in place in the packed
+    model record: [cell-body-colour](re/cell.md#cell-body-colour)) under a key of its own (0x7B......,
+    `creations::make_creation`: a package of ours, made again in each run) and chooses it; the creations pipeline
+    shares it as its own creation, so every game draws its cell in that colour (the one key 0x7C......). A copy that
+    cannot be made: the game cell's own colour;
+  * own progress: the first answer starts the guest's food and spent DNA at 0 and, a second later, the meal counters
+    +0x20..+0x28 its Cell card is decided from (the copy of the host's world holds the host's).
+* **The record.** The host keeps every answer by the player's identity key next to the planet:
+  `<planet>.spo.duostart` (SCH1: u32 'SCH1', u8 n, n x {str8 key, u8 diet, u8 colour, u8 body colour, str8 name}; founders::write_side,
+  outside the frame). The first answer of a player stays. The host sends the table of the players here (kTable) on a
+  change and every 10 s; every game shows the creature's name in that player's Cell name tag ("Bob (Glorbo)"), and a
+  guest that finds its own row plays it again without a question.
+* **The Cell card** (cards.cpp decide): the seat's Cell card is its own game's report (its own meals); with no report the
+  diet's card (carnivore CFB01B93, herbivore A8EC6F99, omnivore 5ECE4770) before the host's.
+* **Off.** The session setting `cell.start_choice` (default on, coop.ini `start_choice`), off or creature.mode host:
+  nobody is asked (0.7.15: a guest plays the host's cell or picks one of its own creations in F9). twoinst.start()
+  switches it off for the older tests (start_choice=True keeps it on).
+* Commands: `coop.start` (status; `pick <herb|carn|omni> <name> [colour]` a guest's answer without the window; host
+  tests `ask <player>`, `forget <player>`). Test: tools/tests/coop_start_choice.py (suites start_choice,
+  start_choice_off).
