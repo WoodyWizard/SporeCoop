@@ -1,4 +1,5 @@
 // Host-owned world state (wsync.h, docs/sync-architecture-plan.md#sync-wsync).
+#include "creations.h"
 #include "wsync.h"
 
 #include <windows.h>
@@ -1102,7 +1103,8 @@ static bool r_herd_evo(Table& out)
         Entry e;
         e.key = species_inst(sp);
         e.v[0] = fbits(r.x), e.v[1] = fbits(r.y), e.v[2] = fbits(r.z);
-        e.v[3] = (uint32_t)(F<int32_t>(r.h, 0xF0) & 0xFF) | (F<uint8_t>(r.h, 0x85) ? 0x100u : 0) | (F<uint8_t>(r.h, 0x190) ? 0x200u : 0);
+        e.v[3] = (uint32_t)(F<int32_t>(r.h, 0xF0) & 0xFF) | (F<uint8_t>(r.h, 0x85) ? 0x100u : 0) | (F<uint8_t>(r.h, 0x190) ? 0x200u : 0) |
+                 (F<uint8_t>(r.h, 0x191) ? 0x400u : 0) | 0x800u; // BUG-9286: +0x191 best friends (0x800: sent)
         e.v[4] = F<uint32_t>(r.h, 0x94);
         e.v[5] = species_group(sp);
         auto it = seen.find(home_key(e.v[0], e.v[1], e.v[2]));
@@ -1125,6 +1127,9 @@ static bool r_herd_evo(Table& out)
     }
     return true;
 }
+static bool g_rotate_follow = true;
+COOP_FIX("wsync.nest_rotate", "BUG-9286", g_rotate_follow,
+         "creature: a guest's nest follows the host's nest rotation (a species without a chain, best friends)");
 static int s_herd_evo(const Table& want, bool apply)
 {
     if (want.empty())
@@ -1146,7 +1151,9 @@ static int s_herd_evo(const Table& want, bool apply)
         uint8_t evolve = (w.v[3] & 0x100) ? 1 : 0;
         void* sp = game::herd_species(h);
         bool species_differs = F<int32_t>(h, 0xF0) != gen || species_inst(sp) != w.key;
-        bool rest_differs = F<uint32_t>(h, 0x94) != w.v[4] || F<uint8_t>(h, 0x85) != evolve;
+        const bool bf_sent = g_rotate_follow && (w.v[3] & 0x800); // BUG-9286 (a host before it: not sent)
+        const uint8_t bf = (w.v[3] & 0x400) ? 1 : 0;
+        bool rest_differs = F<uint32_t>(h, 0x94) != w.v[4] || F<uint8_t>(h, 0x85) != evolve || (bf_sent && F<uint8_t>(h, 0x191) != bf);
         if (!species_differs && !rest_differs)
             continue;
         n++;
@@ -1165,6 +1172,8 @@ static int s_herd_evo(const Table& want, bool apply)
                     k[2] = w.v[5];
                 }
                 void* ns = skg::thiscall<void*>(evolved, h, (uint32_t)gen);
+                if (!ns && g_rotate_follow) // BUG-9286: a Sporepedia download only the host has: ask for it (BUG-0724)
+                    creations::want_species({w.key, 0x2B978C46u, w.v[5]});
                 if (ns && species_inst(ns) == w.key) {
                     *(int32_t*)(p + 0xF0) = gen;
                     *(void**)(p + 0xA4) = ns;
@@ -1172,8 +1181,22 @@ static int s_herd_evo(const Table& want, bool apply)
                     H->log(M, SK_INFO, "wsync: the nest at (%.0f %.0f %.0f) is the host's generation %d, species %08X (BUG-0668)",
                            x, y, z, gen, w.key);
                 }
+            } else if (nk == 0 && g_rotate_follow) {
+                // BUG-9286: a player's nest the host rotated (nest_refresh.cpp) has no chain of its own: the species by key
+                void* ns = game::species_by_key({w.key, 0x2B978C46u, w.v[5]});
+                if (!ns)
+                    creations::want_species({w.key, 0x2B978C46u, w.v[5]});
+                if (ns && species_inst(ns) == w.key) {
+                    *(int32_t*)(p + 0xF0) = gen;
+                    *(void**)(p + 0xA4) = ns;
+                    g_herd_evo_set++;
+                    H->log(M, SK_INFO, "wsync: the nest at (%.0f %.0f %.0f) is the host's species %08X (rotated, BUG-9286)",
+                           x, y, z, w.key);
+                }
             }
         }
+        if (bf_sent)
+            p[0x191] = bf;
         *(uint32_t*)(p + 0x94) = w.v[4];
         p[0x85] = evolve;
     }

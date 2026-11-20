@@ -70,6 +70,7 @@ void upload_soon(double secs);              // 6I A: host: store the planet with
 bool welcomed();                             // connected to a galaxy server now (it keeps this game's party)
 int64_t server_time();                       // BUG-9285: the server's clock (Unix seconds), 0 not known yet
 uint32_t refresh_seconds();                  // BUG-9285: an extinct species comes back after this long (0 off)
+uint32_t rotate_seconds();                   // BUG-9286: a player's nest left this long gets a new species (0 off)
 uint16_t my_slot();
 bool party_send(uint8_t kind, uint64_t other_identity, uint8_t flag, uint32_t stage);
 void ask_players();                          // WHO: the server answers PLAYERS (to C.party_in)

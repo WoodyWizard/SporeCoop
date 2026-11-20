@@ -6,6 +6,11 @@
 // mbExtinction (+0x190) and their nests' mark (+0x120) cleared, the species' relation record set back to "not set";
 // the game's own respawn fills the herds again. Guests follow (worldobj.cpp herd kind). Players' own species are not
 // touched (their nests have their own rule). Switch `creature.nest_refresh`.
+// BUG-9286 (decision 7F, docs/12-server-and-players.md#server-nest-rotation-built): that own rule. A player's nest (a
+// nest herd with no slot in the planet's pick table) whose species has had no player on the planet for the server's
+// rotation time (72 hours by default; a party that moved on, a player away for days) gets a new species, picked as the
+// game picks a planet's species (Sporepedia downloads included). Times in <save>.spo.duo-left. Switch
+// `creature.nest_rotate`.
 #pragma once
 
 #include <cstdint>

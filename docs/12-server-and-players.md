@@ -1519,3 +1519,37 @@ The first half of #server-nest-refresh (BUG-9285, switch `creature.nest_refresh`
   WELCOME field and the PONG clock.
 * Not built yet (the second half of 6Z): the nests a party leaves behind when it moves on, rotated out after a while,
   and the players' own nests after their player has been away for days.
+
+## Step 4 part 4 built: a player's left nest gets a new species (the nest rotation) (2026-11-20, feat/lineages-alpha)
+<a id="server-nest-rotation-built"></a>
+
+The second half of #server-nest-refresh (decision 7F, BUG-9286, switches `creature.nest_rotate` on the host and
+`wsync.nest_rotate` on guests; code mods/coop/nest_refresh.cpp, wsync.cpp).
+
+* Owner's answer to 7F: "when it rotates out, it's a normal spore picking including the cache like normal".
+* Which nests: a nest herd with no slot in the planet's pick table (herd +0x8C 0, docs/re/creature.md#creature-species-pick):
+  the game picks every wild nest's species through a slot, a player's nest has none (the game's own nests of a player's
+  species and home_nests' nests). Players here now (the host's species, each player's nest herd) are left alone.
+* When: the planet's host notes when no player of such a species is on the planet (the server's clock, as the refresh)
+  in `<save>.spo.duo-left` next to the planet (it travels with the world). The server's `--rotate-hours` (72 by default,
+  sent in WELCOME after the refresh time; 0 never) later, every nest of that species rotates. A player of it coming
+  back before that clears the note. One rule for a party that moved on to the next stage and for a player away for days.
+* How: the game's own pick (SporeCoop::PlanetPickSpecies 0xB9A8A0) with the archetype and generation of the nearest
+  wild nest and no slot, so a fresh pick from the creations the game knows, Sporepedia downloads included; then what the
+  game's own evolution step writes (generation, species, cHerd_ApplyProfile, the members' +0x1004). The nest gets a
+  slot of its own (0x7E000000 | the new species' instance: a wild nest from then on), is no longer the party's best
+  friends and does not evolve by itself (+0x85 0). Its animals turn into the new species within a minute.
+* Guests: the existing nest sync (wsync row herd_evo, BUG-0668) carries the new species; for a nest with no evolution
+  chain the guest takes the species by its key, a species the guest does not have (a download only the host had) it
+  asks the host for (creations::want_species, BUG-0724), and the row now also carries +0x191 (best friends).
+* ✔ Runtime (TITAN, QA 9 hosting Samuth (Creature), QA 8 a stranger's party, the test galaxy): the host noted 15
+  players' species and dropped QA 8's when it joined; with the clock moved 73 h on and `creature.nest_rotate` off, 0
+  nests changed; switched on, 25 nests of 14 species got new species (14 different picks, among them Sporepedia
+  downloads; another run picked others); their animals were the new species within a minute and attacked the host at
+  what had been a party's friendly nest (images/stage4_nest_rotation_new_species.png). Guest: before the guest part, 13
+  of 126 nests kept the old species (species it did not have); with it 0 of 125 differ (it asked the host for 14
+  species). QA 8 left: its nest was noted at once and rotated 72 h (test clock) later. After a save, an upload and a
+  reload all 26 rotated nests kept species and slot, and none was noted again. `tools/tests/galaxy_server_check.py`
+  checks the WELCOME field.
+* Not seen yet: a rotated nest when its new species goes extinct (the game's own replacement pick runs with the
+  nest's slot; the refresh brings it back first), and the MSI (it needs the new builds).

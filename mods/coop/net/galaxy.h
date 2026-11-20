@@ -126,7 +126,8 @@ enum Type : uint8_t {
     HELLO = 1,    // player -> server: u32 proto, u64 identity, str8 name, str8 version, u64 key, u64 cookie (6: 6S)
     WELCOME = 2,  // server -> player: u16 its slot, str8 galaxy name, u8 the players a planet takes (6E B; older: 4),
                   //   u32 the nest refresh: seconds after which an extinct species comes back, 0 off (step 4 part 4,
-                  //   BUG-9285; older servers send none: off)
+                  //   BUG-9285; older servers send none: off), u32 the nest rotation: seconds after which a player's nest
+                  //   whose species has had no player on the planet gets a new species, 0 off (7F, BUG-9286)
     LIST = 3,     // player -> server
     PLANETS = 4,  // server -> player: u8 n, n x {str8 planet, u16 players, u16 host slot (0 none), u32 stored world bytes,
                   //   u8 tech level, u32 x3 its creature's species key} (the last two: the galaxy menu, 5X B)

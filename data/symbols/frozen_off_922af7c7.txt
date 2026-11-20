@@ -411,3 +411,6 @@ SporeCoop::cPosseSimulator_ptr ; BUG-9248: partners' own packs (creature.party_p
 SporeCoop::GGE_MakePanels ; the galaxy menu's planets of the galaxy server (alpha, decision 5X B) are off on GOG 2016 (BUG-9255)
 SporeCoop::GGE_PlayStep ; the galaxy menu's planets of the galaxy server (alpha, decision 5X B) are off on GOG 2016 (BUG-9255)
 SporeCoop::cOrnament_SetModel ; era visitors (alpha: another era's vehicles and buildings shown) are off on GOG 2016 (BUG-9255)
+SporeCoop::PlanetPickSpecies ; the nest rotation (alpha, decision 7F, creature.nest_rotate) is off on GOG 2016 (BUG-9286)
+SporeCoop::PlanetForgetSpeciesPick ; the nest rotation (alpha, decision 7F, creature.nest_rotate) is off on GOG 2016 (BUG-9286)
+SporeCoop::cHerd_ApplyProfile ; the nest rotation (alpha, decision 7F, creature.nest_rotate) is off on GOG 2016 (BUG-9286)

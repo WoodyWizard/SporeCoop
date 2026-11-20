@@ -182,6 +182,9 @@ def main():
             off = 3 + name_len + 1  # u16 slot, str8 name, u8 the players a planet takes
             check(len(a.welcome) >= off + 4 and struct.unpack_from('<I', a.welcome, off)[0] == 180 * 60,
                   'WELCOME carries the nest refresh (180 min by default)')
+            print('BUG-9286')
+            check(len(a.welcome) >= off + 8 and struct.unpack_from('<I', a.welcome, off + 4)[0] == 72 * 3600,
+                  'WELCOME carries the nest rotation (72 h by default)')
             a.ping()
             pong = a.take(PONG)
             check(pong is not None and len(pong) >= 8 and abs(struct.unpack_from('<Q', pong)[0] - time.time()) < 5,

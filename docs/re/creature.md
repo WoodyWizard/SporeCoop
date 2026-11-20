@@ -5464,3 +5464,20 @@ BUG-9284 (step 4 part 2's last piece). Adds to [the view centres](#creature-view
   own here. CORRECTION (2026-11-20) of docs/12-server-and-players.md#server-party-progress-design part 2 ("the herds
   near each player follow that player's own brain level"): nothing to do; what the level does change (the avatar's
   size and health, its own nest herd, `CreatureGame_NestHerdFor`) is each game's own already.
+
+## How the game picks a planet's species: the pick table (2026-11-20, feat/lineages-alpha)
+<a id="creature-species-pick"></a>
+
+* ✔ (Ghidra) SporeCoop::PlanetPickSpecies 0xB9A8A0, cdecl `cSpeciesProfile*(u32 slot, u32 archetype, int generation,
+  cSpeciesProfile* previous, bool* out)`: with a slot it first looks in the planet's pick table (0x168890C..0x1688910,
+  sorted 16-byte entries {slot, tuning +0x14, species, bool}); otherwise it asks cSpeciesManager for a species of that
+  archetype tuning (0x4E0060 -> 0x4D2270: the creations the game knows, Sporepedia downloads included) and adds the
+  answer to the table. cHerd_Init 0xC6EA90 calls it for generation 0 and then 1..n (the herd's evolution chain +0xA8);
+  CreatureGame_Update calls it after SporeCoop::PlanetForgetSpeciesPick 0xB97750 (which removes a slot's entries) to
+  replace a species extinct on the planet; the species extinction 0xBA4750 forgets the slot too.
+* ✔ (runtime, Samuth 126 nests) wild nests have a small slot (+0x8C, 1..0x1D seen; several nests share one and so one
+  species) and an archetype (+0x88); the game's own nests of a player's species have an archetype and slot 0;
+  home_nests' nests (CreateHerd with a species) have neither (+0x88 0, +0x8C 0, no chain). +0x8C is saved with the
+  world (a value written at runtime was there after a reload).
+* ✔ (runtime) with slot 0 every call is a fresh pick: 25 calls with 7 archetypes gave 25 species, other ones in a
+  second run.

@@ -8,10 +8,10 @@ reported: 2026-11-20
 source: step 4 part 4 (docs/12 #server-nest-refresh, 6Z)
 role: host
 versions: 
-fixed_in:
+fixed_in: unreleased
 branch:
-commits:
-tests:
+commits: 3ea9d832
+tests: tools/tests/galaxy_server_check.py (server side); in game: TITAN QA runs (docs, Verification)
 signature:
 docs:
 related:
@@ -27,8 +27,11 @@ related:
 <!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+TITAN QA runs (no lab on Windows), docs/12-server-and-players.md#server-nest-refresh-built:
+- FAIL (switch `creature.nest_refresh` off, clock +3 h): all 5 extinct species stayed extinct.
+- PASS (on): the host revived all 5; the guest the 2 within its nearest nests at once; 7 animals and the game's own
+  goal at a revived nest (images/stage4_nest_refresh_revived.png).
+- tools/tests/galaxy_server_check.py: WELCOME refresh field, PONG clock.
 
 ## History
 - 2026-11-20: opened.
