@@ -2165,3 +2165,84 @@ BUG-1322. Follows "How Civ weapons fire (BUG-0477)" above and BUG-0535.
   `coop.civ shotobjs` prints the unlisted ones seen, `coop.civ shotprobe` (tests) one observed shot at a target that is
   no object. Test `coop_civ_influence.py --case shotobjs` (docs/06-testing.md#testing-civ-shot-objects; on the 0.7.15
   line `coop_civ_shot_objects.py`, fix/w58-hotfix).
+
+## Every player's own nation (2026-11-20, feat/lineages-civ)
+<a id="civ-own-nations"></a>
+
+BUG-9274, the Lineages port (PR #196; its civ.md sections "Founder nations of up to four players",
+"Automatic founder capitals and native control", "Separate founder campaign credit", "Late capitals and their
+catch-up") onto the 0.7.15 split civ files. Code: civ_nations.cpp, pure rules civ_seats.h (tests/civ_seats_tests.cpp);
+switches `civ.own_nations` (off: the one shared nation of 0.7.15), `civ.nations_native`, `civ.team_campaign`;
+`coop.civ nations [found | ally | relation | citizens | spawn | capture <ci> <seat>]`. GOG 2024 code (lane C on Windows
+ran the Steam 3010a413 exe, the same code). Symbols from Lineages (overrides_dc04aee5.sym, "verified" there):
+City_IsPlayerOwned 0xBD8300, Vehicle_IsPlayerOwned 0xC9E820, Civilization_AI 0xBFBD30 and its GetPlayerCivilization
+return 0xBFBD6D, CivMode_Progress 0xCF8F80 and its HUD caller's return 0xCEAB84.
+
+* Seats are the party's (party.h), as the Tribe villages of BUG-9268 (docs/re/tribe.md#tribe-own-villages): the roster
+  `<planet>.spo.duonations` (founders::Roster, Stage::Civilization, DUO3) has seat 0 the host's nation (the native
+  player civilization) and seat N {species, political id, identity} the partner's. A seat that plays the host's species
+  has no nation (it shares the host's: the 0.7.15 split).
+* Who gets a capital (`civ_seats::next_capital`): the lowest party seat (1..3) whose species (its Tribe village's from
+  `.duofounders`, else its party seat's own creature) is not the host nation's or another nation's and whose model is
+  known in the host's game (creations::key_known; the player's creature is archived with the planet first).
+* ✔ (runtime, lane C) The founding: `SpawnNextCity(ex, 0, 0)` through the co-op hook (the guests found the same site)
+  when cCivExpansion's sites are Ready ([civ-city-burst](#civ-city-burst)); the live cities are remembered before the
+  call; the new capital is the one new city with a fresh nation (blank species keys, a political id no earlier city had:
+  `new_city_since`), told apart also when NPC nations exist. Meanwhile the host's other non-instant SpawnNextCity calls
+  return false and every nation that is neither the player's nor in the roster skips its AI tick (h_CivAI). Then the
+  nation's species key (+0x268) = {seat species, 0x2B978C46, 0x40626200}, the roster is written and the world shared
+  (saved when the host is alone). The game time must run: the Civ tutorial's captions held it until the host pressed
+  OK (cinematic and pause in the trace's busy=), then the capital came 4 s after the request.
+* ✔ (runtime) The Tribe -> Civ graduation with the guest's own village (agent A's Boheus, BUG-9268): the host entered
+  Civ with its one capital; after the caption the guest's capital 000022A8 of the guest's species 7CA81684 was founded
+  419 m from the host's at the next free site (not near the guest's former village: the site record's position is still
+  unknown, as in Lineages); relation 8.0 both ways (allied 7.0); the guest's game got the shared world with its own
+  nation; 19 citizens of 000022A8's capital were of 7CA81684 on both games (`coop.civ nations citizens`, the camera at
+  the capital).
+* Ownership (host): a partner nation's cities and vehicles are its seat's connected player's (`party::player_of_seat`),
+  0xFE nobody's while the player is away (the nation waits: no NPC AI, its money kept). MSG_CIV_STATE's city owner byte
+  is 0xFC for an away player's nation (`civ_seats::kAwaySeat`): a guest counts it as the team's, nobody commands it.
+  The host nation's cities are dealt only between the players without a nation of their own (host_assign_cities); a
+  city the host's nation takes is never credited to a player with a nation of its own.
+* ✔ (runtime) The guest's own nation (the political id of the cities the host says are its own, `nations::own_faction`)
+  is the player's for its game: City_IsPlayerOwned / Vehicle_IsPlayerOwned answer true for it and false for the host's
+  nation; the terrain cursor's candidate list (+0x164) is its nation's +0xD4 (tribe_villages.cpp h_Cursor, one hook for
+  both stages). A real click on its own city opened the city menu (planner, vehicle buttons) and the planner of that
+  city ("Red Nation"); a house dragged in its planner was built in the host's game in the guest's city and 1600 taken
+  from its nation's money; the land vehicle button made a vehicle of nation 000022A8 owned by the guest in the host's
+  game (1000 from the nation); a real click selected it (sel=1) and a right-click on the ground drove it 37 m in the
+  host's game (the order went through h_SetMoveOrder as before).
+* Money: a partner nation's money is its own +0x98: GetMoney / SpendMoney of a partner nation read and write +0x98 only
+  (an NPC nation's GetMoney adds its budgets +0x4AC / +0x4B0 and SpendMoney refills them). ✔ (runtime) Its income came
+  by itself (AddMoney on that nation: 1400 -> 1634 over the session), it is kept in the save, and the host playing alone
+  keeps it (before the alone-mode change the nation's NPC AI spent all 1400 within seconds while the host played without
+  a session). The guest's HUD shows it through civ_wallet (MSG_CIV_WALLET K_SET on its ask, then K_NATION whenever the
+  nation's money changes), also with the setting civ.own_money off; a purchase the host makes for it is paid by the
+  nation (host_buy's civilization is the city's own), its planner buildings are charged to the nation (CMD_BUILD's paid
+  value), refunds go back to it.
+* Its AI: the nation AI (Civilization_AI) of a player's nation runs its player branch (its GetPlayerCivilization at
+  0xBFBD6D answers that nation), on the host and on every guest: no NPC orders, purchases or wars by the game.
+* ✔ (runtime) Allies: the relation of each pair of the players' nations is raised to the allied threshold (manager
+  +0x1C) every 5 s (ApplyRelationship, as the Tribe villages); a hit between two players' nations (buildings, the City
+  Hall, vehicles: the attacker's political id against the target's) is dropped, a capture or purchase of another player
+  nation's city is refused (`coop.civ capture` of the guest's city by the host's nation: "capture -> 0", the owner
+  stayed the guest).
+* ✔ (runtime) A city a player's nation takes is that player's: `coop.civ nations capture <ci> 1` (Capture with the
+  instant path of a surrender) gave the NPC city to 000022A8, the guest's on both games.
+* The team (`civ.team_campaign`): every player nation's level (+0x298) is raised (cCivilization_RaiseLevel) to what the
+  team's cities earn (4 at the planet's city total, 3 over three, 2); the HUD progress (CivMode_Progress at its HUD
+  caller only) adds every other player nation's cities. ✔ (runtime) Both games' bars showed 2/10, 3/10, 9/10, 10/10.
+* ✔ (runtime) The team victory: all ten sites founded (`coop.civ nations spawn`) and taken by both nations in turns (5
+  cities each): with only the players' nations left and the host's level 4, the host called GameCiv_ShowPlanetWon and
+  GameCiv_PlanetWonPause: the end window 0x6453746 (the bottom-right button) showed; its click opened History, its OK
+  the end cinematic, then the spaceship editor request and the existing vote ("Player wants to edit a design
+  (Civilization)"), the guest's "I'm ready", the editor, Space on the host; the guest followed when the host's ship left
+  the home planet (the existing 0.7.15 flow). GameCiv_ShowPlanetWon is therefore the end of Civ UI (✔ at runtime).
+* ✔ (runtime) Reload: the host loaded the saved world alone: the roster's nation (its species key kept in the save,
+  money 1400) was there, nobody's; the guest joined and had its nation again; nothing founded twice.
+* Not ported: Lineages' offline control of an away partner's nation by the host, the catch-up of a late capital to the
+  host capital's buildings, the party wipe, the takeover and combat scaling by founder count, the unlock-byte merge, the
+  economic state messages, the history counters of a partner's captures. A nation that lost all its cities is not
+  founded again. The guest's Space empire stays the host's (a later phase).
+* Pitfall (tests): `coop.view set` keeps the camera there also in an editor (the spaceship editor showed the planet):
+  `coop.view off` first.

@@ -158,7 +158,29 @@ def main():
     ck(wait(lambda: own_village(guest) and seat1(host) and abs(own_village(guest)[2] - seat1(host)[5]) <= 1, 20),
        f'its village\'s food is the same on both games (guest {own_village(guest)}, host {seat1(host)})')
     ck(counter(host, 'count_views') > 0, f'host: the NPC controller counted without the players\' villages (count_views={counter(host, "count_views")})')
-    # 5. a rejoin
+    # 4b. the guest's game: its own village is its player tribe (the game's cGameNounManager +0x70: HUD, cards, hut menu)
+    def persp():
+        m = re.search(r'perspective: native=([0-9A-F]{8}) host=([0-9A-F]{8}) own=([0-9A-F]{8})', out(guest, 'coop.tribe villages'))
+        return m.groups() if m else None
+    ck(wait(lambda: persp() and persp()[0] == persp()[2] != '00000000' and persp()[1] != '00000000', 30),
+       f'guest: its game\'s player tribe is its own village ({persp()})')
+    # 4c. a birth in its village (the host's game makes it, for its village's food): both games show it
+    n0, f0 = seat1(host)[4], seat1(host)[5]
+    out(host, f'coop.tribe villages baby {gid}')
+    ck(wait(lambda: seat1(host)[4] == n0 + 1 and seat1(host)[5] < f0, 15), f'host: a baby in the guest\'s village for its food ({n0} -> {seat1(host)[4]}, food {f0} -> {seat1(host)[5]})')
+    ck(wait(lambda: own_village(guest) and own_village(guest)[1] == n0 + 1, 20), f'guest: its village has the baby ({own_village(guest)})')
+    # 4d. the team's alliances: an NPC village the guest's village made an ally is the host's ally too
+    npcs = re.findall(r'npc ([0-9A-F]{8}): relation host=(-?[\d.]+)', out(host, 'coop.tribe villages'))
+    ck(bool(npcs), f'host: an NPC village to befriend ({npcs})')
+    if npcs:
+        fac = npcs[0][0]
+        out(host, f'coop.tribe villages earn 1 {fac}')
+
+        def host_rel():
+            m = re.search(fac + r': relation host=(-?[\d.]+)', out(host, 'coop.tribe villages'))
+            return float(m.group(1)) if m else -99
+        ck(wait(lambda: host_rel() > 5, 20), f'host: the NPC village the guest\'s village befriended is the host\'s ally too (relation {host_rel()})')
+    # 5. a rejoin (the lab's hitch gate fails a guest's stall in the world reset, BUG-9272)
     out(guest, 'coop.leave')
     ck(wait(lambda: seat1(host) and seat1(host)[0] == -1 and has_village(seat1(host)), 30), f'host: the village stays while its player is away ({seat1(host)})')
     hm = members(host)

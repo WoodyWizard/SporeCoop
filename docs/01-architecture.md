@@ -915,9 +915,8 @@ Phases 3 and 4 of the Lineages port (PR #196), BUG-9261 and BUG-9262, on top of 
 * A joining guest outside a world reports the creature it will play in the host's world (its record of that world)
   before it loads it, so its first world waits for its nest (`creations.join_world_record`, BUG-9267).
 * Left out of Lineages' home_nests: the ring cleanup of nests of old salted keys (BUG-9182 there: not needed with one
-<<<<<<< HEAD
-  key from the start), the guest-side own-family tick (npc.cpp own_family_tick, BUG-9175 there) and the game's player
-  species following the own creature (BUG-9177 there). Test: tools/tests/coop_home_nests.py (suite home_nests).
+  key from the start). Tests: tools/tests/coop_home_nests.py, coop_home_nests_join.py (suites home_nests,
+  home_nests_join).
 
 ## Every player's own tribe (2026-11-20, feat/lineages-tribe)
 <a id="architecture-own-villages"></a>
@@ -961,7 +960,35 @@ Phase 5 of the Lineages port (PR #196), BUG-9268, on top of the party and the ar
   of a downed founder and the party wipe, the outfit vote per seat (`.duooutfits`), the late joiner's stand-in and
   catch-up, the guest's game showing its own village as the player tribe (SetPlayerTribe: its HUD, cards and hut menu),
   the six-rival trial and the objective backfill.
-=======
-  key from the start). Tests: tools/tests/coop_home_nests.py, coop_home_nests_join.py (suites home_nests,
-  home_nests_join).
->>>>>>> feat/lineages-nests
+
+## Every player's own nation (2026-11-20, feat/lineages-civ)
+<a id="architecture-own-nations"></a>
+
+Phase 5 of the Lineages port for Civilization (PR #196), BUG-9274, on top of the party, the archive and the Tribe
+villages ([architecture-party](#architecture-party), [architecture-own-villages](#architecture-own-villages)). The game
+side is in [civ-own-nations](re/civ.md#civ-own-nations).
+
+* **Files**: mods/coop/civ_nations.{h,cpp} (the module, beside the Civ split files of C8), mods/coop/civ_seats.h (its
+  pure rules, tests/civ_seats_tests.cpp), founders.{h,cpp} (`founders::Roster`, Stage::Civilization:
+  `<planet>.spo.duonations`, DUO3 by party seat).
+* **Host** (`nations::host_tick` from civ_host.cpp's host tick after the vehicle table pass, and from civ::tick while the
+  host plays alone): the roster and each seat's live nation; the owners of the partner nations' cities (g_city_owner)
+  and vehicles (the host table) every tick (`civ_seats::seat_owner`: the seat's connected player, 0xFE while away);
+  outside the frame every 2 s the founding of the next seat's capital (`found_task`: SpawnNextCity through the co-op hook,
+  the new city told by `new_city_since`, the species key, the roster, the world shared), every 5 s the alliance, every
+  0.5 s the team campaign (levels, the planet won). The host nation's cities are dealt only between the players without
+  a nation of their own; host_buy, build_in_city and the CMD_BUYCITY / CMD_CAPTURE buyer use the city's or the player's
+  own nation (`paying_nation`, `nation_of_player`).
+* **Wire**: no new message. MSG_CIV_STATE's city owner byte 0xFC = an away player's nation (`civ_seats::wire_owner`);
+  MSG_CIV_WALLET's new kind K_NATION (5, host -> guest: u32 seq, f64 money) sets the guest's HUD money to its nation's
+  silently (older guests ignore an unknown kind); civ_wallet is active for a player with a nation also with the setting
+  civ.own_money off (its nation's money is the wallet; its reports are not taken).
+* **Guest** (`nations::guest_tick`): its own nation is the political id of the cities the host says are its own; the team
+  is every nation with a player's city. Hooks (civ_nations.cpp `init`): City_IsPlayerOwned, Vehicle_IsPlayerOwned (its
+  own nation the player's, the host's not), the terrain cursor list (one hook with the Tribe villages in
+  tribe_villages.cpp), Civilization_AI with GetPlayerCivilization at its return (a player's nation runs the player branch,
+  both roles), GetMoney / SpendMoney (a player's nation's own +0x98), CivMode_Progress at its HUD caller (the team's
+  cities). The friendly-fire and capture refusals sit in civ.cpp's damage / Capture / CityBuy hooks
+  (`nations::friendly`).
+* Switches: `civ.own_nations`, `civ.nations_native`, `civ.team_campaign`. Command: `coop.civ nations [found | ally |
+  relation | citizens | spawn | capture <ci> <seat>]`. Test: tools/tests/coop_civ_seats.py (suite civ_seats).

@@ -95,6 +95,8 @@ static uint8_t stage_bit()
 
 static void* player_tribe()
 {
+    if (void* h = tribe::swapped_host_tribe()) // BUG-9268
+        return h;
     void* nm = game::noun_manager();
     return nm && skg::readable(nm, 0x74) ? field<void*>(nm, 0x70) : nullptr; // cGameNounManager::mpPlayerTribe
 }

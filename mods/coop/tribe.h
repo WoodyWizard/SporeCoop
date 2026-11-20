@@ -30,6 +30,9 @@ int own_selected();
 // BUG-9268: this player's own village (a partner's own, or the host's while a partner has one): its members and food
 // (the co-op window's row); false: none
 bool own_village_info(int& members, float& food);
+// BUG-9268: the host's village while a guest's game shows its own village as the player tribe (cGameNounManager +0x70
+// is the own one then); null otherwise. Modules that mean "the host's village" read this before +0x70.
+void* swapped_host_tribe();
 // give the selected own members to another player (the host applies it); returns how many
 int give_selected(uint8_t to);
 void tick(double now);                               // every frame
