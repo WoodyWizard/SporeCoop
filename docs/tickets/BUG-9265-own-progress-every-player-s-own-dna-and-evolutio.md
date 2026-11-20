@@ -10,7 +10,7 @@ role: host, guest
 versions: 0.7.15.2
 fixed_in:
 branch: feat/own-progress
-commits:
+commits: c20f81d5 d066eb71
 tests: own_progress_cell, own_progress_creature, own_progress_off
 signature:
 docs: docs/01-architecture.md#architecture-own-progress, docs/re/creature.md#creature-own-progress, docs/re/cell.md#cell-own-progress

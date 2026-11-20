@@ -10,7 +10,7 @@ role: host, guest
 versions: 0.7.15.2
 fixed_in: unreleased
 branch: feat/own-progress
-commits:
+commits: d066eb71
 tests: own_progress_cell
 signature: Cell_EndSequence 0xE72C80
 docs: docs/re/cell.md#cell-end-sequence
