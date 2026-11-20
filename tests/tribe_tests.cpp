@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "tribe_logic.h"
+#include "bone_rules.h"
 #include "tribe_editors.h"
 #include "wire/tribe_anim.h"
 
@@ -163,9 +164,32 @@ static void own_species()
 }
 
 
+// BUG-1335: a hand bone against the body's bone array (CreateEffect's read). The lab's case (20261119-214823
+// late_species): the hand bone 64 from the species' limb table, the body's array not built that far yet. The old rule
+// (`--nofix`: the game's only check, bone != -1) lets it through: FAILS
+static bool g_nofix = false;
+static void hand_bone()
+{
+    using bone_rules::Bone;
+    auto rule = [](bool have, uint32_t b, uint32_t e, int bone) {
+        return g_nofix ? (bone == -1 || have ? Bone::Ok : Bone::Unknown) : bone_rules::check(have, b, e, bone);
+    };
+    const uint32_t b = 0x1218E000;
+    CHECK(rule(true, b, b + 24 * 700, 20) == Bone::Ok);   // the fixture creature: 24 bones, a hand at 20
+    CHECK(rule(true, b, b + 24 * 700, 23) == Bone::Ok);   // the last bone
+    CHECK(rule(true, b, b + 24 * 700, 24) == Bone::Out);  // one past the end
+    CHECK(rule(true, b, b + 40 * 700, 64) == Bone::Out);  // the lab's: hand 64, the body not built that far
+    CHECK(rule(true, b, b + 80 * 700, 64) == Bone::Ok);   // the same body once built
+    CHECK(rule(true, 0, 0, 64) == Bone::Out);             // no bones at all yet
+    CHECK(rule(true, b, b, 0) == Bone::Out);              // an empty array
+    CHECK(rule(true, b, b + 24 * 700, -1) == Bone::Ok);   // -1: the game's own "no bone" (CreateEffect returns null)
+    CHECK(rule(false, 0, 0, 5) == Bone::Unknown);         // no model to judge by
+    CHECK(rule(true, b, b + 24 * 700 + 3, 5) == Bone::Unknown); // not an array of bones: not judged
+    CHECK(rule(true, b, b + 24 * 700, -7) == Bone::Out);  // a negative index other than -1
+}
+
 // BUG-1280 (found by the Lineages fork, its BUG-9060): every vehicle editor the game opens at the end of Tribe (the
 // archetype rule of 0xCD2308) is an end-of-Tribe editor for the BUG-0849 guard. FAILS with `--nofix` (the old list)
-static bool g_nofix = false;
 static void end_editors()
 {
     using namespace tribe_editors;
@@ -182,6 +206,7 @@ int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && !strcmp(argv[1], "--nofix");
     own_species();
+    hand_bone();
     owners();
     balance_share();
     bodies();

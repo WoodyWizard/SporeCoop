@@ -9774,3 +9774,15 @@ BUG-1328 (docs/re/creations.md#creations-props-key0), the 0.7.15 line's form of 
 * A lane whose profile already has such a list (space_captain_none names a captain whose species cannot be copied; see
   the RE section) passes the other end-of-Tribe tests only with the fix on; a profile can be checked by the .prop
   records of its Pollination.package (a clean profile has none).
+
+## A hand bone past the member's body: tribe_hand_bone (2026-11-20, fix/w59-tribe)
+<a id="testing-tribe-hand-bone"></a>
+
+BUG-1335 (docs/re/tribe.md#tribe-hand-bone). `tools/tests/coop_tribe_hand_bone.py`, tribe fixture, ~4 min cold.
+* Step 2 (`coop.tribe hand_race` on the guest) is evidence, not a check: it prints the new member's hand bone and its
+  body's bone count in the frame it is made and made chief. Step 3 (`coop.tribe hand_plant <chief>`) makes the fault's
+  state on purpose: the hand bone set 0x4000 past the body's bones for one SetHandheldItem call, then put back (also
+  by the next tick when the call faulted and unwound past the command).
+* Twin `tribe_hand_bone_off` (`SPORE_FIX_OFF=creature.fx_bone`): the planted call faults the guest in CreateEffect
+  (+0x143 reading the far bone, or +0x146 like the lab's when that memory is mapped): FAIL by the faults check.
+* Unit: tests/tribe_tests.cpp `hand_bone` (bone_rules::check), FAILS with `--nofix` (the game's only check, bone != -1).

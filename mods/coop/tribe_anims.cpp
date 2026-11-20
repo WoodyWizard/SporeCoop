@@ -352,6 +352,10 @@ void hold_try(GEntry& e, double now)
         // (the attach adds the hold modifier with the animation playing now; it also sizes the model again by the
         // mirror's own size: the size it had, the host's (tribe.item_scale, BUG-0912), is put back at once)
         float sc = read_item_scale(c);
+        if (!hand_ready(c)) { // BUG-1335: not before its body has the hand's bone (the host's next hold tries again)
+            g_hand_waits++;
+            return;
+        }
         if (g_hold_queued_fix && clear_pending_same(c, cur))
             hold_ev(member_id(c), 'W', cur, 0); // BUG-0992
         set_hand(c, item);

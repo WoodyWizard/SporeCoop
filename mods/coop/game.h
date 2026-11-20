@@ -3,8 +3,10 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "bone_rules.h"
 #include "net/protocol.h"
 #include "sporekit.h"
 
@@ -229,6 +231,13 @@ uint32_t last_foreign_effect_id();
 uint32_t foreign_effects();
 // a bone index inside the creature model's bone array (the range cCreatureBase::CreateEffect indexes)
 bool creature_bone_ok(void* creature, int bone);
+// BUG-1335: the bone against the model's bone array (Out: CreateEffect would read past it), its bone count (-1 unknown)
+bone_rules::Bone creature_bone(void* creature, int bone);
+int creature_bone_count(void* creature);
+// BUG-1335 (creature.fx_bone): CreateEffect calls not made for a bone outside the body; the creatures they were for
+bool fx_bone_fix();
+uint32_t fx_bone_skips();
+std::vector<std::pair<void*, uint32_t>> take_fx_bone_skipped();
 void clear_effect_table();         // after effects::tick (once a frame, main thread)
 void effect_table_stats(uint32_t& creates, uint32_t& probes, uint32_t& evicted, uint32_t& mgr, uint32_t& world,
                         uint32_t& anim);

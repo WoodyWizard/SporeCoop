@@ -384,6 +384,15 @@ std::string species_list();
 extern uint32_t g_item_holds_ended;
 uint32_t hold_modifier(void* c, bool end);
 void set_hand(void* c, int item);
+// BUG-1335 (creature.fx_bone): the member's body has its hand bone (an item attached there now cannot fault)
+bool hand_ready(void* c);
+extern uint32_t g_hand_waits, g_hand_repairs;
+struct HandPlant { // tests (`coop.tribe hand_plant`): a hand bone planted past the body's bones, put back next tick
+    void* c = nullptr;
+    uint32_t serial = 0;
+    int hand = -1;
+};
+extern HandPlant g_hand_plant;
 extern bool g_mirror_hold_fix;
 extern bool g_hold_item_fix;
 extern bool g_hold_anim_fix;

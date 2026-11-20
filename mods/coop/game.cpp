@@ -19,6 +19,7 @@
 #include "swap_ledger.h"
 #include "fixes.h"
 #include "gamefixes.h"
+#include "bone_rules.h"
 #include <unordered_map>
 
 using namespace skg;
@@ -878,6 +879,25 @@ bool effect_position(void* fx, net::Vec3& out)
 // A bone index the game will accept for this creature: cCreatureBase::CreateEffect 0xC150D0
 // indexes the model's bone array (AnimatedCreature +0xB54 -> +0x17C -> +0x2E4) with `bone * 700`
 // without a check; the array's end (+0x2E8) gives the count (the fixture creature: 24 bones).
+// BUG-1335: the same range as the rule (bone_rules::check): Out only when the array is there and the bone is not in it
+bone_rules::Bone creature_bone(void* c, int bone)
+{
+    uint8_t* ac = c && skg::readable((uint8_t*)c + 0xB54, 4) ? field<uint8_t*>(c, 0xB54) : nullptr;
+    uint8_t* model = ac && skg::readable(ac + 0x17C, 4) ? field<uint8_t*>(ac, 0x17C) : nullptr;
+    bool have = model && skg::readable(model + 0x2E4, 8);
+    if (ac && !have) // (a body without its model: CreateEffect would read the bones of a null model)
+        return bone == -1 ? bone_rules::Bone::Ok : bone_rules::Bone::Out;
+    return bone_rules::check(have, have ? field<uint32_t>(model, 0x2E4) : 0, have ? field<uint32_t>(model, 0x2E8) : 0, bone);
+}
+int creature_bone_count(void* c)
+{
+    uint8_t* ac = c && skg::readable((uint8_t*)c + 0xB54, 4) ? field<uint8_t*>(c, 0xB54) : nullptr;
+    uint8_t* model = ac && skg::readable(ac + 0x17C, 4) ? field<uint8_t*>(ac, 0x17C) : nullptr;
+    if (!model || !skg::readable(model + 0x2E4, 8))
+        return -1;
+    uint32_t b = field<uint32_t>(model, 0x2E4), e = field<uint32_t>(model, 0x2E8);
+    return b && e >= b && (e - b) % 700 == 0 ? (int)((e - b) / 700) : (b == 0 && e == 0 ? 0 : -1);
+}
 bool creature_bone_ok(void* c, int bone)
 {
     if (!c || bone < 0 || !skg::readable((uint8_t*)c + 0xB54, 4))
@@ -1123,8 +1143,41 @@ void hit_effect_calls(uint32_t& calls, uint32_t& last_other_ret, uint32_t& other
 static void report_effect(void* c, const EffectEvent& ev);
 typedef void*(SK_THISCALL* CreateCreatureFx_t)(void*, int, uint32_t, uint32_t);
 static CreateCreatureFx_t o_CreateCreatureFx;
+// BUG-1335 (`creature.fx_bone`): CreateEffect reads the bone's transform past the end of the model's bone array when the
+// bone is not in it (no check but -1): a tribe member made chief 0.65 s after its mirror was spawned got the staff on
+// its hand bone (+0xFC4, 64, from the species' limb table) while its model's bone array was still shorter (lab
+// 20261119-214823 late_species: 0xC0000005 at CreateEffect+0x146 reading [0x3E800000 + 0x140], a float taken as a
+// bone's pointer). On: such a call returns null as the game's own "no bone" does (its callers handle it: the hand's
+// attach returns when it finds no record) and is counted; the creature is remembered so its owner can attach the item
+// again once the array has the bone (tribe.cpp hand_repair_tick). Off: the game's call (the fault).
+static bool g_fx_bone_fix = true;
+COOP_FIX("creature.fx_bone", "BUG-1335", g_fx_bone_fix,
+         "creature: an effect on a bone the creature's body does not have (yet) is not made (the game read past the bones and faulted)");
+static std::atomic<uint32_t> g_fx_bone_skips{0};
+static std::mutex g_fx_bone_mu;
+static std::vector<std::pair<void*, uint32_t>> g_fx_bone_skipped; // creature, serial (main thread drains it)
+bool fx_bone_fix() { return g_fx_bone_fix; }
+uint32_t fx_bone_skips() { return g_fx_bone_skips.load(); }
+std::vector<std::pair<void*, uint32_t>> take_fx_bone_skipped()
+{
+    std::lock_guard<std::mutex> lk(g_fx_bone_mu);
+    std::vector<std::pair<void*, uint32_t>> v;
+    v.swap(g_fx_bone_skipped);
+    return v;
+}
 static void* SK_THISCALL h_CreateCreatureFx(void* self, int bone, uint32_t id, uint32_t extra)
 {
+    if (g_fx_bone_fix && bone != -1 && creature_bone(self, bone) == bone_rules::Bone::Out) {
+        uint32_t n = ++g_fx_bone_skips;
+        if (n <= 10)
+            H->log(M, SK_WARN, "effects: effect %08X on bone %d of creature %p (species %08X) not made: its body has %d bones "
+                   "(BUG-1335)", id, bone, self, skg::readable((uint8_t*)self + 0xB28, 4) ? field<uint32_t>(self, 0xB28) : 0u,
+                   creature_bone_count(self));
+        std::lock_guard<std::mutex> lk(g_fx_bone_mu);
+        if (g_fx_bone_skipped.size() < 64)
+            g_fx_bone_skipped.push_back({self, object_serial(self)});
+        return nullptr;
+    }
     void* fx = o_CreateCreatureFx ? o_CreateCreatureFx(self, bone, id, extra) : nullptr;
     if (!on_main()) // the UI skinner's render thread: the original only
         return fx;

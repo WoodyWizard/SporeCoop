@@ -845,6 +845,76 @@ std::string debug(const std::vector<std::string>& a)
         return std::string(b) + " hold=" + std::to_string(hold_modifier(c, false) ? 1 : 0) + " holds_ended=" +
                std::to_string(g_item_holds_ended);
     }
+    // BUG-1335 (tests): handbone [member id]: each member of the player tribe (or that one): its hand bone (+0xFC4),
+    // its body's bone count, the bone's state against the array (ok / out / unknown), its item and the drawn model
+    if (a.size() >= 1 && a[0] == "handbone") {
+        auto line = [](void* c) {
+            char b[200];
+            int hand = F<int>(c, kHandOff);
+            auto st = game::creature_bone(c, hand);
+            snprintf(b, sizeof b, "#%u hand=%d bones=%d state=%s item=%d model=%d age=%d leader=%d\n", member_id(c), hand,
+                     game::creature_bone_count(c), st == bone_rules::Bone::Ok ? "ok" : st == bone_rules::Bone::Out ? "out" : "unknown",
+                     F<int>(c, kHeldItemOff), hand_model(c), (int)F<uint8_t>(c, kAgeOff), (int)is_leader(c));
+            return std::string(b);
+        };
+        std::string out;
+        if (a.size() >= 2) {
+            void* c = is_guest() ? member_mirror((uint16_t)atoi(a[1].c_str())) : local_of((uint16_t)atoi(a[1].c_str()));
+            out = has_body(c) ? line(c) : "no such member\n";
+        } else if (void* pt = player_tribe())
+            for (void* c : members(pt))
+                if (has_body(c))
+                    out += line(c);
+        char b[160];
+        snprintf(b, sizeof b, "fix=%d waits=%u repairs=%u fx_skips=%u\n", (int)game::fx_bone_fix(), g_hand_waits,
+                 g_hand_repairs, game::fx_bone_skips());
+        return out + b;
+    }
+    // hand_race [owner]: tests (BUG-1335), the lab's case on purpose: a member made in the player tribe (born for that
+    // owner: its line species, tribe.birth_species) and made its tribe's chief in the same frame (cTribe_SetChieftain,
+    // what tribe.leader_sync did 0.65 s after a mirror's spawn): its hand bone and its body's bones before the call.
+    // A guest's such member has no host member: the next snapshot removes it
+    if (a.size() >= 1 && a[0] == "hand_race" && a_SetChieftain) {
+        void* pt = player_tribe();
+        if (!pt)
+            return "no player tribe";
+        uint8_t owner = a.size() >= 2 ? (uint8_t)atoi(a[1].c_str()) : 0xFF;
+        void* c = spawn_member(pt, 1, owner);
+        if (!c)
+            return "no member made";
+        int hand = F<int>(c, kHandOff), bones = game::creature_bone_count(c);
+        uint32_t skips = game::fx_bone_skips();
+        auto st = game::creature_bone(c, hand);
+        thiscall<void>(a_SetChieftain, pt, c);
+        char b[220];
+        snprintf(b, sizeof b, "race: member %p species %08X hand=%d bones=%d state=%s, made chief: item=%d fx_skips +%u", c,
+                 F<uint32_t>(c, 0xB28), hand, bones, st == bone_rules::Bone::Ok ? "ok" : st == bone_rules::Bone::Out ? "out" : "unknown",
+                 F<int>(c, kHeldItemOff), game::fx_bone_skips() - skips);
+        return b;
+    }
+    // hand_plant <member id> [item]: tests (BUG-1335), the fault's state made on purpose on a member: its hand bone set
+    // past its body's bone array, the item (default 0x11, the chief's staff) attached with the game's own call, the hand
+    // bone put back. creature.fx_bone on: not made (counted), the item is attached once the bone is back (the repair);
+    // off: the game's CreateEffect reads past the array (the lab's fault)
+    if (a.size() >= 2 && a[0] == "hand_plant" && a_SetHandheldItem) {
+        void* c = is_guest() ? member_mirror((uint16_t)atoi(a[1].c_str())) : local_of((uint16_t)atoi(a[1].c_str()));
+        int bones = has_body(c) ? game::creature_bone_count(c) : -1;
+        if (bones <= 0)
+            return "no such member, or its body has no bones";
+        int item = a.size() >= 3 ? atoi(a[2].c_str()) : 0x11;
+        int hand = F<int>(c, kHandOff);
+        uint32_t skips = game::fx_bone_skips();
+        thiscall<void>(a_SetHandheldItem, c, 0, -1); // (the hand emptied at its own bone first)
+        g_hand_plant = {c, game::object_serial(c), hand}; // (a fault unwinds past this frame: the next tick puts it back)
+        F<int>(c, kHandOff) = bones + 0x4000;
+        thiscall<void>(a_SetHandheldItem, c, item, -1);
+        F<int>(c, kHandOff) = hand;
+        g_hand_plant = {};
+        char b[200];
+        snprintf(b, sizeof b, "planted: hand %d -> %d (body %d bones) item %d, fx_skips +%u, item now %d model %d", hand,
+                 bones + 0x4000, bones, item, game::fx_bone_skips() - skips, F<int>(c, kHeldItemOff), hand_model(c));
+        return b;
+    }
     if (a.size() >= 2 && a[0] == "bhvzero" && is_host()) { // bhvzero <member id>: tests (BUG-1071), the member as after
         // the save's load: no behaviour start seen yet (bhv_anim 0)
         if (HEntry* e = g_host.members.find((uint16_t)atoi(a[1].c_str()))) {
