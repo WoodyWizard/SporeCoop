@@ -45,8 +45,18 @@ if os.environ.get('SPORE_NET'):  # the guest goes through a bad network (tools/t
 HOST_CMD = f'cheat coop host {PORT} Alice'
 
 
+# BUG-1329: twoinst.start() sets it to (before(insts), after(insts)), called around a kill of this lane's games
+# (sh('kill'), coop_creature_desync.kill_game): the faults and the log of every instance a test kills count
+on_kill = None
+
+
 def sh(*args, check=True):
+    hook = on_kill if args and args[0] == 'kill' else None
+    if hook:
+        hook[0]([HOST, GUEST])
     subprocess.run([SPORE, *args], check=check, stdout=subprocess.DEVNULL)
+    if hook:
+        hook[1]([HOST, GUEST])
 
 
 def _run(*args):
