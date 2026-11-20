@@ -37,6 +37,9 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
 - Lab: `coop.pool near <x> <y> <r>` (the cells drawn at a place) answers again; the slow-link test's cell list is now
   `coop.pool nearkeys` (BUG-1330). The Cell kin test parts the players again when the guest was knocked out alone in
   its new area and came back next to the host (BUG-1334).
+- Lab: fixes of tests from the 0.7.16 final check: cell_ko_food, the cell attack tests, space_puppet's landing, the
+  walker's clicks near its nest, and a cold start that waits for the lane's console ports (BUG-1354, BUG-1355, BUG-1356,
+  BUG-1358, BUG-1359).
 
 ### Added
 - Creature: when a partner goes into an editor of its own (its mating evolution, Evolve now, or later at the nest),
@@ -149,6 +152,8 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   game could show the host's ship instead (BUG-1301; still open until its lab run).
 - Tribe: a guest's game no longer faults when it joins a Tribe world and a tribe member it has just made becomes the
   chief: the chief's staff now waits until the member's body is built (BUG-1335; still open until its lab run).
+- Creature: a guest no longer sees some of the host's animals far away half sunk into the ground (BUG-1357; still open
+  until its lab run).
 ## [0.7.15.5] - 2026-11-19
 
 A fix for players who could not leave the Tribe stage: the City Hall editor at its end could not be named after a
