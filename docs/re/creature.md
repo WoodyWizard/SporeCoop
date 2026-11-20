@@ -5307,3 +5307,22 @@ BUG-1305 (the Lineages fork's BUG-9175), BUG-1304 (its BUG-9161); `mods/coop/gue
   (CreatureGame_HandleMessage 0xD42E50 -> 0xD3C650(1), then CreatureGame_Update -> 0xD3C650(0): the mating editor's
   own request, tag 0x12191CA), outside the frame; Submit's hook takes it as the guest's own evolution. Once more after
   8 s when no editor came. No egg scene plays on the guest.
+
+## A far NPC under the host's own ground (2026-11-20, fix/w60-misc)
+<a id="creature-far-npc-under-ground"></a>
+
+BUG-1357 (switch `npc.air_under`, test `coop_npc_air.py --lift -0.8`: npc_air_under, twin npc_air_under_off).
+
+* ✔ (logs, lab 20261120-041304 migration_heal; the same spot in BUG-1208's nest_follow 20261116-025154) a host NPC of
+  species 065662CF at about (138..149 -480 -75..-79), 70-110 m from both players (outside the host's 60 m of
+  simulated NPCs), stood 0.69-0.79 m under the host's own terrain for 13 s while the guest sat in its nest-claim
+  cinematic; the guest's proxy was exactly where the host had it ("the host's NPC 0.0 m from it"), i.e. under the
+  guest's ground too: both terrains agree there, the host's game left its unsimulated NPC in the ground.
+* ✔ (code) the host's state flags such a body NF_AIR: `drive::body_airborne` is "not grounded and more than 0.15 m off
+  GetHeightAt" either way, and the agl trailer carries the negative height. The guest's air placing
+  (`at_sender_agl` + `drive::air_place`) put the proxy at that height over its own terrain, i.e. under it, and no
+  ground rule runs for an air-placed proxy: the monitor's proxies rule ("NPC proxies under the ground") fired.
+* Fix (guest side, so a 0.7.15 host is covered too): NF_AIR with agl < -kUnderTol (0.25 m) is not in the air
+  (`npc_rules::place`, `host_under`): the proxy stands or walks on this game's ground (drive::step / walk_place
+  ground). The host's own NPC stays where its game has it.
+* ? why the host's game leaves a far NPC 0.7-0.8 m in its terrain (terrain detail far from the camera?) is not known.

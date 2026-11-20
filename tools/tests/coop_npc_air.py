@@ -23,6 +23,15 @@ Tribe (--fixture tribe) is not a test of this: the host's Tribe game puts a lift
 its own update (the host's rows 0.00 m with the animal lifted 4 m at every mod frame, lab 20261105-112236), so the
 check "the host's NPC was in the air" fails there (docs/re/tribe.md#tribe-animal-height).
 
+--lift < 0 (BUG-1357, suite npc_air_under: --lift -0.8): the host's game holds its NPC that far UNDER its ground (as a
+far NPC the host's game does not simulate stood 0.7-0.8 m in its terrain in migration_heal / nest_follow; the host
+sends it as NF_AIR with a negative height). Checks then:
+   * the host's NPC was under its ground (its own rows: median under LIFT + 0.3 m);
+   * the guest drew the proxy on its own ground, not under it: median height within 0.3 m of 0 and at most UNDER_SHARE
+     of the rows of that phase more than 0.25 m under (the monitor's proxies rule counts 0.5 m);
+   * on the guest's ground before and after.
+SPORE_FIX_OFF=npc.air_under must FAIL (the proxy air-placed at the host's negative height, under the guest's ground).
+
   SPORE_LANE=4 python3 tools/tests/coop_npc_air.py [--fixture creature|tribe] [--lift 4] [--secs 15]
 """
 import argparse
@@ -36,6 +45,7 @@ from coop_sync import wait_running
 from twoinst import Checks, start
 
 AIR_SHARE = 0.8
+UNDER_SHARE = 0.1  # BUG-1357: rows of the under phase the proxy may be drawn more than 0.25 m under the guest's ground
 HEIGHT_TOL = 0.75  # m
 
 
@@ -99,6 +109,18 @@ def main():
     print(f'  air: host median {med(h_air):.2f} m ({len(h_air)} rows), guest median {med(g_air):.2f} m '
           f'({len(g_air)} rows, {share:.0%} over 1 m); guest before {med(g_before):.2f} m, after {med(g_after):.2f} m',
           flush=True)
+    if a.lift < 0:  # BUG-1357: under the host's ground
+        under = sum(1 for v in g_air if v < -0.25) / max(len(g_air), 1)
+        print(f'  under: guest rows more than 0.25 m under its ground {under:.0%}', flush=True)
+        ck(len(h_air) >= 30 and med(h_air) < a.lift + 0.3, f'the host\'s NPC #{nid} was under its ground ({med(h_air):.2f} m)')
+        ck(len(g_air) >= 30, f'the guest drew the proxy in that phase ({len(g_air)} rows)')
+        ck(abs(med(g_air)) < 0.3 and under <= UNDER_SHARE,
+           f'the guest drew it on its own ground, not under it (median {med(g_air):.2f} m, {under:.0%} of the rows over '
+           f'0.25 m under, want <= {UNDER_SHARE:.0%})')
+        ck(abs(med(g_before)) < 0.3, f'on the guest\'s ground before ({med(g_before):.2f} m)')
+        ck(abs(med(g_after)) < 0.3, f'on the guest\'s ground after ({med(g_after):.2f} m)')
+        ck.faults(host=host, guest=guest)
+        return ck.result()
     ck(len(h_air) >= 30 and med(h_air) > a.lift - 1.0, f'the host\'s NPC #{nid} was in the air ({med(h_air):.2f} m)')
     ck(len(g_air) >= 30, f'the guest drew the proxy in the air phase ({len(g_air)} rows)')
     ck(share >= AIR_SHARE, f'the guest drew it in the air ({share:.0%} of the rows over 1 m, want {AIR_SHARE:.0%})')

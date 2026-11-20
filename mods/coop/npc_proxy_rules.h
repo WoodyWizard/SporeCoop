@@ -55,6 +55,9 @@ struct PlaceIn {
     bool killed = false;    // the proxy plays the host NPC's death (or lies dead)
     bool host_dead = false; // the state's NF_DEAD
     bool host_air = false;  // the state's NF_AIR: the host's NPC is off its ground
+    // BUG-1357: NF_AIR with a height UNDER the host's terrain (agl < -drive::kUnderTol): the host's NPC is pressed into
+    // its ground (a far NPC the host's game does not simulate), not in the air: placed on this game's ground instead
+    bool host_under = false;
     bool stage = true;      // Creature, Tribe or Civ: the stages whose moving proxies are walked
     float speed = 0;        // m/s of the velocity the walk would use (after the stop and path rules)
     float off = 0;          // m between the proxy now and its target
@@ -63,7 +66,7 @@ constexpr float kWalkSpeed = 0.3f; // m/s: slower stands
 constexpr float kWalkNear = 8.f;   // m: a proxy farther from its target is driven (teleported) first
 inline Place place(const PlaceIn& in)
 {
-    if (!in.killed && in.host_air && !in.host_dead)
+    if (!in.killed && in.host_air && !in.host_under && !in.host_dead)
         return Place::Air;
     if (!in.killed && in.stage && in.speed > kWalkSpeed && in.off < kWalkNear)
         return Place::Walk;

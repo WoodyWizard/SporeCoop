@@ -710,6 +710,12 @@ static void test_proxy_rules()
     CHECK(place(in) == Place::Walk);
     in.host_air = true;
     CHECK(place(in) == Place::Air);   // BUG-0550: off its ground on the host, before any walk
+    in.host_under = true;
+    CHECK(place(in) == Place::Walk);  // BUG-1357: under the host's ground is not in the air: walked on this game's ground
+    in.speed = 0.f;
+    CHECK(place(in) == Place::Stand); // (standing: driven, drive::step puts it onto the ground)
+    in.speed = 4.f;
+    in.host_under = false;
     in.host_dead = true;
     CHECK(place(in) == Place::Walk);  // a dead NPC is never put in the air
     in.host_air = in.host_dead = false;

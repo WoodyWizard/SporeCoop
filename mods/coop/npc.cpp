@@ -247,6 +247,16 @@ COOP_FIX("npc.walk_ground", "BUG-0406", g_walk_ground_fix, "creature: a walking 
 // from its target (game::place_hold). `coop.fix npc.proxy_hold off`: placed only (0.7.13).
 static bool g_proxy_hold_fix = true;
 COOP_FIX("npc.proxy_hold", "BUG-0440", g_proxy_hold_fix, "tribe: a walking animal's copy that its game holds back is kept on the host animal's path");
+// BUG-1357: the host sends NF_AIR for a body that is not grounded and over 0.15 m off its terrain either way
+// (drive::body_airborne), so also for an NPC pressed under the host's ground: a far NPC the host's game does not
+// simulate (outside its 60 m) stood 0.7-0.8 m under the host's terrain at (137.7 -480.2 -79.3) for 13 s in
+// migration_heal (final check 20261120-041304) and nest_follow (BUG-1208); the guest air-placed its proxy at that
+// negative height over its own ground (at_sender_agl), the monitor's proxies rule saw it under the ground. Now a state
+// in the air whose height is under the host's ground (agl < -kUnderTol) is placed as standing / walking on this
+// game's ground (npc_rules::place host_under; drive::step's `ground` lifts it). `coop.fix npc.air_under off`: air-placed
+// at the negative height (0.7.15).
+static bool g_air_under_fix = true;
+COOP_FIX("npc.air_under", "BUG-1357", g_air_under_fix, "creature: an animal under the host's ground is shown on this game's ground, not air-placed under it");
 // BUG-1094 (`coop.fix npc.air_catch`): the first placings in the air put a proxy on its target at once: a walked proxy
 // that trailed it 0.9 m stepped 0.94 m in one 15 ms frame at the throw's start, and the lead's target itself leaps
 // 1-1.5 m there (the newest state moved on at the throw's 9 m/s; lab 20261113-235647 #2, 20261114-000525 #3: 1.07 m
@@ -2572,6 +2582,7 @@ static void guest_tick(double now)
         pin.killed = px.killed;
         pin.host_dead = (s.flags & net::NF_DEAD) != 0;
         pin.host_air = (s.flags & net::NF_AIR) != 0;
+        pin.host_under = g_air_under_fix && net::agl_known(s.agl) && s.agl < -drive::kUnderTol; // BUG-1357
         pin.stage = game::in_creature_stage() || rts;
         const bool air = npc_rules::place(pin) == npc_rules::Place::Air;
         if (!air && !px.killed && !(s.flags & net::NF_DEAD)) { // BUG-0562: the host's NPC inside this game's mound

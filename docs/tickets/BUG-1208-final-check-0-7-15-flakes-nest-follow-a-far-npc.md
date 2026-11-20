@@ -55,3 +55,4 @@ group's final runs on fix/w51-t5 (lab 20261116-085451: all PASS twice).
 ## History
 - 2026-11-16: opened.
 - 2026-11-16: closed as flakes (fix/w51-t5): PASS twice in reruns 20261116-082817 and again in 20261116-085451.
+- 2026-11-20: nest_follow's proxy under the guest's ground: the cause is BUG-1357 (the host's far NPC 0.7-0.8 m under its own ground, sent as NF_AIR with a negative height, air-placed under the guest's ground); the same spot and species failed migration_heal in the 0.7.16 final check 20261120-041304. Fixed there (npc.air_under).
