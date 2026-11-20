@@ -23,8 +23,13 @@ COOP_FIX("civ.nations_native", "BUG-9274", g_native,
 static bool g_team = true;
 COOP_FIX("civ.team_campaign", "BUG-9274", g_team,
          "civ: every player nation's cities count for the team (level, HUD progress); only the players' nations left = the planet is won");
+static bool g_adopt = true;
+COOP_FIX("civ.nation_adopt", "BUG-9276", g_adopt,
+         "civ: on a planet with no free city site a partner's nation is an NPC nation taken over (the fewest cities, nearest the host's capital), its cities of the partner's species");
+static bool g_adopt_city = true; // not a lab switch: a test knob of civ.nation_adopt (`coop.civ nations adopt_city off`: the nation's species key only, the taken cities' own kept)
+static bool g_adopt_money = true; // not a lab switch: a test knob of civ.nation_adopt (`coop.civ nations adopt_money off`: a taken nation keeps the NPC's own money)
 
-constexpr uintptr_t kNationSpecies = 0x268, kExSites = 0xAC, kExSitesLeft = 0xB0, kSelectable = 0xD4, kWealth = 0x98,
+constexpr uintptr_t kNationSpecies = 0x268, kCitySpecies = 0x658, kExSites = 0xAC, kExSitesLeft = 0xB0, kSelectable = 0xD4, kWealth = 0x98,
                     kLevel = 0x298, kCitySpiral = 0x120;
 constexpr uint32_t kSpeciesType = 0x2B978C46, kSpeciesGroup = 0x40626200;
 
@@ -269,7 +274,7 @@ static std::vector<civ_seats::City> city_list()
         c.faction = pol_of(city);
         c.nation = country != nullptr;
         c.home = country && country == home;
-        c.blank = country && pol_of(city) == pol_of(country) && !F<creations::Key>(city, 0x658).instance &&
+        c.blank = country && pol_of(city) == pol_of(country) && !F<creations::Key>(city, kCitySpecies).instance &&
                   !F<creations::Key>(country, kNationSpecies).instance;
         c.id = (uint64_t)(uintptr_t)city;
         out.push_back(c);
@@ -310,7 +315,7 @@ static std::string seat_name(int seat)
     return seat < (int)r.seats.size() && !r.seats[seat].name.empty() ? r.seats[seat].name : "seat " + std::to_string(seat);
 }
 
-static void bind(uint32_t faction)
+static void bind(uint32_t faction, bool adopted = false)
 {
     void* nation = nation_by(faction);
     void* home = player_civ();
@@ -339,7 +344,19 @@ static void bind(uint32_t faction)
         report("the new nation of " + seat_name(seat) + " was not recorded: " + err);
         return; // (the city stays an NPC nation's)
     }
+    const uint32_t was = F<creations::Key>(nation, kNationSpecies).instance;
     F<creations::Key>(nation, kNationSpecies) = key;
+    size_t keyed = 0;
+    if (adopted) // (BUG-9276) the taken cities' own species key: the partner's too (the citizens follow the nation's)
+        for (void* c : all_cities())
+            if (F<void*>(c, kCityCiv) == nation) {
+                H->log(M, SK_INFO, "civ nations: taken nation %08X (species key was %08X): its city %08X's species key %08X%s",
+                       faction, was, pol_of(c), F<creations::Key>(c, kCitySpecies).instance, g_adopt_city ? " -> the partner's" : "");
+                if (g_adopt_city) {
+                    F<creations::Key>(c, kCitySpecies) = key;
+                    keyed++;
+                }
+            }
     // a nation the game founds mid-stage starts with an NPC's budget (20000 seen, lane C, while the host had 4000): a
     // player's new nation never starts richer than the host's
     if (F<float>(nation, kWealth) > F<float>(home, kWealth))
@@ -357,13 +374,59 @@ static void bind(uint32_t faction)
         hc = c;
         break;
     }
-    char b[260];
-    snprintf(b, sizeof b, "%s has their own nation %08X (seat %d, species %08X), capital at (%.0f %.0f %.0f), %.0f m from the host's",
-             seat_name(seat).c_str(), faction, seat, key.instance, at.x, at.y, at.z, hc ? net::dist(at, city_pos(hc)) : -1.f);
+    char b[320];
+    snprintf(b, sizeof b, "%s has their own nation %08X (seat %d, species %08X%s, %zu city key(s)), capital at (%.0f %.0f %.0f), %.0f m from the host's",
+             seat_name(seat).c_str(), faction, seat, key.instance, adopted ? ", an NPC nation taken over" : "", keyed, at.x, at.y,
+             at.z, hc ? net::dist(at, city_pos(hc)) : -1.f);
     report(b);
     if (C.notice)
         C.notice(seat_name(seat) + " has their own nation now");
     share();
+}
+
+// BUG-9276: no free site left: the partner's nation is an NPC nation taken over (civ_seats::adopt_choice), bound as a
+// founded one (the species, the roster, the money cap, the world shared again). 0: none to take.
+static uint32_t adopt_target()
+{
+    void* home = player_civ();
+    void* hc = nullptr;
+    for (void* c : vec_of((uint8_t*)home + kCivCities)) {
+        hc = c;
+        break;
+    }
+    const net::Vec3 centre = hc ? city_pos(hc) : net::Vec3{};
+    std::vector<civ_seats::Holding> list;
+    for (void* city : all_cities()) {
+        void* country = F<void*>(city, kCityCiv);
+        civ_seats::Holding h;
+        h.nation = country ? pol_of(country) : 0;
+        h.home = country && country == home;
+        h.own = country && pol_of(city) == pol_of(country);
+        h.dist = hc ? net::dist(city_pos(city), centre) : 0.f;
+        list.push_back(h);
+    }
+    const uint32_t pol = civ_seats::adopt_choice(list, g_roster);
+    return pol && nation_by(pol) ? pol : 0;
+}
+static void adopt(int seat, uint32_t pol, const creations::Key& key)
+{
+    H->log(M, SK_INFO, "civ nations: no free site: %s's nation takes over NPC nation %08X", seat_name(seat).c_str(), pol);
+    // an NPC nation keeps its money in its budgets (+0x4AC / +0x4B0, its +0x98 was 0 on Kealeneon): the partner's
+    // nation starts with all of it in +0x98. That was 718 on Kealeneon (a vehicle costs 1000: the partner could buy
+    // nothing), so it starts like a founded capital: the host nation's money (a founding mid-Civ gets the game's
+    // 20000 capped at the host's), never less than the NPC nation had (bind caps it at the host nation's)
+    if (void* n = nation_by(pol)) {
+        const float total = thiscall<float>(a_GetMoney, n); // (not a partner nation yet: the game's own GetMoney)
+        if (std::isfinite(total) && total > F<float>(n, kWealth))
+            F<float>(n, kWealth) = total;
+        if (void* home = player_civ())
+            if (g_adopt_money && F<float>(home, kWealth) > F<float>(n, kWealth))
+                F<float>(n, kWealth) = F<float>(home, kWealth);
+    }
+    g_found = {};
+    g_found.seat = seat;
+    g_found.key = key;
+    bind(pol, true);
 }
 
 static void found_task(void* ctx)
@@ -418,8 +481,11 @@ static void found_task(void* ctx)
     void* ex = skg::cdecl_call<void*>(a_ExpansionGet);
     const auto site = ex ? civ_seats::site_state(F<int>(ex, kExSites), F<int>(ex, kExSitesLeft), all_cities().size())
                          : civ_seats::SiteState::Unknown;
-    if (site != civ_seats::SiteState::Ready) {
-        report(seat_name(seat) + "'s capital waits: " + civ_seats::site_name(site), site == civ_seats::SiteState::NoSite);
+    const uint32_t take = site == civ_seats::SiteState::NoSite && g_adopt ? adopt_target() : 0; // BUG-9276
+    if (site != civ_seats::SiteState::Ready && !take) {
+        report(seat_name(seat) + "'s capital waits: " + civ_seats::site_name(site) +
+                   (site == civ_seats::SiteState::NoSite && g_adopt ? " and no NPC nation to take over" : ""),
+               site == civ_seats::SiteState::NoSite);
         return;
     }
     const uint8_t player = party::player_of_seat(seat);
@@ -432,6 +498,10 @@ static void found_task(void* ctx)
     for (auto& w : wants)
         if (w.seat == seat)
             species = w.species;
+    if (take) {
+        adopt(seat, take, {species, kSpeciesType, kSpeciesGroup});
+        return;
+    }
     g_found = {};
     g_found.phase = Phase::Requested;
     g_found.seat = seat;
@@ -800,6 +870,37 @@ std::string debug(const std::vector<std::string>& a)
         g_queued = true;
         H->run_outside_frame(found_task, (void*)(uintptr_t)g_epoch);
         return "queued\n";
+    }
+    if (a.size() >= 2 && a[1] == "sites" && in_civ()) { // RE (BUG-9276): cCivExpansion's site records, vector at +0x14
+        uint8_t* ex = skg::cdecl_call<uint8_t*>(a_ExpansionGet);
+        if (!ex || !skg::readable(ex, 0xB4))
+            return "no expansion\n";
+        uint8_t* rb = F<uint8_t*>(ex, 0x14);
+        uint8_t* re = F<uint8_t*>(ex, 0x18);
+        std::string out = "sites " + std::to_string(F<int>(ex, kExSites)) + " left " + std::to_string(F<int>(ex, kExSitesLeft)) + "\n";
+        char row[1400];
+        for (int k = 0; rb && re > rb && rb + (k + 1) * 0x64 <= re && k < 32; ++k) {
+            uint8_t* rec = rb + k * 0x64;
+            if (!skg::readable(rec, 0x64))
+                break;
+            int n = snprintf(row, sizeof row, "site %d:", k);
+            for (unsigned off = 0; off < 0x64 && n > 0 && n < (int)sizeof row - 40; off += 4) {
+                const float f = F<float>(rec, off);
+                n += snprintf(row + n, sizeof row - n, " +%02X=%08X(%.1f)", off, F<uint32_t>(rec, off),
+                              std::isfinite(f) && std::fabs(f) < 1e7 ? f : 0.f);
+            }
+            out += row;
+            out += "\n";
+        }
+        return out;
+    }
+    if (a.size() >= 3 && a[1] == "adopt_city") { // tests: adopt_city on|off (BUG-9276: the taken cities' species key too)
+        g_adopt_city = a[2] == "on";
+        return std::string("adopt_city=") + (g_adopt_city ? "on" : "off") + "\n";
+    }
+    if (a.size() >= 3 && a[1] == "adopt_money") { // tests: adopt_money on|off (BUG-9276: the host nation's money to start)
+        g_adopt_money = a[2] == "on";
+        return std::string("adopt_money=") + (g_adopt_money ? "on" : "off") + "\n";
     }
     if (a.size() >= 2 && a[1] == "ally" && authority()) {
         H->run_outside_frame(ally_task, (void*)(uintptr_t)g_epoch);

@@ -1,16 +1,16 @@
 ---
 id: BUG-9274
 title: Lineages port, phase 5 for Civ: every player's own nation (own capital of their own species, cities, vehicles, money), allied, the team wins together
-status: open
+status: fixed
 kind: feature
 stage: Civ
 reported: 2026-11-20
 source: Lineages port (PR #196)
 role: 
 versions: 0.7.15.5
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-civ (fork IltonBJSilva/SporeCoop)
-commits: e80c559c be54fe64 2e429fef
+commits: 72c7a805 175085ea d7b9d1c3 0c516ca9
 tests: tools/tests/coop_civ_seats.py (suite civ_seats), tests/civ_seats_tests.cpp
 signature:
 docs: docs/re/civ.md#civ-own-nations docs/01-architecture.md#architecture-own-nations

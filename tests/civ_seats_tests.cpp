@@ -78,6 +78,26 @@ static void sites_and_new_cities()
     CHECK(new_city_since(npc, grown, r) == kAmbiguous);
 }
 
+static void adoption() // BUG-9276: no free site, the partner takes over an NPC nation
+{
+    auto r = roster({{0, {1, 0x800021CB, 0}}, {2, {0x7C000002, 0x22A8, 2}}});
+    // the host's, a player's, then NPC nations: one with two cities near, two one-city ones (the nearer wins)
+    // (nation, home, own, dist)
+    std::vector<Holding> c{{0x800021CB, true, true, 0},  {0x22A8, false, true, 10}, {0x21CC, false, true, 50},
+                           {0x21CC, false, true, 60},     {0x21D0, false, true, 305}, {0x21CD, false, true, 575}};
+    CHECK(adopt_choice(c, r) == 0x21D0);
+    // a nation whose city is on its way to another nation (a capture under way) is not taken
+    c[4].own = false;
+    CHECK(adopt_choice(c, r) == 0x21CD);
+    // the two-city nation when no one-city nation is left
+    c[5].own = false;
+    CHECK(adopt_choice(c, r) == 0x21CC);
+    // only the players' nations left: none
+    std::vector<Holding> team{{0x800021CB, true, true, 0}, {0x22A8, false, true, 10}, {0, false, true, 5}};
+    CHECK(adopt_choice(team, r) == 0);
+    CHECK(adopt_choice({}, r) == 0);
+}
+
 static void owners()
 {
     CHECK(seat_owner(0, kNobody) == 0);   // the host's nation
@@ -115,6 +135,7 @@ int main()
 {
     next_capitals();
     sites_and_new_cities();
+    adoption();
     owners();
     team();
     if (g_fail)
