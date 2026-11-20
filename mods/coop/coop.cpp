@@ -75,6 +75,7 @@
 #include "net/lobby.h"
 #include "net/session.h"
 #include "net/utf8.h"
+#include "creation_props.h"
 #include "creations.h"
 #include "species_line.h"
 #include "designs.h"
@@ -2915,6 +2916,7 @@ static void init_civ_and_space()
     spacecoop::init(H, M, std::move(spc));
     apply_startup_off(); // tests: switches that must be off before the game starts (fixes_off.txt)
     gamefixes::init(H, M);
+    creationprops::init(H, M); // BUG-1328
     autoupdate::set_feed(feed);
     autoupdate::init(H, M, COOP_VERSION);
 }
