@@ -190,7 +190,7 @@ void init(const SkHost* host, SkMod* mod, const char* version)
     M = mod;
     upd::g_log = log_retry;
     g_version = version;
-    g_enabled = H->config_int(M, "update", "check", 1) != 0;
+    g_enabled = H->config_int(M, "update", "check", 0) != 0; // build/amigos: a private build, off by default (an official update would replace it)
     char b[512];
     H->config_str(M, "update", "url", upd::kLatestUrl, b, sizeof b);
     g_url = b;
