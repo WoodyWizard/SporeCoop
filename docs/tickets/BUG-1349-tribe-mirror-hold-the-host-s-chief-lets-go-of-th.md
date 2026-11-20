@@ -47,7 +47,8 @@ The checks (rounds >= 2, the guest's copy follows each, puts it back) are unchan
 ## Verification
 Open, waiting for the lab run: tribe_mirror_hold must PASS; if a round still lets go, its printed attaches and
 handbone line say whether pending tracks were there (cleared=1) and whether creature.fx_bone refused the bone
-(fx_skips). tribe_mirror_hold_off (SPORE_FIX_OFF=tribe.mirror_hold) must still FAIL. If it fails again with cleared=0
+(fx_skips).
+`SPORE_FIX_OFF=tribe.mirror_hold` (by hand, BUG-0914's twin) must still FAIL on the guest's copy. If it fails again with cleared=0
 and no fx_skips, this ticket gets a runtime probe of the chief's modifier table (cause still open).
 
 ## History
