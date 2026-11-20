@@ -10,7 +10,7 @@ role: host
 versions: 0.7.16 (unreleased)
 fixed_in:
 branch: fix/w60-dna
-commits:
+commits: 48dfc9fa
 tests: social_sing_own, social_sing_own_lowfps, social_sing_partner (coop_social_sing.py; --old: the test before)
 signature:
 docs:

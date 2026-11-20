@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.16 (unreleased)
 fixed_in:
 branch: fix/w60-dna
-commits:
+commits: 48dfc9fa
 tests: tag_camera (twin tag_camera_drawncam_off), tag_height
 signature:
 docs:

@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.16 (unreleased)
 fixed_in:
 branch: fix/w60-dna
-commits:
+commits: 48dfc9fa
 tests: creature_social_prompts
 signature:
 docs:

@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.16 (unreleased)
 fixed_in:
 branch: fix/w60-dna
-commits:
+commits: 1165c4fd
 tests: dna_notice (twin dna_notice_cause_off)
 signature: guest log "dna: own N -> N, bar x -> party y cause=<cause>" followed by "dna: own N -> M ... cause=unknown"
 docs:

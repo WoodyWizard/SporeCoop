@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.16 (unreleased)
 fixed_in:
 branch: fix/w60-dna
-commits:
+commits: 1165c4fd
 tests: dna_away, dna_away_shared, team, dna_resend, dna_resend_shared, dna_notice, dna_notice_shared
 signature:
 docs:
