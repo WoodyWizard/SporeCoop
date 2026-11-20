@@ -2,6 +2,7 @@
 // the snapshot it sends (host_tick), the buildings' hit points, the guests' commands (host_command); moved out of
 // civ.cpp (C8 of 0.7.15, BUG-1164).
 #include "civ_internal.h"
+#include "civ_wallet.h"
 
 namespace civ {
 
@@ -604,7 +605,10 @@ static void refund_build(uint8_t from, float paid, const char* why)
         return;
     void* pc = player_civ();
     float back = civlogic::refund_amount(paid, kRefundMax);
-    if (pc && back > 0 && o_AddMoney) {
+    if (back > 0 && civ_wallet::host_refund(from, back)) { // BUG-9259: back into its own money
+        g_n.build_refunds++;
+        g_build_refunded += back;
+    } else if (pc && back > 0 && o_AddMoney) {
         o_AddMoney(pc, back, 0); // the shared money (no difficulty multiplier)
         g_n.build_refunds++;
         g_build_refunded += back;
@@ -875,6 +879,7 @@ void* host_buy(void* city, int loco)
     if (thiscall<int>(a_SlotsLeft, civ, purpose) <= 0)
         return nullptr;
     float cost = thiscall<float>(a_VehicleCost, civ, purpose, loco);
+    civ_wallet::PayAs pay(g_pending_owner); // BUG-9259: a guest's purchase is paid from its own money
     g_buy_fail = "not enough money";
     if (!civlogic::can_pay(thiscall<float>(a_GetMoney, civ), cost))
         return nullptr;
@@ -1131,15 +1136,20 @@ void host_command(uint8_t from, net::Reader& r)
             snprintf(why, sizeof why, " (city %u: %s)", (unsigned)ci, !city ? "not in the host's game" : "already the players'");
             return reject();
         }
-        float money = thiscall<float>(a_GetMoney, pc);
-        g_capture_for = from;
-        if (kind == 6)
-            o_CityBuy(city, pol_of(pc), price);
-        else
-            h_Capture(city, pol_of(pc), type, 0, 0, 0);
-        g_capture_for = -1;
-        // (the owner changes when the capture's cinematic ends: a purchase that took spent the money)
-        if (kind == 6 && pol_of(city) != pol_of(pc) && thiscall<float>(a_GetMoney, pc) >= money) {
+        bool refused;
+        {
+            civ_wallet::PayAs pay(kind == 6 ? from : -1); // BUG-9259: a guest's city purchase is paid from its own money
+            float money = thiscall<float>(a_GetMoney, pc);
+            g_capture_for = from;
+            if (kind == 6)
+                o_CityBuy(city, pol_of(pc), price);
+            else
+                h_Capture(city, pol_of(pc), type, 0, 0, 0);
+            g_capture_for = -1;
+            // (the owner changes when the capture's cinematic ends: a purchase that took spent the money)
+            refused = kind == 6 && pol_of(city) != pol_of(pc) && thiscall<float>(a_GetMoney, pc) >= money;
+        }
+        if (refused) {
             net::Writer nw;
             nw.str8("the city was not bought: not enough money or no trade route in the host's game");
             C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
