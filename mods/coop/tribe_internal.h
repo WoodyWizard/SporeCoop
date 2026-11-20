@@ -119,6 +119,21 @@ void* find_tree(const net::Vec3& pos, float max_dist);
 void graduation_init();
 std::string graduation_cmd(const std::vector<std::string>& a);
 
+// tribe_villages.cpp (BUG-9268, Lineages port phase 5): every player's own village
+void villages_init();
+void villages_host_tick(double now);
+void villages_guest_tick();
+void villages_ai(void* c);                     // host: from h_BTTick
+int village_seat(void* t);                     // host: the party seat of a partner's village (>= 1), -1 none
+uint8_t village_member_owner(void* t);         // host: the owner of its members, 0xFF: no partner's village
+std::vector<uint8_t> villaged_players();       // host: the players here with a village of their own (sorted)
+bool village_orders_ok(void* t, void* pt, uint8_t from); // host: `from` may order a member of village t
+bool hostile_to_party(int action, void* target); // host: an attack or raid on a player's village (refused)
+size_t founder_villages_in(const void* list);  // the partners' villages in a GetData tribe list
+void* own_village();                           // guest: its own village (null: none, it shares the host's)
+std::string villages_status();
+std::string villages_debug(const std::vector<std::string>& a);
+
 // ---------------- host ----------------
 // C1 (BUG-1140): one entry of the host's member table (tribe.hm); its id, object and serial are the registry entry's
 struct HMember {

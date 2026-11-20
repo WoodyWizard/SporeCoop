@@ -1,6 +1,7 @@
 #include "tribe.h"
 #include "tribe_internal.h"
 #include "tribe_logic.h"
+#include "tribe_seats.h"
 #include "call_guard.h"
 #include "lifecycle.h"
 #include "mirror_registry.h"
@@ -209,11 +210,16 @@ void host_tick(double now)
     for (auto& p : C.sess->players())
         players.push_back(p.id);
     std::sort(players.begin(), players.end());
+    villages_host_tick(now); // BUG-9268: every player's own village
+    // BUG-9268: a player with a village of their own does not share the host's: the player tribe is split between the
+    // others (with tribe.own_villages off or nobody villaged: every player, as before)
+    const std::vector<uint8_t> villaged = villaged_players();
+    const std::vector<uint8_t> shared = villaged.empty() ? players : tribe_seats::shared_players(players, villaged);
     member_claims_tick(pt, now); // E1 (BUG-1154)
-    if (players != g_host.split_for && pt) {
+    if (shared != g_host.split_for && pt) {
         arrival_place_due(now); // BUG-0340: a player arrived or rejoined
         // the players changed: split the player tribe again, in member order (E1: a claimed member to its player)
-        g_host.split_for = players;
+        g_host.split_for = shared;
         g_host.dealt = 0;
         for (void* c : members(pt)) {
             HEntry* it = hm_of(c);
@@ -222,9 +228,10 @@ void host_tick(double now)
             int cl = claim_holder(c);
             if (cl >= 0)
                 g_mclaims_held += cl == C.sess->my_id() && g_member_claim[c] != "host";
-            it->data.owner = tribe_logic::resplit_owner(cl, players, g_host.dealt); // (D3)
+            it->data.owner = tribe_seats::shared_owner(tribe_logic::resplit_owner(cl, shared, g_host.dealt), villaged, shared,
+                                                       g_host.dealt); // (D3)
         }
-        member_balance(pt, players);
+        member_balance(pt, shared);
     }
     struct Entry {
         uint16_t id;
@@ -252,12 +259,17 @@ void host_tick(double now)
             if (fresh) { // the owner (D3: tribe_logic::new_owner): E1's claim, else the players in turns; BUG-0671's purchase
                 auto bf = g_host.born_for.find(c);
                 bool bought = bf != g_host.born_for.end();
-                it->data.owner = tribe_logic::new_owner(player, player ? claim_holder(c) : -1, players, g_host.dealt,
+                it->data.owner = tribe_logic::new_owner(player, player ? claim_holder(c) : -1, shared, g_host.dealt,
                                                         bought ? (int)bf->second : -1,
                                                         bought && net::is_player(*C.sess, bf->second));
                 if (bought)
                     g_host.born_for.erase(bf);
             }
+            if (player && !villaged.empty()) // BUG-9268: not the member of a player with a village of their own
+                it->data.owner = tribe_seats::shared_owner(it->data.owner, villaged, shared, g_host.dealt);
+            else if (!player)
+                if (uint8_t vo = village_member_owner(tribes[ti]); vo != 0xFF) // BUG-9268: a partner's village
+                    it->data.owner = vo;
             if (it->data.tribe && it->data.tribe != tribes[ti]) { // BUG-0841: a known member in another tribe now
                 g_member_moves++;
                 if (player && it->data.owner == 0xFE)
@@ -511,6 +523,11 @@ void host_command(uint8_t from, net::Reader& r)
         g_last_cmd += tgt.kind == 1 && g_host.members.has(tgt.id) ? " rejected: the target is gone (BUG-1053)" : " rejected: no such target here";
         return; // the object is gone on the host
     }
+    if (kind == CMD_ACTION && hostile_to_party(action, target)) { // BUG-9268: the players' villages are allies
+        g_cmds_rejected++;
+        g_last_cmd += " rejected: a player's village (allies, BUG-9268)";
+        return;
+    }
     int ran = 0;
     for (uint16_t id : ids) {
         HEntry* hm = g_host.members.find(id);
@@ -519,8 +536,8 @@ void host_command(uint8_t from, net::Reader& r)
             g_cmds_rejected++;
             continue;
         }
-        if (hm->data.owner != from ||
-            (g_cmd_listed_fix ? !hm_live(c) : !game::object_alive(c)) || F<void*>(c, kOwnerTribeOff) != pt) { // (BUG-1053)
+        if (hm->data.owner != from || (g_cmd_listed_fix ? !hm_live(c) : !game::object_alive(c)) || // (BUG-1053)
+            !village_orders_ok(F<void*>(c, kOwnerTribeOff), pt, from)) { // BUG-9268: or the sender's own village
             g_cmds_rejected++;
             continue;
         }

@@ -1283,3 +1283,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9261](BUG-9261-lineages-port-phase-3-a-partner-s-creature-archi.md) | open | feature | Creature | 2026-11-20 |  | Lineages port, phase 3: a partner's creature archived with the host's planet, one key per creation |
 | [BUG-9262](BUG-9262-lineages-port-phase-4-every-player-s-own-nest-of.md) | open | feature | Creature | 2026-11-20 |  | Lineages port, phase 4: every player's own nest of their own species next to the host's |
 | [BUG-9267](BUG-9267-a-guest-s-first-join-of-a-planet-loads-the-world.md) | open | bug | Creature | 2026-11-20 |  | A guest's first join of a planet loads the world twice: the share hold sees the host's species before the guest's own creature |
+| [BUG-9268](BUG-9268-lineages-port-phase-5-every-player-s-own-tribe-o.md) | open | feature | Tribe | 2026-11-20 |  | Lineages port, phase 5: every player's own tribe (own village of their own species, allied, together to Civ) |

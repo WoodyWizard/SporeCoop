@@ -518,6 +518,8 @@ static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
                              uint32_t a7, uint32_t a8)
 {
     g_bt_calls++;
+    if (is_host())
+        villages_ai((void*)self); // BUG-9268: a partner's village's members are player members
     if (g_detached.count((void*)self)) { // BUG-0667: a detached body's tree stays ended
         g_bt_skipped++;
         return 0;
@@ -1590,6 +1592,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     savestrip::add_filter(save_filter); // BUG-0495
     savestrip::add_save_hooks(save_start, save_end);
     graduation_init(); // BUG-1325 (optional)
+    villages_init();   // BUG-9268 (optional hooks)
     return true;
 }
 
@@ -2776,6 +2779,7 @@ bool form_species_state(void* ctrl, FormSpecies& s)
     if (!skg::readable(list, 12))
         return false;
     s.tribes = (int)((F<uintptr_t>(list, 8) - F<uintptr_t>(list, 4)) / 4);
+    s.tribes -= (int)founder_villages_in(list); // BUG-9268: as FormTribe counts with tribe.founder_npc_budget
     void* props = *(void**)a_Props;
     int n = 0;
     void* data = nullptr;
@@ -4211,6 +4215,7 @@ void tick(double now)
     else if (is_guest()) {
         away_tree_end_tick(); // BUG-1084
         guest_tick(now);
+        villages_guest_tick(); // BUG-9268: its own village
         held_items_tick(now); // BUG-0906
     }
     coop_tick(now);
@@ -4482,6 +4487,7 @@ std::string status()
     std::string out = b;
     // C1 / C4 (BUG-1140, BUG-1143): the tables and the snapshot receiver
     out += "tribe registry: " + g_host.members.status() + "; " + g_guest.mirrors.status() + "\n";
+    out += villages_status(); // BUG-9268
     snprintf(b, sizeof b, "tribe snapshot rx: chunks=%u bad=%u older=%u cut=%u incomplete=%u abandoned=%u complete=%u generation=%u\n",
              g_guest.snap.chunks_in, g_guest.snap.bad, g_guest.snap.older, g_guest.snap.cut, g_guest.snap.incomplete, g_guest.snap.abandoned,
              g_guest.snap.complete, g_guest.snap.generation);

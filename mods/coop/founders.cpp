@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cwchar>
 
 #include "net/buffer.h"
@@ -266,6 +267,72 @@ bool store_guest_model(const std::string& key, uint32_t id, const std::vector<ui
         return true;
     err = "this planet already archives a different creature under that key";
     return false;
+}
+
+// ---- BUG-9268: the founders of a stage (from PR #196's founders.cpp, indexed by party seat) ----
+static const wchar_t* roster_suffix(Stage stage) { return stage == Stage::Tribe ? L".duofounders" : L".duonations"; }
+constexpr uint32_t kRosterMagic = 0x334F5544u; // DUO3
+constexpr size_t kRosterMax = 5 + kMaxSeats * 16;
+
+bool read(const std::string& key, Roster& out, Stage stage)
+{
+    std::vector<uint8_t> bytes;
+    if (!read_side(key, roster_suffix(stage), bytes, kRosterMax))
+        return false;
+    net::Reader r(bytes.data(), bytes.size());
+    if (r.u32() != kRosterMagic)
+        return false;
+    const unsigned n = r.u8();
+    if (n < 1 || n > kMaxSeats || bytes.size() != 5 + n * 16)
+        return false;
+    Roster value;
+    for (unsigned i = 0; i < n; ++i) {
+        value.entries[i].species = r.u32();
+        value.entries[i].faction = r.u32();
+        value.entries[i].player = r.u64();
+    }
+    if (!r.ok() || r.left() || !roster_valid(value))
+        return false;
+    out = value;
+    return true;
+}
+
+bool record(const std::string& key, const Roster& value, std::string& err, Stage stage)
+{
+    auto path = path_for(key, roster_suffix(stage));
+    if (path.empty() || !roster_valid(value) || !value.seats()) {
+        err = "a saved planet and distinct species and factions for every founder are required";
+        return false;
+    }
+    Roster prior;
+    if (read(key, prior, stage) && prior == value)
+        return true;
+    net::Writer w;
+    w.u32(kRosterMagic);
+    const size_t n = value.seats();
+    w.u8((uint8_t)n);
+    for (size_t i = 0; i < n; ++i) {
+        w.u32(value.entries[i].species);
+        w.u32(value.entries[i].faction);
+        w.u64(value.entries[i].player);
+    }
+    if (publish(path, w.data, GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES))
+        return true;
+    err = "could not save the founders (write access to the planet's folder?)";
+    return false;
+}
+
+std::string describe(const Roster& v)
+{
+    std::string out;
+    char line[96];
+    for (size_t i = 0; i < v.seats(); ++i) {
+        if (!v.entries[i].founded())
+            continue;
+        snprintf(line, sizeof line, "%sseat %zu %08X/%08X", out.empty() ? "" : ", ", i, v.entries[i].species, v.entries[i].faction);
+        out += line;
+    }
+    return out.empty() ? "no founders" : out;
 }
 
 } // namespace founders
