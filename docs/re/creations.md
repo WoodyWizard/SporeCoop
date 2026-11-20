@@ -1613,3 +1613,78 @@ BUG-1255, BUG-1258. GOG 2024, lanes 2 / 3 (`coop_evo_screens.py --part switch`, 
 * The host's phase notice after its editor said "everybody gets the new body" in Creature, also while the guest made
   its own creature (BUG-1258): now "made its creature: every player makes its own" / "evolved its creature" unless
   creature.mode host.
+
+## The consequence cards: ids, where each stage decides its card, and per-player cards (2026-11-20, feat/own-cards)
+<a id="creations-own-cards"></a>
+
+BUG-9263 / BUG-9264. Steam build 3010a413 (the GOG 2024 code; addresses are GOG 2024), objdump of the in-memory
+unpacked `.text` (docs/05-re-notes.md#re-notes-steam-text-dump) and runtime reads / calls on lane C (two instances,
+the owner's Creature save AMOR copied into the test profiles). Builds on #creations-cplayer-fields.
+
+* ✔ **Stage ids** (the argument of `cPlayer::GetConsequenceTrait` 0xC75880 / `SetConsequenceTrait` 0xC75E60) are
+  fnv1-32 of the stage names: `CellGame` A426730B, `CreatureGame` AD56080C, `TribeGame` F71FA311, `CivGame` BEB528CB,
+  `SpaceGame` 2DB6DAD3.
+* ✔ **Trait ids** (the release cheat `setConsequenceTrait`'s name table, .data 0x156ACD0: {char* name, u32 id} pairs,
+  null-terminated): cell_carnivore CFB01B93, cell_herbivore A8EC6F99, cell_omnivore 5ECE4770; creature_aggressive
+  17E5EF84, creature_social FD159D91, creature_mixed B9DE15F2; tribe_aggressive 0CAC124D, tribe_social 60A78928,
+  tribe_mixed C2CA9495; civ_military 0A35D0F5, civ_economic 3360727F, civ_religious 6AEB96A1; space_bard 50FEE6BF,
+  space_ecologist B40D2187, space_zealot 2B35F523, space_diplomat B436C0BC, space_scientist 9CE4639C, space_trader
+  B7CB9F7A, space_shaman CF6C2AB4, space_warrior D9C806E4, space_wanderer A5656E84, space_knight F966D429. (The names
+  are not their own fnv hashes.) The cheat's help: "Sets the trait which will determine what super powers are
+  available."
+* ✔ **Writers of cPlayer +0x10FC..+0x110C** (objdump, every `mov [reg+0x10FC..0x110C]`): the setter 0xC75E60, the
+  load / init (0xC7B9A0 zeroes all five), and one writer per stage end:
+  * Cell: the Cell end 0xE61140 (the body of SporeCoop::CellStage_ToCreature) calls `Cell_GetConsequenceTrait`
+    0xE5C9D0 and passes it to CreatureStart_FromCell 0xE83910, which writes +0x10FC (0xE83932; and +0x10EC). The
+    decision reads the Cell save data (cCellGame::_ptr +0x5190, cCellSerializableData): r = 0xE511C0(+0x24 + +0x20,
+    +0x28 - +0x20 + +0x1C) against the Cell tuning's +0xCC / +0xC8 (0xE4CE20): below = herbivore, above = carnivore,
+    else omnivore (~ which counter is meat and which plant: wstate.cpp names +0x1C food, +0x20 plant).
+  * Creature: the creature game's message handler at its stage end (0xD2C756, the Timeline's evolve button path)
+    calls `Creature_GetConsequenceTrait` 0xD38780 and writes +0x1100 at 0xD2C7D3. 0xD38780 = `Creature_TraitScore`
+    0xD386A0 >= 1/3 -> aggressive, >= -1/3 -> mixed, else social; the score = (combat +0x127C - social +0x1278) / (the
+    sum of the four floats 0x1582E38..0x1582E44: 1000, 2000, 3000, 4000 in the file) + the History timeline's Cell
+    value (Simulator_GetUITimeline 0xB3D510, 0xE3F7A0(timeline, CellGame): a per-stage float map at +0x250, filled
+    from the game's records when missing; ~ its exact source), clamped to [-1, 1]. Runtime: social 80, combat 0 ->
+    B9DE15F2 mixed; social 0, combat 5007 -> 17E5EF84 aggressive (`coop.cards decide`).
+  * Tribe: 0xCDC739 calls `Tribe_GetConsequenceTrait` 0xCDBBD0 (0xCDBA30, a float score of the player tribe's
+    relations with the other villages, against +-1/3: aggressive / mixed / social) and writes +0x1104 at 0xCDC746
+    (Lineages' tribe-native-graduation-role section; there C2CA9495 was called "industrious").
+  * Civ: 0xCF82C0 compares the player civilization's share of each city type (0xBF19C0(civ, trait) for military,
+    economic, religious) and writes the largest to +0x1108 (0xCF833B / 0xCF83BB / 0xCF8428).
+  * Space: the Space start 0x1005C20 (with its bool argument) computes the archetype from the four cards with
+    `SpaceArchetype_FromTraits` 0x556440 (cdecl, 4 args) and sets it with SetConsequenceTrait(SpaceGame); an
+    archetype change later (cMissionChangeArchetype, 0xC4DB40) sets it again. Runtime (`coop.cards space`): omnivore,
+    social, aggressive, religious -> B40D2187 ecologist; omnivore, aggressive, aggressive, religious -> F966D429
+    knight; carnivore, aggressive, aggressive, military -> D9C806E4 warrior; herbivore, social, social, economic ->
+    CF6C2AB4 shaman.
+  * 0xB5F910 (in Civ, mode 0x1654C04): a card still 0 (a game started at Civ) is filled from the civilization's
+    archetype (0xBF1080: 0 / 1 / 2): Cell CFB01B93 / 5ECE4770 / A8EC6F99, Creature 17E5EF84 / B9DE15F2 / FD159D91.
+* ✔ **Trait progress**: `cPlayer_AddTraitProgress` 0xC75840 (thiscall(amount, bool social) ret 8; social ? +0x1278 :
+  +0x127C) is called by the kill in TakeDamage (0xC07C0C, combat), SpeciesGoal_Update (0xC2EFE9, 0xC2F0F1) and the
+  social win 0xD9BD36 (social), each right after AddEvolutionPoints with the same amount.
+* ✔ (runtime, a probe on both games, BUG-9264) **A guest's kill counted for the host**: the guest's lethal hit
+  (`coop.npc hit`; npc.cpp lands it as the host avatar's for the DNA credit) called AddTraitProgress(7.0, combat) on
+  the host only: the host's combat 0 -> 7, the guest's game's stayed 0 (the guest's game never calls it: its animals
+  are proxies). social.cpp's replica of the social win (apply_success) added nobody's social progress. Both games'
+  History and Creature card followed the host's progress.
+* ✔ **Readers** (objdump): the stage end decisions above; the editor requests (+0x70 vector: 0xD3C7BE mating,
+  0xD44F56 the stage's evolution, 0xD132F9 the Tribe outfitter, 0x100580E Space; the mod's own requests in vote.cpp)
+  copy the cards from cPlayer, so a creation made in a game gets that game's cPlayer's consequence abilities; the
+  Tribe stage reads +0x1100 (0xCC622B, 0xCD866E, 0xCD993E), the Tribe vehicle editor +0x1104 (0xCD2308), Civ +0x1104
+  (0xB9E4B3), Space +0x1108 (0xFF0802); the Creature stage's 0xD482A3 reads the Cell card; the Sporepedia card
+  0xDD1000 and the History timeline 0xE3A70E call GetConsequenceTrait. ~ Which of them builds the avatar's ability bar
+  at a stage start was not traced: a game that has its own cards in cPlayer when that code runs gets its own powers.
+* ✔ (runtime) Before this change a guest's game had the host's five cards from the host's save and from the wsync
+  row "stages" (every 0.5 s). Negative: no other row or message writes them.
+* **Per-player cards (cards.cpp, BUG-9263)**: the host keeps every seat's cards and progress in the party file (PTY2,
+  founders.h), credits a guest's kill / social win to its seat (the hook on AddTraitProgress, an Actor scope around
+  the guest's hit and social win), and when the host's world has a stage done that a seat has not, decides the
+  seat's card: Cell = the guest's own game's Cell_GetConsequenceTrait (reported over MSG_OWN_CARDS while it plays
+  Cell; ~ not run in a Cell game yet: no Cell save on this PC), Creature = Creature_GetConsequenceTrait with the
+  seat's progress swapped into the host's cPlayer for the call (the Cell timeline value stays the host world's),
+  Tribe / Civ = the host's (one shared player tribe / nation in this build), Space = SpaceArchetype_FromTraits of
+  the seat's four cards. A stage the host's world has not done is cleared for every seat (a reload of an earlier
+  save). The guest's game writes its record into its cPlayer (SetConsequenceTrait, the progress fields) while it
+  plays the host's world; the "stages" row leaves it alone. ✔ (runtime, lane C) a guest's kill: the guest's combat
+  0 -> 7, the host's unchanged; the host's Creature card FD159D91, the guest's (combat 5007) 17E5EF84 by the game's
+  own getter (`call SporeCoop::cPlayer_GetConsequenceTrait` on each game); kept across a rejoin and a reload.
