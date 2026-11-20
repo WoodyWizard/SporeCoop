@@ -81,6 +81,17 @@ The difference reproduced on lane 6 and the fix (fix/w58-cityname):
 - Lanes 5 and 6 cleaned afterwards (`coop.creationprops remove`: no .prop left in either guest profile's
   Pollination.package).
 
+Backport to the 0.7.15 line (fix/w59-hotfix from main = v0.7.15.4; the fix of fix/w58-cityname without 0.7.16 code; the
+0.7.15 line has no own arrival editors, so its test `coop_creation_props_key0.py` drives the game's own end-of-Tribe City
+Hall and vehicle editors of the host with the list planted in the host's game; lane 9):
+- PASS: out/lab/20261119-204948:creation_props_key0 and again out/lab/20261119-205401:creation_props_key0 (both editors:
+  name field and dice shown, named with the dice, saved; the host's game reached Civ; the guard answered 2 reads of key
+  0; 0 faults). Key frames cityhall_name_panel / vehicle_name_panel show the empty name field with the dice.
+- FAIL (twin): out/lab/20261119-205401:creation_props_key0_off (no name field, no dice in the City Hall editor; its key
+  frame shows only the caption "Name your City Hall", Description and Tags: the end of Tribe cannot be left).
+- Smoke: out/lab/20261119-205832 lane 9 (13 OK, ui INCONCLUSIVE there as usual off lanes 1-5); ui PASS out/lab/20261119-205419 lane 5.
+- Lane 9's host profile cleaned at each test's end (`coop.creationprops remove`: deleted from Pollination.package).
+
 ## History
 - 2026-11-19: opened (fix/w58-linestages): the lab runs above, the screenshots; first taken for an effect of the guest's own
   outfitter, then seen on lane 5 only (line_stages_outfit passes the editors on lane 6, 20261119-190903); open.
@@ -88,3 +99,5 @@ The difference reproduced on lane 6 and the fix (fix/w58-cityname):
   5's Pollination.package, the name panel's flags read at runtime and in Ghidra, reproduced on lane 6 by planting the
   list; fixed by `game.creation_props_key0`; the campaign's red-cross workaround removed; fixed. Found on the way:
   BUG-1329 (the late route's City Hall result faults in the Tribe goal listener).
+- 2026-11-19: backported to the 0.7.15 line (fix/w59-hotfix): a 0.7.15 player whose profile has the list cannot leave
+  Tribe (the game's own City Hall editor); test creation_props_key0 on the end of Tribe.
