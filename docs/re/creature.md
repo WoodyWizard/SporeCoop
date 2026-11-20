@@ -5429,3 +5429,22 @@ and setter (vt 0xD8 / vt 0xDC).
   editor always comes back to Creature first. 0x445F729 is the cinematic manager's "cinematic done" message
   (cCinematicManager_HandleMessage, cPlayer::HandleCoreMessage), not part of the stage end. The bottom bar of History
   is the timeline's scroll bar.
+
+## A fresh Creature -> Tribe start seen live with two players (2026-11-20, feat/lineages-47)
+<a id="creature-tribe-start-live"></a>
+
+Ported from feat/lineages-alpha with the test commands of #creature-tribe-ready-test (`coop.vote tribe`,
+`coop.dna brain [n]`, the goal in `coop.dna bar`). TITAN QA copy, host QA 9 (DuoQAJiffStand, Vandh at brain level 1),
+guest QA 8 (DuoQACreatureGuest, its own creature).
+
+* ✔ `coop.dna brain 4`, `coop.dna add 3000`, `coop.vote tribe` on the host: the stage-end vote starts ("wants to move on
+  to the Tribe stage"); the guest's game shows the game's own "brain fully grown" scene and the "Advance to Tribe" hint.
+  The guest's F9 passes the vote, the host gets the stage-end editor; after its Done: "Congratulations! You are about to
+  enter the Tribal stage.", its check, then the Tribe stage. The guest follows ("Getting the latest world") and arrives
+  in Tribe with its own village by the host's (village food line, both Party cards, players=2), no crash
+  (images/live_creature_to_tribe_host.png, images/live_creature_to_tribe_guest.png).
+* ~ A guest still making its first creature (DuoQACreatureJoin, a mouthless blank creature: its Done did nothing) stays
+  in its editor while the vote runs out ("evolution starts (time is up)") and the host moves on to Tribe. What that guest
+  gets when it leaves the editor later was not checked.
+* The stage end saves over the host's slot (Vandh.spo and its .old both Tribe after it): restore the fixture from
+  Game0.bak-20261113 before reusing it.

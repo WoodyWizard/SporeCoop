@@ -36,3 +36,5 @@ and the HUD's blue arrow; on, the edge in QA 9's colour (blue for that player) a
 
 ## History
 - 2026-11-19: built on feat/lineages-alpha.
+
+* 2026-11-20: ported to feat/lineages-47 (Live, b23e9a9b); seen live there: the host's plate yellow, the guest's blue, one edge each (images/live_7DA_plate_host_view.png, images/live_7DA_plate_guest_view.png).
