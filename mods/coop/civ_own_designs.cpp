@@ -389,9 +389,10 @@ std::string own_designs_debug(const std::vector<std::string>& a)
         }
         auto it = g_own.find(v);
         uint8_t o = owner_of_vehicle(v);
-        snprintf(b, sizeof b, "  ownveh #%u %p owner=%d purpose=%d loco=%d did=%08X model=%08X culture=%08X hp=%.1f max=%.1f\n",
+        snprintf(b, sizeof b, "  ownveh #%u %p owner=%d purpose=%d loco=%d did=%08X model=%08X culture=%08X hp=%.1f max=%.1f mtype=%08X mgroup=%08X\n",
                  id, v, o == 0xFF ? -1 : (int)o, F<int>(v, kVPurpose), F<int>(v, kVLoco), vehicle_did(v), model_key(v)[0],
-                 it == g_own.end() ? 0u : it->second.orig[0], F<float>(v, kVHp), F<float>(v, 0x534));
+                 it == g_own.end() ? 0u : it->second.orig[0], F<float>(v, kVHp), F<float>(v, 0x534), model_key(v)[1],
+                 model_key(v)[2]);
         out += b;
     }
     int ci = 0;

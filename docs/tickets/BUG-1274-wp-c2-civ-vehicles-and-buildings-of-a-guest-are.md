@@ -60,6 +60,13 @@ fix/w57-civlook (the night run's failures, 2026-11-19):
   20261119-143657 (+0xC4 00000000 on both games, as the night's 20261119-133307 of fix/w57-savestrip); PASS lab
   20261119-142443-2 (the guest's vehicle 7BE222FB built from 76023C9D on both games, hp 368.2, the host's Civ save
   clean) and on the merged tree lab 20261119-143657.
+* fix/w58-linestages (the tree with WP-X1 / the own editors merged, c4132601): the guest's vehicle shows its design on
+  both games in all three line tests: line_stages lab 20261119-184827 (`owndesign set`, the host's culture key 0),
+  line_stages_outfit 20261119-190903 / 20261119-182732 (the same path, 7BE222FB built from 76023C9D; the guest's culture
+  key a generated 0x29...... design, re-keyed), line_stages_editors 20261119-190903 (its own vehicle editor's design
+  7B67193D built from 7AF016DB, the culture's 3A5843B7). Twin line_stages_nodesign_off FAIL lab 20261119-173854 (+0xC4
+  0, max hp 10). The "built from none" of fix/w57-own-editors 20261119-162318 (line_stages_outfit) did not come back
+  in 4 runs of that path; line_stages now prints the vehicle's whole model key (type, group) when the check fails.
 
 ## History
 - 2026-11-18: opened.

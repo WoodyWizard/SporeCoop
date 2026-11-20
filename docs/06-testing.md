@@ -9423,6 +9423,19 @@ record (coop_civ_own_designs.keys_in) for the guest's keys of that stage.
   them on both games). Suite entry `line_stages_editors` (added with WP-X1, feat/w54-x1).
 * coop_campaign.py: the editor driver drags the City Hall palette's parts (TRIBE_EDITOR_PARTS) also in the Civ follow
   phase (a guest's own City Hall / vehicle editors at its arrival, WP-X1), not the spaceship palette's.
+* (2026-11-19, fix/w58-linestages) The guest's own arrival editors come on every path of the merged tree (own mode,
+  `core.own_civ_arrival`), not only with `--civ-editors`: the test drives them (the campaign's driver in the follow
+  phase) until `coop.civarrival` says `phase=done`, the guest is back in Civ and, with `--civ-editors`, its line holds
+  the City Hall and the vehicle editor's design id on both games. Waiting for "any design" stopped the driver in the
+  few seconds between the two editors and left the guest in its vehicle editor for the rest of the test (lab
+  20261119-151550 / 20261119-153243: "no such city" on the guest, no capital citizens there; a test problem, not a
+  city sync one: the host's cities come to the guest when it is back in Civ, lab 20261119-164538). With
+  `--civ-editors` the driver gives a guest's own arrival editors a fourth part (`CIV_ARRIVAL_PARTS`,
+  `Campaign.arrival_parts`): with the host's three drags the guest's vehicle was the host's model byte for byte
+  (3A5843B7 both, lab 20261119-164538 line_stages_editors), so "not the culture's model" could not hold. A guest's
+  own arrival editor still up after 14 "done" is left with the red cross (`Campaign.arrival_cancel_after`, None with
+  `--civ-editors`): on lab lane 5 that City Hall editor's name panel has no dice and the driver cannot name it
+  (BUG-1328, 6 of 6 runs there; lane 6 names it every time). line_stages_editors on lane 5 FAILs for that reason.
 
 ## Tests of the Lineages fork's general bugs (2026-11-19, fix/w56-general)
 <a id="testing-fork-general"></a>
