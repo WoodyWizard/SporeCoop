@@ -16,6 +16,7 @@
 #include "designs.h"
 #include "fixes.h"
 #include "own_world.h"
+#include "nest.h"
 #include "game.h"
 #include "modes.h"
 #include "net/protocol.h"
@@ -887,6 +888,9 @@ static bool r_nest(Table& out)
     return true;
 }
 constexpr float kSameNest = 30.f; // m: one nest (nests lie hundreds of metres apart)
+static bool g_own_home_fix = true;
+COOP_FIX("wsync.own_nest_stays", "BUG-9262", g_own_home_fix,
+         "wsync: a guest living in its own nest (the home the host tells it) does not migrate to the host's nest");
 static int s_nest(const Table& want, bool apply)
 {
     void* p = cplayer();
@@ -921,6 +925,11 @@ static int s_nest(const Table& want, bool apply)
     pending_since = -1;
     if (st != 0)
         return 0; // this game migrates already (its own or started here): its NestTick goes on
+    // BUG-9262: a guest with its own nest (home_nests.cpp) lives in the home the host tells it (nest.cpp kind 2), not in
+    // the host's nest: no migration to the host's nest (it set this game's migration and emptied the brain range of the
+    // guest's own nest herd: the "Migrate to a new nest" goal on the guest, lane A 2026-11-20)
+    if (net::Vec3 told; g_own_home_fix && nest::told_home(told) && nest_dist(mine, told) < 15.f && nest_dist(told, host) >= kSameNest)
+        return 0;
     bool same_home = nest_dist(mine, host) < kSameNest;
     // the host migrates from the nest this game still lives in, or it lives in a nest this game never claimed
     bool behind = hst != 0 ? same_home : !same_home;

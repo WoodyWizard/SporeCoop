@@ -26,7 +26,7 @@ static std::function<bool()> g_creature_now;
 static double g_next = 0;
 static bool g_queued = false;
 static uint32_t g_sets, g_checks;
-static uintptr_t a_set_by_key, a_get_image;
+static uintptr_t a_set_by_key, a_get_image, a_image_vt;
 
 constexpr uint32_t kPortraitWin = 0x03D99151, kPngType = 0x2F7D0004;
 
@@ -55,14 +55,16 @@ static sui::Win window()
     return w && sui::visible(w) ? w : nullptr;
 }
 
-// whether the window draws the avatar's species png: the window's drawable (UTFWin::ImageDrawable, vtable 0x01443248)
+// whether the window draws the avatar's species png: the window's drawable (UTFWin::ImageDrawable, its vtable a symbol)
 // holds its UTFWin::Image at +0x24 (runtime 2026-11-12: an object with the size 67 x 68 at +0x20 / +0x24, the
 // portrait's size); UTFWin::Image::GetImage of a key answers the game's one Image of that png, so the two pointers
 // are the same when the portrait shows it. -1: not known (no drawable, no image of that key)
 static int shows(sui::Win w, const uint32_t key[3], void** shown_img = nullptr)
 {
     uint8_t* d = (uint8_t*)sui::drawable(w);
-    if (!d || !readable(d, 0x28) || *(uint32_t*)d != 0x01443248 || !a_get_image)
+    // BUG-9269: the vtable by name (it was the GOG 2024 address as a number: on the Steam exe, where SporeKit moves
+    // every address by -0xE0000, no portrait matched and the fix never set one)
+    if (!d || !readable(d, 0x28) || !a_image_vt || *(uint32_t*)d != (uint32_t)a_image_vt || !a_get_image)
         return -1;
     void* img = *(void**)(d + 0x24);
     if (shown_img)
@@ -124,6 +126,7 @@ void init(const SkHost* host, SkMod* mod, std::function<bool()> creature_now)
     g_creature_now = std::move(creature_now);
     a_set_by_key = H->sym("UTFWin::Image::SetBackgroundByKey");
     a_get_image = H->sym("UTFWin::Image::GetImage");
+    a_image_vt = H->sym("UTFWin::ImageDrawable::vftable"); // BUG-9269
     H->command_add(M, "coop.portrait",
                    "coop.portrait - BUG-0937: the Creature HUD portrait's image key against the avatar's species",
                    command, nullptr, SK_CMD_OUTSIDE_FRAME);
