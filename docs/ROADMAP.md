@@ -496,3 +496,8 @@ docs/12-server-and-players.md#server-era-visitors-built): players of a planet's 
 creatures that walk where their player walks (Creature and Tribe), through a light stream on the galaxy server and a
 creation store there (any game can get any player's creature). Step 4's parts are all built; left: Civ / Space
 visitors (vehicles, buildings, ships), the Cell -> Creature and Tribe -> Civ crossings, the MSI builds.
+Update 2026-11-20 (continued, the owner's continue rule): visitors only reach players within 300 m (BUG-9288), wear
+a name tag (BUG-9289); the creation store keys creations by owner and carries any type (BUG-9290); a Civ era's
+buildings and vehicles are drawn in the Creature and Tribe eras (BUG-9290, BUG-9291: seen); the Cell stage's end goes
+through the party's crossing (BUG-9292: seen), the Tribe stage's too (built, not run). Left: ships of the Space era
+over the planet, a run of Tribe -> Civ through a crossing, the MSI builds.

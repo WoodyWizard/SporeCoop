@@ -3064,9 +3064,28 @@ static ReqImage req_image(void* req)
 static void* g_cross_req = nullptr;
 static double g_cross_at = 0;
 static unsigned g_cross_holds = 0, g_cross_sent = 0;
+// BUG-9292: the Cell and Tribe stages' ends go through the party's crossing too (as the Creature stage's, BUG-9278)
+static bool g_cross_more = true;
+COOP_FIX("galaxy.party_stage_end_more", "BUG-9292", g_cross_more,
+         "galaxy: on a galaxy era the Cell -> Creature switch and the Tribe -> Civ graduation move the leader's party into its own crossing first");
+static bool g_cell_cross = false; // the Cell switch waits for the crossing
+void SK_CDECL h_CellToCreature();
 bool SK_CDECL h_Submit(void* req);
 static void cross_tick(double now)
 {
+    if (g_cell_cross) { // BUG-9292: the Cell stage's switch, held for the crossing
+        if (game::mode_id() != modes::kCell) {
+            g_cell_cross = false; // (left the stage another way)
+        } else if (galaxy::crossing_ready()) {
+            g_cell_cross = false;
+            g_cross_sent++;
+            LOG("the Creature stage: the party is in its crossing: the switch goes on there (BUG-9292)");
+            H->run_outside_frame([](void*) { h_CellToCreature(); }, nullptr);
+        } else if (!galaxy::in_crossing() && now - g_cross_at > 30) {
+            g_cell_cross = false;
+            feed("your party could not move on to the next stage: try again");
+        }
+    }
     if (!g_cross_req)
         return;
     if (galaxy::crossing_ready()) {
@@ -3096,9 +3115,12 @@ bool SK_CDECL h_Submit(void* req)
     }
     uint32_t mode = game::mode_id();
     // BUG-9278 (step 4 part 3): on a galaxy era the Creature stage's end moves the party (its leader asks) into its
-    // own crossing first; there the co-op stage end runs for the party alone
-    if (!g_vote_bypass && req && mode == modes::kCreature && !g_lineages_evo_req && skg::readable(req, 0x94) &&
-        skg::field<uint32_t>(req, 0x90) == kTagStageEnd) {
+    // own crossing first; there the co-op stage end runs for the party alone. BUG-9292: the Tribe stage's end too (the
+    // native graduation's request: History's check once the totem is complete)
+    const bool creature_end = mode == modes::kCreature && !g_lineages_evo_req && req && skg::readable(req, 0x94) &&
+                              skg::field<uint32_t>(req, 0x90) == kTagStageEnd;
+    const bool tribe_end = g_cross_more && req && skg::readable(req, 0x94) && native_tribal_graduation(req);
+    if (!g_vote_bypass && req && (creature_end || tribe_end)) {
         std::string why;
         const auto step = galaxy::stage_end_request(why);
         if (step == galaxy::kStageEndHold) {
@@ -3268,6 +3290,25 @@ CellToCreature_t o_CellToCreature;
 bool g_switch_go = false; // the vote passed: the next call is the game's own switch
 void SK_CDECL h_CellToCreature()
 {
+    // BUG-9292 (step 4 part 3 for the Cell stage): on a galaxy era the switch moves the party (its leader asks) into its
+    // own crossing first; there it runs again (cross_tick), the party's own vote
+    if (g_cross_more && !g_switch_go && game::mode_id() == modes::kCell) {
+        std::string why;
+        const auto step = galaxy::stage_end_request(why);
+        if (step == galaxy::kStageEndHold) {
+            if (!g_cell_cross) {
+                g_cell_cross = true;
+                g_cross_at = H->time_seconds();
+                g_cross_holds++;
+            }
+            feed(why);
+            return;
+        }
+        if (step == galaxy::kStageEndRefuse) {
+            feed(why);
+            return;
+        }
+    }
     bool multi = g_sess.connected() && g_sess.players().size() > 1;
     if (!g_switch_vote_fix || !settings::on(settings::kSwitchVote) || g_switch_go || game::mode_id() != modes::kCell ||
         !multi) {
@@ -12267,7 +12308,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                        return 0;
                    },
                    nullptr, SK_CMD_OUTSIDE_FRAME);
-    H->command_add(M, "coop.vote", "coop.vote [test|go] - evolution vote (test: a vote without an editor)",
+    H->command_add(M, "coop.vote", "coop.vote [test|go|creature|tribe|stageend|mate] - evolution vote (test: a vote without an editor; creature: the Cell stage's switch)",
                    [](void*, int argc, const char* const* argv, SkOut* out) {
                        if (argc > 1 && !strcmp(argv[1], "test") && g_sess.role() == net::Role::Host && !g_vote.active) {
                            start_vote(nullptr, g_name + " wants to evolve (test)");
@@ -12314,6 +12355,11 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            if (uintptr_t f = H->sym("SporeCoop::CreatureEvolutionPending_flag")) // as 0xD43069
                                *(uint8_t*)f = 1;
                            SAY("stage-end request submitted -> %d\n", (int)r);
+                       } else if (argc > 1 && !strcmp(argv[1], "creature") && game::mode_id() == modes::kCell &&
+                                  o_CellToCreature) {
+                           // tests (BUG-9292): what History's check does at the end of the Cell stage (the switch hook)
+                           h_CellToCreature();
+                           SAY("the Cell stage's switch asked (%s)\n", g_cell_cross ? "held for the party's crossing" : "as before");
                        } else if (argc > 1 && !strcmp(argv[1], "tribe") && game::mode_id() == modes::kCreature) {
                            // tests (BUG-9278): what History's check does in its stage-end mode (TimelineUI_HandleMessage,
                            // +0x36D set): the creature game's message 0x4471C60 (the stage-end request: +0xDA set, as

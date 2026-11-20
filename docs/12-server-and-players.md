@@ -1618,3 +1618,15 @@ mods/coop/era_visitors.cpp, galaxy_crt.cpp, server/galaxy/main.cpp.
   (`galaxy.prop_remake`). ✔ The Civ city of Abber drawn from the Creature stage (images/stage4_civ_visitors.png); a
   driving vehicle made again 5 times along its way. The buildings stand on their own pillars, high where the other
   world's ground is lower (this test put Abber's city on Samuth's ground; a planet's eras share their ground).
+
+## Step 4 part 3 for the Cell and Tribe stages (2026-11-20, feat/lineages-alpha)
+<a id="server-party-stage-end-more"></a>
+
+BUG-9292, switch `galaxy.party_stage_end_more`. The Cell stage's switch (History's check, h_CellToCreature) and the
+Tribe stage's native graduation request (h_Submit) go through the party's crossing as the Creature stage's end does
+(#server-party-stage-end): the leader's party moves into its own crossing, the switch / request runs again there, and on
+arrival the crossing becomes the next era (or joins its host).
+* ✔ Runtime (TITAN, QA 9 hosting Cellfour (Cell) from the test galaxy, `coop.vote creature`): the party moved into
+  "Cellfour~1|Cell" (5 s), the switch ran there, the game played Creature, the crossing became "Cellfour|Creature"
+  (15 s) and the first creature's editor opened. With the switch off: the game played Creature on "Cellfour|Cell".
+* ? Tribe -> Civ: built, not run (a Tribe save at its graduation takes ~40 minutes of scripted raids).

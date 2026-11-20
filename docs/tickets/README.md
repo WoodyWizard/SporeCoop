@@ -1405,3 +1405,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9289](BUG-9289-era-visitors-name-tags-walking-lag-measured.md) | fixed | feature | creature | 2026-11-20 | unreleased | Era visitors: name tags; walking lag measured |
 | [BUG-9290](BUG-9290-creation-store-keyed-by-owner-a-civ-era-s-vehicl.md) | fixed | feature | creature | 2026-11-20 | unreleased | Creation store keyed by owner; a Civ era's vehicles and buildings for the other eras |
 | [BUG-9291](BUG-9291-era-visitors-another-era-s-vehicles-and-building.md) | fixed | feature | creature | 2026-11-20 | unreleased | Era visitors: another era's vehicles and buildings drawn as props are not reliably visible |
+| [BUG-9292](BUG-9292-step-4-part-3-the-cell-and-tribe-stages-ends-go.md) | fixed | feature | cell | 2026-11-20 | unreleased | Step 4 part 3: the Cell and Tribe stages' ends go through the party's crossing too |
