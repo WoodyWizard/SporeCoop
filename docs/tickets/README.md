@@ -1280,3 +1280,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1328](BUG-1328-civ-after-its-own-tribal-outfitter-a-guest-s-own.md) | fixed | bug | Civ | 2026-11-19 | 0.7.15.5 | An editor without a creation key cannot be named (no name field, no dice) in a profile with a creation property list under key 0 (lab lane 5) |
 | [BUG-9258](BUG-9258-lineages-port-phase-1-a-persistent-player-identi.md) | open | feature | All | 2026-11-19 |  | Lineages port, phase 1: a persistent player identity per Spore profile (MSG_IDENTITY) |
 | [BUG-9260](BUG-9260-lineages-port-phase-2-the-campaign-s-party-one-f.md) | open | feature | All | 2026-11-20 |  | Lineages port, phase 2: the campaign's party, one founder seat per player, kept next to the planet |
+| [BUG-9281](BUG-9281-coop-party-counts-errors-on-a-new-game-before-th.md) | fixed | bug | Cell | 2026-11-20 | unreleased | coop.party counts errors on a new game before the planet has a file |
