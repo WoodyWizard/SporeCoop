@@ -7,6 +7,8 @@
 #include "wire/tribe_anim.h"
 #include "settings.h"
 #include "teamplay.h"
+#include "home_nests.h"
+#include "party.h"
 
 #include <algorithm>
 #include <cmath>
@@ -506,6 +508,24 @@ std::string debug_rxkeep(int n, float secs)
 static uint32_t g_stale_dropped = 0;   // guest: proxies the host stopped talking about (ghosts)
 static uint32_t g_deaths_played = 0; // guest: proxy deaths replayed (Die + animation)
 static uint32_t g_removed_local = 0, g_hits_sent = 0, g_hits_applied = 0, g_damage_in = 0, g_kills_credited = 0;
+
+// BUG-9262 (Lineages roadmap phase 2, owner decision 7): a player's (or a partner's) hit on a creature of a party species
+// (the host's own or a seat's own creature, home_nests.cpp) is dropped in the creature stage: the party's species are
+// best friends, also while their player is offline. `coop.fix creature.party_species_peace off`: hits land (0.7.15.2).
+static bool g_party_peace_fix = true;
+COOP_FIX("creature.party_species_peace", "BUG-9262", g_party_peace_fix,
+         "creature: no player hunts a party species (a partner's own nest family), also while its player is offline");
+static uint32_t g_party_hits_kept = 0;
+static bool party_peace(void* npc, bool by_player, uint8_t from)
+{
+    if (!g_party_peace_fix || !by_player || !home_nests::enabled() || !game::in_creature_stage() ||
+        !party::party_species(game::species_key(npc).instance))
+        return false;
+    if (g_party_hits_kept++ < 20)
+        H->log(M, SK_INFO, "npc: player %u's hit on a party species %08X dropped (BUG-9262)", from,
+               game::species_key(npc).instance);
+    return true;
+}
 
 static bool g_host_away = false; // guest: the host is in the main menu, our own game runs the NPCs
 // BUG-1174 (owner decision 2 of docs/plan-0.7.15.md, C2: an editor visit is the host away, not a world change): the
@@ -3309,6 +3329,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         void* npc = it;
         if (creature_hp::drop_partner_hit(npc)) // BUG-0374: the host's pack / family (npc.party_peace)
             break;
+        // BUG-9262: a partner's hit lands here through apply_damage (no damage filter): the party's species are best
+        // friends here too (a player's own nest family, also while that player is offline)
+        if (party_peace(npc, true, from))
+            break;
         // BUG-0805: the guest's puppet as the attacker only while it is a live creature here (TakeDamage relays it)
         void* attacker = g_handler_live_fix && C.puppet_live ? C.puppet_live(from) : C.puppet_of(from);
         float dmg = teamplay::on_player_hit(npc, from, net::sane_damage(q.damage, kMaxHit));
@@ -3427,6 +3451,10 @@ bool damage_filter(void* c, float& damage, int type, void* attacker)
             return true;
         }
         if (!game::is_puppet(c)) {
+            // BUG-9262 (Lineages decision 7): the party's species are best friends: no party member hunts them, also
+            // while their player is offline (their nest's family). Species outside the party keep the game's rules.
+            if (party_peace(c, attacker == av || (attacker && game::is_puppet(attacker)), 0))
+                return false;
             if (attacker == av)
                 damage = teamplay::on_player_hit(c, 0, damage);
             return true;

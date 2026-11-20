@@ -66,6 +66,7 @@
 #include "social.h"
 #include "identity.h"
 #include "party.h"
+#include "home_nests.h"
 #include "world.h"
 #include "find.h"
 #include "net/discovery.h"
@@ -1130,6 +1131,7 @@ static void frame_stage_ticks(double now)
     host_busy_tick(now); // C3 (BUG-1142): the host tells its pause; a guest's game waits for it
     identity::tick(now); // BUG-9258 (Lineages): a guest sends its identity after each join, the host its table
     party::tick(now);    // BUG-9260 (Lineages): the host seats the players of this planet's campaign
+    home_nests::host_tick(now); // BUG-9262 (Lineages): every seat's own nest next to the host's
     dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
     tribe::tick(now);
@@ -2669,6 +2671,11 @@ static void init_player_modules()
     sc.pace = dna_pace_gain; // BUG-0510
     sc.elsewhere = [] { return guest_elsewhere(); }; // BUG-0420
     social::init(H, M, sc);
+    home_nests::Ctx hc; // BUG-9262 (Lineages)
+    hc.sess = &g_sess;
+    hc.notice = [](const std::string& t) { notice(t, -1); };
+    hc.world = [] { return g_world; };
+    home_nests::init(H, M, hc);
     game::set_damage_filter(npc::damage_filter);
 }
 

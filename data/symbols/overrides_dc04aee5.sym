@@ -120,7 +120,7 @@ Simulator::cCreatureGameData::GetAbilityMode=0x00D2E490 ; verified port from GOG
 Simulator::cEmpire::AddMoney=0x00C31B60 ; verified port from GOG 2016 0x00C31B40: +0x20; +0xD0 money, clamp 0x5F5E0FF (99999999), ret 4
 Simulator::cGameDataUFO::PlayerDestroyed=0x00C3C680 ; verified port from GOG 2016 0x00C3C660: +0x20 (UFO anchors +0x20); start, plain ret, uses +0x7F0; called from TakeDamage 0xC3D5CB
 Simulator::cGameDataUFO::TakeDamage=0x00C3CEC0 ; verified port from GOG 2016 0x00C3CEA0: +0x20; start, ret 0x14, in vtable 0x146BB60 (secondary base), calls PlayerDestroyed 0xC3C680
-Simulator::cGameNounManager::CreateHerd=0x00B23920 ; verified port from GOG 2016 0x00B238B0 (ModAPI March2017 address of the same name)
+Simulator::cGameNounManager::CreateHerd=0x00B23920 ; verified port from GOG 2016 0x00B238B0 (ModAPI March2017 address of the same name); thiscall(nm, const Vector3* pos, cSpeciesProfile*, int herdSize, bool ownedByAvatar, int personality, bool createNest) ret 0x18 -> cHerd*; with createNest the herd gets its cNest (+0x160) but no member (runtime 2026-11-20, BUG-9262: +0x40 empty, target +0xF4 = herdSize)
 Simulator::cGameNounManager::CreateInstance=0x00B20BF0 ; verified port from GOG 2016 0x00B20B80 (ModAPI March2017 address of the same name)
 Simulator::cGameNounManager::DestroyInstance=0x00B22560 ; verified port from GOG 2016 0x00B224F0 (ModAPI March2017 address of the same name)
 Simulator::cGameNounManager::Get=0x00B3D400 ; verified port from GOG 2016 0x00B3D3D0 (ModAPI March2017 address of the same name)

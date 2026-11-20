@@ -258,6 +258,9 @@ void* species_by_key(const Key& k);
 // (docs/re/creations.md#creations-species-map, BUG-0200)
 void** species_slot(const Key& k);
 void* create_herd(const net::Vec3& pos, void* species);
+// BUG-9262 (Lineages): a herd WITH its nest (CreateHerd's createNest), `size` members the game spawns and respawns
+// itself, enabled; not one of ours (the save keeps it like any nest). Outside the frame.
+void* create_nest_herd(const net::Vec3& pos, void* species, int size, bool owned_by_avatar);
 void* own_herd_for(void* species); // an existing herd like create_herd's of this species, or null
 // BUG-1067: a herd create_herd made (or own_herd_for handed out) in this process, the same object (its serial);
 // the game's own herds look the same in Civ (no archetype, no nest)

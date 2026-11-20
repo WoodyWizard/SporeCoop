@@ -395,3 +395,13 @@ anchor so other docs can link to it:
   cinematic) until the vote ends; the guest still sees the cinematic.
 * Reproduce: `tools/lab.py run evo_screens_switch`, key frame `01_switch_vote`.
 * Ticket: BUG-1269
+
+## Own nests: a guest's first join of a planet loads the world twice (2026-11-20, feat/lineages-nests)
+<a id="issue-own-nest-double-load"></a>
+
+* What happens: a guest that plays its own creature joins a planet where it has no nest yet: it gets the host's world
+  at once, its own nest is made a few seconds later and the world loads a second time with it. A returning guest
+  (its nest is in the save) loads once.
+* Reproduce: a Creature planet with no party file, the guest with its own creature joins; the host's log shows
+  `home nests: player 1's world share may go (the host's species, ...)` then a second `saving for the share`.
+* Ticket: BUG-9267

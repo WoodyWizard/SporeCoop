@@ -24,5 +24,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_session_end();
 void on_world_change();
 std::string status();
+// guest (BUG-9262): the herd of our own nest as the host told it (the nest within 15 m of it), null: not told or not here
+void* home_herd();
+// guest (BUG-9262): the home nest the host told us in the last 5 s (false: none)
+bool told_home(net::Vec3& out);
 
 } // namespace nest

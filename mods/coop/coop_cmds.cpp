@@ -4,6 +4,7 @@
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
 #include "identity.h"
 #include "party.h"
+#include "home_nests.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1203,6 +1204,12 @@ void register_commands_core()
     H->command_add(M, "coop.party", "coop.party - the host: this planet's party, one seat per player who played it (BUG-9260)",
                    [](void*, int, const char* const*, SkOut* out) {
                        SAY("%s", party::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.homenests", "coop.homenests [make <seat> | extinct <seat>] - the host: every seat's own nest (BUG-9262)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", home_nests::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                        return 0;
                    },
                    nullptr, MT);
