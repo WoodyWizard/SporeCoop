@@ -11392,6 +11392,10 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                                    !(argc > 8 && !strcmp(argv[8], "ufo")));
                        else if (sub == "clear")
                            r = era_visitors::clear();
+                       else if (sub == "at" && argc > 4)
+                           r = era_visitors::spawn_at({(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])});
+                       else if (sub == "move" && argc > 4) // tests (BUG-9291): the last prop to x y z (on the ground)
+                           r = era_visitors::move_last({(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])});
                        else
                            r = era_visitors::status();
                        H->out_printf(out, "%s\n", r.c_str());

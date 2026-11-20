@@ -1611,3 +1611,10 @@ mods/coop/era_visitors.cpp, galaxy_crt.cpp, server/galaxy/main.cpp.
 * ✘ Open (BUG-9291): those props mostly do not show. One truck showed (a fresh game at 1280x960, near the nest, as in
   the spike); not after the avatar moved, not at 800x600, not after a hot reload, also offline and without the mounted
   package, also on a UFO carrier. Ruled out: the bake, the session, the package, the carrier.
+* CORRECTION (2026-11-20, feat/lineages-alpha): the "✘ Open (BUG-9291)" above was mostly the tests: the spike's
+  "25 m ahead" point and `coop.nest look` leave the prop off the screen (the status now prints its screen position).
+  What is real: an ornament prop draws only near the place it had in its first frames; moved more than its size later
+  it is no longer drawn. Streamed objects are made at their place, a moving vehicle is made again beyond 6 m
+  (`galaxy.prop_remake`). ✔ The Civ city of Abber drawn from the Creature stage (images/stage4_civ_visitors.png); a
+  driving vehicle made again 5 times along its way. The buildings stand on their own pillars, high where the other
+  world's ground is lower (this test put Abber's city on Samuth's ground; a planet's eras share their ground).

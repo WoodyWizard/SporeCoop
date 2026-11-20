@@ -39,6 +39,7 @@
 
 #include <cstring>
 #include <map>
+#include <tuple>
 
 namespace era_visitors {
 
@@ -64,6 +65,8 @@ struct Prop {
 static std::vector<Prop> g_props;
 static double g_last;
 static uint32_t g_frames;
+static net::Vec3 g_next_at{};
+static bool g_next_at_set;
 
 static net::Vec3 norm(net::Vec3 v)
 {
@@ -196,7 +199,8 @@ std::string spawn(uint32_t inst, uint32_t type, uint32_t group, bool drive, floa
     const net::Vec3 ap = game::position(av);
     const net::Quat aq = game::orientation(av);
     const net::Vec3 fwd = {2 * (aq.x * aq.y - aq.w * aq.z), 1 - 2 * (aq.x * aq.x + aq.z * aq.z), 2 * (aq.y * aq.z + aq.w * aq.x)};
-    pr.centre = add(ap, fwd, 25);
+    pr.centre = g_next_at_set ? g_next_at : add(ap, fwd, 25);
+    g_next_at_set = false;
     pr.fwd = fwd;
     pr.avq = aq;
     g_axes = axes;
@@ -214,6 +218,21 @@ std::string spawn(uint32_t inst, uint32_t type, uint32_t group, bool drive, floa
     H->log(M, SK_INFO, "era_visitors: %s", b);
     return b;
 }
+
+std::string spawn_at(const net::Vec3& at) // tests (BUG-9291): the next spawn stands there
+{
+    g_next_at = at;
+    g_next_at_set = true;
+    return "next spawn there";
+}
+std::string move_last(const net::Vec3& at)
+{
+    if (g_props.empty())
+        return "no prop";
+    g_props.back().centre = at;
+    return "moved";
+}
+
 
 std::string clear()
 {
@@ -243,10 +262,15 @@ std::string status()
         const bool alive = pr.u && game::object_alive(pr.u) && game::object_serial(pr.u) == pr.serial;
         if (alive)
             game::object_position(pr.u, v);
-        char b[200];
-        snprintf(b, sizeof b, "  %s %p %s model %08X/%08X/%08X %s pos=(%.1f %.1f %.1f) ground=%.1f\n", pr.prop ? "prop" : "ufo", pr.u, alive ? "alive" : "gone",
-                 pr.key[0], pr.key[1], pr.key[2], pr.drive ? "driving" : "standing", v.x, v.y, v.z,
-                 alive ? game::ground_radius(v) : 0.f);
+        char b[260];
+        float w[3] = {v.x, v.y, v.z}, sc[2] = {NAN, NAN};
+        if (alive)
+            H->world_to_screen(w, sc); // (tests, BUG-9291: on the screen or not)
+        void* av = game::avatar();
+        snprintf(b, sizeof b, "  %s %p %s model %08X/%08X/%08X %s pos=(%.1f %.1f %.1f) ground=%.1f screen=(%.0f %.0f) from_avatar=%.1f\n",
+                 pr.prop ? "prop" : "ufo", pr.u, alive ? "alive" : "gone", pr.key[0], pr.key[1], pr.key[2],
+                 pr.drive ? "driving" : "standing", v.x, v.y, v.z, alive ? game::ground_radius(v) : 0.f, sc[0], sc[1],
+                 av ? net::dist(game::position(av), v) : -1.f);
         out += b;
     }
     return out;
@@ -283,6 +307,12 @@ static bool baked_or_ask(const uint32_t key[3])
         lods |= (skg::vcall<char>(bm, 0x1C / 4, key, l) != 0) << l;
     if (lods == 0xF)
         return true;
+    static std::map<std::tuple<uint32_t, uint32_t, uint32_t>, double> asked; // (once every 5 s a key)
+    double& next = asked[{key[0], key[1], key[2]}];
+    const double now = H->time_seconds();
+    if (now < next)
+        return (lods & 1) != 0;
+    next = now + 5.0;
     for (int l = 0; l < 4; l++)
         if (!(lods & (1 << l))) {
             int lod = l;
@@ -293,8 +323,10 @@ static bool baked_or_ask(const uint32_t key[3])
     return (lods & 1) != 0; // (drawn close up already; the farther levels come)
 }
 
-// a plain ornament carrying a creation's model (decision 5T B), AddRef held: ours until prop_destroy. Null: not made
-static void* prop_make(const uint32_t key[3])
+// a plain ornament carrying a creation's model (decision 5T B), AddRef held: ours until prop_destroy. Null: not made.
+// Put where it stands in the same frame: BUG-9291, an ornament draws only near the place it had in its first frames
+// (moved more than its size later, it is no longer drawn), so a moving one is made again (objects_show)
+static void* prop_make(const uint32_t key[3], const net::Vec3& at, const net::Quat& rot)
 {
     void* nm = noun_mgr();
     if (!nm || !a_CreateInstance || !a_OrnSetModel)
@@ -303,6 +335,7 @@ static void* prop_make(const uint32_t key[3])
     if (!u || game::noun_id(u) != kOrnamentNoun)
         return nullptr;
     skg::vcall<void>(u, 0); // AddRef
+    place(u, at, rot);
     skg::thiscall<void>(a_OrnSetModel, u, key[0], key[1], key[2]);
     if (void* sp = game::cast(u, 0x1186577)) // the model by its key, as cVehicle::Load (spatial vt 0x94 SetModelKey)
         skg::vcall<void>(sp, 0x94 / 4, key);
@@ -563,8 +596,14 @@ struct ObjProp {
     void* u = nullptr;
     uint32_t serial = 0;
     bool waiting = false;
+    net::Vec3 made_at{}; // BUG-9291: drawn only near here
 };
-static std::map<std::pair<uint16_t, uint32_t>, ObjProp> g_objs; // (sender slot, its object's id)
+static std::map<std::pair<uint16_t, uint32_t>, ObjProp> g_objs;
+static uint64_t g_props_remade;
+static bool g_remake = true;
+COOP_FIX("galaxy.prop_remake", "BUG-9291", g_remake,
+         "galaxy: another era's moving vehicle is made again where it drives (a prop draws only near where it was made)");
+constexpr float kRemakeBeyond = 6.f; // m from where a prop was made (a truck's box is ~8 m across) // (sender slot, its object's id)
 struct Sent {
     net::Vec3 pos{};
     double at = 0;
@@ -717,6 +756,16 @@ static void objects_show(double now)
         ++it;
         if (o.u && (!game::object_alive(o.u) || game::object_serial(o.u) != o.serial))
             o.u = nullptr; // (gone with a load)
+        const float t = (float)std::min(age, 1.0);
+        const net::Vec3 at{o.pos.x + o.vel.x * t, o.pos.y + o.vel.y * t, o.pos.z + o.vel.z * t};
+        const net::Vec3 up = norm(at);
+        const float g = game::ground_radius(net::Vec3{up.x * 600, up.y * 600, up.z * 600});
+        const net::Vec3 ground{up.x * g, up.y * g, up.z * g};
+        if (g_remake && o.u && net::dist(ground, o.made_at) > kRemakeBeyond) { // BUG-9291: made again where it is now
+            prop_destroy(o.u, o.serial);
+            o.u = nullptr;
+            g_props_remade++;
+        }
         if (!o.u) {
             uint32_t lk[3];
             size_t live = 0;
@@ -735,18 +784,15 @@ static void objects_show(double now)
                 o.waiting = true;
                 continue;
             }
-            o.u = prop_make(lk);
+            o.u = prop_make(lk, ground, o.rot);
+            o.made_at = ground;
             if (!o.u)
                 continue;
             o.serial = game::object_serial(o.u);
             o.waiting = false;
             g_props_made++;
         }
-        const float t = (float)std::min(age, 1.0);
-        const net::Vec3 at{o.pos.x + o.vel.x * t, o.pos.y + o.vel.y * t, o.pos.z + o.vel.z * t};
-        const net::Vec3 up = norm(at);
-        const float g = game::ground_radius(net::Vec3{up.x * 600, up.y * 600, up.z * 600});
-        place(o.u, {up.x * g, up.y * g, up.z * g}, o.rot);
+        place(o.u, ground, o.rot);
     }
 }
 
@@ -763,10 +809,10 @@ std::string stream_status()
         size_t live = 0, waiting = 0;
         for (auto& [k, o] : g_objs)
             live += o.u != nullptr, waiting += o.waiting;
-        snprintf(b, sizeof b, "  objects (BUG-9290): sent %llu in %llu messages; got %llu, now %u (props %u, waiting %u), made %llu, gone %llu, bakes asked %llu\n",
+        snprintf(b, sizeof b, "  objects (BUG-9290): sent %llu in %llu messages; got %llu, now %u (props %u, waiting %u), made %llu (again %llu), gone %llu, bakes asked %llu\n",
                  (unsigned long long)g_objs_sent, (unsigned long long)g_obj_msgs, (unsigned long long)g_objs_got,
                  (unsigned)g_objs.size(), (unsigned)live, (unsigned)waiting, (unsigned long long)g_props_made,
-                 (unsigned long long)g_props_gone, (unsigned long long)g_bakes_asked);
+                 (unsigned long long)g_props_remade, (unsigned long long)g_props_gone, (unsigned long long)g_bakes_asked);
         out += b;
         int listed = 0;
         for (auto& [k, o] : g_objs) {
@@ -774,9 +820,12 @@ std::string stream_status()
                 break;
             net::Vec3 at{};
             const bool alive = o.u && game::object_alive(o.u) && game::object_position(o.u, at);
-            snprintf(b, sizeof b, "    %s %08X/%08X sent (%.0f %.0f %.0f) prop %s at (%.0f %.0f %.0f)\n",
+            float w[3] = {at.x, at.y, at.z}, sc[2] = {NAN, NAN};
+            if (alive)
+                H->world_to_screen(w, sc);
+            snprintf(b, sizeof b, "    %s %08X/%08X sent (%.0f %.0f %.0f) prop %s at (%.0f %.0f %.0f) screen (%.0f %.0f)\n",
                      o.kind == net::galaxy::kVisitVehicle ? "vehicle" : "building", o.key[0], o.key[1], o.pos.x, o.pos.y,
-                     o.pos.z, alive ? "alive" : "none", at.x, at.y, at.z);
+                     o.pos.z, alive ? "alive" : "none", at.x, at.y, at.z, sc[0], sc[1]);
             out += b;
         }
     }

@@ -1817,3 +1817,17 @@ BUG-0996. GOG 2024 (dc04aee5), from the decompiler (tools/ghidra/q.sh --build 20
   write of the same name fail (`_2.package` ... `_49`, then "cannot write the package").
 - The GOG 2016 addresses in the section above (Close 0x8D9CC0, SetLocation 0x8D9CD0) are 0x10 lower than GOG 2024's
   (the march2017 port names Close=0x8D9CD0, SetLocation=0x8D9CE0 for dc04aee5): not a contradiction, two builds.
+
+## Era visitor props: what draws an ornament, and the bake (2026-11-20, feat/lineages-alpha)
+<a id="creations-ornament-props"></a>
+
+* ✔ (runtime) An ornament (noun 0x18C88E4) with a creation's model draws only near the place it had in its first
+  frames: made and placed in one frame anywhere it draws; moved more than its size later with spatial vt 0x38 / 0x3C
+  it is no longer drawn, its origin on the screen; spatial vt 0x94 SetModelKey again does not bring it back. A moving
+  look-alike is made again (era_visitors.cpp, BUG-9291).
+* ✔ (runtime) IBakeManager (Editors::IBakeManager::Get 0x401010): vt 0x1C(const key*, int level) "this level of
+  detail is baked", vt 0x18(const key*) "baked / asked", vt 0x4C(const key*, int* level) asks for the bake of that
+  level (the game: 0xC5B250 / 0xC5B420 ask with level 0). A Creature profile had only level 0 of a Civ vehicle and a
+  building (mask 1); a creature the game spawned had all four (F); 20 s after asking for 1..3 the vehicle had all four.
+* ✔ (runtime) The spatial part of an ornament and of a cVehicle have the same layout (a vehicle's at +0x34, an
+  ornament's at +0x70): +0x04 position, +0x10 orientation, two boxes, +0x5C radius, +0x64 scale, +0x90 the model key.
