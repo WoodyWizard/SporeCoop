@@ -110,6 +110,8 @@ EDITOR_DONE = (1416, 1062)   # the green "done" of the editors (1440x1080)
 CIV_TALK = ('We happily accept your surrender.', 'I accept your offer! Start shipments immediately!',
             'Agreed. Bye for now.')  # the nation's last line after an accepted offer (BUG-0268)
 CAPTAIN_NAME = [(915, 555), (936, 630)]  # "Name Your Captain" (the first Space minutes): dice, check
+EDITOR_CANCEL = (1383, 1062)  # the editors' red cross (an own editor's)
+EDITOR_QUIT = (944, 604)  # its box "Exiting will cause your changes to be lost": Quit
 EDITOR_DICE = (614, 826)     # the dice of the name panel (a random name), open after a "done" without a name
 EDITOR_PARTS = [(85, 130), (350, 405), (480, 405)]       # spaceship editor palette: a hull, two discs
 TRIBE_EDITOR_PARTS = (((88, 130), (900, 850)), ((220, 130), (900, 700)), ((350, 130), (1150, 850)))  # City Hall / vehicle
@@ -272,6 +274,10 @@ class Campaign:
         self.edits = {}  # player -> "done" clicks in the current editor
         # a guest's own Civ arrival editors' drags (line_stages --civ-editors: CIV_ARRIVAL_PARTS, a model not the host's)
         self.arrival_parts = TRIBE_EDITOR_PARTS
+        # BUG-1328: a guest's own arrival editor still up after this many "done" (no name: the name panel had no dice
+        # after the guest's own Tribal Outfitter) is left with its red cross, as a player would (it keeps the
+        # civilization's designs); None: never (line_stages --civ-editors needs the designs, a FAIL shows the bug)
+        self.arrival_cancel_after = 14
         self.segments = {}  # A6: stage -> the save it started from ({save, planet} or {fixture})
 
     # ---------------- findings and evidence ----------------
@@ -720,11 +726,19 @@ class Campaign:
         self.edits[p.name] = n + 1
         time.sleep(self.rng.uniform(3, 6))  # a look at the creation
         pace = editor_parts_due(n)
+        # the end of Tribe opens the City Hall and the vehicle editor empty: their palette and plot
+        # (coop_tribe_civ.PARTS); the spaceship editor's at the end of Civ. WP-X1 of 0.7.16 (BUG-1277): a guest's own
+        # City Hall and vehicle editors after its arrival in Civ (the follow phase) are the same editors
+        civ_arrival = self.stage == 'civ' and self.phase == 'follow'
+        if civ_arrival and p is not self.host and self.arrival_cancel_after is not None \
+                and n >= self.arrival_cancel_after:
+            editor_click(con, *EDITOR_CANCEL)
+            editor_click(con, *EDITOR_QUIT)  # ("Exiting will cause your changes to be lost": Quit)
+            self.note(f'{p.name}: its own arrival editor still up after {n} "done" (no name, BUG-1328): left with the '
+                      'red cross')
+            self.edits.pop(p.name, None)
+            return 'editor cancelled'
         if pace:
-            # the end of Tribe opens the City Hall and the vehicle editor empty: their palette and plot
-            # (coop_tribe_civ.PARTS); the spaceship editor's at the end of Civ. WP-X1 of 0.7.16 (BUG-1277): a guest's own
-            # City Hall and vehicle editors after its arrival in Civ (the follow phase) are the same editors
-            civ_arrival = self.stage == 'civ' and self.phase == 'follow'
             moves = (self.arrival_parts if civ_arrival else TRIBE_EDITOR_PARTS if self.stage == 'tribe'
                      else list(zip(EDITOR_PARTS, EDITOR_PLACES)))
             for (sx, sy), (tx, ty) in moves:

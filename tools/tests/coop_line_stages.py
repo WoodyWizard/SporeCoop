@@ -297,7 +297,9 @@ def arrival_editors(ck, camp, guest_p, host, guest, pid, secs=360, required=True
         ck(got, f'civ: the guest\'s own City Hall and vehicle editors at its arrival gave it both designs on both games '
                 f'({svc.done})')
     else:
-        ck('Editor' not in mode(guest), f'civ: the guest is back in Civ after its own arrival editors ({svc.done})')
+        why = re.search(r"why='([^']*)'", guest.call('coop.civarrival')['out'] or '')
+        ck('Editor' not in mode(guest), f'civ: the guest is back in Civ after its own arrival editors ({svc.done}; '
+                                        f'{why.group(1) if why else "?"})')
 
 
 def run_civ(ck, camp, a, host, guest, guest_p, pid, want, keys):
@@ -488,6 +490,7 @@ def main():
     camp = Campaign(ca, players, run_dir, seed)
     if a.civ_editors:  # (the guest's own vehicle must not be the host's model byte for byte: its check against the culture's)
         camp.arrival_parts = CIV_ARRIVAL_PARTS
+        camp.arrival_cancel_after = None  # (its designs are what the test checks: no red cross)
     camp.ids()
     camp.health()
     pid = players[1].pid
