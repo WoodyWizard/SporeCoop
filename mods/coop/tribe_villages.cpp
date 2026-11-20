@@ -23,6 +23,7 @@
 #include "founders.h"
 #include "identity.h"
 #include "party.h"
+#include "civ_nations.h"
 
 namespace tribe {
 
@@ -530,9 +531,13 @@ static void* SK_CDECL h_Cursor()
         return cursor;
     void*& list = F<void*>(cursor, 0x164);
     // (the village in the object list now, never a freed one: a world being torn down or loaded keeps the game's own)
+    void* own = nullptr;
     if (g_villages && g_guest_native && g_own_village && is_guest() && active() && !local_play() && !world::load_queued() &&
-        game::listed(g_own_village, kTribeNoun)) {
-        void* own = (uint8_t*)g_own_village + 0x354;
+        game::listed(g_own_village, kTribeNoun))
+        own = (uint8_t*)g_own_village + 0x354;
+    else
+        own = civ::nations::cursor_list(); // BUG-9274: in Civ the guest's own nation's selectable list (+0xD4)
+    if (own) {
         if (list != own) {
             if (!g_bound_list)
                 g_native_list = list; // the game's own (the player tribe's), put back below

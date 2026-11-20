@@ -1,6 +1,7 @@
 #include "civ.h"
 #include "civ_internal.h"
 #include "civ_wallet.h"
+#include "civ_nations.h"
 
 namespace civ {
 
@@ -444,6 +445,8 @@ void* nearest_player_city(const net::Vec3& p, uint8_t* owner)
     void* best = nullptr;
     float bd = 1e18f;
     for (auto& [c, o] : g_city_owner) {
+        if (nations::seat_of_faction(pol_of(c)) >= 1)
+            continue; // BUG-9274: a partner nation's city builds and keeps that nation's vehicles only
         float d = net::dist(city_pos(c), p);
         if (d < bd) {
             bd = d;
@@ -625,8 +628,9 @@ static int SK_THISCALL h_UIMessage(void* self, void* win, const uint8_t* msg)
             void* city = F<void*>(self, 0xA8);
             uint8_t owner = owner_of_city(city);
             if (owner != 0xFF && owner != kShared && owner != C.sess->my_id()) {
-                if (C.feed)
-                    C.feed("this city belongs to " + C.sess->name_of(owner));
+                if (C.feed) // (BUG-9274: 0xFC a player's nation whose player is away)
+                    C.feed(owner == 0xFC ? std::string("this city belongs to a player who is away")
+                                         : "this city belongs to " + C.sess->name_of(owner));
                 return 1;
             }
             if (loco >= 0 && is_guest() && host_index_of_city(city) >= 0) {
@@ -844,6 +848,10 @@ static bool SK_THISCALL h_SpawnNextCity(void* ex, int instant, void* who)
         g_n.cities_blocked++;
         return false; // both callers ignore the result
     }
+    if (!instant && !who && game::mode_id() == modes::kCiv && nations::hold_foundings()) {
+        g_n.cities_blocked++; // BUG-9274: a player's capital is on its way (the new city must be told apart)
+        return false;
+    }
     bool r = o_SpawnNextCity(ex, instant, who);
     if (r && is_host() && game::mode_id() == modes::kCiv && !who && (!instant || g_instant_found_fix)) {
         net::Writer w;
@@ -854,6 +862,13 @@ static bool SK_THISCALL h_SpawnNextCity(void* ex, int instant, void* who)
         g_n.cities_founded++;
     }
     return r;
+}
+
+// BUG-9274 (civ_nations.cpp): the host founds the next free site now (a player's capital); the guests found it too
+bool found_next_site()
+{
+    void* ex = a_ExpansionGet ? skg::cdecl_call<void*>(a_ExpansionGet) : nullptr;
+    return ex && h_SpawnNextCity(ex, 0, nullptr);
 }
 
 // BUG-0494: roads between cities (noun 0x2B8A4E7 "inter_city_road") are the ground objects of trade
@@ -1050,7 +1065,11 @@ int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int a4, in
             g_away_capture_sent.clear();
         return 0; // captures happen on the host and come back with the snapshot
     }
+    if (nations::friendly(pol_of(city), pol)) // BUG-9274: the players' nations take nothing of each other
+        return 0;
     int r = o_Capture(city, pol, type, a3, a4, a5);
+    if (is_host() && game::mode_id() == modes::kCiv && nations::seat_of_faction(pol) >= 1)
+        nations::captured(city, pol); // BUG-9274: a player's own nation took it (the next host tick gives it its owner)
     if (is_host() && game::mode_id() == modes::kCiv) {
         caption_arm(); // every capture the host's game runs may show a caption that waits for OK
         void* pc = player_civ();
@@ -1144,6 +1163,8 @@ COOP_FIX("civ.buy_city", "BUG-0877", g_fix_buy_city,
 CityBuy_t o_CityBuy;
 static void SK_THISCALL h_CityBuy(void* city, uint32_t pol, float price)
 {
+    if (is_host() && nations::friendly(pol_of(city), pol))
+        return; // BUG-9274: a player's nation buys no city of another player's
     void* pc = g_fix_buy_city && game::mode_id() == modes::kCiv && !g_applying ? player_civ() : nullptr;
     if (pc && pol == pol_of(pc) && is_guest()) {
         int ci = host_index_of_city(city);
@@ -1373,6 +1394,8 @@ static BTakeDamage_t o_BTakeDamage, o_HallTakeDamage;
 static int b_damage(BTakeDamage_t orig, void* self, float dmg, uint32_t pol, int type, const void* dir, void* att)
 {
     if (cosmetic_hit(att)) // BUG-0477: a relayed shot of the host's
+        return 0;
+    if (nations::friendly(pol_of((uint8_t*)self - 0x120), pol)) // BUG-9274: the players' nations are allies
         return 0;
     uint8_t p = is_host() && active() ? player_of_combatant(att) : 0xFF;
     if (p != 0xFF && role(p) == 1) {
@@ -1876,6 +1899,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
             g_ai_spawn_ret[i] = H->sym(rets[i]);
     }
     H->hook_create(M, (void*)a_SpawnVehicle, (void*)h_SpawnVehicle, (void**)&o_SpawnVehicle);
+    nations::init(); // BUG-9274 (optional hooks)
     // co-op mechanics (optional: a missing symbol only disables that mechanic)
     struct Opt {
         const char* name;
@@ -1945,8 +1969,10 @@ void tick(double now)
     });
     if (is_host())
         host_tick(now);
-    else if (is_guest())
+    else if (is_guest()) {
+        nations::guest_tick(now); // BUG-9274: its own nation (from the host's city owners)
         guest_tick(now);
+    }
 }
 
 // BUG-0751: guest, Space: a building bought in a colony's planner goes to the host with the planet it is on

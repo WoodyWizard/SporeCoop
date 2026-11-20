@@ -2,6 +2,7 @@
 #include "civ_internal.h"
 #include "civ_wallet.h"
 #include "civ_wallet_logic.h"
+#include "civ_nations.h"
 
 #include <map>
 #include <set>
@@ -12,7 +13,7 @@ using civ::C;
 using civ::H;
 using civ::M;
 
-enum Kind : uint8_t { K_ASK = 1, K_SET = 2, K_ADD = 3, K_REPORT = 4 };
+enum Kind : uint8_t { K_ASK = 1, K_SET = 2, K_ADD = 3, K_REPORT = 4, K_NATION = 5 };
 constexpr uintptr_t kWealth = 0x98; // cCivilization mWealth (float; docs/re/civ.md: GetMoney returns it for the player)
 constexpr double kReportEvery = 2.0;
 
@@ -40,9 +41,12 @@ static struct {
     double income, shared_out, charged;
 } g_n;
 
+static bool setting() { return settings::on(settings::kCivOwnMoney); }
+
 bool active()
 {
-    return C.sess && C.sess->role() != net::Role::None && settings::on(settings::kCivOwnMoney);
+    // BUG-9274: a player's own nation keeps its own money also with the setting off
+    return C.sess && C.sess->role() != net::Role::None && (setting() || civ::nations::wallets());
 }
 
 static bool host() { return C.sess && C.sess->role() == net::Role::Host; }
@@ -97,7 +101,7 @@ static std::set<uint8_t> wallets()
 
 bool host_add_money(void* civ, float amount, int difficulty)
 {
-    if (!active() || !host() || g_paying_as || !civ || civ != civ::player_civ() || !(amount > 0))
+    if (!active() || !setting() || !host() || g_paying_as || !civ || civ != civ::player_civ() || !(amount > 0))
         return false;
     double before = money_of(civ);
     civ::o_AddMoney(civ, amount, difficulty);
@@ -122,7 +126,7 @@ bool host_add_money(void* civ, float amount, int difficulty)
 
 bool host_refund(uint8_t player, double amount)
 {
-    if (!active() || !host() || player == C.sess->my_id() || !g_guests.count(player) || !g_guests[player].have)
+    if (!active() || !setting() || !host() || player == C.sess->my_id() || !g_guests.count(player) || !g_guests[player].have)
         return false;
     host_op(player, amount);
     g_n.refunds++;
@@ -132,8 +136,10 @@ bool host_refund(uint8_t player, double amount)
 PayAs::PayAs(int player)
 {
     // civ_wallet::active(), not the member active() (which is on_, false here: the purchase went to the host's money)
-    if (!civ_wallet::active() || !host() || player < 0 || player == C.sess->my_id())
+    if (!civ_wallet::active() || !setting() || !host() || player < 0 || player == C.sess->my_id())
         return;
+    if (civ::nations::nation_of_player((uint8_t)player))
+        return; // BUG-9274: its own nation pays (civ_host.cpp host_buy, the nation's own money)
     auto it = g_guests.find((uint8_t)player);
     civ_ = civ::player_civ();
     if (!civ_ || it == g_guests.end() || !it->second.have) {
@@ -224,7 +230,14 @@ static void host_ask(uint8_t from)
     std::string k = key_of(from);
     double v;
     auto it = k.empty() ? g_kept.end() : g_kept.find(k);
-    if (g.have) { // asked again (its answer crossed a new ask): the wallet it has
+    double nation = 0;
+    if (civ::nations::player_money(from, nation)) { // BUG-9274: its own nation's money
+        v = civwallet::clamp_money(nation);
+        it = g_kept.end();
+    } else if (!setting()) {
+        g_n.asks_early++; // (a player without a nation of its own and the setting off: the shared money)
+        return;
+    } else if (g.have) { // asked again (its answer crossed a new ask): the wallet it has
         v = g.led.value();
     } else if (it != g_kept.end()) {
         v = it->second;
@@ -261,6 +274,9 @@ void on_message(uint8_t from, net::Reader& r)
         } else if (kind == K_REPORT) {
             uint32_t seq = r.u32();
             double v = r.f64();
+            double nation;
+            if (civ::nations::player_money(from, nation))
+                return; // BUG-9274: its nation's money is the host's (nation_sync)
             auto it = g_guests.find(from);
             if (!r.ok() || it == g_guests.end() || !it->second.have || !it->second.led.report(seq, v)) {
                 g_n.reports_bad++;
@@ -273,7 +289,7 @@ void on_message(uint8_t from, net::Reader& r)
         }
         return;
     }
-    if (from != 0 || (kind != K_SET && kind != K_ADD))
+    if (from != 0 || (kind != K_SET && kind != K_ADD && kind != K_NATION))
         return;
     uint32_t seq = r.u32();
     double v = r.f64();
@@ -287,6 +303,14 @@ void on_message(uint8_t from, net::Reader& r)
     }
     if (!civ || (kind == K_SET && game::mode_id() != modes::kCiv))
         return;
+    if (kind == K_NATION) { // BUG-9274: its own nation's money (silent)
+        if (g_have && seq > g_applied && game::mode_id() == modes::kCiv) {
+            set_money(civ, v);
+            g_applied = seq;
+            g_n.adds++;
+        }
+        return;
+    }
     if (kind == K_SET) {
         set_money(civ, v);
         g_have = true;
@@ -303,6 +327,19 @@ void on_message(uint8_t from, net::Reader& r)
         g_applied = seq;
         g_n.adds++;
     }
+}
+
+void nation_sync(uint8_t player, double money)
+{
+    if (!active() || !host() || !civwallet::amount_ok(money))
+        return;
+    auto it = g_guests.find(player);
+    if (it == g_guests.end() || !it->second.have || std::fabs(it->second.led.value() - civwallet::clamp_money(money)) < 0.5)
+        return;
+    uint32_t seq = ++g_seq;
+    it->second.led.set(seq, money);
+    send(player, K_NATION, seq, civwallet::clamp_money(money));
+    g_n.adds++;
 }
 
 // lifecycle-exempt: called by session_glue.cpp player_leave next to the other modules (it needs the leaver id)
