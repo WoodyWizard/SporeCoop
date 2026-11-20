@@ -48,4 +48,13 @@ bool record_party(const std::string& planet_file, const Party& value, std::strin
 bool read_side(const std::string& planet_file, const wchar_t* suffix, std::vector<uint8_t>& out, size_t max_bytes);
 bool write_side(const std::string& planet_file, const wchar_t* suffix, const std::vector<uint8_t>& data);
 
+// BUG-9261 (Lineages port phase 3): a partner's own creature archived with the host's planet, so its nest (its village
+// and nation later) loads while that partner is offline. One file per creature next to the save,
+// `<planet>.spo.duoguest-<KEY>` (KEY: the creature's 0x7C...... key in hex; the content is creations.cpp's archive:
+// u32 'DGA1', u32 key, u8 owner, the creation's bundle). 16 creatures and 8 MB each at most; an archive is never
+// replaced by a different one under the same key. creations::restore_guest_model registers them before the planet loads.
+bool model_ids(const std::string& planet_file, std::vector<uint32_t>& ids, std::string& err);
+bool load_guest_model(const std::string& planet_file, uint32_t id, std::vector<uint8_t>& data, std::string& err);
+bool store_guest_model(const std::string& planet_file, uint32_t id, const std::vector<uint8_t>& data, std::string& err);
+
 } // namespace founders
