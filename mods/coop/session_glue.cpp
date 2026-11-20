@@ -847,6 +847,8 @@ void setup_callbacks()
         }
         case net::Route::Progress: { // BUG-9265: own progress in Cell / Creature (Session class)
             own_progress::on_message(from, r);
+            return;
+        }
         case net::Route::OwnCards: { // BUG-9263: the own stage history (Session class)
             cards::on_message(from, r);
             return;
