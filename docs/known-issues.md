@@ -394,3 +394,13 @@ anchor so other docs can link to it:
   `items: none` +1); not checked with a host captain made in Galactic Adventures.
 * Next steps: send and register that resource under the host's key (BUG-1279 lists the pitfalls).
 * Ticket: BUG-1279.
+
+## Creature: at 30 fps a guest sees some fleeing animals slide in their standing pose for a few seconds (2026-11-20, fix/w60-misc)
+<a id="issue-proxy-idle-30fps"></a>
+
+* What happens: on a guest at about 30 fps, a host animal that runs straight at ~4 m/s (fleeing, or walked by the
+  test) is drawn on its path but with its standing animation (0x02481DE5) for 1-6 s; at 60 fps almost never.
+* Reproduce: `tools/lab.py run npc_walk_novel npc_walk_fps30` (walk gait 79-86 % of the on-screen moving frames; 98 %
+  in npc_walk at 60 fps).
+* Next steps: a diagnostic run with the proxy's MoveTo goal, desired speed and locomotion state in the track.
+* Ticket: BUG-1360
