@@ -4,6 +4,7 @@ ready, then the editor opens; afterwards the guests get the evolved world."""
 import re
 import time
 
+import settings_lib
 from harness import mode
 from coop_ui import Ui
 from twoinst import Checks, shot, start
@@ -59,19 +60,23 @@ def main():
     while time.time() - t0 < 30 and mode(host) != m0:
         time.sleep(1)
     ck(mode(host) == m0, 'the host is back in its stage')
+    # the notice (BUG-1258, core.evolve_notice): in creature.mode own (the default) every player evolves its own
+    # creature: "Alice evolved its creature"; creature.mode host: "Alice evolved the species: everybody gets the new
+    # body" (this test expected the second text in every mode until 0.7.16's final check, BUG-1342)
+    told = 'evolved the species' if settings_lib.get(host, 'creature.mode') == 1 else 'Alice evolved its creature'
     t0 = time.time()
     got = False
     while time.time() - t0 < 120 and not got:
-        got = 'evolved the species' in guest.call('coop.status')['out'] and guest.call('coop.avatar')['ok']
+        got = told in guest.call('coop.status')['out'] and guest.call('coop.avatar')['ok']
         time.sleep(2)
     time.sleep(20)
     st = guest.call('coop.status')['out']
-    ck('evolved the species' in st, 'everybody is told about the evolution')
+    ck(told in st, f'everybody is told about the evolution ("{told}")')
     ck(re.search(r"remote 0 'Alice' puppet=[0-9A-F]{8} ", st) and 'puppet=00000000' not in st.split("remote 0")[1][:40],
        'the guest got the evolved world and sees the host again')
     # the world share after the evolution waits for the evolution's cinematic on the host (BUG-0404), the
     # guest then reloads and gets its own body 3 s after the load: wait for it, up to 60 s more
-    # (lab 20261101-223733: the reload came 21 s after "evolved the species", BUG-0447)
+    # (lab 20261101-223733: the reload came 21 s after the notice, BUG-0447)
     t0 = time.time()
     while True:
         gav = re.search(r'key=0x([0-9A-F]{8})', guest.call('coop.avatar')['out'])

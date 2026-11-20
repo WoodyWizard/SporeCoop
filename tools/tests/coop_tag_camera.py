@@ -96,6 +96,10 @@ def measure(png, colour, origin=None):
             def red(x, y):
                 r, g, b = px[x, y]
                 return r > 140 and g < 70 and b < 70 and r > 2.4 * max(g, b, 1)
+
+            def body(x, y):  # the red species in its own shade too (a dark back away from the light), not the ground
+                r, g, b = px[x, y]
+                return r > 45 and g < 70 and b < 70 and r > 2.0 * max(g, b, 1)
             bx = []
             for y in range(min(h, by + 30), min(h - 200, by + 370), 2):
                 for x in range(max(0, tx - 420), min(w, tx + 420), 2):
@@ -105,11 +109,19 @@ def measure(png, colour, origin=None):
             span = None
             if bx:  # the creature nearest to the tag (the nest has more of the red species): its columns only, a run
                 # of red columns without a gap of 80 px (a dark, shaded part of a close creature) around the red column nearest to the tag
+                # BUG-1352: a creature close to the camera seen from behind has a shaded back (r 70-120, g/b 20-40:
+                # not `red`) wider than 80 px between its two lit shoulders; the tag over that back read as `off` (lab
+                # 20261120-041304 turn 10: red runs 632-694 and 794-856 px, the tag at 742). A gap whose every column
+                # holds the creature's shaded red (`body`) is the same creature, ground between two creatures is not
+                y0, y1 = min(h, by + 30), min(h - 200, by + 370)
+
+                def bridged(xa, xb):
+                    return all(sum(1 for y in range(y0, y1, 2) if body(x, y)) >= 3 for x in range(xa + 2, xb, 4))
                 k = min(range(len(bx)), key=lambda i: abs(bx[i] - tx))
                 lo = hi = k
-                while lo > 0 and bx[lo] - bx[lo - 1] < 80:
+                while lo > 0 and (bx[lo] - bx[lo - 1] < 80 or bridged(bx[lo - 1], bx[lo])):
                     lo -= 1
-                while hi < len(bx) - 1 and bx[hi + 1] - bx[hi] < 80:
+                while hi < len(bx) - 1 and (bx[hi + 1] - bx[hi] < 80 or bridged(bx[hi], bx[hi + 1])):
                     hi += 1
                 bx = bx[lo:hi + 1]
                 span = (bx[0], bx[-1])

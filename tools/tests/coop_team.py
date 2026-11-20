@@ -13,6 +13,7 @@ import re
 import sys
 import time
 
+import dna_mode
 from harness import avatar_pos as pos
 from coop_sync import sample
 from twoinst import Checks, shot, start
@@ -173,7 +174,7 @@ def main():
                                              host.call('coop.npc list')['out'])
             if m.group(1) in mirrored and m.group(2) != fam and float(m.group(3)) > 0]
     dna = lambda c: float(re.search(r'dna=([\d.]+)', c.call('coop.dna')['out']).group(1))  # noqa: E731
-    d0 = dna(host)
+    d0, g0 = dna(host), dna(guest)
     killed = before = None
     for cand in prey[:3]:
         before = sample(host).get('n' + cand)
@@ -185,7 +186,10 @@ def main():
     d1 = dna(host)
     time.sleep(2)
     ck(d1 > d0, f'a kill by the guest pays DNA: host {d0} -> {d1} (prey {prey[:3]})')
-    ck(abs(dna(guest) - d1) < 0.5, f'the guest has the same DNA ({dna(guest)})')
+    # BUG-1340: own DNA per player is the 0.7.16 default (all.shared_dna off): the guest's own DNA grows by the same
+    # gain (a warm lane's guest may keep an own wallet that differs from the host's reloaded DNA, lab 20261120-041304:
+    # guest 8.5, host 3.5); the shared pool (all.shared_dna on): the host's total. (Until then: the host's total always.)
+    dna_mode.party_gain(ck, dna_mode.shared(host), lambda: dna(guest), d0, d1, g0, 'the guest\'s kill')
     # the corpse stays where the animal fell, the same on both (a forwarded hit used to push with
     # the victim's position as the impulse: the corpse flew ~80 m up, on the guest it stayed there)
     hs, gs = sample(host).get(killed), sample(guest).get(killed)

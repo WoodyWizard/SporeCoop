@@ -1065,6 +1065,7 @@ static void frame_world_ticks(double now)
 static void frame_send_totals(double now)
 {
     if (g_sess.role() == net::Role::Host && game::avatar()) {
+        own_dna_credit_now(); // BUG-1341: this frame's party gain is in every own wallet before the totals go out
         float total = game::dna();
         // WP-D (BUG-1291): sent per guest: a guest with an own wallet gets its own budget (dna_own.h), the others the
         // host's (the shared pool); the tail (after the pace byte: older guests stop before it) names which

@@ -427,6 +427,33 @@ void own_dna_tick()
         trace::line("dna", "party +%.1f -> every own DNA of world %08X (%d wallets)", g, wallet_world(), (int)g_book.w.size());
 }
 
+// BUG-1341 (lab 20261120-041304 dna_notice, dna_away): the host's DNA totals go out in the frame's totals phase, the
+// income observer above runs later in the same frame (the stage phase). A party gain of frame N went to the guests in
+// frame N+1 with its causes and every guest's OLD wallet (only the bar moved: guest log "dna: own 0 -> 0, bar 0.0 ->
+// party 3.5 cause=hunt:1+4"), the wallet's step came one total later without its cause ("own 0 -> 4 ... cause=unknown").
+// On: the totals phase credits the gain first (the same observer: a second call in one frame sees no step), only while
+// the host plays its creature in this frame and the last (no load, no editor in between: the world and the store are
+// the ones the observer knows). Off: the credit waits for the stage phase (0.7.16 before the fix).
+bool g_own_dna_cause_fix = true;
+COOP_FIX("creature.own_dna_cause", "BUG-1341", g_own_dna_cause_fix,
+         "creature: a party gain reaches every guest's own DNA in the same total as its cause (off: one total later, cause unknown)");
+uint32_t g_own_early = 0; // tests: gains credited from the totals phase
+void own_dna_credit_now()
+{
+    if (!g_own_dna_cause_fix || g_sess.role() != net::Role::Host || !own_dna_on() || !g_sess.connected())
+        return;
+    if (g_mode != modes::kCreature || game::mode_id() != modes::kCreature || !game::avatar())
+        return;
+    if (store::serial() != g_book_serial)
+        return; // a store opened since the stage phase read it: that phase starts the new baseline
+    float g = g_book.observe(game::evolution_bar(), wallet_world(), store::serial());
+    if (g > 0) {
+        g_own_early++;
+        trace::line("dna", "party +%.1f -> every own DNA of world %08X (%d wallets, with the total)", g, wallet_world(),
+                    (int)g_book.w.size());
+    }
+}
+
 // BUG-1311: MSG_DNA is sent from the frame's totals phase, before the frame reads the game's mode (g_mode): in the first
 // frame after the host's editor (or a load) the host has its avatar again while g_mode still names the editor, and every
 // guest with its own wallet got the host's own DNA as a shared total (the guest's game went to the host's DNA through
@@ -498,10 +525,11 @@ std::string own_dna_status()
 {
     std::string o;
     char b[260];
-    snprintf(b, sizeof b, "own dna: on=%d fix=%d bar_set=%d store=%d heard=%d bar_heard=%.1f firsts=%u spends=%u loaded=%u totals=%u applied=%u steps=%u credited=%.1f edge=%d strays=%u gates=%d\n",
+    snprintf(b, sizeof b, "own dna: on=%d fix=%d bar_set=%d store=%d heard=%d bar_heard=%.1f firsts=%u spends=%u loaded=%u totals=%u applied=%u steps=%u credited=%.1f edge=%d strays=%u gates=%d cause=%d early=%u\n",
              (int)own_dna_on(), (int)g_own_dna_fix, (int)g_dna_bar_set_fix, (int)g_own_dna_store_fix, (int)g_own_heard,
              g_own_bar_heard, g_own_firsts, g_own_spends, g_own_loaded, g_own_totals, g_own_applied, g_book.steps,
-             g_book.credited, (int)g_own_dna_edge_fix, g_own_edge_strays, (int)g_own_dna_gates_fix);
+             g_book.credited, (int)g_own_dna_edge_fix, g_own_edge_strays, (int)g_own_dna_gates_fix, (int)g_own_dna_cause_fix,
+             g_own_early);
     o += b;
     for (auto& p : g_sess.players()) {
         if (p.id == 0 || g_sess.role() != net::Role::Host)

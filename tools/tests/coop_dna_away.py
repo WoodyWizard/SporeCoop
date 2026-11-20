@@ -10,15 +10,20 @@ when the host is back.
    the guest counts it as away), the guest earns 7 DNA through the game (`coop.dna add`:
    AddEvolutionPoints, the hooked game function): it goes to the host.
 2. Once the guest knows the host is away it earns 11 more (kept on the guest).
-3. The host loads its world again: the host's game DNA total is its saved total + 18.
+3. The host loads its world again: the host's game DNA total is its saved total + 18; the guest's: with own DNA (the
+   0.7.16 default, all.shared_dna off) its own DNA grew by the same 18 (every gain counts for everybody); with the
+   shared pool (--shared: all.shared_dna on, suite dna_away_shared) the guest has the host's total. (Until 0.7.16's
+   final check this test asked for the host's total in every mode: it failed whenever the lane's guest kept an own
+   wallet that differs from the host's reloaded DNA, lab 20261120-041304, BUG-1340.)
 
 --nofix: `coop.fix core.away_dna off` on both (the old behaviour): the 7 are lost, must FAIL.
 
-  SPORE_LANE=7 python3 tools/tests/coop_dna_away.py [--nofix]
+  SPORE_LANE=7 python3 tools/tests/coop_dna_away.py [--nofix] [--shared]
 """
 import argparse
 import time
 
+import dna_mode
 from harness import dna
 from twoinst import Checks, lane_state, start
 
@@ -26,9 +31,18 @@ from twoinst import Checks, lane_state, start
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--nofix', action='store_true')
+    ap.add_argument('--shared', action='store_true')  # (read by dna_mode)
     a = ap.parse_args()
     host, guest = start('creature')
     ck = Checks()
+    try:
+        return run(host, guest, ck, a)
+    finally:
+        dna_mode.teardown(host, guest)
+
+
+def run(host, guest, ck, a):
+    shared = dna_mode.setup(host, guest, ck)
     if a.nofix:
         for c in (host, guest):
             c.call('coop.fix core.away_dna off')
@@ -65,7 +79,7 @@ def main():
     print(f'  dna host {d0} -> {d1}, guest {g0} -> {g1}; host: {hs[0] if hs else ""}')
     ck(d1 is not None and d0 is not None and abs((d1 - d0) - 18) < 0.6,
        f'the host\'s game DNA grew by both gains (7 + 11): {d0} -> {d1}')
-    ck(g1 is not None and d1 is not None and abs(g1 - d1) < 0.6, 'the guest has the same total')
+    dna_mode.party_gain(ck, shared, lambda: dna(guest), d0, d1, g0, 'both gains')
     ck.faults(host=host, guest=guest)
     return ck.result()
 
