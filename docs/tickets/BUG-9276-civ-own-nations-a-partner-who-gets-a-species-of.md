@@ -10,7 +10,7 @@ role:
 versions: 0.7.15.5 (feat/lineages-civ)
 fixed_in: unreleased
 branch: feat/lineages-civ
-commits:
+commits: fb7b9d3e
 tests: tools/tests/coop_civ_nosite.py (suite civ_nosite), tests/civ_seats_tests.cpp (adoption)
 signature:
 docs: docs/re/civ.md#civ-own-nations docs/re/civ.md#civ-nation-adopt
