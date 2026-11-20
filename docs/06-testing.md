@@ -9436,6 +9436,13 @@ record (coop_civ_own_designs.keys_in) for the guest's keys of that stage.
   own arrival editor still up after 14 "done" is left with the red cross (`Campaign.arrival_cancel_after`, None with
   `--civ-editors`): on lab lane 5 that City Hall editor's name panel has no dice and the driver cannot name it
   (BUG-1328, 6 of 6 runs there; lane 6 names it every time). line_stages_editors on lane 5 FAILs for that reason.
+* CORRECTION (2026-11-19, fix/w58-cityname): BUG-1328 was not the lane but its guest profile's Pollination.package: a
+  creation property list under key 0 (named "Breer", the way "Name Your Captain" writes it when the species copy
+  fails, as space_captain_none does) made the name of every editor without a creation key read-only (no field, no
+  dice; docs/re/creations.md#creations-props-key0). Fixed in the mod (`game.creation_props_key0`, test
+  `creation_props_key0` and its twin); `Campaign.arrival_cancel_after` (the red cross after 14 "done") is gone: a
+  stuck own arrival editor fails line_stages / line_stages_outfit again. A lane profile can be checked for such a list
+  by the .prop records of its Pollination.package (a clean profile has none).
 
 ## Tests of the Lineages fork's general bugs (2026-11-19, fix/w56-general)
 <a id="testing-fork-general"></a>

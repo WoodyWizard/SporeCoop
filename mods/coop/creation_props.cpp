@@ -116,13 +116,14 @@ static std::string plant(const char* name)
 }
 
 // tests: the list under key 0 out of the profile's Pollination.package (the database CaptainProps_Save wrote it to:
-// DeleteRecord, Resource::Database vt 0x54) and out of the manager's cache (RemovePropertyList)
+// Resource::GetDatabaseByID(0x11AC19C), vtable 0x140A178; DeleteRecord is slot 0x40 there and in DatabasePackedFile's
+// 0x1436938: thiscall bool(db, const ResourceKey*) ret 4) and out of the manager's cache (RemovePropertyList)
 static std::string remove_key0()
 {
     static uintptr_t rm = H->sym("App::cPropManager::RemovePropertyList"), db_get = H->sym("Resource::GetDatabaseByID");
     static const uint32_t key[3] = {0, 0x00B1B104, kPropsGroup};
     void* db = db_get ? skg::cdecl_call<void*>(db_get, kPollinationDb) : nullptr;
-    bool deleted = db && readable(db, 4) && skg::vcall<bool>(db, 0x54 / 4, (const uint32_t*)key);
+    bool deleted = db && readable(db, 4) && skg::vcall<bool>(db, 0x40 / 4, (const uint32_t*)key);
     void* pm = prop_manager();
     void* list = key0_list();
     if (list && pm && rm)

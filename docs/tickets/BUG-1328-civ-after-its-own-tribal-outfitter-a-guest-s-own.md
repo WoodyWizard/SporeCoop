@@ -1,20 +1,20 @@
 ---
 id: BUG-1328
-title: Lab lane 5: the guest's own City Hall editor at its Civ arrival offers no random-name dice: the driver cannot name it
-status: open
+title: An editor without a creation key cannot be named (no name field, no dice) in a profile with a creation property list under key 0 (lab lane 5)
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in:
-branch: fix/w58-linestages
+fixed_in: unreleased
+branch: fix/w58-cityname
 commits:
-tests: line_stages_outfit
+tests: creation_props_key0, creation_props_key0_off, civ_own_arrival, line_stages_editors
 signature:
-docs:
-related: BUG-1272, BUG-1276, BUG-1277
+docs: docs/re/creations.md#creations-props-key0
+related: BUG-1111, BUG-1272, BUG-1276, BUG-1277, BUG-1329
 ---
 
 ## Report
@@ -32,20 +32,36 @@ line_stages_outfit 20261119-190903 (with the outfit: so the guest's own Tribal O
 thought); lane 2 (fix/w57-own-editors 20261119-162318) too.
 
 ## Root cause
-Not found. Observed: on lane 5 only, 6 of 6 runs; no warning in either game's log; lane 5 and lane 6 have the same
-game files (sizes), the same Preferences.prop and login.prop in the guest profile (inst10 on lane 5, inst12 on lane 6);
-lane 5's coop.ini is an older template (name=Alice, no dna_pace / log_detail / [report]). Inferred (unverified): something
-of lane 5's bottle or guest profile (inst10) hides the random-name button (a name generator resource or a setting the
-panel reads). Whether a player can type a name there is not verified (the kit's text input does not reach Spore's name
-field in any editor). Next: compare the bottles' and inst10's files with lane 6, or recreate lane 5
-(`tools/spore.sh lane create 5`) and rerun line_stages_editors there.
+Observed (lab lanes 5 and 6, Ghidra, runtime; docs/re/creations.md#creations-props-key0):
+* The difference between the lanes is one record of the guest profile's Pollination.package (lane 5, inst10): a
+  creation property list `{0x00000000, 0x00B1B104, 0x0000E500}` (119 bytes: the "Name Your Captain" template's
+  properties with the name "Breer"). No other lane's profile has a .prop in Pollination.package. Game files, bottles
+  (registry, locale), Preferences.prop, login.prop, coop.ini and the guest's creations were compared too: only sizes of
+  caches and the mod's per-player store differ, nothing that the name panel reads.
+* Editors::cEditor::OnEnter reads the property list of its request's creation (EditorRequest +0x10,
+  SporeCoop::CaptainProps_Get at 0x58F9CD). Our own arrival editors and the game's end of Tribe editors carry no
+  creation key (0/0/0), so it finds that list under key 0; its non-empty name makes the name read-only
+  (UI::EditorNamePanel +0x11 = 0, read at runtime on lane 5) and takes away the dice (+0x20 = 0): no name field, no
+  dice, keys go to the editor's hotkeys, "You must give your creation a name" for ever.
+* Such a list is what NameCaptainDialog_OnButton writes when the world's species cannot be copied: the captain key is 0
+  (BUG-1111) and CaptainProps_Copy / CaptainProps_SetName still save the list, under key 0, into Pollination.package
+  (written to the file at once: lab 20261119-200001 left it on lane 6's disk). Inferred source on lane 5: the
+  space_captain_none test (uncopyable species, the dice's name) ran on lane 5 on 2026-11-16 and 2026-11-17.
+* Can a real player hit it: yes. GitHub #202's reporter had a captain key 0/0/0 (BUG-1111); a player whose "Name Your
+  Captain" could not copy the species has this list in the profile for good, and from then on every editor without a
+  creation key cannot be saved, also the game's own end-of-Tribe City Hall editor, which has no red cross (the
+  player cannot leave Tribe), and a guest's own arrival editors of 0.7.16.
 
 ## Fix
-Not fixed (a lab lane's environment, not seen on other lanes). Test side (fix/w58-linestages, BUG-1277): the
-campaign's driver leaves a guest's own arrival editor with the red cross after 14 "done"
-(`Campaign.arrival_cancel_after`; the player's way to keep the civilization's designs, the note names this ticket), so
-line_stages / line_stages_outfit reach their Civ checks on such a lane; line_stages --civ-editors keeps no red cross
-(its designs are checked: it FAILs on lane 5).
+`game.creation_props_key0` (mods/coop/creation_props.cpp): a hook on SporeCoop::CaptainProps_Get answers "no list" for
+a key whose instance is 0 (no creation has instance 0: a clean profile answers the same). The editors start with an
+empty editable name and the dice; the list stays in the file. `coop.creationprops [plant <name> | remove]`: the
+guard's count, whether the game has a list under key 0; tests plant one the captain dialog's way and remove it
+(DeleteRecord of Pollination.package's database, RemovePropertyList). New symbols: CaptainProps_Copy,
+CaptainProps_SetName, NameCaptain_PropsTemplate, cPropManager::GetPropertyList / RemovePropertyList,
+UI::EditorNamePanel::Initialize. Test side: the campaign driver's red cross after 14 "done"
+(`Campaign.arrival_cancel_after`, fix/w58-linestages) is removed, so a stuck own arrival editor fails line_stages /
+line_stages_outfit again.
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);

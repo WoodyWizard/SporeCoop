@@ -55,7 +55,8 @@ def in_editor(con):
 
 
 def name_panel(con, who):
-    """three parts, done without a name: (name field shown, dice shown) of the name panel the game opened"""
+    """three parts, done without a name: (name field shown, dice shown) of the name panel the game opened (shown: through
+    visible parents, `coop.ui where`; its coordinates are the layout's before the panel moved up, not the screen's)"""
     for (sx, sy), (tx, ty) in TRIBE_EDITOR_PARTS:
         drag_slow(con, sx, sy, tx, ty, 1.0)
     editor_click(con, *EDITOR_DONE)
@@ -78,8 +79,7 @@ def leave_named(con, tries=4):
         if n and n % 2 == 0:
             for (sx, sy), (tx, ty) in TRIBE_EDITOR_PARTS:
                 drag_slow(con, sx, sy, tx, ty, 1.0 + n // 2)
-        p = uifind.where(con, DICE)
-        editor_click(con, *(p or EDITOR_DICE))
+        editor_click(con, *EDITOR_DICE)  # (the panel's own place: `coop.ui where` gives the unmoved layout's)
         editor_click(con, *EDITOR_DONE, settle=0)
         wait(lambda: not in_editor(con), 8)
     return not in_editor(con)
