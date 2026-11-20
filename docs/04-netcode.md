@@ -789,5 +789,6 @@ Phase 1 of the port of Lineages (PR #196, PandizeLive; there BUG-9135 / BUG-9198
   host address and name, 30 days). The Lineages features that come next (founder seats, Space allies) key by the
   identity; folding the two into one key is open in BUG-9258.
 * Test: tools/tests/coop_identity.py (suite `identity`): each game knows the other's identity, and the guest's is the
-  same after a rejoin. Not yet run in the lab (written on a Windows PC without the lab).
+  same after a rejoin. Its steps were run by hand on two instances of the Steam build on Windows (BUG-9258); not yet
+  in the lab.
 
