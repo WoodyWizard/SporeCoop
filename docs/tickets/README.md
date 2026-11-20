@@ -1290,3 +1290,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9269](BUG-9269-creature-hud-portrait-fix-bug-0937-never-works-o.md) | open | bug | Creature | 2026-11-20 |  | Creature HUD portrait fix (BUG-0937) never works on the Steam exe: the ImageDrawable vtable was a raw GOG 2024 address |
 | [BUG-9270](BUG-9270-a-guest-s-own-nest-herd-keeps-the-host-s-family.md) | open | bug | Creature | 2026-11-20 |  | A guest's own nest herd keeps the host's family copies in its member list after the guest joins it |
 | [BUG-9273](BUG-9273-every-player-chooses-their-own-start-in-a-new-ce.md) | open | feature | Cell | 2026-11-20 |  | Every player chooses their own start in a new Cell game: diet, name, colour |
+| [BUG-9280](BUG-9280-the-guest-s-first-creature-editor-starts-from-th.md) | fixed | bug | Creature | 2026-11-20 | unreleased | the guest's first Creature editor starts from the host's creature, not from the cell it chose (start choice) |

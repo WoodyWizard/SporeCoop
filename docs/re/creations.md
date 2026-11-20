@@ -1731,3 +1731,22 @@ BUG-1328. Ghidra (GOG 2024) and runtime on lab lanes 5 and 6.
 * ~ The editor's exit `0x5802F0` saves the new creation's list for the key from cIDGenerator (never 0 seen); with
   `param_2` (saved) it first reads the edited creation's list (EditorRequest +0x10's key: 0 for a new one; on a polluted
   profile the new creation inherited the list under key 0, now none).
+
+## A guest's own cell becomes its land creature (2026-11-20, fix/guest-landfall)
+<a id="creations-guest-landfall"></a>
+
+BUG-9280, ported from Lineages (its BUG-9006). ✔ The game's own landfall (E83910) converts the local player's cell with
+`SporeCoop::CellModelToEarlyCreature` (0x4BA690, thiscall(source model, out model ref), ret 4): the copy's editor becomes
+9EA3031A. A guest's game never runs it for the guest's own cell (the guest plays the host's world), so the mod does the
+same steps, outside the frame, once the guest is in the Creature stage of the planet it played its cell on:
+1. load the cell's model (resource manager vt +0x0C) and convert it;
+2. a new creature key from `App::cIDGenerator::Get` vt +4 (type 2B978C46, group 40626200), written at model +8;
+3. `SporeCoop::RegisterConvertedModel`, `Resource::IResourceManager::Get` vt +0x6C (CacheResource), then
+   `SporeCoop::WriteCreationResource` into My Creations (EditorSaves, 0x11AC199);
+4. the editor reads the asset catalog: the cell's PNG under the new key (`SporeCoop::WriteRawCreationRecord`) and a
+   metadata of its own (`SporeCoop::AssetMetadataCtor` on 0xD8 bytes, `Pollinator::cAssetMetadata::Set`, resource
+   manager vt +0x20). Without them the editor opened a blank body (Lineages).
+5. ✔ flush My Creations (database vt +0x24) before reading the new record back: without the flush the record was never
+   found in 30 s (observed 2026-11-20, lane B); with it, a second later.
+The creature is then chosen as the guest's own (choices.ini) and its landfall editor (vote.cpp) waits for it. A painted
+start-choice cell (BUG-9273) has no metadata of its own: the start choice's name is used.
