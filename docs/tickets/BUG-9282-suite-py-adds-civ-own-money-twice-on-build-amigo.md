@@ -10,7 +10,7 @@ role:
 versions: 0.7.15.94
 fixed_in: unreleased
 branch: fix/suite-dup
-commits: COMMIT
+commits: 9054e063
 tests: unit-tools (tools_selftest.py testlint), test_lint.py
 signature:
 docs:
