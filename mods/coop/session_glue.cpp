@@ -12,6 +12,7 @@
 #endif
 #include "lifecycle.h"
 #include "identity.h"
+#include "civ_wallet.h"
 #include "coop_state.h"
 #include "store.h"
 #include "designs.h"
@@ -1088,6 +1089,10 @@ void setup_callbacks()
             civ::on_message(type, from, r);
             return;
         }
+        case net::Route::CivWallet: { // BUG-9259: every player's own Civ money
+            civ_wallet::on_message(from, r);
+            return;
+        }
         case net::Route::Creation: {
             creations::on_message(type, from, r);
             return;
@@ -1154,6 +1159,7 @@ void setup_callbacks()
         views::forget(id);              // BUG-0280
         pfind::on_player_leave(id);     // F2: its colour is free again
         identity::on_player_left(id);   // BUG-9258: its identity goes (ids are reused)
+        civ_wallet::on_player_leave(id); // BUG-9259: its own Civ money is kept by its key
         if (g_player_forget_fix)
             player_life::forget_all(id); // BUG-0422: every module's state of this id (player_life.h)
         g_give_pick = net::give_pick_after_leave(g_give_pick, id, g_give_pick_reset_fix); // BUG-0234

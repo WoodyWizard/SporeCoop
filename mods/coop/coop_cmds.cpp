@@ -5,6 +5,7 @@
 #include "identity.h"
 #include "party.h"
 #include "home_nests.h"
+#include "civ_wallet.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1957,6 +1958,8 @@ void register_commands_editor()
 
 void register_commands_civ()
 {
+    H->command_add(M, "coop.wallet", "coop.wallet [income <n>] - Civ own money (civ.own_money, BUG-9259): the wallets; income <n>: tests, as if the game paid the host this income",
+                   civ_wallet::command, nullptr, SK_CMD_MAIN_THREAD);
     const int MT = SK_CMD_MAIN_THREAD;
     H->command_add(M, "coop.role", "coop.role [0-3 | fix 0|1] - civilization role: 0 none, 1 military, 2 economic, 3 religious",
                    [](void*, int argc, const char* const* argv, SkOut* out) {

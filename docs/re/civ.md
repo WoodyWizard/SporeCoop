@@ -2108,6 +2108,37 @@ walk goals, a<id> animations), 6 recordings of fix/w51-trail and the labs below.
   2.4-2.8 m (off 11 m), standing copies in the run 0-1 % (host 4-5 %). Off: only citizen_follow's walk.
 * ? What in the citizens' behaviour tree keeps walking a bound copy (and whether it can be told to stand) is not traced.
 
+## Every player's own money (2026-11-19, feat/civ-own-money)
+<a id="civ-own-money"></a>
+
+The session setting `civ.own_money` (Civilization, "Own money", off by default, set before the session starts;
+BUG-9259) gives every player a wallet of their own instead of the one shared treasury. Code: mods/coop/civ_wallet.cpp,
+the rules in mods/coop/civ_wallet_logic.h (unit tests in tests/civ_tests.cpp `wallets`).
+
+* The host's wallet is its game's money (cCivilization `mWealth` +0x98, read with GetMoney 0xBEF800). Every guest's
+  wallet is the guest game's money; the host keeps a copy of it (the guest reports its money and the last host
+  operation it applied every 2 s, MSG_CIV_WALLET). shared.cpp stops syncing the Civ money while the setting is on
+  (`own_budget`, as for Space's rivals mode).
+* Income: only the host's game earns (guests drop AddMoney for the player civilization, civ.cpp h_AddMoney). In own
+  money mode the host's h_AddMoney takes the gain (money after minus before: the game's difficulty multiplier is in it)
+  and gives each guest with a wallet the part of its cities (civ.cpp `g_city_owner`); a shared city (kShared, the
+  capital while a player would have none) is split equally between the host and those guests; the cities of a player
+  without a wallet stay with the host. ~ The per-city split is a rule of ours, not the game's: Spore does not say which
+  city a payment (a spice derrick, a trade delivery) came from to AddMoney.
+* A guest's purchase that the host's game makes (host_buy for a vehicle, a city bought by CMD_BUYCITY) runs inside
+  `civ_wallet::PayAs`: the host's money is the guest's wallet for the call, so the game's own "enough money?" check
+  and SpendMoney use it; what it spent is charged to the guest (a K_ADD with a minus) and the host's money is put back.
+  A building is paid in the guest's own planner (its own money already); a refund for a building the host's game could
+  not make goes into that guest's wallet.
+* A player new to the world gets an equal part of the host's money (money moves, none is made). A player who leaves
+  keeps its wallet by its store key (store.h key_of) for its next join and across sessions (`civ.wallet` records in the
+  per-player store on the host's disk). A guest asks for its wallet every 5 s from the time its Civ world opens until
+  the host (in its own Civ world) answers; an editor visit keeps the wallet.
+* Not covered yet: the superweapons, which the host fires and pays from its own money; switching the setting off
+  later does not merge the wallets back into one (the guests' wallets stay stored).
+* `coop.wallet` prints the wallets; `coop.wallet income <n>` (host, tests) pays the player civilization an income
+  through the game's AddMoney as the game would.
+
 ## The host's shot observer and targets that are no listed object (2026-11-19, fix/w57-crashes)
 <a id="civ-shot-observer-targets"></a>
 

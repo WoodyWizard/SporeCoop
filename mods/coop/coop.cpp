@@ -44,6 +44,7 @@
 #include "audio.h"
 #include "census.h"
 #include "civ.h"
+#include "civ_wallet.h"
 #include "autoupdate.h"
 #include "gamefixes.h"
 #include "spacecoop.h"
@@ -1144,6 +1145,7 @@ static void frame_stage_ticks(double now)
         }, &walk_done);
     cellsync::tick(now);
     civ::tick(now);
+    civ_wallet::tick(now); // BUG-9259: every player's own Civ money (the setting civ.own_money)
     civ::planner_probe_tick(); // BUG-0682 tests (off unless `coop.civ planner_probe on`)
     squadron::tick(now);
     autoupdate::tick();
