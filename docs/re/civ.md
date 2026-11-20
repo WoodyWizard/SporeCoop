@@ -2698,3 +2698,33 @@ BUG-1322. Follows "How Civ weapons fire (BUG-0477)" above and BUG-0535.
   no object. Test `coop_civ_influence.py --case shotobjs` (docs/06-testing.md#testing-civ-shot-objects).
   no object. Test `coop_civ_influence.py --case shotobjs` (docs/06-testing.md#testing-civ-shot-objects; on the 0.7.15
   line `coop_civ_shot_objects.py`, fix/w58-hotfix).
+
+## The Tribe stage's listener and the results of a guest's own arrival editors (2026-11-19, fix/w58-assignnames)
+<a id="civ-arrival-tribe-listener"></a>
+
+BUG-1329, on top of [civ-own-arrival](#civ-own-arrival). Code: mods/coop/civ_arrival.cpp (`core.own_civ_tag`).
+
+* ✔ (lab 20261119-113002, -130049 civ_late_arrival; 20261119-200557, -201729 creation_props_key0: the guest's log)
+  The result message 0x30C11C7 of a guest's own City Hall editor (tag 0x116DD1B, saved or left with the red cross)
+  faulted on that guest: `exception 0xC0000005 at 0x00645E4D hash_map__int_int__Find+0xD (data 0x00000030)`, ebp
+  0x030C11C7, esi 0x5312DA01. The stack names (AssignNames+0x1443, TribeStage_RemoveMemberCard+0x1D8F) are the nearest
+  symbols only: the real chain is 0xCD81F0+0x163 -> 0xCD6B00 -> 0xB708A0 -> hash_map Find. Both routes had it (the
+  restarted guest of civ_late_arrival and the live end of Tribe of creation_props_key0); Wine's game went on.
+* ✔ (Ghidra, asm 0xCD831C..0xCD83A5) The Tribe stage's message listener 0xCD81F0 (`TribeGame_GoalListener`, this = the
+  stage + 8) is still registered in Civ. On 0x30C11C7 with result +0xC == 0x116DD1B it calls `cCinematicManager::Get(1)`
+  -> 0xADF310, then **0xCD6B00(stage, 0x5312DA01)** (a Tribe hint), the intrusive assign of the result (null when
+  cancelled) into stage +0x2F8 (0x572620), and with stage +0x28 set and a City Hall result (+0x14 0x99E92F05, not
+  cancelled) 0xCD3F80, which copies the result's key +0x18..+0x20 into cPlayer +0x1150..+0x1158; with stage +0x29 the
+  same for the vehicle ids (0xCD3FB0).
+* ✔ (Ghidra) 0xCD6B00 (thiscall(stage, uint32 hint) ret 4) for hint 0x5312DA01 calls **0xB708A0** with ECX = **stage
+  +0x394** (`MOV ECX,[EDI+0x394]` at 0xCD6F74): the stage's hint list; 0xB708A0 (thiscall(list, id) ret 4) finds the id
+  in its hash map (+0x2C / +0x30) and runs the hint's vt 0x78. In Civ that list is gone (null): the read of +0x30.
+* ✔ (Ghidra `scan`) 0x116DD1B is also a common component id (casts at 0xDB4D22, 0xF207A2 and ~40 more sites); the tag
+  check of the Tribe listener at 0xCD832B is the only listener test of it that matters here. `GameCiv_HandleMessage`
+  acts on the tags 0x66787BB and 0x116D51D only, the planner's listener 0xD130D0 copies every result whatever the tag
+  (0x91D4AF08 is the planner's own request tag, tested at 0xD08D85 / 0xD135A5).
+* Fix `core.own_civ_tag`: our arrival requests carry the tag **0x0C0B1329** (no dword of the exe has it), so no game
+  listener acts on their results; `civ_arrival_result` takes the result by that tag (cGameModeCiv's listener hook), the
+  planner's copy stays the second way. Off: the Tribe tag as before (the twin civ_late_arrival_tag_off).
+* Negative: the result of a guest's own Tribal Outfitter (designs.cpp, in Tribe) must keep the Tribe tag: there the
+  listener's +0x2F8 copy is the way its result comes back (0xCDCC90).

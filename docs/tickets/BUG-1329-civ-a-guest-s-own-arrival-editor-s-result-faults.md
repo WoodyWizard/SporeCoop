@@ -9,11 +9,11 @@ source: lab
 role: guest
 versions: 
 fixed_in:
-branch:
+branch: fix/w58-assignnames
 commits:
-tests: civ_late_arrival, creation_props_key0
+tests: civ_late_arrival, civ_late_arrival_tag_off, creation_props_key0, civ_own_arrival
 signature: 0x00645E4D hash_map__int_int__Find+0xD < cIdentityColorable::AssignNames+0x1443 < TribeStage_RemoveMemberCard+0x1D8F < TribeGame_GoalListener+0x163
-docs:
+docs: docs/re/civ.md#civ-arrival-tribe-listener, docs/06-testing.md#testing-killed-faults
 related: BUG-1276, BUG-1290, BUG-1328
 ---
 
@@ -37,12 +37,30 @@ live end of Tribe) no run had it (20261119-200005 and the fix/w57-own-editors ru
 end the game (as BUG-0304's did).
 
 ## Root cause
-Not analysed. Inferred: the Tribe game's goal listener handles the end of Tribe's editor result (tag 0x116DD1B) and
-reads the tribe's member cards / identity colours, gone in Civ; the arrival editor reuses that tag (civ_arrival.cpp
-kTribeTag) so the stale listener runs on it.
+(Ghidra, docs/re/civ.md#civ-arrival-tribe-listener) Our own arrival editors (civ_arrival.cpp open_editor) were built as
+the end of Tribe builds them, with the Tribe tag 0x116DD1B at EditorRequest +0x90, which the editor copies into the
+result's +0xC. The Tribe stage's message listener 0xCD81F0 is still registered in Civ and acts on every 0x30C11C7 with
+that tag: cinematic manager, the Tribe hint 0x5312DA01 through 0xCD6B00 -> 0xB708A0 on the stage's hint list (stage
++0x394, ECX at 0xCD6F74), the result kept in stage +0x2F8 (and with +0x28 set its key copied into cPlayer +0x1150). In
+Civ the hint list is null: 0xB708A0's hash_map Find reads +0x30 and faults at 0x645E4D. The stack's names
+(AssignNames+0x1443, TribeStage_RemoveMemberCard+0x1D8F) are only the nearest symbols. Seen on both routes: the
+restarted guest (civ_late_arrival, every run) and the live end of Tribe of creation_props_key0 (2 of 2); civ_own_arrival
+and line_stages_editors had 2 results and no fault in each of 13 earlier runs (why the list is there in those games was
+not analysed; the fix does not depend on it).
+
+The lab missed it: civ_late_arrival restarts the guest twice and `Checks.faults()` asked only the games alive at the end
+(the lab kept only the last instance's log), so the second instance's fault was never counted.
 
 ## Fix
-<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
+* `coop.fix core.own_civ_tag` (civ_arrival.cpp): the guest's own arrival editors carry a tag of our own, 0x0C0B1329 (no
+  dword of the exe has it), so no game listener acts on their results; `civ_arrival_result` takes the result by that
+  tag. Off: the Tribe tag (the twin civ_late_arrival_tag_off). `coop.civarrival` shows `tag: fix=.. request=..`.
+* Test: civ_late_arrival checks the guest's fault count around each own editor ("no fault at the end of its own ...
+  editor").
+* Harness: `twoinst.start()` sets `lane.on_kill`; every game a test kills after start (`lane.sh('kill')`,
+  `kill_game`) has its `exc` read first and judged by `Checks.faults()` (`<who> (killed instance N) faults: ...`), its log
+  copied as `<test>.<who>.killed<N>.game.log` (docs/06-testing.md#testing-killed-faults). `SPORE_KILLED_FAULTS=0`: the
+  old way.
 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
