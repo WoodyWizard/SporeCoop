@@ -6698,6 +6698,11 @@ COOP_FIX("ui.cover_ends_in_editor", "BUG-9274", g_cover_editor_end,
 // decision 3E C: a partner's arrow is a slim chevron in the HUD's blue with a white edge and a name plate
 // (images/partner_arrow_mockup_C.png); off: the green arrow and the name line
 static bool g_partner_chevron = true;
+// decision 7D A (owner 2026-11-19: "make sure the white border is replaced, not a new one added"): the plate's edge
+// and the arrow take the player's own colour (find.h color_of, the F2 colour); off: the light edge and the HUD's blue
+static bool g_plate_colour = true;
+COOP_FIX("ui.plate_colour", "BUG-9282", g_plate_colour,
+         "ui: a partner's name plate edge and arrow are drawn in that player's colour (decision 7D A)");
 COOP_FIX("ui.partner_chevron", "BUG-9191", g_partner_chevron,
          "ui: a partner's arrow is the HUD-blue chevron with a name plate (decision 3E C)");
 static bool g_party_panel = true;
@@ -7288,8 +7293,12 @@ void on_overlay(void*, int, void*)
                                                     std::max(py2, y + 30));
             if (covered) {
             } else if (g_partner_chevron) {
-                partner_marker::chevron(H, x, y, dx, dy, cs, partner_down ? 0xFFE85050 : 0xFF46AAE6);
-                partner_marker::plate(H, px1, py1, px2, py2, 17, 0xA5282828, 0xC8EBF0F5);
+                const uint32_t own = 0xFF000000u | (pfind::color_of(id) & 0xFFFFFFu); // 7D A: the player's colour
+                partner_marker::chevron(H, x, y, dx, dy, cs, partner_down ? 0xFFE85050 : g_plate_colour ? own : 0xFF46AAE6);
+                if (g_plate_colour)
+                    partner_marker::plate(H, px1, py1, px2, py2, 17, 0xA5282828, own, 2.f); // (its edge, not a second one)
+                else
+                    partner_marker::plate(H, px1, py1, px2, py2, 17, 0xA5282828, 0xC8EBF0F5);
                 const int nx = (int)((px1 + px2) * .5f) - utf8::overlay_text_px(name_line) / 2;
                 const int dxl = (int)((px1 + px2) * .5f) - utf8::overlay_text_px(dist_line) / 2;
                 H->overlay_text(nx + 1, (int)py1 + 5, 0xFF000000, name_line.c_str());
@@ -10815,6 +10824,8 @@ void support_init()
     p.since_share = [](uint8_t peer) { return world::since_share(peer); };
     p.dna = [](float& v) {
         if (!game::avatar() || g_mode != modes::kCreature)
+            return false;
+        if (party_bar::on()) // BUG-9277: on a galaxy planet each party has its own bar: nothing every game must agree on
             return false;
         // BUG-9162: with personal DNA each player's budget is their own; the party's progress bar is what must agree
         v = personal_dna() ? game::evolution_bar() : game::dna();

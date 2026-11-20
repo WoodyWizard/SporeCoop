@@ -1487,3 +1487,8 @@ mean outlining all tribe members. For civ, it'd be all units, etc."
   BUG-9280 corrected (its ticket): the village by the host's came from an old partner seat in the QA save, made at the
   crossing's Tribe start; the real gaps are the Tribe start making villages for seats outside the crossing party, and a
   stranger's Creature nest being placed by the host's like a partner's (decision 7E).
+* 7D A and 7E A built (2026-11-19 late, BUG-9282, BUG-9283): a partner's plate edge and arrow in that player's colour
+  (images/7DA_plate_colour_off_on.png); another party's player gets its nest on a spot of its own (seen: 295 m from the
+  host's, 250 m from every player's nest). With 7E A a stranger's nest is far from the host's, so a party's Tribe start
+  that turns other species' nests into rival tribes (the game's own rule) makes a stranger's tribe at its own nest:
+  BUG-9280's "the nest becomes the village" for a party that arrives later. Not seen yet in game.

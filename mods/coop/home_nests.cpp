@@ -15,6 +15,7 @@
 #include "game.h"
 #include "net/interp.h"
 #include "party.h"
+#include "parties_net.h"
 #include "social.h"
 #include "sporekit_game.hpp"
 #include "world.h"
@@ -102,6 +103,23 @@ static void* nest_herd_near(void* profile, const net::Vec3& home, float r, net::
 // BUG-9215 (MSI tour 2026-11-15): a player who joined while the host was on its death screen got the world saved with
 // the host's dead avatar, arrived dead at the host's spot and saw "You were killed in battle". The joiner's world now
 // waits while the host is dead (the hold's 2 minutes at most) and the host is told once to respawn. Off: shared at once.
+// decision 7E A (owner 2026-11-19, BUG-9283): on a galaxy planet a player of another party than the host's is no partner
+// of the host: its nest is its own wherever it is (searched on the whole planet), and a new one goes next to a nest of
+// its own party's members, else on a free spot of its own, at least kApart from every other player's nest. Off: every
+// player's nest 45-80 m from the host's (decision 2, the co-op party rule)
+static bool g_apart = true;
+COOP_FIX("creature.stranger_nest_apart", "BUG-9283", g_apart,
+         "creature: on a galaxy planet another party's player gets its nest on a spot of its own, away from other players");
+constexpr float kAnywhere = 1e6f, kApart = 250.f;
+static uint32_t g_apart_made = 0, g_apart_near_party = 0;
+static bool stranger_seat(size_t seat)
+{
+    if (!g_apart || !parties::galaxy())
+        return false;
+    const uint8_t p = party::player_of_seat((int)seat);
+    return p != party::kNobody && parties::table_key(p) != 0;
+}
+static float seat_range(size_t seat) { return stranger_seat(seat) ? kAnywhere : kNear; }
 static bool g_dead_hold = true;
 COOP_FIX("creature.join_after_respawn", "BUG-9215", g_dead_hold,
          "creature: a player joining while the host is dead gets the world once the host respawned (2 min at most)");
@@ -136,7 +154,7 @@ static bool nest_due(uint8_t player, uint64_t waited_ms)
     net::Vec3 home;
     if (!host_home(home)) return false;
     void* profile = game::species_by_key({species, kCrtType, kCrtGroup});
-    return !profile || !nest_herd_near(profile, home, kNear, nullptr);
+    return !profile || !nest_herd_near(profile, home, seat_range((size_t)seat), nullptr);
 }
 void init(const SkHost* host, SkMod* mod, const Ctx& ctx)
 {
@@ -312,6 +330,55 @@ static bool site_near(const net::Vec3& home, net::Vec3& out)
     return false;
 }
 
+// 7E A (BUG-9283): a free spot of its own for another party's player: rings of 300-650 m round the host's home, the
+// spot at least kApart from every player's nest (the host's home included), then site_near's flat, dry spot by it
+static bool site_apart(const net::Vec3& home, net::Vec3& out)
+{
+    std::vector<net::Vec3> taken{home};
+    for (const auto& n : g_nests)
+        if (live_herd(n.herd))
+            taken.push_back(n.pos);
+    const float r = std::sqrt(home.x * home.x + home.y * home.y + home.z * home.z);
+    if (!(r > 1))
+        return false;
+    net::Vec3 n{home.x / r, home.y / r, home.z / r};
+    net::Vec3 u{n.z, 0, -n.x};
+    float ul = std::sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
+    if (ul < 1e-3f) {
+        u = {0, -n.z, n.y};
+        ul = std::sqrt(u.y * u.y + u.z * u.z);
+    }
+    u = {u.x / ul, u.y / ul, u.z / ul};
+    net::Vec3 v{n.y * u.z - n.z * u.y, n.z * u.x - n.x * u.z, n.x * u.y - n.y * u.x};
+    auto clear = [&](const net::Vec3& q, float d) {
+        for (const auto& t : taken)
+            if (net::dist(t, q) < d)
+                return false;
+        return true;
+    };
+    for (float dist : {300.f, 400.f, 500.f, 650.f})
+        for (int k = 0; k < 12; k++) {
+            const float a = (k * 30 + dist * 0.37f) * 0.0174533f;
+            net::Vec3 c{home.x + dist * (u.x * std::cos(a) + v.x * std::sin(a)), home.y + dist * (u.y * std::cos(a) + v.y * std::sin(a)),
+                        home.z + dist * (u.z * std::cos(a) + v.z * std::sin(a))};
+            const float g = game::ground_radius(c), len = std::sqrt(c.x * c.x + c.y * c.y + c.z * c.z);
+            if (!std::isfinite(g) || g < 1 || len < 1)
+                continue;
+            c = {c.x * g / len, c.y * g / len, c.z * g / len};
+            const float water = game::water_radius();
+            if (water > 1 && g < water + 1.f)
+                continue;
+            net::Vec3 q;
+            if (clear(c, kApart) && site_near(c, q) && clear(q, kApart - 30.f)) {
+                out = q;
+                H->log(M, SK_INFO, "home nests: a spot of its own %.0f m from the host's home, %.0f m or more from every "
+                       "player's nest (7E A)", net::dist(q, home), kApart - 30.f);
+                return true;
+            }
+        }
+    return false;
+}
+
 // BUG-9234 (owner play test 2026-11-15: "is it possible to stop the double world loading ... when the player is loading
 // into their new nest?"): a migration sent the world at its start (the guest's game learns the migration only from it)
 // and again minutes later, when the host reached the new nest and the guest's own nest was made there. On: while the
@@ -363,13 +430,29 @@ static void make_nest(void* ctx)
     const uint32_t species = roster.seats[seat].species;
     void* profile = species ? game::species_by_key({species, kCrtType, kCrtGroup}) : nullptr;
     net::Vec3 home, site;
-    if (!profile || !host_home(home) || nest_herd_near(profile, home, kNear))
+    if (!profile || !host_home(home) || nest_herd_near(profile, home, seat_range((size_t)seat)))
         return;
-    if (!site_near(home, site)) {
+    const bool apart = stranger_seat((size_t)seat);
+    net::Vec3 anchor = home;
+    bool by_party = false;
+    if (apart) // 7E A: by a nest of its own party's members, if one has a nest here
+        for (size_t s = 1; s < roster.seats.size() && s < g_nests.size(); ++s) {
+            const uint8_t ps = party::player_of_seat((int)s), pm = party::player_of_seat(seat);
+            if ((int)s != seat && ps != party::kNobody && live_herd(g_nests[s].herd) &&
+                parties::table_key(ps) == parties::table_key(pm)) {
+                anchor = g_nests[s].pos;
+                by_party = true;
+                break;
+            }
+        }
+    if (apart && !by_party ? !site_apart(home, site) : !site_near(anchor, site)) {
         if (g_failed++ < 5)
-            H->log(M, SK_WARN, "home nests: no flat spot 45-80 m from the host's nest for seat %d", seat);
+            H->log(M, SK_WARN, "home nests: no flat spot for seat %d (%s)", seat,
+                   apart ? (by_party ? "by its party's nest" : "apart from other players, 7E A") : "45-80 m from the host's nest");
         return;
     }
+    if (apart)
+        (by_party ? g_apart_near_party : g_apart_made)++;
     void* herd = game::create_nest_herd(site, profile, kFamily, false);
     net::Vec3 at;
     if (!herd || !nest_pos_of(herd, at)) {
@@ -793,7 +876,7 @@ void host_tick(double now)
             continue;
         }
         net::Vec3 at;
-        if (void* herd = nest_herd_near(profile, home, kNear, &at)) {
+        if (void* herd = nest_herd_near(profile, home, seat_range(seat), &at)) {
             const SeatNest old = g_nests[seat];
             const bool same = old.herd == herd;
             g_nests[seat] = {herd, at, species, same ? old.rate : 0, same ? old.empty_since : -1, same ? old.filled_at : -100};

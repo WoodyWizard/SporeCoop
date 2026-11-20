@@ -97,7 +97,7 @@ void chevron(const SkHost* host, float x, float y, float dx, float dy, float siz
     saved->Apply(); saved->Release();
 }
 
-void plate(const SkHost* host, float x1, float y1, float x2, float y2, float radius, unsigned fill, unsigned edge)
+void plate(const SkHost* host, float x1, float y1, float x2, float y2, float radius, unsigned fill, unsigned edge, float width)
 {
     auto* device = static_cast<IDirect3DDevice9*>(host->d3d_device());
     if (!device || !(x2 > x1) || !(y2 > y1)) return;
@@ -116,7 +116,8 @@ void plate(const SkHost* host, float x1, float y1, float x2, float y2, float rad
                 out[n++] = {c[0] + std::cos(ang) * r, c[1] + std::sin(ang) * r, 0, 1, argb};
             }
     };
-    const float in = edge >> 24 ? 1.f : 0.f;
+    width = std::clamp(width, 1.f, 4.f);
+    const float in = edge >> 24 ? width : 0.f;
     Vertex fan[kPts + 2];
     fan[0] = {(x1 + x2) * .5f, (y1 + y2) * .5f, 0, 1, fill};
     outline(in, fan + 1, fill);
@@ -125,7 +126,7 @@ void plate(const SkHost* host, float x1, float y1, float x2, float y2, float rad
     if (edge >> 24) { // a ring, so the see-through fill does not show the edge's colour
         Vertex outer[kPts], inner[kPts], strip[2 * kPts + 2];
         outline(0, outer, edge);
-        outline(1, inner, edge);
+        outline(width, inner, edge);
         for (int i = 0; i < kPts; ++i) { strip[2 * i] = outer[i]; strip[2 * i + 1] = inner[i]; }
         strip[2 * kPts] = outer[0];
         strip[2 * kPts + 1] = inner[0];

@@ -8,5 +8,7 @@ void draw(const SkHost* host, float x, float y, float dx, float dy, float size, 
 // edge, pointing along (dx, dy); `size` its width. Only during SK_EV_OVERLAY.
 void chevron(const SkHost* host, float x, float y, float dx, float dy, float size, unsigned fill);
 // a rounded plate (the Party panel's name plate look: dark, see-through, a thin light edge) for a partner's name tag
-void plate(const SkHost* host, float x1, float y1, float x2, float y2, float radius, unsigned fill, unsigned edge);
+// (7D A: `width` the edge's width in pixels; the player's colour replaces the light edge, owner 2026-11-19)
+void plate(const SkHost* host, float x1, float y1, float x2, float y2, float radius, unsigned fill, unsigned edge,
+           float width = 1.f);
 }
