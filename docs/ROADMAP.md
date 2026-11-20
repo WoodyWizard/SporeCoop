@@ -480,3 +480,5 @@ side checked, the party's split into its crossing seen in game; the Tribe start 
 test copy needs a save at the last brain level). Next: that test, then the herds by each player's brain level (part
 2's last piece), the nest refresh (part 4), visitors across eras (part 5). The test galaxy is on protocol 8: the
 MSI needs the new build before it can join.
+Update 2026-11-20: the Tribe start inside a crossing was seen (BUG-9278); part 2's last piece needs nothing (every wild
+herd's brain range is [0,5], BUG-9284). Next: the nest refresh (part 4), visitors across eras (part 5).

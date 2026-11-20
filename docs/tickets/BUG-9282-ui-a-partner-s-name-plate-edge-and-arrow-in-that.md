@@ -10,7 +10,7 @@ role: all
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: c8dcd277, b23e9a9b
 tests: tools/qa_win (live TITAN QA 8+9 2026-11-19, switch off and on)
 signature:
 docs: docs/ROADMAP.md (7D)

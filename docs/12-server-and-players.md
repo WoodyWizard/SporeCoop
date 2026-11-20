@@ -1361,6 +1361,8 @@ while. 7A and 7B were withdrawn (badly worded, not gameplay choices). The plan a
    BUG-9270); a guest's gain goes to its party's total; MSG_DNA gives each guest its party's; brain levels follow. The
    herds near each player follow that player's own brain level (the game's rule, run per player as the view centres
    already are, npc.view_centres); no creature's level is changed.
+   CORRECTION (2026-11-20, feat/lineages-alpha): nothing to build: every wild herd's brain range is [0,5], so no herd
+   wakes or sleeps by the brain level (BUG-9284, docs/re/creature.md#creature-herd-brain-ranges).
 3. **The stage end per party**: a party's bar full, its leader gets the game's own next-stage offer; the party leaves
    the Creature era together (1X A) and enters the planet's Tribe era. The first party there makes it from its own
    save through the game's own stage change; a later party joins it, and each player's village is founded at its own

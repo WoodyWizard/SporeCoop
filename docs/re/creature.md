@@ -5448,3 +5448,19 @@ guest QA 8 (DuoQACreatureGuest, its own creature).
   gets when it leaves the editor later was not checked.
 * The stage end saves over the host's slot (Vandh.spo and its .old both Tribe after it): restore the fixture from
   Game0.bak-20261113 before reusing it.
+
+## The herds' brain ranges: every wild herd is [0,5] (2026-11-20, feat/lineages-alpha)
+<a id="creature-herd-brain-ranges"></a>
+
+BUG-9284 (step 4 part 2's last piece). Adds to [the view centres](#creature-view-centres).
+
+* ✔ (Ghidra) `Relevance_Update` 0xACE8F5..0xACE912: for every herd with +0x84 clear (the Creature stage, [esp+0x13]),
+  a brain level [0x169E370] >= 0 outside [+0x120, +0x124] gives `cHerd::SetEnabled(0)` (+0x218, and the nest's +0xA9)
+  and nest +0x120 = 1, whatever the herd's distance. `FUN_00c6a1c0` 0xC6A1C0 returns +0x218 (enabled).
+* ✔ (runtime, TITAN) every wild herd's range is [0,5]: Samuth at level 4: [0,5] x232, [5,-1] x2, [0,-1] x1; Vandh at
+  level 1: [0,5] x121, [5,-1] x1, [0,-1] x1 (`coop.views ranges`). The others are emptied ranges (a nest left by a
+  migration, AfterEditor's +0x120 = 5 / +0x124 = -1): asleep at every level.
+* So the brain level wakes or puts to sleep no wild herd: a guest at another level than the host needs nothing of its
+  own here. CORRECTION (2026-11-20) of docs/12-server-and-players.md#server-party-progress-design part 2 ("the herds
+  near each player follow that player's own brain level"): nothing to do; what the level does change (the avatar's
+  size and health, its own nest herd, `CreatureGame_NestHerdFor`) is each game's own already.

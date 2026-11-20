@@ -203,6 +203,21 @@ std::string status()
 
 static int c_views(void*, int argc, const char* const* argv, SkOut* out)
 {
+    if (argc > 1 && !strcmp(argv[1], "ranges")) { // BUG-9284: every game herd's brain range [+0x120, +0x124] on the planet
+        std::map<std::pair<int, int>, int> ranges;
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* up) {
+                if (noun == game::kHerdNoun && game::object_alive(o) && skg::readable(o, 0x220) && !skg::field<uint8_t>(o, 0x84))
+                    (*(std::map<std::pair<int, int>, int>*)up)[{skg::field<int>(o, 0x120), skg::field<int>(o, 0x124)}]++;
+                return true;
+            },
+            &ranges);
+        H->out_printf(out, "herd brain ranges [lo,hi] x count:");
+        for (auto& [r, k] : ranges)
+            H->out_printf(out, " [%d,%d]x%d", r.first, r.second, k);
+        H->out_printf(out, "\n");
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "unwind")) { // tests (BUG-0882): the next pass with partners leaves without its restore
         g_test_unwind = true;
         H->out_printf(out, "the next relevance pass with partners leaves like a fault\n");
@@ -219,7 +234,7 @@ bool init(const SkHost* host, SkMod* mod)
 {
     H = host;
     M = mod;
-    H->command_add(M, "coop.views", "coop.views - the partners' view centres the host keeps its world alive around (BUG-0280)",
+    H->command_add(M, "coop.views", "coop.views [ranges] - the partners' view centres the host keeps its world alive around (BUG-0280); ranges: the herds' brain ranges (BUG-9284)",
                    c_views, nullptr, SK_CMD_MAIN_THREAD);
     uintptr_t a = H->sym("SporeCoop::Relevance_Update");
     if (!a || H->hook_create(M, (void*)a, (void*)&h_Relevance, (void**)&o_Relevance) != 0) {
