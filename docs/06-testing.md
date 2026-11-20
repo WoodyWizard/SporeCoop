@@ -9636,7 +9636,7 @@ DNA as before):
   editor alone while the guest plays on; the guest's game log must have no shared total (`dna: a -> b cause=`, own
   totals say `dna: own a -> b`) and its bar must stay the party's. `coop.dna own` prints `edge=` (the switch) and
   `strays=` (totals of the host's DNA sent to an own-wallet guest at a mode edge: counted with the switch off).
-* BUG-1327 (open): in civ_late_arrival the guest's second exit (SIGKILL or its own WM_CLOSE exit alike) leaves the
+* BUG-1327 (fixed 2026-11-19: the games of a lane share the PID namespace of its wineserver, docs/06-testing.md#testing-lane-pid-namespace): in civ_late_arrival the guest's second exit (SIGKILL or its own WM_CLOSE exit alike) leaves the
   host's game without its wineserver: the host's log stops, its console refuses, a new wineserver of the lane's bottle
   starts with the guest's relaunch. The test dies in wait_guest_in at its last step (a third join); every check before
   it is valid.
@@ -9685,6 +9685,36 @@ the shooters and targets of the host's observed shots that were no listed object
 `coop.civ shotprobe` hands the shot observer one shot of a listed host vehicle at a fake target whose preceding dword is
 the exe's base (its +0xC is 0x0000FFFF): checked that it is taken as a target the guests cannot find (kind 2) and the host
 has no fault. Twin `civ_shot_objects_off` (civ.shot_target_listed off): the observer calls into it, the host faults.
+
+## The games of a lane share the PID namespace of its wineserver (2026-11-19, fix/w58-wineserver)
+<a id="testing-lane-pid-namespace"></a>
+
+BUG-1327: in civ_late_arrival the guest's second exit (SIGKILL or its own WM_CLOSE exit alike) left the host's game
+without its wineserver. Cause (✔ runtime, lane 3, 2026-11-19, without the mod's editors: two plain kill and restart
+cycles of the guest's game reproduce it):
+
+* Every `spore.sh run` is a flatpak launch: an outer bwrap in the host namespace and an inner bwrap that is PID 1 of a
+  new PID namespace. The lane's wineserver (and services.exe, explorer.exe, rpcss.exe ...) lives in the namespace of
+  the launch that started it: the guest's first game (twoinst.start starts the guest first). Its inner bwrap outlives
+  the killed game (it reaps until its last child, the wineserver, is gone), so the first kill is harmless.
+* The wineserver keeps each game's unix pid as the game sees it in ITS namespace: a fresh sandbox numbers its
+  processes the same way (the host's game and the guest's game were both pid 49 of their own namespaces, the
+  wineserver pid 47 of the first one). At the exit of the restarted guest (a sandbox of its own) the wineserver sent
+  `kill(47, SIGKILL)`, a pid of the restarted sandbox, which in its own namespace is the wineserver itself (gdb with
+  `catch syscall kill` on the wineserver: `kill(49, 0)`, `kill(47, 0)`, `kill(45, 0)`, then `kill(47, 9)`, "Program
+  terminated with signal SIGKILL"). The host's game runs on without a server: log still, console refused; the next
+  launch starts a new wineserver.
+* Fix: `spore.sh run` starts a game of a lane whose wineserver runs inside that wineserver's PID namespace
+  (`flatpak run --parent-pid=<wineserver> --parent-share-pids`; `spore.sh wineserver` prints the lane's wineserver,
+  the one whose WINEPREFIX is the lane's bottle). The first game of a lane makes the namespace as before. Every game
+  of a lane then has its real pid in the wineserver's eyes. `SPORE_SHARE_PIDS=0`: a sandbox of its own (the old way).
+  `spore.sh kill` is unchanged (the joined launches are bwrap trees of the lane like before).
+* Self-check: `lane_guest_restart` (tools/tests/lane_guest_restart.py, about 70 s): the guest, then the host; three
+  times the guest's game SIGKILLed and started again: the host's console answers, the wineserver is the one it was,
+  every game in its namespace. Twin `lane_guest_restart_off` (`SPORE_SHARE_PIDS=0`) FAILs at the namespace checks and
+  from the second kill on at the host's console and the wineserver (lab 20261119-165314).
+* Any test that restarts one game of a lane while the other plays on (restart_guest of coop_late_species and others,
+  rejoin tests that end a game) had the same trap; it struck only when the numbers met (the second restart in a row).
 ## The save-slot key scan of the own-species tests (2026-11-19, fix/w58-savestrip2)
 <a id="testing-save-key-scan"></a>
 

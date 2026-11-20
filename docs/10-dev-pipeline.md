@@ -31,7 +31,8 @@ A lane is an independent copy of the whole setup, so several test pairs run at t
 * lane N ≥ 2 = `tools/spore.sh lane create N`: reflink copies (Btrfs: no extra space) of the game
   folder (`SPORE-lab/laneN`: own `mods/`, logs, `SporeCoop.package`) and of the bottle
   (`SporeLabN`: own wineserver, so a crash or quit stays in the lane; registry paths point to the
-  copy); takes 2 s.
+  copy); takes 2 s. A game started while the lane's wineserver runs joins that wineserver's PID namespace
+  (`flatpak run --parent-pid --parent-share-pids`, BUG-1327, docs/06-testing.md#testing-lane-pid-namespace).
 * instances `2N-1` (host) / `2N` (guest): console ports 47800 + i − 1, co-op port 47810 + 2(N−1);
   test profiles `test` / `inst<2N>`; outputs under `out/laneN/`.
 * `SPORE_LANE=N` selects a lane for `tools/spore.sh`, every test and helper (`tools/tests/lane.py`).
