@@ -1457,6 +1457,7 @@ void own_editor_tick(double now)
     }
     if (!av || !g_local || now - g_settle_since < 15.0 || now < g_own_editor_hold_until ||
         creations::avatar_swap_settling(now) || // BUG-0318
+        (g_own_editor_due == kEditorLandfall && creations::landfall_pending()) || // BUG-9280: our land creature first
         world::cinematic_playing() || b || mode_switch_pending() || world::load_queued()) { // a received world loads first (BUG-0157)
         g_own_editor_waits++;
         return;
