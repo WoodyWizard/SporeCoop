@@ -1494,3 +1494,28 @@ mean outlining all tribe members. For civ, it'd be all units, etc."
   host's, 250 m from every player's nest). With 7E A a stranger's nest is far from the host's, so a party's Tribe start
   that turns other species' nests into rival tribes (the game's own rule) makes a stranger's tribe at its own nest:
   BUG-9280's "the nest becomes the village" for a party that arrives later. Not seen yet in game.
+
+## Step 4 part 4 built: extinct species come back (the nest refresh) (2026-11-20, feat/lineages-alpha)
+<a id="server-nest-refresh-built"></a>
+
+The first half of #server-nest-refresh (BUG-9285, switch `creature.nest_refresh`; code mods/coop/nest_refresh.cpp).
+
+* The galaxy server has the refresh time (`--refresh-minutes`, 180 by default, 0 never) and sends it in WELCOME; its
+  PONG carries its clock (Unix seconds), so every host of a planet times the refresh the same way.
+* The planet's host (Creature, a galaxy planet) looks at the wild herds every 10 s: a species whose herds are extinct
+  (+0x190) is noted with the server's time in `<save>.spo.duo-extinct` next to the planet (it is in the world the
+  server stores, so a hand-over keeps it). When the refresh time has passed, the host undoes the extinction: the herds'
+  +0x190 (cHerd_SetExtinction(false)), the nests' mark (+0x120), and the species' relation record back to "not set"
+  with no kills (the archetype decides again; its goal cards come back). Players' own species are left alone.
+  A species found extinct when the planet is first seen with the refresh (an older world) starts its clock then.
+* Guests follow through the worldobj herd kind (a herd the host revived is revived in the guest's game), for the 48
+  nests nearest each guest, as extinction itself is synced: a farther one catches up when the guest comes near, and the
+  next host loads the revived world from the server.
+* ✔ Runtime (TITAN, QA 8 host, QA 9 another party, the test galaxy): the server's 10800 s and clock arrived; the 5
+  species extinct on Samuth were noted and the file written; with the clock moved 3 h on (`coop.refresh age 10900`)
+  and the switch off all 5 stayed extinct, on the host revived all 5; the guest revived the 2 within its nearest nests
+  at once (the others 424-637 m away); at one revived nest the host found 7 animals and the game's own "Impress 6
+  Fatroch to ally" goal (images/stage4_nest_refresh_revived.png). `tools/tests/galaxy_server_check.py` checks the
+  WELCOME field and the PONG clock.
+* Not built yet (the second half of 6Z): the nests a party leaves behind when it moves on, rotated out after a while,
+  and the players' own nests after their player has been away for days.

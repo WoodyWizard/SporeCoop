@@ -1398,3 +1398,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9282](BUG-9282-ui-a-partner-s-name-plate-edge-and-arrow-in-that.md) | fixed | feature | all | 2026-11-19 | unreleased | UI: a partner's name plate edge and arrow in that player's colour |
 | [BUG-9283](BUG-9283-galaxy-planet-a-player-of-another-party-gets-its.md) | fixed | feature | creature | 2026-11-19 | unreleased | Galaxy planet: a player of another party gets its own free nest spot, away from other players' nests |
 | [BUG-9284](BUG-9284-creature-the-herds-near-each-player-wake-by-that.md) | wontfix | feature | creature | 2026-11-20 |  | creature: the herds near each player wake by that player's own brain level (galaxy planets) |
+| [BUG-9285](BUG-9285-galaxy-planet-an-extinct-species-comes-back-afte.md) | fixed | feature | creature | 2026-11-20 |  | galaxy planet: an extinct species comes back after the server's refresh time (the nest refresh) |

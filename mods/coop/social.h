@@ -59,6 +59,9 @@ bool debug_send_goal(uint32_t crt_instance, int outcome, float dna); // guest, t
 bool debug_set_record(uint32_t crt_instance, int relation, uint32_t impressed); // host, tests: a record of the table
 // host (roadmap phase 2, decision 7): a party species is allied (relation 6) in the host's table
 bool set_party_ally(uint32_t crt_instance);
+// host (BUG-9285, the nest refresh): an extinct species' record back to "not set" (relation 0, no kills): the
+// archetype decides again and a new hunt has to start over
+bool clear_extinct(uint32_t crt_instance);
 bool debug_event(uint32_t crt_instance, int event);
 bool debug_event_by(uint16_t npc_id, int event, int player); // 6V A tests: the event on host NPC #id as that player's action // host, tests (BUG-0168): the game's ApplyEvent(event, species, null)
 // guest: a social action (ability slot 0-3) on proxy #id as if done in game; slot -1 toggles the

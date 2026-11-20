@@ -124,7 +124,9 @@ constexpr const char* kNotConnected = "Not connected to the galaxy server: conne
 
 enum Type : uint8_t {
     HELLO = 1,    // player -> server: u32 proto, u64 identity, str8 name, str8 version, u64 key, u64 cookie (6: 6S)
-    WELCOME = 2,  // server -> player: u16 its slot, str8 galaxy name, u8 the players a planet takes (6E B; older: 4)
+    WELCOME = 2,  // server -> player: u16 its slot, str8 galaxy name, u8 the players a planet takes (6E B; older: 4),
+                  //   u32 the nest refresh: seconds after which an extinct species comes back, 0 off (step 4 part 4,
+                  //   BUG-9285; older servers send none: off)
     LIST = 3,     // player -> server
     PLANETS = 4,  // server -> player: u8 n, n x {str8 planet, u16 players, u16 host slot (0 none), u32 stored world bytes,
                   //   u8 tech level, u32 x3 its creature's species key} (the last two: the galaxy menu, 5X B)
@@ -140,7 +142,8 @@ enum Type : uint8_t {
                   //   str8 the planet the game is on ("" none), u8 kPingOnPlanet / kPingHosting: READY and LEAVE go
                   //   once over UDP, so the server takes a planet's state from the pings when one was lost (an older
                   //   game sends no body: nothing is taken from it)
-    PONG = 9,
+    PONG = 9,     // server -> player: u64 the server's clock (Unix seconds; BUG-9285: the nest refresh's clock, the same
+                  //   for every host of a planet; older servers send no body)
     REFUSED = 10, // server -> player: str8 why
     HOSTGONE = 11, // server -> the planet's players: str8 planet (its host left; the hand-over is a later step)
     READY = 12,    // host -> server: its session hosts the planet now (players entering before are asked to wait)

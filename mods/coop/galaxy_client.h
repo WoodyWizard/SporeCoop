@@ -68,6 +68,8 @@ uint16_t slot_of(const net::Endpoint& peer);  // a session peer's galaxy slot (0
 void upload_soon(double secs);              // 6I A: host: store the planet within secs (the share saved anew)
 // 6K: the parties kept by the galaxy server
 bool welcomed();                             // connected to a galaxy server now (it keeps this game's party)
+int64_t server_time();                       // BUG-9285: the server's clock (Unix seconds), 0 not known yet
+uint32_t refresh_seconds();                  // BUG-9285: an extinct species comes back after this long (0 off)
 uint16_t my_slot();
 bool party_send(uint8_t kind, uint64_t other_identity, uint8_t flag, uint32_t stage);
 void ask_players();                          // WHO: the server answers PLAYERS (to C.party_in)

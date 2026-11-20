@@ -481,4 +481,7 @@ test copy needs a save at the last brain level). Next: that test, then the herds
 2's last piece), the nest refresh (part 4), visitors across eras (part 5). The test galaxy is on protocol 8: the
 MSI needs the new build before it can join.
 Update 2026-11-20: the Tribe start inside a crossing was seen (BUG-9278); part 2's last piece needs nothing (every wild
-herd's brain range is [0,5], BUG-9284). Next: the nest refresh (part 4), visitors across eras (part 5).
+herd's brain range is [0,5], BUG-9284). Part 4's first half built and seen in game: extinct species come back after
+the server's refresh time (180 min by default, BUG-9285, docs/12-server-and-players.md#server-nest-refresh-built). Next:
+the nests a party leaves behind rotating out (part 4's second half), visitors across eras (part 5). The test galaxy's
+server and the QA copy have the new builds; the MSI still needs them.

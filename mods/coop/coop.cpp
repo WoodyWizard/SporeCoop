@@ -84,6 +84,7 @@
 #include "busy.h"
 #include "social.h"
 #include "party_bar.h"
+#include "nest_refresh.h"
 #include "world.h"
 #include "net/validate.h"
 #include "find.h"
@@ -5717,6 +5718,7 @@ void on_frame(void*, int, void*)
     fprof::mark("social::tick(now)");
     if (g_sess.role() == net::Role::Host)
         party_bar::tick(g_sess); // BUG-9277: the planet's saved party bars
+    nest_refresh::tick(g_sess, now); // BUG-9285: extinct species come back on a galaxy planet
     evo_key_tick(now);
     fprof::mark("evo_key_tick(now)");
     creature_hp::tick();
@@ -11339,6 +11341,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     sc.elsewhere = [] { return guest_elsewhere(); }; // BUG-0420
     social::init(H, M, sc);
     party_bar::init(H, M); // BUG-9277
+    nest_refresh::init(H, M); // BUG-9285
     home_nests::Ctx hc; // roadmap phase 2
     hc.sess = &g_sess;
     hc.notice = [](const std::string& t) { notice(t, -1); };

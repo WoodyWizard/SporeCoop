@@ -18,6 +18,7 @@
 #include "fixes.h"
 #include "game.h"
 #include "modes.h"
+#include "nest_refresh.h"
 #include "realign.h"
 #include "net/protocol.h"
 #include "sporekit_game.hpp"
@@ -402,9 +403,20 @@ static void herd_collect(Items& out)
 }
 // host state: bit 0 herd +0x190, bit 1 nest +0x120 (runtime, lane 9: a herd whose members the host's avatar killed had
 // +0x190 = 1 and its nest +0x120 = 0: +0x190 came first another way, so cHerd_SetExtinct did not touch the nest)
-static bool herd_behind(uint32_t local, uint32_t host) { return host != kGone && (host & ~local & 3) != 0; }
+// BUG-9285 (the nest refresh): a species the host brought back (+0x190 clear on the host) is back in the guest's game too
+static bool herd_behind(uint32_t local, uint32_t host)
+{
+    return host != kGone && ((host & ~local & 3) != 0 || (nest_refresh::revive_on() && (local & 1) && !(host & 1)));
+}
 static void herd_apply(const Item& l, uint32_t host)
 {
+    if (nest_refresh::revive_on() && (l.st & 1) && !(host & 1)) {
+        thiscall<void>(a_HerdSetExtinctFlag, l.p, false);
+        void* nest = field<void*>(l.p, 0x160);
+        if (nest && !IsBadReadPtr(nest, 0x130))
+            field<uint8_t>(nest, 0x120) = 0;
+        return;
+    }
     if ((host & 2) && !(l.st & 1))
         thiscall<void>(a_HerdSetExtinct, l.p); // both, as the species' extinction does
     else if (host & 1)

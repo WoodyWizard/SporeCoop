@@ -2031,6 +2031,21 @@ bool set_party_ally(uint32_t inst)
     return true;
 }
 
+bool clear_extinct(uint32_t inst)
+{
+    void* mgr = rel_mgr();
+    if (!mgr || !a_RelRecord || !is_host() || !inst)
+        return false;
+    ResourceKey k{inst, 0x2B978C46u, 0x40626200u};
+    uint32_t* rec = thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, &k);
+    if (!rec)
+        return false;
+    rec[0] = 0; // the relation (6 after an extinction, 0xBA4750)
+    rec[3] = 0; // the kills (+0xC) that reached the extinction count
+    H->run_outside_frame(refresh_cards, nullptr);
+    return true;
+}
+
 bool debug_set_record(uint32_t inst, int relation, uint32_t impressed)
 {
     void* mgr = rel_mgr();

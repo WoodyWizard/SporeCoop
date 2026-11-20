@@ -45,6 +45,9 @@ struct Client {
 };
 // limits (2026-11-18 review: nothing bounded the players, the worlds or a world's size); each has a switch
 static size_t g_max_players = 1024, g_max_per_address = 64, g_max_worlds = 500;
+// step 4 part 4 (BUG-9285, docs/12-server-and-players.md#server-nest-refresh): an extinct species comes back this many
+// minutes after it died out (the planet's host does it, by this server's clock); 0 = never
+static uint32_t g_refresh_minutes = 180;
 static uint32_t g_max_world_bytes = 32u << 20;
 constexpr uint32_t kFetchEveryMs = 3000, kDownloadGiveUpMs = 30000;
 constexpr size_t kMaxPlanetName = 64, kMaxPlayerName = 32;
@@ -475,6 +478,7 @@ static void on_control(const Endpoint& from, Reader& r)
         w.u16(c->slot);
         w.str8(g_name);
         w.u8(g_planet_players);
+        w.u32(g_refresh_minutes * 60u); // (BUG-9285)
         send(*c, w);
         say("player %u '%s' connected from %s (%s)", c->slot, c->name.c_str(), from.masked().c_str(), version.c_str());
         party_player_in(*c); // 6K
@@ -513,7 +517,9 @@ static void on_control(const Endpoint& from, Reader& r)
         return;
     }
     if (type == PING) {
-        send(*c, control(PONG));
+        Writer pong = control(PONG);
+        pong.u64((uint64_t)std::time(nullptr)); // BUG-9285: the server's clock
+        send(*c, pong);
         if (r.left() >= 2) { // its planet state (a LEAVE or a READY that was lost: followed after kPingMismatches pings)
             const std::string on = r.str8();
             const uint8_t state = r.u8();
@@ -1184,11 +1190,14 @@ int main(int argc, char** argv)
             g_max_per_address = (size_t)std::max(1, atoi(argv[++i]));
         else if (!strcmp(argv[i], "--max-worlds") && i + 1 < argc)
             g_max_worlds = (size_t)std::max(1, atoi(argv[++i]));
+        else if (!strcmp(argv[i], "--refresh-minutes") && i + 1 < argc) // BUG-9285: 0 = extinct species stay extinct
+            g_refresh_minutes = (uint32_t)std::max(0, atoi(argv[++i]));
         else if (!strcmp(argv[i], "--max-world-mb") && i + 1 < argc)
             g_max_world_bytes = (uint32_t)std::min(128, std::max(1, atoi(argv[++i]))) << 20;
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
             printf("usage: galaxy_server [--local] [--worlds <dir>] [--warm-handover] [--planet-players <n>]\n"
                    "                     [--max-players <n>] [--max-per-address <n>] [--max-worlds <n>] [--max-world-mb <n>]\n"
+                   "                     [--refresh-minutes <n>]\n"
                    "                     [port] [galaxy name]\n");
             return 0;
         }

@@ -100,6 +100,7 @@ class Player:
         w = self.take(WELCOME)
         if w is not None:
             self.slot = struct.unpack_from('<H', w)[0]
+            self.welcome = w
         return w is not None
 
     def ping(self, planet='', state=0):
@@ -175,6 +176,16 @@ def main():
             probe2.send(HELLO, struct.pack('<IQ', PROTO, probe2.identity) + s8('Probe') + s8('check') + struct.pack('<QQ', 5, 12345))
             check(probe2.take(WELCOME, 0.5) is None, 'a wrong cookie is no proof: no slot')
         check(a.hello() and b.hello() and c.hello(), 'three players are welcomed')
+        if not os.environ.get('GALAXY_CHECK_OLD'):
+            print('BUG-9285')
+            name_len = a.welcome[2]
+            off = 3 + name_len + 1  # u16 slot, str8 name, u8 the players a planet takes
+            check(len(a.welcome) >= off + 4 and struct.unpack_from('<I', a.welcome, off)[0] == 180 * 60,
+                  'WELCOME carries the nest refresh (180 min by default)')
+            a.ping()
+            pong = a.take(PONG)
+            check(pong is not None and len(pong) >= 8 and abs(struct.unpack_from('<Q', pong)[0] - time.time()) < 5,
+                  "PONG carries the server's clock")
         if not os.environ.get('GALAXY_CHECK_OLD'):
             thief = Player(port, 'Thief', a.identity)
             ok = thief.hello(key=999)

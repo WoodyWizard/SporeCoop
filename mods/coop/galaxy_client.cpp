@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <algorithm>
 #include <deque>
 #include <vector>
@@ -32,6 +33,9 @@ static bool g_welcomed;
 static uint16_t g_slot;
 static_assert(kMaxPlanetPlayers == net::kMaxPlayers, "a planet's players are one session's");
 static uint8_t g_planet_players = kPlanetPlayers; // 6E B: what the server's WELCOME says a planet takes
+static uint32_t g_refresh_secs;                   // BUG-9285: the server's nest refresh (0 off)
+static int64_t g_clock_offset;                    // BUG-9285: the server's clock minus ours (its PONGs)
+static bool g_clock_known;
 static uint64_t g_fan_tx, g_fan_tx_bytes, g_fan_rx, g_fan_rx_bytes, g_fan_refused; // 6F B
 static double g_reconnect_at = -100; // 6H A
 // 6I A: the host's last upload the server stored (its crc, world, the save's newest write, when it was packed); a guest's
@@ -269,6 +273,7 @@ static void on_control(net::Reader& r)
             return;
         const uint8_t cap = r.left() >= 1 ? r.u8() : 4; // (a server before 6E B: 4)
         g_planet_players = cap < 2 ? 2 : cap > net::kMaxPlayers ? (uint8_t)net::kMaxPlayers : cap;
+        g_refresh_secs = r.ok() && r.left() >= 4 ? r.u32() : 0; // BUG-9285 (an older server: no refresh)
         g_welcomed = true;
         say("Connected to the galaxy '" + g_galaxy + "'.");
         if (!g_resume.planet.empty() && H->time_seconds() - g_resume.at < 120) // BUG-9272: tick enters it
@@ -460,6 +465,11 @@ static void on_control(net::Reader& r)
             say("Your party arrived: joining the players of " + era_display(planet) + "...");
         }
     } else if (type == PONG) {
+        if (r.left() >= 8) { // BUG-9285: the server's clock
+            const int64_t srv = (int64_t)r.u64();
+            if (r.ok() && srv > 0)
+                g_clock_offset = srv - (int64_t)std::time(nullptr), g_clock_known = true;
+        }
         // the server answers again after "stopped answering" and still knows this game (no REFUSED then): welcomed again
         if (!g_welcomed && H->time_seconds() - g_hello_at > 5)
             send_hello();
@@ -1158,6 +1168,8 @@ uint32_t planets_version() { return g_planets_ver; }
 std::string current_planet() { return g_planet; }
 unsigned planet_players() { return g_planet_players; }
 bool welcomed() { return g_sock.is_open() && g_welcomed; }
+int64_t server_time() { return g_clock_known ? (int64_t)std::time(nullptr) + g_clock_offset : 0; }
+uint32_t refresh_seconds() { return g_welcomed ? g_refresh_secs : 0; }
 uint16_t my_slot() { return g_slot; }
 bool party_send(uint8_t kind, uint64_t other, uint8_t flag, uint32_t stage)
 {
