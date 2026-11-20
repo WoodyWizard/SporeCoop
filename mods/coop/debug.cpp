@@ -993,7 +993,18 @@ int c_dna(void*, int argc, const char* const* argv, SkOut* out)
     if (argc > 2 && !strcmp(argv[1], "spend")) // tests (BUG-0630): a spend the game's way (its editor's result:
         game::dna_set_raw(game::dna() - (float)atof(argv[2])); // SetEvolutionPoints, the DNA only)
     if (argc > 1 && !strcmp(argv[1], "bar")) { // tests (BUG-0630): also the evolution bar, cPlayer +0x10F0
-        SAY("dna=%.1f bar=%.1f", game::dna(), game::evolution_bar());
+        SAY("dna=%.1f bar=%.1f goal=%.1f", game::dna(), game::evolution_bar(), game::goal_total());
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "brain")) { // tests (BUG-9278): the brain level, read or set with the avatar's own
+        void* av = game::avatar();                // setter (vt 0xDC, 0xC02AB0 writes [0x169E370]; vt 0xD8 reads it)
+        if (!av) {
+            SAY("no avatar");
+            return 1;
+        }
+        if (argc > 2)
+            skg::vcall<void>(av, 0xDC / 4, atoi(argv[2]));
+        SAY("brain level %d", skg::vcall<int>(av, 0xD8 / 4));
         return 0;
     }
     SAY("dna=%.1f", game::dna()); // (the plain form: tests parse "dna=<n>" alone)

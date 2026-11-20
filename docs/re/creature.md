@@ -5389,3 +5389,58 @@ galaxy's saves must not freeze the game).
   (SkHost::run_outside_frame), as the game's own leave-the-planet path sends it, with a static token object: the save
   is written at once (one 0.7 s frame), no box, no pause, and the next host loaded it.
 
+
+## Reaching the Tribe offer in a test game: what does not work (2026-11-19, feat/lineages-alpha)
+<a id="creature-tribe-ready-test"></a>
+
+BUG-9278's test (TITAN QA copy, Samuth). `coop.dna brain [n]` (new): the brain level through the avatar's own getter
+and setter (vt 0xD8 / vt 0xDC).
+
+* ✔ The QA Creature saves on Samuth are at brain level 4 already (`coop.dna brain` 4; max health 100 + the species').
+* ~ `coop.dna add 3000` filled the HUD's bar (4163 earned) with no brain-upgrade caption; History's bottom bar stayed
+  half way through the Creature stage and its check closed History (no stage-end editor).
+* ~ `coop.vote mate` (the creature game's message 0x4471C60 with +0xDA set) at level 4 with the bar full: the editor
+  opened; after "done" the game ran the baby game (the avatar a hatchling, 50/50 health, then grown), no migration
+  (no CRG_SpeciesMigrate), no Tribe start. It is the egg scene's evolution (#creature-cocoon notes: 0xE45760 posts
+  0x4471C60 then 0x445F729 at the end of the egg scene), not History's next-stage path.
+* ? Still to find: what History's check needs to start the stage end (the lab's 0.7.13 run got "Your brain is fully
+  grown" from `coop.dna add 3000` and then History's check opened editor 465C50BA with tag 0x64AA168). Candidates: the
+  migration state of #creature-migration notes (0x514A219) after an editor with the total above the last threshold,
+  or a save that saw the fully-grown caption.
+* ~ (later the same day) `coop.vote tribe` (new): 0x4471C60 with +0xDA set, then 0x445F729 posted, as History's check
+  does in its stage-end mode: the editor opened, and after "done" the game again ran the baby game and stayed in
+  Creature. A message 0x287259F6 with command 0x6455B55 at +0xC through MessageSend opened nothing. History's bottom
+  bar is the timeline's scroll bar, not the stage's progress. So the QA Samuth saves are not in the state where the
+  stage-end editor leads to Tribe; a save that saw "Your brain is fully grown" (a Creature start at a low brain level
+  and `coop.dna add 3000`, as the lab fixture did) is the next thing to try.
+* ✔ SOLVED (later the same day, Ghidra on TITAN): the stage's end is decided when the game comes back from the editor.
+  `CreatureGame_ReturnStateMachine` 0xD43DE0, state 6 (the return from the editor): if the creature game's byte
+  base+0xDE (g_creature_game +0xDA in coop.cpp) is set it calls **0xD3AEA0** (sends message **0x533535DD** with the
+  avatar to the listeners of [0x169E294]+0xBC: the stage's end) and goes to state 0xC; else the return is a plain
+  evolution (the baby game). The stage-end command (0x6455B55, enabled at brain level 4) sets that byte and leaves it
+  set; `coop.vote mate` cleared it right after its request, so its "done" was an evolution. `coop.vote tribe` now
+  leaves it set: after "done" the game played "Congratulations! You are about to enter the Tribal stage." and, after
+  its check, loaded the Tribe stage with the player's village at its old nest (images/stage4_crossing_tribal_offer.png,
+  images/stage4_crossing_tribe_intro.png). Also: the request's +0x1C (return mode) is the current mode (Creature); the
+  editor always comes back to Creature first. 0x445F729 is the cinematic manager's "cinematic done" message
+  (cCinematicManager_HandleMessage, cPlayer::HandleCoreMessage), not part of the stage end. The bottom bar of History
+  is the timeline's scroll bar.
+
+## A fresh Creature -> Tribe start seen live with two players (2026-11-20, feat/lineages-47)
+<a id="creature-tribe-start-live"></a>
+
+Ported from feat/lineages-alpha with the test commands of #creature-tribe-ready-test (`coop.vote tribe`,
+`coop.dna brain [n]`, the goal in `coop.dna bar`). TITAN QA copy, host QA 9 (DuoQAJiffStand, Vandh at brain level 1),
+guest QA 8 (DuoQACreatureGuest, its own creature).
+
+* ✔ `coop.dna brain 4`, `coop.dna add 3000`, `coop.vote tribe` on the host: the stage-end vote starts ("wants to move on
+  to the Tribe stage"); the guest's game shows the game's own "brain fully grown" scene and the "Advance to Tribe" hint.
+  The guest's F9 passes the vote, the host gets the stage-end editor; after its Done: "Congratulations! You are about to
+  enter the Tribal stage.", its check, then the Tribe stage. The guest follows ("Getting the latest world") and arrives
+  in Tribe with its own village by the host's (village food line, both Party cards, players=2), no crash
+  (images/live_creature_to_tribe_host.png, images/live_creature_to_tribe_guest.png).
+* ~ A guest still making its first creature (DuoQACreatureJoin, a mouthless blank creature: its Done did nothing) stays
+  in its editor while the vote runs out ("evolution starts (time is up)") and the host moves on to Tribe. What that guest
+  gets when it leaves the editor later was not checked.
+* The stage end saves over the host's slot (Vandh.spo and its .old both Tribe after it): restore the fixture from
+  Game0.bak-20261113 before reusing it.

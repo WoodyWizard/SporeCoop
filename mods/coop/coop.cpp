@@ -6533,6 +6533,11 @@ COOP_FIX("ui.cover_ends_in_editor", "BUG-9274", g_cover_editor_end,
 // decision 3E C: a partner's arrow is a slim chevron in the HUD's blue with a white edge and a name plate
 // (images/partner_arrow_mockup_C.png); off: the green arrow and the name line
 static bool g_partner_chevron = true;
+// decision 7D A (owner 2026-11-19: "make sure the white border is replaced, not a new one added"): the plate's edge
+// and the arrow take the player's own colour (find.h color_of, the F2 colour); off: the light edge and the HUD's blue
+static bool g_plate_colour = true;
+COOP_FIX("ui.plate_colour", "7D", g_plate_colour,
+         "ui: a partner's name plate edge and arrow are drawn in that player's colour (decision 7D A)");
 COOP_FIX("ui.partner_chevron", "BUG-9191", g_partner_chevron,
          "ui: a partner's arrow is the HUD-blue chevron with a name plate (decision 3E C)");
 static bool g_party_panel = true;
@@ -7069,7 +7074,8 @@ void on_overlay(void*, int, void*)
             float px1 = 0, py1 = 0, px2 = 0, py2 = 0;
             if (g_partner_chevron) {
                 const float cs = std::clamp(sh / 19.f, 30.f, 60.f) * ui_scale();
-                partner_marker::chevron(H, x, y, dx, dy, cs, partner_down ? 0xFFE85050 : 0xFF46AAE6);
+                const uint32_t own = 0xFF000000u | (pfind::color_of(id) & 0xFFFFFFu); // 7D A: the player's colour
+                partner_marker::chevron(H, x, y, dx, dy, cs, partner_down ? 0xFFE85050 : g_plate_colour ? own : 0xFF46AAE6);
                 name_line = r.name.substr(0, utf8::cut_bytes(r.name, 32));
                 dist_line = std::to_string(int(std::min(distance, 999999.f))) + " m";
                 // (centred by the letters' real widths: the flat estimate put the name left of the middle, owner 2026-11-17)
@@ -7107,7 +7113,11 @@ void on_overlay(void*, int, void*)
                                  ring_timer::fraction(win - (label_now - r.down_since), win), revive, label_now);
             }
             if (g_partner_chevron) {
-                partner_marker::plate(H, px1, py1, px2, py2, 17, 0xA5282828, 0xC8EBF0F5);
+                if (g_plate_colour) // 7D A: its edge in the player's colour, not a second one
+                    partner_marker::plate(H, px1, py1, px2, py2, 17, 0xA5282828,
+                                          0xFF000000u | (pfind::color_of(id) & 0xFFFFFFu), 2.f);
+                else
+                    partner_marker::plate(H, px1, py1, px2, py2, 17, 0xA5282828, 0xC8EBF0F5);
                 const int nx = (int)((px1 + px2) * .5f) - utf8::overlay_text_px(name_line) / 2;
                 const int dxl = (int)((px1 + px2) * .5f) - utf8::overlay_text_px(dist_line) / 2;
                 H->overlay_text(nx + 1, (int)py1 + 5, 0xFF000000, name_line.c_str());
@@ -11328,6 +11338,25 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            if (uintptr_t f = H->sym("SporeCoop::CreatureEvolutionPending_flag")) // as 0xD43069
                                *(uint8_t*)f = 1;
                            SAY("stage-end request submitted -> %d\n", (int)r);
+                       } else if (argc > 1 && !strcmp(argv[1], "tribe") && game::mode_id() == modes::kCreature) {
+                           // tests (BUG-9278): what History's check does in its stage-end mode (TimelineUI_HandleMessage,
+                           // +0x36D set): the creature game's message 0x4471C60 (the stage-end request: +0xDA set, as
+                           // `mate` does), then 0x445F729 posted (docs/re/creature.md#creature-tribe-ready-test)
+                           uintptr_t get = H->sym("App::IMessageManager::Get");
+                           void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+                           if (!mm || !game::avatar() || !g_creature_game || !o_CreatureGameMsg) {
+                               SAY("not possible here");
+                               return 1;
+                           }
+                           // +0xDA (the creature game's base +0xDE) stays set, as the stage-end command leaves it: back
+                           // from the editor the stage's return (CreatureGame_ReturnStateMachine, state 6) sees it and
+                           // calls 0xD3AEA0 (message 0x533535DD with the avatar: the stage's end), state 0xC. Cleared
+                           // again, the editor's return is a plain evolution (what `mate` does)
+                           skg::field<uint8_t>(g_creature_game, 0xDA) = 1;
+                           o_CreatureGameMsg(g_creature_game, 0x4471C60u, nullptr);
+                           skg::vcall<void>(mm, 0x18 / 4, 0x445F729u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
+                           SAY("the stage-end request and 0x445F729 sent (brain level %d, editor-pending flag %d)\n",
+                               skg::vcall<int>(game::avatar(), 0xD8 / 4), evo_flag_now());
                        } else if (argc > 1 && !strcmp(argv[1], "mate") && game::mode_id() == modes::kCreature) {
                            // tests (BUG-0920): the game's own evolution request, not one built by the mod: its message
                            // handler 0xD42E50 run with message 0x4471C60 and +0xDA set (the avatar met its mate, as
