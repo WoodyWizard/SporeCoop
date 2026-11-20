@@ -77,6 +77,8 @@ static uint32_t home_pol()
 
 static void report(const std::string& text, bool notice = false)
 {
+    if (text == g_last)
+        return; // (a wait is told once)
     g_last = text;
     H->log(M, SK_INFO, "civ nations: %s", text.c_str());
     if (notice && C.notice && text != g_told) {
@@ -338,6 +340,10 @@ static void bind(uint32_t faction)
         return; // (the city stays an NPC nation's)
     }
     F<creations::Key>(nation, kNationSpecies) = key;
+    // a nation the game founds mid-stage starts with an NPC's budget (20000 seen, lane C, while the host had 4000): a
+    // player's new nation never starts richer than the host's
+    if (F<float>(nation, kWealth) > F<float>(home, kWealth))
+        F<float>(nation, kWealth) = std::max(0.f, F<float>(home, kWealth));
     g_roster = next;
     g_founded++;
     refresh();
