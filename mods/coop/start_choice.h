@@ -31,8 +31,9 @@ void on_message(uint8_t from, net::Reader& r);
 
 // guest: the host asked and nothing was answered yet (the co-op window shows the "Your own cell" page)
 bool prompt();
-// guest: the answer from the window (or `coop.start pick`); false and *why when it is refused (no name, ...)
-bool answer(int diet, const std::string& name, int color, std::string* why);
+// guest: the answer from the window (or `coop.start pick`); body: the cell's body colour (kBody index, -1 the game cell's
+// own); false and *why when it is refused (no name, ...)
+bool answer(int diet, const std::string& name, int color, int body, std::string* why);
 // guest: the name the window starts with
 std::string default_name();
 

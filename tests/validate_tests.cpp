@@ -446,6 +446,42 @@ static void test_start_choice()
     std::vector<Row> rows;
     CHECK(tr.u8() == kTable && read_table(tr, rows, 8) && rows.size() == 2 && rows[1].c.diet == kOmnivore &&
           rows[1].c.color == -1 && rows[0].c == c);
+    // the body colour (BUG-9273 follow-up): the model's runs unpacked and packed again, its base colour at byte 50
+    {
+        std::vector<uint8_t> u, back;
+        CHECK(unpack_runs({1, 0xFE, 3, 0xFE, 0, 7}, u) && u == std::vector<uint8_t>({1, 1, 1, 1, 0xFE, 7}));
+        CHECK(!unpack_runs({0xFE, 3}, u) && !unpack_runs({5, 0xFE}, u));
+        // a packed record: the magic, zeros as a run, three colour floats written literally, a run of 0x00 after them
+        std::vector<uint8_t> packed = {0xD3, 0x7E, 0x65, 0x48, 0x00, 0xFE, 44}; // decoded: 4 + 1 + 44 = 49 bytes
+        packed.push_back(0x07);                                                   // decoded byte 49
+        for (int i = 0; i < 3; i++) {
+            float half = 0.5f;
+            uint8_t fb[4];
+            memcpy(fb, &half, 4);
+            packed.insert(packed.end(), fb, fb + 4); // decoded 50..61
+        }
+        packed.push_back(0x2A);
+        packed.push_back(0xFE);
+        packed.push_back(0x00); // a literal 0xFE
+        std::vector<uint8_t> painted;
+        CHECK(paint_body(packed, 4, painted) && unpack_runs(painted, back) && unpack_runs(packed, u) && back.size() == u.size());
+        float r, g, b;
+        memcpy(&r, &back[kBodyAt], 4);
+        memcpy(&g, &back[kBodyAt + 4], 4);
+        memcpy(&b, &back[kBodyAt + 8], 4);
+        CHECK(r == kBody[4].r && g == kBody[4].g && b == kBody[4].b && back[62] == 0x2A && back[63] == 0xFE && back[49] == 0x07);
+        CHECK(!paint_body(packed, kBodies, painted) && !paint_body({1, 2, 3}, 0, painted));
+        std::vector<uint8_t> in_run = {0xD3, 0x7E, 0x65, 0x48, 0x3F, 0xFE, 60}; // the colour inside a run: not painted
+        CHECK(!paint_body(in_run, 0, painted));
+        CHECK((body_instance(0x252A132F, 0) >> 24) == 0x7B && body_instance(0x252A132F, 0) != body_instance(0x252A132F, 1));
+        CHECK(body_argb(0) == 0xFFDB1F1F && body_argb(-1) == 0 && body_find("blue") == 4 && body_find("natural") == kNoBody);
+        Choice cb{kCarnivore, 1, "Glorbo", 4};
+        net::Writer bw;
+        write_choice(bw, cb);
+        net::Reader br(bw.data.data(), bw.data.size());
+        Choice cb2;
+        CHECK(read_choice(br, cb2, 8) && cb2 == cb && !valid(Choice{kCarnivore, 1, "Glorbo", kBodies}, 8));
+    }
     // the side file: the first answer of a player stays; another key is another player; a broken file is refused
     std::vector<Record> recs;
     CHECK(record_once(recs, "id:0000000000000001", c) && !record_once(recs, "id:0000000000000001", Choice{kOmnivore, 1, "X"}));

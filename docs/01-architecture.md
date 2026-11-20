@@ -998,7 +998,7 @@ start_choice_logic.h (unit tests in tests/validate_tests.cpp test_start_choice),
   The host's own start is the game's Cell wizard, unchanged.
 * **The page.** The guest's co-op window opens on "Your own cell" (subtitle "CO-OP: YOUR START"): three diet buttons
   (Herbivore, Carnivore, Omnivore), the creature's name (24 characters, starts as the player's name + "ite"), the colour
-  (">" steps through the F2 colours no other player has) and Start. Closing the window leaves the question open (F9
+  (">" steps through the F2 colours no other player has), the body colour (">": Natural and 8 colours) and Start. Closing the window leaves the question open (F9
   shows it again); the setting going off or the stage ending closes it.
 * **What the answer does** (guest side, at once, and again from the host's table after a rejoin or a reload):
   * the own cell: `creations::choose(kCell, <the diet's game cell>)`: herbivore E219E5D2 and carnivore 252A132F (the
@@ -1007,10 +1007,16 @@ start_choice_logic.h (unit tests in tests/validate_tests.cpp test_start_choice),
     premade: no records, every game has it), the host builds the guest's puppet of it, the guest's own cell is rebuilt
     with it (creations.cpp apply_own_cell, the hatch);
   * the colour: pfind::request_color (the host's colour table: name tags, arrows, minimap, chat);
+  * the body colour (Natural or one of 8: red, orange, yellow, green, blue, purple, pink, white): the guest makes a copy
+    of the diet's game cell with that base colour (start_choice_logic.h paint_body, written in place in the packed
+    model record: [cell-body-colour](re/cell.md#cell-body-colour)) under a key of its own (0x7B......,
+    `creations::make_creation`: a package of ours, made again in each run) and chooses it; the creations pipeline
+    shares it as its own creation, so every game draws its cell in that colour (the one key 0x7C......). A copy that
+    cannot be made: the game cell's own colour;
   * own progress: the first answer starts the guest's food and spent DNA at 0 and, a second later, the meal counters
     +0x20..+0x28 its Cell card is decided from (the copy of the host's world holds the host's).
 * **The record.** The host keeps every answer by the player's identity key next to the planet:
-  `<planet>.spo.duostart` (SCH1: u32 'SCH1', u8 n, n x {str8 key, u8 diet, u8 colour, str8 name}; founders::write_side,
+  `<planet>.spo.duostart` (SCH1: u32 'SCH1', u8 n, n x {str8 key, u8 diet, u8 colour, u8 body colour, str8 name}; founders::write_side,
   outside the frame). The first answer of a player stays. The host sends the table of the players here (kTable) on a
   change and every 10 s; every game shows the creature's name in that player's Cell name tag ("Bob (Glorbo)"), and a
   guest that finds its own row plays it again without a question.

@@ -2169,8 +2169,8 @@ void init_ui()
     };
     // BUG-9273: "Your own cell" (start_choice.h)
     a.start_prompt = [] { return start_choice::prompt(); };
-    a.start_submit = [](int diet, const std::string& name, int color, std::string& why) {
-        return start_choice::answer(diet, name, color, &why);
+    a.start_submit = [](int diet, const std::string& name, int color, int body, std::string& why) {
+        return start_choice::answer(diet, name, color, body, &why);
     };
     a.start_color_free = [](int idx) {
         return findx::can_take(pfind::colors(), g_sess.my_id(), idx) == findx::Refused::None;

@@ -52,3 +52,8 @@ wizard (Hypsov, Logani), and Logani reloaded with its side files wiped for the l
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: implemented on feat/start-choice; lane B runs passed (carnivore, omnivore, rejoin, setting off).
+- 2026-11-20: the body colour (the owner: the colour on the cell's body): a painted copy of the diet's game cell shared
+  as the guest's own creation. Lane B: blue carnivore on both games, after a rejoin and after both games restarted and
+  reloaded the planet; green herbivore and yellow omnivore copies drawn on both. A first version that packed the model
+  again faulted both games in GetCellModelData (the 0xE83EC8 path; not shipped): the colour is now written in place
+  (docs/re/cell.md#cell-body-colour).

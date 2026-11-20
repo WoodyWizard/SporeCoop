@@ -104,7 +104,8 @@ struct Api {
     // the creature's name, palette index or -1): false and why when refused; start_color_free(idx): no other player
     // has it; start_color_now: our palette index now (-1 none); start_name: the name the page starts with
     std::function<bool()> start_prompt;
-    std::function<bool(int diet, const std::string& name, int color, std::string& why)> start_submit;
+    std::function<bool(int diet, const std::string& name, int color, int body, std::string& why)> start_submit; // body: the cell's
+    // body colour (start_choice_logic.h kBody index, -1: the game cell's own)
     std::function<bool(int color)> start_color_free;
     std::function<int()> start_color_now;
     std::function<std::string()> start_name;

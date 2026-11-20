@@ -2643,3 +2643,32 @@ BUG-9273. Steam build (the GOG 2024 code), lane B, Windows; `coop.creations choo
 * ✔ (runtime) A guest's copy of the host's world holds the host's counters; the start choice zeroes +0x20..+0x28 a
   second after the answer (after the food step set the food to 0), so its card follows its own meals.
 * ✔ (runtime) A carnivore guest (252A132F) swimming into meat gained 12 points twice; swimming into plants: 0.
+
+## A cell model's body colour, and painting a copy (2026-11-20, feat/start-choice)
+<a id="cell-body-colour"></a>
+
+BUG-9273 (the owner: each player's creature colour on the cell's body). Steam build, lane B; the game's 44 cell model
+records (bem 0x1A99B06B, group 0x40616200) of Spore_Content.package.
+* ✔ (static, all 44) The unpacked model record starts `D3 7E 65 48 05 00 00 00 <part count> ...`; at byte 26 the cell
+  paint id (docs/re/creations.md#creations-content-all-kinds), and at **byte 50 three colours of three floats each
+  (r, g, b, 0..1): base, coat, detail**. E219E5D2: base (0.80, 0.49, 0.37), coat and detail white; 252A132F: base
+  (0.20, 0.80, 0.15) green, coat (0.67, 0.24, 0.38), detail (1.0, 0.94, 0.69).
+* ✔ (runtime) The base colour is the body: a copy of 252A132F (green) with base (0.15, 0.35, 0.90) is drawn blue, with
+  (0.86, 0.12, 0.12) red, on the game that made it and on the partner's game that built it from the shared bundle
+  (screenshots of both games); a copy of E219E5D2 green and of 0C176D89 yellow the same. The mouths stay (GetCellModelData
+  +0x1250 / +0x1251 of the copy as the original's).
+* ✔ The records are byte-run packed: `FE n` = n more of the byte before (`FE 00` a literal 0xFE). In the 44 models the
+  runs are only of 0x00 and 0xFF and n is 3 or more; runs of three zeros stay literal.
+* ✔ (runtime) **The game's reader faults on the same model packed again with runs of 3 bytes** (`FE 02`, any byte):
+  `GetCellModelData` -> the 0xE83EC8 path (`CreatureStart_FromCell+0x5B8` in the relocated Steam exe, data 0x9C), on the
+  guest that made it and on the host that built it, the moment the cell was rebuilt. A byte-for-byte copy under a new
+  key works. So a colour is written **in place**: only when the 12 bytes are literal in the record and the byte after
+  them is no run (a new 0xFE as FE 00); all three premades of the start choice have them literal.
+* ✔ (runtime) A cell copy under a key of ours (0x7B......, registered in a package of ours) works as a guest's own cell
+  through the creations pipeline exactly like a My Creations cell: the bundle carries the bem and the pictures, every
+  other game registers it under the one key 0x7C...... Without the premade's png (type 0x2F7D0004) the guest's HUD portrait
+  was a white square; with it the portrait shows the premade's picture (its own colour, not the painted one).
+* ~ The premade cells' metadata records (0x030BDEE3, 135 bytes, version 0x0A) hold the key and a tag
+  ("tag:spore.com,2006:AssembledContent") but no author / name strings (a My Creations metadata record has them after
+  an FF x7 FE mark, dbpf::metadata_names): a name would need the player creations' metadata layout, which is not
+  traced (other fields, the key inside).

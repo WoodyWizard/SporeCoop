@@ -97,6 +97,49 @@ static creations::Key cell_key(int diet)
     return {kDietCell[diet], kCellModelType, kCellModelGroup};
 }
 
+// BUG-9273 follow-up: the cell our choice plays: the diet's game cell, or with a body colour our coloured copy of it
+// (made once per run: the model record of the game cell with its base colour set, registered here and shared as our own
+// creation; docs/re/cell.md#cell-body-colour). {}: the copy could not be made (then the game cell itself)
+static uint32_t g_paints, g_paint_fails;
+static creations::Key own_cell_key(const Choice& c)
+{
+    creations::Key game = cell_key(c.diet);
+    if (c.body < 0)
+        return game;
+    creations::Key made{body_instance(game.instance, c.body), kCellModelType, kCellModelGroup};
+    if (creations::made_creation(made))
+        return made;
+    std::vector<dbpf::Record> recs, out;
+    std::string err = "no model record of the game cell";
+    if (creations::records_from_game({game.instance, 0x1A99B06Bu, kCellModelGroup}, recs))
+        for (auto& r : recs)
+            if (r.key.type == 0x1A99B06Bu && r.key.instance == game.instance) {
+                dbpf::Record m;
+                m.key = {made.instance, r.key.type, r.key.group};
+                if (!paint_body(r.data, c.body, m.data)) {
+                    err = "the model's colours are not where they should be";
+                    break;
+                }
+                out.push_back(std::move(m));
+                break;
+            }
+    if (!out.empty()) // its pictures go with it (the HUD portrait was white without them); they show the game cell's colour
+        for (auto& r : recs)
+            if (r.key.type == 0x2F7D0004u && r.key.instance == game.instance && r.data.size() <= (1u << 20)) {
+                dbpf::Record png = r;
+                png.key.instance = made.instance;
+                out.push_back(std::move(png));
+            }
+    if (!out.empty() && creations::make_creation(creations::kCell, made, out, &err)) {
+        g_paints++;
+        H->log(M, SK_INFO, "start choice: our %s cell painted %s: %08X", diet_name(c.diet), kBody[c.body].key, made.instance);
+        return made;
+    }
+    g_paint_fails++;
+    H->log(M, SK_WARN, "start choice: our cell could not be painted %s (%s): the game cell's own colour", kBody[c.body].key, err.c_str());
+    return game;
+}
+
 // ---- host: the planet's records
 static void save_outside(void*)
 {
@@ -239,7 +282,7 @@ static void guest_apply(double now)
         return;
     if (g_apply_due) {
         g_apply_due = false;
-        creations::Key want = cell_key(g_mine.diet);
+        creations::Key want = own_cell_key(g_mine);
         if (!(creations::mine(creations::kCell).key == want)) {
             creations::choose(creations::kCell, want);
             g_cell_applies++;
@@ -302,11 +345,12 @@ std::string default_name()
     return clean_name(n.empty() ? std::string("Cell") : n + "ite");
 }
 
-bool answer(int diet, const std::string& name, int color, std::string* why)
+bool answer(int diet, const std::string& name, int color, int body, std::string* why)
 {
     Choice c;
     c.diet = (uint8_t)diet;
     c.color = (int8_t)color;
+    c.body = (int8_t)body;
     c.name = clean_name(name);
     auto fail = [&](const char* s) {
         if (why)
@@ -341,7 +385,8 @@ bool answer(int diet, const std::string& name, int color, std::string* why)
         g_fresh_starts++;
     }
     guest_apply(H->time_seconds());
-    H->log(M, SK_INFO, "start choice: answered: a %s named '%s', colour %d", diet_name(c.diet), c.name.c_str(), (int)c.color);
+    H->log(M, SK_INFO, "start choice: answered: a %s named '%s', colour %d, body %s", diet_name(c.diet), c.name.c_str(), (int)c.color,
+           c.body >= 0 ? kBody[c.body].key : "natural");
     return true;
 }
 
@@ -412,12 +457,13 @@ std::string status()
              "start choice: setting=%d enabled=%d role=%s planet=%s records=%zu\n"
              "  host: asks=%u answers=%u kept=%u refused=%u saves=%u save_errors=%u loaded=%u tables=%u asked=%zu\n"
              "  guest: prompt=%d mine=%d diet=%s name='%s' colour=%d asks_rx=%u answers=%u cell_applies=%u colour_requests=%u "
-             "colour_refused=%d fresh=%u tables_rx=%u\n",
+             "colour_refused=%d fresh=%u tables_rx=%u paints=%u paint_fails=%u\n",
              (int)settings::on(settings::kStartChoice), (int)enabled(), is_host() ? "host" : is_guest() ? "guest" : "none",
              g_planet.empty() ? "-" : g_planet.substr(g_planet.find_last_of("\\/") + 1).c_str(), g_recs.size(), g_asks,
              g_answers, g_kept, g_refused, g_saves, g_save_errors, g_loaded, g_tables_tx, g_asked.size(), (int)prompt(),
              (int)g_mine_known, g_mine_known ? diet_name(g_mine.diet) : "-", g_mine.name.c_str(), (int)g_mine.color,
-             g_rx_asks, g_answers_tx, g_cell_applies, g_color_requests, (int)g_color_refused, g_fresh_starts, g_tables_rx);
+             g_rx_asks, g_answers_tx, g_cell_applies, g_color_requests, (int)g_color_refused, g_fresh_starts, g_tables_rx, g_paints,
+             g_paint_fails);
     s += b;
     if (uint8_t* g = modes::cell_game(); g && game::mode_id() == modes::kCell && !IsBadReadPtr(g + 0x5190, 4)) {
         uint8_t* d = *(uint8_t**)(g + 0x5190); // cCellSerializableData: the food bar and the counters the Cell card reads
@@ -428,12 +474,13 @@ std::string status()
         }
     }
     for (const auto& [p, c] : g_rows) {
-        snprintf(b, sizeof b, "  row player=%u diet=%s name='%s' colour=%d\n", p, diet_name(c.diet), c.name.c_str(), (int)c.color);
+        snprintf(b, sizeof b, "  row player=%u diet=%s name='%s' colour=%d body=%s\n", p, diet_name(c.diet), c.name.c_str(), (int)c.color,
+                 c.body >= 0 ? kBody[c.body].key : "natural");
         s += b;
     }
     for (const auto& r : g_recs) {
-        snprintf(b, sizeof b, "  record %s diet=%s name='%s' colour=%d\n", r.key.c_str(), diet_name(r.c.diet), r.c.name.c_str(),
-                 (int)r.c.color);
+        snprintf(b, sizeof b, "  record %s diet=%s name='%s' colour=%d body=%d\n", r.key.c_str(), diet_name(r.c.diet), r.c.name.c_str(),
+                 (int)r.c.color, (int)r.c.body);
         s += b;
     }
     return s;
@@ -442,12 +489,39 @@ std::string status()
 int command(int argc, const char* const* argv, std::string& out)
 {
     const std::string a1 = argc > 1 ? argv[1] : "";
-    if (a1 == "pick" && argc >= 4) { // guest: answer without the window: pick <diet> <name> [colour]
+    if (a1 == "pick" && argc >= 4) { // guest: answer without the window: pick <diet> <name> [colour] [body colour]
         int d = diet_find(argv[2]);
         int col = argc >= 5 ? findx::color_find(argv[4]) : -1;
+        int body = argc >= 6 ? body_find(argv[5]) : kNoBody;
         std::string why;
-        bool ok = answer(d, argv[3], col, &why);
+        bool ok = answer(d, argv[3], col, body, &why);
         out = ok ? "answered\n" : "refused: " + why + "\n";
+        return ok ? 0 : 1;
+    }
+    if (a1 == "testmake" && argc >= 4) { // tests: testmake <game cell hex> raw|<body colour>: a copy made (not chosen)
+        uint32_t cell = (uint32_t)strtoul(argv[2], nullptr, 16);
+        const std::string how = argv[3];
+        int body = body_find(how);
+        std::vector<dbpf::Record> recs, out_recs;
+        uint32_t inst = body_instance(cell, how == "raw" ? 100 : body);
+        if (creations::records_from_game({cell, 0x1A99B06Bu, kCellModelGroup}, recs))
+            for (auto& r : recs)
+                if (r.key.type == 0x1A99B06Bu && r.key.instance == cell) {
+                    dbpf::Record m;
+                    m.key = {inst, r.key.type, r.key.group};
+                    if (how == "raw")
+                        m.data = r.data;
+                    else if (body >= 0)
+                        paint_body(r.data, body, m.data);
+                    if (!m.data.empty())
+                        out_recs.push_back(m);
+                }
+        std::string err;
+        bool ok = !out_recs.empty() && creations::make_creation(creations::kCell, {inst, kCellModelType, kCellModelGroup}, out_recs, &err);
+        char b[160];
+        snprintf(b, sizeof b, "%s %08X (%zu bytes) %s\n", ok ? "made" : "not made", inst, out_recs.empty() ? (size_t)0 : out_recs[0].data.size(),
+                 err.c_str());
+        out = b;
         return ok ? 0 : 1;
     }
     if (a1 == "ask" && argc >= 3) { // host (tests): ask that player again (its record decides, as on a new join)

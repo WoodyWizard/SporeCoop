@@ -13,6 +13,7 @@
 #include <map>
 
 #include "find_core.h"
+#include "start_choice_logic.h"
 #include "modes.h"
 #include "mouse.h"
 #include "net/fixes.h"
@@ -377,7 +378,7 @@ struct Dialog {
     // BUG-9273: "Your own cell" (a guest's own start in a new Cell game): the diet cards, the name, the colour
     std::vector<Win> page_start;
     Win st_diet[3] = {}, st_desc = nullptr, st_name = nullptr, st_color = nullptr, st_color_next = nullptr, st_go = nullptr,
-        st_line = nullptr;
+        st_line = nullptr, st_body = nullptr, st_body_next = nullptr;
 };
 static Dialog D;
 static std::map<std::string, Win> g_named; // for tests (coop.uistate)
@@ -809,6 +810,7 @@ static std::string g_report_seen; // the last session report line put into the s
 // ---- BUG-9273: "Your own cell" (start_choice.h): the page's state while the host's question is open
 static int g_st_diet = -1;       // the diet card picked (-1: none yet)
 static int g_st_color = -1;      // the colour picked (palette index, -1: none)
+static int g_st_body = -1;       // the body colour picked (start_choice::kBody index, -1: the game cell's own)
 static bool g_st_open;           // the page was set up for the current question (the name field filled once)
 static std::string g_st_line;    // the answer line (a refusal)
 static const char* const kDietEn[3] = {"Herbivore", "Carnivore", "Omnivore"};
@@ -835,7 +837,7 @@ static void do_start_go()
         return;
     }
     std::string name = D.st_name ? sui::edit_text(D.st_name) : std::string();
-    if (!A.start_submit || !A.start_submit(diet, name, g_st_color, why)) {
+    if (!A.start_submit || !A.start_submit(diet, name, g_st_color, g_st_body, why)) {
         g_st_line = why.empty() ? std::string(T("Not possible now", "Сейчас нельзя")) : why;
         g_dirty = true;
         return;
@@ -1205,8 +1207,15 @@ static void build_dialog()
     D.st_color = add_label(ST, {190, 302, 400, 328}, "", kWhite);
     D.st_color_next = add_button(ST, "stcolor", {410, 298, 470, 330}, ">", [] { start_color_step(1); });
     add_label(ST, {480, 302, 720, 328}, T("name tag, arrows, map", "имя, стрелки, карта"), kDim);
-    D.st_go = add_button(ST, "stgo", {500, 360, 720, 402}, T("Start", "Начать"), do_start_go);
-    D.st_line = add_label(ST, {40, 414, 720, 440}, "", kRed);
+    add_label(ST, {40, 350, 190, 376}, T("Body", "Тело"), kWhite);
+    D.st_body = add_label(ST, {190, 350, 400, 376}, "", kWhite);
+    D.st_body_next = add_button(ST, "stbody", {410, 346, 470, 378}, ">", [] {
+        g_st_body = g_st_body + 1 >= start_choice::kBodies ? -1 : g_st_body + 1; // the game's own, then the colours
+        g_dirty = true;
+    });
+    add_label(ST, {480, 350, 720, 376}, T("your cell's colour", "цвет вашей клетки"), kDim);
+    D.st_go = add_button(ST, "stgo", {500, 400, 720, 442}, T("Start", "Начать"), do_start_go);
+    D.st_line = add_label(ST, {40, 454, 720, 480}, "", kRed);
     // Enter in a field does what its button does: the chat sends, the address joins, the name continues
     if (D.chat_edit)
         sui::add_handler(D.chat_edit, [](Win, const sui::Msg& m) {
@@ -1256,6 +1265,7 @@ static void refresh_start()
         g_st_diet = -1;
         g_st_line.clear();
         g_st_color = A.start_color_now ? A.start_color_now() : -1;
+        g_st_body = -1;
         sui::set_edit_text(D.st_name, A.start_name ? A.start_name() : std::string());
     }
     for (int i = 0; i < 3; i++)
@@ -1270,6 +1280,13 @@ static void refresh_start()
     } else {
         text(D.st_color, T("the host's pick", "выбор хоста"));
         color(D.st_color, kDim);
+    }
+    if (g_st_body >= 0 && g_st_body < start_choice::kBodies) {
+        text(D.st_body, g_ru ? start_choice::kBody[g_st_body].ru : start_choice::kBody[g_st_body].en);
+        color(D.st_body, start_choice::body_argb(g_st_body));
+    } else {
+        text(D.st_body, T("Natural", "Природный"));
+        color(D.st_body, kWhite);
     }
     text(D.st_line, g_st_line);
 }

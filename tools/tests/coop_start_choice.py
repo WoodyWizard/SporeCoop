@@ -4,9 +4,9 @@
 Two players who just bought the game (empty profiles): the host starts a new Cell game from its galaxy menu through
 the game's own wizard (herbivore card, the planet's name), hosts, the guest joins. Then, as the players see it:
   1. the guest is asked: its co-op window opens on "Your own cell" (the page's widgets, not a mod counter);
-  2. the guest clicks Carnivore, types its creature's name, picks the next free colour and clicks Start;
-  3. on the HOST's game: the guest's cell is the carnivore cell (its model's carnivore mouth flag, GetCellModelData
-     +0x1250), its name tag reads "Bob (<name>)" in the colour it picked (the colour table the tags are drawn with);
+  2. the guest clicks Carnivore, types its creature's name, picks the next free colour, a blue body and clicks Start;
+  3. on the HOST's game: the guest's cell is its own copy of the carnivore cell painted blue (a 0x7C key of the
+     creations pipeline, its model's carnivore mouth flag, GetCellModelData +0x1250; screenshots of both games), its name tag reads "Bob (<name>)" in the colour it picked (the colour table the tags are drawn with);
   4. the guest's own game eats meat it swims into and not plants (AvatarEat: its own points);
   5. its own game's Cell card (Cell_GetConsequenceTrait from its own meals) is carnivore, and the host has it as the
      guest's report for its seat's Cell card;
@@ -29,7 +29,6 @@ from lane import sh  # noqa: E402
 from sporectl import Console  # noqa: E402
 
 NAME = 'Glorbo'
-CARNIVORE = '252A132F'
 CARD_CARNIVORE = 'CFB01B93'
 
 
@@ -72,6 +71,24 @@ def click(con, caption):
     con.call('wait.frames 3 5000')
     con.call(f'click {p[0]} {p[1]}')
     time.sleep(1.0)
+    return True
+
+
+def click_last(con, caption, times=1):
+    """the lowest visible widget with this caption (the body colour's ">" is below the player colour's)"""
+    at = []
+    for l in out(con, 'coop.uistate widgets').splitlines():
+        m = re.match(r"widget (\d+) (\d+) (\d+) (\d+) \w -?\d+ '(.*)'$", l)
+        if m and m[5] == caption:
+            at.append(((int(m[1]) + int(m[3])) // 2, (int(m[2]) + int(m[4])) // 2))
+    if not at:
+        return False
+    x, y = max(at, key=lambda p: p[1])
+    for _ in range(times):
+        con.call(f'move {x} {y}')
+        con.call('wait.frames 3 5000')
+        con.call(f'click {x} {y}')
+        time.sleep(0.6)
     return True
 
 
@@ -180,14 +197,18 @@ def main():
         time.sleep(0.5)
     c0 = color_of(host, 1)[0]
     ok &= click(guest, '>')
+    ok &= click_last(guest, '>', 5)  # the body colour: Natural -> Red, Orange, Yellow, Green, Blue
     want = re.search(r"widget 32\d \d+ \d+ \d+ L \d+ '(\w+)'", out(guest, 'coop.uistate widgets'))
     shot(guest, 'start_choice_filled.png')
     ok &= click(guest, 'Start')
-    ck(ok and name_at is not None, 'the guest picked Carnivore, typed its name, the next colour and clicked Start')
+    ck(ok and name_at is not None, 'the guest picked Carnivore, typed its name, the next colour, a blue body and clicked Start')
     ck(wait(lambda: start_line(host, 'records') == '1', 20), 'the host recorded the guest\'s choice for this planet')
     # 3. what the host sees
-    ck(wait(lambda: partner_diet(host)[0] == CARNIVORE, 60),
-       f'on the host the guest\'s cell is the carnivore cell (model {model0} -> {partner_diet(host)[0]})')
+    ck(wait(lambda: partner_diet(host)[0].startswith('7C'), 60),
+       f'on the host the guest\'s cell is its own painted copy of the carnivore cell (model {model0} -> {partner_diet(host)[0]})')
+    m = re.search(r'diet me model=(\w+)', out(guest, 'coop.pool diet'))
+    ck(m is not None and m[1].startswith('7B') and 'paints=1' in out(guest, 'coop.start'),
+       f'the guest plays the blue copy it made ({m[1] if m else "?"})')
     d = partner_diet(host)
     ck(d[1] and not d[2], f'its mouth on the host\'s game: carnivore={int(d[1])} herbivore={int(d[2])}')
     idx, key = color_of(host, 1)
@@ -227,7 +248,8 @@ def main():
     time.sleep(30)
     ck(widget(guest, 'Your own cell') is None and start_line(guest, 'asks_rx') == asks,
        'the rejoin does not ask again')
-    ck(wait(lambda: partner_diet(host)[0] == CARNIVORE, 60), 'after the rejoin the host sees the carnivore cell again')
+    ck(wait(lambda: partner_diet(host)[0].startswith('7C') and partner_diet(host)[1], 60),
+       'after the rejoin the host sees the painted carnivore cell again')
     ck(color_of(host, 1)[0] == idx, f'and the guest\'s colour ({color_of(host, 1)})')
     ck.faults(host=host, guest=guest)
     return ck.result()

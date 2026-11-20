@@ -11,7 +11,9 @@
 //   * MSG_START_CHOICE (79, session family): u8 kind and its payload (below).
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -69,22 +71,155 @@ inline std::string clean_name(const std::string& in)
     return a == std::string::npos ? std::string() : out.substr(a, b - a + 1);
 }
 
+// ---- the body colour (BUG-9273 follow-up): the base colour of the cell model, three floats (r, g, b, 0..1) at byte
+// 50 of the model record's unpacked stream (after them the coat and the detail colours; docs/re/cell.md#cell-body-colour)
+struct BodyColor {
+    const char* key;
+    const char* en;
+    const char* ru;
+    float r, g, b;
+};
+constexpr int kBodies = 8;
+inline const BodyColor kBody[kBodies] = {
+    {"red", "Red", "Красный", 0.86f, 0.12f, 0.12f},      {"orange", "Orange", "Оранжевый", 0.95f, 0.50f, 0.08f},
+    {"yellow", "Yellow", "Жёлтый", 0.95f, 0.85f, 0.15f}, {"green", "Green", "Зелёный", 0.20f, 0.75f, 0.20f},
+    {"blue", "Blue", "Синий", 0.15f, 0.35f, 0.90f},      {"purple", "Purple", "Фиолетовый", 0.55f, 0.20f, 0.80f},
+    {"pink", "Pink", "Розовый", 0.95f, 0.45f, 0.70f},    {"white", "White", "Белый", 0.95f, 0.95f, 0.95f},
+};
+constexpr int kNoBody = -1; // the game cell's own colour
+inline uint32_t body_argb(int i)
+{
+    if (i < 0 || i >= kBodies)
+        return 0;
+    auto c = [](float v) { return (uint32_t)(v * 255.f + 0.5f) & 0xFF; };
+    return 0xFF000000u | c(kBody[i].r) << 16 | c(kBody[i].g) << 8 | c(kBody[i].b);
+}
+inline int body_find(const std::string& s)
+{
+    for (int i = 0; i < kBodies; i++)
+        if (s == kBody[i].key)
+            return i;
+    return s == "natural" || s == "none" ? kNoBody : -2;
+}
+
+// the model record's byte runs (0xFE n: the byte before, n more times; FE 00: the byte 0xFE): unpacked whole
+inline bool unpack_runs(const std::vector<uint8_t>& m, std::vector<uint8_t>& out)
+{
+    out.clear();
+    uint8_t last = 0;
+    for (size_t i = 0; i < m.size();) {
+        if (m[i] != 0xFE) {
+            last = m[i++];
+            out.push_back(last);
+            continue;
+        }
+        if (i + 1 >= m.size())
+            return false;
+        unsigned n = m[i + 1];
+        i += 2;
+        if (!n) {
+            last = 0xFE;
+            out.push_back(0xFE);
+            continue;
+        }
+        if (out.empty())
+            return false; // a run with no byte before it
+        out.insert(out.end(), n, last);
+    }
+    return true;
+}
+constexpr uint8_t kBemMagic[4] = {0xD3, 0x7E, 0x65, 0x48};
+constexpr size_t kBodyAt = 50;
+// the cell model record `bem` with its base colour set to body colour `i`, written in place in the packed record (the
+// game's reader faulted on the same model packed again by us: docs/re/cell.md#cell-body-colour): each of the 12 bytes
+// must be a literal byte of the record and the byte after them no run of the byte before; a new 0xFE is written FE 00.
+// false: not a model record we can paint (the caller keeps the game cell's own colour)
+inline bool paint_body(const std::vector<uint8_t>& bem, int i, std::vector<uint8_t>& out)
+{
+    if (i < 0 || i >= kBodies || bem.size() < 4 || !std::equal(kBemMagic, kBemMagic + 4, bem.begin()))
+        return false;
+    // where decoded bytes kBodyAt .. kBodyAt + 11 are in the record (literal bytes only)
+    size_t raw_at[12], dec = 0, end = 0;
+    int found = 0;
+    for (size_t p = 0; p < bem.size() && found < 12;) {
+        if (bem[p] == 0xFE) {
+            if (p + 1 >= bem.size())
+                return false;
+            unsigned n = bem[p + 1];
+            if (n) {
+                if (dec + n > kBodyAt && dec < kBodyAt + 12)
+                    return false; // a run inside the colour
+                dec += n;
+                p += 2;
+                continue;
+            }
+            if (dec >= kBodyAt)
+                raw_at[found++] = p; // (a literal 0xFE: two bytes)
+            dec++;
+            p += 2;
+            end = p;
+            continue;
+        }
+        if (dec >= kBodyAt)
+            raw_at[found++] = p;
+        dec++;
+        p++;
+        end = p;
+    }
+    if (found < 12 || (end + 1 < bem.size() && bem[end] == 0xFE && bem[end + 1] != 0))
+        return false; // (a run after the colour would repeat its last byte)
+    float rgb[3] = {kBody[i].r, kBody[i].g, kBody[i].b};
+    uint8_t nb[12];
+    for (int k = 0; k < 12; k++) {
+        float cur;
+        uint8_t cb[4];
+        for (int q = 0; q < 4; q++)
+            cb[q] = bem[raw_at[(k / 4) * 4 + q]];
+        if (k % 4 == 0) {
+            memcpy(&cur, cb, 4);
+            if (!(cur >= 0.f && cur <= 1.f))
+                return false; // not a colour there: another header
+        }
+    }
+    memcpy(nb, rgb, 12);
+    out.assign(bem.begin(), bem.begin() + (long)raw_at[0]);
+    for (int k = 0; k < 12; k++) {
+        out.push_back(nb[k]);
+        if (nb[k] == 0xFE)
+            out.push_back(0);
+    }
+    out.insert(out.end(), bem.begin() + (long)end, bem.end());
+    return true;
+}
+// the instance of a coloured copy of a game cell (registered by the guest, shared as its own creation)
+inline uint32_t body_instance(uint32_t cell, int body)
+{
+    uint32_t h = 2166136261u;
+    for (uint32_t v : {cell, (uint32_t)body, 0x5C4E11u})
+        for (int k = 0; k < 4; k++)
+            h = (h ^ ((v >> (8 * k)) & 0xFF)) * 16777619u;
+    return 0x7B000000u | (h & 0x00FFFFFFu);
+}
+
 // ---- one player's choice
 constexpr int kNoColor = -1;
 struct Choice {
     uint8_t diet = kHerbivore;
     int8_t color = kNoColor; // findx::kPalette index, -1 = keep the one the host gave
     std::string name;
+    int8_t body = kNoBody;   // kBody index, -1 = the game cell's own colour
     bool operator==(const Choice&) const = default;
 };
 inline bool valid(const Choice& c, int colors)
 {
-    return c.diet < kDiets && c.color >= kNoColor && c.color < colors && !c.name.empty() && c.name == clean_name(c.name);
+    return c.diet < kDiets && c.color >= kNoColor && c.color < colors && c.body >= kNoBody && c.body < kBodies &&
+           !c.name.empty() && c.name == clean_name(c.name);
 }
 inline void write_choice(net::Writer& w, const Choice& c)
 {
     w.u8(c.diet);
     w.u8((uint8_t)c.color);
+    w.u8((uint8_t)c.body);
     w.str8(c.name);
 }
 inline bool read_choice(net::Reader& r, Choice& c, int colors)
@@ -92,6 +227,7 @@ inline bool read_choice(net::Reader& r, Choice& c, int colors)
     Choice t;
     t.diet = r.u8();
     t.color = (int8_t)r.u8();
+    t.body = (int8_t)r.u8();
     t.name = r.str8();
     if (!r.ok() || !valid(t, colors))
         return false;
@@ -102,7 +238,7 @@ inline bool read_choice(net::Reader& r, Choice& c, int colors)
 // ---- MSG_START_CHOICE (79, session family 1.5): u8 kind, payload
 enum Kind : uint8_t {
     kAsk = 1,    // host -> a guest: nothing. Choose your own start (diet, name, colour) for this planet
-    kAnswer = 2, // guest -> host: Choice
+    kAnswer = 2, // guest -> host: Choice (u8 diet, u8 colour, u8 body colour, str8 name)
     kTable = 3,  // host -> every guest: u8 n, n x {u8 player, Choice}: the choices of the players here (a guest
                  //   finds its own in it after a rejoin: it plays it again without being asked)
 };

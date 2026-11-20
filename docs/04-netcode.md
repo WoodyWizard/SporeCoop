@@ -133,7 +133,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 73 | `IDENTITY` | R | any | Session | Identity | session | the persistent player identity (identity.h, BUG-9258): guest -> host u64 its own after each join; host -> guests u8 n, n x {u8 player, u64 identity} |
 | 75 | `OWN_CARDS` | R | any | Session | OwnCards | session | the own stage history (cards.h, BUG-9263): host -> a guest u8 0, u8 flags, 5 x u32 its seat's consequence cards, f32 social, f32 combat; guest -> host u8 1, u32 the Cell card its own play would give now |
 | 77 | `PROGRESS` | R | any | Session | Progress | session | own progress in Cell / Creature (own_progress_logic.h, BUG-9265): u8 kind (1 ask, 2 set, 3 report, 4 table, 5 gain), payload |
-| 79 | `START_CHOICE` | R | any | Session | StartChoice | session | every player's own start in a new Cell game (start_choice_logic.h, BUG-9273): u8 kind (1 ask: host -> a guest; 2 answer: guest -> host u8 diet, u8 colour, str8 name; 3 table: host -> guests u8 n, n x {u8 player, the answer}) |
+| 79 | `START_CHOICE` | R | any | Session | StartChoice | session | every player's own start in a new Cell game (start_choice_logic.h, BUG-9273): u8 kind (1 ask: host -> a guest; 2 answer: guest -> host u8 diet, u8 colour, u8 body colour, str8 name; 3 table: host -> guests u8 n, n x {u8 player, the answer}) |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
