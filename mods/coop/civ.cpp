@@ -7940,6 +7940,29 @@ void world_check()
     }
 }
 
+// BUG-9290 (visitors across eras): every city building (a hall too) and every vehicle of the planet with its model key
+void for_each_visit_object(void (*fn)(void* obj, const uint32_t key[3], bool vehicle, void* user), void* user)
+{
+    if (!a_GetAllCities)
+        return;
+    for (void* city : all_cities())
+        for (void* bl : vec_of((uint8_t*)city + kCityBuildings))
+            if (bl && game::object_alive(bl) && skg::readable(bl, kBModelKey + 12) && F<uint32_t>(bl, kBModelKey))
+                fn(bl, &F<uint32_t>(bl, kBModelKey), false, user);
+    struct U {
+        void (*fn)(void*, const uint32_t*, bool, void*);
+        void* user;
+    } u{fn, user};
+    game::for_each_object(
+        [](void* o, uint32_t noun, void* up) {
+            auto& u = *(U*)up;
+            if (noun == kVehicleNoun && game::object_alive(o) && skg::readable(o, kVModelKey + 12) && F<uint32_t>(o, kVModelKey))
+                u.fn(o, &F<uint32_t>(o, kVModelKey), true, u.user);
+            return true;
+        },
+        &u);
+}
+
 void for_each_owned(void (*fn)(void* obj, const net::Vec3& pos, uint8_t owner, bool city, void* user), void* user)
 {
     if (!active())

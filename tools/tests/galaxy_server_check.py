@@ -23,7 +23,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 EXE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'build', 'galaxy_server.exe' if os.name == 'nt' else 'galaxy_server')
 PROTO = 8
 (HELLO, WELCOME, LIST, PLANETS, ENTER, ROLE, LEAVE, PING, PONG, REFUSED, HOSTGONE, READY, FETCH, XBEGIN, XCHUNK, XACK, XDONE,
- HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE, MOVEON, MOVED, ARRIVE, VISIT, VISITOR, CRTPUT, CRTGET, CRTHAVE, CRTPART) = range(1, 35)
+ HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE, MOVEON, MOVED, ARRIVE, VISIT, VISITOR, CRTPUT, CRTGET, CRTHAVE, CRTPART, VISITOBJ) = range(1, 36)
 CHUNK = 1100
 fails = []
 
@@ -158,6 +158,7 @@ def main():
     probe.close()
     worlds = tempfile.mkdtemp(prefix='galaxy_check_')
     limits = [] if os.environ.get('GALAXY_CHECK_OLD') else ['--max-per-address', '6', '--max-world-mb', '1']  # (a server before the limits)
+    limits += os.environ.get('GALAXY_CHECK_ARGS', '').split()  # (a FAIL run: a fix's switch off, e.g. --visit-radius 0)
     srv = subprocess.Popen([EXE, '--local', '--worlds', worlds] + limits + [str(port), 'check'],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -392,33 +393,74 @@ def main():
             a.send(VISIT, body[:-1])
             check(b.take(VISITOR, 0.3) is None, 'a VISIT of the wrong size is dropped')
 
-            print('the creation store (BUG-9287)')
+            print('only near players (BUG-9288)')
+            def vbody(x, y, z):
+                return bytes([2]) + struct.pack('<III', 0x7C0B35F6, 0x2B978C46, 0x40626200) + struct.pack('<fff', x, y, z)
+            time.sleep(0.5)
+            b.send(VISIT, vbody(400.0, 0.0, 0.0))  # b's creature 400 m away
+            a.take(VISITOR, 0.3)
+            b.inbox.clear()
+            a.send(VISIT, vbody(0.0, 0.0, 0.0))
+            check(b.take(VISITOR, 0.4) is None, 'a VISIT does not reach a player 400 m away (300 m radius)')
+            time.sleep(0.5)
+            b.send(VISIT, vbody(100.0, 0.0, 0.0))
+            time.sleep(0.5)
+            a.send(VISIT, vbody(0.0, 0.0, 0.0))
+            check(b.take(VISITOR, 0.6) is not None, 'it reaches a player 100 m away')
+
+            print('the creation store (BUG-9287, BUG-9290)')
+            CT, CG = 0x2B978C46, 0x40626200
             crt = bytes((i * 7 + 3) & 0xFF for i in range(3000))
-            ccrc = zlib.crc32(crt) & 0xFFFFFFFF
             def put(p, data, skip=()):
+                c = zlib.crc32(data) & 0xFFFFFFFF
                 for k, off in enumerate(range(0, len(data), 1100)):
                     if k not in skip:
-                        p.send(CRTPUT, struct.pack('<IIIII', 0x29AA0001, 0x40626200, len(data), ccrc, off) + data[off:off + 1100])
+                        p.send(CRTPUT, struct.pack('<IIIIII', 0x29AA0001, CT, CG, len(data), c, off) + data[off:off + 1100])
+            def get(p, owner, inst=0x29AA0001):
+                p.inbox.clear()
+                p.send(CRTGET, struct.pack('<QIII', owner, inst, CT, CG))
+                p.pump(0.5)
+                parts = [d[2:] for d in p.inbox if d[0:1] == b'G' and d[1] == CRTPART]
+                if not parts:
+                    return None
+                total = struct.unpack_from('<I', parts[0], 20)[0]
+                got = bytearray(total)
+                for d in parts:
+                    off = struct.unpack_from('<I', d, 28)[0]
+                    got[off:off + len(d) - 32] = d[32:]
+                return bytes(got)
             put(a, crt, skip=(1,))
             check(a.take(CRTHAVE, 0.4) is None, 'a creation with a piece missing is not kept')
             put(a, crt)
             h = a.take(CRTHAVE)
-            check(h is not None and h == struct.pack('<IIB', 0x29AA0001, 0x40626200, 1), 'a whole creation is kept (CRTHAVE)')
-            b.send(CRTGET, struct.pack('<II', 0x29AA0001, 0x40626200))
-            b.pump(0.5)
-            parts = [d[2:] for d in b.inbox if d[0:1] == b'G' and d[1] == CRTPART]
-            got = bytearray(3000)
-            for d in parts:
-                off = struct.unpack_from('<I', d, 16)[0]
-                got[off:off + len(d) - 20] = d[20:]
-            check(len(parts) == 3 and bytes(got) == crt, 'CRTGET sends every piece of it back')
-            b.send(CRTGET, struct.pack('<II', 0x29AA0002, 0x40626200))
+            check(h is not None and h == struct.pack('<QIIIB', a.identity, 0x29AA0001, CT, CG, 1), "a whole creation is kept as its sender's (CRTHAVE)")
+            check(get(b, a.identity) == crt, 'CRTGET of its owner and key sends every piece of it back')
+            b.send(CRTGET, struct.pack('<QIII', a.identity, 0x29AA0002, CT, CG))
             h = b.take(CRTHAVE)
             check(h is not None and h[-1] == 0, 'CRTGET of a creation nobody put: CRTHAVE 0')
+            other = bytes(2500)
+            put(b, other)
+            h = b.take(CRTHAVE)
+            check(h is not None and h[-1] == 1 and get(c, b.identity) == other and get(c, a.identity) == crt,
+                  "another player's creation with the same key is its own (BUG-9290)")
             a.inbox.clear()
             put(a, crt[:1100] + bytes(1900))
             h = a.take(CRTHAVE)
-            check(h is not None and h[-1] == 1, 'a key kept already is answered at once (one key, one content)')
+            check(h is not None and h[-1] == 1 and get(b, a.identity) == crt, 'a key kept already stays as it was')
+
+            print("a Civ era's objects (BUG-9290)")
+            obj = struct.pack('<IIII', 7, 0x0654CCD8, 0x24682294, 0x40646200) + struct.pack('<10f', 1, 2, 3, 0, 0, 0, 1, 0, 0, 0) + bytes([1])
+            a.inbox.clear()
+            b.send(VISITOBJ, bytes([1]) + obj)
+            o = a.take(VISITOBJ)
+            check(o is not None and struct.unpack_from('<HQ', o) == (b.slot, b.identity) and o[10:] == bytes([1]) + obj,
+                  "VISITOBJ reaches the planet's other era with the sender's slot and identity")
+            time.sleep(1.1)
+            a.inbox.clear()
+            for _ in range(12):
+                b.send(VISITOBJ, bytes([1]) + obj)
+            a.pump(0.5)
+            check(sum(1 for d in a.inbox if d[0:1] == b'G' and d[1] == VISITOBJ) == 8, 'at most 8 VISITOBJ a second from one player')
 
         print('limits')
         more = [Player(port, 'p%d' % i, 0x100 + i) for i in range(5)]

@@ -561,6 +561,7 @@ static float creature_tag(void* p)
     return h;
 }
 std::string tag_info() { return g_tag_info; }
+float creature_tag_height(void* c) { return creature_tag(c); }
 
 // On from 44 (BUG-9113): the body has the partner's captain scale, comes once the mission plays and
 // survived act changes, a finished mission and leaving it (docs/re/space.md#space-adventure-partner-bodies).

@@ -187,16 +187,24 @@ enum Type : uint8_t {
     // in a stage sends where its creature is; the server passes it on to the players of the same planet in its other
     // worlds (its other eras, a party's crossing), whose games show it look-only
     VISIT = 29,    // player -> server (twice a second): u8 its era, u32 x3 its creature's species key, f32 x3 position
-    VISITOR = 30,  // server -> player: u16 the sender's slot, str8 its name, then VISIT's body
-    // BUG-9287: the galaxy's creation store, so a game can show a visitor whose creature it does not have. A player
-    // puts its own creature there (the mod's species bundle, creations.cpp); a game asks for one by its key. Kept in
-    // the server's worlds folder (creations/), across restarts. Key = {species instance, group}.
-    CRTPUT = 31,   // player -> server: u32 instance, u32 group, u32 total bytes, u32 crc, u32 offset, the piece
-                   //   (kCrtChunk bytes, the last one shorter); the server answers CRTHAVE once it has it
-    CRTGET = 32,   // player -> server: u32 instance, u32 group
-    CRTHAVE = 33,  // server -> player: u32 instance, u32 group, u8 1 stored / 0 the server has none (a CRTGET)
-    CRTPART = 34,  // server -> player: as CRTPUT's body (every piece of it, after a CRTGET)
+    VISITOR = 30,  // server -> player: u16 the sender's slot, u64 its identity (BUG-9290), str8 its name, VISIT's body
+    // BUG-9287: the galaxy's creation store, so a game can show what another world has and it does not (a visitor's
+    // creature, another era's vehicles and buildings). A player puts creations of its game there (the mod's bundle of
+    // the records, creations.cpp); a game asks for one by its owner and key. Kept in the server's worlds folder
+    // (creations/), across restarts. BUG-9290: a creation is {its owner's identity, instance, type, group} (creation ids
+    // count up per profile: two players' creations can share a key).
+    CRTPUT = 31,   // player -> server: u32 instance, u32 type, u32 group, u32 total bytes, u32 crc, u32 offset, the piece
+                   //   (kCrtChunk bytes, the last one shorter); kept as the sender's; the server answers CRTHAVE
+    CRTGET = 32,   // player -> server: u64 owner, u32 instance, u32 type, u32 group
+    CRTHAVE = 33,  // server -> player: u64 owner, u32 instance, type, group, u8 1 kept / 0 the server has none (a CRTGET)
+    CRTPART = 34,  // server -> player: u64 owner, u32 instance, type, group, u32 total, u32 crc, u32 offset, the piece
+    // BUG-9290: a Civ era's host sends its vehicles and buildings near the other eras' players; the server passes it to
+    // the planet's other worlds (as VISIT), at most kVisitObjPerSecond a second, kVisitObjMax bytes
+    VISITOBJ = 35, // host -> server: u8 n, n x {u32 id, u32 x3 model key, f32 x3 position, f32 x4 orientation, f32 x3
+                   //   velocity, u8 kind (kVisitVehicle / kVisitBuilding)}; server -> player: u16 slot, u64 identity, then that
 };
+constexpr uint8_t kVisitVehicle = 1, kVisitBuilding = 2;
+constexpr size_t kVisitObjBytes = 4 + 12 + 12 + 16 + 12 + 1, kVisitObjMax = 1 + 24 * kVisitObjBytes;
 constexpr uint32_t kCrtChunk = 1100;
 constexpr uint32_t kCrtMaxBytes = 512u << 10; // a species bundle (its records and creaturedata) is far smaller
 constexpr uint32_t kVisitEveryMs = 500; // a player's VISITs: the server drops ones sooner than this after the last

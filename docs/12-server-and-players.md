@@ -1589,3 +1589,25 @@ mods/coop/era_visitors.cpp, galaxy_crt.cpp, server/galaxy/main.cpp.
   still hit a visitor in its own game (nothing reaches the other era); the lag while walking (a target ahead on the
   path, as partners' puppets do, BUG-0360); many visitors at once (the server sends every VISIT to each player of the
   planet's other worlds: an interest radius for an MMO-sized planet); the MSI (it needs the new builds).
+
+## Visitors: radius, name tags, the store by owner, Civ objects (2026-11-20, feat/lineages-alpha)
+<a id="server-era-visitors-more"></a>
+
+* BUG-9288: the server passes a VISIT only to players whose creature is within 300 m (`--visit-radius`, 0 everyone);
+  a player that sent none yet gets them all. Server checks: 400 m away none, 100 m away one; FAIL with the radius off.
+* BUG-9289: a grey name tag over each visitor within 120 m (its name and "<Era> era"), at its head as a partner's tag
+  (switch `galaxy.visitor_tags`). The walking gap (5-6 m on average at 2 VISITs a second and 10 FPS) did not change
+  when the walk aimed 0.5 s ahead (5.2 m against 5.7 m over 4 walks each): taken out.
+* BUG-9290: the creation store keeps a creation as {its owner's identity, instance, type, group}: creation ids count up
+  per profile, so two players' creations can share a key (a vehicle design above all). Any creation type; installed
+  under a key of ours from its content. VISITOR carries the sender's identity.
+* BUG-9290: the Civ era's host sends its city buildings and vehicles near the other eras' players (VISITOBJ: id, model
+  key, position, orientation, velocity, kind; vehicles twice a second, buildings every 4 s, at most 8 messages a
+  second) and puts their designs in the store. A Creature or Tribe game makes a ground prop per object (installed design,
+  else its own key), a vehicle moved on along its velocity. ✔ Runtime: 441 objects in 129 messages, 6 designs fetched,
+  9 props at the city's places. Before a prop the game bakes every level of detail of its model: a Creature profile had
+  level 0 only of a vehicle and a building (IBakeManager vt 0x1C(key, level): mask 1; a spawned creature F); asked with
+  vt 0x4C(key, &level), all four were there 20 s later.
+* ✘ Open (BUG-9291): those props mostly do not show. One truck showed (a fresh game at 1280x960, near the nest, as in
+  the spike); not after the avatar moved, not at 800x600, not after a hot reload, also offline and without the mounted
+  package, also on a UFO carrier. Ruled out: the bake, the session, the package, the carrier.

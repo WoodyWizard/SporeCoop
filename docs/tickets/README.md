@@ -1401,3 +1401,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9285](BUG-9285-galaxy-planet-an-extinct-species-comes-back-afte.md) | fixed | feature | creature | 2026-11-20 | unreleased | galaxy planet: an extinct species comes back after the server's refresh time (the nest refresh) |
 | [BUG-9286](BUG-9286-step-4-part-4-7f-a-player-s-nest-left-behind-get.md) | fixed | feature | creature | 2026-11-20 | unreleased | Step 4 part 4 (7F): a player's nest left behind gets a new species from the game's own pick |
 | [BUG-9287](BUG-9287-step-4-part-5-visitors-across-eras-players-of-a.md) | fixed | feature | creature | 2026-11-20 | unreleased | Step 4 part 5: visitors across eras (players of a planet's other eras shown look-only) |
+| [BUG-9288](BUG-9288-galaxy-server-visitors-only-reach-players-near-t.md) | fixed | feature | creature | 2026-11-20 | unreleased | Galaxy server: visitors only reach players near them (interest radius) |
+| [BUG-9289](BUG-9289-era-visitors-name-tags-walking-lag-measured.md) | fixed | feature | creature | 2026-11-20 | unreleased | Era visitors: name tags; walking lag measured |
+| [BUG-9290](BUG-9290-creation-store-keyed-by-owner-a-civ-era-s-vehicl.md) | fixed | feature | creature | 2026-11-20 | unreleased | Creation store keyed by owner; a Civ era's vehicles and buildings for the other eras |
+| [BUG-9291](BUG-9291-era-visitors-another-era-s-vehicles-and-building.md) | open | feature | creature | 2026-11-20 |  | Era visitors: another era's vehicles and buildings drawn as props are not reliably visible |

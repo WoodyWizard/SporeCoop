@@ -158,6 +158,8 @@ void quat_to_mat(const net::Quat& q, float* m);
 float puppet_jump_speed();
 // BUG-0376 (creature.puppet_air), tests: coop.track air <v>
 extern int g_puppet_air_variant;
+// BUG-0929: a creature's name tag height over its position (its pose's top; era_visitors' tags too, BUG-9289)
+float creature_tag_height(void* c);
 // BUG-0929 (creature.tag_height), tests: the last partner name tag's height and what it came from (coop.find tagh)
 std::string tag_info();
 

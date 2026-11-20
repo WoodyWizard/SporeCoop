@@ -6959,6 +6959,8 @@ void on_overlay(void*, int, void*)
         return;
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
+    if (!g_menu_up && !(game_busy() & (busy::kPaused | busy::kInputLock)) && !mem_refresh::box_up())
+        era_visitors::overlay(sw, sh); // BUG-9289
     // BUG-9195 (the owner 2026-11-13: "Maybe instead of that [the notice], we can do our loading screen to overlay
     // it?"): a world from the host arriving while this guest plays a stage (its own new nest, a party wipe, a reload)
     // took it through the galaxy menu and a load in plain sight. The loading screen covers it from the first byte until

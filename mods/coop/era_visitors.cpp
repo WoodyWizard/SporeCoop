@@ -29,7 +29,11 @@
 #include "net/galaxy.h"
 #include "net/interp.h"
 #include "net/protocol.h"
+#include "modes.h"
+#include "net/utf8.h"
+#include "partner_marker.h"
 #include "savestrip.h"
+#include "civ.h"
 #include "tribe.h"
 #include "sporekit_game.hpp"
 
@@ -145,6 +149,7 @@ static void drive_prop(Prop& pr, float dt)
     place(pr.u, p, q);
 }
 
+static bool baked_or_ask(const uint32_t key[3]); // BUG-9290 (below)
 std::string spawn(uint32_t inst, uint32_t type, uint32_t group, bool drive, float lift, int axes, bool prop)
 {
     void* av = game::avatar();
@@ -161,6 +166,8 @@ std::string spawn(uint32_t inst, uint32_t type, uint32_t group, bool drive, floa
     uint32_t key[3] = {inst, type, group};
     if (m.key.instance)
         key[0] = m.key.instance, key[1] = m.key.type, key[2] = m.key.group;
+    if (!baked_or_ask(key)) // BUG-9290
+        return "its model is not baked here yet: asked the game to bake it, spawn again in a few seconds";
     void* u = nullptr;
     if (prop) {
         void* nm = noun_mgr();
@@ -246,6 +253,8 @@ std::string status()
 }
 
 static void on_visitor(net::Reader& r); // BUG-9287 (below)
+static void on_visit_objects(net::Reader& r); // BUG-9290 (below)
+static bool our_object_prop(void* obj);       // BUG-9290 (below)
 
 // our props are not the player's world (CLAUDE.md 2): a save never holds them
 static bool savestrip_filter(void* obj, uint32_t noun)
@@ -255,7 +264,57 @@ static bool savestrip_filter(void* obj, uint32_t noun)
     for (auto& pr : g_props)
         if (pr.prop && pr.u == obj)
             return true;
-    return false;
+    return our_object_prop(obj);
+}
+
+// BUG-9290: a model is drawn only once the game has baked it (its mesh in the graphics cache). A Creature profile never
+// baked another era's buildings and vehicles, so their props drew nothing (the spike's profile had them baked). As the
+// game does for a model it is about to use (0xC5B250, 0xC5B420): IBakeManager vt 0x1C(key, 0) "baked", else vt 0x18(key)
+// "asked already" or vt 0x4C(key, &0) asks for the bake. true: baked (or no bake manager: as before)
+static uint64_t g_bakes_asked;
+static bool baked_or_ask(const uint32_t key[3])
+{
+    static uintptr_t get = H->sym("Editors::IBakeManager::Get");
+    void* bm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!bm)
+        return true;
+    int lods = 0;
+    for (int l = 0; l < 4; l++)
+        lods |= (skg::vcall<char>(bm, 0x1C / 4, key, l) != 0) << l;
+    if (lods == 0xF)
+        return true;
+    for (int l = 0; l < 4; l++)
+        if (!(lods & (1 << l))) {
+            int lod = l;
+            skg::vcall<void>(bm, 0x4C / 4, key, &lod);
+            g_bakes_asked++;
+        }
+    H->log(M, SK_INFO, "era visitors: %08X/%08X baked levels %X: asked the rest (BUG-9290)", key[0], key[1], lods);
+    return (lods & 1) != 0; // (drawn close up already; the farther levels come)
+}
+
+// a plain ornament carrying a creation's model (decision 5T B), AddRef held: ours until prop_destroy. Null: not made
+static void* prop_make(const uint32_t key[3])
+{
+    void* nm = noun_mgr();
+    if (!nm || !a_CreateInstance || !a_OrnSetModel)
+        return nullptr;
+    void* u = skg::thiscall<void*>(a_CreateInstance, nm, kOrnamentNoun);
+    if (!u || game::noun_id(u) != kOrnamentNoun)
+        return nullptr;
+    skg::vcall<void>(u, 0); // AddRef
+    skg::thiscall<void>(a_OrnSetModel, u, key[0], key[1], key[2]);
+    if (void* sp = game::cast(u, 0x1186577)) // the model by its key, as cVehicle::Load (spatial vt 0x94 SetModelKey)
+        skg::vcall<void>(sp, 0x94 / 4, key);
+    return u;
+}
+static void prop_destroy(void* u, uint32_t serial)
+{
+    if (!u || !game::object_alive(u) || game::object_serial(u) != serial)
+        return; // (gone with its world)
+    if (void* nm = noun_mgr())
+        skg::thiscall<void>(a_DestroyInstance, nm, u);
+    skg::vcall<void>(u, 1); // Release our reference
 }
 
 void init(const SkHost* host, SkMod* mod)
@@ -269,6 +328,7 @@ void init(const SkHost* host, SkMod* mod)
     a_OrnSetModel = H->sym("SporeCoop::cOrnament_SetModel");
     savestrip::add_filter(savestrip_filter);
     galaxy::on_message(net::galaxy::VISITOR, on_visitor); // BUG-9287
+    galaxy::on_message(net::galaxy::VISITOBJ, on_visit_objects); // BUG-9290
     galaxy_crt::init(H, M);
 }
 
@@ -283,6 +343,7 @@ static bool g_stream = true;
 COOP_FIX("galaxy.era_visitors", "BUG-9287", g_stream,
          "galaxy: players of the planet's other eras are shown as look-only creatures (and this player to them)");
 struct Visitor {
+    uint64_t owner = 0; // its player's identity (BUG-9290: whose creation its species key is)
     std::string name;
     uint8_t era = 0;
     uint32_t key[3]{};
@@ -292,7 +353,10 @@ struct Visitor {
     uint32_t serial = 0;
     net::Vec3 walk_to{};
     bool walking = false;
+    bool waiting = false, missing = false; // its creature asked from the store / not buildable here
 };
+static bool g_tags = true;
+COOP_FIX("galaxy.visitor_tags", "BUG-9289", g_tags, "galaxy: a visitor of another era wears a name tag (its name, its era)");
 static std::map<uint16_t, Visitor> g_visitors; // by the sender's galaxy slot
 static double g_next_visit;
 static uint64_t g_visits_sent, g_visits_got, g_shown, g_no_species, g_gone;
@@ -318,6 +382,7 @@ static bool shows_visitors(uint8_t era) { return era == net::galaxy::kEraCreatur
 static void on_visitor(net::Reader& r)
 {
     const uint16_t slot = r.u16();
+    const uint64_t owner = r.u64();
     std::string name = r.str8();
     const uint8_t era = r.u8();
     uint32_t key[3];
@@ -330,6 +395,7 @@ static void on_visitor(net::Reader& r)
     Visitor& v = g_visitors[slot];
     if (v.c && (v.key[0] != key[0] || v.key[2] != key[2])) // another creature now (an editor, a new stage)
         visitor_remove(v);
+    v.owner = owner;
     v.name = std::move(name);
     v.era = era;
     memcpy(v.key, key, sizeof key);
@@ -343,10 +409,18 @@ static void visitor_show(Visitor& v, void* av)
     if (!visitor_alive(v)) {
         if (v.c)
             visitor_remove(v);
-        void* species = game::species_by_key({v.key[0], v.key[1], v.key[2]});
-        if (!species) { // asked from the galaxy's creation store (galaxy_crt): shown once it is here
-            if (galaxy_crt::want(v.key[0], v.key[1], v.key[2]))
+        // its player's creature as installed here from the galaxy's creation store (a key of ours: another creature of
+        // this game may have its key, BUG-9290); not here yet: asked, shown later
+        uint32_t lk[3];
+        if (!galaxy_crt::local_key(v.owner, v.key, lk)) {
+            v.waiting = true;
+            return;
+        }
+        void* species = game::species_by_key({lk[0], lk[1], lk[2]});
+        if (!species) {
+            if (!v.waiting || !v.missing)
                 g_no_species++;
+            v.missing = true;
             return;
         }
         void* herd = game::own_herd_for(species);
@@ -370,17 +444,23 @@ static void visitor_show(Visitor& v, void* av)
     }
     const net::Vec3 at = game::position(v.c);
     const float d = net::dist(at, v.pos);
+    // (it trails its player by 5-6 m on average while walking, at 2 VISITs a second and 10 FPS; aiming 0.5 s ahead on
+    // the path did not change that (5.2 m against 5.7 m over 4 walks each, BUG-9289) and was taken out)
+    const net::Vec3& target = v.pos;
     if (d > kTeleportBeyond) {
         game::teleport(v.c, v.pos, game::orientation(v.c));
         v.walking = false;
-    } else if (d > 1.5f && (!v.walking || net::dist(v.walk_to, v.pos) > 2.f)) {
-        game::move_to(v.c, v.pos, 1.f); // the game walks it there (its own walk animation)
-        v.walk_to = v.pos;
+    } else if (d > 1.5f && (!v.walking || net::dist(v.walk_to, target) > 2.f)) {
+        game::move_to(v.c, target, 1.f); // the game walks it there (its own walk animation)
+        v.walk_to = target;
         v.walking = true;
     } else if (d <= 1.5f)
         v.walking = false;
 }
 
+static void objects_send(double now); // BUG-9290 (below)
+static void objects_show(double now);
+static void objs_clear();
 static void stream_tick(double now)
 {
     const std::string planet = galaxy::current_planet();
@@ -391,8 +471,15 @@ static void stream_tick(double now)
         for (auto& [s, v] : g_visitors)
             visitor_remove(v);
         g_visitors.clear();
+        objs_clear();
         return;
     }
+    if (era == net::galaxy::kEraCiv && galaxy::hosting()) // BUG-9290: the Civ era's vehicles and buildings
+        objects_send(now);
+    if (shows_visitors(era) && av)
+        objects_show(now);
+    else
+        objs_clear();
     if (av && now >= g_next_visit) { // where this player is, for the planet's other worlds
         g_next_visit = now + net::galaxy::kVisitEveryMs / 1000.0;
         const game::Key k = game::species_key(av);
@@ -405,7 +492,7 @@ static void stream_tick(double now)
         w.f32(p.x), w.f32(p.y), w.f32(p.z);
         if (k.instance && galaxy::send_message(net::galaxy::VISIT, w)) {
             g_visits_sent++;
-            galaxy_crt::put_own(k.instance, k.type, k.group); // the store keeps it for the other eras' games
+            galaxy_crt::put(k.instance, k.type, k.group); // the store keeps it for the other eras' games
         }
     }
     for (auto it = g_visitors.begin(); it != g_visitors.end();) {
@@ -424,6 +511,245 @@ static void stream_tick(double now)
     }
 }
 
+// BUG-9289: a name tag over each visitor near this player (its name, its era), in grey: a visitor, not a partner
+void overlay(int sw, int sh)
+{
+    if (!g_stream || !g_tags || g_visitors.empty() || sw <= 0 || sh <= 0)
+        return;
+    const std::string planet = galaxy::current_planet();
+    void* me = game::avatar() ? game::avatar()
+                              : net::galaxy::era_of(planet) == net::galaxy::kEraTribe ? tribe::player_chief() : nullptr;
+    if (!me)
+        return;
+    const net::Vec3 mine = game::position(me);
+    for (auto& [s, v] : g_visitors) {
+        if (!visitor_alive(v))
+            continue;
+        const net::Vec3 p = game::position(v.c);
+        const float dist = net::dist(p, mine);
+        if (!std::isfinite(dist) || dist > 120.f)
+            continue;
+        const float len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        const float up = len > 1 ? modes::creature_tag_height(v.c) / len : 0; // over its head (as a partner's tag)
+        float w[3] = {p.x + p.x * up, p.y + p.y * up, p.z + p.z * up}, sc[2] = {NAN, NAN};
+        H->world_to_screen(w, sc);
+        if (!std::isfinite(sc[0]) || !std::isfinite(sc[1]) || sc[0] < 40 || sc[0] > sw - 40 || sc[1] < 40 || sc[1] > sh - 40)
+            continue;
+        const std::string name = v.name.substr(0, utf8::cut_bytes(v.name, 32));
+        const std::string era = std::string(net::galaxy::era_name(v.era)) + " era";
+        const float bw = (float)std::max(utf8::overlay_text_px(name), utf8::overlay_text_px(era)) + 20, bh = 38;
+        const float x1 = sc[0] - bw * .5f, y1 = sc[1] - bh;
+        partner_marker::plate(H, x1, y1, x1 + bw, y1 + bh, 17, 0x8C282828, 0xC8A0A0A0);
+        const int nx = (int)(sc[0] - utf8::overlay_text_px(name) / 2), ex = (int)(sc[0] - utf8::overlay_text_px(era) / 2);
+        H->overlay_text(nx + 1, (int)y1 + 5, 0xFF000000, name.c_str());
+        H->overlay_text(nx, (int)y1 + 4, 0xFFE6E6E6, name.c_str());
+        H->overlay_text(ex, (int)y1 + 19, 0xFFB4BEC8, era.c_str());
+    }
+}
+
+// ---- BUG-9290: a Civ era's vehicles and buildings in the other eras (look-only props, decision 5T B) ----
+// The Civ era's host sends its cities' buildings and its vehicles near the other eras' players it hears of (VISITOR:
+// within kObjRadius), the vehicles twice a second, the buildings every 4 s, and puts their designs in the galaxy's
+// creation store. A Creature or Tribe game stands each on its ground as a prop with that model (installed from the
+// store under a key of its own; the game's own designs as they are), a vehicle moved on along its velocity between
+// the updates. Props are kept out of saves and go when their object is no longer sent.
+struct ObjProp {
+    uint64_t owner = 0;
+    uint32_t key[3]{};
+    uint8_t kind = 0;
+    net::Vec3 pos{}, vel{};
+    net::Quat rot{0, 0, 0, 1};
+    double seen = 0;
+    void* u = nullptr;
+    uint32_t serial = 0;
+    bool waiting = false;
+};
+static std::map<std::pair<uint16_t, uint32_t>, ObjProp> g_objs; // (sender slot, its object's id)
+struct Sent {
+    net::Vec3 pos{};
+    double at = 0;
+};
+static std::map<uint32_t, Sent> g_obj_last; // host: an object's last sent place (its velocity)
+static double g_next_vehicles, g_next_buildings;
+static uint64_t g_objs_sent, g_obj_msgs, g_objs_got, g_props_made, g_props_gone;
+constexpr float kObjRadius = 250.f;
+constexpr size_t kMaxObjProps = 150;
+constexpr double kVehicleTimeout = 3.0, kBuildingTimeout = 12.0;
+
+static bool our_object_prop(void* obj)
+{
+    for (auto& [k, o] : g_objs)
+        if (o.u == obj)
+            return true;
+    return false;
+}
+
+static void objs_clear()
+{
+    for (auto& [k, o] : g_objs)
+        prop_destroy(o.u, o.serial);
+    g_objs.clear();
+}
+
+static void on_visit_objects(net::Reader& r)
+{
+    const uint16_t slot = r.u16();
+    const uint64_t owner = r.u64();
+    const uint8_t n = r.u8();
+    const double now = H->time_seconds();
+    for (uint8_t i = 0; i < n && r.ok(); i++) {
+        const uint32_t id = r.u32();
+        uint32_t key[3];
+        for (auto& k : key)
+            k = r.u32();
+        net::Vec3 p, v;
+        net::Quat q;
+        p.x = r.f32(), p.y = r.f32(), p.z = r.f32();
+        q.x = r.f32(), q.y = r.f32(), q.z = r.f32(), q.w = r.f32();
+        v.x = r.f32(), v.y = r.f32(), v.z = r.f32();
+        const uint8_t kind = r.u8();
+        if (!r.ok() || !g_stream || !std::isfinite(p.x + p.y + p.z + q.x + q.y + q.z + q.w + v.x + v.y + v.z))
+            return;
+        ObjProp& o = g_objs[{slot, id}];
+        if (o.u && memcmp(o.key, key, sizeof key)) { // another model at that id: made again
+            prop_destroy(o.u, o.serial);
+            o.u = nullptr;
+        }
+        o.owner = owner;
+        memcpy(o.key, key, sizeof key);
+        o.kind = kind, o.pos = p, o.vel = v, o.rot = q, o.seen = now;
+        g_objs_got++;
+    }
+}
+
+// host of a Civ era: its objects near the other eras' players, to them
+static void objects_send(double now)
+{
+    const bool vehicles = now >= g_next_vehicles, buildings = now >= g_next_buildings;
+    if (!vehicles && !buildings)
+        return;
+    if (vehicles)
+        g_next_vehicles = now + net::galaxy::kVisitEveryMs / 1000.0;
+    if (buildings)
+        g_next_buildings = now + 4.0;
+    struct U {
+        bool vehicles, buildings;
+        double now;
+        std::vector<net::Vec3> close_to;
+        net::Writer w;
+        uint8_t n = 0;
+        size_t sent = 0;
+    } u{vehicles, buildings, now, {}};
+    for (auto& [s, v] : g_visitors)
+        u.close_to.push_back(v.pos);
+    if (u.close_to.empty())
+        return;
+    auto flush = [](U& u) {
+        if (!u.n)
+            return;
+        net::Writer m;
+        m.u8(u.n);
+        m.data.insert(m.data.end(), u.w.data.begin(), u.w.data.end());
+        if (galaxy::send_message(net::galaxy::VISITOBJ, m))
+            g_obj_msgs++;
+        u.w = net::Writer{};
+        u.n = 0;
+    };
+    civ::for_each_visit_object(
+        [](void* o, const uint32_t key[3], bool vehicle, void* up) {
+            auto& u = *(U*)up;
+            if ((vehicle && !u.vehicles) || (!vehicle && !u.buildings) || u.sent >= 2 * 24)
+                return;
+            net::Vec3 p;
+            if (!game::object_position(o, p))
+                return;
+            bool close = false;
+            for (auto& v : u.close_to)
+                close = close || net::dist(v, p) <= kObjRadius;
+            if (!close)
+                return;
+            void* sp = game::cast(o, 0x1186577);
+            const float* q = sp ? (const float*)((uint8_t*)sp + 0x10) : nullptr; // cSpatialObject::mOrientation
+            const uint32_t id = game::object_serial(o);
+            net::Vec3 vel{};
+            Sent& last = g_obj_last[id];
+            const double dt = u.now - last.at;
+            if (vehicle && last.at > 0 && dt > 0.1 && dt < 2.0)
+                vel = {(float)((p.x - last.pos.x) / dt), (float)((p.y - last.pos.y) / dt), (float)((p.z - last.pos.z) / dt)};
+            last = {p, u.now};
+            u.w.u32(id);
+            for (int i = 0; i < 3; i++)
+                u.w.u32(key[i]);
+            u.w.f32(p.x), u.w.f32(p.y), u.w.f32(p.z);
+            u.w.f32(q ? q[0] : 0.f), u.w.f32(q ? q[1] : 0.f), u.w.f32(q ? q[2] : 0.f), u.w.f32(q ? q[3] : 1.f);
+            u.w.f32(vel.x), u.w.f32(vel.y), u.w.f32(vel.z);
+            u.w.u8(vehicle ? net::galaxy::kVisitVehicle : net::galaxy::kVisitBuilding);
+            galaxy_crt::put(key[0], key[1], key[2]); // its design, for games that do not have it
+            u.n++;
+            u.sent++;
+            g_objs_sent++;
+            if (u.n >= 24) {
+                net::Writer m;
+                m.u8(u.n);
+                m.data.insert(m.data.end(), u.w.data.begin(), u.w.data.end());
+                if (galaxy::send_message(net::galaxy::VISITOBJ, m))
+                    g_obj_msgs++;
+                u.w = net::Writer{};
+                u.n = 0;
+            }
+        },
+        &u);
+    flush(u);
+}
+
+// a Creature or Tribe game: each object as a prop on this game's ground
+static void objects_show(double now)
+{
+    for (auto it = g_objs.begin(); it != g_objs.end();) {
+        ObjProp& o = it->second;
+        const double age = now - o.seen;
+        if (age > (o.kind == net::galaxy::kVisitVehicle ? kVehicleTimeout : kBuildingTimeout)) {
+            prop_destroy(o.u, o.serial);
+            g_props_gone++;
+            it = g_objs.erase(it);
+            continue;
+        }
+        ++it;
+        if (o.u && (!game::object_alive(o.u) || game::object_serial(o.u) != o.serial))
+            o.u = nullptr; // (gone with a load)
+        if (!o.u) {
+            uint32_t lk[3];
+            size_t live = 0;
+            for (auto& [k, x] : g_objs)
+                live += x.u != nullptr;
+            if (live >= kMaxObjProps || !galaxy_crt::local_key(o.owner, o.key, lk)) {
+                o.waiting = true;
+                continue;
+            }
+            creations::Model m = creations::ensure_model({lk[0], lk[1], lk[2]},
+                                                         o.kind == net::galaxy::kVisitVehicle ? creations::kMkVehicle
+                                                                                              : creations::kMkBuilding);
+            if (m.key.instance)
+                lk[0] = m.key.instance, lk[1] = m.key.type, lk[2] = m.key.group;
+            if (!baked_or_ask(lk)) { // (made once its model is baked)
+                o.waiting = true;
+                continue;
+            }
+            o.u = prop_make(lk);
+            if (!o.u)
+                continue;
+            o.serial = game::object_serial(o.u);
+            o.waiting = false;
+            g_props_made++;
+        }
+        const float t = (float)std::min(age, 1.0);
+        const net::Vec3 at{o.pos.x + o.vel.x * t, o.pos.y + o.vel.y * t, o.pos.z + o.vel.z * t};
+        const net::Vec3 up = norm(at);
+        const float g = game::ground_radius(net::Vec3{up.x * 600, up.y * 600, up.z * 600});
+        place(o.u, {up.x * g, up.y * g, up.z * g}, o.rot);
+    }
+}
+
 std::string stream_status()
 {
     char b[300];
@@ -433,6 +759,27 @@ std::string stream_status()
              (unsigned long long)g_visits_got, (unsigned)g_visitors.size(), (unsigned long long)g_shown,
              (unsigned long long)g_no_species, (unsigned long long)g_gone);
     std::string out = b;
+    {
+        size_t live = 0, waiting = 0;
+        for (auto& [k, o] : g_objs)
+            live += o.u != nullptr, waiting += o.waiting;
+        snprintf(b, sizeof b, "  objects (BUG-9290): sent %llu in %llu messages; got %llu, now %u (props %u, waiting %u), made %llu, gone %llu, bakes asked %llu\n",
+                 (unsigned long long)g_objs_sent, (unsigned long long)g_obj_msgs, (unsigned long long)g_objs_got,
+                 (unsigned)g_objs.size(), (unsigned)live, (unsigned)waiting, (unsigned long long)g_props_made,
+                 (unsigned long long)g_props_gone, (unsigned long long)g_bakes_asked);
+        out += b;
+        int listed = 0;
+        for (auto& [k, o] : g_objs) {
+            if (listed++ >= 12)
+                break;
+            net::Vec3 at{};
+            const bool alive = o.u && game::object_alive(o.u) && game::object_position(o.u, at);
+            snprintf(b, sizeof b, "    %s %08X/%08X sent (%.0f %.0f %.0f) prop %s at (%.0f %.0f %.0f)\n",
+                     o.kind == net::galaxy::kVisitVehicle ? "vehicle" : "building", o.key[0], o.key[1], o.pos.x, o.pos.y,
+                     o.pos.z, alive ? "alive" : "none", at.x, at.y, at.z);
+            out += b;
+        }
+    }
     for (auto& [s, v] : g_visitors) {
         net::Vec3 at{};
         const bool alive = visitor_alive(v);

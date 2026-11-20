@@ -2991,11 +2991,12 @@ static void alias_restore()
     g_alias.clear();
 }
 
-static void apply_own_species(const std::vector<uint8_t>& data)
+// returns the instance its records are registered under here (0: not registered)
+static uint32_t apply_own_species(const std::vector<uint8_t>& data)
 {
     Bundle b;
     if (!unpack(data, b) || b.recs.empty() || !(is_crt(b.key) || is_cll(b.key)) || !find_paths())
-        return;
+        return 0;
     const bool cell = is_cll(b.key); // BUG-9111: a Lineages cell of the host's pool
     unsigned miss = ensure_content(b.recs, cell ? kMkCell : kMkCreature, "the host's own creation " + trace::hex(b.key.instance));
     if (miss) { // BUG-0452: not registered, the world is not loaded
@@ -3008,7 +3009,7 @@ static void apply_own_species(const std::vector<uint8_t>& data)
         H->log(M, SK_WARN, "creations: the host's own creation %08X '%s' of its world has %u part(s) this "
                "game does not have: not registered, the world cannot be loaded here (BUG-0452)", b.key.instance,
                name.c_str(), miss);
-        return;
+        return 0;
     }
     g_world_missing.erase(b.key.instance);
     uint32_t h = 0x811C9DC5;
@@ -3018,7 +3019,7 @@ static void apply_own_species(const std::vector<uint8_t>& data)
     uint32_t ours = 0x7D000000u | (h & 0x00FFFFFFu);
     auto it = g_remap.find(b.key.instance);
     if (it != g_remap.end() && it->second == ours)
-        return;
+        return ours;
     std::vector<dbpf::Record> recs = b.recs;
     for (auto& r : recs) {
         if (r.key.instance != b.key.instance)
@@ -3034,7 +3035,7 @@ static void apply_own_species(const std::vector<uint8_t>& data)
     std::wstring path = g_dir + L"\\own_species_" + std::to_wstring(ours) + L".package";
     if (!package_for(path, recs, kPrioWorld)) {
         g_last_error = "cannot write a species package";
-        return;
+        return 0;
     }
     // a guest that has nothing under the host's key gets the host's records there too (as for an
     // unknown species, apply_species): whatever still names the species by that key finds it
@@ -3049,7 +3050,7 @@ static void apply_own_species(const std::vector<uint8_t>& data)
     species_card(b.key.instance); // BUG-9188 (when its picture came first)
     if (cell) {
         H->log(M, SK_INFO, "creations: the host's Lineages cell %08X is %08X here", b.key.instance, ours);
-        return;
+        return ours;
     }
     // the species profile now (the game keeps profiles for the whole process): the first proxy of
     // it does not wait for its creaturedata
@@ -3060,27 +3061,45 @@ static void apply_own_species(const std::vector<uint8_t>& data)
             dbpf::metadata_names(r.data, author, name);
     H->log(M, SK_INFO, "creations: the host's own creation %08X '%s' of its world is %08X here%s", b.key.instance,
            name.c_str(), ours, prof ? "" : " (no species profile yet)");
+    return ours;
 }
 
-// ---- BUG-9287: a creature species for the galaxy's creation store (galaxy_crt.cpp) ----
-// the same bundle as host_species_out sends a guest (its records and creaturedata), and its install there
-bool species_bundle(const Key& k, std::vector<uint8_t>& out)
+// ---- BUG-9287 / BUG-9290: a creation for the galaxy's creation store (galaxy_crt.cpp) ----
+// the same bundle as host_species_out / serve_design send a guest (its records; a creature's creaturedata too), and its
+// install as a guest installs a host's own creature or design: under a key of ours from its content
+static uint32_t apply_own_design(uint8_t kind, const std::vector<uint8_t>& data); // (below)
+bool creation_bundle(const Key& k, std::vector<uint8_t>& out)
 {
-    if (!is_crt(k) || !k.instance)
+    if (!k.instance)
         return false;
     Bundle b;
     b.key = k;
     if (!records_from_game(k, b.recs))
         return false;
     std::vector<dbpf::Record> cd;
-    if (records_from_game({k.instance, kCreatureData, k.group}, cd))
+    if (is_crt(k) && records_from_game({k.instance, kCreatureData, k.group}, cd))
         for (auto& r : cd)
             if (r.key.type == kCreatureData)
                 b.recs.push_back(std::move(r));
     out = pack(b);
     return !out.empty();
 }
-void species_from_bundle(const std::vector<uint8_t>& data) { apply_own_species(data); }
+Key creation_from_bundle(const std::vector<uint8_t>& data)
+{
+    Bundle b;
+    if (!unpack(data, b))
+        return {};
+    if (is_crt(b.key)) {
+        const uint32_t ours = apply_own_species(data);
+        return ours ? Key{ours, b.key.type, b.key.group} : Key{};
+    }
+    for (uint8_t kind = 0; kind < kMkKinds; kind++)
+        if (kModelInfo[kind].type == b.key.type && kModelInfo[kind].group == b.key.group) {
+            const uint32_t ours = apply_own_design(kind, data);
+            return ours ? Key{ours, b.key.type, b.key.group} : Key{};
+        }
+    return {};
+}
 
 // ---- BUG-0647: the host's own designs (civ vehicles) on a guest ----
 // The host's civilization names its vehicle designs by the keys of the host's own editor saves (My
@@ -3174,11 +3193,11 @@ static void serve_design(uint8_t guest, uint32_t inst, uint32_t kind)
 }
 
 // guest: the records of a host's own design, registered under a key of ours
-static void apply_own_design(uint8_t kind, const std::vector<uint8_t>& data)
+static uint32_t apply_own_design(uint8_t kind, const std::vector<uint8_t>& data)
 {
     Bundle b;
     if (kind >= kMkKinds || !unpack(data, b) || b.recs.empty() || !find_paths())
-        return;
+        return 0;
     auto& d = g_designs[{kind, b.key.instance}];
     if (g_design_descs_fix)
         take_part_descs(b.recs); // BUG-0725: the descriptions of the design's parts, kept for ensure_model
@@ -3198,12 +3217,13 @@ static void apply_own_design(uint8_t kind, const std::vector<uint8_t>& data)
     if (!package_for(path, recs, kPrioWorld)) {
         g_last_error = "cannot write a design package";
         d.not_own = true; // built as it is
-        return;
+        return 0;
     }
     d.ours = ours;
     g_design_in++;
     H->log(M, SK_INFO, "creations: the host's own %s design %08X is %08X here (%u records)", kModelInfo[kind].name,
            b.key.instance, ours, (unsigned)recs.size());
+    return ours;
 }
 
 std::string design_status()

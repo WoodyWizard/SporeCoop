@@ -14,5 +14,6 @@ void tick(double now);
 std::string spawn(uint32_t instance, uint32_t type, uint32_t group, bool drive, float lift = 0, int axes = 0, bool prop = true);
 std::string clear();
 std::string status();
+void overlay(int screen_w, int screen_h); // BUG-9289: the visitors' name tags (SK_EV_OVERLAY only)
 
 } // namespace era_visitors
