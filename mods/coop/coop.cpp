@@ -65,6 +65,7 @@
 #include "busy.h"
 #include "social.h"
 #include "identity.h"
+#include "party.h"
 #include "world.h"
 #include "find.h"
 #include "net/discovery.h"
@@ -1128,6 +1129,7 @@ static void frame_stage_ticks(double now)
     host_away_tick(now);
     host_busy_tick(now); // C3 (BUG-1142): the host tells its pause; a guest's game waits for it
     identity::tick(now); // BUG-9258 (Lineages): a guest sends its identity after each join, the host its table
+    party::tick(now);    // BUG-9260 (Lineages): the host seats the players of this planet's campaign
     dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
     tribe::tick(now);
@@ -2404,6 +2406,7 @@ static void init_world_share()
     });
     shared::init(H, M);
     identity::init(H, M, &g_sess); // BUG-9258 (Lineages)
+    party::init(H, M, &g_sess);    // BUG-9260 (Lineages)
     shared::set_feed([](const std::string& t) { feed(t); }); // BUG-0696
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);

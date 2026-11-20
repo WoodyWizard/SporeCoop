@@ -3,6 +3,7 @@
 // places the registrations had (the same order: SporeKit keeps the commands by name, the module inits between them stay
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
 #include "identity.h"
+#include "party.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1196,6 +1197,12 @@ void register_commands_core()
     H->command_add(M, "coop.identity", "coop.identity - the persistent player identities (BUG-9258): this profile's, and the players' the host knows",
                    [](void*, int, const char* const*, SkOut* out) {
                        SAY("%s", identity::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.party", "coop.party - the host: this planet's party, one seat per player who played it (BUG-9260)",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s", party::status().c_str());
                        return 0;
                    },
                    nullptr, MT);
