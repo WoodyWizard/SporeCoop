@@ -1003,6 +1003,17 @@ int c_dna(void*, int argc, const char* const* argv, SkOut* out)
         SAY("dna=%.1f bar=%.1f", game::dna(), game::evolution_bar());
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "brain")) { // tests (BUG-9278): the brain level, read or set with the avatar's own
+        void* av = game::avatar();                // setter (vt 0xDC, 0xC02AB0 writes [0x169E370]; vt 0xD8 reads it)
+        if (!av) {
+            SAY("no avatar");
+            return 1;
+        }
+        if (argc > 2)
+            skg::vcall<void>(av, 0xDC / 4, atoi(argv[2]));
+        SAY("brain level %d", skg::vcall<int>(av, 0xD8 / 4));
+        return 0;
+    }
     SAY("dna=%.1f", game::dna()); // (the plain form: tests parse "dna=<n>" alone)
     return 0;
 }

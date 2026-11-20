@@ -5393,3 +5393,21 @@ galaxy's saves must not freeze the game).
   (SkHost::run_outside_frame), as the game's own leave-the-planet path sends it, with a static token object: the save
   is written at once (one 0.7 s frame), no box, no pause, and the next host loaded it.
 
+
+## Reaching the Tribe offer in a test game: what does not work (2026-11-19, feat/lineages-alpha)
+<a id="creature-tribe-ready-test"></a>
+
+BUG-9278's test (TITAN QA copy, Samuth). `coop.dna brain [n]` (new): the brain level through the avatar's own getter
+and setter (vt 0xD8 / vt 0xDC).
+
+* ✔ The QA Creature saves on Samuth are at brain level 4 already (`coop.dna brain` 4; max health 100 + the species').
+* ~ `coop.dna add 3000` filled the HUD's bar (4163 earned) with no brain-upgrade caption; History's bottom bar stayed
+  half way through the Creature stage and its check closed History (no stage-end editor).
+* ~ `coop.vote mate` (the creature game's message 0x4471C60 with +0xDA set) at level 4 with the bar full: the editor
+  opened; after "done" the game ran the baby game (the avatar a hatchling, 50/50 health, then grown), no migration
+  (no CRG_SpeciesMigrate), no Tribe start. It is the egg scene's evolution (#creature-cocoon notes: 0xE45760 posts
+  0x4471C60 then 0x445F729 at the end of the egg scene), not History's next-stage path.
+* ? Still to find: what History's check needs to start the stage end (the lab's 0.7.13 run got "Your brain is fully
+  grown" from `coop.dna add 3000` and then History's check opened editor 465C50BA with tag 0x64AA168). Candidates: the
+  migration state of #creature-migration notes (0x514A219) after an editor with the total above the last threshold,
+  or a save that saw the fully-grown caption.

@@ -1438,3 +1438,14 @@ keeps its species and gets its village, decisions 4, 5 and 14).
   Next: a Creature test save at the last brain level (the campaign fixture's way) to run the whole crossing.
 * Only the Creature stage's end is routed so far; Cell -> Creature and Tribe -> Civ ends keep today's session-wide
   behaviour on a galaxy planet.
+* ✔ Runtime, the host's party (TITAN 2026-11-19, QA 8 hosting Samuth (Creature) with brain level 4 and a full bar, QA 9
+  another party as its guest): QA 8's stage-end request (`coop.vote mate`) moved it into "Samuth~1|Creature" (hosted
+  3 s later, no reload); QA 9 took Samuth (Creature) over in place (32 of its copies of the creatures went on as its
+  own, no reload) and swapped in its own party's relations (BUG-9270) and bar (BUG-9277: "this planet's bar was
+  another party's (60): this host's party plays its own (60)"), the first live check of that swap.
+* ~ Still not seen: the Tribe start inside a crossing. `coop.vote mate` runs the egg scene's message (0x4471C60, the
+  mating evolution): after "done" the game ran an evolution (the baby game, a hatchling), not the Tribe start, and no
+  migration followed; History's check only closed History (its Creature bar half full while the HUD's was full). The
+  game's "ready to form a tribe" state is still to be reached in a test game (docs/re/creature.md#creature-tribe-ready-test).
+* ~ Seen once: the crossing's host logged "sending the world to Pandize 2" and "player 1 left" 40 s after the split
+  (the old session's partner still in its list of remotes when the editor returned); the partner never joined it.
