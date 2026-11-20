@@ -432,7 +432,7 @@ void host_command(uint8_t from, net::Reader& r);
 int host_index_of_city(void* c);
 bool is_guest();
 bool is_host();
-bool found_next_site(); // BUG-9274
+bool found_next_site(bool instant = false); // BUG-9274
 void kill_local(void* v);
 bool local_play();
 void* local_vehicle(uint16_t id);

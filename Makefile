@@ -187,6 +187,9 @@ unit-cpp: sanitizer-probe
 	@# BUG-9268: every player's own village (tribe_seats.h) and the founders' roster (founders.h)
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/tribe_seats_tests tests/tribe_seats_tests.cpp
 	$(B)/host/tribe_seats_tests
+	@# BUG-9274: every player's own nation in Civilization (civ_seats.h)
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/civ_seats_tests tests/civ_seats_tests.cpp
+	$(B)/host/civ_seats_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/wire_tests tests/wire_tests.cpp
 	$(B)/host/wire_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp

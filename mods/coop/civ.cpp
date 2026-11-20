@@ -865,10 +865,10 @@ static bool SK_THISCALL h_SpawnNextCity(void* ex, int instant, void* who)
 }
 
 // BUG-9274 (civ_nations.cpp): the host founds the next free site now (a player's capital); the guests found it too
-bool found_next_site()
+bool found_next_site(bool instant)
 {
     void* ex = a_ExpansionGet ? skg::cdecl_call<void*>(a_ExpansionGet) : nullptr;
-    return ex && h_SpawnNextCity(ex, 0, nullptr);
+    return ex && h_SpawnNextCity(ex, instant ? 1 : 0, nullptr);
 }
 
 // BUG-0494: roads between cities (noun 0x2B8A4E7 "inter_city_road") are the ground objects of trade
@@ -1095,6 +1095,8 @@ int SK_THISCALL h_Capture(void* city, uint32_t pol, int type, int a3, int a4, in
                 owner = credit;
             else
                 g_n.credit_by[3]++;
+            if (nations::nation_of_player(owner)) // BUG-9274: a player with a nation of its own takes cities for it
+                owner = C.sess->my_id();          // (a city the host's nation took is the host's)
             g_city_owner[city] = owner;
             g_city_captured.insert(city); // BUG-0875 (used with civ.capture_keeps)
             g_capture_by[city] = {owner, H->time_seconds()};
@@ -1957,6 +1959,8 @@ void tick(double now)
     veh_hunt_tick();
     if (g_ok && C.sess && C.sess->connected())
         space_tick(now); // BUG-0766 / BUG-0884
+    if (g_ok && !is_guest() && !(C.sess && C.sess->connected()) && game::mode_id() == modes::kCiv)
+        nations::host_tick(now); // BUG-9274: the host playing alone keeps the partners' nations waiting
     if (!active())
         return;
     prune_gone();

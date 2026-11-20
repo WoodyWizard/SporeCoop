@@ -64,6 +64,10 @@ static thread_local void* g_ai_nation;     // the nation whose AI runs its playe
 
 static bool host() { return is_host(); }
 static bool guest() { return is_guest(); }
+// the nations live in the host's game also while it plays alone (no session): a partner's nation waits for its player,
+// it does not turn into an NPC nation (its AI, its money)
+static bool in_civ() { return g_ok && game::mode_id() == modes::kCiv; }
+static bool authority() { return in_civ() && !guest(); }
 static void* nation_by(uint32_t pol) { return pol ? thiscall<void*>(a_CivByPol, nm(), pol) : nullptr; }
 static uint32_t home_pol()
 {
@@ -112,7 +116,7 @@ static void refresh()
 
 int seat_of_faction(uint32_t pol)
 {
-    if (!g_on || !pol || !host())
+    if (!g_on || !pol || guest())
         return -1;
     const int s = g_roster.seat_of_faction(pol);
     return s >= 1 && g_nation[s] ? s : -1;
@@ -122,7 +126,7 @@ uint8_t owner_of_faction(uint32_t pol)
 {
     if (!g_on || !pol)
         return 0xFF;
-    if (host()) {
+    if (!guest()) {
         const int s = seat_of_faction(pol);
         return s >= 1 ? civ_seats::seat_owner(s, g_seat_player[s]) : 0xFF;
     }
@@ -137,7 +141,7 @@ bool team_faction(uint32_t pol)
         return false;
     if (pol == home_pol())
         return true;
-    if (host())
+    if (!guest())
         return seat_of_faction(pol) >= 1;
     return std::find(g_team_pols.begin(), g_team_pols.end(), pol) != g_team_pols.end();
 }
@@ -145,7 +149,7 @@ bool team_faction(uint32_t pol)
 // a partner's nation (not the player civ): its money is its own, its AI the player's
 static bool partner_nation(void* country)
 {
-    if (!g_on || !country || !active() || country == player_civ())
+    if (!g_on || !country || !in_civ() || country == player_civ())
         return false;
     return team_faction(pol_of(country));
 }
@@ -189,7 +193,7 @@ uint8_t wire_owner(void* city, uint8_t owner)
 
 uint32_t own_faction() { return g_on && guest() ? g_own : 0; }
 
-bool hold_foundings() { return g_on && host() && g_found.phase == Phase::Requested && !g_spawning; }
+bool hold_foundings() { return g_on && !guest() && g_found.phase == Phase::Requested && !g_spawning; }
 
 void charge_build(void* city, float paid)
 {
@@ -226,12 +230,14 @@ void* cursor_list()
     if (!g_on || !g_native || !guest() || !g_own || local_play() || !active() || world::load_queued())
         return nullptr;
     void* n = nation_by(g_own);
+    if (n)
+        g_cursor_lists++;
     return n ? (uint8_t*)n + kSelectable : nullptr;
 }
 
 bool friendly(uint32_t target, uint32_t attacker)
 {
-    if (!g_on || !active())
+    if (!g_on || !in_civ())
         return false;
     if (!civ_seats::friendly_fire(team_faction(target), team_faction(attacker), target, attacker))
         return false;
@@ -271,7 +277,7 @@ static std::vector<civ_seats::City> city_list()
 
 static bool can_work()
 {
-    return g_on && active() && host() && !world::load_queued() && !world::save_busy() && !world::save_pending() &&
+    return g_on && authority() && !world::load_queued() && !world::save_busy() && !world::save_pending() &&
            !world::time_paused() && !world::cinematic_playing();
 }
 
@@ -440,7 +446,7 @@ static void found_task(void* ctx)
 // ---- the alliance (outside the frame: the relation change can reach the UI) ----
 static void ally_task(void* ctx)
 {
-    if ((uint64_t)(uintptr_t)ctx != g_epoch || !g_on || !active() || !host() || world::load_queued())
+    if ((uint64_t)(uintptr_t)ctx != g_epoch || !g_on || !authority() || world::load_queued())
         return;
     refresh();
     void* mgr = a_RelGet ? skg::cdecl_call<void*>(a_RelGet) : nullptr;
@@ -518,10 +524,11 @@ static void campaign_task(void* ctx)
 
 void host_tick(double now)
 {
-    if (!g_on || !host())
+    if (!g_on || !authority())
         return;
     roster_load();
     refresh();
+    if (host()) {
     // the owners of the partner nations' cities and vehicles (every host tick: a player joins, leaves, comes back)
     for (void* c : g_host_cities) {
         const int s = seat_of_faction(pol_of(c));
@@ -539,6 +546,7 @@ void host_tick(double now)
             if (g_nation[s] && g_seat_player[s] < civ_seats::kAwaySeat)
                 civ_wallet::nation_sync(g_seat_player[s], F<float>(g_nation[s], kWealth));
     }
+    } // host()
     if (world::load_queued() || world::cinematic_playing() || world::time_paused())
         return;
     if (g_any && now >= g_ally_next) {
@@ -641,7 +649,7 @@ static void* SK_THISCALL h_PlayerCiv(void* mgr)
 }
 static void SK_THISCALL h_CivAI(void* country)
 {
-    if (g_on && host() && g_found.phase == Phase::Requested && active() && country != player_civ() &&
+    if (g_on && authority() && g_found.phase == Phase::Requested && country != player_civ() &&
         !g_roster.contains_faction(pol_of(country))) {
         g_ai_held++;
         return;
@@ -687,9 +695,9 @@ static Progress_t o_Progress;
 static float SK_THISCALL h_Progress(void* strategy)
 {
     const float own = o_Progress(strategy);
-    if ((uintptr_t)__builtin_return_address(0) != a_HudRet || !g_on || !g_team || !active() || !a_CityTotal)
+    if ((uintptr_t)__builtin_return_address(0) != a_HudRet || !g_on || !g_team || !in_civ() || !a_CityTotal)
         return own;
-    if (host() ? !g_any : g_team_pols.size() < 2)
+    if (!guest() ? !g_any : g_team_pols.size() < 2)
         return own;
     const uint32_t hp = home_pol();
     size_t others = 0;
@@ -741,7 +749,7 @@ std::string status()
              g_won, g_owned_answers, g_cursor_lists, g_found.phase == Phase::Requested ? ("seat " + std::to_string(g_found.seat)).c_str() : "-",
              g_last.c_str());
     std::string out = b;
-    if (!active())
+    if (!in_civ())
         return out;
     void* ex = skg::cdecl_call<void*>(a_ExpansionGet);
     size_t live = 0;
@@ -749,7 +757,7 @@ std::string status()
     snprintf(b, sizeof b, "  cities %zu, the team's %zu, planet total %d, sites %d left %d\n", live, team,
              a_CityTotal ? skg::cdecl_call<int>(a_CityTotal) : -1, ex ? F<int>(ex, kExSites) : -1, ex ? F<int>(ex, kExSitesLeft) : -1);
     out += b;
-    if (host()) {
+    if (!guest()) {
         out += "  roster: " + founders::describe(g_roster) + "\n";
         for (size_t s = 0; s < founders::kMaxSeats; ++s) {
             void* n = g_nation[s];
@@ -780,16 +788,32 @@ std::string status()
 
 std::string debug(const std::vector<std::string>& a)
 {
-    if (a.size() >= 2 && a[1] == "found" && host()) { // tests: the founding pass now
+    if (a.size() >= 2 && a[1] == "found" && authority()) { // tests: the founding pass now
         if (g_queued)
             return "busy\n";
         g_queued = true;
         H->run_outside_frame(found_task, (void*)(uintptr_t)g_epoch);
         return "queued\n";
     }
-    if (a.size() >= 2 && a[1] == "ally" && host()) {
+    if (a.size() >= 2 && a[1] == "ally" && authority()) {
         H->run_outside_frame(ally_task, (void*)(uintptr_t)g_epoch);
         return "queued\n";
+    }
+    if (a.size() >= 2 && a[1] == "spawn" && authority()) { // tests: the next free site gets an NPC city now (instantly)
+        if (!in_civ())
+            return "not in Civ\n";
+        return found_next_site(true) ? "founded\n" : "no city founded\n";
+    }
+    if (a.size() >= 4 && a[1] == "capture" && authority()) { // tests: capture <host city index> <seat> [type]: that seat's nation takes it
+        const size_t ci = (size_t)atoi(a[2].c_str());
+        const int seat = atoi(a[3].c_str());
+        void* city = ci < g_host_cities.size() ? g_host_cities[ci] : nullptr;
+        void* n = seat >= 0 && seat < (int)founders::kMaxSeats ? g_nation[seat] : nullptr;
+        if (!city || !n)
+            return "no such city / nation\n";
+        // (pol, type, instant 1, no nuked caption, a5 1: the instant path of a surrender, docs/re/civ.md#civ-stage-end)
+        const int r = h_Capture(city, pol_of(n), a.size() > 4 ? atoi(a[4].c_str()) : 0, 1, 0, 1);
+        return "capture -> " + std::to_string(r) + ", the city's nation now " + std::to_string(seat_of_faction(pol_of(city))) + "\n";
     }
     if (a.size() >= 2 && a[1] == "citizens") { // the live citizens by their city's nation and species (Lineages)
         struct Census {
@@ -808,14 +832,12 @@ std::string debug(const std::vector<std::string>& a)
         std::string out;
         char b[120];
         for (auto& [k, n] : census.groups) {
-            snprintf(b, sizeof b, "citizens city_pol=%08X species=%08X count=%u
-", k.first, k.second, n);
+            snprintf(b, sizeof b, "citizens city_pol=%08X species=%08X count=%u\n", k.first, k.second, n);
             out += b;
         }
-        return out.empty() ? "no live citizen
-" : out;
+        return out.empty() ? "no live citizen\n" : out;
     }
-    if (a.size() >= 2 && a[1] == "relation" && host()) { // the relation between the host's nation and each partner's
+    if (a.size() >= 2 && a[1] == "relation" && authority()) { // the relation between the host's nation and each partner's
         void* mgr = a_RelGet ? skg::cdecl_call<void*>(a_RelGet) : nullptr;
         std::string out;
         char b[160];
