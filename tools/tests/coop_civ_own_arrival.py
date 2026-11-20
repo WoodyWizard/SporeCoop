@@ -21,10 +21,11 @@ Checked:
   3. the guest's line names both designs on both games (one shared key 0x7B......); the host's culture set is what it
      was when the host reached Civ (its City Hall key in cPlayer, the civilization's species, the world's player
      species too); the guest's copy keeps every entry it had;
-  4. the guest gets a city (it buys the NPC city nearest the capital; the cities still to come are spawned first when
-     none stands): on both games its City Hall is drawn from the guest's new City Hall (WP-C2's bem hash of the model
-     key, `coop.creations modelhash`), the capital's is not; within 30 s its citizens are of the guest's Civ line
-     (WP-C1, `coop.civ citizens`);
+  4. the guest gets a city (it buys the NPC city nearest the capital whose land design is the guest's vehicle editor's,
+     else the nearest given that specialty first, BUG-1343; the cities still to come are spawned first when none
+     stands): on both games its City Hall is drawn from the guest's new City Hall (WP-C2's bem hash of the model key,
+     `coop.creations modelhash`), the capital's is not; within 30 s its citizens are of the guest's Civ line (WP-C1,
+     `coop.civ citizens`; every game's camera on the city until its citizen manager runs it, BUG-1343);
   5. the guest buys a land vehicle (its city menu's land button; `coop.civ buy` when not shown) in the city whose land
      design is the one its vehicle editor made: on both games it shows the guest's new vehicle design;
   6. key frames: the guest in its editor and the host's Civ world at the same moment; the guest's city (its City Hall,
@@ -50,7 +51,7 @@ from coop_evo_screens import BLACK_LIMIT, Screens
 from coop_tribe_civ import ADVANCE, CAPTION_OK, CARD_OK, busy, finish_editor, vote_active, where
 from coop_ui import Ui
 from harness import mode, waiter
-from play_civ import BTN_LAND, Player, answer_specialty, frame_city
+from play_civ import BTN_LAND, HUD_BOTTOM, W, Player, answer_specialty, frame_city
 from twoinst import Checks, Console, keyframe, shot, start
 
 SWITCH = 'core.own_civ_arrival'
@@ -187,6 +188,56 @@ def guest_editors(ck, host, guest, scr):
     return t_arr, all(done)
 
 
+def land_design(con, ci, purpose=None):
+    """the land vehicle design id a purchase in host city `ci` makes (its specialty's; or that purpose's)"""
+    m = re.search(r'did (\w+) ', con.call(f'coop.civ owndesign did {ci} 0' + ('' if purpose is None else f' {purpose}'))['out'])
+    return int(m.group(1), 16) if m else None
+
+
+def city_ptrs(con):
+    """{host city index: this game's cCity pointer} (`coop.civ` city lines)"""
+    return {int(i): int(p, 16) for i, p in re.findall(r'^city (-?\d+) (?:0x)?([0-9A-Fa-f]{6,8}) pol=', con.call('coop.civ')['out'], re.M)}
+
+
+def give_specialty(ck, host, guest, ci, capi, land_did):
+    """BUG-1343: no NPC city has the specialty whose land design the guest's vehicle editor made (the capital's: the
+    end of Tribe opens that editor). The NPC cities' specialties are the planet's, random per run (lab 20261120-041304,
+    20261119-193856, -130049: none military near the capital; the guest bought a religious one, 9AD7D4AA, and could buy
+    its vehicle nowhere: the capital is the host's). Step 5 needs a city where the guest's design applies, so city `ci`
+    gets that specialty on both games with the game's own setter (cCity_SetSpecialty 0xBE7520, +0x540) before the guest
+    buys it; the purchase's specialty box then keeps it. What step 5 checks (the guest's new vehicle shows its own
+    design on both games) is unchanged."""
+    spec = next((p for p in (0, 1, 2) if land_design(host, capi, p) == land_did), None)
+    if not ck(spec is not None, f'the specialty whose land design is the guest\'s vehicle editor {land_did:08X} ({spec})'):
+        return
+    for con, who in ((host, 'host'), (guest, 'guest')):
+        ptr = city_ptrs(con).get(ci)
+        out = con.call(f'call SporeCoop::cCity_SetSpecialty thiscall 0x{ptr:X} {spec} 1')['out'].strip() if ptr else 'no city'
+        print(f'  {who}: city {ci} given specialty {spec} (no NPC city had it): {out[:60]}', flush=True)
+    ck(land_design(host, ci) == land_did, f'city {ci} now buys land vehicles of design {land_did:08X} ({land_design(host, ci) or 0:08X})')
+
+
+def camera_on_city(players, ci, pos, tries=3):
+    """BUG-1343: a game makes the citizens of the city near its camera only (the citizen manager's city, mgr +0xAF0,
+    docs/re/civ.md#civ-own-species). frame_city's look_at puts the city anywhere in a wide box: in lab 20261120-041304 the
+    guest's camera showed city 1 at the horizon, its manager ran another city and the guest's game had none of city 1's
+    citizens for 31 s. Each game's camera is panned until the point is in the middle of the screen and its manager runs
+    that city (`coop.civ citizens`: `mgr city=`); {role: the manager's city at the end}"""
+    def mgr(con):
+        m = re.search(r'^mgr city=(-?\d+)', con.call('coop.civ citizens')['out'] or '', re.M)
+        return int(m.group(1)) if m else None
+    got = {}
+    for role, con in players.items():
+        for _ in range(tries):
+            if mgr(con) == ci:
+                break
+            Player(role, con, 0, random.Random(1), []).look_at(pos, box=(W // 2 - 220, 320, W // 2 + 220, HUD_BOTTOM - 300))
+            wait(lambda: mgr(con) == ci, 8)
+        got[role] = mgr(con)
+    print(f'  the citizen managers\' city (want {ci}): {got}', flush=True)
+    return got
+
+
 def guest_city(ck, host, guest, land_did=0):
     """4.: the NPC city nearest the capital bought for the guest (the cities still to come spawned first); land_did:
     the nearest one whose land vehicles are of that design id when there is one (BUG-1323, lab 20261119-130049: the
@@ -208,12 +259,14 @@ def guest_city(ck, host, guest, land_did=0):
     npc.sort(key=lambda i: dist(hc[i]['pos'], hc[cap[0]]['pos']))
     gci = npc[0]
     if land_did:
+        found = False
         for ci in npc:
-            m = re.search(r'did (\w+) ', host.call(f'coop.civ owndesign did {ci} 0')['out'])
-            if m and int(m.group(1), 16) == land_did:
-                gci = ci
+            if land_design(host, ci) == land_did:
+                gci, found = ci, True
                 break
         print(f'  the guest\'s city: {gci} (land design {land_did:08X} wanted; nearest {npc[0]})', flush=True)
+        if not found:
+            give_specialty(ck, host, guest, gci, cap[0], land_did)
     print('  host:', host.call('coop.res add money 30000')['out'].strip(), flush=True)
     print(f'  guest buys city {gci}:', guest.call(f'coop.civ buycity {gci} 500')['out'].strip(), flush=True)
     got = wait(lambda: all((c := civ(x)[0].get(gci)) and c['player'] and c['owner'] == 1 for x in (host, guest)), 30)
@@ -302,6 +355,7 @@ def run(host, guest, ck, off_twin, scr):
         ck(got, f'{who}: the guest\'s city\'s City Hall is the guest\'s own new design ({halls(1)}, want {hall})')
         ck(hall not in halls(0) + halls(253), f'{who}: the capital\'s City Hall is the culture\'s ({halls(0) + halls(253)})')
     want = species(host)[0].get(1, 0)
+    camera_on_city(players, gci, gpos)
     seen, t = wait_city(players, gci, want, 30)
     print(f'  city {gci} citizens: {fmt(seen)} after {t:.0f} s (the guest\'s Civ line {want:08X})', flush=True)
     ck(want and all(set(v) == {want} for v in seen.values()) and all(seen.values()),
