@@ -9606,13 +9606,14 @@ BUG-0304 (GitHub #203), BUG-1278. Written without a lab run (owner rule 2026-11-
 <a id="testing-cell-slow-link"></a>
 
 * `cell_slow_link` (coop_cell_slow_link.py, SPORE_NET=lowband, BUG-1309): every 2 s for 40 s the host's live cells
-  within 20 units of the guest's cell (`coop.pool near 20 <x> <y>` on the host) against the guest's own game's cells
-  near it that mirror a host cell (`coop.pool near 22` on the guest, keyed by the host's index). Only the host cells
+  within 20 units of the guest's cell (`coop.pool nearkeys 20 <x> <y>` on the host) against the guest's own game's cells
+  near it that mirror a host cell (`coop.pool nearkeys 22` on the guest, keyed by the host's index). Only the host cells
   near the guest in the samples before and after too count (a cell the population pass made a moment ago may still be
   on its way, one the cull took may leave the guest a moment before the host's list is read). PASS: from 8 s on at least 80 % in every sample but one, median 90 %. Twin `cell_slow_link_off`
   (cell.slow_link off): the guest keeps ~100 of the host's ~400 cells (25-45 % near it), must FAIL.
-* `coop.pool near <r> [x y]`: a game's own live cells (no players' cells, no dying / dead ones) within r of a point
-  (default its own cell) as `near n=<count> ...` and a `keys` line; a guest lists only the cells that mirror a host
+* `coop.pool nearkeys <r> [x y]` (named `near` until BUG-1330, 2026-11-20: that name shadowed BUG-1246's
+  `coop.pool near <x> <y> <r>`, which evo_screens_cell_mate reads): a game's own live cells (no players' cells, no
+  dying / dead ones) within r of a point (default its own cell) as `nearkeys n=<count> ...` and a `keys` line; a guest lists only the cells that mirror a host
   cell, by the host's index. `coop.pool pace` (host): each guest's paced Cell state (rate, cuts, raises, last loss,
   the round on its way).
 * Pitfall: at level 1 the Cell screen shows only 2-15 cells, so the key frame `slow_link_cells` shows the difference

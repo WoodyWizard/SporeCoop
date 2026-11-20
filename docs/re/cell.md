@@ -2791,7 +2791,7 @@ time to 924 (`coop.pool kin` prints `box=` since this branch: the width and heig
   second (BUG-0032's rule for a round with a lost chunk): ~100 of the host's ~400 cells stayed, spread over the whole
   pool, not the nearest. The sync-check's "c: 247 missing on the guest" 7.5 s after the arrival was that, not a
   moment of the check: the guest's own game lacked them for as long as the link was full (BUG-1309).
-* ✔ Measured with `coop.pool near <r> [x y]` (the game's own live cells within r of a point, keyed by the host's index;
+* ✔ Measured with `coop.pool nearkeys <r> [x y]` (`near` until BUG-1330; the game's own live cells within r of a point, keyed by the host's index;
   a guest lists its mirrors): the twin of coop_cell_slow_link.py (cell.slow_link off) had 25-62 % of the host's cells
   within 15 units of the guest in its own game over 40 s.
 * The fix (`cell.slow_link`, cellsync_host.cpp, `cell_logic::LinkPace`): each guest's round is sorted nearest first
