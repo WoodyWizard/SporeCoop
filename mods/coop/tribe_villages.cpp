@@ -157,7 +157,7 @@ bool village_orders_ok(void* t, void* pt, uint8_t from)
 // host: the village (cTribe) of an order's target: a tribe, a hut (+0x230), a tool (+0x1F8), a citizen (+0x1014)
 static void* village_of_object(void* o)
 {
-    if (!o || !game::object_alive(o))
+    if (!o || !game::listed(o))
         return nullptr;
     const uint32_t noun = game::noun_id(o);
     return noun == kTribeNoun     ? o
@@ -213,7 +213,7 @@ static void ally_task(void*)
     void* mgr = rel_mgr();
     std::vector<uint32_t> f;
     for (void* v : g_village)
-        if (v && game::object_alive(v))
+        if (v && game::listed(v, kTribeNoun))
             f.push_back(faction_of(v));
     uint32_t n = 0;
     for (size_t i = 0; i < f.size(); ++i)
@@ -444,7 +444,7 @@ void villages_guest_tick()
         if (g_own_village || e.data.owner != me || !mirror_ok(e))
             return;
         void* t = F<void*>(e.ref.p, kOwnerTribeOff);
-        if (t && t != pt && game::object_alive(t))
+        if (t && t != pt && game::listed(t, kTribeNoun))
             g_own_village = t;
     });
 }
@@ -470,7 +470,7 @@ size_t founder_villages_in(const void* list)
     std::vector<uint32_t> factions, partner;
     for (uintptr_t at = b; at < e; at += 4) {
         void* t = *(void**)at;
-        factions.push_back(t && game::object_alive(t) ? faction_of(t) : 0);
+        factions.push_back(t && game::listed(t, kTribeNoun) ? faction_of(t) : 0);
     }
     for (size_t s = 1; s < g_village.size(); ++s)
         if (g_village[s])
