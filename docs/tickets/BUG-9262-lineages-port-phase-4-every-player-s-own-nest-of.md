@@ -47,6 +47,16 @@ Not in main. Two bugs of the Lineages code found in the port (fixed here, both s
   creature.nest_at_migration_target, creature.nest_note, creature.party_nests_known, nest.follow_home,
   creature.place_at_own_nest, wsync.own_nest_stays, creature.party_species_peace.
 
+## Fix (2026-11-20, second round)
+* Lineages BUG-9177 ported: `creature.own_player_species` (creations.cpp): in Creature the game's player species
+  (cSpeciesManager +0xA4) is the creature the avatar wears, on every game (`creations: the game's player species
+  065CBE70 -> 7CA81684` on the guest). The guest's goals, nest lookups (NestHerdFor) and its next editor follow its own
+  species.
+* Lineages BUG-9175 ported: `creature.own_family_home` (npc.cpp own_family_tick): copies of the guest's own species go
+  into its own nest herd; copies of another species leave it for their species' nest herd. And proxy_herd: a member of
+  the host's family (NF_FAMILY) goes into the avatar's herd only when the guest plays the host's species.
+* BUG-9267 (first join loads twice) and BUG-9269 (HUD portrait) fixed in the same round; BUG-9270 ticketed.
+
 ## Verification
 Windows, lane A, Creature game Boheus (made for this: a new game, Maxis Burpee), guest with its own creature
 (Guleskate 7CA81684), the same steps as coop_home_nests.py driven by hand:
@@ -65,6 +75,10 @@ Windows, lane A, Creature game Boheus (made for this: a new game, Maxis Burpee),
   migration line in the guest's log.
 * Lab: coop_home_nests.py not run on the Linux lab yet.
   no-fail-run: feature port, verified by hand on two instances (a new feature: the test fails on main, unknown commands).
+
+Second round (lane A, the final dll): s3/s4 again all PASS (nest, home, respawn, cold reload with the guest
+offline, rejoin without a second nest); the guest's family copies #22-25 are in its own nest herd (`fam=1`); the
+guest's portrait shows its own creature (BUG-9269).
 
 ## History
 - 2026-11-20: opened, ported, two Lineages bugs fixed, verified on lane A (feat/lineages-nests).

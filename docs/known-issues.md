@@ -382,16 +382,6 @@ anchor so other docs can link to it:
   cinematic) until the vote ends; the guest still sees the cinematic.
 * Reproduce: `tools/lab.py run evo_screens_switch`, key frame `01_switch_vote`.
 * Ticket: BUG-1269
-
-## Own nests: a guest's first join of a planet loads the world twice (2026-11-20, feat/lineages-nests)
-<a id="issue-own-nest-double-load"></a>
-
-* What happens: a guest that plays its own creature joins a planet where it has no nest yet: it gets the host's world
-  at once, its own nest is made a few seconds later and the world loads a second time with it. A returning guest
-  (its nest is in the save) loads once.
-* Reproduce: a Creature planet with no party file, the guest with its own creature joins; the host's log shows
-  `home nests: player 1's world share may go (the host's species, ...)` then a second `saving for the share`.
-* Ticket: BUG-9267
 ## Space: a guest's captain screen shows no item limits for the host's captain (2026-11-18, fix/w55-captain)
 <a id="issue-captain-items-guest"></a>
 
@@ -407,3 +397,11 @@ anchor so other docs can link to it:
 * Next steps: send and register that resource under the host's key (BUG-1279 lists the pitfalls).
 * Ticket: BUG-1279.
 
+
+## Own nests: the host's family copies stay in the guest's own nest herd list (2026-11-20, feat/lineages-nests)
+<a id="issue-own-nest-herd-list"></a>
+
+* What happens: on a guest's game that joined its own nest, `coop.nest herd <its home herd>` still lists the copies of
+  the host's family after they were moved to their own species' herd. No wrong behaviour seen yet.
+* Reproduce: tools/tests/coop_home_nests.py, then `coop.nest home` and `coop.nest herd <herd>` on the guest.
+* Ticket: BUG-9270

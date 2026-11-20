@@ -4896,3 +4896,11 @@ playing its own My Creations creature.
   host's family copies that were in the guest's herd before the join went along into the new herd on the guest's game
   (`coop.nest herd` on the guest: 11 members, the host's family among them). Lineages' own_family_tick (BUG-9175 there)
   moves the guest's own family copies into its nest; not ported.
+* ✔ (runtime, second round) With the game's player species following the creature played (`creature.own_player_species`,
+  Lineages BUG-9177) the guest got no migration goal, its nest copies of its own species were in its own nest herd
+  (`coop.npc list`: `herd=<home> fam=1`), and the HUD portrait (BUG-9269) showed its own creature.
+* ✔ (runtime) `CreatureGame_JoinNestHerd` on the guest carried the copies of the host's family (the avatar's old herd
+  mates) into the new nest herd's member list; Creature_SetHerd moved them out (their +0x1674) but the list kept them
+  (BUG-9270, not fixed).
+* ✔ (runtime) The Creature HUD portrait's drawable vtable is 0x01443248 at the preferred base; on a game loaded at
+  0x00320000 it is 0x01363248 (every address -0xE0000): now a symbol, `UTFWin::ImageDrawable::vftable` (BUG-9269).
