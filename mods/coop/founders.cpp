@@ -3,6 +3,7 @@
 
 #include <windows.h>
 #include <array>
+#include <cmath>
 
 #include "net/buffer.h"
 #include "slotfs.h"
@@ -10,7 +11,9 @@
 namespace founders {
 namespace {
 
-constexpr uint32_t kPartyMagic = 0x31595450u; // PTY1
+constexpr uint32_t kPartyMagic = 0x31595450u;  // PTY1 (read only)
+constexpr uint32_t kPartyMagic2 = 0x32595450u; // PTY2 (BUG-9263: + the seat's own stage history)
+constexpr size_t kSeatExtra = 1 + 4 * kCards + 8;
 constexpr size_t kNameMax = 64;
 
 // the side file of a saved planet; empty when the key is no .spo file that exists
@@ -85,10 +88,11 @@ bool write_side(const std::string& key, const wchar_t* suffix, const std::vector
 bool read_party(const std::string& key, Party& out)
 {
     std::vector<uint8_t> bytes;
-    if (!read_side(key, L".duoparty", bytes, 5 + kMaxSeats * (8 + 4 + 1 + kNameMax)))
+    if (!read_side(key, L".duoparty", bytes, 5 + kMaxSeats * (8 + 4 + 1 + kNameMax + kSeatExtra)))
         return false;
     net::Reader r(bytes.data(), bytes.size());
-    if (r.u32() != kPartyMagic)
+    const uint32_t magic = r.u32();
+    if (magic != kPartyMagic && magic != kPartyMagic2)
         return false;
     Party value;
     const unsigned n = r.u8();
@@ -97,6 +101,15 @@ bool read_party(const std::string& key, Party& out)
         s.player = r.u64();
         s.species = r.u32();
         s.name = r.str8();
+        if (magic == kPartyMagic2) {
+            s.own_cards = (r.u8() & 1) != 0;
+            for (auto& c : s.cards)
+                c = r.u32();
+            s.social = r.f32();
+            s.combat = r.f32();
+            if (!std::isfinite(s.social) || !std::isfinite(s.combat)) // a NaN would never compare equal
+                s.social = s.combat = 0;
+        }
         value.seats.push_back(std::move(s));
     }
     if (!r.ok() || r.left() || value.seats.size() != n || !party_valid(value))
@@ -132,12 +145,17 @@ bool record_party(const std::string& key, const Party& value, std::string& err)
             }
     }
     net::Writer w;
-    w.u32(kPartyMagic);
+    w.u32(kPartyMagic2);
     w.u8((uint8_t)value.seats.size());
     for (const auto& s : value.seats) {
         w.u64(s.player);
         w.u32(s.species);
         w.str8(s.name);
+        w.u8(s.own_cards ? 1 : 0);
+        for (uint32_t c : s.cards)
+            w.u32(c);
+        w.f32(s.social);
+        w.f32(s.combat);
     }
     if (publish(path, w.data, had))
         return true;

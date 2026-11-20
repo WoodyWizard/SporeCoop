@@ -67,6 +67,7 @@
 #include "identity.h"
 #include "party.h"
 #include "own_progress.h"
+#include "cards.h"
 #include "world.h"
 #include "find.h"
 #include "net/discovery.h"
@@ -1133,6 +1134,7 @@ static void frame_stage_ticks(double now)
     identity::tick(now); // BUG-9258 (Lineages): a guest sends its identity after each join, the host its table
     party::tick(now);    // BUG-9260 (Lineages): the host seats the players of this planet's campaign
     own_progress::tick(now); // BUG-9265: every player's own DNA and bar (Cell, Creature), the stage end together
+    cards::tick(now);    // BUG-9263: every player's own stage history (consequence cards)
     dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
     tribe::tick(now);
@@ -2419,6 +2421,7 @@ static void init_world_share()
         oc.vote_active = [] { return g_vote.active; };
         own_progress::init(H, M, oc);
     }
+    cards::init(H, M, &g_sess);    // BUG-9263
     shared::set_feed([](const std::string& t) { feed(t); }); // BUG-0696
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);

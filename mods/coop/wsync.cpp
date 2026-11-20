@@ -15,6 +15,7 @@
 #include "cellsync.h"
 #include "civ.h"
 #include "designs.h"
+#include "cards.h"
 #include "fixes.h"
 #include "own_world.h"
 #include "game.h"
@@ -254,7 +255,7 @@ static bool r_stages(Table& out)
 static int s_stages(const Table& want, bool apply)
 {
     void* p = cplayer();
-    if (want.empty() || !p)
+    if (want.empty() || !p || cards::guest_owns()) // BUG-9263: this game shows its own player's history
         return 0;
     int n = 0;
     for (int i = 0; i < 5; i++) {

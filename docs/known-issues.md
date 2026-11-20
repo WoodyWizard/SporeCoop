@@ -382,3 +382,35 @@ anchor so other docs can link to it:
   cinematic) until the vote ends; the guest still sees the cinematic.
 * Reproduce: `tools/lab.py run evo_screens_switch`, key frame `01_switch_vote`.
 * Ticket: BUG-1269
+
+## Own stage history: what is still shared or untested (2026-11-20, feat/own-cards)
+<a id="issue-own-cards-limits"></a>
+
+* Tribe and Civ: a guest's Tribe and Civ cards are the host's (this build has one player tribe and one nation, the
+  same play for both players); own cards need own villages / nations (the next Lineages phases).
+* Cell: the guest's own Cell card is its own game's decision from its own Cell save data; that the guest's game
+  counts its own food there was not checked in a Cell game (no Cell save on the test PC): if it does not, the guest
+  gets the host's card (the fallback).
+* Creature: the Creature decision adds the History timeline's Cell value of the host's world, not the guest's.
+* Powers: the guest's cPlayer holds its own cards; which code builds the avatar's consequence abilities at a stage
+  start (before or after the mod writes the cards after a world load) was not traced; the guest's own editor requests
+  carry its own cards.
+* The stage ends were made by the host's command (`coop.wsync stage`), not through History and the editors (the
+  campaign's coordinates are for 1440x1080; this PC's test windows are 1024x768).
+* Reproduce / test: tools/tests/coop_own_cards.py.
+* Ticket: BUG-9263
+## Space: a guest's captain screen shows no item limits for the host's captain (2026-11-18, fix/w55-captain)
+<a id="issue-captain-items-guest"></a>
+
+* What happens: a guest in the host's Space world opens the captain screen (the rank badge, or Accept of an
+  adventure mission): since 0.7.15.3 it no longer crashes (BUG-0304), but the equipment palette shows every item as
+  available, not the host captain's real item state.
+* Reproduce: `tools/lab.py run space_captain` (the fixture's captain has no item list in either game); a host whose
+  captain was made in Galactic Adventures and a guest joining its Space world.
+* Known: coop sends the host's own creation without the captain's property list {captain, 0x00B1B104, group | 0xE500}
+  (docs/re/space.md#space-captain-items-null).
+* Seen at runtime (lane 3, 2026-11-19): the `space` fixture's guest gets a null list on every opening (`coop.captain`:
+  `items: none` +1); not checked with a host captain made in Galactic Adventures.
+* Next steps: send and register that resource under the host's key (BUG-1279 lists the pitfalls).
+* Ticket: BUG-1279.
+

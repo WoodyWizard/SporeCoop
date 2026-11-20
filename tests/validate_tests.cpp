@@ -1179,8 +1179,8 @@ static void test_manifest()
     for (int t = 0; t < 256; t++)
         known += msg_info((uint8_t)t).known;
     // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
-    // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_IDENTITY 73 (BUG-9258, the Lineages port), MSG_PROGRESS 77 (BUG-9265)
-    const std::set<int> added_types = {70, 71, 72, 73, 77};
+    // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_IDENTITY 73 (BUG-9258, the Lineages port), MSG_OWN_CARDS 75 (BUG-9263; 74 is MSG_CIV_WALLET of feat/civ-own-money), MSG_PROGRESS 77 (BUG-9265)
+    const std::set<int> added_types = {70, 71, 72, 73, 75, 77};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1197,6 +1197,9 @@ static void test_manifest()
     CHECK(MSG_PROGRESS == 77 && std::string(msg_info(77).name) == "PROGRESS" && msg_info(77).family == Family::session &&
           msg_dir(77) == MsgDir::Any && host_world::msg_class(77) == host_world::MsgClass::Session &&
           dispatch_route(77, true) == Route::Progress && dispatch_route(77, false) == Route::Progress);
+    CHECK(MSG_OWN_CARDS == 75 && std::string(msg_info(75).name) == "OWN_CARDS" && msg_info(75).family == Family::session &&
+          msg_dir(75) == MsgDir::Any && host_world::msg_class(75) == host_world::MsgClass::Session &&
+          dispatch_route(75, true) == Route::OwnCards && dispatch_route(75, false) == Route::OwnCards);
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);
