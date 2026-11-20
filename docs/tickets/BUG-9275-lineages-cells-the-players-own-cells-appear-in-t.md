@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: feat/lineage-cells
-commits:
+commits: 4c83cbb8
 tests: tools/tests/coop_lineage_cells.py (suite lineage_cells)
 signature:
 docs: docs/01-architecture.md#architecture-lineage-cells, docs/re/cell.md#cell-lineage-cells, docs/re/creations.md#creations-lineage-cells
