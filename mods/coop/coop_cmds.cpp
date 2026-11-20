@@ -5,9 +5,6 @@
 #include "identity.h"
 #include "party.h"
 #include "own_progress.h"
-                       return 0;
-                   },
-                   nullptr, MT);
 #include "home_nests.h"
 #include "coop_state.h"
 #include "net/compat.h"
