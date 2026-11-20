@@ -1553,3 +1553,39 @@ The second half of #server-nest-refresh (decision 7F, BUG-9286, switches `creatu
   checks the WELCOME field.
 * Not seen yet: a rotated nest when its new species goes extinct (the game's own replacement pick runs with the
   nest's slot; the refresh brings it back first), and the MSI (it needs the new builds).
+
+## Step 4 part 5 built: visitors across eras (2026-11-20, feat/lineages-alpha)
+<a id="server-era-visitors-built"></a>
+
+Decisions 5S A / 5T B (#server-era-visitors, #server-era-spike); BUG-9287, switch `galaxy.era_visitors`; code
+mods/coop/era_visitors.cpp, galaxy_crt.cpp, server/galaxy/main.cpp.
+
+* The stream: each player in a stage sends where its creature is (VISIT: its era, its species key, its position;
+  twice a second; in Tribe the chieftain, the game has no avatar there). The galaxy server passes it to the players of
+  the same planet in its other worlds (another era, a party's crossing: `crossing_planet` equal, the world not the
+  same), nobody else; one sooner than 0.375 s after the last is dropped. `--no-visitors` turns it off on a server.
+* What a game shows: each visitor as a creature of its species with no AI, a puppet as a partner's (own herd, no AI,
+  kept out of saves: the save with a visitor stripped it and its herd), walking where its player walks (the game's
+  own walk, a MoveTo when the target moved 2 m; a teleport beyond 30 m). Shown in the Creature and Tribe stages;
+  removed 6 s after its last VISIT.
+* ✘ A creature drawn on the spike's ground prop (ornament + SetModelKey with a creature key) shows nothing; vehicles
+  and buildings draw that way, creatures do not. So visitors from the creature stages are creatures; a Civ era's
+  vehicles and buildings (props) are the next piece, with a Civ era in the test galaxy.
+* The creation store (net/galaxy.h CRTPUT .. CRTPART): a game rarely has another era's player's creature (each is a
+  creation of its own player's profile or Sporepedia). Each player puts its own creature in the galaxy server's store
+  (the mod's species bundle: its records and creaturedata, 58-88 KB; one file per creation in <worlds>/creations, kept
+  across restarts, a key kept once); a game that has to show a creature it does not have asks for it and installs it
+  as a host's own species is installed on a guest. Generalises: any game of the galaxy can get any player's creature.
+* ✔ Runtime (TITAN, the test galaxy): QA 9 on Samuth (Creature), QA 8 on Samuth (Tribe). Each game put its creature
+  in the store (88300 and 58841 bytes) and got the other's (one ask each); each showed the other era's player
+  (images/stage4_era_visitors.png: the Tribe player's small green species in the Creature stage, the Creature
+  player's purple one among the Tribe village). The Creature player walked 30 m: its copy in the Tribe game walked the
+  same way, up to 11 m behind while moving (10 FPS QA), 2 m from it 2 s after. Switch off on one game: both games
+  dropped their visitor; on: both showed it again. A save with a visitor: kept out (savestrip last_ours 2), the
+  upload stored. `tools/tests/galaxy_server_check.py`: VISIT reaches the other era only, not another planet or the
+  sender, too soon and wrong size dropped; the store keeps a whole creation only, serves it back whole, answers 0
+  for an unknown one.
+* Not yet: Civ / Space eras (vehicles and buildings as props, ships as UFOs); a name over a visitor; a player can
+  still hit a visitor in its own game (nothing reaches the other era); the lag while walking (a target ahead on the
+  path, as partners' puppets do, BUG-0360); many visitors at once (the server sends every VISIT to each player of the
+  planet's other worlds: an interest radius for an MMO-sized planet); the MSI (it needs the new builds).

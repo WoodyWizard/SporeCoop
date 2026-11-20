@@ -1400,3 +1400,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9284](BUG-9284-creature-the-herds-near-each-player-wake-by-that.md) | wontfix | feature | creature | 2026-11-20 |  | creature: the herds near each player wake by that player's own brain level (galaxy planets) |
 | [BUG-9285](BUG-9285-galaxy-planet-an-extinct-species-comes-back-afte.md) | fixed | feature | creature | 2026-11-20 | unreleased | galaxy planet: an extinct species comes back after the server's refresh time (the nest refresh) |
 | [BUG-9286](BUG-9286-step-4-part-4-7f-a-player-s-nest-left-behind-get.md) | fixed | feature | creature | 2026-11-20 | unreleased | Step 4 part 4 (7F): a player's nest left behind gets a new species from the game's own pick |
+| [BUG-9287](BUG-9287-step-4-part-5-visitors-across-eras-players-of-a.md) | fixed | feature | creature | 2026-11-20 | unreleased | Step 4 part 5: visitors across eras (players of a planet's other eras shown look-only) |

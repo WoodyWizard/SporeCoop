@@ -109,6 +109,10 @@ bool archive_world_designs(std::vector<slotfs::File>& files, std::string& err);
 // creation's records, the guest registers them under the same key. Without them the guest could
 // not build these NPCs at all (an ally in the host's pack was invisible, player report 2026-10-25).
 void want_species(const Key& k); // guest: this NPC species is unknown here
+// BUG-9287 (the galaxy's creation store): a creature species' bundle (records and creaturedata) to put there, and the
+// install of one got from there (as a host's own species on a guest: registered under its key when free)
+bool species_bundle(const Key& k, std::vector<uint8_t>& out);
+void species_from_bundle(const std::vector<uint8_t>& data);
 bool species_pending(const Key& k); // guest: asked, no answer yet
 bool avatar_swap_settling(double now); // BUG-0318: the own avatar got a new body moments ago (editors wait)
 bool landfall_pending();

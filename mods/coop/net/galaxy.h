@@ -183,7 +183,23 @@ enum Type : uint8_t {
                  //   host)
     ARRIVE = 28, // the crossing's host -> server: u8 the era its game plays now (the next stage): the crossing becomes
                  //   that era if nobody hosts it (kMovedRenamed), else everyone joins its host (kMovedJoin)
+    // step 4 part 5 (BUG-9287, docs/12-server-and-players.md#server-era-visitors-built): visitors across eras. A player
+    // in a stage sends where its creature is; the server passes it on to the players of the same planet in its other
+    // worlds (its other eras, a party's crossing), whose games show it look-only
+    VISIT = 29,    // player -> server (twice a second): u8 its era, u32 x3 its creature's species key, f32 x3 position
+    VISITOR = 30,  // server -> player: u16 the sender's slot, str8 its name, then VISIT's body
+    // BUG-9287: the galaxy's creation store, so a game can show a visitor whose creature it does not have. A player
+    // puts its own creature there (the mod's species bundle, creations.cpp); a game asks for one by its key. Kept in
+    // the server's worlds folder (creations/), across restarts. Key = {species instance, group}.
+    CRTPUT = 31,   // player -> server: u32 instance, u32 group, u32 total bytes, u32 crc, u32 offset, the piece
+                   //   (kCrtChunk bytes, the last one shorter); the server answers CRTHAVE once it has it
+    CRTGET = 32,   // player -> server: u32 instance, u32 group
+    CRTHAVE = 33,  // server -> player: u32 instance, u32 group, u8 1 stored / 0 the server has none (a CRTGET)
+    CRTPART = 34,  // server -> player: as CRTPUT's body (every piece of it, after a CRTGET)
 };
+constexpr uint32_t kCrtChunk = 1100;
+constexpr uint32_t kCrtMaxBytes = 512u << 10; // a species bundle (its records and creaturedata) is far smaller
+constexpr uint32_t kVisitEveryMs = 500; // a player's VISITs: the server drops ones sooner than this after the last
 constexpr uint8_t kMovedSplit = 1, kMovedRenamed = 2, kMovedJoin = 3;
 // 6S: the identity's key does not match the one the server keeps for it
 constexpr const char* kIdentityTaken = "This player's identity is in use with another key on this galaxy: is another copy of your profile playing?";

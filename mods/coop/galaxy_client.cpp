@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <map>
 #include <algorithm>
 #include <deque>
 #include <vector>
@@ -233,6 +234,7 @@ static void send_control(const net::Writer& w)
     if (g_sock.is_open())
         g_sock.send_to(g_server, w.data.data(), w.data.size());
 }
+static std::map<uint8_t, std::function<void(net::Reader&)>> g_handlers; // BUG-9287: on_message
 
 static void say(const std::string& s)
 {
@@ -282,6 +284,8 @@ static void on_control(net::Reader& r)
             g_resume.enter_at = H->time_seconds() + (g_resume.host ? 0.0 : 4.0);
         else
             g_resume = {};
+    } else if (g_handlers.count(type)) { // BUG-9287: VISITOR (era_visitors.cpp), CRTHAVE / CRTPART (galaxy_crt.cpp)
+        g_handlers[type](r);
     } else if (type == PARTYVIEW || type == PARTYNOTE || type == PLAYERS || type == WHISPER) { // 6K, 6L A
         if (C.party_in)
             C.party_in(type, r);
@@ -1183,6 +1187,16 @@ bool party_send(uint8_t kind, uint64_t other, uint8_t flag, uint32_t stage)
     w.u64(other);
     w.u8(flag);
     w.u32(stage);
+    send_control(w);
+    return true;
+}
+void on_message(uint8_t type, std::function<void(net::Reader&)> fn) { g_handlers[type] = std::move(fn); }
+bool send_message(uint8_t type, const net::Writer& body)
+{
+    if (!welcomed())
+        return false;
+    net::Writer w = control((Type)type);
+    w.data.insert(w.data.end(), body.data.begin(), body.data.end());
     send_control(w);
     return true;
 }

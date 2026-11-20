@@ -23,7 +23,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 EXE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'build', 'galaxy_server.exe' if os.name == 'nt' else 'galaxy_server')
 PROTO = 8
 (HELLO, WELCOME, LIST, PLANETS, ENTER, ROLE, LEAVE, PING, PONG, REFUSED, HOSTGONE, READY, FETCH, XBEGIN, XCHUNK, XACK, XDONE,
- HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE, MOVEON, MOVED, ARRIVE) = range(1, 29)
+ HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE, MOVEON, MOVED, ARRIVE, VISIT, VISITOR, CRTPUT, CRTGET, CRTHAVE, CRTPART) = range(1, 35)
 CHUNK = 1100
 fails = []
 
@@ -358,6 +358,67 @@ def main():
         ma, mb = a.take(MOVED), b.take(MOVED)
         check(rc is not None and ma is not None and mb is not None and moved_of(ma)[:3] == ('Venus|Civ', 3, c.slot)
               and moved_of(mb)[1] == 3, 'ARRIVE where the era has a host: the party is told to join it')
+
+        if not os.environ.get('GALAXY_CHECK_OLD'):
+            print('visitors across eras (BUG-9287)')
+            for p in (a, b):
+                p.send(LEAVE)
+            time.sleep(0.2)
+            a.enter('Pluto|Creature')
+            a.take(ROLE)
+            b.enter('Pluto|Tribe')
+            b.take(ROLE)
+            time.sleep(0.2)
+            for p in (a, b, c):
+                p.pump(0.2)
+                p.inbox.clear()
+            body = bytes([2]) + struct.pack('<III', 0x7C0B35F6, 0x2B978C46, 0x40626200) + struct.pack('<fff', 1.0, 2.0, 3.0)
+            a.send(VISIT, body)
+            v = b.take(VISITOR)
+            check(v is not None and struct.unpack_from('<H', v)[0] == a.slot and v.endswith(body),
+                  "a VISIT reaches the planet's other era with the sender's slot")
+            c.pump(0.3)
+            a.pump(0.1)
+            check(c.take(VISITOR, 0.2) is None and a.take(VISITOR, 0.2) is None,
+                  'not another planet, not the sender')
+            time.sleep(0.5)
+            b.inbox.clear()
+            a.send(VISIT, body)
+            a.send(VISIT, body)
+            b.pump(0.4)
+            check(sum(1 for d in b.inbox if d[0:1] == b'G' and d[1] == VISITOR) == 1, 'a VISIT sooner than 0.5 s after the last is dropped')
+            time.sleep(0.5)
+            b.inbox.clear()
+            a.send(VISIT, body[:-1])
+            check(b.take(VISITOR, 0.3) is None, 'a VISIT of the wrong size is dropped')
+
+            print('the creation store (BUG-9287)')
+            crt = bytes((i * 7 + 3) & 0xFF for i in range(3000))
+            ccrc = zlib.crc32(crt) & 0xFFFFFFFF
+            def put(p, data, skip=()):
+                for k, off in enumerate(range(0, len(data), 1100)):
+                    if k not in skip:
+                        p.send(CRTPUT, struct.pack('<IIIII', 0x29AA0001, 0x40626200, len(data), ccrc, off) + data[off:off + 1100])
+            put(a, crt, skip=(1,))
+            check(a.take(CRTHAVE, 0.4) is None, 'a creation with a piece missing is not kept')
+            put(a, crt)
+            h = a.take(CRTHAVE)
+            check(h is not None and h == struct.pack('<IIB', 0x29AA0001, 0x40626200, 1), 'a whole creation is kept (CRTHAVE)')
+            b.send(CRTGET, struct.pack('<II', 0x29AA0001, 0x40626200))
+            b.pump(0.5)
+            parts = [d[2:] for d in b.inbox if d[0:1] == b'G' and d[1] == CRTPART]
+            got = bytearray(3000)
+            for d in parts:
+                off = struct.unpack_from('<I', d, 16)[0]
+                got[off:off + len(d) - 20] = d[20:]
+            check(len(parts) == 3 and bytes(got) == crt, 'CRTGET sends every piece of it back')
+            b.send(CRTGET, struct.pack('<II', 0x29AA0002, 0x40626200))
+            h = b.take(CRTHAVE)
+            check(h is not None and h[-1] == 0, 'CRTGET of a creation nobody put: CRTHAVE 0')
+            a.inbox.clear()
+            put(a, crt[:1100] + bytes(1900))
+            h = a.take(CRTHAVE)
+            check(h is not None and h[-1] == 1, 'a key kept already is answered at once (one key, one content)')
 
         print('limits')
         more = [Player(port, 'p%d' % i, 0x100 + i) for i in range(5)]

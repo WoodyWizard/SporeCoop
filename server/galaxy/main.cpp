@@ -42,7 +42,21 @@ struct Client {
     uint32_t stage = 0; // 6K: the game mode it plays (its PARTY kPartyStage; 0 a menu or a load)
     uint32_t fetch_ms = 0;   // its last FETCH (one every kFetchEveryMs: each reads and checks a whole world)
     uint8_t ping_off = 0;    // pings in a row whose planet state disagrees with this server's (net/galaxy.h PING)
+    uint32_t visit_ms = 0;   // BUG-9287: its last VISIT passed on
 };
+// BUG-9287 (step 4 part 5): visitors across eras; --no-visitors turns the stream off
+static bool g_visitors = true;
+static uint64_t g_visits_in, g_visits_out;
+// BUG-9287: the creation store (net/galaxy.h CRTPUT): one file per creation in <worlds>/creations, an index here
+static std::set<std::pair<uint32_t, uint32_t>> g_crt_index; // {instance, group}
+static size_t g_max_creations = 100000;
+struct CrtIn {
+    uint32_t inst = 0, group = 0, total = 0, crc = 0;
+    std::vector<uint8_t> data;
+    std::vector<bool> got;
+    uint32_t have = 0;
+};
+static std::map<uint16_t, CrtIn> g_crt_in; // by slot: the one creation it is putting now
 // limits (2026-11-18 review: nothing bounded the players, the worlds or a world's size); each has a switch
 static size_t g_max_players = 1024, g_max_per_address = 64, g_max_worlds = 500;
 // step 4 part 4 (BUG-9285, docs/12-server-and-players.md#server-nest-refresh): an extinct species comes back this many
@@ -227,6 +241,119 @@ static std::string world_file(const std::string& planet)
     char h[16];
     snprintf(h, sizeof h, "-%08X", crc32(0, (const uint8_t*)planet.data(), planet.size()));
     return g_worlds_dir + "/" + safe.substr(0, 40) + h + ".world";
+}
+
+static std::string crt_file(uint32_t inst, uint32_t group)
+{
+    char b[40];
+    snprintf(b, sizeof b, "/%08X_%08X.crt", group, inst);
+    return g_worlds_dir + "/creations" + b;
+}
+static void load_creations()
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::create_directories(g_worlds_dir + "/creations", ec);
+    for (auto& e : fs::directory_iterator(g_worlds_dir + "/creations", ec)) {
+        unsigned g = 0, i = 0;
+        if (e.path().extension() == ".crt" && sscanf(e.path().filename().string().c_str(), "%8X_%8X", &g, &i) == 2)
+            g_crt_index.insert({i, g});
+    }
+    say("creation store: %u creations", (unsigned)g_crt_index.size());
+}
+static void crt_have(const Client& c, uint32_t inst, uint32_t group, bool have)
+{
+    Writer w = control(CRTHAVE);
+    w.u32(inst);
+    w.u32(group);
+    w.u8(have ? 1 : 0);
+    send(c, w);
+}
+static void on_crt_put(Client& c, Reader& r)
+{
+    const uint32_t inst = r.u32(), group = r.u32(), total = r.u32(), crc = r.u32(), off = r.u32();
+    if (!r.ok() || !inst || !total || total > kCrtMaxBytes || off % kCrtChunk || off >= total)
+        return;
+    const uint32_t n = std::min(kCrtChunk, total - off);
+    if (r.left() != n)
+        return;
+    if (g_crt_index.count({inst, group})) { // (kept already: a creation's key names one content)
+        crt_have(c, inst, group, true);
+        return;
+    }
+    if (g_crt_index.size() >= g_max_creations)
+        return;
+    CrtIn& in = g_crt_in[c.slot];
+    if (in.inst != inst || in.group != group || in.total != total || in.crc != crc) {
+        in = CrtIn{};
+        in.inst = inst, in.group = group, in.total = total, in.crc = crc;
+        in.data.assign(total, 0);
+        in.got.assign((total + kCrtChunk - 1) / kCrtChunk, false);
+    }
+    const size_t ci = off / kCrtChunk;
+    if (in.got[ci])
+        return;
+    in.got[ci] = true;
+    in.have += n;
+    for (uint32_t k = 0; k < n; k++)
+        in.data[off + k] = r.u8();
+    if (in.have < in.total)
+        return;
+    const bool ok = crc32(0, in.data.data(), in.data.size()) == crc;
+    if (ok) {
+        const std::string path = crt_file(inst, group);
+        FILE* f = fopen((path + ".tmp").c_str(), "wb");
+        bool written = f && fwrite(in.data.data(), 1, in.data.size(), f) == in.data.size();
+        if (f)
+            written = fclose(f) == 0 && written;
+        std::error_code ec;
+        if (written)
+            std::filesystem::rename(path + ".tmp", path, ec);
+        if (written && !ec) {
+            g_crt_index.insert({inst, group});
+            crt_have(c, inst, group, true);
+            say("creation store: %08X from %u '%s' (%u KB)", inst, c.slot, c.name.c_str(), total >> 10);
+        }
+    }
+    g_crt_in.erase(c.slot);
+}
+static void on_crt_get(Client& c, Reader& r)
+{
+    const uint32_t inst = r.u32(), group = r.u32();
+    if (!r.ok())
+        return;
+    std::vector<uint8_t> data;
+    if (g_crt_index.count({inst, group})) {
+        FILE* f = fopen(crt_file(inst, group).c_str(), "rb");
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            const long n = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            if (n > 0 && (uint32_t)n <= kCrtMaxBytes) {
+                data.resize((size_t)n);
+                if (fread(data.data(), 1, data.size(), f) != data.size())
+                    data.clear();
+            }
+            fclose(f);
+        }
+    }
+    if (data.empty()) {
+        crt_have(c, inst, group, false);
+        return;
+    }
+    const uint32_t crc = crc32(0, data.data(), data.size());
+    for (uint32_t off = 0; off < data.size(); off += kCrtChunk) {
+        Writer w = control(CRTPART);
+        w.u32(inst);
+        w.u32(group);
+        w.u32((uint32_t)data.size());
+        w.u32(crc);
+        w.u32(off);
+        const uint32_t n = std::min<uint32_t>(kCrtChunk, (uint32_t)data.size() - off);
+        for (uint32_t k = 0; k < n; k++)
+            w.u8(data[off + k]);
+        send(c, w);
+    }
 }
 
 static void load_stored()
@@ -499,6 +626,33 @@ static void on_control(const Endpoint& from, Reader& r)
     c->last_ms = now_ms();
     if (type == PARTY) { // 6K
         on_party(*c, r);
+        return;
+    }
+    if (type == VISIT) { // BUG-9287: passed on to the planet's players in its other worlds
+        const uint32_t now = now_ms();
+        if (!g_visitors || c->planet.empty() || r.left() != 1 + 12 + 12 || now - c->visit_ms < kVisitEveryMs * 3 / 4)
+            return;
+        c->visit_ms = now;
+        g_visits_in++;
+        const std::string mine = crossing_planet(c->planet);
+        Writer w = control(VISITOR);
+        w.u16(c->slot);
+        w.str8(c->name);
+        while (r.left())
+            w.u8(r.u8());
+        for (auto& [s, o] : g_clients)
+            if (s != c->slot && !o.planet.empty() && o.planet != c->planet && crossing_planet(o.planet) == mine) {
+                send(o, w);
+                g_visits_out++;
+            }
+        return;
+    }
+    if (type == CRTPUT) { // BUG-9287
+        on_crt_put(*c, r);
+        return;
+    }
+    if (type == CRTGET) {
+        on_crt_get(*c, r);
         return;
     }
     if (type == WHO) {
@@ -1194,6 +1348,8 @@ int main(int argc, char** argv)
             g_max_per_address = (size_t)std::max(1, atoi(argv[++i]));
         else if (!strcmp(argv[i], "--max-worlds") && i + 1 < argc)
             g_max_worlds = (size_t)std::max(1, atoi(argv[++i]));
+        else if (!strcmp(argv[i], "--no-visitors")) // BUG-9287: no visitors across eras
+            g_visitors = false;
         else if (!strcmp(argv[i], "--refresh-minutes") && i + 1 < argc) // BUG-9285: 0 = extinct species stay extinct
             g_refresh_minutes = (uint32_t)std::max(0, atoi(argv[++i]));
         else if (!strcmp(argv[i], "--rotate-hours") && i + 1 < argc) // BUG-9286: 0 = players' left nests stay
@@ -1203,7 +1359,7 @@ int main(int argc, char** argv)
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
             printf("usage: galaxy_server [--local] [--worlds <dir>] [--warm-handover] [--planet-players <n>]\n"
                    "                     [--max-players <n>] [--max-per-address <n>] [--max-worlds <n>] [--max-world-mb <n>]\n"
-                   "                     [--refresh-minutes <n>] [--rotate-hours <n>]\n"
+                   "                     [--refresh-minutes <n>] [--rotate-hours <n>] [--no-visitors]\n"
                    "                     [port] [galaxy name]\n");
             return 0;
         }
@@ -1245,6 +1401,7 @@ int main(int argc, char** argv)
     say("limits: %zu players (%zu an address), %zu stored worlds of %u MB at most", g_max_players, g_max_per_address,
         g_max_worlds, g_max_world_bytes >> 20);
     load_stored();
+    load_creations(); // BUG-9287
     std::vector<uint8_t> buf(65536);
     uint32_t last_status = now_ms(), last_sweep = now_ms();
     uint64_t status_bytes = 0, status_fan_in = 0, status_fan_out = 0;
@@ -1294,6 +1451,7 @@ int main(int argc, char** argv)
                 leave_planet(g_clients[s], "timed out");
                 party_player_out(g_clients[s]); // 6K
                 g_upload_meta.erase(s); // (not for the next player of this slot)
+                g_crt_in.erase(s);      // BUG-9287
                 g_clients.erase(s);
             }
             g_parties.lapse(now / 1000.0); // (invites nobody answered: no longer shown as pending)

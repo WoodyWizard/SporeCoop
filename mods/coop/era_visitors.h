@@ -1,4 +1,5 @@
-// Decision 5S A spike (alpha): another era's vehicles and buildings shown in a Creature game (era_visitors.cpp).
+// Decision 5S A spike (alpha): another era's vehicles and buildings shown in a Creature game (era_visitors.cpp); BUG-9287:
+// the players of a planet's other eras shown look-only (the galaxy VISIT stream, docs/12-server-and-players.md#server-era-visitors-built).
 #pragma once
 
 #include <cstdint>

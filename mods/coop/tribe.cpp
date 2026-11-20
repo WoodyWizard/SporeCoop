@@ -11154,6 +11154,13 @@ void world_check()
     }
 }
 
+void* player_chief()
+{
+    void* t = g_ok ? player_tribe() : nullptr;
+    void* c = t && skg::readable(t, kNativeLeaderOff + 4) ? F<void*>(t, kNativeLeaderOff) : nullptr;
+    return c && game::object_alive(c) ? c : nullptr;
+}
+
 bool center(net::Vec3& pos)
 {
     void* t = g_ok ? player_tribe() : nullptr;

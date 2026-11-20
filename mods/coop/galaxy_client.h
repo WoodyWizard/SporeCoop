@@ -75,6 +75,11 @@ uint16_t my_slot();
 bool party_send(uint8_t kind, uint64_t other_identity, uint8_t flag, uint32_t stage);
 void ask_players();                          // WHO: the server answers PLAYERS (to C.party_in)
 bool whisper(uint64_t to_identity, const std::string& text); // 6L A: through the galaxy server (WHISPER)
+// BUG-9287 (step 4 part 5): other modules' messages with the galaxy server (net/galaxy.h VISIT, CRTPUT, ...):
+// send_message sends a control message of that type with this body (false: not connected); on_message handles the
+// server's messages of that type (the reader after the type byte)
+bool send_message(uint8_t type, const net::Writer& body);
+void on_message(uint8_t type, std::function<void(net::Reader&)> fn);
 unsigned planet_players();                  // 6E B: the players a planet of this galaxy takes (16 by default)
 bool close_request();                       // Alt+F4 / the window's X (mouse.cpp): true = held, saved first (6A A)
 // decision 6B C (the warm hand-over): a player still in the planet's world rejoins its new host with the hand-over's

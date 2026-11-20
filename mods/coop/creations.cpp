@@ -3062,6 +3062,26 @@ static void apply_own_species(const std::vector<uint8_t>& data)
            name.c_str(), ours, prof ? "" : " (no species profile yet)");
 }
 
+// ---- BUG-9287: a creature species for the galaxy's creation store (galaxy_crt.cpp) ----
+// the same bundle as host_species_out sends a guest (its records and creaturedata), and its install there
+bool species_bundle(const Key& k, std::vector<uint8_t>& out)
+{
+    if (!is_crt(k) || !k.instance)
+        return false;
+    Bundle b;
+    b.key = k;
+    if (!records_from_game(k, b.recs))
+        return false;
+    std::vector<dbpf::Record> cd;
+    if (records_from_game({k.instance, kCreatureData, k.group}, cd))
+        for (auto& r : cd)
+            if (r.key.type == kCreatureData)
+                b.recs.push_back(std::move(r));
+    out = pack(b);
+    return !out.empty();
+}
+void species_from_bundle(const std::vector<uint8_t>& data) { apply_own_species(data); }
+
 // ---- BUG-0647: the host's own designs (civ vehicles) on a guest ----
 // The host's civilization names its vehicle designs by the keys of the host's own editor saves (My
 // Creations, ids sequential per profile). A guest's copy of that civilization names the same keys, which

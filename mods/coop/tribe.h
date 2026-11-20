@@ -86,6 +86,7 @@ std::string founding_wait_line();
 // guest's game, which runs no such phase, keeps them until the Civ world comes
 bool stage_end();
 bool center(net::Vec3& pos); // position of the player tribe
+void* player_chief();        // BUG-9287: the player tribe's leader (cCommunity +0x11C), null none
 // members of the player tribe with their owner (for name tags)
 // the epic creature was hit by a creature (host; from the creature damage filter)
 void note_animal_hit(void* animal, void* attacker_creature);

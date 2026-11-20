@@ -20,10 +20,21 @@
 #include <vector>
 
 #include "creations.h"
-#include "savestrip.h"
+#include "creature_hp.h"
+#include "fixes.h"
+#include "galaxy_client.h"
+#include "galaxy_crt.h"
 #include "game.h"
+#include "net/buffer.h"
+#include "net/galaxy.h"
+#include "net/interp.h"
 #include "net/protocol.h"
+#include "savestrip.h"
+#include "tribe.h"
 #include "sporekit_game.hpp"
+
+#include <cstring>
+#include <map>
 
 namespace era_visitors {
 
@@ -216,9 +227,10 @@ std::string clear()
     return "cleared " + std::to_string(n);
 }
 
+std::string stream_status();
 std::string status()
 {
-    std::string out = "era visitors (spike): " + std::to_string(g_props.size()) + " prop(s), frames " + std::to_string(g_frames) + "\n";
+    std::string out = stream_status() + galaxy_crt::status() + "era visitors (spike): " + std::to_string(g_props.size()) + " prop(s), frames " + std::to_string(g_frames) + "\n";
     for (auto& pr : g_props) {
         net::Vec3 v{};
         const bool alive = pr.u && game::object_alive(pr.u) && game::object_serial(pr.u) == pr.serial;
@@ -232,6 +244,8 @@ std::string status()
     }
     return out;
 }
+
+static void on_visitor(net::Reader& r); // BUG-9287 (below)
 
 // our props are not the player's world (CLAUDE.md 2): a save never holds them
 static bool savestrip_filter(void* obj, uint32_t noun)
@@ -254,10 +268,188 @@ void init(const SkHost* host, SkMod* mod)
     a_DestroyInstance = H->sym("Simulator::cGameNounManager::DestroyInstance");
     a_OrnSetModel = H->sym("SporeCoop::cOrnament_SetModel");
     savestrip::add_filter(savestrip_filter);
+    galaxy::on_message(net::galaxy::VISITOR, on_visitor); // BUG-9287
+    galaxy_crt::init(H, M);
+}
+
+// ---- BUG-9287 (step 4 part 5, docs/12-server-and-players.md#server-era-visitors-built): visitors across eras ----
+// Each player in a stage sends where its creature is (galaxy VISIT, twice a second); the galaxy server passes it to the
+// players of the same planet in its other worlds (another era, a party's crossing). This game shows each such player
+// look-only as a creature of its species with no AI (a puppet as a partner's: own_herd_for, puppet_register, kept out
+// of saves), walking where the player walks. A creature drawn on a ground prop (the spike's carrier) shows nothing, so
+// creatures go as creatures; another era's vehicles and buildings (props) come with a Civ era. Shown in the Creature
+// and Tribe stages; a visitor whose species this game does not have is not shown (counted).
+static bool g_stream = true;
+COOP_FIX("galaxy.era_visitors", "BUG-9287", g_stream,
+         "galaxy: players of the planet's other eras are shown as look-only creatures (and this player to them)");
+struct Visitor {
+    std::string name;
+    uint8_t era = 0;
+    uint32_t key[3]{};
+    net::Vec3 pos{};
+    double seen = 0;
+    void* c = nullptr;
+    uint32_t serial = 0;
+    net::Vec3 walk_to{};
+    bool walking = false;
+};
+static std::map<uint16_t, Visitor> g_visitors; // by the sender's galaxy slot
+static double g_next_visit;
+static uint64_t g_visits_sent, g_visits_got, g_shown, g_no_species, g_gone;
+constexpr double kVisitorTimeout = 6.0;
+constexpr float kTeleportBeyond = 30.f;
+
+static bool visitor_alive(const Visitor& v)
+{
+    return v.c && game::creature_listed(v.c) && game::object_serial(v.c) == v.serial && game::object_alive(v.c);
+}
+static void visitor_remove(Visitor& v)
+{
+    if (visitor_alive(v)) {
+        creature_hp::forget_puppet(v.c);
+        game::destroy_creature(v.c); // (the deferred path; it leaves the puppet list)
+    } else if (v.c)
+        game::puppet_unregister(v.c);
+    v.c = nullptr;
+    v.walking = false;
+}
+static bool shows_visitors(uint8_t era) { return era == net::galaxy::kEraCreature || era == net::galaxy::kEraTribe; }
+
+static void on_visitor(net::Reader& r)
+{
+    const uint16_t slot = r.u16();
+    std::string name = r.str8();
+    const uint8_t era = r.u8();
+    uint32_t key[3];
+    for (auto& k : key)
+        k = r.u32();
+    net::Vec3 p;
+    p.x = r.f32(), p.y = r.f32(), p.z = r.f32();
+    if (!r.ok() || !g_stream || !slot || !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
+        return;
+    Visitor& v = g_visitors[slot];
+    if (v.c && (v.key[0] != key[0] || v.key[2] != key[2])) // another creature now (an editor, a new stage)
+        visitor_remove(v);
+    v.name = std::move(name);
+    v.era = era;
+    memcpy(v.key, key, sizeof key);
+    v.pos = p;
+    v.seen = H->time_seconds();
+    g_visits_got++;
+}
+
+static void visitor_show(Visitor& v, void* av)
+{
+    if (!visitor_alive(v)) {
+        if (v.c)
+            visitor_remove(v);
+        void* species = game::species_by_key({v.key[0], v.key[1], v.key[2]});
+        if (!species) { // asked from the galaxy's creation store (galaxy_crt): shown once it is here
+            if (galaxy_crt::want(v.key[0], v.key[1], v.key[2]))
+                g_no_species++;
+            return;
+        }
+        void* herd = game::own_herd_for(species);
+        if (herd) {
+            game::herd_home(herd, v.pos);
+            game::herd_quiet(herd);
+        } else
+            herd = game::create_herd(v.pos, species);
+        void* c = herd ? game::spawn_creature(v.pos, species, herd) : nullptr;
+        if (!c)
+            return;
+        game::puppet_register(c);
+        game::teleport(c, v.pos, av ? game::orientation(av) : net::Quat{0, 0, 0, 1});
+        v.c = c;
+        v.serial = game::object_serial(c);
+        v.walking = false;
+        g_shown++;
+        H->log(M, SK_INFO, "era visitors: %s (%s) shown as %08X (BUG-9287)", v.name.c_str(), net::galaxy::era_name(v.era),
+               v.key[0]);
+        return;
+    }
+    const net::Vec3 at = game::position(v.c);
+    const float d = net::dist(at, v.pos);
+    if (d > kTeleportBeyond) {
+        game::teleport(v.c, v.pos, game::orientation(v.c));
+        v.walking = false;
+    } else if (d > 1.5f && (!v.walking || net::dist(v.walk_to, v.pos) > 2.f)) {
+        game::move_to(v.c, v.pos, 1.f); // the game walks it there (its own walk animation)
+        v.walk_to = v.pos;
+        v.walking = true;
+    } else if (d <= 1.5f)
+        v.walking = false;
+}
+
+static void stream_tick(double now)
+{
+    const std::string planet = galaxy::current_planet();
+    const uint8_t era = net::galaxy::era_of(planet);
+    // this player's creature: the avatar (Creature), the tribe's chieftain (Tribe: the game has no avatar there)
+    void* av = game::avatar() ? game::avatar() : era == net::galaxy::kEraTribe ? tribe::player_chief() : nullptr;
+    if (!g_stream || planet.empty() || !galaxy::welcomed()) {
+        for (auto& [s, v] : g_visitors)
+            visitor_remove(v);
+        g_visitors.clear();
+        return;
+    }
+    if (av && now >= g_next_visit) { // where this player is, for the planet's other worlds
+        g_next_visit = now + net::galaxy::kVisitEveryMs / 1000.0;
+        const game::Key k = game::species_key(av);
+        const uint32_t key[3] = {k.instance, k.type, k.group};
+        const net::Vec3 p = game::position(av);
+        net::Writer w;
+        w.u8(era);
+        for (uint32_t v : key)
+            w.u32(v);
+        w.f32(p.x), w.f32(p.y), w.f32(p.z);
+        if (k.instance && galaxy::send_message(net::galaxy::VISIT, w)) {
+            g_visits_sent++;
+            galaxy_crt::put_own(k.instance, k.type, k.group); // the store keeps it for the other eras' games
+        }
+    }
+    for (auto it = g_visitors.begin(); it != g_visitors.end();) {
+        Visitor& v = it->second;
+        if (now - v.seen > kVisitorTimeout) { // it left (another planet, a menu) or its game stopped
+            visitor_remove(v);
+            g_gone++;
+            it = g_visitors.erase(it);
+            continue;
+        }
+        if (av && shows_visitors(era))
+            visitor_show(v, av);
+        else if (v.c)
+            visitor_remove(v);
+        ++it;
+    }
+}
+
+std::string stream_status()
+{
+    char b[300];
+    snprintf(b, sizeof b,
+             "era visitors (BUG-9287): on=%d planet='%s' sent=%llu got=%llu visitors=%u shown=%llu no_species=%llu gone=%llu\n",
+             (int)g_stream, galaxy::current_planet().c_str(), (unsigned long long)g_visits_sent,
+             (unsigned long long)g_visits_got, (unsigned)g_visitors.size(), (unsigned long long)g_shown,
+             (unsigned long long)g_no_species, (unsigned long long)g_gone);
+    std::string out = b;
+    for (auto& [s, v] : g_visitors) {
+        net::Vec3 at{};
+        const bool alive = visitor_alive(v);
+        if (alive)
+            at = game::position(v.c);
+        snprintf(b, sizeof b, "  slot %u '%s' (%s) species %08X at (%.0f %.0f %.0f) %s, %.1f m from it\n", s, v.name.c_str(),
+                 net::galaxy::era_name(v.era), v.key[0], v.pos.x, v.pos.y, v.pos.z, alive ? "shown" : "not shown",
+                 alive ? net::dist(at, v.pos) : 0.f);
+        out += b;
+    }
+    return out;
 }
 
 void tick(double now)
 {
+    stream_tick(now);
+    galaxy_crt::tick(now);
     const float dt = g_last > 0 ? (float)std::min(now - g_last, 0.25) : 0.f;
     g_last = now;
     if (g_props.empty())

@@ -491,3 +491,8 @@ docs/12-server-and-players.md#server-nest-rotation-built): a player's nest whose
 for the server's rotation time (72 h by default) gets a new species from the game's own pick, Sporepedia downloads
 included; guests follow; it holds across a save and a reload. That also covers the players' own nests after days away.
 Next: visitors across eras (part 5). The MSI still needs the new builds.
+Update 2026-11-20: part 5 built and seen in game (BUG-9287,
+docs/12-server-and-players.md#server-era-visitors-built): players of a planet's other eras are shown as look-only
+creatures that walk where their player walks (Creature and Tribe), through a light stream on the galaxy server and a
+creation store there (any game can get any player's creature). Step 4's parts are all built; left: Civ / Space
+visitors (vehicles, buildings, ships), the Cell -> Creature and Tribe -> Civ crossings, the MSI builds.
