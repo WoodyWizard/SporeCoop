@@ -1,16 +1,16 @@
 ---
 id: BUG-1354
 title: Test cell_ko_food: the host's meals run after its knockout ended (8 s spent looking for plants)
-status: fixed
+status: open
 kind: test
 stage: Cell
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
-versions: 
-fixed_in: unreleased
+versions: 0.7.15.5, unreleased
+fixed_in:
 branch: fix/w60-misc
-commits:
+commits: c74bf7ee
 tests: cell_ko_food
 signature:
 docs:

@@ -1,16 +1,16 @@
 ---
 id: BUG-1359
 title: Lab: a cold start after a test goes on while the lane's old host still holds its console port (evolve_world JSONDecodeError)
-status: fixed
+status: open
 kind: tooling
 stage: Tools
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
-versions: 
-fixed_in: unreleased
+versions: 0.7.15.5, unreleased
+fixed_in:
 branch: fix/w60-misc
-commits:
+commits: 52a307a4
 tests: evolve_world
 signature:
 docs: docs/06-testing.md#testing-ports-after-kill

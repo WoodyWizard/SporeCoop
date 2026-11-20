@@ -1,16 +1,16 @@
 ---
 id: BUG-1355
 title: Test cell_attack_mouth/spike: 'see 300' is a row count, not a radius: the attacker with no creature on its screen never swims to one
-status: fixed
+status: open
 kind: test
 stage: Cell
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
-versions: 
-fixed_in: unreleased
+versions: 0.7.15.5, unreleased
+fixed_in:
 branch: fix/w60-misc
-commits:
+commits: 1c87e63c
 tests: cell_attack_mouth, cell_attack_spike, cell_attack_jaw
 signature:
 docs:

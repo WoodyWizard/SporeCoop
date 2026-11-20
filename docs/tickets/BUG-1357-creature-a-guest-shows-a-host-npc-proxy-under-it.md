@@ -1,16 +1,16 @@
 ---
 id: BUG-1357
 title: Creature: a guest shows a host NPC proxy under its ground while the host's NPC is under the host's ground (NF_AIR with a negative height)
-status: fixed
+status: open
 kind: bug
 stage: Creature
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
 versions: 0.7.15.5, unreleased
-fixed_in: unreleased
+fixed_in:
 branch: fix/w60-misc
-commits:
+commits: eb7a43d0
 tests: npc_air_under, npc_air_under_off, migration_heal, nest_follow
 signature:
 docs: docs/re/creature.md#creature-far-npc-under-ground

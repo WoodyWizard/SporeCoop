@@ -1,16 +1,16 @@
 ---
 id: BUG-1358
 title: Test latency_step_ingame: the walker's random click on its own nest opens the evolution editor, the second walk has no partner
-status: fixed
+status: open
 kind: test
 stage: Creature
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
-versions: 
-fixed_in: unreleased
+versions: 0.7.15.5, unreleased
+fixed_in:
 branch: fix/w60-misc
-commits:
+commits: ff36cb71
 tests: latency_step_ingame, puppet_walk, puppet_walk_novel, puppet_stops
 signature:
 docs:

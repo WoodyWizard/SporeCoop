@@ -1,16 +1,16 @@
 ---
 id: BUG-1356
 title: Test space_puppet (play_space.land): the guest zooms in on the planet it is still at when its clicks miss the wanted one
-status: fixed
+status: open
 kind: test
 stage: Space
 reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
-versions: 
-fixed_in: unreleased
+versions: 0.7.15.5, unreleased
+fixed_in:
 branch: fix/w60-misc
-commits:
+commits: 8273ee9a
 tests: space_puppet
 signature:
 docs:
