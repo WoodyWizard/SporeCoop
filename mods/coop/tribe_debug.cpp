@@ -821,12 +821,20 @@ std::string debug(const std::vector<std::string>& a)
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
         return c ? ai_line(c) : "no such member";
     }
-    if (a.size() >= 2 && a[0] == "hand") { // hand <member id> [item | end]: tests (BUG-0906), the member's hand: what it
+    if (a.size() >= 2 && a[0] == "hand") { // hand <member id> [item [pending] | end]: tests (BUG-0906), the member's hand: what it
         // holds, its scale; with an item the game's attach again (the hand emptied first)
         void* c = is_guest() ? member_mirror((uint16_t)atoi(a[1].c_str())) : local_of((uint16_t)atoi(a[1].c_str()));
         if (!has_body(c))
             return "no such member";
+        int cleared = -1;
         if (a.size() >= 3 && a[2] != "end" && a_SetHandheldItem) {
+            // `pending` (tests, BUG-1349): the pending starts of the animation drawn now are ended first (the BUG-0992
+            // call): the attach binds the hold to a pending track of the current id before the playing one, and a hold
+            // on a track that does not play ends at once (tribe_mirror_hold: "the host's chief let go at once")
+            if (a.size() >= 4 && a[3] == "pending") {
+                uint32_t cur = 0;
+                cleared = game::drawn_state(c, nullptr, &cur) && clear_pending_same(c, cur) ? 1 : 0;
+            }
             thiscall<void>(a_SetHandheldItem, c, 0, -1);
             set_hand(c, atoi(a[2].c_str()));
             if (is_guest()) {
@@ -843,7 +851,7 @@ std::string debug(const std::vector<std::string>& a)
                  hand_model(c), F<int>(c, kHandOff), vcall<float>((uint8_t*)c + 0xC0, 0x34 / 4), vcall<float>(c, 0x80 / 4, 0),
                  g_item_sets);
         return std::string(b) + " hold=" + std::to_string(hold_modifier(c, false) ? 1 : 0) + " holds_ended=" +
-               std::to_string(g_item_holds_ended);
+               std::to_string(g_item_holds_ended) + (cleared >= 0 ? " pending_cleared=" + std::to_string(cleared) : "");
     }
     // BUG-1335 (tests): handbone [member id]: each member of the player tribe (or that one): its hand bone (+0xFC4),
     // its body's bone count, the bone's state against the array (ok / out / unknown), its item and the drawn model
