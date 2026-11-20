@@ -5326,3 +5326,17 @@ BUG-1357 (switch `npc.air_under`, test `coop_npc_air.py --lift -0.8`: npc_air_un
   (`npc_rules::place`, `host_under`): the proxy stands or walks on this game's ground (drive::step / walk_place
   ground). The host's own NPC stays where its game has it.
 * ? why the host's game leaves a far NPC 0.7-0.8 m in its terrain (terrain detail far from the camera?) is not known.
+## Own DNA: the wallet credit and the totals in one frame (2026-11-20, fix/w60-dna)
+<a id="creature-own-dna-frame"></a>
+
+BUG-1341, builds on #creature-own-dna. ✔ (lab rel/0.7.16 20261120-041304, dna_notice / dna_away logs) the host's
+on_frame runs frame_send_totals (MSG_DNA per guest, with the causes g_dna_out) before frame_stage_ticks, whose
+own_dna_tick credits the host's bar step to the own wallets: a party gain went out with its causes and the old
+wallet (guest: `dna: own 0 -> 0, bar 0.0 -> party 3.5 cause=hunt:1+4`), the wallet's step one total later with
+`cause=unknown`. `creature.own_dna_cause` (on): the totals phase runs the same observer first (only in continuous
+Creature play: this frame and the last, the store already read). ~ Not run in the lab yet.
+* ✔ (same run) a guest's own wallet outlives the lab's warm reset: the reset loads a fresh slot of the same planet
+  (world 68AC222A, a store without a file), book_load keeps the wallets it has no record of, the host's DNA goes back to
+  the save's. A guest then starts the next test with its earlier own DNA (dna_away: guest 3.5, host 0.0). Designed
+  (a guest seen since the last save keeps its wallet); lab tests compare gains, not totals (BUG-1340,
+  docs/06-testing.md#testing-dna-gain).

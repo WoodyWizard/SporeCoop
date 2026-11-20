@@ -14,6 +14,9 @@ in the hand and the other's does not; no stretch of over 2 s where both play the
 0.5 s apart in it (the track time `t=`); the hand item the same within 3 s of every change.
 Twin: SPORE_FIX_OFF=tribe.mirror_phase_any: the chief's gesture begun at the load (before the session) runs on the
 guest from its own start, 10-20 s from the host's moment (FAIL).
+BUG-1347 (tribe.hold_retry): a hold the guest bound right after the chief's animation started on its copy (P / R, then
+T with the item attached) did not start until the host's next resend 1 s later; the guest's `hold_try` attach is made
+again 0.3 s later when its hold has not started (hold event A). Twin tribe_chief_still_retry_off (360 s).
 
   SPORE_LANE=6 python3 tools/tests/coop_tribe_chief_still.py [--secs 90] [--slack 1.0]
 """
@@ -157,6 +160,9 @@ def main():
     if m and view_both(host, guest, tuple(float(m.group(i)) for i in (1, 2, 3)), 10.0, 3.0):
         keyframe('chief', f"the same camera on both games 10 m from the host's chief #{cid}: its staff held the same "
                           f"way (in the hand or in the resting grip, the same angle) on both screens", kind='sameview')
+    # BUG-1347: the guest's holds bound and taken again (`retried=`: attaches made again by tribe.hold_retry)
+    print('  guest:', ' '.join(l for l in guest.call('coop.tribe anims')['out'].splitlines() if l.startswith('hold fix')),
+          flush=True)
     ck(not bad_hold, f'no stretch over {a.slack} s with the chief\'s item in the hand on one game only '
                      f'({[(round(s - t0, 1), round(e - s, 1)) for s, e in bad_hold]})')
     ck(not bad_moment, f'no stretch over 2 s with the chief in the same gesture over 0.5 s apart on the two games '

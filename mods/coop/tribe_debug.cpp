@@ -821,12 +821,20 @@ std::string debug(const std::vector<std::string>& a)
         void* c = local_of((uint16_t)atoi(a[1].c_str()));
         return c ? ai_line(c) : "no such member";
     }
-    if (a.size() >= 2 && a[0] == "hand") { // hand <member id> [item | end]: tests (BUG-0906), the member's hand: what it
+    if (a.size() >= 2 && a[0] == "hand") { // hand <member id> [item [pending] | end]: tests (BUG-0906), the member's hand: what it
         // holds, its scale; with an item the game's attach again (the hand emptied first)
         void* c = is_guest() ? member_mirror((uint16_t)atoi(a[1].c_str())) : local_of((uint16_t)atoi(a[1].c_str()));
         if (!has_body(c))
             return "no such member";
+        int cleared = -1;
         if (a.size() >= 3 && a[2] != "end" && a_SetHandheldItem) {
+            // `pending` (tests, BUG-1349): the pending starts of the animation drawn now are ended first (the BUG-0992
+            // call): the attach binds the hold to a pending track of the current id before the playing one, and a hold
+            // on a track that does not play ends at once (tribe_mirror_hold: "the host's chief let go at once")
+            if (a.size() >= 4 && a[3] == "pending") {
+                uint32_t cur = 0;
+                cleared = game::drawn_state(c, nullptr, &cur) && clear_pending_same(c, cur) ? 1 : 0;
+            }
             thiscall<void>(a_SetHandheldItem, c, 0, -1);
             set_hand(c, atoi(a[2].c_str()));
             if (is_guest()) {
@@ -843,7 +851,7 @@ std::string debug(const std::vector<std::string>& a)
                  hand_model(c), F<int>(c, kHandOff), vcall<float>((uint8_t*)c + 0xC0, 0x34 / 4), vcall<float>(c, 0x80 / 4, 0),
                  g_item_sets);
         return std::string(b) + " hold=" + std::to_string(hold_modifier(c, false) ? 1 : 0) + " holds_ended=" +
-               std::to_string(g_item_holds_ended);
+               std::to_string(g_item_holds_ended) + (cleared >= 0 ? " pending_cleared=" + std::to_string(cleared) : "");
     }
     // BUG-1335 (tests): handbone [member id]: each member of the player tribe (or that one): its hand bone (+0xFC4),
     // its body's bone count, the bone's state against the array (ok / out / unknown), its item and the drawn model
@@ -1398,7 +1406,7 @@ std::string debug(const std::vector<std::string>& a)
                " sent=" + std::to_string(g_anim.phase_sent) + " rx=" + std::to_string(g_anim.phase_rx) + " set=" + std::to_string(g_anim.phase_set) + " unlooped=" + std::to_string(g_anim.phase_unlooped) +
                " last_off=" + std::to_string(g_phase_last_off) + "\ntracks fix=" + std::to_string((int)g_phase_tracks_fix) +
                " sent=" + std::to_string(g_anim.tracks_sent) + " rx=" + std::to_string(g_anim.tracks_rx) + " set=" + std::to_string(g_anim.tracks_set) + "\nhold fix=" + std::to_string((int)g_mirror_hold_fix) + " sent=" + std::to_string(g_anim.hold_sent) + " rx=" + std::to_string(g_anim.hold_rx) +
-               " bound=" + std::to_string(g_anim.hold_bound) + " item_sets=" + std::to_string(g_anim.hold_item_sets) + " anim_plays=" + std::to_string(g_anim.hold_anim_plays) + " queued=" + std::to_string(g_anim.hold_queued) +
+               " bound=" + std::to_string(g_anim.hold_bound) + " item_sets=" + std::to_string(g_anim.hold_item_sets) + " anim_plays=" + std::to_string(g_anim.hold_anim_plays) + " queued=" + std::to_string(g_anim.hold_queued) + " retried=" + std::to_string(g_anim.hold_retried) +
                "\ntheme sent=" + std::to_string(g_anim.theme_sent) + " rx=" + std::to_string(g_anim.theme_rx) + " played=" + std::to_string(g_anim.theme_played) +
                "\nparty fix=" + std::to_string((int)g_party_fix) + " sent=" + std::to_string(g_anim.party_sent) + " rx=" +
                std::to_string(g_anim.party_rx) + " played=" + std::to_string(g_anim.party_played) + " stopped=" + std::to_string(g_anim.party_stopped) + " outside=" + std::to_string(g_party_stops_outside) +

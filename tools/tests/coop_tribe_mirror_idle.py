@@ -18,8 +18,9 @@ whether the hand holds its item, `hold=`):
 --part hold (BUG-0914): the natural holds are printed (each hold of the host's member in an animation and whether the
    mirror held its item in that animation during it or 0.6 s after: the mirror's own game takes the item itself in
    some animations, so the rate is no measure); then the host's chief takes its staff into the hand in the animation
-   it plays (`coop.tribe hand <id> <item>`, the game's attach: the hold modifier bound to that animation, what its
-   behaviour nodes do in a swing) three times and puts it back (`hand <id> end`): the guest's copy must hold the staff
+   it plays (`coop.tribe hand <id> <item> pending`, the game's attach: the hold modifier bound to that animation, what
+   its behaviour nodes do in a swing; its pending starts of that animation ended first and up to 3 attaches watched
+   1.5 s each, BUG-1349) three times and puts it back (`hand <id> end`): the guest's copy must hold the staff
    in the hand within 4 s of each take (the relay, and a mirror still in an animation the host's chief has left: the
    idle relay ends it within 2 s) and have it back in the grip (or held, as the host's) within 3.5 s of each end.
 Key frames of kind sameview: the village's fire with the members at rest (idle), the host's chief with its staff
@@ -162,15 +163,32 @@ def main():
                     print(f'    try {k}: not now (anim {x and x["anim"]} hold {x and x["hold"]}; {hand.strip()[:90]})', flush=True)
                     time.sleep(3)
                     continue
-                if not x['hold']:  # (holding already: its own behaviour took it, e.g. a long gesture)
-                    # its item, or the chief's staff (0x11) when its game has put it away (#tribe-held-item)
-                    host.call(f'coop.tribe hand {lead} {int(item.group(1)) or 17}')
+                tries = []
+                held = bool(x['hold'])  # (holding already: its own behaviour took it, e.g. a long gesture)
+                for _ in range(3):
+                    if held:
+                        break
+                    # its item, or the chief's staff (0x11) when its game has put it away (#tribe-held-item).
+                    # BUG-1349: `pending`: the attach after the pending starts of the drawn animation are ended (a hold
+                    # bound to a pending track ends at once: every round "let go at once" in lab 20261120-041304 and
+                    # 20261115-182010); up to 3 attaches, each watched for 1.5 s (a state, not one sample)
+                    out = host.call(f'coop.tribe hand {lead} {int(item.group(1)) or 17} pending')['out']
                     if not int(item.group(1)):
                         time.sleep(1.0)  # (the item field reaches the mirror twice a second)
-                time.sleep(1.5)
+                    t4 = time.time()
+                    while time.time() - t4 < 1.5 and not held:
+                        time.sleep(0.25)
+                        x = anims(host).get(lead)
+                        held = bool(x and x['hold'])
+                    pc = re.search(r'pending_cleared=(\d)', out)
+                    tries.append(f'{x and x["anim"]} held={int(held)} cleared={pc and pc.group(1)}')
+                time.sleep(0.5)
                 x, y = anims(host).get(lead), anims(guest).get(lead)
                 if not x or not x['hold']:
-                    print(f'    round {k}: the host\'s chief let go at once (anim {x and x["anim"]})', flush=True)
+                    print(f'    round {k}: the host\'s chief let go at once (anim {x and x["anim"]}; attaches {tries}; '
+                          f'{host.call(f"coop.tribe hand {lead}")["out"].strip()[:120]}; '
+                          f'{host.call(f"coop.tribe handbone {lead}")["out"].strip().replace(chr(10), " | ")[:160]})',
+                          flush=True)
                     host.call(f'coop.tribe hand {lead} end')
                     time.sleep(2)
                     continue

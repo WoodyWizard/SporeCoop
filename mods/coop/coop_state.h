@@ -380,6 +380,7 @@ bool dna_own_expect(uint8_t id, float& v);                        // BUG-1310: t
 bool dna_own_expect_cell(uint8_t id, int host_spent, int& v);     // BUG-1310
 std::string dna_own_field();                                      // BUG-1310: the host's trace line field
 void own_dna_tick();
+void own_dna_credit_now(); // BUG-1341: the totals phase credits this frame's party gain first
 std::string own_dna_status();
 
 // ---- defined in vote.cpp ----

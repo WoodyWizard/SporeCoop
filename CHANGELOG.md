@@ -34,6 +34,10 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   leaves its editor (BUG-1311).
 - Lab: a test that restarts the guest's game more than once no longer takes the host's game of the same lane along:
   every game of a lane now runs in the process namespace of the lane's Wine server (BUG-1327).
+- Lab: the campaigns wait for and finish a guest's own City Hall and vehicle editors after its arrival in
+  Civilization in any phase (they had been driven as the spaceship editor and counted as a stage desync, BUG-1351);
+  civ_own_arrival, civ_guest_creature and tribe_mirror_hold no longer fail on their own setup (BUG-1343, BUG-1344,
+  BUG-1349).
 - Lab: `coop.pool near <x> <y> <r>` (the cells drawn at a place) answers again; the slow-link test's cell list is now
   `coop.pool nearkeys` (BUG-1330). The Cell kin test parts the players again when the guest was knocked out alone in
   its new area and came back next to the host (BUG-1334).
@@ -155,6 +159,11 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
 - Creature: a guest no longer sees some of the host's animals far away half sunk into the ground (BUG-1357; still open
   until its lab run).
 
+- Tribe: a member a guest buys at its hut that the host's game makes from the guest's request (when the host did not
+  see the guest's hut) is now the guest's own creature on the host's screen too; before, it stayed the tribe's species
+  there until it grew up (BUG-1345; still open until its lab run).
+- Tribe: on a guest's screen the host's chief no longer shows its staff in the resting grip for about a second while
+  it swings it on the host's screen (BUG-1347; still open until its lab run).
 ## [0.7.15.5] - 2026-11-19
 
 A fix for players who could not leave the Tribe stage: the City Hall editor at its end could not be named after a

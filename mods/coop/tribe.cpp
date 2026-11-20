@@ -950,6 +950,18 @@ struct HoldSeen {
     double since;
 };
 static std::unordered_map<uint16_t, HoldSeen> g_hold_seen; // mirror id -> its started modifier, first seen
+// BUG-1347: a mirror's hold that hold_try bound with the attach (T with hold 0, then SetHandheldItem) in the frame the
+// host's animation was started on it (P) or a relayed restart came (R) did not start: hold 0 until the host's
+// once-a-second resend bound it again (T, then O 0.02 s later). Guest hold traces of tribe_chief_still's FAILs (lab
+// 20261113-060910 twice, 20261117-154911, 20261119-214823, 20261120-041304): the chief's staff in the hand on the host and
+// in the resting grip on the guest for 1.0-1.4 s. On: an attach whose hold has not started kHoldRetry s later, while the
+// mirror still draws that animation and holds the item, is made again (its pending starts of that id ended first, the
+// BUG-0992 call), at most kHoldRetries times per bind. Off: it waits for the resend (as before).
+static bool g_hold_retry_fix = true;
+COOP_FIX("tribe.hold_retry", "BUG-1347", g_hold_retry_fix,
+         "tribe: a guest's copy of a member takes its item into the hand again when the first take in the host's animation did not start");
+constexpr double kHoldRetry = 0.3;
+constexpr uint8_t kHoldRetries = 2;
 // the hand's started modifier of c: its handle (u16 serial | index << 16), 0 none; end: remove it
 uint32_t hold_modifier(void* c, bool end)
 {
@@ -1121,6 +1133,28 @@ static void held_items_tick(double now)
         if (slow && m.hold_anim && g_mirror_hold_fix) // BUG-0914: a hold that came before the mirror had the item or the animation
             hold_try(e_, now);
         uint32_t h = mirror_ok(e_) && has_body(c) && F<int>(c, kHeldItemOff) ? hold_modifier(c, false) : 0; // (BUG-0955)
+        if (h)
+            m.hold_set_at = 0; // (BUG-1347: started)
+        else if (slow && g_hold_retry_fix && g_mirror_hold_fix && m.hold_bound && m.hold_set_at > 0 &&
+                 now - m.hold_set_at >= kHoldRetry && now >= m.hold_set_at && a_SetHandheldItem && mirror_ok(e_) &&
+                 has_body(c) && !game::is_dead(c)) {
+            uint32_t cur = 0;
+            int item = F<int>(c, kHeldItemOff);
+            if (m.hold_retries >= kHoldRetries || item <= 0 || !game::drawn_state(c, nullptr, &cur) ||
+                cur != m.hold_anim_bound) {
+                m.hold_set_at = 0; // (another animation now, or tried enough: the host's resend binds it)
+            } else if (hand_ready(c)) {
+                float sc = read_item_scale(c);
+                clear_pending_same(c, cur);
+                set_hand(c, item);
+                if (g_item_scale_fix && sc != 1.f)
+                    apply_item_scale(c, sc);
+                m.hold_retries++;
+                m.hold_set_at = now;
+                g_anim.hold_retried++;
+                hold_ev(id, 'A', cur, m.hold_retries);
+            }
+        }
         auto it = g_hold_seen.find(id);
         if (!h) {
             if (it != g_hold_seen.end())
@@ -2283,6 +2317,15 @@ void test_vel_tick(double now)
 // food). `coop.fix tribe.guest_baby off`: the guest's game makes its own baby (0.7.9).
 bool g_guest_baby_fix = true;
 COOP_FIX("tribe.guest_baby", "BUG-0671", g_guest_baby_fix, "tribe: a tribe member the guest buys at its hut is born in the host's game and is the guest's");
+// BUG-1345: the host makes a guest's baby itself when its own game made none for the guest's ask within kBabyPair s (no
+// relayed hut effect, or its message never came: baby_tick). That call named no owner, so tribe.birth_species (BUG-1299)
+// gave it the tribe's species and baby_give named the guest only afterwards; tribe.kid_species (BUG-1313) never changes
+// a kid, so the guest's kid wore the tribe's species on the host until it grew up while the guest's mirror of it was
+// born in the guest's (lab 20261120-041304 tribe_kid_species: first seen 9.1 s after the click, 5.2 s + 4 s). On: the
+// asking guest is the owner at the birth. Off: as before.
+static bool g_ask_baby_species_fix = true;
+COOP_FIX("tribe.ask_baby_species", "BUG-1345", g_ask_baby_species_fix,
+         "tribe: a member a guest buys that the host's game makes for its ask is born in that guest's own species");
 static constexpr double kBabyPair = 4.0;
 static constexpr float kBabyNear = 6.0f;
 struct BabyAsk {
@@ -2479,7 +2522,9 @@ void baby_tick(double now)
         void* stage = a_Stage ? skg::cdecl_call<void*>(a_Stage) : nullptr;
         if (!stage || !player_tribe() || !net::is_player(*C.sess, k.from))
             continue;
-        for (void* c : baby_call(stage, k.pos)) { // none came: the host's game makes it (null at the cap: none)
+        // none came: the host's game makes it (null at the cap: none). BUG-1345: born for the guest that asked (its line
+        // species, tribe.birth_species), not named its owner only afterwards
+        for (void* c : baby_call(stage, k.pos, g_ask_baby_species_fix ? k.from : (uint8_t)0xFF)) {
             baby_give(c, k.from);
             g_babies_made++;
         }

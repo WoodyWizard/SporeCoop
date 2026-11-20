@@ -10,7 +10,8 @@ PlayCinematic plays CRG_ClaimNest (its caption keeps it running until a key). Re
 (`coop.find boxes`: every label as drawn) and a key frame:
   * before: the host's tag is drawn on the guest;
   * while the cinematic holds the guest's game (`busy` cinematic with input_lock or paused): no tag or arrow drawn;
-  * after it ended (Enter): the tag is drawn again.
+  * after it ended (Enter, else the game's EndCinematic: a guest's CRG_ClaimNest often takes no Enter): the tag is
+    drawn again.
 SPORE_FIX_OFF=find.cinematic must FAIL.
 
   SPORE_LANE=4 python3 tools/tests/coop_tag_cinematic.py
@@ -49,10 +50,25 @@ def main():
              settle=0)
     print(f'  during: drawn on the guest {during}', flush=True)
     ck(holds and not during, f'during the cutscene no partner tag or arrow is drawn ({during})')
+    # The cutscene ends with Enter (the caption's OK: cCinematicManager_HandleMessage 0x44EE075 -> EndCinematic). A
+    # CRG_ClaimNest started by PlayCinematic on a guest often takes no Enter at all (docs/re/creature.md, "does not end
+    # with Enter on the guest"; lab 20261115-225537, 20261117-154911, 20261120-041304: still playing after 40 s of
+    # Enter, input_lock=1 all the time): then the game's own EndCinematic, the call the caption's OK makes, ends it.
+    # The test checks the tag after the end, not how the cutscene was ended (BUG-1353).
     t0 = time.time()
     while time.time() - t0 < 40 and cinematic(guest):
         guest.call('key enter')
         time.sleep(1.0)
+    how = 'Enter'
+    if cinematic(guest):
+        how = 'EndCinematic'
+        guest.call(f'call SporeCoop::cCinematicManager_EndCinematic thiscall {cm:#x}')
+        wait(lambda: not cinematic(guest), 10)
+    over = not cinematic(guest)
+    print(f'  the cutscene {"ended by " + how if over else "still plays after Enter and EndCinematic"}', flush=True)
+    if not over:
+        ck.faults(host=host, guest=guest)
+        return ck.inconclusive('the cutscene did not end (Enter and EndCinematic): the tag after it cannot be judged')
     game_runs(guest)
     time.sleep(1.5)
     after = wait(lambda: drawn(guest), 10) or []
