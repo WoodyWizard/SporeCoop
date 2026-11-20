@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and reverse-engineering notes for this version.
+[SporeCoop Lineages](https://github.com/PandizeLive/SporeCoop-Lineages) is their own co-op campaign in which every player
+evolves a separate species in one shared world, from the tide pool to the galaxy. Its author says it is still pretty
+unstable for now. A Lineages game and a SporeCoop game cannot join each other: every player needs the same mod.
 
 ### Development
 - The guest's own editors of this version, fixed after their first lab run before any release: the Tribal Outfitter
