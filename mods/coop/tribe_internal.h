@@ -133,6 +133,11 @@ size_t founder_villages_in(const void* list);  // the partners' villages in a Ge
 void* own_village();                           // guest: its own village (null: none, it shares the host's)
 std::string villages_status();
 std::string villages_debug(const std::vector<std::string>& a);
+void villages_init2();                         // the guest's own village as its player tribe: the hut hooks
+void villages_save(bool start);                // a save: the host's village as the player tribe while it runs
+bool village_baby(uint8_t from);               // host: CMD_BABY of a player with a village of their own (true: taken)
+std::string persp_status();
+void note_owned_caller(uintptr_t ret);
 
 // ---------------- host ----------------
 // C1 (BUG-1140): one entry of the host's member table (tribe.hm); its id, object and serial are the registry entry's

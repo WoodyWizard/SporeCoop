@@ -478,6 +478,8 @@ void host_command(uint8_t from, net::Reader& r)
     if (!r.ok())
         return;
     if (kind == CMD_BABY) { // BUG-0671
+        if (from != 0 && game::mode_id() == modes::kTribe && village_baby(from)) // BUG-9268: in its own village
+            return;
         if (g_guest_baby_fix && from != 0 && game::mode_id() == modes::kTribe)
             baby_on_host(from, pos);
         else

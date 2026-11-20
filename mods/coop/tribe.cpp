@@ -95,6 +95,8 @@ void anim_send(uint8_t to, const net::Writer& w, bool reliable)
 
 void* player_tribe()
 {
+    if (void* h = swapped_host_tribe()) // BUG-9268: the guest's game shows its own village as the player's
+        return h;
     void* nm = game::noun_manager();
     return nm ? thiscall<void*>(a_GetPlayerTribe, nm) : nullptr;
 }
@@ -1593,6 +1595,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     savestrip::add_save_hooks(save_start, save_end);
     graduation_init(); // BUG-1325 (optional)
     villages_init();   // BUG-9268 (optional hooks)
+    villages_init2();  // BUG-9268: the guest's own village as its player tribe (optional hooks)
     return true;
 }
 
@@ -2475,6 +2478,7 @@ static bool mat_of(void* o, void* t)
 }
 static void save_start()
 {
+    villages_save(true); // BUG-9268: a save keeps the host's village as the player tribe
     g_strip_now.clear();
     if (!is_guest() || game::mode_id() != modes::kTribe)
         return;
@@ -2535,6 +2539,7 @@ static void save_start()
 }
 static void save_end()
 {
+    villages_save(false); // BUG-9268
     for (auto& t : g_took_t) { // back at the end of the list (the capacity is the one they left)
         void**& e = F<void**>(t.t, t.off + 4);
         if (game::object_alive(t.t) && e < F<void**>(t.t, t.off + 8))

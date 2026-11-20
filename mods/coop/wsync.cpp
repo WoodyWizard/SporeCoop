@@ -21,6 +21,7 @@
 #include "modes.h"
 #include "net/protocol.h"
 #include "sporekit_game.hpp"
+#include "tribe.h"
 
 namespace wsync {
 
@@ -72,6 +73,8 @@ static void* noun_mgr()
 }
 static void* player_tribe()
 {
+    if (void* h = tribe::swapped_host_tribe()) // BUG-9268
+        return h;
     void* nm = noun_mgr();
     void* t = R(nm, 0x78) ? F<void*>(nm, 0x70) : nullptr;
     return R(t, 0x350) ? t : nullptr;
