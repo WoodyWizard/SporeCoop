@@ -1401,3 +1401,27 @@ Parts 1, 2 and 6 of #server-party-progress-design.
 * Not yet: the herds near a player waking by that player's own brain level (part 2's last piece: the game's
   Relevance_Update uses the host's level for every herd), the stage end per party (part 3), the nest refresh (part 4),
   visitors across eras (part 5).
+
+## Step 4 part 3, the stage end per party: how it works (2026-11-19, feat/lineages-alpha)
+<a id="server-party-stage-end"></a>
+
+The pieces it reuses: the warm hand-over (6B C: a game keeps its loaded world and hosts it in place, the others rejoin
+with the token and get no world), the co-op stage end inside one session (the vote, the editor, the Tribe start with
+a village per founder seat from its own nest, tribe.multi_founders), and the late join into a Tribe world (a joiner
+keeps its species and gets its village, decisions 4, 5 and 14).
+
+1. **The split.** A party's leader asks for the stage end (the game's own stage-end editor request, with its party's
+   bar full). Its game holds the request and sends MOVEON to the galaxy server. The server takes the party's members
+   on that era out of it into a crossing session of their own (key "<planet>~<party id>|<Era>": never stored, never
+   listed, only that party may enter): the leader hosts it with the world it has loaded (warm), the members get MOVED
+   with the token and rejoin the leader with no world sent. The players who stay keep the era: if its host was in
+   the moving party, the next of them takes it over warm (the hand-over the server does when a host leaves).
+2. **The stage end.** Once the members are back with the leader (or 60 s passed), the leader's game sends the held
+   request again: the co-op stage end runs as in a party's own game (vote, editor, the next stage's start, a village
+   per member from its own nest).
+3. **Arriving.** In the next stage the leader sends ARRIVE: if the planet's next era has no host, the crossing
+   becomes that era (the server renames it; the members stay in the session, nothing reloads) and the leader's next
+   upload stores it. If the era has a host, every member gets ROLE guest of that host: they join it as late joiners
+   (one load; each keeps its species and gets its home through the late-join path).
+4. **What stays behind** (part 4): the party's nests stay in the old era as wild animals; the nest refresh rotates
+   them later.

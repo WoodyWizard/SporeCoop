@@ -21,9 +21,9 @@ import zlib
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 EXE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'build', 'galaxy_server.exe' if os.name == 'nt' else 'galaxy_server')
-PROTO = 7
+PROTO = 8
 (HELLO, WELCOME, LIST, PLANETS, ENTER, ROLE, LEAVE, PING, PONG, REFUSED, HOSTGONE, READY, FETCH, XBEGIN, XCHUNK, XACK, XDONE,
- HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE) = range(1, 26)
+ HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE, MOVEON, MOVED, ARRIVE) = range(1, 29)
 CHUNK = 1100
 fails = []
 
@@ -123,6 +123,20 @@ def upload(p, xid, planet, data, era=None):
 def blob(planet, n=3000):
     """A world as the game packs it (world.cpp galaxy_pack): "SCW1", str8 the save's planet, then anything."""
     return b'SCW1' + s8(planet) + bytes((i * 5 + 1) & 0xFF for i in range(n))
+
+
+def moved_of(body):
+    r = Reader(body)
+    planet = r.s8().decode()
+    kind, host = r.take('<B'), r.take('<H')
+    return planet, kind, host, r.take('<Q')
+
+
+def ready(p, planet):
+    for _ in range(4):
+        p.ping(planet, 2)
+        time.sleep(0.05)
+    p.pump(0.3)
 
 
 def role_of(body):
@@ -271,6 +285,65 @@ def main():
         b.pump(0.3)
         a.pump(0.3)
         check(a.take(PARTYNOTE, 0.2) is None, 'an answer to no invite sends its "inviter" nothing')
+
+        print('a party crosses to the next stage (step 4 part 3)')
+        for p in (a, b, c):
+            p.send(LEAVE)
+        time.sleep(0.2)
+        a.send(PARTY, struct.pack('<BQBI', 1, b.identity, 0, 0))
+        time.sleep(0.2)
+        b.send(PARTY, struct.pack('<BQBI', 2, a.identity, 1, 0))
+        time.sleep(0.3)
+        for p in (a, b, c):
+            p.pump(0.2)
+            p.inbox.clear()
+        a.enter('Venus|Creature')
+        ra = a.take(ROLE)
+        ready(a, 'Venus|Creature')
+        b.enter('Venus|Creature')
+        c.enter('Venus|Creature')
+        check(ra is not None and role_of(ra)[1] == 1 and b.take(ROLE) is not None and c.take(ROLE) is not None,
+              'Host hosts Venus (Creature), Guest (its party) and the third player join')
+        a.send(MOVEON)
+        ma, mb = a.take(MOVED), b.take(MOVED)
+        rc = c.take(ROLE)
+        ok = ma is not None and mb is not None and moved_of(ma)[1] == 1 and moved_of(ma)[0] == moved_of(mb)[0]
+        check(ok and '~' in moved_of(ma)[0] and moved_of(mb)[2] == a.slot and moved_of(ma)[3] == moved_of(mb)[3] != 0,
+              "MOVEON: the party goes into its crossing, its leader hosts it (warm, one token)")
+        check(rc is not None and role_of(rc)[0] == 'Venus|Creature' and role_of(rc)[1] == 1 and c.take(MOVED, 0.2) is None,
+              'the player who stays takes Venus (Creature) over')
+        cross = moved_of(ma)[0] if ma else ''
+        c.send(LIST)
+        lst = c.take(PLANETS)
+        check(lst is not None and b'~' not in lst, 'a crossing is not listed')
+        b.inbox.clear()
+        b.send(MOVEON)
+        check(b.take(REFUSED) is not None, 'only the leader moves the party on')
+        c.inbox.clear()
+        c.enter(cross)
+        check(c.take(REFUSED) is not None, 'nobody enters a crossing')
+        d = upload(a, 60, cross, blob('Venus'), era=2)
+        check(d is not None and d[4] == 0, 'a crossing is never stored')
+        a.send(ARRIVE, bytes([2]))
+        check(a.take(REFUSED) is not None, 'ARRIVE in the stage it left is refused')
+        a.send(ARRIVE, bytes([3]))
+        ma, mb = a.take(MOVED), b.take(MOVED)
+        check(ma is not None and mb is not None and moved_of(ma)[:2] == ('Venus|Tribe', 2) and moved_of(mb)[:2] == ('Venus|Tribe', 2),
+              'ARRIVE in Tribe, nobody hosts Venus (Tribe): the crossing becomes it (no reload)')
+        c.send(LIST)
+        lst = c.take(PLANETS)
+        check(lst is not None and b'Venus|Tribe' in lst, 'Venus (Tribe) is listed')
+        # the second party to arrive joins the era's host: the party moves on again from Tribe while Civ has a host
+        c.enter('Venus|Civ')
+        rc = c.take(ROLE)
+        ready(c, 'Venus|Civ')
+        a.send(MOVEON)
+        a.take(MOVED)
+        b.take(MOVED)
+        a.send(ARRIVE, bytes([4]))
+        ma, mb = a.take(MOVED), b.take(MOVED)
+        check(rc is not None and ma is not None and mb is not None and moved_of(ma)[:3] == ('Venus|Civ', 3, c.slot)
+              and moved_of(mb)[1] == 3, 'ARRIVE where the era has a host: the party is told to join it')
 
         print('limits')
         more = [Player(port, 'p%d' % i, 0x100 + i) for i in range(5)]

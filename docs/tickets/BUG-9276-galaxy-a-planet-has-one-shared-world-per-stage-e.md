@@ -10,8 +10,8 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
-tests: tools/tests/galaxy_server_check.py (eras); live TITAN QA 8+9 2026-11-19
+commits: 6a73ae46
+tests: tools/tests/galaxy_server_check.py
 signature:
 docs: docs/12-server-and-players.md#server-eras-built
 related: BUG-9277, BUG-9273

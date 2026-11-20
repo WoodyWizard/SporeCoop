@@ -399,6 +399,9 @@ static std::string clean_name(std::string s, size_t max)
     return out;
 }
 
+static void move_on(Client& c);
+static void arrive(Client& c, uint8_t era);
+
 static void on_control(const Endpoint& from, Reader& r)
 {
     const uint8_t type = r.u8();
@@ -533,7 +536,8 @@ static void on_control(const Endpoint& from, Reader& r)
     } else if (type == LIST) { // the planets with players, then the stored ones nobody is on
         std::vector<std::string> names;
         for (auto& [name, p] : g_planets)
-            names.push_back(name);
+            if (!is_crossing(name)) // (a party's crossing is its own: not listed)
+                names.push_back(name);
         for (auto& [name, st] : g_stored)
             if (!g_planets.count(name))
                 names.push_back(name);
@@ -552,10 +556,22 @@ static void on_control(const Endpoint& from, Reader& r)
                 w.u32(st == g_stored.end() ? 0 : st->second.species[k]);
         }
         send(*c, w);
+    } else if (type == MOVEON) {
+        move_on(*c);
+    } else if (type == ARRIVE) {
+        const uint8_t era = r.u8();
+        if (r.ok())
+            arrive(*c, era);
     } else if (type == ENTER) {
         std::string name = r.str8();
         if (!r.ok() || name.empty())
             return;
+        if (is_crossing(name)) { // (made by the server for a party only)
+            Writer w = control(REFUSED);
+            w.str8("That is a party's crossing to the next stage: it cannot be entered.");
+            send(*c, w);
+            return;
+        }
         if (name.size() > kMaxPlanetName || clean_name(name, kMaxPlanetName) != name) {
             Writer w = control(REFUSED);
             w.str8("That planet name cannot be used (too long, or odd characters).");
@@ -679,6 +695,14 @@ static void on_control(const Endpoint& from, Reader& r)
         // step 4 part 1: an era keeps worlds of its stage only (a host whose game went on to the next stage does not
         // turn the planet's Creature era into a Tribe world: its party moves to the Tribe era instead)
         const uint8_t key_era = era_of(in.planet);
+        if (is_crossing(in.planet)) { // step 4 part 3: a crossing is never stored (its world becomes the next era's)
+            Writer w = control(XDONE);
+            w.u32(in.id);
+            w.u8(0);
+            w.str8("a party's crossing to the next stage is not stored");
+            send(*c, w);
+            return;
+        }
         if (key_era && m.era != key_era) {
             Writer w = control(XDONE);
             w.u32(in.id);
@@ -783,6 +807,118 @@ static void send_party_view(uint16_t slot)
     w.str8(f ? f->name : "");
     send(it->second, w);
     g_party_views++;
+}
+
+// ---------------- step 4 part 3: a party ends its stage (docs/12-server-and-players.md#server-party-stage-end) -------
+static void send_party_views(std::initializer_list<uint16_t> slots);
+static uint32_t g_moveons = 0, g_arrivals = 0, g_renamed = 0;
+static uint64_t new_token()
+{
+    return ((uint64_t)rand() << 48) ^ ((uint64_t)rand() << 32) ^ ((uint64_t)rand() << 16) ^ (uint64_t)rand() ^
+           ((uint64_t)now_ms() << 20) ^ 1; // (never 0)
+}
+static void moved(uint16_t to, const std::string& planet, uint8_t kind, uint16_t host, uint64_t token)
+{
+    Writer w = control(MOVED);
+    w.str8(planet);
+    w.u8(kind);
+    w.u16(host);
+    w.u64(token);
+    send(g_clients[to], w);
+}
+static void refuse(Client& c, const std::string& why)
+{
+    Writer w = control(REFUSED);
+    w.str8(why);
+    send(c, w);
+}
+
+// the party's leader: its party's players on this era go into the party's crossing; the leader hosts it with the
+// world it plays (warm), the others rejoin it with the token; the era's other players keep it (a hand-over when its
+// host was one of the party)
+static void move_on(Client& c)
+{
+    const auto* q = g_parties.find(c.slot);
+    if (c.planet.empty() || !era_of(c.planet) || is_crossing(c.planet))
+        return refuse(c, "Only a party on a planet's stage can move on to the next stage.");
+    if (q && q->leader != c.slot)
+        return refuse(c, "Only the party's leader moves the party on to the next stage.");
+    auto it = g_planets.find(c.planet);
+    if (it == g_planets.end())
+        return;
+    const std::string from = c.planet, cross = crossing_key(from, q ? q->id : c.slot);
+    std::vector<uint16_t> movers{c.slot};
+    if (q)
+        for (uint16_t m : q->members)
+            if (m != c.slot && it->second.members.count(m))
+                movers.push_back(m);
+    // out of the era: the others first, the leader last, the era's host (if one of them) after everybody else of the
+    // party so its hand-over goes to a player who stays
+    const uint16_t era_host = it->second.host;
+    std::sort(movers.begin() + 1, movers.end());
+    std::vector<uint16_t> order;
+    for (uint16_t m : movers)
+        if (m != era_host)
+            order.push_back(m);
+    for (uint16_t m : movers)
+        if (m == era_host)
+            order.push_back(m);
+    for (uint16_t m : order) {
+        Client& mc = g_clients[m];
+        leave_planet(mc, "moved on to the next stage with its party");
+    }
+    Planet& p = g_planets[cross];
+    p = Planet{};
+    p.host = c.slot;
+    p.token = new_token();
+    for (uint16_t m : movers) {
+        p.members.insert(m);
+        g_clients[m].planet = cross;
+        g_clients[m].ping_off = 0;
+        moved(m, cross, kMovedSplit, c.slot, p.token);
+    }
+    g_moveons++;
+    say("planet '%s': %u '%s' moves its party (%zu) on to the next stage: crossing '%s'", from.c_str(), c.slot,
+        c.name.c_str(), movers.size(), cross.c_str());
+    send_party_views({c.slot});
+}
+
+// the crossing's host plays the next stage now: the crossing becomes that era (nobody hosts it), or everyone joins
+// the era's host
+static void arrive(Client& c, uint8_t era)
+{
+    auto it = g_planets.find(c.planet);
+    if (!is_crossing(c.planet) || it == g_planets.end() || it->second.host != c.slot || !era || era > kEraLast)
+        return refuse(c, "Nothing to arrive from.");
+    const std::string cross = c.planet, to = era_key(crossing_planet(cross), era);
+    if (to == era_key(crossing_planet(cross), era_of(cross)))
+        return refuse(c, "The crossing is still in the stage it left.");
+    Planet moving = it->second;
+    g_planets.erase(it);
+    g_arrivals++;
+    auto ex = g_planets.find(to);
+    if (ex == g_planets.end() || !ex->second.host) { // nobody hosts it: the crossing is that era now
+        Planet& p = g_planets[to];
+        const std::set<uint16_t> waiting = p.members; // (players who entered it without a host: none in practice)
+        p = moving;
+        p.members.insert(waiting.begin(), waiting.end());
+        p.ready = true;
+        for (uint16_t m : moving.members) {
+            g_clients[m].planet = to;
+            g_clients[m].ping_off = 0;
+            moved(m, to, kMovedRenamed, c.slot, 0);
+        }
+        g_renamed++;
+        say("planet '%s': the party of %u '%s' arrived from its crossing and hosts it", to.c_str(), c.slot, c.name.c_str());
+    } else { // the era has a host: the party joins it (each enters it as any player)
+        for (uint16_t m : moving.members) {
+            g_clients[m].planet.clear();
+            moved(m, to, kMovedJoin, ex->second.host, 0);
+        }
+        say("planet '%s': the party of %u '%s' arrived from its crossing and joins %u '%s'", to.c_str(), c.slot,
+            c.name.c_str(), ex->second.host, g_clients[ex->second.host].name.c_str());
+    }
+    send_party_views({c.slot});
 }
 
 // the views of every member of these players' parties (after a change)
@@ -1154,12 +1290,12 @@ int main(int argc, char** argv)
             const double secs = (now - last_status) / 1000.0;
             say("status: %zu player(s), %zu planet(s), relay %.1f KB/s (%llu packets, %llu dropped in all), "
                 "copies: in %.1f KB/s out %.1f KB/s (%llu sent, %llu dropped in all), parties %zu (%llu requests, %llu views), "
-                "eras: %u migrated, %u uploads of another stage and %u of another planet refused",
+                "eras: %u migrated, %u uploads of another stage and %u of another planet refused, crossings %u (arrived %u, became the era %u)",
                 g_clients.size(), g_planets.size(), kbs, (unsigned long long)g_relay_packets,
                 (unsigned long long)g_relay_dropped, (g_fan_in_bytes - status_fan_in) / 1024.0 / secs,
                 (g_fan_out_bytes - status_fan_out) / 1024.0 / secs, (unsigned long long)g_fan_packets,
                 (unsigned long long)g_fan_dropped, g_parties.all().size(), (unsigned long long)g_party_requests,
-                (unsigned long long)g_party_views, g_migrated, g_era_refused, g_save_refused);
+                (unsigned long long)g_party_views, g_migrated, g_era_refused, g_save_refused, g_moveons, g_arrivals, g_renamed);
             last_status = now;
             status_bytes = g_relay_bytes;
             status_fan_in = g_fan_in_bytes;

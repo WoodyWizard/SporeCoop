@@ -66,9 +66,34 @@ inline std::string era_key(const std::string& planet, uint8_t era)
 {
     return era ? era_planet(planet) + kEraSep + era_name(era) : era_planet(planet);
 }
-// for messages: "Samuth (Tribe)"
+// Step 4 part 3 (docs/12-server-and-players.md#server-party-stage-end): a party crossing to the next stage plays in a
+// session of its own, "<planet>~<party id>|<Era>" (never stored, never listed, only made by the server)
+inline std::string crossing_key(const std::string& key, uint16_t party)
+{
+    return era_planet(key) + "~" + std::to_string(party) + kEraSep + era_name(era_of(key));
+}
+inline bool is_crossing(const std::string& key)
+{
+    const std::string p = era_planet(key);
+    const size_t i = p.rfind('~');
+    if (!era_of(key) || i == std::string::npos || i + 1 >= p.size())
+        return false;
+    for (size_t k = i + 1; k < p.size(); k++)
+        if (p[k] < '0' || p[k] > '9')
+            return false;
+    return true;
+}
+// the planet a crossing belongs to ("Samuth~12|Creature": "Samuth"; anything else: era_planet)
+inline std::string crossing_planet(const std::string& key)
+{
+    const std::string p = era_planet(key);
+    return is_crossing(key) ? p.substr(0, p.rfind('~')) : p;
+}
+// for messages: "Samuth (Tribe)", a crossing "Samuth (your party's way to the next stage)"
 inline std::string era_display(const std::string& key)
 {
+    if (is_crossing(key))
+        return crossing_planet(key) + " (your party's crossing)";
     const uint8_t e = era_of(key);
     return e ? era_planet(key) + " (" + era_name(e) + ")" : key;
 }
@@ -85,9 +110,10 @@ inline std::string blob_planet(const std::vector<uint8_t>& blob)
     const size_t n = blob[4];
     return blob.size() < 5 + n ? "" : std::string((const char*)blob.data() + 5, n);
 }
-constexpr uint32_t kProto = 7; // 2: stored worlds (5Q A); 3: the hand-over (5V A); 4: the menu facts (5X B);
+constexpr uint32_t kProto = 8; // 2: stored worlds (5Q A); 3: the hand-over (5V A); 4: the menu facts (5X B);
                                 // 5: the warm hand-over token (6B C); 6: the identity key and the address cookie (6S);
-                                // 7: eras (step 4 part 1: an upload names its era, the server keeps 3 older saves)
+                                // 7: eras (step 4 part 1: an upload names its era, the server keeps 3 older saves);
+                                // 8: a party's crossing to the next stage (MOVEON, MOVED, ARRIVE: step 4 part 3)
 constexpr uint8_t kControl = 'G', kRelay = 'R', kFan = 'F';
 constexpr size_t kMaxFanSlots = 64; // (kMaxPlanetPlayers)
 // decision 6I A: a guest that loaded the planet's stored world joins with this receipt; the host takes it (no world sent)
@@ -145,7 +171,16 @@ enum Type : uint8_t {
     // 6S (BUG-9273): server -> a new address: u64 cookie; the HELLO from that address carries it back (the address is
     // real: no slot, no answer bigger than the HELLO for a spoofed one)
     CHALLENGE = 25,
+    // step 4 part 3: a party ends its stage (docs/12-server-and-players.md#server-party-stage-end)
+    MOVEON = 26, // the party's leader -> server: take my party out of this era into its crossing (no body)
+    MOVED = 27,  // server -> a player: str8 planet, u8 kind (kMovedSplit / kMovedRenamed / kMovedJoin), u16 its host's
+                 //   slot, u64 the token (a split: this game keeps its world, the host hosts it in place, the others
+                 //   rejoin with the token); kMovedJoin: leave the crossing and ENTER the planet named (its era has a
+                 //   host)
+    ARRIVE = 28, // the crossing's host -> server: u8 the era its game plays now (the next stage): the crossing becomes
+                 //   that era if nobody hosts it (kMovedRenamed), else everyone joins its host (kMovedJoin)
 };
+constexpr uint8_t kMovedSplit = 1, kMovedRenamed = 2, kMovedJoin = 3;
 // 6S: the identity's key does not match the one the server keeps for it
 constexpr const char* kIdentityTaken = "This player's identity is in use with another key on this galaxy: is another copy of your profile playing?";
 enum PartyKind : uint8_t { kPartyInvite = 1, kPartyAnswer, kPartyLeave, kPartyLead, kPartyKick, kPartyStage };

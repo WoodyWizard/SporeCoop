@@ -10,8 +10,8 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
-tests: live TITAN QA 8+9 2026-11-19 (coop.dna gain on the guest, switch on and off)
+commits: 6a73ae46
+tests: tools/qa_win (live TITAN QA 8+9 2026-11-19, coop.dna gain on the guest)
 signature:
 docs: docs/12-server-and-players.md#server-eras-built
 related: BUG-9162, BUG-9266, BUG-9270, BUG-9276
