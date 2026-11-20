@@ -10,9 +10,9 @@ role:
 versions: 
 fixed_in: unreleased
 branch: fix/w58-cityname
-commits:
+commits: 3dd923f5 37844d02 e6e418c3 3f698fd6 acdbda75
 tests: creation_props_key0, creation_props_key0_off, civ_own_arrival, line_stages_editors
-signature:
+signature: UI::EditorNamePanel +0x11 = 0, +0x20 = 0 (no name field 0xC7CEB1BD, no dice 0x0552C901); a .prop {0, 0x00B1B104, 0x0000E500} in the profile's Pollination.package
 docs: docs/re/creations.md#creations-props-key0
 related: BUG-1111, BUG-1272, BUG-1276, BUG-1277, BUG-1329
 ---
@@ -64,9 +64,24 @@ UI::EditorNamePanel::Initialize. Test side: the campaign driver's red cross afte
 line_stages_outfit again.
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+The difference reproduced on lane 6 and the fix (fix/w58-cityname):
+- FAIL (no fix, lane 5 as it was): civ_own_arrival 20261119-193851 lane 5 ("the guest left its City Hall editor with a
+  creation" FAIL: no dice; panel +0x11 = 0 / +0x20 = 0 read at runtime), while the same build on lane 6 left it
+  (20261119-193856).
+- FAIL (twin, the difference applied to lane 6): creation_props_key0_off 20261119-200001 lane 6 (late route; planted
+  list: no name field, no dice, the key frame shows lane 5's panel); creation_props_key0_off 20261119-202053 lane 5 (final
+  route, the live end of Tribe).
+- PASS (fix): creation_props_key0 20261119-202049 lane 6 (both editors named with the dice and saved, both results on
+  the guest's line, the guard answered 2 reads of key 0); civ_own_arrival 20261119-200005 on lane 5 with its list still
+  in the file; line_stages_editors 20261119-200601 on lane 5 (all passed, 11.2 min: the City Hall editor ended at the
+  4th "done", as on lane 6), without the campaign's red cross.
+- Lanes 5 and 6 cleaned afterwards (`coop.creationprops remove`: no .prop left in either guest profile's
+  Pollination.package).
 
 ## History
 - 2026-11-19: opened (fix/w58-linestages): the lab runs above, the screenshots; first taken for an effect of the guest's own
   outfitter, then seen on lane 5 only (line_stages_outfit passes the editors on lane 6, 20261119-190903); open.
+- 2026-11-19: fix/w58-cityname: the lanes compared (bottles, game files, profiles), the list under key 0 found in lane
+  5's Pollination.package, the name panel's flags read at runtime and in Ghidra, reproduced on lane 6 by planting the
+  list; fixed by `game.creation_props_key0`; the campaign's red-cross workaround removed; fixed. Found on the way:
+  BUG-1329 (the late route's City Hall result faults in the Tribe goal listener).
