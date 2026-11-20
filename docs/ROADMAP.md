@@ -471,3 +471,10 @@ across eras, planet saves kept safe. No gameplay decision is open for it.
 Summon Flock per player (5D), encryption of the galaxy traffic, a chat line in the galaxy menu (P8), the paging of
 long planet and player lists (S10). Test PCs: the MSI's Spore still has a protocol 5 build and cannot join the
 protocol 6 test galaxy until it gets the new build.
+
+Step 4 progress (2026-11-19, the owner: "Yes, start step 4"): parts 1, 2 and 6 built and seen in game (eras on the
+server, each party's own bar, planet saves kept and checked: BUG-9276, BUG-9277); part 3 built (BUG-9278: the server
+side checked, the party's split into its crossing seen in game; the Tribe start inside the crossing not seen yet: the
+test copy needs a save at the last brain level). Next: that test, then the herds by each player's brain level (part
+2's last piece), the nest refresh (part 4), visitors across eras (part 5). The test galaxy is on protocol 8: the
+MSI needs the new build before it can join.
