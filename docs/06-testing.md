@@ -9796,3 +9796,14 @@ player's own creature on its game and none on the partner's (`p: 1 missing on th
 that passed). `diag.override_out`: the player's own row is left out of the compare while its override runs (the digest's
 `out` list). away_stages asks for one check inside its "menu" window (`coop.diag sync now`) and needs no difference;
 twin `away_stages_override_off`.
+
+## The sync-check and a guest whose game stands (2026-11-20, fix/w59-tribe)
+<a id="testing-sync-guest-stands"></a>
+
+BUG-1339. A guest in its pause menu (or a planner, or waiting for the host) runs no world: a city the host founds
+meanwhile and that city's vehicles come there only when it goes on (BUG-0335). The campaign's own compare and census
+skipped such a guest since BUG-0289 / BUG-0404; the mod's in-game sync-check (the lab's sync-check gate) did not and
+reported `v: N missing on the guest` (campaign_tc2, 20261119-214823: Carol paused 4.5 min). `diag.guest_stands`: the
+guest's digest carries a `stands` byte, the host does not compare it then (`stands_skipped=` in `coop.diag sync`).
+The campaign logs a guest that stood a minute (`<name> stands N s: busy ..., pause menu 0|1, pauses: ...`) and closes a
+pause menu still up after 90 s.

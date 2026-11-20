@@ -46,6 +46,7 @@ struct Probe {
     std::function<uint32_t()> mode;  // game mode id
     std::function<uint32_t()> place; // the place (world) id of the stage, 0 = none
     std::function<bool()> playing;   // the player controls something (an avatar, a tribe, ...)
+    std::function<bool()> stands;    // BUG-1339: this game's own game time stands (busy.h kPaused)
     // BUG-0588: the host's game is in the end of its stage (Tribe: from the City Hall editor on its animals are at
     // (0 0 0), its village is taken down): its world is no longer the one a guest plays, the sync-check waits
     std::function<bool()> stage_end;

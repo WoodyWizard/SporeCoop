@@ -3206,9 +3206,23 @@ static void test_diag_messages()
     Reader rs(ws.data.data(), ws.size());
     dg::Digest d4;
     CHECK(rs.u8() == dg::kDigest && d4.read(rs) && d4.scale == 1.5f && d4.out.size() == 2);
-    Writer wo; // an older sender's digest (no scale and no agl trailer at the end) reads scale 0
+    CHECK(d4.stands == 0);
+    d.stands = 1; // BUG-1339: the sender's game stands
+    Writer wp;
+    d.write(wp);
+    Reader rp(wp.data.data(), wp.size());
+    dg::Digest d6;
+    CHECK(rp.u8() == dg::kDigest && d6.read(rp) && d6.stands == 1 && d6.scale == 1.5f && d6.out.size() == 2);
+    Writer wq; // a 0.7.16 sender before BUG-1339 (no stands byte) reads 0
+    d.write(wq);
+    wq.data.resize(wq.data.size() - 1);
+    Reader rq(wq.data.data(), wq.size());
+    dg::Digest d7;
+    CHECK(rq.u8() == dg::kDigest && d7.read(rq) && d7.stands == 0 && d7.scale == 1.5f);
+    d.stands = 0;
+    Writer wo; // an older sender's digest (no scale, no agl trailer, no stands byte at the end) reads scale 0
     d.write(wo);
-    wo.data.resize(wo.data.size() - 4 - 2);
+    wo.data.resize(wo.data.size() - 4 - 2 - 1);
     Reader ro(wo.data.data(), wo.size());
     dg::Digest d5;
     CHECK(ro.u8() == dg::kDigest && d5.read(ro) && d5.scale == 0 && d5.out.size() == 2);

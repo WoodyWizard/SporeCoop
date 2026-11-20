@@ -2265,6 +2265,7 @@ void support_init()
     p.chat_log = [](const std::string& t) { chat_log(t); };
     p.my_name = [] { return g_name; };
     p.entries = sync_all;
+    p.stands = [] { return (game_busy() & busy::kPaused) != 0; }; // BUG-1339
     p.players_out = [] { // dead, respawning or not in a world: hidden on purpose (drive_puppet's rules)
         std::vector<uint8_t> v;
         double now = H->time_seconds();
