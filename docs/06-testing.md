@@ -9786,3 +9786,13 @@ BUG-1335 (docs/re/tribe.md#tribe-hand-bone). `tools/tests/coop_tribe_hand_bone.p
 * Twin `tribe_hand_bone_off` (`SPORE_FIX_OFF=creature.fx_bone`): the planted call faults the guest in CreateEffect
   (+0x143 reading the far bone, or +0x146 like the lab's when that memory is mapped): FAIL by the faults check.
 * Unit: tests/tribe_tests.cpp `hand_bone` (bone_rules::check), FAILS with `--nofix` (the game's only check, bone != -1).
+
+## away_stages and the sync-check during a faked host state (2026-11-20, fix/w59-tribe)
+<a id="testing-away-stages-override"></a>
+
+BUG-1338. `coop.hoststate mode <hex> <s>` makes a game's player states report another mode while the game stays where it
+is. A partner hides that player as the reported mode says (the menu: hidden), so a sync-check in that window found the
+player's own creature on its game and none on the partner's (`p: 1 missing on the guest (p0)`, a gate FAIL of a test
+that passed). `diag.override_out`: the player's own row is left out of the compare while its override runs (the digest's
+`out` list). away_stages asks for one check inside its "menu" window (`coop.diag sync now`) and needs no difference;
+twin `away_stages_override_off`.

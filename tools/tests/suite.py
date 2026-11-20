@@ -641,6 +641,7 @@ add('tribe_away', P + 'coop_tribe_away.py', warm=True, minutes=5, fixture='tribe
 add('dna_away', P + 'coop_dna_away.py', warm=True, minutes=5, fixture='creature')  # guest DNA while the host has no creature reaches the pack (BUG-0151; --nofix fails)
 add('away_editor', P + 'coop_away_editor.py', warm=True, minutes=6, fixture='creature')  # a guest's goal reward reaching the host in its editor is paid when it is back (BUG-0205; --nofix fails)
 add('away_stages', P + 'coop_away_stages.py', warm=True, minutes=3, fixture='space')  # a host editor counts as away only in Creature/Tribe/Civ, not in Space; the menu still does (BUG-0233; --nofix fails)
+add('away_stages_override_off', 'SPORE_FIX_OFF=diag.override_out ' + P + 'coop_away_stages.py', ('twin',), minutes=3, fixture='space')  # BUG-1338 twin: the sync-check compares the host's own creature while its states report the menu: the guest's hidden puppet differs: must FAIL
 add('tribe_chief_removed', P + 'coop_tribe_chief_removed.py', warm=True, minutes=3, fixture='tribe')  # a chief removed at once (BUG-0081; --nofix fails)
 add('tribe_epic_dying', P + 'coop_tribe_epic_dying.py', warm=True, minutes=6, fixture='tribe')  # BUG-0171: blows on the co-op epic at and after its death keep both games drawing (SPORE_FIX_OFF=tribe.hit_dead: the old command)
 add('tribe_epic_dying_slow', 'SPORE_FPS=20 SPORE_NET=player ' + P + 'coop_tribe_epic_dying.py', minutes=8)  # BUG-0171 at 20 fps over the player network
