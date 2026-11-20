@@ -4382,3 +4382,11 @@ BUG-9268 (second round), BUG-9271, BUG-9272; follows [tribe-own-villages](#tribe
   with the search on that side (the nest itself when 80 m out, else 80-125 m on the nest's side, up to 30 degrees either
   way, within 70 m of the nest; level, dry, within 6 m of the host village's height) a site is found there
   (`coop.tribe villages nests 1`: "site at the nest"); before, the ring search put it 99 m away on another side.
+* ✔ (runtime, found in this round) BUG-0571's pace of the party (tribe.form_pace) counted every tribe noun: with a
+  partner's village the planet had 2 tribes and no rival, so its rule held the first rival until the host's food passed
+  100 x players (15 minutes without a rival on lane D: `coop.tribe form`: "tribes 2 ... held"). The partners' villages
+  are no rivals there either now and their food is the party's (`partner_villages`): the first rival came at once
+  ("tribes 3", Juko / Chirpotaur as before).
+* ✔ (runtime) The team's alliance: `coop.tribe villages earn 1 <npc>` (the NPC allied with the guest's village only, its
+  mission made as for a guest's gift) -> within 5 s the host's village's relation 0 -> 8 (team_allies 1) and the host's
+  goal bar 0 -> 1; the guest's game showed the goal card "Ally the Cyan Village" done and the bar's segment filled.

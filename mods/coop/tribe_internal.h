@@ -138,6 +138,7 @@ void villages_save(bool start);                // a save: the host's village as 
 bool village_baby(uint8_t from);               // host: CMD_BABY of a player with a village of their own (true: taken)
 std::string persp_status();
 void note_owned_caller(uintptr_t ret);
+size_t partner_villages(int* food);            // host: the partners' live villages (and their food added to *food)
 
 // ---------------- host ----------------
 // C1 (BUG-1140): one entry of the host's member table (tribe.hm); its id, object and serial are the registry entry's
