@@ -797,7 +797,7 @@ Phase 1 of the port of Lineages (PR #196, PandizeLive; there BUG-9135 / BUG-9198
 ## The own stage history on the wire (2026-11-20, feat/own-cards)
 <a id="netcode-own-cards"></a>
 
-BUG-9263. `MSG_OWN_CARDS` (74, session family 1.3, a type older versions ignore):
+BUG-9263. `MSG_OWN_CARDS` (75, session family 1.3, a type older versions ignore):
 * host -> a guest: `u8 0, u8 flags (bit 0: own history), 5 x u32 the seat's consequence cards, f32 social, f32
   combat`, reliable, when the seat's record changes and every 5 s;
 * guest -> host: `u8 1, u32 the Cell card its own game would give now` (Cell_GetConsequenceTrait), reliable, while it

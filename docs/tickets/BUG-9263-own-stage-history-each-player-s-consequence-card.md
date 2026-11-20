@@ -32,7 +32,7 @@ docs/re/creations.md#creations-own-cards (objdump of the in-memory Steam .text +
 mods/coop/cards.{h,cpp}: each party seat keeps its own cards and progress (party file PTY2, reads PTY1); when the
 host's world has a stage done that a seat has not, the host decides the seat's card (Cell: the guest's own game's
 decision; Creature: the game's decision with the seat's progress; Tribe / Civ: the host's, one shared tribe /
-nation; Space: the game's archetype of the seat's four cards) and sends each guest its record (MSG_OWN_CARDS 74,
+nation; Space: the game's archetype of the seat's four cards) and sends each guest its record (MSG_OWN_CARDS 75,
 session 1.3); the guest's game writes it into its cPlayer, the "stages" row leaves it alone. Switch
 `coop.fix party.own_cards off`: one shared history (0.7.15). Limits: docs/known-issues.md#issue-own-cards-limits.
 
