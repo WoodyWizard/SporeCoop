@@ -394,17 +394,3 @@ anchor so other docs can link to it:
   `items: none` +1); not checked with a host captain made in Galactic Adventures.
 * Next steps: send and register that resource under the host's key (BUG-1279 lists the pitfalls).
 * Ticket: BUG-1279.
-
-
-
-## Civ: the end of a guest's own City Hall editor after it came back into the host's Civ world faults in the Tribe goal listener (2026-11-19, fix/w58-cityname)
-* What happens: a guest that joins (or rejoins) the host's Civ world after the end of Tribe gets its own City Hall and
-  vehicle editors (BUG-1290); when its City Hall editor ends (saved or left with the red cross) its game takes an access
-  violation at 0x00645E4D (hash_map Find < cIdentityColorable::AssignNames < TribeStage_RemoveMemberCard <
-  TribeGame_GoalListener) on the editor's result message. Wine's game goes on; on Windows it may end the game.
-* Reproduce: `tools/lab.py run civ_late_arrival` and read the guest's log of the second instance (the test restarts the
-  guest again afterwards and the lab keeps only the last one); every such run had it (lab 20261119-113002,
-  20261119-130049, 20261119-201729). The live end of Tribe (civ_own_arrival) has not shown it.
-* Known: inferred: the arrival editor carries the end of Tribe's tag 0x116DD1B and the Tribe game's goal listener, still
-  listening in that game, reads tribe data that is gone.
-* Ticket: BUG-1329.

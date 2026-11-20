@@ -9745,3 +9745,15 @@ tribe_own_outfitter, own_editor_drop) answers which files of a save slot name a 
   line key in a compressed record, the raw key beside its type, a raw instance no host id explains and the creation as
   a resource are found). Twin `tribe_own_outfitter_keys_off` (SPORE_FIX_OFF=savestrip.keys) must FAIL at the save check
   (the members' line key in the .spo): the scan still catches a real key.
+
+## The faults of a game a test kills (2026-11-19, fix/w58-assignnames)
+<a id="testing-killed-faults"></a>
+
+BUG-1329: civ_late_arrival restarts the guest's game twice; its fault check (`Checks.faults`) asked only the games alive
+at the end and the lab kept only the last instance's log, so the access violation of the second instance (every run)
+was never counted. Since then `twoinst.start()` sets `lane.on_kill`: before a kill through `lane.sh('kill')` or
+`coop_creature_desync.kill_game` each instance's `exc` is read (`twoinst.KILLED`), after it its log is copied to the
+run folder as `<test>.<who>.killed<N>.game.log`; `Checks.faults()` prints `<who> (killed instance N) faults: ...` and
+judges it like a live game (the lab's "faults in the log" sees the line too). An instance that did not answer before
+its kill is only noted. Kills before `start()` (a test's own cleanup of the lane) and direct `spore.sh kill` calls are
+not covered. `SPORE_KILLED_FAULTS=0`: the old way. The log gates still read only the last instance's log.

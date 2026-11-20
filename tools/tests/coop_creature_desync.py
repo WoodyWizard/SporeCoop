@@ -164,9 +164,13 @@ def kill_game(inst):
     """SIGKILL one game (a crash): this lane's SporeApp.exe of that instance. spore.sh pids knows the
     lane's game folder and, on lane 1 (the real install), takes only games started for tests: the
     owner's own Spore there has no test argument and is never touched (BUG-0103)"""
+    if lane.on_kill:  # BUG-1329: its faults and its log count for the test
+        lane.on_kill[0]([inst])
     pids = subprocess.run([lane.SPORE, 'pids', str(inst)], capture_output=True, text=True).stdout.split()
     for pid in pids:
         subprocess.run(['kill', '-9', pid])
+    if lane.on_kill and pids:
+        lane.on_kill[1]([inst])
     if not pids:
         print(f'  kill_game: no game of instance {inst} found on lane {lane.LANE}')
 

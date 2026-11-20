@@ -11,7 +11,9 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
 - The guest's own editors of this version, fixed after their first lab run before any release: the Tribal Outfitter
   for a guest's own creature now closes with Done and its outfit reaches the guest's members (BUG-1308, BUG-1316), and
   a guest's own City Hall and vehicle editors at its Civilization arrival open (the guest did not know the host's
-  build) and leave its game running (BUG-1306, BUG-1323).
+  build) and leave its game running (BUG-1306, BUG-1323); their end no longer faults in the game's leftover Tribe
+  code when the guest came into the host's Civilization world later (BUG-1329).
+- Lab: the faults of a game a test kills and starts again now count for the test, and its log is kept (BUG-1329).
 - The species line (BUG-1270): every player's own species per stage (tribe and Civ outfits, Civ designs) is kept by
   the mod, sent to every game and kept by the host between sessions; the base for every player's own look in Tribe and
   Civilization (no visible change by itself).

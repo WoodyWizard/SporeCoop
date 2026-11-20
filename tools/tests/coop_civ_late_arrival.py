@@ -24,7 +24,9 @@ civ_npc fixture (cold start: the guest has no choice and no record, it plays the
   5. a second rejoin: no editor opens within 60 s of its arrival (`coop.civarrival`: late why 'offered in this world
      already', the world noted).
 SPORE_FIX_OFF=core.own_civ_late (suite civ_late_arrival_off, the twin): step 2 FAILs (no editor opens); the test ends
-there.
+there. SPORE_FIX_OFF=core.own_civ_tag (civ_late_arrival_tag_off, BUG-1329): step 2 FAILs at "no fault at the end of
+its own City Hall editor" (the Tribe stage's listener faults at 0x645E4D on the editor's result). The games this test
+kills (its two restarts) have their faults judged too (twoinst.KILLED, BUG-1329).
 
   SPORE_LANE=5 python3 tools/tests/coop_civ_late_arrival.py
 """
@@ -39,7 +41,7 @@ from coop_civ_own_designs import mhash, own
 from coop_civ_own_species import fmt, species, wait_city
 from coop_late_species import restart_guest
 from coop_tribe_civ import CAPTION_OK, busy, vote_active
-from harness import mode, waiter
+from harness import faults, mode, waiter
 from play_civ import answer_specialty, frame_city
 from twoinst import Checks, Console, keyframe, shot, start
 
@@ -139,11 +141,17 @@ def run(host, guest, ck, off_twin):
         keyframe(f'guest_{kind}_editor', f'Civ: the guest (which joined after the end of Tribe) in its OWN {what} '
                                          'editor (parts palette, plot); the host\'s screen shows its Civ world and plays '
                                          'on (no vote window)', settle=0)
+        n0 = faults(guest)
         left = drive_editor(guest, kind)
         ck(left, f'the guest left its {what} editor with a creation, back in Civ ({mode(guest).strip()})')
+        time.sleep(2)
+        # BUG-1329: the result of its own editor reached the Tribe stage's leftover listener (the Tribe tag): an access
+        # violation at 0x645E4D on every restarted guest (core.own_civ_tag off: civ_late_arrival_tag_off FAILs here)
+        n1 = faults(guest)
+        exc = [l.strip() for l in guest.call('exc')['out'].splitlines()[1:3]]
+        ck(n1 == n0, f'the guest\'s game took no fault at the end of its own {what} editor ({n0} -> {n1} faults; {exc})')
         if not left:
             return guest
-        time.sleep(2)
     ck(not held, f'the host played Civ while the guest made its own designs (no other mode, no vote: {held[:4]})')
     if off_twin:
         return guest

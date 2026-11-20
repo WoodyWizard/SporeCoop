@@ -911,7 +911,53 @@ def start(*a, **kw):
     apply_fps(guest, 'guest')
     PLAYERS.clear()
     PLAYERS.update(host=host, guest=guest)
+    lane.on_kill = (_before_kill, _after_kill)  # BUG-1329: from here on a killed game's faults count
     return host, guest
+
+
+# BUG-1329: a test that kills a game and starts it again (lane.sh('kill'), coop_creature_desync.kill_game:
+# civ_late_arrival's restarted guest) lost that instance's faults and log: Checks.faults() asked the games alive at the
+# end and the lab kept the last instance's log, so civ_late_arrival passed while every restarted guest's City Hall
+# editor ended in an access violation (lab 20261119-113002, 20261119-130049, 20261119-201729). After start() each game
+# a test kills has its `exc` read first (KILLED) and its log copied into the lab's run folder
+# (<test>.<who>.killed<N>.game.log); Checks.faults() judges a killed instance as it judges the live ones (a game that
+# did not answer before its kill is only noted). SPORE_KILLED_FAULTS=0: the old way (the twin of this harness fix).
+KILLED = []  # [(name, the `exc` lines, None when it did not answer)]
+_kills = {}  # {who: kills so far}
+
+
+def _who(inst):
+    return 'host' if inst == lane.HOST else 'guest' if inst == lane.GUEST else f'inst{inst}'
+
+
+def _before_kill(insts):
+    if os.environ.get('SPORE_KILLED_FAULTS') == '0':
+        return
+    for inst in insts:
+        try:
+            out = (Console(inst, timeout=5).call('exc').get('out') or '').splitlines() or ['']
+        except (OSError, ValueError):
+            out = None
+        if out is None and not os.path.exists(lane.game_log(inst)):
+            continue
+        who = _who(inst)
+        _kills[who] = _kills.get(who, 0) + 1
+        KILLED.append((f'{who} (killed instance {_kills[who]})', out))
+
+
+def _after_kill(insts):
+    run, test = os.environ.get('SPORE_LAB_RUN'), os.environ.get('SPORE_LAB_TEST')
+    if os.environ.get('SPORE_KILLED_FAULTS') == '0' or not run or not test:
+        return
+    for inst in insts:
+        who = _who(inst)
+        src = lane.game_log(inst)
+        if who in _kills and os.path.exists(src):
+            try:
+                import shutil
+                shutil.copy(src, os.path.join(run, f'{test}.{who}.killed{_kills[who]}.game.log'))
+            except OSError:
+                pass
 
 
 def fps_limits(spec=None):
@@ -1170,8 +1216,13 @@ class Checks:
         return cond
 
     def faults(self, **cons):
-        for name, con in cons.items():
-            out = con.call('exc')['out'].splitlines() or ['']
+        outs = [(name, con.call('exc')['out'].splitlines() or ['']) for name, con in cons.items()]
+        for name, out in KILLED:  # BUG-1329: the games the test killed on its way
+            if out is None:
+                print(f'{name}: it did not answer before its kill (its faults are not known)')
+            else:
+                outs.append((name, out))
+        for name, out in outs:
             m = re.search(r'total faults: (\d+)', out[0])
             known = sum(int(k.group(1)) for line in out[1:] for k in [BOOT_AUDIO_FAULT.match(line.strip())] if k)
             if m and known and int(m.group(1)) == known and os.environ.get('SPORE_BOOT_FAULT_STRICT') != '1':

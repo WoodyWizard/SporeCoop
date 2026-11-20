@@ -45,6 +45,22 @@ COOP_FIX("core.own_civ_arrival", "BUG-1276", g_fix,
 
 constexpr uint32_t kCityHall = 0x99E92F05u;
 constexpr uint32_t kTribeTag = 0x0116DD1Bu;    // the Tribe listener's tag for both editors (0xCD1D60)
+
+// BUG-1329 (lab 20261119-113002 / -130049 civ_late_arrival, 20261119-201729 creation_props_key0): the Tribe stage's
+// message listener 0xCD81F0 (TribeGame_GoalListener) is still registered in Civ and acts on every editor result
+// 0x30C11C7 whose tag (+0xC) is 0x116DD1B: it calls the cinematic manager, posts the Tribe hint 0x5312DA01 through
+// 0xCD6B00 -> 0xB708A0 on the stage's hint list (cTribeUI +0x394, ECX) and keeps the result in cTribeUI +0x2F8 (with
+// +0x28 set: its key into cPlayer +0x1150). A guest whose game came into the host's Civ world without its own Tribe
+// stage (restarted, joined in Civ) has no hint list (+0x394 null): the read of +0x30 faults at 0x645E4D (Wine goes on,
+// Windows may end the game). On: our arrival editors carry a tag of our own that no game code knows (`scan` of the exe:
+// none), so the Tribe listener and cGameModeCiv's (0xCFD500: tags 0x66787BB / 0x116D51D only) ignore their results;
+// civ_arrival_result takes them by that tag. Off: the Tribe tag (rel/0.7.16 before the fix).
+static bool g_tag_fix = true;
+COOP_FIX("core.own_civ_tag", "BUG-1329", g_tag_fix,
+         "civ: the end of a guest's own City Hall or vehicle editor at its Civ arrival no longer faults in the Tribe stage's leftover listener");
+constexpr uint32_t kOwnTag = 0x0C0B1329u; // EditorRequest +0x90 / result +0xC of our own arrival editors
+static uint32_t g_req_tag = 0;            // the tag of the editor we requested last (status)
+static uint32_t request_tag() { return g_tag_fix ? kOwnTag : kTribeTag; }
 constexpr double kArriveLimit = 900.0;           // the host's two editors and the Civ world's transfer
 constexpr double kSettle = 20.0, kSettleLimit = 240.0, kOpenLimit = 30.0, kNextSettle = 5.0, kNextLimit = 120.0;
 
@@ -231,7 +247,8 @@ static bool open_editor(uint32_t editor)
     skg::thiscall<void*>(ctor, req); // (+0x1C the current game mode, the reference count 0)
     skg::vcall<int>(req, 1);         // AddRef (the game's intrusive pointer, 0x61DF80)
     skg::field<uint32_t>(req, 0xC) = editor;
-    skg::field<uint32_t>(req, 0x90) = kTribeTag;
+    g_req_tag = request_tag(); // BUG-1329
+    skg::field<uint32_t>(req, 0x90) = g_req_tag;
     skg::field<uint8_t>(req, 0x34) = 0;
     skg::field<uint8_t>(req, 0x36) = 1;
     skg::field<uint8_t>(req, 0x37) = 1;
@@ -306,11 +323,12 @@ static void take(int step, const char* from)
         r.key[0], r.key[1], r.key[2], g_editor[step], from, r.taken ? "goes to our species line" : "was not taken");
 }
 
-// civ_editors.cpp (cGameModeCiv's listener, every message 0x30C11C7): the result of our own editor
+// civ_editors.cpp (cGameModeCiv's listener, every message 0x30C11C7): the result of our own editor (its tag: ours,
+// BUG-1329)
 void civ_arrival_result(const void* data)
 {
     void* d = const_cast<void*>(data);
-    if (g_phase != kOpen || !d || !skg::readable(d, 0x48) || skg::field<uint32_t>(d, 0xC) != kTribeTag)
+    if (g_phase != kOpen || !d || !skg::readable(d, 0x48) || !g_req_tag || skg::field<uint32_t>(d, 0xC) != g_req_tag)
         return;
     Result& r = g_res[g_step];
     r.seen = true;
@@ -514,6 +532,8 @@ std::string civ_arrival_status()
     snprintf(b, sizeof b, "  late: fix=%d this=%d checked=%d world=%08X noted=%u dues=%u skips=%u notes=%u why='%s' (BUG-1290)\n",
              (int)g_late_fix, (int)g_late, (int)g_late_checked, w, creations::world_note(kNote, w), g_late_dues,
              g_late_skips, g_late_notes, g_late_why.c_str());
+    s += b;
+    snprintf(b, sizeof b, "  tag: fix=%d request=%08X (BUG-1329)\n", (int)g_tag_fix, g_req_tag);
     s += b;
     snprintf(b, sizeof b, "  unpause: fix=%d due=%d civ_state=%d modal_at_open=%d modal_now=%d resumed=%u skipped=%u (BUG-1323)\n",
              (int)g_unpause_fix, (int)(g_unpause_due_at >= 0), g_civ_state, g_modal_at_open, modal_pauses(), g_unpaused,
