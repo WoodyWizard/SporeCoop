@@ -41,13 +41,15 @@
 // Minor bumps of fix/w53-cellvote: cell 1.1 (MSG_CELL_FOOD's own-editor spend, MSG_CELL_MATE: BUG-1249, BUG-1246),
 // npc 1.1 (wsync row cell_spend_ack, BUG-1249), creature 1.1 (no wire change: the guest opens its own landfall editor
 // after a late arrival, BUG-1240; a host does not wait for such a guest's arrival, vote.cpp core.arrival_nowait).
+// Minor bump of feat/civ-own-money: civ 1.1 (MSG_CIV_WALLET, a new type older versions ignore: BUG-9259). Id 74: 73 is
+// taken by MSG_IDENTITY of the open pull request #204 (BUG-9258).
 FAMILY(session,   1, 1, 1, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 1, STAGE_CREATURE, "Creature", "")
 FAMILY(npc,       4, 1, 1, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
 FAMILY(cell,      5, 1, 1, STAGE_CELL, "Cell", "")
 FAMILY(tribe,     6, 1, 1, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
-FAMILY(civ,       7, 1, 0, STAGE_CIV | STAGE_SPACE, "Civilization", "")
+FAMILY(civ,       7, 1, 1, STAGE_CIV | STAGE_SPACE, "Civilization", "")
 FAMILY(space,     8, 1, 2, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h")
 FAMILY(shared,    9, 1, 0, STAGE_TRIBE | STAGE_CIV | STAGE_SPACE, "shared resources", "wire/common.h wire/shared_res.h")
 FAMILY(creations, 10, 1, 0, STAGE_ALWAYS, "creations", "")
@@ -127,6 +129,8 @@ MSG(69, HOST_WORLD,   R,  Host,  Session,   HostWorld,   Both,   session,   "u32
 MSG(70, HOST_BUSY,    R,  Host,  Session,   HostBusy,    Client, session,   "the host's game is paused, in an editor or away (busy_model.h, 14 bytes v1: u8 version, u8 state, u16 why, u32 mode, u32 world, u16 seq; BUG-1142)")
 MSG(71, TRIBE_ANIM,   RU, Host,  Module,    Tribe,       Client, tribe,     "u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160)")
 MSG(72, CELL_MATE,    RU, Guest, HostWorld, Cell,        Host,   cell,      "u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246)")
+
+MSG(74, CIV_WALLET,   R,  Any,   HostWorld, CivWallet,   Both,   civ,       "every player's own Civ money (civ_wallet.h, BUG-9259): u8 kind; guest -> host an ask / u32 seq + f64 money (a report); host -> guest u32 seq + f64 the wallet / a change")
 
 #undef MSG
 #undef FAMILY

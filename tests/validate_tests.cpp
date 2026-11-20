@@ -586,7 +586,7 @@ static void test_settings()
     CHECK(parse_value(kCreatureMode, "on", v) && v == 1 && !parse_value(kCreatureMode, "hosts", v));
     CHECK(value_name(kCellRegen, 0).empty() && value_text(kCellRegen, 0) == "off");
     for (int i = kNameTags; i < kCount; i++) // every row of step 3 but friendly fire and the creature mode is on by default
-        CHECK(kDefs[i].def == (i == kFriendlyFire || i == kCreatureMode ? 0 : i == kPlayerLimit ? 4 : i == kAutosave ? 2 : 1));
+        CHECK(kDefs[i].def == (i == kFriendlyFire || i == kCreatureMode || i == kCivOwnMoney ? 0 : i == kPlayerLimit ? 4 : i == kAutosave ? 2 : 1));
     // E2 (BUG-0864): the host's autosave: a choice of minutes, 10 by default, Live
     CHECK(kDefs[kAutosave].scope == Scope::Live && value_text(kAutosave, 2) == "10 min" && value_text(kAutosave, 0) == "off");
     CHECK(autosave_minutes(0) == 0 && autosave_minutes(2) == 10 && autosave_minutes(5) == 60 && autosave_minutes(9) == 10);
@@ -1107,8 +1107,8 @@ static void test_manifest()
     for (int t = 0; t < 256; t++)
         known += msg_info((uint8_t)t).known;
     // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
-    // BUG-1160), MSG_CELL_MATE 72 (BUG-1246)
-    const std::set<int> added_types = {70, 71, 72};
+    // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_CIV_WALLET 74 (BUG-9259)
+    const std::set<int> added_types = {70, 71, 72, 74};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1119,6 +1119,9 @@ static void test_manifest()
     CHECK(MSG_CELL_MATE == 72 && std::string(msg_info(72).name) == "CELL_MATE" && msg_info(72).family == Family::cell &&
           msg_dir(72) == MsgDir::Guest && host_world::msg_class(72) == host_world::MsgClass::HostWorld &&
           dispatch_route(72, true) == Route::Cell && dispatch_route(72, false) == Route::None);
+    CHECK(MSG_CIV_WALLET == 74 && std::string(msg_info(74).name) == "CIV_WALLET" && msg_info(74).family == Family::civ &&
+          msg_dir(74) == MsgDir::Any && host_world::msg_class(74) == host_world::MsgClass::HostWorld &&
+          dispatch_route(74, true) == Route::CivWallet && dispatch_route(74, false) == Route::CivWallet);
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);

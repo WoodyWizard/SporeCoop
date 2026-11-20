@@ -48,6 +48,7 @@ enum Id : int {
     kCivRoles,       // Civ: the governors' roles (military, economic, religious) and their bonuses
     kCivSiege,       // Civ: two players attacking one city capture it 50 % faster
     kCivSwVote,      // Civ: a superweapon fires after a vote of everybody
+    kCivOwnMoney,    // Civ: every player has its own money (civ_wallet.cpp, BUG-9259); off by default
     kSpaceDisable,   // Space: a destroyed ship next to a partner is only disabled for 20 s
     kSpaceTrade,     // Space: tool gifts and trade between players (space_trade.cpp)
     kSpaceContracts, // Space: co-op contracts (space_contracts.cpp)
@@ -145,6 +146,9 @@ inline const Def kDefs[kCount] = {
     {"civ.superweapon_vote", "Civilization", "Superweapons need a vote",
      "on: a superweapon fires after a vote of everybody; off: it fires at once",
      1, 0, 1, Scope::Session, nullptr, false},
+    {"civ.own_money", "Civilization", "Own money",
+     "on: every player has their own money: each pays for their own purchases, the nation's income is split by the cities each one owns, and a player new to the world gets an equal part of the host's money; off: one shared treasury",
+     0, 0, 1, Scope::Session, nullptr, false},
     {"space.disable", "Space", "Disabled, not destroyed",
      "on: a destroyed ship next to a partner is only disabled for 20 s and the partner repairs it; off: it is destroyed as in a solo game",
      1, 0, 1, Scope::Session, nullptr, false},
