@@ -1092,7 +1092,7 @@ void tick(double now)
         } else
             g_arrive_ready_since = 0;
     }
-    if (!g_pending_enter.empty() && g_welcomed && (!C.sess || C.sess->role() == net::Role::None)) {
+    if (!g_pending_enter.empty() && g_welcomed && !g_session_seen && (!C.sess || C.sess->role() == net::Role::None)) {
         const std::string to = g_pending_enter;
         g_pending_enter.clear();
         say(enter(to));
@@ -1113,11 +1113,15 @@ void tick(double now)
             g_resume_hold = false;
             g_session_seen = false;
         } else if (g_session_seen && g_hstep != kLoading && g_hstep != kFetching && !g_waiting_host &&
-                 g_pending_join.empty()) {
+                 g_pending_join.empty() && g_pending_enter.empty()) {
             send_control(control(LEAVE));
             g_planet.clear();
             g_role = 0;
             reset_planet_steps();
+            use_relay(false);
+            g_session_seen = false; // (BUG-9278: done; a later planet's session starts unseen)
+        } else if (!g_pending_enter.empty() && g_session_seen) {
+            g_session_seen = false; // BUG-9278 (kMovedJoin): the crossing's session ended: no LEAVE, ENTER comes next
             use_relay(false);
         }
     }

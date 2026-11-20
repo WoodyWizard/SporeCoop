@@ -1457,3 +1457,10 @@ keeps its species and gets its village, decisions 4, 5 and 14).
   hosting and saving. Pictures: images/stage4_crossing_tribal_offer.png, images/stage4_crossing_tribe_intro.png.
   Not run in game yet: a party of two or more crossing together, a guest's party crossing, arriving where the next era
   already has a host (each is covered by the server checks only).
+* ✔ Joining the players already there (TITAN 2026-11-19 22:47): QA 8 hosted Samuth (Tribe) from the server, QA 9
+  hosted Samuth (Creature) and ended its stage; its crossing ARRIVEd while Samuth (Tribe) had a host, so the server
+  sent it to join QA 8 (kMovedJoin); QA 9 downloaded nothing new of its own, joined QA 8's Tribe world as a late joiner
+  and got its own village and chief there (images/stage4_join_tribe_host_view.png, _guest_view.png). Found and fixed on
+  the way: the end of the crossing's session made the game send LEAVE right after its ENTER (it ended alone in a Tribe
+  world of its own). Open: its village was placed next to the host's, not at its own nest (BUG-9280); the Tribe food
+  share runs between the two parties (BUG-9281).
