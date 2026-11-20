@@ -1,6 +1,7 @@
 #include "social.h"
 #include "lifecycle.h"
 #include "mouse.h"
+#include "cards.h"
 #include "fixes.h"
 #include "creations.h"
 
@@ -861,10 +862,17 @@ static void apply_success(uint8_t player, uint16_t id)
     int rel = a_RelGet ? thiscall<int>(a_RelGet, mgr, key, c, av) : 0;
     int mode = social_mode(c);
     uint32_t anim = reaction_anim(rel);
-    thiscall<void>(a_RelEvent, mgr, 3, key, c);
+    {
+        cards::Actor actor(player); // BUG-9264: an alliance's progress (the species goal) goes to this guest's seat
+        thiscall<void>(a_RelEvent, mgr, 3, key, c);
+    }
     float dna = 0;
     if (mode != 4 && a_DnaWorth) {
         dna = thiscall<float>(a_DnaWorth, c, 1);
+        // BUG-9264: the game's social win adds the creature's DNA worth to the winner's social progress (0xD9BD36);
+        // this replica of it paid nobody's: now the guest's seat
+        if (dna > 0 && dna < 10000)
+            cards::credit(player, true, dna);
         if (dna > 0 && dna < 10000 && C.pace)
             dna = C.pace(dna); // BUG-0510: the party's pace (a guest's friend, as the host's own are in on_dna)
         if (dna > 0 && dna < 10000)

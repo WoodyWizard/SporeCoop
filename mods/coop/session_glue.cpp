@@ -12,6 +12,7 @@
 #endif
 #include "lifecycle.h"
 #include "identity.h"
+#include "cards.h"
 #include "coop_state.h"
 #include "store.h"
 #include "designs.h"
@@ -841,6 +842,10 @@ void setup_callbacks()
         }
         case net::Route::Identity: { // BUG-9258 (Lineages): the persistent player identities (Session class)
             identity::on_message(from, r);
+            return;
+        }
+        case net::Route::OwnCards: { // BUG-9263: the own stage history (Session class)
+            cards::on_message(from, r);
             return;
         }
         case net::Route::Effect: { // BUG-0451: a partner's creature made an effect

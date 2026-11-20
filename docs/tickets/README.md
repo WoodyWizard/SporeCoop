@@ -1275,3 +1275,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-1269](BUG-1269-cell-creature-vote-the-host-looks-at-a-plain-whi.md) | open | bug | Cell | 2026-11-18 |  | Cell -> Creature vote: the host looks at a plain white screen (the Cell-end white fade held) while the guest still sees the cinematic |
 | [BUG-9258](BUG-9258-lineages-port-phase-1-a-persistent-player-identi.md) | open | feature | All | 2026-11-19 |  | Lineages port, phase 1: a persistent player identity per Spore profile (MSG_IDENTITY) |
 | [BUG-9260](BUG-9260-lineages-port-phase-2-the-campaign-s-party-one-f.md) | open | feature | All | 2026-11-20 |  | Lineages port, phase 2: the campaign's party, one founder seat per player, kept next to the planet |
+| [BUG-9263](BUG-9263-own-stage-history-each-player-s-consequence-card.md) | open | feature | All | 2026-11-20 |  | Own stage history: each player's consequence cards and the powers they give |
+| [BUG-9264](BUG-9264-a-guest-s-kills-and-social-wins-add-to-the-host.md) | open | bug | Creature | 2026-11-20 |  | A guest's kills and social wins add to the host's trait progress (cPlayer +0x1278/+0x127C): the guest's own counts nothing |
