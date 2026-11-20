@@ -2139,3 +2139,29 @@ the rules in mods/coop/civ_wallet_logic.h (unit tests in tests/civ_tests.cpp `wa
 * `coop.wallet` prints the wallets; `coop.wallet income <n>` (host, tests) pays the player civilization an income
   through the game's AddMoney as the game would.
 
+## The host's shot observer and targets that are no listed object (2026-11-19, fix/w57-crashes)
+<a id="civ-shot-observer-targets"></a>
+
+BUG-1322. Follows "How Civ weapons fire (BUG-0477)" above and BUG-0535.
+
+* ✔ (runtime, lab 20261119-114030 civ_preach_far, host) The fault with EIP inside a preaching vehicle (+9) and the next at
+  0xCCCCCCCC came from the mod, not from the game's FUN_00bfd750 (that address was a stale stack entry): the module
+  return addresses on the stack, mapped on a build of the run's commit (dee4405f), are `civ::fire_observed`
+  (civ_shots.cpp, the target branch) and `game::object_position` (the Cast vcall, slot 0xC), called from squadron's
+  `cToolManager::FireTool` hook; esi held the Cast id 0x1186577. fire_observed took the object at target spatial - 0x34
+  and, when its first dword lay in SporeApp.exe's image (BUG-0535's check), called its vtable: for a spatial that is not
+  +0x34 of a game object the "vtable" is whatever memory precedes it.
+* `cCombatSimulator::Update` 0xAE7360 passes as the target the target combatant's (+0x44) vt+8 result. ✔ (runtime, lab
+  20261119-141549 civ_shot_objects, host, preachers on the ground at an NPC city; Ghidra) a preacher's target spatial has
+  vtable 0x1468478, which sits at **+0x100** of `Simulator/cCulturalTarget` (noun factory 0xB1EB40, 0x218 bytes, ctor
+  0xBDACB0: cGameData, combatant 0xBFD620, cModelObject; vtables 0x14685B8 at +0, 0x14685A8 +4, 0x1468540 +0x38,
+  0x1468478 +0x100; dtor 0xBDAE30). Target - 0x34 is then cCulturalTarget +0xCC, a field (0x00000018 in that run): when
+  it happens to hold a value in the image's range the old check took it for a vtable. So every religious preaching in a
+  co-op host's game went through this; the crash needed that field's value, which explains 1 fault in 4 runs.
+  Vehicles and buildings keep their spatial at +0x34 (BUG-0477).
+* The mod (BUG-1322): `civ.shot_target_listed`: a shooter or target that is not one of the host's listed vehicles is
+  used only when the object at spatial - 0x34 is in the game's object list (`game::listed`, pointers compared, once
+  per object and frame); else nothing is called and the shot has no target the guests could find (kind 2).
+  `coop.civ shotobjs` prints the unlisted ones seen, `coop.civ shotprobe` (tests) one observed shot at a target that is
+  no object. Test `coop_civ_influence.py --case shotobjs` (docs/06-testing.md#testing-civ-shot-objects; on the 0.7.15
+  line `coop_civ_shot_objects.py`, fix/w58-hotfix).

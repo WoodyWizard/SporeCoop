@@ -58,3 +58,15 @@ def press(con, caption, expect=None, timeout=10):
             if not expect and not shown(con, caption):
                 return True
     return False
+
+
+def where(con, ctl):
+    """(x, y) of the centre of the shown window with this control id (`coop.ui where`: only through visible parents),
+    or None. Use it when a caption is not unique: `coop.ui find` returns the first window with the caption, and a
+    hidden copy (the captain panel's own Accept and Decline, BUG-0304) hides the shown one."""
+    out = con.call('coop.ui where %08X' % ctl).get('out') or ''
+    m = re.search(r'%08X (-?\d+) (-?\d+) (-?\d+) (-?\d+)' % ctl, out)
+    if not m:
+        return None
+    x0, y0, x1, y1 = (int(v) for v in m.groups())
+    return (x0 + x1) // 2, (y0 + y1) // 2

@@ -899,8 +899,32 @@ static int c_staleref(void*, int argc, const char* const* argv, SkOut* out)
     return 0;
 }
 
+// BUG-1325: cGameNounManager::DestroyInstance (thiscall(mgr, obj) ret 4) writes obj +0x20 first, with no null check: a
+// null object faults at DestroyInstance+0x6 (data 0x20) and the caller never gets past it (TribeStage_Graduate destroys
+// the player tribe's food mat without a check; when the end of Tribe ran a second time the mat was already gone: a
+// fault storm, lab 20261119-120449). Destroying nothing is skipped (the caller goes on as after a destroy). Off: the
+// game's own call (it faults).
+static bool g_destroy_null_fix = true;
+COOP_FIX("game.destroy_null", "BUG-1325", g_destroy_null_fix,
+         "game: a destroy of nothing (a null object) is skipped instead of faulting in the game's DestroyInstance");
+static std::atomic<unsigned> g_destroy_nulls{0};
+static uintptr_t g_destroy_null_from;
+unsigned destroy_nulls(uintptr_t* from)
+{
+    if (from)
+        *from = g_destroy_null_from;
+    return g_destroy_nulls;
+}
+
 static void __fastcall destroy_guard(void* nm, void*, void* obj)
 {
+    if (!obj && g_destroy_null_fix) {
+        g_destroy_null_from = (uintptr_t)__builtin_return_address(0);
+        if (g_destroy_nulls++ < 10)
+            H->log(M, SK_WARN, "game fixes: DestroyInstance of nothing (a null object) from 0x%08X: skipped (BUG-1325)",
+                   (unsigned)g_destroy_null_from);
+        return;
+    }
     if (g_staleref_on && obj && readable(obj, 0x30) && game::noun_id(obj) == kAnimalNoun)
         g_destroyed[g_destroyed_n++ % 8] = {(uint8_t*)obj, H->time_seconds(), game::is_puppet(obj), game::object_serial(obj)};
     if (obj && obj == g_count_obj)
@@ -1077,6 +1101,75 @@ static void __fastcall creature_show_guard(void* display, void*, const uint32_t*
     g_creature_show_orig(display, key, kind, scale, name, slot, window);
 }
 
+// BUG-0304 (docs/re/space.md#space-captain-items-null, GitHub #203): the captain screen's equipment palette
+// (SporeCoop::CaptainItems_Palette 0xF179E0) loads the captain's item list from the captain's property list
+// {captain, 0x00B1B104, captain group | 0xE500} (SporeCoop::CaptainProps_Get, SporeCoop::CaptainItems_Load) and calls
+// SporeCoop::CollectableItems_5970D0 (thiscall(items, int n) ret 4, void) on the result without a null check: a read of
+// 0x4D04 at 0x5971D4 when this game has no such list (a guest in the host's Space world: coop sends the host's captain
+// creature, not that property list; a captain made without Galactic Adventures). The game's other users of the list
+// take null as "no items" (0x5C6820 / 0x5C66E0: everything available, 0x5BF710, 0xFDBF80), so the guard returns at
+// once for a null list, as the method does for an empty one. Callers: the palette 0xF17A19 (badge and accepted
+// mission), 0xF16CED and 0xF125BB (the same palette's list). Wine's game survived the fault, Windows players crashed.
+// Off: the game's code (0.7.15.2).
+using ItemsMarkFn = void(__thiscall*)(void*, int);
+static ItemsMarkFn g_items_mark_orig;
+static bool g_captain_items_fix = true;
+COOP_FIX("game.captain_items", "BUG-0304", g_captain_items_fix,
+         "gamefixes: the captain screen of a captain whose item list this game does not have (a guest in the host's "
+         "Space world) shows no item limits instead of a crash at 0x5971D4");
+static std::atomic<unsigned> g_items_null{0};
+
+static const uint32_t* player_captain_key()
+{
+    static uintptr_t emp_get = H->sym("Simulator::GetPlayerEmpire");
+    const uint8_t* emp = emp_get ? skg::cdecl_call<const uint8_t*>(emp_get) : nullptr;
+    return emp && readable(emp + 0xC4, 12) ? (const uint32_t*)(emp + 0xC4) : nullptr;
+}
+
+static void __fastcall items_mark_guard(void* items, void*, int n)
+{
+    if (!items && g_captain_items_fix) {
+        unsigned c = ++g_items_null;
+        if (c <= 8 || c % 100 == 0) {
+            const uint32_t* ck = player_captain_key();
+            H->log(M, SK_WARN, "game fixes: the captain's item list is not in this game (captain %08X/%08X/%08X): "
+                   "no item limits shown (BUG-0304, %u)", ck ? ck[0] : 0, ck ? ck[1] : 0, ck ? ck[2] : 0, c);
+        }
+        return;
+    }
+    g_items_mark_orig(items, n);
+}
+
+// BUG-1278 (docs/re/space.md#space-captain-items-null): the captain panel 0xFE7560 (modes 0 and 2: the rank badge, an
+// accepted mission) fills its stats with three cdecl void() helpers, SporeCoop::CaptainPanel_Stats1..3 (0xFE7140,
+// 0xFE7250, 0xFE7330), each reading cSpeciesManager::GetSpeciesProfile(captain) without a null check (0xC02A14 /
+// +0x644 / +0x648): a captain this game has no species profile of (captain 0, BUG-1111) faults there next, once
+// BUG-0304's guard lets the panel go on. The guard skips a helper when the profile is null (its fields keep their
+// text). Off: the game's code (0.7.15.2).
+using VoidFn = void(__cdecl*)();
+static VoidFn g_stats_orig[3];
+static bool g_captain_stats_fix = true;
+COOP_FIX("game.captain_stats", "BUG-1278", g_captain_stats_fix,
+         "gamefixes: the captain panel's stats of a captain this game has no species of are left out instead of a "
+         "crash at 0xC02A14");
+static std::atomic<unsigned> g_stats_skipped{0};
+
+template <int I> static void __cdecl stats_guard()
+{
+    if (g_captain_stats_fix) {
+        const uint32_t* ck = player_captain_key();
+        game::Key k{ck ? ck[0] : 0, ck ? ck[1] : 0, ck ? ck[2] : 0};
+        if (!game::species_by_key(k)) { // the same lookup the helper makes next (the profile is cached after it)
+            unsigned c = ++g_stats_skipped;
+            if (c <= 8 || c % 100 == 0)
+                H->log(M, SK_WARN, "game fixes: the captain %08X/%08X/%08X has no species profile here: captain stats %d "
+                       "left out (BUG-1278, %u)", k.instance, k.type, k.group, I + 1, c);
+            return;
+        }
+    }
+    g_stats_orig[I]();
+}
+
 // coop.captain (BUG-1111): the player empire's captain, the world's species, the guard's counts; tests: `open` shows the
 // captain screen as the game's Space update does (SpaceGameUI_ShowCaptainScreen(ui, 0, 0): a UI whose rank badge was
 // never clicked builds it and goes on to the portrait, the reporter's path), `species <hex>` / `species restore` points
@@ -1113,10 +1206,12 @@ static int c_captain(void*, int argc, const char* const* argv, SkOut* out)
     }
     const uint32_t* ck = emp && readable(emp + 0xC4, 12) ? (const uint32_t*)(emp + 0xC4) : nullptr;
     const uint32_t* sk = spm ? (const uint32_t*)(spm + 0xA4) : nullptr;
-    H->out_printf(out, "captain=%08X/%08X/%08X species=%08X/%08X/%08X%s portraits: species %u skipped %u fix=%d\n",
+    H->out_printf(out, "captain=%08X/%08X/%08X species=%08X/%08X/%08X%s portraits: species %u skipped %u fix=%d "
+                  "items: none %u fix=%d stats: skipped %u fix=%d\n",
                   ck ? ck[0] : 0, ck ? ck[1] : 0, ck ? ck[2] : 0, sk ? sk[0] : 0, sk ? sk[1] : 0, sk ? sk[2] : 0,
                   g_species_saved ? " (species changed by a test)" : "", g_portrait_species.load(), g_portrait_skipped.load(),
-                  (int)g_portrait_fix);
+                  (int)g_portrait_fix, g_items_null.load(), (int)g_captain_items_fix, g_stats_skipped.load(),
+                  (int)g_captain_stats_fix);
     return 0;
 }
 
@@ -1950,6 +2045,23 @@ void init(const SkHost* host, SkMod* mod)
     if (!portrait)
         g_creature_show_orig = nullptr;
     H->log(M, SK_INFO, "game fixes: creature portrait guard %s (BUG-1111)", portrait ? "on" : "off");
+    uintptr_t im = H->sym("SporeCoop::CollectableItems_5970D0");
+    bool items = im && H->hook_create(M, (void*)im, (void*)&items_mark_guard, (void**)&g_items_mark_orig) == 0;
+    if (!items)
+        g_items_mark_orig = nullptr;
+    static const char* const kStats[3] = {"SporeCoop::CaptainPanel_Stats1", "SporeCoop::CaptainPanel_Stats2",
+                                          "SporeCoop::CaptainPanel_Stats3"};
+    static void(__cdecl* const kStatsGuard[3])() = {&stats_guard<0>, &stats_guard<1>, &stats_guard<2>};
+    unsigned stats = 0;
+    for (int i = 0; i < 3; i++) {
+        uintptr_t a = H->sym(kStats[i]);
+        if (a && H->hook_create(M, (void*)a, (void*)kStatsGuard[i], (void**)&g_stats_orig[i]) == 0)
+            stats++;
+        else
+            g_stats_orig[i] = nullptr;
+    }
+    H->log(M, SK_INFO, "game fixes: captain item list guard %s (BUG-0304), captain stats guard %u of 3 (BUG-1278)",
+           items ? "on" : "off", stats);
     H->command_add(M, "coop.captain", "coop.captain [open | species <hex> | species restore] - the player empire's captain and the "
                    "world's species (BUG-1111); tests: open the captain screen as the game's Space update does, point the "
                    "player species at another instance and back", c_captain, nullptr, SK_CMD_OUTSIDE_FRAME);
