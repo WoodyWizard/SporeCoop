@@ -2,8 +2,10 @@
 #include "founders.h"
 
 #include <windows.h>
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cwchar>
 
 #include "net/buffer.h"
 #include "slotfs.h"
@@ -160,6 +162,127 @@ bool record_party(const std::string& key, const Party& value, std::string& err)
     if (publish(path, w.data, had))
         return true;
     err = "could not save the party (write access to the planet's folder?)";
+    return false;
+}
+
+// ---- BUG-9261: the partners' creatures archived with the planet (from PR #196's founders.cpp) ----
+constexpr unsigned kMaxModel = 8u << 20;
+constexpr size_t kMaxModels = 16;
+
+static std::wstring model_path(const std::string& key, uint32_t id)
+{
+    if ((id >> 24) != 0x7C)
+        return {};
+    wchar_t suffix[32];
+    swprintf(suffix, 32, L".duoguest-%08X", id);
+    return path_for(key, suffix);
+}
+
+bool model_ids(const std::string& key, std::vector<uint32_t>& ids, std::string& err)
+{
+    ids.clear();
+    std::wstring prefix = path_for(key, L".duoguest-");
+    if (prefix.empty())
+        return true;
+    WIN32_FIND_DATAW entry{};
+    HANDLE h = FindFirstFileW((prefix + L"????????").c_str(), &entry);
+    if (h == INVALID_HANDLE_VALUE) {
+        if (GetLastError() == ERROR_FILE_NOT_FOUND)
+            return true;
+        err = "could not list this planet's archived creatures";
+        return false;
+    }
+    bool ok = true;
+    do {
+        std::wstring name = entry.cFileName;
+        auto suffix = name.substr(name.size() >= 8 ? name.size() - 8 : 0);
+        if (suffix.size() != 8 || suffix.find_first_not_of(L"0123456789abcdefABCDEF") != std::wstring::npos)
+            continue; // (a temporary file of publish)
+        uint32_t id = wcstoul(suffix.c_str(), nullptr, 16);
+        if ((id >> 24) != 0x7C || (entry.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) ||
+            entry.nFileSizeHigh || !entry.nFileSizeLow || entry.nFileSizeLow > kMaxModel || ids.size() >= kMaxModels) {
+            ok = false;
+            break;
+        }
+        ids.push_back(id);
+    } while (FindNextFileW(h, &entry));
+    if (ok && GetLastError() != ERROR_NO_MORE_FILES)
+        ok = false;
+    FindClose(h);
+    if (!ok)
+        err = "invalid or too many archived creatures next to this planet";
+    return ok;
+}
+
+bool load_guest_model(const std::string& key, uint32_t id, std::vector<uint8_t>& data, std::string& err)
+{
+    data.clear();
+    std::wstring path = model_path(key, id);
+    if (path.empty()) {
+        err = "invalid archived creature key";
+        return false;
+    }
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) {
+        err = "could not read the archived creature";
+        return false;
+    }
+    LARGE_INTEGER size{};
+    bool ok = GetFileSizeEx(f, &size) && size.QuadPart > 0 && size.QuadPart <= kMaxModel;
+    DWORD got = 0;
+    if (ok) {
+        data.resize((size_t)size.QuadPart);
+        ok = ReadFile(f, data.data(), (DWORD)data.size(), &got, nullptr) && got == data.size();
+    }
+    CloseHandle(f);
+    if (!ok) {
+        data.clear();
+        err = "invalid or incomplete archived creature";
+    }
+    return ok;
+}
+
+bool store_guest_model(const std::string& key, uint32_t id, const std::vector<uint8_t>& data, std::string& err)
+{
+    std::wstring path = model_path(key, id);
+    if (path.empty() || data.empty() || data.size() > kMaxModel) {
+        err = "a saved planet and a valid creature are required";
+        return false;
+    }
+    // two game instances on one PC may archive at once: one at a time, never waiting in the game thread
+    struct Guard {
+        HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\SporeCoopDuoFounderArchive");
+        DWORD state = mutex ? WaitForSingleObject(mutex, 0) : WAIT_FAILED;
+        bool acquired() const { return state == WAIT_OBJECT_0 || state == WAIT_ABANDONED; }
+        ~Guard()
+        {
+            if (acquired())
+                ReleaseMutex(mutex);
+            if (mutex)
+                CloseHandle(mutex);
+        }
+    } guard;
+    if (!guard.acquired()) {
+        err = "another creature archive is being written: retried later";
+        return false;
+    }
+    std::vector<uint32_t> ids;
+    if (!model_ids(key, ids, err))
+        return false;
+    if (std::find(ids.begin(), ids.end(), id) == ids.end()) {
+        if (ids.size() >= kMaxModels) {
+            err = "this planet holds the most archived creatures it can";
+            return false;
+        }
+        if (publish(path, data, false))
+            return true;
+    }
+    std::vector<uint8_t> existing;
+    if (!load_guest_model(key, id, existing, err))
+        return false;
+    if (data == existing)
+        return true;
+    err = "this planet already archives a different creature under that key";
     return false;
 }
 

@@ -5,6 +5,10 @@
 #include "identity.h"
 #include "party.h"
 #include "own_progress.h"
+                       return 0;
+                   },
+                   nullptr, MT);
+#include "home_nests.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1215,6 +1219,12 @@ void register_commands_core()
                        SAY("%s", own_progress::status().c_str());
                        SAY("  dna.cpp: totals_ignored=%u gains_kept=%u hunts_given=%u end_clicks_held=%u\n", g_own_totals_ignored,
                            g_own_gains_kept, g_own_hunts_given, g_end_clicks_held);
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.homenests", "coop.homenests [make <seat> | extinct <seat>] - the host: every seat's own nest (BUG-9262)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", home_nests::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
                        return 0;
                    },
                    nullptr, MT);
