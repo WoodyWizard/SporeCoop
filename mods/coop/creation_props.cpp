@@ -41,6 +41,7 @@ static const SkHost* H;
 static SkMod* M;
 
 constexpr uint32_t kPropsGroup = 0x0000E500; // the props group of a key whose group is 0 (0 & ~0x1A00 | 0xE500)
+constexpr uint32_t kPollinationDb = 0x011AC19C; // the profile's Pollination.package (CaptainProps_Save's fallback)
 
 using PropsGetFn = bool(__cdecl*)(const uint32_t* key, void** out);
 static PropsGetFn g_get_orig;
@@ -114,17 +115,21 @@ static std::string plant(const char* name)
     return std::string("planted '") + name + "' under key 0\n";
 }
 
+// tests: the list under key 0 out of the profile's Pollination.package (the database CaptainProps_Save wrote it to:
+// DeleteRecord, Resource::Database vt 0x54) and out of the manager's cache (RemovePropertyList)
 static std::string remove_key0()
 {
-    static uintptr_t rm = H->sym("App::cPropManager::RemovePropertyList");
+    static uintptr_t rm = H->sym("App::cPropManager::RemovePropertyList"), db_get = H->sym("Resource::GetDatabaseByID");
+    static const uint32_t key[3] = {0, 0x00B1B104, kPropsGroup};
+    void* db = db_get ? skg::cdecl_call<void*>(db_get, kPollinationDb) : nullptr;
+    bool deleted = db && readable(db, 4) && skg::vcall<bool>(db, 0x54 / 4, (const uint32_t*)key);
     void* pm = prop_manager();
     void* list = key0_list();
-    if (!list)
-        return "no list under key 0\n";
-    if (pm && rm)
+    if (list && pm && rm)
         skg::thiscall<void>(rm, pm, list);
     release(list);
-    return "removed\n";
+    return std::string(deleted ? "deleted from Pollination.package" : "not in Pollination.package") +
+           (list ? ", dropped from the cache\n" : "\n");
 }
 
 static int c_props(void*, int argc, const char* const* argv, SkOut* out)

@@ -274,10 +274,6 @@ class Campaign:
         self.edits = {}  # player -> "done" clicks in the current editor
         # a guest's own Civ arrival editors' drags (line_stages --civ-editors: CIV_ARRIVAL_PARTS, a model not the host's)
         self.arrival_parts = TRIBE_EDITOR_PARTS
-        # BUG-1328: a guest's own arrival editor still up after this many "done" (no name: on lab lane 5 the name panel
-        # has no dice) is left with its red cross, as a player would (it keeps the
-        # civilization's designs); None: never (line_stages --civ-editors needs the designs, a FAIL shows the bug)
-        self.arrival_cancel_after = 14
         self.segments = {}  # A6: stage -> the save it started from ({save, planet} or {fixture})
 
     # ---------------- findings and evidence ----------------
@@ -729,15 +725,9 @@ class Campaign:
         # the end of Tribe opens the City Hall and the vehicle editor empty: their palette and plot
         # (coop_tribe_civ.PARTS); the spaceship editor's at the end of Civ. WP-X1 of 0.7.16 (BUG-1277): a guest's own
         # City Hall and vehicle editors after its arrival in Civ (the follow phase) are the same editors
+        # (no red cross after N "done" any more: BUG-1328's unnameable editor was a profile's list under creation key 0,
+        # fixed by game.creation_props_key0; a stuck editor fails the test again)
         civ_arrival = self.stage == 'civ' and self.phase == 'follow'
-        if civ_arrival and p is not self.host and self.arrival_cancel_after is not None \
-                and n >= self.arrival_cancel_after:
-            editor_click(con, *EDITOR_CANCEL)
-            editor_click(con, *EDITOR_QUIT)  # ("Exiting will cause your changes to be lost": Quit)
-            self.note(f'{p.name}: its own arrival editor still up after {n} "done" (no name, BUG-1328): left with the '
-                      'red cross')
-            self.edits.pop(p.name, None)
-            return 'editor cancelled'
         if pace:
             moves = (self.arrival_parts if civ_arrival else TRIBE_EDITOR_PARTS if self.stage == 'tribe'
                      else list(zip(EDITOR_PARTS, EDITOR_PLACES)))
