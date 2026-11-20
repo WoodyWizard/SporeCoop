@@ -1217,6 +1217,7 @@ void tick(double now)
         partner_tiles_reset(false); // the tile pool went with the stage
         g_loot_recent.clear();
         modes::cell_forget(); // the partners' puppets were in the same pool
+        lineage_forget();     // BUG-9275: the cell graphics' preloads went with the stage
         mate_forget();        // BUG-1246: and the copies of the partners' mates
     }
     if (!cell && (g_solo || g_solo_owed))
@@ -1236,6 +1237,11 @@ void tick(double now)
         g_n.leave_writes++;
     }
     solo_tick();
+    static bool lin_registered;
+    if (cell && !lin_registered) { // BUG-9275 (the hook on GetModelKeyForCellResource is made with the first Cell game)
+        lin_registered = true;
+        lineage_init();
+    }
     if (cell)
         camera_heal(avatar()); // BUG-0604: solo too (a session that ended keeps the lost view)
     if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())

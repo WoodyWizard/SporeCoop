@@ -45,6 +45,8 @@
 // Minor bumps of feat/own-cards (MSG_OWN_CARDS 75, BUG-9263), feat/own-progress (MSG_PROGRESS 77, BUG-9265) and
 // feat/start-choice (MSG_START_CHOICE 79, BUG-9273), new types older versions ignore; each branch took its own
 // minor, build/amigos has all of them: session 1.6 (74 is MSG_CIV_WALLET of feat/civ-own-money, BUG-9259).
+// Minor bump of feat/lineage-cells: creations 1.1 (MSG_CREATION kind 9, a guest's own cell for the host's Lineages cells,
+// a kind older versions drop; kind 5 also carries a cll key: BUG-9275).
 FAMILY(session,   1, 1, 6, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
 FAMILY(creature,  3, 1, 1, STAGE_CREATURE, "Creature", "")
@@ -54,7 +56,7 @@ FAMILY(tribe,     6, 1, 1, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
 FAMILY(civ,       7, 1, 1, STAGE_CIV | STAGE_SPACE, "Civilization", "")
 FAMILY(space,     8, 1, 2, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h")
 FAMILY(shared,    9, 1, 0, STAGE_TRIBE | STAGE_CIV | STAGE_SPACE, "shared resources", "wire/common.h wire/shared_res.h")
-FAMILY(creations, 10, 1, 0, STAGE_ALWAYS, "creations", "")
+FAMILY(creations, 10, 1, 1, STAGE_ALWAYS, "creations", "")
 
 // Class notes (from the 0.7.14 switch of host_world.h): ANIM, DAMAGE are Session: a partner's own creature (its
 // puppet); SETTINGS, COLORS, REPORT, HOST_WORLD: the session's, wherever the guest plays (HOST_WORLD is what

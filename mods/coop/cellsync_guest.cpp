@@ -155,7 +155,9 @@ void guest_state(net::Reader& r)
             continue;
         }
         if (!c) { // dead ones too: the host shows a creature it killed until it is gone
-            uint32_t idx = modes::cell_create({p.x * k, p.y * k, p.z * k}, ref_for(inst), level, key, &q);
+            uint32_t use[3]; // BUG-9275: a host's Lineages cell is built from our own key of its model
+            lineage_mirror_key(key, use);
+            uint32_t idx = modes::cell_create({p.x * k, p.y * k, p.z * k}, ref_for(inst), level, use, &q);
             c = modes::cell_at(idx);
             if (c) {
                 if (m.local && g_fix_hostof) // the old local cell is gone (BUG-0088)

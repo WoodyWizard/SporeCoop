@@ -71,6 +71,7 @@
 #include "home_nests.h"
 #include "own_progress.h"
 #include "start_choice.h"
+#include "lineage_cells.h"
 #include "world.h"
 #include "find.h"
 #include "net/discovery.h"
@@ -1140,6 +1141,8 @@ static void frame_stage_ticks(double now)
     cards::tick(now);    // BUG-9263: every player's own stage history (consequence cards)
     start_choice::tick(now); // BUG-9273: a guest new to a Cell planet chooses its own cell (diet, name, colour)
     home_nests::host_tick(now); // BUG-9262 (Lineages): every seat's own nest next to the host's
+    lineage_cells::tick(now, game::mode_id() == modes::kCell && modes::cell_game() &&
+                                 !(game_busy() & (busy::kEditor | busy::kLoading))); // BUG-9275: the players' cells as NPCs
     dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
     tribe::tick(now);
@@ -2442,6 +2445,7 @@ static void init_world_share()
     }
     cards::init(H, M, &g_sess);    // BUG-9263
     start_choice::init(H, M, &g_sess); // BUG-9273
+    lineage_cells::init(H, M, &g_sess); // BUG-9275 (Lineages cells)
     shared::set_feed([](const std::string& t) { feed(t); }); // BUG-0696
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);

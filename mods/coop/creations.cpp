@@ -26,6 +26,9 @@ constexpr uint8_t kWorldSpecies = 3, kAskSpecies = 4, kOwnSpecies = 5;
 // total = the model kind), the host sends the records (kOwnDesign) or says it is not one of its own
 // (kDesignNotOwn: a premade, the same everywhere)
 constexpr uint8_t kAskDesign = 6, kOwnDesign = 7, kDesignNotOwn = 8;
+// BUG-9275 (Lineages cells, Lineages BUG-9111): a guest's own cell of its My Creations for the host's Cell pool (owner =
+// the guest, id = its instance); the host registers it under a key of its own (0x7B......, from the content)
+constexpr uint8_t kLineageCell = 9;
 // BUG-0017: a guest registers the host's own creations of its world (nest species)
 // BUG-0010: a guest asks the host for a species of its world it does not have
 
@@ -2118,6 +2121,13 @@ void want_species(const Key& k)
 // ---- the host's own creations among its world's species (creations.h) ----
 static bool in_my_creations(const Key& k);
 static bool is_crt(const Key& k) { return k.type == kInfo[kCreature].type && k.group == kInfo[kCreature].group; }
+static bool is_cll(const Key& k) { return k.type == kInfo[kCell].type && k.group == kInfo[kCell].group; }
+// BUG-9275: a host's Lineages cell (host_cell_out) is remapped on a guest like a host's own species; off: a guest
+// builds the host's NPC of such a cell from the host's key (its own creation of that id when it has one)
+static bool g_cell_remap_fix = true;
+COOP_FIX("cell.lineage_remap", "BUG-9275", g_cell_remap_fix,
+         "cell: a guest builds the host's NPC cells of a player cell (Lineages cells) from the records the host sent, under a key of its own");
+static bool remappable(const Key& k) { return is_crt(k) || (g_cell_remap_fix && is_cll(k)); }
 
 void host_species_out(uint8_t peer, const Key& k)
 {
@@ -2160,6 +2170,136 @@ void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t
         dbpf::find_keys(*f, kInfo[kCreature].type, kInfo[kCreature].group, keys);
     for (uint32_t inst : keys)
         host_species_out(peer, {inst, kInfo[kCreature].type, kInfo[kCreature].group});
+}
+
+// ---- BUG-9275: Lineages cells (lineage_cells.h; ported from Lineages BUG-9111) ----
+// A player cell the host's Cell pool uses as an NPC species: the guest gets its records like an own creature species
+// (kOwnSpecies) and registers them under a key of its own (apply_own_species); its mirrors of that species are built
+// from that key (local_species). Sent once per peer.
+bool host_cell_out(uint8_t peer, const Key& k)
+{
+    if (!is_host() || peer == 0 || !k.instance || !is_cll(k))
+        return false;
+    auto& sent = g_own_sent[peer];
+    if (sent.count(k.instance))
+        return true;
+    Bundle b;
+    b.key = k;
+    if (!records_from_game(k, b.recs)) {
+        g_species_missing++;
+        return false;
+    }
+    sent.insert(k.instance);
+    send_bundle(peer, 0, (Kind)kOwnSpecies, k.instance, pack(b));
+    g_own_out++;
+    H->log(M, SK_INFO, "creations: Lineages cell %08X (%u records) to player %u (BUG-9275)", k.instance, (unsigned)b.recs.size(), peer);
+    return true;
+}
+
+// a cell model's own bytes (FNV-1 of its bem records; no metadata, no pictures), 0 = not found: the same cell under
+// two keys (My Creations, the creations stream, a remapped copy) has the same signature
+uint32_t model_signature(const Key& k, std::string* name, std::string* author)
+{
+    std::vector<dbpf::Record> recs;
+    if (!k.instance || !records_from_game(k, recs))
+        return 0;
+    uint32_t h = 0;
+    for (auto& r : recs) {
+        if (r.key.type == kBem && r.key.instance == k.instance)
+            h = fnv(r.data.data(), r.data.size(), h ? h : 0x811C9DC5);
+        if ((name || author) && r.key.type == kMeta) {
+            std::string a, n;
+            dbpf::metadata_names(r.data, a, n);
+            if (name)
+                *name = n;
+            if (author)
+                *author = a;
+        }
+    }
+    return h;
+}
+
+// guest: one of our own cells to the host (its Cell pool may use it)
+bool guest_cell_out(const Key& k)
+{
+    if (is_host() || !C.sess || !C.sess->connected() || !k.instance || !is_cll(k))
+        return false;
+    Bundle b;
+    b.key = k;
+    if (!records_from_game(k, b.recs))
+        return false;
+    send_bundle(0, C.sess->my_id(), (Kind)kLineageCell, k.instance, pack(b));
+    H->log(M, SK_INFO, "creations: our cell %08X (%u records) to the host's Lineages cells (BUG-9275)", k.instance, (unsigned)b.recs.size());
+    return true;
+}
+
+// host: the guests' cells received this session, by the key of ours they are registered under
+static std::map<uint32_t, GuestCell> g_guest_cells;
+static unsigned g_guest_cells_in, g_guest_cells_refused;
+static void apply_guest_cell(uint8_t owner, const std::vector<uint8_t>& data)
+{
+    Bundle b;
+    if (!unpack(data, b) || b.recs.empty() || !is_cll(b.key) || !find_paths() || g_guest_cells.size() >= 64)
+        return;
+    if (unsigned miss = ensure_content(b.recs, kMkCell, "player " + std::to_string(owner) + "'s cell " + trace::hex(b.key.instance))) {
+        g_guest_cells_refused++;
+        H->log(M, SK_WARN, "creations: player %u's cell %08X names %u part(s) this game does not have: not used (BUG-9275)", owner,
+               b.key.instance, miss);
+        return;
+    }
+    uint32_t h = 0x811C9DC5;
+    for (auto& r : b.recs)
+        if (r.key.instance == b.key.instance && r.key.type == kBem)
+            h = fnv(r.data.data(), r.data.size(), fnv(&r.key.type, 4, h));
+    const uint32_t ours = 0x7B000000u | (h & 0x00FFFFFFu);
+    GuestCell gc;
+    gc.key = {ours, b.key.type, b.key.group};
+    gc.owner = owner;
+    for (auto& r : b.recs) {
+        if (r.key.type == kMeta)
+            dbpf::metadata_names(r.data, gc.author, gc.name);
+        if (r.key.instance != b.key.instance)
+            continue;
+        r.key.instance = ours;
+        uint8_t* d = r.data.data(); // the metadata names its own key (big-endian at +0x14): ours too
+        if (r.key.type == kMeta && r.data.size() >= 0x18 &&
+            ((uint32_t)d[0x14] << 24 | d[0x15] << 16 | d[0x16] << 8 | d[0x17]) == b.key.instance)
+            for (int i = 0; i < 4; i++)
+                d[0x14 + i] = (uint8_t)(ours >> (24 - 8 * i));
+    }
+    if (!g_guest_cells.count(ours)) {
+        std::wstring path = g_dir + L"\\lineage_cell_" + std::to_wstring(ours) + L".package";
+        if (!key_exists(gc.key) && !package_for(path, b.recs, kPrioWorld)) {
+            g_last_error = "cannot write a Lineages cell package";
+            return;
+        }
+    }
+    g_guest_cells[ours] = gc;
+    g_guest_cells_in++;
+    H->log(M, SK_INFO, "creations: player %u's cell %08X '%s' is %08X here (Lineages cells, BUG-9275)", owner, b.key.instance,
+           gc.name.c_str(), ours);
+}
+
+std::vector<GuestCell> guest_cells()
+{
+    std::vector<GuestCell> out;
+    for (auto& [k, c] : g_guest_cells)
+        out.push_back(c);
+    return out;
+}
+
+std::string lineage_status()
+{
+    char b[200];
+    snprintf(b, sizeof b, "creations: lineage guest_cells=%u in=%u refused=%u remap_fix=%d\n", (unsigned)g_guest_cells.size(),
+             g_guest_cells_in, g_guest_cells_refused, (int)g_cell_remap_fix);
+    std::string out = b;
+    for (auto& [host, ours] : g_remap)
+        if ((ours >> 24) == 0x7D) {
+            snprintf(b, sizeof b, "remap %08X -> %08X\n", host, ours);
+            out += b;
+        }
+    return out;
 }
 
 // guest: a creation of the host's own My Creations that its world uses: registered under a key of
@@ -2275,9 +2415,10 @@ static void alias_restore()
 static void apply_own_species(const std::vector<uint8_t>& data)
 {
     Bundle b;
-    if (!unpack(data, b) || b.recs.empty() || !is_crt(b.key) || !find_paths())
+    if (!unpack(data, b) || b.recs.empty() || !remappable(b.key) || !find_paths())
         return;
-    unsigned miss = ensure_content(b.recs, kMkCreature, "the host's own creation " + trace::hex(b.key.instance));
+    const bool cell = is_cll(b.key); // BUG-9275: a Lineages cell of the host's pool
+    unsigned miss = ensure_content(b.recs, cell ? kMkCell : kMkCreature, "the host's own creation " + trace::hex(b.key.instance));
     if (miss) { // BUG-0452: not registered, the world is not loaded
         std::string name, author;
         for (auto& r : b.recs)
@@ -2326,6 +2467,10 @@ static void apply_own_species(const std::vector<uint8_t>& data)
     g_remap[b.key.instance] = ours;
     g_unmap[ours] = b.key.instance;
     g_own_in++;
+    if (cell) {
+        H->log(M, SK_INFO, "creations: the host's Lineages cell %08X is %08X here (BUG-9275)", b.key.instance, ours);
+        return;
+    }
     // the species profile now (the game keeps profiles for the whole process): the first proxy of
     // it does not wait for its creaturedata
     void* prof = game::species_by_key({ours, b.key.type, b.key.group});
@@ -2486,13 +2631,13 @@ std::string model_hash(const Key& k)
 
 Key local_species(const Key& k)
 {
-    auto it = is_crt(k) ? g_remap.find(k.instance) : g_remap.end();
+    auto it = remappable(k) ? g_remap.find(k.instance) : g_remap.end();
     return it == g_remap.end() ? k : Key{it->second, k.type, k.group};
 }
 
 Key host_species(const Key& k)
 {
-    auto it = is_crt(k) ? g_unmap.find(k.instance) : g_unmap.end();
+    auto it = remappable(k) ? g_unmap.find(k.instance) : g_unmap.end();
     return it == g_unmap.end() ? k : Key{it->second, k.type, k.group};
 }
 
@@ -3273,7 +3418,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if ((kind == kWorldSpecies || kind == kOwnSpecies || kind == kOwnDesign) && (is_host() || from != 0))
         return;
-    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign) ||
+    if (kind == kLineageCell && !is_host()) // BUG-9275: a guest's cell goes to the host only
+        return;
+    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign && kind != kLineageCell) ||
         total > (8u << 20) ||
         (uint64_t)off + n > total)
         return;
@@ -3299,6 +3446,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (kind == kOwnSpecies) {
         apply_own_species(data);
+        return;
+    }
+    if (kind == kLineageCell) { // BUG-9275
+        apply_guest_cell(owner, data);
         return;
     }
     if (kind == kOwnDesign) { // BUG-0647 (owner = the model kind)
@@ -3368,6 +3519,7 @@ void on_session_end()
     g_designs.clear(); // BUG-0647 (the next host's designs are other creations under the same ids)
     g_design_sent.clear();
     g_unmap.clear();
+    g_guest_cells.clear(); // BUG-9275 (their packages stay registered, as the remapped species)
     g_store.clear();
     g_rx.clear();
     for (int k = 0; k < kKinds; k++) // BUG-0508: the session's host and its species

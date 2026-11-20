@@ -2,6 +2,7 @@
 // passes around every player, BUG-0174 / BUG-0295, the world scale and the stack tests, the AI's targets and the
 // loot drops); moved out of cellsync.cpp (C8 of 0.7.15, BUG-1183).
 #include "cellsync_internal.h"
+#include "call_guard.h"
 
 namespace cellsync {
 
@@ -28,6 +29,7 @@ int SK_CDECL h_Populate(float prob, int layer, int level, void* query, void* bbo
             return 0;
         g_n.solo_spawns++; // BUG-0205: the host is away, our game fills its own pool
     }
+    callguard::Depth depth(g_marker_depth); // BUG-9275: the native spawns (a Lineages cell may take one's model)
     return o_Populate(prob, layer, level, query, bbox, marker, x);
 }
 
@@ -1068,6 +1070,8 @@ void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, float si
         double now = H->time_seconds();
         for (int i = 0; i < n && i < cap; i++)
             g_loot_recent.push_back({buf[i], now});
+        if (mine)
+            lineage_loot(res, buf, n < cap ? n : cap); // BUG-9275: a species that drops a part keeps its look
         while (g_loot_recent.size() > 64)
             g_loot_recent.pop_front();
     }

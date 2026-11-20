@@ -1731,3 +1731,18 @@ BUG-1328. Ghidra (GOG 2024) and runtime on lab lanes 5 and 6.
 * ~ The editor's exit `0x5802F0` saves the new creation's list for the key from cIDGenerator (never 0 seen); with
   `param_2` (saved) it first reads the edited creation's list (EditorRequest +0x10's key: 0 for a new one; on a polluted
   profile the new creation inherited the list under key 0, now none).
+
+## Lineages cells: cll keys through the own-species path (2026-11-20, feat/lineage-cells)
+<a id="creations-lineage-cells"></a>
+
+BUG-9275 (docs/01-architecture.md#architecture-lineage-cells).
+
+* MSG_CREATION kind 5 (kOwnSpecies) carries a cll key too: a player cell the host's Cell pool uses; the guest registers
+  it under 0x7D + FNV-1 of its records like a host's own creature species (`creations.cpp` remappable(),
+  `cell.lineage_remap`) and `local_species` / `host_species` map cll keys as well. `coop.lineage` prints the remaps.
+* MSG_CREATION kind 9 (kLineageCell, creations family 1.1): guest -> host, owner = the guest, id = the instance, one
+  of the guest's own My Creations cells (bem, metadata, pictures: 4 records); the host checks its parts
+  (ensure_content kMkCell) and registers it under 0x7B + FNV-1 of the bem record (`lineage_cell_<key>.package` next to
+  its EditorSaves). An older host drops the kind (kind >= kKinds and not a known one).
+* The model signature of a cell (`creations::model_signature`) hashes the bem record only: pictures and metadata
+  differ between My Creations and the stream's bundle.

@@ -77,8 +77,22 @@ bool avatar_swap_settling(double now); // BUG-0318: the own avatar got a new bod
 // under both keys (docs/re/creature.md 15).
 void host_species_out(uint8_t peer, const Key& k); // host: before an NPC of species k goes to peer
 void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files); // host: before a world share
-Key local_species(const Key& k); // guest: the host's key of a species -> the key its NPCs use here
+Key local_species(const Key& k); // guest: the host's key of a species -> the key its NPCs use here (a Lineages cell too)
 Key host_species(const Key& k);  // guest: ours -> the host's
+
+// BUG-9275 (Lineages cells, lineage_cells.h): host: a player cell its Cell pool uses goes to `peer` (once; false: no
+// records here); the cell's model signature (its bem bytes, 0: not found) and metadata names; guest: one of its own
+// cells to the host; host: the guests' cells received this session (registered under 0x7B...... keys of ours)
+bool host_cell_out(uint8_t peer, const Key& k);
+uint32_t model_signature(const Key& k, std::string* name = nullptr, std::string* author = nullptr);
+bool guest_cell_out(const Key& k);
+struct GuestCell {
+    Key key; // ours
+    uint8_t owner = 0;
+    std::string name, author;
+};
+std::vector<GuestCell> guest_cells();
+std::string lineage_status();
 
 // BUG-0469: the model a caller may build from `model` (docs/re/creations.md#creations-content-all-kinds):
 //  - kSame: this game has the model and every part / paint it names, build it from that key

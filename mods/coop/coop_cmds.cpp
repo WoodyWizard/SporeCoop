@@ -8,6 +8,8 @@
 #include "home_nests.h"
 #include "own_progress.h"
 #include "start_choice.h"
+#include "lineage_cells.h"
+#include "cellsync.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1228,6 +1230,15 @@ void register_commands_core()
                        int rc = start_choice::command(argc, argv, o);
                        SAY("%s", o.c_str());
                        return rc;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.lineage",
+                   "coop.lineage [share <percent>] - Lineages cells (BUG-9275): the host's player cells for its Cell pool, the swaps, the live cells by model, a guest's remapped cells",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", lineage_cells::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       SAY("%s", cellsync::lineage_debug().c_str());
+                       SAY("%s", creations::lineage_status().c_str());
+                       return 0;
                    },
                    nullptr, MT);
     H->command_add(M, "coop.homenests", "coop.homenests [make <seat> | extinct <seat>] - the host: every seat's own nest (BUG-9262)",
