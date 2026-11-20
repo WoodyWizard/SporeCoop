@@ -106,6 +106,9 @@ bool cinematic_pause_resume();
 // planet, BUG-0035, and the guest's own copy can be beside them). "" = unknown (a menu: "SaveGame",
 // snapshot.spo, no save database). Not for every frame (it asks the resource database).
 std::string current_game_key();
+// BUG-9265 (ported from Lineages' shared_loads, BUG-9223): the loads this game started (load_slot: a received world, a
+// rejoin, coop.load), counted when the game's LoadGameByName is called
+uint32_t loads_started();
 // BUG-0225: called after a received world was written into a slot (lower-case dir, UTF-8, no
 // trailing '\'): the game that was in that slot no longer exists as it was
 void set_slot_replaced_hook(void (*fn)(const std::string& dir));

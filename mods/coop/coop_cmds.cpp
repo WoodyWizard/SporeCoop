@@ -4,6 +4,7 @@
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
 #include "identity.h"
 #include "party.h"
+#include "own_progress.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1203,6 +1204,17 @@ void register_commands_core()
     H->command_add(M, "coop.party", "coop.party - the host: this planet's party, one seat per player who played it (BUG-9260)",
                    [](void*, int, const char* const*, SkOut* out) {
                        SAY("%s", party::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.progress",
+                   "coop.progress [resync] - own progress (BUG-9265): this game's own DNA / bar / food, every player's bar, the host's records; resync: ask the host for our values again",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "resync"))
+                           own_progress::resync();
+                       SAY("%s", own_progress::status().c_str());
+                       SAY("  dna.cpp: totals_ignored=%u gains_kept=%u hunts_given=%u\n", g_own_totals_ignored, g_own_gains_kept,
+                           g_own_hunts_given);
                        return 0;
                    },
                    nullptr, MT);

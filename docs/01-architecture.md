@@ -879,3 +879,39 @@ identity ([netcode-identity](04-netcode.md#netcode-identity), BUG-9258).
   joining in the menu must not be seated on it.
 * Nothing in the game uses the seats yet. The next phases index by them: every player's own nest (Creature), village
   (Tribe) and nation (Civilization). Test: tools/tests/coop_party.py (suite party).
+
+## Own progress: every player's own DNA and bar in Cell and Creature (2026-11-20, feat/own-progress)
+<a id="architecture-own-progress"></a>
+
+BUG-9265, the owner's rule of 2026-11-20 ("Together" of [docs/11-rivals.md](11-rivals.md): wait for everyone, no
+"first wins"). Builds on the identity ([netcode-identity](04-netcode.md#netcode-identity)) and the party side files
+([architecture-party](#architecture-party)).
+
+* The session setting **all.own_progress** (default on, coop.ini `own_progress`; `coop.fix core.own_progress off` reads
+  it off) makes the DNA and the evolution bar of the Cell and Creature stages each player's own. Off (or creature.mode
+  host): the party's one shared total of 0.7.15 (dna_route.h, dna_pace.h).
+* What steps aside when it is on: the host's DNA total (MSG_DNA, not sent / not applied), a guest's forwarded gains and
+  spends (MSG_DNA_ADD, BUG-0466), the pace 1/N (BUG-0510: each bar fills at a solo game's pace by itself), the Cell
+  food total (MSG_CELL_FOOD: the host still sends it, a guest only takes the meal acknowledgements from it), a guest's
+  meal on the host's food, the cell-editor spend sharing (BUG-1249, the wsync row cell_spent), the shared species goal
+  card. A deed a guest does on the host's game is paid to the guest: the hunt credit (dna_ledger g_credit) and a social
+  success (social K_RESULT) go as MSG_PROGRESS kGain / the result's DNA into the guest's own game.
+* The host keeps every guest's last values (Cell: food, spent; Creature: DNA, bar cPlayer +0x10F0, brain level) by the
+  player's identity key per planet, saved as `<planet>.spo.duoprogress` next to the save (OPG1, own_progress_logic.h;
+  `founders::write_side`, outside the frame). A copy of the host's world holds the host's values, so after every load
+  of a world (world::loads_started) a guest asks (kAsk) and gets its own back (kSet: Cell through AddFoodPoints by the
+  difference; Creature a higher bar through AddEvolutionPoints, a lower one written, the DNA set, a lower brain level
+  written); then it reports once a second (kReport). A player without a record keeps the world's values.
+* The stage end together: the host sends the table of every player's bar (kTable). Cell: the host's click on History's
+  check is held until every bar is full and then runs again by itself (the switch vote of BUG-0315 follows); a guest's
+  click is never its own switch. Creature: the host's stage-end request (tag 0x64AA168) is refused until every bar is
+  full (the game keeps its evolve button; Esc closes History), then the vote of BUG-1085. Notices: "your bar is full
+  ... waiting for Bob 64%" (again every 60 s) and "every player's bar is full ...".
+* Code: mods/coop/own_progress.{h,cpp}, own_progress_logic.h (unit tests in tests/validate_tests.cpp), the hooks in
+  dna.cpp, session_glue.cpp, coop.cpp, vote.cpp, social.cpp, cellsync.cpp, wsync.cpp; `coop.progress [resync]`.
+  MSG_PROGRESS 77 (session family 1.3). Test: tools/tests/coop_own_progress.py (suites own_progress_cell,
+  own_progress_creature, own_progress_off); twoinst.start() switches the setting off for the older tests of the shared
+  total (own_progress=True keeps it on).
+* Known: in Cell the players can be at other levels (their own food) in the host's one pool; a held click on History's
+  check shows a white screen until the stage moves on (BUG-9266, as BUG-1269); a guest whose brain level is set lower
+  keeps the save's body size until its next brain upgrade.

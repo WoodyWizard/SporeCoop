@@ -12,6 +12,7 @@
 #endif
 #include "lifecycle.h"
 #include "identity.h"
+#include "own_progress.h"
 #include "coop_state.h"
 #include "store.h"
 #include "designs.h"
@@ -843,6 +844,10 @@ void setup_callbacks()
             identity::on_message(from, r);
             return;
         }
+        case net::Route::Progress: { // BUG-9265: own progress in Cell / Creature (Session class)
+            own_progress::on_message(from, r);
+            return;
+        }
         case net::Route::Effect: { // BUG-0451: a partner's creature made an effect
             effects::on_message(type, from, r);
             return;
@@ -862,6 +867,10 @@ void setup_callbacks()
                 dna_pace_heard(r.ok() && r.left() >= 1 ? r.u8() : 1);
             } else
                 dna_pace_heard(1);
+            if (own_progress::active()) { // BUG-9265: our DNA and bar are our own: the host's total is the host's
+                g_own_totals_ignored++;
+                return;
+            }
             if (r.ok() && g_solo_await > 0) { // BUG-0829
                 bool paid = false;
                 for (auto& p : parts)
@@ -895,6 +904,10 @@ void setup_callbacks()
         }
         case net::Route::DnaAdd: {
             float d = r.f32();
+            if (own_progress::active()) { // BUG-9265: a guest's DNA is its own (an older guest's forward is dropped)
+                g_own_totals_ignored++;
+                return;
+            }
             auto add = dna_route::host_add(game::avatar() != nullptr, g_away_dna_fix);
             if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Pay) {
                 dna_host_gain({dna_ledger::Cause::Earned, from, d}, game::dna());
@@ -1154,6 +1167,7 @@ void setup_callbacks()
         views::forget(id);              // BUG-0280
         pfind::on_player_leave(id);     // F2: its colour is free again
         identity::on_player_left(id);   // BUG-9258: its identity goes (ids are reused)
+        own_progress::on_player_left(id); // BUG-9265: its live values go (its record stays, by identity)
         if (g_player_forget_fix)
             player_life::forget_all(id); // BUG-0422: every module's state of this id (player_life.h)
         g_give_pick = net::give_pick_after_leave(g_give_pick, id, g_give_pick_reset_fix); // BUG-0234

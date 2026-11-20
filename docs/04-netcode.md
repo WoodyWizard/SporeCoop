@@ -131,10 +131,11 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 71 | `TRIBE_ANIM` | RU | host | Module | Tribe (guest) | tribe | u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160) |
 | 72 | `CELL_MATE` | RU | guest | HostWorld | Cell (host) | cell | u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246) |
 | 73 | `IDENTITY` | R | any | Session | Identity | session | the persistent player identity (identity.h, BUG-9258): guest -> host u64 its own after each join; host -> guests u8 n, n x {u8 player, u64 identity} |
+| 77 | `PROGRESS` | R | any | Session | Progress | session | own progress in Cell / Creature (own_progress_logic.h, BUG-9265): u8 kind (1 ask, 2 set, 3 report, 4 table, 5 gain), payload |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
-| session (session) | 1 | 1.2 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY`, `IDENTITY` |
+| session (session) | 1 | 1.3 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY`, `IDENTITY`, `PROGRESS` |
 | world (world transfer) | 2 | 1.0 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
 | creature (Creature) | 3 | 1.1 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT` |
 | npc (mirrored creature and world state) | 4 | 1.1 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |

@@ -316,6 +316,7 @@ void register_commands_stages();
 void register_commands_ui();
 
 // ---- defined in dna.cpp ----
+extern uint32_t g_own_totals_ignored, g_own_gains_kept, g_own_hunts_given; // BUG-9265
 extern bool g_away_dna_fix;
 extern bool g_dna_seen_ok;
 extern bool g_solo_await_fix;

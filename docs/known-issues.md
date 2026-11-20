@@ -395,3 +395,13 @@ anchor so other docs can link to it:
   cinematic) until the vote ends; the guest still sees the cinematic.
 * Reproduce: `tools/lab.py run evo_screens_switch`, key frame `01_switch_vote`.
 * Ticket: BUG-1269
+
+## Cell, own progress: a click on History's check that waits leaves the screen white (2026-11-20, feat/own-progress)
+<a id="issue-own-progress-cell-white"></a>
+
+* What happens: with all.own_progress on, a player whose Cell bar is full clicks History's check before every
+  partner's bar is full: the click waits (the host's runs by itself once every bar is full) and that player's screen
+  stays white until the stage moves on. The "bar is full" notice tells the players to click only when told.
+* Reproduce: two games in Cell, `coop.pool meal 1000` on one, its History check (the HUD button under the portrait,
+  then the check), screenshot.
+* Ticket: BUG-9266

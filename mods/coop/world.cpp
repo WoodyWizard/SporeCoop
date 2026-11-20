@@ -1750,6 +1750,9 @@ bool load_slot(const std::wstring& slot, const std::string& planet_file, std::st
     return true;
 }
 
+static uint32_t g_loads_started; // BUG-9265
+uint32_t loads_started() { return g_loads_started; }
+
 static bool load_now(const std::wstring& slot, const std::string& planet_file, std::string& err)
 {
     uintptr_t getdb = H->sym("Resource::GetDatabaseByID");
@@ -1801,6 +1804,7 @@ static bool load_now(const std::wstring& slot, const std::string& planet_file, s
     // the menu intro must not survive into the stage (see end_menu_intro); in the menu nothing else plays
     end_menu_intro(game::mode_id() == modes::kMenu, "at the load");
     skg::thiscall<void>(loadby, mgr, name.c_str());
+    g_loads_started++; // BUG-9265: own_progress gives a guest its own values back after each load
     H->log(M, SK_INFO, "world: loading %s from %s", planet_file.c_str(), narrow(slot).c_str());
     return true;
 }

@@ -5,6 +5,7 @@
 // busy for a share (game_busy, save_blocker) and the editor-pending flag (BUG-0920). The MSG_VOTE handler is in the
 // session callbacks.
 #include "coop_state.h"
+#include "own_progress.h"
 #include "designs.h"
 
 namespace coop_core {
@@ -835,6 +836,11 @@ bool SK_CDECL h_Submit(void* req)
             notice(g_name + " evolves now (the others may evolve too)", -1);
         } else if (g_sess.role() == net::Role::Host) {
             if (!g_vote.active) {
+                if (stage_end && own_progress::hold_stage_end(true)) { // BUG-9265: every player's own bar first
+                    LOG("evolution: the end of the Creature stage waits until every player's own bar is full (BUG-9265)");
+                    g_evo_flag_refused = true; // BUG-0920: the game sets its "editor pending" flag after this call
+                    return false;
+                }
                 if (stage_end) { // BUG-1085: a stage start keeps the vote
                     g_stage_end_votes++;
                     LOG("evolution: the end of the Creature stage waits for the vote (BUG-1085)");
@@ -853,6 +859,9 @@ bool SK_CDECL h_Submit(void* req)
             if (g_vote.active) {
                 LOG("evolution: this guest's stage-end request is its I'm ready (BUG-1085)");
                 set_ready(true);
+            } else if (own_progress::active()) { // BUG-9265: told who still fills a bar
+                LOG("evolution: this guest's stage-end request waits for every player's bar and the host's vote (BUG-9265)");
+                own_progress::hold_stage_end(false);
             } else {
                 LOG("evolution: this guest's stage-end request is not taken: the host moves everybody on (BUG-1085)");
                 feed("the host moves everybody on to the Tribe stage (after a vote)");
@@ -908,6 +917,22 @@ bool g_switch_go = false; // the vote passed: the next call is the game's own sw
 void SK_CDECL h_CellToCreature()
 {
     bool multi = g_sess.connected() && g_sess.players().size() > 1;
+    // BUG-9265 (own progress): nobody moves on alone. The host's click waits until every player's own bar is full (then
+    // it runs again by itself: own_switch_tick); a guest's click in the host's world is never its own switch (during
+    // the vote it is its I'm ready, below)
+    if (own_progress::active() && !g_switch_go && game::mode_id() == modes::kCell && multi) {
+        if (g_sess.role() == net::Role::Host) {
+            if (own_progress::hold_stage_end(true)) {
+                LOG("the Creature stage waits until every player's own bar is full (own progress, BUG-9265)");
+                return;
+            }
+        } else if (host_world_now() == host_world::HostWorld::Same && !g_vote.active) {
+            g_switch_guest_held++;
+            LOG("the Creature stage: this guest's click waits for every player's bar and the host's vote (BUG-9265)");
+            own_progress::hold_stage_end(false);
+            return;
+        }
+    }
     if (!g_switch_vote_fix || !settings::on(settings::kSwitchVote) || g_switch_go || game::mode_id() != modes::kCell ||
         !multi) {
         g_switch_go = false;
@@ -1143,8 +1168,24 @@ static bool peer_in_editor(uint8_t id)
     return m == modes::kEditor || m == modes::kEdit;
 }
 unsigned vote_in_editor_count() { return g_vote_in_editor; }
+// BUG-9265: the host's held click on History's check runs once every player's own bar is full (outside the frame, as
+// the vote's action runs it)
+static void own_switch_task(void*)
+{
+    if (game::mode_id() == modes::kCell)
+        h_CellToCreature();
+}
+static void own_switch_tick()
+{
+    if (own_progress::switch_resume_due()) {
+        LOG("every player's own bar is full: the held switch to the Creature stage goes on (BUG-9265)");
+        H->run_outside_frame(own_switch_task, nullptr);
+    }
+}
+
 void vote_tick(double now)
 {
+    own_switch_tick();
     if (!g_vote.active || g_sess.role() != net::Role::Host)
         return;
     if (g_vote_scope_fix) {

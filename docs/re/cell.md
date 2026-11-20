@@ -2585,3 +2585,18 @@ BUG-1263. GOG 2024, lanes 2 / 3 (`coop_evo_screens.py --part cell`, both games' 
 * ✔ The egg laying's fade is undone only by an editor's return or the next round: forgetting the mate after the fade
   left the picture black (36 s). The mate has to be forgotten before the meeting starts (`cell.refused_mate`,
   `cellsync::forget_mate` from vote.cpp evo_flag_tick, outside the game's call chain).
+
+## Own progress: own food, a held History check (2026-11-20, feat/own-progress)
+<a id="cell-own-progress"></a>
+
+BUG-9265, BUG-9266. Steam build (the GOG 2024 code), lane B on Windows.
+* ✔ (runtime) With each player's own food (S+0x1C) the HUD of each game shows its own bar and DNA (host 300 food:
+  22 DNA, guest 120: 11 DNA); the players then are at other levels in the host's one pool (the host's cell drawn large
+  on the guest's screen); nothing faulted in a 10 min session.
+* ✔ (runtime) A guest's own food after a load of the host's save is given back through AddFoodPoints by the
+  difference in the cell step (`cellsync::set_food_total`, the food guard: not paced, not sent): 100 kept while the
+  host's world had 200.
+* ✔ (runtime) History's check clicked at food 1000 and held (the host's, CellStage_ToCreature not called) or refused (a
+  guest's) leaves that game's screen plain white with the consequence card ("Pacifist"), 26 s and longer, until the
+  stage moves on; no cinematic plays at the hook (`cinematic 0`). Calling the held switch later (outside the frame) runs
+  the game's switch as before (the vote, both games in Creature). ? What starts the white before 0xE62440 (BUG-9266).

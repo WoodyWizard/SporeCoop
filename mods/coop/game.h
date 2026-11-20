@@ -330,6 +330,9 @@ void dna_add_raw(float delta);              // a shared change, not reported: a 
                                             // AddEvolutionPoints (DNA + the evolution bar), a spend the DNA only (BUG-0630)
 void dna_set_raw(float total);              // SetEvolutionPoints: the DNA only, as the game's editor spends it
 float evolution_bar();                      // cPlayer +0x10F0, the stage's total earned (NAN without a player)
+bool set_evolution_bar(float v);            // BUG-9265: writes cPlayer +0x10F0 (false: no player)
+int brain_level();                          // BUG-9265: the avatar's brain level (Creature; -1: no avatar)
+bool set_brain_level(int level);            // BUG-9265: writes it (SporeCoop::g_BrainLevel); false: not in Creature
 using DnaListener = bool (*)(float& delta); // return false to swallow a gain; may change it (BUG-0510 pace)
 void set_dna_listener(DnaListener fn);
 
