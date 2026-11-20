@@ -5,12 +5,12 @@ status: open
 kind: feature
 stage: Tribe
 reported: 2026-11-20
-source: 
+source: Lineages port (PR #196)
 role: 
 versions: 0.7.15.5
 fixed_in:
 branch: feat/lineages-tribe (fork IltonBJSilva/SporeCoop)
-commits:
+commits: 1497003b 0d2dcfe1 752d4323
 tests: tools/tests/coop_tribe_seats.py (suite tribe_seats), tests/tribe_seats_tests.cpp
 signature:
 docs: docs/re/tribe.md#tribe-own-villages docs/01-architecture.md#architecture-own-villages
@@ -54,4 +54,4 @@ City Hall and vehicle editors took both games to Civ together. The first rival f
 (count_views > 0). `make test` passes.
 
 ## History
-- 2026-11-20: opened; ported on feat/lineages-tribe and run on lane D.
+- 2026-11-20: opened; ported on feat/lineages-tribe and run on lane D; the final build (752d4323, with feat/lineages-nests merged) passed the same steps again: a cold restart with the host loading alone (the village of the archived species there), the guest joining (its members), the box and right-click, the refused attack, the food, a rejoin.
