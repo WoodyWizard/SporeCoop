@@ -6269,3 +6269,40 @@ from a running game's memory (tools/qa_win/dis.py). Follows #tribe-partner-totem
   (0xBC6620, kept at tribe +0x26C) and actor names from 0x137770C, and the actors 0xE44AEA33 (tribe +0x120),
   0x268AB814 (tribe vt 0xAC + 0x34), 0xE4206FE9 (the food mat + 0x34) and 0xFF7F9A4C (0xC8F870(tribe, 10) + 0x34) are
   bound to the cinematic. It works on GetPlayerTribe(), which on a guest is the guest's own village.
+
+## Final Tribe QA: the pet cap, partner pens, the wipe regroup, the outfit path (2026-11-21, fix/l47-final-tribe)
+<a id="tribe-final-qa"></a>
+
+Live, MSI two games (host instance 2, guest instance 1, Creature -> Tribe from Vandh); code read from a running game's
+memory (tools/qa_win/dis.py). Follows #tribe-wipe-regroup. A crash address in a crash text of the MSI host is in run
+space: this run's game sat at base 0x300000, so 0xCAD6A3 there is 0xDAD6A3 in .sym space (dis.py takes .sym addresses).
+* ✔ (live) Power 0x39's cap, prop 0x217997F4 of the chief's 0x39 ability (+0x130 prop list), is **5** on Vandh for
+  both chiefs (the default 4 is not used): a village tames 5 animals.
+* ✔ (memory) `SporeCoop::BT_TameAnimalsNode` 0xDB9310 dispatches on the state's step (+4) with `jmp [4*eax +
+  0xCB975C]` at +0x13; the taming block (+0xE5) is step **3**. It is called every frame the chief is in the node (137
+  calls for one press), the taming step several times (it waits for the chief's animation 0x609EA47).
+* ✔ (live) Tamed animals leave the TribalGame list (+0x94) by themselves: both villages' 10 pets went between 14:04 and
+  14:08 while no taming node ran; the animals went back to their herds. Whether a timed end or the "rival tribe formed"
+  cinematic (started 14:06:16) did it was not told apart.
+* ✔ (memory) CitizenAction 25 (tame) node around 0xDAD64D: checks the action record's action == 0x19, then citizen
+  +0x1014 (0xC230B0, the owner tribe) -> 0xC90060 (`mov eax, [ecx+0x19C4]`, the animal pen) -> `[pen+0x70]` with no
+  null check. A village without a pen faults there (BUG-9326). 0xC90070 is the next getter (+0x19CC).
+* ✔ (memory) CitizenAction 13 (egg) node 0xDB1720: `0xBC9810(ai+8, 0x80000, 0)`, then `0xD99830(that, 0x175CDC9)` and
+  a read of the result without a null check; it crashed at once for a partner village (BUG-9326). ? What 0x175CDC9 names
+  (likely the egg pen's kind).
+* ✔ (live) The host's own village has an animal pen and an egg pen (+0x19C4 / +0x19C8 non-null); a partner founder
+  village on the host has neither, like every computer village (#tribe-fork-graduation-notes).
+* ✔ (live) CitizenAction 20 (feed) on a wild animal from a partner village: the villager carries food (item 12) to the
+  animal, which walks about 40 m toward the village and stops (no pen to lead it into). No crash.
+* ✔ (live) CitizenAction 24 (repair) on the partner's own hut, its health lowered with `coop.tribe huthp`: the members
+  repair it (200 -> 307 in 27 s). A real right-click on that hut made no order on the guest (not analysed).
+* ✔ (live) Villagers stand still with behaviour node 046A27F6 while the game is paused by a cinematic caption ("A
+  rival tribe of ... has formed", input_lock + paused): orders given then do nothing until the check mark.
+* ✔ (live) A party wipe whose last villager fell **at the raiders' village** comes back with that villager there (60
+  hp; the wipe's checkpoint keeps its place); the raiders' members killed it again 41 s after the reload and the next
+  wipe came 2 minutes after the first (BUG-9320, fixed by `tribe.regroup_villagers`). A wipe whose last villager fell at
+  home came back with it at home.
+* ✔ (live) The host's outfit is applied by the native game when the host **leaves the Planner** after the outfitter
+  (`coop.tribe outfits` home= changes then, 291EE5B5 -> 292BC151); an outfitter opened with `coop.vote editor` (no
+  Planner) ends the vote but the host's village keeps its old species. The guest's copy follows with the next world
+  share ("host species 292BC151 = 7DBCDD56 here").

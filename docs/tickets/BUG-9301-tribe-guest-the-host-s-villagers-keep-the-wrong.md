@@ -65,6 +65,22 @@ guest's `coop.tribe species` shows the host's village with the host's key; off: 
   the same green creatures (scratchpad only). The host's own village on the guest keeps 291EE5B5 itself (the guest has
   that key too), so one host species shows under two keys on a guest; same look, not a bug.
 
+- Live QA 2026-11-21, fix/l47-final-tribe (MSI two games, host instance 2, guest instance 1, a fresh Creature -> Tribe
+  entry from Vandh): PASS end to end, the players' way.
+  * First try with `coop.vote editor 156276D1` on the host (no planner): the guest pressed I'm Ready in the lobby, both
+    outfitters opened, the host added a cap (budget 60 -> 45), both pressed Done; the vote ended (`token=0 pending=0`)
+    but the host's village kept 291EE5B5 on both games: the native host applies its outfit when it leaves the Planner
+    (as tools/tests/duo_tribal_outfitter.py notes), and this path has no Planner. Not the players' path, not a bug.
+  * The players' path (14:50-14:55): a click on the host's hut, the Planner button, the planner tutorial's check, the
+    hat tab, the Edit Outfit button under the portrait: the vote started on the guest ("Paused by host" over its lobby;
+    the console's F9 key failed there, the vote's timer opened both outfitters anyway); the host added the cap, the guest
+    pressed Done in its own outfitter (`ready=1 result=7CE63A2C`: answered with its own outfit), the host pressed Done
+    and then the Planner's Done. Host `coop.tribe outfits`: `home=292BC151`, `coop.tribe species` tribe 0
+    slot0=292BC151. Guest, after the world share that followed: tribe 0 slot0=7DBCDD56, `coop.creations` "host species
+    292BC151 = 7DBCDD56 here" (before: 291EE5B5): the guest's copy of the host's village wears the new outfit
+    (out/qa-shots/bug9301_pass_guest_sees_host_outfit.png; at this distance and from behind the cap itself is not
+    visible, so the look was judged by the species key, not by eye).
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on fix/l47-view (built, not run in a game yet; the lead runs the two-player test).
@@ -78,3 +94,4 @@ guest's `coop.tribe species` shows the host's village with the host's key; off: 
 - 2026-11-21: live two-game QA (see Verification).
 - 2026-11-21: second live QA run (see Verification).
 - 2026-11-21: third live run: the NPC species "mismatch" is the remap (same look); the outfit change not reached.
+- 2026-11-21: fix/l47-final-tribe: the host's outfit change reached the guest end to end (Verification).

@@ -3982,3 +3982,21 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * BUG-9306 (open part). Tribe: the lure basket of chief power 0x34 is not shown on a partner's screen. A display-only
   copy needs an object the guest's game draws but never saves or simulates; the mod has none yet (an ornament copy
   would be a planet record that the guest's saves keep).
+## Tribe after fix/l47-final-tribe (2026-11-21)
+<a id="known-tribe-final-qa"></a>
+
+* BUG-9326 (open part). Tribe: a partner village has no animal pen and no egg pen (the game makes them for the player
+  tribe only), so a partner cannot domesticate an animal by feeding it or keep eggs: the host refuses those orders
+  (`tribe.partner_pen_guard`, which stops the crash) and a fed animal follows only part of the way. Chief power 0x39
+  (taming) works for partners. Giving partner founder villages their own pens is not done.
+* Reproduce: a partner's villagers selected, a tame (right-click in social stance on a wild animal) or an egg order:
+  host log "refused ... no animal pen (BUG-9326)".
+* BUG-9303 (not run). Tribe: a partner's fishing order was not run (no fishing spot or fishing tool near the partner
+  village on Vandh); a real right-click on the partner's own damaged hut made no repair order on the guest (the repair
+  order itself works).
+* BUG-9320 (open, fix built, not yet seen in its case). Tribe: when a village's last villager falls at the raiders'
+  village, the party wipe's reload brings it back there and the raiders kill it again inside the 2 calm minutes (a
+  second wipe 2 minutes after the first). `tribe.regroup_villagers` keeps outside blows off the party's villagers for
+  those 2 minutes and walks them home; a natural run with the fix had no raid to show it.
+* Reproduce: Vandh, let the host's chief chase raiders home to their village and fall there; watch the host log for two
+  "party wipe" lines about 2 minutes apart.

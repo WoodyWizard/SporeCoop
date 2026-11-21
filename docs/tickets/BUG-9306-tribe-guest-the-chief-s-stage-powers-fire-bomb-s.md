@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.14.1-lineages67-dev
 fixed_in:
 branch: fix/l47-powers
-commits: 0306419f, db507eef, 8bd69ecc
+commits: 0306419f, db507eef, 8bd69ecc, 8836d797, 212b8595
 tests:
 signature:
 docs:
@@ -143,6 +143,29 @@ Done on fix/l47-powers (built; not run in a game yet):
     planet record the guest's own saves keep, and its removal before every save, load, editor and stage change would
     be new code), so it is left as an open issue (docs/known-issues.md#known-tribe-l47-tribe2).
 
+- Live QA 2026-11-21, fix/l47-final-tribe (MSI two games, host instance 2, guest instance 1, a fresh Creature -> Tribe
+  entry from Vandh; power 0x39 granted on both games, each chief walked to its own herd with `coop.tribe order <chief>
+  4 x y z`). The native cap is **5**, not 4: `coop.tribe powers pets` now prints each chief's 0x39 ability prop
+  0x217997F4, `cap=5` for both chiefs in this world. That explains the earlier off-run's "one past 4": the host had 4
+  pets, the shared cap was 5, so one more came in (there it re-tamed a host pet, see below). Each village now gets the
+  game's own cap (5 here), as solo play.
+  * Host 14:00:28: the host's press tamed 5 (list 5, all 800021D3, `cap=5 pets_in_list=5`).
+  * FAIL (`coop.fix tribe.pet_cap_per_village off` on the host), 14:00:51: the guest's press ran on the host (the
+    partner chief's recharge started, progress 0.04) and tamed **none**: the list stayed at the host's 5 (one cap for
+    the party) (out/qa-shots/bug9306_fail_off_partner_tames_none.png).
+  * PASS (on), 14:02:04 (the partner's recharge cleared with mem.write; `coop.tribe powers ready <type> <seat>` does it
+    from now on): the guest's press tamed **5 of its own** (list 10: five 0000228C, the host's five still 800021D3, no
+    entry twice); `split=9 restored=45 taming_steps=18`. Both chiefs were then walked home: 40 s later each village's
+    five pets stood at their own chief's village (partner's at 311..313 -391..-394, host's at 227..235 -443..-447)
+    (out/qa-shots/bug9306_pass_guest_pets_follow_own_chief.png, bug9306_pass_host_pets_follow_own_chief.png; the
+    tame sparkles over them).
+  * The one-call dead flag (+0xB5E): now set only in the node's taming step (step 3 here, read from the node's own jump
+    table: `power 0x39's taming step is 3`), not on every frame the node runs (275 calls for two presses, 18 in the
+    taming step). Pets left the TribalGame list later in both sessions (here all 10 at once between 14:04 and 14:08,
+    while no node call ran: the counters did not move after 14:02), so the earlier "the pets died" is not the flag but
+    the game's own (a timed tame, or the "rival tribe formed" cinematic that started 14:06:16: not told apart); the
+    animals went back to their herds (#109 was at its herd 14:17).
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix/l47-powers: tribe.guest_powers; Civ and Space surveyed (plan above). Static analysis + build only.
@@ -185,3 +208,6 @@ Done on fix/l47-powers (built; not run in a game yet):
 - 2026-11-21: third live run (fix/l47-tribe): 0x36 effect relayed (`tribe.power_effects`), 0x38 has no effect, pets tool.
 - 2026-11-21: decision 7W A on fix/l47-tribe2: `tribe.pet_cap_per_village` (FAIL off seen; PASS partial, see
   Verification); the lure basket's stand-in not done (blocker recorded).
+- 2026-11-21: fix/l47-final-tribe: the real PASS (both villages at the cap, each with its own pets) and FAIL; the cap
+  is the game's 5; the split and dead flag only in the taming step; `coop.tribe powers pets` caps,
+  `coop.tribe powers ready`.
