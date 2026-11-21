@@ -803,6 +803,8 @@ Measured for BUG-0222 (the civ_reload / civ_sw_vote tests read these now):
 * ✔ Costs 0xBF6DF0: types 0, 6, 11 = 4000; 1, 4, 7 = 16000; 2, 5, 8 = 12000 x 1 while fewer than two
   cities of the planet are not this civ's, else 12000 x (the type number, as decompiled: ~ not checked
   at runtime); every other type (3, 9, 10) = 2000.
+  CORRECTION (2026-11-21, fix/l47-money): 2, 5, 8 = 12000 x max(1, the cities not of this civ), not the type number
+  (Ghidra and runtime, see #civ-reload-spend-sw-price).
 * ✔ Fired at the zero vector, type 4 crashed the game in `cPlanetModel::GetNearestCity+0x1B7`
   (0xB897A7, read of 0x8F04CAB0, lab 20261030-001517; via launch 0xBE5D30 → 0xBDC2F0). Types 1, 3
   and 9 at the zero vector worked. Tests use 1, 3, 9 only.
@@ -2854,3 +2856,32 @@ Owner decisions 7P A (BUG-9313), 7S B (BUG-9309) and BUG-9312. GOG 2024, Ghidra 
   `.duo-seats` (CampaignRules seats) counts players at once (network ids), not nations: unchanged. The Space launch offer
   carries every seat (BUG-9187, 8 entries). Creature nests and Tribe villages read the party seats and the Tribe roster
   (at most kPlaySeats), never the Civilization roster: a Civilization seat >= 4 does not reach them.
+## A guest's world reload counted as its spend of the shared money; the global superweapons' price (2026-11-21, fix/l47-money)
+<a id="civ-reload-spend-sw-price"></a>
+
+BUG-9316, BUG-9317 (owner decision 7T A). GOG 2024, Ghidra on the TITAN Steam dump, live runs on the TITAN QA copy (Abber,
+docs/06-testing.md#testing-reload-spend-sw-price).
+* ✔ (runtime) A guest's world reload (a world share after a capture or a founding: Civilization -> Galaxy menu 02CCD1D2 ->
+  Loading 01654C08 -> Civilization, 15-20 s) kept the guest's shared-money sync state: game::stage_epoch(kCiv) only moves
+  when Civilization is entered again, so the mod's "same world" test still held in the Galaxy menu. A host total (MSG_RES,
+  at least every 2 s) that arrived in a Galaxy menu frame was folded (BUG-0220's fold) against what GetPlayerCivilization
+  +0x98 read there: 0, 320, 840 in three runs (the old world being torn down), so "0 - the last total" went to the host as
+  the guest's spend. Three FAIL runs with `coop.fix res.load_hold off`: -63565 (the whole shared money), -1040, -72660
+  (host HUD 72,120 -> 2,720). No test tool is involved: the QA log of 2026-11-21 09:39 shows -2660 at a reload before any
+  `coop.civ swgrant`. Not a test artefact.
+  CORRECTION (2026-11-21, fix/l47-money) of the "not analysed" pitfall in docs/06-testing.md#testing-global-sw-newcomer
+  ("after swgrant money writes"): swgrant has nothing to do with it; any reload of a guest can do it (fixed by res.load_hold).
+* ✔ The same code (mods/coop/shared.cpp) keeps the Tribe food and the Space money: the same fix covers them (not run live
+  in Tribe or Space).
+* ✔ `Simulator::cCivilization::GetSuperweaponCost` 0xBF6DF0 (thiscall float(civ, type) ret 4, ST0): types 2 / 5 / 8 cost
+  12000 (0x14693E4) x max(1, every city of noun 0x18C43E8 minus this civ's city vector +0x9C..+0xA0). Its only callers:
+  0xBF7870 (CanUse's affordable check, `cost <= +0x98`), FireSuperweapon 0xBF8BB0 (call at 0xBF8DB4, after the launch:
+  `+0x98 -= cost`; for a nation with +0x89 = 0 a negative result takes the budgets +0x4AC / +0x4B0) and the superweapon
+  tooltip 0xE05DC0 ("ICBM (48,000) - Requires 6 Cities [F4]", for GetPlayerCivilization). One function, one price.
+  CORRECTION (2026-11-21, fix/l47-money) of the "~ not checked" line in the BUG-0222 notes ("12000 x (the type number, as
+  decompiled)"): it is 12000 x max(1, the cities not of this civ), checked at runtime (48000 with 4 such cities).
+* ✔ (runtime) A partner seat's global superweapon fired for its guest is charged to that seat's nation +0x98 (seat 4:
+  60000 -> 12000), not the shared money; wsync shows the same value on the guest.
+* (code, BUG-9317 `civ.global_sw_party_price`) h_SwCost: for types 2 and 8 of a party nation, a city of any party nation
+  does not count; the price is the game's unit x max(1, the cities hit). The tooltip, the affordable check and the charge
+  follow. Live: host 48000 -> 24000 (2 outsider cities), seat 4 48000 -> 12000 (1). Type 5 is unchanged (it hits no city).

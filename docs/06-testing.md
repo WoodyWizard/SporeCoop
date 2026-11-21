@@ -9115,3 +9115,28 @@ seats belong to absent identities, so the guest is the BUG-9309 newcomer as it i
 * Pitfalls: a capture can bring the Communications Panel tutorial (pauses both games: click its check mark), a campaign
   autosave and a world share (the guest reloads, 20-40 s). After a guest reload the host logged `shared money -N from
   player 1` once per reload in these runs (after `swgrant` money writes; not analysed). Restore the save folders after.
+  CORRECTION (2026-11-21, fix/l47-money): not a test artefact of swgrant: any reload of a guest folded a host total read
+  in the Galaxy menu as its spend (BUG-9316, fixed by res.load_hold; #testing-reload-spend-sw-price).
+## A guest's reload must not spend the shared money; the party price of global superweapons: how to test (2026-11-21, fix/l47-money)
+<a id="testing-reload-spend-sw-price"></a>
+
+BUG-9316, BUG-9317 (docs/re/civ.md#civ-reload-spend-sw-price). TITAN: host DuoQACivHost / Abber (instance 9, `.duo-seats`
+byte 4 patched 0x10 -> 4 in a backed-up folder), guest DuoQACivGuest (instance 10), as #testing-global-sw-newcomer.
+* Reload (BUG-9316): host `coop.share 1` sends the world, the guest reloads (about 9 s transfer, 3 s Galaxy menu, 0.2 s
+  load). Host log `shared money -N from player 1` / `<guest> spent N money (shared)` right after the guest's
+  `stage: Civilization -> Galaxy menu`, and the guest's `shared money: a local change ... folded into a host total in mode
+  02CCD1D2, stage open=0`: the bug (3 of 3 reloads with `coop.fix res.load_hold off` on the guest). Fixed: the guest logs
+  `a host total ... ignored while this game loads`, the host's `coop.res` from_guests does not move, both HUDs keep the
+  money. The founding share right after the newcomer joins is such a reload too.
+* `coop.res` shows `load_totals=` (totals a guest ignored during its loads) and `big=` (local changes of 1000 or more).
+* Price (BUG-9317): host `coop.settings force civ.superweapon_vote 0`, `coop.civ test_outsider <faction>` (a founder
+  nation outside the party: Abber's cities all belong to the party at first), `coop.civ swgrant 0 2` (host) or `coop.civ
+  swgrant 4 2 <money>` (the guest's seat). `coop.civ sw` shows `price2= price8=` per nation (the game's own function, so
+  the tooltip's price) and the last changed price. Host fires `coop.civ super 2`, the guest `coop.civ super 2`; compare
+  the shared money (host's nation) or `nation seat 4 money=` on both games right before and after, and the guest's notice
+  `<host> spent N money (shared)`. Tooltip: `move 455 540`, `move 460 545` on the HUD's fourth weapon button, then `shot`.
+* `coop.civ test_outsider` is host only: a guest's price then counts that nation as the party's (the host and the guest
+  agree without it). `mem.write <nation+0x4CC> 00` for another run of a type 2 / 5 / 8.
+* Pitfalls: the shot command's path must have no spaces; a capture brings the Communications Panel tutorial on the host
+  (pauses both games: click its check mark at 571 299) and a world share to the guest. `coop.share` writes the host's
+  save slot: restore Game0 from the backup afterwards.
