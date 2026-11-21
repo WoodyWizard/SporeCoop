@@ -26,6 +26,12 @@ def own_npcs(con):
     return sum(1 for m in re.finditer(r'npc \S+ mirror=(\d)', out) if m.group(1) == '0')
 
 
+def destroys(con):
+    """{caller: n} of the game's DestroyCell calls so far (`coop.pool orphans`: by return address)"""
+    m = re.search(r'DestroyCell from:(.*)$', con.call('coop.pool orphans')['out'], re.M)
+    return {k: int(n) for n, k in re.findall(r'(\d+)@(\S+)', m.group(1))} if m else {}
+
+
 def own_cells(con):
     """the guest's own foreground cells (the game's pool, not mirrors, not dying: `coop.pool census` strays)"""
     m = re.search(r'strays=(\d+) \(keepalive \d+, dying/dead (\d+)\)', con.call('coop.pool census')['out'])
@@ -63,9 +69,21 @@ def main():
     # 4. BUG-0797
     counts, cells = [], []
     t0 = time.time()
+    # BUG-1408: the pool of the guest's own game falls from ~170 to 0-25 cells within 5 s and fills up again 15-25 s
+    # later (lab 20261121-003202: 174 -> 0, its `cell pool` 172/4096 -> 23 with no line of the mod). Which code of the
+    # game destroys them is printed with each such fall: the DestroyCell calls by caller since the sample before (the
+    # tile cull 0xE7C080 returns to 0xE7C3E6, docs/re/cell.md#cell-levelup-partner-area)
+    gone_by = destroys(guest)
     while time.time() - t0 < 60:
         counts.append(own_npcs(guest))
         cells.append(own_cells(guest))
+        now_by = destroys(guest)
+        if len(cells) > 1 and cells[-2] >= 40 and cells[-1] < cells[-2] / 2:
+            delta = {k: n - gone_by.get(k, 0) for k, n in now_by.items() if n > gone_by.get(k, 0)}
+            tiles = [l for l in guest.call('coop.pool')['out'].splitlines() if l.startswith(('cell_tiles', 'cell_away'))]
+            print(f'  the guest\'s own pool fell {cells[-2]} -> {cells[-1]} at {time.time() - t0:.0f} s: DestroyCell by '
+                  f'{delta}; {[l[:300] for l in tiles]} (BUG-1408)', flush=True)
+        gone_by = now_by
         time.sleep(5)
     away = [l for l in guest.call('coop.pool')['out'].splitlines() if l.startswith('cell_away')]
     print(f'  the guest\'s own creature cells within 80 m over 60 s: {counts}; its own live cells in the pool: {cells}; {away}',
