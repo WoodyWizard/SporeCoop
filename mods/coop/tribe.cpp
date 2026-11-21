@@ -5524,6 +5524,55 @@ static bool chief_power_recharging(void* c, int idx)
     if (idx < 0 || idx >= 0x58 || !slots || IsBadReadPtr(slots + idx * 16, 8)) return false;
     return F<float>(slots + idx * 16, 4) != 1.0f && (F<uint32_t>(c, 0xBF8 + (idx >> 5) * 4) & (1u << (idx & 31))) != 0;
 }
+// BUG-9306 (live 2026-11-21): what a power did on the chief that ran it, logged 0.5 s, 2 s and 8 s after the press (host:
+// a partner's power and the host's own, to compare): the action record and behaviour node (ai_line), the power's
+// recharge (+0xC28 [idx * 16 + 4] progress, 1 = ready; +0xBF8 bit), the "ability in use" word +0xE8C (the recharge
+// start 0xC19800 does nothing unless it is -1) and the energy +0xE58 against the power's cost (ability +0x104)
+struct PowerWatch {
+    void* chief;
+    uint32_t serial, type;
+    int idx, step;
+    double t0;
+    uint8_t from;
+};
+static std::vector<PowerWatch> g_power_watch;
+static std::string power_state(void* c, int idx)
+{
+    uint8_t* slots = F<uint8_t*>(c, 0xC28);
+    uint8_t* ab = citizen_ability(c, idx);
+    const float progress = slots && idx >= 0 && !IsBadReadPtr(slots + idx * 16, 8) ? F<float>(slots + idx * 16, 4) : -1.f;
+    const bool bit = idx >= 0 && idx < 0x58 && (F<uint32_t>(c, 0xBF8 + (idx >> 5) * 4) & (1u << (idx & 31)));
+    char b[200];
+    snprintf(b, sizeof b, "progress=%.2f bit=%d in_use=%d energy=%.1f cost=%.1f ", progress, (int)bit, F<int>(c, 0xE8C),
+             F<float>(c, 0xE58), ab ? F<float>(ab, 0x104) : -1.f);
+    return b + ai_line(c);
+}
+static void power_watch(void* chief, uint32_t type, int idx, uint8_t from)
+{
+    if (g_power_watch.size() < 8)
+        g_power_watch.push_back({chief, game::object_serial(chief), type, idx, 0, H->time_seconds(), from});
+}
+static void power_watch_tick(double now)
+{
+    static const double at[3] = {0.5, 2.0, 8.0};
+    for (size_t i = 0; i < g_power_watch.size();) {
+        PowerWatch& w = g_power_watch[i];
+        if (!kept_alive(w.chief, w.serial, 0)) {
+            g_power_watch.erase(g_power_watch.begin() + i);
+            continue;
+        }
+        if (now - w.t0 >= at[w.step]) {
+            H->log(M, SK_INFO, "tribe: power 0x%X of %s's chief %p after %.1f s: %s (BUG-9306)", w.type,
+                   C.sess->name_of(w.from).c_str(), w.chief, now - w.t0, power_state(w.chief, w.idx).c_str());
+            if (++w.step >= 3) {
+                g_power_watch.erase(g_power_watch.begin() + i);
+                continue;
+            }
+        }
+        ++i;
+    }
+}
+
 // host: partner `from` (seat `seat`) wants its chief (`member`, its id in the guest's game) to use power `type`
 static bool chief_power_on_host(uint8_t from, int seat, uint16_t member, uint32_t type)
 {
@@ -5549,6 +5598,9 @@ static bool chief_power_on_host(uint8_t from, int seat, uint16_t member, uint32_
     const int idx = citizen_ability_index(chief, type);
     if (idx < 0) return refuse("the chief has no such ability");
     if (chief_power_recharging(chief, idx)) return refuse("the power is recharging");
+    // the bar's energy check (AbilityBar_Status 1): the chief's energy +0xE58 below the power's cost (ability +0x104)
+    if (uint8_t* ab = citizen_ability(chief, idx); ab && F<float>(ab, 0x104) > 0 && F<float>(chief, 0xE58) < F<float>(ab, 0x104))
+        return refuse("the chief has too little energy for it (bar status 1)");
     // the property Ability_Use builds (0x671B70: flags +0x10 and type +0x12 zero, then SetValueUInt32); DoAction copies it
     alignas(8) uint8_t prop[0x40] = {};
     uint32_t value = (uint32_t)idx;
@@ -5559,7 +5611,8 @@ static bool chief_power_on_host(uint8_t from, int seat, uint16_t member, uint32_
     snprintf(b, sizeof b, "host: %s's chief %u uses power 0x%X (ability %d) rec=%p", C.sess->name_of(from).c_str(), member,
              type, idx, rec);
     g_power_last = b;
-    H->log(M, SK_INFO, "tribe: %s (BUG-9306)", b);
+    H->log(M, SK_INFO, "tribe: %s; before: %s (BUG-9306)", b, power_state(chief, idx).c_str());
+    power_watch(chief, type, idx, from);
     return true;
 }
 
@@ -5583,7 +5636,15 @@ static void SK_CDECL h_AbilityUse(void* avatar, int index)
             return;
         }
     }
+    // host: its own chief's power, watched as a partner's is (to compare the two in the log)
+    uint8_t* own = is_host() && active() && game::mode_id() == modes::kTribe && is_citizen(avatar) ? citizen_ability(avatar, index) : nullptr;
+    const uint32_t own_type = own ? F<uint32_t>(own, 8) : 0;
+    if (own_type >= kChiefPowerFirst && own_type <= kChiefPowerLast)
+        H->log(M, SK_INFO, "tribe: the host's chief %p uses power 0x%X (ability %d); before: %s (BUG-9306)", avatar, own_type, index,
+               power_state(avatar, index).c_str());
     o_AbilityUse(avatar, index);
+    if (own_type >= kChiefPowerFirst && own_type <= kChiefPowerLast)
+        power_watch(avatar, own_type, index, 0);
 }
 
 static void host_command_run(uint8_t from, net::Reader& r, bool resumed);
@@ -10528,6 +10589,8 @@ static void village_caption_tick(double now)
 static void coop_tick(double now)
 {
     chiefs_tick();
+    if (is_host() && !g_power_watch.empty())
+        power_watch_tick(now); // BUG-9306
     if (!is_host())
         village_caption_tick(now); // BUG-0983
     if (is_host()) {
@@ -12903,8 +12966,10 @@ std::string debug(const std::vector<std::string>& a)
             for (uint32_t ty = kChiefPowerFirst; ty <= kChiefPowerLast; ++ty) {
                 const int idx = citizen_ability_index(c, ty);
                 const int st = idx >= 0 && status && c == chief ? skg::cdecl_call<int>(status, idx) : -1;
-                snprintf(b, sizeof b, "%s %p power 0x%X ability %d status %d recharging %d\n", who, c, ty, idx, st,
-                         idx >= 0 ? (int)chief_power_recharging(c, idx) : -1);
+                uint8_t* ab = idx >= 0 ? citizen_ability(c, idx) : nullptr; // reach +0xA8 (+ +0xF4), cost +0x104
+                snprintf(b, sizeof b, "%s %p power 0x%X ability %d status %d recharging %d reach=%.0f+%.0f cost=%.0f energy=%.0f in_use=%d\n",
+                         who, c, ty, idx, st, idx >= 0 ? (int)chief_power_recharging(c, idx) : -1, ab ? F<float>(ab, 0xA8) : -1.f,
+                         ab ? F<float>(ab, 0xF4) : -1.f, ab ? F<float>(ab, 0x104) : -1.f, F<float>(c, 0xE58), F<int>(c, 0xE8C));
                 o += b;
             }
         };

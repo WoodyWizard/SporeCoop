@@ -6160,3 +6160,26 @@ static analysis only, nothing of this section was run in a game yet.
 * Tools: `coop.tribe powers` (this game's chief: each power's index, bar status and recharge, the player's cards and
   unlock words; on the host each partner chief), `coop.tribe powers grant <type>` (tests: this player earns the power,
   a saved player property), `coop.tribe powers use <type>` (the bar's press).
+* ✔ (Ghidra 2026-11-21, fix/l47-powers) **Which node runs which power.** The citizen tree has a composite whose six
+  children start at .data 0x1599FE0, stride 0x88 (child: +0 node id, +8 its utility function, +0x40 / +0x48 the
+  stimulus mask 0x10000000, +0x70 the action row in 0x1593C90.., +0x78 type 9 = an action leaf). Each utility function
+  returns 1 when the current action is 22 and its property's ability has its type:
+  | type | utility (extra test) | action node | what it does |
+  |---|---|---|---|
+  | 0x34 | 0xDAE6F0 (leader, spatial vt 0x58) | 060B708E 0xDB2F60 | places the lure basket (noun 0x61494BE); animals come to it (0xBCC180 stimulus 0x100); its end (0xBCBDF0) sends 0x4B18967F to them naming the PLAYER tribe's chief. Seen live: the basket on the host, animals at the chief |
+  | 0x35 | none of these (the child 06004E06, utility 0) | 06004E1D 0xDB9F90 | the ability's animation; for 0x35 also flora round the chief (0xDB9EF0 / 0xDB2B90). Seen live: food bundles carried, food rose |
+  | 0x36 | 0xDAE760 (leader, spatial vt 0x58) | 060B7090 0xDB3360 | walks to a spot found round the chief (Planet_NearestCell, props 0xC492C89F / 0x191DCAD8) and plays effects 0xA86F8D7E / 0x3F370771 / 0x6D8F14EF there (? which power) |
+  | 0x37 | 0xDAAB20 (none) | 06088765 0xDB4300 | throws held item 0x16 up to 4 times, then every living object in reach (+0xF4 + +0xA8) that is not the player's (vt 0x58 false) gets the ability's damage (+0x3C) and a flee / scare stimulus: **Fire Bomb** (~, by what it does) |
+  | 0x38 | 0xDAE850 (leader, spatial vt 0x58, no "SocialPower" group 0x74EAB7F8 on it yet) | 060B70B4 0xDB40D0 | "SocialPower": stimulus 0x10000000 to the citizens in reach (+0xA8) that 0xD99420 accepts; they come to the chief (vt 0x84) (~ Soothing Song) |
+  | 0x39 | 0xDA8480 (none) | 0609EACA 0xDB9310 | animation chain 0x6006755 (events 0x0E95450E, 0x7D7502FC: held item 0x15), 0x609EA47; then adult, non-epic animals in reach (+0xF4 + +0xA8), at most prop 0x217997F4 (4) minus the TribalGame's list (+0x94..+0x98), join that list (0xE1C7D0), get a new tree (0x1590B30), the chief's political id (animal vt 0x48 (chief vt 0x4C), ~) and flag 0x4000 at +0xB58 (~ Summon / tame animals) |
+* ✔ (Ghidra) The recharge start 0xC19800 thiscall(c, idx, 1, 0) ret 0xC does nothing (returns -1) unless the
+  citizen's +0xE8C is -1 and the slot is ready (+0xC28 [idx*16+4] >= 1); then it sets the +0xBF8 bit, the progress to
+  0, ConsumeEnergy(ability +0x104) (the energy is +0xE58; the bar refuses with status 1 below the cost). 0x34, 0x35,
+  0x36, 0x37 and 0x38 start it in their first tick, 0x39 only after its animation chain. So "recharging 0" after a press
+  means the node never ticked, or +0xE8C was not -1, or the recharge was already over.
+* ? (live 2026-11-21, feat/lineages-47 5f077c4f, MSI) A partner's 0x36 and 0x37 run through the host showed no recharge
+  on the partner's chief at a later look, 0x34 and 0x35 did; the host's own chief recharged all four. Nothing in the
+  utility functions or the enter / tick code above names the player tribe for 0x36 / 0x37 (0x37's utility does not even
+  test the leader), so the cause is not found statically. The host now logs each power's state 0.5 / 2 / 8 s after the
+  press, for a partner's and its own chief (`tribe: power 0x.. of <name>'s chief ... after N s: progress= bit= in_use=
+  energy= cost= rec= node= depth= mem= ...`): the node id tells whether the power node ran.

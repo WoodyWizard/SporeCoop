@@ -90,3 +90,13 @@ Done on fix/l47-powers (built; not run in a game yet):
 - 2026-11-20: opened.
 - 2026-11-20: fix/l47-powers: tribe.guest_powers; Civ and Space surveyed (plan above). Static analysis + build only.
 - 2026-11-21: live two-game QA (see Verification).
+- 2026-11-21: live test (coordinator, feat/lineages-47 5f077c4f, MSI two games, all six powers granted): the host's own
+  chief: 0x34 lure basket, 0x35..0x37 run (recharging after); 0x38, 0x39 nothing (no recharge). A partner's presses: the
+  host ran all six ("uses power"), the partner chief showed a recharge for 0x34 and 0x35 only; on the guest 0x34 brought
+  animals to its chief (the basket not shown on the guest), 0x35 gave food. Analysis (Ghidra, fix/l47-powers): the type
+  -> node map is in docs/re/tribe.md#tribe-chief-powers (0x37 is most likely Fire Bomb, 0x39 the animal taming, 0x34
+  the lure basket); no player-tribe test was found on the 0x36 / 0x37 paths. Added: the host's energy check (status 1),
+  a 0.5 / 2 / 8 s state log of every power (partner's and host's own), reach / cost / energy / in-use in `coop.tribe
+  powers`. Not changed: the lure basket on the guest (a host object the mod does not mirror; showing it needs a
+  visual-only copy whose own update is held, plan), the tamed animals' list (the TribalGame's one list; their political
+  id already follows the acting chief, ~).
