@@ -653,6 +653,8 @@ static double g_camera_civ_since = -1; // when this game's Civ stage was last se
 // camera at the ground looking sideways, lane B 2026-11-21, Kealeneon): the move waits this long into the stage
 constexpr double kCameraSettle = 4.0;
 static uint32_t g_camera_moves;
+static float g_camera_dist = 0; // 0: the game's own distance (CivCamera_HomeDistance); tests: `nations camera <dist> [zero]`
+static bool g_camera_zero = false;
 static void camera_home(uint32_t pol)
 {
     void* capital = nullptr;
@@ -668,7 +670,15 @@ static void camera_home(uint32_t pol)
         return;
     const net::Vec3 at = city_pos(capital);
     float pos[3] = {at.x, at.y, at.z};
-    thiscall<void>(look, cam, pos, (const float*)dist, 1);
+    const float* dp = g_camera_dist > 0 ? &g_camera_dist : (const float*)dist;
+    thiscall<void>(look, cam, pos, dp, 1);
+    if (g_camera_zero) { // as the Civ start does after its LookAt (0xCFA5A8, 0xCFA5BF): two vectors of the camera to 0
+        static uintptr_t z1 = H->sym("SporeCoop::SimCamera_ZeroA"), z2 = H->sym("SporeCoop::SimCamera_ZeroB");
+        if (z1 && z2) {
+            thiscall<void>(z1, cam, 0.f, 0.f, 0.f);
+            thiscall<void>(z2, cam, 0.f, 0.f, 0.f);
+        }
+    }
     thiscall<void>(update, cam);
     g_camera_pol = pol;
     g_camera_moves++;
@@ -911,6 +921,12 @@ std::string status()
 
 std::string debug(const std::vector<std::string>& a)
 {
+    if (a.size() >= 2 && a[1] == "camera" && g_own) { // BUG-9294 tests: camera <dist (0 = the game's)> [zero]
+        g_camera_dist = a.size() > 2 ? (float)atof(a[2].c_str()) : 0.f;
+        g_camera_zero = a.size() > 3 && a[3] == "zero";
+        camera_home(g_own);
+        return "camera moved\n";
+    }
     if (a.size() >= 2 && a[1] == "found" && authority()) { // tests: the founding pass now
         if (g_queued)
             return "busy\n";
