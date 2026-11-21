@@ -14,6 +14,7 @@
 // docs/re/tribe.md.
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -176,6 +177,31 @@ inline SpeciesAct species_act(uint32_t line, uint32_t cur, uint32_t slot, uint32
         return ready ? SpeciesAct::Apply : SpeciesAct::Wait;
     }
     return ours && cur == ours && cur != slot ? SpeciesAct::Revert : SpeciesAct::Keep;
+}
+
+// ---------------- member mirror driving (guest) ----------------
+
+// BUG-0619 / BUG-0651 / BUG-1235: WalkPlace::lead_speed of a walked member mirror, the body's own speed (0: no bound).
+// What a frame draws is the placing's step plus the game's walk of the next frame at the walk speed `sp`; walk_place
+// holds the placing to (2 x lead_speed + catch_up - sp) x dt, so a frame draws at most 2 x the body's own speed +
+// catch_up. `lead_sp` is the raw lead's speed when the smoothed target drives the mirror (-1: the raw lead drives it),
+// `late_rate` the late lead's catch-up rate (1: none). While the late lead catches up the raw lead's velocity runs at
+// that rate (BUG-0650): 9 m/s x 1.5 = 13.4-13.7 m/s.
+// * the raw lead (lead_sp < 0) while it catches up: sp / late_rate (drive.lead_keep, BUG-0651).
+// * BUG-1235 (`coop.fix tribe.smooth_bound`): the smoothed target (lead_sp >= 0, after a walk start: the switch from the
+//   interpolated stand goes through the smoothing until its offset is closed): lead_sp / late_rate. BUG-0619 bounded
+//   this path by lead_sp; the BUG-0651 change (1fcf09b2) replaced that with the raw path's bound only, so a walk start
+//   whose late state was caught up in the smoothed path walked at 13.4-13.7 m/s with the placing at (sp + 3 m/s) x dt
+//   on top: 0.95 m frames at 30 fps (tribe_walk_player 20261121-003202 member 3 at 23.55 s, 20261119-214823 member 7
+//   at 28.49 s, 20261117-154911 member 2: placing 0.52 m + walk 0.43 m; the test's limit 3 x 9 m/s x 32 ms = 0.86 m).
+//   Off: no bound in the smoothed path (0.7.16 rc).
+inline float mirror_lead_speed(bool keep_fix, bool smooth_bound_fix, float lead_sp, float sp, bool late_catching,
+                               float late_rate)
+{
+    const float rate = late_rate > 1.f ? late_rate : 1.f;
+    if (lead_sp < 0)
+        return keep_fix && late_catching ? std::max(sp / rate, 0.5f) : 0.f;
+    return smooth_bound_fix ? std::max(lead_sp / rate, 0.5f) : 0.f;
 }
 
 } // namespace tribe_logic

@@ -457,6 +457,12 @@ static void mirror_step(GEntry& e, const net::Vec3& pos, const net::Quat& rot, c
                (unsigned)e.id, (unsigned)g.owner, -g.ds.grounded_from);
 }
 
+// BUG-1235: a member mirror driven by the smoothed target (a walk start) is held to 2 x the body's own speed + catch_up a
+// frame as the raw lead is (tribe_logic::mirror_lead_speed); off: no bound there (0.95 m frames at 30 fps)
+static bool g_smooth_bound_fix = true;
+COOP_FIX("tribe.smooth_bound", "BUG-1235", g_smooth_bound_fix,
+         "tribe: a guest's copy of a member that starts to walk over a laggy network does not jump about 1 m in one frame");
+
 static void mirror_drive(GEntry& e, double now)
 {
     GMember& g = e.data;
@@ -487,8 +493,9 @@ static void mirror_drive(GEntry& e, double now)
         // #3); with catch_prop off instead a 6-9 m error (BUG-0674) took 0.6 s to close
         // (and always: a mirror held by its game and moved by keep_lost's marked teleports, BUG-0386, caught up in 0.91 m
         // frames at 12.8 m/s, tribe_walk_player 20261107-111106 #2)
-        if (net::g_lead_keep_fix && g.lead_sp < 0)
-            o.lead_speed = std::max(sp / g.buf.late_rate(), 0.5f);
+        // BUG-1235 (tribe.smooth_bound): the smoothed target's walk start too (tribe_logic::mirror_lead_speed)
+        o.lead_speed = tribe_logic::mirror_lead_speed(net::g_lead_keep_fix, g_smooth_bound_fix, g.lead_sp, sp,
+                                                      g.buf.late_catching(), g.buf.late_rate());
         o.keep_lost = g_mirror_keep_fix; // BUG-0386
         drive::walk_place(c, g.aim, rot, vel, g.ds, now, o);
         // tests (BUG-0386): the game's walk and a placing without the teleport mark are undone, the mirror crawls 0.04 m

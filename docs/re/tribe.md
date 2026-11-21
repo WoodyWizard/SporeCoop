@@ -4845,3 +4845,16 @@ asks the host for the species (`creations: species ... unknown here: asked the h
 the village's members are "not made: its tribe has no tribe of this game" and the sync-check counts them missing. A
 village of a species the guest has is copied about 50 ms after the host formed it. `coop.fix tribe.copy_species_retry`
 tries again 0.5 s after a try that found no species.
+
+## A member mirror's walk start in the smoothed path has no frame bound (2026-11-21, fix/w62-flake-tcs)
+<a id="tribe-smooth-bound"></a>
+
+✔ (lab per-frame samples, BUG-1235) The jumps of tribe_walk_player (30 fps, player network) are one case: a member
+that stood starts to walk, its first walking state comes late (a latency spike), the guest's mirror target goes through
+the smoothing (the switch from the interpolated stand to the lead, interp.h smooth(); mirror_target's `lead_sp >= 0`
+path) while the late lead catches up at ~1.5x (BUG-0650): the mirror is walked at 13.4-13.7 m/s and walk_place's placing
+step is (sp + 3 m/s) x dt with no WalkPlace::lead_speed (that path had BUG-0619's bound until 1fcf09b2 kept only the raw
+lead's, BUG-0651). A 32 ms frame then draws 0.52 m of placing + 0.43 m of the game's walk = 0.95 m (the test's limit
+0.86 m). How to read it in a track: the jumping frames have rv (aim speed) and gv (the game's walk speed) at 13-14 m/s,
+err 0.75-2 m just before, and a step of (2 x gv + 3) x dt. tribe.smooth_bound bounds the placing by the body's own speed
+(lead_sp / late_rate) there too. ? The stop-and-go half of BUG-1235 (uneven 12-14 %) is another cause, not found.
