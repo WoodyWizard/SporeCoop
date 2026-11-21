@@ -2854,3 +2854,13 @@ BUG-1394. GOG 2024, Ghidra, and the logs of lab 20261121-094225 (campaign_short#
   the camera update 0xE600A0 keeps +0x48 in a box round the avatar and returns during a cinematic). The mod now logs
   `cell: the world scale change ... moves this game's world about the camera point (...)` once per change with the
   camera's target, its followed cell (+0xE0), the own cell and the cinematic flag, to find it the next time.
+## An idle cell's own plant meal shows as animation 0xB (2026-11-21, fix/w62-flake-cc)
+<a id="cell-eat-anim"></a>
+
+BUG-1400. GOG 2024, lab logs only (no new run). Extends [#cell-partner-attack-anim](#cell-partner-attack-anim).
+* ~ (runtime, 2 runs) +0x1B0 = 0xB comes with the own cell's plant meal (AvatarEat, `eat: own cell ate +6 plant`):
+  the guest's idle herbivore cell in lab 20261121-003202 (cell_attack_anim, meal at s 26.65, a plant drifted into
+  its mouth; it was not steered) and the host's swimming cell in 20261119-102828 (meal at s 23.8). Inferred: 0xB
+  is the eat (chomp) animation; an idle herbivore cell plays it whenever a plant reaches its mouth, with no partner
+  involved. Tests that judge "no new animation" of an idle cell must keep its own meals apart (`coop.pool anims`
+  prints `own_eats` since BUG-1400).

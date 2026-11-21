@@ -43,9 +43,30 @@ def die(con, name, ck):
     while time.time() - t0 < 40:
         if uifind.shown(con, 'You were killed'):
             time.sleep(1.0)
-            con.call('key enter')
-            return True
+            return answer(con, name)
         time.sleep(0.5)
+    return False
+
+
+def answer(con, name):
+    """BUG-1411: OK on the death caption until it is gone, as coop_creature_respawn.py does. One Enter was sent and not
+    checked: in lab 20261121-003202 the guest's game stayed dead and paused for 77 s after it (`busy=cinematic,
+    input_lock,paused`, hp 0/16, no `drama: baby_game` / `alive again`; passing runs respawn ~8 s after the death), so
+    its own creature never moved and the host saw 5 frames of its puppet: no jump to judge. A pause menu the key opened
+    ("Resume Game") is closed with Esc. True when the caption went away"""
+    presses, t0 = 0, time.time()
+    while time.time() - t0 < 20:
+        if uifind.shown(con, 'You were killed'):
+            con.call('key enter')
+            presses += 1
+        elif uifind.shown(con, 'Resume Game'):
+            con.call('key esc')
+        else:
+            if presses != 1:
+                print(f'  {name}: the death caption took {presses} Enter(s) (BUG-1411)', flush=True)
+            return True
+        time.sleep(1.0)
+    print(f'  {name}: the death caption is still up after {presses} Enter(s) in 20 s (BUG-1411)', flush=True)
     return False
 
 
