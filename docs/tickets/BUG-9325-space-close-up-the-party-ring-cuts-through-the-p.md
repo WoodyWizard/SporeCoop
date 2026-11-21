@@ -1,7 +1,7 @@
 ---
 id: BUG-9325
 title: Space: close up, the party ring cuts through the partner's ship
-status: fixed
+status: open
 kind: bug
 stage: Space
 reported: 2026-11-21
@@ -43,3 +43,5 @@ the grown ring, 67-dev). `coop.rings sink <cell> <space>` still sets a value for
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fixed on fix/l47-final-rings (30549e5b), FAIL / PASS live.
+
+- 2026-11-21: CORRECTION (owner review): the system-view crop (bug9325_system_view_FAIL_off_vs_PASS_on_crop.png) shows the ring over the hull in both halves: the system view is not fixed, only Space on a planet. Reopened for the system view on fix/l47-final-rings.
