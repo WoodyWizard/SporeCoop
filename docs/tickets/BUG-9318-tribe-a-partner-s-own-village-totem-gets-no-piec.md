@@ -10,8 +10,8 @@ role: guest
 versions: 0.7.14.1-lineages67-dev
 fixed_in:
 branch: fix/l47-tribe
-commits:
-tests:
+commits: 3c2a6550, 59d47c0a
+tests: manual two-game MSI run (ticket Verification)
 signature:
 docs: docs/re/tribe.md#tribe-partner-totems
 related: BUG-9155, BUG-9158, BUG-0531, BUG-0983
