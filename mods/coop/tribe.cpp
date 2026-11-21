@@ -35,6 +35,7 @@
 #include "party_food.h"
 #include "gamefixes.h"
 #include "notify.h"
+#include "own_world.h"
 #include "npc.h"
 #include "savestrip.h"
 #include "space_ext.h"
@@ -372,6 +373,7 @@ struct OutfitVote {
     uint32_t world = 0, token = 0, previous = 0, model = 0;
     uint8_t owner = 0;
     bool ready = false, saved = false, host_entered = false;
+    double idle_since = 0; // BUG-9298 (host): since when its player is out of any editor while the host plays Tribe
 };
 static OutfitVote g_outfit; // guest: its own outfit vote
 // host: the outfit vote of each partner founder seat (1..); with tribe.multi_founders off seat 1 only (BUG-9135)
@@ -383,6 +385,19 @@ static double g_outfit_settled;
 static bool g_outfit_recovery = true;
 COOP_FIX("tribe.outfit_recovery", "BUG-9044", g_outfit_recovery,
          "tribe: accept a new voted outfit from a recognized earlier founder appearance");
+// BUG-9298: an outfit vote its player never answered held every campaign save (save_blocker: outfits_pending) and so
+// every guest purchase (world::save_pending) for as long as that player stayed: 25 minutes in the 67-dev report. The
+// vote's start reached the guest while it was in its own editor and receive_outfit dropped it (Tribe mode only), so the
+// guest never sent a result. On: the host ends a vote whose player has been out of any editor for kOutfitVoteIdle s while
+// the host plays Tribe (that village keeps its outfit, the player is told); a guest in an editor of the same world keeps
+// the vote's start, so its own outfitter's result answers it. Off: the vote waits for the answer as long as the player stays.
+static bool g_outfit_vote_timeout = true;
+COOP_FIX("tribe.outfit_vote_timeout", "BUG-9298", g_outfit_vote_timeout,
+         "tribe: an outfit vote a player does not answer ends 90 s after that player left its editor (saves and purchases go on)");
+// the vote's own outfitters reset the clock; the longest answer seen in the code: a guest's outfitter waits up to 90 s for
+// its stage to settle (own_editor_tick) and the result is read up to 30 s after it closes (creations' adoption window)
+constexpr double kOutfitVoteIdle = 90;
+static uint32_t g_outfit_votes_timed_out;
 static bool founder_model(size_t seat, uint32_t model)
 {
     return model && (g_outfits.contains(seat, model) || g_order_roster.entries[seat].species == model);
@@ -2914,6 +2929,31 @@ static void persp_update()
     const float at[3] = {home.x, home.y, home.z};
     if (g_persp_cam_pending && std::isfinite(home.x) && gamefixes::tribe_camera_to(at)) g_persp_cam_pending = false;
 }
+// BUG-9299: a guest's birth was refused while a share's save was only queued (world::save_pending: 41 refusals in the
+// 67-dev report, that save held by BUG-9298's vote) and while the host's own birth flag (TribalGame +0x3A3) was down,
+// which the game clears while its own baby is on its way (likely, not proven: the host was buying babies then); one
+// lumped message for every reason, and every quick click sent another order. On: a queued save does not refuse a birth
+// or a rack (the purchase goes into that save); a save being written, a load or the host's birth flag down hold the
+// birth up to kBirthHold s, tried again every kBirthRetry s (one held birth per player); each refusal names its reason;
+// a guest sends at most one birth order per kBirthClickGap s. Off: refused at once with the old message, as before.
+static bool g_guest_birth_gate = true;
+COOP_FIX("tribe.guest_birth_gate", "BUG-9299", g_guest_birth_gate,
+         "tribe: a guest's birth waits up to 20 s for a save or the host's own birth instead of a refusal; one reason per refusal; no double orders");
+constexpr double kBirthHold = 20, kBirthRetry = 0.5, kBirthClickGap = 0.5;
+static double g_birth_click_at = -1;
+static uint32_t g_births_held, g_births_after_wait, g_births_wait_expired, g_birth_clicks_guarded;
+// guest: may this Add Baby click send an order (not a second click of the same one)
+static bool guest_birth_click()
+{
+    const double now = H->time_seconds();
+    if (g_guest_birth_gate && now >= g_birth_click_at && now - g_birth_click_at < kBirthClickGap) {
+        ++g_birth_clicks_guarded;
+        return false;
+    }
+    g_birth_click_at = now;
+    return true;
+}
+
 // TribeHutUI_HandleMessage (CDBEA0): the hut menu's buttons; 0x0625CD52 Add Baby buys a baby for the player tribe
 using HutUI_t = bool(SK_THISCALL*)(void*, void*, void*);
 static HutUI_t o_HutUI;
@@ -2924,7 +2964,7 @@ static bool SK_THISCALL h_HutUI(void* self, void* window, void* msg)
         // (merge 0.7.14: only with a village of its own; in the shared tribe the game's own purchase goes on to
         // upstream's h_BabyBorn relay, BUG-0671, instead of being swallowed here)
         auto ids = guest_village_ids(false);
-        if (!ids.empty()) send_cmd(CMD_BABY, {ids.front()}, 0, {}, {});
+        if (!ids.empty() && guest_birth_click()) send_cmd(CMD_BABY, {ids.front()}, 0, {}, {}); // BUG-9299: one per click
         ++g_native_babies;
         return true; // the host buys it (its food and cap); the baby comes with its snapshots
     }
@@ -3254,7 +3294,9 @@ static void receive_outfit(uint8_t from, net::Reader& r)
     unsigned kind = r.u8();
     uint32_t world = r.u32(), token = r.u32(), previous = r.u32(), model = r.u32();
     if (!r.ok() || r.left() || !world || world != modes::current_world() || !token || !previous) return;
-    if (kind == 0 && from == 0 && is_guest() && active() && !model) {
+    const uint32_t mode = game::mode_id(); // BUG-9298: also while this guest is in an editor of this world
+    const bool here = active() || (g_outfit_vote_timeout && g_ok && (mode == modes::kEditor || mode == modes::kEdit));
+    if (kind == 0 && from == 0 && is_guest() && here && !model) {
         g_outfit = {world, token, previous, 0, C.sess->my_id()};
     } else if (kind == 1 && is_host()) {
         for (auto& vote : g_votes) // the sender's own vote (the vote's owner is its seat's player)
@@ -8659,8 +8701,13 @@ static bool buy_guest_tool(uint8_t from, int seat, uint16_t witness, int kind, n
     void* village = seat >= 1 ? founder_village(seat) : nullptr; // the buyer's own village (BUG-9135)
     if (!village || !intact_village(village) || found == g_hm_by_id.end() || !living(found->second) ||
         owner_of(found->second) != from || F<void*>(found->second, kOwnerTribeOff) != village ||
-        world::load_queued() || world::save_busy() || world::save_pending())
-        return reject("The host could not check that rack just now (your village, or a save running). Try again.");
+        world::load_queued() || world::save_busy() || (!g_guest_birth_gate && world::save_pending())) {
+        if (!g_guest_birth_gate)
+            return reject("The host could not check that rack just now (your village, or a save running). Try again.");
+        if (world::load_queued() || world::save_busy()) // BUG-9299: the reason itself
+            return reject("The host's game is saving or loading right now. Try the rack again in a few seconds.");
+        return reject("The host could not find your village or a living villager of yours in it. Try again.");
+    }
     int cost;
     uintptr_t layout = H->sym("SporeCoop::Tribe_UpdateToolLayout");
     uintptr_t purchased = H->sym("SporeCoop::Tribe_SetPurchasedTool");
@@ -8716,38 +8763,105 @@ static bool buy_guest_tool(uint8_t from, int seat, uint16_t witness, int kind, n
     return true;
 }
 
-static bool buy_guest_baby(uint8_t from, int seat, uint16_t witness)
+enum class Birth { Done, Refused, Wait };
+static const char* g_birth_wait = ""; // the reason of the last Birth::Wait (BUG-9299)
+struct HeldBirth { uint8_t from; int seat; uint16_t witness; uint32_t world; double since, next; };
+static std::vector<HeldBirth> g_held_births; // host: guest births waiting for a save or the host's own birth
+
+// one try of a guest's birth; Wait (tribe.guest_birth_gate): only a passing state of the host's game stops it
+static Birth try_guest_baby(uint8_t from, int seat, uint16_t witness)
 {
+    auto refuse = [from](const char* reason) { tell_buyer(from, reason); return Birth::Refused; };
     auto found = g_hm_by_id.find(witness);
     void* village = seat >= 1 ? founder_village(seat) : nullptr; // the buyer's own village (BUG-9135)
-    if (!village || !intact_village(village) || found == g_hm_by_id.end() ||
-        !game::object_alive(found->second) || !is_citizen(found->second) ||
-        owner_of(found->second) != from || !living(found->second) ||
-        F<void*>(found->second, kOwnerTribeOff) != village || world::load_queued() ||
-        world::save_busy() || world::save_pending())
-        return tell_buyer(from, "The host could not add that baby just now (your village, or a save running). Try again.");
+    const bool own = village && intact_village(village) && found != g_hm_by_id.end() &&
+        game::object_alive(found->second) && is_citizen(found->second) &&
+        owner_of(found->second) == from && living(found->second) &&
+        F<void*>(found->second, kOwnerTribeOff) == village;
+    if (!g_guest_birth_gate && (!own || world::load_queued() || world::save_busy() || world::save_pending()))
+        return refuse("The host could not add that baby just now (your village, or a save running). Try again.");
+    if (!own) return refuse("The host could not find your village or a living villager of yours in it. Try again.");
     float cost;
     double food;
     uintptr_t get = H->sym("SporeCoop::TribalGame_Get");
     uintptr_t blocked = H->sym("SporeCoop::TribalGame_BirthBlocked");
     void* ui = get ? skg::cdecl_call<void*>(get) : nullptr;
-    if (!birth_cost(cost) || !blocked || !ui || !F<uint8_t>(ui, 0x3A3) ||
-        skg::cdecl_call<bool>(blocked)) {
-        return tell_buyer(from, "Births are not available at this point in the Tribal campaign.");
-    }
-    if (!shared::tribe_food(village, food) || food < cost) {
-        return tell_buyer(from, "Your village needs more food to add a baby.");
+    // +3A3: the host's own birth flag; with the gate a flag that is down holds the birth below instead
+    if (!birth_cost(cost) || !blocked || !ui || (!g_guest_birth_gate && !F<uint8_t>(ui, 0x3A3)) ||
+        skg::cdecl_call<bool>(blocked))
+        return refuse("Births are not available at this point in the Tribal campaign.");
+    if (!shared::tribe_food(village, food) || food < cost)
+        return refuse("Your village needs more food to add a baby.");
+    if (g_guest_birth_gate) {
+        const char* wait = world::load_queued() ? "a world is loading in the host's game"
+                         : world::save_busy()   ? "the host's game is saving"
+                         : !F<uint8_t>(ui, 0x3A3) ? "the host's own baby is on its way (the game makes one at a time)"
+                                                  : nullptr;
+        if (wait) {
+            g_birth_wait = wait;
+            return Birth::Wait;
+        }
     }
     // Use the capped native path, never the mirror helper's uncapped fallback.
     // SpawnMember has no price side effect. Charge only after successful creation.
     void* baby = vcall<void*>(village, 0x98 / 4, 0);
-    if (!baby) {
-        return tell_buyer(from, "Your village is at its population limit.");
-    }
+    if (!baby) return refuse("Your village is at its population limit.");
     shared::mirror_village_food(village, food - cost);
     ++g_cmds_done;
     if (C.notice) C.notice("A baby joined your partner's original species village.");
+    return Birth::Done;
+}
+
+// the guest's order (CMD_BABY); false: refused (told to the buyer). A held birth is not refused (guest_birth_tick).
+static bool buy_guest_baby(uint8_t from, int seat, uint16_t witness)
+{
+    for (const auto& held : g_held_births)
+        if (held.from == from)
+            return tell_buyer(from, "Your last baby is still waiting for the host's game: one at a time.");
+    const Birth r = try_guest_baby(from, seat, witness);
+    if (r != Birth::Wait) return r == Birth::Done;
+    const double now = H->time_seconds();
+    g_held_births.push_back({from, seat, witness, modes::current_world(), now, now + kBirthRetry});
+    ++g_births_held;
+    uintptr_t get = H->sym("SporeCoop::TribalGame_Get");
+    void* ui = get ? skg::cdecl_call<void*>(get) : nullptr;
+    H->log(M, SK_INFO, "tribe: player %u's baby waits up to %.0f s: %s (host birth flag +3A3=%d, save queued=%d busy=%d, "
+           "load=%d) (BUG-9299)", (unsigned)from, kBirthHold, g_birth_wait, ui ? (int)F<uint8_t>(ui, 0x3A3) : -1,
+           (int)world::save_pending(), (int)world::save_busy(), (int)world::load_queued());
+    net::Writer w;
+    w.str8(std::string("Your baby comes in a few seconds: ") + g_birth_wait + ".");
+    C.sess->send_reliable_to(from, net::MSG_NOTICE, w);
     return true;
+}
+
+// host, every Tribe tick: the held guest births, tried again every kBirthRetry s for kBirthHold s (BUG-9299)
+static void guest_birth_tick(double now)
+{
+    for (size_t i = 0; i < g_held_births.size();) {
+        const HeldBirth held = g_held_births[i];
+        if (now < held.next) { ++i; continue; }
+        Birth r = Birth::Refused;
+        if (held.world != modes::current_world())
+            tell_buyer(held.from, "The host's world changed before your baby could be added. Try again.");
+        else
+            r = try_guest_baby(held.from, held.seat, held.witness);
+        if (r == Birth::Wait && now - held.since < kBirthHold) {
+            g_held_births[i].next = now + kBirthRetry;
+            ++i;
+            continue;
+        }
+        if (r == Birth::Wait) {
+            ++g_births_wait_expired;
+            tell_buyer(held.from, (std::string("The host could not add that baby: ") + g_birth_wait +
+                                   " for 20 seconds. Try again.").c_str());
+        } else if (r == Birth::Done) {
+            ++g_births_after_wait;
+            H->log(M, SK_INFO, "tribe: player %u's held baby added after %.1f s (BUG-9299)", (unsigned)held.from,
+                   now - held.since);
+        }
+        if (r != Birth::Done) ++g_cmds_rejected;
+        g_held_births.erase(g_held_births.begin() + (std::ptrdiff_t)i);
+    }
 }
 
 // BUG-9135: a downed founder of seat `seat` can be helped: its partners are here (two players with the partner
@@ -10420,8 +10534,39 @@ static uint32_t seat_outfit_target(int seat)
     return vote.token && vote.model != vote.previous ? vote.model : g_outfits.current((size_t)seat);
 }
 
+// BUG-9298 (host, every Tribe tick): end the votes nobody answers (tribe.outfit_vote_timeout)
+static void outfit_vote_timeouts(double now)
+{
+    static double last = -1;
+    const bool gap = now - last > 2; // the tick did not run: the host was out of Tribe (its own outfitter, a load)
+    last = now;
+    if (!g_outfit_vote_timeout || !is_host() || game::mode_id() != modes::kTribe) return;
+    for (int seat = 1; seat < (int)g_votes.size(); ++seat) {
+        auto& vote = g_votes[seat];
+        const uint32_t mode = vote.token ? own_world::peer_mode(vote.owner) : 0;
+        // a ready vote the host has entered is being applied (outfit_tick waits for a pause or a cinematic to end)
+        if (gap || !vote_pending(vote) || (vote.ready && vote.host_entered) || mode == modes::kEditor ||
+            mode == modes::kEdit) {
+            vote.idle_since = 0;
+            continue;
+        }
+        if (!vote.idle_since) vote.idle_since = now;
+        if (now - vote.idle_since < kOutfitVoteIdle) continue;
+        ++g_outfit_votes_timed_out;
+        H->log(M, SK_INFO, "tribe: seat %d's outfit vote (token %u, player %u, mode %08X, ready=%d host_entered=%d) ended "
+               "unanswered %.0f s after the player left any editor: the village keeps its outfit (BUG-9298)", seat,
+               vote.token, (unsigned)vote.owner, mode, (int)vote.ready, (int)vote.host_entered, now - vote.idle_since);
+        net::Writer w;
+        w.str8("Your new outfit did not reach the host in time: your village keeps its outfit. Saves go on.");
+        C.sess->send_reliable_to(vote.owner, net::MSG_NOTICE, w);
+        vote = {};
+        g_outfit_settled = 0;
+    }
+}
+
 static void outfit_tick(double now)
 {
+    if (is_host()) outfit_vote_timeouts(now); // BUG-9298: before the pause gates below (a held save waits on it)
     if (is_host() && (world::time_paused() || world::cinematic_playing() || world::load_queued())) {
         g_outfit_settled = 0;
         return;
@@ -10782,6 +10927,7 @@ void tick(double now)
         combat_tick(now);
         load_six_trial();
         outfit_tick(now);
+        guest_birth_tick(now); // BUG-9299
         shared_hut_upgrade_tick(now);
         objective_backfill_tick(now);
         host_buildings(now);
@@ -11427,9 +11573,10 @@ std::string debug(const std::vector<std::string>& a)
         bool ok = founders::read_outfits(world::current_game_key(), saved, error);
         char line[240];
         const OutfitVote& vote = is_host() ? g_votes[1] : g_outfit; // the host: seat 1's vote (more seats below)
-        snprintf(line, sizeof line, "outfits readable=%d home=%08X guest=%08X token=%u previous=%08X result=%08X ready=%d host_entered=%d pending=%d\n",
+        const double idle = vote.idle_since > 0 ? H->time_seconds() - vote.idle_since : 0; // BUG-9298
+        snprintf(line, sizeof line, "outfits readable=%d home=%08X guest=%08X token=%u previous=%08X result=%08X ready=%d host_entered=%d pending=%d idle=%.0f timed_out=%u\n",
                  (int)ok, saved.current(0), saved.current(1), vote.token, vote.previous, vote.model,
-                 (int)vote.ready, (int)vote.host_entered, (int)outfits_pending());
+                 (int)vote.ready, (int)vote.host_entered, (int)outfits_pending(), idle, g_outfit_votes_timed_out);
         std::string out = line;
         for (size_t seat = 2; is_host() && seat < founder_seats(); ++seat) { // BUG-9135
             snprintf(line, sizeof line, "  seat %u outfit=%08X token=%u previous=%08X result=%08X ready=%d host_entered=%d owner=%u\n",
@@ -11438,6 +11585,13 @@ std::string debug(const std::vector<std::string>& a)
             out += line;
         }
         return out + (ok ? "" : error);
+    }
+    if (a.size() == 1 && a[0] == "births") { // BUG-9299: the guest births the host held, and the guest's guarded clicks
+        char line[200];
+        snprintf(line, sizeof line, "births gate=%d waiting=%u held=%u after_wait=%u expired=%u clicks_guarded=%u rejected=%u",
+                 (int)g_guest_birth_gate, (unsigned)g_held_births.size(), g_births_held, g_births_after_wait,
+                 g_births_wait_expired, g_birth_clicks_guarded, g_cmds_rejected);
+        return line;
     }
     // tests of the co-op mechanics through the game's damage path (host): ids as in coop.tribe
     auto hit = [](void* victim, void* attacker, float dmg) {
@@ -12684,6 +12838,7 @@ std::string debug(const std::vector<std::string>& a)
         if (!active() || !is_guest() || local_play()) return "Add a baby from the guest's Village page.";
         auto ids = guest_village_ids();
         if (ids.empty()) return "Your village needs a living member before adding a baby.";
+        if (!guest_birth_click()) return "That baby was requested a moment ago."; // BUG-9299
         send_cmd(CMD_BABY, {ids.front()}, 0, {}, {});
         return "Birth requested. The host checks your village's food and population limit.";
     }

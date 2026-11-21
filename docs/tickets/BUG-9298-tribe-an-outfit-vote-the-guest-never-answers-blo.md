@@ -9,12 +9,12 @@ source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with 
 role: all
 versions: 0.7.14.1-lineages67-dev
 fixed_in:
-branch:
+branch: fix/l47-births
 commits:
 tests:
 signature:
-docs:
-related: BUG-9043
+docs: docs/re/tribe.md#tribe-outfit-vote-timeout-births, docs/06-testing.md#testing-outfit-vote-timeout-births
+related: BUG-9043, BUG-9299
 ---
 
 ## Report
@@ -25,7 +25,9 @@ saved nothing: both "Saving Tribal conquest for your partner..." shares (21:45:1
 conquest's checkpoint never reached the guest. Right after the guest left: "Campaign autosaved", "founder outfits saved".
 
 ## Root cause
-Observed in the logs, cause in the code: `receive_outfit` (tribe.cpp ~3197) drops the vote message unless the game is in
+Observed in the logs (guest 20:31:56 "evolves its own creature", Tribe -> Editor; 20:32:10 the vote, editor 156276D1,
+started and ended while the guest stayed in its editor until 20:38:36; no outfit result in either log), cause in the
+code: `receive_outfit` (tribe.cpp ~3197) drops the vote message unless the game is in
 Tribe mode (`active()`), and the guest was in its editor; `vote_pending` (~3157) checks only token, world and that the
 player is there, so `outfits_pending()` stays true while the player is connected. `save_blocker` (coop.cpp ~2878) then
 answers "Wait for your partner's outfit to finish saving." to every save; `world::save_pending()` stays true and
@@ -36,9 +38,26 @@ Planned: the vote ends for a player who has been back in Tribe, out of any edito
 outfit); a guest opening its outfitter during a vote answers the vote. Switch `tribe.outfit_vote_timeout`. Test: the guest
 opens its outfitter, then the host starts the outfit vote: FAIL (outfits_pending stays 1, a share never saves) / PASS.
 
+Done (2026-11-20, fix/l47-births), switch `tribe.outfit_vote_timeout` (on; off = the old wait):
+- Host (`outfit_vote_timeouts`, run first in `outfit_tick`): a vote still waiting for an answer (not ready, or the host
+  never entered its editor) ends when its player has been out of any editor for 90 s while the host plays Tribe. The
+  player's mode comes from its latest PlayerState (new `own_world::peer_mode`); the clock restarts while the player is in
+  an editor and after any gap in the host's Tribe tick (the host in its own outfitter). The vote is cleared (`vote = {}`):
+  that village keeps its outfit, the player gets "Your new outfit did not reach the host in time ...", the log says
+  `outfit vote ... ended unanswered`. Saves and the queued share go on (`outfits_pending()` 0).
+- 90 s, not the planned 30 s: a guest's voted outfitter may wait up to 90 s for its stage to settle (own_editor_tick)
+  and its result is read up to 30 s after it closes (creations' adoption window); 30 s could drop a real answer.
+- Guest (`receive_outfit`): the vote's start is also kept while the guest is in an editor of the same world, so an
+  outfitter opened through `open_own_editor` answers the vote on its return. The editor the game opens by itself (the
+  report's case) never reaches `finish_own_outfit` (inferred from the code), so there only the host's timeout ends it.
+- `coop.tribe outfits` shows `idle=` (seconds counted) and `timed_out=`.
+- Not changed: a vote whose answer came and whose result fails to apply every time (`Outfit not applied: ...`) still holds
+  saves (not seen in a report).
+
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20: fixed on fix/l47-births (`tribe.outfit_vote_timeout`); built, not run in a game yet (the lead's two-player test).

@@ -6079,3 +6079,24 @@ BUG-9300, BUG-9301, BUG-9302. Code only on this branch: nothing here was run in 
   position, projected point by point with world_to_screen and drawn as a D3D9 XYZRHW band (partner_marker::
   ground_rings) in color_of(owner), without depth (it covers the villager's feet when they stand in front of it).
   `coop.status` `labels: ... partner_rings=N` counts the rings of the last frame.
+## Outfit votes nobody answers and held guest births (2026-11-20, fix/l47-births)
+<a id="tribe-outfit-vote-timeout-births"></a>
+
+BUG-9298, BUG-9299 (67-dev player report 20261120-205700, guest and host logs; no lab run yet).
+* ✔ (logs) A guest that opens an editor in Tribe by itself (guest log 20:31:56 "BigTexas evolves its own creature",
+  Tribe -> Editor) and is still in it when the host's outfit vote starts (20:32:10, editor 156276D1) never answers that
+  vote: `receive_outfit` took the vote's start in Tribe mode only, and at the vote's end `own_tribal_outfitter` is false
+  in the editor, so no own outfitter opens either. The host's `outfits_pending()` stayed 1 for 25 minutes (until the
+  guest left): no share, no autosave, every guest purchase refused on `world::save_pending()`.
+* ✔ (code) A guest's own editor opened by the game itself (h_Submit's guest branch, not `open_own_editor`) never calls
+  `creations::begin_tribal_outfit`, so its return never reaches `finish_own_outfit`: only the host can end such a vote.
+* ✔ (code) `own_world::peer_mode(id)` is the guest's game mode in its latest PlayerState (Editor while it edits);
+  `peer_here` compares it with the host's own mode, so it is true for two players both in an editor.
+* `tribe.outfit_vote_timeout`: the host ends a vote whose player has been out of any editor for 90 s while the host
+  plays Tribe (`coop.tribe outfits`: `idle=` seconds, `timed_out=`); the clock restarts while either is in an editor.
+* ~ (likely, not proven at runtime) TribalGame +0x3A3 (mbMatingAllowed, set to 1 by TribeStage_BabyBorn) is 0 while the
+  host's own baby is on its way (the host's food fell 49 -> 29 -> 19 during the five "Births are not available"
+  refusals). A guest's purchase does not go through the native birth (it calls SpawnMember on its own village), so the
+  flag only says the host's single native birth is busy. With `tribe.guest_birth_gate` a down flag holds the guest's
+  birth (retried every 0.5 s, at most 20 s); the hold logs the flag's value: `tribe: player N's baby waits up to 20 s:
+  ... (host birth flag +3A3=V, ...)`. A runtime read of +3A3 between a host click and its baby settles it.
