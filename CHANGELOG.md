@@ -98,7 +98,7 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
 ### Fixed
 - Saves: a save asked for right after another one (a player joining right after an autosave or a Save) is no longer
   lost: the game ignored it while its last save was finishing and the mod took it as made; it now waits a moment and
-  saves (BUG-1365).
+  saves.
 - Cell -> Creature: the party evolves together again in the first Creature editor. The host's editor waits again (up
   to the vote's time) for a guest that is on its way to the Creature stage over a normal connection, as in 0.7.15:
   both editors open together. Before, the host's editor opened at once and the guest got its own editor later, alone,
