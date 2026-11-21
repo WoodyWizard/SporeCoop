@@ -2619,3 +2619,19 @@ BUG-9266. Steam build, objdump of the unpacked `.text` (docs/05-re-notes.md, the
   History closed, G+0x5158 at 5 (a later click works) and the game drawn; calling the original 0xE72C80 later from
   outside the frame plays the whole sequence and the switch as the game's own click does.
 * ~ Inferred: 0xE4F640(1) is the white fade (the sequence's only screen-wide call); not checked alone.
+
+## Own progress: players on different levels; nobody grows a level alone (2026-11-20, feat/own-progress)
+<a id="cell-level-together"></a>
+
+BUG-9287. Steam build (the GOG 2024 code), lane A on Windows, a new Cell game, own progress on.
+* ✔ (runtime) Host at food 312 (world scale 15), guest at food 24 (world scale 0.5, `scale_converted` counting): the
+  guest's `coop.pool see 80` listed no cell at all on its screen for minutes (nothing it could eat), while the host saw
+  plants, meat and creatures. The pool is populated at the host's level (host-centric.md G7, the partner passes of
+  cellsync_tiles.cpp take the host's level base too).
+* ✔ (runtime, both games at level 1) Plants eaten by either player gave points on that player's game only (12 a plant;
+  6 of 6 on the host, 6 of 6 on the guest); a "bubble" the cell swims into disappears with no points (not food).
+* ✔ (code) cell_logic::level_of_food: 1 + food / 100 (level 10 from 900); the tile pass's level argument is that level
+  of the host's food (the trace's `level` followed the host's food 84 -> 1, 218 -> 3).
+* Fix: own meals over the next level line are kept while a partner is below it (own_progress::clip_meal).
+* ? Not tried: PopulateTiles with a partner's level base for that partner's area (BUG-0975: lower levels' tiles at the
+  host's world scale overflow the game's 511-entry buffer unless the box is scaled).
