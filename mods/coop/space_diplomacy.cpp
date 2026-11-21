@@ -712,10 +712,30 @@ static void own_task(void*)
         return;
     }
     callguard::Hold applying(g_applying);
+    std::vector<uint32_t> own;
+    for (auto& h : g_own_in)
+        own.push_back(h.npc);
+    std::sort(own.begin(), own.end());
     g_snap_in = std::move(g_own_in);
     g_own_in.clear();
     g_snap_asked = true; // the table is this player's own: nothing of ours is newer
     apply_snapshot();
+    // the relations the host's save brought that are not this player's own (the host's war, alliance, gifts with an
+    // empire this player met too): no state, only the events the game computes by itself (apply_snapshot leaves a
+    // met empire alone, a shared table may lack its own contacts). The contact itself stays (no way back).
+    uint32_t cleared = 0;
+    for (auto& mine : my_table()) {
+        if (!busy(mine) || std::binary_search(own.begin(), own.end(), mine.npc))
+            continue;
+        Rec h{mine.npc, mine.flags & (kMet | kContacted), {}};
+        for (auto& e : mine.ev)
+            if (own_event(e.first))
+                h.ev.push_back(e);
+        if (reconcile(h, true))
+            cleared++;
+    }
+    if (cleared)
+        log_line(std::to_string(cleared) + " relations of the host's save that are not mine cleared (BUG-9279)");
     g_own_applied++;
 }
 bool own_apply(const std::vector<wire::space_diplomacy::SnapRec>& recs)

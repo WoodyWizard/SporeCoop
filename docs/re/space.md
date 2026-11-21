@@ -3460,6 +3460,13 @@ core together (16.4). Rivals mode (11) is a host option with own budgets and per
   800019BF stayed off the host; the host's alliance with 80001B4E stayed off the guest. With the switch off on both
   the guest's war with 80001AE3 reached the host. ✔ (log) a leave and rejoin: "my own empire, seat 3, money 33333",
   "my own diplomacy from the host: 3 empires" (the money set before the leave; the host had set its own to 88888).
+* ✔ A host save and a new evening (both games restarted, the host loads the Space save, hosts, the guest joins): the
+  guest got 33333 and its own table back (war with 80001A35, the gift to 800019BF), the host had neither. The host's
+  save also brings the host's own relations to the guest's game: an empire the guest met too kept the host's alliance
+  (80001B4E). own_apply now also clears, for every met empire missing from the guest's own table, the state and all
+  events but the ones the game computes itself (✔ the alliance gone, relation -2.5). The contact flags stay.
+* The host reads the files only while it hosts (the feature runs in a session): `coop.space empires` of a host alone
+  shows no empires.
 * A rejoining guest is answered once in the old copy of the world (the session starts before the host's world is
   loaded again) and again after the reload (another Space world epoch): only the second one stays.
 * **The name**: on the guest's game its player empire is called "<player>'s empire" (`wstring_copy` on cEmpire +0x3C,
@@ -3472,8 +3479,11 @@ core together (16.4). Rivals mode (11) is a host option with own budgets and per
 * A home of its own: both players' nations live on the same planet; the guest's empire is still the host's cEmpire on
   its game (one save, one player empire, 13.1): the same political id, home planet, colour and colonies; the host's
   colonies count as the guest's own on its game (the reverse of 15 would show them as the host's mirror).
-* Its own ship and captain: the guest that rejoined in Space got the host's ship and captain (the Civ victory's "open
-  History to design your ship" path was missed because the guest had timed out, BUG-9290). The guest's own species as
+* Its own ship and captain: the guest gets the host's ship and captain. 0.7.15 has no per-guest launch: after the
+  ship editor vote the guest's History check does nothing (✔ lane C, the guest connected thanks to BUG-9290's fix).
+  Lineages has it (world.cpp begin_local_space_intro / guest_launch_tick, civ::founder_space_ready,
+  creations::needs_local_space_intro, the vote end message "Open Civilization History..."): a port of its own. The
+  ship model is cEmpire +0xB8 (mUFOKey) and the ship's cGameDataUFO +0x780; UfoGfx_SetModel 0xE9A920. The guest's own species as
   the captain (SetSpeciesProfile 0xC337D0) is not tried.
 * Cards and powers: feat/own-cards keeps every seat's cards and decides the Space archetype per seat
   (SpaceArchetype_FromTraits); the archetype's tools in the guest's inventory are still the host save's.
