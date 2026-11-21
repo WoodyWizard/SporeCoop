@@ -5367,3 +5367,16 @@ Checks #creature-lineages-save-steps against the GOG 2024 exe (objdump, BUG-1365
   save (its box confirmed by the mod 1.5 s earlier at most) wrote nothing: no "Tribe, saving" hitch, no box, no file
   newer than the request in 90 s, while `coop.save` had answered "saved". `world::save_game` now reads both bytes
   (`world::save_may_start`) and refuses such a save with its reason (`world.save_allowed`).
+
+## A death floors the evolution bar (2026-11-21, fix/w62-core)
+<a id="creature-death-bar-floor"></a>
+
+BUG-1393. GOG 2024, the logs of lab 20261121-003202 mem_census (20 min of Creature, 2 players, own DNA).
+
+* ✔ (runtime, logs) A creature's death and respawn (the hatch cutscene, `drama: baby_game`) drops that player's
+  evolution bar (cPlayer +0x10F0) to its whole number; the DNA (GetEvolutionPoints) stays: every death of the run,
+  host and guest alike: 19.2 -> 19.0, 36.9 -> 36.0 (twice), 53.5 -> 53.0. Which function writes it was not looked up
+  (? the respawn path after CRG_Fade_From_Black_Egg).
+* In co-op with own DNA the bar is the party's (the host's): a guest's own drop is undone by the host's next total
+  (raised to the party's when over half a point); the host's drop is the party's setback, which the guests now follow
+  (`creature.bar_setback`, a fall under one point only: dna_own.h apply_own).

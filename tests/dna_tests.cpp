@@ -157,6 +157,18 @@ static void apply()
     // no bar to read: the budget only
     a = dna_own::apply_own(60, NAN, 70, 700);
     CHECK(a.raise == 0 && a.set);
+    // BUG-1393: the party's setback under one point (the host's respawn: 36.9 -> 36.0) is followed when asked
+    a = dna_own::apply_own(37, 36.0f, 37, 36.9f, true);
+    CHECK(near(a.raise, -0.9f) && a.set);
+    a = dna_own::apply_own(37, 36.0f, 37, 36.9f, false); // (the switch off: kept)
+    CHECK(a.raise == 0 && !a.set);
+    // within the compare's half point, or a fall of a point or more (a load): never down
+    a = dna_own::apply_own(37, 36.6f, 37, 36.9f, true);
+    CHECK(a.raise == 0 && !a.set);
+    a = dna_own::apply_own(37, 35.5f, 37, 36.9f, true);
+    CHECK(a.raise == 0 && !a.set);
+    a = dna_own::apply_own(60, 690, 70, 700, true);
+    CHECK(a.raise == 0 && a.set);
 }
 
 int main()

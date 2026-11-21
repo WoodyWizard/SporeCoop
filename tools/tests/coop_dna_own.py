@@ -43,7 +43,13 @@ SetEvolutionPoints, as the editor's result):
           party's). The host alone in its editor while the guest plays on does not show it (lab 20261119-113728: the
           stray total came while the guest counted the host away and was dropped)
 
-  SPORE_LANE=2 python3 tools/tests/coop_dna_own.py [--case spend|shared|reload|rejoin|store|editors|host_editor]
+  --case setback  BUG-1393: the party's bar gets a part of a point (the host's `coop.dna add 0.8`: both bars X.8);
+          the host's creature dies (`coop.team die`) and respawns: the game drops the host's bar to its whole number
+          (X.0, the setback of a death, seen on every death of lab 20261121-003202 mem_census); within 30 s the
+          guest's bar is the party's again (within the sync-check's half point). FAIL: SPORE_FIX_OFF=creature.bar_setback
+          (the guest's bar stays 0.8 ahead until the next gain: the night's "bar: host 36.0, guest 36.9")
+
+  SPORE_LANE=2 python3 tools/tests/coop_dna_own.py [--case spend|shared|reload|rejoin|store|editors|host_editor|setback]
 """
 import os
 import re
@@ -361,6 +367,45 @@ def host_editor_case(host, guest, ck):
              f"{h1[0]:.0f}; the evolution bars equally full")
 
 
+def avatar_hp(con):
+    m = re.search(r'hp=([-\d.]+)/', con.call('coop.avatar')['out'] or '')
+    return float(m.group(1)) if m else -1
+
+
+def setback_case(host, guest, ck):
+    h0, g0 = prepare(host, guest, ck)
+    host.call('coop.dna add 0.8')  # (pace 0: exactly 0.8) the party's bar gets a part of a point
+    time.sleep(3)
+    h1, g1 = calm(host, guest)
+    show('the party gained 0.8', h1, g1)
+    frac = (h1[1] or 0) - int(h1[1] or 0)
+    if not ck(h1[1] is not None and g1[1] is not None and frac > 0.55 and abs(g1[1] - h1[1]) <= 0.5,
+              f"both bars at the party's {h1[1]} (guest {g1[1]})"):
+        return
+    ck('lethal' in (host.call('coop.team die')['out'] or ''), "the host's creature takes a lethal hit")
+    alive = 0
+    for _ in range(40):  # the death caption's OK, then the respawn cutscene (Enter skips both)
+        time.sleep(1)
+        if avatar_hp(host) > 0:
+            alive = avatar_hp(host)
+            break
+        host.call('key enter')
+    ck(alive > 0, f"the host's creature respawned (hp {alive})")
+    time.sleep(6)  # three of the host's 2 s resends
+    h2, g2 = calm(host, guest, 30)
+    show("after the host's respawn", h2, g2)
+    wallets(host, guest)
+    # the game's own rule, the precondition: the respawn dropped the host's bar (the party's) to its whole number
+    if not ck(h2[1] is not None and h2[1] < h1[1] - 0.5, f"the host's respawn dropped its bar ({h1[1]} -> {h2[1]})"):
+        return
+    ck(g2[1] is not None and abs(g2[1] - h2[1]) <= 0.5,
+       f"the guest's evolution bar is the party's after the host's respawn (guest {g2[1]}, host {h2[1]})")
+    ck(near(g2[0], g1[0]) and near(h2[0], h1[0]), f"the DNA unchanged by the death (host {h1[0]} -> {h2[0]}, "
+       f"guest {g1[0]} -> {g2[0]})")
+    keyframe('setback', f"Creature after the host's respawn: both evolution bars equally full (host {h2[1]}, guest "
+             f"{g2[1]}); the host's new creature at its nest")
+
+
 def main():
     host, guest = start('creature')
     ck = Checks()
@@ -370,7 +415,8 @@ def main():
         twoinst.forget_settings()
     try:
         r = {'spend': spend_case, 'shared': shared_case, 'reload': reload_case, 'rejoin': rejoin_case,
-             'store': store_case, 'editors': editors_case, 'host_editor': host_editor_case}[CASE](host, guest, ck)
+             'store': store_case, 'editors': editors_case, 'host_editor': host_editor_case,
+             'setback': setback_case}[CASE](host, guest, ck)
         if CASE == 'store' and r:
             host, guest = r
     finally:

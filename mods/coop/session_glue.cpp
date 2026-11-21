@@ -893,10 +893,11 @@ void setup_callbacks()
                     // game has the host's save value and bar: a plain AddEvolutionPoints of the difference would move
                     // the bar by it (the fork's "set the budget, move the bar" order, credited to Lineages)
                     float bar = game::evolution_bar();
-                    auto a = dna_own::apply_own(total, tail.bar, before, bar);
+                    auto a = dna_own::apply_own(total, tail.bar, before, bar, g_bar_setback_fix);
                     if (a.set) {
                         LOG("dna: own %.0f -> %.0f, bar %.1f -> party %.1f%s cause=%s", before, total, bar, tail.bar,
-                            a.raise > 0 ? "" : " (kept)", dna_ledger::causes_text(parts).c_str());
+                            a.raise > 0 ? "" : a.raise < 0 ? " (the party's setback, BUG-1393)" : " (kept)",
+                            dna_ledger::causes_text(parts).c_str());
                         game::dna_set_and_bar(total, a.raise);
                         g_own_applied++;
                         for (auto& p : parts)
