@@ -18,14 +18,27 @@ of the cell it was leaving, made by the host's level rebuild before its follow a
 20261119-214823: 4DA56CA5 x5 after the change to BAF1AD40).
 
   coop_cell_own_level10.py [--food 924]
+The pool is listed twice after each change: at once when the guest's follow reached the host (BUG-1333: kin of the
+previous cell made in that window are still there; inferred: the twin of 20261120-130608 passed because those near the
+guest's old place were culled before the 8 s listing) and 8 s later (as before).
 FAIL twin: SPORE_FIX_OFF=cell.kin_follow (kin of the previous own cell near the guest after a change; the host's
-rebuild must populate while the guest's puppet is there, which it did in the first change of 20261119-214823 only).
+rebuild must populate near the guest's centre in the window: the printed `kin filter since the change: partner+N`
+says whether it did).
 """
 import argparse
 import re
 import time
 
 from twoinst import Checks, start
+
+
+def wait_until(cond, secs, step=0.2):
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        if cond():
+            return True
+        time.sleep(step)
+    return False
 
 
 def species(con):
@@ -40,6 +53,12 @@ def partner_cells(host):
     out = host.call('coop.pool kin 0')['out']
     return {m.group(2) for m in re.finditer(r'^kin player (\d+) cell=([0-9A-F]{8})', out, re.M)
             if '(me)' not in m.group(0) and m.group(2) != '00000000'}
+
+
+def kin_counts(host):
+    """the host's kin filter counters (`coop.pool kin 0`, first line: own= partner= follow= ...)"""
+    line = host.call('coop.pool kin 0')['out'].splitlines()[:1]
+    return dict((k, int(v)) for k, v in re.findall(r'\b(own|partner|no_key|unknown|one_mode|follow)=(\d+)', line[0])) if line else {}
 
 
 def show(name, sp):
@@ -70,8 +89,21 @@ def main():
     rows = []
     orig = base[0][0]
     for cmd in ('choose cell BAF1AD40', f'choose cell {orig}'):  # a premade cell (the test profiles have no own ones), then back
+        k0 = kin_counts(host)
         r = host.call(f'coop.creations {cmd}')['out'].strip()
         print(f'  host: coop.creations {cmd}: {r[:160]}', flush=True)
+        # BUG-1333 twin (lab 20261120-130608 passed with cell.kin_follow off). Inferred: the kin the host's rebuild makes
+        # near the guest before its follow arrives (0.5-1.4 s) are culled when they lie where the guest's cell was before ITS
+        # rebuild (at level 10 the host's rebuild puts the host at (100 100), the guest's cell stays near (0 0) until
+        # its own); only those near the host stay for the 8 s listing. So the pool is listed also at once when the
+        # guest's follow is there, and the kin counters show whether the filter made kin of a partner in the window
+        new = cmd.split()[-1]
+        wait_until(lambda: partner_cells(host) == {new}, 10)
+        at = species(host)
+        show(f'host when the guest followed {cmd}', at)
+        k1 = kin_counts(host)
+        print(f'  kin filter since the change: ' + ' '.join(f'{k}+{k1.get(k, 0) - k0.get(k, 0)}' for k in sorted(k1)), flush=True)
+        rows.append((cmd + ' (at the follow)', at, {new}))
         time.sleep(8)
         sp = species(host)
         show(f'host after {cmd}', sp)
@@ -81,6 +113,10 @@ def main():
         rows.append((cmd, sp, pc))
     prev = orig
     for cmd, (own, m), pc in rows:
+        if cmd.endswith('(at the follow)'):  # the listing right after the follow (BUG-1333): the previous cell only
+            ck(prev == own[0] or prev not in m, f'  {cmd}: no NPC of the previous own cell {prev} (own species now '
+               f'{own[0]} x{m.get(own[0], (0,))[0]}; {prev} x{m.get(prev, (0,))[0]}; the guest followed to {sorted(pc)})')
+            continue
         lv0 = own[2]
         new = [k for k in m if k not in seen_models and k != own[0] and k not in pc]
         odd = [(k, lv) for k, (n, lv) in m.items() if any(l < lv0 - 1 or l > lv0 + 5 for l in lv if l >= 0)]
