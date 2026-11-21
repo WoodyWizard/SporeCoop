@@ -44,8 +44,13 @@ def main():
     if npc:
         out, st, alive = meet(npc[0])
         print('  guest meets an NPC civilization:', out, '|', st, flush=True)
-        ck(alive and 'civ=0' not in out and 'civ=(nil)' not in out and re.search(r'met=[01]\b', st),
-           'the guest\'s game met a civilization it has (the game\'s own path, no crash)')
+        # BUG-1390: the pointer is printed with %p (8 hex digits): a civilization below 0x10000000 starts with 0
+        # ("civ=0D595428"), which the old substring check 'civ=0' read as null (FAIL runs 20261103-204638,
+        # 20261121-003202). Parse it as a number: null is 0 (or "(nil)")
+        cm = re.search(r'civ=([0-9A-Fa-fx]+|\(nil\))', out)
+        civ = int(cm.group(1), 16) if cm and cm.group(1) != '(nil)' else 0
+        ck(alive and civ != 0 and re.search(r'met=[01]\b', st),
+           f'the guest\'s game met a civilization it has (the game\'s own path, no crash; civ {civ:08X})')
     out, st, alive = meet('7EADBEEF')
     print('  guest meets a political id it has no civilization for:', out, '|', st, flush=True)
     ck(alive and re.search(r'met=[01]\b', st), 'the guest\'s game goes on after meeting a civilization it does not have')
