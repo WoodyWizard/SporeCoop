@@ -19,6 +19,11 @@ guest's copy of the hut at 1 hp at least, so the guest's game never conquered th
    in the same moment left the game time standing for the rest of the stage (Carol 30 min, Dave 16 min in
    campaign_tribe_noclick of the 0.7.14 final check). When the host's game plays no conquest caption either (the game
    left it out: 3 of 19 runs up to 2026-11-16, 0.7.14 too), the result is INCONCLUSIVE (BUG-1205).
+   BUG-1377: the caption is the end of the village's cTribeToTribeMission (TribeToTribeMission_Complete), which the
+   host's game makes from a player's raid click only; `coop.tribe order` (a DoAction) makes none, so the caption
+   came only when the game had made the village's mission by itself (lab 20261120-133703: INCONCLUSIVE). The raid now
+   starts with the guest's own raid order of its members (`coop.tribe act_obj 15`, the guest's order path: the host
+   makes the village's mission for it, BUG-1068) and waits for the host's guest_missions count.
 """
 import argparse
 import re
@@ -47,6 +52,12 @@ def near(rows, p, tol):
 
 
 CAPTION_OK = (1410, 1048)  # the green check of a caption that waits for the player (coop_campaign.py)
+
+
+def guest_missions(host):
+    """the host's count of villages whose mission a guest's raid or gift made (tribe.guest_mission, BUG-1068)"""
+    m = re.search(r'guest_missions=(\d+)', host.call('coop.status')['out'])
+    return int(m.group(1)) if m else -1
 
 
 def busy_of(con):
@@ -114,6 +125,16 @@ def main():
     print(f'  hut at {hp}; the guest\'s copy: hut {gh}, village {gv}', flush=True)
     ck(gh and gv, "the guest's game has the new village and its hut")
     raiders = own + hown
+    if a.click_at_close:  # BUG-1377: the guest's raid order makes the village's mission on the host (BUG-1068)
+        m0 = guest_missions(host)
+        for mid in own:
+            guest.call(f'coop.tribe select {mid} 1')
+        print('  guest raid order: ' + guest.call('coop.tribe act_obj 15 %s %.2f %.2f %.2f' % ((HUT,) + hp))['out'].strip(),
+              flush=True)
+        t1 = time.time()
+        while time.time() - t1 < 10 and guest_missions(host) <= m0:
+            time.sleep(0.5)
+        print(f'  host: guest_missions {m0} -> {guest_missions(host)} (the village\'s mission from the guest\'s raid)', flush=True)
     for mid in raiders:
         print(f'  raid #{mid}: ' + host.call('coop.tribe order %d 15 %.2f %.2f %.2f %s' % ((mid,) + hp + (HUT,)))['out'].strip(), flush=True)
     t0, cut, fell, last_hp, last_change = time.time(), False, None, None, time.time()
