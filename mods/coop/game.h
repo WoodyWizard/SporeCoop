@@ -258,6 +258,9 @@ void* species_by_key(const Key& k);
 // (docs/re/creations.md#creations-species-map, BUG-0200)
 void** species_slot(const Key& k);
 void* create_herd(const net::Vec3& pos, void* species);
+// BUG-9262 (Lineages): a herd WITH its nest (CreateHerd's createNest), `size` members the game spawns and respawns
+// itself, enabled; not one of ours (the save keeps it like any nest). Outside the frame.
+void* create_nest_herd(const net::Vec3& pos, void* species, int size, bool owned_by_avatar);
 void* own_herd_for(void* species); // an existing herd like create_herd's of this species, or null
 // BUG-1067: a herd create_herd made (or own_herd_for handed out) in this process, the same object (its serial);
 // the game's own herds look the same in Civ (no archetype, no nest)
@@ -330,6 +333,9 @@ void dna_add_raw(float delta);              // a shared change, not reported: a 
                                             // AddEvolutionPoints (DNA + the evolution bar), a spend the DNA only (BUG-0630)
 void dna_set_raw(float total);              // SetEvolutionPoints: the DNA only, as the game's editor spends it
 float evolution_bar();                      // cPlayer +0x10F0, the stage's total earned (NAN without a player)
+bool set_evolution_bar(float v);            // BUG-9265: writes cPlayer +0x10F0 (false: no player)
+int brain_level();                          // BUG-9265: the avatar's brain level (Creature; -1: no avatar)
+bool set_brain_level(int level);            // BUG-9265: writes it (SporeCoop::g_BrainLevel); false: not in Creature
 using DnaListener = bool (*)(float& delta); // return false to swallow a gain; may change it (BUG-0510 pace)
 void set_dna_listener(DnaListener fn);
 

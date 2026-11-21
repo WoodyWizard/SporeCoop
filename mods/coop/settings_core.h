@@ -56,6 +56,8 @@ enum Id : int {
     kSpaceFinale,    // Space: the galaxy's core together (space_finale.cpp)
     kSpaceRivals,    // Space: the host may switch to the rivals mode (space_rivalry.cpp)
     kAutosave,       // all stages: the host's game saves itself every N minutes and after milestones (E2, autosave.h)
+    kOwnProgress,    // Cell, Creature: every player's own DNA and evolution bar; the stage changes when all are full (BUG-9265)
+    kLineageCells,   // Cell: the players' own cells appear as NPC species in the pool (BUG-9275, lineage_cells.h)
     kCount
 };
 
@@ -169,6 +171,12 @@ inline const Def kDefs[kCount] = {
     {"all.autosave", "All stages", "Host autosave",
      "every N minutes and after a milestone (a new stage, a colony founded, a city captured, an epic killed) the host's game saves itself into its own save, as the pause menu's Save; off: only the players' own saves",
      2, 0, 5, Scope::Live, "autosave", false, "off|5 min|10 min|15 min|30 min|60 min"},
+    {"all.own_progress", "All stages", "Own progress",
+     "on: in the Cell and Creature stages every player has their own DNA and evolution bar, earned by their own deeds; a full bar waits until every player's bar is full, then everybody moves on together after the vote; off: one shared DNA / food total for the party",
+     1, 0, 1, Scope::Session, "own_progress", false},
+    {"cell.lineage_cells", "Cell", "Player cells in the pool",
+     "on: about one in six spawns of a creature species of the tide pool takes the look of one of the players' own cells (from their My Creations; never a cell a player plays now) with the same diet, so a carnivore hunts and a herbivore grazes; off: only the game's own species",
+     1, 0, 1, Scope::Live, "lineage_cells", false},
 };
 
 // all.autosave (E2): the minutes of a choice (0 = off)

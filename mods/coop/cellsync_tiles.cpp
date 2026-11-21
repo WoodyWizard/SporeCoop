@@ -2,6 +2,7 @@
 // passes around every player, BUG-0174 / BUG-0295, the world scale and the stack tests, the AI's targets and the
 // loot drops); moved out of cellsync.cpp (C8 of 0.7.15, BUG-1183).
 #include "cellsync_internal.h"
+#include "call_guard.h"
 
 namespace cellsync {
 
@@ -28,6 +29,7 @@ int SK_CDECL h_Populate(float prob, int layer, int level, void* query, void* bbo
             return 0;
         g_n.solo_spawns++; // BUG-0205: the host is away, our game fills its own pool
     }
+    callguard::Depth depth(g_marker_depth); // BUG-9275: the native spawns (a Lineages cell may take one's model)
     return o_Populate(prob, layer, level, query, bbox, marker, x);
 }
 
@@ -89,6 +91,7 @@ views::Set g_views;                          // host: itself + every partner (th
 static std::vector<std::array<float, 12>> g_view_boxes; // the view boxes of each centre (host first)
 static TileList* g_pass_list;   // the list of the pass PopulateTiles is running for us (null: none)
 static int g_pass = -1;         // -1 none, 0 the host's pass, k > 0 the pass of centre k
+int tile_pass_player() { return g_pass > 0 && (size_t)g_pass < g_views.size() ? (int)g_views.list()[(size_t)g_pass].player : -1; }
 static bool g_union;            // h_TileActive: also true inside another centre's box
 static std::unordered_set<uint32_t> g_shadow_tiles; // tile objects not populated (another list has the tile)
 // BUG-0999: a host view box whose centre is not a usable position (not finite, or at the 1e7 edge that view_bad lets
@@ -1068,6 +1071,8 @@ void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, float si
         double now = H->time_seconds();
         for (int i = 0; i < n && i < cap; i++)
             g_loot_recent.push_back({buf[i], now});
+        if (mine)
+            lineage_loot(res, buf, n < cap ? n : cap); // BUG-9275: a species that drops a part keeps its look
         while (g_loot_recent.size() > 64)
             g_loot_recent.pop_front();
     }

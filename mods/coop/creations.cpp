@@ -1,4 +1,5 @@
 #include "creations_internal.h"
+#include "founders.h"
 
 namespace creations {
 
@@ -25,6 +26,9 @@ constexpr uint8_t kWorldSpecies = 3, kAskSpecies = 4, kOwnSpecies = 5;
 // total = the model kind), the host sends the records (kOwnDesign) or says it is not one of its own
 // (kDesignNotOwn: a premade, the same everywhere)
 constexpr uint8_t kAskDesign = 6, kOwnDesign = 7, kDesignNotOwn = 8;
+// BUG-9275 (Lineages cells, Lineages BUG-9111): a guest's own cell of its My Creations for the host's Cell pool (owner =
+// the guest, id = its instance); the host registers it under a key of its own (0x7B......, from the content)
+constexpr uint8_t kLineageCell = 9;
 // BUG-0017: a guest registers the host's own creations of its world (nest species)
 // BUG-0010: a guest asks the host for a species of its world it does not have
 
@@ -109,6 +113,29 @@ void world_record_set(int k, uint32_t world, uint32_t inst)
     g_world_records++;
     H->log(M, SK_INFO, "creations: own %s %08X recorded for world %08X (BUG-0345)", kInfo[k].name, inst, world);
 }
+// BUG-9262 (Lineages): a free note of the mod per planet in worlds.ini ([section] <world crc> = value; ASCII)
+std::string world_note(const char* section, uint32_t world)
+{
+    if (!world || !section || !find_paths())
+        return {};
+    wchar_t key[16], buf[1024] = {};
+    swprintf(key, 16, L"%08X", world);
+    GetPrivateProfileStringW(wide(section).c_str(), key, L"", buf, 1024, (g_dir + L"\\worlds.ini").c_str());
+    std::string out;
+    for (const wchar_t* p = buf; *p; ++p)
+        out += (char)(*p < 128 ? *p : '?');
+    return out;
+}
+void world_note_set(const char* section, uint32_t world, const std::string& value)
+{
+    if (!world || !section || !find_paths())
+        return;
+    wchar_t key[16];
+    swprintf(key, 16, L"%08X", world);
+    const std::wstring v(value.begin(), value.end());
+    WritePrivateProfileStringW(wide(section).c_str(), key, value.empty() ? nullptr : v.c_str(),
+                               (g_dir + L"\\worlds.ini").c_str());
+}
 // BUG-0508: a guest that plays the host world's species (no creation of its
 // own, no choice) takes the host's new creature in place after the host's editor, as the reloaded
 // world gave it before: `g_follow` is the host's new creation, valid in the stage world it came in
@@ -179,6 +206,37 @@ static void player_species_tick()
     k[0] = to.instance;
     g_ps_set++;
     H->log(M, SK_INFO, "creations: the world's player species %08X -> %08X (BUG-0508)", g_ps_from.instance, to.instance);
+}
+
+// BUG-9262 (Lineages BUG-9177, roadmap 1b): in the game the creature the player plays IS the player species: the key
+// above (cSpeciesManager +0xA4, read by PlayerSpecies 0x4DF490), the avatar, its family and its nest agree. A guest's
+// own creature is put on its avatar (apply_own_avatar, BUG-0517) and this key stayed the world's (the host's species):
+// the guest's game took its own nest family for another species and CreatureGame_NestHerdFor(1) pointed at the host's
+// nest. In Creature the key now follows the creature the avatar wears, on every game (the host's is its world's: no
+// change there). `coop.fix creature.own_player_species off`: the world's key (0.7.15.2).
+static bool g_own_ps_fix = true;
+COOP_FIX("creature.own_player_species", "BUG-9262", g_own_ps_fix,
+         "creature: the game's player species is the creature the player plays (its own nest, family and goals)");
+static unsigned g_own_ps_set;
+static void own_player_species_tick()
+{
+    if (!g_own_ps_fix || game::mode_id() != modes::kCreature)
+        return;
+    void* av = game::avatar();
+    uint32_t* k = player_species_slot();
+    if (!av || !k)
+        return;
+    const game::Key own = game::species_key(av);
+    if (!own.instance || (k[0] == own.instance && k[1] == own.type && k[2] == own.group))
+        return;
+    if (game::species_by_key(own) != game::species_profile(av))
+        return; // the avatar's species is not (yet) the manager's profile of that key
+    const uint32_t was = k[0];
+    k[0] = own.instance;
+    k[1] = own.type;
+    k[2] = own.group;
+    if (g_own_ps_set++ < 20)
+        H->log(M, SK_INFO, "creations: the game's player species %08X -> %08X, the creature played (BUG-9262)", was, own.instance);
 }
 
 // ---- bundles: a creation with its records ----
@@ -284,6 +342,9 @@ bool find_paths()
     H->log(M, SK_INFO, "creations: My Creations %s", slotfs::narrow(g_es_path).c_str());
     return true;
 }
+
+// BUG-9258 (Lineages): this profile's SporeCoop folder next to EditorSaves.package, "" while not known
+std::wstring coop_dir() { return find_paths() ? g_dir : std::wstring(); }
 
 static bool load_editor_saves(dbpf::Package& pk)
 {
@@ -1206,10 +1267,27 @@ static Key avatar_species_key()
     return {k[0], k[1], k[2]};
 }
 
+// BUG-9267: a guest that joins from the galaxy menu is in no world yet: its own creation's record of the HOST's world
+// (worlds.ini, BUG-0345) and a choice made in it apply already, so the first creature it reports is the one it will play
+// there. Before, it reported the world's species until the host's world had loaded, the host's party took the seat for
+// the host's species, the share hold let the world go before the seat's own nest (home_nests.cpp) and the guest loaded
+// the world twice. `coop.fix creations.join_world_record off`: the record of the world the guest is in (0.7.15.2).
+static bool g_join_record_fix = true;
+COOP_FIX("creations.join_world_record", "BUG-9267", g_join_record_fix,
+         "creations: a joining guest outside a world plays its own creation's record of the host's world (one world load)");
+static uint32_t record_world()
+{
+    const bool guest = C.sess && C.sess->role() == net::Role::Client && C.sess->connected();
+    if (g_join_record_fix && guest && !game::avatar() && C.host_world)
+        if (uint32_t h = C.host_world())
+            return h;
+    return modes::current_world();
+}
+
 // BUG-0638: the guest's explicit choice was made (or played) in this world; outside a world it holds
 static bool choice_here(int k)
 {
-    uint32_t w = modes::current_world();
+    uint32_t w = record_world();
     return !w || world_record(k, w) == g_choice[k].instance;
 }
 
@@ -1277,7 +1355,7 @@ Option mine(Kind k)
     }
     // BUG-0345: a guest's default is its own creation only in a world it played it in
     if (guest && g_guest_world_fix && !g_opts[k].empty()) {
-        if (uint32_t rec = world_record(k, modes::current_world()))
+        if (uint32_t rec = world_record(k, record_world())) // (BUG-9267: the host's world while joining)
             for (auto& o : g_opts[k])
                 if (o.key.instance == rec)
                     return o;
@@ -1764,6 +1842,29 @@ std::string content_status()
     return b;
 }
 
+// BUG-9261 (Lineages BUG-9180): the key a player's creation has on every game: 0x7C + a hash. Before, the hash took the
+// owner's network id as well (salted_instance): the key changed with every rejoin under another id (in Lineages a new
+// nest each session), and the owner itself played its own My Creations key, another species there. Now the hash is
+// the bundle's alone (the creation's own key and records), the same on every game and across rejoins; two players
+// with the very same creation (the same file) share its species. A partner's creature archived with the host's planet
+// (archive_guest_model) is found again under this key. `coop.fix creations.one_key off`: the old key, and the own My
+// Creations key on the owner's game (0.7.15.2).
+static bool g_one_key = true;
+COOP_FIX("creations.one_key", "BUG-9261", g_one_key,
+         "creations: a player's creation has one key on every game, its own included, the same across rejoins");
+static uint32_t salted_instance(uint8_t owner, uint32_t id)
+{
+    uint8_t seed[5] = {owner, (uint8_t)id, (uint8_t)(id >> 8), (uint8_t)(id >> 16), (uint8_t)(id >> 24)};
+    return 0x7C000000u | (fnv(seed, sizeof seed) & 0x00FFFFFFu);
+}
+static uint32_t shared_instance(uint8_t owner, uint32_t id)
+{
+    if (!g_one_key)
+        return salted_instance(owner, id);
+    uint8_t seed[5] = {0xC1, (uint8_t)id, (uint8_t)(id >> 8), (uint8_t)(id >> 16), (uint8_t)(id >> 24)};
+    return 0x7C000000u | (fnv(seed, sizeof seed) & 0x00FFFFFFu);
+}
+
 // a bundle arrived (or is our own): store it here under a collision-free instance and register it
 static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>& data)
 {
@@ -1818,9 +1919,9 @@ static void apply(uint8_t owner, Kind k, uint32_t id, const std::vector<uint8_t>
             C.feed((C.name_of ? C.name_of(owner) : "a player") + std::string("'s ") + noun + " uses parts this game does "
                    "not have: shown as another " + noun + " here");
     } else if (!b.recs.empty() && find_paths()) {
-        // the same id everywhere: owner + content hash (a new version after an editor = a new key)
-        uint8_t seed[5] = {owner, (uint8_t)id, (uint8_t)(id >> 8), (uint8_t)(id >> 16), (uint8_t)(id >> 24)};
-        uint32_t inst = 0x7C000000u | (fnv(seed, 5) & 0x00FFFFFFu);
+        // the same id everywhere: the content hash (a new version after an editor = a new key); BUG-9261: not the
+        // owner's network id (creations.one_key)
+        uint32_t inst = shared_instance(owner, id);
         std::vector<dbpf::Record> recs = b.recs;
         for (auto& r : recs)
             if (r.key.instance == b.key.instance)
@@ -2015,6 +2116,13 @@ void want_species(const Key& k)
 // ---- the host's own creations among its world's species (creations.h) ----
 static bool in_my_creations(const Key& k);
 static bool is_crt(const Key& k) { return k.type == kInfo[kCreature].type && k.group == kInfo[kCreature].group; }
+static bool is_cll(const Key& k) { return k.type == kInfo[kCell].type && k.group == kInfo[kCell].group; }
+// BUG-9275: a host's Lineages cell (host_cell_out) is remapped on a guest like a host's own species; off: a guest
+// builds the host's NPC of such a cell from the host's key (its own creation of that id when it has one)
+static bool g_cell_remap_fix = true;
+COOP_FIX("cell.lineage_remap", "BUG-9275", g_cell_remap_fix,
+         "cell: a guest builds the host's NPC cells of a player cell (Lineages cells) from the records the host sent, under a key of its own");
+static bool remappable(const Key& k) { return is_crt(k) || (g_cell_remap_fix && is_cll(k)); }
 
 void host_species_out(uint8_t peer, const Key& k)
 {
@@ -2057,6 +2165,136 @@ void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t
         dbpf::find_keys(*f, kInfo[kCreature].type, kInfo[kCreature].group, keys);
     for (uint32_t inst : keys)
         host_species_out(peer, {inst, kInfo[kCreature].type, kInfo[kCreature].group});
+}
+
+// ---- BUG-9275: Lineages cells (lineage_cells.h; ported from Lineages BUG-9111) ----
+// A player cell the host's Cell pool uses as an NPC species: the guest gets its records like an own creature species
+// (kOwnSpecies) and registers them under a key of its own (apply_own_species); its mirrors of that species are built
+// from that key (local_species). Sent once per peer.
+bool host_cell_out(uint8_t peer, const Key& k)
+{
+    if (!is_host() || peer == 0 || !k.instance || !is_cll(k))
+        return false;
+    auto& sent = g_own_sent[peer];
+    if (sent.count(k.instance))
+        return true;
+    Bundle b;
+    b.key = k;
+    if (!records_from_game(k, b.recs)) {
+        g_species_missing++;
+        return false;
+    }
+    sent.insert(k.instance);
+    send_bundle(peer, 0, (Kind)kOwnSpecies, k.instance, pack(b));
+    g_own_out++;
+    H->log(M, SK_INFO, "creations: Lineages cell %08X (%u records) to player %u (BUG-9275)", k.instance, (unsigned)b.recs.size(), peer);
+    return true;
+}
+
+// a cell model's own bytes (FNV-1 of its bem records; no metadata, no pictures), 0 = not found: the same cell under
+// two keys (My Creations, the creations stream, a remapped copy) has the same signature
+uint32_t model_signature(const Key& k, std::string* name, std::string* author)
+{
+    std::vector<dbpf::Record> recs;
+    if (!k.instance || !records_from_game(k, recs))
+        return 0;
+    uint32_t h = 0;
+    for (auto& r : recs) {
+        if (r.key.type == kBem && r.key.instance == k.instance)
+            h = fnv(r.data.data(), r.data.size(), h ? h : 0x811C9DC5);
+        if ((name || author) && r.key.type == kMeta) {
+            std::string a, n;
+            dbpf::metadata_names(r.data, a, n);
+            if (name)
+                *name = n;
+            if (author)
+                *author = a;
+        }
+    }
+    return h;
+}
+
+// guest: one of our own cells to the host (its Cell pool may use it)
+bool guest_cell_out(const Key& k)
+{
+    if (is_host() || !C.sess || !C.sess->connected() || !k.instance || !is_cll(k))
+        return false;
+    Bundle b;
+    b.key = k;
+    if (!records_from_game(k, b.recs))
+        return false;
+    send_bundle(0, C.sess->my_id(), (Kind)kLineageCell, k.instance, pack(b));
+    H->log(M, SK_INFO, "creations: our cell %08X (%u records) to the host's Lineages cells (BUG-9275)", k.instance, (unsigned)b.recs.size());
+    return true;
+}
+
+// host: the guests' cells received this session, by the key of ours they are registered under
+static std::map<uint32_t, GuestCell> g_guest_cells;
+static unsigned g_guest_cells_in, g_guest_cells_refused;
+static void apply_guest_cell(uint8_t owner, const std::vector<uint8_t>& data)
+{
+    Bundle b;
+    if (!unpack(data, b) || b.recs.empty() || !is_cll(b.key) || !find_paths() || g_guest_cells.size() >= 64)
+        return;
+    if (unsigned miss = ensure_content(b.recs, kMkCell, "player " + std::to_string(owner) + "'s cell " + trace::hex(b.key.instance))) {
+        g_guest_cells_refused++;
+        H->log(M, SK_WARN, "creations: player %u's cell %08X names %u part(s) this game does not have: not used (BUG-9275)", owner,
+               b.key.instance, miss);
+        return;
+    }
+    uint32_t h = 0x811C9DC5;
+    for (auto& r : b.recs)
+        if (r.key.instance == b.key.instance && r.key.type == kBem)
+            h = fnv(r.data.data(), r.data.size(), fnv(&r.key.type, 4, h));
+    const uint32_t ours = 0x7B000000u | (h & 0x00FFFFFFu);
+    GuestCell gc;
+    gc.key = {ours, b.key.type, b.key.group};
+    gc.owner = owner;
+    for (auto& r : b.recs) {
+        if (r.key.type == kMeta)
+            dbpf::metadata_names(r.data, gc.author, gc.name);
+        if (r.key.instance != b.key.instance)
+            continue;
+        r.key.instance = ours;
+        uint8_t* d = r.data.data(); // the metadata names its own key (big-endian at +0x14): ours too
+        if (r.key.type == kMeta && r.data.size() >= 0x18 &&
+            ((uint32_t)d[0x14] << 24 | d[0x15] << 16 | d[0x16] << 8 | d[0x17]) == b.key.instance)
+            for (int i = 0; i < 4; i++)
+                d[0x14 + i] = (uint8_t)(ours >> (24 - 8 * i));
+    }
+    if (!g_guest_cells.count(ours)) {
+        std::wstring path = g_dir + L"\\lineage_cell_" + std::to_wstring(ours) + L".package";
+        if (!key_exists(gc.key) && !package_for(path, b.recs, kPrioWorld)) {
+            g_last_error = "cannot write a Lineages cell package";
+            return;
+        }
+    }
+    g_guest_cells[ours] = gc;
+    g_guest_cells_in++;
+    H->log(M, SK_INFO, "creations: player %u's cell %08X '%s' is %08X here (Lineages cells, BUG-9275)", owner, b.key.instance,
+           gc.name.c_str(), ours);
+}
+
+std::vector<GuestCell> guest_cells()
+{
+    std::vector<GuestCell> out;
+    for (auto& [k, c] : g_guest_cells)
+        out.push_back(c);
+    return out;
+}
+
+std::string lineage_status()
+{
+    char b[200];
+    snprintf(b, sizeof b, "creations: lineage guest_cells=%u in=%u refused=%u remap_fix=%d\n", (unsigned)g_guest_cells.size(),
+             g_guest_cells_in, g_guest_cells_refused, (int)g_cell_remap_fix);
+    std::string out = b;
+    for (auto& [host, ours] : g_remap)
+        if ((ours >> 24) == 0x7D) {
+            snprintf(b, sizeof b, "remap %08X -> %08X\n", host, ours);
+            out += b;
+        }
+    return out;
 }
 
 // guest: a creation of the host's own My Creations that its world uses: registered under a key of
@@ -2172,9 +2410,10 @@ static void alias_restore()
 static void apply_own_species(const std::vector<uint8_t>& data)
 {
     Bundle b;
-    if (!unpack(data, b) || b.recs.empty() || !is_crt(b.key) || !find_paths())
+    if (!unpack(data, b) || b.recs.empty() || !remappable(b.key) || !find_paths())
         return;
-    unsigned miss = ensure_content(b.recs, kMkCreature, "the host's own creation " + trace::hex(b.key.instance));
+    const bool cell = is_cll(b.key); // BUG-9275: a Lineages cell of the host's pool
+    unsigned miss = ensure_content(b.recs, cell ? kMkCell : kMkCreature, "the host's own creation " + trace::hex(b.key.instance));
     if (miss) { // BUG-0452: not registered, the world is not loaded
         std::string name, author;
         for (auto& r : b.recs)
@@ -2223,6 +2462,10 @@ static void apply_own_species(const std::vector<uint8_t>& data)
     g_remap[b.key.instance] = ours;
     g_unmap[ours] = b.key.instance;
     g_own_in++;
+    if (cell) {
+        H->log(M, SK_INFO, "creations: the host's Lineages cell %08X is %08X here (BUG-9275)", b.key.instance, ours);
+        return;
+    }
     // the species profile now (the game keeps profiles for the whole process): the first proxy of
     // it does not wait for its creaturedata
     void* prof = game::species_by_key({ours, b.key.type, b.key.group});
@@ -2383,13 +2626,13 @@ std::string model_hash(const Key& k)
 
 Key local_species(const Key& k)
 {
-    auto it = is_crt(k) ? g_remap.find(k.instance) : g_remap.end();
+    auto it = remappable(k) ? g_remap.find(k.instance) : g_remap.end();
     return it == g_remap.end() ? k : Key{it->second, k.type, k.group};
 }
 
 Key host_species(const Key& k)
 {
-    auto it = is_crt(k) ? g_unmap.find(k.instance) : g_unmap.end();
+    auto it = remappable(k) ? g_unmap.find(k.instance) : g_unmap.end();
     return it == g_unmap.end() ? k : Key{it->second, k.type, k.group};
 }
 
@@ -2433,6 +2676,10 @@ static void share_own(double now)
         return;
     refresh_options(now);
     uint8_t me = C.sess->my_id();
+    // BUG-9267: a guest outside a world sends nothing until it knows the host's world (the host's first state, about a
+    // second after the join): its first creature was the world's species, the host seated it with that one
+    if (g_join_record_fix && !is_host() && !game::avatar() && C.host_world && !C.host_world())
+        return;
     for (int k = 0; k < kKinds; k++) {
         Option o = mine((Kind)k);
         if (!o.key.instance)
@@ -2502,6 +2749,13 @@ static Key own_key_here(Kind kind)
     uint8_t me = C.sess->my_id();
     Key k = mine(kind).key;
     auto host = g_applied.find({0, (uint8_t)kind});
+    // BUG-9261: a guest plays its creature under the key every game has for it (applied by share_own as everybody's):
+    // the host's nest of it (home_nests.cpp) is a nest of the guest's own species on the guest's game too
+    if (g_one_key && kind == kCreature && me != 0 && k.instance) {
+        auto self = g_applied.find({me, (uint8_t)kind});
+        if (self != g_applied.end() && self->second.orig == k && !self->second.unusable && self->second.key.instance)
+            return self->second.key;
+    }
     if (me != 0 && host != g_applied.end() && host->second.orig == k)
         k = player_key(me, kind);
     // BUG-0278: an own creation under a key of the host's world (the own editor's "Save New" keeps
@@ -2772,6 +3026,215 @@ static void bar_tick()
     }
 }
 
+// ---- BUG-9261 (Lineages port phase 3): a partner's creature archived with the host's planet ----
+// A partner's own creature lives in the host's save (its nest now, its village and nation later) under the key every
+// game has for it (shared_instance). Its records exist only in the package the host registered when the partner sent
+// it: after the host's game restarts, a load of that planet while the partner is offline had a species the game could
+// not build. archive_guest_model writes the partner's bundle next to the planet (founders::store_guest_model); the hook
+// on LoadGameByName registers every archive of the planet before the game reads it. Archive layout: u32 'DGA1', u32 the
+// shared key, u8 the owner's network id when archived (only the key check uses it), the bundle as pack() wrote it.
+constexpr uint32_t kArchiveMagic = 0x31414744; // DGA1
+using LoadPlanet = void(SK_THISCALL*)(void*, const char16_t*);
+static LoadPlanet o_LoadPlanet;
+static unsigned g_archived, g_restored, g_restore_failed;
+static std::string g_archive_last;
+
+// the archive's bundle with its records under the archive's key; false: not a valid archive of a creature this game
+// can build (err says why)
+static bool decode_founder(const std::vector<uint8_t>& archive, Bundle& b, std::string& err)
+{
+    net::Reader header(archive.data(), archive.size());
+    uint32_t magic = header.u32(), key = header.u32();
+    uint8_t owner = header.u8();
+    if (!header.ok() || magic != kArchiveMagic || !owner || owner >= 0xFE || header.left() < 14) {
+        err = "invalid creature archive header";
+        return false;
+    }
+    std::vector<uint8_t> payload(header.cur(), header.cur() + header.left());
+    net::Reader record_header(payload.data(), payload.size());
+    record_header.u32();
+    record_header.u32();
+    record_header.u32();
+    uint16_t count = record_header.u16();
+    const uint32_t content = fnv(payload.data(), payload.size());
+    // (an archive written with creations.one_key off has the owner's salted key)
+    if (!count || count > 2u + 512u + 8u || !unpack(payload, b) || !b.key.instance || !is_crt(b.key) ||
+        (key != shared_instance(owner, content) && key != salted_instance(owner, content))) {
+        err = "invalid or mismatched creature archive";
+        H->log(M, SK_WARN, "creations: creature archive of player %u refused: %u record(s), key %08X/%08X/%08X, archive key %08X, "
+               "expected %08X", owner, count, b.key.instance, b.key.type, b.key.group, key, shared_instance(owner, content));
+        return false;
+    }
+    bool model = false, meta = false;
+    size_t used = 14; // the original key, the record count
+    std::vector<dbpf::Record> kept;
+    for (auto& rec : b.recs) {
+        used += 16 + rec.data.size();
+        if (rec.key.group == kPartDescGroup) {
+            // a part's description (BUG-0559): counted, not registered (the receiver's own parts answer)
+            if (rec.data.empty() || rec.data.size() > (64u << 10)) {
+                err = "unexpected part description in the creature archive";
+                return false;
+            }
+            continue;
+        }
+        // its pictures (BUG-0643: png in the model group and the thumbnail group +1) go with it
+        const bool png = rec.key.type == kPng && rec.key.instance == b.key.instance &&
+                         (rec.key.group == b.key.group || rec.key.group == b.key.group + 1);
+        if (rec.data.empty() || rec.key.instance != b.key.instance || (!png && rec.key.group != b.key.group) ||
+            (!png && rec.key.type != kBem && rec.key.type != kMeta) || (rec.key.type == kBem ? model : rec.key.type == kMeta && meta)) {
+            err = "unexpected record in the creature archive";
+            return false;
+        }
+        if (rec.key.type == kBem) {
+            uint32_t eff[3];
+            size_t at[3], len[3];
+            if (!model_effects(rec.data, eff, at, len)) {
+                err = "invalid creature model header";
+                return false;
+            }
+            for (const auto& ref : model_part_refs(rec.data, kPartGroup))
+                if (!part_known(ref.id, kPartGroup)) {
+                    err = "the archived creature needs part " + hex(ref.id) + ", which this game does not have";
+                    return false;
+                }
+            for (uint32_t fx : eff)
+                if (fx && !paint_known(fx)) {
+                    err = "the archived creature needs paint " + hex(fx) + ", which this game does not have";
+                    return false;
+                }
+            model = true;
+        } else if (rec.key.type == kMeta)
+            meta = true;
+        rec.key.instance = key;
+        kept.push_back(rec);
+    }
+    b.recs = std::move(kept);
+    if (used != payload.size()) {
+        err = "unexpected data after the archived creature's records";
+        return false;
+    }
+    if (!model) {
+        err = "the archived creature has no model";
+        return false;
+    }
+    b.key.instance = key;
+    return true;
+}
+
+bool archive_guest_model(uint8_t guest, const std::string& planet, std::string& err)
+{
+    auto id = std::make_pair(guest, (uint8_t)kCreature);
+    auto a = g_applied.find(id);
+    if (a == g_applied.end() || !a->second.key.instance || a->second.unusable) {
+        err = "the partner's creature has not arrived yet";
+        return false;
+    }
+    if (a->second.key == a->second.orig)
+        return true; // a premade: every game has its records
+    if (!o_LoadPlanet) {
+        err = "no hook on the planet load: an archive could not be restored";
+        return false;
+    }
+    auto source = g_store.find(id);
+    if (source == g_store.end()) {
+        err = "the partner creature's records are not here";
+        return false;
+    }
+    net::Writer w;
+    w.u32(kArchiveMagic);
+    w.u32(a->second.key.instance);
+    w.u8(guest);
+    w.raw(source->second.data(), source->second.size());
+    Bundle b;
+    if (!decode_founder(w.data, b, err) || !founders::store_guest_model(planet, b.key.instance, w.data, err))
+        return false;
+    if (g_archived++ < 50 || g_archive_last != hex(b.key.instance))
+        H->log(M, SK_INFO, "creations: player %u's creature %08X archived with the planet (BUG-9261)", guest, b.key.instance);
+    g_archive_last = hex(b.key.instance);
+    return true;
+}
+
+static bool restore_model(const std::string& planet, uint32_t id, std::string& err)
+{
+    std::vector<uint8_t> archive;
+    if (!founders::load_guest_model(planet, id, archive, err))
+        return false;
+    Bundle b;
+    if (!decode_founder(archive, b, err))
+        return false;
+    if (id != b.key.instance) {
+        err = "the archived creature does not match its file name";
+        return false;
+    }
+    std::vector<dbpf::Record> current;
+    if (records_from_game(b.key, current)) {
+        for (auto& rec : b.recs) {
+            auto it = std::find_if(current.begin(), current.end(), [&](const dbpf::Record& r) { return r.key == rec.key; });
+            if (it == current.end() || it->data != rec.data) {
+                err = "another creature has the archived creature's key here";
+                return false;
+            }
+        }
+        H->log(M, SK_INFO, "creations: archived creature %08X is registered already", b.key.instance);
+        return true;
+    }
+    if (!find_paths() ||
+        !package_for(g_dir + L"\\founder_" + slotfs::widen(hex(b.key.instance) + "_" + hex(fnv(archive.data(), archive.size()))) +
+                         L".package",
+                     b.recs, kPrioModel)) {
+        err = "could not register the archived creature";
+        return false;
+    }
+    H->log(M, SK_INFO, "creations: archived creature %08X registered before the planet loads (BUG-9261)", b.key.instance);
+    return true;
+}
+
+bool restore_guest_model(const std::string& planet, std::string& err)
+{
+    std::vector<uint32_t> ids;
+    if (!founders::model_ids(planet, ids, err))
+        return false;
+    bool all = true;
+    for (uint32_t id : ids) {
+        std::string one;
+        if (restore_model(planet, id, one)) {
+            g_restored++;
+            continue;
+        }
+        // one archive that cannot be used does not keep the planet from loading (its nest's creatures are missing)
+        g_restore_failed++;
+        all = false;
+        err += (err.empty() ? "" : "; ") + hex(id) + ": " + one;
+    }
+    return all;
+}
+
+// the game loads a planet by name (the galaxy menu, coop.load, a received world): its archived creatures first
+static void SK_THISCALL h_LoadPlanet(void* manager, const char16_t* name)
+{
+    if (name) {
+        std::wstring planet;
+        for (size_t i = 0; i < MAX_PATH && name[i]; ++i)
+            planet.push_back((wchar_t)name[i]);
+        std::string key = world::game_key_for_planet(slotfs::narrow(planet)), err;
+        if (!key.empty() && !restore_guest_model(key, err)) {
+            H->log(M, SK_WARN, "creations: archived creature(s) of this planet not restored: %s", err.c_str());
+            if (C.feed)
+                C.feed("A partner's creature archived with this planet could not be restored: " + err);
+        }
+    }
+    o_LoadPlanet(manager, name);
+}
+
+std::string archive_status()
+{
+    char b[300];
+    snprintf(b, sizeof b, "archive: hook=%d one_key=%d archived=%u restored=%u failed=%u last=%s\n", (int)(o_LoadPlanet != nullptr),
+             (int)g_one_key, g_archived, g_restored, g_restore_failed, g_archive_last.empty() ? "-" : g_archive_last.c_str());
+    return b;
+}
+
 // ---- api ----
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
 {
@@ -2788,6 +3251,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     a_CellPreload = H->sym("Simulator::Cell::PreloadModel");
     a_BarPtr = H->sym("SporeCoop::AbilityBar_ptr");
     a_BarRebuild = H->sym("SporeCoop::AbilityBar_Rebuild");
+    if (uintptr_t load = H->sym("Simulator::cGamePersistenceManager::LoadGameByName")) // BUG-9261
+        H->hook_create(M, (void*)load, (void*)h_LoadPlanet, (void**)&o_LoadPlanet);
     return a_GetDb && a_OpNew && a_DbCtor && a_RmPtr;
 }
 
@@ -2918,6 +3383,7 @@ void tick(double now)
     alias_tick(); // BUG-0200 (first: a key the avatar is about to play loses its alias before SetSpecies)
     apply_own_avatar();
     player_species_tick(); // BUG-0508
+    own_player_species_tick(); // BUG-9262 (Lineages BUG-9177)
     bar_tick(); // BUG-0358
 }
 
@@ -2947,7 +3413,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if ((kind == kWorldSpecies || kind == kOwnSpecies || kind == kOwnDesign) && (is_host() || from != 0))
         return;
-    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign) ||
+    if (kind == kLineageCell && !is_host()) // BUG-9275: a guest's cell goes to the host only
+        return;
+    if (!r.ok() || (kind >= kKinds && kind != kWorldSpecies && kind != kOwnSpecies && kind != kOwnDesign && kind != kLineageCell) ||
         total > (8u << 20) ||
         (uint64_t)off + n > total)
         return;
@@ -2973,6 +3441,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
     }
     if (kind == kOwnSpecies) {
         apply_own_species(data);
+        return;
+    }
+    if (kind == kLineageCell) { // BUG-9275
+        apply_guest_cell(owner, data);
         return;
     }
     if (kind == kOwnDesign) { // BUG-0647 (owner = the model kind)
@@ -3042,6 +3514,7 @@ void on_session_end()
     g_designs.clear(); // BUG-0647 (the next host's designs are other creations under the same ids)
     g_design_sent.clear();
     g_unmap.clear();
+    g_guest_cells.clear(); // BUG-9275 (their packages stay registered, as the remapped species)
     g_store.clear();
     g_rx.clear();
     for (int k = 0; k < kKinds; k++) // BUG-0508: the session's host and its species

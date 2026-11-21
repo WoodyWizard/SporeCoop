@@ -2585,3 +2585,74 @@ BUG-1263. GOG 2024, lanes 2 / 3 (`coop_evo_screens.py --part cell`, both games' 
 * ✔ The egg laying's fade is undone only by an editor's return or the next round: forgetting the mate after the fade
   left the picture black (36 s). The mate has to be forgotten before the meeting starts (`cell.refused_mate`,
   `cellsync::forget_mate` from vote.cpp evo_flag_tick, outside the game's call chain).
+
+## Own progress: own food, a held History check (2026-11-20, feat/own-progress)
+<a id="cell-own-progress"></a>
+
+BUG-9265, BUG-9266. Steam build (the GOG 2024 code), lane B on Windows.
+* ✔ (runtime) With each player's own food (S+0x1C) the HUD of each game shows its own bar and DNA (host 300 food:
+  22 DNA, guest 120: 11 DNA); the players then are at other levels in the host's one pool (the host's cell drawn large
+  on the guest's screen); nothing faulted in a 10 min session.
+* ✔ (runtime) A guest's own food after a load of the host's save is given back through AddFoodPoints by the
+  difference in the cell step (`cellsync::set_food_total`, the food guard: not paced, not sent): 100 kept while the
+  host's world had 200.
+* ✔ (runtime) History's check clicked at food 1000 and held (the host's, CellStage_ToCreature not called) or refused (a
+  guest's) leaves that game's screen plain white with the consequence card ("Pacifist"), 26 s and longer, until the
+  stage moves on; no cinematic plays at the hook (`cinematic 0`). Calling the held switch later (outside the frame) runs
+  the game's switch as before (the vote, both games in Creature). What starts the white: #cell-end-sequence.
+
+## History's check runs the Cell end sequence before the stage switch (2026-11-20, feat/own-progress)
+<a id="cell-end-sequence"></a>
+
+BUG-9266. Steam build, objdump of the unpacked `.text` (docs/05-re-notes.md, the Steam text dump) and lane B.
+* ✔ (asm) `SporeCoop::Cell_HistoryCheck` 0xE75B80 (History's check in Cell): hides window 0x44827B8, 0xE53640(2, 0),
+  closes History (0xE44200), and only when G+0x5158 == 5 (the stage done) jumps to `SporeCoop::Cell_EndSequence`
+  0xE72C80. The other caller of 0xE72C80 is the debug key handler (0xE814B3).
+* ✔ (asm) `Cell_EndSequence` 0xE72C80, cdecl void(): returns at once without the avatar or with its +0x113 / +0x112
+  set; G+0x5169 = 1; unless G+0x5158 is 3 already: 0xE53560, G+0x5158 = 3, 0xE53110, 0xE6D600, 0xE82C10 (the avatar's
+  position, the cell game +0x5190 +0x6C..+0x74), **0xE4F640(1)**, the avatar's animation 0x2E (0xE6D200), a timed cell
+  event of type 0x1F after that animation's length (G+0x5194), 0xE59A30 (avatar +0x18C = 0x2E). The event dispatcher
+  0xE7E130 runs type 0x1F as `CellStage_ToCreature` 0xE62440 (#cell-switch-to-creature).
+* ✔ (runtime) So the white screen of a held or refused switch was already up when CellStage_ToCreature came: with the
+  switch held there (`coop.fix cell.end_click off`) the host's screen after its early click was 69 % white, the guest's
+  after its click in the vote 52 % (lane B shots). Refusing the click at 0xE72C80 instead (`cell.end_click`) leaves
+  History closed, G+0x5158 at 5 (a later click works) and the game drawn; calling the original 0xE72C80 later from
+  outside the frame plays the whole sequence and the switch as the game's own click does.
+* ~ Inferred: 0xE4F640(1) is the white fade (the sequence's only screen-wide call); not checked alone.
+
+## Lineages cells on our pipeline (2026-11-20, feat/lineage-cells)
+<a id="cell-lineage-cells"></a>
+
+BUG-9275 (Lineages BUG-9111, docs/re/cell.md#cell-fork-lineages-43 for the fork's own notes). Steam build (the GOG 2024
+code), Windows lane A, `coop.lineage`.
+
+* ✔ (runtime) GetModelKeyForCellResource (0xE65640) answered with a player cell's key inside PopulateMarker makes the
+  native spawn a cell of that model, drawn with its paint, on the host and (built from the guest's own key of the same
+  records) on the guest: 31 swaps in the first minute with `coop.lineage share 100`; outside a marker no call came on
+  the host (`outside=0`); on the guest the mirrors' creation calls it (outside=1334: the chooser ignores them).
+* ✔ (runtime) Behaviour by the model's diet: cells of a carnivore-only model (flags C-) chased meat only, cells of an
+  omnivore model (CH) chased meat and plants (`pcell ... chase_kind=`, +0x22C, sampled on the host). The native
+  predator species of a new herbivore game was B0B9BAFF (a herbivore model, AI 0x1006) as in Lineages' notes.
+* ✔ (runtime) The Cell pool is not saved: after `coop.save` with 22 player-model cells in the pool, a cold game that
+  loaded the planet had only the native species (B0B9BAFF) and no fault, although the 0x7B keys of the guest cells were
+  not registered in that game.
+* ✔ A cell's bem record is the same bytes in My Creations, in the creations stream (0x7C key) and in our remapped copies
+  (0x7B / 0x7D): the bem signature found the guest's current cell among the cells it sent (20219D41 = 7B08F5A9 = the
+  guest's 29284693) and left it out.
+* ~ Not handled: NPCs of a cell made before it became a player's current cell (a guest's mid-stage `coop.creations
+  choose cell`) live on until they die; only new spawns leave it out.
+* ? Not checked: whether a cell is drawn without PreloadCreature (both games preload it; Lineages did not test either).
+
+## Lineages cells: only the players' current cells (2026-11-20, feat/lineage-cells)
+<a id="cell-lineage-current"></a>
+
+BUG-9285 (the owner's test of the friends build 0.7.15.94: "many giants in the Cell stage").
+* ✔ (log) With BUG-9275 the host's pool candidates were its own My Creations cells (8, then 9 and 10: the Cell editor
+  saves every version of the own cell to My Creations, so each evolution added the old cell) and the guests' sent
+  cells; any native creature species could take one (any AI, any level).
+* ~ Inferred: the species of the levels above the avatar are drawn large (that is how the game shows the bigger
+  levels), so a player cell on such a spawn is a giant; the player species' own native spread (S+0x10, 6-8 cells
+  around the avatar, #cell-own-species) is always at the avatar's level.
+* Now (cell.lineage_current): only player-species spawns are swapped, to a partner's current cell
+  (creations::player_key); `coop.lineage` prints each player-model cell's level (+0x358) and the avatar's
+  `food_level` (cell_logic::level_of_food(S+0x1C)) so a test can compare them.

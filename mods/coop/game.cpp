@@ -2414,6 +2414,22 @@ void* create_herd(const net::Vec3& pos, void* species)
     return h;
 }
 
+// BUG-9262 (Lineages roadmap phase 2, own nests): a herd WITH its nest, as the game places the nests of a species
+// (CreateHerd's createNest), `size` members the game spawns and respawns itself, enabled (CreateHerd leaves a herd
+// disabled in the creature stage). Not one of "ours": it has a nest, so the save keeps it (savestrip own_kind_herd).
+void* create_nest_herd(const net::Vec3& pos, void* species, int size, bool owned_by_avatar)
+{
+    if (!a_CreateHerd || !species)
+        return nullptr;
+    void* nm = cdecl_call<void*>(a_NounGet);
+    Vector3 p{pos.x, pos.y, pos.z};
+    void* h = nm ? thiscall<void*>(a_CreateHerd, nm, &p, species, size, owned_by_avatar ? 1 : 0, 0, 1) : nullptr;
+    static uintptr_t enable = H->sym("Simulator::cHerd::SetEnabled");
+    if (h && enable && skg::readable(h, 0x21C) && !field<uint8_t>(h, 0x218))
+        thiscall<void>(enable, h, true);
+    return h;
+}
+
 // A herd like the ones create_herd makes (no archetype, no nest, not the avatar's) of this species, or
 // null. Each puppet used to get a new herd and the herd stayed after the puppet was gone: a session
 // with rejoins and editors left one per spawn in the world, and every save kept them all.
@@ -2521,6 +2537,37 @@ float evolution_bar()
     void* nm = noun_manager();
     void* p = nm && skg::readable((uint8_t*)nm + 0x74, 4) ? *(void**)((uint8_t*)nm + 0x74) : nullptr; // cPlayer
     return p && skg::readable((uint8_t*)p + 0x10F0, 8) ? *(float*)((uint8_t*)p + 0x10F0) : NAN;
+}
+
+// BUG-9265 (own progress): a restore of a guest's own bar that must go down (a gain goes through dna_add_raw)
+bool set_evolution_bar(float v)
+{
+    void* nm = noun_manager();
+    void* p = nm && skg::readable((uint8_t*)nm + 0x74, 4) ? *(void**)((uint8_t*)nm + 0x74) : nullptr; // cPlayer
+    if (!p || !skg::readable((uint8_t*)p + 0x10F0, 8) || !std::isfinite(v))
+        return false;
+    *(float*)((uint8_t*)p + 0x10F0) = v;
+    return true;
+}
+
+// BUG-9265: the avatar's brain level (creature vt 0xD8 = cCreatureAnimal_Level 0xC02A60: [0x169E370] for the avatar)
+int brain_level()
+{
+    void* av = in_creature_stage() ? avatar() : nullptr;
+    if (!av || !skg::readable(av, 4))
+        return -1;
+    return skg::vcall<int>(av, 0xD8 / 4);
+}
+
+// BUG-9265: a guest's own lower brain level back after a load of the host's save (the save holds the host's level).
+// Only the level: the avatar's size and the nests' brain ranges follow it as after a brain upgrade's next pass.
+bool set_brain_level(int level)
+{
+    uintptr_t a = H->sym("SporeCoop::g_BrainLevel");
+    if (!a || level < 0 || level > 6 || !in_creature_stage() || !skg::readable((void*)a, 4))
+        return false;
+    *(int*)a = level;
+    return true;
 }
 
 void set_dna_listener(DnaListener fn) { g_dna_listener = fn; }

@@ -38,11 +38,14 @@ struct Ctx {
     std::function<std::string(uint8_t)> name_of;
     std::function<void(uint8_t player)> appearance_changed; // rebuild that player's puppet
     std::function<void()> cell_rebuilt; // the own cell hatched again: move it next to a partner
+    std::function<uint32_t()> host_world; // guest (BUG-9267): the world the host plays (its save name crc), 0 unknown
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);
 bool key_known(const Key& k); // some registered database has this resource (RM FindRecord)
 void tick(double now);
+// BUG-9258 (Lineages): this profile's SporeCoop folder next to EditorSaves.package (identity.bin lives there), "" while not known
+std::wstring coop_dir();
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_player_join(uint8_t id); // host: everybody's creations to the newcomer
 void on_session_end();
@@ -74,8 +77,22 @@ bool avatar_swap_settling(double now); // BUG-0318: the own avatar got a new bod
 // under both keys (docs/re/creature.md 15).
 void host_species_out(uint8_t peer, const Key& k); // host: before an NPC of species k goes to peer
 void world_species_out(uint8_t peer, const std::vector<const std::vector<uint8_t>*>& files); // host: before a world share
-Key local_species(const Key& k); // guest: the host's key of a species -> the key its NPCs use here
+Key local_species(const Key& k); // guest: the host's key of a species -> the key its NPCs use here (a Lineages cell too)
 Key host_species(const Key& k);  // guest: ours -> the host's
+
+// BUG-9275 (Lineages cells, lineage_cells.h): host: a player cell its Cell pool uses goes to `peer` (once; false: no
+// records here); the cell's model signature (its bem bytes, 0: not found) and metadata names; guest: one of its own
+// cells to the host; host: the guests' cells received this session (registered under 0x7B...... keys of ours)
+bool host_cell_out(uint8_t peer, const Key& k);
+uint32_t model_signature(const Key& k, std::string* name = nullptr, std::string* author = nullptr);
+bool guest_cell_out(const Key& k);
+struct GuestCell {
+    Key key; // ours
+    uint8_t owner = 0;
+    std::string name, author;
+};
+std::vector<GuestCell> guest_cells();
+std::string lineage_status();
 
 // BUG-0469: the model a caller may build from `model` (docs/re/creations.md#creations-content-all-kinds):
 //  - kSame: this game has the model and every part / paint it names, build it from that key
@@ -117,5 +134,17 @@ std::string status();
 // support trace (trace.h): the own creation of the stage, where the choice came from, what the avatar has
 std::string trace_line(Kind k);
 std::string debug(const std::vector<std::string>& args);
+
+// BUG-9262 (Lineages): a free note of the mod per planet (worlds.ini [section] <world crc> = value, ASCII; "" = none)
+std::string world_note(const char* section, uint32_t world);
+void world_note_set(const char* section, uint32_t world, const std::string& value);
+
+// BUG-9261 (Lineages port phase 3, docs/re/creations.md#creations-guest-archive): host: `guest`'s own creature is
+// archived with the planet `planet` (world::current_game_key(); a premade needs none), so a nest of it loads while
+// that player is offline. restore_guest_model registers every archive of a planet (the LoadGameByName hook does it
+// before each load; false: some could not be, err says which).
+bool archive_guest_model(uint8_t guest, const std::string& planet, std::string& err);
+bool restore_guest_model(const std::string& planet, std::string& err);
+std::string archive_status();
 
 } // namespace creations

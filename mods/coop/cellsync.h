@@ -68,6 +68,7 @@ std::string debug(const std::vector<std::string>& args);
 void set_fake_model(uint32_t idx, uint32_t inst);
 
 bool food_total(int& food); // the own game's food total S+0x1C (support sync-check); false outside Cell
+bool set_food_total(int food); // BUG-9265: the own food back to `food` (AddFoodPoints by the difference, in the step)
 uint32_t forget_mate();           // BUG-1245: the mate G+0x51D4 is no longer the mate (its index, 0: none); the cell stays
 bool restore_mate(uint32_t idx);  // BUG-1245: ... the mate again (still alive, no new mate called meanwhile)
 // BUG-1249: a guest's own cell editor's spend (cell.guest_spend)
@@ -77,6 +78,13 @@ void spend_acked(uint32_t meal);                             // guest: the host'
 bool spend_acks(std::vector<std::pair<int, uint32_t>>& out); // host: that row (false: not in Cell)
 bool spend_owed();                                           // host: a guest's spend waits for our Cell game
 std::string spend_status();
+// BUG-9275 (Lineages cells, lineage_cells.h; cellsync_lineage.cpp): the own cell's model key (S+0x10..+0x18), the
+// carnivore / herbivore flags of a cell model (false: not in Cell or an unknown key), the cell graphics load a player
+// cell's model (once per Cell stage), coop.lineage's cell part
+bool own_cell_model(uint32_t key[3]);
+bool model_diet(const uint32_t key[3], bool& carnivore, bool& herbivore);
+void preload_model(const uint32_t key[3]);
+std::string lineage_debug();
 float scale_now(); // BUG-0606: the own game's world scale G+0x514C in Cell (sync-check), 0 outside Cell or when not sane
 
 } // namespace cellsync

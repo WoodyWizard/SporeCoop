@@ -293,3 +293,20 @@ capacity and the world's objects). A "bound" is what keeps co-op counts below th
   stress runs show the world's object counts (`objects: all= creatures=`) for a later comparison.
 * The "same caught EIP every frame" signal BUG-0432 asks for exists in SporeKit (exceptions.cpp `storm_check`,
   BUG-0676); every caught fault fails a lab test (`p.faults`, the lab's log check).
+
+## Disassembling the Steam build without Ghidra: dump the unpacked .text (2026-11-20, feat/own-cards)
+<a id="re-notes-steam-text-dump"></a>
+
+The Steam exe keeps `.text` encrypted on disk (5.1.2), so objdump of the file shows garbage. A running game has it
+unpacked, at its ASLR base (the log line `sporekit: exe ... base=0x008F0000 (preferred 0x00400000)`):
+
+1. `ReadProcessMemory` of `base + 0x1000 .. + 0xFCAF2A` page by page (Python ctypes, `OpenProcess(0x410)`), written
+   over the file's `.text` (file offset 0x400) in a copy of the exe;
+2. undo the relocations: walk the file's `.reloc` (offset 0x16D6600, size 0xE505E), and for every HIGHLOW entry in
+   `.text` subtract `base - 0x400000` (273 546 entries);
+3. `objdump -d -M intel --no-show-raw-insn` of the copy: 5.5 M lines, addresses equal to the GOG 2024 symbol files
+   (0xC75880 = cPlayer::GetConsequenceTrait checked byte for byte). The functions SporeKit hooked start with its jumps.
+
+Runtime addresses in console commands are `static + (base - 0x400000)` (0x4F0000 at that base; `sym <name>` prints
+them). Pitfall: a `call <address> cdecl` with a mistyped address runs a random function and kills the game (a crash
+report of instance 5 on lane C, 2026-11-20 12:01, was this, not a bug).
