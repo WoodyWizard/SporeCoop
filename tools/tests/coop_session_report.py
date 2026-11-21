@@ -55,6 +55,22 @@ def own_report(p, since):
     return max(files, key=os.path.getmtime) if files else None
 
 
+# BUG-1370: SESSION.txt names every game's version since B6 (BUG-1137, "this game coop 0.7.15.5, SporeKit 0.3.18"), and a
+# version between releases has four parts like an IPv4 address: the check matched it (lab 20261120-133703, all three
+# rounds). Only the version right after "coop " / "SporeKit " is skipped; any other dotted quad still fails the check.
+VERSION = re.compile(r'\b(?:coop|SporeKit) \d+(?:\.\d+)+\b')
+ADDRESS = re.compile(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b')
+
+
+def addresses(text):
+    """the network addresses in a text, the games' version numbers left out"""
+    return ADDRESS.findall(VERSION.sub('', text))
+
+
+assert addresses('this game coop 0.7.15.5, SporeKit 0.3.18; peer 1 coop 0.7.16.1') == [], 'versions are not addresses'
+assert addresses('coop 0.7.15.5 joined from 127.0.0.1:47904, 192.168.1.20') == ['127.0.0.1', '192.168.1.20']
+
+
 def sstatus(p):
     return p.call('coop.sreport status')
 
@@ -126,7 +142,8 @@ def run_round(ck, party, label, how, answers, hooks, expect_names, expect_states
         ck(names == sorted(expect_names), f'[{label}] the session zip holds exactly {sorted(expect_names)} ({names})')
         ck(z.testzip() is None, f'[{label}] the session zip reads back without a CRC error')
         text = z.read('SESSION.txt').decode('utf-8', 'replace') if 'SESSION.txt' in names else ''
-        ck(not re.search(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', text), f'[{label}] SESSION.txt has no network address')
+        found = addresses(text)
+        ck(not found, f'[{label}] SESSION.txt has no network address' + (f' ({found})' if found else ''))
         for name, want in expect_states.items():
             ck(f'{name}: {want}' in text, f'[{label}] SESSION.txt lists {name}: {want}')
         for n in names:
