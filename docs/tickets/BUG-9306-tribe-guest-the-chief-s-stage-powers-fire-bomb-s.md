@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.14.1-lineages67-dev
 fixed_in:
 branch: fix/l47-powers
-commits: 0306419f
+commits: 0306419f, db507eef, 8bd69ecc
 tests:
 signature:
 docs:

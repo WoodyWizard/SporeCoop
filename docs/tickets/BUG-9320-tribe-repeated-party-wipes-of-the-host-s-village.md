@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages67-dev (fix/l47-tribe)
 fixed_in:
 branch: fix/l47-tribe2
-commits:
+commits: db507eef, 8bd69ecc
 tests: manual two-game MSI run (Verification)
 signature:
 docs: docs/re/tribe.md#tribe-wipe-regroup
