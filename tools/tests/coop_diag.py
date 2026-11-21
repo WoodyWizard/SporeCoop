@@ -11,7 +11,8 @@
    difference forced on the guest (`coop.diag sync force shift`: its own creature 100 units off in its
    digest) is reported as a MISMATCH on both games after the 3 s recheck
 5. its cost: the check's CPU time on the host (build + compare) and on the guest (build) under 1 ms,
-   the diagnostics' average cost per frame under 0.05 ms (printed for docs/REPORTING.md#reporting-support)
+   the diagnostics' average cost per frame under 0.05 ms (printed for docs/REPORTING.md#reporting-support); both are
+   wall time: over the limit while the machine's load average is one per core or more, INCONCLUSIVE (BUG-1395)
 6. the environment: `env` lists the extra packages and the game files' size check
 
   coop_diag.py [--fixture cell|creature]
@@ -67,6 +68,7 @@ def main():
     stage = {'cell': 'Cell', 'creature': 'Creature'}[fixture]
     host, guest = start(fixture)
     ck = Checks()
+    overloaded = []  # BUG-1395: cost checks not judged on an overloaded machine
     h0, g0 = log_size(lane.HOST), log_size(lane.GUEST)
     try:
         # 1. the session clock
@@ -157,8 +159,22 @@ def main():
         print(f'  COST {stage}: host check avg {hb} ms max {hm} ms; guest digest avg {gb} ms max {gm} ms; '
               f'per frame host {hf} ms (max {hfm}), guest {gf} ms; {byt:.0f} bytes of digests on the host')
         print('  host:', dh.strip().replace('\n', ' | ')[:700])
-        ck(0 <= hm < 1.0 and 0 <= gm < 1.0, f'one check costs under 1 ms (host {hm} ms, guest {gm} ms)')
-        ck(0 <= hf < 0.05 and 0 <= gf < 0.05, f'the diagnostics cost under 0.05 ms per frame on average (host {hf}, guest {gf})')
+        # BUG-1395: the costs are wall time of the main thread: the same 22-object check took 0.04 ms on an idle machine
+        # (lab 20261120-133703) and 1.3-5.7 ms at a load average of 26-30 (BUG-1191, lab 20261116-*). Over a load of
+        # one per core the measurement says nothing about the mod: a cost over its limit then is INCONCLUSIVE (never a
+        # pass; a cost under the limit still passes, any other failure still fails)
+        load, cores = os.getloadavg()[0], os.cpu_count() or 1
+        busy = load >= cores
+        print(f'  machine load average {load:.1f} on {cores} cores{" (overloaded)" if busy else ""}', flush=True)
+        costs = [(0 <= hm < 1.0 and 0 <= gm < 1.0, f'one check costs under 1 ms (host {hm} ms, guest {gm} ms)'),
+                 (0 <= hf < 0.05 and 0 <= gf < 0.05,
+                  f'the diagnostics cost under 0.05 ms per frame on average (host {hf}, guest {gf})')]
+        for good, what in costs:
+            if good or not busy:
+                ck(good, what)
+            else:
+                print(f'  not judged: {what}: over its limit at a load average of {load:.1f} on {cores} cores', flush=True)
+                overloaded.append(what)
 
         # 6. the environment
         env = host.call('env')['out']
@@ -171,6 +187,8 @@ def main():
         guest.call('coop.diag sync force off')
         lab_mark('sync-force', 'off')
     ck.faults(host=host, guest=guest)
+    if overloaded:
+        return ck.inconclusive(f'the cost measured on an overloaded machine (BUG-1395): {"; ".join(overloaded)}')
     return ck.result()
 
 

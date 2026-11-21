@@ -9974,3 +9974,12 @@ BUG-1392: the test writes the controller update's timer (0x157E940, float, count
 its `coop.tribe form`, so the game's own FormTribe comes in the next frame, inside the second the mod keeps its
 species-list answer. Without that the race (one fault at 0x406EFF) happened only when the game's second was shorter
 than ours (lab 20261121-003202, 1 run of 10). Twin `tribe_form_species_fresh_off` must FAIL on the host's fault.
+
+## diag_creature / diag_cell: the cost checks on a loaded machine (2026-11-21, fix/w62-core)
+<a id="testing-diag-cost-load"></a>
+
+BUG-1395: "one check costs under 1 ms" and "the diagnostics cost under 0.05 ms per frame" measure wall time of the
+main thread. The same Creature check (22 objects) took 0.033-0.044 ms on an idle machine and 0.3-1.4 ms average (max up
+to 5.7 ms) under the load of other lanes (load average 26-30 on 12 cores, BUG-1191; the third 0.7.16 final check,
+20261121-003202). coop_diag.py prints the machine's load average and, at one per core or more, reports a cost over
+its limit as INCONCLUSIVE instead of FAIL. A cost number for docs/REPORTING.md comes from an idle machine only.
