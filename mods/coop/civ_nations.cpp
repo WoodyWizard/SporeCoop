@@ -648,6 +648,10 @@ static bool g_camera_fix = true;
 COOP_FIX("civ.own_camera", "BUG-9294", g_camera_fix,
          "civ: a guest's camera goes to its own nation's capital once its game knows that nation");
 static uint32_t g_camera_pol;   // the own nation the camera went to in this world
+static double g_camera_civ_since = -1; // when this game's Civ stage was last seen settled (no load, no cinematic)
+// the stage's own camera set-up runs after the load's first frames (a move in the first frame after a load left the
+// camera at the ground looking sideways, lane B 2026-11-21, Kealeneon): the move waits this long into the stage
+constexpr double kCameraSettle = 4.0;
 static uint32_t g_camera_moves;
 static void camera_home(uint32_t pol)
 {
@@ -671,7 +675,7 @@ static void camera_home(uint32_t pol)
     H->log(M, SK_INFO, "civ nations: the camera goes to our own capital at (%.0f %.0f %.0f) (BUG-9294)", at.x, at.y, at.z);
 }
 
-void guest_tick(double)
+void guest_tick(double now)
 {
     g_own = 0;
     g_team_pols.clear();
@@ -688,8 +692,14 @@ void guest_tick(double)
         if (o == me && pol != hp)
             g_own = pol;
     }
-    if (g_camera_fix && g_own && g_own != g_camera_pol && !local_play() && !world::cinematic_playing())
-        camera_home(g_own); // BUG-9294
+    // BUG-9294
+    const bool settled = game::mode_id() == modes::kCiv && !world::cinematic_playing() && !world::load_queued();
+    if (!settled)
+        g_camera_civ_since = -1;
+    else if (g_camera_civ_since < 0)
+        g_camera_civ_since = now;
+    if (g_camera_fix && g_own && g_own != g_camera_pol && !local_play() && settled && now - g_camera_civ_since >= kCameraSettle)
+        camera_home(g_own);
 }
 
 void forget()
@@ -705,6 +715,7 @@ void forget()
     g_own = 0;
     g_team_pols.clear();
     g_camera_pol = 0; // BUG-9294: once per world
+    g_camera_civ_since = -1;
     g_epoch++;
 }
 LIFECYCLE_HOOK("civ.nations", lifecycle::kSessionEnd | lifecycle::kWorldChange, -45, [](const lifecycle::Ctx&) { forget(); }, false);
