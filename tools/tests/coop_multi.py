@@ -132,15 +132,16 @@ def settled(host_status, g):
     every joiner, also with a guest that rejoined in the world it already had (Tribe, Creature): that guest counts as
     "together" at once and leaves the stage to load the new copy seconds later (save 2 s, transfer 5 s over a bad
     link): the round measured it while it reloaded (multi4_tribe_slow, lab 20261120-133703: 0% of the host's world).
-    Here: the host sees it together, the host has no share for it (saving or sending), the guest receives no world and
-    has its avatar."""
+    Here: the host sees it together and owes it no world (`world_due N 0`: no share due, saved, sent or waiting for
+    its acknowledgement; older builds without that line: no `share for N` / `sending world to N` line), the guest
+    receives no world and has its avatar."""
     gs = g.call('coop.status').get('out', '')
     gid = guest_id(g, gs)
     if gid is None or 'receiving world' in gs or not g.call('coop.avatar').get('ok'):
         return False
     if not re.search(rf'^together {gid} 1$', host_status, re.M):
         return False
-    return not re.search(rf'^(sending world to {gid}:|share for {gid} )', host_status, re.M)
+    return not re.search(rf'^(world_due {gid} 1|sending world to {gid}:|share for {gid} )', host_status, re.M)
 
 
 # BUG-1368 twin: MULTI_WAIT=together is the old wait (the host's together count only, once): with --round-churn it

@@ -180,6 +180,10 @@ int c_status(void*, int, const char* const*, SkOut* out)
             SAY("puppet_listed %u %d gone_by_game=%u\n", id, (int)game::creature_listed(r.puppet), modes::g_puppets_gone_alive);
         // tests: both players are in the same world and place right now
         SAY("together %u %d\n", id, !r.buf.empty() && r.buf.age(now) < 3.0 && same_place(r.buf.latest()) ? 1 : 0);
+        // tests (BUG-1368): the host still owes this guest its world (a share due, being saved, sent or acknowledged):
+        // the guest reloads soon, also when it is together now (a rejoin into the world it had)
+        if (g_sess.role() == net::Role::Host)
+            SAY("world_due %u %d\n", id, r.needs_world || world::share_in_flight(id) ? 1 : 0);
     }
     return 0;
 }

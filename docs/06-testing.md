@@ -9881,3 +9881,19 @@ cause=c` (coop_dna_notice.py LEDGER reads both forms).
   puppet (BUG-1241, BUG-1250), so social_sing_partner judges the guest's side without a song.
 * tag_camera (BUG-1352): a close creature's shaded back is not `red` (r > 140): `body()` bridges it.
 * tag_cinematic (BUG-1353): a guest's CRG_ClaimNest often ignores Enter: EndCinematic ends it, else INCONCLUSIVE.
+
+## Multi-player chaos: editors and the rejoin's world share (2026-11-20, fix/w61-multi)
+<a id="testing-multi-settled"></a>
+
+* coop_multi.py counts a guest as back only when it is `settled()`: the host sees it `together`, owes it no world
+  (`world_due <id> 0` in the host's `coop.status`, a test line since BUG-1368: a share due, saved, sent or not yet
+  acknowledged; `share for <id>` / `sending world to <id>` on older builds), the guest's own game receives no world and
+  has its avatar, on 3 polls in a row. The host shares its world with every joiner, also with a guest that rejoined
+  into the world it still had: that guest is `together` at once and reloads seconds later (multi4_tribe_slow, lab
+  20261120-133703: measured inside the reload, 0%). `--round-churn` (Bob rejoins before every round and must then
+  stay for 15 s) with `MULTI_WAIT=together` (the old wait) is the twin `multi3_round_rejoin_oldwait`.
+* The chaos bot's clicks can start a mating, and the host's own evolution editor opens at once (core.editor_now):
+  in it the host has no avatar and no guest is `together`. Bot.leave_editors() makes every player leave its editor
+  with "done" (multi3, lab 20261120-133703, BUG-1367); coop_multi calls it on every poll of its waits.
+* coop_session_report.py: SESSION.txt names every game's version (B6); a four-part version between releases
+  (`coop 0.7.15.5`) is not a network address (BUG-1370).
