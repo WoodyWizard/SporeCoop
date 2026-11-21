@@ -22,7 +22,7 @@ import time
 import lane
 import twoinst
 from coop_tribe_food_zero import food
-from coop_tribe_gameover import frames_go_on, player_members
+from coop_tribe_gameover import frames_go_on, knock_out, player_members
 from twoinst import Checks, start
 from wsync_util import differences, dump
 
@@ -67,15 +67,7 @@ def main():
     # 1. the host's game over and reload of its last save
     own, enemy = player_members(host)
     ck(own and enemy, 'the player tribe and another tribe have members')
-    t0 = time.time()
-    while own and enemy and time.time() - t0 < 60:
-        own, enemy = player_members(host)
-        alive = [i for i, hp in own.items() if hp > 0]
-        if not alive or not enemy:
-            break
-        for i in alive:
-            host.call(f'coop.tribe pincer {i} {enemy[0]} 300')
-        time.sleep(1)
+    own, enemy = knock_out(host)  # BUG-1399: one member a second, the leader last (no two fall in one tick)
     t2, alas = time.time(), False
     while time.time() - t2 < 40 and not alas:
         time.sleep(3)

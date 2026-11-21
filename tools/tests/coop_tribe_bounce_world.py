@@ -10,7 +10,8 @@ Pink village), empty plazas where the host fought at a hut, other food, other to
 1. Tribe fixture. Before the game over the host's world gets what its last save does not have: a new NPC
    tribe (`coop.tribe form`: the controller's own forming) and 40 food (`coop.res add food 40`). The guest
    shows both (the tribe within 40 m of the host's, the same food).
-2. The host knocks out its own player tribe (`coop.tribe pincer`, as coop_tribe_bounce_mirrors.py), OK on the
+2. The host knocks out its own player tribe (`coop.tribe pincer`, one member a second, the leader last:
+   coop_tribe_gameover.knock_out, BUG-1399), OK on the
    game-over caption: the host's game reloads the last save (without the new tribe, the old food).
 3. PASS: within 40 s the guest's game has every NPC tribe of the host's (each within 40 m), no tribe the
    host has not, and the host's food.
@@ -21,7 +22,7 @@ import math
 import re
 import time
 
-from coop_tribe_gameover import frames_go_on, player_members
+from coop_tribe_gameover import frames_go_on, knock_out, player_members
 from coop_tribe_guest_tribes import show, tribes
 from coop_tribe_food_zero import food
 from twoinst import Checks, start
@@ -67,15 +68,7 @@ def main():
     ck(own and enemy, 'the player tribe and another tribe have members')
     if not (own and enemy):
         return ck.result()
-    t0 = time.time()
-    while time.time() - t0 < 60:
-        own, enemy = player_members(host)
-        alive = [i for i, hp in own.items() if hp > 0]
-        if not alive or not enemy:
-            break
-        for i in alive:
-            host.call(f'coop.tribe pincer {i} {enemy[0]} 300')
-        time.sleep(1)
+    own, enemy = knock_out(host)  # BUG-1399: one member a second, the leader last (no two fall in one tick)
     t2, alas = time.time(), False
     while time.time() - t2 < 75 and not alas:  # ~20 s in a quiet lab, more under load
         time.sleep(3)

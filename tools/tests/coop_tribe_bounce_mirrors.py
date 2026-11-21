@@ -25,7 +25,7 @@ import time
 
 import twoinst
 from coop_multi import sample
-from coop_tribe_gameover import frames_go_on, player_members
+from coop_tribe_gameover import frames_go_on, knock_out, player_members
 from twoinst import Checks, start
 
 
@@ -61,15 +61,7 @@ def main():
     ck(own and enemy, 'the player tribe and another tribe have members')
     if not (own and enemy):
         return ck.result()
-    t0 = time.time()
-    while time.time() - t0 < 60:
-        own, enemy = player_members(host)
-        alive = [i for i, hp in own.items() if hp > 0]
-        if not alive or not enemy:
-            break
-        for i in alive:
-            host.call(f'coop.tribe pincer {i} {enemy[0]} 300')
-        time.sleep(1)
+    own, enemy = knock_out(host)  # BUG-1399: one member a second, the leader last (no two fall in one tick)
     ck(own and not [i for i, hp in own.items() if hp > 0], 'every member of the player tribe is out')
     t2, alas = time.time(), False
     while time.time() - t2 < 40 and not alas:  # the caption comes some seconds later

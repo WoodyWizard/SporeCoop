@@ -57,6 +57,28 @@ def leaders(con):
     return {int(m.group(1)) for m in re.finditer(r'#(\d+) \S+ owner=.* leader=1 ', con.call('coop.tribe')['out'])}
 
 
+def knock_out(host, secs=60, dmg=300, same_frame=False):
+    """Knock out every member of the host's player tribe through the game's damage path for a game over (BUG-1337,
+    BUG-1399): one blow a second on one member at a time, the tribe's leader last (a leader with others up stops at 0.3,
+    the partner's rescue too), so no two members fall in one behaviour tick (then the game shows no game over at all,
+    docs/re/tribe.md#tribe-gameover-list). same_frame: the twin, the last two killing blows in one call.
+    Returns ({id: hp} of the player tribe at the end, [enemy ids])."""
+    t0, lead = time.time(), leaders(host)
+    own, enemy = player_members(host)
+    while time.time() - t0 < secs:
+        own, enemy = player_members(host)
+        alive = sorted((i for i, hp in own.items() if hp > 0), key=lambda i: (i in lead, i))
+        if not alive or not enemy:
+            break
+        if same_frame and len(alive) == 2 and all(own[i] <= dmg for i in alive):
+            print('  the last two in one call:', host.call(f'coop.tribe pincer {alive[0]},{alive[1]} {enemy[0]} {dmg}')['out'].strip()[:120])
+        else:
+            host.call(f'coop.tribe pincer {alive[0]} {enemy[0]} {dmg}')
+        time.sleep(1)
+    print('  player tribe now', own, flush=True)
+    return own, enemy
+
+
 def frames_go_on(con, secs):
     f0 = twoinst.host_frame(con)
     time.sleep(secs)
@@ -81,18 +103,7 @@ def main():
     ck(own and enemy, 'the player tribe and another tribe have members')
     if not (own and enemy):
         return ck.result()
-    t0, lead = time.time(), leaders(host)
-    while time.time() - t0 < 60:
-        own, enemy = player_members(host)
-        alive = sorted((i for i, hp in own.items() if hp > 0), key=lambda i: (i in lead, i))
-        if not alive or not enemy:
-            break
-        if a.same_frame and len(alive) == 2 and all(own[i] <= 300 for i in alive):  # the twin: both fall in one frame
-            print('  the last two in one call:', host.call(f'coop.tribe pincer {alive[0]},{alive[1]} {enemy[0]} 300')['out'].strip()[:120])
-        else:  # BUG-1337: one member a second, the leader last (a leader with others up stops at 0.3)
-            host.call(f'coop.tribe pincer {alive[0]} {enemy[0]} 300')
-        time.sleep(1)
-    print('  player tribe now', own)
+    own, enemy = knock_out(host, 60, 300, a.same_frame)  # BUG-1337: one member a second, the leader last
     ck(own and not [i for i, hp in own.items() if hp > 0], 'every member of the player tribe is out')
     time.sleep(15)  # the caption comes some seconds later (play_tribe.py waits 15 s too)
     twoinst.shot(host, 'tribe_gameover_caption.png')

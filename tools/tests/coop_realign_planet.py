@@ -83,19 +83,11 @@ def bad(res):
 
 
 def gameover(host, ck):
-    from coop_tribe_gameover import frames_go_on, player_members
+    from coop_tribe_gameover import frames_go_on, knock_out, player_members
     own, enemy = player_members(host)
     if not ck(own and enemy, 'the player tribe and another tribe have members'):
         return False
-    t0 = time.time()
-    while time.time() - t0 < 60:
-        own, enemy = player_members(host)
-        alive = [i for i, hp in own.items() if hp > 0]
-        if not alive or not enemy:
-            break
-        for i in alive:
-            host.call(f'coop.tribe pincer {i} {enemy[0]} 300')
-        time.sleep(1)
+    own, enemy = knock_out(host)  # BUG-1399: one member a second, the leader last (no two fall in one tick)
     t2, alas = time.time(), False
     while time.time() - t2 < 75 and not alas:  # ~20 s in a quiet lab, more under load
         time.sleep(3)
