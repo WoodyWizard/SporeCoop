@@ -216,6 +216,14 @@ void release_depth()
     if (g_scene_ds) g_scene_ds->Release();
     g_scene_ds = nullptr;
 }
+// tests (coop.rings ztest): the depth compare and the near plane the ring's depth is computed with (0: the projection's)
+static int g_zfunc = D3DCMP_LESSEQUAL;
+static float g_near_override = 0;
+void set_depth_test(int zfunc, float near_plane)
+{
+    g_zfunc = zfunc >= 1 && zfunc <= 8 ? zfunc : D3DCMP_LESSEQUAL;
+    g_near_override = near_plane > 0 ? near_plane : 0;
+}
 static bool perspective(const D3DMATRIX& p) { return p._34 == 1.f && p._44 == 0.f && p._33 > 0 && p._43 < 0; }
 // the current frame's scene depth (true) or the last one kept; false: none known
 static bool scene_depth(IDirect3DDevice9* device)
@@ -316,7 +324,7 @@ int rings(const SkHost* host, const Ring* in, int n, bool soft, bool depth)
         if (g.max_px > 0 && px > g.max_px) k = g.max_px / px;
         else if (g.min_px > 0 && px < g.min_px) k = g.min_px / px;
         // (depth: a little higher for a bigger ring, so a gentle slope under it does not cut it)
-        const float lift = std::isfinite(g.lift) ? g.lift * k : .12f + .06f * g.radius * k;
+        const float lift = std::isfinite(g.lift) ? (g.lift_fixed ? g.lift : g.lift * k) : .12f + .06f * g.radius * k;
         v.clear();
         idx.clear();
         bool behind = false;
@@ -328,7 +336,12 @@ int rings(const SkHost* host, const Ring* in, int n, bool soft, bool depth)
                 const D3DMATRIX& V = g_scene_view;
                 const float zv = w[0] * V._13 + w[1] * V._23 + w[2] * V._33 + V._43;
                 behind |= !(zv > .05f) || !std::isfinite(o[0]) || !std::isfinite(o[1]);
-                const float z = std::clamp(g_scene_proj._33 + g_scene_proj._43 / std::max(zv, .05f), 0.f, 1.f);
+                float za = g_scene_proj._33, zb = g_scene_proj._43;
+                if (g_near_override > 0 && za > 1.f) { // (tests) the same far plane, another near one
+                    const float n = -zb / za, f = za * n / (za - 1.f);
+                    za = f / (f - g_near_override), zb = -g_near_override * za;
+                }
+                const float z = std::clamp(za + zb / std::max(zv, .05f), 0.f, 1.f);
                 v.push_back({o[0], o[1], z, 1.f / std::max(zv, .05f), col});
             } else {
                 const float m = k * t / kOut;
@@ -380,7 +393,7 @@ int rings(const SkHost* host, const Ring* in, int n, bool soft, bool depth)
                 device->GetDepthStencilSurface(&old_ds);
                 if (old_ds != g_scene_ds) device->SetDepthStencilSurface(g_scene_ds);
                 device->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
-                device->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+                device->SetRenderState(D3DRS_ZFUNC, g_zfunc);
                 device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
             }
         }
@@ -397,5 +410,158 @@ int rings(const SkHost* host, const Ring* in, int n, bool soft, bool depth)
         saved->Release();
     }
     return drawn;
+}
+}
+
+// tests (coop.rings trace, BUG-9321 in Civ): the frame's render target / depth-stencil switches, clears and draw counts
+// between them, recorded for a few frames from hooks on the device's methods (installed by the first trace)
+namespace partner_marker {
+using Clear_t = HRESULT(__stdcall*)(IDirect3DDevice9*, DWORD, const D3DRECT*, DWORD, D3DCOLOR, float, DWORD);
+using SetDS_t = HRESULT(__stdcall*)(IDirect3DDevice9*, IDirect3DSurface9*);
+using SetRT_t = HRESULT(__stdcall*)(IDirect3DDevice9*, DWORD, IDirect3DSurface9*);
+using DIP_t = HRESULT(__stdcall*)(IDirect3DDevice9*, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
+static Clear_t o_Clear;
+static SetDS_t o_SetDS;
+static SetRT_t o_SetRT;
+static DIP_t o_DIP;
+static int g_trace_frames;
+static unsigned g_trace_draws;
+static std::string g_trace;
+static void trace_line(const char* s)
+{
+    if (g_trace_draws) {
+        char b[48];
+        snprintf(b, sizeof b, "  %u draws\n", g_trace_draws);
+        g_trace += b;
+        g_trace_draws = 0;
+    }
+    if (g_trace.size() < 60000) g_trace += s;
+}
+static std::string surf(IDirect3DSurface9* s)
+{
+    char b[64];
+    D3DSURFACE_DESC d{};
+    if (s) s->GetDesc(&d);
+    snprintf(b, sizeof b, "%p %ux%u f=%d", (void*)s, d.Width, d.Height, (int)d.Format);
+    return b;
+}
+// BUG-9327: Civ and Tribe draw the world into another render target, put it on the back buffer and then clear the
+// depth-stencil (Z and stencil, not the colour) before the game's UI: at the overlay pass the depth buffer is empty and
+// the ring was drawn over the unit (docs/re/graphics.md#graphics-ui-depth-clear). The rings of the last overlay pass
+// are drawn right before that clear: the scene's depth is still there, and the game's UI comes after (over the ring).
+static const SkHost* g_early_host;
+static std::vector<Ring> g_early;
+static bool g_early_soft = true;
+static bool g_early_armed;     // the last overlay pass gave a list for this frame
+static int g_early_drawn = -1; // rings drawn at the clear this frame (-1: none drawn there)
+static uint32_t g_early_frames;
+static void early_draw(IDirect3DDevice9* d, DWORD n, DWORD f)
+{
+    if (!g_early_armed || g_early.empty() || n != 0 || !(f & D3DCLEAR_ZBUFFER) || (f & D3DCLEAR_TARGET) || g_early_drawn >= 0)
+        return;
+    IDirect3DSurface9 *ds = nullptr, *rt = nullptr, *bb = nullptr;
+    d->GetDepthStencilSurface(&ds);
+    d->GetRenderTarget(0, &rt);
+    d->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &bb);
+    D3DSURFACE_DESC dd{}, bd{};
+    if (ds) ds->GetDesc(&dd);
+    if (bb) bb->GetDesc(&bd);
+    D3DVIEWPORT9 vp{};
+    d->GetViewport(&vp);
+    // the back buffer is the target (the world is on it already) and the clear is of the whole screen-size depth
+    const bool ok = ds && rt && rt == bb && dd.Width == bd.Width && dd.Height == bd.Height && vp.Width == bd.Width &&
+                    vp.Height == bd.Height;
+    if (ds) ds->Release();
+    if (rt) rt->Release();
+    if (bb) bb->Release();
+    if (!ok) return;
+    g_early_armed = false;
+    g_early_drawn = rings(g_early_host, g_early.data(), (int)g_early.size(), g_early_soft, true);
+    g_early_frames++;
+}
+static HRESULT __stdcall h_Clear(IDirect3DDevice9* d, DWORD n, const D3DRECT* r, DWORD f, D3DCOLOR c, float z, DWORD st)
+{
+    early_draw(d, n, f);
+    if (g_trace_frames > 0) {
+        IDirect3DSurface9* ds = nullptr;
+        d->GetDepthStencilSurface(&ds);
+        D3DVIEWPORT9 vp{};
+        d->GetViewport(&vp);
+        D3DMATRIX p{};
+        d->GetTransform(D3DTS_PROJECTION, &p);
+        char b[256];
+        snprintf(b, sizeof b, "clear flags=%lx rects=%lu z=%.2f viewport=%lu %lu %lux%lu ds=%s proj33=%.4f proj43=%.3f\n", f,
+                 n, z, vp.X, vp.Y, vp.Width, vp.Height, surf(ds).c_str(), p._33, p._43);
+        if (ds) ds->Release();
+        trace_line(b);
+    }
+    return o_Clear(d, n, r, f, c, z, st);
+}
+static HRESULT __stdcall h_SetDS(IDirect3DDevice9* d, IDirect3DSurface9* s)
+{
+    if (g_trace_frames > 0) trace_line(("set depth-stencil " + surf(s) + "\n").c_str());
+    return o_SetDS(d, s);
+}
+static HRESULT __stdcall h_SetRT(IDirect3DDevice9* d, DWORD i, IDirect3DSurface9* s)
+{
+    if (g_trace_frames > 0) {
+        char b[32];
+        snprintf(b, sizeof b, "set render target %lu ", i);
+        trace_line((b + surf(s) + "\n").c_str());
+    }
+    return o_SetRT(d, i, s);
+}
+static HRESULT __stdcall h_DIP(IDirect3DDevice9* d, D3DPRIMITIVETYPE t, INT b, UINT m, UINT n, UINT s, UINT c)
+{
+    if (g_trace_frames > 0) g_trace_draws++;
+    return o_DIP(d, t, b, m, n, s, c);
+}
+static int g_hooked = -1; // 1 installed, 0 failed
+bool install(const SkHost* host, SkMod* mod)
+{
+    auto* device = static_cast<IDirect3DDevice9*>(host->d3d_device());
+    if (g_hooked >= 0 || !device) return g_hooked == 1;
+    g_early_host = host;
+    void** vt = *(void***)device; // IDirect3DDevice9::Clear is slot 43
+    g_hooked = host->hook_create(mod, vt[43], (void*)h_Clear, (void**)&o_Clear) == 0;
+    return g_hooked == 1;
+}
+int early_drawn()
+{
+    const int drawn = g_early_drawn;
+    g_early_drawn = -1;
+    g_early_armed = false;
+    return drawn;
+}
+void early_arm(const Ring* in, int n, bool soft)
+{
+    g_early.assign(in, in + std::max(0, n));
+    g_early_soft = soft;
+    g_early_armed = n > 0;
+}
+uint32_t early_frames() { return g_early_frames; }
+std::string trace(const SkHost* host, SkMod* mod, int frames)
+{
+    if (!install(host, mod)) return "hooks failed" "\n";
+    static int traced = -1; // the trace's own hooks (only for tests): SetDepthStencilSurface 39, SetRenderTarget 37, DIP 82
+    if (traced < 0) {
+        void** vt = *(void***)host->d3d_device();
+        traced = host->hook_create(mod, vt[39], (void*)h_SetDS, (void**)&o_SetDS) == 0 &&
+                 host->hook_create(mod, vt[37], (void*)h_SetRT, (void**)&o_SetRT) == 0 &&
+                 host->hook_create(mod, vt[82], (void*)h_DIP, (void**)&o_DIP) == 0;
+    }
+    if (traced != 1) return "trace hooks failed" "\n";
+    std::string out = g_trace;
+    g_trace.clear();
+    g_trace_draws = 0;
+    g_trace_frames = frames;
+    return out.empty() ? "(armed: ask again)\n" : out;
+}
+void trace_frame()
+{
+    if (g_trace_frames > 0) {
+        trace_line("--- overlay pass (Present)\n");
+        g_trace_frames--;
+    }
 }
 }

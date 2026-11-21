@@ -9216,3 +9216,31 @@ BUG-9321, BUG-9319 (docs/re/graphics.md#graphics-overlay-depth, docs/08-ui.md#ui
   (278 -422 3). Power 0x34's lure brought no animal from 70 m in one try. Power 0x39 recharges slowly (progress 0.02
   after 8 s): one press per game per test session.
 * A test blow during a regroup window (BUG-9320) is refused like any outside blow; wait the 120 s out.
+
+## Party rings in Space, Civ, Tribe and Cell, the final check: recipes (2026-11-21, fix/l47-final-rings)
+<a id="testing-party-rings-final"></a>
+
+BUG-9321 follow-ups BUG-9324, BUG-9325, BUG-9327, and BUG-9322, BUG-9323 (#testing-party-rings,
+docs/re/graphics.md#graphics-ui-depth-clear). TITAN QA copy, host instance 9, guest 10, 1024 x 768.
+* Space: host DuoQAJiffSpace `coop.load Game0 "Jiff Peanutbutter.spo"`, `coop.host`, guest DuoQAStageGuest joins (in
+  Space within about 30 s). `coop.space goto` (guest) puts its ship 20 m from the host's in the same place. The mouse
+  wheel over the window zooms; +5 from the system view enters the planet under the camera (the place changes from
+  0x8046.... to 0x4046....: the partner shows as "in another world" until both are there); -20 leaves it again.
+  The homeworld gets a pirate raid contract: both ships are hit and die within minutes (not a bug).
+* A Space death screen on demand: `coop.space hit 2000` disables the ship (a partner nearby repairs it in seconds);
+  a second `coop.space hit 2000` within the next minute destroys it: the death screen, then the new-ship caption (click
+  the check at 990, 737 for each).
+* Civ: DuoQACivHost / Abber (seats byte 4 to 0x04 first, back the profile up) + DuoQACivGuest; `coop.civ move <veh #>
+  x y z` on the host drives the host's vehicle (a land vehicle stops at water); `coop.rings look x y z` aims the guest's
+  camera at it and resets the zoom, wheel +7 is close. Clicking the guest's own city hall opens its city planner.
+* Tribe: DuoQAJiffFresh / "Jiff Peanutbutter.spo" + DuoQAStageGuest: the guest lands in the host's village with the
+  host's chief in view (the wrecked hut opens no planner: the Tribe planner was not reached on this save).
+* Cell: DuoQACreatureHost / Diplomavil + DuoQACreatureGuest; `coop.pool tp <dx> <dy>` puts the guest's cell next to the
+  host's. The Cell camera stays 20 m over the plane here: the wheel and the zoom buttons did not change it.
+* `coop.rings`: also `space_cinematic=` (passes a Space cinematic hid), `sink=<cell>/<space>`, and `before the UI:
+  frames=` (passes whose rings were drawn at the game's depth clear). `coop.rings trace [frames]`: the next frames'
+  render target / depth-stencil switches, clears and draw counts (ask twice). `coop.rings ztest <zfunc> [near]`: the
+  ring's depth compare (4 LESSEQUAL, 5 GREATER) and a near plane for its depth (tests of the scene depth).
+* Device reset: not reachable windowed (docs/re/graphics.md#graphics-ui-depth-clear); a fullscreen alt-tab was not
+  tried on TITAN (it takes a whole screen of the owner's PC).
+* The game's `shot` path must have no spaces; forward slashes work.

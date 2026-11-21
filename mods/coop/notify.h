@@ -23,6 +23,9 @@ void tick(double now);
 void shutdown();
 // the panels start at this screen y or lower (the co-op status block's bottom; 0 = no block)
 void set_top_min(float y);
+// BUG-9322: a game window covers the screen (the Spore Guide): the panels slide out and their time stands still until it
+// closes (they come back for the rest of their time)
+void set_covered(bool covered);
 std::string status();
 
 } // namespace notify
