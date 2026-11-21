@@ -367,3 +367,39 @@ Windows QA copy, 1024 x 768, read with `coop.rings depth` (partner_marker::devic
 * Negative: the overlay pass is after the game's UI, so a ring partly under a HUD window is still drawn over that
   window (the depth buffer holds no UI); the ring code leaves out a ring whose centre is on a HUD box (BUG-9319) and
   hides all rings while the Spore Guide is open.
+
+## The depth clear before the game's UI, and Space and Cell depth at the overlay (2026-11-21, fix/l47-final-rings)
+<a id="graphics-ui-depth-clear"></a>
+
+BUG-9327, BUG-9324, BUG-9325 (the party rings, BUG-9321). TITAN QA copy (Steam code), 1024 x 768, read with
+`coop.rings trace` (hooks on the device's Clear, SetRenderTarget, SetDepthStencilSurface, DrawIndexedPrimitive) and
+`coop.rings ztest`.
+* CORRECTION (2026-11-21, fix/l47-final-rings): "Civ and Tribe with depth on ... the projection path is the same"
+  (#graphics-overlay-depth) does not hold: in Civ and Tribe the depth buffer is EMPTY at the overlay pass. Evidence: a
+  ring under a Civ vehicle (and under a tree's canopy) was drawn over it with LESSEQUAL; with GREATER it was not drawn at
+  all; computing its depth with a near plane of 0.5 to 0.01 (instead of the projection's 1.0) changed nothing.
+* ✔ Civ frame (trace, one frame): the world is drawn into an offscreen 1024 x 768 render target with the screen-size
+  depth-stencil (the same surface the overlay sees bound, D24S8), post effects run on 1024 x 768 / 512 x 384 / 512 x 512
+  targets with no depth-stencil, small 32 x 32 and 128 x 96 passes (icons), then ONE draw puts the world on the back
+  buffer, then `Clear(Z | STENCIL)` of the whole screen-size depth-stencil (flags 6, no colour) with the back buffer as
+  render target, then about 60 draws (the game's UI), then Present. That clear is why the overlay has no scene depth.
+* ✔ The fix: the rings are drawn inside that Clear call, just before it runs (partner_marker early_draw: count 0, Z in
+  the flags, no TARGET, render target 0 = the swap chain's back buffer, the depth-stencil and the viewport the back
+  buffer's size). The scene's depth is still there and the game's UI comes after (a HUD window or the city planner now
+  covers a ring by itself). The ring list is the previous overlay pass's (positions one frame old). Seen working in Civ,
+  Tribe and Space (on a planet: `before the UI: frames=` grows every frame); Cell has no such clear (frames=0) and keeps
+  the overlay path with the kept scene depth (#graphics-overlay-depth).
+* ✔ Space at the overlay pass (system view and on a planet): the scene depth-stencil and the perspective transforms are
+  bound (near 1, far 10000, camera about 1170 m away in the system view); the ship in front hid its ring.
+* ✔ Space cinematics (the death screen "Your ... has taken so much damage", the "We've built you a new ship" caption):
+  the scene is drawn blurred through another pass and the depth no longer matches: the ring was drawn sharp over its
+  ship on both screens. `world::cinematic_playing()` is true for both (BUG-9324: no ring then).
+* ✔ A ship's hull reaches lower than 0.6 x the ring's radius under its centre (close up on a planet the ring went round
+  the hull's lower part); 1.0 x the radius (the ring is 1.1 x the bounding radius) keeps it under the whole hull, in the
+  hull's own metres also when min_px grows the ring far away (BUG-9325).
+* ✔ A device reset is not reachable on the windowed QA copy: minimize / restore (`kit.test.window`), `window.borderless`
+  on / off and resizing the window (the game stretches its 1024 x 768 back buffer) gave no SK_EV_DEVICE_LOST, and the
+  game's own screen size setting says it needs a restart. The kept depth surface stayed valid through all of them.
+* ? The game's own selection marker (the soft glow under a selected Civ vehicle, the owner's lead) was not analysed: the
+  draw-before-the-clear path was enough. It is drawn in the world pass (it is hidden by the vehicle), so a game-side
+  marker renderer would be another way.

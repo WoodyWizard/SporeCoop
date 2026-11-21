@@ -31,6 +31,9 @@ struct Ring {
     // depth: metres along up from at (NAN: just over the ground, a little more for a bigger ring); negative puts the
     // ring under a unit that has no ground under it (a cell on its plane, a ship), so it never cuts through its body
     float lift = NAN;
+    // BUG-9325: lift is in the unit's own metres (a ship's hull), not grown with the ring when min_px makes it bigger on
+    // the screen (a far ship's grown ring sank its own height away and hung under it, detached)
+    bool lift_fixed = false;
 };
 // depth (BUG-9321): world-space triangles through the game's view and projection, tested against the scene's depth
 // buffer (a unit or a hill in front hides that part of its ring); drawn flat when the device has no depth buffer or
@@ -40,4 +43,18 @@ int rings(const SkHost* host, const Ring* rings, int n, bool soft, bool depth);
 void release_depth();
 // tests (BUG-9321): the device's depth-stencil, render target, depth states and transforms at the overlay pass
 std::string device_report(const SkHost* host);
+// tests: the ring's depth compare (D3DCMP 1..8; LESSEQUAL = 4) and a near plane to compute its depth with (0: the
+// projection's)
+void set_depth_test(int zfunc, float near_plane);
+// tests: the next `frames` frames' render target and depth-stencil switches, clears and draws (hooks on the device);
+// returns what the last trace recorded
+std::string trace(const SkHost* host, SkMod* mod, int frames);
+void trace_frame(); // at the overlay pass
+// BUG-9327: hooks on the device's Clear (and the trace's methods); once, when the device exists
+bool install(const SkHost* host, SkMod* mod);
+// BUG-9327, at the overlay pass: the rings drawn this frame right before the game's depth clear under its UI (-1: none
+// drawn there, draw them now); it also disarms. early_arm: draw `in` at the next frame's clear.
+int early_drawn();
+void early_arm(const Ring* in, int n, bool soft);
+uint32_t early_frames(); // frames whose rings were drawn at that clear (coop.rings)
 }

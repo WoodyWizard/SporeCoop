@@ -5889,6 +5889,15 @@ static bool g_ring_only = true;
 COOP_FIX("tribe.ring_only", "BUG-9314", g_ring_only, "tribe: no name text over villagers when the partner rings mark them (the revive timer stays)");
 uint32_t g_tags_suppressed = 0;
 
+// BUG-9323: a name tag's name: this player's own (g_name, typed) shown without the -NoShare- tag like the partners'
+// (net::Session::name_of, BUG-9222); net.shown_names off: as typed (67-dev)
+static std::string tag_name(uint8_t owner)
+{
+    if (owner != g_sess.my_id())
+        return g_sess.name_of(owner);
+    return net::g_fix.shown_names ? utf8::shown_name(g_name) : g_name;
+}
+
 // tribe stage: the owner's name over every member of the player tribe (own members in gold)
 void draw_owner_tags()
 {
@@ -5900,7 +5909,7 @@ void draw_owner_tags()
             float w[3] = {p.x + p.x * up, p.y + p.y * up, p.z + p.z * up}, sc[2];
             if (!H->world_to_screen(w, sc))
                 return;
-            std::string n = owner == g_sess.my_id() ? g_name : g_sess.name_of(owner);
+            std::string n = tag_name(owner); // BUG-9323
             bool chief = tribe::is_chief(c);
             if (chief)
                 n = "\u2605 " + n + "'s chief";
@@ -5969,6 +5978,11 @@ std::atomic<bool> g_cover_up{false};
 bool g_cover_fix = true;
 COOP_FIX("ui.cover_labels", "BUG-9319", g_cover_fix,
          "ui: no party ring, name tag or arrow over the Spore Guide window; no party ring over the HUD");
+// BUG-9322: the co-op notices (notify.cpp, game windows kept in front) were drawn over the Spore Guide too: while the
+// guide is open (the same check) they stay out of the screen and their time stands still. Off: over the guide (67-dev).
+static bool g_guide_notices_fix = true;
+COOP_FIX("ui.guide_notices", "BUG-9322", g_guide_notices_fix,
+         "ui: the co-op notices are not drawn over the Spore Guide window (they come back when it closes)");
 uint32_t g_cover_hidden = 0, g_rings_on_hud = 0; // frames the guide hid the labels; rings left out on the HUD (coop.status)
 uint32_t g_rings_drawn = 0; // rings drawn in the last overlay pass (`coop.status` partner_rings=)
 uint32_t g_rings_beyond = 0; // rings left out beyond the planet's horizon (coop.rings)
@@ -5976,7 +5990,33 @@ uint32_t g_rings_beyond = 0; // rings left out beyond the planet's horizon (coop
 // 2026-11-21 on the Cell ring 2 cm over the plane: "I'm seeing the ring flicker in front and behind the cell": it ran
 // through the cell's body, which lies on the same plane). Cell: the plane's cells; Space: a ship over a planet or in a
 // system (the camera looks down on both). `coop.rings sink <cell> <space>` (tests).
-static float g_sink_cell = .6f, g_sink_space = .6f;
+// BUG-9325: 0.6 x the radius cut through a ship close up (its hull reaches lower than that under its centre; seen on a
+// planet, 2026-11-21): a ship's ring sinks 1.0 x its radius (the ring is 1.1 x the ship's bounding radius, so it stays
+// under the whole hull), in the hull's own metres also when min_px grows the ring on the screen (far away a grown ring
+// sank by its grown size and hung detached under the ship). Off: 0.6 x the grown ring. `coop.rings sink` sets a value of
+// its own (tests; a negative one: back to these).
+static float g_sink_cell = .6f, g_sink_space = -1.f;
+static bool g_ship_ring_low_fix = true;
+COOP_FIX("space.ring_below_hull", "BUG-9325", g_ship_ring_low_fix,
+         "space: a partner's ship ring sits below the whole hull (off: 0.6 x its radius, cut through the ship close up)");
+static float space_sink() { return g_sink_space >= 0 ? g_sink_space : g_ship_ring_low_fix ? 1.f : .6f; }
+// BUG-9324: in Space the labels stay over cinematics (BUG-0985: a flight's arrows), but the death screen and the
+// new-ship caption draw the scene blurred through another pass: the depth buffer at the overlay no longer holds the
+// ships, and the party ring was drawn sharp over its ship (2026-11-21, both screens). No party ring in Space while a
+// cinematic plays (world::cinematic_playing); the arrows and tags stay. Off: drawn (67-dev).
+static bool g_space_ring_cine_fix = true;
+COOP_FIX("space.ring_cinematic", "BUG-9324", g_space_ring_cine_fix,
+         "space: no party ring while a cinematic plays (the death screen, the new-ship caption: drawn over the ship)");
+static uint32_t g_rings_cine = 0; // overlay passes whose rings a Space cinematic hid (coop.rings)
+// BUG-9327 (the owner 2026-11-21, Civ: "I checked the player ring during the test and saw it was still above the
+// unit"): Civ and Tribe clear the depth buffer after putting the world on the screen and before their UI, so at the
+// overlay pass there is no scene depth and the ring was drawn over the unit (a near plane changed nothing, a GREATER test
+// drew nothing). all.ring_before_ui: the rings are drawn right before that clear (partner_marker::early_arm, a hook on
+// the device's Clear), under the game's UI; a frame without it draws them at the overlay as before. Off: the overlay.
+static bool g_ring_before_ui_fix = true;
+COOP_FIX("all.ring_before_ui", "BUG-9327", g_ring_before_ui_fix,
+         "all stages: the party ring is drawn before the game's UI, while the scene's depth is there (Civ, Tribe: a unit hides it)");
+static uint32_t g_rings_before_ui = 0; // overlay passes whose rings were drawn before the UI (coop.rings)
 struct RingList {
     std::vector<partner_marker::Ring> v;
     uint8_t me = 0;
@@ -6000,7 +6040,10 @@ struct RingList {
         r.radius = radius;
         r.color = (g_soft_ring ? 0xFF000000u : 0xE6000000u) | (pfind::color_of((uint8_t)owner) & 0xFFFFFFu);
         r.min_px = g_soft_ring ? min_px * sh / 1080.f : 0.f; // (the hard ring keeps its first look)
-        r.max_px = g_soft_ring && max_px > 0 ? max_px * sh / 1080.f : 0.f;
+        // BUG-9327: a ring in the world keeps its real size close up (shrunk to max_px it went under the unit, which hid
+        // all of it); max_px only for a ring drawn over everything
+        const bool in_world = g_ring_depth && g_ring_before_ui_fix;
+        r.max_px = g_soft_ring && max_px > 0 && !in_world ? max_px * sh / 1080.f : 0.f;
         r.lift = lift;
         v.push_back(r);
     }
@@ -6060,6 +6103,8 @@ static const std::vector<partner_marker::Ring>& draw_partner_rings_list() { retu
 void draw_partner_rings()
 {
     g_rings_drawn = 0;
+    partner_marker::trace_frame();
+    const int early = partner_marker::early_drawn(); // BUG-9327 (also disarms: a pass that lists nothing draws nothing)
     if (g_dev_report_want) {
         g_dev_report_want = false;
         g_dev_report = partner_marker::device_report(H);
@@ -6096,7 +6141,10 @@ void draw_partner_rings()
                 L.add(L.me, p, creature_ring_radius(g_local, 6.f), nullptr, 9.f);
             } else {
                 const float rr = object_ring_radius(g_local, 6.f);
-                L.add(L.me, p, rr, on_planet ? nullptr : kZ, 18.f, 60.f, -g_sink_space * rr);
+                const size_t n0 = L.v.size();
+                L.add(L.me, p, rr, on_planet ? nullptr : kZ, 18.f, 60.f, -space_sink() * rr);
+                if (L.v.size() > n0) // BUG-9325: under the hull it really has, also when the ring is grown on the screen
+                    L.v.back().lift_fixed = g_ship_ring_low_fix;
             }
         }
         // a partner's cell, creature or ship: its puppet here
@@ -6116,7 +6164,10 @@ void draw_partner_rings()
                 L.add(id, p, creature_ring_radius(r.puppet, 6.f), nullptr, 9.f);
             } else if (g_mode == modes::kSpace) {
                 const float rr = object_ring_radius(r.puppet, 6.f);
-                L.add(id, p, rr, on_planet ? nullptr : kZ, 18.f, 60.f, -g_sink_space * rr);
+                const size_t n0 = L.v.size();
+                L.add(id, p, rr, on_planet ? nullptr : kZ, 18.f, 60.f, -space_sink() * rr);
+                if (L.v.size() > n0) // BUG-9325: under the hull it really has, also when the ring is grown on the screen
+                    L.v.back().lift_fixed = g_ship_ring_low_fix;
             }
         }
         if (g_mode == modes::kCreature)
@@ -6146,6 +6197,10 @@ void draw_partner_rings()
                       L.v.end());
         }
     }
+    if (g_space_ring_cine_fix && g_mode == modes::kSpace && !L.v.empty() && world::cinematic_playing()) { // BUG-9324
+        g_rings_cine++;
+        L.v.clear();
+    }
     if (g_cover_fix) // BUG-9319: not over the game's HUD windows
         L.v.erase(std::remove_if(L.v.begin(), L.v.end(),
                                  [](const partner_marker::Ring& r) {
@@ -6156,8 +6211,15 @@ void draw_partner_rings()
                                      return on;
                                  }),
                   L.v.end());
-    if (!L.v.empty())
+    // BUG-9327: with depth, the rings are drawn right before the game's depth clear under its UI (the next frame: these
+    // positions one frame old); a frame without that clear (Creature, Cell, Space) draws them here
+    const bool before_ui = g_ring_before_ui_fix && g_ring_depth && partner_marker::install(H, M);
+    if (before_ui && early >= 0)
+        g_rings_drawn = (uint32_t)early, g_rings_before_ui++;
+    else if (!L.v.empty())
         g_rings_drawn = (uint32_t)partner_marker::rings(H, L.v.data(), (int)L.v.size(), g_soft_ring, g_ring_depth);
+    if (before_ui)
+        partner_marker::early_arm(L.v.data(), (int)L.v.size(), g_soft_ring);
 }
 // tests (BUG-9321): `coop.rings`: the rings of the last overlay pass (player, radius, centre and where it is on the
 // screen); `coop.rings look <x> <y> <z>`: Tribe / Civ, the camera looks at that point (the screenshots)
@@ -6171,7 +6233,16 @@ static int rings_command(void*, int argc, const char* const* argv, SkOut* out)
     if (argc >= 4 && !strcmp(argv[1], "sink")) {
         g_sink_cell = (float)atof(argv[2]);
         g_sink_space = (float)atof(argv[3]);
-        SAY("sink cell=%.2f space=%.2f (x the ring's radius, below the unit)\n", g_sink_cell, g_sink_space);
+        SAY("sink cell=%.2f space=%.2f (x the ring's radius, below the unit)\n", g_sink_cell, space_sink());
+        return 0;
+    }
+    if (argc >= 2 && !strcmp(argv[1], "trace")) { // trace [frames]: the frame's passes (tests)
+        SAY("%s", partner_marker::trace(H, M, argc >= 3 ? atoi(argv[2]) : 2).c_str());
+        return 0;
+    }
+    if (argc >= 3 && !strcmp(argv[1], "ztest")) { // ztest <zfunc 1..8> [near]: tests of the scene depth
+        partner_marker::set_depth_test(atoi(argv[2]), argc >= 4 ? (float)atof(argv[3]) : 0.f);
+        SAY("ring depth test: zfunc=%d near=%s\n", atoi(argv[2]), argc >= 4 ? argv[3] : "projection");
         return 0;
     }
     if (argc >= 2 && !strcmp(argv[1], "depth")) { // the last report; the next overlay pass writes a new one
@@ -6180,8 +6251,10 @@ static int rings_command(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     const auto& v = draw_partner_rings_list();
-    SAY("rings: drawn=%u listed=%u soft=%d all=%d own=%d on_hud=%u beyond_horizon=%u\n", g_rings_drawn, (unsigned)v.size(),
-        (int)g_soft_ring, (int)g_rings_all, (int)g_own_rings, g_rings_on_hud, g_rings_beyond);
+    SAY("rings: drawn=%u listed=%u soft=%d all=%d own=%d on_hud=%u beyond_horizon=%u space_cinematic=%u sink=%.2f/%.2f\n",
+        g_rings_drawn, (unsigned)v.size(), (int)g_soft_ring, (int)g_rings_all, (int)g_own_rings, g_rings_on_hud,
+        g_rings_beyond, g_rings_cine, g_sink_cell, space_sink());
+    SAY("before the UI: frames=%u (drawn at the game's depth clear: %u)\n", g_rings_before_ui, partner_marker::early_frames());
     for (const auto& r : v) {
         float w[3] = {r.at[0], r.at[1], r.at[2]}, sc[2] = {NAN, NAN};
         H->world_to_screen(w, sc);
@@ -6201,7 +6274,7 @@ void draw_civ_tags()
             float w[3] = {p.x + p.x * up, p.y + p.y * up, p.z + p.z * up}, sc[2];
             if (!H->world_to_screen(w, sc))
                 return;
-            std::string n = owner == g_sess.my_id() ? g_name : g_sess.name_of(owner);
+            std::string n = tag_name(owner); // BUG-9323
             if (city)
                 n = "[" + n + "]";
             float at[3] = {p.x, p.y, p.z};
@@ -6284,7 +6357,9 @@ void menu_check_task(void*)
     g_menu_up = up;
     sui::Win root = sui::main_window();
     g_text_up = g_text_fix && root && shown_chain(sui::find(root, kCheatConsoleId));
-    g_cover_up = g_cover_fix && root && shown_chain(sui::find(root, kGuideFrameId)); // BUG-9319
+    const bool guide = root && shown_chain(sui::find(root, kGuideFrameId));
+    g_cover_up = g_cover_fix && guide;                // BUG-9319
+    notify::set_covered(g_guide_notices_fix && guide); // BUG-9322
 }
 
 void menu_tick(double now)
