@@ -10,7 +10,7 @@ role: host
 versions: 0.7.16 (unreleased)
 fixed_in: unreleased
 branch: fix/w61-creature-e
-commits:
+commits: 55d39747
 tests: unit (tools/tests/labverdict_selftest.py lab_run)
 signature:
 docs:
@@ -38,9 +38,9 @@ in streak_fails). A tooling fix, no game code, no switch.
 
 ## Verification
 labverdict_selftest.py lab_run (make test, unit-lab, no game): three INCONCLUSIVE runs in a row put the test under
-"Ticket candidates" in summary.md, a PASS in the next run takes it off. Without the fix the new check "a test judged in
-this run is no ticket candidate in its summary.md (BUG-1362)" FAILs (the old code lists the history's streak of 3);
-with it PASS (fix/w61-creature-e, make test).
+"Ticket candidates" in summary.md, a PASS in the next run takes it off. With the lab.py of 673f7a55 both new checks FAIL
+(the third INCONCLUSIVE was missing from the list: the history's streak was 2; the PASS run was listed: the history's
+streak was 3); with the fix both PASS (fix/w61-creature-e).
 * no-fail-run: a tooling fix checked by the unit self-test, no lab run needed.
 
 ## History

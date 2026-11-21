@@ -8076,6 +8076,9 @@ tests: tools/tests/labverdict_selftest.py (`make test`, part `unit-verdict`).
   `FAIL lab: INCONCLUSIVE 3 runs in a row (<why>): the precondition never happens; ticket candidate`. It stays a
   failure in every later run until the test passes or fails on its own; summary.md and `lab.py flaky` list it under
   "Ticket candidates". Open a ticket for it (kind test, or the mod's kind when the mod prevents the scenario).
+  summary.md lists only the tests INCONCLUSIVE in that run too (BUG-1362, 2026-11-20: a test judged in the run ended
+  its streak; before, the list came from the history before the run and named tests that had just passed).
+  `lab.py flaky` lists the history as recorded.
   Measured 2026-11-15 over 17 456 recorded results: no test is 3 in a row on all branches today (content_civ is 3 in a
   row on rel/* alone), so the rule fails nothing that passed before.
 * Neither half of a twin: `lab.py fixcheck` leaves INCONCLUSIVE results out (also those the streak rule made FAIL):
