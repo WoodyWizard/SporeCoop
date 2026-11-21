@@ -5340,3 +5340,18 @@ Creature play: this frame and the last, the store already read). ~ Not run in th
   the save's. A guest then starts the next test with its earlier own DNA (dna_away: guest 3.5, host 0.0). Designed
   (a guest seen since the last save keeps its wallet); lab tests compare gains, not totals (BUG-1340,
   docs/06-testing.md#testing-dna-gain).
+
+## The Save message is dropped while the last save finishes (2026-11-20, fix/w61-creature-a)
+<a id="creature-save-dropped"></a>
+
+Checks #creature-lineages-save-steps against the GOG 2024 exe (objdump, BUG-1365).
+
+* ✔ (disassembly) `SporeCoop::SaveGame_MessageHandler` 0xB29960, message 0x1CD20F0: it returns at once, with no box,
+  no busy cursor and no trace, when `SporeCoop::SaveGame_Clock` +0|+4 is not 0 (0xB2999F, the last save's clock still
+  runs), when `SporeCoop::SaveGame_Allowed` (byte 0x15689AC) is 0 (0xB299B0; cleared at 0xB299E3 by every taken save,
+  set again 1500 ms after its "game saved" box's OK), or when the handler's +0x45 is not 0 (0xB299BC, not known yet).
+  In Space it also needs a non-planet context (0xB299CA..0xB299D8). Only then the clock starts (0xB299EA, 0x571E80).
+* ✔ (runtime, lab 20261120-133703 own_editor_drop) a MessagePost of 0x1CD20F0 1-2 s after the rejoin's world-share
+  save (its box confirmed by the mod 1.5 s earlier at most) wrote nothing: no "Tribe, saving" hitch, no box, no file
+  newer than the request in 90 s, while `coop.save` had answered "saved". `world::save_game` now reads both bytes
+  (`world::save_may_start`) and refuses such a save with its reason (`world.save_allowed`).
