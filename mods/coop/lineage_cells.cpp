@@ -21,6 +21,10 @@ static bool g_fix = true;
 COOP_FIX("cell.lineage_cells", "BUG-9275", g_fix,
          "cell: the players' own cells appear as about one in six spawns of a native creature species of the same diet (Lineages cells)");
 static unsigned g_share = kSharePercent;
+static bool g_current_fix = true; // BUG-9285 (lineage_cells.h current_only)
+COOP_FIX("cell.lineage_current", "BUG-9285", g_current_fix,
+         "cell: Lineages cells are only the players' current cells, on spawns of the player species at its level (no giant My Creations cells on every species)");
+bool current_only() { return g_current_fix; }
 
 struct Cand {
     creations::Key key; // as this game builds it
@@ -28,7 +32,9 @@ struct Cand {
     uint32_t sig = 0;               // its bem bytes: one cell under several keys counts once
     std::string name, from;         // for the trace: "host" or "guest:<id>"
     std::map<uint8_t, double> sent; // peer -> when its records went out
+    int owner = -1;                 // BUG-9285: the player whose current cell this is (current_only)
 };
+static unsigned g_player_picks, g_player_native; // BUG-9285: spawns of the player species given a partner's cell / kept
 static std::vector<Cand> g_pool; // built outside the frame; read by pick() inside it
 static SRWLOCK g_lock = SRWLOCK_INIT;
 static bool g_building = false;
@@ -62,10 +68,59 @@ static std::string hex(uint32_t v)
     return b;
 }
 
+// BUG-9285, outside the frame: every partner's current cell (the creations stream's key the host builds it with)
+static void build_current(std::vector<Cand>& pool)
+{
+    if (!S || !S->connected())
+        return;
+    for (auto& p : S->players()) {
+        if (p.id == S->my_id())
+            continue;
+        const creations::Key k = creations::player_key(p.id, creations::kCell);
+        if (!k.instance)
+            continue;
+        g_seen++;
+        auto m = creations::ensure_model(k, creations::kMkCell);
+        if (m.status == creations::Model::kRefused || !m.key.instance) {
+            g_refused++;
+            continue;
+        }
+        const uint32_t kk[3] = {m.key.instance, m.key.type, m.key.group};
+        Cand c;
+        if (!cellsync::model_diet(kk, c.carn, c.herb)) {
+            g_no_diet++; // (not built yet: the next build)
+            continue;
+        }
+        cellsync::preload_model(kk);
+        c.key = m.key;
+        c.sig = creations::model_signature(m.key);
+        c.from = "guest:" + std::to_string(p.id);
+        c.name = p.name;
+        c.owner = p.id;
+        pool.push_back(std::move(c));
+    }
+}
+
 // outside the frame: the candidates now
 static void build(void*)
 {
     std::vector<Cand> pool;
+    if (current_only()) {
+        build_current(pool);
+        static size_t logged = (size_t)-1;
+        if (pool.size() != logged) {
+            logged = pool.size();
+            H->log(M, SK_INFO, "coop: Lineages cells: %u partner cell(s) for the player species' spawns (BUG-9285)", (unsigned)pool.size());
+        }
+        AcquireSRWLockExclusive(&g_lock);
+        g_pool = std::move(pool);
+        g_current.clear();
+        g_current_keys.clear();
+        g_builds++;
+        ReleaseSRWLockExclusive(&g_lock);
+        g_building = false;
+        return;
+    }
     // the players' current cells: never NPCs (by their bem bytes: the same cell under My Creations' key, the creations
     // stream's 0x7C key and a guest cell's 0x7B key)
     std::set<uint32_t> current;
@@ -153,8 +208,8 @@ static void guest_tick(double now, bool in_cell)
         g_out.clear(); // the next connection gets them again
         return;
     }
-    if (!in_cell || !enabled() || now - g_out_last < 2.0 || g_out.size() >= kGuestMax)
-        return;
+    if (!in_cell || !enabled() || current_only() || now - g_out_last < 2.0 || g_out.size() >= kGuestMax)
+        return; // (BUG-9285: our current cell reaches the host through the creations stream, nothing else is used)
     g_out_last = now;
     for (auto& o : creations::options(creations::kCell)) {
         if (g_out.count(o.key.instance))
@@ -184,8 +239,9 @@ void tick(double now, bool in_cell)
         g_built_at = now;
         H->run_outside_frame(build, nullptr);
     }
-    // every guest gets each cell's records before the cell is used (its mirrors are built from them)
-    if (!S || !S->connected() || g_building)
+    // every guest gets each cell's records before the cell is used (its mirrors are built from them); BUG-9285: a
+    // player's current cell goes to everybody with the creations stream already
+    if (!S || !S->connected() || g_building || current_only())
         return;
     static double last;
     if (now - last < 1.0)
@@ -250,6 +306,30 @@ bool pick(bool carnivore, bool herbivore, uint32_t key[3])
     return ok;
 }
 
+bool pick_player(int player, uint32_t key[3])
+{
+    if (!enabled() || is_guest() || !TryAcquireSRWLockShared(&g_lock))
+        return false;
+    const Cand* c = nullptr;
+    if (player >= 0) { // a partner's own area: its own species
+        for (auto& x : g_pool)
+            if (x.owner == player)
+                c = &x;
+    } else if (!g_pool.empty()) { // the host's area: every player's species alike (index 0: the host's own, native)
+        size_t i = std::uniform_int_distribution<size_t>(0, g_pool.size())(g_rng);
+        c = i ? &g_pool[i - 1] : nullptr;
+    }
+    if (c) {
+        key[0] = c->key.instance;
+        key[1] = c->key.type;
+        key[2] = c->key.group;
+        g_player_picks++;
+    } else
+        g_player_native++;
+    ReleaseSRWLockShared(&g_lock);
+    return c != nullptr;
+}
+
 bool is_candidate(uint32_t instance)
 {
     if (!TryAcquireSRWLockShared(&g_lock))
@@ -272,7 +352,8 @@ std::string debug(const std::vector<std::string>& args)
                       " refused=" + std::to_string(g_refused) + " current_skipped=" + std::to_string(g_current_skipped) +
                       " sent=" + std::to_string(g_sent) + " seen=" + std::to_string(g_seen) + " no_sig=" + std::to_string(g_no_sig) +
                       " no_diet=" + std::to_string(g_no_diet) + " dupes=" + std::to_string(g_dupes) +
-                      " guest_out=" + std::to_string(g_out_n) + "\n";
+                      " guest_out=" + std::to_string(g_out_n) + " current_only=" + (current_only() ? "1" : "0") +
+                      " player_picks=" + std::to_string(g_player_picks) + " player_native=" + std::to_string(g_player_native) + "\n";
     AcquireSRWLockShared(&g_lock);
     out += "current " + (g_current.empty() ? std::string("none") : g_current) + " keys " +
            (g_current_keys.empty() ? std::string("none") : g_current_keys) + "\n";

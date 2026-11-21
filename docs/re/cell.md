@@ -2642,3 +2642,17 @@ code), Windows lane A, `coop.lineage`.
 * ~ Not handled: NPCs of a cell made before it became a player's current cell (a guest's mid-stage `coop.creations
   choose cell`) live on until they die; only new spawns leave it out.
 * ? Not checked: whether a cell is drawn without PreloadCreature (both games preload it; Lineages did not test either).
+
+## Lineages cells: only the players' current cells (2026-11-20, feat/lineage-cells)
+<a id="cell-lineage-current"></a>
+
+BUG-9285 (the owner's test of the friends build 0.7.15.94: "many giants in the Cell stage").
+* ✔ (log) With BUG-9275 the host's pool candidates were its own My Creations cells (8, then 9 and 10: the Cell editor
+  saves every version of the own cell to My Creations, so each evolution added the old cell) and the guests' sent
+  cells; any native creature species could take one (any AI, any level).
+* ~ Inferred: the species of the levels above the avatar are drawn large (that is how the game shows the bigger
+  levels), so a player cell on such a spawn is a giant; the player species' own native spread (S+0x10, 6-8 cells
+  around the avatar, #cell-own-species) is always at the avatar's level.
+* Now (cell.lineage_current): only player-species spawns are swapped, to a partner's current cell
+  (creations::player_key); `coop.lineage` prints each player-model cell's level (+0x358) and the avatar's
+  `food_level` (cell_logic::level_of_food(S+0x1C)) so a test can compare them.

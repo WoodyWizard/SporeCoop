@@ -103,6 +103,8 @@ def swim_to(con, models, tag):
 
 def main():
     host, guest = start('cell', own_progress=True)
+    for con in (host, guest):  # BUG-9285: this test checks the My Creations pool of BUG-9275 (the old behaviour)
+        con.call('coop.fix cell.lineage_current off')
     ck = Checks()
     try:
         mine = own_cell(guest)
