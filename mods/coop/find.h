@@ -78,6 +78,8 @@ void tag(const char* kind, uint8_t id, const std::string& text, float sx, float 
 void labels_flush();
 void set_status_rect(int x0, int y0, int x1, int y1); // the co-op status block of the last pass (a HUD box too)
 void hud_tick(double now);                           // every frame: the UI windows' boxes are read outside the frame
+// BUG-9319: (x, y) is on one of the game's UI windows of the last scan (the HUD boxes the labels keep off)
+bool over_hud(float x, float y);
 bool layout_on();
 extern bool g_layout_fix;
 // tests (BUG-0949): made-up partners (`coop.find ghost <id> <x> <y> <z> [name]`, `coop.find ghost clear`): an arrow

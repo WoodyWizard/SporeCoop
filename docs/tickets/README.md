@@ -1398,5 +1398,8 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9316](BUG-9316-civ-host-after-a-guest-s-world-reload-the-host-l.md) | open | bug | Civ | 2026-11-21 |  | Civ (host): after a guest's world reload the host logs a large shared-money spend from that guest (seen after coop.civ swgrant money writes) |
 | [BUG-9317](BUG-9317-civ-a-party-nation-s-global-superweapon-types-2.md) | open | feature | Civ | 2026-11-21 |  | Civ: a party nation's global superweapon (types 2, 8) costs 12000 for every city not of the firer, the party's own cities included (decision 7T A) |
 | [BUG-9318](BUG-9318-tribe-a-partner-s-own-village-totem-gets-no-piec.md) | open | bug | Tribe | 2026-11-21 |  | Tribe: a partner's own village totem gets no piece for the party's wins and no totem cutscene |
-| [BUG-9319](BUG-9319-tribe-the-partner-rings-are-drawn-over-the-spore.md) | open | bug | Tribe | 2026-11-21 |  | Tribe: the partner rings are drawn over the Spore Guide window |
+| [BUG-9319](BUG-9319-tribe-the-partner-rings-are-drawn-over-the-spore.md) | fixed | bug | Tribe | 2026-11-21 | unreleased | Tribe: the partner rings are drawn over the Spore Guide window |
 | [BUG-9320](BUG-9320-tribe-repeated-party-wipes-of-the-host-s-village.md) | open | bug | Tribe | 2026-11-21 |  | Tribe: repeated party wipes of the host's village (village down about every 100 s, the hut read 1/400 right after a wipe reload) |
+| [BUG-9321](BUG-9321-all-stages-a-soft-gradient-ring-in-the-player-s.md) | open | feature | all | 2026-11-21 |  | All stages: a soft gradient ring in the player's colour under every unit a partner controls |
+| [BUG-9322](BUG-9322-ui-the-co-op-notices-are-drawn-over-the-spore-gu.md) | open | bug | all | 2026-11-21 |  | UI: the co-op notices are drawn over the Spore Guide window |
+| [BUG-9323](BUG-9323-civ-this-player-s-own-name-tags-show-the-noshare.md) | open | bug | Civ | 2026-11-21 |  | Civ: this player's own name tags show the -NoShare- test tag |

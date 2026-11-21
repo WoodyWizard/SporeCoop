@@ -5931,30 +5931,264 @@ void draw_owner_tags()
 // tribe's tracked members (the host's table on the host, the snapshot's owner on a guest), every village. Off: no ring.
 COOP_FIX("tribe.partner_ring", "BUG-9302", g_partner_ring,
          "tribe: a ring in the player's colour on the ground under each partner's villager (decision 7K A)");
-uint32_t g_rings_drawn = 0; // rings drawn in the last overlay pass (`coop.tribe rings`)
+// BUG-9321 (the owner 2026-11-21: "The ring underneath, can it be a gradient soft ring? I'd love to have this ring be
+// applied to all player controlled units in all stages, like ships in space, pack in creature stage, civ and tribe"):
+// * all.soft_ring: the ring is a soft glow in the player's colour (partner_marker::rings soft: almost clear over the
+//   unit, strongest near the rim, a soft edge), 48 points round; off: the hard two-band ring of 7K A.
+// * all.partner_rings: every stage marks a partner's units: Cell its cell, Creature its creature and its pack, Tribe
+//   its villagers (tribe.partner_ring), Civ its vehicles (not cities), Space its ship (sized from the ship and kept a
+//   marker on the screen at every zoom); off: Tribe only (as 7K A).
+// * all.own_rings (off): this player's own units get a ring too (7K A: a partner's only).
+// The owner lists are the ones the tags and arrows use: tribe::for_each_tracked, civ::for_each_owned, the partners'
+// puppets (g_remotes), the packs (guest_pack::for_each_member; a guest: the pack proxies, npc::for_each_pack_proxy).
+static bool g_soft_ring = true;
+COOP_FIX("all.soft_ring", "BUG-9321", g_soft_ring,
+         "all stages: the party ring is a soft glow in the player's colour (off: the hard two-band ring)");
+static bool g_rings_all = true;
+COOP_FIX("all.partner_rings", "BUG-9321", g_rings_all,
+         "all stages: a ring under a partner's cell, creature and pack, vehicles and ship too (off: Tribe villagers only)");
+static bool g_own_rings = false;
+// the owner 2026-11-21: "Ensure the ring respects the creature. So if the ring is behind them, it doesn't display that
+// part of it... Currently the ring appears OVER the creature." all.ring_depth: the ring is drawn in the world (the
+// game's view and projection, tested against the scene's depth buffer, docs/re/graphics.md#graphics-overlay-depth);
+// off: drawn over everything (the overlay's flat triangles).
+static bool g_ring_depth = true;
+COOP_FIX("all.ring_depth", "BUG-9321", g_ring_depth,
+         "all stages: a unit, building or hill in front of a party ring hides that part of it (off: the ring over everything)");
+static bool g_dev_report_want = false; // coop.rings depth: the device's state at the next overlay pass
+static std::string g_dev_report;
+COOP_FIX("all.own_rings", "BUG-9321", g_own_rings,
+         "all stages: this player's own units get a ring too (off: partners' only, decision 7K A)");
+// BUG-9319: the world labels (the party rings, name tags, arrows) were drawn over the Spore Guide window (H, or the
+// pause menu's Spore Guide button): it is none of the windows above. Its frame window (control id 0x53C5B392, inside
+// the container 0x53C6DC80 that stays loaded) exists only while the guide is open (runtime 2026-11-21, Civ, `coop.ui
+// tree`). A ring whose centre is on one of the game's HUD windows (the boxes the labels keep off, find.cpp) is left out
+// too (a partner's vehicle under the bottom bar drew its ring over the bar). Off: both drawn (67-dev).
+constexpr uint32_t kGuideFrameId = 0x53C5B392;
+std::atomic<bool> g_cover_up{false};
+bool g_cover_fix = true;
+COOP_FIX("ui.cover_labels", "BUG-9319", g_cover_fix,
+         "ui: no party ring, name tag or arrow over the Spore Guide window; no party ring over the HUD");
+uint32_t g_cover_hidden = 0, g_rings_on_hud = 0; // frames the guide hid the labels; rings left out on the HUD (coop.status)
+uint32_t g_rings_drawn = 0; // rings drawn in the last overlay pass (`coop.status` partner_rings=)
+uint32_t g_rings_beyond = 0; // rings left out beyond the planet's horizon (coop.rings)
+// all.ring_depth: a unit with no ground under it gets its ring BELOW it, `sink` x its radius away along up (the owner
+// 2026-11-21 on the Cell ring 2 cm over the plane: "I'm seeing the ring flicker in front and behind the cell": it ran
+// through the cell's body, which lies on the same plane). Cell: the plane's cells; Space: a ship over a planet or in a
+// system (the camera looks down on both). `coop.rings sink <cell> <space>` (tests).
+static float g_sink_cell = .6f, g_sink_space = .6f;
+struct RingList {
+    std::vector<partner_marker::Ring> v;
+    uint8_t me = 0;
+    float sh = 1080; // the screen's height (the pixel bounds are for 1080 lines)
+    bool wants(int owner) const { return owner >= 0 && owner < 0xFE && (owner != me || g_own_rings) && v.size() < 256; }
+    // up: nullptr = the planet's normal at p
+    void add(int owner, const net::Vec3& p, float radius, const float* up, float min_px, float max_px = 0,
+             float lift = NAN)
+    {
+        if (!wants(owner) || !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || !(radius > 0))
+            return;
+        const float len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (!up && !(len > 1.f))
+            return;
+        partner_marker::Ring r{};
+        r.at[0] = p.x, r.at[1] = p.y, r.at[2] = p.z;
+        if (up)
+            r.up[0] = up[0], r.up[1] = up[1], r.up[2] = up[2];
+        else
+            r.up[0] = p.x / len, r.up[1] = p.y / len, r.up[2] = p.z / len, r.planet = true;
+        r.radius = radius;
+        r.color = (g_soft_ring ? 0xFF000000u : 0xE6000000u) | (pfind::color_of((uint8_t)owner) & 0xFFFFFFu);
+        r.min_px = g_soft_ring ? min_px * sh / 1080.f : 0.f; // (the hard ring keeps its first look)
+        r.max_px = g_soft_ring && max_px > 0 ? max_px * sh / 1080.f : 0.f;
+        r.lift = lift;
+        v.push_back(r);
+    }
+};
+// a creature's ring radius from its bounding radius (the villager's of 7K A: 0.7 of it, 0.5 m .. hi)
+static float creature_ring_radius(void* c, float hi)
+{
+    const float br = game::bounding_radius(c);
+    return std::clamp(std::isfinite(br) ? br * .7f : 1.f, .5f, hi);
+}
+// a vehicle's or ship's ring radius from its bounding radius (BUG-9321), `fallback` when it has none that is sane
+static float object_ring_radius(void* o, float fallback)
+{
+    const float br = o ? game::object_bounding_radius(o) : -1.f;
+    return std::isfinite(br) && br > .5f && br < 200.f ? br * 1.1f : fallback;
+}
+// Creature: each pack member's ring (the partners' packs; the own one with all.own_rings). On a guest a pack proxy's
+// player is not sent: it is the partner whose creature is nearest (a pack follows its leader; 60 m at most).
+static void collect_pack_rings(RingList& L)
+{
+    std::vector<void*> known;
+    struct U { RingList* L; std::vector<void*>* known; } u{&L, &known};
+    guest_pack::for_each_member(
+        L.me,
+        [](void* c, uint8_t owner, void* p) {
+            auto& u = *(U*)p;
+            u.known->push_back(c);
+            if (!game::listed(c) || game::is_dead(c))
+                return;
+            u.L->add(owner, game::position(c), creature_ring_radius(c, 3.f), nullptr, 9.f);
+        },
+        &u);
+    if (g_sess.role() == net::Role::Host)
+        return;
+    npc::for_each_pack_proxy(
+        [](void* c, void* p) {
+            auto& u = *(U*)p;
+            if (std::find(u.known->begin(), u.known->end(), c) != u.known->end())
+                return; // this player's own pack (above)
+            const net::Vec3 at = game::position(c);
+            int best = -1;
+            float best_d = 60.f;
+            for (auto& [id, r] : g_remotes) {
+                if (id == u.L->me || r.echo || !r.puppet || !r.puppet_adapter || r.puppet_adapter->mode != modes::kCreature)
+                    continue;
+                const float d = net::dist(at, modes::entity_pos(r.puppet_adapter, r.puppet));
+                if (d < best_d)
+                    best = id, best_d = d;
+            }
+            if (best >= 0)
+                u.L->add(best, at, creature_ring_radius(c, 3.f), nullptr, 9.f);
+        },
+        &u);
+}
+static RingList g_ring_list; // the last overlay pass's (coop.rings)
+static const std::vector<partner_marker::Ring>& draw_partner_rings_list() { return g_ring_list.v; }
 void draw_partner_rings()
 {
     g_rings_drawn = 0;
-    if (!g_partner_ring || g_mode != modes::kTribe || !g_sess.connected())
+    if (g_dev_report_want) {
+        g_dev_report_want = false;
+        g_dev_report = partner_marker::device_report(H);
+    }
+    RingList& L = g_ring_list;
+    L.v.clear();
+    if (!g_sess.connected())
         return;
-    struct Rings { std::vector<float> at, radius; std::vector<unsigned> col; uint8_t me; };
-    static Rings r;
-    r.at.clear(); r.radius.clear(); r.col.clear();
-    r.me = g_sess.my_id();
-    tribe::for_each_tracked(
-        [](const tribe::TrackMember& m, void* u) {
-            auto& r = *(Rings*)u;
-            if (m.owner == r.me || m.owner >= 0xFE || !m.c || game::is_dead(m.c) || r.col.size() >= 256)
-                return;
-            const net::Vec3 p = game::position(m.c);
-            const float br = game::bounding_radius(m.c);
-            r.at.insert(r.at.end(), {p.x, p.y, p.z});
-            r.radius.push_back(std::clamp(std::isfinite(br) ? br * .7f : 1.f, .5f, 1.8f));
-            r.col.push_back(0xE6000000u | (pfind::color_of(m.owner) & 0xFFFFFFu));
-        },
-        &r);
-    if (!r.col.empty())
-        g_rings_drawn = (uint32_t)partner_marker::ground_rings(H, r.at.data(), r.radius.data(), r.col.data(), (int)r.col.size());
+    L.me = g_sess.my_id();
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    L.sh = sh > 0 ? (float)sh : 1080.f;
+    if (g_mode == modes::kTribe && g_partner_ring)
+        tribe::for_each_tracked(
+            [](const tribe::TrackMember& m, void* u) {
+                auto& L = *(RingList*)u;
+                if (!L.wants(m.owner) || !m.c || game::is_dead(m.c))
+                    return;
+                L.add(m.owner, game::position(m.c), creature_ring_radius(m.c, 1.8f), nullptr, 8.f);
+            },
+            &L);
+    if (g_rings_all && g_mode != modes::kTribe) {
+        game::LiveScope live;
+        static const float kZ[3] = {0, 0, 1};
+        const bool on_planet = (g_world & 0x40000000u) != 0; // Space: on a planet (its centre the origin), else a system
+        // the player's own unit (all.own_rings): its cell, avatar or ship
+        if (g_own_rings && g_local && g_adapter && g_adapter->mode == g_mode &&
+            (g_mode == modes::kCell || g_mode == modes::kCreature || g_mode == modes::kSpace)) {
+            const net::Vec3 p = modes::entity_pos(g_adapter, g_local);
+            if (g_mode == modes::kCell) {
+                const float rr = std::max(.6f, (g_adapter->tag_height(g_local) - .5f) / 1.2f * 2.f);
+                L.add(L.me, p, rr, kZ, 14.f, 0, -g_sink_cell * rr);
+            } else if (g_mode == modes::kCreature) {
+                L.add(L.me, p, creature_ring_radius(g_local, 6.f), nullptr, 9.f);
+            } else {
+                const float rr = object_ring_radius(g_local, 6.f);
+                L.add(L.me, p, rr, on_planet ? nullptr : kZ, 18.f, 60.f, -g_sink_space * rr);
+            }
+        }
+        // a partner's cell, creature or ship: its puppet here
+        for (auto& [id, r] : g_remotes) {
+            if (id == L.me || r.echo || !r.puppet || !r.puppet_adapter || r.puppet_adapter->mode != g_mode)
+                continue;
+            const net::Vec3 p = modes::entity_pos(r.puppet_adapter, r.puppet);
+            const float q[3] = {p.x, p.y, p.z};
+            if (!findx::placed(q, 0.f))
+                continue;
+            // (a cell's tag height is its scale x 1.2 + 0.5, modes.cpp cell_tag; the ring twice that scale: the cell model
+            // reaches out about that far, 2026-11-21)
+            if (g_mode == modes::kCell) {
+                const float rr = std::max(.6f, (r.puppet_adapter->tag_height(r.puppet) - .5f) / 1.2f * 2.f);
+                L.add(id, p, rr, kZ, 14.f, 0, -g_sink_cell * rr);
+            } else if (g_mode == modes::kCreature) {
+                L.add(id, p, creature_ring_radius(r.puppet, 6.f), nullptr, 9.f);
+            } else if (g_mode == modes::kSpace) {
+                const float rr = object_ring_radius(r.puppet, 6.f);
+                L.add(id, p, rr, on_planet ? nullptr : kZ, 18.f, 60.f, -g_sink_space * rr);
+            }
+        }
+        if (g_mode == modes::kCreature)
+            collect_pack_rings(L);
+        if (g_mode == modes::kCiv) // a partner's vehicles (land, sea, air); cities are far too big for a ring
+            civ::for_each_owned(
+                [](void* o, const net::Vec3& p, uint8_t owner, bool city, void* u) {
+                    if (!city)
+                        ((RingList*)u)->add(owner, p, object_ring_radius(o, 5.f), nullptr, 12.f, 56.f);
+                },
+                &L);
+    }
+    // a ring on the planet beyond the horizon (the camera below its ground's plane) is left out: drawn flat (no depth:
+    // all.ring_depth off, or no scene depth known) it would show through the planet (seen in Civ: a partner's vehicle on
+    // the far side was projected)
+    if (sw > 0 && std::any_of(L.v.begin(), L.v.end(), [](const partner_marker::Ring& r) { return r.planet; })) {
+        net::Vec3 cam, dir;
+        if (modes::camera_ray_at_pixel(sw / 2, sh / 2, cam, dir)) {
+            L.v.erase(std::remove_if(L.v.begin(), L.v.end(),
+                                     [&](const partner_marker::Ring& r) {
+                                         const float d = (cam.x - r.at[0]) * r.up[0] + (cam.y - r.at[1]) * r.up[1] +
+                                                         (cam.z - r.at[2]) * r.up[2];
+                                         const bool behind = r.planet && d < 0;
+                                         g_rings_beyond += behind;
+                                         return behind;
+                                     }),
+                      L.v.end());
+        }
+    }
+    if (g_cover_fix) // BUG-9319: not over the game's HUD windows
+        L.v.erase(std::remove_if(L.v.begin(), L.v.end(),
+                                 [](const partner_marker::Ring& r) {
+                                     float w[3] = {r.at[0], r.at[1], r.at[2]}, sc[2] = {NAN, NAN};
+                                     H->world_to_screen(w, sc);
+                                     const bool on = std::isfinite(sc[0]) && pfind::over_hud(sc[0], sc[1]);
+                                     g_rings_on_hud += on;
+                                     return on;
+                                 }),
+                  L.v.end());
+    if (!L.v.empty())
+        g_rings_drawn = (uint32_t)partner_marker::rings(H, L.v.data(), (int)L.v.size(), g_soft_ring, g_ring_depth);
+}
+// tests (BUG-9321): `coop.rings`: the rings of the last overlay pass (player, radius, centre and where it is on the
+// screen); `coop.rings look <x> <y> <z>`: Tribe / Civ, the camera looks at that point (the screenshots)
+static int rings_command(void*, int argc, const char* const* argv, SkOut* out)
+{
+    if (argc >= 5 && !strcmp(argv[1], "look")) {
+        const float at[3] = {(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])};
+        SAY("%s\n", gamefixes::tribe_camera_to(at) ? "camera moved" : "camera not moved (Tribe / Civ only)");
+        return 0;
+    }
+    if (argc >= 4 && !strcmp(argv[1], "sink")) {
+        g_sink_cell = (float)atof(argv[2]);
+        g_sink_space = (float)atof(argv[3]);
+        SAY("sink cell=%.2f space=%.2f (x the ring's radius, below the unit)\n", g_sink_cell, g_sink_space);
+        return 0;
+    }
+    if (argc >= 2 && !strcmp(argv[1], "depth")) { // the last report; the next overlay pass writes a new one
+        SAY("%s", g_dev_report.empty() ? "(none yet: ask again)\n" : g_dev_report.c_str());
+        g_dev_report_want = true;
+        return 0;
+    }
+    const auto& v = draw_partner_rings_list();
+    SAY("rings: drawn=%u listed=%u soft=%d all=%d own=%d on_hud=%u beyond_horizon=%u\n", g_rings_drawn, (unsigned)v.size(),
+        (int)g_soft_ring, (int)g_rings_all, (int)g_own_rings, g_rings_on_hud, g_rings_beyond);
+    for (const auto& r : v) {
+        float w[3] = {r.at[0], r.at[1], r.at[2]}, sc[2] = {NAN, NAN};
+        H->world_to_screen(w, sc);
+        SAY("  color=%08X radius=%.2f lift=%.2f px=%.0f..%.0f at=(%.1f %.1f %.1f) up=(%.2f %.2f %.2f) screen=(%.0f %.0f)\n", r.color,
+            r.radius, r.lift, r.min_px, r.max_px, r.at[0], r.at[1], r.at[2], r.up[0], r.up[1], r.up[2], sc[0], sc[1]);
+    }
+    return 0;
 }
 
 // civilization: owner names over the player's cities and vehicles
@@ -6050,6 +6284,7 @@ void menu_check_task(void*)
     g_menu_up = up;
     sui::Win root = sui::main_window();
     g_text_up = g_text_fix && root && shown_chain(sui::find(root, kCheatConsoleId));
+    g_cover_up = g_cover_fix && root && shown_chain(sui::find(root, kGuideFrameId)); // BUG-9319
 }
 
 void menu_tick(double now)
@@ -6831,6 +7066,7 @@ void on_overlay(void*, int, void*)
     modes::CellScope cell_scope; // BUG-0271
     if (!g_menu_up)
         progress_debt::draw(); // BUG-9119: the red stretch on the progress bar
+    g_rings_drawn = 0; // (coop.status: none while a cover or a menu hides them)
     if (!g_overlay)
         return;
     int sw = 0, sh = 0;
@@ -6995,6 +7231,10 @@ void on_overlay(void*, int, void*)
     bool labels = !g_menu_up && !coop_ui::is_open();
     if (!labels)
         g_menu_hidden++;
+    else if (g_cover_up && g_cover_fix) { // BUG-9319: the Spore Guide window
+        labels = false;
+        g_cover_hidden++;
+    }
     else if (cinematic_holds_labels()) { // BUG-0985
         labels = false;
         g_cine_hidden++;
@@ -8410,8 +8650,9 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
         g_dna_owed_world, g_owed_dropped); // BUG-0233
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
-    SAY("labels: menu_up=%d window=%d hidden_frames=%u cinematic_frames=%u name_tags=%u partner_rings=%u\n", (int)g_menu_up.load(),
-        (int)coop_ui::is_open(), g_menu_hidden, g_cine_hidden, g_tags_drawn, g_rings_drawn); // (partner_rings: BUG-9302)
+    SAY("labels: menu_up=%d window=%d hidden_frames=%u cinematic_frames=%u name_tags=%u partner_rings=%u cover_up=%d "
+        "cover_frames=%u rings_on_hud=%u\n", (int)g_menu_up.load(), (int)coop_ui::is_open(), g_menu_hidden, g_cine_hidden,
+        g_tags_drawn, g_rings_drawn, (int)g_cover_up.load(), g_cover_hidden, g_rings_on_hud); // (BUG-9302, BUG-9319)
     for (auto& p : g_sess.players()) // tests (BUG-0809): the datagrams sent to each peer so far
         if (net::Connection* c = p.id != g_sess.my_id() ? g_sess.conn_to(p.id) : nullptr)
             SAY("net to %u: out_bytes=%llu out_packets=%u\n", (unsigned)p.id, (unsigned long long)c->stats.bytes_sent,
@@ -9973,6 +10214,7 @@ int c_uistate(void*, int argc, const char* const* argv, SkOut* out)
 
 void on_unload()
 {
+    partner_marker::release_depth(); // BUG-9321
     support::on_unload();
     gamefixes::shutdown();
     fov::shutdown();
@@ -10591,6 +10833,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     }
     keepalive_start();
     H->subscribe(M, SK_EV_OVERLAY, on_overlay, nullptr);
+    H->subscribe(M, SK_EV_DEVICE_LOST, [](void*, int, void*) { partner_marker::release_depth(); }, nullptr); // BUG-9321
     const int MT = SK_CMD_MAIN_THREAD;
     H->command_add(M, "coop.seats", "coop.seats <1-4> [now] - reserve seats for the next stage or next Space load; now: more seats in this stage at once", c_seats, nullptr, MT);
     H->command_add(M, "coop.host", "coop.host [port] [name] [new-game seats 1-4] [scaling percent] - host a session", c_host, nullptr, MT);
@@ -10621,6 +10864,8 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                    sreport::command, nullptr, MT);
     H->command_add(M, "coop.settings", "coop.settings [list] | get <key> | set <key> on|off|default|<n> | force <key> <v> (tests) | stored - the session settings (the host decides; session ones before the start)",
                    settings::command, nullptr, MT);
+    H->command_add(M, "coop.rings", "coop.rings [look x y z | depth | sink <cell> <space>] - tests (BUG-9321): the party rings of the last frame; Tribe / Civ: aim the camera",
+                   rings_command, nullptr, MT);
     H->command_add(M, "coop.find", "coop.find [colors | color <name|0..7> | project x y z | labels] - F2: the arrows to the partners of the last frame, the player colours, pick a colour",
                    pfind::command, nullptr, MT);
     H->command_add(M, "coop.live", "coop.live - tests (BUG-0426): the object list of this frame (game::listed: walks, hits, destroys seen)",

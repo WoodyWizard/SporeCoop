@@ -64,4 +64,9 @@ constexpr uint8_t kPackAnimKind = 16;   // guest -> host {u8 n, n x {u16 id, u32
 void own_anim(void* c, uint32_t anim, int how, int a, int b); // guest: a member this game runs started a behaviour animation
 void on_pack_anims(uint8_t from, net::Reader& r);             // host: played on the members
 
+// BUG-9321 (the party rings): every pack member this game knows with its player: the host its own pack (owner: the
+// host) and each partner's (party lists and the guest pack); a guest its own pack's proxies (owner: this player).
+// Pointers from the lists as they are: the caller checks game::listed (inside a game::LiveScope) before using one.
+void for_each_member(uint8_t me, void (*fn)(void* c, uint8_t owner, void* user), void* user);
+
 } // namespace guest_pack
