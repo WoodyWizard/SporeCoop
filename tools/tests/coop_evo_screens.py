@@ -19,6 +19,10 @@ mate, the vote's I'm ready, History's check, the editors' parts and done), and t
                   pixels beside the co-op window, in the key frame and in the shots of the vote; the guest's printed
                   beside it). `SPORE_FIX_OFF=core.switch_vote_world` (held at the switch, after the game's white end
                   sequence) must FAIL that check.
+                  BUG-1376 / BUG-1396: while the host's game stands under its evolution caption (~70 s) the test puts
+                  one of the host's animals near it 12 m away on the host (`coop.npctrack put`, no state goes out
+                  meanwhile); 8 s after the host's game goes on, no guest copy (that one included) stands over 5 m off.
+                  `SPORE_FIX_OFF=drive.lead_gap` must FAIL that check (the copy crosses the gap's line over a minute).
 
   --part cell-eggs  Cell fixture (BUG-1245): the host's mating call, the guest answers the vote late (--ready click:
                   after 45 s) or never: the host's game plays the mating scene and the egg laying once, not again
@@ -282,6 +286,36 @@ def npcs_apart(host, guest, near=40.0):
             continue
         out.append((k, min(d(g[k][0], hp), d(g[k][0], h1[k][0]))))
     return out
+
+
+NPC_MOVE = 12.0  # m: BUG-1396, what the host's game moved its family by under the caption in BUG-1376's runs
+
+
+def move_host_animal(host, guest, secs=30):
+    """BUG-1396: once the host's game stands (its caption), one of its animals within 25 m that the guest has a copy of
+    is put NPC_MOVE m farther from the host's avatar on the host (onto the ground, not held). Its key, or None"""
+    t0 = time.time()
+    while time.time() - t0 < secs and game_paused(host) is not True:
+        time.sleep(1)
+    if game_paused(host) is not True:
+        print('  BUG-1396: the host\'s game did not stand: no animal moved', flush=True)
+        return None
+    time.sleep(2)  # (its last states are out)
+    h, g = sync_sample(host), sync_sample(guest)
+    me = h.get('p0')
+    if not me:
+        return None
+    me = me[0]
+    d = lambda a, b: sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5  # noqa: E731
+    near = sorted((d(p, me), k, p) for k, (p, _) in h.items() if k.startswith('n') and k in g and 3 < d(p, me) < 25)
+    if not near:
+        print('  BUG-1396: no animal of the host within 25 m with a copy on the guest', flush=True)
+        return None
+    dist, k, p = near[0]
+    q = [pc + (pc - mc) / dist * NPC_MOVE for pc, mc in zip(p, me)]
+    out = host.call(f'coop.npctrack put {k[1:]} {q[0]:.2f} {q[1]:.2f} {q[2]:.2f} 0')['out'].strip()
+    print(f'  BUG-1396: while the host\'s game stands: {out} ({k}, {dist:.1f} m from the host)', flush=True)
+    return k if out.startswith('npc ') else None
 
 
 def avatar_key(con):
@@ -836,7 +870,13 @@ def part_switch(host, guest, ck, ready, scr):
     shot(host, 'evo_switch_host_after.png')
     shot(guest, 'evo_switch_guest_after.png')
     # some time later (BUG-0508's 30 s check, a world share): still each its own
-    time.sleep(45)
+    t45 = time.time() + 45
+    # BUG-1396: the twin with drive.lead_gap off passed (lab 20261121-001418): the host's game stood 69 s as in BUG-1376,
+    # but its game moved none of its animals near it meanwhile, so the first state after the gap had nothing to bring
+    # in. The host's game put its family 10-15 m away in the runs that showed it (20261120-133703); the test now does the
+    # same with one animal while the host's game stands, so the late path is taken in every run.
+    moved = move_host_animal(host, guest)
+    time.sleep(max(0.0, t45 - time.time()))
     r2 = good()
     print(f'  45 s later: {r2 or ident()}')
     ck(r2, 'each player still plays its own creature 45 s later (no world share took it back)')
@@ -857,6 +897,8 @@ def part_switch(host, guest, ck, ready, scr):
     off = sorted({k for r in rounds for k in r if all(r2.get(k, 0) > NPC_APART for r2 in rounds)})
     print(f'  the host\'s animals near it 8 s after its game went on (ran={ran}): {len(rounds[0])} compared, apart on the '
           f'guest: ' + (', '.join(f'{k} {rounds[-1][k]:.1f} m' for k in off) or 'none'), flush=True)
+    ck(moved and all(moved in r for r in rounds), f"the test moved one of the host's animals while its game stood "
+       f"({moved}) and compared its copy after ({[round(r.get(moved, -1), 1) for r in rounds] if moved else '-'} m)")
     ck(ran and rounds[0] and not off, f"the guest's copies of the host's animals stand where the host's game has them "
                                       f"after its caption (none over {NPC_APART:.0f} m in 3 reads)")
 

@@ -9983,3 +9983,12 @@ main thread. The same Creature check (22 objects) took 0.033-0.044 ms on an idle
 to 5.7 ms) under the load of other lanes (load average 26-30 on 12 cores, BUG-1191; the third 0.7.16 final check,
 20261121-003202). coop_diag.py prints the machine's load average and, at one per core or more, reports a cost over
 its limit as INCONCLUSIVE instead of FAIL. A cost number for docs/REPORTING.md comes from an idle machine only.
+
+## evo_screens_switch: the BUG-1376 twin needs a move over the gap (2026-11-21, fix/w62-core)
+<a id="testing-lead-gap-twin"></a>
+
+BUG-1396: the host's ~70 s caption stand alone does not show BUG-1376; the copies are off only when the host's game
+moved its animals meanwhile, which happens in some runs only (lab 20261121-001418: nothing moved, the twin with
+`drive.lead_gap` off passed). The test puts one host animal 12 m farther out with `coop.npctrack put` while the host's
+game stands and checks its copy 8 s after the host goes on. A twin of a fix for "after a gap" must make the change
+over the gap itself, not wait for the game to make one.
