@@ -102,6 +102,22 @@ Done on fix/l47-powers (built; not run in a game yet):
   a granted fire crashed the host (BUG-9310). The 0x39 tamed animals' list: not reached (no tool reads the TribalGame
   list).
 
+- Live QA 2026-11-21, third run (fix/l47-tribe, MSI two games, Tribe from Vandh, powers granted with `coop.tribe powers
+  grant`), the leftovers:
+  * 0x36: its effect A86F8D7E plays at a spot about 230 m from the chief, for the host's own chief (09:53:22, at 266.9
+    -334.9 -257.6) and a partner's (09:54:15, 282.9 -324.7 -253.8); the relay dropped both ("not on the local player").
+    Fix `tribe.power_effects` (effects.cpp): with it the guest's press at 11:14:30 made the host send it (`coop.effects`
+    "chief power 0x36 effects sent=2") and the guest's game played it ("effect: from 0 played on other id A86F8D7E ...
+    pool 5", 11:14:44). Off-run with a partner's press not done (recharge); before the fix the same press logged only
+    "not on the local player" (09:54:15).
+  * 0x38: no world effect at all for either chief's press; the B490E2EC logged 0.1 s after the host's own press is a
+    selection ring, not the power (docs/re/tribe.md#tribe-partner-totems). Its result is citizens walking to the chief
+    (positions, mirrored): nothing to add.
+  * 0x34 lure basket on the guest: not changed (a visual-only copy of a host object; plan unchanged).
+  * 0x39 / pets: new tool `coop.tribe powers pets` (the TribalGame list +0x94..+0x98 and every tribe's political id).
+    The list read empty on both games before a tame; the guest's 0x39 press during the run came in a world reload, so
+    whose list a partner's tame joins is still not read.
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix/l47-powers: tribe.guest_powers; Civ and Space surveyed (plan above). Static analysis + build only.
@@ -141,3 +157,4 @@ Done on fix/l47-powers (built; not run in a game yet):
   cards (logged). Tools: `coop.cards [own|set|clear]`, `coop.tribe powers`, `coop.civ sw`. Built, not run. Open: whether
   a guest's game writes its own card at a co-op graduation (to be seen in the log at the next graduation).
 - 2026-11-21: second live QA run (see Verification).
+- 2026-11-21: third live run (fix/l47-tribe): 0x36 effect relayed (`tribe.power_effects`), 0x38 has no effect, pets tool.

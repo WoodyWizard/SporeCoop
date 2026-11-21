@@ -9085,3 +9085,30 @@ seat with a nation (TITAN: DuoQACivHost / Abber with the pitfalls above patched 
   `civ.unlock_cards_restore` (off from the start): every seat shows it, and the host's `coop.cards` `effective` shows the
   partner's card.
 * The guest's screen shows no superweapon marker or burst (BUG-9312): check effects on the game state, not the picture.
+
+## Tribe live QA on the MSI: camera, hut and totem recipes (2026-11-21, fix/l47-tribe)
+<a id="testing-tribe-msi-recipes"></a>
+
+* The MSI's Spore has no `frame_ms` in its sporekit.ini: cap each QA game with
+  `frame.limit 100` right after its console is up instead of editing the ini.
+* Logs on the MSI: instance 1 writes `mods/logs/sporekit.log`, instance 2 `sporekit.2.log`.
+* Camera: a guest's `coop.tribe camera own` looks at its own village; any game: a click on the minimap (bottom left,
+  1280x960: the village markers near 113..135, 858..872) moves the camera there; the H key opens the Spore Guide (not
+  "home"), a click on a roster card opens the creature's card, not the camera.
+* `coop.tribe select <member id> 1` on a guest selects its own villagers (`select_own` there picks the HOST's village,
+  the mod's player tribe on a guest); then `coop.tribe walk x y z`, or a real right-click (`move`, wait ~1.2 s, `click
+  x y right`) on an object from `coop.targets objs` (loose fruit worked).
+* Host births: the first click on the own hut opens a rollover; its small lower button (about 55 px under the hut's
+  planner button) buys the baby. The guest's `coop.tribe baby` within ~1 s gives the held-birth case of BUG-9299.
+* Wins and totems (BUG-9318): `coop.tribe npc_tribe 3 70` (host) makes an NPC village; its political id is cTribe
+  +0x30 (`mem.read <obj+0x30> 4`, the obj from `coop.tribe`); `coop.tribe win <id hex>` queues the win; the piece and
+  TRG_Upgrade come when the Tribe game mode is entered again (open and close the planner from the hut). The guest then
+  shows "Saving Tribal conquest for your partner..." and reloads the host's save ~35 s later. `coop.tribe totems`
+  (host) lists every founder totem and the partner_totems counters.
+* `mod.reload coop` on the MSI host in Tribe (a new coop.dll copied over mods\coop.dll while the game ran; the copy
+  works, the file is not locked) ended the co-op session ("offline", the guest dropped) and the host's game fell back to
+  the galaxy menu; re-hosting and `coop.load Game0 Vandh` brought the world back. Restart both games for a new build
+  instead.
+* Test wins in a world with native NPC tribes nearby set off raids on the host's village and repeated party wipes
+  (BUG-9320); each wipe drops the newest totem piece and reloads, which hides a totem result. Run win tests right after
+  the Tribe entry, before the native tribes raid.

@@ -73,8 +73,19 @@ Done on fix/l47-powers (built; not run in a game yet):
   meat, eggs, bundles, food raid, repair, tame / feed: not reached (no targets near the villages in this world; `coop.tribe
   act` only takes members / proxies).
 
+- Live QA 2026-11-21, third run (fix/l47-tribe, MSI two games, Tribe from Vandh): loose fruit PASS end to end. The
+  guest's six villagers selected (`coop.tribe select <id> 1` on the guest), a real right-click on a loose fruit
+  (o2C9CC91, 52 m): guest cmds_sent 8 -> 9, host cmds_done 9 -> 15, rejected unchanged, host "last order: from=1 kind=0
+  n=6 action=2 target=3/0/6ABEE7E"; within 48 s the members walked between the fruit (250 -425) and their village and
+  the guest village's food rose from about 1 to 16.24 (host `coop.status` seat 1 food) with item=17 carried.
+  Food raid: a right-click on a fresh NPC village's food mat / bundle (o629BAFE / o18C431C) sent nothing from the guest,
+  and the same click with the host's own chief selected gave no order on the host's game either (native: not a raid in
+  that state), so the raid relay was not exercised. Fishing, meat, eggs, repair, tame / feed: not reached (no such
+  targets near the villages in this world).
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix/l47-powers: tribe.guest_orders, tribe.guest_chief (static analysis + build only; the two-player test is for the lead).
 - 2026-11-21: live two-game QA (see Verification).
 - 2026-11-21: second live QA run (see Verification).
+- 2026-11-21: third live run (fix/l47-tribe): loose fruit PASS; raid not reachable natively in the test world.

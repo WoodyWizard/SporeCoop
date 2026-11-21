@@ -58,6 +58,13 @@ guest's `coop.tribe species` shows the host's village with the host's key; off: 
   7CE63A2C here)"). The vote ended unanswered for the guest (BUG-9298); whether the host's own outfit is applied only at a
   full vote was not checked. On the guest's screen the host's villagers were too small to judge the look.
 
+- Live QA 2026-11-21, third run (fix/l47-tribe): the outfit change itself was not reached (time). The "NPC tribe
+  species mismatch" of the earlier runs, rechecked: an NPC village made by `coop.tribe npc_tribe 3 70` (host) reads
+  slot0 291EE5B5 on the host and `7D894077 (host 291EE5B5 = 7D894077 here)` on the guest, `fixed=0`: the guest's
+  remap of the host's creature (the same records), not a wrong species. Screenshots of that village on both games show
+  the same green creatures (scratchpad only). The host's own village on the guest keeps 291EE5B5 itself (the guest has
+  that key too), so one host species shows under two keys on a guest; same look, not a bug.
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on fix/l47-view (built, not run in a game yet; the lead runs the two-player test).
@@ -70,3 +77,4 @@ guest's `coop.tribe species` shows the host's village with the host's key; off: 
   the host every 3 s); neither = a bug to report.
 - 2026-11-21: live two-game QA (see Verification).
 - 2026-11-21: second live QA run (see Verification).
+- 2026-11-21: third live run: the NPC species "mismatch" is the remap (same look); the outfit change not reached.

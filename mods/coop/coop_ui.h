@@ -135,6 +135,9 @@ void draw_tooltip();
 // mod there reaches the game's window under it (the "game saved" box's OK); false = not open or not there
 bool step_aside(int x, int y, double secs);
 int input_lock_now(); // the game's input lock count (cGameInputManager +0x110; > 0 = clicks are dropped)
+// BUG-9318: our loading cover (join / reload / editor return) is over the game: set by coop.cpp's overlay each frame
+void set_cover_up(bool up);
+bool cover_up();
 bool game_modal_up(); // a modal window of the game is up (UTFWin window manager +0x82C: the pause menu, a box; not ours)
 void shutdown(); // mod unload: hide our windows
 // 3X A: an editor was requested: Spore's UI goes to 100 % before the editor builds its own (it stays there until

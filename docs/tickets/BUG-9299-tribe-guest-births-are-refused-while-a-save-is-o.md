@@ -61,8 +61,18 @@ Done (2026-11-20, fix/l47-births), switch `tribe.guest_birth_gate` (on; off = re
   baby added after 2.6 s", guest "A baby joined ...". Not reached: the host's own hut birth then the guest's within 5 s
   (needs the host's hut UI); off-run not done.
 
+- Live QA 2026-11-21, third run (fix/l47-tribe 3e6d1b0a, MSI two games, Tribe from Vandh): PASS (host's own birth case).
+  The host's player clicked its hut's baby button (the small button under the hut's planner button) and the guest sent
+  `coop.tribe baby` 0.8 s later: host 10:03:36.608 "player 1's baby waits up to 20 s: the host's own baby is on its way
+  (the game makes one at a time) (host birth flag +3A3=0 ...)", 10:03:41.242 "player 1's held baby added after 4.6 s";
+  `coop.tribe births` held=1 after_wait=1 rejected=0; the guest's own baby joined its village. Off-run (`coop.fix
+  tribe.guest_birth_gate off` on the host, the same two clicks): 10:04:12.486 "player 1's purchase refused: Births are
+  not available at this point in the Tribal campaign." (rejected=1): the 67-dev report's refusal. Cause 2 of the root
+  cause (the host's +3A3 flag down during its own birth) is now seen at runtime.
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fixed on fix/l47-births (`tribe.guest_birth_gate`); built, not run in a game yet (the lead's two-player test).
 - 2026-11-21: live two-game QA (see Verification).
 - 2026-11-21: second live QA run (see Verification).
+- 2026-11-21: third live run (fix/l47-tribe): the host's own birth case PASS on, FAIL off.

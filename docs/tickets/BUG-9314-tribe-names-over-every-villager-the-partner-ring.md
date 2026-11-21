@@ -9,8 +9,8 @@ source: owner 2026-11-21
 role: both
 versions: 0.7.14.1-lineages67-dev
 fixed_in:
-branch:
-commits:
+branch: fix/l47-tribe
+commits: 3e6d1b0a
 tests:
 signature:
 docs:
@@ -32,6 +32,15 @@ With the partner rings on (tribe.partner_ring, 7K A), draw_owner_tags draws no t
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- Live QA 2026-11-21 (fix/l47-tribe 3e6d1b0a, MSI two games: host MSITribeHost instance 2, guest MSIGuest instance 1, a
+  live Creature -> Tribe entry from Vandh; the guest's villagers walked into the host's village, then the host's into the
+  guest's view): PASS on both screens. Switch on (default): no text over any villager, the partner rings shown
+  (host `coop.status` `labels: ... name_tags=0 partner_rings=3`, guest `name_tags=0 partner_rings=3`;
+  out/qa-shots/bug9314_host_on.png, bug9314_9315_host_on.png, bug9314_9315_guest_on.png). `coop.fix tribe.ring_only off`
+  on both: the names came back ("Host-NoShare-", "Host-NoShare-'s chief" on the host, "Host", "Host's chief" over the
+  host's villagers on the guest; host `name_tags=3`, guest `name_tags=3`; out/qa-shots/bug9314_9315_host_off.png,
+  bug9314_9315_guest_off.png); on again: gone (name_tags=0). A downed villager's revive ring was not checked.
 
 ## History
 - 2026-11-21: opened.
+- 2026-11-21: live two-game QA on the MSI: PASS on, FAIL off (see Verification).

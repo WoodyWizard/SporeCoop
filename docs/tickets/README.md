@@ -1394,3 +1394,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9312](BUG-9312-civ-guest-a-superweapon-s-visual-effect-target-m.md) | open | bug | Civ | 2026-11-21 |  | Civ (guest): a superweapon's visual effect (target marker, impact) is drawn on the host's screen only, never on a guest's |
 | [BUG-9314](BUG-9314-tribe-names-over-every-villager-the-partner-ring.md) | open | bug | Tribe | 2026-11-21 |  | Tribe: names over every villager; the partner ring under the unit is enough |
 | [BUG-9315](BUG-9315-tribe-the-green-village-food-line-at-the-top-rig.md) | open | bug | Tribe | 2026-11-21 |  | Tribe: the green Village food line at the top right shows in releases (a test line) |
+| [BUG-9318](BUG-9318-tribe-a-partner-s-own-village-totem-gets-no-piec.md) | open | bug | Tribe | 2026-11-21 |  | Tribe: a partner's own village totem gets no piece for the party's wins and no totem cutscene |
+| [BUG-9319](BUG-9319-tribe-the-partner-rings-are-drawn-over-the-spore.md) | open | bug | Tribe | 2026-11-21 |  | Tribe: the partner rings are drawn over the Spore Guide window |
+| [BUG-9320](BUG-9320-tribe-repeated-party-wipes-of-the-host-s-village.md) | open | bug | Tribe | 2026-11-21 |  | Tribe: repeated party wipes of the host's village (village down about every 100 s, the hut read 1/400 right after a wipe reload) |
