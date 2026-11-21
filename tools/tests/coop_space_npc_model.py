@@ -18,6 +18,14 @@ BUG-1363: which ship the empire flies is the game's random pick; 3 lab runs in a
 (INCONCLUSIVE in a row fails, A15). After NATURAL arrivals without the case, the next arrival's ship models get a key no
 game has (`coop.ufoplant`; the guard and the game's SetModel work on it as on a cache ship without its model): the case
 happens every run; which way it came is printed ("natural" / "planted").
+
+BUG-1391: the natural case came only at the FIRST arrival (2 of 15 runs, ~2 s after it); no revisit ever had it (0 of
+36 visits 2-4): the ships the empire has at its star get their models at the first arrival only, a revisit asks for
+models only for ships that come later (lab 20261121-003202 coop: planted models asked 21 s and 56 s after the third
+arrival; solo: none in the 35 s the test stayed, RESULT: SKIP, the 4th INCONCLUSIVE in a row = FAIL). So the second
+arrival is planted (a second natural one never brought the case) and the test stays at the star until the game asked
+for a planted model (`ship model keys planted N` in coop.status), at most PLANT_WAIT s, instead of leaving after the
+fixed wait of fly().
 """
 import os
 import re
@@ -35,8 +43,9 @@ from twoinst import Checks, alive, shot, start, wait_up
 
 FIXTURE = 'space_empire'
 STAR = 0x004A0014  # home star of the NPC empire 8000216E in the fixture
-VISITS = 3
-NATURAL = 2  # BUG-1363: arrivals with the game's own pick of ships; the last one gets planted unknown model keys
+VISITS = 2
+NATURAL = 1  # BUG-1363/BUG-1391: the first arrival with the game's own pick of ships; the next one gets planted keys
+PLANT_WAIT = 180  # BUG-1391: s at the star for a ship that asks for its model after a revisit (seen: 21 s, 56 s)
 
 
 def faults(con):
@@ -148,6 +157,10 @@ def run():
         m = re.search(r'ship models defaulted (\d+)', host.call('coop.status')['out'])
         return int(m.group(1)) if m else 0
 
+    def planted_n():
+        m = re.search(r'ship model keys planted (\d+)', host.call('coop.status')['out'])
+        return int(m.group(1)) if m else 0
+
     def fly(star, world):
         for _ in range(5):  # a badge or caption cinematic blocks the jump: confirm it
             r = sp(host, 'jumpto', star)
@@ -180,6 +193,19 @@ def run():
         if planted:  # BUG-1363: the ships of this arrival ask for a model no game has
             print('  visit %d: planted: %s' % (visit + 1, host.call('coop.ufoplant 4')['out'].strip()), flush=True)
         fly(STAR, '804A0014')
+        if planted:  # BUG-1391: a revisit asks for models only for ships that come later: wait for that state
+            t0, got = time.time(), 0
+            while time.time() - t0 < PLANT_WAIT and alive(lane.HOST):
+                got = planted_n()
+                if got:
+                    break
+                hp = sp(host, 'hp')
+                if 'cine=1' in hp or 'movie=1' in hp:
+                    host.call('key enter')
+                time.sleep(2)
+            print(f'  visit {visit + 1}: planted model keys asked for {got} after {time.time() - t0:.0f} s more at the star'
+                  f' (at most {PLANT_WAIT} s)', flush=True)
+            time.sleep(3)  # the game's SetVisible / gfx messages on that ship follow its SetModel
         n = defaulted()
         print(f'  visit {visit + 1}: ship models defaulted {n}' + (f' ({"planted" if planted else "natural"})' if n else ''),
               flush=True)
