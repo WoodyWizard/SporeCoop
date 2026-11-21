@@ -50,3 +50,4 @@ Lab not run yet (orchestrator: no lab until "lab ok", the final check runs on ot
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20 (fix/w61-cell): the night plan of the second final check ran the "split from cellslow" line as `SPORE_LAB_FIXOFF="cell_slow_link=cell.slow_link"` on cell_slow_link (PASS expected) instead of on cell_kin_species: that is cell_slow_link_off's case and it FAILED as it must (lab 20261120-133208: median 0.31, `c: 158 missing`; the twin 0.28 in 20261120-130608). The command meant: `SPORE_LAB_FIXOFF="cell_kin_species=cell.slow_link" SPORE_DETECTOR=20 python3 tools/lab.py run cell_kin_species --lane N --retry 0 --no-build` (PASS expected).

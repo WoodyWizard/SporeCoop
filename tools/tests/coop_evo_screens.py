@@ -503,7 +503,11 @@ def part_cell_eggs(host, guest, ck, ready, scr):
         m, e = mate_counts(host)
         if m < 0 or 'Cell' not in mode(host):
             break  # the vote ran out: the editor comes (the counts are read in Cell only)
-        shown.append(window_shown(host))
+        look = window_shown(host)
+        # BUG-1387: the vote ran out between the loop's check and this look (lab 20261120-133703 lowfps: "time is up
+        # after 59.1 s", the 59 s look read no window): a look after the vote's end says nothing of the window
+        if look or 'vote active' in host.call('coop.vote')['out']:
+            shown.append(look)
         m1, e1 = m, e
         rows.append(f'{time.time() - t_vote:.0f}s:{m - m0}/{e - e0}')
         if k in (0, 3) and time.time() - t_vote > (12 if k == 0 else 33):

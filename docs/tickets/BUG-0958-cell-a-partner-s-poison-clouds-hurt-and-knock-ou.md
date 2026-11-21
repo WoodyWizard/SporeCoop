@@ -62,3 +62,4 @@ must not be knocked out.
 - 2026-11-12 (fix/w48-cell): opened from the BUG-0799 runs.
 - 2026-11-12 (fix/w48-pass): fixed (cell.partner_poison), FAIL and PASS runs in Verification.
 - 2026-11-12: released in 0.7.13.
+- 2026-11-20 (fix/w61-cell): `lab.py fixcheck` CONTRADICTED the suite's claim "SPORE_FIX_OFF=cell.partner_poison fails" on cell_partner_poison_host (one PASS run with the switch off, 20261112-120150; Verification already said no-fail-run): the suite.py comment and the test's docstring now say no FAIL run, a regression check; cell_partner_poison (--who guest) keeps its claim.

@@ -27,6 +27,7 @@ a moment between two reads is no violation):
                 instead of the host's dna=, and its `bar=` (the evolution bar, the party's) with the host's
   hp            what a machine's partner line says of a player's hp / max hp (the state it received)
                 equals what that player's own trace line says at the same moment, on 2 comparisons
+                (a partner line with the player not in a world, flags bit 0 clear, is not compared: BUG-1386)
   objects       the game's cell pool (tiles: ... cell pool N/M) stays under 90 % of its size, the
                 census of each game (coop.census, every 30 s, live only) stays under the limits of
                 OBJECT_LIMITS and does not grow past 3x its first count + 200
@@ -523,7 +524,12 @@ class Hp(Invariant):
                         continue
                 like = p if self.c['same_session'] else None  # BUG-1061
                 o = tl.own_at(subj, p['t'], 5.0, like) if p['t'] is not None else None
-                if not o or not p['same'] or not playing(o) or o['maxhp'] <= 0 or p['age'] > 1.0:
+                # BUG-1386: a partner line of a player that is not in a world (flags without bit 0: hp 0/0, the
+                # state of a player reloading the world) says nothing about its hp; its own nearest line of that
+                # stage was the next session's (cell_rejoin_leave, lab 20261120-133703: host s 70 / 80 against the
+                # guest's s 73 / 83 after its reloads)
+                if not o or not p['same'] or not (p['flags'] & PF_IN_WORLD) or not playing(o) or o['maxhp'] <= 0 \
+                        or p['age'] > 1.0:
                     run = []
                     continue
                 # the subject's own hp unchanged around the moment (a fight changes it between the lines)

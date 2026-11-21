@@ -10,7 +10,7 @@ role:
 versions: 0.7.16
 fixed_in:
 branch: fix/w59-cell
-commits: 505778b1
+commits: 505778b1 bead290b
 tests: cell_own_level10, cell_own_level10_follow_off, cell_tests own_cell_follow
 signature: cell_own_level10 "no NPC of the previous own cell 4DA56CA5 is left (own species now BAF1AD40)"
 docs: docs/re/cell.md#cell-kin-follow
@@ -49,6 +49,20 @@ Lab not run yet (orchestrator: no lab until "lab ok", the final check runs on ot
 * twin, FAIL expected: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_own_level10_follow_off --lane N --retry 0
   --no-build` (it fails only when the host's rebuild populates near the guest's puppet, as in the first change of
   20261119-214823; a twin that passes is rerun once before it counts).
+* 2026-11-20, second final check (rel/0.7.16 673f7a55): cell_own_level10 PASS (lab 20261120-133703, lane 2, fix on:
+  `4DA56CA5 x0` after the change); the FAIL before the fix twice (20261119-214823 `x5`, 20261120-041304 `x4`, both on
+  f6c16890). The twin cell_own_level10_follow_off PASSED (lab 20261120-130608, lane 6): `4DA56CA5 x0` 8 s after the
+  change. Observed in its logs: the host's rebuild put the host at (100 100) while the guest's cell stayed at (-0.1 -0.3)
+  (host trace s 50.008 `d=141 drawn=(-0.0 -0.3)`), the guest's follow reached the host 1.37 s later (s 50.324; 0.53 s in
+  the FAIL runs), then the guest's own rebuild put it at (100 100) too (s 60 `d=0`). Inferred (the test printed no kin
+  counters): kin of the old cell made near the guest's old place in the window were culled with that place before the
+  8 s listing, and none were made near the host. The test listed only 8 s later, so whether the window was hit was not
+  visible. Test change (fix/w61-cell): after each change the host's pool is listed again at once when the guest's
+  follow is there (the previous cell must not be in it either) and the kin counters since the change are printed
+  (`kin filter since the change: partner+N follow+M ...`; partner+0 with the switch off means the window made no kin of
+  the guest: the twin did not reach the bug). Lab again: `SPORE_DETECTOR=20 python3 tools/lab.py run cell_own_level10
+  --lane N --retry 0 --no-build` PASS; `... run cell_own_level10_follow_off --lane M --retry 0 --no-build` FAIL expected.
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20 (fix/w61-cell): the twin passed in the second final check; the test lists the pool at the follow too and prints the kin counters.

@@ -9,10 +9,11 @@ and the food it ate went to a host that dropped it.
 1. The host leaves for the main menu (`coop.menu`); the guest counts it as away (host_away=1).
 2. In the guest's game the creatures around it swim by their own AI: at least two of them moved
    more than 1 m within 6 s (`coop.pool npcs`, the positions in the guest's own pool).
-3. The guest eats 10 points through the game's hooked AddFoodPoints (`coop.pool food 10`).
+3. The guest eats 10 points through the game's hooked AddFoodPoints (`coop.pool food 10`); its idle cell may eat
+   plants of its own pool too (BUG-1382), counted from the total right before.
 4. The host loads its world again: within 30 s every creature around the guest is a mirror of a live
    host cell again (the guest's own cells are gone) and there are more than 5 mirrors, and the host's
-   game food total S+0x1C grew by the 10 points, the guest's the same, and the guest's total never
+   game food total S+0x1C grew by all the guest ate while it was away, the guest's the same, and the guest's total never
    fell below its own on the way (read every 0.2-0.5 s).
 
 --editor: the host is in its own cell editor instead (its mating call by a real click, then onto the
@@ -103,12 +104,15 @@ def main():
     # off), the mod sets it again every frame (guest_tick); the movement is what the player sees
     ck(len(n2) > 0, f'creatures around the guest while the host is away ({len(n2)})')
     ck(len(moved) >= 2, f'the guest\'s creatures swim by their own AI ({len(moved)} moved more than 1 m in 6 s)')
-    # 3. the guest eats
+    # 3. the guest eats. BUG-1382: its idle cell may have eaten plants of its own pool by then (lab 20261120-133703:
+    # kept_plant=12 before the 10 points): the +10 is counted from the total right before it, and everything the guest
+    # ate while the host was away (g1 - g0) must reach the host's total
+    ga = food(guest)
     print(' ', guest.call('coop.pool food 10')['out'].strip())
     time.sleep(1)
     g1 = food(guest)
-    print(f'  guest food {g0} -> {g1}; {away_line(guest)}')
-    ck(g1 == g0 + 10, f'the guest\'s game counts its meal while the host is away ({g0} -> {g1})')
+    print(f'  guest food {g0} -> {ga} (its own meals while the host is away) -> {g1}; {away_line(guest)}')
+    ck(ga is not None and g1 == ga + 10, f'the guest\'s game counts its meal while the host is away ({ga} -> {g1})')
 
     # 4. the host is back
     if editor:
@@ -141,10 +145,13 @@ def main():
     n, dead, own = res or host_pool_again()
     print(f'  back: guest mirrors {n}, not live on the host {len(dead)}, own creatures left {len(own)}; {away_line(guest)}')
     ck(res is not None, f'the guest shows the host\'s pool again ({n} mirrors, {len(dead)} dead, {len(own)} own creatures)')
-    ok = wait(lambda: food(host) == h0 + 10 and sample() == food(host), 15, 0.2)
+    # BUG-1382: what the guest ate while away (g1 - g0, the 10 points and its own meals) is in the host's total; the
+    # host's own cell may eat after its return, so the total is at least that and the guest has the same
+    ok = wait(lambda: (food(host) or 0) >= h0 + (g1 - g0) and sample() == food(host), 15, 0.2)
     h2, g2 = food(host), food(guest)
     print(f'  food host {h0} -> {h2}, guest {g1} -> {g2}')
-    ck(ok, f'the 10 points eaten while the host was away are in the host\'s total, the guest the same ({h0} -> {h2}, guest {g2})')
+    ck(ok, f'the {g1 - g0} points eaten while the host was away (10 of them by coop.pool food) are in the host\'s total, '
+           f'the guest the same ({h0} -> {h2}, guest {g2})')
     low = min(lows) if lows else None
     print(f'  guest total while the host came back: low {low} ({len(lows)} reads)')
     ck(low is not None and low >= g1, f'the guest\'s total did not dip while the host came back (low {low}, its own {g1})')

@@ -12,7 +12,8 @@ the host dies without a helper (`coop.pool selfhit 50` until its game rebuilds t
 guest is out, the host's own cell must never get the knockout look (`coop.pool selfstate`: its opacity), the mod's
 lookup of the partner's cell must never hand out the host's own (`handed_own`, the effect lasts one frame) and no game
 faults. The rebuilt cell lands on the puppet's address in some rounds only (BUG-0342: about a third).
-SPORE_FIX_OFF=cell.puppet_cell_index must FAIL.
+No FAIL run: with cell.puppet_cell_index off it passed (lab 20261112-012332, 20261112-012832, 20261112-013239; BUG-0823
+not-reproduced: the coincidence came once in ~16 rebuilds and left nothing visible). A hardening check.
 
   SPORE_LANE=6 python3 tools/tests/coop_cell_puppet_cell.py [--rounds 6]"""
 import argparse

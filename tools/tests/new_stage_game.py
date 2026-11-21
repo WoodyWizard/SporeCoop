@@ -76,6 +76,22 @@ def chooser_open(c):
     return len(flags) >= 3 and all(f & 1 for f in flags[:3])
 
 
+def wait_menu_intro(c, t_menu, secs=90):
+    """BUG-1385: the galaxy menu's intro cinematic (GGE_intro) starts ~15.85 s after the menu came up (world.cpp,
+    BUG-0607) and moves the camera for ~10 s; a slot clicked before or during it did not open the stage chooser
+    (lab 20261120-133703 cell_far_guest: the 600-frame wait ends ~10 s after the menu, the intro started 15.9 s after
+    it, the five tries failed). Wait
+    until it has played (`coop.status`: "(menu intro)"), or 20 s after the menu with none playing"""
+    seen = False
+    while time.time() - t_menu < secs:
+        if "(menu intro)" in c.cmd("coop.status"):
+            seen = True
+        elif seen or time.time() - t_menu > 20:
+            break
+        time.sleep(1)
+    c.cmd("wait.frames 60 20000")
+
+
 def city_count(c):
     return sum(1 for line in c.cmd("coop.civ").splitlines() if line.startswith("city "))
 
@@ -137,22 +153,30 @@ def main():
         if "GalaxyGameEntry" in c.cmd("game.mode"):
             break
         time.sleep(1)
+    t_menu = time.time()
     c.cmd("wait.frames 600 120000")  # a fresh profile flies into the galaxy first (~15 s)
+    wait_menu_intro(c, t_menu)
     c.cmd("cheat levels -unlock")
-    if "," in a.slot:
+    index = None if "," in a.slot else int(a.slot)
+    if index is None:
         sx, sy = map(int, a.slot.split(","))
     else:
-        sx, sy = find_slot(c, int(a.slot))
+        sx, sy = find_slot(c, index)
     print("planet slot at", sx, sy)
-    for _ in range(5):  # hover first: a click on a slot that was not hovered may do nothing
+    for n in range(6):  # hover first: a click on a slot that was not hovered may do nothing
         c.cmd(f"move {sx} {sy}")
         c.cmd("wait.frames 15 10000")
         c.cmd(f"click {sx} {sy}")
         c.cmd("wait.frames 150 60000")
         if chooser_open(c):
             break
-        if "," not in a.slot:
-            sx, sy = find_slot(c, int(a.slot))
+        if index is not None:
+            # BUG-1385: a slot that did not open the chooser three times: the next one (an empty profile's slots
+            # are all new games; lab 20261120-133703 clicked one at 139 433, by the left edge, five times)
+            if n == 2 and len(slot_centers(c)) > index + 1:
+                index += 1
+                print("planet slot", index - 1, "did not open the chooser: slot", index)
+            sx, sy = find_slot(c, index)
     else:
         print("FAILED: the stage chooser did not open")
         return 1
