@@ -9,12 +9,12 @@ source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with 
 role: guest
 versions: 0.7.14.1-lineages67-dev
 fixed_in:
-branch:
+branch: fix/l47-births
 commits:
 tests:
 signature:
-docs:
-related:
+docs: docs/re/tribe.md#tribe-outfit-vote-timeout-births, docs/06-testing.md#testing-outfit-vote-timeout-births
+related: BUG-9298
 ---
 
 ## Report
@@ -28,6 +28,8 @@ then five refusals "Births are not available at this point in the Tribal campaig
 2. The five refusals (likely, not proven at runtime): `!F<uint8_t>(ui, 0x3A3)` reads the HOST's TribalGame
    mbMatingAllowed (docs/re/tribe.md), cleared while the host's own birth is on its way (the host's food fell 49 -> 29 ->
    19 in that window: the host was buying babies). The guest's births depend on the host's own birth state.
+   The guest's purchase does not use the native birth (SpawnMember on its own village), so the flag only says the
+   host's single native birth is busy for a few seconds (TribeStage_BabyBorn sets it to 1 when that baby comes).
 3. The guest sends one order per click with no in-flight guard (`h_HutUI` ~2870) and the reasons are lumped into one
    message, so a player clicks 5-14 times and learns nothing.
 
@@ -37,9 +39,21 @@ host's +0x3A3 flag for a guest purchase (keep BirthBlocked) after logging its va
 0.5 s in-flight guard on the guest. Switch `tribe.guest_birth_gate`. Test duo_tribe_birth.py with a queued share and a
 host birth in flight: FAIL / PASS.
 
+Done (2026-11-20, fix/l47-births), switch `tribe.guest_birth_gate` (on; off = refused at once with the old message):
+- `save_pending()` (a share's save only queued) no longer refuses a birth or a rack: the purchase goes into that save.
+- A save being written (`save_busy`), a load (`load_queued`) or the host's +0x3A3 down HOLD the birth instead of
+  refusing it (not skipped, as first planned: the flag is also the native unlock, so a held birth respects it): the host
+  tries it again every 0.5 s for at most 20 s (`guest_birth_tick`), one held birth per player (a further order: "Your last
+  baby is still waiting ..."). The buyer is told "Your baby comes in a few seconds: <reason>."; after 20 s "The host could
+  not add that baby: <reason> for 20 seconds. Try again." The hold logs the +3A3 value (evidence for cause 2).
+- Separate messages: village / villager not found, births not available (BirthBlocked), food, the population limit, the
+  wait reasons; racks: "saving or loading" apart from "village or villager not found".
+- Guest: one birth order per 0.5 s (the native hut button and `coop.tribe baby`); `coop.tribe births` shows
+  `waiting held after_wait expired clicks_guarded rejected`.
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20: fixed on fix/l47-births (`tribe.guest_birth_gate`); built, not run in a game yet (the lead's two-player test).

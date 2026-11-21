@@ -1626,6 +1626,11 @@ bool peer_elsewhere(uint8_t id)
     const net::PlayerState* s = peer_state(id);
     return host_world::peer_elsewhere(s != nullptr, s ? s->mode : 0, s ? s->world : 0, g_mode, g_world);
 }
+uint32_t peer_mode(uint8_t id)
+{
+    const net::PlayerState* s = peer_state(id);
+    return s ? s->mode : 0;
+}
 } // namespace own_world
 namespace {
 

@@ -9004,3 +9004,17 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
 * Pitfalls: QA games run at 10 FPS (`frame_ms=100`), so "frames with an interval over 80 ms" counts every frame
   there; the call times are still right. Another game on the same PC (the owner playing) slows every section: a run
   then shows everything slow, not one culprit.
+
+## Outfit vote timeout and held guest births: how to test (2026-11-20, fix/l47-births)
+<a id="testing-outfit-vote-timeout-births"></a>
+
+BUG-9298, BUG-9299. Two players in a two-founder Tribal campaign (`coop.tribe village_orders on`).
+* Stuck vote: the guest opens an editor first (its own hut's outfitter, or `coop.vote editor 156276D1` on the guest),
+  then the host starts the outfit vote (the native hut -> Planner -> hat tab -> Edit Outfit, as duo_tribal_outfitter.py
+  taps it, or `coop.vote editor 156276D1` on the host) and both press ready. The host leaves its editor; the guest leaves
+  its own one later. Host: `coop.tribe outfits` shows `token=<n> ready=0 pending=1 idle=<s>`; with
+  `tribe.outfit_vote_timeout` on, 90 s after the guest is back in Tribe: `token=0 pending=0 timed_out=1` and the log line
+  `outfit vote ... ended unanswered`; off: `pending=1` as long as the guest stays.
+* Held births: `coop.tribe births` (both games): `waiting held after_wait expired clicks_guarded rejected`. A host save
+  being written (`coop.save` / a share) or the host's own hut birth (click its own hut, then the guest's Add Baby within
+  5 s) holds the guest's birth; it comes when the save or the host's baby is done (`after_wait` +1).
