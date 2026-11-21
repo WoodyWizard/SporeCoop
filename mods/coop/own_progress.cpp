@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <map>
+#include <set>
 
 #include "cellsync.h"
 #include "fixes.h"
@@ -455,21 +456,32 @@ static int g_level_told = -1;
 // the highest food this game may have now: the last food of the lowest partner's level (INT_MAX: no limit)
 static int food_cap(int* low_level = nullptr, std::string* who = nullptr)
 {
-    if (!g_level_fix || !active() || game::mode_id() != modes::kCell || !C.sess)
+    // (also while a partner is away: the host alone hosting keeps to the level of the planet's partners on record, so a
+    // partner who comes back is not a level below: lane A, a one-level gap left the lower player's screen empty)
+    if (!g_level_fix || !g_fix || !C.sess || !C.sess->connected() || !settings::on(settings::kOwnProgress) ||
+        (C.one_creature && C.one_creature()) || game::mode_id() != modes::kCell)
         return INT_MAX;
     int low = INT_MAX;
     const uint8_t my = C.sess->my_id();
-    auto note = [&](uint8_t id, int food) {
+    auto note_named = [&](const std::string& name, int food) {
         if (food < low) {
             low = food;
             if (who)
-                *who = name_of(id);
+                *who = name;
         }
     };
-    if (is_host()) {
+    auto note = [&](uint8_t id, int food) { note_named(name_of(id), food); };
+    if (is_host() || C.sess->players().size() < 2) {
+        std::set<std::string> here;
         for (auto& [id, l] : g_live)
-            if (id != my && l.reported && l.v.mode == modes::kCell)
+            if (id != my && l.reported && l.v.mode == modes::kCell) {
                 note(id, l.v.food);
+                here.insert(identity::key(id));
+            }
+        const std::string mine = identity::key(my);
+        for (const auto& r : g_recs) // the partners of this planet who are away now
+            if (r.key != mine && !here.count(r.key) && r.v.mode == modes::kCell)
+                note_named("your partner (away)", r.v.food);
     } else if (H->time_seconds() - g_table_got < 5) {
         for (auto& p : g_table) // (the table's percent: food * 100 / 1000, the level lines are multiples of 100)
             if (p.id != my && p.reported && p.mode == modes::kCell)
