@@ -14,7 +14,6 @@ import sys
 import time
 
 import lane
-from coop_campaign import EDITOR_DICE, EDITOR_DONE, TRIBE_EDITOR_PARTS, drag_slow, editor_click
 from twoinst import Checks, Monitor, shot, start, wait_guest_in
 
 W, H = 1440, 1080
@@ -78,6 +77,8 @@ class Bot:
         for i in range(6):
             if 'Editor' not in self.c[who].call('game.mode').get('out', ''):
                 return
+            # (here: coop_campaign imports coop_multi, which imports this module)
+            from coop_campaign import EDITOR_DICE, EDITOR_DONE, TRIBE_EDITOR_PARTS, drag_slow, editor_click
             time.sleep(2)
             con = self.c[who]
             if i in (1, 4):  # an empty creation: three parts (City Hall / vehicle / building palettes)
