@@ -10,7 +10,7 @@ role: guest
 versions: unreleased
 fixed_in:
 branch: fix/w62-flake-tcs
-commits:
+commits: d3303a4d, 84c8f9e6
 tests: party_space_names
 signature:
 docs:

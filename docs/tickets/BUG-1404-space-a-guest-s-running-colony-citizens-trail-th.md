@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.15, unreleased
 fixed_in:
 branch: fix/w62-flake-tcs
-commits:
+commits: 80ee2745, 84c8f9e6
 tests: space_planet_citizens
 signature:
 docs: docs/re/space.md#space-citizen-lead

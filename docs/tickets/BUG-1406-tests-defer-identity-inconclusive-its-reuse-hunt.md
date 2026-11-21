@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.13, unreleased
 fixed_in:
 branch: fix/w62-flake-tcs
-commits:
+commits: 7ba78dc2, 84c8f9e6
 tests: defer_identity
 signature:
 docs: docs/06-testing.md#testing-w62-flake-tcs
