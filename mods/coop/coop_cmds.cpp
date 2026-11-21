@@ -1213,6 +1213,23 @@ void register_commands_core()
                        return 0;
                    },
                    nullptr, MT);
+    H->command_add(M, "coop.sameversion",
+                   "coop.sameversion [as <coop version> | real] - BUG-9284: the same-version gate (status); tests: this game says it runs another coop version in its next HELLO / WELCOME (outside a session)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       static std::string real;
+                       if (real.empty())
+                           real = g_sess.version;
+                       if (argc > 2 && !strcmp(argv[1], "as") && !g_sess.connected()) {
+                           std::string v = real;
+                           size_t e = v.find(',');
+                           g_sess.version = std::string("coop ") + argv[2] + (e == std::string::npos ? "" : v.substr(e));
+                       } else if (argc > 1 && !strcmp(argv[1], "real") && !g_sess.connected())
+                           g_sess.version = real;
+                       SAY("same version: gate=%d version='%s' refused=%u\n", (int)g_sess.same_version, g_sess.version.c_str(),
+                           g_sess.same_version_refused());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.progress",
                    "coop.progress [resync] - own progress (BUG-9265): this game's own DNA / bar / food, every player's bar, the host's records; resync: ask the host for our values again",
                    [](void*, int argc, const char* const* argv, SkOut* out) {

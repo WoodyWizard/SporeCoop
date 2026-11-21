@@ -15,7 +15,13 @@ struct Options {
     std::wstring pack_dir;      // the setup's own folder
     std::string api = upd::kLatestUrl;
     bool downgrade = false;     // /downgrade or the player said yes: a version older than the installed one is fine
+    // BUG-9284 (build/amigos, the private friends build): its own version. Non-empty: the setup installs only the pack of
+    // exactly this version next to it (or /pack:) and never downloads anything (an official release would replace the
+    // private build: the owner's friend had got the official 0.7.15.5 that way)
+    std::string private_version;
 };
+// BUG-9284: the refusal of a private build's setup without its pack, in words for the player
+std::string private_pack_missing(const std::string& version);
 
 bool is_game(const std::wstring& root); // root\SporebinEP1\SporeApp.exe exists
 

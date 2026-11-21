@@ -158,6 +158,15 @@ std::map<uint8_t, uint8_t> g_roles; // civilization roles by player id (the host
 // BUG-0079); `coop.role fix 0` = the code before (tests)
 bool g_role_fix = true;
 COOP_FIX("role.fix", "BUG-0064 BUG-0079", g_role_fix, "civ: roles end with their player and session (coop.role fix)");
+// BUG-9284 (the private friends build, owner test 2026-11-20: a friend on the official 0.7.15.5 joined the 0.7.15.94
+// host with only a "versions differ" warning, and the stages' own progress, own cards and own cells did not work with
+// it): a guest whose SporeCoop version differs from the host's is refused at its join, with a text on both games
+// (net::Session::same_version). coop.ini [coop] same_version: this build's default is on (1); `coop.fix
+// net.same_version off`: the warning only (0.7.15).
+static bool g_same_version_fix = true;
+COOP_FIX("net.same_version", "BUG-9284", g_same_version_fix,
+         "net: only the same SporeCoop version joins (the private build): another one is refused with a text on both games");
+static bool g_same_version_cfg = true;
 std::map<uint8_t, int> g_lobby_rtt; // guest: host-measured rtt of every player
 // BUG-0772 (not reproduced, a guard): the ready flags and round trips are in the BUG-0422 registry, so a join and a
 // leave of an id clear them like every other per-player state. The ticket's path (a leaver without a Remote kept
@@ -1114,6 +1123,7 @@ static void frame_local_update(double now)
     store::tick();    // E1 (BUG-1149): the host's world opened: its per-player store
     autosave::tick(); // E2 (BUG-0864): the host's autosave (the save itself outside the frame)
     g_sess.max_players = settings::get(settings::kPlayerLimit); // F3 (BUG-0768): the host's join rules
+    g_sess.same_version = g_same_version_fix && g_same_version_cfg; // BUG-9284
     pfind::tick(H->time_seconds()); // F2: the partners on the minimap (outside the frame)
     portrait::tick(H->time_seconds()); // BUG-0937: the HUD portrait follows the avatar's species (outside the frame)
     pfind::hud_tick(H->time_seconds()); // BUG-0949: the UI windows the labels keep off (outside the frame)
@@ -2415,6 +2425,7 @@ SkModInfo g_info = {SK_ABI_VERSION, "coop", COOP_VERSION, on_unload};
 // sporekit_mod_main, phase: coop.ini: the player name, the world share switches, the support trace
 static void init_config()
 {
+    g_same_version_cfg = H->config_int(M, "coop", "same_version", 1) != 0; // BUG-9284
     char nm[256]; // 24 characters of up to 4 bytes each (BUG-0142: 64 bytes cut a CJK name)
     H->config_str(M, "coop", "name", "Player", nm, sizeof nm);
     g_name = utf8::player_name(nm);

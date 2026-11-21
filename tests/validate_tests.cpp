@@ -1484,6 +1484,13 @@ static void test_compat()
           "Bob plays SporeCoop 0.7.13; you have SporeCoop 0.7.15: some things may not match");
     CHECK(warn_text("Old", "", "coop 0.7.15, x") == "Old plays an older SporeCoop (before 0.7.4); you have SporeCoop 0.7.15: "
                                                    "some things may not match");
+    // BUG-9284: the same-version gate compares the coop versions only (SporeKit and the exe may differ)
+    CHECK(other_version("coop 0.7.15.5, SporeKit 0.3.18, Steam 3010a413", "coop 0.7.15.94, SporeKit 0.3.18, Steam 3010a413"));
+    CHECK(!other_version("coop 0.7.15.94, SporeKit 0.3.18, Steam 3010a413", "coop 0.7.15.94, SporeKit 0.3.19, GOG 2024 dc04aee5"));
+    CHECK(other_version("", "coop 0.7.15.94, x"));
+    CHECK(same_version_text("Ana", "coop 0.7.15.94, x", "coop 0.7.15.5, x") ==
+          "not the same version: Ana has SporeCoop 0.7.15.94, you have SporeCoop 0.7.15.5. This build plays only with the same "
+          "version: install the same SporeCoop on both games");
     std::string r = refuse_text("Alice", "coop 0.7.16, x", "coop 0.7.15, x", (uint8_t)Family::space, 2, 1);
     CHECK(r.find("Alice plays SporeCoop 0.7.16; you have SporeCoop 0.7.15: the Space messages") == 0 &&
           r.find("revision 2 there, 1 here") != std::string::npos);

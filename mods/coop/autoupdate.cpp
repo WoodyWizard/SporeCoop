@@ -16,6 +16,10 @@ static const SkHost* H;
 static SkMod* M;
 static std::string g_version, g_url;
 static bool g_enabled;
+// BUG-9284 (build/amigos, the private friends build): an official release would replace this build and leave the
+// friends on different versions (the owner's test: a friend's setup had downloaded the official 0.7.15.5). This build
+// never checks for, offers or installs an official release, whatever coop.ini [update] check says.
+constexpr bool kPrivateBuild = true;
 
 enum State { Idle, Checking, UpToDate, Available, Downloading, Ready, Failed };
 static std::mutex g_mu;
@@ -126,7 +130,7 @@ static void check_work()
         {
             std::lock_guard<std::mutex> l(g_mu);
             g_rel = r;
-            st = upd::compare_versions(r.version, g_version) > 0 && !r.pack_url.empty() ? Available : UpToDate;
+            st = !kPrivateBuild && upd::compare_versions(r.version, g_version) > 0 && !r.pack_url.empty() ? Available : UpToDate;
             if (!g_unloaded)
                 H->log(M, SK_INFO, "update check: latest %s, running %s%s", r.version.c_str(), g_version.c_str(),
                        r.from_web ? " (from the release page: the GitHub API refused, BUG-0392)" : "");
@@ -191,6 +195,10 @@ void init(const SkHost* host, SkMod* mod, const char* version)
     upd::g_log = log_retry;
     g_version = version;
     g_enabled = H->config_int(M, "update", "check", 0) != 0; // build/amigos: a private build, off by default (an official update would replace it)
+    if (kPrivateBuild && g_enabled) {
+        H->log(M, SK_INFO, "update check: off in this private build (coop.ini [update] check=1 is ignored, BUG-9284)");
+        g_enabled = false;
+    }
     char b[512];
     H->config_str(M, "update", "url", upd::kLatestUrl, b, sizeof b);
     g_url = b;
@@ -268,8 +276,8 @@ void start_update()
 {
     {
         std::lock_guard<std::mutex> l(g_mu);
-        if (g_state != Available && g_state != Failed)
-            return;
+        if (kPrivateBuild || (g_state != Available && g_state != Failed))
+            return; // (BUG-9284: never an official release over the private build)
         g_told_failed = false;
     }
     if (!g_busy.exchange(true))
@@ -303,7 +311,7 @@ std::string command(const std::string& arg, const std::string& val)
     std::lock_guard<std::mutex> l(g_mu);
     return std::string("update: ") + names[g_state] + " running=" + g_version + " latest=" + g_rel.version +
            (g_rel.from_web ? " via=page" : "") +
-           " check=" + (g_enabled ? "on" : "off") + " url=" + g_url + (g_err.empty() ? "" : " error=" + g_err) +
+           " check=" + (g_enabled ? "on" : "off") + (kPrivateBuild ? " private=1" : "") + " url=" + g_url + (g_err.empty() ? "" : " error=" + g_err) +
            " busy=" + std::to_string((int)g_busy.load()) +
            (g_state == Downloading ? " line='" + download_line() + "'" : std::string());
 }
