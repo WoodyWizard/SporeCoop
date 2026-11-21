@@ -108,6 +108,14 @@ def main():
             seen.append((metres, k, off, migration(guest)))
             print(f'  guest {metres} m (dir {k}) at {gp}: its next nest {gpos} ({off if off is None else round(off)} m from the '
                   f"host's), migration state {migration(guest)}", flush=True)
+            if gp:
+                # BUG-1410: the host drew the guest, held in the air in its paused game (21.8 / 36.1 m over its ground at
+                # the 600 m spots), 6.3 m lower than the guest's game has it (monitor `drawn`, lab 20261121-003202; 6.8 m in
+                # 20261112-175447, 0 m in 20261120-133703 at the same spots): both games' ground radius under it, so a
+                # run that shows it again says which game's terrain disagrees there
+                grounds = [con.call('coop.ground %.2f %.2f %.2f' % tuple(gp))['out'].strip() for con in (host, guest)]
+                print(f"    ground under the guest: host {grounds[0]}, guest {grounds[1]}, radius {math.hypot(*gp):.2f}",
+                      flush=True)
     ck(seen and all(st == 0 or (o is not None and o < 30) for _, _, o, st in seen),
        "wherever the guest stands its game starts no migration to another nest than the host's next one "
        f"({[(m, k, o and round(o), st) for m, k, o, st in seen]})")
