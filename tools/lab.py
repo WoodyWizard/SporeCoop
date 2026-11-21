@@ -678,7 +678,7 @@ def run_one(t, lane, tree, logdir, warm, suffix=''):
         lab_fails.insert(0, 'FAIL lab: ' + mem['over'])
     ok = rc == 0 and 'RESULT: FAIL' not in text and 'Traceback' not in text and has_result and not lab_fails
     # the machine, not the mod: the game did not even start
-    env = not ok and ('did not start' in text or "bwrap: Can't find" in text)
+    env = not ok and labverdict.env_trouble(text)  # BUG-1379: the harness's own lines only
     m = re.search(r'\((both games ready|warm reset) in (\d+) s', text)
     load = bool(not ok and xwl and xwl['peak'] >= XW_LOAD)  # BUG-0663
     if load:

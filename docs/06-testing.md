@@ -9881,3 +9881,24 @@ cause=c` (coop_dna_notice.py LEDGER reads both forms).
   puppet (BUG-1241, BUG-1250), so social_sing_partner judges the guest's side without a song.
 * tag_camera (BUG-1352): a close creature's shaded back is not `red` (r > 140): `body()` bridges it.
 * tag_cinematic (BUG-1353): a guest's CRG_ClaimNest often ignores Enter: EndCinematic ends it, else INCONCLUSIVE.
+
+## Second final check of 0.7.16: the Tribe and Civ triage (2026-11-20, fix/w61-civ)
+<a id="testing-final2-tribe-civ-0716"></a>
+
+Lab run 20261120-133703 (and the twins 20261120-130608); see [testing-lab-verdicts](#testing-lab-verdicts).
+* Environment trouble (the lab's retry of a run whose game did not start) is read only from the harness's own lines
+  (`labverdict.env_trouble`: a start wait's AssertionError, spore.sh / headless.sh, bwrap). Before, any "did not start"
+  in the output counted, and the twin tribe_chief_still_retry_off printed it in its SPORE_FIX_OFF line (the switch's
+  description): its two FAILs were retried until a PASS (BUG-1379). A switch's description may say anything now.
+* civ_other_world --slow-join: `frame.limit 500` on the guest over its join puts WELCOME and the host's first money
+  total into one guest frame (BUG-1371). A slow frame is the tool for "two messages in one frame" races.
+* civ_preach_far: forced preachers die to the city's retaliation; the test puts their health back every second
+  (`coop.civ vhp`), as civ_capture_credit does for its besiegers (BUG-1372).
+* party_civ_trade: since BUG-0875 a host capture stays the host's; guests get their cities by `coop.civ buycity` on
+  the guest (BUG-1373).
+* The chaos bot's leave_editor drags three parts into an editor "done" does not leave (a 0.7.16 guest's new, empty
+  design), as coop_civ_guest_editors does (BUG-1374).
+* tribe_npc_form --species-late: `coop.tribe species_miss <n>` on the guest makes its next n copy tries of a host
+  village read the species as missing (BUG-1375).
+* tribe_caption_race: the conquest caption needs the village's mission; the guest's `coop.tribe act_obj 15` raid order
+  makes it on the host (BUG-1068), `coop.tribe order` does not (BUG-1377).

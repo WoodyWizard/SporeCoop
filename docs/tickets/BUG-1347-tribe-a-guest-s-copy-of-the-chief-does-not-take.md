@@ -55,7 +55,12 @@ FAIL (before): lab 20261120-041304, 20261119-214823 (rel/0.7.16), 20261117-15491
 Open, waiting for the lab run: tribe_chief_still must PASS (and print `retried=` > 0 when the case came);
 tribe_chief_still_retry_off is expected to FAIL (a PASS there is no proof: the case is timing); tribe_mirror_hold,
 tribe_hold_only, tribe_hold_guest, same_view_tribe must still PASS.
+- FAIL twin (the case came twice, retry off): lab 20261120-130608 tribe_chief_still_retry_off.log (1.7 s at 27.1 s,
+  1.1 s at 188.3 s, retried=0) and .env1.log (1.4 s at 87.3 s); the lab listed the twin OK only because its rule for a
+  game that did not start matched this switch's description and kept the third run's PASS (BUG-1379).
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.
+- 2026-11-20 (fix/w61-civ): the twin's runs of the second final check FAILed twice as wanted (BUG-1379 explains the
+  OK in the twins' list).

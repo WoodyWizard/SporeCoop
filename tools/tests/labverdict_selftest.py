@@ -25,6 +25,9 @@ Cases:
               --until all runs every copy; a test INCONCLUSIVE in its 3rd run in a row (the history of the fake
               out/lab) fails as a ticket candidate; a campaign result's CAMPAIGN-SEGMENT line is kept and found by
               find_segment (A6, A7, A8, A15)
+  env         environment trouble (a run the lab repeats) only from the harness's own lines: a start wait's
+              AssertionError, spore.sh / headless.sh, bwrap; not a fix switch's description, a note or a check that
+              says "did not start" (BUG-1379)
   impact      labimpact.select on this tree's sources with made-up changes: docs only -> smoke + unit, a lab tool ->
               unit, a test script -> it and the tests that import it, tribe.cpp -> Tribe tests and cross-stage tests
               but no Cell test, a line with a switch's variable -> the tests that name that switch, coop.cpp -> all of
@@ -364,6 +367,27 @@ def impact_case(tree):
           and li.test_stage(dict(name='partner_pass', cmd='x', fixture=None)) is None, 'impact: the stage of a test')
 
 
+def env_case(lv):
+    """BUG-1379: the twin tribe_chief_still_retry_off's FAILs were taken for a game that did not start"""
+    env = getattr(lv, 'env_trouble', None)
+    if env is None:
+        check(False, 'env: labverdict has env_trouble (BUG-1379)')
+        return
+    fix_line = ("  SPORE_FIX_OFF: tribe.hold_retry off BUG-1347  tribe: a guest's copy of a member takes its item into the "
+                "hand again when the first take in the host's animation did not start\n")
+    check(not env(fix_line + '  FAIL no stretch over 1.0 s\nRESULT: FAIL\n'),
+          'env: a fix switch\'s description with "did not start" is no environment trouble')
+    check(not env('  (the guest menu intro did not start)\n  FAIL x\nRESULT: FAIL\n'), 'env: a note of the harness is not')
+    check(not env('  FAIL the cinematic did not start\nRESULT: FAIL\n'), 'env: a failed check saying so is not')
+    check(not env("RESULT: INCONCLUSIVE the creature never sang in 40 s (the social game did not start)\n"),
+          'env: an INCONCLUSIVE reason is not')
+    check(env('Traceback (most recent call last):\n  File "x", line 1\nAssertionError: instance 4 did not start\n'),
+          'env: a start wait\'s AssertionError is')
+    check(env("AssertionError: the guest did not start\n"), 'env: a test\'s own start wait is')
+    check(env('the headless test display did not start\n'), 'env: spore.sh\'s display line is')
+    check(env("bwrap: Can't find source path /x: No such file or directory\n"), 'env: bwrap\'s line is')
+
+
 def replay(tree):
     """the recorded campaign failures of every worktree: their reason before and now"""
     import loggates
@@ -414,6 +438,7 @@ def main():
         repeat_case(lv)
         lab_run_case(tree, tmp)
         impact_case(tree)
+        env_case(lv)
         if a.replay:
             replay(tree)
     print('RESULT:', 'OK' if not FAILS else f'FAIL ({len(FAILS)})')
