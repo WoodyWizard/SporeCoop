@@ -2832,3 +2832,25 @@ time to 924 (`coop.pool kin` prints `box=` since this branch: the width and heig
   measured the host's place (BUG-1334). The host's counter `partner=81` had made the guest's kin; they were culled
   with the area the guest left. Inferred (not decompiled): the damage came through a path without the +0x111 check
   (Bite's lethal or much-smaller branch, see the Bite entry above); not followed further.
+
+## The world scale change moves a world whose camera is far out (2026-11-21, fix/w62-core)
+<a id="cell-rescale-centre"></a>
+
+BUG-1394. GOG 2024, Ghidra, and the logs of lab 20261121-094225 (campaign_short#2, 4 players).
+
+* ✔ (Ghidra) WorldScaleStep 0xE73E50 calls 0xE6DB70 (`SporeCoop::Cell_RescaleAbout`) with EAX = `[0x16B3C0C] + 0x48`
+  (the camera's drawn point) and the ratio new / old. When that point is within 1000 m of the origin (|p|^2 <= 1e6)
+  the centre is 0x16B3C28 ((0 0 0) at runtime), else the point itself floored to a grid (0xE4F900,
+  `SporeCoop::Cell_SnapToGrid`, the step in xmm3). Every position becomes **(pos - C) / ratio**: with C not 0 the
+  whole world of that game is moved by C at each step, not only scaled. CORRECTION (2026-11-21, fix/w62-core) to
+  [cell-world-scale](#cell-world-scale) "about a centre C": the centre is subtracted and not added back.
+* ✔ (lab log) campaign_short#2: the end of Cell (food 1000) at s 269.9; the host's cell went (149 176) at scale 0.505,
+  (492 -136) at 14829, (2724 -13403) at 15000 and stayed there for its last 12 s of Cell; every guest's own cell went
+  to about (0 0) as in the passing runs #1 and #3 (and the host's cell there). The guests drew the host's puppet at
+  (472 38) -> (2711 -13298): the sync-check's "p: 1 apart (p0 171.3)" / "(p0 192.5)" was this real difference of the
+  two games' worlds (the guests' own cells and the host's world apart for those seconds), not an artefact of the scale
+  conversion (BUG-0606 converts by the scales only).
+* ? Why the host's camera point was over 1000 m from the origin there is not known (its cell 231 m out at scale 0.5;
+  the camera update 0xE600A0 keeps +0x48 in a box round the avatar and returns during a cinematic). The mod now logs
+  `cell: the world scale change ... moves this game's world about the camera point (...)` once per change with the
+  camera's target, its followed cell (+0xE0), the own cell and the cinematic flag, to find it the next time.

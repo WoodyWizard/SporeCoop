@@ -355,6 +355,36 @@ static void camera_heal(uint8_t* av)
         H->log(M, SK_WARN, "coop: cell: the camera was not finite, put back on our own cell (%.1f %.1f) (BUG-0604)", p.x, p.y);
 }
 
+// BUG-1394 (diagnostics): WorldScaleStep 0xE73E50 passes the camera's drawn point (cCellUI +0x48) to 0xE6DB70, which
+// rescales the world about the origin's centre 0x16B3C28 while that point is within 1000 m of the origin, and about the
+// point itself (snapped by 0xE4F900) when it is farther: then every position of this game is moved by that point, which
+// no partner's game does (campaign_short#2 of lab 20261121-094225: the host's cell went (149 176) ->
+// (2724 -13403) through the end of Cell while the guests' went to 0: sync-check "p: 1 apart (p0 171.3)"). Said once
+// per scale change with the camera's state, to tell why the point was that far the next time.
+static void scale_centre_note()
+{
+    static float said_target = 0;
+    uint8_t* g = G();
+    uint8_t* ui = a_CellUI ? *(uint8_t**)a_CellUI : nullptr;
+    if (!g || !ui || !skg::readable(g + 0x514C, 8) || !skg::readable(ui + 0x48, 0x24) || !skg::readable(ui + 0xE0, 4))
+        return;
+    float sc = F<float>(g, 0x514C), target = F<float>(g, 0x5150);
+    if (sc == target || target == said_target)
+        return;
+    const float* q = (const float*)(ui + 0x48);
+    float r2 = q[0] * q[0] + q[1] * q[1] + q[2] * q[2];
+    if (!(r2 > 1e6f))
+        return;
+    said_target = target;
+    uint8_t* av = avatar();
+    net::Vec3 a = av ? pos_of(av) : net::Vec3{};
+    H->log(M, SK_WARN,
+           "coop: cell: the world scale change %.4g -> %.4g moves this game's world about the camera point (%.1f %.1f %.1f), "
+           "%.0f m from the origin (target +0x54 (%.1f %.1f), followed cell %08X, own cell (%.1f %.1f), cinematic %d) (BUG-1394)",
+           sc, target, q[0], q[1], q[2], std::sqrt(r2), q[3], q[4], F<uint32_t>(ui, 0xE0), a.x, a.y,
+           (int)game::cinematic_playing());
+}
+
 void stop_at(uint8_t* c, const net::Vec3& p)
 {
     if (c && c == avatar() && net::dist(pos_of(c), p) > 2.f)
@@ -1284,8 +1314,10 @@ void tick(double now)
         g_n.leave_writes++;
     }
     solo_tick();
-    if (cell)
+    if (cell) {
         camera_heal(avatar()); // BUG-0604: solo too (a session that ended keeps the lost view)
+        scale_centre_note();   // BUG-1394
+    }
     if (!in_cell() || !C.sess || !C.sess->connected() || !avatar())
         return;
     mate_tick(now); // BUG-1246
