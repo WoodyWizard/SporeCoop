@@ -14,6 +14,7 @@ import sys
 import time
 
 import lane
+from coop_campaign import EDITOR_DICE, EDITOR_DONE, TRIBE_EDITOR_PARTS, drag_slow, editor_click
 from twoinst import Checks, Monitor, shot, start, wait_guest_in
 
 W, H = 1440, 1080
@@ -70,17 +71,26 @@ class Bot:
         """a random key or click can open an editor (Civ: a design editor, "Bob edits a design"); a guest that
         joins in it gets the host's world when it leaves the editor (by design: "the world of Alice is loaded
         when you leave the editor"), so it leaves like a player: "done", the dice's name when one is asked
-        (chaos_civ_long, lab 20261101-134020: the guest waited in its editor)"""
-        for i in range(4):
+        (chaos_civ_long, lab 20261101-134020: the guest waited in its editor). BUG-1374: since 0.7.16 a guest's
+        palette "new design" opens its own design editor with an empty creation (lab 20261120-133703: `civedit: our
+        design editor request ... starts from 00000000`), which "done" never leaves: from the second try three
+        parts go in first, as coop_civ_guest_editors' driver does"""
+        for i in range(6):
             if 'Editor' not in self.do(who, 'game.mode'):
                 return
             time.sleep(2)
+            con = self.c[who]
+            if i in (1, 4):  # an empty creation: three parts (City Hall / vehicle / building palettes)
+                for (sx, sy), (tx, ty) in TRIBE_EDITOR_PARTS:
+                    drag_slow(con, sx, sy, tx, ty, 1.0 + i // 3)
+                self.log.append(f'{time.strftime("%H:%M:%S")} {who}: three parts into its editor')
             if i >= 2:
-                self.do(who, 'click 614 826')  # the name panel's dice
-                time.sleep(1)
-            self.do(who, 'click 1416 1062')  # the editors' green "done"
+                editor_click(con, *EDITOR_DICE)  # the name panel's dice
+            editor_click(con, *EDITOR_DONE)  # the editors' green "done"
             self.log.append(f'{time.strftime("%H:%M:%S")} {who}: leaves its editor ("done")')
             time.sleep(3)
+        if 'Editor' in self.do(who, 'game.mode'):
+            shot(self.c[who], f'chaos_{who}_editor_stuck.png')  # (what kept it there)
 
     def step(self):
         rng = self.rng
