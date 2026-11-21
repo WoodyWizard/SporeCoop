@@ -1,6 +1,7 @@
 // World sharing: the host streams its current save folder (AppData\Spore\Games\GameN)
 // to a joining guest, who stores it as a new save slot. See docs/03-gameplay.md 3.2.
 #include "world.h"
+#include "civ_launch.h"
 #include "lifecycle.h"
 
 #include <winsock2.h>
@@ -1262,6 +1263,12 @@ static void via_menu_tick()
     g_settle_ctx = ctx;
     if (!g_via_menu.on)
         return;
+    // BUG-9295: a guest's own Civ -> Space launch (its History, its ship editor, its first flight) runs: the host's
+    // world waits (its clock too: the 60 s cancel below counts from the end of the wait)
+    if (!g_via_menu.posted && civ::launch::holds_load()) {
+        g_via_menu.since = now;
+        return;
+    }
     // other modes (an adventure, an editor, before the first menu): load from there as before, but
     // outside the frame; a load under way (kLoad) ends in a stage, which is left first
     bool other = mode != modes::kMenu && mode != modes::kLoad && !in_stage(mode);
@@ -1337,8 +1344,8 @@ static void deferred_tick()
         return;
     uint32_t mode = game::mode_id();
     double now = H->time_seconds();
-    if (mode == modes::kEditor || mode == modes::kEdit || mode == modes::kLoad) {
-        g_deferred.back_since = 0;
+    if (mode == modes::kEditor || mode == modes::kEdit || mode == modes::kLoad || civ::launch::holds_load()) {
+        g_deferred.back_since = 0; // (BUG-9295: also while a guest's own launch runs)
         return;
     }
     if (!g_deferred.back_since) {
@@ -1382,6 +1389,7 @@ bool load_queued() { return g_editor_load_fix && (g_via_menu.on || g_deferred.on
 
 void guest_tick()
 {
+    civ::launch::tick(); // BUG-9295 (before the loads it may hold)
     intro_in_stage_tick();
     via_menu_tick();
     menu_intro_tick();

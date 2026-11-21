@@ -17,6 +17,7 @@
 #include "coop_state.h"
 #include "store.h"
 #include "designs.h"
+#include "civ_launch.h"
 #include "net/compat.h"
 #include "net/manifest.h"
 
@@ -969,6 +970,8 @@ void setup_callbacks()
             bool started = on && !g_vote.active, ended = !on && g_vote.active;
             if (on || (g_vote_drop_editor_fix && ended && has_editor))
                 g_vote.editor = editor; // a cancelled vote ends with 0 (BUG-0234)
+            if (ended && has_editor && editor)
+                civ::launch::on_vote_end(editor); // BUG-9295: the spaceship vote: a guest with its own nation launches itself
             // the evolution starts: everybody evolves its own creature in its own editor (own_editor_tick)
             // F5 (BUG-0769): creature.mode host: no own editor, the host's evolution comes as the new species
             if (ended && g_vote.editor && g_mode == modes::kCreature && g_local && !(g_vote_world_fix && guest_elsewhere()) &&
