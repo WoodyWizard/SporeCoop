@@ -9909,6 +9909,10 @@ cause=c` (coop_dna_notice.py LEDGER reads both forms).
   `coop.status` says `ship model keys planted N (armed M)`. creature_ufo_nomodel plants from its 4th UFO visit,
   space_npc_model on its 3rd arrival, each only after the game's own picks brought no such ship (the case was random:
   INCONCLUSIVE 3 runs in a row, final check 20261120-133703); the log says "natural" or "planted".
+  CORRECTION (2026-11-21, fix/w62-flake-tcs): space_npc_model now plants its 2nd arrival and stays at the star until
+  `ship model keys planted` > 0 (at most 180 s, BUG-1391): the empire's ships at its star ask for their models at the
+  first arrival only (every natural case came ~2 s after it, no revisit ever had one); a revisit asks only for ships
+  that come later (21 s / 56 s after it in lab 20261121-003202), so the old fixed wait left before them (solo: SKIP).
 * `lab.py fixcheck` CONTRADICTED net_nan / game.finite_pose and npc_nan_vel / game.finite_vel (BUG-1364): their twins
   only ever passed (BUG-0614 and BUG-0894 are no-fail-run: the game's puppet and proxy driving tolerate the NaN states),
   so the claims were corrected as leave_avatar's (2026-11-01): the suite comments name the PASS runs with the switch off.
