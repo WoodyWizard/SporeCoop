@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.15.2
 fixed_in:
 branch: feat/lineages-space-guest-launch
-commits: 3a0c12d3
+commits: 3a0c12d3 e162f732
 tests: by hand on lane C with the batch driver agentC4/t1.py (not in the repo; no lab test yet)
 signature:
 docs: docs/re/civ.md#civ-guest-launch, docs/re/space.md#space-own-ship-captain
