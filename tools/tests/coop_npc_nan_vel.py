@@ -9,7 +9,9 @@ The guest's NPC proxies are driven from the host's states (npc.cpp): the velocit
    thrown with a NaN velocity of its own game; off the ground the guest's driver writes the velocity into the body),
    then good states again.
 PASS, on the guest's game: every spawned proxy keeps a finite game position (`coop.npc list` at=, the creature's
-position) during and 5 s after, no fault. FAIL (SPORE_FIX_OFF=game.finite_vel): proxies at NaN.
+position) during and 5 s after, no fault. Meant to FAIL with game.finite_vel off (proxies at NaN), but it never did: the switch off passed in lab 20261112-073101
+and -074517 (the drivers place each proxy from its finite position every frame); BUG-0894 no-fail-run, BUG-1364: a
+regression test of the hardening, not its proof.
 
   SPORE_LANE=7 python3 tools/tests/coop_npc_nan_vel.py
 """

@@ -6,7 +6,8 @@ the host's avatar, so the host and the real guest make a puppet of it; then it s
 rotation and velocity are NaN or Inf for a few seconds, then good ones again. Checks on the game's own positions
 (`coop.bodyrec`: the puppet as both games drew it): the puppet of the scripted guest is finite in every row on the
 host and on the real guest, it is still drawn after the bad states, both games run on without a fault.
-(SPORE_FIX_OFF=game.finite_pose must FAIL)"""
+(meant to FAIL with game.finite_pose off, but it never did: the switch off passed in lab 20261106-043542, the game's
+puppet driving tolerates these states; BUG-0614 no-fail-run, BUG-1364: a regression test of the guard, not its proof)"""
 import math
 import struct
 import time
