@@ -3968,3 +3968,17 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: Civ with a partner, press H while money is shared.
 * BUG-9323. Civ: this player's own name tags show the -NoShare- test tag (`CivGuest-NoShare-`, `[CivGuest-NoShare-]`).
 * Reproduce: join a Civ session as `X-NoShare-` and look at the own vehicle and capital: their name tags show the tag.
+## Tribe after fix/l47-tribe2 (2026-11-21)
+<a id="known-tribe-l47-tribe2"></a>
+
+* BUG-9320 (partly fixed, `tribe.wipe_regroup`). Tribe: after a party wipe the host's hut is whole again and outside
+  raiders are kept away for 120 s, but an aggressive rival village raids again right after that: in an idle world the
+  host's village is still wiped about every 4 minutes (every 100 s before). Whether a wipe should calm the raiding
+  village for longer is a gameplay decision.
+* Reproduce: Vandh (MSI recipe, docs/06-testing.md#testing-tribe-raid-wipe-pets), wait about 6 minutes in Tribe without
+  defending: the native archetype-7 village raids; watch the host log's "village down" and "party wipe reason" lines.
+* BUG-9318 (open part). Tribe: the partner's own totem cutscene: run through the game's hut upgrade on the guest it no
+  longer shows the sky, but it shows no totem close-up or caption either (`tribe.partner_totem_cutscene` stays off).
+* BUG-9306 (open part). Tribe: the lure basket of chief power 0x34 is not shown on a partner's screen. A display-only
+  copy needs an object the guest's game draws but never saves or simulates; the mod has none yet (an ornament copy
+  would be a planet record that the guest's saves keep).

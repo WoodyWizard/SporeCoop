@@ -6237,3 +6237,35 @@ Live, MSI two games (host MSITribeHost instance 2, guest MSIGuest instance 1, Cr
   TribalGame list (+0x94..+0x98, `coop.tribe powers pets`: 3 entries) with the partner village's political id
   (0x228C); the guest's own TribalGame list stayed empty. So a partner's tames count against the host's cap (prop
   0x217997F4, 4) and the host's list; the animals themselves follow the partner's tribe.
+
+## Raids after a party wipe, the hut upgrade's cutscene actors, the per-village pet cap (2026-11-21, fix/l47-tribe2)
+<a id="tribe-wipe-regroup"></a>
+
+Live, MSI two games (host MSITribeHost instance 2, guest MSIGuest instance 1, Creature -> Tribe from Vandh); code read
+from a running game's memory (tools/qa_win/dis.py). Follows #tribe-partner-totems and #tribe-party-wipe.
+* ✔ (live) BUG-9320: the party wipe's checkpoint is saved at the moment of the wipe, with the raiders standing at the
+  host's hut; after the reload they go on at once (`founder huts after this world's load: seat 0 152/400` 3 s after the
+  load). The hut came back at 40 % (160 of 400) and fell again 30-35 s after the load (a crowd of 3-8 raiders takes
+  about 10 hp a second at blows of 4-9), then the 60 s window ran out: one wipe every 95-110 s, as in the report. The
+  "1/400 right after a wipe reload" of the report is that second fall (the hut reads 1 during the down window).
+* ✔ (live) Vandh's native villages raid the host's village by themselves within about 6 minutes of the Tribe entry:
+  archetype 7 (8 members, the village of the report's white villagers) and archetype 4, both at relation -10 to the host's
+  village, with no test command. A test blow alone (`coop.tribe hutfall`, no raiders) wipes once and the reloaded hut
+  stays at 160/400: the loop needs the raid.
+* ✔ (live) One walk-home order (DoAction 4 to their own village) right after the reload does not end a raid: the hut
+  took no blow during a 90 s shield, but the raid hit it again the second the shield ended (the raiders in behaviour
+  node 0462854E at the hut). With the order repeated every 4 s (fix `tribe.wipe_regroup`, 120 s) no raider reached the
+  hut in the window (`blocked=0`, `sent_home=69`, a screenshot with the village empty), and the native archetype-7
+  village raided again about 10 s after the window ended and downed the hut 56 s later. So the game's raid AI keeps
+  its plan against a rival through any number of walk orders; ? where the tribe keeps it (not found). A pause for the
+  raiding village longer than the window is a gameplay decision (asked).
+* ✔ (memory disassembly) Power 0x39's taming node `SporeCoop::BT_TameAnimalsNode` 0xDB9310 (cdecl, [esp+4] the chief,
+  the 6th argument the node state {+0 ability index, +4 step, +8 animation}) reads `App_GetPropInt(props,
+  0x217997F4, 4)` minus `(TribalGame +0x98 - +0x94) >> 2` and push_backs each tamed animal with 0xE1C7D0
+  (`SporeCoop::TribalGame_PetsPushBack`, an intrusive pointer: one reference taken). The list is the only count; a
+  village's own count needs the list to hold that village's pets while the node runs (fix `tribe.pet_cap_per_village`).
+* ✔ (memory disassembly) `SporeCoop::TribeHut_Upgrade` 0xCDA4F0 is thiscall(TribeUI = TribalGame_Get()), not argument
+  free: PlayCinematic("TRG_Upgrade", 1, 1, 0, 0, 0), then the members in the hut's radius get a formation at the hut
+  (0xBC6620, kept at tribe +0x26C) and actor names from 0x137770C, and the actors 0xE44AEA33 (tribe +0x120),
+  0x268AB814 (tribe vt 0xAC + 0x34), 0xE4206FE9 (the food mat + 0x34) and 0xFF7F9A4C (0xC8F870(tribe, 10) + 0x34) are
+  bound to the cinematic. It works on GetPlayerTribe(), which on a guest is the guest's own village.

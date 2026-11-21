@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.14.1-lineages67-dev
 fixed_in:
 branch: fix/l47-tribe
-commits: 3c2a6550, 59d47c0a
+commits: 3c2a6550, 59d47c0a, db507eef, 8bd69ecc
 tests: manual two-game MSI run (ticket Verification)
 signature:
 docs: docs/re/tribe.md#tribe-partner-totems
@@ -75,6 +75,22 @@ own_totem= own_pieces= last:`; logs "tribe: seat N's village got a totem", "seat
     So the guest's cutscene is behind `tribe.partner_totem_cutscene` (off) until that context is found.
   * Seen on the way: one host's pieces were dropped by repeated party wipes in a raided test world (BUG-9320).
 
+- Live QA 2026-11-21, fix/l47-tribe2 (MSI two games, Vandh): the context of TRG_Upgrade, read from memory
+  (docs/re/tribe.md#tribe-wipe-regroup): TribeHut_Upgrade 0xCDA4F0 is thiscall(TribalGame_Get()) on GetPlayerTribe()
+  (a guest's own village); it plays TRG_Upgrade and binds its actors (the members near the hut in a formation, the
+  village, the hut, the food mat, one more village object). The guest's cutscene now runs that upgrade instead of the
+  bare PlayCinematic (`coop.tribe cine upgrade` by hand). A win (`coop.tribe win 2295`, the host's planner opened and
+  closed) gave the guest's village its totem piece through the share (`own_pieces=1`) and the guest ran it by itself
+  ("the hut upgrade ran for village 0000228C (cinematic now 94D17D9F)"). Result: no more sky; the screen fades to black
+  for about a second, then shows the normal view of the guest's own village (its hut upgraded, the totem with the
+  piece) with the HUD while the input stays locked until our 8 s closer ends it (BUG-0983); no close-up of the totem
+  and no caption as on the host (out/qa-shots/bug9318_guest_hut_upgrade_path.png). So `tribe.partner_totem_cutscene`
+  stays OFF: an 8 s input lock with no visible cutscene is worse than none. ? What else the host's reward path sets
+  (TribeTokens +0x1C, the caption's village, written by 0xCDAC90 before the upgrade) and whether the guest's camera
+  code of ours overrides the cinematic camera: not found.
+
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fix/l47-tribe: partner totems (live PASS on / FAIL off); the guest cutscene diagnosed, off by default.
+- 2026-11-21: fix/l47-tribe2: the guest cutscene runs the game's hut upgrade (its actors); no sky now, but no totem
+  close-up either: still off (Verification).
