@@ -2648,7 +2648,7 @@ void dna_set_raw(float total)
 // runtime note (docs/re/creature.md#creature-own-dna)
 void dna_set_and_bar(float total, float raise)
 {
-    if (raise > 0 && o_AddEvo)
+    if (raise != 0 && o_AddEvo) // (< 0: BUG-1393, the party's setback)
         o_AddEvo(raise);
     dna_set_raw(total);
 }

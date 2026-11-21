@@ -364,7 +364,7 @@ void dna_spend_resync();
 void dna_spend_sample();
 void dna_spend_tick(double now);
 // WP-D (BUG-1291): own DNA per player (dna_own.h)
-extern bool g_own_dna_fix, g_dna_bar_set_fix, g_own_dna_store_fix;
+extern bool g_own_dna_fix, g_dna_bar_set_fix, g_own_dna_store_fix, g_bar_setback_fix;
 extern dna_own::Book g_book;
 extern std::map<uint8_t, float> g_dna_sent_to;
 extern uint32_t g_own_totals, g_own_applied;

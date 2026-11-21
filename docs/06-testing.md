@@ -9986,3 +9986,28 @@ Lab run 20261120-133703 (and the twins 20261120-130608); see [testing-lab-verdic
 * Knocking out the player tribe for a game over: `coop_tribe_gameover.knock_out(host)` (one blow a second, the leader
   last), never blows on every member back to back: two members falling in one behaviour tick give no game over at all
   (BUG-1337, BUG-1399).
+## tribe_form_species: the update's call right after a form (2026-11-21, fix/w62-core)
+<a id="testing-tribe-form-fresh"></a>
+
+BUG-1392: the test writes the controller update's timer (0x157E940, float, counted down by game time) to 0 right after
+its `coop.tribe form`, so the game's own FormTribe comes in the next frame, inside the second the mod keeps its
+species-list answer. Without that the race (one fault at 0x406EFF) happened only when the game's second was shorter
+than ours (lab 20261121-003202, 1 run of 10). Twin `tribe_form_species_fresh_off` must FAIL on the host's fault.
+
+## diag_creature / diag_cell: the cost checks on a loaded machine (2026-11-21, fix/w62-core)
+<a id="testing-diag-cost-load"></a>
+
+BUG-1395: "one check costs under 1 ms" and "the diagnostics cost under 0.05 ms per frame" measure wall time of the
+main thread. The same Creature check (22 objects) took 0.033-0.044 ms on an idle machine and 0.3-1.4 ms average (max up
+to 5.7 ms) under the load of other lanes (load average 26-30 on 12 cores, BUG-1191; the third 0.7.16 final check,
+20261121-003202). coop_diag.py prints the machine's load average and, at one per core or more, reports a cost over
+its limit as INCONCLUSIVE instead of FAIL. A cost number for docs/REPORTING.md comes from an idle machine only.
+
+## evo_screens_switch: the BUG-1376 twin needs a move over the gap (2026-11-21, fix/w62-core)
+<a id="testing-lead-gap-twin"></a>
+
+BUG-1396: the host's ~70 s caption stand alone does not show BUG-1376; the copies are off only when the host's game
+moved its animals meanwhile, which happens in some runs only (lab 20261121-001418: nothing moved, the twin with
+`drive.lead_gap` off passed). The test puts one host animal 12 m farther out with `coop.npctrack put` while the host's
+game stands and checks its copy 8 s after the host goes on. A twin of a fix for "after a gap" must make the change
+over the gap itself, not wait for the game to make one.

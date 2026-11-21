@@ -223,17 +223,23 @@ struct Tail {
 };
 
 // guest: what to do with an own total. set: SetEvolutionPoints(total); raise: AddEvolutionPoints(raise) first (the bar
-// up to the party's; it adds the same to the DNA, which the set then replaces). The bar never goes down here.
+// up to the party's; it adds the same to the DNA, which the set then replaces). The bar goes down only for a setback
+// of the party's bar under one point (`setback`, BUG-1393): a creature's respawn drops the dying player's bar to its
+// whole number (36.9 -> 36.0, lab 20261121-003202 mem_census); the host's death drops the party's so, and the guest's
+// bar stayed 0.9 ahead until the next gain. A bigger fall (a host's load) is not followed (the bar never goes down there).
+constexpr float kSetbackMax = 1.0f;
 struct Apply {
-    float raise = 0;
+    float raise = 0; // < 0: the party's setback
     bool set = false;
 };
-inline Apply apply_own(float total, float bar, float my_dna, float my_bar)
+inline Apply apply_own(float total, float bar, float my_dna, float my_bar, bool setback = false)
 {
     Apply a;
     if (std::isfinite(bar) && std::isfinite(my_bar) && bar - my_bar > 0.5f && bar - my_bar < kMaxStep)
         a.raise = bar - my_bar;
-    a.set = a.raise > 0 || std::fabs(total - my_dna) > 0.01f;
+    else if (setback && std::isfinite(bar) && std::isfinite(my_bar) && my_bar - bar > 0.5f && my_bar - bar < kSetbackMax)
+        a.raise = bar - my_bar;
+    a.set = a.raise != 0 || std::fabs(total - my_dna) > 0.01f;
     return a;
 }
 

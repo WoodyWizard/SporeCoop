@@ -1443,7 +1443,8 @@ std::string debug(const std::vector<std::string>& a)
         char b[64];
         snprintf(b, sizeof b, " saved_keys=%d", (int)((F<uintptr_t>(ctrl, 0x80) - F<uintptr_t>(ctrl, 0x7C)) / 12));
         return "form_species fix=" + std::to_string((int)g_form_species_fix) + " held=" + std::to_string(g_forms_past) +
-               " last_fix=" + std::to_string((int)g_last_species_fix) + " last=" + std::to_string(g_forms_last) + " " +
+               " last_fix=" + std::to_string((int)g_last_species_fix) + " last=" + std::to_string(g_forms_last) + " fresh_fix=" + std::to_string((int)g_form_species_fresh_fix) +
+               " fresh=" + std::to_string(g_forms_fresh) + " " +
                g_form_species_last + " keys=" + keys + b;
     }
     // form: tests (BUG-0483), this game's NPC tribe controller forms its next tribe now (what it does during play)

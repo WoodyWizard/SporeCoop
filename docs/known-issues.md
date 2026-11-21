@@ -404,3 +404,15 @@ anchor so other docs can link to it:
   in npc_walk at 60 fps).
 * Next steps: a diagnostic run with the proxy's MoveTo goal, desired speed and locomotion state in the track.
 * Ticket: BUG-1360
+
+## Cell: after a level change one player's world can be moved away from the others' for the rest of the level (2026-11-21, fix/w62-core)
+<a id="issue-cell-rescale-centre"></a>
+
+* What happens: when a Cell level change (or the end of Cell) rescales the world while a game's camera point is over
+  1000 m from the origin, that game moves its whole world (the game's precision recentre); the partners' games do not,
+  so the players see each other far away until the next stage. Seen once: the host's cell 13 600 m from the guests'
+  for the last 12 s of Cell (campaign_short#2, lab 20261121-094225).
+* Reproduce: not reproduced on purpose; the log line `cell: the world scale change ... moves this game's world about
+  the camera point` says when it happens.
+* Next steps: the camera's state from that log line, then a co-op rule for the recentre.
+* Ticket: BUG-1394

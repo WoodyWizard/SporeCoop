@@ -276,6 +276,14 @@ COOP_FIX("creature.own_dna", "BUG-1291", g_own_dna_fix,
 bool g_dna_bar_set_fix = true;
 COOP_FIX("creature.dna_bar_set", "BUG-1291", g_dna_bar_set_fix,
          "creature: a guest's own DNA is set with the game's setter and its evolution bar follows the party's (off: through AddEvolutionPoints, the bar runs ahead after a reload)");
+// BUG-1393: a creature's respawn drops the player's evolution bar to its whole number (the game's own rule, seen on
+// every death of lab 20261121-003202 mem_census: 19.2 -> 19.0, 36.9 -> 36.0, 53.5 -> 53.0). A guest's own drop is
+// undone by the next total (the bar up to the party's); the host's drop is the party's, but a guest's bar never went
+// down: it stayed up to 0.9 ahead until the next gain (sync-check "bar: host 36.0, guest 36.9" for 30 s). On: a guest
+// follows a setback of the party's bar under one point. Off: the bar never down (0.7.16 before the fix).
+bool g_bar_setback_fix = true;
+COOP_FIX("creature.bar_setback", "BUG-1393", g_bar_setback_fix,
+         "creature: when the host's creature dies the guests' evolution bars lose the same part of a point as the host's (the party's bar)");
 bool g_own_dna_store_fix = true;
 COOP_FIX("creature.own_dna_store", "BUG-1291", g_own_dna_store_fix,
          "creature, cell: every guest's own DNA is kept in the host's per-player store (a reload, a host restart, a rejoin); off: a guest starts again at the host's DNA");

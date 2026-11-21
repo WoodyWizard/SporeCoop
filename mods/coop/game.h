@@ -360,7 +360,7 @@ float dna();
 void dna_add_raw(float delta);              // a shared change, not reported: a gain through the original
                                             // AddEvolutionPoints (DNA + the evolution bar), a spend the DNA only (BUG-0630)
 void dna_set_raw(float total);              // SetEvolutionPoints: the DNA only, as the game's editor spends it
-void dna_set_and_bar(float total, float raise); // WP-D: AddEvolutionPoints(raise > 0: the bar and the DNA up), then SetEvolutionPoints(total)
+void dna_set_and_bar(float total, float raise); // WP-D: AddEvolutionPoints(raise: the bar and the DNA up, or down for a setback), then SetEvolutionPoints(total)
 float evolution_bar();                      // cPlayer +0x10F0, the stage's total earned (NAN without a player)
 using DnaListener = bool (*)(float& delta); // return false to swallow a gain; may change it (BUG-0510 pace)
 void set_dna_listener(DnaListener fn);

@@ -104,6 +104,10 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   got them (BUG-1290).
 
 ### Fixed
+- Creature: when the host's creature dies, every player's evolution bar loses the same part of a point as the host's;
+  a guest's bar stayed up to almost a point ahead of the party's until the next DNA gain.
+- Tribe: the host's game could fault (and crash) right after a new village appeared on a planet whose list of
+  species for new villages was used up.
 - Creature: after the host confirms its evolution caption, the guest sees the host's family where the host's game put
   it at once, instead of watching it creep there for about a minute (BUG-1376).
 - Saves: a save asked for right after another one (a player joining right after an autosave or a Save) is no longer

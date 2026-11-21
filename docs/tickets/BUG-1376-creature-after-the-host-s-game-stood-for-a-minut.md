@@ -64,3 +64,4 @@ no-fail-run: lab runs pending (owner rule: no lab today); the FAIL is reproduced
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-creature-b): root cause in late_time (a path across the host's 70 s stand), fixed with drive.lead_gap; evo_screens_switch checks the copies after the caption.
+- 2026-11-21: fix/w62-core: the fix-off twin passed in lab 20261121-001418 (nothing moved over the gap); the test now moves one host animal during the stand (BUG-1396).

@@ -4845,3 +4845,21 @@ asks the host for the species (`creations: species ... unknown here: asked the h
 the village's members are "not made: its tribe has no tribe of this game" and the sync-check counts them missing. A
 village of a species the guest has is copied about 50 ms after the host formed it. `coop.fix tribe.copy_species_retry`
 tries again 0.5 s after a try that found no species.
+
+## The species-list check kept across a formed village (2026-11-21, fix/w62-core)
+<a id="tribe-form-species-fresh"></a>
+
+BUG-1392 (after [tribe-form-species](#tribe-form-species)). GOG 2024, Ghidra and the logs of lab 20261121-003202.
+
+* ✔ (Ghidra) The controller's update 0xCC6A90 counts the timer 0x157E940 down by the frame's dt (u64 ms x 0.001) and
+  calls FormTribe (vt 0x24) when it is below 0; FormTribe sets it to 1.0 first. So the next call comes one second of
+  **game** time after the last, which on our clock (`H->time_seconds`) can be a little under a second.
+* ✔ (lab log) tribe_form_species of 20261121-003202, host: `coop.tribe form` decided "in the list" with 2 tribes at
+  s 20.236 and formed the third; the update's next FormTribe came at s 21.234 (0.998 s), took the kept answer and read
+  list[2] (the planted 0xFFFFFFFF): one fault at 0x406EFF (data 0x50B, ebx = the controller), FormTribe+0x119, the
+  BUG-1233 signature. The calls after it decided again and formed villages 4 and 5 with the last species.
+* Not a w61 change: tribe.cpp's only w61 commit (34cb98e5, BUG-1375 tribe.copy_species_retry) is the guest's copy of
+  a host village; the one-second answer is from BUG-1233 (0.7.14). The test passed 9 times before by timing.
+* Fix `tribe.form_species_fresh` (h_Form): a call that reached the game's FormTribe drops the answer, the next decides
+  with its own tribes. The test now runs the timer out right after its form (`mem.write 0x157E940 00000000`), so the
+  race happens on every run.
