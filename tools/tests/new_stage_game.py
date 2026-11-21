@@ -76,6 +76,22 @@ def chooser_open(c):
     return len(flags) >= 3 and all(f & 1 for f in flags[:3])
 
 
+def wait_chooser(c, frames=600):
+    """BUG-1389: the chooser ring may open later than 150 frames after the click (lab 20261121-003202 cell_new_game:
+    slot 0 at 818 669, right of the Space icon at 798 646 of the ring that opens around the screen's center). The
+    next click on the slot then landed on the open ring's Space icon and a Space wizard ("Choose or Create Your
+    Creature", cell_new_game_wizard.png) replaced the chooser, so every later check failed. Poll for the chooser
+    (150 frames first, as before, then every 30) before the slot is clicked again"""
+    c.cmd("wait.frames 150 60000")
+    waited = 150
+    while not chooser_open(c):
+        if waited >= frames:
+            return False
+        c.cmd("wait.frames 30 20000")
+        waited += 30
+    return True
+
+
 def wait_menu_intro(c, t_menu, secs=90):
     """BUG-1385: the galaxy menu's intro cinematic (GGE_intro) starts ~15.85 s after the menu came up (world.cpp,
     BUG-0607) and moves the camera for ~10 s; a slot clicked before or during it did not open the stage chooser
@@ -167,8 +183,7 @@ def main():
         c.cmd(f"move {sx} {sy}")
         c.cmd("wait.frames 15 10000")
         c.cmd(f"click {sx} {sy}")
-        c.cmd("wait.frames 150 60000")
-        if chooser_open(c):
+        if wait_chooser(c):
             break
         if index is not None:
             # BUG-1385: a slot that did not open the chooser three times: the next one (an empty profile's slots
