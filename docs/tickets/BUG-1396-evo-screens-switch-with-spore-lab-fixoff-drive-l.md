@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w62-core
-commits:
+commits: a5ca9fe4 c6f93414
 tests: tools/tests/coop_evo_screens.py (evo_screens_switch, SPORE_FIX_OFF=drive.lead_gap)
 signature:
 docs:

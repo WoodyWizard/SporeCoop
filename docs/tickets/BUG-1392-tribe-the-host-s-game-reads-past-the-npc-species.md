@@ -10,7 +10,7 @@ role: host
 versions: 0.7.16 dev (coop 0.7.15.5 build of rel/0.7.16 21025f40)
 fixed_in:
 branch: fix/w62-core
-commits:
+commits: c1c0a136
 tests: tools/tests/coop_tribe_form_species.py (tribe_form_species, twin tribe_form_species_fresh_off)
 signature: dc04aee5:Resource::StandardFileFilter::IsValid+0x1FEF
 docs: docs/re/tribe.md#tribe-form-species-fresh, docs/06-testing.md#testing-tribe-form-fresh

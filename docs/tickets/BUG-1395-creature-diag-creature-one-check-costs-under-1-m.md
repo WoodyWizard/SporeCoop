@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w62-core
-commits:
+commits: 22a8b5ca
 tests: tools/tests/coop_diag.py (diag_creature, diag_cell)
 signature:
 docs:

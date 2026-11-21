@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w62-core
-commits:
+commits: 472ea2de
 tests:
 signature: sync-check: MISMATCH with the host (Cell ...): p: 1 apart (p0 171.3) during the end of Cell
 docs: docs/re/cell.md#cell-rescale-centre

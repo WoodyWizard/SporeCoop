@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w62-core
-commits:
+commits: 57941e27
 tests: tools/tests/coop_dna_own.py (dna_own_setback, twin dna_own_setback_off), tests/dna_tests.cpp
 signature: sync-check: MISMATCH ... (Creature ...): bar: host 36.0, guest 36.9
 docs: docs/re/creature.md#creature-death-bar-floor
