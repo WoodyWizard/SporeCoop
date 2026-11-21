@@ -1113,6 +1113,14 @@ static void space_citizen_drive(const Item& l, const net::Vec3& hp, const net::V
 }
 static bool g_space_cit_fix = true;
 COOP_FIX("space.citizens", "BUG-0490", g_space_cit_fix, "space: a colony's citizens stand where the host's stand (the host's citizens near a guest on its planet)");
+// BUG-1404: with snapshots every 0.5 s a runner's start, stop or turn reached the guest 0.5-1 s late (the velocity of two
+// snapshots 0.5 s apart, carried on up to 1 s): a runner's copy stood 2.7-4.3 m off now and then (space_planet_citizens 4
+// of 57 and 6 of 57 elsewhere, every miss a bound copy, `binds=19 own=0`), as Civ's citizens did before BUG-1227. Now
+// the host sends the kind every 0.25 s to guests of 0.7.15 on (BUG-1227's fast tick; older guests every 0.5 s) and the
+// guest takes the velocity from snapshots over 0.15 s apart. `coop.fix space.citizen_lead off`: every 0.5 s (0.7.15).
+static bool g_space_cit_lead_fix = true;
+COOP_FIX("space.citizen_lead", "BUG-1404", g_space_cit_lead_fix,
+         "space: a guest's running colony citizens are where the host's are now (snapshots every 0.25 s, not 0.5 s)");
 // BUG-1210: a host citizen with no guest citizen within the bind radius (30 m) stayed unbound, and the guest's own
 // citizen of that place stood elsewhere for good (binds=18 own=1 of 19 on the fixture's planet, the same in 0.7.14.1:
 // space_planet_citizens 3 of 57 elsewhere). Now such a host citizen takes the guest's nearest citizen without a
@@ -1242,7 +1250,8 @@ static Kind g_kinds[] = {
     {.name = "space_citizen", .fix = &g_space_cit_fix, .stages = kStSpace, .tol = 30.f, .range = 400.f, .max = 56,
      .collect = citizen_collect, .behind = none_behind, .apply = none_apply, .acted = none_acted, .act = none_act,
      .gone_acted = false, .drop_own = false, .every = 0.5, .drive = space_citizen_drive, .place = space_citizen_place,
-     .relocate = 400.f, .place_fix = &g_space_cit_relocate_fix},
+     .relocate = 400.f, .place_fix = &g_space_cit_relocate_fix,
+     .fast_fix = &g_space_cit_lead_fix, .fast_every = 0.25, .fast_vel_dt = 0.15}, // BUG-1404
     // the whole planet (the fixture's is ~510 m in radius): every vehicle binds to the nearest host vehicle of its class
     // (sea vehicles were 400+ m from their partner: the bind radius is the planet's size)
     {.name = "space_vehicle", .fix = &g_space_veh_fix, .stages = kStSpace, .tol = 1500.f, .range = 2500.f, .max = 44,

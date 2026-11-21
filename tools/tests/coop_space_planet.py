@@ -4,7 +4,10 @@ docs/re/space.md#space-planet-life, docs/06-testing.md#testing-space-planet).
 
   --case citizens  both ships land on the home planet, the host's ship over the guest's: the host's citizens
                    near the guest stand in the guest's game at the same spots (3 m) at the same size (12 %)
-                   (SPORE_FIX_OFF=space.citizens fails: 15-20 % elsewhere, every size its own)
+                   (SPORE_FIX_OFF=space.citizens fails: 15-20 % elsewhere, every size its own). BUG-1404: the misses
+                   left (2.7-4.3 m, every one a bound copy) were runners whose start or stop reached the guest a
+                   0.5 s snapshot late; SPORE_FIX_OFF=space.citizen_lead (0.5 s snapshots) failed in about half of
+                   the runs (4 of 9 on rel/main before the fix, 3-6 of 57 elsewhere)
   --case vehicles  the same planet: the colony's 40 vehicles (~20 m/s) are where the host's are (15 m)
                    (SPORE_FIX_OFF=space.vehicles fails: about 60 % elsewhere)
   --case spice     the host lands, the guest leaves the star system and comes back (its game collects the
