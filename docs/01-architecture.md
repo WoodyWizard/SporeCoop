@@ -858,3 +858,24 @@ The creations module's `debug()` (`coop.creations`, 410 lines) went the same way
 the four `debug()` functions of the plan. The proofs: refactor_dump identical after each step, `tools/refactor_dump.py
 moves` lists only dropped `static`s, header declarations, default arguments kept on the prototype, and the new files'
 heads (docs/10-dev-pipeline.md#pipeline-refactor-proof); the Cell lab tests on the split build (BUG-1183).
+
+## The campaign's party: founder seats (2026-11-20, feat/lineages-party)
+<a id="architecture-party"></a>
+
+Phase 2 of the Lineages port (PR #196; there roadmap 0b, BUG-9135), BUG-9260. Builds on the persistent player
+identity ([netcode-identity](04-netcode.md#netcode-identity), BUG-9258).
+
+* The host keeps one **party** per planet: one seat per player who ever played it, seat 0 the host's. A seat is bound
+  to the player's identity, not the network id or the name, so a player who leaves and comes back (the same session or
+  another day) gets the same seat. At most `founders::kPlaySeats` (4) seats; the file format holds 8.
+* Saved next to the planet, never inside the game's save: `<planet>.spo.duoparty` (PTY1: u32 'PTY1', u8 seats, per
+  seat u64 identity, u32 own creature species instance, str8 name), written whole through a temporary file, outside the
+  frame (`run_outside_frame`). A party only grows; a seat's identity is never replaced (`founders::record_party`
+  refuses both). An unreadable file is left alone and logged.
+* Code: mods/coop/party.{h,cpp} (host tick once a second, `coop.party`), mods/coop/founders.{h,cpp} (the file; only the
+  party part of Lineages' founders.h so far: the Tribe / Civ rosters, difficulty and outfits come with their phases).
+  The lifecycle hook `party.forget` (session end, world change) drops it; the next tick reads the planet's file again.
+  The galaxy menu ends it too: world::current_game_key() still names the planet played last there, and a player
+  joining in the menu must not be seated on it.
+* Nothing in the game uses the seats yet. The next phases index by them: every player's own nest (Creature), village
+  (Tribe) and nation (Civilization). Test: tools/tests/coop_party.py (suite party).
