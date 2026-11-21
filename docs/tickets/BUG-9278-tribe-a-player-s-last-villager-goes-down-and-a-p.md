@@ -68,6 +68,14 @@ civ/fixture_tribe (Boheus.spo with the guest's own village, seat 1), 2026-11-20:
 * the host's last villager down and nobody came: the wipe after 61 s with no win: food 11.7 -> 9.7 and 14.9 -> 12.9,
   the villager up at its village.
 * switches (see the second run in the History): party_wipe off: the setback at home; founder_rescue off: the game's death.
+* re-run on lane D (instances 7 / 8, the same fixture, the guest's identity as the fixture's seat 1), 2026-11-20, on
+  the branch's final build: the guest's two other villagers fell, its last one down at 1 health on both games, a world
+  save refused, a further blow held; a host villager walked there revived it (60 health on both games); the guest
+  gave up: the party wipe without a win (food 15.0 -> 13.0 and 16.4 -> 14.4), the villager up at its village on both
+  games; the host's own last villager down and revived by the guest's walked villager; tribe.party_wipe off: the
+  setback (only the downed village paid, 14.4 -> 12.4); tribe.founder_rescue off: the last villager died (dead 1).
+  A game caption that pauses the game (the "rival tribe formed" one at the load) held every blow until OKed.
 
 ## History
 - 2026-11-20: opened; implemented on feat/lineages-rescue (ported from Lineages' tribe.cpp).
+- 2026-11-20: verified again on lane D on the final build.

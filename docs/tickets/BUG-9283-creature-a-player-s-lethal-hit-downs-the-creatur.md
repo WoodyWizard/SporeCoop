@@ -65,6 +65,12 @@ Boheus.spo (nests/fixture_boheus) with the guest playing its own creature 7CA816
   1 health, up): fixed in this ticket (the hit is tried again every second until the game takes it).
 * found on the way: the first retry set 1 health every frame and undid the game's death; after a party wipe the host's
   creature stayed up at 1 health (236 retries): the retry no longer touches the health.
+* re-run after the retry fix (lane D, 2026-11-20): the party wipe (both respawned 0 m from their own nests), the host
+  downed and revived by the guest (6.0 / 15), the host's give-up (respawn 0 m from its nest). A run where the brain
+  upgrade caption stayed up the whole time held both creatures for the retry's 120 s and left them up: the game took no
+  damage while paused (the tests now OK the caption first).
+* the rescue and the respawn spawn nothing: no creature, herd or nest is made (only health, position and the game's own
+  death and respawn).
 
 ## History
 - 2026-11-20: opened; implemented on feat/lineages-rescue (ported from Lineages' creature_rescue.cpp).
