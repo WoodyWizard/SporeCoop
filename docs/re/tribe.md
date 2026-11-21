@@ -4863,3 +4863,15 @@ BUG-1392 (after [tribe-form-species](#tribe-form-species)). GOG 2024, Ghidra and
 * Fix `tribe.form_species_fresh` (h_Form): a call that reached the game's FormTribe drops the answer, the next decides
   with its own tribes. The test now runs the timer out right after its form (`mem.write 0x157E940 00000000`), so the
   race happens on every run.
+## A member mirror's walk start in the smoothed path has no frame bound (2026-11-21, fix/w62-flake-tcs)
+<a id="tribe-smooth-bound"></a>
+
+✔ (lab per-frame samples, BUG-1235) The jumps of tribe_walk_player (30 fps, player network) are one case: a member
+that stood starts to walk, its first walking state comes late (a latency spike), the guest's mirror target goes through
+the smoothing (the switch from the interpolated stand to the lead, interp.h smooth(); mirror_target's `lead_sp >= 0`
+path) while the late lead catches up at ~1.5x (BUG-0650): the mirror is walked at 13.4-13.7 m/s and walk_place's placing
+step is (sp + 3 m/s) x dt with no WalkPlace::lead_speed (that path had BUG-0619's bound until 1fcf09b2 kept only the raw
+lead's, BUG-0651). A 32 ms frame then draws 0.52 m of placing + 0.43 m of the game's walk = 0.95 m (the test's limit
+0.86 m). How to read it in a track: the jumping frames have rv (aim speed) and gv (the game's walk speed) at 13-14 m/s,
+err 0.75-2 m just before, and a step of (2 x gv + 3) x dt. tribe.smooth_bound bounds the placing by the body's own speed
+(lead_sp / late_rate) there too. ? The stop-and-go half of BUG-1235 (uneven 12-14 %) is another cause, not found.

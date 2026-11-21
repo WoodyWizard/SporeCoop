@@ -9909,6 +9909,10 @@ cause=c` (coop_dna_notice.py LEDGER reads both forms).
   `coop.status` says `ship model keys planted N (armed M)`. creature_ufo_nomodel plants from its 4th UFO visit,
   space_npc_model on its 3rd arrival, each only after the game's own picks brought no such ship (the case was random:
   INCONCLUSIVE 3 runs in a row, final check 20261120-133703); the log says "natural" or "planted".
+  CORRECTION (2026-11-21, fix/w62-flake-tcs): space_npc_model now plants its 2nd arrival and stays at the star until
+  `ship model keys planted` > 0 (at most 180 s, BUG-1391): the empire's ships at its star ask for their models at the
+  first arrival only (every natural case came ~2 s after it, no revisit ever had one); a revisit asks only for ships
+  that come later (21 s / 56 s after it in lab 20261121-003202), so the old fixed wait left before them (solo: SKIP).
 * `lab.py fixcheck` CONTRADICTED net_nan / game.finite_pose and npc_nan_vel / game.finite_vel (BUG-1364): their twins
   only ever passed (BUG-0614 and BUG-0894 are no-fail-run: the game's puppet and proxy driving tolerate the NaN states),
   so the claims were corrected as leave_avatar's (2026-11-01): the suite comments name the PASS runs with the switch off.
@@ -10028,3 +10032,18 @@ over the gap itself, not wait for the game to make one.
 * puppet_jump: the death caption is answered until it is gone (one Enter could be lost: the game stayed dead and
   paused, BUG-1411).
 * creature_sneak: the sneak look is compared only on a puppet the observer draws opaque before the sneak (BUG-1412).
+## Space and defer_identity flakes of the third 0.7.16 final check (2026-11-21, fix/w62-flake-tcs)
+<a id="testing-w62-flake-tcs"></a>
+
+* Extra guests (`coop_multi.start_extra`: Party, campaigns, every 3-4 player test) now start without the records an
+  earlier test left in their profiles (`forget_extra_records`: SporeCoop/holds, badges, settings, choices.ini,
+  worlds.ini, Games-sporecoop-store / -backup), as the host and the first guest do. Before, the second Bob of
+  party_space_names got its hold of the last run on that lane back (BUG-0679 record: 3 Anti-Matter Bombs) and the gift
+  made 6 (BUG-1405). `SPORE_EXTRA_RESET_FIX=0`: only the saves go (the old start).
+* `coop.npc reusehunt` flags `B<N>` (N creatures a tick once the target's chunk is free), `K` (misses kept from the free
+  on), `M` (a target whose chunk merges backward ends at once). defer_identity hunts `xf40B4KM` over 1500 frames: one
+  creature a frame destroyed at once until the free (what lets the game let go of the queued puppet), then BUG-1099's
+  4 a frame kept (BUG-1406). Of the 16 rounds of the old hunt in 20261121-003202: 7 never freed in 900 frames, 4 freed
+  1026-1295 frames after the destroy, 4 merged backward, 1 freed and missed.
+* space_planet_citizens: its misses after BUG-1210 are bound copies of runners 2.7-4.3 m off; `space.citizen_lead`
+  (BUG-1404) sends the kind every 0.25 s. The test's 3 m / 5 % limits are unchanged.

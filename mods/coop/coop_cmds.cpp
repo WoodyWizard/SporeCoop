@@ -485,6 +485,11 @@ int c_npc(void*, int argc, const char* const* argv, SkOut* out)
             npc::debug_reuse_free_first(atoi(ww + 1));
         if (ff)
             npc::debug_reuse_wait_free(atoi(ff + 1) > 0 ? atoi(ff + 1) : 20);
+        // B<N>: N creatures a tick once the chunk is free; K: the misses kept from the free on; M: a target whose chunk
+        // merges backward ends at once (BUG-1406)
+        const char* bf = strchr(fl, 'B');
+        if (bf || strchr(fl, 'K') || strchr(fl, 'M'))
+            npc::debug_reuse_after_free(bf ? std::max(1, atoi(bf + 1)) : 0, strchr(fl, 'K') != nullptr, strchr(fl, 'M') != nullptr);
         SAY("%s", npc::debug_reuse_status().c_str());
         return 0;
     }

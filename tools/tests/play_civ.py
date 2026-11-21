@@ -593,6 +593,16 @@ class Bot(Player):
         if st.get('open') != '1' or not st.get('cnext', {}).get('vis'):
             self.do('key 0x78')
             return 'no role buttons'
+        # BUG-1402: since BUG-1289 (creations.late_species) a guest that plays the host's species and has own creatures
+        # sees the creature row in Civ ("My creature: ... < >"): its arrows pick a creature, not a role (BUG-1403). The
+        # action clicked them, changed the guest's species mid-session and read no "My role" (lab 20261121-003202:
+        # "guest picked the role ?, the host has none"). Only the role row is a role action: the arrows of another row
+        # are not clicked; the role check below is the same for every role row
+        row = str(st.get('creation', ''))
+        if not row.startswith('My role'):
+            self.do('key 0x78')
+            self.g.bump('role_other_row')
+            return f'no role row ({row[:40]!r})'
         n = self.rng.randint(1, 3)
         for _ in range(n):
             self.ui.click('cnext')

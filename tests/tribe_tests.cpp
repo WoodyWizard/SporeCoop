@@ -1,6 +1,7 @@
 // Native tests for tribe_logic.h (make test, D3 of 0.7.15): the Tribe stage's rules of owner dealing, member hold and
 // snapshot apply, and the per-peer message type of the member animations (wire/tribe_anim.h, C7). Where a rule has a
 // switch, the case runs with it off too and must show the old behaviour, so the test is known to catch it.
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -202,6 +203,42 @@ static void end_editors()
     CHECK(!end_editor(0x7CB21BADu) && !end_editor(0x465C50BAu)); // no such editor / another editor
 }
 
+// BUG-1235 (tribe.smooth_bound): the frame a walked member mirror draws = the placing's step (walk_place: at most
+// (sp + catch_up) x dt, with lead_speed at most (2 x lead_speed + catch_up - sp) x dt) + the game's walk of the next
+// frame at sp. The lab's case (tribe_walk_player 20261121-003202 member 3, 20261119-214823 member 7): a walk start in
+// the smoothed path while the late lead catches up at 1.49-1.51x: sp = raw lead = 13.4-13.7 m/s, catch_up 3 m/s
+// (catch_prop off there), 32 ms frames; the test's jump limit 3 x 9 m/s x dt. FAILS with `--nofix` (the 0.7.16 rc rule)
+static float drawn_frame(float lead_speed, float sp, float catch_up, float dt)
+{
+    float max_step = (sp + catch_up) * dt;
+    if (lead_speed > 0)
+        max_step = std::min(max_step, std::max(0.f, 2.f * lead_speed + catch_up - sp) * dt);
+    return max_step + sp * dt;
+}
+
+static void smooth_bound()
+{
+    printf("member mirror frame bound: smoothed walk start while the late lead catches up (BUG-1235)\n");
+    const bool fix = !g_nofix;
+    const float dt = 0.032f, limit = 3.f * 9.f * dt; // 0.864 m
+    for (float raw : {13.4f, 13.7f}) {
+        const float rate = raw / 9.f;
+        float ls = mirror_lead_speed(true, fix, raw, raw, true, rate);
+        CHECK(drawn_frame(ls, raw, 3.f, dt) < limit); // 0.67 m with the bound, 0.95 m without (the lab's frames)
+        CHECK(ls > 8.9f && ls < 9.1f);                // the body's own speed
+    }
+    // without a catch-up the bound is BUG-0619's (the raw lead's speed); a standing body still gets the 0.5 m/s floor
+    CHECK(!fix || mirror_lead_speed(true, true, 9.f, 9.f, false, 1.f) == 9.f);
+    CHECK(!fix || mirror_lead_speed(true, true, 0.f, 0.f, false, 1.f) == 0.5f);
+    // the raw lead (lead_sp < 0): drive.lead_keep's bound, only while it catches up, unchanged by the switch
+    CHECK(mirror_lead_speed(true, false, -1.f, 13.5f, true, 1.5f) == 9.f);
+    CHECK(mirror_lead_speed(true, true, -1.f, 9.f, false, 1.f) == 0.f);
+    CHECK(mirror_lead_speed(false, true, -1.f, 13.5f, true, 1.5f) == 0.f);
+    // the switch off: no bound in the smoothed path (the 0.7.16 rc rule; the lab's 0.95 m frame)
+    CHECK(mirror_lead_speed(true, false, 13.5f, 13.5f, true, 1.5f) == 0.f);
+    CHECK(drawn_frame(0.f, 13.6f, 3.f, dt) > limit);
+}
+
 int main(int argc, char** argv)
 {
     g_nofix = argc > 1 && !strcmp(argv[1], "--nofix");
@@ -213,6 +250,7 @@ int main(int argc, char** argv)
     apply();
     anim_type();
     end_editors();
+    smooth_bound();
     if (g_fail) {
         printf("tribe_tests: %d FAILED\n", g_fail);
         return 1;

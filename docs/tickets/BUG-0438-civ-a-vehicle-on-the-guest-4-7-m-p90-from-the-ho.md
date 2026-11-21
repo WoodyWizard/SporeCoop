@@ -1,7 +1,7 @@
 ---
 id: BUG-0438
 title: civ: a vehicle on the guest 4-7 m (p90) from the host's under loss bursts (sync_burst, sync_fps15burst)
-status: not-reproduced
+status: open
 kind: desync
 stage: Civ
 reported: 2026-11-01
@@ -61,3 +61,21 @@ no-fail-run: the reported trail is not reproduced at a lab load under ~15 on 6 c
 - 2026-11-06 (fix/w45-remote-bodies, M1): root cause observed (the 0.15 s extrapolation limit), fixed by drive.lead.
 - 2026-11-07 (orchestrator, 0.7.9 final check on a quiet lab): reopened, the claim does not hold: body_trail_civ_loss 1 of 2 with the lead (p90 3.35 m in #2, out/lab/20261107-012856) and 1 of 2 with SPORE_FIX_OFF=drive.lead (p90 4.03 m, out/lab/20261107-012856-2); FAIL in the final check 20261106-231404 (5.30 m) and the rerun 20261107-004042 (2.54 m). The lead is better than or equal to 0.7.8 behaviour, so it ships as an improvement (CHANGELOG Changed), the rest goes to 0.7.10 K3.
 - 2026-11-07 (fix/w46-k3-bodies, K3): decomposed with coop.bodyrec diag rows: the drawn mirror behind its own target (fixed, civ.place_now) and the target's error from the host's state ages under lab load; at a moderate load body_trail_civ_loss and body_trail_civ pass 12 of 12 with and without the fix. Closed not-reproduced with these runs.
+- 2026-11-21 (fix/w62-flake-tcs, 0.7.16 final check 3): reopened: sync_civ_loss FAIL on rel/0.7.16 21025f40
+  (out/lab/20261121-003202, nightly at 4 lanes): `vehicles n=1 pos med 0.07 p90 3.21 max 3.78 m | facing p90 1.0 max
+  43.0 deg | raw p90 3.21 m`, limit 3.0 m (2 of the 16 samples over it). History: 2 of 12 runs failed since 2026-11-04
+  (the other one 20261104-020316). Observed: the run's loss burst came inside the sampling window (both games log
+  `net: spike ... loss 10.1% / 13.8% of the packets in 5 s` at session s 20.2-20.5, the sampling ran from about s 12 to
+  s 25); the facing error stayed small (p90 1 deg), so it was not the turn-in-a-burst case of 2026-11-04 but the
+  lag case of 2026-11-06 (states 0.3-0.6 s apart in a 30 % burst, the mirror extrapolates at most kVehLead 0.3 s past
+  its newest state, civ_guest.cpp, then waits). The 4.9 s silence both games log at s 30 is the test's end (its netem
+  proxy lives in the test process), not the sampling. Not a w61 regression: the only w61 change near remote bodies,
+  drive.lead_gap (BUG-1376, net/interp.h late_time), acts only on bodies with member rules or late_lead (Tribe
+  mirrors, NPC proxies); Civ vehicles use net::VelocityEstimate (GV::est) with max_ahead (civ_guest.cpp guest_state), not late_time.
+  Cause not provable from this run's logs (coop_sync prints aggregates only). coop_sync.py now prints each vehicle /
+  ship sample over its limit with the host's speed over the window, the implied lateness and netem's burst state at
+  that moment, and the network state at the start and end of the sampling. Lab command that would show it:
+  `SPORE_DETECTOR=20 python3 tools/lab.py run sync_civ_loss body_trail_civ_loss --lane N --retry 0 --no-build`, 4-6
+  times: a FAIL whose `over:` lines say BURST with lateness 0.3-0.6 s confirms the extrapolation limit in a burst (fix
+  then: send the vehicle's own velocity, or a longer lead only after a gap in the state cycle numbers; the 0.6 s try of
+  2026-11-04 had no measurable gain), `good` lines would be a desync to analyse.

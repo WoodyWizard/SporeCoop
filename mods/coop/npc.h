@@ -122,6 +122,9 @@ std::string debug_settle(double s); // tests (BUG-0842): the guest's npc tick wa
 std::string debug_chunk(void* obj); // tests (BUG-1099): the heap chunk of an object and its neighbours' use
 void debug_reuse_free_first(int frames); // tests (BUG-1099): no try until the target's heap chunk is free (at most N frames)
 void debug_reuse_wait_free(int tries); // tests (BUG-0825): the hunt ends N tries after the target's heap chunk is free
+// tests (BUG-1406): once the target's chunk is free, `burst` creatures a tick (0: as before) and the misses kept (keep);
+// end_merged: a target whose chunk merges backward when freed ends the hunt at once
+void debug_reuse_after_free(int burst, bool keep, bool end_merged);
 std::string debug_reuse_hunt(void* target, int frames, void* species, int now_tries = 0, int burst = 1, void* herd = nullptr,
                              const net::Vec3* at = nullptr, bool herds = false, bool pool = false, bool keep = false, int every = 1);
 std::string debug_reuse_status();

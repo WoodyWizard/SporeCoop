@@ -6,11 +6,13 @@ vehicles (the guest's vehicles are mirrors and deal no damage) the herds of the 
 guest's attack of a creature it saw named a creature the host did not have there (BUG-0970's fallback then gave a
 move order).
 
-1. Two games on civ_npc (a herd of 7 and three epics). Both games' wild creatures (census rows, noun 0x18EB45E).
+1. Two games on civ_npc (a herd of 7 and three epics). Both games' wild creatures (census rows, noun 0x18EB45E); the
+   herd: 3 or more placed creatures within 30 m in two censuses 1 s apart (BUG-1401: not the game's pool objects).
 2. Both cameras on the herd; the host's game sets its herd 40 m aside (`coop.civ creatureshift`, as a flight would): within 8 s every live wild
    creature of the host's game has one of the guest's within 4 m and the counts agree.
 3. The host spawns two military land vehicles at the player's city nearest to the herd and gives them to the guest;
-   the guest's game orders them to attack the creature of its own screen nearest to them (`coop.civ attack <id> c`,
+   the guest's game orders them to attack a creature of the moved herd on its own screen, both cameras on it (BUG-1401:
+   a kill out of the cameras' relevance is taken into the game's pool with its body; `coop.civ attack <id> c`,
    the game's SetOrder, as a right-click). Within 60 s the creature of the host's game at that place (the same
    creature) is dead in the host's game, and the guest's census agrees again (the same live creatures within 4 m,
    a dead body where the host's is).
@@ -27,6 +29,12 @@ from play_civ import civ_state, dist, frame_city
 from twoinst import Checks, keyframe, start
 
 CREATURE = 0x018EB45E
+
+
+def placed(p):
+    """BUG-1401: not an object of the game's pool: those stand at the planet's centre or at unplaced points with a
+    coordinate of exactly 0 ((0 524.8 0), (-368.7 -347.0 0): docs/re/civ.md#civ-wild-reused-frozen)"""
+    return all(abs(v) >= 0.05 for v in p) and dist(p, (0.0, 0.0, 0.0)) > 50
 
 
 def wild(con):
@@ -80,8 +88,28 @@ def main():
     herd = [x[0] for x in h if x[1]]
     if not ck(len(herd) >= 3, f'wild creatures in the host\'s game ({len(herd)})'):
         return ck.result()
-    # the herd: the live creature with the most others within 30 m (not an epic standing alone)
-    c0 = max(herd, key=lambda p: sum(1 for q in herd if dist(p, q) < 30))
+    # the herd: the live creature with the most others within 30 m (not an epic standing alone). BUG-1401: only
+    # placed creatures the host's game simulates, and a herd of 3 or more seen in two censuses 1 s apart (a state, not
+    # a sleep): the game's pool gives objects out at unplaced points ((0 524.8 0), z = 0: docs/re/civ.md
+    # #civ-wild-reused-frozen) while its relevance pass rebuilds herds; lab 20261121-003202 picked such an object
+    # alone at the pole (`shifted 1 creatures`), its target was 449 m from the vehicles and 180 m from the cameras,
+    # and the game took the body into its pool at once (no kill seen, no body on either screen)
+    c0, t0 = None, time.time()
+    while c0 is None and time.time() - t0 < 30:
+        cand = []
+        for _ in range(2):
+            rows = wild(host)
+            live = [x for x in rows if x[1] and placed(x[0])]
+            npc = [x for x in live if x[3] == 'npc'] or live  # (switch off: nothing is tracked)
+            cand.append({x[2]: x[0] for x in npc})
+            time.sleep(1)
+        both = [p for s, p in cand[1].items() if s in cand[0] and dist(p, cand[0][s]) < 10]
+        best = max(both, key=lambda p: sum(1 for q in both if dist(p, q) < 30), default=None)
+        if best is not None and sum(1 for q in both if dist(best, q) < 30) >= 3:
+            c0 = best
+    if not ck(c0 is not None, f'a herd (3 or more placed creatures within 30 m) in the host\'s game'
+                              f'{f" at {tuple(round(v) for v in c0)}" if c0 else ""}'):
+        return ck.result()
     # 2. the host's herd moves 40 m aside. Both cameras look at the herd first: the Civ game keeps herds simulated only
     # within ~200 m of its camera's point (the relevance sphere, docs/re/civ.md#civ-wild-sync); a herd moved out of it
     # is taken back into the pool (on both games then: the guest drops its proxies)
@@ -119,8 +147,13 @@ def main():
         return ck.result()
     at = gv[ids[0]]['pos']
     g = wild(guest)
-    gl = [x[0] for x in g if x[1]]
-    near = min(gl, key=lambda p: dist(p, at))
+    gl = [x[0] for x in g if x[1] and placed(x[0])]
+    # BUG-1401: a creature of the moved herd (nearest to the cameras' point), and both cameras on it: the Civ relevance
+    # pass keeps only creatures near the camera in the world (leave 200 m, #civ-wild-sync); a kill farther away is
+    # taken into the game's pool with its body in the same frame (lab 20261121-003202: npc 140 `updated at the planet's
+    # centre ... dead=1` 22 s after the orders, then given out alive again: the test saw no death)
+    near = min(gl, key=lambda p: dist(p, herd_at))
+    frame_city({'host': host, 'guest': guest}, near, answer=False)
     h = wild(host)
     hl = [(x[0], x[2]) for x in h if x[1]]
     tp, tser = min(hl, key=lambda x: dist(x[0], near))

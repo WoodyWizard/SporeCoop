@@ -281,7 +281,7 @@ anchor so other docs can link to it:
   host's) sometimes jump once while walking, or start and stop unevenly in 12-14% of the frames (the test allows 10%).
 * Reproduce: `lab.py run tribe_walk_player --repeat 4` (about 3 of 4 runs fail on both builds).
 * Known: not a 0.7.15 regression (v0.7.14.1 fails 4 of 4 the same night); worse when the headless Xwayland is saturated.
-* Not checked: which member path (drive.lead, the hold after a stop) makes the jump.
+* Known (2026-11-21): the jump is a walk start driven by the smoothed target while the late lead catches up (13.4-13.7 m/s, no frame bound in that path since 0.7.9); fixed by `tribe.smooth_bound` (BUG-1235), waiting for the lab. The stop-and-go part is not explained yet.
 * Next steps: the next release.
 * Ticket: BUG-1235
 

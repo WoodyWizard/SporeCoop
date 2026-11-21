@@ -3576,3 +3576,18 @@ analysis (Ghidra, GOG 2024), no lab run yet:
   screen shows the host captain's real item state; it changes the creations bundle and registers a resource under the
   host's key, not a hotfix.
 
+
+## Colony citizens that run: the snapshot rate (2026-11-21, fix/w62-flake-tcs)
+<a id="space-citizen-lead"></a>
+
+BUG-1404. Follows #space-planet-life. GOG 2024, the space fixture's home planet, logs only (no new runtime run).
+
+* ✔ (logs) After BUG-1210 every miss of space_planet_citizens is a bound copy (`kind space_citizen binds=19 own=0
+  missing=0`), 2.7-4.3 m from its host citizen (lab 20261121-003202: 4 of 57; 20261117-154911 rel/0.7.15: 6 of 57,
+  misses 3.1-4.2 m): runners (~5 m/s), not unbound citizens.
+* ~ (inferred) The kind was sent every 0.5 s and the guest put each copy at the last place moved on with the velocity of
+  two snapshots 0.5 s apart (at most 1 s ahead): a runner's start, stop or turn reached the copy 0.5-1 s late, up to
+  2.5-5 m off. The same as Civ's city citizens before BUG-1227 (docs/tickets/BUG-1227: the glide at 0.5 s snapshots p90
+  3.4 m, at 0.25 s 1.4-1.7 m).
+* Change: `space.citizen_lead` sends the kind every 0.25 s to guests of 0.7.15 on (the fast tick of BUG-1227; older
+  guests every 0.5 s) and the guest takes the velocity from snapshots over 0.15 s apart. No wire change.

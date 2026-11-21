@@ -71,6 +71,19 @@ def together(host):
     return sorted(int(m.group(1)) for m in re.finditer(r'^together (\d+) 1$', host.call('coop.status')['out'], re.M))
 
 
+def forget_extra_records(d):
+    """BUG-1405: an extra guest starts without what an earlier test left in its profile `d` (<profile>/Spore), as the
+    host and the first guest do (twoinst.forget_holds / forget_settings / forget_store and the cold start's choices.ini
+    and worlds.ini): its hold records per host world (BUG-0679: party_space_names' second Bob got its hold of the last
+    run back, 3 Anti-Matter Bombs, and the gift made 6), badges, session settings, the per-player store and its own
+    creation choices. SPORE_EXTRA_RESET_FIX=0: only the saves go (the old start, the twin)"""
+    if os.environ.get('SPORE_EXTRA_RESET_FIX') == '0':
+        return
+    subprocess.run(['rm', '-rf', d + '/SporeCoop/holds', d + '/SporeCoop/badges', d + '/SporeCoop/settings',
+                    d + '/Games-sporecoop-store', d + '/Games-sporecoop-backup', d + '/SporeCoop/choices.ini']
+                   + ([] if os.environ.get('SPORE_WORLDS_INI_RESET_FIX') == '0' else [d + '/SporeCoop/worlds.ini']))
+
+
 def start_extra(n):
     """n more guests from lane B, joined to lane A's host; {name: console}"""
     b, env = lane_b()
@@ -86,6 +99,7 @@ def start_extra(n):
         # an empty profile: the host's world arrives
         appdata = lane.APPDATA.replace(f'/{lane.BOTTLE}/', f'/SporeLab{b}/' if b > 1 else '/Games/')
         subprocess.run(['rm', '-rf', f'{appdata}/SporeKit-{prof}/Spore/Games'])
+        forget_extra_records(f'{appdata}/SporeKit-{prof}/Spore')
         sh('run', '-i', str(inst), '-p', prof)
         # A9 (BUG-1112): the next launch once this game's process runs (its sandbox is up), at most the old 2 s
         startwait.until(lambda: sh('pids', str(inst)).stdout.strip(), 2)

@@ -158,6 +158,20 @@ def stir(stage, host, guest, i):
         host.call('coop.pool goto %d %d' % ([20, 0, -20, 0][i % 4], [0, 20, 0, -20][i % 4]))
 
 
+def net_state():
+    """BUG-0438: the guest's bad network now (SPORE_NET): in a loss burst or not, bursts and packets lost so far"""
+    try:
+        import netem
+        px = netem.proxy()
+    except ImportError:
+        px = None
+    if not px:
+        return 'direct'
+    st = px.stats
+    return (f'{"BURST" if px.model.bad else "good"} (bursts {st.get("bursts", 0)}, lost {st.get("lost", 0)} of '
+            f'{st.get("up", 0) + st.get("down", 0)})')
+
+
 def measure(stage):
     fx, planet = FIXTURES[stage]
     host, guest = start(fx, planet)
@@ -168,9 +182,12 @@ def measure(stage):
           else '  (a game stayed paused: measuring anyway)', flush=True)
     time.sleep(5)
     pos, rot, raw_pos, raw_rot, keys = {}, {}, {}, {}, {}
+    t_start = time.time()
+    print(f'  (sampling; network: {net_state()})', flush=True)
     for i in range(16):
         if i % 4 == 0 or (FPS and stage == 'civ'):  # --fps: the vehicles drive all the time (BUG-0175)
             stir(stage, host, guest, i if FPS and stage == 'civ' else i // 4)
+        t_h0 = time.time()
         h0 = sample(host)
         time.sleep(LAG_WINDOW - 0.03)  # a console call takes ~0.03 s: h0 is ~LAG_WINDOW older than g
         h1, g, h2 = sample(host), sample(guest), sample(host)
@@ -191,6 +208,15 @@ def measure(stage):
             raw_pos.setdefault(kind, []).append(raw)
             if e > 50:  # print the big ones: which object, when, where on both sides
                 print(f'    big: {k} {e:.0f} m at sample {i}: host {h1[k][0]} / {h2[k][0]}, guest {gp}', flush=True)
+            elif e > LIMITS.get(kind, (2, 20))[0] and kind in 'vs':
+                # BUG-0438: a vehicle / ship over its limit: how fast the host's moved over the window (a guest copy
+                # behind by e at that speed is late by e / speed past the window) and whether the bad network was in
+                # a loss burst then (netem's Gilbert-Elliott state), so a failed run tells lag in a burst from a desync
+                span = math.dist(h0[k][0], h2[k][0]) if k in h0 else math.dist(h1[k][0], h2[k][0])
+                v = span / max(time.time() - t_h0, 0.05)
+                print(f'    over: {k} {e:.2f} m at sample {i} (+{time.time() - t_start:.1f} s): host speed ~{v:.1f} m/s '
+                      f'(late ~{e / v if v > 0.5 else float("inf"):.2f} s past the window), facing err {a:.1f} deg, '
+                      f'network: {net_state()}', flush=True)
             rot.setdefault(kind, []).append(a)
             if os.environ.get('SYNC_VERBOSE') and kind == 'v':  # BUG-0326: how far the host turned meanwhile
                 turn = angle(h0[k][1], h2[k][1]) if k in h0 else -1
@@ -199,6 +225,7 @@ def measure(stage):
             raw_rot.setdefault(kind, []).append(angle(gq, hq))
             keys.setdefault(kind, set()).add(k)
         time.sleep(0.4)
+    print(f'  (sampled in {time.time() - t_start:.1f} s; network: {net_state()})', flush=True)
     shot(host, f'sync_{stage}_host.png')
     shot(guest, f'sync_{stage}_guest.png')
     return pos, rot, raw_pos, raw_rot, keys, host, guest

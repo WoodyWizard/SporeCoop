@@ -2741,3 +2741,16 @@ BUG-1343. GOG 2024, lab 20261120-041304 civ_own_arrival (logs, key frames), no n
   the city nearest the capital military in some runs, religious in others). A vehicle bought in a city is of its
   specialty's design id, and the guest's vehicle editor at its Civ arrival is the capital's specialty's: a test that
   needs a city where that design applies sets one with the game's own `cCity_SetSpecialty` 0xBE7520 when none has it.
+
+## A wild creature killed out of the cameras' relevance goes to the pool with its body (2026-11-21, fix/w62-flake-tcs)
+<a id="civ-wild-kill-pooled"></a>
+
+BUG-1401. GOG 2024, logs of lab 20261121-003202 (civ_wild_sync, lane 2).
+* ✔ (logs) Two vehicles of the guest killed a wild creature about 180 m from both cameras' point: the host's npc pass
+  logged `npc 140 ... is updated at the planet's centre: herd 00000000, 507 m from where it was a frame before, dead=1`
+  (the frame before it stood on the ground), and the census then listed the same object (same serial) alive at
+  (0 0 0): the game took the body into its pool in the frame of the death and gave the object out again. Neither game
+  showed a body. A kill near the camera (every other civ_wild_sync run) keeps the body.
+* ✔ (logs) The census lists pool objects given out at unplaced points ((0 524.8 0)) as live creatures
+  (#civ-wild-reused-frozen); a test that picks "the densest place of live creatures" can pick one of them alone.
+  Tests pick herds by placed creatures (no coordinate exactly 0, not at the centre) seen in two censuses.
