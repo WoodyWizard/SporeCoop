@@ -526,6 +526,10 @@ static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
         g_bt_skipped++;
         return 0;
     }
+    if (is_host() && rescue_downed((void*)self)) { // BUG-9278: a downed last villager does nothing until it is up
+        g_bt_skipped++;
+        return 0;
+    }
     if (is_guest() && is_citizen((void*)self) && game::mode_id() == modes::kTribe && !local_play() &&
         !g_bt_local.count((void*)self)) {
         g_bt_skipped++;
@@ -1945,6 +1949,10 @@ void on_member_anims(uint8_t kind, net::Reader& r)
     }
     if (!g_ok || !is_guest() || game::mode_id() != modes::kTribe)
         return;
+    if (kind == wire::tribe_anim::K_RESCUE) { // BUG-9278: the downed last villagers
+        on_rescue_lines(r);
+        return;
+    }
     if (kind >= 4 && kind <= 6) { // BUG-0568: the theme music
         on_theme(kind, r);
         return;
@@ -3310,6 +3318,8 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
         void* pt = player_tribe();
         void* vt = F<void*>(victim, kOwnerTribeOff);
         void* ac = att && !IsBadReadPtr(att, 4) ? vcall<void*>(att, 0xC / 4) : nullptr;
+        if (rescue_downed(ac)) // BUG-9278: a downed last villager deals no blows
+            return 0;
         HEntry* ah = hm_of(ac);
         if (ac && !ah && is_epic_animal(ac)) {
             auto& b = g_epic_blows[ac];
@@ -3358,6 +3368,9 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
                 }
             }
         }
+        // BUG-9278: a player's last villager goes down instead (a partner may revive it), or a downed one takes no blow
+        if (rescue_protect(victim, dmg, pol))
+            return 0;
     }
     return o_CitizenTD(comb, dmg, pol, type, pos, att);
 }
@@ -4225,6 +4238,7 @@ void tick(double now)
         away_tree_end_tick(); // BUG-1084
         guest_tick(now);
         villages_guest_tick(); // BUG-9268: its own village
+        rescue_guest_tick(now); // BUG-9278: its own downed last villager may give up
         held_items_tick(now); // BUG-0906
     }
     coop_tick(now);

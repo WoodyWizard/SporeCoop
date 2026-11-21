@@ -4390,3 +4390,46 @@ BUG-9268 (second round), BUG-9271, BUG-9272; follows [tribe-own-villages](#tribe
 * ✔ (runtime) The team's alliance: `coop.tribe villages earn 1 <npc>` (the NPC allied with the guest's village only, its
   mission made as for a guest's gift) -> within 5 s the host's village's relation 0 -> 8 (team_allies 1) and the host's
   goal bar 0 -> 1; the guest's game showed the goal card "Ally the Cyan Village" done and the bar's segment filled.
+
+## A player's downed last villager and the party wipe (2026-11-20, feat/lineages-rescue)
+<a id="tribe-founder-rescue"></a>
+
+BUG-9278, the Lineages port of its founder rescue (BUG-9118 / BUG-9135) and party wipe (BUG-9155). Code:
+`mods/coop/tribe_rescue.cpp`, rules `tribe_rescue_logic.h` (tests/tribe_rescue_tests.cpp).
+
+* ✔ (runtime, lane B 2026-11-20) A blow through the citizen's TakeDamage hook (h_CitizenTD, combatant vt 0x18) that
+  is lethal for the last living member of a player's village (the host's player tribe, seat 0, or a partner's own village
+  of tribe_villages.cpp) is not dealt while another player of the party is here with a village of their own: the
+  villager is kept at 1 health (game::set_health), stopped and held at the spot it fell (teleported back when anything
+  moves it more than 0.4 m), its behaviour tree is skipped (h_BTTick), the host refuses orders for it (host_command) and
+  its own blows deal nothing. Blows on it are counted and not dealt (27 in one window: wildlife at the guest's village).
+  Its health 1 reaches the guest's mirror with the snapshots; the guest's game kept it alive (its own blows on a mirror
+  stop at 0.3: tribe.mirror_blow).
+* ✔ (runtime) Revive: a living member of another player's village within 15 m of the spot for 1.5 s. The game's own
+  walk order of the host (`coop.tribe order <id> 4 x y z`) and the guest's own selection and walk (`coop.tribe select`,
+  `coop.tribe walk`, the orders the guest's mouse sends) both revived it 1-2 s after the walker came within 15 m;
+  the villager got up with 40 % of its maximum health (60 of 150).
+* ✔ (runtime) The stage's win list: TribeUI (cTribeUI_Get) +0x40 / +0x44 is a vector of 16-byte records {vt, kind 1
+  conquered / 2 allied, cTribe*, 0}; an alliance the guest's village earned (`coop.tribe villages earn 1 <npc>`, the
+  team alliance) added "allied 000022A6" and cPlayer +0x10F0 0 -> 1 on the host, 1.0 on the guest's game through wsync.
+  The wipe (end pointer back by one record, +0x10F0 - 1, the ally's relation to every player village set to -5 with
+  ApplyRelationship) gave 0 wins, bar 0.0 on both games ("The Cyan Village dislikes your tribe." on the guest) and the
+  relations -5 kept through the save and reload.
+* ✔ (runtime) The totem's pieces did not follow the win at once: after the alliance the host village's totem (+0x19D0,
+  piece kinds +0x11C / +0x120, colours +0x130 / +0x134) still had 0 pieces (the piece comes from the reward queue when the
+  game's mode changes, Lineages: TribeGame_ModeChanged 0xCDAC90). A totem whose piece count is not the win count is left
+  as it is (totem_pop_ok).
+* ✔ (runtime) The world refresh after a wipe that took a win (world::share_with every guest, save first, then
+  world::host_reload_after_share): the guest's game went through the galaxy menu into the new world within seconds, the
+  host reloaded its save; the goal history, the bar and the relations were the wipe's on both games, the guest kept its
+  own village. A wipe without a win (every village loses 10 % of its food, rounded up: 11.7 -> 9.7, 14.9 -> 12.9) needs
+  no refresh: wsync's food rows carry it.
+* ✔ (runtime) The guest's give-up (CMD_GIVE_UP = 5 in MSG_TRIBE_CMD, the action word its seat + 1) ended the window at
+  once with the wipe. A host before BUG-9278 ignores the kind (host_command returns on any kind but ACTION / WALK).
+* ✔ (runtime) The guests learn the windows from MSG_TRIBE_ANIM (or MSG_NPC_ANIM for an older peer) kind 22 K_RESCUE:
+  u8 n, n x {u8 seat, u8 player, u16 member, u16 tenths left, u8 revive %}, every second while one is open and once
+  empty at the end; a guest before it drops the kind (is_tribe_kind) and sees only the notices. Both games draw
+  "DOWN <s>: <name>'s last villager" over it.
+* ~ Not ported (Lineages had them): the hut's own "village down" window (a lethal blow on a founder hut), the capture of an
+  unrevived village by its attacker, the party wipe from the population event when every player village is empty
+  (BUG-9147) and the red lost step on the goal bar (progress_debt). The downed villager stands (no lying pose).

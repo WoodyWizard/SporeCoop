@@ -33,6 +33,11 @@ bool own_village_info(int& members, float& food);
 // BUG-9268: the host's village while a guest's game shows its own village as the player tribe (cGameNounManager +0x70
 // is the own one then); null otherwise. Modules that mean "the host's village" read this before +0x70.
 void* swapped_host_tribe();
+// BUG-9278 (tribe_rescue.cpp): a player's downed last villager waits for a partner's villager: the seconds it has left
+// (0: not down), whether any is down (no world save then), and every downed one with its player and seconds left
+float revive_seconds(void* citizen);
+bool rescue_pending();
+void for_each_downed(void (*fn)(void* citizen, uint8_t player, float seconds, void* user), void* user);
 // give the selected own members to another player (the host applies it); returns how many
 int give_selected(uint8_t to);
 void tick(double now);                               // every frame

@@ -127,6 +127,23 @@ int village_seat(void* t)
     return -1;
 }
 
+// host (BUG-9278): the villages by seat as refresh_villages last saw them (seat 0: the player tribe), only while a
+// partner's village is live (one shared village: no seats); the pointer is checked in the game's list
+void* seat_village(int seat)
+{
+    if (!g_any_partner || seat < 0 || seat >= (int)g_village.size() || !g_village[seat])
+        return nullptr;
+    return game::listed(g_village[seat], kTribeNoun) ? g_village[seat] : nullptr;
+}
+int founder_seat(void* t)
+{
+    if (!t || !g_any_partner)
+        return -1;
+    if (t == g_village[0])
+        return 0;
+    return village_seat(t);
+}
+
 // host: the owner of a member of a partner's village (0xFF: t is no partner's village)
 uint8_t village_member_owner(void* t)
 {
@@ -732,6 +749,8 @@ static float village_food(void* t)
             v += F<float>(*it, 0x134);
     return v;
 }
+
+float village_food_of(void* t) { return village_food(t); }
 
 std::string villages_status()
 {

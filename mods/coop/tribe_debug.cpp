@@ -167,6 +167,8 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (!a.empty() && a[0] == "villages") // BUG-9268 (tribe_villages.cpp): villages [found <player> | ally]
         return villages_debug(a);
+    if (!a.empty() && a[0] == "rescue") // BUG-9278 (tribe_rescue.cpp): rescue [giveup | wipe <seat> | wins]
+        return rescue_debug(a);
     if (!a.empty() && (a[0] == "graduation" || a[0] == "gradcine")) // BUG-1325 (tribe_graduation.cpp)
         return graduation_cmd(a);
     if (a.size() >= 4 && a[0] == "caption_race") { // see caption_race (BUG-1101)

@@ -139,6 +139,19 @@ bool village_baby(uint8_t from);               // host: CMD_BABY of a player wit
 std::string persp_status();
 void note_owned_caller(uintptr_t ret);
 size_t partner_villages(int* food);            // host: the partners' live villages (and their food added to *food)
+void* seat_village(int seat);                  // host: seat 0 the player tribe, 1.. a partner's live village (null: none)
+int founder_seat(void* t);                     // host: the seat of a player's village (0 the host's), -1: none or no partner village
+float village_food_of(void* t);                // a tribe's food store (-1: unreadable)
+
+// tribe_rescue.cpp (BUG-9278, Lineages port): a player's downed last villager, its revive and the party wipe
+bool rescue_protect(void* victim, float damage, uint32_t attacker); // host, h_CitizenTD: true = the blow is not dealt
+bool rescue_downed(void* c);                   // host: c is a downed last villager (no orders, no behaviour, no blows)
+void rescue_host_tick(double now);
+void rescue_guest_tick(double now);
+bool rescue_give_up(uint8_t from, uint32_t action); // host: CMD_GIVE_UP of a guest (true: taken)
+void on_rescue_lines(net::Reader& r);           // guest: MSG_TRIBE_ANIM kind K_RESCUE
+std::string rescue_debug(const std::vector<std::string>& a);
+void rescue_forget();
 
 // ---------------- host ----------------
 // C1 (BUG-1140): one entry of the host's member table (tribe.hm); its id, object and serial are the registry entry's
@@ -322,7 +335,8 @@ struct Target {
 void write_target(net::Writer& w, const Target& t);
 Target read_target(net::Reader& r);
 
-enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2, CMD_BABY = 3, CMD_CONQUER = 4 };
+// CMD_GIVE_UP (BUG-9278): a guest's downed last villager gives up (the action word: its seat + 1, tribe_rescue_logic.h)
+enum : uint8_t { CMD_ACTION = 0, CMD_WALK = 1, CMD_GIVE = 2, CMD_BABY = 3, CMD_CONQUER = 4, CMD_GIVE_UP = 5 };
 
 extern bool g_away_conquest_fix;
 extern uint32_t g_conquests_done;

@@ -211,6 +211,7 @@ void host_tick(double now)
         players.push_back(p.id);
     std::sort(players.begin(), players.end());
     villages_host_tick(now); // BUG-9268: every player's own village
+    rescue_host_tick(now);   // BUG-9278: a downed last villager, its revive, the party wipe
     // BUG-9268: a player with a village of their own does not share the host's: the player tribe is split between the
     // others (with tribe.own_villages off or nobody villaged: every player, as before)
     const std::vector<uint8_t> villaged = villaged_players();
@@ -486,6 +487,11 @@ void host_command(uint8_t from, net::Reader& r)
             g_cmds_rejected++;
         return;
     }
+    if (kind == CMD_GIVE_UP) { // BUG-9278: a guest's downed last villager gives up (an older host ignores the kind)
+        if (from == 0 || game::mode_id() != modes::kTribe || !rescue_give_up(from, (uint32_t)action))
+            g_cmds_rejected++;
+        return;
+    }
     if (kind == CMD_CONQUER) { // BUG-0879
         if (g_away_conquest_fix && from != 0 && game::mode_id() == modes::kTribe)
             conquer_on_host(from, pos);
@@ -540,6 +546,10 @@ void host_command(uint8_t from, net::Reader& r)
         }
         if (hm->data.owner != from || (g_cmd_listed_fix ? !hm_live(c) : !game::object_alive(c)) || // (BUG-1053)
             !village_orders_ok(F<void*>(c, kOwnerTribeOff), pt, from)) { // BUG-9268: or the sender's own village
+            g_cmds_rejected++;
+            continue;
+        }
+        if (rescue_downed(c)) { // BUG-9278: a downed last villager takes no orders until it is up again
             g_cmds_rejected++;
             continue;
         }
