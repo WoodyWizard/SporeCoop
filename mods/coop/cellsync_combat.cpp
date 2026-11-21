@@ -2,6 +2,7 @@
 // bite, chunk, kill, break, destroy and eat hooks, the food that comes in, the own cell's finite probes, the
 // collision pairs); moved out of cellsync.cpp (C8 of 0.7.15, BUG-1183).
 #include "cellsync_internal.h"
+#include "own_progress.h"
 
 namespace cellsync {
 
@@ -775,6 +776,16 @@ void food_drain(bool late_only)
 }
 void SK_CDECL h_AddFood(int amount, bool plant)
 {
+    // BUG-9287: own progress: an own meal over the next level line while a partner is still below it is kept until that
+    // partner reaches it (own_progress::clip_meal; the network's totals and the kept meals come with the food guard)
+    if (!g_food_guard && amount > 0 && in_cell() && !dna_pace::g_bypass) {
+        uint8_t* s = S();
+        if (s) {
+            amount = own_progress::clip_meal(amount, F<int32_t>(s, 0x1C));
+            if (amount <= 0)
+                return;
+        }
+    }
     // BUG-0510: an own meal (AvatarEat 0xE7D070 -> AddFoodPoints) enters the shared food at the
     // party's pace (amount / N, the remainder kept; coop.cpp dna_pace_meal). The guest's game applies
     // and sends its share, the host adds a guest's meal whole: scaled once, where it was eaten

@@ -18,7 +18,10 @@
 #include "net/protocol.h"
 #include "party.h"
 #include "settings.h"
+#include "slotfs.h"
 #include "world.h"
+#include "cell_logic.h"
+#include <climits>
 
 namespace own_progress {
 
@@ -30,6 +33,14 @@ static Ctx C;
 static bool g_fix = true;
 COOP_FIX("core.own_progress", "BUG-9265", g_fix,
          "cell, creature: every player's own DNA and evolution bar (the session setting all.own_progress); off: the party's shared total");
+// BUG-9287 (own_progress.h clip_meal)
+static bool g_level_fix = true;
+COOP_FIX("cell.level_together", "BUG-9287", g_level_fix,
+         "cell, own progress: nobody grows a Cell level alone (the pool is the host's level): meals over the next level line are kept until every partner reached it");
+// BUG-9286: the side file waits quietly for the planet's first save (a new game has no <planet>.spo until then)
+static bool g_quiet_fix = true;
+COOP_FIX("core.own_progress_quiet", "BUG-9286", g_quiet_fix,
+         "own progress: <planet>.spo.duoprogress waits for the planet's first save without a warning (a new game)");
 
 static bool is_host() { return C.sess && C.sess->role() == net::Role::Host && C.sess->connected(); }
 static bool is_guest() { return C.sess && C.sess->role() == net::Role::Client && C.sess->connected(); }
@@ -205,6 +216,13 @@ bool all_full(std::string* waiting)
 }
 
 // ---- host: the planet's records
+static unsigned g_waits_save; // BUG-9286: tries before the planet's first save
+static bool planet_saved(const std::string& key)
+{
+    DWORD a = GetFileAttributesW(slotfs::widen(key).c_str());
+    return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
 static void save_outside(void*)
 {
     g_save_queued = false;
@@ -213,6 +231,11 @@ static void save_outside(void*)
     if (founders::write_side(g_planet, L".duoprogress", encode_file(g_recs))) {
         g_dirty = false;
         g_saves++;
+    } else if (g_quiet_fix && !planet_saved(g_planet)) {
+        // BUG-9286: a new game has no <planet>.spo before its first save (the first share or autosave writes it): the
+        // records stay dirty and go out with the next try after it (the owner's log: two warnings in a new game)
+        if (!g_waits_save++)
+            H->log(M, SK_INFO, "own progress: <planet>.spo.duoprogress waits for the planet's first save");
     } else if (g_save_errors++ < 5)
         H->log(M, SK_WARN, "own progress: <planet>.spo.duoprogress not written");
 }
@@ -423,8 +446,97 @@ static void notice_tick(double now)
     g_switch_resumed = false;
 }
 
+// ---- BUG-9287: nobody grows a Cell level alone (own_progress.h clip_meal)
+static int g_bank;              // own meals kept above the level line
+static unsigned g_clipped, g_released, g_level_waits;
+static double g_level_told_at = -1e9;
+static int g_level_told = -1;
+
+// the highest food this game may have now: the last food of the lowest partner's level (INT_MAX: no limit)
+static int food_cap(int* low_level = nullptr, std::string* who = nullptr)
+{
+    if (!g_level_fix || !active() || game::mode_id() != modes::kCell || !C.sess)
+        return INT_MAX;
+    int low = INT_MAX;
+    const uint8_t my = C.sess->my_id();
+    auto note = [&](uint8_t id, int food) {
+        if (food < low) {
+            low = food;
+            if (who)
+                *who = name_of(id);
+        }
+    };
+    if (is_host()) {
+        for (auto& [id, l] : g_live)
+            if (id != my && l.reported && l.v.mode == modes::kCell)
+                note(id, l.v.food);
+    } else if (H->time_seconds() - g_table_got < 5) {
+        for (auto& p : g_table) // (the table's percent: food * 100 / 1000, the level lines are multiples of 100)
+            if (p.id != my && p.reported && p.mode == modes::kCell)
+                note(p.id, p.pct * kCellFull / 100);
+    }
+    if (low == INT_MAX)
+        return INT_MAX;
+    const int lv = cell_logic::level_of_food(low);
+    if (low_level)
+        *low_level = lv;
+    return lv >= cell_logic::level_of_food(kCellFull) ? INT_MAX : lv * 100 - 1;
+}
+
+int clip_meal(int amount, int cur)
+{
+    if (amount <= 0)
+        return amount;
+    int lv = 0;
+    std::string who;
+    const int cap = food_cap(&lv, &who);
+    if (cap == INT_MAX || cur + amount <= cap)
+        return amount;
+    const int give = std::max(0, cap - cur);
+    g_bank += amount - give;
+    g_clipped++;
+    const double now = H->time_seconds();
+    if (g_level_told != lv || now - g_level_told_at > 30) {
+        g_level_told = lv;
+        g_level_told_at = now;
+        g_level_waits++;
+        feed("Nobody grows alone: your cell waits at level " + std::to_string(lv) + " until " + who +
+             " gets there too (your meals are kept: +" + std::to_string(g_bank) + ")");
+    }
+    H->log(M, SK_INFO, "own progress: meal +%d over the level line (food %d, limit %d while %s is on level %d): +%d now, %d kept",
+           amount, cur, cap, who.c_str(), lv, give, g_bank);
+    return give;
+}
+
+// the kept meals go to the game as far as the level line allows (all of them without a limit: a partner left, the
+// setting off); outside Cell they wait (the next Cell stage of this game)
+static void bank_tick()
+{
+    static double next;
+    const double now = H->time_seconds();
+    // (set_food_total sets a total in the next cell step: one at a time, or a second one from the old total undid it)
+    if (g_bank <= 0 || game::mode_id() != modes::kCell || now < next)
+        return;
+    next = now + 2;
+    int cur = 0;
+    if (!cellsync::food_total(cur))
+        return;
+    const int cap = food_cap();
+    const int n = cap == INT_MAX ? g_bank : std::min(g_bank, cap - cur);
+    if (n <= 0)
+        return;
+    if (!cellsync::set_food_total(cur + n))
+        return;
+    g_bank -= n;
+    g_released++;
+    H->log(M, SK_INFO, "own progress: %d kept meal point(s) added (food %d -> %d, %d still kept)", n, cur, cur + n, g_bank);
+    if (!g_bank)
+        feed("Your kept meals are in: +" + std::to_string(n) + " food");
+}
+
 void tick(double now)
 {
+    bank_tick(); // BUG-9287 (also after the session or the setting ended: everything kept goes in)
     if (!active()) {
         g_switch_due = false;
         return;
@@ -627,6 +739,12 @@ std::string status()
              (int)g_synced, modes::mode_name(g_synced_mode), (int)g_switch_due, g_asks, g_sets, g_applied, g_reports_in,
              g_reports_out, g_gains_out, g_gains_in, g_holds, g_resumes, g_tables_in, g_full_notices, g_all_notices,
              g_waits_told, g_saves, g_loaded_recs);
+    out += b;
+    int low = 0;
+    const int cap = food_cap(&low);
+    snprintf(b, sizeof b, "  level_together=%d cap=%d low_level=%d bank=%d clipped=%u released=%u level_waits=%u waits_save=%u\n",
+             (int)g_level_fix, cap == INT_MAX ? -1 : cap, cap == INT_MAX ? -1 : low, g_bank, g_clipped, g_released, g_level_waits,
+             g_waits_save); // BUG-9287, BUG-9286
     out += b;
     for (const auto& p : players_now()) {
         snprintf(b, sizeof b, "  player %u %s: known=%d mode=%s full=%d pct=%d\n", (unsigned)p.id, name_of(p.id).c_str(),

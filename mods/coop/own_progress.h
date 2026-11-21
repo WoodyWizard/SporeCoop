@@ -54,6 +54,14 @@ void give_gain(uint8_t player, float dna);
 // guest: a gain the host's game paid for our deed (MSG_PROGRESS kGain, a social result)
 void take_gain(float dna, const char* why);
 
+// BUG-9287 (Cell: a player at a lower level than the host found nothing to eat: the one pool is populated at the HOST's
+// level, also around the partners, docs/re/host-centric.md G7): nobody grows a Cell level alone. An own meal that would
+// take this game's food over the next level line (every 100 food, cell_logic::level_of_food) while a partner is still
+// on a lower level gives only what fits; the rest is kept (banked) and added as soon as every partner has reached that
+// level. Only own meals (AvatarEat's AddFoodPoints) are clipped. `cur`: this game's food now. Returns the part of
+// `amount` the game takes now. `coop.fix cell.level_together off`: each player's level on its own (0.7.15.94).
+int clip_meal(int amount, int cur);
+
 // tests: give back now (guest: ask the host again as after a load)
 void resync();
 std::string status();
