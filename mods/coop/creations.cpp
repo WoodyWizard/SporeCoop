@@ -3796,7 +3796,10 @@ void choose(Kind k, const Key& key)
     g_choice[k] = key;
     g_choice_epoch[k] = choice_epoch_now(k);
     if (g_choice_world_fix && k != kUfo && key.instance && C.sess && C.sess->role() == net::Role::Client)
-        world_record_set(k, modes::current_world(), key.instance); // BUG-0638: the world it is chosen in
+        // BUG-0638: the world it is chosen in. BUG-9293: by the same rule mine() reads it with (record_world: the host's
+        // world while this game has no avatar, as in Space): a choice made in Space was recorded under the star and read
+        // under the host's world, so it never held
+        world_record_set(k, record_world(), key.instance);
     if (find_paths()) {
         std::wstring v = key.instance ? std::wstring(L"0x") + std::to_wstring(0) : L"0";
         wchar_t hx[16];

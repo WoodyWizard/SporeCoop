@@ -28,8 +28,8 @@ from lane import sh
 from sporectl import Console
 from twoinst import HERE, Checks, shot, wait_up
 
-CARDS = ['CFB01B93', 'FD159D91', 'C2CA9495']  # Cell carnivore, Creature social, Tribe mixed (the page's buttons s,s)
-STAGE = {'creature': 1, 'tribe': 2, 'civ': 3}
+CARDS = ['CFB01B93', 'FD159D91', 'C2CA9495', '0A35D0F5']  # Cell carnivore, Creature social, Tribe mixed, Civ military (the page's buttons s, s % 3)
+STAGE = {'creature': 1, 'tribe': 2, 'civ': 3, 'space': 4}
 
 
 def out(con, line):
@@ -51,7 +51,7 @@ def wait(f, secs, step=2.0):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--stage', default='tribe', choices=sorted(STAGE))
+    ap.add_argument('--stage', default='tribe', choices=sorted(STAGE))  # (space: new_stage_game.py's space wizard)
     ap.add_argument('--old', action='store_true')
     a = ap.parse_args()
     ck = Checks()
@@ -80,6 +80,14 @@ def main():
                        capture_output=True, text=True, timeout=900)
     if not ck(r.returncode == 0, f'the host started a new {a.stage} game'):
         return ck.result()
+    if a.stage == 'space':  # the Space share waits for the host's ship to leave the planet
+        for _ in range(15):
+            host.call('click 992 737')  # the intro caption's OK (1440x1080: the same corner)
+            time.sleep(2)
+            if 'left' in out(host, 'coop.space takeoff'):
+                break
+            time.sleep(4)
+        wait(lambda: 'Space' in out(guest, 'game.mode'), 180)
     want = CARDS[:STAGE[a.stage]]
     asked = wait(lambda: re.search(r'prompt=[1-4]', out(guest, 'coop.startany')) is not None, 180)
     ck(asked, '1: the guest is asked for its own start')
@@ -97,10 +105,10 @@ def main():
             guest.call(f'click {(x0 + x1) // 2} {(y0 + y1) // 2}')
             time.sleep(0.8)
 
-        ck(wait(lambda: ui().get('sago', (0, 0, 0, 0, False, ''))[4], 60), '1: the guest's window shows its "Your own start" page')
+        ck(wait(lambda: ui().get('sago', (0, 0, 0, 0, False, ''))[4], 60), "1: the guest's window shows its 'Your own start' page")
         click('sanext')  # the first of its creatures
         for s in range(len(want)):
-            click(f'sacard{s}{s}')  # Cell carnivore (0), Creature social (1), Tribe mixed (2)
+            click(f'sacard{s}{s % 3}')  # Cell carnivore (0), Creature social (1), Tribe mixed (2), Civ military (0)
         click('sago')
     time.sleep(8)
     party = out(host, 'coop.party')
@@ -115,6 +123,9 @@ def main():
     ck(mine and mine.group(1) == creature, f'3: the guest plays its chosen creature {creature}')
     pk = re.search(r'player 1 creature: (\w{8})', out(host, 'coop.creations'))
     ck(pk and wait(lambda: pk.group(1) in out(host, 'coop.party'), 40), "3: the guest's party seat carries that creature")
+    if a.stage == 'space':
+        emp = out(guest, 'coop.space empires')
+        ck('own=1' in emp and pk and f'captain={pk.group(1)}' in emp, f"3: the guest's own empire has its creature as captain ({emp[:120]})")
     shot(guest, f'start_any_{a.stage}_guest.png')
     host.call('coop.fix party.start_any on')
     ck.faults(host=host, guest=guest)

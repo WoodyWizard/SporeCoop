@@ -134,7 +134,10 @@ static void host_tick(double now)
     for (const auto& p : S->players()) {
         if (p.id == S->my_id())
             continue;
-        if (!world_here || !own_world::peer_here(p.id)) {
+        // (Space: every player flies its own copy of the galaxy, its place is its own star: not the host's world by
+        // place; a guest of the host's Space save is "not elsewhere")
+        const bool here = stage == 4 ? !own_world::peer_elsewhere(p.id) && !own_world::space_other() : own_world::peer_here(p.id);
+        if (!world_here || !here) {
             g_here_since.erase(p.id);
             continue;
         }

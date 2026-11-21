@@ -1298,6 +1298,7 @@ add('cell_own_editor', P + 'coop_cell_own_editor.py', minutes=6, fixture='cell')
 add('cell_own_editor_off', P + 'coop_cell_own_editor.py --old', ('twin',), minutes=6, fixture='cell')  # BUG-9288 twin: cell.own_editor off: the notice of 0.7.15: must FAIL
 add('start_any_tribe', P + 'coop_start_any.py --stage tribe', minutes=10)  # BUG-9293: a new Tribe game: the guest chooses its creature and its Cell and Creature cards: its seat, its History and its village carry them
 add('start_any_civ', P + 'coop_start_any.py --stage civ', minutes=10)  # BUG-9293: the same in a new Civ game (Cell, Creature, Tribe cards)
+add('start_any_space', P + 'coop_start_any.py --stage space', minutes=12)  # BUG-9293: a new Space game: the guest's four cards, the archetype from them, its own empire with its creature as captain
 add('start_any_off', P + 'coop_start_any.py --stage tribe --old', ('twin',), minutes=10)  # BUG-9293 twin: party.start_any off: nobody is asked: must FAIL
 add('own_progress_off', P + 'coop_own_progress.py --part off', warm=True, minutes=4, fixture='creature')  # BUG-9265: all.own_progress off: the host's gain reaches the guest (the shared total of 0.7.15)
 add('own_cards', P + 'coop_own_cards.py', warm=True, minutes=8, fixture='creature')  # BUG-9263 / BUG-9264: every player's own stage history: a guest's kill counts for its own Creature progress, its game shows its own Creature card after the stage end, after a rejoin and a reload (PTY2 party file)

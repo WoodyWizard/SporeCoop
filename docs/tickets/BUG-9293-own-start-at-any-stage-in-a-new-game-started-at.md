@@ -51,3 +51,12 @@ was off), the Linux lab run of start_any_tribe / start_any_civ / start_any_off.
 
 ## History
 - 2026-11-21: opened and implemented on feat/start-choice-any, tested on lane A.
+- 2026-11-21: the co-op window's "Your own start" page (the creature by name with < >, one card row per earlier stage,
+  Start): answered by clicking on lane A (Tribe, Civ, Space: PASS). Civ with civ.own_nations on: the guest's own nation
+  00002411 (seat 1) is of its chosen creature 7CA81684, allied with the host's: PASS. Merged feat/lineages-space-launch
+  (a620e40f); Space start (the host takes off for the share): the guest's seat and History have its four cards and the
+  archetype the game computes from them (F966D429 knight; the host's is A5656E84), its own empire (seat 1) has the
+  chosen creature as captain (7CA81684): PASS. Two fixes on the way: a guest of the host's Space save is "here" for the
+  question (every player's place is its own star), and creations::choose records a choice by the same world rule
+  mine() reads it with (record_world: the host's world while the game has no avatar, as in Space; it was recorded
+  under the star and never held there).
