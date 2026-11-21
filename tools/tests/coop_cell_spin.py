@@ -65,8 +65,17 @@ def bite_to_death(ck, who, con, host, guest, key):
     hps = [host_hp(host, key)]
     for _ in range(5):
         print('   ', who, con.call(f'coop.pool realbite c{key}')['out'], flush=True)
-        time.sleep(1.0)
-        hps.append(host_hp(host, key))
+        # BUG-1383: the host's answer to the bite (its hp, or the cell gone after a lethal one), up to 5 s: the host
+        # removed a creature of the guest's lethal bite more than 1 s later (lab 20261120-133703: hp stayed 3 after
+        # "kill applied"), and a bite on the guest's broken mirror sends nothing; the old fixed 1 s let the test bite
+        # a third time and count that bite as lost
+        t0 = time.time()
+        while True:
+            time.sleep(0.25)
+            hp = host_hp(host, key)
+            if hp != hps[-1] or time.time() - t0 > 5:
+                break
+        hps.append(hp)
         if hps[-1] <= 0:
             break
     print(f'    {who}: the creature\'s hp on the host {hps}', flush=True)
