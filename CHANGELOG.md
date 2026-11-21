@@ -96,6 +96,8 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   got them (BUG-1290).
 
 ### Fixed
+- Creature: after the host confirms its evolution caption, the guest sees the host's family where the host's game put
+  it at once, instead of watching it creep there for about a minute (BUG-1376).
 - Cell -> Creature: the party evolves together again in the first Creature editor. The host's editor waits again (up
   to the vote's time) for a guest that is on its way to the Creature stage over a normal connection, as in 0.7.15:
   both editors open together. Before, the host's editor opened at once and the guest got its own editor later, alone,

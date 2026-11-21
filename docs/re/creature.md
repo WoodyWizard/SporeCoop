@@ -5340,3 +5340,16 @@ Creature play: this frame and the last, the store already read). ~ Not run in th
   the save's. A guest then starts the next test with its earlier own DNA (dna_away: guest 3.5, host 0.0). Designed
   (a guest seen since the last save keeps its wallet); lab tests compare gains, not totals (BUG-1340,
   docs/06-testing.md#testing-dna-gain).
+
+## The host's evolution caption stands its game; its family is put elsewhere afterwards (2026-11-20, fix/w61-creature-b)
+<a id="creature-caption-stand-gap"></a>
+
+BUG-1376. GOG 2024, lab logs of evo_screens_switch (20261118-125715, -134852, 20261120-133703).
+* ✔ (runtime) After the host's first Creature editor (the landfall evolution) its game shows the caption "It is the
+  beginning of a new day..." and stands (`busy=cinematic,input_lock,paused`) until it is confirmed: ~70 s in the test
+  (s ~150 to ~220). No creature is updated meanwhile, so the host sends no NPC states (npc.cpp host_tick: frozen_send only).
+* ✔ (runtime) When the game goes on, the host's family members (its avatar's herd) stand or walk 1-6 m from its avatar,
+  10-15 m from where they stood before the caption: the game puts them there at the caption's end.
+* ✔ (code + net_tests test_lead_gap) The guests' proxies took the first state after such a gap for late news of a walk
+  (late_time): the target crossed the gap's straight line at 1/35 of the distance per second, the copies stood near the
+  old places for a minute (sync-check "n: 3 apart"). `drive.lead_gap` shows the lead at once after a gap over 2 s.

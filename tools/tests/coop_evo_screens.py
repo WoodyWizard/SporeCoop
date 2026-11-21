@@ -51,6 +51,7 @@ import screen_look as sl
 import lane
 from sporectl import Console
 from twoinst import Checks, keyframe, shot, start
+from coop_sync import game_paused, sample as sync_sample
 
 HEART = (721, 1018)    # the mating-call button of the cell HUD
 READY_BTN = re.compile(r"ready (\d+) (\d+) (\d+) (\d+) 1 '(?:I'm ready|Я готов)'")
@@ -61,6 +62,11 @@ HISTORY_OK = (1415, 1055)
 CAPTION_OK = (1410, 1048)
 SAVE_NEW = (926, 604)  # the own editor's exit dialog after an edit: "Save New"
 BLACK_LIMIT = 20.0     # seconds of a black picture in a row that a player would call "a black screen"
+# BUG-1378: the guest's game's own load and stage-entry pause after it loads the host's world (BUG-0313, the bake wait;
+# not the mod's, BUG-1239's root cause: "not changed") is measured apart from BLACK_LIMIT: 4-14 s at 60 fps and 12-22 s
+# at 10 fps in 11 runs; a stage entry that never ends (or one the mod makes much longer) still fails at this limit
+ENTRY_LIMIT = 45.0
+LOAD_MODES = ('Loading', 'LoadGame', 'GalaxyGameEntry')  # game.mode names of the load (the guest's way to a new world)
 VOTE = '--vote' in sys.argv  # the session setting core.editor_now off: the host's Cell evolution through the vote (BUG-1263)
 
 wait = waiter(step=1.0)
@@ -153,10 +159,14 @@ class Screens(threading.Thread):
     """a game's screen measured every `step` s in the background (its own console connection, so the test's clicks
     and drags do not stop it): (t, mode, world brightness); black runs are judged on these rows"""
 
-    def __init__(self, con, label, step=2.0):
+    def __init__(self, con, label, step=2.0, entry=False):
         super().__init__(daemon=True)
         self.port, self.label, self.step = con.port - 47799, label, step
         self.rows = []
+        # BUG-1378: entry=True also reads per shot whether this game's time stands by itself (coop.status: busy has
+        # `paused`, the host-busy wait of the mod `wait=none`): {t: (paused, mod_wait)}; see entry_rows()
+        self.entry = entry
+        self.pause = {}
         self.whites = []  # (t, white_share) per shot (BUG-1269)
         self.stop_ev = threading.Event()
         self.n = 0
@@ -170,6 +180,11 @@ class Screens(threading.Thread):
                 path = os.path.join(lane.out_dir('shots'), f'evo_{self.label}_{self.n % 400:03d}.png')
                 self.n += 1
                 ok = c.call('shot ' + path).get('ok')
+                if self.entry:
+                    st = c.call('coop.status').get('out') or ''
+                    busy = re.search(r'^busy: ([^\n]*)', st, re.M)
+                    self.pause[t] = (bool(busy) and 'paused' in busy.group(1).split(','),
+                                     not re.search(r'\bwait=none\b', st))
                 self.rows.append((t, m, margins(path) if ok else -1))
                 self.whites.append((t, white_share(path) if ok else -1))
                 self.stop_ev.wait(max(0.2, self.step - (time.time() - t)))
@@ -188,12 +203,50 @@ class Screens(threading.Thread):
     def since(self, t0):
         return [r for r in self.rows if r[0] >= t0]
 
-    def longest_black(self, t0=0, t1=None):
-        """the longest time the picture stayed black (from the first black shot to the next drawn one)"""
+    def entry_rows(self, rows):
+        """BUG-1378: the times of the black shots that are this game's own load and stage-entry pause (BUG-0313: after a
+        load the game's time stands with its screen black until every creature model is baked; 4-14 s at 60 fps, 12-22 s
+        at 10 fps in 11 runs of evo_screens_switch_lowfps, lab 20261118-100543 .. 20261120-133703): a black run that
+        starts in a load mode (or right after one) and goes on while the game's time stands by itself (not the mod's
+        host-busy wait). Only with entry=True; such shots are measured on their own (longest_entry), not as the black
+        screen of BUG-1239 / BUG-1240 (the player waiting while the other edits)."""
+        out = set()
+        if not self.entry:
+            return out
+        on = after_load = False
+        for t, m, w in rows:
+            black = 0 <= w <= sl.WORLD_MIN
+            paused, waits = self.pause.get(t, (False, False))
+            if any(k in m for k in LOAD_MODES):
+                on, after_load = black, True  # the loading screen itself
+            else:
+                on = (on or after_load) and black and paused and not waits
+                after_load = False
+            if on:
+                out.add(t)
+        return out
+
+    def longest_entry(self, t0=0, t1=None):
+        """the longest of this game's own load + stage-entry pauses (entry_rows), from its first shot to the next one"""
         rows = [r for r in self.rows if r[0] >= t0 and (t1 is None or r[0] <= t1)]
+        ent = self.entry_rows(rows)
         best, since = 0.0, None
         for t, m, w in rows:
-            if 0 <= w <= sl.WORLD_MIN:
+            if t in ent:
+                since = since or t
+            elif since is not None:
+                best = max(best, t - since)
+                since = None
+        return best
+
+    def longest_black(self, t0=0, t1=None):
+        """the longest time the picture stayed black (from the first black shot to the next drawn one); with entry=True
+        the game's own load and stage-entry pause (entry_rows) is not counted (BUG-1378)"""
+        rows = [r for r in self.rows if r[0] >= t0 and (t1 is None or r[0] <= t1)]
+        ent = self.entry_rows(rows)
+        best, since = 0.0, None
+        for t, m, w in rows:
+            if 0 <= w <= sl.WORLD_MIN and t not in ent:
                 since = since or t
                 best = max(best, t - since)
             elif since is not None:
@@ -205,12 +258,30 @@ class Screens(threading.Thread):
         rows = [r for r in self.rows if r[0] >= t0 and (t1 is None or r[0] <= t1)]
         base = rows[0][0] if rows else 0
         out, last = [], None
+        ent = self.entry_rows(rows)
         for t, m, w in rows:
-            key = (m.split()[-1] if m else '?', 'black' if 0 <= w <= sl.WORLD_MIN else 'drawn' if w > 0 else '?')
+            key = (m.split()[-1] if m else '?', 'entry' if t in ent else 'black' if 0 <= w <= sl.WORLD_MIN else 'drawn' if w > 0 else '?')
             if key != last:
                 out.append(f'{t - base:.0f}s:{key[0]}/{key[1]}({w:.0f})')
                 last = key
         return ' '.join(out)
+
+
+NPC_APART = 5.0  # m: a copy over this far from the host's animal in 3 reads 1 s apart (trail p90 0.6 m; BUG-1376 10-15 m)
+
+
+def npcs_apart(host, guest, near=40.0):
+    """[(key, m)]: the host's animals within `near` m of its avatar and how far the guest's copy stands from them (the
+    host read before and after the guest: a walking animal counts against the nearer of its two places)"""
+    h0, g, h1 = sync_sample(host), sync_sample(guest), sync_sample(host)
+    me = h0.get('p0')
+    d = lambda a, b: sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5  # noqa: E731
+    out = []
+    for k, (hp, _) in h0.items():
+        if not k.startswith('n') or k not in g or k not in h1 or (me and d(hp, me[0]) > near):
+            continue
+        out.append((k, min(d(g[k][0], hp), d(g[k][0], h1[k][0]))))
+    return out
 
 
 def avatar_key(con):
@@ -226,6 +297,10 @@ def check_black(ck, scr, who, what, t0, t1=None):
     lb = scr.longest_black(t0, t1)
     print(f'  {who} screen {what}: {scr.text(t0, t1)}', flush=True)
     ck(lb < BLACK_LIMIT, f"the {who}'s screen is not black {what} (longest black {lb:.0f} s)")
+    if scr.entry:  # BUG-1378: the game's own load + stage-entry pause, measured on its own (a hang there still fails)
+        le = scr.longest_entry(t0, t1)
+        ck(le < ENTRY_LIMIT, f"the {who}'s game's own load and stage-entry pause {what} ends (longest {le:.0f} s, "
+                             f"limit {ENTRY_LIMIT:.0f} s)")
     return lb
 
 
@@ -762,6 +837,24 @@ def part_switch(host, guest, ck, ready, scr):
     print(f'  45 s later: {r2 or ident()}')
     ck(r2, 'each player still plays its own creature 45 s later (no world share took it back)')
     keyframe('own_creatures_later', 'Creature: 45 s later, still each player its own creature', calm=5)
+    # BUG-1376: the host's game stood ~70 s under its evolution caption ("It is the beginning of a new day", confirmed by
+    # good() above); when it goes on its game puts its family members 10-15 m away. The guest's copies must stand there
+    # within seconds, not cross the gap's line over a minute (the lab's sync-check caught it only when its 30 s slot fell
+    # into the few seconds before the test ended: "n: 3 apart (n15 14.6 n21 11.5 n17 10.6)", lab 20261120-133703).
+    def host_runs():
+        confirm_captions()
+        return game_paused(host) is False
+    ran = wait(host_runs, 60, 2)
+    time.sleep(8)
+    rounds = []
+    for _ in range(3):
+        rounds.append(dict(npcs_apart(host, guest)))
+        time.sleep(1)
+    off = sorted({k for r in rounds for k in r if all(r2.get(k, 0) > NPC_APART for r2 in rounds)})
+    print(f'  the host\'s animals near it 8 s after its game went on (ran={ran}): {len(rounds[0])} compared, apart on the '
+          f'guest: ' + (', '.join(f'{k} {rounds[-1][k]:.1f} m' for k in off) or 'none'), flush=True)
+    ck(ran and rounds[0] and not off, f"the guest's copies of the host's animals stand where the host's game has them "
+                                      f"after its caption (none over {NPC_APART:.0f} m in 3 reads)")
 
 
 def main():
@@ -790,7 +883,7 @@ def main():
     if '--own-keep' in sys.argv:  # exploration (BUG-1255): the own editor's request bytes kept at the constructor's
         guest.call('coop.fix creations.own_editor_cancel off')
         guest.call('coop.editreq keep ' + ARG('--own-keep', '7'))
-    scr = (Screens(host, 'host'), Screens(guest, 'guest'))
+    scr = (Screens(host, 'host'), Screens(guest, 'guest', entry=True))  # BUG-1378: the guest's own load measured apart
     for x in scr:
         x.start()
     try:

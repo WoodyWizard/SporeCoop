@@ -9899,3 +9899,14 @@ cause=c` (coop_dna_notice.py LEDGER reads both forms).
   so the claims were corrected as leave_avatar's (2026-11-01): the suite comments name the PASS runs with the switch off.
   The switch column of the C2 table above ([testing-c2-creature-0713](#testing-c2-creature-0713)) for npc_nan_vel is
   therefore no FAIL twin: CORRECTION (2026-11-20, fix/w61-creature-d).
+## The game's own stage-entry black in the screen checks (2026-11-20, fix/w61-creature-b)
+<a id="testing-stage-entry-black"></a>
+
+BUG-1378. `coop_evo_screens.py` shoots both screens every 2 s and fails a black run of 20 s (`BLACK_LIMIT`, BUG-1239 /
+BUG-1240). A guest that loads the host's world then stands black in the game's own stage-entry pause (BUG-0313: its time
+paused until every creature model is baked): 4-14 s at 60 fps, 12-22 s at 10 fps (11 runs of evo_screens_switch_lowfps),
+so the 10 fps variant failed on the game's load in some runs. The guest's `Screens(entry=True)` also reads coop.status
+per shot (`busy:` paused, the mod's host-busy `wait=`): a black run that starts in a load mode (Loading, LoadGame,
+GalaxyGameEntry) or right after one and goes on while the game's time stands by itself is shown as `entry` and checked
+against `ENTRY_LIMIT` (45 s) on its own; every other black run (the vote's hold, the mod's wait, a black that is not
+paused) still counts against the 20 s.
