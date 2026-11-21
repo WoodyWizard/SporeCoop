@@ -1,7 +1,7 @@
 ---
 id: BUG-9325
 title: Space: close up, the party ring cuts through the partner's ship
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-21
@@ -10,7 +10,7 @@ role: both
 versions: 0.7.14.1-lineages67-dev
 fixed_in: unreleased
 branch: fix/l47-final-rings
-commits: 30549e5b
+commits: 30549e5b, 2a83437c
 tests: tools/qa_win (manual, two TITAN QA games, 2026-11-21)
 signature:
 docs: docs/re/graphics.md#graphics-ui-depth-clear, docs/06-testing.md#testing-party-rings-final
@@ -49,8 +49,24 @@ the grown ring, 67-dev). `coop.rings sink <cell> <space>` still sets a value for
   drawn at the depth clear there (the counter suggests so), then a system-view crop with the hull covering the back of
   the ring, `coop.fix all.ring_before_ui off` for comparison. Fallback coded: `space.ring_cut` (a frame drawn at the
   overlay in Space cuts the part of the ring behind the ship's sphere by geometry).
+- System view, live 2026-11-21 (TITAN QA copy, same pair, the host's view of the guest's ship at the default system
+  zoom; frame trace there: the world on the back buffer, then the `Clear(Z | STENCIL)` before the UI, as in Civ, so the
+  rings are drawn at that clear, BUG-9327):
+  - With the ring raised into the hull for a clear picture (`coop.rings sink 0.6 0.3`): FAIL with
+    `coop.fix all.ring_before_ui off` and `coop.fix space.ring_cut off` (the ring over the hull), the fallback alone
+    (before_ui off, ring_cut on: the back of the ring cut behind the hull), PASS with the release settings (the hull in
+    front of the back of the ring, the front arc over the hull's lower part): bug9325_system_view_ring_raised_FAIL_off_cut_on.png
+    (left to right: off, cut, on); four frames on, no flicker: bug9325_system_view_ring_raised_PASS_on_4_frames.png.
+  - The default sink (1.0): the ring under the ship, the hull's bottom covering the back arc where they meet:
+    bug9325_system_view_default_FAIL_off_cut_on.png, bug9325_system_view_default_PASS_on_3_frames.png.
+  - Zoomed in within the system the camera drops to about the ships' height and sees the ring edge-on (a thin line
+    under the ship; nothing to cover).
+  - Galaxy view: not reached. 40 wheel notches out stopped at the system's widest view (this save still has the first
+    Space mission, "Fly to planet Athalky"; inferred: the game keeps the camera in the home system until then).
+- no-fail-run: not a lab run (TITAN QA games by hand).
 
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fixed on fix/l47-final-rings (30549e5b), FAIL / PASS live.
 - 2026-11-21: reopened for the system view (the owner); space.ring_cut fallback coded, not run live yet.
+- 2026-11-21: system view checked live (2a83437c build): FAIL off / PASS on; fixed again.

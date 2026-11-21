@@ -1404,5 +1404,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9322](BUG-9322-ui-the-co-op-notices-are-drawn-over-the-spore-gu.md) | fixed | bug | all | 2026-11-21 | unreleased | UI: the co-op notices are drawn over the Spore Guide window |
 | [BUG-9323](BUG-9323-civ-this-player-s-own-name-tags-show-the-noshare.md) | fixed | bug | Civ | 2026-11-21 | unreleased | Civ: this player's own name tags show the -NoShare- test tag |
 | [BUG-9324](BUG-9324-space-the-party-ring-is-drawn-over-the-ship-in-t.md) | fixed | bug | Space | 2026-11-21 | unreleased | Space: the party ring is drawn over the ship in the death and new-ship screens |
-| [BUG-9325](BUG-9325-space-close-up-the-party-ring-cuts-through-the-p.md) | open | bug | Space | 2026-11-21 | unreleased | Space: close up, the party ring cuts through the partner's ship |
+| [BUG-9325](BUG-9325-space-close-up-the-party-ring-cuts-through-the-p.md) | fixed | bug | Space | 2026-11-21 | unreleased | Space: close up, the party ring cuts through the partner's ship |
 | [BUG-9327](BUG-9327-civ-and-tribe-the-party-ring-is-drawn-over-the-u.md) | fixed | bug | Civ | 2026-11-21 | unreleased | Civ and Tribe: the party ring is drawn over the unit (the scene depth is cleared before the overlay) |

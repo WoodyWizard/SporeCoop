@@ -414,3 +414,10 @@ BUG-9327, BUG-9324, BUG-9325 (the party rings, BUG-9321). TITAN QA copy (Steam c
 * BUG-9325 fallback (space.ring_cut): a Space frame whose rings are drawn at the overlay (no such clear that frame)
   cuts geometrically: each ring vertex whose line to the camera passes through the ship's sphere (0.75 x the ring's
   radius round its centre; the camera from the view matrix, -t R^T) is made clear. `coop.rings` cut_vertices=.
+* ✔ (2026-11-21, later) The Space system view has the same frame as Civ (trace: offscreen 1024 x 768 world target with
+  the screen-size depth-stencil, post targets, 128 x 96 icon passes, one draw onto the back buffer, `Clear(Z | STENCIL)`,
+  about 145 UI draws): the rings are drawn at that clear and the guest's hull covers the back of its ring
+  (bug9325_system_view_ring_raised_FAIL_off_cut_on.png). The space.ring_cut fallback also works there with the clear
+  path off (the middle picture). A ship's bounding radius changes with the system-view zoom (the game scales ships with
+  the camera distance: the ring radius read 17.1, 6.3, 1.6 and 1.0 m at four zooms). Zoomed in, the system camera sits at
+  about the ships' height (edge-on ring).
