@@ -148,6 +148,41 @@ def apart(host, guest, dx, dy, want):
     return d
 
 
+def pool_num(con, key):
+    m = re.search(r'\b' + key + r'=(-?\d+)', con.call('coop.pool')['out'])
+    return int(m.group(1)) if m else None
+
+
+def wait_up(con, secs):
+    """BUG-1407: the player's own cell is not knocked out (`coop.pool` downed=0, dying=0), waited for up to secs s (a
+    knockout ends in a revive or a respawn within ~10 s)"""
+    t0 = time.time()
+    while True:
+        if pool_num(con, 'downed') == 0 and pool_num(con, 'dying') == 0:
+            return True
+        if time.time() - t0 >= secs:
+            return False
+        time.sleep(0.5)
+
+
+def players_apart(host, gid):
+    """the distance of the host's own cell from the guest's, both as the host's game has them"""
+    hp = kin(host, 0)[0]
+    h = next((p['pos'] for p in hp.values() if p['me']), None)
+    g = hp.get(gid, {}).get('pos')
+    return math.hypot(h[0] - g[0], h[1] - g[1]) if h and g else 1e9
+
+
+def ko_diag(con):
+    """what took the hp (BUG-1334 / BUG-1407: knockouts in spite of invulnfor): the avatar's flag and counters and the
+    last hit our cell took"""
+    out = con.call('coop.pool')['out']
+    vals = {k: (re.search(r'\b' + k + r'=(-?\d+)', out) or [None, '?'])[1]
+            for k in ('hp', 'invuln', 'downed', 'bites_taken', 'damage_taken', 'ko_respawns')}
+    last = re.search(r'last_hit=(.*)$', con.call('coop.pool anims')['out'], re.M)
+    return ' '.join(f'{k}={v}' for k, v in vals.items()) + f" last_hit={last.group(1)[:120] if last else '?'}"
+
+
 def kin_keys(con):
     """the host keys of every kin cell this game has now"""
     return frozenset(c['key'] for c in kin(con)[1])
@@ -358,11 +393,25 @@ def main():
     ai_check(ck, host, gid, hkey, gkey)
 
     # both screens at the guest's place, then both at the host's place
-    hp0, gp0 = kin(host, 0)[0], kin(host, 0)[0][gid]
-    h_at = next(p['pos'] for p in hp0.values() if p['me'])
-    off = (h_at[0] - gp0['pos'][0], h_at[1] - gp0['pos'][1])
-    host.call(f'coop.pool tp {unit * 0.3:.2f} 0')
-    time.sleep(6)
+    # BUG-1407: the host can be knocked out here in spite of invulnfor (BUG-1334's class: lab 20261121-003202, hp 6 -> 3
+    # by s 120, knocked out at s 121.9, the tp to the guest at ~s 122 did not hold: the key frame shows the host 185 m
+    # from the guest, the kin "at the guest's place" were counted where the host lay). The host goes there only when it
+    # is up, and the kin are judged only once it is there; a host that is not there after the wait is tried once more.
+    for attempt in range(2):
+        up = wait_up(host, 20)
+        for con in (host, guest):
+            con.call('coop.pool invulnfor 900')
+        hp0, gp0 = kin(host, 0)[0], kin(host, 0)[0][gid]
+        h_at = next(p['pos'] for p in hp0.values() if p['me'])
+        off = (h_at[0] - gp0['pos'][0], h_at[1] - gp0['pos'][1])
+        host.call(f'coop.pool tp {unit * 0.3:.2f} 0')
+        time.sleep(6)
+        d_hg = players_apart(host, gid)
+        if d_hg <= r and wait_up(host, 0):
+            break
+        print(f"  the host is not at the guest's place ({d_hg:.1f} m from the guest, up before the move: {up}; "
+              f"{ko_diag(host)}): again (BUG-1407)", flush=True)
+    ck(d_hg <= r, f"the host is at the guest's place to look at the kin there ({d_hg:.1f} m, within {r:.1f})")
     hp, hc, _ = kin(host, r)
     near = counts(hc, (0, gid), r)
     print(f"  both at the guest's place: kin near the host now {near}", flush=True)
