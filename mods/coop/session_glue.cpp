@@ -117,6 +117,20 @@ COOP_FIX("core.evolve_notice", "BUG-1258", g_evolve_notice_fix,
          "creature: the host's evolution is told as its own creature's, not as everybody's new body (each player evolves its own)");
 bool evolve_own_text(uint32_t to) { return g_evolve_notice_fix && to == modes::kCreature && !host_creature_mode(); }
 
+// BUG-9288 (the owner's test 2026-11-20: "on mating and changing parts the partner is pulled along with me"): the host's
+// return from its own Cell editor was a world event for every guest: the notice "evolved the species: everybody gets the
+// new body", a guest in the host's world marked to take the new body in place, any other guest (its own editor, a load)
+// sent the host's world: a reload that puts its cell at the level's start next to the host. A guest of 0.7.15.5 took the
+// body in place, which rebuilt its cell at the start too. With separate lives (own progress, every player their own cell)
+// the host's Cell evolution is the host's alone: no share, no in-place body, and the notice names the host's cell only.
+// Off (`coop.fix cell.own_editor off`): the share and notice of 0.7.15.
+static bool g_cell_own_editor_fix = true;
+COOP_FIX("cell.own_editor", "BUG-9288", g_cell_own_editor_fix,
+         "cell: with separate lives the host's Cell editor changes only the host's cell: the partners are not reloaded, moved or given its body");
+static unsigned g_cell_own_editor_kept; // tests (coop.status): host Cell evolutions kept to the host
+bool cell_own_editor(uint32_t to) { return g_cell_own_editor_fix && to == modes::kCell && own_progress::active(); }
+unsigned cell_own_editor_kept() { return g_cell_own_editor_kept; }
+
 // BUG-0941: a host that loads another Space save from the galaxy menu sent no world to its connected guests: the
 // stage is the same and in Space the state's world is the place (star, planet), so nothing told the guests the save
 // was another one; they played on in their copy of the old save. The host's save file (world::current_game_key: the
@@ -183,6 +197,12 @@ void on_mode_change(uint32_t from, uint32_t to)
     if (evolved && tribe_graduating()) { // BUG-0849: no evolution; the Civ stage comes next and is shared then
         LOG("back from the editor %08X in the end of Tribe: no share (the Civilization stage is shared)", g_last_editor_req);
         notice(g_name + " made a design for the Civilization stage: it comes next", -1);
+        return;
+    }
+    if (evolved && cell_own_editor(to)) { // BUG-9288: the host's own cell only
+        g_cell_own_editor_kept++;
+        LOG("back from the Cell editor: the host's own cell only, no share and no new body for the others (BUG-9288)");
+        notice(g_name + " evolved its own cell (every player evolves their own)", -1);
         return;
     }
     g_evo_cine = false;
