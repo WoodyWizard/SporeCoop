@@ -474,6 +474,43 @@ static bool g_ship_set, g_captain_set;
 static uint32_t g_species;
 static uint32_t g_ship_choice; // coop.space empires ship <hex>
 static Key3& key_at(void* e, uintptr_t off) { return *(Key3*)((uint8_t*)e + off); }
+static double g_next_ship_try;
+// the ship: the chosen or the newest own ship design of this player's library (Empire_SetSpacecraftKey also gives the
+// empire's other ships that model); false: none known yet
+static bool apply_ship(void* e)
+{
+    Key3 ship{};
+    for (auto& o : creations::options(creations::kUfo))
+        if (!g_ship_choice || o.key.instance == g_ship_choice) {
+            ship = {o.key.instance, o.key.type, o.key.group};
+            break;
+        }
+    if (ship.i && !ship.t) // an option names the instance only: the ship type and group of every ship design
+        ship.t = 0x476A98C7u, ship.g = 0x40656200u;
+    static uint32_t s_told;
+    // (not creations::key_known: a design of EditorSaves.package is no ResourceManager record under the ship key until
+    // the game makes its model; a key the game cannot draw gets the default ship, gamefixes game.ufo_model)
+    if (!ship.i || !a_SetShip) {
+        if (ship.i && s_told != ship.i) {
+            s_told = ship.i;
+            H->log(M, SK_INFO, "empires: no ship setter for %08X/%08X/%08X", ship.i, ship.t, ship.g);
+        }
+        return false;
+    }
+    g_orig_ship = key_at(e, kShipKey);
+    g_my_ship = ship;
+    if (!(g_orig_ship == ship))
+        thiscall<void>(a_SetShip, e, &ship);
+    g_ship_set = true;
+    H->log(M, SK_INFO, "empires: my ship %08X (the game's %08X)", ship.i, g_orig_ship.i);
+    return true;
+}
+static void ship_task(void*)
+{
+    void* e = player_empire();
+    if (e && g_renamed == e && !g_ship_set && g_own && g_ship_fix)
+        apply_ship(e);
+}
 static uint32_t g_renamed_epoch;
 
 bool own_money() { return active() && !spaceext::is_host() && g_own; }
@@ -507,20 +544,7 @@ static void name_apply()
     g_orig_name = name_of_empire(e);
     g_ship_set = g_captain_set = false;
     if (g_ship_fix) {
-        // the ship: the chosen or the newest own ship design of this player's library
-        Key3 ship{};
-        for (auto& o : creations::options(creations::kUfo))
-            if (!g_ship_choice || o.key.instance == g_ship_choice) {
-                ship = {o.key.instance, o.key.type, o.key.group};
-                break;
-            }
-        if (ship.i && a_SetShip && creations::key_known({ship.i, ship.t, ship.g})) {
-            g_orig_ship = key_at(e, kShipKey);
-            g_my_ship = ship;
-            if (!(g_orig_ship == ship))
-                thiscall<void>(a_SetShip, e, &ship);
-            g_ship_set = true;
-        }
+        apply_ship(e); // (the library's list may come later: guest_tick tries again)
         // the captain: this player's own species (a creature of its own library)
         const Key3 cap{g_species, 0x2B978C46u, 0x40626200u};
         if (g_species && a_SetCaptain && creations::key_known({cap.i, cap.t, cap.g})) {
@@ -530,8 +554,7 @@ static void name_apply()
                 thiscall<void>(a_SetCaptain, e, &cap);
             g_captain_set = true;
         }
-        H->log(M, SK_INFO, "empires: my ship %08X (the game's %08X), my captain %08X (the game's %08X)",
-               g_ship_set ? ship.i : 0u, g_orig_ship.i, g_captain_set ? cap.i : 0u, g_orig_captain.i);
+        H->log(M, SK_INFO, "empires: my captain %08X (the game's %08X)", g_captain_set ? cap.i : 0u, g_orig_captain.i);
     }
     g_orig_color = *(uint32_t*)((uint8_t*)e + kColorId);
     memcpy(g_orig_rgb, (uint8_t*)e + kColorRgb, sizeof g_orig_rgb);
@@ -606,6 +629,10 @@ static void guest_tick(double now)
     if (!g_renamed && g_name_fix && !g_name_queued && player_empire()) {
         g_name_queued = true;
         H->run_outside_frame(name_task, nullptr); // after a save, or the first time in this world
+    }
+    if (g_ship_fix && g_renamed && !g_ship_set && now >= g_next_ship_try) {
+        g_next_ship_try = now + 3.0;
+        H->run_outside_frame(ship_task, nullptr);
     }
     if (g_diplo_ready && now >= g_next_diplo) {
         g_next_diplo = now + kDiploEvery;
