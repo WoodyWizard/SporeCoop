@@ -6100,3 +6100,17 @@ BUG-9298, BUG-9299 (67-dev player report 20261120-205700, guest and host logs; n
   flag only says the host's single native birth is busy. With `tribe.guest_birth_gate` a down flag holds the guest's
   birth (retried every 0.5 s, at most 20 s); the hold logs the flag's value: `tribe: player N's baby waits up to 20 s:
   ... (host birth flag +3A3=V, ...)`. A runtime read of +3A3 between a host click and its baby settles it.
+## The live Tribe entry's two reloads (2026-11-20, fix/l47-saves)
+<a id="tribe-entry-reloads"></a>
+
+BUG-9304, decision 7M B. Read in the code, not traced at runtime.
+
+* ✔ (code) A live Creature -> Tribe change loaded every game twice: the share save ~3 s in (the guests load it, the
+  host reloads it once it left: `tribe.host_reload`, BUG-0332, #tribe-terrain-stamps), then the founders' checkpoint
+  (found_partners -> founders_refresh -> world::checkpoint_reload: save, share, host load). The founding could not come
+  earlier: founder_creature_settled waits 15 s after the world was entered (BUG-9137), longer than the share's 3 s.
+* ~ (inferred) At a live entry that 15 s guards nothing: the partner's creature is the one it played in Creature, not
+  one still coming with a new world. `tribe.one_entry_reload` holds the entry's share (20 s at most) and founds then,
+  so the share save carries the villages and the `.duofounders` roster (a sidecar of the planet file in the slot,
+  shared with it). Not seen in a game yet.
+* The host's own reload (BUG-0332) stays: only a load gives every game the same ground.
