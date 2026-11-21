@@ -62,6 +62,14 @@ inline uint32_t get(const State& s, uint32_t stage_mode)
     return i >= 0 ? s.count[i] : 0;
 }
 
+// BUG-9316: the stage's world is open now (the stage itself or one of its editors). False during a load and in the
+// menus: the counter only moves when the stage is entered again, so it cannot tell a world on its way in.
+inline bool is_open(const State& s, uint32_t stage_mode)
+{
+    int i = index_of(stage_mode);
+    return i >= 0 && s.open == i;
+}
+
 // A module's view of "my stage's world changed": the stage counter plus in-stage signals (the
 // player's tribe / civilization object and the save name), which also count while the mode stays
 // the stage. The first call only records (a hot reload restarts the counters).

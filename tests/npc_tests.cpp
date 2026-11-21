@@ -273,6 +273,22 @@ static void test_stage_epoch()
     CHECK(get(s, kTribe) == 3);
     CHECK(get(s, kMenu) == 0);
 
+    // BUG-9316: a world share's reload (menu, load, the stage again) is "not open" while the counter still shows the
+    // old world; an editor keeps it open
+    State o;
+    step(o, kCiv);
+    CHECK(is_open(o, kCiv) && !is_open(o, kTribe));
+    step(o, kEditor);
+    CHECK(is_open(o, kCiv));
+    step(o, kCiv);
+    step(o, kMenu);
+    CHECK(!is_open(o, kCiv) && get(o, kCiv) == 1);
+    step(o, kLoad);
+    CHECK(!is_open(o, kCiv) && get(o, kCiv) == 1);
+    step(o, kCiv);
+    CHECK(is_open(o, kCiv) && get(o, kCiv) == 2);
+    CHECK(!is_open(o, kMenu));
+
     int a = 0, b = 0;
     Watch w;
     CHECK(!changed(w, 5, true, &a, 7)); // the first call records only (hot reload)

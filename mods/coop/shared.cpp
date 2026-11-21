@@ -195,6 +195,19 @@ COOP_FIX("res.owed", "BUG-0691", g_owed_fix,
 static bool g_mode_keep_fix = true;
 COOP_FIX("res.mode_keep", "BUG-0692", g_mode_keep_fix,
          "shared: a guest's purchase right after an editor visit is not undone by the host's money / food total");
+// BUG-9316: a guest's world reload (a world share: galaxy menu, load, the stage again) kept its sync state, because
+// game::stage_epoch only moves when the stage is entered again. A host total that arrived in a frame of the load (the
+// new world's money / food already readable) was folded as a local change: the save's value minus the last total went
+// to the host as the guest's own spend or earning ("CivGuest spent 61900 money (shared)", the shared money fell on
+// every game). On: while the stage's world is not open (a load, the menus; an editor keeps it open) a guest drops its
+// sync state and ignores host totals; unsent and in-flight changes are kept, the first total back in the stage is
+// taken as after any load. Off: the code before (0.7.14).
+static bool g_load_hold_fix = true;
+COOP_FIX("res.load_hold", "BUG-9316", g_load_hold_fix,
+         "shared: a guest's world reload is never counted as its spend or earning of the shared money / food");
+static uint32_t g_load_totals; // tests: host totals a guest ignored during its load (BUG-9316)
+static uint32_t g_big_changes; // tests: local changes of kBigChange or more a guest counted (BUG-9316 diagnostics)
+static constexpr double kBigChange = 1000;
 // tests (coop_res_away.py): `coop.res block <s>`: the resources read as unavailable for <s> s (the host in a load or
 // the menu, BUG-0691); `coop.res away <s> <name> <change>`: the tick sees an editor's mode for <s> s, then the change
 // is made in the first frame back, before the tick samples (a purchase right after an editor, BUG-0692)
@@ -374,8 +387,9 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
         }
         if (r.mode != mode || !get_now(r, v, now)) {
             // BUG-0692: a guest out of the mode (an editor) keeps its sync state while the stage's world is the same
+            // BUG-9316: only while the stage's world stays open (an editor), not during a load or in the menus
             if (!(g_mode_keep_fix && s.role() == net::Role::Client && r.have && r.mode != mode &&
-                  game::stage_epoch(r.mode) == r.epoch)) {
+                  game::stage_epoch(r.mode) == r.epoch && (!g_load_hold_fix || game::stage_open(r.mode)))) {
                 if (r.have && g_away_due)
                     H->log(M, SK_INFO, "shared %s: sync state dropped out of its mode (test)", r.name);
                 r.have = false;
@@ -439,6 +453,11 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
         if (!r.have || !g_guest_send)
             continue; // wait for the first total from the host
         double d = v - r.synced;
+        if (std::fabs(d) >= kBigChange) { // BUG-9316: a large change of our own is worth one line
+            g_big_changes++;
+            H->log(M, SK_INFO, "shared %s: a local change %+.1f (%.1f -> %.1f) in mode %08X, stage open=%d epoch %u/%u",
+                   r.name, d, r.synced, v, mode, (int)game::stage_open(r.mode), game::stage_epoch(r.mode), r.epoch);
+        }
         if (std::fabs(d) > 1e-3) {
             r.led.pending += d;
             r.synced = v;
@@ -491,6 +510,14 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
             return;
         }
         if (type == net::MSG_RES && s.role() == net::Role::Client) {
+            if (g_load_hold_fix && !game::stage_open(r.mode)) { // BUG-9316: our world is on its way in
+                if (r.have || !g_load_totals)
+                    H->log(M, SK_INFO, "shared %s: a host total %.1f ignored while this game loads (mode %08X)", r.name, v,
+                           game::mode_id());
+                r.have = false;
+                g_load_totals++;
+                return;
+            }
             if (!r.led.take_total(g_hold)) {
                 g_held_totals++;
                 return; // BUG-0231: the guest plays another world
@@ -501,8 +528,18 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
                 r.have = true;
                 return;
             }
-            if (g_join_keep_fix && r.have)
+            if (g_join_keep_fix && r.have) {
+                const double before = r.synced;
                 r.led.fold(cur, r.synced); // a change since the last tick is ours, not undone
+                if (std::fabs(cur - before) >= kBigChange) { // BUG-9316: the reload's spend came in here
+                    g_big_changes++;
+                    H->log(M, SK_INFO,
+                           "shared %s: a local change %+.1f (%.1f -> %.1f) folded into a host total in mode %08X, "
+                           "stage open=%d epoch %u/%u",
+                           r.name, cur - before, before, cur, game::mode_id(), (int)game::stage_open(r.mode),
+                           game::stage_epoch(r.mode), r.epoch);
+                }
+            }
             // keep changes made since our last report and those the host has not counted yet
             bool has_ack = false;
             uint32_t ack = 0;
@@ -579,7 +616,7 @@ std::string brief()
 std::string status()
 {
     std::string out;
-    char b[192];
+    char b[256];
     for (auto& r : g_res) {
         double v;
         // only this mode's resources: in Space the player cCivilization still exists and its
@@ -589,9 +626,9 @@ std::string status()
         double fl = 0;
         for (auto& e : r.led.in_flight)
             fl += e.v;
-        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u created=%u owed=%.1f/%u causes=%u\n",
+        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u created=%u owed=%.1f/%u causes=%u load_totals=%u big=%u\n",
                  r.name, v, r.have, r.led.pending, fl, r.gained, r.spent, (int)r.led.held, g_held_totals, g_food_created,
-                 r.owed, g_owed_paid, g_causes_shown);
+                 r.owed, g_owed_paid, g_causes_shown, g_load_totals, g_big_changes);
         out += b;
     }
     return out.empty() ? "no shared resources in this mode\n" : out;

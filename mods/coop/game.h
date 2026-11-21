@@ -43,6 +43,8 @@ void set_world_epoch_fix(bool on);
 // rule. No fix switch: callers gate their own use (tribe.editor_world, civ.world_epoch).
 void stage_epoch_tick();
 uint32_t stage_epoch(uint32_t stage_mode);
+// BUG-9316: the stage's world is open (the stage or its editor), not on its way in (a load, the menus)
+bool stage_open(uint32_t stage_mode);
 void* avatar();
 // BUG-0264: the stage is being left for the galaxy menu (the quit message 0x4715068 posted or
 // handled): avatar() returns null until the mode changes (30 s at most). world.leave_avatar.
