@@ -40,3 +40,4 @@ no-fail-run: not reproducible (npc_nan_vel passed with the guard off: out/lab/20
 ## History
 - 2026-11-10: opened by the fixed-ticket review (plan 0.7.13), from BUG-0614. Severity low, confidence medium.
 - 2026-11-12 (fix/w48-creature, C2 of 0.7.13): not reproduced (no proxy went NaN with the guard off); hardening behind game.finite_vel.
+- 2026-11-20 (fix/w61-creature-d): the suite.py claim "SPORE_FIX_OFF=game.finite_vel fails" was CONTRADICTED in fixcheck (only PASS runs with the switch off, as this ticket's no-fail-run says): the claim is corrected, BUG-1364.

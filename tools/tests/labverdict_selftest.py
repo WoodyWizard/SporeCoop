@@ -23,7 +23,8 @@ Cases:
   lab_run     lab.cmd_run on a fake lane: results.json gets verdict / fix_off (SPORE_LAB_FIXOFF) / twin; --repeat 8
               of a test that alternates stops after both results (clear), --until fail stops at the first FAIL,
               --until all runs every copy; a test INCONCLUSIVE in its 3rd run in a row (the history of the fake
-              out/lab) fails as a ticket candidate; a campaign result's CAMPAIGN-SEGMENT line is kept and found by
+              out/lab) fails as a ticket candidate, and a PASS in the next run takes it off the summary's candidates
+              (BUG-1362); a campaign result's CAMPAIGN-SEGMENT line is kept and found by
               find_segment (A6, A7, A8, A15)
   impact      labimpact.select on this tree's sources with made-up changes: docs only -> smoke + unit, a lab tool ->
               unit, a test script -> it and the tests that import it, tribe.cpp -> Tribe tests and cross-stage tests
@@ -309,6 +310,11 @@ def lab_run_case(tree, tmp):
     r = data['results'][0]
     check(r['verdict'] == 'FAIL' and not r['ok'] and not data['ok'] and 'INCONCLUSIVE 3 runs in a row' in r['fails'][0]
           and 'ticket candidate' in r['fails'][0], f'lab_run: the third INCONCLUSIVE in a row fails ({r["fails"][:1]})')
+    check('## Ticket candidates' in summary and '- incy: INCONCLUSIVE' in summary,
+          'lab_run: the third INCONCLUSIVE in a row is a ticket candidate in summary.md')
+    data, out, summary, _ = run([('incy', f'{py} "print(\'RESULT: OK\')"')])
+    check(data['results'][0]['verdict'] == 'PASS' and '## Ticket candidates' not in summary,
+          'lab_run: a test judged in this run is no ticket candidate in its summary.md (BUG-1362)')
     data, out, summary, run_id = run([('camp', camp)])
     r = data['results'][0]
     check(r['fails'] == ['FAIL stuck: the stage change creature -> tribe did not finish']

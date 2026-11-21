@@ -43,9 +43,24 @@ with ground / walk_place ground). Guest side only, so a 0.7.15 host is covered. 
 (median within 0.3 m, at most 10 % of the rows more than 0.25 m under).
 
 ## Verification
-Waiting for the lab run (no game today, owner rule). Tonight: npc_air_under PASS, npc_air_under_off
+Lab 20261120-133703 (second final check, rel/0.7.16 673f7a55, lane 6) npc_air_under FAIL on ONE check, "the host's NPC
+#196 was under its ground (-0.00 m)"; its other checks passed (the guest drew the proxy on its ground: median 0.00 m, 0 %
+of the rows over 0.25 m under). The twin (lab 20261120-130608 npc_air_under_off, lane 4) FAILED as wanted: the guest
+drew the proxy at -0.80 m in 100 % of the rows (monitor: 1 NPC proxy under the ground), with the same host check also
+reading 0.00 m. So the host DID send its NPC 0.8 m under its ground (the guest without the fix air-placed it there), but
+the host's own track rows cannot show it: they are taken at the start of the mod's frame, where the host's game had
+already put the NPC back onto its terrain in its update (`coop.npc lift` runs after the row and before the send). A test
+bug (the check measured the wrong thing), not the fix: the check now reads what the host sent, as the guest received it
+(`coop.npctrack dump` column sa, the agl trailer; NF_AIR in the flags): at least 30 rows of the phase, 80 % NF_AIR,
+median under LIFT + 0.3 m. Nothing was loosened: the guest's drawn-height checks are unchanged, and the twin still has
+the same failing guest check.
+Earlier: waiting for the lab run (no game today, owner rule). Tonight: npc_air_under PASS, npc_air_under_off
 (`SPORE_FIX_OFF=npc.air_under`) FAIL, npc_air (the 4 m lift, unchanged) PASS, migration_heal PASS. Open, waiting for
 the lab run.
 
 ## History
 - 2026-11-20: opened from the 0.7.16 final check; fixed on fix/w60-misc (npc.air_under), not run yet.
+- 2026-11-20 (fix/w61-creature-c, second final check 20261120-133703): npc_air_under failed only its host-side
+  precondition: the host's drawn rows are re-grounded by its game before it draws (0.00 m) while the state it sent was
+  -0.80 m (the twin's guest drew -0.80 m). The precondition reads the received state now (npctrack column sa). Open,
+  waiting for the lab run: npc_air_under PASS, npc_air_under_off FAIL.

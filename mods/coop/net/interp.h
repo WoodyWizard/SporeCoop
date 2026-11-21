@@ -183,6 +183,17 @@ constexpr size_t kHorizonN = 32;
 constexpr size_t kHorizonLongN = 64; // BUG-1093: the puppets' knee (20 states/s: 3.2 s)
 constexpr double kLateNews = 0.05; // s
 constexpr float kLateLost = 1.5f;  // m
+// BUG-1376 (`coop.fix drive.lead_gap`): a new state after a gap in the sender's states longer than kLateGap (its game
+// stood: the host's evolution caption held its game ~70 s, no creature updated, no state sent) is no late news of a
+// walk. late_time searched the path between the state before the gap and the new one for the point nearest where the
+// shown target was going (the old place), stepped the shown time back to the gap's start and caught up at 2 x: the
+// target crossed the gap's straight line at 1/70 of the real pace, so the guest's copies of the host's family members
+// the host's game had put 10-15 m away after its caption stood near the old places for a minute (sync-check "n: 3 apart
+// (n15 14.6 n21 11.5 n17 10.6)", evo_screens_switch of lab 20261120-133703 and 20261118-134852, -125715, each ~5 s
+// after the host's caption ended). On: the shown time is the lead's at once after such a gap (the body closes the
+// error by its own rules, as after a put). Off: brought in over the gap (0.7.16 rc).
+inline bool g_lead_gap_fix = true;
+constexpr double kLateGap = 2.0; // s of sender time between two states
 // BUG-0674 (K4, `coop.fix drive.lead_fall`): a body is moved on past its newest state at its velocity only as far as
 // its states usually come (the median lead horizon at the last kHorizonN arrivals, + kFallMargin); further (a latency
 // spike, a loss burst, no state for 0.2-0.6 s) the extrapolation slows down exponentially (kFallTau: at most kFallTau x
@@ -707,6 +718,10 @@ private:
                 if (g_lead_keep_fix && bd > kLateLost)
                     t = tl;
             }
+            // BUG-1376: no path across a long gap of the sender's states (its game stood; where it put the body
+            // meanwhile is not a walk): the lead's time at once
+            if (g_lead_gap_fix && snaps_.size() >= 2 && snaps_.back().t - snaps_[snaps_.size() - 2].t > kLateGap)
+                t = tl;
             lt_new_ = false;
         }
         lt_rate_ = (float)std::max(1.0, std::min(rate, (t - lt_t_) / adv));

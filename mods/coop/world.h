@@ -30,6 +30,9 @@ bool save_game(std::string& err);
 bool post_quit_to_menu(std::string& err);
 extern bool g_box_hold; // tests (BUG-0482): our save's "game saved" box is not confirmed while set
 bool saved_box_up();     // the "game saved" box of our last save is up (seen, watched)
+// BUG-1365: the game takes a Save message now (its last save finished: SaveGame_Allowed set, its clock stopped)
+bool save_may_start();
+extern unsigned g_saves_too_early; // tests: saves refused because the game's last save was still finishing
 // coop.cpp: why the game must not save now (an editor opens or is open, a mode switch is pending),
 // nullptr when it may
 void set_save_blocker(const char* (*probe)());

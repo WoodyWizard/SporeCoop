@@ -8076,6 +8076,9 @@ tests: tools/tests/labverdict_selftest.py (`make test`, part `unit-verdict`).
   `FAIL lab: INCONCLUSIVE 3 runs in a row (<why>): the precondition never happens; ticket candidate`. It stays a
   failure in every later run until the test passes or fails on its own; summary.md and `lab.py flaky` list it under
   "Ticket candidates". Open a ticket for it (kind test, or the mod's kind when the mod prevents the scenario).
+  summary.md lists only the tests INCONCLUSIVE in that run too (BUG-1362, 2026-11-20: a test judged in the run ended
+  its streak; before, the list came from the history before the run and named tests that had just passed).
+  `lab.py flaky` lists the history as recorded.
   Measured 2026-11-15 over 17 456 recorded results: no test is 3 in a row on all branches today (content_civ is 3 in a
   row on rel/* alone), so the rule fails nothing that passed before.
 * Neither half of a twin: `lab.py fixcheck` leaves INCONCLUSIVE results out (also those the streak rule made FAIL):
@@ -9897,3 +9900,28 @@ cause=c` (coop_dna_notice.py LEDGER reads both forms).
   with "done" (multi3, lab 20261120-133703, BUG-1367); coop_multi calls it on every poll of its waits.
 * coop_session_report.py: SESSION.txt names every game's version (B6); a four-part version between releases
   (`coop 0.7.15.5`) is not a network address (BUG-1370).
+## Random content preconditions and two never-true fixcheck claims (2026-11-20, fix/w61-creature-d)
+<a id="testing-fixcheck-nan-claims"></a>
+
+* `coop.ufoplant [n]` (BUG-1363, host): the next n ship models the game asks for (UfoGfx SetModel, the BUG-0546 guard's
+  hook) get the key 0BAD0546/476A98C7/40656200 that no game has, before the guard decides: the guard and the game's
+  SetModel then work as on a Sporepedia-cache ship whose model is missing (BUG-0546 / BUG-0686). `0` disarms;
+  `coop.status` says `ship model keys planted N (armed M)`. creature_ufo_nomodel plants from its 4th UFO visit,
+  space_npc_model on its 3rd arrival, each only after the game's own picks brought no such ship (the case was random:
+  INCONCLUSIVE 3 runs in a row, final check 20261120-133703); the log says "natural" or "planted".
+* `lab.py fixcheck` CONTRADICTED net_nan / game.finite_pose and npc_nan_vel / game.finite_vel (BUG-1364): their twins
+  only ever passed (BUG-0614 and BUG-0894 are no-fail-run: the game's puppet and proxy driving tolerate the NaN states),
+  so the claims were corrected as leave_avatar's (2026-11-01): the suite comments name the PASS runs with the switch off.
+  The switch column of the C2 table above ([testing-c2-creature-0713](#testing-c2-creature-0713)) for npc_nan_vel is
+  therefore no FAIL twin: CORRECTION (2026-11-20, fix/w61-creature-d).
+## The game's own stage-entry black in the screen checks (2026-11-20, fix/w61-creature-b)
+<a id="testing-stage-entry-black"></a>
+
+BUG-1378. `coop_evo_screens.py` shoots both screens every 2 s and fails a black run of 20 s (`BLACK_LIMIT`, BUG-1239 /
+BUG-1240). A guest that loads the host's world then stands black in the game's own stage-entry pause (BUG-0313: its time
+paused until every creature model is baked): 4-14 s at 60 fps, 12-22 s at 10 fps (11 runs of evo_screens_switch_lowfps),
+so the 10 fps variant failed on the game's load in some runs. The guest's `Screens(entry=True)` also reads coop.status
+per shot (`busy:` paused, the mod's host-busy `wait=`): a black run that starts in a load mode (Loading, LoadGame,
+GalaxyGameEntry) or right after one and goes on while the game's time stands by itself is shown as `entry` and checked
+against `ENTRY_LIMIT` (45 s) on its own; every other black run (the vote's hold, the mod's wait, a black that is not
+paused) still counts against the 20 s.

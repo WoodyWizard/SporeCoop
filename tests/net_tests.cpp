@@ -1361,6 +1361,54 @@ static float proxy_turn_step(bool fix)
     return mx;
 }
 
+// BUG-1376 (drive.lead_gap): an NPC proxy (the buffer as npc.cpp sets it) of a host animal standing at x = 0; the host's
+// game stands for 70 s (its evolution caption: no state sent), its game puts the animal 12 m away and it stands there,
+// the states come again. Returns the shown target's distance from the new place 5 s after the first new state.
+static float lead_gap_err(bool on)
+{
+    const bool was = g_lead_gap_fix;
+    g_lead_gap_fix = on;
+    SnapshotBuffer b;
+    b.delay = 0.15;
+    b.lead = true;
+    b.late_lead = true;
+    b.smooth_max = 8.f;
+    const double lat = 0.03, gap_from = 5.0, gap_to = 75.0;
+    auto st_at = [&](double st) {
+        PlayerState s;
+        s.time_ms = (uint32_t)(1000 + st * 1000.0 + 0.5);
+        s.mode = 0x1654C01;
+        s.world = 7;
+        s.flags = PF_IN_WORLD;
+        s.pos = {st >= gap_to ? 12.f : 0.f, 0.f, 0.f};
+        return s;
+    };
+    double next = 0;
+    PlayerState o;
+    float err = 99.f;
+    for (double now = 10.0 + lat; now < 10.0 + lat + gap_to + 5.0; now += 1.0 / 30) {
+        double st = now - 10.0 - lat;
+        while (next <= st) {
+            if (next < gap_from || next >= gap_to)
+                b.push(st_at(next), next + 10.0 + lat);
+            next += 0.1;
+        }
+        if (b.sample(now, o)) // the proxy is driven every frame, also while the host's game stands
+            err = std::fabs(o.pos.x - 12.f);
+    }
+    g_lead_gap_fix = was;
+    return err;
+}
+
+static void test_lead_gap()
+{
+    printf("an NPC proxy after the host's game stood for 70 s and put the animal 12 m away (BUG-1376)\n");
+    float on = lead_gap_err(true), off = lead_gap_err(false);
+    printf("  5 s after the states came again: target %.2f m from the new place (0.7.16 rc %.2f m)\n", on, off);
+    CHECK(off > 5.f); // the gap's line crossed at a fraction of the real pace: still near the old place
+    CHECK(on < 0.5f);
+}
+
 static void test_lead_fall()
 {
     printf("remote bodies moved on through a latency spike (BUG-0674, BUG-0675, BUG-0651)\n");
@@ -5146,6 +5194,7 @@ int main(int argc, char** argv)
         {"test_lead_late", test_lead_late},
         {"test_lead_keep", test_lead_keep},
         {"test_lead_fall", test_lead_fall},
+        {"test_lead_gap", test_lead_gap},
         {"test_agl_extrap", test_agl_extrap},
         {"test_discovery", test_discovery},
         {"test_lobby_roles", test_lobby_roles},

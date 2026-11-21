@@ -11,6 +11,10 @@ ship model an earlier visit had, `coop.ufoforget`, as in a Creature game that ha
   1. no fault on the host (0xE99524 at the start, 0xE9A908 later), the games answer;
   2. the case happened: a ship gfx without a model (the guard's counter, or the fault with the fix off); else SKIP.
 SPORE_FIX_OFF=game.ufo_gfx fails 1.
+BUG-1363: the game's pick of a ship is random and 3 lab runs in a row saw no ship without its model (INCONCLUSIVE in a
+row fails, A15). After NATURAL visits without the case, the next visit's ship model gets a key no game has
+(`coop.ufoplant`, the guard and the game's SetModel then work on it as on a cache ship without its model): the case is
+the game's own null-model path every run; which way it came is printed ("natural" / "planted").
 
   SPORE_LANE=N python3 tools/tests/coop_creature_ufo_nomodel.py [--cache bug0546|lane|<file>]
   --cache  the host's Sporepedia cache (default bug0546: lane 5's cache without a complete UFO, see
@@ -27,7 +31,8 @@ import lane
 from coop_space_npc_model import bad_cache, gfx_aside, gfx_back
 from twoinst import Checks, alive, shot, start
 
-TRIES = 8  # BUG-1213: a backstop; 0.7.14.1 needed 4 visits with the lane's GraphicsCache (lab 20261116-085912)
+TRIES = 5  # BUG-1213: a backstop; 0.7.14.1 needed 4 visits with the lane's GraphicsCache (lab 20261116-085912)
+NATURAL = 3  # BUG-1363: visits with the game's own pick of a ship; the later ones get the planted unknown model key
 HOLD = 40.0
 
 
@@ -60,19 +65,24 @@ def run():
     for i in range(TRIES):
         n0 = gfx_null(host)[0]
         host.call('coop.ufoforget')  # a Creature game has no own ship: no known ship model for game.ufo_model (retired)
+        planted = i >= NATURAL
+        if planted:  # BUG-1363: this visit's ship model is one no game has (as a cache ship without its model)
+            print('  visit %d: planted: %s' % (i + 1, host.call('coop.ufoplant 2')['out'].strip()), flush=True)
         out = host.call('coop.drama start 2')['out']
         print(f'  visit {i + 1}: ' + ' | '.join(ln for ln in out.splitlines() if 'ufo' in ln)[:200], flush=True)
         time.sleep(5)
         f, lines = faults(host)
         n = gfx_null(host)[0]
         if n > n0 or ufo_fault(lines) or f > f0:
-            print(f'  visit {i + 1}: a ship gfx without a model (guard {n0} -> {n}, faults {f0} -> {f})', flush=True)
+            how = 'planted' if planted else 'natural'
+            print(f'  visit {i + 1}: a ship gfx without a model ({how}; guard {n0} -> {n}, faults {f0} -> {f})', flush=True)
             case = True
             break
         t = time.time()  # the visit's ship had a model: wait for the visit to end, then the next one
         while time.time() - t < 150 and visit_active(host):
             time.sleep(3)
         print(f'  visit {i + 1}: its ship had a model; the visit ended after {time.time() - t:.0f} s', flush=True)
+    host.call('coop.ufoplant 0')  # nothing planted stays armed
     if case:
         shot(host, 'ufo_nomodel_host')
         t = time.time()

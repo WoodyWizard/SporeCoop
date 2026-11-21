@@ -840,10 +840,24 @@ def summary_history(results, rows, repeats):
     if bad:
         out += ['', '## History of the failed and INCONCLUSIVE tests (all worktrees, before this run; `lab.py flaky`)', '']
         out += [f'- {n}: {labverdict.known_line(stats.get(n))}' for n in bad]
-    cand = [s for s in labverdict.ticket_candidates(stats) if s.test in {r['name'].split('#')[0] for r in results}]
+    # BUG-1362: the ledger is the history before this run; a test judged in this run (PASS or FAIL) ended its streak and
+    # is no candidate (lab 20261120-133703 listed social_sing_partner / social_sing_own_lowfps, both judged OK in that
+    # run); a test INCONCLUSIVE here too (or failed by streak_fails as one) counts this run in its streak
+    here, judged = {}, set()
+    for r in results:
+        base = r['name'].split('#')[0]
+        if r.get('fix_off') or r.get('twin') or r.get('quick'):
+            continue  # left out of the ledger's streak too (streak_fails)
+        if r.get('inconclusive') or r.get('skipped'):
+            here[base] = here.get(base, 0) + 1
+        else:
+            judged.add(base)
+    cand = sorted(((t, (stats[t].streak if t in stats else 0) + n) for t, n in here.items() if t not in judged),
+                  key=lambda x: (-x[1], x[0]))
+    cand = [(t, n) for t, n in cand if n >= labverdict.INCONCLUSIVE_STREAK]
     if cand:
         out += ['', '## Ticket candidates (INCONCLUSIVE in a row)', ''] + [
-            f'- {s.test}: INCONCLUSIVE in its last {s.streak} runs' for s in cand]
+            f'- {t}: INCONCLUSIVE in its last {n} runs' for t, n in cand]
     return out
 
 

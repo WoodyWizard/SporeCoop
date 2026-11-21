@@ -1449,6 +1449,16 @@ struct NpcTrackRow {
     float mag = 0; // and the model's (AnimatedCreature +0x04)
     int32_t lm = -1; // BUG-0409: the locomotion mode (+0x2B0: 0 normal, 3 thrown by a hit, 4 abducted)
     int8_t gr = -1;  // the grounded byte (+0x137)
+    // BUG-1357 (test of npc_air_under): the host state's height over the HOST's terrain as this guest received it (the
+    // agl trailer, interpolated), 99 = none (an older host, the host's own rows). The host's own rows cannot show an
+    // NPC pressed under its ground: its game puts it back onto the terrain in its update before it draws it
+    float sa = 99.f;
+    // BUG-1360 diagnostics (a walked proxy playing the standing idle 02481DE5 on a straight 30 fps run): the locomotion's
+    // own request, read without a call (docs/re/creature.md, the fork's `?` offsets: spatial +0x1E0 desired speed, the
+    // current movement request creature +0x2C8 destination / +0x310 mode, 1 MoveTo, 0 Stop); -1 = not readable
+    float dsp = -1.f;  // desired speed (creature +0xC0 +0x1E0)
+    int8_t mmode = -1; // movement request mode (creature +0x310)
+    float gdist = -1.f; // m from the drawn position to the request's destination (creature +0x2C8)
 };
 static std::deque<NpcTrackRow> g_ntrack;
 static bool g_ntrack_on = false;
@@ -1473,7 +1483,7 @@ static bool ntrack_centre(net::Vec3& c)
 }
 
 static void ntrack_push(uint16_t id, void* c, uint8_t how, uint8_t flags, uint16_t tp, const net::Vec3& drawn,
-                        const net::Vec3& tgt, float rv, double now)
+                        const net::Vec3& tgt, float rv, double now, float sa = 99.f)
 {
     net::Vec3 ctr;
     if (!g_ntrack_on || !c || !ntrack_centre(ctr))
@@ -1508,6 +1518,13 @@ static void ntrack_push(uint16_t id, void* c, uint8_t how, uint8_t flags, uint16
     x.mag = drive::over_ground(x.m);
     x.lm = *(int32_t*)((uint8_t*)c + game::kLocoModeOff);
     x.gr = (int8_t)*((uint8_t*)c + 0x137);
+    x.sa = sa;
+    if (skg::readable(c, 0x318)) {
+        const uint8_t* b = (const uint8_t*)c;
+        x.dsp = *(const float*)(b + game::kSpatialOff + 0x1E0);
+        x.mmode = (int8_t)*(const int32_t*)(b + 0x310);
+        x.gdist = net::dist(drawn, *(const net::Vec3*)(b + 0x2C8));
+    }
     g_ntrack.push_back(x);
     while (g_ntrack.size() > kNtrackMax)
         g_ntrack.pop_front();
@@ -1516,7 +1533,8 @@ static void ntrack_push(uint16_t id, void* c, uint8_t how, uint8_t flags, uint16
 static void ntrack_row(uint16_t id, const PxE& pe, const net::PlayerState& s, const net::Vec3& drawn, uint8_t how,
                        double now, float rv)
 {
-    ntrack_push(id, pe.ref.p, how, s.flags, (uint16_t)pe.data.drv.teleports, drawn, s.pos, rv, now);
+    ntrack_push(id, pe.ref.p, how, s.flags, (uint16_t)pe.data.drv.teleports, drawn, s.pos, rv, now,
+                net::agl_known(s.agl) ? s.agl : 99.f);
 }
 
 static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
@@ -1534,14 +1552,14 @@ static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
     } else if (!strcmp(a, "stop"))
         g_ntrack_on = false;
     else if (!strcmp(a, "dump")) {
-        // dump [from] [n] (how: 0 driven, 1 placed, 2 killed, 3 walked, 4 an NPC of the host itself, 5 in the air): t id how flags tp dx dy dz px py pz tx ty tz gv rv da anim gait gait2 moving ss vis sx sy mx my mz ag mag lm gr
+        // dump [from] [n] (how: 0 driven, 1 placed, 2 killed, 3 walked, 4 an NPC of the host itself, 5 in the air): t id how flags tp dx dy dz px py pz tx ty tz gv rv da anim gait gait2 moving ss vis sx sy mx my mz ag mag lm gr sa dsp mmode gdist
         size_t from = argc > 2 ? (size_t)atol(argv[2]) : 0, n = argc > 3 ? (size_t)atol(argv[3]) : 2000;
         for (size_t i = from; i < g_ntrack.size() && i < from + n; i++) {
             const auto& x = g_ntrack[i];
-            H->out_printf(out, "%.4f %u %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %.1f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %.3f %.3f %.3f %d %d\n",
+            H->out_printf(out, "%.4f %u %u %u %u %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.3f %.2f %.2f %.1f %08X %d %d %d %d %d %.0f %.0f %.3f %.3f %.3f %.3f %.3f %d %d %.3f %.2f %d %.2f\n",
                           x.t, x.id, x.how, x.flags, x.tp, x.d.x, x.d.y, x.d.z, x.p.x, x.p.y, x.p.z, x.tgt.x, x.tgt.y,
                           x.tgt.z, x.gv, x.rv, x.da, x.anim, x.gait, x.gait2, x.moving, x.speed_state, x.vis, x.sx, x.sy, x.m.x,
-                          x.m.y, x.m.z, x.ag, x.mag, x.lm, x.gr);
+                          x.m.y, x.m.z, x.ag, x.mag, x.lm, x.gr, x.sa, x.dsp, (int)x.mmode, x.gdist);
         }
         return 0;
     } else if (!strcmp(a, "objects")) {

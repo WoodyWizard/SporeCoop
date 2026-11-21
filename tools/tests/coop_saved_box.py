@@ -15,14 +15,24 @@
                     OK's point hits nothing, the box stays up). (A box only moved past the edge with coop.ui area is
                     still hit by the click under Wine: not a reproduction.)
 
-  SPORE_LANE=N python3 tools/tests/coop_saved_box.py --case question|cursor|video
+  --case twice     BUG-1365: a second save right after the first one's box was confirmed (the game's Save handler
+                    drops the message for 1.5 s after the box's OK, SaveGame_Allowed): every save the mod reports as
+                    made ("saved") is written into the slot (a file newer than the slot's newest before it); a save
+                    refused for now says so and is taken a moment later. SPORE_FIX_OFF=world.save_allowed fails (the
+                    second save says "saved" and nothing is written).
+
+  SPORE_LANE=N python3 tools/tests/coop_saved_box.py --case question|cursor|video|twice
 """
 import argparse
 import re
 import sys
 import time
 
+import os
+
+import lane
 import uifind
+from coop_content_civ import save_slot
 from twoinst import Checks, start
 
 QUESTION = 'Do you want to save your game?'
@@ -135,6 +145,57 @@ def case_cursor(ck, h):
     ck(held < 1.0, f'the game reads the real mouse again within 1 s after the box closed (OK point read until {held:.1f} s)')
 
 
+def newest(folder):
+    """the newest modification time of the slot's files (0 when none)"""
+    t = 0.0
+    for root, _, files in os.walk(folder):
+        for name in files:
+            try:
+                t = max(t, os.path.getmtime(os.path.join(root, name)))
+            except OSError:
+                pass
+    return t
+
+
+def written_after(folder, base, secs):
+    return wait(lambda: newest(folder) > base, secs, 0.5)
+
+
+def case_twice(ck, h):
+    """BUG-1365: a save asked for while the game's last save is still finishing"""
+    _, folder, _ = save_slot(h, lane.HOST_DIR)
+    ck(os.path.isdir(folder), f'the host\'s save slot is found ({folder})')
+    base = newest(folder)
+    first = h.call('coop.save')['out'].strip()
+    ck(first.startswith('saved (mode'), f'the host saves ({first[:80]})')
+    ck(wait(lambda: saved_up(h), 15, 0.2), 'its saved box is up')
+    ck(wait(lambda: not saved_up(h), 10, 0.1), 'the mod confirmed the box (it closed)')
+    ck(written_after(folder, base, 10), 'the first save is written')
+    # at once: the game takes no Save message for 1.5 s after the box's OK
+    base = newest(folder)
+    t0 = time.time()
+    second = h.call('coop.save')['out'].strip()
+    print(f'  second save {time.time() - t0:.2f} s after the box closed: {second[:100]}; '
+          f'{h.call("coop.save box")["out"].strip()}', flush=True)
+    if second.startswith('saved (mode'):
+        ck(written_after(folder, base, 20), 'the second save the mod reported as made is written (the game did not '
+                                            'drop it)')
+    else:
+        ck('previous save is still finishing' in second, f'the second save is refused for now with its reason '
+                                                         f'({second[:80]})')
+        took = None
+        while time.time() - t0 < 15:
+            r = h.call('coop.save')['out'].strip()
+            if r.startswith('saved (mode'):
+                took = time.time() - t0
+                break
+            time.sleep(0.3)
+        print(f'  taken {took} s after the box closed', flush=True)
+        ck(took is not None and took < 5, f'the game takes the save a moment later ({took} s)')
+        ck(written_after(folder, base, 20), 'and it is written')
+    ck(wait(lambda: not saved_up(h), 20, 0.3), 'no saved box left up')
+
+
 def set_mode(con, w, h):
     """the game's own video mode change (as its options do; coop_window_layout.py)"""
     r = re.search(r'eax=0x([0-9A-F]+)', con.call('call Graphics::IRenderer::Get cdecl')['out'])
@@ -164,12 +225,12 @@ def case_video(ck, h):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--case', choices=('question', 'cursor', 'video'), required=True)
+    ap.add_argument('--case', choices=('question', 'cursor', 'video', 'twice'), required=True)
     a = ap.parse_args()
     h, g = start('creature')
     ck = Checks()
     try:
-        {'question': case_question, 'cursor': case_cursor, 'video': case_video}[a.case](ck, h)
+        {'question': case_question, 'cursor': case_cursor, 'video': case_video, 'twice': case_twice}[a.case](ck, h)
     finally:
         close_all(h)
     ck(mode(h) == 'Creature', f'the host is in its game at the end ({mode(h)})')

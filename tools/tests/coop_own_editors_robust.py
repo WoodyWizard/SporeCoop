@@ -380,8 +380,19 @@ def run_drop(ck):
                               'while it was away (the leaf on the chest), the host\'s members the tribe\'s species')
     from coop_content_civ import save_slot, wait_saved
     slotname, folder, _ = save_slot(host, lane.HOST_DIR)
-    since = time.time()
-    print('  host:', host.call('coop.save')['out'].strip()[:80], f'(slot {slotname})', flush=True)
+    # BUG-1365 (final check 20261120-133703): this save came 1-2 s after the rejoin's world-share save, the game's Save
+    # handler dropped it (its last save still finishing) and coop.save still said "saved": 'not saved' below. The mod
+    # now refuses such a save with its reason; the test asks again until the host's game takes it (a player's
+    # Save in the pause menu waits the same way). A "saved" that writes nothing still fails the check below.
+    t_ask = time.time()
+    while True:
+        since = time.time()
+        said = host.call('coop.save')['out'].strip()
+        if said.startswith('saved (mode') or time.time() - t_ask > 30:
+            break
+        print(f'  host save refused for now: {said[:100]}', flush=True)
+        time.sleep(1)
+    print('  host:', said[:80], f'(slot {slotname})', flush=True)
     saved = wait_saved(folder, since - 1, 90)
     time.sleep(3)
     own = set()  # (BUG-1326: instances that are also ids of the host's own resources of the slot, not counted)

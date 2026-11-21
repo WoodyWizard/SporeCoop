@@ -54,7 +54,8 @@ int c_save(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "box")) {
-        SAY("saved_box=%d hold=%d", world::saved_box_up() ? 1 : 0, world::g_box_hold ? 1 : 0);
+        SAY("saved_box=%d hold=%d may_start=%d too_early=%u", world::saved_box_up() ? 1 : 0, world::g_box_hold ? 1 : 0,
+            world::save_may_start() ? 1 : 0, world::g_saves_too_early); // BUG-1365
         return 0;
     }
     world::g_box_hold = argc > 1 && !strcmp(argv[1], "hold"); // tests (BUG-0482): the box stays up
@@ -287,6 +288,14 @@ int c_spotcut(void*, int, const char* const*, SkOut* out)
 int c_ufoforget(void*, int, const char* const*, SkOut* out)
 {
     SAY("%s", gamefixes::ufo_forget().c_str());
+    return 0;
+}
+
+// tests (BUG-1363): coop.ufoplant [n] - the next n ship models (default 1) get a key no game has
+int c_ufoplant(void*, int argc, const char* const* argv, SkOut* out)
+{
+    unsigned n = argc > 1 ? (unsigned)strtoul(argv[1], nullptr, 10) : 1u;
+    SAY("%s", gamefixes::ufo_plant(n > 64 ? 64 : n).c_str());
     return 0;
 }
 
@@ -1185,6 +1194,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_spotcut, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.ufoforget", "tests (BUG-0686): the ship model guard forgets the last known ship model (as a Creature game that has none)",
                       c_ufoforget, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.ufoplant", "tests (BUG-1363): coop.ufoplant [n] - the next n ship models asked for get a key no game has (a cache ship without its model)",
+                      c_ufoplant, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.dna", "coop.dna [add|gain|local|spend <n> | pace 0|1 | bar | own] - DNA debug (bar: also the evolution bar, cPlayer +0x10F0; own: the own DNA wallets, WP-D)", c_dna, nullptr, SK_CMD_MAIN_THREAD);

@@ -5340,3 +5340,30 @@ Creature play: this frame and the last, the store already read). ~ Not run in th
   the save's. A guest then starts the next test with its earlier own DNA (dna_away: guest 3.5, host 0.0). Designed
   (a guest seen since the last save keeps its wallet); lab tests compare gains, not totals (BUG-1340,
   docs/06-testing.md#testing-dna-gain).
+
+## The host's evolution caption stands its game; its family is put elsewhere afterwards (2026-11-20, fix/w61-creature-b)
+<a id="creature-caption-stand-gap"></a>
+
+BUG-1376. GOG 2024, lab logs of evo_screens_switch (20261118-125715, -134852, 20261120-133703).
+* ✔ (runtime) After the host's first Creature editor (the landfall evolution) its game shows the caption "It is the
+  beginning of a new day..." and stands (`busy=cinematic,input_lock,paused`) until it is confirmed: ~70 s in the test
+  (s ~150 to ~220). No creature is updated meanwhile, so the host sends no NPC states (npc.cpp host_tick: frozen_send only).
+* ✔ (runtime) When the game goes on, the host's family members (its avatar's herd) stand or walk 1-6 m from its avatar,
+  10-15 m from where they stood before the caption: the game puts them there at the caption's end.
+* ✔ (code + net_tests test_lead_gap) The guests' proxies took the first state after such a gap for late news of a walk
+  (late_time): the target crossed the gap's straight line at 1/35 of the distance per second, the copies stood near the
+  old places for a minute (sync-check "n: 3 apart"). `drive.lead_gap` shows the lead at once after a gap over 2 s.
+## The Save message is dropped while the last save finishes (2026-11-20, fix/w61-creature-a)
+<a id="creature-save-dropped"></a>
+
+Checks #creature-lineages-save-steps against the GOG 2024 exe (objdump, BUG-1365).
+
+* ✔ (disassembly) `SporeCoop::SaveGame_MessageHandler` 0xB29960, message 0x1CD20F0: it returns at once, with no box,
+  no busy cursor and no trace, when `SporeCoop::SaveGame_Clock` +0|+4 is not 0 (0xB2999F, the last save's clock still
+  runs), when `SporeCoop::SaveGame_Allowed` (byte 0x15689AC) is 0 (0xB299B0; cleared at 0xB299E3 by every taken save,
+  set again 1500 ms after its "game saved" box's OK), or when the handler's +0x45 is not 0 (0xB299BC, not known yet).
+  In Space it also needs a non-planet context (0xB299CA..0xB299D8). Only then the clock starts (0xB299EA, 0x571E80).
+* ✔ (runtime, lab 20261120-133703 own_editor_drop) a MessagePost of 0x1CD20F0 1-2 s after the rejoin's world-share
+  save (its box confirmed by the mod 1.5 s earlier at most) wrote nothing: no "Tribe, saving" hitch, no box, no file
+  newer than the request in 90 s, while `coop.save` had answered "saved". `world::save_game` now reads both bytes
+  (`world::save_may_start`) and refuses such a save with its reason (`world.save_allowed`).
