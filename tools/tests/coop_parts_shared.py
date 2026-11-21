@@ -199,7 +199,23 @@ def from_cell(ck, cell_part=False):
     t0 = time.time()
     ok = camp.advance('cell')
     ck(ok, f"the host changed Cell -> Creature the players' way and the guest followed ({time.time() - t0:.0f} s)")
-    ck('Creature' in mode(guest) and guest.call('coop.avatar')['ok'], f"the guest plays Creature with an avatar ({mode(guest)})")
+    # BUG-1380: the host's first creature editor keeps the guest in place (BUG-0508) and sends the world after all 30 s
+    # later when the guest still plays the pre-editor species (BUG-1215); that share lands around the end of the follow
+    # phase (13 s after it in 20261120-041304, 1 s before this check in 20261119-214823 and 20261120-133703, which read
+    # GalaxyGameEntry while the guest reloaded). The guest must reach Creature with an avatar (a guest stuck in the menu
+    # or the load still fails); the reload of the shared world on the way is the designed path.
+    t1 = time.time()
+    seen = set()
+
+    def plays_creature():
+        seen.add(mode(guest).strip())
+        return 'Creature' in mode(guest) and guest.call('coop.avatar')['ok']
+    in_creature = plays_creature()
+    while not in_creature and time.time() - t1 < 60:
+        time.sleep(1)
+        in_creature = plays_creature()
+    ck(in_creature, f"the guest plays Creature with an avatar ({mode(guest)}; {time.time() - t1:.0f} s, modes seen "
+                    f"{sorted(seen)})")
     ok, ph, pg, dt = wait_same(host, guest, 10)
     print(f'  after the transition ({dt:.0f} s): host {ph}, guest {pg} | guest sync: {sync_line(guest)}', flush=True)
     ck(ok, f"within 10 s of the transition the guest's collected parts are the host's (guest {pg[0]}:{pg[1]} of {pg[2]}, "
