@@ -28,7 +28,8 @@ saves, and keep the knowledge files honest. Every check runs on fakes in a tempo
   campaign  the pure logic of the co-op campaign (campaign_lib.py): plan, stages, findings (BUG-0152)
   trail     body_trail.since (the detector's read of coop.bodyrec) ends, keeps no row twice and is bounded on a model
             of the game's command; the old loop (SPORE_BODYTRAIL_OLD_SINCE=1) never ends on it (BUG-0916)
-  testlint  tools/tests/test_lint.py: a game test in no suite, a check on a mod counter without a reason (BUG-0430)
+  testlint  tools/tests/test_lint.py: a game test in no suite, a check on a mod counter without a reason (BUG-0430), a
+            suite name added twice (BUG-9282)
   laa       tools/laa.py on a fake 32-bit exe: set writes a verified backup and changes only the
             Characteristics flag and the PE checksum (still valid), set again and a Steam .bind exe are
             refused, restore brings back the original's sha256; a damaged backup is refused (BUG-0862)
@@ -967,6 +968,11 @@ def test_testlint():
     os.remove(t('coop_c.py'))
     r = run()
     check(r.returncode == 0, f'with `# counter: <reason>` it passes ({r.stdout.strip().splitlines()[-1:]})')
+    # BUG-9282: a name added twice (a merge kept both sides' line)
+    open(t('suite.py'), 'w').write("T = [dict(name='a', cmd='python3 tools/tests/coop_a.py'), "
+                                   "dict(name='a', cmd='python3 tools/tests/coop_a.py')]\n")
+    r = run()
+    check(r.returncode == 1 and 'the test name a is added twice' in r.stdout, 'a suite name added twice is flagged (BUG-9282)')
 
 
 # ---------------------------------------------------------------- laa (BUG-0862)
