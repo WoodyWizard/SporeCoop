@@ -10,7 +10,7 @@ role: host
 versions: <=0.7.16
 fixed_in:
 branch: fix/w61-creature-a
-commits:
+commits: 3ffe3266
 tests: saved_box_twice, saved_box_twice_off, own_editor_drop
 signature: coop.save answers "saved (mode ...)" and no file of the slot is newer than the request (test: ['not saved'])
 docs: docs/re/creature.md#creature-save-dropped

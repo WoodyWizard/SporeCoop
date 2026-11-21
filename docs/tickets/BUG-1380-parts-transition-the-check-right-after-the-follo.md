@@ -10,7 +10,7 @@ role: guest
 versions: 
 fixed_in:
 branch: fix/w61-creature-a
-commits:
+commits: c4261908
 tests: parts_transition
 signature: FAIL the guest plays Creature with an avatar (0x02CCD1D2 GalaxyGameEntry)
 docs: docs/06-testing.md#testing-creature-after-worlds-reset
