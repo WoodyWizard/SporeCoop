@@ -1753,6 +1753,40 @@ static bool buy_guest_baby(uint8_t from, int seat, uint16_t witness);
 static bool buy_guest_tool(uint8_t from, int seat, uint16_t witness, int kind, net::Vec3 pos);
 static bool queue_partner_rebuild(uint8_t from, uint16_t member, int action);
 
+// BUG-9303 (a guest, 67-dev: the host's `rejected=` counter at 147 and not one log line): a partner's village orders the
+// host's allowlist did not know were dropped without a word: fishing (CitizenAction 1, the fishing spot is the order's
+// Vector3 property, DoActionGeneric 0xCD0C20 input 0x22), carcass meat (27), eggs (13), bundles (14), a raid on another
+// village's food (8: the target is that cTribe), repairs of the own tools (24), feeding / taming an animal (20 / 25)
+// and a right-click on a loose fruit (2 with a cFruit target; the host's tribe.fruit_order fallback was never reached).
+// On: these orders run on the host with a target check like hunt's (an object of the host's world, not a party member;
+// the raid's village not a founder's, the repair's tool the sender's own), the fishing spot travels in the command's
+// position, and every refused command is logged (rate-limited) with what it was. `coop.fix tribe.guest_orders off`: as
+// before (dropped, counted only).
+static bool g_guest_orders_fix = true;
+COOP_FIX("tribe.guest_orders", "BUG-9303", g_guest_orders_fix,
+         "tribe: a partner village's fishing, meat, eggs, bundles, food raids, repairs, taming and loose-fruit orders run on the host; refusals are logged");
+// BUG-9303: chiefs_tick knew the host's player tribe only, so a partner founder's village had no chief for the aura
+// (tribe.chief_aura: +20 % damage next to the own chief). On: each partner village's native chief (tribe +0x11C) leads
+// its owner's members (host; no size marker: the game's own chief scale stays). `coop.fix tribe.guest_chief off`: none.
+static bool g_guest_chief_fix = true;
+COOP_FIX("tribe.guest_chief", "BUG-9303", g_guest_chief_fix,
+         "tribe: a partner founder village's native chief gives its members the chief aura");
+// BUG-9306 (owner: "Firebombs did not work for BigTexas ... the chieftain will always be able to throw the bombs and he
+// refused"): a Tribe chief's stage powers (the consequence abilities of the earlier stages, ability types 0x34..0x39:
+// Fire Bomb, Summon Animals, ...) are CitizenAction 22 with an App::Property (uint32) holding the ability's index in the
+// chief's own ability list, no target (Ability_Use 0xD1E930 -> DoAction(22, 0, prop)); docs/re/tribe.md#tribe-chief-powers.
+// On a guest the press ran that DoAction on its own game's mirror of its chief, whose behaviour tree the mod skips
+// (h_BTTick): nothing reached the host, nothing happened. On: the guest's game sends the power's type (CMD_CHIEF_POWER),
+// the host checks the sender's own village's living native chief, the power's recharge and the chief's own refusal
+// flag, and runs the game's own DoAction(22, 0, prop) on that chief: the game's power node (recharge, animation,
+// effect) runs there and the mirrors show it. The game's unlock (the player's earlier-stage cards, 0xD1F400) is the
+// guest's own game's check before the press. `coop.fix tribe.guest_powers off`: the press stays on the guest's mirror.
+static bool g_guest_powers_fix = true;
+COOP_FIX("tribe.guest_powers", "BUG-9306", g_guest_powers_fix,
+         "tribe: a partner's Tribe chief uses its stage powers (Fire Bomb, Summon Animals, ...) through the host's game");
+using AbilityUse_t = void(SK_CDECL*)(void*, int); // SporeCoop::Ability_Use 0xD1E930 cdecl(avatar, ability index)
+static AbilityUse_t o_AbilityUse;
+static void SK_CDECL h_AbilityUse(void* avatar, int index); // BUG-9306 (with chief_power_on_host)
 static bool send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action, const Target& tgt, const net::Vec3& pos)
 {
     if (kind != CMD_REPAIR && kind != CMD_GIVE_UP && kind != CMD_LATE_EDITING && (ids.empty() || g_guest_orders_held))
@@ -1831,7 +1865,17 @@ static int SK_THISCALL h_DoActionForObjects(void* self, void* vec, int action, v
         if (f != g_gid_of.end())
             ids.push_back(f->second);
     }
-    send_cmd(CMD_ACTION, ids, action, encode_target(target), {});
+    net::Vec3 spot{};
+    if (g_guest_orders_fix && action == 1 && prop && !IsBadReadPtr(prop, 0x14)) {
+        // BUG-9303: a fishing order's spot is its Vector3 property (DoActionGeneric input 0x22: the cursor's surface
+        // point); a value kept elsewhere (flags +0x10 & 0x30) is behind the first pointer
+        const uint16_t flags = F<uint16_t>(prop, 0x10);
+        const float* v = (flags & 0x30) ? F<const float*>(prop, 0) : (const float*)prop;
+        if (v && !IsBadReadPtr(v, 12) && std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]) &&
+            std::fabs(v[0]) < 1e6f && std::fabs(v[1]) < 1e6f && std::fabs(v[2]) < 1e6f)
+            spot = {v[0], v[1], v[2]};
+    }
+    send_cmd(CMD_ACTION, ids, action, encode_target(target), spot);
     ring_order(action, target, ids); // BUG-0570
     char ob[48];
     snprintf(ob, sizeof ob, " obj=%p", target);
@@ -2952,6 +2996,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)a, (void*)h_AddSegment, (void**)&o_AddSegment);
     if (uintptr_t key = H->sym("SporeCoop::AbilityBar_OnKey"))
         H->hook_create(M, (void*)key, (void*)h_AbilityKey, (void**)&o_AbilityKey);
+    if (uintptr_t use = H->sym("SporeCoop::Ability_Use")) // BUG-9306 (tribe.guest_powers)
+        H->hook_create(M, (void*)use, (void*)h_AbilityUse, (void**)&o_AbilityUse);
     if (uintptr_t hut = H->sym("SporeCoop::Tribe_HutStateIs2")) // BUG-9153
         H->hook_create(M, (void*)hut, (void*)h_HutState, (void**)&o_HutState);
     a_SetPlayerTribe = H->sym("Simulator::cGameNounManager::SetPlayerTribe"); // BUG-9153
@@ -5342,7 +5388,129 @@ static void* target_village(void* o)
     return std::find(ts.begin(), ts.end(), t) != ts.end() ? t : nullptr;
 }
 
+constexpr uint8_t CMD_CHIEF_POWER = 16; // BUG-9306 (a number apart from the CMD_ enum's, which other kinds extend)
+constexpr int kChiefPowerAction = 22;   // CitizenAction 22: a chief's stage power (ModAPI leaves it unnamed)
+constexpr uint32_t kChiefPowerFirst = 0x34, kChiefPowerLast = 0x39; // ability types of a leader's six powers
+static uint32_t g_powers_sent, g_powers_run, g_powers_refused;
+static std::string g_power_last; // the last power command, as the host or the guest saw it (coop.tribe powers)
+static const char* g_reject_why = nullptr; // BUG-9303: the reason of the current refusal, where a check names one
+static uint32_t g_rejects_logged, g_rejects_quiet;
+static void* g_village_chief[founders::kMaxSeats]; // BUG-9303 (host): seat -> its village's native chief (chiefs_tick)
+static uint8_t g_village_chief_owner[founders::kMaxSeats];
+
+// a citizen's ability `idx` (vt 0xB0 count, vt 0xB4 GetAbility; null past the list)
+static uint8_t* citizen_ability(void* c, int idx)
+{
+    if (!is_citizen(c) || idx < 0 || idx >= vcall<int>(c, 0xB0 / 4))
+        return nullptr;
+    uint8_t* ab = vcall<uint8_t*>(c, 0xB4 / 4, idx);
+    return ab && !IsBadReadPtr(ab, 0x140) ? ab : nullptr;
+}
+static int citizen_ability_index(void* c, uint32_t type)
+{
+    const int n = is_citizen(c) ? vcall<int>(c, 0xB0 / 4) : 0;
+    for (int i = 0; i < n && i < 64; i++)
+        if (uint8_t* ab = citizen_ability(c, i); ab && F<uint32_t>(ab, 8) == type)
+            return i;
+    return -1;
+}
+// the ability's recharge as the bar's status reads it (0xD1E8D0): the slot's ready float (+0xC28 [idx * 16 + 4]) under
+// 1 and the ability's bit in +0xBF8 set
+static bool chief_power_recharging(void* c, int idx)
+{
+    uint8_t* slots = F<uint8_t*>(c, 0xC28);
+    if (idx < 0 || idx >= 0x58 || !slots || IsBadReadPtr(slots + idx * 16, 8)) return false;
+    return F<float>(slots + idx * 16, 4) != 1.0f && (F<uint32_t>(c, 0xBF8 + (idx >> 5) * 4) & (1u << (idx & 31))) != 0;
+}
+// host: partner `from` (seat `seat`) wants its chief (`member`, its id in the guest's game) to use power `type`
+static bool chief_power_on_host(uint8_t from, int seat, uint16_t member, uint32_t type)
+{
+    static uintptr_t set_u32 = H->sym("App::Property::SetValueUInt32");
+    auto refuse = [&](const char* why) {
+        g_reject_why = why;
+        ++g_powers_refused;
+        char b[200];
+        snprintf(b, sizeof b, "host: %s's chief power 0x%X refused: %s", C.sess->name_of(from).c_str(), type, why);
+        g_power_last = b;
+        return false;
+    };
+    if (type < kChiefPowerFirst || type > kChiefPowerLast) return refuse("not a chief power");
+    if (!set_u32 || !a_DoAction) return refuse("symbols missing");
+    void* village = founder_village(seat);
+    void* chief = village ? F<void*>(village, kNativeLeaderOff) : nullptr;
+    if (!chief || !is_citizen(chief) || !game::object_alive(chief)) return refuse("the village has no living chief");
+    auto it = g_hm_by_id.find(member);
+    if (it == g_hm_by_id.end() || it->second != chief) return refuse("the pressed member is not the village's chief now");
+    if (game::health(chief) <= 0 || F<uint8_t>(chief, 0xB5E) || founder_downed(chief)) return refuse("the chief is down");
+    if (void* ai = F<void*>(chief, 0xB4C); ai && !IsBadReadPtr(ai, 0x1D0) && (F<uint32_t>(ai, 0x1CC) & 0x10000))
+        return refuse("the chief refuses orders now (its AI flag 0x10000, bar status 0xB)");
+    const int idx = citizen_ability_index(chief, type);
+    if (idx < 0) return refuse("the chief has no such ability");
+    if (chief_power_recharging(chief, idx)) return refuse("the power is recharging");
+    // the property Ability_Use builds (0x671B70: flags +0x10 and type +0x12 zero, then SetValueUInt32); DoAction copies it
+    alignas(8) uint8_t prop[0x40] = {};
+    uint32_t value = (uint32_t)idx;
+    thiscall<void*>(set_u32, (void*)prop, (const uint32_t*)&value);
+    void* rec = thiscall<void*>(a_DoAction, chief, kChiefPowerAction, (void*)nullptr, (void*)prop);
+    ++g_powers_run;
+    char b[200];
+    snprintf(b, sizeof b, "host: %s's chief %u uses power 0x%X (ability %d) rec=%p", C.sess->name_of(from).c_str(), member,
+             type, idx, rec);
+    g_power_last = b;
+    H->log(M, SK_INFO, "tribe: %s (BUG-9306)", b);
+    return true;
+}
+
+// guest: the press of a chief's stage power (the bar's one use path: AbilityBar_Use -> 0xD48AB0 -> Ability_Use) goes to
+// the host; any other ability, and the host's own presses, stay the game's
+static void SK_CDECL h_AbilityUse(void* avatar, int index)
+{
+    if (g_guest_powers_fix && active() && is_guest() && !local_play() && village_orders() &&
+        game::mode_id() == modes::kTribe && is_citizen(avatar)) {
+        uint8_t* ab = citizen_ability(avatar, index);
+        const uint32_t type = ab ? F<uint32_t>(ab, 8) : 0;
+        if (type >= kChiefPowerFirst && type <= kChiefPowerLast) {
+            auto it = g_gid_of.find(avatar);
+            const bool sent = it != g_gid_of.end() && send_cmd(CMD_CHIEF_POWER, {it->second}, (int)type, {}, game::position(avatar));
+            if (sent) ++g_powers_sent;
+            char b[160];
+            snprintf(b, sizeof b, "guest: chief %u power 0x%X (ability %d) %s", it != g_gid_of.end() ? it->second : 0, type, index,
+                     sent ? "sent to the host" : "not sent (no member id for the chief, or orders held)");
+            g_power_last = b;
+            H->log(M, SK_INFO, "tribe: %s (BUG-9306)", b);
+            return;
+        }
+    }
+    o_AbilityUse(avatar, index);
+}
+
+static void host_command_run(uint8_t from, net::Reader& r, bool resumed);
+// BUG-9303: every refused command is logged (at most one line a second, the rest counted into the next line)
 static void host_command(uint8_t from, net::Reader& r, bool resumed = false)
+{
+    net::Reader head = r; // the command's head for the log (a copy: the run reads r)
+    const uint32_t before = g_cmds_rejected;
+    g_reject_why = nullptr;
+    host_command_run(from, r, resumed);
+    if (!g_guest_orders_fix || g_cmds_rejected == before) return;
+    static double last_at = -100;
+    const double now = H->time_seconds();
+    if (now - last_at < 1.0) { ++g_rejects_quiet; return; }
+    last_at = now;
+    uint8_t kind = head.u8(), n = head.u8();
+    uint16_t first = 0;
+    for (int i = 0; i < n && head.ok(); i++) { uint16_t id = head.u16(); if (!i) first = id; }
+    const int action = (int)head.u32();
+    const Target tgt = read_target(head);
+    ++g_rejects_logged;
+    H->log(M, SK_INFO, "tribe: refused %s's command kind=%u action=%d members=%u (first %u) target=%u/%u/%X (%.1f %.1f %.1f): "
+           "%s (+%u refusals not logged; %u in all, BUG-9303)", C.sess->name_of(from).c_str(), kind, action, n, first, tgt.kind,
+           tgt.id, tgt.noun, tgt.pos.x, tgt.pos.y, tgt.pos.z, g_reject_why ? g_reject_why : "a target or member check",
+           g_rejects_quiet, g_cmds_rejected);
+    g_rejects_quiet = 0;
+}
+
+static void host_command_run(uint8_t from, net::Reader& r, bool resumed)
 {
     uint8_t kind = r.u8(), n = r.u8();
     std::vector<uint16_t> ids;
@@ -5457,9 +5625,28 @@ static void host_command(uint8_t from, net::Reader& r, bool resumed = false)
     const bool perform = g_performance_fix && kind == CMD_ACTION && action == 26 && tgt.kind == 1;
     const bool hunt = g_hunt_party_orders && kind == CMD_ACTION && action == 10 && tgt.kind == 2 && tgt.noun == 0x18EB45E;
     const bool party = g_hunt_party_orders && kind == CMD_ACTION && action == 12 && tgt.kind == 2 && tgt.noun == 0x18C8F0C;
+    // BUG-9303 (tribe.guest_orders): the rest of the game's own orders (DoActionGeneric 0xCD0C20's input actions)
+    const bool more = g_guest_orders_fix && kind == CMD_ACTION;
+    const bool fish = more && action == 1 && tgt.kind == 0;                                        // the spot: `pos`
+    const bool loot = more && (action == 27 || action == 13 || action == 14) && tgt.kind == 2;    // meat, egg, bundle
+    const bool raid_food = more && action == 8 && tgt.kind == 2 && tgt.noun == kTribeNoun;        // another village
+    const bool repair = more && action == 24 && tgt.kind == 2 && (tgt.noun == kToolNoun || tgt.noun == kHutNoun);
+    const bool tame = more && (action == 20 || action == 25) && tgt.kind == 2 && tgt.noun == 0x18EB45E; // an animal
+    const bool fruit = more && action == 2 && tgt.kind == 2 && tgt.noun == kFruitNoun;            // a loose fruit
+    if (kind == CMD_CHIEF_POWER) { // BUG-9306: a partner's chief uses its stage power (tribe.guest_powers)
+        if (!g_guest_powers_fix || !village_orders || !commander || ids.size() != 1 ||
+            !chief_power_on_host(from, sender_seat, ids[0], (uint32_t)action)) {
+            if (!g_reject_why)
+                g_reject_why = !g_guest_powers_fix ? "tribe.guest_powers is off" : "not a partner village's commander";
+            g_cmds_rejected++;
+        } else
+            g_cmds_done++;
+        return;
+    }
     if (village_orders && ((kind != CMD_WALK && !gather && !attack && !raid && !equip && !heal && !eat && !gift && !perform &&
-                            !hunt && !party) || !commander || !std::isfinite(pos.x) ||
-                           !std::isfinite(pos.y) || !std::isfinite(pos.z))) {
+                            !hunt && !party && !fish && !loot && !raid_food && !repair && !tame && !fruit) || !commander ||
+                           !std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z))) {
+        g_reject_why = !commander ? "the sender commands no partner village" : "an order the host does not run for a partner village";
         g_cmds_rejected++;
         return;
     }
@@ -5483,6 +5670,32 @@ static void host_command(uint8_t from, net::Reader& r, bool resumed = false)
         return;
     }
     void* target = forage_target ? forage_target : (kind == CMD_ACTION ? resolve_target(tgt) : nullptr);
+    if (village_orders && (loot || tame) && (!target || !game::object_alive(target) || is_citizen(target) ||
+        g_order_roster.contains_faction(F<uint32_t>(target, 0x30)) || (tame && (game::health(target) <= 0 || F<uint8_t>(target, 0xB5E))))) {
+        g_reject_why = "the target is gone, a member or a party member's"; // BUG-9303
+        g_cmds_rejected++;
+        return;
+    }
+    if (village_orders && raid_food) { // BUG-9303: another, living, unconquered village (a party member's is a gift)
+        auto tribes = all_tribes();
+        if (!target || std::find(tribes.begin(), tribes.end(), target) == tribes.end() ||
+            g_order_roster.contains_faction(F<uint32_t>(target, 0x30)) || F<uint8_t>(target, 0x556)) {
+            g_reject_why = "the food raid's village is gone, conquered or a founder's";
+            g_cmds_rejected++;
+            return;
+        }
+    }
+    if (village_orders && repair && (!target || !game::object_alive(target) || sender_seat < 1 ||
+        F<uint32_t>(target, 0x30) != g_order_roster.entries[sender_seat].faction)) { // BUG-9303: the sender's own building
+        g_reject_why = "the repair's building is gone or not the sender village's";
+        g_cmds_rejected++;
+        return;
+    }
+    if (village_orders && fish && (!std::isfinite(pos.x) || (pos.x == 0 && pos.y == 0 && pos.z == 0))) {
+        g_reject_why = "a fishing order without its spot"; // BUG-9303
+        g_cmds_rejected++;
+        return;
+    }
     if (village_orders && equip && (!target || !game::object_alive(target) || game::noun_id(target) != kToolNoun ||
         F<float>(target, 0x158) <= 0 || sender_seat < 1 || F<uint32_t>(target, 0x30) != g_order_roster.entries[sender_seat].faction ||
         F<uint32_t>(target, 0x1FC) < 1 || F<uint32_t>(target, 0x1FC) > 9)) {
@@ -5613,6 +5826,12 @@ static void host_command(uint8_t from, net::Reader& r, bool resumed = false)
             ++g_cmds_rejected;
             continue;
         }
+        if (village_orders && (fish || loot || raid_food || repair || tame || fruit) && // BUG-9303: adults, standing
+            (game::health(c) <= 0 || F<uint8_t>(c, 0xB5E) || F<uint32_t>(c, kAgeOff) != 1)) {
+            g_reject_why = "the member is a baby or down";
+            g_cmds_rejected++;
+            continue;
+        }
         if (kind == CMD_WALK) {
             void* rec = thiscall<void*>(a_DoAction, c, 4, (void*)nullptr, (void*)nullptr);
             float p[3] = {pos.x, pos.y, pos.z};
@@ -5621,6 +5840,10 @@ static void host_command(uint8_t from, net::Reader& r, bool resumed = false)
         } else {
             if (village_orders && (raid || gift || perform)) register_campaign_target(F<uint32_t>(target, 0x30));
             void* record = thiscall<void*>(a_DoAction, c, action, target, (void*)nullptr);
+            if (fish && record) { // BUG-9303: the fishing spot, the order's Vector3 property (as a walk's)
+                float p[3] = {pos.x, pos.y, pos.z};
+                thiscall<void>(a_SetValueVector3, (uint8_t*)record + 0x39, (const float*)p);
+            }
             if (perform) {
                 ++g_perform_dispatch.dispatched;
                 if (record) ++g_perform_dispatch.records;
@@ -7274,11 +7497,35 @@ static void chiefs_tick()
             vcall<void>((uint8_t*)c + 0xC0, 0x40 / 4, sc * 1.3f);
         }
     g_chief = want;
+    // BUG-9303: each partner founder village's own native chief leads its owner's members (the aura); host only
+    for (size_t seat = 0; seat < founders::kMaxSeats; ++seat) {
+        g_village_chief[seat] = nullptr;
+        g_village_chief_owner[seat] = 0xFF;
+    }
+    if (!g_guest_chief_fix || !is_host() || !village_orders()) return;
+    for (size_t seat = 1; seat < founder_seats() && seat < founders::kMaxSeats; ++seat) {
+        void* village = founder_village((int)seat);
+        void* chief = village ? F<void*>(village, kNativeLeaderOff) : nullptr;
+        const uint8_t owner = player_of_seat((int)seat);
+        if (!chief || !is_citizen(chief) || !game::object_alive(chief) || owner >= 0xFE || game::health(chief) <= 0 ||
+            F<uint8_t>(chief, 0xB5E) || founder_downed(chief))
+            continue;
+        g_village_chief[seat] = chief;
+        g_village_chief_owner[seat] = owner;
+    }
 }
 
 static bool near_own_chief(void* c, uint8_t owner)
 {
     auto it = g_chief.find(owner);
+    if (it == g_chief.end() || !it->second) // BUG-9303: a partner's own village chief (tribe.guest_chief)
+        for (size_t seat = 1; seat < founders::kMaxSeats; ++seat)
+            if (g_village_chief[seat] && g_village_chief_owner[seat] == owner) {
+                void* chief = g_village_chief[seat];
+                if (chief == c || !game::listed(chief, 0x18EB4B7u))
+                    return false;
+                return net::dist(game::position(chief), game::position(c)) < 15.f;
+            }
     if (it == g_chief.end() || !it->second || it->second == c)
         return false;
     // BUG-1053: g_chief is chiefs_tick's table; a hit in the game's update before the next tick may come after the
@@ -10765,6 +11012,7 @@ static void forget_world_tables()
     g_rack_asked = {};
     g_remote_rescues = {};
     g_epic_blows.clear(); // BUG-0515 diagnostics: keys are animals of the world left
+    for (auto& chief : g_village_chief) chief = nullptr; // BUG-9303: the old world's villages are freed
     if (g_fix_chiefs) {
         g_chief_scale.clear();
         g_chief.clear();
@@ -12208,6 +12456,73 @@ std::string debug(const std::vector<std::string>& a)
             game::destroy_instance(f);
         size_t n = q.v.size();
         return "destroyed " + std::to_string(n) + " fruit; tribe.fruit_order moved " + std::to_string(g_fruit_orders_moved);
+    }
+    // powers [grant <type> | use <type>]: BUG-9306, a chief's stage powers (ability types 0x34..0x39, CitizenAction 22).
+    // powers: this game's player tribe's chief (the bar's avatar): each power's ability index, the bar's status (0 usable,
+    // 8 / 0xF recharging, 10 not earned, 0xB the chief refuses), this player's earlier-stage cards and the unlock words the
+    // game caches from them; on the host each partner village's chief too; the counters and the last power command.
+    // grant <type>: tests, this player earns that power (the unlock words 0x5FF7BAF |= 1 << (type - 0x20), 0x5FF7BB6 = 0;
+    // they are the player's saved properties: a test world only); select the chief again for the bar.
+    // use <type>: the power pressed as on the bar (AbilityBar_Use with the chief's ability index: the game's status check,
+    // then Ability_Use, so a guest's press takes the tribe.guest_powers path).
+    if (!a.empty() && a[0] == "powers") {
+        void* nm = game::noun_manager();
+        void* player = nm ? F<void*>(nm, 0x74) : nullptr;
+        void* t = native_player_tribe();
+        void* chief = t ? F<void*>(t, kNativeLeaderOff) : nullptr;
+        if (!is_citizen(chief)) chief = nullptr;
+        static uintptr_t get_prop = H->sym("SporeCoop::Player_GetProperty"), set_prop = H->sym("SporeCoop::Player_SetProperty"),
+                         status = H->sym("SporeCoop::AbilityBar_Status"), bar_use = H->sym("SporeCoop::AbilityBar_Use");
+        const uint32_t type = a.size() >= 3 ? (uint32_t)strtoul(a[2].c_str(), nullptr, 0) : 0;
+        if (a.size() >= 3 && (type < kChiefPowerFirst || type > kChiefPowerLast))
+            return "the type is one of 0x34..0x39";
+        if (a.size() >= 3 && a[1] == "grant") {
+            if (!player || !get_prop || !set_prop) return "no player or symbols";
+            const int bits = thiscall<int>(get_prop, player, 0x5FF7BAFu) | (int)(1u << (type - 0x20));
+            thiscall<void>(set_prop, player, 0x5FF7BAFu, bits);
+            thiscall<void>(set_prop, player, 0x5FF7BB6u, 0);
+            char b[96];
+            snprintf(b, sizeof b, "granted 0x%X: unlock words %08X / 0 (select the chief again)", type, (unsigned)bits);
+            return b;
+        }
+        if (a.size() >= 3 && a[1] == "use") {
+            const int idx = chief ? citizen_ability_index(chief, type) : -1;
+            if (idx < 0 || !bar_use) return "this game's chief has no such ability";
+            const int st = status ? skg::cdecl_call<int>(status, idx) : -1;
+            skg::cdecl_call<void>(bar_use, idx);
+            return "pressed ability " + std::to_string(idx) + " (bar status " + std::to_string(st) + "): " + g_power_last;
+        }
+        std::string o;
+        char b[256];
+        snprintf(b, sizeof b, "powers fix=%d sent=%u run=%u refused=%u cards cell=%08X creature=%08X unlock=%08X/%08X\n",
+                 (int)g_guest_powers_fix, g_powers_sent, g_powers_run, g_powers_refused,
+                 player ? F<uint32_t>(player, 0x10FC) : 0, player ? F<uint32_t>(player, 0x1100) : 0,
+                 player && get_prop ? (unsigned)thiscall<int>(get_prop, player, 0x5FF7BAFu) : 0,
+                 player && get_prop ? (unsigned)thiscall<int>(get_prop, player, 0x5FF7BB6u) : 0);
+        o += b;
+        auto list = [&](const char* who, void* c) {
+            if (!c) { o += std::string(who) + ": no chief\n"; return; }
+            for (uint32_t ty = kChiefPowerFirst; ty <= kChiefPowerLast; ++ty) {
+                const int idx = citizen_ability_index(c, ty);
+                const int st = idx >= 0 && status && c == chief ? skg::cdecl_call<int>(status, idx) : -1;
+                snprintf(b, sizeof b, "%s %p power 0x%X ability %d status %d recharging %d\n", who, c, ty, idx, st,
+                         idx >= 0 ? (int)chief_power_recharging(c, idx) : -1);
+                o += b;
+            }
+        };
+        list("this game's chief", chief);
+        if (is_host())
+            for (size_t seat = 1; seat < founder_seats() && seat < founders::kMaxSeats; ++seat) {
+                void* v = founder_village((int)seat);
+                void* c = v ? F<void*>(v, kNativeLeaderOff) : nullptr;
+                char who[32];
+                snprintf(who, sizeof who, "seat %u chief", (unsigned)seat);
+                list(who, is_citizen(c) ? c : nullptr);
+            }
+        snprintf(b, sizeof b, "refusals logged=%u quiet=%u; village chiefs (aura) fix=%d\n", g_rejects_logged, g_rejects_quiet,
+                 (int)g_guest_chief_fix);
+        o += b;
+        return o + "last: " + g_power_last;
     }
     // duet: tests (BUG-0748), the player tribe's members in the social performance node 0xB46E8803 (host): id, owner, the
     // session's target tribe, its state, the mini-game's progress (ui +0x68)

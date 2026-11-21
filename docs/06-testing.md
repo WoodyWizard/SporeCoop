@@ -9004,3 +9004,20 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
 * Pitfalls: QA games run at 10 FPS (`frame_ms=100`), so "frames with an interval over 80 ms" counts every frame
   there; the call times are still right. Another game on the same PC (the owner playing) slows every section: a run
   then shows everything slow, not one culprit.
+
+## A Tribe chief's stage powers and a partner's orders (2026-11-20, fix/l47-powers)
+<a id="testing-chief-powers"></a>
+
+BUG-9306 / BUG-9303 (docs/re/tribe.md#tribe-chief-powers). Not run yet; the commands:
+* `coop.tribe powers` (either game): this game's chief, each power type 0x34..0x39 with its ability index, the bar's
+  status (0 usable, 8 / 0xF recharging, 10 not earned, 0xB the chief refuses, -1 not this game's avatar), the player's
+  cell / creature cards and the unlock words; the host adds each partner village's chief; then the counters
+  (sent / run / refused), the logged refusals and the last power command.
+* `coop.tribe powers grant <type>`: test setup, this game's player earns that power (a saved player property: a test
+  world only); select the chief again. `coop.tribe powers use <type>`: the bar's press (status check, then the game's
+  use path, so on a guest the tribe.guest_powers relay).
+* The host's log: `tribe: host: <name>'s chief <id> uses power 0x.. (ability n)` for a power run,
+  `tribe: refused <name>'s command kind= action= ...: <reason>` for a refused order or power (one line a second).
+* Switch twins: `coop.fix tribe.guest_powers off` (the guest's press stays on its mirror: no host line, no power),
+  `tribe.guest_orders off` (fishing, meat, eggs, bundles, food raids, repairs, taming, loose fruit dropped, no log),
+  `tribe.guest_chief off` (no chief aura for a partner's members).
