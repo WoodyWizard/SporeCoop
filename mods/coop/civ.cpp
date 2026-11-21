@@ -3836,6 +3836,51 @@ static void SK_THISCALL h_CityLaunch(void* city, int type, const float* target)
     H->log(M, SK_INFO, "civ: %s (BUG-9313)", b);
 }
 
+// BUG-9317 (owner decision 7T A, 2026-11-21): with 7P A a party nation's global superweapon spares the party's cities,
+// but its price still counted them. Simulator::cCivilization::GetSuperweaponCost 0xBF6DF0 (thiscall float(civ, type)):
+// types 2 / 5 / 8 cost 12000 x max(1, every city of the planet minus this civ's own). It is the one price the game
+// uses: CanUse's affordable check 0xBF7870, FireSuperweapon's charge (+0x98 -= cost, after the launch) and the
+// superweapon tooltip 0xE05DC0 (the HUD's price). On (host and guests): for types 2 and 8 of a party founder nation, a
+// city of any party nation does not count: the price is the game's unit x max(1, the cities the weapon hits). Type 5
+// hits no city (#civ-global-sw-party): unchanged. `coop.fix civ.global_sw_party_price off`: the game's price.
+static bool g_sw_party_price = true;
+COOP_FIX("civ.global_sw_party_price", "BUG-9317", g_sw_party_price,
+         "civ: a party nation's global superweapon (types 2, 8) costs only the cities it hits, as decision 7T A");
+using SwCost_t = float(SK_THISCALL*)(void*, int);
+static SwCost_t o_SwCost;
+static uint32_t g_sw_price_changed;
+static std::string g_sw_price_last;
+static std::map<uint64_t, float> g_sw_price_seen, g_sw_price_seen_game;
+static float SK_THISCALL h_SwCost(void* civ, int type)
+{
+    const float game_price = o_SwCost(civ, type);
+    if ((type != 2 && type != 8) || !g_sw_party_price || !civ || !g_ok || !active() || !party_nation(pol_of(civ)))
+        return game_price;
+    const uint32_t own = pol_of(civ);
+    const auto cities = all_cities();
+    const int own_n = (int)(vec_of((uint8_t*)civ + 0x9C).size());
+    int hit = 0;
+    for (void* c : cities) {
+        const uint32_t p = pol_of(c);
+        if (p != own && !party_nation(p)) ++hit;
+    }
+    const int game_n = std::max(1, (int)cities.size() - own_n);
+    const float unit = game_price / (float)game_n; // 12000 in the game's data (0x14693E4)
+    const float price = unit * (float)std::max(1, hit);
+    float& seen = g_sw_price_seen[(uint64_t)own << 8 | (uint32_t)type]; // one line per nation and type when it changes
+    if (price != game_price && (seen != price || g_sw_price_seen_game[(uint64_t)own << 8 | (uint32_t)type] != game_price)) {
+        char b[200];
+        snprintf(b, sizeof b, "nation %08X type %d: %.0f for %d hit cities (the game's %.0f for %d)", own, type,
+                 (double)price, hit, (double)game_price, game_n);
+        g_sw_price_last = b;
+        ++g_sw_price_changed;
+        H->log(M, SK_INFO, "civ: global superweapon price, %s (BUG-9317)", b);
+    }
+    seen = price;
+    g_sw_price_seen_game[(uint64_t)own << 8 | (uint32_t)type] = game_price;
+    return price;
+}
+
 // guest (BUG-9312): the host's launch, shown with this game's copy of the nation's tool (no damage: sw_show_cosmetic)
 static void guest_sw_show(net::Reader& r)
 {
@@ -4249,6 +4294,7 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {"Simulator::cCivilization::FireSuperweapon", (void*)h_FireSW, (void**)&o_FireSW},
         {"Simulator::cCity::LaunchSuperweapon", (void*)h_CityLaunch, (void**)&o_CityLaunch}, // BUG-9313, BUG-9312
         {"Simulator::cRelationshipManager::ApplyRelationship", (void*)h_ApplyRel, (void**)&o_ApplyRel}, // BUG-9313
+        {"Simulator::cCivilization::GetSuperweaponCost", (void*)h_SwCost, (void**)&o_SwCost}, // BUG-9317
     };
     for (auto& o : opts)
         if (uintptr_t a = H->sym(o.name))
@@ -9220,6 +9266,11 @@ std::string debug(const std::vector<std::string>& a)
                 snprintf(l, sizeof l, "\nnation seat %u %p money=%.0f unlocked=%s can=%s global_used=%d", (unsigned)seat, n,
                          (double)F<float>(n, 0x98), unl.c_str(), can.c_str(), (int)F<uint8_t>(n, 0x4CC));
                 out += l;
+                if (uintptr_t cost = H->sym("Simulator::cCivilization::GetSuperweaponCost")) { // BUG-9317: the game's price
+                    snprintf(l, sizeof l, " price2=%.0f price8=%.0f", (double)thiscall<float>(cost, n, 2),
+                             (double)thiscall<float>(cost, n, 8));
+                    out += l;
+                }
                 const cards::Own own = seat ? cards::of_identity(g_founder_nations.entries[seat].player) : cards::Own{};
                 snprintf(l, sizeof l, " cards=%s", !seat ? "the host's own" : (own.mask & 7) ? cards::line(own).c_str() : "shared (no record)");
                 out += l;
@@ -9230,6 +9281,8 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "\nglobal_sw_spares_party fix=%d launches=%u spared_cities=%u spared_relations=%u last: ",
                  (int)g_sw_spare_party, g_global_sw_launches, g_global_sw_spared_cities, g_global_sw_spared_relations);
         out += b + g_global_sw_last;
+        snprintf(b, sizeof b, "\nglobal_sw_party_price fix=%d changed=%u last: ", (int)g_sw_party_price, g_sw_price_changed);
+        out += b + g_sw_price_last;
         snprintf(b, sizeof b, "\nsw_show fix=%d sent=%u in=%u fired=%u missed=%u dropped=%u last: ", (int)g_sw_show_fix,
                  g_sw_shows_sent, g_sw_shows_in, g_sw_shows_fired, g_sw_shows_missed, g_sw_show_dropped);
         return out + b + g_sw_show_last;
