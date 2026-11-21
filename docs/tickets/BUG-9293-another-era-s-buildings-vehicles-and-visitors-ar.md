@@ -10,7 +10,7 @@ role: any
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: 4dd70c23
 tests: in game: TITAN QA runs (coop.visit walk / onstretch / status: avatar in each prop's frame)
 signature:
 docs: docs/12-server-and-players.md#server-era-visitors-solid

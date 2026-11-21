@@ -10,7 +10,7 @@ role: host
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: 4dd70c23
 tests: in game through tools/qa_win/qa.py (QA 7 entering Abber (Tribe) while QA 8 hosts Abber (Civ))
 signature: Editors::cEditor::HandleMessage+0x11E; CastTo_cEditorResource_+0x351 (in baked_or_ask)
 docs: docs/re/creations.md#creations-bake-in-tribe

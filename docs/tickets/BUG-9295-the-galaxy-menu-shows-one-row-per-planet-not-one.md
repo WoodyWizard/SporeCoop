@@ -10,7 +10,7 @@ role: any
 versions: 
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: 4dd70c23
 tests: in game through tools/qa_win/qa.py (QA 7 on the galaxy menu: coop.gmenu, screenshots)
 signature:
 docs: docs/12-server-and-players.md#server-era-visitors-solid
