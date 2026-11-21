@@ -403,3 +403,14 @@ BUG-9327, BUG-9324, BUG-9325 (the party rings, BUG-9321). TITAN QA copy (Steam c
 * ? The game's own selection marker (the soft glow under a selected Civ vehicle, the owner's lead) was not analysed: the
   draw-before-the-clear path was enough. It is drawn in the world pass (it is hidden by the vehicle), so a game-side
   marker renderer would be another way.
+* CORRECTION (2026-11-21, fix/l47-final-rings, later the same day): "✔ Space at the overlay pass ... the ship in front
+  hid its ring" above is not proven: the owner pointed out that the system-view pair (old overlay path) shows the ring
+  over the hull in both halves, and on a planet Space has the depth clear before its UI (rings drawn there: `before the
+  UI: frames=` grew), so the overlay's planet shots were compared at different ship positions. What holds: on a planet
+  with the draw before the clear the ship covers its ring (space_final_build_off_then_4_on.png). Seen but not yet
+  checked by picture: in the system view the same counter also grew (98 frames with the rings drawn at the clear while
+  both ships were in the system), so the system view probably has the same clear. To check: `coop.rings trace 2` in the
+  system view and the galaxy view.
+* BUG-9325 fallback (space.ring_cut): a Space frame whose rings are drawn at the overlay (no such clear that frame)
+  cuts geometrically: each ring vertex whose line to the camera passes through the ship's sphere (0.75 x the ring's
+  radius round its centre; the camera from the view matrix, -t R^T) is made clear. `coop.rings` cut_vertices=.

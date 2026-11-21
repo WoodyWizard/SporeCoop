@@ -1,7 +1,7 @@
 ---
 id: BUG-9325
 title: Space: close up, the party ring cuts through the partner's ship
-status: fixed
+status: open
 kind: bug
 stage: Space
 reported: 2026-11-21
@@ -40,6 +40,17 @@ the grown ring, 67-dev). `coop.rings sink <cell> <space>` still sets a value for
   (bug9325_system_view_FAIL_off_vs_PASS_on_crop.png: both attached, on lies just under the ship).
 - no-fail-run: not a lab run (TITAN QA games by hand).
 
+- REOPENED (2026-11-21, the owner on the system-view pair: "Your before and after of the ship one shows the same
+  overlay issue"): right, the system-view crop shows the ring over the hull in both halves; it was taken with the old
+  overlay path, which has no usable depth in Space, so the "on" half proves nothing for the system view. The close-up
+  planet pair stands only for the placement under the hull; the hull covering its ring on a planet is proven with
+  BUG-9327's draw before the depth clear (space_final_build_off_then_4_on.png).
+- Prepared, not run yet (TITAN busy): `coop.rings trace 2` in the system and galaxy views to see whether the rings are
+  drawn at the depth clear there (the counter suggests so), then a system-view crop with the hull covering the back of
+  the ring, `coop.fix all.ring_before_ui off` for comparison. Fallback coded: `space.ring_cut` (a frame drawn at the
+  overlay in Space cuts the part of the ring behind the ship's sphere by geometry).
+
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fixed on fix/l47-final-rings (30549e5b), FAIL / PASS live.
+- 2026-11-21: reopened for the system view (the owner); space.ring_cut fallback coded, not run live yet.
