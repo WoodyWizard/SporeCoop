@@ -150,7 +150,7 @@ def main():
     ck(wait(lambda: 'records=1' in c(h, 'coop.start'), 30), 'the host recorded the guest\'s start choice')
     party = c(h, 'coop.party').splitlines()[0]
     m = re.search(r'errors=(\d+)', party)
-    ck(m and m[1] == '0', f'BUG-9281: no party errors on the new game ({party})')
+    ck(m and m[1] == '0', f'BUG-9281: no party errors on the new game ({party})')  # counter: the bug is this count
     # 2. both bars full, the host's check starts the vote, both in Creature
     time.sleep(10)
     cell_caption(g)
