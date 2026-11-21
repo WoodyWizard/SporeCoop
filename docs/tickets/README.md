@@ -1409,3 +1409,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9322](BUG-9322-ui-the-co-op-notices-are-drawn-over-the-spore-gu.md) | open | bug | all | 2026-11-21 |  | UI: the co-op notices are drawn over the Spore Guide window |
 | [BUG-9323](BUG-9323-civ-this-player-s-own-name-tags-show-the-noshare.md) | open | bug | Civ | 2026-11-21 |  | Civ: this player's own name tags show the -NoShare- test tag |
 | [BUG-9326](BUG-9326-tribe-host-a-partner-s-tame-order-citizenaction.md) | open | crash | Tribe | 2026-11-21 |  | Tribe (host): a partner's tame order (CitizenAction 25) crashes the host: a partner village has no animal pen |
+| [BUG-9328](BUG-9328-creature-the-visiting-ufo-is-a-different-ship-mo.md) | fixed | desync | Creature | 2026-11-21 | unreleased | Creature: the visiting UFO is a different ship model in each game (a guest picks its own, even a test ship of its Lineages Cache) |
+| [BUG-9329](BUG-9329-lineages-cache-test-creations-of-qa-profiles-are.md) | fixed | feature | all | 2026-11-21 | unreleased | Lineages Cache: test creations of QA profiles are purged and banned (ban list shipped with the mod) |
+| [BUG-9330](BUG-9330-creature-a-guest-shows-two-ufos-for-one-visit-of.md) | open | desync | Creature | 2026-11-21 |  | Creature: a guest shows two UFOs for one visit of the host (its own relayed event's ship and the mirror of the host's) |

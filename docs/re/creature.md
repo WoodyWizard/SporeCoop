@@ -5518,3 +5518,33 @@ from the running game (tools/qa_win/dis.py).
 * Fix `social.partner_relation`: the relation is read outside the party (the party shares the host's table); only a
   relation-6 NPC asks the party context for its goal (the partner's pack: membership and room). The host's engage /
   act checks use the partner's goal (an ally the host's full pack would refuse is still the partner's).
+
+## The visiting UFO's ship model (2026-11-21, fix/l47-ship-purge)
+<a id="creature-ufo-ship-model"></a>
+
+BUG-9328. GOG 2024, Ghidra (the Steam image dumped on TITAN, docs/05-re-notes.md#re-notes-ghidra-windows); runtime on
+TITAN's QA copy. Follows #creature-ufo-abduction-event and #creature-ufo-mirror.
+
+* ✔ The event's start (0xD4F8A0) rolls `RandomFloat() > prop 0x51BE5FAE` ("empire ship" chance) with the game's random
+  numbers, then `UFOAbductionEvent_SpawnUFO(pos, height, empire)`:
+  * empire: the star manager's empire (0xBA9500: its map at +0x150 by the id at +0x1D8), its ship key (0xC32810:
+    cEmpire +0xB8; when zero and the empire is the Grox (political id == the star manager's 0x885D80), the Grox ship
+    {prop 0x02AE0C7E!0x280852F1 int 0x04EA8A07, 0x476A98C7, 0x40656200}, else 0x102F670 picks one), its political id;
+  * not empire: `SporeCoop::UFOAbductionEvent_PickShip` 0x102C800 (cdecl(Key* out, bool)): one random ship of this
+    game's Sporepedia (OTDB_FindObjects with max 1), Lineages Cache imports included; political id -1.
+  * Both end in `Simulator::SpawnUFO(7, political, key)` (cdecl, plain ret), which stores the model key at cGameDataUFO
+    +0x780..+0x788 (0xC372E0; getter 0xC37390, +0x78C a flag).
+* ✔ (runtime) Each game picks by itself: in four runs of the QA host's first visit after a fresh start the host took
+  FB220279, 2926CA3F, 2926CA3F, 2926CA3D, the guest's own picks were other ships every time (0680E860 and 59FDDB0A,
+  29215407, 2921540A and 29215408). The pick prefers templates used least lately (#creations-ban-list).
+* ✔ (runtime) A Lineages Cache creation is imported under another key in each game: the same test ship was 2926CA3F in
+  the host's game and 29215407 in the guest's. A key alone does not name a shared creation; its cache hash does.
+* ✔ (runtime) The game's default UFO {9D5DB21A, 0x476A98C7, 0x40656200} (UfoGfx_InitFromUfo's model for a zero key) is
+  not in a Creature game's resources on Steam: a ship spawned with the zero key had no model (game.ufo_model and
+  game.ufo_gfx kept it from faulting) and was invisible. The Grox ship key (06576DBD on Steam) is there.
+* ✔ (runtime) On a guest a visit shows two ships: the guest's own start of the relayed event (BUG-9131) over its avatar and
+  the mirror of the host's ship (BUG-0558, creature.ufo_mirror); both come from the event's spawn function.
+* Fix `creature.same_ship` (drama.cpp): the host relays the UFO after its own start with the spawned key and the Lineages
+  Cache hash of that creation; on a guest every ship of the event's spawn function takes the host's ship (by the hash
+  for a cached creation, by the key otherwise) when the guest has it, else the Grox ship. `coop.drama ship` shows the
+  keys and the model of every live ship.

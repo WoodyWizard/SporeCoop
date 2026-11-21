@@ -12,6 +12,8 @@ cp "$ROOT/build/sporekit.dll" "$STAGE/SporeCoop/sporekit.dll"
 cp "$ROOT/build/coop.dll" "$STAGE/SporeCoop/mods/coop.dll"
 cp "$ROOT"/data/symbols/*.sym "$STAGE/SporeCoop/mods/sporekit/symbols/"
 cp "$ROOT"/data/config/*.ini "$STAGE/SporeCoop/mods/"
+mkdir -p "$STAGE/SporeCoop/mods/lineages"  # BUG-9329: the ban list of test creations
+cp "$ROOT"/data/lineages/*.txt "$STAGE/SporeCoop/mods/lineages/"
 cp "$ROOT/build/SporeCoop.package" "$STAGE/SporeCoop/SporeCoop.package"  # menu icon (Spore loads Data\*.package)
 
 # install.bat / uninstall.bat (installer/): install.bat keeps the player's .ini files (BUG-0080)

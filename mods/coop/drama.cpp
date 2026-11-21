@@ -8,14 +8,17 @@
 // `coop.fix creature.guest_events off`: a guest starts every event as before (0.7.4).
 #include "drama.h"
 #include "call_guard.h"
+#include "creations.h"
 #include "lifecycle.h"
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include "fixes.h"
 #include "game.h"
 #include "guest_pack.h"
+#include "library.h"
 #include "modes.h"
 #include "sporekit_game.hpp"
 
@@ -61,6 +64,98 @@ WORLD_STATE("drama.last_events", nullptr, [] {
 });
 
 static bool is_guest() { return S && S->role() == net::Role::Client && S->connected(); }
+
+// BUG-9328: the UFO visit's ship model. The event's start (0xD4F8A0) rolls "empire ship" (prop 0x51BE5FAE) with the
+// game's random numbers: an empire's ship (cEmpire +0xB8, the Grox one when it has none) or a random ship of this game's
+// Sporepedia (0x102C800: an object template DB query for ships, one random result), then Simulator::SpawnUFO(7,
+// political id, model key). A guest that starts the host's visit (BUG-9131) rolled and picked in its own game: another
+// ship, also one of its Lineages Cache (the owner saw a Grox ship, the partner a test ship). Now the host's spawn key
+// goes with the relay (MSG_DRAMA: u8 kind, then for the UFO 12 bytes of key and str8 the Lineages Cache hash of that
+// creation, "" for none), and on a guest every ship the event's spawn function makes (the relayed visit's and the mirror
+// of BUG-0558) takes that ship: a Lineages Cache creation by its hash (each game imports it under its own key: the
+// host's 2926CA3F was the guest's 29215407, runtime 2026-11-21), any other by its key, when this game has it,
+// else the game's own Grox ship (the key the empire branch gives the Grox, 0xC32810: prop 0x2AE0C7E!0x280852F1, int
+// 0x4EA8A07, type 0x476A98C7, group 0x40656200): never a random ship of the guest's own. (Not the zero key: the game's
+// default UFO 9D5DB21A it stands for is not in a Creature game's resources, runtime 2026-11-21: the ship had no model and
+// was invisible.) `coop.fix creature.same_ship off`: the guest's own pick (0.7.14.1-lineages57-dev).
+static bool g_same_ship_fix = true;
+COOP_FIX("creature.same_ship", "BUG-9328", g_same_ship_fix,
+         "creature: the visiting UFO is the host's ship model on every guest (the Grox ship when a guest lacks it)");
+static bool g_in_event_spawn = false;  // inside UFOAbductionEvent_SpawnUFO now
+static uint32_t g_spawn_key[3];        // the model key of the last ship that function made here (after our choice)
+static bool g_spawn_key_new = false;   // set by a spawn during the host's event start (sent with the relay)
+static uint32_t g_host_key[3];         // guest: the host's last visit ship key
+static bool g_host_key_known = false;
+static std::string g_host_hash;        // guest: the host's ship's Lineages Cache hash ("" when it is not a cached one)
+static unsigned g_ship_same, g_ship_default, g_ship_spawns;
+constexpr uint32_t kUfoModelType = 0x476A98C7, kUfoGroup = 0x40656200;
+
+// the Grox ship's model key as the game reads it for the Grox empire (0xC32810); zeros when the prop is missing
+static void grox_ship_key(uint32_t out[3])
+{
+    out[0] = out[1] = out[2] = 0;
+    static uintptr_t get_pm = H->sym("App::IPropManager::Get"), get_int = H->sym("App::Property::GetInt32");
+    void* pm = get_pm ? skg::cdecl_call<void*>(get_pm) : nullptr;
+    void* list = nullptr;
+    if (!pm || !get_int || !skg::vcall<bool>(pm, 0x2C / 4, 0x280852F1u, 0x02AE0C7Eu, &list) || !list)
+        return;
+    int32_t inst = 0;
+    if (skg::cdecl_call<bool>(get_int, list, 0x04EA8A07u, &inst) && inst)
+        out[0] = (uint32_t)inst, out[1] = kUfoModelType, out[2] = kUfoGroup;
+    skg::vcall<int>(list, 0x04 / 4);
+}
+
+using EventSpawn_t = void*(SK_STDCALL*)(const void*, float, bool);
+static EventSpawn_t o_EventSpawn;
+static void* SK_STDCALL h_EventSpawn(const void* pos, float height, bool empire)
+{
+    const bool was = g_in_event_spawn;
+    g_in_event_spawn = true;
+    void* u = o_EventSpawn(pos, height, empire);
+    g_in_event_spawn = was;
+    return u;
+}
+
+using SpawnUfo_t = void*(SK_CDECL*)(int, const int*, const uint32_t*);
+static SpawnUfo_t o_SpawnUfo;
+static void* SK_CDECL h_SpawnUfo(int type, const int* political, const uint32_t* model)
+{
+    if (!g_in_event_spawn || type != 7)
+        return o_SpawnUfo(type, political, model);
+    uint32_t k[3] = {0, 0, 0};
+    if (model && skg::readable(model, 12))
+        k[0] = model[0], k[1] = model[1], k[2] = model[2];
+    if (g_same_ship_fix && is_guest() && game::mode_id() == modes::kCreature) {
+        creations::Key hk;
+        hk.instance = g_host_key[0];
+        hk.type = g_host_key[1] ? g_host_key[1] : kUfoModelType;
+        hk.group = g_host_key[2];
+        bool have = false;
+        if (!g_host_hash.empty()) { // a cached creation: this game's own key of it (never the host's number)
+            dbpf::Key mine{};
+            if (library::key_of(g_host_hash, mine)) {
+                hk.instance = mine.instance, hk.group = mine.group;
+                have = creations::key_known(hk);
+            }
+        } else
+            have = g_host_key_known && (g_host_key[0] || g_host_key[2]) && creations::key_known(hk);
+        const uint32_t own[3] = {k[0], k[1], k[2]};
+        if (have) {
+            k[0] = hk.instance, k[1] = hk.type, k[2] = hk.group;
+            g_ship_same++;
+        } else {
+            grox_ship_key(k); // the game's own (Maxis) ship
+            g_ship_default++;
+        }
+        H->log(M, SK_INFO, "drama: the visit's ship here is %s %08X/%08X/%08X (this game picked %08X/%08X/%08X; "
+               "creature.same_ship, BUG-9328)", have ? "the host's" : g_host_key_known ? "the Grox ship (the host's "
+               "is not in this game)" : "the Grox ship (no host ship known yet)", k[0], k[1], k[2], own[0], own[1], own[2]);
+    }
+    memcpy(g_spawn_key, k, sizeof k);
+    g_spawn_key_new = true;
+    g_ship_spawns++;
+    return o_SpawnUfo(type, political, k); // (a copy: the empire branch passes its empire's own key field)
+}
 
 // BUG-0736 (class BUG-0418): a guest's Summon Flock (ability 0x33 -> DramaManager_StartKind(8), cSummonCreatureEvent
 // start 0xD50EA0: a herd of the event's species 70 m from the avatar, its members into the local pack, then made to
@@ -155,8 +250,11 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
     unsigned kind = ev ? *(const unsigned*)((const uint8_t*)ev + 0x14) : 99;
     if (kind < 9)
         g_last_event[kind] = ev;
-    if (g_shared_fix && kind < 9 && (kRelay >> kind & 1) && S && S->role() == net::Role::Host && S->connected() &&
-        game::mode_id() == modes::kCreature) { // BUG-9131: the guests start it too
+    const bool relay = g_shared_fix && kind < 9 && (kRelay >> kind & 1) && S && S->role() == net::Role::Host &&
+                       S->connected() && game::mode_id() == modes::kCreature; // BUG-9131: the guests start it too
+    // BUG-9328: the UFO's relay goes after the host's own start, with the ship key the start spawned
+    const bool relay_after = relay && kind == 2 && g_same_ship_fix;
+    if (relay && !relay_after) {
         net::Writer w;
         w.u8((uint8_t)kind);
         S->broadcast_reliable(net::MSG_DRAMA, w);
@@ -190,7 +288,20 @@ static void SK_THISCALL h_Start(void* mgr, void* ev, int arg)
         g_started[kind]++;
         H->log(M, SK_INFO, "drama: %s event starts (%s)", kKind[kind], is_guest() ? "guest" : "host or alone");
     }
+    g_spawn_key_new = false;
     o_Start(mgr, ev, arg);
+    if (relay_after) {
+        net::Writer w;
+        w.u8((uint8_t)kind);
+        if (g_spawn_key_new) { // (none when the start made no ship: the guests take the Grox one)
+            w.u32(g_spawn_key[0]), w.u32(g_spawn_key[1]), w.u32(g_spawn_key[2]);
+            w.str8(library::hash_of(g_spawn_key[0], g_spawn_key[2]));
+        }
+        S->broadcast_reliable(net::MSG_DRAMA, w);
+        g_relayed_tx[kind]++;
+        H->log(M, SK_INFO, "drama: the UFO visit goes to the guests with its ship %08X/%08X/%08X (BUG-9328)",
+               g_spawn_key_new ? g_spawn_key[0] : 0, g_spawn_key_new ? g_spawn_key[1] : 0, g_spawn_key_new ? g_spawn_key[2] : 0);
+    }
 }
 
 static uintptr_t a_Get, a_StartKind;
@@ -306,6 +417,13 @@ void init(const SkHost* host, SkMod* mod, net::Session* sess)
         H->hook_create(M, (void*)a, (void*)h_Start, (void**)&o_Start);
     else // BUG-1059: the message named the wrong symbol
         H->log(M, SK_WARN, "drama: SporeCoop::DramaManager_StartEvent missing: a guest's own world events are not held back");
+    // BUG-9328: the visit's ship model (the event's spawn function and the spawn inside it)
+    uintptr_t es = H->sym("SporeCoop::UFOAbductionEvent_SpawnUFO"), su = H->sym("Simulator::SpawnUFO");
+    if (es && su) {
+        H->hook_create(M, (void*)es, (void*)h_EventSpawn, (void**)&o_EventSpawn);
+        H->hook_create(M, (void*)su, (void*)h_SpawnUfo, (void**)&o_SpawnUfo);
+    } else
+        H->log(M, SK_WARN, "drama: UFOAbductionEvent_SpawnUFO / Simulator::SpawnUFO missing: a guest's visiting ship is its own pick");
     if (uintptr_t u = H->sym("SporeCoop::SummonEvent_Update"))
         H->hook_create(M, (void*)u, (void*)h_SummonUpdate, (void**)&o_SummonUpdate);
     else
@@ -433,6 +551,17 @@ void on_message(uint8_t from, net::Reader& r)
     if (!r.ok() || from != 0 || !is_guest() || kind > 8 || !(kRelay >> kind & 1) || !g_shared_fix ||
         game::mode_id() != modes::kCreature)
         return;
+    if (kind == 2) { // BUG-9328: this visit's ship only (an older host sends none)
+        g_host_key_known = false;
+        g_host_hash.clear();
+    }
+    if (kind == 2 && r.left() >= 12) {
+        g_host_key[0] = r.u32(), g_host_key[1] = r.u32(), g_host_key[2] = r.u32();
+        g_host_key_known = r.ok();
+        g_host_hash = r.ok() && r.left() ? r.str8() : std::string();
+        if (!r.ok() || (!g_host_hash.empty() && g_host_hash.size() != 64))
+            g_host_hash.clear();
+    }
     void* mgr = a_Get ? skg::cdecl_call<void*>(a_Get) : nullptr;
     if (!mgr || !a_StartKind)
         return;
@@ -483,6 +612,35 @@ std::string debug(const std::vector<std::string>& a)
                      ok ? game::health(c) : -1.f);
             out += b;
         }
+        return out;
+    }
+    if (a.size() >= 1 && a[0] == "ship") {
+        // BUG-9328 (tests): the ship keys of the visit, and the model key of every live UFO (cGameDataUFO +0x780)
+        snprintf(b, sizeof b, "ship fix=%d last_spawn=%08X/%08X/%08X host=%08X/%08X/%08X known=%d same=%u default=%u spawns=%u\n",
+                 (int)g_same_ship_fix, g_spawn_key[0], g_spawn_key[1], g_spawn_key[2], g_host_key[0], g_host_key[1],
+                 g_host_key[2], (int)g_host_key_known, g_ship_same, g_ship_default, g_ship_spawns);
+        out += b;
+        uint32_t g[3];
+        grox_ship_key(g);
+        creations::Key gk;
+        gk.instance = g[0], gk.type = g[1], gk.group = g[2];
+        out += "  host hash " + (g_host_hash.empty() ? std::string("none") : g_host_hash) + "\n";
+        snprintf(b, sizeof b, "  grox ship %08X/%08X/%08X in this game=%d\n", g[0], g[1], g[2], (int)(g[0] && creations::key_known(gk)));
+        out += b;
+        game::for_each_object(
+            [](void* o, uint32_t noun, void* p) {
+                void* u = noun == 0x018EBADCu && game::object_alive(o) ? game::cast(o, 0xB033B403u) : nullptr;
+                if (u && skg::readable((uint8_t*)u + 0x780, 12)) {
+                    const uint32_t* k = (const uint32_t*)((uint8_t*)u + 0x780);
+                    net::Vec3 v{};
+                    game::object_position(o, v);
+                    char t[128];
+                    snprintf(t, sizeof t, "  ufo %p model=%08X/%08X/%08X pos=(%.1f %.1f %.1f)\n", o, k[0], k[1], k[2], v.x, v.y, v.z);
+                    *(std::string*)p += t;
+                }
+                return true;
+            },
+            &out);
         return out;
     }
     if (a.size() >= 1 && a[0] == "target") {

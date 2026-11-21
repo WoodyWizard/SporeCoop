@@ -21,4 +21,9 @@ struct CacheCell {
 };
 std::vector<CacheCell> pool_cells(); // BUG-9111: cells the host may use as Cell NPC species
 void set_foreign_creations(bool on);
+// BUG-9328: a Lineages Cache creation is imported under another key in each game; its PNG hash names it everywhere.
+// hash_of: the cache hash of this game's creation with that instance and group ("" when it is not a cached one);
+// key_of: this game's key of the cached creation with that hash (false when it is not here, failed or banned)
+std::string hash_of(uint32_t instance, uint32_t group);
+bool key_of(const std::string &hash, dbpf::Key &out);
 } // namespace library
