@@ -93,7 +93,7 @@ static bool alive_member(void* c) { return game::health(c) > 0 && !F<uint8_t>(c,
 static bool intact(void* t)
 {
     void* hut = t && skg::readable((uint8_t*)t + 0x368, 4) ? F<void*>(t, 0x368) : nullptr;
-    return t && !F<uint8_t>(t, 0x556) && hut && game::object_alive(hut) && skg::readable((uint8_t*)hut + 0x230, 4) &&
+    return t && !F<uint8_t>(t, 0x556) && hut && game::listed(hut) && skg::readable((uint8_t*)hut + 0x230, 4) &&
            F<float>(hut, 0x158) > 0 && F<void*>(hut, 0x230) == t && F<uint32_t>(hut, 0x30) == F<uint32_t>(t, 0x30);
 }
 
@@ -220,7 +220,7 @@ static std::string wins_line()
     for (int s = 0; s < (int)kMaxSeats; ++s) {
         void* v = seat_village(s);
         void* totem = v ? F<void*>(v, 0x19D0) : nullptr;
-        if (totem && game::object_alive(totem) && skg::readable((uint8_t*)totem + 0x11C, 0x1C)) {
+        if (totem && game::listed(totem) && skg::readable((uint8_t*)totem + 0x11C, 0x1C)) {
             char line[64];
             snprintf(line, sizeof line, "; seat %d totem %u piece(s)", s, (unsigned)((F<uintptr_t>(totem, 0x120) - F<uintptr_t>(totem, 0x11C)) / 4));
             out += line;
@@ -237,7 +237,7 @@ static int drop_totem_piece(size_t wins)
     for (int s = 0; s < (int)kMaxSeats; ++s) {
         void* v = seat_village(s);
         void* totem = v ? F<void*>(v, 0x19D0) : nullptr;
-        if (!totem || !game::object_alive(totem) || !skg::readable((uint8_t*)totem + 0x11C, 0x1C))
+        if (!totem || !game::listed(totem) || !skg::readable((uint8_t*)totem + 0x11C, 0x1C))
             continue;
         const uintptr_t kinds = F<uintptr_t>(totem, 0x11C), kinds_end = F<uintptr_t>(totem, 0x120);
         const uintptr_t colours = F<uintptr_t>(totem, 0x130), colours_end = F<uintptr_t>(totem, 0x134);
