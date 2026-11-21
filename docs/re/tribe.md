@@ -6050,3 +6050,32 @@ with the host at 10 fps (lane 2, `tribe_under_probe`, coop_tribe_under.py). Not 
   still tracks (`body_age=`); `coop.tribe layout` rows have the grab spot's `agl=`; the grab spot move logs `tribe:
   member #N stood .. s .. m short of its grab spot: set onto it at (...), .. m over the ground`. Test setup commands:
   `coop.tribe sink <id> <m> [air]`, `coop.tribe epic on <id> [dx]`.
+
+## A guest's member cards after the swap, the host's species on a guest, partner rings (2026-11-20, fix/l47-view)
+<a id="tribe-swap-cards"></a>
+
+BUG-9300, BUG-9301, BUG-9302. Code only on this branch: nothing here was run in a game yet. Follows
+#tribe-guest-own-player-village and #tribe-roster-cards.
+
+* ✔ (code) Nothing in the mod took a card off the roster on the BUG-9153 swap or restore: TribeStage_RemoveMemberCard
+  was called only by detach_body (BUG-0961). The roster's card count is TribeGameUI +0xA8 (as the roster test reads it).
+* ? How the game adds the new player tribe's cards after SetPlayerTribe (on the swap the MSI saw the own villagers'
+  cards on 2026-11-12) and whether it ever takes the old player's off: not known (no Ghidra or running game here).
+  `tribe.swap_cards` does not depend on it: a guest keeps cards only for native_player_tribe's members (more cards
+  than members: every other tribe's members lose theirs; on a restore the former player village's go).
+* ✔ (code) A guest's mirror is made by its local tribe's SpawnMember / CreateCitizen and wears that tribe's species
+  (slot +0x18CC); the snapshot has no species per member; the host's per-tribe species is in the TRBI table after each
+  state chunk's trailer (BUG-0381). The guest's food mirroring (guest_state) needs the local tribe's species to equal
+  the host's, so a wrong species also stops that village's food mirror (inferred from the code).
+* `tribe.mirror_species`: a guest gives a mapped tribe that differs from TRBI the host's species outside the frame:
+  cCreatureAnimal::SetSpecies(profile, age, true) on the members (as `coop.tribe setspecies`, BUG-0643) and
+  Tribe_SetSpeciesProfile on slot 0 and on slots that held a wrong species. ? Not checked: whether the live model swap
+  of a mirror via SetSpecies looks right at once (BUG-0643's test command did it on a guest), and the roster portraits
+  (they read the tribe's key at +0x1904 / +0x1920, not changed here; the guest's roster shows its own village anyway).
+  `coop.tribe species` lists each tribe's slot 0 and its members' species keys (host: its tribes in object order;
+  guest: by host tribe index).
+* Decision 7K A, `tribe.partner_ring`: the game's own target ring (TribeTargetRing_Draw, #tribe-target-ring) has fixed
+  effect colours, so the partner ring is the mod's: a circle on the planet's tangent plane at each partner member's
+  position, projected point by point with world_to_screen and drawn as a D3D9 XYZRHW band (partner_marker::
+  ground_rings) in color_of(owner), without depth (it covers the villager's feet when they stand in front of it).
+  `coop.status` `labels: ... partner_rings=N` counts the rings of the last frame.
