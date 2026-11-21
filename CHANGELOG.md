@@ -164,6 +164,9 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   there until it grew up (BUG-1345; still open until its lab run).
 - Tribe: on a guest's screen the host's chief no longer shows its staff in the resting grip for about a second while
   it swings it on the host's screen (BUG-1347; still open until its lab run).
+- Civilization: a player who joins while playing a Civilization world of their own keeps that world's money also when
+  their game is slow at the moment of joining; before, the host's money could replace it (BUG-1371; still open until
+  its lab run).
 ## [0.7.15.5] - 2026-11-19
 
 A fix for players who could not leave the Tribe stage: the City Hall editor at its end could not be named after a

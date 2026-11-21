@@ -14,6 +14,11 @@
 #include "fixes.h"
 #include "wire/shared_res.h"
 
+namespace coop_core {
+bool guest_elsewhere();   // coop.cpp (BUG-0231)
+bool guest_space_other(); // coop.cpp (BUG-0709)
+}
+
 namespace shared {
 
 static const SkHost* H;
@@ -163,6 +168,14 @@ COOP_FIX("res.join_keep", "BUG-0220", g_join_keep_fix, "shared: a guest's spend 
 // (SharedLedger::pause: the sync state waits, nothing is lost). Off: totals applied while elsewhere.
 static bool g_elsewhere_fix = true;
 COOP_FIX("res.elsewhere", "BUG-0231", g_elsewhere_fix, "shared: a guest in another world keeps its own money and food");
+// BUG-1371: the hold was the last tick's: a guest that joined from its own world got WELCOME and the host's first total in
+// one frame (the host sends it in the tick after the join; a slow or busy guest frame holds both) and took that total
+// before any tick knew it was elsewhere (its own world's money became the host's, civ_other_world). On: a host total
+// asks where this guest plays when it arrives. Off: the last tick's hold (0.7.15).
+static bool g_join_hold_fix = true;
+COOP_FIX("res.elsewhere_join", "BUG-1371", g_join_hold_fix,
+         "shared: a guest that joins from a world of its own keeps its money also when the host's first total comes with the join");
+static uint32_t g_join_held; // tests: totals held by the arrival check whose last tick had not held
 // BUG-0691: the host returned before the ack when its game could not read the resource (a load, the galaxy menu, no
 // player tribe / civilization): a guest's credit sent then was never counted and never acked (the guest showed it
 // in flight for good, the host never had it). On: the host always acks and keeps the change as owed, paid into its
@@ -441,6 +454,13 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
             return;
         }
         if (type == net::MSG_RES && s.role() == net::Role::Client) {
+            if (g_join_hold_fix && g_elsewhere_fix && !g_hold &&
+                (coop_core::guest_elsewhere() || coop_core::guest_space_other())) { // BUG-1371: elsewhere already
+                g_hold = true;
+                if (g_join_held++ < 4)
+                    H->log(M, SK_INFO, "shared %s: the host's total %.1f arrived before a tick knew this game plays another world: held (BUG-1371)",
+                           r.name, v);
+            }
             if (!r.led.take_total(g_hold)) {
                 g_held_totals++;
                 return; // BUG-0231: the guest plays another world
@@ -528,9 +548,9 @@ std::string status()
         double fl = 0;
         for (auto& e : r.led.in_flight)
             fl += e.v;
-        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u created=%u owed=%.1f/%u causes=%u\n",
-                 r.name, v, r.have, r.led.pending, fl, r.gained, r.spent, (int)r.led.held, g_held_totals, g_food_created,
-                 r.owed, g_owed_paid, g_causes_shown);
+        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u join_held=%u created=%u owed=%.1f/%u causes=%u\n",
+                 r.name, v, r.have, r.led.pending, fl, r.gained, r.spent, (int)r.led.held, g_held_totals, g_join_held,
+                 g_food_created, r.owed, g_owed_paid, g_causes_shown);
         out += b;
     }
     return out.empty() ? "no shared resources in this mode\n" : out;
