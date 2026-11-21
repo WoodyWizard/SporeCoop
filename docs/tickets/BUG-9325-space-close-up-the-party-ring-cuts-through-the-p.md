@@ -1,7 +1,7 @@
 ---
 id: BUG-9325
 title: Space: close up, the party ring cuts through the partner's ship
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-21
