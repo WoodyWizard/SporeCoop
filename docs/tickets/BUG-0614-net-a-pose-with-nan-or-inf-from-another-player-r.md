@@ -34,3 +34,4 @@ no-fail-run: the bad states did not reach a body without the guard either (FAIL 
 - 2026-11-06 (fix/w45-remote-bodies-2, M2): opened from BUG-0612; guard added (game.finite_pose); the lab showed the old code tolerating NaN on the player path (no visible bug); kept as a defence with its test.
 - 2026-11-07: released in 0.7.9.
 - 2026-11-10 (plan/w47-closed-fixed): fixed-ticket review: the raw velocity writes from NPC and Tribe snapshots (npc.cpp:1939, driver.h:348/418) are still unguarded; new ticket BUG-0894.
+- 2026-11-20 (fix/w61-creature-d): the suite.py claim "SPORE_FIX_OFF=game.finite_pose fails" was CONTRADICTED in fixcheck (only PASS runs with the switch off, as this ticket's no-fail-run says): the claim is corrected, BUG-1364.

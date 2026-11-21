@@ -1005,8 +1005,26 @@ static bool ufo_key_known(const uint32_t* key)
     return creations::key_known(k);
 }
 
+// BUG-1363 (tests, `coop.ufoplant <n>`): the next n ship models asked for get a key no game has, as a ship picked from a
+// Sporepedia cache that holds its summary but not its model (BUG-0546 / BUG-0686); the game's own pick of a ship is
+// random and the lab saw no such ship for 3 runs in a row. The key goes through the guard as the game's would (the
+// guard decides on it, the game's SetModel gets the guard's answer), so the case is the game's own null-model path
+static std::atomic<unsigned> g_ufo_plant{0}, g_ufo_planted{0};
+static const uint32_t kPlantedUfo[3] = {0x0BAD0546, kUfoModelType, 0x40656200};
+
 static void __fastcall ufo_set_model_guard(void* gfx, void*, const uint32_t* key, uint32_t bake)
 {
+    if (key && readable(key, 12) && (key[0] || key[2]) && g_ufo_plant.load() > 0) {
+        unsigned left = g_ufo_plant.load();
+        while (left && !g_ufo_plant.compare_exchange_weak(left, left - 1)) {
+        }
+        if (left) {
+            unsigned n = ++g_ufo_planted;
+            H->log(M, SK_INFO, "game fixes: tests: ship model %08X/%08X/%08X replaced by the planted unknown %08X (BUG-1363, %u)",
+                   key[0], key[1], key[2], kPlantedUfo[0], n);
+            key = kPlantedUfo;
+        }
+    }
     if (key && readable(key, 12) && (key[0] || key[2])) {
         if (ufo_key_known(key)) {
             memcpy(g_ufo_good, key, sizeof g_ufo_good);
@@ -1284,6 +1302,15 @@ static uint8_t __fastcall ufo_gfx_msg_guard(void* listener, void*, uint32_t id, 
         return 1;
     }
     return g_ufo_msg_orig(listener, id, data);
+}
+
+std::string ufo_plant(unsigned n)
+{
+    g_ufo_plant = n;
+    char b[128];
+    snprintf(b, sizeof b, "the next %u ship model(s) get the planted unknown key %08X/%08X/%08X (planted so far %u)\n", n,
+             kPlantedUfo[0], kPlantedUfo[1], kPlantedUfo[2], g_ufo_planted.load());
+    return b;
 }
 
 std::string ufo_forget()
@@ -2139,7 +2166,8 @@ std::string status()
            ", ship models defaulted " + std::to_string(g_ufo_defaulted.load()) + " (SetVisible without a model skipped " +
            std::to_string(g_ufo_invisible_skipped.load()) + "), ship gfx made without a model " +
            std::to_string(g_ufo_gfx_null.load()) + " (their messages skipped " + std::to_string(g_ufo_msg_skipped.load()) +
-           ")" + ", creature portraits that cannot load: the world's species " + std::to_string(g_portrait_species.load()) +
+           ")" + ", ship model keys planted " + std::to_string(g_ufo_planted.load()) + " (armed " +
+           std::to_string(g_ufo_plant.load()) + ")" + ", creature portraits that cannot load: the world's species " + std::to_string(g_portrait_species.load()) +
            ", skipped " + std::to_string(g_portrait_skipped.load()) + ", broken model effects dropped " +
            std::to_string(g_model_fx_dropped.load()) + " (tests: planted " + std::to_string(g_fxcut_planted) + ", dropped " + std::to_string(g_fxcut_done) + ")" +
            ", freed fruit taken out of the pool " + std::to_string(g_fruit_dropped.load()) +
