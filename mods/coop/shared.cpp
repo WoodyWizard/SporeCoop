@@ -13,6 +13,7 @@
 #include "sporekit_game.hpp"
 #include "fixes.h"
 #include "wire/shared_res.h"
+#include "tribe.h"
 
 namespace shared {
 
@@ -33,6 +34,8 @@ static void* noun_manager()
 // bundle +0x134. cGameNounManager::mpPlayerTribe is at +0x70.
 static void* player_tribe()
 {
+    if (void* h = tribe::swapped_host_tribe()) // BUG-9268
+        return h;
     void* nm = noun_manager();
     void* t = nm ? skg::field<void*>(nm, 0x70) : nullptr;
     return t && skg::readable(t, 0x230) ? t : nullptr;

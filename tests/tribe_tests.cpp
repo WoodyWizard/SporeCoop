@@ -133,14 +133,15 @@ static void anim_type()
     CHECK(type_for(true, rev2, true) == net::MSG_NPC_ANIM);    // another rev: refused anyway; never the new type
     CHECK(type_for(true, other, true) == net::MSG_NPC_ANIM);   // no tribe family in the list
     CHECK(type_for(true, new15, false) == net::MSG_NPC_ANIM);  // tribe.anim_msg off: 0.7.14's type for everyone
-    // the kinds: exactly npc.cpp's whitelist of 0.7.14 (2..12, 14, 15, 16, 20, 21); the NPC's own kinds 1 and 13 are not
+    // the kinds: exactly npc.cpp's whitelist of 0.7.14 (2..12, 14, 15, 16, 20, 21) and K_RESCUE 22 (BUG-9278); the NPC's own
+    // kinds 1 and 13 are not
     int n = 0;
     for (int k = 0; k < 256; k++) {
-        bool want = (k >= 2 && k <= 12) || k == 14 || k == 15 || k == 16 || k == 20 || k == 21;
+        bool want = (k >= 2 && k <= 12) || k == 14 || k == 15 || k == 16 || k == 20 || k == 21 || k == 22;
         CHECK(is_tribe_kind((uint8_t)k) == want);
         n += want;
     }
-    CHECK(n == 16);
+    CHECK(n == 17);
     // the kinds a guest takes outside Tribe: the party music's stop (BUG-0890), the game-over and pause waits
     for (int k = 0; k < 256; k++)
         CHECK(any_mode((uint8_t)k) == (k == K_PARTY_STOP || k == K_GAMEOVER || k == K_HOST_PAUSE));

@@ -95,6 +95,8 @@ void anim_send(uint8_t to, const net::Writer& w, bool reliable)
 
 void* player_tribe()
 {
+    if (void* h = swapped_host_tribe()) // BUG-9268: the guest's game shows its own village as the player's
+        return h;
     void* nm = game::noun_manager();
     return nm ? thiscall<void*>(a_GetPlayerTribe, nm) : nullptr;
 }
@@ -518,7 +520,13 @@ static int SK_CDECL h_BTTick(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,
                              uint32_t a7, uint32_t a8)
 {
     g_bt_calls++;
+    if (is_host())
+        villages_ai((void*)self); // BUG-9268: a partner's village's members are player members
     if (g_detached.count((void*)self)) { // BUG-0667: a detached body's tree stays ended
+        g_bt_skipped++;
+        return 0;
+    }
+    if (is_host() && rescue_downed((void*)self)) { // BUG-9278: a downed last villager does nothing until it is up
         g_bt_skipped++;
         return 0;
     }
@@ -1590,6 +1598,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
     savestrip::add_filter(save_filter); // BUG-0495
     savestrip::add_save_hooks(save_start, save_end);
     graduation_init(); // BUG-1325 (optional)
+    villages_init();   // BUG-9268 (optional hooks)
+    villages_init2();  // BUG-9268: the guest's own village as its player tribe (optional hooks)
     return true;
 }
 
@@ -1939,6 +1949,10 @@ void on_member_anims(uint8_t kind, net::Reader& r)
     }
     if (!g_ok || !is_guest() || game::mode_id() != modes::kTribe)
         return;
+    if (kind == wire::tribe_anim::K_RESCUE) { // BUG-9278: the downed last villagers
+        on_rescue_lines(r);
+        return;
+    }
     if (kind >= 4 && kind <= 6) { // BUG-0568: the theme music
         on_theme(kind, r);
         return;
@@ -2472,6 +2486,7 @@ static bool mat_of(void* o, void* t)
 }
 static void save_start()
 {
+    villages_save(true); // BUG-9268: a save keeps the host's village as the player tribe
     g_strip_now.clear();
     if (!is_guest() || game::mode_id() != modes::kTribe)
         return;
@@ -2532,6 +2547,7 @@ static void save_start()
 }
 static void save_end()
 {
+    villages_save(false); // BUG-9268
     for (auto& t : g_took_t) { // back at the end of the list (the capacity is the one they left)
         void**& e = F<void**>(t.t, t.off + 4);
         if (game::object_alive(t.t) && e < F<void**>(t.t, t.off + 8))
@@ -2727,13 +2743,17 @@ static bool pace_holds(double now)
             return true;
         },
         &tribes);
+    // BUG-9268: the players' own villages are no rivals (as the controller counts them, h_NounData) and their food is the
+    // party's too
+    int party_food = 0;
+    tribes -= partner_villages(&party_food);
     if (tribes != 2) // (1: the first neighbour after 25 s; 3 / 4 / 5: the game's rule, the threshold is passed)
         return false;
     int threshold = 100;
     void* props = a_Props ? *(void**)a_Props : nullptr;
     if (a_PropInt && props)
         threshold = skg::cdecl_call<int>(a_PropInt, props, 0x4C87E711u, 100);
-    int food = vcall<int>(pt, 0xA4 / 4);
+    int food = vcall<int>(pt, 0xA4 / 4) + party_food;
     g_pace_hold = food <= threshold * (int)players;
     char b[128];
     snprintf(b, sizeof b, "food %d, threshold %d x %u players: %s", food, threshold, (unsigned)players,
@@ -2776,6 +2796,7 @@ bool form_species_state(void* ctrl, FormSpecies& s)
     if (!skg::readable(list, 12))
         return false;
     s.tribes = (int)((F<uintptr_t>(list, 8) - F<uintptr_t>(list, 4)) / 4);
+    s.tribes -= (int)founder_villages_in(list); // BUG-9268: as FormTribe counts with tribe.founder_npc_budget
     void* props = *(void**)a_Props;
     int n = 0;
     void* data = nullptr;
@@ -3297,6 +3318,8 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
         void* pt = player_tribe();
         void* vt = F<void*>(victim, kOwnerTribeOff);
         void* ac = att && !IsBadReadPtr(att, 4) ? vcall<void*>(att, 0xC / 4) : nullptr;
+        if (rescue_downed(ac)) // BUG-9278: a downed last villager deals no blows
+            return 0;
         HEntry* ah = hm_of(ac);
         if (ac && !ah && is_epic_animal(ac)) {
             auto& b = g_epic_blows[ac];
@@ -3345,6 +3368,9 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
                 }
             }
         }
+        // BUG-9278: a player's last villager goes down instead (a partner may revive it), or a downed one takes no blow
+        if (rescue_protect(victim, dmg, pol))
+            return 0;
     }
     return o_CitizenTD(comb, dmg, pol, type, pos, att);
 }
@@ -4211,6 +4237,8 @@ void tick(double now)
     else if (is_guest()) {
         away_tree_end_tick(); // BUG-1084
         guest_tick(now);
+        villages_guest_tick(); // BUG-9268: its own village
+        rescue_guest_tick(now); // BUG-9278: its own downed last villager may give up
         held_items_tick(now); // BUG-0906
     }
     coop_tick(now);
@@ -4482,6 +4510,7 @@ std::string status()
     std::string out = b;
     // C1 / C4 (BUG-1140, BUG-1143): the tables and the snapshot receiver
     out += "tribe registry: " + g_host.members.status() + "; " + g_guest.mirrors.status() + "\n";
+    out += villages_status(); // BUG-9268
     snprintf(b, sizeof b, "tribe snapshot rx: chunks=%u bad=%u older=%u cut=%u incomplete=%u abandoned=%u complete=%u generation=%u\n",
              g_guest.snap.chunks_in, g_guest.snap.bad, g_guest.snap.older, g_guest.snap.cut, g_guest.snap.incomplete, g_guest.snap.abandoned,
              g_guest.snap.complete, g_guest.snap.generation);

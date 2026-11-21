@@ -4862,3 +4862,77 @@ lab lane 9 (`coop.wobj orns`, `coop.wobj ornmem`, `tools/tests/coop_ornament_mod
   mod's buffer: the test ends its games with a kill).
 * ? Not explained: "the guest sees bones the host does not have" (the same 12 ornaments are in both games of the
   fixture, from the save); the bone pile an eaten body may leave is still not looked at.
+
+## Every player's own nest: CreateHerd with a nest, members, the claim (2026-11-20, feat/lineages-nests)
+<a id="creature-own-nests"></a>
+
+BUG-9262 (the Lineages port, phase 4; architecture: [architecture-own-nests](../01-architecture.md#architecture-own-nests)).
+Runtime on Windows, Steam build (the GOG 2024 code), lane A, a new Creature game (Boheus, Maxis "Burpee") and a guest
+playing its own My Creations creature.
+* ✔ (runtime) `cGameNounManager::CreateHerd(pos, profile, 4, 0, 0, createNest 1)` makes a nest herd with its cNest
+  (herd +0x160 set, the nest on the ground at pos), target size +0xF4 = 4, but **no member**: +0x40/+0x44 both null,
+  archetype +0x88 = 0. Enabled by hand (`cHerd::SetEnabled(true)`), with the avatar herd's brain range (+0x120/+0x124)
+  and mRespawnRate +0x11C 2000, it still had 0 members after 3 minutes: cHerd::Update lays eggs only from a living
+  member ("How NPC nests get eggs" above), so an empty nest herd never fills itself. CORRECTION (2026-11-20,
+  feat/lineages-nests) of the Lineages assumption (PR #196 home_nests.cpp, "the game respawns members after its respawn
+  time"): it does not here. The port makes them: `cCreatureAnimal::Create(pos, profile, age 1, herd, 0, 0)` 3 m around
+  the nest, 4 members, then members 4 living 4 and the herd's own respawn 120000 again; they walk off like any family
+  and come back.
+* ✔ (runtime) The guest's game joins its copy of that nest herd with `CreatureGame_JoinNestHerd(nest)` (no cinematic)
+  once the host's world with the nest and its members has loaded there; before (an empty copy) it is skipped. After the
+  join the respawn after "You were killed in battle" + OK is at that nest (1 m from it; the guest died 60 m away at the
+  host's nest).
+* ✔ (runtime) wsync's nest row (BUG-0640) took such a guest for one that missed the host's migration: its home was not
+  the host's, `CreatureGame_NestHerdFor(1)` on the guest still gave the host's nest (the guest's world player species
+  stays the host's: Lineages' BUG-9177 "own player species" is not ported), and it set the migration property 1 and
+  emptied the brain range of the guest's own nest herd: the guest got the goal "Migrate to a new nest". Fix
+  `wsync.own_nest_stays`.
+* ✔ (runtime) After the guest left and the host's game was restarted cold, `LoadGameByName` of the planet registered
+  the archived creature first (`creations: archived creature 7CA81684 registered before the planet loads`) and the
+  saved seat nest came back with its 4 living members of that species, drawn with the guest's model on the host.
+* ~ The relation 6 the host writes for a party species (`social::set_party_ally`) reaches the guest through the
+  relation table (`social: species 7CA81684: relation 0 -> 6 ... from the host's table`).
+* ? Not looked at: the guest's own family members on the guest's game are copies (proxies) of the host's NPCs; the
+  host's family copies that were in the guest's herd before the join went along into the new herd on the guest's game
+  (`coop.nest herd` on the guest: 11 members, the host's family among them). Lineages' own_family_tick (BUG-9175 there)
+  moves the guest's own family copies into its nest; not ported.
+* ✔ (runtime, second round) With the game's player species following the creature played (`creature.own_player_species`,
+  Lineages BUG-9177) the guest got no migration goal, its nest copies of its own species were in its own nest herd
+  (`coop.npc list`: `herd=<home> fam=1`), and the HUD portrait (BUG-9269) showed its own creature.
+* ✔ (runtime) `CreatureGame_JoinNestHerd` on the guest carried the copies of the host's family (the avatar's old herd
+  mates) into the new nest herd's member list; Creature_SetHerd moved them out (their +0x1674) but the list kept them
+  (BUG-9270, not fixed).
+* ✔ (runtime) The Creature HUD portrait's drawable vtable is 0x01443248 at the preferred base; on a game loaded at
+  0x00320000 it is 0x01363248 (every address -0xE0000): now a symbol, `UTFWin::ImageDrawable::vftable` (BUG-9269).
+
+## A player's downed creature, its revive and the party wipe (2026-11-20, feat/lineages-rescue)
+<a id="creature-pack-rescue-downed"></a>
+
+BUG-9283, the Lineages port of its creature knockout (PR #196: BUG-9118, BUG-9146, BUG-9149, BUG-9226). Code:
+`mods/coop/creature_rescue.cpp`, rules `creature_rescue_logic.h` (tests/creature_rescue_tests.cpp), MSG_CREATURE_RESCUE 95.
+
+* ✔ (runtime, lane D 2026-11-20, Steam build on Windows) A lethal hit on a player's own creature through the damage
+  filter (teamplay::on_own_damage: the host's own hits, a guest's own hits and the host's MSG_DAMAGE on a guest) while a
+  partner plays in the same world leaves it at 1 health, stopped and held at the spot (teleported back when it moves more
+  than 0.4 m). Further hits are dropped. The guest's maximum health was 15; revived it had 6 (40 %).
+* ✔ (runtime) Revive: a standing partner within 6 m for 1.5 s. The host's creature put next to the downed guest revived it
+  within a second; the guest put next to the downed host revived the host (4 of 10).
+* ✔ (runtime) Timeout: the guest's game applies the game's own death (apply_damage 1e6) and the guest respawns at its own
+  nest (BUG-9262), 0 m from it, 60 m from the host's nest, after the caption "You were killed in battle!" (a modal
+  caption that pauses the game until OK; tests press Enter). The pack's DNA 100 -> 90 on the host, 90 on the guest's game
+  through the DNA totals. 60 s and 30 s (creature.down_60 off) both seen.
+* ✔ (runtime) Party wipe: both players down: the host's tick ended both windows about 2 s later, both died and respawned
+  at their own nests.
+* ✔ (runtime) The game takes no damage while a pausing caption is up: the brain upgrade caption (after `coop.dna add
+  100`, "Brain power! ...") and the death caption hold the game; `game::apply_damage(avatar, 1e6)` and `coop.team die`
+  left the creature at its health (1.0). creature_rescue now holds such a creature and tries the hit again every second
+  (kill_retries) until the game takes it, holding it still but not at 1 health: a first version set 1 health every
+  frame of the retry and the host's own creature never died after a party wipe (236 retries in 2 minutes): the game's
+  death of a lethal hit is not always at once, and the next frame's 1 health undid it.
+* ✔ (runtime) Right after a respawn the game ignores hits for a few seconds: a lethal hit of 55 left the respawned guest at
+  5.0 / 5.0 (with creature.rescue off). Tests wait about 10 s after a respawn before the next hit.
+* ✔ (runtime) The partner's view: the host's game draws "DOWN 55s: Bob" over the guest's creature and its off-screen arrow
+  reads "Bob (DOWN 58s) 27 m"; the downed player's own game draws a red line in the middle of the screen. Tags over the
+  own creature did not show on the guest's game (pfind's layout); the line replaces them there.
+* ~ Not ported (Lineages had them): the progress debt instead of the DNA loss (BUG-9119), the revive ring (BUG-9141), the
+  death pose (BUG-9156: the downed creature stands), the spectator camera, the adventure captain (BUG-9089).

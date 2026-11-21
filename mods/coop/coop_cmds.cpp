@@ -2,6 +2,10 @@
 // functions and the command registrations of sporekit_mod_main, which calls the register_commands_* functions at the
 // places the registrations had (the same order: SporeKit keeps the commands by name, the module inits between them stay
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
+#include "creature_rescue.h"
+#include "identity.h"
+#include "party.h"
+#include "home_nests.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1192,6 +1196,24 @@ void register_commands_core()
                    settings::command, nullptr, MT);
     H->command_add(M, "coop.find", "coop.find [colors | color <name|0..7> | project x y z | labels] - F2: the arrows to the partners of the last frame, the player colours, pick a colour",
                    pfind::command, nullptr, MT);
+    H->command_add(M, "coop.identity", "coop.identity - the persistent player identities (BUG-9258): this profile's, and the players' the host knows",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s", identity::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.party", "coop.party - the host: this planet's party, one seat per player who played it (BUG-9260)",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s", party::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.homenests", "coop.homenests [make <seat> | extinct <seat>] - the host: every seat's own nest (BUG-9262)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", home_nests::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.live", "coop.live - tests (BUG-0426): the object list of this frame (game::listed: walks, hits, destroys seen)",
                    [](void*, int, const char* const*, SkOut* out) {
                        SAY("%s\n", game::live_status().c_str());
@@ -2073,6 +2095,14 @@ void register_commands_stages()
         },
         nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.team", "coop.team [on|off] - co-op mechanics (joint hunt, rescue, pack regen)", c_team,
+                   nullptr, MT);
+    H->command_add(M, "coop.rescue",
+                   "coop.rescue [down | giveup] - the Creature stage's downed creatures (BUG-9283); down: a lethal hit on the own "
+                   "creature through the game's damage path (tests); giveup: the own downed creature gives up (as holding G)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) -> int {
+                       SAY("%s", creature_rescue::debug(std::vector<std::string>(argv, argv + argc)).c_str());
+                       return 0;
+                   },
                    nullptr, MT);
 }
 

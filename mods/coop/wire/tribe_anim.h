@@ -41,10 +41,15 @@ enum Kind : uint8_t {
     K_TRACKS = 16,     // the format of 15: the other playing tracks and the idle (BUG-1072)
     K_GAMEOVER = 20,   // u8 why (0: down): the host's game-over caption is up (BUG-0960, BUG-1081)
     K_HOST_PAUSE = 21, // u8 up: the host's game is paused (BUG-1086)
+    K_RESCUE = 22,     // the downed last villagers (BUG-9278): tribe_rescue_logic.h write_lines (a guest before it drops it)
 };
 
 // the kinds of the tribe members (npc.cpp's whitelist of 0.7.14); the NPC's own kinds of MSG_NPC_ANIM are 1 and 13
-inline bool is_tribe_kind(uint8_t k) { return (k >= K_START && k <= K_HOLD_ITEM) || (k >= K_PHASE && k <= K_TRACKS) || k == K_GAMEOVER || k == K_HOST_PAUSE; }
+inline bool is_tribe_kind(uint8_t k)
+{
+    return (k >= K_START && k <= K_HOLD_ITEM) || (k >= K_PHASE && k <= K_TRACKS) || k == K_GAMEOVER || k == K_HOST_PAUSE ||
+           k == K_RESCUE;
+}
 // the kinds a guest takes while its game is not in Tribe (an editor, a load): the party music's stop (BUG-0890) and the
 // waits (their end must come; their start is applied only in Tribe, tribe.cpp)
 inline bool any_mode(uint8_t k) { return k == K_PARTY_STOP || k == K_GAMEOVER || k == K_HOST_PAUSE; }
