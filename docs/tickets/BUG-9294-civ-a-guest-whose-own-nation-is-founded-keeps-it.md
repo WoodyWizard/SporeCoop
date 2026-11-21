@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.15.94
 fixed_in: unreleased
 branch: fix/civ-own-camera
-commits: 10487032, cc4aa775, deb5f517, f7934445
+commits: 10487032, cc4aa775, deb5f517, f7934445, 416f9c37
 tests: tools/tests/coop_civ_own_camera.py (suite civ_own_camera), agentB/b_cam2.py (lane B, by hand)
 signature:
 docs: docs/re/civ.md#civ-own-camera
