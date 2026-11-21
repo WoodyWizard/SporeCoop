@@ -44,6 +44,9 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
 - Lab: fixes of tests from the 0.7.16 final check: cell_ko_food, the cell attack tests, space_puppet's landing, the
   walker's clicks near its nest, and a cold start that waits for the lane's console ports (BUG-1354, BUG-1355, BUG-1356,
   BUG-1358, BUG-1359).
+- Lab: fixes of the Cell tests from the second 0.7.16 final check (cell_sync, cell_away_editor, cell_spin,
+  cell_new_game, cell_far_guest's new game, evo_screens_cell_eggs_lowfps) and of the monitor's hp gate after a guest's
+  reload (BUG-1381, BUG-1382, BUG-1383, BUG-1384, BUG-1385, BUG-1386, BUG-1387).
 
 ### Added
 - Creature: when a partner goes into an editor of its own (its mating evolution, Evolve now, or later at the nest),

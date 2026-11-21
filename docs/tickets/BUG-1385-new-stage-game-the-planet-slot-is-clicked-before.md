@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: fix/w61-cell
-commits:
+commits: 074bc674
 tests: cell_far_guest, cell_new_game, join_new_game
 signature:
 docs:

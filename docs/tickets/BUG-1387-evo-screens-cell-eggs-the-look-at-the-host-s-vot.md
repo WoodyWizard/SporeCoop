@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: fix/w61-cell
-commits:
+commits: 96f237a7
 tests: evo_screens_cell_eggs_lowfps, evo_screens_cell_eggs
 signature:
 docs:

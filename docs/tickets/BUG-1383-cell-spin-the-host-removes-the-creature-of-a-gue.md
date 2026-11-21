@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: fix/w61-cell
-commits:
+commits: f0ba674a
 tests: cell_spin
 signature:
 docs:

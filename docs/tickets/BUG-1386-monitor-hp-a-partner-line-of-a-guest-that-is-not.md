@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: fix/w61-cell
-commits:
+commits: edf2228d
 tests: cell_rejoin_leave, gates_selftest
 signature:
 docs:

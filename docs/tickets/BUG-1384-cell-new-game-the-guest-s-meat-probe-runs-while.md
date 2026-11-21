@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: fix/w61-cell
-commits:
+commits: c82df964
 tests: cell_new_game
 signature:
 docs: docs/re/cell.md#cell-eat-gate

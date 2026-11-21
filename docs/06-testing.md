@@ -9881,3 +9881,25 @@ cause=c` (coop_dna_notice.py LEDGER reads both forms).
   puppet (BUG-1241, BUG-1250), so social_sing_partner judges the guest's side without a song.
 * tag_camera (BUG-1352): a close creature's shaded back is not `red` (r > 140): `body()` bridges it.
 * tag_cinematic (BUG-1353): a guest's CRG_ClaimNest often ignores Enter: EndCinematic ends it, else INCONCLUSIVE.
+
+## Second final check 0.7.16: Cell test pitfalls (2026-11-20, fix/w61-cell)
+<a id="testing-final2-0716-cell"></a>
+
+* A cell's size across a level line: compare `target x world_scale` (both in one `coop.pool` read) once the world scale
+  reached its target, not the raw target: at food 100 the world scale goes 0.5 -> 1.5 and every target is divided by
+  the ratio (cell_sync, BUG-1381; docs/re/cell.md#cell-world-scale). A test that lands on the next level line by a few
+  stray points of an idle cell meets that line.
+* An idle cell eats plants of its pool (cell_away, cell_sync: +6 twice in the first seconds): count a meal from the
+  total right before it (BUG-1382).
+* A lethal bite: the host's cell stays (hp unchanged, its death animation) for more than 1 s before it is removed; wait
+  for the host's answer, not a fixed second (cell_spin, BUG-1383).
+* A new game's captions hold input AND the avatar's eat lock (+0x178, `coop.pool tokens` own_locks 0010) on every game
+  at the same shared total: probes confirm them like the bots (cell_new_game, BUG-1384).
+* new_stage_game.py waits for the galaxy menu intro (starts ~15.85 s after the menu, ~10 s long) before it clicks a
+  planet slot, and tries the next slot after three misses (BUG-1385).
+* monitor `hp` does not compare a partner line without the in-world flag (a guest reloading, hp 0/0): its own nearest
+  line of the stage was the next session's (cell_rejoin_leave, BUG-1386). `tools/tests/monitor.py replay
+  <test>.host.game.log <test>.guest.game.log` replays a run's two game logs (the violations, no console).
+* A look made after a vote ran out is no look at the vote (evo_screens cell-eggs, BUG-1387).
+* Twins of a race (cell_own_level10_follow_off, BUG-1333): list the state at the moment of the race too, and print the
+  mod's counters so a passing twin shows whether the race window came at all.

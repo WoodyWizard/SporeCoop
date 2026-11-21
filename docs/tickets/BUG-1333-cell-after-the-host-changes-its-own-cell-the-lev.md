@@ -10,7 +10,7 @@ role:
 versions: 0.7.16
 fixed_in:
 branch: fix/w59-cell
-commits: 505778b1
+commits: 505778b1 bead290b
 tests: cell_own_level10, cell_own_level10_follow_off, cell_tests own_cell_follow
 signature: cell_own_level10 "no NPC of the previous own cell 4DA56CA5 is left (own species now BAF1AD40)"
 docs: docs/re/cell.md#cell-kin-follow

@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: fix/w61-cell
-commits:
+commits: e1ec5246
 tests: cell_away_editor, cell_away
 signature:
 docs:

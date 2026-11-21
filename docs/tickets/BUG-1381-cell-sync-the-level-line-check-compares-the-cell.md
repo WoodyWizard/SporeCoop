@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: fix/w61-cell
-commits:
+commits: 14417063
 tests: cell_sync
 signature:
 docs: docs/re/cell.md#cell-world-scale
