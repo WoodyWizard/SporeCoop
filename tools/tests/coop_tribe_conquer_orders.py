@@ -145,8 +145,6 @@ def main():
             print('  cut: ' + host.call('coop.tribe huthp %.2f %.2f %.2f %.0f' % (hp + (a.hp,)))['out'].strip(), flush=True)
             cut = True
     ck(fell is not None, f'the raid ended the hut (its state 2 in the host\'s game, {fell and round(fell)} s)')
-    keyframe('hut_fell', 'the raided village: the hut down on both screens, the raiders on the ground round it, no body '
-                         'standing up, no member in the air')
     for mid in raiders:
         out, _, _ = ai(host, mid)
         print(f'  after the fall #{mid}: {out[:480]}', flush=True)
@@ -172,6 +170,13 @@ def main():
             break
         time.sleep(1)
     ck(bool(seen), f"the host's game played the conquest cinematic ({seen})")
+    # BUG-1409: the key frame after the cinematic watch, not before it: keyframe() waits (BUG-0924, up to 20 s) until no
+    # game plays a cinematic, and when the conquest's started 0-2 s after the hut's last blow (before this test read the
+    # state 2) the shot waited out both of the village's cinematics (5418B038 and 94D17D9F, 8 s each: "waited 17.6 s for
+    # the games to settle", lab 20261121-003202; 18.0 s in feat/w51-tribe 20261115-182010) and the watch above began
+    # after they had ended: "no cinematic" although the host's log shows it played. The shot still shows the fallen hut
+    keyframe('hut_fell', 'the raided village: the hut down on both screens, the raiders on the ground round it, no body '
+                         'standing up, no member in the air')
     print(f'  host after {time.time() - t1:.0f} s: {held.group(0) if held else "no cinematic"}; '
           + host.call('coop.uistate')['out'].strip().splitlines()[0][:120], flush=True)
     others = sorted(i for i in members(guest) if i not in raiders)[:2]
