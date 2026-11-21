@@ -46,3 +46,4 @@ A: see History.
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on feat/start-choice.
+- 2026-11-20: lane A, 0.7.15.95: the host's mating call and editor (a part moved, a name): the guest stayed in Cell, moved 3.7 m, kept its own cell, read "Player evolved its own cell": PASS. Twin (cell.own_editor off): the guest reads "everybody gets the new body": FAIL as expected (a 0.7.15.95 guest on its own cell is not rebuilt even then; the move came from the 0.7.15.5 guest's in-place body, refused at the join now, BUG-9284).
