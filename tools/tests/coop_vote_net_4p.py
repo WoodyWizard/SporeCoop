@@ -11,6 +11,9 @@ host's log only for how a vote ended (tools/tests/party.py).
 2 leaver   an action vote (`coop.vote action`) while Dave edits: Bob and Carol ready; the windows of
            the host, Bob and Carol all show the same ready count; the vote waits. Dave leaves the
            session from his editor: the vote passes within 10 s, once. Dave's game keeps running.
+           Only the evolution vote skips a guest in its own editor (BUG-1239); an action vote waits for
+           it (BUG-1369: 0.7.15.1 skipped it in every vote, lab 20261120-133703 passed the vote at 3/4
+           before Dave left; SPORE_FIX_OFF=core.vote_editor_evo_only must FAIL here).
 3 return   Dave leaves his editor with "done" and joins again: he plays the host's world, every game
            shows every other player where that player is, as the species that player plays.
 4 all      an action vote of all four: everybody ready, it passes within 10 s, once.

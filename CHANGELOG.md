@@ -164,6 +164,9 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   there until it grew up (BUG-1345; still open until its lab run).
 - Tribe: on a guest's screen the host's chief no longer shows its staff in the resting grip for about a second while
   it swings it on the host's screen (BUG-1347; still open until its lab run).
+- Votes: a vote for an action (moving on to the Creature stage, firing a superweapon) waits again for a player who is
+  in its own editor, as before 0.7.15.1: it passes when that player is ready, leaves, or after the vote's time. Only
+  the evolution vote goes on without such a player (BUG-1369; still open until its lab run).
 ## [0.7.15.5] - 2026-11-19
 
 A fix for players who could not leave the Tribe stage: the City Hall editor at its end could not be named after a

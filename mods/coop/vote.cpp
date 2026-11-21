@@ -1238,6 +1238,15 @@ static int g_vote_away_last = 0;
 static bool g_vote_editor_fix = true;
 COOP_FIX("core.vote_guest_editor", "BUG-1239", g_vote_editor_fix,
          "core: the host's evolution vote does not wait for a guest that is in its own editor (the host's screen stayed black meanwhile)");
+// BUG-1369 (vote_net_4p, lab 20261120-133703): BUG-1239's rule was meant for the evolution vote (the game holds the
+// host's editor request behind a faded picture; the guest in its own editor evolves already) but its check ran in every
+// vote: an action vote (the Cell -> Creature switch, a superweapon, coop.vote action) passed without the ready of a guest
+// that sat in its editor, although nothing on the host waits behind an action vote and the action changes that guest's
+// game too. On: only a vote for an editor skips a guest in its own editor; an action vote waits for its ready (or its
+// leave, or the 60 s) as before 0.7.15.1. Off: every vote skips it (0.7.15.1).
+static bool g_vote_editor_evo_fix = true;
+COOP_FIX("core.vote_editor_evo_only", "BUG-1369", g_vote_editor_evo_fix,
+         "core: only the evolution vote skips a guest in its own editor; an action vote (stage switch, superweapon) waits for its ready");
 static unsigned g_vote_in_editor = 0; // tests (coop.vote): votes that stopped waiting for a guest in its editor
 static int g_vote_editor_last = 0;
 static bool peer_in_editor(uint8_t id)
@@ -1302,7 +1311,8 @@ void vote_tick(double now)
             onway++; // BUG-1245: on its way, it opens its own editor when it arrives (BUG-1240): not waited for
             continue;
         }
-        if (p.id != 0 && g_vote_editor_fix && !(g_ready.count(p.id) && g_ready[p.id]) && peer_in_editor((uint8_t)p.id)) {
+        if (p.id != 0 && g_vote_editor_fix && !(g_vote_editor_evo_fix && g_vote_action) &&
+            !(g_ready.count(p.id) && g_ready[p.id]) && peer_in_editor((uint8_t)p.id)) {
             editing++; // BUG-1239: in its own editor, it cannot answer: not waited for
             continue;
         }
