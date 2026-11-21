@@ -405,3 +405,11 @@ anchor so other docs can link to it:
   the host's family after they were moved to their own species' herd. No wrong behaviour seen yet.
 * Reproduce: tools/tests/coop_home_nests.py, then `coop.nest home` and `coop.nest herd <herd>` on the guest.
 * Ticket: BUG-9270
+
+## Civ: a guest's camera starts at the host's capital, not its own (2026-11-21, fix/civ-own-camera)
+<a id="issue-civ-own-camera"></a>
+
+* What happens: a guest with its own nation (BUG-9274) starts its Civ stage looking at the host's capital; its own
+  capital can be hundreds of metres away. The minimap or W/A/S/D take it there.
+* Reproduce: a Civ planet where the guest's nation was founded (Epina on lane B), the guest joins.
+* Ticket: BUG-9294
