@@ -341,6 +341,9 @@ uint32_t noun_id(void* obj);                    // ISimulatorSerializable::GetNo
 void* cast(void* obj, uint32_t type);           // Object::Cast (vt 0x0C)
 bool object_position(void* obj, net::Vec3& out); // via cSpatialObject (TYPE 0x1186577), position +4
 float object_scale(void* obj);                   // cSpatialObject::GetScale (vt 0x34), -1 without one
+// BUG-9321: cSpatialObject::GetBoundingRadius (vt 0x70, the slot bounding_radius() calls on a creature) of any object
+// with a spatial part (a vehicle, a UFO), -1 without one
+float object_bounding_radius(void* obj);
 void set_object_scale(void* obj, float s);         // cSpatialObject::SetScale (vt 0x40), nothing without one
 bool set_object_position(void* obj, const net::Vec3& pos); // cSpatialObject::SetPosition (vt 0x38), false without one
 bool object_alive(void* obj);                    // cGameData::mbIsDestroyed (+0x21) not set

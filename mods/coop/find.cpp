@@ -425,6 +425,14 @@ static void hud_task(void*)
     g_hud = std::move(v);
 }
 
+bool over_hud(float x, float y)
+{
+    for (const findx::Box& b : g_hud)
+        if (x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1)
+            return true;
+    return false;
+}
+
 void hud_tick(double now)
 {
     if (!layout_on() || now < g_hud_next || g_hud_queued)

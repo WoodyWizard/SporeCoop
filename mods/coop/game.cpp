@@ -482,6 +482,12 @@ float object_scale(void* obj)
     return sp ? vcall<float>(sp, 0x34 / 4) : -1.f;
 }
 
+float object_bounding_radius(void* obj)
+{
+    void* sp = cast(obj, 0x1186577);
+    return sp ? vcall<float>(sp, 0x70 / 4) : -1.f;
+}
+
 void set_object_scale(void* obj, float s)
 {
     if (void* sp = cast(obj, 0x1186577))
