@@ -480,7 +480,14 @@ static int food_cap(int* low_level = nullptr, std::string* who = nullptr)
     const int lv = cell_logic::level_of_food(low);
     if (low_level)
         *low_level = lv;
-    return lv >= cell_logic::level_of_food(kCellFull) ? INT_MAX : lv * 100 - 1;
+    if (lv >= cell_logic::level_of_food(kCellFull))
+        return INT_MAX;
+    // every partner waits at the line too (a guest knows the others by the table's percent, 10 food a step): the next
+    // level is open for all (lane A 2026-11-20: both games at 499 held each other for good without this)
+    const int line_end = lv * 100 - 1;
+    if (low >= line_end - (is_host() ? 0 : 9))
+        return line_end + 100;
+    return line_end;
 }
 
 int clip_meal(int amount, int cur)
