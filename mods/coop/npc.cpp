@@ -34,6 +34,7 @@
 #include "mirror_registry.h"
 #include "world.h"
 #include "sporekit_game.hpp"
+#include "cards.h"
 #include "fixes.h"
 #include "fields.h"
 #include "gamefixes.h"
@@ -3413,7 +3414,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             g_kills_credited++;
             dna_ledger::g_credit.kill(from, H->time_seconds()); // the DNA it pays is that guest's hunt
         }
-        game::apply_damage(npc, dmg, q.type, attacker);
+        {
+            cards::Actor actor(from); // BUG-9264: the trait progress of this guest's kill goes to its seat
+            game::apply_damage(npc, dmg, q.type, attacker);
+        }
         g_hits_applied++;
         break;
     }

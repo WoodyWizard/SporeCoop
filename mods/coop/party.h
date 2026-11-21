@@ -33,5 +33,10 @@ uint8_t player_of_seat(int seat);
 // species, also while their player is offline)
 bool party_species(uint32_t creature_instance);
 std::string status();
+// host (BUG-9263): a seat's own stage history (consequence cards, Creature trait progress); saved with the party.
+// false: no such seat (or not the host)
+bool set_history(int seat, bool own, const uint32_t (&cards)[founders::kCards], float social, float combat);
+// the planet the roster belongs to ("" = none)
+const std::string& planet();
 
 } // namespace party

@@ -1,6 +1,7 @@
 // The campaign's party (party.h; Lineages port phase 2, BUG-9260).
 #include "party.h"
 
+#include <cmath>
 #include <cstdio>
 
 #include "creations.h"
@@ -143,6 +144,26 @@ LIFECYCLE_HOOK("party.forget", lifecycle::kSessionEnd | lifecycle::kWorldChange,
                [](const lifecycle::Ctx&) { forget(); }, false);
 
 const founders::Party& roster() { return g_party; }
+const std::string& planet() { return g_planet; }
+
+bool set_history(int seat, bool own, const uint32_t (&cards)[founders::kCards], float social, float combat)
+{
+    if (!is_host() || seat < 0 || seat >= (int)g_party.seats.size() || !std::isfinite(social) || !std::isfinite(combat))
+        return false;
+    auto& s = g_party.seats[seat];
+    bool same = s.own_cards == own && s.social == social && s.combat == combat;
+    for (size_t i = 0; i < founders::kCards; ++i)
+        same = same && s.cards[i] == cards[i];
+    if (same)
+        return true;
+    s.own_cards = own;
+    for (size_t i = 0; i < founders::kCards; ++i)
+        s.cards[i] = cards[i];
+    s.social = social;
+    s.combat = combat;
+    g_dirty = true; // the next tick saves it (outside the frame)
+    return true;
+}
 
 int seat_of_player(uint8_t player)
 {
@@ -186,6 +207,10 @@ std::string status()
         const uint8_t p = player_of_seat((int)i);
         snprintf(b, sizeof b, "  seat %zu: %s id=%08X species=%08X player=%s\n", i, s.name.empty() ? "?" : s.name.c_str(),
                  (unsigned)(s.player >> 32), s.species, p == kNobody ? "offline" : std::to_string(p).c_str());
+        out += b;
+        // BUG-9263: the seat's own stage history
+        snprintf(b, sizeof b, "    cards own=%d %08X %08X %08X %08X %08X social=%.1f combat=%.1f\n", (int)s.own_cards,
+                 s.cards[0], s.cards[1], s.cards[2], s.cards[3], s.cards[4], s.social, s.combat);
         out += b;
     }
     return out;

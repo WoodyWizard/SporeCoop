@@ -1,7 +1,7 @@
 # The wire lock of each message family (B6 of 0.7.15, BUG-1137): family rev minor hash. Written by
 # tools/msg_manifest.py lock after a bump; `make test` (msg_manifest.py check) fails when a family's rows
 # or wire files changed and its rev / minor in net/messages.def did not.
-session 1 2 bf4d8623f2acec0e
+session 1 3 58e7fc36ef7faeae
 world 1 0 ea800256062e0a48
 creature 1 1 f707e2440a8f90fe
 npc 1 1 7a6dd3c2ea2ecf5a
@@ -13,3 +13,4 @@ shared 1 0 c29c6202f6ae9b35
 creations 1 0 606c630c37dd957b
 # rebased space: C6 (BUG-1133): the Space wire structs join the lock; golden bytes identical (tests/wire_tests.cpp)
 # rebased shared: C6 (BUG-1133): the shared resource wire struct joins the lock; golden bytes identical (tests/wire_tests.cpp)
+# rebased session: BUG-9263: MSG_OWN_CARDS renumbered 74 -> 75 before any release (74 is MSG_CIV_WALLET); session 1.3 never shipped

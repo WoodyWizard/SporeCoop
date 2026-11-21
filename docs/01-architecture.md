@@ -1008,3 +1008,29 @@ side is in [civ-own-nations](re/civ.md#civ-own-nations).
   (`nations::friendly`).
 * Switches: `civ.own_nations`, `civ.nations_native`, `civ.team_campaign`. Command: `coop.civ nations [found | ally |
   relation | citizens | spawn | capture <ci> <seat>]`. Test: tools/tests/coop_civ_seats.py (suite civ_seats).
+## Every player's own stage history (2026-11-20, feat/own-cards)
+<a id="architecture-own-cards"></a>
+
+BUG-9263 (BUG-9264 for the trait progress), on top of the party ([architecture-party](#architecture-party)).
+mods/coop/cards.{h,cpp}; the game side in [creations-own-cards](re/creations.md#creations-own-cards).
+
+* Each seat of the party has its own consequence cards (Cell, Creature, Tribe, Civ, Space: cPlayer +0x10FC..+0x110C)
+  and Creature trait progress (social +0x1278, combat +0x127C), saved with the party (`<planet>.spo.duoparty` PTY2:
+  PTY1's seat + u8 flags, 5 x u32 cards, f32 social, f32 combat; PTY1 files are read, every write is PTY2). Seat 0 is
+  the host's own cPlayer, copied once a second. A guest seat that has no history yet starts from the host's cards
+  (until then everybody shared the host's) with no progress.
+* Host: a guest's kill (the lethal hit npc.cpp lands as the host avatar's) and social win (social.cpp) add their
+  trait progress to the guest's seat (`cards::Actor` around the game call + the hook on cPlayer::AddTraitProgress;
+  `cards::credit` for the social win's own amount, the creature's DNA worth). When the host's world has a stage done
+  that a seat has not, the host decides the seat's card (Cell: the guest's own game's decision, reported while it
+  plays Cell; Creature: the game's decision with the seat's progress; Tribe / Civ: the host's, one shared tribe /
+  nation in this build; Space: the game's archetype of the seat's four cards). A stage not done in the host's world
+  is not done for any seat. The host sends each guest its record (MSG_OWN_CARDS) on a change and every 5 s.
+* Guest: writes its record into its own cPlayer (the game's SetConsequenceTrait, the progress fields) every 0.5 s
+  while it plays the host's world (not in a world of its own, not in its own Space save); the wsync row "stages"
+  leaves its cPlayer alone (`cards::guest_owns`). Its History, its stage-end decision and the cards its editor
+  requests carry (its creations' consequence abilities) are its own.
+* Switches: `coop.fix party.own_cards off` (one shared history, the host's, as 0.7.15), `coop.fix party.trait_credit
+  off` (a guest's kill counts for the host, its social win for nobody). Status and test seams: `coop.cards`
+  (`credit`, `decide`, `cell`, `space`, `seat`), `coop.party` prints each seat's cards. Test:
+  tools/tests/coop_own_cards.py (suite own_cards).
