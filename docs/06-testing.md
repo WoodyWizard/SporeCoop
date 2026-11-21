@@ -9881,3 +9881,18 @@ cause=c` (coop_dna_notice.py LEDGER reads both forms).
   puppet (BUG-1241, BUG-1250), so social_sing_partner judges the guest's side without a song.
 * tag_camera (BUG-1352): a close creature's shaded back is not `red` (r > 140): `body()` bridges it.
 * tag_cinematic (BUG-1353): a guest's CRG_ClaimNest often ignores Enter: EndCinematic ends it, else INCONCLUSIVE.
+
+## Random content preconditions and two never-true fixcheck claims (2026-11-20, fix/w61-creature-d)
+<a id="testing-fixcheck-nan-claims"></a>
+
+* `coop.ufoplant [n]` (BUG-1363, host): the next n ship models the game asks for (UfoGfx SetModel, the BUG-0546 guard's
+  hook) get the key 0BAD0546/476A98C7/40656200 that no game has, before the guard decides: the guard and the game's
+  SetModel then work as on a Sporepedia-cache ship whose model is missing (BUG-0546 / BUG-0686). `0` disarms;
+  `coop.status` says `ship model keys planted N (armed M)`. creature_ufo_nomodel plants from its 4th UFO visit,
+  space_npc_model on its 3rd arrival, each only after the game's own picks brought no such ship (the case was random:
+  INCONCLUSIVE 3 runs in a row, final check 20261120-133703); the log says "natural" or "planted".
+* `lab.py fixcheck` CONTRADICTED net_nan / game.finite_pose and npc_nan_vel / game.finite_vel (BUG-1364): their twins
+  only ever passed (BUG-0614 and BUG-0894 are no-fail-run: the game's puppet and proxy driving tolerate the NaN states),
+  so the claims were corrected as leave_avatar's (2026-11-01): the suite comments name the PASS runs with the switch off.
+  The switch column of the C2 table above ([testing-c2-creature-0713](#testing-c2-creature-0713)) for npc_nan_vel is
+  therefore no FAIL twin: CORRECTION (2026-11-20, fix/w61-creature-d).

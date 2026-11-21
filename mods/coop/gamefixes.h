@@ -34,6 +34,8 @@ std::string arm_spot_cut();
 // tests (BUG-0686): the ship model guard (BUG-0546) forgets the last known ship model (a session whose first ship
 // is unknown: a Creature game has no own ship); also with no known default
 std::string ufo_forget();
+// tests (BUG-1363): the next n ship models asked for get a key no game has (a cache ship without its model)
+std::string ufo_plant(unsigned n);
 // BUG-0512: clears the stimuli of creature c whose sender is `sender` (or a sub-object of it), as the game's
 // clear 0xBC9A60 does (masks, value, the sender released); returns how many
 unsigned clear_stimuli_from(void* c, void* sender);

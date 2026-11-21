@@ -290,6 +290,14 @@ int c_ufoforget(void*, int, const char* const*, SkOut* out)
     return 0;
 }
 
+// tests (BUG-1363): coop.ufoplant [n] - the next n ship models (default 1) get a key no game has
+int c_ufoplant(void*, int argc, const char* const* argv, SkOut* out)
+{
+    unsigned n = argc > 1 ? (unsigned)strtoul(argv[1], nullptr, 10) : 1u;
+    SAY("%s", gamefixes::ufo_plant(n > 64 ? 64 : n).c_str());
+    return 0;
+}
+
 // tests (BUG-0329): coop.ground <x> <y> <z> - the terrain radius in that direction (GetHeightAt) and
 // the point's own radius: how high a position is over this game's ground
 int c_ground(void*, int argc, const char* const* argv, SkOut* out)
@@ -1185,6 +1193,8 @@ void coop_register_debug_commands2(const SkHost* host, SkMod* self)
                       c_spotcut, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.ufoforget", "tests (BUG-0686): the ship model guard forgets the last known ship model (as a Creature game that has none)",
                       c_ufoforget, nullptr, SK_CMD_MAIN_THREAD);
+    host->command_add(self, "coop.ufoplant", "tests (BUG-1363): coop.ufoplant [n] - the next n ship models asked for get a key no game has (a cache ship without its model)",
+                      c_ufoplant, nullptr, SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.save", "save the game (like the pause menu Save)", c_save, nullptr,
                       SK_CMD_MAIN_THREAD);
     host->command_add(self, "coop.dna", "coop.dna [add|gain|local|spend <n> | pace 0|1 | bar | own] - DNA debug (bar: also the evolution bar, cPlayer +0x10F0; own: the own DNA wallets, WP-D)", c_dna, nullptr, SK_CMD_MAIN_THREAD);

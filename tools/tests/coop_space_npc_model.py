@@ -13,6 +13,11 @@ fixture, flies to that star and waits: no fault, and the game still answers.
            then out/bug0546/lane5-Pollination.package of this worktree; `lane`: the lane's own cache. The test
            puts the lane's own file back at the end. No such file: RESULT: SKIP.
   SPORE_FIX_OFF=<switch> as every test (twoinst.start); with --solo the switch is set on the one game.
+
+BUG-1363: which ship the empire flies is the game's random pick; 3 lab runs in a row saw no ship without its model
+(INCONCLUSIVE in a row fails, A15). After NATURAL arrivals without the case, the next arrival's ship models get a key no
+game has (`coop.ufoplant`; the guard and the game's SetModel work on it as on a cache ship without its model): the case
+happens every run; which way it came is printed ("natural" / "planted").
 """
 import os
 import re
@@ -30,7 +35,8 @@ from twoinst import Checks, alive, shot, start, wait_up
 
 FIXTURE = 'space_empire'
 STAR = 0x004A0014  # home star of the NPC empire 8000216E in the fixture
-VISITS = 4
+VISITS = 3
+NATURAL = 2  # BUG-1363: arrivals with the game's own pick of ships; the last one gets planted unknown model keys
 
 
 def faults(con):
@@ -170,11 +176,16 @@ def run():
     for visit in range(VISITS):
         if visit and home:
             fly(home, f'80{home:06X}')
+        planted = visit >= NATURAL
+        if planted:  # BUG-1363: the ships of this arrival ask for a model no game has
+            print('  visit %d: planted: %s' % (visit + 1, host.call('coop.ufoplant 4')['out'].strip()), flush=True)
         fly(STAR, '804A0014')
         n = defaulted()
-        print(f'  visit {visit + 1}: ship models defaulted {n}', flush=True)
+        print(f'  visit {visit + 1}: ship models defaulted {n}' + (f' ({"planted" if planted else "natural"})' if n else ''),
+              flush=True)
         if n or not alive(lane.HOST):
             break
+    host.call('coop.ufoplant 0')  # nothing planted stays armed
     fleet = host.call('coop.fleet list')['out']
     print('  fleet:', ' | '.join(fleet.splitlines()[:3])[:300], flush=True)
     m = re.search(r'ship models defaulted \d+ \(SetVisible without a model skipped \d+\)', host.call('coop.status')['out'])
