@@ -90,3 +90,4 @@ cell_slow_link (coop_cell_slow_link.py, SPORE_NET=lowband, lane 10):
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w57-cellslow (cell.slow_link).
+- 2026-11-20 (fix/w61-cell): second final check: cell_slow_link with `SPORE_LAB_FIXOFF=cell_slow_link=cell.slow_link` FAILED (lab 20261120-133208, median 0.31) where the night plan expected a PASS: the expectation was wrong (it is the twin's case; BUG-1334's split command names cell_kin_species), nothing is broken; the twin cell_slow_link_off FAILED as wanted (20261120-130608, median 0.28).
