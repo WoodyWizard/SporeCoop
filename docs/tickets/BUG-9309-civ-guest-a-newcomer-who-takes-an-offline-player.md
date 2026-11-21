@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.14.1-lineages67-dev
 fixed_in:
 branch: fix/l47-decide
-commits: 
+commits: 2d52f56a
 tests: tests/civ_seats_tests.cpp (seat limit cases); manual two-game live test (docs/06-testing.md#testing-global-sw-newcomer)
 signature:
 docs: docs/re/civ.md#civ-global-sw-party

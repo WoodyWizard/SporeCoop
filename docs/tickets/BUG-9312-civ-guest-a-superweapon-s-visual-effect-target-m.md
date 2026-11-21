@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.14.1-lineages67-dev
 fixed_in:
 branch: fix/l47-decide
-commits: 
+commits: 2d52f56a
 tests: manual two-game live test (docs/06-testing.md#testing-global-sw-newcomer); no lab test yet
 signature:
 docs: docs/re/civ.md#civ-global-sw-party
