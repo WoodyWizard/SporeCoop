@@ -4003,6 +4003,12 @@ struct ReuseHunt {
                              // tries at once (docs/re/creature.md#creature-reuse-merged): the creations before the
                              // free only fed other free blocks
     int free_wait = 60, waited = 0; // w<N>: at most N frames waiting for the free
+    // BUG-1406 (defer_identity): the queued puppet's block is let go only while creatures are made and destroyed (0 of
+    // 17 freed with no creation, 1 of 4 with the misses kept: docs/re/creature.md#creature-freed-in-cinematic), and once
+    // free the next creations take it best 4 a frame with the misses kept (BUG-1099: 21 of 27). B<N>: N creatures per
+    // tick once the chunk is free; K: the misses kept from the free on (destroyed at once before it)
+    int burst_free = 0;
+    bool keep_free = false;
 };
 static ReuseHunt g_reuse;
 static void reuse_watch_chunk()
@@ -4063,9 +4069,12 @@ static void reuse_tick()
     p.x += 6.f;
     std::vector<void*> miss;
     // burst: up to `burst` creatures in this one tick (the misses stay until the end of it, so each takes a new block)
-    for (int k = 0; k < std::max(1, g_reuse.burst) && !g_reuse.hit; k++) {
+    const bool freed = g_reuse.freed_at >= 0;
+    const int burst = freed && g_reuse.burst_free > 0 ? g_reuse.burst_free : g_reuse.burst;
+    const bool keep = g_reuse.keep || (g_reuse.keep_free && freed);
+    for (int k = 0; k < std::max(1, burst) && !g_reuse.hit; k++) {
         void* herd = g_reuse.herd ? g_reuse.herd : game::create_herd(p, sp);
-        if (g_reuse.keep && !g_reuse.herds && !g_reuse.herd)
+        if (keep && !g_reuse.herds && !g_reuse.herd)
             g_reuse.herd = herd; // (one herd for the kept misses)
         void* c = g_reuse.herds ? herd : herd ? game::spawn_creature(p, sp, herd, g_reuse.pool) : nullptr; // (herds: the herd is the try)
         g_reuse.tries++;
@@ -4088,7 +4097,7 @@ static void reuse_tick()
     for (void* c : miss) {
         if (g_reuse.made.size() < 8)
             g_reuse.made.push_back(c);
-        if (g_reuse.keep && !g_reuse.herds)
+        if (keep && !g_reuse.herds)
             g_reuse.kept.push_back(c);
         else
             game::destroy_untracked(c);
@@ -4161,6 +4170,16 @@ void debug_reuse_wait_free(int tries)
     uint32_t sz = g_reuse.hdr0 & ~7u;
     if (sz >= 16 && sz <= 0x100000 && (g_reuse.hdr0 & 1))
         g_reuse.wait_free = std::max(1, tries);
+}
+void debug_reuse_after_free(int burst, bool keep, bool end_merged)
+{
+    g_reuse.burst_free = std::max(0, burst);
+    g_reuse.keep_free = keep;
+    // M: a target whose chunk before is free (header bit 0 clear) merges backward when freed: no creation starts at its
+    // address (docs/re/creature.md#creature-reuse-merged), the round ends at once
+    uint32_t sz = g_reuse.hdr0 & ~7u;
+    if (end_merged && sz >= 16 && sz <= 0x100000 && !(g_reuse.hdr0 & 1))
+        g_reuse.left = 0;
 }
 uint32_t handler_dropped() { return g_handler_dropped; }
 void* debug_proxy_creature(uint16_t id)

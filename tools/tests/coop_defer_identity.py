@@ -25,6 +25,15 @@ round 3's hunt, and in round 4 the creature made in the frame the chunk was seen
 (`f20`) watches the target's heap chunk (the dlmalloc-style header before it: size 0x16A8 | 1; free when the next
 chunk's bit 0 is clear) for up to --frames frames and makes creatures only from the frame it is free (20 at most).
 
+BUG-1406 (0.7.16 final checks 20261120-041304 and 20261121-003202: INCONCLUSIVE, 0 reuses in 16 rounds each): of the 16
+rounds of 20261121-003202, 7 never saw the chunk free in 900 frames, 4 saw it free just after the hunt (1026-1295 frames
+after the destroy), 4 had a target whose chunk before was free (header 16A8: the freed block merges backward, no creation
+starts at its address, docs/re/creature.md#creature-reuse-merged) and 1 was freed and missed by the 20 creations one a
+frame with the misses destroyed. So the hunt (`xf40B4KM`): still one creature a frame destroyed at once until the free
+(creations are what lets the game let go of the block: 0 of 17 freed without them), from the free on 4 a frame with the
+misses kept (BUG-1099's recipe: 21 of 27 reused), 40 tries; a target that merges backward ends its round at once (M);
+1500 frames (the late frees came at 1026-1295).
+
   SPORE_LANE=6 python3 tools/tests/coop_defer_identity.py [--tries 16] [--minutes 9]"""
 import argparse
 import os
@@ -47,8 +56,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--tries', type=int, default=int(os.environ.get('SPORE_DEFER_TRIES', '16')))
     ap.add_argument('--minutes', type=float, default=9)
-    ap.add_argument('--flags', default=os.environ.get('SPORE_DEFER_FLAGS', 'xf20'))
-    ap.add_argument('--frames', type=int, default=900)
+    ap.add_argument('--flags', default=os.environ.get('SPORE_DEFER_FLAGS', 'xf40B4KM'))  # BUG-1406 (was xf20)
+    ap.add_argument('--frames', type=int, default=1500)  # BUG-1406 (was 900)
     ap.add_argument('--staleref', action='store_true', default=os.environ.get('SPORE_DEFER_STALEREF') == '1', help='RE: who still points into the destroyed puppet 10 s after it')
     a = ap.parse_args()
     t_end = time.time() + a.minutes * 60
