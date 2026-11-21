@@ -361,6 +361,7 @@ struct Dialog {
     Win chat_lines[5] = {};
     Win chat_up = nullptr, chat_down = nullptr;
     Win creation = nullptr, creation_prev = nullptr, creation_next = nullptr, give_btn = nullptr, give_next = nullptr, jump_btn = nullptr;
+    Win creation_up = nullptr, cup_prev = nullptr, cup_next = nullptr; // BUG-1403: the creature row above the role row
     Win space_btn = nullptr; // lobby -> the Space page (Space stage only)
     // settings page: group headers and the rows of settings_core.h kDefs, a value button and a scope tag each
     std::vector<Win> page_settings;
@@ -1018,6 +1019,20 @@ static void build_dialog()
             A.creation_cycle(1);
         g_dirty = true;
     });
+    // BUG-1403: Civ, a guest playing the host's species: "My creature: ... < >" one line up (the chat's 4th line),
+    // "My role: ... < >" under it in the row above; these arrows always pick a creature
+    D.creation_up = add_label(L, {40, 404, 560, 430}, "", kGold);
+    g_named["creationup"] = D.creation_up;
+    D.cup_prev = add_button(L, "cupprev", {570, 404, 640, 430}, "<", [] {
+        if (A.creation_cycle)
+            A.creation_cycle(-1);
+        g_dirty = true;
+    });
+    D.cup_next = add_button(L, "cupnext", {650, 404, 720, 430}, ">", [] {
+        if (A.creation_cycle)
+            A.creation_cycle(1);
+        g_dirty = true;
+    });
     D.space_btn = add_button(L, "space", {580, 66, 720, 98}, T("Space >", "Космос >"), [] {
         g_space_page = true;
         g_dirty = true;
@@ -1224,6 +1239,12 @@ static void refresh_connect()
 
 bool g_give_hint_fix = true;
 COOP_FIX("core.ui_give_hint", "BUG-0909", g_give_hint_fix, "ui: the give row shows only in Tribe, Civilization and Space");
+// BUG-1403: in Civ the creature row of a guest that plays the host's species and has own creatures (BUG-1289) took the
+// role row's place, so it could pick no role while keeping the host's species. On (the owner's decision: two rows):
+// the creature row goes one line up (the chat shows 3 lines meanwhile), the role row stays where it was under it;
+// each row's arrows change only its own thing. Off: one row, the creature's (rel/0.7.16 before the fix)
+static bool g_civ_rows_fix = true;
+COOP_FIX("core.ui_civ_two_rows", "BUG-1403", g_civ_rows_fix, "ui: in Civ a guest playing the host's species sees its creature row and its role row at once");
 
 static void refresh_lobby()
 {
@@ -1297,33 +1318,6 @@ static void refresh_lobby()
                                   "Пока никто не вошёл: друзья получат ваш мир сами")
                               : "";
     text(D.world, wl.empty() ? g_status : wl);
-    // the chat history (50 lines kept): long lines wrapped, scrolled with the arrows (BUG-0129)
-    std::vector<std::string> chat;
-    std::vector<uint32_t> chat_col; // F2: the writer's colour of each wrapped line
-    {
-        std::vector<std::string> lines = A.chat ? A.chat() : std::vector<std::string>{};
-        std::vector<uint32_t> cols = A.chat_colors ? A.chat_colors() : std::vector<uint32_t>{};
-        for (size_t i = 0; i < lines.size(); i++)
-            for (auto& w : notify_text::wrap(lines[i], kChatCols)) {
-                chat.push_back(w);
-                chat_col.push_back(i < cols.size() && cols[i] ? cols[i] : kWhite);
-            }
-    }
-    g_chat_scroll = std::max(0, std::min(g_chat_scroll, (int)chat.size() - 4));
-    size_t first = chat.size() > 4 ? chat.size() - 4 - (size_t)g_chat_scroll : 0;
-    static uint32_t s_chat_col[4] = {kWhite, kWhite, kWhite, kWhite};
-    static Win s_chat_w[4] = {};
-    for (int i = 0; i < 4; i++) {
-        text(D.chat_lines[i], first + i < chat.size() ? chat[first + i] : "");
-        uint32_t c = first + i < chat.size() ? chat_col[first + i] : kWhite;
-        if (D.chat_lines[i] && (c != s_chat_col[i] || D.chat_lines[i] != s_chat_w[i])) {
-            sui::set_label_color(D.chat_lines[i], c);
-            s_chat_col[i] = c;
-            s_chat_w[i] = D.chat_lines[i];
-        }
-    }
-    show(D.chat_up, first > 0);
-    show(D.chat_down, g_chat_scroll > 0);
     int ck = 0, cown = 0;
     bool hint = false; // the creation row says how to get a choice: it may take the arrows' room
     std::string cname, cl;
@@ -1355,6 +1349,11 @@ static void refresh_lobby()
         cl.clear();
         hint = false;
     }
+    // BUG-1403: in Civ with nothing selected the creature row moves one line up and the role row comes back under it
+    std::string up_row;
+    if (g_civ_rows_fix && !cl.empty() && gn == 0 && ck == 0 && cown > 0 && A.civ_role && A.mode &&
+        A.mode() == 0x1654C04)
+        up_row.swap(cl);
     // BUG-0909: give() names what is given only in Tribe, Civilization and Space; elsewhere (the galaxy menu, Cell,
     // Creature) the row showed the Tribe / Civ hint "Select your units to give them to a partner"
     bool giving = A.give && !gto.empty() && (cl.empty() || space) && (!gwhat.empty() || !g_give_hint_fix);
@@ -1376,6 +1375,15 @@ static void refresh_lobby()
                              T("religious (faster conversion)", "религиозная (быстрее обращение)")};
         cl = std::string(T("My role: ", "Моя роль: ")) + rn[r & 3];
     }
+    if (!up_row.empty() && !roles) { // no role row here (no partner to give to): the creature row keeps its place
+        cl.swap(up_row);
+        up_row.clear();
+    }
+    const bool two_rows = !up_row.empty();
+    text(D.creation_up, up_row);
+    show(D.creation_up, two_rows);
+    show(D.cup_prev, two_rows);
+    show(D.cup_next, two_rows);
     if (D.creation) { // the row is wider while it has no arrows and no buttons
         auto& c = g_cache[D.creation];
         float x2 = hint && !giving && !roles ? 720.f : 560.f;
@@ -1421,6 +1429,34 @@ static void refresh_lobby()
     g_row_creation = !cl.empty() && !giving && !roles && ck != 2 && cown > 0; // BUG-1289: the arrows pick a creature
     show(D.creation_prev, can);
     show(D.creation_next, can);
+    // the chat history (50 lines kept): long lines wrapped, scrolled with the arrows (BUG-0129)
+    std::vector<std::string> chat;
+    std::vector<uint32_t> chat_col; // F2: the writer's colour of each wrapped line
+    {
+        std::vector<std::string> lines = A.chat ? A.chat() : std::vector<std::string>{};
+        std::vector<uint32_t> cols = A.chat_colors ? A.chat_colors() : std::vector<uint32_t>{};
+        for (size_t i = 0; i < lines.size(); i++)
+            for (auto& w : notify_text::wrap(lines[i], kChatCols)) {
+                chat.push_back(w);
+                chat_col.push_back(i < cols.size() && cols[i] ? cols[i] : kWhite);
+            }
+    }
+    const int nchat = two_rows ? 3 : 4; // BUG-1403: the creature row above the role row takes the 4th line
+    g_chat_scroll = std::max(0, std::min(g_chat_scroll, (int)chat.size() - nchat));
+    size_t first = chat.size() > (size_t)nchat ? chat.size() - nchat - (size_t)g_chat_scroll : 0;
+    static uint32_t s_chat_col[4] = {kWhite, kWhite, kWhite, kWhite};
+    static Win s_chat_w[4] = {};
+    for (int i = 0; i < 4; i++) {
+        text(D.chat_lines[i], i < nchat && first + i < chat.size() ? chat[first + i] : "");
+        uint32_t c = first + i < chat.size() ? chat_col[first + i] : kWhite;
+        if (D.chat_lines[i] && (c != s_chat_col[i] || D.chat_lines[i] != s_chat_w[i])) {
+            sui::set_label_color(D.chat_lines[i], c);
+            s_chat_col[i] = c;
+            s_chat_w[i] = D.chat_lines[i];
+        }
+    }
+    show(D.chat_up, first > 0);
+    show(D.chat_down, g_chat_scroll > 0);
     bool host = A.role() == 1;
     int offer = A.evolve_offer && !one ? A.evolve_offer() : 0; // BUG-0516: the host evolves now, this guest may follow
     if (offer > 0)
@@ -2030,7 +2066,7 @@ std::string debug_state()
         // the texts that vary between runs (ui_golden masks them): addresses, ports, pings, the version, chat, LAN
         std::vector<std::pair<std::string, Win>> areas = {
             {"session", D.session}, {"hostaddr", D.address}, {"version", D.version}, {"lanhdr", D.lan_hdr},
-            {"statusline", D.status}, {"world", D.world}, {"creationline", D.creation}, {"setline", D.set_line},
+            {"statusline", D.status}, {"world", D.world}, {"creationline", D.creation}, {"creationupline", D.creation_up}, {"setline", D.set_line},
             {"meline", D.me_line}, {"hosthint", D.host_hint}};
         for (int i = 0; i < 4; i++)
             areas.push_back({"ping" + std::to_string(i), D.row_ping[i]});
