@@ -154,16 +154,30 @@ def case_preach(host, guest, ck, cities, home, far):
     vids = [new_vehicle(host, home, 1) for _ in range(3)]
     vids = [v for v in vids if v is not None]
     ck(len(vids) >= 2, f'the host has religious vehicles ({vids})')
+    # BUG-1372: the city's retaliation (0xBEB6F8) hits the preachers from their arrival; they converted within 3-19 s in
+    # the passing runs, losing one of three on the way, and in lab 20261120-133703 all three were gone 9 s after the
+    # order with nobody converted (slot 2 had its 10 / 2 places, its used count stayed 0). The test is about the places
+    # (BUG-1286), not that race: the preachers' health is put back to full every second while it waits (as
+    # civ_capture_credit keeps its besiegers alive). The twin (civ.remote_preaching off) still has 0 / 0 places.
+    _, hv0, _ = civ_state(host)
+    full = {v: hv0[v]['hp'] for v in vids if v in hv0 and hv0[v]['hp'] > 0}
+    print(f'  preachers\' full health: {full}', flush=True)
     for k, v in enumerate(vids):
         print(f'  #{v}:', put_near(host, v, cities[far]['pos'], 80 + 10 * k), '|',
               host.call(f'coop.civ attack {v} {far} 3')['out'].strip(), flush=True)
     t0 = time.time()
     hd = gd = None
+    alive_min = len(vids)
     while time.time() - t0 < 90:
         hd, _ = influence(host, far)
         if hd and followers_of(hd, pol) > f0:
             break
-        time.sleep(3)
+        alive = 0
+        for v, hp in full.items():
+            alive += 'no such vehicle' not in host.call(f'coop.civ vhp {v} {hp:.0f}')['out']
+        alive_min = min(alive_min, alive)
+        time.sleep(1)
+    print(f'  preachers alive while it waited (fewest): {alive_min} of {len(vids)}', flush=True)
     gd = wait_for(lambda: (lambda g: g if g and followers_of(g, pol) > f0 else None)(influence(guest, far)[0]), 5) or \
         influence(guest, far)[0]
     print(f'  host city {far} after {time.time() - t0:.0f} s: slots {hd and hd["slots"]} followers {hd and hd["followers"]}',
