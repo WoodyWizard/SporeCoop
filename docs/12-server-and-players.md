@@ -1633,3 +1633,23 @@ arrival the crossing becomes the next era (or joins its host).
 * ✔ Cross-PC (2026-11-20, TITAN's galaxy server, the MSI over Tailscale with today's build): TITAN QA 9 on Samuth
   (Creature), the MSI on Samuth (Tribe): each game showed the other's player (1.3 m and 1.7 m from where it was sent)
   and got the other's creature from the creation store (one ask each).
+
+## Era visitors are solid, can be hidden, one menu row per planet (2026-11-20, feat/lineages-alpha)
+<a id="server-era-visitors-solid"></a>
+
+Decisions 7H A and 7I A (docs/ROADMAP.md), the owner's menu point of 7H.
+* BUG-9293, switch `galaxy.visitor_solid`: this game's own creatures (Creature: the avatar; Tribe: the player tribe's
+  members, on the simulating game) are pushed out of another era's buildings and vehicles (each prop's box, turned with
+  it) once a frame, and out of a visitor's "stretch": from its creature to where its player last said it was (up to 30 m),
+  the owner's speed-scaled hitbox. Visitor creatures themselves are creatures of this game (Havok). ✔ In game: the avatar
+  held at a building's wall (switch off: it walked to the middle); put on a 4.2 m stretch of a walking Tribe chief it was
+  pushed 1.27 m off (off: 0.00 m). ? Not run: Tribe members against a prop.
+* BUG-9294 (7I A): cross-stage visibility is the player's: coop.ini [galaxy] other_eras (on), chat `/eras on|off`; the
+  server stops that player's visits both ways (net/galaxy.h ERAS). ✔ galaxy_server_check (FAIL on the old server), ✔ in
+  game both ways. Not built: a button in the co-op window.
+* BUG-9295: the galaxy menu shows one star per planet (its eras' players added, the latest era's icon); Play enters the
+  era this player last played there, else the earliest. ✔ In game (images/stage4_menu_one_row.png). Open: the 5R stage
+  choice for a player new to a planet (Spore's own "Choose A Stage" of an empty star is a candidate).
+* BUG-9296 (found on the way): a Tribe game showing a Civ era's objects crashed in the model bake (asked in the frame;
+  asked outside it, the bake's end crashed in Editors::cEditor::HandleMessage). Bakes are now asked only in the Creature
+  stage, outside the frame, once per model. ✔ No crash in 30+ minutes of Tribe hosting.

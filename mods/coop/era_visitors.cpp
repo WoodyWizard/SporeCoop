@@ -31,6 +31,7 @@
 #include "net/protocol.h"
 #include "modes.h"
 #include "net/utf8.h"
+#include "notify.h"
 #include "partner_marker.h"
 #include "savestrip.h"
 #include "civ.h"
@@ -295,7 +296,10 @@ static bool savestrip_filter(void* obj, uint32_t noun)
 // baked another era's buildings and vehicles, so their props drew nothing (the spike's profile had them baked). As the
 // game does for a model it is about to use (0xC5B250, 0xC5B420): IBakeManager vt 0x1C(key, 0) "baked", else vt 0x18(key)
 // "asked already" or vt 0x4C(key, &0) asks for the bake. true: baked (or no bake manager: as before)
-static uint64_t g_bakes_asked;
+static uint64_t g_bakes_asked, g_bakes_pending, g_bakes_skipped;
+static bool g_bake_outside = true;
+COOP_FIX("galaxy.bake_outside_frame", "BUG-9296", g_bake_outside,
+         "galaxy: another era's model is asked to bake outside the frame (asked in it, a Tribe start crashed)");
 static bool baked_or_ask(const uint32_t key[3])
 {
     static uintptr_t get = H->sym("Editors::IBakeManager::Get");
@@ -307,18 +311,50 @@ static bool baked_or_ask(const uint32_t key[3])
         lods |= (skg::vcall<char>(bm, 0x1C / 4, key, l) != 0) << l;
     if (lods == 0xF)
         return true;
+    // BUG-9296: a Tribe game crashed ~5 s after any bake ask (Editors::cEditor::HandleMessage, a null editor: the bake's
+    // end reports to an editor the Tribe stage does not have); there the prop is made with what is baked, nothing asked
+    if (g_bake_outside && !game::in_creature_stage()) {
+        g_bakes_skipped++;
+        return true;
+    }
     static std::map<std::tuple<uint32_t, uint32_t, uint32_t>, double> asked; // (once every 5 s a key)
     double& next = asked[{key[0], key[1], key[2]}];
     const double now = H->time_seconds();
     if (now < next)
         return (lods & 1) != 0;
     next = now + 5.0;
-    for (int l = 0; l < 4; l++)
-        if (!(lods & (1 << l))) {
-            int lod = l;
-            skg::vcall<void>(bm, 0x4C / 4, key, &lod);
-            g_bakes_asked++;
-        }
+    if (g_bake_outside && skg::vcall<char>(bm, 0x18 / 4, key) != 0) { // BUG-9296: asked and not done yet: never again
+        g_bakes_pending++;                                             // (a second ask then crashed a Tribe game)
+        return (lods & 1) != 0;
+    }
+    if (g_bake_outside) { // BUG-9296: the bake renders: asked outside the frame (in it, a Tribe start crashed in it)
+        struct Ask {
+            uint32_t key[3];
+            int lods;
+        };
+        Ask* a = new Ask{{key[0], key[1], key[2]}, lods};
+        H->run_outside_frame(
+            [](void* p) {
+                Ask* a = (Ask*)p;
+                static uintptr_t get2 = H->sym("Editors::IBakeManager::Get");
+                void* bm2 = get2 ? skg::cdecl_call<void*>(get2) : nullptr;
+                if (bm2 && skg::vcall<char>(bm2, 0x18 / 4, a->key) == 0) // (not asked in the meantime)
+                    for (int l = 0; l < 4; l++)
+                        if (!(a->lods & (1 << l))) {
+                            int lod = l;
+                            skg::vcall<void>(bm2, 0x4C / 4, a->key, &lod);
+                            g_bakes_asked++;
+                        }
+                delete a;
+            },
+            a);
+    } else
+        for (int l = 0; l < 4; l++)
+            if (!(lods & (1 << l))) {
+                int lod = l;
+                skg::vcall<void>(bm, 0x4C / 4, key, &lod);
+                g_bakes_asked++;
+            }
     H->log(M, SK_INFO, "era visitors: %08X/%08X baked levels %X: asked the rest (BUG-9290)", key[0], key[1], lods);
     return (lods & 1) != 0; // (drawn close up already; the farther levels come)
 }
@@ -350,6 +386,12 @@ static void prop_destroy(void* u, uint32_t serial)
     skg::vcall<void>(u, 1); // Release our reference
 }
 
+// BUG-9294 (decision 7I A): the player's own choice (coop.ini [galaxy] other_eras, chat "/eras on|off"), on by default:
+// off, the server passes this player's visits to nobody and sends it nobody's (net/galaxy.h ERAS)
+static bool g_eras = true;
+static bool g_eras_told; // the server of this connection knows it
+static uint64_t g_eras_sent;
+
 void init(const SkHost* host, SkMod* mod)
 {
     H = host;
@@ -363,6 +405,46 @@ void init(const SkHost* host, SkMod* mod)
     galaxy::on_message(net::galaxy::VISITOR, on_visitor); // BUG-9287
     galaxy::on_message(net::galaxy::VISITOBJ, on_visit_objects); // BUG-9290
     galaxy_crt::init(H, M);
+    g_eras = H->config_int(M, "galaxy", "other_eras", 1) != 0; // BUG-9294
+}
+
+static void eras_tell()
+{
+    net::Writer w;
+    w.u8(g_eras ? 1 : 0);
+    if (galaxy::send_message(net::galaxy::ERAS, w)) {
+        g_eras_told = true;
+        g_eras_sent++;
+    }
+}
+
+std::string set_other_eras(bool on)
+{
+    g_eras = on;
+    H->config_set_str(M, "galaxy", "other_eras", on ? "1" : "0");
+    if (galaxy::welcomed())
+        eras_tell();
+    return on ? "Other eras shown: you and this planet's other stages see each other."
+              : "Other eras hidden: you and this planet's other stages no longer see each other.";
+}
+bool other_eras() { return g_eras; }
+
+bool chat_command(const std::string& t) // "/eras", "/eras on", "/eras off"
+{
+    if (t.size() < 5 || (t.compare(0, 5, "/eras") != 0 && t.compare(0, 5, "/ERAS") != 0) || (t.size() > 5 && t[5] != ' '))
+        return false;
+    std::string arg = t.size() > 6 ? t.substr(6) : "";
+    while (!arg.empty() && arg.back() == ' ')
+        arg.pop_back();
+    for (auto& ch : arg)
+        ch = (char)tolower((unsigned char)ch);
+    std::string line;
+    if (arg == "on" || arg == "off")
+        line = set_other_eras(arg == "on");
+    else
+        line = std::string("Other eras are ") + (g_eras ? "shown" : "hidden") + ". Type /eras on or /eras off.";
+    notify::show(line, "info");
+    return true;
 }
 
 // ---- BUG-9287 (step 4 part 5, docs/12-server-and-players.md#server-era-visitors-built): visitors across eras ----
@@ -494,13 +576,18 @@ static void visitor_show(Visitor& v, void* av)
 static void objects_send(double now); // BUG-9290 (below)
 static void objects_show(double now);
 static void objs_clear();
+static void solid_tick(uint8_t era); // BUG-9293 (below)
 static void stream_tick(double now)
 {
     const std::string planet = galaxy::current_planet();
     const uint8_t era = net::galaxy::era_of(planet);
     // this player's creature: the avatar (Creature), the tribe's chieftain (Tribe: the game has no avatar there)
     void* av = game::avatar() ? game::avatar() : era == net::galaxy::kEraTribe ? tribe::player_chief() : nullptr;
-    if (!g_stream || planet.empty() || !galaxy::welcomed()) {
+    if (!galaxy::welcomed())
+        g_eras_told = false;
+    else if (!g_eras_told)
+        eras_tell(); // BUG-9294: on each connection
+    if (!g_stream || !g_eras || planet.empty() || !galaxy::welcomed()) {
         for (auto& [s, v] : g_visitors)
             visitor_remove(v);
         g_visitors.clear();
@@ -542,6 +629,8 @@ static void stream_tick(double now)
             visitor_remove(v);
         ++it;
     }
+    if (shows_visitors(era))
+        solid_tick(era);
 }
 
 // BUG-9289: a name tag over each visitor near this player (its name, its era), in grey: a visitor, not a partner
@@ -796,12 +885,245 @@ static void objects_show(double now)
     }
 }
 
+// ---- BUG-9293 (decision 7H A): another era's buildings, vehicles and visitors are solid for this game's creatures ----
+// The props have no physics body of their own (look-only ornaments), so once a frame this game's own creatures (the
+// avatar in Creature; the player tribe's members in Tribe, on the game that simulates them) are pushed out of each
+// prop's box, turned with the prop, on the ground's tangent plane. A visitor's creature is a creature of this game
+// (Havok's own collision blocks it), but it walks 5-6 m behind its player: its block reaches on to where its player last
+// said it was (decision 7H, the owner's "increase the size of the hitbox ... to adjust for latency"), at most kStretchMax.
+static bool g_solid = true;
+COOP_FIX("galaxy.visitor_solid", "BUG-9293", g_solid,
+         "galaxy: this game's own creatures cannot walk through another era's buildings, vehicles and visitors");
+static uint64_t g_solid_pushes, g_solid_stretch_pushes;
+static float g_stretch_closest = 1e9f, g_stretch_r; // tests: the nearest a stretch came to this game's creature
+static float g_solid_last_push;
+// (the stretch reaches as far as a visitor can trail before it is put where its player is: a running Tribe chief trailed
+// 10-27 m at 10 FPS, so 10 m missed it)
+constexpr float kStretchMax = kTeleportBeyond, kSolidNear = 60.f;
+// a creature this far below a prop's base is still blocked: a slope, or another world's ground lower than the sender's
+// (the prop then stands on its own pillars, images/stage4_civ_visitors.png)
+constexpr float kSolidBelow = 15.f;
+
+static net::Vec3 sub(net::Vec3 a, net::Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+static float len(net::Vec3 v) { return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
+static net::Vec3 qrot(const net::Quat& q, net::Vec3 v) // v turned by q
+{
+    const net::Vec3 u{q.x, q.y, q.z};
+    net::Vec3 t = cross(u, v);
+    t = {2 * t.x, 2 * t.y, 2 * t.z};
+    const net::Vec3 c = cross(u, t);
+    return {v.x + q.w * t.x + c.x, v.y + q.w * t.y + c.y, v.z + q.w * t.z + c.z};
+}
+// a prop's box in its own frame (min x y z, max x y z: spatial vt 0x68, as the game sizes a held item)
+static bool prop_box(void* u, net::Vec3& at, net::Quat& q, float b[6])
+{
+    void* sp = game::cast(u, 0x1186577);
+    if (!sp)
+        return false;
+    const float* bb = skg::vcall<const float*>(sp, 0x68 / 4);
+    if (!bb || !skg::readable(bb, 24))
+        return false;
+    for (int i = 0; i < 6; i++)
+        if (!std::isfinite(bb[i]))
+            return false;
+    memcpy(b, bb, 24);
+    const float* f = (const float*)((uint8_t*)sp + 4);
+    at = {f[0], f[1], f[2]};
+    q = {f[3], f[4], f[5], f[6]}; // +0x10 the orientation
+    return std::isfinite(at.x + at.y + at.z + q.x + q.y + q.z + q.w);
+}
+// keeps p at the radius (height) it had: a push moves along the ground, never up or down
+static net::Vec3 same_height(net::Vec3 p, float r)
+{
+    const float l = len(p);
+    return l > 1 ? net::Vec3{p.x * r / l, p.y * r / l, p.z * r / l} : p;
+}
+
+struct Box {
+    net::Vec3 at;
+    net::Quat q;
+    float b[6];
+};
+static std::vector<Box> g_boxes; // this frame's props (read once a frame, not once per creature)
+
+static void push_out(void* c)
+{
+    net::Vec3 m = game::position(c);
+    const float mr = len(m);
+    if (!std::isfinite(mr) || mr < 1)
+        return;
+    const float cr = std::min(std::max(game::bounding_radius(c) * 0.5f, 0.3f), 3.f);
+    bool moved = false;
+    for (const Box& x : g_boxes) { // the buildings and vehicles: out of the box, by its nearest side
+        const net::Vec3& at = x.at;
+        const net::Quat& q = x.q;
+        const float* b = x.b;
+        if (net::dist(at, m) > kSolidNear)
+            continue;
+        const net::Quat qi{-q.x, -q.y, -q.z, q.w};
+        net::Vec3 l = qrot(qi, sub(m, at));
+        if (l.z < b[2] - kSolidBelow || l.z > b[5]) // (under its ground by more: a cave; over its top: free)
+            continue;
+        const float d[4] = {l.x - (b[0] - cr), (b[3] + cr) - l.x, l.y - (b[1] - cr), (b[4] + cr) - l.y};
+        if (d[0] <= 0 || d[1] <= 0 || d[2] <= 0 || d[3] <= 0)
+            continue;
+        int i = 0;
+        for (int j = 1; j < 4; j++)
+            if (d[j] < d[i])
+                i = j;
+        if (i == 0)
+            l.x = b[0] - cr;
+        else if (i == 1)
+            l.x = b[3] + cr;
+        else if (i == 2)
+            l.y = b[1] - cr;
+        else
+            l.y = b[4] + cr;
+        m = same_height(add(at, qrot(q, l), 1.f), mr);
+        g_solid_last_push = d[i];
+        g_solid_pushes++;
+        moved = true;
+    }
+    for (auto& [s, v] : g_visitors) { // a visitor's stretch: from its creature to where its player is
+        if (!visitor_alive(v))
+            continue;
+        const net::Vec3 a = game::position(v.c);
+        net::Vec3 ab = sub(v.pos, a);
+        const float l = len(ab);
+        if (l < 1.f || net::dist(a, m) > kSolidNear)
+            continue;
+        const float lc = std::min(l, kStretchMax);
+        ab = {ab.x / l, ab.y / l, ab.z / l};
+        const net::Vec3 am = sub(m, a);
+        const float t = std::min(std::max(am.x * ab.x + am.y * ab.y + am.z * ab.z, 0.f), lc);
+        if (t <= 0.f) // (by its creature itself: Havok's)
+            continue;
+        const net::Vec3 near_pt = add(a, ab, t);
+        const float r = std::min(std::max(game::bounding_radius(v.c) * 0.5f, 0.3f), 3.f) + cr;
+        net::Vec3 away = sub(m, near_pt);
+        const float up = (away.x * m.x + away.y * m.y + away.z * m.z) / mr; // (on the ground's plane)
+        away = add(away, m, -up / mr);
+        const float dl = len(away);
+        if (dl < g_stretch_closest)
+            g_stretch_closest = dl, g_stretch_r = r;
+        if (dl >= r || dl < 1e-3f)
+            continue;
+        m = same_height(add(near_pt, away, r / dl), mr);
+        g_solid_last_push = r - dl;
+        g_solid_stretch_pushes++;
+        moved = true;
+    }
+    if (moved)
+        game::place(c, m, game::orientation(c)); // (SetPosition alone: the locomotion put it back next frame)
+}
+
+// tests (BUG-9293, `coop.visit onstretch`): once a visitor trails its player by 4 m or more, this game's avatar is put
+// on the middle of that gap (the stretch); the status then says how far it was moved off that spot
+static bool g_onstretch;
+static net::Vec3 g_onstretch_at{};
+static double g_onstretch_when = -1;
+static float g_onstretch_lag;
+std::string onstretch()
+{
+    g_onstretch = true;
+    g_onstretch_when = -1;
+    return "armed: the avatar goes onto the next visitor's stretch of 4 m or more";
+}
+static void onstretch_tick()
+{
+    void* av = game::avatar();
+    if (!g_onstretch || !av)
+        return;
+    for (auto& [s, v] : g_visitors) {
+        if (!visitor_alive(v))
+            continue;
+        const net::Vec3 a = game::position(v.c);
+        const float l = net::dist(a, v.pos);
+        if (l < 4.f || l > kStretchMax)
+            continue;
+        const net::Vec3 mid{(a.x + v.pos.x) / 2, (a.y + v.pos.y) / 2, (a.z + v.pos.z) / 2};
+        const net::Vec3 up = norm(mid);
+        const float g = game::ground_radius(net::Vec3{up.x * 600, up.y * 600, up.z * 600});
+        g_onstretch_at = {up.x * g, up.y * g, up.z * g};
+        game::place(av, g_onstretch_at, game::orientation(av));
+        g_onstretch_when = H->time_seconds();
+        g_onstretch_lag = l;
+        g_onstretch = false;
+        return;
+    }
+}
+
+static void solid_tick(uint8_t era)
+{
+    if (era == net::galaxy::kEraCreature)
+        onstretch_tick(); // (tests)
+    if (!g_solid || (g_objs.empty() && g_visitors.empty()))
+        return;
+    g_boxes.clear();
+    for (auto& [k, o] : g_objs) {
+        Box x;
+        if (o.u && game::object_alive(o.u) && game::object_serial(o.u) == o.serial && prop_box(o.u, x.at, x.q, x.b))
+            g_boxes.push_back(x);
+    }
+    if (era == net::galaxy::kEraCreature) {
+        if (void* av = game::avatar())
+            push_out(av);
+    } else if (era == net::galaxy::kEraTribe && galaxy::hosting()) { // (members are the simulating game's)
+        tribe::for_each_owned([](void* c, uint8_t, void*) { push_out(c); }, nullptr);
+    }
+}
+
+std::string go(const net::Vec3& to, int mode)
+{
+    const uint8_t era = net::galaxy::era_of(galaxy::current_planet());
+    void* me = game::avatar() ? game::avatar() : era == net::galaxy::kEraTribe ? tribe::player_chief() : nullptr;
+    if (!me)
+        return "no creature";
+    const net::Vec3 at = game::position(me);
+    if (to.x == 0 && to.y == 0 && to.z == 0) {
+        char b[100];
+        snprintf(b, sizeof b, "at (%.1f %.1f %.1f)", at.x, at.y, at.z);
+        return b;
+    }
+    g_stretch_closest = 1e9f; // (a new test run)
+    if (mode == 2) { // tp: put there (on the ground)
+        const net::Vec3 up = norm(to);
+        const float g = game::ground_radius(net::Vec3{up.x * 600, up.y * 600, up.z * 600});
+        game::teleport(me, net::Vec3{up.x * g, up.y * g, up.z * g}, game::orientation(me));
+    } else
+        game::move_to(me, to, 0.5f);
+    if (mode == 1)
+        game::set_speed(me, 2.f);
+    char b[140];
+    snprintf(b, sizeof b, "from (%.1f %.1f %.1f) to (%.1f %.1f %.1f), %.0f m", at.x, at.y, at.z, to.x, to.y, to.z, net::dist(at, to));
+    return b;
+}
+
+std::string walk_into(int n)
+{
+    void* av = game::avatar();
+    int i = 0;
+    for (auto& [k, o] : g_objs)
+        if (i++ == n) {
+            net::Vec3 at;
+            if (!av || !o.u || !game::object_position(o.u, at))
+                return "no avatar or no prop";
+            game::move_to(av, at, 0.5f);
+            char b[120];
+            snprintf(b, sizeof b, "walking to object %d at (%.0f %.0f %.0f), %.0f m", n, at.x, at.y, at.z,
+                     net::dist(at, game::position(av)));
+            return b;
+        }
+    return "no such object";
+}
+
 std::string stream_status()
 {
     char b[300];
     snprintf(b, sizeof b,
-             "era visitors (BUG-9287): on=%d planet='%s' sent=%llu got=%llu visitors=%u shown=%llu no_species=%llu gone=%llu\n",
-             (int)g_stream, galaxy::current_planet().c_str(), (unsigned long long)g_visits_sent,
+             "era visitors (BUG-9287): on=%d other_eras=%d (told %llu) planet='%s' sent=%llu got=%llu visitors=%u shown=%llu no_species=%llu gone=%llu\n",
+             (int)g_stream, (int)g_eras, (unsigned long long)g_eras_sent, galaxy::current_planet().c_str(),
+             (unsigned long long)g_visits_sent,
              (unsigned long long)g_visits_got, (unsigned)g_visitors.size(), (unsigned long long)g_shown,
              (unsigned long long)g_no_species, (unsigned long long)g_gone);
     std::string out = b;
@@ -809,10 +1131,21 @@ std::string stream_status()
         size_t live = 0, waiting = 0;
         for (auto& [k, o] : g_objs)
             live += o.u != nullptr, waiting += o.waiting;
-        snprintf(b, sizeof b, "  objects (BUG-9290): sent %llu in %llu messages; got %llu, now %u (props %u, waiting %u), made %llu (again %llu), gone %llu, bakes asked %llu\n",
+        snprintf(b, sizeof b, "  objects (BUG-9290): sent %llu in %llu messages; got %llu, now %u (props %u, waiting %u), made %llu (again %llu), gone %llu, bakes asked %llu (pending %llu, not asked in this stage %llu)\n",
                  (unsigned long long)g_objs_sent, (unsigned long long)g_obj_msgs, (unsigned long long)g_objs_got,
                  (unsigned)g_objs.size(), (unsigned)live, (unsigned)waiting, (unsigned long long)g_props_made,
-                 (unsigned long long)g_props_remade, (unsigned long long)g_props_gone, (unsigned long long)g_bakes_asked);
+                 (unsigned long long)g_props_remade, (unsigned long long)g_props_gone, (unsigned long long)g_bakes_asked,
+                 (unsigned long long)g_bakes_pending, (unsigned long long)g_bakes_skipped);
+        out += b;
+        snprintf(b, sizeof b, "  solid (BUG-9293): on=%d pushes %llu, by a stretch %llu, last %.2f m; nearest stretch %.2f m (its reach %.2f)\n",
+                 (int)g_solid, (unsigned long long)g_solid_pushes, (unsigned long long)g_solid_stretch_pushes, g_solid_last_push,
+                 g_stretch_closest, g_stretch_r);
+        out += b;
+        if (g_onstretch_when >= 0 && game::avatar()) {
+            snprintf(b, sizeof b, "  onstretch: put on a %.1f m stretch %.1f s ago; now %.2f m from that spot\n", g_onstretch_lag,
+                     H->time_seconds() - g_onstretch_when, net::dist(game::position(game::avatar()), g_onstretch_at));
+        } else
+            snprintf(b, sizeof b, "  onstretch: %s\n", g_onstretch ? "armed" : "-");
         out += b;
         int listed = 0;
         for (auto& [k, o] : g_objs) {
@@ -827,6 +1160,17 @@ std::string stream_status()
                      o.kind == net::galaxy::kVisitVehicle ? "vehicle" : "building", o.key[0], o.key[1], o.pos.x, o.pos.y,
                      o.pos.z, alive ? "alive" : "none", at.x, at.y, at.z, sc[0], sc[1]);
             out += b;
+            net::Vec3 pa;
+            net::Quat pq;
+            float bx[6];
+            if (alive && prop_box(o.u, pa, pq, bx)) { // BUG-9293: its box, and the avatar in the prop's frame
+                net::Vec3 l{};
+                if (void* av = game::avatar())
+                    l = qrot({-pq.x, -pq.y, -pq.z, pq.w}, sub(game::position(av), pa));
+                snprintf(b, sizeof b, "      box (%.1f %.1f %.1f)..(%.1f %.1f %.1f) avatar in its frame (%.1f %.1f %.1f)\n",
+                         bx[0], bx[1], bx[2], bx[3], bx[4], bx[5], l.x, l.y, l.z);
+                out += b;
+            }
         }
     }
     for (auto& [s, v] : g_visitors) {

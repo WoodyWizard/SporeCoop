@@ -1831,3 +1831,19 @@ BUG-0996. GOG 2024 (dc04aee5), from the decompiler (tools/ghidra/q.sh --build 20
   building (mask 1); a creature the game spawned had all four (F); 20 s after asking for 1..3 the vehicle had all four.
 * ✔ (runtime) The spatial part of an ornament and of a cVehicle have the same layout (a vehicle's at +0x34, an
   ornament's at +0x70): +0x04 position, +0x10 orientation, two boxes, +0x5C radius, +0x64 scale, +0x90 the model key.
+
+## Bakes in the Tribe stage, and a prop's box (2026-11-20, feat/lineages-alpha)
+<a id="creations-bake-in-tribe"></a>
+
+* ✔ (runtime, crash dumps) In the Tribe stage an IBakeManager ask (vt 0x4C) of a Civ vehicle or building crashed the game:
+  asked inside the frame at once (CastTo_cEditorResource_+0x351), asked outside it ~5 s later in
+  Editors::cEditor::HandleMessage+0x11E with a null (render thread). The Creature stage bakes the same keys (BUG-9291).
+  ~ Inferred: the bake's end reports to an editor the Tribe stage does not have. era_visitors asks only in the Creature
+  stage now (BUG-9296).
+* ✔ (runtime) vt 0x18(key) is true while a bake is asked and not done (asking again then is what the second crash
+  followed).
+* ✔ (runtime) An ornament's spatial vt 0x68 (GetBoundingBox) is its model's box in its own frame (Z up, min then max):
+  a Civ building -8.7 -8.8 -0.6 .. 8.9 8.9 33.3, a vehicle -2.7 -4.5 -0.2 .. 2.7 4.8 3.0 (the same in a Creature and a
+  Tribe game, a little larger with the model's level of detail there).
+* ✔ (runtime) To move a creature (the avatar) out of a box for good: game::place (teleport vt 0x44 without the teleport
+  mark); SetPosition (vt 0x38) alone is undone by its locomotion in the next frame.

@@ -18,6 +18,7 @@
 #include "net/galaxy.h"
 #include "game.h"
 #include "modes.h"
+#include "fixes.h"
 #include "sporekit_game.hpp"
 
 namespace galaxy_menu {
@@ -39,6 +40,55 @@ static uint32_t g_last_version;
 static double g_rebuild_at;
 static unsigned g_rewrites, g_plays, g_rebuilds;
 static std::string g_last;
+// BUG-9295: one row per planet (its eras are one planet to the player); Play enters the era this player last played
+// there (coop.ini [galaxy_eras] "<galaxy>|<planet>"), else the planet's earliest era (the 5R stage choice is not built)
+static bool g_one_row = true;
+COOP_FIX("galaxy.menu_one_row", "BUG-9295", g_one_row, "galaxy menu: one row per planet, not one per era");
+struct Row {
+    galaxy::PlanetInfo shown;       // the row: the planet's name, all its eras' players, its latest era's icon
+    std::vector<std::string> eras;  // its eras' keys
+};
+static std::vector<Row> rows()
+{
+    std::vector<Row> v;
+    for (auto& p : galaxy::planets_known()) { // (players first: a planet's row where its busiest era is)
+        const std::string planet = g_one_row ? net::galaxy::era_planet(p.name) : p.name;
+        Row* row = nullptr;
+        for (auto& x : v)
+            if (x.shown.name == planet)
+                row = &x;
+        if (!row) {
+            v.push_back({p, {}});
+            row = &v.back();
+            row->shown.name = planet;
+            row->shown.players = 0;
+        }
+        row->eras.push_back(p.name);
+        row->shown.players += p.players;
+        if (p.tech > row->shown.tech) { // the latest era's icon and creature
+            row->shown.tech = p.tech;
+            memcpy(row->shown.species, p.species, sizeof p.species);
+        }
+    }
+    return v;
+}
+static std::string remember_key(const std::string& planet) { return galaxy::galaxy_name() + "|" + planet; }
+static std::string era_to_enter(const Row& row)
+{
+    if (row.eras.size() == 1)
+        return row.eras[0];
+    char b[128] = {};
+    H->config_str(M, "galaxy_eras", remember_key(row.shown.name).c_str(), "", b, sizeof b);
+    for (auto& e : row.eras)
+        if (e == b)
+            return e;
+    std::string first = row.eras[0];
+    for (auto& e : row.eras)
+        if (net::galaxy::era_of(e) < net::galaxy::era_of(first))
+            first = e;
+    return first;
+}
+static std::string g_remembered;
 
 static bool active() { return g_hooks && g_on && galaxy::online() && game::mode_id() == modes::kMenu; }
 
@@ -74,14 +124,17 @@ static void rewrite(void* set)
     if (!begin || end <= begin)
         return;
     const size_t n = (size_t)(end - begin) / 0xBC;
-    std::vector<galaxy::PlanetInfo> ps = galaxy::planets_known();
+    std::vector<Row> rs = rows();
+    std::vector<galaxy::PlanetInfo> ps;
+    for (auto& x : rs)
+        ps.push_back(x.shown);
     size_t shown = 0;
     for (size_t i = 0; i < n; i++) {
         uint8_t* e = begin + i * 0xBC;
         uint32_t* key = (uint32_t*)(e + 0x3C);
         if (i < ps.size()) {
             const galaxy::PlanetInfo& p = ps[i];
-            set_name(e, u16(net::galaxy::era_display(p.name))); // (step 4: "Samuth (Tribe)": the planet and its era)
+            set_name(e, u16(g_one_row ? p.name : net::galaxy::era_display(p.name))); // (BUG-9295: the planet; before, "Samuth (Tribe)")
             void* prof = p.species[0] ? game::species_by_key({p.species[0], p.species[1], p.species[2]}) : nullptr;
             key[0] = prof ? p.species[0] : 0;
             key[1] = prof ? p.species[1] : 0;
@@ -121,8 +174,10 @@ static void __fastcall h_Step(void* self, void* edx, void* arg)
         const char16_t* b = *(const char16_t* const*)e;
         const char16_t* en = *(const char16_t* const*)(e + 4);
         const std::string planet = b && en > b ? utf8(b, en) : "";
-        for (auto& p : galaxy::planets_known())
-            if (net::galaxy::era_display(p.name) == planet) {
+        for (auto& row : rows())
+            if ((g_one_row ? row.shown.name : net::galaxy::era_display(row.shown.name)) == planet) {
+                const std::string key = era_to_enter(row);
+                const galaxy::PlanetInfo p{key};
                 // the step comes again every frame until the menu is left: once, and never while on that planet (each
                 // ENTER of the planet it is on made the client leave and join again, 2026-11-17)
                 const double now = H->time_seconds();
@@ -152,6 +207,13 @@ static void rebuild(void*)
 
 void tick(double now)
 {
+    { // BUG-9295: the era this player plays on a planet, for the menu's next Play there
+        const std::string cur = galaxy::current_planet();
+        if (!cur.empty() && cur != g_remembered && !net::galaxy::is_crossing(cur) && net::galaxy::era_of(cur)) {
+            g_remembered = cur;
+            H->config_set_str(M, "galaxy_eras", remember_key(net::galaxy::era_planet(cur)).c_str(), cur.c_str());
+        }
+    }
     if (!g_hooks || game::mode_id() != modes::kMenu)
         return;
     const bool online = g_on && galaxy::online();

@@ -1406,3 +1406,7 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9290](BUG-9290-creation-store-keyed-by-owner-a-civ-era-s-vehicl.md) | fixed | feature | creature | 2026-11-20 | unreleased | Creation store keyed by owner; a Civ era's vehicles and buildings for the other eras |
 | [BUG-9291](BUG-9291-era-visitors-another-era-s-vehicles-and-building.md) | fixed | feature | creature | 2026-11-20 | unreleased | Era visitors: another era's vehicles and buildings drawn as props are not reliably visible |
 | [BUG-9292](BUG-9292-step-4-part-3-the-cell-and-tribe-stages-ends-go.md) | fixed | feature | cell | 2026-11-20 | unreleased | Step 4 part 3: the Cell and Tribe stages' ends go through the party's crossing too |
+| [BUG-9293](BUG-9293-another-era-s-buildings-vehicles-and-visitors-ar.md) | fixed | feature | creature | 2026-11-20 | unreleased | Another era's buildings, vehicles and visitors are solid (decision 7H A) |
+| [BUG-9294](BUG-9294-cross-stage-visibility-is-a-player-setting-on-by.md) | fixed | feature | any | 2026-11-20 | unreleased | Cross-stage visibility is a player setting, on by default (decision 7I A) |
+| [BUG-9295](BUG-9295-the-galaxy-menu-shows-one-row-per-planet-not-one.md) | fixed | feature | any | 2026-11-20 | unreleased | The galaxy menu shows one row per planet, not one per era |
+| [BUG-9296](BUG-9296-crash-in-the-bake-request-of-another-era-s-vehic.md) | fixed | crash | tribe | 2026-11-20 | unreleased | Crash in the bake request of another era's vehicle at a Tribe era's start (era_visitors baked_or_ask) |

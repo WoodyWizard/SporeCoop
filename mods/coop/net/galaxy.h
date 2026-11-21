@@ -202,6 +202,9 @@ enum Type : uint8_t {
     // the planet's other worlds (as VISIT), at most kVisitObjPerSecond a second, kVisitObjMax bytes
     VISITOBJ = 35, // host -> server: u8 n, n x {u32 id, u32 x3 model key, f32 x3 position, f32 x4 orientation, f32 x3
                    //   velocity, u8 kind (kVisitVehicle / kVisitBuilding)}; server -> player: u16 slot, u64 identity, then that
+    // BUG-9294 (decision 7I A): cross-stage visibility is the player's choice, on until it says otherwise. Off: the server
+    // passes none of its VISIT / VISITOBJ on and sends it none of the others'
+    ERAS = 36, // player -> server: u8 1 sees and is seen by the planet's other eras, 0 not (sent on each WELCOME and change)
 };
 constexpr uint8_t kVisitVehicle = 1, kVisitBuilding = 2;
 constexpr size_t kVisitObjBytes = 4 + 12 + 12 + 16 + 12 + 1, kVisitObjMax = 1 + 24 * kVisitObjBytes;

@@ -9021,3 +9021,11 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   Co-op window, menu or prompt is drawn (`coop.uistate` says open=1, the screen shows nothing). Gameplay still runs, so
   tests that read the game's state pass. After a merge copy build/sporekit.dll, build/steam_api.dll and
   data/symbols/*.sym (to mods/sporekit/symbols) too, and check the log for that line.
+
+## The QA launcher and Steam's ActiveProcess pid 0 (2026-11-20, feat/lineages-alpha)
+<a id="testing-steam-pid-zero"></a>
+
+* Seen 2026-11-20 on TITAN after the owner's Steam start: `HKCU\Software\Valve\Steam\ActiveProcess` had pid 0 and
+  ActiveUser 0 while steam.exe was running and logged on; every QA start ended in cSporeApp::Init (as
+  #testing-steam-update-qa-start). launch.ps1's check missed it: `Get-Process -Id 0` finds the Idle process. It now treats
+  0 as stale too and writes the running steam.exe's pid (the QA games then started).

@@ -8786,6 +8786,10 @@ int c_say(void*, int argc, const char* const* argv, SkOut* out)
         SAY("marked for the report");
         return 0;
     }
+    if (era_visitors::chat_command(t)) { // BUG-9294: "/eras on|off"
+        SAY("other eras %s", era_visitors::other_eras() ? "shown" : "hidden");
+        return 0;
+    }
     if (!g_sess.connected()) {
         SAY("not connected");
         return 1;
@@ -11435,6 +11439,15 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            r = era_visitors::clear();
                        else if (sub == "at" && argc > 4)
                            r = era_visitors::spawn_at({(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])});
+                       else if (sub == "eras" && argc > 2) // BUG-9294: the player's setting (as chat /eras on|off)
+                           r = era_visitors::set_other_eras(!strcmp(argv[2], "on"));
+                       else if (sub == "go" && argc > 1) // tests (BUG-9293): this player's creature walks to x y z (none: where)
+                           r = era_visitors::go(argc > 4 ? net::Vec3{(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])} : net::Vec3{},
+                                                argc > 5 ? (!strcmp(argv[5], "run") ? 1 : !strcmp(argv[5], "tp") ? 2 : 0) : 0);
+                       else if (sub == "onstretch") // tests (BUG-9293)
+                           r = era_visitors::onstretch();
+                       else if (sub == "walk" && argc > 2) // tests (BUG-9293): into streamed object n (status order)
+                           r = era_visitors::walk_into(atoi(argv[2]));
                        else if (sub == "move" && argc > 4) // tests (BUG-9291): the last prop to x y z (on the ground)
                            r = era_visitors::move_last({(float)atof(argv[2]), (float)atof(argv[3]), (float)atof(argv[4])});
                        else

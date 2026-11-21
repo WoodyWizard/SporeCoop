@@ -23,7 +23,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 EXE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'build', 'galaxy_server.exe' if os.name == 'nt' else 'galaxy_server')
 PROTO = 8
 (HELLO, WELCOME, LIST, PLANETS, ENTER, ROLE, LEAVE, PING, PONG, REFUSED, HOSTGONE, READY, FETCH, XBEGIN, XCHUNK, XACK, XDONE,
- HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE, MOVEON, MOVED, ARRIVE, VISIT, VISITOR, CRTPUT, CRTGET, CRTHAVE, CRTPART, VISITOBJ) = range(1, 36)
+ HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE, MOVEON, MOVED, ARRIVE, VISIT, VISITOR, CRTPUT, CRTGET, CRTHAVE, CRTPART, VISITOBJ, ERAS) = range(1, 37)
 CHUNK = 1100
 fails = []
 
@@ -407,6 +407,22 @@ def main():
             time.sleep(0.5)
             a.send(VISIT, vbody(0.0, 0.0, 0.0))
             check(b.take(VISITOR, 0.6) is not None, 'it reaches a player 100 m away')
+
+            print('other eras hidden by the player (BUG-9294)')
+            b.send(ERAS, bytes([0]))  # b hides other eras: it gets none, and its own go to nobody
+            time.sleep(0.6)
+            b.inbox.clear()
+            a.send(VISIT, vbody(0.0, 0.0, 0.0))
+            check(b.take(VISITOR, 0.5) is None, 'a player that hides other eras gets no VISITOR')
+            a.pump(0.6)  # (the earlier VISITs' VISITORs still on the way)
+            a.inbox.clear()
+            b.send(VISIT, vbody(100.0, 0.0, 0.0))
+            check(a.take(VISITOR, 0.5) is None, "and its own VISIT reaches nobody")
+            b.send(ERAS, bytes([1]))
+            time.sleep(0.6)
+            b.inbox.clear()
+            a.send(VISIT, vbody(0.0, 0.0, 0.0))
+            check(b.take(VISITOR, 0.6) is not None, 'shown again: it gets them again')
 
             print('the creation store (BUG-9287, BUG-9290)')
             CT, CG = 0x2B978C46, 0x40626200

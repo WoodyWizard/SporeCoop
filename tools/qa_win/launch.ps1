@@ -15,7 +15,7 @@ if (-not (Test-Path (Join-Path (Split-Path $exe) 'steam_appid.txt'))) { throw "n
 $ap = 'HKCU:\Software\Valve\Steam\ActiveProcess'
 $steam = Get-Process steam -ErrorAction SilentlyContinue | Select-Object -First 1
 $pidNow = (Get-ItemProperty $ap -ErrorAction SilentlyContinue).pid
-if ($steam -and $pidNow -ne $steam.Id -and -not (Get-Process -Id $pidNow -ErrorAction SilentlyContinue)) {
+if ($steam -and $pidNow -ne $steam.Id -and (-not $pidNow -or -not (Get-Process -Id $pidNow -ErrorAction SilentlyContinue))) { # (0: Get-Process finds the Idle process)
     Set-ItemProperty $ap -Name pid -Value $steam.Id -Type DWord
     "Steam's ActiveProcess pid $pidNow was stale: now $($steam.Id) (the running steam.exe)"
 }

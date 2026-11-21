@@ -48,6 +48,7 @@ struct Client {
     float visit_pos[3]{};    // BUG-9288: where its creature was then (the interest radius)
     bool visit_known = false;
     uint32_t obj_window_ms = 0, obj_in_window = 0; // BUG-9290: its VISITOBJs in this second
+    bool eras = true; // BUG-9294: sees and is seen by the planet's other eras (ERAS; on until it says otherwise)
 };
 // BUG-9287 (step 4 part 5): visitors across eras; --no-visitors turns the stream off
 static bool g_visitors = true;
@@ -664,7 +665,7 @@ static void on_control(const Endpoint& from, Reader& r)
     }
     if (type == VISIT) { // BUG-9287: passed on to the planet's players in its other worlds
         const uint32_t now = now_ms();
-        if (!g_visitors || c->planet.empty() || r.left() != 1 + 12 + 12 || now - c->visit_ms < kVisitEveryMs * 3 / 4)
+        if (!g_visitors || !c->eras || c->planet.empty() || r.left() != 1 + 12 + 12 || now - c->visit_ms < kVisitEveryMs * 3 / 4)
             return;
         c->visit_ms = now;
         g_visits_in++;
@@ -685,7 +686,7 @@ static void on_control(const Endpoint& from, Reader& r)
         while (r.left())
             w.u8(r.u8());
         for (auto& [s, o] : g_clients)
-            if (s != c->slot && !o.planet.empty() && o.planet != c->planet && crossing_planet(o.planet) == mine) {
+            if (s != c->slot && o.eras && !o.planet.empty() && o.planet != c->planet && crossing_planet(o.planet) == mine) {
                 if (g_visit_radius > 0 && c->visit_known && o.visit_known && now - o.visit_ms < 5000) {
                     const float dx = c->visit_pos[0] - o.visit_pos[0], dy = c->visit_pos[1] - o.visit_pos[1],
                                 dz = c->visit_pos[2] - o.visit_pos[2];
@@ -703,7 +704,8 @@ static void on_control(const Endpoint& from, Reader& r)
         const uint32_t now = now_ms();
         if (now - c->obj_window_ms >= 1000)
             c->obj_window_ms = now, c->obj_in_window = 0;
-        if (!g_visitors || c->planet.empty() || r.left() < 2 || r.left() > kVisitObjMax || ++c->obj_in_window > kVisitObjPerSecond)
+        if (!g_visitors || !c->eras || c->planet.empty() || r.left() < 2 || r.left() > kVisitObjMax ||
+            ++c->obj_in_window > kVisitObjPerSecond)
             return;
         const std::string mine = crossing_planet(c->planet);
         Writer w = control(VISITOBJ);
@@ -712,8 +714,16 @@ static void on_control(const Endpoint& from, Reader& r)
         while (r.left())
             w.u8(r.u8());
         for (auto& [s, o] : g_clients)
-            if (s != c->slot && !o.planet.empty() && o.planet != c->planet && crossing_planet(o.planet) == mine)
+            if (s != c->slot && o.eras && !o.planet.empty() && o.planet != c->planet && crossing_planet(o.planet) == mine)
                 send(o, w);
+        return;
+    }
+    if (type == ERAS) { // BUG-9294
+        const uint8_t on = r.u8();
+        if (r.ok() && (on != 0) != c->eras) {
+            c->eras = on != 0;
+            say("player %u: other eras %s", c->slot, c->eras ? "shown" : "hidden");
+        }
         return;
     }
     if (type == CRTPUT) { // BUG-9287
