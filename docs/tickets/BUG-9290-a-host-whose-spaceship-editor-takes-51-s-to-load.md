@@ -9,8 +9,8 @@ source: agent test (lane C)
 role: guest
 versions: 
 fixed_in:
-branch:
-commits:
+branch: feat/lineages-space
+commits: 8ecde240 (ticket only)
 tests:
 signature: host WATCHDOG (no frames) in IO::FileStream::Read < Resource::DatabasePackedFile::VerifyIndexRecordIntegrity < App::PropertyList::Read; guest "disconnected: connection to host lost (timeout)"
 docs: docs/re/space.md#space-own-empires
