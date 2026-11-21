@@ -5484,7 +5484,7 @@ Decision 7L, BUG-9308.
   `+0x1FC & 0x10` is set; ~ (decomp, above) CreatureSocialSuccess sets that flag for a social goal 4.
 * ~ CreatureSocialMode (GetSocialGoal) 0xC0E800: 1 / 2 / 3 from the species relation when the creature is not friendly
   (vt 0xD4 false); the decomp's reconstruction of the friendly branch is incomplete. Our .sym: "4 via +0xB58 and herd
-  counts". Inferred: 4 is "a friendly creature that can join the pack" (allied species, impressed, the own species).
+  counts". Inferred: 4 is "a friendly creature that can join the pack" (allied species, impressed, the own species). (~ superseded 2026-11-21: 4 is relation 6 only, see docs/re/creature.md#creature-partner-social-goal)
   Not measured: what an impressed creature and a pack member return; `coop.social rel` prints `mode=` per NPC.
 * ✔ (code) Before 7L a partner's won social game (host social.cpp apply_success) only set the impressed flag: nobody
   called AddMember. The partner's own recruit path (player_rules h_AddMember -> K_RECRUIT) needs an AddMember in the
@@ -5493,3 +5493,28 @@ Decision 7L, BUG-9308.
   the avatar, its pack as the posse), lets a goal-4 game run also on an impressed creature, and at its win calls
   guest_pack::recruit (the game's own AddMember into that partner's pack). Host log: "won a recruit game (social goal
   4) with npc N: it joins that player's pack"; `coop.social` (host) `recruits=` / `recruits_refused=`.
+
+## A partner's social goal and the party context (2026-11-21, fix/l47-qa)
+<a id="creature-partner-social-goal"></a>
+
+BUG-9308. Runtime on the MSI (two games, Steam 3010a413), `coop.social pmode <npc> <player>` and the disassembly read
+from the running game (tools/qa_win/dis.py).
+* ✔ CreatureSocialMode 0xC0E800 (read live): GetRelationship(npc +0xB28, the noun manager's avatar, npc) gives the
+  relation r; a jump table at 0xC0EA0C picks the goal: r 1 / 2 -> 3, r 3 -> 2, r 4 -> 1 (each 0 when the creature is
+  friendly, vt 0xD4: impressed, relation 6 or the player species), r 5 -> 0 (3 while the creature is busy,
+  0xBCA230(+0xB48, 2, 1, 0, 0) != -1), r 6 -> 4 only in Creature (mode 0x1654C01 / 0x1654C10) when the creature is in no
+  pack (+0xB58 & 0x100 clear) and the pack is not full (cPosseSimulator 0xD52DA0 != 0xD52DC0), else 0.
+* CORRECTION (2026-11-21, fix/l47-qa): the section above (#creature-native-recruit) inferred "goal 4 = allied species,
+  impressed, own species". Read live: goal 4 is relation 6 only; an impressed creature of a neutral species gets goal 0
+  (no social game, no recruit). Native recruiting is: impress members until the species is allied (relation 6), then
+  any ally (not in a pack, the pack not full) is a goal-4 game whose win adds it to the pack.
+* ✔ (runtime) The native ally click on the host (relation 6 set by `coop.social record`): the cursor shows the "+"
+  (add to pack), the click opens the social meter with the green face and rounds = 3 (a prompt game like an impress).
+* ✔ (runtime) Inside guest_pack's party context (the partner's puppet as the noun manager's avatar) GetRelationship
+  returned 6 for every NPC: host relation 3 / mode 2, the same NPC in the partner's party relation 6 / mode 4 (6 NPCs of
+  3 species). ~ Inferred: the puppet's player-species tuning (+0x390 = 6, the player species key AED08DD4) is read as
+  "the one that is not the avatar" (#creature-relations). So partner_mode made every partner win a recruit game: the
+  first QA win on a neutral Trigo Morts paid +0 DNA and put it into the partner's pack at once.
+* Fix `social.partner_relation`: the relation is read outside the party (the party shares the host's table); only a
+  relation-6 NPC asks the party context for its goal (the partner's pack: membership and room). The host's engage /
+  act checks use the partner's goal (an ally the host's full pack would refuse is still the partner's).

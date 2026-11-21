@@ -9304,6 +9304,10 @@ int c_social(void*, int argc, const char* const* argv, SkOut* out)
         SAY("%s", social::meter_dump().c_str());
         return 0;
     }
+    if (argc > 3 && !strcmp(argv[1], "pmode")) { // tests (BUG-9308): pmode <npc id> <player id>
+        SAY("%s", social::pmode_dump((uint16_t)atoi(argv[2]), (uint8_t)atoi(argv[3])).c_str());
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "rel")) {
         SAY("%s", social::relations_dump().c_str());
         return 0;

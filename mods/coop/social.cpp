@@ -281,15 +281,40 @@ static bool g_recruit_fix = true;
 COOP_FIX("social.partner_recruit", "BUG-9308", g_recruit_fix, "creature: a creature a partner wins in a recruit social game joins that partner's pack (decision 7L)");
 static uint32_t g_recruits = 0, g_recruits_refused = 0;
 
+// BUG-9308 (live QA 2026-11-21, MSI): inside the partner's party context GetRelationship 0xBA40E0 returned 6 (allied)
+// for every NPC (`coop.social pmode`: host relation 3 mode 2, the partner's relation 6 mode 4; ~ the puppet's own
+// player-species tuning +0x390 = 6 is read as "the one that is not the avatar"), so a partner's first win on a neutral
+// creature was a recruit game: no DNA, no impression step, straight into its pack. CreatureSocialMode 0xC0E800 (read
+// live): the relation's jump table (0xC0EA0C) gives 1 / 2 -> 3, 3 -> 2, 4 -> 1, 5 -> 0 (3 while busy), each 0 when the
+// creature is friendly (vt 0xD4, e.g. impressed); 6 -> 4 only in Creature when the creature is in no pack (+0xB58 &
+// 0x100) and the pack is not full, else 0. The species relation is the party's (the host's table, the guests follow it):
+// it is read outside the party context; the party context only decides goal 4 (the partner's pack: membership, room).
+// Off (`coop.fix social.partner_relation off`): the goal from inside the party context (every NPC a recruit, first QA).
+static bool g_partner_rel_fix = true;
+COOP_FIX("social.partner_relation", "BUG-9308", g_partner_rel_fix, "creature: a partner's social goal uses the party's species relation (only allied species are recruit games)");
+static uint32_t g_partner_rel_kept = 0;
 // host: the NPC's social goal for player `player` (the partner's puppet as the avatar, its own pack)
 static int partner_mode(uint8_t player, void* c)
 {
     void* pup = g_recruit_fix && C.puppet_of ? C.puppet_of(player) : nullptr;
+    if (g_recruit_fix && g_partner_rel_fix && pup) {
+        void* mgr = rel_mgr();
+        const int rel = mgr && a_RelGet ? thiscall<int>(a_RelGet, mgr, (uint8_t*)c + game::kSpeciesKeyOff, game::avatar(), c) : 0;
+        if (rel != 6) { // not an allied species: the party's goal (1-3, or 0 for a friendly / busy one), as the host's
+            g_partner_rel_kept++;
+            return social_mode(c);
+        }
+    }
     const size_t tok = pup && guest_pack::party_mode() ? guest_pack::party_enter_puppet(pup) : 0;
     const int m = social_mode(c);
     if (tok)
         guest_pack::party_leave_token(tok);
     return m;
+}
+// host: the goal for whoever plays: the host's own avatar, or a partner (7L)
+static int mode_for(uint8_t player, void* c)
+{
+    return g_recruit_fix && g_partner_rel_fix && C.sess && player != C.sess->my_id() ? partner_mode(player, c) : social_mode(c);
 }
 // host: the creature takes no social game from this player (impressed, unless a recruit game as in its own game)
 static bool closed_to(uint8_t player, void* c)
@@ -1242,7 +1267,7 @@ static void fail_game(uint8_t player, uint16_t id)
 static void host_engage(uint8_t from, uint16_t id)
 {
     void* c = npc::host_npc(id);
-    if (!g_prompt_fix || !c || game::is_dead(c) || closed_to(from, c) || social_mode(c) == 0) {
+    if (!g_prompt_fix || !c || game::is_dead(c) || closed_to(from, c) || mode_for(from, c) == 0) {
         if (g_prompt_fix)
             log_no("an engagement the host does not start", from, id, c, C.puppet_of ? C.puppet_of(from) : nullptr);
         return;
@@ -1307,11 +1332,11 @@ static void host_act(uint8_t from, uint16_t id, uint32_t type)
     g_acts_in++;
     void* c = npc::host_npc(id);
     void* pup = C.puppet_of ? C.puppet_of(from) : nullptr;
-    if (!c || game::is_dead(c) || closed_to(from, c) || social_mode(c) == 0 ||
+    if (!c || game::is_dead(c) || closed_to(from, c) || mode_for(from, c) == 0 ||
         (pup && net::dist(game::position(pup), game::position(c)) > kActRange + 4)) {
         g_refused++;
         log_no(!c ? "an act on an npc this game does not have" : game::is_dead(c) ? "an act on a dead npc"
-               : closed_to(from, c) ? "an act on an npc impressed already" : social_mode(c) == 0 ? "an act while the npc does not socialize"
+               : closed_to(from, c) ? "an act on an npc impressed already" : mode_for(from, c) == 0 ? "an act while the npc does not socialize"
                : "an act from too far", from, id, c, pup);
         send_result(id, from, false, 0, 0);
         return;
@@ -1668,15 +1693,16 @@ void on_session_end()
 
 std::string status()
 {
-    char b[640];
+    char b[700];
     if (is_host())
         snprintf(b, sizeof b,
                  "social(host): acts_in=%u impressed=%u refused=%u games=%u species_tx=%u goal_dna_paid=%u "
                  "goal_dna_dropped=%u goal_owed=%u goal_owed_paid=%u prompts_sent=%u answers=%u answers_wrong=%u "
-                 "answers_early=%u prompt_fails=%u games_forgotten=%u recruits=%u recruits_refused=%u\n",
+                 "answers_early=%u prompt_fails=%u games_forgotten=%u recruits=%u recruits_refused=%u partner_rel_kept=%u\n",
                  g_acts_in, g_impressed, g_refused, (unsigned)g_games.size(), g_table_tx, g_goal_dna_paid,
                  g_goal_dna_dropped, (unsigned)g_goal_owed.size(), g_goal_owed_paid, g_prompts_sent, g_answers,
-                 g_answers_wrong, g_answers_early, g_prompt_fails, g_games_forgotten, g_recruits, g_recruits_refused);
+                 g_answers_wrong, g_answers_early, g_prompt_fails, g_games_forgotten, g_recruits, g_recruits_refused,
+                 g_partner_rel_kept);
     else
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
@@ -1861,6 +1887,30 @@ std::string abilities_dump(int id)
         out += "\n";
     }
     return out;
+}
+
+// tests (BUG-9308): host: NPC #id's social goal for the host's avatar and for player p (inside p's party), with the
+// species relation GetRelationship gives in each
+std::string pmode_dump(uint16_t id, uint8_t player)
+{
+    void* c = is_host() ? npc::host_npc(id) : nullptr;
+    void* mgr = rel_mgr();
+    if (!c || !mgr || !a_RelGet)
+        return "no such npc (host only)\n";
+    void* key = (uint8_t*)c + game::kSpeciesKeyOff;
+    auto rel = [&] { return thiscall<int>(a_RelGet, mgr, key, game::avatar(), c); };
+    const int r0 = rel(), m0 = social_mode(c);
+    void* pup = C.puppet_of ? C.puppet_of(player) : nullptr;
+    const size_t tok = pup && guest_pack::party_mode() ? guest_pack::party_enter_puppet(pup) : 0;
+    void* av_in = game::avatar();
+    const int r1 = rel(), m1 = social_mode(c);
+    if (tok)
+        guest_pack::party_leave_token(tok);
+    char b[260];
+    snprintf(b, sizeof b, "npc %u: host relation=%d mode=%d | player %u (puppet %p, party %s, avatar there %p) relation=%d mode=%d "
+             "| impressed=%d pack=%d partner_mode=%d\n", id, r0, m0, player, pup, tok ? "entered" : "not entered", av_in, r1, m1,
+             (int)game::impressed(c), (int)game::pack_member(c), partner_mode(player, c));
+    return b;
 }
 
 bool debug_goto(uint16_t id) // tests: the guest's avatar steps next to proxy #id (2.5 m)

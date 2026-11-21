@@ -43,8 +43,16 @@ animation's length (not measured).
 ## Verification
 no-fail-run: pending the lead's two-player QA (built only; a visual check plus `coop.social meter` samples).
 - Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): partial: right after the first matched answer the guest meter showed entries=1/1 goal=0.25 frac_set=0.25, 0.37 after the second (samples every ~1.2 s over the tunnel, too slow to see the 1 s glide). No visual check, no off-run.
+- Live QA 2026-11-21, second run (QA agent, fix/l47-qa on aeaedfc3 + the BUG-9308 fix, MSI two games: host MSITribeHost
+  instance 2, guest MSIGuest instance 1, Creature Vandh): PASS (switch on). The guest won a full impress of a Trigo Morts
+  (npc 30, two sing prompts, host "score 2.0 of 2.0", "+12 DNA"); `coop.social meter` sampled every ~0.14 s over one
+  console connection (scratchpad play2.py): after the winning answer the bar end went 0.472 -> 0.513 -> 0.595 -> 0.662
+  -> 0.724 -> 0.790 -> 0.860 -> 0.945 over 0.89 s (linear, ~0.07 per 0.14 s), the win waited for it (win_wait=30,
+  wins_deferred=1), full=1 at +1.05 s, the meter stayed visible with the full bar until +2.4 s (hold ~1.4-1.5 s), then
+  visible=0. No visual (screenshot) check; off-run (`social.meter_smooth off`) not done.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on fix/l47-impress (built, not run in game).
 - 2026-11-21: live two-game QA (see Verification).
+- 2026-11-21: second live run, the smooth fill and the win hold measured (see Verification).
