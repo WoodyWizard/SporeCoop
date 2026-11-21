@@ -5999,6 +5999,13 @@ static float g_sink_cell = .6f, g_sink_space = -1.f;
 static bool g_ship_ring_low_fix = true;
 COOP_FIX("space.ring_below_hull", "BUG-9325", g_ship_ring_low_fix,
          "space: a partner's ship ring sits below the whole hull (off: 0.6 x its radius, cut through the ship close up)");
+// BUG-9325 (the owner on the system-view evidence 2026-11-21: "the same overlay issue" in both halves): a Space frame
+// whose rings are drawn at the overlay (no depth clear before the UI seen that frame) has no scene depth to trust; the
+// ship's own sphere (0.75 x the ring's radius round its centre) cuts the part of its ring it hides from the camera.
+// Off: the ring drawn whole there.
+static bool g_ring_cut_fix = true;
+COOP_FIX("space.ring_cut", "BUG-9325", g_ring_cut_fix,
+         "space: where no scene depth is usable, the part of a ship's ring behind the ship is not drawn");
 static float space_sink() { return g_sink_space >= 0 ? g_sink_space : g_ship_ring_low_fix ? 1.f : .6f; }
 // BUG-9324: in Space the labels stay over cinematics (BUG-0985: a flight's arrows), but the death screen and the
 // new-ship caption draw the scene blurred through another pass: the depth buffer at the overlay no longer holds the
@@ -6143,8 +6150,10 @@ void draw_partner_rings()
                 const float rr = object_ring_radius(g_local, 6.f);
                 const size_t n0 = L.v.size();
                 L.add(L.me, p, rr, on_planet ? nullptr : kZ, 18.f, 60.f, -space_sink() * rr);
-                if (L.v.size() > n0) // BUG-9325: under the hull it really has, also when the ring is grown on the screen
+                if (L.v.size() > n0) { // BUG-9325: under the hull it really has, also when the ring is grown on the screen
                     L.v.back().lift_fixed = g_ship_ring_low_fix;
+                    L.v.back().occluder = rr * .75f; // (rr is 1.1 x the bounding radius: the hull, a little inside it)
+                }
             }
         }
         // a partner's cell, creature or ship: its puppet here
@@ -6166,8 +6175,10 @@ void draw_partner_rings()
                 const float rr = object_ring_radius(r.puppet, 6.f);
                 const size_t n0 = L.v.size();
                 L.add(id, p, rr, on_planet ? nullptr : kZ, 18.f, 60.f, -space_sink() * rr);
-                if (L.v.size() > n0) // BUG-9325: under the hull it really has, also when the ring is grown on the screen
+                if (L.v.size() > n0) { // BUG-9325: under the hull it really has, also when the ring is grown on the screen
                     L.v.back().lift_fixed = g_ship_ring_low_fix;
+                    L.v.back().occluder = rr * .75f; // (rr is 1.1 x the bounding radius: the hull, a little inside it)
+                }
             }
         }
         if (g_mode == modes::kCreature)
@@ -6216,8 +6227,9 @@ void draw_partner_rings()
     const bool before_ui = g_ring_before_ui_fix && g_ring_depth && partner_marker::install(H, M);
     if (before_ui && early >= 0)
         g_rings_drawn = (uint32_t)early, g_rings_before_ui++;
-    else if (!L.v.empty())
-        g_rings_drawn = (uint32_t)partner_marker::rings(H, L.v.data(), (int)L.v.size(), g_soft_ring, g_ring_depth);
+    else if (!L.v.empty()) // BUG-9325: Space drawn here has no usable depth: the hull's sphere cuts its ring
+        g_rings_drawn = (uint32_t)partner_marker::rings(H, L.v.data(), (int)L.v.size(), g_soft_ring, g_ring_depth,
+                                                        g_ring_cut_fix && g_mode == modes::kSpace);
     if (before_ui)
         partner_marker::early_arm(L.v.data(), (int)L.v.size(), g_soft_ring);
 }
@@ -6254,7 +6266,8 @@ static int rings_command(void*, int argc, const char* const* argv, SkOut* out)
     SAY("rings: drawn=%u listed=%u soft=%d all=%d own=%d on_hud=%u beyond_horizon=%u space_cinematic=%u sink=%.2f/%.2f\n",
         g_rings_drawn, (unsigned)v.size(), (int)g_soft_ring, (int)g_rings_all, (int)g_own_rings, g_rings_on_hud,
         g_rings_beyond, g_rings_cine, g_sink_cell, space_sink());
-    SAY("before the UI: frames=%u (drawn at the game's depth clear: %u)\n", g_rings_before_ui, partner_marker::early_frames());
+    SAY("before the UI: frames=%u (drawn at the game's depth clear: %u) cut_vertices=%u\n", g_rings_before_ui,
+        partner_marker::early_frames(), partner_marker::cut_vertices());
     for (const auto& r : v) {
         float w[3] = {r.at[0], r.at[1], r.at[2]}, sc[2] = {NAN, NAN};
         H->world_to_screen(w, sc);

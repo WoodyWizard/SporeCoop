@@ -292,7 +292,33 @@ std::string device_report(const SkHost* host)
     return out;
 }
 
-int rings(const SkHost* host, const Ring* in, int n, bool soft, bool depth)
+// BUG-9325: the camera's position from a view matrix (row vectors: v' = w R + t, the camera at -t R^T); false when it is
+// not a camera's (identity or empty)
+static bool camera_of(const D3DMATRIX& m, float c[3])
+{
+    if (identity(m) || (m._11 == 0 && m._22 == 0 && m._33 == 0)) return false;
+    const float t[3] = {m._41, m._42, m._43};
+    for (int j = 0; j < 3; ++j) c[j] = -(t[0] * m.m[j][0] + t[1] * m.m[j][1] + t[2] * m.m[j][2]);
+    return std::isfinite(c[0]) && std::isfinite(c[1]) && std::isfinite(c[2]);
+}
+// true when the unit's sphere (centre s, radius r) is between the camera c and the world point w
+static bool sphere_hides(const float c[3], const float s[3], float r, const float w[3])
+{
+    float d[3], f[3];
+    for (int i = 0; i < 3; ++i) d[i] = w[i] - c[i], f[i] = c[i] - s[i];
+    const float a = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    const float b = 2 * (f[0] * d[0] + f[1] * d[1] + f[2] * d[2]);
+    const float cc = f[0] * f[0] + f[1] * f[1] + f[2] * f[2] - r * r;
+    if (!(a > 1e-6f) || cc <= 0) return false; // (the camera inside the sphere: no cut)
+    const float disc = b * b - 4 * a * cc;
+    if (disc < 0) return false;
+    const float t1 = (-b - std::sqrt(disc)) / (2 * a);
+    return t1 > 0 && t1 < 1;
+}
+static uint32_t g_cut_vertices;
+uint32_t cut_vertices() { return g_cut_vertices; }
+
+int rings(const SkHost* host, const Ring* in, int n, bool soft, bool depth, bool cut)
 {
     auto* device = static_cast<IDirect3DDevice9*>(host->d3d_device());
     if (!device || !host->world_to_screen || !in || n <= 0) return 0;
@@ -305,6 +331,14 @@ int rings(const SkHost* host, const Ring* in, int n, bool soft, bool depth)
     constexpr int kSeg = 48;
     const float kOut = soft ? 1.3f : 1.1f; // the outermost circle, in radii
     if (depth && !scene_depth(device)) depth = false; // (nothing to test against: drawn flat)
+    // BUG-9325 cut: a frame whose scene depth cannot be trusted (Space drawn at the overlay, no depth clear seen): the
+    // part of a ring that the unit's own sphere (Ring::occluder) hides from the camera is made clear by geometry
+    float cam[3] = {0, 0, 0};
+    if (cut) {
+        D3DMATRIX view{};
+        device->GetTransform(D3DTS_VIEW, &view);
+        cut = camera_of(view, cam) || camera_of(g_scene_view, cam);
+    }
     std::vector<Vertex> v;
     std::vector<uint16_t> idx;
     IDirect3DStateBlock9* saved = nullptr;
@@ -329,6 +363,11 @@ int rings(const SkHost* host, const Ring* in, int n, bool soft, bool depth)
         idx.clear();
         bool behind = false;
         auto point = [&](float t, int s, DWORD col) {
+            if (cut && g.occluder > 0) {
+                float w[3];
+                ring_point(g, q, g.radius * k * t, 6.2831853f * s / kSeg, lift, w);
+                if (sphere_hides(cam, g.at, g.occluder, w)) col &= 0x00FFFFFFu, g_cut_vertices++;
+            }
             if (depth) { // x, y: this frame's camera; z, rhw: the scene's view depth and projection
                 float w[3], o[2] = {NAN, NAN};
                 ring_point(g, q, g.radius * k * t, 6.2831853f * s / kSeg, lift, w);

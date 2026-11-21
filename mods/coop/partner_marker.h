@@ -34,11 +34,15 @@ struct Ring {
     // BUG-9325: lift is in the unit's own metres (a ship's hull), not grown with the ring when min_px makes it bigger on
     // the screen (a far ship's grown ring sank its own height away and hung under it, detached)
     bool lift_fixed = false;
+    // BUG-9325: the unit's own size (a sphere of this radius round `at`, metres; 0: none); with `cut` the part of the
+    // ring it hides from the camera is not drawn (a frame with no usable scene depth)
+    float occluder = 0;
 };
 // depth (BUG-9321): world-space triangles through the game's view and projection, tested against the scene's depth
 // buffer (a unit or a hill in front hides that part of its ring); drawn flat when the device has no depth buffer or
 // transforms at the overlay pass
-int rings(const SkHost* host, const Ring* rings, int n, bool soft, bool depth);
+int rings(const SkHost* host, const Ring* rings, int n, bool soft, bool depth, bool cut = false);
+uint32_t cut_vertices(); // BUG-9325: ring vertices the cut made clear (coop.rings)
 // the kept scene depth-stencil reference: release before a device Reset and at the unload (BUG-9321)
 void release_depth();
 // tests (BUG-9321): the device's depth-stencil, render target, depth states and transforms at the overlay pass
