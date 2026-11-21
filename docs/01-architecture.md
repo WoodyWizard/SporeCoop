@@ -1152,3 +1152,25 @@ side is in [civ-own-nations](re/civ.md#civ-own-nations).
   (`nations::friendly`).
 * Switches: `civ.own_nations`, `civ.nations_native`, `civ.team_campaign`. Command: `coop.civ nations [found | ally |
   relation | citizens | spawn | capture <ci> <seat>]`. Test: tools/tests/coop_civ_seats.py (suite civ_seats).
+
+## Own start at any stage (2026-11-21, feat/start-choice-any)
+<a id="architecture-start-any"></a>
+
+BUG-9293, the owner's rule of 2026-11-20: whatever stage the host starts a NEW game in from the galaxy menu, every
+partner chooses its own start too (the Cell start is start_choice, #architecture-start-choice).
+* mods/coop/start_any.{h,cpp}, start_any_logic.h (portable, unit tests test_start_any); MSG_START_ANY 110 (session
+  family 1.7): the host asks a guest seated in its Creature / Tribe / Civ / Space world of a planet whose party began in
+  this session (party::planet_new: no <planet>.spo.duoparty when it opened) and with no choice recorded, once the
+  stage's intro is over; the guest answers (`coop.startany pick <creature> <cards...>`): one of its My Creations
+  creatures and the consequence card of every earlier stage (Cell diet, Creature, Tribe, Civ).
+* The creature: the guest's game takes it as its own creation (creations::choose), so its party seat's species is it
+  (party.cpp species_of) and its nest, village (tribe_villages.cpp) and nation (civ_nations.cpp) are of it.
+* The cards: the host writes them into the guest's party seat as its own history (party::set_history); cards.cpp keeps
+  a seat's chosen card for a stage the host's world has not done (a new game at a later stage has no cards in cPlayer:
+  docs/re/creations.md#creations-start-any) and sends the seat's record to the guest's cPlayer (its History, its
+  consequence powers). The host's own cards stay the wizard's.
+* Records by identity next to the planet: <planet>.spo.duostartany (SAN1). `coop.fix party.start_any off`: nobody is
+  asked (the seat starts from the host's cards).
+* Not yet: a co-op window page for the answer (the console `coop.startany pick` and the test driver answer now); the
+  Space start (stage 4: asks the four cards, untested in the game); the Space empire of a seat (feat/lineages-space is
+  not on this branch).

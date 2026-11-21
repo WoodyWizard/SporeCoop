@@ -38,5 +38,8 @@ std::string status();
 bool set_history(int seat, bool own, const uint32_t (&cards)[founders::kCards], float social, float combat);
 // the planet the roster belongs to ("" = none)
 const std::string& planet();
+// BUG-9293: the planet's party was made in this session (no <planet>.spo.duoparty when the planet opened: a new game
+// or its first co-op play)
+bool planet_new();
 
 } // namespace party

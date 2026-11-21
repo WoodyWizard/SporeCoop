@@ -22,6 +22,7 @@
 #include "dna_pace.h"
 #include "own_progress_logic.h"
 #include "start_choice_logic.h"
+#include "start_any_logic.h"
 #include "host_world.h"
 #include "settings_core.h"
 #include "find_core.h"
@@ -413,6 +414,46 @@ static void test_dna_ledger()
     m.add(Cause::Meal, 1, 4, 0.0);
     m.add(Cause::Meal, 1, 4, 5.0);
     CHECK(m.due(10.0).empty() && m.due(kGatherMeals).size() == 1);
+}
+
+static void test_start_any()
+{
+    printf("start any: the own start at a later stage, its cards and record (start_any_logic.h, BUG-9293)\n");
+    using namespace start_any;
+    CHECK(cards_asked(1) == 1 && cards_asked(2) == 2 && cards_asked(3) == 3 && cards_asked(4) == 4 && cards_asked(0) == 0);
+    Choice c;
+    c.stage = 2;
+    c.creature = 0x292846CB;
+    c.card[0] = 0;
+    c.card[1] = 1;
+    CHECK(valid(c) && card_id(c, 0) == 0xCFB01B93u && card_id(c, 1) == 0xFD159D91u && card_id(c, 2) == 0);
+    Choice bad = c;
+    bad.card[2] = 1; // a card of the start stage itself: not asked
+    CHECK(!valid(bad));
+    bad = c;
+    bad.card[1] = -1; // an earlier stage without its card
+    CHECK(!valid(bad));
+    bad = c;
+    bad.stage = 0; // Cell is start_choice's
+    CHECK(!valid(bad));
+    net::Writer w;
+    write_choice(w, c);
+    net::Reader r(w.data.data(), w.data.size());
+    Choice back;
+    CHECK(read_choice(r, back) && back == c && !r.left());
+    std::vector<Record> recs = {{"id:00000000000000AB", c}};
+    std::vector<Record> out;
+    CHECK(decode_file(encode_file(recs), out) && out == recs && find_record(out, "id:00000000000000AB"));
+    std::vector<uint8_t> broken = encode_file(recs);
+    broken.push_back(0);
+    CHECK(!decode_file(broken, out));
+    AskState s;
+    s.stage = 2, s.new_party = true, s.seated = true, s.in_world = true;
+    CHECK(should_ask(s));
+    s.new_party = false; // a planet played in co-op before: its seats keep their history
+    CHECK(!should_ask(s));
+    s.new_party = true, s.stage = 0; // Cell: start_choice asks
+    CHECK(!should_ask(s));
 }
 
 static void test_start_choice()
@@ -1278,7 +1319,7 @@ static void test_manifest()
     // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
     // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_IDENTITY 73 (BUG-9258, the Lineages port), MSG_CIV_WALLET 74 (BUG-9259),
     // MSG_OWN_CARDS 75 (BUG-9263), MSG_PROGRESS 77 (BUG-9265), MSG_START_CHOICE 79 (BUG-9273)
-    const std::set<int> added_types = {70, 71, 72, 73, 74, 75, 77, 79};
+    const std::set<int> added_types = {70, 71, 72, 73, 74, 75, 77, 79, 110};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1304,6 +1345,9 @@ static void test_manifest()
     CHECK(MSG_START_CHOICE == 79 && std::string(msg_info(79).name) == "START_CHOICE" && msg_info(79).family == Family::session &&
           msg_dir(79) == MsgDir::Any && host_world::msg_class(79) == host_world::MsgClass::Session &&
           dispatch_route(79, true) == Route::StartChoice && dispatch_route(79, false) == Route::StartChoice);
+    CHECK(MSG_START_ANY == 110 && std::string(msg_info(110).name) == "START_ANY" && msg_info(110).family == Family::session &&
+          msg_dir(110) == MsgDir::Any && host_world::msg_class(110) == host_world::MsgClass::Session &&
+          dispatch_route(110, true) == Route::StartAny && dispatch_route(110, false) == Route::StartAny); // BUG-9293
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);
@@ -1505,6 +1549,7 @@ int main(int argc, char** argv)
     test_dna_pace();
     test_own_progress();
     test_start_choice();
+    test_start_any();
     test_dna_ledger();
     test_host_world();
     test_settings();

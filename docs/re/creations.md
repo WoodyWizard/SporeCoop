@@ -1764,3 +1764,17 @@ same steps, outside the frame, once the guest is in the Creature stage of the pl
    found in 30 s (observed 2026-11-20, lane B); with it, a second later.
 The creature is then chosen as the guest's own (choices.ini) and its landfall editor (vote.cpp) waits for it. A painted
 start-choice cell (BUG-9273) has no metadata of its own: the start choice's name is used.
+
+## A new game at a later stage: the wizard's questions and the cards (2026-11-21, feat/start-choice-any)
+<a id="creations-start-any"></a>
+
+BUG-9293. Steam build (the GOG 2024 code), lane A, the galaxy menu's stage chooser (1024x768).
+* ✔ (runtime) Creature and Tribe: "Choose Your Diet" (herbivore / carnivore / omnivore cards), then the Sporepedia
+  ("Create or Choose a (Tribe) Creature"), a theme, the difficulty, the planet's name. Civ: "Choose or Create Your
+  Creature" (one card, a dice), a theme, the difficulty, "Choose Your Empire Specialty" (military / economic /
+  religious), "Choose Your City Stuff" (vehicle and building cards, a dice), the planet's name.
+* ✔ (runtime, `coop.cards` cplayer) In a new game started at Tribe and at Civ the host's cPlayer has NO consequence
+  card (+0x10FC.. all 0) after the intro: the diet card and the empire specialty are not written as Cell / Tribe cards.
+  So a seat's chosen cards of earlier stages are kept by cards.cpp although the host's world has none.
+* ✔ (runtime) A guest's chosen My Creations creature (its 292846CB) is the host's 7CA81684 (the creations stream's
+  key) in the party seat; in Tribe its own village (tribe_villages.cpp, seat 1) was founded with that species.

@@ -17,6 +17,7 @@
 #include "own_world.h"
 #include "party.h"
 #include "sporekit_game.hpp"
+#include "start_any.h"
 #include "start_choice.h"
 
 namespace cards {
@@ -265,8 +266,9 @@ static void host_tick(double now)
             H->log(M, SK_INFO, "cards: seat %d starts its own history from the host's cards", seat);
         }
         for (int i = 0; i < (int)founders::kCards; ++i) {
-            if (!host.cards[i])
-                r.cards[i] = 0; // not done in this world (an earlier save): not done for anybody
+            if (!host.cards[i]) // not done in this world (an earlier save, a new game at a later stage): not done for
+                                // anybody, unless the seat chose its own card for it at its start (BUG-9293)
+                r.cards[i] = start_any::seat_card(seats[seat].player, i);
             else if (!r.cards[i])
                 r.cards[i] = decide(i, seat, r, host.cards[i]);
         }

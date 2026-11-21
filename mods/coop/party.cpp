@@ -59,10 +59,14 @@ static uint32_t species_of(uint8_t player)
 }
 
 // this planet's party, or a new one with the host in seat 0
+static bool g_new; // BUG-9293: no party file when this planet opened
+bool planet_new() { return g_new && !g_planet.empty(); }
+
 static void load(const std::string& planet)
 {
     g_planet = planet;
     g_dirty = false;
+    g_new = false;
     founders::Party saved;
     if (founders::read_party(planet, saved)) {
         g_party = std::move(saved);
@@ -71,6 +75,7 @@ static void load(const std::string& planet)
         g_party = {};
         g_party.seats.push_back({identity::own(), species_of(S->my_id()), name_of(S->my_id())});
         g_dirty = true;
+        g_new = true;
         H->log(M, SK_INFO, "party: a new party on this planet, the host in seat 0");
     }
     if (!g_party.seats[0].player && identity::own()) { // written before the host's identity was known

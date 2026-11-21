@@ -7,6 +7,7 @@
 #include "party.h"
 #include "home_nests.h"
 #include "own_progress.h"
+#include "start_any.h"
 #include "start_choice.h"
 #include "lineage_cells.h"
 #include "cellsync.h"
@@ -1239,6 +1240,15 @@ void register_commands_core()
                        SAY("  dna.cpp: totals_ignored=%u gains_kept=%u hunts_given=%u end_clicks_held=%u\n", g_own_totals_ignored,
                            g_own_gains_kept, g_own_hunts_given, g_end_clicks_held);
                        return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.startany",
+                   "coop.startany [pick <creature hex|keep> <cell> [creature] [tribe] [civ] | ask <player> | creatures] - BUG-9293: the own start in a new game at Creature, Tribe, Civ or Space (status; pick: a guest's answer, card options 0-2: Cell carnivore/herbivore/omnivore, Creature and Tribe aggressive/social/mixed, Civ military/economic/religious)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       std::string o;
+                       int rc = start_any::command(argc, argv, o);
+                       SAY("%s", o.c_str());
+                       return rc;
                    },
                    nullptr, MT);
     H->command_add(M, "coop.start",

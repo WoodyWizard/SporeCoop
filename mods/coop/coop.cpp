@@ -70,6 +70,7 @@
 #include "cards.h"
 #include "home_nests.h"
 #include "own_progress.h"
+#include "start_any.h"
 #include "start_choice.h"
 #include "lineage_cells.h"
 #include "world.h"
@@ -1149,6 +1150,7 @@ static void frame_stage_ticks(double now)
     party::tick(now);    // BUG-9260 (Lineages): the host seats the players of this planet's campaign
     own_progress::tick(now); // BUG-9265: every player's own DNA and bar (Cell, Creature), the stage end together
     cards::tick(now);    // BUG-9263: every player's own stage history (consequence cards)
+    start_any::tick(now); // BUG-9293: a guest in a new game at a later stage chooses its own creature and cards
     start_choice::tick(now); // BUG-9273: a guest new to a Cell planet chooses its own cell (diet, name, colour)
     home_nests::host_tick(now); // BUG-9262 (Lineages): every seat's own nest next to the host's
     lineage_cells::tick(now, game::mode_id() == modes::kCell && modes::cell_game() &&
@@ -2463,6 +2465,7 @@ static void init_world_share()
     }
     cards::init(H, M, &g_sess);    // BUG-9263
     start_choice::init(H, M, &g_sess); // BUG-9273
+    start_any::init(H, M, &g_sess);    // BUG-9293
     lineage_cells::init(H, M, &g_sess); // BUG-9275 (Lineages cells)
     shared::set_feed([](const std::string& t) { feed(t); }); // BUG-0696
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);

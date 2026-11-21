@@ -15,6 +15,7 @@
 #include "civ_wallet.h"
 #include "cards.h"
 #include "own_progress.h"
+#include "start_any.h"
 #include "start_choice.h"
 #include "coop_state.h"
 #include "store.h"
@@ -877,6 +878,10 @@ void setup_callbacks()
         }
         case net::Route::StartChoice: { // BUG-9273: every player's own start in a new Cell game (Session class)
             start_choice::on_message(from, r);
+            return;
+        }
+        case net::Route::StartAny: { // BUG-9293: the own start in a new game at any later stage (Session class)
+            start_any::on_message(from, r);
             return;
         }
         case net::Route::Effect: { // BUG-0451: a partner's creature made an effect
