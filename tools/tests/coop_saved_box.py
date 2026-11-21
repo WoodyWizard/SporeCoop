@@ -171,6 +171,12 @@ def case_twice(ck, h):
     ck(wait(lambda: saved_up(h), 15, 0.2), 'its saved box is up')
     ck(wait(lambda: not saved_up(h), 10, 0.1), 'the mod confirmed the box (it closed)')
     ck(written_after(folder, base, 10), 'the first save is written')
+    # BUG-1397 (final check 20261121-003202): the box's window closes before the mod's own look sees it (box_task, every
+    # 0.2 s outside the frame): a save asked for right then was refused with the older BUG-0846 reason ("waiting for the
+    # previous save's box to close") and the check below, which wants the BUG-1365 reason, failed although the mod did
+    # the right thing. Wait for the mod's own view of the box (`coop.save box`: saved_box=0, set in the same look that
+    # clears the box flag save_game reads), then ask at once: still inside the 1.5 s the game takes no Save message.
+    ck(wait(lambda: 'saved_box=0' in h.call('coop.save box')['out'], 5, 0.05), 'the mod sees the box closed too')
     # at once: the game takes no Save message for 1.5 s after the box's OK
     base = newest(folder)
     t0 = time.time()
