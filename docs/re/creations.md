@@ -1849,3 +1849,16 @@ BUG-9329, decision 7Z A. Runtime on TITAN's QA copy; the test profiles' caches r
 * ✔ (runtime) A save whose player species is a moved-out test creature (QA guest profile, Game20 Samuth: the avatar and
   four of its species, key 291D668C) loaded and played normally after the purge; a host save (Samuth) that references a
   moved-out test vehicle loaded too; a moved-out creature (Pollination only) still spawns with its model.
+* ✔ (2026-11-21, fix/l47-msi-ban, decision 8C A) The main (non-test) Spore profile of the MSI test PC, identity
+  ae4c8a7f631d..., read only: its own cache holds 81 local creations, the same 81 as its EditorSaves metadata records;
+  26 of them were also in 12 TITAN test profiles' caches and in one MSI test profile's cache (shared in a test session),
+  under no other source and on no list line. Every one was made between 2020-07-10 and 2020-08-13 (a real playthrough:
+  two species lines with their cell, creature and editor versions, buildings, vehicles and two ships; parent keys chain
+  them); none by a test game. Result: no `source` line (the owner's rule: never block its real creations), no `creation`
+  line, no `keep` line needed (no listed source holds them); a comment in banned.txt records the review. A later test
+  creation of that profile is banned one by one with a `creation` line.
+* ✔ `pollen_metadata` 0x030BDEE3 (big-endian, version 13): +0x18 parent key {type, group, instance} (zero for a new
+  creation; the previous version for an editor re-save), +0x34 created and +0x3C modified as u64 seconds since
+  0001-01-01 (0x0ED6A3DF8C = 2020-07-17 18:06, consistent with the profile's save files of July/August 2020), +0x44
+  u32 0, +0x48 author ID (FFFFFFFF FFFFFFFE), +0x50 author and then the name as u32 count + UTF-16BE. A quick way to
+  date a profile's creations before banning any: read its EditorSaves.package (DBPF, RefPack) for these records.
