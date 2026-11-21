@@ -82,7 +82,7 @@ static unsigned g_mine_hidden = 0;
 static bool g_no_share_fix = true;
 COOP_FIX("library.no_share", "BUG-9222", g_no_share_fix,
          "Lineages Cache: a player whose name holds -NoShare- shares no creations, and none of theirs are kept");
-static uint32_t g_no_share_dropped;
+static uint32_t g_no_share_dropped, g_no_share_unsent; // BUG-9331: received ones a -NoShare- player did not pass on
 
 // BUG-9329 (decision 7Z A): test creations made before the -NoShare- rule spread into real players' caches. The mod
 // ships a ban list (mods\lineages\banned.txt): `source <identity>` (the hidden Lineages identity of a test profile),
@@ -187,8 +187,13 @@ static void offer(const Entry &e) {
         ++g_ban_unsent;
         return;
     }
-    if (g_no_share_fix && e.local && utf8::no_share_name(S->name_raw_of(S->my_id())))
+    // BUG-9222: a -NoShare- player offers none of its own; BUG-9331: and passes on none it received (a test copy's
+    // cache holds other test games' creations; receivers drop a -NoShare- player's offers anyway, after the download)
+    if (g_no_share_fix && utf8::no_share_name(S->name_raw_of(S->my_id()))) {
+        if (!e.local && g_offered.insert(e.item.hash).second) // once a session: offer_all asks again every step
+            ++g_no_share_unsent;
         return;
+    }
     if (!S->connected() || !g_offered.insert(e.item.hash).second)
         return;
     auto item = e.item;
@@ -1181,7 +1186,7 @@ std::string debug(const std::vector<std::string> &args) {
            " scan=" + std::to_string(g_scan.size()) + " peers=" + std::to_string(g_peers.size()) +
            " incoming=" + std::to_string(g_exchange.incoming_bytes()) + " repaired=" + std::to_string(g_repaired) + " provisional=" + std::to_string(g_provisional) +
            " export_failed=" + std::to_string(g_export_failed) + " mine_hidden=" + std::to_string(g_mine_hidden) + " foreign=" + (g_foreign ? "on" : "off") + " foreign_offered=" + std::to_string(g_foreign_offered) +
-           " foreign_refused=" + std::to_string(g_foreign_refused) + " no_share_dropped=" + std::to_string(g_no_share_dropped) +
+           " foreign_refused=" + std::to_string(g_foreign_refused) + " no_share_dropped=" + std::to_string(g_no_share_dropped) + " no_share_unsent=" + std::to_string(g_no_share_unsent) +
            " ban_list=" + (g_ban_list_ok ? std::to_string(g_ban_sources.size()) + "/" + std::to_string(g_ban_items.size()) + "/" +
                                             std::to_string(g_ban_keep.size()) : std::string("none")) +
            " ban_moved=" + std::to_string(g_ban_moved) + " ban_refused=" + std::to_string(g_ban_refused) + " ban_unsent=" +

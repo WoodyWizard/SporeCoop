@@ -42,3 +42,7 @@ py tools/qa_win/qa.py msi coop.join <this PC's Tailscale address>:47839 MSI-NoSh
 Test players always use a name ending in `-NoShare-` (BUG-9222): their creations are never offered to
 nor kept in anyone's Lineages Cache, so a QA game joining the owner's install leaves nothing in it. The tag is
 hidden in the player list.
+Since BUG-9331 (2026-11-21, owner: "All tests should all be -NoShare-") a test copy adds the tag by itself: any game
+started with `-sporekit-profile:` (every launcher here passes it) or as a second instance hosts and joins with
+"-NoShare-" added to its typed name. Keep typing the tag anyway. Only `coop.fix core.test_noshare off` (on both games)
+lets two QA games share creations, for a deliberate Lineages Cache test.
