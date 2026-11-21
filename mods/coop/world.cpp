@@ -488,6 +488,19 @@ static uint64_t newest_write(const std::wstring& dir, int depth = 0)
 static bool g_adventure_fix = true;
 COOP_FIX("world.adventure_saves", "BUG-0854", g_adventure_fix, "world: no campaign save and no quit message from the mod while an adventure is played");
 
+// BUG-1365: the game's own conditions for taking a Save message (0xB29960: 0xB2999F..0xB299B6): its save clock is
+// stopped and SaveGame_Allowed is set. Unknown symbols: allowed (the old behaviour).
+static bool g_save_allowed_fix = true;
+COOP_FIX("world.save_allowed", "BUG-1365", g_save_allowed_fix, "world: a save is not posted while the game's previous save is still finishing (the game would drop it silently)");
+unsigned g_saves_too_early; // tests
+bool save_may_start()
+{
+    static uintptr_t allowed = H->sym("SporeCoop::SaveGame_Allowed"), clock = H->sym("SporeCoop::SaveGame_Clock");
+    if (!allowed || !clock || !skg::readable((void*)allowed, 1) || !skg::readable((void*)clock, 8))
+        return true;
+    return *(volatile uint8_t*)allowed != 0 && *(volatile uint32_t*)clock == 0 && *(volatile uint32_t*)(clock + 4) == 0;
+}
+
 bool save_game(std::string& err)
 {
     using namespace skg;
@@ -508,6 +521,16 @@ bool save_game(std::string& err)
     // BUG-0846: the previous save's box is still up: a new save would take it for its own confirmation
     if (g_saved_box_fix && g_saved_box_visible) {
         err = "waiting for the previous save's \"game saved\" box to close";
+        return false;
+    }
+    // BUG-1365: the game's Save handler (SporeCoop::SaveGame_MessageHandler 0xB29960) drops the message, with no box and
+    // no trace, while its last save is not finished: the save's clock still runs (SaveGame_Clock +0/+4 not zero) or
+    // SaveGame_Allowed is 0 (cleared by a save, set again 1500 ms after its box's OK). A save posted then was reported
+    // "saved" and never written (own_editor_drop: the test's save 1-2 s after the rejoin's share save). Now it is
+    // refused with that reason; the callers try again (shares, autosave) and coop.save says why.
+    if (g_save_allowed_fix && !save_may_start()) {
+        err = "the previous save is still finishing (the game drops a save now): try again in a moment";
+        g_saves_too_early++;
         return false;
     }
     uintptr_t get = H->sym("App::IMessageManager::Get");

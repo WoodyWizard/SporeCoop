@@ -54,7 +54,8 @@ int c_save(void*, int argc, const char* const* argv, SkOut* out)
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "box")) {
-        SAY("saved_box=%d hold=%d", world::saved_box_up() ? 1 : 0, world::g_box_hold ? 1 : 0);
+        SAY("saved_box=%d hold=%d may_start=%d too_early=%u", world::saved_box_up() ? 1 : 0, world::g_box_hold ? 1 : 0,
+            world::save_may_start() ? 1 : 0, world::g_saves_too_early); // BUG-1365
         return 0;
     }
     world::g_box_hold = argc > 1 && !strcmp(argv[1], "hold"); // tests (BUG-0482): the box stays up
