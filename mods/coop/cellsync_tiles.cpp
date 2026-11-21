@@ -83,7 +83,8 @@ uint32_t kPopCap = 1100, kPopCapScreen = 1300;
 int g_tile_level = -1; // the level base of the last PopulateTiles call (tests)
 std::unordered_map<uint32_t, uint8_t> g_starved; // tile objects of ours not populated for the budget -> the partner (0xFF: unknown)
 uint32_t cells_live() { return G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0; }
-static bool over_budget() { return cells_live() >= kPopCap; }
+static uint32_t pop_cap(); // BUG-9292 (below)
+static bool over_budget() { return cells_live() >= pop_cap(); }
 uintptr_t a_PopTiles, a_PopTile, a_TileActive, a_ViewBoxes;
 constexpr size_t kTileCap = 2048; // entries of our own lists' fixed buffers (the active set is < 512 tiles)
 std::unordered_map<int, PartnerTiles> g_ptiles; // partner id -> its tile list
@@ -187,15 +188,27 @@ static bool partner_core(const uint32_t* t)
 // The cells of a populated tile show up in the pool's live count only over the next frames, so
 // several tiles in one frame overshot the caps (host peaks 1714-1722 with 1250 / 1500, labs
 // 20261030-053258, -062717): from kPopCap - 250 on, at most 2 partner tiles per frame.
+// BUG-9292 (the owner, 2026-11-20: "too many creatures spawn and it lags a lot"): with partners apart the host's game
+// kept up to 1100 live cells (two populated areas) where a game alone holds about 580 (lane A, level 5: solo avg 576
+// max 804; two players apart avg 731 max 1104), and the host's frame rate followed the count (the owner's log: 16 fps
+// at ~450 cells, 7 fps at ~900). On (cell.pop_budget_solo): the session's budget is a single player's, 800 cells (a
+// partner's own screen up to 950); the test command `coop.pool budget` still sets its own. Off: 1100 / 1300.
+static bool g_fix_pop_solo = true;
+COOP_FIX("cell.pop_budget_solo", "BUG-9292", g_fix_pop_solo,
+         "cell: the host's pool with partners keeps about a single player's number of cells (800, a partner's screen 950), not 1100 / 1300");
+constexpr uint32_t kSoloPopCap = 800, kSoloPopCapScreen = 950;
+static uint32_t pop_cap() { return g_fix_pop_solo && kPopCap == 1100 ? kSoloPopCap : kPopCap; }
+static uint32_t pop_cap_screen() { return g_fix_pop_solo && kPopCapScreen == 1300 ? kSoloPopCapScreen : kPopCapScreen; }
 static int g_frame_tiles;
 static bool starve_tile(const uint32_t* t)
 {
     uint32_t live = cells_live();
-    if (live >= kPopCap - 250 && g_frame_tiles >= 2)
+    const uint32_t cap = pop_cap(), cap_screen = pop_cap_screen();
+    if (live >= cap - 250 && g_frame_tiles >= 2)
         return true;
-    if (live < kPopCap)
+    if (live < cap)
         return false;
-    if (live < kPopCapScreen && partner_core(t)) {
+    if (live < cap_screen && partner_core(t)) {
         g_n.tiles_core++;
         return false;
     }
