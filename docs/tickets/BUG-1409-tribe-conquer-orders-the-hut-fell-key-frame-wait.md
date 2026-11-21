@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: fix/w62-flake-tcs
-commits:
+commits: 8fff6d2e
 tests: tribe_conquer_orders
 signature:
 docs:

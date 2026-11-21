@@ -190,6 +190,8 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
 - Tribe: a new village the host's game forms during play now appears on a guest's screen with its people at once,
   also when its species was new to the guest's game; before, it came about 5 seconds late (BUG-1375; still open until
   its lab run).
+- Tribe: on a laggy connection a guest's copy of a tribe member that starts to walk no longer jumps about a metre in
+  one frame while it catches up with the host's member (BUG-1235; still open until its lab run).
 ## [0.7.15.5] - 2026-11-19
 
 A fix for players who could not leave the Tribe stage: the City Hall editor at its end could not be named after a

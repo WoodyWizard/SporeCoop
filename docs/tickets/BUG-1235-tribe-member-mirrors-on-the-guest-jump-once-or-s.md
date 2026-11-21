@@ -10,7 +10,7 @@ role:
 versions: 0.7.14.1, unreleased
 fixed_in:
 branch: fix/w62-flake-tcs
-commits:
+commits: fbdd2510
 tests: tribe_walk_player
 signature:
 docs: docs/known-issues.md#issue-tribe-walk-player-jumps
