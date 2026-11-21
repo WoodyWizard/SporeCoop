@@ -11,7 +11,7 @@ versions: 0.7.15.94
 fixed_in: unreleased
 branch: fix/party-new-planet
 commits: bcd0eaf7
-tests: manual two-instance run (lane B, below)
+tests: tools/tests/coop_newgame_landfall.py (manual driver, Windows lane)
 signature:
 docs:
 related: BUG-9260
@@ -36,6 +36,7 @@ party.wait_planet_file off` = each try counts as an error (0.7.15.94).
 Lane B, the integration build, a new Cell game from the galaxy menu, the guest joins:
 - FAIL with `coop.fix party.wait_planet_file off` (planet Homan): `party: ... saves=4 errors=4`.
 - PASS with the fix (planet Orley): `party: ... saves=1 errors=0 dirty=0 file_waits=4`, then saves=4 errors=0 in Creature.
+- Driver: tools/tests/coop_newgame_landfall.py (the same steps in one script; --landfall-off / --party-off are the twins). The runs above were made with its steps as separate scripts; the combined script waits for a lane.
 - no-fail-run: the lab's party test uses a saved planet (fixture creature), which never has the gap; FAIL and PASS were
   run by hand on lane B as above.
 
