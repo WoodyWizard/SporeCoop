@@ -6183,3 +6183,10 @@ static analysis only, nothing of this section was run in a game yet.
   test the leader), so the cause is not found statically. The host now logs each power's state 0.5 / 2 / 8 s after the
   press, for a partner's and its own chief (`tribe: power 0x.. of <name>'s chief ... after N s: progress= bit= in_use=
   energy= cost= rec= node= depth= mem= ...`): the node id tells whether the power node ran.
+* CORRECTION (2026-11-21, fix/l47-powers): "on a guest's game the guest's own cPlayer decides which power its bar
+  offers" above is true of the field, but that field holds the HOST's cards while a guest plays the host's world:
+  wsync's "stages" row (BUG-0577, wsync.cpp s_stages, in play in every planet stage) writes the host's cPlayer
+  +0x10FC..+0x110C into the guest's cPlayer. So a partner's chief-power unlocks (0xD1F400, and its cached words
+  0x5FF7BAF / 0x5FF7BB6 once both exist) follow the host's earlier stages, not the partner's own. Evidence: the code
+  (wsync.cpp kRows "stages", planet() = Cell..Space); not seen in a game. No per-founder record of a partner's own
+  cards exists in the mod (founders roster, wsync, creations: none found).

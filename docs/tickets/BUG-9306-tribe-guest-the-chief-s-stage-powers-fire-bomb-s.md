@@ -108,3 +108,13 @@ Done on fix/l47-powers (built; not run in a game yet):
   docs/re/civ.md#civ-guest-superweapons) and tells the sender when its nation cannot fire it. Tools: `coop.civ sw` (per
   nation), `coop.civ swgrant <seat> <type> [money]`. Open: the partner nation's card-based unlocks come from the host's
   cPlayer (RefreshUnlocks); the global types 2/5/8 reach the other founders' cities (owner decision). Built, not run.
+- 2026-11-21: CORRECTION (fix/l47-powers): asked to make the host use a partner's own Civ unlocks ("the guest's bar
+  shows its own unlocks"). Found in the code instead: wsync.stages (BUG-0577) writes the host's cPlayer stage cards
+  (+0x10FC..+0x110C) into every connected guest's cPlayer in every planet stage, so the guest's own game also offers
+  the host's cards' powers (Tribe chief powers via 0xD1F400, Civ unlocks via RefreshUnlocks); host and guest agree on
+  the host's history. The mod keeps no per-founder record of a partner's own cards, so there is nothing to send or
+  apply yet. Not implemented; decision asked: (A) record each founder's own card at each graduation per seat (the
+  guest's game reads its new card before wsync overwrites it, sends it, the host keeps it in the founder roster and
+  the world save), then use it for that founder's chief powers (an exception in wsync.stages for the unlock words, or
+  the host checks) and its nation's Civ unlocks (RefreshUnlocks run with that seat's cards swapped into cPlayer, as
+  h_Unlocks already swaps the city view); (B) keep one shared history for the party (today's behaviour).

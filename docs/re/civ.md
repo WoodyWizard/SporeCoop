@@ -2764,3 +2764,8 @@ dump has the mod's hooks in it: FireSuperweapon 0xBF8BB0 and RefreshUnlocks 0xBF
   plus the last partner request; `coop.civ swgrant <seat> <type> [money]` (host, tests) unlocks a type for a seat's
   nation and adds money (RefreshUnlocks may take the unlock back at the next city change); `coop.civ super <type> [x y
   z]` on a guest sends a request as its UI does.
+* CORRECTION (2026-11-21, fix/l47-powers): the premise "the guest's bar shows its own unlocks" does not hold in the
+  host's world: wsync.stages (BUG-0577) gives the guest's cPlayer the host's cards, so the guest's game computes its
+  unlocks from the host's history too, and the host's RefreshUnlocks for a partner nation uses the same host cards.
+  Host and guest agree; neither knows the partner's own earlier-stage cards (the mod keeps no per-founder record).
+  A partner-unlocks fix first needs that record (see BUG-9306, decision).
