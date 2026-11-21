@@ -282,6 +282,10 @@ void refresh()
                                      (ri.rel.from_web ? " (from the release page)" : "")
                          : !ri.done ? "Newest release: checking GitHub..."
                                     : "Newest release: GitHub not reachable (" + ri.err + ")";
+    if (!g_opt.inst.private_version.empty()) // BUG-9284
+        latest = upd::narrow(inst::local_pack(g_opt.inst)).empty()
+                     ? "Private build: " + inst::private_pack_missing(g_opt.inst.private_version)
+                     : "Private build SporeCoop " + g_opt.inst.private_version + ": installs the pack next to the setup only";
     SetWindowTextW(g_latest, upd::widen(latest).c_str());
     // BUG-0094: the version the button installs, as do_install chooses it: the pack next to the
     // setup, or GitHub's release when that is newer
@@ -416,7 +420,8 @@ LRESULT CALLBACK wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         add(L"STATIC", L"github.com/WoodyWizard/SporeCoop  -  every player needs the same SporeCoop version", 0, 20,
             356, 520, 18);
         refresh();
-        CloseHandle(CreateThread(nullptr, 0, check_thread, nullptr, 0, nullptr));
+        if (g_opt.inst.private_version.empty()) // BUG-9284: a private build asks GitHub nothing
+            CloseHandle(CreateThread(nullptr, 0, check_thread, nullptr, 0, nullptr));
         return 0;
     }
     case WM_COMMAND:
@@ -562,6 +567,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, LPWSTR, int show)
     upd::g_log = log; // the download retries (BUG-0755) go to the /log: file
     g_libs = steam_libraries();
     g_opt.inst.pack_dir = self_dir();
+    // BUG-9284 (build/amigos): the private build's setup installs only its own pack and never downloads
+    if (std::string v = SETUP_VERSION; v != "dev")
+        g_opt.inst.private_version = v;
     wchar_t delay[16] = {};
     if (GetEnvironmentVariableW(L"SPORECOOP_SETUP_TEST_DELAY", delay, 16)) { // tests (BUG-0139)
         upd::g_swap_delay_ms = _wtoi(delay);

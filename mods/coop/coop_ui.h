@@ -99,6 +99,22 @@ struct Api {
     std::function<void(bool send)> report_answer;
     // the lobby's address line: the host's "ip:port, ..." to give to friends, a guest's the host it joined
     std::function<std::string()> host_address;
+    // BUG-9273: a guest's own start in a new Cell game (start_choice.h). start_prompt: the host asked and nothing was
+    // answered (the window shows the "Your own cell" page); start_submit(diet 0 herbivore / 1 carnivore / 2 omnivore,
+    // the creature's name, palette index or -1): false and why when refused; start_color_free(idx): no other player
+    // has it; start_color_now: our palette index now (-1 none); start_name: the name the page starts with
+    std::function<bool()> start_prompt;
+    std::function<bool(int diet, const std::string& name, int color, int body, std::string& why)> start_submit; // body: the cell's
+    // body colour (start_choice_logic.h kBody index, -1: the game cell's own)
+    std::function<bool(int color)> start_color_free;
+    std::function<int()> start_color_now;
+    std::function<std::string()> start_name;
+    // BUG-9293: a guest's own start in a new game at a later stage (start_any.h). any_prompt: the stage asked for (1
+    // Creature .. 4 Space, 0 none: the window shows the "Your own start" page); any_creatures: our My Creations
+    // creatures {instance, name}; any_submit(creature instance or 0 = keep, one card option per earlier stage)
+    std::function<int()> any_prompt;
+    std::function<std::vector<std::pair<uint32_t, std::string>>()> any_creatures;
+    std::function<bool(uint32_t creature, const int (&cards)[4], std::string& why)> any_submit;
     uint16_t default_port = 0;
 };
 

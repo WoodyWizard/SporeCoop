@@ -1,7 +1,7 @@
 // SporeCoop mod: creature-stage co-op ("pack" mode). See docs/03-gameplay.md.
 // the release version (tools/package.sh names the zip after it)
 #ifndef COOP_VERSION
-#define COOP_VERSION "0.7.15.5"
+#define COOP_VERSION "0.7.15.95"
 #endif
 
 #include <winsock2.h>
@@ -44,6 +44,7 @@
 #include "audio.h"
 #include "census.h"
 #include "civ.h"
+#include "civ_wallet.h"
 #include "autoupdate.h"
 #include "gamefixes.h"
 #include "spacecoop.h"
@@ -64,6 +65,14 @@
 #include "cell_logic.h"
 #include "busy.h"
 #include "social.h"
+#include "identity.h"
+#include "party.h"
+#include "cards.h"
+#include "home_nests.h"
+#include "own_progress.h"
+#include "start_any.h"
+#include "start_choice.h"
+#include "lineage_cells.h"
 #include "world.h"
 #include "find.h"
 #include "net/discovery.h"
@@ -150,6 +159,15 @@ std::map<uint8_t, uint8_t> g_roles; // civilization roles by player id (the host
 // BUG-0079); `coop.role fix 0` = the code before (tests)
 bool g_role_fix = true;
 COOP_FIX("role.fix", "BUG-0064 BUG-0079", g_role_fix, "civ: roles end with their player and session (coop.role fix)");
+// BUG-9284 (the private friends build, owner test 2026-11-20: a friend on the official 0.7.15.5 joined the 0.7.15.94
+// host with only a "versions differ" warning, and the stages' own progress, own cards and own cells did not work with
+// it): a guest whose SporeCoop version differs from the host's is refused at its join, with a text on both games
+// (net::Session::same_version). coop.ini [coop] same_version: this build's default is on (1); `coop.fix
+// net.same_version off`: the warning only (0.7.15).
+static bool g_same_version_fix = true;
+COOP_FIX("net.same_version", "BUG-9284", g_same_version_fix,
+         "net: only the same SporeCoop version joins (the private build): another one is refused with a text on both games");
+static bool g_same_version_cfg = true;
 std::map<uint8_t, int> g_lobby_rtt; // guest: host-measured rtt of every player
 // BUG-0772 (not reproduced, a guard): the ready flags and round trips are in the BUG-0422 registry, so a join and a
 // leave of an id clear them like every other per-player state. The ticket's path (a leaver without a Remote kept
@@ -1051,7 +1069,7 @@ static void frame_world_ticks(double now)
 // on_frame, phase: host: the DNA total (on a change, every 2 s) and the time of day (every 1 s)
 static void frame_send_totals(double now)
 {
-    if (g_sess.role() == net::Role::Host && game::avatar()) {
+    if (g_sess.role() == net::Role::Host && game::avatar() && !own_progress::active()) { // BUG-9265: own: no shared total
         float total = game::dna();
         // also every 2 s: a guest drops it while it has no avatar (loading, editor), BUG-0128
         if (total != g_dna_sent || (cellsync::totals_resend_enabled() && now - g_dna_at > 2.0)) {
@@ -1106,6 +1124,7 @@ static void frame_local_update(double now)
     store::tick();    // E1 (BUG-1149): the host's world opened: its per-player store
     autosave::tick(); // E2 (BUG-0864): the host's autosave (the save itself outside the frame)
     g_sess.max_players = settings::get(settings::kPlayerLimit); // F3 (BUG-0768): the host's join rules
+    g_sess.same_version = g_same_version_fix && g_same_version_cfg; // BUG-9284
     pfind::tick(H->time_seconds()); // F2: the partners on the minimap (outside the frame)
     portrait::tick(H->time_seconds()); // BUG-0937: the HUD portrait follows the avatar's species (outside the frame)
     pfind::hud_tick(H->time_seconds()); // BUG-0949: the UI windows the labels keep off (outside the frame)
@@ -1127,6 +1146,15 @@ static void frame_stage_ticks(double now)
     share_wait_tick();
     host_away_tick(now);
     host_busy_tick(now); // C3 (BUG-1142): the host tells its pause; a guest's game waits for it
+    identity::tick(now); // BUG-9258 (Lineages): a guest sends its identity after each join, the host its table
+    party::tick(now);    // BUG-9260 (Lineages): the host seats the players of this planet's campaign
+    own_progress::tick(now); // BUG-9265: every player's own DNA and bar (Cell, Creature), the stage end together
+    cards::tick(now);    // BUG-9263: every player's own stage history (consequence cards)
+    start_any::tick(now); // BUG-9293: a guest in a new game at a later stage chooses its own creature and cards
+    start_choice::tick(now); // BUG-9273: a guest new to a Cell planet chooses its own cell (diet, name, colour)
+    home_nests::host_tick(now); // BUG-9262 (Lineages): every seat's own nest next to the host's
+    lineage_cells::tick(now, game::mode_id() == modes::kCell && modes::cell_game() &&
+                                 !(game_busy() & (busy::kEditor | busy::kLoading))); // BUG-9275: the players' cells as NPCs
     dna_spend_tick(now); // BUG-0466
     dna_notices_tick(now);
     tribe::tick(now);
@@ -1138,6 +1166,7 @@ static void frame_stage_ticks(double now)
         }, &walk_done);
     cellsync::tick(now);
     civ::tick(now);
+    civ_wallet::tick(now); // BUG-9259: every player's own Civ money (the setting civ.own_money)
     civ::planner_probe_tick(); // BUG-0682 tests (off unless `coop.civ planner_probe on`)
     squadron::tick(now);
     autoupdate::tick();
@@ -1597,6 +1626,9 @@ void on_overlay(void*, int, void*)
         }
         if (H->world_to_screen(w, sc)) {
             std::string tag = r.name;
+            if (ad->mode == modes::kCell) // BUG-9273: the name the player gave its own cell
+                if (std::string own = start_choice::name_of(id); !own.empty())
+                    tag += " (" + own + ")";
             float at[3] = {p.x, p.y, p.z};
             pfind::tag("player", id, tag, sc[0], sc[1], at, 0); // F2 colour, BUG-0949
             g_tags_drawn++;
@@ -2048,6 +2080,13 @@ void init_ui()
         to = g_sess.name_of(t);
         int n = 0;
         if (g_mode == modes::kTribe) {
+            int vm = 0;
+            float vf = 0;
+            if (tribe::own_village_info(vm, vf)) { // BUG-9268: a village of one's own: its members and food
+                what = "village";
+                to = std::to_string((int)vf);
+                return vm;
+            }
             n = tribe::own_selected();
             what = "member";
         } else if (g_mode == modes::kCiv) {
@@ -2152,6 +2191,30 @@ void init_ui()
                                                   : std::string(ru ? "Ваш цвет: " : "Your colour: ") + (ru ? c.ru : c.en);
         return true;
     };
+    // BUG-9273: "Your own cell" (start_choice.h)
+    a.start_prompt = [] { return start_choice::prompt(); };
+    a.start_submit = [](int diet, const std::string& name, int color, int body, std::string& why) {
+        return start_choice::answer(diet, name, color, body, &why);
+    };
+    a.start_color_free = [](int idx) {
+        return findx::can_take(pfind::colors(), g_sess.my_id(), idx) == findx::Refused::None;
+    };
+    a.start_color_now = [] { return pfind::color_index(g_sess.my_id()); };
+    a.start_name = [] { return start_choice::default_name(); };
+    // BUG-9293: "Your own start" (start_any.h)
+    a.any_prompt = [] { return start_any::prompt(); };
+    a.any_creatures = [] {
+        std::vector<std::pair<uint32_t, std::string>> out;
+        for (const auto& o : creations::options(creations::kCreature))
+            out.push_back({o.key.instance, o.name.empty() ? std::string("?") : o.name});
+        return out;
+    };
+    a.any_submit = [](uint32_t creature, const int (&cards)[4], std::string& why) {
+        int8_t c[4];
+        for (int i = 0; i < 4; i++)
+            c[i] = (int8_t)cards[i];
+        return start_any::answer(creature, c, &why);
+    };
     a.world_line = ui_world_line;
     a.ready = [] { return g_ready.count(g_sess.my_id()) && g_ready[g_sess.my_id()]; };
     a.set_ready = set_ready;
@@ -2221,7 +2284,7 @@ void support_init()
 {
     g_ini_auto_load = H->config_int(M, "coop", "auto_load_world", 1);
     g_ini_share_npcs = H->config_int(M, "coop", "share_npcs", 1);
-    g_ini_update = H->config_int(M, "update", "check", 1);
+    g_ini_update = H->config_int(M, "update", "check", 0); // build/amigos: off by default (autoupdate.cpp)
     g_ini_sync = H->config_int(M, "coop", "sync_check", 30);
     support::Probe p;
     p.sess = &g_sess;
@@ -2278,12 +2341,12 @@ void support_init()
     p.stage_end = [] { return tribe::stage_end(); };
     p.since_share = [](uint8_t peer) { return world::since_share(peer); };
     p.dna = [](float& v) {
-        if (!game::avatar() || g_mode != modes::kCreature)
+        if (!game::avatar() || g_mode != modes::kCreature || own_progress::active()) // BUG-9265: not shared
             return false;
         v = game::dna();
         return true;
     };
-    p.cell_food = [](int& v) { return g_mode == modes::kCell && cellsync::food_total(v); };
+    p.cell_food = [](int& v) { return g_mode == modes::kCell && !own_progress::active() && cellsync::food_total(v); };
     p.cell_scale = [] { return g_mode == modes::kCell ? cellsync::scale_now() : 0.f; };
     p.over_ground = [](const net::Vec3& v) { // BUG-1216: the planet stages only
         if (g_mode != modes::kCreature && g_mode != modes::kTribe && g_mode != modes::kCiv)
@@ -2378,6 +2441,7 @@ SkModInfo g_info = {SK_ABI_VERSION, "coop", COOP_VERSION, on_unload};
 // sporekit_mod_main, phase: coop.ini: the player name, the world share switches, the support trace
 static void init_config()
 {
+    g_same_version_cfg = H->config_int(M, "coop", "same_version", 1) != 0; // BUG-9284
     char nm[256]; // 24 characters of up to 4 bytes each (BUG-0142: 64 bytes cut a CJK name)
     H->config_str(M, "coop", "name", "Player", nm, sizeof nm);
     g_name = utf8::player_name(nm);
@@ -2402,6 +2466,21 @@ static void init_world_share()
         creations::world_species_out(peer, files);
     });
     shared::init(H, M);
+    identity::init(H, M, &g_sess); // BUG-9258 (Lineages)
+    party::init(H, M, &g_sess);    // BUG-9260 (Lineages)
+    {
+        own_progress::Ctx oc; // BUG-9265
+        oc.sess = &g_sess;
+        oc.feed = [](const std::string& s) { feed(s); };
+        oc.elsewhere = [] { return guest_elsewhere(); };
+        oc.one_creature = [] { return settings::get(settings::kCreatureMode) == 1; };
+        oc.vote_active = [] { return g_vote.active; };
+        own_progress::init(H, M, oc);
+    }
+    cards::init(H, M, &g_sess);    // BUG-9263
+    start_choice::init(H, M, &g_sess); // BUG-9273
+    start_any::init(H, M, &g_sess);    // BUG-9293
+    lineage_cells::init(H, M, &g_sess); // BUG-9275 (Lineages cells)
     shared::set_feed([](const std::string& t) { feed(t); }); // BUG-0696
     world::set_auto_load(H->config_int(M, "coop", "auto_load_world", 1) != 0);
     game::set_anim_listener(on_anim);
@@ -2664,6 +2743,11 @@ static void init_player_modules()
     sc.pace = dna_pace_gain; // BUG-0510
     sc.elsewhere = [] { return guest_elsewhere(); }; // BUG-0420
     social::init(H, M, sc);
+    home_nests::Ctx hc; // BUG-9262 (Lineages)
+    hc.sess = &g_sess;
+    hc.notice = [](const std::string& t) { notice(t, -1); };
+    hc.world = [] { return g_world; };
+    home_nests::init(H, M, hc);
     game::set_damage_filter(npc::damage_filter);
 }
 
@@ -2704,6 +2788,8 @@ static void init_creature_hooks()
         H->hook_create(M, (void*)a, (void*)h_Submit, (void**)&o_Submit);
     if (uintptr_t a = H->sym("SporeCoop::CellStage_ToCreature")) // BUG-0315
         H->hook_create(M, (void*)a, (void*)h_CellToCreature, (void**)&o_CellToCreature);
+    if (uintptr_t a = H->sym("SporeCoop::Cell_EndSequence")) // BUG-9266
+        H->hook_create(M, (void*)a, (void*)h_CellEndSeq, (void**)&o_CellEndSeq);
     if (uintptr_t a = H->sym("SporeCoop::CreatureGame_HandleMessage")) // BUG-0466
         H->hook_create(M, (void*)a, (void*)h_CreatureGameMsg, (void**)&o_CreatureGameMsg);
     if (uintptr_t a = H->sym("SporeCoop::Simulator_HandleMessage"))
@@ -2735,6 +2821,10 @@ static void init_tribe_and_creations()
             it->second.relook = it->second.puppet != nullptr; // BUG-0923: built again in a frame or two, not a new arrival
             despawn(it->second);
         }
+    };
+    crc.host_world = [] { // BUG-9267: the world the host plays (its latest state), 0 unknown
+        const net::PlayerState* h = own_world::peer_state(0);
+        return h ? h->world : 0u;
     };
     creations::init(H, M, std::move(crc));
     modes::g_species_for_player = [](uint8_t id) { return creations::player_species(id); };

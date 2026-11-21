@@ -2,6 +2,7 @@
 // passes around every player, BUG-0174 / BUG-0295, the world scale and the stack tests, the AI's targets and the
 // loot drops); moved out of cellsync.cpp (C8 of 0.7.15, BUG-1183).
 #include "cellsync_internal.h"
+#include "call_guard.h"
 
 namespace cellsync {
 
@@ -28,6 +29,7 @@ int SK_CDECL h_Populate(float prob, int layer, int level, void* query, void* bbo
             return 0;
         g_n.solo_spawns++; // BUG-0205: the host is away, our game fills its own pool
     }
+    callguard::Depth depth(g_marker_depth); // BUG-9275: the native spawns (a Lineages cell may take one's model)
     return o_Populate(prob, layer, level, query, bbox, marker, x);
 }
 
@@ -81,7 +83,8 @@ uint32_t kPopCap = 1100, kPopCapScreen = 1300;
 int g_tile_level = -1; // the level base of the last PopulateTiles call (tests)
 std::unordered_map<uint32_t, uint8_t> g_starved; // tile objects of ours not populated for the budget -> the partner (0xFF: unknown)
 uint32_t cells_live() { return G() ? F<uint32_t>(G(), 0x1C + 0xC) : 0; }
-static bool over_budget() { return cells_live() >= kPopCap; }
+static uint32_t pop_cap(); // BUG-9292 (below)
+static bool over_budget() { return cells_live() >= pop_cap(); }
 uintptr_t a_PopTiles, a_PopTile, a_TileActive, a_ViewBoxes;
 constexpr size_t kTileCap = 2048; // entries of our own lists' fixed buffers (the active set is < 512 tiles)
 std::unordered_map<int, PartnerTiles> g_ptiles; // partner id -> its tile list
@@ -89,6 +92,7 @@ views::Set g_views;                          // host: itself + every partner (th
 static std::vector<std::array<float, 12>> g_view_boxes; // the view boxes of each centre (host first)
 static TileList* g_pass_list;   // the list of the pass PopulateTiles is running for us (null: none)
 static int g_pass = -1;         // -1 none, 0 the host's pass, k > 0 the pass of centre k
+int tile_pass_player() { return g_pass > 0 && (size_t)g_pass < g_views.size() ? (int)g_views.list()[(size_t)g_pass].player : -1; }
 static bool g_union;            // h_TileActive: also true inside another centre's box
 static std::unordered_set<uint32_t> g_shadow_tiles; // tile objects not populated (another list has the tile)
 // BUG-0999: a host view box whose centre is not a usable position (not finite, or at the 1e7 edge that view_bad lets
@@ -184,15 +188,27 @@ static bool partner_core(const uint32_t* t)
 // The cells of a populated tile show up in the pool's live count only over the next frames, so
 // several tiles in one frame overshot the caps (host peaks 1714-1722 with 1250 / 1500, labs
 // 20261030-053258, -062717): from kPopCap - 250 on, at most 2 partner tiles per frame.
+// BUG-9292 (the owner, 2026-11-20: "too many creatures spawn and it lags a lot"): with partners apart the host's game
+// kept up to 1100 live cells (two populated areas) where a game alone holds about 580 (lane A, level 5: solo avg 576
+// max 804; two players apart avg 731 max 1104), and the host's frame rate followed the count (the owner's log: 16 fps
+// at ~450 cells, 7 fps at ~900). On (cell.pop_budget_solo): the session's budget is a single player's, 800 cells (a
+// partner's own screen up to 950); the test command `coop.pool budget` still sets its own. Off: 1100 / 1300.
+static bool g_fix_pop_solo = true;
+COOP_FIX("cell.pop_budget_solo", "BUG-9292", g_fix_pop_solo,
+         "cell: the host's pool with partners keeps about a single player's number of cells (800, a partner's screen 950), not 1100 / 1300");
+constexpr uint32_t kSoloPopCap = 800, kSoloPopCapScreen = 950;
+static uint32_t pop_cap() { return g_fix_pop_solo && kPopCap == 1100 ? kSoloPopCap : kPopCap; }
+static uint32_t pop_cap_screen() { return g_fix_pop_solo && kPopCapScreen == 1300 ? kSoloPopCapScreen : kPopCapScreen; }
 static int g_frame_tiles;
 static bool starve_tile(const uint32_t* t)
 {
     uint32_t live = cells_live();
-    if (live >= kPopCap - 250 && g_frame_tiles >= 2)
+    const uint32_t cap = pop_cap(), cap_screen = pop_cap_screen();
+    if (live >= cap - 250 && g_frame_tiles >= 2)
         return true;
-    if (live < kPopCap)
+    if (live < cap)
         return false;
-    if (live < kPopCapScreen && partner_core(t)) {
+    if (live < cap_screen && partner_core(t)) {
         g_n.tiles_core++;
         return false;
     }
@@ -1068,6 +1084,8 @@ void SK_CDECL h_SpawnLoot(void* res, void* key, void* query, void* pos, float si
         double now = H->time_seconds();
         for (int i = 0; i < n && i < cap; i++)
             g_loot_recent.push_back({buf[i], now});
+        if (mine)
+            lineage_loot(res, buf, n < cap ? n : cap); // BUG-9275: a species that drops a part keeps its look
         while (g_loot_recent.size() > 64)
             g_loot_recent.pop_front();
     }

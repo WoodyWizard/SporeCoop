@@ -216,6 +216,12 @@ std::wstring local_pack(const Options& opt)
     return n.empty() ? std::wstring() : opt.pack_dir + L"\\" + upd::widen(n);
 }
 
+std::string private_pack_missing(const std::string& version)
+{
+    return "this is the private SporeCoop " + version + " setup: put SporeCoop-" + version +
+           ".pack next to the setup and run it again (it never downloads SporeCoop; nothing was installed)";
+}
+
 Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox& box, std::string& msg,
                   const upd::Progress& progress, std::string* older_version, std::string* installed)
 {
@@ -228,7 +234,16 @@ Result do_install(const std::wstring& root, const Options& opt, upd::ReleaseBox&
     std::string err;
     std::wstring lp = local_pack(opt);
     bool have_local = !lp.empty() && upd::read_pack_file(lp, pack, err);
+    if (!opt.private_version.empty() && (!have_local || pack.version != opt.private_version)) {
+        // BUG-9284: a private build installs only its own pack, never a download
+        msg = have_local ? "the pack next to the setup is SporeCoop " + pack.version + ", not " + opt.private_version + ". " +
+                               private_pack_missing(opt.private_version)
+                         : private_pack_missing(opt.private_version);
+        return Result::Failed;
+    }
     upd::ReleaseInfo ri = box.get(); // BUG-0077: a copy; the check thread may set the box meanwhile
+    if (!opt.private_version.empty())
+        ri.ok = false; // (BUG-9284: no GitHub release counts, nothing is downloaded)
     if (!have_local || (ri.ok && upd::compare_versions(ri.rel.version, pack.version) > 0)) {
         if (!ri.ok) {
             if (!upd::latest_release(opt.api, ri.rel, err)) {

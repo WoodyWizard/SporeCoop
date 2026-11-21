@@ -127,6 +127,22 @@ inline std::string not_let_in_text(const std::string& player, const std::string&
            " messages of your versions do not fit together (revision " + std::to_string(their_rev) + " there, " +
            std::to_string(my_rev) + " here; you have " + version_words(my_version) + ")";
 }
+// BUG-9284 (the private friends build): only the same SporeCoop version plays together (Session::same_version).
+// `a`, `b`: HELLO / WELCOME version strings; true when their coop versions differ (an empty one, a game before 0.7.4,
+// differs too)
+inline bool other_version(const std::string& a, const std::string& b) { return short_version(a) != short_version(b); }
+// the refusal for the player who reads it (the notice shows its start: the versions first)
+inline std::string same_version_text(const std::string& other, const std::string& other_version, const std::string& my_version)
+{
+    return "not the same version: " + other + " has " + version_words(other_version) + ", you have " +
+           version_words(my_version) + ". This build plays only with the same version: install the same SporeCoop on both games";
+}
+// the host's line about a guest it refused
+inline std::string same_version_not_let_in(const std::string& player, const std::string& their_version, const std::string& my_version)
+{
+    return player + " (" + version_words(their_version) + ") was not let in: this build plays only with the same version (you have " +
+           version_words(my_version) + "). Install the same SporeCoop version on both games";
+}
 // a later stage change into a family that differs: a warning, the session goes on
 inline std::string stage_warn_text(const std::string& player, const std::string& their_version, const Conflict& c)
 {

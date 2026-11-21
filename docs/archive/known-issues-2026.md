@@ -3680,3 +3680,65 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   ../re/space.md#space-captain-items-null); this entry moves to the archive when the night run confirms the fix.
 * Fixed 2026-11-19 (fix/w55-captain, 0.7.15.3): `game.captain_items` (BUG-0304) and `game.captain_stats` (BUG-1278);
   lab PASS 20261119-111406, FAIL with the guards off 20261119-112022 / 20261119-112459.
+
+## Cell, own progress: a click on History's check that waits leaves the screen white (2026-11-20, feat/own-progress)
+<a id="issue-own-progress-cell-white"></a>
+
+* What happens: with all.own_progress on, a player whose Cell bar is full clicks History's check before every
+  partner's bar is full: the click waits (the host's runs by itself once every bar is full) and that player's screen
+  stays white until the stage moves on. The "bar is full" notice tells the players to click only when told.
+* Reproduce: two games in Cell, `coop.pool meal 1000` on one, its History check (the HUD button under the portrait,
+  then the check), screenshot.
+* Ticket: BUG-9266 (fixed on feat/own-progress: `cell.end_click`, the click is taken before the game's end sequence)
+## Space: a guest's captain screen shows no item limits for the host's captain (2026-11-18, fix/w55-captain)
+<a id="issue-captain-items-guest"></a>
+
+* What happens: a guest in the host's Space world opens the captain screen (the rank badge, or Accept of an
+  adventure mission): since 0.7.15.3 it no longer crashes (BUG-0304), but the equipment palette shows every item as
+  available, not the host captain's real item state.
+* Reproduce: `tools/lab.py run space_captain` (the fixture's captain has no item list in either game); a host whose
+  captain was made in Galactic Adventures and a guest joining its Space world.
+* Known: coop sends the host's own creation without the captain's property list {captain, 0x00B1B104, group | 0xE500}
+  (docs/re/space.md#space-captain-items-null).
+* Seen at runtime (lane 3, 2026-11-19): the `space` fixture's guest gets a null list on every opening (`coop.captain`:
+  `items: none` +1); not checked with a host captain made in Galactic Adventures.
+* Next steps: send and register that resource under the host's key (BUG-1279 lists the pitfalls).
+* Ticket: BUG-1279.
+
+
+## Own villages: the host's villager cards list a partner's member (2026-11-20, feat/lineages-tribe)
+<a id="issue-own-village-host-cards"></a>
+
+* What happens: with a partner's own village in Tribe (BUG-9268), the host's villager cards on the right of the HUD
+  show a card of the partner's species among the host's. Clicking it selects nothing.
+* Reproduce: tools/tests/coop_tribe_seats.py (or the graduation to Tribe with a guest on its own creature), then look
+  at the host's cards.
+* Known: Tribe_IsPlayerOwned answers true for a partner's village on the host (`tribe.guest_ai`); the card list's
+  caller is not traced (docs/re/tribe.md#tribe-own-villages).
+* Fixed (2026-11-20, feat/lineages-tribe): the Tribe UI's card caller 0xCCC6EA gets the game's answer (tribe.host_cards).
+* Ticket: BUG-9271
+
+
+## Own villages: one 31 s hang of a guest's world teardown at a rejoin (2026-11-20, feat/lineages-tribe)
+<a id="issue-own-village-rejoin-hang"></a>
+
+* What happens: a guest with its own village left and joined again; leaving its Tribe world for the host's it stood
+  31 s (watchdog) and the host timed it out. Seen once; four later rejoins had no hang.
+* Reproduce: a guest with its own village (BUG-9268) leaves and joins again while the host plays on in Tribe.
+* Known: suspected the terrain cursor bound to the freed village (guarded since); not proven.
+* Fixed (2026-11-20, feat/lineages-tribe): the cause was the destroy hook's object walks during the world reset (game.reset_sender_scan).
+* Ticket: BUG-9272
+
+
+## Own nations: no nation for a partner on a planet without a free city site (2026-11-20, feat/lineages-civ)
+<a id="issue-own-nation-no-site"></a>
+
+* What happens: with every player's own nation (BUG-9274) a partner who joins a Civilization planet whose city sites
+  are all founded gets no capital: the host's `coop.civ nations` says "<name>'s capital waits: no free site" and the
+  partner plays the host's nation (the shared split of 0.7.15).
+* Reproduce: a Civ save with all ten cities founded (cCivExpansion +0xB0 = 0, `coop.civ nations` "sites 10 left 0"),
+  a guest with a creature of its own joins.
+* Known: the capital needs a free native site (SpawnNextCity); Lineages had the same limit.
+* Fixed (2026-11-20, feat/lineages-civ): an NPC nation is taken over for the partner (civ.nation_adopt,
+  docs/re/civ.md#civ-nation-adopt).
+* Ticket: BUG-9276

@@ -2585,3 +2585,141 @@ BUG-1263. GOG 2024, lanes 2 / 3 (`coop_evo_screens.py --part cell`, both games' 
 * ✔ The egg laying's fade is undone only by an editor's return or the next round: forgetting the mate after the fade
   left the picture black (36 s). The mate has to be forgotten before the meeting starts (`cell.refused_mate`,
   `cellsync::forget_mate` from vote.cpp evo_flag_tick, outside the game's call chain).
+
+## Own progress: own food, a held History check (2026-11-20, feat/own-progress)
+<a id="cell-own-progress"></a>
+
+BUG-9265, BUG-9266. Steam build (the GOG 2024 code), lane B on Windows.
+* ✔ (runtime) With each player's own food (S+0x1C) the HUD of each game shows its own bar and DNA (host 300 food:
+  22 DNA, guest 120: 11 DNA); the players then are at other levels in the host's one pool (the host's cell drawn large
+  on the guest's screen); nothing faulted in a 10 min session.
+* ✔ (runtime) A guest's own food after a load of the host's save is given back through AddFoodPoints by the
+  difference in the cell step (`cellsync::set_food_total`, the food guard: not paced, not sent): 100 kept while the
+  host's world had 200.
+* ✔ (runtime) History's check clicked at food 1000 and held (the host's, CellStage_ToCreature not called) or refused (a
+  guest's) leaves that game's screen plain white with the consequence card ("Pacifist"), 26 s and longer, until the
+  stage moves on; no cinematic plays at the hook (`cinematic 0`). Calling the held switch later (outside the frame) runs
+  the game's switch as before (the vote, both games in Creature). What starts the white: #cell-end-sequence.
+
+## History's check runs the Cell end sequence before the stage switch (2026-11-20, feat/own-progress)
+<a id="cell-end-sequence"></a>
+
+BUG-9266. Steam build, objdump of the unpacked `.text` (docs/05-re-notes.md, the Steam text dump) and lane B.
+* ✔ (asm) `SporeCoop::Cell_HistoryCheck` 0xE75B80 (History's check in Cell): hides window 0x44827B8, 0xE53640(2, 0),
+  closes History (0xE44200), and only when G+0x5158 == 5 (the stage done) jumps to `SporeCoop::Cell_EndSequence`
+  0xE72C80. The other caller of 0xE72C80 is the debug key handler (0xE814B3).
+* ✔ (asm) `Cell_EndSequence` 0xE72C80, cdecl void(): returns at once without the avatar or with its +0x113 / +0x112
+  set; G+0x5169 = 1; unless G+0x5158 is 3 already: 0xE53560, G+0x5158 = 3, 0xE53110, 0xE6D600, 0xE82C10 (the avatar's
+  position, the cell game +0x5190 +0x6C..+0x74), **0xE4F640(1)**, the avatar's animation 0x2E (0xE6D200), a timed cell
+  event of type 0x1F after that animation's length (G+0x5194), 0xE59A30 (avatar +0x18C = 0x2E). The event dispatcher
+  0xE7E130 runs type 0x1F as `CellStage_ToCreature` 0xE62440 (#cell-switch-to-creature).
+* ✔ (runtime) So the white screen of a held or refused switch was already up when CellStage_ToCreature came: with the
+  switch held there (`coop.fix cell.end_click off`) the host's screen after its early click was 69 % white, the guest's
+  after its click in the vote 52 % (lane B shots). Refusing the click at 0xE72C80 instead (`cell.end_click`) leaves
+  History closed, G+0x5158 at 5 (a later click works) and the game drawn; calling the original 0xE72C80 later from
+  outside the frame plays the whole sequence and the switch as the game's own click does.
+* ~ Inferred: 0xE4F640(1) is the white fade (the sequence's only screen-wide call); not checked alone.
+
+## The diets' cells for an own start; the Cell card's meal counters (2026-11-20, feat/start-choice)
+<a id="cell-start-choice"></a>
+
+BUG-9273. Steam build (the GOG 2024 code), lane B, Windows; `coop.creations choose cell <key>` on a guest, then
+`coop.pool diet` (GetCellModelData +0x1250 carnivore, +0x1251 herbivore) on both games.
+* ✔ (runtime) Any cell model key the game has can be a guest's own cell: the guest's avatar is rebuilt with it and the
+  host's puppet of the guest has the same model and diet flags (no records travel for a model of the game's packages).
+* ✔ (runtime) The 44 cell models (bem, group 0x40616200) of Spore_Content.package by diet: **both mouths: 6ED040F4
+  (23 parts) and 0C176D89 (16 parts, with spikes)**; neither: 7DBAEA99, 0C7963FB; carnivore: 577327D0, 50F9BC5D,
+  DD6F6214, A0AE3D5C, CD23FEED, D9007204, 4939A587, 29EA9724, 0D64F036, 00D63AA9, 7A91F555, F5447AEB, 0705012B,
+  6E9FA321, C75EF2F7, 780A9EAF, 33E71830, E3B1B67B, 00F529D5, F7840E98, 252A132F; herbivore: the rest (A1C46DF2,
+  BAF1AD40, 2C8CA6B2, D79A2303, AC4ACE98, 4DA56CA5, FB6D9850, BEA71300, E219E5D0, E219E5D2, E219E5D3, B0B9BAFF,
+  70EDAFB0, 834359F4, 71D5C83E, 06444D55, 454573E6, D5766181, 2DDF0D92). The start choice's omnivore is 0C176D89.
+* ✔ (runtime) The wizard's herbivore card does not always give E219E5D2: a new game on lane B gave the host
+  **2DDF0D92**, the next one E219E5D2 (inferred: the wizard picks one of several premades per diet).
+* ✔ (objdump of the unpacked .text) `Cell_GetConsequenceTrait` 0xE5C9D0 calls 0xE511C0(a = +0x24 + +0x20, b = +0x28 -
+  +0x20 + +0x1C) of cCellSerializableData: (b - a) + k1 * (C - (a + b)), times k2, clamped; below tuning +0xCC
+  herbivore, above +0xC8 carnivore, else omnivore.
+* ✔ (runtime) `coop.pool meal 30 plant` raised +0x20 by 30 (and the food +0x1C); meat meals (24 food) left +0x20..+0x28
+  at 0. With every counter 0 and food 24 the card is omnivore (5ECE4770); food 330 of meat: carnivore (CFB01B93).
+* ✔ (runtime) A guest's copy of the host's world holds the host's counters; the start choice zeroes +0x20..+0x28 a
+  second after the answer (after the food step set the food to 0), so its card follows its own meals.
+* ✔ (runtime) A carnivore guest (252A132F) swimming into meat gained 12 points twice; swimming into plants: 0.
+
+## A cell model's body colour, and painting a copy (2026-11-20, feat/start-choice)
+<a id="cell-body-colour"></a>
+
+BUG-9273 (the owner: each player's creature colour on the cell's body). Steam build, lane B; the game's 44 cell model
+records (bem 0x1A99B06B, group 0x40616200) of Spore_Content.package.
+* ✔ (static, all 44) The unpacked model record starts `D3 7E 65 48 05 00 00 00 <part count> ...`; at byte 26 the cell
+  paint id (docs/re/creations.md#creations-content-all-kinds), and at **byte 50 three colours of three floats each
+  (r, g, b, 0..1): base, coat, detail**. E219E5D2: base (0.80, 0.49, 0.37), coat and detail white; 252A132F: base
+  (0.20, 0.80, 0.15) green, coat (0.67, 0.24, 0.38), detail (1.0, 0.94, 0.69).
+* ✔ (runtime) The base colour is the body: a copy of 252A132F (green) with base (0.15, 0.35, 0.90) is drawn blue, with
+  (0.86, 0.12, 0.12) red, on the game that made it and on the partner's game that built it from the shared bundle
+  (screenshots of both games); a copy of E219E5D2 green and of 0C176D89 yellow the same. The mouths stay (GetCellModelData
+  +0x1250 / +0x1251 of the copy as the original's).
+* ✔ The records are byte-run packed: `FE n` = n more of the byte before (`FE 00` a literal 0xFE). In the 44 models the
+  runs are only of 0x00 and 0xFF and n is 3 or more; runs of three zeros stay literal.
+* ✔ (runtime) **The game's reader faults on the same model packed again with runs of 3 bytes** (`FE 02`, any byte):
+  `GetCellModelData` -> the 0xE83EC8 path (`CreatureStart_FromCell+0x5B8` in the relocated Steam exe, data 0x9C), on the
+  guest that made it and on the host that built it, the moment the cell was rebuilt. A byte-for-byte copy under a new
+  key works. So a colour is written **in place**: only when the 12 bytes are literal in the record and the byte after
+  them is no run (a new 0xFE as FE 00); all three premades of the start choice have them literal.
+* ✔ (runtime) A cell copy under a key of ours (0x7B......, registered in a package of ours) works as a guest's own cell
+  through the creations pipeline exactly like a My Creations cell: the bundle carries the bem and the pictures, every
+  other game registers it under the one key 0x7C...... Without the premade's png (type 0x2F7D0004) the guest's HUD portrait
+  was a white square; with it the portrait shows the premade's picture (its own colour, not the painted one).
+* ~ The premade cells' metadata records (0x030BDEE3, 135 bytes, version 0x0A) hold the key and a tag
+  ("tag:spore.com,2006:AssembledContent") but no author / name strings (a My Creations metadata record has them after
+  an FF x7 FE mark, dbpf::metadata_names): a name would need the player creations' metadata layout, which is not
+  traced (other fields, the key inside).
+## Lineages cells on our pipeline (2026-11-20, feat/lineage-cells)
+<a id="cell-lineage-cells"></a>
+
+BUG-9275 (Lineages BUG-9111, docs/re/cell.md#cell-fork-lineages-43 for the fork's own notes). Steam build (the GOG 2024
+code), Windows lane A, `coop.lineage`.
+
+* ✔ (runtime) GetModelKeyForCellResource (0xE65640) answered with a player cell's key inside PopulateMarker makes the
+  native spawn a cell of that model, drawn with its paint, on the host and (built from the guest's own key of the same
+  records) on the guest: 31 swaps in the first minute with `coop.lineage share 100`; outside a marker no call came on
+  the host (`outside=0`); on the guest the mirrors' creation calls it (outside=1334: the chooser ignores them).
+* ✔ (runtime) Behaviour by the model's diet: cells of a carnivore-only model (flags C-) chased meat only, cells of an
+  omnivore model (CH) chased meat and plants (`pcell ... chase_kind=`, +0x22C, sampled on the host). The native
+  predator species of a new herbivore game was B0B9BAFF (a herbivore model, AI 0x1006) as in Lineages' notes.
+* ✔ (runtime) The Cell pool is not saved: after `coop.save` with 22 player-model cells in the pool, a cold game that
+  loaded the planet had only the native species (B0B9BAFF) and no fault, although the 0x7B keys of the guest cells were
+  not registered in that game.
+* ✔ A cell's bem record is the same bytes in My Creations, in the creations stream (0x7C key) and in our remapped copies
+  (0x7B / 0x7D): the bem signature found the guest's current cell among the cells it sent (20219D41 = 7B08F5A9 = the
+  guest's 29284693) and left it out.
+* ~ Not handled: NPCs of a cell made before it became a player's current cell (a guest's mid-stage `coop.creations
+  choose cell`) live on until they die; only new spawns leave it out.
+* ? Not checked: whether a cell is drawn without PreloadCreature (both games preload it; Lineages did not test either).
+## Own progress: players on different levels; nobody grows a level alone (2026-11-20, feat/own-progress)
+<a id="cell-level-together"></a>
+
+BUG-9287. Steam build (the GOG 2024 code), lane A on Windows, a new Cell game, own progress on.
+* ✔ (runtime) Host at food 312 (world scale 15), guest at food 24 (world scale 0.5, `scale_converted` counting): the
+  guest's `coop.pool see 80` listed no cell at all on its screen for minutes (nothing it could eat), while the host saw
+  plants, meat and creatures. The pool is populated at the host's level (host-centric.md G7, the partner passes of
+  cellsync_tiles.cpp take the host's level base too).
+* ✔ (runtime, both games at level 1) Plants eaten by either player gave points on that player's game only (12 a plant;
+  6 of 6 on the host, 6 of 6 on the guest); a "bubble" the cell swims into disappears with no points (not food).
+* ✔ (code) cell_logic::level_of_food: 1 + food / 100 (level 10 from 900); the tile pass's level argument is that level
+  of the host's food (the trace's `level` followed the host's food 84 -> 1, 218 -> 3).
+* Fix: own meals over the next level line are kept while a partner is below it (own_progress::clip_meal).
+* ? Not tried: PopulateTiles with a partner's level base for that partner's area (BUG-0975: lower levels' tiles at the
+  host's world scale overflow the game's 511-entry buffer unless the box is scaled).
+
+## Lineages cells: only the players' current cells (2026-11-20, feat/lineage-cells)
+<a id="cell-lineage-current"></a>
+
+BUG-9285 (the owner's test of the friends build 0.7.15.94: "many giants in the Cell stage").
+* ✔ (log) With BUG-9275 the host's pool candidates were its own My Creations cells (8, then 9 and 10: the Cell editor
+  saves every version of the own cell to My Creations, so each evolution added the old cell) and the guests' sent
+  cells; any native creature species could take one (any AI, any level).
+* ~ Inferred: the species of the levels above the avatar are drawn large (that is how the game shows the bigger
+  levels), so a player cell on such a spawn is a giant; the player species' own native spread (S+0x10, 6-8 cells
+  around the avatar, #cell-own-species) is always at the avatar's level.
+* Now (cell.lineage_current): only player-species spawns are swapped, to a partner's current cell
+  (creations::player_key); `coop.lineage` prints each player-model cell's level (+0x358) and the avatar's
+  `food_level` (cell_logic::level_of_food(S+0x1C)) so a test can compare them.

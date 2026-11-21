@@ -48,6 +48,7 @@ enum Id : int {
     kCivRoles,       // Civ: the governors' roles (military, economic, religious) and their bonuses
     kCivSiege,       // Civ: two players attacking one city capture it 50 % faster
     kCivSwVote,      // Civ: a superweapon fires after a vote of everybody
+    kCivOwnMoney,    // Civ: every player has its own money (civ_wallet.cpp, BUG-9259); off by default
     kSpaceDisable,   // Space: a destroyed ship next to a partner is only disabled for 20 s
     kSpaceTrade,     // Space: tool gifts and trade between players (space_trade.cpp)
     kSpaceContracts, // Space: co-op contracts (space_contracts.cpp)
@@ -56,6 +57,9 @@ enum Id : int {
     kSpaceFinale,    // Space: the galaxy's core together (space_finale.cpp)
     kSpaceRivals,    // Space: the host may switch to the rivals mode (space_rivalry.cpp)
     kAutosave,       // all stages: the host's game saves itself every N minutes and after milestones (E2, autosave.h)
+    kOwnProgress,    // Cell, Creature: every player's own DNA and evolution bar; the stage changes when all are full (BUG-9265)
+    kStartChoice,    // Cell: a guest new to the planet chooses its own cell's diet, name and colour (BUG-9273, start_choice.h)
+    kLineageCells,   // Cell: the players' own cells appear as NPC species in the pool (BUG-9275, lineage_cells.h)
     kCount
 };
 
@@ -145,6 +149,9 @@ inline const Def kDefs[kCount] = {
     {"civ.superweapon_vote", "Civilization", "Superweapons need a vote",
      "on: a superweapon fires after a vote of everybody; off: it fires at once",
      1, 0, 1, Scope::Session, nullptr, false},
+    {"civ.own_money", "Civilization", "Own money",
+     "on: every player has their own money: each pays for their own purchases, the nation's income is split by the cities each one owns, and a player new to the world gets an equal part of the host's money; off: one shared treasury",
+     0, 0, 1, Scope::Session, nullptr, false},
     {"space.disable", "Space", "Disabled, not destroyed",
      "on: a destroyed ship next to a partner is only disabled for 20 s and the partner repairs it; off: it is destroyed as in a solo game",
      1, 0, 1, Scope::Session, nullptr, false},
@@ -169,6 +176,15 @@ inline const Def kDefs[kCount] = {
     {"all.autosave", "All stages", "Host autosave",
      "every N minutes and after a milestone (a new stage, a colony founded, a city captured, an epic killed) the host's game saves itself into its own save, as the pause menu's Save; off: only the players' own saves",
      2, 0, 5, Scope::Live, "autosave", false, "off|5 min|10 min|15 min|30 min|60 min"},
+    {"all.own_progress", "All stages", "Own progress",
+     "on: in the Cell and Creature stages every player has their own DNA and evolution bar, earned by their own deeds; a full bar waits until every player's bar is full, then everybody moves on together after the vote; off: one shared DNA / food total for the party",
+     1, 0, 1, Scope::Session, "own_progress", false},
+    {"cell.start_choice", "Cell", "Own start",
+     "on: a guest who starts on the planet in the Cell stage chooses its own cell (diet, name, colour), kept per player; off: a guest plays the host's cell or one of its own creations (F9)",
+     1, 0, 1, Scope::Session, "start_choice", false},
+    {"cell.lineage_cells", "Cell", "Player cells in the pool",
+     "on: about one in six spawns of a creature species of the tide pool takes the look of one of the players' own cells (from their My Creations; never a cell a player plays now) with the same diet, so a carnivore hunts and a herbivore grazes; off: only the game's own species",
+     1, 0, 1, Scope::Live, "lineage_cells", false},
 };
 
 // all.autosave (E2): the minutes of a choice (0 = off)

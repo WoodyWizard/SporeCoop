@@ -96,6 +96,11 @@ public:
     // whether a new player is refused now (all.late_join off while the host plays its world). A player who was in
     // this session already (its name, or its rejoin token) may always come back. coop.cpp sets both every frame
     int max_players = kMaxPlayers;
+    // BUG-9284 (the private friends build): a guest whose SporeCoop version differs from the host's is refused at its join
+    // (host: its HELLO; guest: the WELCOME of a host of another version), with a text on both games. coop.cpp sets it from
+    // coop.ini [coop] same_version (the build's default) and `coop.fix net.same_version`
+    bool same_version = false;
+    uint32_t same_version_refused() const { return same_version_refused_; }
     std::function<bool()> join_closed;
     // BUG-0776, host: the broadcast addresses of this machine's adapters (network byte order, coop.cpp from
     // adapters::list()): a discovery query from one of their subnets is answered too (a virtual LAN outside the
@@ -239,6 +244,7 @@ private:
     bool host_state_seen_ = false;
     std::vector<uint32_t> compat_warned_; // host: (id << 8 | family) warned about; guest: families
     uint32_t compat_refused_ = 0;
+    uint32_t same_version_refused_ = 0; // BUG-9284
     bool host_compat(Peer& p, uint32_t host_mode);
     void stage_compat();
     uint32_t halfopen_refused_ = 0, halfopen_evicted_ = 0;                                      // BUG-0778

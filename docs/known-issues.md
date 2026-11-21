@@ -383,6 +383,22 @@ anchor so other docs can link to it:
 * Reproduce: `tools/lab.py run evo_screens_switch`, key frame `01_switch_vote`.
 * Ticket: BUG-1269
 
+## Own stage history: what is still shared or untested (2026-11-20, feat/own-cards)
+<a id="issue-own-cards-limits"></a>
+
+* Tribe and Civ: a guest's Tribe and Civ cards are the host's (this build has one player tribe and one nation, the
+  same play for both players); own cards need own villages / nations (the next Lineages phases).
+* Cell: the guest's own Cell card is its own game's decision from its own Cell save data; that the guest's game
+  counts its own food there was not checked in a Cell game (no Cell save on the test PC): if it does not, the guest
+  gets the host's card (the fallback).
+* Creature: the Creature decision adds the History timeline's Cell value of the host's world, not the guest's.
+* Powers: the guest's cPlayer holds its own cards; which code builds the avatar's consequence abilities at a stage
+  start (before or after the mod writes the cards after a world load) was not traced; the guest's own editor requests
+  carry its own cards.
+* The stage ends were made by the host's command (`coop.wsync stage`), not through History and the editors (the
+  campaign's coordinates are for 1440x1080; this PC's test windows are 1024x768).
+* Reproduce / test: tools/tests/coop_own_cards.py.
+* Ticket: BUG-9263
 ## Space: a guest's captain screen shows no item limits for the host's captain (2026-11-18, fix/w55-captain)
 <a id="issue-captain-items-guest"></a>
 
@@ -398,3 +414,37 @@ anchor so other docs can link to it:
 * Next steps: send and register that resource under the host's key (BUG-1279 lists the pitfalls).
 * Ticket: BUG-1279.
 
+
+## Own nests: the host's family copies stay in the guest's own nest herd list (2026-11-20, feat/lineages-nests)
+<a id="issue-own-nest-herd-list"></a>
+
+* What happens: on a guest's game that joined its own nest, `coop.nest herd <its home herd>` still lists the copies of
+  the host's family after they were moved to their own species' herd. No wrong behaviour seen yet.
+* Reproduce: tools/tests/coop_home_nests.py, then `coop.nest home` and `coop.nest herd <herd>` on the guest.
+* Ticket: BUG-9270
+
+## Own start: what the start choice does not give yet (2026-11-20, feat/start-choice)
+<a id="issue-start-choice-limits"></a>
+
+* Body colour: the guest's HUD portrait shows the game cell's picture in its own colour (the png of the premade; the
+  body in the world is painted). Only the base colour is set (coat and detail stay the premade's).
+* Name: the creature's name is not written into the cell creation's metadata: the premade cells' metadata has no name
+  strings and the player creations' layout is not traced (docs/re/cell.md#cell-body-colour); the next stage's species
+  name comes from the creature editor anyway.
+* Omnivore: the game has no omnivore premade player cell; the omnivore start is the game's cell 0C176D89 (both mouths,
+  with spikes: stronger in a fight than the two premades).
+* The creature's name is shown in the Cell name tags only; it does not become the species name of a later stage.
+* The host's own start is the game's wizard: the host has no name or colour page of its own (its colour stays the
+  lobby's).
+* Ticket: BUG-9273
+
+## A slow first load of the host's spaceship editor drops the guest (2026-11-20, feat/lineages-space)
+<a id="issue-editor-load-timeout"></a>
+
+* What happens: at the Civilization to Space vote the host's game opened the spaceship editor and its main thread
+  hung 51 s reading the editor's property files (three other games were loading on the same PC). The guest timed out
+  after 30 s, its vote was dropped, and it later joined straight into the host's Space world, so it never designed its
+  own ship. The host tells the guests "editor" only after the editor is open.
+* Reproduce: a slow disk or several games loading at once, then the Civ to Space vote (lane C, the Kealeneon fixture
+  after the team victory).
+* Ticket: BUG-9290.

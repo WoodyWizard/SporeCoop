@@ -1222,13 +1222,22 @@ static GetModelKey_t o_GetModelKey;
 static bool g_force_key;
 static skg::ResourceKey g_key;
 
+static bool (*g_cell_model_chooser)(void* res, const uint32_t native[3], uint32_t out[3]);
 static skg::ResourceKey* __cdecl h_GetModelKey(skg::ResourceKey* ret, void* res)
 {
     if (g_force_key) {
         *ret = g_key;
         return ret;
     }
-    return o_GetModelKey(ret, res);
+    skg::ResourceKey* r = o_GetModelKey(ret, res);
+    // BUG-9275 (Lineages cells): a native spawn may take a player cell's model (cellsync_lineage.cpp decides)
+    if (g_cell_model_chooser && r) {
+        const uint32_t native[3] = {r->instance, r->type, r->group};
+        uint32_t out[3];
+        if (g_cell_model_chooser(res, native, out))
+            *r = {out[0], out[1], out[2]};
+    }
+    return r;
 }
 
 // BUG-0342: a puppet is the cell at its address AND its pool index. Our own cell's level rebuild
@@ -1280,6 +1289,12 @@ static uint8_t* cell_at_checked(void* cp)
     return it != g_cell_ids.end() && cell_at(it->second) == cp ? (uint8_t*)cp : nullptr;
 }
 
+static void ensure_model_hook();
+void set_cell_model_chooser(bool (*f)(void*, const uint32_t[3], uint32_t[3]))
+{
+    g_cell_model_chooser = f;
+    ensure_model_hook();
+}
 static void ensure_model_hook()
 {
     if (!o_SimUpdate) {

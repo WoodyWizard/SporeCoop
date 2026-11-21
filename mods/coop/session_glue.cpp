@@ -11,6 +11,12 @@
 #define COOP_VERSION SC_VER_STR
 #endif
 #include "lifecycle.h"
+#include "identity.h"
+#include "civ_wallet.h"
+#include "cards.h"
+#include "own_progress.h"
+#include "start_any.h"
+#include "start_choice.h"
 #include "coop_state.h"
 #include "store.h"
 #include "designs.h"
@@ -112,6 +118,20 @@ COOP_FIX("core.evolve_notice", "BUG-1258", g_evolve_notice_fix,
          "creature: the host's evolution is told as its own creature's, not as everybody's new body (each player evolves its own)");
 bool evolve_own_text(uint32_t to) { return g_evolve_notice_fix && to == modes::kCreature && !host_creature_mode(); }
 
+// BUG-9288 (the owner's test 2026-11-20: "on mating and changing parts the partner is pulled along with me"): the host's
+// return from its own Cell editor was a world event for every guest: the notice "evolved the species: everybody gets the
+// new body", a guest in the host's world marked to take the new body in place, any other guest (its own editor, a load)
+// sent the host's world: a reload that puts its cell at the level's start next to the host. A guest of 0.7.15.5 took the
+// body in place, which rebuilt its cell at the start too. With separate lives (own progress, every player their own cell)
+// the host's Cell evolution is the host's alone: no share, no in-place body, and the notice names the host's cell only.
+// Off (`coop.fix cell.own_editor off`): the share and notice of 0.7.15.
+static bool g_cell_own_editor_fix = true;
+COOP_FIX("cell.own_editor", "BUG-9288", g_cell_own_editor_fix,
+         "cell: with separate lives the host's Cell editor changes only the host's cell: the partners are not reloaded, moved or given its body");
+static unsigned g_cell_own_editor_kept; // tests (coop.status): host Cell evolutions kept to the host
+bool cell_own_editor(uint32_t to) { return g_cell_own_editor_fix && to == modes::kCell && own_progress::active(); }
+unsigned cell_own_editor_kept() { return g_cell_own_editor_kept; }
+
 // BUG-0941: a host that loads another Space save from the galaxy menu sent no world to its connected guests: the
 // stage is the same and in Space the state's world is the place (star, planet), so nothing told the guests the save
 // was another one; they played on in their copy of the old save. The host's save file (world::current_game_key: the
@@ -178,6 +198,12 @@ void on_mode_change(uint32_t from, uint32_t to)
     if (evolved && tribe_graduating()) { // BUG-0849: no evolution; the Civ stage comes next and is shared then
         LOG("back from the editor %08X in the end of Tribe: no share (the Civilization stage is shared)", g_last_editor_req);
         notice(g_name + " made a design for the Civilization stage: it comes next", -1);
+        return;
+    }
+    if (evolved && cell_own_editor(to)) { // BUG-9288: the host's own cell only
+        g_cell_own_editor_kept++;
+        LOG("back from the Cell editor: the host's own cell only, no share and no new body for the others (BUG-9288)");
+        notice(g_name + " evolved its own cell (every player evolves their own)", -1);
         return;
     }
     g_evo_cine = false;
@@ -838,6 +864,26 @@ void setup_callbacks()
             host_busy_message(from, r);
             return;
         }
+        case net::Route::Identity: { // BUG-9258 (Lineages): the persistent player identities (Session class)
+            identity::on_message(from, r);
+            return;
+        }
+        case net::Route::Progress: { // BUG-9265: own progress in Cell / Creature (Session class)
+            own_progress::on_message(from, r);
+            return;
+        }
+        case net::Route::OwnCards: { // BUG-9263: the own stage history (Session class)
+            cards::on_message(from, r);
+            return;
+        }
+        case net::Route::StartChoice: { // BUG-9273: every player's own start in a new Cell game (Session class)
+            start_choice::on_message(from, r);
+            return;
+        }
+        case net::Route::StartAny: { // BUG-9293: the own start in a new game at any later stage (Session class)
+            start_any::on_message(from, r);
+            return;
+        }
         case net::Route::Effect: { // BUG-0451: a partner's creature made an effect
             effects::on_message(type, from, r);
             return;
@@ -857,6 +903,10 @@ void setup_callbacks()
                 dna_pace_heard(r.ok() && r.left() >= 1 ? r.u8() : 1);
             } else
                 dna_pace_heard(1);
+            if (own_progress::active()) { // BUG-9265: our DNA and bar are our own: the host's total is the host's
+                g_own_totals_ignored++;
+                return;
+            }
             if (r.ok() && g_solo_await > 0) { // BUG-0829
                 bool paid = false;
                 for (auto& p : parts)
@@ -890,6 +940,10 @@ void setup_callbacks()
         }
         case net::Route::DnaAdd: {
             float d = r.f32();
+            if (own_progress::active()) { // BUG-9265: a guest's DNA is its own (an older guest's forward is dropped)
+                g_own_totals_ignored++;
+                return;
+            }
             auto add = dna_route::host_add(game::avatar() != nullptr, g_away_dna_fix);
             if (r.ok() && d > 0 && d < 10000 && add == dna_route::Add::Pay) {
                 dna_host_gain({dna_ledger::Cause::Earned, from, d}, game::dna());
@@ -1083,6 +1137,10 @@ void setup_callbacks()
             civ::on_message(type, from, r);
             return;
         }
+        case net::Route::CivWallet: { // BUG-9259: every player's own Civ money
+            civ_wallet::on_message(from, r);
+            return;
+        }
         case net::Route::Creation: {
             creations::on_message(type, from, r);
             return;
@@ -1148,6 +1206,9 @@ void setup_callbacks()
         npc::on_player_leave(id);       // BUG-0125
         views::forget(id);              // BUG-0280
         pfind::on_player_leave(id);     // F2: its colour is free again
+        identity::on_player_left(id);   // BUG-9258: its identity goes (ids are reused)
+        civ_wallet::on_player_leave(id); // BUG-9259: its own Civ money is kept by its key
+        own_progress::on_player_left(id); // BUG-9265: its live values go (its record stays, by identity)
         if (g_player_forget_fix)
             player_life::forget_all(id); // BUG-0422: every module's state of this id (player_life.h)
         g_give_pick = net::give_pick_after_leave(g_give_pick, id, g_give_pick_reset_fix); // BUG-0234

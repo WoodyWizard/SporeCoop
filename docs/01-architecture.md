@@ -858,3 +858,319 @@ The creations module's `debug()` (`coop.creations`, 410 lines) went the same way
 the four `debug()` functions of the plan. The proofs: refactor_dump identical after each step, `tools/refactor_dump.py
 moves` lists only dropped `static`s, header declarations, default arguments kept on the prototype, and the new files'
 heads (docs/10-dev-pipeline.md#pipeline-refactor-proof); the Cell lab tests on the split build (BUG-1183).
+
+## The campaign's party: founder seats (2026-11-20, feat/lineages-party)
+<a id="architecture-party"></a>
+
+Phase 2 of the Lineages port (PR #196; there roadmap 0b, BUG-9135), BUG-9260. Builds on the persistent player
+identity ([netcode-identity](04-netcode.md#netcode-identity), BUG-9258).
+
+* The host keeps one **party** per planet: one seat per player who ever played it, seat 0 the host's. A seat is bound
+  to the player's identity, not the network id or the name, so a player who leaves and comes back (the same session or
+  another day) gets the same seat. At most `founders::kPlaySeats` (4) seats; the file format holds 8.
+* Saved next to the planet, never inside the game's save: `<planet>.spo.duoparty` (PTY1: u32 'PTY1', u8 seats, per
+  seat u64 identity, u32 own creature species instance, str8 name), written whole through a temporary file, outside the
+  frame (`run_outside_frame`). A party only grows; a seat's identity is never replaced (`founders::record_party`
+  refuses both). An unreadable file is left alone and logged.
+* Code: mods/coop/party.{h,cpp} (host tick once a second, `coop.party`), mods/coop/founders.{h,cpp} (the file; only the
+  party part of Lineages' founders.h so far: the Tribe / Civ rosters, difficulty and outfits come with their phases).
+  The lifecycle hook `party.forget` (session end, world change) drops it; the next tick reads the planet's file again.
+  The galaxy menu ends it too: world::current_game_key() still names the planet played last there, and a player
+  joining in the menu must not be seated on it.
+* Nothing in the game uses the seats yet. The next phases index by them: every player's own nest (Creature), village
+  (Tribe) and nation (Civilization). Test: tools/tests/coop_party.py (suite party).
+
+## Own progress: every player's own DNA and bar in Cell and Creature (2026-11-20, feat/own-progress)
+<a id="architecture-own-progress"></a>
+
+BUG-9265, the owner's rule of 2026-11-20 ("Together" of [docs/11-rivals.md](11-rivals.md): wait for everyone, no
+"first wins"). Builds on the identity ([netcode-identity](04-netcode.md#netcode-identity)) and the party side files
+([architecture-party](#architecture-party)).
+
+* The session setting **all.own_progress** (default on, coop.ini `own_progress`; `coop.fix core.own_progress off` reads
+  it off) makes the DNA and the evolution bar of the Cell and Creature stages each player's own. Off (or creature.mode
+  host): the party's one shared total of 0.7.15 (dna_route.h, dna_pace.h).
+* What steps aside when it is on: the host's DNA total (MSG_DNA, not sent / not applied), a guest's forwarded gains and
+  spends (MSG_DNA_ADD, BUG-0466), the pace 1/N (BUG-0510: each bar fills at a solo game's pace by itself), the Cell
+  food total (MSG_CELL_FOOD: the host still sends it, a guest only takes the meal acknowledgements from it), a guest's
+  meal on the host's food, the cell-editor spend sharing (BUG-1249, the wsync row cell_spent), the shared species goal
+  card. A deed a guest does on the host's game is paid to the guest: the hunt credit (dna_ledger g_credit) and a social
+  success (social K_RESULT) go as MSG_PROGRESS kGain / the result's DNA into the guest's own game.
+* The host keeps every guest's last values (Cell: food, spent; Creature: DNA, bar cPlayer +0x10F0, brain level) by the
+  player's identity key per planet, saved as `<planet>.spo.duoprogress` next to the save (OPG1, own_progress_logic.h;
+  `founders::write_side`, outside the frame). A copy of the host's world holds the host's values, so after every load
+  of a world (world::loads_started) a guest asks (kAsk) and gets its own back (kSet: Cell through AddFoodPoints by the
+  difference; Creature a higher bar through AddEvolutionPoints, a lower one written, the DNA set, a lower brain level
+  written); then it reports once a second (kReport). A player without a record keeps the world's values.
+* The stage end together: the host sends the table of every player's bar (kTable). Cell: the host's click on History's
+  check is held until every bar is full and then runs again by itself (the switch vote of BUG-0315 follows); a guest's
+  click is never its own switch. Creature: the host's stage-end request (tag 0x64AA168) is refused until every bar is
+  full (the game keeps its evolve button; Esc closes History), then the vote of BUG-1085. Notices: "your bar is full
+  ... waiting for Bob 64%" (again every 60 s) and "every player's bar is full ...".
+* Code: mods/coop/own_progress.{h,cpp}, own_progress_logic.h (unit tests in tests/validate_tests.cpp), the hooks in
+  dna.cpp, session_glue.cpp, coop.cpp, vote.cpp, social.cpp, cellsync.cpp, wsync.cpp; `coop.progress [resync]`.
+  MSG_PROGRESS 77 (session family 1.3). Test: tools/tests/coop_own_progress.py (suites own_progress_cell,
+  own_progress_creature, own_progress_off); twoinst.start() switches the setting off for the older tests of the shared
+  total (own_progress=True keeps it on).
+* BUG-9266 (`coop.fix cell.end_click`): History's check first runs the game's Cell end sequence (0xE72C80, the white
+  screen, the walk-out) and only then the switch; a click that must wait is taken before that sequence (History closes,
+  the player plays on) and the host's kept click runs the whole sequence once every bar is full; a guest's click in
+  the vote is its I'm ready without the sequence ([cell-end-sequence](re/cell.md#cell-end-sequence)).
+* Known: in Cell the players can be at other levels (their own food) in the host's one pool; a guest whose brain level
+  is set lower keeps the save's body size until its next brain upgrade.
+
+## Every player's own stage history (2026-11-20, feat/own-cards)
+<a id="architecture-own-cards"></a>
+
+BUG-9263 (BUG-9264 for the trait progress), on top of the party ([architecture-party](#architecture-party)).
+mods/coop/cards.{h,cpp}; the game side in [creations-own-cards](re/creations.md#creations-own-cards).
+
+* Each seat of the party has its own consequence cards (Cell, Creature, Tribe, Civ, Space: cPlayer +0x10FC..+0x110C)
+  and Creature trait progress (social +0x1278, combat +0x127C), saved with the party (`<planet>.spo.duoparty` PTY2:
+  PTY1's seat + u8 flags, 5 x u32 cards, f32 social, f32 combat; PTY1 files are read, every write is PTY2). Seat 0 is
+  the host's own cPlayer, copied once a second. A guest seat that has no history yet starts from the host's cards
+  (until then everybody shared the host's) with no progress.
+* Host: a guest's kill (the lethal hit npc.cpp lands as the host avatar's) and social win (social.cpp) add their
+  trait progress to the guest's seat (`cards::Actor` around the game call + the hook on cPlayer::AddTraitProgress;
+  `cards::credit` for the social win's own amount, the creature's DNA worth). When the host's world has a stage done
+  that a seat has not, the host decides the seat's card (Cell: the guest's own game's decision, reported while it
+  plays Cell; Creature: the game's decision with the seat's progress; Tribe / Civ: the host's, one shared tribe /
+  nation in this build; Space: the game's archetype of the seat's four cards). A stage not done in the host's world
+  is not done for any seat. The host sends each guest its record (MSG_OWN_CARDS) on a change and every 5 s.
+* Guest: writes its record into its own cPlayer (the game's SetConsequenceTrait, the progress fields) every 0.5 s
+  while it plays the host's world (not in a world of its own, not in its own Space save); the wsync row "stages"
+  leaves its cPlayer alone (`cards::guest_owns`). Its History, its stage-end decision and the cards its editor
+  requests carry (its creations' consequence abilities) are its own.
+* Switches: `coop.fix party.own_cards off` (one shared history, the host's, as 0.7.15), `coop.fix party.trait_credit
+  off` (a guest's kill counts for the host, its social win for nobody). Status and test seams: `coop.cards`
+  (`credit`, `decide`, `cell`, `space`, `seat`), `coop.party` prints each seat's cards. Test:
+  tools/tests/coop_own_cards.py (suite own_cards).
+
+## Partner creatures in the host's save and every player's own nest (2026-11-20, feat/lineages-nests)
+<a id="architecture-own-nests"></a>
+
+Phases 3 and 4 of the Lineages port (PR #196), BUG-9261 and BUG-9262, on top of the party
+([architecture-party](#architecture-party)). The game side is in
+[creature-own-nests](re/creature.md#creature-own-nests).
+
+* **One key per creation** (`creations.one_key`, BUG-9261; Lineages BUG-9180): a player's creation is registered on
+  every game, its owner's included, under `0x7C` + a hash of its bundle (`shared_instance`), no longer salted with the
+  owner's network id. The key is the same across rejoins and machines; a guest's avatar wears it too (`own_key_here`),
+  so the host's nest of that creature is a nest of the guest's own species on the guest's game.
+* **Archive** (BUG-9261): the host writes a partner's bundle next to the planet, `<planet>.spo.duoguest-<KEY>` (u32
+  'DGA1', u32 key, u8 owner id, the bundle as `pack()` writes it; 16 files, 8 MB each at most; never replaced by a
+  different one under the same key: `founders::store_guest_model`). A hook on `cGamePersistenceManager::LoadGameByName`
+  registers every archive of the planet (`founder_<key>_<hash>.package`, priority kPrioModel) before the game reads the
+  save (`creations::restore_guest_model`; a bad archive is logged and skipped, the planet still loads).
+  `world::game_key_for_planet` gives the planet's key before the load (`current_game_key` names the previous world then).
+  `coop.creations archive [<player>]`.
+* **Own nests** (BUG-9262, mods/coop/home_nests.{h,cpp}, host only, every 2 s from `frame_stage_ticks`): each seat
+  (party.h) playing its own species gets a nest herd of that species 45-100 m from the host's home nest (made outside
+  the frame, archived, best friends with the party: relation 6 and `cHerd_SetBestFriends`), filled with 4 members of its
+  species and refilled when its family is gone while its player is online. A partner online when its nest is made gets
+  the world again once the nest has members; a joining partner's first world waits for its nest (`world::set_share_hold`,
+  2 minutes at most). The nest's spot is noted per planet in the host's worlds.ini (`[nest<seat>]`). An offline
+  partner's nest is the AI's (it may die out) and is made again on return. `coop.homenests [make|extinct <seat>]`.
+* **Home** (nest.cpp MSG_NEST kind 2, host -> guest, f32 x y z, 1 Hz): the guest's game joins the herd of the nest the
+  host names (CreatureGame_JoinNestHerd, no cinematic), so it hatches and respawns there, and once per world puts the
+  creature next to it. wsync's nest row (BUG-0640) no longer migrates such a guest to the host's nest
+  (`wsync.own_nest_stays`). Older guests skip kind 2. `coop.nest home`.
+* Party species are not hunted by the players (`creature.party_species_peace`, npc.cpp).
+* Each player's own species is THE player species in its own game (`creature.own_player_species`, Lineages BUG-9177),
+  and the copies of its own family live in its own nest herd on its game (`creature.own_family_home`, BUG-9175 there).
+* A joining guest outside a world reports the creature it will play in the host's world (its record of that world)
+  before it loads it, so its first world waits for its nest (`creations.join_world_record`, BUG-9267).
+* Left out of Lineages' home_nests: the ring cleanup of nests of old salted keys (BUG-9182 there: not needed with one
+  key from the start). Tests: tools/tests/coop_home_nests.py, coop_home_nests_join.py (suites home_nests,
+  home_nests_join).
+
+## Every player's own start in a new Cell game (2026-11-20, feat/start-choice)
+<a id="architecture-start-choice"></a>
+
+BUG-9273, the owner's rule of 2026-11-20: every player starts together on the same planet with their own creature and
+chooses its diet, name and colour; the host alone names the planet (the game's own wizard). Builds on the party
+([architecture-party](#architecture-party)), own progress ([architecture-own-progress](#architecture-own-progress)) and
+own cards ([architecture-own-cards](#architecture-own-cards)). Code: mods/coop/start_choice.{h,cpp}, the portable
+start_choice_logic.h (unit tests in tests/validate_tests.cpp test_start_choice), the page in coop_ui.cpp.
+
+* **Who is asked.** The host asks (MSG_START_CHOICE 79 kAsk, session family 1.5) a guest that holds a party seat, has
+  played the host's Cell world for 3 s (own_world::peer_here) and has no choice recorded for this planet; once per join.
+  The host's own start is the game's Cell wizard, unchanged.
+* **The page.** The guest's co-op window opens on "Your own cell" (subtitle "CO-OP: YOUR START"): three diet buttons
+  (Herbivore, Carnivore, Omnivore), the creature's name (24 characters, starts as the player's name + "ite"), the colour
+  (">" steps through the F2 colours no other player has), the body colour (">": Natural and 8 colours) and Start. Closing the window leaves the question open (F9
+  shows it again); the setting going off or the stage ending closes it.
+* **What the answer does** (guest side, at once, and again from the host's table after a rejoin or a reload):
+  * the own cell: `creations::choose(kCell, <the diet's game cell>)`: herbivore E219E5D2 and carnivore 252A132F (the
+    wizard's premade player cells), omnivore 0C176D89 (the game's own cell with both mouths; the wizard has no omnivore
+    card: [cell-start-choice](re/cell.md#cell-start-choice)). The creations pipeline shares it as the guest's cell (a
+    premade: no records, every game has it), the host builds the guest's puppet of it, the guest's own cell is rebuilt
+    with it (creations.cpp apply_own_cell, the hatch);
+  * the colour: pfind::request_color (the host's colour table: name tags, arrows, minimap, chat);
+  * the body colour (Natural or one of 8: red, orange, yellow, green, blue, purple, pink, white): the guest makes a copy
+    of the diet's game cell with that base colour (start_choice_logic.h paint_body, written in place in the packed
+    model record: [cell-body-colour](re/cell.md#cell-body-colour)) under a key of its own (0x7B......,
+    `creations::make_creation`: a package of ours, made again in each run) and chooses it; the creations pipeline
+    shares it as its own creation, so every game draws its cell in that colour (the one key 0x7C......). A copy that
+    cannot be made: the game cell's own colour;
+  * own progress: the first answer starts the guest's food and spent DNA at 0 and, a second later, the meal counters
+    +0x20..+0x28 its Cell card is decided from (the copy of the host's world holds the host's).
+* **The record.** The host keeps every answer by the player's identity key next to the planet:
+  `<planet>.spo.duostart` (SCH1: u32 'SCH1', u8 n, n x {str8 key, u8 diet, u8 colour, u8 body colour, str8 name}; founders::write_side,
+  outside the frame). The first answer of a player stays. The host sends the table of the players here (kTable) on a
+  change and every 10 s; every game shows the creature's name in that player's Cell name tag ("Bob (Glorbo)"), and a
+  guest that finds its own row plays it again without a question.
+* **The Cell card** (cards.cpp decide): the seat's Cell card is its own game's report (its own meals); with no report the
+  diet's card (carnivore CFB01B93, herbivore A8EC6F99, omnivore 5ECE4770) before the host's.
+* **Off.** The session setting `cell.start_choice` (default on, coop.ini `start_choice`), off or creature.mode host:
+  nobody is asked (0.7.15: a guest plays the host's cell or picks one of its own creations in F9). twoinst.start()
+  switches it off for the older tests (start_choice=True keeps it on).
+* Commands: `coop.start` (status; `pick <herb|carn|omni> <name> [colour]` a guest's answer without the window; host
+  tests `ask <player>`, `forget <player>`). Test: tools/tests/coop_start_choice.py (suites start_choice,
+  start_choice_off).
+
+## Lineages cells: the players' own cells as NPC species of the Cell stage (2026-11-20, feat/lineage-cells)
+<a id="architecture-lineage-cells"></a>
+
+BUG-9275, ported from Lineages (PR #196, there BUG-9111, roadmap 43). The owner's words: "when you go up in the Cell
+stage, others like you start to appear".
+
+* The session setting **cell.lineage_cells** (Live, default on, coop.ini `lineage_cells`; `coop.fix cell.lineage_cells
+  off` reads it off). Off: only the game's own species.
+* Which cells (lineage_cells.cpp, host, rebuilt every 15 s outside the frame): the host's own My Creations cells and the
+  cells every guest sent from its My Creations (up to 16 each, newest first, one every 2 s while it plays Cell:
+  `creations::guest_cell_out`, MSG_CREATION kind 9; the host registers each under 0x7B + a hash of its bem record). A
+  cell is known by its model signature (FNV-1 of its bem record), so one cell under several keys counts once and a
+  player's **current** cell (the host's S+0x10, each guest's creation of the creations stream) is never a candidate.
+  Each candidate's diet is its model data's carnivore / herbivore flags (+0x1250 / +0x1251). Lineages' Cache and
+  Foreign Creations are not ported (no Lineages library here).
+* Where (cellsync_lineage.cpp): CreateCellObject asks GetModelKeyForCellResource for a new cell's model (hooked in
+  modes.cpp, `modes::set_cell_model_chooser`). Inside PopulateMarker (h_Populate: the native spawns, host only), a
+  creature .cell that is not the player's own species and not a part carrier (a species whose death dropped a part
+  token keeps its native look; mods\coop-cell-part-carriers.txt) takes a player cell in 17 % of its spawns (Lineages'
+  last player decision: one in six; `coop.lineage share <n>` for tests). The AI 0x1006 picks its prey with the model's
+  own diet, so any cell fits it and a carnivore model hunts, a herbivore model grazes; another AI takes only a cell
+  whose diet fits the native model's.
+* Every guest gets a candidate's records (`creations::host_cell_out`, MSG_CREATION kind 5 with a cll key) and registers
+  them under 0x7D + a hash (creations' remap, as for the host's own creature species, `cell.lineage_remap`); its mirrors
+  of such a cell are built from that key (cellsync_guest.cpp, `lineage_mirror_key`). The host uses a cell only 8 s
+  after every guest got it. A player cell's model is preloaded for the cell graphics (PreloadModel, cCellGFX::
+  PreloadCreature) before its first use on both games.
+* Nothing goes into a save: the Cell pool is not saved (a reload repopulates it with native species only, lane A
+  2026-11-20), and the 0x7B / 0x7D packages are registered at run time only.
+* Code: mods/coop/lineage_cells.{h,cpp}, cellsync_lineage.cpp, the hooks in modes.cpp, cellsync_tiles.cpp (h_Populate's
+  depth, a loot drop's part tokens), cellsync_guest.cpp, creations.cpp (host_cell_out, guest_cell_out, model_signature,
+  apply_guest_cell), coop.cpp, coop_cmds.cpp (`coop.lineage [share <n>]`). Test: tools/tests/coop_lineage_cells.py
+  (suite lineage_cells).
+## Every player's own tribe (2026-11-20, feat/lineages-tribe)
+<a id="architecture-own-villages"></a>
+
+Phase 5 of the Lineages port (PR #196), BUG-9268, on top of the party and the archive
+([architecture-party](#architecture-party), [architecture-own-nests](#architecture-own-nests)). The game side is in
+[tribe-own-villages](re/tribe.md#tribe-own-villages).
+
+* **Files**: mods/coop/tribe_villages.cpp (the module, one of the Tribe split files of
+  [arch-tribe-files](#arch-tribe-files)), mods/coop/tribe_seats.h (its pure rules, tests/tribe_seats_tests.cpp),
+  founders.{h,cpp} (`founders::Roster`, `read` / `record` / `describe`, Stage::Tribe).
+* **Founding** (host, `villages_host_tick` from tribe_host.cpp's host tick, once a second): a connected partner with a
+  party seat whose creature is not the host village's species gets a village of it once its creature settled (15 s
+  after the world, 10 s after its key last changed; `tribe_seats::founding_wait`). Outside the frame: the creature is
+  archived with the planet (`creations::archive_guest_model`), a level dry site is searched 100-180 m around the host's
+  village (and around the other players' villages), `Simulator::SpawnNpcTribe(pos, 0, 3, 15, 0, profile)`, the
+  village is recorded by party seat in `<planet>.spo.duofounders` (DUO3: u8 n, n x {u32 species, u32 faction, u64
+  identity}; seat 0 the host's village) and allied, then every guest gets the world again (the first share saves).
+* **Alliance**: every 5 s (outside the frame) each pair of the players' villages is raised to allies
+  (`ApplyRelationship(manager, a, b, 0x0530CF07, allied + 1 - now)`, both ways); the host refuses an attack (7) or a
+  raid (15) on a player's village from a guest's order.
+* **Ownership** (MSG_TRIBE_STATE, no wire change): the members of a partner's village are its seat's player's (nobody's,
+  0xFE, while offline); the host's village is split as before between the players without a village of their own
+  (`tribe_seats::shared_players` / `shared_owner`). `host_command` runs a guest's order on its own village's members
+  too (`village_orders_ok`).
+* **Native counts**: `cGameNounManager::GetData` hooked; its two count-only callers in the NPC tribe controller
+  (`SporeCoop::FormTribe_TribeCountReturn`, `NpcTribeUpdate_TribeCountReturn`) get a private copy of the tribe list's
+  header with the partners' villages left out, so the planet still gets its rivals and the first one comes as usual;
+  `form_species_state` (BUG-1233) counts the same way.
+* **Player-owned**: `SporeCoop::Tribe_IsPlayerOwned` hooked: on the host a partner's village is the player's (with the
+  AI's cached bit, (+0xB4C)+0x5FC bit 0, refreshed from `h_BTTick`: its members take orders as player members); on a
+  guest its own village is the player's, and `cGameTerrainCursor::GetTerrainCursor` points the cursor's candidate list
+  (+0x164) at its own village's selectable members (only while that village is in the object list), so the game's own
+  box, click and right-click order them through the existing hooks.
+* The guest's own village is found from its mirrors (`villages_guest_tick`: the tribe of a mirror it owns that is not
+  the player tribe). Its food is the NPC tribe's store, shown on every game by wsync's `tribe_food` row; the Co-op window
+  shows "Your village: N members, food F" (coop_ui.cpp, `tribe::own_village_info`).
+* Switches: `tribe.own_villages`, `tribe.founder_npc_budget`, `tribe.guest_ai`, `tribe.guest_native`. Commands:
+  `coop.tribe villages [found <player> | ally]`. Test: tools/tests/coop_tribe_seats.py (suite tribe_seats).
+* Left out of Lineages' Tribe founders: the village at the partner's own nest (the free-site search only), the rescue
+  of a downed founder and the party wipe, the outfit vote per seat (`.duooutfits`), the late joiner's stand-in and
+  catch-up, the guest's game showing its own village as the player tribe (SetPlayerTribe: its HUD, cards and hut menu),
+  the six-rival trial and the objective backfill.
+* **Second round** (2026-11-20, [tribe-own-village-player](re/tribe.md#tribe-own-village-player)):
+  * The guest's game makes its own village its player tribe (`tribe.own_player_village`, SetPlayerTribe; the host's
+    village back for its saves, a load, the session's end, local play). `tribe::player_tribe()` and the new
+    `tribe::swapped_host_tribe()` (read by wsync, shared, designs, realign and wstate before cGameNounManager +0x70)
+    keep meaning the host's village. Its own village's relations follow the host village's (outside the frame, every
+    2 s). Tribe_HutStateIs2 guarded; Add Baby at its hut sends CMD_BABY, which the host runs in that village for its
+    food (`village_baby`).
+  * Team alliances (`tribe.team_allies`, host, every 5 s): an NPC village allied with one player's village is raised to
+    an ally of every player's village; a lower relation is never shared.
+  * The village at the partner's own Creature nest when the ground allows (`tribe.village_at_nest`), else the rings.
+  * BUG-9271 (`tribe.host_cards`): the Tribe UI's card caller (0xCCC6EA, `SporeCoop::TribeUI_CardOwnedReturn`) gets the
+    game's own IsPlayerOwned for a partner's villager (Citizen_IsPlayerOwned hooked); `coop.tribe villages deny <va>...`
+    tests other callers.
+  * BUG-9272 (`game.reset_sender_scan`, gamefixes.cpp): GalaxyMenu_SimReset hooked; the stimulus and last-attacker walks
+    of the destroy hook are skipped while it runs. `tribe.cursor_listed` keeps the cursor guard switchable.
+  * Commands: `coop.tribe villages baby <player> | earn <seat> <npc faction> | nests <player> | reswap | aibit 0|1`.
+
+## Every player's own nation (2026-11-20, feat/lineages-civ)
+<a id="architecture-own-nations"></a>
+
+Phase 5 of the Lineages port for Civilization (PR #196), BUG-9274, on top of the party, the archive and the Tribe
+villages ([architecture-party](#architecture-party), [architecture-own-villages](#architecture-own-villages)). The game
+side is in [civ-own-nations](re/civ.md#civ-own-nations).
+
+* **Files**: mods/coop/civ_nations.{h,cpp} (the module, beside the Civ split files of C8), mods/coop/civ_seats.h (its
+  pure rules, tests/civ_seats_tests.cpp), founders.{h,cpp} (`founders::Roster`, Stage::Civilization:
+  `<planet>.spo.duonations`, DUO3 by party seat).
+* **Host** (`nations::host_tick` from civ_host.cpp's host tick after the vehicle table pass, and from civ::tick while the
+  host plays alone): the roster and each seat's live nation; the owners of the partner nations' cities (g_city_owner)
+  and vehicles (the host table) every tick (`civ_seats::seat_owner`: the seat's connected player, 0xFE while away);
+  outside the frame every 2 s the founding of the next seat's capital (`found_task`: SpawnNextCity through the co-op hook,
+  the new city told by `new_city_since`, the species key, the roster, the world shared), every 5 s the alliance, every
+  0.5 s the team campaign (levels, the planet won). The host nation's cities are dealt only between the players without
+  a nation of their own; host_buy, build_in_city and the CMD_BUYCITY / CMD_CAPTURE buyer use the city's or the player's
+  own nation (`paying_nation`, `nation_of_player`).
+* **Wire**: no new message. MSG_CIV_STATE's city owner byte 0xFC = an away player's nation (`civ_seats::wire_owner`);
+  MSG_CIV_WALLET's new kind K_NATION (5, host -> guest: u32 seq, f64 money) sets the guest's HUD money to its nation's
+  silently (older guests ignore an unknown kind); civ_wallet is active for a player with a nation also with the setting
+  civ.own_money off (its nation's money is the wallet; its reports are not taken).
+* **Guest** (`nations::guest_tick`): its own nation is the political id of the cities the host says are its own; the team
+  is every nation with a player's city. Hooks (civ_nations.cpp `init`): City_IsPlayerOwned, Vehicle_IsPlayerOwned (its
+  own nation the player's, the host's not), the terrain cursor list (one hook with the Tribe villages in
+  tribe_villages.cpp), Civilization_AI with GetPlayerCivilization at its return (a player's nation runs the player branch,
+  both roles), GetMoney / SpendMoney (a player's nation's own +0x98), CivMode_Progress at its HUD caller (the team's
+  cities). The friendly-fire and capture refusals sit in civ.cpp's damage / Capture / CityBuy hooks
+  (`nations::friendly`).
+* Switches: `civ.own_nations`, `civ.nations_native`, `civ.team_campaign`. Command: `coop.civ nations [found | ally |
+  relation | citizens | spawn | capture <ci> <seat>]`. Test: tools/tests/coop_civ_seats.py (suite civ_seats).
+
+## Own start at any stage (2026-11-21, feat/start-choice-any)
+<a id="architecture-start-any"></a>
+
+BUG-9293, the owner's rule of 2026-11-20: whatever stage the host starts a NEW game in from the galaxy menu, every
+partner chooses its own start too (the Cell start is start_choice, #architecture-start-choice).
+* mods/coop/start_any.{h,cpp}, start_any_logic.h (portable, unit tests test_start_any); MSG_START_ANY 110 (session
+  family 1.7): the host asks a guest seated in its Creature / Tribe / Civ / Space world of a planet whose party began in
+  this session (party::planet_new: no <planet>.spo.duoparty when it opened) and with no choice recorded, once the
+  stage's intro is over; the guest answers (`coop.startany pick <creature> <cards...>`): one of its My Creations
+  creatures and the consequence card of every earlier stage (Cell diet, Creature, Tribe, Civ).
+* The creature: the guest's game takes it as its own creation (creations::choose), so its party seat's species is it
+  (party.cpp species_of) and its nest, village (tribe_villages.cpp) and nation (civ_nations.cpp) are of it.
+* The cards: the host writes them into the guest's party seat as its own history (party::set_history); cards.cpp keeps
+  a seat's chosen card for a stage the host's world has not done (a new game at a later stage has no cards in cPlayer:
+  docs/re/creations.md#creations-start-any) and sends the seat's record to the guest's cPlayer (its History, its
+  consequence powers). The host's own cards stay the wizard's.
+* Records by identity next to the planet: <planet>.spo.duostartany (SAN1). `coop.fix party.start_any off`: nobody is
+  asked (the seat starts from the host's cards).
+* Not yet: a co-op window page for the answer (the console `coop.startany pick` and the test driver answer now); the
+  Space start (stage 4: asks the four cards, untested in the game); the Space empire of a seat (feat/lineages-space is
+  not on this branch).

@@ -454,6 +454,10 @@ std::string Session::status() const
         snprintf(b, sizeof b, "manifest: dir_drops=%u compat_refused=%u\n", dir_drops_, compat_refused_);
         s += b;
     }
+    if (same_version || same_version_refused_) { // BUG-9284
+        snprintf(b, sizeof b, "same version: %s refused=%u\n", same_version ? "on" : "off", same_version_refused_);
+        s += b;
+    }
     return s;
 }
 
@@ -779,6 +783,12 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             } else if (build && h.build && h.build != build) {
                 rej.reason = REJ_BUILD;
                 rej.text = "different SporeApp.exe build";
+            } else if (same_version && compat::other_version(h.version, version)) {
+                rej.reason = REJ_VERSION; // BUG-9284: every 0.7.x guest shows the text
+                rej.text = compat::same_version_text(my_name_, version, h.version);
+                same_version_refused_++;
+                if (cb.compat)
+                    cb.compat(0xFF, compat::same_version_not_let_in(h.name.empty() ? "a player" : h.name, h.version, version), true);
             } else if (compat::Conflict c = compat::conflict(families, h.families, h.has_families, mode);
                        g_fix.family_check && c.any) {
                 // B6 (BUG-1137): another revision of a message family the host's stage uses. REJ_VERSION: every 0.7.x
@@ -980,6 +990,20 @@ void Session::handle_msg(Peer& p, uint8_t type, Reader& r)
             return;
         if (g_fix.name_clean) // BUG-0774 (again below: the conflict text names the host's version)
             wl.host_version = utf8::clean_text(wl.host_version, kVersionMax);
+        // BUG-9284: a host of another SporeCoop version (an older one lets everybody in): this game leaves, with the text
+        if (same_version && compat::other_version(wl.host_version, version)) {
+            std::string host_name = "the host";
+            for (auto& pl : wl.players)
+                if (pl.id == 0 && !pl.name.empty())
+                    host_name = utf8::net_name(pl.name);
+            std::string why = "rejected: " + compat::same_version_text(host_name, wl.host_version, version);
+            logf(cb, "%s", why.c_str());
+            same_version_refused_++;
+            if (!leave_pending_)
+                pending_disc_ = why;
+            leave("rejected");
+            return;
+        }
         // B6 (BUG-1137): the families every stage uses now (the host's stage is known with its first state, below)
         if (compat::Conflict c = compat::conflict(families, wl.families, wl.has_families, 0); g_fix.family_check && c.any) {
             std::string host_name = "the host";

@@ -2,6 +2,16 @@
 // functions and the command registrations of sporekit_mod_main, which calls the register_commands_* functions at the
 // places the registrations had (the same order: SporeKit keeps the commands by name, the module inits between them stay
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
+#include "identity.h"
+#include "civ_wallet.h"
+#include "party.h"
+#include "home_nests.h"
+#include "own_progress.h"
+#include "start_any.h"
+#include "start_choice.h"
+#include "lineage_cells.h"
+#include "cellsync.h"
+#include "civ_wallet.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1192,6 +1202,79 @@ void register_commands_core()
                    settings::command, nullptr, MT);
     H->command_add(M, "coop.find", "coop.find [colors | color <name|0..7> | project x y z | labels] - F2: the arrows to the partners of the last frame, the player colours, pick a colour",
                    pfind::command, nullptr, MT);
+    H->command_add(M, "coop.identity", "coop.identity - the persistent player identities (BUG-9258): this profile's, and the players' the host knows",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s", identity::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.party", "coop.party - the host: this planet's party, one seat per player who played it (BUG-9260)",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s", party::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.sameversion",
+                   "coop.sameversion [as <coop version> | real] - BUG-9284: the same-version gate (status); tests: this game says it runs another coop version in its next HELLO / WELCOME (outside a session)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       static std::string real;
+                       if (real.empty())
+                           real = g_sess.version;
+                       if (argc > 2 && !strcmp(argv[1], "as") && !g_sess.connected()) {
+                           std::string v = real;
+                           size_t e = v.find(',');
+                           g_sess.version = std::string("coop ") + argv[2] + (e == std::string::npos ? "" : v.substr(e));
+                       } else if (argc > 1 && !strcmp(argv[1], "real") && !g_sess.connected())
+                           g_sess.version = real;
+                       SAY("same version: gate=%d version='%s' refused=%u\n", (int)g_sess.same_version, g_sess.version.c_str(),
+                           g_sess.same_version_refused());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.progress",
+                   "coop.progress [resync] - own progress (BUG-9265): this game's own DNA / bar / food, every player's bar, the host's records; resync: ask the host for our values again",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "resync"))
+                           own_progress::resync();
+                       SAY("%s", own_progress::status().c_str());
+                       SAY("  dna.cpp: totals_ignored=%u gains_kept=%u hunts_given=%u end_clicks_held=%u\n", g_own_totals_ignored,
+                           g_own_gains_kept, g_own_hunts_given, g_end_clicks_held);
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.startany",
+                   "coop.startany [pick <creature hex|keep> <cell> [creature] [tribe] [civ] | ask <player> | creatures] - BUG-9293: the own start in a new game at Creature, Tribe, Civ or Space (status; pick: a guest's answer, card options 0-2: Cell carnivore/herbivore/omnivore, Creature and Tribe aggressive/social/mixed, Civ military/economic/religious)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       std::string o;
+                       int rc = start_any::command(argc, argv, o);
+                       SAY("%s", o.c_str());
+                       return rc;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.start",
+                   "coop.start [pick <herb|carn|omni> <name> [colour] | ask <player> | forget <player>] - BUG-9273: every player's own start in a new Cell game (status; pick: a guest's answer without the window; host tests: ask again, forget a choice)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       std::string o;
+                       int rc = start_choice::command(argc, argv, o);
+                       SAY("%s", o.c_str());
+                       return rc;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.lineage",
+                   "coop.lineage [share <percent>] - Lineages cells (BUG-9275): the host's player cells for its Cell pool, the swaps, the live cells by model, a guest's remapped cells",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", lineage_cells::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       SAY("%s", cellsync::lineage_debug().c_str());
+                       SAY("%s", creations::lineage_status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.homenests", "coop.homenests [make <seat> | extinct <seat>] - the host: every seat's own nest (BUG-9262)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", home_nests::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.live", "coop.live - tests (BUG-0426): the object list of this frame (game::listed: walks, hits, destroys seen)",
                    [](void*, int, const char* const*, SkOut* out) {
                        SAY("%s\n", game::live_status().c_str());
@@ -1936,6 +2019,8 @@ void register_commands_editor()
 
 void register_commands_civ()
 {
+    H->command_add(M, "coop.wallet", "coop.wallet [income <n>] - Civ own money (civ.own_money, BUG-9259): the wallets; income <n>: tests, as if the game paid the host this income",
+                   civ_wallet::command, nullptr, SK_CMD_MAIN_THREAD);
     const int MT = SK_CMD_MAIN_THREAD;
     H->command_add(M, "coop.role", "coop.role [0-3 | fix 0|1] - civilization role: 0 none, 1 military, 2 economic, 3 religious",
                    [](void*, int argc, const char* const* argv, SkOut* out) {

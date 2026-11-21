@@ -9,6 +9,8 @@
             other machine (CLAUDE.md 3: "check what the other player sees, not our bookkeeping"). Such a check
             needs a reason: `# counter: <reason>` on the check's line, or an entry of COUNTER_ALLOW below (the
             checks that were there when the lint came, each with why it may stay or what should replace it)
+  names     every suite entry has a name of its own: the lab keys results, logs and flaky counts by name, a second
+            entry of a name runs the test twice and hides one result (BUG-9282: a merge added civ_own_money twice)
   copy      a test that copies a helper of tools/tests/harness.py (a def the codemod tools/harness_codemod.py would
             replace: a copy of mode / sp / num / faults / ..., the wait template): import it from harness instead
             (D4 of 0.7.15, BUG-1185, docs/06-testing.md#testing-harness)
@@ -164,6 +166,12 @@ def suite_problems(root):
         src = open(os.path.join(root, 'tools', 'tests', name), encoding='utf-8').read()
         imported |= {m + '.py' for m in re.findall(r'^\s*(?:from|import)\s+(\w+)', src, re.M)}
     out = []
+    seen = set()
+    for t in suite.T:  # BUG-9282
+        name = t.get('name')
+        if name and name in seen:
+            out.append(f'tools/tests/suite.py: the test name {name} is added twice: one entry per name')
+        seen.add(name)
     for f in sorted(glob.glob(os.path.join(root, 'tools', 'tests', 'coop_*.py')) +
                     glob.glob(os.path.join(root, 'tools', 'tests', 'kit_*.py'))):
         name = os.path.basename(f)
