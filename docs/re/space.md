@@ -3420,3 +3420,63 @@ analysis (Ghidra, GOG 2024), no lab run yet:
   screen shows the host captain's real item state; it changes the creations bundle and registers a resource under the
   host's key, not a hotfix.
 
+
+## Every player's own empire (2026-11-20, feat/lineages-space)
+<a id="space-own-empires"></a>
+
+BUG-9279, the last phase of "Separated Lives" (the Lineages port: identity, party, nests, villages, nations; after
+[civ-own-nations](civ.md#civ-own-nations)). Players are allied for good and change stage together.
+
+**What Lineages did in Space.** Nothing of its own: all founders share the host's empire (its decision 1X A); its
+Space commits are the four-founder launch (BUG-9187), the guests' kept colonies keyed by identity (BUG-9189; 0.7.15
+keeps them on disk already, space_kept.h / kept_disk.h), per-identity rivalry and mirrors (BUG-9198), the fleet leader
+per place (BUG-9197) and the party difficulty (BUG-9199). This phase is written new (space_empires.cpp).
+
+**What 0.7.15 does in Space.** One player empire (the host's save: the same political id, home, colour and name on
+every game, 13.1), one shared Space money (shared.cpp resource 3, cEmpire +0xD0), a partner's colonies founded after
+the join shown on the other games as an allied mirror empire "<partner>'s empire" (15, undone before every save), a
+guest's own colonies, cargo and badges kept by the host across a rejoin (the store), one shared diplomacy (12.4), the
+core together (16.4). Rivals mode (11) is a host option with own budgets and per-player diplomacy.
+
+**Built (✔ runtime, lane C, Steam exe 3010a413, two games, 2026-11-20):**
+* **Who**: a party seat >= 1 that plays a species of its own (party.h PartySeat::species, not the host's; a partner
+  with its own Civ nation has one) gets an empire record; a seat on the host's species shares the host's empire and
+  money as before (the Civ rule, civ_seats::next_capital). ✔ After the team victory of the Kealeneon fixture (the guest
+  on seat 3, an adopted NPC nation, species 7CA81684) the host's first Space tick founded it, during the "Space Stage"
+  loading card, while the guest was away: "Bob's own empire is founded" (money 100000 = the game's Space start money).
+* **The record**: `<planet>.spo.duoempires` (EMP1: u32 'EMP1', u8 n, n x {u8 flags (1 founded), u64 identity, u32
+  species, i32 money}); seat 0 is the game's own player empire. Written when an empire is founded and with every save
+  (spaceext::on_save, before the game writes). `<planet>.spo.duoempdiplo` (EMD1: u32 'EMD1', u8 n, n x {u8 seat, u32
+  len, a diplomacy K_SNAP of that seat's own table}) next to it.
+* **Own money**: K_ASK (100) after every Space world the guest loads, K_EMPIRE (101) sets its player cEmpire +0xD0 to
+  its own money; shared.cpp then leaves the Space money alone on that guest and the host drops its RES_ADD; K_REPORT
+  (102) every 2 s, counted only when it answers the host's last K_EMPIRE. ✔ Guest 55555 -> the host's record 55555,
+  the host's own money stays 100000; the host's 77777 does not move the guest. With `space.own_empires off` on both the
+  guest's 44444 became the host's money too (the old shared money).
+* **Own diplomacy**: space_diplomacy.cpp sends and applies nothing on a guest with its own empire and the host drops
+  what such a guest sends (`diplomacy.own_empires`). The guest sends its table when it changes (K_DIPLO 103, parts of
+  <= 900 bytes); the host gives it back right after every K_EMPIRE (K_DIPLO_SET 104, count 0: none kept) and the
+  guest applies it with the table code of 12.4 (reconcile, asked). ✔ The guest's war with 80001A35 and gift to
+  800019BF stayed off the host; the host's alliance with 80001B4E stayed off the guest. With the switch off on both
+  the guest's war with 80001AE3 reached the host. ✔ (log) a leave and rejoin: "my own empire, seat 3, money 33333",
+  "my own diplomacy from the host: 3 empires" (the money set before the leave; the host had set its own to 88888).
+* A rejoining guest is answered once in the old copy of the world (the session starts before the host's world is
+  loaded again) and again after the reload (another Space world epoch): only the second one stays.
+* **The name**: on the guest's game its player empire is called "<player>'s empire" (`wstring_copy` on cEmpire +0x3C,
+  the name space_allies gives its mirror on the host's game), the game's name put back before every save of that
+  game. ✔ The guest's captain card read "Bob's emp..." in place of "Keigh Empire".
+* NPC empire names differ per copy (12.3): the same 80001AE3 was "Wubble Empire" on the guest and "Ixplix Empire" on
+  the host.
+
+**Not built (the plan):**
+* A home of its own: both players' nations live on the same planet; the guest's empire is still the host's cEmpire on
+  its game (one save, one player empire, 13.1): the same political id, home planet, colour and colonies; the host's
+  colonies count as the guest's own on its game (the reverse of 15 would show them as the host's mirror).
+* Its own ship and captain: the guest that rejoined in Space got the host's ship and captain (the Civ victory's "open
+  History to design your ship" path was missed because the guest had timed out, BUG-9290). The guest's own species as
+  the captain (SetSpeciesProfile 0xC337D0) is not tried.
+* Cards and powers: feat/own-cards keeps every seat's cards and decides the Space archetype per seat
+  (SpaceArchetype_FromTraits); the archetype's tools in the guest's inventory are still the host save's.
+* The finale: space_finale.cpp already holds the core until every partner in Space is at the gate (16.4); not changed
+  and not run again with own empires.
+* Rivals mode keeps its own budgets: this feature waits while it is on.

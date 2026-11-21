@@ -19,6 +19,9 @@
 //   32 SNAP   host -> all: u8 last chunk, u16 n, n x {u32 npc pol, u32 flags, u8 k, k x {u32 id, f32 v}}
 //   33 ASK    guest -> host: send me the table
 // In rivals mode (spaceext::rivals()) diplomacy is per player: nothing is sent or applied.
+// BUG-9279: a player with an empire of its own (space_empires.cpp) has its own relations too: its game sends and
+// applies nothing, the host drops what it sends; space_empires.cpp keeps its table with the host across a rejoin
+// (own_table / own_apply below).
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -27,6 +30,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "space_empires.h"
 #include "space_ext.h"
 #include "call_guard.h"
 #include "sporekit_game.hpp"
@@ -342,7 +346,17 @@ static void tell_state(const std::string& who, uint32_t npc, uint8_t what, bool 
     spaceext::notice(s);
 }
 
-static bool sharing() { return spaceext::connected() && !spaceext::rivals() && spaceext::feature_allowed("diplomacy"); }
+// BUG-9279: a player with an empire of its own keeps its own relations with the NPC empires. Off: one shared diplomacy
+// for everybody (0.7.15)
+static bool g_own_fix = true;
+COOP_FIX("diplomacy.own_empires", "BUG-9279", g_own_fix,
+         "space: a player with an empire of its own has its own relations with the NPC empires (not shared)");
+static uint32_t g_skipped_own, g_own_applied;
+static bool own_empire_here() { return g_own_fix && spaceempires::own_money(); }
+static bool sharing()
+{
+    return spaceext::connected() && !spaceext::rivals() && spaceext::feature_allowed("diplomacy") && !own_empire_here();
+}
 
 // ---------------- hooks ----------------
 static float SK_THISCALL h_ApplyEv(void* mgr, void* map, uint32_t a, uint32_t b, uint32_t ev, float scale)
@@ -672,6 +686,54 @@ static void schedule()
     }
 }
 
+// ---------------- an own empire's table (BUG-9279, space_empires.cpp keeps it with the host) ----------------
+std::vector<wire::space_diplomacy::SnapRec> own_table()
+{
+    std::vector<wire::space_diplomacy::SnapRec> v;
+    if (!active())
+        return v;
+    for (auto& r : my_table()) {
+        if (!busy(r))
+            continue;
+        wire::space_diplomacy::SnapRec h;
+        h.npc = r.npc;
+        h.flags = r.flags;
+        for (size_t i = 0; i < r.ev.size() && i < wire::space_diplomacy::kMaxEvents; i++)
+            h.ev.push_back(r.ev[i]);
+        v.push_back(std::move(h));
+    }
+    return v;
+}
+static std::vector<Rec> g_own_in;
+static void own_task(void*)
+{
+    if (!active()) {
+        g_own_in.clear();
+        return;
+    }
+    callguard::Hold applying(g_applying);
+    g_snap_in = std::move(g_own_in);
+    g_own_in.clear();
+    g_snap_asked = true; // the table is this player's own: nothing of ours is newer
+    apply_snapshot();
+    g_own_applied++;
+}
+bool own_apply(const std::vector<wire::space_diplomacy::SnapRec>& recs)
+{
+    if (!active())
+        return false;
+    g_own_in.clear();
+    for (auto& m : recs) {
+        Rec h{m.npc, m.flags & (3 | kMet | kContacted), {}};
+        for (auto& e : m.ev)
+            h.ev.push_back({e.first, e.second});
+        std::sort(h.ev.begin(), h.ev.end());
+        g_own_in.push_back(std::move(h));
+    }
+    H->run_outside_frame(own_task, nullptr);
+    return true;
+}
+
 // ---------------- network ----------------
 static void send_snapshot(uint8_t reply_to)
 {
@@ -718,6 +780,12 @@ static void on_message(uint8_t kind, uint8_t origin, net::Reader& r)
 {
     if (spaceext::rivals()) {
         g_skipped_rivals++;
+        return;
+    }
+    // BUG-9279: my own empire's relations are my own (a host's table or a partner's change is not mine); on the host
+    // the changes of a player with its own empire are its own
+    if (own_empire_here() || (g_own_fix && spaceempires::own_money_player(origin))) {
+        g_skipped_own++;
         return;
     }
     if (kind == K_CONTACT) {
@@ -848,6 +916,11 @@ static std::vector<spaceext::Row> rows()
         v.push_back(r);
         return v;
     }
+    if (own_empire_here()) {
+        r.text = ru ? "Дипломатия: своя (ваша империя)" : "Diplomacy: your own empire's";
+        v.push_back(r);
+        return v;
+    }
     auto t = my_table();
     int allies = 0, wars = 0, met = 0;
     for (auto& x : t) {
@@ -879,13 +952,14 @@ static std::vector<spaceext::Row> rows()
 
 static std::string status()
 {
-    char b[360];
+    char b[480];
     snprintf(b, sizeof b,
              "diplomacy: %s sent ev=%u state=%u contact=%u got ev=%u state=%u contact=%u snaps sent=%u got=%u fixed=%u"
-             " unknown=%u rivals_skipped=%u kept_away=%u dropped_away=%u",
+             " unknown=%u rivals_skipped=%u own_skipped=%u own=%d own_applied=%u kept_away=%u dropped_away=%u",
              a_ApplyEv && o_ApplyEv ? "on" : "no hooks", g_sent_ev, g_sent_state, g_sent_contact, g_got_ev, g_got_state,
              g_got_contact, g_snaps_sent,
-             g_snaps_got, g_fixed, g_unknown, g_skipped_rivals, (unsigned)(g_kept_away ? g_in.size() : 0), g_dropped_away);
+             g_snaps_got, g_fixed, g_unknown, g_skipped_rivals, g_skipped_own, (int)own_empire_here(), g_own_applied,
+             (unsigned)(g_kept_away ? g_in.size() : 0), g_dropped_away);
     return b;
 }
 

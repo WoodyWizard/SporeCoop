@@ -190,6 +190,9 @@ unit-cpp: sanitizer-probe
 	@# BUG-9274: every player's own nation in Civilization (civ_seats.h)
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/civ_seats_tests tests/civ_seats_tests.cpp
 	$(B)/host/civ_seats_tests
+	@# BUG-9279: every player's own empire in Space (space_empires_logic.h, wire/space_empires.h)
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/space_empires_tests tests/space_empires_tests.cpp
+	$(B)/host/space_empires_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/wire_tests tests/wire_tests.cpp
 	$(B)/host/wire_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp
