@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "creations.h"
+#include "fixes.h"
 #include "game.h"
 #include "identity.h"
 #include "lifecycle.h"
@@ -21,6 +22,13 @@ static std::string g_planet; // the planet g_party belongs to ("" = none loaded)
 static bool g_dirty, g_save_queued;
 static double g_next;
 static uint32_t g_saves, g_save_errors, g_full_logged;
+// BUG-9281: a new game's planet has no file until the game saves it (the Cell stage's start): the party waits for it
+// (stays dirty, the next tick tries again) instead of counting "a saved planet and a valid party are required" errors.
+// Off: every save before the planet's file counts as an error (0.7.15.94).
+static bool g_wait_file_fix = true;
+COOP_FIX("party.wait_planet_file", "BUG-9281", g_wait_file_fix,
+         "the party of a new game waits for the planet's first save instead of counting errors before it");
+static uint32_t g_file_waits;
 
 void init(const SkHost* host, SkMod* mod, net::Session* sess)
 {
@@ -76,6 +84,10 @@ static void save_outside(void*)
     g_save_queued = false;
     if (!g_dirty || g_planet.empty() || g_planet != world::current_game_key())
         return;
+    if (g_wait_file_fix && !founders::planet_saved(g_planet)) {
+        g_file_waits++; // the planet's first save comes later; still dirty: the next tick tries again
+        return;
+    }
     std::string err;
     if (founders::record_party(g_planet, g_party, err)) {
         g_dirty = false;
@@ -199,8 +211,8 @@ std::string status()
     // the planet's file name only (no folder: status lines go into reports)
     const size_t slash = g_planet.find_last_of("\\/");
     const std::string planet = g_planet.empty() ? "-" : g_planet.substr(slash == std::string::npos ? 0 : slash + 1);
-    snprintf(b, sizeof b, "party: planet=%s seats=%zu saves=%u errors=%u dirty=%d\n", planet.c_str(), g_party.seats.size(),
-             g_saves, g_save_errors, (int)g_dirty);
+    snprintf(b, sizeof b, "party: planet=%s seats=%zu saves=%u errors=%u dirty=%d file_waits=%u\n", planet.c_str(),
+             g_party.seats.size(), g_saves, g_save_errors, (int)g_dirty, g_file_waits);
     std::string out = b;
     for (size_t i = 0; i < g_party.seats.size(); ++i) {
         const auto& s = g_party.seats[i];
