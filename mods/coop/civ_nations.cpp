@@ -640,7 +640,56 @@ void host_tick(double now)
     }
 }
 
-void guest_tick(double)
+// BUG-9294: a guest whose own nation was founded while it played (its capital far from the host's) kept the camera of
+// its load, at the host's capital (the Civ start points it at the player civ of the loaded world, the host's): its own
+// city was 500 m away out of view. Once its game knows its own nation the camera goes to that nation's first city,
+// once per world, the way the game's own "next city" button does it (the Civ message 0x3702D53 in 0xCF56A0:
+// SimCamera_GoToPoint(camera, City_CenterPoint(city), true, true)): the camera keeps its own zoom and angle and only
+// travels. Off: the camera stays where the load put it. (A first fix with SimCamera_LookAt and a wrong second argument
+// broke the camera on Kealeneon: docs/re/civ.md#civ-own-camera.)
+static bool g_camera_fix = true;
+COOP_FIX("civ.own_camera", "BUG-9294", g_camera_fix,
+         "civ: a guest's camera goes to its own nation's capital once its game knows that nation");
+static uint32_t g_camera_pol;           // the own nation the camera went to in this world
+static double g_camera_civ_since = -1;  // when this game's Civ stage was last seen settled (no load, no cinematic)
+constexpr double kCameraSettle = 4.0;   // the stage's own camera set-up after a load runs first
+static bool g_camera_queued;
+static uint32_t g_camera_moves;
+static net::Vec3 g_camera_at;
+
+static void* first_city_of(uint32_t pol)
+{
+    void* n = nation_by(pol);
+    if (!n)
+        return nullptr;
+    for (void* c : vec_of((uint8_t*)n + kCivCities))
+        if (c && game::listed(c))
+            return c;
+    return nullptr;
+}
+
+static void camera_task(void* arg)
+{
+    g_camera_queued = false;
+    const uint32_t pol = (uint32_t)(uintptr_t)arg;
+    if (!g_camera_fix || pol != g_own || pol == g_camera_pol || game::mode_id() != modes::kCiv || world::cinematic_playing())
+        return;
+    static uintptr_t get = H->sym("SporeCoop::SimCamera_Get"), center = H->sym("SporeCoop::City_CenterPoint"),
+                     go = H->sym("SporeCoop::SimCamera_GoToPoint");
+    void* city = first_city_of(pol);
+    void* cam = city && get && center && go ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!cam)
+        return;
+    float at[3] = {0, 0, 0};
+    thiscall<void*>(center, city, at);
+    thiscall<void>(go, cam, at, true, true);
+    g_camera_pol = pol;
+    g_camera_moves++;
+    g_camera_at = {at[0], at[1], at[2]};
+    H->log(M, SK_INFO, "civ nations: the camera goes to our own city at (%.0f %.0f %.0f) (BUG-9294)", at[0], at[1], at[2]);
+}
+
+void guest_tick(double now)
 {
     g_own = 0;
     g_team_pols.clear();
@@ -657,6 +706,17 @@ void guest_tick(double)
         if (o == me && pol != hp)
             g_own = pol;
     }
+    // BUG-9294
+    const bool settled = game::mode_id() == modes::kCiv && !world::cinematic_playing() && !world::load_queued();
+    if (!settled)
+        g_camera_civ_since = -1;
+    else if (g_camera_civ_since < 0)
+        g_camera_civ_since = now;
+    if (g_camera_fix && g_own && g_own != g_camera_pol && !g_camera_queued && !local_play() && settled &&
+        now - g_camera_civ_since >= kCameraSettle) {
+        g_camera_queued = true;
+        H->run_outside_frame(camera_task, (void*)(uintptr_t)g_own);
+    }
 }
 
 void forget()
@@ -671,6 +731,8 @@ void forget()
     g_won_shown = false;
     g_own = 0;
     g_team_pols.clear();
+    g_camera_pol = 0; // BUG-9294: once per world
+    g_camera_civ_since = -1;
     g_epoch++;
 }
 LIFECYCLE_HOOK("civ.nations", lifecycle::kSessionEnd | lifecycle::kWorldChange, -45, [](const lifecycle::Ctx&) { forget(); }, false);
@@ -827,6 +889,15 @@ std::string status()
     std::string out = b;
     if (!in_civ())
         return out;
+    { // BUG-9294: where the camera went; tests compare it with coop.view's viewer position
+        void* oc = g_own ? first_city_of(g_own) : nullptr;
+        void* hc = first_city_of(home_pol());
+        const net::Vec3 o = oc ? city_pos(oc) : net::Vec3{}, h = hc ? city_pos(hc) : net::Vec3{};
+        snprintf(b, sizeof b, "  own camera: fix=%d moves=%u nation=%08X at=(%.1f %.1f %.1f) own_city=(%.1f %.1f %.1f) host_city=(%.1f %.1f %.1f)\n",
+                 (int)g_camera_fix, g_camera_moves, g_camera_pol, g_camera_at.x, g_camera_at.y, g_camera_at.z, o.x, o.y, o.z,
+                 h.x, h.y, h.z);
+        out += b;
+    }
     void* ex = skg::cdecl_call<void*>(a_ExpansionGet);
     size_t live = 0;
     const size_t team = team_city_count(&live);
