@@ -11,7 +11,7 @@ versions: 0.7.15.94
 fixed_in: unreleased
 branch: fix/guest-landfall
 commits: caf95ff8, 7db156c3
-tests: manual two-instance run (lane B, below)
+tests: tools/tests/coop_newgame_landfall.py (manual driver, Windows lane)
 signature:
 docs: docs/re/creations.md#creations-guest-landfall
 related: BUG-9273, BUG-1255, BUG-0278
@@ -53,6 +53,7 @@ Carnivore "Glorbo" blue in the start choice, both fill their own bars, the vote 
   "Glorbo" grown from its cell; after the editor the guest plays 7C1A600D 'Glorbo' at its own nest 56 m from the host's;
   the host's game shows the guest's creature as 'Glorbo' (coop.creations player 1) and the party's seat 1 has species
   7C1A600D (seat 0 the host's 292AC9EB).
+- Driver: tools/tests/coop_newgame_landfall.py (the same steps in one script; --landfall-off / --party-off are the twins). The runs above were made with its steps as separate scripts; the combined script waits for a lane.
 - no-fail-run: no lab test drives the start choice and the Cell stage end to end yet; FAIL and PASS were run by hand on
   lane B as above.
 
