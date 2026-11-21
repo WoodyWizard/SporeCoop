@@ -1804,6 +1804,16 @@ COOP_FIX("tribe.guest_orders", "BUG-9303", g_guest_orders_fix,
 static bool g_guest_chief_fix = true;
 COOP_FIX("tribe.guest_chief", "BUG-9303", g_guest_chief_fix,
          "tribe: a partner founder village's native chief gives its members the chief aura");
+// BUG-9326 (live 2026-11-21, MSI): a partner's tame order (CitizenAction 25) crashed the host 19 s later in the tame
+// node (0xDAD6A3: citizen +0x1014 -> its tribe -> 0xC90060 = tribe +0x19C4, the animal pen, read without a null check).
+// The game makes pens for the player tribe only; every other village, a partner founder's on the host too, has none
+// (docs/re/tribe.md#tribe-fork-graduation-notes). On: the host refuses a partner's 25 when the member's village has no
+// pen, and a partner's egg order (13) when it has no egg pen (+0x19C8), with the refusal logged. Off: the order runs
+// (the crash; live also for an egg: the egg node 0xDB1720 reads an object it looks up with 0xD99830(.., 0x175CDC9)
+// without a null check, and crashed the host at once for a partner's egg order with the guard off).
+static bool g_partner_pen_fix = true;
+COOP_FIX("tribe.partner_pen_guard", "BUG-9326", g_partner_pen_fix,
+         "tribe: a partner's tame or egg order needs its village's animal or egg pen (a village without one crashed the host)");
 // BUG-9306 (owner: "Firebombs did not work for BigTexas ... the chieftain will always be able to throw the bombs and he
 // refused"): a Tribe chief's stage powers (the consequence abilities of the earlier stages, ability types 0x34..0x39:
 // Fire Bomb, Summon Animals, ...) are CitizenAction 22 with an App::Property (uint32) holding the ability's index in the
@@ -5844,14 +5854,43 @@ static bool chief_power_on_host(uint8_t from, int seat, uint16_t member, uint32_
 // So during the call every animal already in the list carries the dead flag +0xB5E (its own value put back right
 // after, in the same call: no frame passes) and is no candidate. Off: one cap for the whole party (the host's list
 // as the game counts it, the prop 0x217997F4) and a pet can be tamed again by another village.
+// 2026-11-21 (fix/l47-final-tribe): the node runs every frame the chief is in it (137 calls for one press), but only its
+// taming step reads the list and the dead flags. The split and the flags are now made for that step only (the step
+// word +4 of the node state, the 6th argument, equal to the jump table index of the taming block): the other steps and
+// frames see the list and every pet as the game keeps them. The index is read from the node's own jump (FF 24 85 <table>
+// at +0x13, the taming block at +0xE5, tools/qa_win/dis.py); a node that does not match keeps the every-call behaviour.
 static bool g_pet_cap_fix = true;
 COOP_FIX("tribe.pet_cap_per_village", "BUG-9306", g_pet_cap_fix,
          "tribe: each village's chief can tame up to 4 animals of its own (chief power 0x39), decision 7W A");
 static uint32_t g_pet_cap_split, g_pet_cap_restored; // node calls that hid other villages' pets / pets put back
+static uint32_t g_pet_cap_calls, g_pet_cap_steps;    // node calls on the host / calls in its taming step
+static int g_tame_step = -2;                          // the taming step's index (-1: not found, -2: not read yet)
+static int tame_step_index()
+{
+    const uintptr_t tame = H->sym("SporeCoop::BT_TameAnimalsNode");
+    const uint8_t* j = tame ? (const uint8_t*)tame + 0x13 : nullptr; // jmp dword ptr [4*eax + table]
+    if (!j || !skg::readable(j, 7) || j[0] != 0xFF || j[1] != 0x24 || j[2] != 0x85) return -1;
+    const uint32_t* table = *(const uint32_t* const*)(j + 3);
+    if (!skg::readable(table, 7 * 4)) return -1;
+    for (int i = 0; i < 7; ++i) // cmp eax, 6; ja: seven steps
+        if (table[i] == (uint32_t)(tame + 0xE5)) return i;
+    return -1;
+}
 static int SK_CDECL h_TameNode(void* chief, void* a2, void* a3, void* a4, void* a5, void* a6, void* a7, void* a8)
 {
     static uintptr_t get = H->sym("SporeCoop::TribalGame_Get");
     static uintptr_t push = H->sym("SporeCoop::TribalGame_PetsPushBack");
+    if (g_pet_cap_fix && active() && is_host()) {
+        if (g_tame_step == -2) {
+            g_tame_step = tame_step_index();
+            H->log(M, g_tame_step >= 0 ? SK_INFO : SK_WARN, "tribe: power 0x39's taming step is %d (%s, BUG-9306)", g_tame_step,
+                   g_tame_step >= 0 ? "the pet cap acts in that step only" : "node not recognised: the pet cap acts on every call");
+        }
+        ++g_pet_cap_calls;
+        if (g_tame_step >= 0 && !(a6 && skg::readable((uint8_t*)a6 + 4, 4) && F<int>(a6, 4) == g_tame_step))
+            return o_TameNode(chief, a2, a3, a4, a5, a6, a7, a8);
+        ++g_pet_cap_steps;
+    }
     void* tg = g_pet_cap_fix && active() && is_host() && get && push && is_citizen(chief) ?
         skg::cdecl_call<void*>(get) : nullptr;
     if (!tg || !skg::readable((uint8_t*)tg + 0x94, 8)) return o_TameNode(chief, a2, a3, a4, a5, a6, a7, a8);
@@ -6263,6 +6302,15 @@ static void host_command_run(uint8_t from, net::Reader& r, bool resumed)
             g_reject_why = "the member is a baby or down";
             g_cmds_rejected++;
             continue;
+        }
+        if (village_orders && g_partner_pen_fix && kind == CMD_ACTION && (action == 25 || action == 13)) { // BUG-9326
+            void* home = F<void*>(c, kOwnerTribeOff);
+            const uintptr_t pen = action == 25 ? 0x19C4 : 0x19C8;
+            if (!home || !skg::readable((uint8_t*)home + pen, 4) || !F<void*>(home, pen)) {
+                g_reject_why = action == 25 ? "the member's village has no animal pen (BUG-9326)" : "the member's village has no egg pen (BUG-9326)";
+                g_cmds_rejected++;
+                continue;
+            }
         }
         if (kind == CMD_WALK) {
             void* rec = thiscall<void*>(a_DoAction, c, 4, (void*)nullptr, (void*)nullptr);
@@ -9552,6 +9600,11 @@ static bool rescue_helper_alive(int seat)
 // from their own village walk home (the order again every 4 s: the game's raid AI turns them back at once), and for
 // kRegroupSeconds no blow of a non-party faction harms a founder hut (the
 // partners load the world in that time too). Later raids are ordinary play. Off: the hut at 40 %, the raid goes on.
+// Decision 7Y A ("but 2 minutes", 2026-11-21): the raiders stay calm toward the party for the 2 minutes. Live
+// (fix/l47-final-tribe): a wipe whose last villager fell AT the raiders' village came back with that villager still
+// standing there (60 hp), the village's members killed it again 41 s after the reload, and the next wipe came inside
+// the window. So for the window no blow of a non-party faction harms a founder village's member either, and at its
+// start the founder villages' members away from their own village (over 25 m) walk home.
 static bool g_wipe_regroup = true;
 COOP_FIX("tribe.wipe_regroup", "BUG-9320", g_wipe_regroup,
          "tribe: after a party wipe the village's hut is whole again and outside raiders withdraw for 120 s");
@@ -9562,6 +9615,10 @@ static uint64_t g_regroup_epoch;        // the world epoch at the wipe (a reload
 static uint64_t g_regroup_withdrawn = ~0ull; // the world epoch whose raiders were sent home
 static double g_regroup_asked, g_regroup_until;
 static uint32_t g_regroups, g_regroup_blocked, g_regroup_sent_home;
+static uint32_t g_regroup_members_blocked, g_regroup_walked_home; // decision 7Y A: the party's villagers too
+static bool g_regroup_villagers = true; // off: the regroup guards the huts only (the wipe inside the window comes back)
+COOP_FIX("tribe.regroup_villagers", "BUG-9320", g_regroup_villagers,
+         "tribe: in the 2 minutes after a party wipe outside blows spare the party's villagers too, and they walk home");
 
 // BUG-9320 diagnostics: who an attacker's political id is (a founder village, an NPC village and its relation to the
 // victim village, or no village: wildlife or a test blow), for the village-down and party-wipe log lines
@@ -9596,6 +9653,15 @@ static bool protect_founder(void* victim, float damage, uint32_t attacker)
 {
     if (!std::isfinite(damage) || damage <= 0 || !g_order_roster.guest().faction) return false;
     if (founder_downed(victim)) return true;
+    if (g_wipe_regroup && g_regroup_villagers && H->time_seconds() < g_regroup_until &&
+        !g_order_roster.contains_faction(attacker)) {
+        void* home = F<void*>(victim, kOwnerTribeOff); // BUG-9320, 7Y A: a founder village's member, an outside blow
+        const int seat = home ? seat_of_village(home, player_tribe()) : -1;
+        if (seat >= 0 && home == founder_village(seat)) {
+            ++g_regroup_members_blocked;
+            return true;
+        }
+    }
     auto tracked = g_hm.find(victim);
     if (tracked == g_hm.end()) return false;
     double now = H->time_seconds();
@@ -9758,6 +9824,26 @@ static unsigned regroup_withdraw()
             bool near = false;
             for (const auto& f : founders_at) near = near || net::dist(at, f) < kRegroupReach;
             if (!near) continue;
+            void* rec = thiscall<void*>(a_DoAction, c, 4, (void*)nullptr, (void*)nullptr);
+            if (rec) thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)&home);
+            ++sent;
+        }
+    }
+    return sent;
+}
+// BUG-9320, 7Y A: at the regroup's start the founder villages' members away from their own village walk home (a wipe's
+// checkpoint can keep a villager at the raiders' village)
+static unsigned regroup_walk_home()
+{
+    if (!a_DoAction || !a_SetValueVector3) return 0;
+    unsigned sent = 0;
+    for (size_t s = 0; s < founder_seats(); ++s) {
+        void* f = founder_village((int)s);
+        if (!f) continue;
+        const net::Vec3 home = tribe_pos(f);
+        for (void* c : members(f)) {
+            if (!c || !game::object_alive(c) || game::health(c) <= 0 || F<uint8_t>(c, 0xB5E)) continue;
+            if (net::dist(game::position(c), home) < 25.f) continue;
             void* rec = thiscall<void*>(a_DoAction, c, 4, (void*)nullptr, (void*)nullptr);
             if (rec) thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)&home);
             ++sent;
@@ -11710,9 +11796,11 @@ void tick(double now)
                 next_withdraw = now + 4;
                 const unsigned sent = regroup_withdraw();
                 g_regroup_sent_home += sent;
-                if (first) H->log(M, SK_INFO, "tribe: regroup after the party wipe: %u raider(s) of other villages walk home, founder "
-                       "huts take no outside blow for %.0f s;%s (BUG-9320)", sent, g_regroup_until - now,
-                       founder_huts_line().c_str());
+                const unsigned own = first && g_regroup_villagers ? regroup_walk_home() : 0;
+                g_regroup_walked_home += own;
+                if (first) H->log(M, SK_INFO, "tribe: regroup after the party wipe: %u raider(s) of other villages walk home, %u "
+                       "party villager(s) away from home walk home, founder huts and villagers take no outside blow for %.0f s;%s "
+                       "(BUG-9320)", sent, own, g_regroup_until - now, founder_huts_line().c_str());
             }
         }
         static uint64_t huts_logged_epoch = ~0ull; // BUG-9320: the founder huts as each Tribe world settles
@@ -13371,9 +13459,37 @@ std::string debug(const std::vector<std::string>& a)
             char b[200];
             const long n = b0 && e0 >= b0 ? (long)(e0 - b0) : -1;
             snprintf(b, sizeof b, "TribalGame %p list +0x94 %p +0x98 %p (%ld entries); pet_cap_per_village fix=%d split=%u "
-                     "restored=%u (BUG-9306)\n", tg, (void*)b0, (void*)e0, n, (int)g_pet_cap_fix, g_pet_cap_split,
-                     g_pet_cap_restored);
+                     "restored=%u calls=%u taming_steps=%u step=%d (BUG-9306)\n", tg, (void*)b0, (void*)e0, n,
+                     (int)g_pet_cap_fix, g_pet_cap_split, g_pet_cap_restored, g_pet_cap_calls, g_pet_cap_steps, g_tame_step);
             o += b;
+            // each chief's cap: the 0x39 ability's prop 0x217997F4 (the node reads it from the ability's list +0x130)
+            static uintptr_t prop_int = H->sym("SporeCoop::App_GetPropInt");
+            auto cap_line = [&](const char* who, void* c) {
+                if (!is_citizen(c)) return;
+                const int idx = citizen_ability_index(c, 0x39);
+                uint8_t* ab = idx >= 0 ? citizen_ability(c, idx) : nullptr;
+                void* props = ab && skg::readable(ab + 0x130, 4) ? F<void*>(ab, 0x130) : nullptr;
+                const int cap = props && prop_int ? skg::cdecl_call<int>(prop_int, props, 0x217997F4u, 4) : -1;
+                const uint32_t pol = game::political_id(c);
+                long own = 0;
+                for (long i = 0; i >= 0 && i < n && i < 64 && skg::readable(b0 + i, 4); ++i)
+                    if (b0[i] && game::object_alive(b0[i]) && game::political_id(b0[i]) == pol) ++own;
+                const std::string st = idx >= 0 ? power_state(c, idx).substr(0, 40) : std::string();
+                snprintf(b, sizeof b, "%s %p political=%08X 0x39 ability %d cap=%d pets_in_list=%ld %s\n", who, c, pol, idx,
+                         cap, own, st.c_str());
+                o += b;
+            };
+            {
+                void* t = native_player_tribe();
+                cap_line("this game's chief", t ? F<void*>(t, kNativeLeaderOff) : nullptr);
+                if (is_host())
+                    for (size_t seat = 1; seat < founder_seats() && seat < founders::kMaxSeats; ++seat) {
+                        void* v = founder_village((int)seat);
+                        char who[32];
+                        snprintf(who, sizeof who, "seat %u chief", (unsigned)seat);
+                        cap_line(who, v ? F<void*>(v, kNativeLeaderOff) : nullptr);
+                    }
+            }
             for (long i = 0; i >= 0 && i < n && i < 32 && skg::readable(b0 + i, 4); ++i) {
                 void* c = b0[i];
                 const bool ok = c && game::object_alive(c);
@@ -13389,6 +13505,20 @@ std::string debug(const std::vector<std::string>& a)
                 o += b;
             }
             return o;
+        }
+        // ready <type> <seat>: tests (BUG-9306, host), ends a chief's recharge of that power (+0xC28 slot progress 1, the
+        // +0xBF8 bit cleared): power 0x39 otherwise recharges for many minutes
+        if (a.size() >= 4 && a[1] == "ready" && is_host()) {
+            const uint32_t ty = type;
+            const int seat = atoi(a[3].c_str());
+            void* v = seat == 0 ? native_player_tribe() : founder_village(seat);
+            void* c = v ? F<void*>(v, kNativeLeaderOff) : nullptr;
+            const int idx = is_citizen(c) && ty >= kChiefPowerFirst && ty <= kChiefPowerLast ? citizen_ability_index(c, ty) : -1;
+            uint8_t* slots = idx >= 0 && idx < 0x58 ? F<uint8_t*>(c, 0xC28) : nullptr;
+            if (!slots || !skg::readable(slots + idx * 16, 8)) return "no such chief or power";
+            F<float>(slots + idx * 16, 4) = 1.0f;
+            F<uint32_t>(c, 0xBF8 + (idx >> 5) * 4) &= ~(1u << (idx & 31));
+            return "ready: " + power_state(c, idx);
         }
         if (a.size() >= 3 && a[1] == "use") {
             const int idx = chief ? citizen_ability_index(chief, type) : -1;
@@ -13879,7 +14009,8 @@ std::string debug(const std::vector<std::string>& a)
         (g_last_wipe.empty() ? "" : "\nlast: " + g_last_wipe) + // BUG-9155
         "\nregroup (BUG-9320) fix=" + std::to_string((int)g_wipe_regroup) + " regroups=" + std::to_string(g_regroups) +
         " blocked=" + std::to_string(g_regroup_blocked) + " sent_home=" + std::to_string(g_regroup_sent_home) +
-        " left=" + std::to_string((int)std::max(0.0, g_regroup_until - H->time_seconds())) + " s";
+        " members_blocked=" + std::to_string(g_regroup_members_blocked) + " walked_home=" +
+        std::to_string(g_regroup_walked_home) + " left=" + std::to_string((int)std::max(0.0, g_regroup_until - H->time_seconds())) + " s";
     if (a.size() == 1 && a[0] == "totems") { // BUG-9155 tests: each founder village's totem: pieces and model slots
         std::string out;
         for (size_t seat = 0; seat < founder_seats(); ++seat) {
