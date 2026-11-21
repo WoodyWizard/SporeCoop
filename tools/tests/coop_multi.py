@@ -120,17 +120,71 @@ def join_cmd(name):
     return lane.JOIN.replace(' Bob', ' ' + name)
 
 
-def wait_all(host, want, timeout=150):
+def guest_id(g, status=None):
+    """the guest's own player id (not always 1..3: a rejoin that reaches the host before its old entry is gone gets
+    another one, twoinst.wait_guest_in)"""
+    m = re.search(r'client id=(\d+) connected', status if status is not None else g.call('coop.status').get('out', ''))
+    return int(m.group(1)) if m else None
+
+
+def settled(host_status, g):
+    """BUG-1368: the guest plays the host's world and no world is on its way to it. The host shares its world with
+    every joiner, also with a guest that rejoined in the world it already had (Tribe, Creature): that guest counts as
+    "together" at once and leaves the stage to load the new copy seconds later (save 2 s, transfer 5 s over a bad
+    link): the round measured it while it reloaded (multi4_tribe_slow, lab 20261120-133703: 0% of the host's world).
+    Here: the host sees it together, the host has no share for it (saving or sending), the guest receives no world and
+    has its avatar."""
+    gs = g.call('coop.status').get('out', '')
+    gid = guest_id(g, gs)
+    if gid is None or 'receiving world' in gs or not g.call('coop.avatar').get('ok'):
+        return False
+    if not re.search(rf'^together {gid} 1$', host_status, re.M):
+        return False
+    return not re.search(rf'^(sending world to {gid}:|share for {gid} )', host_status, re.M)
+
+
+# BUG-1368 twin: MULTI_WAIT=together is the old wait (the host's together count only, once): with --round-churn it
+# must FAIL ("stays in the host's world")
+OLD_WAIT = os.environ.get('MULTI_WAIT') == 'together'
+
+
+def wait_all(host, guests, timeout=150, unstick=None, stable=3):
+    """every guest settled() on `stable` polls in a row (about a second apart: the queued share's last packets and the
+    guest's stage change take a moment after the host's lines end). unstick(): the bot leaves any editor (BUG-1367).
+    `guests` as a number (the other tests: coop_campaign, coop_npc_multi, coop_sync_multi): that many guests together
+    on the host, the old wait"""
+    count = guests if isinstance(guests, int) else None
+    guests = [] if count is not None else list(guests)
     t0 = time.time()
+    n = 0
     while time.time() - t0 < timeout:
-        if len(together(host)) >= want:
-            return True
+        hs = host.call('coop.status')['out']
+        if OLD_WAIT or count is not None:
+            if len(together(host)) >= (count if count is not None else len(guests)):
+                return True
+        else:
+            n = n + 1 if all(settled(hs, g) for g in guests) else 0
+            if n >= stable:
+                return True
+        if unstick:
+            unstick()
         f1 = re.search(r'frame=(\d+)', host.call('frame')['out'])
         time.sleep(0.7)
         f2 = re.search(r'frame=(\d+)', host.call('frame')['out'])
         if f1 and f2 and f1.group(1) == f2.group(1):
             host.call('key enter')  # the host's "game saved" box (world.cpp closes it too)
     return False
+
+
+def stays(host, guests, seconds):
+    """every guest stays in the host's world for `seconds` (polled each second): [names that left it]"""
+    left = set()
+    t0 = time.time()
+    while time.time() - t0 < seconds:
+        hs = host.call('coop.status')['out']
+        left |= {n for n, g in guests.items() if not settled(hs, g)}
+        time.sleep(1)
+    return sorted(left)
 
 
 def mode(con):
@@ -150,7 +204,7 @@ def my_key(con, sample_keys):
     return mine[0] if len(mine) == 1 else None
 
 
-def check_round(ck, host, guests, label, report):
+def check_round(ck, host, guests, label, report, unstick=None):
     """desync / coverage / resources of every guest against the host"""
     report.append(f'  [{label}] modes: host {mode(host)} {fps(host)} fps, '
                   + ', '.join(f'{n} {mode(g)} {fps(g)} fps' for n, g in guests.items())
@@ -168,7 +222,7 @@ def check_round(ck, host, guests, label, report):
             report.append('      ' + ' | '.join(l.strip()[:110] for l in g.call('coop.npc')['out'].splitlines()[:2])
                           + ' | host ' + host.call('coop.npc')['out'].splitlines()[-1].strip()[:110])
             time.sleep(6)
-            wait_all(host, len(guests), 90)  # a churn just before the round: the guest is still loading
+            wait_all(host, guests.values(), 90, unstick)  # a churn just before the round: the guest is still loading
             time.sleep(4)
             h1 = sample(host)
             errs, cov, total, _ = measure(host, g)
@@ -278,29 +332,33 @@ def main():
     ap.add_argument('--minutes', type=float, default=6)
     ap.add_argument('--seed', type=int, default=None)
     ap.add_argument('--rate', type=float, default=2.0)
+    ap.add_argument('--round-churn', action='store_true',
+                    help='BUG-1368: Bob leaves and joins again right before every round; once he counts as back he must '
+                         'stay in the host\'s world for 15 s (MULTI_WAIT=together, the old wait, must FAIL)')
     a = ap.parse_args()
     seed = a.seed if a.seed is not None else random.randrange(1 << 30)
     print(f'  multi: {a.players} players, fixture {a.fixture}, {a.minutes} min, seed {seed}', flush=True)
     host, guest = start(a.fixture)
     ck = Checks()
     extra = start_extra(a.players - 2)
+    guests = {'Bob': guest, **{n: c for n, (c, _) in extra.items()}}
     t0 = time.time()
     for name, (c, _) in extra.items():
         c.call(join_cmd(name))
         time.sleep(1)
-    ck(wait_all(host, a.players - 1), f'all {a.players - 1} guests are in the host\'s world '
+    ck(wait_all(host, guests.values()), f'all {a.players - 1} guests are in the host\'s world '
        f'({time.time() - t0:.0f} s, together {together(host)})')
     # watch every game for freezes and crashes
     for name, (c, inst) in extra.items():
         m = Monitor(inst, name)
         m.start()
-    guests = {'Bob': guest, **{n: c for n, (c, _) in extra.items()}}
     report = []
     check_round(ck, host, guests, 'start', report)
     ids = {'host': 0, 'guest': 1}
+    # back_in: every guest settled, any editor left meanwhile (the host's own evolution editor too, BUG-1367)
     bot = Bot(host, guest, a.fixture, seed, a.rate, extra={n: c for n, (c, _) in extra.items()},
               joins={'guest': lane.JOIN, **{n: join_cmd(n) for n in extra}}, ids=ids,
-              back_in=lambda name: wait_all(host, a.players - 1, 120))
+              back_in=lambda name: wait_all(host, guests.values(), 120, bot.leave_editors))
     bot.weights['pause'] = 0  # random clicks into an open pause menu can quit to the galaxy menu
     t_end, t_check, n, ok, rounds = time.time() + a.minutes * 60, time.time() + 60, 0, True, 0
     try:
@@ -311,9 +369,18 @@ def main():
                 ok = False
             if time.time() > t_check:
                 rounds += 1
+                if a.round_churn:  # BUG-1368: a rejoin right before the round, then Bob must stay
+                    ok = bot.rejoin('guest')
+                    left = stays(host, guests, 15) if ok else []
+                    ck(ok and not left, f'[min {rounds}] after Bob\'s rejoin every guest stays in the host\'s world '
+                       f'for 15 s once all counted as back (left: {left})')
+                    if not ok:
+                        break
                 t_check = time.time() + 60
-                if wait_all(host, a.players - 1, 60):
-                    check_round(ck, host, guests, f'min {rounds}', report)
+                # a player in an editor (the host's own evolution editor opens at once, core.editor_now) is not in
+                # the world: it leaves the editor like a player before the round (BUG-1367)
+                if wait_all(host, guests.values(), 60, bot.leave_editors):
+                    check_round(ck, host, guests, f'min {rounds}', report, bot.leave_editors)
                 else:
                     ck(False, f'[min {rounds}] all guests in the host world (together {together(host)})')
     except (OSError, ValueError) as e:

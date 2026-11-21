@@ -1054,6 +1054,8 @@ add('npc_multi3', P + 'coop_npc_multi.py --players 3 --seconds 40', ('extended',
 # BUG-0167 / BUG-0170 hunts (fix/w46-n1-crashes): the 4-player churns of the two reports, also at low fps over the players' networks
 add('multi4_tribe', P + 'coop_multi.py --fixture tribe --players 4 --minutes 6', ('extended',), minutes=11)
 add('multi4_tribe_slow', 'SPORE_FPS=20 SPORE_NET=players ' + P + 'coop_multi.py --fixture tribe --players 4 --minutes 6', ('extended',), minutes=12)
+add('multi3_round_rejoin', 'SPORE_NET=players ' + P + 'coop_multi.py --fixture tribe --players 3 --minutes 2 --round-churn', ('extended',), minutes=7)  # BUG-1368: Bob rejoins right before every round; once every guest counts as back (the host's world share to him done, loaded) he stays in the host's world for 15 s
+add('multi3_round_rejoin_oldwait', 'MULTI_WAIT=together SPORE_NET=players ' + P + 'coop_multi.py --fixture tribe --players 3 --minutes 2 --round-churn', ('twin',), minutes=7)  # BUG-1368 twin: the old wait (the host's together count) takes Bob as back before the world the host shares with every joiner reloads his game: must FAIL (left: ['Bob'])
 add('multi4_creature_seed', P + 'coop_multi.py --fixture creature --players 4 --minutes 6 --seed 1035603402', ('extended',), minutes=11)
 add('multi4_creature_slow', 'SPORE_FPS=20 SPORE_NET=players ' + P + 'coop_multi.py --fixture creature --players 4 --minutes 6 --seed 1035603402', ('extended',), minutes=12)
 

@@ -70,9 +70,12 @@ class Bot:
         """a random key or click can open an editor (Civ: a design editor, "Bob edits a design"); a guest that
         joins in it gets the host's world when it leaves the editor (by design: "the world of Alice is loaded
         when you leave the editor"), so it leaves like a player: "done", the dice's name when one is asked
-        (chaos_civ_long, lab 20261101-134020: the guest waited in its editor)"""
+        (chaos_civ_long, lab 20261101-134020: the guest waited in its editor). The host too: its own evolution
+        editor opens at once (core.editor_now) after a mating the bot's clicks started, and no guest is in its world
+        until it is done (multi3, lab 20261120-133703, BUG-1367). The mode is read without a line in the log (this
+        runs on every poll of coop_multi's waits)"""
         for i in range(4):
-            if 'Editor' not in self.do(who, 'game.mode'):
+            if 'Editor' not in self.c[who].call('game.mode').get('out', ''):
                 return
             time.sleep(2)
             if i >= 2:
@@ -81,6 +84,23 @@ class Bot:
             self.do(who, 'click 1416 1062')  # the editors' green "done"
             self.log.append(f'{time.strftime("%H:%M:%S")} {who}: leaves its editor ("done")')
             time.sleep(3)
+
+    def leave_editors(self):
+        """every player that sits in an editor leaves it ("done"), the host first (BUG-1367)"""
+        for who in self.c:
+            self.leave_editor(who)
+
+    def rejoin(self, g):
+        """the guest g leaves and joins again; False when it is not back in the host's world"""
+        self.do(g, 'coop.leave')
+        time.sleep(self.rng.uniform(1, 4))
+        self.do(g, self.join_cmd[g])
+        self.joins += 1
+        self.leave_editor(g)
+        if not self.back_in(g):
+            self.log.append(f'  !! {g} did not get back into the host world')
+            return False
+        return True
 
     def step(self):
         rng = self.rng
@@ -122,14 +142,7 @@ class Bot:
             if cmds:
                 self.do(who, rng.choice(cmds).format(r=rng.randint(0, 3)))
         elif kind == 'churn':  # a guest leaves and joins again
-            g = rng.choice([n for n in self.c if n != 'host'])
-            self.do(g, 'coop.leave')
-            time.sleep(rng.uniform(1, 4))
-            self.do(g, self.join_cmd[g])
-            self.joins += 1
-            self.leave_editor(g)
-            if not self.back_in(g):
-                self.log.append(f'  !! {g} did not get back into the host world')
+            if not self.rejoin(rng.choice([n for n in self.c if n != 'host'])):
                 return False
         elif kind == 'outage':  # bad network only: the link drops for a few seconds
             import netem
