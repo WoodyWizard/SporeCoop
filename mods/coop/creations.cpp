@@ -1,5 +1,6 @@
 #include "creations_internal.h"
 #include "founders.h"
+#include "start_choice.h"
 
 namespace creations {
 
@@ -3228,10 +3229,217 @@ static void own_world_tick()
     }
 }
 
+// ---- BUG-9280: the guest's own cell becomes its land creature (Lineages BUG-9006, creations-duo-cell-conversion) ----
+// A guest that played a cell of its own (the start choice's, BUG-9273, or one of its My Creations) got the host's
+// creature in its first Creature editor: the editor starts from the avatar's species, the world's (BUG-1255). The game's
+// own landfall makes the land creature from the player's cell with CellModelToEarlyCreature (0x4BA690); the guest's game
+// does the same with its own cell once it plays the host's Creature world: a new creature key (the ID generator), the
+// converted model written to My Creations with the cell's picture and a metadata of its own (the start choice's name),
+// then chosen as the guest's own creature; its landfall editor waits for it (landfall_pending, vote.cpp).
+// Off: the guest's first editor starts from the host's creature (0.7.15).
+static bool g_landfall_fix = true;
+COOP_FIX("creations.guest_landfall", "BUG-9280", g_landfall_fix,
+         "creature: a guest that played its own cell lands with its own creature made from that cell (its first editor starts from it), not the host's");
+static Key g_land_cell, g_land_result;
+static uint32_t g_land_world;
+static bool g_land_queued;
+static double g_land_started, g_land_retry;
+static unsigned g_land_made, g_land_fails;
+bool landfall_pending() { return g_landfall_fix && g_land_cell.instance != 0; }
+
+static std::u16string utf16(const std::string& s)
+{
+    std::u16string o;
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
+    if (n > 0) {
+        std::wstring w((size_t)n, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), n);
+        o.assign(w.begin(), w.end());
+    }
+    return o;
+}
+
+// the editor asks the asset catalog for the creation: its picture and a metadata (a model alone opened a blank body there)
+static bool landfall_catalog(void* rm, void* db, const Key& cell, const Key& land)
+{
+    uintptr_t raw_write = H->sym("SporeCoop::WriteRawCreationRecord");
+    uintptr_t alloc = H->sym("GeneralAllocator::new_");
+    uintptr_t ctor = H->sym("SporeCoop::AssetMetadataCtor");
+    uintptr_t name = H->sym("SporeCoop::AssetMetadataName");
+    uintptr_t description = H->sym("SporeCoop::AssetMetadataDescription");
+    uintptr_t set = H->sym("Pollinator::cAssetMetadata::Set");
+    if (!alloc || !raw_write || !ctor || !name || !description || !set)
+        return false;
+    Key thumbnail{cell.instance, kPng, cell.group};
+    std::vector<dbpf::Record> records;
+    if (!records_from_game(thumbnail, records))
+        return false;
+    auto png = std::find_if(records.begin(), records.end(), [&](const auto& r) { return r.key == thumbnail; });
+    if (png == records.end() || png->data.empty())
+        return false;
+    Key new_thumb{land.instance, kPng, land.group};
+    if (!cdecl_call<bool>(raw_write, db, &new_thumb, png->data.data(), (uint32_t)png->data.size(), 1))
+        return false;
+    // the cell's own metadata gives the name; a cell of ours (the start choice's painted copy) has none: then the name
+    // the player chose for its creature
+    void* source = nullptr;
+    Key meta_key{cell.instance, kMeta, cell.group};
+    bool loaded = vcall<bool>(rm, 0x0C / 4, &meta_key, &source, nullptr, nullptr, nullptr, nullptr);
+    void* meta = loaded && source ? vcall<void*>(source, 3, kMeta) : nullptr;
+    std::u16string chosen = utf16(start_choice::name_of(C.sess->my_id()));
+    bool ok = false;
+    void* storage = cdecl_call<void*>(alloc, 0xD8, "SporeCoop landfall metadata", 0, 0, 0, 0);
+    void* created = storage ? thiscall<void*>(ctor, storage) : nullptr;
+    if (created) {
+        vcall<int>(created, 0);
+        const char16_t* title = meta ? thiscall<const char16_t*>(name, meta) : nullptr;
+        const char16_t* desc = meta ? thiscall<const char16_t*>(description, meta) : nullptr;
+        if (!chosen.empty() && (!title || !*title))
+            title = chosen.c_str();
+        ok = thiscall<bool>(set, created, &land, title ? title : u"", desc ? desc : u"", u"", &cell, false) &&
+             vcall<bool>(rm, 0x20 / 4, created, nullptr, db, nullptr, nullptr);
+        vcall<int>(created, 1);
+    }
+    if (source)
+        vcall<int>(source, 1);
+    return ok;
+}
+
+static bool make_land_creature(const Key& cell, Key& result)
+{
+    uintptr_t convert = H->sym("SporeCoop::CellModelToEarlyCreature");
+    uintptr_t write = H->sym("SporeCoop::WriteCreationResource");
+    uintptr_t publish = H->sym("SporeCoop::RegisterConvertedModel");
+    uintptr_t cache_get = H->sym("Resource::IResourceManager::Get");
+    uintptr_t generator = H->sym("App::cIDGenerator::Get");
+    void* ids = generator ? cdecl_call<void*>(generator) : nullptr;
+    void* db = a_GetDb ? cdecl_call<void*>(a_GetDb, kEditorSavesArea) : nullptr;
+    void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+    void* cache = cache_get ? cdecl_call<void*>(cache_get) : nullptr;
+    if (!convert || !write || !publish || !cache || !ids || !db || !rm)
+        return false;
+    void* source = nullptr;
+    void* model = nullptr;
+    bool ok = vcall<bool>(rm, 0x0C / 4, &cell, &source, nullptr, nullptr, nullptr, nullptr) && source &&
+              thiscall<bool>(convert, source, &model) && model;
+    if (ok) {
+        vcall<void>(ids, 1, &result, kInfo[kCreature].type, 0x62, 0, 0x62, 0);
+        Key bem{result.instance, kBem, result.group};
+        ok = result.instance && result.type == kInfo[kCreature].type && result.group == kInfo[kCreature].group && !key_exists(bem);
+        if (ok) {
+            *(Key*)((uint8_t*)model + 8) = result;
+            cdecl_call<void>(publish, model);
+            vcall<bool>(cache, 0x6C / 4, model, true);
+            ok = cdecl_call<bool>(write, model, db, nullptr, &bem) && landfall_catalog(rm, db, cell, result);
+        }
+    }
+    if (model)
+        vcall<int>(model, 1);
+    if (source)
+        vcall<int>(source, 1);
+    return ok;
+}
+
+static void landfall_clear()
+{
+    g_land_cell = g_land_result = {};
+    g_land_world = 0;
+}
+
+// true while the conversion runs (the rest of the creations tick waits)
+static bool landfall_tick(double now)
+{
+    if (!g_landfall_fix || C.sess->role() != net::Role::Client || g_chosen[kCreature]) {
+        landfall_clear();
+        return false;
+    }
+    uint32_t m = game::mode_id();
+    if (m == modes::kCell) {
+        Key cell = cell_key();
+        auto host = g_applied.find({0, (uint8_t)kCell});
+        if (cell.instance && host != g_applied.end() && host->second.key.instance) {
+            g_land_cell = (cell == host->second.orig || cell == host->second.key) ? Key{} : cell;
+            g_land_world = modes::current_world();
+        }
+        return false;
+    }
+    if (m != modes::kCreature) {
+        if (m == modes::kTribe || m == modes::kCiv || m == modes::kSpace)
+            landfall_clear();
+        return false;
+    }
+    if (!g_land_cell.instance || !game::avatar())
+        return false;
+    if (!g_land_world || modes::current_world() != g_land_world) {
+        landfall_clear();
+        return false;
+    }
+    if (g_land_queued || (g_land_result.instance && now < g_land_retry))
+        return true;
+    g_land_queued = true;
+    H->run_outside_frame( // writes resources: outside the frame
+        [](void*) {
+            g_land_queued = false;
+            if (!g_land_cell.instance || !C.sess->connected() || C.sess->role() != net::Role::Client || g_chosen[kCreature] ||
+                game::mode_id() != modes::kCreature || modes::current_world() != g_land_world || !game::avatar())
+                return;
+            double t = H->time_seconds();
+            if (!g_land_result.instance) {
+                Key result{};
+                if (make_land_creature(g_land_cell, result)) {
+                    g_land_result = result;
+                    g_land_started = t;
+                    g_land_retry = t + 1;
+                    return; // the game writes the package file a moment later
+                }
+                g_land_fails++;
+                H->log(M, SK_WARN, "landfall: our cell %08X could not be converted (BUG-9280)", g_land_cell.instance);
+                if (C.feed)
+                    C.feed("Your cell could not become your land creature: choose a creature in F9.");
+            } else {
+                // the game writes the BEM into My Creations' disk index only when the database is flushed (vt +0x24,
+                // as Lineages did: without it the record was never found, 30 s, "could not be saved")
+                void* db = a_GetDb ? cdecl_call<void*>(a_GetDb, kEditorSavesArea) : nullptr;
+                std::vector<dbpf::Record> records;
+                if (db && vcall<bool>(db, 0x24 / 4) && records_from_game(g_land_result, records) &&
+                    std::any_of(records.begin(), records.end(), [](const auto& r) { return r.key.type == kBem && !r.data.empty(); })) {
+                    g_opts_read = -100;
+                    refresh_options(t);
+                    choose(kCreature, g_land_result);
+                    g_land_made++;
+                    H->log(M, SK_INFO, "landfall: our cell %08X -> our own creature %08X (BUG-9280)", g_land_cell.instance,
+                           g_land_result.instance);
+                    if (C.feed)
+                        C.feed("Your land creature grew from your own cell.");
+                } else if (t - g_land_started < 30) {
+                    g_land_retry = t + 1;
+                    return;
+                } else {
+                    g_land_fails++;
+                    if (C.feed)
+                        C.feed("Your land creature could not be saved: choose a creature in F9.");
+                }
+            }
+            landfall_clear();
+        },
+        nullptr);
+    return true;
+}
+
+std::string landfall_status()
+{
+    char b[200];
+    snprintf(b, sizeof b, "  landfall: fix=%d cell=%08X world=%08X result=%08X made=%u fails=%u\n", g_landfall_fix ? 1 : 0,
+             g_land_cell.instance, g_land_world, g_land_result.instance, g_land_made, g_land_fails);
+    return b;
+}
+
 void tick(double now)
 {
     close_tick(now); // BUG-0996 (also after the session: its end drops the world packages)
     if (!C.sess || !C.sess->connected())
+        return;
+    if (landfall_tick(now)) // BUG-9280
         return;
     if (adopt_after_editor(now))
         return;
@@ -3347,6 +3555,7 @@ void on_player_leave(uint8_t id)
 void on_session_end()
 {
     g_own_told.clear(); // BUG-0345: the notice again in the next session
+    landfall_clear(); // BUG-9280
     // the host's creations registered under their original keys (priority 2000, above the guest's
     // own My Creations): after the session a guest's own creation of the same id (ids are per
     // profile and sequential) resolved to the host's records in its own games (BUG-0055). They go;
@@ -3493,6 +3702,7 @@ std::string status()
     s += b;
     snprintf(b, sizeof b, "  swap waits for a cinematic: %u ticks (BUG-1173)\n", g_swap_cine_waits);
     s += b;
+    s += landfall_status(); // BUG-9280
     snprintf(b, sizeof b, "  packages: open=%zu closing=%zu closed=%u kept=%u renamed=%u close_fix=%d\n", g_pkgs.size(),
              g_closing.size(), g_pkgs_closed, g_pkgs_close_kept, g_pkg_renames, (int)g_pkg_close_fix); // BUG-0996
     s += b;
