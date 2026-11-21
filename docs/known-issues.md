@@ -3957,3 +3957,14 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   host's cap of 4; the lure basket of power 0x34 is not shown on a partner's screen.
 * Reproduce: `coop.tribe powers grant 0x39` on both games, the guest's `coop.tribe powers use 0x39` near animals, then
   `coop.tribe powers pets` on the host: the animals are listed there with the guest village's political id.
+
+## The party rings and windows (2026-11-21, feat/l47-rings)
+<a id="known-party-rings"></a>
+
+* BUG-9321 (limits). A party ring is drawn after the game's UI: a ring partly under a HUD window (the Pack buttons, the
+  bottom bar) is drawn over that window unless its centre is on it. The Civ city planner and Space were not checked.
+* Reproduce: Creature, a partner's creature at the right edge of the screen beside the Pack buttons.
+* BUG-9322. The co-op notices ("CivHost earned N money (shared)") are drawn over the Spore Guide window.
+* Reproduce: Civ with a partner, press H while money is shared.
+* BUG-9323. Civ: this player's own name tags show the -NoShare- test tag (`CivGuest-NoShare-`, `[CivGuest-NoShare-]`).
+* Reproduce: join a Civ session as `X-NoShare-` and look at the own vehicle and capital: their name tags show the tag.

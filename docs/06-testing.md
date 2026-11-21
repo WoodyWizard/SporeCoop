@@ -9173,3 +9173,30 @@ byte 4 patched 0x10 -> 4 in a backed-up folder), guest DuoQACivGuest (instance 1
   click in social stance (scratchpad engage.py: the social button, then a click on `coop.targets objs` n<id>), answer
   with `coop.social act <npc> <slot>` per prompt (play_social.py). Many wild species of Vandh are hostile (relation 5)
   to the party; `coop.npc hosthit` kills count as the party's kills.
+
+## The party rings: how to test (2026-11-21, feat/l47-rings)
+<a id="testing-party-rings"></a>
+
+BUG-9321, BUG-9319 (docs/re/graphics.md#graphics-overlay-depth, docs/08-ui.md#ui-spore-guide-window). TITAN QA copy,
+1024 x 768 windows, host instance 9, guest instance 10.
+* From a worktree the QA tools need `SPORECOOP_QA_COPY=<main checkout>/out/release36/native` (their default is the
+  worktree's own out/, which has no game). The game's `shot` path must have no spaces (save into the scratchpad, then
+  copy).
+* `coop.rings`: the rings of the last overlay pass (colour, radius, lift, the pixel bounds, centre, screen point) and the
+  counters on_hud / beyond_horizon; `coop.rings depth` (twice: the next pass writes it) the device's depth-stencil,
+  states and transforms; `coop.rings look x y z` aims the Tribe / Civ camera at a point (gamefixes::tribe_camera_to,
+  also works in Civ); `coop.rings sink <cell> <space>` the depth offset under a cell / ship. `coop.status` `labels:`
+  line: partner_rings, cover_up, cover_frames, rings_on_hud.
+* Switch twins: `all.soft_ring` (off: the hard ring), `all.partner_rings` (off: Tribe only), `all.own_rings` (on: own
+  units too), `all.ring_depth` (off: over everything), `ui.cover_labels` (off: labels over the guide, rings over the HUD).
+* Saves: Civ DuoQACivHost / Abber + DuoQACivGuest (#testing-qa-pitfalls-l47; the guest is a newcomer and gets a capital
+  and a vehicle); Tribe DuoQAJiffFresh / "Jiff Peanutbutter.spo" + DuoQAStageGuest (the guest is sent into the late
+  joiner's creature editor; `coop.creations choose creature <id>` then Quit, the founding then waits on the host's
+  wrecked hut); Creature and Cell DuoQACreatureHost Game0 (Samuth, Diplomavil) + DuoQACreatureGuest.
+* Pitfall: DuoQACreatureHost's samuth.spo.duo-seats holds seats 0x10 (byte 4) AND protected seats 0x0A (byte 11): the
+  load stops with "the reserved founder settings are unreadable" until both are 4 (back the folder up first). Samuth's
+  epic predators kill both creatures within minutes (the green check of the death caption, 990 737).
+* Creature pack: host `coop.npc recruit <id>` (an NPC from `coop.npc list` near the host): the guest shows a second
+  ring in the host's colour (a guest gives a pack proxy the player of the nearest partner creature, 60 m at most).
+* Cell: `coop.cell tp` does not exist on this build (only list / spawn); a guest's camera reached the host's cell after
+  the world share that follows a reload.

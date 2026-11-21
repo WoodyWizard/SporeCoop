@@ -331,3 +331,39 @@ BUG-0948. GOG 2024, lane 4, Creature (the guest's follow camera turned by SporeK
   the planet name box and crosshair sit on the planet, the home marker on the home planet, and the tooltip window
   (here "Main Tools", 0x03754E6C) shows just over the pointer with ui.tooltip_place on. With these, every stage's
   overlays were looked at once (Cell, Creature, Tribe, Civ, Space).
+
+## The overlay pass and the scene's depth buffer (2026-11-21, feat/l47-rings)
+<a id="graphics-overlay-depth"></a>
+
+BUG-9321 (the party rings drawn into the world: a unit in front hides that part of its ring). GOG 2024 / Steam on the
+Windows QA copy, 1024 x 768, read with `coop.rings depth` (partner_marker::device_report) inside SK_EV_OVERLAY.
+
+* ✔ SporeKit's overlay pass runs in Present: it binds the back buffer as render target 0 and calls BeginScene; it does
+  not touch the depth-stencil binding, the transforms or the depth states.
+* ✔ Creature (Samuth): at the overlay pass the game's depth-stencil surface is still bound (D3DFMT_D24S8, the back
+  buffer's size, no multisampling), and D3DTS_VIEW / D3DTS_PROJECTION are the scene's camera: a perspective projection
+  with _11 = 1.83, _22 = 2.44 (tan of the half field of view 0.4097, the viewer's +0x60), _33 = 1.0001, _43 = -0.5 or
+  -1.0 (the near plane changes with the camera's zoom; far = 10000 x near), _34 = 1. ZENABLE was 0 and ZWRITEENABLE 1
+  (the last pass's states). Triangles drawn with ZENABLE on, ZWRITEENABLE off and LESSEQUAL against that surface are
+  hidden behind creatures, legs and tails exactly (screenshots out/qa-shots/creature_*_depth_*).
+* ✔ Cell (Diplomavil): in about every other frame the last pass before Present is a 2D one: NO depth-stencil is bound and
+  the transforms are an orthographic view (translation -0.5 0.5 2) and projection (2, 2, 0.5, -0.5); in the other
+  frames the scene's depth-stencil (the same surface) and perspective transforms are set (camera 20 m over the plane,
+  _43 = -2.0). Drawing flat in the first kind of frame and depth-tested in the second made the ring flicker over and
+  under the cell (owner report 2026-11-21). The ring code keeps the last scene state seen: the surface (one reference,
+  released on SK_EV_DEVICE_LOST and at the unload, else the game's Reset fails) and the view / projection, binds the kept
+  surface for its draw when none is bound and puts the binding back after (a D3DSBT_ALL state block does not restore
+  it). Over 216 Cell frames 35 used the kept surface; its content was still the scene's depth (no flicker in six frames
+  in a row, out/qa-shots/cell_guest_ring_under_host_cell_6_frames_no_flicker.png).
+* ✔ The vertices: x, y from world_to_screen (the camera the frame was drawn with, #graphics-drawn-camera), z = _33 +
+  _43 / zv and rhw = 1 / zv with zv the view-space depth from the kept view (XYZRHW). Using the device's view and
+  projection directly (D3DFVF_XYZ) also worked in Creature, but in frames with a stale or 2D transform it cannot.
+* ✔ A ring on the ground with a unit standing on it: 0.12 m + 0.06 x its radius over the ground is enough (no
+  z-fighting with the ground seen in Creature at 10 FPS). A unit with no ground under it (a cell lies ON the Cell plane,
+  a ship) must get its ring below it (0.6 x the ring's radius away along up): a ring 0.12 m over the Cell plane cut
+  through the cell's body and flickered.
+* ~ Not checked: the Space stage's depth at the overlay pass (no live Space run), Civ and Tribe with depth on (their
+  screenshots were taken before the depth path; the projection path is the same).
+* Negative: the overlay pass is after the game's UI, so a ring partly under a HUD window is still drawn over that
+  window (the depth buffer holds no UI); the ring code leaves out a ring whose centre is on a HUD box (BUG-9319) and
+  hides all rings while the Spore Guide is open.

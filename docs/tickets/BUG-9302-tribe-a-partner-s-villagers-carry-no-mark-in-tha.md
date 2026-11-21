@@ -55,3 +55,4 @@ partner_rings=0 and no ring.
 - 2026-11-20: fix on fix/l47-view (built, not run in a game yet; the lead runs the two-player test).
 - 2026-11-21: live two-game QA (see Verification).
 - 2026-11-21: second live QA run (see Verification).
+- 2026-11-21: the ring's look and stages were extended by BUG-9321 (soft, depth-tested, every stage); `tribe.partner_ring` still turns the Tribe rings off.
