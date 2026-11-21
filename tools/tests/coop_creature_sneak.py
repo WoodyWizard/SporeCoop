@@ -40,7 +40,34 @@ def wait_for(fn, t):
     return v
 
 
+def unfaded(actor, observer, pid, who):
+    """BUG-1412: the observer's game drew the actor's puppet see-through before any sneak (lab 20261121-003202: the
+    guest's game drew the host's puppet at model alpha 0.13 with +0xB7C 1.0, sneak 0; the host's game drew the guest's
+    puppet at model alpha 0.2 with +0xB7C 1.0 before, during and after the guest's sneak, and the game's sneak look never
+    eased its +0xB7C). Inferred: the observer's camera fades a creature between it and the avatar (the partner stands
+    5 m beside, BUG-0989); a faded puppet does not show the sneak look the test compares. The actor moves to another
+    side of the observer until the puppet is drawn opaque (model alpha 0.9 or more), at most 4 places"""
+    for k, off in enumerate(((0, 0, 0), (6, 0, 0), (0, 6, 0), (0, 0, 6), (-6, 0, 0))):
+        if k:
+            m = re.search(r'pos=\(([-\d.]+) ([-\d.]+) ([-\d.]+)\)', observer.call('coop.avatar')['out'])
+            if not m:
+                break
+            q = [float(v) + d for v, d in zip(m.groups(), off)]
+            actor.call('coop.npc gopos %.2f %.2f %.2f' % tuple(q))
+            time.sleep(2)
+        p = sneak(observer).get(('puppet', pid))
+        if p and p[4] >= 0.9:
+            if k:
+                print(f'  {who}: the other game drew the puppet see-through before the sneak; opaque after {k} move(s) '
+                      f'({p}, BUG-1412)', flush=True)
+            return True
+        print(f'  {who}: the other game draws the puppet see-through before any sneak ({p}): moving it (BUG-1412)',
+              flush=True)
+    return False
+
+
 def direction(ck, actor, observer, pid, who):
+    ck(unfaded(actor, observer, pid, who), f'{who}: the other game draws the puppet opaque before the sneak')
     own = sneak(actor).get(('own', -1))
     print(f'  {who}: own before {own}', flush=True)
     ck(own is not None, f'{who}: its own avatar is there')
