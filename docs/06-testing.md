@@ -9966,3 +9966,11 @@ Lab run 20261120-133703 (and the twins 20261120-130608); see [testing-lab-verdic
   village read the species as missing (BUG-1375).
 * tribe_caption_race: the conquest caption needs the village's mission; the guest's `coop.tribe act_obj 15` raid order
   makes it on the host (BUG-1068), `coop.tribe order` does not (BUG-1377).
+
+## tribe_form_species: the update's call right after a form (2026-11-21, fix/w62-core)
+<a id="testing-tribe-form-fresh"></a>
+
+BUG-1392: the test writes the controller update's timer (0x157E940, float, counted down by game time) to 0 right after
+its `coop.tribe form`, so the game's own FormTribe comes in the next frame, inside the second the mod keeps its
+species-list answer. Without that the race (one fault at 0x406EFF) happened only when the game's second was shorter
+than ours (lab 20261121-003202, 1 run of 10). Twin `tribe_form_species_fresh_off` must FAIL on the host's fault.

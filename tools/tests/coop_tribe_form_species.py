@@ -16,6 +16,9 @@ goal bar stayed at 4 of 5 (BUG-1238). The tribe fixture has 5 of 5.
    no room after them (the villages after the list need the game's own vector insert, which moves the list).
 3. One `coop.tribe form` forms the third tribe (species 1 of 2, in the list; tribe.form_pace off). With 3-4 tribes
    the game's own update calls FormTribe every second by itself (5 needs three goals: the test command then).
+   BUG-1392: right after that form the test runs the update's 1 s timer out (0x157E940 = 0): the game's next call
+   comes within the second the form's "in the list" answer (made with 2 tribes) is kept, as it did by chance in lab
+   20261121-003202 (0.998 s after the form: one fault at 0x406EFF).
 4. Within 30 s: no fault in the host's game; the host's game has the 6 tribes its property list allows (the villages
    after the list with its last species); the guest's game has its copy of each (same species), no fault there.
    The test command once more at 6 tribes: no fault, nothing formed (the game's own limit).
@@ -23,6 +26,7 @@ goal bar stayed at 4 of 5 (BUG-1238). The tribe fixture has 5 of 5.
 
 SPORE_FIX_OFF=tribe.form_species must FAIL (a fault a second at 0x406EFF in FormTribe, caught by the game's handler,
 or a crash). SPORE_FIX_OFF=tribe.form_last_species must FAIL (no fault, but the host stays at 3 tribes).
+SPORE_FIX_OFF=tribe.form_species_fresh must FAIL (BUG-1392: the fault at 0x406EFF of the call right after the form).
 
   SPORE_LANE=2 python3 tools/tests/coop_tribe_form_species.py
 """
@@ -88,6 +92,9 @@ def main():
     out = host.call('coop.tribe form')['out'].strip()
     print(f'  host: {out}', flush=True)
     ck(out.startswith('tribes 2 -> 3'), 'the host\'s controller formed the third tribe (species 1 of the list)')
+    # BUG-1392: the update's next FormTribe within the second the form's answer is kept (the timer FormTribe set to
+    # 1.0 runs out now: the game calls it in its next frame)
+    put(host, 0x157E940, 0)
     # (4) the game's own update: with 3 and 4 tribes it calls FormTribe every second; at 5 (three goals needed) the
     # test command asks, as the campaign does when no village is left
     t0, seen, asked = time.time(), [], 0

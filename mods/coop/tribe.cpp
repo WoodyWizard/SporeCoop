@@ -2951,6 +2951,26 @@ static bool species_holds(void* ctrl, double now)
 }
 void form_species_recheck() { g_species_checked = -10; }
 
+// BUG-1392 (lab 20261121-003202 tribe_form_species): the decision above is kept for a second, and the game's own update
+// calls FormTribe one second (of game time: the timer 0x157E940 FormTribe sets to 1.0, counted down by the frames' dt)
+// after the last call. A call that formed a village kept its "in the list" answer, made with one tribe fewer: when the
+// next call came 0.998 s of our clock later, it took that answer and the game read past the list once (the host's fault
+// at 0x406EFF, FormTribe+0x119, the same signature as BUG-1233). Now a call that reached the game's FormTribe drops the
+// answer: the next call decides with the tribes it has (a held call does not reach it: the update's every-frame calls
+// still use the second's answer). `coop.fix tribe.form_species_fresh off`: the answer kept for its second (0.7.14).
+bool g_form_species_fresh_fix = true;
+COOP_FIX("tribe.form_species_fresh", "BUG-1392", g_form_species_fresh_fix,
+         "tribe: the check that stops the NPC tribe controller reading past its list of species is made again after each "
+         "village it forms (the next call less than a second later could still read past it and the game could crash)");
+uint32_t g_forms_fresh; // tests: answers dropped after a call that reached FormTribe
+static void form_species_formed()
+{
+    if (g_form_species_fresh_fix) {
+        g_forms_fresh++;
+        form_species_recheck();
+    }
+}
+
 // BUG-1238: with the list used up (BUG-1233) no village formed any more, and on a planet whose list is shorter than its
 // property list allows (the final check's campaign planet: 4 species, 5 NPC villages) the stage's fifth goal never
 // came: the campaign stood at "no village left to raid (goal bar 4 of 5)". The index min(size, tribes - 1) is one past
@@ -2991,6 +3011,7 @@ static void* form_last_species(void* ctrl, int arg, int size, int tribes)
     g_forms_last++;
     g_forms_run++;
     void* r = o_Form(ctrl, arg);
+    form_species_formed(); // BUG-1392
     // back to the game's size (FormTribe neither grows nor moves the list; the slots past it keep the repeated species)
     F<void**>(ctrl, 0xD4) = F<void**>(ctrl, 0xD0) + size;
     if (g_forms_last <= 5)
@@ -3023,7 +3044,9 @@ void* SK_THISCALL h_Form(void* self, int arg)
         return nullptr;
     }
     g_forms_run++;
-    return o_Form(self, arg);
+    void* r = o_Form(self, arg);
+    form_species_formed(); // BUG-1392: the tribes may have changed
+    return r;
 }
 void unmapped_tick(const std::vector<void*>& locals, void* pt, double now)
 {
