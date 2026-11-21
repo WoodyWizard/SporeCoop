@@ -32,11 +32,22 @@ from twoinst import Checks, keyframe, start  # (first: it puts tools/ on the pat
 from sporectl import Console
 
 
-def anims(con):
+def anims(con, eats=False):
     out = con.call('coop.pool anims')['out']
     av = re.search(r'^anim avatar \S+ anim=([0-9A-F]+)', out, re.M)
     pp = re.findall(r'^anim puppet \S+ anim=([0-9A-F]+)', out, re.M)
+    if eats:
+        e = re.search(r'\bown_eats=(\d+)', out)
+        return (av.group(1) if av else None), pp, (int(e.group(1)) if e else None)
     return (av.group(1) if av else None), pp
+
+
+# BUG-1400: a herbivore cell that sits idle eats a plant that drifts into its mouth (the game's own AvatarEat, lab
+# 20261121-003202: the guest's idle cell ate a plant at s 26.2 of the host's bites and its +0x1B0 showed 0xB; lab
+# 20261119-102828: the host's 0xB with its own plant meal at s 23.8). That eat animation is the cell's own meal, not
+# the partner's attack: the samples from 1 s before to 3 s after an own meal (`own_eats` of `coop.pool anims` went
+# up) are kept apart and printed, the rest is judged as before.
+MEAL_BEFORE, MEAL_AFTER = 1.0, 3.0
 
 
 class Sampler(threading.Thread):
@@ -44,14 +55,20 @@ class Sampler(threading.Thread):
         super().__init__(daemon=True)
         self.port = con.port - 47799
         self.avatar, self.puppet = [], []
+        self.meals = []  # (last sample before, first sample after) of each rise of the own cell's own_eats
         self.stop_ev = threading.Event()
 
     def run(self):
         c = Console(self.port, timeout=20)
+        last = None  # (time, own_eats) of the last sample
         try:
             while not self.stop_ev.is_set():
-                a, p = anims(c)
+                a, p, e = anims(c, eats=True)
                 t = time.time()
+                if e is not None:
+                    if last is not None and e > last[1]:
+                        self.meals.append((last[0], t))
+                    last = (t, e)
                 if a:
                     self.avatar.append((t, a))
                 for x in p:
@@ -94,6 +111,21 @@ class Recent:
 
 def window(rows, t0, t1):
     return {a for t, a in rows if t0 <= t <= t1}
+
+
+def at_meal(t, meals):
+    return any(m0 - MEAL_BEFORE <= t <= m1 + MEAL_AFTER for m0, m1 in meals)
+
+
+def own_window(s, t0, t1, who):
+    """the own cell's animations in [t0, t1] without those of its own meals (BUG-1400); prints what was kept apart"""
+    meals = [m for m in s.meals if m[1] >= t0 - MEAL_AFTER and m[0] <= t1 + MEAL_BEFORE]
+    kept = {a for t, a in s.avatar if t0 <= t <= t1 and not at_meal(t, meals)}
+    apart = {a for t, a in s.avatar if t0 <= t <= t1 and at_meal(t, meals)} - kept
+    if meals:
+        print(f"  the {who}'s own cell ate {len(meals)} time(s) by itself in the window: its animations around them "
+              f"{sorted(apart)} are its own meals (BUG-1400)", flush=True)
+    return kept
 
 
 def host_hp(host, key):
@@ -273,6 +305,7 @@ def contact(host, guest, ck, part, attacker_name):
                 con.call('coop.pool borrow off')
     a_av = window(sa.avatar, t0, t1)
     a_pup, o_av, o_pup = window(sa.puppet, t0, t1 + 2), window(so.avatar, t0, t1 + 2), window(so.puppet, t0, t1 + 2)
+    o_own = own_window(so, t0, t1 + 2, oname)  # without its own meals (BUG-1400)
     print(f'  {attacker_name} attacks ({hits} swims, last: {r[:60]}): its own cell {sorted(a_av)} | its puppet of the {oname} '
           f'{sorted(a_pup)} | the {oname}\'s own cell {sorted(o_av)} | the {oname}\'s puppet of the {attacker_name} {sorted(o_pup)}', flush=True)
     att_anims = a_av - {'0'}
@@ -281,7 +314,7 @@ def contact(host, guest, ck, part, attacker_name):
               f'checks left out', flush=True)
         return False
     ck(att_anims, f"the {attacker_name}'s own cell played attack / eat animations ({sorted(att_anims)})")
-    ck(not (att_anims & (o_av - idle_o)), f"the {oname}'s own cell plays none of the {attacker_name}'s animations ({sorted(att_anims & (o_av - idle_o))})")
+    ck(not (att_anims & (o_own - idle_o)), f"the {oname}'s own cell plays none of the {attacker_name}'s animations ({sorted(att_anims & (o_own - idle_o))})")
     ck(not ((a_pup - {'0'}) - o_av), f"the {attacker_name}'s game shows the {oname}'s cell only with animations its own game plays ({sorted((a_pup - {'0'}) - o_av)})")
     return True
 
@@ -335,7 +368,7 @@ def main():
         keyframe('host_attacks', "Cell: the host bites; the guest's cell does not play the attack on either game", settle=0)
         t1 = time.time()
         time.sleep(2)
-        g_own = window(sg.avatar, t0, t1 + 2)
+        g_own = own_window(sg, t0, t1 + 2, 'guest')
         h_pup = window(sh.puppet, t0, t1 + 2)
         g_pup = window(sg.puppet, t0, t1 + 2)
         print(f'  host attacks: host avatar {sorted(window(sh.avatar, t0, t1))} | guest avatar {sorted(g_own)} | '
@@ -351,7 +384,7 @@ def main():
         keyframe('guest_attacks', "Cell: the guest bites; the host's cell does not play the attack on either game", settle=0)
         t3 = time.time()
         time.sleep(2)
-        h_own = window(sh.avatar, t2, t3 + 2)
+        h_own = own_window(sh, t2, t3 + 2, 'host')
         g_pup2 = window(sg.puppet, t2, t3 + 2)
         h_pup2 = window(sh.puppet, t2, t3 + 2)
         print(f'  guest attacks: guest avatar {sorted(window(sg.avatar, t2, t3))} | host avatar {sorted(h_own)} | '

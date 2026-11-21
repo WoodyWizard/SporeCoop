@@ -2832,3 +2832,14 @@ time to 924 (`coop.pool kin` prints `box=` since this branch: the width and heig
   measured the host's place (BUG-1334). The host's counter `partner=81` had made the guest's kin; they were culled
   with the area the guest left. Inferred (not decompiled): the damage came through a path without the +0x111 check
   (Bite's lethal or much-smaller branch, see the Bite entry above); not followed further.
+
+## An idle cell's own plant meal shows as animation 0xB (2026-11-21, fix/w62-flake-cc)
+<a id="cell-eat-anim"></a>
+
+BUG-1400. GOG 2024, lab logs only (no new run). Extends [#cell-partner-attack-anim](#cell-partner-attack-anim).
+* ~ (runtime, 2 runs) +0x1B0 = 0xB comes with the own cell's plant meal (AvatarEat, `eat: own cell ate +6 plant`):
+  the guest's idle herbivore cell in lab 20261121-003202 (cell_attack_anim, meal at s 26.65, a plant drifted into
+  its mouth; it was not steered) and the host's swimming cell in 20261119-102828 (meal at s 23.8). Inferred: 0xB
+  is the eat (chomp) animation; an idle herbivore cell plays it whenever a plant reaches its mouth, with no partner
+  involved. Tests that judge "no new animation" of an idle cell must keep its own meals apart (`coop.pool anims`
+  prints `own_eats` since BUG-1400).
