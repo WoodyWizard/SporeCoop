@@ -9112,3 +9112,9 @@ seat with a nation (TITAN: DuoQACivHost / Abber with the pitfalls above patched 
 * Test wins in a world with native NPC tribes nearby set off raids on the host's village and repeated party wipes
   (BUG-9320); each wipe drops the newest totem piece and reloads, which hides a totem result. Run win tests right after
   the Tribe entry, before the native tribes raid.
+* A partner's recruit game (BUG-9308) the guest can win: the host's own nest family (the host's species, "family" in
+  `coop.npc list`, in no pack) is partner_mode 4 for the guest (`coop.social pmode <npc> <player>`), and its prompt kinds
+  were mostly the guest's own; put the guest beside the host's nest (`coop.abilities put x y z`), engage with a real
+  click in social stance (scratchpad engage.py: the social button, then a click on `coop.targets objs` n<id>), answer
+  with `coop.social act <npc> <slot>` per prompt (play_social.py). Many wild species of Vandh are hostile (relation 5)
+  to the party; `coop.npc hosthit` kills count as the party's kills.

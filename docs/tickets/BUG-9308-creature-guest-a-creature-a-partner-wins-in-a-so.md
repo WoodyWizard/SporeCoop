@@ -83,8 +83,30 @@ no-fail-run: pending the lead's two-player QA (built only).
     rounds 3): a native recruit is a prompt game too (out/qa-shots/h_native_ally_click5.png).
   * Off-run of `social.partner_relation` = the "Before" bullet above.
 
+- Live QA 2026-11-21, third run (fix/l47-tribe 3c2a6550 + the BUG-9318 follow-ups, `social.partner_relation` on, MSI two
+  games, Creature Vandh; host MSITribeHost instance 2, guest MSIGuest instance 1): PASS, a partner's recruit game won end
+  to end. How the prompts became answerable: the guest's creature has the social kinds 1 / 2 / 4 (`coop.social abil -1`:
+  sing key 1 1 pt, dance key 2 2 pts, charm key 4 2 pts); the host's own nest family (Clop 291EE5B5, npcs 22 23 24 28
+  30, "family", in no pack) is relation 6 / partner_mode 4 for the guest (`coop.social pmode 22 1`) and its prompts are
+  keys 3 / 4 / 1 / 2, so three of four prompt kinds are the guest's. The guest was put beside the host's nest
+  (`coop.abilities put`), engaged npc 22 with a real click in social stance (engage.py) and answered each prompt with
+  its own ability of the prompt's kind (play_social.py, `coop.social act`). Host log 11:41:24 "player 1 answers npc 22:
+  type 00000023 kind 4 to prompt 0 ...: match, score 2.0 of 3.0", 11:41:33 "... kind 2 to prompt 1 ...: match, score
+  4.0 of 3.0", "guest_pack: player 1 recruited 23A68370", "social: player 1 won a recruit game (social goal 4) with npc
+  22: it joins that player's pack (decision 7L)"; `coop.social` recruits=1 recruits_refused=0; `coop.gpack` "party 1:
+  ... members 1  23A68370 flags=00000181 species=291EE5B5"; `coop.npc list` #22 "pack family impressed=1". The guest's
+  Pack panel shows the Clop's portrait (out/qa-shots/bug9308_guest_recruit_won.png). Follow: the guest walked about 30 m
+  (`coop.abilities walk 205 -460 -70`): npc 22 went from (232.3 -445.8 -61.1) to (206.1 -455.9 -74.9), about 6 m from the
+  guest at (204.6 -458.3 -69.7), and stayed there (bug9308_guest_recruit_follows.png).
+  The neutral case (a win gives DNA, no pack) is the second run's "+12 DNA" line above (not repeated).
+  Test pitfalls of this run: most wild species of Vandh were hostile (relation 5) to the party in this save (a herd of
+  065CB7CB killed the guest twice even after `coop.social record 065CB7CB 6 0`); `coop.npc hosthit` kills count as the
+  party's kills (relation events); a `record` of relation 6 on a species nobody plays is set back to 0 by BUG-9244's
+  cleanup within minutes.
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on fix/l47-impress (built, not run in game).
 - 2026-11-21: live two-game QA (see Verification).
 - 2026-11-21: second live run; `social.partner_relation` (every partner win was a recruit game); see Fix and Verification.
+- 2026-11-21: third live run (fix/l47-tribe): a partner's recruit game won end to end, the creature joins and follows.

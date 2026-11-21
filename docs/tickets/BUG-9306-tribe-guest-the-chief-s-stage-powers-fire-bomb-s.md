@@ -115,8 +115,11 @@ Done on fix/l47-powers (built; not run in a game yet):
     (positions, mirrored): nothing to add.
   * 0x34 lure basket on the guest: not changed (a visual-only copy of a host object; plan unchanged).
   * 0x39 / pets: new tool `coop.tribe powers pets` (the TribalGame list +0x94..+0x98 and every tribe's political id).
-    The list read empty on both games before a tame; the guest's 0x39 press during the run came in a world reload, so
-    whose list a partner's tame joins is still not read.
+    A guest's 0x39 (11:28:24, its chief at its own village): three animals tamed (sparkles over them on the guest's
+    screen, out/qa-shots/bug9306_guest_0x39.png); the HOST's list then held 3 entries, each with political id 0x228C
+    (the guest's village), the guest's own list empty. The animals follow the partner's tribe, but they sit in the
+    host's single pet list and use up the host's cap of 4 (prop 0x217997F4): gameplay question for the owner (one
+    shared cap for the party, or one per village).
 
 ## History
 - 2026-11-20: opened.

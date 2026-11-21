@@ -3049,7 +3049,14 @@ static AddSegment_t o_AddSegment;
 // village when that village's totem gained a piece. Off (`coop.fix tribe.partner_totems off`): only the host's totem
 // (0.7.14.1-lineages67-dev). The party wipe (BUG-9155) drops the top piece from every founder totem: counts stay matched.
 COOP_FIX("tribe.partner_totems", "BUG-9318", g_partner_totems,
-         "tribe: every founder village's totem gets the party's win pieces, and a partner sees the totem cutscene for its own village");
+         "tribe: every founder village's totem gets the party's win pieces (made by the game when a partner village has none)");
+// The guest's cutscene part: off by default (2026-11-21, live MSI): TRG_Upgrade played by itself on a guest showed about
+// 1 s of sky (once a spear's tip) and ended, never the village's totem: the native cinematic needs the context its
+// caller (TribeHut_Upgrade 0xCDA4F0, the reward queue) sets up first. `coop.fix tribe.partner_totem_cutscene on`:
+// the guest plays it anyway (tests).
+static bool g_totem_cutscene = false;
+COOP_FIX("tribe.partner_totem_cutscene", "BUG-9318", g_totem_cutscene,
+         "tribe: a partner's game plays TRG_Upgrade when its own village's totem gained a piece (off: its framing is wrong)");
 static bool g_totem_syncing;
 static uint32_t g_partner_pieces, g_partner_totems_made, g_partner_totem_fails, g_totem_cines;
 static int g_totem_seen = -1;        // guest: its own village's totem pieces last seen (-1: not yet in this stage)
@@ -3427,6 +3434,10 @@ static void partner_totems_tick()
     if (++g_totem_rise < 3) return; // settled for 3 s after the win's reload
     g_totem_seen = n;
     g_totem_rise = 0;
+    if (!g_totem_cutscene) {
+        g_totem_last = "this village's totem has " + std::to_string(n) + " pieces (no cutscene: tribe.partner_totem_cutscene off)";
+        return;
+    }
     g_totem_cines++;
     char b[160];
     snprintf(b, sizeof b, "this village's totem has %d pieces: the totem cutscene TRG_Upgrade plays here", n);

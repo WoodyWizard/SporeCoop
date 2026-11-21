@@ -6228,3 +6228,12 @@ Live, MSI two games (host MSITribeHost instance 2, guest MSIGuest instance 1, Cr
   baby (small, ~55 px below it at 1280x960); a click on the hut's roof opened the planner directly.
 * ✔ (live) A right-click on a fresh NPC tribe's food mat / bundle (o629BAFE / o18C431C) with own villagers selected
   started nothing on the host's own game either (no order): a raid needs more than the click there (not analysed).
+* ✔ (live) A totem made by Tribe_CreateTotem has an empty model slot vector (+0x108 == +0x10C) for a moment: a piece
+  added right away is refused by our slot guard (BUG-9158); 5 s later (the catch-up) the slots were there.
+* ✔ (live) TRG_Upgrade (94D17D9F) played by itself on a guest (PlayCinematic, outside the frame) frames nothing useful
+  (about 1 s of sky, once a spear's tip) and ends; on the host, played by the reward path, it is a close-up of the
+  player's totem with the alliance / conquest caption. ? The context its caller (TribeHut_Upgrade 0xCDA4F0) sets up.
+* ✔ (live) Power 0x39 pressed by a partner (run on its chief on the host): the three tamed animals went into the HOST's
+  TribalGame list (+0x94..+0x98, `coop.tribe powers pets`: 3 entries) with the partner village's political id
+  (0x228C); the guest's own TribalGame list stayed empty. So a partner's tames count against the host's cap (prop
+  0x217997F4, 4) and the host's list; the animals themselves follow the partner's tribe.

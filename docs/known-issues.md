@@ -3937,3 +3937,18 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: two players in Civ, both cameras on the same place; host `coop.settings force civ.superweapon_vote 0`,
   `coop.civ swgrant 0 3`, `coop.civ super 3 <x y z>` at that place: the host's screen shows the marker and a green
   burst, the guest's screen nothing.
+* BUG-9318 (partly fixed). Tribe: a partner's own village totem now gets the party's win pieces, but the partner sees no
+  totem cutscene for it: the game's TRG_Upgrade played by itself on a guest frames nothing (switch
+  `tribe.partner_totem_cutscene`, off).
+* Reproduce: two founders in Tribe; host `coop.tribe npc_tribe 3 130`, `coop.tribe win <its political id>`, open and
+  close the host's planner: the host plays its totem cutscene; the guest reloads the win's save with the new piece and
+  plays nothing (with the switch on: about a second of sky).
+* BUG-9319. Tribe: the partner rings are drawn over the Spore Guide window (H, or the pause menu's Spore Guide).
+* Reproduce: a partner's villagers on screen, press H.
+* BUG-9320. Tribe: in a raided test world the host's village went down about every 100 s and was party-wiped again and
+  again; once its hut read 1/400 right after a wipe's reload.
+* Reproduce: not clean yet (see the ticket: test wins, a `mod.reload coop`, native NPC tribes nearby).
+* BUG-9306 (open part). Tribe: a partner's tamed animals (power 0x39) go into the host's single pet list and use up the
+  host's cap of 4; the lure basket of power 0x34 is not shown on a partner's screen.
+* Reproduce: `coop.tribe powers grant 0x39` on both games, the guest's `coop.tribe powers use 0x39` near animals, then
+  `coop.tribe powers pets` on the host: the animals are listed there with the guest village's political id.
