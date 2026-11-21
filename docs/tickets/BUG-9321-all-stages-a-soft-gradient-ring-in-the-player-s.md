@@ -14,7 +14,7 @@ commits: d19ed484
 tests: tools/qa_win (manual, two TITAN QA games, 2026-11-21)
 signature:
 docs: docs/re/graphics.md#graphics-overlay-depth, docs/06-testing.md#testing-party-rings
-related: BUG-9302, BUG-9319
+related: BUG-9302, BUG-9319, BUG-9324, BUG-9325, BUG-9327
 ---
 
 ## Report
@@ -67,7 +67,22 @@ the cell's body (docs/re/graphics.md#graphics-overlay-depth).
     2D frames, six frames: cell_guest_ring_before_fix_6_frames_flicker.png); PASS (kept scene depth, ring below the
     cell: the cell drawn over its ring in six frames in a row, cell_guest_ring_under_host_cell_6_frames_no_flicker.png).
   - Not run: Space (no two-player Space save started), Civ and Tribe with the depth path, the Civ city planner.
+- Final check 2026-11-21 (fix/l47-final-rings, TITAN QA copy; docs/06-testing.md#testing-party-rings-final):
+  - Space (DuoQAJiffSpace + DuoQAStageGuest): the partner's ship ring seen in the system view and on a planet, far
+    and close; the ship in front hides it (space_host_view_depth_ON_crop.png vs _OFF_crop.png). Found and fixed: the ring
+    over the ship in the death / new-ship screens (BUG-9324) and the ring through the hull close up (BUG-9325).
+  - Civ and Tribe: the depth path did not work there (the game clears the depth before its UI): BUG-9327, fixed (the
+    rings drawn before that clear), FAIL / PASS on a Civ vehicle and a Tribe chief, four frames each with no flicker.
+    The Civ city planner covers the rings (none over it); the Tribe planner / hut screen was not reached (the save's hut
+    is wrecked and opened nothing).
+  - Cell (DuoQACreatureHost / Diplomavil): twelve frames over two camera positions, the host's cell turning, always
+    drawn over its ring (cell_guest_spectate_ring_under_host_cell_6_frames_turning.png,
+    cell_guest_ring_under_host_cell_6_frames_second_view.png). The Cell camera stayed 20 m over the plane: the wheel and
+    the zoom buttons gave no second zoom level on this save.
+  - Device: minimize / restore, borderless on / off and a window resize with rings on screen: no device reset happens
+    windowed, rings and the kept depth surface fine, no warning in the logs. A fullscreen alt-tab was not tried.
 
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: built on feat/l47-rings (d19ed484), live QA on TITAN (see Verification).
+- 2026-11-21: final check on fix/l47-final-rings: BUG-9324, BUG-9325, BUG-9327 found and fixed (30549e5b).
