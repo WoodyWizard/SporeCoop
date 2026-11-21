@@ -2317,8 +2317,30 @@ adopted)`; pure rule `civ_seats::adopt_choice` (tests/civ_seats_tests.cpp). Lab 
 ? 0xCFA570 (called from 0xCFC174, the Civ start) asks the planet camera (0xB3D380: `mov eax,[0x167EACC]` in the
 objdump) and calls `SporeCoop::SimCamera_LookAt` (0xB12D10, thiscall, ret 0xC) with (0x169D2CC, 0x15819B4, 1), then
 0xB102A0 and 0xB104A0 with three zero floats each, and sets 0x169D2BC = 1. 0x169D2CC is compared as a vector with a
-city's position at 0xCFB959 (a stored home point). NEGATIVE (BUG-9294, lane B): calling LookAt with a city's position
+city's position at 0xCFB959 (a stored home point). NEGATIVE (BUG-9294, lane B; ~ superseded in part
+(2026-11-21): the argument layout is known now, see the CORRECTION below): calling LookAt with a city's position
 as the first argument and a float pointer as the second does not centre the camera on that city: it worked once
 (Epina), left the camera at the ground looking sideways on Kealeneon, and with other distances (and the two zero calls)
 put it far off the planet until a restart. The argument layout is not known; do not call it this way. mem.read of
 0x15819B4 and 0xB3D380 in the running Steam game shows other bytes than the objdump of ~/re/spore.exe (not checked why).
+
+CORRECTION (2026-11-21, fix/civ-own-camera): ✔ the second argument of `SporeCoop::SimCamera_LookAt` is a QUATERNION
+(16 bytes, the camera's orientation), not a distance: the Civ start 0xCFC3F2..0xCFC451 passes the capital's position
+(its spatial vt 0x2C) and a 4-float orientation copied from 0x473080, and 0xBE5E27 passes one built by the planet's
+0xB7F3A0. The float pointer the first fix passed made LookAt read 16 bytes of whatever followed as an orientation:
+harmless by chance on Epina, the camera sideways at the ground on Kealeneon, off the planet with other "distances".
+The "other bytes" mem.read showed are the relocation: the Steam exe runs at another base (sporekit.log `base=0x000A0000
+(preferred 0x00400000)`), so a raw objdump address is not the running one (SporeKit's symbols are relocated).
+
+✔ The game's own "go to a city" is `SporeCoop::SimCamera_GoToPoint` (0xB145E0, thiscall (camera, const Vector3* point,
+bool, bool), ret 0xC): the Civ message handler 0xCF56A0, message 0x3702D53 (the HUD's "next city", at 0xCF6453),
+walks the player civ's cities (0xBEF810) after the last one shown (handler +0xF4) and calls
+`SimCamera_GoToPoint(SimCamera_Get(), City_CenterPoint(city, &v), 1, 1)` (`SporeCoop::SimCamera_Get` 0xB3D380,
+`SporeCoop::City_CenterPoint` 0xBD95D0: the position of the city's walls object +0x324). It moves the camera's target
+to the point and keeps the camera's own zoom and angle (it returns at once while camera +0x390 is set). Recipe, to show
+a city on a player's screen: that call, outside the frame, a few seconds after the Civ stage settled (no load queued,
+no cinematic). BUG-9294's fix (civ_nations.cpp, switch `civ.own_camera`) does exactly that for a guest's own nation's
+first city, once per world. ✔ at runtime (lane B, 2026-11-21): Epina, the guest's viewer 120 m from its own city
+(441 m with the switch off); Kealeneon (where the LookAt attempt broke the camera), 120 m from its own city and 314 m
+from the host's (413 m / 120 m off), the camera's height (173 / 179 m) and its angle to the ground (forward . up -0.84
+both) unchanged, and the four arrow keys still move it (11-30 m per three presses).

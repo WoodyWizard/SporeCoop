@@ -3718,3 +3718,13 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Fixed (2026-11-20, feat/lineages-civ): an NPC nation is taken over for the partner (civ.nation_adopt,
   docs/re/civ.md#civ-nation-adopt).
 * Ticket: BUG-9276
+
+## Civ: a guest's camera starts at the host's capital, not its own (2026-11-21, fix/civ-own-camera)
+<a id="issue-civ-own-camera"></a>
+
+* What happens: a guest with its own nation (BUG-9274) starts its Civ stage looking at the host's capital; its own
+  capital can be hundreds of metres away. The minimap or W/A/S/D take it there.
+* Reproduce: a Civ planet where the guest's nation was founded (Epina on lane B), the guest joins.
+* Fixed (2026-11-21, fix/civ-own-camera): the guest's camera goes to its own city the way the game's "next city"
+  button does (`civ.own_camera`, docs/re/civ.md#civ-own-camera).
+* Ticket: BUG-9294
