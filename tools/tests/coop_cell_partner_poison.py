@@ -12,7 +12,9 @@ the guest's own game: its hp (the game's +0x244) never goes down and it is never
 at least 6 clouds. --who host: the GUEST's puppet gets the part in the host's game (its clouds are that partner's,
 puppet_poison) and the host is put onto the clouds near the puppet (more than 3 m from its own cell: the host's own
 cell shares the grafted model and makes clouds of its own, which are not a partner's).
-SPORE_FIX_OFF=cell.partner_poison must FAIL (hp lost or knocked out).
+SPORE_FIX_OFF=cell.partner_poison must FAIL (hp lost or knocked out) with --who guest. --who host has no FAIL run: the
+host's game never hurt its own avatar with the guest's clouds, also with the switch off (lab 20261112-120150, BUG-0958):
+a regression check only.
 --ff: friendly fire on (all.friendly_fire): the old behaviour; printed only.
 
   SPORE_LANE=6 python3 tools/tests/coop_cell_partner_poison.py [--who guest|host] [--ff]

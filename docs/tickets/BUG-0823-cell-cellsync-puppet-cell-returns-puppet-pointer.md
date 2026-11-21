@@ -38,3 +38,4 @@ no-fail-run: not reproducible in the lab: the address coincidence came once in a
 ## History
 - 2026-11-10: opened (code audit 2026-11-10 (0.7.13 plan), plan/w47-cellcreature).
 - 2026-11-12: not reproduced on fix/w48-freed (the guard kept, cell.puppet_cell_index).
+- 2026-11-20 (fix/w61-cell): `lab.py fixcheck` CONTRADICTED the suite's claim "SPORE_FIX_OFF=cell.puppet_cell_index fails" (two PASS runs with the switch off, 20261112-012332 / 012832; Verification already said no-fail-run): the suite.py comment and the test's docstring now say no FAIL run, a hardening check.
