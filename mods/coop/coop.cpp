@@ -5880,6 +5880,15 @@ uint32_t g_tags_drawn = 0;   // name tags over partners drawn in the last overla
 bool g_tribe_tag_fix = true;
 COOP_FIX("tribe.pointer_tag", "BUG-0907", g_tribe_tag_fix, "tribe: a partner's name is over its chief and members only, not over the empty ground under its mouse pointer");
 
+// BUG-9314 (owner 2026-11-21: "in tribe stage, I saw text above my units, we shouldn't have that right? Our ring below
+// the unit should be enough"): with the partner rings on (tribe.partner_ring, 7K A) no name is drawn over any villager;
+// a downed villager keeps its revive ring timer. Off (`coop.fix tribe.ring_only off`): the owner's name over every
+// member (0.7.14.1-lineages67-dev and before).
+static bool g_partner_ring = true; // tribe.partner_ring (BUG-9302), registered below
+static bool g_ring_only = true;
+COOP_FIX("tribe.ring_only", "BUG-9314", g_ring_only, "tribe: no name text over villagers when the partner rings mark them (the revive timer stays)");
+uint32_t g_tags_suppressed = 0;
+
 // tribe stage: the owner's name over every member of the player tribe (own members in gold)
 void draw_owner_tags()
 {
@@ -5905,6 +5914,10 @@ void draw_owner_tags()
                                  H->time_seconds());
             } else if (seconds > 0)
                 n += " [REVIVE " + std::to_string((int)std::ceil(seconds)) + "s]";
+            if (g_ring_only && g_partner_ring && !(seconds > 0 && !ring_timer::enabled())) { // BUG-9314
+                g_tags_suppressed++;
+                return;
+            }
             float at[3] = {p.x, p.y, p.z};
             pfind::tag(chief ? "chief" : "member", owner, n, sc[0], sc[1], at, chief ? 1 : 3); // F2 colour, BUG-0949
             g_tags_drawn++;
@@ -5916,7 +5929,6 @@ void draw_owner_tags()
 // they were hard to tell who was who"): a small ring on the ground under each partner's villager, in that player's
 // colour (find.h color_of, the plate's colour of 7D A); this player's own villagers get none. The owners are the
 // tribe's tracked members (the host's table on the host, the snapshot's owner on a guest), every village. Off: no ring.
-static bool g_partner_ring = true;
 COOP_FIX("tribe.partner_ring", "BUG-9302", g_partner_ring,
          "tribe: a ring in the player's colour on the ground under each partner's villager (decision 7K A)");
 uint32_t g_rings_drawn = 0; // rings drawn in the last overlay pass (`coop.tribe rings`)
@@ -6802,6 +6814,8 @@ static std::vector<pfind::Target> find_targets(float me[3], bool& has_me)
         v.push_back(g);
     return v;
 }
+static bool g_no_test_lines = true;
+COOP_FIX("hud.no_test_lines", "BUG-9315", g_no_test_lines, "hud: the green village food line at the top right only with [coop] dev_lines=1 (test copies)");
 
 void on_overlay(void*, int, void*)
 {
@@ -7211,7 +7225,11 @@ void on_overlay(void*, int, void*)
         y += 22;
     }
     if (g_mode == modes::kTribe && g_sess.connected()) {
-        std::string food = tribe::village_food_line();
+        // BUG-9315 (owner 2026-11-21: "I also saw green text on the top right still, we need to remove that from our
+        // releases. It can stay during testing"): the village food line is a test line, shown only with [coop]
+        // dev_lines=1 (QA copies); the food also shows in the co-op window. Off (`coop.fix hud.no_test_lines off`): always.
+        static const bool dev_lines = H->config_int(M, "coop", "dev_lines", 0) != 0;
+        std::string food = !g_no_test_lines || dev_lines ? tribe::village_food_line() : std::string();
         if (!food.empty()) {
             H->overlay_text(x, y, 0xFF8CF08C, food.c_str());
             wmax = std::max(wmax, utf8::overlay_width(food));
