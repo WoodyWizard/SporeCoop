@@ -9626,7 +9626,7 @@ static std::string attacker_label(uint32_t attacker, void* victim_village)
 {
     char b[160];
     if (!attacker || attacker == 0xFFFFFFFFu) {
-        snprintf(b, sizeof b, "no faction (%08X: a test blow or an effect)", attacker);
+        snprintf(b, sizeof b, "no faction (%08X: a test blow, an effect or an epic creature)", attacker);
         return b;
     }
     for (size_t s = 0; s < founder_seats(); ++s)

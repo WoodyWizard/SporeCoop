@@ -1403,3 +1403,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9321](BUG-9321-all-stages-a-soft-gradient-ring-in-the-player-s.md) | open | feature | all | 2026-11-21 |  | All stages: a soft gradient ring in the player's colour under every unit a partner controls |
 | [BUG-9322](BUG-9322-ui-the-co-op-notices-are-drawn-over-the-spore-gu.md) | open | bug | all | 2026-11-21 |  | UI: the co-op notices are drawn over the Spore Guide window |
 | [BUG-9323](BUG-9323-civ-this-player-s-own-name-tags-show-the-noshare.md) | open | bug | Civ | 2026-11-21 |  | Civ: this player's own name tags show the -NoShare- test tag |
+| [BUG-9326](BUG-9326-tribe-host-a-partner-s-tame-order-citizenaction.md) | open | crash | Tribe | 2026-11-21 |  | Tribe (host): a partner's tame order (CitizenAction 25) crashes the host: a partner village has no animal pen |

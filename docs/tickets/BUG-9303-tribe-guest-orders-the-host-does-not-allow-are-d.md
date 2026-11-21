@@ -83,9 +83,36 @@ Done on fix/l47-powers (built; not run in a game yet):
   that state), so the raid relay was not exercised. Fishing, meat, eggs, repair, tame / feed: not reached (no such
   targets near the villages in this world).
 
+- Live QA 2026-11-21, fix/l47-final-tribe (MSI two games, host instance 2, guest instance 1, a fresh Creature -> Tribe
+  entry from Vandh). The guest's two villagers selected (`coop.tribe select <id> 1` on the guest), each order sent from
+  the guest with `coop.tribe act_obj <action> <noun> <x y z>` (the game's DoActionForObjects on the guest, so the same
+  relay a right-click uses; the action is the one DoActionGeneric makes for that click). Native comparison: the host's
+  own villager given the same order with `coop.tribe order`.
+  * Repair (24) on the partner's own hut, its health set to 200 with `coop.tribe huthp`: PASS. The villagers walked to
+    their hut and it rose 208 -> 307 in 27 s (14:16:25; out/qa-shots/bug9303_pass_guest_repair_own_hut.png). A real
+    right-click on that damaged hut made no order on the guest (two tries); not analysed. An earlier try during the
+    "rival tribe formed" caption (the game paused, 14:06-14:16) showed the villagers standing still: the host's own
+    villager did the same then (paused, not a bug).
+  * Hunt (10, an older order) then meat (27) on the carcass: PASS. The hunt killed a 2919E265 in 27 s; the meat order on
+    the body: the villagers shuttled between it and their village and the partner village's food rose 58 -> 83 in a
+    minute (14:33; out/qa-shots/bug9303_pass_guest_meat_from_carcass.png). A hunt on an animal already dying was
+    refused ("a target or member check", hp 0): right.
+  * Food raid (8) on the native Pink Village (archetype 15, formed 14:32): PASS. The villagers went to that village,
+    came back, and the partner village's food rose 104 -> 131 on their return (14:34:56 - 14:36:10). The same village
+    raided the host's hut about 4 minutes later (BUG-9320's run).
+  * Tame (25): FAIL, crash. The host ran the partner's order and crashed 19 s later: the partner village has no animal
+    pen (BUG-9326). With `tribe.partner_pen_guard` (on) the order is refused and logged ("the member's village has no
+    animal pen (BUG-9326)", 14:29:03), the host stayed up.
+  * Eggs (13) on an egg of the nest next to the partner village: refused by the same guard ("no egg pen", 14:31:08);
+    whether the egg node needs the egg pen was not run (see BUG-9326).
+  * Feed (20), fishing (1): not run (feed: held back for the crash risk of the tame node; fishing: no fishing spot or
+    fishing tool near the partner village in this world).
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix/l47-powers: tribe.guest_orders, tribe.guest_chief (static analysis + build only; the two-player test is for the lead).
 - 2026-11-21: live two-game QA (see Verification).
 - 2026-11-21: second live QA run (see Verification).
 - 2026-11-21: third live run (fix/l47-tribe): loose fruit PASS; raid not reachable natively in the test world.
+- 2026-11-21: fix/l47-final-tribe: repair, meat and food raid PASS; tame crashed the host (BUG-9326, guarded); eggs
+  guarded; feed and fishing not run.

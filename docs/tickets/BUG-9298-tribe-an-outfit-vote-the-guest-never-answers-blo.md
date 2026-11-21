@@ -66,8 +66,16 @@ Done (2026-11-20, fix/l47-births), switch `tribe.outfit_vote_timeout` (on; off =
   after the player left any editor" (93 s); then token=0 pending=0 timed_out=1, an event autosave 2 s later ("campaign
   autosave confirmed") and `coop.save` "saved". Off-run not done.
 
+- Live QA 2026-11-21, fix/l47-final-tribe (MSI two games, Vandh, Tribe): the answered case, twice. (1) `coop.vote
+  editor` on the host, the guest's I'm Ready click in the lobby, both outfitters, the guest's Done first: `token=1
+  pending=1 idle=` counted while the guest was back in Tribe, then the host's Done ended the vote (`token=0 pending=0
+  timed_out=0`). (2) The host's Planner -> Edit Outfit, the guest's Done in its own outfitter: `ready=1
+  result=7CE63A2C`, then `token=0 pending=0`, the host's new outfit recorded and shared (BUG-9301). No vote was left
+  pending, no timeout needed.
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fixed on fix/l47-births (`tribe.outfit_vote_timeout`); built, not run in a game yet (the lead's two-player test).
 - 2026-11-21: live two-game QA (see Verification).
 - 2026-11-21: second live QA run (see Verification).
+- 2026-11-21: fix/l47-final-tribe: the answered vote ends normally, twice (Verification).

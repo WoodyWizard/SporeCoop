@@ -9216,3 +9216,31 @@ BUG-9321, BUG-9319 (docs/re/graphics.md#graphics-overlay-depth, docs/08-ui.md#ui
   (278 -422 3). Power 0x34's lure brought no animal from 70 m in one try. Power 0x39 recharges slowly (progress 0.02
   after 8 s): one press per game per test session.
 * A test blow during a regroup window (BUG-9320) is refused like any outside blow; wait the 120 s out.
+## Final Tribe QA on the MSI: pets, partner orders, the outfit, a natural raid (2026-11-21, fix/l47-final-tribe)
+<a id="testing-tribe-final-qa"></a>
+
+Follows #testing-tribe-msi-recipes and #testing-tribe-raid-wipe-pets (same two games, Creature -> Tribe from Vandh).
+* Captions pause both games: "A rival tribe of ... has formed" comes about 4-7 minutes into Tribe and holds the game
+  (host `coop.status` `busy: cinematic,input_lock,paused`) until its check (1249 928 at 1280x960) is clicked; orders and
+  natural raids wait meanwhile. A watch loop that clicks it when it sees that busy line keeps a long run going.
+* Pet cap (BUG-9306): `coop.tribe powers grant 0x39` on both games, the chiefs to their own herds with `coop.tribe order
+  <chief id> 4 x y z` (host), `coop.tribe powers use 0x39` per game; `coop.tribe powers pets` (host) shows each chief's
+  `cap=` and `pets_in_list=` and the list. Power 0x39 recharges for minutes: `coop.tribe powers ready 0x39 <seat>`
+  (host) ends it (or `mem.write` of 1.0 into the chief's +0xC28 slot [idx*16+4] and clearing bit idx of +0xBF8).
+* Partner orders (BUG-9303): on the guest `coop.tribe select <id> 1` for its villagers (ids change after every reload:
+  read them from `coop.tribe`, owner=1), then `coop.tribe act_obj <action> <noun> <x y z>`: 24 on the own hut (noun
+  1E4DAAE, health lowered first with host `coop.tribe huthp <hut> 200`), 10 hunt then 27 meat on the body (noun
+  18EB45E), 8 food raid on a native village (noun 18C6D19 at the village centre), 20 feed / 25 tame (18EB45E), 13 egg
+  (2A034CD, `coop.tribe objs 2A034CD` lists eggs; a nest sits next to the partner village on Vandh). Watch the host's
+  `last order:` line, the refusal lines and `seat 1: ... food=` in host `coop.tribe`.
+* `coop.npc hosthit` does not work in Tribe ("no such npc": no avatar); use a partner hunt for a carcass.
+* Pitfall: a partner's tame or egg order crashes the host when `tribe.partner_pen_guard` is off (BUG-9326): run those
+  last in a session.
+* Outfit (BUG-9301): the players' path at 1280x960: a click on the host's hut, the Planner button on it (about 30 px
+  above the hut's centre), the planner tutorial's check (810 733), the hat tab (204 42), the Edit Outfit button under
+  the portrait (47 571); the guest sees "Paused by host" over its lobby and the vote's timer opens its outfitter (the
+  console's `key F9` failed there: "no window?"). In the outfitter a hat goes on with `move 75 128`, `button 75 128
+  down`, several `move` to the head, `button <x y> up`; Done at 1258 942; then the Planner's Done (1257 940): only
+  then does the host's species change (`coop.tribe outfits` home=). `coop.vote editor 156276D1` alone ends the vote
+  without changing the host's species.
+* The console's `button` takes the position: `button <x> <y> <down|up>`.
