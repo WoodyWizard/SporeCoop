@@ -36,7 +36,11 @@ int main()
     check(play_seats(two) == 2 && play_seats(four) == 4, "play seats");
     Roster five = four;
     five.entries[4] = {0x500, 0x21CE, 0xA4};
-    check(play_seats(five) == founders::kPlaySeats, "play seats capped at kPlaySeats");
+    // decision 7S B (BUG-9309): a newcomer's nation past the first four seats is played too (up to kMaxSeats)
+    check(play_seats(five) == 5, "play seats: a fifth nation (a newcomer's) is played");
+    Roster nine_full = five;
+    for (size_t i = 5; i < founders::kMaxSeats; ++i) nine_full.entries[i] = {uint32_t(0x600 + i), uint32_t(0x21D0 + i), 0xA5 + i};
+    check(play_seats(nine_full) == founders::kMaxSeats, "play seats capped at kMaxSeats");
 
     // seat_species: the nation's species or any look of the seat
     check(seat_species(four, outfits, 2, 0x300) && seat_species(four, outfits, 2, 0x2F0), "seat species, history");
@@ -61,7 +65,8 @@ int main()
     check(own_seat(four, outfits, 0x77, 0x200, 3) == -1, "a seat with another identity is not taken by species");
     check(own_seat(bound, {}, 0x77, 0x999, 1) == -1, "a bound partner seat is not taken by the sole partner rule");
     check(own_seat(four, outfits, 0xA0, 0x100, 3) == -1, "the host's seat is never a guest's");
-    check(own_seat(five, outfits, 0xA4, 0x500, 4) == -1, "seats past kPlaySeats are not played");
+    check(own_seat(five, outfits, 0xA4, 0x500, 4) == 4, "a newcomer's seat past the first four is its own (7S B)");
+    check(own_seat(five, outfits, 0xA3, 0x500, 3) == 3, "the returning absent player keeps its old seat");
 
     // owner_of_seat
     check(owner_of_seat(0, true, 0, -1, 0, false) == 0 && owner_of_seat(0, false, kNobody, 2, 2, false) == 0, "seat 0 is the host's");
@@ -168,7 +173,19 @@ int main()
     look.species = 0x200; // tribal seat 1's first look
     check(late_status(nations3, tribe3, looks3, host, look) == LateWhy::SharedSpecies, "a founder's species: no second nation");
     check(late_status(nations4, tribe3, looks3, host, Joiner{2, 0xC4, 0x901, true, true, -1}) == LateWhy::SeatsFull,
-          "four nations: every play seat taken");
+          "four nations: every play seat taken (before decision 7S B)");
+    // decision 7S B (BUG-9309): a newcomer in an absent player's party seat (party seat 3, its old identity 0xC3 bound to
+    // nation seat 3) founds a new nation in seat 4; with all eight taken it gets none
+    const Joiner newcomer{3, 0xC9, 0x901, true, true, -1};
+    plan = late_capital(nations4, tribe3, looks3, host, {newcomer}, &why, founders::kMaxSeats);
+    check(plan.seat == 4 && plan.joiner == 0 && why[0] == LateWhy::Capital, "a newcomer founds a new nation in seat 4");
+    plan = late_capital(nations4, tribe3, looks3, host, {newcomer}, &why);
+    check(plan.seat == -1 && why[0] == LateWhy::SeatsFull, "without 7S B the newcomer finds every seat taken");
+    Roster nations8 = nations4;
+    for (size_t i = 4; i < founders::kMaxSeats; ++i) nations8.entries[i] = {uint32_t(0x910 + i), uint32_t(0x21E0 + i), 0xD0 + i};
+    check(late_status(nations8, tribe3, looks3, host, newcomer, founders::kMaxSeats) == LateWhy::SeatsFull,
+          "eight nations: every founder seat taken");
+    check(founders::nations_descend(tribe3, looks3, nations8), "nations in seats 4..7 may be recorded");
     // the Tribe roster's seats come first: seat 2 (no nation yet) is founded before any late joiner
     plan = late_capital(two, tribe3, looks3, host, {late}, &why);
     check(plan.seat == 2 && plan.joiner == -1 && why[0] == LateWhy::TribalFirst, "the tribal seat 2 first, then the late joiner");

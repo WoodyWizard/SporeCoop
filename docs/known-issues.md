@@ -3937,3 +3937,8 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: two players in Civ, both cameras on the same place; host `coop.settings force civ.superweapon_vote 0`,
   `coop.civ swgrant 0 3`, `coop.civ super 3 <x y z>` at that place: the host's screen shows the marker and a green
   burst, the guest's screen nothing.
+## Fixed on fix/l47-decide (2026-11-21): a superweapon on a guest's screen
+<a id="known-civ-superweapon-visual-fixed"></a>
+
+* BUG-9312 (see #known-civ-superweapon-visual): fixed on fix/l47-decide, unreleased (`civ.sw_show`): the host relays the
+  launch's tool aims, a guest's game fires the same tool without damage. Live FAIL / PASS on TITAN.
