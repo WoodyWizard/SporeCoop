@@ -46,7 +46,7 @@ static bool g_down_30 = true;
 COOP_FIX("space.down_30", "BUG-9118", g_down_30, "space: a disabled ship waits 30 s for a partner's repair (20 before)");
 static double down_time() { return downed::seconds(g_down_30, 20.0); } // BUG-9149: a minute (core.down_60)
 static bool g_give_up_now; // coop.giveup (tests)
-constexpr double kRepairHold = 2.0;
+static double kRepairHold() { return downed::revive_hold(2.0); } // BUG-9307
 static float g_repair_dist = 60.f; // coop.space repairdist <m> (tests: 0 = nobody can repair)
 
 enum Kind : uint8_t { K_DOWN = 1, K_RAID = 2, K_MISSION = 3, K_TERRA = 4, K_GIFT = 5, K_GIFT_BACK = 6, K_SCULPT = 7, K_COLOUR = 8, K_TERRA_REC = 9 };
@@ -396,7 +396,7 @@ static void down_tick(double now)
     if (give_up::held(H, now) || g_give_up_now) // BUG-9118: as if the timer ran out
         g_down_until = std::min(g_down_until, now - 0.01);
     g_give_up_now = false;
-    if (g_repair_t >= kRepairHold && now <= g_down_until)
+    if (g_repair_t >= kRepairHold() && now <= g_down_until)
         end_down(true);
     else if (now > g_down_until) {
         if (g_down_world_fix && g_down_ship.u && !down_ship_here()) {
@@ -1931,7 +1931,7 @@ void draw_overlay()
     if (ring_timer::enabled()) { // BUG-9141: the own disabled ship: a large ring under the top bar, the hint under it
         const float r = ring_timer::radius_for(sh) * 1.4f;
         ring_timer::draw(H, sw / 2.f, sh / 4.f + r, r, ring_timer::fraction(g_down_until - now, down_time()),
-                         (float)std::clamp(g_repair_t / kRepairHold, 0.0, 1.0), now);
+                         (float)std::clamp(g_repair_t / kRepairHold(), 0.0, 1.0), now);
         const char* hint = "Ship disabled: a partner repairs it by flying close (hold G to give up)";
         H->overlay_text(sw / 2 - utf8::overlay_width(hint) / 2, (int)(sh / 4.f + 2.f * r + 10.f), 0xFFFFD040, hint);
         return;
@@ -1943,7 +1943,7 @@ void draw_overlay()
     H->overlay_text(sw / 2 - utf8::overlay_width(b) / 2, sh / 4, col, b); // cells, not bytes (BUG-0159)
     if (g_repair_t > 0) {
         std::string bar = "repair ";
-        int n = (int)(g_repair_t / kRepairHold * 10);
+        int n = (int)(g_repair_t / kRepairHold() * 10);
         for (int i = 0; i < 10; i++)
             bar += i < n ? "■" : "□";
         H->overlay_text(sw / 2 - 80, sh / 4 + 26, 0xFF60FF60, bar.c_str());

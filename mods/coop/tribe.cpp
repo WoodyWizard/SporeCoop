@@ -8630,7 +8630,7 @@ static bool protect_founder(void* victim, float damage, uint32_t attacker)
     rescue.attacker_faction = attacker;
     game::set_health(victim, 1);
     game::stop(victim);
-    if (C.notice) C.notice("Last villager down. Bring a partner villager within 15 metres for 1.5 seconds to revive. " + std::to_string((int)down_time()) + " seconds before respawn or capture (hold G to give up).");
+    if (C.notice) C.notice("Last villager down. Bring a partner villager within 15 metres for " + std::to_string((int)downed::revive_hold(1.5)) + " seconds to revive. " + std::to_string((int)down_time()) + " seconds before respawn or capture (hold G to give up).");
     return true;
 }
 
@@ -8842,7 +8842,7 @@ static void founder_rescue_tick(double now)
                     if (living(c) && net::dist(game::position(c), rescue.anchor) <= 15) partner_near = true;
         if (!partner_near) rescue.near_since = -1;
         else if (rescue.near_since < 0) rescue.near_since = now;
-        bool revived = !rescue.gave_up && partner_near && rescue.near_since + 1.5 <= std::min(now, rescue.until);
+        bool revived = !rescue.gave_up && partner_near && rescue.near_since + downed::revive_hold(1.5) <= std::min(now, rescue.until);
         if (!revived && now < rescue.until) continue;
         bool wiped = false; // BUG-9155: the party pays instead of a capture
         if (!revived && g_party_wipe) {
@@ -8906,7 +8906,7 @@ float revive_progress(void* c)
     const double now = H->time_seconds();
     for (const auto& rescue : g_founder_rescues)
         if (rescue.member == id && rescue.until > 0 && rescue.near_since >= 0)
-            return (float)std::clamp((now - rescue.near_since) / 1.5, 0.0, 1.0);
+            return (float)std::clamp((now - rescue.near_since) / downed::revive_hold(1.5), 0.0, 1.0);
     return 0.f;
 }
 

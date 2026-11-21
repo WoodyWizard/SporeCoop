@@ -25,7 +25,7 @@ namespace {
 bool g_long_fix = true;
 COOP_FIX("creature.down_30", "BUG-9118", g_long_fix, "creature / adventure: a downed player waits 30 s for a partner (10 before)");
 double window_s() { return downed::seconds(g_long_fix, 10.0); } // BUG-9149: a minute (core.down_60)
-constexpr double hold = 1.5;
+double hold() { return downed::revive_hold(1.5); } // BUG-9307
 constexpr float reach = 6;
 enum Event : uint8_t { Begin, Revived, Expired, GiveUp };
 const SkHost* H;
@@ -325,7 +325,7 @@ void tick(uint32_t world, void* avatar, const std::vector<net::PlayerState>& par
         }
         if (!near) w.near_since = -1;
         else if (w.near_since < 0) w.near_since = now;
-        bool saved = !w.gave_up && near && w.near_since + hold <= std::min(now, w.begin + window_s());
+        bool saved = !w.gave_up && near && w.near_since + hold() <= std::min(now, w.begin + window_s());
         if (!saved && !w.gave_up && now - w.begin < window_s()) continue;
         w.active = false; // one host debit per knockout, even if both players expire on this frame
         Event result = saved ? Revived : Expired;
@@ -340,7 +340,7 @@ void give_up_now() { if (down()) local_give_up = true; } // tests and the consol
 
 double window_seconds() { return window_s(); }
 float reach_m() { return reach; }
-double hold_seconds() { return hold; }
+double hold_seconds() { return hold(); }
 float own_left()
 {
     return down() ? ring_timer::fraction(window_s() - (H->time_seconds() - local_start), window_s()) : 0.f;
@@ -348,7 +348,7 @@ float own_left()
 float own_revive()
 {
     if (!down() || own_near_since < 0) return 0.f;
-    return (float)std::clamp((H->time_seconds() - own_near_since) / hold, 0.0, 1.0);
+    return (float)std::clamp((H->time_seconds() - own_near_since) / hold(), 0.0, 1.0);
 }
 static bool g_hud_has_give_up; // BUG-9156: the downed screen's GIVE UP button says it
 void set_give_up_button(bool shown) { g_hud_has_give_up = shown; }
@@ -365,7 +365,7 @@ std::string status()
         return "Downed: " + std::to_string(sec) + " s for your partner to revive you (hold G to give up)";
     }
     for (const auto& p : peers)
-        if (p.flags & net::PF_DOWNED) return "Revive " + S->name_of(p.id) + ": stay close for 1.5 s";
+        if (p.flags & net::PF_DOWNED) return "Revive " + S->name_of(p.id) + ": stay close for " + std::to_string((int)hold()) + " s";
     return {};
 }
 }

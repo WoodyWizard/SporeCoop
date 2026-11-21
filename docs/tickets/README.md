@@ -1384,3 +1384,6 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9302](BUG-9302-tribe-a-partner-s-villagers-carry-no-mark-in-tha.md) | open | feature | tribe | 2026-11-20 |  | Tribe: a partner's villagers carry no mark in that player's colour |
 | [BUG-9303](BUG-9303-tribe-guest-orders-the-host-does-not-allow-are-d.md) | open | bug | tribe | 2026-11-20 |  | Tribe (guest): orders the host does not allow are dropped silently (fishing, meat, eggs, bundles, loose fruit, repair) and the chief aura is host-only |
 | [BUG-9304](BUG-9304-saves-the-campaign-autosave-pauses-both-games-an.md) | open | feature | all | 2026-11-20 |  | Saves: the campaign autosave pauses both games and shows the saved box |
+| [BUG-9305](BUG-9305-creature-guest-the-impress-meter-jumps-to-its-ne.md) | open | bug | Creature | 2026-11-20 |  | Creature (guest): the impress meter jumps to its new value instead of filling smoothly |
+| [BUG-9306](BUG-9306-tribe-guest-the-chief-s-stage-powers-fire-bomb-s.md) | open | bug | Tribe | 2026-11-20 |  | Tribe (guest): the chief's stage powers (Fire Bomb, Summon) are refused, later stage powers likely too |
+| [BUG-9307](BUG-9307-all-stages-a-partner-revives-a-teammate-in-5-s-1.md) | open | feature | all | 2026-11-20 |  | All stages: a partner revives a teammate in 5 s (1.5 s before, Space repair 2 s) |

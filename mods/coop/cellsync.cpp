@@ -337,7 +337,7 @@ static uint32_t g_created, g_destroyed, g_hits_sent, g_eats_sent, g_purged, g_bi
 static bool g_down_30 = true;
 COOP_FIX("cell.down_30", "BUG-9118", g_down_30, "cell: a knocked-out cell waits 30 s for a partner (10 before)");
 static double down_time() { return downed::seconds(g_down_30, 10.0); } // BUG-9149: a minute (core.down_60)
-constexpr double kReviveHold = 1.5;
+static double kReviveHold() { return downed::revive_hold(1.5); } // BUG-9307
 constexpr float kSmall = 0.5f;
 static double g_last_regen, g_invuln_until, g_last_tick;
 static uint32_t g_revives, g_respawns;
@@ -850,8 +850,8 @@ static void downed_tick(uint8_t* a, double now, double dt)
     std::string helper = nearest_partner(revive_dist(a), nullptr, &d, true);
     g_hold = helper.empty() ? 0 : g_hold + dt;
     if (now - g_ko_sent > 0.25)
-        send_ko(KO_OUT, (float)std::max(0.0, down_time() - (now - g_down_since)), (float)(g_hold / kReviveHold));
-    if (!helper.empty() && g_hold >= kReviveHold) { // revived by the partner
+        send_ko(KO_OUT, (float)std::max(0.0, down_time() - (now - g_down_since)), (float)(g_hold / kReviveHold()));
+    if (!helper.empty() && g_hold >= kReviveHold()) { // revived by the partner
         g_downed = false;
         F<int>(a, kHp) = 3;
         F<float>(a, kOpacity) = 1.f;
@@ -5855,7 +5855,7 @@ void draw_overlay()
     H->screen_size(&sw, &sh);
     double now = H->time_seconds();
     if (g_downed && !g_box_shown) // BUG-9171: with the downed box its ring is at the bottom
-        draw_ko(avatar(), "", (float)std::max(0.0, down_time() - (now - g_down_since)), (float)(g_hold / kReviveHold), now,
+        draw_ko(avatar(), "", (float)std::max(0.0, down_time() - (now - g_down_since)), (float)(g_hold / kReviveHold()), now,
                 sw, sh);
     if (g_downed && g_spec_idx && !g_spec_name.empty() && sw > 0 && !g_box_shown) { // BUG-9171
         const std::string t = "SPECTATING " + g_spec_name;
@@ -8232,7 +8232,7 @@ float own_left()
     const double left = std::max(0.0, down_time() - (H->time_seconds() - g_down_since));
     return g_ring_fraction_fix ? ring_timer::fraction(left, down_time()) : (float)left;
 }
-float own_revive() { return g_downed ? (float)std::min(1.0, g_hold / kReviveHold) : 0.f; }
+float own_revive() { return g_downed ? (float)std::min(1.0, g_hold / kReviveHold()) : 0.f; }
 void set_box_shown(bool shown) { g_box_shown = shown; }
 
 float scale_now() { return in_cell() ? world_scale() : 0.f; }
