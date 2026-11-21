@@ -640,52 +640,7 @@ void host_tick(double now)
     }
 }
 
-// BUG-9294: a guest whose own nation was founded while it played (its capital far from the host's) kept the camera of
-// its load, at the host's capital: its own city was 500 m away out of view. Once its game knows its own nation the
-// camera goes to its capital, once per world, the way the game's own Civ start points it (Civ_CameraHome 0xCFA570:
-// SimCamera_LookAt(camera, position, distance, 1), then SimCamera_Update). Off: the camera stays where the load put it.
-static bool g_camera_fix = true;
-COOP_FIX("civ.own_camera", "BUG-9294", g_camera_fix,
-         "civ: a guest's camera goes to its own nation's capital once its game knows that nation");
-static uint32_t g_camera_pol;   // the own nation the camera went to in this world
-static double g_camera_civ_since = -1; // when this game's Civ stage was last seen settled (no load, no cinematic)
-// the stage's own camera set-up runs after the load's first frames (a move in the first frame after a load left the
-// camera at the ground looking sideways, lane B 2026-11-21, Kealeneon): the move waits this long into the stage
-constexpr double kCameraSettle = 4.0;
-static uint32_t g_camera_moves;
-static float g_camera_dist = 0; // 0: the game's own distance (CivCamera_HomeDistance); tests: `nations camera <dist> [zero]`
-static bool g_camera_zero = false;
-static void camera_home(uint32_t pol)
-{
-    void* capital = nullptr;
-    for (auto& [c, o] : g_city_owner)
-        if (c && game::listed(c) && pol_of(c) == pol) {
-            capital = c;
-            break;
-        }
-    static uintptr_t get = H->sym("SporeCoop::SimCamera_Get"), look = H->sym("SporeCoop::SimCamera_LookAt"),
-                     update = H->sym("SporeCoop::SimCamera_Update"), dist = H->sym("SporeCoop::CivCamera_HomeDistance");
-    void* cam = capital && get ? skg::cdecl_call<void*>(get) : nullptr;
-    if (!cam || !look || !update || !dist)
-        return;
-    const net::Vec3 at = city_pos(capital);
-    float pos[3] = {at.x, at.y, at.z};
-    const float* dp = g_camera_dist > 0 ? &g_camera_dist : (const float*)dist;
-    thiscall<void>(look, cam, pos, dp, 1);
-    if (g_camera_zero) { // as the Civ start does after its LookAt (0xCFA5A8, 0xCFA5BF): two vectors of the camera to 0
-        static uintptr_t z1 = H->sym("SporeCoop::SimCamera_ZeroA"), z2 = H->sym("SporeCoop::SimCamera_ZeroB");
-        if (z1 && z2) {
-            thiscall<void>(z1, cam, 0.f, 0.f, 0.f);
-            thiscall<void>(z2, cam, 0.f, 0.f, 0.f);
-        }
-    }
-    thiscall<void>(update, cam);
-    g_camera_pol = pol;
-    g_camera_moves++;
-    H->log(M, SK_INFO, "civ nations: the camera goes to our own capital at (%.0f %.0f %.0f) (BUG-9294)", at.x, at.y, at.z);
-}
-
-void guest_tick(double now)
+void guest_tick(double)
 {
     g_own = 0;
     g_team_pols.clear();
@@ -702,14 +657,6 @@ void guest_tick(double now)
         if (o == me && pol != hp)
             g_own = pol;
     }
-    // BUG-9294
-    const bool settled = game::mode_id() == modes::kCiv && !world::cinematic_playing() && !world::load_queued();
-    if (!settled)
-        g_camera_civ_since = -1;
-    else if (g_camera_civ_since < 0)
-        g_camera_civ_since = now;
-    if (g_camera_fix && g_own && g_own != g_camera_pol && !local_play() && settled && now - g_camera_civ_since >= kCameraSettle)
-        camera_home(g_own);
 }
 
 void forget()
@@ -724,8 +671,6 @@ void forget()
     g_won_shown = false;
     g_own = 0;
     g_team_pols.clear();
-    g_camera_pol = 0; // BUG-9294: once per world
-    g_camera_civ_since = -1;
     g_epoch++;
 }
 LIFECYCLE_HOOK("civ.nations", lifecycle::kSessionEnd | lifecycle::kWorldChange, -45, [](const lifecycle::Ctx&) { forget(); }, false);
@@ -880,8 +825,6 @@ std::string status()
              g_won, g_owned_answers, g_cursor_lists, g_found.phase == Phase::Requested ? ("seat " + std::to_string(g_found.seat)).c_str() : "-",
              g_last.c_str());
     std::string out = b;
-    snprintf(b, sizeof b, "  own camera: fix=%d moves=%u nation=%08X\n", (int)g_camera_fix, g_camera_moves, g_camera_pol); // BUG-9294
-    out += b;
     if (!in_civ())
         return out;
     void* ex = skg::cdecl_call<void*>(a_ExpansionGet);
@@ -921,12 +864,6 @@ std::string status()
 
 std::string debug(const std::vector<std::string>& a)
 {
-    if (a.size() >= 2 && a[1] == "camera" && g_own) { // BUG-9294 tests: camera <dist (0 = the game's)> [zero]
-        g_camera_dist = a.size() > 2 ? (float)atof(a[2].c_str()) : 0.f;
-        g_camera_zero = a.size() > 3 && a[3] == "zero";
-        camera_home(g_own);
-        return "camera moved\n";
-    }
     if (a.size() >= 2 && a[1] == "found" && authority()) { // tests: the founding pass now
         if (g_queued)
             return "busy\n";

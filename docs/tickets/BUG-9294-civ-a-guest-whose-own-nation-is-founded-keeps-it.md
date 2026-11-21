@@ -1,21 +1,21 @@
 ---
 id: BUG-9294
 title: Civ: a guest whose own nation is founded keeps its camera at the host's capital, its own capital out of view
-status: fixed
+status: open
 kind: bug
 stage: Civ
 reported: 2026-11-21
 source: integration campaign QA lane B (test/integration)
 role: guest
 versions: 0.7.15.94
-fixed_in: unreleased
+fixed_in:
 branch: fix/civ-own-camera
 commits: 10487032
-tests: agentB in-game runs (b_cam.py), make test
+tests:
 signature:
 docs: docs/re/civ.md#civ-own-camera
 related: BUG-9274
-switch: civ.own_camera
+switch:
 ---
 
 ## Report
@@ -30,20 +30,19 @@ SimCamera_Update), and on a guest the player civ of the loaded world is the host
 becomes its player nation later (civ_nations.cpp, the perspective), after the camera was pointed.
 
 ## Fix
-civ_nations.cpp guest_tick (`civ.own_camera`): once the guest's game knows its own nation (g_own) in a world, and no
-cinematic plays, its camera goes to that nation's first city: SimCamera_LookAt(camera, position, &CivCamera_HomeDistance,
-1) and SimCamera_Update, as the game's own Civ start does; once per world (`coop.civ nations`: `own camera: fix= moves=
-nation=`). Off: the camera stays at the host's capital (0.7.15.94).
+None yet. A first fix (fix/civ-own-camera 10487032, cc4aa775: SimCamera_LookAt(camera, &capital position,
+&0x15819B4, 1) + SimCamera_Update once the guest knows its own nation) was taken back: its arguments are not understood.
+On Epina it happened to show the guest's capital from above; on Kealeneon the same call (4 s into a settled stage, too)
+left the camera at the ground looking sideways at the sky, and trials with other distances and the Civ start's two
+"zero" calls after it (0xB102A0, 0xB104A0) put the camera far off the planet (labels in a column on black) until the
+guest's game was restarted. Findings (docs/re/civ.md#civ-own-camera): 0x169D2CC, the "position" the Civ start's
+0xCFA570 passes, is compared as a vector against a city's position in 0xCFB959 (a stored home point, not a constant);
+0x15819B4 is not data in the running game (mem.read shows instruction bytes there). Next: the game's own "go to a
+city" (the Civ HUD's city list / the minimap) instead of the low-level camera.
 
 ## Verification
-Lane B (Windows, Steam build), the integration build, planet Epina (Civ, the guest's own nation 0000235B):
-- FAIL with `coop.fix civ.own_camera off` on the guest: after its join the guest's screen shows the host's capital
-  ("[Player]", agentB/cam_off.png), `own camera: fix=0 moves=0`.
-- PASS: switched on in the same session, the guest's camera went to its capital at (185 -371 286) at once
-  ("[Bob]" centred, the host 521 m away, agentB/cam_on.png); after a rejoin (on from the start) the same
-  (agentB/cam_rejoin.png). No fault (`exc`: total faults 0).
-- no-fail-run: no lab here; FAIL and PASS by hand on lane B as above (agentB/b_cam.py).
+no-fail-run: open bug, no fix. FAIL seen on Epina (the guest's camera at the host's capital, agentB/cam_off.png).
 
 ## History
 - 2026-11-21: opened.
-- 2026-11-21: fixed on fix/civ-own-camera (from feat/lineages-civ).
+- 2026-11-21: the LookAt fix taken back (Kealeneon: the camera sideways, then broken); open.

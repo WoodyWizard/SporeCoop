@@ -2314,10 +2314,11 @@ adopted)`; pure rule `civ_seats::adopt_choice` (tests/civ_seats_tests.cpp). Lab 
 ## The Civ start's camera and a guest's own capital (2026-11-21, fix/civ-own-camera)
 <a id="civ-own-camera"></a>
 
-✔ 0xCFA570 (called from 0xCFC174, the Civ start) points the planet camera at the player's home: `SporeCoop::SimCamera_Get`
-(0xB3D380, cdecl, `mov eax,[0x167EACC]`), then `SporeCoop::SimCamera_LookAt` (0xB12D10, thiscall, ret 0xC) with
-(Vector3* position = 0x169D2CC, float* distance = `SporeCoop::CivCamera_HomeDistance` 0x15819B4, int 1), then zeroes two
-offsets (0xB102A0, 0xB104A0) and sets 0x169D2BC = 1. The same LookAt + `SporeCoop::SimCamera_Update` from the mod (a
-city's position, the game's distance) moves a guest's camera to its own capital at once (BUG-9294); the camera looks
-straight down, closer than after the game's own start. ~ The tribe setup's call (0xCD7D1D) passes its target from a
-virtual call; its layout is not checked.
+? 0xCFA570 (called from 0xCFC174, the Civ start) asks the planet camera (0xB3D380: `mov eax,[0x167EACC]` in the
+objdump) and calls `SporeCoop::SimCamera_LookAt` (0xB12D10, thiscall, ret 0xC) with (0x169D2CC, 0x15819B4, 1), then
+0xB102A0 and 0xB104A0 with three zero floats each, and sets 0x169D2BC = 1. 0x169D2CC is compared as a vector with a
+city's position at 0xCFB959 (a stored home point). NEGATIVE (BUG-9294, lane B): calling LookAt with a city's position
+as the first argument and a float pointer as the second does not centre the camera on that city: it worked once
+(Epina), left the camera at the ground looking sideways on Kealeneon, and with other distances (and the two zero calls)
+put it far off the planet until a restart. The argument layout is not known; do not call it this way. mem.read of
+0x15819B4 and 0xB3D380 in the running Steam game shows other bytes than the objdump of ~/re/spore.exe (not checked why).
