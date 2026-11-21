@@ -9063,9 +9063,25 @@ Decision 7Q A (BUG-9306, mods/coop/cards.h). Not run yet. Stage numbers: 0 cell,
   u32 faction, u64 identity); back the folder up first.
 * `coop.civ swgrant` is undone within 0.5 s by the campaign tick's RefreshUnlocks (civ.partner_unlocks): grant and
   request must go back to back, with `coop.settings force civ.superweapon_vote 0`.
+  CORRECTION (2026-11-21, fix/l47-civ): from ffe972b0 on a swgrant lasts (per seat, until `coop.civ swgrant clear`).
 * Creature social tests on Vandh (MSI): roaming predators (an epic 067C69C6, 0679B969) kill the idle creatures; the host
   can remove one with `coop.npc hosthit <id> 400`. A creature refuses a new social game for a while after a lost one.
   The MSIGuest creature has social kinds 1 / 2 / 4 only: Trigo Morts (067C92C6, prompts sing 1 pt / pose 2 pts, 2
   rounds) can be won only when both prompts are sings (~1 in 4 games).
 * `coop.social meter` sampled through one persistent console connection (tools/sporectl.Console(51), the msi tunnel)
   runs at ~7 samples a second, enough for the 1 s fill.
+
+## A partner's superweapon and per-nation card unlocks: how to test (2026-11-21, fix/l47-civ)
+<a id="testing-partner-superweapon"></a>
+
+BUG-9310 / BUG-9311 (docs/re/civ.md#civ-partner-sw-tools). Two games, a Civ save with founder nations and the guest on a
+seat with a nation (TITAN: DuoQACivHost / Abber with the pitfalls above patched in a backed-up copy).
+* Superweapon: host `coop.settings force civ.superweapon_vote 0`, `coop.civ swgrant <guest seat> 3 20000`; guest `coop.civ
+  super 3 <x y z>` (a non-global type; a place both cameras see). Host log `civ: host: <name>'s superweapon 3 nation=...:
+  fires`, the seat's money -2000 in `coop.civ sw`, no crash report. Type 0 at a city: its hp in `coop.civ` falls on both
+  games. Switch twin `civ.partner_sw_tools` (set off BEFORE anything runs `coop.civ sw`: one call loads the tools for
+  the session): the host crashes at 0xBF18CA.
+* Card unlocks: host `coop.cards set <player id> 2 60A78928`, then `coop.civ sw`: only that seat shows 000010000000. Twin
+  `civ.unlock_cards_restore` (off from the start): every seat shows it, and the host's `coop.cards` `effective` shows the
+  partner's card.
+* The guest's screen shows no superweapon marker or burst (BUG-9312): check effects on the game state, not the picture.

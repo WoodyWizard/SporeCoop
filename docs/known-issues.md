@@ -3928,3 +3928,12 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Fixed 2026-11-19 (unreleased, ec783b75): the portrait check knew only the GOG 2016 drawable; it is set by key now.
 * Reproduce: host a Creature world, join from a new profile, make and save the first creature; on the guest
   `coop.portrait` says `image=00000000 ... same=-1 sets=0` (no png for the new species' key).
+
+## Civ: a superweapon is not drawn on a guest's screen (2026-11-21, fix/l47-civ)
+<a id="known-civ-superweapon-visual"></a>
+
+* BUG-9312. Civ: a superweapon's own show (the targeting marker, the burst) is drawn on the host's screen only; a guest
+  sees the results the mod relays (a city's damage) but not the weapon, also for the host's own weapon.
+* Reproduce: two players in Civ, both cameras on the same place; host `coop.settings force civ.superweapon_vote 0`,
+  `coop.civ swgrant 0 3`, `coop.civ super 3 <x y z>` at that place: the host's screen shows the marker and a green
+  burst, the guest's screen nothing.

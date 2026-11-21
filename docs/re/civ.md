@@ -2774,3 +2774,32 @@ dump has the mod's hooks in it: FireSuperweapon 0xBF8BB0 and RefreshUnlocks 0xBF
   city view), the guest's own nation likewise on the guest; campaign_tick's team sharing of unlocks is limited to the
   global types 2 / 5 / 8 (the card-based ones stay each nation's). Which cities the global weapons hit is unchanged
   (decision 7P open). Built, not run.
+
+## A partner nation's superweapon tools and the unlock cards (2026-11-21, fix/l47-civ)
+<a id="civ-partner-sw-tools"></a>
+
+BUG-9310, BUG-9311. GOG 2024 addresses (Ghidra on the TITAN Steam dump; the crash dump crash-20261121-035634-i9; live
+runs on the TITAN QA copy).
+* ✔ A nation's superweapon tools: vector +0x470 (begin) / +0x474 (end) of 12 tool pointers (intrusive, vt +8 release),
+  one per type, tool ids from the table 0x14693E8. Loaded by 0xBF7020 (`Simulator::cCivilization::LoadSuperweaponTools`,
+  thiscall(civ), no stack arguments, plain ret) **only when +0x89 (mIsPlayerOwned) is set**: at creation 0xBF82B0
+  (which sets +0x89 / +0x8A) and after a load (the Read slot 0xBF8280 of the vtable 0x1469370: cGameData Read,
+  RefreshUnlocks, then 0xBF7020). Each tool gets +0x150 = 1. The tools are not saved; they are made again at a load.
+* ✔ 0xBF18C0 thiscall(civ, type) ret 4 = +0x470[type] (no check). Its callers: the targeted launch 0xBDC2F0 (types 0, 1,
+  3, 4, 6, 7, 9, 10, 11; ecx = city +0x590), the global ones 0xBE4300 (2) and 0xBE4550 (8), and 0xCEA320. The cooldown
+  check 0xBF18D0 (in CanUse) reads +0x470[type] +0x1C0 (the recharge seconds) when the type's timer (+0x490 + type * 32,
+  a vector every nation has) runs.
+* ✔ A partner founder's nation (civ.multi_founders) has +0x89 = 0 (dump: seat 3's 1CA35540 +0x89 0, +0x8A 1; the
+  host's 1C969DF8 +0x89 1): no tools, so its first launch read a null vector (the host crashed reading 0xC at 0xBF18CA,
+  BUG-9310). Live: the loader with +0x89 set for the call fills all 12 (`... got its superweapon tools: 12 loaded`), then a
+  partner's type 3 and type 0 fired from its own city with its own money, and its cooldown check works.
+* ✔ (runtime) The launch's effect is drawn on the host's game only; a guest sees the results the mod already relays (a
+  type 0 at a city: the city's hp fell on both games), not the marker or the burst, also for the host's own weapon
+  (BUG-9312).
+* ✔ RefreshUnlocks 0xBF2510 reads cPlayer +0x10FC / +0x1100 / +0x1104 on every call (each card's traits through
+  0x555E80, then 0xBEFAD0 trait -> type, then the city counts) and caches nothing; it first clears +0x484..+0x48F.
+  CORRECTION (2026-11-21, fix/l47-civ) of BUG-9311's first reading ("a shared cache"): the leak was the mod's h_Unlocks,
+  which never put the host's cards back after a partner's call (`game::swap_close(mark, n)` drops ledger entries, it does
+  not restore them: the caller must). Fixed by `civ.unlock_cards_restore`.
+* Tools: `coop.civ sw` (now with tools_loaded=), `coop.civ swgrant <seat> <type> [money]` keeps its grant across the
+  campaign tick until `coop.civ swgrant clear` (or a planet change).
