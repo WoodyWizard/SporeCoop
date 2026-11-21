@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.16 21025f40
 fixed_in:
 branch: fix/w62-civrole
-commits: 843ec8e1
+commits: 843ec8e1, d5426c83
 tests: civ_role_row, civ_role_row_off, late_species_civ, play_civ
 signature:
 docs: docs/08-ui.md#ui-civ-two-rows
