@@ -9294,3 +9294,23 @@ Follows #testing-tribe-msi-recipes and #testing-tribe-raid-wipe-pets (same two g
   banned identity; set bytes 4 and 11 of samuth.spo.duo-seats to 4 first).
 * tools: a read-only scan of the test profiles' saves for keys of banned creations (DBPF + RefPack in Python) found them
   in many QA saves (records 018EB45E creatures, 01897C18, 02C21781, 03572E72); not kept in the repo.
+
+## Partner village pens on the MSI: recipes (2026-11-21, fix/l47-pens)
+<a id="testing-tribe-partner-pens"></a>
+
+BUG-9326 (docs/re/tribe.md#tribe-partner-pens). Follows #testing-tribe-final-qa (same two games and entry).
+* `coop.tribe pens` (any game): each founder village's animal pen, egg pen, pen herd, its members and the egg food
+  (+0x2C0); on a guest also its own village; the `partner_pens` counters and the last village made.
+* Positions: `coop.tribe objs 18C88E4` lists the pens (both are that noun); on Vandh the partner's at (290.9 -413.5
+  -51.9) and (286.3 -415.9 -56.7). `coop.rings look <x y z>` on both games then `shot` frames them.
+* Tame by feeding: the guest's villagers selected, `coop.tribe act_obj 20 18EB45E <animal>` on an animal 40-60 m from
+  the village; the pet joins the pen herd after about 80 s and walks in within 4 minutes at frame.limit 100. A 25 alone
+  does not tame (the game sends it after its own tame step).
+* Egg: the egg food grows about 1 per minute per pet; the egg order is `act_obj 13 18C88E4 <the own egg pen>`, or a real
+  right-click on it (the guest's game then sends 13 itself). A 13 on anything else is refused (`not the member's own egg
+  pen`); with `tribe.partner_pen_guard` off it crashes the host (0xDB174B): run that last.
+* Switch twin: `coop.fix tribe.partner_pens off` on both games before `coop.vote tribe` (the founding happens in the
+  entry). Turned on later in the same game, the 5 s catch-up makes the pens on the host and the guest's copy.
+* A reload: host `coop.save`, `coop.load Game0 Vandh`, then `coop.share 1` (the guest does not reload by itself).
+  Game0 is the host's Creature save: restore it from Game0.bak-l47 afterwards.
+* The games ran at about 2 fps (present interval 440 ms) with frame.limit 100 in Tribe on the MSI.

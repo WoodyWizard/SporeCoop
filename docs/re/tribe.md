@@ -6306,3 +6306,45 @@ space: this run's game sat at base 0x300000, so 0xCAD6A3 there is 0xDAD6A3 in .s
   (`coop.tribe outfits` home= changes then, 291EE5B5 -> 292BC151); an outfitter opened with `coop.vote editor` (no
   Planner) ends the vote but the host's village keeps its old species. The guest's copy follows with the next world
   share ("host species 292BC151 = 7DBCDD56 here").
+
+## Partner village pens: the game's pen setup, the egg order's target (2026-11-21, fix/l47-pens)
+<a id="tribe-partner-pens"></a>
+
+BUG-9326, owner decision 8A A. Ghidra on the Steam 3010a413 memory dump (the GOG 2024 code, re-notes-ghidra-windows)
+and live on the MSI (host instance 2, guest instance 1, Creature -> Tribe from Vandh). Follows #tribe-final-qa.
+* ✔ (Ghidra) A village's pens are made by **`SporeCoop::cTribe_CreatePens` 0xC90080**, bool thiscall(cTribe*), plain
+  ret: nothing when the layout prop list +0x2D4 is null or the pen herd +0x19CC exists; else CreateHerd at the pen site
+  (prop 0x51ADF81 from the village's +0x120 position, else 7.5 m behind the hut) with the village's species +0x18CC ->
+  +0x19CC, the animal pen (noun 0x18C88E4, model 0x5D97F762) -> +0x19C4, the egg pen (noun 0x18C88E4, model
+  0x5B9A06E, owner set by its vt 0x34(tribe)) -> +0x19C8. The only writers of +0x19C4 / +0x19C8 besides clears.
+  Callers: the player tribe's creation 0xC99F50 (right before Tribe_CreateTotem, as the totem pattern of
+  #tribe-partner-totems) and the tame step 0xDB5E10, which makes the pens of a village without them by itself.
+* ✔ (live) Called by the host on a partner founder village right after SpawnNpcTribe (fix `tribe.partner_pens`): pens
+  at (290.9 -413.5 -51.9) / (286.3 -415.9 -56.7), 25 m from the village centre; the entry's share save carried them, both
+  games show them at the same places after the reload (new pointers on both: saved and loaded as the village's own
+  fields). The same call on a village of a loaded world (switch turned on mid-game: the 5 s catch-up) made them too, and
+  a guest's game made its own village's copy the same way at the same places. The catch-up's pen stood on two plants
+  the founding-time pen did not have (the plants are not cleared; cosmetic).
+* ✔ (live) Feed (CitizenAction 20) from a partner's villagers on a wild animal 50 m out: about 80 s later the animal
+  was in the partner village's pen herd (+0x19CC members +0x40..+0x44) and walked into the pen (2 m from it 4 minutes
+  after the order), on both screens; the village's egg food +0x2C0 rose from then on (about 0.015 a second with one pet
+  at frame.limit 100). A coop.save and a reload kept the pens, the pet in the pen and the egg food.
+* ✔ (Ghidra) In DoActionGeneric 0xCD0C20 the click on an animal (input 0x29) checks the food, then either orders 20
+  (feed) or runs the tame step 0xDB5E10 on GetPlayerTribe() and, when it succeeds, orders 25 (tame): **25 follows the
+  tame step**, it is not a tame by itself. Live: a partner's 25 sent alone (act_obj) ran on the host without a crash,
+  the animal walked 40 m toward the pen and stopped (it was never added to the pen herd).
+* ✔ (Ghidra) The click on an ornament with the egg pen's model 0x5B9A06E whose owner's +0x2C0 is over tuning
+  0xD2078A9B (10) is input 0x23 = **CitizenAction 13 with the egg pen as its target** (ChooseInputActionID); a wild
+  egg (noun 0x2A034CD) is input 0x1D = **27**, not 13. Live: a real right-click on the guest's own egg pen sent 13 on
+  that pen to the host.
+* CORRECTION (2026-11-21, fix/l47-pens): #tribe-final-qa's "the egg order (13) brings the egg to the egg pen" and the
+  test recipe's "13 egg (2A034CD)" are wrong: 13's target is the egg pen. The egg node 05B9B7F5 (enter 0xD7BE60, tick
+  0xDB1720, exit 0xC2E640; row .data 0x1593B60) casts its target to interface 0x175CDC9 (the ornament's) and reads it
+  without a null check: live, a partner's 13 on a wild egg crashed the host at 0xDB174B (read of 0) **with** the village's
+  egg pen present (guard off, crash-20261121-180002-i2). The guard now passes 13 only on the member's own egg pen.
+* ~ (live) 13 on an egg pen (the partner's through the relay, and the host's own villagers by a real right-click and
+  by DoAction) put the villagers into the eat node 0x0461300F, the village's food rose in 1.25 steps and the egg food
+  +0x2C0 did not drop; the egg node 05B9B7F5 was never seen in 1 s samples. Whether the eggs were collected was not
+  told apart from eating and fruit gathering; ? when the egg node's vt 0x2C check cancels it.
+* ✔ (live) The guest's copy of its village's pen herd lists no members (the host's lists the pet); the pet itself is
+  shown at the host's place on the guest.
