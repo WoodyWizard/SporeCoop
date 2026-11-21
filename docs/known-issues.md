@@ -4006,3 +4006,14 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * BUG-9329 (not seen live). Lineages Cache: the refusal of a banned creation offered by a partner and the "never sent"
   side run only between two players without -NoShare- names; test games always carry the tag, so only the console
   import path (`coop.library import <png>`, source manual-test) was seen refused.
+
+## Tribe after fix/l47-pens (2026-11-21)
+<a id="known-tribe-partner-pens"></a>
+
+* BUG-9326 (the open part of #known-tribe-final-qa is done on fix/l47-pens: partner villages have their own pens and a
+  partner tames by feeding). Still open: a partner's egg order on its own egg pen runs without a crash, but the eggs
+  were not seen being collected, for the host's own villagers either (they go to the eat node); not analysed further.
+* Reproduce: a partner pet in the pen and the egg food over 10 (`coop.tribe pens`), right-click the partner's egg pen
+  with two villagers selected; watch the members' `bt=` in host `coop.tribe` (the egg node 05B9B7F5 never shows).
+* BUG-9326 (cosmetic). A pen made by the catch-up for a village that already stood (a loaded world) can stand on
+  plants; at the founding the site was clear.

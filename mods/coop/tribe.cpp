@@ -1811,6 +1811,9 @@ COOP_FIX("tribe.guest_chief", "BUG-9303", g_guest_chief_fix,
 // pen, and a partner's egg order (13) when it has no egg pen (+0x19C8), with the refusal logged. Off: the order runs
 // (the crash; live also for an egg: the egg node 0xDB1720 reads an object it looks up with 0xD99830(.., 0x175CDC9)
 // without a null check, and crashed the host at once for a partner's egg order with the guard off).
+// 2026-11-21 (fix/l47-pens, owner decision 8A A): partner villages have pens now (tribe.partner_pens): the guard passes
+// those orders when the village has the pen, and an egg order only on the member's own egg pen (the egg node takes its
+// target as an ornament, an egg pen; any other target is the same null read).
 static bool g_partner_pen_fix = true;
 COOP_FIX("tribe.partner_pen_guard", "BUG-9326", g_partner_pen_fix,
          "tribe: a partner's tame or egg order needs its village's animal or egg pen (a village without one crashed the host)");
@@ -3483,6 +3486,78 @@ static void partner_totems_tick()
     H->log(M, SK_INFO, "tribe: %s (BUG-9318)", b);
     H->run_outside_frame( // the game's own hut upgrade gives TRG_Upgrade its actors (alone it framed only the sky)
         +[](void*) { H->log(M, SK_INFO, "tribe: %s (BUG-9318)", play_hut_upgrade().c_str()); }, nullptr);
+}
+
+// ---- BUG-9326 (owner decision 8A A, 2026-11-21): every partner founder village gets its own pens ----
+// The game makes a village's animal pen (+0x19C4), egg pen (+0x19C8) and the pen's herd (+0x19CC) with
+// cTribe_CreatePens (0xC90080) in the player tribe's creation (0xC99F50, right before its totem) and in the tame step
+// (0xDB5E10) when the herd is missing; SpawnNpcTribe never calls it, so a partner founder village had none and a
+// partner's tame (25) or egg (13) order crashed the host (tribe.partner_pen_guard refuses those without pens). On: the
+// host makes a partner village's pens with that same call at its founding (before the save that carries the village)
+// and as a catch-up every 5 s (a world saved before this); a guest's game makes its own village's pens the same way while
+// its copy has none (the host's come with the next share). They are the village's own fields, kept by the tribe
+// serializer (mpDomesticatedAnimalsPen, mpEggPen, mpDomesticatedAnimalsHerd). Off (`coop.fix tribe.partner_pens off`):
+// no pens for partner villages (0.7.14.1-lineages67-dev; the guard refuses their tame and egg orders).
+static bool g_partner_pens = true;
+COOP_FIX("tribe.partner_pens", "BUG-9326", g_partner_pens,
+         "tribe: every partner founder village gets its own animal pen and egg pen, made by the game like the host's");
+static uint32_t g_pens_made, g_pen_fails;
+static bool intact_village(void* t);
+static std::string g_pens_last; // the last village that got pens, for `coop.tribe pens`
+
+static bool village_has_pens(void* v)
+{
+    return v && skg::readable((uint8_t*)v + 0x19C4, 12) && F<void*>(v, 0x19C4) && F<void*>(v, 0x19C8);
+}
+
+// outside the frame: village `v` (founder seat `seat`, -1 a guest's own) gets the game's pens when it has none; true:
+// it has both now
+static bool make_village_pens(void* v, int seat, const char* why)
+{
+    if (!v || !game::object_alive(v) || !skg::readable((uint8_t*)v + 0x2D4, 4) || !skg::readable((uint8_t*)v + 0x19C4, 12))
+        return false;
+    if (village_has_pens(v)) return true;
+    static const uintptr_t make = H->sym("SporeCoop::cTribe_CreatePens");
+    // the game's call needs the village's layout props (+0x2D4) and makes nothing while a pen herd (+0x19CC) exists;
+    // without the props' pen site it places the pens behind the hut (+0x368)
+    const char* no = !make ? "no symbol" : !F<void*>(v, 0x2D4) ? "no layout props (+0x2D4)" : !F<void*>(v, 0x368) ? "no hut"
+                   : F<void*>(v, 0x19CC) ? "a pen herd without pens (+0x19CC)" : nullptr;
+    if (!no) {
+        thiscall<bool>(make, v);
+        if (!village_has_pens(v)) no = "the game made none";
+    }
+    if (no) {
+        if (g_pen_fails++ < 4)
+            H->log(M, SK_WARN, "tribe: seat %d's village %p gets no pens: %s (BUG-9326)", seat, v, no);
+        return false;
+    }
+    g_pens_made++;
+    char b[200];
+    snprintf(b, sizeof b, "seat %d's village %08X got an animal pen %p, an egg pen %p and a pen herd %p (%s)", seat,
+             F<uint32_t>(v, 0x30), F<void*>(v, 0x19C4), F<void*>(v, 0x19C8), F<void*>(v, 0x19CC), why);
+    g_pens_last = b;
+    H->log(M, SK_INFO, "tribe: %s (BUG-9326)", b);
+    return true;
+}
+
+static void partner_pens_tick()
+{
+    static double next;
+    const double now = H->time_seconds();
+    if (!g_partner_pens || !active() || now < next) return;
+    next = now + 5.0;
+    if (world::save_busy() || world::load_queued() || world::cinematic_id()) return;
+    H->run_outside_frame(+[](void*) {
+        if (!g_partner_pens || !active() || world::save_busy() || world::load_queued()) return;
+        if (is_host()) {
+            void* home = founder_village(0);
+            for (size_t seat = 1; seat < founder_seats() && seat < founders::kMaxSeats; ++seat)
+                if (void* v = founder_village((int)seat); v && v != home && intact_village(v))
+                    make_village_pens(v, (int)seat, "catch-up");
+        } else if (!local_play() && g_own_village && game::object_alive(g_own_village) && intact_village(g_own_village)) {
+            make_village_pens(g_own_village, -1, "this game's own village");
+        }
+    }, nullptr);
 }
 
 // ---- outfit votes: one per partner seat (the two-founder co-op had one, for seat 1) ----
@@ -6141,8 +6216,14 @@ static void host_command_run(uint8_t from, net::Reader& r, bool resumed)
         return;
     }
     void* target = forage_target ? forage_target : (kind == CMD_ACTION ? resolve_target(tgt) : nullptr);
+    // BUG-9326: an egg order (13) collects from an egg pen (the egg node 0xDB1720 takes its target as an ornament and
+    // reads its owner village's egg food +0x2C0): the sender's own village's pen is the one target of a party member's
+    // faction allowed (tribe.partner_pens)
+    void* own_village = g_partner_pens && loot && action == 13 && sender_seat >= 1 ? founder_village(sender_seat) : nullptr;
+    const bool own_egg_pen = own_village && target && target == F<void*>(own_village, 0x19C8);
     if (village_orders && (loot || tame) && (!target || !game::object_alive(target) || is_citizen(target) ||
-        g_order_roster.contains_faction(F<uint32_t>(target, 0x30)) || (tame && (game::health(target) <= 0 || F<uint8_t>(target, 0xB5E))))) {
+        (!own_egg_pen && g_order_roster.contains_faction(F<uint32_t>(target, 0x30))) ||
+        (tame && (game::health(target) <= 0 || F<uint8_t>(target, 0xB5E))))) {
         g_reject_why = "the target is gone, a member or a party member's"; // BUG-9303
         g_cmds_rejected++;
         return;
@@ -6308,6 +6389,11 @@ static void host_command_run(uint8_t from, net::Reader& r, bool resumed)
             const uintptr_t pen = action == 25 ? 0x19C4 : 0x19C8;
             if (!home || !skg::readable((uint8_t*)home + pen, 4) || !F<void*>(home, pen)) {
                 g_reject_why = action == 25 ? "the member's village has no animal pen (BUG-9326)" : "the member's village has no egg pen (BUG-9326)";
+                g_cmds_rejected++;
+                continue;
+            }
+            if (action == 13 && target != F<void*>(home, 0x19C8)) { // the egg node faults on any other target (BUG-9326)
+                g_reject_why = "an egg order's target is not the member's own egg pen (BUG-9326)";
                 g_cmds_rejected++;
                 continue;
             }
@@ -9207,6 +9293,7 @@ static void found_partners()
     // roadmap phase 4 (decision 5): the new village like the host's (once: this seat is never founded again), before
     // the checkpoint below saves it; a village of an older save is never touched (decision 9)
     if (g_late_catch_up) catch_up_village((int)seat, village, home);
+    if (g_partner_pens) make_village_pens(village, (int)seat, "founding"); // BUG-9326: before the save that carries it
     // another partner ready now is founded first (one a tick); the checkpoint comes after the last one
     for (uint8_t p : party::unseated_partners(g_order_roster, founder_creature_match))
         if (founding_ready(p, now, nullptr) && g_order_roster.seats() < founders::kPlaySeats) return;
@@ -11065,6 +11152,7 @@ static void coop_tick(double now)
     if (!is_host())
         village_caption_tick(now); // BUG-0983
     partner_totems_tick(); // BUG-9318
+    partner_pens_tick(); // BUG-9326
     if (is_host()) {
         village_caption_tick(now);
         grab_spot_tick(now);
@@ -14011,6 +14099,30 @@ std::string debug(const std::vector<std::string>& a)
         " blocked=" + std::to_string(g_regroup_blocked) + " sent_home=" + std::to_string(g_regroup_sent_home) +
         " members_blocked=" + std::to_string(g_regroup_members_blocked) + " walked_home=" +
         std::to_string(g_regroup_walked_home) + " left=" + std::to_string((int)std::max(0.0, g_regroup_until - H->time_seconds())) + " s";
+    if (a.size() == 1 && a[0] == "pens") { // BUG-9326 tests: each founder village's animal pen, egg pen and pen herd
+        std::string out;
+        char line[320];
+        auto row = [&](const char* who, int seat, void* v) {
+            if (!v || !skg::readable((uint8_t*)v + 0x19C4, 12)) {
+                snprintf(line, sizeof line, "%s %d: no village\n", who, seat);
+            } else {
+                void* herd = F<void*>(v, 0x19CC);
+                int animals = -1;
+                if (herd && skg::readable((uint8_t*)herd + 0x40, 8))
+                    animals = (int)((F<uintptr_t>(herd, 0x44) - F<uintptr_t>(herd, 0x40)) / 4);
+                snprintf(line, sizeof line, "%s %d village %p (%08X): pen %p egg_pen %p herd %p animals %d egg_food %.1f\n", who,
+                         seat, v, F<uint32_t>(v, 0x30), F<void*>(v, 0x19C4), F<void*>(v, 0x19C8), herd, animals,
+                         F<float>(v, 0x2C0));
+            }
+            out += line;
+        };
+        for (size_t seat = 0; seat < founder_seats(); ++seat) row("seat", (int)seat, founder_village((int)seat));
+        if (!is_host()) row("own", -1, g_own_village);
+        snprintf(line, sizeof line, "partner_pens fix=%d guard=%d made=%u fails=%u last: %s\n", (int)g_partner_pens,
+                 (int)g_partner_pen_fix, g_pens_made, g_pen_fails, g_pens_last.empty() ? "-" : g_pens_last.c_str());
+        out += line;
+        return out;
+    }
     if (a.size() == 1 && a[0] == "totems") { // BUG-9155 tests: each founder village's totem: pieces and model slots
         std::string out;
         for (size_t seat = 0; seat < founder_seats(); ++seat) {
