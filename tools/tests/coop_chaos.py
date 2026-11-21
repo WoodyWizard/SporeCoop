@@ -72,18 +72,29 @@ class Bot:
         when you leave the editor"), so it leaves like a player: "done", the dice's name when one is asked
         (chaos_civ_long, lab 20261101-134020: the guest waited in its editor). The host too: its own evolution
         editor opens at once (core.editor_now) after a mating the bot's clicks started, and no guest is in its world
-        until it is done (multi3, lab 20261120-133703, BUG-1367). The mode is read without a line in the log (this
-        runs on every poll of coop_multi's waits)"""
-        for i in range(4):
+        until it is done (multi3, lab 20261120-133703, BUG-1367). BUG-1374: since 0.7.16 a guest's palette "new
+        design" opens its own design editor with an empty creation (lab 20261120-133703: `civedit: our design editor
+        request ... starts from 00000000`), which "done" never leaves: from the second try three parts go in first,
+        as coop_civ_guest_editors' driver does. The mode is read without a line in the log (this runs on every poll
+        of coop_multi's waits)"""
+        for i in range(6):
             if 'Editor' not in self.c[who].call('game.mode').get('out', ''):
                 return
+            # (here: coop_campaign imports coop_multi, which imports this module)
+            from coop_campaign import EDITOR_DICE, EDITOR_DONE, TRIBE_EDITOR_PARTS, drag_slow, editor_click
             time.sleep(2)
+            con = self.c[who]
+            if i in (1, 4):  # an empty creation: three parts (City Hall / vehicle / building palettes)
+                for (sx, sy), (tx, ty) in TRIBE_EDITOR_PARTS:
+                    drag_slow(con, sx, sy, tx, ty, 1.0 + i // 3)
+                self.log.append(f'{time.strftime("%H:%M:%S")} {who}: three parts into its editor')
             if i >= 2:
-                self.do(who, 'click 614 826')  # the name panel's dice
-                time.sleep(1)
-            self.do(who, 'click 1416 1062')  # the editors' green "done"
+                editor_click(con, *EDITOR_DICE)  # the name panel's dice
+            editor_click(con, *EDITOR_DONE)  # the editors' green "done"
             self.log.append(f'{time.strftime("%H:%M:%S")} {who}: leaves its editor ("done")')
             time.sleep(3)
+        if 'Editor' in self.c[who].call('game.mode').get('out', ''):
+            shot(self.c[who], f'chaos_{who}_editor_stuck.png')  # (what kept it there)
 
     def leave_editors(self):
         """every player that sits in an editor leaves it ("done"), the host first (BUG-1367)"""

@@ -8,6 +8,9 @@ evolves a separate species in one shared world, from the tide pool to the galaxy
 unstable for now. A Lineages game and a SporeCoop game cannot join each other: every player needs the same mod.
 
 ### Development
+- Lab: a test is run again as "the game did not start" only when the harness says so; a fix switch whose description
+  said "did not start" made a twin's failures run again until one passed (BUG-1379). Lab tests of the Tribe and Civ
+  stages corrected (BUG-1372, BUG-1373, BUG-1374, BUG-1377).
 - The guest's own editors of this version, fixed after their first lab run before any release: the Tribal Outfitter
   for a guest's own creature now closes with Done and its outfit reaches the guest's members (BUG-1308, BUG-1316), and
   a guest's own City Hall and vehicle editors at its Civilization arrival open (the guest did not know the host's
@@ -175,6 +178,12 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
 - Votes: a vote for an action (moving on to the Creature stage, firing a superweapon) waits again for a player who is
   in its own editor, as before 0.7.15.1: it passes when that player is ready, leaves, or after the vote's time. Only
   the evolution vote goes on without such a player (BUG-1369; still open until its lab run).
+- Civilization: a player who joins while playing a Civilization world of their own keeps that world's money also when
+  their game is slow at the moment of joining; before, the host's money could replace it (BUG-1371; still open until
+  its lab run).
+- Tribe: a new village the host's game forms during play now appears on a guest's screen with its people at once,
+  also when its species was new to the guest's game; before, it came about 5 seconds late (BUG-1375; still open until
+  its lab run).
 ## [0.7.15.5] - 2026-11-19
 
 A fix for players who could not leave the Tribe stage: the City Hall editor at its end could not be named after a

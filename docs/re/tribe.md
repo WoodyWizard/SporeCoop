@@ -4834,3 +4834,14 @@ BUG-1345. GOG 2024, code reading and the lab log of 20261120-041304 tribe_kid_sp
   did not note (no `bought`) and paired with an ask later is still named afterwards (not seen in a lab run).
 * Test path: `coop.fix effects.other_stages off` on both games makes every guest baby come through baby_tick
   (tribe_birth_ask, also tribe_guest_baby_noeffects).
+
+## A guest's copy of a new host village whose species it lacked (2026-11-20, fix/w61-civ)
+<a id="tribe-copy-species-retry"></a>
+
+BUG-1375. ✔ (runtime, lab 20261120-133703 campaign_civ_jump, 4 players) A host NPC village formed during play with a
+species of the host's world the guest's game does not have: the guest's first copy try (make_npc_tribes, BUG-0381)
+asks the host for the species (`creations: species ... unknown here: asked the host`), the species is registered about
+20 ms later, and the copy came only at the next try 5.1 s after the first (one try per host tribe every 5 s); meanwhile
+the village's members are "not made: its tribe has no tribe of this game" and the sync-check counts them missing. A
+village of a species the guest has is copied about 50 ms after the host formed it. `coop.fix tribe.copy_species_retry`
+tries again 0.5 s after a try that found no species.

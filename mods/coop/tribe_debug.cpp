@@ -1339,6 +1339,12 @@ std::string debug(const std::vector<std::string>& a)
                  (unsigned)members(t).size(), net::dist(tp, c));
         return b;
     }
+    // species_miss <n>: tests (BUG-1375), a guest's next n tries to copy a host NPC tribe read its species as missing (the
+    // host's answer is then here at once): the retry after such a try decides when the copy comes
+    if (a.size() >= 2 && a[0] == "species_miss") {
+        g_species_miss_test = (uint32_t)std::max(0, atoi(a[1].c_str()));
+        return "species_miss " + std::to_string(g_species_miss_test);
+    }
     // npc_tribe_at <members> <x> <y> <z>: tests (BUG-0332), SpawnNpcTribe at exactly that position (as a guest makes its
     // copy of a host's new village, BUG-0381), with the game's ground there before and after
     if (a.size() >= 5 && a[0] == "npc_tribe_at" && a_SpawnNpcTribe) {

@@ -42,6 +42,24 @@ def output_verdict(text):
     return INCONCLUSIVE, why
 
 
+# BUG-1379: environment trouble (the machine, not the mod: a game or the test display did not start; the lab runs such a
+# test again, up to twice, and keeps the last result). Only the harness's own lines count: an AssertionError of a start
+# wait (twoinst / coop_ui / the tests' restarts: "instance 3 did not start", "the guest did not start"), spore.sh's and
+# headless.sh's lines, bwrap's. Before, any "did not start" in the output counted: a fix switch's description in the
+# SPORE_FIX_OFF line of the twin tribe_chief_still_retry_off ("... the first take ... did not start") made both of its
+# FAILs environment trouble and its third run's PASS the verdict (lab 20261120-130608).
+_ENV_TROUBLE = re.compile(r"^(?:AssertionError: .*did not start\b.*"
+                          r"|.*\bthe headless test display did not start\b.*"
+                          r"|.*\bheadless shell did not start\b.*"
+                          r"|\s*restart: the guest did not start\b.*"
+                          r"|.*bwrap: Can't find.*)$", re.M)
+
+
+def env_trouble(text):
+    """True when the output says the game (or the display) did not start: a run the lab tries again"""
+    return bool(_ENV_TROUBLE.search(text))
+
+
 def verdict_of(r):
     """the verdict of a recorded result (results.json before the verdict field: skipped = INCONCLUSIVE)"""
     v = r.get('verdict')

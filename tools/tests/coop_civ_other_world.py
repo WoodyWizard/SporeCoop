@@ -18,8 +18,14 @@ cycle, and founded cities up to the host's count.
      host's (coop.res add money 777, offline): while it plays that world in the session, its game's
      money never becomes the host's total (0.7.3.0 overwrote it), and the host's does not move by it
 
+  5. --slow-join (BUG-1371): the guest runs at 2 fps (frame.limit 500) from just before the join until 6 s after it,
+     so WELCOME and the host's first money total (sent in the host's tick after the join) arrive in one frame of the
+     guest's, before any tick of its knows it plays another world (lab 20261120-133703: a loaded lab did this by itself,
+     the guest's money became the host's 3000 one millisecond after the join). The money check of 4. decides.
+
   coop_civ_other_world.py [--nofix]   (coop.fix core.world_gate off: must FAIL)
   SPORE_FIX_OFF=res.elsewhere coop_civ_other_world.py   (the host's money total applied: must FAIL)
+  SPORE_FIX_OFF=res.elsewhere_join coop_civ_other_world.py --slow-join   (the total of the join's frame taken: must FAIL)
 """
 import glob
 import os
@@ -35,6 +41,7 @@ from twoinst import Checks, start
 
 def main():
     nofix = '--nofix' in sys.argv
+    slow_join = '--slow-join' in sys.argv
     host, guest = start('civ')
     ck = Checks()
     for con in (host, guest):
@@ -69,11 +76,17 @@ def main():
     gm0, hm0 = money(guest), money(host)
     print(f'  money: guest own world {gm0}, host {hm0}')
 
+    if slow_join:  # BUG-1371: WELCOME and the host's first total in one frame of the guest's
+        print('  guest: frame.limit 500 ->', guest.call('frame.limit 500')['out'].strip(), flush=True)
     print(' ', guest.call(lane.JOIN)['out'].strip())
     mirrors_max, alive_min = 0, n0
     pairs = []  # (guest money, host money) per second
     t0 = time.time()
+    slow = slow_join
     while time.time() - t0 < 40:
+        if slow and time.time() - t0 > 6:
+            slow = False
+            print('  guest: frame.limit auto ->', guest.call('frame.limit auto')['out'].strip(), flush=True)
         c = dump(guest)
         vs = [r for r in c.rows if r['kind'] == 'v']
         mirrors_max = max(mirrors_max, len([r for r in vs if r['own'] == 'mirror']))
@@ -91,6 +104,9 @@ def main():
     gap = min((abs(g - h) for g, h in pairs), default=None)
     drift = max((abs(h - hm0) for g, h in pairs), default=None) if hm0 is not None else None
     print(f'  money during the 40 s: {len(pairs)} samples, closest guest/host {gap}, host drift {drift}; last {pairs[-1:]}')
+    # (join_held: host totals the BUG-1371 check held on arrival because no tick had held yet: the case of --slow-join)
+    print('  guest:', ' '.join(w for w in guest.call('coop.res')['out'].split() if w.startswith(('held=', 'join_held='))),
+          flush=True)
     # (a Civ planet's money moves with its own income: the 777 apart is what must stay)
     ck(gap is not None and gap > 500, f"the guest's own world keeps its own money, never the host's total (closest {gap})")
     ck(drift is not None and drift < 500, f"the host's money is not changed by the guest's world (drift {drift})")

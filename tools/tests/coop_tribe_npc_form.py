@@ -15,9 +15,16 @@ guest" for minutes; the players on the guests did not see these tribes at all.
 
 tribe.npc_tribes off failed (retired in 0.7.15, BUG-1138: FAIL run 20261101-122850:tribe_npc_form).
 
-  SPORE_LANE=7 python3 tools/tests/coop_tribe_npc_form.py
+--species-late (BUG-1375): the guest's first try to copy the new tribe reads its species as missing (`coop.tribe
+   species_miss 1`, as when the host's world has a species the guest's game lacks and asks for it: campaign_civ_jump,
+   lab 20261120-133703, the answer came in 20 ms and the copy 5 s later); the guest's tribe with every member must be
+   there within 3 s of the host's formation (the sync-check compares twice 3 s apart: "t: 5 missing on the guest").
+   SPORE_FIX_OFF=tribe.copy_species_retry: the next try 5 s later: FAIL.
+
+  SPORE_LANE=7 python3 tools/tests/coop_tribe_npc_form.py [--species-late]
 """
 import re
+import sys
 import time
 
 from harness import dist
@@ -39,11 +46,19 @@ def tribes(con):
 
 
 def main():
+    late = '--species-late' in sys.argv
     host, guest = start('tribe')
     ck = Checks()
     time.sleep(3)
     before = tribes(host)
     print(f'  host: {len(before)} tribes, guest: {len(tribes(guest))} tribes', flush=True)
+    if late:  # BUG-1375: every host tribe copied first, so the next try the knob takes is the new tribe's
+        t0 = time.time()
+        while time.time() - t0 < 20 and len(tribes(guest)) < len(tribes(host)):
+            time.sleep(1)
+        print(f'  tribes before the formation: host {len(tribes(host))}, guest {len(tribes(guest))}', flush=True)
+        print('  guest:', guest.call('coop.tribe species_miss 1')['out'].strip(), flush=True)
+    formed_at = time.time()
     out = host.call('coop.tribe npc_tribe 4 70')['out'].strip()
     print('  host:', out, flush=True)
     m = re.search(r'at \(([-\d.]+) ([-\d.]+) ([-\d.]+)\): (\d+) members', out)
@@ -51,6 +66,19 @@ def main():
     if not m:
         return ck.result()
     at = tuple(float(m.group(i)) for i in (1, 2, 3))
+    if late:  # BUG-1375: when the guest's copy with every member comes
+        n_host = len(next((t for t in tribes(host) if not t[0] and dist(t[1], at) < 5), (0, 0, 0, []))[3])
+        came = None
+        while time.time() - formed_at < 15 and came is None:
+            g = [t for t in tribes(guest) if not t[0] and dist(t[1], at) < 10]
+            if g and n_host and len(g[0][3]) >= n_host:
+                came = time.time() - formed_at
+            else:
+                time.sleep(0.25)
+        print(f'  the guest\'s copy with its {n_host} members came {came and round(came, 1)} s after the formation', flush=True)
+        ck(came is not None and came <= 3.0, f'the guest\'s copy came within 3 s although its first try found no species '
+                                             f'({came and round(came, 1)} s; BUG-1375: 5 s before)')
+        print('  guest:', guest.call('coop.tribe species_miss 0')['out'].strip(), flush=True)
     time.sleep(2)
     hnew = [t for t in tribes(host) if not t[0] and dist(t[1], at) < 5]
     ck(hnew and hnew[0][3], f'the host lists its new tribe with members ({hnew[0][2] if hnew else "-"})')
