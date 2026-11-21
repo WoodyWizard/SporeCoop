@@ -105,7 +105,11 @@ def dump(con):
                          'da': float(f[16]), 'anim': f[17], 'gait': int(f[18]), 'gait2': int(f[19]),
                          'moving': int(f[20]), 'ss': int(f[21]), 'vis': int(f[22]), 'sx': float(f[23]),
                          'sy': float(f[24]), 'm': tuple(map(float, f[25:28])) if len(f) >= 28 else None,
-                         'lm': int(f[30]) if len(f) >= 32 else None, 'gr': int(f[31]) if len(f) >= 32 else None})
+                         'lm': int(f[30]) if len(f) >= 32 else None, 'gr': int(f[31]) if len(f) >= 32 else None,
+                         # BUG-1360 diagnostics: the locomotion's desired speed, its movement request's mode and the
+                         # distance to its destination (columns 33-35; older builds have none)
+                         'dsp': float(f[33]) if len(f) >= 36 else None, 'mmode': int(f[34]) if len(f) >= 36 else None,
+                         'gdist': float(f[35]) if len(f) >= 36 else None})
     return rows
 
 
@@ -503,6 +507,18 @@ def main():
             k = (x['anim'], x['gait'], x['moving'], x['ss'])
             cnt[k] = cnt.get(k, 0) + 1
         print(f'    walked proxies (anim, gait, +0x137, +0xF98): {sorted(cnt.items(), key=lambda kv: -kv[1])[:4]}', flush=True)
+        # BUG-1360: the walked frames that play the standing idle 02481DE5 against those with a walk gait: what the
+        # game's locomotion was asked (desired speed, request mode, distance to the MoveTo destination) and its speed
+        def q(xs, k):
+            v = sorted(x[k] for x in xs if x.get(k) is not None)
+            return f'{v[len(v) // 10]:.2f}/{v[len(v) // 2]:.2f}/{v[len(v) * 9 // 10]:.2f}' if v else '-'
+        for name, xs in (('idle 02481DE5', [x for x in walked if x['anim'] == '02481DE5']),
+                         ('walk gait', [x for x in walked if x['gait'] > 0])):
+            modes = {}
+            for x in xs:
+                modes[x.get('mmode')] = modes.get(x.get('mmode'), 0) + 1
+            print(f'    BUG-1360 walked, {name}: {len(xs)} frames; p10/p50/p90 game speed {q(xs, "gv")}, desired speed '
+                  f'{q(xs, "dsp")}, to the MoveTo destination {q(xs, "gdist")} m; request modes {modes}', flush=True)
     # falls (BUG-0366 for proxies): +0x137 going 1 -> 0 while the host's NPC moves, per 100 s of such frames
     def falls(rs, how):
         by, n, t = {}, 0, 0.0

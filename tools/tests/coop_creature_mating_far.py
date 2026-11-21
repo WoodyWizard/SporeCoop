@@ -21,7 +21,7 @@ import math
 import re
 import time
 
-from coop_creature_mating import MATE_NODE, mate, mode, npc_ids, screen_of, W, H
+from coop_creature_mating import MATE_NODE, MATE_WAIT_S, mate, mode, npc_ids, screen_of, W, H
 from coop_migration import cinematic
 from coop_nest_follow import herd_nest_pos
 from twoinst import Checks, start
@@ -36,11 +36,15 @@ def main():
     m0 = mode(host)
     mt = None
     t0 = time.time()
-    while time.time() - t0 < 30:
+    # BUG-1182 / BUG-1366: the game's own pick near the nest can take longer than 30 s since the lab's condition start-up
+    # waits (A9) start the test sooner after the load; this probe still waited 30 s (FAIL with `mate 00000000` in the
+    # 0.7.16 final check 20261120-133703 while creature_mating, 60 s, passed in the same run)
+    while time.time() - t0 < MATE_WAIT_S:
         mt = mate(host)
         if mt and mt['ptr'] and mt['flags'] & 0x10:
             break
         time.sleep(1)
+    print(f'  mate after {time.time() - t0:.0f} s: {host.call("coop.drama mate")["out"].strip()}', flush=True)
     ck(mt and mt['ptr'] and mt['flags'] & 0x10, "the host's game picked a mate near the nest")
     ids = npc_ids(host)
     me = ids.get(mt['ptr']) if mt else None
