@@ -411,3 +411,5 @@ SporeCoop::cPosseSimulator_ptr ; BUG-9248: partners' own packs (creature.party_p
 SporeCoop::Ability_Use ; BUG-9306: a partner's Tribe chief powers (tribe.guest_powers) are off on GOG 2016
 Simulator::cCivilization::LoadSuperweaponTools ; BUG-9310: a partner nation's superweapon tools (civ.partner_sw_tools) are off on GOG 2016
 Simulator::cCity::LaunchSuperweapon ; BUG-9313 / BUG-9312: a global superweapon spares the party (civ.global_sw_spares_party) and the launch shown on guests (civ.sw_show) are off on GOG 2016
+SporeCoop::BT_TameAnimalsNode ; BUG-9306: each village's own pet cap (tribe.pet_cap_per_village) is off on GOG 2016
+SporeCoop::TribalGame_PetsPushBack ; BUG-9306: each village's own pet cap (tribe.pet_cap_per_village) is off on GOG 2016

@@ -9173,3 +9173,20 @@ byte 4 patched 0x10 -> 4 in a backed-up folder), guest DuoQACivGuest (instance 1
   click in social stance (scratchpad engage.py: the social button, then a click on `coop.targets objs` n<id>), answer
   with `coop.social act <npc> <slot>` per prompt (play_social.py). Many wild species of Vandh are hostile (relation 5)
   to the party; `coop.npc hosthit` kills count as the party's kills.
+
+## Tribe raids, wipes and pets on the MSI (2026-11-21, fix/l47-tribe2)
+<a id="testing-tribe-raid-wipe-pets"></a>
+
+* A raid on the host's village without waiting for the natives: `coop.tribe npc_tribe 3 70`, then for each of its
+  members (`coop.tribe`, `owner=254` under that tribe) `coop.tribe order <id> 15 <hut x y z> 1E4DAAE`; the host's hut
+  position is the hut object's +0x38 (`mem.read <tribe obj + 0x368>`, then `mem.read <hut + 0x38> 12`), on Vandh about
+  (244 -441 -46). An ally does not take the order; a test blow (`coop.tribe hutfall`) wipes once and turns the newest
+  ally into a rival that does. `scratchpad watch.sh`: `coop.tribe huthp <x y z> -` every 10 s.
+* Vandh's native villages (archetype 7 and 4) raid the host's village by themselves about 6 minutes after the Tribe
+  entry: a natural test of BUG-9320 without commands. The log lines "village down", "last villager down" and "party wipe
+  reason" name the attacker; "founder huts after this world's load" gives each hut after a load.
+* `coop.npc spawn` needs an avatar: in Tribe there is none ("unknown species or no avatar"). For power tests, walk the
+  chiefs to a group of animals instead (`coop.tribe order <chief id> 4 x y z`, host): on Vandh six 29197E6B near
+  (278 -422 3). Power 0x34's lure brought no animal from 70 m in one try. Power 0x39 recharges slowly (progress 0.02
+  after 8 s): one press per game per test session.
+* A test blow during a regroup window (BUG-9320) is refused like any outside blow; wait the 120 s out.

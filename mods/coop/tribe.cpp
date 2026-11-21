@@ -1820,6 +1820,9 @@ COOP_FIX("tribe.guest_powers", "BUG-9306", g_guest_powers_fix,
 using AbilityUse_t = void(SK_CDECL*)(void*, int); // SporeCoop::Ability_Use 0xD1E930 cdecl(avatar, ability index)
 static AbilityUse_t o_AbilityUse;
 static void SK_CDECL h_AbilityUse(void* avatar, int index); // BUG-9306 (with chief_power_on_host)
+using TameNode_t = int(SK_CDECL*)(void*, void*, void*, void*, void*, void*, void*, void*);
+static TameNode_t o_TameNode; // BUG-9306 (tribe.pet_cap_per_village, with h_AbilityUse)
+static int SK_CDECL h_TameNode(void* chief, void* a2, void* a3, void* a4, void* a5, void* a6, void* a7, void* a8);
 static bool send_cmd(uint8_t kind, const std::vector<uint16_t>& ids, int action, const Target& tgt, const net::Vec3& pos)
 {
     if (kind != CMD_REPAIR && kind != CMD_GIVE_UP && kind != CMD_LATE_EDITING && (ids.empty() || g_guest_orders_held))
@@ -3142,6 +3145,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         H->hook_create(M, (void*)key, (void*)h_AbilityKey, (void**)&o_AbilityKey);
     if (uintptr_t use = H->sym("SporeCoop::Ability_Use")) // BUG-9306 (tribe.guest_powers)
         H->hook_create(M, (void*)use, (void*)h_AbilityUse, (void**)&o_AbilityUse);
+    if (uintptr_t tame = H->sym("SporeCoop::BT_TameAnimalsNode")) // BUG-9306 (tribe.pet_cap_per_village)
+        H->hook_create(M, (void*)tame, (void*)h_TameNode, (void**)&o_TameNode);
     if (uintptr_t hut = H->sym("SporeCoop::Tribe_HutStateIs2")) // BUG-9153
         H->hook_create(M, (void*)hut, (void*)h_HutState, (void**)&o_HutState);
     a_SetPlayerTribe = H->sym("Simulator::cGameNounManager::SetPlayerTribe"); // BUG-9153
@@ -3401,6 +3406,27 @@ static void sync_partner_totems(const char* why)
     g_totem_syncing = false;
 }
 
+// BUG-9318: the totem cutscene the way the host's reward plays it: the game's own hut upgrade
+// (SporeCoop::TribeHut_Upgrade 0xCDA4F0, thiscall(TribalGame_Get())), which plays TRG_Upgrade and gives it its actors
+// (the members near the hut in a formation, the village, the hut, the food mat and one more object of the village, by
+// the actor names 0xE44AEA33 / 0x268AB814 / 0xE4206FE9 / 0xFF7F9A4C) for GetPlayerTribe(): on a guest its OWN village
+// (tribe.own_player_village). It also sets that village's level from the goal progress (the host's, wsync) and the
+// HUD's cap, as wsync.tribe_level does. Outside the frame only.
+static std::string play_hut_upgrade()
+{
+    uintptr_t upgrade = H->sym("SporeCoop::TribeHut_Upgrade"), get = H->sym("SporeCoop::TribalGame_Get");
+    void* ui = get ? skg::cdecl_call<void*>(get) : nullptr;
+    void* v = native_player_tribe();
+    if (!upgrade || !ui || !active() || game::mode_id() != modes::kTribe || world::cinematic_id() || !v ||
+        !game::object_alive(v) || !F<void*>(v, 0x368))
+        return "the hut upgrade cutscene did not run (no symbol, TribalGame, village or hut here, or a cinematic plays)";
+    thiscall<void>(upgrade, ui);
+    char b[120];
+    snprintf(b, sizeof b, "the hut upgrade ran for village %08X (cinematic now %08X)", F<uint32_t>(v, 0x30),
+             world::cinematic_id());
+    return b;
+}
+
 // BUG-9318: host: the catch-up of the partner totems (a loaded world, a piece added while a check refused); guest: its
 // own village's totem cutscene when the totem gained a piece (the win's save came in), once per piece
 static void partner_totems_tick()
@@ -3440,18 +3466,11 @@ static void partner_totems_tick()
     }
     g_totem_cines++;
     char b[160];
-    snprintf(b, sizeof b, "this village's totem has %d pieces: the totem cutscene TRG_Upgrade plays here", n);
+    snprintf(b, sizeof b, "this village's totem has %d pieces: the totem cutscene (the hut upgrade's TRG_Upgrade) plays here", n);
     g_totem_last = b;
     H->log(M, SK_INFO, "tribe: %s (BUG-9318)", b);
-    H->run_outside_frame(
-        +[](void*) {
-            uintptr_t get = H->sym("Simulator::cCinematicManager::Get"),
-                      play = H->sym("Simulator::cCinematicManager::PlayCinematic");
-            void* cm = get ? skg::cdecl_call<void*>(get) : nullptr;
-            if (cm && play && active() && !world::cinematic_id())
-                thiscall<int>(play, cm, "TRG_Upgrade", 1, 1, 0, 0, 0);
-        },
-        nullptr);
+    H->run_outside_frame( // the game's own hut upgrade gives TRG_Upgrade its actors (alone it framed only the sky)
+        +[](void*) { H->log(M, SK_INFO, "tribe: %s (BUG-9318)", play_hut_upgrade().c_str()); }, nullptr);
 }
 
 // ---- outfit votes: one per partner seat (the two-founder co-op had one, for seat 1) ----
@@ -5809,6 +5828,59 @@ static bool chief_power_on_host(uint8_t from, int seat, uint16_t member, uint32_
     H->log(M, SK_INFO, "tribe: %s; before: %s (BUG-9306)", b, power_state(chief, idx).c_str());
     power_watch(chief, type, idx, from);
     return true;
+}
+
+// BUG-9306, decision 7W A (owner 2026-11-21: each player's village gets its own cap of 4 tamed animals, like solo
+// play). The taming node of chief power 0x39 (SporeCoop::BT_TameAnimalsNode 0xDB9310, cdecl(chief, ..., state)) tames
+// at most App_GetPropInt(0x217997F4, 4) minus the size of the TribalGame's ONE pet list (+0x94..+0x98, intrusive
+// pointers) and push_backs each new pet there (0xE1C7D0); a partner's chief runs it in the host's game, so every
+// village shared the host's 4 (docs/re/tribe.md#tribe-partner-totems). On: while the node runs for a chief, the list
+// holds only the pets with that chief's political id (the others are moved aside, no reference changed, and pushed back
+// with the game's own push_back after it, one extra reference released), so the node counts that village's pets only.
+// The node's candidates are every adult, non-epic, living (+0xB5E clear) animal in reach, pets included: live
+// (2026-11-21) a partner's press re-tamed one of the host's pets (its political id changed, the list held it twice).
+// So during the call every animal already in the list carries the dead flag +0xB5E (its own value put back right
+// after, in the same call: no frame passes) and is no candidate. Off: one cap for the whole party (the host's list
+// as the game counts it, the prop 0x217997F4) and a pet can be tamed again by another village.
+static bool g_pet_cap_fix = true;
+COOP_FIX("tribe.pet_cap_per_village", "BUG-9306", g_pet_cap_fix,
+         "tribe: each village's chief can tame up to 4 animals of its own (chief power 0x39), decision 7W A");
+static uint32_t g_pet_cap_split, g_pet_cap_restored; // node calls that hid other villages' pets / pets put back
+static int SK_CDECL h_TameNode(void* chief, void* a2, void* a3, void* a4, void* a5, void* a6, void* a7, void* a8)
+{
+    static uintptr_t get = H->sym("SporeCoop::TribalGame_Get");
+    static uintptr_t push = H->sym("SporeCoop::TribalGame_PetsPushBack");
+    void* tg = g_pet_cap_fix && active() && is_host() && get && push && is_citizen(chief) ?
+        skg::cdecl_call<void*>(get) : nullptr;
+    if (!tg || !skg::readable((uint8_t*)tg + 0x94, 8)) return o_TameNode(chief, a2, a3, a4, a5, a6, a7, a8);
+    void** begin = F<void**>(tg, 0x94);
+    void** end = F<void**>(tg, 0x98);
+    if (!begin || end <= begin || end - begin > 64 || !skg::readable(begin, (end - begin) * sizeof(void*)))
+        return o_TameNode(chief, a2, a3, a4, a5, a6, a7, a8);
+    const uint32_t own = game::political_id(chief);
+    std::vector<void*> others;
+    std::vector<std::pair<void*, uint8_t>> flagged; // pets kept out of the candidates, with their own +0xB5E
+    void** out = begin;
+    for (void** p = begin; p < end; ++p) {
+        if (*p && skg::readable((uint8_t*)*p + 0xB5E, 1) &&
+            std::none_of(flagged.begin(), flagged.end(), [p](const auto& f) { return f.first == *p; }))
+            flagged.push_back({*p, F<uint8_t>(*p, 0xB5E)});
+        if (*p && game::political_id(*p) != own) others.push_back(*p);
+        else *out++ = *p;
+    }
+    for (const auto& f : flagged) F<uint8_t>(f.first, 0xB5E) = 1;
+    if (!others.empty()) {
+        F<void**>(tg, 0x98) = out; // the list now holds this village's pets only (the others are kept here)
+        ++g_pet_cap_split;
+    }
+    const int r = o_TameNode(chief, a2, a3, a4, a5, a6, a7, a8);
+    for (const auto& f : flagged) F<uint8_t>(f.first, 0xB5E) = f.second;
+    for (void* pet : others) { // back into the game's list: push_back takes a reference, the one we held goes
+        thiscall<void>(push, (uint8_t*)tg + 0x94, &pet);
+        vcall<void>(pet, 1);
+        ++g_pet_cap_restored;
+    }
+    return r;
 }
 
 // guest: the press of a chief's stage power (the bar's one use path: AbilityBar_Use -> 0xD48AB0 -> Ability_Use) goes to
@@ -9468,6 +9540,56 @@ static bool rescue_helper_alive(int seat)
     return false;
 }
 
+// BUG-9320 (live QA 2026-11-21: the host's village went down about every 100 s in a raided test world, a party wipe
+// each time): the party wipe replaces the native hut-destroyed defeat, whose OK reloads an earlier save (the hut whole,
+// the raid not there yet). The wipe's checkpoint is saved at the moment of the wipe instead: the raiders stood at the
+// hut in that save and went on after the reload, the hut came back at 40 % (160 of 400: about 25 s of a raid), and the
+// newest ally turned rival raided too: down again 25-40 s after each reload, then the 60 s window, then the next wipe.
+// On: the wipe gives the downed village's hut its full health (as the native defeat's reload does), and once the
+// reloaded world settles, the members of non-party villages within kRegroupReach of a founder village who are away
+// from their own village walk home (the order again every 4 s: the game's raid AI turns them back at once), and for
+// kRegroupSeconds no blow of a non-party faction harms a founder hut (the
+// partners load the world in that time too). Later raids are ordinary play. Off: the hut at 40 %, the raid goes on.
+static bool g_wipe_regroup = true;
+COOP_FIX("tribe.wipe_regroup", "BUG-9320", g_wipe_regroup,
+         "tribe: after a party wipe the village's hut is whole again and outside raiders withdraw for 120 s");
+constexpr double kRegroupSeconds = 120;
+constexpr float kRegroupReach = 90.f;
+static bool g_regroup_pending;          // a wipe asked for the regroup: it starts when the (reloaded) world settles
+static uint64_t g_regroup_epoch;        // the world epoch at the wipe (a reload changes it)
+static uint64_t g_regroup_withdrawn = ~0ull; // the world epoch whose raiders were sent home
+static double g_regroup_asked, g_regroup_until;
+static uint32_t g_regroups, g_regroup_blocked, g_regroup_sent_home;
+
+// BUG-9320 diagnostics: who an attacker's political id is (a founder village, an NPC village and its relation to the
+// victim village, or no village: wildlife or a test blow), for the village-down and party-wipe log lines
+static std::string attacker_label(uint32_t attacker, void* victim_village)
+{
+    char b[160];
+    if (!attacker || attacker == 0xFFFFFFFFu) {
+        snprintf(b, sizeof b, "no faction (%08X: a test blow or an effect)", attacker);
+        return b;
+    }
+    for (size_t s = 0; s < founder_seats(); ++s)
+        if (void* f = founder_village((int)s); f && F<uint32_t>(f, 0x30) == attacker) {
+            snprintf(b, sizeof b, "founder seat %u's village %08X", (unsigned)s, attacker);
+            return b;
+        }
+    for (void* t : all_tribes()) {
+        if (F<uint32_t>(t, 0x30) != attacker) continue;
+        float rel = NAN;
+        void* manager = relationship_manager();
+        uintptr_t calculate = H->sym("Simulator::cRelationshipManager::CalculateRelationship");
+        if (manager && calculate && victim_village)
+            rel = thiscall<float>(calculate, manager, attacker, F<uint32_t>(victim_village, 0x30), 0);
+        snprintf(b, sizeof b, "NPC village %08X (archetype %d, %u members, relation to the victim %.1f, defeated %d)",
+                 attacker, F<int>(t, 0x550), (unsigned)members(t).size(), rel, (int)F<uint8_t>(t, 0x556));
+        return b;
+    }
+    snprintf(b, sizeof b, "faction %08X (no village: wildlife or a creature)", attacker);
+    return b;
+}
+
 static bool protect_founder(void* victim, float damage, uint32_t attacker)
 {
     if (!std::isfinite(damage) || damage <= 0 || !g_order_roster.guest().faction) return false;
@@ -9489,6 +9611,9 @@ static bool protect_founder(void* victim, float damage, uint32_t attacker)
     auto& rescue = g_founder_rescues[seat];
     rescue = {tracked->second.id, F<uint32_t>(tribe, 0x30), now + down_time(), -1, 0, game::position(victim)};
     rescue.attacker_faction = attacker;
+    H->log(M, SK_INFO, "tribe: last villager down, seat %d (village %08X): member %u took a blow of %.1f at %.1f hp from %s "
+           "(BUG-9320)", seat, F<uint32_t>(tribe, 0x30), (unsigned)tracked->second.id, damage, game::health(victim),
+           attacker_label(attacker, tribe).c_str());
     game::set_health(victim, 1);
     game::stop(victim);
     if (C.notice) C.notice("Last villager down. Bring a partner villager within 15 metres for " + std::to_string((int)downed::revive_hold(1.5)) + " seconds to revive. " + std::to_string((int)down_time()) + " seconds before respawn or capture (hold G to give up).");
@@ -9504,6 +9629,10 @@ static bool protect_founder_hut(void* hut, float damage, uint32_t attacker)
         !intact_village(tribe)) return false;
     auto& rescue = g_founder_rescues[seat];
     double now = H->time_seconds();
+    if (g_wipe_regroup && now < g_regroup_until && !g_order_roster.contains_faction(attacker)) {
+        ++g_regroup_blocked; // BUG-9320: the regroup after a party wipe
+        return true;
+    }
     if (rescue.faction == F<uint32_t>(tribe, 0x30) && now < rescue.grace_until) return true;
     if (rescue.until && rescue.hut_down) return true;
     float health = F<float>(hut, 0x158);
@@ -9518,6 +9647,9 @@ static bool protect_founder_hut(void* hut, float damage, uint32_t attacker)
         game::set_health(representative, 1);
     }
     rescue.hut_down = true;
+    H->log(M, SK_INFO, "tribe: village down, seat %d (village %08X): its hut took a blow of %.1f at %.1f/%.0f hp from %s "
+           "(BUG-9320)", seat, F<uint32_t>(tribe, 0x30), damage, health, F<float>(hut, 0x14C),
+           attacker_label(attacker, tribe).c_str());
     F<float>(hut, 0x158) = 1;
     for (void* person : members(tribe)) game::stop(person);
     if (C.notice) C.notice("Village down. Bring a partner villager to the marked survivor within " + std::to_string((int)down_time()) + " seconds to prevent capture (hold G to give up).");
@@ -9605,7 +9737,52 @@ static void drop_totem_piece(size_t count)
     }
 }
 
-static std::string party_wipe(int seat)
+// BUG-9320: the members of non-party villages near a founder village, away from their own village, walk home
+// (DoAction 4 with the walk's point, as `coop.tribe order <id> 4`); the number sent
+static unsigned regroup_withdraw()
+{
+    if (!a_DoAction || !a_SetValueVector3) return 0;
+    std::vector<net::Vec3> founders_at;
+    for (size_t s = 0; s < founder_seats(); ++s)
+        if (void* f = founder_village((int)s)) founders_at.push_back(tribe_pos(f));
+    unsigned sent = 0;
+    for (void* t : all_tribes()) {
+        if (g_order_roster.contains_faction(F<uint32_t>(t, 0x30))) continue;
+        const net::Vec3 home = tribe_pos(t);
+        for (void* c : members(t)) {
+            if (!c || !game::object_alive(c) || game::health(c) <= 0) continue;
+            const net::Vec3 at = game::position(c);
+            if (net::dist(at, home) < 25.f) continue;
+            bool near = false;
+            for (const auto& f : founders_at) near = near || net::dist(at, f) < kRegroupReach;
+            if (!near) continue;
+            void* rec = thiscall<void*>(a_DoAction, c, 4, (void*)nullptr, (void*)nullptr);
+            if (rec) thiscall<void>(a_SetValueVector3, (uint8_t*)rec + 0x39, (const float*)&home);
+            ++sent;
+        }
+    }
+    return sent;
+}
+
+// BUG-9320 diagnostics: every founder village's hut health, state (2: dead) and whether a down window runs
+static std::string founder_huts_line()
+{
+    std::string huts;
+    for (size_t s = 0; s < founder_seats(); ++s) {
+        void* v = founder_village((int)s);
+        void* hut = v ? F<void*>(v, 0x368) : nullptr;
+        char b[112];
+        if (hut && game::object_alive(hut))
+            snprintf(b, sizeof b, " seat %u %.0f/%.0f state %d%s;", (unsigned)s, F<float>(hut, 0x158), F<float>(hut, 0x14C),
+                     F<int>(hut, 0x120 + 0x34), g_founder_rescues[s].until ? " (down window)" : "");
+        else
+            snprintf(b, sizeof b, " seat %u no hut;", (unsigned)s);
+        huts += b;
+    }
+    return huts;
+}
+
+static std::string party_wipe(int seat, const char* reason)
 {
     void* ui;
     GoalRecord *b, *e;
@@ -9657,10 +9834,17 @@ static std::string party_wipe(int seat)
         lost = "no win to lose yet: every village lost 10% of its food";
     }
     ++g_party_wipes;
+    if (g_wipe_regroup) { // BUG-9320: the regroup starts when the wipe's reloaded world settles
+        g_regroup_pending = true;
+        g_regroup_epoch = g_campaign_epoch;
+        g_regroup_asked = H->time_seconds();
+    }
     const uint8_t player = player_of_seat(seat);
     const std::string who = player < 0xFE ? C.sess->name_of(player) + "'s village" : "A party village";
     g_last_wipe = who + " was wiped out: " + lost + ".";
     H->log(M, SK_INFO, "tribe: party wipe, seat %d: %s (BUG-9155)", seat, g_last_wipe.c_str());
+    H->log(M, SK_INFO, "tribe: party wipe reason (seat %d): %s; huts:%s (BUG-9320)", seat, reason,
+           founder_huts_line().c_str()); // BUG-9320: why, and every founder hut at that moment
     return g_last_wipe;
 }
 
@@ -9707,7 +9891,10 @@ static void founder_rescue_tick(double now)
         if (!revived && now < rescue.until) continue;
         bool wiped = false; // BUG-9155: the party pays instead of a capture
         if (!revived && g_party_wipe) {
-            if (C.notice) C.notice(party_wipe((int)seat));
+            const std::string why = std::string(rescue.gave_up ? "its player gave up" : "no partner revived it in time") +
+                (rescue.hut_down ? " (the village was down: its hut fell to " : " (its last villager fell to ") +
+                attacker_label(rescue.attacker_faction, t) + ")";
+            if (C.notice) C.notice(party_wipe((int)seat, why.c_str()));
             wiped = true;
         }
         if (!revived && !wiped && queue_founder_capture((int)seat, rescue.attacker_faction)) continue;
@@ -9724,9 +9911,9 @@ static void founder_rescue_tick(double now)
         }
         game::set_health(body, std::max(1.f, game::max_health(body) * 0.4f));
         bool refresh_hut = rescue.hut_down;
-        if (refresh_hut) {
+        if (refresh_hut) { // BUG-9320: after a wipe the hut is whole (the native defeat's reload), else 40 %
             void* hut = F<void*>(t, 0x368);
-            F<float>(hut, 0x158) = std::max(1.f, F<float>(hut, 0x14C) * 0.4f);
+            F<float>(hut, 0x158) = std::max(1.f, F<float>(hut, 0x14C) * (wiped && g_wipe_regroup ? 1.f : 0.4f));
         }
         rescue.until = 0;
         rescue.grace_until = now + 2;
@@ -11320,7 +11507,7 @@ static void home_respawn_tick(double now)
         }
         g_last_wipe_all_at = now;
         ++g_wipes_all;
-        if (C.notice) C.notice(party_wipe(0));
+        if (C.notice) C.notice(party_wipe(0, "every founder village had no living member (the population event)"));
         wipe_refresh(now);
         return;
     }
@@ -11508,6 +11695,29 @@ void tick(double now)
     if (is_host()) {
         for (uint8_t p = 1; p < 0xFE; ++p) // BUG-9159: a partner who left is asked again when they come back
             if (g_editor_asked_at[p] && !net::is_player(*C.sess, p)) g_editor_asked_at[p] = g_late_editing_until[p] = 0;
+        if (g_wipe_regroup && now - active_since > 3 && game::mode_id() == modes::kTribe) { // BUG-9320: the regroup
+            if (g_regroup_pending && (g_campaign_epoch != g_regroup_epoch || now - g_regroup_asked > 20)) {
+                g_regroup_pending = false;
+                g_regroup_until = now + kRegroupSeconds;
+                ++g_regroups;
+            }
+            static double next_withdraw; // the game's raid AI sends them back: the order again every 4 s
+            const bool first = g_regroup_withdrawn != g_campaign_epoch;
+            if (now < g_regroup_until && (first || now >= next_withdraw)) {
+                g_regroup_withdrawn = g_campaign_epoch;
+                next_withdraw = now + 4;
+                const unsigned sent = regroup_withdraw();
+                g_regroup_sent_home += sent;
+                if (first) H->log(M, SK_INFO, "tribe: regroup after the party wipe: %u raider(s) of other villages walk home, founder "
+                       "huts take no outside blow for %.0f s;%s (BUG-9320)", sent, g_regroup_until - now,
+                       founder_huts_line().c_str());
+            }
+        }
+        static uint64_t huts_logged_epoch = ~0ull; // BUG-9320: the founder huts as each Tribe world settles
+        if (huts_logged_epoch != g_campaign_epoch && now - active_since > 3 && founder_seats()) {
+            huts_logged_epoch = g_campaign_epoch;
+            H->log(M, SK_INFO, "tribe: founder huts after this world's load:%s (BUG-9320)", founder_huts_line().c_str());
+        }
         founder_rescue_tick(now);
         g_give_up_now = false;
         home_respawn_tick(now); // BUG-9147
@@ -12296,6 +12506,10 @@ std::string debug(const std::vector<std::string>& a)
         g_race_post = a[2] == "post";
         g_race_before = a[3] == "before";
         return "armed " + a[1] + " " + a[2] + " " + a[3];
+    }
+    if (a.size() == 2 && a[0] == "cine" && a[1] == "upgrade") { // BUG-9318 tests: this game's own hut upgrade path
+        H->run_outside_frame(+[](void*) { H->log(M, SK_INFO, "tribe: tests: %s", play_hut_upgrade().c_str()); }, nullptr);
+        return "the hut upgrade (TRG_Upgrade with its actors) runs outside the frame";
     }
     if (a.size() >= 2 && a[0] == "cine") { // cine <name> (tests, BUG-1101): this game plays that cinematic, outside the frame
         static std::string name;
@@ -13154,7 +13368,9 @@ std::string debug(const std::vector<std::string>& a)
             std::string o;
             char b[200];
             const long n = b0 && e0 >= b0 ? (long)(e0 - b0) : -1;
-            snprintf(b, sizeof b, "TribalGame %p list +0x94 %p +0x98 %p (%ld entries)\n", tg, (void*)b0, (void*)e0, n);
+            snprintf(b, sizeof b, "TribalGame %p list +0x94 %p +0x98 %p (%ld entries); pet_cap_per_village fix=%d split=%u "
+                     "restored=%u (BUG-9306)\n", tg, (void*)b0, (void*)e0, n, (int)g_pet_cap_fix, g_pet_cap_split,
+                     g_pet_cap_restored);
             o += b;
             for (long i = 0; i >= 0 && i < n && i < 32 && skg::readable(b0 + i, 4); ++i) {
                 void* c = b0[i];
@@ -13658,7 +13874,10 @@ std::string debug(const std::vector<std::string>& a)
         return founders::record(planet, roster, err) ? founders::describe(roster) : err;
     }
     if (a.size() == 1 && a[0] == "wins") return goal_history_line() + "\nparty wipes: " + std::to_string(g_party_wipes) +
-        (g_last_wipe.empty() ? "" : "\nlast: " + g_last_wipe); // BUG-9155
+        (g_last_wipe.empty() ? "" : "\nlast: " + g_last_wipe) + // BUG-9155
+        "\nregroup (BUG-9320) fix=" + std::to_string((int)g_wipe_regroup) + " regroups=" + std::to_string(g_regroups) +
+        " blocked=" + std::to_string(g_regroup_blocked) + " sent_home=" + std::to_string(g_regroup_sent_home) +
+        " left=" + std::to_string((int)std::max(0.0, g_regroup_until - H->time_seconds())) + " s";
     if (a.size() == 1 && a[0] == "totems") { // BUG-9155 tests: each founder village's totem: pieces and model slots
         std::string out;
         for (size_t seat = 0; seat < founder_seats(); ++seat) {
@@ -13727,7 +13946,7 @@ std::string debug(const std::vector<std::string>& a)
     }
     if (a.size() == 2 && a[0] == "wipe") { // BUG-9155 tests (host): the party wipe of seat N now, then the reload
         if (!active() || !is_host() || !founder_seats()) return "Requires the Tribe host with founder villages.";
-        const std::string text = party_wipe(atoi(a[1].c_str()));
+        const std::string text = party_wipe(atoi(a[1].c_str()), "the test command coop.tribe wipe");
         if (C.notice) C.notice(text);
         wipe_refresh(H->time_seconds());
         return text + (g_wipe_refresh_until ? " (the refresh waits for the save)" : "");
