@@ -1387,3 +1387,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9305](BUG-9305-creature-guest-the-impress-meter-jumps-to-its-ne.md) | open | bug | Creature | 2026-11-20 |  | Creature (guest): the impress meter jumps to its new value instead of filling smoothly |
 | [BUG-9306](BUG-9306-tribe-guest-the-chief-s-stage-powers-fire-bomb-s.md) | open | bug | Tribe | 2026-11-20 |  | Tribe (guest): the chief's stage powers (Fire Bomb, Summon) are refused, later stage powers likely too |
 | [BUG-9307](BUG-9307-all-stages-a-partner-revives-a-teammate-in-5-s-1.md) | open | feature | all | 2026-11-20 |  | All stages: a partner revives a teammate in 5 s (1.5 s before, Space repair 2 s) |
+| [BUG-9308](BUG-9308-creature-guest-a-creature-a-partner-wins-in-a-so.md) | open | bug | creature | 2026-11-20 |  | Creature (guest): a creature a partner wins in a social game never joins the partner's pack |

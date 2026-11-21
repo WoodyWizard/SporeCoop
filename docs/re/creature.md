@@ -5444,3 +5444,52 @@ guest QA 8 (DuoQACreatureGuest, its own creature).
   gets when it leaves the editor later was not checked.
 * The stage end saves over the host's slot (Vandh.spo and its .old both Tribe after it): restore the fixture from
   Game0.bak-20261113 before reusing it.
+
+## The native social meter fill, read from the public decompilation (2026-11-20, fix/l47-impress)
+<a id="creature-meter-native-fill"></a>
+
+BUG-9305. Source: the public spore-decomp project (github.com/NoahBPeterson/spore-decomp, files
+`src/game/SPGonzago/SPUISocialRainbow.cpp` and `match/slices/s00d9af60`), read as data, not run. Its addresses are
+of its own build: in the meter's code they are the GOG 2024 ones + 0x40 (its Reset 0xE33CE0 = our
+`SocialMeter_Reset` 0xE33CA0, its `Set(i, f)` 0xE319D0 = our `SocialMeter_SetBar` 0xE31990); elsewhere the shift
+differs, so no address below is ours without a check. Not seen at runtime by us.
+
+* ~ The meter is `cSPUISocialRainbow` (the "social rainbow"). Per bar (side) at +0xA4 + i * 0xA4: the step list, then
+  +0x90 the step's start (our "lo"), +0x94 the drawn arc length (our "pos"), +0x98 its target (our "hi"), +0x9C / +0x9D
+  two flags, +0xA0 a cached draw. Matches docs/re/creature.md#creature-meter-bars.
+* ~ The draw (window proc, message 0x0D, only for the bars' window 0x562BD40) draws each side from its arc end over
+  +0x94, and only when that side's step list is not empty; message 0x0C (update) sets "full" when both sides together
+  reach the arc and both lists have entries, and refreshes the bars' window when +0x24 is set.
+* ~ An answer: `SocialValues::StartFillLeft(points, anim)` (decomp 0xD9B0D0, from the answer check decomp 0xD9B110:
+  the answer stimulus 0x10000000, its kind equal to the prompt's gives the points, else 0.1 of them) calls
+  `StartFill(side 1, 1, 0, 0, points / total, color 0xFF7BCC76, 1)` (decomp 0xE33AB0): **a new entry goes into the
+  side's step list at once** and the target becomes +0x94 + the arc x the fraction. The NPC's side uses
+  StartFillRight (side 0).
+* ~ The fill: `SocialValues::Update` (decomp 0xD9BA60) every frame sets `Set(i, r)` with r = the answering creature's
+  animation progress (elapsed / length, clamped at 1): **the bar moves linearly over the answer's animation**.
+* ~ `CreatureSocialSuccess` (decomp 0xD9BC70): when the creature's social goal (CreatureSocialMode) is 4 it sets the
+  session flag 0x10 (the recruit, see docs/re/creature.md#creature-native-recruit) and gives no DNA and no 0x60B4123
+  message; for goals 1-3 the DNA (worth + a bonus by the meter's side 1 past 0.5) and the message. It always sets
+  +0xB58 |= 0x80 (impressed) and applies species event 3.
+* What it meant for the guest's meter (social.cpp meter_fill, `social.meter_smooth`): the guest added a round's entry
+  only when the fill passed half the round (lround), so the first half of each round drew nothing and then appeared at
+  once; now the entry is there from the step's start (ceil) and the bar moves linearly for 1 s, the win waits for it.
+
+## A partner's recruit by a social game (2026-11-20, fix/l47-impress)
+<a id="creature-native-recruit"></a>
+
+Decision 7L, BUG-9308.
+
+* ✔ (.sym, earlier work) The session end 0xD9F7A0 calls cPosseSimulator_AddMember when the session flag
+  `+0x1FC & 0x10` is set; ~ (decomp, above) CreatureSocialSuccess sets that flag for a social goal 4.
+* ~ CreatureSocialMode (GetSocialGoal) 0xC0E800: 1 / 2 / 3 from the species relation when the creature is not friendly
+  (vt 0xD4 false); the decomp's reconstruction of the friendly branch is incomplete. Our .sym: "4 via +0xB58 and herd
+  counts". Inferred: 4 is "a friendly creature that can join the pack" (allied species, impressed, the own species).
+  Not measured: what an impressed creature and a pack member return; `coop.social rel` prints `mode=` per NPC.
+* ✔ (code) Before 7L a partner's won social game (host social.cpp apply_success) only set the impressed flag: nobody
+  called AddMember. The partner's own recruit path (player_rules h_AddMember -> K_RECRUIT) needs an AddMember in the
+  partner's game, which runs no social session for a mirror; BUG-9129 tested it only by calling AddMember by hand.
+* `social.partner_recruit`: the host asks the social goal inside guest_pack's party context (the partner's puppet as
+  the avatar, its pack as the posse), lets a goal-4 game run also on an impressed creature, and at its win calls
+  guest_pack::recruit (the game's own AddMember into that partner's pack). Host log: "won a recruit game (social goal
+  4) with npc N: it joins that player's pack"; `coop.social` (host) `recruits=` / `recruits_refused=`.

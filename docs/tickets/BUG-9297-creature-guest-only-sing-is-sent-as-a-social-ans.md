@@ -9,11 +9,11 @@ source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with 
 role: guest
 versions: 0.7.14.1-lineages67-dev
 fixed_in:
-branch:
+branch: fix/l47-impress
 commits:
 tests:
 signature:
-docs:
+docs: docs/re/creature.md#creature-social-prompts
 related: BUG-0179, BUG-0518, BUG-0525, BUG-9136, BUG-9258
 ---
 
@@ -38,13 +38,18 @@ the host's avatar (`social_mode()` uses CreatureSocialMode(npc) with the host's 
 be recruited is a gameplay decision (asked as 7L), not this bug.
 
 ## Fix
-Planned: `== 1` -> `!= 0` in both places (switch `social.all_kinds`), plus log lines: guest "act sent (type, kind)",
-host "answer kind X to prompt kind Y, match, score/needed". Test: a fixture creature with two social kinds; a real bar
-click on a non-sing ability answering a non-sing prompt: FAIL (no answer counted) with the switch off, PASS on.
+Done (fix/l47-impress, switch `social.all_kinds`, `coop.fix social.all_kinds off` = 67-dev): social.cpp `is_social()`
+takes any ability with +0x10 != 0 as social (combat abilities have 0, docs/re/creature.md#creature-social-prompts); used
+by `social_ability` (keys 1-4, `coop.social act <id> <slot>`) and `h_BarUse` (the bar's buttons). Log lines (60 a run):
+guest "social: act sent to npc N: ability I type T kind K"; host "social: player P answers npc N: type T kind K to
+prompt I (type T kind K): match | another kind, score S of NEEDED".
+Observed: the code (`== 1` in both places, `!= 0` in player_rules). Inferred: the guest's other social abilities have
++0x10 2..4 (not seen at runtime; the fixture creature has only the sing).
 
 ## Verification
-<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
-     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+no-fail-run: pending the lead's two-player QA (built only; a creature with a second social kind is needed, the
+fixture has only the sing). Test plan in the fix/l47-impress report.
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20: fix on fix/l47-impress (built, not run in game).
