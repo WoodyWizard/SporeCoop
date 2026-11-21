@@ -43,6 +43,9 @@ source ccbd54adfa84be13e6fd85212ba6b68a80c171ff821d9ed74d0dc257ac9d9f28
 source d0c86d66df5a3429c0183a1be07270fee3d6eb84d9d716841e9f6dc6bd3e2b61
 source d17c6f4f80e7481e11c73ef6c6ef196dae5014995d9e14e29732d0b1a7ef8437
 source fb75f20b6960446a65ccf799bdd9db3d11b3532a9549bb72d66e3a80cf5b2410
+# Not listed (2026-11-21, decision 8C A): ae4c8a7f631d54817c5e8cc329d268c61ba623baa24985535e5a9626c3f695a3,
+# the main profile of a test PC. Its creations are real (made in 2020, none by a test game): no source line and
+# no creation line for it. Ban a test creation of that profile one by one with a creation line, never by source.
 # Creations imported by hand in tests (coop.library import)
 source manual-test
 

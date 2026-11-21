@@ -67,3 +67,6 @@ list is pickable again. `coop.fix library.banned off` (or fixes_off.txt): nothin
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: done on fix/l47-ship-purge (bbe18d12), FAIL / PASS live on TITAN's QA copy.
+- 2026-11-21: decision 8C A (fix/l47-msi-ban): the test PC main profile's identity (ae4c8a7f...) stays off the list;
+  its 81 creations (26 of them in test caches) were all made in 2020 in a real playthrough, none by a test game, so
+  no creation line was added; a comment in banned.txt records the review (docs/re/creations.md#creations-ban-list).
