@@ -1,6 +1,7 @@
 // The host's shots copied on the guests (BUG-0477 and its class), the old Tribe-stage villages raided in Civ
 // (BUG-0539) and the damage of a mirror's weapon dropped; moved out of civ.cpp (C8 of 0.7.15, BUG-1164).
 #include "civ_internal.h"
+#include "civ_nations.h"
 
 namespace civ {
 
@@ -733,6 +734,8 @@ VTakeDamage_t o_VTakeDamage;
 int SK_THISCALL h_VTakeDamage(void* s, float d, uint32_t pol, int t, const void* dir, void* a)
 {
     if (cosmetic_hit(a))
+        return 0;
+    if (nations::friendly(pol_of((uint8_t*)s - 0x508), pol)) // BUG-9274: the players' nations are allies
         return 0;
     return o_VTakeDamage(s, d, pol, t, dir, a);
 }

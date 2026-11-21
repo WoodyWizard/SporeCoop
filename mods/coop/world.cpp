@@ -1,6 +1,7 @@
 // World sharing: the host streams its current save folder (AppData\Spore\Games\GameN)
 // to a joining guest, who stores it as a new save slot. See docs/03-gameplay.md 3.2.
 #include "world.h"
+#include "civ_launch.h"
 #include "lifecycle.h"
 
 #include <winsock2.h>
@@ -553,7 +554,11 @@ struct PendingShare {
     int saves = 0;     // saves made for this share (the planet's file did not appear: save again)
     uint32_t tag = 0;  // the caller's tag, given back on a failure (coop.cpp: the guest's join serial)
     bool on_planet = false; // the last save was refused: the ship is on a planet (BUG-0382: share_wait)
+    uint64_t asked = 0;     // BUG-9262: the tick count it was asked at (the share hold's 2 minutes)
+    bool held = false;      // BUG-9262: the hold was logged
 };
+static std::function<bool(uint8_t, uint64_t)> g_share_hold; // BUG-9262 (home_nests.cpp)
+void set_share_hold(std::function<bool(uint8_t, uint64_t)> hold) { g_share_hold = std::move(hold); }
 // BUG-0231: the final failure of a queued share ("cannot share the world"), for the caller's retry
 static void (*g_share_failed)(uint8_t peer, uint32_t tag, bool planet_missing);
 void set_share_failed(void (*f)(uint8_t peer, uint32_t tag, bool planet_missing)) { g_share_failed = f; }
@@ -579,6 +584,7 @@ bool share_with(uint8_t peer, std::string& err, bool save_first, uint32_t tag)
             }
         PendingShare ps{peer, 0, true};
         ps.tag = tag;
+        ps.asked = GetTickCount64();
         g_pending.push_back(ps);
         return true;
     }
@@ -1257,6 +1263,12 @@ static void via_menu_tick()
     g_settle_ctx = ctx;
     if (!g_via_menu.on)
         return;
+    // BUG-9295: a guest's own Civ -> Space launch (its History, its ship editor, its first flight) runs: the host's
+    // world waits (its clock too: the 60 s cancel below counts from the end of the wait)
+    if (!g_via_menu.posted && civ::launch::holds_load()) {
+        g_via_menu.since = now;
+        return;
+    }
     // other modes (an adventure, an editor, before the first menu): load from there as before, but
     // outside the frame; a load under way (kLoad) ends in a stage, which is left first
     bool other = mode != modes::kMenu && mode != modes::kLoad && !in_stage(mode);
@@ -1332,8 +1344,8 @@ static void deferred_tick()
         return;
     uint32_t mode = game::mode_id();
     double now = H->time_seconds();
-    if (mode == modes::kEditor || mode == modes::kEdit || mode == modes::kLoad) {
-        g_deferred.back_since = 0;
+    if (mode == modes::kEditor || mode == modes::kEdit || mode == modes::kLoad || civ::launch::holds_load()) {
+        g_deferred.back_since = 0; // (BUG-9295: also while a guest's own launch runs)
         return;
     }
     if (!g_deferred.back_since) {
@@ -1377,6 +1389,7 @@ bool load_queued() { return g_editor_load_fix && (g_via_menu.on || g_deferred.on
 
 void guest_tick()
 {
+    civ::launch::tick(); // BUG-9295 (before the loads it may hold)
     intro_in_stage_tick();
     via_menu_tick();
     menu_intro_tick();
@@ -1426,6 +1439,17 @@ void tick(net::Session& s)
     for (size_t i = 0; i < g_pending.size();) {
         auto& p = g_pending[i];
         uint64_t now = GetTickCount64();
+        // BUG-9262 (Lineages BUG-9210): a guest whose own nest is about to be made gets the world with it (the nest's
+        // share joins this one, share_with), not before: it spawned at the host's nest and reloaded minutes later
+        // ("Bringing your nest"). 2 minutes at most.
+        if (p.need_save && g_share_hold && p.asked && now < p.asked + 120000 && g_share_hold(p.peer, now - p.asked)) {
+            if (!p.held) {
+                p.held = true;
+                H->log(M, SK_INFO, "world: the share for player %u waits for its own nest (BUG-9262)", p.peer);
+            }
+            ++i;
+            continue;
+        }
         if (p.need_save && g_one_save_fix) {
             // BUG-0112: a save for another share is posted already and not written yet (2+ guests
             // waiting at a stage change, or a guest that joins during another one's save): this
@@ -1691,9 +1715,10 @@ static std::wstring current_db_dir(bool lower)
     return w;
 }
 
-std::string current_game_key()
+// BUG-9261 (Lineages): the key of a planet file of the selected save slot, also right before LoadGameByName (the
+// game's current world name is still the previous one then)
+std::string game_key_for_planet(const std::string& planet)
 {
-    std::string planet = modes::current_world_name();
     if (!is_planet_file(planet))
         return "";
     std::wstring db = current_db_dir(true);
@@ -1704,6 +1729,8 @@ std::string current_game_key()
         ch = towlower(ch);
     return narrow(db + L"\\" + f);
 }
+
+std::string current_game_key() { return game_key_for_planet(modes::current_world_name()); }
 
 static void (*g_slot_replaced)(const std::string&);
 void set_slot_replaced_hook(void (*fn)(const std::string& dir)) { g_slot_replaced = fn; }

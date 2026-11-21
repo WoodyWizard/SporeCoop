@@ -633,6 +633,7 @@ void submit_tick(double now)
             if (g_submit_end_cine && world::end_cinematic("before the held editor opens (BUG-0404)"))
                 g_submit_cines_ended++;
             g_submit_end_cine = false;
+            host_busy_long_wait("the editor opens"); // BUG-9291: before the game's editor load stands this thread
             submit_now(r);
             g_submit_queued = false;
             skg::vcall<int>(r, 2); // Release

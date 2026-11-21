@@ -916,6 +916,30 @@ unsigned destroy_nulls(uintptr_t* from)
     return g_destroy_nulls;
 }
 
+// BUG-9272: a guest's game stood 17-31 s (once past the 30 s watchdog, and the host timed it out) while it tore down its
+// Tribe world for the host's world at a rejoin: the main thread in forget_sender (BUG-0456) under DestroyInstance under
+// GalaxyMenu_SimReset. forget_sender walks every object of the world (VirtualQuery on each creature and its AI) for every
+// creature or citizen destroyed: a world reset destroys hundreds of them, each walk over hundreds more. A reset leaves no
+// NPC whose stimuli could name the dying one, so the walk is skipped while the game's simulator reset runs
+// (GalaxyMenu_SimReset hooked: a flag around the call). Off: the walk for every destroy, as before.
+static bool g_reset_skip_fix = true;
+COOP_FIX("game.reset_sender_scan", "BUG-9272", g_reset_skip_fix,
+         "game: the world reset (galaxy menu, a world load) does not scan every object for each creature it destroys (a 17-31 s stall)");
+static bool g_in_sim_reset;
+static uint32_t g_reset_scans_skipped;
+using SimReset_t = void(SK_CDECL*)();
+static SimReset_t g_sim_reset_orig;
+static void SK_CDECL sim_reset_guard()
+{
+    g_in_sim_reset = true;
+    const double t0 = H->time_seconds();
+    g_sim_reset_orig();
+    g_in_sim_reset = false;
+    H->log(M, SK_INFO, "game fixes: the world reset took %.2f s; %u creature(s) destroyed without the stimulus scan (BUG-9272, %s)",
+           H->time_seconds() - t0, g_reset_scans_skipped, g_reset_skip_fix ? "on" : "off");
+    g_reset_scans_skipped = 0;
+}
+
 static void __fastcall destroy_guard(void* nm, void*, void* obj)
 {
     if (!obj && g_destroy_null_fix) {
@@ -934,13 +958,15 @@ static void __fastcall destroy_guard(void* nm, void*, void* obj)
         g_destroy_listener(obj, (uintptr_t)__builtin_return_address(0));
     if (obj && readable(obj, 0x30)) {
         uint32_t noun = game::noun_id(obj);
-        if (noun == kAnimalNoun || noun == kCitizenNoun)
+        if ((noun == kAnimalNoun || noun == kCitizenNoun) && g_reset_skip_fix && g_in_sim_reset)
+            g_reset_scans_skipped++; // BUG-9272
+        else if (noun == kAnimalNoun || noun == kCitizenNoun)
             forget_sender(obj);
     }
     if (g_avatar_target_fix && obj && readable(obj, 0x30) && game::noun_id(obj) == kAnimalNoun)
         forget_avatar_target(obj);
     bool la = false;
-    if (g_last_attacker_fix && obj && readable(obj, 0x30)) {
+    if (g_last_attacker_fix && obj && readable(obj, 0x30) && !(g_reset_skip_fix && g_in_sim_reset)) { // (BUG-9272: a reset)
         uint32_t noun = game::noun_id(obj);
         la = noun == kAnimalNoun || noun == kCitizenNoun;
     }
@@ -2009,6 +2035,9 @@ void init(const SkHost* host, SkMod* mod)
     if (!dest)
         g_destroy_orig = nullptr;
     H->log(M, SK_INFO, "game fixes: stale stimulus sender guard %s", dest ? "on" : "off");
+    if (uintptr_t sr = H->sym("SporeCoop::GalaxyMenu_SimReset")) // BUG-9272
+        if (H->hook_create(M, (void*)sr, (void*)&sim_reset_guard, (void**)&g_sim_reset_orig) != 0)
+            g_sim_reset_orig = nullptr;
     uintptr_t ts = H->sym("SporeCoop::TribeAttack_TakeSpot");
     bool spot = ts && H->hook_create(M, (void*)ts, (void*)&take_spot_guard, (void**)&g_spot_orig) == 0;
     if (!spot)
