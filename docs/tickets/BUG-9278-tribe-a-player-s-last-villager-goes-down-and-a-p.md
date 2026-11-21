@@ -10,7 +10,7 @@ role: host
 versions: 0.7.15.2
 fixed_in: unreleased
 branch: feat/lineages-rescue
-commits:
+commits: 0c488d61 6bedb1bc
 tests: tests/tribe_rescue_tests.cpp (make test), tools/tests/coop_tribe_rescue.py (suite tribe_rescue, tribe fixture); manual two-instance run on lane B (Windows), see Verification
 signature: -
 docs: docs/re/tribe.md#tribe-founder-rescue

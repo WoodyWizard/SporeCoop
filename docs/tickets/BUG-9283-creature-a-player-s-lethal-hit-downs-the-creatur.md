@@ -10,7 +10,7 @@ role: both
 versions: 0.7.15.2
 fixed_in: unreleased
 branch: feat/lineages-rescue
-commits:
+commits: 6bedb1bc
 tests: tests/creature_rescue_tests.cpp (make test), tools/tests/coop_creature_rescue.py (suite creature_rescue, creature fixture); manual two-instance runs on lane D (Windows), see Verification
 signature: -
 docs: docs/re/creature.md#creature-pack-rescue-downed
