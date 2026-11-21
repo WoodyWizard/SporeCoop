@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: feat/lineages-space
-commits: 65e118c4
+commits: 65e118c4, 256cad7c, 832e2d34
 tests: tests/space_empires_tests.cpp, tools/tests/coop_space_own_empires.py (suite space_own_empires, not run in the lab yet)
 signature:
 docs: docs/re/space.md#space-own-empires

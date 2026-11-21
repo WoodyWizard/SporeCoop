@@ -3500,3 +3500,32 @@ core together (16.4). Rivals mode (11) is a host option with own budgets and per
   ship model is cEmpire +0xB8 (mUFOKey) and the ship's cGameDataUFO +0x780; UfoGfx_SetModel 0xE9A920. The guest's own species as
   the captain (SetSpeciesProfile 0xC337D0) is not tried.
 * Rivals mode keeps its own budgets: this feature waits while it is on.
+
+## A partner's own ship, captain and cards in Space (2026-11-21, feat/lineages-space-launch)
+<a id="space-own-ship-captain"></a>
+
+BUG-9279, after [space-own-empires](#space-own-empires). Lane C, Steam exe 3010a413, two games.
+* ✔ **The keys**: cEmpire +0xB8 the spacecraft design (ResourceKey, type 0x476A98C7 group 0x40656200), +0xC4 the
+  captain creature. `SporeCoop::Empire_SetSpacecraftKey` 0xC358A0 (Lineages, verified on this exe: also gives the
+  empire's other ships the model) and `SporeCoop::cEmpire_SetCaptainKey` 0xC31100 set them; space_empires.cpp sets them
+  on a partner's game after every K_EMPIRE (K_EMPIRE carries the seat's species now, space family 1.4) and puts the
+  game's keys back before a save, with the name and colour (`space.own_ship`).
+* ✔ The captain: the seat's own species 7CA81684 (`space.own_ship` off: the save's 292ACCC6, the host's species).
+* ✔ The ship: the partner's newest own design (or `coop.space empires ship <hex>`) from its EditorSaves.package.
+  `creations::key_known` (ResourceManager FindRecord) is false for such a design while the game plays the host's world:
+  not a test for it. The library list can be empty for the first seconds of a world: retried every 3 s. With the ship
+  "bobship" 292AE660 (made in Create > Spaceship Creator of the galaxy menu) the guest's empire flew 292AE660 and the
+  host's creations list had "player 1 ufo: 7CA917D7 'bobship'" (the network key); off: the host's design for both.
+* ✔ **Cards** (feat/own-cards merged): the guest's cPlayer carries its seat's cards in Space; the seat's Space card set
+  to B40D2187 (ecologist, `coop.cards seat 3 4 B40D2187`) reached the guest's cPlayer +0x110C at once. ✗ **Its
+  archetype tool did not follow**: the guest kept the save's warrior ability "Raider Rally" D0E48980. The tool is
+  given at the Space start (0x1005C20) or by an archetype change (cMissionChangeArchetype 0xC4DB40); the map
+  archetype -> ability tool is not known yet (the next step: those two functions).
+* Not built: Lineages' per-guest launch (world::begin_local_space_intro, guest_launch_tick, civ::founder_space_ready,
+  creations::needs_local_space_intro, the vote end message "Open Civilization History..."): the guest's own ship
+  editor at the Civ -> Space launch. Today a partner designs its ship in the galaxy menu's Spaceship Creator, and the
+  newest one is its empire's ship on every load.
+* Own home planet and colonies (notes only): the partner's empire on its game is the save's player cEmpire (pol, home
+  star +0xB0, home planet +0xB4, stars +0x88); the host's colonies are its colonies on the partner's game. A home of its
+  own would be a record-level colony of its species (15.2) set as +0xB4, and the host's colonies shown as the host's
+  mirror empire (the reverse of 15): both untried.
