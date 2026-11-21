@@ -52,3 +52,9 @@ and after the host leaves to the menu and comes back; off: cards = own + host me
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on fix/l47-view (built, not run in a game yet; the lead runs the two-player test).
+- 2026-11-21: live MSI (two games, merged into feat/lineages-47): PASS on the guest (`cards=3 player_members=3
+  cards_off=9`), but the HOST's roster showed 2 cards of the guest's villagers next to its own 3 after a fresh
+  Creature -> Tribe entry with per-player founding. The pass now runs on the host too (the same swap_cards_tick, still
+  `tribe.swap_cards`; `coop.tribe perspective` reads `cards=` / `player_members=` on the host as well). Where the host's
+  extra cards come from is not known (likely, not checked: the founding's SpawnNpcTribe(.., 3 members, ..) telling the
+  stage of new members; no card-add function is known, so it is not stopped at the source).
