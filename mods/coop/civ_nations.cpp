@@ -640,6 +640,37 @@ void host_tick(double now)
     }
 }
 
+// BUG-9294: a guest whose own nation was founded while it played (its capital far from the host's) kept the camera of
+// its load, at the host's capital: its own city was 500 m away out of view. Once its game knows its own nation the
+// camera goes to its capital, once per world, the way the game's own Civ start points it (Civ_CameraHome 0xCFA570:
+// SimCamera_LookAt(camera, position, distance, 1), then SimCamera_Update). Off: the camera stays where the load put it.
+static bool g_camera_fix = true;
+COOP_FIX("civ.own_camera", "BUG-9294", g_camera_fix,
+         "civ: a guest's camera goes to its own nation's capital once its game knows that nation");
+static uint32_t g_camera_pol;   // the own nation the camera went to in this world
+static uint32_t g_camera_moves;
+static void camera_home(uint32_t pol)
+{
+    void* capital = nullptr;
+    for (auto& [c, o] : g_city_owner)
+        if (c && game::listed(c) && pol_of(c) == pol) {
+            capital = c;
+            break;
+        }
+    static uintptr_t get = H->sym("SporeCoop::SimCamera_Get"), look = H->sym("SporeCoop::SimCamera_LookAt"),
+                     update = H->sym("SporeCoop::SimCamera_Update"), dist = H->sym("SporeCoop::CivCamera_HomeDistance");
+    void* cam = capital && get ? skg::cdecl_call<void*>(get) : nullptr;
+    if (!cam || !look || !update || !dist)
+        return;
+    const net::Vec3 at = city_pos(capital);
+    float pos[3] = {at.x, at.y, at.z};
+    thiscall<void>(look, cam, pos, (const float*)dist, 1);
+    thiscall<void>(update, cam);
+    g_camera_pol = pol;
+    g_camera_moves++;
+    H->log(M, SK_INFO, "civ nations: the camera goes to our own capital at (%.0f %.0f %.0f) (BUG-9294)", at.x, at.y, at.z);
+}
+
 void guest_tick(double)
 {
     g_own = 0;
@@ -657,6 +688,8 @@ void guest_tick(double)
         if (o == me && pol != hp)
             g_own = pol;
     }
+    if (g_camera_fix && g_own && g_own != g_camera_pol && !local_play() && !world::cinematic_playing())
+        camera_home(g_own); // BUG-9294
 }
 
 void forget()
@@ -671,6 +704,7 @@ void forget()
     g_won_shown = false;
     g_own = 0;
     g_team_pols.clear();
+    g_camera_pol = 0; // BUG-9294: once per world
     g_epoch++;
 }
 LIFECYCLE_HOOK("civ.nations", lifecycle::kSessionEnd | lifecycle::kWorldChange, -45, [](const lifecycle::Ctx&) { forget(); }, false);
@@ -825,6 +859,8 @@ std::string status()
              g_won, g_owned_answers, g_cursor_lists, g_found.phase == Phase::Requested ? ("seat " + std::to_string(g_found.seat)).c_str() : "-",
              g_last.c_str());
     std::string out = b;
+    snprintf(b, sizeof b, "  own camera: fix=%d moves=%u nation=%08X\n", (int)g_camera_fix, g_camera_moves, g_camera_pol); // BUG-9294
+    out += b;
     if (!in_civ())
         return out;
     void* ex = skg::cdecl_call<void*>(a_ExpansionGet);
