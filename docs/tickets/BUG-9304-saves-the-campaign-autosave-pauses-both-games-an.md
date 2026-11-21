@@ -87,3 +87,13 @@ Built only (2026-11-20, `tools/build_windows.sh coop`, no new warnings); no game
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix/l47-saves: `world.silent_autosave` and `tribe.one_entry_reload` (decision 7M B); built, not run.
+- 2026-11-21: CORRECTION (fix/l47-saves): the first live two-game test (MSI, Vandh, coop.vote tribe) still had two
+  reloads each: the share waited its 20 s ("goes out after 20 s without the partners' villages") and no founding ran
+  in it; the founding came 25 s after the host's BUG-0332 reload. The log names no reason (the gates return
+  silently). Inferred cause: the game time is paused right after a live Tribe entry (the Tribe entry's own pause
+  0x4BF38A7 and its hints, docs/re/tribe.md BUG-0313 notes), and found_partners / auto_founders_multi wait for an
+  unpaused game; the share's own gate ignores a pause (busy::kShareGate). Also read: tribe::on_world_change is not
+  called on entering Tribe (world_check fires on leaving), so the 15 s rule was not the gate. Change: while the
+  entry's share is held, the founding does not wait for the pause (the pause bit does not stop the native forming,
+  #tribe-form-needs), and every reason it waits for is logged once ("tribe: the Tribe entry's founding waits: ...":
+  a cinematic, a save, the hut, a partner's creature settling with its key and age). Built, not run.

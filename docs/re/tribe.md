@@ -6114,6 +6114,12 @@ BUG-9304, decision 7M B. Read in the code, not traced at runtime.
   so the share save carries the villages and the `.duofounders` roster (a sidecar of the planet file in the slot,
   shared with it). Not seen in a game yet.
 * The host's own reload (BUG-0332) stays: only a load gives every game the same ground.
+* CORRECTION (2026-11-21, fix/l47-saves): the first live test (MSI) showed the hold run out (20 s) with no founding;
+  the founding came 25 s after the host's reload. ✔ (code) tribe::on_world_change does not run on entering Tribe
+  (world_check fires when the Tribe world is left), so g_auto_found_entered is the time the last Tribe was left and
+  the 15 s rule was not the gate. ? (inferred) the gate was found_partners' wait for an unpaused game time right after
+  the live entry (the entry's pause 0x4BF38A7 / its hints): the hold's founding now ignores the pause and logs what it
+  waits for ("tribe: the Tribe entry's founding waits: ...").
 ## A chief's stage powers and a partner's orders (2026-11-20, fix/l47-powers)
 <a id="tribe-chief-powers"></a>
 

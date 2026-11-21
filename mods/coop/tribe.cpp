@@ -8590,6 +8590,19 @@ static void entry_release(const char* why)
     g_entry_releases++;
     H->log(M, SK_INFO, "tribe: the Tribe entry's share goes out (BUG-9304): %s", why);
 }
+// BUG-9304 (live test 2026-11-21, MSI: the share waited its 20 s and no founding ran, no reason in the log): why the
+// founding does nothing while the entry's share waits, logged when it changes
+static void entry_note(const std::string& why)
+{
+    static std::string last;
+    if (!world::entry_share_held() || why == last) return;
+    last = why;
+    H->log(M, SK_INFO, "tribe: the Tribe entry's founding waits: %s (BUG-9304)", why.c_str());
+}
+// the founding of the entry's held share does not wait for the game time: at a live Tribe start the game time can be
+// paused for seconds (after a load it is for ~7 s, docs/re/tribe.md), the share's own gate ignores a pause
+// (busy::kShareGate) and the pause bit does not stop the native forming (docs/re/tribe.md#tribe-form-needs)
+static bool entry_founding_paused_ok() { return g_one_entry_reload && world::entry_share_held(); }
 
 // the checkpoint after new founders were saved (both games load the planet with the new villages)
 static void founders_refresh(const std::function<void(const std::string&)>& report)
@@ -8626,10 +8639,13 @@ static void found_partners()
 {
     if (!g_auto_founders || g_auto_found_manual_off || !active() || !is_host() || C.sess->players().size() < 2 ||
         world::load_queued() || world::save_busy() || (world::save_pending() && !world::entry_share_held()) ||
-        world::cinematic_playing() || world::time_paused()) {
+        world::cinematic_playing() || (world::time_paused() && !entry_founding_paused_ok())) {
         g_found_skip = "off, alone, or the game is busy (load, save, cinematic, pause)";
+        entry_note(std::string("found_partners: ") + (world::load_queued() ? "a load is queued" : world::save_busy() ? "a save is written"
+                   : world::cinematic_playing() ? "a cinematic plays" : !active() ? "not active" : "off or alone"));
         return;
     }
+    if (world::time_paused()) entry_note("the game time is paused: founding anyway");
     auto report = [](const std::string& text) {
         if (text == g_auto_found_notice) return;
         g_auto_found_notice = text;
@@ -8641,6 +8657,7 @@ static void found_partners()
     if (planet.empty() || !home || !intact_village(home) || !a_SpawnNpcTribe) {
         g_found_skip = planet.empty() ? "no planet" : !home ? "no host village" : !a_SpawnNpcTribe ? "no symbol"
                                                                                : "the host's village is not intact (its hut)";
+        entry_note(g_found_skip);
         return;
     }
     const uint32_t home_species = tribe_info(home).key.instance, home_faction = F<uint32_t>(home, 0x30);
@@ -8692,7 +8709,16 @@ static void found_partners()
         tribe_late::Wait kind;
         if (founding_ready(p, now, &reason, &kind)) { partner = p; partner_kind = kind; break; }
         if (why.empty() && !reason.empty()) { why = reason; why_player = p; why_kind = kind; }
-        if (kind == tribe_late::Wait::Settling || kind == tribe_late::Wait::NoCreatureYet) soon = true;
+        if (kind == tribe_late::Wait::Settling || kind == tribe_late::Wait::NoCreatureYet) {
+            soon = true;
+            char b[200];
+            const auto key = creations::player_key(p, creations::kCreature);
+            snprintf(b, sizeof b, "player %u's creature %s (key %08X, species %s, changed %.0f s ago)", p,
+                     kind == tribe_late::Wait::Settling ? "is settling" : "is not here yet", key.instance,
+                     creations::player_species(p) ? "found" : "missing",
+                     now - creations::player_key_changed_at(p, creations::kCreature));
+            entry_note(b);
+        }
     }
     if (partner >= 0xFE && soon && world::entry_share_held()) return; // (BUG-9304: the share waits, 20 s at most)
     if (partner >= 0xFE) { // the host's status line names them (tribe.late_prompt)
@@ -8806,8 +8832,13 @@ static void found_partners()
 static void auto_founders_multi(double now)
 {
     if (!g_auto_founders || g_auto_found_manual_off || !is_host() || g_auto_found_queued || now < g_auto_found_at ||
-        C.sess->players().size() < 2 || world::cinematic_playing() || world::time_paused() ||
-        world::load_queued() || world::save_busy() || (world::save_pending() && !world::entry_share_held())) return;
+        C.sess->players().size() < 2) return;
+    if (world::cinematic_playing() || (world::time_paused() && !entry_founding_paused_ok()) ||
+        world::load_queued() || world::save_busy() || (world::save_pending() && !world::entry_share_held())) {
+        entry_note(world::cinematic_playing() ? "a cinematic plays" : world::load_queued() ? "a load is queued"
+                   : world::save_busy() ? "a save is written" : "busy");
+        return;
+    }
     g_auto_found_at = now + (world::entry_share_held() ? 1 : 5); // (BUG-9304: the entry's share waits)
     if (!g_auto_found_refresh && g_order_roster.guest().faction &&
         party::unseated_partners(g_order_roster, founder_creature_match).empty()) {
