@@ -10,10 +10,10 @@ role:
 versions: unreleased
 fixed_in: unreleased
 branch: fix/w62-flake-tcs
-commits:
+commits: 50052a59, fa98a003
 tests: space_npc_model, space_npc_model_coop
 signature:
-docs:
+docs: docs/06-testing.md#testing-fixcheck-nan-claims
 related: BUG-1363, BUG-1213, BUG-0546
 ---
 
