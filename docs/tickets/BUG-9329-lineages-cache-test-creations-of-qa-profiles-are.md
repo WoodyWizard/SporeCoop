@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: owner report 2026-11-21, decision 7Z A
 role: all
 versions: 0.7.14.1-lineages57-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-ship-purge
 commits: bbe18d12
 tests: tools/qa_win (manual, TITAN QA games, 2026-11-21: coop.library, coop.library pickships 200, a save with a moved-out creature)
@@ -70,3 +70,4 @@ list is pickable again. `coop.fix library.banned off` (or fixes_off.txt): nothin
 - 2026-11-21: decision 8C A (fix/l47-msi-ban): the test PC main profile's identity (ae4c8a7f...) stays off the list;
   its 81 creations (26 of them in test caches) were all made in 2020 in a real playthrough, none by a test game, so
   no creation line was added; a comment in banned.txt records the review (docs/re/creations.md#creations-ban-list).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

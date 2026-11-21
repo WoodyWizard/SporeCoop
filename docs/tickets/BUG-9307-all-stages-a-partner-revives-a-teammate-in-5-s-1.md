@@ -1,17 +1,17 @@
 ---
 id: BUG-9307
 title: All stages: a partner revives a teammate in 5 s (1.5 s before, Space repair 2 s)
-status: open
+status: fixed
 kind: feature
 stage: all
 reported: 2026-11-20
 source: owner request 2026-11-20
 role: all
 versions: 
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch:
-commits:
-tests:
+commits: 419b0e84
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature:
 docs:
 related:
@@ -36,3 +36,5 @@ Creature and Tribe hints print the time from it.
 ## History
 - 2026-11-20: opened.
 - 2026-11-21: live two-game QA (see Verification).
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

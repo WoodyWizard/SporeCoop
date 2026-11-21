@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: QA 2026-11-21
 role: both
 versions: 0.7.14.1-lineages67-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-final-rings
 commits: 30549e5b
 tests: tools/qa_win (manual, two TITAN QA games, 2026-11-21)
@@ -45,3 +45,4 @@ in the co-op window's vote line; notices strip it (BUG-9239).
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fixed on fix/l47-final-rings (30549e5b), FAIL / PASS live in Civ.
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

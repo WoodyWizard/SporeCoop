@@ -1,17 +1,17 @@
 ---
 id: BUG-9298
 title: Tribe: an outfit vote the guest never answers blocks every save and guest purchase
-status: open
+status: fixed
 kind: bug
 stage: tribe
 reported: 2026-11-20
 source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with the host log)
 role: all
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-births
-commits:
-tests:
+commits: d481096a, 8a76f7fc, 212b8595
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature:
 docs: docs/re/tribe.md#tribe-outfit-vote-timeout-births, docs/06-testing.md#testing-outfit-vote-timeout-births
 related: BUG-9043, BUG-9299
@@ -72,6 +72,7 @@ Done (2026-11-20, fix/l47-births), switch `tribe.outfit_vote_timeout` (on; off =
   timed_out=0`). (2) The host's Planner -> Edit Outfit, the guest's Done in its own outfitter: `ready=1
   result=7CE63A2C`, then `token=0 pending=0`, the host's new outfit recorded and shared (BUG-9301). No vote was left
   pending, no timeout needed.
+no-fail-run: checked by hand in live two-game QA (no lab on Windows); the PASS evidence is above, the old behaviour stays behind the switch.
 
 ## History
 - 2026-11-20: opened.
@@ -79,3 +80,5 @@ Done (2026-11-20, fix/l47-births), switch `tribe.outfit_vote_timeout` (on; off =
 - 2026-11-21: live two-game QA (see Verification).
 - 2026-11-21: second live QA run (see Verification).
 - 2026-11-21: fix/l47-final-tribe: the answered vote ends normally, twice (Verification).
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

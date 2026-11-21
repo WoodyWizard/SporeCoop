@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages68-dev] - 2026-11-21
+
+- All stages: a soft ring in each player's colour under every unit a partner controls (creature and pack, villagers,
+  vehicles, ships). It sits in the world, hidden behind units, and under the Spore Guide and other windows (BUG-9321,
+  BUG-9319, BUG-9324, BUG-9325, BUG-9327). The co-op notices stay under the Spore Guide too (BUG-9322).
+- All stages: reviving a downed teammate takes 5 s (BUG-9307).
+- Creature: everyone sees the same visiting spaceship (BUG-9328).
+- Creature: a partner's social answers other than sing count, so the impress bar fills; the meter fills smoothly on a
+  partner's screen; a creature a partner wins in a social game joins that partner's pack (BUG-9297, BUG-9305,
+  BUG-9308).
+- Lineages Cache: leftover test creations are moved out of every player's cache into a "banned" folder (never
+  deleted) and are never shared or picked by the game again. The ban list ships with the mod (BUG-9329).
+- Tribe: a partner's village gets its own animal pen and egg pen, so taming by feeding works for partners (BUG-9326).
+- Tribe: the chief's powers work for partners, and each village has its own tamed-animal cap of 5 (BUG-9306).
+- Tribe: a partner's own totem gets its pieces for the party's wins (BUG-9318).
+- Tribe: partner orders (repair, meat, raids) run on the host; an order the host refuses says why (BUG-9303).
+- Tribe: an outfit vote no longer blocks saves and purchases; a partner's births are no longer refused; the member
+  list shows only your own villagers; the host's outfit changes reach the partner; a partner's villagers carry their
+  player's ring (BUG-9298, BUG-9299, BUG-9300, BUG-9301, BUG-9302).
+- Tribe: no names over villagers (the ring is enough) and no green food line at the top right (BUG-9314, BUG-9315).
+- Tribe: after the party's village is wiped, raiders stay away for 2 minutes (BUG-9320, still being tested).
+- Saves: the campaign autosave no longer pauses both games and shows the saved box (BUG-9304).
+- Civ: a newcomer who takes an offline player's seat founds a nation of their own (BUG-9309).
+- Civ: a partner's superweapons work without crashing the host, everyone sees their effects, a global superweapon
+  spares the party's nations and costs 12,000 per party nation (BUG-9310, BUG-9312, BUG-9313, BUG-9317).
+- Civ: a partner's own card unlocks no longer unlock for the host; no false shared-money spend after a partner's
+  reload; your own name tags no longer show the test tag (BUG-9311, BUG-9316, BUG-9323).
+
 ## [0.7.14.1-lineages67-dev] - 2026-11-20
 
 - A partner's name plate edge and arrow are drawn in that player's colour, so you can tell players apart at a glance

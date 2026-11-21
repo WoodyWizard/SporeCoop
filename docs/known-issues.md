@@ -3968,6 +3968,7 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Reproduce: Civ with a partner, press H while money is shared.
 * BUG-9323. Civ: this player's own name tags show the -NoShare- test tag (`CivGuest-NoShare-`, `[CivGuest-NoShare-]`).
 * Reproduce: join a Civ session as `X-NoShare-` and look at the own vehicle and capital: their name tags show the tag.
+* CORRECTION (2026-11-21, feat/lineages-47): BUG-9322 and BUG-9323 are fixed (fix/l47-final-rings), and the ring over HUD windows is fixed in Civ, Tribe and Space by drawing the rings before the UI (BUG-9327); released in 68-dev.
 ## Tribe after fix/l47-tribe2 (2026-11-21)
 <a id="known-tribe-l47-tribe2"></a>
 

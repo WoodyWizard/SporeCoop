@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: owner report 2026-11-21
 role: guest
 versions: 0.7.14.1-lineages57-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-ship-purge
 commits: bbe18d12
 tests: tools/qa_win (manual, two TITAN QA games, 2026-11-21: host coop.drama start 2, coop.drama ship on both)
@@ -56,3 +56,4 @@ Debug: `coop.drama ship`.
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fixed on fix/l47-ship-purge (bbe18d12), FAIL / PASS live on TITAN's QA copy.
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

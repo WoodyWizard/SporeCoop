@@ -1,14 +1,14 @@
 ---
 id: BUG-9317
 title: Civ: a party nation's global superweapon (types 2, 8) costs 12000 for every city not of the firer, the party's own cities included (decision 7T A)
-status: open
+status: fixed
 kind: feature
 stage: Civ
 reported: 2026-11-21
 source: owner decision 7T A (2026-11-21)
 role: both
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-money
 commits: cca8c393
 tests: manual two-game live test (docs/06-testing.md#testing-reload-spend-sw-price); no lab test yet
@@ -54,3 +54,5 @@ appeared later. Outputs out/qa-runs/20261121-l47-money/run-9317-*.txt, screensho
 ## History
 - 2026-11-21: opened (owner decision 7T A).
 - 2026-11-21: fixed on fix/l47-money (civ.global_sw_party_price), live FAIL / PASS on TITAN.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

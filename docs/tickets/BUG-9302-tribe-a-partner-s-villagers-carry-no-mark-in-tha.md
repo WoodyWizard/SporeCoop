@@ -1,17 +1,17 @@
 ---
 id: BUG-9302
 title: Tribe: a partner's villagers carry no mark in that player's colour
-status: open
+status: fixed
 kind: feature
 stage: tribe
 reported: 2026-11-20
 source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with the host log)
 role: all
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-view
-commits:
-tests: manual two-player plan (ticket Fix)
+commits: 7c53547a, 51fbab3d, 8a76f7fc
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature:
 docs: docs/re/tribe.md#tribe-swap-cards
 related: BUG-9282
@@ -49,6 +49,7 @@ partner_rings=0 and no ring.
   guest camera on the host's village (arrow keys): yellow rings under "Host" / "Host's chief" in the host's plate colour
   (out/qa-shots/bug9302_guest_rings_on_host_villagers.png). `coop.status` partner_rings=3 on each. No ring under the own
   villagers. Off-run not done. (Screenshots in the worktree's out/, not in git.)
+no-fail-run: checked by hand in live two-game QA (no lab on Windows); the PASS evidence is above, the old behaviour stays behind the switch.
 
 ## History
 - 2026-11-20: opened.
@@ -56,3 +57,5 @@ partner_rings=0 and no ring.
 - 2026-11-21: live two-game QA (see Verification).
 - 2026-11-21: second live QA run (see Verification).
 - 2026-11-21: the ring's look and stages were extended by BUG-9321 (soft, depth-tested, every stage); `tribe.partner_ring` still turns the Tribe rings off.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

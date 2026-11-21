@@ -1,14 +1,14 @@
 ---
 id: BUG-9310
 title: Civ (host): a partner's superweapon fired from its own nation (civ.guest_superweapons) crashes the host in FireSuperweapon's city check
-status: open
+status: fixed
 kind: crash
 stage: Civ
 reported: 2026-11-21
 source: live QA 2026-11-21 (TITAN, DuoQACivHost Abber + DuoQACivGuest), crash-20261121-035634-i9
 role: host
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-civ
 commits: ffe972b0
 tests: manual two-game live test (docs/06-testing.md#testing-partner-superweapon); no lab test yet
@@ -98,3 +98,5 @@ ground beside the host's capital, in both cameras).
 ## History
 - 2026-11-21: opened (live QA, the host crashed; not fixed).
 - 2026-11-21: root cause found (a partner nation has no superweapon tools); fixed on fix/l47-civ (civ.partner_sw_tools), swgrant grants last; live FAIL / PASS on TITAN.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

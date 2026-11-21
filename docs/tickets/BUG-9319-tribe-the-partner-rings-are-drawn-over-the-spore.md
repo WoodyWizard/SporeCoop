@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: QA 2026-11-21
 role: both
 versions: 0.7.14.1-lineages67-dev (fix/l47-tribe 3e6d1b0a)
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages68-dev
 branch: feat/l47-rings
 commits: d19ed484
 tests: tools/qa_win (manual, two TITAN QA games, 2026-11-21)
@@ -50,3 +50,4 @@ over the bar). Off: both drawn (67-dev). Readout: `coop.status` `labels: ... cov
 ## History
 - 2026-11-21: opened (fix/l47-tribe live QA).
 - 2026-11-21: fixed on feat/l47-rings (d19ed484), FAIL / PASS live in Civ and Tribe.
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

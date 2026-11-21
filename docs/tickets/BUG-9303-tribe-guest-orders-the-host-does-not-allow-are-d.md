@@ -1,17 +1,17 @@
 ---
 id: BUG-9303
 title: Tribe (guest): orders the host does not allow are dropped silently (fishing, meat, eggs, bundles, loose fruit, repair) and the chief aura is host-only
-status: open
+status: fixed
 kind: bug
 stage: tribe
 reported: 2026-11-20
 source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with the host log)
 role: guest
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-powers
 commits: 0306419f, 212b8595
-tests:
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature:
 docs:
 related:
@@ -116,3 +116,5 @@ Done on fix/l47-powers (built; not run in a game yet):
 - 2026-11-21: third live run (fix/l47-tribe): loose fruit PASS; raid not reachable natively in the test world.
 - 2026-11-21: fix/l47-final-tribe: repair, meat and food raid PASS; tame crashed the host (BUG-9326, guarded); eggs
   guarded; feed and fishing not run.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

@@ -1,14 +1,14 @@
 ---
 id: BUG-9316
 title: Civ (host): after a guest's world reload the host logs a large shared-money spend from that guest (seen after coop.civ swgrant money writes)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-21
 source: live QA 2026-11-21 (TITAN, fix/l47-decide, Abber)
 role: host
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-money
 commits: 8692238f
 tests: manual two-game live test (docs/06-testing.md#testing-reload-spend-sw-price); tests/npc_tests.cpp (stage_epoch::is_open); no lab test yet
@@ -72,3 +72,5 @@ out/qa-runs/20261121-l47-money/ of the worktree (not in git); screenshots out/qa
 - 2026-11-21: opened.
 - 2026-11-21: analysed (a real bug: a reload's Galaxy menu frame, not swgrant), fixed on fix/l47-money (res.load_hold),
   live FAIL / PASS on TITAN.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

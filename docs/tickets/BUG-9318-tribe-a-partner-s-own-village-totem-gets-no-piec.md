@@ -1,17 +1,17 @@
 ---
 id: BUG-9318
 title: Tribe: a partner's own village totem gets no piece for the party's wins and no totem cutscene
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-21
 source: owner 2026-11-21
 role: guest
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-tribe
 commits: 3c2a6550, 59d47c0a, db507eef, 8bd69ecc
-tests: manual two-game MSI run (ticket Verification)
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature:
 docs: docs/re/tribe.md#tribe-partner-totems
 related: BUG-9155, BUG-9158, BUG-0531, BUG-0983
@@ -94,3 +94,5 @@ own_totem= own_pieces= last:`; logs "tribe: seat N's village got a totem", "seat
 - 2026-11-21: fix/l47-tribe: partner totems (live PASS on / FAIL off); the guest cutscene diagnosed, off by default.
 - 2026-11-21: fix/l47-tribe2: the guest cutscene runs the game's hut upgrade (its actors); no sky now, but no totem
   close-up either: still off (Verification).
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

@@ -1,17 +1,17 @@
 ---
 id: BUG-9301
 title: Tribe (guest): the host's villagers keep the wrong body (no species sync for mirrors)
-status: open
+status: fixed
 kind: desync
 stage: tribe
 reported: 2026-11-20
 source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with the host log)
 role: guest
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-view
-commits:
-tests: manual two-player plan (ticket Fix)
+commits: 7c53547a, 51fbab3d, ab158f07, 8a76f7fc, 3c2a6550, 212b8595
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature:
 docs: docs/re/tribe.md#tribe-swap-cards
 related: BUG-9043, BUG-9153
@@ -80,6 +80,7 @@ guest's `coop.tribe species` shows the host's village with the host's key; off: 
     292BC151 = 7DBCDD56 here" (before: 291EE5B5): the guest's copy of the host's village wears the new outfit
     (out/qa-shots/bug9301_pass_guest_sees_host_outfit.png; at this distance and from behind the cap itself is not
     visible, so the look was judged by the species key, not by eye).
+no-fail-run: checked by hand in live two-game QA (no lab on Windows); the PASS evidence is above, the old behaviour stays behind the switch.
 
 ## History
 - 2026-11-20: opened.
@@ -95,3 +96,5 @@ guest's `coop.tribe species` shows the host's village with the host's key; off: 
 - 2026-11-21: second live QA run (see Verification).
 - 2026-11-21: third live run: the NPC species "mismatch" is the remap (same look); the outfit change not reached.
 - 2026-11-21: fix/l47-final-tribe: the host's outfit change reached the guest end to end (Verification).
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

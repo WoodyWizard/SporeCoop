@@ -1,14 +1,14 @@
 ---
 id: BUG-9313
 title: Civ: a party player's global superweapon (types 2, 8) also hits the other party nations' cities (decision 7P A: spare them)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-21
 source: owner decision 7P A, 2026-11-21
 role: host
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-decide
 commits: 2d52f56a
 tests: manual two-game live test (docs/06-testing.md#testing-global-sw-newcomer); no lab test yet
@@ -56,3 +56,5 @@ outside the party; a native NPC nation (21CE) appeared during the run.
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fixed on fix/l47-decide (civ.global_sw_spares_party), live FAIL / PASS on TITAN.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

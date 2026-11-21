@@ -1,17 +1,17 @@
 ---
 id: BUG-9304
 title: Saves: the campaign autosave pauses both games and shows the saved box
-status: open
+status: fixed
 kind: feature
 stage: all
 reported: 2026-11-20
 source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with the host log)
 role: host
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-saves
 commits: 6ae83163
-tests:
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature:
 docs: docs/re/tribe.md#tribe-entry-reloads, docs/re/creature.md#creature-save-steps
 related: BUG-0332, BUG-9260, BUG-9137, BUG-9210
@@ -99,3 +99,5 @@ Built only (2026-11-20, `tools/build_windows.sh coop`, no new warnings); no game
   #tribe-form-needs), and every reason it waits for is logged once ("tribe: the Tribe entry's founding waits: ...":
   a cinematic, a save, the hut, a partner's creature settling with its key and age). Built, not run.
 - 2026-11-21: live two-game QA (see Verification).
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

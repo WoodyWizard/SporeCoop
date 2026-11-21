@@ -1,17 +1,17 @@
 ---
 id: BUG-9299
 title: Tribe (guest): births are refused while a save is only queued or the host's own birth is pending
-status: open
+status: fixed
 kind: bug
 stage: tribe
 reported: 2026-11-20
 source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with the host log)
 role: guest
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-births
-commits:
-tests:
+commits: d481096a, 8a76f7fc
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature:
 docs: docs/re/tribe.md#tribe-outfit-vote-timeout-births, docs/06-testing.md#testing-outfit-vote-timeout-births
 related: BUG-9298
@@ -69,6 +69,7 @@ Done (2026-11-20, fix/l47-births), switch `tribe.guest_birth_gate` (on; off = re
   tribe.guest_birth_gate off` on the host, the same two clicks): 10:04:12.486 "player 1's purchase refused: Births are
   not available at this point in the Tribal campaign." (rejected=1): the 67-dev report's refusal. Cause 2 of the root
   cause (the host's +3A3 flag down during its own birth) is now seen at runtime.
+no-fail-run: checked by hand in live two-game QA (no lab on Windows); the PASS evidence is above, the old behaviour stays behind the switch.
 
 ## History
 - 2026-11-20: opened.
@@ -76,3 +77,5 @@ Done (2026-11-20, fix/l47-births), switch `tribe.guest_birth_gate` (on; off = re
 - 2026-11-21: live two-game QA (see Verification).
 - 2026-11-21: second live QA run (see Verification).
 - 2026-11-21: third live run (fix/l47-tribe): the host's own birth case PASS on, FAIL off.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

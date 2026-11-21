@@ -1,14 +1,14 @@
 ---
 id: BUG-9309
 title: Civ (guest): a newcomer who takes an offline player's party seat gets no nation of its own (every founder seat taken)
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-21
 source: live QA 2026-11-21 (TITAN, DuoQACivHost Abber + DuoQACivGuest)
 role: guest
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-decide
 commits: 2d52f56a
 tests: tests/civ_seats_tests.cpp (seat limit cases); manual two-game live test (docs/06-testing.md#testing-global-sw-newcomer)
@@ -67,3 +67,5 @@ Live, TITAN QA copy (build fix/l47-decide), host DuoQACivHost / Abber (instance 
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: owner decision 7S B (a newcomer founds a nation of its own); fixed on fix/l47-decide (civ.newcomer_nation), live FAIL / PASS on TITAN.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

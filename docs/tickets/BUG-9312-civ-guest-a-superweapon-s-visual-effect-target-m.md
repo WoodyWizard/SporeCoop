@@ -1,14 +1,14 @@
 ---
 id: BUG-9312
 title: Civ (guest): a superweapon's visual effect (target marker, impact) is drawn on the host's screen only, never on a guest's
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-21
 source: live QA 2026-11-21 (TITAN, fix/l47-civ, BUG-9310 test)
 role: guest
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-decide
 commits: 2d52f56a
 tests: manual two-game live test (docs/06-testing.md#testing-global-sw-newcomer); no lab test yet
@@ -65,3 +65,5 @@ beside it), shots of host and guest one after another (~0.5 s each).
 - 2026-11-21: opened.
 - 2026-11-21: found while testing BUG-9310 (not fixed; a visual relay of the launch is new work).
 - 2026-11-21: fixed on fix/l47-decide (civ.sw_show: the host relays the launch, a guest fires the same tool without damage), live FAIL / PASS on TITAN.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

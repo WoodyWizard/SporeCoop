@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: QA 2026-11-21
 role: both
 versions: 0.7.14.1-lineages67-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-final-rings
 commits: 30549e5b, 2a83437c
 tests: tools/qa_win (manual, two TITAN QA games, 2026-11-21)
@@ -72,3 +72,4 @@ the grown ring, 67-dev). `coop.rings sink <cell> <space>` still sets a value for
 - 2026-11-21: CORRECTION (owner review): the system-view crop (bug9325_system_view_FAIL_off_vs_PASS_on_crop.png) shows the ring over the hull in both halves: the system view is not fixed, only Space on a planet. Reopened for the system view on fix/l47-final-rings.
 - 2026-11-21: reopened for the system view (the owner); space.ring_cut fallback coded, not run live yet.
 - 2026-11-21: system view checked live (2a83437c build): FAIL off / PASS on; fixed again.
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

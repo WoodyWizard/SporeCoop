@@ -1,17 +1,17 @@
 ---
 id: BUG-9300
 title: Tribe (guest): the member list shows both players' villagers after the own-village swap
-status: open
+status: fixed
 kind: bug
 stage: tribe
 reported: 2026-11-20
 source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with the host log)
 role: guest
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-view
-commits:
-tests: manual two-player plan (ticket Fix)
+commits: 7c53547a, 51fbab3d, ab158f07
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature:
 docs: docs/re/tribe.md#tribe-swap-cards
 related: BUG-9153
@@ -49,6 +49,7 @@ and after the host leaves to the menu and comes back; off: cards = own + host me
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 - Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): PASS (on): guest cards=3 player_members=3 cards_off=9 (first run) and cards_off=3 (second); the host (after ab158f07) cards=3 player_members=3 cards_off=6. The first run (before ab158f07) showed the guest's 2 villager cards on the host's roster. Off-run not done.
+no-fail-run: checked by hand in live two-game QA (no lab on Windows); the PASS evidence is above, the old behaviour stays behind the switch.
 
 ## History
 - 2026-11-20: opened.
@@ -60,3 +61,5 @@ and after the host leaves to the menu and comes back; off: cards = own + host me
   extra cards come from is not known (likely, not checked: the founding's SpawnNpcTribe(.., 3 members, ..) telling the
   stage of new members; no card-add function is known, so it is not stopped at the source).
 - 2026-11-21: live two-game QA (see Verification).
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

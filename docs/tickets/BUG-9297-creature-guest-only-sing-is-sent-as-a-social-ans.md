@@ -1,17 +1,17 @@
 ---
 id: BUG-9297
 title: Creature (guest): only sing is sent as a social answer, so the impress bar never fills
-status: open
+status: fixed
 kind: bug
 stage: creature
 reported: 2026-11-20
 source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with the host log)
 role: guest
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-impress
-commits:
-tests:
+commits: 0e2a2801, 9d64f85d
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature:
 docs: docs/re/creature.md#creature-social-prompts
 related: BUG-0179, BUG-0518, BUG-0525, BUG-9136, BUG-9258
@@ -55,3 +55,5 @@ fixture has only the sing). Test plan in the fix/l47-impress report.
 - 2026-11-20: opened.
 - 2026-11-20: fix on fix/l47-impress (built, not run in game).
 - 2026-11-21: live two-game QA (see Verification).
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

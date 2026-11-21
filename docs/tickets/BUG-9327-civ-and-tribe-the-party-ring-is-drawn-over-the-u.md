@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: owner 2026-11-21
 role: both
 versions: 0.7.14.1-lineages67-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-final-rings
 commits: 30549e5b
 tests: tools/qa_win (manual, two TITAN QA games, 2026-11-21)
@@ -56,3 +56,4 @@ The game's selection marker was not analysed (not needed); noted as another way 
 ## History
 - 2026-11-21: opened (owner report during the live Civ test).
 - 2026-11-21: fixed on fix/l47-final-rings (30549e5b), FAIL / PASS live in Civ and Tribe.
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

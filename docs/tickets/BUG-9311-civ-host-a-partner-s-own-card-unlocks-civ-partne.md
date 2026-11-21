@@ -1,14 +1,14 @@
 ---
 id: BUG-9311
 title: Civ (host): a partner's own card unlocks (civ.partner_unlocks, 7Q A) also unlock the host's and the other seats' nations
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-21
 source: live QA 2026-11-21 (TITAN, DuoQACivHost Abber + DuoQACivGuest)
 role: host
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-civ
 commits: ffe972b0
 tests: manual two-game live test (docs/06-testing.md#testing-partner-superweapon); no lab test yet
@@ -67,3 +67,5 @@ Live, TITAN QA copy (build fix/l47-civ ffe972b0), host DuoQACivHost / Abber (ins
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: root cause found (the host's cPlayer cards were never put back after a partner's unlock run); fixed on fix/l47-civ (civ.unlock_cards_restore); live FAIL / PASS on TITAN.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

@@ -8,10 +8,10 @@ reported: 2026-11-21
 source: QA 2026-11-21
 role: host
 versions: 0.7.14.1-lineages67-dev (fix/l47-final-tribe)
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-final-tribe, fix/l47-pens
 commits: 8836d797, 212b8595, 25f2d7ba, 91de3c21
-tests:
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature: 0xC0000005 at 0xDAD6A3 (read 0x70), main thread, in a citizen behaviour tree tick (BehaviorTreeTickGeneric+0x540); the crash text names it BT_CitizenKnockoutEnd+0x9D3 (nearest symbol, not the function)
 docs: docs/re/tribe.md#tribe-final-qa, docs/re/tribe.md#tribe-partner-pens
 related: BUG-9303, BUG-0856
@@ -100,3 +100,4 @@ restored after each session), no lab run (a Windows-only path):
 - 2026-11-21: opened, fixed on fix/l47-final-tribe (`tribe.partner_pen_guard`), FAIL / PASS live (Verification).
 - 2026-11-21: fix/l47-pens: partner founder villages get the game's own pens (`tribe.partner_pens`, owner decision 8A A);
   the egg order only on the own egg pen; live FAIL / PASS (Verification).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

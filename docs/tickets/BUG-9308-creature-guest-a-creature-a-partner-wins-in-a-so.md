@@ -1,17 +1,17 @@
 ---
 id: BUG-9308
 title: Creature (guest): a creature a partner wins in a social game never joins the partner's pack
-status: open
+status: fixed
 kind: bug
 stage: Creature
 reported: 2026-11-20
 source: decision 7L (owner, 2026-11-20) and the 67-dev guest report 20261120-205700
 role: guest
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-impress
-commits:
-tests:
+commits: 0e2a2801, a5a8cf31, 9d64f85d, 59d47c0a
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature:
 docs: docs/re/creature.md#creature-native-recruit, docs/re/creature.md#creature-partner-social-goal
 related: BUG-9297, BUG-9305, BUG-9129, BUG-9248
@@ -110,3 +110,5 @@ no-fail-run: pending the lead's two-player QA (built only).
 - 2026-11-21: live two-game QA (see Verification).
 - 2026-11-21: second live run; `social.partner_relation` (every partner win was a recruit game); see Fix and Verification.
 - 2026-11-21: third live run (fix/l47-tribe): a partner's recruit game won end to end, the creature joins and follows.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

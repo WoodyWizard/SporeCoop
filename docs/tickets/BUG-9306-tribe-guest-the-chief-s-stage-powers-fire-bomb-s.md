@@ -1,17 +1,17 @@
 ---
 id: BUG-9306
 title: Tribe (guest): the chief's stage powers (Fire Bomb, Summon) are refused, later stage powers likely too
-status: open
+status: fixed
 kind: bug
 stage: Tribe
 reported: 2026-11-20
 source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with the host log)
 role: guest
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: fix/l47-powers
 commits: 0306419f, db507eef, 8bd69ecc, 8836d797, 212b8595
-tests:
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
 signature:
 docs:
 related: BUG-9303
@@ -211,3 +211,5 @@ Done on fix/l47-powers (built; not run in a game yet):
 - 2026-11-21: fix/l47-final-tribe: the real PASS (both villages at the cap, each with its own pets) and FAIL; the cap
   is the game's 5; the split and dead flag only in the taming step; `coop.tribe powers pets` caps,
   `coop.tribe powers ready`.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

@@ -1,14 +1,14 @@
 ---
 id: BUG-9321
 title: All stages: a soft gradient ring in the player's colour under every unit a partner controls
-status: open
+status: fixed
 kind: feature
 stage: all
 reported: 2026-11-21
 source: owner request 2026-11-21
 role: all
 versions: 0.7.14.1-lineages67-dev
-fixed_in:
+fixed_in: 0.7.14.1-lineages68-dev
 branch: feat/l47-rings
 commits: d19ed484
 tests: tools/qa_win (manual, two TITAN QA games, 2026-11-21)
@@ -86,3 +86,5 @@ the cell's body (docs/re/graphics.md#graphics-overlay-depth).
 - 2026-11-21: opened.
 - 2026-11-21: built on feat/l47-rings (d19ed484), live QA on TITAN (see Verification).
 - 2026-11-21: final check on fix/l47-final-rings: BUG-9324, BUG-9325, BUG-9327 found and fixed (30549e5b).
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.
