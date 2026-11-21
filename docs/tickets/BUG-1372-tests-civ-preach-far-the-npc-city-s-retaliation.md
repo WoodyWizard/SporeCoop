@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w61-civ
-commits:
+commits: 5c29c021
 tests: civ_preach_far, civ_preach_far_off (twin)
 signature: FAIL the preachers converted citizens of the far city on the host (0 -> 0)
 docs: docs/re/civ.md#civ-influence-relay

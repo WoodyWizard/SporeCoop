@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w61-civ
-commits:
+commits: 28b70c3d
 tests: party_civ_trade
 signature: FAIL [owners] three cities: Alice, Bob and Carol own one each, no shared capital ({0: 253, 1: 0, 2: 0})
 docs: docs/re/civ.md#civ-capture-keeps

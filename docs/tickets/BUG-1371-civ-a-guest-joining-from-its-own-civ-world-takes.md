@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.16
 fixed_in:
 branch: fix/w61-civ
-commits:
+commits: d8f60860
 tests: civ_other_world, civ_other_world_slowjoin, civ_other_world_slowjoin_off (twin)
 signature: FAIL the guest's own world keeps its own money, never the host's total (closest 0.0)
 docs:

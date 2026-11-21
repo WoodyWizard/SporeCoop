@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.16
 fixed_in:
 branch: fix/w61-civ
-commits:
+commits: 34cb98e5
 tests: tribe_npc_form, tribe_npc_form_late, tribe_npc_form_late_off (twin), campaign_civ_jump
 signature: sync-check: MISMATCH with the host (Tribe ...): t: 5 missing on the guest
 docs: docs/re/tribe.md#tribe-copy-species-retry

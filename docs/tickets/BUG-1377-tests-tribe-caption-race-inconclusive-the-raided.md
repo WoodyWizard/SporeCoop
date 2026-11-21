@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w61-civ
-commits:
+commits: de99d975, 326d54e1
 tests: tribe_caption_race (coop_tribe_conquest_guest.py --click-at-close)
 signature: RESULT: INCONCLUSIVE neither game played the conquest caption (the host's game left it out, BUG-1205)
 docs: docs/re/tribe.md#tribe-raid-end

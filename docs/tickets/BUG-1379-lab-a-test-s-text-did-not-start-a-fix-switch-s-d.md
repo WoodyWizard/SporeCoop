@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w61-civ
-commits:
+commits: 9c86e722
 tests: unit-verdict (tools/tests/labverdict_selftest.py, case env), tribe_chief_still_retry_off
 signature: OK   tribe_chief_still_retry_off (its log: RESULT: FAIL; results.json log .env2.log)
 docs: docs/06-testing.md#testing-final2-tribe-civ-0716

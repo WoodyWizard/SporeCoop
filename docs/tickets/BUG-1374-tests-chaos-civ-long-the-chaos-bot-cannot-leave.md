@@ -10,7 +10,7 @@ role:
 versions: 
 fixed_in:
 branch: fix/w61-civ
-commits:
+commits: ab8a6e1e, 34cb98e5
 tests: chaos_civ_long
 signature: FAIL the games survived the chaos / !! guest did not get back into the host world
 docs:
