@@ -4,9 +4,11 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <set>
 #include <vector>
 
 #include "civ_logic.h"
+#include "civ_wallet_logic.h"
 
 static int g_fail = 0;
 #define CHECK(c)                                                         \
@@ -94,11 +96,62 @@ static void test_holds()
     CHECK(!local_play(false, true, true) && !local_play(true, false, true) && !local_play(true, true, false));
 }
 
+// BUG-9259: every player's own Civ money (civ_wallet_logic.h)
+static void test_wallets()
+{
+    printf("wallets\n");
+    using namespace civwallet;
+    const uint8_t host = 0;
+    // income by cities: host 1 city, guest 1: 2 cities, guest 2: 1 city -> 100 per city
+    std::multiset<uint8_t> owners{0, 1, 1, 2};
+    auto parts = split_income(400, owners, host, {1, 2});
+    CHECK(parts.size() == 2 && std::fabs(parts[1] - 200) < 1e-9 && std::fabs(parts[2] - 100) < 1e-9);
+    // a guest without a wallet (away, not in Civ yet): its cities' part stays with the host
+    parts = split_income(400, owners, host, {1});
+    CHECK(parts.size() == 1 && std::fabs(parts[1] - 200) < 1e-9);
+    // the shared capital: equal parts for the host and every guest with a wallet
+    parts = split_income(300, {kSharedCity}, host, {1, 2});
+    CHECK(parts.size() == 2 && std::fabs(parts[1] - 100) < 1e-9 && std::fabs(parts[2] - 100) < 1e-9);
+    // nothing to split: no gain, a loss, no cities, not a number
+    CHECK(split_income(0, owners, host, {1}).empty());
+    CHECK(split_income(-50, owners, host, {1}).empty());
+    CHECK(split_income(100, {}, host, {1}).empty());
+    CHECK(split_income(std::numeric_limits<double>::quiet_NaN(), owners, host, {1}).empty());
+    // the parts never exceed the gain
+    parts = split_income(1000, {0, 1, 2, kSharedCity}, host, {1, 2});
+    double sum = 0;
+    for (auto& [p, v] : parts)
+        sum += v;
+    CHECK(sum <= 1000 + 1e-9 && sum > 0);
+    // a newcomer: an equal part of the host's money, whole dollars, nothing for less than two holders
+    CHECK(newcomer_share(1000, 2) == 500 && newcomer_share(1001, 2) == 500 && newcomer_share(900, 3) == 300);
+    CHECK(newcomer_share(0, 2) == 0 && newcomer_share(-5, 2) == 0 && newcomer_share(1000, 1) == 0);
+    CHECK(newcomer_share(std::numeric_limits<double>::infinity(), 2) == 0);
+    // the ledger: the host's operations count until the guest confirms them, then its report is the value
+    Ledger l;
+    l.set(1, 500);
+    CHECK(l.value() == 500);
+    l.op(2, +100); // an income share
+    l.op(3, -250); // a vehicle the host bought for it
+    CHECK(l.value() == 350);
+    CHECK(l.report(2, 600));       // the guest applied op 2 (500 + 100), op 3 still on the way
+    CHECK(l.value() == 350 && l.sent.size() == 1);
+    CHECK(l.report(3, 330));       // it applied op 3 and spent 20 in its own planner meanwhile
+    CHECK(l.value() == 330 && l.sent.empty());
+    CHECK(!l.report(2, 9999));     // an old report (crossed a newer one) is ignored
+    CHECK(l.value() == 330);
+    CHECK(!l.report(4, std::numeric_limits<double>::quiet_NaN()) && !l.report(4, 1e12));
+    l.op(4, -1000);                // never below 0
+    CHECK(l.value() == 0);
+    CHECK(clamp_money(2e8) == kMoneyMax && clamp_money(-1) == 0);
+}
+
 int main()
 {
     test_money();
     test_owners();
     test_holds();
+    test_wallets();
     printf(g_fail ? "civ_tests: %d FAILED\n" : "civ_tests: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

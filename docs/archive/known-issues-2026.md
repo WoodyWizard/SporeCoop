@@ -3680,3 +3680,51 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
   ../re/space.md#space-captain-items-null); this entry moves to the archive when the night run confirms the fix.
 * Fixed 2026-11-19 (fix/w55-captain, 0.7.15.3): `game.captain_items` (BUG-0304) and `game.captain_stats` (BUG-1278);
   lab PASS 20261119-111406, FAIL with the guards off 20261119-112022 / 20261119-112459.
+
+
+## Own villages: the host's villager cards list a partner's member (2026-11-20, feat/lineages-tribe)
+<a id="issue-own-village-host-cards"></a>
+
+* What happens: with a partner's own village in Tribe (BUG-9268), the host's villager cards on the right of the HUD
+  show a card of the partner's species among the host's. Clicking it selects nothing.
+* Reproduce: tools/tests/coop_tribe_seats.py (or the graduation to Tribe with a guest on its own creature), then look
+  at the host's cards.
+* Known: Tribe_IsPlayerOwned answers true for a partner's village on the host (`tribe.guest_ai`); the card list's
+  caller is not traced (docs/re/tribe.md#tribe-own-villages).
+* Fixed (2026-11-20, feat/lineages-tribe): the Tribe UI's card caller 0xCCC6EA gets the game's answer (tribe.host_cards).
+* Ticket: BUG-9271
+
+
+## Own villages: one 31 s hang of a guest's world teardown at a rejoin (2026-11-20, feat/lineages-tribe)
+<a id="issue-own-village-rejoin-hang"></a>
+
+* What happens: a guest with its own village left and joined again; leaving its Tribe world for the host's it stood
+  31 s (watchdog) and the host timed it out. Seen once; four later rejoins had no hang.
+* Reproduce: a guest with its own village (BUG-9268) leaves and joins again while the host plays on in Tribe.
+* Known: suspected the terrain cursor bound to the freed village (guarded since); not proven.
+* Fixed (2026-11-20, feat/lineages-tribe): the cause was the destroy hook's object walks during the world reset (game.reset_sender_scan).
+* Ticket: BUG-9272
+
+
+## Own nations: no nation for a partner on a planet without a free city site (2026-11-20, feat/lineages-civ)
+<a id="issue-own-nation-no-site"></a>
+
+* What happens: with every player's own nation (BUG-9274) a partner who joins a Civilization planet whose city sites
+  are all founded gets no capital: the host's `coop.civ nations` says "<name>'s capital waits: no free site" and the
+  partner plays the host's nation (the shared split of 0.7.15).
+* Reproduce: a Civ save with all ten cities founded (cCivExpansion +0xB0 = 0, `coop.civ nations` "sites 10 left 0"),
+  a guest with a creature of its own joins.
+* Known: the capital needs a free native site (SpawnNextCity); Lineages had the same limit.
+* Fixed (2026-11-20, feat/lineages-civ): an NPC nation is taken over for the partner (civ.nation_adopt,
+  docs/re/civ.md#civ-nation-adopt).
+* Ticket: BUG-9276
+
+## Civ: a guest's camera starts at the host's capital, not its own (2026-11-21, fix/civ-own-camera)
+<a id="issue-civ-own-camera"></a>
+
+* What happens: a guest with its own nation (BUG-9274) starts its Civ stage looking at the host's capital; its own
+  capital can be hundreds of metres away. The minimap or W/A/S/D take it there.
+* Reproduce: a Civ planet where the guest's nation was founded (Epina on lane B), the guest joins.
+* Fixed (2026-11-21, fix/civ-own-camera): the guest's camera goes to its own city the way the game's "next city"
+  button does (`civ.own_camera`, docs/re/civ.md#civ-own-camera).
+* Ticket: BUG-9294
