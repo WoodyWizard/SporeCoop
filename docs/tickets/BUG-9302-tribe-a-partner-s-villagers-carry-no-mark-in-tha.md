@@ -44,7 +44,14 @@ partner_rings=0 and no ring.
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 - Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): partial: host `coop.status` partner_rings=3, guest 0 (the host village was off its screen); the rings were not seen in a screenshot (the test camera never reached the partner village).
 
+- Live QA 2026-11-21, second run (QA agent, fix/l47-qa 9d64f85d = fix/l47-powers aeaedfc3 + BUG-9308, MSI two games: host MSITribeHost instance 2, guest MSIGuest instance 1, a live Creature -> Tribe entry from Vandh): PASS (seen on both screens). Host camera on the guest's village (minimap
+  click): blue rings under the guest's three villagers, the MSI card's colour (out/qa-shots/bug9302_host_rings_on_guest_villagers.png);
+  guest camera on the host's village (arrow keys): yellow rings under "Host" / "Host's chief" in the host's plate colour
+  (out/qa-shots/bug9302_guest_rings_on_host_villagers.png). `coop.status` partner_rings=3 on each. No ring under the own
+  villagers. Off-run not done. (Screenshots in the worktree's out/, not in git.)
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on fix/l47-view (built, not run in a game yet; the lead runs the two-player test).
 - 2026-11-21: live two-game QA (see Verification).
+- 2026-11-21: second live QA run (see Verification).

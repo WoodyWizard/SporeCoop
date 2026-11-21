@@ -87,6 +87,21 @@ Done on fix/l47-powers (built; not run in a game yet):
 - Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): PASS (relay): guest `coop.tribe powers`: 0x36 unlocked (status 0); `coop.tribe powers use 0x36`: guest sent=1, host 00:39:06.035 "tribe: host: MSI's chief 13 uses power 0x36 (ability 15)", run=1; a second press 00:39:30 "refused ... the power is recharging". The power's effect was not seen on screen; Fire Bomb itself (a carnivore chief) not tested; off-run not done.
 - Live QA 2026-11-21, second run (lead, MSI two games, build f07775ca, a fresh Creature -> Tribe entry, all six powers granted to the guest with `coop.tribe powers grant`, each pressed on the guest with `coop.tribe powers use`; the host's power log at 0.5 / 2 / 8 s): every power ran its own node on the partner's chief and started its recharge on the host (0x36 node 060B7090, 0x37 06088765, 0x38 060B70B4, 0x39 0609EACA, 0x34 060B708E; progress 0.00 -> 0.03 by 8 s). On the guest's own screen: 0x34 animals walk to the guest's chief, but the lure basket is not shown there (host object, not copied); 0x35 the guest's villagers carry food bundles, its food rose (28.5 -> 36); 0x37 (Fire Bomb) an explosion by the guest's chief at 1.5 s, the raiding rival tribe fled (images/live68_guest_power_0x37_firebomb.png); 0x39 tame sparkles over two animals beside the guest's villagers (images/live68_guest_power_0x39_tame.png; whose pet list they joined was not checked: the TribalGame's single list, see the history). 0x36 (the chief walks to a spot) and 0x38 (social) ran and recharged, but no effect was clear in the screenshots. CORRECTION (2026-11-21): the first run's "0x36 / 0x37 never ran on the partner chief" (recharging 0) did not repeat; cause not known. Off-run (`tribe.guest_powers off`) not done in this run; 67-dev (the report) is the off behaviour.
 
+- Live QA 2026-11-21, 7Q A (aeaedfc3) (QA agent, fix/l47-qa 9d64f85d = fix/l47-powers aeaedfc3 + BUG-9308, MSI two games: host MSITribeHost instance 2, guest MSIGuest instance 1, a live Creature -> Tribe entry from Vandh): PASS (Tribe). Guest `coop.cards own 1 B6295724` ("sent to the host"; host
+  "MSI's own creature card B6295724 kept"); guest `coop.tribe powers`: 0x37 status 0, the other five status 10, "partner_cards
+  ... -> power bits 00800000"; `powers use 0x37`: host 04:10:35 "MSI's chief 10 uses power 0x37 (ability 16, its own cards)",
+  the Fire Bomb burst at the guest's chief on the guest's screen (out/qa-shots/t_g_firebomb_own.png). Host `coop.cards
+  set 1 1 E5F355B3`: the guest's 0x37 went to status 10 and 0x34 to 0 ("chief powers follow its own cards: ... unlock word
+  00100000"); a 0x37 press is then stopped by the guest's own bar (status 10), so the host's refusal line was not
+  exercised. Off at runtime (`tribe.partner_cards off` on both): the guest's unlock word stayed 00100000 (a runtime
+  switch does not recompute; restart needed for an off-run). A real Creature -> Tribe graduation (tribe_up) logged no
+  "cards:" line on either game, `coop.cards` caught=0, host records=0, the creature card 00000000 on both games
+  (effective cell 5ECE4770): the guest's game wrote no card of its own at the co-op graduation (or none is caught).
+  Civ (7Q A, TITAN, see BUG-9311): FAIL, the partner's card unlocks also reach the host's nation. Civ superweapon from
+  the partner's nation (9e3e326a, TITAN): the refusal works ("your nation cannot fire superweapon 9 now (unlocked=0 ...)"),
+  a granted fire crashed the host (BUG-9310). The 0x39 tamed animals' list: not reached (no tool reads the TribalGame
+  list).
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix/l47-powers: tribe.guest_powers; Civ and Space surveyed (plan above). Static analysis + build only.
@@ -125,3 +140,4 @@ Done on fix/l47-powers (built; not run in a game yet):
   with its own cards; team sharing of unlocks only for the global types). Founders without a record keep the shared
   cards (logged). Tools: `coop.cards [own|set|clear]`, `coop.tribe powers`, `coop.civ sw`. Built, not run. Open: whether
   a guest's game writes its own card at a co-op graduation (to be seen in the log at the next graduation).
+- 2026-11-21: second live QA run (see Verification).

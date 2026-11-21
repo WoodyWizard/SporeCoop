@@ -66,7 +66,15 @@ Done on fix/l47-powers (built; not run in a game yet):
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 - Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): partial: the refusal log works ("tribe: refused MSI's command kind=16 ...: the power is recharging"). Fishing, meat, eggs, bundles, raids, repair, taming and loose fruit not tested (they need right-clicks on targets).
 
+- Live QA 2026-11-21, second run (QA agent, fix/l47-qa 9d64f85d = fix/l47-powers aeaedfc3 + BUG-9308, MSI two games: host MSITribeHost instance 2, guest MSIGuest instance 1, a live Creature -> Tribe entry from Vandh): partial. A real guest right-click on a loose fruit (noun 0x2C9CC91) with two
+  villagers selected (box drag): the order went to the host (guest cmds_sent 1 -> 2, host cmds_done 3, rejected 0, no
+  "tribe: refused" line all session), the selected villagers walked to the fruit on the guest's screen
+  (out/qa-shots/t_g_fruit.png); the fruit was still listed 12 s later (gather result not confirmed). Fishing, carcass
+  meat, eggs, bundles, food raid, repair, tame / feed: not reached (no targets near the villages in this world; `coop.tribe
+  act` only takes members / proxies).
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix/l47-powers: tribe.guest_orders, tribe.guest_chief (static analysis + build only; the two-player test is for the lead).
 - 2026-11-21: live two-game QA (see Verification).
+- 2026-11-21: second live QA run (see Verification).

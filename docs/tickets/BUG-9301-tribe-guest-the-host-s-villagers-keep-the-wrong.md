@@ -52,6 +52,12 @@ guest's `coop.tribe species` shows the host's village with the host's key; off: 
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 - Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): seen: both games list tribe 0 291EE5B5 (host) and tribe 1 7CE63A2C (guest) after the entry; no outfit change tested. First run: NPC tribe 2 differed (host 291981F2, guest 7DF97DCB), fixed=0; see the history line on how to read it.
 
+- Live QA 2026-11-21, second run (QA agent, fix/l47-qa 9d64f85d = fix/l47-powers aeaedfc3 + BUG-9308, MSI two games: host MSITribeHost instance 2, guest MSIGuest instance 1, a live Creature -> Tribe entry from Vandh): not reached. The host changed its outfit in the outfitter of the BUG-9298 vote
+  (a part added, budget 60 -> 30, Done), but its own `coop.tribe species` kept tribe 0 slot0=291EE5B5 and members
+  291EE5B5 before and after (so the guest had nothing new to mirror: guest also 291EE5B5; tribe 1 "(host 7CE63A2C =
+  7CE63A2C here)"). The vote ended unanswered for the guest (BUG-9298); whether the host's own outfit is applied only at a
+  full vote was not checked. On the guest's screen the host's villagers were too small to judge the look.
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on fix/l47-view (built, not run in a game yet; the lead runs the two-player test).
@@ -63,3 +69,4 @@ guest's `coop.tribe species` shows the host's village with the host's key; off: 
   differing from the "here" key with `fixed=0` and `wanted=` rising = the species is missing on the guest (asked from
   the host every 3 s); neither = a bug to report.
 - 2026-11-21: live two-game QA (see Verification).
+- 2026-11-21: second live QA run (see Verification).

@@ -59,7 +59,15 @@ Done (2026-11-20, fix/l47-births), switch `tribe.outfit_vote_timeout` (on; off =
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 - Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): not run (needs the outfitter vote with both editors).
 
+- Live QA 2026-11-21, second run (QA agent, fix/l47-qa 9d64f85d = fix/l47-powers aeaedfc3 + BUG-9308, MSI two games: host MSITribeHost instance 2, guest MSIGuest instance 1, a live Creature -> Tribe entry from Vandh): PASS (switch on). The guest opened its own editor (`coop.vote editor 156276D1`),
+  then the host started the outfit vote (`coop.vote editor 156276D1`, "ready 1/2"), pressed Start Now and finished its
+  outfitter (one part added); `coop.tribe outfits`: token=1 ready=0 host_entered=1 pending=1. The guest left its editor at
+  04:16:50; idle counted (18 s at 04:17:10); host 04:18:23 "seat 1's outfit vote (token 1, ...) ended unanswered 90 s
+  after the player left any editor" (93 s); then token=0 pending=0 timed_out=1, an event autosave 2 s later ("campaign
+  autosave confirmed") and `coop.save` "saved". Off-run not done.
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fixed on fix/l47-births (`tribe.outfit_vote_timeout`); built, not run in a game yet (the lead's two-player test).
 - 2026-11-21: live two-game QA (see Verification).
+- 2026-11-21: second live QA run (see Verification).

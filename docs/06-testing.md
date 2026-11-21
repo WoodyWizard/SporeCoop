@@ -9050,3 +9050,22 @@ Decision 7Q A (BUG-9306, mods/coop/cards.h). Not run yet. Stage numbers: 0 cell,
   <stage> card .. kept`, guest `tribe: this game's chief powers follow its own cards ...`, host `civ: seat N's nation
   unlocks from its own cards ...` or `civ: seat N has no record of its own cards: ... shared (host's) cards ...`.
 * Switch twins: `tribe.partner_cards`, `civ.partner_unlocks` (off: the host's cards for everyone, as before).
+## Live QA pitfalls on the Windows QA PCs (2026-11-21, fix/l47-qa)
+<a id="testing-qa-pitfalls-l47"></a>
+
+* `sym.reload` followed by `mod.reload coop` on a running MSI game: "0 symbols from" and "mod refused to initialise":
+  coop was gone from both games (restart needed). Deploy with the games stopped instead.
+* TITAN's DuoQACivHost / Abber `.duo-seats` holds seats = 0x10 (found 2026-11-21): the load stops with "the reserved
+  founder settings are unreadable". Seats 4 (byte 4 = 0x04) loads; the file was put back as found after the test.
+* Abber's four founder seats are bound to three partners' identities that are not DuoQACivGuest's: that guest gets the
+  party seat 3 but no nation (BUG-9309). For a test the guest's identity (its profile's Spore\SporeCoop\identity.bin,
+  bytes 4..11) can be written over a seat's identity in `<save>.duonations` (CIV2: u8 seats, then per seat u32 species,
+  u32 faction, u64 identity); back the folder up first.
+* `coop.civ swgrant` is undone within 0.5 s by the campaign tick's RefreshUnlocks (civ.partner_unlocks): grant and
+  request must go back to back, with `coop.settings force civ.superweapon_vote 0`.
+* Creature social tests on Vandh (MSI): roaming predators (an epic 067C69C6, 0679B969) kill the idle creatures; the host
+  can remove one with `coop.npc hosthit <id> 400`. A creature refuses a new social game for a while after a lost one.
+  The MSIGuest creature has social kinds 1 / 2 / 4 only: Trigo Morts (067C92C6, prompts sing 1 pt / pose 2 pts, 2
+  rounds) can be won only when both prompts are sings (~1 in 4 games).
+* `coop.social meter` sampled through one persistent console connection (tools/sporectl.Console(51), the msi tunnel)
+  runs at ~7 samples a second, enough for the 1 s fill.

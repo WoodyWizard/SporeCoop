@@ -55,7 +55,14 @@ Done (2026-11-20, fix/l47-births), switch `tribe.guest_birth_gate` (on; off = re
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 - Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): partial: a guest baby with food: "A baby joined your partner's original species village."; without food two clear refusals ("Your village needs more food to add a baby."); a held birth during a save or the host's own birth was not reproduced.
 
+- Live QA 2026-11-21, second run (QA agent, fix/l47-qa 9d64f85d = fix/l47-powers aeaedfc3 + BUG-9308, MSI two games: host MSITribeHost instance 2, guest MSIGuest instance 1, a live Creature -> Tribe entry from Vandh): PASS for the save case: host `coop.save` and guest `coop.tribe baby` sent in the
+  same moment: host 04:21:07.907 "player 1's baby waits up to 20 s: the host's game is saving (host birth flag +3A3=1, save
+  queued=0 busy=1, load=0)", guest "Your baby comes in a few seconds: the host's game is saving.", host 04:21:10.497 "held
+  baby added after 2.6 s", guest "A baby joined ...". Not reached: the host's own hut birth then the guest's within 5 s
+  (needs the host's hut UI); off-run not done.
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fixed on fix/l47-births (`tribe.guest_birth_gate`); built, not run in a game yet (the lead's two-player test).
 - 2026-11-21: live two-game QA (see Verification).
+- 2026-11-21: second live QA run (see Verification).
