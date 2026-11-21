@@ -1044,3 +1044,4 @@ SporeCoop::Civilization_AI=0x00BFBD30 ; verified Steam 3010a413: void thiscall(c
 SporeCoop::Civilization_AI_PlayerCiv_Ret=0x00BFBD6D ; verified return site after GetPlayerCivilization call BFBD68, cmp esi,eax then jne NPC branch. BUG-9054.
 SporeCoop::CivMode_Progress=0x00CF8F80 ; verified Steam 3010a413: float thiscall(strategy), no stack args, plain ret +8F/+95. Divides real city vector count by Civ tuning +AC; returns in ST0. BUG-9056.
 SporeCoop::CivHUD_Progress_Ret=0x00CEAB84 ; verified Steam 3010a413: CEAB7F calls CF8F80, CEAB87 fstp [esp], CEAB8A passes fraction to E04510 for widget +64. BUG-9056.
+SporeCoop::Empire_SetSpacecraftKey=0x00C358A0 ; verified (Lineages PR #196 on the Steam exe 3010a413, BUG-9071; used here by BUG-9279) thiscall void(cEmpire*, const ResourceKey*) ret 4: compares and writes +0xB8/+0xBC/+0xC0 (the empire's ship design), then updates the ships of this empire (0xC372E0)

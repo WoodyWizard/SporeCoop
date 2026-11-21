@@ -40,6 +40,7 @@
 #include "space_empires_logic.h"
 #include "space_ext.h"
 #include "space_map.h"
+#include "creations.h"
 #include "sporekit_game.hpp"
 #include "wire/space_empires.h"
 #include "world.h"
@@ -59,17 +60,24 @@ enum Kind : uint8_t {
 
 static const SkHost* H;
 static SkMod* M;
-static uintptr_t a_PlayerEmpire, a_StrAssign, a_Color;
+static uintptr_t a_PlayerEmpire, a_StrAssign, a_Color, a_SetShip, a_SetCaptain;
 
 static bool g_fix = true;
 COOP_FIX("space.own_empires", "BUG-9279", g_fix,
          "space: a partner who plays a species of their own has their own empire and money (kept with the planet)");
+// own ship and captain: on its game a partner's empire flies the partner's newest own ship design (or the one
+// `coop.space empires ship <hex>` chose) and has the partner's own species as its captain, set again after every Space
+// world it loads from the host (the host's save holds the host's), put back before a save
+static bool g_ship_fix = true;
+COOP_FIX("space.own_ship", "BUG-9279", g_ship_fix,
+         "space: a partner's own empire flies the partner's own ship design and has the partner's species as captain");
 static bool g_name_fix = true;
 COOP_FIX("space.own_empire_name", "BUG-9279", g_name_fix,
          "space: a partner's own empire carries the partner's name and colour on the partner's game");
 
 constexpr uintptr_t kColorId = 0x10, kColorRgb = 0x30; // cEmpire colour id, cached RGB floats (docs/re/space.md 15.1)
-constexpr uintptr_t kName = 0x3C;  // cEmpire name, eastl::string16 {begin, end, cap} (docs/re/space.md 13.1)
+constexpr uintptr_t kName = 0x3C;
+constexpr uintptr_t kShipKey = 0xB8, kCaptainKey = 0xC4; // cEmpire spacecraft / captain ResourceKey  // cEmpire name, eastl::string16 {begin, end, cap} (docs/re/space.md 13.1)
 constexpr uintptr_t kMoney = 0xD0; // cEmpire money (int; docs/re/space.md 13.1)
 constexpr double kAskEvery = 3.0, kReportEvery = 2.0, kFoundEvery = 1.0, kDiploEvery = 5.0, kDiploResend = 60.0;
 const wchar_t* const kSuffix = L".duoempires";
@@ -303,6 +311,7 @@ static void send_empire(uint8_t player, int seat)
     m.have = g_roster.founded(seat);
     m.seat = m.have ? (uint8_t)seat : 0;
     m.money = m.have ? g_roster.e[seat].money : 0;
+    m.species = m.have ? g_roster.e[seat].species : 0;
     if (m.have)
         g_wallet[seat].serial = m.serial;
     net::Writer w;
@@ -455,6 +464,16 @@ static void* g_renamed;
 static std::u16string g_orig_name;
 static uint32_t g_orig_color;
 static float g_orig_rgb[3];
+// the ship and captain: the game's keys before ours (put back before a save), ours, the species the host told
+struct Key3 {
+    uint32_t i = 0, t = 0, g = 0;
+    bool operator==(const Key3&) const = default;
+};
+static Key3 g_orig_ship, g_orig_captain, g_my_ship, g_my_captain;
+static bool g_ship_set, g_captain_set;
+static uint32_t g_species;
+static uint32_t g_ship_choice; // coop.space empires ship <hex>
+static Key3& key_at(void* e, uintptr_t off) { return *(Key3*)((uint8_t*)e + off); }
 static uint32_t g_renamed_epoch;
 
 bool own_money() { return active() && !spaceext::is_host() && g_own; }
@@ -467,6 +486,11 @@ static void name_undo()
     if (!g_renamed)
         return;
     if (g_renamed == player_empire() && g_renamed_epoch == spaceext::world_epoch()) {
+        if (g_ship_set && a_SetShip && key_at(g_renamed, kShipKey) == g_my_ship)
+            thiscall<void>(a_SetShip, g_renamed, &g_orig_ship);
+        if (g_captain_set && a_SetCaptain && key_at(g_renamed, kCaptainKey) == g_my_captain)
+            thiscall<void>(a_SetCaptain, g_renamed, &g_orig_captain);
+        g_ship_set = g_captain_set = false;
         set_name(g_renamed, g_orig_name);
         *(uint32_t*)((uint8_t*)g_renamed + kColorId) = g_orig_color;
         memcpy((uint8_t*)g_renamed + kColorRgb, g_orig_rgb, sizeof g_orig_rgb);
@@ -481,6 +505,34 @@ static void name_apply()
     if (!e)
         return;
     g_orig_name = name_of_empire(e);
+    g_ship_set = g_captain_set = false;
+    if (g_ship_fix) {
+        // the ship: the chosen or the newest own ship design of this player's library
+        Key3 ship{};
+        for (auto& o : creations::options(creations::kUfo))
+            if (!g_ship_choice || o.key.instance == g_ship_choice) {
+                ship = {o.key.instance, o.key.type, o.key.group};
+                break;
+            }
+        if (ship.i && a_SetShip && creations::key_known({ship.i, ship.t, ship.g})) {
+            g_orig_ship = key_at(e, kShipKey);
+            g_my_ship = ship;
+            if (!(g_orig_ship == ship))
+                thiscall<void>(a_SetShip, e, &ship);
+            g_ship_set = true;
+        }
+        // the captain: this player's own species (a creature of its own library)
+        const Key3 cap{g_species, 0x2B978C46u, 0x40626200u};
+        if (g_species && a_SetCaptain && creations::key_known({cap.i, cap.t, cap.g})) {
+            g_orig_captain = key_at(e, kCaptainKey);
+            g_my_captain = cap;
+            if (!(g_orig_captain == cap))
+                thiscall<void>(a_SetCaptain, e, &cap);
+            g_captain_set = true;
+        }
+        H->log(M, SK_INFO, "empires: my ship %08X (the game's %08X), my captain %08X (the game's %08X)",
+               g_ship_set ? ship.i : 0u, g_orig_ship.i, g_captain_set ? cap.i : 0u, g_orig_captain.i);
+    }
     g_orig_color = *(uint32_t*)((uint8_t*)e + kColorId);
     memcpy(g_orig_rgb, (uint8_t*)e + kColorRgb, sizeof g_orig_rgb);
     set_name(e, own_name());
@@ -613,6 +665,7 @@ static void guest_message(uint8_t kind, net::Reader& r)
         return; // no player empire now: it asks again
     g_own = m.have;
     g_seat = m.have ? m.seat : -1;
+    g_species = m.have ? m.species : 0;
     g_answer = m.serial;
     g_answered = spaceext::world_epoch();
     g_next_report = 0;
@@ -680,11 +733,12 @@ static std::string status()
     else
         snprintf(b, sizeof b,
                  "empires: fix=%d guest own=%d seat=%d money=%d name='%s' color=%08X serial=%u answered_epoch=%u epoch=%u asks=%u"
-                 " sets=%u reports=%u diplo ready=%d sets=%u sent=%u",
+                 " sets=%u reports=%u diplo ready=%d sets=%u sent=%u ship=%08X captain=%08X",
                  (int)g_fix, (int)g_own, g_seat, money_now(), utf8(name_of_empire(player_empire())).c_str(),
                  player_empire() ? *(uint32_t*)((uint8_t*)player_empire() + kColorId) : 0u, g_answer,
                  g_answered, spaceext::world_epoch(), g_g_asks, g_g_sets, g_g_reports, (int)g_diplo_ready, g_g_diplo_sets,
-                 g_g_diplo_sent);
+                 g_g_diplo_sent, player_empire() ? key_at(player_empire(), kShipKey).i : 0u,
+                 player_empire() ? key_at(player_empire(), kCaptainKey).i : 0u);
     return b;
 }
 
@@ -719,6 +773,20 @@ static std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "money") {
         const int v = atoi(a[1].c_str());
         return set_money(v) ? "empires: my money set to " + std::to_string(v) : "empires: no player empire";
+    }
+    if (a.size() >= 2 && a[0] == "ship" && !spaceext::is_host()) { // the ship design my empire flies (0: the newest)
+        g_ship_choice = (uint32_t)strtoul(a[1].c_str(), nullptr, 16);
+        name_undo();
+        return "empires: my ship choice " + a[1] + " (set again in a moment)";
+    }
+    if (!a.empty() && a[0] == "ships") {
+        std::string s;
+        for (auto& o : creations::options(creations::kUfo)) {
+            char b[96];
+            snprintf(b, sizeof b, "ship %08X '%s'\n", o.key.instance, o.name.c_str());
+            s += b;
+        }
+        return s.empty() ? "no own ship designs\n" : s;
     }
     if (!a.empty() && a[0] == "write")
         return roster_write("test") ? "empires: written" : "empires: not written";
@@ -767,6 +835,8 @@ static bool init(const SkHost* h, SkMod* m)
     a_PlayerEmpire = H->sym("Simulator::GetPlayerEmpire");
     a_StrAssign = H->sym("wstring_copy");
     a_Color = H->sym("Simulator::GetCachedColorFromId");
+    a_SetShip = H->sym("SporeCoop::Empire_SetSpacecraftKey");
+    a_SetCaptain = H->sym("SporeCoop::cEmpire_SetCaptainKey");
     spaceext::on_save(host_save);
     spaceext::on_save(guest_save);
     return a_PlayerEmpire != 0;

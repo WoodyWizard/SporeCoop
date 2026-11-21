@@ -124,13 +124,15 @@ static void payloads()
     e.have = true;
     e.seat = 2;
     e.money = 250000;
+    e.species = 0x7CA81684;
     net::Writer w;
     e.write(w);
-    const std::vector<uint8_t> want = {3, 4, 3, 2, 1, 1, 2, 0x90, 0xD0, 0x03, 0x00};
+    const std::vector<uint8_t> want = {3, 4, 3, 2, 1, 1, 2, 0x90, 0xD0, 0x03, 0x00, 0x84, 0x16, 0xA8, 0x7C};
     CHECK(w.data == want);
     ew::Empire back;
     net::Reader r(w.data.data(), w.data.size());
-    CHECK(back.read(r) && back.to == 3 && back.serial == 0x01020304 && back.have && back.seat == 2 && back.money == 250000);
+    CHECK(back.read(r) && back.to == 3 && back.serial == 0x01020304 && back.have && back.seat == 2 && back.money == 250000 &&
+          back.species == 0x7CA81684);
     // a money over the game's cap, a seat past the file's
     auto bad = want;
     bad[7] = 0xFF, bad[8] = 0xFF, bad[9] = 0xFF, bad[10] = 0x7F;

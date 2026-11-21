@@ -30,18 +30,21 @@ struct Head {
 // K_ASK (guest -> host): {to 0, serial 0}: my Space world opened, which empire is mine?
 using Ask = Head;
 
-// K_EMPIRE (host -> guest): {to, serial, u8 have, u8 seat, i32 money}: have 1 = your own empire (party seat `seat`),
-// its money; have 0 = you play the host's empire (the shared money). A money outside 0..99 999 999 is no message.
+// K_EMPIRE (host -> guest): {to, serial, u8 have, u8 seat, i32 money, u32 species}: have 1 = your own empire (party
+// seat `seat`), its money and its species (the creature its captain is, 0 = unknown); have 0 = you play the host's
+// empire (the shared money). A money outside 0..99 999 999 is no message.
 struct Empire : Head {
     bool have = false;
     uint8_t seat = 0;
     int32_t money = 0;
+    uint32_t species = 0;
     void write(net::Writer& w) const
     {
         Head::write(w);
         w.u8(have ? 1 : 0);
         w.u8(seat);
         w.u32((uint32_t)money);
+        w.u32(species);
     }
     bool read(net::Reader& r)
     {
@@ -50,6 +53,7 @@ struct Empire : Head {
         have = r.u8() != 0;
         seat = r.u8();
         money = (int32_t)r.u32();
+        species = r.u32();
         return r.ok() && money >= 0 && money <= 99999999 && seat < 8;
     }
 };
