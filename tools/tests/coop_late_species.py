@@ -23,7 +23,8 @@ Tribe (default; tribe fixture: the cold start leaves the guest without choice an
      another own creature (`coop.creations choose`, what the menu's row does), then it joins: within 40 s that creature
      is recorded for this world, both games answer its key, the guest's members wear it on both games; key frame.
 --civ (civ_npc fixture): the guest buys the NPC city nearest the capital; its citizens are the civilization's species
-  on both games (no line); the guest's window shows the creature row in Civ (not "My role"); its ">": both games answer
+  on both games (no line); the guest's window shows the creature row in Civ (one line above "My role" since BUG-1403,
+  coop_civ_role_row.py tests that row); its ">": both games answer
   its creature for its Civ line and the city's citizens are of it on both games (`coop.civ citizens`: the citizen
   objects' +0xB28) within 30 s; the guest's Civ role is what it was; key frames of the city and a citizen up close.
 
@@ -81,20 +82,31 @@ def wait_line(cons, getter, secs, pred):
     return got, False
 
 
+def creature_row(s):
+    """(text, its '>' control) of the creature row on a uistate, (None, None) without one. BUG-1403
+    (core.ui_civ_two_rows): in Civ, while the role row shows under it, the creature row is one line up (creationup,
+    cupprev / cupnext); elsewhere it is the row of the window (creation, cprev / cnext)"""
+    up = s.get('creationup')
+    if isinstance(up, dict) and up['vis'] and up['text'].startswith('My creature') and s['cupnext']['vis']:
+        return up['text'], 'cupnext'
+    if s.get('creation', '').startswith('My creature') and s['cnext']['vis']:
+        return s['creation'], 'cnext'
+    return None, None
+
+
 def pick_row(ck, guest, stage):
     """2.: the creature row in this stage on the guest's window, its '>' clicked. The row text before the click"""
     gu = Ui(guest, 'guest')
     guest.call('coop.uistate 1')
-    st = gu.wait(lambda s: s['open'] == '1' and s.get('creation', '').startswith('My creature') and s['cnext']['vis'],
-                 30, f'the creature row in {stage}')
-    row = st.get('creation') if st else None
+    st = gu.wait(lambda s: s['open'] == '1' and creature_row(s)[0], 30, f'the creature row in {stage}')
+    row, nxt = creature_row(st) if st else (None, None)
     print(f'  guest window in {stage}: {row!r}; {late(guest)}', flush=True)
     if not ck(st, f'the guest\'s co-op window offers its own creatures in {stage} ("My creature: ... < >": {row})'):
         guest.call('coop.uistate 0')
         return None
     keyframe(f'{stage.lower()}_row', f'{stage}: the guest\'s co-op window shows "My creature: the host\'s species" with '
                                      '< > and the count of its own creatures; the host\'s screen plays on', settle=0)
-    gu.click('cnext')
+    gu.click(nxt)
     time.sleep(2)
     print(f'  guest after ">": mine {mine(guest)}, {late(guest)}', flush=True)
     guest.call('coop.uistate 0')

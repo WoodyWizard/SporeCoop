@@ -107,6 +107,9 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   got them (BUG-1290).
 
 ### Fixed
+- Civilization: a guest that plays the host's species and has creatures of its own sees "My creature: ... < >" and
+  under it "My role: ... < >" in the co-op window again, so it can pick a civilization role and keep the host's
+  species; each row's arrows change only its own choice. Before, the creature row took the role row's place.
 - Creature: when the host's creature dies, every player's evolution bar loses the same part of a point as the host's;
   a guest's bar stayed up to almost a point ahead of the party's until the next DNA gain.
 - Tribe: the host's game could fault (and crash) right after a new village appeared on a planet whose list of
