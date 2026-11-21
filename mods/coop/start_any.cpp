@@ -6,6 +6,7 @@
 #include <map>
 #include <set>
 
+#include "coop_ui.h"
 #include "creations.h"
 #include "fixes.h"
 #include "founders.h"
@@ -285,6 +286,7 @@ void on_message(uint8_t from, net::Reader& r)
         g_rx_asks++;
         g_prompt = stage;
         H->log(M, SK_INFO, "start any: the host asks for our own start at stage %u", stage);
+        coop_ui::open(true); // the window opens on its "Your own start" page (coop_ui.cpp)
     } else if (kind == kTaken) {
         const uint8_t ok = r.u8();
         if (r.ok() && ok)

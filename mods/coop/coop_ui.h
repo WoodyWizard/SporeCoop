@@ -109,6 +109,12 @@ struct Api {
     std::function<bool(int color)> start_color_free;
     std::function<int()> start_color_now;
     std::function<std::string()> start_name;
+    // BUG-9293: a guest's own start in a new game at a later stage (start_any.h). any_prompt: the stage asked for (1
+    // Creature .. 4 Space, 0 none: the window shows the "Your own start" page); any_creatures: our My Creations
+    // creatures {instance, name}; any_submit(creature instance or 0 = keep, one card option per earlier stage)
+    std::function<int()> any_prompt;
+    std::function<std::vector<std::pair<uint32_t, std::string>>()> any_creatures;
+    std::function<bool(uint32_t creature, const int (&cards)[4], std::string& why)> any_submit;
     uint16_t default_port = 0;
 };
 

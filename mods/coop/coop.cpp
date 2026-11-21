@@ -2201,6 +2201,20 @@ void init_ui()
     };
     a.start_color_now = [] { return pfind::color_index(g_sess.my_id()); };
     a.start_name = [] { return start_choice::default_name(); };
+    // BUG-9293: "Your own start" (start_any.h)
+    a.any_prompt = [] { return start_any::prompt(); };
+    a.any_creatures = [] {
+        std::vector<std::pair<uint32_t, std::string>> out;
+        for (const auto& o : creations::options(creations::kCreature))
+            out.push_back({o.key.instance, o.name.empty() ? std::string("?") : o.name});
+        return out;
+    };
+    a.any_submit = [](uint32_t creature, const int (&cards)[4], std::string& why) {
+        int8_t c[4];
+        for (int i = 0; i < 4; i++)
+            c[i] = (int8_t)cards[i];
+        return start_any::answer(creature, c, &why);
+    };
     a.world_line = ui_world_line;
     a.ready = [] { return g_ready.count(g_sess.my_id()) && g_ready[g_sess.my_id()]; };
     a.set_ready = set_ready;

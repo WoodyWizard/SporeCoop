@@ -379,6 +379,10 @@ struct Dialog {
     std::vector<Win> page_start;
     Win st_diet[3] = {}, st_desc = nullptr, st_name = nullptr, st_color = nullptr, st_color_next = nullptr, st_go = nullptr,
         st_line = nullptr, st_body = nullptr, st_body_next = nullptr;
+    // BUG-9293: "Your own start" (a guest's own start in a new game at a later stage): the creature, a card per stage
+    std::vector<Win> page_any;
+    Win sa_sub = nullptr, sa_creature = nullptr, sa_prev = nullptr, sa_next = nullptr, sa_go = nullptr, sa_line = nullptr;
+    Win sa_label[4] = {}, sa_card[4][3] = {};
 };
 static Dialog D;
 static std::map<std::string, Win> g_named; // for tests (coop.uistate)
@@ -827,6 +831,43 @@ static void start_color_step(int dir)
     }
     g_dirty = true;
 }
+// ---- BUG-9293: "Your own start" (start_any.h): the page's state while the host's question is open
+static int g_sa_creature = -1; // index into the creature list, -1 = keep the one we play
+static int g_sa_card[4] = {-1, -1, -1, -1};
+static bool g_sa_open;
+static std::string g_sa_line;
+static const char* const kSaStageEn[4] = {"Cell", "Creature", "Tribe", "Civilization"};
+static const char* const kSaCardEn[4][3] = {{"Carnivore", "Herbivore", "Omnivore"},
+                                           {"Aggressive", "Social", "Mixed"},
+                                           {"Aggressive", "Social", "Mixed"},
+                                           {"Military", "Economic", "Religious"}};
+static void do_any_go()
+{
+    const int stage = A.any_prompt ? A.any_prompt() : 0;
+    for (int i = 0; i < stage && i < 4; i++)
+        if (g_sa_card[i] < 0) {
+            g_sa_line = std::string("Choose your ") + kSaStageEn[i] + " card";
+            g_dirty = true;
+            return;
+        }
+    uint32_t creature = 0;
+    if (g_sa_creature >= 0 && A.any_creatures) {
+        auto list = A.any_creatures();
+        if (g_sa_creature < (int)list.size())
+            creature = list[(size_t)g_sa_creature].first;
+    }
+    std::string why;
+    if (!A.any_submit || !A.any_submit(creature, g_sa_card, why)) {
+        g_sa_line = why.empty() ? std::string("Not possible now") : why;
+        g_dirty = true;
+        return;
+    }
+    g_sa_line.clear();
+    g_sa_open = false;
+    g_dirty = true;
+    open(false);
+}
+
 static void do_start_go()
 {
     std::string why;
@@ -1216,6 +1257,38 @@ static void build_dialog()
     add_label(ST, {480, 350, 720, 376}, T("your cell's colour", "цвет вашей клетки"), kDim);
     D.st_go = add_button(ST, "stgo", {500, 400, 720, 442}, T("Start", "Начать"), do_start_go);
     D.st_line = add_label(ST, {40, 454, 720, 480}, "", kRed);
+    // ---- BUG-9293: "Your own start" (a guest's own start in a new game at a later stage) ----
+    auto& SA = D.page_any;
+    add_label(SA, {40, 104, 720, 130}, "Your own start", kGold);
+    D.sa_sub = add_label(SA, {40, 136, 720, 160}, "", kDim);
+    add_label(SA, {40, 172, 190, 198}, "Creature", kWhite);
+    D.sa_prev = add_button(SA, "saprev", {190, 166, 240, 202}, "<", [] {
+        int n = A.any_creatures ? (int)A.any_creatures().size() : 0;
+        g_sa_creature = g_sa_creature < 0 ? n - 1 : g_sa_creature - 1;
+        g_dirty = true;
+    });
+    D.sa_creature = add_label(SA, {250, 172, 650, 198}, "", kWhite);
+    D.sa_next = add_button(SA, "sanext", {660, 166, 710, 202}, ">", [] {
+        int n = A.any_creatures ? (int)A.any_creatures().size() : 0;
+        g_sa_creature = g_sa_creature + 1 >= n ? -1 : g_sa_creature + 1;
+        g_dirty = true;
+    });
+    for (int s = 0; s < 4; s++) {
+        const float y = 220.f + s * 46;
+        D.sa_label[s] = add_label(SA, {40, y + 6, 190, y + 32}, kSaStageEn[s], kWhite);
+        for (int i = 0; i < 3; i++) {
+            char nm[16];
+            snprintf(nm, sizeof nm, "sacard%d%d", s, i);
+            const float x = 190.f + i * 178;
+            D.sa_card[s][i] = add_button(SA, nm, {x, y, x + 168, y + 36}, kSaCardEn[s][i], [s, i] {
+                g_sa_card[s] = i;
+                g_sa_line.clear();
+                g_dirty = true;
+            });
+        }
+    }
+    D.sa_go = add_button(SA, "sago", {500, 410, 720, 452}, "Start", do_any_go);
+    D.sa_line = add_label(SA, {40, 460, 720, 486}, "", kRed);
     // Enter in a field does what its button does: the chat sends, the address joins, the name continues
     if (D.chat_edit)
         sui::add_handler(D.chat_edit, [](Win, const sui::Msg& m) {
@@ -1289,6 +1362,35 @@ static void refresh_start()
         color(D.st_body, kWhite);
     }
     text(D.st_line, g_st_line);
+}
+
+// BUG-9293: the "Your own start" page
+static void refresh_any(int stage)
+{
+    if (!g_sa_open) {
+        g_sa_open = true;
+        g_sa_creature = -1;
+        for (int& c : g_sa_card)
+            c = -1;
+        g_sa_line.clear();
+    }
+    text(D.sa_sub, "Your creature and your path before this stage (your History).");
+    auto list = A.any_creatures ? A.any_creatures() : std::vector<std::pair<uint32_t, std::string>>{};
+    if (g_sa_creature >= (int)list.size())
+        g_sa_creature = -1;
+    text(D.sa_creature, g_sa_creature < 0 ? std::string("the creature you play now")
+                                          : list[(size_t)g_sa_creature].second + "  (" + std::to_string(g_sa_creature + 1) + "/" +
+                                                std::to_string(list.size()) + ")");
+    for (int s = 0; s < 4; s++) {
+        const bool on = s < stage;
+        show(D.sa_label[s], on);
+        for (int i = 0; i < 3; i++) {
+            show(D.sa_card[s][i], on);
+            const std::string t = kSaCardEn[s][i];
+            text(D.sa_card[s][i], g_sa_card[s] == i ? "> " + t + " <" : t);
+        }
+    }
+    text(D.sa_line, g_sa_line);
 }
 
 static void refresh_connect()
@@ -1919,7 +2021,11 @@ static void refresh()
     const bool start = lobby && A.start_prompt && A.start_prompt(); // BUG-9273: the host asks for our own start
     if (!start)
         g_st_open = false;
-    bool sett = lobby && g_settings_page && !g_space_page && !start;
+    const int any_stage = lobby && !start && A.any_prompt ? A.any_prompt() : 0; // BUG-9293: our own start, a later stage
+    const bool any = any_stage > 0;
+    if (!any)
+        g_sa_open = false;
+    bool sett = lobby && g_settings_page && !g_space_page && !start && !any;
     for (Win w : D.page_name)
         show(w, !lobby && g_step == kStepName);
     for (Win w : D.page_choose)
@@ -1933,19 +2039,21 @@ static void refresh()
     if (lobby)
         show(D.update_btn, false);
     for (Win w : D.page_lobby)
-        show(w, lobby && !g_space_page && !sett && !start);
+        show(w, lobby && !g_space_page && !sett && !start && !any);
     for (Win w : D.page_start)
         show(w, start);
+    for (Win w : D.page_any)
+        show(w, any);
     for (Win w : D.page_settings)
         show(w, sett);
     for (Win w : D.page_space)
-        show(w, lobby && g_space_page && !start);
-    show(D.space_btn, space && !g_space_page && !sett && !start);
-    if (!lobby || g_space_page || sett || start) {
+        show(w, lobby && g_space_page && !start && !any);
+    show(D.space_btn, space && !g_space_page && !sett && !start && !any);
+    if (!lobby || g_space_page || sett || start || any) {
         show(D.chat_up, false);
         show(D.chat_down, false);
     }
-    text(D.subtitle, start                 ? T("CO-OP: YOUR START", "КООПЕРАТИВ: ВАШ СТАРТ")
+    text(D.subtitle, start || any          ? T("CO-OP: YOUR START", "КООПЕРАТИВ: ВАШ СТАРТ")
                      : lobby && g_space_page ? T("CO-OP: SPACE", "КООПЕРАТИВ: КОСМОС")
                      : sett                ? T("CO-OP: SETTINGS", "КООПЕРАТИВ: НАСТРОЙКИ")
                      : lobby               ? T("CO-OP LOBBY", "ЛОББИ КООПЕРАТИВА")
@@ -1956,6 +2064,8 @@ static void refresh()
         A.lan_scan(!lobby);
     if (start)
         refresh_start();
+    else if (any)
+        refresh_any(any_stage);
     else if (lobby && g_space_page)
         refresh_space();
     else if (sett)

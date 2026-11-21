@@ -28,7 +28,7 @@ from lane import sh
 from sporectl import Console
 from twoinst import HERE, Checks, shot, wait_up
 
-CARDS = ['CFB01B93', 'FD159D91', 'C2CA9495', '0A35D0F5']  # Cell carnivore, Creature social, Tribe mixed, Civ military
+CARDS = ['CFB01B93', 'FD159D91', 'C2CA9495']  # Cell carnivore, Creature social, Tribe mixed (the page's buttons s,s)
 STAGE = {'creature': 1, 'tribe': 2, 'civ': 3}
 
 
@@ -83,8 +83,25 @@ def main():
     want = CARDS[:STAGE[a.stage]]
     asked = wait(lambda: re.search(r'prompt=[1-4]', out(guest, 'coop.startany')) is not None, 180)
     ck(asked, '1: the guest is asked for its own start')
-    if asked:
-        print('  guest:', out(guest, 'coop.startany pick %s %s' % (creature, ' '.join(str(i) for i in range(len(want))))), flush=True)
+    if asked:  # answered by clicking the guest's "Your own start" page, as a player does (coop.uistate: the buttons)
+        def ui():
+            d = {}
+            for ln in out(guest, 'coop.uistate').splitlines():
+                m = re.match(r"(\w+) (\d+) (\d+) (\d+) (\d+) (\d) '(.*)'$", ln)
+                if m:
+                    d[m.group(1)] = (int(m.group(2)), int(m.group(3)), int(m.group(4)), int(m.group(5)), m.group(6) == '1', m.group(7))
+            return d
+
+        def click(name):
+            x0, y0, x1, y1, _, _ = ui()[name]
+            guest.call(f'click {(x0 + x1) // 2} {(y0 + y1) // 2}')
+            time.sleep(0.8)
+
+        ck(wait(lambda: ui().get('sago', (0, 0, 0, 0, False, ''))[4], 60), '1: the guest's window shows its "Your own start" page')
+        click('sanext')  # the first of its creatures
+        for s in range(len(want)):
+            click(f'sacard{s}{s}')  # Cell carnivore (0), Creature social (1), Tribe mixed (2)
+        click('sago')
     time.sleep(8)
     party = out(host, 'coop.party')
     seat = re.search(r'seat 1: .*?\n\s+cards own=1 ((?:\w{8} ){5})', party + ' ')
