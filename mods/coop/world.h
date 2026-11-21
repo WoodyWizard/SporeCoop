@@ -106,6 +106,12 @@ bool cinematic_pause_resume();
 // planet, BUG-0035, and the guest's own copy can be beside them). "" = unknown (a menu: "SaveGame",
 // snapshot.spo, no save database). Not for every frame (it asks the resource database).
 std::string current_game_key();
+// BUG-9261 (Lineages): the same key for a planet file of the selected save slot ("<planet>.spo"), also right before
+// LoadGameByName (creations.cpp restores the planet's archived creatures there)
+std::string game_key_for_planet(const std::string& planet_file);
+// BUG-9262 (Lineages): host: a world share that waits for a save asks `hold(player, ms since it was asked)` first; true
+// keeps it waiting (2 minutes at most): a partner's own nest is about to be made (home_nests.cpp)
+void set_share_hold(std::function<bool(uint8_t, uint64_t)> hold);
 // BUG-0225: called after a received world was written into a slot (lower-case dir, UTF-8, no
 // trailing '\'): the game that was in that slot no longer exists as it was
 void set_slot_replaced_hook(void (*fn)(const std::string& dir));

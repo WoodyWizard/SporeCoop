@@ -858,3 +858,153 @@ The creations module's `debug()` (`coop.creations`, 410 lines) went the same way
 the four `debug()` functions of the plan. The proofs: refactor_dump identical after each step, `tools/refactor_dump.py
 moves` lists only dropped `static`s, header declarations, default arguments kept on the prototype, and the new files'
 heads (docs/10-dev-pipeline.md#pipeline-refactor-proof); the Cell lab tests on the split build (BUG-1183).
+
+## The campaign's party: founder seats (2026-11-20, feat/lineages-party)
+<a id="architecture-party"></a>
+
+Phase 2 of the Lineages port (PR #196; there roadmap 0b, BUG-9135), BUG-9260. Builds on the persistent player
+identity ([netcode-identity](04-netcode.md#netcode-identity), BUG-9258).
+
+* The host keeps one **party** per planet: one seat per player who ever played it, seat 0 the host's. A seat is bound
+  to the player's identity, not the network id or the name, so a player who leaves and comes back (the same session or
+  another day) gets the same seat. At most `founders::kPlaySeats` (4) seats; the file format holds 8.
+* Saved next to the planet, never inside the game's save: `<planet>.spo.duoparty` (PTY1: u32 'PTY1', u8 seats, per
+  seat u64 identity, u32 own creature species instance, str8 name), written whole through a temporary file, outside the
+  frame (`run_outside_frame`). A party only grows; a seat's identity is never replaced (`founders::record_party`
+  refuses both). An unreadable file is left alone and logged.
+* Code: mods/coop/party.{h,cpp} (host tick once a second, `coop.party`), mods/coop/founders.{h,cpp} (the file; only the
+  party part of Lineages' founders.h so far: the Tribe / Civ rosters, difficulty and outfits come with their phases).
+  The lifecycle hook `party.forget` (session end, world change) drops it; the next tick reads the planet's file again.
+  The galaxy menu ends it too: world::current_game_key() still names the planet played last there, and a player
+  joining in the menu must not be seated on it.
+* Nothing in the game uses the seats yet. The next phases index by them: every player's own nest (Creature), village
+  (Tribe) and nation (Civilization). Test: tools/tests/coop_party.py (suite party).
+
+## Partner creatures in the host's save and every player's own nest (2026-11-20, feat/lineages-nests)
+<a id="architecture-own-nests"></a>
+
+Phases 3 and 4 of the Lineages port (PR #196), BUG-9261 and BUG-9262, on top of the party
+([architecture-party](#architecture-party)). The game side is in
+[creature-own-nests](re/creature.md#creature-own-nests).
+
+* **One key per creation** (`creations.one_key`, BUG-9261; Lineages BUG-9180): a player's creation is registered on
+  every game, its owner's included, under `0x7C` + a hash of its bundle (`shared_instance`), no longer salted with the
+  owner's network id. The key is the same across rejoins and machines; a guest's avatar wears it too (`own_key_here`),
+  so the host's nest of that creature is a nest of the guest's own species on the guest's game.
+* **Archive** (BUG-9261): the host writes a partner's bundle next to the planet, `<planet>.spo.duoguest-<KEY>` (u32
+  'DGA1', u32 key, u8 owner id, the bundle as `pack()` writes it; 16 files, 8 MB each at most; never replaced by a
+  different one under the same key: `founders::store_guest_model`). A hook on `cGamePersistenceManager::LoadGameByName`
+  registers every archive of the planet (`founder_<key>_<hash>.package`, priority kPrioModel) before the game reads the
+  save (`creations::restore_guest_model`; a bad archive is logged and skipped, the planet still loads).
+  `world::game_key_for_planet` gives the planet's key before the load (`current_game_key` names the previous world then).
+  `coop.creations archive [<player>]`.
+* **Own nests** (BUG-9262, mods/coop/home_nests.{h,cpp}, host only, every 2 s from `frame_stage_ticks`): each seat
+  (party.h) playing its own species gets a nest herd of that species 45-100 m from the host's home nest (made outside
+  the frame, archived, best friends with the party: relation 6 and `cHerd_SetBestFriends`), filled with 4 members of its
+  species and refilled when its family is gone while its player is online. A partner online when its nest is made gets
+  the world again once the nest has members; a joining partner's first world waits for its nest (`world::set_share_hold`,
+  2 minutes at most). The nest's spot is noted per planet in the host's worlds.ini (`[nest<seat>]`). An offline
+  partner's nest is the AI's (it may die out) and is made again on return. `coop.homenests [make|extinct <seat>]`.
+* **Home** (nest.cpp MSG_NEST kind 2, host -> guest, f32 x y z, 1 Hz): the guest's game joins the herd of the nest the
+  host names (CreatureGame_JoinNestHerd, no cinematic), so it hatches and respawns there, and once per world puts the
+  creature next to it. wsync's nest row (BUG-0640) no longer migrates such a guest to the host's nest
+  (`wsync.own_nest_stays`). Older guests skip kind 2. `coop.nest home`.
+* Party species are not hunted by the players (`creature.party_species_peace`, npc.cpp).
+* Each player's own species is THE player species in its own game (`creature.own_player_species`, Lineages BUG-9177),
+  and the copies of its own family live in its own nest herd on its game (`creature.own_family_home`, BUG-9175 there).
+* A joining guest outside a world reports the creature it will play in the host's world (its record of that world)
+  before it loads it, so its first world waits for its nest (`creations.join_world_record`, BUG-9267).
+* Left out of Lineages' home_nests: the ring cleanup of nests of old salted keys (BUG-9182 there: not needed with one
+  key from the start). Tests: tools/tests/coop_home_nests.py, coop_home_nests_join.py (suites home_nests,
+  home_nests_join).
+
+## Every player's own tribe (2026-11-20, feat/lineages-tribe)
+<a id="architecture-own-villages"></a>
+
+Phase 5 of the Lineages port (PR #196), BUG-9268, on top of the party and the archive
+([architecture-party](#architecture-party), [architecture-own-nests](#architecture-own-nests)). The game side is in
+[tribe-own-villages](re/tribe.md#tribe-own-villages).
+
+* **Files**: mods/coop/tribe_villages.cpp (the module, one of the Tribe split files of
+  [arch-tribe-files](#arch-tribe-files)), mods/coop/tribe_seats.h (its pure rules, tests/tribe_seats_tests.cpp),
+  founders.{h,cpp} (`founders::Roster`, `read` / `record` / `describe`, Stage::Tribe).
+* **Founding** (host, `villages_host_tick` from tribe_host.cpp's host tick, once a second): a connected partner with a
+  party seat whose creature is not the host village's species gets a village of it once its creature settled (15 s
+  after the world, 10 s after its key last changed; `tribe_seats::founding_wait`). Outside the frame: the creature is
+  archived with the planet (`creations::archive_guest_model`), a level dry site is searched 100-180 m around the host's
+  village (and around the other players' villages), `Simulator::SpawnNpcTribe(pos, 0, 3, 15, 0, profile)`, the
+  village is recorded by party seat in `<planet>.spo.duofounders` (DUO3: u8 n, n x {u32 species, u32 faction, u64
+  identity}; seat 0 the host's village) and allied, then every guest gets the world again (the first share saves).
+* **Alliance**: every 5 s (outside the frame) each pair of the players' villages is raised to allies
+  (`ApplyRelationship(manager, a, b, 0x0530CF07, allied + 1 - now)`, both ways); the host refuses an attack (7) or a
+  raid (15) on a player's village from a guest's order.
+* **Ownership** (MSG_TRIBE_STATE, no wire change): the members of a partner's village are its seat's player's (nobody's,
+  0xFE, while offline); the host's village is split as before between the players without a village of their own
+  (`tribe_seats::shared_players` / `shared_owner`). `host_command` runs a guest's order on its own village's members
+  too (`village_orders_ok`).
+* **Native counts**: `cGameNounManager::GetData` hooked; its two count-only callers in the NPC tribe controller
+  (`SporeCoop::FormTribe_TribeCountReturn`, `NpcTribeUpdate_TribeCountReturn`) get a private copy of the tribe list's
+  header with the partners' villages left out, so the planet still gets its rivals and the first one comes as usual;
+  `form_species_state` (BUG-1233) counts the same way.
+* **Player-owned**: `SporeCoop::Tribe_IsPlayerOwned` hooked: on the host a partner's village is the player's (with the
+  AI's cached bit, (+0xB4C)+0x5FC bit 0, refreshed from `h_BTTick`: its members take orders as player members); on a
+  guest its own village is the player's, and `cGameTerrainCursor::GetTerrainCursor` points the cursor's candidate list
+  (+0x164) at its own village's selectable members (only while that village is in the object list), so the game's own
+  box, click and right-click order them through the existing hooks.
+* The guest's own village is found from its mirrors (`villages_guest_tick`: the tribe of a mirror it owns that is not
+  the player tribe). Its food is the NPC tribe's store, shown on every game by wsync's `tribe_food` row; the Co-op window
+  shows "Your village: N members, food F" (coop_ui.cpp, `tribe::own_village_info`).
+* Switches: `tribe.own_villages`, `tribe.founder_npc_budget`, `tribe.guest_ai`, `tribe.guest_native`. Commands:
+  `coop.tribe villages [found <player> | ally]`. Test: tools/tests/coop_tribe_seats.py (suite tribe_seats).
+* Left out of Lineages' Tribe founders: the village at the partner's own nest (the free-site search only), the rescue
+  of a downed founder and the party wipe, the outfit vote per seat (`.duooutfits`), the late joiner's stand-in and
+  catch-up, the guest's game showing its own village as the player tribe (SetPlayerTribe: its HUD, cards and hut menu),
+  the six-rival trial and the objective backfill.
+* **Second round** (2026-11-20, [tribe-own-village-player](re/tribe.md#tribe-own-village-player)):
+  * The guest's game makes its own village its player tribe (`tribe.own_player_village`, SetPlayerTribe; the host's
+    village back for its saves, a load, the session's end, local play). `tribe::player_tribe()` and the new
+    `tribe::swapped_host_tribe()` (read by wsync, shared, designs, realign and wstate before cGameNounManager +0x70)
+    keep meaning the host's village. Its own village's relations follow the host village's (outside the frame, every
+    2 s). Tribe_HutStateIs2 guarded; Add Baby at its hut sends CMD_BABY, which the host runs in that village for its
+    food (`village_baby`).
+  * Team alliances (`tribe.team_allies`, host, every 5 s): an NPC village allied with one player's village is raised to
+    an ally of every player's village; a lower relation is never shared.
+  * The village at the partner's own Creature nest when the ground allows (`tribe.village_at_nest`), else the rings.
+  * BUG-9271 (`tribe.host_cards`): the Tribe UI's card caller (0xCCC6EA, `SporeCoop::TribeUI_CardOwnedReturn`) gets the
+    game's own IsPlayerOwned for a partner's villager (Citizen_IsPlayerOwned hooked); `coop.tribe villages deny <va>...`
+    tests other callers.
+  * BUG-9272 (`game.reset_sender_scan`, gamefixes.cpp): GalaxyMenu_SimReset hooked; the stimulus and last-attacker walks
+    of the destroy hook are skipped while it runs. `tribe.cursor_listed` keeps the cursor guard switchable.
+  * Commands: `coop.tribe villages baby <player> | earn <seat> <npc faction> | nests <player> | reswap | aibit 0|1`.
+
+## Every player's own nation (2026-11-20, feat/lineages-civ)
+<a id="architecture-own-nations"></a>
+
+Phase 5 of the Lineages port for Civilization (PR #196), BUG-9274, on top of the party, the archive and the Tribe
+villages ([architecture-party](#architecture-party), [architecture-own-villages](#architecture-own-villages)). The game
+side is in [civ-own-nations](re/civ.md#civ-own-nations).
+
+* **Files**: mods/coop/civ_nations.{h,cpp} (the module, beside the Civ split files of C8), mods/coop/civ_seats.h (its
+  pure rules, tests/civ_seats_tests.cpp), founders.{h,cpp} (`founders::Roster`, Stage::Civilization:
+  `<planet>.spo.duonations`, DUO3 by party seat).
+* **Host** (`nations::host_tick` from civ_host.cpp's host tick after the vehicle table pass, and from civ::tick while the
+  host plays alone): the roster and each seat's live nation; the owners of the partner nations' cities (g_city_owner)
+  and vehicles (the host table) every tick (`civ_seats::seat_owner`: the seat's connected player, 0xFE while away);
+  outside the frame every 2 s the founding of the next seat's capital (`found_task`: SpawnNextCity through the co-op hook,
+  the new city told by `new_city_since`, the species key, the roster, the world shared), every 5 s the alliance, every
+  0.5 s the team campaign (levels, the planet won). The host nation's cities are dealt only between the players without
+  a nation of their own; host_buy, build_in_city and the CMD_BUYCITY / CMD_CAPTURE buyer use the city's or the player's
+  own nation (`paying_nation`, `nation_of_player`).
+* **Wire**: no new message. MSG_CIV_STATE's city owner byte 0xFC = an away player's nation (`civ_seats::wire_owner`);
+  MSG_CIV_WALLET's new kind K_NATION (5, host -> guest: u32 seq, f64 money) sets the guest's HUD money to its nation's
+  silently (older guests ignore an unknown kind); civ_wallet is active for a player with a nation also with the setting
+  civ.own_money off (its nation's money is the wallet; its reports are not taken).
+* **Guest** (`nations::guest_tick`): its own nation is the political id of the cities the host says are its own; the team
+  is every nation with a player's city. Hooks (civ_nations.cpp `init`): City_IsPlayerOwned, Vehicle_IsPlayerOwned (its
+  own nation the player's, the host's not), the terrain cursor list (one hook with the Tribe villages in
+  tribe_villages.cpp), Civilization_AI with GetPlayerCivilization at its return (a player's nation runs the player branch,
+  both roles), GetMoney / SpendMoney (a player's nation's own +0x98), CivMode_Progress at its HUD caller (the team's
+  cities). The friendly-fire and capture refusals sit in civ.cpp's damage / Capture / CityBuy hooks
+  (`nations::friendly`).
+* Switches: `civ.own_nations`, `civ.nations_native`, `civ.team_campaign`. Command: `coop.civ nations [found | ally |
+  relation | citizens | spawn | capture <ci> <seat>]`. Test: tools/tests/coop_civ_seats.py (suite civ_seats).
