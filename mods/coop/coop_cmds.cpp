@@ -2,6 +2,10 @@
 // functions and the command registrations of sporekit_mod_main, which calls the register_commands_* functions at the
 // places the registrations had (the same order: SporeKit keeps the commands by name, the module inits between them stay
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
+#include "identity.h"
+#include "party.h"
+#include "home_nests.h"
+#include "civ_wallet.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1192,6 +1196,24 @@ void register_commands_core()
                    settings::command, nullptr, MT);
     H->command_add(M, "coop.find", "coop.find [colors | color <name|0..7> | project x y z | labels] - F2: the arrows to the partners of the last frame, the player colours, pick a colour",
                    pfind::command, nullptr, MT);
+    H->command_add(M, "coop.identity", "coop.identity - the persistent player identities (BUG-9258): this profile's, and the players' the host knows",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s", identity::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.party", "coop.party - the host: this planet's party, one seat per player who played it (BUG-9260)",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s", party::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.homenests", "coop.homenests [make <seat> | extinct <seat>] - the host: every seat's own nest (BUG-9262)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", home_nests::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.live", "coop.live - tests (BUG-0426): the object list of this frame (game::listed: walks, hits, destroys seen)",
                    [](void*, int, const char* const*, SkOut* out) {
                        SAY("%s\n", game::live_status().c_str());
@@ -1936,6 +1958,8 @@ void register_commands_editor()
 
 void register_commands_civ()
 {
+    H->command_add(M, "coop.wallet", "coop.wallet [income <n>] - Civ own money (civ.own_money, BUG-9259): the wallets; income <n>: tests, as if the game paid the host this income",
+                   civ_wallet::command, nullptr, SK_CMD_MAIN_THREAD);
     const int MT = SK_CMD_MAIN_THREAD;
     H->command_add(M, "coop.role", "coop.role [0-3 | fix 0|1] - civilization role: 0 none, 1 military, 2 economic, 3 religious",
                    [](void*, int argc, const char* const* argv, SkOut* out) {

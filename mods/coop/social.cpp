@@ -1,6 +1,7 @@
 #include "social.h"
 #include "lifecycle.h"
 #include "mouse.h"
+#include "cards.h"
 #include "fixes.h"
 #include "creations.h"
 
@@ -861,10 +862,17 @@ static void apply_success(uint8_t player, uint16_t id)
     int rel = a_RelGet ? thiscall<int>(a_RelGet, mgr, key, c, av) : 0;
     int mode = social_mode(c);
     uint32_t anim = reaction_anim(rel);
-    thiscall<void>(a_RelEvent, mgr, 3, key, c);
+    {
+        cards::Actor actor(player); // BUG-9264: an alliance's progress (the species goal) goes to this guest's seat
+        thiscall<void>(a_RelEvent, mgr, 3, key, c);
+    }
     float dna = 0;
     if (mode != 4 && a_DnaWorth) {
         dna = thiscall<float>(a_DnaWorth, c, 1);
+        // BUG-9264: the game's social win adds the creature's DNA worth to the winner's social progress (0xD9BD36);
+        // this replica of it paid nobody's: now the guest's seat
+        if (dna > 0 && dna < 10000)
+            cards::credit(player, true, dna);
         if (dna > 0 && dna < 10000 && C.pace)
             dna = C.pace(dna); // BUG-0510: the party's pace (a guest's friend, as the host's own are in on_dna)
         if (dna > 0 && dna < 10000)
@@ -1378,6 +1386,31 @@ bool debug_send_goal(uint32_t inst, int outcome, float dna)
     w.u8((uint8_t)outcome);
     w.f32(dna);
     return C.sess->send_reliable_to(0, net::MSG_SOCIAL, w);
+}
+
+// BUG-9262 (Lineages roadmap phase 2, owner decision 7): a party species (a player's own creature with its own nest) is
+// best friends with the host's: relation 6 in the host's table (the game's own "allied"; the guests follow the table)
+bool set_party_ally(uint32_t inst)
+{
+    void* mgr = rel_mgr();
+    if (!mgr || !a_RelRecord || !is_host() || !inst)
+        return false;
+    ResourceKey k{inst, 0x2B978C46u, 0x40626200u};
+    uint32_t* rec = thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, &k);
+    if (!rec)
+        return false;
+    rec[0] = 6;
+    return true;
+}
+
+int relation_of(uint32_t inst)
+{
+    void* mgr = rel_mgr();
+    if (!mgr || !a_RelRecord || !inst)
+        return -1;
+    ResourceKey k{inst, 0x2B978C46u, 0x40626200u};
+    uint32_t* rec = thiscall<uint32_t*>(a_RelRecord, (uint8_t*)mgr + 0x20, &k);
+    return rec && skg::readable(rec, 12) ? (int)rec[0] : -1;
 }
 
 // tests: the host's record of a creature species (as the game's ApplyEvent keeps it), sent on change

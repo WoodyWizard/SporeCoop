@@ -31,7 +31,8 @@ FEATURE(trade, 70, 79)      // tool gifts and trade between players
 FEATURE(planets, 80, 84)    // a shared colony's stored spice (BUG-0537)
 FEATURE(badges, 85, 89)     // badges kept across a rejoin
 FEATURE(eco, 90, 94)        // a planet's ecosystem: its plant and animal species (BUG-1148)
-// 95..255 free
+FEATURE(empires, 100, 109)    // every player's own empire: its own money and diplomacy (BUG-9279)
+// 110..255 free
 
 KIND(1,  spacecoop, DOWN,          Any)
 KIND(2,  spacecoop, RAID,          Any)
@@ -85,6 +86,11 @@ KIND(85, badges,    BADGES,        Guest)
 KIND(86, badges,    BADGES_KEPT,   Host)
 KIND(87, badges,    BADGES_DONE,   Guest)
 KIND(90, eco,       ECO,           Any)
+KIND(100, empires,  ASK,           Guest)
+KIND(101, empires,  EMPIRE,        Host)
+KIND(102, empires,  REPORT,        Guest)
+KIND(103, empires,  DIPLO,         Guest)
+KIND(104, empires,  DIPLO_SET,     Host)
 
 #undef FEATURE
 #undef KIND
