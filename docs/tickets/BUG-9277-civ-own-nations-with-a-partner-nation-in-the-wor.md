@@ -1,17 +1,17 @@
 ---
 id: BUG-9277
 title: Civ own nations: with a partner nation in the world and civ.own_money off, a guest who shares the host's nation no longer gets the shared money
-status: open
+status: fixed
 kind: bug
 stage: Civ
 reported: 2026-11-20
 source: found in the port of BUG-9274 (review, 2026-11-20)
 role: 
 versions: 0.7.15.5 (feat/lineages-civ)
-fixed_in:
+fixed_in: unreleased
 branch: feat/lineages-civ
-commits: 2e429fef
-tests:
+commits: d7b9d1c3
+tests: civ_own_money (suite, two players: the money of a guest on the host's nation); the three-player case itself has no test (two instances per lane), see Verification
 signature:
 docs: docs/re/civ.md#civ-own-nations
 related: BUG-9274 BUG-9259

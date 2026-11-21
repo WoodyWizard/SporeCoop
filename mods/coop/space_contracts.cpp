@@ -26,6 +26,7 @@
 
 #include "game.h"
 #include "net/utf8.h"
+#include "space_empires.h"
 #include "space_ext.h"
 #include "space_logic.h"
 #include "sporekit_game.hpp"
@@ -590,7 +591,8 @@ void on_result(uint32_t id, bool ok, uint8_t reason, uint32_t money_, uint32_t t
     g_rewarded = id;
     // money: one shared budget (the host adds it once, shared.cpp gives it to everybody), in rivals
     // mode every member of the crew gets it
-    bool pay = spaceext::rivals() ? mine : host();
+    // BUG-9279: a crew member with an empire of its own gets the reward into its own money
+    bool pay = spaceext::rivals() ? mine : host() || (mine && spaceempires::own_money());
     // BUG-0694: outside Space (no empire / no inventory) the reward is owed, paid back in the same Space world
     bool owe_money = g_owed_fix && pay && money_ && (!spaceext::in_space() || !empire());
     bool owe_tool = g_owed_fix && mine && tool && (!spaceext::in_space() || !inventory());

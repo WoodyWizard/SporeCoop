@@ -3728,3 +3728,17 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * Known: suspected the terrain cursor bound to the freed village (guarded since); not proven.
 * Fixed (2026-11-20, feat/lineages-tribe): the cause was the destroy hook's object walks during the world reset (game.reset_sender_scan).
 * Ticket: BUG-9272
+
+
+## Own nations: no nation for a partner on a planet without a free city site (2026-11-20, feat/lineages-civ)
+<a id="issue-own-nation-no-site"></a>
+
+* What happens: with every player's own nation (BUG-9274) a partner who joins a Civilization planet whose city sites
+  are all founded gets no capital: the host's `coop.civ nations` says "<name>'s capital waits: no free site" and the
+  partner plays the host's nation (the shared split of 0.7.15).
+* Reproduce: a Civ save with all ten cities founded (cCivExpansion +0xB0 = 0, `coop.civ nations` "sites 10 left 0"),
+  a guest with a creature of its own joins.
+* Known: the capital needs a free native site (SpawnNextCity); Lineages had the same limit.
+* Fixed (2026-11-20, feat/lineages-civ): an NPC nation is taken over for the partner (civ.nation_adopt,
+  docs/re/civ.md#civ-nation-adopt).
+* Ticket: BUG-9276

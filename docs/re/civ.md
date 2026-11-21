@@ -2251,10 +2251,62 @@ return 0xBFBD6D, CivMode_Progress 0xCF8F80 and its HUD caller's return 0xCEAB84.
   nation (shared.cpp own_budget) while the guest with its own nation keeps its nation's: an income of 500 on the host
   (4000 -> 8322 with a trade route's) left the guest's HUD money at its nation's 3000.
 * ✔ (runtime, BUG-9276) On a planet without a free site (Kealeneon: 10 of 10 founded) no capital is founded: "<name>'s
-  capital waits: no free site"; the partner plays the host's nation.
+  capital waits: no free site"; the partner plays the host's nation. Since then (switch civ.nation_adopt): an NPC
+  nation is taken over for it, [civ-nation-adopt](#civ-nation-adopt).
 * Not ported: Lineages' offline control of an away partner's nation by the host, the catch-up of a late capital to the
   host capital's buildings, the party wipe, the takeover and combat scaling by founder count, the unlock-byte merge, the
   economic state messages, the history counters of a partner's captures. A nation that lost all its cities is not
   founded again. The guest's Space empire stays the host's (a later phase).
 * Pitfall (tests): `coop.view set` keeps the camera there also in an editor (the spaceship editor showed the planet):
   `coop.view off` first.
+
+## No free city site: a partner's nation is an NPC nation taken over (2026-11-20, feat/lineages-civ)
+<a id="civ-nation-adopt"></a>
+
+BUG-9276, after [civ-own-nations](#civ-own-nations). Switch `civ.nation_adopt` (off: the partner waits, "<name>'s
+capital waits: no free site", and plays the host's nation). Code: civ_nations.cpp `adopt_target`, `adopt`, `bind(...,
+adopted)`; pure rule `civ_seats::adopt_choice` (tests/civ_seats_tests.cpp). Lab test `coop_civ_nosite.py` (suite
+`civ_nosite`).
+
+* When the next seat's capital finds cCivExpansion +0xB0 = 0 (no free site), the host takes an NPC nation for it: not
+  the host's, not in the roster, every city of it settled (the city's political id is its nation's); the one with the
+  fewest cities (a one-city nation is a capital, as a founding gives), then the one whose nearest city is closest to
+  the host's capital. It is bound as a founded capital: the nation's species key (+0x268) the seat's, the roster
+  entry, the money capped at the host nation's, the world shared again. None to take (only the players' nations are
+  left): the partner waits, as before, with "and no NPC nation to take over".
+* Money: an NPC nation keeps its money in its budgets (+0x4AC / +0x4B0; its +0x98 was 0 on Kealeneon): the game's own
+  GetMoney total is moved into +0x98 before the bind (718 on Kealeneon), then capped at the host nation's. A player's
+  nation spends +0x98 only ([civ-own-nations](#civ-own-nations)). With 718 the guest's first land vehicle was refused
+  by the game ("no vehicle: not enough money", a vehicle costs 1000; the host had 23000): the nation's money, not the
+  host's, pays. So a taken nation now starts like a founded capital: with the host nation's money (never less than the
+  NPC nation had; test knob `coop.civ nations adopt_money off` keeps the NPC's own).
+* ✔ (runtime, lane C, 2026-11-20, the final build) Kealeneon again: the taken nation 000021D0 started with 23170 = the
+  host nation's; the guest's `coop.civ buy` made a land vehicle of 000021D0 owned by the guest on the host's game, paid
+  by its nation (the guest's HUD 23227 -> 22231 = the nation's money); the guest's move order drove it on the host's
+  game; the host's capture refused; relation 8.0 both ways; 19 citizens of 7CA81684 on both games; leave and rejoin:
+  the same nation, none taken over twice. With the switch off before the guest's join no nation was given.
+* ✔ (runtime, lane C, the dev Kealeneon save: 10 of 10 sites, the host's capital and nine one-city NPC nations) The
+  guest (its own creature 7CA81684) got NPC nation 000021D0 (its one city 305 m from the host's capital, the nearest);
+  relation 8.0 both ways (allied 7.0) within 5 s; the guest's game had it as its own nation of 7CA81684 after the
+  world came again; the city's label was "[Bob]" on both games; 19 citizens of that city were of 7CA81684 on both
+  games (`coop.civ nations citizens`, the camera at the city). The host's capture of it was refused. A leave and
+  rejoin, and a new evening (the host loading the save alone: the nation kept, nobody's), gave the same nation; none
+  taken over twice.
+* ✔ (runtime) The citizens follow the nation's species key: with only +0x268 set (`coop.civ nations adopt_city off`)
+  the city's 19 citizens were of the guest's species on both games as well. Both keys of the Kealeneon NPC nation
+  000021D0 were blank before (nation +0x268 and city +0x658 00000000, as Lineages saw for new nations): an NPC nation's
+  citizens use the game's own NPC species while the keys are blank. The taken cities' own key (+0x658) is set too
+  (default) so that the save holds the species per city; the log line "taken nation ... its city ...'s species key"
+  shows the old values.
+* ✔ (runtime, Kealeneon) The native city site records (cCivExpansion +0x14 begin, +0x18 end, stride 0x64,
+  `coop.civ nations sites`): **+0x04 / +0x08 / +0x0C the site's position** (each of the ten matched its city's
+  position within 1 m: site 5 (-371.9 183.7 -286.2) = city 000021D0 at (-372 184 -286)); +0x10..+0x1C four floats of
+  unit length (an orientation quaternion); +0x3C the political id of the city founded there (800021CB the player's on
+  site 0); +0x44 a sequential id (053DBCF1..053DBCFC); +0x00 0xFFFFFFFF on the player's site, 0x13C..0x144 on the
+  others; +0x50 0x40828100 on all. This is the position Lineages lacked (docs Lineages civ-multi-founders) to choose
+  the free site nearest a partner's former Tribe village; SpawnNextCity still takes the next site by its own order
+  (Lineages: +0x2C, values here 0xFFFFFFFF, 0, 0x4B, 0xAF, 0x3EC, 0x413, 0x426, 0x2748, 0x2752, 0x2763: not a plain
+  order, ?), and a guest replays "the next site", so a chosen site needs that order understood and the guests told.
+* Not done: a partner whose planet has only the players' nations left gets no nation (none to take); the takeover
+  keeps the NPC nation's buildings, vehicles and their designs (the partner's own City Hall and vehicle designs are
+  not applied).

@@ -10,6 +10,7 @@
 
 #include "modes.h"
 #include "net/shared_ledger.h"
+#include "space_empires.h"
 #include "space_ext.h"
 #include "sporekit_game.hpp"
 #include "fixes.h"
@@ -263,10 +264,12 @@ static bool g_nation_share_fix = true;
 COOP_FIX("civ.nation_share", "BUG-9277", g_nation_share_fix,
          "civ: the host shares its money with the guests who play its nation also when another player has a nation of their own");
 
-// rivals mode (space_rivalry.cpp): every player has its own Space budget, nothing is shared
+// rivals mode (space_rivalry.cpp): every player has its own Space budget, nothing is shared. BUG-9279: a guest with an
+// empire of its own (space_empires.cpp) keeps its own Space money too (the host still shares its own with the guests
+// who play its empire, and drops a change of a guest with its own empire: on_message)
 static bool own_budget(const Res& r)
 {
-    return (r.mode == modes::kSpace && spaceext::rivals()) ||
+    return (r.mode == modes::kSpace && (spaceext::rivals() || spaceempires::own_money())) ||
            (r.mode == modes::kCiv && civ_wallet::active() && // BUG-9259: every player's own Civ money
             !(g_nation_share_fix && g_host_role && !settings::on(settings::kCivOwnMoney))); // BUG-9277
 }
@@ -440,6 +443,8 @@ void on_message(net::Session& s, uint8_t type, uint8_t from, net::Reader& rd)
             continue;
         if (own_budget(r))
             return; // a total or a change sent before the switch to rivals mode: not shared any more
+        if (type == net::MSG_RES_ADD && r.mode == modes::kSpace && spaceempires::own_money_player(from))
+            return; // BUG-9279: a guest with its own empire: its change is its own money's, not the host's
         double cur;
         const double t = H ? H->time_seconds() : 0;
         if (!get_now(r, cur, t)) {

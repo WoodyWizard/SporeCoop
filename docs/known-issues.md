@@ -438,14 +438,13 @@ anchor so other docs can link to it:
   lobby's).
 * Ticket: BUG-9273
 
+## A slow first load of the host's spaceship editor drops the guest (2026-11-20, feat/lineages-space)
+<a id="issue-editor-load-timeout"></a>
 
-## Own nations: no nation for a partner on a planet without a free city site (2026-11-20, feat/lineages-civ)
-<a id="issue-own-nation-no-site"></a>
-
-* What happens: with every player's own nation (BUG-9274) a partner who joins a Civilization planet whose city sites
-  are all founded gets no capital: the host's `coop.civ nations` says "<name>'s capital waits: no free site" and the
-  partner plays the host's nation (the shared split of 0.7.15).
-* Reproduce: a Civ save with all ten cities founded (cCivExpansion +0xB0 = 0, `coop.civ nations` "sites 10 left 0"),
-  a guest with a creature of its own joins.
-* Known: the capital needs a free native site (SpawnNextCity); Lineages had the same limit.
-* Ticket: BUG-9276
+* What happens: at the Civilization to Space vote the host's game opened the spaceship editor and its main thread
+  hung 51 s reading the editor's property files (three other games were loading on the same PC). The guest timed out
+  after 30 s, its vote was dropped, and it later joined straight into the host's Space world, so it never designed its
+  own ship. The host tells the guests "editor" only after the editor is open.
+* Reproduce: a slow disk or several games loading at once, then the Civ to Space vote (lane C, the Kealeneon fixture
+  after the team victory).
+* Ticket: BUG-9290.

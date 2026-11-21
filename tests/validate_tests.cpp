@@ -230,7 +230,7 @@ static void test_space_dir()
     // every kind declared in the files that send MSG_SPACE (enum Kind values 1..99) has a direction
     int listed = 0, missing = 0;
     for (const char* f : {"spacecoop", "space_map", "space_contracts", "space_diplomacy", "space_finale", "space_rivalry",
-                          "space_allies", "space_trade", "space_planets", "space_badges", "space_eco"}) {
+                          "space_allies", "space_trade", "space_planets", "space_badges", "space_eco", "space_empires"}) {
         std::ifstream in(std::string("mods/coop/") + f + ".cpp");
         if (!in) {
             printf("  (no %s.cpp: run from the repository root)\n", f);
@@ -1364,8 +1364,8 @@ static void test_manifest()
             bad++;
         }
         // kinds added after 0.7.14 (unknown there: a 0.7.14 peer passes them on and ignores them): K_ECO 90 (BUG-1148),
-        // K_COLONY 14 / K_KEPT_COLONY 15 (BUG-1151)
-        bool added = (t == 90 || t == 14 || t == 15) && golden0714::space_dir(u) == SpaceDir::Unknown;
+        // K_COLONY 14 / K_KEPT_COLONY 15 (BUG-1151), the empires kinds 100..104 (BUG-9279)
+        bool added = (t == 90 || t == 14 || t == 15 || (t >= 100 && t <= 104)) && golden0714::space_dir(u) == SpaceDir::Unknown;
         if (space_dir(u) != golden0714::space_dir(u) && !added) {
             printf("  space kind %d: direction %d, 0.7.14 %d\n", t, (int)space_dir(u), (int)golden0714::space_dir(u));
             bad++;

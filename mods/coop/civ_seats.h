@@ -114,6 +114,45 @@ inline uint32_t new_city_since(const std::vector<City>& before, const std::vecto
     return found;
 }
 
+// ---- no free site (BUG-9276): the partner takes over an NPC nation ----
+// A live city as the takeover sees it.
+struct Holding {
+    uint32_t nation = 0;  // its nation's political id (0: no nation)
+    bool home = false;    // its nation is the host's (the native player country)
+    bool own = true;      // the city's political id is its nation's (not on its way to another nation)
+    float dist = 0;       // from the place the partner's capital should be near (the host's capital)
+};
+// The NPC nation a partner takes over when the planet has no free city site: not the host's, not a player's (the
+// roster), every city of it settled; the one with the fewest cities (a one-city nation: one capital, as a founding),
+// then the one whose nearest city is closest. 0 = none (only the players' nations are left).
+inline uint32_t adopt_choice(const std::vector<Holding>& cities, const founders::Roster& r)
+{
+    struct N {
+        uint32_t pol = 0;
+        size_t count = 0;
+        float dist = 1e30f;
+        bool ok = true;
+    };
+    std::vector<N> ns;
+    for (const auto& c : cities) {
+        if (!c.nation || c.home || r.contains_faction(c.nation))
+            continue;
+        auto it = std::find_if(ns.begin(), ns.end(), [&](const N& n) { return n.pol == c.nation; });
+        if (it == ns.end()) {
+            ns.push_back(N{c.nation});
+            it = ns.end() - 1;
+        }
+        it->count++;
+        it->dist = std::min(it->dist, c.dist);
+        it->ok = it->ok && c.own;
+    }
+    const N* best = nullptr;
+    for (const auto& n : ns)
+        if (n.ok && (!best || n.count < best->count || (n.count == best->count && n.dist < best->dist)))
+            best = &n;
+    return best ? best->pol : 0;
+}
+
 // ---- who commands ----
 // The host's owner of a seat's cities and vehicles: seat 0 the host, a partner seat its connected player (kNobody:
 // away -> kNoOwner, nobody commands it; its cities and vehicles stay its nation's), -1 (no seat): kNobody.
