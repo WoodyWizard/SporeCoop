@@ -10,7 +10,7 @@ role:
 versions: 0.7.15.1, unreleased
 fixed_in:
 branch: fix/w62-flake-cc
-commits:
+commits: 9cebc645
 tests: own_cell
 signature:
 docs:

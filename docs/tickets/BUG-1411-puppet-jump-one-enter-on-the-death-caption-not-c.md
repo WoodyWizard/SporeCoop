@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: fix/w62-flake-cc
-commits:
+commits: c34e3345
 tests: puppet_jump
 signature:
 docs:

@@ -10,7 +10,7 @@ role:
 versions: 0.7.4, unreleased
 fixed_in:
 branch: fix/w62-flake-cc
-commits:
+commits: 1e99207e
 tests: creature_sneak
 signature:
 docs: docs/re/creature.md#creature-sneak

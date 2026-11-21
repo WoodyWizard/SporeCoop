@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: fix/w62-flake-cc
-commits:
+commits: e4076da2
 tests: cell_attack_anim, cell_attack_jaw, cell_attack_spike, cell_attack_mouth
 signature:
 docs: docs/re/cell.md#cell-eat-anim

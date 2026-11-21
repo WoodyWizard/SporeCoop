@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: fix/w62-flake-cc
-commits:
+commits: 372de2c3
 tests: cell_new_game, cell_far_guest, join_new_game
 signature:
 docs:

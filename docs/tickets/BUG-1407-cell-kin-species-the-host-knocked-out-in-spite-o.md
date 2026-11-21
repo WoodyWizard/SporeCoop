@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in:
 branch: fix/w62-flake-cc
-commits:
+commits: 4c7f2925
 tests: cell_kin_species
 signature:
 docs:

@@ -9966,3 +9966,21 @@ Lab run 20261120-133703 (and the twins 20261120-130608); see [testing-lab-verdic
   village read the species as missing (BUG-1375).
 * tribe_caption_race: the conquest caption needs the village's mission; the guest's `coop.tribe act_obj 15` raid order
   makes it on the host (BUG-1068), `coop.tribe order` does not (BUG-1377).
+
+## Third final check of 0.7.16: Cell and Creature flakes (2026-11-21, fix/w62-flake-cc)
+<a id="testing-flakes-0716-cc"></a>
+
+* new_stage_game.py: the stage chooser can open later than 150 frames after the click; a second click on a slot near
+  the ring's Space icon (slot 818 669, icon 798 646) then opens a Space wizard. `wait_chooser` polls up to 600 frames
+  before the slot is clicked again (BUG-1389).
+* cell_attack_anim: an idle herbivore cell eats a plant that drifts into its mouth (animation 0xB); `coop.pool anims`
+  prints `own_eats`, the test keeps the samples around an own meal apart (BUG-1400, docs/re/cell.md#cell-eat-anim).
+* cell_kin_species: a player can be knocked out at level 10 in spite of `coop.pool invulnfor` (BUG-1334); the host is
+  sent to the guest's place only when it is up and must be there before the kin there are judged (BUG-1407).
+* own_cell: the guest's own pool falls from ~170 to 0-25 cells and fills again 15-25 s later; the test prints the
+  DestroyCell callers of each fall (`coop.pool orphans`), cause open (BUG-1408).
+* nest_target_probe: the host drew the guest, hanging in its paused game 565 m away, 6.3 m lower (monitor `drawn`);
+  the test prints both games' `coop.ground` under the guest, cause open (BUG-1410).
+* puppet_jump: the death caption is answered until it is gone (one Enter could be lost: the game stayed dead and
+  paused, BUG-1411).
+* creature_sneak: the sneak look is compared only on a puppet the observer draws opaque before the sneak (BUG-1412).

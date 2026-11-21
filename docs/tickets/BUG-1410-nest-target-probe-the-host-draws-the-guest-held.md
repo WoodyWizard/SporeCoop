@@ -10,7 +10,7 @@ role:
 versions: 0.7.13, unreleased
 fixed_in:
 branch: fix/w62-flake-cc
-commits:
+commits: 91754ef4
 tests: nest_target_probe
 signature:
 docs:
