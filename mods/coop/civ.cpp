@@ -94,6 +94,15 @@ static bool g_founder_share_due;        // host: a capital was bound; the world 
 static bool g_late_capital = true;
 COOP_FIX("civ.late_capital", "BUG-9135", g_late_capital,
          "civ: a partner without a nation gets one capital, caught up to the host's capital, also once NPC nations exist");
+// BUG-9309 (owner decision 7S B, 2026-11-21): a newcomer who took an absent player's party seat (party.reuse_offline_seat,
+// BUG-9259) found every founder seat bound to an absent identity and got no nation. Now it founds a new nation of its own
+// in a free founder seat past the first four (4..7, founders::kMaxSeats) through the late capital; the absent player
+// keeps theirs (the game runs it while they are away) and gets it back on return (the roster seat is its identity's).
+// All eight taken: no capital, as before. `coop.fix civ.newcomer_nation off`: at most founders::kPlaySeats nations.
+static bool g_newcomer_nation = true;
+COOP_FIX("civ.newcomer_nation", "BUG-9309", g_newcomer_nation,
+         "civ: a newcomer in an absent player's party seat founds a nation of its own in a free founder seat past the first four");
+static size_t late_seat_limit() { return g_newcomer_nation ? founders::kMaxSeats : founders::kPlaySeats; }
 static bool g_late_requested;   // host: a late capital was requested and has not appeared yet
 static double g_late_prompt_since; // guest: this Civ world (or session) began then (late_prompt waits 15 s)
 static bool g_late_spawning;    // host: the late founding's own SpawnNextCity call is running
@@ -859,8 +868,38 @@ void fire_local(void* owner, uintptr_t ret, bool fired)
                (unsigned)ret, (unsigned)e.owner_vt, e.owner_vt && vtable_in_game(o) ? game::noun_id(o) : 0u);
 }
 
+// BUG-9312 (owner 2026-11-21, "Yes you should fix that"): a superweapon was launched on the host only (the vote / request
+// path), so a guest saw the results the mod relays (city hp, owners) but never the weapon: no projectile, no target
+// marker, no burst, for the host's own weapons and a partner's. On (civ.sw_show): the host notes the aims of the tools
+// its launch fires (cCity::LaunchSuperweapon 0xBE5D30, the FireTool calls inside it: one for a targeted type, one per
+// city hit for the global types 2 / 8) and sends them with the type, the launching nation and city (MSG_CIV_CMD
+// CMD_SW_SHOW); a guest fires the same tool of its own copy of that nation from its copy of that city at those aims
+// (cToolManager::FireTool, as the launch does), and for 20 s drops every damage, capture, conversion and purchase in its
+// game attributed to that nation (the host's game is the authority: its results arrive through the usual relays).
+// Type 5 fires no tool at its launch: nothing is sent. `coop.fix civ.sw_show off`: no relay (the guest sees nothing).
+static bool g_sw_show_fix = true;
+COOP_FIX("civ.sw_show", "BUG-9312", g_sw_show_fix,
+         "civ: every player sees a superweapon's launch (the host relays it, a guest's game shows it without damage)");
+static bool g_sw_capture;                         // host: inside a relayed launch, FireTool's aims are noted
+CALL_GUARD("civ.sw_capture", g_sw_capture);
+static std::vector<net::Vec3> g_sw_aims;          // host: the aims of the launch being noted
+static uint32_t g_sw_show_pol;                    // guest: the nation of the last shown launch
+static double g_sw_show_until = -100;             // guest: its effects are dropped until then
+static uint32_t g_sw_shows_sent, g_sw_shows_in, g_sw_shows_fired, g_sw_shows_missed, g_sw_show_dropped;
+static std::string g_sw_show_last;
+// guest: an effect of `pol` while a shown launch of that nation lives here: the host's game decides it
+static bool sw_show_cosmetic(uint32_t pol)
+{
+    if (!g_sw_show_fix || !pol || pol != g_sw_show_pol || !is_guest() || !H || H->time_seconds() > g_sw_show_until)
+        return false;
+    ++g_sw_show_dropped;
+    return true;
+}
+
 void fire_observed(void* tool, void* owner, const float* aim, void* target, bool fired)
 {
+    if (g_sw_capture && aim && g_sw_aims.size() < 64 && std::isfinite(aim[0]) && std::isfinite(aim[1]) && std::isfinite(aim[2]))
+        g_sw_aims.push_back({aim[0], aim[1], aim[2]}); // BUG-9312: a superweapon launch's tool
     if (!g_fix_shots || !owner || !aim || !tool || !is_host() || !active())
         return;
     if (g_fix_shot_fired && !fired) {
@@ -3226,13 +3265,14 @@ static int SK_THISCALL h_VehicleDamage(void* combat, float damage, uint32_t fact
                                        const void* direction, void* attacker)
 {
     // BUG-0477 (h_VTakeDamage's guard; that second hook of the same function never installed: MinHook allows one)
-    if (g_vehicle_cosmetic_fix && cosmetic_hit(attacker))
+    if ((g_vehicle_cosmetic_fix && cosmetic_hit(attacker)) || sw_show_cosmetic(faction)) // BUG-9312: a shown superweapon
         return 0;
     return o_VehicleDamage(combat,combat_damage(combat,0x508,damage,faction,attacker),faction,type,direction,attacker);
 }
 static int SK_THISCALL h_TurretDamage(void* combat, float damage, uint32_t faction, int type,
                                       const void* direction, void* attacker)
 {
+    if (sw_show_cosmetic(faction)) return 0; // BUG-9312: a shown superweapon hurts nothing on a guest
     return o_TurretDamage(combat,combat_damage(combat,kTurretCombat,damage,faction,attacker),faction,type,direction,attacker);
 }
 
@@ -3242,7 +3282,7 @@ using BTakeDamage_t = int(SK_THISCALL*)(void*, float, uint32_t, int, const void*
 static BTakeDamage_t o_BTakeDamage, o_HallTakeDamage;
 static int b_damage(BTakeDamage_t orig, void* self, float dmg, uint32_t pol, int type, const void* dir, void* att)
 {
-    if (cosmetic_hit(att)) // BUG-0477: a relayed shot of the host's
+    if (cosmetic_hit(att) || sw_show_cosmetic(pol)) // BUG-0477: a relayed shot of the host's; BUG-9312: a shown superweapon
         return 0;
     uint8_t p = is_host() && active() ? player_of_combatant(att) : 0xFF;
     if (p != 0xFF && role(p) == 1) {
@@ -3272,6 +3312,7 @@ using AddCapture_t = void(SK_CDECL*)(void*, void*, void*, uint32_t, float, uint3
 static AddCapture_t o_AddCapture;
 static void SK_CDECL h_AddCapture(void* ctx, void* city, void* meter, uint32_t owner, float dmg, uint32_t att, bool f)
 {
+    if (sw_show_cosmetic(att)) return; // BUG-9312: a shown superweapon takes no city on a guest
     // BUG-0420: the owner of an NPC nation's vehicle is 0xFE: it counted as a second player (one guest and an NPC
     // army gave the joint-siege bonus). Only a player's vehicles count now; `coop.fix civ.siege_players off`: 0.7.10.
     bool player = g_hit_by != 0xFF && (!g_siege_players_fix || g_hit_by < net::kMaxPlayers);
@@ -3346,6 +3387,7 @@ COOP_FIX("civ.religious_attribution", "BUG-9078", g_religious_attribution,
          "civ: religious governors boost their own preachers, not traders or other nations");
 static void SK_THISCALL h_Convert(void* city, uint32_t pol, int count)
 {
+    if (sw_show_cosmetic(pol)) return; // BUG-9312: a shown superweapon converts nobody on a guest
     if (is_host() && active() && city && count > 0) {
         net::Vec3 cp = city_pos(city);
         uint8_t preacher = 0xFF;
@@ -3376,6 +3418,7 @@ using BuyProgress = void(SK_THISCALL*)(void*,float,uint32_t);
 static BuyProgress o_BuyProgress;
 static void SK_THISCALL h_BuyProgress(void* city, float amount, uint32_t buyer)
 {
+    if (sw_show_cosmetic(buyer)) return; // BUG-9312: a shown superweapon buys nothing on a guest
     if (amount > 0 && std::isfinite(amount)) amount *= 100.f / takeover_percent(city,buyer);
     o_BuyProgress(city,amount,buyer);
 }
@@ -3699,6 +3742,153 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
             }
         }))
         g_votes++;
+}
+
+// BUG-9313 (owner decision 7P A, 2026-11-21): a global superweapon spares the party's cities. The city launch 0xBE5D30
+// (Simulator::cCity::LaunchSuperweapon) runs 0xBE4300 (type 2) or 0xBE4550 (type 8), which fire the type's tool at every
+// city of the planet whose political id (vt 0x4C, +0x30) is not the launching city's and set that city's instant-capture
+// flag +0x762; 0xBE4300 then applies the relationship event 0x5776D99 ("used a superweapon") between the firing nation
+// and every other nation. The game has no ally exception (Ghidra, docs/re/civ.md#civ-global-sw-party): its only
+// exclusion is "the launching city's own political id". On (host): for the call, every city of another party founder
+// nation carries the firing nation's political id (+0x30, swap ledger), so the game's own exclusion skips it, and the
+// relationship event between two party nations is not applied. NPC cities are hit as before. Type 5 (0xBDC4A0) hits no
+// city at its launch (it toggles an effect on the launching city): unchanged. `coop.fix civ.global_sw_spares_party off`:
+// every city but the firing nation's is hit (the game's rule).
+static bool g_sw_spare_party = true;
+COOP_FIX("civ.global_sw_spares_party", "BUG-9313", g_sw_spare_party,
+         "civ: a party player's global superweapon (types 2, 8) spares every party nation's cities, as decision 7P A");
+static bool g_global_sw_launching; // inside a party global launch: the relationship hook spares party pairs
+CALL_GUARD("civ.global_sw_launching", g_global_sw_launching);
+static uint32_t g_global_sw_launches, g_global_sw_spared_cities, g_global_sw_spared_relations;
+static std::string g_global_sw_last;
+using CityLaunch_t = void(SK_THISCALL*)(void*, int, const float*);
+static CityLaunch_t o_CityLaunch;
+using ApplyRel_t = float(SK_THISCALL*)(void*, uint32_t, uint32_t, uint32_t, float);
+static ApplyRel_t o_ApplyRel;
+static float SK_THISCALL h_ApplyRel(void* mgr, uint32_t a, uint32_t b, uint32_t event, float scale)
+{
+    if (g_global_sw_launching && event == 0x5776D99u && a != b && party_nation(a) && party_nation(b)) {
+        ++g_global_sw_spared_relations;
+        return 0.f;
+    }
+    return o_ApplyRel(mgr, a, b, event, scale);
+}
+constexpr uint8_t CMD_SW_SHOW = 12; // host -> guests (BUG-9312): u8 type, u32 nation, 3 f32 city, u8 n, n x 3 f32 aims
+// host: the launch's tools went off at g_sw_aims: every guest shows them (BUG-9312)
+static void sw_show_send(void* city, int type)
+{
+    if (g_sw_aims.empty() || !city || !C.sess) return;
+    net::Writer w;
+    w.u8(CMD_SW_SHOW);
+    w.u8((uint8_t)type);
+    w.u32(pol_of(city));
+    const net::Vec3 at = city_pos(city);
+    w.f32(at.x); w.f32(at.y); w.f32(at.z);
+    w.u8((uint8_t)g_sw_aims.size());
+    for (const auto& a : g_sw_aims) { w.f32(a.x); w.f32(a.y); w.f32(a.z); }
+    for (const auto& p : C.sess->players())
+        if (p.id != C.sess->my_id()) C.sess->send_reliable_to(p.id, net::MSG_CIV_CMD, w);
+    ++g_sw_shows_sent;
+    H->log(M, SK_INFO, "civ: superweapon %d of nation %08X: %zu tool aim(s) sent to the guests to show (BUG-9312)", type,
+           pol_of(city), g_sw_aims.size());
+}
+static void city_launch(void* city, int type, const float* target)
+{
+    const bool show = g_sw_show_fix && active() && is_host() && C.sess->players().size() > 1;
+    if (!show) { o_CityLaunch(city, type, target); return; }
+    g_sw_aims.clear();
+    {
+        callguard::Hold capture(g_sw_capture);
+        o_CityLaunch(city, type, target);
+    }
+    sw_show_send(city, type);
+    g_sw_aims.clear();
+}
+static void SK_THISCALL h_CityLaunch(void* city, int type, const float* target)
+{
+    const uint32_t own = city ? pol_of(city) : 0;
+    if ((type != 2 && type != 8) || !g_sw_spare_party || !active() || !is_host() || !party_nation(own)) {
+        city_launch(city, type, target);
+        return;
+    }
+    std::vector<std::pair<void*, uint32_t>> spared;
+    const size_t mark = game::swap_depth();
+    for (void* c : all_cities()) {
+        const uint32_t pol = pol_of(c);
+        if (pol == own || !party_nation(pol)) continue;
+        game::swap_open(game::swap_undo_u32, &F<uint32_t>(c, kPol), pol, "Civ global superweapon spares a party city");
+        F<uint32_t>(c, kPol) = own;
+        spared.push_back({c, pol});
+    }
+    const uint32_t relations = g_global_sw_spared_relations;
+    {
+        callguard::Hold launching(g_global_sw_launching);
+        city_launch(city, type, target);
+    }
+    for (auto& [c, pol] : spared) F<uint32_t>(c, kPol) = pol;
+    game::swap_close(mark, spared.size());
+    ++g_global_sw_launches;
+    g_global_sw_spared_cities += (uint32_t)spared.size();
+    char b[200];
+    snprintf(b, sizeof b, "global superweapon %d of nation %08X: %zu party cities spared, %u party relationship events spared",
+             type, own, spared.size(), g_global_sw_spared_relations - relations);
+    g_global_sw_last = b;
+    H->log(M, SK_INFO, "civ: %s (BUG-9313)", b);
+}
+
+// guest (BUG-9312): the host's launch, shown with this game's copy of the nation's tool (no damage: sw_show_cosmetic)
+static void guest_sw_show(net::Reader& r)
+{
+    const int type = r.u8();
+    const uint32_t pol = r.u32();
+    net::Vec3 at;
+    at.x = r.f32(); at.y = r.f32(); at.z = r.f32();
+    const unsigned n = r.u8();
+    std::vector<net::Vec3> aims;
+    for (unsigned i = 0; i < n && i < 64 && r.ok(); ++i) {
+        net::Vec3 a;
+        a.x = r.f32(); a.y = r.f32(); a.z = r.f32();
+        if (std::isfinite(a.x) && std::isfinite(a.y) && std::isfinite(a.z)) aims.push_back(a);
+    }
+    if (!r.ok() || type > 11 || aims.empty()) return;
+    ++g_sw_shows_in;
+    if (!g_sw_show_fix || !active() || !is_guest() || !a_FireTool || !a_ToolMgrGet || !nm()) return;
+    void* city = nullptr;
+    float best = 80.f; // the host's city here (the same world): the nearest of that nation
+    for (void* c : all_cities()) {
+        if (pol_of(c) != pol) continue;
+        const float d = net::dist(city_pos(c), at);
+        if (d < best) { best = d; city = c; }
+    }
+    void* nation = city ? F<void*>(city, kCityCiv) : nullptr;
+    ensure_sw_tools(nation);
+    void** b = nation ? F<void**>(nation, 0x470) : nullptr;
+    void** e = nation ? F<void**>(nation, 0x474) : nullptr;
+    void* tool = b && e - b > type ? b[type] : nullptr;
+    void* hall = city ? F<void*>(city, 0x320) : nullptr; // mpCityHall: the launch's owner (its spatial +0x34)
+    void* mgr = tool ? skg::cdecl_call<void*>(a_ToolMgrGet) : nullptr;
+    char line[220];
+    if (!mgr || !hall) {
+        ++g_sw_shows_missed;
+        snprintf(line, sizeof line, "superweapon %d of nation %08X not shown: city=%p nation=%p tool=%p hall=%p", type, pol, city,
+                 nation, tool, hall);
+        g_sw_show_last = line;
+        H->log(M, SK_WARN, "civ: %s (BUG-9312)", line);
+        return;
+    }
+    g_sw_show_pol = pol;
+    g_sw_show_until = H->time_seconds() + 20;
+    unsigned fired = 0;
+    for (const auto& a : aims) {
+        const float aim[3] = {a.x, a.y, a.z};
+        callguard::Hold in_guest_fire(g_in_guest_fire);
+        fired += (thiscall<int>(a_FireTool, mgr, tool, (uint8_t*)hall + kVSpatial, aim, -1, 0, (void*)nullptr, 1) & 0xFF) != 0;
+    }
+    g_sw_shows_fired += fired;
+    snprintf(line, sizeof line, "superweapon %d of nation %08X shown from city %p: %u of %zu tool shot(s) fired", type, pol, city,
+             fired, aims.size());
+    g_sw_show_last = line;
+    H->log(M, SK_INFO, "civ: %s (BUG-9312)", line);
 }
 
 static void init_wall_editor();
@@ -4057,6 +4247,8 @@ bool init(const SkHost* host, SkMod* mod, Ctx ctx)
         {"Simulator::cCity::AddBuyProgress", (void*)h_BuyProgress, (void**)&o_BuyProgress},
         {"Simulator::cCity::OnAttacked", (void*)h_OnAttacked, (void**)&o_OnAttacked},
         {"Simulator::cCivilization::FireSuperweapon", (void*)h_FireSW, (void**)&o_FireSW},
+        {"Simulator::cCity::LaunchSuperweapon", (void*)h_CityLaunch, (void**)&o_CityLaunch}, // BUG-9313, BUG-9312
+        {"Simulator::cRelationshipManager::ApplyRelationship", (void*)h_ApplyRel, (void**)&o_ApplyRel}, // BUG-9313
     };
     for (auto& o : opts)
         if (uintptr_t a = H->sym(o.name))
@@ -4408,7 +4600,9 @@ static void late_tell(uint8_t player, uint64_t identity, civ_seats::LateWhy why)
     g_late_told[key] = why;
     if (first && why == W::HasNation) return; // a founder as before: nothing to say
     const std::string name = C.sess->name_of(player);
-    H->log(M, SK_INFO, "civ late capital: %s (player %u) %s", name.c_str(), (unsigned)player, civ_seats::late_why_text(why));
+    H->log(M, SK_INFO, "civ late capital: %s (player %u) %s%s", name.c_str(), (unsigned)player, civ_seats::late_why_text(why),
+           why == W::SeatsFull ? (g_newcomer_nation ? " (all 8 founder seats have a nation, BUG-9309)"
+                                                    : " (the first 4; civ.newcomer_nation is off, BUG-9309)") : "");
     if (!C.notice) return;
     if (why == W::NoOwnCreature)
         C.notice(name + " plays the host's species: no capital of their own until they create a creature.");
@@ -4585,7 +4779,8 @@ static void late_capital_tick(const std::string& planet, void* home, const found
     const auto joiners = late_joiners(ids);
     const auto host_key = F<creations::Key>(home, kNationSpecies);
     std::vector<civ_seats::LateWhy> why;
-    const auto plan = civ_seats::late_capital(g_founder_nations, tribal, looks, host_key.instance, joiners, &why);
+    const auto plan = civ_seats::late_capital(g_founder_nations, tribal, looks, host_key.instance, joiners, &why,
+                                              late_seat_limit());
     for (size_t i = 0; i < joiners.size(); ++i) late_tell(ids[i], joiners[i].identity, why[i]);
     if (plan.seat < 0 || (plan.joiner < 0 && !tribal_blocked)) return; // nothing, or the usual founding's turn
     LateFounding next;
@@ -7878,6 +8073,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         const uint8_t kind = r.u8();
         if (kind == kCmdSpecialty) // BUG-0982: the host's question
             guest_specialty_ask(r);
+        else if (kind == CMD_SW_SHOW) // BUG-9312: a superweapon's launch to show
+            guest_sw_show(r);
         else if (kind == CMD_WALL_ACK) {
             auto request = r.u32(), sequence = r.u32();
             const auto accepted = r.u8();
@@ -8450,7 +8647,7 @@ std::string debug(const std::vector<std::string>& a)
             return unseated.empty() ? "Every partner already has a nation." : "Name the partner: bind_guest <nation> <player id>.";
         }
         const size_t seat = std::max<size_t>(g_founder_nations.seats(), 1);
-        if (seat >= founders::kPlaySeats) return "Every founder seat is taken.";
+        if (seat >= late_seat_limit()) return "Every founder seat is taken."; // BUG-9309: up to kMaxSeats
         auto key = creations::player_key(guest, creations::kCreature);
         auto home_key = F<creations::Key>(player_civ(), kNationSpecies);
         bool distinct = key.instance && home_key.instance && !(key == home_key);
@@ -8493,7 +8690,8 @@ std::string debug(const std::vector<std::string>& a)
         const auto joiners = late_joiners(ids);
         std::vector<civ_seats::LateWhy> why;
         const auto plan = civ_seats::late_capital(g_founder_nations, tribal, looks,
-                                                  F<creations::Key>(player_civ(), kNationSpecies).instance, joiners, &why);
+                                                  F<creations::Key>(player_civ(), kNationSpecies).instance, joiners, &why,
+                                                  late_seat_limit());
         void* ex = a_ExpansionGet ? skg::cdecl_call<void*>(a_ExpansionGet) : nullptr;
         const bool sites = ex && skg::readable(ex, kExSitesLeft + 4);
         char line[200];
@@ -9028,7 +9226,13 @@ std::string debug(const std::vector<std::string>& a)
             }
         snprintf(b, sizeof b, "\npartner_unlocks fix=%d guest_superweapons fix=%d own_nation=%u refused=%u tools_loaded=%u last: ",
                  (int)g_partner_unlocks, (int)g_guest_sw_fix, g_sw_own_nation, g_sw_nation_refused, g_sw_tools_loaded);
-        return out + b + g_sw_last_line;
+        out += b + g_sw_last_line;
+        snprintf(b, sizeof b, "\nglobal_sw_spares_party fix=%d launches=%u spared_cities=%u spared_relations=%u last: ",
+                 (int)g_sw_spare_party, g_global_sw_launches, g_global_sw_spared_cities, g_global_sw_spared_relations);
+        out += b + g_global_sw_last;
+        snprintf(b, sizeof b, "\nsw_show fix=%d sent=%u in=%u fired=%u missed=%u dropped=%u last: ", (int)g_sw_show_fix,
+                 g_sw_shows_sent, g_sw_shows_in, g_sw_shows_fired, g_sw_shows_missed, g_sw_show_dropped);
+        return out + b + g_sw_show_last;
     }
     // swgrant <seat> <type> [money]: tests (BUG-9306, host), founder seat's nation gets superweapon <type> unlocked
     // (+0x484, kept across the campaign tick's RefreshUnlocks until `swgrant clear`, BUG-9310) and [money] added to +0x98

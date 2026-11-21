@@ -9085,3 +9085,33 @@ seat with a nation (TITAN: DuoQACivHost / Abber with the pitfalls above patched 
   `civ.unlock_cards_restore` (off from the start): every seat shows it, and the host's `coop.cards` `effective` shows the
   partner's card.
 * The guest's screen shows no superweapon marker or burst (BUG-9312): check effects on the game state, not the picture.
+  CORRECTION (2026-11-21, fix/l47-decide): with civ.sw_show (BUG-9312) the guest's screen shows the marker, the projectile
+  and the burst (#testing-global-sw-newcomer).
+## Global superweapons, a superweapon on a guest's screen, a newcomer's nation: how to test (2026-11-21, fix/l47-decide)
+<a id="testing-global-sw-newcomer"></a>
+
+BUG-9309, BUG-9312, BUG-9313 (docs/re/civ.md#civ-global-sw-party). TITAN: host DuoQACivHost / Abber (instance 9, the
+`.duo-seats` byte 4 patched 0x10 -> 4 in a backed-up folder), guest DuoQACivGuest (instance 10); Abber's four founder
+seats belong to absent identities, so the guest is the BUG-9309 newcomer as it is.
+* Newcomer (BUG-9309): host `coop.load Game0 Abber`, `coop.host 47839 CivHost-NoShare- 4`; guest `coop.join
+  127.0.0.1:47839 CivGuest-NoShare-`, then (in the world) `coop.creations choose creature 292B20E4` (an own creature; a
+  fresh load plays the host's species). Host `coop.civ late` / the log: `finds every founder seat taken` with
+  `coop.fix civ.newcomer_nation off`; on: `founding requested for seat 4`, `seat 4 (CivGuest) capital ... roster
+  written`, the guest's `coop.status` `founders: ... seats=5 local_seat=4`. Save (`coop.save`), both `coop.leave`, host
+  load, host and join again: `nation_seat=4: has a nation` at once.
+* The switch can be turned on during the session: the next late-capital tick (2 s) founds the seat.
+* Superweapon on the guest's screen (BUG-9312): both cameras on the host's capital, host `coop.settings force
+  civ.superweapon_vote 0`, `coop.civ swgrant 0 9 20000`, `coop.civ super 9 75 -410 -285`; shots of both games right
+  after (`shot`, ~0.5 s each). Guest-fired: `coop.civ swgrant 4 3 20000`, guest `coop.civ super 3 75 -410 -285`. `coop.civ
+  sw` last lines: host `sw_show ... sent=`, guest `in= fired= dropped=` and the last shown launch. A type recharges for
+  minutes: use another type for the next run (3, 9 work at open ground).
+* Global types (BUG-9313): Abber has no NPC nation at first (sites appear later): `coop.civ test_outsider <faction>`
+  makes a founder nation count as outside the party. `coop.civ swgrant <seat> 2 100000` (cost 12000 x the other
+  cities), the firing game `coop.civ super 2` (no place). The capture comes 10-20 s later: `coop.civ` city lines on both
+  games (pol= changes to the firing nation). A type 2 / 5 / 8 is once per nation (+0x4CC): `mem.write <nation+0x4CC> 00`
+  on the host for another run (the nation's address in `coop.civ sw`).
+* The host's camera moves to the launching city for a global type (the game's launch); a guest's camera does not. The
+  guest's camera is moved with a click on its minimap (QA windows only).
+* Pitfalls: a capture can bring the Communications Panel tutorial (pauses both games: click its check mark), a campaign
+  autosave and a world share (the guest reloads, 20-40 s). After a guest reload the host logged `shared money -N from
+  player 1` once per reload in these runs (after `swgrant` money writes; not analysed). Restore the save folders after.

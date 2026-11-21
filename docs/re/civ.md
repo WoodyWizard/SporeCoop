@@ -2759,7 +2759,7 @@ dump has the mod's hooks in it: FireSuperweapon 0xBF8BB0 and RefreshUnlocks 0xBF
   nation (CivByPol of its founder faction) fires it, through the vote as before; when that nation's CanUse is false the
   sender gets a notice with its unlocked flag, money and the global flag (the cooldown is the remaining reason).
 * ? The global types 2/5/8 act on every city not of the firing nation: a partner's global weapon (as the host's own
-  before) also reaches the other founders' cities. Whether the party wants that is an owner decision (BUG-9306).
+  before) also reaches the other founders' cities. Whether the party wants that is an owner decision (BUG-9306). ~ answered (2026-11-21, fix/l47-decide): see #civ-global-sw-party (type 5 hits no city; 2 / 8 spare the party, decision 7P A).
 * Tools: `coop.civ sw` lists each founder nation's money, unlocked[12], the game's CanUse per type and the global flag,
   plus the last partner request; `coop.civ swgrant <seat> <type> [money]` (host, tests) unlocks a type for a seat's
   nation and adds money (RefreshUnlocks may take the unlock back at the next city change); `coop.civ super <type> [x y
@@ -2803,3 +2803,54 @@ runs on the TITAN QA copy).
   not restore them: the caller must). Fixed by `civ.unlock_cards_restore`.
 * Tools: `coop.civ sw` (now with tools_loaded=), `coop.civ swgrant <seat> <type> [money]` keeps its grant across the
   campaign tick until `coop.civ swgrant clear` (or a planet change).
+## Global superweapons and the party, a superweapon shown on guests, a newcomer's own nation (2026-11-21, fix/l47-decide)
+<a id="civ-global-sw-party"></a>
+
+Owner decisions 7P A (BUG-9313), 7S B (BUG-9309) and BUG-9312. GOG 2024, Ghidra on the TITAN Steam dump
+(`tools/ghidra/q.sh --build 2024`), live runs on the TITAN QA copy (Abber, docs/06-testing.md#testing-global-sw-newcomer).
+* ✔ `Simulator::cCity::LaunchSuperweapon` 0xBE5D30 (thiscall(city, int type, const Vector3* target) ret 8; now in the
+  .sym) is the switch FireSuperweapon launches through: types 0/1/3/4/6/7/9/10/11 -> 0xBDC2F0(type, target) (the
+  targeted launch), 2 -> 0xBE4300, 5 -> 0xBDC4A0, 8 -> 0xBE4550; for 2/5/8 the camera then looks at the launching city
+  (SimCamera_LookAt), and every type plays its launch sound 0x1468864[type].
+* ✔ 0xBE4300 (type 2, fastcall city) walks every city of the planet (cGameNounManager::GetData of noun 0x18C43E8), skips
+  the ones whose political id (vt 0x4C = +0x30) equals the launching city's, fires the type-2 tool (+0x470[2] of city
+  +0x590) at a point 10 above each of the others (cToolManager::FireTool(tool, city hall +0x320 spatial, &aim, -1, 0,
+  null, 1)) and sets that city's instant-capture flag +0x762; then ApplyRelationship(other nation, firing nation,
+  0x5776D99, 1.0) for every other nation (GetAllCivilizations, skipping the launching city's +0x590), and an achievement
+  when the city is the player's and something was hit. 0xBE4550 (type 8) is the same loop (aim 60 above each city), no
+  relationship loop. **There is no ally exception in the game**: an ally's cities are hit as any other's; the only
+  exclusion is "the launching city's own political id".
+* ✔ 0xBDC4A0 (type 5) hits no city at its launch: it toggles an effect object of the launching city (+0x764 / +0x768,
+  0xBDBD70 makes it through cGameViewManager, effect 0xB332DE96) and restarts the cooldown (0xBC32A0). So "2/5/8 hit every
+  city not of the firing nation" (#civ-guest-superweapons) holds for 2 and 8 only.
+  CORRECTION (2026-11-21, fix/l47-decide) of the "?" line in #civ-guest-superweapons: type 5 hits no city when launched
+  (static, the launch function above); types 2 and 8 hit every other city, allies' and the other founders' included (live:
+  a party nation's capital and an offline founder's city were captured by the host's type 2 with the fix off).
+* ✔ The targeted launch 0xBDC2F0: tool +0x470[type], 0xBC3280 on tool +0x88 (a timer), the aim from 0xBDA350 (types 4,
+  7, 11 snap to the nearest city's centre when inside its radius, else the target) moved along its normal by the height
+  0x146863C[type], then the same FireTool call (owner the city hall's spatial, target null, last arg 1); type 1 also
+  applies 0x5776D99 to every other nation.
+* ✔ (runtime) The target marker (a cross with rings), the projectile and the burst all come from that FireTool call: a
+  guest's game firing the same tool from its copy of the launching city's city hall at the host's aim draws all three
+  (BUG-9312, out/qa-shots/bug9312_pass_guest_sw3_montage_host_left_guest_right.png); its hits arrive in that guest's
+  game as damage of the launching nation's political id (TakeDamage pol / AddCaptureDamage attacker), dropped there
+  (29 drops in one type-2 show).
+* (code, BUG-9313 `civ.global_sw_spares_party`) h_CityLaunch: for types 2 / 8 launched by a party founder nation on the
+  host, every city of another party nation carries the firing nation's political id for the call (+0x30 through the
+  swap ledger, put back after it), so the game's own exclusion skips it; ApplyRelationship's 0x5776D99 between two party
+  nations is not applied inside the call. Live: a partner's (seat 4) type 2 spared 3 party cities and took the one
+  outsider's; the host's type 8 spared 3 and took an outsider's and a real NPC nation's city.
+* (code, BUG-9312 `civ.sw_show`) the host notes the FireTool aims inside LaunchSuperweapon (squadron's FireTool hook ->
+  civ::fire_observed) and sends MSG_CIV_CMD kind 12 (u8 type, u32 nation, the city's place, u8 n, n aims); a guest finds
+  its copy of the city (that nation's nearest within 80 m), loads the nation's tools (ensure_sw_tools) and fires the tool
+  at each aim; for 20 s its damage, capture, conversion and purchase hooks drop effects of that nation.
+* (code, BUG-9309 `civ.newcomer_nation`) civ_seats::play_seats covers every founded seat (up to founders::kMaxSeats);
+  late_status takes a seat limit: kMaxSeats with the fix, kPlaySeats without. Live: the newcomer in the absent player's
+  party seat 3 got founder seat 4 (capital 21D0, its identity in CIV2 `.duonations`, five seats), kept it after a save,
+  leave and reload, and fired a superweapon from it; seats 1..3 kept their identities, cities and money.
+* ✔ Per-seat state checked for seats 4..7: g_seat_player, g_founder_village, g_sw_test_grant, g_unlock_cards_logged are
+  kMaxSeats arrays; g_founder_spawned_seats / g_founder_village_known are 8-bit masks; CIV2 `.duonations` holds up to 8
+  seats (founders.cpp); `.duo-cards` is keyed by identity (64 records); `.duo-command` names seats 0 and 1 only;
+  `.duo-seats` (CampaignRules seats) counts players at once (network ids), not nations: unchanged. The Space launch offer
+  carries every seat (BUG-9187, 8 entries). Creature nests and Tribe villages read the party seats and the Tribe roster
+  (at most kPlaySeats), never the Civilization roster: a Civilization seat >= 4 does not reach them.
