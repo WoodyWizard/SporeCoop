@@ -210,6 +210,13 @@ def monitor_cases(tmp):
     check(got == {'hp'}, f'monitor: hp: the guest at 3/10 by its own game, 10/10 on the host ({got})')
     got = scenario(tmp, 'maxhp', *clean_pair(guest_own=dict(hp=10, maxhp=16), host_sees=dict(hp=10, maxhp=10)))
     check(got == {'hp'}, f'monitor: hp: another max hp ({got})')
+    # BUG-1386: the host's line of a guest that is not in a world (reloading: flags 0x0, hp 0/0) is not compared with
+    # the guest's own line of the session it comes back to; the same 0/0 with the guest in the world still is
+    got = scenario(tmp, 'hp_not_in_world', *clean_pair(host_sees=dict(hp=0, maxhp=0, flags=0,
+                                                                      puppet='hidden: partner not in a world')))
+    check('hp' not in got, f'monitor: hp: a partner not in a world (flags 0x0, hp 0/0) is no hp violation ({got})')
+    got = scenario(tmp, 'hp_zero_in_world', *clean_pair(host_sees=dict(hp=0, maxhp=0, flags=1)))
+    check('hp' in got, f'monitor: hp: hp 0/0 of a partner in the world still is one ({got})')
     got = scenario(tmp, 'apart', *clean_pair(n=14, guest_own=dict(stage='Tribe', world='11112222'),
                                              guest_sees=dict(same=0, puppet='hidden: partner in another mode'),
                                              host_sees=dict(same=0, puppet='hidden: partner in another mode')))
