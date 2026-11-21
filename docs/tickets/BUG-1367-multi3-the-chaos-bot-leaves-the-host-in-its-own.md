@@ -10,7 +10,7 @@ role: host
 versions: rel/0.7.16 673f7a55
 fixed_in:
 branch: fix/w61-multi
-commits:
+commits: ed6666e0
 tests: multi3, multi4_creature_seed, multi4_creature_slow
 signature:
 docs: docs/06-testing.md

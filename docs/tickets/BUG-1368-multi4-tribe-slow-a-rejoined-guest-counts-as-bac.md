@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.16 673f7a55
 fixed_in:
 branch: fix/w61-multi
-commits:
+commits: ed6666e0, 26b2b711
 tests: multi4_tribe_slow, multi3_round_rejoin, multi3_round_rejoin_oldwait (twin)
 signature:
 docs: docs/06-testing.md

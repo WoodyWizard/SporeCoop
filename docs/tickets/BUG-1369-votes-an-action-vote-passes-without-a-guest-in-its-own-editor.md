@@ -10,7 +10,7 @@ role: host
 versions: 0.7.15.1 and later
 fixed_in:
 branch: fix/w61-multi
-commits:
+commits: af0576ca
 tests: vote_net_4p, vote_net_4p_editor_off (twin)
 signature:
 docs: docs/09-coop-design.md

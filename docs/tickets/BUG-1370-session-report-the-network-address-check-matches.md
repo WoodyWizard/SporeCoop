@@ -10,7 +10,7 @@ role: host
 versions: rel/0.7.16 673f7a55 (coop 0.7.15.5)
 fixed_in:
 branch: fix/w61-multi
-commits:
+commits: 0156c720
 tests: session_report
 signature:
 docs: docs/06-testing.md
