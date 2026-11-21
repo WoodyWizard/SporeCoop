@@ -134,6 +134,13 @@ public:
     bool join(const std::string& addr, const std::string& name, std::string& err);
     void leave(const char* why = "left");
     void update(); // call every frame: receive, timeouts, send
+    // BUG-9291: what is queued goes out now (no receive, no timeouts): a message told just before the game's main
+    // thread stands for long (host_busy_long_wait)
+    void flush_now()
+    {
+        if (role_ != Role::None)
+            flush(now());
+    }
 
     void send_state(PlayerState st);              // own state
     void send_chat(const std::string& text);

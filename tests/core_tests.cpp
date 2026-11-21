@@ -598,6 +598,33 @@ static std::vector<uint8_t> msg_bytes(State s, uint16_t seq, uint16_t why = 0)
     return encode(Msg{1, s, why, 0x1654C02, 7, seq});
 }
 
+// BUG-9291 / BUG-9290: the host tells "an editor's load is coming" at once (no debounce), and a guest waits longer for a
+// host whose last told state is such a stand; the next state is told as usual
+static void busy_long_wait()
+{
+    Announcer a;
+    Msg m;
+    CHECK(a.step(0.0, Classified{}, 0x1654C02, 7, &m) && m.seq == 1);
+    Msg lw = a.announce({State::Editor, (uint16_t)kWhyLongWait}, 0x1654C02, 7);
+    CHECK(lw.seq == 2 && lw.state == State::Editor && (lw.why & kWhyLongWait) && a.sent.state == State::Editor);
+    // the editor is open a frame later (why 0): told, a newer seq
+    Classified ed{State::Editor, 0};
+    CHECK(a.step(1.0, ed, 0xDBDBA1, 7, &m) && m.seq == 3 && m.why == 0);
+    CHECK(!a.step(1.1, ed, 0xDBDBA1, 7, &m)); // nothing new
+    std::vector<uint8_t> b = encode(lw);
+    Msg d;
+    CHECK(decode(b.data(), b.size(), d) && (d.why & kWhyLongWait));
+    // the guest's timeout
+    CHECK(guest_timeout_ms(false, lw, 30000) == 30000); // nothing heard (an older host): the session's own
+    CHECK(guest_timeout_ms(true, lw, 30000) == kLongWaitMs);
+    CHECK(guest_timeout_ms(true, Msg{1, State::Editor, 0, 0, 0, 3}, 30000) == kLongWaitMs);
+    CHECK(guest_timeout_ms(true, Msg{1, State::Away, (uint16_t)kWhyLoad, 0, 0, 4}, 30000) == kLongWaitMs);
+    CHECK(guest_timeout_ms(true, Msg{1, State::Away, (uint16_t)kWhyMenu, 0, 0, 4}, 30000) == 30000);
+    CHECK(guest_timeout_ms(true, Msg{1, State::Paused, (uint16_t)kWhyPauseMenu, 0, 0, 5}, 30000) == 30000);
+    CHECK(guest_timeout_ms(true, Msg{1, State::None, 0, 0, 0, 6}, 30000) == 30000);
+    CHECK(kLongWaitMs >= 120000); // longer than the 51.8 s seen (BUG-9290) with room
+}
+
 static void busy_host_view()
 {
     HostView v;
@@ -733,6 +760,7 @@ int main()
     lifecycle_hooks();
     busy_classify();
     busy_codec();
+    busy_long_wait();
     busy_announcer();
     busy_host_view();
     busy_rows();
