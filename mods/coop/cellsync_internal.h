@@ -294,6 +294,9 @@ void lineage_init();
 void lineage_forget();
 void lineage_mirror_key(const uint32_t key[3], uint32_t use[3]);
 void lineage_loot(void* res, const uint32_t* cells, int n);
+// BUG-9285 (cellsync_tiles.cpp): whose area the running PopulateTiles pass fills: a partner's player id, -1 the
+// host's own pass or none
+int tile_pass_player();
 const char* kind_of(uint8_t* c);
 bool in_cell();
 uint8_t* G();

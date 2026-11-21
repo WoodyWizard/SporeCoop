@@ -104,7 +104,21 @@ static bool choose_model(void* ref, const uint32_t native[3], uint32_t out[3])
     if (!native[0] || is_guest() || !in_cell() || !lineage_cells::enabled())
         return false;
     uint8_t* s = S();
-    if (s && F<uint32_t>(s, 0x10) == native[0]) { // the native spread of the player's own species
+    const bool own_species = s && F<uint32_t>(s, 0x10) == native[0]; // the native spread of the player's own species
+    if (lineage_cells::current_only()) {
+        // BUG-9285: only the player species' spawns (6-8 at the avatar's level, never another species' size) take a
+        // partner's current cell: in a partner's tile pass that partner's, in the host's pass any player's
+        if (!own_species)
+            return false;
+        g_lin_considered++;
+        if (!lineage_cells::pick_player(tile_pass_player(), out)) {
+            g_lin_own++;
+            return false;
+        }
+        g_lin_swapped++;
+        return true;
+    }
+    if (own_species) {
         g_lin_own++;
         return false;
     }
@@ -230,14 +244,16 @@ std::string lineage_debug()
         net::Vec3 p = pos_of(c), me = av ? pos_of(av) : net::Vec3{};
         const uint32_t chase = F<uint32_t>(c, 0x22C), flee = F<uint32_t>(c, 0x220);
         uint8_t* t = chase ? modes::cell_at(chase) : nullptr;
-        snprintf(b, sizeof b, "pcell %u model=%08X diet=%s%s d=%.1f dx=%.1f dy=%.1f chase=%u chase_kind=%s flee=%u\n", idx, m,
+        snprintf(b, sizeof b, "pcell %u model=%08X diet=%s%s d=%.1f dx=%.1f dy=%.1f chase=%u chase_kind=%s flee=%u level=%d\n", idx, m,
                  md && md[0x1250] ? "C" : "-", md && md[0x1251] ? "H" : "-", std::hypot(p.x - me.x, p.y - me.y), p.x - me.x, p.y - me.y, chase,
-                 t ? (t == av ? "avatar" : modes::cell_is_puppet(t) ? "puppet" : kind_of(t)) : "none", flee);
+                 t ? (t == av ? "avatar" : modes::cell_is_puppet(t) ? "puppet" : kind_of(t)) : "none", flee,
+                 F<int>(c, 0x358)); // BUG-9285: the cell's level (+0x358, docs/re/cell.md GetScaleDifference)
         out += b;
     });
     uint32_t own[3] = {};
     own_cell_model(own);
-    snprintf(b, sizeof b, "own %08X\n", own[0]);
+    uint8_t* s = S();
+    snprintf(b, sizeof b, "own %08X food_level=%d\n", own[0], s ? cell_logic::level_of_food(F<int32_t>(s, 0x1C)) : -1);
     return out + b;
 }
 
