@@ -49,3 +49,4 @@ see History.
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on feat/own-progress.
+- 2026-11-20: lane A, 0.7.15.95: found and fixed in the game: both at 499 held each other for good (d20eef9d: the next level opens when every partner is at the line); a guest that left let the host take its kept meals and came back a level below with an empty screen (e4faf01a: partners away on record count). Then: host meal over the line stops at 599 with 51 kept, the guest crosses, the host gets 650: PASS; twin (cell.level_together off): the host crosses alone to 750: FAIL as expected. The owner's report after playing 0.7.15.94 ("I evolved faster than my friend and the food for him disappeared") is this bug.

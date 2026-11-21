@@ -42,3 +42,4 @@ once, the file next to the planet after the first save): see History.
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on feat/own-progress.
+- 2026-11-20: lane A, a new Cell game on 0.7.15.95: no "not written" warning, one "waits for the planet's first save", the file written after the first save (saves=2). (The party's "not saved" warnings of the same moment: fix/party-new-planet.)
