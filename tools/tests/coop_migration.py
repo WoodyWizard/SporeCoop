@@ -163,7 +163,7 @@ def main():
     # creature is still the hatchling, age 0, and its game never sets the goal; a save made now has
     # the grown-up creature and the goal, like a rejoin after the caption)
     print(f'   guest before the second world: migration state {migration(guest)}')
-    print('  ', host.call('coop.save')['out'].strip())
+    print('  ', twoinst.save_taken(host, 30)[0])  # BUG-1398: asked again while the mod refuses it for now
     close_boxes(host, 10)
     print('  ', host.call('coop.share')['out'].strip())
     time.sleep(8)

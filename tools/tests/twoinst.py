@@ -812,6 +812,42 @@ def apply_fix_off(con, who):
             raise SystemExit(1)
 
 
+def save_taken(con, secs=30.0, label='host save'):
+    """`coop.save` until the game takes the save: the mod refuses a save "for now" while the game would drop it (BUG-1365:
+    its last save still finishing, 1.5 s after that box's OK; BUG-0846: that box still up; an editor or a mode switch
+    on the way) and says why. Asks again every 0.5 s for at most secs, prints each
+    new refusal; returns (answer, refusals, asked): answer starts with "saved (mode" when the save was posted, asked is the
+    time.time() of the last ask (the one the game took) (BUG-1398)."""
+    t0, said, refused, last = time.time(), '', 0, None
+    while True:
+        asked = time.time()
+        said = (con.call('coop.save').get('out') or '').strip()
+        if said.startswith('saved (mode') or time.time() - t0 > secs:
+            return said, refused, asked
+        refused += 1
+        if said != last:
+            print(f'  {label} refused for now ({time.time() - t0:.1f} s): {said[:120]}', flush=True)
+            last = said
+        time.sleep(0.5)
+
+
+def save_fresh(profile_dir, since, secs=30.0):
+    """the game wrote a save after `since` (time.time()): the newest planet file (Games/*/*.spo) of the profile is newer.
+    A check that parses "the newest save" reads this one and not an older save (BUG-1398)."""
+    import glob
+    t0 = time.time()
+    while True:
+        fs = glob.glob(os.path.join(profile_dir, 'Games', '*', '*.spo'))
+        try:
+            if fs and max(os.path.getmtime(f) for f in fs) >= since:
+                return True
+        except OSError:
+            pass
+        if time.time() - t0 > secs:
+            return False
+        time.sleep(0.5)
+
+
 def session_restart(host, guest, save=True, store_wait=20.0, slot=None, planet=None, before_join=None,
                     host_kill=False):
     """A new evening (E1 of 0.7.15, BUG-1149; docs/06-testing.md#testing-session-restart): both players quit, the
@@ -820,7 +856,8 @@ def session_restart(host, guest, save=True, store_wait=20.0, slot=None, planet=N
     store (Games-sporecoop-store), the guest's profile its kept rejoin token (its clean leave, BUG-1135).
 
     1. save (default): the host saves its game (`coop.save`, the game's own save into its own slot, like the pause
-       menu's Save) and waits for the per-player store's write (`coop.store`: writes > before, at most store_wait s);
+       menu's Save; asked again while the mod refuses it for now, save_taken) and waits for the per-player store's
+       write (`coop.store`: writes > before, at most store_wait s); info['saved'] only when both happened (BUG-1398);
     2. the guest leaves (`coop.leave`: a clean leave), then the host;
     3. both games end (`spore.sh kill`: no other process of the lane runs on; host_kill only says in the log that the
        host's end was a crash, the end is the same);
@@ -840,9 +877,14 @@ def session_restart(host, guest, save=True, store_wait=20.0, slot=None, planet=N
         return int(m.group(1)) if m else -1
     if save:
         w0 = writes(host)
-        out = (host.call('coop.save').get('out') or '').strip()
-        print(f'  session_restart: host save: {out[:120]}', flush=True)
-        info['saved'] = out.startswith('saved')
+        # BUG-1398: a save right after another one (species_line: 1.5 s after the rejoin's world-share save) was dropped by
+        # the game (BUG-1365) and coop.save still said "saved": the store's write never came (writes 2 -> 2 in every run)
+        # and the next session loaded the share's save. Since BUG-1365 the mod refuses it for now: ask again until the
+        # game takes it, and count the save only when the game really made it (the store is written by the save).
+        out, refused, _ = save_taken(host, 30, 'session_restart: host save')
+        print(f'  session_restart: host save: {out[:120]}' + (f' (after {refused} refusals)' if refused else ''),
+              flush=True)
+        posted = out.startswith('saved')
         t1 = time.time()
         while time.time() - t1 < store_wait:
             f1 = host_frame(host)
@@ -852,6 +894,7 @@ def session_restart(host, guest, save=True, store_wait=20.0, slot=None, planet=N
             if writes(host) > w0:
                 break
         info['store_writes'] = writes(host)
+        info['saved'] = posted and info['store_writes'] > w0  # BUG-1398: posted and made (a dropped save writes nothing)
         print(f'  session_restart: store writes {w0} -> {info["store_writes"]} '
               f'({(host.call("coop.store").get("out") or "").splitlines()[0][:200]})', flush=True)
         time.sleep(1)

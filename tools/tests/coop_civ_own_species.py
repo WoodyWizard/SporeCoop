@@ -248,10 +248,14 @@ def main():
     print(f'  city {tgt} bake state after the key frames: {later}', flush=True)
 
     # 4. the host's save
-    t_save = time.time()
-    print('  host:', host.call('coop.save')['out'].strip()[:80], flush=True)
+    # BUG-1398: asked again while the mod refuses it for now (final check 20261121-003202: refused 1.5 s after the
+    # previous save, the check below then read that older save, "saved 14 s ago"), and the save read is this one
+    said, _, t_save = twoinst.save_taken(host, 30)
+    print('  host:', said[:80], flush=True)
     close_boxes(host, 12)
     time.sleep(2)
+    ck(twoinst.save_fresh(lane.HOST_DIR, t_save - 1, 30), 'the host\'s game wrote this save (its planet file is newer '
+                                                        'than the request)')
     found = keys_in_save(lane.HOST_DIR, g)
     print(f'  host save: records naming {g:08X}: {found}', flush=True)
     for ln in (host.call('coop.civ citizens')['out'] or '').splitlines()[:1] + \

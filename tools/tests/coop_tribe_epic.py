@@ -22,7 +22,7 @@ import re
 import time
 
 from coop_tribe import members
-from twoinst import Checks, start
+from twoinst import Checks, save_taken, start
 
 
 def food(con):
@@ -121,7 +121,7 @@ def main():
     time.sleep(2)
     hs, outs = herds(host)
     print('  epic alive:', outs)
-    print('  ', host.call('coop.save')['out'].strip())
+    print('  ', save_taken(host, 30)[0])  # BUG-1398: asked again while the mod refuses it for now
     time.sleep(4)
     hs2, outs2 = herds(host)
     print('  after the save:', outs2)

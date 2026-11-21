@@ -260,7 +260,8 @@ def main():
         ck(slot != '' and planet != '', f'the guest plays a save of its own ({slot}/{planet})')
         t_save = time.time()
         print(' ', carol.call('coop.savedb')['out'].strip()[:130], flush=True)
-        print(' ', carol.call('coop.save')['out'].strip()[:80], flush=True)
+        said, _, t_save = twoinst.save_taken(carol, 30)  # BUG-1398: asked again while refused for now
+        print(' ', said[:80], flush=True)
         close_boxes(carol, 12)  # the "game saved" box stops its frames
         ck(wait_saved(folder, t_save), f'the guest wrote its save ({folder})')
         hits, original, read = saved_model_keys(folder)

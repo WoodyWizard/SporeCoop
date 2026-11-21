@@ -403,8 +403,8 @@ def run(host, guest, ck, off_twin):
 
     # 5. the host's save: the tribe's species only
     slotname, folder, planet = save_slot(host, lane.HOST_DIR)
-    since = time.time()
-    print('  host:', host.call('coop.save')['out'].strip()[:80], f'(slot {slotname})', flush=True)
+    said, _, since = twoinst.save_taken(host, 30)  # BUG-1398: asked again while the mod refuses it for now
+    print('  host:', said[:80], f'(slot {slotname})', flush=True)
     saved = wait_saved(folder, since - 1, 90)
     time.sleep(3)
     hits = keys_in_slot(folder, [gkey, orig, outfit]) if saved else ['not saved']

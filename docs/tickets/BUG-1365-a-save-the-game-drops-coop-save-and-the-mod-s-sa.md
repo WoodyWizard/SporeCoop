@@ -53,3 +53,8 @@ Open, waiting for the lab run (no lab runs today, owner rule):
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-creature-a): root cause by the logs and the disassembly; fixed with world.save_allowed, new
   case coop_saved_box.py --case twice with its twin; own_editor_drop retries a refused save.
+- 2026-11-21 (fix/w62-saves, third final check 20261121-003202): suspected of a regression (species_line "the host
+  saved its game before quitting"): disproved, the quit save of species_line was dropped by the game in every earlier
+  run too (store writes 2 -> 2, no save in the host's log); the fix only made it visible. Tests now ask again while a
+  save is refused for now (BUG-1398, twoinst.save_taken); saved_box_twice waits for the mod's view of the box
+  (BUG-1397). The fix and its switch are unchanged.

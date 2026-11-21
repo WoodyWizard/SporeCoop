@@ -407,7 +407,7 @@ def run(host, guest, ck, off_twin, scr):
     keys = [k for k in (ch and ch['key'], veh and veh['key'], shared.get((CITY_HALL, 'host')),
                         shared.get((vdid, 'host'))) if k]
     t_save = time.time() - 1
-    print('  host:', host.call('coop.save')['out'].strip()[:100], flush=True)
+    print('  host:', twoinst.save_taken(host, 30)[0][:100], flush=True)  # BUG-1398: asked again while refused for now
     time.sleep(8)
     files = save_files(os.path.join(lane.HOST_DIR, 'Games'), t_save)
     found = keys_in(files, keys)

@@ -9966,3 +9966,23 @@ Lab run 20261120-133703 (and the twins 20261120-130608); see [testing-lab-verdic
   village read the species as missing (BUG-1375).
 * tribe_caption_race: the conquest caption needs the village's mission; the guest's `coop.tribe act_obj 15` raid order
   makes it on the host (BUG-1068), `coop.tribe order` does not (BUG-1377).
+
+## A test's save: ask until the game takes it, read only that save (2026-11-21, fix/w62-saves)
+<a id="testing-save-taken"></a>
+
+* The game drops a Save message for 1.5 s after the last save's box was confirmed (docs/re/creature.md#creature-save-dropped);
+  since BUG-1365 the mod refuses such a save "for now" with its reason instead of answering "saved". A rejoin, a
+  `creature.mode` change or any share saves the host's game, so a test's own save right after one of those is refused.
+  Use `twoinst.save_taken(con, secs)` (asks again every 0.5 s, prints each new reason, returns the answer, the refusals
+  and the time of the ask the game took), never one bare `coop.save` (BUG-1398).
+* A check that reads "the newest save" of a profile reads an older save when the test's save was dropped or refused:
+  first `twoinst.save_fresh(profile_dir, since)` (the newest planet file is newer than the request). civ_own_species
+  read a save 14 s old and passed (lab 20261121-003202).
+* `twoinst.session_restart` counts its save (`info['saved']`) only when the save was posted and the per-player store
+  was written by it: species_line's quit save, 1.5 s after the rejoin's share save, had been lost in every run (store
+  writes 2 -> 2) while the test passed on the share's save.
+* `coop.save box` answers `saved_box=0` once the mod's own look (every 0.2 s outside the frame) saw the box closed: a save
+  in the 0.2 s before that is refused with the older BUG-0846 reason, not the BUG-1365 one (BUG-1397).
+* Knocking out the player tribe for a game over: `coop_tribe_gameover.knock_out(host)` (one blow a second, the leader
+  last), never blows on every member back to back: two members falling in one behaviour tick give no game over at all
+  (BUG-1337, BUG-1399).

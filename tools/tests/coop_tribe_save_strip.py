@@ -105,8 +105,8 @@ def main():
         ck(bool(made), 'Carol\'s game made the host\'s new NPC tribe')
         slot, folder, planet = save_slot(carol, carol_dir)
         ck(slot != '' and planet != '', f'Carol plays a save of her own ({slot}/{planet})')
-        t_save = time.time()
-        print(' ', carol.call('coop.save')['out'].strip()[:80], flush=True)
+        said, _, t_save = twoinst.save_taken(carol, 30)  # BUG-1398: asked again while refused for now
+        print(' ', said[:80], flush=True)
         close_boxes(carol, 12)
         ck(wait_saved(folder, t_save), f'Carol wrote her save ({folder})')
         st = [ln for ln in carol.call('coop.tribe')['out'].splitlines() if 'save_stripped' in ln]

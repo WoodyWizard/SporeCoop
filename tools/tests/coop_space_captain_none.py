@@ -35,7 +35,7 @@ import time
 import coop_space_finale as fz
 import play_space
 import uifind
-from twoinst import Checks, shot, start
+from twoinst import Checks, save_taken, shot, start
 
 BADGE = (1390, 890)            # the rank badge over the ship's picture, 1440x1080
 ACCEPT = 0x075DD108            # the adventure mission screen's Accept (SporeCoop::CaptainPanel_OnMessage)
@@ -84,7 +84,7 @@ def main():
         return ck.result()
     host.call(f'mem.write {int(m.group(1), 16) + 0xC4:#x} 000000000000000000000000')
     print('  host:', captain(host)[2])
-    print('  host:', host.call('coop.save')['out'].strip())
+    print('  host:', save_taken(host, 30)[0])  # BUG-1398: asked again while the mod refuses it for now
     time.sleep(5)
     guest.call('probe.clear')
     guest.call('probe SporeCoop::NameCaptainDialog_Show')
