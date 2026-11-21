@@ -54,3 +54,10 @@ guest's `coop.tribe species` shows the host's village with the host's key; off: 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on fix/l47-view (built, not run in a game yet; the lead runs the two-player test).
+- 2026-11-21: live MSI: NPC tribe 2 showed 291981F2 on the host and 7DF97DCB on the guest with `fixed=0`. The pass does
+  cover NPC tribes (every mapped tribe), but it compares with creations::local_species of the host's key: a guest that
+  stored the host's creature under a key of its own (`coop.creations`: "host species 291981F2 = 7DF97DCB here", the same
+  records) counts as matching, by design. Not checked which case this was. `coop.tribe species` on a guest now shows
+  each tribe's `(host XXXXXXXX = YYYYYYYY here)`: equal to the members' key = the remap (same look, not a bug); members
+  differing from the "here" key with `fixed=0` and `wanted=` rising = the species is missing on the guest (asked from
+  the host every 3 s); neither = a bug to report.

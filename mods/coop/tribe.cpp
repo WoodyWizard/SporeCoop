@@ -2904,10 +2904,13 @@ static bool persp_set(void* t)
 // local play many times a session) showed the host's villagers' cards next to its own. Now a guest's roster holds the
 // cards of the game's player tribe only: twice a second, when it has more cards than that tribe has members, every
 // other tribe's members lose theirs; on a restore the village that stops being the player's loses its cards at once.
+// The host too (live MSI 2026-11-21, a fresh Creature -> Tribe entry with per-player founding: the host's roster showed
+// 2 cards of the guest's villagers next to its own 3; how they got there is not known, likely the founding's
+// SpawnNpcTribe(.., 3 members, ..) telling the stage of new members): the same pass runs on every game in Tribe.
 // `coop.fix tribe.swap_cards off`: the cards stay (0.7.14.1-lineages67).
 static bool g_swap_cards = true;
 COOP_FIX("tribe.swap_cards", "BUG-9300", g_swap_cards,
-         "tribe: a guest's member cards show only its own villagers after its village becomes the player's (not the host's too)");
+         "tribe: the member cards show only this game's player tribe's villagers (not a partner's village's too)");
 static uint32_t g_swap_card_passes, g_swap_cards_off;
 static double g_swap_cards_at = -10;
 // the roster's card count (the game UI's citizen -> card map size, +0xA8), -1: no roster
@@ -2925,7 +2928,7 @@ static void cards_off_for(void* t)
 }
 static void swap_cards_tick()
 {
-    if (!g_swap_cards || !active() || !is_guest()) return;
+    if (!g_swap_cards || !active()) return; // (host and guest: the roster is the player tribe's on both)
     const double now = H->time_seconds();
     if (now - g_swap_cards_at < 0.5) return;
     g_swap_cards_at = now;
@@ -6342,6 +6345,7 @@ COOP_FIX("tribe.mirror_species", "BUG-9301", g_mirror_species,
          "tribe: a guest's copies of the host's villages wear the host's species and outfit (not this game's)");
 static uint32_t g_species_fixed, g_species_members, g_species_wanted;
 static std::string g_species_last; // `coop.tribe species`: the last change
+static std::vector<uint32_t> g_species_host; // guest: the host's species of each host tribe (the last TRBI)
 struct SpeciesSeen { uint32_t want = 0; double since = 0, tried = -10; };
 static std::unordered_map<void*, SpeciesSeen> g_species_seen; // a local tribe -> the host's species it lacks, since when
 static bool species_off(void* t, uint32_t a, uint32_t b) // a member or slot 0 of t wears neither a nor b
@@ -6396,8 +6400,10 @@ static void mirror_species_check(const uint8_t* p, size_t len, size_t ntribes)
 {
     uint32_t tag;
     memcpy(&tag, p, 4);
-    if (!g_mirror_species || tag != kTribeInfoTag || len < 5 || p[4] != ntribes || len < 5 + ntribes * kTribeInfo ||
-        !is_guest() || local_play() || (g_outfit.token && g_outfit.world == modes::current_world()) ||
+    if (tag != kTribeInfoTag || len < 5 || p[4] != ntribes || len < 5 + ntribes * kTribeInfo) return;
+    g_species_host.assign(ntribes, 0); // (`coop.tribe species`: the host's key and this game's for it, by host index)
+    for (size_t i = 0; i < ntribes; i++) memcpy(&g_species_host[i], p + 5 + i * kTribeInfo, 4);
+    if (!g_mirror_species || !is_guest() || local_play() || (g_outfit.token && g_outfit.world == modes::current_world()) ||
         world::load_queued() || world::save_busy() || world::cinematic_playing())
         return;
     const double now = H->time_seconds();
@@ -13419,7 +13425,14 @@ std::string debug(const std::vector<std::string>& a)
             for (uint32_t k : keys) { snprintf(b, sizeof b, " %08X", k); ks += b; }
             snprintf(b, sizeof b, "  tribe %u%s: slot0=%08X members=%u species:", (unsigned)i, t == player_tribe() ? " (player)" : "",
                      s0 && skg::readable((uint8_t*)s0 + 0x504, 4) ? F<uint32_t>(s0, 0x504) : 0u, (unsigned)members(t).size());
-            out += b + ks + "\n";
+            out += b + ks;
+            if (!is_host() && i < g_species_host.size() && g_species_host[i]) { // the host's key, and what it is here
+                const uint32_t h = g_species_host[i];
+                const uint32_t l = creations::local_species({h, 0x2B978C46, 0x40626200}).instance;
+                snprintf(b, sizeof b, " (host %08X = %08X here)", h, l);
+                out += b;
+            }
+            out += "\n";
         }
         return out;
     }
