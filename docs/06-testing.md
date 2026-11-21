@@ -9970,3 +9970,19 @@ Lab run 20261120-133703 (and the twins 20261120-130608); see [testing-lab-verdic
   village read the species as missing (BUG-1375).
 * tribe_caption_race: the conquest caption needs the village's mission; the guest's `coop.tribe act_obj 15` raid order
   makes it on the host (BUG-1068), `coop.tribe order` does not (BUG-1377).
+
+## Space and defer_identity flakes of the third 0.7.16 final check (2026-11-21, fix/w62-flake-tcs)
+<a id="testing-w62-flake-tcs"></a>
+
+* Extra guests (`coop_multi.start_extra`: Party, campaigns, every 3-4 player test) now start without the records an
+  earlier test left in their profiles (`forget_extra_records`: SporeCoop/holds, badges, settings, choices.ini,
+  worlds.ini, Games-sporecoop-store / -backup), as the host and the first guest do. Before, the second Bob of
+  party_space_names got its hold of the last run on that lane back (BUG-0679 record: 3 Anti-Matter Bombs) and the gift
+  made 6 (BUG-1405). `SPORE_EXTRA_RESET_FIX=0`: only the saves go (the old start).
+* `coop.npc reusehunt` flags `B<N>` (N creatures a tick once the target's chunk is free), `K` (misses kept from the free
+  on), `M` (a target whose chunk merges backward ends at once). defer_identity hunts `xf40B4KM` over 1500 frames: one
+  creature a frame destroyed at once until the free (what lets the game let go of the queued puppet), then BUG-1099's
+  4 a frame kept (BUG-1406). Of the 16 rounds of the old hunt in 20261121-003202: 7 never freed in 900 frames, 4 freed
+  1026-1295 frames after the destroy, 4 merged backward, 1 freed and missed.
+* space_planet_citizens: its misses after BUG-1210 are bound copies of runners 2.7-4.3 m off; `space.citizen_lead`
+  (BUG-1404) sends the kind every 0.25 s. The test's 3 m / 5 % limits are unchanged.

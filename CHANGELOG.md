@@ -47,6 +47,9 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
 - Lab: fixes of tests from the 0.7.16 final check: cell_ko_food, the cell attack tests, space_puppet's landing, the
   walker's clicks near its nest, and a cold start that waits for the lane's console ports (BUG-1354, BUG-1355, BUG-1356,
   BUG-1358, BUG-1359).
+- Lab: the extra guests of 3- and 4-player tests start without the hold records, settings and per-player store an
+  earlier test left in their profiles (BUG-1405); defer_identity hunts for the reused block as BUG-1099 found it
+  works (BUG-1406).
 - Lab: fixes of the Cell tests from the second 0.7.16 final check (cell_sync, cell_away_editor, cell_spin,
   cell_new_game, cell_far_guest's new game, evo_screens_cell_eggs_lowfps) and of the monitor's hp gate after a guest's
   reload (BUG-1381, BUG-1382, BUG-1383, BUG-1384, BUG-1385, BUG-1386, BUG-1387).
@@ -165,6 +168,9 @@ unstable for now. A Lineages game and a SporeCoop game cannot join each other: e
   appears; before, it was the tribe's species for a moment first (BUG-1299).
 - Space: a guest whose own ship has the same id as the host's ship now flies its own ship on its screen; before, its
   game could show the host's ship instead (BUG-1301; still open until its lab run).
+- Space: on a colony planet, the citizens that run about now run where the host's run on a guest's screen; before, a
+  runner could stand 3-4 m away from its place for a moment when it started or stopped (BUG-1404; still open until its
+  lab run).
 - Tribe: a guest's game no longer faults when it joins a Tribe world and a tribe member it has just made becomes the
   chief: the chief's staff now waits until the member's body is built (BUG-1335; still open until its lab run).
 - Creature: a guest no longer sees some of the host's animals far away half sunk into the ground (BUG-1357; still open
