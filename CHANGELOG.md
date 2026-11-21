@@ -8,6 +8,8 @@ evolves a separate species in one shared world, from the tide pool to the galaxy
 unstable for now. A Lineages game and a SporeCoop game cannot join each other: every player needs the same mod.
 
 ### Development
+- Lab tests: a test's save is asked again while the mod refuses it for now and only a save the game wrote counts; the
+  tribe game-over tests knock the tribe out one member at a time (BUG-1397, BUG-1398, BUG-1399).
 - Lab: a test is run again as "the game did not start" only when the harness says so; a fix switch whose description
   said "did not start" made a twin's failures run again until one passed (BUG-1379). Lab tests of the Tribe and Civ
   stages corrected (BUG-1372, BUG-1373, BUG-1374, BUG-1377).

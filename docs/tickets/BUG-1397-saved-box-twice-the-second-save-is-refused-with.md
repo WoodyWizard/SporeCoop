@@ -10,7 +10,7 @@ role: host
 versions: 0.7.16
 fixed_in:
 branch: fix/w62-saves
-commits:
+commits: 0b94adaa
 tests: saved_box_twice, saved_box_twice_off
 signature: saved_box_twice: FAIL the second save is refused for now with its reason (waiting for the previous save's "game saved" box to close)
 docs: docs/re/creature.md#creature-save-dropped

@@ -10,7 +10,7 @@ role: host
 versions: 0.7.7,0.7.16
 fixed_in:
 branch: fix/w62-saves
-commits:
+commits: c0792a81
 tests: tribe_bounce_world, tribe_bounce_mirrors, tribe_bounce_goal, tribe_attack_stale, wsync_transitions, realign_tribe (coop_realign_planet.py), tribe_gameover* (coop_tribe_gameover.py, twin tribe_gameover_reload2_sameframe)
 signature: FAIL the game-over caption is up on the host; FAIL the host's reloaded world lacks the tribe formed after its save (the scenario happened)
 docs: docs/re/tribe.md#tribe-gameover-list

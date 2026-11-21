@@ -10,7 +10,7 @@ role: host
 versions: 0.7.16
 fixed_in:
 branch: fix/w62-saves
-commits:
+commits: ff3f8986
 tests: species_line, own_editor_drop, civ_own_species, civ_own_species_hostmode, civ_owners_session, dna_own_store, space_session, space_session_npc, tribe_owners_session, tribe_own_species
 signature: species_line: session_restart: host save: the previous save is still finishing (the game drops a save now) ... FAIL the host saved its game before quitting
 docs: docs/06-testing.md#testing-save-taken
