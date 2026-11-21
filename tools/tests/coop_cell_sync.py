@@ -49,6 +49,10 @@ def size(con):
     return t * ws, wt > 0 and abs(ws / wt - 1) < 0.01
 
 
+def f3(x):
+    return f'{x:.3f}' if x is not None else '?'
+
+
 wait = waiter(step=0.5)
 
 
@@ -113,18 +117,18 @@ def main():
         # both totals there and both world scales settled (BUG-1381: a state, not a sleep)
         wait(lambda: (food(host) or 0) >= f1 and food(guest) == food(host) and size(host)[1] and size(guest)[1], 10)
         (h0, hs0), (g0, gs0), lv0 = size(host), size(guest), food(host) // 50  # level line every 50
-        print(f'  food {food(host)} level {lv0}: host size {h0:.3f}, guest size {g0:.3f} (target x world scale; '
+        print(f'  food {food(host)} level {lv0}: host size {f3(h0)}, guest size {f3(g0)} (target x world scale; '
               f'settled {hs0}/{gs0}; {num(pool(host), "target", float)} raw)')
         print(' ', guest.call('coop.pool small')['out'].strip(), 'body', num(pool(guest), 'body', float))
         guest.call('coop.pool food 41')
         wait(lambda: (food(host) or 0) >= f1 + 41 and food(guest) == food(host) and size(host)[1] and size(guest)[1], 15)
         (h1, hs1), (g1, gs1), lv1 = size(host), size(guest), food(host) // 50
-        print(f'  food {food(host)} level {lv1}: host size {h1:.3f}, guest size {g1:.3f} body {num(pool(guest), "body", float)} '
+        print(f'  food {food(host)} level {lv1}: host size {f3(h1)}, guest size {f3(g1)} body {num(pool(guest), "body", float)} '
               f'(settled {hs1}/{gs1}; {num(pool(host), "target", float)} raw)')
-        ck(lv1 == lv0 + 1 and h0 and h1 > h0 * 1.1, f'over a level line ({lv0} -> {lv1}): the host cell grew ({h0:.3f} -> {h1:.3f})')
-        want = g0 * h1 / h0 if h0 else 0
+        ck(lv1 == lv0 + 1 and h0 and h1 and h1 > h0 * 1.1, f'over a level line ({lv0} -> {lv1}): the host cell grew ({f3(h0)} -> {f3(h1)})')
+        want = g0 * h1 / h0 if h0 and h1 and g0 else 0
         ck(want and g1 and abs(g1 / want - 1) < 0.05,
-           f'BUG-0041: the guest cell has the size of its new level (size {g1:.3f}, {want:.3f} from the host ratio)')
+           f'BUG-0041: the guest cell has the size of its new level (size {f3(g1)}, {f3(want)} from the host ratio)')
 
         # ---- BUG-0070 case A: leave within 2 s after a revive ----
         time.sleep(4)  # regen, no invulnerability left
