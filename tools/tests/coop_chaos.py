@@ -76,7 +76,7 @@ class Bot:
         design editor request ... starts from 00000000`), which "done" never leaves: from the second try three
         parts go in first, as coop_civ_guest_editors' driver does"""
         for i in range(6):
-            if 'Editor' not in self.do(who, 'game.mode'):
+            if 'Editor' not in self.c[who].call('game.mode').get('out', ''):
                 return
             time.sleep(2)
             con = self.c[who]
@@ -89,7 +89,7 @@ class Bot:
             editor_click(con, *EDITOR_DONE)  # the editors' green "done"
             self.log.append(f'{time.strftime("%H:%M:%S")} {who}: leaves its editor ("done")')
             time.sleep(3)
-        if 'Editor' in self.do(who, 'game.mode'):
+        if 'Editor' in self.c[who].call('game.mode').get('out', ''):
             shot(self.c[who], f'chaos_{who}_editor_stuck.png')  # (what kept it there)
 
     def step(self):

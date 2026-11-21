@@ -596,6 +596,7 @@ extern std::unordered_map<void*, uint32_t> g_ours_t;
 void note_ours(std::unordered_map<void*, uint32_t>& m, void* o);
 bool ours_in(const std::unordered_map<void*, uint32_t>& m, void* o);
 extern uint32_t g_markers_used;
+extern uint32_t g_species_miss_test; // BUG-1375 (tests)
 
 void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std::pair<net::Vec3, bool>>& htribes,
                             const std::vector<void*>& locals);

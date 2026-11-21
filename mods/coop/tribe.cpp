@@ -2714,6 +2714,15 @@ static void use_marker_at(const net::Vec3& at)
 // within the mapping's 40 m (guest_state). `p`: the tribe table after the trailer (tag, count,
 // count x kTribeInfo). One try per host tribe every 5 s (an unknown species is asked for first).
 static std::map<std::pair<int, int>, double> g_npc_tribe_tried; // host tribe position (2 m grid) -> last try
+// BUG-1375: a try that found the species missing (asked from the host) waited the full 5 s, though the host's answer
+// comes within a round trip: the guest's copy of a new village came 5 s late (campaign_civ_jump: the sync-check's two
+// checks 3 s apart saw its five members missing). On: such a try is made again 0.5 s later (want_species asks once per
+// 30 s: no flood). Off: 5 s (0.7.15).
+static bool g_species_retry_fix = true;
+COOP_FIX("tribe.copy_species_retry", "BUG-1375", g_species_retry_fix,
+         "tribe: a guest makes its copy of the host's new village right after the host sent the village's species");
+constexpr double kNpcTribeRetry = 5.0, kNpcTribeSpeciesRetry = 0.5;
+uint32_t g_species_miss_test; // tests (`coop.tribe species_miss <n>`): the next n tries read their species as missing
 static std::map<std::pair<int, int>, void*> g_npc_tribe_made;   // ... -> the tribe made for it here
 void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std::pair<net::Vec3, bool>>& htribes,
                             const std::vector<void*>& locals)
@@ -2747,14 +2756,21 @@ void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std::pair<n
         if (g_npc_tribes_made >= 64)
             continue; // a bound against a loop of tribes made and lost
         auto tried = g_npc_tribe_tried.find(cell);
-        if (tried != g_npc_tribe_tried.end() && now - tried->second < 5.0)
+        if (tried != g_npc_tribe_tried.end() && now - tried->second < kNpcTribeRetry)
             continue;
         g_npc_tribe_tried[cell] = now;
         creations::Key lk = creations::local_species({k.instance, k.type, k.group});
         void* species = game::species_by_key({lk.instance, lk.type, lk.group});
+        if (species && g_species_miss_test) { // tests: as if this game lacked it (its answer is here at once)
+            g_species_miss_test--;
+            species = nullptr;
+            H->log(M, SK_INFO, "tribe: the species %08X of the host's NPC tribe %u reads as missing (test)", k.instance, (unsigned)i);
+        }
         if (!species) { // a species of the host's world this game lacks: the host sends it
             creations::want_species({k.instance, k.type, k.group});
             g_npc_tribes_failed++;
+            if (g_species_retry_fix) // BUG-1375: again as soon as the answer can be here
+                g_npc_tribe_tried[cell] = now - kNpcTribeRetry + kNpcTribeSpeciesRetry;
             continue;
         }
         skg::Vector3 pos{hp.x, hp.y, hp.z};
