@@ -406,14 +406,3 @@ anchor so other docs can link to it:
 * Reproduce: tools/tests/coop_home_nests.py, then `coop.nest home` and `coop.nest herd <herd>` on the guest.
 * Ticket: BUG-9270
 
-
-## A slow first load of the host's spaceship editor drops the guest (2026-11-20, feat/lineages-space)
-<a id="issue-editor-load-timeout"></a>
-
-* What happens: at the Civilization to Space vote the host's game opened the spaceship editor and its main thread
-  hung 51 s reading the editor's property files (three other games were loading on the same PC). The guest timed out
-  after 30 s, its vote was dropped, and it later joined straight into the host's Space world, so it never designed its
-  own ship. The host tells the guests "editor" only after the editor is open.
-* Reproduce: a slow disk or several games loading at once, then the Civ to Space vote (lane C, the Kealeneon fixture
-  after the team victory).
-* Ticket: BUG-9290.

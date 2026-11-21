@@ -1000,6 +1000,8 @@ void setup_callbacks()
                 coop_ui::open(false);
                 g_vote_opened_ui = false;
             }
+            if (ended && editor) // BUG-9290: the host's game loads the editor now (it may block for a long time)
+                editor_grace_start(H->time_seconds());
             return;
         }
         case net::Route::Notice: {

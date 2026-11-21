@@ -456,6 +456,7 @@ void start_vote(void* req, const std::string& text);
 void submit_tick(double now);
 void vote_action_tick(double now);
 void vote_tick(double now);
+void editor_grace_start(double now); // BUG-9290 (vote.cpp): a guest waits longer for a host loading an editor
 void* build_editor_request(EditKind kind, uint32_t editor_id, const game::Key& k);
 void* collected_parts();
 
