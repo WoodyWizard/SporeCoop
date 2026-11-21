@@ -67,6 +67,7 @@
 #include "identity.h"
 #include "party.h"
 #include "home_nests.h"
+#include "creature_rescue.h"
 #include "world.h"
 #include "find.h"
 #include "net/discovery.h"
@@ -1150,6 +1151,7 @@ static void frame_stage_ticks(double now)
     spacecoop::tick(now);
     if (g_sess.connected() && g_mode == modes::kCreature)
         teamplay::tick(game::avatar(), now);
+    creature_rescue::tick(now); // BUG-9283
 }
 
 // on_frame, phase: our player state (net::state_due: every 0.05 s, a stop at once) and the echo test remote
@@ -1317,6 +1319,54 @@ void draw_owner_tags()
                 n = "\u2605 " + n + "'s chief";
             float at[3] = {p.x, p.y, p.z};
             pfind::tag(chief ? "chief" : "member", owner, n, sc[0], sc[1], at, chief ? 1 : 3); // F2 colour, BUG-0949
+            g_tags_drawn++;
+        },
+        nullptr);
+}
+
+// BUG-9278: a downed last villager (tribe_rescue.cpp) shows "DOWN <s>" over it on every game (Lineages BUG-9141 drew a
+// draining ring there; its text form when the ring was off)
+void draw_downed_tags()
+{
+    tribe::for_each_downed(
+        [](void* c, uint8_t player, float seconds, void*) {
+            net::Vec3 p = game::position(c);
+            float len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+            float up = len > 1 ? 4.2f / len : 0;
+            float w[3] = {p.x + p.x * up, p.y + p.y * up, p.z + p.z * up}, sc[2];
+            if (!H->world_to_screen(w, sc))
+                return;
+            std::string who = player >= 0xFE ? std::string("A villager") : player == g_sess.my_id() ? g_name : g_sess.name_of(player);
+            std::string n = "DOWN " + std::to_string((int)std::ceil(seconds)) + "s: " + who + "'s last villager";
+            float at[3] = {p.x, p.y, p.z};
+            pfind::tag("member", player < 0xFE ? player : 0, n, sc[0], sc[1], at, 0);
+            g_tags_drawn++;
+        },
+        nullptr);
+    // BUG-9283: a downed creature (creature_rescue.cpp): "DOWN <s>" over it, with the revive's progress
+    creature_rescue::for_each_downed(
+        [](void* c, uint8_t player, float seconds, float revive, void*) {
+            if (player == g_sess.my_id()) { // the own creature: a line at the top of the screen (a tag over it did not
+                int sw = 0, sh = 0;          // show on the guest's game, lane D 2026-11-20)
+                H->screen_size(&sw, &sh);
+                std::string t = "DOWN " + std::to_string((int)std::ceil(seconds)) + "s: a partner next to you revives you" +
+                                (revive > 0 ? " (" + std::to_string((int)std::lround(revive * 100)) + "%)" : std::string()) +
+                                ". Hold G to give up.";
+                H->overlay_text(sw / 2 - text_width(t) / 2, (int)(sh * 0.42f), 0xFFFF6060, t.c_str());
+                return;
+            }
+            net::Vec3 p = game::position(c);
+            float len = std::sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+            float up = len > 1 ? 3.2f / len : 0;
+            float w[3] = {p.x + p.x * up, p.y + p.y * up, p.z + p.z * up}, sc[2];
+            if (!H->world_to_screen(w, sc))
+                return;
+            std::string who = player == g_sess.my_id() ? g_name : g_sess.name_of(player);
+            std::string n = "DOWN " + std::to_string((int)std::ceil(seconds)) + "s: " + who;
+            if (revive > 0)
+                n += " (revive " + std::to_string((int)std::lround(revive * 100)) + "%)";
+            float at[3] = {p.x, p.y, p.z};
+            pfind::tag("player", player, n, sc[0], sc[1], at, 0);
             g_tags_drawn++;
         },
         nullptr);
@@ -1517,6 +1567,9 @@ static std::vector<pfind::Target> find_targets(float me[3], bool& has_me)
         } else if (here && (!fix || find_placed(p, ref_r))) {
             have = true;
             t.flat = r.puppet_adapter->flat;
+            if (g_mode == modes::kCreature) // BUG-9283: a downed partner's arrow says so (where to go to revive it)
+                if (float s = creature_rescue::seconds_left_of(id); s > 0)
+                    t.what = "DOWN " + std::to_string((int)std::ceil(s)) + "s";
         } else if (g_mode == modes::kCiv && pk.city.count(id)) {
             p = pk.city[id];
             have = true;
@@ -1562,6 +1615,7 @@ void on_overlay(void*, int, void*)
             draw_owner_tags();
             draw_civ_tags();
         }
+        draw_downed_tags(); // BUG-9278 (also without name tags: the countdown is the game's news)
     }
     { // F2: arrows to the partners off screen; the minimap takes the same positions (outside the frame)
         float me[3] = {0, 0, 0};
@@ -2710,6 +2764,26 @@ static void init_creature_hooks()
     tc.notice = [](const std::string& t) { notice(t, -1); };
     tc.my_name = [] { return g_name; };
     teamplay::init(H, M, std::move(tc));
+    creature_rescue::Ctx rc; // BUG-9283 (Lineages): a downed creature, its revive, the party wipe
+    rc.sess = &g_sess;
+    rc.peers = [] {
+        std::vector<net::PlayerState> v;
+        const double now = H->time_seconds();
+        for (auto& [id, r] : g_remotes) {
+            if (r.echo || id >= net::kMaxPlayers || r.buf.empty() || r.buf.age(now) > 2.0)
+                continue;
+            net::PlayerState s = r.buf.latest();
+            if (same_place(s) && (s.flags & net::PF_IN_WORLD)) {
+                s.id = id;
+                v.push_back(s);
+            }
+        }
+        return v;
+    };
+    rc.puppet_of = [](uint8_t id) { return creature_puppet_live(id); };
+    rc.notice = [](const std::string& t) { notice(t, -1); };
+    rc.feed = feed;
+    creature_rescue::init(H, M, std::move(rc));
     if (uintptr_t a = H->sym("Simulator::CreatureSelectionUI"))
         H->hook_create(M, (void*)a, (void*)h_SelectUI, (void**)&o_SelectUI);
     a_AbilityModeCore = H->sym("Simulator::cCreatureGameData::GetAbilityMode"); // BUG-0913

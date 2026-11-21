@@ -58,10 +58,8 @@ COUNTER_ALLOW = {
         'the panels\' screen rectangles (the game\'s UI windows) are checked on the next line',
     ('coop_select.py', 'guards'):
         'a crash guard: that the guarded path ran is the point (the crash itself is the lab\'s invariant)',
-    ('coop_space_stale.py', 'down'):
-        'not a counter: `coop.space hp` prints the ship\'s disabled state read from the game (spacecoop.cpp hp line)',
     ('coop_space_stale.py', 'repair'):
-        'as down (the game\'s repair timer of the ship)',
+        'not a counter: `coop.space hp` prints the game\'s repair timer of the ship (spacecoop.cpp hp line)',
     ('coop_tribe.py', 'cmds_done'):
         'pending: the host\'s member doing the order (coop.tribe: the member\'s action / target) instead',
     ('coop_tribe.py', 'rejected'):

@@ -10,7 +10,7 @@ role: host
 versions: 0.7.15.5 (feat/lineages-tribe)
 fixed_in: unreleased
 branch: feat/lineages-tribe
-commits: 8e2c9780 0d2dcfe1 10f6c106
+commits: 5e2418fa 1716e16c fafe5a96
 tests: tools/tests/coop_tribe_seats.py (suite tribe_seats)
 signature: a villager card of the partner species on the host
 docs: docs/re/tribe.md#tribe-own-villages

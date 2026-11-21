@@ -5,6 +5,7 @@
 #include <map>
 
 #include "fixes.h"
+#include "creature_rescue.h"
 #include "game.h"
 #include "hunt_hits.h"
 #include "net/interp.h"
@@ -93,6 +94,10 @@ static std::string nearest_partner(void* avatar, float max_dist, float* out_dist
 float on_own_damage(void* avatar, float damage)
 {
     if (!g_on || !avatar || damage <= 0 || !settings::on(settings::kPackRescue))
+        return damage;
+    // BUG-9283 (Lineages): with a partner in this world a lethal hit downs the creature (a partner revives it); off or
+    // alone: the pack's one-off rescue below
+    if (creature_rescue::protect(avatar, damage))
         return damage;
     float hp = game::health(avatar);
     if (hp <= 0 || hp - damage > 0)

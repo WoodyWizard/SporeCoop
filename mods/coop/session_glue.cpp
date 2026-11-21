@@ -12,6 +12,7 @@
 #endif
 #include "lifecycle.h"
 #include "identity.h"
+#include "creature_rescue.h"
 #include "coop_state.h"
 #include "store.h"
 #include "designs.h"
@@ -1104,6 +1105,9 @@ void setup_callbacks()
             return;
         case net::Route::Social:
             social::on_message(type, from, r);
+            return;
+        case net::Route::CreatureRescue: // BUG-9283 (Lineages): a downed creature, its revive, the party wipe
+            creature_rescue::message(from, r);
             return;
         case net::Route::Nest: // BUG-0384
             nest::on_message(type, from, r);

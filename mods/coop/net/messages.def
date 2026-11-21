@@ -42,12 +42,14 @@
 // npc 1.1 (wsync row cell_spend_ack, BUG-1249), creature 1.1 (no wire change: the guest opens its own landfall editor
 // after a late arrival, BUG-1240; a host does not wait for such a guest's arrival, vote.cpp core.arrival_nowait).
 // Minor bump of feat/lineages-port: session 1.2 (MSG_IDENTITY, a new type older versions ignore: BUG-9258).
+// Minor bumps of feat/lineages-rescue: creature 1.2 (MSG_CREATURE_RESCUE, a new type older versions ignore: BUG-9283),
+// tribe 1.2 (MSG_TRIBE_ANIM kind K_RESCUE 22, a kind older versions drop: BUG-9278).
 FAMILY(session,   1, 1, 2, STAGE_ALWAYS, "session", "net/protocol.h")
 FAMILY(world,     2, 1, 0, STAGE_ALWAYS, "world transfer", "")
-FAMILY(creature,  3, 1, 1, STAGE_CREATURE, "Creature", "")
+FAMILY(creature,  3, 1, 2, STAGE_CREATURE, "Creature", "")
 FAMILY(npc,       4, 1, 1, STAGE_CREATURE | STAGE_TRIBE | STAGE_CIV, "mirrored creature and world state", "")
 FAMILY(cell,      5, 1, 1, STAGE_CELL, "Cell", "")
-FAMILY(tribe,     6, 1, 1, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
+FAMILY(tribe,     6, 1, 2, STAGE_TRIBE, "Tribe", "wire/tribe_anim.h")
 FAMILY(civ,       7, 1, 0, STAGE_CIV | STAGE_SPACE, "Civilization", "")
 FAMILY(space,     8, 1, 2, STAGE_SPACE, "Space", "wire/common.h wire/space_core.h wire/space_map.h wire/space_contracts.h wire/space_diplomacy.h wire/space_finale.h wire/space_rivalry.h wire/space_allies.h wire/space_trade.h wire/space_planets.h wire/space_badges.h wire/space_eco.h")
 FAMILY(shared,    9, 1, 0, STAGE_TRIBE | STAGE_CIV | STAGE_SPACE, "shared resources", "wire/common.h wire/shared_res.h")
@@ -129,6 +131,8 @@ MSG(70, HOST_BUSY,    R,  Host,  Session,   HostBusy,    Client, session,   "the
 MSG(71, TRIBE_ANIM,   RU, Host,  Module,    Tribe,       Client, tribe,     "u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160)")
 MSG(72, CELL_MATE,    RU, Guest, HostWorld, Cell,        Host,   cell,      "u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246)")
 MSG(73, IDENTITY,     R,  Any,   Session,   Identity,    Both,   session,   "the persistent player identity (identity.h, BUG-9258): guest -> host u64 its own after each join; host -> guests u8 n, n x {u8 player, u64 identity}")
+
+MSG(95, CREATURE_RESCUE, R, Any, Module,   CreatureRescue, Both, creature, "a downed creature (creature_rescue_logic.h, BUG-9283): u8 kind, u32 world; guest -> host K_DOWN / K_GIVE_UP u32 knockout; host -> guest K_RESULT u32 knockout, u8 result; host -> guests K_LINES u8 n, n x {u8 player, u16 tenths left, u8 revive %}")
 
 #undef MSG
 #undef FAMILY

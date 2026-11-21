@@ -10,7 +10,7 @@ role: guest
 versions: 0.7.15.5 (feat/lineages-tribe)
 fixed_in: unreleased
 branch: feat/lineages-tribe
-commits: 43c9dbbd 8e2c9780 0d2dcfe1 10f6c106
+commits: 6d94b4ae 5e2418fa 1716e16c fafe5a96
 tests: tools/tests/coop_tribe_seats.py (the lab hitch gate on its rejoin)
 signature: WATCHDOG / hitch 12-31 s "Tribe, loading" on a guest; main thread in gamefixes forget_sender / forget_last_attacker (for_each_object, skg::readable) under DestroyInstance from GalaxyMenu_SimReset
 docs:

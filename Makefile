@@ -187,6 +187,12 @@ unit-cpp: sanitizer-probe
 	@# BUG-9268: every player's own village (tribe_seats.h) and the founders' roster (founders.h)
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/tribe_seats_tests tests/tribe_seats_tests.cpp
 	$(B)/host/tribe_seats_tests
+	@# BUG-9278: a player's downed last villager, its revive and the party wipe (tribe_rescue_logic.h)
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/tribe_rescue_tests tests/tribe_rescue_tests.cpp
+	$(B)/host/tribe_rescue_tests
+	@# BUG-9283: a downed creature in the Creature stage, its revive and the party wipe (creature_rescue_logic.h)
+	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/creature_rescue_tests tests/creature_rescue_tests.cpp
+	$(B)/host/creature_rescue_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/wire_tests tests/wire_tests.cpp
 	$(B)/host/wire_tests
 	$(HOSTCXX) -std=c++20 -O1 -g -Wall $(SAN) -Imods/coop -o $(B)/host/text_tests tests/text_tests.cpp

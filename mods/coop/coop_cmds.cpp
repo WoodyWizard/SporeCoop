@@ -2,6 +2,7 @@
 // functions and the command registrations of sporekit_mod_main, which calls the register_commands_* functions at the
 // places the registrations had (the same order: SporeKit keeps the commands by name, the module inits between them stay
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
+#include "creature_rescue.h"
 #include "identity.h"
 #include "party.h"
 #include "home_nests.h"
@@ -2094,6 +2095,14 @@ void register_commands_stages()
         },
         nullptr, SK_CMD_MAIN_THREAD);
     H->command_add(M, "coop.team", "coop.team [on|off] - co-op mechanics (joint hunt, rescue, pack regen)", c_team,
+                   nullptr, MT);
+    H->command_add(M, "coop.rescue",
+                   "coop.rescue [down | giveup] - the Creature stage's downed creatures (BUG-9283); down: a lethal hit on the own "
+                   "creature through the game's damage path (tests); giveup: the own downed creature gives up (as holding G)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) -> int {
+                       SAY("%s", creature_rescue::debug(std::vector<std::string>(argv, argv + argc)).c_str());
+                       return 0;
+                   },
                    nullptr, MT);
 }
 

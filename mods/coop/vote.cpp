@@ -5,6 +5,7 @@
 // busy for a share (game_busy, save_blocker) and the editor-pending flag (BUG-0920). The MSG_VOTE handler is in the
 // session callbacks.
 #include "coop_state.h"
+#include "creature_rescue.h"
 #include "designs.h"
 
 namespace coop_core {
@@ -672,6 +673,10 @@ const char* save_blocker()
         return "an editor is opening";
     if (mode_switch_pending())
         return "the game is switching modes";
+    if (mode == modes::kCreature && creature_rescue::pending()) // BUG-9283 (Lineages): never a world with a creature down
+        return "a player is down: wait for the revive or the respawn";
+    if (mode == modes::kTribe && tribe::rescue_pending()) // BUG-9278 (Lineages): never a world with a villager down
+        return "a last villager is down: wait for its revive or the party wipe";
     if (tribe_graduating()) { // BUG-0849
         if (!g_graduation_refusals++)
             LOG("no world save in the end of Tribe (City Hall built, Civilization next): the world is sent in Civ");

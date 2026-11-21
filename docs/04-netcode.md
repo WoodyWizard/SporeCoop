@@ -131,15 +131,16 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 71 | `TRIBE_ANIM` | RU | host | Module | Tribe (guest) | tribe | u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160) |
 | 72 | `CELL_MATE` | RU | guest | HostWorld | Cell (host) | cell | u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246) |
 | 73 | `IDENTITY` | R | any | Session | Identity | session | the persistent player identity (identity.h, BUG-9258): guest -> host u64 its own after each join; host -> guests u8 n, n x {u8 player, u64 identity} |
+| 95 | `CREATURE_RESCUE` | R | any | Module | CreatureRescue | creature | a downed creature (creature_rescue_logic.h, BUG-9283): u8 kind, u32 world; guest -> host K_DOWN / K_GIVE_UP u32 knockout; host -> guest K_RESULT u32 knockout, u8 result; host -> guests K_LINES u8 n, n x {u8 player, u16 tenths left, u8 revive %} |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
 | session (session) | 1 | 1.2 | every stage and the menus | `HELLO`, `WELCOME`, `REJECT`, `PLAYER_JOIN`, `PLAYER_LEAVE`, `PLAYER_STATE`, `CHAT`, `PING`, `PONG`, `BYE`, `ABILITY`, `PING_MARK`, `READY`, `LOBBY`, `NOTICE`, `DIAG`, `SETTINGS`, `COLORS`, `REPORT`, `HOST_WORLD`, `HOST_BUSY`, `IDENTITY` |
 | world (world transfer) | 2 | 1.0 | every stage and the menus | `WORLD_OFFER`, `WORLD_FILE`, `WORLD_CHUNK`, `WORLD_DONE` |
-| creature (Creature) | 3 | 1.1 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT` |
+| creature (Creature) | 3 | 1.2 | Creature | `ANIM`, `WORLD_TIME`, `DNA`, `DNA_ADD`, `VOTE`, `SPECIES`, `SOCIAL`, `NEST`, `PARTS`, `EFFECT`, `CREATURE_RESCUE` |
 | npc (mirrored creature and world state) | 4 | 1.1 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
 | cell (Cell) | 5 | 1.1 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
-| tribe (Tribe) | 6 | 1.1 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
+| tribe (Tribe) | 6 | 1.2 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
 | civ (Civilization) | 7 | 1.0 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |
 | space (Space) | 8 | 1.2 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |
 | shared (shared resources) | 9 | 1.0 | Tribe, Civilization, Space | `RES`, `RES_ADD` |
