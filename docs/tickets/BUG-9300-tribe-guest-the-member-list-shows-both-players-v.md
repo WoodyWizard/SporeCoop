@@ -9,11 +9,11 @@ source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with 
 role: guest
 versions: 0.7.14.1-lineages67-dev
 fixed_in:
-branch:
+branch: fix/l47-view
 commits:
-tests:
+tests: manual two-player plan (ticket Fix)
 signature:
-docs:
+docs: docs/re/tribe.md#tribe-swap-cards
 related: BUG-9153
 ---
 
@@ -29,14 +29,26 @@ stopped being the player's (cards leave only through TribeStage_RemoveMemberCard
 The guest swapped and restored many times this session (20:26:40, :50, :53.8, 20:27:01, 20:38:36; restores at 20:26:47,
 20:26:53, 20:31:56).
 
-## Fix
-Planned: after a swap, take the other village's members off the cards (`body_card_off`, tribe.cpp ~310, out from under
-the `tribe.body_card` switch); the same on restore. Switch `tribe.swap_cards`. Test: card count = own members after the
-swap and after a save + re-swap (cards() of coop_tribe_roster_cards.py): FAIL (host + own) / PASS.
+CORRECTION / precision (2026-11-20, fix/l47-view): not seen in a game by this branch. Observed in the code: nothing in
+the mod removes a card on the swap or the restore (TribeStage_RemoveMemberCard is called only by detach_body), and the
+card count is readable (TribeGameUI +0xA8). Inferred, not checked: how the game adds the new player tribe's cards on a
+SetPlayerTribe (the MSI saw the cards become the own villagers on 2026-11-12, so something adds them; whether it also
+removes the old ones in some cases is unknown; no Ghidra / running game on this PC).
 
+## Fix
+Switch `tribe.swap_cards` (tribe.cpp, next to persp_restore; on). On a guest in Tribe, twice a second
+(swap_cards_tick, from persp_update): when the roster has more cards (TribeGameUI +0xA8) than the game's player tribe
+(native_player_tribe) has members, every other tribe's members lose their card (TribeStage_RemoveMemberCard, no
+card: nothing). On persp_restore the village that stops being the player's loses its cards at once (the host's come
+back by the same game path that added the own ones). body_card_off is split: roster_card_off (no switch) +
+body_card_off (`tribe.body_card` as before). Readout: `coop.tribe perspective` adds `cards= player_members= cards_off=
+card_passes=`; the log line "the member cards of villages that are not the player's went: A -> B".
+Test (manual, two players): cards == player_members on the guest after the swap, after a save (restore + re-swap)
+and after the host leaves to the menu and comes back; off: cards = own + host members.
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20: fix on fix/l47-view (built, not run in a game yet; the lead runs the two-player test).

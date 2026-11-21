@@ -2,6 +2,7 @@
 #include <d3d9.h>
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace partner_marker {
 void draw(const SkHost* host, float x, float y, float dx, float dy, float size, unsigned color)
@@ -133,5 +134,71 @@ void plate(const SkHost* host, float x1, float y1, float x2, float y2, float rad
         device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2 * kPts, strip, sizeof(Vertex));
     }
     saved->Apply(); saved->Release();
+}
+
+int ground_rings(const SkHost* host, const float* centres, const float* radii, const unsigned* colors, int n)
+{
+    auto* device = static_cast<IDirect3DDevice9*>(host->d3d_device());
+    if (!device || !host->world_to_screen || n <= 0) return 0;
+    constexpr int kSeg = 24;
+    // per ring: the band's outer and inner edge and the dark edge's, projected (x, y) at kSeg angles
+    struct Proj { float o[kSeg][2], i[kSeg][2], eo[kSeg][2], ei[kSeg][2]; };
+    std::vector<Proj> rings;
+    std::vector<unsigned> cols;
+    rings.reserve(n);
+    for (int r = 0; r < n; ++r) {
+        const float* c = centres + 3 * r;
+        const float radius = radii[r];
+        if (!(radius > 0) || radius > 50.f) continue;
+        const float len = std::sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
+        if (!std::isfinite(len) || len < 1.f) continue;
+        const float up[3] = {c[0] / len, c[1] / len, c[2] / len};
+        // a tangent: up x (the axis least along up)
+        float ax[3] = {0, 0, 0};
+        const float fx = std::fabs(up[0]), fy = std::fabs(up[1]), fz = std::fabs(up[2]);
+        ax[fx <= fy && fx <= fz ? 0 : fy <= fz ? 1 : 2] = 1;
+        float a[3] = {up[1] * ax[2] - up[2] * ax[1], up[2] * ax[0] - up[0] * ax[2], up[0] * ax[1] - up[1] * ax[0]};
+        const float al = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+        a[0] /= al; a[1] /= al; a[2] /= al;
+        const float b[3] = {up[1] * a[2] - up[2] * a[1], up[2] * a[0] - up[0] * a[2], up[0] * a[1] - up[1] * a[0]};
+        Proj p{};
+        bool ok = true;
+        auto project = [&](float rad, float ang, float out[2]) {
+            const float lift = .12f, ca = std::cos(ang) * rad, sa = std::sin(ang) * rad; // just over the ground
+            float w[3] = {c[0] + up[0] * lift + a[0] * ca + b[0] * sa, c[1] + up[1] * lift + a[1] * ca + b[1] * sa,
+                          c[2] + up[2] * lift + a[2] * ca + b[2] * sa};
+            out[0] = out[1] = NAN;
+            host->world_to_screen(w, out); // (0 also off screen, with the point written: only an unwritten one is behind)
+            ok = ok && std::isfinite(out[0]) && std::isfinite(out[1]) && std::fabs(out[0]) < 1e5f && std::fabs(out[1]) < 1e5f;
+        };
+        for (int s = 0; s < kSeg && ok; ++s) {
+            const float ang = 6.2831853f * s / kSeg;
+            project(radius, ang, p.o[s]);
+            project(radius * .78f, ang, p.i[s]);
+            project(radius * 1.1f, ang, p.eo[s]);
+            project(radius * .68f, ang, p.ei[s]);
+        }
+        if (!ok) continue;
+        rings.push_back(p);
+        cols.push_back(colors[r]);
+    }
+    if (rings.empty()) return 0;
+    IDirect3DStateBlock9* saved = begin(device);
+    if (!saved) return 0;
+    Vertex strip[2 * kSeg + 2];
+    auto band = [&](const float (*o)[2], const float (*in)[2], DWORD argb) {
+        for (int s = 0; s <= kSeg; ++s) {
+            const int k = s % kSeg;
+            strip[2 * s] = {o[k][0], o[k][1], 0, 1, argb};
+            strip[2 * s + 1] = {in[k][0], in[k][1], 0, 1, argb};
+        }
+        device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2 * kSeg, strip, sizeof(Vertex));
+    };
+    for (size_t r = 0; r < rings.size(); ++r) {
+        band(rings[r].eo, rings[r].ei, 0x70000000); // the dark edge (seen on light ground)
+        band(rings[r].o, rings[r].i, (DWORD)cols[r]);
+    }
+    saved->Apply(); saved->Release();
+    return (int)rings.size();
 }
 }

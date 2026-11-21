@@ -5905,6 +5905,39 @@ void draw_owner_tags()
         nullptr);
 }
 
+// BUG-9302, decision 7K A (owner 2026-11-20; the report: "Party's creatures were not highlighted the party color, so
+// they were hard to tell who was who"): a small ring on the ground under each partner's villager, in that player's
+// colour (find.h color_of, the plate's colour of 7D A); this player's own villagers get none. The owners are the
+// tribe's tracked members (the host's table on the host, the snapshot's owner on a guest), every village. Off: no ring.
+static bool g_partner_ring = true;
+COOP_FIX("tribe.partner_ring", "BUG-9302", g_partner_ring,
+         "tribe: a ring in the player's colour on the ground under each partner's villager (decision 7K A)");
+uint32_t g_rings_drawn = 0; // rings drawn in the last overlay pass (`coop.tribe rings`)
+void draw_partner_rings()
+{
+    g_rings_drawn = 0;
+    if (!g_partner_ring || g_mode != modes::kTribe || !g_sess.connected())
+        return;
+    struct Rings { std::vector<float> at, radius; std::vector<unsigned> col; uint8_t me; };
+    static Rings r;
+    r.at.clear(); r.radius.clear(); r.col.clear();
+    r.me = g_sess.my_id();
+    tribe::for_each_tracked(
+        [](const tribe::TrackMember& m, void* u) {
+            auto& r = *(Rings*)u;
+            if (m.owner == r.me || m.owner >= 0xFE || !m.c || game::is_dead(m.c) || r.col.size() >= 256)
+                return;
+            const net::Vec3 p = game::position(m.c);
+            const float br = game::bounding_radius(m.c);
+            r.at.insert(r.at.end(), {p.x, p.y, p.z});
+            r.radius.push_back(std::clamp(std::isfinite(br) ? br * .7f : 1.f, .5f, 1.8f));
+            r.col.push_back(0xE6000000u | (pfind::color_of(m.owner) & 0xFFFFFFu));
+        },
+        &r);
+    if (!r.col.empty())
+        g_rings_drawn = (uint32_t)partner_marker::ground_rings(H, r.at.data(), r.radius.data(), r.col.data(), (int)r.col.size());
+}
+
 // civilization: owner names over the player's cities and vehicles
 void draw_civ_tags()
 {
@@ -6979,6 +7012,7 @@ void on_overlay(void*, int, void*)
         cellsync::set_box_shown(false);
     }
     if (labels) {
+        draw_partner_rings(); // BUG-9302 (first: under the tags and marks)
         draw_marks();
         cellsync::draw_overlay();
         spacecoop::draw_overlay();
@@ -8345,8 +8379,8 @@ int c_status(void*, int, const char* const*, SkOut* out)
     SAY("away dna: solo_mode=%08X solo_dropped=%u owed_world=%08X owed_dropped=%u\n", g_solo_mode, g_solo_dropped,
         g_dna_owed_world, g_owed_dropped); // BUG-0233
     SAY("strays: pending=%u removed=%u\n", (unsigned)g_strays.size(), g_strays_removed);
-    SAY("labels: menu_up=%d window=%d hidden_frames=%u cinematic_frames=%u name_tags=%u\n", (int)g_menu_up.load(),
-        (int)coop_ui::is_open(), g_menu_hidden, g_cine_hidden, g_tags_drawn);
+    SAY("labels: menu_up=%d window=%d hidden_frames=%u cinematic_frames=%u name_tags=%u partner_rings=%u\n", (int)g_menu_up.load(),
+        (int)coop_ui::is_open(), g_menu_hidden, g_cine_hidden, g_tags_drawn, g_rings_drawn); // (partner_rings: BUG-9302)
     for (auto& p : g_sess.players()) // tests (BUG-0809): the datagrams sent to each peer so far
         if (net::Connection* c = p.id != g_sess.my_id() ? g_sess.conn_to(p.id) : nullptr)
             SAY("net to %u: out_bytes=%llu out_packets=%u\n", (unsigned)p.id, (unsigned long long)c->stats.bytes_sent,

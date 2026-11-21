@@ -306,14 +306,20 @@ static bool g_body_card_fix = true;
 COOP_FIX("tribe.body_card", "BUG-0961", g_body_card_fix,
          "tribe: a member that died on the host leaves the guest's roster too (one card more stayed there)");
 static uint32_t g_body_cards;
-static void body_card_off(void* c)
+// the roster's card of c goes (TribeStage_RemoveMemberCard: nothing when c has none); false: no roster to ask
+static bool roster_card_off(void* c)
 {
     static uintptr_t get = H->sym("SporeCoop::cTribeUI_Get"), off = H->sym("SporeCoop::TribeStage_RemoveMemberCard");
     void* stage = get ? skg::cdecl_call<void*>(get) : nullptr;
-    if (!g_body_card_fix || !stage || !off || !skg::readable(stage, 0x244) || !F<void*>(stage, 0x240))
-        return;
+    if (!c || !stage || !off || !skg::readable(stage, 0x244) || !F<void*>(stage, 0x240))
+        return false;
     thiscall<void>(off, stage, c);
-    g_body_cards++;
+    return true;
+}
+static void body_card_off(void* c)
+{
+    if (g_body_card_fix && roster_card_off(c))
+        g_body_cards++;
 }
 
 static void detach_body(void* c)
@@ -2832,17 +2838,68 @@ static bool persp_set(void* t)
     thiscall<void>(a_SetPlayerTribe, mgr, t);
     return native_player_tribe() == t;
 }
+// BUG-9300 (a guest's report 2026-11-20, 67-dev: "The Pack list showed both party member's units"): the member cards
+// (the roster on the right edge, docs/re/tribe.md#tribe-roster-cards) leave only through TribeStage_RemoveMemberCard,
+// sent by the game when a member goes. The swap above changes the player tribe under the roster: the new player's
+// members got cards and nothing took the old player's cards off, so a guest that swapped (and restored for saves and
+// local play many times a session) showed the host's villagers' cards next to its own. Now a guest's roster holds the
+// cards of the game's player tribe only: twice a second, when it has more cards than that tribe has members, every
+// other tribe's members lose theirs; on a restore the village that stops being the player's loses its cards at once.
+// `coop.fix tribe.swap_cards off`: the cards stay (0.7.14.1-lineages67).
+static bool g_swap_cards = true;
+COOP_FIX("tribe.swap_cards", "BUG-9300", g_swap_cards,
+         "tribe: a guest's member cards show only its own villagers after its village becomes the player's (not the host's too)");
+static uint32_t g_swap_card_passes, g_swap_cards_off;
+static double g_swap_cards_at = -10;
+// the roster's card count (the game UI's citizen -> card map size, +0xA8), -1: no roster
+static int roster_cards()
+{
+    static uintptr_t get = H->sym("SporeCoop::cTribeUI_Get");
+    void* stage = get ? skg::cdecl_call<void*>(get) : nullptr;
+    void* ui = stage && skg::readable(stage, 0x244) ? F<void*>(stage, 0x240) : nullptr;
+    return ui && skg::readable(ui, 0xAC) ? (int)F<uint32_t>(ui, 0xA8) : -1;
+}
+static void cards_off_for(void* t)
+{
+    for (void* c : members(t))
+        if (!roster_card_off(c)) return;
+}
+static void swap_cards_tick()
+{
+    if (!g_swap_cards || !active() || !is_guest()) return;
+    const double now = H->time_seconds();
+    if (now - g_swap_cards_at < 0.5) return;
+    g_swap_cards_at = now;
+    void* keep = native_player_tribe();
+    const int before = roster_cards();
+    if (!keep || before < 0 || (size_t)before <= members(keep).size()) return;
+    for (void* t : all_tribes())
+        if (t != keep) cards_off_for(t);
+    const int after = roster_cards();
+    if (after >= before) return;
+    g_swap_cards_off += (uint32_t)(before - after);
+    if (++g_swap_card_passes <= 10 || g_swap_card_passes % 100 == 0)
+        H->log(M, SK_INFO, "tribe: the member cards of villages that are not the player's went: %d -> %d (player tribe %u members, "
+               "pass %u, BUG-9300)", before, after, (unsigned)members(keep).size(), g_swap_card_passes);
+}
 static void persp_restore(const char* why)
 {
     if (!g_persp_host) return;
     void* host = g_persp_host;
     g_persp_host = nullptr;
-    if (game::object_alive(host) && native_player_tribe() != host) persp_set(host);
+    void* was = native_player_tribe();
+    if (game::object_alive(host) && was != host && persp_set(host) && g_swap_cards && was && game::object_alive(was)) {
+        const int before = roster_cards();
+        cards_off_for(was); // BUG-9300: the own village's cards go with its player role
+        const int after = roster_cards();
+        if (before > after) g_swap_cards_off += (uint32_t)(before - after);
+    }
     ++g_persp_restores;
     H->log(M, SK_INFO, "tribe: the host's village is the player's again (%s, BUG-9153)", why);
 }
 static void persp_update()
 {
+    swap_cards_tick(); // BUG-9300
     const bool want = g_own_player && !g_persp_saving && active() && is_guest() && !local_play() &&
                       g_own_village && game::object_alive(g_own_village);
     if (g_persp_host && (!want || !game::object_alive(g_persp_host) || native_player_tribe() != g_own_village))
@@ -6003,6 +6060,108 @@ static void make_npc_tribes(const uint8_t* p, size_t len, const std::vector<std:
         g_npc_tribe_made.clear();
 }
 
+// BUG-9301 (a guest's report 2026-11-20, 67-dev: "Host was not their species on their side"): a guest's mirror is made
+// by its local tribe's SpawnMember / CreateCitizen (spawn_member), so it wears that local tribe's species, and nothing on
+// a guest ever changed a tribe's species: the host's new outfit (a native editor result on the host's game) never
+// reached the guest's copy of the host's village, and a guest's own outfitter result the game applied to its player
+// tribe (the host's village while the swap was undone) stayed there. The host's tribe table (TRBI, after each state
+// chunk's trailer) already carries each host tribe's species (its first member's). Now a guest compares each mapped
+// local tribe with it (creations::local_species, as tribe.npc_tribes) and, outside the frame, gives a tribe that
+// differs (the same for 2 s: a village's mapping by position settles) the host's species: its species slots
+// (Tribe_SetSpeciesProfile, the slots of the wrong species, slot 0 always: future mirrors) and its members
+// (cCreatureAnimal::SetSpecies, the game's own call after an editor, age kept).
+// Not during the guest's own outfit vote (the host's checkpoint brings the result) nor local play. One try per tribe
+// every 3 s; a species this game lacks is asked from the host first. `coop.fix tribe.mirror_species off`: as before.
+static bool g_mirror_species = true;
+COOP_FIX("tribe.mirror_species", "BUG-9301", g_mirror_species,
+         "tribe: a guest's copies of the host's villages wear the host's species and outfit (not this game's)");
+static uint32_t g_species_fixed, g_species_members, g_species_wanted;
+static std::string g_species_last; // `coop.tribe species`: the last change
+struct SpeciesSeen { uint32_t want = 0; double since = 0, tried = -10; };
+static std::unordered_map<void*, SpeciesSeen> g_species_seen; // a local tribe -> the host's species it lacks, since when
+static bool species_off(void* t, uint32_t a, uint32_t b) // a member or slot 0 of t wears neither a nor b
+{
+    auto wrong = [&](uint32_t k) { return k && k != a && k != b; };
+    void* s0 = skg::readable((uint8_t*)t + 0x18CC, 4) ? F<void*>(t, 0x18CC) : nullptr;
+    if (s0 && skg::readable((uint8_t*)s0 + 0x504, 4) && wrong(F<uint32_t>(s0, 0x504))) return true;
+    for (void* c : members(t))
+        if (!g_detached.count(c) && wrong(game::species_key(c).instance)) return true;
+    return false;
+}
+struct SpeciesJob { void* t; uint32_t serial; game::Key want; uint32_t host; };
+static void species_apply(void* u)
+{
+    SpeciesJob j = *(SpeciesJob*)u;
+    delete (SpeciesJob*)u;
+    static uintptr_t set_tribe = H->sym("SporeCoop::Tribe_SetSpeciesProfile"),
+                     set_member = H->sym("Simulator::cCreatureAnimal::SetSpecies");
+    if (!g_mirror_species || !set_tribe || !set_member || !active() || !is_guest() || local_play()) return;
+    auto tribes = all_tribes();
+    if (std::find(tribes.begin(), tribes.end(), j.t) == tribes.end() || game::object_serial(j.t) != j.serial) return;
+    void* profile = game::species_by_key(j.want);
+    if (!profile || !species_off(j.t, j.want.instance, j.host)) return;
+    std::unordered_set<uint32_t> wrong;
+    unsigned n = 0, slots = 0;
+    for (void* c : members(j.t)) {
+        const uint32_t k = game::species_key(c).instance;
+        if (g_detached.count(c) || !k || k == j.want.instance || k == j.host) continue;
+        wrong.insert(k);
+        thiscall<bool>(set_member, c, profile, F<int>(c, kAgeOff), true);
+        n++;
+    }
+    for (int i = 0; i < 14; ++i) {
+        void* old = F<void*>(j.t, 0x18CC + 4 * i);
+        const uint32_t k = old && skg::readable((uint8_t*)old + 0x504, 4) ? F<uint32_t>(old, 0x504) : 0;
+        if (k && k != j.want.instance && k != j.host && (i == 0 || wrong.count(k))) {
+            if (i == 0) wrong.insert(k);
+            thiscall<void>(set_tribe, j.t, profile, i);
+            slots++;
+        }
+    }
+    g_species_fixed++;
+    g_species_members += n;
+    char b[200];
+    snprintf(b, sizeof b, "tribe %p: %u members and %u slots to %08X (host %08X; wore %u other species)", j.t, n, slots,
+             j.want.instance, j.host, (unsigned)wrong.size());
+    g_species_last = b;
+    H->log(M, SK_INFO, "tribe: the host's species for a village here: %s (BUG-9301)", b);
+}
+// `p`: the tribe table after the trailer (as make_npc_tribes)
+static void mirror_species_check(const uint8_t* p, size_t len, size_t ntribes)
+{
+    uint32_t tag;
+    memcpy(&tag, p, 4);
+    if (!g_mirror_species || tag != kTribeInfoTag || len < 5 || p[4] != ntribes || len < 5 + ntribes * kTribeInfo ||
+        !is_guest() || local_play() || (g_outfit.token && g_outfit.world == modes::current_world()) ||
+        world::load_queued() || world::save_busy() || world::cinematic_playing())
+        return;
+    const double now = H->time_seconds();
+    for (size_t i = 0; i < ntribes && i < g_local_tribe_of.size(); i++) {
+        void* t = g_local_tribe_of[i];
+        if (!t) continue;
+        const uint8_t* e = p + 5 + i * kTribeInfo;
+        game::Key k;
+        memcpy(&k.instance, e, 4);
+        memcpy(&k.type, e + 4, 4);
+        memcpy(&k.group, e + 8, 4);
+        if (!k.instance) continue; // no member on the host yet
+        creations::Key lk = creations::local_species({k.instance, k.type, k.group});
+        game::Key want{lk.instance ? lk.instance : k.instance, lk.instance ? lk.type : k.type, lk.instance ? lk.group : k.group};
+        if (!species_off(t, want.instance, k.instance)) { g_species_seen.erase(t); continue; }
+        SpeciesSeen& seen = g_species_seen[t];
+        if (seen.want != want.instance) seen = {want.instance, now, -10}; // (a new difference: mapped the same for 2 s first)
+        if (now - seen.since < 2.0 || now - seen.tried < 3.0) continue;
+        seen.tried = now;
+        if (!game::species_by_key(want)) { // a species this game lacks: the host sends it, the next try applies it
+            creations::want_species({k.instance, k.type, k.group});
+            g_species_wanted++;
+            continue;
+        }
+        H->run_outside_frame(species_apply, new SpeciesJob{t, game::object_serial(t), want, k.instance});
+    }
+    if (g_species_seen.size() > 64) g_species_seen.clear();
+}
+
 static std::vector<uint16_t> guest_village_ids(bool selected_only = false);
 
 // BUG-0483: a whole village (tribe, hut, tools, food mat, members) stood in a guest's game only (the
@@ -6374,8 +6533,10 @@ static void guest_state(net::Reader& r)
         memcpy(&host_ms, t + 4, 4);
         timed = magic == kStateTrailer;
     }
-    if (info && timed)
+    if (info && timed) {
         make_npc_tribes(r.cur() + n * kEntry + kTrailerSize, extra, htribes, locals);
+        mirror_species_check(r.cur() + n * kEntry + kTrailerSize, extra, htribes.size()); // BUG-9301
+    }
     g_mirror_timed += timed;
     for (int i = 0; i < n && r.ok(); i++) {
         uint16_t id = r.u16();
@@ -12725,11 +12886,35 @@ std::string debug(const std::vector<std::string>& a)
         }
         return out;
     }
+    if (a.size() == 1 && a[0] == "species") { // BUG-9301: each village's species (host: its tribes; guest: the mapped copies)
+        std::string out;
+        char b[200];
+        snprintf(b, sizeof b, "species fixed=%u members=%u wanted=%u last=%s\n", g_species_fixed, g_species_members,
+                 g_species_wanted, g_species_last.empty() ? "-" : g_species_last.c_str());
+        out += b;
+        auto list = is_host() ? all_tribes() : g_local_tribe_of;
+        for (size_t i = 0; i < list.size() && i < 32; i++) {
+            void* t = list[i];
+            if (!t || !game::object_alive(t)) { out += "  tribe " + std::to_string(i) + ": none\n"; continue; }
+            void* s0 = F<void*>(t, 0x18CC);
+            std::set<uint32_t> keys;
+            for (void* c : members(t)) keys.insert(game::species_key(c).instance);
+            std::string ks;
+            for (uint32_t k : keys) { snprintf(b, sizeof b, " %08X", k); ks += b; }
+            snprintf(b, sizeof b, "  tribe %u%s: slot0=%08X members=%u species:", (unsigned)i, t == player_tribe() ? " (player)" : "",
+                     s0 && skg::readable((uint8_t*)s0 + 0x504, 4) ? F<uint32_t>(s0, 0x504) : 0u, (unsigned)members(t).size());
+            out += b + ks + "\n";
+        }
+        return out;
+    }
     if (a.size() == 1 && a[0] == "perspective") { // BUG-9153
-        char b[256];
-        snprintf(b, sizeof b, "perspective native=%p host=%p own=%p swaps=%u restores=%u babies=%u tools=%u hutless=%u last=%p",
-                 native_player_tribe(), g_persp_host, g_own_village, g_persp_swaps, g_persp_restores, g_native_babies,
-                 g_native_tools, g_hutless_reads, g_hutless_last);
+        char b[384];
+        void* nt = native_player_tribe();
+        snprintf(b, sizeof b, "perspective native=%p host=%p own=%p swaps=%u restores=%u babies=%u tools=%u hutless=%u last=%p "
+                 "cards=%d player_members=%u cards_off=%u card_passes=%u",
+                 nt, g_persp_host, g_own_village, g_persp_swaps, g_persp_restores, g_native_babies,
+                 g_native_tools, g_hutless_reads, g_hutless_last, roster_cards(), nt ? (unsigned)members(nt).size() : 0u,
+                 g_swap_cards_off, g_swap_card_passes);
         return b;
     }
     if (a.size() == 2 && a[0] == "test_perspective") {
