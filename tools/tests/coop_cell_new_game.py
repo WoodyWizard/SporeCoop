@@ -68,12 +68,31 @@ def edible(kind, sd):
     return sd in (0, 1) if kind == 'meat' else sd == 1
 
 
+def close_captions(name, me, secs=20):
+    """BUG-1384: a caption of the game waits for OK (`coop.pool` cine=1) and holds the input and the avatar's eat
+    lock (+0x178: own_locks 0010, docs/re/cell.md#cell-eat-gate): a new game's caption came up at the shared total
+    ~125 on both games right after the host's probe (lab 20261120-133703, busy=cinematic,input_lock from s 219 to the
+    end) and the guest's probe swam into 6 meats it could not eat. The bots of the play phase confirm captions; the
+    probe does it as a player does: Enter, then the green check (bottom right). Returns how many it confirmed"""
+    n, t0 = 0, time.time()
+    while time.time() - t0 < secs and pool(me).get('cine'):
+        if n == 0:
+            shot(me, f'cell_new_game_caption_{name}.png')
+        me.call('key enter' if n % 2 == 0 else 'click 1410 1048')
+        n += 1
+        me.call('wait.frames 30 10000')
+    return n
+
+
 def probe(name, me, other, kind, tries):
     """`me` swims to the nearest cell of `kind` on its screen (`coop.pool swimto`, like a click on it)
     until it touches it: did its own game eat it (AvatarEat: own points up), the same cell left on both?"""
     ok = 0
     log = []
     for _ in range(tries):
+        closed = close_captions(name, me)
+        if closed:
+            log.append(f'(a caption was up: confirmed it, {closed} press(es))')
         # BUG-0293: meat (kill loot) is rare right after a level change (RemoveCellsOfOldScale empties the pool
         # outside the host's box): a try that found none on screen at once was spent after 60 frames, and 4 of 10
         # runs failed on "none on screen". Wait up to FOOD_WAIT s for food of the kind to float onto the screen, as
@@ -106,6 +125,8 @@ def probe(name, me, other, kind, tries):
             me.call(f'coop.pool swimto {key} tp')
         for _ in range(24):
             time.sleep(0.25)
+            if close_captions(name, me, 10):  # BUG-1384: one that came up on the way (a meal over a threshold)
+                log.append('(a caption came up on the way: confirmed it)')
             me.call(f'coop.pool swimto {key}')
             if not alive(me, key):
                 break
