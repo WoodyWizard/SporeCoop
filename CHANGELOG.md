@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages67-dev] - 2026-11-20
+
+- A partner's name plate edge and arrow are drawn in that player's colour, so you can tell players apart at a glance
+  (BUG-9282).
+
 ## [0.7.14.1-lineages66-dev] - 2026-11-19
 
 - Creature: a player joining a game makes their first creature in the stage's start editor (145 DNA, the starter

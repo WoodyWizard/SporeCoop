@@ -8,9 +8,9 @@ reported: 2026-11-19
 source: owner 2026-11-19 (7D A)
 role: all
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages67-dev
 branch: feat/lineages-alpha
-commits:
+commits: b23e9a9b
 tests: tools/qa_win (live TITAN QA 8+9 2026-11-19, switch off and on)
 signature:
 docs: docs/ROADMAP.md (7D)
@@ -38,3 +38,4 @@ and the HUD's blue arrow; on, the edge in QA 9's colour (blue for that player) a
 - 2026-11-19: built on feat/lineages-alpha.
 
 * 2026-11-20: ported to feat/lineages-47 (Live); seen live there: the host's plate yellow, the guest's blue, one edge each (images/live_7DA_plate_host_view.png, images/live_7DA_plate_guest_view.png).
+- 2026-11-20: released in 0.7.14.1-lineages67-dev.
