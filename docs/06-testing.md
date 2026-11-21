@@ -9244,3 +9244,25 @@ docs/re/graphics.md#graphics-ui-depth-clear). TITAN QA copy, host instance 9, gu
 * Device reset: not reachable windowed (docs/re/graphics.md#graphics-ui-depth-clear); a fullscreen alt-tab was not
   tried on TITAN (it takes a whole screen of the owner's PC).
 * The game's `shot` path must have no spaces; forward slashes work.
+
+## The visiting ship and the ban list on TITAN (2026-11-21, fix/l47-ship-purge)
+<a id="testing-ship-ban-list"></a>
+
+* The QA copy reads its symbols from its own mods\sporekit\symbols: a new symbol needs the branch's
+  overrides_dc04aee5.sym copied there (back up the old one, put it back after; never `sym.reload`). Without it a hook
+  of the branch is simply off (`coop.library pickships` answered "no symbol").
+* Ship (BUG-9328): host `coop.drama start 2`, then `coop.drama ship` on both games: the host's `last_spawn`, the guest's
+  `host=` and `host hash`, and the model of every live ship (cGameDataUFO +0x780). Twin: `coop.fix creature.same_ship 0`
+  on both. The ship hangs 20 m over the avatars: in the Creature camera only its shadow shows, which is enough to
+  compare models (out/qa-shots/bug9328_*.png). The guest's join cover ends by its 180 s time limit on Samuth at night.
+* A drama event stays active while its ship lives (minutes over dead avatars): for another visit restart both games.
+* Ban list (BUG-9329): copy data/lineages/banned.txt to the QA copy's mods\lineages\ (remove it after). Twin: the line
+  `library.banned` in the profile's Spore\SporeCoop\fixes_off.txt (the purge runs at the first library step, before a
+  console can switch it). `coop.library` shows ban_list (sources/creations/kept), ban_moved, ban_hidden, ban_refused;
+  `coop.library pickships <n>` runs the visiting ship's own pick n times and counts picks of moved-out keys. The purge
+  changes the profile's cache (LineagesCache\banned, index.bin) and the game stamps templates: back up the profile and
+  restore it with robocopy /MIR afterwards.
+* A save that holds a moved-out creature: DuoQACreatureGuest Game20 Samuth (its player species is a test creature of a
+  banned identity; set bytes 4 and 11 of samuth.spo.duo-seats to 4 first).
+* tools: a read-only scan of the test profiles' saves for keys of banned creations (DBPF + RefPack in Python) found them
+  in many QA saves (records 018EB45E creatures, 01897C18, 02C21781, 03572E72); not kept in the repo.

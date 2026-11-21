@@ -3982,3 +3982,9 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * BUG-9306 (open part). Tribe: the lure basket of chief power 0x34 is not shown on a partner's screen. A display-only
   copy needs an object the guest's game draws but never saves or simulates; the mod has none yet (an ornament copy
   would be a planet record that the guest's saves keep).
+* BUG-9330. Creature: a guest shows two UFOs for one visit of the host: its own start of the relayed event (BUG-9131)
+  and the mirror of the host's ship (BUG-0558). Both show the host's ship model since BUG-9328.
+* Reproduce: host and guest in Creature, host `coop.drama start 2`, guest `coop.drama ship`: two `ufo` lines.
+* BUG-9329 (not seen live). Lineages Cache: the refusal of a banned creation offered by a partner and the "never sent"
+  side run only between two players without -NoShare- names; test games always carry the tag, so only the console
+  import path (`coop.library import <png>`, source manual-test) was seen refused.
