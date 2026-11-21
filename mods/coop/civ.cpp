@@ -1642,11 +1642,21 @@ static bool g_partner_unlocks = true;
 COOP_FIX("civ.partner_unlocks", "BUG-9306", g_partner_unlocks,
          "civ: a partner's nation unlocks the superweapons / archetype abilities of the partner's own earlier-stage cards (7Q A)");
 static uint32_t g_unlock_cards_logged[founders::kMaxSeats];
+// BUG-9311: the three cards put into the cPlayer for the call were never put back (swap_close only drops the ledger
+// entries the caller restores itself), so the host's own cPlayer kept the last partner's cards: every nation computed
+// afterwards (the host's own included) and the guests (wsync.stages copies the host's cards) got that partner's card
+// unlocks. On: the host's own values go back after the call. `coop.fix civ.unlock_cards_restore off`: as before (tests).
+static bool g_unlock_cards_restore = true;
+COOP_FIX("civ.unlock_cards_restore", "BUG-9311", g_unlock_cards_restore,
+         "civ: a partner nation's unlock run puts the host's own stage cards back into the cPlayer afterwards (7Q A)");
+// BUG-9310 (tests): superweapon types `coop.civ swgrant` unlocked per founder seat, kept across RefreshUnlocks
+static uint16_t g_sw_test_grant[founders::kMaxSeats];
 static void unlocks_run(void* country);
 static void SK_THISCALL h_Unlocks(void* country)
 {
     void* player = nullptr;
     size_t card_mark = 0;
+    uint32_t saved[3] = {};
     int seat = -1;
     cards::Own own;
     if (g_partner_unlocks && nm() && country) {
@@ -1667,6 +1677,7 @@ static void SK_THISCALL h_Unlocks(void* country)
             uint32_t* f = &F<uint32_t>(player, 0x10FC + 4 * s);
             const size_t m = game::swap_open(game::swap_undo_u32, f, *f, "Civ unlock own card");
             if (!s) card_mark = m;
+            saved[s] = *f;
             *f = eff[s];
         }
         if (g_unlock_cards_logged[seat] != cards::generation()) {
@@ -1680,7 +1691,17 @@ static void SK_THISCALL h_Unlocks(void* country)
                "its founder's next graduation (7Q A)", seat);
     }
     unlocks_run(country);
-    if (player) game::swap_close(card_mark, 3);
+    if (player) {
+        if (g_unlock_cards_restore)
+            for (int s = 0; s < 3; ++s) F<uint32_t>(player, 0x10FC + 4 * s) = saved[s];
+        game::swap_close(card_mark, 3);
+    }
+    if (is_host() && nm() && country) { // BUG-9310 tests: a swgrant outlives the refresh
+        const int gs = g_founder_nations.seat_of_faction(pol_of(country));
+        if (gs >= 0 && gs < (int)founders::kMaxSeats && g_sw_test_grant[gs])
+            for (int t = 0; t < 12; ++t)
+                if (g_sw_test_grant[gs] & (1u << t)) F<uint8_t>(country, 0x484 + t) = 1;
+    }
 }
 static void unlocks_run(void* country)
 {
@@ -3561,11 +3582,46 @@ static void* seat_nation_of(uint8_t player)
         return nullptr;
     return thiscall<void*>(a_CivByPol, nm(), g_founder_nations.entries[seat].faction);
 }
+// BUG-9310: the game loads a nation's twelve superweapon tools (vector +0x470, LoadSuperweaponTools 0xBF7020) only for a
+// player-owned nation (+0x89, at creation 0xBF82B0 and after a load 0xBF8280), so a partner founder's nation has none. The
+// launch 0xBDC2F0 (and the global ones 0xBE4300 / 0xBE4550) reads city +0x590 -> +0x470[type] without a check (the host
+// crashed reading 0xC at 0xBF18CA for type 3), and the cooldown check 0xBF18D0 in CanUse reads it while a type recharges.
+// On (host): before a non-player nation's weapon is checked or fired, the game's own loader fills its tools, +0x89 set to
+// 1 for that call only. `coop.fix civ.partner_sw_tools off`: no tools (the crash, tests).
+static bool g_sw_tools_fix = true;
+COOP_FIX("civ.partner_sw_tools", "BUG-9310", g_sw_tools_fix,
+         "civ: a partner nation gets the game's superweapon tools before its weapon is checked or fired (else the launch crashes)");
+static uint32_t g_sw_tools_loaded;
+static bool sw_tools_ready(void* nation)
+{
+    void** b = F<void**>(nation, 0x470);
+    void** e = F<void**>(nation, 0x474);
+    if (!b || e - b < 12) return false;
+    for (int i = 0; i < 12; ++i)
+        if (!b[i]) return false;
+    return true;
+}
+static void ensure_sw_tools(void* nation)
+{
+    static uintptr_t load = H->sym("Simulator::cCivilization::LoadSuperweaponTools");
+    if (!g_sw_tools_fix || !nation || !load || sw_tools_ready(nation)) return;
+    uint8_t* owned = &F<uint8_t>(nation, 0x89);
+    const uint8_t was = *owned;
+    const size_t mark = game::swap_open(game::swap_undo_u8, owned, was, "Civ superweapon tools");
+    *owned = 1;
+    thiscall<void>(load, nation);
+    *owned = was;
+    game::swap_close(mark);
+    ++g_sw_tools_loaded;
+    H->log(M, SK_INFO, "civ: nation %p (player-owned %d) got its superweapon tools: %s (BUG-9310)", nation, (int)was,
+           sw_tools_ready(nation) ? "12 loaded" : "still missing");
+}
 // why `nation` cannot fire `type` now (empty: it can), as the game's CanUse 0xBF8B40 decides
 static std::string sw_refusal(void* nation, int type)
 {
     static uintptr_t can_use = H->sym("Simulator::cCivilization::CanUseSuperweapon");
     if (!nation || type < 0 || type > 11) return "no nation";
+    ensure_sw_tools(nation);
     if (!can_use || thiscall<bool>(can_use, nation, type)) return "";
     char b[180];
     snprintf(b, sizeof b, "superweapon: your nation cannot fire superweapon %d now (unlocked=%d money=%.0f global_used=%d; or it is recharging)",
@@ -3604,6 +3660,7 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
         {
             callguard::Hold sw_bypass(g_sw_bypass);
             g_sw_fired = type;
+            ensure_sw_tools(pc);
             o_FireSW(pc, type, pos);
         }
         g_sw_unvoted++;
@@ -3615,6 +3672,7 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
                 {
                     callguard::Hold sw_bypass(g_sw_bypass);
                     g_sw_fired = type;
+                    ensure_sw_tools(pc);
                     o_FireSW(pc, type, p.data());
                 }
             }))
@@ -3636,6 +3694,7 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
             {
                 callguard::Hold sw_bypass(g_sw_bypass);
                 g_sw_fired = s_type;
+                ensure_sw_tools(s_civ);
                 o_FireSW(s_civ, s_type, s_pos);
             }
         }))
@@ -4709,6 +4768,7 @@ static void founder_tick(double now)
         if (planet.empty() || !home) return;
         if (planet != g_founder_planet) {
             g_founder_planet = planet; g_founder_spawned = false; g_founder_nations = {};
+            std::fill(std::begin(g_sw_test_grant), std::end(g_sw_test_grant), (uint16_t)0); // BUG-9310 test grants
             g_combat_roster_ready = false;
             reset_founder_seats(); // BUG-9135
         }
@@ -8966,12 +9026,16 @@ std::string debug(const std::vector<std::string>& a)
                 snprintf(l, sizeof l, " cards=%s", !seat ? "the host's own" : (own.mask & 7) ? cards::line(own).c_str() : "shared (no record)");
                 out += l;
             }
-        snprintf(b, sizeof b, "\npartner_unlocks fix=%d guest_superweapons fix=%d own_nation=%u refused=%u last: ", (int)g_partner_unlocks,
-                 (int)g_guest_sw_fix, g_sw_own_nation, g_sw_nation_refused);
+        snprintf(b, sizeof b, "\npartner_unlocks fix=%d guest_superweapons fix=%d own_nation=%u refused=%u tools_loaded=%u last: ",
+                 (int)g_partner_unlocks, (int)g_guest_sw_fix, g_sw_own_nation, g_sw_nation_refused, g_sw_tools_loaded);
         return out + b + g_sw_last_line;
     }
     // swgrant <seat> <type> [money]: tests (BUG-9306, host), founder seat's nation gets superweapon <type> unlocked
-    // (+0x484; the game's RefreshUnlocks may take it back at the next city change) and [money] added to +0x98
+    // (+0x484, kept across the campaign tick's RefreshUnlocks until `swgrant clear`, BUG-9310) and [money] added to +0x98
+    if (a.size() >= 2 && a[0] == "swgrant" && a[1] == "clear") {
+        std::fill(std::begin(g_sw_test_grant), std::end(g_sw_test_grant), (uint16_t)0);
+        return "swgrant: test grants cleared (the next unlock refresh decides again)";
+    }
     if (a.size() >= 3 && a[0] == "swgrant" && is_host() && g_ok && game::mode_id() == modes::kCiv && nm() && a_CivByPol) {
         const size_t seat = (size_t)atoi(a[1].c_str());
         const int t = atoi(a[2].c_str());
@@ -8979,6 +9043,7 @@ std::string debug(const std::vector<std::string>& a)
         void* n = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.entries[seat].faction);
         if (!n) return "no nation for that seat";
         F<uint8_t>(n, 0x484 + t) = 1;
+        g_sw_test_grant[seat] |= (uint16_t)(1u << t);
         if (a.size() >= 4) F<float>(n, 0x98) = F<float>(n, 0x98) + (float)atof(a[3].c_str());
         const std::string why = sw_refusal(n, t);
         char b[260];

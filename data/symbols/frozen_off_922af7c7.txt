@@ -409,3 +409,4 @@ SporeCoop::cPosseSimulator_RemoveMember ; BUG-9248: partners' own packs (creatur
 SporeCoop::cPosseSimulator_ctor ; BUG-9248: partners' own packs (creature.party_packs) are off on GOG 2016
 SporeCoop::cPosseSimulator_ptr ; BUG-9248: partners' own packs (creature.party_packs) are off on GOG 2016
 SporeCoop::Ability_Use ; BUG-9306: a partner's Tribe chief powers (tribe.guest_powers) are off on GOG 2016
+Simulator::cCivilization::LoadSuperweaponTools ; BUG-9310: a partner nation's superweapon tools (civ.partner_sw_tools) are off on GOG 2016
