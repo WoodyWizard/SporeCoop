@@ -418,6 +418,8 @@ static std::array<float, founders::kMaxSeats> unknown_food()
 }
 static std::array<float, founders::kMaxSeats> g_seat_food = unknown_food(); // host: every founder village's food by seat
 static size_t founder_seats();
+static void* founder_village(int seat);
+static bool g_partner_totems = true; // tribe.partner_totems (BUG-9318, the switch with h_AddSegment)
 bool village_orders() { return is_host() ? g_order_roster.guest().faction != 0 : g_guest_order_mode; }
 std::string village_food_line()
 {
@@ -1183,6 +1185,15 @@ static void host_campaign_tick(double now)
         uintptr_t begin = F<uintptr_t>(totem, 0x11C), end = F<uintptr_t>(totem, 0x120);
         if (end >= begin && (end - begin) % 4 == 0 && (end - begin) / 4 <= 64) {
             uint32_t segments = (uint32_t)((end - begin) / 4);
+            // BUG-9318: the partner founder totems' pieces count too (a catch-up after the win's share needs one more)
+            for (size_t seat = 1; g_partner_totems && seat < founder_seats() && seat < founders::kMaxSeats; ++seat) {
+                void* v = founder_village((int)seat);
+                void* pt = v ? F<void*>(v, 0x19D0) : nullptr;
+                if (pt && game::object_alive(pt) && skg::readable((uint8_t*)pt + 0x11C, 8)) {
+                    const uintptr_t b = F<uintptr_t>(pt, 0x11C), e = F<uintptr_t>(pt, 0x120);
+                    if (e >= b && (e - b) / 4 <= 64) segments += (uint32_t)((e - b) / 4);
+                }
+            }
             if (g_campaign_observed && segments != g_campaign_segments) changed = true;
             g_campaign_segments = segments;
         }
@@ -3028,6 +3039,31 @@ COOP_FIX("tribe.totem_full", "BUG-9158", g_totem_guard, "tribe: a full totem get
 static uint32_t g_totem_guarded;
 typedef void(SK_THISCALL* AddSegment_t)(void*, int, const void*);
 static AddSegment_t o_AddSegment;
+// BUG-9318 (owner 2026-11-21: "our party member didn't see their totem gaining progress, only the host's tribe ... This
+// plays into the party member also not seeing the totem addition cutscene"): the game's reward queue (0xCDAC90) adds
+// a won village's piece to the PLAYER tribe's totem only, the host's village; a partner founder village had no totem
+// at all (none made at its founding). Now the host gives every partner founder village a totem (the game's own
+// Tribe_CreateTotem) and the same pieces as the host's totem (kind and colour, Totem_AddSegment), right after the
+// host's piece and as a catch-up every 5 s (a loaded world); the save the win's share writes takes them to the guests.
+// A guest's game plays the totem cutscene (TRG_Upgrade, the one the host's game plays after a piece) for its own
+// village when that village's totem gained a piece. Off (`coop.fix tribe.partner_totems off`): only the host's totem
+// (0.7.14.1-lineages67-dev). The party wipe (BUG-9155) drops the top piece from every founder totem: counts stay matched.
+COOP_FIX("tribe.partner_totems", "BUG-9318", g_partner_totems,
+         "tribe: every founder village's totem gets the party's win pieces (made by the game when a partner village has none)");
+// The guest's cutscene part: off by default (2026-11-21, live MSI): TRG_Upgrade played by itself on a guest showed about
+// 1 s of sky (once a spear's tip) and ended, never the village's totem: the native cinematic needs the context its
+// caller (TribeHut_Upgrade 0xCDA4F0, the reward queue) sets up first. `coop.fix tribe.partner_totem_cutscene on`:
+// the guest plays it anyway (tests).
+static bool g_totem_cutscene = false;
+COOP_FIX("tribe.partner_totem_cutscene", "BUG-9318", g_totem_cutscene,
+         "tribe: a partner's game plays TRG_Upgrade when its own village's totem gained a piece (off: its framing is wrong)");
+static bool g_totem_syncing;
+static uint32_t g_partner_pieces, g_partner_totems_made, g_partner_totem_fails, g_totem_cines;
+static int g_totem_seen = -1;        // guest: its own village's totem pieces last seen (-1: not yet in this stage)
+static int g_totem_rise;             // guest: seconds the count has been above g_totem_seen
+static std::string g_totem_last;     // the last sync or cutscene, for `coop.tribe totems`
+static void sync_partner_totems(const char* why); // after founder_village
+static void* native_player_tribe();
 static void SK_THISCALL h_AddSegment(void* totem, int kind, const void* color)
 {
     if (g_totem_guard && totem && skg::readable((uint8_t*)totem + 0x108, 0x30)) {
@@ -3041,6 +3077,13 @@ static void SK_THISCALL h_AddSegment(void* totem, int kind, const void* color)
         }
     }
     o_AddSegment(totem, kind, color);
+    // BUG-9318: the party's win piece on the host's player totem goes onto every partner founder village's totem too
+    // (not active(): the reward queue runs while the game comes back from the planner, before the mode reads Tribe)
+    if (g_partner_totems && !g_totem_syncing && is_host() && g_ok && C.sess && C.sess->connected()) {
+        void* home = native_player_tribe();
+        if (home && F<void*>(home, 0x19D0) == totem)
+            sync_partner_totems("the party's win");
+    }
 }
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx)
@@ -3298,6 +3341,117 @@ static void* founder_village(int seat)
     if (seat < 0 || seat >= (int)founder_seats()) return nullptr;
     for (void* t : all_tribes()) if (seat_village_match(t, home, seat)) return t;
     return nullptr;
+}
+
+// BUG-9318: each partner founder village's totem gets the host's totem's pieces it lacks (made when missing); only
+// when its pieces are the start of the host's (a totem with other pieces is left alone and logged)
+static void sync_partner_totems(const char* why)
+{
+    void* home = founder_village(0);
+    void* ht = home ? F<void*>(home, 0x19D0) : nullptr;
+    if (!ht || !game::object_alive(ht) || !skg::readable((uint8_t*)ht + 0x108, 0x30)) return;
+    const uintptr_t hk = F<uintptr_t>(ht, 0x11C), hc = F<uintptr_t>(ht, 0x130);
+    const size_t hn = (F<uintptr_t>(ht, 0x120) - hk) / 4;
+    if (!hn || hn > 8 || (F<uintptr_t>(ht, 0x134) - hc) / 12 != hn || !skg::readable((void*)hk, hn * 4) ||
+        !skg::readable((void*)hc, hn * 12))
+        return;
+    static uintptr_t create = H->sym("SporeCoop::Tribe_CreateTotem");
+    static uint32_t mismatch_logged;
+    g_totem_syncing = true;
+    for (size_t seat = 1; seat < founder_seats() && seat < founders::kMaxSeats; ++seat) {
+        void* v = founder_village((int)seat);
+        if (!v || v == home) continue;
+        void* t = F<void*>(v, 0x19D0);
+        if (!t) {
+            if (!create || !thiscall<bool>(create, v) || !(t = F<void*>(v, 0x19D0))) {
+                if (g_partner_totem_fails++ < 4)
+                    H->log(M, SK_WARN, "tribe: seat %u's village %p has no totem and the game made none (BUG-9318)",
+                           (unsigned)seat, v);
+                continue;
+            }
+            g_partner_totems_made++;
+            H->log(M, SK_INFO, "tribe: seat %u's village got a totem %p (BUG-9318)", (unsigned)seat, t);
+        }
+        if (!game::object_alive(t) || !skg::readable((uint8_t*)t + 0x108, 0x30)) continue;
+        const uintptr_t k = F<uintptr_t>(t, 0x11C);
+        size_t n = (F<uintptr_t>(t, 0x120) - k) / 4;
+        if (n >= hn) continue;
+        bool prefix = n == 0 || skg::readable((void*)k, n * 4); // an empty totem's vector may have no storage yet
+        for (size_t i = 0; prefix && i < n; ++i) prefix = ((const int*)k)[i] == ((const int*)hk)[i];
+        if (!prefix) {
+            if (mismatch_logged++ < 4)
+                H->log(M, SK_WARN, "tribe: seat %u's totem has other pieces than the host's (%u vs %u): left alone (BUG-9318)",
+                       (unsigned)seat, (unsigned)n, (unsigned)hn);
+            continue;
+        }
+        const size_t before = n;
+        for (; n < hn; ++n) {
+            const uintptr_t slots = (F<uintptr_t>(t, 0x10C) - F<uintptr_t>(t, 0x108)) / 4;
+            if (!slots || slots >= 64 || n >= slots) break; // BUG-9158: never past the model slots
+            o_AddSegment(t, ((const int*)hk)[n], (const void*)(hc + n * 12));
+            g_partner_pieces++;
+        }
+        if (n == before) continue; // a new totem's model slots come a moment later: the catch-up adds the pieces
+        char b[200];
+        snprintf(b, sizeof b, "seat %u's village totem %u -> %u pieces (%s)", (unsigned)seat, (unsigned)before,
+                 (unsigned)n, why);
+        g_totem_last = b;
+        H->log(M, SK_INFO, "tribe: %s (BUG-9318)", b);
+    }
+    g_totem_syncing = false;
+}
+
+// BUG-9318: host: the catch-up of the partner totems (a loaded world, a piece added while a check refused); guest: its
+// own village's totem cutscene when the totem gained a piece (the win's save came in), once per piece
+static void partner_totems_tick()
+{
+    static double next;
+    const double now = H->time_seconds();
+    if (!C.sess || !C.sess->connected()) g_totem_seen = -1, g_totem_rise = 0; // (a reload keeps it: the win's share)
+    if (!g_partner_totems || !active() || now < next) return;
+    next = now + (is_host() ? 5.0 : 1.0);
+    if (world::save_busy() || world::load_queued() || world::cinematic_id()) return;
+    if (is_host()) {
+        H->run_outside_frame(+[](void*) { if (active() && is_host()) sync_partner_totems("catch-up"); }, nullptr);
+        return;
+    }
+    if (local_play() || coop_ui::cover_up()) return; // (the cutscene under our loading cover was not seen, 2026-11-21)
+    void* v = native_player_tribe(); // a guest's game shows its own village as the player's (tribe.own_player_village)
+    if (!v || !game::object_alive(v)) return;
+    void* t = F<void*>(v, 0x19D0);
+    int n = 0;
+    if (t) {
+        if (!game::object_alive(t) || !skg::readable((uint8_t*)t + 0x11C, 8)) return;
+        n = (int)((F<uintptr_t>(t, 0x120) - F<uintptr_t>(t, 0x11C)) / 4);
+    } else if (g_totem_seen > 0) {
+        return; // no totem object right now (a reload building the village): not a lost piece
+    }
+    if (g_totem_seen < 0 || n <= g_totem_seen) {
+        g_totem_seen = n;
+        g_totem_rise = 0;
+        return;
+    }
+    if (++g_totem_rise < 3) return; // settled for 3 s after the win's reload
+    g_totem_seen = n;
+    g_totem_rise = 0;
+    if (!g_totem_cutscene) {
+        g_totem_last = "this village's totem has " + std::to_string(n) + " pieces (no cutscene: tribe.partner_totem_cutscene off)";
+        return;
+    }
+    g_totem_cines++;
+    char b[160];
+    snprintf(b, sizeof b, "this village's totem has %d pieces: the totem cutscene TRG_Upgrade plays here", n);
+    g_totem_last = b;
+    H->log(M, SK_INFO, "tribe: %s (BUG-9318)", b);
+    H->run_outside_frame(
+        +[](void*) {
+            uintptr_t get = H->sym("Simulator::cCinematicManager::Get"),
+                      play = H->sym("Simulator::cCinematicManager::PlayCinematic");
+            void* cm = get ? skg::cdecl_call<void*>(get) : nullptr;
+            if (cm && play && active() && !world::cinematic_id())
+                thiscall<int>(play, cm, "TRG_Upgrade", 1, 1, 0, 0, 0);
+        },
+        nullptr);
 }
 
 // ---- outfit votes: one per partner seat (the two-founder co-op had one, for seat 1) ----
@@ -10635,6 +10789,7 @@ static void coop_tick(double now)
         power_watch_tick(now); // BUG-9306
     if (!is_host())
         village_caption_tick(now); // BUG-0983
+    partner_totems_tick(); // BUG-9318
     if (is_host()) {
         village_caption_tick(now);
         grab_spot_tick(now);
@@ -12988,6 +13143,35 @@ std::string debug(const std::vector<std::string>& a)
             snprintf(b, sizeof b, "granted 0x%X: unlock words %08X / 0 (select the chief again)", type, (unsigned)bits);
             return b;
         }
+        // pets: tests (BUG-9306), the TribalGame's animal list (+0x94..+0x98, the list power 0x39 fills; read as
+        // pointers) with each entry's political id and the tribes' ids, to see whose tribe a tamed animal follows
+        if (a.size() >= 2 && a[1] == "pets") {
+            static uintptr_t get = H->sym("SporeCoop::TribalGame_Get");
+            void* tg = get ? skg::cdecl_call<void*>(get) : nullptr;
+            if (!tg || !skg::readable(tg, 0xA0)) return "no TribalGame";
+            void** b0 = F<void**>(tg, 0x94);
+            void** e0 = F<void**>(tg, 0x98);
+            std::string o;
+            char b[200];
+            const long n = b0 && e0 >= b0 ? (long)(e0 - b0) : -1;
+            snprintf(b, sizeof b, "TribalGame %p list +0x94 %p +0x98 %p (%ld entries)\n", tg, (void*)b0, (void*)e0, n);
+            o += b;
+            for (long i = 0; i >= 0 && i < n && i < 32 && skg::readable(b0 + i, 4); ++i) {
+                void* c = b0[i];
+                const bool ok = c && game::object_alive(c);
+                net::Vec3 p = ok ? game::position(c) : net::Vec3{};
+                snprintf(b, sizeof b, "pet %ld %p alive=%d political=%08X pos=(%.1f %.1f %.1f)\n", i, c, (int)ok,
+                         ok ? game::political_id(c) : 0u, p.x, p.y, p.z);
+                o += b;
+            }
+            for (void* tr : all_tribes()) {
+                net::Vec3 p = tribe_pos(tr);
+                snprintf(b, sizeof b, "tribe %p political=%08X player=%d at (%.0f %.0f %.0f)\n", tr, F<uint32_t>(tr, 0x30),
+                         (int)(tr == native_player_tribe()), p.x, p.y, p.z);
+                o += b;
+            }
+            return o;
+        }
         if (a.size() >= 3 && a[1] == "use") {
             const int idx = chief ? citizen_ability_index(chief, type) : -1;
             if (idx < 0 || !bar_use) return "this game's chief has no such ability";
@@ -13502,7 +13686,17 @@ std::string debug(const std::vector<std::string>& a)
             }
             out += "\n";
         }
-        return out.empty() ? "no founder villages" : out;
+        { // BUG-9318: the partner totems (host) and this game's own village's totem (a guest's)
+            void* own = native_player_tribe();
+            void* ot = own ? F<void*>(own, 0x19D0) : nullptr;
+            char line[320];
+            snprintf(line, sizeof line, "partner_totems fix=%d made=%u pieces=%u fails=%u cutscenes=%u seen=%d own_totem=%p own_pieces=%d last: %s\n",
+                     (int)g_partner_totems, g_partner_totems_made, g_partner_pieces, g_partner_totem_fails, g_totem_cines,
+                     g_totem_seen, ot, ot && game::object_alive(ot) ? (int)((F<uintptr_t>(ot, 0x120) - F<uintptr_t>(ot, 0x11C)) / 4) : -1,
+                     g_totem_last.empty() ? "-" : g_totem_last.c_str());
+            out += line;
+        }
+        return out;
     }
     if (a.size() == 2 && a[0] == "win") { // BUG-9155 tests (host): an alliance with village <faction hex> as a native win
         if (!active() || !is_host()) return "Requires the Tribe host.";

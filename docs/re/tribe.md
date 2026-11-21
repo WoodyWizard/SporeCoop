@@ -6197,3 +6197,43 @@ static analysis only, nothing of this section was run in a game yet.
   partner's power its own cards did not earn. Built, not run. ? Whether a guest's game writes its own card at a co-op
   graduation at all (each game runs the stage end itself, or the host's transition only) is not checked: the catch logs
   it when it happens.
+
+## Partner totems, chief power effects and QA findings (2026-11-21, fix/l47-tribe)
+<a id="tribe-partner-totems"></a>
+
+Live, MSI two games (host MSITribeHost instance 2, guest MSIGuest instance 1, Creature -> Tribe from Vandh).
+* ✔ (live) A partner founder village has **no totem** (`coop.tribe totems`: `seat 1: no totem` from the entry on);
+  the host's player village has one (5 model slots). A win's piece goes to the host's totem only (0xCDAC90 reads the
+  player tribe), then the host's game plays **TRG_Upgrade (94D17D9F)**; no TRG_TotemPole_* played for a `coop.tribe
+  win` (it queues the win without the mission's completion). The guest's game played no cinematic; it showed "Saving
+  Tribal conquest for your partner..." and reloaded the host's save about 35 s later (its progress bar and its upgraded
+  hut came with that save). Fix BUG-9318 (`tribe.partner_totems`): the host makes partner totems with Tribe_CreateTotem
+  and copies the pieces; the guest plays TRG_Upgrade when its own village's totem grew.
+* ✔ (live) On a guest, `native_player_tribe()` (GetPlayerTribe) is the guest's OWN village (its chief is the guest's
+  chief in `coop.tribe powers`), while the mod's `player_tribe()` there is the host's village copy (`coop.tribe`
+  `player_tribe=` = tribe 0's object).
+* ✔ (live) Chief power 0x36 (node 060B7090): its effect **A86F8D7E** plays at "the spot", which was about 230 m from
+  the chief both for the host's own chief (266.9 -334.9 -257.6, 14 s after the press) and for a partner's (282.9 -324.7
+  -253.8); no 3F370771 / 6D8F14EF was seen. The world effect relay sent neither ("not on the local player": it sends
+  only effects within 1.8 m of the sender's own villagers). Fix `tribe.power_effects` (effects.cpp, BUG-9306): the host
+  sends these ids from wherever they are made in Tribe.
+* ✔ (live) Chief power 0x38 (node 060B70B4, "SocialPower") made **no world effect** for either chief; the effect
+  B490E2EC logged 0.1 s after the host's own press is a selection / target ring (0xC1D7D0 / 0xDFE180 pick it from a
+  size and kind table, with 0x3751CCEA, 0xA231DA2F, ...), not the power. 0x38's visible result is citizens in reach
+  walking to the chief.
+* ✔ (Ghidra-free disassembly from memory, 0xD1E930) Ability_Use's chief-power branch (0xD1EF98) only casts to the
+  citizen (0x18EB4B7) and calls DoAction(22, 0, Property(index)) (0xC27710): **no effect** of its own.
+* ✔ (live) A tribe's political id is cTribe +0x30 (NPC tribe 2 of the test: 0x2295, read with `mem.read`).
+* ✔ (live) The host's hut: the first click opens a rollover with two buttons, the planner (big, on the hut) and the
+  baby (small, ~55 px below it at 1280x960); a click on the hut's roof opened the planner directly.
+* ✔ (live) A right-click on a fresh NPC tribe's food mat / bundle (o629BAFE / o18C431C) with own villagers selected
+  started nothing on the host's own game either (no order): a raid needs more than the click there (not analysed).
+* ✔ (live) A totem made by Tribe_CreateTotem has an empty model slot vector (+0x108 == +0x10C) for a moment: a piece
+  added right away is refused by our slot guard (BUG-9158); 5 s later (the catch-up) the slots were there.
+* ✔ (live) TRG_Upgrade (94D17D9F) played by itself on a guest (PlayCinematic, outside the frame) frames nothing useful
+  (about 1 s of sky, once a spear's tip) and ends; on the host, played by the reward path, it is a close-up of the
+  player's totem with the alliance / conquest caption. ? The context its caller (TribeHut_Upgrade 0xCDA4F0) sets up.
+* ✔ (live) Power 0x39 pressed by a partner (run on its chief on the host): the three tamed animals went into the HOST's
+  TribalGame list (+0x94..+0x98, `coop.tribe powers pets`: 3 entries) with the partner village's political id
+  (0x228C); the guest's own TribalGame list stayed empty. So a partner's tames count against the host's cap (prop
+  0x217997F4, 4) and the host's list; the animals themselves follow the partner's tribe.

@@ -6924,6 +6924,7 @@ void on_overlay(void*, int, void*)
                 s_ready_at = -1; // BUG-9205: the next cover's black is counted from its own start
             }
         }
+        coop_ui::set_cover_up(s_since >= 0); // BUG-9318: a cutscene waits until the cover is gone
         if (s_since >= 0 && sw > 0) {
             // the join: 0..0.1 while the host saves, the transfer to 0.7, then the load
             static double s_recv_end = -1;

@@ -592,6 +592,21 @@ static void process_local(void* creature, const game::EffectEvent& ev)
     C.sess->send_event(net::MSG_EFFECT, w);
 }
 
+// BUG-9306: a Tribe chief's power 0x36 (node 060B7090) plays its effects at a spot the game picks round the chief, often
+// far from every villager (seen 2026-11-21: A86F8D7E about 230 m off, for the host's own chief and a partner's), so the
+// "on the local player" check never sent them and no partner saw the power's effect. The host's game runs every chief
+// (a partner's too): these ids are sent from wherever they are made in Tribe. Off (`coop.fix tribe.power_effects off`):
+// only near the host's own villagers (0.7.14.1-lineages67-dev).
+static bool g_power_fx = true;
+COOP_FIX("tribe.power_effects", "BUG-9306", g_power_fx,
+         "tribe: the effects of a chief's power 0x36 show on the partners' screens wherever the game plays them");
+static uint32_t g_power_fx_sent;
+static bool chief_power_effect(uint32_t id)
+{
+    return g_power_fx && game::mode_id() == modes::kTribe && C.sess && C.sess->my_id() == 0 &&
+           (id == 0xA86F8D7Eu || id == 0x3F370771u || id == 0x6D8F14EFu);
+}
+
 static void process_world(void* fx, uint32_t id)
 {
     if (!g_fix || !fx || !id || !C.sess || !C.sess->connected())
@@ -627,7 +642,10 @@ static void process_world(void* fx, uint32_t id)
     }
     if (g_world_start)
         g_world_start(C.sess->my_id(), id, fx, p);
-    if (!C.near_local || !C.near_local(p)) {
+    const bool power_fx = chief_power_effect(id); // BUG-9306
+    if (power_fx)
+        g_power_fx_sent++;
+    if (!power_fx && (!C.near_local || !C.near_local(p))) {
         g_w_far++;
         if (g_log)
             H->log(M, SK_INFO, "effect: world id %08X at %.2f %.2f %.2f is not on the local player", id, p.x, p.y, p.z);
@@ -1292,8 +1310,8 @@ std::string status()
     snprintf(b, sizeof b, "effects hits: fix=%d seen=%u sent=%u off=%u rate=%u (event effects %u, on the animating object %u, last sent id %08X)\n",
              (int)g_hit_fix, game::hit_effects_seen(), g_hit_sent, g_hit_off, g_hit_rate, hc, hfx, hret);
     s += b;
-    snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u sent_probes=%u\n",
-             g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate, g_world_sent_probes);
+    snprintf(b, sizeof b, "effects world drops: no_pos=%u relayed=%u far=%u seen=%u rate=%u sent_probes=%u; chief power 0x36 effects sent=%u (fix=%d)\n",
+             g_w_no_pos, g_w_relayed, g_w_far, g_w_seen, g_w_rate, g_world_sent_probes, g_power_fx_sent, (int)g_power_fx);
     s += b;
     snprintf(b, sizeof b, "effects received drops: spoof=%u pool=%u id=%u bone=%u transform=%u short=%u\n",
              g_dropped_spoof, g_bad_pool, g_bad_id, g_bad_bone, g_bad_xf, g_bad_short);

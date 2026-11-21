@@ -3209,6 +3209,10 @@ void open(bool on)
     g_dirty = true;
 }
 
+static bool g_cover_up; // BUG-9318
+void set_cover_up(bool up) { g_cover_up = up; }
+bool cover_up() { return g_cover_up; }
+
 bool is_open() { return g_want_open; }
 
 // ---- tooltips: a couple of words for the button under the mouse, after a short hover ----
