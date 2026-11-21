@@ -176,6 +176,25 @@ struct Remote {
 net::Session g_sess;
 std::map<uint8_t, Remote> g_remotes;
 std::string g_name = "Player";
+// BUG-9331 (owner 2026-11-21): test creations reached real players' caches from QA games named without the -NoShare-
+// tag (MSIGuest, MSIJoiner, Titan, Player). On: a game started as a test copy (a SporeKit profile, -sporekit-profile:,
+// or a second instance on this PC) hosts and joins with the -NoShare- tag added to its name, so it offers none of its
+// creations and nobody keeps one it made or passed on (library.no_share, BUG-9222); the tag is never shown. Off
+// (`coop.fix core.test_noshare off`, e.g. a Lineages Cache test between two QA games): the typed name as is (68-dev).
+static bool g_test_noshare = true;
+COOP_FIX("core.test_noshare", "BUG-9331", g_test_noshare,
+         "core: a test copy (SporeKit profile or second instance) always plays with the -NoShare- tag");
+static bool test_copy()
+{
+    return wcsstr(GetCommandLineW(), L"-sporekit-profile:") || H->instance_id() > 1;
+}
+// the name this game hosts and joins with (BUG-9331)
+static std::string session_name()
+{
+    if (!g_test_noshare || utf8::no_share_name(g_name) || !test_copy())
+        return g_name;
+    return utf8::player_name(g_name + "-NoShare-");
+}
 double g_last_send = 0;
 static float g_sent_speed = 0; // BUG-1093: the speed in the last state sent (m/s)
 void* g_last_avatar = nullptr;
@@ -8504,7 +8523,7 @@ bool do_host(uint16_t port, unsigned seats, unsigned scaling, std::string& err, 
     requested.extra_health_percent = uint16_t(health);
     requested.extra_damage_percent = uint16_t(damage);
     if (!world::setup_campaign(g_sess,requested,err)) return false;
-    if (!g_sess.host(port, g_name, err, password))
+    if (!g_sess.host(port, session_name(), err, password)) // BUG-9331
         return false;
     support::on_session_start();
     pfind::on_session_start(); // F2: the host takes its colour
@@ -8521,9 +8540,9 @@ bool do_join(const std::string& addr, std::string& err, const std::string& passw
     end_open_session();
     reset_lobby();
     g_sess.resume_world = world::resume_world();
-    g_sess.rejoin_token = rejoin::token_for_join(H->instance_id(), addr, g_name); // BUG-0235, BUG-1001
+    g_sess.rejoin_token = rejoin::token_for_join(H->instance_id(), addr, session_name()); // BUG-0235, BUG-1001, BUG-9331
     if (token) g_sess.rejoin_token = token; // BUG-9239: the same player after a memory restart
-    if (!g_sess.join(addr, g_name, err, password))
+    if (!g_sess.join(addr, session_name(), err, password)) // BUG-9331
         return false;
     { // the chat log goes into problem reports: no public address there
         net::Endpoint ep;

@@ -9314,3 +9314,12 @@ BUG-9326 (docs/re/tribe.md#tribe-partner-pens). Follows #testing-tribe-final-qa 
 * A reload: host `coop.save`, `coop.load Game0 Vandh`, then `coop.share 1` (the guest does not reload by itself).
   Game0 is the host's Creature save: restore it from Game0.bak-l47 afterwards.
 * The games ran at about 2 fps (present interval 440 ms) with frame.limit 100 in Tribe on the MSI.
+
+## Test copies never share creations (2026-11-21, fix/l47-test-noshare)
+<a id="testing-test-noshare"></a>
+
+* BUG-9331: a game started with `-sporekit-profile:` or as SporeKit instance 2+ hosts and joins with "-NoShare-" added
+  to its typed name (`core.test_noshare`, on). It offers none of its creations and no one keeps one it made or passed
+  on (library.no_share). A Lineages Cache test that needs two QA games to share turns it off on both:
+  `coop.fix core.test_noshare off`, then leave and host / join again (the name is taken at host and join).
+* Check: `coop.library` on both games: `incoming` and `imported` do not grow after the join with the switch on.
