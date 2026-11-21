@@ -7633,7 +7633,9 @@ COOP_FIX("tribe.founder_settle", "BUG-9137", g_found_settle_fix,
 static double g_auto_found_entered;
 static bool founder_creature_settled(uint8_t guest, double now)
 {
-    return now - g_auto_found_entered >= 15 &&
+    // BUG-9304: at a live Creature -> Tribe entry (its share held for the villages) the partner's creature is the one
+    // it played in Creature, not one still coming with a new world: only its own 10 s rule
+    return (now - g_auto_found_entered >= 15 || world::entry_share_held()) &&
            now - creations::player_key_changed_at(guest, creations::kCreature) >= 10;
 }
 
@@ -8113,9 +8115,45 @@ static void bind_founder_identities(double now)
     }
 }
 
+// BUG-9304 (owner decision 7M B): the live Creature -> Tribe entry loaded the world twice: the host's reload of its
+// share save (BUG-0332, tribe.host_reload) and, once the partners' villages were made, the founders' checkpoint reload
+// (49.5 s of loading screens for the guest). The entry's share now waits (world::set_entry_share_hold, 20 s at most)
+// while found_partners makes the villages, so the share save carries them and the BUG-0332 reload is the only one; the
+// checkpoint is not needed then. Released when the founding is done, failed or waits for something long (a partner
+// without a creature of their own, in the editor); after 20 s the share goes out and the old way follows. Off: the
+// share at once, the founding later and its checkpoint reload (0.7.14.1).
+static bool g_one_entry_reload = true;
+COOP_FIX("tribe.one_entry_reload", "BUG-9304", g_one_entry_reload,
+         "tribe: at the live Creature -> Tribe entry the partners' villages are made before the share save: one reload, not two");
+static uint64_t g_entry_released_epoch = ~0ull; // the world (g_campaign_epoch) whose entry hold is over
+static uint32_t g_entry_foundings, g_entry_releases; // coop.tribe (BUG-9304)
+static bool entry_found_hold(uint64_t)
+{
+    return g_one_entry_reload && g_auto_founders && !g_auto_found_manual_off && g_multi_founders && active() && is_host() &&
+           g_entry_released_epoch != g_campaign_epoch;
+}
+static void entry_release(const char* why)
+{
+    if (g_entry_released_epoch == g_campaign_epoch) return;
+    g_entry_released_epoch = g_campaign_epoch;
+    if (!world::entry_share_held()) return;
+    g_entry_releases++;
+    H->log(M, SK_INFO, "tribe: the Tribe entry's share goes out (BUG-9304): %s", why);
+}
+
 // the checkpoint after new founders were saved (both games load the planet with the new villages)
 static void founders_refresh(const std::function<void(const std::string&)>& report)
 {
+    if (g_one_entry_reload && world::entry_share_held()) {
+        // BUG-9304: the entry's share save (held until now) carries the new villages and the host reloads it (BUG-0332).
+        // A village made whose seat is not saved yet is tried again first: the reload forgets g_found_pending
+        if (!g_found_pending.empty()) return;
+        if (g_auto_found_refresh) g_entry_foundings++;
+        entry_release(g_auto_found_refresh ? "the villages are made: the share save carries them, no checkpoint reload"
+                                           : "no village to make now");
+        g_auto_found_refresh = false;
+        return;
+    }
     if (!g_auto_found_refresh) return;
     std::string error;
     if (!world::checkpoint_reload(error)) { report("Founders registered; checkpoint retry pending: " + error); return; }
@@ -8137,7 +8175,8 @@ static const char* g_found_skip = ""; // BUG-9159: why the last automatic foundi
 static void found_partners()
 {
     if (!g_auto_founders || g_auto_found_manual_off || !active() || !is_host() || C.sess->players().size() < 2 ||
-        world::load_queued() || world::save_busy() || world::save_pending() || world::cinematic_playing() || world::time_paused()) {
+        world::load_queued() || world::save_busy() || (world::save_pending() && !world::entry_share_held()) ||
+        world::cinematic_playing() || world::time_paused()) {
         g_found_skip = "off, alone, or the game is busy (load, save, cinematic, pause)";
         return;
     }
@@ -8197,12 +8236,15 @@ static void found_partners()
     uint8_t partner = 0xFE, why_player = 0xFF;
     tribe_late::Wait why_kind = tribe_late::Wait::Ready, partner_kind = tribe_late::Wait::Ready;
     std::string why;
+    bool soon = false; // BUG-9304: a partner's creature settles within seconds
     for (uint8_t p : unseated) {
         std::string reason;
         tribe_late::Wait kind;
         if (founding_ready(p, now, &reason, &kind)) { partner = p; partner_kind = kind; break; }
         if (why.empty() && !reason.empty()) { why = reason; why_player = p; why_kind = kind; }
+        if (kind == tribe_late::Wait::Settling || kind == tribe_late::Wait::NoCreatureYet) soon = true;
     }
+    if (partner >= 0xFE && soon && world::entry_share_held()) return; // (BUG-9304: the share waits, 20 s at most)
     if (partner >= 0xFE) { // the host's status line names them (tribe.late_prompt)
         g_founding_wait_player = why_player;
         g_founding_wait_kind = why_kind;
@@ -8315,12 +8357,13 @@ static void auto_founders_multi(double now)
 {
     if (!g_auto_founders || g_auto_found_manual_off || !is_host() || g_auto_found_queued || now < g_auto_found_at ||
         C.sess->players().size() < 2 || world::cinematic_playing() || world::time_paused() ||
-        world::load_queued() || world::save_busy() || world::save_pending()) return;
-    g_auto_found_at = now + 5;
+        world::load_queued() || world::save_busy() || (world::save_pending() && !world::entry_share_held())) return;
+    g_auto_found_at = now + (world::entry_share_held() ? 1 : 5); // (BUG-9304: the entry's share waits)
     if (!g_auto_found_refresh && g_order_roster.guest().faction &&
         party::unseated_partners(g_order_roster, founder_creature_match).empty()) {
         g_founding_wait_player = 0xFF; // nobody waits for a village
         g_found_skip = "every connected partner has a seat";
+        entry_release("every connected partner has a village"); // BUG-9304
         return;
     }
     g_auto_found_queued = true;
@@ -8334,6 +8377,8 @@ static void auto_founders_multi(double now)
 
 static void auto_founders_tick(double now)
 {
+    static const bool s_entry_hold = (world::set_entry_share_hold(entry_found_hold), true); // BUG-9304
+    (void)s_entry_hold;
     if (g_multi_founders) auto_founders_multi(now);
     else auto_founders_two(now);
 }
@@ -11026,8 +11071,9 @@ std::string status()
                  g_teardown_bt_emptied, g_map_stale_skipped, g_join_bodies, g_mirrors_grown, g_away_trees_ended);
     std::string out = b;
     if (C.sess && C.sess->role() == net::Role::Host && founder_seats()) { // BUG-9135: every founder seat
-        snprintf(b, sizeof b, "tribe founders: multi=%d seats=%u made=%u at_nest=%u identities_bound=%u pending=%u\n", (int)g_multi_founders,
-                 (unsigned)founder_seats(), g_found_made, g_found_at_nest, g_identities_bound, (unsigned)g_found_pending.size());
+        snprintf(b, sizeof b, "tribe founders: multi=%d seats=%u made=%u at_nest=%u identities_bound=%u pending=%u one_entry_reload=%d "
+                 "entry_foundings=%u entry_releases=%u\n", (int)g_multi_founders, (unsigned)founder_seats(), g_found_made, g_found_at_nest,
+                 g_identities_bound, (unsigned)g_found_pending.size(), (int)g_one_entry_reload, g_entry_foundings, g_entry_releases);
         out += b;
         // roadmap phase 4: the partner waiting for a creature of their own, the catch-ups of late villages
         snprintf(b, sizeof b, "tribe late: prompt=%d skip=%d catch_up=%d stand_in=%d made=%u swapped=%u catch_ups=%u members_added=%u racks_added=%u waiting=%u\n",

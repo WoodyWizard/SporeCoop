@@ -6050,3 +6050,18 @@ with the host at 10 fps (lane 2, `tribe_under_probe`, coop_tribe_under.py). Not 
   still tracks (`body_age=`); `coop.tribe layout` rows have the grab spot's `agl=`; the grab spot move logs `tribe:
   member #N stood .. s .. m short of its grab spot: set onto it at (...), .. m over the ground`. Test setup commands:
   `coop.tribe sink <id> <m> [air]`, `coop.tribe epic on <id> [dx]`.
+
+## The live Tribe entry's two reloads (2026-11-20, fix/l47-saves)
+<a id="tribe-entry-reloads"></a>
+
+BUG-9304, decision 7M B. Read in the code, not traced at runtime.
+
+* ✔ (code) A live Creature -> Tribe change loaded every game twice: the share save ~3 s in (the guests load it, the
+  host reloads it once it left: `tribe.host_reload`, BUG-0332, #tribe-terrain-stamps), then the founders' checkpoint
+  (found_partners -> founders_refresh -> world::checkpoint_reload: save, share, host load). The founding could not come
+  earlier: founder_creature_settled waits 15 s after the world was entered (BUG-9137), longer than the share's 3 s.
+* ~ (inferred) At a live entry that 15 s guards nothing: the partner's creature is the one it played in Creature, not
+  one still coming with a new world. `tribe.one_entry_reload` holds the entry's share (20 s at most) and founds then,
+  so the share save carries the villages and the `.duofounders` roster (a sidecar of the planet file in the slot,
+  shared with it). Not seen in a game yet.
+* The host's own reload (BUG-0332) stays: only a load gives every game the same ground.

@@ -39,6 +39,10 @@ void invalidate_campaign_rules(); // native load, including reloading the same s
 bool setup_campaign(net::Session& session, const founders::CampaignRules& requested, std::string& error);
 // the game's own save (pause menu "Save"); also works on planets in space
 bool save_game(std::string& err);
+// owner 2026-11-17 ("seamless for uninterrupted gameplay", alpha 520ace7b): Spore's silent save (message 0x689C9B9 with
+// data: no game-time pause, no busy cursor, no wait, no "game saved" box; docs/re/creature.md#creature-save-steps), the
+// same checks as save_game; only the write itself remains (0.7-0.9 s). Live (BUG-9304): the campaign autosave only
+bool silent_save(std::string& err);
 // Host milestone, saved once the native save path is ready.
 void request_autosave();
 // Tribal reconstruction: confirm a new native save, transfer it to connected
@@ -74,6 +78,12 @@ bool load_starting();
 void hold_for_editor(bool on);
 // host (BUG-9210): a player's share waits while this says its own nest is about to be made (2 min at most)
 void set_share_hold(std::function<bool(uint8_t, uint64_t)> hold); // (player, ms since the share was asked for)
+// host (BUG-9304, decision 7M B): the share of a live Creature -> Tribe entry (the one the host reloads after,
+// tribe.host_reload) waits while this says the partners' villages are about to be made (20 s at most), so the save
+// carries them and no founders' checkpoint reload follows. (ms since the share was asked for)
+void set_entry_share_hold(bool (*hold)(uint64_t waited_ms));
+// host: every queued share is held by that hook now (its save is not posted: the founding may run meanwhile)
+bool entry_share_held();
 uint32_t shared_loads(); // BUG-9223: how many received copies of the host's world this game loaded
 // guest: it plays its own planet-side Space intro (the personal launch, BUG-9071): the host's world waits for its
 // launch, so a queued load is not coming now (BUG-9202: the loading screen stayed over the playable Civ stage)
