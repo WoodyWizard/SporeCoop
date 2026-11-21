@@ -1143,40 +1143,8 @@ static bool peer_in_editor(uint8_t id)
     return m == modes::kEditor || m == modes::kEdit;
 }
 unsigned vote_in_editor_count() { return g_vote_in_editor; }
-// BUG-9290: when the host's editor vote ends, the host's game loads the editor; its first load of the spaceship editor
-// blocked its main thread 51 s on a busy PC (the packages' property files) and the guest left after 30 s without a
-// packet ("connection to host lost (timeout)"), so it missed its own editor. On: a guest waits up to 120 s for the host
-// for the next 180 s after such a vote ended. Off: 30 s as before.
-bool g_editor_grace_fix = true;
-COOP_FIX("core.editor_load_grace", "BUG-9290", g_editor_grace_fix,
-         "core: a guest waits up to 120 s for a host that is loading the editor of a vote that just ended");
-constexpr uint32_t kEditorGraceTimeoutMs = 120000;
-constexpr double kEditorGraceSeconds = 180.0;
-double g_editor_grace_until;
-uint32_t g_editor_grace_old_ms;
-unsigned g_editor_graces;
-void editor_grace_start(double now)
-{
-    if (!g_editor_grace_fix || g_sess.role() != net::Role::Client)
-        return;
-    if (!g_editor_grace_until)
-        g_editor_grace_old_ms = g_sess.timeout_ms;
-    g_editor_grace_until = now + kEditorGraceSeconds;
-    g_sess.timeout_ms = std::max(g_sess.timeout_ms, kEditorGraceTimeoutMs);
-    g_editor_graces++;
-    LOG("vote: the host loads its editor: this game waits up to %u s for it (BUG-9290)", g_sess.timeout_ms / 1000);
-}
-static void editor_grace_tick(double now)
-{
-    if (g_editor_grace_until && (now > g_editor_grace_until || !g_sess.connected())) {
-        g_sess.timeout_ms = g_editor_grace_old_ms ? g_editor_grace_old_ms : 30000;
-        g_editor_grace_until = 0;
-    }
-}
-
 void vote_tick(double now)
 {
-    editor_grace_tick(now);
     if (!g_vote.active || g_sess.role() != net::Role::Host)
         return;
     if (g_vote_scope_fix) {

@@ -1,7 +1,7 @@
 ---
 id: BUG-9290
 title: A host whose spaceship editor takes 51 s to load drops the guest (session timeout) at the Civ to Space vote
-status: fixed
+status: open
 kind: bug
 stage: Civ, Space
 reported: 2026-11-20
@@ -11,7 +11,7 @@ versions:
 fixed_in:
 branch: feat/lineages-space
 commits: 8ecde240 (ticket only)
-tests: agentC3/t8.py (by hand, lane C)
+tests:
 signature: host WATCHDOG (no frames) in IO::FileStream::Read < Resource::DatabasePackedFile::VerifyIndexRecordIntegrity < App::PropertyList::Read; guest "disconnected: connection to host lost (timeout)"
 docs: docs/re/space.md#space-own-empires
 related: BUG-9279, BUG-1142
@@ -32,17 +32,14 @@ tells the guests "editor" only after the editor is open (21:05:24), too late.
 ## Root cause
 Observed: a blocking load on the host's main thread longer than the session timeout. Inferred: the host should tell
 the guests "loading the editor" before it asks the game for the editor (or the guests should wait longer while the
-host's last busy state is a vote that just ended into an editor). 
-## Fix
-vote.cpp / session_glue.cpp (`core.editor_load_grace`): when a vote with an editor ends, a guest raises its session
-timeout to 120 s for the next 180 s (`editor_grace_start`), then sets it back (vote_tick). Off: 30 s as before.
+host's last busy state is a vote that just ended into an editor). Not fixed here (not part of BUG-9279).
 
+## Fix
+<!-- what changed and why; the switch to turn it off for tests (coop.fix <name>) -->
 
 ## Verification
-no-fail-run: no Linux lab here. By hand on lane C (two games, 2026-11-20): the Kealeneon Civ fixture, the guest's
-nation, every NPC city taken, History, the ship editor vote; when it ended the host ran `kit.test.hang 45000` (its main
-thread blocked 45 s). `coop.fix core.editor_load_grace off` on the guest: "offline" after the block (FAIL); on: still
-connected, the host in its editor (PASS).
+<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
+     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
 
 ## History
 - 2026-11-20: opened.
