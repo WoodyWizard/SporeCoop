@@ -43,3 +43,8 @@ host's last busy state is a vote that just ended into an editor). Not fixed here
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-20: a trial fix on feat/lineages-space (45383967, reverted in 02491962: the ticket went to lane B with
+  BUG-9291): when a vote with an editor ends, the guest raised its session timeout to 120 s for 180 s
+  (`core.editor_load_grace`). Repro by hand on lane C: the Kealeneon Civ fixture, the guest's nation, every NPC city
+  taken, History, the ship editor vote, then `kit.test.hang 45000` on the host right after the vote ended: the guest
+  went offline with the trial switch off, stayed connected with it on (driver agentC3/t8.py).

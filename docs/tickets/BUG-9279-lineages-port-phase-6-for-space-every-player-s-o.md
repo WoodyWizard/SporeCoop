@@ -11,7 +11,7 @@ versions:
 fixed_in:
 branch: feat/lineages-space
 commits: 65e118c4
-tests: tests/space_empires_tests.cpp
+tests: tests/space_empires_tests.cpp, tools/tests/coop_space_own_empires.py (suite space_own_empires, not run in the lab yet)
 signature:
 docs: docs/re/space.md#space-own-empires
 related: BUG-9274, BUG-9260, BUG-9290

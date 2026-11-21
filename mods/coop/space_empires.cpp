@@ -24,6 +24,7 @@
 #include <windows.h>
 
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <string>
 #include <vector>
@@ -38,6 +39,7 @@
 #include "space_empires.h"
 #include "space_empires_logic.h"
 #include "space_ext.h"
+#include "space_map.h"
 #include "sporekit_game.hpp"
 #include "wire/space_empires.h"
 #include "world.h"
@@ -57,15 +59,16 @@ enum Kind : uint8_t {
 
 static const SkHost* H;
 static SkMod* M;
-static uintptr_t a_PlayerEmpire, a_StrAssign;
+static uintptr_t a_PlayerEmpire, a_StrAssign, a_Color;
 
 static bool g_fix = true;
 COOP_FIX("space.own_empires", "BUG-9279", g_fix,
          "space: a partner who plays a species of their own has their own empire and money (kept with the planet)");
 static bool g_name_fix = true;
 COOP_FIX("space.own_empire_name", "BUG-9279", g_name_fix,
-         "space: a partner's own empire carries the partner's name on the partner's game");
+         "space: a partner's own empire carries the partner's name and colour on the partner's game");
 
+constexpr uintptr_t kColorId = 0x10, kColorRgb = 0x30; // cEmpire colour id, cached RGB floats (docs/re/space.md 15.1)
 constexpr uintptr_t kName = 0x3C;  // cEmpire name, eastl::string16 {begin, end, cap} (docs/re/space.md 13.1)
 constexpr uintptr_t kMoney = 0xD0; // cEmpire money (int; docs/re/space.md 13.1)
 constexpr double kAskEvery = 3.0, kReportEvery = 2.0, kFoundEvery = 1.0, kDiploEvery = 5.0, kDiploResend = 60.0;
@@ -269,14 +272,27 @@ static bool roster_write(const char* why)
     return true;
 }
 
+// the host's own seat: usually 0, but a planet played by other founders before has the host on a later seat (lane C's
+// Kealeneon: the host on seat 2, seat 0 a founder of another PC)
+static int host_seat()
+{
+    const int s = party::seat_of_player(spaceext::my_id());
+    return s < 0 ? 0 : s;
+}
+static uint32_t host_species()
+{
+    const auto& seats = party::roster().seats;
+    const int h = host_seat();
+    return h < (int)seats.size() ? seats[h].species : 0;
+}
+
 // the seat of a seated player wants an empire of its own (a species of its own, not the host's)
 static bool wants_empire(int seat)
 {
     const auto& seats = party::roster().seats;
-    if (seat < 1 || seat >= (int)kPlaySeats || seat >= (int)seats.size())
+    if (seat < 1 || seat >= (int)kPlaySeats || seat >= (int)seats.size() || seat == host_seat())
         return false;
-    const uint32_t host_species = seats.empty() ? 0 : seats[0].species;
-    return seats[seat].species && seats[seat].species != host_species;
+    return seats[seat].species && seats[seat].species != host_species();
 }
 
 static void send_empire(uint8_t player, int seat)
@@ -310,8 +326,9 @@ static void host_found()
     const auto& seats = party::roster().seats;
     std::vector<Seat> want;
     for (size_t s = 1; s < seats.size(); ++s)
-        want.push_back({(int)s, seats[s].species, seats[s].player});
-    const int seat = next_empire(g_roster, want, seats.empty() ? 0 : seats[0].species);
+        if ((int)s != host_seat()) // the host's own empire is the game's
+            want.push_back({(int)s, seats[s].species, seats[s].player});
+    const int seat = next_empire(g_roster, want, host_species());
     if (seat < 1)
         return;
     const int host_money = money_now();
@@ -433,9 +450,11 @@ static bool g_diplo_ready;           // the host's K_DIPLO_SET of g_answer is ap
 static ew::Joiner g_diplo_join;
 static std::vector<uint8_t> g_diplo_last; // the table I sent last
 static uint16_t g_g_version;
-// the name: the empire object I renamed, its game name, the epoch I did it in
+// the name and colour: the empire object I renamed, its game name and colour, the epoch I did it in
 static void* g_renamed;
 static std::u16string g_orig_name;
+static uint32_t g_orig_color;
+static float g_orig_rgb[3];
 static uint32_t g_renamed_epoch;
 
 bool own_money() { return active() && !spaceext::is_host() && g_own; }
@@ -447,8 +466,11 @@ static void name_undo()
 {
     if (!g_renamed)
         return;
-    if (g_renamed == player_empire() && g_renamed_epoch == spaceext::world_epoch())
+    if (g_renamed == player_empire() && g_renamed_epoch == spaceext::world_epoch()) {
         set_name(g_renamed, g_orig_name);
+        *(uint32_t*)((uint8_t*)g_renamed + kColorId) = g_orig_color;
+        memcpy((uint8_t*)g_renamed + kColorRgb, g_orig_rgb, sizeof g_orig_rgb);
+    }
     g_renamed = nullptr;
 }
 static void name_apply()
@@ -459,7 +481,35 @@ static void name_apply()
     if (!e)
         return;
     g_orig_name = name_of_empire(e);
+    g_orig_color = *(uint32_t*)((uint8_t*)e + kColorId);
+    memcpy(g_orig_rgb, (uint8_t*)e + kColorRgb, sizeof g_orig_rgb);
     set_name(e, own_name());
+    // its colour: the game's palette colour nearest to this player's co-op colour (the host's game draws its allied
+    // mirror empire in that colour too, space_allies.cpp)
+    if (a_Color) {
+        const uint32_t argb = spacemap::player_color(spaceext::my_id());
+        uint32_t best = 0;
+        float bd = 1e9f;
+        for (uint32_t i = 0; i < 12; i++) {
+            const float* c = cdecl_call<float*>(a_Color, 0x53DBCF3u + i);
+            if (!c || IsBadReadPtr(c, 12))
+                continue;
+            float d = 0;
+            for (int k = 0; k < 3; k++) {
+                const float want = ((argb >> (16 - 8 * k)) & 0xFF) / 255.f;
+                d += (c[k] - want) * (c[k] - want);
+            }
+            if (d < bd) {
+                bd = d;
+                best = 0x53DBCF3u + i;
+            }
+        }
+        const float* rgb = best ? cdecl_call<float*>(a_Color, best) : nullptr;
+        if (rgb && !IsBadReadPtr(rgb, 12)) {
+            *(uint32_t*)((uint8_t*)e + kColorId) = best;
+            memcpy((uint8_t*)e + kColorRgb, rgb, 12);
+        }
+    }
     g_renamed = e;
     g_renamed_epoch = spaceext::world_epoch();
     H->log(M, SK_INFO, "empires: my empire is called '%s' here (the game's name '%s')", utf8(own_name()).c_str(),
@@ -629,9 +679,10 @@ static std::string status()
                  g_last_err.c_str());
     else
         snprintf(b, sizeof b,
-                 "empires: fix=%d guest own=%d seat=%d money=%d name='%s' serial=%u answered_epoch=%u epoch=%u asks=%u"
+                 "empires: fix=%d guest own=%d seat=%d money=%d name='%s' color=%08X serial=%u answered_epoch=%u epoch=%u asks=%u"
                  " sets=%u reports=%u diplo ready=%d sets=%u sent=%u",
-                 (int)g_fix, (int)g_own, g_seat, money_now(), utf8(name_of_empire(player_empire())).c_str(), g_answer,
+                 (int)g_fix, (int)g_own, g_seat, money_now(), utf8(name_of_empire(player_empire())).c_str(),
+                 player_empire() ? *(uint32_t*)((uint8_t*)player_empire() + kColorId) : 0u, g_answer,
                  g_answered, spaceext::world_epoch(), g_g_asks, g_g_sets, g_g_reports, (int)g_diplo_ready, g_g_diplo_sets,
                  g_g_diplo_sent);
     return b;
@@ -664,13 +715,32 @@ static std::vector<spaceext::Row> rows()
 
 static std::string debug(const std::vector<std::string>& a)
 {
-    // coop.space empires [money <n> | write]: tests
+    // coop.space empires [money <n> | write | found <player> <species>]: tests
     if (a.size() >= 2 && a[0] == "money") {
         const int v = atoi(a[1].c_str());
         return set_money(v) ? "empires: my money set to " + std::to_string(v) : "empires: no player empire";
     }
     if (!a.empty() && a[0] == "write")
         return roster_write("test") ? "empires: written" : "empires: not written";
+    // tests (a lab fixture without a guest on a species of its own): found <player id> <species hex>: that player's
+    // seat gets an empire as if it played that species, then the player is told again
+    if (a.size() >= 3 && a[0] == "found" && spaceext::is_host()) {
+        const uint8_t p = (uint8_t)atoi(a[1].c_str());
+        const int seat = party::seat_of_player(p);
+        const int host_money = money_now();
+        if (seat < 1 || seat >= (int)kPlaySeats || seat == host_seat() || g_roster.founded(seat) || host_money < 0)
+            return "empires: no seat to found for player " + a[1];
+        Empire& e = g_roster.e[seat];
+        e = {true, party::roster().seats[seat].player, (uint32_t)strtoul(a[2].c_str(), nullptr, 16), start_money(host_money)};
+        if (!roster_valid(g_roster)) {
+            e = {};
+            return "empires: not valid";
+        }
+        g_n.founded++;
+        roster_write("test found");
+        send_empire(p, seat);
+        return "empires: seat " + std::to_string(seat) + " founded";
+    }
     std::string s = status() + "\n";
     if (spaceext::is_host() || !spaceext::connected()) {
         const auto& seats = party::roster().seats;
@@ -696,6 +766,7 @@ static bool init(const SkHost* h, SkMod* m)
     M = m;
     a_PlayerEmpire = H->sym("Simulator::GetPlayerEmpire");
     a_StrAssign = H->sym("wstring_copy");
+    a_Color = H->sym("Simulator::GetCachedColorFromId");
     spaceext::on_save(host_save);
     spaceext::on_save(guest_save);
     return a_PlayerEmpire != 0;

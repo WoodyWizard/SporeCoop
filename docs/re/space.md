@@ -3472,21 +3472,31 @@ core together (16.4). Rivals mode (11) is a host option with own budgets and per
 * **The name**: on the guest's game its player empire is called "<player>'s empire" (`wstring_copy` on cEmpire +0x3C,
   the name space_allies gives its mirror on the host's game), the game's name put back before every save of that
   game. ✔ The guest's captain card read "Bob's emp..." in place of "Keigh Empire".
+* **Its colour** (`space.own_empire_name` too): cEmpire +0x10 set to the palette id (0x53DBCF3 + 0..11) nearest to the
+  player's co-op colour (spacemap::player_color, as space_allies picks the mirror's) and +0x30 to that id's cached RGB
+  (`Simulator::GetCachedColorFromId`); both put back with the name before a save. ✔ The guest's empire 053DBCF7 on its
+  game (the colour on the galaxy map not looked at: a tutorial caption was up).
+* **The host's seat** is not always 0: on lane C's Kealeneon the party has four seats from two PCs (seat 0 and 1 a
+  host and guest of another PC's run, seat 2 this host, seat 3 this guest), so the host's own seat is
+  `party::seat_of_player(host)` and is never given an empire; the host species is that seat's. ✔ With no empire file
+  the guest's seat 3 was founded, seat 2 not.
+* ✔ **The core together** with own empires (`coop.space finale`): the host at the core waited (waiting=1, blocked=1)
+  until the guest flew to the gate, then entered (entries_with=1); the guest still had its own empire.
+* Test seam `coop.space empires found <player> <species>` (host): founds a player's seat as if it played that species
+  (the lab's Space fixtures have no guest on a species of its own); tools/tests/coop_space_own_empires.py.
 * NPC empire names differ per copy (12.3): the same 80001AE3 was "Wubble Empire" on the guest and "Ixplix Empire" on
   the host.
 
 **Not built (the plan):**
+* Cards and archetype per seat: feat/own-cards (not merged into this branch) decides each seat's Space archetype; the
+  archetype's tools come with the game's Space start of the host's save, so a guest's inventory has the host's.
 * A home of its own: both players' nations live on the same planet; the guest's empire is still the host's cEmpire on
   its game (one save, one player empire, 13.1): the same political id, home planet, colour and colonies; the host's
   colonies count as the guest's own on its game (the reverse of 15 would show them as the host's mirror).
 * Its own ship and captain: the guest gets the host's ship and captain. 0.7.15 has no per-guest launch: after the
-  ship editor vote the guest's History check does nothing (✔ lane C, the guest connected thanks to BUG-9290's fix).
+  ship editor vote the guest's History check does nothing (✔ lane C, a run with the guest still connected after the vote; BUG-9290 is lane B's).
   Lineages has it (world.cpp begin_local_space_intro / guest_launch_tick, civ::founder_space_ready,
   creations::needs_local_space_intro, the vote end message "Open Civilization History..."): a port of its own. The
   ship model is cEmpire +0xB8 (mUFOKey) and the ship's cGameDataUFO +0x780; UfoGfx_SetModel 0xE9A920. The guest's own species as
   the captain (SetSpeciesProfile 0xC337D0) is not tried.
-* Cards and powers: feat/own-cards keeps every seat's cards and decides the Space archetype per seat
-  (SpaceArchetype_FromTraits); the archetype's tools in the guest's inventory are still the host save's.
-* The finale: space_finale.cpp already holds the core until every partner in Space is at the gate (16.4); not changed
-  and not run again with own empires.
 * Rivals mode keeps its own budgets: this feature waits while it is on.
