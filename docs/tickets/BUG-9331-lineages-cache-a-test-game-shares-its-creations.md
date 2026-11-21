@@ -1,17 +1,17 @@
 ---
 id: BUG-9331
 title: Lineages Cache: a test game shares its creations unless its typed name carries -NoShare-
-status: open
+status: fixed
 kind: bug
 stage: all
 reported: 2026-11-21
 source: owner 2026-11-21
 role: all
 versions: 0.7.14.1-lineages68-dev
-fixed_in:
+fixed_in: unreleased
 branch: fix/l47-test-noshare
-commits:
-tests:
+commits: a76fff13
+tests: tools/qa_win (two TITAN QA games, 2026-11-21, switch off and on)
 signature:
 docs:
 related: BUG-9222, BUG-9329
@@ -53,3 +53,4 @@ typed without the tag: `coop.host 47839 TestHost 4`, `coop.join 127.0.0.1:47839 
 
 ## History
 - 2026-11-21: opened.
+- 2026-11-21: fixed on fix/l47-test-noshare, FAIL / PASS live on TITAN (Verification).
