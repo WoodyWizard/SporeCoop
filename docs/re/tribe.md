@@ -6114,3 +6114,43 @@ BUG-9304, decision 7M B. Read in the code, not traced at runtime.
   so the share save carries the villages and the `.duofounders` roster (a sidecar of the planet file in the slot,
   shared with it). Not seen in a game yet.
 * The host's own reload (BUG-0332) stays: only a load gives every game the same ground.
+## A chief's stage powers and a partner's orders (2026-11-20, fix/l47-powers)
+<a id="tribe-chief-powers"></a>
+
+BUG-9306, BUG-9303. GOG 2024 (Ghidra on the Windows PC's Steam dump, docs/05-re-notes.md#re-notes-ghidra-windows);
+static analysis only, nothing of this section was run in a game yet.
+
+* ✔ (Ghidra) A leader's six extra abilities (Citizen_GetAbility, the table 0x169DE30 +0x1C..+0x30) have the types
+  **0x34..0x39**, the Tribe stage powers the earlier stages' cards give (Fire Bomb, Summon Animals, ...: which type is
+  which power is not mapped yet). Ability_Use 0xD1E930 for these types: `DoAction(22, target 0, Property(uint32 =
+  the ability's index in the chief's own list))` on the citizen (the property built by 0x671B70: +0x10 / +0x12 zero,
+  then App::Property::SetValueUInt32 0x428010). **CitizenAction 22** (unnamed in ModAPI's enum) is the chief power.
+* ✔ (Ghidra) The bar's status (AbilityBar_Status 0xD49220 -> 0xD1F650) for 0x34..0x39: 1 outside Tribe; **10** when
+  0xD1F400 says the power is not earned; **0xB** when the player tribe's chief is missing, has +0xB5E set or its AI
+  word (+0xB4C)+0x1CC has 0x10000; **0xF** while recharging (0xD1E8D0: +0xC28 [idx*16+4] != 1.0 and bit idx of
+  +0xBF8). The bar's avatar in Tribe (0xD1E610) is `GetPlayerTribe()->leader` (+0x11C).
+* ✔ (Ghidra) The unlock (0xD1F400, SporeCoop::ChiefPower_Unlocked in the .sym) reads **this game's cPlayer** only: the
+  cell (+0x10FC) and creature (+0x1100) cards map to bits 20..25 of the cached player property 0x5FF7BAF (0x5FF7BB6 the
+  other word), one per type 0x34..0x39 (bit = type - 0x20); the card ids are in the .sym entry. Once both properties
+  exist the cache is used, not the cards. So on a guest's game the guest's own cPlayer decides which power its bar
+  offers; the host's game never checks the partner's cards.
+* ✔ (Ghidra) The power nodes (.data 0x1593C90.., SporeCoop::BT_ChiefPowerNodes): each enter reads the current action
+  record (0xBCA430: action 22, the uint32 property at +0x39) and each tick starts the recharge (0xC19800(index)) and
+  ends action 22 (0xDA6140). They act on the chief itself (its position, reach +0xA8 / +0xF4 of the ability), with
+  two exceptions that name the **player tribe**: node 060B708E's lure object ends with messages 0x4B18967F whose
+  sender is `GetPlayerTribe()->chief` (0xBCBDF0), and node 0609EACA puts the animals in reach into the TribalGame's
+  list (the player's pets, 0xC7DE10). For a partner's chief run on the host these credit the host's tribe (~, not
+  seen in a game).
+* ✔ (code) Before BUG-9306 a guest's press ran Ability_Use -> DoAction(22) on its own game's mirror of its chief, whose
+  behaviour tree h_BTTick skips: nothing was sent to the host (h_DoActionForObjects, the order relay, is not on this
+  path). Fix `tribe.guest_powers`: the guest sends the type (CMD_CHIEF_POWER 16), the host checks the sender's
+  village's native chief (alive, not down, AI flag, recharge) and runs the same DoAction(22, 0, property) on it.
+* ✔ (Ghidra) DoActionGeneric 0xCD0C20: input 0x21 food raid -> **8 on the other village's cTribe** (the mat +0x10C, or
+  the tribe of a 0x18C431C object); 0x22 fish -> **1 with no target and a Vector3 property** (the cursor's surface
+  point, also a marker effect 0xBADB68EA); 0x24 -> 2 on the cFruit; 0x25 -> 2 on 0xC22F50(obj); 0x1B -> 14 bundle;
+  0x1C / 0x1D -> 27 meat; 0x23 -> 13 egg; 0x29 -> 20 feed or 25 tame on the animal. Fix `tribe.guest_orders` lets a
+  partner village's commander send all of these (the fishing spot in the command's position, set on the record's +0x39
+  as a walk's) and logs every refused command.
+* Tools: `coop.tribe powers` (this game's chief: each power's index, bar status and recharge, the player's cards and
+  unlock words; on the host each partner chief), `coop.tribe powers grant <type>` (tests: this player earns the power,
+  a saved player property), `coop.tribe powers use <type>` (the bar's press).
