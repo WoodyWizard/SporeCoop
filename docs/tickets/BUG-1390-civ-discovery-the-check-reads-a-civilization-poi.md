@@ -10,7 +10,7 @@ role: test
 versions: 
 fixed_in: unreleased
 branch: fix/w62-flake-tcs
-commits:
+commits: 69313126
 tests: civ_discovery
 signature:
 docs:
