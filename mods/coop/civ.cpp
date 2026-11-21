@@ -1,4 +1,5 @@
 #include "civ.h"
+#include "cards.h"
 #include "tribe.h"
 #include "call_guard.h"
 #include "squadron.h"
@@ -1631,7 +1632,57 @@ static float SK_THISCALL h_HudProgress(void* strategy)
 static double g_progress_poll, g_campaign_share_at;
 static bool g_progress_queued;
 
+// decision 7Q A ("Own powers", BUG-9306): RefreshUnlocks 0xBF2510 maps the cell, creature and tribe cards of the one
+// cPlayer (+0x10FC, +0x1100, +0x1104) to unlocks, so every nation got the host's cards' weapons. On (host): a partner
+// seat's nation is computed with that founder's own cards (cards.h: a record per identity; the shared card for a stage
+// without one) put into those three fields for the call, as the city view below is borrowed, and the team's unlocks
+// are shared across the founder nations for the global types 2/5/8 only (the city-count ones), not the card ones.
+// `coop.fix civ.partner_unlocks off`: the host's cards for every nation, all unlocks shared (as before).
+static bool g_partner_unlocks = true;
+COOP_FIX("civ.partner_unlocks", "BUG-9306", g_partner_unlocks,
+         "civ: a partner's nation unlocks the superweapons / archetype abilities of the partner's own earlier-stage cards (7Q A)");
+static uint32_t g_unlock_cards_logged[founders::kMaxSeats];
+static void unlocks_run(void* country);
 static void SK_THISCALL h_Unlocks(void* country)
+{
+    void* player = nullptr;
+    size_t card_mark = 0;
+    int seat = -1;
+    cards::Own own;
+    if (g_partner_unlocks && nm() && country) {
+        if (is_host()) {
+            seat = g_founder_nations.seat_of_faction(pol_of(country));
+            if (seat >= 1 && seat < (int)founders::kMaxSeats) own = cards::of_identity(g_founder_nations.entries[seat].player);
+        } else if (local_founder_faction() && pol_of(country) == local_founder_faction()) { // a guest's own nation, its own cards
+            seat = g_local_seat;
+            own = cards::own();
+        }
+    }
+    if (seat < 0 || seat >= (int)founders::kMaxSeats) own = {};
+    if ((own.mask & 7) && (player = F<void*>(nm(), 0x74))) { // its own cell / creature / tribe card for this call (the
+                                                              // fault rollback holds the host's values)
+        uint32_t eff[cards::kStages];
+        cards::effective(own, eff);
+        for (int s = 0; s < 3; ++s) {
+            uint32_t* f = &F<uint32_t>(player, 0x10FC + 4 * s);
+            const size_t m = game::swap_open(game::swap_undo_u32, f, *f, "Civ unlock own card");
+            if (!s) card_mark = m;
+            *f = eff[s];
+        }
+        if (g_unlock_cards_logged[seat] != cards::generation()) {
+            g_unlock_cards_logged[seat] = cards::generation();
+            H->log(M, SK_INFO, "civ: seat %d's nation unlocks from its own cards cell %08X creature %08X tribe %08X (7Q A)", seat,
+                   eff[0], eff[1], eff[2]);
+        }
+    } else if (g_partner_unlocks && is_host() && seat >= 1 && g_unlock_cards_logged[seat] != cards::generation()) {
+        g_unlock_cards_logged[seat] = cards::generation();
+        H->log(M, SK_INFO, "civ: seat %d has no record of its own cards: its nation unlocks from the shared (host's) cards until "
+               "its founder's next graduation (7Q A)", seat);
+    }
+    unlocks_run(country);
+    if (player) game::swap_close(card_mark, 3);
+}
+static void unlocks_run(void* country)
 {
     auto cities = team_cities(country);
     if (cities.empty()) { o_Unlocks(country); return; }
@@ -4700,6 +4751,7 @@ static void campaign_tick(double now)
             h_Unlocks(country);
         }
         for (unsigned i = 0; i < 12; ++i) {
+            if (g_partner_unlocks && i != 2 && i != 5 && i != 8) continue; // 7Q A: the card ones stay each nation's own
             uint8_t unlocked = 0;
             for (void* country : nations) unlocked |= F<uint8_t>(country, 0x484 + i);
             for (void* country : nations) F<uint8_t>(country, 0x484 + i) = unlocked;
@@ -8910,9 +8962,12 @@ std::string debug(const std::vector<std::string>& a)
                 snprintf(l, sizeof l, "\nnation seat %u %p money=%.0f unlocked=%s can=%s global_used=%d", (unsigned)seat, n,
                          (double)F<float>(n, 0x98), unl.c_str(), can.c_str(), (int)F<uint8_t>(n, 0x4CC));
                 out += l;
+                const cards::Own own = seat ? cards::of_identity(g_founder_nations.entries[seat].player) : cards::Own{};
+                snprintf(l, sizeof l, " cards=%s", !seat ? "the host's own" : (own.mask & 7) ? cards::line(own).c_str() : "shared (no record)");
+                out += l;
             }
-        snprintf(b, sizeof b, "\nguest_superweapons fix=%d own_nation=%u refused=%u last: ", (int)g_guest_sw_fix, g_sw_own_nation,
-                 g_sw_nation_refused);
+        snprintf(b, sizeof b, "\npartner_unlocks fix=%d guest_superweapons fix=%d own_nation=%u refused=%u last: ", (int)g_partner_unlocks,
+                 (int)g_guest_sw_fix, g_sw_own_nation, g_sw_nation_refused);
         return out + b + g_sw_last_line;
     }
     // swgrant <seat> <type> [money]: tests (BUG-9306, host), founder seat's nation gets superweapon <type> unlocked

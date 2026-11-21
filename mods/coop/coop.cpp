@@ -51,6 +51,7 @@
 #include "tribe_late.h"
 #include "drama.h"
 #include "identity.h"
+#include "cards.h"
 #include "bans.h"
 #include "party.h"
 #include "home_nests.h"
@@ -5696,6 +5697,7 @@ void on_frame(void*, int, void*)
     guest_pack::tick(now);                      // BUG-9129
     fprof::mark("guest_pack::tick(now)");
     identity::tick(now);                        // BUG-9135
+    cards::tick(now);                           // BUG-9306 (7Q A)
     fprof::mark("identity::tick(now)");
     bans::tick(now);                            // BUG-9251: a banned player whose identity arrived is removed
     fprof::mark("bans::tick(now)");
@@ -7352,6 +7354,7 @@ void end_session(EndPath path, bool cell)
     if (g_session_end_fix || path == EndPath::Disconnect) {
         npc::on_session_end();
         identity::on_session_end(); // BUG-9135
+        cards::on_session_end();    // BUG-9306 (7Q A)
         party::on_session_end();    // roadmap 0b
         nest::on_session_end(); // BUG-0384: our egg mirrors
         fields::on_session_end();
@@ -7611,6 +7614,10 @@ void setup_callbacks()
         }
         if (type == net::MSG_IDENTITY) { // BUG-9135
             identity::on_message(from, r);
+            return;
+        }
+        if (type == net::MSG_CARDS) { // BUG-9306 (7Q A)
+            cards::on_message(from, r);
             return;
         }
         if (type == net::MSG_DRAMA) { // BUG-9131
@@ -11468,6 +11475,7 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
     tribe::init(H, M, std::move(trc));
     drama::init(H, M, &g_sess); // BUG-0486
     identity::init(H, M, &g_sess); // BUG-9135
+    cards::init(H, M, &g_sess);    // BUG-9306 (7Q A)
     { // BUG-9251 (decision 5I): kick and ban
         bans::Ctx bc;
         bc.sess = &g_sess;

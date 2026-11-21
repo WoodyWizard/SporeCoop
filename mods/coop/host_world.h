@@ -157,7 +157,7 @@ inline MsgClass msg_class(uint8_t type)
     case net::MSG_IDENTITY: case net::MSG_LIBRARY: case net::MSG_CAMPAIGN_RULES: case net::MSG_TRIBE_LATE:
     case net::MSG_DNA_OWN: case net::MSG_START_PARTS: case net::MSG_MIGRATE: case net::MSG_PROGRESS_DEBT:
     case net::MSG_SPACE_LAUNCH: case net::MSG_CREATURE_RESCUE: case net::MSG_TRIBE_OUTFIT: case net::MSG_ADVENTURE:
-    case net::MSG_HOST_RESTART:
+    case net::MSG_HOST_RESTART: case net::MSG_CARDS: // MSG_CARDS: a player's own stage cards (BUG-9306, 7Q A)
         return MsgClass::Session;
     // Lineages: rows of the host's world (Tribe, Civ, the Drama Manager, Cell contact hits)
     case net::MSG_TRIBE_BUILDINGS: case net::MSG_TRIBE_EQUIPMENT: case net::MSG_TRIBE_TOOLS:

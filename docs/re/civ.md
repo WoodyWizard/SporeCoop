@@ -2769,3 +2769,8 @@ dump has the mod's hooks in it: FireSuperweapon 0xBF8BB0 and RefreshUnlocks 0xBF
   unlocks from the host's history too, and the host's RefreshUnlocks for a partner nation uses the same host cards.
   Host and guest agree; neither knows the partner's own earlier-stage cards (the mod keeps no per-founder record).
   A partner-unlocks fix first needs that record (see BUG-9306, decision).
+* (2026-11-21, fix/l47-powers, decision 7Q A) `civ.partner_unlocks`: RefreshUnlocks for a partner seat's nation runs with
+  that founder's own cell / creature / tribe cards in cPlayer +0x10FC / +0x1100 / +0x1104 for the call (swap_open, as the
+  city view), the guest's own nation likewise on the guest; campaign_tick's team sharing of unlocks is limited to the
+  global types 2 / 5 / 8 (the card-based ones stay each nation's). Which cities the global weapons hit is unchanged
+  (decision 7P open). Built, not run.

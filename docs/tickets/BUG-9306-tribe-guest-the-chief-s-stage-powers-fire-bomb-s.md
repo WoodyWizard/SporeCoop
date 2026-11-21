@@ -118,3 +118,10 @@ Done on fix/l47-powers (built; not run in a game yet):
   the world save), then use it for that founder's chief powers (an exception in wsync.stages for the unlock words, or
   the host checks) and its nation's Civ unlocks (RefreshUnlocks run with that seat's cards swapped into cPlayer, as
   h_Unlocks already swaps the city view); (B) keep one shared history for the party (today's behaviour).
+- 2026-11-21: decision 7Q A ("Own powers") on fix/l47-powers: mods/coop/cards.{h,cpp} (MSG_CARDS 110: a guest's own new
+  card caught in wsync's "stages" row before the host's replaces it, kept by the host per identity in `<save>.duo-cards`,
+  sent back to the guest); `tribe.partner_cards` (the guest's chief-power unlock words from its own cards; the host
+  refuses a power the partner's own cards did not earn); `civ.partner_unlocks` (a partner nation's unlocks computed
+  with its own cards; team sharing of unlocks only for the global types). Founders without a record keep the shared
+  cards (logged). Tools: `coop.cards [own|set|clear]`, `coop.tribe powers`, `coop.civ sw`. Built, not run. Open: whether
+  a guest's game writes its own card at a co-op graduation (to be seen in the log at the next graduation).

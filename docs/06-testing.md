@@ -9034,3 +9034,19 @@ BUG-9306 / BUG-9303 (docs/re/tribe.md#tribe-chief-powers). Not run yet; the comm
 * Switch twins: `coop.fix tribe.guest_powers off` (the guest's press stays on its mirror: no host line, no power),
   `tribe.guest_orders off` (fishing, meat, eggs, bundles, food raids, repairs, taming, loose fruit dropped, no log),
   `tribe.guest_chief off` (no chief aura for a partner's members).
+## Each player's own stage cards (2026-11-21, fix/l47-powers)
+<a id="testing-own-cards"></a>
+
+Decision 7Q A (BUG-9306, mods/coop/cards.h). Not run yet. Stage numbers: 0 cell, 1 creature, 2 tribe, 3 civ, 4 space.
+* `coop.cards` (any game): this game's own cards (mask, five ids), what was caught / sent / received, the effective cell,
+  creature and tribe cards and the chief-power unlock word they give; on the host every record (identity, player, cards).
+* `coop.cards own <stage> <card hex>` on a guest: as if its game had just graduated with that card (sent to the host,
+  kept per identity in `<save>.duo-cards`, sent back). On the host: `coop.cards set <player id> <stage> <card hex>`,
+  `coop.cards clear <player id>`. The world must have a save file for the record to be saved.
+* Tribe chief power cards (cell or creature card -> power type): E5F355B3 -> 0x34, EE0C1239 -> 0x35, 5961D110 -> 0x36,
+  B6295724 -> 0x37, C7981631 -> 0x38, 27CB4512 -> 0x39 (0xD1F400). `coop.tribe powers` shows the own cards and the
+  resulting bits (`partner_cards ...`, on the host `seat N cards ...`); `coop.civ sw` shows `cards=` per nation.
+* Logs: guest `cards: this game's own <stage> card .. caught before the host's .. replaced it`, host `cards: <name>'s own
+  <stage> card .. kept`, guest `tribe: this game's chief powers follow its own cards ...`, host `civ: seat N's nation
+  unlocks from its own cards ...` or `civ: seat N has no record of its own cards: ... shared (host's) cards ...`.
+* Switch twins: `tribe.partner_cards`, `civ.partner_unlocks` (off: the host's cards for everyone, as before).

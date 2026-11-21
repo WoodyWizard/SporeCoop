@@ -107,6 +107,7 @@ enum MsgType : uint8_t {
     MSG_CIV_TURRETS = 90,  // host -> guest: one city wall layout, occupied slots and turret HP
     MSG_CELL_COMBAT = 89, // guest contact hit; host replies with any whole bonus for the same body
     MSG_CAMPAIGN_RULES = 88, // reliable host snapshot scoped to campaign name hash and stage
+    MSG_CARDS = 110, // reliable (BUG-9306, 7Q A): u8 kind; 0 guest -> host u8 stage, u32 its own new card; 1 host -> guest u8 mask, 5 x u32 its record (cards.h)
     MSG_IDENTITY = 83, // reliable guest -> host (BUG-9135): u64 the player's persistent identity (identity.h)
     MSG_TRIBE_LATE = 84, // reliable host -> guest (BUG-9159): u8 kind (1: make your creature in the editor now), u32 world
     MSG_DNA_OWN = 85, // reliable host -> guest (BUG-9162): f32 DNA of that guest's own (its kill paid on the host's game)

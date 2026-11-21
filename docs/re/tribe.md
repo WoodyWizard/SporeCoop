@@ -6190,3 +6190,10 @@ static analysis only, nothing of this section was run in a game yet.
   0x5FF7BAF / 0x5FF7BB6 once both exist) follow the host's earlier stages, not the partner's own. Evidence: the code
   (wsync.cpp kRows "stages", planet() = Cell..Space); not seen in a game. No per-founder record of a partner's own
   cards exists in the mod (founders roster, wsync, creations: none found).
+* (2026-11-21, fix/l47-powers, decision 7Q A) Each player's own cards: a guest's game catches the card its own
+  graduation writes into cPlayer +0x10FC.. (the field differs from what wsync's "stages" row last wrote) before wsync
+  overwrites it, the host keeps it per identity (`<save>.duo-cards`, mods/coop/cards.h). `tribe.partner_cards`: the
+  guest's bar unlock words 0x5FF7BAF / 0x5FF7BB6 are written from its own cell / creature cards; the host refuses a
+  partner's power its own cards did not earn. Built, not run. ? Whether a guest's game writes its own card at a co-op
+  graduation at all (each game runs the stage end itself, or the host's transition only) is not checked: the catch logs
+  it when it happens.

@@ -1,5 +1,6 @@
 #include "down_time.h"
 #include "tribe.h"
+#include "cards.h"
 #include "chief_arrival.h"
 #include "creature_hp.h"
 #include "call_guard.h"
@@ -5573,6 +5574,34 @@ static void power_watch_tick(double now)
     }
 }
 
+// decision 7Q A ("Own powers", BUG-9306): a partner's chief powers follow the stage cards its own play earned (cards.h),
+// not the host's history wsync gives every guest. Guest: the bar's unlock words (player properties 0x5FF7BAF /
+// 0x5FF7BB6, which 0xD1F400 reads once both exist) are written from the own cards (the shared ones for a stage without
+// a record). Host: a partner's power is refused when its own cards did not earn it (no record: as before, any power).
+// `coop.fix tribe.partner_cards off`: the shared (host's) cards decide on both games.
+static bool g_partner_cards_fix = true;
+COOP_FIX("tribe.partner_cards", "BUG-9306", g_partner_cards_fix,
+         "tribe: a partner's chief powers follow its own earlier-stage cards (7Q A), not the host's");
+static uint32_t g_own_bits_applied = 0xFFFFFFFFu; // guest: the unlock word last written from the own cards
+static void partner_cards_guest_tick()
+{
+    if (!g_partner_cards_fix || !is_guest() || local_play() || game::mode_id() != modes::kTribe) return;
+    const cards::Own o = cards::own();
+    if (!(o.mask & 3)) return; // no own cell / creature card: the shared ones stand
+    static uintptr_t set_prop = H->sym("SporeCoop::Player_SetProperty");
+    void* nm = game::noun_manager();
+    void* player = nm ? F<void*>(nm, 0x74) : nullptr;
+    uint32_t eff[cards::kStages];
+    cards::effective(o, eff);
+    const uint32_t bits = cards::tribe_power_bits(eff);
+    if (!set_prop || !player || bits == g_own_bits_applied) return;
+    thiscall<void>(set_prop, player, 0x5FF7BAFu, (int)bits);
+    thiscall<void>(set_prop, player, 0x5FF7BB6u, 0);
+    g_own_bits_applied = bits;
+    H->log(M, SK_INFO, "tribe: this game's chief powers follow its own cards: cell %08X creature %08X -> unlock word %08X (7Q A)",
+           eff[0], eff[1], bits);
+}
+
 // host: partner `from` (seat `seat`) wants its chief (`member`, its id in the guest's game) to use power `type`
 static bool chief_power_on_host(uint8_t from, int seat, uint16_t member, uint32_t type)
 {
@@ -5598,6 +5627,18 @@ static bool chief_power_on_host(uint8_t from, int seat, uint16_t member, uint32_
     const int idx = citizen_ability_index(chief, type);
     if (idx < 0) return refuse("the chief has no such ability");
     if (chief_power_recharging(chief, idx)) return refuse("the power is recharging");
+    const char* cards_note = "shared cards";
+    if (g_partner_cards_fix && seat >= 1 && seat < (int)founders::kMaxSeats) { // 7Q A: the partner's own cards
+        const cards::Own own = cards::of_identity(g_order_roster.entries[seat].player);
+        if (own.mask & 3) {
+            uint32_t eff[cards::kStages];
+            cards::effective(own, eff);
+            if (!(cards::tribe_power_bits(eff) & (1u << (type - 0x20))))
+                return refuse("the partner's own cards did not earn this power (tribe.partner_cards)");
+            cards_note = "its own cards";
+        } else
+            cards_note = "no record of its own cards: shared cards";
+    }
     // the bar's energy check (AbilityBar_Status 1): the chief's energy +0xE58 below the power's cost (ability +0x104)
     if (uint8_t* ab = citizen_ability(chief, idx); ab && F<float>(ab, 0x104) > 0 && F<float>(chief, 0xE58) < F<float>(ab, 0x104))
         return refuse("the chief has too little energy for it (bar status 1)");
@@ -5608,8 +5649,8 @@ static bool chief_power_on_host(uint8_t from, int seat, uint16_t member, uint32_
     void* rec = thiscall<void*>(a_DoAction, chief, kChiefPowerAction, (void*)nullptr, (void*)prop);
     ++g_powers_run;
     char b[200];
-    snprintf(b, sizeof b, "host: %s's chief %u uses power 0x%X (ability %d) rec=%p", C.sess->name_of(from).c_str(), member,
-             type, idx, rec);
+    snprintf(b, sizeof b, "host: %s's chief %u uses power 0x%X (ability %d, %s) rec=%p", C.sess->name_of(from).c_str(), member,
+             type, idx, cards_note, rec);
     g_power_last = b;
     H->log(M, SK_INFO, "tribe: %s; before: %s (BUG-9306)", b, power_state(chief, idx).c_str());
     power_watch(chief, type, idx, from);
@@ -7292,6 +7333,7 @@ static void away_tree_end_tick()
 static void guest_tick(double now)
 {
     static double own_village_at;
+    partner_cards_guest_tick(); // 7Q A
     if (g_persp_host) { // BUG-9154: the right press on a party member's hut
         mouse::install(H->game_window());
         mouse::set_tribe_input(party_gift_input);
@@ -12985,6 +13027,21 @@ std::string debug(const std::vector<std::string>& a)
         snprintf(b, sizeof b, "refusals logged=%u quiet=%u; village chiefs (aura) fix=%d\n", g_rejects_logged, g_rejects_quiet,
                  (int)g_guest_chief_fix);
         o += b;
+        { // 7Q A: the own cards behind the powers (this game's; on the host each partner seat's record)
+            uint32_t eff[cards::kStages];
+            cards::effective(cards::own(), eff);
+            snprintf(b, sizeof b, "partner_cards fix=%d own %s -> power bits %08X (applied %08X)\n", (int)g_partner_cards_fix,
+                     cards::line(cards::own()).c_str(), cards::tribe_power_bits(eff), g_own_bits_applied);
+            o += b;
+            if (is_host())
+                for (size_t seat = 1; seat < founder_seats() && seat < founders::kMaxSeats; ++seat) {
+                    const cards::Own own = cards::of_identity(g_order_roster.entries[seat].player);
+                    cards::effective(own, eff);
+                    snprintf(b, sizeof b, "seat %u cards %s -> power bits %08X%s\n", (unsigned)seat, cards::line(own).c_str(),
+                             cards::tribe_power_bits(eff), own.mask & 3 ? "" : " (no record: shared)");
+                    o += b;
+                }
+        }
         return o + "last: " + g_power_last;
     }
     // duet: tests (BUG-0748), the player tribe's members in the social performance node 0xB46E8803 (host): id, owner, the
