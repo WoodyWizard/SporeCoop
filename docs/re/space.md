@@ -3534,10 +3534,13 @@ BUG-9279, after [space-own-empires](#space-own-empires). Lane C, Steam exe 3010a
   became "Return Ticket"; the host kept "Raider Rally" (warrior). With the switch off the tools stayed (FAIL).
   Ability tools seen: warrior Raider Rally D0E48980, ecologist Safari Vacuum 805CEFBC, shaman Return Ticket.
 * The kept cargo hold (BUG-0195 family) brings a guest's own tools back across a rejoin, the archetype tool too.
-* Not built: Lineages' per-guest launch (world::begin_local_space_intro, guest_launch_tick, civ::founder_space_ready,
-  creations::needs_local_space_intro, the vote end message "Open Civilization History..."): the guest's own ship
-  editor at the Civ -> Space launch. Today a partner designs its ship in the galaxy menu's Spaceship Creator, and the
-  newest one is its empire's ship on every load.
+* ~ superseded (2026-11-21): "Not built: Lineages' per-guest launch (the guest's own ship editor at the Civ -> Space
+  launch); a partner designs its ship in the galaxy menu's Spaceship Creator".
+  CORRECTION (2026-11-21, feat/lineages-space-guest-launch): built new as civ_launch.cpp (BUG-9295, switch
+  `civ.guest_launch`): a guest with its own nation gets the planet-won state on its game when the spaceship vote ends,
+  designs its ship in its own History editor and launches its own game into Space; the host's world waits until the
+  guest leaves its home planet, and space_empires then flies that ship (the newest design of its library) as the
+  guest's empire ship. See docs/re/civ.md#civ-guest-launch.
 * Own home planet and colonies (notes only): the partner's empire on its game is the save's player cEmpire (pol, home
   star +0xB0, home planet +0xB4, stars +0x88); the host's colonies are its colonies on the partner's game. A home of its
   own would be a record-level colony of its species (15.2) set as +0xB4, and the host's colonies shown as the host's

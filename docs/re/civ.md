@@ -2310,3 +2310,43 @@ adopted)`; pure rule `civ_seats::adopt_choice` (tests/civ_seats_tests.cpp). Lab 
 * Not done: a partner whose planet has only the players' nations left gets no nation (none to take); the takeover
   keeps the NPC nation's buildings, vehicles and their designs (the partner's own City Hall and vehicle designs are
   not applied).
+
+
+## A partner's own launch at the Civ -> Space change (2026-11-21, feat/lineages-space-guest-launch)
+<a id="civ-guest-launch"></a>
+
+BUG-9295. Lane C, Steam exe 3010a413 (the GOG 2024 code, image base 0x140000 at runtime: a symbol's address minus
+0x2C0000 is where the code is in memory; `mem.read` / `call` with a raw address need that), two games, the Kealeneon
+Civ fixture (the guest's adopted nation 000021D0, every other city taken by `coop.civ nations capture`).
+* ✔ **Why a guest's History did nothing after the spaceship vote**: its game never saw the planet won. The team
+  campaign (civ_nations.cpp campaign_task) raises the nations' levels and calls GameCiv_ShowPlanetWon +
+  GameCiv_PlanetWonPause on the host's game only. On the guest the player civilization (the save's, the host's
+  nation copy) stayed at level 3 (`GameCiv_IsPlanetOwned` 0xCF7730 false), and its History check only closed the
+  History: no EditorRequest::Submit at all.
+* ✔ Level 4 alone (cCivilization_RaiseLevel, IsPlanetOwned then true) is not enough: the check still only closed the
+  History. ✔ Level 4 + GameCiv_ShowPlanetWon + GameCiv_PlanetWonPause on the guest's game: the HUD's bottom bar turns
+  into the full blue bar, and the History check submits the game's own spaceship editor request (editor 0x96B24187;
+  vote.cpp lets a guest's own design editor through, the host gets "Bob edits a design"). The editor works as on the
+  host; its Done launches the guest's own game into Space (its own "Space Stage" card, "Lift off!" text, its own ship
+  on its home planet).
+* ✔ `GameCiv_IsPlanetOwned` 0xCF7730 is not called by the History check on the host either (a probe on it had 0 hits
+  through the host's History + check + vote): the check's condition is the planet-won UI state, not this function.
+  It is the same address Lineages calls `SporeCoop::CivMode_SpaceReady` (BUG-9056): one function, our name kept.
+* ✔ Both games on the home planet in Space at once (the host on its own Space start, the guest on its own launch of
+  its Civ copy): the same world id 4039A02F, each sees the other's ship ("Bob" on the host, "Player" on the guest).
+  The guest's local start has the save's captain (the host's species, "Keigh Emp...") and money.
+* ✔ The host's world is shared when the host leaves its home planet (the game saves only off planets). Without a hold
+  the guest, still on its own home planet, was taken to the galaxy menu and loaded it; space_empires then set "my ship
+  292B0725 (the game's 292B071D)": the ship the guest had just made (the newest design of its library), not the
+  host's. With `civ.guest_launch` the received world waits (world.cpp via_menu_tick / deferred_tick) while the guest's
+  own launch runs: in Civ after the vote (10 min at most), in its editor, and in Space on its home planet (context 0);
+  it is loaded when the guest leaves the planet (context 1 / 2) or after 30 min.
+* ✔ (runtime, lane C, 2026-11-21, t1.py on) The whole launch: the guest's ship 'Bob2521' (292B761E) made in its own
+  editor, its own Space start, the host's world received after the host left its planet and held 1.5 min while the
+  guest stayed on its home planet (Simulator::GetCurrentContext 0), released when the guest flew off (context 1 / 2);
+  the guest then quit its local Space game to the galaxy menu (the game saved the guest's own copy slot on the way out,
+  our ships stripped by space.save_strip), loaded the host's world, and its empire flew 292B761E; the host's game
+  listed "player 1 ufo ... 'Bob2521'". With the switch off the History check did nothing and the world loaded at once.
+* Not done: the guest's own planet-side start has the host's captain and money (the host's world, loaded after the
+  first flight, then gets the guest's own captain and money from space_empires); Lineages' launch offer for a partner
+  who joins while the host is already in Space (LaunchMessage, the retained Civ checkpoint) is not ported.

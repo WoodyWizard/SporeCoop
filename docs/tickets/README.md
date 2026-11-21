@@ -1297,3 +1297,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9279](BUG-9279-lineages-port-phase-6-for-space-every-player-s-o.md) | open | feature | Space | 2026-11-20 |  | Lineages port phase 6 for Space: every player's own empire (own money and diplomacy) |
 | [BUG-9290](BUG-9290-a-host-whose-spaceship-editor-takes-51-s-to-load.md) | open | bug | Civ, Space | 2026-11-20 |  | A host whose spaceship editor takes 51 s to load drops the guest (session timeout) at the Civ to Space vote |
 | [BUG-9295](BUG-9295-civ-to-space-a-partner-with-its-own-nation-desig.md) | open | feature | Civ, Space | 2026-11-21 |  | Civ to Space: a partner with its own nation designs its own spaceship in its own History editor and launches with it |
+| [BUG-9297](BUG-9297-space-a-guest-s-own-launch-from-civ-starts-with.md) | open | bug | Space | 2026-11-21 |  | Space: a guest's own launch from Civ starts with the host's captain and money until the host's world loads |
