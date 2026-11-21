@@ -48,3 +48,4 @@ tools/tests/coop_cell_pop_budget.py (pop_budget, twin pop_budget_off) is left to
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on build/amigos.
+- 2026-11-20: built into 0.7.15.95 (the friends' package E:\SporeCoop-amigos-0.7.15.95).
