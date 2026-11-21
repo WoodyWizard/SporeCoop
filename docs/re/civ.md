@@ -2310,3 +2310,14 @@ adopted)`; pure rule `civ_seats::adopt_choice` (tests/civ_seats_tests.cpp). Lab 
 * Not done: a partner whose planet has only the players' nations left gets no nation (none to take); the takeover
   keeps the NPC nation's buildings, vehicles and their designs (the partner's own City Hall and vehicle designs are
   not applied).
+
+## The Civ start's camera and a guest's own capital (2026-11-21, fix/civ-own-camera)
+<a id="civ-own-camera"></a>
+
+✔ 0xCFA570 (called from 0xCFC174, the Civ start) points the planet camera at the player's home: `SporeCoop::SimCamera_Get`
+(0xB3D380, cdecl, `mov eax,[0x167EACC]`), then `SporeCoop::SimCamera_LookAt` (0xB12D10, thiscall, ret 0xC) with
+(Vector3* position = 0x169D2CC, float* distance = `SporeCoop::CivCamera_HomeDistance` 0x15819B4, int 1), then zeroes two
+offsets (0xB102A0, 0xB104A0) and sets 0x169D2BC = 1. The same LookAt + `SporeCoop::SimCamera_Update` from the mod (a
+city's position, the game's distance) moves a guest's camera to its own capital at once (BUG-9294); the camera looks
+straight down, closer than after the game's own start. ~ The tribe setup's call (0xCD7D1D) passes its target from a
+virtual call; its layout is not checked.
