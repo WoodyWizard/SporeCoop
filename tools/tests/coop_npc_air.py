@@ -26,7 +26,13 @@ check "the host's NPC was in the air" fails there (docs/re/tribe.md#tribe-animal
 --lift < 0 (BUG-1357, suite npc_air_under: --lift -0.8): the host's game holds its NPC that far UNDER its ground (as a
 far NPC the host's game does not simulate stood 0.7-0.8 m in its terrain in migration_heal / nest_follow; the host
 sends it as NF_AIR with a negative height). Checks then:
-   * the host's NPC was under its ground (its own rows: median under LIFT + 0.3 m);
+   * the host sent its NPC under its ground: the states the guest received in that phase (`coop.npctrack dump` column
+     sa: the host's height over the host's terrain, the agl trailer) have NF_AIR and a median under LIFT + 0.3 m.
+     Not the host's own rows: the host's game puts the NPC back onto its terrain in its own update before it draws it,
+     every frame (lab 20261120-133703 npc_air_under and its twin -130608 npc_air_under_off: the host's drawn rows
+     median 0.00 m while the guest received -0.80 m and, with the switch off, drew the proxy 0.80 m under its ground);
+     the lift (`coop.npc lift`, after the track row) is what the host then sends. Until 2026-11-20 the check read the
+     host's drawn rows and failed whatever the fix did (BUG-1357 History);
    * the guest drew the proxy on its own ground, not under it: median height within 0.3 m of 0 and at most UNDER_SHARE
      of the rows of that phase more than 0.25 m under (the monitor's proxies rule counts 0.5 m);
    * on the guest's ground before and after.
@@ -54,7 +60,10 @@ def rows_of(con, nid):
     while True:
         lines = [ln.split() for ln in con.call(f'coop.npctrack dump {i} 4000')['out'].splitlines() if ln.strip()]
         i += len(lines)
-        out += [(float(f[0]), int(f[2]), float(f[28])) for f in lines if len(f) >= 30 and int(f[1]) == nid]
+        # t, how, the drawn height over this game's terrain, the state's NF_* flags, the received host height (sa, 99 =
+        # none; an older build has no column 33)
+        out += [(float(f[0]), int(f[2]), float(f[28]), int(f[3]), float(f[32]) if len(f) >= 33 else 99.0)
+                for f in lines if len(f) >= 30 and int(f[1]) == nid]
         if len(lines) < 4000:
             return out
 
@@ -112,7 +121,15 @@ def main():
     if a.lift < 0:  # BUG-1357: under the host's ground
         under = sum(1 for v in g_air if v < -0.25) / max(len(g_air), 1)
         print(f'  under: guest rows more than 0.25 m under its ground {under:.0%}', flush=True)
-        ck(len(h_air) >= 30 and med(h_air) < a.lift + 0.3, f'the host\'s NPC #{nid} was under its ground ({med(h_air):.2f} m)')
+        # what the host sent (the guest's received states of that phase), not the host's drawn rows (see the docstring)
+        NF_AIR = 32  # net/protocol.h
+        sent = [r for r in gr if t_lift + 1.5 <= r[0] <= t_land - 0.5 and r[4] < 90]
+        sent_air = sum(1 for r in sent if r[3] & NF_AIR) / max(len(sent), 1)
+        h_sent = med([r[4] for r in sent])
+        print(f'  sent: {len(sent)} received host states, {sent_air:.0%} NF_AIR, the host\'s height median {h_sent:.2f} m '
+              f'(the host\'s drawn rows {med(h_air):.2f} m: its game grounds it before drawing)', flush=True)
+        ck(len(sent) >= 30 and sent_air >= AIR_SHARE and h_sent < a.lift + 0.3,
+           f'the host sent its NPC #{nid} under its ground ({h_sent:.2f} m, {sent_air:.0%} NF_AIR)')
         ck(len(g_air) >= 30, f'the guest drew the proxy in that phase ({len(g_air)} rows)')
         ck(abs(med(g_air)) < 0.3 and under <= UNDER_SHARE,
            f'the guest drew it on its own ground, not under it (median {med(g_air):.2f} m, {under:.0%} of the rows over '
