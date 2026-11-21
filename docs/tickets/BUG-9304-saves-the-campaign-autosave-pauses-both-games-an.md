@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages67-dev
 fixed_in:
 branch: fix/l47-saves
-commits:
+commits: 6ae83163
 tests:
 signature:
 docs: docs/re/tribe.md#tribe-entry-reloads, docs/re/creature.md#creature-save-steps
