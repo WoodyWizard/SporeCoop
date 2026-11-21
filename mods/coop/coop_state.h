@@ -306,6 +306,7 @@ void host_busy_pause_menu(bool shown);
 void host_busy_join(uint8_t id);
 void host_busy_message(uint8_t from, net::Reader& r);
 std::string host_busy_status();
+void host_busy_long_wait(const char* what); // BUG-9291, host: an editor is asked for: the guests wait longer
 
 // ---- defined in coop_cmds.cpp ----
 void register_commands_cell();
