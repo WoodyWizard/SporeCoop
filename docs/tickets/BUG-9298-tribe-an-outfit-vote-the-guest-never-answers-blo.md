@@ -57,7 +57,9 @@ Done (2026-11-20, fix/l47-births), switch `tribe.outfit_vote_timeout` (on; off =
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): not run (needs the outfitter vote with both editors).
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fixed on fix/l47-births (`tribe.outfit_vote_timeout`); built, not run in a game yet (the lead's two-player test).
+- 2026-11-21: live two-game QA (see Verification).

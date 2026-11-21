@@ -49,7 +49,9 @@ Observed: the code (`== 1` in both places, `!= 0` in player_rules). Inferred: th
 ## Verification
 no-fail-run: pending the lead's two-player QA (built only; a creature with a second social kind is needed, the
 fixture has only the sing). Test plan in the fix/l47-impress report.
+- Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): PASS (on): host log "player 1 answers npc 22: type 00000023 kind 4 to prompt 0 (type 00000023 kind 4): match, score 2.0 of 8.0", then 3.0 of 8.0; kind 2 answers arrived too ("another kind"). The guest creature has kinds 4, 1, 2 (`coop.social abil -1` key column). Off-run not done (67-dev sent only kind 1, the report). The third prompt asked for a kind the test creature lacks: no win.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on fix/l47-impress (built, not run in game).
+- 2026-11-21: live two-game QA (see Verification).

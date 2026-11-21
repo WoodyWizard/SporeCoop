@@ -84,7 +84,9 @@ Done on fix/l47-powers (built; not run in a game yet):
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): PASS (relay): guest `coop.tribe powers`: 0x36 unlocked (status 0); `coop.tribe powers use 0x36`: guest sent=1, host 00:39:06.035 "tribe: host: MSI's chief 13 uses power 0x36 (ability 15)", run=1; a second press 00:39:30 "refused ... the power is recharging". The power's effect was not seen on screen; Fire Bomb itself (a carnivore chief) not tested; off-run not done.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix/l47-powers: tribe.guest_powers; Civ and Space surveyed (plan above). Static analysis + build only.
+- 2026-11-21: live two-game QA (see Verification).

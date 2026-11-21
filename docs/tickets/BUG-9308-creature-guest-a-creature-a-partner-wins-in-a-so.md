@@ -45,7 +45,9 @@ also when it is impressed and posts no part-reward message for it (`coop.social 
 
 ## Verification
 no-fail-run: pending the lead's two-player QA (built only).
+- Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): not verified: clicks of the guest in social stance on the host's own pack members (npc 21, `family`, mode=4) never started a social game (engaged stayed -1), so the recruit path never ran.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on fix/l47-impress (built, not run in game).
+- 2026-11-21: live two-game QA (see Verification).

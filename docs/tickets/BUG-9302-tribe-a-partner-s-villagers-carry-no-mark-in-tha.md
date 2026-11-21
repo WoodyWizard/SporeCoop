@@ -42,7 +42,9 @@ partner_rings=0 and no ring.
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): partial: host `coop.status` partner_rings=3, guest 0 (the host village was off its screen); the rings were not seen in a screenshot (the test camera never reached the partner village).
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix on fix/l47-view (built, not run in a game yet; the lead runs the two-player test).
+- 2026-11-21: live two-game QA (see Verification).

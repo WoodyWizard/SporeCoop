@@ -31,6 +31,8 @@ Creature and Tribe hints print the time from it.
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): PASS: guest `coop.giveup down` next to the host: down 00:18:33.248, "MSI was revived." 00:18:38.252 (5.0 s). FAIL as the old behaviour with `coop.fix core.revive_5s off`: 00:19:19.314 -> 00:19:20.823 (1.5 s).
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-21: live two-game QA (see Verification).

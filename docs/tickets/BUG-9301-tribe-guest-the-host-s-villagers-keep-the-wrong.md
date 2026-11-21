@@ -50,6 +50,7 @@ guest's `coop.tribe species` shows the host's village with the host's key; off: 
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): seen: both games list tribe 0 291EE5B5 (host) and tribe 1 7CE63A2C (guest) after the entry; no outfit change tested. First run: NPC tribe 2 differed (host 291981F2, guest 7DF97DCB), fixed=0; see the history line on how to read it.
 
 ## History
 - 2026-11-20: opened.
@@ -61,3 +62,4 @@ guest's `coop.tribe species` shows the host's village with the host's key; off: 
   each tribe's `(host XXXXXXXX = YYYYYYYY here)`: equal to the members' key = the remap (same look, not a bug); members
   differing from the "here" key with `fixed=0` and `wanted=` rising = the species is missing on the guest (asked from
   the host every 3 s); neither = a bug to report.
+- 2026-11-21: live two-game QA (see Verification).

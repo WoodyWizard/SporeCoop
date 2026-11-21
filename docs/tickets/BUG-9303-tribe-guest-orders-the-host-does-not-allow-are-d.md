@@ -64,7 +64,9 @@ Done on fix/l47-powers (built; not run in a game yet):
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): partial: the refusal log works ("tribe: refused MSI's command kind=16 ...: the power is recharging"). Fishing, meat, eggs, bundles, raids, repair, taming and loose fruit not tested (they need right-clicks on targets).
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix/l47-powers: tribe.guest_orders, tribe.guest_chief (static analysis + build only; the two-player test is for the lead).
+- 2026-11-21: live two-game QA (see Verification).

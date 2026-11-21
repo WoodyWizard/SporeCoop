@@ -53,7 +53,9 @@ Done (2026-11-20, fix/l47-births), switch `tribe.guest_birth_gate` (on; off = re
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): partial: a guest baby with food: "A baby joined your partner's original species village."; without food two clear refusals ("Your village needs more food to add a baby."); a held birth during a save or the host's own birth was not reproduced.
 
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fixed on fix/l47-births (`tribe.guest_birth_gate`); built, not run in a game yet (the lead's two-player test).
+- 2026-11-21: live two-game QA (see Verification).

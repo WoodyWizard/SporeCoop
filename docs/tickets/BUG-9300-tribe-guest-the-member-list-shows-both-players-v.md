@@ -48,6 +48,7 @@ and after the host leaves to the menu and comes back; off: cards = own + host me
 ## Verification
 <!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
      or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): PASS (on): guest cards=3 player_members=3 cards_off=9 (first run) and cards_off=3 (second); the host (after ab158f07) cards=3 player_members=3 cards_off=6. The first run (before ab158f07) showed the guest's 2 villager cards on the host's roster. Off-run not done.
 
 ## History
 - 2026-11-20: opened.
@@ -58,3 +59,4 @@ and after the host leaves to the menu and comes back; off: cards = own + host me
   `tribe.swap_cards`; `coop.tribe perspective` reads `cards=` / `player_members=` on the host as well). Where the host's
   extra cards come from is not known (likely, not checked: the founding's SpawnNpcTribe(.., 3 members, ..) telling the
   stage of new members; no card-add function is known, so it is not stopped at the source).
+- 2026-11-21: live two-game QA (see Verification).

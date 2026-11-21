@@ -83,6 +83,7 @@ Built only (2026-11-20, `tools/build_windows.sh coop`, no new warnings); no game
   game in the next 2 minutes. FAIL expected after `coop.fix tribe.one_entry_reload off` (restore the fixture first: the
   stage end saves over the host's slot): that notice and a second loading screen on both games about 15-30 s after
   the first, entry_foundings=0.
+- Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): autosave PASS: `coop.autosave-test`: "autosave requested (silent save, BUG-9304)" 00:19:45.585, "campaign autosave confirmed" 00:19:46.644, no box, "silent autosaves 1, confirmed 1, pause-menu fallbacks 0"; an interval autosave in Tribe was silent too. Off: "the game saved box is up 2093 ms after the save: confirming it". 7M B: first run FAIL (two reloads per game, 79 s to Tribe; the founding waited for the paused game, fixed in 140df736); second run PASS: "founding waits: the game time is paused: founding anyway", the village made in the same 10 ms, "the Tribe entry's share goes out ... no checkpoint reload", one reload per game, both in Tribe 31 s after the OK, `entry_foundings=1`, no "refreshing" notice. Off-run of one_entry_reload = the first run's behaviour.
 
 ## History
 - 2026-11-20: opened.
@@ -97,3 +98,4 @@ Built only (2026-11-20, `tools/build_windows.sh coop`, no new warnings); no game
   entry's share is held, the founding does not wait for the pause (the pause bit does not stop the native forming,
   #tribe-form-needs), and every reason it waits for is logged once ("tribe: the Tribe entry's founding waits: ...":
   a cinematic, a save, the hut, a partner's creature settling with its key and age). Built, not run.
+- 2026-11-21: live two-game QA (see Verification).
