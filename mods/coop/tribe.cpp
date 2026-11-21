@@ -1811,6 +1811,9 @@ COOP_FIX("tribe.guest_chief", "BUG-9303", g_guest_chief_fix,
 // pen, and a partner's egg order (13) when it has no egg pen (+0x19C8), with the refusal logged. Off: the order runs
 // (the crash; live also for an egg: the egg node 0xDB1720 reads an object it looks up with 0xD99830(.., 0x175CDC9)
 // without a null check, and crashed the host at once for a partner's egg order with the guard off).
+// 2026-11-21 (fix/l47-pens, owner decision 8A A): partner villages have pens now (tribe.partner_pens): the guard passes
+// those orders when the village has the pen, and an egg order only on the member's own egg pen (the egg node takes its
+// target as an ornament, an egg pen; any other target is the same null read).
 static bool g_partner_pen_fix = true;
 COOP_FIX("tribe.partner_pen_guard", "BUG-9326", g_partner_pen_fix,
          "tribe: a partner's tame or egg order needs its village's animal or egg pen (a village without one crashed the host)");
@@ -6213,8 +6216,14 @@ static void host_command_run(uint8_t from, net::Reader& r, bool resumed)
         return;
     }
     void* target = forage_target ? forage_target : (kind == CMD_ACTION ? resolve_target(tgt) : nullptr);
+    // BUG-9326: an egg order (13) collects from an egg pen (the egg node 0xDB1720 takes its target as an ornament and
+    // reads its owner village's egg food +0x2C0): the sender's own village's pen is the one target of a party member's
+    // faction allowed (tribe.partner_pens)
+    void* own_village = g_partner_pens && loot && action == 13 && sender_seat >= 1 ? founder_village(sender_seat) : nullptr;
+    const bool own_egg_pen = own_village && target && target == F<void*>(own_village, 0x19C8);
     if (village_orders && (loot || tame) && (!target || !game::object_alive(target) || is_citizen(target) ||
-        g_order_roster.contains_faction(F<uint32_t>(target, 0x30)) || (tame && (game::health(target) <= 0 || F<uint8_t>(target, 0xB5E))))) {
+        (!own_egg_pen && g_order_roster.contains_faction(F<uint32_t>(target, 0x30))) ||
+        (tame && (game::health(target) <= 0 || F<uint8_t>(target, 0xB5E))))) {
         g_reject_why = "the target is gone, a member or a party member's"; // BUG-9303
         g_cmds_rejected++;
         return;
@@ -6380,6 +6389,11 @@ static void host_command_run(uint8_t from, net::Reader& r, bool resumed)
             const uintptr_t pen = action == 25 ? 0x19C4 : 0x19C8;
             if (!home || !skg::readable((uint8_t*)home + pen, 4) || !F<void*>(home, pen)) {
                 g_reject_why = action == 25 ? "the member's village has no animal pen (BUG-9326)" : "the member's village has no egg pen (BUG-9326)";
+                g_cmds_rejected++;
+                continue;
+            }
+            if (action == 13 && target != F<void*>(home, 0x19C8)) { // the egg node faults on any other target (BUG-9326)
+                g_reject_why = "an egg order's target is not the member's own egg pen (BUG-9326)";
                 g_cmds_rejected++;
                 continue;
             }
