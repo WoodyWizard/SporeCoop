@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in: unreleased
 branch: fix/w61-creature-d
-commits:
+commits: c67ac9af
 tests: creature_ufo_nomodel, space_npc_model, space_npc_model_coop
 signature:
 docs: docs/06-testing.md#testing-fixcheck-nan-claims

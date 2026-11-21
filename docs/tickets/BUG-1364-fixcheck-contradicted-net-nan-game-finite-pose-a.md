@@ -10,7 +10,7 @@ role:
 versions: unreleased
 fixed_in: unreleased
 branch: fix/w61-creature-d
-commits:
+commits: de235059 c67ac9af
 tests: net_nan, npc_nan_vel
 signature:
 docs: docs/06-testing.md#testing-fixcheck-nan-claims
