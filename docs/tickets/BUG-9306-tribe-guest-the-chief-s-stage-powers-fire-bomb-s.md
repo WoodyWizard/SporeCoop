@@ -102,3 +102,9 @@ Done on fix/l47-powers (built; not run in a game yet):
   visual-only copy whose own update is held, plan), the tamed animals' list (the TribalGame's one list; their political
   id already follows the acting chief, ~).
 - 2026-11-21: second live run, all six powers run for a partner (see Verification).
+- 2026-11-21: Civ (owner: "Also test the Civ superweapons like MOAB"): `civ.guest_superweapons` on fix/l47-powers: the
+  host fires a partner's superweapon request with the sender's own seat's nation (its unlocks, money, cooldown, cities;
+  Ghidra: FireSuperweapon / CanUse need no player nation, only the history record and stats event are player-only,
+  docs/re/civ.md#civ-guest-superweapons) and tells the sender when its nation cannot fire it. Tools: `coop.civ sw` (per
+  nation), `coop.civ swgrant <seat> <type> [money]`. Open: the partner nation's card-based unlocks come from the host's
+  cPlayer (RefreshUnlocks); the global types 2/5/8 reach the other founders' cities (owner decision). Built, not run.

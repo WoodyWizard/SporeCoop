@@ -3487,6 +3487,41 @@ static bool SK_THISCALL h_FireSW(void* civ, int type, const float* target)
     return false;
 }
 
+// BUG-9306 (owner: "Also test the Civ superweapons like MOAB"): a partner's superweapon or archetype ability (the
+// game's 12 types, FireSuperweapon) was fired by the host with player_civ(), the HOST's nation: the host's unlocks,
+// money, cooldown and launch city, also with civ.multi_founders (one nation per founder). Ghidra (GOG 2024 0xBF8BB0,
+// docs/re/civ.md#civ-guest-superweapons): FireSuperweapon works on any cCivilization: CanUse of that nation (unlocked
+// +0x484, money +0x98, cooldown +0x490, the once-only global flag +0x4CC), the launch from that nation's own city
+// nearest to the target, the cost taken from that nation's money, its cooldown restarted; only the history record and
+// the stats event at the end are made for the player's nation alone. On: the host fires a partner's request with the
+// sender's own seat's nation (CivByPol of its founder faction) and tells the sender when that nation cannot fire it
+// (not unlocked, money, cooldown, a global weapon used). `coop.fix civ.guest_superweapons off`: the host's nation.
+static bool g_guest_sw_fix = true;
+COOP_FIX("civ.guest_superweapons", "BUG-9306", g_guest_sw_fix,
+         "civ: a partner's superweapon fires from the partner's own nation (its unlocks, money, cooldown and cities)");
+static uint32_t g_sw_own_nation, g_sw_nation_refused;
+static std::string g_sw_last_line; // the last guest superweapon request as the host handled it (coop.civ sw)
+// the nation founder `player` commands (host; civ.multi_founders), null: none
+static void* seat_nation_of(uint8_t player)
+{
+    if (!g_multi_founders || !a_CivByPol || !nm()) return nullptr;
+    const int seat = party::founder_seat_of(g_founder_nations, player, founder_legacy_match);
+    if (seat < 0 || seat >= (int)civ_seats::play_seats(g_founder_nations) || !g_founder_nations.entries[seat].faction)
+        return nullptr;
+    return thiscall<void*>(a_CivByPol, nm(), g_founder_nations.entries[seat].faction);
+}
+// why `nation` cannot fire `type` now (empty: it can), as the game's CanUse 0xBF8B40 decides
+static std::string sw_refusal(void* nation, int type)
+{
+    static uintptr_t can_use = H->sym("Simulator::cCivilization::CanUseSuperweapon");
+    if (!nation || type < 0 || type > 11) return "no nation";
+    if (!can_use || thiscall<bool>(can_use, nation, type)) return "";
+    char b[180];
+    snprintf(b, sizeof b, "superweapon: your nation cannot fire superweapon %d now (unlocked=%d money=%.0f global_used=%d; or it is recharging)",
+             type, (int)F<uint8_t>(nation, 0x484 + type), (double)F<float>(nation, 0x98), (int)F<uint8_t>(nation, 0x4CC));
+    return b;
+}
+
 static void host_superweapon_request(uint8_t from, net::Reader& r)
 {
     int type = (int)r.u32();
@@ -3496,6 +3531,24 @@ static void host_superweapon_request(uint8_t from, net::Reader& r)
     if (!r.ok() || !pc || !C.vote || type < 0 || type > 11 || !net::finite3(pos))
         return;
     g_sw_last_req = type;
+    if (g_guest_sw_fix && g_multi_founders && from) { // BUG-9306: the sender's own nation fires it
+        void* own = seat_nation_of(from);
+        const std::string why = own ? sw_refusal(own, type) : "superweapon: you command no nation of the party";
+        char b[260];
+        snprintf(b, sizeof b, "host: %s's superweapon %d nation=%p (host's %p): %s", C.sess->name_of(from).c_str(), type, own, pc,
+                 why.empty() ? "fires" : why.c_str());
+        g_sw_last_line = b;
+        H->log(M, SK_INFO, "civ: %s (BUG-9306)", b);
+        if (!why.empty()) {
+            ++g_sw_nation_refused;
+            net::Writer nw;
+            nw.str8(why);
+            C.sess->send_reliable_to(from, net::MSG_NOTICE, nw);
+            return;
+        }
+        ++g_sw_own_nation;
+        pc = own;
+    }
     if (!settings::on(settings::kCivSwVote)) { // F3 (BUG-0768): no vote, the guest's superweapon fires now
         {
             callguard::Hold sw_bypass(g_sw_bypass);
@@ -8841,6 +8894,41 @@ std::string debug(const std::vector<std::string>& a)
         char b[192];
         snprintf(b, sizeof b, "sw last_request=%d fired=%d refused=%u fix=%d orphans_given=%u civ=%p", g_sw_last_req,
                  g_sw_fired, g_sw_refused, (int)g_fix_sw_vote, g_orphans_given, g_ok && game::mode_id() == modes::kCiv && nm() ? player_civ() : nullptr);
+        // BUG-9306: each founder nation's superweapon state (money +0x98, unlocked[12] +0x484, the global flag +0x4CC, the
+        // game's CanUse per type) and the last partner request
+        std::string out = b;
+        if (g_ok && game::mode_id() == modes::kCiv && nm() && a_CivByPol)
+            for (size_t seat = 0; seat < civ_seats::play_seats(g_founder_nations); ++seat) {
+                void* n = g_founder_nations.entries[seat].faction ? thiscall<void*>(a_CivByPol, nm(), g_founder_nations.entries[seat].faction) : nullptr;
+                if (!n) continue;
+                std::string unl, can;
+                for (int t = 0; t < 12; ++t) {
+                    unl += F<uint8_t>(n, 0x484 + t) ? '1' : '0';
+                    can += sw_refusal(n, t).empty() ? '1' : '0';
+                }
+                char l[200];
+                snprintf(l, sizeof l, "\nnation seat %u %p money=%.0f unlocked=%s can=%s global_used=%d", (unsigned)seat, n,
+                         (double)F<float>(n, 0x98), unl.c_str(), can.c_str(), (int)F<uint8_t>(n, 0x4CC));
+                out += l;
+            }
+        snprintf(b, sizeof b, "\nguest_superweapons fix=%d own_nation=%u refused=%u last: ", (int)g_guest_sw_fix, g_sw_own_nation,
+                 g_sw_nation_refused);
+        return out + b + g_sw_last_line;
+    }
+    // swgrant <seat> <type> [money]: tests (BUG-9306, host), founder seat's nation gets superweapon <type> unlocked
+    // (+0x484; the game's RefreshUnlocks may take it back at the next city change) and [money] added to +0x98
+    if (a.size() >= 3 && a[0] == "swgrant" && is_host() && g_ok && game::mode_id() == modes::kCiv && nm() && a_CivByPol) {
+        const size_t seat = (size_t)atoi(a[1].c_str());
+        const int t = atoi(a[2].c_str());
+        if (seat >= civ_seats::play_seats(g_founder_nations) || t < 0 || t > 11) return "swgrant <seat> <type 0..11> [money]";
+        void* n = thiscall<void*>(a_CivByPol, nm(), g_founder_nations.entries[seat].faction);
+        if (!n) return "no nation for that seat";
+        F<uint8_t>(n, 0x484 + t) = 1;
+        if (a.size() >= 4) F<float>(n, 0x98) = F<float>(n, 0x98) + (float)atof(a[3].c_str());
+        const std::string why = sw_refusal(n, t);
+        char b[260];
+        snprintf(b, sizeof b, "seat %u nation %p: superweapon %d unlocked, money %.0f, can fire: %s", (unsigned)seat, n, t,
+                 (double)F<float>(n, 0x98), why.empty() ? "yes" : why.c_str());
         return b;
     }
     if (a.size() >= 2 && a[0] == "super") { // super <type> [x y z]: fire a superweapon (through the vote)
