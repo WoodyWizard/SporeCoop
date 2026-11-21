@@ -2,6 +2,11 @@
 // functions and the command registrations of sporekit_mod_main, which calls the register_commands_* functions at the
 // places the registrations had (the same order: SporeKit keeps the commands by name, the module inits between them stay
 // where they were). Commands that are the whole interface of a recorder (coop.track, coop.bodyrec) stay next to it.
+#include "identity.h"
+#include "party.h"
+#include "own_progress.h"
+#include "home_nests.h"
+#include "start_choice.h"
 #include "coop_state.h"
 #include "net/compat.h"
 #include "net/kick.h"
@@ -1192,6 +1197,44 @@ void register_commands_core()
                    settings::command, nullptr, MT);
     H->command_add(M, "coop.find", "coop.find [colors | color <name|0..7> | project x y z | labels] - F2: the arrows to the partners of the last frame, the player colours, pick a colour",
                    pfind::command, nullptr, MT);
+    H->command_add(M, "coop.identity", "coop.identity - the persistent player identities (BUG-9258): this profile's, and the players' the host knows",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s", identity::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.party", "coop.party - the host: this planet's party, one seat per player who played it (BUG-9260)",
+                   [](void*, int, const char* const*, SkOut* out) {
+                       SAY("%s", party::status().c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.progress",
+                   "coop.progress [resync] - own progress (BUG-9265): this game's own DNA / bar / food, every player's bar, the host's records; resync: ask the host for our values again",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       if (argc > 1 && !strcmp(argv[1], "resync"))
+                           own_progress::resync();
+                       SAY("%s", own_progress::status().c_str());
+                       SAY("  dna.cpp: totals_ignored=%u gains_kept=%u hunts_given=%u end_clicks_held=%u\n", g_own_totals_ignored,
+                           g_own_gains_kept, g_own_hunts_given, g_end_clicks_held);
+                       return 0;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.start",
+                   "coop.start [pick <herb|carn|omni> <name> [colour] | ask <player> | forget <player>] - BUG-9273: every player's own start in a new Cell game (status; pick: a guest's answer without the window; host tests: ask again, forget a choice)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       std::string o;
+                       int rc = start_choice::command(argc, argv, o);
+                       SAY("%s", o.c_str());
+                       return rc;
+                   },
+                   nullptr, MT);
+    H->command_add(M, "coop.homenests", "coop.homenests [make <seat> | extinct <seat>] - the host: every seat's own nest (BUG-9262)",
+                   [](void*, int argc, const char* const* argv, SkOut* out) {
+                       SAY("%s", home_nests::debug(std::vector<std::string>(argv + 1, argv + argc)).c_str());
+                       return 0;
+                   },
+                   nullptr, MT);
     H->command_add(M, "coop.live", "coop.live - tests (BUG-0426): the object list of this frame (game::listed: walks, hits, destroys seen)",
                    [](void*, int, const char* const*, SkOut* out) {
                        SAY("%s\n", game::live_status().c_str());

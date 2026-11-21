@@ -9302,3 +9302,16 @@ BUG-1328 (docs/re/creations.md#creations-props-key0), the 0.7.15 line's form of 
 * A lane whose profile already has such a list (space_captain_none names a captain whose species cannot be copied; see
   the RE section) passes the other end-of-Tribe tests only with the fix on; a profile can be checked by the .prop
   records of its Pollination.package (a clean profile has none).
+
+## The own start in a new Cell game (2026-11-20, feat/start-choice)
+<a id="testing-start-choice"></a>
+
+tools/tests/coop_start_choice.py (BUG-9273): empty profiles, the host's new Cell game through the game's wizard
+(new_stage_game.py), the guest joins; the guest's window must show "Your own cell", the test clicks Carnivore, types
+the name, steps the colour and clicks Start by the widgets' screen rectangles (`coop.uistate widgets`: the captions;
+the name field starts as "<player>ite"); then the host's game: the guest's cell model and mouth flags (`coop.pool
+diet`), its colour (`coop.find colors`), its name tag (`coop.find labels`); the guest eats meat, not plants (own points,
+up to 4 meats: a single swim can miss); its own Cell card (`coop.cards cell`) and the host's copy of its report; a
+rejoin asks nothing and brings the cell and colour back. `--part off`: cell.start_choice off, no question in 60 s.
+Typing: `key backspace tap` erases (SporeKit `key 8` is the digit 8), `text <s>` types. Not run in the Linux lab yet;
+the same steps ran on lane B (Windows, 1024x768).

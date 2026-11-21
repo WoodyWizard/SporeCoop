@@ -20,6 +20,8 @@
 #include "dna_route.h"
 #include "dna_ledger.h"
 #include "dna_pace.h"
+#include "own_progress_logic.h"
+#include "start_choice_logic.h"
 #include "host_world.h"
 #include "settings_core.h"
 #include "find_core.h"
@@ -411,6 +413,173 @@ static void test_dna_ledger()
     m.add(Cause::Meal, 1, 4, 0.0);
     m.add(Cause::Meal, 1, 4, 5.0);
     CHECK(m.due(10.0).empty() && m.due(kGatherMeals).size() == 1);
+}
+
+static void test_start_choice()
+{
+    printf("start choice: a guest's own cell, its name, its record by identity (start_choice_logic.h, BUG-9273)\n");
+    using namespace start_choice;
+    // the diets' game cells and Cell cards (docs/re/cell.md#cell-start-choice; cards.cpp's card ids)
+    CHECK(kDietCell[kHerbivore] == 0xE219E5D2 && kDietCell[kCarnivore] == 0x252A132F && kDietCell[kOmnivore] == 0x0C176D89);
+    CHECK(kDietCard[kHerbivore] == 0xA8EC6F99 && kDietCard[kCarnivore] == 0xCFB01B93 && kDietCard[kOmnivore] == 0x5ECE4770);
+    CHECK(diet_find("carn") == kCarnivore && diet_find("omnivore") == kOmnivore && diet_find("0") == kHerbivore &&
+          diet_find("fish") == -1);
+    CHECK(diet_of_cell(0x252A132F) == kCarnivore && diet_of_cell(0x2DDF0D92) == -1);
+    // the name: trimmed, printable, 24 characters at most, UTF-8 kept whole
+    CHECK(clean_name("  Glorbo  ") == "Glorbo" && clean_name("a\tb\x7F") == "ab" && clean_name("   ").empty());
+    CHECK(clean_name(std::string(40, 'x')).size() == kNameMax);
+    CHECK(clean_name("\xD0\x91\xD0\xBE\xD0\xB1") == "\xD0\x91\xD0\xBE\xD0\xB1"); // Bob in Cyrillic: 3 characters
+    CHECK(clean_name("ab\xD0") == "ab");                                            // a cut character goes
+    Choice c{kCarnivore, 3, "Glorbo"};
+    CHECK(valid(c, 8) && !valid(Choice{kCarnivore, 8, "Glorbo"}, 8) && !valid(Choice{3, 0, "Glorbo"}, 8) &&
+          !valid(Choice{kHerbivore, -1, ""}, 8) && valid(Choice{kHerbivore, -1, "Ann"}, 8) &&
+          !valid(Choice{kHerbivore, 0, " Ann"}, 8));
+    // the answer and the table on the wire
+    net::Writer w;
+    write_choice(w, c);
+    net::Reader r(w.data.data(), w.data.size());
+    Choice back;
+    CHECK(read_choice(r, back, 8) && back == c && !r.left());
+    net::Writer t;
+    write_table(t, {{1, c}, {2, Choice{kOmnivore, -1, "Ann"}}});
+    net::Reader tr(t.data.data(), t.data.size());
+    std::vector<Row> rows;
+    CHECK(tr.u8() == kTable && read_table(tr, rows, 8) && rows.size() == 2 && rows[1].c.diet == kOmnivore &&
+          rows[1].c.color == -1 && rows[0].c == c);
+    // the body colour (BUG-9273 follow-up): the model's runs unpacked and packed again, its base colour at byte 50
+    {
+        std::vector<uint8_t> u, back;
+        CHECK(unpack_runs({1, 0xFE, 3, 0xFE, 0, 7}, u) && u == std::vector<uint8_t>({1, 1, 1, 1, 0xFE, 7}));
+        CHECK(!unpack_runs({0xFE, 3}, u) && !unpack_runs({5, 0xFE}, u));
+        // a packed record: the magic, zeros as a run, three colour floats written literally, a run of 0x00 after them
+        std::vector<uint8_t> packed = {0xD3, 0x7E, 0x65, 0x48, 0x00, 0xFE, 44}; // decoded: 4 + 1 + 44 = 49 bytes
+        packed.push_back(0x07);                                                   // decoded byte 49
+        for (int i = 0; i < 3; i++) {
+            float half = 0.5f;
+            uint8_t fb[4];
+            memcpy(fb, &half, 4);
+            packed.insert(packed.end(), fb, fb + 4); // decoded 50..61
+        }
+        packed.push_back(0x2A);
+        packed.push_back(0xFE);
+        packed.push_back(0x00); // a literal 0xFE
+        std::vector<uint8_t> painted;
+        CHECK(paint_body(packed, 4, painted) && unpack_runs(painted, back) && unpack_runs(packed, u) && back.size() == u.size());
+        float r, g, b;
+        memcpy(&r, &back[kBodyAt], 4);
+        memcpy(&g, &back[kBodyAt + 4], 4);
+        memcpy(&b, &back[kBodyAt + 8], 4);
+        CHECK(r == kBody[4].r && g == kBody[4].g && b == kBody[4].b && back[62] == 0x2A && back[63] == 0xFE && back[49] == 0x07);
+        CHECK(!paint_body(packed, kBodies, painted) && !paint_body({1, 2, 3}, 0, painted));
+        std::vector<uint8_t> in_run = {0xD3, 0x7E, 0x65, 0x48, 0x3F, 0xFE, 60}; // the colour inside a run: not painted
+        CHECK(!paint_body(in_run, 0, painted));
+        CHECK((body_instance(0x252A132F, 0) >> 24) == 0x7B && body_instance(0x252A132F, 0) != body_instance(0x252A132F, 1));
+        CHECK(body_argb(0) == 0xFFDB1F1F && body_argb(-1) == 0 && body_find("blue") == 4 && body_find("natural") == kNoBody);
+        Choice cb{kCarnivore, 1, "Glorbo", 4};
+        net::Writer bw;
+        write_choice(bw, cb);
+        net::Reader br(bw.data.data(), bw.data.size());
+        Choice cb2;
+        CHECK(read_choice(br, cb2, 8) && cb2 == cb && !valid(Choice{kCarnivore, 1, "Glorbo", kBodies}, 8));
+    }
+    // the side file: the first answer of a player stays; another key is another player; a broken file is refused
+    std::vector<Record> recs;
+    CHECK(record_once(recs, "id:0000000000000001", c) && !record_once(recs, "id:0000000000000001", Choice{kOmnivore, 1, "X"}));
+    CHECK(record_once(recs, "name:Ann", Choice{kHerbivore, -1, "Ann"}) && !record_once(recs, "", c));
+    std::vector<uint8_t> f = encode_file(recs);
+    std::vector<Record> got;
+    CHECK(decode_file(f, got, 8) && got == recs && find_record(got, "id:0000000000000001")->c.name == "Glorbo");
+    f.push_back(0);
+    CHECK(!decode_file(f, got, 8));
+    f.pop_back();
+    f[0] ^= 1;
+    CHECK(!decode_file(f, got, 8));
+    // who is asked: a seated guest in the host's Cell world, nothing recorded, not asked in this join
+    AskState s;
+    s.cell = s.seated = s.in_world = true;
+    CHECK(should_ask(s));
+    s.recorded = true;
+    CHECK(!should_ask(s)); // a rejoin with a record: no question
+    s.recorded = false;
+    s.asked = true;
+    CHECK(!should_ask(s));
+    s.asked = false;
+    s.setting = false;
+    CHECK(!should_ask(s)); // the setting off: 0.7.15
+    s.setting = true;
+    s.cell = false;
+    CHECK(!should_ask(s)); // Creature and later: no question
+}
+
+static void test_own_progress()
+{
+    printf("own progress: every player's own bar, the stage end together, the side file (own_progress_logic.h, BUG-9265)\n");
+    using namespace own_progress;
+    Values c;
+    c.mode = kCell;
+    c.food = 999;
+    CHECK(!full(c) && percent(c) == 99);
+    c.food = 1000;
+    CHECK(full(c) && percent(c) == 100);
+    Values k;
+    k.mode = kCreature;
+    k.level = 3;
+    CHECK(!full(k) && percent(k) == 75);
+    k.level = 4;
+    CHECK(full(k));
+    // the stage end: every player of the stage played now, at least two
+    std::vector<Player> ps = {{0, "Host", true, kCell, true, 100}, {1, "Bob", true, kCell, false, 64}};
+    std::string w;
+    CHECK(!all_full(ps, kCell, &w) && w == "Bob 64%");
+    ps[1].full = true;
+    CHECK(all_full(ps, kCell, &w) && w.empty());
+    CHECK(!all_full(ps, kCreature, &w)); // a report of another stage does not count
+    ps[1] = {1, "Bob", false, 0, false, 0};
+    CHECK(!all_full(ps, kCell, &w) && w == "Bob (not known yet)");
+    CHECK(!all_full({{0, "Host", true, kCell, true, 100}}, kCell)); // alone: no "together"
+    // the wire
+    net::Writer wr;
+    Values v;
+    v.mode = kCreature;
+    v.dna = 42;
+    v.bar = 310;
+    v.level = 2;
+    write_values(wr, v);
+    net::Reader rd(wr.data.data(), wr.data.size());
+    Values back;
+    CHECK(read_values(rd, back) && back == v && rd.left() == 0);
+    Values bad = v;
+    bad.mode = 7;
+    net::Writer wb;
+    write_values(wb, bad);
+    net::Reader rb(wb.data.data(), wb.data.size());
+    CHECK(!read_values(rb, back) && back == v);
+    // the side file
+    std::vector<Record> recs;
+    record_of(recs, "id:1").v = v;
+    record_of(recs, "name:Ann").v = c;
+    record_of(recs, "id:1").v.dna = 50;
+    CHECK(recs.size() == 2 && recs[0].v.dna == 50);
+    std::vector<Record> got;
+    CHECK(decode_file(encode_file(recs), got) && got == recs);
+    auto bytes = encode_file(recs);
+    bytes.push_back(0);
+    CHECK(!decode_file(bytes, got) && got == recs); // trailing bytes: refused, nothing changed
+    CHECK(!decode_file({1, 2, 3}, got));
+    // the restore: the record of this stage only
+    CHECK(restore_for(recs, "id:1", kCreature) && restore_for(recs, "id:1", kCreature)->dna == 50);
+    CHECK(!restore_for(recs, "id:1", kCell) && !restore_for(recs, "id:2", kCreature));
+    // Creature: a higher bar through the game's gain, a lower one written; the DNA set last
+    Values want;
+    want.mode = kCreature;
+    want.dna = 20;
+    want.bar = 300;
+    CreatureApply a = creature_apply(250, want);
+    CHECK(a.up == 50 && std::isnan(a.bar_write) && a.dna == 20);
+    a = creature_apply(400, want);
+    CHECK(a.up == 0 && a.bar_write == 300);
+    a = creature_apply(NAN, want);
+    CHECK(a.up == 0 && std::isnan(a.bar_write));
 }
 
 static void test_dna_pace()
@@ -1107,8 +1276,9 @@ static void test_manifest()
     for (int t = 0; t < 256; t++)
         known += msg_info((uint8_t)t).known;
     // types added after 0.7.14 (a 0.7.14 peer ignores them, B6): MSG_HOST_BUSY 70 (BUG-1142), MSG_TRIBE_ANIM 71 (C7,
-    // BUG-1160), MSG_CELL_MATE 72 (BUG-1246)
-    const std::set<int> added_types = {70, 71, 72};
+    // BUG-1160), MSG_CELL_MATE 72 (BUG-1246), MSG_IDENTITY 73 (BUG-9258, the Lineages port), MSG_OWN_CARDS 75 (BUG-9263; 74 is MSG_CIV_WALLET of feat/civ-own-money), MSG_PROGRESS 77 (BUG-9265),
+    // MSG_START_CHOICE 79 (BUG-9273)
+    const std::set<int> added_types = {70, 71, 72, 73, 75, 77, 79};
     CHECK(known == (int)(sizeof golden0714::kTypes / sizeof golden0714::kTypes[0] + added_types.size()));
     CHECK(MSG_HOST_BUSY == 70 && msg_info(70).known && msg_dir(70) == MsgDir::Host &&
           host_world::msg_class(70) == host_world::MsgClass::Session && dispatch_route(70, false) == Route::HostBusy &&
@@ -1119,6 +1289,18 @@ static void test_manifest()
     CHECK(MSG_CELL_MATE == 72 && std::string(msg_info(72).name) == "CELL_MATE" && msg_info(72).family == Family::cell &&
           msg_dir(72) == MsgDir::Guest && host_world::msg_class(72) == host_world::MsgClass::HostWorld &&
           dispatch_route(72, true) == Route::Cell && dispatch_route(72, false) == Route::None);
+    CHECK(MSG_IDENTITY == 73 && std::string(msg_info(73).name) == "IDENTITY" && msg_info(73).family == Family::session &&
+          msg_dir(73) == MsgDir::Any && host_world::msg_class(73) == host_world::MsgClass::Session &&
+          dispatch_route(73, true) == Route::Identity && dispatch_route(73, false) == Route::Identity);
+    CHECK(MSG_PROGRESS == 77 && std::string(msg_info(77).name) == "PROGRESS" && msg_info(77).family == Family::session &&
+          msg_dir(77) == MsgDir::Any && host_world::msg_class(77) == host_world::MsgClass::Session &&
+          dispatch_route(77, true) == Route::Progress && dispatch_route(77, false) == Route::Progress);
+    CHECK(MSG_OWN_CARDS == 75 && std::string(msg_info(75).name) == "OWN_CARDS" && msg_info(75).family == Family::session &&
+          msg_dir(75) == MsgDir::Any && host_world::msg_class(75) == host_world::MsgClass::Session &&
+          dispatch_route(75, true) == Route::OwnCards && dispatch_route(75, false) == Route::OwnCards);
+    CHECK(MSG_START_CHOICE == 79 && std::string(msg_info(79).name) == "START_CHOICE" && msg_info(79).family == Family::session &&
+          msg_dir(79) == MsgDir::Any && host_world::msg_class(79) == host_world::MsgClass::Session &&
+          dispatch_route(79, true) == Route::StartChoice && dispatch_route(79, false) == Route::StartChoice);
     for (int t : added_types)
         for (auto& g : golden0714::kTypes)
             CHECK(g.id != t);
@@ -1311,6 +1493,8 @@ int main(int argc, char** argv)
     test_give_pick_leave();
     test_dna_route();
     test_dna_pace();
+    test_own_progress();
+    test_start_choice();
     test_dna_ledger();
     test_host_world();
     test_settings();

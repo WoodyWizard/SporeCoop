@@ -1,5 +1,6 @@
 #include "cellsync_internal.h"
 #include "effects.h"
+#include "own_progress.h"
 
 namespace cellsync {
 
@@ -1069,7 +1070,7 @@ static unsigned g_spends_sent, g_spends_got, g_spends_owed_paid, g_spends_acked;
 
 static void spend_in(int from, int spent, uint32_t meal, bool cell)
 {
-    if (!is_host() || !g_fix_guest_spend || spent == 0)
+    if (!is_host() || !g_fix_guest_spend || spent == 0 || own_progress::active()) // BUG-9265: the guest's own DNA
         return;
     g_spends_got++;
     uint8_t* s = cell && H->time_seconds() - g_cell_entered_at > 1.0 ? S() : nullptr;
@@ -1139,7 +1140,7 @@ void spend_measure()
     int d = F<int32_t>(s, 0x2C) - g_own_ed_before;
     H->log(M, SK_INFO, "cell: our own editor: spent %d -> %d (%+d)%s (BUG-1249)", g_own_ed_before, F<int32_t>(s, 0x2C), d,
            !g_fix_guest_spend ? ", not sent (cell.guest_spend off)" : d ? ", sent to the host" : "");
-    if (!g_fix_guest_spend || !d || !C.sess || !C.sess->connected())
+    if (!g_fix_guest_spend || !d || !C.sess || !C.sess->connected() || own_progress::active()) // BUG-9265: ours
         return;
     net::Writer w;
     w.u32(0); // no food
@@ -1481,7 +1482,7 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             if (c) {
                 g_n.eats_in++;
                 o_Destroy(idx, arg & 1, 0.f, 0); // with the loot the game asked for on the guest
-                if (food)
+                if (food && !own_progress::active()) // BUG-9265: the guest's meal is its own food
                     food_in_step([food, plant] { o_AddFood(food, plant); });
             } else if (food) {
                 // somebody ate it first: no points for it. The guest already counted them: our total
@@ -1517,7 +1518,8 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             FoodMsg f = read_food(r);
             if (f.has_spent)
                 spend_in(from, f.spent, f.meal, true); // BUG-1249
-            if (f.valid && f.amount > -1000 && f.amount < 1000 && !(f.has_spent && f.amount == 0))
+            if (f.valid && f.amount > -1000 && f.amount < 1000 && !(f.has_spent && f.amount == 0) &&
+                !own_progress::active()) // BUG-9265: a guest's meal is its own food (acknowledged, not added here)
                 food_in_step([from, f] {
                     uint8_t* s0 = S();
                     int before = s0 ? F<int32_t>(s0, 0x1C) : 0;
@@ -1538,6 +1540,10 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             bool has_ack = r.ok();
             if (C.pace_heard) // BUG-0510: the host's pace divisor (an older host sends none: the full sum)
                 C.pace_heard(r.ok() && r.left() >= 1 ? r.u8() : 1);
+            if (own_progress::active()) { // BUG-9265: our food is our own: the host's total only acknowledges our meals
+                g_meals.diff(food, has_ack, ack, 0, 0, g_fix_foodseq);
+                return;
+            }
             // the difference is taken when it is applied (in the step): two totals before a step apply once
             food_in_step([food, plant, ack, has_ack] {
                 uint8_t* s = S();
@@ -1861,6 +1867,27 @@ bool food_total(int& food)
     if (!s)
         return false;
     food = F<int32_t>(s, 0x1C);
+    return true;
+}
+
+// BUG-9265 (own progress): a guest's own food back after a copy of the host's world opened. Through the game's
+// AddFoodPoints by the difference (the level changes run as for a meal), in the cell step, not counted as a meal of
+// ours (the food guard: not paced, not sent)
+bool set_food_total(int food)
+{
+    if (!(in_cell() && S() && avatar()))
+        return false;
+    food_in_step([food] {
+        uint8_t* s = S();
+        if (!s)
+            return;
+        int diff = std::clamp(food, 0, 1000) - F<int32_t>(s, 0x1C);
+        if (!diff)
+            return;
+        callguard::Hold food_guard(g_food_guard);
+        o_AddFood(diff, false);
+        H->log(M, SK_INFO, "cell: own food set to %d (%+d, own progress BUG-9265)", F<int32_t>(s, 0x1C), diff);
+    });
     return true;
 }
 

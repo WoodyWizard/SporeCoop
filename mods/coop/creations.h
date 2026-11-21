@@ -38,11 +38,14 @@ struct Ctx {
     std::function<std::string(uint8_t)> name_of;
     std::function<void(uint8_t player)> appearance_changed; // rebuild that player's puppet
     std::function<void()> cell_rebuilt; // the own cell hatched again: move it next to a partner
+    std::function<uint32_t()> host_world; // guest (BUG-9267): the world the host plays (its save name crc), 0 unknown
 };
 
 bool init(const SkHost* host, SkMod* mod, Ctx ctx);
 bool key_known(const Key& k); // some registered database has this resource (RM FindRecord)
 void tick(double now);
+// BUG-9258 (Lineages): this profile's SporeCoop folder next to EditorSaves.package (identity.bin lives there), "" while not known
+std::wstring coop_dir();
 void on_message(uint8_t type, uint8_t from, net::Reader& r);
 void on_player_join(uint8_t id); // host: everybody's creations to the newcomer
 void on_session_end();
@@ -62,6 +65,10 @@ void* player_species(uint8_t player);
 // not build these NPCs at all (an ally in the host's pack was invisible, player report 2026-10-25).
 void want_species(const Key& k); // guest: this NPC species is unknown here
 bool species_pending(const Key& k); // guest: asked, no answer yet
+// BUG-9280: a guest's own cell is being made its land creature (its landfall editor waits for it); the state for
+// coop.creations
+bool landfall_pending();
+std::string landfall_status();
 bool avatar_swap_settling(double now); // BUG-0318: the own avatar got a new body moments ago (editors wait)
 
 // Species of the host's world that are the host's own creations (its My Creations). Creation ids
@@ -113,9 +120,30 @@ void choose(Kind k, const Key& key); // {} = keep the world's own
 // UI: the next / previous own creation
 void cycle(Kind k, int dir);
 
+// BUG-9273: a creation the mod made (the start choice's coloured copy of a game cell): its records under `key`, kept
+// in a package of ours (made_<kind>_<key>.package next to EditorSaves) so this game builds it, and sent as this player's
+// own creation while it is chosen (the bundle carries the records: every game registers them under the one key).
+// false and *err: no model record in recs, or the package could not be written
+bool make_creation(Kind k, const Key& key, const std::vector<dbpf::Record>& recs, std::string* err);
+bool made_creation(const Key& key); // this game made `key` in this run
+// the records some registered database has for a key (My Creations, the game's packages, ours)
+bool records_from_game(const Key& k, std::vector<dbpf::Record>& out);
+
 std::string status();
 // support trace (trace.h): the own creation of the stage, where the choice came from, what the avatar has
 std::string trace_line(Kind k);
 std::string debug(const std::vector<std::string>& args);
+
+// BUG-9262 (Lineages): a free note of the mod per planet (worlds.ini [section] <world crc> = value, ASCII; "" = none)
+std::string world_note(const char* section, uint32_t world);
+void world_note_set(const char* section, uint32_t world, const std::string& value);
+
+// BUG-9261 (Lineages port phase 3, docs/re/creations.md#creations-guest-archive): host: `guest`'s own creature is
+// archived with the planet `planet` (world::current_game_key(); a premade needs none), so a nest of it loads while
+// that player is offline. restore_guest_model registers every archive of a planet (the LoadGameByName hook does it
+// before each load; false: some could not be, err says which).
+bool archive_guest_model(uint8_t guest, const std::string& planet, std::string& err);
+bool restore_guest_model(const std::string& planet, std::string& err);
+std::string archive_status();
 
 } // namespace creations
