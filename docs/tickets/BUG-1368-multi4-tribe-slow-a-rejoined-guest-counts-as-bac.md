@@ -36,9 +36,10 @@ again ~10 s later, inside the reload (0%). The world share on a rejoin in place 
 the host's current world).
 
 ## Fix
-coop_multi.py `settled()` / `wait_all()`: a guest is back when the host sees it together, the host has no share for
-it (`share for N`, `sending world to N`), the guest's own game receives no world (`receiving world`) and has its
-avatar, on 3 polls in a row (about 1 s apart: the stage change follows the end of the host's share lines by up to a
+coop_multi.py `settled()` / `wait_all()`: a guest is back when the host sees it together, the host owes it no world
+(new test line `world_due N 0|1` in the host's coop.status, coop_cmds.cpp: needs_world or world::share_in_flight, i.e.
+a share due, being saved, sent or not yet acknowledged; `share for N` / `sending world to N` on older builds), the
+guest's own game receives no world (`receiving world`) and has its avatar, on 3 polls in a row (about 1 s apart: the stage change follows the end of the host's share lines by up to a
 second). A wait for a state, not a longer sleep. The other tests that import wait_all with a number keep the old
 count wait. New `--round-churn`: Bob rejoins right before every round and, once every guest counts as back, must stay
 in the host's world for 15 s; `MULTI_WAIT=together` is the old wait.
