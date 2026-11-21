@@ -10,7 +10,7 @@ role: guest
 versions: rel/0.7.16 21025f40
 fixed_in:
 branch: fix/w62-flake-tcs
-commits:
+commits: 5f8ec7c6
 tests: play_civ
 signature:
 docs:
