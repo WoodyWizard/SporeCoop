@@ -13,13 +13,17 @@ host's creature from before the editor (legless). The guest then does what a new
   --guest new       adds legs, "done", and "Save New" in the game's save dialog
   --guest replace   adds legs, "done", and "Replace" (the creation it edited)
   --guest dontsave  adds legs, "done", and "Don't Save"
-  (the own editor asks "Save 'X' as a new creation or replace 'X' before exiting?" after an edit)
+  (until 0.7.15.1 the own editor asked "Save 'X' as a new creation or replace 'X' before exiting?" after an edit.
+  BUG-1255, 0.7.15.2: this guest's first own editor starts from the world's species (the host's creation) and has no
+  such dialog any more: done saves a new creature of its own. BUG-1361: new / replace / dontsave now check that no
+  save dialog comes up after done and that the guest plays its new creature; the dialog's buttons are clicked only
+  when it is up (`SPORE_FIX_OFF=creations.own_editor_no_replace`: the old dialog, which this test then reports))
 
 Checked on the guest's game (its avatar's species key) and on the host's (the species of the
 guest's puppet), after the editors, after the guest's rejoin and after the host's next editor:
   * done / cancel: the guest plays the host's evolved (legged) species, not the pre-editor one;
-  * new / replace: the guest plays its own new creature (it designed it);
-  * dontsave: as cancel;
+  * new / replace / dontsave: no save dialog after done (BUG-1255), the guest plays its own new creature (it designed
+    it); until BUG-1361 dontsave expected the host's species, as cancel, because Don't Save dropped the edit;
   * every case: the guest can still change its creature in its own next editor (it opens on the
     creature the guest plays).
 
@@ -31,6 +35,7 @@ import sys
 import time
 
 from harness import field_dotall as field, mode, waiter
+from coop_evo_screens import save_dialog_up
 import lane
 from twoinst import Checks, shot, start
 
@@ -45,7 +50,9 @@ CAPTION_OK = (1410, 1048)
 # made `--guest cancel` add legs and press that Cancel instead of the red cross, BUG-0283)
 SAVE_DIALOG = {'dontsave': (510, 604), 'replace': (830, 604), 'new': (926, 604)}
 QUIT = (944, 604)  # "Exiting will cause your changes to be lost": Quit
-OWN = ('new', 'replace')  # the guest keeps a creature it designed
+# the guest keeps a creature it designed: with BUG-1255 every edit in this first own editor (it starts from the
+# world's species) is saved as a new creature without a dialog, so Don't Save has nothing to click (BUG-1361)
+OWN = ('new', 'replace', 'dontsave')
 
 
 wait = waiter(step=1.0)
@@ -175,7 +182,12 @@ def main():
             guest.call('click %d %d' % DONE)
             time.sleep(3)
             shot(guest, f'legless_guest_dialog_{how}.png')
-            guest.call('click %d %d' % SAVE_DIALOG[how])
+            # BUG-1255 / BUG-1361: no dialog offering to replace the host's species (the guest edits the world's
+            # species here); a click at the dialog's place without the dialog would land in the world
+            dialog = save_dialog_up(guest)
+            ck(not dialog, "done in the guest's first own editor asks nothing (no save dialog, BUG-1255)")
+            if dialog:
+                guest.call('click %d %d' % SAVE_DIALOG[how])
         elif how == 'cancel':
             guest.call('click %d %d' % CANCEL)
             # the editor takes ~4 s to close (lab 20261030-141448: the mode read Editor 3 s after the
