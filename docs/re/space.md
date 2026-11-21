@@ -3521,6 +3521,19 @@ BUG-9279, after [space-own-empires](#space-own-empires). Lane C, Steam exe 3010a
   archetype tool did not follow**: the guest kept the save's warrior ability "Raider Rally" D0E48980. The tool is
   given at the Space start (0x1005C20) or by an archetype change (cMissionChangeArchetype 0xC4DB40); the map
   archetype -> ability tool is not known yet (the next step: those two functions).
+  CORRECTION (2026-11-21, feat/lineages-space-launch): found and fixed, see the next bullet.
+* ✔ **The archetype's abilities** (objdump of the Steam exe + runtime): `SporeCoop::SpaceGame_SetArchetype` 0x1005C20
+  is thiscall(cSimulatorSpaceGame, bool from_cards, bool announce) ret 8: the card (from the four cards or cPlayer
+  +0x110C) is set with SetConsequenceTrait(0x2DB6DAD3), the archetype index goes into cEmpire +0x58 (warrior 9,
+  ecologist 0x10, shaman 0xC, knight 0x12, ...), `announce` adds a chronicle event and achievements, then 0x10056A0
+  sets the card powers (+0xC4 of the space game) and the inventory gets the archetype's tools. The archetype change
+  mission (`SporeCoop::MissionChangeArchetype_Complete` 0xC4DB40) calls it with (false, true). The game calls it at
+  the Space start only, so a card written later (feat/own-cards) left the save's tools. space_empires.cpp now calls it
+  with (false, false) on the partner's game when its own Space card is new or the world is new (`space.own_archetype`).
+  ✔ The guest's seat set to shaman CF6C2AB4: its "Safari Vacuum" (ecologist, kept in its hold from an earlier run)
+  became "Return Ticket"; the host kept "Raider Rally" (warrior). With the switch off the tools stayed (FAIL).
+  Ability tools seen: warrior Raider Rally D0E48980, ecologist Safari Vacuum 805CEFBC, shaman Return Ticket.
+* The kept cargo hold (BUG-0195 family) brings a guest's own tools back across a rejoin, the archetype tool too.
 * Not built: Lineages' per-guest launch (world::begin_local_space_intro, guest_launch_tick, civ::founder_space_ready,
   creations::needs_local_space_intro, the vote end message "Open Civilization History..."): the guest's own ship
   editor at the Civ -> Space launch. Today a partner designs its ship in the galaxy menu's Spaceship Creator, and the

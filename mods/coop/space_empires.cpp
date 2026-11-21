@@ -60,7 +60,7 @@ enum Kind : uint8_t {
 
 static const SkHost* H;
 static SkMod* M;
-static uintptr_t a_PlayerEmpire, a_StrAssign, a_Color, a_SetShip, a_SetCaptain;
+static uintptr_t a_PlayerEmpire, a_StrAssign, a_Color, a_SetShip, a_SetCaptain, a_SpaceGame, a_SetArchetype, a_NounMgr;
 
 static bool g_fix = true;
 COOP_FIX("space.own_empires", "BUG-9279", g_fix,
@@ -71,6 +71,33 @@ COOP_FIX("space.own_empires", "BUG-9279", g_fix,
 static bool g_ship_fix = true;
 COOP_FIX("space.own_ship", "BUG-9279", g_ship_fix,
          "space: a partner's own empire flies the partner's own ship design and has the partner's species as captain");
+// the archetype's abilities: a partner's own Space card (feat/own-cards writes it into its cPlayer +0x110C) gets the
+// tools of that archetype on its game (the save's are the host's): the game's own archetype setter, as the archetype
+// change mission does (SpaceGame_SetArchetype(spacegame, false, false): the card stays, its tools replace the old ones)
+static bool g_archetype_fix = true;
+COOP_FIX("space.own_archetype", "BUG-9279", g_archetype_fix,
+         "space: a partner's own Space archetype card brings that archetype's abilities on the partner's game");
+static uint32_t g_arch_applied, g_arch_epoch, g_arch_sets;
+static bool g_arch_queued;
+static uint32_t space_card()
+{
+    void* nm = a_NounMgr ? cdecl_call<void*>(a_NounMgr) : nullptr;
+    void* pl = nm && !IsBadReadPtr((uint8_t*)nm + 0x74, 4) ? *(void**)((uint8_t*)nm + 0x74) : nullptr;
+    return pl && !IsBadReadPtr((uint8_t*)pl + 0x110C, 4) ? *(uint32_t*)((uint8_t*)pl + 0x110C) : 0;
+}
+static void archetype_task(void*)
+{
+    g_arch_queued = false;
+    const uint32_t card = space_card();
+    void* sg = a_SpaceGame ? cdecl_call<void*>(a_SpaceGame) : nullptr;
+    if (!card || !sg || !a_SetArchetype || !spaceext::in_space())
+        return;
+    thiscall<void>(a_SetArchetype, sg, 0, 0); // from cPlayer +0x110C, no badge / achievement
+    g_arch_applied = card;
+    g_arch_epoch = spaceext::world_epoch();
+    g_arch_sets++;
+    H->log(M, SK_INFO, "empires: my archetype %08X and its abilities set on my game", card);
+}
 static bool g_name_fix = true;
 COOP_FIX("space.own_empire_name", "BUG-9279", g_name_fix,
          "space: a partner's own empire carries the partner's name and colour on the partner's game");
@@ -630,6 +657,13 @@ static void guest_tick(double now)
         g_name_queued = true;
         H->run_outside_frame(name_task, nullptr); // after a save, or the first time in this world
     }
+    if (g_archetype_fix && g_renamed && !g_arch_queued && a_SetArchetype) {
+        const uint32_t card = space_card();
+        if (card && (card != g_arch_applied || g_arch_epoch != e)) {
+            g_arch_queued = true;
+            H->run_outside_frame(archetype_task, nullptr);
+        }
+    }
     if (g_ship_fix && g_renamed && !g_ship_set && now >= g_next_ship_try) {
         g_next_ship_try = now + 3.0;
         H->run_outside_frame(ship_task, nullptr);
@@ -745,6 +779,7 @@ static void on_session_end()
     g_diplo_ready = false;
     g_diplo_join = {};
     g_diplo_last.clear();
+    g_arch_applied = g_arch_epoch = 0;
 }
 
 static std::string status()
@@ -760,12 +795,12 @@ static std::string status()
     else
         snprintf(b, sizeof b,
                  "empires: fix=%d guest own=%d seat=%d money=%d name='%s' color=%08X serial=%u answered_epoch=%u epoch=%u asks=%u"
-                 " sets=%u reports=%u diplo ready=%d sets=%u sent=%u ship=%08X captain=%08X",
+                 " sets=%u reports=%u diplo ready=%d sets=%u sent=%u ship=%08X captain=%08X archetype=%08X (set %u)",
                  (int)g_fix, (int)g_own, g_seat, money_now(), utf8(name_of_empire(player_empire())).c_str(),
                  player_empire() ? *(uint32_t*)((uint8_t*)player_empire() + kColorId) : 0u, g_answer,
                  g_answered, spaceext::world_epoch(), g_g_asks, g_g_sets, g_g_reports, (int)g_diplo_ready, g_g_diplo_sets,
                  g_g_diplo_sent, player_empire() ? key_at(player_empire(), kShipKey).i : 0u,
-                 player_empire() ? key_at(player_empire(), kCaptainKey).i : 0u);
+                 player_empire() ? key_at(player_empire(), kCaptainKey).i : 0u, g_arch_applied, g_arch_sets);
     return b;
 }
 
@@ -864,6 +899,9 @@ static bool init(const SkHost* h, SkMod* m)
     a_Color = H->sym("Simulator::GetCachedColorFromId");
     a_SetShip = H->sym("SporeCoop::Empire_SetSpacecraftKey");
     a_SetCaptain = H->sym("SporeCoop::cEmpire_SetCaptainKey");
+    a_SpaceGame = H->sym("Simulator::cSimulatorSpaceGame::Get");
+    a_SetArchetype = H->sym("SporeCoop::SpaceGame_SetArchetype");
+    a_NounMgr = H->sym("Simulator::cGameNounManager::Get");
     spaceext::on_save(host_save);
     spaceext::on_save(guest_save);
     return a_PlayerEmpire != 0;
