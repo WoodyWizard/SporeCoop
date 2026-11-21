@@ -2,11 +2,14 @@
 """Civilization with three players and three cities (BUG-0152): city owners, roles of two guests and
 the trade between the players' cities, checked on every machine.
 
-Alice hosts, Bob and Carol are guests (tools/tests/party.py), on `civ_npc`. The host's civ captures
-two NPC cities (`coop.civ capture`, the game's cCity::Capture): three cities for three players.
+Alice hosts, Bob and Carol are guests (tools/tests/party.py), on `civ_npc`. Bob and Carol each buy an NPC
+city (`coop.civ buycity`, the game's city purchase on the guest, made in the host's game for that guest:
+BUG-0877): three cities for three players.
 
-1. owners  the capital is Alice's, the other two go to Bob and Carol (one each), the same on every
-           machine (no shared capital: as many cities as players).
+1. owners  the capital is Alice's, the other two are Bob's and Carol's (one each), the same on every
+           machine (no shared capital: as many cities as players). Until 0.7.12 the host's own captures
+           were dealt out to the players in turns; since BUG-0875 (0.7.13) a city stays with the player who
+           took it, so the guests take their own (BUG-1373: the test still had the host capture both).
 2. roles   Bob picks Military, Carol Economic (`coop.role`): every machine lists both roles.
 3. trade   every pair of cities of two different players trades every 30 s: three pairs, the
            Economic governor doubles the two pairs with her city (20 + 40 + 40 = 100 per payout).
@@ -53,21 +56,26 @@ def main():
         time.sleep(3)
         hc = civ(p.host.con)[0]
         npc = [k for k, v in hc.items() if not v['player']]
-        ck(len(npc) >= 2, f'[owners] the planet has NPC cities to capture ({npc})')
-        for k in npc:  # (a capture can be refused: until the player civ has three cities)
-            if len(owners(p.host.con)) >= 3:
-                break
-            print(f'  [owners] capture city {k}:', p.host.call(f'coop.civ capture {k}').strip(), flush=True)
-            # the captured city asks for its specialty (a modal box): answered like a player, before
-            # the next capture (the campaign's way, BUG-0290)
-            for _ in range(12):
-                b = uifind.shown(p.host.con, 'Military')
-                if b and 600 < b[0] < 1100 and 500 < b[1] < 750:
-                    uifind.press(p.host.con, 'Military')
-                    print('  [owners] the specialty box: Military', flush=True)
+        ck(len(npc) >= 2, f'[owners] the planet has NPC cities to buy ({npc})')
+        # BUG-1373: each guest buys one NPC city (the host's game buys it for that guest, BUG-0877); a host capture
+        # would stay the host's (BUG-0875) and leave the capital shared
+        print('  [owners] host:', p.host.call('coop.res add money 30000').strip(), flush=True)
+        for g, k in zip((bob, carol), npc):
+            print(f'  [owners] {g.name} buys city {k}:', g.call(f'coop.civ buycity {k} 500').strip(), flush=True)
+            wait(lambda: owners(p.host.con).get(k) == ids[g.name], 30)
+            # a city that changed hands may ask for its specialty (a modal box): answered like a player (BUG-0290)
+            for _ in range(6):
+                hit = False
+                for x in (p.host, g):
+                    b = uifind.shown(x.con, 'Military')
+                    if b and 600 < b[0] < 1100 and 500 < b[1] < 750:
+                        uifind.press(x.con, 'Military')
+                        print(f'  [owners] the specialty box on {x.name}: Military', flush=True)
+                        hit = True
+                if hit:
                     break
                 time.sleep(1)
-            time.sleep(3)
+            time.sleep(2)
         ok = wait(lambda: len(owners(p.host.con)) >= 3 and set(owners(p.host.con).values()) == {0, ids['Bob'], ids['Carol']}, 30)
         h = owners(p.host.con)
         print(f'  [owners] host: {h}', flush=True)
