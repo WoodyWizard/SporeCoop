@@ -3055,8 +3055,10 @@ COOP_FIX("tribe.partner_totems", "BUG-9318", g_partner_totems,
          "tribe: every founder village's totem gets the party's win pieces (made by the game when a partner village has none)");
 // The guest's cutscene part: off by default (2026-11-21, live MSI): TRG_Upgrade played by itself on a guest showed about
 // 1 s of sky (once a spear's tip) and ended, never the village's totem: the native cinematic needs the context its
-// caller (TribeHut_Upgrade 0xCDA4F0, the reward queue) sets up first. `coop.fix tribe.partner_totem_cutscene on`:
-// the guest plays it anyway (tests).
+// caller (TribeHut_Upgrade 0xCDA4F0, the reward queue) sets up first. 2026-11-21 (fix/l47-tribe2): the guest now runs
+// that hut upgrade itself (play_hut_upgrade: its actors bound); live, no sky any more, but a second of black and then
+// the normal view of the guest's village with the input locked until the 8 s closer, no totem close-up and no
+// caption: still off. `coop.fix tribe.partner_totem_cutscene on`: the guest runs it anyway (tests).
 static bool g_totem_cutscene = false;
 COOP_FIX("tribe.partner_totem_cutscene", "BUG-9318", g_totem_cutscene,
          "tribe: a partner's game plays TRG_Upgrade when its own village's totem gained a piece (off: its framing is wrong)");

@@ -121,6 +121,28 @@ Done on fix/l47-powers (built; not run in a game yet):
     host's single pet list and use up the host's cap of 4 (prop 0x217997F4): gameplay question for the owner (one
     shared cap for the party, or one per village).
 
+- Live QA 2026-11-21, fix/l47-tribe2 (MSI two games, Vandh), decision 7W A (each village its own cap of 4 tamed
+  animals, as solo play): switch `tribe.pet_cap_per_village` (on). Both chiefs walked to a group of wild animals
+  (`coop.tribe order <chief> 4 x y z`), power 0x39 granted on both games.
+  * FAIL (`coop.fix tribe.pet_cap_per_village off`, 12:45): the host's press tamed 4 (list 4 entries, all 800021D3);
+    the guest's press then tamed one more, and it was one of the HOST's pets: its political id became 0x228C and the
+    list held it twice (5 entries, 32DAFAD8 at 3 and 4). So with one shared list a partner's press both counts against
+    the host's cap and takes the host's own pets. (Why the native count let one more in at 4 of 4 is not known: the
+    prop's value in this world may be 5, or the node's step ran twice.)
+  * PASS, partial (on, 13:05): the host tamed 4 (list 4); the guest's press ran the node 137 times with the list showing
+    only its own pets (`split=137 restored=548`), the host's 4 pets kept the host's id and the list stayed at 4 (no
+    re-tame, no duplicate): the candidates exclude every animal already in the list (their dead flag +0xB5E set for
+    the call only). It tamed nothing: no adult animal was left in reach (the two others were young). A second press at
+    another group 9 minutes later was refused on the host ("the power is recharging", while the guest's bar showed
+    status 0). Not seen: a partner taming its own 4 while the host has 4.
+  * Seen on the way: the host's 4 pets fought wild animals (13:08 a pet killed npc 96) and by 13:14 the list was empty,
+    the pets' objects reused by the creature pool for another species (they died). ? Whether the per-call dead flag can
+    play a part: not seen in the node's code (the flag is read as the candidate filter), not ruled out at runtime.
+  * The lure basket (0x34) on the guest: not done. A display-only copy needs an object the guest's game draws but never
+    saves or simulates; the mod has no such model-only object (a cOrnament copy, cOrnament_SetModel, would be a
+    planet record the guest's own saves keep, and its removal before every save, load, editor and stage change would
+    be new code), so it is left as an open issue (docs/known-issues.md#known-tribe-l47-tribe2).
+
 ## History
 - 2026-11-20: opened.
 - 2026-11-20: fix/l47-powers: tribe.guest_powers; Civ and Space surveyed (plan above). Static analysis + build only.
@@ -161,3 +183,5 @@ Done on fix/l47-powers (built; not run in a game yet):
   a guest's game writes its own card at a co-op graduation (to be seen in the log at the next graduation).
 - 2026-11-21: second live QA run (see Verification).
 - 2026-11-21: third live run (fix/l47-tribe): 0x36 effect relayed (`tribe.power_effects`), 0x38 has no effect, pets tool.
+- 2026-11-21: decision 7W A on fix/l47-tribe2: `tribe.pet_cap_per_village` (FAIL off seen; PASS partial, see
+  Verification); the lure basket's stand-in not done (blocker recorded).

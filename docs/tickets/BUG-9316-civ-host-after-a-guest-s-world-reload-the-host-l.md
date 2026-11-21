@@ -60,6 +60,14 @@ out/qa-runs/20261121-l47-money/ of the worktree (not in git); screenshots out/qa
 - tests/npc_tests.cpp `test_stage_epoch` (is_open over menu, load, editor) passes (built natively with llvm-mingw i686).
 - No crash report on either game.
 
+- Tribe, live 2026-11-21 (fix/l47-tribe2, MSI two games, Vandh, two founder villages): two guest world reloads by
+  `coop.share 1`, the first with `coop.fix res.load_hold off` on the guest (12:48), the second with it on (12:49).
+  Both the same: `coop.res` on both games `shared food ... synced=0 ... from_guests=+0/0 load_totals=0 big=0`, no
+  "shared food ... from player 1" line on the host and no "a local change" line on the guest, each village's food
+  only moved by eating and gathering (seat 1 18.1 -> 32.9 -> 30.9). With founder villages each village keeps its own
+  food (the per-village mirror), the shared food row is not synced in Tribe, so this bug's path does not run there:
+  nothing to fix in Tribe.
+
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: analysed (a real bug: a reload's Galaxy menu frame, not swgrant), fixed on fix/l47-money (res.load_hold),
