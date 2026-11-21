@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages67-dev (fix/l47-final-tribe)
 fixed_in:
 branch: fix/l47-final-tribe
-commits:
+commits: 8836d797, 212b8595
 tests:
 signature: 0xC0000005 at 0xDAD6A3 (read 0x70), main thread, in a citizen behaviour tree tick (BehaviorTreeTickGeneric+0x540); the crash text names it BT_CitizenKnockoutEnd+0x9D3 (nearest symbol, not the function)
 docs: docs/re/tribe.md#tribe-final-qa
