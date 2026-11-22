@@ -10,7 +10,7 @@ role: host
 versions: 0.7.14.1-lineages68-dev
 fixed_in: unreleased
 branch: fix/l47-ring-fps
-commits:
+commits: 9a460e62
 tests: tools/qa_win (manual, 2026-11-21): the owner's Tribe world copied into a test profile, host and guest on TITAN, kit.fix viewcache 0/1
 signature: perf: hitch 290-330 ms every frame in Tribe while a partner is connected; prof: frames over 80 ms filled by the mod's own work 0
 docs: docs/re/graphics.md#graphics-projection-cost
