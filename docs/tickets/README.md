@@ -1411,3 +1411,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9329](BUG-9329-lineages-cache-test-creations-of-qa-profiles-are.md) | fixed | feature | all | 2026-11-21 | 0.7.14.1-lineages68-dev | Lineages Cache: test creations of QA profiles are purged and banned (ban list shipped with the mod) |
 | [BUG-9330](BUG-9330-creature-a-guest-shows-two-ufos-for-one-visit-of.md) | open | desync | Creature | 2026-11-21 |  | Creature: a guest shows two UFOs for one visit of the host (its own relayed event's ship and the mirror of the host's) |
 | [BUG-9331](BUG-9331-lineages-cache-a-test-game-shares-its-creations.md) | fixed | bug | all | 2026-11-21 | unreleased | Lineages Cache: a test game shares its creations unless its typed name carries -NoShare- |
+| [BUG-9332](BUG-9332-names-the-no-share-tag-is-noshare-in-any-case-th.md) | fixed | feature | all | 2026-11-21 | unreleased | Names: the no-share tag is -noshare in any case, the trailing dash optional |

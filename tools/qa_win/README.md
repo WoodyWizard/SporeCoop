@@ -46,3 +46,5 @@ Since BUG-9331 (2026-11-21, owner: "All tests should all be -NoShare-") a test c
 started with `-sporekit-profile:` (every launcher here passes it) or as a second instance hosts and joins with
 "-NoShare-" added to its typed name. Keep typing the tag anyway. Only `coop.fix core.test_noshare off` (on both games)
 lets two QA games share creations, for a deliberate Lineages Cache test.
+Since BUG-9332 (2026-11-21) the tag is "-noshare" in any case (`Host-noshare`, `MSI-NOSHARE`); the old "-NoShare-"
+still counts. The automatic tag is "-noshare".
