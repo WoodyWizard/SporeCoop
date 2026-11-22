@@ -10,7 +10,7 @@ role:
 versions: 0.7.14.1-lineages69-dev (alpha)
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits:
+commits: 08ad7e19, ee0da001
 tests: tools/qa_win (manual, 2026-11-22): TITAN's test galaxy (worlds_6ga copy), QA 9, coop.gmenu forget / play Samuth, a click on the choice, coop.fix galaxy.stage_choice off/on
 signature:
 docs: docs/12-server-and-players.md#server-stage-choice
