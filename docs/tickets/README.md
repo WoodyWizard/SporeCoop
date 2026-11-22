@@ -1452,3 +1452,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9336](BUG-9336-galaxy-a-player-new-to-a-planet-starts-its-tribe.md) | fixed | feature | tribe | 2026-11-22 | unreleased | Galaxy: a player new to a planet starts its Tribe stage when the planet has only Creature (a new era) |
 | [BUG-9337](BUG-9337-galaxy-the-stage-choice-uses-spore-s-own-choose.md) | fixed | feature | all | 2026-11-22 | unreleased | Galaxy: the stage choice uses Spore's own Choose A Stage screen (8L A) |
 | [BUG-9338](BUG-9338-galaxy-our-stage-choice-box-opens-on-top-of-spor.md) | open | bug | all | 2026-11-22 |  | Galaxy: our stage choice box opens on top of Spore's stage loading card after a real Play |
+| [BUG-9339](BUG-9339-galaxy-the-planet-list-message-after-connecting.md) | open | bug | menu | 2026-11-22 |  | Galaxy: the planet list message after connecting runs off the screen's right edge |
+| [BUG-9339](BUG-9339-galaxy-the-planet-list-message-after-connecting.md) | open | bug | menu | 2026-11-22 |  | Galaxy: the planet list message after connecting runs off the screen's right edge |

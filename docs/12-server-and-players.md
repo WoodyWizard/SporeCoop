@@ -1729,3 +1729,25 @@ ours.
 * Found on the way, open: BUG-9338, the box (fallback only now) opens on top of Spore's stage loading card after a real
   Play.
 * How the screen works: docs/re/space.md#space-native-stage-choice.
+
+## The planet details panel: a mockup (8M, 2026-11-22, feat/lineages-alpha)
+<a id="server-planet-details-panel"></a>
+
+Owner, 2026-11-22, on the players per stage lost with #server-native-stage-choice: "Why can't we add a little panel
+(similar to party player name panel) off to the opposite side of the planet menu that shows the details of the
+planet? Can you create a mockup?"
+* Yes: Spore's screen has no room of its own for it, but the mod already draws its own panels over Spore's menus (the
+  Social Menu, the Party panel, #server-social-menu). A panel beside the screen is the same work.
+* Mockup: images/mockup_planet_details.png, on a real shot of the screen (Abber, QA 9) with the Social Menu's own frame.
+  Right of the planet: the planet's name, "Online world", players here; one row per stage in the buttons' order
+  (Cell, Creature, Tribe, Civilization, Space) with the stage's own icon: players and host, "New here: start it",
+  "Not on this planet" or "Not reached yet" in grey; the hovered stage's row lit gold with its players' names; friends
+  on the planet; when it was last saved. Sample names only.
+* What the data needs: players per era, host and saved come with the planet list already (galaxy_client.cpp, PLANETS);
+  the players' names per era and friends from the Social Menu's player list (WHO, PLAYERS); the save's age from ROLE.
+  The hovered button: Spore's flow window under the pointer (not looked at yet).
+* The connect flow as it is today, shot on TITAN (QA 9, out/shots/connect, not in git): Spore's own "Network play
+  disabled" box at start (an offline copy), the Co-op window (F9 or Co-op), the Galaxy Server row, Join ("Galaxy
+  server: connected", the row shows the galaxy's name), the window closes to the galaxy menu with the server's planets
+  as stars; a star, Spore's planet panel, Play, the Choose A Stage screen. Seen on the way: the planet list message
+  runs off the right edge (BUG-9339, open); the galaxy row says "0 planets, 0 players online" for a moment after Join.
