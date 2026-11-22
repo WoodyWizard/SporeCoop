@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: owner 2026-11-21
 role: all
 versions: 0.7.14.1-lineages68-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages69-dev
 branch: fix/l47-test-noshare
 commits: a76fff13
 tests: tools/qa_win (two TITAN QA games, 2026-11-21, switch off and on)
@@ -54,3 +54,4 @@ typed without the tag: `coop.host 47839 TestHost 4`, `coop.join 127.0.0.1:47839 
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fixed on fix/l47-test-noshare, FAIL / PASS live on TITAN (Verification).
+- 2026-11-22: released in 0.7.14.1-lineages69-dev.

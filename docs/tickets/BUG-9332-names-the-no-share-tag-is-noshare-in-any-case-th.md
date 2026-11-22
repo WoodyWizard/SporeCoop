@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: owner 2026-11-21
 role: all
 versions: 0.7.14.1-lineages68-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages69-dev
 branch: fix/l47-noshare-tag
 commits: d3ea538b
 tests: tests/text_tests.cpp
@@ -34,3 +34,4 @@ net/utf8.h `no_share_tag`: "-noshare" in any case; a dash right after it is part
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: fixed on fix/l47-noshare-tag, unit test FAIL old / PASS new.
+- 2026-11-22: released in 0.7.14.1-lineages69-dev.

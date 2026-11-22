@@ -23,7 +23,7 @@ Also: a one-page Co-op window, Interface Size for Spore's whole UI, a loading sc
 - Three and four players: the difficulty scales for them, but full campaigns are not tested yet. More than four players is planned.
 - Known issues, each with how to reproduce it: [docs/known-issues.md](docs/known-issues.md). Changes per build: [CHANGELOG.md](CHANGELOG.md). Decisions and plan: [docs/ROADMAP.md](docs/ROADMAP.md). How the upstream 0.7.14.1 merge was done: [docs/merge-0.7.14.md](docs/merge-0.7.14.md).
 
-<details><summary>Build history (41-dev to 68-dev)</summary>
+<details><summary>Build history (41-dev to 69-dev)</summary>
 
 Done in 41-dev: 60% progress per extra seat, and one Difficulty Scaling slider (up to 400%) for progress, enemy health and damage, hunger, city takeover and Space raids.
 
@@ -46,6 +46,7 @@ Done in 52-dev: a connected player with their own custom creature gets their own
 Done in 53-dev: bones the other player digs up disappear on your screen too.
 Done in 54-dev: befriending works for connected players again, a partner's respawn no longer darkens your screen, Ctrl+Scroll FoV widens the view, partner villages use the partner's own creature, smoother sending on slow connections.
 Done in 63-dev: the impress meter fills on a partner's screen, no false "species is extinct" for old player species, no frame-cap notice for a cap you set, Co-op window text placement.
+Done in 69-dev: the frame rate no longer drops to 1-3 fps while partner rings are shown, six more broken early creatures banned from Lineages Caches, test copies never share creations.
 Done in 68-dev: soft player-colour rings under every unit a partner controls, the same visiting spaceship for everyone, leftover test creations removed from Lineages Caches, partner villages with their own pens, totems and pet cap, partner superweapons in Civ, 5 s revives.
 Done in 67-dev: a partner's name plate edge and arrow in that player's colour.
 Done in 66-dev: a joiner's first creature uses the 145 DNA start editor (no 2,000 DNA Creator), everyone keeps a nest and creature after a migration, connected players stop when the host pauses, sharp centred loading screens.

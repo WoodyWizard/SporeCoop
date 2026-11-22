@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.14.1-lineages69-dev] - 2026-11-22
+
 - All stages: the frame rate no longer falls to 1-3 fps while partners' rings are shown (Tribe with a partner's
   villagers: 300 ms a frame); finding the camera for each ring point cost a system call each time (BUG-9333).
 - Lineages Cache: the ban list also takes out six early creatures that still showed their cell picture (shared before

@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: owner play test 2026-11-21 (Live 68-dev, Tribe)
 role: host
 versions: 0.7.14.1-lineages68-dev
-fixed_in: unreleased
+fixed_in: 0.7.14.1-lineages69-dev
 branch: fix/l47-ring-fps
 commits: 9a460e62
 tests: tools/qa_win (manual, 2026-11-21): the owner's Tribe world copied into a test profile, host and guest on TITAN, kit.fix viewcache 0/1
@@ -52,3 +52,4 @@ no-fail-run: Windows QA by hand (no lab on this PC); the FAIL and PASS runs abov
 ## History
 - 2026-11-21: opened.
 - 2026-11-21: reproduced on TITAN with the owner's world (test profile copy), rings proven as the cost (switches off/on), fixed in SporeKit read_view.
+- 2026-11-22: released in 0.7.14.1-lineages69-dev.
