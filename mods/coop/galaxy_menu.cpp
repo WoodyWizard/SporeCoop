@@ -235,6 +235,124 @@ static void open_choice(const Row& row)
     coop_ui::show_player_menu(sw * 0.5f - 112, sh * 0.3f, "Choose a stage", items, on_stage_pick);
 }
 
+// BUG-9337 (decision 8L A): the stage choice is Spore's own Choose A Stage screen (the new game's screen with the paw,
+// fire, globe and rocket, docs/re/space.md#space-native-stage-choice), opened for the server planet's menu entry the
+// way the menu opens it for an empty star (the new-game state 4's entry, then the menu's state switch). Its stage
+// buttons are enabled for the planet's eras and the new stage this player may start (and reached in its own Spore);
+// a press closes the screen as its Back does and enters or starts that stage on the server (on_stage_pick), never a
+// new game. Off: our "Choose a stage" box (BUG-9335).
+static bool g_native = true;
+COOP_FIX("galaxy.native_stage_choice", "BUG-9337", g_native, "galaxy menu: the stage choice is Spore's own Choose A Stage screen (off: our box)");
+typedef void(__fastcall* FlowOpenFn)(void* flow, void* edx, void* entry);
+typedef void(__fastcall* FlowButtonFn)(void* flow, void* edx, uint32_t id);
+static FlowOpenFn o_FlowOpen;
+static FlowButtonFn o_FlowButton;
+static bool g_flow_hooks;
+static uintptr_t a_NewGameState, a_SetState, a_FindWin, a_PlanetSet, a_PlayState;
+typedef void(__fastcall* SetStateFn)(void* gge, void* edx, int state, int push);
+static SetStateFn o_SetState;
+static const uint32_t kStageButtons[5] = {0x053F06E1, 0x053F06EE, 0x053F06F5, 0x053F06FC, 0x053F0707}; // Cell..Space
+static const uint32_t kFlowBack = 0x0595E0A8;
+static void* g_native_entry;       // the server planet's entry the screen is open for (nullptr: none of ours)
+static double g_native_at;
+static int g_native_codes[6];      // per era (1..5): the index into g_pick_eras, -1 not offered
+static unsigned g_native_opens, g_native_picks, g_native_closes;
+static std::string g_native_last;
+
+// switch_now: the menu's state switch here (tests); else the caller switches (h_SetState: Play's switch made state 4)
+static bool open_native(const Row& row, uint8_t* entry, bool switch_now)
+{
+    uint8_t* gge = a_Gge ? *(uint8_t**)a_Gge : nullptr;
+    uint8_t* st = a_NewGameState ? *(uint8_t**)a_NewGameState : nullptr;
+    if (!g_native || !g_flow_hooks || !gge || !st || !a_SetState || !entry)
+        return false;
+    g_pick_eras.clear();
+    g_pick_from.clear();
+    g_last_choice.clear();
+    for (int& c : g_native_codes)
+        c = -1;
+    for (auto& e : row.eras) {
+        const uint8_t era = net::galaxy::era_of(e);
+        if (era < 1 || era > net::galaxy::kEraLast || g_native_codes[era] >= 0)
+            continue;
+        g_native_codes[era] = (int)g_pick_eras.size();
+        g_pick_eras.push_back(e);
+        g_pick_from.push_back("");
+        g_last_choice += std::string(g_last_choice.empty() ? "" : ", ") + net::galaxy::era_name(era) +
+                         (stage_reached(era) ? "" : " (grey)");
+    }
+    const std::string from = start_from(row); // BUG-9336: the new Tribe stage
+    if (!from.empty() && g_native_codes[net::galaxy::kEraTribe] < 0) {
+        const uint8_t era = net::galaxy::kEraTribe;
+        g_native_codes[era] = (int)g_pick_eras.size();
+        g_pick_eras.push_back(net::galaxy::era_key(row.shown.name, era));
+        g_pick_from.push_back(from);
+        g_last_choice += std::string(", ") + net::galaxy::era_name(era) + " (new" + (stage_reached(era) ? ")" : ", grey)");
+    }
+    *(void**)(st + 0xC) = entry; // (what the menu's click on an empty star sets, 0xDF7960)
+    g_native_entry = entry;
+    g_native_at = H->time_seconds();
+    if (switch_now)
+        skg::thiscall<void>(a_SetState, (void*)gge, 4, 0);
+    g_choices++;
+    g_native_opens++;
+    g_native_last = row.shown.name + ": " + g_last_choice;
+    H->log(M, SK_INFO, "galaxy menu: Spore's Choose A Stage screen on '%s': %s (BUG-9337)", row.shown.name.c_str(),
+           g_last_choice.c_str());
+    return true;
+}
+
+// the screen's stage buttons: enabled for the stages offered and reached (window vt 0x7C(2, on): enabled)
+static void native_buttons(void* flow)
+{
+    if (!a_FindWin)
+        return;
+    for (int i = 0; i < 5; i++) {
+        const uint8_t era = (uint8_t)(i + 1);
+        const bool on = g_native_codes[era] >= 0 && stage_reached(era);
+        if (void* w = skg::thiscall<void*>(a_FindWin, (uint8_t*)flow + 0x28, kStageButtons[i], 1))
+            skg::vcall<void>(w, 0x7C / 4, 2, (int)on);
+    }
+}
+
+static void __fastcall h_FlowOpen(void* flow, void* edx, void* entry)
+{
+    o_FlowOpen(flow, edx, entry);
+    if (g_native_entry && entry == g_native_entry)
+        native_buttons(flow);
+    else
+        g_native_entry = nullptr; // (a new game on an empty star: the game's own screen as it is)
+}
+
+static void native_closed()
+{
+    g_native_entry = nullptr;
+    g_last_version = ~0u; // the next tick rebuilds the entries (the screen wrote into this one)
+}
+
+static void __fastcall h_FlowButton(void* flow, void* edx, uint32_t id)
+{
+    if (g_native_entry && flow && *(void**)((uint8_t*)flow + 0x628) == g_native_entry) {
+        for (int i = 0; i < 5; i++)
+            if (id == kStageButtons[i]) {
+                const int code = g_native_codes[i + 1];
+                if (code < 0 || !stage_reached((uint8_t)(i + 1)))
+                    return; // (not offered: the button is disabled)
+                o_FlowButton(flow, edx, kFlowBack); // closed as its Back does (the menu's planets again)
+                native_closed();
+                g_native_picks++;
+                H->log(M, SK_INFO, "galaxy menu: Choose A Stage: %s pressed (BUG-9337)", net::galaxy::era_name((uint8_t)(i + 1)));
+                on_stage_pick(code);
+                return;
+            }
+        if (id == kFlowBack) {
+            g_native_closes++;
+            native_closed();
+        }
+    }
+    o_FlowButton(flow, edx, id);
+}
+
 static bool active() { return g_hooks && g_on && galaxy::online() && game::mode_id() == modes::kMenu; }
 
 static std::u16string u16(const std::string& s)
@@ -313,7 +431,24 @@ static void __fastcall h_Panels(void* set, void* edx)
 // Play on the menu's planet `planet` (its shown name): true when it is a server planet (entered, or its stage choice
 // opened). The step comes again every frame until the menu is left: once, and never while on that planet (each ENTER of
 // the planet it is on made the client leave and join again, 2026-11-17)
-static bool play(const std::string& planet)
+// BUG-9335: several eras; BUG-9336: or a new stage this player may start there
+static bool wants_choice(const Row& row)
+{
+    return g_choice && !has_remembered(row) &&
+           (row.eras.size() > 1 || (!start_from(row).empty() && stage_reached(net::galaxy::kEraTribe)));
+}
+
+static const Row* row_of(const std::vector<Row>& rs, const std::string& planet)
+{
+    for (auto& row : rs)
+        if ((g_one_row ? row.shown.name : net::galaxy::era_display(row.shown.name)) == planet)
+            return &row;
+    return nullptr;
+}
+
+// entry: the menu entry, for Spore's own screen (tests: coop.gmenu play); nullptr from the Play step: our box (the
+// Play button's state switch already went to Spore's screen when it could, h_SetState)
+static bool play(const std::string& planet, uint8_t* entry = nullptr)
 {
     for (auto& row : rows())
         if ((g_one_row ? row.shown.name : net::galaxy::era_display(row.shown.name)) == planet) {
@@ -322,10 +457,9 @@ static bool play(const std::string& planet)
             if (galaxy::current_planet() != key && (planet != g_play_name || now - g_play_at > 30)) {
                 g_play_name = planet;
                 g_play_at = now;
-                // BUG-9335: several eras; BUG-9336: or a new stage this player may start there
-                if (g_choice && !has_remembered(row) &&
-                    (row.eras.size() > 1 || (!start_from(row).empty() && stage_reached(net::galaxy::kEraTribe)))) {
-                    open_choice(row);
+                if (wants_choice(row)) {
+                    if (!open_native(row, entry, true)) // BUG-9337: Spore's own screen; our box when it cannot open
+                        open_choice(row);
                     return true;
                 }
                 g_plays++;
@@ -337,7 +471,47 @@ static bool play(const std::string& planet)
     return false;
 }
 
+// BUG-9337: the menu's state switch. The planet panel's Play sets the Play state's entry and switches to state 0xC (its
+// stage card and the Play step); for a server planet that wants a stage choice it goes to state 4 (Spore's Choose
+// A Stage screen) instead, as the panel of an empty star does. (Switching from the Play step left the stage card on
+// screen: 2026-11-22, TITAN.)
+static void __fastcall h_SetState(void* gge, void* edx, int state, int push)
+{
+    if (state == 0xC && g_native && g_flow_hooks && active() && a_PlayState && a_NewGameState) {
+        uint8_t* ps = *(uint8_t**)a_PlayState;
+        uint8_t* e = ps ? *(uint8_t**)(ps + 0xC) : nullptr;
+        if (e && e[0xAC]) {
+            const char16_t* b = *(const char16_t* const*)e;
+            const char16_t* en = *(const char16_t* const*)(e + 4);
+            const std::string planet = b && en > b ? utf8(b, en) : "";
+            const std::vector<Row> rs = rows();
+            const Row* row = row_of(rs, planet);
+            if (row && galaxy::current_planet() != era_to_enter(*row) && wants_choice(*row) && open_native(*row, e, false)) {
+                g_play_name = planet;
+                g_play_at = H->time_seconds();
+                state = 4;
+            }
+        }
+    }
+    o_SetState(gge, edx, state, push);
+}
+
 // the Play step (thiscall, one stack argument): step +0xC the picked entry, +0x8 a countdown (the action at 0)
+// the menu entry shown as `planet` (tests)
+static uint8_t* entry_of(const std::string& planet)
+{
+    uint8_t* set = a_PlanetSet ? *(uint8_t**)a_PlanetSet : nullptr;
+    uint8_t* b = set ? *(uint8_t**)(set + 8) : nullptr;
+    uint8_t* en = set ? *(uint8_t**)(set + 0xC) : nullptr;
+    for (uint8_t* e = b; e && e + 0xBC <= en; e += 0xBC) {
+        const char16_t* nb = *(const char16_t* const*)e;
+        const char16_t* ne = *(const char16_t* const*)(e + 4);
+        if (e[0xAC] && nb && ne > nb && utf8(nb, ne) == planet)
+            return e;
+    }
+    return nullptr;
+}
+
 static void __fastcall h_Step(void* self, void* edx, void* arg)
 {
     uint8_t* gge = a_Gge ? *(uint8_t**)a_Gge : nullptr;
@@ -372,6 +546,13 @@ void tick(double now)
             H->config_set_str(M, "galaxy_eras", remember_key(net::galaxy::era_planet(cur)).c_str(), cur.c_str());
         }
     }
+    if (g_native_entry && now - g_native_at > 2) { // BUG-9337: the screen left without a stage (Esc), or the menu left
+        uint8_t* gge = a_Gge ? *(uint8_t**)a_Gge : nullptr;
+        if (!gge || game::mode_id() != modes::kMenu || *(int*)(gge + 0x108) != 4) {
+            g_native_closes++;
+            native_closed();
+        }
+    }
     if (!g_hooks || game::mode_id() != modes::kMenu)
         return;
     const bool online = g_on && galaxy::online();
@@ -400,16 +581,20 @@ std::string command(int argc, const char* const* argv)
         if (!active())
             return "not in the galaxy menu while online (Play is the menu's)";
         g_play_at = -100;
-        if (!play(argv[2]))
+        if (!play(argv[2], entry_of(argv[2])))
             return std::string("no server planet '") + argv[2] + "' in the menu";
     }
-    char b[600];
+    char b[900];
     snprintf(b, sizeof b, "galaxy menu (5X B): %s, hooks %s, active %d, rewrites %u, plays %u, rebuilds %u, last: %s; "
              "stage choice (BUG-9335): opened %u, entered %u, refused %u, new stages started %u (BUG-9336), last: %s; reached: %d%d%d%d%d",
              g_on ? "on" : "off", g_hooks ? "on" : "missing", (int)active(), g_rewrites, g_plays, g_rebuilds,
              g_last.empty() ? "-" : g_last.c_str(), g_choices, g_picks, g_refusals, g_starts,
              g_last_choice.empty() ? "-" : g_last_choice.c_str(), (int)stage_reached(1), (int)stage_reached(2),
              (int)stage_reached(3), (int)stage_reached(4), (int)stage_reached(5));
+    const size_t n = strlen(b);
+    snprintf(b + n, sizeof b - n, "\nSpore's Choose A Stage screen (BUG-9337, %s): hooks %s, opened %u, stages pressed %u, closed %u, "
+             "open now %d, last: %s", g_native ? "on" : "off", g_flow_hooks ? "on" : "missing", g_native_opens,
+             g_native_picks, g_native_closes, (int)(g_native_entry != nullptr), g_native_last.empty() ? "-" : g_native_last.c_str());
     return b;
 }
 
@@ -432,6 +617,18 @@ void init(const SkHost* host, SkMod* mod)
     // left the first hook installed and calling a null original; the feature is off through g_hooks instead)
     g_hooks = ok;
     H->log(M, SK_INFO, "galaxy menu: hooks %s (5X B)", ok ? "on" : "off");
+    // BUG-9337: Spore's own Choose A Stage screen (the new game's flow)
+    a_NewGameState = H->sym("SporeCoop::GGE_NewGameState_ptr");
+    a_SetState = H->sym("SporeCoop::GGE_SetState");
+    a_FindWin = H->sym("UTFWin::UILayout::FindWindowByID");
+    a_PlanetSet = H->sym("SporeCoop::GGE_PlanetSet_ptr");
+    a_PlayState = H->sym("SporeCoop::GGE_PlayState_ptr");
+    uintptr_t fopen = H->sym("SporeCoop::NewGameFlow_Open"), fbutton = H->sym("SporeCoop::NewGameFlow_OnButton");
+    g_flow_hooks = ok && a_NewGameState && a_SetState && a_FindWin && fopen && fbutton &&
+                   H->hook_create(M, (void*)fopen, (void*)&h_FlowOpen, (void**)&o_FlowOpen) == 0 &&
+                   H->hook_create(M, (void*)fbutton, (void*)&h_FlowButton, (void**)&o_FlowButton) == 0 &&
+                   H->hook_create(M, (void*)a_SetState, (void*)&h_SetState, (void**)&o_SetState) == 0;
+    H->log(M, SK_INFO, "galaxy menu: Choose A Stage hooks %s (BUG-9337)", g_flow_hooks ? "on" : "off");
 }
 
 } // namespace galaxy_menu

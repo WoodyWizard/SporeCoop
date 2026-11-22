@@ -423,3 +423,10 @@ SporeCoop::TribeHut_Upgrade ; BUG-9318: a partner's totem cutscene through the h
 SporeCoop::OTDB_FindObjects ; BUG-9329: banned creations already in the Sporepedia stay pickable (library.banned) on GOG 2016
 SporeCoop::UFOAbductionEvent_PickShip ; BUG-9329: the coop.library pickships test command is off on GOG 2016
 SporeCoop::cTribe_CreatePens ; BUG-9326: partner founder villages get no pens of their own (tribe.partner_pens) on GOG 2016
+SporeCoop::GGE_NewGameState_ptr ; BUG-9337: Spore's own Choose A Stage screen for server planets (alpha, decision 8L A) is off on GOG 2016
+SporeCoop::GGE_SetState ; BUG-9337: Spore's own Choose A Stage screen for server planets (alpha, decision 8L A) is off on GOG 2016
+SporeCoop::NewGameFlow_Open ; BUG-9337: Spore's own Choose A Stage screen for server planets (alpha, decision 8L A) is off on GOG 2016
+SporeCoop::NewGameFlow_OnButton ; BUG-9337: Spore's own Choose A Stage screen for server planets (alpha, decision 8L A) is off on GOG 2016
+SporeCoop::GGE_IsStageUnlocked ; BUG-9335: the galaxy menu's stage choice (alpha, decision 5R A) is off on GOG 2016
+SporeCoop::AchievementsManager_HasEarned ; BUG-9335: the galaxy menu's stage choice (alpha, decision 5R A) is off on GOG 2016
+SporeCoop::GGE_PlayState_ptr ; BUG-9337: Spore's own Choose A Stage screen for server planets (alpha, decision 8L A) is off on GOG 2016
