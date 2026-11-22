@@ -69,6 +69,10 @@ static bool g_give_fit_fix = true;
 COOP_FIX("core.ui_give_fit", "BUG-1062", g_give_fit_fix, "ui: the give and jump buttons are as wide as their captions");
 static bool g_creation_hint_fix = true;
 COOP_FIX("core.ui_creation_hint", "BUG-0598", g_creation_hint_fix, "ui: the creation row says whose creation it is and how to get a choice");
+// BUG-9334 (roadmap-alpha-now: BUG-9294 left "a button for /eras"): on a galaxy server the Social Menu ends with
+// "Players in other stages" and a Shown / Hidden button, the same setting as chat /eras on|off. Off: no row (chat only).
+static bool g_eras_button = true;
+COOP_FIX("galaxy.eras_button", "BUG-9334", g_eras_button, "ui: the Social Menu has a Shown / Hidden button for players in other stages (as /eras)");
 static bool g_f9_down;
 static bool g_lb_down;      // the left mouse button in the last frame (the Co-op item during the menu intro)
 static uint32_t g_lb_seen;  // mouse::clicks() handled (BUG-0145)
@@ -5442,6 +5446,7 @@ constexpr int kSoRows = 12, kSoChips = 2;
 // this look more native."): the panel is the Co-op window's own native frame (the game's account dialog layout: its
 // frame, glow and close button; the content hidden) with a centred gold title as the Co-op window's page titles, and
 // each player in the lobby's row box (lineages_field_box) with the lobby's colour swatch
+constexpr float kSoEras = 36; // BUG-9334: the eras row under the lists
 constexpr float kSoW = 318, kSoHead = 66, kSoSect = 28, kSoRow = 42, kSoPad = 24, kSoBottom = 22, kSoChipW = 68, kSoChipH = 24;
 constexpr uint32_t kIdSocialFrame = 0xC00F0200;
 constexpr uint32_t kSoOnline = 0xFF5ADC6Eu, kSoOffline = 0xFF6E7882u,
@@ -5462,6 +5467,8 @@ static struct {
     Win button = nullptr, btn_tab = nullptr, btn_icon = nullptr;
     Win root = nullptr, box = nullptr, edge[4] = {}, title = nullptr, hint = nullptr, sect[3] = {}, empty = nullptr;
     SoRowWin rows[kSoRows];
+    Win eras_label = nullptr; // BUG-9334: "Players in other stages" and its Shown / Hidden button
+    SoChip eras;
     std::string btn_style;
     bool failed = false;
 } g_so;
@@ -5613,6 +5620,14 @@ static bool so_build()
             c.cap = so_label(root, small, kWhite, sui::kAlignCenter);
         }
     }
+    g_so.eras_label = so_label(root, small, kWhite, sui::kAlignLeft); // BUG-9334
+    g_so.eras.img = party_image_window(root, "lineages_button_gold_normal");
+    if (g_so.eras.img) {
+        sui::add_ref(g_so.eras.img);
+        sui::set_flag(g_so.eras.img, sui::kFlagIgnoreMouse, true);
+        sui::set_visible(g_so.eras.img, false);
+    }
+    g_so.eras.cap = so_label(root, small, kWhite, sui::kAlignCenter);
     sui::set_visible(root, false);
     return true;
 }
@@ -5622,8 +5637,15 @@ static void so_chip_look(SoChip& c)
 {
     if (!c.img) return;
     if (void* look = card_look(std::string("lineages_button_") + kSoStyle[std::clamp(c.style, 0, 3)] +
-                               (c.hover ? "_hover" : "_normal")))
+                               (c.hover ? "_hover" : "_normal"))) {
+        if (sui::drawable(c.img) == look) return;
         sui::set_drawable(c.img, look);
+        // BUG-9334: the game draws a window's new drawable only once the window changes (set_look): the eras button
+        // stayed gold after a press to Hidden (2026-11-22). Hidden and shown again, it is drawn anew
+        const bool was = sui::visible(c.img);
+        sui::set_visible(c.img, false);
+        sui::set_visible(c.img, was);
+    }
 }
 
 static void so_apply(void*)
@@ -5668,6 +5690,7 @@ static void so_apply(void*)
         sui::set_visible(g_so.root, false);
         g_so_rect = {};
         for (auto& r : g_so.rows) r.at = {}, r.row = -1;
+        g_so.eras.at = {};
         return;
     }
     g_so_rows = st.rows;
@@ -5695,7 +5718,8 @@ static void so_apply(void*)
     }
     const int nrows = std::min<int>((int)st.rows.size(), kSoRows);
     const bool friends_empty = std::none_of(st.rows.begin(), st.rows.end(), [](const SocialRow& r) { return r.section == 1; });
-    const float h = kSoHead + sections * kSoSect + nrows * kSoRow + kSoBottom + (friends_empty ? 24 : 0);
+    const bool eras_row = st.eras >= 0 && g_eras_button; // BUG-9334
+    const float h = kSoHead + sections * kSoSect + nrows * kSoRow + kSoBottom + (friends_empty ? 24 : 0) + (eras_row ? kSoEras : 0);
     // at the top, left of the Party cards and the Social button when they show (they stay in reach: the button closes
     // it again), else at the right edge
     float x2 = sw - 10.f;
@@ -5827,6 +5851,27 @@ static void so_apply(void*)
         for (auto& c : w.chip) c.at = {}, place(c.img, false, {}), place(c.cap, false, {});
     }
     if (!friends_empty) place(g_so.empty, false, {});
+    // BUG-9334: the player's own "other eras" setting (chat /eras on|off) under the lists: a label and a button that
+    // says what is set now (gold Shown, grey Hidden); a press switches it
+    if (eras_row) {
+        const float top = cy + 4, bot = top + kSoChipH;
+        const Rect r{kSoW - kSoPad - 8 - kSoChipW - 6, top, kSoW - kSoPad - 8, bot};
+        text_at(g_so.eras_label, {kSoPad + 4, top + 2, r.x1 - 6, bot}, "Players in other stages", true, false);
+        g_so.eras.action = kSocEras;
+        g_so.eras.style = st.eras ? kMenuGold : kMenuGrey;
+        g_so.eras.at = {x + r.x1, y + r.y1, x + r.x2, y + r.y2};
+        place(g_so.eras.img, true, r);
+        place(g_so.eras.cap, true, {r.x1, r.y1 + 1, r.x2, r.y2});
+        so_chip_look(g_so.eras);
+        sui::set_caption(g_so.eras.cap, st.eras ? "Shown" : "Hidden");
+        if (g_so.eras.img) sui::bring_to_front(g_so.root, g_so.eras.img);
+        if (g_so.eras.cap) sui::bring_to_front(g_so.root, g_so.eras.cap);
+    } else {
+        g_so.eras.at = {};
+        place(g_so.eras_label, false, {});
+        place(g_so.eras.img, false, {});
+        place(g_so.eras.cap, false, {});
+    }
 }
 
 static void so_queue()
@@ -5843,7 +5888,7 @@ void set_social(const SocialState& s, void (*on_action)(int, const SocialRow&, f
     g_so_action = on_action;
     auto same = [](const SocialState& a, const SocialState& b) {
         if (a.button != b.button || a.galaxy != b.galaxy || a.rows.size() != b.rows.size() || a.party_n != b.party_n ||
-            a.friends_online != b.friends_online || a.online_n != b.online_n || a.stage != b.stage)
+            a.friends_online != b.friends_online || a.online_n != b.online_n || a.stage != b.stage || a.eras != b.eras)
             return false;
         for (size_t i = 0; i < a.rows.size(); i++) {
             const auto &x = a.rows[i], &y = b.rows[i];
@@ -5892,6 +5937,10 @@ bool social_press(float x, float y, bool right)
         return true;
     }
     if (!g_so_open || !so_in(g_so_rect, x, y)) return false;
+    if (!right && so_in(g_so.eras.at, x, y)) { // BUG-9334
+        if (g_so_action) g_so_action(kSocEras, SocialRow{}, x, y);
+        return true;
+    }
     for (auto& w : g_so.rows) {
         if (w.row < 0 || w.row >= (int)g_so_rows.size() || !so_in(w.at, x, y)) continue;
         const SocialRow row = g_so_rows[w.row];
@@ -5921,6 +5970,7 @@ static void so_hover_tick()
                 hr = i, hc = c;
                 break;
             }
+    if (hr < 0 && so_in(g_so.eras.at, (float)px, (float)py)) hr = kSoRows, hc = 0; // BUG-9334 (the eras button)
     if (hr == g_so_hover_row && hc == g_so_hover_chip) return;
     g_so_hover_row = hr, g_so_hover_chip = hc;
     H->run_outside_frame([](void*) {
@@ -5933,7 +5983,24 @@ static void so_hover_tick()
                     so_chip_look(ch);
                 }
             }
+        const bool want = g_so_hover_row == kSoRows;
+        if (g_so.eras.hover != want && g_so.eras.at.x2 > g_so.eras.at.x1) {
+            g_so.eras.hover = want;
+            so_chip_look(g_so.eras);
+        }
     }, nullptr);
+}
+
+std::string social_debug()
+{
+    char b[200];
+    const Rect& r = g_so.eras.at;
+    const std::string stem = std::string("lineages_button_") + kSoStyle[std::clamp(g_so.eras.style, 0, 3)] +
+                             (g_so.eras.hover ? "_hover" : "_normal");
+    snprintf(b, sizeof b, "social open=%d eras=%d button=(%.0f %.0f %.0f %.0f) caption='%s' look=%s%s", (int)g_so_open,
+             g_so_want.eras, r.x1, r.y1, r.x2, r.y2, g_so.eras.cap && r.x2 > r.x1 ? sui::caption(g_so.eras.cap).c_str() : "",
+             stem.c_str(), card_look(stem) ? "" : " (no art)");
+    return b;
 }
 
 } // namespace coop_ui

@@ -230,12 +230,14 @@ struct SocialState {
     std::vector<SocialRow> rows;
     int party_n = 0, friends_online = 0, online_n = 0;
     uint32_t stage = 0;  // this player's game mode (the button's art)
+    int eras = -1;       // BUG-9334: the "Players in other stages" row: 1 shown, 0 hidden, -1 no row (not on a galaxy)
 };
-enum SocialAction { kSocLeave = 1, kSocWhisper, kSocInvite, kSocMenu };
+enum SocialAction { kSocLeave = 1, kSocWhisper, kSocInvite, kSocMenu, kSocEras };
 void set_social(const SocialState& s, void (*on_action)(int action, const SocialRow& row, float x, float y));
 void toggle_social();
 bool social_open();
 bool social_press(float x, float y, bool right); // client pixels; true: the press was the Social Menu's
+std::string social_debug(); // tests (BUG-9334): open, the eras row's button (client pixels) and its caption
 // the open Social Menu or player menu covers this screen rectangle (the overlay's name tags and arrows stay off it)
 bool ui_covers(float x1, float y1, float x2, float y2);
 // the player of the Co-op window's lobby row or the Party card drawn at a client pixel (-1 none)

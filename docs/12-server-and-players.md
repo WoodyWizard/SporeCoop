@@ -1653,3 +1653,13 @@ Decisions 7H A and 7I A (docs/ROADMAP.md), the owner's menu point of 7H.
 * BUG-9296 (found on the way): a Tribe game showing a Civ era's objects crashed in the model bake (asked in the frame;
   asked outside it, the bake's end crashed in Editors::cEditor::HandleMessage). Bakes are now asked only in the Creature
   stage, outside the frame, once per model. ✔ No crash in 30+ minutes of Tribe hosting.
+
+## A button for players in other stages (2026-11-22, feat/lineages-alpha)
+<a id="server-eras-button"></a>
+
+BUG-9334, switch `galaxy.eras_button`. On a galaxy server the Social Menu (F8) ends with "Players in other stages" and
+a button showing the setting of BUG-9294 (#server-era-visitors-solid): gold "Shown", grey "Hidden"; a press does what
+chat `/eras on|off` does. Off a galaxy server there is no row.
+* ✔ In game (TITAN's test galaxy, QA 9 on Samuth, Creature): a real click switched it both ways; switch off: no row.
+* ✔ UI pitfall (again): a window given a new drawable keeps drawing the old one until it changes; hiding and showing it
+  draws the new one (set_look, now so_chip_look too).

@@ -10376,6 +10376,7 @@ static void on_social_action(int action, const coop_ui::SocialRow& row, float x,
                                                : "That player is not reachable from here.";
         break;
     case coop_ui::kSocMenu: open_menu_for(row.session_id, row.identity, row.name, x, y); break;
+    case coop_ui::kSocEras: r = era_visitors::set_other_eras(!era_visitors::other_eras()); break; // BUG-9334
     default: break;
     }
     if (!r.empty())
@@ -10391,6 +10392,7 @@ static void social_tick(double now)
     const bool gx = parties::galaxy();
     st.galaxy = gx;
     st.stage = g_mode;
+    st.eras = gx ? (era_visitors::other_eras() ? 1 : 0) : -1; // BUG-9334: the Social Menu's eras row
     const bool in_stage = g_mode >= modes::kCell && g_mode <= modes::kSpace;
     st.button = in_stage && (g_sess.connected() || galaxy::welcomed()) && !(game_busy() & (busy::kPaused | busy::kInputLock));
     if (coop_ui::social_open() && gx && now >= s_ask) {
@@ -11911,6 +11913,9 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                                r = "posted";
                            } else
                                r = "coop.party rclick <x> <y>";
+                       } else if (sub == "social") { // tests (BUG-9334): the Social Menu (open, the eras button)
+                           if (arg == "toggle") coop_ui::toggle_social();
+                           r = coop_ui::social_debug() + " other_eras=" + std::to_string((int)era_visitors::other_eras());
                        } else if (sub == "menu") {
                            int x = 0, y = 0;
                            sscanf(arg.c_str(), "%d %d", &x, &y);
