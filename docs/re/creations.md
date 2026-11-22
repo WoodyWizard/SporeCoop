@@ -1847,3 +1847,47 @@ BUG-0996. GOG 2024 (dc04aee5), from the decompiler (tools/ghidra/q.sh --build 20
   Tribe game, a little larger with the model's level of detail there).
 * ✔ (runtime) To move a creature (the avatar) out of a box for good: game::place (teleport vt 0x44 without the teleport
   mark); SetPosition (vt 0x38) alone is undone by its locomotion in the next frame.
+## The ban list of test creations (2026-11-21, fix/l47-ship-purge)
+<a id="creations-ban-list"></a>
+
+BUG-9329, decision 7Z A. Runtime on TITAN's QA copy; the test profiles' caches read on TITAN and the MSI (read only).
+
+* ✔ The object template DB (`Sporepedia::OTDB::cObjectTemplateDB::Get` 0x67CB00, 0x270 bytes "Editor/ObjectTemplateDB",
+  ctor 0x559110, vtable 0x13F44A8) answers the game's creation queries with vt 0x24 `SporeCoop::OTDB_FindObjects`
+  0x562E60 (thiscall bool(db, vector<Key>* out, int max, vector<Param 0x24 bytes>* params) ret 0xC): its query engine
+  (+0x12C) fills out, then 0x55C2B0 keeps max random results (a partial shuffle). vt 0x58 0x55F9F0(key, 1) stamps a
+  template as used (+0x48/+0x4C of its 0x50-byte record, the DB marked dirty at +0x1D0). The visiting UFO's random ship
+  is such a query (#creature-ufo-ship-model). Other slots 0x28..0x54 are other query forms (not hooked).
+* ✔ (runtime) The result set is the templates used least lately, not every match: on a QA profile with five never-used
+  test ships, 200 ship picks with those five dropped afterwards came back empty every time, also when the query asked for
+  44 results (only the five came); the caller stamps only what it takes. Stamping each dropped template (vt 0x58) and
+  asking again brings the next ones: 200 picks, 0 banned, 0 empty, 90 different ships (13 picks needed one more ask).
+* ✔ (runtime) A received creation can resolve to the player's own EditorSaves record (ImportPNG returns the existing key
+  of a known creation): a QA guest's species "received" from a test profile was also its own EditorSaves creature. Such
+  a key is never hidden from the game (library.cpp hide_key).
+* ✔ Received creations live in the Pollination database (0x11AC19D), not in EditorSaves; each game imports them under
+  its own key (a test ship: 2926CA3F on one QA game, 29215407 on the other).
+* ✔ (test profiles' caches, 2026-11-21) 35 hidden identities on the two test PCs (several profiles share one: copies).
+  One identity found in a test profile carries only the creations of a copied player save and the sharer name of a real
+  player: it is not on the list (treated as that player's), and the 80 creations seen under it are `keep` lines, because
+  the same PNGs (same hash) are also "local" creations of four other test profiles that copied the save.
+* Design: removing a creation from Pollination would break any save that holds it (a world's NPC species, an empire's
+  ship) and needs the database's own record deletion; instead the cache entry and its PNG move out (LineagesCache\banned,
+  moved.txt) and OTDB_FindObjects drops their keys, so the game never picks them again while saves that hold them keep
+  loading. A creation that comes back from a source not on the list is pickable again.
+* ✔ (runtime) A save whose player species is a moved-out test creature (QA guest profile, Game20 Samuth: the avatar and
+  four of its species, key 291D668C) loaded and played normally after the purge; a host save (Samuth) that references a
+  moved-out test vehicle loaded too; a moved-out creature (Pollination only) still spawns with its model.
+* ✔ (2026-11-21, fix/l47-msi-ban, decision 8C A) The main (non-test) Spore profile of the MSI test PC, identity
+  ae4c8a7f631d..., read only: its own cache holds 81 local creations, the same 81 as its EditorSaves metadata records;
+  26 of them were also in 12 TITAN test profiles' caches and in one MSI test profile's cache (shared in a test session),
+  under no other source and on no list line. Every one was made between 2020-07-10 and 2020-08-13 (a real playthrough:
+  two species lines with their cell, creature and editor versions, buildings, vehicles and two ships; parent keys chain
+  them); none by a test game. Result: no `source` line (the owner's rule: never block its real creations), no `creation`
+  line, no `keep` line needed (no listed source holds them); a comment in banned.txt records the review. A later test
+  creation of that profile is banned one by one with a `creation` line.
+* ✔ `pollen_metadata` 0x030BDEE3 (big-endian, version 13): +0x18 parent key {type, group, instance} (zero for a new
+  creation; the previous version for an editor re-save), +0x34 created and +0x3C modified as u64 seconds since
+  0001-01-01 (0x0ED6A3DF8C = 2020-07-17 18:06, consistent with the profile's save files of July/August 2020), +0x44
+  u32 0, +0x48 author ID (FFFFFFFF FFFFFFFE), +0x50 author and then the name as u32 count + UTF-16BE. A quick way to
+  date a profile's creations before banning any: read its EditorSaves.package (DBPF, RefPack) for these records.

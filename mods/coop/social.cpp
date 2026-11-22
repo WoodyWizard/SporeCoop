@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "game.h"
+#include "guest_pack.h"
 #include "player_life.h"
 #include "net/validate.h"
 #include "npc.h"
@@ -571,6 +572,71 @@ static bool g_log_posts = false;
 static int social_mode(void* npc_c) { return a_SocialMode ? thiscall<int>(a_SocialMode, npc_c) : 0; }
 static uint32_t g_posts_logged = 0;
 
+// Decision 7L (owner 2026-11-20: "If a partner impresses a creature to join a pack, it should go to their pack like
+// native spore"), BUG-9308. The native game: CreatureSocialMode (the creature's social goal to the avatar) is 4 for a
+// friendly creature (allied species, impressed, the own species; docs/re/creature.md#creature-native-recruit); the
+// success of a goal-4 game (0xD9BC40) gives no DNA and sets the session's recruit flag (+0x1FC & 0x10), and the session
+// end (0xD9F7A0) adds the creature to the avatar's pack (cPosseSimulator_AddMember). A partner's social game runs on the
+// host (host_act, apply_success): nobody ever recruited, its won creature only got the impressed flag; the partner's
+// recruit path (player_rules h_AddMember -> K_RECRUIT) waits for an AddMember on the partner's game, which runs no
+// session for a mirror. And an impressed creature was refused a second game (the native recruit game of a befriended
+// one). Now the host asks the social goal as the partner's own game would (inside guest_pack's party context: the
+// partner's puppet is the avatar, its pack the posse), lets a goal-4 game run also on an impressed creature, and at its
+// win recruits it into that partner's pack (guest_pack::recruit, the game's own AddMember there), with no DNA as
+// natively. The guest opens its meter for a goal-4 creature also when it is impressed, and posts no part-reward message
+// for it (the native success posts 0x60B4123 only for goals 1-3).
+// Off (`coop.fix social.partner_recruit off`): impressed only, no pack (67-dev).
+static bool g_recruit_fix = true;
+COOP_FIX("social.partner_recruit", "BUG-9308", g_recruit_fix, "creature: a creature a partner wins in a recruit social game joins that partner's pack (decision 7L)");
+static uint32_t g_recruits = 0, g_recruits_refused = 0;
+
+// BUG-9308 (live QA 2026-11-21, MSI): inside the partner's party context GetRelationship 0xBA40E0 returned 6 (allied)
+// for every NPC (`coop.social pmode`: host relation 3 mode 2, the partner's relation 6 mode 4; ~ the puppet's own
+// player-species tuning +0x390 = 6 is read as "the one that is not the avatar"), so a partner's first win on a neutral
+// creature was a recruit game: no DNA, no impression step, straight into its pack. CreatureSocialMode 0xC0E800 (read
+// live): the relation's jump table (0xC0EA0C) gives 1 / 2 -> 3, 3 -> 2, 4 -> 1, 5 -> 0 (3 while busy), each 0 when the
+// creature is friendly (vt 0xD4, e.g. impressed); 6 -> 4 only in Creature when the creature is in no pack (+0xB58 &
+// 0x100) and the pack is not full, else 0. The species relation is the party's (the host's table, the guests follow it):
+// it is read outside the party context; the party context only decides goal 4 (the partner's pack: membership, room).
+// Off (`coop.fix social.partner_relation off`): the goal from inside the party context (every NPC a recruit, first QA).
+static bool g_partner_rel_fix = true;
+COOP_FIX("social.partner_relation", "BUG-9308", g_partner_rel_fix, "creature: a partner's social goal uses the party's species relation (only allied species are recruit games)");
+static uint32_t g_partner_rel_kept = 0;
+// host: the NPC's social goal for player `player` (the partner's puppet as the avatar, its own pack)
+static int partner_mode(uint8_t player, void* c)
+{
+    void* pup = g_recruit_fix && C.puppet_of ? C.puppet_of(player) : nullptr;
+    if (g_recruit_fix && g_partner_rel_fix && pup) {
+        void* mgr = rel_mgr();
+        const int rel = mgr && a_RelGet ? thiscall<int>(a_RelGet, mgr, (uint8_t*)c + game::kSpeciesKeyOff, game::avatar(), c) : 0;
+        if (rel != 6) { // not an allied species: the party's goal (1-3, or 0 for a friendly / busy one), as the host's
+            g_partner_rel_kept++;
+            return social_mode(c);
+        }
+    }
+    const size_t tok = pup && guest_pack::party_mode() ? guest_pack::party_enter_puppet(pup) : 0;
+    const int m = social_mode(c);
+    if (tok)
+        guest_pack::party_leave_token(tok);
+    return m;
+}
+// host: the goal for whoever plays: the host's own avatar, or a partner (7L)
+static int mode_for(uint8_t player, void* c)
+{
+    return g_recruit_fix && g_partner_rel_fix && C.sess && player != C.sess->my_id() ? partner_mode(player, c) : social_mode(c);
+}
+// host: the creature takes no social game from this player (impressed, unless a recruit game as in its own game)
+static bool closed_to(uint8_t player, void* c)
+{
+    return game::impressed(c) && !(g_recruit_fix && partner_mode(player, c) == 4);
+}
+// guest: its meter opens for this proxy (its own game's social goal)
+static bool open_to_me(void* px)
+{
+    const int m = social_mode(px);
+    return m != 0 && (!game::impressed(px) || (g_recruit_fix && m == 4));
+}
+
 static void send_engage(uint16_t id) // BUG-0525: the host starts the NPC's prompts
 {
     if (!g_prompt_fix)
@@ -758,12 +824,26 @@ bool goal_dna(float delta)
 static int ability_count(void* c) { return c ? vcall<int>(c, 0xB0 / 4) : 0; }
 static void* ability(void* c, int i) { return vcall<void*>(c, 0xB4 / 4, i); }
 
+// BUG-9297 (a guest, 67-dev: "the impress bar was still not functioning"): the keys 1-4 and the ability bar took an
+// ability as social only when its +0x10 was 1 (the sing). +0x10 is the social kind a prompt asks for
+// (docs/re/creature.md#creature-social-prompts; combat abilities have 0), so a guest's dance, charm and pose went to
+// the game's own path, were never sent as answers, and a prompt of those kinds could not be answered. Now any kind
+// but 0 is a social answer (as player_rules' social_use already took it, BUG-9136). Off (`coop.fix social.all_kinds
+// off`): only the sing (67-dev).
+static bool g_all_kinds_fix = true;
+COOP_FIX("social.all_kinds", "BUG-9297", g_all_kinds_fix, "creature: a guest's dance, charm and pose answer the creature's prompts too (not only the sing)");
+static bool is_social(void* a)
+{
+    const uint32_t kind = a ? field<uint32_t>(a, 0x10) : 0;
+    return g_all_kinds_fix ? kind != 0 : kind == 1;
+}
+
 static int social_ability(void* c, int slot) // index of the slot-th social ability, -1
 {
     int n = ability_count(c);
     for (int i = 0, k = 0; i < n && i < 64; i++) {
         void* a = ability(c, i);
-        if (a && field<uint32_t>(a, 0x10) == 1 && k++ == slot)
+        if (a && is_social(a) && k++ == slot)
             return i;
     }
     return -1;
@@ -804,7 +884,14 @@ static bool act_index(int idx)
         return false;
     if (idx < 0 || !play_ability(av, idx))
         return false; // no such ability, cooling down or no energy
-    send_act((uint16_t)g_engaged, field<uint32_t>(ability(av, idx), 8));
+    void* a = ability(av, idx);
+    send_act((uint16_t)g_engaged, field<uint32_t>(a, 8));
+    static unsigned logged = 0; // BUG-9297: which answer left (60 lines a game run)
+    if (logged < 60) {
+        logged++;
+        H->log(M, SK_INFO, "social: act sent to npc %d: ability %d type %08X kind %u", g_engaged, idx, field<uint32_t>(a, 8),
+               field<uint32_t>(a, 0x10));
+    }
     g_engaged_at = g_last_act = H->time_seconds();
     return true;
 }
@@ -835,7 +922,7 @@ static void SK_CDECL h_BarUse(int idx)
                    : nullptr;
     if (av && a_AbilityMode && cdecl_call<int>(a_AbilityMode) == 0 && idx >= 0 && idx < ability_count(av)) {
         void* a = ability(av, idx);
-        if (a && field<uint32_t>(a, 0x10) == 1) { // a social ability (sing, dance, ...)
+        if (a && is_social(a)) { // a social ability (sing, dance, charm, pose; BUG-9297)
             if (H->time_seconds() - g_last_act < 0.5 || act_index(idx)) {
                 g_bar_acts++; // (a key press also reaches here: the poll sent it a moment ago)
                 return;
@@ -870,6 +957,42 @@ static bool g_meter_glide = true;
 COOP_FIX("social.meter_glide", "BUG-9258", g_meter_glide, "creature: a guest's social meter glides to each new fill instead of jumping");
 static float g_meter_goal = 0;   // where the bar goes (the host's count)
 static double g_meter_step_at = 0;
+// BUG-9305 (owner, 67-dev: "Even when it was the correct one, it snapped the fill, rather than gradually filling like
+// native Spore"). The native fill (spore-decomp, docs/re/creature.md#creature-meter-native-fill): an answer starts a
+// step on the meter (cSPUISocialRainbow StartFill: the step's entry goes into the bar's list at once, the bar's end
+// target set), then every frame SocialValues::Update moves the bar there by the answer animation's progress (SetBar(i,
+// elapsed / length)): a linear fill over the answer's animation. The guest's glide (BUG-9258) had three snaps:
+// meter_fill added a round's entry only when the fill passed half the round (lround), and the bar draws nothing
+// without an entry, so the first half of a round was invisible and then appeared at once; the 20 % a step glide was
+// most of the way there in 0.1 s; and the win (K_RESULT, right behind the last K_PROGRESS) set the meter full at once
+// and the meter closed the next frame. Now the step's entry is there from its start, the bar moves linearly over
+// kFillTime s, the win waits for the fill (kWinWait s at most) and the full meter stays kWinHold s.
+// Off (`coop.fix social.meter_smooth off`): the 67-dev glide.
+static bool g_meter_smooth = true;
+COOP_FIX("social.meter_smooth", "BUG-9305", g_meter_smooth, "creature: a guest's social meter fills gradually like the native one (no snap at a round or at the win)");
+constexpr double kFillTime = 1.0; // s for one answer's fill (~ the native answer animation)
+constexpr double kWinWait = 3.0;  // s at most the win waits for the fill
+constexpr double kWinHold = 1.5;  // s the full meter stays after the win
+static float g_glide_from = 0;    // where the bar stood when the current goal arrived
+static double g_glide_t0 = 0;     // when
+static int g_win_npc = -1;        // the win waits for the fill
+static double g_win_at = 0, g_hold_until = 0;
+static uint32_t g_wins_deferred = 0;
+static int g_meter_mode = -1;     // decision 7L: the proxy's social goal when its meter opened (4: a recruit game)
+static bool smooth() { return g_meter_glide && g_meter_smooth; }
+static float glide_pos(double now) // where the bar should stand now
+{
+    const double t = kFillTime > 0 ? std::clamp((now - g_glide_t0) / kFillTime, 0.0, 1.0) : 1.0;
+    return g_glide_from + (g_meter_goal - g_glide_from) * (float)t;
+}
+static void glide_to(float goal, double now) // a new goal: the linear fill starts from where the bar is
+{
+    if (goal <= g_meter_goal + 1e-4f)
+        return;
+    g_glide_from = std::max(g_meter_frac, glide_pos(now));
+    g_glide_t0 = now;
+    g_meter_goal = goal;
+}
 static int g_meter_vis_at_win = -1; // the meter layout's own visible byte when the win arrived (tests)
 
 // the layout's visible byte: SetVisible 0xE319D0 is UILayout::SetVisible(meter + 0xC), which writes
@@ -956,7 +1079,12 @@ static void meter_fill(void* m, float frac)
     // read from a native meter: bar 0 ends at +0x3C + its length so far, bar 1 at +0x40 - it, the last at pi / 2 where they
     // meet). The guest's list was empty: nothing drawn. Rebuilt for the rounds done (rounds at +0x44).
     const int rounds = *(int*)(u + 0x44);
-    const int done = rounds > 0 ? std::min(rounds, (int)std::lround(std::max(0.f, std::min(1.f, frac)) * rounds)) : 0;
+    const float f01 = std::max(0.f, std::min(1.f, frac));
+    // BUG-9305: the round being filled has its entry from its start, as StartFill pushes it (else nothing is drawn
+    // until half the round); off: rounded (the entry at half the round)
+    const int done = rounds <= 0 ? 0
+                     : smooth()  ? std::min(rounds, (int)std::ceil(f01 * rounds - 1e-3f))
+                                 : std::min(rounds, (int)std::lround(f01 * rounds));
     for (int i = 0; i < 2; i++) {
         uint8_t* v = u + 0xA4 + i * 0xA4;
         uint8_t* own = u + 0xBC + i * 0xA4;
@@ -1014,6 +1142,9 @@ static void meter_run(void*) // outside the frame: the meter is UI
             g_meter_rounds = t.rounds;
             g_meter_frac = 0;
             g_meter_goal = 0;
+            g_glide_from = 0;
+            g_win_npc = -1;
+            g_meter_mode = social_mode(px);
             g_meter_opened++;
         } else if (t.op == 1 && t.npc == g_meter_npc && a_MeterBar) {
             if (g_meter_fill_fix) meter_fill(m, t.frac); // BUG-9230
@@ -1033,7 +1164,8 @@ static void meter_run(void*) // outside the frame: the meter is UI
             // the win's message, as CreatureSocialSuccess posts it ({avatar, the creature, 0}): the
             // handler rolls the species' part reward (coop.cpp h_StageMsg gives a proxy a blank +0xE84)
             void* av = game::avatar();
-            if (px && av && a_StrategyGet && a_ExecuteAction)
+            const bool recruit = g_recruit_fix && g_meter_mode == 4; // 7L: the native goal-4 success posts no message
+            if (px && av && a_StrategyGet && a_ExecuteAction && !recruit)
                 if (void* st = cdecl_call<void*>(a_StrategyGet)) {
                     void* msg[3] = {av, px, nullptr};
                     thiscall<void>(a_ExecuteAction, st, 0x60B4123u, (void*)msg);
@@ -1068,26 +1200,40 @@ static void meter_tick()
 {
     if (!g_meter_fix)
         return;
+    const double now = H->time_seconds();
+    // BUG-9305: the win waits for the fill to reach the end, then the full meter stays a moment before the close
+    if (g_win_npc >= 0 && g_win_npc != g_meter_npc)
+        g_win_npc = -1;
+    if (g_win_npc >= 0 && g_meter_tasks.empty() && (g_meter_frac >= 0.999f || now - g_win_at > kWinWait)) {
+        meter_task(2, g_win_npc);
+        g_win_npc = -1;
+        g_hold_until = now + kWinHold;
+    }
+    if (smooth() && g_meter_npc >= 0 && g_meter_tasks.empty()) { // BUG-9305: linear, every frame
+        const float to = glide_pos(now);
+        if (to > g_meter_frac + 0.001f)
+            meter_task(1, g_meter_npc, to);
+    }
     // BUG-9258: the bar glides towards the host's count, a step every ~30 ms
-    if (g_meter_glide && g_meter_npc >= 0 && g_meter_goal > g_meter_frac + 0.002f && g_meter_tasks.empty()) {
-        const double now = H->time_seconds();
+    if (!smooth() && g_meter_glide && g_meter_npc >= 0 && g_meter_goal > g_meter_frac + 0.002f && g_meter_tasks.empty()) {
         if (now - g_meter_step_at >= 0.03) {
             g_meter_step_at = now;
             const float step = std::max(0.02f, (g_meter_goal - g_meter_frac) * 0.2f);
             meter_task(1, g_meter_npc, std::min(g_meter_goal, g_meter_frac + step));
         }
     }
-    if (g_engaged >= 0 && g_engaged != g_meter_npc && g_meter_tasks.empty()) {
+    if (g_engaged >= 0 && g_engaged != g_meter_npc && g_meter_tasks.empty() && g_win_npc < 0) {
         void* px = npc::proxy((uint16_t)g_engaged);
         if (g_meter_retry_fix && H->time_seconds() - g_meter_missed_at < kMeterRetry)
             return; // (BUG-1058: a missed open, tried again shortly)
-        if (px && !game::impressed(px) && social_mode(px) != 0)
+        if (px && open_to_me(px))
             meter_task(0, g_engaged, 0, rounds_needed(px));
         else
             return;
         if (!g_meter_retry_fix)
             g_meter_npc = g_engaged; // (0.7.13: marked before the task opened it)
-    } else if (g_engaged < 0 && g_meter_npc >= 0 && g_meter_tasks.empty()) {
+    } else if (g_engaged < 0 && g_meter_npc >= 0 && g_meter_tasks.empty() && g_win_npc < 0 &&
+               !(smooth() && now < g_hold_until)) {
         meter_task(3, g_meter_npc);
     }
 }
@@ -1147,19 +1293,25 @@ std::string cards_dump()
 std::string meter_dump() // tests: the game's meter object as the guest's screen has it
 {
     void* m = meter_ui();
-    char b[560];
+    char b[760];
     if (!m)
         return "meter: none\n";
     uint8_t* u = (uint8_t*)m;
+    auto entries = [u](int i) { // BUG-9305: the bar's list of steps (what is drawn), entries of 0x14 bytes
+        uint8_t* s = *(uint8_t**)(u + 0xA4 + i * 0xA4);
+        uint8_t* e = *(uint8_t**)(u + 0xA8 + i * 0xA4);
+        return s && e >= s ? (int)((e - s) / 0x14) : -1;
+    };
     // bar i: lo +0x90+(i+1)*0xA4, pos +0x94+.., hi +0x98+.. (SetBar 0xE31990)
     float lo = *(float*)(u + 0x134), pos = *(float*)(u + 0x138), hi = *(float*)(u + 0x13C);
     float frac = hi != lo ? (pos - lo) / (hi - lo) : 0;
     snprintf(b, sizeof b,
              "meter: ui=%p visible=%d visible_at_win=%d raw=%.3f/%.3f/%.3f bar1=%.3f/%.3f/%.3f fills=%u full=%d rounds=%d bar0=%.2f open_for=%d opened=%u bars=%u closed=%u win_msgs=%u stage_win_msgs=%u "
-             "frac_set=%.2f missed=%u\n",
+             "frac_set=%.2f missed=%u entries=%d/%d goal=%.2f glide_from=%.2f win_wait=%d wins_deferred=%u mode=%d smooth=%d\n",
              m, meter_visible(m), g_meter_vis_at_win, lo, pos, hi, *(float*)(u + 0x1D8), *(float*)(u + 0x1DC), *(float*)(u + 0x1E0),
              g_meter_fills, (int)u[0x26], *(int*)(u + 0x44), frac, g_meter_npc, g_meter_opened, g_meter_bars, g_meter_closed, g_win_msgs,
-             g_stage_msg_win, g_meter_frac, g_meter_missed);
+             g_stage_msg_win, g_meter_frac, g_meter_missed, entries(0), entries(1), g_meter_goal, g_glide_from, g_win_npc,
+             g_wins_deferred, g_meter_mode, (int)smooth());
     return b;
 }
 
@@ -1235,6 +1387,7 @@ struct Game {
     bool answered = true;  // the open prompt got its answer (or none is open)
     double prompt_at = 0, next_at = 0;
     float score = 0, needed = 0;
+    bool recruit = false;  // decision 7L: a recruit game on an impressed creature (it stays open)
 };
 static std::map<std::pair<uint8_t, uint16_t>, Game> g_games;
 static uint32_t g_acts_in = 0, g_impressed = 0, g_refused = 0;
@@ -1353,7 +1506,7 @@ static void apply_success(uint8_t player, uint16_t id)
 {
     void* c = npc::host_npc(id);
     void* mgr = rel_mgr();
-    if (!c || !mgr || !a_RelEvent || game::is_dead(c) || game::impressed(c)) {
+    if (!c || !mgr || !a_RelEvent || game::is_dead(c) || closed_to(player, c)) {
         g_refused++; // gone, died or impressed by somebody else meanwhile
         log_no("won, but the npc is gone, dead or impressed already", player, id, c, C.puppet_of ? C.puppet_of(player) : nullptr);
         send_result(id, player, false, 0, 0);
@@ -1363,6 +1516,10 @@ static void apply_success(uint8_t player, uint16_t id)
     void* key = (uint8_t*)c + game::kSpeciesKeyOff;
     int rel = a_RelGet ? thiscall<int>(a_RelGet, mgr, key, c, av) : 0;
     int mode = social_mode(c);
+    // decision 7L: the goal as the partner's own game has it (the host's own avatar for the host's games)
+    const bool partner = g_recruit_fix && C.sess && player != C.sess->my_id();
+    if (partner)
+        mode = partner_mode(player, c);
     uint32_t anim = reaction_anim(rel);
     const int actor_was = set_event_actor(player); // 6V A: the winner's party's relations
     thiscall<void>(a_RelEvent, mgr, 3, key, c);
@@ -1383,6 +1540,13 @@ static void apply_success(uint8_t player, uint16_t id)
     if (a_PlayReaction)
         thiscall<int>(a_PlayReaction, c, anim, 1, -1);
     g_impressed++;
+    // decision 7L: a won recruit game (goal 4) puts the creature into the partner's pack, as the native session end does
+    if (partner && mode == 4) {
+        const bool ok = guest_pack::recruit(player, c);
+        ok ? g_recruits++ : g_recruits_refused++;
+        H->log(M, SK_INFO, "social: player %u won a recruit game (social goal 4) with npc %u: %s (decision 7L)", player, id,
+               ok ? "it joins that player's pack" : "the pack refused it (full, in a pack already, or no party pack)");
+    }
     send_result(id, player, true, anim, dna);
     if (C.feed)
         C.feed(C.sess->name_of(player) + " impressed a creature (+" + std::to_string((int)(dna + 0.5f)) + " DNA)");
@@ -1456,7 +1620,7 @@ static void fail_game(uint8_t player, uint16_t id)
 static void host_engage(uint8_t from, uint16_t id)
 {
     void* c = npc::host_npc(id);
-    if (!g_prompt_fix || !c || game::is_dead(c) || game::impressed(c) || social_mode(c) == 0) {
+    if (!g_prompt_fix || !c || game::is_dead(c) || closed_to(from, c) || mode_for(from, c) == 0) {
         if (g_prompt_fix)
             log_no("an engagement the host does not start", from, id, c, C.puppet_of ? C.puppet_of(from) : nullptr);
         return;
@@ -1466,6 +1630,7 @@ static void host_engage(uint8_t from, uint16_t id)
     if (!g.prompts.empty() && now - g.last < kEngageTime && g.idx < (int)g.prompts.size())
         return; // a game with it is on
     g = Game{};
+    g.recruit = game::impressed(c); // (closed_to let it through: a recruit game, 7L)
     g.prompts = pick_prompts(c);
     g.last = now;
     g.next_at = now + kPromptGreet;
@@ -1487,7 +1652,7 @@ static void host_prompt_tick(double now)
             ++it;
             continue;
         }
-        if (!c || game::is_dead(c) || game::impressed(c) || now - g.last > kEngageTime) {
+        if (!c || game::is_dead(c) || (game::impressed(c) && !g.recruit) || now - g.last > kEngageTime) {
             it = g_games.erase(it);
             continue;
         }
@@ -1520,11 +1685,11 @@ static void host_act(uint8_t from, uint16_t id, uint32_t type)
     g_acts_in++;
     void* c = npc::host_npc(id);
     void* pup = C.puppet_of ? C.puppet_of(from) : nullptr;
-    if (!c || game::is_dead(c) || game::impressed(c) || social_mode(c) == 0 ||
+    if (!c || game::is_dead(c) || closed_to(from, c) || mode_for(from, c) == 0 ||
         (pup && net::dist(game::position(pup), game::position(c)) > kActRange + 4)) {
         g_refused++;
         log_no(!c ? "an act on an npc this game does not have" : game::is_dead(c) ? "an act on a dead npc"
-               : game::impressed(c) ? "an act on an npc impressed already" : social_mode(c) == 0 ? "an act while the npc does not socialize"
+               : closed_to(from, c) ? "an act on an npc impressed already" : mode_for(from, c) == 0 ? "an act while the npc does not socialize"
                : "an act from too far", from, id, c, pup);
         send_result(id, from, false, 0, 0);
         return;
@@ -1552,6 +1717,13 @@ static void host_act(uint8_t from, uint16_t id, uint32_t type)
         g_answers++;
         if (!match)
             g_answers_wrong++;
+        static unsigned logged = 0; // BUG-9297: each answer against its prompt (60 lines a game run)
+        if (logged < 60) {
+            logged++;
+            H->log(M, SK_INFO, "social: player %u answers npc %u: type %08X kind %u to prompt %d (type %08X kind %u): %s, "
+                   "score %.1f of %.1f", from, id, type, key, g.idx, p.type, p.key, match ? "match" : "another kind",
+                   g.score, g.needed);
+        }
         int needed = std::max(1, (int)std::lround(g.needed * 10));
         int done = std::min(needed, (int)std::lround(g.score * 10));
         send_progress(from, id, std::min(done, 255), std::min(needed, 255));
@@ -1855,7 +2027,9 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
         int done = r.u8(), needed = r.u8();
         if (r.ok() && needed > 0 && id == g_engaged) {
             const float f = std::min(1.f, (float)done / needed);
-            if (g_meter_glide && id == g_meter_npc)
+            if (smooth() && id == g_meter_npc)
+                glide_to(f, H->time_seconds()); // BUG-9305
+            else if (g_meter_glide && id == g_meter_npc)
                 g_meter_goal = std::max(g_meter_goal, f);
             else
                 meter_task(1, id, f);
@@ -1889,8 +2063,16 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             C.feed(ok ? "Impressed! +" + std::to_string((int)(dna + 0.5f)) + " DNA for the pack"
                  : anim == kFailAnim ? "It lost interest: copy the move it shows with the same ability to fill the bar"
                                      : "It does not want to socialize now");
-        if (mine && ok && id == g_meter_npc)
-            meter_task(2, id);
+        if (mine && ok && id == g_meter_npc) {
+            if (smooth()) { // BUG-9305: the win when the fill is there
+                const double now = H->time_seconds();
+                glide_to(1.f, now);
+                g_win_npc = id;
+                g_win_at = now;
+                g_wins_deferred++;
+            } else
+                meter_task(2, id);
+        }
         if (mine && g_engaged == id)
             g_engaged = -1;
     }
@@ -1907,6 +2089,7 @@ void on_session_end()
         meter_task(3, g_meter_npc);
     g_engaged = -1;
     g_meter_npc = -1;
+    g_win_npc = -1;
     g_goal_paid.clear();
     g_goal_owed.clear();
     g_games.clear();
@@ -1917,15 +2100,16 @@ void on_session_end()
 
 std::string status()
 {
-    char b[640];
+    char b[700];
     if (is_host())
         snprintf(b, sizeof b,
                  "social(host): acts_in=%u impressed=%u refused=%u games=%u species_tx=%u goal_dna_paid=%u "
                  "goal_dna_dropped=%u goal_owed=%u goal_owed_paid=%u prompts_sent=%u answers=%u answers_wrong=%u "
-                 "answers_early=%u prompt_fails=%u games_forgotten=%u\n",
+                 "answers_early=%u prompt_fails=%u games_forgotten=%u recruits=%u recruits_refused=%u partner_rel_kept=%u\n",
                  g_acts_in, g_impressed, g_refused, (unsigned)g_games.size(), g_table_tx, g_goal_dna_paid,
                  g_goal_dna_dropped, (unsigned)g_goal_owed.size(), g_goal_owed_paid, g_prompts_sent, g_answers,
-                 g_answers_wrong, g_answers_early, g_prompt_fails, g_games_forgotten);
+                 g_answers_wrong, g_answers_early, g_prompt_fails, g_games_forgotten, g_recruits, g_recruits_refused,
+                 g_partner_rel_kept);
     else
         snprintf(b, sizeof b,
                  "social(guest): engaged=%d engages=%u acts_sent=%u results_in=%u species_rx=%u species_fixed=%u "
@@ -2155,6 +2339,30 @@ std::string abilities_dump(int id)
         out += "\n";
     }
     return out;
+}
+
+// tests (BUG-9308): host: NPC #id's social goal for the host's avatar and for player p (inside p's party), with the
+// species relation GetRelationship gives in each
+std::string pmode_dump(uint16_t id, uint8_t player)
+{
+    void* c = is_host() ? npc::host_npc(id) : nullptr;
+    void* mgr = rel_mgr();
+    if (!c || !mgr || !a_RelGet)
+        return "no such npc (host only)\n";
+    void* key = (uint8_t*)c + game::kSpeciesKeyOff;
+    auto rel = [&] { return thiscall<int>(a_RelGet, mgr, key, game::avatar(), c); };
+    const int r0 = rel(), m0 = social_mode(c);
+    void* pup = C.puppet_of ? C.puppet_of(player) : nullptr;
+    const size_t tok = pup && guest_pack::party_mode() ? guest_pack::party_enter_puppet(pup) : 0;
+    void* av_in = game::avatar();
+    const int r1 = rel(), m1 = social_mode(c);
+    if (tok)
+        guest_pack::party_leave_token(tok);
+    char b[260];
+    snprintf(b, sizeof b, "npc %u: host relation=%d mode=%d | player %u (puppet %p, party %s, avatar there %p) relation=%d mode=%d "
+             "| impressed=%d pack=%d partner_mode=%d\n", id, r0, m0, player, pup, tok ? "entered" : "not entered", av_in, r1, m1,
+             (int)game::impressed(c), (int)game::pack_member(c), partner_mode(player, c));
+    return b;
 }
 
 bool debug_goto(uint16_t id) // tests: the guest's avatar steps next to proxy #id (2.5 m)

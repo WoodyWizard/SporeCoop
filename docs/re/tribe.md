@@ -6050,3 +6050,301 @@ with the host at 10 fps (lane 2, `tribe_under_probe`, coop_tribe_under.py). Not 
   still tracks (`body_age=`); `coop.tribe layout` rows have the grab spot's `agl=`; the grab spot move logs `tribe:
   member #N stood .. s .. m short of its grab spot: set onto it at (...), .. m over the ground`. Test setup commands:
   `coop.tribe sink <id> <m> [air]`, `coop.tribe epic on <id> [dx]`.
+
+## A guest's member cards after the swap, the host's species on a guest, partner rings (2026-11-20, fix/l47-view)
+<a id="tribe-swap-cards"></a>
+
+BUG-9300, BUG-9301, BUG-9302. Code only on this branch: nothing here was run in a game yet. Follows
+#tribe-guest-own-player-village and #tribe-roster-cards.
+
+* ✔ (code) Nothing in the mod took a card off the roster on the BUG-9153 swap or restore: TribeStage_RemoveMemberCard
+  was called only by detach_body (BUG-0961). The roster's card count is TribeGameUI +0xA8 (as the roster test reads it).
+* ? How the game adds the new player tribe's cards after SetPlayerTribe (on the swap the MSI saw the own villagers'
+  cards on 2026-11-12) and whether it ever takes the old player's off: not known (no Ghidra or running game here).
+  `tribe.swap_cards` does not depend on it: a guest keeps cards only for native_player_tribe's members (more cards
+  than members: every other tribe's members lose theirs; on a restore the former player village's go).
+* ✔ (code) A guest's mirror is made by its local tribe's SpawnMember / CreateCitizen and wears that tribe's species
+  (slot +0x18CC); the snapshot has no species per member; the host's per-tribe species is in the TRBI table after each
+  state chunk's trailer (BUG-0381). The guest's food mirroring (guest_state) needs the local tribe's species to equal
+  the host's, so a wrong species also stops that village's food mirror (inferred from the code).
+* `tribe.mirror_species`: a guest gives a mapped tribe that differs from TRBI the host's species outside the frame:
+  cCreatureAnimal::SetSpecies(profile, age, true) on the members (as `coop.tribe setspecies`, BUG-0643) and
+  Tribe_SetSpeciesProfile on slot 0 and on slots that held a wrong species. ? Not checked: whether the live model swap
+  of a mirror via SetSpecies looks right at once (BUG-0643's test command did it on a guest), and the roster portraits
+  (they read the tribe's key at +0x1904 / +0x1920, not changed here; the guest's roster shows its own village anyway).
+  `coop.tribe species` lists each tribe's slot 0 and its members' species keys (host: its tribes in object order;
+  guest: by host tribe index).
+* Decision 7K A, `tribe.partner_ring`: the game's own target ring (TribeTargetRing_Draw, #tribe-target-ring) has fixed
+  effect colours, so the partner ring is the mod's: a circle on the planet's tangent plane at each partner member's
+  position, projected point by point with world_to_screen and drawn as a D3D9 XYZRHW band (partner_marker::
+  ground_rings) in color_of(owner), without depth (it covers the villager's feet when they stand in front of it).
+  `coop.status` `labels: ... partner_rings=N` counts the rings of the last frame.
+## Outfit votes nobody answers and held guest births (2026-11-20, fix/l47-births)
+<a id="tribe-outfit-vote-timeout-births"></a>
+
+BUG-9298, BUG-9299 (67-dev player report 20261120-205700, guest and host logs; no lab run yet).
+* ✔ (logs) A guest that opens an editor in Tribe by itself (guest log 20:31:56 "BigTexas evolves its own creature",
+  Tribe -> Editor) and is still in it when the host's outfit vote starts (20:32:10, editor 156276D1) never answers that
+  vote: `receive_outfit` took the vote's start in Tribe mode only, and at the vote's end `own_tribal_outfitter` is false
+  in the editor, so no own outfitter opens either. The host's `outfits_pending()` stayed 1 for 25 minutes (until the
+  guest left): no share, no autosave, every guest purchase refused on `world::save_pending()`.
+* ✔ (code) A guest's own editor opened by the game itself (h_Submit's guest branch, not `open_own_editor`) never calls
+  `creations::begin_tribal_outfit`, so its return never reaches `finish_own_outfit`: only the host can end such a vote.
+* ✔ (code) `own_world::peer_mode(id)` is the guest's game mode in its latest PlayerState (Editor while it edits);
+  `peer_here` compares it with the host's own mode, so it is true for two players both in an editor.
+* `tribe.outfit_vote_timeout`: the host ends a vote whose player has been out of any editor for 90 s while the host
+  plays Tribe (`coop.tribe outfits`: `idle=` seconds, `timed_out=`); the clock restarts while either is in an editor.
+* ~ (likely, not proven at runtime) TribalGame +0x3A3 (mbMatingAllowed, set to 1 by TribeStage_BabyBorn) is 0 while the
+  host's own baby is on its way (the host's food fell 49 -> 29 -> 19 during the five "Births are not available"
+  refusals). A guest's purchase does not go through the native birth (it calls SpawnMember on its own village), so the
+  flag only says the host's single native birth is busy. With `tribe.guest_birth_gate` a down flag holds the guest's
+  birth (retried every 0.5 s, at most 20 s); the hold logs the flag's value: `tribe: player N's baby waits up to 20 s:
+  ... (host birth flag +3A3=V, ...)`. A runtime read of +3A3 between a host click and its baby settles it.
+## The live Tribe entry's two reloads (2026-11-20, fix/l47-saves)
+<a id="tribe-entry-reloads"></a>
+
+BUG-9304, decision 7M B. Read in the code, not traced at runtime.
+
+* ✔ (code) A live Creature -> Tribe change loaded every game twice: the share save ~3 s in (the guests load it, the
+  host reloads it once it left: `tribe.host_reload`, BUG-0332, #tribe-terrain-stamps), then the founders' checkpoint
+  (found_partners -> founders_refresh -> world::checkpoint_reload: save, share, host load). The founding could not come
+  earlier: founder_creature_settled waits 15 s after the world was entered (BUG-9137), longer than the share's 3 s.
+* ~ (inferred) At a live entry that 15 s guards nothing: the partner's creature is the one it played in Creature, not
+  one still coming with a new world. `tribe.one_entry_reload` holds the entry's share (20 s at most) and founds then,
+  so the share save carries the villages and the `.duofounders` roster (a sidecar of the planet file in the slot,
+  shared with it). Not seen in a game yet.
+* The host's own reload (BUG-0332) stays: only a load gives every game the same ground.
+* CORRECTION (2026-11-21, fix/l47-saves): the first live test (MSI) showed the hold run out (20 s) with no founding;
+  the founding came 25 s after the host's reload. ✔ (code) tribe::on_world_change does not run on entering Tribe
+  (world_check fires when the Tribe world is left), so g_auto_found_entered is the time the last Tribe was left and
+  the 15 s rule was not the gate. ? (inferred) the gate was found_partners' wait for an unpaused game time right after
+  the live entry (the entry's pause 0x4BF38A7 / its hints): the hold's founding now ignores the pause and logs what it
+  waits for ("tribe: the Tribe entry's founding waits: ...").
+## A chief's stage powers and a partner's orders (2026-11-20, fix/l47-powers)
+<a id="tribe-chief-powers"></a>
+
+BUG-9306, BUG-9303. GOG 2024 (Ghidra on the Windows PC's Steam dump, docs/05-re-notes.md#re-notes-ghidra-windows);
+static analysis only, nothing of this section was run in a game yet.
+
+* ✔ (Ghidra) A leader's six extra abilities (Citizen_GetAbility, the table 0x169DE30 +0x1C..+0x30) have the types
+  **0x34..0x39**, the Tribe stage powers the earlier stages' cards give (Fire Bomb, Summon Animals, ...: which type is
+  which power is not mapped yet). Ability_Use 0xD1E930 for these types: `DoAction(22, target 0, Property(uint32 =
+  the ability's index in the chief's own list))` on the citizen (the property built by 0x671B70: +0x10 / +0x12 zero,
+  then App::Property::SetValueUInt32 0x428010). **CitizenAction 22** (unnamed in ModAPI's enum) is the chief power.
+* ✔ (Ghidra) The bar's status (AbilityBar_Status 0xD49220 -> 0xD1F650) for 0x34..0x39: 1 outside Tribe; **10** when
+  0xD1F400 says the power is not earned; **0xB** when the player tribe's chief is missing, has +0xB5E set or its AI
+  word (+0xB4C)+0x1CC has 0x10000; **0xF** while recharging (0xD1E8D0: +0xC28 [idx*16+4] != 1.0 and bit idx of
+  +0xBF8). The bar's avatar in Tribe (0xD1E610) is `GetPlayerTribe()->leader` (+0x11C).
+* ✔ (Ghidra) The unlock (0xD1F400, SporeCoop::ChiefPower_Unlocked in the .sym) reads **this game's cPlayer** only: the
+  cell (+0x10FC) and creature (+0x1100) cards map to bits 20..25 of the cached player property 0x5FF7BAF (0x5FF7BB6 the
+  other word), one per type 0x34..0x39 (bit = type - 0x20); the card ids are in the .sym entry. Once both properties
+  exist the cache is used, not the cards. So on a guest's game the guest's own cPlayer decides which power its bar
+  offers; the host's game never checks the partner's cards.
+* ✔ (Ghidra) The power nodes (.data 0x1593C90.., SporeCoop::BT_ChiefPowerNodes): each enter reads the current action
+  record (0xBCA430: action 22, the uint32 property at +0x39) and each tick starts the recharge (0xC19800(index)) and
+  ends action 22 (0xDA6140). They act on the chief itself (its position, reach +0xA8 / +0xF4 of the ability), with
+  two exceptions that name the **player tribe**: node 060B708E's lure object ends with messages 0x4B18967F whose
+  sender is `GetPlayerTribe()->chief` (0xBCBDF0), and node 0609EACA puts the animals in reach into the TribalGame's
+  list (the player's pets, 0xC7DE10). For a partner's chief run on the host these credit the host's tribe (~, not
+  seen in a game).
+* ✔ (code) Before BUG-9306 a guest's press ran Ability_Use -> DoAction(22) on its own game's mirror of its chief, whose
+  behaviour tree h_BTTick skips: nothing was sent to the host (h_DoActionForObjects, the order relay, is not on this
+  path). Fix `tribe.guest_powers`: the guest sends the type (CMD_CHIEF_POWER 16), the host checks the sender's
+  village's native chief (alive, not down, AI flag, recharge) and runs the same DoAction(22, 0, property) on it.
+* ✔ (Ghidra) DoActionGeneric 0xCD0C20: input 0x21 food raid -> **8 on the other village's cTribe** (the mat +0x10C, or
+  the tribe of a 0x18C431C object); 0x22 fish -> **1 with no target and a Vector3 property** (the cursor's surface
+  point, also a marker effect 0xBADB68EA); 0x24 -> 2 on the cFruit; 0x25 -> 2 on 0xC22F50(obj); 0x1B -> 14 bundle;
+  0x1C / 0x1D -> 27 meat; 0x23 -> 13 egg; 0x29 -> 20 feed or 25 tame on the animal. Fix `tribe.guest_orders` lets a
+  partner village's commander send all of these (the fishing spot in the command's position, set on the record's +0x39
+  as a walk's) and logs every refused command.
+* Tools: `coop.tribe powers` (this game's chief: each power's index, bar status and recharge, the player's cards and
+  unlock words; on the host each partner chief), `coop.tribe powers grant <type>` (tests: this player earns the power,
+  a saved player property), `coop.tribe powers use <type>` (the bar's press).
+* ✔ (Ghidra 2026-11-21, fix/l47-powers) **Which node runs which power.** The citizen tree has a composite whose six
+  children start at .data 0x1599FE0, stride 0x88 (child: +0 node id, +8 its utility function, +0x40 / +0x48 the
+  stimulus mask 0x10000000, +0x70 the action row in 0x1593C90.., +0x78 type 9 = an action leaf). Each utility function
+  returns 1 when the current action is 22 and its property's ability has its type:
+  | type | utility (extra test) | action node | what it does |
+  |---|---|---|---|
+  | 0x34 | 0xDAE6F0 (leader, spatial vt 0x58) | 060B708E 0xDB2F60 | places the lure basket (noun 0x61494BE); animals come to it (0xBCC180 stimulus 0x100); its end (0xBCBDF0) sends 0x4B18967F to them naming the PLAYER tribe's chief. Seen live: the basket on the host, animals at the chief |
+  | 0x35 | none of these (the child 06004E06, utility 0) | 06004E1D 0xDB9F90 | the ability's animation; for 0x35 also flora round the chief (0xDB9EF0 / 0xDB2B90). Seen live: food bundles carried, food rose |
+  | 0x36 | 0xDAE760 (leader, spatial vt 0x58) | 060B7090 0xDB3360 | walks to a spot found round the chief (Planet_NearestCell, props 0xC492C89F / 0x191DCAD8) and plays effects 0xA86F8D7E / 0x3F370771 / 0x6D8F14EF there (? which power) |
+  | 0x37 | 0xDAAB20 (none) | 06088765 0xDB4300 | throws held item 0x16 up to 4 times, then every living object in reach (+0xF4 + +0xA8) that is not the player's (vt 0x58 false) gets the ability's damage (+0x3C) and a flee / scare stimulus: **Fire Bomb** (~, by what it does) |
+  | 0x38 | 0xDAE850 (leader, spatial vt 0x58, no "SocialPower" group 0x74EAB7F8 on it yet) | 060B70B4 0xDB40D0 | "SocialPower": stimulus 0x10000000 to the citizens in reach (+0xA8) that 0xD99420 accepts; they come to the chief (vt 0x84) (~ Soothing Song) |
+  | 0x39 | 0xDA8480 (none) | 0609EACA 0xDB9310 | animation chain 0x6006755 (events 0x0E95450E, 0x7D7502FC: held item 0x15), 0x609EA47; then adult, non-epic animals in reach (+0xF4 + +0xA8), at most prop 0x217997F4 (4) minus the TribalGame's list (+0x94..+0x98), join that list (0xE1C7D0), get a new tree (0x1590B30), the chief's political id (animal vt 0x48 (chief vt 0x4C), ~) and flag 0x4000 at +0xB58 (~ Summon / tame animals) |
+* ✔ (Ghidra) The recharge start 0xC19800 thiscall(c, idx, 1, 0) ret 0xC does nothing (returns -1) unless the
+  citizen's +0xE8C is -1 and the slot is ready (+0xC28 [idx*16+4] >= 1); then it sets the +0xBF8 bit, the progress to
+  0, ConsumeEnergy(ability +0x104) (the energy is +0xE58; the bar refuses with status 1 below the cost). 0x34, 0x35,
+  0x36, 0x37 and 0x38 start it in their first tick, 0x39 only after its animation chain. So "recharging 0" after a press
+  means the node never ticked, or +0xE8C was not -1, or the recharge was already over.
+* ? (live 2026-11-21, feat/lineages-47 5f077c4f, MSI) A partner's 0x36 and 0x37 run through the host showed no recharge
+  on the partner's chief at a later look, 0x34 and 0x35 did; the host's own chief recharged all four. Nothing in the
+  utility functions or the enter / tick code above names the player tribe for 0x36 / 0x37 (0x37's utility does not even
+  test the leader), so the cause is not found statically. The host now logs each power's state 0.5 / 2 / 8 s after the
+  press, for a partner's and its own chief (`tribe: power 0x.. of <name>'s chief ... after N s: progress= bit= in_use=
+  energy= cost= rec= node= depth= mem= ...`): the node id tells whether the power node ran.
+* CORRECTION (2026-11-21, fix/l47-powers): "on a guest's game the guest's own cPlayer decides which power its bar
+  offers" above is true of the field, but that field holds the HOST's cards while a guest plays the host's world:
+  wsync's "stages" row (BUG-0577, wsync.cpp s_stages, in play in every planet stage) writes the host's cPlayer
+  +0x10FC..+0x110C into the guest's cPlayer. So a partner's chief-power unlocks (0xD1F400, and its cached words
+  0x5FF7BAF / 0x5FF7BB6 once both exist) follow the host's earlier stages, not the partner's own. Evidence: the code
+  (wsync.cpp kRows "stages", planet() = Cell..Space); not seen in a game. No per-founder record of a partner's own
+  cards exists in the mod (founders roster, wsync, creations: none found).
+* (2026-11-21, fix/l47-powers, decision 7Q A) Each player's own cards: a guest's game catches the card its own
+  graduation writes into cPlayer +0x10FC.. (the field differs from what wsync's "stages" row last wrote) before wsync
+  overwrites it, the host keeps it per identity (`<save>.duo-cards`, mods/coop/cards.h). `tribe.partner_cards`: the
+  guest's bar unlock words 0x5FF7BAF / 0x5FF7BB6 are written from its own cell / creature cards; the host refuses a
+  partner's power its own cards did not earn. Built, not run. ? Whether a guest's game writes its own card at a co-op
+  graduation at all (each game runs the stage end itself, or the host's transition only) is not checked: the catch logs
+  it when it happens.
+
+## Partner totems, chief power effects and QA findings (2026-11-21, fix/l47-tribe)
+<a id="tribe-partner-totems"></a>
+
+Live, MSI two games (host MSITribeHost instance 2, guest MSIGuest instance 1, Creature -> Tribe from Vandh).
+* ✔ (live) A partner founder village has **no totem** (`coop.tribe totems`: `seat 1: no totem` from the entry on);
+  the host's player village has one (5 model slots). A win's piece goes to the host's totem only (0xCDAC90 reads the
+  player tribe), then the host's game plays **TRG_Upgrade (94D17D9F)**; no TRG_TotemPole_* played for a `coop.tribe
+  win` (it queues the win without the mission's completion). The guest's game played no cinematic; it showed "Saving
+  Tribal conquest for your partner..." and reloaded the host's save about 35 s later (its progress bar and its upgraded
+  hut came with that save). Fix BUG-9318 (`tribe.partner_totems`): the host makes partner totems with Tribe_CreateTotem
+  and copies the pieces; the guest plays TRG_Upgrade when its own village's totem grew.
+* ✔ (live) On a guest, `native_player_tribe()` (GetPlayerTribe) is the guest's OWN village (its chief is the guest's
+  chief in `coop.tribe powers`), while the mod's `player_tribe()` there is the host's village copy (`coop.tribe`
+  `player_tribe=` = tribe 0's object).
+* ✔ (live) Chief power 0x36 (node 060B7090): its effect **A86F8D7E** plays at "the spot", which was about 230 m from
+  the chief both for the host's own chief (266.9 -334.9 -257.6, 14 s after the press) and for a partner's (282.9 -324.7
+  -253.8); no 3F370771 / 6D8F14EF was seen. The world effect relay sent neither ("not on the local player": it sends
+  only effects within 1.8 m of the sender's own villagers). Fix `tribe.power_effects` (effects.cpp, BUG-9306): the host
+  sends these ids from wherever they are made in Tribe.
+* ✔ (live) Chief power 0x38 (node 060B70B4, "SocialPower") made **no world effect** for either chief; the effect
+  B490E2EC logged 0.1 s after the host's own press is a selection / target ring (0xC1D7D0 / 0xDFE180 pick it from a
+  size and kind table, with 0x3751CCEA, 0xA231DA2F, ...), not the power. 0x38's visible result is citizens in reach
+  walking to the chief.
+* ✔ (Ghidra-free disassembly from memory, 0xD1E930) Ability_Use's chief-power branch (0xD1EF98) only casts to the
+  citizen (0x18EB4B7) and calls DoAction(22, 0, Property(index)) (0xC27710): **no effect** of its own.
+* ✔ (live) A tribe's political id is cTribe +0x30 (NPC tribe 2 of the test: 0x2295, read with `mem.read`).
+* ✔ (live) The host's hut: the first click opens a rollover with two buttons, the planner (big, on the hut) and the
+  baby (small, ~55 px below it at 1280x960); a click on the hut's roof opened the planner directly.
+* ✔ (live) A right-click on a fresh NPC tribe's food mat / bundle (o629BAFE / o18C431C) with own villagers selected
+  started nothing on the host's own game either (no order): a raid needs more than the click there (not analysed).
+* ✔ (live) A totem made by Tribe_CreateTotem has an empty model slot vector (+0x108 == +0x10C) for a moment: a piece
+  added right away is refused by our slot guard (BUG-9158); 5 s later (the catch-up) the slots were there.
+* ✔ (live) TRG_Upgrade (94D17D9F) played by itself on a guest (PlayCinematic, outside the frame) frames nothing useful
+  (about 1 s of sky, once a spear's tip) and ends; on the host, played by the reward path, it is a close-up of the
+  player's totem with the alliance / conquest caption. ? The context its caller (TribeHut_Upgrade 0xCDA4F0) sets up.
+* ✔ (live) Power 0x39 pressed by a partner (run on its chief on the host): the three tamed animals went into the HOST's
+  TribalGame list (+0x94..+0x98, `coop.tribe powers pets`: 3 entries) with the partner village's political id
+  (0x228C); the guest's own TribalGame list stayed empty. So a partner's tames count against the host's cap (prop
+  0x217997F4, 4) and the host's list; the animals themselves follow the partner's tribe.
+
+## Raids after a party wipe, the hut upgrade's cutscene actors, the per-village pet cap (2026-11-21, fix/l47-tribe2)
+<a id="tribe-wipe-regroup"></a>
+
+Live, MSI two games (host MSITribeHost instance 2, guest MSIGuest instance 1, Creature -> Tribe from Vandh); code read
+from a running game's memory (tools/qa_win/dis.py). Follows #tribe-partner-totems and #tribe-party-wipe.
+* ✔ (live) BUG-9320: the party wipe's checkpoint is saved at the moment of the wipe, with the raiders standing at the
+  host's hut; after the reload they go on at once (`founder huts after this world's load: seat 0 152/400` 3 s after the
+  load). The hut came back at 40 % (160 of 400) and fell again 30-35 s after the load (a crowd of 3-8 raiders takes
+  about 10 hp a second at blows of 4-9), then the 60 s window ran out: one wipe every 95-110 s, as in the report. The
+  "1/400 right after a wipe reload" of the report is that second fall (the hut reads 1 during the down window).
+* ✔ (live) Vandh's native villages raid the host's village by themselves within about 6 minutes of the Tribe entry:
+  archetype 7 (8 members, the village of the report's white villagers) and archetype 4, both at relation -10 to the host's
+  village, with no test command. A test blow alone (`coop.tribe hutfall`, no raiders) wipes once and the reloaded hut
+  stays at 160/400: the loop needs the raid.
+* ✔ (live) One walk-home order (DoAction 4 to their own village) right after the reload does not end a raid: the hut
+  took no blow during a 90 s shield, but the raid hit it again the second the shield ended (the raiders in behaviour
+  node 0462854E at the hut). With the order repeated every 4 s (fix `tribe.wipe_regroup`, 120 s) no raider reached the
+  hut in the window (`blocked=0`, `sent_home=69`, a screenshot with the village empty), and the native archetype-7
+  village raided again about 10 s after the window ended and downed the hut 56 s later. So the game's raid AI keeps
+  its plan against a rival through any number of walk orders; ? where the tribe keeps it (not found). A pause for the
+  raiding village longer than the window is a gameplay decision (asked).
+* ✔ (memory disassembly) Power 0x39's taming node `SporeCoop::BT_TameAnimalsNode` 0xDB9310 (cdecl, [esp+4] the chief,
+  the 6th argument the node state {+0 ability index, +4 step, +8 animation}) reads `App_GetPropInt(props,
+  0x217997F4, 4)` minus `(TribalGame +0x98 - +0x94) >> 2` and push_backs each tamed animal with 0xE1C7D0
+  (`SporeCoop::TribalGame_PetsPushBack`, an intrusive pointer: one reference taken). The list is the only count; a
+  village's own count needs the list to hold that village's pets while the node runs (fix `tribe.pet_cap_per_village`).
+* ✔ (memory disassembly) `SporeCoop::TribeHut_Upgrade` 0xCDA4F0 is thiscall(TribeUI = TribalGame_Get()), not argument
+  free: PlayCinematic("TRG_Upgrade", 1, 1, 0, 0, 0), then the members in the hut's radius get a formation at the hut
+  (0xBC6620, kept at tribe +0x26C) and actor names from 0x137770C, and the actors 0xE44AEA33 (tribe +0x120),
+  0x268AB814 (tribe vt 0xAC + 0x34), 0xE4206FE9 (the food mat + 0x34) and 0xFF7F9A4C (0xC8F870(tribe, 10) + 0x34) are
+  bound to the cinematic. It works on GetPlayerTribe(), which on a guest is the guest's own village.
+
+## Final Tribe QA: the pet cap, partner pens, the wipe regroup, the outfit path (2026-11-21, fix/l47-final-tribe)
+<a id="tribe-final-qa"></a>
+
+Live, MSI two games (host instance 2, guest instance 1, Creature -> Tribe from Vandh); code read from a running game's
+memory (tools/qa_win/dis.py). Follows #tribe-wipe-regroup. A crash address in a crash text of the MSI host is in run
+space: this run's game sat at base 0x300000, so 0xCAD6A3 there is 0xDAD6A3 in .sym space (dis.py takes .sym addresses).
+* ✔ (live) Power 0x39's cap, prop 0x217997F4 of the chief's 0x39 ability (+0x130 prop list), is **5** on Vandh for
+  both chiefs (the default 4 is not used): a village tames 5 animals.
+* ✔ (memory) `SporeCoop::BT_TameAnimalsNode` 0xDB9310 dispatches on the state's step (+4) with `jmp [4*eax +
+  0xCB975C]` at +0x13; the taming block (+0xE5) is step **3**. It is called every frame the chief is in the node (137
+  calls for one press), the taming step several times (it waits for the chief's animation 0x609EA47).
+* ✔ (live) Tamed animals leave the TribalGame list (+0x94) by themselves: both villages' 10 pets went between 14:04 and
+  14:08 while no taming node ran; the animals went back to their herds. Whether a timed end or the "rival tribe formed"
+  cinematic (started 14:06:16) did it was not told apart.
+* ✔ (memory) CitizenAction 25 (tame) node around 0xDAD64D: checks the action record's action == 0x19, then citizen
+  +0x1014 (0xC230B0, the owner tribe) -> 0xC90060 (`mov eax, [ecx+0x19C4]`, the animal pen) -> `[pen+0x70]` with no
+  null check. A village without a pen faults there (BUG-9326). 0xC90070 is the next getter (+0x19CC).
+* ✔ (memory) CitizenAction 13 (egg) node 0xDB1720: `0xBC9810(ai+8, 0x80000, 0)`, then `0xD99830(that, 0x175CDC9)` and
+  a read of the result without a null check; it crashed at once for a partner village (BUG-9326). ? What 0x175CDC9 names
+  (likely the egg pen's kind).
+* ✔ (live) The host's own village has an animal pen and an egg pen (+0x19C4 / +0x19C8 non-null); a partner founder
+  village on the host has neither, like every computer village (#tribe-fork-graduation-notes).
+* ✔ (live) CitizenAction 20 (feed) on a wild animal from a partner village: the villager carries food (item 12) to the
+  animal, which walks about 40 m toward the village and stops (no pen to lead it into). No crash.
+* ✔ (live) CitizenAction 24 (repair) on the partner's own hut, its health lowered with `coop.tribe huthp`: the members
+  repair it (200 -> 307 in 27 s). A real right-click on that hut made no order on the guest (not analysed).
+* ✔ (live) Villagers stand still with behaviour node 046A27F6 while the game is paused by a cinematic caption ("A
+  rival tribe of ... has formed", input_lock + paused): orders given then do nothing until the check mark.
+* ✔ (live) A party wipe whose last villager fell **at the raiders' village** comes back with that villager there (60
+  hp; the wipe's checkpoint keeps its place); the raiders' members killed it again 41 s after the reload and the next
+  wipe came 2 minutes after the first (BUG-9320, fixed by `tribe.regroup_villagers`). A wipe whose last villager fell at
+  home came back with it at home.
+* ✔ (live) The host's outfit is applied by the native game when the host **leaves the Planner** after the outfitter
+  (`coop.tribe outfits` home= changes then, 291EE5B5 -> 292BC151); an outfitter opened with `coop.vote editor` (no
+  Planner) ends the vote but the host's village keeps its old species. The guest's copy follows with the next world
+  share ("host species 292BC151 = 7DBCDD56 here").
+
+## Partner village pens: the game's pen setup, the egg order's target (2026-11-21, fix/l47-pens)
+<a id="tribe-partner-pens"></a>
+
+BUG-9326, owner decision 8A A. Ghidra on the Steam 3010a413 memory dump (the GOG 2024 code, re-notes-ghidra-windows)
+and live on the MSI (host instance 2, guest instance 1, Creature -> Tribe from Vandh). Follows #tribe-final-qa.
+* ✔ (Ghidra) A village's pens are made by **`SporeCoop::cTribe_CreatePens` 0xC90080**, bool thiscall(cTribe*), plain
+  ret: nothing when the layout prop list +0x2D4 is null or the pen herd +0x19CC exists; else CreateHerd at the pen site
+  (prop 0x51ADF81 from the village's +0x120 position, else 7.5 m behind the hut) with the village's species +0x18CC ->
+  +0x19CC, the animal pen (noun 0x18C88E4, model 0x5D97F762) -> +0x19C4, the egg pen (noun 0x18C88E4, model
+  0x5B9A06E, owner set by its vt 0x34(tribe)) -> +0x19C8. The only writers of +0x19C4 / +0x19C8 besides clears.
+  Callers: the player tribe's creation 0xC99F50 (right before Tribe_CreateTotem, as the totem pattern of
+  #tribe-partner-totems) and the tame step 0xDB5E10, which makes the pens of a village without them by itself.
+* ✔ (live) Called by the host on a partner founder village right after SpawnNpcTribe (fix `tribe.partner_pens`): pens
+  at (290.9 -413.5 -51.9) / (286.3 -415.9 -56.7), 25 m from the village centre; the entry's share save carried them, both
+  games show them at the same places after the reload (new pointers on both: saved and loaded as the village's own
+  fields). The same call on a village of a loaded world (switch turned on mid-game: the 5 s catch-up) made them too, and
+  a guest's game made its own village's copy the same way at the same places. The catch-up's pen stood on two plants
+  the founding-time pen did not have (the plants are not cleared; cosmetic).
+* ✔ (live) Feed (CitizenAction 20) from a partner's villagers on a wild animal 50 m out: about 80 s later the animal
+  was in the partner village's pen herd (+0x19CC members +0x40..+0x44) and walked into the pen (2 m from it 4 minutes
+  after the order), on both screens; the village's egg food +0x2C0 rose from then on (about 0.015 a second with one pet
+  at frame.limit 100). A coop.save and a reload kept the pens, the pet in the pen and the egg food.
+* ✔ (Ghidra) In DoActionGeneric 0xCD0C20 the click on an animal (input 0x29) checks the food, then either orders 20
+  (feed) or runs the tame step 0xDB5E10 on GetPlayerTribe() and, when it succeeds, orders 25 (tame): **25 follows the
+  tame step**, it is not a tame by itself. Live: a partner's 25 sent alone (act_obj) ran on the host without a crash,
+  the animal walked 40 m toward the pen and stopped (it was never added to the pen herd).
+* ✔ (Ghidra) The click on an ornament with the egg pen's model 0x5B9A06E whose owner's +0x2C0 is over tuning
+  0xD2078A9B (10) is input 0x23 = **CitizenAction 13 with the egg pen as its target** (ChooseInputActionID); a wild
+  egg (noun 0x2A034CD) is input 0x1D = **27**, not 13. Live: a real right-click on the guest's own egg pen sent 13 on
+  that pen to the host.
+* CORRECTION (2026-11-21, fix/l47-pens): #tribe-final-qa's "the egg order (13) brings the egg to the egg pen" and the
+  test recipe's "13 egg (2A034CD)" are wrong: 13's target is the egg pen. The egg node 05B9B7F5 (enter 0xD7BE60, tick
+  0xDB1720, exit 0xC2E640; row .data 0x1593B60) casts its target to interface 0x175CDC9 (the ornament's) and reads it
+  without a null check: live, a partner's 13 on a wild egg crashed the host at 0xDB174B (read of 0) **with** the village's
+  egg pen present (guard off, crash-20261121-180002-i2). The guard now passes 13 only on the member's own egg pen.
+* ~ (live) 13 on an egg pen (the partner's through the relay, and the host's own villagers by a real right-click and
+  by DoAction) put the villagers into the eat node 0x0461300F, the village's food rose in 1.25 steps and the egg food
+  +0x2C0 did not drop; the egg node 05B9B7F5 was never seen in 1 s samples. Whether the eggs were collected was not
+  told apart from eating and fruit gathering; ? when the egg node's vt 0x2C check cancels it.
+* ✔ (live) The guest's copy of its village's pen herd lists no members (the host's lists the pet); the pet itself is
+  shown at the host's place on the guest.

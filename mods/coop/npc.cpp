@@ -3989,6 +3989,13 @@ void* proxy(uint16_t id)
     return it == g_proxies.end() ? nullptr : handler_c(it->second); // BUG-0805 (social's prompt and result)
 }
 
+void for_each_pack_proxy(void (*fn)(void* c, void* user), void* user)
+{
+    for (auto& [id, px] : g_proxies)
+        if (px.c && px.host_pack && !px.killed && game::listed(px.c) && !game::is_dead(px.c))
+            fn(px.c, user);
+}
+
 bool proxy_in_host_pack(void* c)
 {
     auto g = g_proxy_of.find(c);

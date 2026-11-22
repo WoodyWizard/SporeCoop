@@ -130,39 +130,37 @@ inline int overlay_text_px(const std::string& s)
 
 // a player name: at most kNameMax code points (the co-op window's limit), no control characters
 constexpr size_t kNameMax = 24;
-// BUG-9222 (the owner 2026-11-15): a player name holding "-NoShare-" (any case) marks a test / QA player: its
-// creations are never offered to nor kept in anyone's Lineages Cache (library.cpp)
-inline bool no_share_name(const std::string& name)
+// BUG-9222 (the owner 2026-11-15): a player name holding the no-share tag marks a test / QA player: its creations are
+// never offered to nor kept in anyone's Lineages Cache (library.cpp). BUG-9332 (the owner 2026-11-21: "just be
+// -noshare with no capitalization requirement"): the tag is "-noshare" in any case; a dash right after it belongs to
+// it ("-NoShare-", the old spelling, still counts). Returns where the tag starts, its length in `len`, or npos.
+inline size_t no_share_tag(const std::string& name, size_t from, size_t* len)
 {
-    static const char kTag[] = "-noshare-";
+    static const char kTag[] = "-noshare";
     const size_t n = sizeof kTag - 1;
-    for (size_t i = 0; i + n <= name.size(); i++) {
-        size_t k = 0;
-        while (k < n && (name[i + k] >= 'A' && name[i + k] <= 'Z' ? name[i + k] + 32 : name[i + k]) == kTag[k])
-            k++;
-        if (k == n)
-            return true;
-    }
-    return false;
-}
-
-// the name as players read it: "MSI-NoShare-" shows as "MSI" (the tag only marks the player, BUG-9222)
-inline std::string shown_name(std::string name)
-{
-    static const char kTag[] = "-noshare-";
-    const size_t n = sizeof kTag - 1;
-    bool cut = false;
-    for (size_t i = 0; i + n <= name.size();) {
+    for (size_t i = from; i + n <= name.size(); i++) {
         size_t k = 0;
         while (k < n && (name[i + k] >= 'A' && name[i + k] <= 'Z' ? name[i + k] + 32 : name[i + k]) == kTag[k])
             k++;
         if (k == n) {
-            name.erase(i, n);
-            cut = true;
-        } else
-            i++;
+            if (len) *len = n + (i + n < name.size() && name[i + n] == '-' ? 1 : 0);
+            return i;
+        }
     }
-    if (cut) { // the spaces around the tag go with it ("Pandize -NoShare- 2" is "Pandize 2", not "Pandize  2"; a plate
+    return std::string::npos;
+}
+inline bool no_share_name(const std::string& name) { return no_share_tag(name, 0, nullptr) != std::string::npos; }
+
+// the name as players read it: "MSI-noshare" shows as "MSI" (the tag only marks the player, BUG-9222)
+inline std::string shown_name(std::string name)
+{
+    bool cut = false;
+    size_t len = 0;
+    for (size_t i = 0; (i = no_share_tag(name, i, &len)) != std::string::npos;) {
+        name.erase(i, len);
+        cut = true;
+    }
+    if (cut) { // the spaces around the tag go with it ("Pandize -noshare 2" is "Pandize 2", not "Pandize  2"; a plate
                // sized for "Pandize " drew its text off centre, 2026-11-18)
         std::string t;
         for (char c : name)
@@ -179,9 +177,9 @@ inline std::string player_name(const std::string& in)
     for (unsigned char c : in)
         if (c >= 0x20 && c != 0x7F)
             s += (char)c;
-    // BUG-9222: a long name keeps its -NoShare- tag (the name is cut, not the tag)
+    // BUG-9222: a long name keeps its no-share tag (the name is cut, not the tag; BUG-9332: "-noshare")
     if (count(s) > kNameMax && no_share_name(s))
-        return head(shown_name(s), kNameMax - 9) + "-NoShare-";
+        return head(shown_name(s), kNameMax - 8) + "-noshare";
     return head(s, kNameMax);
 }
 

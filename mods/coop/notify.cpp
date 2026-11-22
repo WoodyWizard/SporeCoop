@@ -63,6 +63,13 @@ static void screen(float& sw, float& sh)
 static std::atomic<float> g_top_min{0.f};
 void set_top_min(float y) { g_top_min = y; }
 
+// BUG-9322: the panels are game windows that stay in front (kFlagAlwaysInFront), so they were drawn over the Spore
+// Guide window; while it is open (coop.cpp menu_check_task) they stay out of the screen and do not age
+static std::atomic<bool> g_covered{false};
+static double g_anim_last = 0;
+static unsigned g_covered_frames;
+void set_covered(bool covered) { g_covered = covered; }
+
 static float top_of(size_t i, float sh) { return std::max(sh * 0.15f, g_top_min.load()) + i * (kH + kGap); }
 
 // BUG-1025 (tests, `coop.notify` status): what is left of the dropped panels, from the game's reference counts read
@@ -167,9 +174,15 @@ static void animate(void*)
     float sw, sh;
     screen(sw, sh);
     double now = H->time_seconds();
+    const double step = g_anim_last > 0 ? std::clamp(now - g_anim_last, 0.0, 1.0) : 0.0;
+    g_anim_last = now;
+    const bool covered = g_covered;
+    g_covered_frames += covered;
     float x_in = sw - kW - kMargin, x_out = sw + 10;
     for (size_t i = 0; i < g_toasts.size();) {
         Toast& t = g_toasts[i];
+        if (covered) // BUG-9322: out of the screen, its time held
+            t.t0 += step;
         double age = now - t.t0;
         if (age > t.life + kOut) {
             remove(t);
@@ -187,7 +200,7 @@ static void animate(void*)
         t.y += (want_y - t.y) * 0.25f; // close the gap of a panel that went away
         if (std::fabs(want_y - t.y) < 0.5f)
             t.y = want_y;
-        float x = x_out + (x_in - x_out) * k;
+        float x = covered ? x_out : x_out + (x_in - x_out) * k;
         sui::set_area(t.w, {x, t.y, x + kW, t.y + kH});
         i++;
     }
@@ -248,7 +261,8 @@ void shutdown()
 std::string status()
 {
     char b[160];
-    snprintf(b, sizeof b, "notify: shown=%u failed=%u visible=%u\n", g_shown, g_failed, (unsigned)g_toasts.size());
+    snprintf(b, sizeof b, "notify: shown=%u failed=%u visible=%u covered=%d covered_frames=%u\n", g_shown, g_failed,
+             (unsigned)g_toasts.size(), (int)g_covered.load(), g_covered_frames);
     std::string s = b;
     snprintf(b, sizeof b, "notify dropped=%u labels_freed=%u labels_kept=%u panel_refs=%d label_refs=%d release=%d\n",
              g_dropped, g_labels_freed, g_labels_kept, g_panel_refs, g_label_refs, (int)sui::g_release_fix);

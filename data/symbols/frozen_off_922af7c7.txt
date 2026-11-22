@@ -414,3 +414,12 @@ SporeCoop::cOrnament_SetModel ; era visitors (alpha: another era's vehicles and 
 SporeCoop::PlanetPickSpecies ; the nest rotation (alpha, decision 7F, creature.nest_rotate) is off on GOG 2016 (BUG-9286)
 SporeCoop::PlanetForgetSpeciesPick ; the nest rotation (alpha, decision 7F, creature.nest_rotate) is off on GOG 2016 (BUG-9286)
 SporeCoop::cHerd_ApplyProfile ; the nest rotation (alpha, decision 7F, creature.nest_rotate) is off on GOG 2016 (BUG-9286)
+SporeCoop::Ability_Use ; BUG-9306: a partner's Tribe chief powers (tribe.guest_powers) are off on GOG 2016
+Simulator::cCivilization::LoadSuperweaponTools ; BUG-9310: a partner nation's superweapon tools (civ.partner_sw_tools) are off on GOG 2016
+Simulator::cCity::LaunchSuperweapon ; BUG-9313 / BUG-9312: a global superweapon spares the party (civ.global_sw_spares_party) and the launch shown on guests (civ.sw_show) are off on GOG 2016
+SporeCoop::BT_TameAnimalsNode ; BUG-9306: each village's own pet cap (tribe.pet_cap_per_village) is off on GOG 2016
+SporeCoop::TribalGame_PetsPushBack ; BUG-9306: each village's own pet cap (tribe.pet_cap_per_village) is off on GOG 2016
+SporeCoop::TribeHut_Upgrade ; BUG-9318: a partner's totem cutscene through the hut upgrade (tribe.partner_totem_cutscene) is off on GOG 2016
+SporeCoop::OTDB_FindObjects ; BUG-9329: banned creations already in the Sporepedia stay pickable (library.banned) on GOG 2016
+SporeCoop::UFOAbductionEvent_PickShip ; BUG-9329: the coop.library pickships test command is off on GOG 2016
+SporeCoop::cTribe_CreatePens ; BUG-9326: partner founder villages get no pens of their own (tribe.partner_pens) on GOG 2016

@@ -43,6 +43,8 @@ void set_world_epoch_fix(bool on);
 // rule. No fix switch: callers gate their own use (tribe.editor_world, civ.world_epoch).
 void stage_epoch_tick();
 uint32_t stage_epoch(uint32_t stage_mode);
+// BUG-9316: the stage's world is open (the stage or its editor), not on its way in (a load, the menus)
+bool stage_open(uint32_t stage_mode);
 void* avatar();
 // BUG-0264: the stage is being left for the galaxy menu (the quit message 0x4715068 posted or
 // handled): avatar() returns null until the mode changes (30 s at most). world.leave_avatar.
@@ -340,6 +342,9 @@ uint32_t noun_id(void* obj);                    // ISimulatorSerializable::GetNo
 void* cast(void* obj, uint32_t type);           // Object::Cast (vt 0x0C)
 bool object_position(void* obj, net::Vec3& out); // via cSpatialObject (TYPE 0x1186577), position +4
 float object_scale(void* obj);                   // cSpatialObject::GetScale (vt 0x34), -1 without one
+// BUG-9321: cSpatialObject::GetBoundingRadius (vt 0x70, the slot bounding_radius() calls on a creature) of any object
+// with a spatial part (a vehicle, a UFO), -1 without one
+float object_bounding_radius(void* obj);
 void set_object_scale(void* obj, float s);         // cSpatialObject::SetScale (vt 0x40), nothing without one
 bool set_object_position(void* obj, const net::Vec3& pos); // cSpatialObject::SetPosition (vt 0x38), false without one
 bool object_alive(void* obj);                    // cGameData::mbIsDestroyed (+0x21) not set

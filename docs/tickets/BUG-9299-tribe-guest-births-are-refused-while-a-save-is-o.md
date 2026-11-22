@@ -1,0 +1,81 @@
+---
+id: BUG-9299
+title: Tribe (guest): births are refused while a save is only queued or the host's own birth is pending
+status: fixed
+kind: bug
+stage: tribe
+reported: 2026-11-20
+source: player report 2026-11-20 (a guest, 67-dev, report 20261120-205700, with the host log)
+role: guest
+versions: 0.7.14.1-lineages67-dev
+fixed_in: 0.7.14.1-lineages68-dev
+branch: fix/l47-births
+commits: d481096a, 8a76f7fc
+tests: tools/qa_win (live two-game QA on the MSI and TITAN, 2026-11-21, switch off and on)
+signature:
+docs: docs/re/tribe.md#tribe-outfit-vote-timeout-births, docs/06-testing.md#testing-outfit-vote-timeout-births
+related: BUG-9298
+---
+
+## Report
+Live 67-dev, Tribe: "Adding babies seemed inconsistent and broke a lot of the time." Host log: one guest baby at 21:31:38,
+then five refusals "Births are not available at this point in the Tribal campaign." (21:31:39-47); two babies at 21:39:06;
+41 refusals "The host could not add that baby just now (your village, or a save running)" from 21:46:39 to 21:56:50.
+
+## Root cause
+1. The 41 refusals: `world::save_pending()` in `buy_guest_baby` (tribe.cpp ~8566) while the stuck outfit vote held a share
+   queued (the outfit vote ticket opened with this one). A queued share has not started writing; the purchase would be in it.
+2. The five refusals (likely, not proven at runtime): `!F<uint8_t>(ui, 0x3A3)` reads the HOST's TribalGame
+   mbMatingAllowed (docs/re/tribe.md), cleared while the host's own birth is on its way (the host's food fell 49 -> 29 ->
+   19 in that window: the host was buying babies). The guest's births depend on the host's own birth state.
+   The guest's purchase does not use the native birth (SpawnMember on its own village), so the flag only says the
+   host's single native birth is busy for a few seconds (TribeStage_BabyBorn sets it to 1 when that baby comes).
+3. The guest sends one order per click with no in-flight guard (`h_HutUI` ~2870) and the reasons are lumped into one
+   message, so a player clicks 5-14 times and learns nothing.
+
+## Fix
+Planned: drop `save_pending()` (keep `save_busy()` and `load_queued()`) in buy_guest_baby and buy_guest_tool; skip the
+host's +0x3A3 flag for a guest purchase (keep BirthBlocked) after logging its value once; separate refusal messages; a
+0.5 s in-flight guard on the guest. Switch `tribe.guest_birth_gate`. Test duo_tribe_birth.py with a queued share and a
+host birth in flight: FAIL / PASS.
+
+Done (2026-11-20, fix/l47-births), switch `tribe.guest_birth_gate` (on; off = refused at once with the old message):
+- `save_pending()` (a share's save only queued) no longer refuses a birth or a rack: the purchase goes into that save.
+- A save being written (`save_busy`), a load (`load_queued`) or the host's +0x3A3 down HOLD the birth instead of
+  refusing it (not skipped, as first planned: the flag is also the native unlock, so a held birth respects it): the host
+  tries it again every 0.5 s for at most 20 s (`guest_birth_tick`), one held birth per player (a further order: "Your last
+  baby is still waiting ..."). The buyer is told "Your baby comes in a few seconds: <reason>."; after 20 s "The host could
+  not add that baby: <reason> for 20 seconds. Try again." The hold logs the +3A3 value (evidence for cause 2).
+- Separate messages: village / villager not found, births not available (BirthBlocked), food, the population limit, the
+  wait reasons; racks: "saving or loading" apart from "village or villager not found".
+- Guest: one birth order per 0.5 s (the native hut button and `coop.tribe baby`); `coop.tribe births` shows
+  `waiting held after_wait expired clicks_guarded rejected`.
+## Verification
+<!-- the test: FAIL without the fix, PASS with it, each with its lab run id (out/lab/YYYYMMDD-HHMMSS);
+     or a line `no-fail-run: <reason>` (docs only, regression only, not reproducible) -->
+- Live QA 2026-11-21 (lead, two games on the MSI: host MSITribeHost instance 2, guest MSIGuest instance 1; the Creature part first with the host on TITAN QA 9): partial: a guest baby with food: "A baby joined your partner's original species village."; without food two clear refusals ("Your village needs more food to add a baby."); a held birth during a save or the host's own birth was not reproduced.
+
+- Live QA 2026-11-21, second run (QA agent, fix/l47-qa 9d64f85d = fix/l47-powers aeaedfc3 + BUG-9308, MSI two games: host MSITribeHost instance 2, guest MSIGuest instance 1, a live Creature -> Tribe entry from Vandh): PASS for the save case: host `coop.save` and guest `coop.tribe baby` sent in the
+  same moment: host 04:21:07.907 "player 1's baby waits up to 20 s: the host's game is saving (host birth flag +3A3=1, save
+  queued=0 busy=1, load=0)", guest "Your baby comes in a few seconds: the host's game is saving.", host 04:21:10.497 "held
+  baby added after 2.6 s", guest "A baby joined ...". Not reached: the host's own hut birth then the guest's within 5 s
+  (needs the host's hut UI); off-run not done.
+
+- Live QA 2026-11-21, third run (fix/l47-tribe 3e6d1b0a, MSI two games, Tribe from Vandh): PASS (host's own birth case).
+  The host's player clicked its hut's baby button (the small button under the hut's planner button) and the guest sent
+  `coop.tribe baby` 0.8 s later: host 10:03:36.608 "player 1's baby waits up to 20 s: the host's own baby is on its way
+  (the game makes one at a time) (host birth flag +3A3=0 ...)", 10:03:41.242 "player 1's held baby added after 4.6 s";
+  `coop.tribe births` held=1 after_wait=1 rejected=0; the guest's own baby joined its village. Off-run (`coop.fix
+  tribe.guest_birth_gate off` on the host, the same two clicks): 10:04:12.486 "player 1's purchase refused: Births are
+  not available at this point in the Tribal campaign." (rejected=1): the 67-dev report's refusal. Cause 2 of the root
+  cause (the host's +3A3 flag down during its own birth) is now seen at runtime.
+no-fail-run: checked by hand in live two-game QA (no lab on Windows); the PASS evidence is above, the old behaviour stays behind the switch.
+
+## History
+- 2026-11-20: opened.
+- 2026-11-20: fixed on fix/l47-births (`tribe.guest_birth_gate`); built, not run in a game yet (the lead's two-player test).
+- 2026-11-21: live two-game QA (see Verification).
+- 2026-11-21: second live QA run (see Verification).
+- 2026-11-21: third live run (fix/l47-tribe): the host's own birth case PASS on, FAIL off.
+- 2026-11-21: set to fixed for 68-dev: merged into feat/lineages-47 with the live FAIL / PASS in Verification (any open part stays in docs/known-issues.md).
+- 2026-11-21: released in 0.7.14.1-lineages68-dev.

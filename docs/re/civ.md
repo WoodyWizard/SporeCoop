@@ -803,6 +803,8 @@ Measured for BUG-0222 (the civ_reload / civ_sw_vote tests read these now):
 * ✔ Costs 0xBF6DF0: types 0, 6, 11 = 4000; 1, 4, 7 = 16000; 2, 5, 8 = 12000 x 1 while fewer than two
   cities of the planet are not this civ's, else 12000 x (the type number, as decompiled: ~ not checked
   at runtime); every other type (3, 9, 10) = 2000.
+  CORRECTION (2026-11-21, fix/l47-money): 2, 5, 8 = 12000 x max(1, the cities not of this civ), not the type number
+  (Ghidra and runtime, see #civ-reload-spend-sw-price).
 * ✔ Fired at the zero vector, type 4 crashed the game in `cPlanetModel::GetNearestCity+0x1B7`
   (0xB897A7, read of 0x8F04CAB0, lab 20261030-001517; via launch 0xBE5D30 → 0xBDC2F0). Types 1, 3
   and 9 at the zero vector worked. Tests use 1, 3, 9 only.
@@ -2734,3 +2736,152 @@ BUG-1100. GOG 2024, lab lane 7, civ_npc. Follows #civ-wild-parked.
   fixture's start the game rebuilt 14 tracked objects of species 06689607 as 065276AC / 066742CD within 2 s, several
   at unplaced points with z = 0 ((0 524.8 0), (-368.7 -347.0 0)), the rest at their new herds: the reuse in a stand is
   common, and the guest's #129 at (-387.0 -327.7 0.0) of the final check was such an unplaced object.
+## A partner's superweapons and its own nation (2026-11-21, fix/l47-powers)
+<a id="civ-guest-superweapons"></a>
+
+BUG-9306 (owner: "Also test the Civ superweapons like MOAB"). GOG 2024, Ghidra on the Windows PC's Steam dump (the
+dump has the mod's hooks in it: FireSuperweapon 0xBF8BB0 and RefreshUnlocks 0xBF2510 start with a jmp, read them with
+`asm` from +5); static analysis only.
+* ✔ FireSuperweapon 0xBF8BB0 (thiscall civ, type, const Vector3* target, ret 8) needs no player nation: CanUse 0xBF8B40
+  on `this`; it walks `this`'s own cities (+0x9C..+0xA0), each tested with 0xBDA1D0 (city +0x590 = the city's
+  civilization, then CanUse), and takes the one nearest to the target (or the first one for the zero vector); launches
+  with 0xBE5D30(city, type, target); takes the cost (0xBF6DF0) from `this` +0x98 unless the free cheat byte 0x168BD6C is
+  set; restarts `this`'s cooldown (+0x490 slot, 0xBC32A0); sets +0x4CC for 2/5/8. **Only** the end (0xBF8E36..0xBF8EF9:
+  a history record 0xC561F54B and a stats event 0xF11610BD with the player species) runs when `this ==
+  GetPlayerCivilization()`; another nation's weapon fires without them.
+* ✔ CanUse 0xBF8B40 (now in the .sym as Simulator::cCivilization::CanUseSuperweapon): the cheat byte -> 1; types 2/5/8
+  only while +0x4CC is 0; unlocked +0x484[type]; affordable 0xBF7870; no cooldown 0xBF18D0. All on `this`.
+* ✔ The launch 0xBE5D30 moves the camera (SimCamera_LookAt) to the launching city for the global types 2/5/8 only; on the
+  host that is the host's camera, whoever's nation fires.
+* ~ RefreshUnlocks 0xBF2510 fills +0x484 from "the shared player history traits" (docs/re/civ.md, BUG-9056) and the city
+  counts: on the host a partner's nation gets the unlocks of the host's cPlayer cards, not the partner's own earlier
+  stages. Not changed; a partner's card-based abilities follow the host's cards until this is scoped per founder.
+* ✔ (code) Before BUG-9306 the host fired a partner's request (CMD 5, civ.cpp host_superweapon_request) with
+  player_civ(), the host's nation, also with civ.multi_founders. Fix `civ.guest_superweapons`: the sender's own seat's
+  nation (CivByPol of its founder faction) fires it, through the vote as before; when that nation's CanUse is false the
+  sender gets a notice with its unlocked flag, money and the global flag (the cooldown is the remaining reason).
+* ? The global types 2/5/8 act on every city not of the firing nation: a partner's global weapon (as the host's own
+  before) also reaches the other founders' cities. Whether the party wants that is an owner decision (BUG-9306). ~ answered (2026-11-21, fix/l47-decide): see #civ-global-sw-party (type 5 hits no city; 2 / 8 spare the party, decision 7P A).
+* Tools: `coop.civ sw` lists each founder nation's money, unlocked[12], the game's CanUse per type and the global flag,
+  plus the last partner request; `coop.civ swgrant <seat> <type> [money]` (host, tests) unlocks a type for a seat's
+  nation and adds money (RefreshUnlocks may take the unlock back at the next city change); `coop.civ super <type> [x y
+  z]` on a guest sends a request as its UI does.
+* CORRECTION (2026-11-21, fix/l47-powers): the premise "the guest's bar shows its own unlocks" does not hold in the
+  host's world: wsync.stages (BUG-0577) gives the guest's cPlayer the host's cards, so the guest's game computes its
+  unlocks from the host's history too, and the host's RefreshUnlocks for a partner nation uses the same host cards.
+  Host and guest agree; neither knows the partner's own earlier-stage cards (the mod keeps no per-founder record).
+  A partner-unlocks fix first needs that record (see BUG-9306, decision).
+* (2026-11-21, fix/l47-powers, decision 7Q A) `civ.partner_unlocks`: RefreshUnlocks for a partner seat's nation runs with
+  that founder's own cell / creature / tribe cards in cPlayer +0x10FC / +0x1100 / +0x1104 for the call (swap_open, as the
+  city view), the guest's own nation likewise on the guest; campaign_tick's team sharing of unlocks is limited to the
+  global types 2 / 5 / 8 (the card-based ones stay each nation's). Which cities the global weapons hit is unchanged
+  (decision 7P open). Built, not run.
+
+## A partner nation's superweapon tools and the unlock cards (2026-11-21, fix/l47-civ)
+<a id="civ-partner-sw-tools"></a>
+
+BUG-9310, BUG-9311. GOG 2024 addresses (Ghidra on the TITAN Steam dump; the crash dump crash-20261121-035634-i9; live
+runs on the TITAN QA copy).
+* ✔ A nation's superweapon tools: vector +0x470 (begin) / +0x474 (end) of 12 tool pointers (intrusive, vt +8 release),
+  one per type, tool ids from the table 0x14693E8. Loaded by 0xBF7020 (`Simulator::cCivilization::LoadSuperweaponTools`,
+  thiscall(civ), no stack arguments, plain ret) **only when +0x89 (mIsPlayerOwned) is set**: at creation 0xBF82B0
+  (which sets +0x89 / +0x8A) and after a load (the Read slot 0xBF8280 of the vtable 0x1469370: cGameData Read,
+  RefreshUnlocks, then 0xBF7020). Each tool gets +0x150 = 1. The tools are not saved; they are made again at a load.
+* ✔ 0xBF18C0 thiscall(civ, type) ret 4 = +0x470[type] (no check). Its callers: the targeted launch 0xBDC2F0 (types 0, 1,
+  3, 4, 6, 7, 9, 10, 11; ecx = city +0x590), the global ones 0xBE4300 (2) and 0xBE4550 (8), and 0xCEA320. The cooldown
+  check 0xBF18D0 (in CanUse) reads +0x470[type] +0x1C0 (the recharge seconds) when the type's timer (+0x490 + type * 32,
+  a vector every nation has) runs.
+* ✔ A partner founder's nation (civ.multi_founders) has +0x89 = 0 (dump: seat 3's 1CA35540 +0x89 0, +0x8A 1; the
+  host's 1C969DF8 +0x89 1): no tools, so its first launch read a null vector (the host crashed reading 0xC at 0xBF18CA,
+  BUG-9310). Live: the loader with +0x89 set for the call fills all 12 (`... got its superweapon tools: 12 loaded`), then a
+  partner's type 3 and type 0 fired from its own city with its own money, and its cooldown check works.
+* ✔ (runtime) The launch's effect is drawn on the host's game only; a guest sees the results the mod already relays (a
+  type 0 at a city: the city's hp fell on both games), not the marker or the burst, also for the host's own weapon
+  (BUG-9312).
+* ✔ RefreshUnlocks 0xBF2510 reads cPlayer +0x10FC / +0x1100 / +0x1104 on every call (each card's traits through
+  0x555E80, then 0xBEFAD0 trait -> type, then the city counts) and caches nothing; it first clears +0x484..+0x48F.
+  CORRECTION (2026-11-21, fix/l47-civ) of BUG-9311's first reading ("a shared cache"): the leak was the mod's h_Unlocks,
+  which never put the host's cards back after a partner's call (`game::swap_close(mark, n)` drops ledger entries, it does
+  not restore them: the caller must). Fixed by `civ.unlock_cards_restore`.
+* Tools: `coop.civ sw` (now with tools_loaded=), `coop.civ swgrant <seat> <type> [money]` keeps its grant across the
+  campaign tick until `coop.civ swgrant clear` (or a planet change).
+## Global superweapons and the party, a superweapon shown on guests, a newcomer's own nation (2026-11-21, fix/l47-decide)
+<a id="civ-global-sw-party"></a>
+
+Owner decisions 7P A (BUG-9313), 7S B (BUG-9309) and BUG-9312. GOG 2024, Ghidra on the TITAN Steam dump
+(`tools/ghidra/q.sh --build 2024`), live runs on the TITAN QA copy (Abber, docs/06-testing.md#testing-global-sw-newcomer).
+* ✔ `Simulator::cCity::LaunchSuperweapon` 0xBE5D30 (thiscall(city, int type, const Vector3* target) ret 8; now in the
+  .sym) is the switch FireSuperweapon launches through: types 0/1/3/4/6/7/9/10/11 -> 0xBDC2F0(type, target) (the
+  targeted launch), 2 -> 0xBE4300, 5 -> 0xBDC4A0, 8 -> 0xBE4550; for 2/5/8 the camera then looks at the launching city
+  (SimCamera_LookAt), and every type plays its launch sound 0x1468864[type].
+* ✔ 0xBE4300 (type 2, fastcall city) walks every city of the planet (cGameNounManager::GetData of noun 0x18C43E8), skips
+  the ones whose political id (vt 0x4C = +0x30) equals the launching city's, fires the type-2 tool (+0x470[2] of city
+  +0x590) at a point 10 above each of the others (cToolManager::FireTool(tool, city hall +0x320 spatial, &aim, -1, 0,
+  null, 1)) and sets that city's instant-capture flag +0x762; then ApplyRelationship(other nation, firing nation,
+  0x5776D99, 1.0) for every other nation (GetAllCivilizations, skipping the launching city's +0x590), and an achievement
+  when the city is the player's and something was hit. 0xBE4550 (type 8) is the same loop (aim 60 above each city), no
+  relationship loop. **There is no ally exception in the game**: an ally's cities are hit as any other's; the only
+  exclusion is "the launching city's own political id".
+* ✔ 0xBDC4A0 (type 5) hits no city at its launch: it toggles an effect object of the launching city (+0x764 / +0x768,
+  0xBDBD70 makes it through cGameViewManager, effect 0xB332DE96) and restarts the cooldown (0xBC32A0). So "2/5/8 hit every
+  city not of the firing nation" (#civ-guest-superweapons) holds for 2 and 8 only.
+  CORRECTION (2026-11-21, fix/l47-decide) of the "?" line in #civ-guest-superweapons: type 5 hits no city when launched
+  (static, the launch function above); types 2 and 8 hit every other city, allies' and the other founders' included (live:
+  a party nation's capital and an offline founder's city were captured by the host's type 2 with the fix off).
+* ✔ The targeted launch 0xBDC2F0: tool +0x470[type], 0xBC3280 on tool +0x88 (a timer), the aim from 0xBDA350 (types 4,
+  7, 11 snap to the nearest city's centre when inside its radius, else the target) moved along its normal by the height
+  0x146863C[type], then the same FireTool call (owner the city hall's spatial, target null, last arg 1); type 1 also
+  applies 0x5776D99 to every other nation.
+* ✔ (runtime) The target marker (a cross with rings), the projectile and the burst all come from that FireTool call: a
+  guest's game firing the same tool from its copy of the launching city's city hall at the host's aim draws all three
+  (BUG-9312, out/qa-shots/bug9312_pass_guest_sw3_montage_host_left_guest_right.png); its hits arrive in that guest's
+  game as damage of the launching nation's political id (TakeDamage pol / AddCaptureDamage attacker), dropped there
+  (29 drops in one type-2 show).
+* (code, BUG-9313 `civ.global_sw_spares_party`) h_CityLaunch: for types 2 / 8 launched by a party founder nation on the
+  host, every city of another party nation carries the firing nation's political id for the call (+0x30 through the
+  swap ledger, put back after it), so the game's own exclusion skips it; ApplyRelationship's 0x5776D99 between two party
+  nations is not applied inside the call. Live: a partner's (seat 4) type 2 spared 3 party cities and took the one
+  outsider's; the host's type 8 spared 3 and took an outsider's and a real NPC nation's city.
+* (code, BUG-9312 `civ.sw_show`) the host notes the FireTool aims inside LaunchSuperweapon (squadron's FireTool hook ->
+  civ::fire_observed) and sends MSG_CIV_CMD kind 12 (u8 type, u32 nation, the city's place, u8 n, n aims); a guest finds
+  its copy of the city (that nation's nearest within 80 m), loads the nation's tools (ensure_sw_tools) and fires the tool
+  at each aim; for 20 s its damage, capture, conversion and purchase hooks drop effects of that nation.
+* (code, BUG-9309 `civ.newcomer_nation`) civ_seats::play_seats covers every founded seat (up to founders::kMaxSeats);
+  late_status takes a seat limit: kMaxSeats with the fix, kPlaySeats without. Live: the newcomer in the absent player's
+  party seat 3 got founder seat 4 (capital 21D0, its identity in CIV2 `.duonations`, five seats), kept it after a save,
+  leave and reload, and fired a superweapon from it; seats 1..3 kept their identities, cities and money.
+* ✔ Per-seat state checked for seats 4..7: g_seat_player, g_founder_village, g_sw_test_grant, g_unlock_cards_logged are
+  kMaxSeats arrays; g_founder_spawned_seats / g_founder_village_known are 8-bit masks; CIV2 `.duonations` holds up to 8
+  seats (founders.cpp); `.duo-cards` is keyed by identity (64 records); `.duo-command` names seats 0 and 1 only;
+  `.duo-seats` (CampaignRules seats) counts players at once (network ids), not nations: unchanged. The Space launch offer
+  carries every seat (BUG-9187, 8 entries). Creature nests and Tribe villages read the party seats and the Tribe roster
+  (at most kPlaySeats), never the Civilization roster: a Civilization seat >= 4 does not reach them.
+## A guest's world reload counted as its spend of the shared money; the global superweapons' price (2026-11-21, fix/l47-money)
+<a id="civ-reload-spend-sw-price"></a>
+
+BUG-9316, BUG-9317 (owner decision 7T A). GOG 2024, Ghidra on the TITAN Steam dump, live runs on the TITAN QA copy (Abber,
+docs/06-testing.md#testing-reload-spend-sw-price).
+* ✔ (runtime) A guest's world reload (a world share after a capture or a founding: Civilization -> Galaxy menu 02CCD1D2 ->
+  Loading 01654C08 -> Civilization, 15-20 s) kept the guest's shared-money sync state: game::stage_epoch(kCiv) only moves
+  when Civilization is entered again, so the mod's "same world" test still held in the Galaxy menu. A host total (MSG_RES,
+  at least every 2 s) that arrived in a Galaxy menu frame was folded (BUG-0220's fold) against what GetPlayerCivilization
+  +0x98 read there: 0, 320, 840 in three runs (the old world being torn down), so "0 - the last total" went to the host as
+  the guest's spend. Three FAIL runs with `coop.fix res.load_hold off`: -63565 (the whole shared money), -1040, -72660
+  (host HUD 72,120 -> 2,720). No test tool is involved: the QA log of 2026-11-21 09:39 shows -2660 at a reload before any
+  `coop.civ swgrant`. Not a test artefact.
+  CORRECTION (2026-11-21, fix/l47-money) of the "not analysed" pitfall in docs/06-testing.md#testing-global-sw-newcomer
+  ("after swgrant money writes"): swgrant has nothing to do with it; any reload of a guest can do it (fixed by res.load_hold).
+* ✔ The same code (mods/coop/shared.cpp) keeps the Tribe food and the Space money: the same fix covers them (not run live
+  in Tribe or Space).
+* ✔ `Simulator::cCivilization::GetSuperweaponCost` 0xBF6DF0 (thiscall float(civ, type) ret 4, ST0): types 2 / 5 / 8 cost
+  12000 (0x14693E4) x max(1, every city of noun 0x18C43E8 minus this civ's city vector +0x9C..+0xA0). Its only callers:
+  0xBF7870 (CanUse's affordable check, `cost <= +0x98`), FireSuperweapon 0xBF8BB0 (call at 0xBF8DB4, after the launch:
+  `+0x98 -= cost`; for a nation with +0x89 = 0 a negative result takes the budgets +0x4AC / +0x4B0) and the superweapon
+  tooltip 0xE05DC0 ("ICBM (48,000) - Requires 6 Cities [F4]", for GetPlayerCivilization). One function, one price.
+  CORRECTION (2026-11-21, fix/l47-money) of the "~ not checked" line in the BUG-0222 notes ("12000 x (the type number, as
+  decompiled)"): it is 12000 x max(1, the cities not of this civ), checked at runtime (48000 with 4 such cities).
+* ✔ (runtime) A partner seat's global superweapon fired for its guest is charged to that seat's nation +0x98 (seat 4:
+  60000 -> 12000), not the shared money; wsync shows the same value on the guest.
+* (code, BUG-9317 `civ.global_sw_party_price`) h_SwCost: for types 2 and 8 of a party nation, a city of any party nation
+  does not count; the price is the game's unit x max(1, the cities hit). The tooltip, the affordable check and the charge
+  follow. Live: host 48000 -> 24000 (2 outsider cities), seat 4 48000 -> 12000 (1). Type 5 is unchanged (it hits no city).

@@ -1,6 +1,7 @@
 // Host-owned world state (wsync.h, docs/sync-architecture-plan.md#sync-wsync).
 #include "creations.h"
 #include "wsync.h"
+#include "cards.h"
 
 #include <windows.h>
 
@@ -266,6 +267,8 @@ static int s_stages(const Table& want, bool apply)
     int n = 0;
     for (int i = 0; i < 5; i++) {
         uint32_t& mine = *(uint32_t*)((uint8_t*)p + 0x10FC + 4 * i);
+        if (apply) // BUG-9306 (7Q A): a card this game's own graduation wrote is kept before the host's replaces it
+            cards::stage_check(i, mine, want[0].v[i]);
         if (mine == want[0].v[i])
             continue;
         n++;

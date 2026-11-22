@@ -12,6 +12,8 @@
 //   host side:  peer_here(id)    guest `id`'s latest state is this machine's stage and world
 //               peer_elsewhere(id) guest `id` plays another world of this machine's stage (what its own
 //                                elsewhere() says: it ignores the host's votes and gated messages, BUG-0702)
+//               peer_mode(id)    guest `id`'s game mode in its latest state (0: no state yet; BUG-9298: is it in
+//                                an editor)
 #pragma once
 
 #include <cstdint>
@@ -23,5 +25,6 @@ bool space_other();
 bool host_left();
 bool peer_here(uint8_t id);
 bool peer_elsewhere(uint8_t id);
+uint32_t peer_mode(uint8_t id);
 
 } // namespace own_world

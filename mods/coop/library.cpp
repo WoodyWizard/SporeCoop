@@ -82,10 +82,118 @@ static unsigned g_mine_hidden = 0;
 static bool g_no_share_fix = true;
 COOP_FIX("library.no_share", "BUG-9222", g_no_share_fix,
          "Lineages Cache: a player whose name holds -NoShare- shares no creations, and none of theirs are kept");
-static uint32_t g_no_share_dropped;
-static void offer(const Entry &e) {
-    if (g_no_share_fix && e.local && utf8::no_share_name(S->name_raw_of(S->my_id())))
+static uint32_t g_no_share_dropped, g_no_share_unsent; // BUG-9331: received ones a -NoShare- player did not pass on
+
+// BUG-9329 (decision 7Z A): test creations made before the -NoShare- rule spread into real players' caches. The mod
+// ships a ban list (mods\lineages\banned.txt): `source <identity>` (the hidden Lineages identity of a test profile),
+// `creation <png sha256>` (one creation), `keep <png sha256>` (never banned: a real player's creation that a test
+// profile copied with a save). At the first library step of a game start (the main menu, before a save loads) every
+// received creation of the list is moved out of the cache into LineagesCache\banned (the PNG, never deleted; a line
+// per creation in banned\moved.txt) and out of the index; it is never imported again, refused when offered (it counts
+// as had, so nothing is sent) and never offered. Its copy in the game's Sporepedia cache (Pollination) stays, so a save
+// that holds it loads as before, but the game's object template DB never hands it out again (FindObjects without it:
+// no new visiting ship, NPC or other pick of it). The player's own creations (local entries) are never moved.
+// `coop.fix library.banned off`: nothing is banned (57-dev).
+static bool g_ban_fix = true;
+COOP_FIX("library.banned", "BUG-9329", g_ban_fix,
+         "Lineages Cache: creations on the mod's ban list (test profiles) are moved out, refused and never picked by the game");
+static std::set<std::string> g_ban_sources, g_ban_items, g_ban_keep;
+static bool g_ban_list_ok = false;
+static SRWLOCK g_hidden_lock = SRWLOCK_INIT;
+static std::set<std::pair<uint32_t, uint32_t>> g_hidden; // (instance, group) of moved-out creations
+static unsigned g_ban_moved = 0, g_ban_refused = 0, g_ban_unsent = 0;
+static std::atomic<unsigned> g_ban_picks{0}, g_ban_retries{0};
+static bool banned(const library_sync::Item &i) {
+    if (!g_ban_fix || g_ban_keep.count(i.hash))
+        return false;
+    return g_ban_items.count(i.hash) || (!i.source.empty() && g_ban_sources.count(i.source));
+}
+static bool ban_token(const std::string &s) { // a hex digest or a plain id such as "manual-test"
+    if (s.empty() || s.size() > 64)
+        return false;
+    return std::all_of(s.begin(), s.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || c == '-'; });
+}
+static void load_ban_list() {
+    const std::wstring path = slotfs::widen(H->mods_dir()) + L"\\lineages\\banned.txt";
+    std::vector<uint8_t> bytes;
+    WIN32_FILE_ATTRIBUTE_DATA st{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &st) || st.nFileSizeHigh || st.nFileSizeLow > (4u << 20)) {
+        H->log(M, SK_WARN, "library: no ban list (mods\\lineages\\banned.txt): nothing is banned (BUG-9329)");
         return;
+    }
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE)
+        return;
+    bytes.resize(st.nFileSizeLow);
+    DWORD got = 0;
+    const bool ok = ReadFile(f, bytes.data(), DWORD(bytes.size()), &got, nullptr) && got == bytes.size();
+    CloseHandle(f);
+    if (!ok)
+        return;
+    unsigned bad = 0;
+    size_t at = 0;
+    const std::string text(bytes.begin(), bytes.end());
+    while (at < text.size()) {
+        size_t end = text.find('\n', at);
+        if (end == std::string::npos)
+            end = text.size();
+        std::string line = text.substr(at, end - at);
+        at = end + 1;
+        if (auto hash = line.find('#'); hash != std::string::npos)
+            line.resize(hash);
+        line.erase(std::remove_if(line.begin(), line.end(), [](char c) { return c == '\r' || c == '\t'; }), line.end());
+        while (!line.empty() && line.back() == ' ')
+            line.pop_back();
+        while (!line.empty() && line.front() == ' ')
+            line.erase(line.begin());
+        if (line.empty())
+            continue;
+        const size_t sp = line.find(' ');
+        const std::string what = line.substr(0, sp), value = sp == std::string::npos ? "" : line.substr(line.find_first_not_of(' ', sp));
+        if (!ban_token(value) || value.find(' ') != std::string::npos)
+            ++bad;
+        else if (what == "source")
+            g_ban_sources.insert(value);
+        else if (what == "creation" && library_sync::valid_hash(value))
+            g_ban_items.insert(value);
+        else if (what == "keep" && library_sync::valid_hash(value))
+            g_ban_keep.insert(value);
+        else
+            ++bad;
+    }
+    g_ban_list_ok = true;
+    H->log(M, SK_INFO, "library: ban list: %zu source(s), %zu creation(s), %zu kept, %u bad line(s) (BUG-9329)",
+           g_ban_sources.size(), g_ban_items.size(), g_ban_keep.size(), bad);
+}
+static void hide_key(const dbpf::Key &k) {
+    // a key the player's own database answers for (the same creation in My Creations, e.g. a partner's species the
+    // game kept there) stays pickable: the player's own creations are never touched
+    if (!k.instance || creations::key_in_editor_saves(k))
+        return;
+    AcquireSRWLockExclusive(&g_hidden_lock);
+    g_hidden.emplace(k.instance, k.group);
+    ReleaseSRWLockExclusive(&g_hidden_lock);
+}
+static void purge_banned(); // (below: needs the cache's paths)
+static size_t hidden_count() {
+    AcquireSRWLockShared(&g_hidden_lock);
+    const size_t n = g_hidden.size();
+    ReleaseSRWLockShared(&g_hidden_lock);
+    return n;
+}
+
+static void offer(const Entry &e) {
+    if (banned(e.item)) { // BUG-9329: never sent
+        ++g_ban_unsent;
+        return;
+    }
+    // BUG-9222: a -NoShare- player offers none of its own; BUG-9331: and passes on none it received (a test copy's
+    // cache holds other test games' creations; receivers drop a -NoShare- player's offers anyway, after the download)
+    if (g_no_share_fix && utf8::no_share_name(S->name_raw_of(S->my_id()))) {
+        if (!e.local && g_offered.insert(e.item.hash).second) // once a session: offer_all asks again every step
+            ++g_no_share_unsent;
+        return;
+    }
     if (!S->connected() || !g_offered.insert(e.item.hash).second)
         return;
     auto item = e.item;
@@ -237,6 +345,122 @@ static bool load_index() {
         }
     return true;
 }
+// BUG-9329: moves the listed received creations out (see banned() above); the keys moved out before stay hidden from the
+// game's picks (banned\moved.txt: "<hash> <instance> <type> <group> <source>" per line, hex)
+static void purge_banned() {
+    const std::wstring dir = g_dir + L"\\banned", log = dir + L"\\moved.txt";
+    std::vector<uint8_t> old;
+    // a creation that came back from a source not on the list (the same PNG from its real author) is not hidden
+    std::set<std::pair<uint32_t, uint32_t>> wanted;
+    for (auto &[hash, e] : g_entries)
+        if (!banned(e.item) && e.key.instance)
+            wanted.emplace(e.key.instance, e.key.group);
+    if (read_file(log, old, 16u << 20)) {
+        const std::string text(old.begin(), old.end());
+        size_t at = 0;
+        while (at < text.size()) {
+            size_t end = text.find('\n', at);
+            if (end == std::string::npos)
+                end = text.size();
+            char hash[80] = {};
+            dbpf::Key k{};
+            if (sscanf(text.substr(at, end - at).c_str(), "%79s %x %x %x", hash, &k.instance, &k.type, &k.group) == 4 &&
+                !wanted.count({k.instance, k.group}))
+                hide_key(k);
+            at = end + 1;
+        }
+    }
+    if (!g_ban_fix || (g_ban_sources.empty() && g_ban_items.empty()))
+        return;
+    std::string lines;
+    unsigned moved = 0, missing = 0;
+    for (auto it = g_entries.begin(); it != g_entries.end();) {
+        const Entry &e = it->second;
+        if (e.local || !banned(e.item)) { // the player's own creations stay
+            ++it;
+            continue;
+        }
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        if (ec) {
+            g_error = "Cannot create the banned folder.";
+            break;
+        }
+        const std::wstring from = object_path(e.item.hash), to = dir + L"\\" + slotfs::widen(e.item.hash) + L".png";
+        if (GetFileAttributesW(from.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            if (!MoveFileExW(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED | MOVEFILE_WRITE_THROUGH)) {
+                H->log(M, SK_WARN, "library: banned %s could not be moved out (error %lu): kept", e.item.hash.c_str(), GetLastError());
+                ++it;
+                continue;
+            }
+        } else
+            ++missing;
+        char line[256];
+        snprintf(line, sizeof line, "%s %08X %08X %08X %s\n", e.item.hash.c_str(), e.key.instance, e.key.type, e.key.group,
+                 e.item.source.c_str());
+        lines += line;
+        H->log(M, SK_INFO, "library: banned creation moved out: %s key %08X/%08X/%08X source %.16s (BUG-9329)",
+               e.item.hash.c_str(), e.key.instance, e.key.type, e.key.group, e.item.source.c_str());
+        hide_key(e.key);
+        it = g_entries.erase(it);
+        ++moved;
+    }
+    if (!moved)
+        return;
+    std::vector<uint8_t> all = old;
+    all.insert(all.end(), lines.begin(), lines.end());
+    if (!atomic_file(log, all))
+        H->log(M, SK_WARN, "library: banned\\moved.txt could not be written");
+    save_index();
+    g_ban_moved += moved;
+    H->log(M, SK_INFO, "library: %u banned creation(s) moved out of the Lineages Cache into its banned folder (%u without "
+           "their PNG); their keys are hidden from the game's picks (BUG-9329)", moved, missing);
+}
+
+// BUG-9329: the object template DB's FindObjects (Sporepedia::OTDB::cObjectTemplateDB vt 0x24, SporeCoop::OTDB_FindObjects)
+// without the moved-out keys. A limited query (the visiting ship asks for one) only offers the templates used least
+// lately (runtime 2026-11-21: with five never-used banned ships, every one of 200 picks offered just those five, also
+// when asked for 44), and the caller stamps only what it takes as used (vt 0x58). So each banned template a query
+// offers is stamped as used here (vt 0x58(key, 1), as the caller does) and the query runs again, up to 8 times: the next
+// templates come up, and a pick is a creation that is not banned whenever the game has one.
+struct KeyVector {
+    dbpf::Key *begin, *end, *capacity;
+};
+static bool(SK_THISCALL *o_FindObjects)(void *, KeyVector *, int, void *);
+static size_t drop_hidden(void *db, KeyVector *out) {
+    if (!out || !out->begin || out->end <= out->begin || out->end - out->begin > 1000000 ||
+        !readable(out->begin, size_t(out->end - out->begin) * sizeof(dbpf::Key)))
+        return 0;
+    std::vector<dbpf::Key> gone;
+    AcquireSRWLockShared(&g_hidden_lock);
+    dbpf::Key *w = out->begin;
+    for (dbpf::Key *r = out->begin; r != out->end; ++r)
+        if (!g_hidden.count({r->instance, r->group}))
+            *w++ = *r;
+        else if (gone.size() < 256)
+            gone.push_back(*r);
+    ReleaseSRWLockShared(&g_hidden_lock);
+    const size_t n = size_t(out->end - w);
+    out->end = w;
+    for (auto &k : gone) // stamped as used: the next query offers others first
+        vcall<bool>(db, 0x58 / 4, &k, true);
+    return n;
+}
+static bool SK_THISCALL h_FindObjects(void *db, KeyVector *out, int max, void *params) {
+    bool ok = o_FindObjects(db, out, max, params);
+    if (!g_ban_fix || !out || !hidden_count())
+        return ok;
+    size_t dropped = drop_hidden(db, out);
+    g_ban_picks += unsigned(dropped);
+    for (int tries = 0; dropped && max > 0 && out->begin == out->end && tries < 8; ++tries) {
+        ++g_ban_retries;
+        ok = o_FindObjects(db, out, max, params);
+        dropped = drop_hidden(db, out);
+        g_ban_picks += unsigned(dropped);
+    }
+    return out->begin != out->end && ok;
+}
+
 static bool paths() {
     if (g_loaded)
         return !g_index_bad;
@@ -278,6 +502,7 @@ static bool paths() {
         g_error = "Library index is unreadable; preserved without overwriting.";
         return false;
     }
+    purge_banned(); // BUG-9329: before anything is imported, offered or loaded
     refresh_received();
     load_onward();
     return true;
@@ -474,6 +699,11 @@ static void import_one() {
         e.item.name = clean(name);
         if (!creations::import_library_png(object_path(hash), e.key, g_error))
             e.failed = true;
+        else if (e.key.instance) { // BUG-9329: kept again from a source not on the list: pickable again
+            AcquireSRWLockExclusive(&g_hidden_lock);
+            g_hidden.erase({e.key.instance, e.key.group});
+            ReleaseSRWLockExclusive(&g_hidden_lock);
+        }
         save_index();
         refresh_received();
         H->log(M, e.failed ? SK_WARN : SK_INFO, "library: %s %s", e.failed ? "import rejected" : "imported",
@@ -615,6 +845,8 @@ static bool wants_foreign(uint8_t peer) {
 }
 // may this creation go to that peer
 static bool eligible_to(uint8_t peer, const Entry &e) {
+    if (banned(e.item)) // BUG-9329
+        return false;
     if (e.local)
         return g_active_local.count(e.item.hash) > 0;
     if (e.failed)
@@ -634,6 +866,11 @@ static void offer_all() {
 }
 
 static bool store_item(uint8_t peer, const library_sync::Item &item, const std::vector<uint8_t> &png) {
+    if (banned(item)) { // BUG-9329
+        if (!g_ban_refused++)
+            H->log(M, SK_INFO, "library: a banned creation (test profile) is not kept (BUG-9329)");
+        return true; // taken and dropped: the sender moves on
+    }
     if (g_no_share_fix && (utf8::no_share_name(S->name_raw_of(peer)) || utf8::no_share_name(item.sharer))) {
         if (!g_no_share_dropped++)
             H->log(M, SK_INFO, "library: a creation from a -NoShare- player is not kept (BUG-9222)");
@@ -680,12 +917,21 @@ void init(const SkHost *host, SkMod *mod, net::Session *session) {
     auto feed = H->sym("SporeCoop::FeedItem_GetAssetKeys");
     if (feed && a_Reserve && a_GetKeys && a_GetProps)
         H->hook_create(mod, (void *)feed, (void *)h_FeedKeys, (void **)&o_FeedKeys);
+    load_ban_list(); // BUG-9329
+    if (auto find = H->sym("SporeCoop::OTDB_FindObjects"))
+        H->hook_create(mod, (void *)find, (void *)h_FindObjects, (void **)&o_FindObjects);
+    else
+        H->log(M, SK_WARN, "library: SporeCoop::OTDB_FindObjects missing: banned creations already in the Sporepedia stay pickable");
     g_exchange.inventory = []() -> const std::vector<library_sync::Item> & { return g_offers; };
     g_exchange.eligible_to = [](uint8_t peer, const library_sync::Item &i) { // BUG-9112: by the peer's choice
         auto e = g_entries.find(i.hash);
         return e != g_entries.end() && eligible_to(peer, e->second);
     };
     g_exchange.have = [](const library_sync::Item &item) {
+        if (banned(item)) { // BUG-9329: refused on receive (counted as had: nothing is sent)
+            ++g_ban_refused;
+            return true;
+        }
         auto it = g_entries.find(item.hash);
         if (it == g_entries.end() || it->second.item.size != item.size)
             return false;
@@ -820,6 +1066,23 @@ void tick(double now, bool safe) {
     H->run_outside_frame(work, nullptr);
 }
 bool foreign_creations() { return g_foreign; }
+std::string hash_of(uint32_t instance, uint32_t group) {
+    if (!instance || !g_loaded)
+        return {};
+    for (auto &[hash, e] : g_entries)
+        if (e.key.instance == instance && e.key.group == group && !e.failed)
+            return hash;
+    return {};
+}
+bool key_of(const std::string &hash, dbpf::Key &out) {
+    if (!g_loaded)
+        return false;
+    auto it = g_entries.find(hash);
+    if (it == g_entries.end() || it->second.failed || !it->second.key.instance || banned(it->second.item))
+        return false;
+    out = it->second.key;
+    return true;
+}
 // BUG-9111 / BUG-9112: Lineages cells for the host's Cell pool: our own, those authored by a player in
 // this session, and, with Foreign Creations on, every other cell of the Cache.
 std::vector<CacheCell> pool_cells() {
@@ -851,6 +1114,33 @@ std::string debug(const std::vector<std::string> &args) {
         g_editor_stamp = 0;
         g_scan.clear();
         scan_index();
+    }
+    if (args.size() == 2 && args[0] == "pickships") {
+        // BUG-9329 tests: the visiting UFO's random ship pick (UFOAbductionEvent_PickShip, the OTDB query the event's start
+        // runs) N times: how many picks named a moved-out creation (0 with library.banned on)
+        auto pick = H->sym("SporeCoop::UFOAbductionEvent_PickShip");
+        if (!pick)
+            return "no symbol";
+        const int n = std::clamp(atoi(args[1].c_str()), 1, 500);
+        int hidden = 0, none = 0;
+        std::map<uint32_t, int> seen;
+        for (int i = 0; i < n; ++i) {
+            dbpf::Key k{};
+            cdecl_call<void>(pick, &k, false);
+            AcquireSRWLockShared(&g_hidden_lock);
+            hidden += g_hidden.count({k.instance, k.group}) ? 1 : 0;
+            ReleaseSRWLockShared(&g_hidden_lock);
+            none += !k.instance;
+            ++seen[k.instance];
+        }
+        std::string out = "picks=" + std::to_string(n) + " hidden=" + std::to_string(hidden) + " none=" + std::to_string(none) +
+                          " distinct=" + std::to_string(seen.size()) + " fix=" + (g_ban_fix ? "on" : "off");
+        for (auto &[inst, c] : seen) {
+            char t[32];
+            snprintf(t, sizeof t, " %08X:%d", inst, c);
+            out += t;
+        }
+        return out;
     }
     if (args.size() == 2 && args[0] == "inspect") {
         uint32_t group = 0;
@@ -896,7 +1186,12 @@ std::string debug(const std::vector<std::string> &args) {
            " scan=" + std::to_string(g_scan.size()) + " peers=" + std::to_string(g_peers.size()) +
            " incoming=" + std::to_string(g_exchange.incoming_bytes()) + " repaired=" + std::to_string(g_repaired) + " provisional=" + std::to_string(g_provisional) +
            " export_failed=" + std::to_string(g_export_failed) + " mine_hidden=" + std::to_string(g_mine_hidden) + " foreign=" + (g_foreign ? "on" : "off") + " foreign_offered=" + std::to_string(g_foreign_offered) +
-           " foreign_refused=" + std::to_string(g_foreign_refused) + " no_share_dropped=" + std::to_string(g_no_share_dropped) + " peers_foreign=" +
+           " foreign_refused=" + std::to_string(g_foreign_refused) + " no_share_dropped=" + std::to_string(g_no_share_dropped) + " no_share_unsent=" + std::to_string(g_no_share_unsent) +
+           " ban_list=" + (g_ban_list_ok ? std::to_string(g_ban_sources.size()) + "/" + std::to_string(g_ban_items.size()) + "/" +
+                                            std::to_string(g_ban_keep.size()) : std::string("none")) +
+           " ban_moved=" + std::to_string(g_ban_moved) + " ban_refused=" + std::to_string(g_ban_refused) + " ban_unsent=" +
+           std::to_string(g_ban_unsent) + " ban_hidden=" + std::to_string(hidden_count()) + " ban_picks_dropped=" +
+           std::to_string(g_ban_picks.load()) + " ban_retries=" + std::to_string(g_ban_retries.load()) + " peers_foreign=" +
            std::to_string(std::count_if(g_peer_foreign.begin(), g_peer_foreign.end(), [](auto &p) { return p.second; })) + " retried=" + std::to_string(g_retried) +
            (g_error.empty() ? "" : " error=" + g_error) + list;
 }

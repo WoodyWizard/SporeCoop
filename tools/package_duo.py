@@ -53,6 +53,9 @@ def main():
             shutil.copyfile(source, symbols / source.name)
         for source in (root / "data/config").glob("*.ini"):
             shutil.copyfile(source, mod / "mods" / source.name)
+        (mod / "mods/lineages").mkdir(parents=True)  # BUG-9329: the ban list of test creations
+        for source in (root / "data/lineages").glob("*.txt"):
+            shutil.copyfile(source, mod / "mods/lineages" / source.name)
         for name, target in (("coop.dll", mod / "mods/coop.dll"), ("steam_api.dll", mod / "steam_api.sporekit.dll"),
                              ("sporekit.dll", mod / "sporekit.dll"), ("SporeCoopSetup.exe", stage / "SporeCoopSetup.exe")):
             shutil.copyfile(build / name, target)

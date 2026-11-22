@@ -46,6 +46,11 @@ static bool g_autosave_show_confirmation;
 static uint32_t g_autosave_world;
 static uint64_t g_autosave_posted, g_autosave_retry, g_autosave_before;
 static std::wstring g_autosave_slot;
+// BUG-9304: the posted autosave is Spore's silent save (confirmed by its write, it has no box); a silent autosave that
+// wrote nothing in 30 s makes this world's next ones the pause-menu save again; the silent write's 4 s (save_busy)
+static bool g_autosave_silent, g_silent_autosave_failed;
+static uint64_t g_silent_at;
+static unsigned g_silent_autosaves, g_silent_autosaves_confirmed, g_silent_autosave_fallbacks; // tests (BUG-9304)
 
 static void autosave_world(uint32_t world)
 {
@@ -55,6 +60,7 @@ static void autosave_world(uint32_t world)
     g_autosave_posted = g_autosave_retry = g_autosave_before = 0;
     g_autosave_show_confirmation = false;
     g_autosave_slot.clear();
+    g_autosave_silent = g_silent_autosave_failed = false;
 }
 
 void request_autosave()
@@ -589,6 +595,7 @@ bool save_game(std::string& err)
         g_autosave_before = g_autosave_slot.empty() ? 0 : newest_write(g_autosave_slot);
         g_autosave_posted = g_autosave_slot.empty() ? 0 : g_saved_at;
         g_autosave_show_confirmation = false;
+        g_autosave_silent = false; // (confirmed by this save's box)
         if (g_autosave_posted) g_autosave.event_pending = false;
     }
     return true;
@@ -660,11 +667,14 @@ struct PendingShare {
     uint64_t posted = 0;    // when its save was posted
     bool waited = false;    // BUG-9166: logged once
     bool held = false;      // BUG-9210: logged once
+    bool entry_held = false; // BUG-9304: held this tick for the partners' villages of a live Tribe entry
 };
 static bool g_world_window_fix = true;
 COOP_FIX("world.window_by_rate", "BUG-9236", g_world_window_fix,
          "world: a world transfer keeps only what the link delivers in a round trip + 0.2 s queued (game events wait less)");
 static std::function<bool(uint8_t, uint64_t)> g_share_hold;
+static bool (*g_entry_hold)(uint64_t); // BUG-9304 (tribe.one_entry_reload): set_entry_share_hold
+static unsigned g_entry_holds, g_entry_hold_timeouts; // tests (BUG-9304): entry shares held, held until the 20 s
 static uint32_t g_shared_loads; // BUG-9223: loads of a received copy of the host's world (coop.cpp own_dna_tick) // BUG-9210: home_nests: this player's own nest comes first
 // BUG-0231: the final failure of a queued share ("cannot share the world"), for the caller's retry
 static void (*g_share_failed)(uint8_t peer, uint32_t tag, bool planet_missing);
@@ -711,6 +721,8 @@ bool save_busy()
     for (auto& p : g_pending)
         if (!p.need_save && (!g_share_reset_fix || !p.latest || now < p.latest + 5000))
             return true; // saved for a share, not written completely yet (at most 15 s: BUG-0140)
+    if (g_silent_at && now < g_silent_at + 4000)
+        return true; // BUG-9304: a silent autosave was sent (as alpha's uploads, 4 s for its files)
     return g_saved_at && now < g_saved_at + 10000 && g_box_seen_at < g_saved_at;
 }
 
@@ -2213,6 +2225,15 @@ static void checkpoint_reload_tick(net::Session& s)
         g_feed("Rebuild reload failed: " + error);
 }
 
+// BUG-9304 (owner, Live 67-dev: "Autosave isn't seamless still"): the campaign autosave was the pause menu's Save (a
+// 1 s game-time pause, the busy cursor, the "game saved" box the mod clicks; the guests pause with the host, BUG-9260).
+// It is Spore's silent save now (silent_save, alpha 520ace7b): no pause, no cursor, no box, only the write; confirmed
+// by a newer file in the slot. Shares and checkpoint reloads keep the pause-menu save (they wait for its box). Off: the
+// pause-menu save for the autosave too (0.7.14.1).
+static bool g_silent_autosave_fix = true;
+COOP_FIX("world.silent_autosave", "BUG-9304", g_silent_autosave_fix,
+         "world: the campaign autosave is Spore's silent save (no pause, no busy cursor, no game saved box)");
+
 static void autosave_tick(net::Session& s)
 {
     if (!g_autosave_enabled || !s.connected() || !g_playing || !g_playing()) return;
@@ -2222,15 +2243,23 @@ static void autosave_tick(net::Session& s)
     const auto now = GetTickCount64();
     if (!g_autosave.since) g_autosave.saved(now);
     if (g_autosave_posted) {
-        if (g_box_seen_at >= g_autosave_posted && newest_write(g_autosave_slot) > g_autosave_before) {
+        if ((g_autosave_silent || g_box_seen_at >= g_autosave_posted) && newest_write(g_autosave_slot) > g_autosave_before) {
             g_autosave.saved(now);
             g_autosave_posted = 0;
+            if (g_autosave_silent) g_silent_autosaves_confirmed++;
+            g_autosave_silent = false;
             if (g_autosave_show_confirmation) {
                 g_autosave_show_confirmation = false;
                 H->log(M, SK_INFO, "world: campaign autosave confirmed");
                 g_feed("Campaign autosaved");
             }
         } else if (now >= g_autosave_posted + 30000) {
+            if (g_autosave_silent) { // BUG-9304: nothing written: this world's next autosaves are the pause-menu save
+                g_silent_autosave_failed = true;
+                g_silent_autosave_fallbacks++;
+                H->log(M, SK_WARN, "world: the silent autosave wrote nothing in 30 s: the next one is the pause-menu save");
+            }
+            g_autosave_silent = false;
             g_autosave_posted = 0;
             g_autosave.event_pending = true;
             g_autosave_retry = now + 15000;
@@ -2245,6 +2274,22 @@ static void autosave_tick(net::Session& s)
     if (current_db_dir(false).empty()) return;
     const bool event = g_autosave.event_pending;
     std::string error;
+    if (g_silent_autosave_fix && !g_silent_autosave_failed) {
+        // (the bookkeeping save_game does for an autosave, here: the slot's newest write before the silent save)
+        const std::wstring slot = current_db_dir(false);
+        const uint64_t before = slot.empty() ? 0 : newest_write(slot);
+        if (!slot.empty() && silent_save(error)) {
+            g_autosave_slot = slot;
+            g_autosave_before = before;
+            g_autosave_posted = g_silent_at = now;
+            g_autosave_silent = true;
+            g_autosave_show_confirmation = true;
+            g_autosave.event_pending = false;
+            g_silent_autosaves++;
+            H->log(M, SK_INFO, "world: %s autosave requested (silent save, BUG-9304)", event ? "event" : "interval");
+        }
+        return;
+    }
     if (save_game(error)) {
         g_autosave_show_confirmation = g_autosave_posted != 0;
         H->log(M, SK_INFO, "world: %s autosave requested", event ? "event" : "interval");
@@ -2302,6 +2347,26 @@ void tick(net::Session& s)
             }
             ++i;
             continue;
+        }
+        // BUG-9304 (decision 7M B): the share of the live Creature -> Tribe entry (the host reloads its save after it,
+        // BUG-0332) waits up to 20 s while the partners' villages are made (tribe.cpp found_partners), so that one save
+        // and one load carry them: no founders' checkpoint reload a minute later
+        const bool entry_was_held = p.entry_held;
+        p.entry_held = p.need_save && g_reload_due && g_entry_hold && game::mode_id() == modes::kTribe && p.asked &&
+                       now < p.asked + 20000 && g_entry_hold(now - p.asked);
+        if (p.entry_held) {
+            if (!entry_was_held) {
+                g_entry_holds++;
+                H->log(M, SK_INFO, "world: the share for player %u waits for the partners' villages of the new Tribe stage "
+                                   "(BUG-9304, 20 s at most)", p.peer);
+            }
+            ++i;
+            continue;
+        }
+        if (entry_was_held && p.asked && now >= p.asked + 20000) {
+            g_entry_hold_timeouts++;
+            H->log(M, SK_WARN, "world: the share for player %u goes out after 20 s without the partners' villages (BUG-9304)",
+                   p.peer);
         }
         if (p.need_save && g_one_save_fix) {
             // BUG-0112: a save for another share is posted already and not written yet (2+ guests
@@ -2959,6 +3024,11 @@ std::string status()
     snprintf(b, sizeof b, "saved box: questions left alone %u, Enters for an OK outside the window %u\n", g_box_questions,
              g_box_enters); // tests (BUG-0846, BUG-0806)
     s += b;
+    snprintf(b, sizeof b, "silent autosaves %u, confirmed %u, pause-menu fallbacks %u%s; Tribe entry shares held for "
+             "villages %u (to the 20 s %u)\n", g_silent_autosaves, g_silent_autosaves_confirmed,
+             g_silent_autosave_fallbacks, g_silent_autosave_failed ? " (now: pause-menu)" : "", g_entry_holds,
+             g_entry_hold_timeouts); // tests (BUG-9304)
+    s += b;
     snprintf(b, sizeof b, "shares refused (a save file unreadable) %u, staged moves tried again %u\n", g_collect_failures,
              slotfs::g_move_retries); // tests (BUG-0847, BUG-0848)
     s += b;
@@ -3163,6 +3233,14 @@ static int c_worldfix(void*, int argc, const char* const* argv, SkOut* out)
 
 // BUG-9210
 void set_share_hold(std::function<bool(uint8_t, uint64_t)> hold) { g_share_hold = std::move(hold); }
+void set_entry_share_hold(bool (*hold)(uint64_t)) { g_entry_hold = hold; }
+bool entry_share_held()
+{
+    for (const auto& p : g_pending)
+        if (!p.need_save || !p.entry_held)
+            return false;
+    return !g_pending.empty();
+}
 uint32_t shared_loads() { return g_shared_loads; }
 
 } // namespace world

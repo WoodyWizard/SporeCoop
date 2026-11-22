@@ -1,4 +1,5 @@
-// BUG-9135 (roadmap phase 5): the Civilization founder nations of up to founders::kPlaySeats players, one per seat.
+// BUG-9135 (roadmap phase 5): the Civilization founder nations of up to founders::kPlaySeats players, one per seat
+// (decision 7S B, BUG-9309: up to founders::kMaxSeats nations, a newcomer's past the first four).
 //
 // Pure rules (no game state; tests/civ_seats_tests.cpp): which seat a guest plays, who owns a seat's cities and
 // vehicles, which seat gets the next capital, when a new capital may be founded and which nation is the new one;
@@ -23,8 +24,11 @@ constexpr uint8_t kNobody = 0xFF;    // party::kNobody: no connected player in a
 constexpr uint8_t kNoOwner = 0xFE;   // civ.cpp: a founder nation nobody may command now (its player is away)
 constexpr uint8_t kOtherSeat = 0xFC; // guest: another partner's nation (only the host knows that player's id)
 
-// the seats the gameplay uses: the founded seats, at most founders::kPlaySeats (owner decision 10)
-inline size_t play_seats(const founders::Roster& r) { return std::min(r.seats(), founders::kPlaySeats); }
+// the seats the gameplay uses: every founded seat. Owner decision 10 allows founders::kPlaySeats players at once; owner
+// decision 7S B (BUG-9309, 2026-11-21): a newcomer who took an absent player's party seat founds a nation of its own in a
+// founder seat past the first four (late_status with seat_limit founders::kMaxSeats), so up to kMaxSeats nations are
+// played (the absent ones by the game while their players are away). Before 7S B: at most kPlaySeats.
+inline size_t play_seats(const founders::Roster& r) { return std::min(r.seats(), founders::kMaxSeats); }
 
 // The seat's species: the nation's recorded species or any look of the seat's tribal founder (the outfit history).
 // Outfits::contains is the same test; it lives in founders.cpp, this header stays free of it.
@@ -188,7 +192,7 @@ enum class LateWhy : uint8_t {
     NoOwnCreature,  // plays the host's species: no capital until it creates a creature (decision 4)
     SpeciesLoading, // its creature is not loaded here yet: wait
     SharedSpecies,  // its species is a founder's (a nation's, or a look of a tribal founder): no second nation of it
-    SeatsFull,      // every play seat (founders::kPlaySeats) has a nation
+    SeatsFull,      // every founder seat a late capital may take has a nation (late_status seat_limit)
     TribalFirst,    // a Tribe roster seat's capital comes first (seat order)
     TribalSeat,     // a tribal founder whose own seat's capital is still to come (founded from the Tribe roster)
 };
@@ -212,8 +216,10 @@ inline const char* late_why_text(LateWhy why)
 // The Civilization seat a late joiner takes: the next one after the founded seats (seat 0 is always the host's).
 inline size_t late_seat(const founders::Roster& nations) { return std::max<size_t>(nations.seats(), 1); }
 
+// seat_limit: the founder seats a late capital may take (founders::kPlaySeats before decision 7S B; founders::kMaxSeats
+// with it: a newcomer who took an absent player's party seat founds a new nation in seat 4..7, BUG-9309)
 inline LateWhy late_status(const founders::Roster& nations, const founders::Roster& tribe, const founders::Outfits& looks,
-                           uint32_t host_species, const Joiner& j)
+                           uint32_t host_species, const Joiner& j, size_t seat_limit = founders::kPlaySeats)
 {
     if (j.nation_seat >= 0)
         return LateWhy::HasNation;
@@ -236,7 +242,7 @@ inline LateWhy late_status(const founders::Roster& nations, const founders::Rost
         if ((s < nations.seats() && nations.entries[s].species == j.species) ||
             (s < tribe.seats() && seat_species(tribe, looks, (int)s, j.species)))
             return LateWhy::SharedSpecies;
-    if (late_seat(nations) >= founders::kPlaySeats)
+    if (late_seat(nations) >= std::min(seat_limit, founders::kMaxSeats))
         return LateWhy::SeatsFull;
     if (next_capital_seat(nations.seats(), tribe.seats()) >= 0)
         return LateWhy::TribalFirst;
@@ -250,7 +256,8 @@ struct LatePlan {
     int joiner = -1;
 };
 inline LatePlan late_capital(const founders::Roster& nations, const founders::Roster& tribe, const founders::Outfits& looks,
-                             uint32_t host_species, const std::vector<Joiner>& joiners, std::vector<LateWhy>* why = nullptr)
+                             uint32_t host_species, const std::vector<Joiner>& joiners, std::vector<LateWhy>* why = nullptr,
+                             size_t seat_limit = founders::kPlaySeats)
 {
     LatePlan plan;
     const int tribal = next_capital_seat(nations.seats(), tribe.seats());
@@ -260,7 +267,7 @@ inline LatePlan late_capital(const founders::Roster& nations, const founders::Ro
         why->clear();
     int best_party_seat = 0;
     for (size_t i = 0; i < joiners.size(); ++i) {
-        const LateWhy w = late_status(nations, tribe, looks, host_species, joiners[i]);
+        const LateWhy w = late_status(nations, tribe, looks, host_species, joiners[i], seat_limit);
         if (why)
             why->push_back(w);
         if (tribal < 0 && w == LateWhy::Capital && (plan.joiner < 0 || joiners[i].party_seat < best_party_seat)) {

@@ -5481,3 +5481,106 @@ BUG-9284 (step 4 part 2's last piece). Adds to [the view centres](#creature-view
   world (a value written at runtime was there after a reload).
 * ✔ (runtime) with slot 0 every call is a fresh pick: 25 calls with 7 archetypes gave 25 species, other ones in a
   second run.
+## The native social meter fill, read from the public decompilation (2026-11-20, fix/l47-impress)
+<a id="creature-meter-native-fill"></a>
+
+BUG-9305. Source: the public spore-decomp project (github.com/NoahBPeterson/spore-decomp, files
+`src/game/SPGonzago/SPUISocialRainbow.cpp` and `match/slices/s00d9af60`), read as data, not run. Its addresses are
+of its own build: in the meter's code they are the GOG 2024 ones + 0x40 (its Reset 0xE33CE0 = our
+`SocialMeter_Reset` 0xE33CA0, its `Set(i, f)` 0xE319D0 = our `SocialMeter_SetBar` 0xE31990); elsewhere the shift
+differs, so no address below is ours without a check. Not seen at runtime by us.
+
+* ~ The meter is `cSPUISocialRainbow` (the "social rainbow"). Per bar (side) at +0xA4 + i * 0xA4: the step list, then
+  +0x90 the step's start (our "lo"), +0x94 the drawn arc length (our "pos"), +0x98 its target (our "hi"), +0x9C / +0x9D
+  two flags, +0xA0 a cached draw. Matches docs/re/creature.md#creature-meter-bars.
+* ~ The draw (window proc, message 0x0D, only for the bars' window 0x562BD40) draws each side from its arc end over
+  +0x94, and only when that side's step list is not empty; message 0x0C (update) sets "full" when both sides together
+  reach the arc and both lists have entries, and refreshes the bars' window when +0x24 is set.
+* ~ An answer: `SocialValues::StartFillLeft(points, anim)` (decomp 0xD9B0D0, from the answer check decomp 0xD9B110:
+  the answer stimulus 0x10000000, its kind equal to the prompt's gives the points, else 0.1 of them) calls
+  `StartFill(side 1, 1, 0, 0, points / total, color 0xFF7BCC76, 1)` (decomp 0xE33AB0): **a new entry goes into the
+  side's step list at once** and the target becomes +0x94 + the arc x the fraction. The NPC's side uses
+  StartFillRight (side 0).
+* ~ The fill: `SocialValues::Update` (decomp 0xD9BA60) every frame sets `Set(i, r)` with r = the answering creature's
+  animation progress (elapsed / length, clamped at 1): **the bar moves linearly over the answer's animation**.
+* ~ `CreatureSocialSuccess` (decomp 0xD9BC70): when the creature's social goal (CreatureSocialMode) is 4 it sets the
+  session flag 0x10 (the recruit, see docs/re/creature.md#creature-native-recruit) and gives no DNA and no 0x60B4123
+  message; for goals 1-3 the DNA (worth + a bonus by the meter's side 1 past 0.5) and the message. It always sets
+  +0xB58 |= 0x80 (impressed) and applies species event 3.
+* What it meant for the guest's meter (social.cpp meter_fill, `social.meter_smooth`): the guest added a round's entry
+  only when the fill passed half the round (lround), so the first half of each round drew nothing and then appeared at
+  once; now the entry is there from the step's start (ceil) and the bar moves linearly for 1 s, the win waits for it.
+
+## A partner's recruit by a social game (2026-11-20, fix/l47-impress)
+<a id="creature-native-recruit"></a>
+
+Decision 7L, BUG-9308.
+
+* ✔ (.sym, earlier work) The session end 0xD9F7A0 calls cPosseSimulator_AddMember when the session flag
+  `+0x1FC & 0x10` is set; ~ (decomp, above) CreatureSocialSuccess sets that flag for a social goal 4.
+* ~ CreatureSocialMode (GetSocialGoal) 0xC0E800: 1 / 2 / 3 from the species relation when the creature is not friendly
+  (vt 0xD4 false); the decomp's reconstruction of the friendly branch is incomplete. Our .sym: "4 via +0xB58 and herd
+  counts". Inferred: 4 is "a friendly creature that can join the pack" (allied species, impressed, the own species). (~ superseded 2026-11-21: 4 is relation 6 only, see docs/re/creature.md#creature-partner-social-goal)
+  Not measured: what an impressed creature and a pack member return; `coop.social rel` prints `mode=` per NPC.
+* ✔ (code) Before 7L a partner's won social game (host social.cpp apply_success) only set the impressed flag: nobody
+  called AddMember. The partner's own recruit path (player_rules h_AddMember -> K_RECRUIT) needs an AddMember in the
+  partner's game, which runs no social session for a mirror; BUG-9129 tested it only by calling AddMember by hand.
+* `social.partner_recruit`: the host asks the social goal inside guest_pack's party context (the partner's puppet as
+  the avatar, its pack as the posse), lets a goal-4 game run also on an impressed creature, and at its win calls
+  guest_pack::recruit (the game's own AddMember into that partner's pack). Host log: "won a recruit game (social goal
+  4) with npc N: it joins that player's pack"; `coop.social` (host) `recruits=` / `recruits_refused=`.
+
+## A partner's social goal and the party context (2026-11-21, fix/l47-qa)
+<a id="creature-partner-social-goal"></a>
+
+BUG-9308. Runtime on the MSI (two games, Steam 3010a413), `coop.social pmode <npc> <player>` and the disassembly read
+from the running game (tools/qa_win/dis.py).
+* ✔ CreatureSocialMode 0xC0E800 (read live): GetRelationship(npc +0xB28, the noun manager's avatar, npc) gives the
+  relation r; a jump table at 0xC0EA0C picks the goal: r 1 / 2 -> 3, r 3 -> 2, r 4 -> 1 (each 0 when the creature is
+  friendly, vt 0xD4: impressed, relation 6 or the player species), r 5 -> 0 (3 while the creature is busy,
+  0xBCA230(+0xB48, 2, 1, 0, 0) != -1), r 6 -> 4 only in Creature (mode 0x1654C01 / 0x1654C10) when the creature is in no
+  pack (+0xB58 & 0x100 clear) and the pack is not full (cPosseSimulator 0xD52DA0 != 0xD52DC0), else 0.
+* CORRECTION (2026-11-21, fix/l47-qa): the section above (#creature-native-recruit) inferred "goal 4 = allied species,
+  impressed, own species". Read live: goal 4 is relation 6 only; an impressed creature of a neutral species gets goal 0
+  (no social game, no recruit). Native recruiting is: impress members until the species is allied (relation 6), then
+  any ally (not in a pack, the pack not full) is a goal-4 game whose win adds it to the pack.
+* ✔ (runtime) The native ally click on the host (relation 6 set by `coop.social record`): the cursor shows the "+"
+  (add to pack), the click opens the social meter with the green face and rounds = 3 (a prompt game like an impress).
+* ✔ (runtime) Inside guest_pack's party context (the partner's puppet as the noun manager's avatar) GetRelationship
+  returned 6 for every NPC: host relation 3 / mode 2, the same NPC in the partner's party relation 6 / mode 4 (6 NPCs of
+  3 species). ~ Inferred: the puppet's player-species tuning (+0x390 = 6, the player species key AED08DD4) is read as
+  "the one that is not the avatar" (#creature-relations). So partner_mode made every partner win a recruit game: the
+  first QA win on a neutral Trigo Morts paid +0 DNA and put it into the partner's pack at once.
+* Fix `social.partner_relation`: the relation is read outside the party (the party shares the host's table); only a
+  relation-6 NPC asks the party context for its goal (the partner's pack: membership and room). The host's engage /
+  act checks use the partner's goal (an ally the host's full pack would refuse is still the partner's).
+
+## The visiting UFO's ship model (2026-11-21, fix/l47-ship-purge)
+<a id="creature-ufo-ship-model"></a>
+
+BUG-9328. GOG 2024, Ghidra (the Steam image dumped on TITAN, docs/05-re-notes.md#re-notes-ghidra-windows); runtime on
+TITAN's QA copy. Follows #creature-ufo-abduction-event and #creature-ufo-mirror.
+
+* ✔ The event's start (0xD4F8A0) rolls `RandomFloat() > prop 0x51BE5FAE` ("empire ship" chance) with the game's random
+  numbers, then `UFOAbductionEvent_SpawnUFO(pos, height, empire)`:
+  * empire: the star manager's empire (0xBA9500: its map at +0x150 by the id at +0x1D8), its ship key (0xC32810:
+    cEmpire +0xB8; when zero and the empire is the Grox (political id == the star manager's 0x885D80), the Grox ship
+    {prop 0x02AE0C7E!0x280852F1 int 0x04EA8A07, 0x476A98C7, 0x40656200}, else 0x102F670 picks one), its political id;
+  * not empire: `SporeCoop::UFOAbductionEvent_PickShip` 0x102C800 (cdecl(Key* out, bool)): one random ship of this
+    game's Sporepedia (OTDB_FindObjects with max 1), Lineages Cache imports included; political id -1.
+  * Both end in `Simulator::SpawnUFO(7, political, key)` (cdecl, plain ret), which stores the model key at cGameDataUFO
+    +0x780..+0x788 (0xC372E0; getter 0xC37390, +0x78C a flag).
+* ✔ (runtime) Each game picks by itself: in four runs of the QA host's first visit after a fresh start the host took
+  FB220279, 2926CA3F, 2926CA3F, 2926CA3D, the guest's own picks were other ships every time (0680E860 and 59FDDB0A,
+  29215407, 2921540A and 29215408). The pick prefers templates used least lately (#creations-ban-list).
+* ✔ (runtime) A Lineages Cache creation is imported under another key in each game: the same test ship was 2926CA3F in
+  the host's game and 29215407 in the guest's. A key alone does not name a shared creation; its cache hash does.
+* ✔ (runtime) The game's default UFO {9D5DB21A, 0x476A98C7, 0x40656200} (UfoGfx_InitFromUfo's model for a zero key) is
+  not in a Creature game's resources on Steam: a ship spawned with the zero key had no model (game.ufo_model and
+  game.ufo_gfx kept it from faulting) and was invisible. The Grox ship key (06576DBD on Steam) is there.
+* ✔ (runtime) On a guest a visit shows two ships: the guest's own start of the relayed event (BUG-9131) over its avatar and
+  the mirror of the host's ship (BUG-0558, creature.ufo_mirror); both come from the event's spawn function.
+* Fix `creature.same_ship` (drama.cpp): the host relays the UFO after its own start with the spawned key and the Lineages
+  Cache hash of that creation; on a guest every ship of the event's spawn function takes the host's ship (by the hash
+  for a cached creation, by the key otherwise) when the guest has it, else the Grox ship. `coop.drama ship` shows the
+  keys and the model of every live ship.

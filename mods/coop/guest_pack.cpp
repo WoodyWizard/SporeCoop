@@ -451,6 +451,31 @@ static void send_lists(double now, bool force)
     }
 }
 
+void for_each_member(uint8_t me, void (*fn)(void* c, uint8_t owner, void* user), void* user)
+{
+    if (!C.sess || !C.sess->connected())
+        return;
+    std::vector<void*> seen;
+    auto give = [&](void* c, uint8_t owner) {
+        if (!c || std::find(seen.begin(), seen.end(), c) != seen.end())
+            return;
+        seen.push_back(c);
+        fn(c, owner, user);
+    };
+    if (!is_host()) {
+        for (void* c : std::vector<void*>(g_mirror))
+            give(c, me);
+        return;
+    }
+    for (auto& [c, m] : g_members)
+        give(c, m.owner);
+    for (auto& [p, pt] : g_parties)
+        for (void* c : party_list(p))
+            give(c, p);
+    for (void* c : host_posse())
+        give(c, me);
+}
+
 static void mirror_out(void* posse, void* c)
 {
     if (a_PosseRemove && posse && game::listed(c))

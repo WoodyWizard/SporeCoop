@@ -68,6 +68,7 @@ int main()
     check(own_seat(four, outfits, 0xA0, 0x100, 3) == -1, "the host's seat is never a guest's");
     check(own_seat(five, outfits, 0xA4, 0x500, 4) == 4, "a fifth seat is played (6E B)");
     check(own_seat(full, outfits, 0xB10, 0x610, 16) == 16, "seat 16 (the seventeenth player) is played");
+    check(own_seat(five, outfits, 0xA3, 0x500, 3) == 3, "the returning absent player keeps its old seat"); // BUG-9309
 
     // owner_of_seat
     check(owner_of_seat(0, true, 0, -1, 0, false) == 0 && owner_of_seat(0, false, kNobody, 2, 2, false) == 0, "seat 0 is the host's");
@@ -179,6 +180,11 @@ int main()
         nations_full.entries[i] = {uint32_t(0xA00 + i), uint32_t(0x2300 + i), uint64_t(0xD00 + i)};
     check(late_status(nations_full, tribe3, looks3, host, Joiner{2, 0xC4, 0x901, true, true, -1}) == LateWhy::SeatsFull,
           "every play seat taken");
+    // decision 7S B (BUG-9309, live): a newcomer in an absent player's party seat founds a new nation in the next seat
+    // (here every seat plays already, 6E B, so the live "past the first four" limit is the same seat ceiling)
+    const Joiner newcomer{3, 0xC9, 0x901, true, true, -1};
+    plan = late_capital(nations4, tribe3, looks3, host, {newcomer}, &why, founders::kMaxSeats);
+    check(plan.seat == 4 && plan.joiner == 0 && why[0] == LateWhy::Capital, "a newcomer founds a new nation in seat 4");
     // the Tribe roster's seats come first: seat 2 (no nation yet) is founded before any late joiner
     plan = late_capital(two, tribe3, looks3, host, {late}, &why);
     check(plan.seat == 2 && plan.joiner == -1 && why[0] == LateWhy::TribalFirst, "the tribal seat 2 first, then the late joiner");

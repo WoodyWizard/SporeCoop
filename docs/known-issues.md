@@ -3932,3 +3932,92 @@ Found by eye in the sheets of lab 20261111-044257 (54 sheets); details and how t
 * (fixed 2026-11-19, alpha) BUG-9268 (galaxy Tribe planet): the host's own reload of the planet (after the empty-village rescue, BUG-9147)
   goes through the galaxy menu and the galaxy client hands the planet over as if the host had left. Repro: host a
   galaxy Tribe planet whose host village has no living member, let a second player join.
+## Civ: a superweapon is not drawn on a guest's screen (2026-11-21, fix/l47-civ)
+<a id="known-civ-superweapon-visual"></a>
+
+* BUG-9312. Civ: a superweapon's own show (the targeting marker, the burst) is drawn on the host's screen only; a guest
+  sees the results the mod relays (a city's damage) but not the weapon, also for the host's own weapon.
+* Reproduce: two players in Civ, both cameras on the same place; host `coop.settings force civ.superweapon_vote 0`,
+  `coop.civ swgrant 0 3`, `coop.civ super 3 <x y z>` at that place: the host's screen shows the marker and a green
+  burst, the guest's screen nothing.
+## Fixed on fix/l47-decide (2026-11-21): a superweapon on a guest's screen
+<a id="known-civ-superweapon-visual-fixed"></a>
+
+* BUG-9312 (see #known-civ-superweapon-visual): fixed on fix/l47-decide, unreleased (`civ.sw_show`): the host relays the
+  launch's tool aims, a guest's game fires the same tool without damage. Live FAIL / PASS on TITAN.
+* BUG-9318 (partly fixed). Tribe: a partner's own village totem now gets the party's win pieces, but the partner sees no
+  totem cutscene for it: the game's TRG_Upgrade played by itself on a guest frames nothing (switch
+  `tribe.partner_totem_cutscene`, off).
+* Reproduce: two founders in Tribe; host `coop.tribe npc_tribe 3 130`, `coop.tribe win <its political id>`, open and
+  close the host's planner: the host plays its totem cutscene; the guest reloads the win's save with the new piece and
+  plays nothing (with the switch on: about a second of sky).
+* BUG-9319. Tribe: the partner rings are drawn over the Spore Guide window (H, or the pause menu's Spore Guide).
+* Reproduce: a partner's villagers on screen, press H.
+* BUG-9320. Tribe: in a raided test world the host's village went down about every 100 s and was party-wiped again and
+  again; once its hut read 1/400 right after a wipe's reload.
+* Reproduce: not clean yet (see the ticket: test wins, a `mod.reload coop`, native NPC tribes nearby).
+* BUG-9306 (open part). Tribe: a partner's tamed animals (power 0x39) go into the host's single pet list and use up the
+  host's cap of 4; the lure basket of power 0x34 is not shown on a partner's screen.
+* Reproduce: `coop.tribe powers grant 0x39` on both games, the guest's `coop.tribe powers use 0x39` near animals, then
+  `coop.tribe powers pets` on the host: the animals are listed there with the guest village's political id.
+
+## The party rings and windows (2026-11-21, feat/l47-rings)
+<a id="known-party-rings"></a>
+
+* BUG-9321 (limits). A party ring is drawn after the game's UI: a ring partly under a HUD window (the Pack buttons, the
+  bottom bar) is drawn over that window unless its centre is on it. The Civ city planner and Space were not checked.
+* Reproduce: Creature, a partner's creature at the right edge of the screen beside the Pack buttons.
+* BUG-9322. The co-op notices ("CivHost earned N money (shared)") are drawn over the Spore Guide window.
+* Reproduce: Civ with a partner, press H while money is shared.
+* BUG-9323. Civ: this player's own name tags show the -NoShare- test tag (`CivGuest-NoShare-`, `[CivGuest-NoShare-]`).
+* Reproduce: join a Civ session as `X-NoShare-` and look at the own vehicle and capital: their name tags show the tag.
+* CORRECTION (2026-11-21, feat/lineages-47): BUG-9322 and BUG-9323 are fixed (fix/l47-final-rings), and the ring over HUD windows is fixed in Civ, Tribe and Space by drawing the rings before the UI (BUG-9327); released in 68-dev.
+## Tribe after fix/l47-tribe2 (2026-11-21)
+<a id="known-tribe-l47-tribe2"></a>
+
+* BUG-9320 (partly fixed, `tribe.wipe_regroup`). Tribe: after a party wipe the host's hut is whole again and outside
+  raiders are kept away for 120 s, but an aggressive rival village raids again right after that: in an idle world the
+  host's village is still wiped about every 4 minutes (every 100 s before). Whether a wipe should calm the raiding
+  village for longer is a gameplay decision.
+* Reproduce: Vandh (MSI recipe, docs/06-testing.md#testing-tribe-raid-wipe-pets), wait about 6 minutes in Tribe without
+  defending: the native archetype-7 village raids; watch the host log's "village down" and "party wipe reason" lines.
+* BUG-9318 (open part). Tribe: the partner's own totem cutscene: run through the game's hut upgrade on the guest it no
+  longer shows the sky, but it shows no totem close-up or caption either (`tribe.partner_totem_cutscene` stays off).
+* BUG-9306 (open part). Tribe: the lure basket of chief power 0x34 is not shown on a partner's screen. A display-only
+  copy needs an object the guest's game draws but never saves or simulates; the mod has none yet (an ornament copy
+  would be a planet record that the guest's saves keep).
+## Tribe after fix/l47-final-tribe (2026-11-21)
+<a id="known-tribe-final-qa"></a>
+
+* BUG-9326 (open part). Tribe: a partner village has no animal pen and no egg pen (the game makes them for the player
+  tribe only), so a partner cannot domesticate an animal by feeding it or keep eggs: the host refuses those orders
+  (`tribe.partner_pen_guard`, which stops the crash) and a fed animal follows only part of the way. Chief power 0x39
+  (taming) works for partners. Giving partner founder villages their own pens is not done.
+* Reproduce: a partner's villagers selected, a tame (right-click in social stance on a wild animal) or an egg order:
+  host log "refused ... no animal pen (BUG-9326)".
+* BUG-9303 (not run). Tribe: a partner's fishing order was not run (no fishing spot or fishing tool near the partner
+  village on Vandh); a real right-click on the partner's own damaged hut made no repair order on the guest (the repair
+  order itself works).
+* BUG-9320 (open, fix built, not yet seen in its case). Tribe: when a village's last villager falls at the raiders'
+  village, the party wipe's reload brings it back there and the raiders kill it again inside the 2 calm minutes (a
+  second wipe 2 minutes after the first). `tribe.regroup_villagers` keeps outside blows off the party's villagers for
+  those 2 minutes and walks them home; a natural run with the fix had no raid to show it.
+* Reproduce: Vandh, let the host's chief chase raiders home to their village and fall there; watch the host log for two
+  "party wipe" lines about 2 minutes apart.
+* BUG-9330. Creature: a guest shows two UFOs for one visit of the host: its own start of the relayed event (BUG-9131)
+  and the mirror of the host's ship (BUG-0558). Both show the host's ship model since BUG-9328.
+* Reproduce: host and guest in Creature, host `coop.drama start 2`, guest `coop.drama ship`: two `ufo` lines.
+* BUG-9329 (not seen live). Lineages Cache: the refusal of a banned creation offered by a partner and the "never sent"
+  side run only between two players without -NoShare- names; test games always carry the tag, so only the console
+  import path (`coop.library import <png>`, source manual-test) was seen refused.
+
+## Tribe after fix/l47-pens (2026-11-21)
+<a id="known-tribe-partner-pens"></a>
+
+* BUG-9326 (the open part of #known-tribe-final-qa is done on fix/l47-pens: partner villages have their own pens and a
+  partner tames by feeding). Still open: a partner's egg order on its own egg pen runs without a crash, but the eggs
+  were not seen being collected, for the host's own villagers either (they go to the eat node); not analysed further.
+* Reproduce: a partner pet in the pen and the egg food over 10 (`coop.tribe pens`), right-click the partner's egg pen
+  with two villagers selected; watch the members' `bt=` in host `coop.tribe` (the egg node 05B9B7F5 never shows).
+* BUG-9326 (cosmetic). A pen made by the catch-up for a village that already stood (a loaded world) can stand on
+  plants; at the founding the site was clear.

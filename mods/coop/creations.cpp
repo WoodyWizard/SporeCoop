@@ -537,6 +537,13 @@ static bool key_exists(const Key& k)
 }
 
 bool key_known(const Key& k) { return key_exists(k); }
+bool key_in_editor_saves(const Key& k)
+{
+    void* rm = a_RmPtr ? *(void**)a_RmPtr : nullptr;
+    uint32_t key[3] = {k.instance, k.type, k.group}, real[3] = {};
+    void* db = rm ? vcall<void*>(rm, 0x30 / 4, (const uint32_t*)key, real, (void*)nullptr) : nullptr;
+    return db && a_GetDb && db == cdecl_call<void*>(a_GetDb, kEditorSavesArea);
+}
 
 // ---- BUG-0341: creatures with parts of a pack this game does not have ----
 // A Steam player without the "Creepy & Cute" parts pack crashed at 0x441F3B (a model bake with a

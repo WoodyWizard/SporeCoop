@@ -482,6 +482,12 @@ float object_scale(void* obj)
     return sp ? vcall<float>(sp, 0x34 / 4) : -1.f;
 }
 
+float object_bounding_radius(void* obj)
+{
+    void* sp = cast(obj, 0x1186577);
+    return sp ? vcall<float>(sp, 0x70 / 4) : -1.f;
+}
+
 void set_object_scale(void* obj, float s)
 {
     if (void* sp = cast(obj, 0x1186577))
@@ -1744,6 +1750,7 @@ uint32_t world_epoch()
 static stage_epoch::State g_stage_epochs;
 void stage_epoch_tick() { stage_epoch::step(g_stage_epochs, mode_id()); }
 uint32_t stage_epoch(uint32_t stage_mode) { return stage_epoch::get(g_stage_epochs, stage_mode); }
+bool stage_open(uint32_t stage_mode) { return stage_epoch::is_open(g_stage_epochs, stage_mode); }
 
 net::Vec3 position(void* c)
 {

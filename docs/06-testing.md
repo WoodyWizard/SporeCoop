@@ -9029,3 +9029,321 @@ game's own surface point) and the bodies the host tracks (`B` rows). Only the 4-
   ActiveUser 0 while steam.exe was running and logged on; every QA start ended in cSporeApp::Init (as
   #testing-steam-update-qa-start). launch.ps1's check missed it: `Get-Process -Id 0` finds the Idle process. It now treats
   0 as stale too and writes the running steam.exe's pid (the QA games then started).
+## Outfit vote timeout and held guest births: how to test (2026-11-20, fix/l47-births)
+<a id="testing-outfit-vote-timeout-births"></a>
+
+BUG-9298, BUG-9299. Two players in a two-founder Tribal campaign (`coop.tribe village_orders on`).
+* Stuck vote: the guest opens an editor first (its own hut's outfitter, or `coop.vote editor 156276D1` on the guest),
+  then the host starts the outfit vote (the native hut -> Planner -> hat tab -> Edit Outfit, as duo_tribal_outfitter.py
+  taps it, or `coop.vote editor 156276D1` on the host) and both press ready. The host leaves its editor; the guest leaves
+  its own one later. Host: `coop.tribe outfits` shows `token=<n> ready=0 pending=1 idle=<s>`; with
+  `tribe.outfit_vote_timeout` on, 90 s after the guest is back in Tribe: `token=0 pending=0 timed_out=1` and the log line
+  `outfit vote ... ended unanswered`; off: `pending=1` as long as the guest stays.
+* Held births: `coop.tribe births` (both games): `waiting held after_wait expired clicks_guarded rejected`. A host save
+  being written (`coop.save` / a share) or the host's own hut birth (click its own hut, then the guest's Add Baby within
+  5 s) holds the guest's birth; it comes when the save or the host's baby is done (`after_wait` +1).
+## A Tribe chief's stage powers and a partner's orders (2026-11-20, fix/l47-powers)
+<a id="testing-chief-powers"></a>
+
+BUG-9306 / BUG-9303 (docs/re/tribe.md#tribe-chief-powers). Not run yet; the commands:
+* `coop.tribe powers` (either game): this game's chief, each power type 0x34..0x39 with its ability index, the bar's
+  status (0 usable, 8 / 0xF recharging, 10 not earned, 0xB the chief refuses, -1 not this game's avatar), the player's
+  cell / creature cards and the unlock words; the host adds each partner village's chief; then the counters
+  (sent / run / refused), the logged refusals and the last power command.
+* `coop.tribe powers grant <type>`: test setup, this game's player earns that power (a saved player property: a test
+  world only); select the chief again. `coop.tribe powers use <type>`: the bar's press (status check, then the game's
+  use path, so on a guest the tribe.guest_powers relay).
+* The host's log: `tribe: host: <name>'s chief <id> uses power 0x.. (ability n)` for a power run,
+  `tribe: refused <name>'s command kind= action= ...: <reason>` for a refused order or power (one line a second).
+* Switch twins: `coop.fix tribe.guest_powers off` (the guest's press stays on its mirror: no host line, no power),
+  `tribe.guest_orders off` (fishing, meat, eggs, bundles, food raids, repairs, taming, loose fruit dropped, no log),
+  `tribe.guest_chief off` (no chief aura for a partner's members).
+## Each player's own stage cards (2026-11-21, fix/l47-powers)
+<a id="testing-own-cards"></a>
+
+Decision 7Q A (BUG-9306, mods/coop/cards.h). Not run yet. Stage numbers: 0 cell, 1 creature, 2 tribe, 3 civ, 4 space.
+* `coop.cards` (any game): this game's own cards (mask, five ids), what was caught / sent / received, the effective cell,
+  creature and tribe cards and the chief-power unlock word they give; on the host every record (identity, player, cards).
+* `coop.cards own <stage> <card hex>` on a guest: as if its game had just graduated with that card (sent to the host,
+  kept per identity in `<save>.duo-cards`, sent back). On the host: `coop.cards set <player id> <stage> <card hex>`,
+  `coop.cards clear <player id>`. The world must have a save file for the record to be saved.
+* Tribe chief power cards (cell or creature card -> power type): E5F355B3 -> 0x34, EE0C1239 -> 0x35, 5961D110 -> 0x36,
+  B6295724 -> 0x37, C7981631 -> 0x38, 27CB4512 -> 0x39 (0xD1F400). `coop.tribe powers` shows the own cards and the
+  resulting bits (`partner_cards ...`, on the host `seat N cards ...`); `coop.civ sw` shows `cards=` per nation.
+* Logs: guest `cards: this game's own <stage> card .. caught before the host's .. replaced it`, host `cards: <name>'s own
+  <stage> card .. kept`, guest `tribe: this game's chief powers follow its own cards ...`, host `civ: seat N's nation
+  unlocks from its own cards ...` or `civ: seat N has no record of its own cards: ... shared (host's) cards ...`.
+* Switch twins: `tribe.partner_cards`, `civ.partner_unlocks` (off: the host's cards for everyone, as before).
+## Live QA pitfalls on the Windows QA PCs (2026-11-21, fix/l47-qa)
+<a id="testing-qa-pitfalls-l47"></a>
+
+* `sym.reload` followed by `mod.reload coop` on a running MSI game: "0 symbols from" and "mod refused to initialise":
+  coop was gone from both games (restart needed). Deploy with the games stopped instead.
+* TITAN's DuoQACivHost / Abber `.duo-seats` holds seats = 0x10 (found 2026-11-21): the load stops with "the reserved
+  founder settings are unreadable". Seats 4 (byte 4 = 0x04) loads; the file was put back as found after the test.
+* Abber's four founder seats are bound to three partners' identities that are not DuoQACivGuest's: that guest gets the
+  party seat 3 but no nation (BUG-9309). For a test the guest's identity (its profile's Spore\SporeCoop\identity.bin,
+  bytes 4..11) can be written over a seat's identity in `<save>.duonations` (CIV2: u8 seats, then per seat u32 species,
+  u32 faction, u64 identity); back the folder up first.
+* `coop.civ swgrant` is undone within 0.5 s by the campaign tick's RefreshUnlocks (civ.partner_unlocks): grant and
+  request must go back to back, with `coop.settings force civ.superweapon_vote 0`.
+  CORRECTION (2026-11-21, fix/l47-civ): from ffe972b0 on a swgrant lasts (per seat, until `coop.civ swgrant clear`).
+* Creature social tests on Vandh (MSI): roaming predators (an epic 067C69C6, 0679B969) kill the idle creatures; the host
+  can remove one with `coop.npc hosthit <id> 400`. A creature refuses a new social game for a while after a lost one.
+  The MSIGuest creature has social kinds 1 / 2 / 4 only: Trigo Morts (067C92C6, prompts sing 1 pt / pose 2 pts, 2
+  rounds) can be won only when both prompts are sings (~1 in 4 games).
+* `coop.social meter` sampled through one persistent console connection (tools/sporectl.Console(51), the msi tunnel)
+  runs at ~7 samples a second, enough for the 1 s fill.
+
+## A partner's superweapon and per-nation card unlocks: how to test (2026-11-21, fix/l47-civ)
+<a id="testing-partner-superweapon"></a>
+
+BUG-9310 / BUG-9311 (docs/re/civ.md#civ-partner-sw-tools). Two games, a Civ save with founder nations and the guest on a
+seat with a nation (TITAN: DuoQACivHost / Abber with the pitfalls above patched in a backed-up copy).
+* Superweapon: host `coop.settings force civ.superweapon_vote 0`, `coop.civ swgrant <guest seat> 3 20000`; guest `coop.civ
+  super 3 <x y z>` (a non-global type; a place both cameras see). Host log `civ: host: <name>'s superweapon 3 nation=...:
+  fires`, the seat's money -2000 in `coop.civ sw`, no crash report. Type 0 at a city: its hp in `coop.civ` falls on both
+  games. Switch twin `civ.partner_sw_tools` (set off BEFORE anything runs `coop.civ sw`: one call loads the tools for
+  the session): the host crashes at 0xBF18CA.
+* Card unlocks: host `coop.cards set <player id> 2 60A78928`, then `coop.civ sw`: only that seat shows 000010000000. Twin
+  `civ.unlock_cards_restore` (off from the start): every seat shows it, and the host's `coop.cards` `effective` shows the
+  partner's card.
+* The guest's screen shows no superweapon marker or burst (BUG-9312): check effects on the game state, not the picture.
+  CORRECTION (2026-11-21, fix/l47-decide): with civ.sw_show (BUG-9312) the guest's screen shows the marker, the projectile
+  and the burst (#testing-global-sw-newcomer).
+## Global superweapons, a superweapon on a guest's screen, a newcomer's nation: how to test (2026-11-21, fix/l47-decide)
+<a id="testing-global-sw-newcomer"></a>
+
+BUG-9309, BUG-9312, BUG-9313 (docs/re/civ.md#civ-global-sw-party). TITAN: host DuoQACivHost / Abber (instance 9, the
+`.duo-seats` byte 4 patched 0x10 -> 4 in a backed-up folder), guest DuoQACivGuest (instance 10); Abber's four founder
+seats belong to absent identities, so the guest is the BUG-9309 newcomer as it is.
+* Newcomer (BUG-9309): host `coop.load Game0 Abber`, `coop.host 47839 CivHost-NoShare- 4`; guest `coop.join
+  127.0.0.1:47839 CivGuest-NoShare-`, then (in the world) `coop.creations choose creature 292B20E4` (an own creature; a
+  fresh load plays the host's species). Host `coop.civ late` / the log: `finds every founder seat taken` with
+  `coop.fix civ.newcomer_nation off`; on: `founding requested for seat 4`, `seat 4 (CivGuest) capital ... roster
+  written`, the guest's `coop.status` `founders: ... seats=5 local_seat=4`. Save (`coop.save`), both `coop.leave`, host
+  load, host and join again: `nation_seat=4: has a nation` at once.
+* The switch can be turned on during the session: the next late-capital tick (2 s) founds the seat.
+* Superweapon on the guest's screen (BUG-9312): both cameras on the host's capital, host `coop.settings force
+  civ.superweapon_vote 0`, `coop.civ swgrant 0 9 20000`, `coop.civ super 9 75 -410 -285`; shots of both games right
+  after (`shot`, ~0.5 s each). Guest-fired: `coop.civ swgrant 4 3 20000`, guest `coop.civ super 3 75 -410 -285`. `coop.civ
+  sw` last lines: host `sw_show ... sent=`, guest `in= fired= dropped=` and the last shown launch. A type recharges for
+  minutes: use another type for the next run (3, 9 work at open ground).
+* Global types (BUG-9313): Abber has no NPC nation at first (sites appear later): `coop.civ test_outsider <faction>`
+  makes a founder nation count as outside the party. `coop.civ swgrant <seat> 2 100000` (cost 12000 x the other
+  cities), the firing game `coop.civ super 2` (no place). The capture comes 10-20 s later: `coop.civ` city lines on both
+  games (pol= changes to the firing nation). A type 2 / 5 / 8 is once per nation (+0x4CC): `mem.write <nation+0x4CC> 00`
+  on the host for another run (the nation's address in `coop.civ sw`).
+* The host's camera moves to the launching city for a global type (the game's launch); a guest's camera does not. The
+  guest's camera is moved with a click on its minimap (QA windows only).
+* Pitfalls: a capture can bring the Communications Panel tutorial (pauses both games: click its check mark), a campaign
+  autosave and a world share (the guest reloads, 20-40 s). After a guest reload the host logged `shared money -N from
+  player 1` once per reload in these runs (after `swgrant` money writes; not analysed). Restore the save folders after.
+  CORRECTION (2026-11-21, fix/l47-money): not a test artefact of swgrant: any reload of a guest folded a host total read
+  in the Galaxy menu as its spend (BUG-9316, fixed by res.load_hold; #testing-reload-spend-sw-price).
+## A guest's reload must not spend the shared money; the party price of global superweapons: how to test (2026-11-21, fix/l47-money)
+<a id="testing-reload-spend-sw-price"></a>
+
+BUG-9316, BUG-9317 (docs/re/civ.md#civ-reload-spend-sw-price). TITAN: host DuoQACivHost / Abber (instance 9, `.duo-seats`
+byte 4 patched 0x10 -> 4 in a backed-up folder), guest DuoQACivGuest (instance 10), as #testing-global-sw-newcomer.
+* Reload (BUG-9316): host `coop.share 1` sends the world, the guest reloads (about 9 s transfer, 3 s Galaxy menu, 0.2 s
+  load). Host log `shared money -N from player 1` / `<guest> spent N money (shared)` right after the guest's
+  `stage: Civilization -> Galaxy menu`, and the guest's `shared money: a local change ... folded into a host total in mode
+  02CCD1D2, stage open=0`: the bug (3 of 3 reloads with `coop.fix res.load_hold off` on the guest). Fixed: the guest logs
+  `a host total ... ignored while this game loads`, the host's `coop.res` from_guests does not move, both HUDs keep the
+  money. The founding share right after the newcomer joins is such a reload too.
+* `coop.res` shows `load_totals=` (totals a guest ignored during its loads) and `big=` (local changes of 1000 or more).
+* Price (BUG-9317): host `coop.settings force civ.superweapon_vote 0`, `coop.civ test_outsider <faction>` (a founder
+  nation outside the party: Abber's cities all belong to the party at first), `coop.civ swgrant 0 2` (host) or `coop.civ
+  swgrant 4 2 <money>` (the guest's seat). `coop.civ sw` shows `price2= price8=` per nation (the game's own function, so
+  the tooltip's price) and the last changed price. Host fires `coop.civ super 2`, the guest `coop.civ super 2`; compare
+  the shared money (host's nation) or `nation seat 4 money=` on both games right before and after, and the guest's notice
+  `<host> spent N money (shared)`. Tooltip: `move 455 540`, `move 460 545` on the HUD's fourth weapon button, then `shot`.
+* `coop.civ test_outsider` is host only: a guest's price then counts that nation as the party's (the host and the guest
+  agree without it). `mem.write <nation+0x4CC> 00` for another run of a type 2 / 5 / 8.
+* Pitfalls: the shot command's path must have no spaces; a capture brings the Communications Panel tutorial on the host
+  (pauses both games: click its check mark at 571 299) and a world share to the guest. `coop.share` writes the host's
+  save slot: restore Game0 from the backup afterwards.
+
+## Tribe live QA on the MSI: camera, hut and totem recipes (2026-11-21, fix/l47-tribe)
+<a id="testing-tribe-msi-recipes"></a>
+
+* The MSI's Spore has no `frame_ms` in its sporekit.ini: cap each QA game with
+  `frame.limit 100` right after its console is up instead of editing the ini.
+* Logs on the MSI: instance 1 writes `mods/logs/sporekit.log`, instance 2 `sporekit.2.log`.
+* Camera: a guest's `coop.tribe camera own` looks at its own village; any game: a click on the minimap (bottom left,
+  1280x960: the village markers near 113..135, 858..872) moves the camera there; the H key opens the Spore Guide (not
+  "home"), a click on a roster card opens the creature's card, not the camera.
+* `coop.tribe select <member id> 1` on a guest selects its own villagers (`select_own` there picks the HOST's village,
+  the mod's player tribe on a guest); then `coop.tribe walk x y z`, or a real right-click (`move`, wait ~1.2 s, `click
+  x y right`) on an object from `coop.targets objs` (loose fruit worked).
+* Host births: the first click on the own hut opens a rollover; its small lower button (about 55 px under the hut's
+  planner button) buys the baby. The guest's `coop.tribe baby` within ~1 s gives the held-birth case of BUG-9299.
+* Wins and totems (BUG-9318): `coop.tribe npc_tribe 3 70` (host) makes an NPC village; its political id is cTribe
+  +0x30 (`mem.read <obj+0x30> 4`, the obj from `coop.tribe`); `coop.tribe win <id hex>` queues the win; the piece and
+  TRG_Upgrade come when the Tribe game mode is entered again (open and close the planner from the hut). The guest then
+  shows "Saving Tribal conquest for your partner..." and reloads the host's save ~35 s later. `coop.tribe totems`
+  (host) lists every founder totem and the partner_totems counters.
+* `mod.reload coop` on the MSI host in Tribe (a new coop.dll copied over mods\coop.dll while the game ran; the copy
+  works, the file is not locked) ended the co-op session ("offline", the guest dropped) and the host's game fell back to
+  the galaxy menu; re-hosting and `coop.load Game0 Vandh` brought the world back. Restart both games for a new build
+  instead.
+* Test wins in a world with native NPC tribes nearby set off raids on the host's village and repeated party wipes
+  (BUG-9320); each wipe drops the newest totem piece and reloads, which hides a totem result. Run win tests right after
+  the Tribe entry, before the native tribes raid.
+* A partner's recruit game (BUG-9308) the guest can win: the host's own nest family (the host's species, "family" in
+  `coop.npc list`, in no pack) is partner_mode 4 for the guest (`coop.social pmode <npc> <player>`), and its prompt kinds
+  were mostly the guest's own; put the guest beside the host's nest (`coop.abilities put x y z`), engage with a real
+  click in social stance (scratchpad engage.py: the social button, then a click on `coop.targets objs` n<id>), answer
+  with `coop.social act <npc> <slot>` per prompt (play_social.py). Many wild species of Vandh are hostile (relation 5)
+  to the party; `coop.npc hosthit` kills count as the party's kills.
+
+## The party rings: how to test (2026-11-21, feat/l47-rings)
+<a id="testing-party-rings"></a>
+
+BUG-9321, BUG-9319 (docs/re/graphics.md#graphics-overlay-depth, docs/08-ui.md#ui-spore-guide-window). TITAN QA copy,
+1024 x 768 windows, host instance 9, guest instance 10.
+* From a worktree the QA tools need `SPORECOOP_QA_COPY=<main checkout>/out/release36/native` (their default is the
+  worktree's own out/, which has no game). The game's `shot` path must have no spaces (save into the scratchpad, then
+  copy).
+* `coop.rings`: the rings of the last overlay pass (colour, radius, lift, the pixel bounds, centre, screen point) and the
+  counters on_hud / beyond_horizon; `coop.rings depth` (twice: the next pass writes it) the device's depth-stencil,
+  states and transforms; `coop.rings look x y z` aims the Tribe / Civ camera at a point (gamefixes::tribe_camera_to,
+  also works in Civ); `coop.rings sink <cell> <space>` the depth offset under a cell / ship. `coop.status` `labels:`
+  line: partner_rings, cover_up, cover_frames, rings_on_hud.
+* Switch twins: `all.soft_ring` (off: the hard ring), `all.partner_rings` (off: Tribe only), `all.own_rings` (on: own
+  units too), `all.ring_depth` (off: over everything), `ui.cover_labels` (off: labels over the guide, rings over the HUD).
+* Saves: Civ DuoQACivHost / Abber + DuoQACivGuest (#testing-qa-pitfalls-l47; the guest is a newcomer and gets a capital
+  and a vehicle); Tribe DuoQAJiffFresh / "Jiff Peanutbutter.spo" + DuoQAStageGuest (the guest is sent into the late
+  joiner's creature editor; `coop.creations choose creature <id>` then Quit, the founding then waits on the host's
+  wrecked hut); Creature and Cell DuoQACreatureHost Game0 (Samuth, Diplomavil) + DuoQACreatureGuest.
+* Pitfall: DuoQACreatureHost's samuth.spo.duo-seats holds seats 0x10 (byte 4) AND protected seats 0x0A (byte 11): the
+  load stops with "the reserved founder settings are unreadable" until both are 4 (back the folder up first). Samuth's
+  epic predators kill both creatures within minutes (the green check of the death caption, 990 737).
+* Creature pack: host `coop.npc recruit <id>` (an NPC from `coop.npc list` near the host): the guest shows a second
+  ring in the host's colour (a guest gives a pack proxy the player of the nearest partner creature, 60 m at most).
+* Cell: `coop.cell tp` does not exist on this build (only list / spawn); a guest's camera reached the host's cell after
+  the world share that follows a reload.
+## Tribe raids, wipes and pets on the MSI (2026-11-21, fix/l47-tribe2)
+<a id="testing-tribe-raid-wipe-pets"></a>
+
+* A raid on the host's village without waiting for the natives: `coop.tribe npc_tribe 3 70`, then for each of its
+  members (`coop.tribe`, `owner=254` under that tribe) `coop.tribe order <id> 15 <hut x y z> 1E4DAAE`; the host's hut
+  position is the hut object's +0x38 (`mem.read <tribe obj + 0x368>`, then `mem.read <hut + 0x38> 12`), on Vandh about
+  (244 -441 -46). An ally does not take the order; a test blow (`coop.tribe hutfall`) wipes once and turns the newest
+  ally into a rival that does. `scratchpad watch.sh`: `coop.tribe huthp <x y z> -` every 10 s.
+* Vandh's native villages (archetype 7 and 4) raid the host's village by themselves about 6 minutes after the Tribe
+  entry: a natural test of BUG-9320 without commands. The log lines "village down", "last villager down" and "party wipe
+  reason" name the attacker; "founder huts after this world's load" gives each hut after a load.
+* `coop.npc spawn` needs an avatar: in Tribe there is none ("unknown species or no avatar"). For power tests, walk the
+  chiefs to a group of animals instead (`coop.tribe order <chief id> 4 x y z`, host): on Vandh six 29197E6B near
+  (278 -422 3). Power 0x34's lure brought no animal from 70 m in one try. Power 0x39 recharges slowly (progress 0.02
+  after 8 s): one press per game per test session.
+* A test blow during a regroup window (BUG-9320) is refused like any outside blow; wait the 120 s out.
+
+## Party rings in Space, Civ, Tribe and Cell, the final check: recipes (2026-11-21, fix/l47-final-rings)
+<a id="testing-party-rings-final"></a>
+
+BUG-9321 follow-ups BUG-9324, BUG-9325, BUG-9327, and BUG-9322, BUG-9323 (#testing-party-rings,
+docs/re/graphics.md#graphics-ui-depth-clear). TITAN QA copy, host instance 9, guest 10, 1024 x 768.
+* Space: host DuoQAJiffSpace `coop.load Game0 "Jiff Peanutbutter.spo"`, `coop.host`, guest DuoQAStageGuest joins (in
+  Space within about 30 s). `coop.space goto` (guest) puts its ship 20 m from the host's in the same place. The mouse
+  wheel over the window zooms; +5 from the system view enters the planet under the camera (the place changes from
+  0x8046.... to 0x4046....: the partner shows as "in another world" until both are there); -20 leaves it again.
+  The homeworld gets a pirate raid contract: both ships are hit and die within minutes (not a bug).
+* A Space death screen on demand: `coop.space hit 2000` disables the ship (a partner nearby repairs it in seconds);
+  a second `coop.space hit 2000` within the next minute destroys it: the death screen, then the new-ship caption (click
+  the check at 990, 737 for each).
+* Civ: DuoQACivHost / Abber (seats byte 4 to 0x04 first, back the profile up) + DuoQACivGuest; `coop.civ move <veh #>
+  x y z` on the host drives the host's vehicle (a land vehicle stops at water); `coop.rings look x y z` aims the guest's
+  camera at it and resets the zoom, wheel +7 is close. Clicking the guest's own city hall opens its city planner.
+* Tribe: DuoQAJiffFresh / "Jiff Peanutbutter.spo" + DuoQAStageGuest: the guest lands in the host's village with the
+  host's chief in view (the wrecked hut opens no planner: the Tribe planner was not reached on this save).
+* Cell: DuoQACreatureHost / Diplomavil + DuoQACreatureGuest; `coop.pool tp <dx> <dy>` puts the guest's cell next to the
+  host's. The Cell camera stays 20 m over the plane here: the wheel and the zoom buttons did not change it.
+* `coop.rings`: also `space_cinematic=` (passes a Space cinematic hid), `sink=<cell>/<space>`, and `before the UI:
+  frames=` (passes whose rings were drawn at the game's depth clear). `coop.rings trace [frames]`: the next frames'
+  render target / depth-stencil switches, clears and draw counts (ask twice). `coop.rings ztest <zfunc> [near]`: the
+  ring's depth compare (4 LESSEQUAL, 5 GREATER) and a near plane for its depth (tests of the scene depth).
+* Device reset: not reachable windowed (docs/re/graphics.md#graphics-ui-depth-clear); a fullscreen alt-tab was not
+  tried on TITAN (it takes a whole screen of the owner's PC).
+* The game's `shot` path must have no spaces; forward slashes work.
+## Final Tribe QA on the MSI: pets, partner orders, the outfit, a natural raid (2026-11-21, fix/l47-final-tribe)
+<a id="testing-tribe-final-qa"></a>
+
+Follows #testing-tribe-msi-recipes and #testing-tribe-raid-wipe-pets (same two games, Creature -> Tribe from Vandh).
+* Captions pause both games: "A rival tribe of ... has formed" comes about 4-7 minutes into Tribe and holds the game
+  (host `coop.status` `busy: cinematic,input_lock,paused`) until its check (1249 928 at 1280x960) is clicked; orders and
+  natural raids wait meanwhile. A watch loop that clicks it when it sees that busy line keeps a long run going.
+* Pet cap (BUG-9306): `coop.tribe powers grant 0x39` on both games, the chiefs to their own herds with `coop.tribe order
+  <chief id> 4 x y z` (host), `coop.tribe powers use 0x39` per game; `coop.tribe powers pets` (host) shows each chief's
+  `cap=` and `pets_in_list=` and the list. Power 0x39 recharges for minutes: `coop.tribe powers ready 0x39 <seat>`
+  (host) ends it (or `mem.write` of 1.0 into the chief's +0xC28 slot [idx*16+4] and clearing bit idx of +0xBF8).
+* Partner orders (BUG-9303): on the guest `coop.tribe select <id> 1` for its villagers (ids change after every reload:
+  read them from `coop.tribe`, owner=1), then `coop.tribe act_obj <action> <noun> <x y z>`: 24 on the own hut (noun
+  1E4DAAE, health lowered first with host `coop.tribe huthp <hut> 200`), 10 hunt then 27 meat on the body (noun
+  18EB45E), 8 food raid on a native village (noun 18C6D19 at the village centre), 20 feed / 25 tame (18EB45E), 13 egg
+  (2A034CD, `coop.tribe objs 2A034CD` lists eggs; a nest sits next to the partner village on Vandh). Watch the host's
+  `last order:` line, the refusal lines and `seat 1: ... food=` in host `coop.tribe`.
+* `coop.npc hosthit` does not work in Tribe ("no such npc": no avatar); use a partner hunt for a carcass.
+* Pitfall: a partner's tame or egg order crashes the host when `tribe.partner_pen_guard` is off (BUG-9326): run those
+  last in a session.
+* Outfit (BUG-9301): the players' path at 1280x960: a click on the host's hut, the Planner button on it (about 30 px
+  above the hut's centre), the planner tutorial's check (810 733), the hat tab (204 42), the Edit Outfit button under
+  the portrait (47 571); the guest sees "Paused by host" over its lobby and the vote's timer opens its outfitter (the
+  console's `key F9` failed there: "no window?"). In the outfitter a hat goes on with `move 75 128`, `button 75 128
+  down`, several `move` to the head, `button <x y> up`; Done at 1258 942; then the Planner's Done (1257 940): only
+  then does the host's species change (`coop.tribe outfits` home=). `coop.vote editor 156276D1` alone ends the vote
+  without changing the host's species.
+* The console's `button` takes the position: `button <x> <y> <down|up>`.
+
+## The visiting ship and the ban list on TITAN (2026-11-21, fix/l47-ship-purge)
+<a id="testing-ship-ban-list"></a>
+
+* The QA copy reads its symbols from its own mods\sporekit\symbols: a new symbol needs the branch's
+  overrides_dc04aee5.sym copied there (back up the old one, put it back after; never `sym.reload`). Without it a hook
+  of the branch is simply off (`coop.library pickships` answered "no symbol").
+* Ship (BUG-9328): host `coop.drama start 2`, then `coop.drama ship` on both games: the host's `last_spawn`, the guest's
+  `host=` and `host hash`, and the model of every live ship (cGameDataUFO +0x780). Twin: `coop.fix creature.same_ship 0`
+  on both. The ship hangs 20 m over the avatars: in the Creature camera only its shadow shows, which is enough to
+  compare models (out/qa-shots/bug9328_*.png). The guest's join cover ends by its 180 s time limit on Samuth at night.
+* A drama event stays active while its ship lives (minutes over dead avatars): for another visit restart both games.
+* Ban list (BUG-9329): copy data/lineages/banned.txt to the QA copy's mods\lineages\ (remove it after). Twin: the line
+  `library.banned` in the profile's Spore\SporeCoop\fixes_off.txt (the purge runs at the first library step, before a
+  console can switch it). `coop.library` shows ban_list (sources/creations/kept), ban_moved, ban_hidden, ban_refused;
+  `coop.library pickships <n>` runs the visiting ship's own pick n times and counts picks of moved-out keys. The purge
+  changes the profile's cache (LineagesCache\banned, index.bin) and the game stamps templates: back up the profile and
+  restore it with robocopy /MIR afterwards.
+* A save that holds a moved-out creature: DuoQACreatureGuest Game20 Samuth (its player species is a test creature of a
+  banned identity; set bytes 4 and 11 of samuth.spo.duo-seats to 4 first).
+* tools: a read-only scan of the test profiles' saves for keys of banned creations (DBPF + RefPack in Python) found them
+  in many QA saves (records 018EB45E creatures, 01897C18, 02C21781, 03572E72); not kept in the repo.
+
+## Partner village pens on the MSI: recipes (2026-11-21, fix/l47-pens)
+<a id="testing-tribe-partner-pens"></a>
+
+BUG-9326 (docs/re/tribe.md#tribe-partner-pens). Follows #testing-tribe-final-qa (same two games and entry).
+* `coop.tribe pens` (any game): each founder village's animal pen, egg pen, pen herd, its members and the egg food
+  (+0x2C0); on a guest also its own village; the `partner_pens` counters and the last village made.
+* Positions: `coop.tribe objs 18C88E4` lists the pens (both are that noun); on Vandh the partner's at (290.9 -413.5
+  -51.9) and (286.3 -415.9 -56.7). `coop.rings look <x y z>` on both games then `shot` frames them.
+* Tame by feeding: the guest's villagers selected, `coop.tribe act_obj 20 18EB45E <animal>` on an animal 40-60 m from
+  the village; the pet joins the pen herd after about 80 s and walks in within 4 minutes at frame.limit 100. A 25 alone
+  does not tame (the game sends it after its own tame step).
+* Egg: the egg food grows about 1 per minute per pet; the egg order is `act_obj 13 18C88E4 <the own egg pen>`, or a real
+  right-click on it (the guest's game then sends 13 itself). A 13 on anything else is refused (`not the member's own egg
+  pen`); with `tribe.partner_pen_guard` off it crashes the host (0xDB174B): run that last.
+* Switch twin: `coop.fix tribe.partner_pens off` on both games before `coop.vote tribe` (the founding happens in the
+  entry). Turned on later in the same game, the 5 s catch-up makes the pens on the host and the guest's copy.
+* A reload: host `coop.save`, `coop.load Game0 Vandh`, then `coop.share 1` (the guest does not reload by itself).
+  Game0 is the host's Creature save: restore it from Game0.bak-l47 afterwards.
+* The games ran at about 2 fps (present interval 440 ms) with frame.limit 100 in Tribe on the MSI.
+
+## Test copies never share creations (2026-11-21, fix/l47-test-noshare)
+<a id="testing-test-noshare"></a>
+
+* BUG-9331: a game started with `-sporekit-profile:` or as SporeKit instance 2+ hosts and joins with "-NoShare-" added
+  to its typed name (`core.test_noshare`, on). It offers none of its creations and no one keeps one it made or passed
+  on (library.no_share). A Lineages Cache test that needs two QA games to share turns it off on both:
+  `coop.fix core.test_noshare off`, then leave and host / join again (the name is taken at host and join).
+* Check: `coop.library` on both games: `incoming` and `imported` do not grow after the join with the switch on.

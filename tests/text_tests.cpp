@@ -58,7 +58,13 @@ static void test_names()
     CHECK(utf8::shown_name("-NoShare-") == "Player" && utf8::shown_name("Bob") == "Bob");
     // the spaces around the tag go with it (a name plate sized for "Pandize " drew off centre, 2026-11-18)
     CHECK(utf8::shown_name("Pandize -NoShare-") == "Pandize" && utf8::shown_name("Pandize -NoShare- 2") == "Pandize 2");
-    CHECK(utf8::player_name("WilhelminaLongname-NoShare-") == "WilhelminaLongn-NoShare-"); // the tag survives the cut
+    CHECK(utf8::player_name("WilhelminaLongname-NoShare-") == "WilhelminaLongna-noshare"); // the tag survives the cut
+    // BUG-9332: "-noshare" in any case, the dash after it optional; the old "-NoShare-" still counts
+    CHECK(utf8::no_share_name("MSI-noshare") && utf8::no_share_name("MSI-NOSHARE") && utf8::no_share_name("x-NoShare"));
+    CHECK(!utf8::no_share_name("noshare") && !utf8::no_share_name("MSI-noshar"));
+    CHECK(utf8::shown_name("MSI-noshare") == "MSI" && utf8::shown_name("MSI-NoShare-") == "MSI");
+    CHECK(utf8::shown_name("Late-NOSHARE 2") == "Late 2" && utf8::shown_name("-noshare-") == "Player");
+    CHECK(utf8::player_name("WilhelminaLongname-noshare") == "WilhelminaLongna-noshare");
 }
 
 // BUG-0159: the overlay centres by letter cells, not bytes

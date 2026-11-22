@@ -8,4 +8,9 @@ namespace downed {
 // stage's old short time).
 bool minute();
 inline double seconds(bool down_30, double short_s) { return minute() ? 60.0 : down_30 ? 30.0 : short_s; }
+// BUG-9307 (owner 2026-11-20: "Increase the revive time for a teammate to 5 seconds."): how long a partner stays
+// close to revive (Cell, Creature / Adventure, Tribe) or repair (Space). `coop.fix core.revive_5s` off: each stage's
+// old hold (1.5 s, Space 2 s).
+bool revive_5s();
+inline double revive_hold(double old_s) { return revive_5s() ? 5.0 : old_s; }
 } // namespace downed

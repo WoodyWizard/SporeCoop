@@ -22,6 +22,8 @@ def main():
              ('Data/SporeCoop.package', os.path.join(src, 'SporeCoop.package'), 0)]
     for f in sorted(glob.glob(os.path.join(src, 'mods', 'sporekit', 'symbols', '*.sym'))):
         files.append(('SporebinEP1/mods/sporekit/symbols/' + os.path.basename(f), f, 0))
+    for f in sorted(glob.glob(os.path.join(src, 'mods', 'lineages', '*.txt'))):  # BUG-9329: the ban list (always the release's)
+        files.append(('SporebinEP1/mods/lineages/' + os.path.basename(f), f, 0))
     for f in sorted(glob.glob(os.path.join(src, 'mods', '*.ini'))):  # the player's settings stay
         files.append(('SporebinEP1/mods/' + os.path.basename(f), f, ONLY_IF_MISSING))
     entries = [(path, open(f, 'rb').read(), flags) for path, f, flags in files]
