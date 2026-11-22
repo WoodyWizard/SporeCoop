@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- All stages: the frame rate no longer falls to 1-3 fps while partners' rings are shown (Tribe with a partner's
+  villagers: 300 ms a frame); finding the camera for each ring point cost a system call each time (BUG-9333).
 - Lineages Cache: the ban list also takes out six early creatures that still showed their cell picture (shared before
   BUG-9213's fix); the same players' real creatures stay.
 - Lineages Cache: a test copy of the game always plays with the -noshare tag (BUG-9331); the tag is "-noshare" in any

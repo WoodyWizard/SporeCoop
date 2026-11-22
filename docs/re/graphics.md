@@ -421,3 +421,15 @@ BUG-9327, BUG-9324, BUG-9325 (the party rings, BUG-9321). TITAN QA copy (Steam c
   path off (the middle picture). A ship's bounding radius changes with the system-view zoom (the game scales ships with
   the camera distance: the ring radius read 17.1, 6.3, 1.6 and 1.0 m at four zooms). Zoomed in, the system camera sits at
   about the ships' height (edge-on ring).
+
+## The cost of a projection (2026-11-21, fix/l47-ring-fps)
+<a id="graphics-projection-cost"></a>
+* ✔ SporeKit's `world_to_screen` outside the overlay pass reads the game's camera (read_view: IGameModeManager::Get,
+  vt 0x58 the viewer, +0x170 the camera). Until BUG-9333 every call looked the symbol up by name and ran 4
+  VirtualQuery (skg::readable); a system call costs a few microseconds, so code that projects thousands of points a
+  frame (the party rings: about 1000 a soft ring) spent 300-600 ms a frame on the checks alone. Since BUG-9333 the
+  checked pointers are kept for the frame (`kit.fix viewcache`).
+* Rule: a mod that projects many points a frame still pays a virtual call and a 64-byte copy per point; keep it to
+  hundreds, not tens of thousands. The mod's own prof lines do not count work done in the D3D hooks (the rings at the
+  depth clear): "filled by the mod's own work 0" does not clear the rings.
+

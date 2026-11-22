@@ -150,6 +150,7 @@ static bool load_build()
 
 bool symbols_load()
 {
+    view_cache_drop(); // BUG-9333: the camera symbol is looked up again
     g_syms.clear();
     g_by_addr.clear();
     g_files.clear();

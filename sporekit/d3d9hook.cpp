@@ -688,6 +688,7 @@ void frame_from_game_loop()
 {
     uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
     present_cut_off(sp); // BUG-1024: after App::Canvas::Tick no Present of this thread is running
+    view_cache_drop();   // BUG-9333: a game loop pass: the camera's pointers are checked again
     if (fixed(g_fix_taskcut))
         command_tasks_cut_off(sp); // BUG-0966: no console task of this thread is running here either
     if ((g_in_frame || g_in_loop_frame) && !g_present_depth)
