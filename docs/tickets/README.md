@@ -1446,3 +1446,4 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9330](BUG-9330-creature-a-guest-shows-two-ufos-for-one-visit-of.md) | open | desync | Creature | 2026-11-21 |  | Creature: a guest shows two UFOs for one visit of the host (its own relayed event's ship and the mirror of the host's) |
 | [BUG-9331](BUG-9331-lineages-cache-a-test-game-shares-its-creations.md) | fixed | bug | all | 2026-11-21 | unreleased | Lineages Cache: a test game shares its creations unless its typed name carries -NoShare- |
 | [BUG-9332](BUG-9332-names-the-no-share-tag-is-noshare-in-any-case-th.md) | fixed | feature | all | 2026-11-21 | unreleased | Names: the no-share tag is -noshare in any case, the trailing dash optional |
+| [BUG-9333](BUG-9333-all-stages-fps-falls-to-1-3-while-partner-rings.md) | fixed | bug | All | 2026-11-21 | unreleased | All stages: FPS falls to 1-3 while partner rings are drawn (each ring point asked SporeKit for the camera, 4 VirtualQuery each) |

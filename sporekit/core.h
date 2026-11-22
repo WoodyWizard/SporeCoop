@@ -154,6 +154,7 @@ int world_to_screen(const float* w, float* out);
 // gamehooks.cpp, BUG-0948: the viewer as the game drew the frame (copied at its first SetTransform(VIEW) after a Present)
 void drawn_view_take();
 void drawn_view_drop();
+void view_cache_drop();                    // BUG-9333: the next world_to_screen checks the camera's pointers again
 void drawn_view_measure();                // the overlay pass: how far the viewer moved since the copy (kit.cam)
 std::string drawn_view_text(bool reset);  // kit.cam
 int world_to_screen_drawn(const float* w, float* out);
@@ -325,6 +326,7 @@ extern KitFix g_fix_hangloop;  // BUG-0347: no frames while the game loop runs (
 extern KitFix g_fix_framelimit; // BUG-0779: a frame limit set by another program is kept, not written back
 extern KitFix g_fix_hiddenpaint; // decision 5H: a hidden game window is painted at the frame limit (gamehooks.cpp)
 extern KitFix g_fix_presentlost; // BUG-0653: a hitch over 2 s is not Present lost (game loop passes without Present needed)
+extern KitFix g_fix_viewcache; // BUG-9333: world_to_screen checks the camera's pointers once a frame, not at every call
 extern KitFix g_fix_drawncam;  // BUG-0948: the overlay projects with the camera the frame was drawn with
 extern KitFix g_fix_logprune;  // BUG-0137: old crash reports, dumps, reports and archives are removed
 extern KitFix g_fix_stackvq;   // BUG-0880: no VirtualQuery while a thread is suspended (stack bounds from its TEB first)
