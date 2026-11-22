@@ -165,20 +165,49 @@ struct GameView {
     uint32_t vp[4];
 };
 
+// BUG-9333: every world_to_screen asked for the symbol by name and checked the mode manager, its viewer and the camera
+// with 4 VirtualQuery (a syscall each). The party rings project about 1000 points a ring (BUG-9321: 48 a circle, the soft
+// glow's 9 bands, each vertex on its own for the depth test): 9 partner villagers took 35 000 syscalls a frame, 300 ms
+// on the owner's PC (live 68-dev Tribe: 3 fps) and 600 ms on the QA copy. Now the pointers checked once are trusted
+// while the game hands out the same ones, checked again at every frame (view_cache_drop at Present) and on any change;
+// the matrix and the viewport are still read at every call. `kit.fix viewcache 0`: every call checks all (68-dev).
+static uintptr_t g_vc_get;
+static void* g_vc_mm;
+static void* g_vc_viewer;
+static const float* g_vc_cam;
+static DWORD g_vc_thread;
+static bool g_vc_ok;
+static uint64_t g_vc_full, g_vc_cached;
+void view_cache_drop() { g_vc_ok = false; }
+
 static bool read_view(GameView& g)
 {
-    uintptr_t get = sym("App::IGameModeManager::Get");
+    const bool cache = fixed(g_fix_viewcache) && g_vc_ok && g_vc_thread == GetCurrentThreadId();
+    uintptr_t get = cache ? g_vc_get : sym("App::IGameModeManager::Get");
     if (!get)
         return false;
     void* mm = cdecl_call<void*>(get);
-    if (!mm || !readable(mm, 4) || !readable(*(void**)mm, 0x5C))
-        return false;
-    void* viewer = vcall<void*>(mm, 0x58 / 4);
-    if (!viewer || !readable(viewer, 0x174))
-        return false;
-    const float* cam = field<const float*>(viewer, 0x170);
-    if (!cam || !readable(cam, 0x88))
-        return false;
+    const float* cam = nullptr;
+    void* viewer = nullptr;
+    if (cache && mm == g_vc_mm && (viewer = vcall<void*>(mm, 0x58 / 4)) == g_vc_viewer &&
+        field<const float*>(viewer, 0x170) == g_vc_cam) {
+        cam = g_vc_cam;
+        g_vc_cached++;
+    } else {
+        g_vc_ok = false;
+        if (!mm || !readable(mm, 4) || !readable(*(void**)mm, 0x5C))
+            return false;
+        viewer = vcall<void*>(mm, 0x58 / 4);
+        if (!viewer || !readable(viewer, 0x174))
+            return false;
+        cam = field<const float*>(viewer, 0x170);
+        if (!cam || !readable(cam, 0x88))
+            return false;
+        g_vc_full++;
+        g_vc_get = get, g_vc_mm = mm, g_vc_viewer = viewer, g_vc_cam = cam;
+        g_vc_thread = GetCurrentThreadId();
+        g_vc_ok = true;
+    }
     memcpy(g.V, viewer, sizeof g.V);
     g.vw[0] = cam[0x5C / 4], g.vw[1] = cam[0x60 / 4];
     memcpy(g.vp, &cam[0x78 / 4], sizeof g.vp);
@@ -229,7 +258,11 @@ void drawn_view_take()
     g_drawn_ok = read_view(g_drawn);
     g_drawn_takes++;
 }
-void drawn_view_drop() { g_drawn_ok = false; }
+void drawn_view_drop()
+{
+    g_drawn_ok = false;
+    view_cache_drop(); // BUG-9333: checked again in the next frame
+}
 
 // at the overlay pass: how far the viewer at Present is from the copy (kit.cam): a point 10 m ahead of the copy and off
 // its middle (the orbit camera looks at the avatar: a point straight ahead stays in the middle), projected with both
@@ -261,9 +294,11 @@ void drawn_view_measure()
 std::string drawn_view_text(bool reset)
 {
     char b[320];
-    snprintf(b, sizeof b, "drawncam fix=%d copies=%llu overlay_frames=%llu moved=%llu last_px=%.1f max_px=%.1f have=%d",
+    snprintf(b, sizeof b, "drawncam fix=%d copies=%llu overlay_frames=%llu moved=%llu last_px=%.1f max_px=%.1f have=%d | "
+             "viewcache fix=%d checked=%llu cached=%llu",
              (int)fixed(g_fix_drawncam), (unsigned long long)g_drawn_takes, (unsigned long long)g_drawn_frames,
-             (unsigned long long)g_drawn_moved, g_drawn_last_px, g_drawn_max_px, (int)g_drawn_ok);
+             (unsigned long long)g_drawn_moved, g_drawn_last_px, g_drawn_max_px, (int)g_drawn_ok,
+             (int)fixed(g_fix_viewcache), (unsigned long long)g_vc_full, (unsigned long long)g_vc_cached);
     if (reset)
         g_drawn_frames = g_drawn_moved = 0, g_drawn_max_px = 0;
     return b;

@@ -32,6 +32,7 @@ KitFix g_fix_dialognote{"dialognote", "a dialog on the main thread that stops th
 KitFix g_fix_offstack{"offstack", "a fault whose stack pointer is outside its thread's stack (Windows and Wine cannot dispatch it, the game ends at once) writes its crash report from the fault logger (BUG-0956)", 1};
 KitFix g_fix_framelimit{"framelimit", "a frame limit another program or the game sets (kFrameLimitMS) is kept, not written back to the first frame's value (BUG-0779)", 1};
 KitFix g_fix_taskdrop{"taskdrop", "the tasks of an unloaded mod are destroyed after the task lock is released: a capture whose destructor queues a task does not deadlock (BUG-0860)", 1};
+KitFix g_fix_viewcache{"viewcache", "world_to_screen checks the game's camera pointers once a frame and when they change, not 4 VirtualQuery at every call (BUG-9333)", 1};
 KitFix g_fix_drawncam{"drawncam", "the overlay's labels are projected with the camera the frame was drawn with, not the one at Present (BUG-0948)", 1};
 KitFix g_fix_stackvq{"stackvq", "stack / hangdump / watchdog: the stack bounds come from the thread's TEB before the suspend, no VirtualQuery while it is suspended (BUG-0880)", 1};
 KitFix g_fix_wheelmk{"wheelmk", "the virtual mouse wheel carries the held keys and buttons in its wParam (MK_SHIFT, MK_CONTROL, MK_LBUTTON, MK_RBUTTON) (BUG-0859)", 1};
@@ -49,7 +50,7 @@ std::vector<KitFix*> kit_fixes() { return {&g_fix_stackdump, &g_fix_cheatwait, &
                                        &g_fix_stackov,   &g_fix_crashsafe, &g_fix_logprune, &g_fix_iniutf, &g_fix_hookpark,
                                        &g_fix_crashtid, &g_fix_iniencode, &g_fix_inilock,
                                        &g_fix_exitwait, &g_fix_hookorig, &g_fix_hookfirst, &g_fix_initfail, &g_fix_hangloop, &g_fix_longout,
-                                       &g_fix_frameunwind, &g_fix_outpump, &g_fix_presentlost, &g_fix_faultstorm, &g_fix_dialognote, &g_fix_framelimit, &g_fix_offstack, &g_fix_taskdrop, &g_fix_drawncam,
+                                       &g_fix_frameunwind, &g_fix_outpump, &g_fix_presentlost, &g_fix_faultstorm, &g_fix_dialognote, &g_fix_framelimit, &g_fix_offstack, &g_fix_taskdrop, &g_fix_drawncam, &g_fix_viewcache,
                                        &g_fix_stackvq, &g_fix_wheelmk, &g_fix_presentunwind, &g_fix_taskcut, &g_fix_crashcopy,
                                        &g_fix_reportsafe, &g_fix_vehbounds, &g_fix_trireset, &g_fix_cmdkeep, &g_fix_postinit}; }
 
