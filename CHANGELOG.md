@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Lineages Cache: the ban list also takes out six early creatures that still showed their cell picture (shared before
+  BUG-9213's fix); the same players' real creatures stay.
+- Lineages Cache: a test copy of the game always plays with the -noshare tag (BUG-9331); the tag is "-noshare" in any
+  case, and the old "-NoShare-" still counts (BUG-9332).
+
 ## [0.7.14.1-lineages68-dev] - 2026-11-21
 
 - All stages: a soft ring in each player's colour under every unit a partner controls (creature and pack, villagers,

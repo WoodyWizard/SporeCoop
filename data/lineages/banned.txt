@@ -82,6 +82,16 @@ creation f8147adadff80bb930b78c6eee39981544b5a5943cbc63cca7a542d8e7032339 # a te
 creation 1bd9c3db29d34996473474867bd6e1f87ea466087a0595789b8ee115b9a598d7 # a test creature imported by hand
 creation 3648e7714295350e792c6be1591c5bdc673f169a2bf39afaefc521fbc4ac7ab6 # a test creature imported by hand
 
+# Landfall creatures that still carry the cell's picture (BUG-9213: shared 2026-11-08 to 11-11, before its fix).
+# Each was checked by its picture (2026-11-21): it matches that player's cell picture, not a creature render.
+# Only these copies: the same players' real creatures (their own creature pictures) are not listed.
+creation 1d14fc0b0687ed30bc041b1fac86ba8fffaff695cd1d44b4f5bff982e8fddf52 # a cell picture on a creature
+creation e1b2eebdc58e67a25dda909320e2a820c2d828ce287995c9b1d52bd8baa802a2 # a cell picture on a creature
+creation 0988dfdd430565bc504616492738ad1c777a136371e7aa4acaf52fe8904b8d30 # a cell picture on a creature
+creation 35ce8564c5b9e9c8ce93cf8f59869baf2f412c172df46d74951689591e7d48cf # a cell picture on a creature
+creation fc86a2d9d0fecdb1ad375a9f0bd1e7465a6fd9b82edf85ce8b7442fe2ad44f13 # a cell picture on a creature
+creation 137c9c956b3d9291be175d4a0d1ed5066006c30b62816548563e1be486a80b98 # a cell picture on a creature
+
 # Real creations that test profiles copied from a player's save: never banned
 keep 035abb578a47c0dd346b201c37fe3396c1f9dc93f1d76927e3e5ffd6ec1ecb1b
 keep 03b9941cceee36859a8ea363aa9ccc4d4853a3786ad9ba007d8cd3e591d9323a
