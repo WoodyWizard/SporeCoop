@@ -1663,3 +1663,15 @@ chat `/eras on|off` does. Off a galaxy server there is no row.
 * ✔ In game (TITAN's test galaxy, QA 9 on Samuth, Creature): a real click switched it both ways; switch off: no row.
 * ✔ UI pitfall (again): a window given a new drawable keeps drawing the old one until it changes; hiding and showing it
   draws the new one (set_look, now so_chip_look too).
+
+## The stage choice for a player new to a planet (5R A, 2026-11-22, feat/lineages-alpha)
+<a id="server-stage-choice"></a>
+
+BUG-9335, switch `galaxy.stage_choice`. Play on a planet of several eras where this player has played none opens
+"Choose a stage": one button per era (stage order, its players); a press enters that era and remembers it (BUG-9295's
+[galaxy_eras]). Stages not reached in the player's own Spore are grey and refused with a notice (Spore's rule, 5R A);
+the reader of the game's own unlocks is being found (until then every stage counts as reached). One era or one
+remembered: entered at once, as before.
+* ✔ In game (TITAN, test galaxy, Samuth Creature + Tribe): the choice showed both, a click on Tribe loaded Samuth's
+  Tribe era; the next Play went straight to Tribe; switch off: the earliest era (Creature) at once.
+* Not built: starting a stage the planet has no era of yet (a new era from Spore's own Choose A Stage wizard).

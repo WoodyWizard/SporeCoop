@@ -10,11 +10,15 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
 
+#include "coop_ui.h"
 #include "galaxy_client.h"
+#include "notify.h"
 #include "net/galaxy.h"
 #include "game.h"
 #include "modes.h"
@@ -89,6 +93,79 @@ static std::string era_to_enter(const Row& row)
     return first;
 }
 static std::string g_remembered;
+
+// BUG-9335 (decision 5R A, "players progress on their own, a later stage can be started when the player reached it in
+// their own Spore"): Play on a planet of several eras where this player has played none (nothing remembered) opens a
+// stage choice instead of entering the earliest era: one button per era of the planet (its stage and players), the
+// stages this player has not reached in its own Spore grey (a press says so, nothing entered). The choice is
+// remembered as an era played (BUG-9295). Off: the earliest era, as before. Not built: a stage the planet has no era
+// of yet (a new era of the planet).
+static bool g_choice = true;
+COOP_FIX("galaxy.stage_choice", "BUG-9335", g_choice, "galaxy menu: a player new to a planet chooses among its stages (the ones it reached), not the earliest");
+static std::vector<std::string> g_pick_eras; // the open choice's eras (the menu's item codes index it)
+static unsigned g_choices, g_picks, g_refusals;
+static std::string g_last_choice;
+static bool has_remembered(const Row& row)
+{
+    char b[128] = {};
+    H->config_str(M, "galaxy_eras", remember_key(row.shown.name).c_str(), "", b, sizeof b);
+    for (auto& e : row.eras)
+        if (e == b)
+            return true;
+    return false;
+}
+// Spore's own rule for starting a stage: the stage chooser of a new game greys the stages this profile has not reached
+static int (*g_reached)(uint8_t era); // (set by the game's unlock reader; null: not known, every stage open)
+bool stage_reached(uint8_t era) { return !g_reached || era <= net::galaxy::kEraCell || g_reached(era) != 0; }
+static void on_stage_pick(int code)
+{
+    if (code < 0 || code >= (int)g_pick_eras.size())
+        return;
+    const std::string key = g_pick_eras[code];
+    const uint8_t era = net::galaxy::era_of(key);
+    if (!stage_reached(era)) {
+        g_refusals++;
+        notify::show(std::string("You have not reached the ") + net::galaxy::era_name(era) +
+                     " stage in your own Spore yet. Play an earlier stage here, or reach it in a game of your own.", "info");
+        return;
+    }
+    g_picks++;
+    g_play_at = H->time_seconds();
+    H->config_set_str(M, "galaxy_eras", remember_key(net::galaxy::era_planet(key)).c_str(), key.c_str());
+    H->log(M, SK_INFO, "galaxy menu: stage choice '%s' (BUG-9335)", key.c_str());
+    galaxy::enter(key);
+}
+static void open_choice(const Row& row)
+{
+    std::vector<std::string> eras = row.eras;
+    std::sort(eras.begin(), eras.end(), [](const std::string& a, const std::string& b) {
+        return net::galaxy::era_of(a) < net::galaxy::era_of(b);
+    });
+    std::vector<coop_ui::MenuItem> items;
+    g_pick_eras.clear();
+    g_last_choice.clear();
+    for (auto& e : eras) {
+        if (items.size() >= 6) // (the menu's rows)
+            break;
+        const uint8_t era = net::galaxy::era_of(e);
+        int players = 0;
+        for (auto& p : galaxy::planets_known())
+            if (p.name == e)
+                players = p.players;
+        std::string t = net::galaxy::era_name(era);
+        if (players)
+            t += "  (" + std::to_string(players) + (players == 1 ? " player)" : " players)");
+        const bool open = stage_reached(era);
+        items.push_back({t, (int)g_pick_eras.size(), open ? coop_ui::kMenuBlue : coop_ui::kMenuGrey});
+        g_pick_eras.push_back(e);
+        g_last_choice += std::string(g_last_choice.empty() ? "" : ", ") + net::galaxy::era_name(era) + (open ? "" : " (grey)");
+    }
+    int sw = 0, sh = 0;
+    H->screen_size(&sw, &sh);
+    g_choices++;
+    H->log(M, SK_INFO, "galaxy menu: stage choice on '%s': %s (BUG-9335)", row.shown.name.c_str(), g_last_choice.c_str());
+    coop_ui::show_player_menu(sw * 0.5f - 112, sh * 0.3f, "Choose a stage", items, on_stage_pick);
+}
 
 static bool active() { return g_hooks && g_on && galaxy::online() && game::mode_id() == modes::kMenu; }
 
@@ -165,6 +242,31 @@ static void __fastcall h_Panels(void* set, void* edx)
     o_Panels(set, edx);
 }
 
+// Play on the menu's planet `planet` (its shown name): true when it is a server planet (entered, or its stage choice
+// opened). The step comes again every frame until the menu is left: once, and never while on that planet (each ENTER of
+// the planet it is on made the client leave and join again, 2026-11-17)
+static bool play(const std::string& planet)
+{
+    for (auto& row : rows())
+        if ((g_one_row ? row.shown.name : net::galaxy::era_display(row.shown.name)) == planet) {
+            const std::string key = era_to_enter(row);
+            const double now = H->time_seconds();
+            if (galaxy::current_planet() != key && (planet != g_play_name || now - g_play_at > 30)) {
+                g_play_name = planet;
+                g_play_at = now;
+                if (g_choice && row.eras.size() > 1 && !has_remembered(row)) { // BUG-9335
+                    open_choice(row);
+                    return true;
+                }
+                g_plays++;
+                H->log(M, SK_INFO, "galaxy menu: Play on the server planet '%s': entering it (5X B)", planet.c_str());
+                galaxy::enter(key);
+            }
+            return true;
+        }
+    return false;
+}
+
 // the Play step (thiscall, one stack argument): step +0xC the picked entry, +0x8 a countdown (the action at 0)
 static void __fastcall h_Step(void* self, void* edx, void* arg)
 {
@@ -174,22 +276,8 @@ static void __fastcall h_Step(void* self, void* edx, void* arg)
         const char16_t* b = *(const char16_t* const*)e;
         const char16_t* en = *(const char16_t* const*)(e + 4);
         const std::string planet = b && en > b ? utf8(b, en) : "";
-        for (auto& row : rows())
-            if ((g_one_row ? row.shown.name : net::galaxy::era_display(row.shown.name)) == planet) {
-                const std::string key = era_to_enter(row);
-                const galaxy::PlanetInfo p{key};
-                // the step comes again every frame until the menu is left: once, and never while on that planet (each
-                // ENTER of the planet it is on made the client leave and join again, 2026-11-17)
-                const double now = H->time_seconds();
-                if (galaxy::current_planet() != p.name && (planet != g_play_name || now - g_play_at > 30)) {
-                    g_play_name = planet;
-                    g_play_at = now;
-                    g_plays++;
-                    H->log(M, SK_INFO, "galaxy menu: Play on the server planet '%s': entering it (5X B)", planet.c_str());
-                    galaxy::enter(p.name);
-                }
-                return; // (no local file: the galaxy client loads it)
-            }
+        if (play(planet))
+            return; // (no local file: the galaxy client loads it)
     }
     o_Step(self, edx, arg);
 }
@@ -234,10 +322,24 @@ std::string command(int argc, const char* const* argv)
         g_last_version = ~0u;
     } else if (sub == "rebuild")
         H->run_outside_frame(rebuild, nullptr);
-    char b[300];
-    snprintf(b, sizeof b, "galaxy menu (5X B): %s, hooks %s, active %d, rewrites %u, plays %u, rebuilds %u, last: %s",
+    if (sub == "forget" && argc > 2) // tests (BUG-9335): this player has played no era of planet argv[2]
+        H->config_set_str(M, "galaxy_eras", remember_key(argv[2]).c_str(), "");
+    if (sub == "pick" && argc > 2) // tests (BUG-9335): as a press on the open choice's button n
+        on_stage_pick(atoi(argv[2]));
+    if (sub == "play" && argc > 2) { // tests (BUG-9335): the menu's Play on planet argv[2] (its code path, no click)
+        if (!active())
+            return "not in the galaxy menu while online (Play is the menu's)";
+        g_play_at = -100;
+        if (!play(argv[2]))
+            return std::string("no server planet '") + argv[2] + "' in the menu";
+    }
+    char b[600];
+    snprintf(b, sizeof b, "galaxy menu (5X B): %s, hooks %s, active %d, rewrites %u, plays %u, rebuilds %u, last: %s; "
+             "stage choice (BUG-9335): opened %u, entered %u, refused %u, last: %s; reached: %d%d%d%d%d",
              g_on ? "on" : "off", g_hooks ? "on" : "missing", (int)active(), g_rewrites, g_plays, g_rebuilds,
-             g_last.empty() ? "-" : g_last.c_str());
+             g_last.empty() ? "-" : g_last.c_str(), g_choices, g_picks, g_refusals,
+             g_last_choice.empty() ? "-" : g_last_choice.c_str(), (int)stage_reached(1), (int)stage_reached(2),
+             (int)stage_reached(3), (int)stage_reached(4), (int)stage_reached(5));
     return b;
 }
 
