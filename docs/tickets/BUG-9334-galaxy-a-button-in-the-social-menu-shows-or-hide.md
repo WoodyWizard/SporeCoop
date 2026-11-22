@@ -10,7 +10,7 @@ role:
 versions: 0.7.14.1-lineages69-dev (alpha)
 fixed_in: unreleased
 branch: feat/lineages-alpha
-commits: 
+commits: 82aac47b
 tests: tools/qa_win (manual, 2026-11-22): TITAN's test galaxy, QA 9 on Samuth (Creature), coop.party social / lclick, coop.fix galaxy.eras_button off/on
 signature: 
 docs: docs/12-server-and-players.md#server-eras-button
