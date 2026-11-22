@@ -21,9 +21,9 @@ import zlib
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 EXE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'build', 'galaxy_server.exe' if os.name == 'nt' else 'galaxy_server')
-PROTO = 8
+PROTO = int(os.environ.get('GALAXY_PROTO', '9'))  # (GALAXY_PROTO=8: a FAIL run on a server before BUG-9336)
 (HELLO, WELCOME, LIST, PLANETS, ENTER, ROLE, LEAVE, PING, PONG, REFUSED, HOSTGONE, READY, FETCH, XBEGIN, XCHUNK, XACK, XDONE,
- HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE, MOVEON, MOVED, ARRIVE, VISIT, VISITOR, CRTPUT, CRTGET, CRTHAVE, CRTPART, VISITOBJ, ERAS) = range(1, 37)
+ HOSTMOVE, PARTY, PARTYVIEW, PARTYNOTE, WHO, PLAYERS, WHISPER, CHALLENGE, MOVEON, MOVED, ARRIVE, VISIT, VISITOR, CRTPUT, CRTGET, CRTHAVE, CRTPART, VISITOBJ, ERAS, STARTERA) = range(1, 38)
 CHUNK = 1100
 fails = []
 
@@ -359,6 +359,41 @@ def main():
         ma, mb = a.take(MOVED), b.take(MOVED)
         check(rc is not None and ma is not None and mb is not None and moved_of(ma)[:3] == ('Venus|Civ', 3, c.slot)
               and moved_of(mb)[1] == 3, 'ARRIVE where the era has a host: the party is told to join it')
+
+        print('a player starts a stage its planet has none of (BUG-9336)')
+        for p in (a, b, c):
+            p.send(LEAVE)
+        time.sleep(0.2)
+        for p in (a, b, c):
+            p.pump(0.2)
+            p.inbox.clear()
+        a.enter('Mars|Creature')
+        a.take(ROLE)
+        ready(a, 'Mars|Creature')
+        mars = blob('Mars', 2500)
+        d = upload(a, 70, 'Mars|Creature', mars, era=2)
+        check(d is not None and d[4] == 1, 'Mars (Creature) stored')
+        c.send(STARTERA, s8('Mars|Creature') + bytes([4]))
+        check(c.take(REFUSED) is not None, 'STARTERA two stages up (Civ from Creature) is refused')
+        c.send(STARTERA, s8('Mars|Creature') + bytes([3]))
+        rc = c.take(ROLE)
+        start = role_of(rc) if rc else ('', 0, 0, 0)
+        check(rc is not None and '~' in start[0] and start[0].endswith('|Creature') and start[1] == 1 and start[2] == c.slot
+              and start[3] == len(mars), 'STARTERA Tribe on Mars: a crossing of its own from the Creature world, hosted by the player')
+        c.send(FETCH)
+        xb = c.take(XBEGIN, 2.0)
+        check(xb is not None and struct.unpack_from('<I', xb, 4 + 1 + len(start[0]))[0] == len(mars),
+              'FETCH in the start crossing sends the stored world of Mars (Creature)')
+        a.send(LIST)
+        lst = a.take(PLANETS)
+        check(lst is not None and b'~' not in lst, 'the start crossing is not listed')
+        c.send(ARRIVE, bytes([3]))
+        mc = c.take(MOVED)
+        check(mc is not None and moved_of(mc)[:2] == ('Mars|Tribe', 2), 'ARRIVE: the start crossing becomes Mars (Tribe)')
+        b.send(STARTERA, s8('Mars|Creature') + bytes([3]))
+        check(b.take(REFUSED) is not None and b.take(ROLE, 0.2) is None, 'STARTERA Tribe again once Mars (Tribe) has a player: refused')
+        b.send(STARTERA, s8('Nowhere|Creature') + bytes([3]))
+        check(b.take(REFUSED) is not None, 'STARTERA from an era with no stored world: refused')
 
         if not os.environ.get('GALAXY_CHECK_OLD'):
             print('visitors across eras (BUG-9287)')

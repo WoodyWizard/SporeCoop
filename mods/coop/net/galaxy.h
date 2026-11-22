@@ -110,10 +110,11 @@ inline std::string blob_planet(const std::vector<uint8_t>& blob)
     const size_t n = blob[4];
     return blob.size() < 5 + n ? "" : std::string((const char*)blob.data() + 5, n);
 }
-constexpr uint32_t kProto = 8; // 2: stored worlds (5Q A); 3: the hand-over (5V A); 4: the menu facts (5X B);
+constexpr uint32_t kProto = 9; // 2: stored worlds (5Q A); 3: the hand-over (5V A); 4: the menu facts (5X B);
                                 // 5: the warm hand-over token (6B C); 6: the identity key and the address cookie (6S);
                                 // 7: eras (step 4 part 1: an upload names its era, the server keeps 3 older saves);
-                                // 8: a party's crossing to the next stage (MOVEON, MOVED, ARRIVE: step 4 part 3)
+                                // 8: a party's crossing to the next stage (MOVEON, MOVED, ARRIVE: step 4 part 3);
+                                // 9: a player starts a stage the planet has no era of (STARTERA, BUG-9336)
 constexpr uint8_t kControl = 'G', kRelay = 'R', kFan = 'F';
 constexpr size_t kMaxFanSlots = 64; // (kMaxPlanetPlayers)
 // decision 6I A: a guest that loaded the planet's stored world joins with this receipt; the host takes it (no world sent)
@@ -205,6 +206,11 @@ enum Type : uint8_t {
     // BUG-9294 (decision 7I A): cross-stage visibility is the player's choice, on until it says otherwise. Off: the server
     // passes none of its VISIT / VISITOBJ on and sends it none of the others'
     ERAS = 36, // player -> server: u8 1 sees and is seen by the planet's other eras, 0 not (sent on each WELCOME and change)
+    // BUG-9336 (5R A): a player starts a stage its planet has no era of yet (Tribe on a planet of Creature only). The
+    // server makes it a crossing of its own from the era below's stored world (key crossing_key(from, its slot)) and
+    // answers ROLE host with that world (FETCHed as any stored world); the game plays the stage's end there and ARRIVEs
+    // as a party's crossing does (the crossing becomes the new era, or joins it if another player made it first)
+    STARTERA = 37, // player -> server: str8 the era it starts from ("Samuth|Creature"), u8 the era to start (the next)
 };
 constexpr uint8_t kVisitVehicle = 1, kVisitBuilding = 2;
 constexpr size_t kVisitObjBytes = 4 + 12 + 12 + 16 + 12 + 1, kVisitObjMax = 1 + 24 * kVisitObjBytes;

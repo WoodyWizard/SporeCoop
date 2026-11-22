@@ -98,12 +98,15 @@ static std::string g_remembered;
 // their own Spore"): Play on a planet of several eras where this player has played none (nothing remembered) opens a
 // stage choice instead of entering the earliest era: one button per era of the planet (its stage and players), the
 // stages this player has not reached in its own Spore grey (a press says so, nothing entered). The choice is
-// remembered as an era played (BUG-9295). Off: the earliest era, as before. Not built: a stage the planet has no era
-// of yet (a new era of the planet).
+// remembered as an era played (BUG-9295). Off: the earliest era, as before.
+// BUG-9336: the choice also offers the stage the planet has no era of yet, the next one up from its stored Creature
+// world ("Tribe (new)", grey when not reached): a press starts it (galaxy::start_era). Only Creature -> Tribe: the
+// game's own stage end runs there (the Tribe stage's end has no such request yet).
 static bool g_choice = true;
 COOP_FIX("galaxy.stage_choice", "BUG-9335", g_choice, "galaxy menu: a player new to a planet chooses among its stages (the ones it reached), not the earliest");
 static std::vector<std::string> g_pick_eras; // the open choice's eras (the menu's item codes index it)
-static unsigned g_choices, g_picks, g_refusals;
+static std::vector<std::string> g_pick_from; // BUG-9336: per item, the era a new stage starts from ("" an existing era)
+static unsigned g_choices, g_picks, g_refusals, g_starts;
 static std::string g_last_choice;
 static bool has_remembered(const Row& row)
 {
@@ -142,10 +145,39 @@ bool stage_reached(uint8_t era)
             return skg::thiscall<bool>(a_HasEarned, mgr, key);
     return true; // (no reader: not refused)
 }
+// BUG-9336: the era a new Tribe stage of this planet starts from (its stored Creature era), "" none (it has a Tribe era,
+// no stored Creature world, or the switch is off)
+static std::string start_from(const Row& row)
+{
+    if (!galaxy::stage_start_on())
+        return "";
+    for (auto& e : row.eras)
+        if (net::galaxy::era_of(e) == net::galaxy::kEraTribe)
+            return "";
+    const std::string from = net::galaxy::era_key(row.shown.name, net::galaxy::kEraCreature);
+    for (auto& p : galaxy::planets_known())
+        if (p.name == from && p.stored)
+            return from;
+    return "";
+}
 static void on_stage_pick(int code)
 {
     if (code < 0 || code >= (int)g_pick_eras.size())
         return;
+    if (code < (int)g_pick_from.size() && !g_pick_from[code].empty()) { // BUG-9336: a new stage of the planet
+        const uint8_t era = net::galaxy::era_of(g_pick_eras[code]);
+        if (!stage_reached(era)) {
+            g_refusals++;
+            notify::show(std::string("You have not reached ") + net::galaxy::era_name(era) + " in your own Spore yet", "info");
+            return;
+        }
+        g_starts++;
+        g_play_at = H->time_seconds();
+        H->log(M, SK_INFO, "galaxy menu: stage choice: a new %s stage from '%s' (BUG-9336)", net::galaxy::era_name(era),
+               g_pick_from[code].c_str());
+        notify::show(galaxy::start_era(g_pick_from[code], era), "info");
+        return;
+    }
     const std::string key = g_pick_eras[code];
     const uint8_t era = net::galaxy::era_of(key);
     if (!stage_reached(era)) {
@@ -167,6 +199,7 @@ static void open_choice(const Row& row)
     });
     std::vector<coop_ui::MenuItem> items;
     g_pick_eras.clear();
+    g_pick_from.clear();
     g_last_choice.clear();
     for (auto& e : eras) {
         if (items.size() >= 6) // (the menu's rows)
@@ -182,7 +215,18 @@ static void open_choice(const Row& row)
         const bool open = stage_reached(era);
         items.push_back({t, (int)g_pick_eras.size(), open ? coop_ui::kMenuBlue : coop_ui::kMenuGrey});
         g_pick_eras.push_back(e);
+        g_pick_from.push_back("");
         g_last_choice += std::string(g_last_choice.empty() ? "" : ", ") + net::galaxy::era_name(era) + (open ? "" : " (grey)");
+    }
+    const std::string from = start_from(row); // BUG-9336
+    if (!from.empty() && items.size() < 6) {
+        const uint8_t era = net::galaxy::kEraTribe;
+        const bool open = stage_reached(era);
+        items.push_back({std::string(net::galaxy::era_name(era)) + "  (new)", (int)g_pick_eras.size(),
+                         open ? coop_ui::kMenuBlue : coop_ui::kMenuGrey});
+        g_pick_eras.push_back(net::galaxy::era_key(row.shown.name, era));
+        g_pick_from.push_back(from);
+        g_last_choice += std::string(", ") + net::galaxy::era_name(era) + " (new" + (open ? ")" : ", grey)");
     }
     int sw = 0, sh = 0;
     H->screen_size(&sw, &sh);
@@ -278,7 +322,9 @@ static bool play(const std::string& planet)
             if (galaxy::current_planet() != key && (planet != g_play_name || now - g_play_at > 30)) {
                 g_play_name = planet;
                 g_play_at = now;
-                if (g_choice && row.eras.size() > 1 && !has_remembered(row)) { // BUG-9335
+                // BUG-9335: several eras; BUG-9336: or a new stage this player may start there
+                if (g_choice && !has_remembered(row) &&
+                    (row.eras.size() > 1 || (!start_from(row).empty() && stage_reached(net::galaxy::kEraTribe)))) {
                     open_choice(row);
                     return true;
                 }
@@ -359,9 +405,9 @@ std::string command(int argc, const char* const* argv)
     }
     char b[600];
     snprintf(b, sizeof b, "galaxy menu (5X B): %s, hooks %s, active %d, rewrites %u, plays %u, rebuilds %u, last: %s; "
-             "stage choice (BUG-9335): opened %u, entered %u, refused %u, last: %s; reached: %d%d%d%d%d",
+             "stage choice (BUG-9335): opened %u, entered %u, refused %u, new stages started %u (BUG-9336), last: %s; reached: %d%d%d%d%d",
              g_on ? "on" : "off", g_hooks ? "on" : "missing", (int)active(), g_rewrites, g_plays, g_rebuilds,
-             g_last.empty() ? "-" : g_last.c_str(), g_choices, g_picks, g_refusals,
+             g_last.empty() ? "-" : g_last.c_str(), g_choices, g_picks, g_refusals, g_starts,
              g_last_choice.empty() ? "-" : g_last_choice.c_str(), (int)stage_reached(1), (int)stage_reached(2),
              (int)stage_reached(3), (int)stage_reached(4), (int)stage_reached(5));
     return b;

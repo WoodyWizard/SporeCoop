@@ -3058,6 +3058,27 @@ bool SK_THISCALL h_CreatureGameMsg(void* self, uint32_t id, void* data)
     }
     return o_CreatureGameMsg(self, id, data);
 }
+// The Creature stage's end as History's check asks it in its stage-end mode (TimelineUI_HandleMessage, +0x36D set): the
+// creature game's message 0x4471C60 with +0xDA set (the stage-end request), then 0x445F729 posted. +0xDA (the creature
+// game's base +0xDE) stays set, as the stage-end command leaves it: back from the editor the stage's return
+// (CreatureGame_ReturnStateMachine, state 6) sees it and calls 0xD3AEA0 (message 0x533535DD with the avatar: the stage's
+// end), state 0xC; cleared, the editor's return is a plain evolution (docs/re/creature.md#creature-tribe-ready-test).
+// brain: the avatar's brain level raised to at least this first (the stage-end command is enabled at level 4); 0 kept.
+// Used by `coop.vote tribe` (BUG-9278 tests) and a galaxy start crossing (BUG-9336).
+static bool creature_stage_end_request(int brain)
+{
+    uintptr_t get = H->sym("App::IMessageManager::Get");
+    void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
+    void* av = game::avatar();
+    if (!mm || !av || !g_creature_game || !o_CreatureGameMsg || game::mode_id() != modes::kCreature)
+        return false;
+    if (brain > 0 && skg::vcall<int>(av, 0xD8 / 4) < brain)
+        skg::vcall<void>(av, 0xDC / 4, brain); // (the avatar's own setter, as `coop.dna brain`)
+    skg::field<uint8_t>(g_creature_game, 0xDA) = 1;
+    o_CreatureGameMsg(g_creature_game, 0x4471C60u, nullptr);
+    skg::vcall<void>(mm, 0x18 / 4, 0x445F729u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
+    return true;
+}
 
 // BUG-0588: the editor of the last request (EditorRequest +0xC): the end of Tribe's City Hall and vehicle editors
 static bool tribe_civ_editor(uint32_t id)
@@ -12800,22 +12821,12 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                            h_CellToCreature();
                            SAY("the Cell stage's switch asked (%s)\n", g_cell_cross ? "held for the party's crossing" : "as before");
                        } else if (argc > 1 && !strcmp(argv[1], "tribe") && game::mode_id() == modes::kCreature) {
-                           // tests (BUG-9278): what History's check does in its stage-end mode (TimelineUI_HandleMessage,
-                           // +0x36D set): the creature game's message 0x4471C60 (the stage-end request: +0xDA set, as
-                           // `mate` does), then 0x445F729 posted (docs/re/creature.md#creature-tribe-ready-test)
-                           uintptr_t get = H->sym("App::IMessageManager::Get");
-                           void* mm = get ? skg::cdecl_call<void*>(get) : nullptr;
-                           if (!mm || !game::avatar() || !g_creature_game || !o_CreatureGameMsg) {
+                           // tests (BUG-9278): what History's check does in its stage-end mode
+                           // (creature_stage_end_request; the brain level as it is)
+                           if (!creature_stage_end_request(0)) {
                                SAY("not possible here");
                                return 1;
                            }
-                           // +0xDA (the creature game's base +0xDE) stays set, as the stage-end command leaves it: back
-                           // from the editor the stage's return (CreatureGame_ReturnStateMachine, state 6) sees it and
-                           // calls 0xD3AEA0 (message 0x533535DD with the avatar: the stage's end), state 0xC. Cleared
-                           // again, the editor's return is a plain evolution (what `mate` does)
-                           skg::field<uint8_t>(g_creature_game, 0xDA) = 1;
-                           o_CreatureGameMsg(g_creature_game, 0x4471C60u, nullptr);
-                           skg::vcall<void>(mm, 0x18 / 4, 0x445F729u, (void*)nullptr, (void*)nullptr, 0); // MessagePost
                            SAY("the stage-end request and 0x445F729 sent (brain level %d, editor-pending flag %d)\n",
                                skg::vcall<int>(game::avatar(), 0xD8 / 4), evo_flag_now());
                        } else if (argc > 1 && !strcmp(argv[1], "mate") && game::mode_id() == modes::kCreature) {
@@ -12951,6 +12962,20 @@ extern "C" SK_EXPORT const SkModInfo* sporekit_mod_main(const SkHost* host, SkMo
                 LOG("galaxy: the new host's first-creature editor (%s) -> %d", g_host_start_editor ? "the start editor" : "the Creator", (int)r);
                 if (r)
                     feed("Make your creature for this planet: you play it when you save it.");
+            }, nullptr);
+            return true;
+        };
+        gx.start_stage = []() -> bool { // BUG-9336: a start crossing: the game's own Creature stage end, once it can
+            void* av = game::avatar();
+            if (game::mode_id() != modes::kCreature || !av || game::health(av) <= 0 || world::cinematic_playing() ||
+                game_busy() || mode_switch_pending() || creations::first_creature_pending() ||
+                creations::host_needs_first_creature() || creations::avatar_swap_settling(H->time_seconds()))
+                return false;
+            H->run_outside_frame([](void*) {
+                const bool r = creature_stage_end_request(4);
+                LOG("galaxy: the start crossing asks the Creature stage's end (BUG-9336) -> %d", (int)r);
+                feed(r ? "A new Tribal stage: shape your creature for it, then press the check."
+                       : "The Tribal stage could not be started here: leave the planet and try again.");
             }, nullptr);
             return true;
         };

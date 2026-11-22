@@ -95,6 +95,17 @@ static double g_arrive_ready_since = 0;
 static std::string g_pending_enter; // kMovedJoin: entered once the crossing's session is closed
 static uint32_t g_moveons_sent = 0, g_crossings = 0, g_arrivals = 0;
 static std::string g_pending_join; // join this address once the old session is closed
+// BUG-9336 (5R A): this player starts a stage its planet has no era of (the galaxy menu's stage choice): STARTERA; in
+// its start crossing (the era below's world, hosted by it) the game plays that stage's end by itself (C.start_stage),
+// then it ARRIVEs as any crossing
+static bool g_start_fix = true;
+COOP_FIX("galaxy.stage_start", "BUG-9336", g_start_fix,
+         "galaxy: a player can start a stage its planet has no era of yet (from the stage below's world)");
+static uint8_t g_start_era;        // the stage this game starts (0 none)
+static double g_start_sent = -100; // STARTERA went out
+static double g_start_since = -1;  // its start crossing hosted and played since
+static bool g_start_asked;         // the stage's end was asked there
+static uint32_t g_starts_sent, g_start_ends;
 static uint32_t g_handovers;
 // decision 6B C: the warm hand-over. g_planet_world: the world this game plays on the planet (a session up, in a stage);
 // g_token: the last hand-over's token; g_token_world: the world it is valid for (this game kept it loaded)
@@ -696,6 +707,31 @@ static void hosted_stored_tick(double now)
         g_hosted_stored_at = -1;
 }
 
+// BUG-9336: the start crossing hosted and played, nothing else waiting (the first creature's editor first): the game's
+// own stage end, once. Done when the planet is an era again (arrived) or the start came to nothing (refused)
+static void start_tick(double now)
+{
+    if (!g_start_era)
+        return;
+    if ((!g_planet.empty() && !is_crossing(g_planet)) || (g_planet.empty() && now - g_start_sent > 30)) {
+        g_start_era = 0;
+        return;
+    }
+    if (g_start_asked || !is_crossing(g_planet) || g_role != kHostRole || g_hstep != kHosting || g_hosted_stored_at >= 0 ||
+        era_of_mode(game::mode_id()) != era_of(g_planet) || !C.ready || !C.ready()) {
+        if (!g_start_asked)
+            g_start_since = -1;
+        return;
+    }
+    if (g_start_since < 0)
+        g_start_since = now;
+    else if (now - g_start_since > 5 && C.start_stage && C.start_stage()) { // (the world settled first)
+        g_start_asked = true;
+        g_start_ends++;
+        H->log(M, SK_INFO, "galaxy: start crossing %s: the stage's end asked (BUG-9336)", g_planet.c_str());
+    }
+}
+
 static void upload_done(bool ok, const std::string& why)
 {
     const uint32_t kb = (uint32_t)(g_up.data.size() >> 10), resent = g_up.resent;
@@ -991,6 +1027,37 @@ std::string enter(const std::string& planet_in)
     return "Entering " + era_display(planet) + "...";
 }
 
+bool stage_start_on() { return g_start_fix; }
+std::string start_era(const std::string& from, uint8_t era)
+{
+    if (!g_start_fix)
+        return "Starting a new stage is off (coop.fix galaxy.stage_start).";
+    if (!g_welcomed)
+        return "Not connected to a galaxy server.";
+    if (!era_of(from) || is_crossing(from) || era != era_of(from) + 1)
+        return "That stage cannot be started there.";
+    if (C.sess && C.sess->role() != net::Role::None && !g_relay_on)
+        return "Leave the current session first.";
+    if (!g_planet.empty()) { // (as enter: a hosted planet is saved and left first)
+        if (g_hstep == kHosting && g_role == kHostRole && C.sess && C.sess->role() == net::Role::Host) {
+            const std::string old = g_planet;
+            leave();
+            return "Saving " + era_display(old) + " to the galaxy first: try again in a moment.";
+        }
+        leave_now();
+    }
+    net::Writer w = control(STARTERA);
+    w.str8(from);
+    w.u8(era);
+    send_control(w);
+    g_start_era = era;
+    g_start_sent = H->time_seconds();
+    g_start_since = -1;
+    g_start_asked = false;
+    g_starts_sent++;
+    return std::string("Starting the ") + era_name(era) + " stage on " + era_planet(from) + "...";
+}
+
 std::string leave()
 {
     if (g_planet.empty())
@@ -1047,6 +1114,7 @@ void tick(double now)
     loading_tick(now);
     upload_tick(now);
     hosted_stored_tick(now);
+    start_tick(now);
     if (g_welcomed && game::mode_id() == modes::kMenu && now >= g_next_list) { // the galaxy menu's list (5X B)
         g_next_list = now + 10;
         send_control(control(LIST));
@@ -1302,7 +1370,7 @@ std::vector<PlanetInfo> planets_known()
 
 std::string status()
 {
-    char b[400];
+    char b[1200];
     snprintf(b, sizeof b,
              "galaxy: %s server=%s galaxy='%s' slot=%u planet='%s' role=%s host_slot=%u relay=%d planets=%zu "
              "relay rx=%llu (%llu KB) tx=%llu (%llu KB) queue=%zu dropped=%llu",
@@ -1321,12 +1389,14 @@ std::string status()
     static const char* steps[] = {"-", "downloading", "loading", "hosting"};
     snprintf(b, sizeof b,
              "\nworld: %s%s stored=%u KB down=%u/%u chunks upload=%s (%u/%u chunks) next upload in %.0f s, uploads %u, "
-             "downloads %u, hand-overs %u (warm: hosted %u, rejoined %u, accepted %u), silent saves %u (idle %u), quiet waits %u, menu hand-overs %u (own reloads kept %u), resumes %u (hosts %u), close holds %u, last upload: %s",
+             "downloads %u, hand-overs %u (warm: hosted %u, rejoined %u, accepted %u), silent saves %u (idle %u), quiet waits %u, menu hand-overs %u (own reloads kept %u), resumes %u (hosts %u), close holds %u, last upload: %s"
+             "\nstage starts (BUG-9336, %s): sent %u, ends asked %u, now %s%s",
              steps[g_hstep], g_waiting_host ? " (waiting for the new host)" : "", g_world_bytes >> 10, g_down.got, (unsigned)g_down.have.size(),
              g_upstep == kUpIdle ? "idle" : g_upstep == kUpSaving ? "saving" : "sending", g_up.acked,
              g_up.on ? g_up.chunks() : 0u, g_hstep == kHosting ? g_next_upload - H->time_seconds() : 0.0,
              g_uploads_done, g_downloads_done, g_handovers, g_warm_hosts, g_warm_joins, g_warm_accepted, g_silent_saves, g_idle_saves, g_quiet_waits, g_menu_handovers, g_reloads_kept, g_resumes, g_resumed_hosts, g_close_holds,
-             g_last_upload.empty() ? "-" : g_last_upload.c_str());
+             g_last_upload.empty() ? "-" : g_last_upload.c_str(), g_start_fix ? "on" : "off", g_starts_sent, g_start_ends,
+             g_start_era ? era_name(g_start_era) : "-", g_start_era ? (g_start_asked ? " (its end asked)" : " (on its way)") : "");
     return s + b;
 }
 

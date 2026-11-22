@@ -28,6 +28,9 @@ struct Ctx {
     // this game hosts a planet it loaded from the galaxy (the first creature): called until it returns true (done or not
     // needed), 10 minutes at most
     std::function<bool()> hosted_stored;
+    // BUG-9336: this game hosts its start crossing (a stage the planet had no era of): ask the game's own end of the stage
+    // it plays (its next stage is the one started); called until it returns true (asked) once nothing else waits
+    std::function<bool()> start_stage;
     std::function<void()> promote; // 6B C: this guest becomes the host in place (its proxies go on as its NPCs)
     // 6F B: a message of the planet's host copied by the galaxy server (from the host: dispatched as the session's)
     std::function<void(uint8_t type, net::Reader& r)> fan_in;
@@ -91,6 +94,11 @@ std::string connect(const std::string& address); // ip or name, [:port] (47900)
 std::string disconnect();
 std::string list();                    // asks for the planets; the answer comes in the feed and status()
 std::string enter(const std::string& planet);
+// BUG-9336 (5R A): start the stage `era` on a planet that has no era of it yet, from its era `from` (the stage below,
+// "Samuth|Creature"): the server makes this player a crossing of its own from that era's stored world; once it is loaded
+// the game plays that stage's end (C.start_stage) and arrives in the new era as a party's crossing does
+std::string start_era(const std::string& from, uint8_t era);
+bool stage_start_on(); // the switch galaxy.stage_start
 std::string leave();
 std::string save(); // host: save the planet's world to the galaxy server now (also every few minutes and when leaving)
 std::string status();

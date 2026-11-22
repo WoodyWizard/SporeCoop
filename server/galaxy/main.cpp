@@ -98,6 +98,7 @@ struct Planet {
     bool ready = false;         // its host's session hosts it (READY)
     uint64_t token = 0;         // 6B C: the last hand-over's token (players still in the world rejoin with it)
     std::set<uint16_t> members; // the host too
+    std::string from;           // BUG-9336: a start crossing: the era whose stored world it plays (FETCH sends that)
 };
 
 // a stored world (the worlds folder): file = GWS2, str8 planet, u32 bytes, u32 crc, u8 tech level, u32 x3 species key,
@@ -569,6 +570,7 @@ static std::string clean_name(std::string s, size_t max)
 
 static void move_on(Client& c);
 static void arrive(Client& c, uint8_t era);
+static void start_era(Client& c, const std::string& from, uint8_t era);
 
 static void on_control(const Endpoint& from, Reader& r)
 {
@@ -870,9 +872,14 @@ static void on_control(const Endpoint& from, Reader& r)
         leave_planet(*c, "left");
     } else if (type == READY) {
         planet_ready(*c);
+    } else if (type == STARTERA) {
+        std::string from = r.str8();
+        const uint8_t era = r.u8();
+        if (r.ok())
+            start_era(*c, from, era);
     } else if (type == FETCH) { // a player of the planet wants its stored world (its host; 6I A: a guest too)
         auto it = g_planets.find(c->planet);
-        auto st = g_stored.find(c->planet);
+        auto st = g_stored.find(it != g_planets.end() && !it->second.from.empty() ? it->second.from : c->planet);
         std::vector<uint8_t> data;
         const uint32_t now = now_ms();
         if (auto cur = g_downloads.find(c->slot); cur != g_downloads.end() && cur->second.planet == c->planet)
@@ -1054,7 +1061,7 @@ static void send_party_view(uint16_t slot)
 
 // ---------------- step 4 part 3: a party ends its stage (docs/12-server-and-players.md#server-party-stage-end) -------
 static void send_party_views(std::initializer_list<uint16_t> slots);
-static uint32_t g_moveons = 0, g_arrivals = 0, g_renamed = 0;
+static uint32_t g_moveons = 0, g_arrivals = 0, g_renamed = 0, g_starts = 0;
 static uint64_t new_token()
 {
     return ((uint64_t)rand() << 48) ^ ((uint64_t)rand() << 32) ^ ((uint64_t)rand() << 16) ^ (uint64_t)rand() ^
@@ -1124,6 +1131,45 @@ static void move_on(Client& c)
     say("planet '%s': %u '%s' moves its party (%zu) on to the next stage: crossing '%s'", from.c_str(), c.slot,
         c.name.c_str(), movers.size(), cross.c_str());
     send_party_views({c.slot});
+}
+
+// BUG-9336 (5R A): a player starts a stage its planet has no era of yet: a crossing of its own from the era below's
+// stored world (it downloads and hosts it, its game plays that stage's end, then ARRIVEs as a party's crossing does).
+// Only the next stage up, only where nobody plays or keeps that stage yet (else the player enters it as any era)
+static void start_era(Client& c, const std::string& from, uint8_t era)
+{
+    const uint8_t below = era_of(from);
+    if (!below || is_crossing(from) || era != below + 1 || era > kEraLast || below < kEraCreature)
+        return refuse(c, "That stage cannot be started there.");
+    const std::string to = era_key(from, era);
+    auto ex = g_planets.find(to);
+    if ((ex != g_planets.end() && !ex->second.members.empty()) || g_stored.count(to))
+        return refuse(c, era_planet(to) + " has its " + era_name(era) + " stage already: enter it.");
+    auto st = g_stored.find(from);
+    if (st == g_stored.end())
+        return refuse(c, "The galaxy server keeps no world of " + era_planet(from) + " to start from.");
+    const std::string cross = crossing_key(from, c.slot);
+    if (g_planets.count(cross))
+        return refuse(c, "Your start there is on its way already.");
+    leave_planet(c, "starts a new stage");
+    Planet& p = g_planets[cross];
+    p = Planet{};
+    p.host = c.slot;
+    p.from = from;
+    p.members.insert(c.slot);
+    c.planet = cross;
+    c.ping_off = 0;
+    Writer w = control(ROLE);
+    w.str8(cross);
+    w.u8(kHostRole);
+    w.u16(c.slot);
+    w.u32(st->second.size);
+    w.u64(0);
+    w.u32(st->second.crc);
+    send(c, w);
+    g_starts++;
+    say("planet '%s': %u '%s' starts its %s stage: crossing '%s' from the stored world", era_planet(from).c_str(), c.slot,
+        c.name.c_str(), era_name(era), cross.c_str());
 }
 
 // the crossing's host plays the next stage now: the crossing becomes that era (nobody hosts it), or everyone joins
@@ -1544,12 +1590,12 @@ int main(int argc, char** argv)
             const double secs = (now - last_status) / 1000.0;
             say("status: %zu player(s), %zu planet(s), relay %.1f KB/s (%llu packets, %llu dropped in all), "
                 "copies: in %.1f KB/s out %.1f KB/s (%llu sent, %llu dropped in all), parties %zu (%llu requests, %llu views), "
-                "eras: %u migrated, %u uploads of another stage and %u of another planet refused, crossings %u (arrived %u, became the era %u)",
+                "eras: %u migrated, %u uploads of another stage and %u of another planet refused, crossings %u (arrived %u, became the era %u), stage starts %u",
                 g_clients.size(), g_planets.size(), kbs, (unsigned long long)g_relay_packets,
                 (unsigned long long)g_relay_dropped, (g_fan_in_bytes - status_fan_in) / 1024.0 / secs,
                 (g_fan_out_bytes - status_fan_out) / 1024.0 / secs, (unsigned long long)g_fan_packets,
                 (unsigned long long)g_fan_dropped, g_parties.all().size(), (unsigned long long)g_party_requests,
-                (unsigned long long)g_party_views, g_migrated, g_era_refused, g_save_refused, g_moveons, g_arrivals, g_renamed);
+                (unsigned long long)g_party_views, g_migrated, g_era_refused, g_save_refused, g_moveons, g_arrivals, g_renamed, g_starts);
             last_status = now;
             status_bytes = g_relay_bytes;
             status_fan_in = g_fan_in_bytes;
