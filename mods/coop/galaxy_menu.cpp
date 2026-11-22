@@ -114,9 +114,34 @@ static bool has_remembered(const Row& row)
             return true;
     return false;
 }
-// Spore's own rule for starting a stage: the stage chooser of a new game greys the stages this profile has not reached
-static int (*g_reached)(uint8_t era); // (set by the game's unlock reader; null: not known, every stage open)
-bool stage_reached(uint8_t era) { return !g_reached || era <= net::galaxy::kEraCell || g_reached(era) != 0; }
+// Spore's own rule for starting a stage (docs/re/space.md#space-stage-unlocks): each start stage but Cell is a hidden
+// achievement; the new game's stage chooser enables a stage when the menu's cheat byte (+0x1F5, `cheat levels -unlock`)
+// is set or GGE_IsStageUnlocked(menu, key) (earned, or pending in the menu's set, as the Galactic Adventures Space start).
+// Out of the menu (no menu object): the earned set alone (AchievementsManager_HasEarned).
+static uintptr_t a_IsUnlocked, a_AchGet, a_HasEarned;
+static uint32_t stage_key(uint8_t era)
+{
+    switch (era) {
+    case net::galaxy::kEraCreature: return 0x26B05664;
+    case net::galaxy::kEraTribe: return 0x24947C07;
+    case net::galaxy::kEraCiv: return 0x2AB05C28;
+    case net::galaxy::kEraSpace: return 0x2887B6DE;
+    default: return 0;
+    }
+}
+bool stage_reached(uint8_t era)
+{
+    const uint32_t key = stage_key(era);
+    if (!key)
+        return true; // Cell (and no era): always open
+    uint8_t* gge = a_Gge ? *(uint8_t**)a_Gge : nullptr;
+    if (gge && a_IsUnlocked)
+        return gge[0x1F5] || skg::thiscall<bool>(a_IsUnlocked, (void*)gge, key);
+    if (a_AchGet && a_HasEarned)
+        if (void* mgr = skg::cdecl_call<void*>(a_AchGet))
+            return skg::thiscall<bool>(a_HasEarned, mgr, key);
+    return true; // (no reader: not refused)
+}
 static void on_stage_pick(int code)
 {
     if (code < 0 || code >= (int)g_pick_eras.size())
@@ -125,8 +150,7 @@ static void on_stage_pick(int code)
     const uint8_t era = net::galaxy::era_of(key);
     if (!stage_reached(era)) {
         g_refusals++;
-        notify::show(std::string("You have not reached the ") + net::galaxy::era_name(era) +
-                     " stage in your own Spore yet. Play an earlier stage here, or reach it in a game of your own.", "info");
+        notify::show(std::string("You have not reached ") + net::galaxy::era_name(era) + " in your own Spore yet", "info");
         return;
     }
     g_picks++;
@@ -351,6 +375,9 @@ void init(const SkHost* host, SkMod* mod)
     a_StarGet = H->sym("Simulator::cStarManager::Get");
     a_ReadStars = H->sym("Simulator::cStarManager::ReadStarsFromSaveDB");
     a_Gge = H->sym("SporeCoop::GalaxyGameEntry_ptr");
+    a_IsUnlocked = H->sym("SporeCoop::GGE_IsStageUnlocked"); // BUG-9335
+    a_AchGet = H->sym("Pollinator::cAchievementsManager::Get");
+    a_HasEarned = H->sym("SporeCoop::AchievementsManager_HasEarned");
     uintptr_t panels = H->sym("SporeCoop::GGE_MakePanels"), step = H->sym("SporeCoop::GGE_PlayStep");
     const bool ok = a_WCopy && a_Gge && panels && step &&
                     H->hook_create(M, (void*)panels, (void*)&h_Panels, (void**)&o_Panels) == 0 &&

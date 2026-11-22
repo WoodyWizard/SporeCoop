@@ -1670,8 +1670,9 @@ chat `/eras on|off` does. Off a galaxy server there is no row.
 BUG-9335, switch `galaxy.stage_choice`. Play on a planet of several eras where this player has played none opens
 "Choose a stage": one button per era (stage order, its players); a press enters that era and remembers it (BUG-9295's
 [galaxy_eras]). Stages not reached in the player's own Spore are grey and refused with a notice (Spore's rule, 5R A);
-the reader of the game's own unlocks is being found (until then every stage counts as reached). One era or one
+the reader is the game's own stage chooser check (docs/re/space.md#space-stage-unlocks). One era or one
 remembered: entered at once, as before.
 * ✔ In game (TITAN, test galaxy, Samuth Creature + Tribe): the choice showed both, a click on Tribe loaded Samuth's
   Tribe era; the next Play went straight to Tribe; switch off: the earliest era (Creature) at once.
+* ✔ Grey stages (a profile with Creature and Space reached): Tribe grey, a click refused with a notice, Creature entered.
 * Not built: starting a stage the planet has no era of yet (a new era from Spore's own Choose A Stage wizard).

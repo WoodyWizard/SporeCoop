@@ -3602,3 +3602,27 @@ GOG 2024 / Steam (3010a413), read at runtime from a QA game's memory (SporeKit `
 * ~ The dump holds SporeKit's hooks: a hooked function (GGE_RebuildPlanets here) starts with a jump out of the image and
   does not decompile; read those with `asm` past the first instruction, or dump a game before the mod hooks it.
 
+
+## Which stages a profile may start at (2026-11-22, feat/lineages-alpha)
+<a id="space-stage-unlocks"></a>
+
+Found for BUG-9335 (the galaxy's stage choice, decision 5R A), runtime on TITAN with a fresh test profile.
+* ✔ There is no stage table: each start stage but Cell is a hidden achievement. Keys: Creature 0x26B05664, Tribe
+  0x24947C07, Civ 0x2AB05C28, Space 0x2887B6DE. The chooser's buttons: 0x053F06EE (paw), 0x053F06F5 (fire), 0x053F06FC
+  (globe), 0x053F0707 (rocket); the button table at .rdata 0x147E750, the window ids at 0x147E760.
+* ✔ The new game's stage chooser (0xDF5278..0xDF52ED) enables a button when GGE+0x1F5 or IAppSystem vt 0x54 (always
+  false here: 0xB1E410 `xor al,al; ret`) or `SporeCoop::GGE_IsStageUnlocked(GGE, key)` (0xDE5C60): earned
+  (`SporeCoop::AchievementsManager_HasEarned` 0x675E40) or pending in the menu's set (GGE+0x254).
+* ✔ A fresh profile with Galactic Adventures has Cell AND Space open: 0xDF5300 posts the Space key into the pending set
+  when the pack is installed (0x6854E0(2)). Creature, Tribe and Civ are grey.
+* ✔ `cheat levels -unlock` (ParseLine 0xDDDF40) only sets GGE+0x1F5 = 1 for the session (not saved) AND sets the
+  achievement manager's cheater byte mgr+0x24, which blocks EarnAchievement: a session where it ran saves no real stage
+  progress.
+* ✔ Saved in `<profile>\Spore\Pollination.package` (DBBF, 64-bit offsets, index offset the u64 at 0x38), record
+  type = group = instance 0x05C2F3B2 (loader 0x675E90): big-endian u32 version 1, u32 N, N x {id, progress}, then
+  block 0x260DA801 with sections 0xABCE0000 (the earned set: u32 count, the ids) and 0xABCE0004..7. EarnAchievement
+  (0x6766D0) writes the file at once: after earning Creature the set read `00 00 00 02 26 B0 56 64 28 87 B6 DE`.
+* ~ How play earns them (code read, not traced): entering a stage posts message 0x6579712 with its key (senders
+  0xB32AD1, 0xE80B7C, 0xD3FD08, 0xCDADBF / 0xCDAF01, 0xBE8BA7); the menu's handler 0xDE92AB adds it to the pending set
+  (skipped while GGE+0x1F5 or the cheater byte is set); 0xDE5210 earns each pending key (deferred while byte
+  [0x16A0F28] is 1, as in the galaxy menu).
