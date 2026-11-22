@@ -3626,3 +3626,33 @@ Found for BUG-9335 (the galaxy's stage choice, decision 5R A), runtime on TITAN 
   0xB32AD1, 0xE80B7C, 0xD3FD08, 0xCDADBF / 0xCDAF01, 0xBE8BA7); the menu's handler 0xDE92AB adds it to the pending set
   (skipped while GGE+0x1F5 or the cheater byte is set); 0xDE5210 earns each pending key (deferred while byte
   [0x16A0F28] is 1, as in the galaxy menu).
+
+## The galaxy menu's new-game screen (Choose A Stage) and its states (2026-11-22, feat/lineages-alpha)
+<a id="space-native-stage-choice"></a>
+
+Found for BUG-9337 (decision 8L A), Ghidra on the Steam 3010a413 dump (GOG 2024 addresses) and runtime on TITAN.
+* ✔ The galaxy menu (GalaxyGameEntry) is a state machine: SporeCoop::GGE_SetState (0xDE8680, thiscall(GGE, state,
+  push) ret 8) sets the next state (+0x10C); the current one is GGE +0x108. The menu's init 0xDE7660 makes one object
+  per state: 2 the planets (0xE008B0), 4 the new game (0xDEE2E0, [0x16A1570]), 0xB the panel's button 0x3C4925E
+  (0xDE3320, [0x16A11B4] +0x48 the entry), 0xC Play (0xDEB620, [0x16A1484]: +0x8 a countdown, +0xC the entry; its
+  update is GGE_PlayStep), 0xD only with Galactic Adventures.
+* ✔ The planet panel's buttons (0xDF7800): Play (window 0x375408C) rolls the panel out, sets state 0xC's entry
+  (vt 0x5C) from GGE +0xFC, GGE_SetState(0xC, 0). A click on an empty star's panel (no save, entry +0xAC = 0): state
+  4's entry (+0xC, via the setter 0xFD9460), GGE_SetState(4, 0). Runtime: state 0xC shows the stage card (the stage's
+  name and loading lines) before the Play step; switching to state 4 from inside the step left that card on screen.
+* ✔ State 4 (vtable 0x147E568) +0x8 is the new-game flow (NewGameFlow; "New Game Flow"), +0xC the entry. Its vt 0xC
+  (0xDF5300, enter) loads the layout [0x16A0CF8] and calls SporeCoop::NewGameFlow_Open (0xDF4780, thiscall(flow, entry)
+  ret 4): flow +0x628 = entry; it resets entry +0x20 (a wstring), the keys at +0x4C, +0x64, +0x70, +0xA0 = 0, +0xA4 =
+  +0xA8 = 6, +0x94 a color, +0xB0; reads the option names (level, diet, creature, difficulty, theme, specialty, assets,
+  captain name, start); ends by enabling the four stage buttons (#space-stage-unlocks). The layout is at flow +0x28
+  (UTFWin::UILayout::FindWindowByID(flow + 0x28, id, 1)); a window's vt 0x7C(2, on) enables it, (1, on) shows it.
+* ✔ Any entry works: opened for a server planet's entry (+0xAC = 1, a planet with a save) the screen shows that planet
+  and "Choose A Stage" with the five buttons; the Cell button 0x53F06E1 is never disabled by the game (enabled by the
+  mod's own call when it should be grey).
+* ✔ SporeCoop::NewGameFlow_OnButton (0xDF3BB0, thiscall(flow, window id) ret 4) handles the screen's buttons: the
+  stages 0x53F06E1 / 0x53F06EE / 0x53F06F5 / 0x53F06FC / 0x53F0707 call 0xDF2E70(0 / 1 / 2 / 4 / 5) (entry +0xA4 =
+  +0xA8 = the stage, its description and options); Back 0x595E0A8 (the X under the planet): 0xDF0640(flow, 0) (page
+  +0x74 = 0, closed) and GGE_SetState(2, 0). Esc does the same in the state's key handler 0xDF46A0. Calling it with the
+  Back id from inside a stage press closes the screen cleanly (seen in game).
+* The screen writes into the entry (above): a mod that opens it for an entry of its own rebuilds the menu's entries
+  afterwards (GGE_RebuildPlanets through cStarManager::ReadStarsFromSaveDB).

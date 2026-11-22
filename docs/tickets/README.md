@@ -1450,3 +1450,5 @@ not-reproduced, game-bug (Spore itself), wontfix, duplicate.
 | [BUG-9334](BUG-9334-galaxy-a-button-in-the-social-menu-shows-or-hide.md) | fixed | feature | all | 2026-11-22 | unreleased | Galaxy: a button in the Social Menu shows or hides players in other stages (as /eras on/off) |
 | [BUG-9335](BUG-9335-galaxy-menu-a-player-new-to-a-planet-chooses-amo.md) | fixed | feature | all | 2026-11-22 | unreleased | Galaxy menu: a player new to a planet chooses among its stages (the ones reached in their own Spore) |
 | [BUG-9336](BUG-9336-galaxy-a-player-new-to-a-planet-starts-its-tribe.md) | fixed | feature | tribe | 2026-11-22 | unreleased | Galaxy: a player new to a planet starts its Tribe stage when the planet has only Creature (a new era) |
+| [BUG-9337](BUG-9337-galaxy-the-stage-choice-uses-spore-s-own-choose.md) | fixed | feature | all | 2026-11-22 | unreleased | Galaxy: the stage choice uses Spore's own Choose A Stage screen (8L A) |
+| [BUG-9338](BUG-9338-galaxy-our-stage-choice-box-opens-on-top-of-spor.md) | open | bug | all | 2026-11-22 |  | Galaxy: our stage choice box opens on top of Spore's stage loading card after a real Play |

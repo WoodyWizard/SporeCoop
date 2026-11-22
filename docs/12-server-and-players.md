@@ -1708,3 +1708,24 @@ player and the stored world of the stage below.
   its party can join the new era afterwards).
 * Seen once, not followed: the nest log line after the editor read "follows its evolution 00000001 -> 7CD60050"
   (the previous species id 1); the Tribe start was normal.
+
+## The stage choice in Spore's own Choose A Stage screen (8L A, 2026-11-22, feat/lineages-alpha)
+<a id="server-native-stage-choice"></a>
+
+BUG-9337, switch `galaxy.native_stage_choice`. Decision 8L A (the owner): the stage choice of #server-stage-choice and
+#server-stage-start is Spore's own Choose A Stage screen (the paw, fire, globe and rocket around the planet), not our
+box. The galaxy menu itself was Spore's already (its entries rewritten, #server-galaxy-menu-spike); only the box was
+ours.
+* Play on a server planet that wants a choice switches the menu to its new-game state with that planet's entry (as an
+  empty star's panel does), not to its Play state. Spore opens its screen for the planet; the mod enables the stages
+  the planet offers (its eras, the new Tribe stage) that the player reached in its own Spore, the others grey.
+* A press closes the screen as its Back does and enters the era or starts the new stage, as the box did. Never a new
+  game. The X or Esc: back to the planets (the entries rebuilt).
+* Lost against the box: the players per stage. The box stays as the fallback (switch off, or the screen's symbols
+  missing).
+* ✔ In game (TITAN): Abber (Creature + Civ, Tribe new) through the real star, Play, X, Play, globe: the Civ stage
+  loaded (images/native_stage_choice.png, images/native_stage_choice_civ.png); Samuth: the fire started the new Tribe
+  stage. Switch off: our box (images/native_stage_choice_off.png).
+* Found on the way, open: BUG-9338, the box (fallback only now) opens on top of Spore's stage loading card after a real
+  Play.
+* How the screen works: docs/re/space.md#space-native-stage-choice.
