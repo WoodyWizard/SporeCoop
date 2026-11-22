@@ -1676,3 +1676,35 @@ remembered: entered at once, as before.
   Tribe era; the next Play went straight to Tribe; switch off: the earliest era (Creature) at once.
 * ✔ Grey stages (a profile with Creature and Space reached): Tribe grey, a click refused with a notice, Creature entered.
 * Not built: starting a stage the planet has no era of yet (a new era from Spore's own Choose A Stage wizard).
+* Built later (BUG-9336, #server-stage-start): the choice offers "Tribe (new)" on a planet of a stored Creature era and
+  no Tribe era.
+
+## Starting a stage the planet has no era of yet (5R A, 2026-11-22, feat/lineages-alpha)
+<a id="server-stage-start"></a>
+
+BUG-9336, switch `galaxy.stage_start`, protocol 9. Spore's own Choose A Stage makes a new planet; a galaxy planet's new
+era has to grow on that planet's ground, so the start reuses the party crossing of #server-party-stage-end with one
+player and the stored world of the stage below.
+* The stage choice (#server-stage-choice) adds "Tribe (new)" when the planet has a stored Creature era and no Tribe era
+  (players or stored); grey when the player has not reached Tribe in its own Spore. A planet of one era opens the choice
+  only when that new stage is open to the player.
+* A press: STARTERA (the era to start from, the era to start). The server makes the player a crossing of its own,
+  "<planet>~<slot>|Creature", whose FETCH sends the Creature era's stored world, and answers ROLE host. Refused: two
+  stages up, a stage that has players or a stored world (enter it instead), no stored world to start from, a start
+  already on its way.
+* The game hosts the crossing as any stored planet (a player new there makes its first creature first, BUG-9265); once
+  it plays (5 s settled, no editor, no cinematic) it asks the game's own Creature stage end (the brain level raised to 4,
+  then the request History's check sends: docs/re/creature.md#creature-tribe-ready-test). The player gets Spore's own
+  stage-end editor, "Congratulations! You are about to enter the Tribal stage" and the Tribe start with its village at
+  its nest; 10 s into Tribe the crossing ARRIVEs: it becomes the planet's Tribe era (stored at its first upload), or
+  the player joins the Tribe era's host if another player made it in the meantime.
+* ✔ In game (TITAN, Samuth with only its Creature era): the choice (images/stage_start_choice.png), a click on "Tribe
+  (new)", the editor, the Tribal offer (images/stage_start_tribal_offer.png), the Tribe intro with the player's creature
+  (images/stage_start_tribe_intro.png); the server: "Samuth|Tribe: arrived from its crossing and hosts it", then
+  Samuth (Tribe) stored (5706 KB) beside the untouched Creature world. Switch off: no choice, Samuth (Creature) at once.
+* ✔ galaxy_server_check: 7 checks (FAIL on the server before).
+* Not built: a Civ start from a Tribe era (the Tribe stage's end has no request to ask yet), a Creature start on a
+  planet that has only later eras (nothing to grow it from), a party starting together (the start is the player's own;
+  its party can join the new era afterwards).
+* Seen once, not followed: the nest log line after the editor read "follows its evolution 00000001 -> 7CD60050"
+  (the previous species id 1); the Tribe start was normal.
