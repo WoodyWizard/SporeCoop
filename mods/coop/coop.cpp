@@ -193,7 +193,7 @@ static std::string session_name()
 {
     if (!g_test_noshare || utf8::no_share_name(g_name) || !test_copy())
         return g_name;
-    return utf8::player_name(g_name + "-NoShare-");
+    return utf8::player_name(g_name + "-noshare"); // BUG-9332: the short tag
 }
 double g_last_send = 0;
 static float g_sent_speed = 0; // BUG-1093: the speed in the last state sent (m/s)
