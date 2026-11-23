@@ -28,6 +28,7 @@
 #include "net/compat.h"
 #include "net/validate.h"
 #include "npc_ids.h"
+#include "npc_logic.h"
 #include "npc_proxy_rules.h"
 #include "mirror_registry.h"
 #include "world.h"
@@ -238,6 +239,11 @@ COOP_FIX("npc.proxy_ground_creature", "BUG-0752", g_proxy_ground_creature, "crea
 // `coop.fix npc.walk_ground off`: on the host's path exactly.
 static bool g_walk_ground_fix = true;
 COOP_FIX("npc.walk_ground", "BUG-0406", g_walk_ground_fix, "creature: a walking NPC's proxy is placed onto the ground, so it does not keep starting to fall downhill");
+// BUG-1360: px.walk_sp (the speed the host NPC reported while it last walked) clamps a walked proxy's path velocity in
+// the frames without a reported speed only within that walk (npc_logic::walk_velocity); off: kept across walks, an
+// unreported walk is clamped to an earlier walk's speed (0.3 m/s: the game plays the standing idle, 0.7.16.1)
+static bool g_walk_gait_fix = true;
+COOP_FIX("npc.walk_gait", "BUG-1360", g_walk_gait_fix, "creature: an NPC's copy that walks without a reported speed walks at its path's speed with the walk animation, not slowed to a standing idle by an earlier walk's speed");
 // BUG-0503: walk_place closes a proxy's error at (speed + catch_up) x the frame time, the frame time capped at
 // WalkPlace::max_dt (0.1 s). A guest at 3-5 fps (0.2-0.5 s frames under load, or a weak PC) closed 0.7 m per frame
 // of a host NPC that walked 1-2 m: the placed proxy fell 0.2-0.4 m further behind every frame, 3-8 m off for 2-11 s
@@ -1618,9 +1624,22 @@ static int c_npctrack(void*, int argc, const char* const* argv, SkOut* out)
             &u);
         return 0;
     } else if (!strcmp(a, "novel")) {
-        if (argc > 2)
+        if (argc > 2) {
             g_npc_novel = atoi(argv[2]) != 0;
+            if (g_walk_gait_fix) // BUG-1360: no proxy keeps a reported walk's speed into the test's unreported walks
+                for (auto [id, pe, px] : px_walk())
+                    px.walk_sp = 0;
+        }
         H->out_printf(out, "npc novel %d\n", (int)g_npc_novel);
+        return 0;
+    } else if (!strcmp(a, "walksp") && argc > 2) { // tests (BUG-1360): every proxy as if its last reported walk ran at V m/s
+        const float v = (float)atof(argv[2]);
+        int n = 0;
+        for (auto [id, pe, px] : px_walk()) {
+            px.walk_sp = v;
+            n++;
+        }
+        H->out_printf(out, "npc walksp %.2f on %d proxies\n", v, n);
         return 0;
     } else if (!strcmp(a, "variant") && argc > 2) { // tests (BUG-0361): how a walked proxy moves
         g_walk_variant = atoi(argv[2]);
@@ -2598,28 +2617,23 @@ static void guest_tick(double now)
         }
         drive::path_update(px.drv, s.pos, now);
         {
+            // BUG-0361: not faster than it walked (at a stop the target can jump back up to 1 m: a 37 m/s "path" and a
+            // 0.8 m jump of the proxy); BUG-0394: a host NPC that moves without a speed of its own walks at its path's
+            // velocity; a host NPC that reports its speed but moves slower is walked at the path's speed (Tribe:
+            // 0.6-1.4x the path in 77 % of the windows); BUG-1360 (npc.walk_gait): the stop clamp belongs to one walk
+            // (npc_logic::walk_velocity)
             const drive::PathTrack& pt = px.drv.path;
-            if (px.kinematic && drive::speed(vel) <= 0.3f) {
-                // not faster than it walked: at a stop the target can jump back up to 1 m (the extrapolation
-                // past the newest state corrected), which made a 37 m/s "path" and a 0.8 m jump of the proxy
-                float ps = drive::speed(pt.v);
-                if (ps > 0.5f) {
-                    float k = px.walk_sp > 0.3f && ps > px.walk_sp ? px.walk_sp / ps : 1.f;
-                    vel = {pt.v.x * k, pt.v.y * k, pt.v.z * k};
-                }
-            } else if (drive::speed(vel) <= 0.3f) {
-                // BUG-0394: a host NPC that moves without a speed of its own (2.2 m/s at speed 0): driven as
-                // standing, its pulls were undone by its locomotion, it fell 2.7 m behind and was teleported
-                vel = drive::path_velocity(px.drv);
-            } else if (drive::speed(vel) > 0.3f) {
-                px.walk_sp = drive::speed(vel);
-                // a host NPC that reports its speed but moves slower (pushed by its herd, against a rock, turning):
-                // the game walks the proxy at the path's speed, or its walk between two placings runs ahead
-                // (Tribe: 0.6-1.4x the path in 77 % of the 0.1 s windows where the path was slower than the speed)
-                float ps = std::max(pt.sp_ema * 1.1f, 0.5f);
-                if (ps < px.walk_sp)
-                    walk_speed = ps; // (only the walk: scaling the placing too made it trail at every start, creature_npc_dash)
-            }
+            npc_logic::WalkIn wi;
+            wi.kinematic = px.kinematic;
+            wi.vel = {vel.x, vel.y, vel.z};
+            wi.path_v = {pt.v.x, pt.v.y, pt.v.z};
+            wi.path_v_ema = {pt.v_ema.x, pt.v_ema.y, pt.v_ema.z};
+            wi.path_sp_ema = pt.sp_ema;
+            wi.walk_sp = px.walk_sp;
+            const npc_logic::WalkOut wo = npc_logic::walk_velocity(wi, g_walk_gait_fix);
+            vel = {wo.vel.x, wo.vel.y, wo.vel.z};
+            walk_speed = wo.walk_speed;
+            px.walk_sp = wo.walk_sp;
         }
         // BUG-0550: the host's NPC is off its ground: at its height over the host's terrain, over this game's, not
         // grounded (drive::air_place); not walked (the walk is ended, it walks again after the landing)

@@ -9,12 +9,13 @@ source: final-check-20261120-041304
 role: 
 versions: 0.7.15.5, unreleased
 fixed_in:
-branch:
+branch: fix/w76-motion
 commits:
-tests: npc_walk_novel, npc_walk_fps30, npc_walk_player
+tests: npc_walk_novel, npc_walk_novel_stale, npc_walk_novel_stale_gait_off (twin), npc_walk_novel_gait_off (twin), npc_walk_fps30, npc_walk_player, tests/npc_tests.cpp test_walk_gait
 signature:
-docs:
-related: BUG-0394, BUG-0436, BUG-1208
+docs: docs/re/creature.md#creature-proxy-stale-walk-speed
+related: BUG-0394, BUG-0436, BUG-1208, BUG-0361
+switch: npc.walk_gait
 ---
 
 ## Report
@@ -45,9 +46,32 @@ of the rel/0.7.16 tree): gait 78 % of 4402 frames; walked frames playing 02481DE
 walked frames with the walk clip 04866DAB: the game's locomotion barely moves the proxy while the placing carries it.
 Inferred: the run lasts ~4x the 1.5 s max_gap of walk_place's MoveTo, so a goal 12 m ahead is given again several times
 during it (or the goal is not the cause); what the locomotion was asked is not in the track yet.
+Found (2026-11-23, fix/w76-motion, the same track, idea from fix/agy-open-bugs fc420dcb): the game's own speed of #21
+is 0.28-0.31 m/s in EVERY walked frame of the run (also those with the walk clip), not only in the idle runs: the mod
+walks it at that speed. npc.cpp guest_tick: a walked proxy whose state reports no speed (here every state: the test's
+`coop.npctrack novel 1`) goes on at its path's velocity clamped to px.walk_sp (BUG-0361's stop clamp: at a stop the
+extrapolated target jumps back, a 37 m/s path). walk_sp is set only by states WITH a speed and never cleared: the slow
+reported walk of #21's first seconds (0.31-0.36 m/s rows in the track) clamped all its later walks to ~0.3 m/s; the
+game's locomotion at 0.3 m/s plays the standing idle, and catch_prop's placing ((0.3 + 3.3) m/s against a 4 m/s path)
+keeps it 0.6-0.8 m behind, growing slowly (0.64 -> 0.78 m over 2.5 s in the track). Which proxies and how often
+depends on what each one reported before (at 60 fps fewer frames are clamped walks: the 98 % of npc_walk). Mod bug,
+observed in the track, the mechanism read in the code; docs/re/creature.md#creature-proxy-stale-walk-speed.
 
 ## Fix
-Not fixed yet. 2026-11-20 (fix/w61-creature-c): `coop.npctrack dump` has the columns the night diagnostic needs (dsp: the
+2026-11-23 (fix/w76-motion), `coop.fix npc.walk_gait` (on; off = 0.7.16.1 exactly): the walk-velocity rule is the
+portable npc_logic::walk_velocity (mods/coop/npc_logic.h, called from guest_tick): walk_sp belongs to one walk. A proxy
+that is not walked and whose state reports no speed (it stands, or an unreported walk starts) forgets it, so an
+unreported walk goes on at its path's velocity; a path jump over 15 m/s is no velocity there (drive::path_velocity's
+rule: with walk_sp 0 more often, the old unclamped 37 m/s stop jump would otherwise pass). Within a walk with a
+reported speed the stop clamp and the slower-path walk speed are unchanged. `coop.npctrack novel` also clears every
+proxy's walk_sp (the test's toggle); `coop.npctrack walksp V` (tests) sets it on every proxy (the lab's stale case at
+will). Not taken from fc420dcb: its nest-mound half (game::place for the residual mound lift, no on_own_ground on a
+mound): no walked idle frame was on a mound, and an unmarked placing is undone by the game's update (BUG-0440), which
+would bring back BUG-0562 (docs/re/creature.md#creature-proxy-stale-walk-speed). Unit test: tests/npc_tests.cpp
+test_walk_gait (the lab's 0.31 m/s case, the BUG-0361 stop clamp, the 15 m/s jump, the slower-path walk; FAILs with
+`--nofix`). Lab tests: npc_walk_novel_stale (every proxy's last walk seeded at 0.35 m/s after `novel 1`) and its twin
+npc_walk_novel_stale_gait_off (deterministic FAIL); npc_walk_novel_gait_off (the plain case, a FAIL in some runs).
+Earlier:  2026-11-20 (fix/w61-creature-c): `coop.npctrack dump` has the columns the night diagnostic needs (dsp: the
 desired speed spatial +0x1E0, mmode: the movement request mode +0x310, gdist: m to its destination +0x2C8, the `?`
 offsets of docs/re/creature.md), and coop_npc_walk.py prints them for the walked idle frames against the walked walk
 frames ("BUG-1360 walked, idle 02481DE5 / walk gait"). No check changed. Next: a night diagnostic run of npc_walk_novel / npc_walk_fps30 with the track extended by the proxy's
@@ -55,7 +79,13 @@ MoveTo goal, its desired speed and the locomotion's own state for the frames whe
 then a fix in drive::walk_place with a switch and the 30 fps tests as its proof. The gate is not loosened.
 
 ## Verification
-Waiting for the night diagnostic run (no game today, owner rule).
+Open, waiting for the lab run (pending night run: npc_walk_novel npc_walk_novel_stale npc_walk_fps30 npc_walk_player
+npc_walk_novel_stale_gait_off npc_walk_novel_gait_off):
+`SPORE_DETECTOR=20 python3 tools/lab.py run npc_walk_novel npc_walk_novel_stale npc_walk_fps30 npc_walk_player --repeat 2
+--lane N --retry 0 --no-build` must PASS (walk gait >= 80 %, the walked idle frames gone from the BUG-1360 lines);
+`SPORE_DETECTOR=20 python3 tools/lab.py run npc_walk_novel_stale_gait_off --repeat 2 --lane M --retry 0 --no-build` must
+FAIL on the walk gait; `npc_walk_novel_gait_off --repeat 4` FAILs in some runs (the old 2-3 of 9). Regression:
+npc_walk, creature_npc_dash, npc_nest_backoff, puppet_mound_view.
 
 ## History
 - 2026-11-20: opened from the 0.7.16 final check (fix/w60-misc): analysis of the two failing runs' tracks; frame-rate
@@ -65,3 +95,4 @@ Waiting for the night diagnostic run (no game today, owner rule).
   the game's own speed in the idle frames ~0.3 m/s; diagnostic columns added to npctrack for the night run
   (`SPORE_DETECTOR=20 python3 tools/lab.py run npc_walk_novel npc_walk_fps30 --lane N --retry 0 --no-build`). Still
   open; not a 0.7.16 regression (orchestrator: 0.7.17).
+- 2026-11-23 (fix/w76-motion): cause found in the track (the stale walk_sp clamp), npc.walk_gait, unit test, lab test + twins; the mound half of fc420dcb not taken.

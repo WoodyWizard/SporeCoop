@@ -406,7 +406,9 @@ anchor so other docs can link to it:
   test) is drawn on its path but with its standing animation (0x02481DE5) for 1-6 s; at 60 fps almost never.
 * Reproduce: `tools/lab.py run npc_walk_novel npc_walk_fps30` (walk gait 79-86 % of the on-screen moving frames; 98 %
   in npc_walk at 60 fps).
-* Next steps: a diagnostic run with the proxy's MoveTo goal, desired speed and locomotion state in the track.
+* Known (2026-11-23, fix/w76-motion): the mod walked such a copy at the speed of an earlier slow walk of its host
+  animal (about 0.3 m/s, at which the game plays the standing idle); `npc.walk_gait` (0.7.17), waiting for the lab.
+* Next steps: the night run of npc_walk_novel_stale and its twin.
 * Ticket: BUG-1360
 
 ## Cell: after a level change one player's world can be moved away from the others' for the rest of the level (2026-11-21, fix/w62-core)
