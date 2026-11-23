@@ -11,6 +11,7 @@
 #define COOP_VERSION SC_VER_STR
 #endif
 #include "lifecycle.h"
+#include "civ_wallet.h"
 #include "coop_state.h"
 #include "store.h"
 #include "species_line.h"
@@ -1214,6 +1215,10 @@ void setup_callbacks()
         }
         case net::Route::Civ: {
             civ::on_message(type, from, r);
+            return;
+        }
+        case net::Route::CivWallet: { // BUG-1468: every player's own Civ money (civ.own_money)
+            civ_wallet::on_message(from, r);
             return;
         }
         case net::Route::Creation: {

@@ -1,3 +1,4 @@
+#include "civ_wallet.h"
 #include "lifecycle.h"
 #include "shared.h"
 #include "game.h"
@@ -151,6 +152,9 @@ struct Res {
     std::map<uint8_t, double> causes;  // host (BUG-0696): each player's change since the last total
     double applied = 0;                // host (BUG-0696): the guests' changes written into the game since then
     uint32_t epoch = 0;                // guest (BUG-0692): game::stage_epoch(mode) of the world the sync state is of
+    double passive = 0;                // host (BUG-1236): the game's passive income (cities, spice, trade) since then
+    double passive_total = 0;          // host (BUG-1236): tests, the passive income noted
+    uint32_t passive_ticks = 0;        // host (BUG-1236): tests, how often
 };
 
 // Switches for tests (`coop.res fix <name> 0|1`); 0 = the code before the fix:
@@ -266,7 +270,12 @@ static Res g_res[] = {
 static uint32_t g_mode; // the game mode of the last tick: status / debug_add use its resources
 
 // rivals mode (space_rivalry.cpp): every player has its own Space budget, nothing is shared
-static bool own_budget(const Res& r) { return r.mode == modes::kSpace && spaceext::rivals(); }
+// BUG-1468: a guest with its own Civ wallet (civ.own_money, civ_wallet.cpp) neither takes the host's Civ money total nor
+// sends its own changes (civ.wallet_row); the host keeps sharing its money with a guest without a wallet (an older peer)
+static bool own_budget(const Res& r)
+{
+    return (r.mode == modes::kSpace && spaceext::rivals()) || (r.mode == modes::kCiv && civ_wallet::guest_own_money());
+}
 
 void init(const SkHost* host, SkMod* mod)
 {
@@ -276,8 +285,10 @@ void init(const SkHost* host, SkMod* mod)
 
 void on_session_change()
 {
-    for (auto& r : g_res)
+    for (auto& r : g_res) {
         r.have = false;
+        r.passive = 0;
+    }
 }
 
 void on_player_join(net::Role role)
@@ -298,6 +309,7 @@ void on_session_end()
         r.owed = 0;
         r.causes.clear();
         r.applied = 0;
+        r.passive = 0;
     }
 }
 LIFECYCLE_HOOK("shared.session", lifecycle::kSessionEnd, -14, [](const lifecycle::Ctx&) { on_session_end(); }, false); // C2 (BUG-1141): end_session
@@ -333,6 +345,7 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
         }
         if (own_budget(r)) { // paused: unsent changes stay with the player (space_rivalry.cpp splits)
             r.have = false;
+            r.passive = 0;
             r.led.reset();
             continue;
         }
@@ -343,6 +356,7 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
                 if (r.have && g_away_due)
                     H->log(M, SK_INFO, "shared %s: sync state dropped out of its mode (test)", r.name);
                 r.have = false;
+                r.passive = 0;
             }
             continue;
         }
@@ -373,7 +387,7 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
                     for (auto& [id, seq] : r.acked)
                         msg.acks.push_back({id, seq});
                     if (g_cause_fix && r.have) { // BUG-0696: whose changes these are (older guests stop before)
-                        double own = v - r.synced - r.applied;
+                        double own = net::host_own_cause(v, r.synced, r.applied, r.passive); // BUG-1236
                         if (std::fabs(own) >= kCauseMin)
                             r.causes[0] += own;
                         msg.has_causes = true;
@@ -384,6 +398,7 @@ void tick(net::Session& s, uint32_t mode, double now, bool elsewhere)
                 msg.write(w);
                 r.causes.clear();
                 r.applied = 0;
+                r.passive = 0;
                 r.ack_dirty = false;
                 s.broadcast_reliable(net::MSG_RES, w);
                 r.synced = v;
@@ -541,7 +556,7 @@ std::string brief()
 std::string status()
 {
     std::string out;
-    char b[192];
+    char b[256];
     for (auto& r : g_res) {
         double v;
         // only this mode's resources: in Space the player cCivilization still exists and its
@@ -551,9 +566,9 @@ std::string status()
         double fl = 0;
         for (auto& e : r.led.in_flight)
             fl += e.v;
-        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u join_held=%u created=%u owed=%.1f/%u causes=%u\n",
+        snprintf(b, sizeof b, "shared %s=%.1f synced=%d pending=%.1f in_flight=%.1f from_guests=+%.0f/%.0f held=%d/%u join_held=%u created=%u owed=%.1f/%u causes=%u passive=%.0f/%u\n",
                  r.name, v, r.have, r.led.pending, fl, r.gained, r.spent, (int)r.led.held, g_held_totals, g_join_held,
-                 g_food_created, r.owed, g_owed_paid, g_causes_shown);
+                 g_food_created, r.owed, g_owed_paid, g_causes_shown, r.passive_total, r.passive_ticks);
         out += b;
     }
     return out.empty() ? "no shared resources in this mode\n" : out;
@@ -570,6 +585,21 @@ std::string fix(const std::string& name, int on)
 }
 
 void set_feed(std::function<void(const std::string&)> f) { g_feed = std::move(f); }
+
+void note_passive(uint8_t res_id, double delta)
+{
+    if (!std::isfinite(delta) || delta == 0.0)
+        return;
+    for (auto& r : g_res) {
+        if (r.id != res_id)
+            continue;
+        r.passive_total += delta;
+        r.passive_ticks++;
+        if (r.have) // unsynced: the next first total carries it without causes
+            r.passive += delta;
+        return;
+    }
+}
 
 std::string test_knob(const std::string& what, double secs, const std::string& name, double change)
 {

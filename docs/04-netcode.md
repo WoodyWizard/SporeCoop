@@ -131,6 +131,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | 71 | `TRIBE_ANIM` | RU | host | Module | Tribe (guest) | tribe | u8 kind (wire/tribe_anim.h), payload: the tribe members' animations, holds, air height, the theme and party music, the game-over and pause waits (MSG_NPC_ANIM's kinds 2-16, 20, 21 for a peer before tribe 1.1, BUG-1160) |
 | 72 | `CELL_MATE` | RU | guest | HostWorld | Cell (host) | cell | u8 kind: 0 (unreliable, 5 Hz) the pose of the mate its mating call brought: u32 res instance, u32 key[3], u8 level, f32 size, vec3 pos, f32 vx, vy, quat, f32 world scale; 1 (reliable) it is gone (BUG-1246) |
 | 73 | `SPECIES_LINE` | R | any | Session | SpeciesLine | creations | u8 kind (species_line_core.h): a player's species line row, its stored row, a piece of a line creation (the host relays it; WP-0, BUG-1270) |
+| 74 | `CIV_WALLET` | R | any | HostWorld | CivWallet | civ | every player's own Civ money (civ_wallet.h, civ.own_money, BUG-1468): u8 kind; guest -> host 1 an ask, 4 a report (u32 last seq applied, f64 money); host -> guest 2 the wallet, 3 a change (u32 seq, f64); only between peers of civ 1.2 |
 
 | Family | Id | Rev | Used in | Covers |
 |---|---|---|---|---|
@@ -140,7 +141,7 @@ payload notes above `enum MsgType`) and in the modules' wire code.
 | npc (mirrored creature and world state) | 4 | 1.2 | Creature, Tribe, Civilization | `DAMAGE`, `NPC_STATE`, `NPC_SPAWN`, `NPC_DESPAWN`, `DAMAGE_REQ`, `WOBJ`, `FIELDS`, `NPC_RESYNC`, `NPC_ANIM`, `WSTATE`, `PLAYER_RULE`, `MIRROR_FX`, `NPC_MEAT` |
 | cell (Cell) | 5 | 1.2 | Cell | `CELL_STATE`, `CELL_HIT`, `CELL_EAT`, `CELL_FOOD`, `CELL_KO`, `CELL_BITTEN`, `CELL_MATE` |
 | tribe (Tribe) | 6 | 1.1 | Tribe | `TRIBE_STATE`, `TRIBE_CMD`, `TRIBE_ANIM` |
-| civ (Civilization) | 7 | 1.2 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM` |
+| civ (Civilization) | 7 | 1.2 | Civilization, Space | `CIV_STATE`, `CIV_CMD`, `CIV_BUILD`, `ROLE`, `CIV_ALARM`, `CIV_WALLET` |
 | space (Space) | 8 | 1.3 | Space | `UFO_STATE`, `UFO_HIT`, `UFO_DAMAGE`, `SPACE` |
 | shared (shared resources) | 9 | 1.0 | Tribe, Civilization, Space | `RES`, `RES_ADD` |
 | creations (creations) | 10 | 1.2 | every stage and the menus | `CREATION`, `SPECIES_LINE` |

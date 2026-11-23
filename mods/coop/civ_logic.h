@@ -126,6 +126,17 @@ inline bool pump_waits(bool listed, bool dead, bool held) { return listed && !de
 inline bool pump_kills(bool listed, bool dead) { return listed && !dead; }
 // BUG-0151: while the host is away (its main menu) a guest's vehicles run their own AI and its orders go to its game
 inline bool local_play(bool fix, bool guest, bool host_away) { return fix && guest && host_away; }
+// BUG-1478 (CIV-5, civ.local_play_gate): the guest hooks that hand the player civilization's income, the NPC growth and
+// founding, the AI's vehicles, captures, city purchases and superweapons to the host's game hold only while the guest
+// plays the host's Civ world: a guest in another Civ world of its own (BUG-0231) plays it with its own game. The host
+// being away (its menu, BUG-0151) is not "elsewhere": those hooks still hold then (BUG-0878's held commands). Off: they
+// hold in every Civ world (0.7.16.1).
+inline bool guest_holds(bool gate_fix, bool guest, bool in_civ, bool elsewhere)
+{
+    return guest && in_civ && !(gate_fix && elsewhere);
+}
+// the host takes a guest's superweapon, city purchase or capture only from a guest in its world (gate on)
+inline bool host_takes_world_cmd(bool gate_fix, bool peer_elsewhere) { return !(gate_fix && peer_elsewhere); }
 // WP-C1 (BUG-1273): whose species line a city's citizens take: the owner's when it is a guest (a player id, not the
 // host 0) and the session plays own creatures (creature.mode own); the host's cities, the shared capital (its founder's:
 // the host's), NPC cities and cities of nobody keep the civilization's species (-1)
