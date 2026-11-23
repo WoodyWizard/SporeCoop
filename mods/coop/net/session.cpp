@@ -530,7 +530,7 @@ bool Session::kick(uint8_t id, const std::string& text)
 
 // BUG-1108: the guest is told why (REJECT, unreliable and sent now, three times: its Connection goes with drop_peer, a
 // queued reliable REJECT would never leave). A guest of any 0.7.x shows "rejected: <text>" and ends its session
-void Session::drop_told(size_t idx, const std::string& text)
+void Session::drop_told(size_t idx, const std::string& text, uint8_t reason)
 {
     auto& p = peers_[idx];
     Reject rej;
@@ -545,7 +545,7 @@ void Session::drop_told(size_t idx, const std::string& text)
         if (p->conn.build_packet(now + 1000, pkt))
             tr_->send_to(p->conn.remote, pkt.data(), pkt.size());
     }
-    drop_peer(idx, 0);
+    drop_peer(idx, reason);
 }
 
 // BUG-1108, host, every update: the drops asked for, the limits (normal play stays far below them) and the peaks
@@ -1457,7 +1457,12 @@ void Session::update()
             auto& p = peers_[i];
             bool dead = p->bye || (p->accepted ? now - p->conn.last_recv_ms > timeout_ms
                                                : now - p->conn.created_ms > 10000);
-            if (dead)
+            if (dead && !p->bye && p->accepted && g_fix.timeout_told) {
+                // BUG-9305: a guest whose game stood (an editor's load) gets the REJECT: it reads it when its game goes
+                // on and ends its session at once (it may join again), not after its own timeout on a dead link
+                timeouts_told_++;
+                drop_told(i, kTimeoutText, 1);
+            } else if (dead)
                 drop_peer(i, p->bye ? 0 : 1);
             else
                 i++;

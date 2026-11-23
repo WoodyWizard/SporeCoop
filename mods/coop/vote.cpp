@@ -533,6 +533,7 @@ bool submit_now(void* req)
 {
     int budget = game::mode_id() == modes::kCell ? cellsync::editor_budget() : -1;
     bool r{};
+    host_busy_long_wait("a held editor request goes to the game"); // BUG-9304: before the editor's load stands us
     {
         callguard::Hold vote_bypass(g_vote_bypass);
         r = o_Submit(req);
@@ -955,6 +956,8 @@ bool SK_CDECL h_Submit(void* req)
         hold_submit(req); // the game's own request (alone in the session): after the save
         return false;
     }
+    if (req)
+        host_busy_long_wait("an editor request goes to the game"); // BUG-9304 (the host's own, not held)
     bool r = o_Submit(req);
     if (r)
         g_editor_submitted_at = H->time_seconds();
@@ -1258,6 +1261,51 @@ static bool peer_in_editor(uint8_t id)
     return m == modes::kEditor || m == modes::kEdit;
 }
 unsigned vote_in_editor_count() { return g_vote_in_editor; }
+// BUG-9305 (the reverse of PR #216 / BUG-9304, the owner's rule): a guest whose game stands (its own editor's load, a
+// dialog, a hang) sends no state; the host's session drops it after 30 s without a packet (net.timeout_told: told), but
+// while its window pumps messages the keepalive (coop.cpp, BUG-0687) answers for it and the link lives on: the host's
+// vote waited for its ready until the 60 s ran out (an evolution vote holds the host's editor request behind a faded
+// picture; a guest that froze while its own editor loaded had not told its editor yet, BUG-1239 did not skip it). On:
+// a guest the vote waits for whose game sent no state for kStuckS is removed from the session with a REJECT that says
+// why (it may join again); the vote goes on without it. Off: waited for until the vote's time is up (0.7.16).
+static bool g_vote_stuck_fix = true;
+COOP_FIX("core.vote_stuck_kick", "BUG-9305", g_vote_stuck_fix,
+         "core: a guest whose game stands 30 s (stuck in its editor's load, a dialog) while a vote waits for it is removed "
+         "from the session, told why, and may join again; the host is not held");
+constexpr double kStuckS = 30.0; // as the session's timeout for a silent link (net::Session::timeout_ms)
+static unsigned g_vote_stuck_kicks = 0; // tests (coop.vote): guests removed for a game that stood during a vote
+unsigned vote_stuck_kicks() { return g_vote_stuck_kicks; }
+static bool vote_kick_stuck(uint8_t id, double now)
+{
+    if (!g_vote_stuck_fix)
+        return false;
+    auto it = g_remotes.find(id);
+    if (it == g_remotes.end() || it->second.echo || it->second.buf.empty())
+        return false;
+    double age = it->second.buf.age(now);
+    if (age < kStuckS)
+        return false;
+    static uint8_t asked_id = 0xFF;
+    static double asked_at = -100;
+    if (asked_id == id && now - asked_at < 5.0)
+        return true; // asked already: the session removes it at its next update
+    uint32_t m = it->second.buf.latest().mode;
+    std::string name = g_sess.name_of(id);
+    char text[200];
+    snprintf(text, sizeof text,
+             "your game stood %.0f s (%s) while the vote '%s' waited for it: the host went on; join again", age,
+             m == modes::kEditor || m == modes::kEdit ? "in its editor" : "not responding", g_vote.text.c_str());
+    if (!g_sess.kick(id, text))
+        return false;
+    asked_id = id;
+    asked_at = now;
+    g_vote_stuck_kicks++;
+    LOG("vote: player %u (%s) sent no state for %.1f s (mode %08X): removed from the session, it may join again "
+        "(BUG-9305)", (unsigned)id, name.c_str(), age, m);
+    trace::line("vote", "player %u stuck %.1f s: removed (BUG-9305)", (unsigned)id, age);
+    notice(name + "'s game stood " + std::to_string((int)age) + " s: removed from the session (it can join again)", -1);
+    return true;
+}
 void vote_tick(double now)
 {
     if (!g_vote.active || g_sess.role() != net::Role::Host)
@@ -1316,6 +1364,8 @@ void vote_tick(double now)
             editing++; // BUG-1239: in its own editor, it cannot answer: not waited for
             continue;
         }
+        if (p.id != 0 && !(g_ready.count(p.id) && g_ready[p.id]) && vote_kick_stuck((uint8_t)p.id, now))
+            continue; // BUG-9305: its game stood 30 s: removed at the session's next update
         all &= g_ready.count(p.id) && g_ready[p.id];
     }
     if (editing != g_vote_editor_last) {
@@ -1373,6 +1423,15 @@ uint32_t g_own_editor_due = 0;
 bool g_own_editor_arrival_fix = true;
 COOP_FIX("core.own_editor_arrival", "BUG-1240", g_own_editor_arrival_fix,
          "core: a guest still on its way to the host's Creature world when the first Creature editor's vote ends gets its own editor when it arrives");
+// BUG-9306 (audit CORE-2): a guest in the Creature stage whose avatar is not there yet (the landing, the stage's entry
+// after the host's world loaded) when the landfall editor's vote ended fitted neither rule above: the vote-end branch
+// wants the avatar, BUG-1240's wants a mode before Creature. The host does not wait for such a guest (BUG-1245's
+// "on its way"), so the vote ended right then and the guest lost its first own Creature editor. On: such a guest keeps
+// its own editor due as one on its way (it opens 15 s after the avatar is there, as BUG-1240's). Off: lost (0.7.16).
+bool g_own_editor_no_avatar_fix = true;
+COOP_FIX("core.own_editor_no_avatar", "BUG-9306", g_own_editor_no_avatar_fix,
+         "core: a guest in the Creature stage without its avatar yet when the first Creature editor's vote ends gets its own editor when the avatar is there");
+double g_vote_noavatar_until = 0; // tests (coop.vote noavatar <s>): a vote's end in that time sees no avatar here
 bool g_own_editor_arriving = false; // the due own editor waits for this guest's arrival in Creature
 unsigned g_own_editor_arrivals = 0; // tests (coop.vote): own editors kept for an arrival
 double g_own_editor_due_at = 0;

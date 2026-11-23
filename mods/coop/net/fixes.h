@@ -44,6 +44,8 @@ struct Fixes {
     bool family_check = true; // BUG-1137: a peer whose message family revision differs in a family the stage uses is refused
     // 0.7.16 (WP-F1)
     bool refuse_fork = true; // BUG-1281: a peer running the Lineages fork is refused at HELLO / WELCOME, in both roles
+    // 0.7.16.1
+    bool timeout_told = true; // BUG-9305: host: a guest dropped for 30 s of silence is told (REJECT), it ends and may rejoin
 };
 inline Fixes g_fix;
 
