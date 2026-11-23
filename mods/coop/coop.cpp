@@ -2694,6 +2694,10 @@ static void init_player_modules()
         sc.playing = [] { return stage_mode(g_mode) && g_local != nullptr; };
         sc.world_name = [] { return modes::current_world_name(); };
         sc.rivals = [] { return spaceext::rivals() || pfind::g_test_rivals; }; // (tests: coop.find rivals 1)
+        sc.holds_world = [] { // BUG-1502: an editor or a load keeps the world (and the session) started
+            uint32_t m = game::mode_id();
+            return m == modes::kEditor || m == modes::kEdit || m == modes::kLoad;
+        };
         sc.feed = feed;
         settings::init(H, M, sc);
         store::Ctx stc; // E1 (BUG-1149): the per-player store on the host's disk
