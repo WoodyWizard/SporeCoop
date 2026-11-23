@@ -33,6 +33,7 @@
 #include "mirror_registry.h"
 #include "world.h"
 #include "sporekit_game.hpp"
+#include "actor_scope.h"
 #include "fixes.h"
 #include "fields.h"
 #include "gamefixes.h"
@@ -3450,7 +3451,11 @@ void on_message(uint8_t type, uint8_t from, net::Reader& r)
             g_kills_credited++;
             dna_ledger::g_credit.kill(from, H->time_seconds()); // the DNA it pays is that guest's hunt
         }
-        game::apply_damage(npc, dmg, q.type, attacker);
+        {
+            // WP-H1 (BUG-1471): the game's kill credit inside (cPlayer::AddTraitProgress, the DNA) is this guest's act
+            actor::Scope act(from);
+            game::apply_damage(npc, dmg, q.type, attacker);
+        }
         g_hits_applied++;
         break;
     }
