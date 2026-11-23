@@ -10,7 +10,7 @@ role:
 versions: 0.7.15.1, unreleased
 fixed_in:
 branch: fix/w84-tests, fix/w85-cell-pool
-commits: 9cebc645 454c040a
+commits: 9cebc645 454c040a 9a6f66d1
 tests: own_cell, own_cell_steady, own_cell_steady_refill_off, cell_tests solo_refill
 signature:
 docs: docs/re/cell.md#cell-own-pool-refill

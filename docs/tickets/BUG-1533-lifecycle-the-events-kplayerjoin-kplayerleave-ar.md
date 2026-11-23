@@ -10,7 +10,7 @@ role: host,guest
 versions: 0.7.16.1
 fixed_in:
 branch: fix/w85-cell-pool
-commits:
+commits: 7a81dbc3
 tests: lifecycle_player, lifecycle_player_off, core_tests lifecycle_hooks
 signature:
 docs: docs/01-architecture.md, docs/06-testing.md#testing-lifecycle-player
