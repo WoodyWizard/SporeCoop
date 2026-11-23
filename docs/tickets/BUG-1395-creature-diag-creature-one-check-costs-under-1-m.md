@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-core
 commits: 22a8b5ca
 tests: tools/tests/coop_diag.py (diag_creature, diag_cell)
@@ -53,3 +53,4 @@ INCONCLUSIVE, not FAIL. no-fail-run: test change for a flake outside the mod (no
 - 2026-11-21: opened.
 - 2026-11-21: fix/w62-core: cause load (evidence of all runs), the cost checks are INCONCLUSIVE on an overloaded machine.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

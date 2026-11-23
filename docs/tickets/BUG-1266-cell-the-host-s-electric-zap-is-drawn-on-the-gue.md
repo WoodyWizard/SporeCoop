@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: key-frame review
 role: guest
 versions: 0.7.15.1
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w54-visual
 commits: aa478bd4
 tests: cell_attack_electric
@@ -74,3 +74,4 @@ Tonight (lanes 2 and 3, build first with `make -j8`):
 ## History
 - 2026-11-18: opened from the key-frame review of the 0.7.15.2 final check; seen since 0.7.15.1 at least; not a blocker of 0.7.15.2 (visual only, pre-existing), planned for 0.7.16.
 - 2026-11-18: root cause from Ghidra and the earlier runs' logs (fix/w54-visual); fix `effects.cell_held` and the test written; lab pending the night run.
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab 20261120-133703
 role: host
 versions: 0.7.15.1 and later
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-multi
 commits: af0576ca
 tests: vote_net_4p, vote_net_4p_editor_off (twin)
@@ -58,3 +58,4 @@ Was waiting for the lab run.
 - 2026-11-20 (fix/w61-multi): BUG-1239's commit, switch and ticket scope it to the evolution vote; the action vote
   skipping is that fix's side effect. Restricted with core.vote_editor_evo_only, twin vote_net_4p_editor_off.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

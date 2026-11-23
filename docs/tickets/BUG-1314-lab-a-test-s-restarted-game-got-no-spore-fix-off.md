@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-tribe-keys
 commits: 4ce6f9de
 tests: space_own_ship_key_off, own_editor_key_off, late_species_off (twins that restart the guest)
@@ -39,3 +39,4 @@ late_species_off 20261119-112300.
 ## History
 - 2026-11-19: opened (fix/w57-tribe-keys).
 - 2026-11-19: fixed on fix/w57-tribe-keys.
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-core
 commits: a5ca9fe4 c6f93414
 tests: tools/tests/coop_evo_screens.py (evo_screens_switch, SPORE_FIX_OFF=drive.lead_gap)
@@ -58,3 +58,4 @@ Was waiting for the lab run:
 - 2026-11-21: opened.
 - 2026-11-21: fix/w62-core: cause found in the twin's logs; the test moves one host animal during the stand.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

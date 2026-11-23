@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-own-editors
 commits: 6b93ebd6
 tests: dna_own_editors, dna_own_editors_off
@@ -44,3 +44,4 @@ dna_own_editors_off FAILs at the price (20261119-130049).
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w57-own-editors, lab runs above.
+- 2026-11-23: released in 0.7.16.

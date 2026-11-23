@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: found by the Lineages fork (PR #196), its BUG-9166
 role: host
 versions: 0.7.15.2
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w56-general
 commits: 310a0311, 6fdea267
 tests: unit (npc_tests test_share_fresh)
@@ -54,3 +54,4 @@ save (world_queue part 1). Status line "shares that waited for their own save N"
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w56-general (WP-F1); found by the Lineages fork (PR #196), its BUG-9166.
 - 2026-11-19: fixed (fix/w57-sync): see the CORRECTION under Root cause; PASS and FAIL twin run dirs above.
+- 2026-11-23: released in 0.7.16.

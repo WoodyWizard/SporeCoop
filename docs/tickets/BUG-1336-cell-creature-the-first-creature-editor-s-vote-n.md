@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: 
 versions: 0.7.15.2, 0.7.15.3, 0.7.15.4, 0.7.15.5, 0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w59-cell
 commits: d04d6a10
 tests: leave_avatar_cell, leave_avatar_cell_wait_off, legless_guest, parts_transition, choice_world, evo_screens_switch, evo_screens_switch_slow, core_tests arrival_wait
@@ -61,3 +61,4 @@ Lab not run then (orchestrator: no lab until "lab ok", the final check runs on o
 ## History
 - 2026-11-20: opened.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

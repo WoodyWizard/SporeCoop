@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w65-night
 commits: 8fff6369
 tests: tools/tests/coop_mode.py (civ, and the other click modes)
@@ -40,3 +40,4 @@ no-fail-run: a test fix; FAIL before 20261122-194210 civ.
 ## History
 - 2026-11-23: opened; fix/w65-night: the click again while the marker is back at its start.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

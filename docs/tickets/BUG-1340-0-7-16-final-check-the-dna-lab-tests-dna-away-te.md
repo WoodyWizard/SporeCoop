@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab 20261120-041304
 role: guest
 versions: 0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w60-dna
 commits: 1165c4fd
 tests: dna_away, dna_away_shared, team, dna_resend, dna_resend_shared, dna_notice, dna_notice_shared
@@ -55,3 +55,4 @@ Twins that must FAIL: SPORE_CELL_FIX=0 dna_resend (own) and with --shared (`SPOR
 ## History
 - 2026-11-20: opened.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

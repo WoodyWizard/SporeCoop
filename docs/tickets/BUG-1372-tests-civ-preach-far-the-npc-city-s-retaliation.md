@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-civ
 commits: 5c29c021
 tests: civ_preach_far, civ_preach_far_off (twin)
@@ -55,3 +55,4 @@ places).
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): cause from the logs, the test keeps its preachers alive; no lab run (owner rule).
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

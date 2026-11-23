@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: final check 20261121-003202 (party_space_names)
 role: guest
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-flake-tcs
 commits: d3303a4d, 84c8f9e6
 tests: party_space_names (tools/tests/coop_party_space.py)
@@ -53,3 +53,4 @@ Was waiting for the lab run (lane 6 first: its mp1 record holds 6 bombs now):
 ## History
 - 2026-11-21: opened; fixed on fix/w62-flake-tcs (the extras' profile records cleared), waiting for the lab run.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

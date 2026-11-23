@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: lab 20261121-003202 play_civ (found on the way)
 role: guest
 versions: rel/0.7.16 21025f40
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-civrole
 commits: 843ec8e1, d5426c83
 tests: civ_role_row, civ_role_row_off, late_species_civ, play_civ
@@ -54,3 +54,4 @@ both rows whole, no overlap, the chat above with 3 lines.
 - 2026-11-21: opened.
 - 2026-11-21: fix in fix/w62-civrole, open until the lab run: two rows, switch core.ui_civ_two_rows, test civ_role_row + twin.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

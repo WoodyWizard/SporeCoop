@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: final check 20261121-003202
 role: host
 versions: 0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-saves
 commits: 0b94adaa
 tests: saved_box_twice, saved_box_twice_off
@@ -49,3 +49,4 @@ Was waiting for the lab run (no lab runs today, owner rule). FAIL run of the old
 ## History
 - 2026-11-21: opened (fix/w62-saves): cause from the test's log line, test waits for the mod's view of the box.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

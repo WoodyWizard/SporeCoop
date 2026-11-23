@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
 versions: 0.7.15.5, unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w60-misc
 commits: 8273ee9a
 tests: space_puppet
@@ -42,3 +42,4 @@ the lab run.
 ## History
 - 2026-11-20: opened from the 0.7.16 final check; fixed in play_space.py on fix/w60-misc.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

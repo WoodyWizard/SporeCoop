@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
 versions: 0.7.15.5, unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w60-misc
 commits: c74bf7ee
 tests: cell_ko_food
@@ -43,3 +43,4 @@ cell_ko_food PASS; `SPORE_FIX_OFF=cell.ko_no_swallow` cell_ko_food FAIL (its twi
 ## History
 - 2026-11-20: opened from the 0.7.16 final check; fixed in the test on fix/w60-misc.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

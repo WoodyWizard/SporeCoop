@@ -2,12 +2,18 @@
 
 ## [Unreleased]
 
+## [0.7.16] - 2026-11-23
+
 Thanks to @PandizeLive, whose SporeCoop Lineages fork (PR #196) gave ideas and reverse-engineering notes for this version.
 [SporeCoop Lineages](https://github.com/PandizeLive/SporeCoop-Lineages) is their own co-op campaign in which every player
 evolves a separate species in one shared world, from the tide pool to the galaxy. Its author says it is still pretty
 unstable for now. A Lineages game and a SporeCoop game cannot join each other: every player needs the same mod.
 
 ### Development
+- The release check: on the release commit every test of the smoke, full and multi suites passed except two:
+  tribe_walk_player (a guest's copy of a tribe member can still slide about a metre in one frame after a lag; open in
+  BUG-1235, see the known issues) and the new space_planet_runners, which has not measured running citizens yet
+  (BUG-1454).
 - Lab tests: a test's save is asked again while the mod refuses it for now and only a save the game wrote counts; the
   tribe game-over tests knock the tribe out one member at a time (BUG-1397, BUG-1398, BUG-1399).
 - Lab: a test is run again as "the game did not start" only when the harness says so; a fix switch whose description

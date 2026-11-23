@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: host
 versions: 0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w59-tribe
 commits: 9161752f
 tests: away_stages, away_stages_override_off (coop_away_stages.py)
@@ -47,3 +47,4 @@ away_stages_override_off must FAIL (the sync-check of part 2 differs). Seen in t
 - 2026-11-20: opened (fix/w59-tribe, triage package G of the 0.7.16 final check).
 - 2026-11-20: fix and test on fix/w59-tribe; lab runs pending.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

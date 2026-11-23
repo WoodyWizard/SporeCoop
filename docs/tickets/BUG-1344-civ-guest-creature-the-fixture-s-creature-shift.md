@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: 
 versions: rel/0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w60-tribe
 commits: 200633bf
 tests: civ_guest_creature
@@ -43,3 +43,4 @@ Was waiting for the lab run: civ_guest_creature must PASS (the nearest host crea
 - 2026-11-20: opened.
 - 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

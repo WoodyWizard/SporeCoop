@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w65-night
 commits: 68d86794
 tests: tools/tests/coop_cell_kin_species.py (cell_kin_species --editor)
@@ -55,3 +55,4 @@ no-fail-run: the knockout cannot be forced; the FAIL before is 20261122-194210 c
 - 2026-11-22: opened.
 - 2026-11-22: fix/w65-night: cause from the host's ko lines and the key frames' places; the way back is measured anew.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

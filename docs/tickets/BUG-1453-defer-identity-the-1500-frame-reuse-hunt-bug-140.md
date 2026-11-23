@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w65-tests
 commits: 15a93727
 tests: tools/tests/coop_defer_identity.py (defer_identity)
@@ -51,3 +51,4 @@ no-fail-run: a test change; INCONCLUSIVE before 20261122-192135.
 ## History
 - 2026-11-23: opened; fix/w65-tests: short hunts, many rounds.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

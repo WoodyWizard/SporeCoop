@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-civ
 commits: de99d975, 326d54e1
 tests: tribe_caption_race (coop_tribe_conquest_guest.py --click-at-close)
@@ -52,3 +52,4 @@ whose host still plays no caption.
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): cause from the logs and the docs; the guest's raid order makes the mission; no lab run (owner rule).
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

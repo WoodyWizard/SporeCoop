@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab 20261120-133703
 role: host
 versions: 0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-creature-e
 commits: 55d39747
 tests: unit (tools/tests/labverdict_selftest.py lab_run)
@@ -46,3 +46,4 @@ streak was 3); with the fix both PASS (fix/w61-creature-e).
 ## History
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-creature-e): fixed in lab.py summary_history, self-test case added.
+- 2026-11-23: released in 0.7.16.

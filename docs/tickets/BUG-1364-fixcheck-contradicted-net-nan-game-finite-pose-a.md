@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: final check 20261120-133703 (5-fixcheck)
 role: 
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-creature-d
 commits: de235059 c67ac9af
 tests: net_nan, npc_nan_vel
@@ -46,3 +46,4 @@ left on those lines: labcov.CLAIM finds none).
 
 ## History
 - 2026-11-20: opened.
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: guest
 versions: rel/0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-civ
 commits: 34cb98e5
 tests: tribe_npc_form, tribe_npc_form_late, tribe_npc_form_late_off (twin), campaign_civ_jump
@@ -55,3 +55,4 @@ formation.
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): cause from the logs, fix, knob, test and twin; no lab run (owner rule).
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

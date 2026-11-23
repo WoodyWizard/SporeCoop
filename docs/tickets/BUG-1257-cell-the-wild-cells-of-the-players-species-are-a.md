@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: owner: players' video, second analysis
 role: guest
 versions: <0.7.15
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w54-cellkin, feat/w54-shims, fix/w57-cellkin
 commits: 1959f57a, eedaf53f, 28ef93c1 696d51e2 48dd3e02 dfba6556 0438065a 5c4a8b06
 tests: cell_kin_species (coop_cell_kin_species.py)
@@ -67,3 +67,4 @@ cell_kin_species (coop_cell_kin_species.py --editor, Cell fixture, food 924, lan
 - 2026-11-19 (fix/w57-cellkin): the first night run failed on the test (view width from the world scale, the premade BAF1AD40 whose editor does not close); test fixed, PASS 20261119-121933 and FAIL twin; fixed.
 - 2026-11-19 (fix/w57-cellkin): PASS again on the tree merged with rel/0.7.16 (e10cac3d): out/lab/20261119-123540.
 - 2026-11-20: cell_own_level10 (BUG-0637's test) now allows the cells the partners play now (their kin); its failure in the final check 20261119-214823 was BUG-1333 (kin of the cell a following guest left), not this check alone. cell_kin_species' apart failure there: BUG-1334 (the guest knocked out, a test setup), fix/w59-cell.
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: nightly 20261121-003202
 role: 
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-flake-tcs
 commits: 8fff6d2e
 tests: tribe_conquer_orders
@@ -50,3 +50,4 @@ cinematic to start before the poll reads the fall, 2 of 12 runs).
 ## History
 - 2026-11-21: opened (fix/w62-flake-tcs); cause found in the frames manifest, the key frame moved after the watch.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

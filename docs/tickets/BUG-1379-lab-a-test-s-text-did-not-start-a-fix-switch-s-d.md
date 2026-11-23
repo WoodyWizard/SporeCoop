@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-civ
 commits: 9c86e722
 tests: unit-verdict (tools/tests/labverdict_selftest.py, case env), tribe_chief_still_retry_off
@@ -53,3 +53,4 @@ find". Self-test case `env` (make test, unit-verdict).
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): cause and fix (lab tooling).
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

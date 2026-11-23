@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: final check 20261120-133703
 role: guest
 versions: 0.7.15.2..0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-creature
 commits: d5d44e38
 tests: legless_guest_dontsave, legless_guest_replace, legless_guest (coop_legless_guest.py --guest dontsave|replace|new)
@@ -62,3 +62,4 @@ Was waiting for the lab run (no game today, owner rule):
 ## History
 - 2026-11-20: opened.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

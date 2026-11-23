@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: guest
 versions: rel/0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-civ
 commits: d8f60860
 tests: civ_other_world, civ_other_world_slowjoin, civ_other_world_slowjoin_off (twin)
@@ -60,3 +60,4 @@ after it, so WELCOME and the first total share a frame almost always; it prints 
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): cause from the logs, fix and twin; no lab run (owner rule).
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

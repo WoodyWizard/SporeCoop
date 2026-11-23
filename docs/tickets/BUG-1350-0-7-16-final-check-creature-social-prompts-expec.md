@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab 20261120-041304
 role: guest
 versions: 0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w60-dna
 commits: 48dfc9fa
 tests: creature_social_prompts
@@ -41,3 +41,4 @@ Was waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run creatur
 ## History
 - 2026-11-20: opened.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

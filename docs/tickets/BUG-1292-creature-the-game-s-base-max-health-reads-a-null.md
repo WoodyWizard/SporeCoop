@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: found by the Lineages fork (PR #196), its BUG-9157
 role: guest
 versions: 0.7.15.2
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w56-general
 commits: 287beb5e
 tests: unit (npc_tests test_max_hp_null_species)
@@ -51,3 +51,4 @@ without species, herd and tuning for one vt 0x7C call, then put back).
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w56-general (WP-F1); found by the Lineages fork (PR #196), its BUG-9157.
 - 2026-11-19: lab verified (fix/w57-sync): PASS and FAIL twin (run dirs above).
+- 2026-11-23: released in 0.7.16.

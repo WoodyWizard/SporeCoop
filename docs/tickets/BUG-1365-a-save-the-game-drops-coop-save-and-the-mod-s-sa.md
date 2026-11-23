@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: final check 20261120-133703 (own_editor_drop)
 role: host
 versions: <=0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-creature-a
 commits: 3ffe3266
 tests: saved_box_twice, saved_box_twice_off, own_editor_drop
@@ -60,3 +60,4 @@ Was waiting for the lab run (no lab runs today, owner rule):
   save is refused for now (BUG-1398, twoinst.save_taken); saved_box_twice waits for the mod's view of the box
   (BUG-1397). The fix and its switch are unchanged.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: plan-0.7.16
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w54-civedit
 commits: 78a585e5 48c171a0 1b7d5b83 6b93ebd6 2cb5861c
 tests: civ_guest_editors, civ_guest_editors_off (twin), civ_designs
@@ -58,3 +58,4 @@ refusal (BUG-1158, 0.7.15). Key frames 01_guest_designs (both screens the guest'
 - 2026-11-18: static RE, code, tests on feat/w54-civedit (BUG-1275); lab pending (night run).
 - 2026-11-19: fix/w57-own-editors: civ_guest_editors: every editor and look check PASS on the merged tree (fix/w57-own-editors worktree out/lab/20261119-130049, -142554; BUG-1307's test fixes); the only FAIL left is the host save holding the guest's design line keys (Zorispe/Tavael.spo 018EB106 ...), which fix/w57-civlook's BUG-1274 work (not merged yet) is about. Twin civ_guest_editors_off FAIL in -130049 (the refusal). Open until that save strip is in.
 - 2026-11-19: fix/w57-own-editors: PASS whole on the merged tree (20261119-153243), twin FAIL (20261119-130049): fixed.
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: final check 20261121-003202
 role: host
 versions: 0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-saves
 commits: ff3f8986
 tests: species_line, own_editor_drop, civ_own_species, civ_own_species_hostmode, civ_owners_session, dna_own_store, space_session, space_session_npc, tribe_owners_session, tribe_own_species
@@ -63,3 +63,4 @@ saved_box_twice_off (BUG-1365).
 ## History
 - 2026-11-21: opened (fix/w62-saves): the logs of three runs show the quit save was always lost; test helpers save_taken / save_fresh.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

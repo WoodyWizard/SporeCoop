@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: lab 20261121-003202
 role: test
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-flake-tcs
 commits: 69313126
 tests: civ_wild_sync
@@ -66,3 +66,4 @@ line right before the attack orders); `SPORE_FIX_OFF=npc.civ_wild python3 tools/
 ## History
 - 2026-11-21: opened.
 - 2026-11-21 (fix/w62-flake-tcs): cause found (the herd pick and the target out of relevance), test fixed.
+- 2026-11-23: released in 0.7.16.

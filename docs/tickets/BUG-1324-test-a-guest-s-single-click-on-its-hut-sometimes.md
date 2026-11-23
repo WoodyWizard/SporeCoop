@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-tribe-keys
 commits: faf0d043
 tests: tribe_guest_baby, tribe_birth_species, tribe_kid_species (coop_tribe_guest_baby.buy_click)
@@ -43,3 +43,4 @@ tribe_kid_species 20261119-121054 (one click), tribe_birth_species 20261119-1210
 
 ## History
 - 2026-11-19: opened and fixed on fix/w57-tribe-keys.
+- 2026-11-23: released in 0.7.16.

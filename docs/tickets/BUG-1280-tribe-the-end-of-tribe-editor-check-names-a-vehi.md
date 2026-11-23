@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: feat/w54-x1; also found by the Lineages fork (PR #196), its BUG-9060
 role: host
 versions: 0.7.15.2
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w56-general
 commits: 5488e40d, 6fdea267
 tests: unit (tribe_tests end_editors)
@@ -61,3 +61,4 @@ and PatchData.package, no 7CB21BAD anywhere (docs/re/tribe.md#tribe-end-editors)
 - 2026-11-18: opened.
 - 2026-11-19: fixed on fix/w56-general (WP-F1); the Lineages fork found the same (its BUG-9060).
 - 2026-11-19: lab verified (fix/w57-sync): the test sets the archetype after the stage card; PASS and FAIL twin run dirs above.
+- 2026-11-23: released in 0.7.16.

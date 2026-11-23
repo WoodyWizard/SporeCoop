@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: guest
 versions: rel/0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w60-tribe
 commits: cbd9f035
 tests: tribe_birth_ask, tribe_birth_ask_off (twin), tribe_kid_species
@@ -60,3 +60,4 @@ FAIL, tribe_kid_species and tribe_birth_species must PASS.
 - 2026-11-20: opened.
 - 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

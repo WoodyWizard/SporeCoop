@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w65-night
 commits: fb569645
 tests: tools/tests/coop_tribe_looks.py (tribe_held_item)
@@ -44,3 +44,4 @@ Was waiting for the lab run: PASS `SPORE_DETECTOR=20 python3 tools/lab.py run tr
 ## History
 - 2026-11-23: opened; fix/w65-night: the grip check compares with the host's hold, the leader's owner checked.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

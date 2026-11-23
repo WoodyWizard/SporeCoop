@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w65-night
 commits: e06d3a16
 tests: tools/tests/coop_migration_probe.py (migration_probe), tools/tests/coop_migration.py new_nest (also migration, nest_follow, nest_target_probe)
@@ -50,3 +50,4 @@ no-fail-run: a test fix; the crash before is 20261122-194210 migration_probe.
 - 2026-11-22: opened.
 - 2026-11-23: fix/w65-night: the crash triaged (crash_triage: the console's call); new_nest() checks the mode first.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: guest
 versions: rel/0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-own-editors
 commits: 39aebbea 5e4f14e1
 tests: civ_own_arrival, civ_late_arrival, line_stages_editors
@@ -47,3 +47,4 @@ both designs.
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fixed on fix/w57-own-editors, lab runs above.
+- 2026-11-23: released in 0.7.16.

@@ -8,9 +8,9 @@ reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w65-tests
-commits: 04d96951
+commits: 04d96951, 42709529, fd28f88f
 tests: tools/tests/coop_space_captain.py (space_captain)
 signature:
 docs:
@@ -45,3 +45,4 @@ Was waiting for the lab run: `SPORE_DETECTOR=20 python3 tools/lab.py run space_c
 ## History
 - 2026-11-23: opened; fix/w65-tests: the click waits for a settled Accept and is given again when not taken.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: guest
 versions: 0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w59-tribe
 commits: 6c8d4d30
 tests: campaign_tc2 (gate sync-check); unit net_tests diag digest (stands byte), fuzz_decoders diag Digest
@@ -56,3 +56,4 @@ made on purpose by any test; `SPORE_FIX_OFF=diag.guest_stands` brings the 0.7.16
 - 2026-11-20: opened (fix/w59-tribe, triage package G of the 0.7.16 final check): not civlook; a paused guest compared.
 - 2026-11-20: diag.guest_stands and the campaign's stand evidence on fix/w59-tribe; lab runs pending.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-civ
 commits: 28b70c3d
 tests: party_civ_trade (tools/tests/coop_party_civ_trade.py)
@@ -50,3 +50,4 @@ steps.
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-civ): cause from the logs and the code; the guests buy their cities; no lab run (owner rule).
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

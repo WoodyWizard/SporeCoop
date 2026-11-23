@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab 20261120-133703
 role: host
 versions: rel/0.7.16 673f7a55
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-multi
 commits: ed6666e0
 tests: multi3, multi4_creature_seed, multi4_creature_slow
@@ -54,3 +54,4 @@ Was waiting for the lab run.
 - 2026-11-20 (fix/w61-multi): the host's own evolution editor (core.editor_now) after a mating the bot started; the bot
   now leaves every player's editor before a round and while it waits for a rejoin.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: lab
 role: host
 versions: 0.7.16 dev (coop 0.7.15.5 build of rel/0.7.16 21025f40)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-core
 commits: c1c0a136
 tests: tools/tests/coop_tribe_form_species.py (tribe_form_species, twin tribe_form_species_fresh_off)
@@ -55,3 +55,4 @@ Was waiting for the lab run (no lab runs in this task):
 - 2026-11-21: opened.
 - 2026-11-21: fix/w62-core: cause from the final check's logs, fix tribe.form_species_fresh, test forces the race.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

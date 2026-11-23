@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: host
 versions: 0.7.14.1,0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w59-tribe
 commits: f6daf30c c0792a81
 tests: tribe_gameover, tribe_gameover_reload, tribe_gameover_reload2, tribe_gameover_slow (coop_tribe_gameover.py); twin tribe_gameover_reload2_sameframe
@@ -54,3 +54,4 @@ old blows: 20261118-033459 (tribe_gameover #3), 20261119-214823 (tribe_gameover_
   0.7.16 regression.
 - 2026-11-20: the test's blows one at a time on fix/w59-tribe; lab runs pending.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab 20261120-133703
 role: host
 versions: rel/0.7.16 673f7a55 (coop 0.7.15.5)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-multi
 commits: 0156c720
 tests: session_report
@@ -49,3 +49,4 @@ Was waiting for the lab run.
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-multi): the cause is the four-part version in the B6 lines; the check skips the version token.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

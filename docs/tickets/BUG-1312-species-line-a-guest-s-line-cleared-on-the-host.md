@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: guest
 versions: 0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-tribe-keys
 commits: 4ce6f9de
 tests: late_species (step 3), late_species_rowclear_off (twin)
@@ -40,3 +40,4 @@ late_species 20261119-104136 (same check). PASS: late_species 20261119-112300, o
 ## History
 - 2026-11-19: opened (fix/w57-tribe-keys, first 0.7.16 lab run).
 - 2026-11-19: fixed on fix/w57-tribe-keys.
+- 2026-11-23: released in 0.7.16.

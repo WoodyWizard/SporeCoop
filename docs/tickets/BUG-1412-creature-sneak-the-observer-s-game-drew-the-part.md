@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: lab rel/0.7.16 20261121-003202 creature_sneak
 role: 
 versions: 0.7.4, unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-flake-cc
 commits: 1e99207e
 tests: creature_sneak
@@ -53,3 +53,4 @@ fade if moving does not help). Was waiting for the lab run.
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); fixed in the test.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

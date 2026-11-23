@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: 
 versions: rel/0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w60-tribe
 commits: b9ce678f 063376e4
 tests: tribe_mirror_hold
@@ -56,3 +56,4 @@ and no fx_skips, this ticket gets a runtime probe of the chief's modifier table 
 - 2026-11-20: opened.
 - 2026-11-20: cause and fix on fix/w60-tribe (no lab today, owner rule); lab run pending.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

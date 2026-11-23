@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: plan
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w56-editors
 commits: 8709f9fe
 tests: own_editor_drop, own_editor_drop_off, own_editor_civdrop, own_editor_civdrop_off (coop_own_editors_robust.py drop|civdrop)
@@ -53,3 +53,4 @@ And `own_editor_civdrop own_editor_civdrop_off` (civ_npc).
 - 2026-11-19: fix/w57-own-editors: own_editor_civdrop PASS / own_editor_civdrop_off FAIL (fix/w57-own-editors worktree out/lab/20261119-130049, PASS again -142554); own_editor_drop: every BUG-1298 check PASS (offline=1 held=1, the slot kept, the outfit reaches the line after the join, acked=1), the only FAIL left is the host save's raw creation key (BUG-1326); own_editor_drop_off FAIL in -130049 (earlier than planned: without the offline switch the pending outfitter is dropped at the session's end and with it BUG-1308's part waiver, so Done stays). Open until BUG-1326.
 - 2026-11-19: fix/w58-savestrip2: BUG-1326 was the test's save scan; own_editor_drop PASS in 20261119-164857: fixed.
 - 2026-11-20 (fix/w61-creature-a): the final check's FAIL of own_editor_drop (20261120-133703, ['not saved']) was not this ticket: the host's game dropped the test's save 1-2 s after the rejoin's share save, BUG-1365.
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: plan
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w56-editors
 commits: 8709f9fe 800a17e6 2cb5861c
 tests: own_editor_key (coop_own_editors_robust.py key), own_editor_key_off
@@ -61,3 +61,4 @@ FAIL in the same run for the right reason (the outfitter opens on 290229B9 -> 6E
 - 2026-11-19: feat/w56-editors: fix and its test written (switch, FAIL twin entry); the lab run waits for the orchestrator.
 - 2026-11-19: fix/w57-tribe-keys: set-up fixed (host My Creations key), BUG-1297 check PASS / twin FAIL; the test waits for the own outfitter's return (Done).
 - 2026-11-19: fix/w57-own-editors: own_editor_key PASS whole / twin FAIL (20261119-130049): fixed.
+- 2026-11-23: released in 0.7.16.

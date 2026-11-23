@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w65-night
 commits: b32a56c9
 tests: tools/tests/coop_monitor_plant.py (monitor_plant)
@@ -49,3 +49,4 @@ reload ends within ~1 s of the plant).
 - 2026-11-22: opened.
 - 2026-11-22: fix/w65-night: cause from the guest's stage entry and the plant's time; the test waits for a spawned proxy.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

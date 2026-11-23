@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: plan
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w56-editors
 commits: f3373bd1
 tests: tribe_birth_species, tribe_birth_species_off (coop_own_editors_robust.py birth)
@@ -41,3 +41,4 @@ only).
 - 2026-11-19: opened.
 - 2026-11-19: feat/w56-editors: fix and its test written (switch, FAIL twin entry); the lab run waits for the orchestrator.
 - 2026-11-19: fix/w57-tribe-keys: lab PASS and twin FAIL; the twin's fault was BUG-1313 (fixed there); fixed.
+- 2026-11-23: released in 0.7.16.

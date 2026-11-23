@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: 
 versions: 0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w59-cell
 commits: 505778b1 bead290b
 tests: cell_own_level10, cell_own_level10_follow_off, cell_tests own_cell_follow
@@ -68,3 +68,4 @@ Lab not run then (orchestrator: no lab until "lab ok", the final check runs on o
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-cell): the twin passed in the second final check; the test lists the pool at the follow too and prints the kin counters.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

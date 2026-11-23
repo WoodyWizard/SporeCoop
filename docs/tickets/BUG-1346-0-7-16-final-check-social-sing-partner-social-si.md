@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab 20261120-041304
 role: host
 versions: 0.7.16 (unreleased)
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w60-dna
 commits: 48dfc9fa
 tests: social_sing_own, social_sing_own_lowfps, social_sing_partner (coop_social_sing.py; --old: the test before)
@@ -68,3 +68,4 @@ The command that was expected to PASS:
   creature.partner_social_hover, BUG-1250), so the old precondition "the host sings to the partner" can never happen;
   what the variant must show (the partner's creature takes up no song, pose or social effect on either game) is still
   checked on both games.
+- 2026-11-23: released in 0.7.16.

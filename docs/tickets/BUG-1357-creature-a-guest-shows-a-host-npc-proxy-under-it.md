@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: final-check-20261120-041304
 role: 
 versions: 0.7.15.5, unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w60-misc
 commits: eb7a43d0
 tests: npc_air_under, npc_air_under_off, migration_heal, nest_follow
@@ -66,3 +66,4 @@ the lab run.
   -0.80 m (the twin's guest drew -0.80 m). The precondition reads the received state now (npctrack column sa). Open,
   waiting for the lab run: npc_air_under PASS, npc_air_under_off FAIL.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab rel/0.7.16 20261120-133703 cell_away_editor
 role: 
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-cell
 commits: e1ec5246
 tests: cell_away_editor, cell_away
@@ -43,3 +43,4 @@ Was waiting for the lab run.
 ## History
 - 2026-11-20: opened from the second final check of 0.7.16; fixed in the test on fix/w61-cell.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

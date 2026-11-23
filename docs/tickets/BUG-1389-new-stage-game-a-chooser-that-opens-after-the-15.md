@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: lab rel/0.7.16 20261121-003202 cell_new_game
 role: 
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-flake-cc
 commits: 372de2c3
 tests: cell_new_game, cell_far_guest, join_new_game
@@ -50,3 +50,4 @@ lab run.
 ## History
 - 2026-11-21: opened from the third final check of 0.7.16 (fix/w62-flake-cc); fixed in the test.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: lab 20261121-003202 (0.7.16 final check 3)
 role: guest
 versions: rel/0.7.16 21025f40
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-flake-tcs
 commits: 5f8ec7c6
 tests: play_civ
@@ -59,3 +59,4 @@ Was waiting for the lab run. FAIL run (old test): out/lab/20261121-003202 (play_
 ## History
 - 2026-11-21: opened (fix/w62-flake-tcs): cause found in the guest log, test fixed.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

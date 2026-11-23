@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab rel/0.7.16 20261120-133703 cell_far_guest
 role: 
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-cell
 commits: 074bc674
 tests: cell_far_guest, cell_new_game, join_new_game
@@ -43,3 +43,4 @@ no-fail-run: harness-only change. Lab: `SPORE_DETECTOR=20 python3 tools/lab.py r
 ## History
 - 2026-11-20: opened from the second final check of 0.7.16; fixed in the test on fix/w61-cell.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

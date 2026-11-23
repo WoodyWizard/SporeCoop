@@ -8,7 +8,7 @@ reported: 2026-11-22
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w65-night
 commits: 1a9f358f
 tests: tools/tests/coop_tribe_village_ground.py (tribe_village_cadian, --map)
@@ -56,3 +56,4 @@ against the map read).
 - 2026-11-22: opened.
 - 2026-11-22: fix/w65-night: cause from the stamp times and the 14 points' places; the map is read on a settled terrain.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

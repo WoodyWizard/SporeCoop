@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: found by the Lineages fork (PR #196), its BUG-9086
 role: guest
 versions: 0.7.15.2
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w56-sync
 commits: bc78d7e3, 38278875
 tests: civ_preach_far, civ_preach_far_off
@@ -52,3 +52,4 @@ the controller's counts 10 / 2 before the game's tick runs.
 - 2026-11-19: opened.
 - 2026-11-19: fix and tests on fix/w56-sync (switch on); status stays open until the lab runs (FAIL twin, PASS).
 - 2026-11-19: fixed (fix/w57-sync): see the CORRECTION under Root cause; PASS and FAIL twin run dirs above.
+- 2026-11-23: released in 0.7.16.

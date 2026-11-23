@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: plan
 role: any
 versions: 0.7.15.2 and older
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w56-cocoon
 commits: d86d5d22 9320074b cc4dc305 b67a4a56
 tests: cocoon, cocoon_guest, cocoon_off
@@ -66,3 +66,4 @@ Lab lane 6 (feat/w56-cocoon):
 - 2026-11-19: opened.
 - 2026-11-19: implemented on feat/w56-cocoon (build, make test); lab pending.
 - 2026-11-19: lab lane 6: the cocoon animations are not in the game here (CORRECTION), checks on the effects; fixed.
+- 2026-11-23: released in 0.7.16.

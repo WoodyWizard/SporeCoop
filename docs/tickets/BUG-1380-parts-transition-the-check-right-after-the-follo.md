@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: final check 20261120-133703 (parts_transition)
 role: guest
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-creature-a
 commits: c4261908
 tests: parts_transition
@@ -46,3 +46,4 @@ the modes seen when the share lands at the check). FAIL runs of the old test: 20
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-creature-a): cause by the logs; the test waits for the state.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

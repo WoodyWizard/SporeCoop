@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: plan-0.7.16
 role: both
 versions: rel/0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w54-citizens, feat/w54-shims
 commits: 86059027 696d51e2 48dd3e02 04f44839
 tests: civ_own_species (coop_civ_own_species.py), civ_own_species_hostmode (--host-mode)
@@ -70,3 +70,4 @@ checks, the capital and the hook's effect as expected.
   twin runs wait for the night run.
 - 2026-11-18: feat/w54-shims: the WP-0 shim `line_key` is species::key(owner, Stage::Civ), species::own_mode, on_change; civ.own_species_save also strips citizens that show any line key (species::is_line_key); the test sets a Civ outfit with `coop.species test civ next` and checks the 0x7B key on both games. Still open: the night run.
 - 2026-11-19: fix/w57-savestrip: the save check fixed by BUG-1315 (the citizens' strip stays as a guard, with counters save_starts / save_seen / save_nociv); fixed.
+- 2026-11-23: released in 0.7.16.

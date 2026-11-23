@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w56-dna
 commits: db0796ed 59a4a1fd 48979cc9 006c2aab 6b93ebd6
 tests: tests/dna_tests.cpp, tools/tests/coop_dna_own.py (spend, shared, reload, rejoin, store, editors), tools/tests/coop_evo_screens.py --part cell-dna [--shared]
@@ -68,3 +68,4 @@ guest's 30 (80.0 / 80.0)", the guest's price reached the host's DNA).
 - 2026-11-19: feat/w56-dna: code, unit tests, lab tests written; lab runs wait for the orchestrator.
 - 2026-11-19: fix/w57-dna: the lab gates compared one shared DNA (BUG-1310, fixed) and a stray shared total after the host's editor (BUG-1311, fixed). PASS on the merged tree 20261119-120634: dna_own, dna_own_reload, dna_own_rejoin, dna_own_store, dna_own_shared, dna_spend, dna_pace, editor_sync_guest, evo_bar_editors; twins FAIL for their reasons: dna_own_off, dna_own_reload_off, dna_own_rejoin_off, dna_own_store_off (the guest starts again at the host's DNA, 150 / 150, as the night's 20261119-105127). dna_own_editors is another agent's.
 - 2026-11-19: fix/w57-own-editors: dna_own_editors PASS / twin FAIL on the merged tree (20261119-130049): fixed.
+- 2026-11-23: released in 0.7.16.

@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-civlook
 commits: 0452cf09 2fc331e7
 tests: civ_own_species, civ_own_species_bake_off, line_stages
@@ -57,3 +57,4 @@ capture (`check_paint`) and keeps its key frames (02 / 03: one citizen up close,
 ## History
 - 2026-11-19: opened (fix/w57-savestrip, seen in the key frames while fixing BUG-1273's save check); not fixed there.
 - 2026-11-19: fix/w57-civlook: cause measured (the line key not baked), civ.own_species_bake, bake check and fresh outfit in the tests; fixed.
+- 2026-11-23: released in 0.7.16.

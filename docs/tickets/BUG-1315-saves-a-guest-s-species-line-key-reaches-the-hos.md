@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w57-savestrip
 commits: fc2cc5e3 0db36ea8 04f44839 99f52667
 tests: tribe_own_species, civ_own_species, line_stages, line_stages_outfit, line_stages_editors
@@ -64,3 +64,4 @@ At the stream, for every object (savestrip.cpp, switch `coop.fix savestrip.keys`
 ## History
 - 2026-11-19: opened.
 - 2026-11-19: fix/w57-savestrip: diagnosis with a logging key filter, the stream-level fix, the twin runs.
+- 2026-11-23: released in 0.7.16.

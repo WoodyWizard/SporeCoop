@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: final-check-20261120-133703
 role: 
 versions: unreleased
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w61-creature-c
 commits: cbd81627
 tests: creature_mating_far (tools/tests/coop_creature_mating_far.py)
@@ -44,3 +44,4 @@ the lab run.
 ## History
 - 2026-11-20: opened from the 0.7.16 second final check (fix/w61-creature-c); the wait of BUG-1182 applied.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

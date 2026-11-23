@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: lab
 role: 
 versions: 0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w59-cell
 commits: 505778b1
 tests: cell_kin_species
@@ -53,3 +53,4 @@ Lab not run then (orchestrator: no lab until "lab ok", the final check runs on o
 - 2026-11-20: opened.
 - 2026-11-20 (fix/w61-cell): the night plan of the second final check ran the "split from cellslow" line as `SPORE_LAB_FIXOFF="cell_slow_link=cell.slow_link"` on cell_slow_link (PASS expected) instead of on cell_kin_species: that is cell_slow_link_off's case and it FAILED as it must (lab 20261120-133208: median 0.31, `c: 158 missing`; the twin 0.28 in 20261120-130608). The command meant: `SPORE_LAB_FIXOFF="cell_kin_species=cell.slow_link" SPORE_DETECTOR=20 python3 tools/lab.py run cell_kin_species --lane N --retry 0 --no-build` (PASS expected).
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

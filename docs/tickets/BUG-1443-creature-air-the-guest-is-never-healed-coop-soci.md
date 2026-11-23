@@ -8,7 +8,7 @@ reported: 2026-11-23
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w65-night
 commits: 2811d2c2
 tests: tools/tests/coop_creature_air.py (creature_air)
@@ -43,3 +43,4 @@ PASS, the guest's trace without a knockout. no-fail-run: a test fix; the FAIL be
 ## History
 - 2026-11-23: opened; fix/w65-night: the heal goes through coop.team hp.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

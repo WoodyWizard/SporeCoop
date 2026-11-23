@@ -8,7 +8,7 @@ reported: 2026-11-18
 source: plan-0.7.16
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w54-designs, feat/w54-shims, fix/w57-civlook
 commits: 696d51e2 48dd3e02 0452cf09 2fc331e7 b29a5c6c
 tests: civ_own_designs, civ_own_designs_off, line_stages, line_stages_nodesign_off
@@ -73,3 +73,4 @@ fix/w57-civlook (the night run's failures, 2026-11-19):
 - 2026-11-18: code, test and twin on feat/w54-designs (built, make test); lab runs wait for the night run.
 - 2026-11-18: feat/w54-shims: one path for designs: species::design / species::set_design (MSG_SPECIES_LINE line creations, 0x7B keys); MSG_CREATION kind 9 (share_design, player_design) removed before any release; `coop.civ owndesign set` goes through species::set_design; the save strip also gives an object showing a line key without a record the culture set's key (designs::culture_key); on_change sweeps at once. Still open: the night run (civ_own_designs, twin civ_own_designs_off).
 - 2026-11-19: fix/w57-civlook: the zero culture key (civ.own_designs_nodesign) and the save's key filter for design keys; the harness catch; fixed with the runs above.
+- 2026-11-23: released in 0.7.16.

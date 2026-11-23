@@ -8,7 +8,7 @@ reported: 2026-11-19
 source: plan
 role: guest
 versions: 0.7.15.2, rel/0.7.16
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: feat/w56-late
 commits: c29e3ba4 4b9fe0de
 tests: civ_late_arrival, civ_late_arrival_off (twin)
@@ -58,3 +58,4 @@ City Hall editor opened"). `make -j8` and `make test` pass. Run dirs: pending.
 - 2026-11-19: fix/w57-own-editors: civ_late_arrival: the late arrival's own editors PASS (fix/w57-own-editors worktree out/lab/20261119-130049, -142554: first arrival offers none, after the rejoin both editors opened, both designs in the line, City Hall and citizens on both games); twins civ_late_arrival_off, _families_off (BUG-1306), _unpause_off (BUG-1323) FAIL in -130049. The test's last step (a third join offers nothing) is not reached: the host's game stops answering when the guest leaves the second time (BUG-1327, analysed by fix/w57-own-editors). Open until that step runs.
 - 2026-11-19: fix/w58-wineserver: with BUG-1327 fixed (lane games share the wineserver's PID namespace) civ_late_arrival PASSES to its last step (20261119-165546), the twin FAILS where it should (same run). Fixed.
 - 2026-11-19: on the tree merged with rel/0.7.16 (1d5f3532): civ_late_arrival PASS, civ_late_arrival_off FAIL at the City Hall editor (out/lab/20261119-171000).
+- 2026-11-23: released in 0.7.16.

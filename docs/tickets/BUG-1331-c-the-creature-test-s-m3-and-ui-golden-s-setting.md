@@ -8,7 +8,7 @@ reported: 2026-11-20
 source: plan
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w59-tests
 commits: d679a5e5 7459b4da
 tests: creature, ui_golden
@@ -60,3 +60,4 @@ came off the guest's DNA only"); ui_golden PASS after the references are refresh
 ## History
 - 2026-11-20: opened; M3 rewritten, golden refresh prepared (fix/w59-tests).
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.

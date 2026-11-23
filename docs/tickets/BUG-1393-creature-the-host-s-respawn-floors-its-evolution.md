@@ -8,7 +8,7 @@ reported: 2026-11-21
 source: lab
 role: 
 versions: 
-fixed_in: unreleased
+fixed_in: 0.7.16
 branch: fix/w62-core
 commits: 57941e27
 tests: tools/tests/coop_dna_own.py (dna_own_setback, twin dna_own_setback_off), tests/dna_tests.cpp
@@ -51,3 +51,4 @@ Was waiting for the lab run (no lab runs in this task):
 - 2026-11-21: opened.
 - 2026-11-21: fix/w62-core: cause from mem_census's logs, fix creature.bar_setback, lab case setback.
 - 2026-11-23: closed on the lab evidence above (0.7.16 release bookkeeping).
+- 2026-11-23: released in 0.7.16.
