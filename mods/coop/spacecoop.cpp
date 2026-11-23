@@ -2465,11 +2465,11 @@ std::string debug(const std::vector<std::string>& a)
         if (!cdecl_call<void*>(a_ActivePlanet) || !u || F<uint32_t>(u, kCinematic) || cinematic_playing() ||
             F<int>(u, kState) == 2)
             return "no active planet / the ship is not flying";
-        // BUG-9352: landing while the ship still flew to a planet never visited crashed in the terrain (GetHeight,
-        // its height map not loaded): only when the game's own zoom landing would land (Space_ZoomLandReady)
-        static uintptr_t ready = H->sym("SporeCoop::Space_ZoomLandReady");
-        if (!F<uint8_t>(u, 0x74C) || (ready && !cdecl_call<bool>(ready)))
-            return "not ready to land (the ship is still flying there, or the game would not land now)";
+        // BUG-9352: a landing on a gas giant (no terrain: GetHeight read a null height map) crashed the game: only
+        // once the ship is there (+0x74C) and the game's own check allows a landing (not a gas giant, hp left, ...)
+        static uintptr_t can_land = H->sym("SporeCoop::cSimulatorPlayerUFO_CanLandOnActivePlanet");
+        if (!F<uint8_t>(u, 0x74C) || (can_land && !thiscall<bool>(can_land, u)))
+            return "cannot land here now (the ship is still flying there, or the game refuses: a gas giant, ...)";
         thiscall<void>(f, mode);
         return "landing";
     }
