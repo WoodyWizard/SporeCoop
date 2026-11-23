@@ -58,6 +58,14 @@ COOP_FIX("core.ui_status", "BUG-0104", g_status_fix, "ui: the co-op window shows
 // caption needs, growing to the left. Off: the fixed widths (0.7.13).
 static bool g_give_fit_fix = true;
 COOP_FIX("core.ui_give_fit", "BUG-1062", g_give_fit_fix, "ui: the give and jump buttons are as wide as their captions");
+// UIFX-8 (BUG-1518): BUG-1062's fit had no lower bound: a long partner name (24 wide letters) made the give button
+// start left of the creation label's text, and a long star name pushed the jump button toward the window's left edge.
+// On: the give button starts at kGiveMinX1 at the most, the jump button at kJumpMinX1, and a caption too wide for that
+// is cut with "..." (the name part). Off (`coop.fix core.ui_give_clamp off`): 0.7.16.1
+static bool g_give_clamp_fix = true;
+COOP_FIX("core.ui_give_clamp", "BUG-1518", g_give_clamp_fix,
+         "ui: the give and jump buttons keep clear of the creation label with long names (the name is cut with ...)");
+constexpr float kGiveMinX1 = 400.f, kJumpMinX1 = 240.f;
 static bool g_f9_down;
 static bool g_lb_down;      // the left mouse button in the last frame (the Co-op item during the menu intro)
 static uint32_t g_lb_seen;  // mouse::clicks() handled (BUG-0145)
@@ -146,6 +154,23 @@ static float text_width(const std::string& t)
     return w + 30;
 }
 float caption_width(const std::string& t) { return text_width(t) - 30; }
+
+// BUG-1518: prefix + name, the name cut by whole UTF-8 code points and "..." added until the caption needs at most
+// `room` px (its button's text borders included: +48)
+static std::string cut_caption(const std::string& prefix, std::string name, float room)
+{
+    if (std::round(caption_width(prefix + name)) + 48 <= room)
+        return prefix + name;
+    while (!name.empty()) {
+        size_t n = name.size() - 1;
+        while (n > 0 && ((unsigned char)name[n] & 0xC0) == 0x80)
+            n--; // the start of the last code point
+        name.resize(n);
+        if (std::round(caption_width(prefix + name + "...")) + 48 <= room)
+            break;
+    }
+    return prefix + name + "...";
+}
 
 // README pictures (coop.uistate demo <address> <real port> <shown port>): the window shows a documentation address
 // instead of the PC's own and the default port instead of a test lane's; nothing else changes
@@ -1412,10 +1437,15 @@ static void refresh_lobby()
     if (g_give_fit_fix) { // BUG-1062: right to left, each button as wide as its caption needs (+48: the button's text
         // borders are 23 px left and right, IButton +0x50: docs/08-ui.md#ui-give-fit)
         auto need = [](const std::string& c, float base) { return std::max(base, std::round(caption_width(demo_text(c)) + 48)); };
+        if (g_give_clamp_fix && r_give.x2 - need(give_cap, r_give.x2 - r_give.x1) < kGiveMinX1) // BUG-1518
+            give_cap = cut_caption(space ? T("Give 10 to ", "Дать 10: ") : T("Give to ", "Отдать "), gto,
+                                   r_give.x2 - kGiveMinX1);
         r_give.x1 = r_give.x2 - need(give_cap, r_give.x2 - r_give.x1);
         if (pick && !space) // Tribe / Civ: ">" left of the give button
             r_next = Rect{r_give.x1 - 50, 430, r_give.x1 - 10, 460};
         float jx2 = std::min(r_jump.x2, (giving && gn > 0 ? r_give.x1 : 720.f) - 5);
+        if (g_give_clamp_fix && jx2 - need(jump_cap, r_jump.x2 - r_jump.x1) < kJumpMinX1) // BUG-1518
+            jump_cap = cut_caption(T("Jump to ", "К звезде: "), jto, jx2 - kJumpMinX1);
         r_jump = Rect{jx2 - need(jump_cap, r_jump.x2 - r_jump.x1), 430, jx2, 460};
     }
     place(D.give_next, r_next);
