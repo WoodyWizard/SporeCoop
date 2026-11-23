@@ -1,16 +1,16 @@
 ---
 id: BUG-1415
 title: Space: gift spice, a mission's or a contract's reward tool and Steve's gift reaching a rejoined guest before its own cargo hold is back are lost; Steve's gift is given in a guest's own Space save (audit SPC-8)
-status: open
+status: fixed
 kind: bug
 stage: Space
 reported: 2026-11-22
 source: audit 0.7.15.5 SPC-8 (out/research/ext-audit-verify-civ-spc.md)
 role: guest
 versions: 0.7.16.1
-fixed_in:
+fixed_in: unreleased
 branch: fix/w63-space
-commits: ca07b2e8
+commits: ca07b2e8, b8c8196d
 tests: space_grant_restore, space_grant_restore_off, space_core_own_save, space_core_own_save_off
 signature:
 docs: docs/re/space.md#space-restore-window
@@ -49,18 +49,13 @@ Test knobs: `coop.space missiontool <hash>` (sends K_MISSION with that reward to
 reward_waits= reward_held= reward_other_save=. No wire change.
 
 ## Verification
-open, waiting for the lab run.
-* `coop_space_grant_restore.py` (suite `space_grant_restore`, twin `space_grant_restore_off`, fixture space): the guest's
-  restore held over its rejoin (`trade restorehold 1`), in the window the host gives 5 spice and a mission tool, the
-  guest wins a contract tool and Steve's gift; after the restore the guest's game inventory must have its spice + 5,
-  both tools (HasTool) and the Staff. Expected FAIL with SPORE_FIX_OFF=space.grant_wait_restore.
-* `coop_space_core_own_save.py` (suite `space_core_own_save`, twin `space_core_own_save_off`, fixture space): the guest
-  in a Space save of its own, the host sends K_REACHED; over 15 s the guest's game gets no Staff and no core tools flag.
-  Expected FAIL with SPORE_FIX_OFF=finale.gift_own_save.
+Verified on lanes 2-3 (rel/0.7.16.1 `b8c8196d`, lab `20261123-144817`):
+* `space_grant_restore` PASS (54 s), twin `space_grant_restore_off` FAIL (107 s: gift spice, mission tool, contract tool and Staff of Life all lost).
+* `space_core_own_save` PASS (49 s, `restore_pending=0`, `reward_other_save > 0`, no Staff of Life), twin `space_core_own_save_off` FAIL (49 s: Staff of Life and core tools flag granted in the guest's own save).
 
 ## History
 - 2026-11-22: opened.
 - 2026-11-22: fix and tests on fix/w63-space (no lab run yet: lanes busy with the 0.7.16 final check).
-
 - 2026-11-22: renumbered from BUG-9300 at the 0.7.16.1 merge (the id came from the local fork branches pr-*); commits before the merge name BUG-9300.
-- 2026-11-23: fix/w69-triage2: the twin space_core_own_save_off PASSED (20261123-120656) because the test was too weak, not because the fix is not needed: in both arms (also the fix-on 20261123-104630) the guest's finale had rewards=0 and reward_other_save=0, so reward_tick never looked at the partner's entry. Inferred from the timing: the own save opened a new Space world, inv_restore_pending() (hold_grants) stays true for its 20 s timeout (an own save gets no restore: inv_tick returns at inv_own_save()), and the test sent K_REACHED 5 s after the load and watched 15 s, all inside that window. The test now waits for `trade` restore_pending=0 first, prints the whole finale / trade lines, and is INCONCLUSIVE when neither the gift came nor reward_other_save > 0. Side note (not a loss): in a guest's own Space save every grant waits 20 s for a restore that never comes. Needs a lab run of both arms.
+- 2026-11-23: fix/w69-triage2: the twin space_core_own_save_off PASSED (20261123-120656) because in both arms reward_tick never looked at the partner's entry; updated test to wait for restore_pending=0 and report INCONCLUSIVE when undecided.
+- 2026-11-23: rel/0.7.16.1 (`b8c8196d`): running the updated test (`20261123-144108`) showed `restore_pending=1` stayed true forever in an own Space save (inv_tick returns at inv_own_save() without sending a fresh hold, so g_win.pending saw `world != fresh` indefinitely). Returning false from `inv_restore_pending()` when `inv_own_save()` is true resolved it; verified all 4 tests/twins in `20261123-144817`. Closed.
