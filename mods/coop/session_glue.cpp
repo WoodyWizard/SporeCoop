@@ -738,6 +738,13 @@ static void core_state_end()
         sreport::on_session_end();
     }
 }
+// BUG-1533: lifecycle's kPlayerJoin / kPlayerLeave were declared but never fired, so a hook on them was silent and
+// own_progress / revive were called by hand here (lifecycle-exempt). Now the player callbacks below fire both events
+// (lifecycle::fire_player) and those modules are LIFECYCLE_HOOKs. Off (`coop.fix core.player_events off`): no event,
+// the hand calls of 0.7.16.1.
+static bool g_fix_player_events = true;
+COOP_FIX("core.player_events", "BUG-1533", g_fix_player_events,
+         "core: a player's join and leave reach every module registered for them (own progress, revive)");
 LIFECYCLE_HOOK("support.session", lifecycle::kSessionEnd, -99,
                [](const lifecycle::Ctx& c) { support::on_session_end(end_why(c.path)); }, false);
 LIFECYCLE_HOOK("core.remotes", lifecycle::kSessionEnd, -20, [](const lifecycle::Ctx&) { remotes_end(); }, true);
@@ -829,7 +836,6 @@ void setup_callbacks()
         support::on_player_join(p);
         settings::on_player_join(p.id); // F3: the host's session settings first
         store::on_player_join(p.id);    // E1: a stored name under a new key: the host is told
-        own_progress::on_player_join(p.id); // BUG-1469: an older mod is not let in while own progress is played
         pfind::on_player_join(p.id);    // F2: the host gives the newcomer a colour, everybody gets the table
         shared::on_player_join(g_sess.role());
         g_world_announced = 0; // BUG-0933: the newcomer's WELCOME may have named no world (the host in an editor)
@@ -840,6 +846,9 @@ void setup_callbacks()
         npc::on_player_leave(p.id); // a newcomer under a reused id knows no NPCs yet (BUG-0125)
         if (g_player_forget_fix && p.id != g_sess.my_id())
             player_life::forget_all(p.id); // BUG-0422: nothing of an earlier player of this id
+        // BUG-1533: the hooks of kPlayerJoin (own_progress), after the forget of an earlier player of this id
+        if (!lifecycle::fire_player(g_fix_player_events, lifecycle::kPlayerJoin, p.id))
+            own_progress::on_player_join(p.id); // (switch off: the hand call of 0.7.16.1, its old place was after store's)
         g_dna_sent = -1; // resend the DNA total to the newcomer
         g_dna_sent_to.erase(p.id); // WP-D: its own total too
         auto old = g_remotes.find(p.id);
@@ -1320,12 +1329,15 @@ void setup_callbacks()
         shared::on_player_leave(id);
         creations::on_player_leave(id); // BUG-0076: the next player of this id is not shown as this one
         npc::on_player_leave(id);       // BUG-0125
-        own_progress::on_player_leave(id); // BUG-1469: its live values go (its record stays, by key)
-        revive::on_player_leave(id);       // BUG-1472: its window ends without a price
         views::forget(id);              // BUG-0280
         pfind::on_player_leave(id);     // F2: its colour is free again
         if (g_player_forget_fix)
             player_life::forget_all(id); // BUG-0422: every module's state of this id (player_life.h)
+        // BUG-1533: the hooks of kPlayerLeave (own_progress, revive), for every leaver (also one without a Remote)
+        if (!lifecycle::fire_player(g_fix_player_events, lifecycle::kPlayerLeave, id)) {
+            own_progress::on_player_leave(id); // (switch off: the hand calls of 0.7.16.1)
+            revive::on_player_leave(id);
+        }
         g_give_pick = net::give_pick_after_leave(g_give_pick, id, g_give_pick_reset_fix); // BUG-0234
         if (g_ready.erase(id) | g_lobby_rtt.erase(id)) // BUG-0772 guard: also for a leaver without a Remote
             g_lobby_dirty = true;

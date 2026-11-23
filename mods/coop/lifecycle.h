@@ -161,6 +161,9 @@ struct WorldWatch {
 // (SEH) is not a C++ exception: the game glue may install a runner (set_runner) that calls the hook under its guard.
 // Portable (no Windows, no SporeKit): tests/core_tests.cpp checks the order, the queue, re-entrancy and a throwing
 // hook. docs/01-architecture.md#arch-world-id.
+// Who fires: kSessionEnd session_glue.cpp end_session, kWorldChange coop.cpp world_id_tick (both game_ok), kPlayerJoin /
+// kPlayerLeave session_glue.cpp's player callbacks through fire_player (BUG-1533; inside g_sess.update(): game_ok
+// false, a needs_game hook waits for pump_game, which coop.cpp frame_receive calls right after the update).
 enum Event : uint8_t { kSessionEnd = 1, kWorldChange = 2, kPlayerJoin = 4, kPlayerLeave = 8 };
 constexpr uint8_t kCellToo = 1;
 
@@ -288,6 +291,20 @@ inline void fire(const Ctx& c, bool game_ok)
     }
     f.pending.clear();
     f.running = false;
+}
+
+// BUG-1533: kPlayerJoin / kPlayerLeave were declared and listed but never fired (a hook on them was never called). The
+// session glue's join / leave callbacks fire them for `id` (inside g_sess.update(): game_ok false). False when the
+// switch is off (`coop.fix core.player_events off`, 0.7.16.1): nothing fired, the caller makes the hand calls.
+inline bool fire_player(bool fix, uint8_t event, uint8_t id)
+{
+    if (!fix || (event != kPlayerJoin && event != kPlayerLeave))
+        return false;
+    Ctx c;
+    c.event = event;
+    c.player = id;
+    fire(c, false);
+    return true;
 }
 
 // on_frame (game calls allowed): the needs_game hooks queued by fire() calls made without game_ok, in the order

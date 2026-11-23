@@ -1049,6 +1049,7 @@ static void frame_receive(double now)
     g_sess.mode = g_mode; // B6 (BUG-1137): the stage whose message families a joining guest must match
     host_save_tick(); // BUG-0933: the host says its save again when it changed; a guest follows it
     g_sess.update();
+    lifecycle::pump_game(); // BUG-1533: the needs_game hooks of the player events the update fired (game calls allowed here)
     partner_pass_tick(); // BUG-0913: what the collision and hover hooks may skip this frame
     lobby_tick(now);
 }

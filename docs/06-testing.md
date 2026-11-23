@@ -10329,3 +10329,12 @@ Test-only changes (no mod code) for flakes of the 0.7.16 final checks; each name
   `own_pool` at the end (the guest's screen: cells and food of its own game). Twin `own_cell_steady_refill_off` (twin
   suite, `SPORE_FIX_OFF=cell.solo_refill`): must FAIL on the first read. The `cell_away` line of the guest's `coop.pool`
   shows `solo_refill=<tiles>/<starts>`.
+
+## The player events of the lifecycle registry (2026-11-23, fix/w85-cell-pool)
+<a id="testing-lifecycle-player"></a>
+
+* `lifecycle_player` (4 min, fixture creature, `coop_lifecycle_player.py`): BUG-1533: on the host, `coop.lifecycle
+  hooks` shows a join and a leave fired for the guest and the hooks `own_progress.player` / `revive.player` ran; own
+  progress forgets the leaver (`coop.progress`), and a second join fires again; key frame `rejoined`. Twin
+  `lifecycle_player_off` (twin suite, `SPORE_FIX_OFF=core.player_events`): must FAIL (join=0, leave=0). Unit:
+  core_tests lifecycle_hooks (`fire_player`, its queue for needs_game hooks).

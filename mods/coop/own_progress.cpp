@@ -882,7 +882,7 @@ static void on_session_end()
     g_ask_at = -100;
 }
 LIFECYCLE_HOOK("own_progress.session", lifecycle::kSessionEnd, -10, [](const lifecycle::Ctx&) { on_session_end(); }, false);
-// lifecycle-exempt: called from session_glue.cpp cb.player_join (the registry never fires kPlayerJoin, BUG-1533)
+// registered below (kPlayerJoin, BUG-1533); with core.player_events off session_glue.cpp's cb.player_join calls it
 void on_player_join(uint8_t id)
 {
     if (!is_host())
@@ -891,7 +891,7 @@ void on_player_join(uint8_t id)
     g_left_food.erase(id);
 }
 
-// lifecycle-exempt: called from session_glue.cpp's leave callback (the registry never fires kPlayerLeave, BUG-1533)
+// registered below (kPlayerLeave, BUG-1533); with core.player_events off session_glue.cpp's leave callback calls it
 void on_player_leave(uint8_t id)
 {
     auto it = g_live.find(id);
@@ -899,6 +899,10 @@ void on_player_leave(uint8_t id)
         g_left_food[id] = it->second.v.food; // the level line keeps it (it comes back to the same pool)
     g_live.erase(id);
 }
+// BUG-1533: mod state only (no game call): runs inside the net callback as the hand calls did
+LIFECYCLE_HOOK("own_progress.player", lifecycle::kPlayerJoin | lifecycle::kPlayerLeave, 0,
+               [](const lifecycle::Ctx& c) { c.event == lifecycle::kPlayerJoin ? on_player_join(c.player) : on_player_leave(c.player); },
+               false);
 
 void resync()
 {

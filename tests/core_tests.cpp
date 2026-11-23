@@ -395,6 +395,8 @@ static void h_refire(const lifecycle::Ctx& c)
     }
 }
 static void h_join(const lifecycle::Ctx& c) { g_log.push_back("join" + std::to_string(c.player)); }
+static void h_leave(const lifecycle::Ctx& c) { g_log.push_back("leave" + std::to_string(c.player)); }
+static void h_leave_game(const lifecycle::Ctx& c) { g_log.push_back("leave_game" + std::to_string(c.player)); }
 static bool g_state_on;
 static void st_reset() { g_log.push_back("state"); }
 static size_t st_held() { return 0; }
@@ -443,6 +445,26 @@ static void lifecycle_hooks()
     j.player = 3;
     fire(j, true);
     CHECK((g_log == std::vector<std::string>{"join3"}));
+    // BUG-1533: the session glue's player events (fire_player, inside g_sess.update(): game_ok false)
+    {
+        HookReg r8("t.leave", kPlayerLeave, 0, h_leave, false);
+        HookReg r9("t.leave_game", kPlayerLeave, 1, h_leave_game, true);
+    }
+    g_log.clear();
+    uint32_t fj = fanout().fired[event_slot(kPlayerJoin)], fl = fanout().fired[event_slot(kPlayerLeave)];
+    CHECK(fire_player(true, kPlayerJoin, 2));
+    CHECK(fire_player(true, kPlayerLeave, 5));
+    CHECK((g_log == std::vector<std::string>{"join2", "leave5"})); // the game hook waits, no session / world hook runs
+    CHECK(fanout().fired[event_slot(kPlayerJoin)] == fj + 1 && fanout().fired[event_slot(kPlayerLeave)] == fl + 1);
+    CHECK(fanout().game_queue.size() == 1);
+    pump_game();
+    CHECK(g_log.back() == "leave_game5" && fanout().game_queue.empty());
+    // the switch off (0.7.16.1): nothing fired, the caller makes its hand calls
+    g_log.clear();
+    CHECK(!fire_player(false, kPlayerJoin, 2) && !fire_player(false, kPlayerLeave, 5));
+    CHECK(!fire_player(true, kSessionEnd, 5)); // only the two player events
+    CHECK(g_log.empty() && fanout().fired[event_slot(kPlayerJoin)] == fj + 1);
+    CHECK(hooks_status(kPlayerLeave).find("t.leave L calls=1") != std::string::npos);
     // a world change: only its hooks, its scope's resets
     g_log.clear();
     Ctx w;
