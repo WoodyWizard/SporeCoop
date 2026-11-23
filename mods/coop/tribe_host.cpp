@@ -314,8 +314,12 @@ void host_tick(double now)
     g_host.members.sweep([&](uint16_t id) { return seen.count(id) != 0; },
                [&](HEntry& e, bool alive_obj) { return body(e, alive_obj) ? mirror::Unseen::Keep : mirror::Unseen::Remove; },
                [](HEntry&, bool) {}); // (no game call: the game removed the member)
-    if (resplit && g_claims_balance_fix) // TR-6 (BUG-9315): with this tick's new entries (a world change has only them)
+    if (resplit && g_claims_balance_fix) { // TR-6 (BUG-9315): with this tick's new entries (a world change has only them)
         member_balance(pt, players);
+        for (Entry& e : entries) // (this tick's snapshot with the owners the balance gave)
+            if (HEntry* it = g_host.members.find(e.id))
+                e.owner = it->data.owner;
+    }
     if (g_claims_order_fix && pt) // TR-1 (BUG-9314): the claims follow the owners this tick's split and adoption gave
         member_claims_follow(pt, now, members(pt));
     // chunks that fit one packet; every chunk carries the tribe table. A chunk larger than a packet
