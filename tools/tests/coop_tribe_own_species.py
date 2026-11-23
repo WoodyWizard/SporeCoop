@@ -217,9 +217,11 @@ def closeup(host, guest, mid, tag, note):
         print(f'  (close-up {tag}: member #{mid} not found)', flush=True)
         return
     try:
-        ok = keyviews.look_both((host, guest), pos, dist=12, height=5, k=0, fov=45, look_up=2.0)
-        print(f'  close-up {tag} at {pos} (member #{mid}): views set {ok}', flush=True)
-        twoinst.keyframe(tag, note, kind='sameview', settle=0)
+        # BUG-1459: a camera round the member with a clear line of sight (one fixed camera looked through a hut wall,
+        # from inside a bush or from inside the chief's head); the frame's manifest says whether one was found
+        ok, info = keyviews.look_both_clear((host, guest), pos, dist=12, height=5, fov=45, look_up=2.0)
+        print(f'  close-up {tag} at {pos} (member #{mid}): views set {ok}; {info}', flush=True)
+        twoinst.keyframe(tag, note, kind='sameview', settle=0, extra=[info])
     finally:
         keyviews.view_off(host, guest)
 

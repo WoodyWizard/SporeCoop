@@ -398,6 +398,20 @@ def run_drop(ck):
 
 
 # ---------------------------------------------------------------------------------------------------------- civdrop
+def city_frame(host, guest, pos, tag, note):
+    """BUG-1459: a key frame of the guest's city with the test camera on it on both games (lab 20261122-194210
+    own_editor_civdrop 02: frame_city's panning left the guest's camera with the city at the edge of its picture, the
+    capital not in it either); frame_city first (it answers a specialty box), then the same camera 70 m off, 45 m up"""
+    import keyviews
+    from play_civ import frame_city
+    frame_city({'host': host, 'guest': guest}, pos)
+    try:
+        ok = keyviews.look_both((host, guest), pos, dist=70.0, height=45.0, k=0, fov=50, look_up=0.0)
+        keyframe(tag, note, extra=[f'test camera on the city on both games: {ok}'])
+    finally:
+        keyviews.view_off(host, guest)
+
+
 def run_civdrop(ck):
     from coop_civ import civ, dist
     from coop_civ_guest_editors import (BGROUP, BTYPE, CIV, HOUSE, civedit, close_planner as civ_close, culture,
@@ -445,8 +459,9 @@ def run_civdrop(ck):
     ck(not changed, f'the guest\'s copy of the culture set keeps every design it had {changed or ""}')
     ck(g0 and game == g0, f'the civilization\'s species, the player species and the City Hall key are unchanged on the '
                           f'guest ({g0} -> {game})')
-    keyframe('civdrop_alone', 'the session has ended inside the guest\'s house editor; back in Civ alone the guest\'s '
-                              'cities show the civilization\'s houses (not the house it just made)')
+    city_frame(host, guest, gpos, 'civdrop_alone', 'the session has ended inside the guest\'s house editor; back in Civ '
+                                                   'alone the guest\'s city (in the middle) shows the civilization\'s '
+                                                   'houses (not the house it just made)')
     if not rejoin(host, guest, ck):
         return ck.result()
 
@@ -477,9 +492,8 @@ def run_civdrop(ck):
         ck(ok, f'{who}: the guest\'s houses show the house made while it was away ({houses(pid)}, {hb})')
     from coop_civ_guest_editors import guest_keys, host_culture_kept
     ck(*host_culture_kept(before['host'][0], culture(host), guest_keys(guest) | {got[1]}))  # BUG-1307 (the house build)
-    frame_city({'host': host, 'guest': guest}, gpos)
-    keyframe('civdrop_rejoined', 'after the guest joined again: the guest\'s city shows its own new house (made while it '
-                                 'was away) on both screens; the capital keeps the culture\'s houses')
+    city_frame(host, guest, gpos, 'civdrop_rejoined', 'after the guest joined again: the guest\'s city (in the middle) '
+                                                      'shows its own new house (made while it was away) on both screens')
     ck(mode(guest) == CIV, 'the guest plays Civ')
     ck.faults(host=host, guest=guest)
     return ck.result()
