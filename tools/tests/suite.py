@@ -1212,6 +1212,9 @@ add('chaos_tribe_awful', 'SPORE_NET=awful ' + P + 'coop_chaos.py --fixture tribe
 add('hotreload', P + 'hotreload_check.py', ('extended',), minutes=3)  # mod.reload coop twice, joins again
 add('multi3', P + 'coop_multi.py --fixture creature --players 3 --minutes 3', ('extended', 'multi'), minutes=7)
 add('npc_multi3', P + 'coop_npc_multi.py --players 3 --seconds 40', ('extended',), minutes=5)
+add('party_difficulty', P + 'coop_party_difficulty.py --value 150 --players 3', ('extended', 'multi'), minutes=9)  # BUG-1473 (WP-D1): three players, all.party_difficulty 150 %: an animal's hit costs each player 1.5 times the 100 % one on its own game (and on the host's for the guests), an NPC hit by all three falls after 1.5 times the hits (twin party_difficulty_off)
+add('party_difficulty_auto', P + 'coop_party_difficulty.py --value auto --players 3', ('extended', 'multi'), minutes=9)  # BUG-1473: auto with three players is 125 % (owner question 5's alternative)
+add('party_difficulty_off', 'SPORE_FIX_OFF=core.party_tuning ' + P + 'coop_party_difficulty.py --value 150 --players 3', ('twin',), minutes=9)  # BUG-1473 twin: the hits at 150 % are the game's own (those of 100 %): must FAIL
 # BUG-0167 / BUG-0170 hunts (fix/w46-n1-crashes): the 4-player churns of the two reports, also at low fps over the players' networks
 add('multi4_tribe', P + 'coop_multi.py --fixture tribe --players 4 --minutes 6', ('extended',), minutes=11)
 add('multi4_tribe_slow', 'SPORE_FPS=20 SPORE_NET=players ' + P + 'coop_multi.py --fixture tribe --players 4 --minutes 6', ('extended',), minutes=12)

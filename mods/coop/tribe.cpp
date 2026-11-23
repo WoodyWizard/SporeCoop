@@ -1,5 +1,6 @@
 #include "tribe.h"
 #include "tribe_internal.h"
+#include "party_difficulty.h"
 #include "tribe_logic.h"
 #include "call_guard.h"
 #include "lifecycle.h"
@@ -3673,6 +3674,14 @@ static int SK_THISCALL h_CitizenTD(void* comb, float dmg, uint32_t pol, int type
         }
         uint8_t ao = ah ? ah->data.owner : 0xFF;
         double now = H->time_seconds();
+        // WP-D1 (BUG-1473): all.party_difficulty: a hit between the players' tribe and an NPC (another tribe's member, an
+        // animal, an epic). The attacker is ours when it is a member of the player tribe (members are citizens: ah)
+        {
+            using party::Side;
+            Side vs = vt == pt && pt ? Side::Player : vt ? Side::Npc : Side::Other;
+            Side as = !ac ? Side::Other : ah && pt && F<void*>(ac, kOwnerTribeOff) == pt ? Side::Player : Side::Npc;
+            dmg = party::hit(dmg, vs, as);
+        }
         if (ao < 0xFE && vt && vt != pt) { // our member hits another tribe
             auto& hits = g_pincer[vt];
             hits[ao] = now;
