@@ -629,6 +629,7 @@ static kept_disk::Backend<std::vector<uint32_t>> g_disk{
         return in.end();
     }};
 static void send_kept(spacekept::Entry<std::vector<uint32_t>>& k);
+static void host_disk_sync();
 static bool g_store_reg = store::add({"space.colonies",
                                       [](pstore::Store& s, int64_t now) {
                                           if (!g_disk_fix || !g_keep_fix)
@@ -665,6 +666,10 @@ static bool g_store_reg = store::add({"space.colonies",
                                           for (auto& [k, e] : g_store.entries())
                                               if (k == to && e.id != spacekept::kNoId && !e.value.empty())
                                                   send_kept(e); // the player is here: its colonies at once
+                                      },
+                                      [] { // NET-3 (BUG-1499): the save opened the store itself
+                                          if (spaceext::connected() && spaceext::is_host())
+                                              host_disk_sync();
                                       }});
 PLAYER_STATE("space_map_kept",
              [](uint8_t id) {
@@ -723,9 +728,11 @@ static void kept_roster(uint8_t id)
     g_store.keep(k, std::move(own));
 }
 
-static void kept_tick(double now)
+// the host: what the host's disk keeps for this Space world into the kept store (every frame; NET-3, BUG-1499: also
+// when a save opened the store itself)
+static void host_disk_sync()
 {
-    if (spaceext::is_host()) {
+    {
         bool emptied = g_store.world(spaceext::world_epoch()); // another Space world: its players' colonies are not this one's
         if (g_disk_fix && g_keep_fix)
             g_disk.sync(g_store, emptied, spaceext::in_space()); // E1: what the host's disk keeps for this world
@@ -748,6 +755,13 @@ static void kept_tick(double now)
                         }
                     }
         }
+    }
+}
+
+static void kept_tick(double now)
+{
+    if (spaceext::is_host()) {
+        host_disk_sync();
         std::set<uint8_t> here;
         for (auto& p : spaceext::ctx().sess->players())
             here.insert(p.id);

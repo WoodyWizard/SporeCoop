@@ -15,8 +15,15 @@ back after the load; while the owner is not there yet the host holds them for it
    the tribe state) the guest owns as many members as before, the host as many as before.
 SPORE_FIX_OFF=store.tribe_owners: the members are dealt anew in turns, the gift is gone (FAIL).
 
-  SPORE_LANE=9 python3 tools/tests/coop_tribe_owners_session.py
+--adopt (NET-4 of the audit, BUG-1500): in the next session the guest comes as another game under the same name
+(`coop.space keptkey other on` before the join: a new install, another PC), so the host holds its members for the
+stored Bob; the host gives them over (`coop.store adopt Bob`). PASS: the adopt finds the stored Bob and the guest owns
+its members as before on both games. SPORE_FIX_OFF=store.owner_names: a Tribe world keeps its owners only in the world
+record, the store has no player named Bob ("0 stored players"): FAIL.
+
+  SPORE_LANE=9 python3 tools/tests/coop_tribe_owners_session.py [--adopt]
 """
+import sys
 import time
 
 from harness import waiter
@@ -57,9 +64,17 @@ def main():
     print('  host ' + next((ln for ln in host.call('coop.status')['out'].splitlines() if ln.startswith('claims:')), '-'),
           flush=True)
 
-    host, guest, info = session_restart(host, guest)
+    adopt = '--adopt' in sys.argv
+    other = (lambda g: print('  guest:', g.call('coop.space keptkey other on')['out'].strip(), flush=True)) if adopt else None
+    host, guest, info = session_restart(host, guest, before_join=other)
     ck(info['saved'], 'the host saved its game before quitting')
     time.sleep(6)
+    if adopt:  # BUG-1500: the guest is a stranger to the store until the host's word
+        print(f'  next session, before the adopt: host {owners(host)}', flush=True)
+        r = host.call('coop.store adopt Bob')
+        print('  host adopt:', (r.get('out') or '').strip()[:160], flush=True)
+        ck(r.get('ok') and "are Bob's now" in (r.get('out') or ''), 'coop.store adopt finds the stored Bob of this Tribe world')
+        time.sleep(6)
     after = owners(host)
     print(f'  next session: host {after}, guest {owners(guest)} (before: {before}) | host '
           + next((ln for ln in host.call('coop.status')['out'].splitlines() if ln.startswith('claims:')), '-'), flush=True)
@@ -67,6 +82,8 @@ def main():
        f'next session: the guest owns {after.get(1, 0)} members as before ({before.get(1, 0)}, the gift included), '
        f'the host {after.get(0, 0)} ({before.get(0, 0)})')
     ck(wait(lambda: owners(guest) == after, 10), f'next session: the guest\'s game shows the same owners ({owners(guest)})')
+    if adopt:
+        guest.call('coop.space keptkey other off')
     ck.faults(host=host, guest=guest)
     return ck.result()
 

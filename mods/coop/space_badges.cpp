@@ -170,6 +170,11 @@ static bool g_store_reg = store::add({"space.badges",
                                           for (auto& [k, e] : g_store.entries())
                                               if (k == to && e.id != spacekept::kNoId)
                                                   send_kept(e);
+                                      },
+                                      [] { // NET-3 (BUG-1499): the save opened the store itself
+                                          if (g_fix && g_disk_fix && spaceext::connected() && spaceext::is_host())
+                                              g_disk.sync(g_store, g_store.world(spaceext::world_epoch()),
+                                                          spaceext::in_space());
                                       }});
 // ---- guest: the Space world of its join, the fresh and restored worlds (C5: space_kept.h) ----
 static spacekept::RestoreWindow g_win;

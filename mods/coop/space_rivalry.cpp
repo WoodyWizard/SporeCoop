@@ -871,6 +871,13 @@ static bool g_store_reg = store::add({"space.rivals", disk_save, [](const std::s
                                           for (auto& [kp, r] : g_rel_keys)
                                               m[key(kp.first == from ? to : kp.first, kp.second == from ? to : kp.second)] = r;
                                           g_rel_keys = std::move(m);
+                                      },
+                                      [] { // NET-3 (BUG-1499): the save opened the store itself: it is this world's
+                                          if (!spaceext::connected() || !spaceext::is_host() || !g_disk_fix || !money_ptr())
+                                              return;
+                                          if (spaceext::rivals()) // the Rivals state played now is this world's (kept)
+                                              g_state_world = store::world_name();
+                                          disk_read();
                                       }});
 
 static void tick(double now)

@@ -191,7 +191,7 @@ static void member_balance(void* pt, const std::vector<uint8_t>& players)
     }
 }
 // the game saves: the claims by position (world record tribe.owners v1)
-static void member_claims_save(pstore::Store& s, int64_t)
+static void member_claims_save(pstore::Store& s, int64_t now)
 {
     if (!g_owners_fix || !g_mclaims_serial || g_mclaims_serial != store::serial() || &s != store::world() ||
         game::mode_id() != modes::kTribe)
@@ -209,6 +209,21 @@ static void member_claims_save(pstore::Store& s, int64_t)
     pstore::Out o;
     claims::put_spots(o, v);
     s.put_world("tribe.owners", 1, o.d);
+    std::vector<std::string> keys; // BUG-1500: the owners keep their names in the store
+    for (auto& sp : v)
+        keys.push_back(sp.key);
+    store::mark_owners(s, "tribe.owner", keys, now);
+}
+// NET-3 (BUG-1499): the save opened the world's store itself: its claims are read and matched now and follow the
+// owners of this moment (as the next ticks would), so this save writes them
+static void member_claims_opened()
+{
+    if (!active() || !is_host() || game::mode_id() != modes::kTribe)
+        return;
+    if (void* pt = player_tribe()) {
+        g_mclaims_at = 0; // the follow runs now
+        member_claims_tick(pt, H->time_seconds());
+    }
 }
 static bool g_mclaims_reg = store::add({"tribe.owners", member_claims_save, [](const std::string& from, const std::string& to) {
                                             for (auto& [c, k] : g_member_claim)
@@ -219,7 +234,7 @@ static bool g_mclaims_reg = store::add({"tribe.owners", member_claims_save, [](c
                                                     sp.key = to;
                                             if (g_claims_order_fix)
                                                 g_host.split_for.clear(); // TR-1: the renamed claims go to their player
-                                        }});
+                                        }, member_claims_opened});
 
 void host_tick(double now)
 {
