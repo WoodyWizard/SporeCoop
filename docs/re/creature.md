@@ -5461,3 +5461,52 @@ were not re-checked by us yet (no game run by day): `~` until the night run of `
   where it fell each frame, so a fall should not start. The test row `creature_revive_paths` records it.
 * Negative: no new game function or field is used (game::health / set_health / stop / teleport / apply_damage / hit,
   SetEvolutionPoints and AddEvolutionPoints are known): no new symbol.
+
+## Difficulty tunings, and why the party difficulty scales the fights (2026-11-23, feat/w72-difficulty)
+<a id="creature-difficulty-tunings"></a>
+
+RE for WP-D1 of docs/plan-0.7.17.md (item 5, BUG-1473): which difficulty keys the game reads per stage, and whether a
+3-4 player difficulty can answer them. Static (Ghidra on GOG 2024 dc04aee5) plus the shipped prop files (read with a
+DBPF reader: Data/Spore_Game.package, Data/PatchData.package; type 0x00B1B104). Addresses in overrides_dc04aee5.sym.
+
+* ✔ **The level.** cPlayer +0x1248 mDifficultyLevel, 0 easy, 1 normal, 2 hard (getter 0xC755C0 `mov eax,[ecx+0x1248]`;
+  the string "mDifficultyLevel" 0x1472EF8 is its save field). Every difficulty reader below indexes by it.
+* ✔ **Two mechanisms.** (1) Per game mode: Simulator cGameModeManager holds three App::PropertyList* per mode (easy,
+  normal, hard) at +0x3C + ((mode - 0x1654C00) * 3 + level) * 4 for the modes 0x1654C00..0x1654C06, and +0x90..+0x98 for
+  adventures (0x1654C10). GetDifficultyTuning 0xB1DA30 thiscall(mgr, mode, bool use_level) ret 8 (level 1 unless the bool;
+  mode 0x1654C06 means "the current one" in its caller 0xB01D10), GetActiveDifficultyTuning 0xB1DDC0 (the active mode,
+  the player's level). The lists come from the .rdata table 0x145D558 (loader 0xB1DBA0, a vtable slot, at the manager's
+  init): see the table below. (2) Space only: DifficultyTuning_GetFloat 0xC75DD0 thiscall(cPlayer, key) ret 4, a 3-float
+  array key of cPlayer +0x11F4 (the list 0x02CA2581 = fnv("difficultytuning") of group 0x02AE0C7E) at [level], 1.0
+  without one (docs/re/space.md#space-difficulty-keys).
+* ✔ **The lists by mode** (0x145D558, rows {group, easy, normal, hard}; the normal list of a stage is its main tuning):
+
+  | Mode | Group | Easy | Normal | Hard | What differs (props of the easy / hard list over the normal one) |
+  |---|---|---|---|---|---|
+  | Cell 0x1654C00 | 0 | 0xC951EB63 | same | same | nothing: Cell's difficulty is its own cCellGame S+0x7C (docs/re/cell.md: AI blocks, damage table) |
+  | Creature 0x1654C01 | 0xAD56080C (creaturegame) | 0xB5CD7BF0 | 0x7C340397 (249 props) | 0xA82BC155 | 0x3194B523 int 25 / 15 / 10, 0xA5B8D733 45 / 60 / 90, 0x3819A4D3 a falloff array, hard 0x48A66EA 1.5 (normal 1.75); roles ? (no health or damage key) |
+  | Tribe 0x1654C02 | 0xF71FA311 (tribegame) | 0xC05AFD81 | 0x4553FCC0 (219 props) | 0x79DEC0FC | the AI attitude arrays (0xDB6B9, 0x1631B0C3, 0x4252B6FF, 0x8B4BF474 ... {event, delta} pairs), 0xA4775A7A 360 / 180 / 60, 0xA9A67944 180 / 150 / 120, 0xE32237C9 2.0 / 1.5 / 0.5, 0x64CF738F 30 / 20 / 0, easy 0xF5BF4D8E {100, 25 x4, 0} (normal {60, 10 x4, 0}), hard only 0x1A09D79E 60, 0x3D346A77 60, 0x4C87E711 70: timers and attitudes ~ |
+  | 0x1654C03 | 0 | 0 | 0 | 0 | none |
+  | Civ 0x1654C04 | 0 | 0xB6A5C63D | same | same | nothing: Civ's difficulty is in cCivilization::AddMoney's multipliers (docs/re/civ.md) and the AI's code |
+  | Space 0x1654C05 | 0x02AE0C7E | 0x7AD7041A | same | same | nothing here (Space reads (2)) |
+  | Edit 0x1654C06 | 0 | 0x334CB9E6 | same | same | - |
+
+  Creature also loads 0x1464EA4[level] {0xEF70EE29, 0x41EDA7D8, 0x76227EA4} (0xB709D0, keys 0x46DC07F 0.833 / 1.111 / 1.67,
+  0x46DC280 15 / 10 / 5, 0x15A2E80..83 ...) into an object of 0xB71580's; roles ?.
+* ✔ **The readers cache.** Most readers copy a key once: the cell avatar's ranges 0x52583BC / 0x52583D4 into globals
+  0x15A8804 / 0x15A8808 (0xE8C100, only when the list changed), 0xECE8D0 / 0xED0E90 / 0xF07B70 into globals, 0xAC69E0 into
+  its object, 0xB01D10 into flags of a big object (+0x1BA18C). Answering a key differently would need the list itself
+  changed before the mode starts, and a stage switch or load to apply it (the plan's risk).
+* ✔ **Creature combat reads the normal list, not the level.** CreatureBase_TakeDamage 0xC1A520 calls four absorbers
+  (0xC0DCE0, 0xC0DE10, 0xC16350, 0xC164A0: energy +0xE58 against the hit, keys 0x7422B3B 100, 0x760C17C 2.5, 0x760C181
+  0.1, 0x760C184 0.25, 0x7422B41 / 0x7422B47 0.5) through GetDifficultyTuning(current mode, use_level = 1); those keys are
+  in no Creature list (the defaults apply), only in the adventures' list (EP1 0x408A0100 / 0x2980610E).
+* **Conclusion (WP-D1).** No stage has a key for NPC health or NPC damage in its difficulty lists; the differences are AI
+  attitudes, timers and, in Space, the player's ship health (0xC045ED0D in SpaceUFO_PlayerMaxHealth 0xFFD780) and the
+  economy. all.party_difficulty therefore scales the fights in our own hit paths on the host (party_difficulty_logic.h):
+  the creature damage filter (npc.cpp damage_filter, the guests' MSG_DAMAGE_REQ, the NPC hits forwarded as MSG_DAMAGE),
+  the Tribe citizens' TakeDamage (tribe.cpp h_CitizenTD), the Civ vehicles' and buildings' TakeDamage (civ_shots.cpp,
+  civ.cpp b_damage) and the UFOs' TakeDamage on the fleet's host (squadron.cpp). The game's lists are not changed (no
+  economy or AI side effect, no reload needed).
+* Negative: no new game function is called by the mod for this; the new .sym entries are documentation (the loader, the
+  tables, the level getter, the Space ship health).

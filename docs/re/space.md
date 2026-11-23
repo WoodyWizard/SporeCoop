@@ -3717,3 +3717,24 @@ not taken by 0.7.16.1. Static reading of rel/0.7.17 (4daf12d1); no new game addr
   not hold; the seller takes back an offer with no answer after the offer life plus 30 s (a 0.7.16.1 receiver, BUG-1491).
 * Negative: SPC-14 parts a and b (a waiting tick's failed list, the 10 s resend) are harmless and unchanged; SPC-3's
   rel_keys part is never read (a self pair).
+
+## The Space difficulty keys (2026-11-23, feat/w72-difficulty)
+<a id="space-difficulty-keys"></a>
+
+BUG-1473 (WP-D1, docs/re/creature.md#creature-difficulty-tunings). DifficultyTuning_GetFloat 0xC75DD0 reads one float of
+a 3-float array of the list 0x02CA2581 (group 0x02AE0C7E) at the player's level (cPlayer +0x1248: 0 easy, 1 normal,
+2 hard). The 11 keys of the list (PatchData values, Spore_Game where it differs) and their readers (Ghidra, static):
+
+| Key | Easy / normal / hard | Read in | Role |
+|---|---|---|---|
+| 0xC045ED0D | 1.5 / 1.0 / 0.3 | 0xFFD780 (SpaceUFO_PlayerMaxHealth, from cGameDataUFO::Initialize) | ✔ the player's ship's max health factor (1000 x hull tools x it) |
+| 0xC42EDF05 | 20 / 6 / 2 (Spore_Game 4 / 1.5 / 0.75) | 0x100DE50, 0x100E2D0, 0x100F080, 0x100F280, 0x100F4A0, 0x100F7D0, 0x100FA60 | ~ a time scale of the colony events (0x100E2D0: 1 - 2^(-t / (prop 0x319266B x key)) x the share of colonies) |
+| 0x1C2E590D | 1.666 / 1.333 / 1.333 | 0x103CE9B (FillNPCStore), 0x103D9C0 (GenerateNPCStore) | ✔ the NPC stores' spice prices (space_trade.cpp kTuneSpicePrice) |
+| 0x24446C70 | 0.7 / 1.0 / 1.5 | 0x1013910 | ~ a per-star value's step (clamped between two star fields): a relation or alert rate ? |
+| 0x17E57DEC, 0xBD68B7C6 | 1.5 / 1 / 0.5, 1 / 1 / 1 | 0x102A640 (from 0xC31A80, 0xC3DD00, 0xC5C2A0, 0xC5CA10) | ? a factor of a value from a 13-row array table (prop 0x33B0A8D ...) by kind |
+| 0x77174715 | 2.0 / 1.0 / 0.75 | 0xC45B70 | ~ an object's +0x80 = prop 0xD71A8119 x 1000 x key (a planet / city defence value; an NPC empire's weaponry level beside it) |
+| 0x95250982 | 1 / 1 / 1 | 0xC45510 | ? (no effect at any level) |
+| 0x35EDC257, 0xA5345685 | 1 / 1 / 1 | 0x103DEF0 (GenerateNPCStore) | ? store values (no effect) |
+| 0xCDE375C9 | 1 / 1 / 0.8 | 0xC7215C (cPlanetRecord::CalculateDeltaSpiceProduction) | ✔ the colonies' spice production factor (hard: 80 %) |
+
+Negative: no key scales the NPC ships' health or damage; the party difficulty scales the UFO hits instead (squadron.cpp).
