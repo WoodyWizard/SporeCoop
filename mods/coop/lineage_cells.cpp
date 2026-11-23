@@ -38,7 +38,7 @@ static bool g_consent;                      // guest: the co-op window's box
 static double g_offer_at = -100, g_send_at = -100;
 static unsigned g_share = lineage::kSharePercent;
 static std::mt19937 g_rng{std::random_device{}()};
-static uintptr_t a_PreloadModel, a_PreloadCreature;
+static uintptr_t a_PreloadModel, a_PreloadCreature, a_GfxPtr;
 static unsigned g_packed, g_refused, g_in, g_out, g_withdrawn, g_picks, g_no_fit, g_considered, g_old_peer_held,
     g_preloads, g_swaps_seen;
 
@@ -218,6 +218,10 @@ static void preload_tick()
         g_preloaded.clear();
         return;
     }
+    // PreloadCreature reads the cell graphics (*cCellGFX::_ptr)+0x58 without a check: only while they exist
+    uint8_t* gfx = a_GfxPtr ? *(uint8_t**)a_GfxPtr : nullptr;
+    if (!gfx || !*(void**)(gfx + 0x58))
+        return;
     for (uint32_t k : g_registered) {
         if (g_preloaded.count(k) || g_preloaded.size() >= 256)
             continue;
@@ -235,6 +239,7 @@ void tick(double now)
     if (!a_PreloadModel) {
         a_PreloadModel = H->sym("Simulator::Cell::PreloadModel");
         a_PreloadCreature = H->sym("Simulator::Cell::cCellGFX::PreloadCreature");
+        a_GfxPtr = H->sym("Simulator::Cell::cCellGFX::_ptr");
     }
     if (!session())
         return;
