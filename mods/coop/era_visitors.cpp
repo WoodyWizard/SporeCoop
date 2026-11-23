@@ -300,6 +300,35 @@ static uint64_t g_bakes_asked, g_bakes_pending, g_bakes_skipped;
 static bool g_bake_outside = true;
 COOP_FIX("galaxy.bake_outside_frame", "BUG-9296", g_bake_outside,
          "galaxy: another era's model is asked to bake outside the frame (asked in it, a Tribe start crashed)");
+// BUG-9341: a bake's picture done, the bake's render (0x410DC0) posts message 0x3FC3F13 to every initialized cEditor (its
+// listener from cEditor::Initialize to Dispose). The editor's handler (cEditor::HandleMessage 0x591FA0, the case at
+// +0x108) reads its save area's database (Resource::GetDatabaseByID([this + 0x29C])) and its model ([this + 0x88],
+// GetCreationName) without a null check: on a galaxy planet a Creature host crashed ~6 s after a bake ask of another
+// era's model, at +0x11E (no database: the death caption, and in plain play) and at +0x147 (no model: just out of the
+// editor). The message has nothing to save for such an editor: it is left out. Off: the game's handler as it is
+static bool g_snap_guard = true;
+COOP_FIX("galaxy.editor_snapshot_guard", "BUG-9341", g_snap_guard,
+         "galaxy: an editor without its save area or model skips a bake's snapshot message (it crashed)");
+typedef char(__fastcall* EdMsgFn)(void* self, void* edx, uint32_t id, void* msg);
+static EdMsgFn o_EdMsg;
+static uintptr_t a_GetDb;
+static uint64_t g_snaps_seen, g_snaps_skipped;
+static char __fastcall h_EdMsg(void* self, void* edx, uint32_t id, void* msg)
+{
+    if (id == 0x3FC3F13 && self) {
+        g_snaps_seen++;
+        void* db = a_GetDb ? skg::cdecl_call<void*>(a_GetDb, *(uint32_t*)((uint8_t*)self + 0x29C)) : (void*)1;
+        void* model = *(void**)((uint8_t*)self + 0x88);
+        if (g_snap_guard && (!db || !model)) {
+            g_snaps_skipped++;
+            H->log(M, SK_INFO, "era visitors: an editor without its %s skipped a bake's snapshot message (BUG-9341)",
+                   !db ? "save area" : "model");
+            return 0;
+        }
+    }
+    return o_EdMsg(self, edx, id, msg);
+}
+
 static bool baked_or_ask(const uint32_t key[3])
 {
     static uintptr_t get = H->sym("Editors::IBakeManager::Get");
@@ -405,6 +434,11 @@ void init(const SkHost* host, SkMod* mod)
     galaxy::on_message(net::galaxy::VISITOR, on_visitor); // BUG-9287
     galaxy::on_message(net::galaxy::VISITOBJ, on_visit_objects); // BUG-9290
     galaxy_crt::init(H, M);
+    a_GetDb = H->sym("Resource::GetDatabaseByID"); // BUG-9341
+    if (uintptr_t ed = H->sym("Editors::cEditor::HandleMessage"))
+        if (a_GetDb && H->hook_create(M, (void*)ed, (void*)&h_EdMsg, (void**)&o_EdMsg) != 0)
+            o_EdMsg = nullptr;
+    H->log(M, SK_INFO, "era visitors: the editor's snapshot guard %s (BUG-9341)", o_EdMsg ? "on" : "off (no hook)");
     g_eras = H->config_int(M, "galaxy", "other_eras", 1) != 0; // BUG-9294
 }
 
@@ -1119,7 +1153,7 @@ std::string walk_into(int n)
 
 std::string stream_status()
 {
-    char b[300];
+    char b[360];
     snprintf(b, sizeof b,
              "era visitors (BUG-9287): on=%d other_eras=%d (told %llu) planet='%s' sent=%llu got=%llu visitors=%u shown=%llu no_species=%llu gone=%llu\n",
              (int)g_stream, (int)g_eras, (unsigned long long)g_eras_sent, galaxy::current_planet().c_str(),
@@ -1131,11 +1165,12 @@ std::string stream_status()
         size_t live = 0, waiting = 0;
         for (auto& [k, o] : g_objs)
             live += o.u != nullptr, waiting += o.waiting;
-        snprintf(b, sizeof b, "  objects (BUG-9290): sent %llu in %llu messages; got %llu, now %u (props %u, waiting %u), made %llu (again %llu), gone %llu, bakes asked %llu (pending %llu, not asked in this stage %llu)\n",
+        snprintf(b, sizeof b, "  objects (BUG-9290): sent %llu in %llu messages; got %llu, now %u (props %u, waiting %u), made %llu (again %llu), gone %llu, bakes asked %llu (pending %llu, not asked in this stage %llu); editor snapshots %llu, skipped %llu\n",
                  (unsigned long long)g_objs_sent, (unsigned long long)g_obj_msgs, (unsigned long long)g_objs_got,
                  (unsigned)g_objs.size(), (unsigned)live, (unsigned)waiting, (unsigned long long)g_props_made,
                  (unsigned long long)g_props_remade, (unsigned long long)g_props_gone, (unsigned long long)g_bakes_asked,
-                 (unsigned long long)g_bakes_pending, (unsigned long long)g_bakes_skipped);
+                 (unsigned long long)g_bakes_pending, (unsigned long long)g_bakes_skipped, (unsigned long long)g_snaps_seen,
+                 (unsigned long long)g_snaps_skipped);
         out += b;
         snprintf(b, sizeof b, "  solid (BUG-9293): on=%d pushes %llu, by a stretch %llu, last %.2f m; nearest stretch %.2f m (its reach %.2f)\n",
                  (int)g_solid, (unsigned long long)g_solid_pushes, (unsigned long long)g_solid_stretch_pushes, g_solid_last_push,
