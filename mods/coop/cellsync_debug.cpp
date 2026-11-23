@@ -937,6 +937,14 @@ std::string debug(const std::vector<std::string>& a)
         });
         return "food added";
     }
+    if (a.size() >= 2 && a[0] == "foodhold") { // tests (BUG-9316): the food queued for the cell step waits secs (at most
+        // 2), as while the game's cell step does not run (a short pause); the totals go out as usual meanwhile
+        double secs = std::clamp(atof(a[1].c_str()), 0.0, 2.0);
+        g_test_food_hold_until = H->time_seconds() + secs;
+        char b[80];
+        snprintf(b, sizeof b, "food queue held %.2f s (%u queued now)", secs, (unsigned)g_food_q.size());
+        return b;
+    }
     if (a.size() >= 2 && a[0] == "meal") { // an own meal as AvatarEat makes it: the party's pace applies (BUG-0510)
         h_AddFood(atoi(a[1].c_str()), a.size() >= 3 && a[2] == "plant");
         return "meal eaten";
@@ -1224,6 +1232,13 @@ std::string debug(const std::vector<std::string>& a)
     if (a.size() >= 2 && a[0] == "invuln") { // tests: the avatar's invulnerability flag +0x111
         F<uint8_t>(av, kInvuln) = (uint8_t)atoi(a[1].c_str());
         return "invuln set";
+    }
+    if (a.size() >= 3 && a[0] == "cellhp" && is_host()) { // host, tests (BUG-9317): cellhp c<idx> <hp>: a cell's hp
+        uint8_t* c = modes::cell_at((uint32_t)strtoul(a[1].c_str() + (a[1][0] == 'c' ? 1 : 0), nullptr, 10));
+        if (!c || c == av || modes::cell_is_puppet(c))
+            return "no such cell";
+        F<int>(c, kHp) = atoi(a[2].c_str());
+        return "hp " + std::to_string(F<int>(c, kHp));
     }
     if (a.size() >= 2 && a[0] == "hp") {
         F<int>(av, kHp) = atoi(a[1].c_str());
